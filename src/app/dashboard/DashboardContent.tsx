@@ -1,13 +1,18 @@
 'use client'
 
+import { useState } from 'react'
 import { signOut } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Sparkles, Plus, LogOut, Eye, Crown, FolderOpen, Calendar, LayoutGrid } from 'lucide-react'
+import { Sparkles, Plus, LogOut, Eye, Crown, FolderOpen, Calendar, LayoutGrid, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { ThemeSelector } from '@/components/ui/ThemeSelector'
 import { GlowCard } from '@/components/ui/GlowCard'
 import { NeonButton } from '@/components/ui/NeonButton'
+import { CreateProjectModal } from '@/components/project/CreateProjectModal'
+import { deleteProject } from '@/lib/actions/projects'
 import { useThemeStore } from '@/stores/themeStore'
+import type { Project } from '@/lib/db/schema'
 
 interface DashboardContentProps {
   user: {
@@ -17,23 +22,34 @@ interface DashboardContentProps {
     email?: string | null
     image?: string | null
   }
+  projects: Project[]
 }
 
-export default function DashboardContent({ user }: DashboardContentProps) {
+export default function DashboardContent({ user, projects }: DashboardContentProps) {
+  const router = useRouter()
+  const [showCreateModal, setShowCreateModal] = useState(false)
   const isAdmin = user.role === 'admin'
   const { glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
+
+  const handleDelete = async (e: React.MouseEvent, projectId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!confirm('Delete this project? All tasks will be permanently removed.')) return
+    await deleteProject(projectId)
+    router.refresh()
+  }
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
       <div className="fixed inset-0 pointer-events-none">
         <div
           className="absolute top-[10%] right-[15%] w-[500px] h-[500px] rounded-full blur-[120px] animate-glow-breathe"
-          style={{ background: 'var(--glow-color)', opacity: 0.08 }}
+          style={{ background: 'var(--glow-color)', opacity: 0.03 }}
         />
         <div
           className="absolute bottom-[20%] left-[10%] w-[400px] h-[400px] rounded-full blur-[100px] animate-glow-breathe"
-          style={{ background: 'var(--primary)', opacity: 0.06, animationDelay: '3s' }}
+          style={{ background: 'var(--primary)', opacity: 0.02, animationDelay: '7s' }}
         />
       </div>
 
@@ -101,17 +117,19 @@ export default function DashboardContent({ user }: DashboardContentProps) {
           transition={{ duration: 0.5, delay: 0.1 }}
           className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10"
         >
-          <GlowCard accentColor="purple" glowIntensity="sm" showAccentLine hover>
-            <div className="flex items-center gap-3 p-2">
-              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-purple-500/15">
-                <Plus className="w-5 h-5 text-purple-400" />
+          <div onClick={() => setShowCreateModal(true)}>
+            <GlowCard accentColor="purple" glowIntensity="sm" showAccentLine hover>
+              <div className="flex items-center gap-3 p-2">
+                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-purple-500/15">
+                  <Plus className="w-5 h-5 text-purple-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-white">New Project</h3>
+                  <p className="text-xs text-[var(--text-dim)]">Create timeline & board</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-semibold text-white">New Project</h3>
-                <p className="text-xs text-[var(--text-dim)]">Create timeline & board</p>
-              </div>
-            </div>
-          </GlowCard>
+            </GlowCard>
+          </div>
 
           <Link href="/demo">
             <GlowCard accentColor="cyan" glowIntensity="sm" showAccentLine hover>
@@ -133,8 +151,8 @@ export default function DashboardContent({ user }: DashboardContentProps) {
                 <FolderOpen className="w-5 h-5 text-emerald-400" />
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-white">0 Projects</h3>
-                <p className="text-xs text-[var(--text-dim)]">Get started below</p>
+                <h3 className="text-sm font-semibold text-white">{projects.length} Project{projects.length !== 1 ? 's' : ''}</h3>
+                <p className="text-xs text-[var(--text-dim)]">{projects.length === 0 ? 'Get started below' : 'Active'}</p>
               </div>
             </div>
           </GlowCard>
@@ -146,36 +164,72 @@ export default function DashboardContent({ user }: DashboardContentProps) {
           transition={{ duration: 0.5, delay: 0.2 }}
         >
           <h2 className="text-lg font-semibold text-white mb-4">Your Projects</h2>
-          <div
-            className="flex flex-col items-center justify-center py-16 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]"
-          >
-            <motion.div
-              animate={{ y: [0, -6, 0] }}
-              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-              className="mb-4"
-            >
-              <div className="relative">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-8 h-8 text-[var(--primary)] opacity-40" />
-                  <LayoutGrid className="w-8 h-8 text-[var(--accent)] opacity-40" />
+
+          {projects.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]">
+              <motion.div
+                animate={{ y: [0, -6, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                className="mb-4"
+              >
+                <div className="relative">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-8 h-8 text-[var(--primary)] opacity-40" />
+                    <LayoutGrid className="w-8 h-8 text-[var(--accent)] opacity-40" />
+                  </div>
+                  <div
+                    className="absolute inset-0 blur-xl opacity-30"
+                    style={{ background: 'var(--glow-color)' }}
+                  />
                 </div>
-                <div
-                  className="absolute inset-0 blur-xl opacity-30"
-                  style={{ background: 'var(--glow-color)' }}
-                />
-              </div>
-            </motion.div>
-            <p className="text-[var(--text-muted)] mb-1">No projects yet</p>
-            <p className="text-sm text-[var(--text-dim)] mb-6">Create your first project to get started</p>
-            <NeonButton color="purple" glowIntensity="md">
-              <span className="flex items-center gap-2">
-                <Plus className="w-4 h-4" />
-                Create First Project
-              </span>
-            </NeonButton>
-          </div>
+              </motion.div>
+              <p className="text-[var(--text-muted)] mb-1">No projects yet</p>
+              <p className="text-sm text-[var(--text-dim)] mb-6">Create your first project to get started</p>
+              <NeonButton color="purple" glowIntensity="md" onClick={() => setShowCreateModal(true)}>
+                <span className="flex items-center gap-2">
+                  <Plus className="w-4 h-4" />
+                  Create First Project
+                </span>
+              </NeonButton>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {projects.map((project) => (
+                <Link key={project.id} href={`/project/${project.id}`}>
+                  <GlowCard accentColor="purple" glowIntensity="sm" showAccentLine hover>
+                    <div className="p-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <h3 className="text-sm font-semibold text-white truncate">{project.name}</h3>
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          onClick={(e) => handleDelete(e, project.id)}
+                          className="p-1.5 rounded-lg text-[var(--text-dim)] hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </motion.button>
+                      </div>
+                      {project.description && (
+                        <p className="text-xs text-[var(--text-dim)] mt-1 line-clamp-2">{project.description}</p>
+                      )}
+                      <div className="flex items-center gap-3 mt-3 text-xs text-[var(--text-muted)]">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          {new Date(project.startDate).toLocaleDateString()}
+                        </span>
+                        <span className="text-[var(--text-dim)]">-</span>
+                        <span>{new Date(project.endDate).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  </GlowCard>
+                </Link>
+              ))}
+            </div>
+          )}
         </motion.div>
       </main>
+
+      <CreateProjectModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} />
     </div>
   )
 }

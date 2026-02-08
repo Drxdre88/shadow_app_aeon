@@ -9,7 +9,12 @@ import { ThemeSelector } from '@/components/ui/ThemeSelector'
 export default function HomePage() {
   return (
     <div className="min-h-screen p-8">
-      <div className="fixed top-4 right-4 z-50">
+      <div className="fixed top-4 right-4 z-50 flex items-center gap-3">
+        <Link href="/login">
+          <NeonButton color="purple" size="sm" variant="outline">
+            Sign In
+          </NeonButton>
+        </Link>
         <ThemeSelector />
       </div>
 
@@ -75,9 +80,9 @@ export default function HomePage() {
                   Try Demo
                 </NeonButton>
               </Link>
-              <Link href="/demo">
+              <Link href="/login">
                 <NeonButton color="none" variant="outline">
-                  View Board
+                  Sign In
                 </NeonButton>
               </Link>
             </div>

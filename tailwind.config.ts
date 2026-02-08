@@ -29,7 +29,7 @@ const config: Config = {
       },
       animation: {
         'glow-pulse': 'glow-pulse 2s ease-in-out infinite',
-        'glow-breathe': 'glow-breathe 4s ease-in-out infinite',
+        'glow-breathe': 'glow-breathe 20s ease-in-out infinite',
         'fade-in': 'fade-in 0.2s ease-out',
         'scale-in': 'scale-in 0.15s ease-out',
       },
@@ -43,8 +43,10 @@ const config: Config = {
           },
         },
         'glow-breathe': {
-          '0%, 100%': { opacity: '0.6' },
+          '0%': { opacity: '0' },
+          '15%, 85%': { opacity: '0.6' },
           '50%': { opacity: '1' },
+          '100%': { opacity: '0' },
         },
         'fade-in': {
           '0%': { opacity: '0' },
