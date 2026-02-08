@@ -142,7 +142,7 @@ export function ThemeSelector() {
 
       <div className="absolute right-0 top-full mt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
         <motion.div
-          className="glass p-4 min-w-[300px]"
+          className="p-4 min-w-[300px] rounded-xl border border-white/10 bg-[#1a1a2e] shadow-2xl"
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2 }}
