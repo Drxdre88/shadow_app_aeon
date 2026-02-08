@@ -7,7 +7,6 @@ A world-class Gantt chart + Trello-style task management application with stunni
 ## Quick Start (Development)
 
 ```bash
-cd apps/aeon
 npm install
 cp .env.example .env.local
 # Edit .env.local with your credentials
@@ -64,6 +63,7 @@ NEXTAUTH_URL="http://localhost:3000"
 ```env
 AUTH_GOOGLE_ID="your-client-id.apps.googleusercontent.com"
 AUTH_GOOGLE_SECRET="your-client-secret"
+ADMIN_EMAILS="you@gmail.com"
 ```
 
 #### GitHub OAuth

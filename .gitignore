@@ -3,6 +3,10 @@ node_modules/
 .pnp/
 .pnp.js
 
+# Claude Code
+CLAUDE.md
+.claude/
+
 # Build outputs
 .next/
 out/
@@ -50,10 +54,6 @@ desktop.ini
 # Package managers
 .yarn/
 .npm/
-
-# Claude Code
-.claude/
-CLAUDE.md
 
 # Misc
 *.pem
