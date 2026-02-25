@@ -1,8 +1,7 @@
 import NextAuth from 'next-auth'
+import type { Provider } from 'next-auth/providers'
 import { DrizzleAdapter } from '@auth/drizzle-adapter'
 import Google from 'next-auth/providers/google'
-import GitHub from 'next-auth/providers/github'
-import Resend from 'next-auth/providers/resend'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import * as schema from '@/lib/db/schema'
@@ -19,6 +18,41 @@ declare module 'next-auth' {
   }
 }
 
+function buildProviders(): Provider[] {
+  const providers: Provider[] = []
+
+  if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
+    providers.push(
+      Google({
+        clientId: process.env.AUTH_GOOGLE_ID,
+        clientSecret: process.env.AUTH_GOOGLE_SECRET,
+      })
+    )
+  }
+
+  if (process.env.AUTH_GITHUB_ID && process.env.AUTH_GITHUB_SECRET) {
+    const GitHub = require('next-auth/providers/github').default
+    providers.push(
+      GitHub({
+        clientId: process.env.AUTH_GITHUB_ID,
+        clientSecret: process.env.AUTH_GITHUB_SECRET,
+      })
+    )
+  }
+
+  if (process.env.AUTH_RESEND_KEY) {
+    const Resend = require('next-auth/providers/resend').default
+    providers.push(
+      Resend({
+        apiKey: process.env.AUTH_RESEND_KEY,
+        from: process.env.EMAIL_FROM || 'Aeon <noreply@aeon.app>',
+      })
+    )
+  }
+
+  return providers
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: DrizzleAdapter(db, {
     usersTable: schema.users,
@@ -31,20 +65,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: '/login',
     error: '/login',
   },
-  providers: [
-    Google({
-      clientId: process.env.AUTH_GOOGLE_ID,
-      clientSecret: process.env.AUTH_GOOGLE_SECRET,
-    }),
-    GitHub({
-      clientId: process.env.AUTH_GITHUB_ID,
-      clientSecret: process.env.AUTH_GITHUB_SECRET,
-    }),
-    Resend({
-      apiKey: process.env.AUTH_RESEND_KEY,
-      from: process.env.EMAIL_FROM || 'Aeon <noreply@aeon.app>',
-    }),
-  ],
+  providers: buildProviders(),
   events: {
     createUser: async ({ user }) => {
       const adminEmails = (process.env.ADMIN_EMAILS || '')
