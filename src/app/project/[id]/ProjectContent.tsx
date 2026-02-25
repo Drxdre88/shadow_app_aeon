@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Sparkles, LayoutGrid, Calendar, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { ThemeSelector } from '@/components/ui/ThemeSelector'
@@ -9,6 +9,7 @@ import { TimeScaleSelector } from '@/components/gantt/TimeScaleSelector'
 import { TaskBoard } from '@/components/board/TaskBoard'
 import { useGanttStore } from '@/lib/store/ganttStore'
 import { useBoardStore } from '@/lib/store/boardStore'
+import { getBoardTasks, createBoardTask, updateBoardTask, deleteBoardTask, reorderBoardTasks } from '@/lib/actions/board'
 import type { Project } from '@/lib/db/schema'
 
 interface ProjectContentProps {
@@ -22,12 +23,70 @@ export default function ProjectContent({ project }: ProjectContentProps) {
   const { setTasks: setBoardTasks, setLabels } = useBoardStore()
 
   useEffect(() => {
-    setBoardTasks([])
     setGanttTasks([])
     setRows([])
     setLabels([])
-    setIsLoading(false)
+
+    getBoardTasks(project.id)
+      .then((dbTasks) => {
+        const mapped = dbTasks.map((t) => ({
+          id: t.id,
+          projectId: t.projectId,
+          name: t.name,
+          description: t.description || undefined,
+          status: t.status as 'todo' | 'doing' | 'review' | 'done',
+          priority: t.priority as 'low' | 'medium' | 'high' | 'urgent',
+          color: t.color,
+          labels: [] as string[],
+          startDate: t.startDate ? t.startDate.toISOString() : undefined,
+          endDate: t.endDate ? t.endDate.toISOString() : undefined,
+          onTimeline: t.onTimeline,
+          orderIndex: t.orderIndex,
+        }))
+        setBoardTasks(mapped)
+      })
+      .catch((err) => {
+        console.error('Failed to load board tasks:', err)
+        setBoardTasks([])
+      })
+      .finally(() => setIsLoading(false))
   }, [project.id, setBoardTasks, setGanttTasks, setRows, setLabels])
+
+  const handleTaskCreate = useCallback((task: {
+    id: string
+    projectId: string
+    name: string
+    description?: string
+    status: string
+    priority: string
+    color: string
+    onTimeline: boolean
+    orderIndex: number
+    startDate?: string
+    endDate?: string
+  }) => {
+    createBoardTask(task).catch((err) => console.error('Failed to create task:', err))
+  }, [])
+
+  const handleTaskUpdate = useCallback((taskId: string, updates: Record<string, unknown>) => {
+    updateBoardTask(taskId, project.id, updates as {
+      name?: string
+      description?: string | null
+      status?: string
+      priority?: string
+      color?: string
+      onTimeline?: boolean
+      orderIndex?: number
+    }).catch((err) => console.error('Failed to update task:', err))
+  }, [project.id])
+
+  const handleTaskDelete = useCallback((taskId: string) => {
+    deleteBoardTask(taskId, project.id).catch((err) => console.error('Failed to delete task:', err))
+  }, [project.id])
+
+  const handleTaskMove = useCallback((updates: { id: string; orderIndex: number; status?: string }[]) => {
+    reorderBoardTasks(project.id, updates).catch((err) => console.error('Failed to reorder tasks:', err))
+  }, [project.id])
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
@@ -87,7 +146,13 @@ export default function ProjectContent({ project }: ProjectContentProps) {
           <>
             {activeTab === 'board' && (
               <div className="h-[calc(100vh-180px)]">
-                <TaskBoard projectId={project.id} />
+                <TaskBoard
+                  projectId={project.id}
+                  onTaskCreate={handleTaskCreate}
+                  onTaskUpdate={handleTaskUpdate}
+                  onTaskDelete={handleTaskDelete}
+                  onTaskMove={handleTaskMove}
+                />
               </div>
             )}
 
