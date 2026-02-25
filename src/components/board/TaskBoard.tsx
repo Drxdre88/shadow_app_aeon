@@ -13,8 +13,27 @@ import { NeonButton } from '@/components/ui/NeonButton'
 import { GlowCard } from '@/components/ui/GlowCard'
 import { useThemeStore } from '@/stores/themeStore'
 
+interface BoardTaskData {
+  id: string
+  projectId: string
+  name: string
+  description?: string
+  status: string
+  priority: string
+  color: string
+  labels: string[]
+  onTimeline: boolean
+  orderIndex: number
+  startDate?: string
+  endDate?: string
+}
+
 interface TaskBoardProps {
   projectId: string
+  onTaskCreate?: (task: BoardTaskData) => void
+  onTaskUpdate?: (taskId: string, updates: Partial<BoardTaskData>) => void
+  onTaskDelete?: (taskId: string) => void
+  onTaskMove?: (updates: { id: string; orderIndex: number; status?: string }[]) => void
 }
 
 type DragEffect = 'glow' | 'ghost' | 'lightning'
@@ -104,7 +123,7 @@ function DragPreview({ task, effect, globalGlow }: { task: any; effect: DragEffe
   )
 }
 
-export function TaskBoard({ projectId }: TaskBoardProps) {
+export function TaskBoard({ projectId, onTaskCreate, onTaskUpdate, onTaskDelete, onTaskMove }: TaskBoardProps) {
   const { tasks, moveTask, addTask, updateTask, removeTask, selectTask, selectedTaskId } = useBoardStore()
   const { colors: themeColors, glowIntensity: globalGlow } = useThemeStore()
   const [editingTask, setEditingTask] = useState<string | null>(null)
@@ -153,11 +172,13 @@ export function TaskBoard({ projectId }: TaskBoardProps) {
 
     if (overTask && activeTask.status !== overTask.status) {
       moveTask(activeId, overTask.status as typeof COLUMNS[number], overTask.orderIndex)
+      onTaskMove?.([{ id: activeId, orderIndex: overTask.orderIndex, status: overTask.status }])
     } else if (overColumn && activeTask.status !== overColumn) {
       const tasksInColumn = projectTasks.filter((t) => t.status === overColumn)
       moveTask(activeId, overColumn as typeof COLUMNS[number], tasksInColumn.length)
+      onTaskMove?.([{ id: activeId, orderIndex: tasksInColumn.length, status: overColumn }])
     }
-  }, [projectTasks, moveTask])
+  }, [projectTasks, moveTask, onTaskMove])
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
@@ -171,6 +192,7 @@ export function TaskBoard({ projectId }: TaskBoardProps) {
 
     if (overId === 'trash') {
       removeTask(activeId)
+      onTaskDelete?.(activeId)
       return
     }
 
@@ -187,14 +209,17 @@ export function TaskBoard({ projectId }: TaskBoardProps) {
 
       if (oldIndex !== -1 && newIndex !== -1) {
         const reordered = arrayMove(columnTasks, oldIndex, newIndex)
+        const moveUpdates: { id: string; orderIndex: number }[] = []
         reordered.forEach((task, index) => {
           if (task.orderIndex !== index) {
             updateTask(task.id, { orderIndex: index })
+            moveUpdates.push({ id: task.id, orderIndex: index })
           }
         })
+        if (moveUpdates.length > 0) onTaskMove?.(moveUpdates)
       }
     }
-  }, [projectTasks, removeTask, updateTask])
+  }, [projectTasks, removeTask, updateTask, onTaskMove, onTaskDelete])
 
   const handleDragCancel = useCallback(() => {
     setActiveTask(null)
@@ -232,16 +257,18 @@ export function TaskBoard({ projectId }: TaskBoardProps) {
     if (!formData.name.trim()) return
 
     if (editingTask) {
-      updateTask(editingTask, {
+      const updates = {
         name: formData.name.trim(),
         description: formData.description.trim() || undefined,
         color: formData.color,
         priority: formData.priority,
-      })
+      }
+      updateTask(editingTask, updates)
+      onTaskUpdate?.(editingTask, updates)
       setEditingTask(null)
     } else if (newTaskStatus) {
       const maxOrder = Math.max(0, ...projectTasks.filter((t) => t.status === newTaskStatus).map((t) => t.orderIndex))
-      addTask({
+      const newTask = {
         id: generateId(),
         projectId,
         name: formData.name.trim(),
@@ -252,10 +279,12 @@ export function TaskBoard({ projectId }: TaskBoardProps) {
         labels: [],
         onTimeline: false,
         orderIndex: maxOrder + 1,
-      })
+      }
+      addTask(newTask)
+      onTaskCreate?.(newTask)
       setNewTaskStatus(null)
     }
-  }, [formData, editingTask, newTaskStatus, projectTasks, projectId, updateTask, addTask])
+  }, [formData, editingTask, newTaskStatus, projectTasks, projectId, updateTask, addTask, onTaskCreate, onTaskUpdate])
 
   const closeModal = () => {
     setEditingTask(null)
