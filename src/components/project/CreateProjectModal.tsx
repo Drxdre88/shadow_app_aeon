@@ -2,12 +2,14 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Sparkles, Loader2 } from 'lucide-react'
+import { X, Loader2 } from 'lucide-react'
+import Image from 'next/image'
 import { cn } from '@/lib/utils/cn'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { createProject } from '@/lib/actions/projects'
 import { useRouter } from 'next/navigation'
 import { useThemeStore } from '@/stores/themeStore'
+import aeonLogo from '@/assets/aeon.png'
 
 interface CreateProjectModalProps {
   isOpen: boolean
@@ -96,7 +98,14 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
 
             <div className="relative flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-[var(--primary)]" />
+                <Image
+                  src={aeonLogo}
+                  alt="Aeon"
+                  width={22}
+                  height={22}
+                  className="rounded"
+                  style={{ filter: 'drop-shadow(0 0 6px var(--glow-color))' }}
+                />
                 <h2 className="text-lg font-semibold text-white">New Project</h2>
               </div>
               <button

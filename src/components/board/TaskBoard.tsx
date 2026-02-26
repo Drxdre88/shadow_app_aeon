@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { DndContext, DragEndEvent, DragStartEvent, DragOverEvent, DragCancelEvent, DragOverlay, useSensor, useSensors, PointerSensor, useDroppable, closestCenter } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -12,6 +12,8 @@ import { cn } from '@/lib/utils/cn'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { GlowCard } from '@/components/ui/GlowCard'
 import { useThemeStore } from '@/stores/themeStore'
+import { TaskChecklist } from './TaskChecklist'
+import { getChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem } from '@/lib/actions/checklist'
 
 interface BoardTaskData {
   id: string
@@ -135,12 +137,35 @@ export function TaskBoard({ projectId, onTaskCreate, onTaskUpdate, onTaskDelete,
   const [sections, setSections] = useState<{ id: string; name: string; color: AccentColor }[]>([])
   const [addingSectionTo, setAddingSectionTo] = useState<string | null>(null)
   const [newSectionName, setNewSectionName] = useState('')
+  const [checklistItemsState, setChecklistItemsState] = useState<
+    { id: string; title: string; completed: boolean; startDate?: string; endDate?: string }[]
+  >([])
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     color: 'purple' as AccentColor,
     priority: 'medium' as typeof PRIORITIES[number],
   })
+
+  useEffect(() => {
+    if (!editingTask) {
+      setChecklistItemsState([])
+      return
+    }
+    getChecklistItems(editingTask)
+      .then((items) =>
+        setChecklistItemsState(
+          items.map((i) => ({
+            id: i.id,
+            title: i.title,
+            completed: i.completed,
+            startDate: i.startDate ? i.startDate.toISOString() : undefined,
+            endDate: i.endDate ? i.endDate.toISOString() : undefined,
+          }))
+        )
+      )
+      .catch(() => setChecklistItemsState([]))
+  }, [editingTask])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -252,6 +277,35 @@ export function TaskBoard({ projectId, onTaskCreate, onTaskUpdate, onTaskDelete,
     setNewSectionName('')
     setAddingSectionTo(null)
   }
+
+  const handleChecklistAdd = useCallback((title: string) => {
+    if (!editingTask) return
+    const newItem = {
+      id: generateId(),
+      taskId: editingTask,
+      title,
+      orderIndex: checklistItemsState.length,
+    }
+    setChecklistItemsState((prev) => [...prev, { id: newItem.id, title, completed: false }])
+    createChecklistItem(newItem).catch(() => {})
+  }, [editingTask, checklistItemsState.length])
+
+  const handleChecklistToggle = useCallback((itemId: string) => {
+    if (!editingTask) return
+    setChecklistItemsState((prev) =>
+      prev.map((i) => (i.id === itemId ? { ...i, completed: !i.completed } : i))
+    )
+    const item = checklistItemsState.find((i) => i.id === itemId)
+    if (item) {
+      updateChecklistItem(itemId, editingTask, { completed: !item.completed }).catch(() => {})
+    }
+  }, [editingTask, checklistItemsState])
+
+  const handleChecklistRemove = useCallback((itemId: string) => {
+    if (!editingTask) return
+    setChecklistItemsState((prev) => prev.filter((i) => i.id !== itemId))
+    deleteChecklistItem(itemId, editingTask).catch(() => {})
+  }, [editingTask])
 
   const handleSubmit = useCallback(() => {
     if (!formData.name.trim()) return
@@ -386,6 +440,7 @@ export function TaskBoard({ projectId, onTaskCreate, onTaskUpdate, onTaskDelete,
               <div key={status} className="flex flex-col gap-2 min-w-[300px]">
                 <KanbanColumn
                   status={status}
+                  projectId={projectId}
                   tasks={projectTasks
                     .filter((t) => t.status === status)
                     .sort((a, b) => a.orderIndex - b.orderIndex)
@@ -395,6 +450,7 @@ export function TaskBoard({ projectId, onTaskCreate, onTaskUpdate, onTaskDelete,
                     }))}
                   onTaskEdit={handleTaskEdit}
                   onAddTask={() => handleAddTask(status)}
+                  onTaskCreate={onTaskCreate}
                   overId={overId}
                   activeTaskId={activeTask?.id}
                 />
@@ -561,6 +617,18 @@ export function TaskBoard({ projectId, onTaskCreate, onTaskUpdate, onTaskDelete,
                   </div>
                 </div>
               </div>
+
+              {editingTask && (
+                <div className="mt-4 pt-4 border-t border-white/10">
+                  <TaskChecklist
+                    taskId={editingTask}
+                    items={checklistItemsState}
+                    onItemAdd={handleChecklistAdd}
+                    onItemToggle={handleChecklistToggle}
+                    onItemRemove={handleChecklistRemove}
+                  />
+                </div>
+              )}
 
               <div className="flex gap-3 mt-6">
                 <NeonButton

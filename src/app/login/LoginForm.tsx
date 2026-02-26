@@ -4,12 +4,17 @@ import { useState } from 'react'
 import { signIn } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Sparkles, Calendar, LayoutGrid, Shield, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
+import Link from 'next/link'
+import Image from 'next/image'
 import { useThemeStore } from '@/stores/themeStore'
+import { GlassStage } from '@/components/ui/GlassStage'
+import aeonLogo from '@/assets/aeon.png'
+import chimaeraLogo from '@/assets/chimaera.png'
 
 function GoogleIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24">
+    <svg width="18" height="18" viewBox="0 0 24 24">
       <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
       <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
       <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
@@ -32,79 +37,106 @@ export default function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
-      <div className="fixed inset-0 pointer-events-none">
-        <motion.div
-          className="absolute top-[20%] left-[25%] w-[600px] h-[600px] rounded-full blur-[120px]"
-          style={{ background: 'var(--glow-color)', opacity: 0.15 }}
-          animate={{ scale: [1, 1.15, 1], opacity: [0.12, 0.22, 0.12] }}
-          transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
-        />
-        <motion.div
-          className="absolute bottom-[20%] right-[20%] w-[500px] h-[500px] rounded-full blur-[100px]"
-          style={{ background: 'var(--primary)', opacity: 0.1 }}
-          animate={{ scale: [1, 1.2, 1], opacity: [0.08, 0.18, 0.08] }}
-          transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
-        />
-        <motion.div
-          className="absolute top-[45%] left-[45%] w-[350px] h-[350px] rounded-full blur-[90px]"
-          style={{ background: 'var(--accent)', opacity: 0.06 }}
-          animate={{ scale: [1, 1.3, 1], opacity: [0.06, 0.14, 0.06] }}
-          transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
-        />
-      </div>
+    <div
+      className="min-h-screen flex items-center justify-center relative overflow-hidden"
+      style={{
+        background: `radial-gradient(ellipse at center, rgba(15, 15, 25, 0.95) 0%, #0a0a0f 70%)`,
+      }}
+    >
+      <GlassStage
+        blobConfig={{
+          blobs: [
+            { position: 'top-[30%] left-[30%]', size: 'w-[500px] h-[500px]', color: 'glow', opacity: 0.08 },
+            { position: 'bottom-[25%] right-[25%]', size: 'w-[400px] h-[400px]', color: 'primary', opacity: 0.05, delay: 3 },
+          ]
+        }}
+      />
 
       <motion.div
-        initial={{ opacity: 0, y: 30, scale: 0.95 }}
+        initial={{ opacity: 0, y: 20, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-        className="relative z-10 w-full max-w-md mx-4"
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+        className="relative z-10 w-full max-w-sm mx-4"
       >
         <div
-          className="relative p-8 rounded-2xl backdrop-blur-xl bg-gradient-to-b from-white/[0.08] to-black/40 border border-white/[0.08] overflow-hidden"
+          className="relative p-8 rounded-2xl overflow-hidden"
           style={{
-            boxShadow: glowIntensity > 0
-              ? `0 0 ${60 * mult}px ${15 * mult}px var(--glow-color), inset 0 1px 0 0 rgba(255,255,255,0.1)`
-              : 'inset 0 1px 0 0 rgba(255,255,255,0.1)',
+            backgroundColor: 'rgba(15, 15, 25, 0.85)',
+            border: `1px solid var(--primary-muted)`,
+            boxShadow: [
+              `0 0 ${40 * mult}px var(--glow-color)`,
+              `0 0 ${80 * mult}px var(--glow-color)`,
+              `inset 0 1px 0 rgba(255,255,255,0.05)`,
+            ].join(', '),
+            backdropFilter: 'blur(20px)',
           }}
         >
-          <div
-            className="absolute top-0 left-8 right-8 h-[1.5px]"
-            style={{
-              background: 'linear-gradient(90deg, transparent, var(--primary), transparent)',
-              boxShadow: `0 0 ${20 * mult}px ${4 * mult}px var(--glow-color)`,
-            }}
-          />
-          <div
-            className="absolute top-0 left-0 right-0 h-24 pointer-events-none"
-            style={{ background: 'linear-gradient(to bottom, var(--primary-muted), transparent)' }}
-          />
-
-          <div className="relative text-center mb-8 pt-2">
+          <div className="text-center mb-8">
             <motion.div
-              initial={{ scale: 0.5, opacity: 0 }}
+              initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: 0.3, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-              className="flex items-center justify-center gap-3 mb-3"
+              transition={{ delay: 0.2, duration: 0.5 }}
+              className="mb-4"
             >
-              <div className="relative">
-                <Sparkles className="w-9 h-9 text-[var(--primary)]" />
-                <div
-                  className="absolute inset-0 blur-lg opacity-60"
-                  style={{ background: 'var(--glow-color)' }}
-                />
-              </div>
-              <h1 className="text-4xl font-bold bg-gradient-to-r from-[var(--primary)] via-[var(--accent)] to-[var(--primary-hover)] bg-clip-text text-transparent">
-                Aeon
-              </h1>
+              <Image
+                src={aeonLogo}
+                alt="Aeon"
+                width={80}
+                height={80}
+                className="mx-auto rounded-lg"
+                style={{
+                  filter: `drop-shadow(0 0 ${12 * mult}px var(--glow-color))`,
+                }}
+              />
             </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3 }}
+              className="flex items-center justify-center gap-2 mb-2"
+            >
+              <Image
+                src={chimaeraLogo}
+                alt="Chimaera"
+                width={20}
+                height={20}
+                className="rounded-sm"
+                style={{
+                  filter: `drop-shadow(0 0 6px rgba(13, 148, 136, 0.5))`,
+                }}
+              />
+              <span
+                className="text-sm font-semibold"
+                style={{
+                  color: '#0d9488',
+                  textShadow: '0 0 10px rgba(13, 148, 136, 0.5), 0 0 20px rgba(13, 148, 136, 0.3)',
+                }}
+              >
+                Chimaera Apps
+              </span>
+            </motion.div>
+
+            <motion.h1
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.4 }}
+              className="text-3xl font-bold"
+              style={{
+                color: '#8a8f98',
+                textShadow: '0 0 15px rgba(138, 143, 152, 0.4), 0 0 30px rgba(138, 143, 152, 0.2), 0 2px 4px rgba(0,0,0,0.5)',
+              }}
+            >
+              Aeon
+            </motion.h1>
+
             <motion.p
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.5 }}
-              className="text-sm text-[var(--text-muted)]"
+              className="text-xs text-[var(--text-dim)] mt-1 tracking-wider uppercase"
             >
-              Beautiful project timelines
+              Project Timeline Management
             </motion.p>
           </div>
 
@@ -112,7 +144,12 @@ export default function LoginForm() {
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
-              className="mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center"
+              className="mb-4 px-4 py-3 rounded-xl text-sm text-center"
+              style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.2)',
+                color: '#f87171',
+              }}
             >
               {error === 'OAuthAccountNotLinked'
                 ? 'This email is already linked to another account'
@@ -124,63 +161,49 @@ export default function LoginForm() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.6 }}
+            className="space-y-3"
           >
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+            <button
               onClick={handleGoogleSignIn}
               disabled={loading}
-              className="w-full flex items-center justify-center gap-3 px-6 py-3.5 rounded-xl backdrop-blur-md bg-white/[0.07] border border-white/[0.12] text-[var(--text)] font-medium transition-all duration-300 hover:bg-white/[0.12] hover:border-white/[0.2] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-3 rounded-xl text-sm font-semibold transition-all duration-200 hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2.5"
               style={{
-                boxShadow: glowIntensity > 0
-                  ? `0 0 ${15 * mult}px ${3 * mult}px var(--glow-color)`
-                  : undefined,
+                background: `linear-gradient(135deg, var(--primary), var(--accent))`,
+                color: '#fff',
+                boxShadow: `0 0 ${20 * mult}px var(--glow-color)`,
               }}
             >
               {loading ? (
-                <Loader2 className="w-5 h-5 animate-spin text-[var(--primary)]" />
+                <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <GoogleIcon />
               )}
-              <span>{loading ? 'Redirecting...' : 'Continue with Google'}</span>
-            </motion.button>
-          </motion.div>
+              <span>{loading ? 'Redirecting...' : 'Sign in with Google'}</span>
+            </button>
 
-          <div className="flex items-center gap-3 my-6">
-            <div className="flex-1 h-px bg-white/10" />
-            <span className="text-xs text-[var(--text-dim)] uppercase tracking-wider">Powered by</span>
-            <div className="flex-1 h-px bg-white/10" />
-          </div>
+            <Link
+              href="/demo"
+              className="w-full py-2.5 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center hover:bg-white/[0.06]"
+              style={{
+                backgroundColor: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: 'var(--text-dim)',
+              }}
+            >
+              Try Demo
+            </Link>
+          </motion.div>
 
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.8 }}
-            className="flex items-center justify-center gap-8 text-[var(--text-dim)]"
+            className="mt-6 text-center text-xs"
+            style={{ color: 'var(--text-dim)' }}
           >
-            <div className="flex items-center gap-1.5 text-xs">
-              <Calendar className="w-3.5 h-3.5 text-[var(--primary)]" />
-              <span>Gantt</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-xs">
-              <LayoutGrid className="w-3.5 h-3.5 text-[var(--accent)]" />
-              <span>Boards</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-xs">
-              <Shield className="w-3.5 h-3.5 text-[var(--success)]" />
-              <span>Secure</span>
-            </div>
+            Secure session &middot; Google OAuth
           </motion.div>
         </div>
-
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1 }}
-          className="text-center text-xs text-[var(--text-dim)] mt-4"
-        >
-          By signing in you agree to the terms of service
-        </motion.p>
       </motion.div>
     </div>
   )

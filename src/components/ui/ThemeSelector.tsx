@@ -125,7 +125,7 @@ function GlowSlider({ value, onChange, themeColor }: { value: number; onChange: 
 }
 
 export function ThemeSelector() {
-  const { currentTheme, setTheme, glowIntensity, setGlowIntensity, colors } = useThemeStore()
+  const { currentTheme, setTheme, glowIntensity, setGlowIntensity, glassOpacity, setGlassOpacity, ambientBlobs, setAmbientBlobs, colors } = useThemeStore()
 
   return (
     <div className="relative group">
@@ -207,6 +207,79 @@ export function ThemeSelector() {
               onChange={setGlowIntensity}
               themeColor={colors.glowColor}
             />
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-white/10">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-4 h-4 rounded-md border border-white/20"
+                  style={{
+                    background: `rgba(255,255,255,${glassOpacity / 400})`,
+                    backdropFilter: 'blur(4px)',
+                  }}
+                />
+                <span className="text-xs font-medium text-slate-300">Glass Transparency</span>
+              </div>
+              <span
+                className="text-xs font-bold tabular-nums px-2 py-0.5 rounded-md"
+                style={{
+                  color: colors.glowColor,
+                  backgroundColor: `${colors.glowColor}20`,
+                }}
+              >
+                {glassOpacity}%
+              </span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={glassOpacity}
+              onChange={(e) => setGlassOpacity(Number(e.target.value))}
+              className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+              style={{
+                background: `linear-gradient(to right, rgba(255,255,255,0.1) 0%, ${colors.glowColor} ${glassOpacity}%, rgba(255,255,255,0.1) ${glassOpacity}%)`,
+              }}
+            />
+            <div className="flex justify-between mt-1 px-0.5">
+              <span className="text-[10px] text-slate-500">Solid</span>
+              <span className="text-[10px] text-slate-500">Glass</span>
+            </div>
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-white/10">
+            <button
+              onClick={() => setAmbientBlobs(!ambientBlobs)}
+              className="w-full flex items-center justify-between px-1 py-1.5 rounded-lg hover:bg-white/5 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-4 h-4 rounded-full"
+                  style={{
+                    background: ambientBlobs ? colors.glowColor : 'rgba(255,255,255,0.1)',
+                    filter: ambientBlobs ? `blur(2px)` : 'none',
+                    boxShadow: ambientBlobs ? `0 0 8px ${colors.glowColor}` : 'none',
+                  }}
+                />
+                <span className="text-xs font-medium text-slate-300">Ambient Blobs</span>
+              </div>
+              <div
+                className={cn(
+                  'w-8 h-[18px] rounded-full transition-colors duration-200 flex items-center px-0.5',
+                  ambientBlobs ? 'justify-end' : 'justify-start'
+                )}
+                style={{
+                  background: ambientBlobs ? colors.glowColor : 'rgba(255,255,255,0.1)',
+                }}
+              >
+                <motion.div
+                  className="w-3.5 h-3.5 rounded-full bg-white"
+                  layout
+                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                />
+              </div>
+            </button>
           </div>
         </motion.div>
       </div>

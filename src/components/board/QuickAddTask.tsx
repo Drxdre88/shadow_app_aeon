@@ -10,9 +10,20 @@ interface QuickAddTaskProps {
   projectId: string
   status: 'todo' | 'doing' | 'review' | 'done'
   onClose?: () => void
+  onTaskCreate?: (task: {
+    id: string
+    projectId: string
+    name: string
+    status: string
+    priority: string
+    color: string
+    labels: string[]
+    onTimeline: boolean
+    orderIndex: number
+  }) => void
 }
 
-export function QuickAddTask({ projectId, status, onClose }: QuickAddTaskProps) {
+export function QuickAddTask({ projectId, status, onClose, onTaskCreate }: QuickAddTaskProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [taskName, setTaskName] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -40,17 +51,20 @@ export function QuickAddTask({ projectId, status, onClose }: QuickAddTaskProps) 
       return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
     }
 
-    addTask({
+    const newTask = {
       id: generateId(),
       projectId,
       name: taskName.trim(),
       status,
-      priority: 'medium',
+      priority: 'medium' as const,
       color: 'purple',
       labels: [],
       onTimeline: false,
       orderIndex: maxOrder + 1,
-    })
+    }
+
+    addTask(newTask)
+    onTaskCreate?.(newTask)
 
     setTaskName('')
     setIsOpen(false)

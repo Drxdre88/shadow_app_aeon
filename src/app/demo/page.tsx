@@ -7,8 +7,11 @@ import { TimeScaleSelector } from '@/components/gantt/TimeScaleSelector'
 import { TaskBoard } from '@/components/board/TaskBoard'
 import { useGanttStore } from '@/lib/store/ganttStore'
 import { useBoardStore } from '@/lib/store/boardStore'
-import { Sparkles, LayoutGrid, Calendar } from 'lucide-react'
+import { LayoutGrid, Calendar } from 'lucide-react'
 import Link from 'next/link'
+import Image from 'next/image'
+import { GlassStage } from '@/components/ui/GlassStage'
+import aeonLogo from '@/assets/aeon.png'
 
 const DEMO_PROJECT_ID = 'demo-project'
 
@@ -56,12 +59,35 @@ export default function DemoPage() {
   const endDate = new Date(today.getFullYear(), today.getMonth() + 2, 0)
 
   return (
-    <div className="min-h-screen bg-[var(--background)]">
+    <div className="min-h-screen">
+      <GlassStage
+        blobConfig={{
+          blobs: [
+            { position: 'top-[10%] right-[20%]', size: 'w-[500px] h-[500px]', color: 'glow', opacity: 0.10 },
+            { position: 'bottom-[20%] left-[10%]', size: 'w-[400px] h-[400px]', color: 'primary', opacity: 0.07, delay: 5 },
+          ]
+        }}
+      />
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/5 border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <Sparkles className="w-6 h-6 text-[var(--primary)]" />
-            <span className="text-xl font-bold text-white">Aeon</span>
+            <Image
+              src={aeonLogo}
+              alt="Aeon"
+              width={28}
+              height={28}
+              className="rounded"
+              style={{ filter: 'drop-shadow(0 0 6px var(--glow-color))' }}
+            />
+            <span
+              className="text-xl font-bold"
+              style={{
+                color: '#8a8f98',
+                textShadow: '0 0 10px rgba(138, 143, 152, 0.3)',
+              }}
+            >
+              Aeon
+            </span>
             <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30">Demo</span>
           </Link>
 

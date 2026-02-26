@@ -6,6 +6,7 @@ import { AnimatePresence } from 'framer-motion'
 import { ListTodo, Activity, Eye, CheckCircle2, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { SortableTaskCard } from './SortableTaskCard'
+import { QuickAddTask } from './QuickAddTask'
 import { AccentColor } from '@/lib/utils/colors'
 import { useThemeStore } from '@/stores/themeStore'
 
@@ -13,6 +14,7 @@ type TaskStatus = 'todo' | 'doing' | 'review' | 'done'
 
 interface KanbanColumnProps {
   status: TaskStatus
+  projectId: string
   tasks: Array<{
     id: string
     name: string
@@ -26,6 +28,17 @@ interface KanbanColumnProps {
   }>
   onTaskEdit?: (taskId: string) => void
   onAddTask?: () => void
+  onTaskCreate?: (task: {
+    id: string
+    projectId: string
+    name: string
+    status: string
+    priority: string
+    color: string
+    labels: string[]
+    onTimeline: boolean
+    orderIndex: number
+  }) => void
   overId?: string | null
   activeTaskId?: string | null
 }
@@ -61,7 +74,7 @@ const statusConfig = {
   },
 }
 
-export function KanbanColumn({ status, tasks, onTaskEdit, onAddTask, overId, activeTaskId }: KanbanColumnProps) {
+export function KanbanColumn({ status, projectId, tasks, onTaskEdit, onAddTask, onTaskCreate, overId, activeTaskId }: KanbanColumnProps) {
   const config = statusConfig[status]
   const Icon = config.icon
   const { glowIntensity: globalGlow } = useThemeStore()
@@ -126,6 +139,14 @@ export function KanbanColumn({ status, tasks, onTaskEdit, onAddTask, overId, act
             ))}
           </AnimatePresence>
         </SortableContext>
+
+        <div className="mt-2">
+          <QuickAddTask
+            projectId={projectId}
+            status={status}
+            onTaskCreate={onTaskCreate}
+          />
+        </div>
       </div>
     </div>
   )

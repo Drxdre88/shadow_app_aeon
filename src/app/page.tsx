@@ -1,14 +1,27 @@
 'use client'
 
 import Link from 'next/link'
-import { Sparkles, Calendar, Clock, Users } from 'lucide-react'
+import Image from 'next/image'
+import { Calendar, Clock, Users } from 'lucide-react'
 import { GlowCard } from '@/components/ui/GlowCard'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { ThemeSelector } from '@/components/ui/ThemeSelector'
+import { GlassStage } from '@/components/ui/GlassStage'
+import aeonLogo from '@/assets/aeon.png'
+import chimaeraLogo from '@/assets/chimaera.png'
 
 export default function HomePage() {
   return (
     <div className="min-h-screen p-8">
+      <GlassStage
+        blobConfig={{
+          blobs: [
+            { position: 'top-[25%] left-[25%]', size: 'w-[500px] h-[500px]', color: 'glow', opacity: 0.15 },
+            { position: 'bottom-[25%] right-[25%]', size: 'w-[500px] h-[500px]', color: 'primary', opacity: 0.12, delay: 2 },
+            { position: 'top-[50%] left-[50%]', size: 'w-[300px] h-[300px]', color: 'accent', opacity: 0.08, delay: 1 },
+          ]
+        }}
+      />
       <div className="fixed top-4 right-4 z-50 flex items-center gap-3">
         <Link href="/login">
           <NeonButton color="purple" size="sm" variant="outline">
@@ -18,19 +31,47 @@ export default function HomePage() {
         <ThemeSelector />
       </div>
 
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-glow-primary/20 rounded-full blur-[100px] animate-glow-breathe" />
-        <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-glow-secondary/20 rounded-full blur-[100px] animate-glow-breathe" style={{ animationDelay: '2s' }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-glow-accent/10 rounded-full blur-[80px] animate-glow-breathe" style={{ animationDelay: '1s' }} />
-      </div>
-
       <div className="max-w-6xl mx-auto relative z-10">
         <div className="text-center mb-12">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <Sparkles className="w-12 h-12 text-glow-primary" />
-            <h1 className="text-6xl font-bold bg-gradient-to-r from-glow-primary via-glow-secondary to-glow-accent bg-clip-text text-transparent">
+          <div className="flex items-center justify-center gap-4 mb-2">
+            <Image
+              src={aeonLogo}
+              alt="Aeon"
+              width={56}
+              height={56}
+              className="rounded-lg"
+              style={{
+                filter: 'drop-shadow(0 0 12px var(--glow-color))',
+              }}
+            />
+            <h1
+              className="text-6xl font-bold"
+              style={{
+                color: '#8a8f98',
+                textShadow: '0 0 20px rgba(138, 143, 152, 0.4), 0 0 40px rgba(138, 143, 152, 0.2), 0 2px 4px rgba(0,0,0,0.5)',
+              }}
+            >
               Aeon
             </h1>
+          </div>
+          <div className="flex items-center justify-center gap-1.5 mb-4">
+            <Image
+              src={chimaeraLogo}
+              alt="Chimaera"
+              width={16}
+              height={16}
+              className="rounded-sm"
+              style={{ filter: 'drop-shadow(0 0 4px rgba(13, 148, 136, 0.5))' }}
+            />
+            <span
+              className="text-xs font-medium"
+              style={{
+                color: '#0d9488',
+                textShadow: '0 0 8px rgba(13, 148, 136, 0.4)',
+              }}
+            >
+              Chimaera Apps
+            </span>
           </div>
           <p className="text-xl text-slate-400">Beautiful project timelines and task management</p>
         </div>

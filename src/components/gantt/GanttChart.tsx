@@ -13,12 +13,13 @@ interface GanttChartProps {
   projectId: string
   startDate: Date
   endDate: Date
+  onTaskUpdate?: (taskId: string, updates: Record<string, unknown>) => void
 }
 
 const CELL_WIDTHS = { day: 60, week: 100, month: 150 }
 const ROW_HEIGHT = 56
 
-export function GanttChart({ projectId, startDate, endDate }: GanttChartProps) {
+export function GanttChart({ projectId, startDate, endDate, onTaskUpdate }: GanttChartProps) {
   const { tasks, rows, timeScale, updateTask } = useGanttStore()
 
   const sensors = useSensors(
@@ -85,16 +86,20 @@ export function GanttChart({ projectId, startDate, endDate }: GanttChartProps) {
     if (daysMoved !== 0) {
       const newStart = addDays(new Date(task.startDate), daysMoved)
       const newEnd = addDays(new Date(task.endDate), daysMoved)
-      updateTask(task.id, {
+      const dateUpdates = {
         startDate: newStart.toISOString(),
         endDate: newEnd.toISOString(),
-      })
+      }
+      updateTask(task.id, dateUpdates)
+      onTaskUpdate?.(task.id, dateUpdates)
     }
 
     if (over.data.current?.type === 'row' && over.id !== task.rowId) {
-      updateTask(task.id, { rowId: over.id as string })
+      const rowUpdate = { rowId: over.id as string }
+      updateTask(task.id, rowUpdate)
+      onTaskUpdate?.(task.id, rowUpdate)
     }
-  }, [projectTasks, updateTask, cellWidth, timeScale])
+  }, [projectTasks, updateTask, onTaskUpdate, cellWidth, timeScale])
 
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>

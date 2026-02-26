@@ -6,8 +6,12 @@ interface ThemeStore {
   currentTheme: ThemeName
   colors: ThemeColors
   glowIntensity: number
+  glassOpacity: number
+  ambientBlobs: boolean
   setTheme: (theme: ThemeName) => void
   setGlowIntensity: (intensity: number) => void
+  setGlassOpacity: (opacity: number) => void
+  setAmbientBlobs: (enabled: boolean) => void
 }
 
 export const useThemeStore = create<ThemeStore>()(
@@ -16,12 +20,20 @@ export const useThemeStore = create<ThemeStore>()(
       currentTheme: 'deepSpace',
       colors: themes.deepSpace,
       glowIntensity: 75,
+      glassOpacity: 50,
+      ambientBlobs: true,
       setTheme: (theme: ThemeName) => {
         const colors = themes[theme]
         set({ currentTheme: theme, colors })
       },
       setGlowIntensity: (intensity: number) => {
         set({ glowIntensity: Math.max(0, Math.min(100, intensity)) })
+      },
+      setGlassOpacity: (opacity: number) => {
+        set({ glassOpacity: Math.max(0, Math.min(100, opacity)) })
+      },
+      setAmbientBlobs: (enabled: boolean) => {
+        set({ ambientBlobs: enabled })
       },
     }),
     {
@@ -30,6 +42,8 @@ export const useThemeStore = create<ThemeStore>()(
         currentTheme: state.currentTheme,
         colors: state.colors,
         glowIntensity: state.glowIntensity,
+        glassOpacity: state.glassOpacity,
+        ambientBlobs: state.ambientBlobs,
       }),
     }
   )

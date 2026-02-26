@@ -30,9 +30,17 @@ export const GlowCard = forwardRef<HTMLDivElement, GlowCardProps>(({
   const effectiveIntensity = selected ? 'lg' : intensity
   const mult = globalGlow / 75
 
-  const glowStyle = effectiveIntensity !== 'none' && globalGlow > 0 ? {
-    boxShadow: `0 0 ${glowConfig[effectiveIntensity].blur * mult}px ${glowConfig[effectiveIntensity].spread * mult}px ${colors.glow}`,
-  } : {}
+  const baseGlow = effectiveIntensity !== 'none' && globalGlow > 0
+    ? `0 0 ${glowConfig[effectiveIntensity].blur * mult}px ${glowConfig[effectiveIntensity].spread * mult}px ${colors.glow}`
+    : ''
+
+  const glowStyle = {
+    boxShadow: [
+      baseGlow,
+      'inset 0 1px 0 0 rgba(255,255,255,0.1)',
+      '0 8px 32px rgba(0,0,0,0.3)',
+    ].filter(Boolean).join(', '),
+  }
 
   const accentLineGlow = showAccentLine && accentColor !== 'none' ? {
     boxShadow: `0 0 ${20 * mult}px ${5 * mult}px ${colors.glow}`,

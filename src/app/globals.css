@@ -46,6 +46,14 @@ body {
     @apply bg-gradient-to-b from-white/10 to-black/30 backdrop-blur-md;
   }
 
+  .glass-elevated {
+    @apply backdrop-blur-xl rounded-xl border border-white/[0.08];
+    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.3));
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.1),
+      0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+
   .glow-border-primary {
     @apply border;
     border-color: var(--border);

@@ -32,6 +32,8 @@ const config: Config = {
         'glow-breathe': 'glow-breathe 20s ease-in-out infinite',
         'fade-in': 'fade-in 0.2s ease-out',
         'scale-in': 'scale-in 0.15s ease-out',
+        'glass-sweep': 'glass-sweep 8s ease-in-out infinite',
+        'glass-shimmer': 'glass-shimmer 12s ease-in-out infinite',
       },
       keyframes: {
         'glow-pulse': {
@@ -55,6 +57,15 @@ const config: Config = {
         'scale-in': {
           '0%': { transform: 'scale(0.95)', opacity: '0' },
           '100%': { transform: 'scale(1)', opacity: '1' },
+        },
+        'glass-sweep': {
+          '0%': { backgroundPosition: '200% 0' },
+          '50%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
+        },
+        'glass-shimmer': {
+          '0%, 100%': { opacity: '0.02' },
+          '50%': { opacity: '0.04' },
         },
       },
       backdropBlur: {

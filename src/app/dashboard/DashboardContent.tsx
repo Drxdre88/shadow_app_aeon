@@ -4,13 +4,16 @@ import { useState } from 'react'
 import { signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Sparkles, Plus, LogOut, Eye, Crown, FolderOpen, Calendar, LayoutGrid, Trash2 } from 'lucide-react'
+import { Plus, LogOut, Eye, Crown, FolderOpen, Calendar, LayoutGrid, Trash2 } from 'lucide-react'
+import Image from 'next/image'
+import aeonLogo from '@/assets/aeon.png'
 import Link from 'next/link'
 import { ThemeSelector } from '@/components/ui/ThemeSelector'
 import { GlowCard } from '@/components/ui/GlowCard'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { CreateProjectModal } from '@/components/project/CreateProjectModal'
 import { deleteProject } from '@/lib/actions/projects'
+import { GlassStage } from '@/components/ui/GlassStage'
 import { useThemeStore } from '@/stores/themeStore'
 import type { Project } from '@/lib/db/schema'
 
@@ -41,23 +44,36 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
   }
 
   return (
-    <div className="min-h-screen bg-[var(--background)]">
-      <div className="fixed inset-0 pointer-events-none">
-        <div
-          className="absolute top-[10%] right-[15%] w-[500px] h-[500px] rounded-full blur-[120px] animate-glow-breathe"
-          style={{ background: 'var(--glow-color)', opacity: 0.03 }}
-        />
-        <div
-          className="absolute bottom-[20%] left-[10%] w-[400px] h-[400px] rounded-full blur-[100px] animate-glow-breathe"
-          style={{ background: 'var(--primary)', opacity: 0.02, animationDelay: '7s' }}
-        />
-      </div>
+    <div className="min-h-screen">
+      <GlassStage
+        blobConfig={{
+          blobs: [
+            { position: 'top-[10%] right-[15%]', size: 'w-[500px] h-[500px]', color: 'glow', opacity: 0.12 },
+            { position: 'bottom-[20%] left-[10%]', size: 'w-[400px] h-[400px]', color: 'primary', opacity: 0.08, delay: 7 },
+          ]
+        }}
+      />
 
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/5 border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Sparkles className="w-6 h-6 text-[var(--primary)]" />
-            <span className="text-xl font-bold text-white">Aeon</span>
+            <Image
+              src={aeonLogo}
+              alt="Aeon"
+              width={28}
+              height={28}
+              className="rounded"
+              style={{ filter: `drop-shadow(0 0 ${6 * mult}px var(--glow-color))` }}
+            />
+            <span
+              className="text-xl font-bold"
+              style={{
+                color: '#8a8f98',
+                textShadow: '0 0 10px rgba(138, 143, 152, 0.3)',
+              }}
+            >
+              Aeon
+            </span>
             {isAdmin && (
               <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/25">
                 <Crown className="w-3 h-3" />
