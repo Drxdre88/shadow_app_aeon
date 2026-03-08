@@ -53,13 +53,40 @@ export default function LoginForm() {
       />
 
       <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.2, duration: 0.5 }}
+        className="fixed top-5 right-6 z-20 flex items-center gap-2.5"
+      >
+        <Image
+          src={chimaeraLogo}
+          alt="Chimaera"
+          width={32}
+          height={32}
+          className="rounded"
+          style={{
+            filter: `drop-shadow(0 0 8px rgba(13, 148, 136, 0.5))`,
+          }}
+        />
+        <span
+          className="text-base font-bold"
+          style={{
+            color: '#0d9488',
+            textShadow: '0 0 10px rgba(13, 148, 136, 0.5), 0 0 20px rgba(13, 148, 136, 0.3)',
+          }}
+        >
+          Chimaera Apps
+        </span>
+      </motion.div>
+
+      <motion.div
         initial={{ opacity: 0, y: 20, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-        className="relative z-10 w-full max-w-sm mx-4"
+        className="relative z-10 w-full max-w-md mx-4"
       >
         <div
-          className="relative p-8 rounded-2xl overflow-hidden"
+          className="relative p-10 rounded-2xl overflow-hidden"
           style={{
             backgroundColor: 'rgba(15, 15, 25, 0.85)',
             border: `1px solid var(--primary-muted)`,
@@ -71,73 +98,53 @@ export default function LoginForm() {
             backdropFilter: 'blur(20px)',
           }}
         >
-          <div className="text-center mb-8">
+          <div className="text-center mb-10">
             <motion.div
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.2, duration: 0.5 }}
-              className="mb-4"
+              className="flex items-center justify-center gap-4 mb-5"
             >
               <Image
                 src={aeonLogo}
                 alt="Aeon"
-                width={80}
-                height={80}
-                className="mx-auto rounded-lg"
+                width={64}
+                height={64}
+                className="rounded-lg"
                 style={{
                   filter: `drop-shadow(0 0 ${12 * mult}px var(--glow-color))`,
                 }}
               />
+              <h1
+                className="text-4xl font-bold"
+                style={{
+                  color: '#8a8f98',
+                  textShadow: '0 0 15px rgba(138, 143, 152, 0.4), 0 0 30px rgba(138, 143, 152, 0.2), 0 2px 4px rgba(0,0,0,0.5)',
+                }}
+              >
+                Aeon
+              </h1>
             </motion.div>
 
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.3 }}
-              className="flex items-center justify-center gap-2 mb-2"
-            >
-              <Image
-                src={chimaeraLogo}
-                alt="Chimaera"
-                width={20}
-                height={20}
-                className="rounded-sm"
-                style={{
-                  filter: `drop-shadow(0 0 6px rgba(13, 148, 136, 0.5))`,
-                }}
-              />
-              <span
-                className="text-sm font-semibold"
-                style={{
-                  color: '#0d9488',
-                  textShadow: '0 0 10px rgba(13, 148, 136, 0.5), 0 0 20px rgba(13, 148, 136, 0.3)',
-                }}
-              >
-                Chimaera Apps
-              </span>
-            </motion.div>
-
-            <motion.h1
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.4 }}
-              className="text-3xl font-bold"
-              style={{
-                color: '#8a8f98',
-                textShadow: '0 0 15px rgba(138, 143, 152, 0.4), 0 0 30px rgba(138, 143, 152, 0.2), 0 2px 4px rgba(0,0,0,0.5)',
-              }}
-            >
-              Aeon
-            </motion.h1>
-
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
               transition={{ delay: 0.5 }}
-              className="text-xs text-[var(--text-dim)] mt-1 tracking-wider uppercase"
+              className="mt-6"
             >
-              Project Timeline Management
-            </motion.p>
+              <p
+                className="text-sm italic"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                &ldquo;Time is the only shadow that never leaves.&rdquo;
+              </p>
+              <p
+                className="text-xs mt-1.5 tracking-widest uppercase"
+                style={{ color: 'var(--text-dim)' }}
+              >
+                &mdash; SLS
+              </p>
+            </motion.div>
           </div>
 
           {error && (
@@ -166,7 +173,7 @@ export default function LoginForm() {
             <button
               onClick={handleGoogleSignIn}
               disabled={loading}
-              className="w-full py-3 rounded-xl text-sm font-semibold transition-all duration-200 hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2.5"
+              className="w-full py-3.5 rounded-xl text-sm font-semibold transition-all duration-200 hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2.5"
               style={{
                 background: `linear-gradient(135deg, var(--primary), var(--accent))`,
                 color: '#fff',
@@ -194,15 +201,6 @@ export default function LoginForm() {
             </Link>
           </motion.div>
 
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.8 }}
-            className="mt-6 text-center text-xs"
-            style={{ color: 'var(--text-dim)' }}
-          >
-            Secure session &middot; Google OAuth
-          </motion.div>
         </div>
       </motion.div>
     </div>

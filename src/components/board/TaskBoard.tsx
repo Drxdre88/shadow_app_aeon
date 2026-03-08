@@ -1,25 +1,29 @@
 'use client'
 
-import { useCallback, useState, useEffect } from 'react'
-import { DndContext, DragEndEvent, DragStartEvent, DragOverEvent, DragCancelEvent, DragOverlay, useSensor, useSensors, PointerSensor, useDroppable, closestCenter } from '@dnd-kit/core'
-import { arrayMove } from '@dnd-kit/sortable'
+import { useCallback, useState, useMemo } from 'react'
+import { DndContext, DragEndEvent, DragStartEvent, DragOverEvent, DragOverlay, useSensor, useSensors, PointerSensor, useDroppable, closestCenter } from '@dnd-kit/core'
+import { SortableContext, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Trash2, Settings2, Sparkles, Zap, Ghost, Plus, FolderPlus } from 'lucide-react'
-import { useBoardStore } from '@/lib/store/boardStore'
+import { Trash2, Settings2, Sparkles, Zap, Ghost, Filter, Plus } from 'lucide-react'
+import { useBoardStore, type BoardColumn } from '@/lib/store/boardStore'
 import { KanbanColumn } from './KanbanColumn'
+import { SortableColumn } from './SortableColumn'
+import { TaskEditModal } from './TaskEditModal'
+import { BoardFilterBar } from './BoardFilterBar'
+import { DependencyGlowTree } from './DependencyGlowTree'
 import { AccentColor, colorConfig } from '@/lib/utils/colors'
 import { cn } from '@/lib/utils/cn'
-import { NeonButton } from '@/components/ui/NeonButton'
 import { GlowCard } from '@/components/ui/GlowCard'
 import { useThemeStore } from '@/stores/themeStore'
-import { TaskChecklist } from './TaskChecklist'
-import { getChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem } from '@/lib/actions/checklist'
+import { applyBoardFilters, activeFilterCount, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
+import type { BoardFilters } from '@/lib/utils/boardFilters'
 
 interface BoardTaskData {
   id: string
   projectId: string
   name: string
   description?: string
+  columnId?: string
   status: string
   priority: string
   color: string
@@ -35,13 +39,16 @@ interface TaskBoardProps {
   onTaskCreate?: (task: BoardTaskData) => void
   onTaskUpdate?: (taskId: string, updates: Partial<BoardTaskData>) => void
   onTaskDelete?: (taskId: string) => void
-  onTaskMove?: (updates: { id: string; orderIndex: number; status?: string }[]) => void
+  onTaskMove?: (updates: { id: string; orderIndex: number; status?: string; columnId?: string }[]) => void
+  onAddDependency?: (blockerTaskId: string, blockedTaskId: string) => void
+  onRemoveDependency?: (blockerTaskId: string, blockedTaskId: string) => void
+  onColumnCreate?: (column: { id: string; projectId: string; name: string; color: string; orderIndex: number }) => void
+  onColumnUpdate?: (columnId: string, updates: Partial<BoardColumn>) => void
+  onColumnReorder?: (updates: { id: string; orderIndex: number }[]) => void
 }
 
 type DragEffect = 'glow' | 'ghost' | 'lightning'
 
-const COLUMNS = ['todo', 'doing', 'review', 'done'] as const
-const ACCENT_COLORS: AccentColor[] = ['purple', 'blue', 'cyan', 'green', 'pink', 'orange']
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
 
 const DRAG_EFFECTS: { id: DragEffect; name: string; icon: typeof Sparkles }[] = [
@@ -125,21 +132,41 @@ function DragPreview({ task, effect, globalGlow }: { task: any; effect: DragEffe
   )
 }
 
-export function TaskBoard({ projectId, onTaskCreate, onTaskUpdate, onTaskDelete, onTaskMove }: TaskBoardProps) {
-  const { tasks, moveTask, addTask, updateTask, removeTask, selectTask, selectedTaskId } = useBoardStore()
+export function TaskBoard({
+  projectId,
+  onTaskCreate,
+  onTaskUpdate,
+  onTaskDelete,
+  onTaskMove,
+  onAddDependency,
+  onRemoveDependency,
+  onColumnCreate,
+  onColumnUpdate,
+  onColumnReorder,
+}: TaskBoardProps) {
+  const {
+    columns,
+    tasks,
+    moveTask,
+    addTask,
+    updateTask,
+    removeTask,
+    selectTask,
+    selectedTaskId,
+    addColumn,
+    updateColumn,
+    reorderColumns,
+  } = useBoardStore()
   const { colors: themeColors, glowIntensity: globalGlow } = useThemeStore()
   const [editingTask, setEditingTask] = useState<string | null>(null)
-  const [newTaskStatus, setNewTaskStatus] = useState<typeof COLUMNS[number] | null>(null)
-  const [activeTask, setActiveTask] = useState<any>(null)
+  const [newTaskColumnId, setNewTaskColumnId] = useState<string | null>(null)
+  const [activeItem, setActiveItem] = useState<{ type: 'task' | 'column'; data: any } | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
   const [dragEffect, setDragEffect] = useState<DragEffect>('glow')
   const [showSettings, setShowSettings] = useState(false)
-  const [sections, setSections] = useState<{ id: string; name: string; color: AccentColor }[]>([])
-  const [addingSectionTo, setAddingSectionTo] = useState<string | null>(null)
-  const [newSectionName, setNewSectionName] = useState('')
-  const [checklistItemsState, setChecklistItemsState] = useState<
-    { id: string; title: string; completed: boolean; startDate?: string; endDate?: string }[]
-  >([])
+  const [showFilters, setShowFilters] = useState(false)
+  const [filters, setFilters] = useState<BoardFilters>(DEFAULT_FILTERS)
+  const [dependencyTreeTaskId, setDependencyTreeTaskId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -147,36 +174,32 @@ export function TaskBoard({ projectId, onTaskCreate, onTaskUpdate, onTaskDelete,
     priority: 'medium' as typeof PRIORITIES[number],
   })
 
-  useEffect(() => {
-    if (!editingTask) {
-      setChecklistItemsState([])
-      return
-    }
-    getChecklistItems(editingTask)
-      .then((items) =>
-        setChecklistItemsState(
-          items.map((i) => ({
-            id: i.id,
-            title: i.title,
-            completed: i.completed,
-            startDate: i.startDate ? i.startDate.toISOString() : undefined,
-            endDate: i.endDate ? i.endDate.toISOString() : undefined,
-          }))
-        )
-      )
-      .catch(() => setChecklistItemsState([]))
-  }, [editingTask])
-
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
 
+  const sortedColumns = useMemo(
+    () => columns.filter((c) => c.projectId === projectId).sort((a, b) => a.orderIndex - b.orderIndex),
+    [columns, projectId]
+  )
+
   const projectTasks = tasks.filter((t) => t.projectId === projectId)
+  const filteredTasks = useMemo(() => applyBoardFilters(projectTasks, filters), [projectTasks, filters])
+  const filterCount = activeFilterCount(filters)
+  const columnIds = sortedColumns.map((c) => c.id)
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
-    const task = projectTasks.find((t) => t.id === event.active.id)
-    setActiveTask(task)
-  }, [projectTasks])
+    const { active } = event
+    const dragType = active.data.current?.type
+
+    if (dragType === 'column') {
+      const col = sortedColumns.find((c) => c.id === active.id)
+      if (col) setActiveItem({ type: 'column', data: col })
+    } else {
+      const task = projectTasks.find((t) => t.id === active.id)
+      if (task) setActiveItem({ type: 'task', data: task })
+    }
+  }, [projectTasks, sortedColumns])
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
     const { active, over } = event
@@ -185,52 +208,73 @@ export function TaskBoard({ projectId, onTaskCreate, onTaskUpdate, onTaskDelete,
       return
     }
 
-    const activeId = active.id as string
+    const activeType = active.data.current?.type
     const currentOverId = over.id as string
     setOverId(currentOverId)
 
+    if (activeType === 'column') return
+
+    const activeId = active.id as string
     const activeTask = projectTasks.find((t) => t.id === activeId)
     if (!activeTask) return
 
     const overTask = projectTasks.find((t) => t.id === currentOverId)
-    const overColumn = over.data.current?.status || (COLUMNS.includes(currentOverId as any) ? currentOverId : null)
+    const overColumnId = over.data.current?.columnId || (sortedColumns.find((c) => c.id === currentOverId)?.id)
 
-    if (overTask && activeTask.status !== overTask.status) {
-      moveTask(activeId, overTask.status as typeof COLUMNS[number], overTask.orderIndex)
-      onTaskMove?.([{ id: activeId, orderIndex: overTask.orderIndex, status: overTask.status }])
-    } else if (overColumn && activeTask.status !== overColumn) {
-      const tasksInColumn = projectTasks.filter((t) => t.status === overColumn)
-      moveTask(activeId, overColumn as typeof COLUMNS[number], tasksInColumn.length)
-      onTaskMove?.([{ id: activeId, orderIndex: tasksInColumn.length, status: overColumn }])
+    if (overTask && activeTask.columnId !== overTask.columnId) {
+      moveTask(activeId, overTask.columnId!, overTask.orderIndex)
+      onTaskMove?.([{ id: activeId, orderIndex: overTask.orderIndex, columnId: overTask.columnId }])
+    } else if (overColumnId && activeTask.columnId !== overColumnId) {
+      const tasksInColumn = projectTasks.filter((t) => t.columnId === overColumnId)
+      moveTask(activeId, overColumnId, tasksInColumn.length)
+      onTaskMove?.([{ id: activeId, orderIndex: tasksInColumn.length, columnId: overColumnId }])
     }
-  }, [projectTasks, moveTask, onTaskMove])
+  }, [projectTasks, sortedColumns, moveTask, onTaskMove])
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
-    setActiveTask(null)
+    const activeType = active.data.current?.type
+
+    setActiveItem(null)
     setOverId(null)
 
     if (!over) return
 
-    const activeId = active.id as string
-    const overId = over.id as string
+    if (activeType === 'column') {
+      const activeId = active.id as string
+      const overId = over.id as string
+      if (activeId === overId) return
 
-    if (overId === 'trash') {
+      const oldIndex = sortedColumns.findIndex((c) => c.id === activeId)
+      const newIndex = sortedColumns.findIndex((c) => c.id === overId)
+      if (oldIndex === -1 || newIndex === -1) return
+
+      const reordered = arrayMove(sortedColumns, oldIndex, newIndex)
+      const updates = reordered.map((col, idx) => ({ id: col.id, orderIndex: idx }))
+      reorderColumns(updates)
+      onColumnReorder?.(updates)
+      return
+    }
+
+    const activeId = active.id as string
+    const overIdVal = over.id as string
+
+    if (overIdVal === 'trash') {
       removeTask(activeId)
       onTaskDelete?.(activeId)
       return
     }
 
     const activeTask = projectTasks.find((t) => t.id === activeId)
-    const overTask = projectTasks.find((t) => t.id === overId)
+    const overTask = projectTasks.find((t) => t.id === overIdVal)
 
-    if (activeTask && overTask && activeTask.status === overTask.status && activeId !== overId) {
+    if (activeTask && overTask && activeTask.columnId === overTask.columnId && activeId !== overIdVal) {
       const columnTasks = projectTasks
-        .filter((t) => t.status === activeTask.status)
+        .filter((t) => t.columnId === activeTask.columnId)
         .sort((a, b) => a.orderIndex - b.orderIndex)
 
       const oldIndex = columnTasks.findIndex((t) => t.id === activeId)
-      const newIndex = columnTasks.findIndex((t) => t.id === overId)
+      const newIndex = columnTasks.findIndex((t) => t.id === overIdVal)
 
       if (oldIndex !== -1 && newIndex !== -1) {
         const reordered = arrayMove(columnTasks, oldIndex, newIndex)
@@ -244,10 +288,10 @@ export function TaskBoard({ projectId, onTaskCreate, onTaskUpdate, onTaskDelete,
         if (moveUpdates.length > 0) onTaskMove?.(moveUpdates)
       }
     }
-  }, [projectTasks, removeTask, updateTask, onTaskMove, onTaskDelete])
+  }, [projectTasks, sortedColumns, removeTask, updateTask, reorderColumns, onTaskMove, onTaskDelete, onColumnReorder])
 
   const handleDragCancel = useCallback(() => {
-    setActiveTask(null)
+    setActiveItem(null)
     setOverId(null)
   }, [])
 
@@ -261,51 +305,33 @@ export function TaskBoard({ projectId, onTaskCreate, onTaskUpdate, onTaskDelete,
         priority: task.priority,
       })
       setEditingTask(taskId)
-      setNewTaskStatus(null)
+      setNewTaskColumnId(null)
     }
   }, [tasks])
 
-  const handleAddTask = useCallback((status: typeof COLUMNS[number]) => {
+  const handleAddTask = useCallback((columnId: string) => {
     setFormData({ name: '', description: '', color: 'purple', priority: 'medium' })
-    setNewTaskStatus(status)
+    setNewTaskColumnId(columnId)
     setEditingTask(null)
   }, [])
 
-  const handleAddSection = (columnStatus: string) => {
-    if (!newSectionName.trim()) return
-    setSections([...sections, { id: generateId(), name: newSectionName.trim(), color: 'purple' }])
-    setNewSectionName('')
-    setAddingSectionTo(null)
-  }
+  const handleColumnRename = useCallback((columnId: string, name: string) => {
+    updateColumn(columnId, { name })
+    onColumnUpdate?.(columnId, { name })
+  }, [updateColumn, onColumnUpdate])
 
-  const handleChecklistAdd = useCallback((title: string) => {
-    if (!editingTask) return
-    const newItem = {
+  const handleAddColumn = useCallback(() => {
+    const newCol: BoardColumn = {
       id: generateId(),
-      taskId: editingTask,
-      title,
-      orderIndex: checklistItemsState.length,
+      projectId,
+      name: 'New Column',
+      color: 'purple',
+      icon: null,
+      orderIndex: sortedColumns.length,
     }
-    setChecklistItemsState((prev) => [...prev, { id: newItem.id, title, completed: false }])
-    createChecklistItem(newItem).catch(() => {})
-  }, [editingTask, checklistItemsState.length])
-
-  const handleChecklistToggle = useCallback((itemId: string) => {
-    if (!editingTask) return
-    setChecklistItemsState((prev) =>
-      prev.map((i) => (i.id === itemId ? { ...i, completed: !i.completed } : i))
-    )
-    const item = checklistItemsState.find((i) => i.id === itemId)
-    if (item) {
-      updateChecklistItem(itemId, editingTask, { completed: !item.completed }).catch(() => {})
-    }
-  }, [editingTask, checklistItemsState])
-
-  const handleChecklistRemove = useCallback((itemId: string) => {
-    if (!editingTask) return
-    setChecklistItemsState((prev) => prev.filter((i) => i.id !== itemId))
-    deleteChecklistItem(itemId, editingTask).catch(() => {})
-  }, [editingTask])
+    addColumn(newCol)
+    onColumnCreate?.({ id: newCol.id, projectId, name: newCol.name, color: newCol.color, orderIndex: newCol.orderIndex })
+  }, [projectId, sortedColumns.length, addColumn, onColumnCreate])
 
   const handleSubmit = useCallback(() => {
     if (!formData.name.trim()) return
@@ -320,14 +346,15 @@ export function TaskBoard({ projectId, onTaskCreate, onTaskUpdate, onTaskDelete,
       updateTask(editingTask, updates)
       onTaskUpdate?.(editingTask, updates)
       setEditingTask(null)
-    } else if (newTaskStatus) {
-      const maxOrder = Math.max(0, ...projectTasks.filter((t) => t.status === newTaskStatus).map((t) => t.orderIndex))
+    } else if (newTaskColumnId) {
+      const maxOrder = Math.max(0, ...projectTasks.filter((t) => t.columnId === newTaskColumnId).map((t) => t.orderIndex))
       const newTask = {
         id: generateId(),
         projectId,
         name: formData.name.trim(),
         description: formData.description.trim() || undefined,
-        status: newTaskStatus,
+        columnId: newTaskColumnId,
+        status: 'todo',
         priority: formData.priority,
         color: formData.color,
         labels: [],
@@ -336,17 +363,18 @@ export function TaskBoard({ projectId, onTaskCreate, onTaskUpdate, onTaskDelete,
       }
       addTask(newTask)
       onTaskCreate?.(newTask)
-      setNewTaskStatus(null)
+      setNewTaskColumnId(null)
     }
-  }, [formData, editingTask, newTaskStatus, projectTasks, projectId, updateTask, addTask, onTaskCreate, onTaskUpdate])
+  }, [formData, editingTask, newTaskColumnId, projectTasks, projectId, updateTask, addTask, onTaskCreate, onTaskUpdate])
 
   const closeModal = () => {
     setEditingTask(null)
-    setNewTaskStatus(null)
+    setNewTaskColumnId(null)
   }
 
-  const isModalOpen = editingTask !== null || newTaskStatus !== null
-  const isDragging = activeTask !== null
+  const isModalOpen = editingTask !== null || newTaskColumnId !== null
+  const isDragging = activeItem !== null
+  const isTaskDrag = activeItem?.type === 'task'
   const glowMult = globalGlow / 75
 
   const bgOpacity1 = Math.round(8 * glowMult).toString(16).padStart(2, '0')
@@ -382,6 +410,21 @@ export function TaskBoard({ projectId, onTaskCreate, onTaskUpdate, onTaskDelete,
 
       <div className="relative">
         <div className="flex items-center justify-end gap-2 mb-4">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={cn(
+              'relative p-2 rounded-lg transition-all duration-200',
+              'hover:bg-white/10 text-slate-400 hover:text-white',
+              showFilters && 'bg-white/10 text-white'
+            )}
+          >
+            <Filter className="w-5 h-5" />
+            {filterCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-purple-500 text-white text-[10px] font-bold flex items-center justify-center">
+                {filterCount}
+              </span>
+            )}
+          </button>
           <button
             onClick={() => setShowSettings(!showSettings)}
             className={cn(
@@ -427,6 +470,12 @@ export function TaskBoard({ projectId, onTaskCreate, onTaskUpdate, onTaskDelete,
           )}
         </AnimatePresence>
 
+        <BoardFilterBar
+          isOpen={showFilters}
+          filters={filters}
+          onFiltersChange={setFilters}
+        />
+
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -435,226 +484,80 @@ export function TaskBoard({ projectId, onTaskCreate, onTaskUpdate, onTaskDelete,
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
         >
-          <div className="flex gap-4 overflow-x-auto pb-4 h-full">
-            {COLUMNS.map((status) => (
-              <div key={status} className="flex flex-col gap-2 min-w-[300px]">
-                <KanbanColumn
-                  status={status}
-                  projectId={projectId}
-                  tasks={projectTasks
-                    .filter((t) => t.status === status)
-                    .sort((a, b) => a.orderIndex - b.orderIndex)
-                    .map((t) => ({
-                      ...t,
-                      color: t.color as AccentColor,
-                    }))}
-                  onTaskEdit={handleTaskEdit}
-                  onAddTask={() => handleAddTask(status)}
-                  onTaskCreate={onTaskCreate}
-                  overId={overId}
-                  activeTaskId={activeTask?.id}
-                />
-
-                {addingSectionTo === status ? (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="p-3 rounded-xl bg-white/5 backdrop-blur-xl border border-white/10"
-                  >
-                    <input
-                      type="text"
-                      value={newSectionName}
-                      onChange={(e) => setNewSectionName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleAddSection(status)
-                        if (e.key === 'Escape') setAddingSectionTo(null)
-                      }}
-                      placeholder="Section name..."
-                      className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
-                      autoFocus
+          <SortableContext items={columnIds} strategy={horizontalListSortingStrategy}>
+            <div className="flex gap-4 overflow-x-auto pb-4 h-full">
+              {sortedColumns.map((column) => (
+                <SortableColumn key={column.id} column={column}>
+                  {(dragHandleProps) => (
+                    <KanbanColumn
+                      column={column}
+                      projectId={projectId}
+                      tasks={filteredTasks
+                        .filter((t) => t.columnId === column.id)
+                        .sort((a, b) => a.orderIndex - b.orderIndex)
+                        .map((t) => ({
+                          ...t,
+                          color: t.color as AccentColor,
+                        }))}
+                      onTaskEdit={handleTaskEdit}
+                      onAddTask={() => handleAddTask(column.id)}
+                      onTaskCreate={onTaskCreate}
+                      onColumnRename={handleColumnRename}
+                      overId={overId}
+                      activeTaskId={activeItem?.type === 'task' ? activeItem.data?.id : null}
+                      onDependencyClick={setDependencyTreeTaskId}
+                      dragHandleProps={dragHandleProps}
                     />
-                    <div className="flex gap-2 mt-2">
-                      <button
-                        onClick={() => handleAddSection(status)}
-                        className="flex-1 px-3 py-1.5 rounded-lg text-sm font-medium bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30"
-                      >
-                        Add
-                      </button>
-                      <button
-                        onClick={() => setAddingSectionTo(null)}
-                        className="px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:bg-white/10"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </motion.div>
-                ) : (
-                  <button
-                    onClick={() => setAddingSectionTo(status)}
-                    className="flex items-center justify-center gap-2 p-2 rounded-lg text-sm text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-all duration-200 border border-dashed border-white/10 hover:border-white/20"
-                  >
-                    <FolderPlus className="w-4 h-4" />
-                    Add Section
-                  </button>
+                  )}
+                </SortableColumn>
+              ))}
+
+              <motion.button
+                onClick={handleAddColumn}
+                className={cn(
+                  'flex-shrink-0 flex flex-col items-center justify-center',
+                  'min-w-[200px] h-32 rounded-xl',
+                  'border-2 border-dashed border-white/10 hover:border-white/25',
+                  'text-slate-500 hover:text-slate-300',
+                  'transition-all duration-200',
+                  'hover:bg-white/[0.03]'
                 )}
-              </div>
-            ))}
-          </div>
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <Plus className="w-6 h-6 mb-2" />
+                <span className="text-sm font-medium">Add Column</span>
+              </motion.button>
+            </div>
+          </SortableContext>
 
           <DragOverlay dropAnimation={{ duration: 300, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' }}>
-            {activeTask && <DragPreview task={activeTask} effect={dragEffect} globalGlow={globalGlow} />}
+            {activeItem?.type === 'task' && <DragPreview task={activeItem.data} effect={dragEffect} globalGlow={globalGlow} />}
           </DragOverlay>
 
-          <TrashDropZone isActive={isDragging} />
+          <TrashDropZone isActive={isTaskDrag} />
         </DndContext>
       </div>
 
-      <AnimatePresence>
-        {isModalOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
-            onClick={closeModal}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              onClick={(e) => e.stopPropagation()}
-              className={cn(
-                'w-full max-w-md p-6 rounded-xl',
-                'bg-gradient-to-b from-white/10 to-black/40',
-                'backdrop-blur-xl border border-white/10',
-                'shadow-[0_0_40px_rgba(99,102,241,0.3)]'
-              )}
-            >
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-semibold text-white">
-                  {editingTask ? 'Edit Task' : 'New Task'}
-                </h2>
-                <button
-                  onClick={closeModal}
-                  className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+      <TaskEditModal
+        isOpen={isModalOpen}
+        editingTaskId={editingTask}
+        newTaskStatus={newTaskColumnId}
+        formData={formData}
+        projectId={projectId}
+        onFormChange={setFormData}
+        onSubmit={handleSubmit}
+        onClose={closeModal}
+        onAddDependency={onAddDependency}
+        onRemoveDependency={onRemoveDependency}
+      />
 
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1.5">Name</label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="Task name..."
-                    className={cn(
-                      'w-full px-4 py-2.5 rounded-lg',
-                      'bg-white/5 border border-white/10',
-                      'text-white placeholder-slate-500',
-                      'focus:outline-none focus:ring-2 focus:ring-purple-500/50',
-                      'transition-all duration-200'
-                    )}
-                    autoFocus
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1.5">Description</label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="Optional description..."
-                    rows={3}
-                    className={cn(
-                      'w-full px-4 py-2.5 rounded-lg resize-none',
-                      'bg-white/5 border border-white/10',
-                      'text-white placeholder-slate-500',
-                      'focus:outline-none focus:ring-2 focus:ring-purple-500/50',
-                      'transition-all duration-200'
-                    )}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1.5">Color</label>
-                  <div className="flex gap-2">
-                    {ACCENT_COLORS.map((color) => (
-                      <button
-                        key={color}
-                        onClick={() => setFormData({ ...formData, color })}
-                        className={cn(
-                          'w-8 h-8 rounded-lg transition-all duration-200',
-                          colorConfig[color].bgSolid,
-                          formData.color === color && 'ring-2 ring-offset-2 ring-offset-black ring-white scale-110'
-                        )}
-                        style={{ boxShadow: formData.color === color ? `0 0 15px ${colorConfig[color].glow}` : undefined }}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1.5">Priority</label>
-                  <div className="flex gap-2">
-                    {PRIORITIES.map((priority) => (
-                      <button
-                        key={priority}
-                        onClick={() => setFormData({ ...formData, priority })}
-                        className={cn(
-                          'px-3 py-1.5 rounded-lg text-sm font-medium capitalize transition-all duration-200',
-                          'border',
-                          formData.priority === priority
-                            ? 'bg-white/10 border-white/30 text-white'
-                            : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
-                        )}
-                      >
-                        {priority}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {editingTask && (
-                <div className="mt-4 pt-4 border-t border-white/10">
-                  <TaskChecklist
-                    taskId={editingTask}
-                    items={checklistItemsState}
-                    onItemAdd={handleChecklistAdd}
-                    onItemToggle={handleChecklistToggle}
-                    onItemRemove={handleChecklistRemove}
-                  />
-                </div>
-              )}
-
-              <div className="flex gap-3 mt-6">
-                <NeonButton
-                  onClick={handleSubmit}
-                  disabled={!formData.name.trim()}
-                  className="flex-1"
-                  color={formData.color}
-                >
-                  {editingTask ? 'Save Changes' : 'Create Task'}
-                </NeonButton>
-                <button
-                  onClick={closeModal}
-                  className={cn(
-                    'px-4 py-2 rounded-lg text-sm font-medium',
-                    'bg-white/5 hover:bg-white/10 border border-white/10',
-                    'text-slate-400 hover:text-white',
-                    'transition-all duration-200'
-                  )}
-                >
-                  Cancel
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {dependencyTreeTaskId && (
+        <DependencyGlowTree
+          taskId={dependencyTreeTaskId}
+          onClose={() => setDependencyTreeTaskId(null)}
+        />
+      )}
     </>
   )
 }

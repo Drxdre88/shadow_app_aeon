@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "aeon": {
+      "command": "npx",
+      "args": ["-y", "supergateway", "--streamableHttp", "http://localhost:3000/api/mcp"]
+    }
+  }
+}

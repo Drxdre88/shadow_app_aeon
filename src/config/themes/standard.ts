@@ -1,26 +1,6 @@
-export interface ThemeColors {
-  background: string
-  surface: string
-  surfaceHover: string
-  border: string
-  borderHover: string
-  text: string
-  textMuted: string
-  textDim: string
-  primary: string
-  primaryHover: string
-  primaryMuted: string
-  accent: string
-  success: string
-  warning: string
-  error: string
-  glow: string
-  glowColor: string
-  chartColors: string[]
-  isDark: boolean
-}
+import type { ThemeColors } from './types'
 
-export const themes: Record<string, ThemeColors> = {
+export const standardThemes: Record<string, ThemeColors> = {
   deepSpace: {
     background: '#0a0a0f',
     surface: 'rgba(15, 15, 25, 0.8)',
@@ -41,6 +21,7 @@ export const themes: Record<string, ThemeColors> = {
     glowColor: 'rgba(139, 92, 246, 0.5)',
     chartColors: ['#8b5cf6', '#c084fc', '#a78bfa', '#ddd6fe', '#e9d5ff'],
     isDark: true,
+    category: 'Standard',
   },
   aurora: {
     background: '#0a0f14',
@@ -62,6 +43,7 @@ export const themes: Record<string, ThemeColors> = {
     glowColor: 'rgba(34, 211, 238, 0.5)',
     chartColors: ['#22d3ee', '#67e8f9', '#06b6d4', '#a5f3fc', '#cffafe'],
     isDark: true,
+    category: 'Standard',
   },
   ember: {
     background: '#0f0a08',
@@ -83,6 +65,7 @@ export const themes: Record<string, ThemeColors> = {
     glowColor: 'rgba(249, 115, 22, 0.5)',
     chartColors: ['#f97316', '#fb923c', '#ea580c', '#fdba74', '#fed7aa'],
     isDark: true,
+    category: 'Standard',
   },
   midnight: {
     background: '#0a0e14',
@@ -104,6 +87,7 @@ export const themes: Record<string, ThemeColors> = {
     glowColor: 'rgba(59, 130, 246, 0.5)',
     chartColors: ['#3b82f6', '#60a5fa', '#2563eb', '#93c5fd', '#bfdbfe'],
     isDark: true,
+    category: 'Standard',
   },
   forest: {
     background: '#0a0f0a',
@@ -125,6 +109,7 @@ export const themes: Record<string, ThemeColors> = {
     glowColor: 'rgba(16, 185, 129, 0.5)',
     chartColors: ['#10b981', '#34d399', '#059669', '#6ee7b7', '#a7f3d0'],
     isDark: true,
+    category: 'Standard',
   },
   rose: {
     background: '#0f0a0e',
@@ -146,8 +131,116 @@ export const themes: Record<string, ThemeColors> = {
     glowColor: 'rgba(236, 72, 153, 0.5)',
     chartColors: ['#ec4899', '#f472b6', '#db2777', '#f9a8d4', '#fbcfe8'],
     isDark: true,
+    category: 'Standard',
+  },
+  chrome: {
+    background: '#1a1a1e',
+    surface: 'rgba(30, 30, 35, 0.8)',
+    surfaceHover: 'rgba(40, 40, 45, 0.9)',
+    border: 'rgba(148, 163, 184, 0.2)',
+    borderHover: 'rgba(148, 163, 184, 0.4)',
+    text: '#e2e8f0',
+    textMuted: '#94a3b8',
+    textDim: '#64748b',
+    primary: '#94a3b8',
+    primaryHover: '#cbd5e1',
+    primaryMuted: 'rgba(148, 163, 184, 0.2)',
+    accent: '#64748b',
+    success: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    glow: '0 0 30px 8px rgba(148, 163, 184, 0.4)',
+    glowColor: 'rgba(148, 163, 184, 0.3)',
+    chartColors: ['#94a3b8', '#cbd5e1', '#64748b', '#e2e8f0', '#475569'],
+    isDark: true,
+    category: 'Standard',
+  },
+  noir: {
+    background: '#050505',
+    surface: 'rgba(10, 10, 10, 0.9)',
+    surfaceHover: 'rgba(18, 18, 18, 0.9)',
+    border: 'rgba(255, 255, 255, 0.08)',
+    borderHover: 'rgba(255, 255, 255, 0.15)',
+    text: '#d4d4d4',
+    textMuted: '#737373',
+    textDim: '#525252',
+    primary: '#a3a3a3',
+    primaryHover: '#d4d4d4',
+    primaryMuted: 'rgba(163, 163, 163, 0.15)',
+    accent: '#737373',
+    success: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    glow: '0 0 20px 5px rgba(255, 255, 255, 0.15)',
+    glowColor: 'rgba(255, 255, 255, 0.1)',
+    chartColors: ['#a3a3a3', '#d4d4d4', '#737373', '#e5e5e5', '#525252'],
+    isDark: true,
+    category: 'Standard',
+  },
+  paper: {
+    background: '#1c1917',
+    surface: 'rgba(28, 25, 23, 0.9)',
+    surfaceHover: 'rgba(41, 37, 36, 0.9)',
+    border: 'rgba(168, 162, 158, 0.2)',
+    borderHover: 'rgba(168, 162, 158, 0.3)',
+    text: '#e7e5e4',
+    textMuted: '#a8a29e',
+    textDim: '#78716c',
+    primary: '#d6d3d1',
+    primaryHover: '#e7e5e4',
+    primaryMuted: 'rgba(214, 211, 209, 0.15)',
+    accent: '#a8a29e',
+    success: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    glow: '0 0 25px 6px rgba(214, 211, 209, 0.3)',
+    glowColor: 'rgba(214, 211, 209, 0.2)',
+    chartColors: ['#d6d3d1', '#a8a29e', '#78716c', '#e7e5e4', '#57534e'],
+    isDark: true,
+    category: 'Standard',
+  },
+  cobalt: {
+    background: '#0a0e1a',
+    surface: 'rgba(10, 15, 35, 0.85)',
+    surfaceHover: 'rgba(15, 25, 50, 0.9)',
+    border: 'rgba(99, 102, 241, 0.2)',
+    borderHover: 'rgba(99, 102, 241, 0.4)',
+    text: '#e2e8f0',
+    textMuted: '#94a3b8',
+    textDim: '#64748b',
+    primary: '#6366f1',
+    primaryHover: '#818cf8',
+    primaryMuted: 'rgba(99, 102, 241, 0.2)',
+    accent: '#4f46e5',
+    success: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    glow: '0 0 30px 8px rgba(99, 102, 241, 0.6)',
+    glowColor: 'rgba(99, 102, 241, 0.5)',
+    chartColors: ['#6366f1', '#818cf8', '#4f46e5', '#a5b4fc', '#c7d2fe'],
+    isDark: true,
+    category: 'Standard',
+  },
+  quartz: {
+    background: '#0f0a14',
+    surface: 'rgba(20, 12, 30, 0.85)',
+    surfaceHover: 'rgba(30, 18, 45, 0.9)',
+    border: 'rgba(192, 132, 252, 0.2)',
+    borderHover: 'rgba(192, 132, 252, 0.4)',
+    text: '#e2e8f0',
+    textMuted: '#94a3b8',
+    textDim: '#64748b',
+    primary: '#c084fc',
+    primaryHover: '#d8b4fe',
+    primaryMuted: 'rgba(192, 132, 252, 0.2)',
+    accent: '#a855f7',
+    success: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    glow: '0 0 30px 8px rgba(192, 132, 252, 0.6)',
+    glowColor: 'rgba(192, 132, 252, 0.5)',
+    chartColors: ['#c084fc', '#d8b4fe', '#a855f7', '#e9d5ff', '#f3e8ff'],
+    isDark: true,
+    category: 'Standard',
   },
 }
-
-export const themeNames = Object.keys(themes)
-export type ThemeName = keyof typeof themes

@@ -1,44 +1,26 @@
 'use server'
 
-import { auth } from '@/lib/auth'
-import { db } from '@/lib/db'
-import { ganttTasks, rows, projects } from '@/lib/db/schema'
-import { eq, and, asc } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
-
-async function verifyProjectOwnership(projectId: string, userId: string) {
-  const [project] = await db
-    .select({ id: projects.id })
-    .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
-
-  if (!project) throw new Error('Project not found or unauthorized')
-  return project
-}
+import { requireOwnership } from './helpers'
+import {
+  findRows as _findRows,
+  findGanttTasks as _findGanttTasks,
+  createGanttTask as _createGanttTask,
+  updateGanttTask as _updateGanttTask,
+  deleteGanttTask as _deleteGanttTask,
+  createRow as _createRow,
+  updateRow as _updateRow,
+  deleteRow as _deleteRow,
+} from '@/lib/data/gantt'
 
 export async function getRows(projectId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error('Unauthorized')
-
-  await verifyProjectOwnership(projectId, session.user.id)
-
-  return db
-    .select()
-    .from(rows)
-    .where(eq(rows.projectId, projectId))
-    .orderBy(asc(rows.orderIndex))
+  await requireOwnership(projectId)
+  return _findRows(projectId)
 }
 
 export async function getGanttTasks(projectId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error('Unauthorized')
-
-  await verifyProjectOwnership(projectId, session.user.id)
-
-  return db
-    .select()
-    .from(ganttTasks)
-    .where(eq(ganttTasks.projectId, projectId))
+  await requireOwnership(projectId)
+  return _findGanttTasks(projectId)
 }
 
 export async function createGanttTask(data: {
@@ -52,25 +34,21 @@ export async function createGanttTask(data: {
   color: string
   progress?: number
 }) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error('Unauthorized')
+  await requireOwnership(data.projectId)
 
-  await verifyProjectOwnership(data.projectId, session.user.id)
-
-  const [task] = await db
-    .insert(ganttTasks)
-    .values({
-      id: data.id,
-      projectId: data.projectId,
+  const task = await _createGanttTask(
+    data.projectId,
+    {
       rowId: data.rowId,
       name: data.name,
-      description: data.description || null,
-      startDate: new Date(data.startDate),
-      endDate: new Date(data.endDate),
+      description: data.description,
+      startDate: data.startDate,
+      endDate: data.endDate,
       color: data.color,
       progress: data.progress ?? 0,
-    })
-    .returning()
+    },
+    data.id
+  )
 
   revalidatePath(`/project/${data.projectId}`)
   return task
@@ -89,40 +67,15 @@ export async function updateGanttTask(
     progress?: number
   }
 ) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error('Unauthorized')
-
-  await verifyProjectOwnership(projectId, session.user.id)
-
-  const updates: Record<string, unknown> = { updatedAt: new Date() }
-  if (data.rowId !== undefined) updates.rowId = data.rowId
-  if (data.name !== undefined) updates.name = data.name
-  if (data.description !== undefined) updates.description = data.description
-  if (data.startDate !== undefined) updates.startDate = new Date(data.startDate)
-  if (data.endDate !== undefined) updates.endDate = new Date(data.endDate)
-  if (data.color !== undefined) updates.color = data.color
-  if (data.progress !== undefined) updates.progress = data.progress
-
-  const [task] = await db
-    .update(ganttTasks)
-    .set(updates)
-    .where(and(eq(ganttTasks.id, taskId), eq(ganttTasks.projectId, projectId)))
-    .returning()
-
+  await requireOwnership(projectId)
+  const task = await _updateGanttTask(taskId, projectId, data)
   revalidatePath(`/project/${projectId}`)
   return task
 }
 
 export async function deleteGanttTask(taskId: string, projectId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error('Unauthorized')
-
-  await verifyProjectOwnership(projectId, session.user.id)
-
-  await db
-    .delete(ganttTasks)
-    .where(and(eq(ganttTasks.id, taskId), eq(ganttTasks.projectId, projectId)))
-
+  await requireOwnership(projectId)
+  await _deleteGanttTask(taskId, projectId)
   revalidatePath(`/project/${projectId}`)
 }
 
@@ -133,21 +86,13 @@ export async function createRow(data: {
   color: string
   orderIndex: number
 }) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error('Unauthorized')
+  await requireOwnership(data.projectId)
 
-  await verifyProjectOwnership(data.projectId, session.user.id)
-
-  const [row] = await db
-    .insert(rows)
-    .values({
-      id: data.id,
-      projectId: data.projectId,
-      name: data.name,
-      color: data.color,
-      orderIndex: data.orderIndex,
-    })
-    .returning()
+  const row = await _createRow(
+    data.projectId,
+    { name: data.name, color: data.color, orderIndex: data.orderIndex },
+    data.id
+  )
 
   revalidatePath(`/project/${data.projectId}`)
   return row
@@ -158,35 +103,14 @@ export async function updateRow(
   projectId: string,
   data: { name?: string; color?: string; orderIndex?: number }
 ) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error('Unauthorized')
-
-  await verifyProjectOwnership(projectId, session.user.id)
-
-  const updates: Record<string, unknown> = {}
-  if (data.name !== undefined) updates.name = data.name
-  if (data.color !== undefined) updates.color = data.color
-  if (data.orderIndex !== undefined) updates.orderIndex = data.orderIndex
-
-  const [row] = await db
-    .update(rows)
-    .set(updates)
-    .where(and(eq(rows.id, rowId), eq(rows.projectId, projectId)))
-    .returning()
-
+  await requireOwnership(projectId)
+  const row = await _updateRow(rowId, projectId, data)
   revalidatePath(`/project/${projectId}`)
   return row
 }
 
 export async function deleteRow(rowId: string, projectId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error('Unauthorized')
-
-  await verifyProjectOwnership(projectId, session.user.id)
-
-  await db
-    .delete(rows)
-    .where(and(eq(rows.id, rowId), eq(rows.projectId, projectId)))
-
+  await requireOwnership(projectId)
+  await _deleteRow(rowId, projectId)
   revalidatePath(`/project/${projectId}`)
 }

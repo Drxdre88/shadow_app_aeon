@@ -30,7 +30,7 @@
 body {
   background: var(--background);
   color: var(--text);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: var(--font-family, system-ui, -apple-system, sans-serif);
 }
 
 @layer components {

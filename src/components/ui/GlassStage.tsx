@@ -30,7 +30,7 @@ export function GlassStage({
 }: GlassStageProps) {
   const { glowIntensity, glassOpacity, ambientBlobs } = useThemeStore()
   const mult = glowIntensity / 75
-  const glass = glassOpacity / 50
+  const glass = Math.pow(glassOpacity / 100, 1.5) * 6
 
   return (
     <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>

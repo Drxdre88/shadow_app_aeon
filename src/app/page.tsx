@@ -5,7 +5,7 @@ import Image from 'next/image'
 import { Calendar, Clock, Users } from 'lucide-react'
 import { GlowCard } from '@/components/ui/GlowCard'
 import { NeonButton } from '@/components/ui/NeonButton'
-import { ThemeSelector } from '@/components/ui/ThemeSelector'
+import { SettingsButton } from '@/components/ui/SettingsModal'
 import { GlassStage } from '@/components/ui/GlassStage'
 import aeonLogo from '@/assets/aeon.png'
 import chimaeraLogo from '@/assets/chimaera.png'
@@ -28,7 +28,7 @@ export default function HomePage() {
             Sign In
           </NeonButton>
         </Link>
-        <ThemeSelector />
+        <SettingsButton />
       </div>
 
       <div className="max-w-6xl mx-auto relative z-10">

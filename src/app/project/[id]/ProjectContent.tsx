@@ -5,7 +5,7 @@ import { LayoutGrid, Calendar, ArrowLeft, RefreshCw, AlertTriangle } from 'lucid
 import Image from 'next/image'
 import aeonLogo from '@/assets/aeon.png'
 import Link from 'next/link'
-import { ThemeSelector } from '@/components/ui/ThemeSelector'
+import { SettingsButton } from '@/components/ui/SettingsModal'
 import { GlassStage } from '@/components/ui/GlassStage'
 import { GanttChart } from '@/components/gantt/GanttChart'
 import { TimeScaleSelector } from '@/components/gantt/TimeScaleSelector'
@@ -13,8 +13,10 @@ import { TaskBoard } from '@/components/board/TaskBoard'
 import { useGanttStore } from '@/lib/store/ganttStore'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { getBoardTasks, createBoardTask, updateBoardTask, deleteBoardTask, reorderBoardTasks } from '@/lib/actions/board'
+import { getColumns, createColumn, updateColumn as updateColumnAction, reorderColumns as reorderColumnsAction, ensureDefaultColumns } from '@/lib/actions/columns'
 import { getRows, getGanttTasks, createGanttTask, updateGanttTask, deleteGanttTask } from '@/lib/actions/gantt'
 import { getLabels, getTaskLabels } from '@/lib/actions/labels'
+import { getDependencies, addTaskDependency, removeTaskDependency } from '@/lib/actions/dependencies'
 import type { Project } from '@/lib/db/schema'
 
 interface ProjectContentProps {
@@ -27,21 +29,35 @@ export default function ProjectContent({ project }: ProjectContentProps) {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loadKey, setLoadKey] = useState(0)
   const { setTasks: setGanttTasks, setRows, timeScale } = useGanttStore()
-  const { setTasks: setBoardTasks, setLabels } = useBoardStore()
+  const { setTasks: setBoardTasks, setColumns, setLabels, setDependencies, addDependency, removeDependency } = useBoardStore()
 
   useEffect(() => {
     setIsLoading(true)
     setLoadError(null)
     setGanttTasks([])
     setRows([])
+    setColumns([])
     setLabels([])
+    setDependencies([])
 
-    const loadBoard = Promise.all([
-      getBoardTasks(project.id),
-      getLabels(project.id),
-      getTaskLabels(project.id),
-    ])
-      .then(([dbTasks, dbLabels, dbTaskLabels]) => {
+    const loadBoard = ensureDefaultColumns(project.id)
+      .then(() => Promise.all([
+        getBoardTasks(project.id),
+        getColumns(project.id),
+        getLabels(project.id),
+        getTaskLabels(project.id),
+        getDependencies(project.id),
+      ]))
+      .then(([dbTasks, dbColumns, dbLabels, dbTaskLabels, dbDependencies]) => {
+        setColumns(dbColumns.map((c) => ({
+          id: c.id,
+          projectId: c.projectId,
+          name: c.name,
+          color: c.color,
+          icon: c.icon,
+          orderIndex: c.orderIndex,
+        })))
+
         const taskLabelMap = new Map<string, string[]>()
         dbTaskLabels.forEach((tl) => {
           const existing = taskLabelMap.get(tl.taskId) || []
@@ -49,12 +65,23 @@ export default function ProjectContent({ project }: ProjectContentProps) {
           taskLabelMap.set(tl.taskId, existing)
         })
 
+        const columnByOldStatus = new Map<string, string>()
+        for (const col of dbColumns) {
+          const lower = col.name.toLowerCase()
+          if (lower === 'todo') columnByOldStatus.set('todo', col.id)
+          else if (lower === 'doing') columnByOldStatus.set('doing', col.id)
+          else if (lower === 'review') columnByOldStatus.set('review', col.id)
+          else if (lower === 'done') columnByOldStatus.set('done', col.id)
+        }
+        const firstColumnId = dbColumns[0]?.id
+
         const mapped = dbTasks.map((t) => ({
           id: t.id,
           projectId: t.projectId,
           name: t.name,
           description: t.description || undefined,
-          status: t.status as 'todo' | 'doing' | 'review' | 'done',
+          columnId: t.columnId || columnByOldStatus.get(t.status) || firstColumnId,
+          status: t.status,
           priority: t.priority as 'low' | 'medium' | 'high' | 'urgent',
           color: t.color,
           labels: taskLabelMap.get(t.id) || [],
@@ -70,6 +97,11 @@ export default function ProjectContent({ project }: ProjectContentProps) {
           projectId: l.projectId,
           name: l.name,
           color: l.color,
+        })))
+
+        setDependencies(dbDependencies.map((d) => ({
+          blockerTaskId: d.blockerTaskId,
+          blockedTaskId: d.blockedTaskId,
         })))
       })
 
@@ -105,13 +137,14 @@ export default function ProjectContent({ project }: ProjectContentProps) {
         setLoadError('Failed to load project data. Check your connection and try again.')
       })
       .finally(() => setIsLoading(false))
-  }, [project.id, setBoardTasks, setGanttTasks, setRows, setLabels, loadKey])
+  }, [project.id, setBoardTasks, setGanttTasks, setRows, setColumns, setLabels, setDependencies, loadKey])
 
   const handleTaskCreate = useCallback((task: {
     id: string
     projectId: string
     name: string
     description?: string
+    columnId?: string
     status: string
     priority: string
     color: string
@@ -127,6 +160,7 @@ export default function ProjectContent({ project }: ProjectContentProps) {
     updateBoardTask(taskId, project.id, updates as {
       name?: string
       description?: string | null
+      columnId?: string
       status?: string
       priority?: string
       color?: string
@@ -139,9 +173,39 @@ export default function ProjectContent({ project }: ProjectContentProps) {
     deleteBoardTask(taskId, project.id).catch((err) => console.error('Failed to delete task:', err))
   }, [project.id])
 
-  const handleTaskMove = useCallback((updates: { id: string; orderIndex: number; status?: string }[]) => {
+  const handleTaskMove = useCallback((updates: { id: string; orderIndex: number; status?: string; columnId?: string }[]) => {
     reorderBoardTasks(project.id, updates).catch((err) => console.error('Failed to reorder tasks:', err))
   }, [project.id])
+
+  const handleColumnCreate = useCallback((col: { id: string; projectId: string; name: string; color: string; orderIndex: number }) => {
+    createColumn(project.id, { name: col.name, color: col.color, orderIndex: col.orderIndex }, col.id)
+      .catch((err) => console.error('Failed to create column:', err))
+  }, [project.id])
+
+  const handleColumnUpdate = useCallback((columnId: string, updates: { name?: string; color?: string }) => {
+    updateColumnAction(columnId, project.id, updates)
+      .catch((err) => console.error('Failed to update column:', err))
+  }, [project.id])
+
+  const handleColumnReorder = useCallback((updates: { id: string; orderIndex: number }[]) => {
+    reorderColumnsAction(project.id, updates)
+      .catch((err) => console.error('Failed to reorder columns:', err))
+  }, [project.id])
+
+  const handleAddDependency = useCallback((blockerTaskId: string, blockedTaskId: string) => {
+    addDependency({ blockerTaskId, blockedTaskId })
+    addTaskDependency(project.id, blockerTaskId, blockedTaskId).catch((err) => {
+      console.error('Failed to add dependency:', err)
+      removeDependency(blockerTaskId, blockedTaskId)
+    })
+  }, [project.id, addDependency, removeDependency])
+
+  const handleRemoveDependency = useCallback((blockerTaskId: string, blockedTaskId: string) => {
+    removeDependency(blockerTaskId, blockedTaskId)
+    removeTaskDependency(project.id, blockerTaskId, blockedTaskId).catch((err) =>
+      console.error('Failed to remove dependency:', err)
+    )
+  }, [project.id, removeDependency])
 
   const handleGanttTaskCreate = useCallback((task: {
     id: string
@@ -183,7 +247,7 @@ export default function ProjectContent({ project }: ProjectContentProps) {
       />
 
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/5 border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
               href="/dashboard"
@@ -204,12 +268,12 @@ export default function ProjectContent({ project }: ProjectContentProps) {
 
           <div className="flex items-center gap-4">
             {activeTab === 'gantt' && <TimeScaleSelector />}
-            <ThemeSelector />
+            <SettingsButton />
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      <main className="px-6 py-6">
         <div className="flex items-center gap-4 mb-6">
           <button
             onClick={() => setActiveTab('board')}
@@ -277,6 +341,11 @@ export default function ProjectContent({ project }: ProjectContentProps) {
                   onTaskUpdate={handleTaskUpdate}
                   onTaskDelete={handleTaskDelete}
                   onTaskMove={handleTaskMove}
+                  onColumnCreate={handleColumnCreate}
+                  onColumnUpdate={handleColumnUpdate}
+                  onColumnReorder={handleColumnReorder}
+                  onAddDependency={handleAddDependency}
+                  onRemoveDependency={handleRemoveDependency}
                 />
               </div>
             )}

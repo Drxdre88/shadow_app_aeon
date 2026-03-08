@@ -1,4 +1,4 @@
-export type AccentColor = 'purple' | 'blue' | 'cyan' | 'green' | 'pink' | 'orange' | 'none'
+export type AccentColor = 'purple' | 'blue' | 'cyan' | 'green' | 'pink' | 'orange' | 'red' | 'none'
 export type GlowIntensity = 'none' | 'sm' | 'md' | 'lg' | 'xl' | 'xxl'
 
 export const colorConfig = {
@@ -61,6 +61,16 @@ export const colorConfig = {
     glow: 'rgba(249, 115, 22, 0.6)',
     glowDark: 'rgba(249, 115, 22, 0.4)',
     hex: '#f97316',
+  },
+  red: {
+    bg: 'bg-red-500/20',
+    bgSolid: 'bg-red-500',
+    border: 'border-red-500/30',
+    text: 'text-red-400',
+    ring: 'ring-red-500/50',
+    glow: 'rgba(239, 68, 68, 0.6)',
+    glowDark: 'rgba(239, 68, 68, 0.4)',
+    hex: '#ef4444',
   },
   none: {
     bg: 'bg-white/5',

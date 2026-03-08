@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useThemeStore } from '@/stores/themeStore'
+import { useThemeStore, FONT_OPTIONS } from '@/stores/themeStore'
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false)
-  const { colors } = useThemeStore()
+  const { colors, fontFamily } = useThemeStore()
 
   useEffect(() => {
     setMounted(true)
@@ -38,12 +38,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     root.style.setProperty('--glow-xl', `0 0 40px 15px ${colors.glowColor}`)
     root.style.setProperty('--glow-xxl', `0 0 60px 20px ${colors.glowColor}`)
 
+    const fontCss = FONT_OPTIONS.find((f) => f.id === fontFamily)?.css || FONT_OPTIONS[0].css
+    document.body.style.fontFamily = fontCss
+
     if (colors.isDark) {
       root.classList.add('dark')
     } else {
       root.classList.remove('dark')
     }
-  }, [mounted, colors])
+  }, [mounted, colors, fontFamily])
 
   if (!mounted) {
     return <div style={{ visibility: 'hidden' }}>{children}</div>

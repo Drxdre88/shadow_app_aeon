@@ -8,7 +8,7 @@ import { Plus, LogOut, Eye, Crown, FolderOpen, Calendar, LayoutGrid, Trash2 } fr
 import Image from 'next/image'
 import aeonLogo from '@/assets/aeon.png'
 import Link from 'next/link'
-import { ThemeSelector } from '@/components/ui/ThemeSelector'
+import { SettingsButton } from '@/components/ui/SettingsModal'
 import { GlowCard } from '@/components/ui/GlowCard'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { CreateProjectModal } from '@/components/project/CreateProjectModal'
@@ -55,7 +55,7 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
       />
 
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/5 border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Image
               src={aeonLogo}
@@ -82,7 +82,7 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
             )}
           </div>
           <div className="flex items-center gap-4">
-            <ThemeSelector />
+            <SettingsButton />
             <div className="flex items-center gap-3 pl-4 border-l border-white/10">
               {user.image && (
                 <img
@@ -112,7 +112,7 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8 relative z-10">
+      <main className="px-6 py-8 relative z-10">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

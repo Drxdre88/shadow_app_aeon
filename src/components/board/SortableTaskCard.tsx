@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { motion } from 'framer-motion'
@@ -10,6 +11,8 @@ import { colorConfig, AccentColor } from '@/lib/utils/colors'
 import { GlowCard } from '@/components/ui/GlowCard'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
+import { DependencyIndicator } from './DependencyIndicator'
+import { TaskContextMenu } from './TaskContextMenu'
 
 interface SortableTaskCardProps {
   task: {
@@ -24,8 +27,11 @@ interface SortableTaskCardProps {
     onTimeline: boolean
   }
   onEdit?: () => void
+  onDependencyClick?: (taskId: string) => void
   columnGlowColor: string
   showDropIndicator?: boolean
+  onTaskUpdate?: (taskId: string, updates: Record<string, unknown>) => void
+  onTaskDelete?: (taskId: string) => void
 }
 
 const priorityColors = {
@@ -42,9 +48,10 @@ const priorityGlows = {
   urgent: 'lg' as const,
 }
 
-export function SortableTaskCard({ task, onEdit, columnGlowColor, showDropIndicator = false }: SortableTaskCardProps) {
+export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowColor, showDropIndicator = false, onTaskUpdate, onTaskDelete }: SortableTaskCardProps) {
   const { selectedTaskId, selectTask, labels } = useBoardStore()
   const { glowIntensity: globalGlow } = useThemeStore()
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const isSelected = selectedTaskId === task.id
   const mult = globalGlow / 75
 
@@ -67,6 +74,12 @@ export function SortableTaskCard({ task, onEdit, columnGlowColor, showDropIndica
 
   const taskLabels = labels.filter((l) => task.labels.includes(l.id))
 
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({ x: e.clientX, y: e.clientY })
+  }
+
   return (
     <div ref={setNodeRef} style={style} className="relative">
       {showDropIndicator && globalGlow > 0 && (
@@ -86,6 +99,7 @@ export function SortableTaskCard({ task, onEdit, columnGlowColor, showDropIndica
         {...listeners}
         onClick={() => selectTask(task.id)}
         onDoubleClick={onEdit}
+        onContextMenu={handleContextMenu}
         className={cn(
           'cursor-grab active:cursor-grabbing',
           isDragging && 'opacity-30 scale-95'
@@ -146,12 +160,18 @@ export function SortableTaskCard({ task, onEdit, columnGlowColor, showDropIndica
           )}
 
           <div className="flex items-center justify-between mt-auto pt-2 border-t border-white/5">
-            <span className={cn(
-              'px-2 py-0.5 rounded-md text-xs font-medium',
-              priorityColors[task.priority]
-            )}>
-              {task.priority}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <span className={cn(
+                'px-2 py-0.5 rounded-md text-xs font-medium',
+                priorityColors[task.priority]
+              )}>
+                {task.priority}
+              </span>
+              <DependencyIndicator
+                taskId={task.id}
+                onClick={() => onDependencyClick?.(task.id)}
+              />
+            </div>
 
             {(task.startDate || task.endDate) && (
               <div className="flex items-center gap-1 text-xs text-slate-500">
@@ -171,6 +191,16 @@ export function SortableTaskCard({ task, onEdit, columnGlowColor, showDropIndica
           </div>
         </GlowCard>
       </motion.div>
+
+      {contextMenu && (
+        <TaskContextMenu
+          taskId={task.id}
+          position={contextMenu}
+          onClose={() => setContextMenu(null)}
+          onTaskUpdate={onTaskUpdate}
+          onTaskDelete={onTaskDelete}
+        />
+      )}
     </div>
   )
 }

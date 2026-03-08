@@ -26,7 +26,7 @@ export const GlowCard = forwardRef<HTMLDivElement, GlowCardProps>(({
   ...props
 }, ref) => {
   const { glowIntensity: globalGlow } = useThemeStore()
-  const colors = colorConfig[accentColor]
+  const colors = colorConfig[accentColor] ?? colorConfig.none
   const effectiveIntensity = selected ? 'lg' : intensity
   const mult = globalGlow / 75
 

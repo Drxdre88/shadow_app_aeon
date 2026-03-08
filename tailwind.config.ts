@@ -34,6 +34,7 @@ const config: Config = {
         'scale-in': 'scale-in 0.15s ease-out',
         'glass-sweep': 'glass-sweep 8s ease-in-out infinite',
         'glass-shimmer': 'glass-shimmer 12s ease-in-out infinite',
+        'edge-draw': 'edge-draw 0.6s ease-in-out forwards',
       },
       keyframes: {
         'glow-pulse': {
@@ -66,6 +67,10 @@ const config: Config = {
         'glass-shimmer': {
           '0%, 100%': { opacity: '0.02' },
           '50%': { opacity: '0.04' },
+        },
+        'edge-draw': {
+          '0%': { strokeDashoffset: '1000', opacity: '0' },
+          '100%': { strokeDashoffset: '0', opacity: '1' },
         },
       },
       backdropBlur: {

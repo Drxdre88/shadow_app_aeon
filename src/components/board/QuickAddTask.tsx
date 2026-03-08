@@ -8,12 +8,13 @@ import { useBoardStore } from '@/lib/store/boardStore'
 
 interface QuickAddTaskProps {
   projectId: string
-  status: 'todo' | 'doing' | 'review' | 'done'
+  columnId: string
   onClose?: () => void
   onTaskCreate?: (task: {
     id: string
     projectId: string
     name: string
+    columnId: string
     status: string
     priority: string
     color: string
@@ -23,7 +24,7 @@ interface QuickAddTaskProps {
   }) => void
 }
 
-export function QuickAddTask({ projectId, status, onClose, onTaskCreate }: QuickAddTaskProps) {
+export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: QuickAddTaskProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [taskName, setTaskName] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -41,7 +42,7 @@ export function QuickAddTask({ projectId, status, onClose, onTaskCreate }: Quick
 
     const maxOrder = Math.max(
       0,
-      ...tasks.filter((t) => t.projectId === projectId && t.status === status).map((t) => t.orderIndex)
+      ...tasks.filter((t) => t.projectId === projectId && t.columnId === columnId).map((t) => t.orderIndex)
     )
 
     const generateId = () => {
@@ -55,7 +56,8 @@ export function QuickAddTask({ projectId, status, onClose, onTaskCreate }: Quick
       id: generateId(),
       projectId,
       name: taskName.trim(),
-      status,
+      columnId,
+      status: 'todo',
       priority: 'medium' as const,
       color: 'purple',
       labels: [],

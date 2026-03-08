@@ -78,9 +78,20 @@ export const ganttTasks = pgTable('gantt_tasks', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 
+export const boardColumns = pgTable('board_columns', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  color: varchar('color', { length: 20 }).default('purple').notNull(),
+  icon: varchar('icon', { length: 50 }),
+  orderIndex: integer('order_index').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
 export const boardTasks = pgTable('board_tasks', {
   id: uuid('id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  columnId: uuid('column_id').references(() => boardColumns.id, { onDelete: 'set null' }),
   ganttTaskId: uuid('gantt_task_id').references(() => ganttTasks.id, { onDelete: 'set null' }),
   name: varchar('name', { length: 255 }).notNull(),
   description: text('description'),
@@ -111,6 +122,14 @@ export const taskLabels = pgTable('task_labels', {
   pk: primaryKey({ columns: [tl.taskId, tl.labelId] }),
 }))
 
+export const taskDependencies = pgTable('task_dependencies', {
+  blockerTaskId: uuid('blocker_task_id').notNull().references(() => boardTasks.id, { onDelete: 'cascade' }),
+  blockedTaskId: uuid('blocked_task_id').notNull().references(() => boardTasks.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (td) => ({
+  pk: primaryKey({ columns: [td.blockerTaskId, td.blockedTaskId] }),
+}))
+
 export const checklistItems = pgTable('checklist_items', {
   id: uuid('id').defaultRandom().primaryKey(),
   taskId: uuid('task_id').notNull().references(() => boardTasks.id, { onDelete: 'cascade' }),
@@ -125,7 +144,9 @@ export const checklistItems = pgTable('checklist_items', {
 export type User = typeof users.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type Row = typeof rows.$inferSelect
+export type BoardColumn = typeof boardColumns.$inferSelect
 export type GanttTask = typeof ganttTasks.$inferSelect
 export type BoardTask = typeof boardTasks.$inferSelect
 export type Label = typeof labels.$inferSelect
+export type TaskDependency = typeof taskDependencies.$inferSelect
 export type ChecklistItem = typeof checklistItems.$inferSelect
