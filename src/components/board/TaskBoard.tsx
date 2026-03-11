@@ -1,21 +1,24 @@
 'use client'
 
-import { useCallback, useState, useMemo } from 'react'
-import { DndContext, DragEndEvent, DragStartEvent, DragOverEvent, DragOverlay, useSensor, useSensors, PointerSensor, useDroppable, closestCenter } from '@dnd-kit/core'
-import { SortableContext, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Trash2, Settings2, Sparkles, Zap, Ghost, Filter, Plus } from 'lucide-react'
+import { useCallback, useState, useMemo, useEffect, useRef } from 'react'
+import { DndContext, DragEndEvent, DragStartEvent, DragOverEvent, DragOverlay, useSensor, useSensors, PointerSensor, closestCenter } from '@dnd-kit/core'
+import { SortableContext, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { useBoardStore, type BoardColumn } from '@/lib/store/boardStore'
 import { KanbanColumn } from './KanbanColumn'
 import { SortableColumn } from './SortableColumn'
 import { TaskEditModal } from './TaskEditModal'
 import { BoardFilterBar } from './BoardFilterBar'
 import { DependencyGlowTree } from './DependencyGlowTree'
-import { AccentColor, colorConfig } from '@/lib/utils/colors'
-import { cn } from '@/lib/utils/cn'
-import { GlowCard } from '@/components/ui/GlowCard'
+import { BoardDependencyOverlay } from './BoardDependencyOverlay'
+import { LabelPicker } from './LabelPicker'
+import { TrashDropZone } from './TrashDropZone'
+import { DragPreview } from './DragPreview'
+import { ConnectModeBanner } from './ConnectModeBanner'
+import { BoardGlowBackground } from './BoardGlowBackground'
+import { AddColumnButton } from './AddColumnButton'
+import { generateId } from '@/lib/utils/colors'
 import { useThemeStore } from '@/stores/themeStore'
-import { applyBoardFilters, activeFilterCount, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
+import { applyBoardFilters, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
 
 interface BoardTaskData {
@@ -36,6 +39,9 @@ interface BoardTaskData {
 
 interface TaskBoardProps {
   projectId: string
+  showFilters?: boolean
+  filters?: BoardFilters
+  onFiltersChange?: (filters: BoardFilters) => void
   onTaskCreate?: (task: BoardTaskData) => void
   onTaskUpdate?: (taskId: string, updates: Partial<BoardTaskData>) => void
   onTaskDelete?: (taskId: string) => void
@@ -45,95 +51,21 @@ interface TaskBoardProps {
   onColumnCreate?: (column: { id: string; projectId: string; name: string; color: string; orderIndex: number }) => void
   onColumnUpdate?: (columnId: string, updates: Partial<BoardColumn>) => void
   onColumnReorder?: (updates: { id: string; orderIndex: number }[]) => void
+  onColumnDelete?: (columnId: string) => void
+  onLabelCreate?: (label: { id: string; projectId: string; name: string; color: string }) => void
+  onLabelToggle?: (taskId: string, labelId: string, action: 'add' | 'remove') => void
+  showDependencyOverlay?: boolean
+  connectMode?: boolean
+  onConnectModeChange?: (v: boolean) => void
 }
-
-type DragEffect = 'glow' | 'ghost' | 'lightning'
 
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
 
-const DRAG_EFFECTS: { id: DragEffect; name: string; icon: typeof Sparkles }[] = [
-  { id: 'glow', name: 'Aurora Glow', icon: Sparkles },
-  { id: 'ghost', name: 'Ghost Trail', icon: Ghost },
-  { id: 'lightning', name: 'Lightning', icon: Zap },
-]
-
-const generateId = () => {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID()
-  }
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
-}
-
-function TrashDropZone({ isActive }: { isActive: boolean }) {
-  const { setNodeRef, isOver } = useDroppable({ id: 'trash', data: { type: 'trash' } })
-
-  return (
-    <AnimatePresence>
-      {isActive && (
-        <motion.div
-          ref={setNodeRef}
-          initial={{ opacity: 0, y: 20, scale: 0.8 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 20, scale: 0.8 }}
-          className={cn(
-            'fixed bottom-8 left-1/2 -translate-x-1/2 z-50',
-            'px-8 py-4 rounded-2xl',
-            'backdrop-blur-xl border-2 border-dashed',
-            'flex items-center gap-3 transition-all duration-300',
-            isOver
-              ? 'bg-red-500/30 border-red-500 shadow-[0_0_40px_rgba(239,68,68,0.5)]'
-              : 'bg-white/5 border-white/20 shadow-[0_0_20px_rgba(255,255,255,0.1)]'
-          )}
-        >
-          <Trash2 className={cn('w-6 h-6 transition-colors', isOver ? 'text-red-400' : 'text-slate-400')} />
-          <span className={cn('font-medium transition-colors', isOver ? 'text-red-400' : 'text-slate-400')}>
-            {isOver ? 'Release to delete' : 'Drop here to delete'}
-          </span>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  )
-}
-
-function DragPreview({ task, effect, globalGlow }: { task: any; effect: DragEffect; globalGlow: number }) {
-  const colors = colorConfig[task.color as AccentColor]
-  const mult = globalGlow / 75
-
-  const effectStyles = {
-    glow: {
-      boxShadow: `0 0 ${60 * mult}px ${20 * mult}px ${colors.glow}, 0 0 ${100 * mult}px ${40 * mult}px ${colors.glowDark}`,
-      transform: 'scale(1.05) rotate(2deg)',
-    },
-    ghost: {
-      opacity: 0.8,
-      boxShadow: `0 20px 40px rgba(0,0,0,0.5)`,
-      transform: 'scale(1.02)',
-      filter: 'blur(0.5px)',
-    },
-    lightning: {
-      boxShadow: `0 0 ${30 * mult}px ${10 * mult}px ${colors.glow}, inset 0 0 ${20 * mult}px ${colors.glowDark}`,
-      transform: 'scale(1.08)',
-      animation: 'pulse 0.3s ease-in-out infinite alternate',
-    },
-  }
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.8, rotate: -5 }}
-      animate={{ opacity: 1, scale: 1, rotate: 0 }}
-      className="pointer-events-none"
-      style={effectStyles[effect]}
-    >
-      <GlowCard accentColor={task.color} glowIntensity="xl" showAccentLine className="p-3 w-72">
-        <h4 className="text-sm font-medium text-white line-clamp-2">{task.name}</h4>
-        {task.description && <p className="text-xs text-slate-400 mt-1 line-clamp-1">{task.description}</p>}
-      </GlowCard>
-    </motion.div>
-  )
-}
-
 export function TaskBoard({
   projectId,
+  showFilters: showFiltersFromParent,
+  filters: filtersFromParent,
+  onFiltersChange,
   onTaskCreate,
   onTaskUpdate,
   onTaskDelete,
@@ -143,6 +75,12 @@ export function TaskBoard({
   onColumnCreate,
   onColumnUpdate,
   onColumnReorder,
+  onColumnDelete,
+  onLabelCreate,
+  onLabelToggle,
+  showDependencyOverlay,
+  connectMode,
+  onConnectModeChange,
 }: TaskBoardProps) {
   const {
     columns,
@@ -155,28 +93,63 @@ export function TaskBoard({
     selectedTaskId,
     addColumn,
     updateColumn,
+    removeColumn,
     reorderColumns,
   } = useBoardStore()
-  const { colors: themeColors, glowIntensity: globalGlow } = useThemeStore()
+  const { colors: themeColors, glowIntensity: globalGlow, dragEffect, shortcuts } = useThemeStore()
   const [editingTask, setEditingTask] = useState<string | null>(null)
   const [newTaskColumnId, setNewTaskColumnId] = useState<string | null>(null)
   const [activeItem, setActiveItem] = useState<{ type: 'task' | 'column'; data: any } | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
-  const [dragEffect, setDragEffect] = useState<DragEffect>('glow')
-  const [showSettings, setShowSettings] = useState(false)
-  const [showFilters, setShowFilters] = useState(false)
-  const [filters, setFilters] = useState<BoardFilters>(DEFAULT_FILTERS)
+  const [internalFilters, setInternalFilters] = useState<BoardFilters>(DEFAULT_FILTERS)
+
+  const showFilters = showFiltersFromParent ?? false
+  const filters = filtersFromParent ?? internalFilters
+  const setFilters = onFiltersChange ?? setInternalFilters
   const [dependencyTreeTaskId, setDependencyTreeTaskId] = useState<string | null>(null)
+  const [labelPickerTaskId, setLabelPickerTaskId] = useState<string | null>(null)
+  const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null)
+  const [connectSourceId, setConnectSourceId] = useState<string | null>(null)
+  const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 })
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    color: 'purple' as AccentColor,
+    color: 'purple' as string,
     priority: 'medium' as typeof PRIORITIES[number],
   })
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
+
+  const boardRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const board = boardRef.current
+    if (!board) return
+    const onOver = (e: MouseEvent) => {
+      const el = (e.target as HTMLElement).closest('[data-task-id]')
+      setHoveredTaskId(el?.getAttribute('data-task-id') ?? null)
+    }
+    const onLeave = () => setHoveredTaskId(null)
+    board.addEventListener('mouseover', onOver)
+    board.addEventListener('mouseleave', onLeave)
+    return () => {
+      board.removeEventListener('mouseover', onOver)
+      board.removeEventListener('mouseleave', onLeave)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!connectMode) setConnectSourceId(null)
+  }, [connectMode])
+
+  useEffect(() => {
+    if (!connectMode) return
+    const onMove = (e: MouseEvent) => setCursorPos({ x: e.clientX, y: e.clientY })
+    window.addEventListener('mousemove', onMove)
+    return () => window.removeEventListener('mousemove', onMove)
+  }, [connectMode])
 
   const sortedColumns = useMemo(
     () => columns.filter((c) => c.projectId === projectId).sort((a, b) => a.orderIndex - b.orderIndex),
@@ -185,7 +158,6 @@ export function TaskBoard({
 
   const projectTasks = tasks.filter((t) => t.projectId === projectId)
   const filteredTasks = useMemo(() => applyBoardFilters(projectTasks, filters), [projectTasks, filters])
-  const filterCount = activeFilterCount(filters)
   const columnIds = sortedColumns.map((c) => c.id)
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -296,12 +268,13 @@ export function TaskBoard({
   }, [])
 
   const handleTaskEdit = useCallback((taskId: string) => {
+    selectTask(taskId)
     const task = tasks.find((t) => t.id === taskId)
     if (task) {
       setFormData({
         name: task.name,
         description: task.description || '',
-        color: task.color as AccentColor,
+        color: task.color,
         priority: task.priority,
       })
       setEditingTask(taskId)
@@ -309,16 +282,62 @@ export function TaskBoard({
     }
   }, [tasks])
 
+  const handleTaskClick = useCallback((taskId: string) => {
+    if (!connectMode) {
+      handleTaskEdit(taskId)
+      return
+    }
+    if (!connectSourceId) {
+      setConnectSourceId(taskId)
+    } else if (taskId !== connectSourceId) {
+      onAddDependency?.(connectSourceId, taskId)
+      setConnectSourceId(null)
+      onConnectModeChange?.(false)
+    }
+  }, [connectMode, connectSourceId, handleTaskEdit, onAddDependency, onConnectModeChange])
+
   const handleAddTask = useCallback((columnId: string) => {
     setFormData({ name: '', description: '', color: 'purple', priority: 'medium' })
     setNewTaskColumnId(columnId)
     setEditingTask(null)
   }, [])
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
+      const key = e.key.toLowerCase()
+
+      const targetTaskId = hoveredTaskId ?? selectedTaskId
+      if (key === (shortcuts?.openLabel ?? 'l') && targetTaskId) {
+        e.preventDefault()
+        setLabelPickerTaskId(targetTaskId)
+        return
+      }
+
+      if (key === (shortcuts?.addTask ?? 't') && sortedColumns.length > 0) {
+        e.preventDefault()
+        handleAddTask(sortedColumns[0].id)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [selectedTaskId, hoveredTaskId, shortcuts, sortedColumns, handleAddTask])
+
   const handleColumnRename = useCallback((columnId: string, name: string) => {
     updateColumn(columnId, { name })
     onColumnUpdate?.(columnId, { name })
   }, [updateColumn, onColumnUpdate])
+
+  const handleColumnColorChange = useCallback((columnId: string, color: string) => {
+    updateColumn(columnId, { color })
+    onColumnUpdate?.(columnId, { color })
+  }, [updateColumn, onColumnUpdate])
+
+  const handleColumnDelete = useCallback((columnId: string) => {
+    removeColumn(columnId)
+    onColumnDelete?.(columnId)
+  }, [removeColumn, onColumnDelete])
 
   const handleAddColumn = useCallback(() => {
     const newCol: BoardColumn = {
@@ -373,103 +392,13 @@ export function TaskBoard({
   }
 
   const isModalOpen = editingTask !== null || newTaskColumnId !== null
-  const isDragging = activeItem !== null
   const isTaskDrag = activeItem?.type === 'task'
-  const glowMult = globalGlow / 75
-
-  const bgOpacity1 = Math.round(8 * glowMult).toString(16).padStart(2, '0')
-  const bgOpacity2 = Math.round(5 * glowMult).toString(16).padStart(2, '0')
-  const bgOpacity3 = Math.round(21 * glowMult).toString(16).padStart(2, '0')
-  const bgOpacity4 = Math.round(16 * glowMult).toString(16).padStart(2, '0')
 
   return (
     <>
-      <div
-        className="absolute inset-0 -z-10 rounded-3xl overflow-hidden"
-        style={{
-          background: globalGlow > 0 ? `linear-gradient(135deg, ${themeColors.glowColor}${bgOpacity1} 0%, transparent 50%, ${themeColors.glowColor}${bgOpacity2} 100%)` : 'transparent',
-        }}
-      >
-        {globalGlow > 0 && (
-          <>
-            <div
-              className="absolute inset-0 backdrop-blur-3xl"
-              style={{
-                background: `radial-gradient(ellipse at top left, ${themeColors.glowColor}${bgOpacity3} 0%, transparent 50%)`,
-              }}
-            />
-            <div
-              className="absolute inset-0"
-              style={{
-                background: `radial-gradient(ellipse at bottom right, ${themeColors.glowColor}${bgOpacity4} 0%, transparent 50%)`,
-              }}
-            />
-          </>
-        )}
-      </div>
+      <BoardGlowBackground glowColor={themeColors.glowColor} globalGlow={globalGlow} />
 
-      <div className="relative">
-        <div className="flex items-center justify-end gap-2 mb-4">
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={cn(
-              'relative p-2 rounded-lg transition-all duration-200',
-              'hover:bg-white/10 text-slate-400 hover:text-white',
-              showFilters && 'bg-white/10 text-white'
-            )}
-          >
-            <Filter className="w-5 h-5" />
-            {filterCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-purple-500 text-white text-[10px] font-bold flex items-center justify-center">
-                {filterCount}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className={cn(
-              'p-2 rounded-lg transition-all duration-200',
-              'hover:bg-white/10 text-slate-400 hover:text-white',
-              showSettings && 'bg-white/10 text-white'
-            )}
-          >
-            <Settings2 className="w-5 h-5" />
-          </button>
-        </div>
-
-        <AnimatePresence>
-          {showSettings && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mb-4 overflow-hidden"
-            >
-              <div className="p-4 rounded-xl bg-white/5 backdrop-blur-xl border border-white/10">
-                <h3 className="text-sm font-medium text-white mb-3">Drag Effect</h3>
-                <div className="flex gap-2">
-                  {DRAG_EFFECTS.map(({ id, name, icon: Icon }) => (
-                    <button
-                      key={id}
-                      onClick={() => setDragEffect(id)}
-                      className={cn(
-                        'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200',
-                        'border',
-                        dragEffect === id
-                          ? 'bg-purple-500/20 border-purple-500/50 text-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.3)]'
-                          : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
-                      )}
-                    >
-                      <Icon className="w-4 h-4" />
-                      {name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
+      <div ref={boardRef} className="relative">
         <BoardFilterBar
           isOpen={showFilters}
           filters={filters}
@@ -484,8 +413,8 @@ export function TaskBoard({
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
         >
-          <SortableContext items={columnIds} strategy={horizontalListSortingStrategy}>
-            <div className="flex gap-4 overflow-x-auto pb-4 h-full">
+          <SortableContext items={columnIds} strategy={rectSortingStrategy}>
+            <div className="flex flex-wrap gap-4 pb-4 overflow-auto content-start" style={{ maxHeight: 'calc(100vh - 140px)' }}>
               {sortedColumns.map((column) => (
                 <SortableColumn key={column.id} column={column}>
                   {(dragHandleProps) => (
@@ -494,15 +423,15 @@ export function TaskBoard({
                       projectId={projectId}
                       tasks={filteredTasks
                         .filter((t) => t.columnId === column.id)
-                        .sort((a, b) => a.orderIndex - b.orderIndex)
-                        .map((t) => ({
-                          ...t,
-                          color: t.color as AccentColor,
-                        }))}
-                      onTaskEdit={handleTaskEdit}
+                        .sort((a, b) => a.orderIndex - b.orderIndex)}
+                      onTaskEdit={handleTaskClick}
                       onAddTask={() => handleAddTask(column.id)}
                       onTaskCreate={onTaskCreate}
                       onColumnRename={handleColumnRename}
+                      onColumnColorChange={handleColumnColorChange}
+                      onColumnDelete={handleColumnDelete}
+                      onTaskUpdate={onTaskUpdate}
+                      onTaskDelete={onTaskDelete}
                       overId={overId}
                       activeTaskId={activeItem?.type === 'task' ? activeItem.data?.id : null}
                       onDependencyClick={setDependencyTreeTaskId}
@@ -512,22 +441,7 @@ export function TaskBoard({
                 </SortableColumn>
               ))}
 
-              <motion.button
-                onClick={handleAddColumn}
-                className={cn(
-                  'flex-shrink-0 flex flex-col items-center justify-center',
-                  'min-w-[200px] h-32 rounded-xl',
-                  'border-2 border-dashed border-white/10 hover:border-white/25',
-                  'text-slate-500 hover:text-slate-300',
-                  'transition-all duration-200',
-                  'hover:bg-white/[0.03]'
-                )}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <Plus className="w-6 h-6 mb-2" />
-                <span className="text-sm font-medium">Add Column</span>
-              </motion.button>
+              <AddColumnButton onClick={handleAddColumn} />
             </div>
           </SortableContext>
 
@@ -558,6 +472,26 @@ export function TaskBoard({
           onClose={() => setDependencyTreeTaskId(null)}
         />
       )}
+
+      {labelPickerTaskId && (
+        <LabelPicker
+          taskId={labelPickerTaskId}
+          projectId={projectId}
+          isOpen={!!labelPickerTaskId}
+          onClose={() => setLabelPickerTaskId(null)}
+          onLabelCreate={onLabelCreate}
+          onLabelToggle={onLabelToggle}
+        />
+      )}
+
+      <BoardDependencyOverlay enabled={showDependencyOverlay ?? false} />
+
+      <ConnectModeBanner
+        connectMode={connectMode ?? false}
+        connectSourceId={connectSourceId}
+        cursorPos={cursorPos}
+        onCancel={() => { onConnectModeChange?.(false); setConnectSourceId(null) }}
+      />
     </>
   )
 }

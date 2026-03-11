@@ -14,6 +14,7 @@ export function ThemeEffects() {
 
   switch (theme.effect) {
     case 'matrix': return <MatrixEffect />
+    case 'matrix-unleashed': return <MatrixEffect />
     case 'vulcan': return <VulcanEffect />
     case 'dracula': return <DraculaEffect />
     default: return null

@@ -95,6 +95,54 @@ body {
   }
 }
 
+[data-theme="matrixUnleashed"] [class*="backdrop-blur"],
+[data-theme="matrixUnleashed"] [class*="glass"],
+[data-theme="matrixUnleashed"] [class*="rounded-xl"],
+[data-theme="matrixUnleashed"] [class*="rounded-2xl"],
+[data-theme="matrixUnleashed"] [class*="rounded-3xl"] {
+  border-color: rgba(0, 255, 65, 0.35) !important;
+  box-shadow:
+    0 0 12px 2px rgba(0, 255, 65, 0.15),
+    0 0 25px 5px rgba(0, 255, 65, 0.06),
+    inset 0 0 8px rgba(0, 255, 65, 0.04) !important;
+}
+
+[data-theme="matrixUnleashed"] [class*="border-white\\/"],
+[data-theme="matrixUnleashed"] [class*="border-slate"],
+[data-theme="matrixUnleashed"] [class*="border-gray"] {
+  border-color: rgba(0, 255, 65, 0.3) !important;
+}
+
+[data-theme="matrixUnleashed"] button,
+[data-theme="matrixUnleashed"] input,
+[data-theme="matrixUnleashed"] textarea,
+[data-theme="matrixUnleashed"] select {
+  border-color: rgba(0, 255, 65, 0.25) !important;
+}
+
+[data-theme="matrixUnleashed"] button:hover,
+[data-theme="matrixUnleashed"] input:focus {
+  border-color: rgba(0, 255, 65, 0.5) !important;
+  box-shadow: 0 0 15px 3px rgba(0, 255, 65, 0.2) !important;
+}
+
+[data-theme="neon"] [class*="backdrop-blur"],
+[data-theme="neon"] [class*="glass"],
+[data-theme="neon"] [class*="rounded-xl"],
+[data-theme="neon"] [class*="rounded-2xl"],
+[data-theme="neon"] [class*="rounded-3xl"] {
+  border-color: rgba(0, 255, 136, 0.3) !important;
+  box-shadow:
+    0 0 10px 2px rgba(0, 255, 136, 0.12),
+    0 0 20px 4px rgba(0, 255, 136, 0.05),
+    inset 0 0 6px rgba(0, 255, 136, 0.03) !important;
+}
+
+[data-theme="neon"] button:hover,
+[data-theme="neon"] input:focus {
+  box-shadow: 0 0 12px 2px rgba(0, 255, 136, 0.2) !important;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

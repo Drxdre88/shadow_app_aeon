@@ -18,6 +18,6 @@ export interface ThemeColors {
   glowColor: string
   chartColors: string[]
   isDark: boolean
-  effect?: 'matrix' | 'vulcan' | 'dracula'
+  effect?: 'matrix' | 'matrix-unleashed' | 'vulcan' | 'dracula'
   category?: string
 }

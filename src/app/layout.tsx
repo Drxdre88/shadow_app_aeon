@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono, Space_Grotesk, Fira_Code } from 'next/font/googl
 import { ThemeProvider } from '@/components/providers/ThemeProvider'
 import { AuthProvider } from '@/components/providers/AuthProvider'
 import { ThemeEffects } from '@/components/effects/ThemeEffects'
+import { CursorEffect } from '@/components/effects/cursor'
 import { ToastContainer } from '@/components/ui/Toast'
 import './globals.css'
 
@@ -30,6 +31,7 @@ export default function RootLayout({
         <AuthProvider>
           <ThemeProvider>
             <ThemeEffects />
+            <CursorEffect />
             <ToastContainer />
             {children}
           </ThemeProvider>

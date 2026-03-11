@@ -131,9 +131,9 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
-          className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10"
+          className="flex flex-wrap gap-4 mb-10"
         >
-          <div onClick={() => setShowCreateModal(true)}>
+          <div onClick={() => setShowCreateModal(true)} className="w-64">
             <GlowCard accentColor="purple" glowIntensity="sm" showAccentLine hover>
               <div className="flex items-center gap-3 p-2">
                 <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-purple-500/15">
@@ -147,7 +147,7 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
             </GlowCard>
           </div>
 
-          <Link href="/demo">
+          <Link href="/demo" className="w-64">
             <GlowCard accentColor="cyan" glowIntensity="sm" showAccentLine hover>
               <div className="flex items-center gap-3 p-2">
                 <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-cyan-500/15">
@@ -161,6 +161,7 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
             </GlowCard>
           </Link>
 
+          <div className="w-64">
           <GlowCard accentColor="green" glowIntensity="sm" showAccentLine>
             <div className="flex items-center gap-3 p-2">
               <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-emerald-500/15">
@@ -172,6 +173,7 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
               </div>
             </div>
           </GlowCard>
+          </div>
         </motion.div>
 
         <motion.div
@@ -209,9 +211,9 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
               </NeonButton>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="flex flex-wrap gap-4">
               {projects.map((project) => (
-                <Link key={project.id} href={`/project/${project.id}`}>
+                <Link key={project.id} href={`/project/${project.id}`} className="w-72">
                   <GlowCard accentColor="purple" glowIntensity="sm" showAccentLine hover>
                     <div className="p-3">
                       <div className="flex items-center justify-between mb-1">

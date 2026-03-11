@@ -10,6 +10,8 @@ import {
   verifyProjectOwnership,
 } from '@/lib/data/projects'
 import { findTasks, createTask, updateTask, deleteTask } from '@/lib/data/tasks'
+import { findDependencies, addDependency, removeDependency, wouldCreateCycle } from '@/lib/data/dependencies'
+import { findLabels, findTaskLabels, createLabel, deleteLabel, addLabelToTask, removeLabelFromTask } from '@/lib/data/labels'
 import {
   findColumns,
   createColumn,
@@ -33,6 +35,7 @@ import {
   updateGanttTaskSchema,
   createColumnSchema,
   updateColumnSchema,
+  createLabelSchema,
 } from '@/lib/data/validators'
 
 const userId = () => {
@@ -300,6 +303,123 @@ const mcpHandler = createMcpHandler(
         if (!await requireOwnership(projectId)) return notFound('Project')
         const summary = await getProjectSummary(projectId, userId())
         return summary ? ok(summary) : notFound('Project')
+      }
+    )
+
+    server.tool(
+      'list_dependencies',
+      'List all task dependencies (blocker relationships) for a project',
+      { projectId: z.string().uuid().describe('The project UUID') },
+      async ({ projectId }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+        return ok(await findDependencies(projectId))
+      }
+    )
+
+    server.tool(
+      'add_dependency',
+      'Add a dependency between two tasks. blockerTaskId must complete before blockedTaskId can proceed',
+      {
+        projectId: z.string().uuid().describe('The project UUID'),
+        blockerTaskId: z.string().uuid().describe('The task that must complete first'),
+        blockedTaskId: z.string().uuid().describe('The task that is blocked'),
+      },
+      async ({ projectId, blockerTaskId, blockedTaskId }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+        if (blockerTaskId === blockedTaskId) {
+          return { content: [{ type: 'text' as const, text: 'A task cannot depend on itself' }], isError: true as const }
+        }
+        if (await wouldCreateCycle(blockerTaskId, blockedTaskId)) {
+          return { content: [{ type: 'text' as const, text: 'Would create a circular dependency' }], isError: true as const }
+        }
+        await addDependency(blockerTaskId, blockedTaskId)
+        return ok({ added: true, blockerTaskId, blockedTaskId })
+      }
+    )
+
+    server.tool(
+      'remove_dependency',
+      'Remove a dependency between two tasks',
+      {
+        projectId: z.string().uuid().describe('The project UUID'),
+        blockerTaskId: z.string().uuid().describe('The blocker task UUID'),
+        blockedTaskId: z.string().uuid().describe('The blocked task UUID'),
+      },
+      async ({ projectId, blockerTaskId, blockedTaskId }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+        await removeDependency(blockerTaskId, blockedTaskId)
+        return ok({ removed: true })
+      }
+    )
+
+    server.tool(
+      'list_labels',
+      'List all labels for a project, and which tasks they are assigned to',
+      { projectId: z.string().uuid().describe('The project UUID') },
+      async ({ projectId }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+        const [projectLabels, assignments] = await Promise.all([
+          findLabels(projectId),
+          findTaskLabels(projectId),
+        ])
+        return ok({ labels: projectLabels, taskLabels: assignments })
+      }
+    )
+
+    server.tool(
+      'create_label',
+      'Create a label in a project',
+      {
+        projectId: z.string().uuid().describe('The project UUID'),
+        ...createLabelSchema.shape,
+      },
+      async ({ projectId, ...data }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+        return ok(await createLabel(projectId, data))
+      }
+    )
+
+    server.tool(
+      'delete_label',
+      'Delete a label from a project',
+      {
+        projectId: z.string().uuid().describe('The project UUID'),
+        labelId: z.string().uuid().describe('The label UUID'),
+      },
+      async ({ projectId, labelId }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+        const deleted = await deleteLabel(labelId, projectId)
+        return deleted ? ok({ deleted: true }) : notFound('Label')
+      }
+    )
+
+    server.tool(
+      'add_label_to_task',
+      'Assign a label to a task',
+      {
+        projectId: z.string().uuid().describe('The project UUID'),
+        taskId: z.string().uuid().describe('The task UUID'),
+        labelId: z.string().uuid().describe('The label UUID'),
+      },
+      async ({ projectId, taskId, labelId }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+        await addLabelToTask(taskId, labelId)
+        return ok({ added: true, taskId, labelId })
+      }
+    )
+
+    server.tool(
+      'remove_label_from_task',
+      'Remove a label from a task',
+      {
+        projectId: z.string().uuid().describe('The project UUID'),
+        taskId: z.string().uuid().describe('The task UUID'),
+        labelId: z.string().uuid().describe('The label UUID'),
+      },
+      async ({ projectId, taskId, labelId }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+        await removeLabelFromTask(taskId, labelId)
+        return ok({ removed: true })
       }
     )
   },

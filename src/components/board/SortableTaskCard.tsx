@@ -19,7 +19,7 @@ interface SortableTaskCardProps {
     id: string
     name: string
     description?: string
-    color: AccentColor
+    color: string
     priority: 'low' | 'medium' | 'high' | 'urgent'
     labels: string[]
     startDate?: string
@@ -49,11 +49,19 @@ const priorityGlows = {
 }
 
 export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowColor, showDropIndicator = false, onTaskUpdate, onTaskDelete }: SortableTaskCardProps) {
-  const { selectedTaskId, selectTask, labels } = useBoardStore()
-  const { glowIntensity: globalGlow } = useThemeStore()
+  const { selectedTaskId, labels } = useBoardStore()
+  const { glowIntensity: globalGlow, priorities } = useThemeStore()
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const isSelected = selectedTaskId === task.id
   const mult = globalGlow / 75
+
+  const getPriorityStyle = (priority: string) => {
+    const defaultMatch = priorityColors[priority as keyof typeof priorityColors]
+    if (defaultMatch) return { className: defaultMatch }
+    const custom = priorities.find((p) => p.id === priority)
+    if (custom) return { style: { backgroundColor: `${custom.color}33`, color: custom.color } }
+    return { className: priorityColors.medium }
+  }
 
   const {
     attributes,
@@ -81,7 +89,7 @@ export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowCo
   }
 
   return (
-    <div ref={setNodeRef} style={style} className="relative">
+    <div ref={setNodeRef} style={style} className="relative" data-task-id={task.id}>
       {showDropIndicator && globalGlow > 0 && (
         <motion.div
           initial={{ opacity: 0, scaleX: 0 }}
@@ -97,8 +105,7 @@ export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowCo
       <motion.div
         {...attributes}
         {...listeners}
-        onClick={() => selectTask(task.id)}
-        onDoubleClick={onEdit}
+        onClick={onEdit}
         onContextMenu={handleContextMenu}
         className={cn(
           'cursor-grab active:cursor-grabbing',
@@ -117,56 +124,54 @@ export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowCo
           hover
           className="p-3 group"
         >
-          <div className="flex items-start justify-between mb-2">
-            {taskLabels.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {taskLabels.map((label) => {
-                  const labelColors = colorConfig[label.color as AccentColor]
-                  return (
-                    <span
-                      key={label.id}
-                      className={cn(
-                        'px-2 py-0.5 rounded-md text-xs font-medium flex items-center gap-1',
-                        'backdrop-blur-md border',
-                        labelColors.bg,
-                        labelColors.border,
-                        labelColors.text
-                      )}
-                    >
-                      <Tag className="w-3 h-3" />
-                      {label.name}
-                    </span>
-                  )
-                })}
-              </div>
-            )}
-
+          <div className="flex items-start justify-between mb-1">
+            <h4 className="text-sm font-medium text-white line-clamp-2 flex-1 mr-2">
+              {task.name}
+            </h4>
             <button
               onClick={(e) => { e.stopPropagation(); onEdit?.() }}
-              className="p-1 rounded-md hover:bg-white/10 transition-colors opacity-0 group-hover:opacity-100"
+              className="p-1 rounded-md hover:bg-white/10 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
             >
               <MoreHorizontal className="w-4 h-4 text-slate-400" />
             </button>
           </div>
 
-          <h4 className="text-sm font-medium text-white mb-2 line-clamp-2">
-            {task.name}
-          </h4>
-
-          {task.description && (
-            <p className="text-xs text-slate-400 mb-3 line-clamp-2">
-              {task.description}
-            </p>
+          {taskLabels.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-2">
+              {taskLabels.map((label) => {
+                const labelColors = colorConfig[label.color as AccentColor]
+                return (
+                  <span
+                    key={label.id}
+                    className={cn(
+                      'px-2 py-0.5 rounded-md text-[10px] font-medium flex items-center gap-1',
+                      'backdrop-blur-md border',
+                      labelColors?.bg ?? 'bg-white/5',
+                      labelColors?.border ?? 'border-white/10',
+                      labelColors?.text ?? 'text-slate-400'
+                    )}
+                  >
+                    <Tag className="w-2.5 h-2.5" />
+                    {label.name}
+                  </span>
+                )
+              })}
+            </div>
           )}
 
           <div className="flex items-center justify-between mt-auto pt-2 border-t border-white/5">
             <div className="flex items-center gap-1.5">
-              <span className={cn(
-                'px-2 py-0.5 rounded-md text-xs font-medium',
-                priorityColors[task.priority]
-              )}>
-                {task.priority}
-              </span>
+              {(() => {
+                const ps = getPriorityStyle(task.priority)
+                return (
+                  <span
+                    className={cn('px-2 py-0.5 rounded-md text-xs font-medium', ps.className)}
+                    style={ps.style}
+                  >
+                    {task.priority}
+                  </span>
+                )
+              })()}
               <DependencyIndicator
                 taskId={task.id}
                 onClick={() => onDependencyClick?.(task.id)}

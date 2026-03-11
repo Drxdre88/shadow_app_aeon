@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useEffect, useCallback } from 'react'
+import { useMemo, useEffect, useCallback, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
@@ -20,8 +20,9 @@ const NODE_HEIGHT = 80
 export function DependencyGlowTree({ taskId, onClose }: DependencyGlowTreeProps) {
   const tasks = useBoardStore((s) => s.tasks)
   const dependencies = useBoardStore((s) => s.dependencies)
+  const [focusId, setFocusId] = useState(taskId)
 
-  const focusedTask = tasks.find((t) => t.id === taskId)
+  const focusedTask = tasks.find((t) => t.id === focusId)
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') onClose()
@@ -58,13 +59,13 @@ export function DependencyGlowTree({ taskId, onClose }: DependencyGlowTreeProps)
       }
     }
 
-    walkUp(taskId)
-    walkDown(taskId)
+    walkUp(focusId)
+    walkDown(focusId)
 
-    if (!visited.has(taskId)) visited.add(taskId)
+    if (!visited.has(focusId)) visited.add(focusId)
 
     return { chainNodeIds: Array.from(visited), chainEdges: edges }
-  }, [taskId, dependencies])
+  }, [focusId, dependencies])
 
   const layout = useMemo(
     () => calculateTreeLayout(chainNodeIds, chainEdges, {
@@ -112,7 +113,7 @@ export function DependencyGlowTree({ taskId, onClose }: DependencyGlowTreeProps)
           <div className="flex items-center justify-between p-4 border-b border-white/10">
             <div>
               <h2 className="text-lg font-semibold text-white">Dependency Chain</h2>
-              <p className="text-sm text-slate-400 mt-0.5">{focusedTask.name}</p>
+              <p className="text-sm text-slate-400 mt-0.5">{focusedTask?.name}</p>
             </div>
             <button
               onClick={onClose}
@@ -138,16 +139,21 @@ export function DependencyGlowTree({ taskId, onClose }: DependencyGlowTreeProps)
                   height={containerHeight}
                   style={{ left: 40, top: 40 }}
                 >
-                  {layout.edges.map((edge, i) => (
-                    <GlowTreeEdge
-                      key={`${edge.sourceId}-${edge.targetId}`}
-                      sourceX={edge.sourceX}
-                      sourceY={edge.sourceY}
-                      targetX={edge.targetX}
-                      targetY={edge.targetY}
-                      index={i}
-                    />
-                  ))}
+                  {layout.edges.map((edge, i) => {
+                    const sourceTask = taskMap.get(edge.sourceId)
+                    const isResolved = sourceTask?.status === 'done'
+                    return (
+                      <GlowTreeEdge
+                        key={`${edge.sourceId}-${edge.targetId}`}
+                        sourceX={edge.sourceX}
+                        sourceY={edge.sourceY}
+                        targetX={edge.targetX}
+                        targetY={edge.targetY}
+                        index={i}
+                        isResolved={isResolved}
+                      />
+                    )
+                  })}
                 </svg>
 
                 <div className="absolute" style={{ left: 40, top: 40 }}>
@@ -166,9 +172,10 @@ export function DependencyGlowTree({ taskId, onClose }: DependencyGlowTreeProps)
                         status={task.status}
                         priority={task.priority}
                         color={task.color}
-                        isFocused={node.id === taskId}
+                        isFocused={node.id === focusId}
                         level={node.level}
                         indexInLevel={node.indexInLevel}
+                        onNodeClick={setFocusId}
                       />
                     )
                   })}

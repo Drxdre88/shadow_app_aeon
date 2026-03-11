@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, X } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
+import { AccentColor, colorConfig, generateId } from '@/lib/utils/colors'
 
 interface QuickAddTaskProps {
   projectId: string
@@ -27,6 +28,7 @@ interface QuickAddTaskProps {
 export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: QuickAddTaskProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [taskName, setTaskName] = useState('')
+  const [taskColor, setTaskColor] = useState<string>('purple')
   const inputRef = useRef<HTMLInputElement>(null)
   const { addTask, tasks } = useBoardStore()
 
@@ -45,13 +47,6 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
       ...tasks.filter((t) => t.projectId === projectId && t.columnId === columnId).map((t) => t.orderIndex)
     )
 
-    const generateId = () => {
-      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-        return crypto.randomUUID()
-      }
-      return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
-    }
-
     const newTask = {
       id: generateId(),
       projectId,
@@ -59,7 +54,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
       columnId,
       status: 'todo',
       priority: 'medium' as const,
-      color: 'purple',
+      color: taskColor,
       labels: [],
       onTimeline: false,
       orderIndex: maxOrder + 1,
@@ -69,6 +64,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
     onTaskCreate?.(newTask)
 
     setTaskName('')
+    setTaskColor('purple')
     setIsOpen(false)
     onClose?.()
   }
@@ -77,6 +73,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
     if (e.key === 'Escape') {
       setIsOpen(false)
       setTaskName('')
+      setTaskColor('purple')
       onClose?.()
     }
   }
@@ -131,6 +128,36 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
           autoComplete="off"
         />
 
+        <div className="flex gap-1.5 mt-2 flex-wrap">
+          {(['purple', 'blue', 'cyan', 'green', 'pink', 'orange', 'red'] as AccentColor[]).map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setTaskColor(c)}
+              className={cn(
+                'w-6 h-6 rounded-full border-2 transition-all flex-shrink-0',
+                taskColor === c ? 'border-white scale-110' : 'border-transparent hover:border-white/40'
+              )}
+              style={{ backgroundColor: colorConfig[c].hex }}
+            />
+          ))}
+          <label className="relative flex-shrink-0">
+            <input
+              type="color"
+              value={taskColor.startsWith('#') ? taskColor : colorConfig[taskColor as AccentColor]?.hex ?? '#a855f7'}
+              onChange={(e) => setTaskColor(e.target.value)}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            />
+            <div
+              className={cn(
+                'w-6 h-6 rounded-full border-2 border-dashed transition-all',
+                taskColor.startsWith('#') ? 'border-white' : 'border-white/30 hover:border-white/50'
+              )}
+              style={{ backgroundColor: taskColor.startsWith('#') ? taskColor : 'transparent' }}
+            />
+          </label>
+        </div>
+
         <div className="flex items-center gap-2 mt-2">
           <button
             type="submit"
@@ -152,6 +179,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
             onClick={() => {
               setIsOpen(false)
               setTaskName('')
+              setTaskColor('purple')
               onClose?.()
             }}
             className={cn(

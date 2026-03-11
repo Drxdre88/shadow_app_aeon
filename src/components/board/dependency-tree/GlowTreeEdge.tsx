@@ -1,7 +1,6 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { useThemeStore } from '@/stores/themeStore'
 
 interface GlowTreeEdgeProps {
   sourceX: number
@@ -9,24 +8,21 @@ interface GlowTreeEdgeProps {
   targetX: number
   targetY: number
   index: number
+  isResolved: boolean
 }
 
-export function GlowTreeEdge({ sourceX, sourceY, targetX, targetY, index }: GlowTreeEdgeProps) {
-  const { colors: themeColors } = useThemeStore()
-  const glowColor = themeColors.glowColor || 'rgba(168, 85, 247, 0.6)'
+export function GlowTreeEdge({ sourceX, sourceY, targetX, targetY, index, isResolved }: GlowTreeEdgeProps) {
+  const edgeColor = isResolved ? 'rgba(16, 185, 129, 0.6)' : 'rgba(239, 68, 68, 0.5)'
+  const edgeColorBright = isResolved ? 'rgba(52, 211, 153, 0.9)' : 'rgba(248, 113, 113, 0.9)'
 
   const midY = (sourceY + targetY) / 2
   const d = `M ${sourceX} ${sourceY} C ${sourceX} ${midY}, ${targetX} ${midY}, ${targetX} ${targetY}`
-
-  const pathLength = Math.sqrt(
-    Math.pow(targetX - sourceX, 2) + Math.pow(targetY - sourceY, 2)
-  ) * 1.5
 
   return (
     <g>
       <defs>
         <filter id={`edge-glow-${index}`} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
+          <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
           <feMerge>
             <feMergeNode in="blur" />
             <feMergeNode in="SourceGraphic" />
@@ -37,7 +33,7 @@ export function GlowTreeEdge({ sourceX, sourceY, targetX, targetY, index }: Glow
       <motion.path
         d={d}
         fill="none"
-        stroke={glowColor}
+        stroke={edgeColor}
         strokeWidth={2}
         strokeLinecap="round"
         filter={`url(#edge-glow-${index})`}
@@ -49,9 +45,18 @@ export function GlowTreeEdge({ sourceX, sourceY, targetX, targetY, index }: Glow
         }}
       />
 
+      <motion.polygon
+        points={`${targetX},${targetY} ${targetX - 6},${targetY - 10} ${targetX + 6},${targetY - 10}`}
+        fill={edgeColorBright}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.3 + index * 0.15 + 0.5, duration: 0.2 }}
+        filter={`url(#edge-glow-${index})`}
+      />
+
       <motion.circle
         r={3}
-        fill={glowColor}
+        fill={edgeColorBright}
         initial={{ opacity: 0 }}
         animate={{ opacity: [0, 1, 0] }}
         transition={{

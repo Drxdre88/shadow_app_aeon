@@ -3,30 +3,29 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowRight, Palette, Flag, Trash2, MoveRight, Copy } from 'lucide-react'
+import { ArrowRight, Palette, Trash2, Copy, Pencil } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { useBoardStore, type BoardColumn } from '@/lib/store/boardStore'
+import { useBoardStore } from '@/lib/store/boardStore'
 import { AccentColor, ACCENT_COLORS, PALETTE_COLORS, colorConfig } from '@/lib/utils/colors'
 import { useThemeStore } from '@/stores/themeStore'
 
-interface TaskContextMenuProps {
-  taskId: string
+interface ColumnContextMenuProps {
+  columnId: string
   position: { x: number; y: number }
   onClose: () => void
-  onTaskUpdate?: (taskId: string, updates: Record<string, unknown>) => void
-  onTaskDelete?: (taskId: string) => void
+  onRename: () => void
+  onColumnDelete?: (columnId: string) => void
 }
 
-export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTaskDelete }: TaskContextMenuProps) {
-  const [submenu, setSubmenu] = useState<'move' | 'priority' | 'color' | null>(null)
+export function ColumnContextMenu({ columnId, position, onClose, onRename, onColumnDelete }: ColumnContextMenuProps) {
+  const [submenu, setSubmenu] = useState<'color' | null>(null)
   const [mounted, setMounted] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
-  const { tasks, columns, updateTask, removeTask } = useBoardStore()
-  const { priorities, colors, glowIntensity } = useThemeStore()
+  const { columns, updateColumn, removeColumn } = useBoardStore()
+  const { colors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
 
-  const task = tasks.find((t) => t.id === taskId)
-  const projectColumns = columns.filter((c) => c.projectId === task?.projectId)
+  const column = columns.find((c) => c.id === columnId)
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -47,44 +46,35 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
     }
   }, [onClose])
 
-  if (!mounted || !task) return null
+  if (!mounted || !column) return null
 
   const menuStyle = {
-    left: Math.min(position.x, window.innerWidth - 220),
-    top: Math.min(position.y, window.innerHeight - 500),
-  }
-
-  const handleMoveTo = (columnId: string) => {
-    updateTask(taskId, { columnId })
-    onTaskUpdate?.(taskId, { columnId })
-    onClose()
-  }
-
-  const handlePriority = (priority: string) => {
-    updateTask(taskId, { priority: priority as any })
-    onTaskUpdate?.(taskId, { priority })
-    onClose()
+    left: Math.min(position.x, window.innerWidth - 260),
+    top: Math.min(position.y, window.innerHeight - 400),
   }
 
   const handleColor = (color: string) => {
-    updateTask(taskId, { color })
-    onTaskUpdate?.(taskId, { color })
+    updateColumn(columnId, { color })
     onClose()
   }
 
   const handleColorNative = (color: string) => {
-    updateTask(taskId, { color })
-    onTaskUpdate?.(taskId, { color })
+    updateColumn(columnId, { color })
   }
 
   const handleCopyId = () => {
-    navigator.clipboard.writeText(taskId)
+    navigator.clipboard.writeText(columnId)
     onClose()
   }
 
   const handleDelete = () => {
-    removeTask(taskId)
-    onTaskDelete?.(taskId)
+    removeColumn(columnId)
+    onColumnDelete?.(columnId)
+    onClose()
+  }
+
+  const handleRename = () => {
+    onRename()
     onClose()
   }
 
@@ -97,7 +87,7 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
         exit={{ opacity: 0, scale: 0.92, y: 8 }}
         transition={{ type: 'spring', stiffness: 400, damping: 25 }}
         className={cn(
-          'fixed z-[200] min-w-[260px] max-h-[80vh] overflow-y-auto',
+          'fixed z-[200] min-w-[220px] max-h-[80vh] overflow-y-auto',
           'rounded-xl overflow-hidden',
           'backdrop-blur-2xl border',
           'py-1'
@@ -122,56 +112,11 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
           }}
         />
         <MenuButton
-          icon={MoveRight}
-          label="Move to..."
-          hasSubmenu
-          isActive={submenu === 'move'}
-          onClick={() => setSubmenu(submenu === 'move' ? null : 'move')}
+          icon={Pencil}
+          label="Rename"
+          onClick={handleRename}
           glowColor={colors.glowColor}
         />
-        {submenu === 'move' && (
-          <div className="pl-2 border-l border-white/10 ml-3 space-y-0.5 py-1">
-            {projectColumns
-              .filter((c) => c.id !== task.columnId)
-              .map((col) => (
-                <button
-                  key={col.id}
-                  onClick={() => handleMoveTo(col.id)}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/10 hover:text-white rounded-md transition-colors"
-                >
-                  <ArrowRight className="w-3 h-3 text-slate-500" />
-                  {col.name}
-                </button>
-              ))}
-          </div>
-        )}
-
-        <MenuButton
-          icon={Flag}
-          label="Priority"
-          hasSubmenu
-          isActive={submenu === 'priority'}
-          onClick={() => setSubmenu(submenu === 'priority' ? null : 'priority')}
-          glowColor={colors.glowColor}
-        />
-        {submenu === 'priority' && (
-          <div className="pl-2 border-l border-white/10 ml-3 space-y-0.5 py-1">
-            {priorities.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => handlePriority(p.id)}
-                className={cn(
-                  'w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors hover:bg-white/10',
-                  task.priority === p.id ? 'bg-white/10 font-medium' : ''
-                )}
-                style={{ color: p.color }}
-              >
-                <Flag className="w-3 h-3" />
-                {p.name.charAt(0).toUpperCase() + p.name.slice(1)}
-              </button>
-            ))}
-          </div>
-        )}
 
         <MenuButton
           icon={Palette}
@@ -190,7 +135,7 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
                   onClick={() => handleColor(c)}
                   className={cn(
                     'w-7 h-7 rounded-full border-2 transition-all',
-                    task.color === c ? 'border-white scale-110' : 'border-transparent hover:border-white/40'
+                    column.color === c ? 'border-white scale-110' : 'border-transparent hover:border-white/40'
                   )}
                   style={{ backgroundColor: colorConfig[c].hex }}
                 />
@@ -204,7 +149,7 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
                     onClick={() => handleColor(hex)}
                     className={cn(
                       'w-7 h-7 rounded-full border-2 transition-all',
-                      task.color === hex ? 'border-white scale-110' : 'border-transparent hover:border-white/40'
+                      column.color === hex ? 'border-white scale-110' : 'border-transparent hover:border-white/40'
                     )}
                     style={{ backgroundColor: hex }}
                   />
@@ -216,15 +161,15 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
                 <div className="relative">
                   <input
                     type="color"
-                    value={task.color?.startsWith('#') ? task.color : colorConfig[task.color as AccentColor]?.hex ?? '#a855f7'}
+                    value={column.color?.startsWith('#') ? column.color : colorConfig[column.color as AccentColor]?.hex ?? '#a855f7'}
                     onChange={(e) => handleColorNative(e.target.value)}
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
                   <div
                     className="w-7 h-7 rounded-full border-2 border-dashed border-white/30 group-hover:border-white/60 transition-all flex items-center justify-center"
-                    style={{ backgroundColor: task.color?.startsWith('#') ? task.color : 'transparent' }}
+                    style={{ backgroundColor: column.color?.startsWith('#') ? column.color : 'transparent' }}
                   >
-                    {!task.color?.startsWith('#') && <Palette className="w-3 h-3 text-slate-400" />}
+                    {!column.color?.startsWith('#') && <Palette className="w-3 h-3 text-slate-400" />}
                   </div>
                 </div>
                 <span className="text-[11px] text-slate-500 group-hover:text-slate-300 transition-colors">Custom</span>
@@ -264,7 +209,7 @@ function MenuButton({
   onClick,
   glowColor,
 }: {
-  icon: typeof MoveRight
+  icon: typeof Pencil
   label: string
   hasSubmenu?: boolean
   isActive?: boolean

@@ -4,19 +4,18 @@ import { useCallback, useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { AccentColor, colorConfig } from '@/lib/utils/colors'
+import { AccentColor, ACCENT_COLORS, PALETTE_COLORS, colorConfig, generateId } from '@/lib/utils/colors'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { TaskChecklist } from './TaskChecklist'
 import { TaskDependencySection } from './TaskDependencySection'
 import { getChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem } from '@/lib/actions/checklist'
 
-const ACCENT_COLORS: AccentColor[] = ['purple', 'blue', 'cyan', 'green', 'pink', 'orange']
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
 
 interface FormData {
   name: string
   description: string
-  color: AccentColor
+  color: string
   priority: typeof PRIORITIES[number]
 }
 
@@ -33,12 +32,8 @@ interface TaskEditModalProps {
   onRemoveDependency?: (blockerTaskId: string, blockedTaskId: string) => void
 }
 
-const generateId = () => {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID()
-  }
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
-}
+const resolveNeonColor = (color: string): AccentColor =>
+  ACCENT_COLORS.includes(color as AccentColor) ? (color as AccentColor) : 'purple'
 
 export function TaskEditModal({
   isOpen,
@@ -177,19 +172,51 @@ export function TaskEditModal({
 
               <div>
                 <label className="block text-sm text-slate-400 mb-1.5">Color</label>
-                <div className="flex gap-2">
-                  {ACCENT_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => onFormChange({ ...formData, color })}
-                      className={cn(
-                        'w-8 h-8 rounded-lg transition-all duration-200',
-                        colorConfig[color].bgSolid,
-                        formData.color === color && 'ring-2 ring-offset-2 ring-offset-black ring-white scale-110'
-                      )}
-                      style={{ boxShadow: formData.color === color ? `0 0 15px ${colorConfig[color].glow}` : undefined }}
-                    />
-                  ))}
+                <div className="space-y-2">
+                  <div className="flex gap-2 flex-wrap">
+                    {ACCENT_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => onFormChange({ ...formData, color })}
+                        className={cn(
+                          'w-8 h-8 rounded-lg transition-all duration-200',
+                          colorConfig[color].bgSolid,
+                          formData.color === color && 'ring-2 ring-offset-2 ring-offset-black ring-white scale-110'
+                        )}
+                        style={{ boxShadow: formData.color === color ? `0 0 15px ${colorConfig[color].glow}` : undefined }}
+                      />
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {PALETTE_COLORS.map((hex) => (
+                      <button
+                        key={hex}
+                        onClick={() => onFormChange({ ...formData, color: hex })}
+                        className={cn(
+                          'w-8 h-8 rounded-lg border-2 transition-all duration-200',
+                          formData.color === hex ? 'border-white scale-110' : 'border-transparent hover:border-white/40'
+                        )}
+                        style={{ backgroundColor: hex }}
+                      />
+                    ))}
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <div className="relative">
+                      <input
+                        type="color"
+                        value={formData.color.startsWith('#') ? formData.color : colorConfig[formData.color as AccentColor]?.hex ?? '#a855f7'}
+                        onChange={(e) => onFormChange({ ...formData, color: e.target.value })}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
+                      <div
+                        className="w-8 h-8 rounded-lg border-2 border-dashed border-white/30 group-hover:border-white/60 transition-all flex items-center justify-center"
+                        style={{ backgroundColor: formData.color.startsWith('#') ? formData.color : 'transparent' }}
+                      >
+                        {!formData.color.startsWith('#') && <span className="text-[10px] text-slate-500">+</span>}
+                      </div>
+                    </div>
+                    <span className="text-xs text-slate-500 group-hover:text-slate-300 transition-colors">Custom color</span>
+                  </label>
                 </div>
               </div>
 
@@ -243,7 +270,7 @@ export function TaskEditModal({
                 onClick={onSubmit}
                 disabled={!formData.name.trim()}
                 className="flex-1"
-                color={formData.color}
+                color={resolveNeonColor(formData.color)}
               >
                 {editingTaskId ? 'Save Changes' : 'Create Task'}
               </NeonButton>

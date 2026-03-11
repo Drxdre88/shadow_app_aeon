@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { LayoutGrid, Calendar, ArrowLeft, RefreshCw, AlertTriangle } from 'lucide-react'
+import { LayoutGrid, Calendar, ArrowLeft, RefreshCw, AlertTriangle, Filter, Link2, GitBranch } from 'lucide-react'
 import Image from 'next/image'
 import aeonLogo from '@/assets/aeon.png'
 import Link from 'next/link'
@@ -12,10 +12,13 @@ import { TimeScaleSelector } from '@/components/gantt/TimeScaleSelector'
 import { TaskBoard } from '@/components/board/TaskBoard'
 import { useGanttStore } from '@/lib/store/ganttStore'
 import { useBoardStore } from '@/lib/store/boardStore'
+import { activeFilterCount, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
+import type { BoardFilters } from '@/lib/utils/boardFilters'
+import { cn } from '@/lib/utils/cn'
 import { getBoardTasks, createBoardTask, updateBoardTask, deleteBoardTask, reorderBoardTasks } from '@/lib/actions/board'
 import { getColumns, createColumn, updateColumn as updateColumnAction, reorderColumns as reorderColumnsAction, ensureDefaultColumns } from '@/lib/actions/columns'
 import { getRows, getGanttTasks, createGanttTask, updateGanttTask, deleteGanttTask } from '@/lib/actions/gantt'
-import { getLabels, getTaskLabels } from '@/lib/actions/labels'
+import { getLabels, getTaskLabels, createLabel, addLabelToTask, removeLabelFromTask } from '@/lib/actions/labels'
 import { getDependencies, addTaskDependency, removeTaskDependency } from '@/lib/actions/dependencies'
 import type { Project } from '@/lib/db/schema'
 
@@ -28,6 +31,10 @@ export default function ProjectContent({ project }: ProjectContentProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loadKey, setLoadKey] = useState(0)
+  const [showFilters, setShowFilters] = useState(false)
+  const [filters, setFilters] = useState<BoardFilters>(DEFAULT_FILTERS)
+  const [showDepOverlay, setShowDepOverlay] = useState(false)
+  const [connectMode, setConnectMode] = useState(false)
   const { setTasks: setGanttTasks, setRows, timeScale } = useGanttStore()
   const { setTasks: setBoardTasks, setColumns, setLabels, setDependencies, addDependency, removeDependency } = useBoardStore()
 
@@ -207,6 +214,18 @@ export default function ProjectContent({ project }: ProjectContentProps) {
     )
   }, [project.id, removeDependency])
 
+  const handleLabelCreate = useCallback((label: { id: string; projectId: string; name: string; color: string }) => {
+    createLabel(label).catch((err) => console.error('Failed to create label:', err))
+  }, [])
+
+  const handleLabelToggle = useCallback((taskId: string, labelId: string, action: 'add' | 'remove') => {
+    if (action === 'add') {
+      addLabelToTask(taskId, labelId, project.id).catch((err) => console.error('Failed to add label:', err))
+    } else {
+      removeLabelFromTask(taskId, labelId, project.id).catch((err) => console.error('Failed to remove label:', err))
+    }
+  }, [project.id])
+
   const handleGanttTaskCreate = useCallback((task: {
     id: string
     projectId: string
@@ -264,40 +283,88 @@ export default function ProjectContent({ project }: ProjectContentProps) {
               style={{ filter: 'drop-shadow(0 0 6px var(--glow-color))' }}
             />
             <span className="text-lg font-bold text-white">{project.name}</span>
+
+            <div className="flex items-center gap-1 ml-4">
+              <button
+                onClick={() => setActiveTab('board')}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                  activeTab === 'board'
+                    ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                )}
+              >
+                <LayoutGrid className="w-4 h-4" />
+                Board
+              </button>
+              <button
+                onClick={() => setActiveTab('gantt')}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                  activeTab === 'gantt'
+                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                )}
+              >
+                <Calendar className="w-4 h-4" />
+                Gantt
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            {activeTab === 'board' && (
+              <>
+                <button
+                  onClick={() => setShowFilters(!showFilters)}
+                  className={cn(
+                    'relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                    showFilters
+                      ? 'bg-white/10 text-white'
+                      : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  )}
+                >
+                  <Filter className="w-4 h-4" />
+                  Filter
+                  {activeFilterCount(filters) > 0 && (
+                    <span className="w-4 h-4 rounded-full bg-purple-500 text-white text-[10px] font-bold flex items-center justify-center">
+                      {activeFilterCount(filters)}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowDepOverlay(!showDepOverlay)}
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                    showDepOverlay
+                      ? 'bg-white/10 text-white'
+                      : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  )}
+                >
+                  <Link2 className="w-4 h-4" />
+                  Deps
+                </button>
+                <button
+                  onClick={() => setConnectMode(!connectMode)}
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                    connectMode
+                      ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                      : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  )}
+                >
+                  <GitBranch className="w-4 h-4" />
+                  Connect
+                </button>
+              </>
+            )}
             {activeTab === 'gantt' && <TimeScaleSelector />}
             <SettingsButton />
           </div>
         </div>
       </header>
 
-      <main className="px-6 py-6">
-        <div className="flex items-center gap-4 mb-6">
-          <button
-            onClick={() => setActiveTab('board')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
-              activeTab === 'board'
-                ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <LayoutGrid className="w-4 h-4" />
-            Task Board
-          </button>
-          <button
-            onClick={() => setActiveTab('gantt')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
-              activeTab === 'gantt'
-                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <Calendar className="w-4 h-4" />
-            Gantt Chart
-          </button>
-        </div>
+      <main className="px-6 py-2">
 
         {loadError ? (
           <div className="flex flex-col items-center justify-center py-20 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]">
@@ -334,9 +401,12 @@ export default function ProjectContent({ project }: ProjectContentProps) {
         ) : (
           <>
             {activeTab === 'board' && (
-              <div className="h-[calc(100vh-180px)]">
+              <div className="h-[calc(100vh-120px)]">
                 <TaskBoard
                   projectId={project.id}
+                  showFilters={showFilters}
+                  filters={filters}
+                  onFiltersChange={setFilters}
                   onTaskCreate={handleTaskCreate}
                   onTaskUpdate={handleTaskUpdate}
                   onTaskDelete={handleTaskDelete}
@@ -346,6 +416,11 @@ export default function ProjectContent({ project }: ProjectContentProps) {
                   onColumnReorder={handleColumnReorder}
                   onAddDependency={handleAddDependency}
                   onRemoveDependency={handleRemoveDependency}
+                  onLabelCreate={handleLabelCreate}
+                  onLabelToggle={handleLabelToggle}
+                  showDependencyOverlay={showDepOverlay}
+                  connectMode={connectMode}
+                  onConnectModeChange={setConnectMode}
                 />
               </div>
             )}

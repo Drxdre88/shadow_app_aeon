@@ -17,6 +17,7 @@ interface GlowTreeNodeProps {
   isFocused: boolean
   level: number
   indexInLevel: number
+  onNodeClick?: (id: string) => void
 }
 
 const statusGlowColors: Record<string, string> = {
@@ -53,6 +54,7 @@ export function GlowTreeNode({
   isFocused,
   level,
   indexInLevel,
+  onNodeClick,
 }: GlowTreeNodeProps) {
   const glowColor = statusGlowColors[status] || statusGlowColors.todo
   const accentColors = colorConfig[color as AccentColor] || colorConfig.purple
@@ -63,8 +65,9 @@ export function GlowTreeNode({
       initial={{ opacity: 0, scale: 0.8, y: 10 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       transition={{ delay, duration: 0.3, ease: 'easeOut' }}
-      className="absolute"
+      className="absolute cursor-pointer"
       style={{ left: x, top: y, width, height }}
+      onDoubleClick={() => onNodeClick?.(id)}
     >
       <div
         className={cn(

@@ -93,26 +93,71 @@ export const glowIntensity = {
   xxl: { blur: 60, spread: 20, opacity: 0.8 },
 }
 
-export function getGlowStyle(color: AccentColor, intensity: GlowIntensity, globalMultiplier: number = 75) {
-  if (intensity === 'none' || globalMultiplier === 0) return {}
-  const c = colorConfig[color]
-  const i = glowIntensity[intensity]
-  const mult = globalMultiplier / 75
-  return {
-    boxShadow: `0 0 ${i.blur * mult}px ${i.spread * mult}px ${c.glow}`,
-    opacity: i.opacity * mult,
+export const ACCENT_COLORS: AccentColor[] = ['purple', 'blue', 'cyan', 'green', 'pink', 'orange', 'red']
+
+export const PALETTE_COLORS = [
+  '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e', '#10b981',
+  '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7',
+  '#d946ef', '#ec4899', '#f43f5e', '#fb7185', '#fda4af', '#fdba74', '#fcd34d',
+  '#bef264', '#86efac', '#5eead4', '#67e8f9', '#93c5fd', '#a5b4fc', '#c4b5fd',
+  '#1e293b', '#334155', '#475569', '#64748b', '#94a3b8', '#cbd5e1', '#f1f5f9',
+]
+
+export function generateId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
   }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
 }
 
-export function applyGlowMultiplier(baseBlur: number, baseSpread: number, globalIntensity: number = 75) {
-  const mult = globalIntensity / 75
-  return {
-    blur: baseBlur * mult,
-    spread: baseSpread * mult,
-    opacity: Math.min(1, mult),
-  }
+export function hexToRgba(hex: string, alpha: number): string {
+  const clean = hex.replace('#', '')
+  const r = parseInt(clean.slice(0, 2), 16)
+  const g = parseInt(clean.slice(2, 4), 16)
+  const b = parseInt(clean.slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
-export function getGlowCSSVar(globalIntensity: number = 75) {
-  return `--glow-multiplier: ${globalIntensity / 100};`
+export interface ResolvedColor {
+  glow: string
+  glowDark: string
+  hex: string
+  borderStyle: React.CSSProperties
+  bgStyle: React.CSSProperties
+  bgSolidStyle: React.CSSProperties
+  textStyle: React.CSSProperties
+  accentGradient: string
+  isPreset: boolean
+  presetKey?: AccentColor
+}
+
+export function resolveColor(color: string): ResolvedColor {
+  const preset = colorConfig[color as AccentColor]
+  if (preset && color !== 'none') {
+    return {
+      glow: preset.glow,
+      glowDark: preset.glowDark,
+      hex: preset.hex,
+      borderStyle: {},
+      bgStyle: {},
+      bgSolidStyle: {},
+      textStyle: {},
+      accentGradient: preset.glow.replace('0.6', '0.15'),
+      isPreset: true,
+      presetKey: color as AccentColor,
+    }
+  }
+
+  const hex = color.startsWith('#') ? color : `#${color}`
+  return {
+    glow: hexToRgba(hex, 0.6),
+    glowDark: hexToRgba(hex, 0.4),
+    hex,
+    borderStyle: { borderColor: hexToRgba(hex, 0.3) },
+    bgStyle: { backgroundColor: hexToRgba(hex, 0.2) },
+    bgSolidStyle: { backgroundColor: hex },
+    textStyle: { color: hex },
+    accentGradient: hexToRgba(hex, 0.15),
+    isPreset: false,
+  }
 }

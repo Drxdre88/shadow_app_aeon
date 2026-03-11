@@ -5,7 +5,7 @@ import { useThemeStore, FONT_OPTIONS } from '@/stores/themeStore'
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false)
-  const { colors, fontFamily } = useThemeStore()
+  const { colors, fontFamily, currentTheme } = useThemeStore()
 
   useEffect(() => {
     setMounted(true)
@@ -41,12 +41,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const fontCss = FONT_OPTIONS.find((f) => f.id === fontFamily)?.css || FONT_OPTIONS[0].css
     document.body.style.fontFamily = fontCss
 
+    root.dataset.theme = currentTheme
+
     if (colors.isDark) {
       root.classList.add('dark')
     } else {
       root.classList.remove('dark')
     }
-  }, [mounted, colors, fontFamily])
+  }, [mounted, colors, fontFamily, currentTheme])
 
   if (!mounted) {
     return <div style={{ visibility: 'hidden' }}>{children}</div>
