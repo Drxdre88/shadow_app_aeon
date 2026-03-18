@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Inter, JetBrains_Mono, Space_Grotesk, Fira_Code } from 'next/font/google'
 import { ThemeProvider } from '@/components/providers/ThemeProvider'
 import { AuthProvider } from '@/components/providers/AuthProvider'
+import { PreferencesProvider } from '@/components/providers/PreferencesProvider'
 import { ThemeEffects } from '@/components/effects/ThemeEffects'
 import { CursorEffect } from '@/components/effects/cursor'
 import { ToastContainer } from '@/components/ui/Toast'
@@ -29,12 +30,14 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <AuthProvider>
+          <PreferencesProvider>
           <ThemeProvider>
             <ThemeEffects />
             <CursorEffect />
             <ToastContainer />
             {children}
           </ThemeProvider>
+          </PreferencesProvider>
         </AuthProvider>
       </body>
     </html>

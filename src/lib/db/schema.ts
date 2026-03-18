@@ -171,6 +171,12 @@ export const canvasNodes = pgTable('canvas_nodes', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 
+export const userPreferences = pgTable('user_preferences', {
+  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  preferences: jsonb('preferences').default({}).notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
+
 export const canvasEdges = pgTable('canvas_edges', {
   id: uuid('id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -225,3 +231,4 @@ export type CanvasNode = typeof canvasNodes.$inferSelect
 export type CanvasEdge = typeof canvasEdges.$inferSelect
 export type ActivityEvent = typeof activityEvents.$inferSelect
 export type TaskVault = typeof taskVault.$inferSelect
+export type UserPreference = typeof userPreferences.$inferSelect

@@ -15,7 +15,7 @@ function BoardLayoutSetting() {
       <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider">Column Size</h4>
       <div className="space-y-3">
         <div className="space-y-1">
-          <CompactSlider label="Width" value={columnWidth} onChange={setColumnWidth} min={250} max={600} color={colors.glowColor} unit="px" />
+          <CompactSlider label="Width" value={columnWidth} onChange={setColumnWidth} min={250} max={1200} color={colors.glowColor} unit="px" />
           <ToggleRow label="Expand width with content" value={dynamicColumnWidth} onChange={setDynamicColumnWidth} color={colors.glowColor} />
         </div>
         <div className="space-y-1">
