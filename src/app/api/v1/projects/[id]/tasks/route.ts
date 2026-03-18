@@ -1,10 +1,14 @@
 import { NextRequest } from 'next/server'
+import { z } from 'zod'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
 import { verifyProjectOwnership } from '@/lib/data/projects'
 import { findTasks, createTask } from '@/lib/data/tasks'
 import { createTaskSchema } from '@/lib/data/validators'
 
 type Params = { params: Promise<{ id: string }> }
+
+const statusSchema = z.enum(['todo', 'in-progress', 'done']).optional()
+const prioritySchema = z.enum(['low', 'medium', 'high', 'urgent']).optional()
 
 export const GET = apiHandler(async (request: NextRequest, ctx: unknown) => {
   const result = await authenticateRequest(request)
@@ -14,12 +18,17 @@ export const GET = apiHandler(async (request: NextRequest, ctx: unknown) => {
   if (!await verifyProjectOwnership(id, result.id)) return jsonError('Project not found', 404)
 
   const url = new URL(request.url)
-  const status = url.searchParams.get('status') || undefined
-  const priority = url.searchParams.get('priority') || undefined
+
+  const statusResult = statusSchema.safeParse(url.searchParams.get('status') || undefined)
+  if (!statusResult.success) return jsonError('Invalid status value', 400)
+
+  const priorityResult = prioritySchema.safeParse(url.searchParams.get('priority') || undefined)
+  if (!priorityResult.success) return jsonError('Invalid priority value', 400)
+
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '200') || 200, 500)
   const offset = parseInt(url.searchParams.get('offset') || '0') || 0
 
-  const data = await findTasks(id, { status, priority }, limit, offset)
+  const data = await findTasks(id, { status: statusResult.data, priority: priorityResult.data }, limit, offset)
   return jsonData(data)
 })
 

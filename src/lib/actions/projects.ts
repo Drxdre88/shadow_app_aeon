@@ -8,6 +8,7 @@ import {
   updateProject as _updateProject,
   deleteProject as _deleteProject,
 } from '@/lib/data/projects'
+import { createProjectSchema, updateProjectSchema } from '@/lib/data/validators'
 import type { UpdateProjectInput } from '@/lib/data/validators'
 
 export async function getProjects() {
@@ -23,27 +24,31 @@ export async function createProject(data: {
   timeScale?: string
 }) {
   const userId = await requireAuth()
-  const project = await _createProject(userId, {
+
+  const parsed = createProjectSchema.parse({
     name: data.name,
     description: data.description,
     startDate: data.startDate,
     endDate: data.endDate,
-    timeScale: (data.timeScale as 'day' | 'week' | 'month') || 'week',
+    timeScale: data.timeScale ?? 'week',
   })
+
+  const project = await _createProject(userId, parsed)
   revalidatePath('/dashboard')
   return project
 }
 
 export async function updateProject(projectId: string, data: UpdateProjectInput) {
-  await requireOwnership(projectId)
-  const project = await _updateProject(projectId, data)
+  const userId = await requireOwnership(projectId)
+  const parsed = updateProjectSchema.parse(data)
+  const project = await _updateProject(projectId, userId, parsed)
   revalidatePath('/dashboard')
   revalidatePath(`/project/${projectId}`)
   return project
 }
 
 export async function deleteProject(projectId: string) {
-  await requireOwnership(projectId)
-  await _deleteProject(projectId)
+  const userId = await requireOwnership(projectId)
+  await _deleteProject(projectId, userId)
   revalidatePath('/dashboard')
 }

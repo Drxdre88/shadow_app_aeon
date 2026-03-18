@@ -12,19 +12,31 @@ interface GanttTask {
   color: string
   progress: number
   dependencies: string[]
+  boardTaskId?: string | null
 }
 
 interface Row {
   id: string
   projectId: string
+  ganttViewId?: string | null
   name: string
   color: string
   orderIndex: number
 }
 
+interface GanttView {
+  id: string
+  projectId: string
+  name: string
+  groupBy: string
+  filters: Record<string, unknown>
+}
+
 interface GanttState {
   tasks: GanttTask[]
   rows: Row[]
+  views: GanttView[]
+  activeViewId: string | null
   selectedTaskId: string | null
   isDirty: boolean
   timeScale: 'day' | 'week' | 'month'
@@ -40,6 +52,11 @@ interface GanttState {
   removeRow: (id: string) => void
   reorderRows: (projectId: string, fromIndex: number, toIndex: number) => void
 
+  setViews: (views: GanttView[]) => void
+  addView: (view: GanttView) => void
+  removeView: (id: string) => void
+  setActiveViewId: (id: string | null) => void
+
   selectTask: (id: string | null) => void
   setTimeScale: (scale: 'day' | 'week' | 'month') => void
   markClean: () => void
@@ -50,6 +67,8 @@ export const useGanttStore = create<GanttState>()(
     (set) => ({
       tasks: [],
       rows: [],
+      views: [],
+      activeViewId: null,
       selectedTaskId: null,
       isDirty: false,
       timeScale: 'week',
@@ -91,13 +110,24 @@ export const useGanttStore = create<GanttState>()(
         }
       }),
 
+      setViews: (views) => set({ views }),
+      addView: (view) => set((s) => ({ views: [...s.views, view] })),
+      removeView: (id) => set((s) => ({
+        views: s.views.filter((v) => v.id !== id),
+        rows: s.rows.filter((r) => r.ganttViewId !== id),
+        activeViewId: s.activeViewId === id
+          ? (s.views.find((v) => v.id !== id)?.id ?? null)
+          : s.activeViewId,
+      })),
+      setActiveViewId: (id) => set({ activeViewId: id }),
+
       selectTask: (id) => set({ selectedTaskId: id }),
       setTimeScale: (scale) => set({ timeScale: scale }),
       markClean: () => set({ isDirty: false }),
     }),
     {
       name: 'aeon-gantt',
-      partialize: (s) => ({ tasks: s.tasks, rows: s.rows, timeScale: s.timeScale }),
+      partialize: (s) => ({ tasks: s.tasks, rows: s.rows, timeScale: s.timeScale, views: s.views, activeViewId: s.activeViewId }),
     }
   )
 )

@@ -2,10 +2,11 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, X } from 'lucide-react'
+import { Plus, X, Tag } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
-import { AccentColor, colorConfig, generateId } from '@/lib/utils/colors'
+import { AccentColor, colorConfig, generateId, hexToRgba } from '@/lib/utils/colors'
+import { ColorSwatchPicker } from './ColorSwatchPicker'
 
 interface QuickAddTaskProps {
   projectId: string
@@ -29,14 +30,21 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
   const [isOpen, setIsOpen] = useState(false)
   const [taskName, setTaskName] = useState('')
   const [taskColor, setTaskColor] = useState<string>('purple')
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
-  const { addTask, tasks } = useBoardStore()
+  const { addTask, tasks, labels } = useBoardStore()
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
       inputRef.current.focus()
     }
   }, [isOpen])
+
+  const toggleLabel = (labelId: string) => {
+    setSelectedLabels((prev) =>
+      prev.includes(labelId) ? prev.filter((id) => id !== labelId) : [...prev, labelId]
+    )
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -55,7 +63,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
       status: 'todo',
       priority: 'medium' as const,
       color: taskColor,
-      labels: [],
+      labels: selectedLabels,
       onTimeline: false,
       orderIndex: maxOrder + 1,
     }
@@ -65,6 +73,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
 
     setTaskName('')
     setTaskColor('purple')
+    setSelectedLabels([])
     setIsOpen(false)
     onClose?.()
   }
@@ -74,6 +83,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
       setIsOpen(false)
       setTaskName('')
       setTaskColor('purple')
+      setSelectedLabels([])
       onClose?.()
     }
   }
@@ -92,7 +102,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
         )}
       >
         <Plus className="w-4 h-4" />
-        Add task
+        Add card
       </button>
     )
   }
@@ -117,7 +127,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
           value={taskName}
           onChange={(e) => setTaskName(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Task name..."
+          placeholder="Card name..."
           className={cn(
             'w-full px-3 py-2 rounded-lg',
             'bg-white/5 border border-white/10',
@@ -128,35 +138,47 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
           autoComplete="off"
         />
 
-        <div className="flex gap-1.5 mt-2 flex-wrap">
-          {(['purple', 'blue', 'cyan', 'green', 'pink', 'orange', 'red'] as AccentColor[]).map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => setTaskColor(c)}
-              className={cn(
-                'w-6 h-6 rounded-full border-2 transition-all flex-shrink-0',
-                taskColor === c ? 'border-white scale-110' : 'border-transparent hover:border-white/40'
-              )}
-              style={{ backgroundColor: colorConfig[c].hex }}
-            />
-          ))}
-          <label className="relative flex-shrink-0">
-            <input
-              type="color"
-              value={taskColor.startsWith('#') ? taskColor : colorConfig[taskColor as AccentColor]?.hex ?? '#a855f7'}
-              onChange={(e) => setTaskColor(e.target.value)}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            />
-            <div
-              className={cn(
-                'w-6 h-6 rounded-full border-2 border-dashed transition-all',
-                taskColor.startsWith('#') ? 'border-white' : 'border-white/30 hover:border-white/50'
-              )}
-              style={{ backgroundColor: taskColor.startsWith('#') ? taskColor : 'transparent' }}
-            />
-          </label>
-        </div>
+        <ColorSwatchPicker
+          value={taskColor}
+          onChange={setTaskColor}
+          swatchSize="sm"
+          accentColors={['purple', 'blue', 'cyan', 'green', 'pink', 'orange', 'red'] as AccentColor[]}
+          inline
+          className="mt-2"
+        />
+
+        {labels.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {labels.map((label) => {
+              const lc = colorConfig[label.color as AccentColor]
+              const isCustom = !lc
+              const hex = label.color.startsWith('#') ? label.color : `#${label.color}`
+              const isSelected = selectedLabels.includes(label.id)
+              return (
+                <button
+                  key={label.id}
+                  type="button"
+                  onClick={() => toggleLabel(label.id)}
+                  className={cn(
+                    'px-2 py-0.5 rounded-md text-[10px] font-medium flex items-center gap-1',
+                    'border transition-all duration-200',
+                    isSelected
+                      ? cn(!isCustom && lc?.bg, !isCustom && lc?.border, !isCustom && lc?.text, 'ring-1 ring-white/30', isCustom && 'text-white')
+                      : 'bg-white/5 border-white/10 text-slate-500 hover:text-slate-400 hover:border-white/20'
+                  )}
+                  style={isSelected && isCustom ? {
+                    backgroundColor: hexToRgba(hex, 0.15),
+                    borderColor: hexToRgba(hex, 0.3),
+                    color: hex,
+                  } : undefined}
+                >
+                  <Tag className="w-2.5 h-2.5" />
+                  {label.name}
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         <div className="flex items-center gap-2 mt-2">
           <button
@@ -180,6 +202,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
               setIsOpen(false)
               setTaskName('')
               setTaskColor('purple')
+              setSelectedLabels([])
               onClose?.()
             }}
             className={cn(

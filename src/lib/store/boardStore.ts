@@ -12,7 +12,7 @@ export interface BoardColumn {
   orderIndex: number
 }
 
-interface BoardTask {
+export interface BoardTask {
   id: string
   projectId: string
   name: string
@@ -25,6 +25,9 @@ interface BoardTask {
   startDate?: string
   endDate?: string
   onTimeline: boolean
+  ganttTaskId?: string | null
+  size?: number | null
+  updatedAt?: string
   orderIndex: number
 }
 
@@ -40,11 +43,18 @@ interface Dependency {
   blockedTaskId: string
 }
 
+export interface ChecklistSummary {
+  checked: number
+  crossed: number
+  total: number
+}
+
 interface BoardState {
   columns: BoardColumn[]
   tasks: BoardTask[]
   labels: Label[]
   dependencies: Dependency[]
+  checklistSummaries: Record<string, ChecklistSummary>
   selectedTaskId: string | null
   isDirty: boolean
 
@@ -62,11 +72,17 @@ interface BoardState {
 
   setLabels: (labels: Label[]) => void
   addLabel: (label: Label) => void
+  updateLabel: (id: string, updates: Partial<Label>) => void
   removeLabel: (id: string) => void
 
   setDependencies: (deps: Dependency[]) => void
   addDependency: (dep: Dependency) => void
   removeDependency: (blockerTaskId: string, blockedTaskId: string) => void
+
+  setChecklistSummaries: (summaries: Record<string, ChecklistSummary>) => void
+
+  showDates: boolean
+  toggleShowDates: () => void
 
   selectTask: (id: string | null) => void
   convertToTimeline: (taskId: string, startDate: string, endDate: string) => void
@@ -80,8 +96,10 @@ export const useBoardStore = create<BoardState>()(
       tasks: [],
       labels: [],
       dependencies: [],
+      checklistSummaries: {},
       selectedTaskId: null,
       isDirty: false,
+      showDates: false,
 
       setColumns: (columns) => set({ columns }),
       addColumn: (column) => set((s) => ({ columns: [...s.columns, column] })),
@@ -117,11 +135,16 @@ export const useBoardStore = create<BoardState>()(
 
       setLabels: (labels) => set({ labels }),
       addLabel: (label) => set((s) => ({ labels: [...s.labels, label], isDirty: true })),
+      updateLabel: (id, updates) => set((s) => ({
+        labels: s.labels.map((l) => l.id === id ? { ...l, ...updates } : l),
+        isDirty: true,
+      })),
       removeLabel: (id) => set((s) => ({
         labels: s.labels.filter((l) => l.id !== id),
         isDirty: true,
       })),
 
+      setChecklistSummaries: (checklistSummaries) => set({ checklistSummaries }),
       setDependencies: (dependencies) => set({ dependencies }),
       addDependency: (dep) => set((s) => ({
         dependencies: [...s.dependencies, dep],
@@ -134,6 +157,7 @@ export const useBoardStore = create<BoardState>()(
         isDirty: true,
       })),
 
+      toggleShowDates: () => set((s) => ({ showDates: !s.showDates })),
       selectTask: (id) => set({ selectedTaskId: id }),
       convertToTimeline: (taskId, startDate, endDate) => set((s) => ({
         tasks: s.tasks.map((t) =>

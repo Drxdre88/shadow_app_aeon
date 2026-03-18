@@ -1,8 +1,30 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import { Check, X } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { colorConfig, AccentColor } from '@/lib/utils/colors'
+import { resolveColor } from '@/lib/utils/colors'
+import { crossedTaskIds } from '../SortableTaskCard'
+
+type TriState = 'unchecked' | 'checked' | 'crossed'
+
+function nextTriState(current: TriState): TriState {
+  if (current === 'unchecked') return 'checked'
+  if (current === 'checked') return 'crossed'
+  return 'unchecked'
+}
+
+function statusToTriState(taskId: string, status: string): TriState {
+  if (status === 'done') return 'checked'
+  if (crossedTaskIds.has(taskId)) return 'crossed'
+  return 'unchecked'
+}
+
+function triStateToStatus(state: TriState, fallbackStatus: string): string {
+  if (state === 'checked') return 'done'
+  if (state === 'crossed') return 'todo'
+  return fallbackStatus === 'done' ? 'todo' : fallbackStatus
+}
 
 interface GlowTreeNodeProps {
   id: string
@@ -18,13 +40,8 @@ interface GlowTreeNodeProps {
   level: number
   indexInLevel: number
   onNodeClick?: (id: string) => void
-}
-
-const statusGlowColors: Record<string, string> = {
-  todo: 'rgba(236, 72, 153, 0.5)',
-  doing: 'rgba(59, 130, 246, 0.5)',
-  review: 'rgba(168, 85, 247, 0.5)',
-  done: 'rgba(16, 185, 129, 0.5)',
+  onNodeDoubleClick?: (id: string) => void
+  onStatusChange?: (id: string, status: string) => void
 }
 
 const statusBadgeColors: Record<string, string> = {
@@ -55,48 +72,98 @@ export function GlowTreeNode({
   level,
   indexInLevel,
   onNodeClick,
+  onNodeDoubleClick,
+  onStatusChange,
 }: GlowTreeNodeProps) {
-  const glowColor = statusGlowColors[status] || statusGlowColors.todo
-  const accentColors = colorConfig[color as AccentColor] || colorConfig.purple
+  const resolved = resolveColor(color)
   const delay = level * 0.1 + indexInLevel * 0.05
+  const triState = statusToTriState(id, status)
+
+  const handleCheckClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const next = nextTriState(triState)
+    if (next === 'crossed') {
+      crossedTaskIds.add(id)
+    } else {
+      crossedTaskIds.delete(id)
+    }
+    onStatusChange?.(id, triStateToStatus(next, status))
+  }
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.8, y: 10 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
+      initial={{ opacity: 0, scale: 0.8, x: -20 }}
+      animate={{ opacity: 1, scale: 1, x: 0 }}
       transition={{ delay, duration: 0.3, ease: 'easeOut' }}
       className="absolute cursor-pointer"
       style={{ left: x, top: y, width, height }}
-      onDoubleClick={() => onNodeClick?.(id)}
+      onClick={() => onNodeClick?.(id)}
+      onDoubleClick={() => onNodeDoubleClick?.(id)}
     >
       <div
         className={cn(
-          'h-full rounded-xl p-3 flex flex-col justify-between',
-          'backdrop-blur-xl border',
-          'transition-all duration-300',
-          isFocused
-            ? 'bg-white/15 border-white/30'
-            : 'bg-white/8 border-white/10'
+          'h-full rounded-xl overflow-hidden flex',
+          'border transition-all duration-300',
+          isFocused ? 'border-white/30' : 'border-white/10'
         )}
         style={{
+          backgroundColor: isFocused ? 'rgba(30, 32, 45, 0.97)' : 'rgba(18, 20, 30, 0.97)',
           boxShadow: isFocused
-            ? `0 0 30px 8px ${glowColor}, 0 0 60px 15px ${glowColor}`
-            : `0 0 15px 3px ${glowColor}`,
+            ? `0 0 30px 8px ${resolved.glow}, 0 0 60px 15px ${resolved.glowDark}`
+            : `0 0 15px 3px ${resolved.glowDark}`,
         }}
       >
-        <p className="text-sm font-medium text-white line-clamp-1">{name}</p>
+        <div
+          className="w-1 shrink-0"
+          style={{ backgroundColor: resolved.hex }}
+        />
 
-        <div className="flex items-center gap-1.5 mt-auto">
-          <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium capitalize', statusBadgeColors[status])}>
-            {status}
-          </span>
-          <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium capitalize', priorityBadgeColors[priority])}>
-            {priority}
-          </span>
-          <div
-            className="w-2 h-2 rounded-full ml-auto"
-            style={{ backgroundColor: accentColors.hex }}
-          />
+        <div className="flex-1 p-3 flex flex-col justify-between min-w-0">
+          <div className="flex items-start gap-2">
+            <button
+              onClick={handleCheckClick}
+              className={cn(
+                'flex-shrink-0 w-5 h-5 rounded border-2 mt-0.5 transition-all duration-300',
+                'flex items-center justify-center',
+                triState === 'checked' && 'bg-emerald-500 border-emerald-400',
+                triState === 'crossed' && 'bg-red-500 border-red-400',
+                triState === 'unchecked' && 'border-white/30 hover:border-white/50'
+              )}
+              style={{
+                boxShadow:
+                  triState === 'checked'
+                    ? '0 0 12px rgba(16,185,129,0.6), 0 0 24px rgba(16,185,129,0.3)'
+                    : triState === 'crossed'
+                      ? '0 0 12px rgba(239,68,68,0.6), 0 0 24px rgba(239,68,68,0.3)'
+                      : undefined,
+              }}
+            >
+              {triState === 'checked' && <Check className="w-3 h-3 text-white" />}
+              {triState === 'crossed' && <X className="w-3 h-3 text-white" />}
+            </button>
+
+            <p className={cn(
+              'text-sm font-medium line-clamp-2',
+              triState === 'checked' && 'line-through text-slate-500',
+              triState === 'crossed' && 'line-through text-red-400/50',
+              triState === 'unchecked' && 'text-white',
+            )}>
+              {name}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-1.5 mt-auto">
+            <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium capitalize', statusBadgeColors[status])}>
+              {status}
+            </span>
+            <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-medium capitalize', priorityBadgeColors[priority])}>
+              {priority}
+            </span>
+            <div
+              className="w-2 h-2 rounded-full ml-auto shrink-0"
+              style={{ backgroundColor: resolved.hex }}
+            />
+          </div>
         </div>
       </div>
     </motion.div>

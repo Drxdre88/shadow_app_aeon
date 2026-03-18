@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils/cn'
 const SHORTCUT_LABELS: Record<string, string> = {
   openLabel: 'Open Label Picker',
   addTask: 'New Task',
+  changeGlow: 'Change Color/Glow',
+  toggleDates: 'Toggle Dates Display',
 }
 
 export function ShortcutsTab() {

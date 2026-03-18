@@ -1,0 +1,1 @@
+ALTER TABLE "board_tasks" ADD COLUMN "archived_at" timestamp;

@@ -33,7 +33,7 @@ export const PUT = apiHandler(async (request: NextRequest, ctx: unknown) => {
   const parsed = updateProjectSchema.safeParse(body)
   if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
-  const project = await updateProject(id, parsed.data)
+  const project = await updateProject(id, result.id, parsed.data)
   return jsonData(project)
 })
 
@@ -45,7 +45,7 @@ export const DELETE = apiHandler(async (request: NextRequest, ctx: unknown) => {
   const existing = await findProjectById(id, result.id)
   if (!existing) return jsonError('Project not found', 404)
 
-  const deleted = await deleteProject(id)
+  const deleted = await deleteProject(id, result.id)
   if (!deleted) return jsonError('Project not found', 404)
   return jsonData({ deleted: true })
 })

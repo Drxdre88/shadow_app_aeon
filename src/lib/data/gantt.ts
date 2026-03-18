@@ -43,6 +43,7 @@ export async function createGanttTask(
       ...(clientId ? { id: clientId } : {}),
       projectId,
       rowId: data.rowId,
+      boardTaskId: data.boardTaskId || null,
       name: data.name,
       description: data.description || null,
       startDate: new Date(data.startDate),
@@ -68,6 +69,7 @@ export async function updateGanttTask(
   if (data.endDate !== undefined) updates.endDate = new Date(data.endDate)
   if (data.color !== undefined) updates.color = data.color
   if (data.progress !== undefined) updates.progress = data.progress
+  if (data.boardTaskId !== undefined) updates.boardTaskId = data.boardTaskId ?? null
 
   const [task] = await db
     .update(ganttTasks)

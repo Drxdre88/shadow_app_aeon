@@ -46,13 +46,15 @@ export function TimelineHeader({ startDate, endDate, timeScale, cellWidth }: Tim
             <div
               key={i}
               className={cn(
-                'flex-shrink-0 px-2 py-2 border-r border-white/5 text-center',
+                'flex-shrink-0 border-r border-white/5 text-center',
                 i % 2 === 0 && 'bg-white/[0.02]'
               )}
               style={{ width: cellWidth }}
             >
-              <div className="text-xs text-slate-500">{col.subLabel}</div>
-              <div className="text-sm font-medium text-slate-300">{col.label}</div>
+              <div className="px-2 py-2">
+                <div className="text-xs text-slate-500">{col.subLabel}</div>
+                <div className="text-sm font-medium text-slate-300">{col.label}</div>
+              </div>
             </div>
           ))}
         </div>

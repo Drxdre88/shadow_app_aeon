@@ -1,94 +1,88 @@
 'use server'
 
-import { auth } from '@/lib/auth'
-import { db } from '@/lib/db'
-import { checklistItems, boardTasks, projects } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
+import { requireOwnership } from './helpers'
+import {
+  createChecklistItemSchema,
+  checklistItemStateSchema,
+  updateChecklistItemSchema,
+} from '@/lib/data/validators'
+import {
+  findChecklistItems as _findChecklistItems,
+  createChecklistItem as _createChecklistItem,
+  updateChecklistItem as _updateChecklistItem,
+  deleteChecklistItem as _deleteChecklistItem,
+} from '@/lib/data/checklist'
+import { findTaskById } from '@/lib/data/tasks'
 
-async function verifyTaskOwnership(taskId: string, userId: string) {
-  const [task] = await db
-    .select({ id: boardTasks.id, projectId: boardTasks.projectId })
-    .from(boardTasks)
-    .innerJoin(projects, eq(projects.id, boardTasks.projectId))
-    .where(and(eq(boardTasks.id, taskId), eq(projects.userId, userId)))
-
+async function requireTaskInProject(taskId: string, projectId: string) {
+  await requireOwnership(projectId)
+  const task = await findTaskById(taskId, projectId)
   if (!task) throw new Error('Task not found or unauthorized')
   return task
 }
 
-export async function getChecklistItems(taskId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error('Unauthorized')
-
-  await verifyTaskOwnership(taskId, session.user.id)
-
-  return db
-    .select()
-    .from(checklistItems)
-    .where(eq(checklistItems.taskId, taskId))
-    .orderBy(checklistItems.orderIndex)
+export async function getChecklistItems(taskId: string, projectId: string) {
+  await requireTaskInProject(taskId, projectId)
+  return _findChecklistItems(taskId, projectId)
 }
 
 export async function createChecklistItem(data: {
   id: string
   taskId: string
+  projectId: string
   title: string
   orderIndex: number
+  groupName?: string
 }) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error('Unauthorized')
+  await requireTaskInProject(data.taskId, data.projectId)
 
-  const task = await verifyTaskOwnership(data.taskId, session.user.id)
+  const parsed = createChecklistItemSchema.parse({
+    title: data.title,
+    groupName: data.groupName,
+    orderIndex: data.orderIndex,
+  })
 
-  const [item] = await db
-    .insert(checklistItems)
-    .values({
-      id: data.id,
-      taskId: data.taskId,
-      title: data.title,
-      completed: false,
-      orderIndex: data.orderIndex,
-    })
-    .returning()
+  const item = await _createChecklistItem(data.taskId, parsed)
 
-  revalidatePath(`/project/${task.projectId}`)
+  revalidatePath(`/project/${data.projectId}`)
   return item
 }
 
 export async function updateChecklistItem(
   itemId: string,
   taskId: string,
-  updates: { title?: string; completed?: boolean; startDate?: string; endDate?: string }
+  projectId: string,
+  updates: {
+    title?: string
+    completed?: boolean
+    state?: string
+    status?: string | null
+    startDate?: string
+    endDate?: string
+  }
 ) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error('Unauthorized')
+  await requireTaskInProject(taskId, projectId)
 
-  const task = await verifyTaskOwnership(taskId, session.user.id)
+  const rawState = updates.state !== undefined
+    ? checklistItemStateSchema.parse(updates.state)
+    : updates.completed !== undefined
+      ? (updates.completed ? 'checked' as const : 'unchecked' as const)
+      : undefined
 
-  const dbUpdates: Record<string, unknown> = {}
-  if (updates.title !== undefined) dbUpdates.title = updates.title
-  if (updates.completed !== undefined) dbUpdates.completed = updates.completed
-  if (updates.startDate !== undefined) dbUpdates.startDate = new Date(updates.startDate)
-  if (updates.endDate !== undefined) dbUpdates.endDate = new Date(updates.endDate)
+  const parsed = updateChecklistItemSchema.parse({
+    title: updates.title,
+    state: rawState,
+    status: updates.status,
+  })
 
-  await db
-    .update(checklistItems)
-    .set(dbUpdates)
-    .where(and(eq(checklistItems.id, itemId), eq(checklistItems.taskId, taskId)))
-
-  revalidatePath(`/project/${task.projectId}`)
+  const item = await _updateChecklistItem(itemId, taskId, parsed)
+  revalidatePath(`/project/${projectId}`)
+  return item
 }
 
-export async function deleteChecklistItem(itemId: string, taskId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error('Unauthorized')
-
-  const task = await verifyTaskOwnership(taskId, session.user.id)
-
-  await db
-    .delete(checklistItems)
-    .where(and(eq(checklistItems.id, itemId), eq(checklistItems.taskId, taskId)))
-
-  revalidatePath(`/project/${task.projectId}`)
+export async function deleteChecklistItem(itemId: string, taskId: string, projectId: string) {
+  await requireTaskInProject(taskId, projectId)
+  await _deleteChecklistItem(itemId, taskId)
+  revalidatePath(`/project/${projectId}`)
 }

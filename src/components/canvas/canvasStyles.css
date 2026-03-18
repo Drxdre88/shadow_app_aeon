@@ -1,0 +1,64 @@
+.canvas-flow .react-flow__pane {
+  cursor: grab;
+}
+
+.canvas-flow .react-flow__pane:active {
+  cursor: grabbing;
+}
+
+.canvas-flow .react-flow__edge-path {
+  stroke: rgba(148, 163, 184, 0.4);
+  stroke-width: 2;
+}
+
+.canvas-flow .react-flow__edge.selected .react-flow__edge-path {
+  stroke: rgba(168, 85, 247, 0.7);
+  stroke-width: 2.5;
+}
+
+.canvas-flow .react-flow__connection-line {
+  stroke: rgba(168, 85, 247, 0.5);
+  stroke-width: 2;
+  stroke-dasharray: 5 5;
+}
+
+.canvas-controls .react-flow__controls {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.canvas-controls .react-flow__controls-button {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(148, 163, 184, 0.8);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.canvas-controls .react-flow__controls-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+}
+
+.canvas-controls .react-flow__controls-button:last-child {
+  border-bottom: none;
+}
+
+.canvas-controls .react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.canvas-minimap .react-flow__minimap {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}

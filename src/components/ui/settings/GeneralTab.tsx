@@ -11,16 +11,19 @@ function BoardLayoutSetting() {
   const { columnWidth, setColumnWidth, columnHeight, setColumnHeight, dynamicColumnWidth, setDynamicColumnWidth, dynamicColumnHeight, setDynamicColumnHeight, colors } = useThemeStore()
 
   return (
-    <div className="space-y-3 max-w-md">
-      <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider">Board Layout</h4>
-      <div className="space-y-0.5">
-        <ToggleRow label="Auto-expand width" value={dynamicColumnWidth} onChange={setDynamicColumnWidth} color={colors.glowColor} />
-        <ToggleRow label="Auto-expand height" value={dynamicColumnHeight} onChange={setDynamicColumnHeight} color={colors.glowColor} />
+    <div className="space-y-4 max-w-md">
+      <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider">Column Size</h4>
+      <div className="space-y-3">
+        <div className="space-y-1">
+          <CompactSlider label="Width" value={columnWidth} onChange={setColumnWidth} min={250} max={600} color={colors.glowColor} unit="px" />
+          <ToggleRow label="Expand width with content" value={dynamicColumnWidth} onChange={setDynamicColumnWidth} color={colors.glowColor} />
+        </div>
+        <div className="space-y-1">
+          <CompactSlider label="Height" value={columnHeight} onChange={setColumnHeight} min={200} max={1600} color={colors.glowColor} unit="px" />
+          <ToggleRow label="Expand height with content" value={dynamicColumnHeight} onChange={setDynamicColumnHeight} color={colors.glowColor} />
+        </div>
       </div>
-      <div className="space-y-2">
-        <CompactSlider label="Column Width" value={columnWidth} onChange={setColumnWidth} min={250} max={500} color={colors.glowColor} />
-        <CompactSlider label="Column Height" value={columnHeight} onChange={setColumnHeight} min={200} max={800} color={colors.glowColor} />
-      </div>
+      <p className="text-[10px] text-slate-600">Sliders set the base size. Expand toggles let columns grow past that when they have more tasks.</p>
     </div>
   )
 }

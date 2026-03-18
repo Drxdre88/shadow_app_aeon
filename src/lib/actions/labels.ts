@@ -2,24 +2,15 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireOwnership } from './helpers'
+import { createLabelSchema, updateLabelSchema } from '@/lib/data/validators'
 import {
-  findLabels as _findLabels,
-  findTaskLabels as _findTaskLabels,
   createLabel as _createLabel,
+  updateLabel as _updateLabel,
   deleteLabel as _deleteLabel,
   addLabelToTask as _addLabelToTask,
   removeLabelFromTask as _removeLabelFromTask,
 } from '@/lib/data/labels'
-
-export async function getLabels(projectId: string) {
-  await requireOwnership(projectId)
-  return _findLabels(projectId)
-}
-
-export async function getTaskLabels(projectId: string) {
-  await requireOwnership(projectId)
-  return _findTaskLabels(projectId)
-}
+import { emitActivity } from '@/lib/data/activity'
 
 export async function createLabel(data: {
   id: string
@@ -29,13 +20,23 @@ export async function createLabel(data: {
 }) {
   await requireOwnership(data.projectId)
 
-  const label = await _createLabel(
-    data.projectId,
-    { name: data.name, color: data.color },
-    data.id
-  )
+  const parsed = createLabelSchema.parse({ name: data.name, color: data.color })
+
+  const label = await _createLabel(data.projectId, parsed, data.id)
 
   revalidatePath(`/project/${data.projectId}`)
+  return label
+}
+
+export async function updateLabel(
+  labelId: string,
+  projectId: string,
+  updates: { name?: string; color?: string }
+) {
+  await requireOwnership(projectId)
+  const parsed = updateLabelSchema.parse(updates)
+  const label = await _updateLabel(labelId, projectId, parsed)
+  revalidatePath(`/project/${projectId}`)
   return label
 }
 
@@ -47,12 +48,14 @@ export async function deleteLabel(labelId: string, projectId: string) {
 
 export async function addLabelToTask(taskId: string, labelId: string, projectId: string) {
   await requireOwnership(projectId)
-  await _addLabelToTask(taskId, labelId)
+  await _addLabelToTask(taskId, labelId, projectId)
+  emitActivity(projectId, 'label', taskId, 'label_added', undefined, { labelId, taskId }).catch(() => {})
   revalidatePath(`/project/${projectId}`)
 }
 
 export async function removeLabelFromTask(taskId: string, labelId: string, projectId: string) {
   await requireOwnership(projectId)
-  await _removeLabelFromTask(taskId, labelId)
+  await _removeLabelFromTask(taskId, labelId, projectId)
+  emitActivity(projectId, 'label', taskId, 'label_removed', undefined, { labelId, taskId }).catch(() => {})
   revalidatePath(`/project/${projectId}`)
 }

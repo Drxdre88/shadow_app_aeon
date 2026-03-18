@@ -23,10 +23,10 @@ interface LayoutConfig {
 }
 
 const DEFAULT_CONFIG: LayoutConfig = {
-  nodeWidth: 200,
-  nodeHeight: 80,
-  hSpacing: 60,
-  vSpacing: 120,
+  nodeWidth: 240,
+  nodeHeight: 100,
+  hSpacing: 140,
+  vSpacing: 60,
 }
 
 export function calculateTreeLayout(
@@ -89,20 +89,20 @@ export function calculateTreeLayout(
   }
 
   const maxNodesInLevel = Math.max(...levels.map((l) => l.length), 1)
-  const totalWidth = maxNodesInLevel * (cfg.nodeWidth + cfg.hSpacing) - cfg.hSpacing
-  const totalHeight = levels.length * (cfg.nodeHeight + cfg.vSpacing) - cfg.vSpacing
+  const totalWidth = levels.length * (cfg.nodeWidth + cfg.hSpacing) - cfg.hSpacing
+  const totalHeight = maxNodesInLevel * (cfg.nodeHeight + cfg.vSpacing) - cfg.vSpacing
 
   const positionedNodes: TreeNode[] = []
   for (let levelIdx = 0; levelIdx < levels.length; levelIdx++) {
     const level = levels[levelIdx]
-    const levelWidth = level.length * (cfg.nodeWidth + cfg.hSpacing) - cfg.hSpacing
-    const startX = (totalWidth - levelWidth) / 2
+    const levelHeight = level.length * (cfg.nodeHeight + cfg.vSpacing) - cfg.vSpacing
+    const startY = (totalHeight - levelHeight) / 2
 
     for (let i = 0; i < level.length; i++) {
       positionedNodes.push({
         id: level[i],
-        x: startX + i * (cfg.nodeWidth + cfg.hSpacing),
-        y: levelIdx * (cfg.nodeHeight + cfg.vSpacing),
+        x: levelIdx * (cfg.nodeWidth + cfg.hSpacing),
+        y: startY + i * (cfg.nodeHeight + cfg.vSpacing),
         level: levelIdx,
         indexInLevel: i,
       })
@@ -118,10 +118,10 @@ export function calculateTreeLayout(
       return {
         sourceId: e.sourceId,
         targetId: e.targetId,
-        sourceX: source.x + cfg.nodeWidth / 2,
-        sourceY: source.y + cfg.nodeHeight,
-        targetX: target.x + cfg.nodeWidth / 2,
-        targetY: target.y,
+        sourceX: source.x + cfg.nodeWidth,
+        sourceY: source.y + cfg.nodeHeight / 2,
+        targetX: target.x,
+        targetY: target.y + cfg.nodeHeight / 2,
       }
     })
 

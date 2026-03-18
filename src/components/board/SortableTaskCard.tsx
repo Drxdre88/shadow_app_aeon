@@ -4,27 +4,31 @@ import { useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { motion } from 'framer-motion'
-import { Calendar, Tag, MoreHorizontal, Clock } from 'lucide-react'
-import { format } from 'date-fns'
+import { Calendar, Tag, MoreHorizontal, Check, X, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { colorConfig, AccentColor } from '@/lib/utils/colors'
+import { colorConfig, AccentColor, hexToRgba } from '@/lib/utils/colors'
 import { GlowCard } from '@/components/ui/GlowCard'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { DependencyIndicator } from './DependencyIndicator'
 import { TaskContextMenu } from './TaskContextMenu'
+import { TaskSizeBadge } from './TaskSizeBadge'
+import { StaleIndicator } from './StaleIndicator'
 
 interface SortableTaskCardProps {
   task: {
     id: string
     name: string
     description?: string
+    status: string
     color: string
     priority: 'low' | 'medium' | 'high' | 'urgent'
     labels: string[]
     startDate?: string
     endDate?: string
     onTimeline: boolean
+    size?: number | null
+    updatedAt?: string
   }
   onEdit?: () => void
   onDependencyClick?: (taskId: string) => void
@@ -32,6 +36,9 @@ interface SortableTaskCardProps {
   showDropIndicator?: boolean
   onTaskUpdate?: (taskId: string, updates: Record<string, unknown>) => void
   onTaskDelete?: (taskId: string) => void
+  onPushToGantt?: (taskId: string) => void
+  onSendToVault?: (taskId: string) => void
+  onArchiveTask?: (taskId: string) => void
 }
 
 const priorityColors = {
@@ -48,19 +55,56 @@ const priorityGlows = {
   urgent: 'lg' as const,
 }
 
-export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowColor, showDropIndicator = false, onTaskUpdate, onTaskDelete }: SortableTaskCardProps) {
-  const { selectedTaskId, labels } = useBoardStore()
+type TriState = 'unchecked' | 'checked' | 'crossed'
+
+export const crossedTaskIds = new Set<string>()
+
+function nextTriState(s: TriState): TriState {
+  if (s === 'unchecked') return 'checked'
+  if (s === 'checked') return 'crossed'
+  return 'unchecked'
+}
+
+function statusToTri(taskId: string, status: string): TriState {
+  if (status === 'done') return 'checked'
+  if (crossedTaskIds.has(taskId)) return 'crossed'
+  return 'unchecked'
+}
+
+function triToStatus(tri: TriState, fallback: string): string {
+  if (tri === 'checked') return 'done'
+  if (tri === 'crossed') return 'todo'
+  return fallback === 'done' ? 'todo' : fallback
+}
+
+export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowColor, showDropIndicator = false, onTaskUpdate, onTaskDelete, onPushToGantt, onSendToVault, onArchiveTask }: SortableTaskCardProps) {
+  const { selectedTaskId, labels, updateTask, checklistSummaries, showDates } = useBoardStore()
   const { glowIntensity: globalGlow, priorities } = useThemeStore()
+  const clSummary = checklistSummaries[task.id]
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const isSelected = selectedTaskId === task.id
   const mult = globalGlow / 75
+  const triState = statusToTri(task.id, task.status)
 
-  const getPriorityStyle = (priority: string) => {
-    const defaultMatch = priorityColors[priority as keyof typeof priorityColors]
-    if (defaultMatch) return { className: defaultMatch }
+  const handleTriToggle = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const next = nextTriState(triState)
+    if (next === 'crossed') {
+      crossedTaskIds.add(task.id)
+    } else {
+      crossedTaskIds.delete(task.id)
+    }
+    const newStatus = triToStatus(next, task.status)
+    updateTask(task.id, { status: newStatus })
+    onTaskUpdate?.(task.id, { status: newStatus })
+  }
+
+  const getPriorityInfo = (priority: string) => {
     const custom = priorities.find((p) => p.id === priority)
-    if (custom) return { style: { backgroundColor: `${custom.color}33`, color: custom.color } }
-    return { className: priorityColors.medium }
+    if (custom) return { label: custom.name, style: { backgroundColor: `${custom.color}33`, color: custom.color } }
+    const defaultMatch = priorityColors[priority as keyof typeof priorityColors]
+    if (defaultMatch) return { label: priority, className: defaultMatch }
+    return { label: priority, className: priorityColors.medium }
   }
 
   const {
@@ -125,9 +169,37 @@ export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowCo
           className="p-3 group"
         >
           <div className="flex items-start justify-between mb-1">
-            <h4 className="text-sm font-medium text-white line-clamp-2 flex-1 mr-2">
-              {task.name}
-            </h4>
+            <div className="flex items-start gap-2 flex-1 mr-2 min-w-0">
+              <button
+                onClick={handleTriToggle}
+                className={cn(
+                  'flex-shrink-0 w-[18px] h-[18px] rounded border-2 mt-0.5 transition-all duration-300',
+                  'flex items-center justify-center',
+                  triState === 'checked' && 'bg-emerald-500 border-emerald-400',
+                  triState === 'crossed' && 'bg-red-500 border-red-400',
+                  triState === 'unchecked' && 'border-white/25 hover:border-white/50'
+                )}
+                style={{
+                  boxShadow:
+                    triState === 'checked'
+                      ? '0 0 8px rgba(16,185,129,0.5)'
+                      : triState === 'crossed'
+                        ? '0 0 8px rgba(239,68,68,0.5)'
+                        : undefined,
+                }}
+              >
+                {triState === 'checked' && <Check className="w-2.5 h-2.5 text-white" />}
+                {triState === 'crossed' && <X className="w-2.5 h-2.5 text-white" />}
+              </button>
+              <h4 className={cn(
+                'text-sm font-medium line-clamp-2',
+                triState === 'checked' && 'line-through text-slate-500',
+                triState === 'crossed' && 'line-through text-red-400/50',
+                triState === 'unchecked' && 'text-white',
+              )}>
+                {task.name}
+              </h4>
+            </div>
             <button
               onClick={(e) => { e.stopPropagation(); onEdit?.() }}
               className="p-1 rounded-md hover:bg-white/10 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
@@ -140,16 +212,24 @@ export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowCo
             <div className="flex flex-wrap gap-1 mb-2">
               {taskLabels.map((label) => {
                 const labelColors = colorConfig[label.color as AccentColor]
+                const isCustom = !labelColors
+                const hex = label.color.startsWith('#') ? label.color : `#${label.color}`
                 return (
                   <span
                     key={label.id}
                     className={cn(
                       'px-2 py-0.5 rounded-md text-[10px] font-medium flex items-center gap-1',
                       'backdrop-blur-md border',
-                      labelColors?.bg ?? 'bg-white/5',
-                      labelColors?.border ?? 'border-white/10',
-                      labelColors?.text ?? 'text-slate-400'
+                      !isCustom && labelColors?.bg,
+                      !isCustom && labelColors?.border,
+                      !isCustom && labelColors?.text,
+                      isCustom && 'text-white'
                     )}
+                    style={isCustom ? {
+                      backgroundColor: hexToRgba(hex, 0.15),
+                      borderColor: hexToRgba(hex, 0.3),
+                      color: hex,
+                    } : undefined}
                   >
                     <Tag className="w-2.5 h-2.5" />
                     {label.name}
@@ -162,13 +242,13 @@ export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowCo
           <div className="flex items-center justify-between mt-auto pt-2 border-t border-white/5">
             <div className="flex items-center gap-1.5">
               {(() => {
-                const ps = getPriorityStyle(task.priority)
+                const pi = getPriorityInfo(task.priority)
                 return (
                   <span
-                    className={cn('px-2 py-0.5 rounded-md text-xs font-medium', ps.className)}
-                    style={ps.style}
+                    className={cn('px-2 py-0.5 rounded-md text-xs font-medium', pi.className)}
+                    style={pi.style}
                   >
-                    {task.priority}
+                    {pi.label}
                   </span>
                 )
               })()}
@@ -178,22 +258,39 @@ export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowCo
               />
             </div>
 
-            {(task.startDate || task.endDate) && (
-              <div className="flex items-center gap-1 text-xs text-slate-500">
-                <Clock className="w-3 h-3" />
-                {task.startDate && format(new Date(task.startDate), 'MMM d')}
-                {task.startDate && task.endDate && ' - '}
-                {task.endDate && format(new Date(task.endDate), 'MMM d')}
-              </div>
-            )}
-
-            {task.onTimeline && (
-              <div className="flex items-center gap-1 text-xs text-cyan-400">
-                <Calendar className="w-3 h-3" />
-                On timeline
-              </div>
-            )}
+            <div className="flex items-center gap-2 ml-auto">
+              <StaleIndicator updatedAt={task.updatedAt} status={task.status} />
+              <TaskSizeBadge size={task.size} />
+              {clSummary && clSummary.total > 0 && (
+                <span className="text-[10px] font-mono tabular-nums">
+                  <span className="text-emerald-400">{clSummary.checked}</span>
+                  <span className="text-slate-600">/</span>
+                  <span className="text-red-400">{clSummary.crossed}</span>
+                  <span className="text-slate-600">/</span>
+                  <span className="text-slate-500">{clSummary.total}</span>
+                </span>
+              )}
+              {task.onTimeline && (
+                <Calendar className="w-3 h-3 text-cyan-400" style={{ filter: 'drop-shadow(0 0 3px rgba(34,211,238,0.5))' }} />
+              )}
+            </div>
           </div>
+
+          {showDates && task.startDate && task.endDate && (() => {
+            const s = new Date(task.startDate)
+            const e = new Date(task.endDate)
+            const days = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)))
+            const fmt = (d: Date) => `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`
+            const sameDay = s.toDateString() === e.toDateString()
+            return (
+              <div className="flex items-center justify-end pt-1.5 mt-1.5 border-t border-white/5">
+                <span className="flex items-center gap-1 text-[10px] text-slate-500 font-mono tabular-nums">
+                  <Clock className="w-2.5 h-2.5" />
+                  {sameDay ? `${fmt(s)} 1d` : `${fmt(s)}-${fmt(e)} ${days}d`}
+                </span>
+              </div>
+            )
+          })()}
         </GlowCard>
       </motion.div>
 
@@ -204,6 +301,9 @@ export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowCo
           onClose={() => setContextMenu(null)}
           onTaskUpdate={onTaskUpdate}
           onTaskDelete={onTaskDelete}
+          onPushToGantt={onPushToGantt}
+          onSendToVault={onSendToVault}
+          onArchiveTask={onArchiveTask}
         />
       )}
     </div>

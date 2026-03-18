@@ -5,7 +5,9 @@ import { themes, type ThemeName, type ThemeColors } from '@/config/themes'
 export type FontFamily = 'system' | 'inter' | 'jetbrains' | 'space-grotesk' | 'fira-code'
 export type DragEffect = 'glow' | 'ghost' | 'lightning'
 export type DepLineStyle = 'solid' | 'dashed' | 'dotted'
+export type DepViewMode = 'canvas' | 'arrows'
 export type CursorEffect = 'none' | 'glow' | 'particles' | 'combo' | 'trail' | 'neon' | 'fire' | 'ice' | 'portal' | 'venom' | 'plasma' | 'blood-moon' | 'smoke' | 'inferno-smoke' | 'venom-smoke' | 'plasma-smoke' | 'blood-moon-smoke' | 'custom-smoke'
+export type BoardLayout = 'scroll' | 'grid'
 
 export interface CustomPriority {
   id: string
@@ -14,10 +16,10 @@ export interface CustomPriority {
 }
 
 export const INITIAL_PRIORITIES = [
-  { id: 'low', name: 'low', color: '#64748b' },
-  { id: 'medium', name: 'medium', color: '#3b82f6' },
-  { id: 'high', name: 'high', color: '#f97316' },
-  { id: 'urgent', name: 'urgent', color: '#ef4444' },
+  { id: 'low', name: '🟢 low', color: '#64748b' },
+  { id: 'medium', name: '🔵 medium', color: '#3b82f6' },
+  { id: 'high', name: '🟠 high', color: '#f97316' },
+  { id: 'urgent', name: '🔴 urgent', color: '#ef4444' },
 ]
 
 export const FONT_OPTIONS: { id: FontFamily; label: string; css: string }[] = [
@@ -31,6 +33,8 @@ export const FONT_OPTIONS: { id: FontFamily; label: string; css: string }[] = [
 export const DEFAULT_SHORTCUTS: Record<string, string> = {
   openLabel: 'l',
   addTask: 't',
+  changeGlow: 'g',
+  toggleDates: 'd',
 }
 
 interface ThemeStore {
@@ -51,8 +55,14 @@ interface ThemeStore {
   depLineWidth: number
   depLineGlow: number
   depLineStyle: DepLineStyle
+  depCanvasBlur: number
+  boardLayout: BoardLayout
+  projectColors: Record<string, string>
+  depViewMode: DepViewMode
   shortcuts: Record<string, string>
   priorities: CustomPriority[]
+  setBoardLayout: (layout: BoardLayout) => void
+  setProjectColor: (projectId: string, color: string) => void
   setTheme: (theme: ThemeName) => void
   setGlowIntensity: (intensity: number) => void
   setGlassOpacity: (opacity: number) => void
@@ -74,6 +84,8 @@ interface ThemeStore {
   setDepLineWidth: (width: number) => void
   setDepLineGlow: (glow: number) => void
   setDepLineStyle: (style: DepLineStyle) => void
+  setDepCanvasBlur: (blur: number) => void
+  setDepViewMode: (mode: DepViewMode) => void
   setShortcut: (action: string, key: string) => void
 }
 
@@ -89,14 +101,18 @@ export const useThemeStore = create<ThemeStore>()(
       dragEffect: 'glow' as DragEffect,
       cursorEffect: 'none' as CursorEffect,
       cursorColor: '',
-      columnWidth: 320,
-      columnHeight: 500,
+      columnWidth: 380,
+      columnHeight: 800,
       dynamicColumnWidth: true,
       dynamicColumnHeight: true,
       smokeVolume: 75,
       depLineWidth: 1,
       depLineGlow: 60,
       depLineStyle: 'solid' as DepLineStyle,
+      depCanvasBlur: 16,
+      boardLayout: 'scroll' as BoardLayout,
+      projectColors: {} as Record<string, string>,
+      depViewMode: 'canvas' as DepViewMode,
       shortcuts: { ...DEFAULT_SHORTCUTS },
       priorities: [...INITIAL_PRIORITIES],
       setTheme: (theme: ThemeName) => {
@@ -140,10 +156,10 @@ export const useThemeStore = create<ThemeStore>()(
         set({ priorities: [...INITIAL_PRIORITIES] })
       },
       setColumnWidth: (width: number) => {
-        set({ columnWidth: Math.max(250, Math.min(500, width)) })
+        set({ columnWidth: Math.max(250, Math.min(600, width)) })
       },
       setColumnHeight: (height: number) => {
-        set({ columnHeight: Math.max(200, Math.min(800, height)) })
+        set({ columnHeight: Math.max(200, Math.min(1600, height)) })
       },
       setDynamicColumnWidth: (enabled: boolean) => {
         set({ dynamicColumnWidth: enabled })
@@ -162,6 +178,18 @@ export const useThemeStore = create<ThemeStore>()(
       },
       setDepLineStyle: (style: DepLineStyle) => {
         set({ depLineStyle: style })
+      },
+      setDepCanvasBlur: (blur: number) => {
+        set({ depCanvasBlur: Math.max(0, Math.min(40, Math.round(blur))) })
+      },
+      setBoardLayout: (layout: BoardLayout) => {
+        set({ boardLayout: layout })
+      },
+      setProjectColor: (projectId: string, color: string) => {
+        set((s) => ({ projectColors: { ...s.projectColors, [projectId]: color } }))
+      },
+      setDepViewMode: (mode: DepViewMode) => {
+        set({ depViewMode: mode })
       },
       setShortcut: (action: string, key: string) => {
         set((s) => ({ shortcuts: { ...s.shortcuts, [action]: key } }))
@@ -188,6 +216,10 @@ export const useThemeStore = create<ThemeStore>()(
         depLineWidth: state.depLineWidth,
         depLineGlow: state.depLineGlow,
         depLineStyle: state.depLineStyle,
+        depCanvasBlur: state.depCanvasBlur,
+        boardLayout: state.boardLayout,
+        projectColors: state.projectColors,
+        depViewMode: state.depViewMode,
         shortcuts: state.shortcuts,
       }),
       merge: (persisted: unknown, current: ThemeStore) => ({
@@ -201,6 +233,8 @@ export const useThemeStore = create<ThemeStore>()(
         depLineWidth: (persisted as Partial<ThemeStore>)?.depLineWidth ?? current.depLineWidth,
         depLineGlow: (persisted as Partial<ThemeStore>)?.depLineGlow ?? current.depLineGlow,
         depLineStyle: (persisted as Partial<ThemeStore>)?.depLineStyle ?? current.depLineStyle,
+        depCanvasBlur: (persisted as Partial<ThemeStore>)?.depCanvasBlur ?? current.depCanvasBlur,
+        depViewMode: (persisted as Partial<ThemeStore>)?.depViewMode ?? current.depViewMode,
       }),
     }
   )

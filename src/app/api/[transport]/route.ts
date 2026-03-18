@@ -1,4 +1,6 @@
 import { createMcpHandler } from 'mcp-handler'
+import { NextRequest } from 'next/server'
+import { authenticateRequest, isApiUser } from '@/lib/api/auth'
 import { z } from 'zod'
 import {
   findProjects,
@@ -9,9 +11,9 @@ import {
   getProjectSummary,
   verifyProjectOwnership,
 } from '@/lib/data/projects'
-import { findTasks, createTask, updateTask, deleteTask } from '@/lib/data/tasks'
-import { findDependencies, addDependency, removeDependency, wouldCreateCycle } from '@/lib/data/dependencies'
-import { findLabels, findTaskLabels, createLabel, deleteLabel, addLabelToTask, removeLabelFromTask } from '@/lib/data/labels'
+import { findTasks, createTask, createTasksBatch, updateTask, deleteTask } from '@/lib/data/tasks'
+import { findDependencies, addDependency, addDependenciesBatch, removeDependency, wouldCreateCycle } from '@/lib/data/dependencies'
+import { findLabels, findTaskLabels, createLabel, deleteLabel, addLabelToTask, removeLabelFromTask, setTaskLabels } from '@/lib/data/labels'
 import {
   findColumns,
   createColumn,
@@ -26,6 +28,14 @@ import {
   deleteGanttTask,
   verifyRowOwnership,
 } from '@/lib/data/gantt'
+import {
+  findChecklistItems,
+  createChecklistItem,
+  createChecklistItemsBatch,
+  updateChecklistItem,
+  deleteChecklistItem,
+  findTaskWithDetails,
+} from '@/lib/data/checklist'
 import {
   createProjectSchema,
   updateProjectSchema,
@@ -50,7 +60,7 @@ const notFound = (entity: string) => ({
 })
 
 const ok = (data: unknown) => ({
-  content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
+  content: [{ type: 'text' as const, text: JSON.stringify(data) }],
 })
 
 async function requireOwnership(projectId: string) {
@@ -98,7 +108,7 @@ const mcpHandler = createMcpHandler(
       },
       async ({ projectId, ...data }) => {
         if (!await requireOwnership(projectId)) return notFound('Project')
-        const project = await updateProject(projectId, data)
+        const project = await updateProject(projectId, userId(), data)
         return project ? ok(project) : notFound('Project')
       }
     )
@@ -109,7 +119,7 @@ const mcpHandler = createMcpHandler(
       { projectId: z.string().uuid().describe('The project UUID') },
       async ({ projectId }) => {
         if (!await requireOwnership(projectId)) return notFound('Project')
-        const deleted = await deleteProject(projectId)
+        const deleted = await deleteProject(projectId, userId())
         return deleted
           ? ok({ deleted: true })
           : notFound('Project')
@@ -192,10 +202,12 @@ const mcpHandler = createMcpHandler(
         projectId: z.string().uuid().describe('The project UUID'),
         status: z.enum(['todo', 'in-progress', 'done']).optional().describe('Filter by status'),
         priority: z.enum(['low', 'medium', 'high', 'urgent']).optional().describe('Filter by priority'),
+        limit: z.number().int().min(1).max(500).default(100).describe('Max results (default 100, max 500)'),
+        offset: z.number().int().min(0).default(0).describe('Skip N results (default 0)'),
       },
-      async ({ projectId, status, priority }) => {
+      async ({ projectId, status, priority, limit, offset }) => {
         if (!await requireOwnership(projectId)) return notFound('Project')
-        return ok(await findTasks(projectId, { status, priority }))
+        return ok(await findTasks(projectId, { status, priority }, limit, offset))
       }
     )
 
@@ -205,14 +217,16 @@ const mcpHandler = createMcpHandler(
       {
         projectId: z.string().uuid().describe('The project UUID'),
         columnId: z.string().uuid().optional().describe('The column UUID to place task in'),
-        ...createTaskSchema.pick({ name: true, description: true, status: true, priority: true, color: true }).shape,
+        ...createTaskSchema.pick({
+          name: true, description: true, status: true, priority: true, color: true,
+          size: true, startDate: true, endDate: true, onTimeline: true,
+        }).shape,
       },
       async ({ projectId, columnId, ...data }) => {
         if (!await requireOwnership(projectId)) return notFound('Project')
         return ok(await createTask(projectId, {
           ...data,
           columnId,
-          onTimeline: false,
           status: data.status ?? 'todo',
           priority: data.priority ?? 'medium',
           color: data.color ?? 'purple',
@@ -227,7 +241,10 @@ const mcpHandler = createMcpHandler(
         projectId: z.string().uuid().describe('The project UUID'),
         taskId: z.string().uuid().describe('The task UUID'),
         columnId: z.string().uuid().optional().describe('Move task to this column'),
-        ...updateTaskSchema.pick({ name: true, description: true, status: true, priority: true, color: true }).shape,
+        ...updateTaskSchema.pick({
+          name: true, description: true, status: true, priority: true, color: true,
+          size: true, startDate: true, endDate: true, onTimeline: true,
+        }).shape,
       },
       async ({ projectId, taskId, columnId, ...data }) => {
         if (!await requireOwnership(projectId)) return notFound('Project')
@@ -329,10 +346,10 @@ const mcpHandler = createMcpHandler(
         if (blockerTaskId === blockedTaskId) {
           return { content: [{ type: 'text' as const, text: 'A task cannot depend on itself' }], isError: true as const }
         }
-        if (await wouldCreateCycle(blockerTaskId, blockedTaskId)) {
+        if (await wouldCreateCycle(blockerTaskId, blockedTaskId, projectId)) {
           return { content: [{ type: 'text' as const, text: 'Would create a circular dependency' }], isError: true as const }
         }
-        await addDependency(blockerTaskId, blockedTaskId)
+        await addDependency(blockerTaskId, blockedTaskId, projectId)
         return ok({ added: true, blockerTaskId, blockedTaskId })
       }
     )
@@ -347,7 +364,7 @@ const mcpHandler = createMcpHandler(
       },
       async ({ projectId, blockerTaskId, blockedTaskId }) => {
         if (!await requireOwnership(projectId)) return notFound('Project')
-        await removeDependency(blockerTaskId, blockedTaskId)
+        await removeDependency(blockerTaskId, blockedTaskId, projectId)
         return ok({ removed: true })
       }
     )
@@ -355,11 +372,15 @@ const mcpHandler = createMcpHandler(
     server.tool(
       'list_labels',
       'List all labels for a project, and which tasks they are assigned to',
-      { projectId: z.string().uuid().describe('The project UUID') },
-      async ({ projectId }) => {
+      {
+        projectId: z.string().uuid().describe('The project UUID'),
+        limit: z.number().int().min(1).max(500).default(100).describe('Max results (default 100, max 500)'),
+        offset: z.number().int().min(0).default(0).describe('Skip N results (default 0)'),
+      },
+      async ({ projectId, limit, offset }) => {
         if (!await requireOwnership(projectId)) return notFound('Project')
         const [projectLabels, assignments] = await Promise.all([
-          findLabels(projectId),
+          findLabels(projectId, limit, offset),
           findTaskLabels(projectId),
         ])
         return ok({ labels: projectLabels, taskLabels: assignments })
@@ -403,7 +424,7 @@ const mcpHandler = createMcpHandler(
       },
       async ({ projectId, taskId, labelId }) => {
         if (!await requireOwnership(projectId)) return notFound('Project')
-        await addLabelToTask(taskId, labelId)
+        await addLabelToTask(taskId, labelId, projectId)
         return ok({ added: true, taskId, labelId })
       }
     )
@@ -418,8 +439,239 @@ const mcpHandler = createMcpHandler(
       },
       async ({ projectId, taskId, labelId }) => {
         if (!await requireOwnership(projectId)) return notFound('Project')
-        await removeLabelFromTask(taskId, labelId)
+        await removeLabelFromTask(taskId, labelId, projectId)
         return ok({ removed: true })
+      }
+    )
+    server.tool(
+      'get_task_detail',
+      'Get full card detail: task fields, checklist items, labels, and dependencies in one call',
+      {
+        projectId: z.string().uuid().describe('The project UUID'),
+        taskId: z.string().uuid().describe('The task UUID'),
+      },
+      async ({ projectId, taskId }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+        const detail = await findTaskWithDetails(taskId, projectId)
+        return detail ? ok(detail) : notFound('Task')
+      }
+    )
+
+    server.tool(
+      'create_checklist_item',
+      'Add a checklist item to a task',
+      {
+        projectId: z.string().uuid().describe('The project UUID'),
+        taskId: z.string().uuid().describe('The task UUID'),
+        title: z.string().min(1).max(255).describe('Checklist item title'),
+        groupName: z.string().max(100).default('Checklist').describe('Group name for organizing items'),
+      },
+      async ({ projectId, taskId, title, groupName }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+        return ok(await createChecklistItem(taskId, { title, groupName }))
+      }
+    )
+
+    server.tool(
+      'update_checklist_item',
+      'Update a checklist item (title, state, status)',
+      {
+        projectId: z.string().uuid().describe('The project UUID'),
+        taskId: z.string().uuid().describe('The task UUID'),
+        itemId: z.string().uuid().describe('The checklist item UUID'),
+        title: z.string().min(1).max(255).optional().describe('New title'),
+        state: z.enum(['unchecked', 'checked', 'crossed']).optional().describe('Check state'),
+        status: z.string().max(30).nullable().optional().describe('Status label'),
+      },
+      async ({ projectId, taskId, itemId, ...updates }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+        const item = await updateChecklistItem(itemId, taskId, updates)
+        return item ? ok(item) : notFound('Checklist item')
+      }
+    )
+
+    server.tool(
+      'delete_checklist_item',
+      'Remove a checklist item from a task',
+      {
+        projectId: z.string().uuid().describe('The project UUID'),
+        taskId: z.string().uuid().describe('The task UUID'),
+        itemId: z.string().uuid().describe('The checklist item UUID'),
+      },
+      async ({ projectId, taskId, itemId }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+        const deleted = await deleteChecklistItem(itemId, taskId)
+        return deleted ? ok({ deleted: true }) : notFound('Checklist item')
+      }
+    )
+
+    server.tool(
+      'batch_create_tasks',
+      'Create multiple board tasks in one call. Returns slim response with IDs and names only.',
+      {
+        projectId: z.string().uuid().describe('The project UUID'),
+        tasks: z.array(z.object({
+          name: z.string().min(1).max(255),
+          description: z.string().max(10000).optional(),
+          status: z.enum(['todo', 'in-progress', 'done']).optional(),
+          priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+          color: z.string().max(20).optional(),
+          size: z.number().min(0.5).max(20).nullable().optional(),
+          startDate: z.string().optional(),
+          endDate: z.string().optional(),
+          columnId: z.string().uuid().optional(),
+        })).min(1).max(100).describe('Array of tasks to create (max 100)'),
+      },
+      async ({ projectId, tasks }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+        const created = await createTasksBatch(projectId, tasks)
+        return ok({ created: created.length, tasks: created.map((t) => ({ id: t.id, name: t.name })) })
+      }
+    )
+
+    server.tool(
+      'batch_create_checklist_items',
+      'Create multiple checklist items on a task in one call',
+      {
+        projectId: z.string().uuid().describe('The project UUID'),
+        taskId: z.string().uuid().describe('The task UUID'),
+        items: z.array(z.object({
+          title: z.string().min(1).max(255),
+          groupName: z.string().max(100).optional(),
+        })).min(1).max(100).describe('Array of checklist items to create'),
+      },
+      async ({ projectId, taskId, items }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+        const created = await createChecklistItemsBatch(taskId, items)
+        return ok({ created: created.length, items: created.map((i) => ({ id: i.id, title: i.title })) })
+      }
+    )
+
+    server.tool(
+      'set_task_labels',
+      'Set all labels on a task (replaces existing). Pass empty array to clear.',
+      {
+        projectId: z.string().uuid().describe('The project UUID'),
+        taskId: z.string().uuid().describe('The task UUID'),
+        labelIds: z.array(z.string().uuid()).max(50).describe('Label IDs to assign (replaces all current labels)'),
+      },
+      async ({ projectId, taskId, labelIds }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+        await setTaskLabels(taskId, labelIds, projectId)
+        return ok({ set: true, taskId, labelCount: labelIds.length })
+      }
+    )
+
+    server.tool(
+      'batch_add_dependencies',
+      'Add multiple task dependencies in one call. Skips self-refs and cycles.',
+      {
+        projectId: z.string().uuid().describe('The project UUID'),
+        dependencies: z.array(z.object({
+          blockerTaskId: z.string().uuid().describe('Task that must complete first'),
+          blockedTaskId: z.string().uuid().describe('Task that is blocked'),
+        })).min(1).max(100).describe('Array of dependency pairs'),
+      },
+      async ({ projectId, dependencies }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+        const result = await addDependenciesBatch(dependencies, projectId)
+        return ok(result)
+      }
+    )
+
+    server.tool(
+      'setup_board',
+      'Set up an entire board in one call: columns, labels, tasks with optional checklist and label assignments',
+      {
+        projectId: z.string().uuid().describe('The project UUID'),
+        columns: z.array(z.object({
+          name: z.string().min(1).max(255),
+          color: z.string().max(20).default('purple'),
+          icon: z.string().max(50).optional(),
+        })).optional().describe('Columns to create'),
+        labels: z.array(z.object({
+          name: z.string().min(1).max(100),
+          color: z.string().max(20).default('purple'),
+        })).optional().describe('Labels to create'),
+        tasks: z.array(z.object({
+          name: z.string().min(1).max(255),
+          description: z.string().max(10000).optional(),
+          status: z.enum(['todo', 'in-progress', 'done']).optional(),
+          priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+          color: z.string().max(20).optional(),
+          columnName: z.string().optional().describe('Match to a column by name (from columns array)'),
+          labelNames: z.array(z.string()).optional().describe('Match to labels by name (from labels array)'),
+          checklist: z.array(z.object({
+            title: z.string().min(1).max(255),
+            groupName: z.string().max(100).optional(),
+          })).optional(),
+        })).optional().describe('Tasks to create with optional checklist and label links'),
+      },
+      async ({ projectId, columns, labels: labelDefs, tasks }) => {
+        if (!await requireOwnership(projectId)) return notFound('Project')
+
+        const columnMap = new Map<string, string>()
+        const existingColumns = await findColumns(projectId)
+        for (const col of existingColumns) {
+          columnMap.set(col.name.toLowerCase(), col.id)
+        }
+        if (columns && columns.length > 0) {
+          for (let i = 0; i < columns.length; i++) {
+            const col = await createColumn(projectId, { ...columns[i], orderIndex: existingColumns.length + i })
+            columnMap.set(columns[i].name.toLowerCase(), col.id)
+          }
+        }
+
+        const labelMap = new Map<string, string>()
+        const existingLabels = await findLabels(projectId)
+        for (const lbl of existingLabels) {
+          labelMap.set(lbl.name.toLowerCase(), lbl.id)
+        }
+        if (labelDefs && labelDefs.length > 0) {
+          for (const ld of labelDefs) {
+            const lbl = await createLabel(projectId, ld)
+            labelMap.set(ld.name.toLowerCase(), lbl.id)
+          }
+        }
+
+        let taskCount = 0
+        let checklistCount = 0
+        if (tasks && tasks.length > 0) {
+          const taskValues = tasks.map((t) => ({
+            name: t.name,
+            description: t.description,
+            status: t.status,
+            priority: t.priority,
+            color: t.color,
+            columnId: t.columnName ? columnMap.get(t.columnName.toLowerCase()) : undefined,
+          }))
+          const created = await createTasksBatch(projectId, taskValues)
+          taskCount = created.length
+
+          for (let i = 0; i < created.length; i++) {
+            const taskDef = tasks[i]
+            const taskId = created[i].id
+
+            if (taskDef.labelNames && taskDef.labelNames.length > 0) {
+              const ids = taskDef.labelNames
+                .map((n) => labelMap.get(n.toLowerCase()))
+                .filter((id): id is string => !!id)
+              if (ids.length > 0) await setTaskLabels(taskId, ids, projectId)
+            }
+
+            if (taskDef.checklist && taskDef.checklist.length > 0) {
+              const items = await createChecklistItemsBatch(taskId, taskDef.checklist)
+              checklistCount += items.length
+            }
+          }
+        }
+
+        return ok({
+          columns: columnMap.size,
+          labels: labelMap.size,
+          tasks: taskCount,
+          checklistItems: checklistCount,
+        })
       }
     )
   },
@@ -430,4 +682,10 @@ const mcpHandler = createMcpHandler(
   }
 )
 
-export { mcpHandler as GET, mcpHandler as POST, mcpHandler as DELETE }
+async function withAuth(req: NextRequest) {
+  const result = await authenticateRequest(req)
+  if (!isApiUser(result)) return result
+  return mcpHandler(req)
+}
+
+export { withAuth as GET, withAuth as POST, withAuth as DELETE }

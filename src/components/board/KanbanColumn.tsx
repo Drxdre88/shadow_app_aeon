@@ -4,14 +4,16 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { AnimatePresence } from 'framer-motion'
-import { ListTodo, Activity, Eye, CheckCircle2, Plus, Columns3, Pencil, Check, X, Palette } from 'lucide-react'
+import { Plus, Check, X, Palette } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { SortableTaskCard } from './SortableTaskCard'
 import { QuickAddTask } from './QuickAddTask'
 import { ColumnContextMenu } from './ColumnContextMenu'
-import { AccentColor, ACCENT_COLORS, PALETTE_COLORS, colorConfig, hexToRgba } from '@/lib/utils/colors'
+import { hexToRgba } from '@/lib/utils/colors'
 import { useThemeStore } from '@/stores/themeStore'
 import type { BoardColumn } from '@/lib/store/boardStore'
+import { COLUMN_ICONS, COLUMN_ICON_MAP } from '@/lib/utils/columnIcons'
+import { ColorSwatchPicker } from './ColorSwatchPicker'
 
 interface KanbanColumnProps {
   column: BoardColumn
@@ -20,12 +22,15 @@ interface KanbanColumnProps {
     id: string
     name: string
     description?: string
+    status: string
     color: string
     priority: 'low' | 'medium' | 'high' | 'urgent'
     labels: string[]
     startDate?: string
     endDate?: string
     onTimeline: boolean
+    size?: number | null
+    updatedAt?: string
   }>
   onTaskEdit?: (taskId: string) => void
   onAddTask?: () => void
@@ -43,21 +48,21 @@ interface KanbanColumnProps {
   }) => void
   onColumnRename?: (columnId: string, name: string) => void
   onColumnColorChange?: (columnId: string, color: string) => void
+  onColumnIconChange?: (columnId: string, icon: string | null) => void
   onColumnDelete?: (columnId: string) => void
   onTaskUpdate?: (taskId: string, updates: Record<string, unknown>) => void
   onTaskDelete?: (taskId: string) => void
+  onPushToGantt?: (taskId: string) => void
+  onSendToVault?: (taskId: string) => void
+  onVaultCompleted?: (columnId: string) => void
+  onArchiveTask?: (taskId: string) => void
+  onArchiveColumn?: (columnId: string) => void
   overId?: string | null
   activeTaskId?: string | null
   onDependencyClick?: (taskId: string) => void
   dragHandleProps?: Record<string, unknown>
 }
 
-const ICON_MAP: Record<string, typeof ListTodo> = {
-  'list-todo': ListTodo,
-  'activity': Activity,
-  'eye': Eye,
-  'check-circle': CheckCircle2,
-}
 
 function getColumnColor(color: string) {
   const colorMap: Record<string, { bg: string; text: string; border: string; glow: string; glowColor: string; styles?: Record<string, React.CSSProperties> }> = {
@@ -102,9 +107,15 @@ export function KanbanColumn({
   onTaskCreate,
   onColumnRename,
   onColumnColorChange,
+  onColumnIconChange,
   onColumnDelete,
   onTaskUpdate,
   onTaskDelete,
+  onPushToGantt,
+  onSendToVault,
+  onVaultCompleted,
+  onArchiveTask,
+  onArchiveColumn,
   overId,
   activeTaskId,
   onDependencyClick,
@@ -116,16 +127,16 @@ export function KanbanColumn({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const { glowIntensity: globalGlow, columnWidth: globalColumnWidth, columnHeight: globalColumnHeight, dynamicColumnWidth, dynamicColumnHeight } = useThemeStore()
   const dynamicW = dynamicColumnWidth
-    ? Math.min(800, globalColumnWidth + Math.max(0, tasks.length - 3) * 20)
+    ? Math.min(900, globalColumnWidth + Math.max(0, tasks.length - 3) * 20)
     : globalColumnWidth
   const dynamicH = dynamicColumnHeight
-    ? Math.min(800, globalColumnHeight + Math.max(0, tasks.length - 3) * 40)
+    ? Math.min(1600, globalColumnHeight + Math.max(0, tasks.length - 3) * 40)
     : globalColumnHeight
   const [columnWidth, setColumnWidth] = useState(dynamicW)
   const [columnHeight, setColumnHeight] = useState(dynamicH)
   const colorPickerRef = useRef<HTMLDivElement>(null)
   const config = getColumnColor(column.color)
-  const Icon = (column.icon && ICON_MAP[column.icon]) || Columns3
+  const SelectedIcon = column.icon ? COLUMN_ICON_MAP[column.icon] : null
   const mult = globalGlow / 75
 
   useEffect(() => {
@@ -177,6 +188,11 @@ export function KanbanColumn({
     onColumnColorChange?.(column.id, color)
   }
 
+  const handleIconChange = (iconId: string | null) => {
+    onColumnIconChange?.(column.id, iconId)
+    setShowColorPicker(false)
+  }
+
   const handleWidthResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -185,7 +201,7 @@ export function KanbanColumn({
 
     const onMouseMove = (ev: MouseEvent) => {
       const delta = ev.clientX - startX
-      setColumnWidth(Math.max(250, Math.min(600, startWidth + delta)))
+      setColumnWidth(Math.max(280, Math.min(700, startWidth + delta)))
     }
 
     const onMouseUp = () => {
@@ -209,7 +225,7 @@ export function KanbanColumn({
 
     const onMouseMove = (ev: MouseEvent) => {
       const delta = ev.clientY - startY
-      setColumnHeight(Math.max(200, Math.min(800, startHeight + delta)))
+      setColumnHeight(Math.max(200, Math.min(1600, startHeight + delta)))
     }
 
     const onMouseUp = () => {
@@ -252,9 +268,9 @@ export function KanbanColumn({
         }}
       >
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
+          <div className="flex-1 min-w-0 flex justify-center">
             {isRenaming ? (
-              <div className="flex items-center gap-1 flex-1">
+              <div className="flex items-center gap-1 w-full">
                 <input
                   type="text"
                   value={renameValue}
@@ -276,7 +292,7 @@ export function KanbanColumn({
             ) : (
               <div
                 className={cn(
-                  'inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium cursor-pointer',
+                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium cursor-pointer',
                   badgeClasses
                 )}
                 style={badgeStyle}
@@ -285,43 +301,31 @@ export function KanbanColumn({
                   setIsRenaming(true)
                 }}
               >
-                <Icon className="w-4 h-4" />
+                {SelectedIcon && <SelectedIcon className="w-3.5 h-3.5" />}
                 <span>{column.name}</span>
-                <span className="font-bold">{tasks.length}</span>
+                <span className="text-[11px] opacity-60 font-normal">{tasks.length}</span>
               </div>
             )}
           </div>
 
-          <div className="flex items-center gap-1 relative">
+          <div className="flex items-center gap-1 relative flex-shrink-0">
             {!isRenaming && (
-              <>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setShowColorPicker(!showColorPicker)
-                  }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
-                >
-                  <Palette className="w-3.5 h-3.5 text-slate-400" />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setRenameValue(column.name)
-                    setIsRenaming(true)
-                  }}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
-                >
-                  <Pencil className="w-3.5 h-3.5 text-slate-400" />
-                </button>
-              </>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowColorPicker(!showColorPicker)
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+              >
+                <Palette className="w-3.5 h-3.5 text-slate-400" />
+              </button>
             )}
             <button
               onClick={(e) => { e.stopPropagation(); onAddTask?.() }}
               onPointerDown={(e) => e.stopPropagation()}
               className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+              title="Add card"
             >
               <Plus className="w-4 h-4 text-slate-400" />
             </button>
@@ -329,55 +333,46 @@ export function KanbanColumn({
             {showColorPicker && (
               <div
                 ref={colorPickerRef}
-                className="absolute top-full right-0 mt-2 z-50 p-4 rounded-xl backdrop-blur-xl bg-[#1a1a24]/95 border border-white/15 shadow-[0_0_40px_rgba(0,0,0,0.6)] space-y-3 min-w-[320px]"
+                className="absolute top-full right-0 mt-2 z-50 p-4 rounded-xl backdrop-blur-xl bg-[#1a1a24]/95 border border-white/15 shadow-[0_0_40px_rgba(0,0,0,0.6)] space-y-3 min-w-[320px] max-h-[70vh] overflow-y-auto"
                 onPointerDown={(e) => e.stopPropagation()}
               >
-                <div className="flex gap-1.5 flex-wrap">
-                  {ACCENT_COLORS.map((c) => (
+                <ColorSwatchPicker
+                  value={column.color}
+                  onChange={handleColorChange}
+                  onChangeNative={handleColorNative}
+                  className="space-y-2"
+                />
+                <div className="pt-2 border-t border-white/10">
+                  <span className="text-[11px] text-slate-500 mb-1.5 block">Icon</span>
+                  <div className="flex gap-1 flex-wrap">
                     <button
-                      key={c}
-                      onClick={() => handleColorChange(c)}
+                      onClick={() => handleIconChange(null)}
                       className={cn(
-                        'w-7 h-7 rounded-full border-2 transition-all',
-                        column.color === c ? 'border-white scale-110' : 'border-transparent hover:border-white/40'
+                        'w-7 h-7 rounded-lg border transition-all flex items-center justify-center text-[10px]',
+                        !column.icon ? 'border-white/40 bg-white/10 text-white' : 'border-white/10 text-slate-500 hover:border-white/30 hover:text-slate-300'
                       )}
-                      style={{ backgroundColor: colorConfig[c].hex }}
-                    />
-                  ))}
-                </div>
-                <div className="border-t border-white/10 pt-2">
-                  <div className="grid grid-cols-7 gap-1">
-                    {PALETTE_COLORS.map((hex) => (
-                      <button
-                        key={hex}
-                        onClick={() => handleColorChange(hex)}
-                        className={cn(
-                          'w-7 h-7 rounded-full border-2 transition-all',
-                          column.color === hex ? 'border-white scale-110' : 'border-transparent hover:border-white/40'
-                        )}
-                        style={{ backgroundColor: hex }}
-                      />
-                    ))}
+                      title="No icon"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                    {COLUMN_ICONS.map((ci) => {
+                      const CIcon = ci.icon
+                      const isActive = column.icon === ci.id
+                      return (
+                        <button
+                          key={ci.id}
+                          onClick={() => handleIconChange(ci.id)}
+                          className={cn(
+                            'w-7 h-7 rounded-lg border transition-all flex items-center justify-center',
+                            isActive ? 'border-white/40 bg-white/10 text-white' : 'border-white/10 text-slate-500 hover:border-white/30 hover:text-slate-300'
+                          )}
+                          title={ci.label}
+                        >
+                          <CIcon className="w-3.5 h-3.5" />
+                        </button>
+                      )
+                    })}
                   </div>
-                </div>
-                <div className="pt-1 border-t border-white/10">
-                  <label className="flex items-center gap-2 cursor-pointer group">
-                    <div className="relative">
-                      <input
-                        type="color"
-                        value={column.color?.startsWith('#') ? column.color : colorConfig[column.color as AccentColor]?.hex ?? '#a855f7'}
-                        onChange={(e) => handleColorNative(e.target.value)}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                      />
-                      <div
-                        className="w-7 h-7 rounded-full border-2 border-dashed border-white/30 group-hover:border-white/60 transition-all flex items-center justify-center"
-                        style={{ backgroundColor: column.color?.startsWith('#') ? column.color : 'transparent' }}
-                      >
-                        {!column.color?.startsWith('#') && <Palette className="w-3 h-3 text-slate-400" />}
-                      </div>
-                    </div>
-                    <span className="text-[11px] text-slate-500 group-hover:text-slate-300 transition-colors">Custom</span>
-                  </label>
                 </div>
               </div>
             )}
@@ -398,6 +393,9 @@ export function KanbanColumn({
                 showDropIndicator={overId === task.id && activeTaskId !== task.id}
                 onTaskUpdate={onTaskUpdate}
                 onTaskDelete={onTaskDelete}
+                onPushToGantt={onPushToGantt}
+                onSendToVault={onSendToVault}
+                onArchiveTask={onArchiveTask}
               />
             ))}
           </AnimatePresence>
@@ -438,6 +436,8 @@ export function KanbanColumn({
           setIsRenaming(true)
         }}
         onColumnDelete={onColumnDelete}
+        onVaultCompleted={onVaultCompleted}
+        onArchiveAll={onArchiveColumn}
       />
     )}
     </div>

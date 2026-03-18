@@ -12,6 +12,8 @@ import {
   updateRow as _updateRow,
   deleteRow as _deleteRow,
 } from '@/lib/data/gantt'
+import { syncGanttDatesToBoard } from '@/lib/data/bridge'
+import { createGanttTaskSchema, updateGanttTaskSchema, createRowSchema, updateRowSchema } from '@/lib/data/validators'
 
 export async function getRows(projectId: string) {
   await requireOwnership(projectId)
@@ -36,19 +38,17 @@ export async function createGanttTask(data: {
 }) {
   await requireOwnership(data.projectId)
 
-  const task = await _createGanttTask(
-    data.projectId,
-    {
-      rowId: data.rowId,
-      name: data.name,
-      description: data.description,
-      startDate: data.startDate,
-      endDate: data.endDate,
-      color: data.color,
-      progress: data.progress ?? 0,
-    },
-    data.id
-  )
+  const parsed = createGanttTaskSchema.parse({
+    rowId: data.rowId,
+    name: data.name,
+    description: data.description,
+    startDate: data.startDate,
+    endDate: data.endDate,
+    color: data.color,
+    progress: data.progress ?? 0,
+  })
+
+  const task = await _createGanttTask(data.projectId, parsed, data.id)
 
   revalidatePath(`/project/${data.projectId}`)
   return task
@@ -68,7 +68,13 @@ export async function updateGanttTask(
   }
 ) {
   await requireOwnership(projectId)
-  const task = await _updateGanttTask(taskId, projectId, data)
+
+  const parsed = updateGanttTaskSchema.parse(data)
+
+  const task = await _updateGanttTask(taskId, projectId, parsed)
+  if (parsed.startDate && parsed.endDate) {
+    syncGanttDatesToBoard(taskId, new Date(parsed.startDate), new Date(parsed.endDate)).catch(() => {})
+  }
   revalidatePath(`/project/${projectId}`)
   return task
 }
@@ -88,11 +94,13 @@ export async function createRow(data: {
 }) {
   await requireOwnership(data.projectId)
 
-  const row = await _createRow(
-    data.projectId,
-    { name: data.name, color: data.color, orderIndex: data.orderIndex },
-    data.id
-  )
+  const parsed = createRowSchema.parse({
+    name: data.name,
+    color: data.color,
+    orderIndex: data.orderIndex,
+  })
+
+  const row = await _createRow(data.projectId, parsed, data.id)
 
   revalidatePath(`/project/${data.projectId}`)
   return row
@@ -104,7 +112,8 @@ export async function updateRow(
   data: { name?: string; color?: string; orderIndex?: number }
 ) {
   await requireOwnership(projectId)
-  const row = await _updateRow(rowId, projectId, data)
+  const parsed = updateRowSchema.parse(data)
+  const row = await _updateRow(rowId, projectId, parsed)
   revalidatePath(`/project/${projectId}`)
   return row
 }

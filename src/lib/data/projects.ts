@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { projects, rows, boardColumns, boardTasks, ganttTasks } from '@/lib/db/schema'
+import { projects, boardColumns, boardTasks, ganttTasks } from '@/lib/db/schema'
 import { eq, and, desc, sql } from 'drizzle-orm'
 import type { CreateProjectInput, UpdateProjectInput } from './validators'
 
@@ -38,12 +38,6 @@ export async function createProject(userId: string, data: CreateProjectInput) {
       })
       .returning()
 
-    await tx.insert(rows).values([
-      { projectId: result[0].id, name: 'Planning', color: 'purple', orderIndex: 0 },
-      { projectId: result[0].id, name: 'Development', color: 'cyan', orderIndex: 1 },
-      { projectId: result[0].id, name: 'Testing', color: 'green', orderIndex: 2 },
-    ])
-
     await tx.insert(boardColumns).values([
       { projectId: result[0].id, name: 'Todo', color: 'pink', icon: 'list-todo', orderIndex: 0 },
       { projectId: result[0].id, name: 'Doing', color: 'blue', icon: 'activity', orderIndex: 1 },
@@ -57,7 +51,7 @@ export async function createProject(userId: string, data: CreateProjectInput) {
   return project
 }
 
-export async function updateProject(projectId: string, data: UpdateProjectInput) {
+export async function updateProject(projectId: string, userId: string, data: UpdateProjectInput) {
   const updates: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() }
   if (data.name !== undefined) updates.name = data.name
   if (data.description !== undefined) updates.description = data.description ?? null
@@ -68,16 +62,16 @@ export async function updateProject(projectId: string, data: UpdateProjectInput)
   const [project] = await db
     .update(projects)
     .set(updates)
-    .where(eq(projects.id, projectId))
+    .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
     .returning()
 
   return project || null
 }
 
-export async function deleteProject(projectId: string) {
+export async function deleteProject(projectId: string, userId: string) {
   const [deleted] = await db
     .delete(projects)
-    .where(eq(projects.id, projectId))
+    .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
     .returning({ id: projects.id })
 
   return !!deleted

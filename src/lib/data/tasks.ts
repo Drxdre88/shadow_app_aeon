@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { boardTasks } from '@/lib/db/schema'
-import { eq, and, asc, sql } from 'drizzle-orm'
+import { eq, and, asc, sql, isNull, isNotNull } from 'drizzle-orm'
 import type { CreateTaskInput, UpdateTaskInput } from './validators'
 
 export async function findTasks(
@@ -9,7 +9,7 @@ export async function findTasks(
   limit = 200,
   offset = 0
 ) {
-  const conditions = [eq(boardTasks.projectId, projectId)]
+  const conditions = [eq(boardTasks.projectId, projectId), isNull(boardTasks.archivedAt)]
   if (filters?.status) conditions.push(eq(boardTasks.status, filters.status))
   if (filters?.priority) conditions.push(eq(boardTasks.priority, filters.priority))
 
@@ -46,6 +46,7 @@ export async function createTask(
     priority: data.priority,
     color: data.color,
     onTimeline: data.onTimeline,
+    size: data.size ?? null,
     startDate: data.startDate ? new Date(data.startDate) : null,
     endDate: data.endDate ? new Date(data.endDate) : null,
   }
@@ -90,6 +91,7 @@ export async function updateTask(
   if (data.priority !== undefined) updates.priority = data.priority
   if (data.color !== undefined) updates.color = data.color
   if (data.onTimeline !== undefined) updates.onTimeline = data.onTimeline
+  if (data.size !== undefined) updates.size = data.size
   if (data.orderIndex !== undefined) updates.orderIndex = data.orderIndex
   if (data.startDate !== undefined) updates.startDate = data.startDate ? new Date(data.startDate) : null
   if (data.endDate !== undefined) updates.endDate = data.endDate ? new Date(data.endDate) : null
@@ -101,6 +103,39 @@ export async function updateTask(
     .returning()
 
   return task || null
+}
+
+export async function createTasksBatch(
+  projectId: string,
+  tasks: { name: string; description?: string; status?: string; priority?: string; color?: string; size?: number | null; startDate?: string; endDate?: string; columnId?: string }[]
+) {
+  if (tasks.length === 0) return []
+
+  return db.transaction(async (tx) => {
+    const [maxResult] = await tx
+      .select({ max: sql<number>`coalesce(max(${boardTasks.orderIndex}), -1)` })
+      .from(boardTasks)
+      .where(eq(boardTasks.projectId, projectId))
+
+    let nextIndex = maxResult.max + 1
+
+    const values = tasks.map((t) => ({
+      projectId,
+      name: t.name,
+      description: t.description || null,
+      columnId: t.columnId || null,
+      status: t.status || 'todo',
+      priority: t.priority || 'medium',
+      color: t.color || 'purple',
+      size: t.size ?? null,
+      startDate: t.startDate ? new Date(t.startDate) : null,
+      endDate: t.endDate ? new Date(t.endDate) : null,
+      onTimeline: false,
+      orderIndex: nextIndex++,
+    }))
+
+    return tx.insert(boardTasks).values(values).returning()
+  })
 }
 
 export async function deleteTask(taskId: string, projectId: string) {
@@ -116,18 +151,58 @@ export async function reorderTasks(
   projectId: string,
   updates: { id: string; orderIndex: number; status?: string; columnId?: string }[]
 ) {
-  await Promise.all(
-    updates.map(({ id, orderIndex, status, columnId }) => {
+  await db.transaction(async (tx) => {
+    for (const { id, orderIndex, status, columnId } of updates) {
       const values: Partial<typeof boardTasks.$inferInsert> = {
         orderIndex,
         updatedAt: new Date(),
       }
       if (status !== undefined) values.status = status
       if (columnId !== undefined) values.columnId = columnId
-      return db
+      await tx
         .update(boardTasks)
         .set(values)
         .where(and(eq(boardTasks.id, id), eq(boardTasks.projectId, projectId)))
-    })
+    }
+  })
+}
+
+export async function findArchivedTasks(projectId: string) {
+  return db
+    .select()
+    .from(boardTasks)
+    .where(and(eq(boardTasks.projectId, projectId), isNotNull(boardTasks.archivedAt)))
+    .orderBy(asc(boardTasks.archivedAt))
+}
+
+export async function archiveTask(taskId: string, projectId: string) {
+  const [task] = await db
+    .update(boardTasks)
+    .set({ archivedAt: new Date() })
+    .where(and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, projectId)))
+    .returning()
+  return task || null
+}
+
+export async function restoreTask(taskId: string, projectId: string) {
+  const [task] = await db
+    .update(boardTasks)
+    .set({ archivedAt: null })
+    .where(and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, projectId)))
+    .returning()
+  return task || null
+}
+
+export async function archiveTasksBatch(projectId: string, taskIds: string[]) {
+  if (taskIds.length === 0) return []
+  const results = await Promise.all(
+    taskIds.map((id) =>
+      db
+        .update(boardTasks)
+        .set({ archivedAt: new Date() })
+        .where(and(eq(boardTasks.id, id), eq(boardTasks.projectId, projectId)))
+        .returning()
+    )
   )
+  return results.flat()
 }

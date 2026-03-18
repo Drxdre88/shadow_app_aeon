@@ -1,16 +1,16 @@
 'use client'
 
-import { useCallback, useState, useMemo, useEffect, useRef } from 'react'
-import { DndContext, DragEndEvent, DragStartEvent, DragOverEvent, DragOverlay, useSensor, useSensors, PointerSensor, closestCenter } from '@dnd-kit/core'
-import { SortableContext, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable'
+import { useCallback, useState, useMemo } from 'react'
+import { DndContext, DragOverlay, closestCenter } from '@dnd-kit/core'
+import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useBoardStore, type BoardColumn } from '@/lib/store/boardStore'
 import { KanbanColumn } from './KanbanColumn'
 import { SortableColumn } from './SortableColumn'
 import { TaskEditModal } from './TaskEditModal'
 import { BoardFilterBar } from './BoardFilterBar'
 import { DependencyGlowTree } from './DependencyGlowTree'
-import { BoardDependencyOverlay } from './BoardDependencyOverlay'
 import { LabelPicker } from './LabelPicker'
+import { TaskColorPicker } from './TaskColorPicker'
 import { TrashDropZone } from './TrashDropZone'
 import { DragPreview } from './DragPreview'
 import { ConnectModeBanner } from './ConnectModeBanner'
@@ -20,6 +20,10 @@ import { generateId } from '@/lib/utils/colors'
 import { useThemeStore } from '@/stores/themeStore'
 import { applyBoardFilters, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
+import { useBoardDnD } from './useBoardDnD'
+import { useBoardKeyboardShortcuts } from './useBoardKeyboardShortcuts'
+import { useBoardHover } from './useBoardHover'
+import { useConnectMode } from './useConnectMode'
 
 interface BoardTaskData {
   id: string
@@ -35,6 +39,8 @@ interface BoardTaskData {
   orderIndex: number
   startDate?: string
   endDate?: string
+  size?: number | null
+  ganttTaskId?: string | null
 }
 
 interface TaskBoardProps {
@@ -45,7 +51,7 @@ interface TaskBoardProps {
   onTaskCreate?: (task: BoardTaskData) => void
   onTaskUpdate?: (taskId: string, updates: Partial<BoardTaskData>) => void
   onTaskDelete?: (taskId: string) => void
-  onTaskMove?: (updates: { id: string; orderIndex: number; status?: string; columnId?: string }[]) => void
+  onTaskMove?: (updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[]) => void
   onAddDependency?: (blockerTaskId: string, blockedTaskId: string) => void
   onRemoveDependency?: (blockerTaskId: string, blockedTaskId: string) => void
   onColumnCreate?: (column: { id: string; projectId: string; name: string; color: string; orderIndex: number }) => void
@@ -53,10 +59,18 @@ interface TaskBoardProps {
   onColumnReorder?: (updates: { id: string; orderIndex: number }[]) => void
   onColumnDelete?: (columnId: string) => void
   onLabelCreate?: (label: { id: string; projectId: string; name: string; color: string }) => void
+  onLabelUpdate?: (labelId: string, updates: { name?: string; color?: string }) => void
+  onLabelDelete?: (labelId: string) => void
   onLabelToggle?: (taskId: string, labelId: string, action: 'add' | 'remove') => void
-  showDependencyOverlay?: boolean
+  showAllDeps?: boolean
+  onShowAllDepsChange?: (v: boolean) => void
   connectMode?: boolean
   onConnectModeChange?: (v: boolean) => void
+  onPushToGantt?: (taskId: string) => void
+  onSendToVault?: (taskId: string) => void
+  onVaultCompleted?: (columnId: string) => void
+  onArchiveTask?: (taskId: string) => void
+  onArchiveColumn?: (columnId: string) => void
 }
 
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
@@ -77,79 +91,49 @@ export function TaskBoard({
   onColumnReorder,
   onColumnDelete,
   onLabelCreate,
+  onLabelUpdate,
+  onLabelDelete,
   onLabelToggle,
-  showDependencyOverlay,
+  showAllDeps,
+  onShowAllDepsChange,
   connectMode,
   onConnectModeChange,
+  onPushToGantt,
+  onSendToVault,
+  onVaultCompleted,
+  onArchiveTask,
+  onArchiveColumn,
 }: TaskBoardProps) {
   const {
     columns,
     tasks,
-    moveTask,
     addTask,
     updateTask,
-    removeTask,
     selectTask,
     selectedTaskId,
     addColumn,
     updateColumn,
     removeColumn,
-    reorderColumns,
   } = useBoardStore()
-  const { colors: themeColors, glowIntensity: globalGlow, dragEffect, shortcuts } = useThemeStore()
+  const { colors: themeColors, glowIntensity: globalGlow, dragEffect, shortcuts, boardLayout } = useThemeStore()
+
   const [editingTask, setEditingTask] = useState<string | null>(null)
   const [newTaskColumnId, setNewTaskColumnId] = useState<string | null>(null)
-  const [activeItem, setActiveItem] = useState<{ type: 'task' | 'column'; data: any } | null>(null)
-  const [overId, setOverId] = useState<string | null>(null)
   const [internalFilters, setInternalFilters] = useState<BoardFilters>(DEFAULT_FILTERS)
-
-  const showFilters = showFiltersFromParent ?? false
-  const filters = filtersFromParent ?? internalFilters
-  const setFilters = onFiltersChange ?? setInternalFilters
   const [dependencyTreeTaskId, setDependencyTreeTaskId] = useState<string | null>(null)
   const [labelPickerTaskId, setLabelPickerTaskId] = useState<string | null>(null)
-  const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null)
-  const [connectSourceId, setConnectSourceId] = useState<string | null>(null)
-  const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 })
+  const [colorPickerTaskId, setColorPickerTaskId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     color: 'purple' as string,
     priority: 'medium' as typeof PRIORITIES[number],
+    size: null as number | null,
   })
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  )
-
-  const boardRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const board = boardRef.current
-    if (!board) return
-    const onOver = (e: MouseEvent) => {
-      const el = (e.target as HTMLElement).closest('[data-task-id]')
-      setHoveredTaskId(el?.getAttribute('data-task-id') ?? null)
-    }
-    const onLeave = () => setHoveredTaskId(null)
-    board.addEventListener('mouseover', onOver)
-    board.addEventListener('mouseleave', onLeave)
-    return () => {
-      board.removeEventListener('mouseover', onOver)
-      board.removeEventListener('mouseleave', onLeave)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!connectMode) setConnectSourceId(null)
-  }, [connectMode])
-
-  useEffect(() => {
-    if (!connectMode) return
-    const onMove = (e: MouseEvent) => setCursorPos({ x: e.clientX, y: e.clientY })
-    window.addEventListener('mousemove', onMove)
-    return () => window.removeEventListener('mousemove', onMove)
-  }, [connectMode])
+  const showFilters = showFiltersFromParent ?? false
+  const filters = filtersFromParent ?? internalFilters
+  const setFilters = onFiltersChange ?? setInternalFilters
 
   const sortedColumns = useMemo(
     () => columns.filter((c) => c.projectId === projectId).sort((a, b) => a.orderIndex - b.orderIndex),
@@ -160,111 +144,26 @@ export function TaskBoard({
   const filteredTasks = useMemo(() => applyBoardFilters(projectTasks, filters), [projectTasks, filters])
   const columnIds = sortedColumns.map((c) => c.id)
 
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    const { active } = event
-    const dragType = active.data.current?.type
+  const { boardRef, hoveredTaskId } = useBoardHover()
 
-    if (dragType === 'column') {
-      const col = sortedColumns.find((c) => c.id === active.id)
-      if (col) setActiveItem({ type: 'column', data: col })
-    } else {
-      const task = projectTasks.find((t) => t.id === active.id)
-      if (task) setActiveItem({ type: 'task', data: task })
-    }
-  }, [projectTasks, sortedColumns])
+  const { connectSourceId, cursorPos, handleConnectClick, cancelConnect } = useConnectMode({
+    connectMode,
+    onAddDependency,
+    onConnectModeChange,
+  })
 
-  const handleDragOver = useCallback((event: DragOverEvent) => {
-    const { active, over } = event
-    if (!over) {
-      setOverId(null)
-      return
-    }
+  const { sensors, activeItem, overId, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel } = useBoardDnD({
+    projectTasks,
+    sortedColumns,
+    onTaskMove,
+    onTaskDelete,
+    onColumnReorder,
+  })
 
-    const activeType = active.data.current?.type
-    const currentOverId = over.id as string
-    setOverId(currentOverId)
-
-    if (activeType === 'column') return
-
-    const activeId = active.id as string
-    const activeTask = projectTasks.find((t) => t.id === activeId)
-    if (!activeTask) return
-
-    const overTask = projectTasks.find((t) => t.id === currentOverId)
-    const overColumnId = over.data.current?.columnId || (sortedColumns.find((c) => c.id === currentOverId)?.id)
-
-    if (overTask && activeTask.columnId !== overTask.columnId) {
-      moveTask(activeId, overTask.columnId!, overTask.orderIndex)
-      onTaskMove?.([{ id: activeId, orderIndex: overTask.orderIndex, columnId: overTask.columnId }])
-    } else if (overColumnId && activeTask.columnId !== overColumnId) {
-      const tasksInColumn = projectTasks.filter((t) => t.columnId === overColumnId)
-      moveTask(activeId, overColumnId, tasksInColumn.length)
-      onTaskMove?.([{ id: activeId, orderIndex: tasksInColumn.length, columnId: overColumnId }])
-    }
-  }, [projectTasks, sortedColumns, moveTask, onTaskMove])
-
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event
-    const activeType = active.data.current?.type
-
-    setActiveItem(null)
-    setOverId(null)
-
-    if (!over) return
-
-    if (activeType === 'column') {
-      const activeId = active.id as string
-      const overId = over.id as string
-      if (activeId === overId) return
-
-      const oldIndex = sortedColumns.findIndex((c) => c.id === activeId)
-      const newIndex = sortedColumns.findIndex((c) => c.id === overId)
-      if (oldIndex === -1 || newIndex === -1) return
-
-      const reordered = arrayMove(sortedColumns, oldIndex, newIndex)
-      const updates = reordered.map((col, idx) => ({ id: col.id, orderIndex: idx }))
-      reorderColumns(updates)
-      onColumnReorder?.(updates)
-      return
-    }
-
-    const activeId = active.id as string
-    const overIdVal = over.id as string
-
-    if (overIdVal === 'trash') {
-      removeTask(activeId)
-      onTaskDelete?.(activeId)
-      return
-    }
-
-    const activeTask = projectTasks.find((t) => t.id === activeId)
-    const overTask = projectTasks.find((t) => t.id === overIdVal)
-
-    if (activeTask && overTask && activeTask.columnId === overTask.columnId && activeId !== overIdVal) {
-      const columnTasks = projectTasks
-        .filter((t) => t.columnId === activeTask.columnId)
-        .sort((a, b) => a.orderIndex - b.orderIndex)
-
-      const oldIndex = columnTasks.findIndex((t) => t.id === activeId)
-      const newIndex = columnTasks.findIndex((t) => t.id === overIdVal)
-
-      if (oldIndex !== -1 && newIndex !== -1) {
-        const reordered = arrayMove(columnTasks, oldIndex, newIndex)
-        const moveUpdates: { id: string; orderIndex: number }[] = []
-        reordered.forEach((task, index) => {
-          if (task.orderIndex !== index) {
-            updateTask(task.id, { orderIndex: index })
-            moveUpdates.push({ id: task.id, orderIndex: index })
-          }
-        })
-        if (moveUpdates.length > 0) onTaskMove?.(moveUpdates)
-      }
-    }
-  }, [projectTasks, sortedColumns, removeTask, updateTask, reorderColumns, onTaskMove, onTaskDelete, onColumnReorder])
-
-  const handleDragCancel = useCallback(() => {
-    setActiveItem(null)
-    setOverId(null)
+  const handleAddTask = useCallback((columnId: string) => {
+    setFormData({ name: '', description: '', color: 'purple', priority: 'medium', size: null })
+    setNewTaskColumnId(columnId)
+    setEditingTask(null)
   }, [])
 
   const handleTaskEdit = useCallback((taskId: string) => {
@@ -276,53 +175,26 @@ export function TaskBoard({
         description: task.description || '',
         color: task.color,
         priority: task.priority,
+        size: task.size ?? null,
       })
       setEditingTask(taskId)
       setNewTaskColumnId(null)
     }
-  }, [tasks])
+  }, [tasks, selectTask])
 
   const handleTaskClick = useCallback((taskId: string) => {
-    if (!connectMode) {
-      handleTaskEdit(taskId)
-      return
-    }
-    if (!connectSourceId) {
-      setConnectSourceId(taskId)
-    } else if (taskId !== connectSourceId) {
-      onAddDependency?.(connectSourceId, taskId)
-      setConnectSourceId(null)
-      onConnectModeChange?.(false)
-    }
-  }, [connectMode, connectSourceId, handleTaskEdit, onAddDependency, onConnectModeChange])
+    handleConnectClick(taskId, handleTaskEdit)
+  }, [handleConnectClick, handleTaskEdit])
 
-  const handleAddTask = useCallback((columnId: string) => {
-    setFormData({ name: '', description: '', color: 'purple', priority: 'medium' })
-    setNewTaskColumnId(columnId)
-    setEditingTask(null)
-  }, [])
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
-      const key = e.key.toLowerCase()
-
-      const targetTaskId = hoveredTaskId ?? selectedTaskId
-      if (key === (shortcuts?.openLabel ?? 'l') && targetTaskId) {
-        e.preventDefault()
-        setLabelPickerTaskId(targetTaskId)
-        return
-      }
-
-      if (key === (shortcuts?.addTask ?? 't') && sortedColumns.length > 0) {
-        e.preventDefault()
-        handleAddTask(sortedColumns[0].id)
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedTaskId, hoveredTaskId, shortcuts, sortedColumns, handleAddTask])
+  useBoardKeyboardShortcuts({
+    hoveredTaskId,
+    selectedTaskId,
+    shortcuts,
+    sortedColumns,
+    onOpenLabel: setLabelPickerTaskId,
+    onOpenColorPicker: setColorPickerTaskId,
+    onAddTask: handleAddTask,
+  })
 
   const handleColumnRename = useCallback((columnId: string, name: string) => {
     updateColumn(columnId, { name })
@@ -332,6 +204,11 @@ export function TaskBoard({
   const handleColumnColorChange = useCallback((columnId: string, color: string) => {
     updateColumn(columnId, { color })
     onColumnUpdate?.(columnId, { color })
+  }, [updateColumn, onColumnUpdate])
+
+  const handleColumnIconChange = useCallback((columnId: string, icon: string | null) => {
+    updateColumn(columnId, { icon })
+    onColumnUpdate?.(columnId, { icon })
   }, [updateColumn, onColumnUpdate])
 
   const handleColumnDelete = useCallback((columnId: string) => {
@@ -361,6 +238,7 @@ export function TaskBoard({
         description: formData.description.trim() || undefined,
         color: formData.color,
         priority: formData.priority,
+        size: formData.size,
       }
       updateTask(editingTask, updates)
       onTaskUpdate?.(editingTask, updates)
@@ -414,7 +292,13 @@ export function TaskBoard({
           onDragCancel={handleDragCancel}
         >
           <SortableContext items={columnIds} strategy={rectSortingStrategy}>
-            <div className="flex flex-wrap gap-4 pb-4 overflow-auto content-start" style={{ maxHeight: 'calc(100vh - 140px)' }}>
+            <div
+              className={boardLayout === 'grid'
+                ? 'flex flex-wrap gap-4 pb-4 overflow-auto content-start'
+                : 'flex flex-nowrap gap-4 pb-4 overflow-auto'
+              }
+              style={{ maxHeight: 'calc(100vh - 140px)' }}
+            >
               {sortedColumns.map((column) => (
                 <SortableColumn key={column.id} column={column}>
                   {(dragHandleProps) => (
@@ -429,11 +313,17 @@ export function TaskBoard({
                       onTaskCreate={onTaskCreate}
                       onColumnRename={handleColumnRename}
                       onColumnColorChange={handleColumnColorChange}
+                      onColumnIconChange={handleColumnIconChange}
                       onColumnDelete={handleColumnDelete}
                       onTaskUpdate={onTaskUpdate}
                       onTaskDelete={onTaskDelete}
+                      onPushToGantt={onPushToGantt}
+                      onSendToVault={onSendToVault}
+                      onVaultCompleted={onVaultCompleted}
+                      onArchiveTask={onArchiveTask}
+                      onArchiveColumn={onArchiveColumn}
                       overId={overId}
-                      activeTaskId={activeItem?.type === 'task' ? activeItem.data?.id : null}
+                      activeTaskId={activeItem?.type === 'task' ? (activeItem.data as BoardTaskData).id : null}
                       onDependencyClick={setDependencyTreeTaskId}
                       dragHandleProps={dragHandleProps}
                     />
@@ -446,7 +336,7 @@ export function TaskBoard({
           </SortableContext>
 
           <DragOverlay dropAnimation={{ duration: 300, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' }}>
-            {activeItem?.type === 'task' && <DragPreview task={activeItem.data} effect={dragEffect} globalGlow={globalGlow} />}
+            {activeItem?.type === 'task' && <DragPreview task={activeItem.data as BoardTaskData} effect={dragEffect} globalGlow={globalGlow} />}
           </DragOverlay>
 
           <TrashDropZone isActive={isTaskDrag} />
@@ -464,12 +354,27 @@ export function TaskBoard({
         onClose={closeModal}
         onAddDependency={onAddDependency}
         onRemoveDependency={onRemoveDependency}
+        onLabelToggle={onLabelToggle}
+        onPushToGantt={onPushToGantt}
+        onDateChange={(taskId, dates) => onTaskUpdate?.(taskId, dates as Record<string, unknown>)}
       />
 
       {dependencyTreeTaskId && (
         <DependencyGlowTree
           taskId={dependencyTreeTaskId}
           onClose={() => setDependencyTreeTaskId(null)}
+          onTaskEdit={(id) => { setDependencyTreeTaskId(null); handleTaskEdit(id) }}
+          onTaskUpdate={onTaskUpdate}
+        />
+      )}
+
+      {showAllDeps && (
+        <DependencyGlowTree
+          taskId={null}
+          showAll
+          onClose={() => onShowAllDepsChange?.(false)}
+          onTaskEdit={(id) => { onShowAllDepsChange?.(false); handleTaskEdit(id) }}
+          onTaskUpdate={onTaskUpdate}
         />
       )}
 
@@ -480,17 +385,26 @@ export function TaskBoard({
           isOpen={!!labelPickerTaskId}
           onClose={() => setLabelPickerTaskId(null)}
           onLabelCreate={onLabelCreate}
+          onLabelUpdate={onLabelUpdate}
+          onLabelDelete={onLabelDelete}
           onLabelToggle={onLabelToggle}
         />
       )}
 
-      <BoardDependencyOverlay enabled={showDependencyOverlay ?? false} />
+      {colorPickerTaskId && (
+        <TaskColorPicker
+          taskId={colorPickerTaskId}
+          isOpen={!!colorPickerTaskId}
+          onClose={() => setColorPickerTaskId(null)}
+          onTaskUpdate={onTaskUpdate}
+        />
+      )}
 
       <ConnectModeBanner
         connectMode={connectMode ?? false}
         connectSourceId={connectSourceId}
         cursorPos={cursorPos}
-        onCancel={() => { onConnectModeChange?.(false); setConnectSourceId(null) }}
+        onCancel={cancelConnect}
       />
     </>
   )

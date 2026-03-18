@@ -3,11 +3,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowRight, Palette, Flag, Trash2, MoveRight, Copy } from 'lucide-react'
+import { Palette, Flag, Trash2, MoveRight, Copy, Calendar, Archive, Package, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { useBoardStore, type BoardColumn } from '@/lib/store/boardStore'
+import { useBoardStore } from '@/lib/store/boardStore'
 import { AccentColor, ACCENT_COLORS, PALETTE_COLORS, colorConfig } from '@/lib/utils/colors'
 import { useThemeStore } from '@/stores/themeStore'
+import { ContextMenuButton } from './ContextMenuButton'
 
 interface TaskContextMenuProps {
   taskId: string
@@ -15,9 +16,12 @@ interface TaskContextMenuProps {
   onClose: () => void
   onTaskUpdate?: (taskId: string, updates: Record<string, unknown>) => void
   onTaskDelete?: (taskId: string) => void
+  onPushToGantt?: (taskId: string) => void
+  onSendToVault?: (taskId: string) => void
+  onArchiveTask?: (taskId: string) => void
 }
 
-export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTaskDelete }: TaskContextMenuProps) {
+export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTaskDelete, onPushToGantt, onSendToVault, onArchiveTask }: TaskContextMenuProps) {
   const [submenu, setSubmenu] = useState<'move' | 'priority' | 'color' | null>(null)
   const [mounted, setMounted] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -60,8 +64,8 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
     onClose()
   }
 
-  const handlePriority = (priority: string) => {
-    updateTask(taskId, { priority: priority as any })
+  const handlePriority = (priority: 'low' | 'medium' | 'high' | 'urgent') => {
+    updateTask(taskId, { priority })
     onTaskUpdate?.(taskId, { priority })
     onClose()
   }
@@ -121,7 +125,7 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
             boxShadow: `0 0 ${8 * mult}px ${colors.glowColor}`,
           }}
         />
-        <MenuButton
+        <ContextMenuButton
           icon={MoveRight}
           label="Move to..."
           hasSubmenu
@@ -146,7 +150,7 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
           </div>
         )}
 
-        <MenuButton
+        <ContextMenuButton
           icon={Flag}
           label="Priority"
           hasSubmenu
@@ -159,7 +163,7 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
             {priorities.map((p) => (
               <button
                 key={p.id}
-                onClick={() => handlePriority(p.id)}
+                onClick={() => handlePriority(p.id as 'low' | 'medium' | 'high' | 'urgent')}
                 className={cn(
                   'w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors hover:bg-white/10',
                   task.priority === p.id ? 'bg-white/10 font-medium' : ''
@@ -173,7 +177,7 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
           </div>
         )}
 
-        <MenuButton
+        <ContextMenuButton
           icon={Palette}
           label="Color"
           hasSubmenu
@@ -241,6 +245,52 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
           Copy ID
         </button>
 
+        {onArchiveTask && (
+          <button
+            onClick={() => { onArchiveTask(taskId); onClose() }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-amber-400 hover:bg-amber-500/10 transition-colors"
+            style={{
+              textShadow: `0 0 ${8 * mult}px rgba(245,158,11,${0.4 * mult})`,
+            }}
+          >
+            <Package className="w-4 h-4" />
+            Archive
+          </button>
+        )}
+
+        {onSendToVault && (
+          <button
+            onClick={() => {
+              if (task.status !== 'done') return
+              onSendToVault(taskId)
+              onClose()
+            }}
+            disabled={task.status !== 'done'}
+            className={cn(
+              'w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors',
+              task.status === 'done'
+                ? 'text-emerald-400 hover:bg-emerald-500/10'
+                : 'text-slate-600 cursor-not-allowed'
+            )}
+            style={task.status === 'done' ? {
+              textShadow: `0 0 ${8 * mult}px rgba(16,185,129,${0.4 * mult})`,
+            } : undefined}
+          >
+            <Archive className="w-4 h-4" />
+            Send to Vault
+          </button>
+        )}
+
+        {!task.onTimeline && onPushToGantt && (
+          <button
+            onClick={() => { onPushToGantt(task.id); onClose() }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-white/10 hover:text-white transition-colors"
+          >
+            <Calendar className="w-4 h-4 text-cyan-400" />
+            Push to Gantt
+          </button>
+        )}
+
         <div className="border-t border-white/10 mt-1 pt-1">
           <button
             onClick={handleDelete}
@@ -256,47 +306,3 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
   )
 }
 
-function MenuButton({
-  icon: Icon,
-  label,
-  hasSubmenu,
-  isActive,
-  onClick,
-  glowColor,
-}: {
-  icon: typeof MoveRight
-  label: string
-  hasSubmenu?: boolean
-  isActive?: boolean
-  onClick?: () => void
-  glowColor?: string
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'w-full flex items-center justify-between gap-2 px-3 py-2.5 text-sm transition-all duration-150',
-        isActive
-          ? 'text-white'
-          : 'text-slate-300 hover:text-white'
-      )}
-      style={isActive && glowColor ? {
-        background: glowColor.replace(/[\d.]+\)$/, '0.1)'),
-      } : {}}
-    >
-      <span className="flex items-center gap-2">
-        <Icon
-          className="w-4 h-4 transition-colors"
-          style={isActive && glowColor ? { color: glowColor.replace(/[\d.]+\)$/, '0.8)') } : {}}
-        />
-        {label}
-      </span>
-      {hasSubmenu && (
-        <ArrowRight
-          className={cn('w-3 h-3 transition-transform duration-200', isActive ? 'rotate-90' : '')}
-          style={isActive && glowColor ? { color: glowColor.replace(/[\d.]+\)$/, '0.7)') } : { color: 'rgb(100,116,139)' }}
-        />
-      )}
-    </button>
-  )
-}

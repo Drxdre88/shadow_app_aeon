@@ -101,14 +101,14 @@ export async function reorderColumns(
   projectId: string,
   updates: { id: string; orderIndex: number }[]
 ) {
-  await Promise.all(
-    updates.map(({ id, orderIndex }) =>
-      db
+  await db.transaction(async (tx) => {
+    for (const { id, orderIndex } of updates) {
+      await tx
         .update(boardColumns)
         .set({ orderIndex })
         .where(and(eq(boardColumns.id, id), eq(boardColumns.projectId, projectId)))
-    )
-  )
+    }
+  })
 }
 
 export async function createDefaultColumns(projectId: string) {

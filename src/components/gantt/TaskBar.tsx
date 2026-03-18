@@ -1,11 +1,11 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useCallback, useRef, useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { cn } from '@/lib/utils/cn'
-import { colorConfig, AccentColor } from '@/lib/utils/colors'
+import { colorConfig, resolveColor, AccentColor } from '@/lib/utils/colors'
 import { useGanttStore } from '@/lib/store/ganttStore'
 
 interface TaskBarProps {
@@ -14,57 +14,128 @@ interface TaskBarProps {
     name: string
     color: AccentColor
     progress: number
+    boardTaskId?: string | null
   }
   style: {
     left: number
     width: number
     top: number
   }
+  cellWidth: number
+  timeScale: 'day' | 'week' | 'month'
+  onTaskClick?: (boardTaskId: string) => void
+  onResize?: (taskId: string, edge: 'left' | 'right', daysDelta: number) => void
 }
 
-export function TaskBar({ task, style }: TaskBarProps) {
+export function TaskBar({ task, style, cellWidth, timeScale, onTaskClick, onResize }: TaskBarProps) {
   const { selectedTaskId, selectTask } = useGanttStore()
   const isSelected = selectedTaskId === task.id
-  const colors = colorConfig[task.color]
+  const preset = colorConfig[task.color]
+  const resolved = resolveColor(task.color)
+  const isPreset = !!preset
+
+  const resizingRef = useRef<{ edge: 'left' | 'right'; startX: number } | null>(null)
+  const [resizeDelta, setResizeDelta] = useState(0)
 
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
     data: { type: 'task', task },
+    disabled: !!resizingRef.current,
   })
+
+  const pxPerDay = useMemo(() => {
+    switch (timeScale) {
+      case 'day': return cellWidth
+      case 'week': return cellWidth / 7
+      case 'month': return cellWidth / 30
+    }
+  }, [cellWidth, timeScale])
+
+  const handleResizeStart = useCallback((edge: 'left' | 'right', e: React.MouseEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+    resizingRef.current = { edge, startX: e.clientX }
+    setResizeDelta(0)
+  }, [])
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizingRef.current) return
+      const dx = e.clientX - resizingRef.current.startX
+      setResizeDelta(dx)
+    }
+
+    const handleMouseUp = (e: MouseEvent) => {
+      if (!resizingRef.current) return
+      const dx = e.clientX - resizingRef.current.startX
+      const daysDelta = Math.round(dx / pxPerDay)
+      if (daysDelta !== 0 && onResize) {
+        onResize(task.id, resizingRef.current.edge, daysDelta)
+      }
+      resizingRef.current = null
+      setResizeDelta(0)
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [pxPerDay, onResize, task.id])
 
   const dragStyle = transform ? {
     transform: CSS.Translate.toString(transform),
   } : undefined
 
+  const resizeStyle = useMemo(() => {
+    if (!resizingRef.current || resizeDelta === 0) return { left: style.left, width: style.width }
+    if (resizingRef.current.edge === 'left') {
+      return {
+        left: style.left + resizeDelta,
+        width: Math.max(20, style.width - resizeDelta),
+      }
+    }
+    return {
+      left: style.left,
+      width: Math.max(20, style.width + resizeDelta),
+    }
+  }, [style.left, style.width, resizeDelta])
+
   const glowStyle = useMemo(() => ({
     boxShadow: isSelected
-      ? `0 0 30px 10px ${colors.glow}`
-      : `0 0 15px 3px ${colors.glowDark}`,
-  }), [isSelected, colors])
+      ? `0 0 30px 10px ${resolved.glow}`
+      : `0 0 15px 3px ${resolved.glowDark}`,
+  }), [isSelected, resolved])
 
   return (
     <motion.div
       ref={setNodeRef}
       {...attributes}
       {...listeners}
-      onClick={() => selectTask(task.id)}
+      onClick={() => {
+        if (resizingRef.current) return
+        selectTask(task.id)
+        if (task.boardTaskId && onTaskClick) onTaskClick(task.boardTaskId)
+      }}
       className={cn(
         'absolute h-10 rounded-lg cursor-grab active:cursor-grabbing group',
         'backdrop-blur-md border transition-all duration-200',
-        colors.border,
+        isPreset && preset.border,
         isDragging && 'opacity-80 z-50',
         isSelected && 'ring-2 ring-offset-2 ring-offset-background'
       )}
       style={{
-        left: `${style.left}px`,
-        width: `${style.width}px`,
+        left: `${resizeStyle.left}px`,
+        width: `${resizeStyle.width}px`,
         top: `${style.top}px`,
-        background: `linear-gradient(to right, ${colors.hex}cc, ${colors.hex}99)`,
+        background: `linear-gradient(to right, ${resolved.hex}cc, ${resolved.hex}99)`,
+        ...(!isPreset ? resolved.borderStyle : {}),
         ...glowStyle,
         ...dragStyle,
       }}
-      whileHover={{ scale: 1.02, y: -1 }}
-      whileTap={{ scale: 0.98 }}
+      whileHover={resizingRef.current ? undefined : { scale: 1.02, y: -1 }}
+      whileTap={resizingRef.current ? undefined : { scale: 0.98 }}
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
     >
@@ -82,8 +153,14 @@ export function TaskBar({ task, style }: TaskBarProps) {
       )}
 
       <div
+        onMouseDown={(e) => handleResizeStart('left', e)}
+        className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-6 rounded-full bg-white/30
+                   cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity z-10"
+      />
+      <div
+        onMouseDown={(e) => handleResizeStart('right', e)}
         className="absolute -right-1 top-1/2 -translate-y-1/2 w-2 h-6 rounded-full bg-white/30
-                   cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity"
+                   cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity z-10"
       />
     </motion.div>
   )

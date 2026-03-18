@@ -2,13 +2,13 @@
 
 import { useDroppable } from '@dnd-kit/core'
 import { cn } from '@/lib/utils/cn'
-import { colorConfig, AccentColor } from '@/lib/utils/colors'
+import { colorConfig, resolveColor, AccentColor } from '@/lib/utils/colors'
 
 interface RowContainerProps {
   row: {
     id: string
     name: string
-    color: AccentColor
+    color: string
   }
   height: number
   isEven: boolean
@@ -16,7 +16,8 @@ interface RowContainerProps {
 }
 
 export function RowContainer({ row, height, isEven, children }: RowContainerProps) {
-  const colors = colorConfig[row.color]
+  const preset = colorConfig[row.color as AccentColor]
+  const resolved = resolveColor(row.color)
 
   const { setNodeRef, isOver } = useDroppable({
     id: row.id,
@@ -35,10 +36,18 @@ export function RowContainer({ row, height, isEven, children }: RowContainerProp
     >
       <div className="w-48 flex-shrink-0 px-4 py-2 border-r border-white/10 flex items-center gap-2">
         <div
-          className={cn('w-2 h-2 rounded-full', colors.bgSolid)}
-          style={{ boxShadow: `0 0 8px ${colors.glow}` }}
+          className={cn('w-2 h-2 rounded-full', preset?.bgSolid)}
+          style={{
+            backgroundColor: !preset ? resolved.hex : undefined,
+            boxShadow: `0 0 8px ${resolved.glow}`,
+          }}
         />
-        <span className="text-sm font-medium text-slate-300 truncate">{row.name}</span>
+        <span
+          className={cn('text-sm font-medium truncate', preset?.text)}
+          style={!preset ? { color: resolved.hex } : undefined}
+        >
+          {row.name}
+        </span>
       </div>
       <div className="flex-1 relative">
         {children}

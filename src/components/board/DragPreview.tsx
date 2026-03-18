@@ -1,12 +1,12 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { AccentColor, colorConfig } from '@/lib/utils/colors'
+import { resolveColor } from '@/lib/utils/colors'
 import { GlowCard } from '@/components/ui/GlowCard'
 import type { DragEffect } from '@/stores/themeStore'
 
-export function DragPreview({ task, effect, globalGlow }: { task: any; effect: DragEffect; globalGlow: number }) {
-  const colors = colorConfig[task.color as AccentColor]
+export function DragPreview({ task, effect, globalGlow }: { task: { color: string; name: string }; effect: DragEffect; globalGlow: number }) {
+  const colors = resolveColor(task.color || 'purple')
   const mult = globalGlow / 75
 
   const effectStyles = {

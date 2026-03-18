@@ -26,7 +26,10 @@ function GoogleIcon() {
 export default function LoginForm() {
   const [loading, setLoading] = useState(false)
   const searchParams = useSearchParams()
-  const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
+  const rawCallback = searchParams.get('callbackUrl') || '/dashboard'
+  const callbackUrl = rawCallback.startsWith('/') && !rawCallback.startsWith('//')
+    ? rawCallback
+    : '/dashboard'
   const error = searchParams.get('error')
   const { glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
@@ -160,7 +163,9 @@ export default function LoginForm() {
             >
               {error === 'OAuthAccountNotLinked'
                 ? 'This email is already linked to another account'
-                : 'Something went wrong. Please try again.'}
+                : error === 'AccessDenied'
+                  ? 'Access is restricted. Contact the admin for an invite.'
+                  : 'Something went wrong. Please try again.'}
             </motion.div>
           )}
 

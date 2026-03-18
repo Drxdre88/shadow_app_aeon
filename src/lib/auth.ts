@@ -81,12 +81,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
   callbacks: {
+    signIn: ({ user }) => {
+      const allowed = (process.env.ALLOWED_EMAILS || '')
+        .split(',')
+        .map(e => e.trim())
+        .filter(Boolean)
+      if (allowed.length === 0) return true
+      return !!user.email && allowed.includes(user.email)
+    },
     session: ({ session, user }) => ({
       ...session,
       user: {
         ...session.user,
         id: user.id,
-        role: (user as Record<string, unknown>).role as string || 'user',
+        role: (user as unknown as Record<string, unknown>).role as string || 'user',
       },
     }),
   },

@@ -2,17 +2,14 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireOwnership } from './helpers'
+import { addDependencySchema } from '@/lib/data/validators'
 import {
   findDependencies as _findDependencies,
   addDependency as _addDependency,
   removeDependency as _removeDependency,
   wouldCreateCycle,
 } from '@/lib/data/dependencies'
-
-export async function getDependencies(projectId: string) {
-  await requireOwnership(projectId)
-  return _findDependencies(projectId)
-}
+import { emitActivity } from '@/lib/data/activity'
 
 export async function addTaskDependency(
   projectId: string,
@@ -21,16 +18,18 @@ export async function addTaskDependency(
 ) {
   await requireOwnership(projectId)
 
-  if (blockerTaskId === blockedTaskId) {
-    throw new Error('A task cannot depend on itself')
-  }
+  const parsed = addDependencySchema.parse({ blockerTaskId, blockedTaskId })
 
-  const cyclic = await wouldCreateCycle(blockerTaskId, blockedTaskId)
+  const cyclic = await wouldCreateCycle(parsed.blockerTaskId, parsed.blockedTaskId, projectId)
   if (cyclic) {
     throw new Error('This dependency would create a cycle')
   }
 
-  await _addDependency(blockerTaskId, blockedTaskId)
+  await _addDependency(parsed.blockerTaskId, parsed.blockedTaskId, projectId)
+  emitActivity(projectId, 'dependency', parsed.blockerTaskId, 'dependency_added', undefined, {
+    blockerTaskId: parsed.blockerTaskId,
+    blockedTaskId: parsed.blockedTaskId,
+  }).catch(() => {})
   revalidatePath(`/project/${projectId}`)
 }
 
@@ -40,6 +39,10 @@ export async function removeTaskDependency(
   blockedTaskId: string
 ) {
   await requireOwnership(projectId)
-  await _removeDependency(blockerTaskId, blockedTaskId)
+  await _removeDependency(blockerTaskId, blockedTaskId, projectId)
+  emitActivity(projectId, 'dependency', blockerTaskId, 'dependency_removed', undefined, {
+    blockerTaskId,
+    blockedTaskId,
+  }).catch(() => {})
   revalidatePath(`/project/${projectId}`)
 }

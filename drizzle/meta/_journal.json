@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1773486104542,
+      "tag": "0000_curved_professor_monster",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1773661456952,
+      "tag": "0001_fantastic_molecule_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773675662347,
+      "tag": "0002_third_namorita",
+      "breakpoints": true
+    }
+  ]
+}
