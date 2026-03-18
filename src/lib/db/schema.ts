@@ -196,6 +196,8 @@ export const activityEvents = pgTable('activity_events', {
   action: varchar('action', { length: 30 }).notNull(),
   entityName: varchar('entity_name', { length: 255 }),
   metadata: jsonb('metadata').default({}).notNull(),
+  actorId: varchar('actor_id', { length: 255 }),
+  actorType: varchar('actor_type', { length: 10 }).default('user').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 

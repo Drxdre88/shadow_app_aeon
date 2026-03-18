@@ -51,7 +51,7 @@ export async function createBoardTask(data: {
   startDate?: string
   endDate?: string
 }) {
-  await requireOwnership(data.projectId)
+  const userId = await requireOwnership(data.projectId)
 
   const parsed = createTaskSchema.parse({
     name: data.name,
@@ -69,7 +69,7 @@ export async function createBoardTask(data: {
 
   const task = await _createTask(data.projectId, parsed, data.id)
 
-  emitActivity(data.projectId, 'task', task.id, 'created', data.name).catch(() => {})
+  emitActivity(data.projectId, 'task', task.id, 'created', data.name, undefined, userId).catch(() => {})
 
   revalidatePath(`/project/${data.projectId}`)
   return task
@@ -92,18 +92,20 @@ export async function updateBoardTask(
     endDate?: string | null
   }
 ) {
-  await requireOwnership(projectId)
+  const userId = await requireOwnership(projectId)
 
   const parsed = updateTaskSchema.parse(data)
+
+  const existing = parsed.columnId ? await _findTaskById(taskId, projectId) : null
 
   const task = await _updateTask(taskId, projectId, parsed)
 
   if (parsed.status === 'done') {
-    emitActivity(projectId, 'task', taskId, 'completed', task?.name).catch(() => {})
+    emitActivity(projectId, 'task', taskId, 'completed', task?.name, undefined, userId).catch(() => {})
   } else if (parsed.columnId) {
-    emitActivity(projectId, 'task', taskId, 'moved', task?.name, { toColumnId: parsed.columnId }).catch(() => {})
+    emitActivity(projectId, 'task', taskId, 'moved', task?.name, { fromColumnId: existing?.columnId, toColumnId: parsed.columnId }, userId).catch(() => {})
   } else {
-    emitActivity(projectId, 'task', taskId, 'updated', task?.name).catch(() => {})
+    emitActivity(projectId, 'task', taskId, 'updated', task?.name, undefined, userId).catch(() => {})
   }
 
   if (parsed.status) {
@@ -115,9 +117,9 @@ export async function updateBoardTask(
 }
 
 export async function deleteBoardTask(taskId: string, projectId: string) {
-  await requireOwnership(projectId)
+  const userId = await requireOwnership(projectId)
   const taskToDelete = await _findTaskById(taskId, projectId)
-  emitActivity(projectId, 'task', taskId, 'deleted', taskToDelete?.name).catch(() => {})
+  emitActivity(projectId, 'task', taskId, 'deleted', taskToDelete?.name, undefined, userId).catch(() => {})
   await deleteLinkedGanttTask(taskId)
   await _deleteTask(taskId, projectId)
   revalidatePath(`/project/${projectId}`)
@@ -127,36 +129,46 @@ export async function reorderBoardTasks(
   projectId: string,
   updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[]
 ) {
-  await requireOwnership(projectId)
+  const userId = await requireOwnership(projectId)
+  const movingIds = updates.filter(u => u.columnId).map(u => u.id)
+  let previousColumns = new Map<string, string | null>()
+  if (movingIds.length > 0) {
+    const allTasks = await _findTasks(projectId)
+    for (const t of allTasks) {
+      if (movingIds.includes(t.id)) {
+        previousColumns.set(t.id, t.columnId)
+      }
+    }
+  }
   const parsed = updates.map(u => reorderTaskEntrySchema.parse(u))
   await _reorderTasks(projectId, parsed)
   const moves = updates.filter(u => u.columnId)
   for (const move of moves) {
-    emitActivity(projectId, 'task', move.id, 'moved', move.name, { toColumnId: move.columnId }).catch(() => {})
+    emitActivity(projectId, 'task', move.id, 'moved', move.name, { fromColumnId: previousColumns.get(move.id) ?? null, toColumnId: move.columnId }, userId).catch(() => {})
   }
   for (const u of updates) {
     if (u.status === 'done') {
-      emitActivity(projectId, 'task', u.id, 'completed', u.name, { via: 'drag' }).catch(() => {})
+      emitActivity(projectId, 'task', u.id, 'completed', u.name, { via: 'drag' }, userId).catch(() => {})
     }
   }
   revalidatePath(`/project/${projectId}`)
 }
 
 export async function archiveBoardTask(taskId: string, projectId: string) {
-  await requireOwnership(projectId)
+  const userId = await requireOwnership(projectId)
   const task = await _archiveTask(taskId, projectId)
   if (task) {
-    emitActivity(projectId, 'task', taskId, 'archived', task.name).catch(() => {})
+    emitActivity(projectId, 'task', taskId, 'archived', task.name, undefined, userId).catch(() => {})
   }
   revalidatePath(`/project/${projectId}`)
   return task
 }
 
 export async function restoreBoardTask(taskId: string, projectId: string) {
-  await requireOwnership(projectId)
+  const userId = await requireOwnership(projectId)
   const task = await _restoreTask(taskId, projectId)
   if (task) {
-    emitActivity(projectId, 'task', taskId, 'restored', task.name).catch(() => {})
+    emitActivity(projectId, 'task', taskId, 'restored', task.name, undefined, userId).catch(() => {})
   }
   revalidatePath(`/project/${projectId}`)
   return task
@@ -168,12 +180,12 @@ export async function getArchivedTasks(projectId: string) {
 }
 
 export async function archiveColumnTasks(projectId: string, columnId: string) {
-  await requireOwnership(projectId)
+  const userId = await requireOwnership(projectId)
   const allTasks = await _findTasks(projectId)
   const columnTaskIds = allTasks.filter(t => t.columnId === columnId).map(t => t.id)
   const archived = await _archiveTasksBatch(projectId, columnTaskIds)
   for (const task of archived) {
-    emitActivity(projectId, 'task', task.id, 'archived', task.name).catch(() => {})
+    emitActivity(projectId, 'task', task.id, 'archived', task.name, undefined, userId).catch(() => {})
   }
   revalidatePath(`/project/${projectId}`)
   return archived
