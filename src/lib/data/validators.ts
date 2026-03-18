@@ -218,6 +218,39 @@ export const batchVaultSchema = z.object({
   })).min(1).max(100),
 })
 
+const customPrioritySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: z.string(),
+})
+
+export const preferencesSchema = z.object({
+  currentTheme: z.string().optional(),
+  glowIntensity: z.number().min(0).max(100).optional(),
+  glassOpacity: z.number().min(0).max(100).optional(),
+  ambientBlobs: z.boolean().optional(),
+  fontFamily: z.enum(['system', 'inter', 'jetbrains', 'space-grotesk', 'fira-code']).optional(),
+  dragEffect: z.enum(['glow', 'ghost', 'lightning']).optional(),
+  cursorEffect: z.string().optional(),
+  cursorColor: z.string().optional(),
+  columnWidth: z.number().min(250).max(1200).optional(),
+  columnHeight: z.number().min(200).max(1600).optional(),
+  dynamicColumnWidth: z.boolean().optional(),
+  dynamicColumnHeight: z.boolean().optional(),
+  smokeVolume: z.number().min(0).max(100).optional(),
+  depLineWidth: z.number().min(0.3).max(3).optional(),
+  depLineGlow: z.number().min(0).max(100).optional(),
+  depLineStyle: z.enum(['solid', 'dashed', 'dotted']).optional(),
+  depCanvasBlur: z.number().min(0).max(40).optional(),
+  boardLayout: z.enum(['scroll', 'grid']).optional(),
+  projectColors: z.record(z.string(), z.string()).optional(),
+  depViewMode: z.enum(['canvas', 'arrows']).optional(),
+  shortcuts: z.record(z.string(), z.string()).optional(),
+  priorities: z.array(customPrioritySchema).optional(),
+}).passthrough()
+
+export type PreferencesInput = z.infer<typeof preferencesSchema>
+
 export type CreateLabelInput = z.infer<typeof createLabelSchema>
 export type CreateColumnInput = z.infer<typeof createColumnSchema>
 export type UpdateColumnInput = z.infer<typeof updateColumnSchema>

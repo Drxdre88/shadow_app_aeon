@@ -1,6 +1,10 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
 import { themes, type ThemeName, type ThemeColors } from '@/config/themes'
+import {
+  DEFAULT_PREFERENCES,
+  DEFAULT_SHORTCUTS,
+  INITIAL_PRIORITIES,
+} from '@/config/defaults'
 
 export type FontFamily = 'system' | 'inter' | 'jetbrains' | 'space-grotesk' | 'fira-code'
 export type DragEffect = 'glow' | 'ghost' | 'lightning'
@@ -15,12 +19,7 @@ export interface CustomPriority {
   color: string
 }
 
-export const INITIAL_PRIORITIES = [
-  { id: 'low', name: '🟢 low', color: '#64748b' },
-  { id: 'medium', name: '🔵 medium', color: '#3b82f6' },
-  { id: 'high', name: '🟠 high', color: '#f97316' },
-  { id: 'urgent', name: '🔴 urgent', color: '#ef4444' },
-]
+export { INITIAL_PRIORITIES, DEFAULT_SHORTCUTS }
 
 export const FONT_OPTIONS: { id: FontFamily; label: string; css: string }[] = [
   { id: 'system', label: 'System', css: 'system-ui, -apple-system, sans-serif' },
@@ -30,14 +29,8 @@ export const FONT_OPTIONS: { id: FontFamily; label: string; css: string }[] = [
   { id: 'fira-code', label: 'Fira Code', css: 'var(--font-fira-code), monospace' },
 ]
 
-export const DEFAULT_SHORTCUTS: Record<string, string> = {
-  openLabel: 'l',
-  addTask: 't',
-  changeGlow: 'g',
-  toggleDates: 'd',
-}
-
 interface ThemeStore {
+  _hydrated: boolean
   currentTheme: ThemeName
   colors: ThemeColors
   glowIntensity: number
@@ -61,6 +54,7 @@ interface ThemeStore {
   depViewMode: DepViewMode
   shortcuts: Record<string, string>
   priorities: CustomPriority[]
+  _hydrateFromDB: (prefs: Record<string, unknown>) => void
   setBoardLayout: (layout: BoardLayout) => void
   setProjectColor: (projectId: string, color: string) => void
   setTheme: (theme: ThemeName) => void
@@ -89,153 +83,123 @@ interface ThemeStore {
   setShortcut: (action: string, key: string) => void
 }
 
-export const useThemeStore = create<ThemeStore>()(
-  persist(
-    (set) => ({
-      currentTheme: 'deepSpace',
-      colors: themes.deepSpace,
-      glowIntensity: 75,
-      glassOpacity: 50,
-      ambientBlobs: true,
-      fontFamily: 'system' as FontFamily,
-      dragEffect: 'glow' as DragEffect,
-      cursorEffect: 'none' as CursorEffect,
-      cursorColor: '',
-      columnWidth: 380,
-      columnHeight: 800,
-      dynamicColumnWidth: true,
-      dynamicColumnHeight: true,
-      smokeVolume: 75,
-      depLineWidth: 1,
-      depLineGlow: 60,
-      depLineStyle: 'solid' as DepLineStyle,
-      depCanvasBlur: 16,
-      boardLayout: 'scroll' as BoardLayout,
-      projectColors: {} as Record<string, string>,
-      depViewMode: 'canvas' as DepViewMode,
-      shortcuts: { ...DEFAULT_SHORTCUTS },
-      priorities: [...INITIAL_PRIORITIES],
-      setTheme: (theme: ThemeName) => {
-        const colors = themes[theme]
-        set({ currentTheme: theme, colors })
-      },
-      setGlowIntensity: (intensity: number) => {
-        set({ glowIntensity: Math.max(0, Math.min(100, intensity)) })
-      },
-      setGlassOpacity: (opacity: number) => {
-        set({ glassOpacity: Math.max(0, Math.min(100, opacity)) })
-      },
-      setAmbientBlobs: (enabled: boolean) => {
-        set({ ambientBlobs: enabled })
-      },
-      setFontFamily: (font: FontFamily) => {
-        set({ fontFamily: font })
-      },
-      setDragEffect: (effect: DragEffect) => {
-        set({ dragEffect: effect })
-      },
-      setCursorEffect: (effect: CursorEffect) => {
-        set({ cursorEffect: effect })
-      },
-      setCursorColor: (color: string) => {
-        set({ cursorColor: color })
-      },
-      setPriorities: (priorities: CustomPriority[]) => {
-        set({ priorities })
-      },
-      updatePriority: (id: string, updates: Partial<CustomPriority>) => {
-        set((s) => ({ priorities: s.priorities.map((p) => (p.id === id ? { ...p, ...updates } : p)) }))
-      },
-      addPriority: (priority: CustomPriority) => {
-        set((s) => ({ priorities: [...s.priorities, priority] }))
-      },
-      removePriority: (id: string) => {
-        set((s) => ({ priorities: s.priorities.filter((p) => p.id !== id) }))
-      },
-      resetPriorities: () => {
-        set({ priorities: [...INITIAL_PRIORITIES] })
-      },
-      setColumnWidth: (width: number) => {
-        set({ columnWidth: Math.max(250, Math.min(600, width)) })
-      },
-      setColumnHeight: (height: number) => {
-        set({ columnHeight: Math.max(200, Math.min(1600, height)) })
-      },
-      setDynamicColumnWidth: (enabled: boolean) => {
-        set({ dynamicColumnWidth: enabled })
-      },
-      setDynamicColumnHeight: (enabled: boolean) => {
-        set({ dynamicColumnHeight: enabled })
-      },
-      setSmokeVolume: (volume: number) => {
-        set({ smokeVolume: Math.max(0, Math.min(100, Math.round(volume))) })
-      },
-      setDepLineWidth: (width: number) => {
-        set({ depLineWidth: Math.max(0.3, Math.min(3, Math.round(width * 10) / 10)) })
-      },
-      setDepLineGlow: (glow: number) => {
-        set({ depLineGlow: Math.max(0, Math.min(100, glow)) })
-      },
-      setDepLineStyle: (style: DepLineStyle) => {
-        set({ depLineStyle: style })
-      },
-      setDepCanvasBlur: (blur: number) => {
-        set({ depCanvasBlur: Math.max(0, Math.min(40, Math.round(blur))) })
-      },
-      setBoardLayout: (layout: BoardLayout) => {
-        set({ boardLayout: layout })
-      },
-      setProjectColor: (projectId: string, color: string) => {
-        set((s) => ({ projectColors: { ...s.projectColors, [projectId]: color } }))
-      },
-      setDepViewMode: (mode: DepViewMode) => {
-        set({ depViewMode: mode })
-      },
-      setShortcut: (action: string, key: string) => {
-        set((s) => ({ shortcuts: { ...s.shortcuts, [action]: key } }))
-      },
-    }),
-    {
-      name: 'aeon-theme',
-      partialize: (state) => ({
-        currentTheme: state.currentTheme,
-        colors: state.colors,
-        glowIntensity: state.glowIntensity,
-        glassOpacity: state.glassOpacity,
-        ambientBlobs: state.ambientBlobs,
-        fontFamily: state.fontFamily,
-        dragEffect: state.dragEffect,
-        cursorEffect: state.cursorEffect,
-        cursorColor: state.cursorColor,
-        priorities: state.priorities,
-        columnWidth: state.columnWidth,
-        columnHeight: state.columnHeight,
-        dynamicColumnWidth: state.dynamicColumnWidth,
-        dynamicColumnHeight: state.dynamicColumnHeight,
-        smokeVolume: state.smokeVolume,
-        depLineWidth: state.depLineWidth,
-        depLineGlow: state.depLineGlow,
-        depLineStyle: state.depLineStyle,
-        depCanvasBlur: state.depCanvasBlur,
-        boardLayout: state.boardLayout,
-        projectColors: state.projectColors,
-        depViewMode: state.depViewMode,
-        shortcuts: state.shortcuts,
-      }),
-      merge: (persisted: unknown, current: ThemeStore) => ({
-        ...current,
-        ...(persisted as Partial<ThemeStore>),
-        shortcuts: { ...DEFAULT_SHORTCUTS, ...((persisted as Partial<ThemeStore>)?.shortcuts ?? {}) },
-        dynamicColumnWidth: (persisted as Partial<ThemeStore>)?.dynamicColumnWidth ?? current.dynamicColumnWidth,
-        dynamicColumnHeight: (persisted as Partial<ThemeStore>)?.dynamicColumnHeight ?? current.dynamicColumnHeight,
-        columnHeight: (persisted as Partial<ThemeStore>)?.columnHeight ?? current.columnHeight,
-        smokeVolume: (persisted as Partial<ThemeStore>)?.smokeVolume ?? current.smokeVolume,
-        depLineWidth: (persisted as Partial<ThemeStore>)?.depLineWidth ?? current.depLineWidth,
-        depLineGlow: (persisted as Partial<ThemeStore>)?.depLineGlow ?? current.depLineGlow,
-        depLineStyle: (persisted as Partial<ThemeStore>)?.depLineStyle ?? current.depLineStyle,
-        depCanvasBlur: (persisted as Partial<ThemeStore>)?.depCanvasBlur ?? current.depCanvasBlur,
-        depViewMode: (persisted as Partial<ThemeStore>)?.depViewMode ?? current.depViewMode,
-      }),
-    }
-  )
-)
+export const useThemeStore = create<ThemeStore>()((set) => ({
+  _hydrated: false,
+  currentTheme: DEFAULT_PREFERENCES.currentTheme as ThemeName,
+  colors: themes[DEFAULT_PREFERENCES.currentTheme as ThemeName] ?? themes.deepSpace,
+  glowIntensity: DEFAULT_PREFERENCES.glowIntensity,
+  glassOpacity: DEFAULT_PREFERENCES.glassOpacity,
+  ambientBlobs: DEFAULT_PREFERENCES.ambientBlobs,
+  fontFamily: DEFAULT_PREFERENCES.fontFamily,
+  dragEffect: DEFAULT_PREFERENCES.dragEffect,
+  cursorEffect: DEFAULT_PREFERENCES.cursorEffect,
+  cursorColor: DEFAULT_PREFERENCES.cursorColor,
+  columnWidth: DEFAULT_PREFERENCES.columnWidth,
+  columnHeight: DEFAULT_PREFERENCES.columnHeight,
+  dynamicColumnWidth: DEFAULT_PREFERENCES.dynamicColumnWidth,
+  dynamicColumnHeight: DEFAULT_PREFERENCES.dynamicColumnHeight,
+  smokeVolume: DEFAULT_PREFERENCES.smokeVolume,
+  depLineWidth: DEFAULT_PREFERENCES.depLineWidth,
+  depLineGlow: DEFAULT_PREFERENCES.depLineGlow,
+  depLineStyle: DEFAULT_PREFERENCES.depLineStyle,
+  depCanvasBlur: DEFAULT_PREFERENCES.depCanvasBlur,
+  boardLayout: DEFAULT_PREFERENCES.boardLayout,
+  projectColors: { ...DEFAULT_PREFERENCES.projectColors },
+  depViewMode: DEFAULT_PREFERENCES.depViewMode,
+  shortcuts: { ...DEFAULT_PREFERENCES.shortcuts },
+  priorities: [...DEFAULT_PREFERENCES.priorities],
+
+  _hydrateFromDB: (prefs: Record<string, unknown>) => {
+    const themeName = (prefs.currentTheme as ThemeName) ?? DEFAULT_PREFERENCES.currentTheme
+    const colors = themes[themeName] ?? themes.deepSpace
+    set({
+      ...prefs,
+      currentTheme: themeName,
+      colors,
+      shortcuts: { ...DEFAULT_SHORTCUTS, ...(prefs.shortcuts as Record<string, string> ?? {}) },
+      priorities: (prefs.priorities as CustomPriority[]) ?? [...INITIAL_PRIORITIES],
+      projectColors: (prefs.projectColors as Record<string, string>) ?? {},
+      _hydrated: true,
+    })
+  },
+
+  setTheme: (theme: ThemeName) => {
+    const colors = themes[theme]
+    set({ currentTheme: theme, colors })
+  },
+  setGlowIntensity: (intensity: number) => {
+    set({ glowIntensity: Math.max(0, Math.min(100, intensity)) })
+  },
+  setGlassOpacity: (opacity: number) => {
+    set({ glassOpacity: Math.max(0, Math.min(100, opacity)) })
+  },
+  setAmbientBlobs: (enabled: boolean) => {
+    set({ ambientBlobs: enabled })
+  },
+  setFontFamily: (font: FontFamily) => {
+    set({ fontFamily: font })
+  },
+  setDragEffect: (effect: DragEffect) => {
+    set({ dragEffect: effect })
+  },
+  setCursorEffect: (effect: CursorEffect) => {
+    set({ cursorEffect: effect })
+  },
+  setCursorColor: (color: string) => {
+    set({ cursorColor: color })
+  },
+  setPriorities: (priorities: CustomPriority[]) => {
+    set({ priorities })
+  },
+  updatePriority: (id: string, updates: Partial<CustomPriority>) => {
+    set((s) => ({ priorities: s.priorities.map((p) => (p.id === id ? { ...p, ...updates } : p)) }))
+  },
+  addPriority: (priority: CustomPriority) => {
+    set((s) => ({ priorities: [...s.priorities, priority] }))
+  },
+  removePriority: (id: string) => {
+    set((s) => ({ priorities: s.priorities.filter((p) => p.id !== id) }))
+  },
+  resetPriorities: () => {
+    set({ priorities: [...INITIAL_PRIORITIES] })
+  },
+  setColumnWidth: (width: number) => {
+    set({ columnWidth: Math.max(250, Math.min(1200, width)) })
+  },
+  setColumnHeight: (height: number) => {
+    set({ columnHeight: Math.max(200, Math.min(1600, height)) })
+  },
+  setDynamicColumnWidth: (enabled: boolean) => {
+    set({ dynamicColumnWidth: enabled })
+  },
+  setDynamicColumnHeight: (enabled: boolean) => {
+    set({ dynamicColumnHeight: enabled })
+  },
+  setSmokeVolume: (volume: number) => {
+    set({ smokeVolume: Math.max(0, Math.min(100, Math.round(volume))) })
+  },
+  setDepLineWidth: (width: number) => {
+    set({ depLineWidth: Math.max(0.3, Math.min(3, Math.round(width * 10) / 10)) })
+  },
+  setDepLineGlow: (glow: number) => {
+    set({ depLineGlow: Math.max(0, Math.min(100, glow)) })
+  },
+  setDepLineStyle: (style: DepLineStyle) => {
+    set({ depLineStyle: style })
+  },
+  setDepCanvasBlur: (blur: number) => {
+    set({ depCanvasBlur: Math.max(0, Math.min(40, Math.round(blur))) })
+  },
+  setBoardLayout: (layout: BoardLayout) => {
+    set({ boardLayout: layout })
+  },
+  setProjectColor: (projectId: string, color: string) => {
+    set((s) => ({ projectColors: { ...s.projectColors, [projectId]: color } }))
+  },
+  setDepViewMode: (mode: DepViewMode) => {
+    set({ depViewMode: mode })
+  },
+  setShortcut: (action: string, key: string) => {
+    set((s) => ({ shortcuts: { ...s.shortcuts, [action]: key } }))
+  },
+}))

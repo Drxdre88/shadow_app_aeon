@@ -5,7 +5,7 @@ import { useThemeStore, FONT_OPTIONS } from '@/stores/themeStore'
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false)
-  const { colors, fontFamily, currentTheme } = useThemeStore()
+  const { colors, fontFamily, currentTheme, _hydrated } = useThemeStore()
 
   useEffect(() => {
     setMounted(true)
@@ -50,7 +50,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [mounted, colors, fontFamily, currentTheme])
 
-  if (!mounted) {
+  if (!mounted || !_hydrated) {
     return <div style={{ visibility: 'hidden' }}>{children}</div>
   }
 
