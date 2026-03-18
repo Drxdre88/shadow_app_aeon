@@ -32,6 +32,7 @@
     "react-dom": "19.0.0",
     "resend": "^4.0.1",
     "tailwind-merge": "^2.6.0",
+    "ws": "^8.19.0",
     "zod": "^4.3.6",
     "zustand": "^5.0.2"
   },
@@ -39,6 +40,7 @@
     "@types/node": "^22.10.5",
     "@types/react": "^19.0.6",
     "@types/react-dom": "^19.0.2",
+    "@types/ws": "^8.18.1",
     "autoprefixer": "^10.4.23",
     "dotenv": "^17.2.3",
     "drizzle-kit": "^0.31.8",
