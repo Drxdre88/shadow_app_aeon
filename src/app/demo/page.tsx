@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { SettingsButton } from '@/components/ui/SettingsModal'
+import { HelpButton } from '@/components/ui/HelpModal'
 import { GanttChart } from '@/components/gantt/GanttChart'
 import { TimeScaleSelector } from '@/components/gantt/TimeScaleSelector'
 import { TaskBoard } from '@/components/board/TaskBoard'
@@ -93,6 +94,7 @@ export default function DemoPage() {
 
           <div className="flex items-center gap-4">
             {activeTab === 'gantt' && <TimeScaleSelector />}
+            <HelpButton />
             <SettingsButton />
           </div>
         </div>

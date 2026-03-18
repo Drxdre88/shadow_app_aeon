@@ -7,6 +7,7 @@ import Image from 'next/image'
 import aeonLogo from '@/assets/aeon.png'
 import Link from 'next/link'
 import { SettingsButton } from '@/components/ui/SettingsModal'
+import { HelpButton } from '@/components/ui/HelpModal'
 import { GlassStage } from '@/components/ui/GlassStage'
 import { GanttChart } from '@/components/gantt/GanttChart'
 import { TimeScaleSelector } from '@/components/gantt/TimeScaleSelector'
@@ -223,6 +224,7 @@ export default function ProjectContent({ project }: ProjectContentProps) {
                 </button>
               </>
             )}
+            <HelpButton />
             <SettingsButton />
           </div>
         </div>
