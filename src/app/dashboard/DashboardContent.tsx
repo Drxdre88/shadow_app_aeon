@@ -9,6 +9,7 @@ import Image from 'next/image'
 import aeonLogo from '@/assets/aeon.png'
 import Link from 'next/link'
 import { SettingsButton } from '@/components/ui/SettingsModal'
+import { HelpButton } from '@/components/ui/HelpModal'
 import { GlowCard } from '@/components/ui/GlowCard'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { CreateProjectModal } from '@/components/project/CreateProjectModal'
@@ -123,6 +124,7 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
             )}
           </div>
           <div className="flex items-center gap-4">
+            <HelpButton />
             <SettingsButton />
             <div className="flex items-center gap-3 pl-4 border-l border-white/10">
               {user.image ? (
