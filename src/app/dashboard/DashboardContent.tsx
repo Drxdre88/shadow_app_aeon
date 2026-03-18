@@ -125,10 +125,10 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
           <div className="flex items-center gap-4">
             <SettingsButton />
             <div className="flex items-center gap-3 pl-4 border-l border-white/10">
-              {user.image && (
+              {user.image ? (
                 <img
                   src={user.image}
-                  alt=""
+                  alt={user.name || ''}
                   className="w-8 h-8 rounded-full border border-white/20"
                   style={{
                     boxShadow: glowIntensity > 0
@@ -136,6 +136,19 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
                       : undefined,
                   }}
                 />
+              ) : (
+                <div
+                  className="w-8 h-8 rounded-full border border-white/20 flex items-center justify-center text-xs font-semibold"
+                  style={{
+                    background: 'var(--primary-muted)',
+                    color: 'var(--text-secondary)',
+                    boxShadow: glowIntensity > 0
+                      ? `0 0 ${10 * mult}px ${2 * mult}px var(--glow-color)`
+                      : undefined,
+                  }}
+                >
+                  {(user.name || user.email || '?').charAt(0).toUpperCase()}
+                </div>
               )}
               <span className="text-sm text-[var(--text-muted)] hidden sm:block">
                 {user.name || user.email}
