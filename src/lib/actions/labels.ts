@@ -47,15 +47,15 @@ export async function deleteLabel(labelId: string, projectId: string) {
 }
 
 export async function addLabelToTask(taskId: string, labelId: string, projectId: string) {
-  await requireOwnership(projectId)
+  const userId = await requireOwnership(projectId)
   await _addLabelToTask(taskId, labelId, projectId)
-  emitActivity(projectId, 'label', taskId, 'label_added', undefined, { labelId, taskId }).catch(() => {})
+  emitActivity(projectId, 'label', taskId, 'label_added', undefined, { labelId, taskId }, userId).catch(() => {})
   revalidatePath(`/project/${projectId}`)
 }
 
 export async function removeLabelFromTask(taskId: string, labelId: string, projectId: string) {
-  await requireOwnership(projectId)
+  const userId = await requireOwnership(projectId)
   await _removeLabelFromTask(taskId, labelId, projectId)
-  emitActivity(projectId, 'label', taskId, 'label_removed', undefined, { labelId, taskId }).catch(() => {})
+  emitActivity(projectId, 'label', taskId, 'label_removed', undefined, { labelId, taskId }, userId).catch(() => {})
   revalidatePath(`/project/${projectId}`)
 }

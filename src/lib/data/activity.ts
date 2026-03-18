@@ -3,7 +3,8 @@ import { activityEvents } from '@/lib/db/schema'
 import { eq, desc, and, lt } from 'drizzle-orm'
 
 export type ActivityEntityType = 'task' | 'column' | 'dependency' | 'label' | 'gantt_task' | 'canvas_node' | 'project'
-export type ActivityAction = 'created' | 'updated' | 'deleted' | 'moved' | 'completed' | 'vaulted' | 'archived' | 'restored' | 'dependency_added' | 'dependency_removed' | 'label_added' | 'label_removed'
+export type ActivityAction = 'created' | 'updated' | 'deleted' | 'moved' | 'completed' | 'vaulted' | 'archived' | 'restored' | 'dependency_added' | 'dependency_removed' | 'label_added' | 'label_removed' | 'column_entered' | 'column_exited'
+export type ActorType = 'user' | 'agent'
 
 export async function emitActivity(
   projectId: string,
@@ -11,7 +12,9 @@ export async function emitActivity(
   entityId: string,
   action: ActivityAction,
   entityName?: string,
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown>,
+  actorId?: string,
+  actorType?: ActorType
 ) {
   await db.insert(activityEvents).values({
     projectId,
@@ -20,6 +23,8 @@ export async function emitActivity(
     action,
     entityName: entityName ?? null,
     metadata: metadata ?? {},
+    actorId: actorId ?? null,
+    actorType: actorType ?? 'user',
   })
 }
 

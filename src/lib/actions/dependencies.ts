@@ -16,7 +16,7 @@ export async function addTaskDependency(
   blockerTaskId: string,
   blockedTaskId: string
 ) {
-  await requireOwnership(projectId)
+  const userId = await requireOwnership(projectId)
 
   const parsed = addDependencySchema.parse({ blockerTaskId, blockedTaskId })
 
@@ -29,7 +29,7 @@ export async function addTaskDependency(
   emitActivity(projectId, 'dependency', parsed.blockerTaskId, 'dependency_added', undefined, {
     blockerTaskId: parsed.blockerTaskId,
     blockedTaskId: parsed.blockedTaskId,
-  }).catch(() => {})
+  }, userId).catch(() => {})
   revalidatePath(`/project/${projectId}`)
 }
 
@@ -38,11 +38,11 @@ export async function removeTaskDependency(
   blockerTaskId: string,
   blockedTaskId: string
 ) {
-  await requireOwnership(projectId)
+  const userId = await requireOwnership(projectId)
   await _removeDependency(blockerTaskId, blockedTaskId, projectId)
   emitActivity(projectId, 'dependency', blockerTaskId, 'dependency_removed', undefined, {
     blockerTaskId,
     blockedTaskId,
-  }).catch(() => {})
+  }, userId).catch(() => {})
   revalidatePath(`/project/${projectId}`)
 }

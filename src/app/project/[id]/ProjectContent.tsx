@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { LayoutGrid, Calendar, Lightbulb, ArrowLeft, RefreshCw, AlertTriangle, Filter, Link2, GitBranch, Trophy, RotateCcw, Columns3, Grid2x2, Package } from 'lucide-react'
+import { LayoutGrid, Calendar, Lightbulb, ArrowLeft, RefreshCw, AlertTriangle, Filter, Link2, GitBranch, Trophy, RotateCcw, Columns3, Grid2x2, Package, Activity } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import Image from 'next/image'
 import aeonLogo from '@/assets/aeon.png'
@@ -18,6 +18,7 @@ import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { cn } from '@/lib/utils/cn'
 import { GanttViewSelector } from '@/components/gantt/GanttViewSelector'
 import { TrophyRoom } from '@/components/trophy/TrophyRoom'
+import { VelocityTab } from '@/components/velocity/VelocityTab'
 import { TaskEditModal } from '@/components/board/TaskEditModal'
 import { VaultDaysModal } from '@/components/board/VaultDaysModal'
 import { BatchVaultModal } from '@/components/board/BatchVaultModal'
@@ -37,7 +38,7 @@ interface ProjectContentProps {
 }
 
 export default function ProjectContent({ project }: ProjectContentProps) {
-  const [activeTab, setActiveTab] = useState<'board' | 'gantt' | 'canvas' | 'trophy'>('board')
+  const [activeTab, setActiveTab] = useState<'board' | 'gantt' | 'canvas' | 'trophy' | 'velocity'>('board')
   const [showFilters, setShowFilters] = useState(false)
   const [filters, setFilters] = useState<BoardFilters>(DEFAULT_FILTERS)
   const [showAllDeps, setShowAllDeps] = useState(false)
@@ -130,6 +131,18 @@ export default function ProjectContent({ project }: ProjectContentProps) {
               >
                 <Trophy className="w-4 h-4" />
                 Trophy
+              </button>
+              <button
+                onClick={() => setActiveTab('velocity')}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                  activeTab === 'velocity'
+                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                )}
+              >
+                <Activity className="w-4 h-4" />
+                Velocity
               </button>
             </div>
           </div>
@@ -355,6 +368,10 @@ export default function ProjectContent({ project }: ProjectContentProps) {
 
             {activeTab === 'trophy' && (
               <TrophyRoom projectId={project.id} />
+            )}
+
+            {activeTab === 'velocity' && (
+              <VelocityTab projectId={project.id} />
             )}
           </>
         )}

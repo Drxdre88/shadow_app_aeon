@@ -9,7 +9,7 @@ import { useBoardStore } from '@/lib/store/boardStore'
 import { useGanttStore } from '@/lib/store/ganttStore'
 import { useCanvasStore } from '@/lib/store/canvasStore'
 
-export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' | 'canvas' | 'trophy') {
+export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' | 'canvas' | 'trophy' | 'velocity') {
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loadKey, setLoadKey] = useState(0)
