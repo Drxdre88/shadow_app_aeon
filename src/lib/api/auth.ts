@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { verifyApiKey } from '@/lib/data/api-keys'
 
 export type ApiUser = { id: string; role: string }
 
@@ -19,12 +20,19 @@ export async function authenticateRequest(
   const authHeader = request.headers.get('authorization')
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7)
-    const apiKey = process.env.AEON_API_KEY
+
+    const masterKey = process.env.AEON_API_KEY
     const adminId = process.env.AEON_API_USER_ID
-    if (!apiKey || !adminId || !constantTimeCompare(token, apiKey)) {
-      return NextResponse.json({ error: 'Invalid API key' }, { status: 401 })
+    if (masterKey && adminId && constantTimeCompare(token, masterKey)) {
+      return { id: adminId, role: 'admin' }
     }
-    return { id: adminId, role: 'admin' }
+
+    if (token.startsWith('aeon_k1_')) {
+      const result = await verifyApiKey(token)
+      if (result) return { id: result.userId, role: 'user' }
+    }
+
+    return NextResponse.json({ error: 'Invalid API key' }, { status: 401 })
   }
 
   const session = await auth()

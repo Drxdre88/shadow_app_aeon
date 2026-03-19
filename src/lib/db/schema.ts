@@ -177,6 +177,17 @@ export const userPreferences = pgTable('user_preferences', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 
+export const apiKeys = pgTable('api_keys', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 100 }).notNull(),
+  keyPrefix: varchar('key_prefix', { length: 12 }).notNull(),
+  keyHash: varchar('key_hash', { length: 64 }).notNull(),
+  lastUsedAt: timestamp('last_used_at', { mode: 'date' }),
+  revokedAt: timestamp('revoked_at', { mode: 'date' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
 export const canvasEdges = pgTable('canvas_edges', {
   id: uuid('id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -234,3 +245,4 @@ export type CanvasEdge = typeof canvasEdges.$inferSelect
 export type ActivityEvent = typeof activityEvents.$inferSelect
 export type TaskVault = typeof taskVault.$inferSelect
 export type UserPreference = typeof userPreferences.$inferSelect
+export type ApiKeyRecord = typeof apiKeys.$inferSelect

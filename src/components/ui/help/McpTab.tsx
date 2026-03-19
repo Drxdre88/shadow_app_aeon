@@ -1,7 +1,8 @@
 'use client'
 
+import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
-import { Terminal, Key, Link2, Wrench } from 'lucide-react'
+import { Terminal, Key, Link2, Wrench, Plus, Trash2, AlertTriangle } from 'lucide-react'
 import { Section, FeatureCard, CodeBlock, CopyButton } from './shared'
 import { useThemeStore } from '@/stores/themeStore'
 
@@ -65,34 +66,159 @@ const TOOL_CATEGORIES = [
     ],
   },
   {
-    name: 'Batch',
+    name: 'Batch & Analytics',
     tools: [
       'batch_create_tasks',
       'batch_create_checklist_items',
       'batch_add_dependencies',
       'setup_board',
+      'get_velocity_stats',
     ],
   },
 ]
 
-function UserIdDisplay() {
-  const { data: session } = useSession()
+type ApiKeyEntry = {
+  id: string
+  name: string
+  keyPrefix: string
+  lastUsedAt: string | null
+  createdAt: string
+}
+
+function ApiKeyManager() {
   const { colors } = useThemeStore()
-  const userId = session?.user?.id ?? 'Sign in to see your User ID'
+  const [keys, setKeys] = useState<ApiKeyEntry[]>([])
+  const [newKeyName, setNewKeyName] = useState('')
+  const [newKeyPlaintext, setNewKeyPlaintext] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchKeys = useCallback(async () => {
+    try {
+      const res = await fetch('/api/v1/api-keys')
+      if (!res.ok) return
+      const json = await res.json()
+      setKeys(json.data || [])
+    } catch {}
+  }, [])
+
+  useEffect(() => { fetchKeys() }, [fetchKeys])
+
+  const handleCreate = async () => {
+    if (!newKeyName.trim()) return
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/v1/api-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newKeyName.trim() }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setError(json.error || 'Failed to create key')
+        return
+      }
+      setNewKeyPlaintext(json.data.key)
+      setNewKeyName('')
+      fetchKeys()
+    } catch {
+      setError('Failed to create key')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRevoke = async (keyId: string) => {
+    try {
+      await fetch(`/api/v1/api-keys/${keyId}`, { method: 'DELETE' })
+      fetchKeys()
+    } catch {}
+  }
 
   return (
-    <div className="flex items-center gap-3 p-3 rounded-lg bg-white/[0.03] border border-white/[0.06]">
-      <div
-        className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-        style={{ backgroundColor: `${colors.primary}20` }}
-      >
-        <Key className="w-4 h-4" style={{ color: colors.primary }} />
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <input
+          type="text"
+          placeholder="Key name (e.g. Claude Desktop)"
+          value={newKeyName}
+          onChange={(e) => setNewKeyName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+          maxLength={100}
+          className="flex-1 px-3 py-2 text-sm bg-white/5 border border-white/10 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-white/20"
+        />
+        <button
+          onClick={handleCreate}
+          disabled={loading || !newKeyName.trim()}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-40"
+          style={{ backgroundColor: `${colors.primary}20`, color: colors.primary }}
+        >
+          <Plus className="w-4 h-4" />
+          Generate
+        </button>
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs text-slate-400">Your User ID</p>
-        <p className="text-sm font-mono text-white truncate">{userId}</p>
-      </div>
-      {session?.user?.id && <CopyButton text={session.user.id} />}
+
+      {error && (
+        <p className="text-xs text-red-400">{error}</p>
+      )}
+
+      {newKeyPlaintext && (
+        <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 space-y-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <p className="text-xs font-medium text-amber-300">
+              Copy this key now. It will not be shown again.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 p-2 rounded bg-black/40 font-mono text-xs text-white break-all">
+            <span className="flex-1">{newKeyPlaintext}</span>
+            <CopyButton text={newKeyPlaintext} />
+          </div>
+          <button
+            onClick={() => setNewKeyPlaintext(null)}
+            className="text-xs text-slate-400 hover:text-white transition-colors"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {keys.length > 0 ? (
+        <div className="space-y-2">
+          {keys.map((k) => (
+            <div
+              key={k.id}
+              className="flex items-center justify-between p-3 rounded-lg bg-white/[0.03] border border-white/[0.06]"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-white font-medium truncate">{k.name}</p>
+                <div className="flex items-center gap-3 mt-0.5">
+                  <span className="text-xs font-mono text-slate-500">{k.keyPrefix}...</span>
+                  <span className="text-xs text-slate-600">
+                    Created {new Date(k.createdAt).toLocaleDateString()}
+                  </span>
+                  {k.lastUsedAt && (
+                    <span className="text-xs text-slate-600">
+                      Last used {new Date(k.lastUsedAt).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => handleRevoke(k.id)}
+                className="p-1.5 rounded-md bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-colors ml-2"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-slate-500 text-center py-2">
+          No API keys yet. Generate one to connect your AI client.
+        </p>
+      )}
     </div>
   )
 }
@@ -102,7 +228,7 @@ function McpConfigBlock() {
   "mcpServers": {
     "aeon": {
       "type": "sse",
-      "url": "https://your-deployment-url.vercel.app/api/mcp/sse",
+      "url": "https://aeon.shadow-lab.ai/api/sse",
       "headers": {
         "Authorization": "Bearer YOUR_API_KEY"
       }
@@ -111,13 +237,6 @@ function McpConfigBlock() {
 }`
 
   return <CodeBlock copyText={configTemplate}>{configTemplate}</CodeBlock>
-}
-
-function EnvBlock() {
-  const envTemplate = `AEON_API_KEY=your-chosen-secret-key
-AEON_API_USER_ID=your-user-id-from-above`
-
-  return <CodeBlock copyText={envTemplate}>{envTemplate}</CodeBlock>
 }
 
 export function McpTab() {
@@ -130,19 +249,19 @@ export function McpTab() {
         This gives your AI full access to manage projects, tasks, and boards programmatically.
       </p>
 
-      <Section title="Your Connection Info">
-        <UserIdDisplay />
+      <Section title="API Keys">
+        <ApiKeyManager />
       </Section>
 
       <Section title="Setup Guide">
         <div className="space-y-4">
           <div className="space-y-2">
             <p className="text-xs font-medium text-white">
-              1. Set environment variables on your deployment
+              1. Generate an API key above
             </p>
-            <EnvBlock />
             <p className="text-xs text-slate-500">
-              Choose any secret for AEON_API_KEY. Copy your User ID from above for AEON_API_USER_ID.
+              Give it a descriptive name like &quot;Claude Desktop&quot; or &quot;Cursor&quot;.
+              The key is shown once -- copy it immediately.
             </p>
           </div>
 
@@ -152,9 +271,10 @@ export function McpTab() {
             </p>
             <McpConfigBlock />
             <p className="text-xs text-slate-500">
-              Replace YOUR_API_KEY with the same secret you set in step 1.
-              For Claude Desktop, add this to claude_desktop_config.json.
+              Replace YOUR_API_KEY with the key you generated.
+              For Claude Desktop, add to claude_desktop_config.json.
               For Cursor, add to .cursor/mcp.json.
+              For Claude Code, add to .mcp.json.
             </p>
           </div>
 
@@ -174,13 +294,13 @@ export function McpTab() {
         <div className="grid grid-cols-2 gap-3">
           <FeatureCard
             icon={Key}
-            title="Bearer Token"
-            description="Your AEON_API_KEY is sent as a Bearer token in the Authorization header with every MCP request."
+            title="Per-User Keys"
+            description="Each user generates their own API keys. Keys are hashed and bound to your account for secure, isolated access."
           />
           <FeatureCard
             icon={Link2}
-            title="User Binding"
-            description="AEON_API_USER_ID links the API key to your account. All operations execute as your user."
+            title="Data Isolation"
+            description="Your API key only accesses your projects. All operations execute with your user's permissions."
           />
           <FeatureCard
             icon={Terminal}
@@ -189,13 +309,13 @@ export function McpTab() {
           />
           <FeatureCard
             icon={Wrench}
-            title="35 Tools"
-            description="Full CRUD for projects, columns, tasks, Gantt, dependencies, labels, checklists, and batch ops."
+            title="36 Tools"
+            description="Full CRUD for projects, columns, tasks, Gantt, dependencies, labels, checklists, batch ops, and analytics."
           />
         </div>
       </Section>
 
-      <Section title="Available Tools (35)">
+      <Section title="Available Tools (36)">
         <div className="grid grid-cols-2 gap-4">
           {TOOL_CATEGORIES.map((cat) => (
             <div key={cat.name}>

@@ -1,4 +1,5 @@
-import { createMcpHandler } from 'mcp-handler'
+import { createMcpHandler, withMcpAuth } from 'mcp-handler'
+import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
 import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser } from '@/lib/api/auth'
 import { z } from 'zod'
@@ -50,10 +51,17 @@ import {
 import { emitActivity } from '@/lib/data/activity'
 import { getVelocityStats } from '@/lib/data/velocity'
 
-const userId = () => {
-  const id = process.env.AEON_API_USER_ID
-  if (!id) throw new Error('AEON_API_USER_ID not configured')
-  return id
+type Extra = { authInfo?: AuthInfo }
+
+function getUserId(extra: Extra): string {
+  const uid = extra.authInfo?.extra?.userId as string | undefined
+  if (!uid) throw new Error('User not authenticated')
+  return uid
+}
+
+async function requireOwnership(projectId: string, uid: string) {
+  const project = await verifyProjectOwnership(projectId, uid)
+  return !!project
 }
 
 const notFound = (entity: string) => ({
@@ -65,9 +73,19 @@ const ok = (data: unknown) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(data) }],
 })
 
-async function requireOwnership(projectId: string) {
-  const project = await verifyProjectOwnership(projectId, userId())
-  return !!project
+async function verifyToken(_req: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
+  if (!bearerToken) return undefined
+  const fakeReq = new NextRequest('http://localhost', {
+    headers: new Headers({ authorization: `Bearer ${bearerToken}` }),
+  })
+  const result = await authenticateRequest(fakeReq)
+  if (!isApiUser(result)) return undefined
+  return {
+    token: bearerToken,
+    clientId: result.id,
+    scopes: [result.role],
+    extra: { userId: result.id, role: result.role },
+  }
 }
 
 const mcpHandler = createMcpHandler(
@@ -76,15 +94,16 @@ const mcpHandler = createMcpHandler(
       'list_projects',
       'List all projects for the authenticated user',
       {},
-      async () => ok(await findProjects(userId()))
+      async (_args, extra) => ok(await findProjects(getUserId(extra)))
     )
 
     server.tool(
       'get_project',
       'Get a project by ID',
       { projectId: z.string().uuid().describe('The project UUID') },
-      async ({ projectId }) => {
-        const project = await findProjectById(projectId, userId())
+      async ({ projectId }, extra) => {
+        const uid = getUserId(extra)
+        const project = await findProjectById(projectId, uid)
         return project ? ok(project) : notFound('Project')
       }
     )
@@ -98,9 +117,10 @@ const mcpHandler = createMcpHandler(
         startDate: createProjectSchema.shape.startDate.describe('Start date (ISO 8601)'),
         endDate: createProjectSchema.shape.endDate.describe('End date (ISO 8601)'),
       },
-      async (input) => {
-        const project = await createProject(userId(), input)
-        emitActivity(project.id, 'project', project.id, 'created', project.name, undefined, userId(), 'agent').catch(() => {})
+      async (input, extra) => {
+        const uid = getUserId(extra)
+        const project = await createProject(uid, input)
+        emitActivity(project.id, 'project', project.id, 'created', project.name, undefined, uid, 'agent').catch(() => {})
         return ok(project)
       }
     )
@@ -112,10 +132,11 @@ const mcpHandler = createMcpHandler(
         projectId: z.string().uuid().describe('The project UUID'),
         ...updateProjectSchema.shape,
       },
-      async ({ projectId, ...data }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
-        const project = await updateProject(projectId, userId(), data)
-        if (project) emitActivity(projectId, 'project', projectId, 'updated', project.name, undefined, userId(), 'agent').catch(() => {})
+      async ({ projectId, ...data }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
+        const project = await updateProject(projectId, uid, data)
+        if (project) emitActivity(projectId, 'project', projectId, 'updated', project.name, undefined, uid, 'agent').catch(() => {})
         return project ? ok(project) : notFound('Project')
       }
     )
@@ -124,10 +145,11 @@ const mcpHandler = createMcpHandler(
       'delete_project',
       'Delete a project and all its data',
       { projectId: z.string().uuid().describe('The project UUID') },
-      async ({ projectId }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
-        const deleted = await deleteProject(projectId, userId())
-        if (deleted) emitActivity(projectId, 'project', projectId, 'deleted', undefined, undefined, userId(), 'agent').catch(() => {})
+      async ({ projectId }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
+        const deleted = await deleteProject(projectId, uid)
+        if (deleted) emitActivity(projectId, 'project', projectId, 'deleted', undefined, undefined, uid, 'agent').catch(() => {})
         return deleted
           ? ok({ deleted: true })
           : notFound('Project')
@@ -138,8 +160,9 @@ const mcpHandler = createMcpHandler(
       'list_columns',
       'List board columns for a project',
       { projectId: z.string().uuid().describe('The project UUID') },
-      async ({ projectId }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         return ok(await findColumns(projectId))
       }
     )
@@ -151,10 +174,11 @@ const mcpHandler = createMcpHandler(
         projectId: z.string().uuid().describe('The project UUID'),
         ...createColumnSchema.shape,
       },
-      async ({ projectId, ...data }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, ...data }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         const col = await createColumn(projectId, data)
-        emitActivity(projectId, 'column', col.id, 'created', col.name, undefined, userId(), 'agent').catch(() => {})
+        emitActivity(projectId, 'column', col.id, 'created', col.name, undefined, uid, 'agent').catch(() => {})
         return ok(col)
       }
     )
@@ -167,10 +191,11 @@ const mcpHandler = createMcpHandler(
         columnId: z.string().uuid().describe('The column UUID'),
         ...updateColumnSchema.shape,
       },
-      async ({ projectId, columnId, ...data }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, columnId, ...data }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         const col = await updateColumn(columnId, projectId, data)
-        if (col) emitActivity(projectId, 'column', columnId, 'updated', col.name, undefined, userId(), 'agent').catch(() => {})
+        if (col) emitActivity(projectId, 'column', columnId, 'updated', col.name, undefined, uid, 'agent').catch(() => {})
         return col ? ok(col) : notFound('Column')
       }
     )
@@ -182,10 +207,11 @@ const mcpHandler = createMcpHandler(
         projectId: z.string().uuid().describe('The project UUID'),
         columnId: z.string().uuid().describe('The column UUID'),
       },
-      async ({ projectId, columnId }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, columnId }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         const deleted = await deleteColumnData(columnId, projectId)
-        if (deleted) emitActivity(projectId, 'column', columnId, 'deleted', undefined, undefined, userId(), 'agent').catch(() => {})
+        if (deleted) emitActivity(projectId, 'column', columnId, 'deleted', undefined, undefined, uid, 'agent').catch(() => {})
         return deleted ? ok({ deleted: true }) : notFound('Column')
       }
     )
@@ -200,8 +226,9 @@ const mcpHandler = createMcpHandler(
           orderIndex: z.number().int(),
         })).describe('Array of column IDs with new order indices'),
       },
-      async ({ projectId, updates }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, updates }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         await reorderColumns(projectId, updates)
         return ok({ reordered: true })
       }
@@ -217,8 +244,9 @@ const mcpHandler = createMcpHandler(
         limit: z.number().int().min(1).max(500).default(100).describe('Max results (default 100, max 500)'),
         offset: z.number().int().min(0).default(0).describe('Skip N results (default 0)'),
       },
-      async ({ projectId, status, priority, limit, offset }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, status, priority, limit, offset }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         return ok(await findTasks(projectId, { status, priority }, limit, offset))
       }
     )
@@ -234,8 +262,9 @@ const mcpHandler = createMcpHandler(
           size: true, startDate: true, endDate: true, onTimeline: true,
         }).shape,
       },
-      async ({ projectId, columnId, ...data }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, columnId, ...data }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         const task = await createTask(projectId, {
           ...data,
           columnId,
@@ -243,7 +272,7 @@ const mcpHandler = createMcpHandler(
           priority: data.priority ?? 'medium',
           color: data.color ?? 'purple',
         })
-        emitActivity(projectId, 'task', task.id, 'created', task.name, undefined, userId(), 'agent').catch(() => {})
+        emitActivity(projectId, 'task', task.id, 'created', task.name, undefined, uid, 'agent').catch(() => {})
         return ok(task)
       }
     )
@@ -260,16 +289,17 @@ const mcpHandler = createMcpHandler(
           size: true, startDate: true, endDate: true, onTimeline: true,
         }).shape,
       },
-      async ({ projectId, taskId, columnId, ...data }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, taskId, columnId, ...data }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         const task = await updateTask(taskId, projectId, { ...data, columnId })
         if (task) {
           if (data.status === 'done') {
-            emitActivity(projectId, 'task', taskId, 'completed', task.name, undefined, userId(), 'agent').catch(() => {})
+            emitActivity(projectId, 'task', taskId, 'completed', task.name, undefined, uid, 'agent').catch(() => {})
           } else if (columnId) {
-            emitActivity(projectId, 'task', taskId, 'moved', task.name, { toColumnId: columnId }, userId(), 'agent').catch(() => {})
+            emitActivity(projectId, 'task', taskId, 'moved', task.name, { toColumnId: columnId }, uid, 'agent').catch(() => {})
           } else {
-            emitActivity(projectId, 'task', taskId, 'updated', task.name, undefined, userId(), 'agent').catch(() => {})
+            emitActivity(projectId, 'task', taskId, 'updated', task.name, undefined, uid, 'agent').catch(() => {})
           }
         }
         return task ? ok(task) : notFound('Task')
@@ -283,10 +313,11 @@ const mcpHandler = createMcpHandler(
         projectId: z.string().uuid().describe('The project UUID'),
         taskId: z.string().uuid().describe('The task UUID'),
       },
-      async ({ projectId, taskId }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, taskId }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         const deleted = await deleteTask(taskId, projectId)
-        if (deleted) emitActivity(projectId, 'task', taskId, 'deleted', undefined, undefined, userId(), 'agent').catch(() => {})
+        if (deleted) emitActivity(projectId, 'task', taskId, 'deleted', undefined, undefined, uid, 'agent').catch(() => {})
         return deleted ? ok({ deleted: true }) : notFound('Task')
       }
     )
@@ -295,8 +326,9 @@ const mcpHandler = createMcpHandler(
       'list_gantt_tasks',
       'List gantt tasks and rows for a project',
       { projectId: z.string().uuid().describe('The project UUID') },
-      async ({ projectId }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         return ok(await findGanttTasksWithRows(projectId))
       }
     )
@@ -311,8 +343,9 @@ const mcpHandler = createMcpHandler(
         startDate: createGanttTaskSchema.shape.startDate.describe('Start date (ISO 8601)'),
         endDate: createGanttTaskSchema.shape.endDate.describe('End date (ISO 8601)'),
       },
-      async ({ projectId, ...data }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, ...data }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         if (!await verifyRowOwnership(data.rowId, projectId)) return notFound('Row in this project')
         return ok(await createGanttTask(projectId, data))
       }
@@ -326,8 +359,9 @@ const mcpHandler = createMcpHandler(
         taskId: z.string().uuid().describe('The gantt task UUID'),
         ...updateGanttTaskSchema.shape,
       },
-      async ({ projectId, taskId, ...data }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, taskId, ...data }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         if (data.rowId && !await verifyRowOwnership(data.rowId, projectId)) {
           return notFound('Row in this project')
         }
@@ -340,9 +374,10 @@ const mcpHandler = createMcpHandler(
       'project_summary',
       'Get task counts by status, overdue items, and progress for a project',
       { projectId: z.string().uuid().describe('The project UUID') },
-      async ({ projectId }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
-        const summary = await getProjectSummary(projectId, userId())
+      async ({ projectId }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
+        const summary = await getProjectSummary(projectId, uid)
         return summary ? ok(summary) : notFound('Project')
       }
     )
@@ -351,8 +386,9 @@ const mcpHandler = createMcpHandler(
       'list_dependencies',
       'List all task dependencies (blocker relationships) for a project',
       { projectId: z.string().uuid().describe('The project UUID') },
-      async ({ projectId }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         return ok(await findDependencies(projectId))
       }
     )
@@ -365,8 +401,9 @@ const mcpHandler = createMcpHandler(
         blockerTaskId: z.string().uuid().describe('The task that must complete first'),
         blockedTaskId: z.string().uuid().describe('The task that is blocked'),
       },
-      async ({ projectId, blockerTaskId, blockedTaskId }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, blockerTaskId, blockedTaskId }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         if (blockerTaskId === blockedTaskId) {
           return { content: [{ type: 'text' as const, text: 'A task cannot depend on itself' }], isError: true as const }
         }
@@ -374,7 +411,7 @@ const mcpHandler = createMcpHandler(
           return { content: [{ type: 'text' as const, text: 'Would create a circular dependency' }], isError: true as const }
         }
         await addDependency(blockerTaskId, blockedTaskId, projectId)
-        emitActivity(projectId, 'dependency', blockerTaskId, 'dependency_added', undefined, { blockerTaskId, blockedTaskId }, userId(), 'agent').catch(() => {})
+        emitActivity(projectId, 'dependency', blockerTaskId, 'dependency_added', undefined, { blockerTaskId, blockedTaskId }, uid, 'agent').catch(() => {})
         return ok({ added: true, blockerTaskId, blockedTaskId })
       }
     )
@@ -387,10 +424,11 @@ const mcpHandler = createMcpHandler(
         blockerTaskId: z.string().uuid().describe('The blocker task UUID'),
         blockedTaskId: z.string().uuid().describe('The blocked task UUID'),
       },
-      async ({ projectId, blockerTaskId, blockedTaskId }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, blockerTaskId, blockedTaskId }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         await removeDependency(blockerTaskId, blockedTaskId, projectId)
-        emitActivity(projectId, 'dependency', blockerTaskId, 'dependency_removed', undefined, { blockerTaskId, blockedTaskId }, userId(), 'agent').catch(() => {})
+        emitActivity(projectId, 'dependency', blockerTaskId, 'dependency_removed', undefined, { blockerTaskId, blockedTaskId }, uid, 'agent').catch(() => {})
         return ok({ removed: true })
       }
     )
@@ -403,8 +441,9 @@ const mcpHandler = createMcpHandler(
         limit: z.number().int().min(1).max(500).default(100).describe('Max results (default 100, max 500)'),
         offset: z.number().int().min(0).default(0).describe('Skip N results (default 0)'),
       },
-      async ({ projectId, limit, offset }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, limit, offset }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         const [projectLabels, assignments] = await Promise.all([
           findLabels(projectId, limit, offset),
           findTaskLabels(projectId),
@@ -420,8 +459,9 @@ const mcpHandler = createMcpHandler(
         projectId: z.string().uuid().describe('The project UUID'),
         ...createLabelSchema.shape,
       },
-      async ({ projectId, ...data }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, ...data }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         return ok(await createLabel(projectId, data))
       }
     )
@@ -433,8 +473,9 @@ const mcpHandler = createMcpHandler(
         projectId: z.string().uuid().describe('The project UUID'),
         labelId: z.string().uuid().describe('The label UUID'),
       },
-      async ({ projectId, labelId }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, labelId }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         const deleted = await deleteLabel(labelId, projectId)
         return deleted ? ok({ deleted: true }) : notFound('Label')
       }
@@ -448,10 +489,11 @@ const mcpHandler = createMcpHandler(
         taskId: z.string().uuid().describe('The task UUID'),
         labelId: z.string().uuid().describe('The label UUID'),
       },
-      async ({ projectId, taskId, labelId }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, taskId, labelId }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         await addLabelToTask(taskId, labelId, projectId)
-        emitActivity(projectId, 'label', taskId, 'label_added', undefined, { labelId, taskId }, userId(), 'agent').catch(() => {})
+        emitActivity(projectId, 'label', taskId, 'label_added', undefined, { labelId, taskId }, uid, 'agent').catch(() => {})
         return ok({ added: true, taskId, labelId })
       }
     )
@@ -464,13 +506,15 @@ const mcpHandler = createMcpHandler(
         taskId: z.string().uuid().describe('The task UUID'),
         labelId: z.string().uuid().describe('The label UUID'),
       },
-      async ({ projectId, taskId, labelId }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, taskId, labelId }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         await removeLabelFromTask(taskId, labelId, projectId)
-        emitActivity(projectId, 'label', taskId, 'label_removed', undefined, { labelId, taskId }, userId(), 'agent').catch(() => {})
+        emitActivity(projectId, 'label', taskId, 'label_removed', undefined, { labelId, taskId }, uid, 'agent').catch(() => {})
         return ok({ removed: true })
       }
     )
+
     server.tool(
       'get_task_detail',
       'Get full card detail: task fields, checklist items, labels, and dependencies in one call',
@@ -478,8 +522,9 @@ const mcpHandler = createMcpHandler(
         projectId: z.string().uuid().describe('The project UUID'),
         taskId: z.string().uuid().describe('The task UUID'),
       },
-      async ({ projectId, taskId }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, taskId }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         const detail = await findTaskWithDetails(taskId, projectId)
         return detail ? ok(detail) : notFound('Task')
       }
@@ -494,8 +539,9 @@ const mcpHandler = createMcpHandler(
         title: z.string().min(1).max(255).describe('Checklist item title'),
         groupName: z.string().max(100).default('Checklist').describe('Group name for organizing items'),
       },
-      async ({ projectId, taskId, title, groupName }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, taskId, title, groupName }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         return ok(await createChecklistItem(taskId, { title, groupName }))
       }
     )
@@ -511,8 +557,9 @@ const mcpHandler = createMcpHandler(
         state: z.enum(['unchecked', 'checked', 'crossed']).optional().describe('Check state'),
         status: z.string().max(30).nullable().optional().describe('Status label'),
       },
-      async ({ projectId, taskId, itemId, ...updates }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, taskId, itemId, ...updates }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         const item = await updateChecklistItem(itemId, taskId, updates)
         return item ? ok(item) : notFound('Checklist item')
       }
@@ -526,8 +573,9 @@ const mcpHandler = createMcpHandler(
         taskId: z.string().uuid().describe('The task UUID'),
         itemId: z.string().uuid().describe('The checklist item UUID'),
       },
-      async ({ projectId, taskId, itemId }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, taskId, itemId }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         const deleted = await deleteChecklistItem(itemId, taskId)
         return deleted ? ok({ deleted: true }) : notFound('Checklist item')
       }
@@ -550,11 +598,12 @@ const mcpHandler = createMcpHandler(
           columnId: z.string().uuid().optional(),
         })).min(1).max(100).describe('Array of tasks to create (max 100)'),
       },
-      async ({ projectId, tasks }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, tasks }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         const created = await createTasksBatch(projectId, tasks)
         for (const t of created) {
-          emitActivity(projectId, 'task', t.id, 'created', t.name, undefined, userId(), 'agent').catch(() => {})
+          emitActivity(projectId, 'task', t.id, 'created', t.name, undefined, uid, 'agent').catch(() => {})
         }
         return ok({ created: created.length, tasks: created.map((t) => ({ id: t.id, name: t.name })) })
       }
@@ -571,8 +620,9 @@ const mcpHandler = createMcpHandler(
           groupName: z.string().max(100).optional(),
         })).min(1).max(100).describe('Array of checklist items to create'),
       },
-      async ({ projectId, taskId, items }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, taskId, items }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         const created = await createChecklistItemsBatch(taskId, items)
         return ok({ created: created.length, items: created.map((i) => ({ id: i.id, title: i.title })) })
       }
@@ -586,8 +636,9 @@ const mcpHandler = createMcpHandler(
         taskId: z.string().uuid().describe('The task UUID'),
         labelIds: z.array(z.string().uuid()).max(50).describe('Label IDs to assign (replaces all current labels)'),
       },
-      async ({ projectId, taskId, labelIds }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, taskId, labelIds }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         await setTaskLabels(taskId, labelIds, projectId)
         return ok({ set: true, taskId, labelCount: labelIds.length })
       }
@@ -603,8 +654,9 @@ const mcpHandler = createMcpHandler(
           blockedTaskId: z.string().uuid().describe('Task that is blocked'),
         })).min(1).max(100).describe('Array of dependency pairs'),
       },
-      async ({ projectId, dependencies }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, dependencies }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         const result = await addDependenciesBatch(dependencies, projectId)
         return ok(result)
       }
@@ -638,8 +690,9 @@ const mcpHandler = createMcpHandler(
           })).optional(),
         })).optional().describe('Tasks to create with optional checklist and label links'),
       },
-      async ({ projectId, columns, labels: labelDefs, tasks }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, columns, labels: labelDefs, tasks }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
 
         const columnMap = new Map<string, string>()
         const existingColumns = await findColumns(projectId)
@@ -697,7 +750,7 @@ const mcpHandler = createMcpHandler(
           }
         }
 
-        emitActivity(projectId, 'project', projectId, 'updated', undefined, { via: 'setup_board', columns: columnMap.size, labels: labelMap.size, tasks: taskCount }, userId(), 'agent').catch(() => {})
+        emitActivity(projectId, 'project', projectId, 'updated', undefined, { via: 'setup_board', columns: columnMap.size, labels: labelMap.size, tasks: taskCount }, uid, 'agent').catch(() => {})
         return ok({
           columns: columnMap.size,
           labels: labelMap.size,
@@ -714,8 +767,9 @@ const mcpHandler = createMcpHandler(
         projectId: z.string().uuid().describe('The project UUID'),
         range: z.enum(['7d', '30d', '90d', 'all']).default('30d').describe('Time range for analysis'),
       },
-      async ({ projectId, range }) => {
-        if (!await requireOwnership(projectId)) return notFound('Project')
+      async ({ projectId, range }, extra) => {
+        const uid = getUserId(extra)
+        if (!await requireOwnership(projectId, uid)) return notFound('Project')
         return ok(await getVelocityStats(projectId, range))
       }
     )
@@ -727,10 +781,10 @@ const mcpHandler = createMcpHandler(
   }
 )
 
-async function withAuth(req: NextRequest) {
-  const result = await authenticateRequest(req)
-  if (!isApiUser(result)) return result
-  return mcpHandler(req)
-}
+const handler = withMcpAuth(
+  (req) => mcpHandler(req as unknown as import('next/server').NextRequest),
+  verifyToken,
+  { required: true }
+)
 
-export { withAuth as GET, withAuth as POST, withAuth as DELETE }
+export { handler as GET, handler as POST, handler as DELETE }
