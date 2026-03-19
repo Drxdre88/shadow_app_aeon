@@ -98,7 +98,7 @@ export function ArchiveBrowser({ isOpen, projectId, onClose }: ArchiveBrowserPro
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
           transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-          className="w-full max-w-lg max-h-[70vh] flex flex-col rounded-2xl border overflow-hidden"
+          className="w-full max-w-lg max-h-[70vh] flex flex-col rounded-2xl border overflow-hidden mx-3 sm:mx-0"
           style={{
             background: 'linear-gradient(to bottom, rgba(20, 20, 32, 0.98), rgba(12, 12, 20, 0.99))',
             borderColor: colors.glowColor.replace(/[\d.]+\)$/, '0.15)'),

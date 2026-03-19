@@ -184,13 +184,13 @@ export function TaskEditModal({
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             onClick={(e) => e.stopPropagation()}
             className={cn(
-              'w-full max-w-lg max-h-[90vh] flex flex-col rounded-xl',
+              'w-full max-w-lg max-h-[90vh] flex flex-col rounded-xl mx-3 sm:mx-0',
               'bg-gradient-to-b from-white/10 to-black/40',
               'backdrop-blur-xl border border-white/10',
               'shadow-[0_0_40px_rgba(99,102,241,0.3)]'
             )}
           >
-            <div className="flex items-center justify-between p-6 pb-0 flex-shrink-0">
+            <div className="flex items-center justify-between p-4 sm:p-6 pb-0 flex-shrink-0">
               <h2 className="text-lg font-semibold text-white">
                 {editingTaskId ? 'Edit Task' : 'New Task'}
               </h2>
@@ -202,7 +202,7 @@ export function TaskEditModal({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 pt-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 pt-4 space-y-4">
               <div>
                 <label className="block text-sm text-slate-400 mb-1.5">Name</label>
                 <input
@@ -505,7 +505,7 @@ export function TaskEditModal({
               )}
             </div>
 
-            <div className="flex gap-3 p-6 pt-4 flex-shrink-0 border-t border-white/10">
+            <div className="flex gap-3 p-4 sm:p-6 pt-4 flex-shrink-0 border-t border-white/10">
               <NeonButton
                 onClick={onSubmit}
                 disabled={!formData.name.trim()}

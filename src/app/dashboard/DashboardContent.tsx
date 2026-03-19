@@ -97,8 +97,8 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
       />
 
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/5 border-b border-white/10">
-        <div className="px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="px-3 sm:px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-3">
             <Image
               src={aeonLogo}
               alt="Aeon"
@@ -123,10 +123,10 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
               </span>
             )}
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <HelpButton />
             <SettingsButton />
-            <div className="flex items-center gap-3 pl-4 border-l border-white/10">
+            <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-4 border-l border-white/10">
               {user.image ? (
                 <img
                   src={user.image}
@@ -168,14 +168,14 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
         </div>
       </header>
 
-      <main className="px-6 py-8 relative z-10">
+      <main className="px-3 sm:px-6 py-4 sm:py-8 relative z-10">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
           className="mb-8"
         >
-          <h1 className="text-3xl font-bold text-white mb-2">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">
             Welcome back, {user.name?.split(' ')[0] || 'there'}
           </h1>
           <p className="text-[var(--text-muted)]">
@@ -189,7 +189,7 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
           transition={{ duration: 0.5, delay: 0.1 }}
           className="flex flex-wrap gap-4 mb-10"
         >
-          <div onClick={() => setShowCreateModal(true)} className="w-64">
+          <div onClick={() => setShowCreateModal(true)} className="w-full sm:w-64">
             <GlowCard accentColor="purple" glowIntensity="sm" showAccentLine hover>
               <div className="flex items-center gap-3 p-2">
                 <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-purple-500/15">
@@ -203,7 +203,7 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
             </GlowCard>
           </div>
 
-          <Link href="/demo" className="w-64">
+          <Link href="/demo" className="w-full sm:w-64">
             <GlowCard accentColor="cyan" glowIntensity="sm" showAccentLine hover>
               <div className="flex items-center gap-3 p-2">
                 <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-cyan-500/15">
@@ -217,7 +217,7 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
             </GlowCard>
           </Link>
 
-          <div className="w-64">
+          <div className="w-full sm:w-64">
           <GlowCard accentColor="green" glowIntensity="sm" showAccentLine>
             <div className="flex items-center gap-3 p-2">
               <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-emerald-500/15">
@@ -271,7 +271,7 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
               {projects.map((project) => {
                 const projectColor = (projectColors[project.id] || 'purple') as AccentColor
                 return (
-                  <div key={project.id} className="relative w-72" data-project-id={project.id}>
+                  <div key={project.id} className="relative w-full sm:w-72" data-project-id={project.id}>
                     <Link href={`/project/${project.id}`}>
                       <GlowCard accentColor={projectColor} glowIntensity="sm" showAccentLine hover>
                         <div className="p-3">

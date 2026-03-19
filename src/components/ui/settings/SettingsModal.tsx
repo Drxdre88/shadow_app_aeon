@@ -63,7 +63,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         }}
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          'w-full max-w-5xl max-h-[85vh] overflow-hidden',
+          'w-full max-w-5xl max-h-[85vh] overflow-hidden mx-2 sm:mx-0',
           'rounded-2xl',
           'border border-white/[0.12]',
           'flex flex-col',

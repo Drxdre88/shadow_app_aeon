@@ -76,7 +76,7 @@ export function EditProjectModal({ isOpen, project, onClose }: EditProjectModalP
             onClick={(e) => e.stopPropagation()}
             onKeyDown={handleKeyDown}
             className={cn(
-              'w-full max-w-md p-6 rounded-2xl relative overflow-hidden',
+              'w-full max-w-md p-4 sm:p-6 rounded-2xl relative overflow-hidden mx-3 sm:mx-0',
               'bg-gradient-to-b from-white/[0.08] to-black/40',
               'backdrop-blur-xl border border-white/[0.08]'
             )}
