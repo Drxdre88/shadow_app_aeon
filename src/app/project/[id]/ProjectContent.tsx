@@ -243,7 +243,7 @@ export default function ProjectContent({ project }: ProjectContentProps) {
         </div>
       </header>
 
-      <main className="px-2 sm:px-6 py-2">
+      <main className="px-0 sm:px-6 py-2">
 
         {loadError ? (
           <div className="flex flex-col items-center justify-center py-20 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]">
@@ -280,7 +280,7 @@ export default function ProjectContent({ project }: ProjectContentProps) {
         ) : (
           <>
             {activeTab === 'board' && (
-              <div className="h-[calc(100vh-110px)] sm:h-[calc(100vh-120px)]">
+              <div className="sm:h-[calc(100vh-120px)]">
                 <TaskBoard
                   projectId={project.id}
                   showFilters={showFilters}
