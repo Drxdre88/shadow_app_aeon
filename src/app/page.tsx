@@ -13,7 +13,7 @@ import chimaeraLogo from '@/assets/chimaera.png'
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen p-8">
+    <div className="min-h-screen p-4 sm:p-8">
       <GlassStage
         blobConfig={{
           blobs: [
@@ -23,7 +23,7 @@ export default function HomePage() {
           ]
         }}
       />
-      <div className="fixed top-4 right-4 z-50 flex items-center gap-3">
+      <div className="fixed top-3 right-3 sm:top-4 sm:right-4 z-50 flex items-center gap-2 sm:gap-3">
         <Link href="/login">
           <NeonButton color="purple" size="sm" variant="outline">
             Sign In
@@ -41,13 +41,13 @@ export default function HomePage() {
               alt="Aeon"
               width={56}
               height={56}
-              className="rounded-lg"
+              className="w-10 h-10 sm:w-14 sm:h-14 rounded-lg"
               style={{
                 filter: 'drop-shadow(0 0 12px var(--glow-color))',
               }}
             />
             <h1
-              className="text-6xl font-bold"
+              className="text-3xl sm:text-6xl font-bold"
               style={{
                 color: '#8a8f98',
                 textShadow: '0 0 20px rgba(138, 143, 152, 0.4), 0 0 40px rgba(138, 143, 152, 0.2), 0 2px 4px rgba(0,0,0,0.5)',
@@ -75,7 +75,7 @@ export default function HomePage() {
               Chimaera Apps
             </span>
           </div>
-          <p className="text-xl text-slate-400">Beautiful project timelines and task management</p>
+          <p className="text-base sm:text-xl text-slate-400">Beautiful project timelines and task management</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
@@ -111,13 +111,13 @@ export default function HomePage() {
         </div>
 
         <div className="text-center">
-          <GlowCard accentColor="none" className="inline-block p-8">
+          <GlowCard accentColor="none" className="inline-block p-4 sm:p-8">
             <h2 className="text-2xl font-bold text-white mb-4">Foundation Ready</h2>
             <p className="text-slate-400 mb-6 max-w-2xl">
               Aeon foundation is initialized with multi-theme system, Archon-inspired glow effects,
               and production-ready component architecture.
             </p>
-            <div className="flex gap-4 justify-center">
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link href="/demo">
                 <NeonButton color="purple" glowIntensity="lg">
                   Try Demo

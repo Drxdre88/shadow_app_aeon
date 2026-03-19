@@ -65,7 +65,7 @@ export default function ProjectContent({ project }: ProjectContentProps) {
       />
 
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/5 border-b border-white/10">
-        <div className="px-6 py-3 flex items-center justify-between">
+        <div className="px-2 sm:px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
               href="/dashboard"
@@ -81,68 +81,68 @@ export default function ProjectContent({ project }: ProjectContentProps) {
               className="rounded"
               style={{ filter: 'drop-shadow(0 0 6px var(--glow-color))' }}
             />
-            <span className="text-lg font-bold text-white">{project.name}</span>
+            <span className="text-sm sm:text-lg font-bold text-white truncate max-w-[120px] sm:max-w-none">{project.name}</span>
 
-            <div className="flex items-center gap-1 ml-4">
+            <div className="flex items-center gap-1 ml-2 sm:ml-4">
               <button
                 onClick={() => setActiveTab('board')}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                  'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                   activeTab === 'board'
                     ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
                     : 'text-slate-400 hover:text-white hover:bg-white/5'
                 )}
               >
                 <LayoutGrid className="w-4 h-4" />
-                Board
+                <span className="hidden sm:inline">Board</span>
               </button>
               <button
                 onClick={() => setActiveTab('gantt')}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                  'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                   activeTab === 'gantt'
                     ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
                     : 'text-slate-400 hover:text-white hover:bg-white/5'
                 )}
               >
                 <Calendar className="w-4 h-4" />
-                Gantt
+                <span className="hidden sm:inline">Gantt</span>
               </button>
               <button
                 onClick={() => setActiveTab('canvas')}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                  'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                   activeTab === 'canvas'
                     ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                     : 'text-slate-400 hover:text-white hover:bg-white/5'
                 )}
               >
                 <Lightbulb className="w-4 h-4" />
-                Canvas
+                <span className="hidden sm:inline">Canvas</span>
               </button>
               <button
                 onClick={() => setActiveTab('trophy')}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                  'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                   activeTab === 'trophy'
                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                     : 'text-slate-400 hover:text-white hover:bg-white/5'
                 )}
               >
                 <Trophy className="w-4 h-4" />
-                Trophy
+                <span className="hidden sm:inline">Trophy</span>
               </button>
               <button
                 onClick={() => setActiveTab('velocity')}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                  'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                   activeTab === 'velocity'
                     ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                     : 'text-slate-400 hover:text-white hover:bg-white/5'
                 )}
               >
                 <Activity className="w-4 h-4" />
-                Velocity
+                <span className="hidden sm:inline">Velocity</span>
               </button>
             </div>
           </div>
@@ -152,22 +152,22 @@ export default function ProjectContent({ project }: ProjectContentProps) {
               <>
                 <button
                   onClick={() => board.setShowArchive(true)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+                  className="flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-white/5 transition-all"
                 >
                   <Package className="w-4 h-4" />
-                  Archive
+                  <span className="hidden sm:inline">Archive</span>
                 </button>
                 <button
                   onClick={() => setShowFilters(!showFilters)}
                   className={cn(
-                    'relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                    'relative flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                     showFilters
                       ? 'bg-white/10 text-white'
                       : 'text-slate-400 hover:text-white hover:bg-white/5'
                   )}
                 >
                   <Filter className="w-4 h-4" />
-                  Filter
+                  <span className="hidden sm:inline">Filter</span>
                   {activeFilterCount(filters) > 0 && (
                     <span className="w-4 h-4 rounded-full bg-purple-500 text-white text-[10px] font-bold flex items-center justify-center">
                       {activeFilterCount(filters)}
@@ -177,31 +177,31 @@ export default function ProjectContent({ project }: ProjectContentProps) {
                 <button
                   onClick={() => setShowAllDeps(!showAllDeps)}
                   className={cn(
-                    'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                    'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                     showAllDeps
                       ? 'bg-white/10 text-white'
                       : 'text-slate-400 hover:text-white hover:bg-white/5'
                   )}
                 >
                   <Link2 className="w-4 h-4" />
-                  Deps
+                  <span className="hidden sm:inline">Deps</span>
                 </button>
                 <button
                   onClick={() => setConnectMode(!connectMode)}
                   className={cn(
-                    'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                    'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                     connectMode
                       ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
                       : 'text-slate-400 hover:text-white hover:bg-white/5'
                   )}
                 >
                   <GitBranch className="w-4 h-4" />
-                  Connect
+                  <span className="hidden sm:inline">Connect</span>
                 </button>
                 <button
                   onClick={() => setBoardLayout(boardLayout === 'scroll' ? 'grid' : 'scroll')}
                   className={cn(
-                    'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                    'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                     boardLayout === 'grid'
                       ? 'bg-white/10 text-white'
                       : 'text-slate-400 hover:text-white hover:bg-white/5'
@@ -223,17 +223,17 @@ export default function ProjectContent({ project }: ProjectContentProps) {
                 <TimeScaleSelector />
                 <button
                   onClick={gantt.handleGanttReflow}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium text-cyan-400 hover:bg-cyan-500/10 border border-cyan-500/20 hover:border-cyan-500/30 transition-all"
+                  className="flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium text-cyan-400 hover:bg-cyan-500/10 border border-cyan-500/20 hover:border-cyan-500/30 transition-all"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                  Reflow
+                  <span className="hidden sm:inline">Reflow</span>
                 </button>
                 <button
                   onClick={gantt.handleGanttReset}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium text-red-400 hover:bg-red-500/10 border border-red-500/20 hover:border-red-500/30 transition-all"
+                  className="flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium text-red-400 hover:bg-red-500/10 border border-red-500/20 hover:border-red-500/30 transition-all"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
-                  Reset
+                  <span className="hidden sm:inline">Reset</span>
                 </button>
               </>
             )}
@@ -243,7 +243,7 @@ export default function ProjectContent({ project }: ProjectContentProps) {
         </div>
       </header>
 
-      <main className="px-6 py-2">
+      <main className="px-2 sm:px-6 py-2">
 
         {loadError ? (
           <div className="flex flex-col items-center justify-center py-20 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]">
@@ -280,7 +280,7 @@ export default function ProjectContent({ project }: ProjectContentProps) {
         ) : (
           <>
             {activeTab === 'board' && (
-              <div className="h-[calc(100vh-120px)]">
+              <div className="h-[calc(100vh-110px)] sm:h-[calc(100vh-120px)]">
                 <TaskBoard
                   projectId={project.id}
                   showFilters={showFilters}

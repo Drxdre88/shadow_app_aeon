@@ -89,7 +89,7 @@ export default function LoginForm() {
         className="relative z-10 w-full max-w-md mx-4"
       >
         <div
-          className="relative p-10 rounded-2xl overflow-hidden"
+          className="relative p-6 sm:p-10 rounded-2xl overflow-hidden"
           style={{
             backgroundColor: 'rgba(15, 15, 25, 0.85)',
             border: `1px solid var(--primary-muted)`,
@@ -101,25 +101,25 @@ export default function LoginForm() {
             backdropFilter: 'blur(20px)',
           }}
         >
-          <div className="text-center mb-10">
+          <div className="text-center mb-6 sm:mb-10">
             <motion.div
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.2, duration: 0.5 }}
-              className="flex items-center justify-center gap-4 mb-5"
+              className="flex items-center justify-center gap-3 sm:gap-4 mb-5"
             >
               <Image
                 src={aeonLogo}
                 alt="Aeon"
                 width={64}
                 height={64}
-                className="rounded-lg"
+                className="w-12 h-12 sm:w-16 sm:h-16 rounded-lg"
                 style={{
                   filter: `drop-shadow(0 0 ${12 * mult}px var(--glow-color))`,
                 }}
               />
               <h1
-                className="text-4xl font-bold"
+                className="text-3xl sm:text-4xl font-bold"
                 style={{
                   color: '#8a8f98',
                   textShadow: '0 0 15px rgba(138, 143, 152, 0.4), 0 0 30px rgba(138, 143, 152, 0.2), 0 2px 4px rgba(0,0,0,0.5)',

@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Inter, JetBrains_Mono, Space_Grotesk, Fira_Code } from 'next/font/google'
 import { ThemeProvider } from '@/components/providers/ThemeProvider'
 import { AuthProvider } from '@/components/providers/AuthProvider'
@@ -16,6 +16,11 @@ const firaCode = Fira_Code({ subsets: ['latin'], variable: '--font-fira-code' })
 export const metadata: Metadata = {
   title: 'Aeon - Beautiful Project Timelines',
   description: 'Visualize your projects with stunning Gantt charts and task boards',
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
 }
 
 export default function RootLayout({
