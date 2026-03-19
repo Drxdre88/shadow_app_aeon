@@ -294,10 +294,9 @@ export function TaskBoard({
           <SortableContext items={columnIds} strategy={rectSortingStrategy}>
             <div
               className={boardLayout === 'grid'
-                ? 'flex flex-wrap gap-4 pb-4 overflow-auto content-start'
-                : 'flex flex-nowrap gap-4 pb-4 overflow-auto'
+                ? 'flex flex-wrap gap-4 pb-4 overflow-visible sm:overflow-auto content-start sm:max-h-[calc(100vh-140px)]'
+                : 'flex flex-nowrap gap-4 pb-4 overflow-visible sm:overflow-auto sm:max-h-[calc(100vh-140px)]'
               }
-              style={{ maxHeight: 'calc(100vh - 140px)' }}
             >
               {sortedColumns.map((column) => (
                 <SortableColumn key={column.id} column={column}>
