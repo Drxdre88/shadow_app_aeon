@@ -227,8 +227,8 @@ function McpConfigBlock() {
   const configTemplate = `{
   "mcpServers": {
     "aeon": {
-      "type": "sse",
-      "url": "https://aeon.shadow-lab.ai/api/sse",
+      "type": "http",
+      "url": "https://aeon.shadow-lab.ai/api/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_API_KEY"
       }
@@ -304,8 +304,8 @@ export function McpTab() {
           />
           <FeatureCard
             icon={Terminal}
-            title="SSE Transport"
-            description="MCP uses Server-Sent Events for real-time communication between your AI client and Aeon."
+            title="HTTP Transport"
+            description="MCP uses HTTP Streamable transport for communication between your AI client and Aeon."
           />
           <FeatureCard
             icon={Wrench}

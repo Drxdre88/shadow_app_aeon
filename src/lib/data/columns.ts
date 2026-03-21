@@ -2,12 +2,24 @@ import { db } from '@/lib/db'
 import { boardColumns } from '@/lib/db/schema'
 import { eq, and, asc, sql } from 'drizzle-orm'
 
-const DEFAULT_COLUMNS = [
-  { name: 'Todo', color: 'pink', icon: 'list-todo', orderIndex: 0 },
-  { name: 'Doing', color: 'blue', icon: 'activity', orderIndex: 1 },
-  { name: 'Review', color: 'purple', icon: 'eye', orderIndex: 2 },
-  { name: 'Done', color: 'green', icon: 'check-circle', orderIndex: 3 },
-]
+const BOARD_TEMPLATES: Record<string, { name: string; color: string; icon: string | null; orderIndex: number }[]> = {
+  default: [
+    { name: 'Todo', color: 'pink', icon: 'list-todo', orderIndex: 0 },
+    { name: 'Doing', color: 'blue', icon: 'activity', orderIndex: 1 },
+    { name: 'Review', color: 'purple', icon: 'eye', orderIndex: 2 },
+    { name: 'Done', color: 'green', icon: 'check-circle', orderIndex: 3 },
+  ],
+  devBoard: [
+    { name: 'Bugs and Fixes', color: 'pink', icon: 'list-todo', orderIndex: 0 },
+    { name: 'New Features', color: 'blue', icon: 'activity', orderIndex: 1 },
+    { name: 'Analysis', color: 'orange', icon: null, orderIndex: 2 },
+    { name: 'In Dev', color: '#fda4af', icon: null, orderIndex: 3 },
+    { name: 'Awaiting Review', color: '#d946ef', icon: null, orderIndex: 4 },
+    { name: 'Done', color: 'green', icon: 'check-circle', orderIndex: 5 },
+  ],
+}
+
+const DEFAULT_COLUMNS = BOARD_TEMPLATES.default
 
 export async function findColumns(projectId: string) {
   return db
@@ -111,7 +123,7 @@ export async function reorderColumns(
   })
 }
 
-export async function createDefaultColumns(projectId: string) {
+export async function createDefaultColumns(projectId: string, template?: string) {
   const existing = await db
     .select({ id: boardColumns.id })
     .from(boardColumns)
@@ -120,8 +132,10 @@ export async function createDefaultColumns(projectId: string) {
 
   if (existing.length > 0) return
 
+  const columns = (template && BOARD_TEMPLATES[template]) || DEFAULT_COLUMNS
+
   await db.insert(boardColumns).values(
-    DEFAULT_COLUMNS.map((col) => ({
+    columns.map((col) => ({
       projectId,
       name: col.name,
       color: col.color,

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { motion } from 'framer-motion'
-import { Calendar, Tag, MoreHorizontal, Check, X, Clock } from 'lucide-react'
+import { Calendar, Tag, MoreHorizontal, Check, X, Clock, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { colorConfig, AccentColor, hexToRgba } from '@/lib/utils/colors'
 import { GlowCard } from '@/components/ui/GlowCard'
@@ -200,12 +200,23 @@ export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowCo
                 {task.name}
               </h4>
             </div>
-            <button
-              onClick={(e) => { e.stopPropagation(); onEdit?.() }}
-              className="p-1 rounded-md hover:bg-white/10 transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
-            >
-              <MoreHorizontal className="w-4 h-4 text-slate-400" />
-            </button>
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
+              <button
+                onClick={(e) => { e.stopPropagation(); onEdit?.() }}
+                className="p-1 rounded-md hover:bg-white/10 transition-colors"
+              >
+                <MoreHorizontal className="w-4 h-4 text-slate-400" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onTaskDelete?.(task.id)
+                }}
+                className="p-1 rounded-md hover:bg-red-500/15 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-slate-400 hover:text-red-400" />
+              </button>
+            </div>
           </div>
 
           {taskLabels.length > 0 && (

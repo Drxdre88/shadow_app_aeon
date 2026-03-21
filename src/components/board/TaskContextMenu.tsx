@@ -3,12 +3,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Palette, Flag, Trash2, MoveRight, Copy, Calendar, Archive, Package, ArrowRight } from 'lucide-react'
+import { Palette, Flag, Trash2, MoveRight, Copy, Calendar, Archive, Package, ArrowRight, FolderInput, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
-import { AccentColor, ACCENT_COLORS, PALETTE_COLORS, colorConfig } from '@/lib/utils/colors'
+import { AccentColor, ACCENT_COLORS, PALETTE_COLORS, colorConfig, getRecentColors, addRecentColor } from '@/lib/utils/colors'
 import { useThemeStore } from '@/stores/themeStore'
 import { ContextMenuButton } from './ContextMenuButton'
+import { listProjectsForTransfer, copyTaskToProject, moveTaskToProject } from '@/lib/actions/transfer'
 
 interface TaskContextMenuProps {
   taskId: string
@@ -22,8 +23,11 @@ interface TaskContextMenuProps {
 }
 
 export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTaskDelete, onPushToGantt, onSendToVault, onArchiveTask }: TaskContextMenuProps) {
-  const [submenu, setSubmenu] = useState<'move' | 'priority' | 'color' | null>(null)
+  const [submenu, setSubmenu] = useState<'move' | 'priority' | 'color' | 'transfer' | null>(null)
   const [mounted, setMounted] = useState(false)
+  const [transferProjects, setTransferProjects] = useState<{ id: string; name: string; columns: { id: string; name: string; color: string }[] }[]>([])
+  const [transferLoading, setTransferLoading] = useState(false)
+  const [transferMode, setTransferMode] = useState<'copy' | 'move'>('copy')
   const menuRef = useRef<HTMLDivElement>(null)
   const { tasks, columns, updateTask, removeTask } = useBoardStore()
   const { priorities, colors, glowIntensity } = useThemeStore()
@@ -77,6 +81,7 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
   }
 
   const handleColorNative = (color: string) => {
+    addRecentColor(color)
     updateTask(taskId, { color })
     onTaskUpdate?.(taskId, { color })
   }
@@ -185,7 +190,9 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
           onClick={() => setSubmenu(submenu === 'color' ? null : 'color')}
           glowColor={colors.glowColor}
         />
-        {submenu === 'color' && (
+        {submenu === 'color' && (() => {
+          const recent = getRecentColors()
+          return (
           <div className="px-3 py-2 space-y-2">
             <div className="flex gap-1.5 flex-wrap">
               {ACCENT_COLORS.map((c) => (
@@ -200,6 +207,24 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
                 />
               ))}
             </div>
+            {recent.length > 0 && (
+              <div className="border-t border-white/10 pt-2">
+                <span className="text-[10px] text-slate-500 mb-1 block">Recent</span>
+                <div className="flex gap-1.5 flex-wrap">
+                  {recent.map((hex) => (
+                    <button
+                      key={hex}
+                      onClick={() => handleColor(hex)}
+                      className={cn(
+                        'w-6 h-6 rounded-full border-2 transition-all',
+                        task.color === hex ? 'border-white scale-110' : 'border-transparent hover:border-white/40'
+                      )}
+                      style={{ backgroundColor: hex }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="border-t border-white/10 pt-2">
               <div className="grid grid-cols-7 gap-1">
                 {PALETTE_COLORS.map((hex) => (
@@ -234,6 +259,81 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
                 <span className="text-[11px] text-slate-500 group-hover:text-slate-300 transition-colors">Custom</span>
               </label>
             </div>
+          </div>
+          )
+        })()}
+
+        <ContextMenuButton
+          icon={FolderInput}
+          label="Copy to Project..."
+          hasSubmenu
+          isActive={submenu === 'transfer' && transferMode === 'copy'}
+          onClick={() => {
+            setTransferMode('copy')
+            if (submenu === 'transfer') { setSubmenu(null); return }
+            setSubmenu('transfer')
+            if (transferProjects.length === 0) {
+              setTransferLoading(true)
+              listProjectsForTransfer()
+                .then(setTransferProjects)
+                .catch(() => {})
+                .finally(() => setTransferLoading(false))
+            }
+          }}
+          glowColor={colors.glowColor}
+        />
+        <ContextMenuButton
+          icon={MoveRight}
+          label="Move to Project..."
+          hasSubmenu
+          isActive={submenu === 'transfer' && transferMode === 'move'}
+          onClick={() => {
+            setTransferMode('move')
+            if (submenu === 'transfer') { setSubmenu(null); return }
+            setSubmenu('transfer')
+            if (transferProjects.length === 0) {
+              setTransferLoading(true)
+              listProjectsForTransfer()
+                .then(setTransferProjects)
+                .catch(() => {})
+                .finally(() => setTransferLoading(false))
+            }
+          }}
+          glowColor={colors.glowColor}
+        />
+        {submenu === 'transfer' && (
+          <div className="pl-2 border-l border-white/10 ml-3 space-y-0.5 py-1">
+            {transferLoading ? (
+              <div className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Loading...
+              </div>
+            ) : transferProjects.filter((p) => p.id !== task.projectId).length === 0 ? (
+              <div className="px-3 py-2 text-xs text-slate-500">No other projects</div>
+            ) : (
+              transferProjects
+                .filter((p) => p.id !== task.projectId)
+                .map((project) => (
+                  <button
+                    key={project.id}
+                    onClick={async () => {
+                      try {
+                        if (transferMode === 'copy') {
+                          await copyTaskToProject(taskId, task.projectId, project.id)
+                        } else {
+                          removeTask(taskId)
+                          await moveTaskToProject(taskId, task.projectId, project.id)
+                        }
+                      } catch {}
+                      onClose()
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/10 hover:text-white rounded-md transition-colors"
+                  >
+                    <ArrowRight className="w-3 h-3 text-slate-500" />
+                    {project.name}
+                  </button>
+                ))
+            )}
           </div>
         )}
 

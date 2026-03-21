@@ -10,6 +10,7 @@ import {
 } from '@/lib/data/projects'
 import { createProjectSchema, updateProjectSchema } from '@/lib/data/validators'
 import type { UpdateProjectInput } from '@/lib/data/validators'
+import { createDefaultColumns } from '@/lib/data/columns'
 
 export async function getProjects() {
   const userId = await requireAuth()
@@ -22,6 +23,7 @@ export async function createProject(data: {
   startDate: string
   endDate: string
   timeScale?: string
+  template?: string
 }) {
   const userId = await requireAuth()
 
@@ -34,6 +36,7 @@ export async function createProject(data: {
   })
 
   const project = await _createProject(userId, parsed)
+  await createDefaultColumns(project.id, data.template)
   revalidatePath('/dashboard')
   return project
 }

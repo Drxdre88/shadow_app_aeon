@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Loader2 } from 'lucide-react'
+import { X, Loader2, LayoutGrid, Bug } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils/cn'
 import { NeonButton } from '@/components/ui/NeonButton'
@@ -21,11 +21,12 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
+  const [template, setTemplate] = useState('default')
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     startDate: new Date().toISOString().split('T')[0],
-    endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    endDate: `${new Date().getFullYear()}-12-31`,
   })
 
   const handleSubmit = async () => {
@@ -38,6 +39,7 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
         description: formData.description.trim() || undefined,
         startDate: formData.startDate,
         endDate: formData.endDate,
+        template,
       })
       onClose()
       router.push(`/project/${project.id}`)
@@ -150,6 +152,34 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
                     'transition-all'
                   )}
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[var(--text-muted)] mb-1.5">Board Template</label>
+                <div className="flex gap-2">
+                  {[
+                    { id: 'default', label: 'Basic', icon: LayoutGrid, desc: 'Todo, Doing, Review, Done' },
+                    { id: 'devBoard', label: 'Dev Board', icon: Bug, desc: 'Bugs, Features, Analysis, In Dev, Review, Done' },
+                  ].map(({ id, label, icon: Icon, desc }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setTemplate(id)}
+                      className={cn(
+                        'flex-1 p-2.5 rounded-xl border transition-all text-left',
+                        template === id
+                          ? 'border-[var(--primary)]/50 bg-[var(--primary)]/10'
+                          : 'border-white/[0.1] bg-white/[0.03] hover:bg-white/[0.06]'
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <Icon className={cn('w-3.5 h-3.5', template === id ? 'text-[var(--primary)]' : 'text-slate-400')} />
+                        <span className={cn('text-xs font-medium', template === id ? 'text-white' : 'text-slate-300')}>{label}</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 leading-tight">{desc}</p>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
