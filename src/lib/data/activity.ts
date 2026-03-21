@@ -2,8 +2,8 @@ import { db } from '@/lib/db'
 import { activityEvents } from '@/lib/db/schema'
 import { eq, desc, and, lt } from 'drizzle-orm'
 
-export type ActivityEntityType = 'task' | 'column' | 'dependency' | 'label' | 'gantt_task' | 'canvas_node' | 'project'
-export type ActivityAction = 'created' | 'updated' | 'deleted' | 'moved' | 'completed' | 'vaulted' | 'archived' | 'restored' | 'dependency_added' | 'dependency_removed' | 'label_added' | 'label_removed' | 'column_entered' | 'column_exited'
+export type ActivityEntityType = 'task' | 'column' | 'dependency' | 'label' | 'gantt_task' | 'canvas_node' | 'project' | 'comment'
+export type ActivityAction = 'created' | 'updated' | 'deleted' | 'moved' | 'completed' | 'vaulted' | 'archived' | 'restored' | 'dependency_added' | 'dependency_removed' | 'label_added' | 'label_removed' | 'column_entered' | 'column_exited' | 'commented'
 export type ActorType = 'user' | 'agent'
 
 export async function emitActivity(

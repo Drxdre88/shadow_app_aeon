@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "aeon": {
+      "type": "http",
+      "url": "https://aeon.shadow-lab.ai/api/mcp",
+      "headers": {
+        "Authorization": "Bearer <YOUR_API_KEY>"
+      }
+    },
+    "aeon-local": {
+      "type": "http",
+      "url": "http://localhost:3000/api/mcp",
+      "headers": {
+        "Authorization": "Bearer <YOUR_API_KEY>"
+      }
+    }
+  }
+}

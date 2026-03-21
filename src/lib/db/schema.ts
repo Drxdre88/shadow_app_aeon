@@ -230,6 +230,15 @@ export const taskVault = pgTable('task_vault', {
   originalCreatedAt: timestamp('original_created_at').notNull(),
 })
 
+export const taskComments = pgTable('task_comments', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  taskId: uuid('task_id').notNull().references(() => boardTasks.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  content: text('content').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
+
 export type User = typeof users.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type GanttView = typeof ganttViews.$inferSelect
@@ -245,4 +254,5 @@ export type CanvasEdge = typeof canvasEdges.$inferSelect
 export type ActivityEvent = typeof activityEvents.$inferSelect
 export type TaskVault = typeof taskVault.$inferSelect
 export type UserPreference = typeof userPreferences.$inferSelect
+export type TaskComment = typeof taskComments.$inferSelect
 export type ApiKeyRecord = typeof apiKeys.$inferSelect

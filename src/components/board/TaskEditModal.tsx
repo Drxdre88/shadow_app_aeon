@@ -2,7 +2,7 @@
 
 import { useCallback, useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, ChevronDown, Palette, Tag, Calendar } from 'lucide-react'
+import { X, ChevronDown, Palette, Tag, Calendar, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { AccentColor, ACCENT_COLORS, colorConfig, generateId, hexToRgba } from '@/lib/utils/colors'
@@ -11,6 +11,7 @@ import { TaskChecklist, type ChecklistItem, type CheckState, type ChecklistStatu
 import { TaskDependencySection } from './TaskDependencySection'
 import { getChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem } from '@/lib/actions/checklist'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
+import { TaskComments } from './TaskComments'
 
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
 
@@ -36,6 +37,7 @@ interface TaskEditModalProps {
   onLabelToggle?: (taskId: string, labelId: string, action: 'add' | 'remove') => void
   onPushToGantt?: (taskId: string) => void
   onDateChange?: (taskId: string, dates: { startDate?: string | null; endDate?: string | null }) => void
+  onTaskDelete?: (taskId: string) => void
 }
 
 const resolveNeonColor = (color: string): AccentColor =>
@@ -55,6 +57,7 @@ export function TaskEditModal({
   onLabelToggle,
   onPushToGantt,
   onDateChange,
+  onTaskDelete,
 }: TaskEditModalProps) {
   const { labels, tasks, updateTask } = useBoardStore()
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([])
@@ -485,6 +488,10 @@ export function TaskEditModal({
                     />
                   </div>
 
+                  <div className="pt-4 border-t border-white/10">
+                    <TaskComments taskId={editingTaskId} projectId={projectId} />
+                  </div>
+
                   {!tasks.find((t) => t.id === editingTaskId)?.onTimeline && onPushToGantt && (
                     <div className="pt-4 border-t border-white/10">
                       <button
@@ -506,6 +513,22 @@ export function TaskEditModal({
             </div>
 
             <div className="flex gap-3 p-4 sm:p-6 pt-4 flex-shrink-0 border-t border-white/10">
+              {editingTaskId && onTaskDelete && (
+                <button
+                  onClick={() => {
+                    onTaskDelete(editingTaskId)
+                    onClose()
+                  }}
+                  className={cn(
+                    'p-2 rounded-lg',
+                    'hover:bg-red-500/15 border border-transparent hover:border-red-500/20',
+                    'text-slate-400 hover:text-red-400',
+                    'transition-all duration-200'
+                  )}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
               <NeonButton
                 onClick={onSubmit}
                 disabled={!formData.name.trim()}

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Plus, LogOut, Eye, Crown, FolderOpen, Calendar, LayoutGrid, Trash2, Pencil } from 'lucide-react'
+import { Plus, LogOut, Eye, Crown, FolderOpen, Calendar, LayoutGrid, Trash2, Pencil, Palette } from 'lucide-react'
 import Image from 'next/image'
 import aeonLogo from '@/assets/aeon.png'
 import Link from 'next/link'
@@ -17,7 +17,7 @@ import { EditProjectModal } from '@/components/project/EditProjectModal'
 import { deleteProject } from '@/lib/actions/projects'
 import { GlassStage } from '@/components/ui/GlassStage'
 import { useThemeStore } from '@/stores/themeStore'
-import { ACCENT_COLORS, type AccentColor, colorConfig } from '@/lib/utils/colors'
+import { ACCENT_COLORS, PALETTE_COLORS, type AccentColor, colorConfig, getRecentColors, addRecentColor } from '@/lib/utils/colors'
 import { cn } from '@/lib/utils/cn'
 import type { Project } from '@/lib/db/schema'
 
@@ -281,6 +281,18 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
                               <motion.button
                                 whileHover={{ scale: 1.1 }}
                                 whileTap={{ scale: 0.9 }}
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  setColorPickerProjectId((prev) => prev === project.id ? null : project.id)
+                                }}
+                                className="p-1.5 rounded-lg text-[var(--text-dim)] hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
+                              >
+                                <Palette className="w-3.5 h-3.5" />
+                              </motion.button>
+                              <motion.button
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
                                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingProject(project) }}
                                 className="p-1.5 rounded-lg text-[var(--text-dim)] hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
                               >
@@ -310,9 +322,11 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
                         </div>
                       </GlowCard>
                     </Link>
-                    {colorPickerProjectId === project.id && (
-                      <div className="absolute top-full left-0 mt-2 z-50 p-3 rounded-xl backdrop-blur-xl bg-[#1a1a24]/95 border border-white/15 shadow-[0_0_40px_rgba(0,0,0,0.6)]">
-                        <div className="flex gap-2">
+                    {colorPickerProjectId === project.id && (() => {
+                      const recent = getRecentColors()
+                      return (
+                      <div className="absolute top-full left-0 mt-2 z-50 p-3 rounded-xl backdrop-blur-xl bg-[#1a1a24]/95 border border-white/15 shadow-[0_0_40px_rgba(0,0,0,0.6)] space-y-2">
+                        <div className="flex gap-2 flex-wrap">
                           {ACCENT_COLORS.map((c) => (
                             <button
                               key={c}
@@ -325,8 +339,61 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
                             />
                           ))}
                         </div>
+                        {recent.length > 0 && (
+                          <div className="border-t border-white/10 pt-2">
+                            <span className="text-[10px] text-slate-500 mb-1 block">Recent</span>
+                            <div className="flex gap-1.5 flex-wrap">
+                              {recent.map((hex) => (
+                                <button
+                                  key={hex}
+                                  onClick={() => handleColorChange(project.id, hex)}
+                                  className={cn(
+                                    'w-6 h-6 rounded-full border-2 transition-all hover:scale-110',
+                                    projectColor === hex ? 'border-white scale-110' : 'border-transparent'
+                                  )}
+                                  style={{ backgroundColor: hex }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <div className="border-t border-white/10 pt-2">
+                          <div className="grid grid-cols-7 gap-1">
+                            {PALETTE_COLORS.map((hex) => (
+                              <button
+                                key={hex}
+                                onClick={() => handleColorChange(project.id, hex)}
+                                className={cn(
+                                  'w-6 h-6 rounded-full border-2 transition-all hover:scale-110',
+                                  projectColor === hex ? 'border-white scale-110' : 'border-transparent'
+                                )}
+                                style={{ backgroundColor: hex }}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                        <div className="pt-1 border-t border-white/10">
+                          <label className="flex items-center gap-2 cursor-pointer group">
+                            <div className="relative">
+                              <input
+                                type="color"
+                                value={typeof projectColor === 'string' && projectColor.startsWith('#') ? projectColor : colorConfig[projectColor]?.hex ?? '#a855f7'}
+                                onChange={(e) => {
+                                  addRecentColor(e.target.value)
+                                  handleColorChange(project.id, e.target.value)
+                                }}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                              />
+                              <div className="w-6 h-6 rounded-full border-2 border-dashed border-white/30 group-hover:border-white/60 transition-all flex items-center justify-center">
+                                <Palette className="w-3 h-3 text-slate-400" />
+                              </div>
+                            </div>
+                            <span className="text-[11px] text-slate-500 group-hover:text-slate-300 transition-colors">Custom</span>
+                          </label>
+                        </div>
                       </div>
-                    )}
+                      )
+                    })()}
                   </div>
                 )
               })}

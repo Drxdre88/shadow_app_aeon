@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Loader2 } from 'lucide-react'
+import { X, Loader2, Palette } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils/cn'
 import { NeonButton } from '@/components/ui/NeonButton'
@@ -10,6 +10,8 @@ import { updateProject } from '@/lib/actions/projects'
 import { useRouter } from 'next/navigation'
 import { useThemeStore } from '@/stores/themeStore'
 import aeonLogo from '@/assets/aeon.png'
+import { ColorSwatchPicker } from '@/components/board/ColorSwatchPicker'
+import { AccentColor, colorConfig } from '@/lib/utils/colors'
 import type { Project } from '@/lib/db/schema'
 
 interface EditProjectModalProps {
@@ -21,8 +23,13 @@ interface EditProjectModalProps {
 export function EditProjectModal({ isOpen, project, onClose }: EditProjectModalProps) {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const { glowIntensity } = useThemeStore()
+  const { glowIntensity, projectColors, setProjectColor } = useThemeStore()
   const mult = glowIntensity / 75
+  const [colorPickerOpen, setColorPickerOpen] = useState(false)
+  const currentColor = (projectColors[project.id] || 'purple') as string
+  const currentColorHex = currentColor.startsWith('#')
+    ? currentColor
+    : colorConfig[currentColor as AccentColor]?.hex ?? '#a855f7'
   const [formData, setFormData] = useState({
     name: project.name,
     description: project.description || '',
@@ -152,6 +159,35 @@ export function EditProjectModal({ isOpen, project, onClose }: EditProjectModalP
                     'transition-all'
                   )}
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm text-[var(--text-muted)] mb-1.5">Card Color</label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setColorPickerOpen(!colorPickerOpen)}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-2 rounded-xl',
+                      'bg-white/[0.05] border border-white/[0.1] hover:bg-white/[0.08]',
+                      'text-slate-400 hover:text-white transition-all'
+                    )}
+                  >
+                    <div
+                      className="w-5 h-5 rounded-full border border-white/20"
+                      style={{ backgroundColor: currentColorHex, boxShadow: `0 0 8px ${currentColorHex}60` }}
+                    />
+                    <Palette className="w-3.5 h-3.5" />
+                  </button>
+                  <ColorSwatchPicker
+                    value={currentColor}
+                    onChange={(color) => { setProjectColor(project.id, color); setColorPickerOpen(false) }}
+                    isOpen={colorPickerOpen}
+                    onClose={() => setColorPickerOpen(false)}
+                    swatchShape="circle"
+                    animated
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

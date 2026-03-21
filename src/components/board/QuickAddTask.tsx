@@ -8,6 +8,8 @@ import { useBoardStore } from '@/lib/store/boardStore'
 import { AccentColor, colorConfig, generateId, hexToRgba } from '@/lib/utils/colors'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
 
+let lastUsedColor = 'purple'
+
 interface QuickAddTaskProps {
   projectId: string
   columnId: string
@@ -29,7 +31,7 @@ interface QuickAddTaskProps {
 export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: QuickAddTaskProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [taskName, setTaskName] = useState('')
-  const [taskColor, setTaskColor] = useState<string>('purple')
+  const [taskColor, setTaskColor] = useState<string>(lastUsedColor)
   const [selectedLabels, setSelectedLabels] = useState<string[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const { addTask, tasks, labels } = useBoardStore()
@@ -71,8 +73,8 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
     addTask(newTask)
     onTaskCreate?.(newTask)
 
+    lastUsedColor = taskColor
     setTaskName('')
-    setTaskColor('purple')
     setSelectedLabels([])
     setIsOpen(false)
     onClose?.()
@@ -82,7 +84,6 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
     if (e.key === 'Escape') {
       setIsOpen(false)
       setTaskName('')
-      setTaskColor('purple')
       setSelectedLabels([])
       onClose?.()
     }
@@ -201,7 +202,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
             onClick={() => {
               setIsOpen(false)
               setTaskName('')
-              setTaskColor('purple')
+              setTaskColor(lastUsedColor)
               setSelectedLabels([])
               onClose?.()
             }}
