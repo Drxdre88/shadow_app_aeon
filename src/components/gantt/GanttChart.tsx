@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useCallback } from 'react'
-import { DndContext, DragEndEvent, useSensor, useSensors, PointerSensor } from '@dnd-kit/core'
+import { DndContext, DragEndEvent, useSensor, useSensors, PointerSensor, TouchSensor } from '@dnd-kit/core'
 import { differenceInDays, eachDayOfInterval, eachWeekOfInterval, eachMonthOfInterval } from 'date-fns'
 import { useGanttStore } from '@/lib/store/ganttStore'
 import { useBoardStore } from '@/lib/store/boardStore'
@@ -34,7 +34,8 @@ export function GanttChart({ projectId, startDate, endDate, onTaskUpdate, onTask
   const allowOverlap = (activeView?.filters?.allowOverlap as boolean) ?? false
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } })
   )
 
   const doneTaskIds = useMemo(() => {

@@ -1,9 +1,10 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Palette } from 'lucide-react'
+import { Palette, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { AccentColor, ACCENT_COLORS, PALETTE_COLORS, colorConfig } from '@/lib/utils/colors'
+import { AccentColor, ACCENT_COLORS, PALETTE_COLORS, colorConfig, getRecentColors, addRecentColor } from '@/lib/utils/colors'
 
 interface ColorSwatchPickerProps {
   value: string
@@ -34,11 +35,29 @@ export function ColorSwatchPicker({
   className,
   animated = false,
 }: ColorSwatchPickerProps) {
+  const [recentColors, setRecentColors] = useState<string[]>([])
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    setRecentColors(getRecentColors())
+  }, [isOpen, expanded])
+
   const sizeClass = swatchSize === 'sm' ? 'w-6 h-6' : 'w-7 h-7'
   const shapeClass = swatchShape === 'circle' ? 'rounded-full' : 'rounded-lg'
   const currentHex = value.startsWith('#')
     ? value
     : colorConfig[value as AccentColor]?.hex ?? '#a855f7'
+
+  const handleCustomColor = (hex: string) => {
+    addRecentColor(hex)
+    setRecentColors(getRecentColors())
+    if (onChangeNative) {
+      onChangeNative(hex)
+    } else {
+      onChange(hex)
+      onClose?.()
+    }
+  }
 
   const customSwatch = (
     <label className={cn('relative flex-shrink-0', !inline && 'flex items-center gap-2 cursor-pointer group')}>
@@ -46,15 +65,7 @@ export function ColorSwatchPicker({
         <input
           type="color"
           value={currentHex}
-          onChange={(e) => {
-            const hex = e.target.value
-            if (onChangeNative) {
-              onChangeNative(hex)
-            } else {
-              onChange(hex)
-              onClose?.()
-            }
-          }}
+          onChange={(e) => handleCustomColor(e.target.value)}
           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         />
         <div
@@ -84,24 +95,88 @@ export function ColorSwatchPicker({
     </label>
   )
 
+  const recentRow = recentColors.length > 0 ? (
+    <div className={cn(inline ? 'flex gap-1 flex-wrap items-center' : 'flex gap-1.5 flex-wrap')}>
+      {recentColors.map((hex) => (
+        <button
+          key={hex}
+          type="button"
+          onClick={() => { onChange(hex); onClose?.() }}
+          className={cn(
+            swatchSize === 'sm' ? 'w-5 h-5' : 'w-6 h-6',
+            shapeClass,
+            'border-2 transition-all flex-shrink-0',
+            value === hex ? 'border-white scale-110' : 'border-transparent hover:border-white/40'
+          )}
+          style={{ backgroundColor: hex }}
+          title="Recent"
+        />
+      ))}
+    </div>
+  ) : null
+
   if (inline) {
     return (
-      <div className={cn('flex gap-1.5 flex-wrap items-center', className)}>
-        {accentColors.map((c) => (
+      <div className={cn('space-y-2', className)}>
+        <div className="flex gap-1.5 flex-wrap items-center">
+          {accentColors.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => { onChange(c); onClose?.() }}
+              className={cn(
+                sizeClass,
+                shapeClass,
+                'border-2 transition-all flex-shrink-0',
+                value === c ? 'border-white scale-110' : 'border-transparent hover:border-white/40'
+              )}
+              style={{ backgroundColor: colorConfig[c].hex }}
+            />
+          ))}
+          {customSwatch}
           <button
-            key={c}
             type="button"
-            onClick={() => { onChange(c); onClose?.() }}
+            onClick={() => setExpanded(!expanded)}
             className={cn(
-              sizeClass,
-              shapeClass,
-              'border-2 transition-all flex-shrink-0',
-              value === c ? 'border-white scale-110' : 'border-transparent hover:border-white/40'
+              'w-6 h-6 rounded-full flex items-center justify-center',
+              'border border-white/20 hover:border-white/40 transition-all',
+              'text-slate-400 hover:text-white',
+              expanded && 'bg-white/10 border-white/30'
             )}
-            style={{ backgroundColor: colorConfig[c].hex }}
-          />
-        ))}
-        {customSwatch}
+          >
+            <ChevronDown className={cn('w-3 h-3 transition-transform', expanded && 'rotate-180')} />
+          </button>
+        </div>
+        {expanded && (
+          <>
+            {recentRow && (
+              <div>
+                <span className="text-[10px] text-slate-500 mb-1 block">Recent</span>
+                {recentRow}
+              </div>
+            )}
+            {showPalette && (
+              <div className="border-t border-white/10 pt-2">
+                <div className="grid grid-cols-7 gap-1">
+                  {PALETTE_COLORS.map((hex) => (
+                    <button
+                      key={hex}
+                      type="button"
+                      onClick={() => { onChange(hex); onClose?.() }}
+                      className={cn(
+                        'w-6 h-6',
+                        shapeClass,
+                        'border-2 transition-all',
+                        value === hex ? 'border-white scale-110' : 'border-transparent hover:border-white/40'
+                      )}
+                      style={{ backgroundColor: hex }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
     )
   }
@@ -154,6 +229,12 @@ export function ColorSwatchPicker({
   const content = (
     <div className={cn('space-y-2', className)}>
       {accentRow}
+      {recentRow && (
+        <div>
+          <span className="text-[10px] text-slate-500 mb-1 block">Recent</span>
+          {recentRow}
+        </div>
+      )}
       {paletteGrid}
       <div className="pt-1 border-t border-white/10">
         {customSwatch}

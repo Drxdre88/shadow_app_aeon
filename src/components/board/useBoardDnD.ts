@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { DragEndEvent, DragStartEvent, DragOverEvent, useSensor, useSensors, PointerSensor } from '@dnd-kit/core'
+import { DragEndEvent, DragStartEvent, DragOverEvent, useSensor, useSensors, PointerSensor, TouchSensor } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 import { useBoardStore, type BoardColumn, type BoardTask } from '@/lib/store/boardStore'
 
@@ -23,7 +23,8 @@ export function useBoardDnD({
   const [overId, setOverId] = useState<string | null>(null)
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } })
   )
 
   const handleDragStart = useCallback((event: DragStartEvent) => {

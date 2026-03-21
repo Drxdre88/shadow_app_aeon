@@ -356,6 +356,7 @@ export function TaskBoard({
         onLabelToggle={onLabelToggle}
         onPushToGantt={onPushToGantt}
         onDateChange={(taskId, dates) => onTaskUpdate?.(taskId, dates as Record<string, unknown>)}
+        onTaskDelete={onTaskDelete}
       />
 
       {dependencyTreeTaskId && (

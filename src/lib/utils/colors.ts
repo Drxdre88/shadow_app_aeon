@@ -131,6 +131,26 @@ export interface ResolvedColor {
   presetKey?: AccentColor
 }
 
+const RECENT_COLORS_KEY = 'aeon-recent-colors'
+const MAX_RECENT = 7
+
+export function getRecentColors(): string[] {
+  if (typeof window === 'undefined') return []
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_COLORS_KEY) || '[]')
+  } catch { return [] }
+}
+
+export function addRecentColor(hex: string) {
+  if (typeof window === 'undefined') return
+  const presetHexes = ACCENT_COLORS.map(c => colorConfig[c].hex)
+  if (presetHexes.includes(hex) || PALETTE_COLORS.includes(hex)) return
+  const recent = getRecentColors().filter(c => c !== hex)
+  recent.unshift(hex)
+  if (recent.length > MAX_RECENT) recent.pop()
+  localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify(recent))
+}
+
 export function resolveColor(color: string): ResolvedColor {
   const preset = colorConfig[color as AccentColor]
   if (preset && color !== 'none') {

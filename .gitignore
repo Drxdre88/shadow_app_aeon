@@ -6,6 +6,7 @@ node_modules/
 # Claude Code
 CLAUDE.md
 .claude/
+.mcp.json
 
 # Build outputs
 .next/

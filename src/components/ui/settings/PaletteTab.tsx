@@ -5,7 +5,7 @@ import { Sparkles } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { themes, themeNames, type ThemeName } from '@/config/themes'
 import { cn } from '@/lib/utils/cn'
-import { GlowSlider, ToggleRow } from './shared'
+import { GlowSlider } from './shared'
 
 const themeLabels: Record<string, string> = Object.fromEntries(
   themeNames.map((name) => [
@@ -22,8 +22,6 @@ export function PaletteTab() {
     setGlowIntensity,
     glassOpacity,
     setGlassOpacity,
-    ambientBlobs,
-    setAmbientBlobs,
     colors,
   } = useThemeStore()
 
@@ -139,7 +137,6 @@ export function PaletteTab() {
           </div>
         </div>
 
-        <ToggleRow label="Ambient Blobs" value={ambientBlobs} onChange={setAmbientBlobs} color={colors.glowColor} />
       </div>
     </div>
   )
