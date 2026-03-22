@@ -49,6 +49,8 @@ export async function updateColumn(
 
 export async function deleteColumn(columnId: string, projectId: string) {
   await requireOwnership(projectId)
+  const { deleteTasksByColumn } = await import('@/lib/data/tasks')
+  await deleteTasksByColumn(columnId, projectId)
   await _deleteColumn(columnId, projectId)
   revalidatePath(`/project/${projectId}`)
 }

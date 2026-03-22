@@ -169,13 +169,24 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
   }, [activeTab, projectId, isLoading, setCanvasNodes, setCanvasEdges])
 
   useEffect(() => {
-    const POLL_INTERVAL = 30_000
+    const POLL_INTERVAL = 10_000
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible' && !useBoardStore.getState().isDirty) {
         setLoadKey((k) => k + 1)
       }
     }, POLL_INTERVAL)
-    return () => clearInterval(interval)
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && !useBoardStore.getState().isDirty) {
+        setLoadKey((k) => k + 1)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
   }, [])
 
   const triggerReload = () => setLoadKey((k) => k + 1)
