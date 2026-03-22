@@ -3,13 +3,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Palette, Trash2, Copy, Pencil, Sparkles, X, Archive, Package } from 'lucide-react'
+import { Palette, Trash2, Copy, Pencil, Sparkles, X, Archive, Package, FolderInput, MoveRight, ArrowRight, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { COLUMN_ICONS } from '@/lib/utils/columnIcons'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
 import { ContextMenuButton } from './ContextMenuButton'
+import { listProjectsForTransfer, copyColumnToProject, moveColumnToProject } from '@/lib/actions/transfer'
 
 interface ColumnContextMenuProps {
   columnId: string
@@ -22,7 +23,10 @@ interface ColumnContextMenuProps {
 }
 
 export function ColumnContextMenu({ columnId, position, onClose, onRename, onColumnDelete, onVaultCompleted, onArchiveAll }: ColumnContextMenuProps) {
-  const [submenu, setSubmenu] = useState<'color' | 'icon' | null>(null)
+  const [submenu, setSubmenu] = useState<'color' | 'icon' | 'transfer' | null>(null)
+  const [transferProjects, setTransferProjects] = useState<{ id: string; name: string; columns: { id: string; name: string; color: string }[] }[]>([])
+  const [transferLoading, setTransferLoading] = useState(false)
+  const [transferMode, setTransferMode] = useState<'copy' | 'move'>('copy')
   const [mounted, setMounted] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const { columns, updateColumn, removeColumn } = useBoardStore()
@@ -72,7 +76,6 @@ export function ColumnContextMenu({ columnId, position, onClose, onRename, onCol
   }
 
   const handleDelete = () => {
-    removeColumn(columnId)
     onColumnDelete?.(columnId)
     onClose()
   }
@@ -194,6 +197,85 @@ export function ColumnContextMenu({ columnId, position, onClose, onRename, onCol
           <Copy className="w-4 h-4" />
           Copy ID
         </button>
+
+        <ContextMenuButton
+          icon={FolderInput}
+          label="Copy to Project..."
+          hasSubmenu
+          isActive={submenu === 'transfer' && transferMode === 'copy'}
+          onClick={() => {
+            if (submenu === 'transfer' && transferMode === 'copy') { setSubmenu(null); return }
+            setTransferMode('copy')
+            setSubmenu('transfer')
+            if (transferProjects.length === 0) {
+              setTransferLoading(true)
+              listProjectsForTransfer()
+                .then(setTransferProjects)
+                .catch(() => {})
+                .finally(() => setTransferLoading(false))
+            }
+          }}
+          glowColor={colors.glowColor}
+        />
+        <ContextMenuButton
+          icon={MoveRight}
+          label="Move to Project..."
+          hasSubmenu
+          isActive={submenu === 'transfer' && transferMode === 'move'}
+          onClick={() => {
+            if (submenu === 'transfer' && transferMode === 'move') { setSubmenu(null); return }
+            setTransferMode('move')
+            setSubmenu('transfer')
+            if (transferProjects.length === 0) {
+              setTransferLoading(true)
+              listProjectsForTransfer()
+                .then(setTransferProjects)
+                .catch(() => {})
+                .finally(() => setTransferLoading(false))
+            }
+          }}
+          glowColor={colors.glowColor}
+        />
+        {submenu === 'transfer' && column && (
+          <div className="pl-2 border-l border-white/10 ml-3 space-y-0.5 py-1">
+            {transferLoading ? (
+              <div className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Loading...
+              </div>
+            ) : transferProjects.filter(p => p.id !== column.projectId).length === 0 ? (
+              <div className="px-3 py-2 text-xs text-slate-500">No other projects</div>
+            ) : (
+              transferProjects
+                .filter(p => p.id !== column.projectId)
+                .map((project) => (
+                  <button
+                    key={project.id}
+                    onClick={async () => {
+                      try {
+                        if (transferMode === 'copy') {
+                          await copyColumnToProject(columnId, column.projectId, project.id)
+                        } else {
+                          await moveColumnToProject(columnId, column.projectId, project.id)
+                          const { tasks, removeTask } = useBoardStore.getState()
+                          tasks.filter(t => t.columnId === columnId).forEach(t => removeTask(t.id))
+                          removeColumn(columnId)
+                          useBoardStore.setState({ isDirty: false })
+                        }
+                      } catch (err) {
+                        console.error('Transfer failed:', err)
+                      }
+                      onClose()
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/10 hover:text-white rounded-md transition-colors"
+                  >
+                    <ArrowRight className="w-3 h-3 text-slate-500" />
+                    {project.name}
+                  </button>
+                ))
+            )}
+          </div>
+        )}
 
         {onArchiveAll && (
           <button

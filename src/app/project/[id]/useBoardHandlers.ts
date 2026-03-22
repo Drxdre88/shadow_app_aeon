@@ -25,7 +25,12 @@ export function useBoardHandlers(projectId: string) {
     startDate?: string
     endDate?: string
   }) => {
-    createBoardTask(task).catch((err) => console.error('Failed to create task:', err))
+    createBoardTask(task)
+      .then(() => useBoardStore.setState({ isDirty: false }))
+      .catch((err) => {
+        console.error('Failed to create task:', err)
+        useBoardStore.getState().removeTask(task.id)
+      })
   }, [])
 
   const handleTaskUpdate = useCallback((taskId: string, updates: Record<string, unknown>) => {
@@ -38,15 +43,27 @@ export function useBoardHandlers(projectId: string) {
       color?: string
       onTimeline?: boolean
       orderIndex?: number
-    }).catch((err) => console.error('Failed to update task:', err))
+    })
+      .then(() => useBoardStore.setState({ isDirty: false }))
+      .catch((err) => console.error('Failed to update task:', err))
   }, [projectId])
 
   const handleTaskDelete = useCallback((taskId: string) => {
-    deleteBoardTask(taskId, projectId).catch((err) => console.error('Failed to delete task:', err))
+    const { tasks, removeTask, addTask } = useBoardStore.getState()
+    const snapshot = tasks.find(t => t.id === taskId)
+    removeTask(taskId)
+    deleteBoardTask(taskId, projectId)
+      .then(() => useBoardStore.setState({ isDirty: false }))
+      .catch((err) => {
+        console.error('Failed to delete task:', err)
+        if (snapshot) addTask(snapshot)
+      })
   }, [projectId])
 
   const handleTaskMove = useCallback((updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[]) => {
-    reorderBoardTasks(projectId, updates).catch((err) => console.error('Failed to reorder tasks:', err))
+    reorderBoardTasks(projectId, updates)
+      .then(() => useBoardStore.setState({ isDirty: false }))
+      .catch((err) => console.error('Failed to reorder tasks:', err))
   }, [projectId])
 
   const handleColumnCreate = useCallback((col: { id: string; projectId: string; name: string; color: string; orderIndex: number }) => {
@@ -65,7 +82,11 @@ export function useBoardHandlers(projectId: string) {
   }, [projectId])
 
   const handleColumnDelete = useCallback((columnId: string) => {
+    const { tasks, removeTask, removeColumn } = useBoardStore.getState()
+    tasks.filter(t => t.columnId === columnId).forEach(t => removeTask(t.id))
+    removeColumn(columnId)
     deleteColumnAction(columnId, projectId)
+      .then(() => useBoardStore.setState({ isDirty: false }))
       .catch((err) => console.error('Failed to delete column:', err))
   }, [projectId])
 

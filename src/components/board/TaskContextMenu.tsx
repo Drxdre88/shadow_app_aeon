@@ -28,6 +28,7 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
   const [transferProjects, setTransferProjects] = useState<{ id: string; name: string; columns: { id: string; name: string; color: string }[] }[]>([])
   const [transferLoading, setTransferLoading] = useState(false)
   const [transferMode, setTransferMode] = useState<'copy' | 'move'>('copy')
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const { tasks, columns, updateTask, removeTask } = useBoardStore()
   const { priorities, colors, glowIntensity } = useThemeStore()
@@ -314,24 +315,42 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
               transferProjects
                 .filter((p) => p.id !== task.projectId)
                 .map((project) => (
-                  <button
-                    key={project.id}
-                    onClick={async () => {
-                      try {
-                        if (transferMode === 'copy') {
-                          await copyTaskToProject(taskId, task.projectId, project.id)
-                        } else {
-                          removeTask(taskId)
-                          await moveTaskToProject(taskId, task.projectId, project.id)
-                        }
-                      } catch {}
-                      onClose()
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/10 hover:text-white rounded-md transition-colors"
-                  >
-                    <ArrowRight className="w-3 h-3 text-slate-500" />
-                    {project.name}
-                  </button>
+                  <div key={project.id}>
+                    <button
+                      onClick={() => setSelectedProjectId(selectedProjectId === project.id ? null : project.id)}
+                      className={cn(
+                        'w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors',
+                        selectedProjectId === project.id ? 'text-white bg-white/10' : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                      )}
+                    >
+                      <ArrowRight className={cn('w-3 h-3 text-slate-500 transition-transform', selectedProjectId === project.id && 'rotate-90')} />
+                      {project.name}
+                    </button>
+                    {selectedProjectId === project.id && (
+                      <div className="pl-4 space-y-0.5 py-1 border-l border-white/10 ml-5">
+                        {project.columns.map((col) => (
+                          <button
+                            key={col.id}
+                            onClick={async () => {
+                              try {
+                                if (transferMode === 'copy') {
+                                  await copyTaskToProject(taskId, task.projectId, project.id, col.id)
+                                } else {
+                                  removeTask(taskId)
+                                  await moveTaskToProject(taskId, task.projectId, project.id, col.id)
+                                }
+                              } catch {}
+                              onClose()
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-1 text-xs text-slate-400 hover:bg-white/10 hover:text-white rounded-md transition-colors"
+                          >
+                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: col.color }} />
+                            {col.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ))
             )}
           </div>

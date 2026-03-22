@@ -151,6 +151,7 @@ export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowCo
         {...listeners}
         onClick={onEdit}
         onContextMenu={handleContextMenu}
+        style={{ touchAction: 'none' }}
         className={cn(
           'cursor-grab active:cursor-grabbing',
           isDragging && 'opacity-30 scale-95'

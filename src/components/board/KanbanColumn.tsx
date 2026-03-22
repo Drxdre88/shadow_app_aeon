@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { AnimatePresence } from 'framer-motion'
-import { Plus, Check, X, Palette } from 'lucide-react'
+import { Plus, Check, X, Palette, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { SortableTaskCard } from './SortableTaskCard'
 import { QuickAddTask } from './QuickAddTask'
@@ -14,6 +14,7 @@ import { useThemeStore } from '@/stores/themeStore'
 import type { BoardColumn } from '@/lib/store/boardStore'
 import { COLUMN_ICONS, COLUMN_ICON_MAP } from '@/lib/utils/columnIcons'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
+import { ColumnDeleteModal } from './ColumnDeleteModal'
 
 interface KanbanColumnProps {
   column: BoardColumn
@@ -125,6 +126,7 @@ export function KanbanColumn({
   const [renameValue, setRenameValue] = useState(column.name)
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const { glowIntensity: globalGlow, columnWidth: globalColumnWidth, columnHeight: globalColumnHeight, dynamicColumnWidth, dynamicColumnHeight } = useThemeStore()
   const dynamicW = dynamicColumnWidth
     ? Math.min(900, globalColumnWidth + Math.max(0, tasks.length - 3) * 20)
@@ -261,6 +263,7 @@ export function KanbanColumn({
     >
       <div
         className={cn('p-4 border-b border-white/10', dragHandleProps && !isRenaming && 'cursor-grab active:cursor-grabbing')}
+        style={dragHandleProps && !isRenaming ? { touchAction: 'none' } : undefined}
         {...(dragHandleProps && !isRenaming ? dragHandleProps : {})}
         onContextMenu={(e) => {
           e.preventDefault()
@@ -308,7 +311,7 @@ export function KanbanColumn({
             )}
           </div>
 
-          <div className="flex items-center gap-1 relative flex-shrink-0">
+          <div className="flex items-center gap-1 relative flex-shrink-0 group">
             {!isRenaming && (
               <button
                 onClick={(e) => {
@@ -321,6 +324,17 @@ export function KanbanColumn({
                 <Palette className="w-3.5 h-3.5 text-slate-400" />
               </button>
             )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowDeleteConfirm(true)
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="p-1.5 rounded-lg hover:bg-red-500/15 transition-colors opacity-0 group-hover:opacity-100"
+              title="Delete column"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-slate-400 hover:text-red-400" />
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); onAddTask?.() }}
               onPointerDown={(e) => e.stopPropagation()}
@@ -435,11 +449,22 @@ export function KanbanColumn({
           setRenameValue(column.name)
           setIsRenaming(true)
         }}
-        onColumnDelete={onColumnDelete}
+        onColumnDelete={() => setShowDeleteConfirm(true)}
         onVaultCompleted={onVaultCompleted}
         onArchiveAll={onArchiveColumn}
       />
     )}
+
+    <ColumnDeleteModal
+      isOpen={showDeleteConfirm}
+      columnName={column.name}
+      taskCount={tasks.length}
+      onConfirm={() => {
+        setShowDeleteConfirm(false)
+        onColumnDelete?.(column.id)
+      }}
+      onClose={() => setShowDeleteConfirm(false)}
+    />
     </div>
   )
 }

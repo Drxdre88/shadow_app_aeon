@@ -147,6 +147,12 @@ export async function deleteTask(taskId: string, projectId: string) {
   return !!deleted
 }
 
+export async function deleteTasksByColumn(columnId: string, projectId: string) {
+  await db
+    .delete(boardTasks)
+    .where(and(eq(boardTasks.columnId, columnId), eq(boardTasks.projectId, projectId)))
+}
+
 export async function reorderTasks(
   projectId: string,
   updates: { id: string; orderIndex: number; status?: string; columnId?: string }[]

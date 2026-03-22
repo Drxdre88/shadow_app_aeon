@@ -10,12 +10,14 @@ const BOARD_TEMPLATES: Record<string, { name: string; color: string; icon: strin
     { name: 'Done', color: 'green', icon: 'check-circle', orderIndex: 3 },
   ],
   devBoard: [
-    { name: 'Bugs and Fixes', color: 'pink', icon: 'list-todo', orderIndex: 0 },
-    { name: 'New Features', color: 'blue', icon: 'activity', orderIndex: 1 },
+    { name: 'Raw Ideas', color: '#fcd34d', icon: null, orderIndex: 0 },
+    { name: 'Queue', color: '#fda4af', icon: 'list-todo', orderIndex: 1 },
     { name: 'Analysis', color: 'orange', icon: null, orderIndex: 2 },
-    { name: 'In Dev', color: '#fda4af', icon: null, orderIndex: 3 },
-    { name: 'Awaiting Review', color: '#d946ef', icon: null, orderIndex: 4 },
-    { name: 'Done', color: 'green', icon: 'check-circle', orderIndex: 5 },
+    { name: 'Blocked', color: '#67e8f9', icon: null, orderIndex: 3 },
+    { name: 'In Dev', color: '#fda4af', icon: null, orderIndex: 4 },
+    { name: 'AI Review', color: '#8b5cf6', icon: null, orderIndex: 5 },
+    { name: 'Human Review', color: '#a5b4fc', icon: null, orderIndex: 6 },
+    { name: 'Done', color: 'green', icon: 'check-circle', orderIndex: 7 },
   ],
 }
 
