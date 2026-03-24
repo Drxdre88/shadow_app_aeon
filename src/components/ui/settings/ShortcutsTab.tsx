@@ -5,8 +5,10 @@ import { useThemeStore, DEFAULT_SHORTCUTS } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
 
 const SHORTCUT_LABELS: Record<string, string> = {
+  addCard: 'New Card',
+  editCard: 'Edit Card',
   openLabel: 'Open Label Picker',
-  addTask: 'New Task',
+  changePriority: 'Change Priority',
   changeGlow: 'Change Color/Glow',
   toggleDates: 'Toggle Dates Display',
 }

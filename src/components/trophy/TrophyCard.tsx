@@ -12,6 +12,7 @@ import type { TaskVault } from '@/lib/db/schema'
 interface TrophyCardProps {
   vaultTask: TaskVault
   onRestore?: (vaultId: string) => void
+  onClick?: (vaultTask: TaskVault) => void
 }
 
 const priorityBadgeStyles = {
@@ -59,7 +60,7 @@ export const cardVariants = {
   },
 }
 
-export function TrophyCard({ vaultTask, onRestore }: TrophyCardProps) {
+export function TrophyCard({ vaultTask, onRestore, onClick }: TrophyCardProps) {
   const { glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
 
@@ -70,10 +71,11 @@ export function TrophyCard({ vaultTask, onRestore }: TrophyCardProps) {
   const iconColor = priorityIconColor[vaultTask.priority] ?? priorityIconColor.low
   const iconBg = priorityIconBg[vaultTask.priority] ?? priorityIconBg.low
 
-  const archivedDisplay = formatDistanceToNow(new Date(vaultTask.archivedAt), { addSuffix: true })
+  const effectiveDate = vaultTask.completedAt ? new Date(vaultTask.completedAt) : new Date(vaultTask.archivedAt)
+  const archivedDisplay = formatDistanceToNow(effectiveDate, { addSuffix: true })
 
   return (
-    <motion.div variants={cardVariants}>
+    <motion.div variants={cardVariants} onClick={() => onClick?.(vaultTask)} className="cursor-pointer">
       <GlowCard accentColor={accentColor} glowIntensity="md" showAccentLine hover className="p-3 h-full">
         <div className="flex items-start gap-2 mb-2">
           <div

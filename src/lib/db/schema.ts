@@ -119,6 +119,7 @@ export const boardTasks = pgTable('board_tasks', {
   metadata: jsonb('metadata').default({}).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  completedAt: timestamp('completed_at', { mode: 'date' }),
   archivedAt: timestamp('archived_at', { mode: 'date' }),
 })
 
@@ -229,6 +230,7 @@ export const taskVault = pgTable('task_vault', {
   checklistSnapshot: jsonb('checklist_snapshot').default({}).notNull(),
   metadata: jsonb('metadata').default({}).notNull(),
   archivedAt: timestamp('archived_at').defaultNow().notNull(),
+  completedAt: timestamp('completed_at'),
   originalCreatedAt: timestamp('original_created_at').notNull(),
 })
 

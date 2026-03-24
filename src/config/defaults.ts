@@ -17,8 +17,10 @@ export const INITIAL_PRIORITIES: CustomPriority[] = [
 
 export const DEFAULT_SHORTCUTS: Record<string, string> = {
   openLabel: 'l',
-  addTask: 't',
+  addCard: 'c',
+  editCard: 'e',
   changeGlow: 'g',
+  changePriority: 'v',
   toggleDates: 'd',
 }
 
@@ -45,6 +47,7 @@ export const DEFAULT_PREFERENCES = {
   boardLayout: 'scroll' as BoardLayout,
   projectColors: {} as Record<string, string>,
   depViewMode: 'canvas' as DepViewMode,
+  completionMode: 'done' as 'done' | 'vault',
   shortcuts: { ...DEFAULT_SHORTCUTS },
   priorities: [...INITIAL_PRIORITIES],
 }

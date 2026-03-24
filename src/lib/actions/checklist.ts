@@ -12,6 +12,7 @@ import {
   createChecklistItem as _createChecklistItem,
   updateChecklistItem as _updateChecklistItem,
   deleteChecklistItem as _deleteChecklistItem,
+  renameChecklistGroup as _renameChecklistGroup,
 } from '@/lib/data/checklist'
 import { findTaskById } from '@/lib/data/tasks'
 
@@ -85,4 +86,16 @@ export async function deleteChecklistItem(itemId: string, taskId: string, projec
   await requireTaskInProject(taskId, projectId)
   await _deleteChecklistItem(itemId, taskId)
   revalidatePath(`/project/${projectId}`)
+}
+
+export async function renameChecklistGroup(
+  taskId: string,
+  projectId: string,
+  oldName: string,
+  newName: string
+) {
+  await requireTaskInProject(taskId, projectId)
+  const count = await _renameChecklistGroup(taskId, oldName, newName)
+  revalidatePath(`/project/${projectId}`)
+  return count
 }

@@ -3,6 +3,7 @@ import {
   createChecklistItem,
   createChecklistItemsBatch,
   updateChecklistItem,
+  updateChecklistItemsBatch,
   deleteChecklistItem,
 } from '@/lib/data/checklist'
 import { verifyProjectOwnership } from '@/lib/data/projects'
@@ -81,6 +82,27 @@ export const registerChecklistTools: RegisterFn = (server) => {
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
       const created = await createChecklistItemsBatch(taskId, items)
       return ok({ created: created.length, items: created.map((i) => ({ id: i.id, title: i.title })) })
+    }
+  )
+
+  server.tool(
+    'batch_update_checklist_items',
+    'Update multiple checklist items at once (state, title, status). Efficient for bulk check/uncheck.',
+    {
+      projectId: z.string().uuid().describe('The project UUID'),
+      taskId: z.string().uuid().describe('The task UUID'),
+      items: z.array(z.object({
+        itemId: z.string().uuid().describe('The checklist item UUID'),
+        state: z.enum(['unchecked', 'checked', 'crossed']).optional().describe('Check state'),
+        title: z.string().min(1).max(255).optional().describe('New title'),
+        status: z.string().max(30).nullable().optional().describe('Status label'),
+      })).min(1).max(100).describe('Array of items to update'),
+    },
+    async ({ projectId, taskId, items }, extra) => {
+      const uid = getUserId(extra)
+      if (!await requireOwnership(projectId, uid)) return notFound('Project')
+      const updated = await updateChecklistItemsBatch(taskId, items)
+      return ok({ updated: updated.length, items: updated.map((i) => ({ id: i.id, title: i.title, state: i.state })) })
     }
   )
 }

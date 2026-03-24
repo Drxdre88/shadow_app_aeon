@@ -62,11 +62,15 @@ export function useBoardDnD({
 
     if (overTask && activeTask.columnId !== overTask.columnId) {
       moveTask(activeId, overTask.columnId!, overTask.orderIndex)
-      onTaskMove?.([{ id: activeId, orderIndex: overTask.orderIndex, columnId: overTask.columnId, name: activeTask.name }])
+      const targetCol = sortedColumns.find((c) => c.id === overTask.columnId)
+      const isDone = targetCol?.name.toLowerCase() === 'done'
+      onTaskMove?.([{ id: activeId, orderIndex: overTask.orderIndex, columnId: overTask.columnId, name: activeTask.name, ...(isDone && { status: 'done' }) }])
     } else if (overColumnId && activeTask.columnId !== overColumnId) {
       const tasksInColumn = projectTasks.filter((t) => t.columnId === overColumnId)
       moveTask(activeId, overColumnId, tasksInColumn.length)
-      onTaskMove?.([{ id: activeId, orderIndex: tasksInColumn.length, columnId: overColumnId, name: activeTask.name }])
+      const targetCol = sortedColumns.find((c) => c.id === overColumnId)
+      const isDone = targetCol?.name.toLowerCase() === 'done'
+      onTaskMove?.([{ id: activeId, orderIndex: tasksInColumn.length, columnId: overColumnId, name: activeTask.name, ...(isDone && { status: 'done' }) }])
     }
   }, [projectTasks, sortedColumns, moveTask, onTaskMove])
 

@@ -12,6 +12,7 @@ export type DepLineStyle = 'solid' | 'dashed' | 'dotted'
 export type DepViewMode = 'canvas' | 'arrows'
 export type CursorEffect = 'none' | 'glow' | 'particles' | 'combo' | 'trail' | 'neon' | 'fire' | 'ice' | 'portal' | 'venom' | 'plasma' | 'blood-moon' | 'smoke' | 'inferno-smoke' | 'venom-smoke' | 'plasma-smoke' | 'blood-moon-smoke' | 'custom-smoke'
 export type BoardLayout = 'scroll' | 'grid'
+export type CompletionMode = 'done' | 'vault'
 
 export interface CustomPriority {
   id: string
@@ -53,6 +54,7 @@ interface ThemeStore {
   spaceOrbitSpeed: number
   boardLayout: BoardLayout
   projectColors: Record<string, string>
+  completionMode: CompletionMode
   depViewMode: DepViewMode
   shortcuts: Record<string, string>
   priorities: CustomPriority[]
@@ -84,6 +86,7 @@ interface ThemeStore {
   setDepViewMode: (mode: DepViewMode) => void
   setSpacePlanetGlow: (enabled: boolean) => void
   setSpaceOrbitSpeed: (speed: number) => void
+  setCompletionMode: (mode: CompletionMode) => void
   setShortcut: (action: string, key: string) => void
 }
 
@@ -111,6 +114,7 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   spaceOrbitSpeed: DEFAULT_PREFERENCES.spaceOrbitSpeed,
   boardLayout: DEFAULT_PREFERENCES.boardLayout,
   projectColors: { ...DEFAULT_PREFERENCES.projectColors },
+  completionMode: DEFAULT_PREFERENCES.completionMode as CompletionMode,
   depViewMode: DEFAULT_PREFERENCES.depViewMode,
   shortcuts: { ...DEFAULT_PREFERENCES.shortcuts },
   priorities: [...DEFAULT_PREFERENCES.priorities],
@@ -210,6 +214,9 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   },
   setSpaceOrbitSpeed: (speed: number) => {
     set({ spaceOrbitSpeed: Math.max(0, Math.min(5, speed)) })
+  },
+  setCompletionMode: (mode: CompletionMode) => {
+    set({ completionMode: mode })
   },
   setShortcut: (action: string, key: string) => {
     set((s) => ({ shortcuts: { ...s.shortcuts, [action]: key } }))

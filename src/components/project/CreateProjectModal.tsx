@@ -15,9 +15,10 @@ import aeonLogo from '@/assets/aeon.png'
 interface CreateProjectModalProps {
   isOpen: boolean
   onClose: () => void
+  existingGroups?: string[]
 }
 
-export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps) {
+export function CreateProjectModal({ isOpen, onClose, existingGroups = [] }: CreateProjectModalProps) {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { glowIntensity } = useThemeStore()
@@ -179,6 +180,25 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
                     'transition-all'
                   )}
                 />
+                {existingGroups.length > 0 && (
+                  <div className="flex gap-1.5 flex-wrap mt-1.5">
+                    {existingGroups.map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, group: g })}
+                        className={cn(
+                          'px-2 py-0.5 rounded-md text-[11px] transition-all',
+                          formData.group === g
+                            ? 'bg-[var(--primary)]/20 text-[var(--primary)] border border-[var(--primary)]/30'
+                            : 'bg-white/[0.05] text-slate-400 border border-white/[0.08] hover:bg-white/[0.1] hover:text-white'
+                        )}
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <PlanetPicker
