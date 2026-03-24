@@ -47,7 +47,7 @@ export const DEFAULT_PREFERENCES = {
   boardLayout: 'scroll' as BoardLayout,
   projectColors: {} as Record<string, string>,
   depViewMode: 'canvas' as DepViewMode,
-  completionMode: 'done' as 'done' | 'vault',
+  completionMode: 'vault' as 'done' | 'vault',
   shortcuts: { ...DEFAULT_SHORTCUTS },
   priorities: [...INITIAL_PRIORITIES],
 }

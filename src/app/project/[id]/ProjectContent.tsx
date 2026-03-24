@@ -13,6 +13,7 @@ import { GlassStage } from '@/components/ui/GlassStage'
 import { GanttChart } from '@/components/gantt/GanttChart'
 import { TimeScaleSelector } from '@/components/gantt/TimeScaleSelector'
 import { TaskBoard } from '@/components/board/TaskBoard'
+import { ProjectSwitcher } from '@/components/board/ProjectSwitcher'
 import { useThemeStore } from '@/stores/themeStore'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { activeFilterCount, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
@@ -45,8 +46,9 @@ export default function ProjectContent({ project }: ProjectContentProps) {
   const [filters, setFilters] = useState<BoardFilters>(DEFAULT_FILTERS)
   const [showAllDeps, setShowAllDeps] = useState(false)
   const [connectMode, setConnectMode] = useState(false)
-  const { boardLayout, setBoardLayout } = useThemeStore()
+  const { boardLayout, setBoardLayout, colors, projectColors, glowIntensity } = useThemeStore()
   const isDirty = useBoardStore((s) => s.isDirty)
+  const projectGlow = projectColors[project.id] || colors.glowColor || 'rgba(139, 92, 246, 0.5)'
 
   const { isLoading, loadError, triggerReload } = useProjectData(project.id, activeTab)
 
@@ -84,7 +86,11 @@ export default function ProjectContent({ project }: ProjectContentProps) {
               className="rounded"
               style={{ filter: 'drop-shadow(0 0 6px var(--glow-color))' }}
             />
-            <span className="text-sm sm:text-lg font-bold text-white truncate max-w-[120px] sm:max-w-none">{project.name}</span>
+            <ProjectSwitcher
+              currentProjectId={project.id}
+              projectName={project.name}
+              glowColor={projectGlow}
+            />
             <div
               className={cn(
                 'w-1.5 h-1.5 rounded-full transition-colors duration-500',
@@ -187,31 +193,31 @@ export default function ProjectContent({ project }: ProjectContentProps) {
                 <button
                   onClick={() => setShowAllDeps(!showAllDeps)}
                   className={cn(
-                    'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                    'hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                     showAllDeps
                       ? 'bg-white/10 text-white'
                       : 'text-slate-400 hover:text-white hover:bg-white/5'
                   )}
                 >
                   <Link2 className="w-4 h-4" />
-                  <span className="hidden sm:inline">Deps</span>
+                  <span>Deps</span>
                 </button>
                 <button
                   onClick={() => setConnectMode(!connectMode)}
                   className={cn(
-                    'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                    'hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                     connectMode
                       ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
                       : 'text-slate-400 hover:text-white hover:bg-white/5'
                   )}
                 >
                   <GitBranch className="w-4 h-4" />
-                  <span className="hidden sm:inline">Connect</span>
+                  <span>Connect</span>
                 </button>
                 <button
                   onClick={() => setBoardLayout(boardLayout === 'scroll' ? 'grid' : 'scroll')}
                   className={cn(
-                    'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
+                    'hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                     boardLayout === 'grid'
                       ? 'bg-white/10 text-white'
                       : 'text-slate-400 hover:text-white hover:bg-white/5'

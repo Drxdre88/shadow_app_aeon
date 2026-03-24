@@ -40,7 +40,7 @@ export function BatchVaultModal({ isOpen, columnName, tasks, onConfirm, onClose 
         taskId: t.id,
         taskName: t.name,
         priority: t.priority,
-        daysTaken: '',
+        daysTaken: '1',
       })))
     }
   }, [isOpen, tasks])

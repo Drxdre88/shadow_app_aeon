@@ -1,14 +1,7 @@
 import { NextResponse } from 'next/server'
-import { readdir } from 'fs/promises'
-import { join } from 'path'
+
+const PLANETS = Array.from({ length: 55 }, (_, i) => `planet${i + 1}.png`)
 
 export async function GET() {
-  const dir = join(process.cwd(), 'public', 'planets')
-  try {
-    const files = await readdir(dir)
-    const images = files.filter((f) => /\.(png|jpg|jpeg|webp)$/i.test(f)).sort()
-    return NextResponse.json(images)
-  } catch {
-    return NextResponse.json([])
-  }
+  return NextResponse.json(PLANETS)
 }
