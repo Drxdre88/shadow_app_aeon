@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useRef } from 'react'
 import { DragEndEvent, DragStartEvent, DragOverEvent, useSensor, useSensors, PointerSensor, TouchSensor } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 import { useBoardStore, type BoardColumn, type BoardTask } from '@/lib/store/boardStore'
@@ -21,6 +21,7 @@ export function useBoardDnD({
   const { moveTask, removeTask, updateTask, reorderColumns } = useBoardStore()
   const [activeItem, setActiveItem] = useState<{ type: 'task' | 'column'; data: BoardTask | BoardColumn } | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
+  const pendingMoveRef = useRef<{ id: string; columnId: string; orderIndex: number; name: string } | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -62,15 +63,11 @@ export function useBoardDnD({
 
     if (overTask && activeTask.columnId !== overTask.columnId) {
       moveTask(activeId, overTask.columnId!, overTask.orderIndex)
-      const targetCol = sortedColumns.find((c) => c.id === overTask.columnId)
-      const isDone = targetCol?.name.toLowerCase() === 'done'
-      onTaskMove?.([{ id: activeId, orderIndex: overTask.orderIndex, columnId: overTask.columnId, name: activeTask.name, ...(isDone && { status: 'done' }) }])
+      pendingMoveRef.current = { id: activeId, columnId: overTask.columnId!, orderIndex: overTask.orderIndex, name: activeTask.name }
     } else if (overColumnId && activeTask.columnId !== overColumnId) {
       const tasksInColumn = projectTasks.filter((t) => t.columnId === overColumnId)
       moveTask(activeId, overColumnId, tasksInColumn.length)
-      const targetCol = sortedColumns.find((c) => c.id === overColumnId)
-      const isDone = targetCol?.name.toLowerCase() === 'done'
-      onTaskMove?.([{ id: activeId, orderIndex: tasksInColumn.length, columnId: overColumnId, name: activeTask.name, ...(isDone && { status: 'done' }) }])
+      pendingMoveRef.current = { id: activeId, columnId: overColumnId, orderIndex: tasksInColumn.length, name: activeTask.name }
     }
   }, [projectTasks, sortedColumns, moveTask, onTaskMove])
 
@@ -78,10 +75,19 @@ export function useBoardDnD({
     const { active, over } = event
     const activeType = active.data.current?.type
 
+    const pendingMove = pendingMoveRef.current
+    pendingMoveRef.current = null
     setActiveItem(null)
     setOverId(null)
 
-    if (!over) return
+    if (!over) {
+      if (pendingMove) {
+        const targetCol = sortedColumns.find((c) => c.id === pendingMove.columnId)
+        const isDone = targetCol?.name.toLowerCase() === 'done'
+        onTaskMove?.([{ id: pendingMove.id, orderIndex: pendingMove.orderIndex, columnId: pendingMove.columnId, name: pendingMove.name, ...(isDone && { status: 'done' }) }])
+      }
+      return
+    }
 
     if (activeType === 'column') {
       const activeId = active.id as string
@@ -128,8 +134,22 @@ export function useBoardDnD({
             moveUpdates.push({ id: task.id, orderIndex: index })
           }
         })
-        if (moveUpdates.length > 0) onTaskMove?.(moveUpdates)
+        if (pendingMove) {
+          const targetCol = sortedColumns.find((c) => c.id === pendingMove.columnId)
+          const isDone = targetCol?.name.toLowerCase() === 'done'
+          const crossColUpdate = { id: pendingMove.id, orderIndex: pendingMove.orderIndex, columnId: pendingMove.columnId, name: pendingMove.name, ...(isDone && { status: 'done' as const }) }
+          onTaskMove?.([crossColUpdate, ...moveUpdates])
+        } else if (moveUpdates.length > 0) {
+          onTaskMove?.(moveUpdates)
+        }
+        return
       }
+    }
+
+    if (pendingMove) {
+      const targetCol = sortedColumns.find((c) => c.id === pendingMove.columnId)
+      const isDone = targetCol?.name.toLowerCase() === 'done'
+      onTaskMove?.([{ id: pendingMove.id, orderIndex: pendingMove.orderIndex, columnId: pendingMove.columnId, name: pendingMove.name, ...(isDone && { status: 'done' }) }])
     }
   }, [projectTasks, sortedColumns, removeTask, updateTask, reorderColumns, onTaskMove, onTaskDelete, onColumnReorder])
 

@@ -34,6 +34,8 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
 
     loadBoardData(projectId)
       .then(({ tasks: dbTasks, columns: dbColumns, labels: dbLabels, taskLabels: dbTaskLabels, dependencies: dbDependencies, checklistSummaries: dbChecklistSummaries }) => {
+        if (!isInitialLoad.current && useBoardStore.getState().isDirty) return
+
         const taskLabelMap = new Map<string, string[]>()
         dbTaskLabels.forEach((tl) => {
           const existing = taskLabelMap.get(tl.taskId) || []
