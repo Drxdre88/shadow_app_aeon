@@ -15,15 +15,18 @@ interface VaultDaysModalProps {
 }
 
 export function VaultDaysModal({ isOpen, taskName, onConfirm, onClose }: VaultDaysModalProps) {
-  const [days, setDays] = useState('')
+  const [days, setDays] = useState('1')
   const inputRef = useRef<HTMLInputElement>(null)
   const { glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
 
   useEffect(() => {
     if (isOpen) {
-      setDays('')
-      setTimeout(() => inputRef.current?.focus(), 100)
+      setDays('1')
+      setTimeout(() => {
+        inputRef.current?.focus()
+        inputRef.current?.select()
+      }, 100)
     }
   }, [isOpen])
 
