@@ -15,9 +15,16 @@ const spaceGrotesk = Space_Grotesk({ subsets: ['latin'], variable: '--font-space
 const firaCode = Fira_Code({ subsets: ['latin'], variable: '--font-fira-code' })
 
 export const metadata: Metadata = {
-  title: 'Aeon - Beautiful Project Timelines',
+  title: {
+    default: 'Aeon',
+    template: 'AEON - %s',
+  },
   description: 'Visualize your projects with stunning Gantt charts and task boards',
   manifest: '/manifest.json',
+  icons: {
+    icon: '/aeon.png',
+    apple: '/aeon.png',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',

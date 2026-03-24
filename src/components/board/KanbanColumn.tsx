@@ -251,15 +251,16 @@ export function KanbanColumn({
     : dynamicGlow
 
   return (
-    <div className="relative flex-shrink-0" style={{ width: `${columnWidth}px` }}>
+    <div className="relative flex-shrink-0 kanban-col-outer" style={{ '--col-w': `${columnWidth}px` } as React.CSSProperties}>
     <div
       ref={setNodeRef}
       className={cn(
         'flex flex-col rounded-xl',
         'glass transition-all duration-200',
+        'kanban-col-inner',
         isOver && 'ring-2 ring-white/20'
       )}
-      style={{ height: `${columnHeight}px` }}
+      style={{ '--col-h': `${columnHeight}px` } as React.CSSProperties}
     >
       <div
         className={cn('p-4 border-b border-white/10', dragHandleProps && !isRenaming && 'cursor-grab active:cursor-grabbing')}
