@@ -49,7 +49,7 @@ export function TaskPriorityPicker({ taskId, isOpen, onClose, onTaskUpdate }: Ta
 
   if (!mounted || !isOpen || !task) return null
 
-  const handleSelect = (priorityId: string) => {
+  const handleSelect = (priorityId: 'low' | 'medium' | 'high' | 'urgent') => {
     updateTask(taskId, { priority: priorityId })
     onTaskUpdate?.(taskId, { priority: priorityId })
     onClose()
