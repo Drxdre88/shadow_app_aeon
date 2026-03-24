@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRight, FolderOpen, Folder, LayoutGrid } from 'lucide-react'
 import Link from 'next/link'
@@ -48,17 +48,20 @@ export function TreeView({ projects }: TreeViewProps) {
   const [editGroupValue, setEditGroupValue] = useState('')
   const editInputRef = useRef<HTMLInputElement>(null)
 
-  const groups = groupByFluidGroup(projects)
+  const groups = useMemo(() => groupByFluidGroup(projects), [projects])
 
-  const flatItems: Array<{ type: 'group'; label: string } | { type: 'project'; project: ProjectWithStats; groupLabel: string }> = []
-  for (const group of groups) {
-    flatItems.push({ type: 'group', label: group.label })
-    if (expandedGroups.has(group.label)) {
-      for (const project of group.projects) {
-        flatItems.push({ type: 'project', project, groupLabel: group.label })
+  const flatItems = useMemo(() => {
+    const items: Array<{ type: 'group'; label: string } | { type: 'project'; project: ProjectWithStats; groupLabel: string }> = []
+    for (const group of groups) {
+      items.push({ type: 'group', label: group.label })
+      if (expandedGroups.has(group.label)) {
+        for (const project of group.projects) {
+          items.push({ type: 'project', project, groupLabel: group.label })
+        }
       }
     }
-  }
+    return items
+  }, [groups, expandedGroups])
 
   const toggleGroup = useCallback((label: string) => {
     setExpandedGroups((prev) => {
