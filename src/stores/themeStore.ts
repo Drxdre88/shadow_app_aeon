@@ -49,6 +49,8 @@ interface ThemeStore {
   depLineGlow: number
   depLineStyle: DepLineStyle
   depCanvasBlur: number
+  spacePlanetGlow: boolean
+  spaceOrbitSpeed: number
   boardLayout: BoardLayout
   projectColors: Record<string, string>
   depViewMode: DepViewMode
@@ -80,6 +82,8 @@ interface ThemeStore {
   setDepLineStyle: (style: DepLineStyle) => void
   setDepCanvasBlur: (blur: number) => void
   setDepViewMode: (mode: DepViewMode) => void
+  setSpacePlanetGlow: (enabled: boolean) => void
+  setSpaceOrbitSpeed: (speed: number) => void
   setShortcut: (action: string, key: string) => void
 }
 
@@ -103,6 +107,8 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   depLineGlow: DEFAULT_PREFERENCES.depLineGlow,
   depLineStyle: DEFAULT_PREFERENCES.depLineStyle,
   depCanvasBlur: DEFAULT_PREFERENCES.depCanvasBlur,
+  spacePlanetGlow: DEFAULT_PREFERENCES.spacePlanetGlow,
+  spaceOrbitSpeed: DEFAULT_PREFERENCES.spaceOrbitSpeed,
   boardLayout: DEFAULT_PREFERENCES.boardLayout,
   projectColors: { ...DEFAULT_PREFERENCES.projectColors },
   depViewMode: DEFAULT_PREFERENCES.depViewMode,
@@ -198,6 +204,12 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   },
   setDepViewMode: (mode: DepViewMode) => {
     set({ depViewMode: mode })
+  },
+  setSpacePlanetGlow: (enabled: boolean) => {
+    set({ spacePlanetGlow: enabled })
+  },
+  setSpaceOrbitSpeed: (speed: number) => {
+    set({ spaceOrbitSpeed: Math.max(0, Math.min(5, speed)) })
   },
   setShortcut: (action: string, key: string) => {
     set((s) => ({ shortcuts: { ...s.shortcuts, [action]: key } }))

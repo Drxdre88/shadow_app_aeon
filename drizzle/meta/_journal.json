@@ -29,6 +29,20 @@
       "when": 1773933860787,
       "tag": "0003_sturdy_cammi",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1774200491362,
+      "tag": "0004_modern_squirrel_girl",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1774222931770,
+      "tag": "0005_eminent_skullbuster",
+      "breakpoints": true
     }
   ]
 }

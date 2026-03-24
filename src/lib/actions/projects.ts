@@ -4,9 +4,12 @@ import { revalidatePath } from 'next/cache'
 import { requireAuth, requireOwnership } from './helpers'
 import {
   findProjects as _findProjects,
+  findProjectsWithStats as _findProjectsWithStats,
   createProject as _createProject,
   updateProject as _updateProject,
   deleteProject as _deleteProject,
+  setProjectGroup as _setProjectGroup,
+  renameGroup as _renameGroup,
 } from '@/lib/data/projects'
 import { createProjectSchema, updateProjectSchema } from '@/lib/data/validators'
 import type { UpdateProjectInput } from '@/lib/data/validators'
@@ -15,6 +18,21 @@ import { createDefaultColumns } from '@/lib/data/columns'
 export async function getProjects() {
   const userId = await requireAuth()
   return _findProjects(userId)
+}
+
+export async function getProjectsWithStats() {
+  const userId = await requireAuth()
+  return _findProjectsWithStats(userId)
+}
+
+export async function setProjectGroup(projectId: string, group: string | null) {
+  await requireOwnership(projectId)
+  return _setProjectGroup(projectId, group)
+}
+
+export async function renameProjectGroup(oldName: string, newName: string) {
+  const userId = await requireAuth()
+  return _renameGroup(userId, oldName, newName)
 }
 
 export async function createProject(data: {

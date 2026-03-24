@@ -6,11 +6,12 @@ import { X, Loader2, Palette } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils/cn'
 import { NeonButton } from '@/components/ui/NeonButton'
-import { updateProject } from '@/lib/actions/projects'
+import { updateProject, setProjectGroup } from '@/lib/actions/projects'
 import { useRouter } from 'next/navigation'
 import { useThemeStore } from '@/stores/themeStore'
 import aeonLogo from '@/assets/aeon.png'
 import { ColorSwatchPicker } from '@/components/board/ColorSwatchPicker'
+import { PlanetPicker } from './PlanetPicker'
 import { AccentColor, colorConfig } from '@/lib/utils/colors'
 import type { Project } from '@/lib/db/schema'
 
@@ -33,6 +34,8 @@ export function EditProjectModal({ isOpen, project, onClose }: EditProjectModalP
   const [formData, setFormData] = useState({
     name: project.name,
     description: project.description || '',
+    group: project.group || '',
+    planetImage: project.planetImage || '',
     startDate: new Date(project.startDate).toISOString().split('T')[0],
     endDate: new Date(project.endDate).toISOString().split('T')[0],
   })
@@ -47,7 +50,9 @@ export function EditProjectModal({ isOpen, project, onClose }: EditProjectModalP
         description: formData.description.trim() || null,
         startDate: formData.startDate,
         endDate: formData.endDate,
+        planetImage: formData.planetImage || null,
       })
+      await setProjectGroup(project.id, formData.group.trim() || null)
       onClose()
       router.refresh()
     } catch (error) {
@@ -85,7 +90,8 @@ export function EditProjectModal({ isOpen, project, onClose }: EditProjectModalP
             className={cn(
               'w-full max-w-md p-4 sm:p-6 rounded-2xl relative overflow-hidden mx-3 sm:mx-0',
               'bg-gradient-to-b from-white/[0.08] to-black/40',
-              'backdrop-blur-xl border border-white/[0.08]'
+              'backdrop-blur-xl border border-white/[0.08]',
+              'max-h-[90vh] overflow-y-auto'
             )}
             style={{
               boxShadow: glowIntensity > 0
@@ -160,6 +166,28 @@ export function EditProjectModal({ isOpen, project, onClose }: EditProjectModalP
                   )}
                 />
               </div>
+
+              <div>
+                <label className="block text-sm text-[var(--text-muted)] mb-1.5">Group</label>
+                <input
+                  type="text"
+                  value={formData.group}
+                  onChange={(e) => setFormData({ ...formData, group: e.target.value })}
+                  placeholder="General (leave empty for default)"
+                  className={cn(
+                    'w-full px-4 py-2.5 rounded-xl',
+                    'bg-white/[0.05] border border-white/[0.1]',
+                    'text-white placeholder-slate-500',
+                    'focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/50 focus:border-[var(--primary)]/30',
+                    'transition-all'
+                  )}
+                />
+              </div>
+
+              <PlanetPicker
+                value={formData.planetImage}
+                onChange={(f) => setFormData({ ...formData, planetImage: f })}
+              />
 
               <div>
                 <label className="block text-sm text-[var(--text-muted)] mb-1.5">Card Color</label>

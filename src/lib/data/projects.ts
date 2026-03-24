@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { projects, boardColumns, boardTasks, ganttTasks } from '@/lib/db/schema'
+import { projects, boardTasks, ganttTasks } from '@/lib/db/schema'
 import { eq, and, desc, sql } from 'drizzle-orm'
 import type { CreateProjectInput, UpdateProjectInput } from './validators'
 
@@ -24,6 +24,55 @@ export async function findProjects(userId: string, limit = 100, offset = 0) {
     .offset(offset)
 }
 
+export async function findProjectsWithStats(userId: string) {
+  const projectRows = await db
+    .select({
+      id: projects.id,
+      name: projects.name,
+      description: projects.description,
+      timeScale: projects.timeScale,
+      startDate: projects.startDate,
+      endDate: projects.endDate,
+      settings: projects.settings,
+      createdAt: projects.createdAt,
+      updatedAt: projects.updatedAt,
+      userId: projects.userId,
+      group: projects.group,
+      planetImage: projects.planetImage,
+      totalTasks: sql<number>`coalesce((
+        select count(*)::int from board_tasks
+        where board_tasks.project_id = ${projects.id}
+      ), 0)`,
+      doneTasks: sql<number>`coalesce((
+        select count(*)::int from board_tasks
+        where board_tasks.project_id = ${projects.id}
+        and board_tasks.status = 'done'
+      ), 0)`,
+    })
+    .from(projects)
+    .where(eq(projects.userId, userId))
+    .orderBy(desc(projects.createdAt))
+
+  return projectRows.map((row) => ({
+    ...row,
+    completionPct: row.totalTasks > 0 ? Math.round((row.doneTasks / row.totalTasks) * 100) : 0,
+  }))
+}
+
+export async function setProjectGroup(projectId: string, group: string | null) {
+  await db
+    .update(projects)
+    .set({ group: group || null })
+    .where(eq(projects.id, projectId))
+}
+
+export async function renameGroup(userId: string, oldName: string, newName: string) {
+  await db
+    .update(projects)
+    .set({ group: newName })
+    .where(and(eq(projects.userId, userId), eq(projects.group, oldName)))
+}
+
 export async function createProject(userId: string, data: CreateProjectInput) {
   const [project] = await db.transaction(async (tx) => {
     const result = await tx
@@ -38,13 +87,6 @@ export async function createProject(userId: string, data: CreateProjectInput) {
       })
       .returning()
 
-    await tx.insert(boardColumns).values([
-      { projectId: result[0].id, name: 'Todo', color: 'pink', icon: 'list-todo', orderIndex: 0 },
-      { projectId: result[0].id, name: 'Doing', color: 'blue', icon: 'activity', orderIndex: 1 },
-      { projectId: result[0].id, name: 'Review', color: 'purple', icon: 'eye', orderIndex: 2 },
-      { projectId: result[0].id, name: 'Done', color: 'green', icon: 'check-circle', orderIndex: 3 },
-    ])
-
     return result
   })
 
@@ -58,6 +100,7 @@ export async function updateProject(projectId: string, userId: string, data: Upd
   if (data.startDate !== undefined) updates.startDate = new Date(data.startDate)
   if (data.endDate !== undefined) updates.endDate = new Date(data.endDate)
   if (data.timeScale !== undefined) updates.timeScale = data.timeScale
+  if (data.planetImage !== undefined) updates.planetImage = data.planetImage
 
   const [project] = await db
     .update(projects)

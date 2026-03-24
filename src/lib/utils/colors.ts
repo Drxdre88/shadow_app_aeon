@@ -151,6 +151,18 @@ export function addRecentColor(hex: string) {
   localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify(recent))
 }
 
+export function pickUniqueColor(usedColors: string[]): string {
+  const normalize = (c: string) => c.toLowerCase().replace('#', '')
+  const used = new Set(usedColors.map(normalize))
+  const allPresetHexes = ACCENT_COLORS.filter(c => c !== 'none').map(c => colorConfig[c].hex)
+  const candidates = [...allPresetHexes, ...PALETTE_COLORS]
+  const available = candidates.filter(c => !used.has(normalize(c)))
+  if (available.length > 0) {
+    return available[Math.floor(Math.random() * available.length)]
+  }
+  return `#${Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0')}`
+}
+
 export function resolveColor(color: string): ResolvedColor {
   const preset = colorConfig[color as AccentColor]
   if (preset && color !== 'none') {

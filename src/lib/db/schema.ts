@@ -50,6 +50,8 @@ export const projects = pgTable('projects', {
   startDate: timestamp('start_date', { mode: 'date' }).notNull(),
   endDate: timestamp('end_date', { mode: 'date' }).notNull(),
   settings: jsonb('settings').default({}).notNull(),
+  group: text('group'),
+  planetImage: varchar('planet_image', { length: 255 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })

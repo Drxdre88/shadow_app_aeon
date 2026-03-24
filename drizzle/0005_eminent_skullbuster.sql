@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "planet_image" varchar(255);

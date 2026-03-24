@@ -16,7 +16,7 @@ import { DragPreview } from './DragPreview'
 import { ConnectModeBanner } from './ConnectModeBanner'
 import { BoardGlowBackground } from './BoardGlowBackground'
 import { AddColumnButton } from './AddColumnButton'
-import { generateId } from '@/lib/utils/colors'
+import { generateId, pickUniqueColor } from '@/lib/utils/colors'
 import { useThemeStore } from '@/stores/themeStore'
 import { applyBoardFilters, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
@@ -217,17 +217,18 @@ export function TaskBoard({
   }, [removeColumn, onColumnDelete])
 
   const handleAddColumn = useCallback(() => {
+    const usedColors = sortedColumns.map(c => c.color).filter(Boolean)
     const newCol: BoardColumn = {
       id: generateId(),
       projectId,
       name: 'New Column',
-      color: 'purple',
+      color: pickUniqueColor(usedColors),
       icon: null,
       orderIndex: sortedColumns.length,
     }
     addColumn(newCol)
     onColumnCreate?.({ id: newCol.id, projectId, name: newCol.name, color: newCol.color, orderIndex: newCol.orderIndex })
-  }, [projectId, sortedColumns.length, addColumn, onColumnCreate])
+  }, [projectId, sortedColumns, addColumn, onColumnCreate])
 
   const handleSubmit = useCallback(() => {
     if (!formData.name.trim()) return

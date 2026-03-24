@@ -40,6 +40,8 @@ export const DEFAULT_PREFERENCES = {
   depLineGlow: 60,
   depLineStyle: 'solid' as DepLineStyle,
   depCanvasBlur: 16,
+  spacePlanetGlow: true,
+  spaceOrbitSpeed: 1 as number,
   boardLayout: 'scroll' as BoardLayout,
   projectColors: {} as Record<string, string>,
   depViewMode: 'canvas' as DepViewMode,
