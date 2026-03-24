@@ -5,6 +5,7 @@ import { createBoardTask, updateBoardTask, deleteBoardTask, reorderBoardTasks, a
 import { createColumn, updateColumn as updateColumnAction, reorderColumns as reorderColumnsAction, deleteColumn as deleteColumnAction } from '@/lib/actions/columns'
 import { sendToVault, sendBatchToVault } from '@/lib/actions/vault'
 import { useBoardStore } from '@/lib/store/boardStore'
+import { toast } from '@/components/ui/Toast'
 
 export function useBoardHandlers(projectId: string) {
   const [vaultTarget, setVaultTarget] = useState<{ taskId: string; taskName: string } | null>(null)
@@ -30,6 +31,8 @@ export function useBoardHandlers(projectId: string) {
       .catch((err) => {
         console.error('Failed to create task:', err)
         useBoardStore.getState().removeTask(task.id)
+        useBoardStore.setState({ isDirty: false })
+        toast('Failed to create task')
       })
   }, [])
 
@@ -50,7 +53,11 @@ export function useBoardHandlers(projectId: string) {
           useBoardStore.getState().removeTask(taskId)
         }
       })
-      .catch((err) => console.error('Failed to update task:', err))
+      .catch((err) => {
+        console.error('Failed to update task:', err)
+        useBoardStore.setState({ isDirty: false })
+        toast('Failed to update task')
+      })
   }, [projectId])
 
   const handleTaskDelete = useCallback((taskId: string) => {
@@ -58,10 +65,35 @@ export function useBoardHandlers(projectId: string) {
     const snapshot = tasks.find(t => t.id === taskId)
     removeTask(taskId)
     deleteBoardTask(taskId, projectId)
-      .then(() => useBoardStore.setState({ isDirty: false }))
+      .then(() => {
+        useBoardStore.setState({ isDirty: false })
+        if (snapshot) {
+          toast('Task deleted', {
+            onUndo: () => {
+              addTask(snapshot)
+              createBoardTask({
+                id: snapshot.id,
+                projectId: snapshot.projectId,
+                name: snapshot.name,
+                description: snapshot.description,
+                columnId: snapshot.columnId,
+                status: snapshot.status,
+                priority: snapshot.priority,
+                color: snapshot.color,
+                onTimeline: snapshot.onTimeline,
+                orderIndex: snapshot.orderIndex,
+                startDate: snapshot.startDate,
+                endDate: snapshot.endDate,
+              }).catch(() => toast('Failed to restore task'))
+            },
+          })
+        }
+      })
       .catch((err) => {
         console.error('Failed to delete task:', err)
+        useBoardStore.setState({ isDirty: false })
         if (snapshot) addTask(snapshot)
+        toast('Failed to delete task')
       })
   }, [projectId])
 
@@ -74,31 +106,61 @@ export function useBoardHandlers(projectId: string) {
           result.autoVaultedIds.forEach((id: string) => removeTask(id))
         }
       })
-      .catch((err) => console.error('Failed to reorder tasks:', err))
+      .catch((err) => {
+        console.error('Failed to reorder tasks:', err)
+        useBoardStore.setState({ isDirty: false })
+        toast('Failed to move task')
+      })
   }, [projectId])
 
   const handleColumnCreate = useCallback((col: { id: string; projectId: string; name: string; color: string; orderIndex: number }) => {
     createColumn(projectId, { name: col.name, color: col.color, orderIndex: col.orderIndex }, col.id)
-      .catch((err) => console.error('Failed to create column:', err))
+      .catch((err) => {
+        console.error('Failed to create column:', err)
+        useBoardStore.getState().removeColumn(col.id)
+        useBoardStore.setState({ isDirty: false })
+        toast('Failed to create column')
+      })
   }, [projectId])
 
   const handleColumnUpdate = useCallback((columnId: string, updates: { name?: string; color?: string }) => {
+    const snapshot = useBoardStore.getState().columns.find(c => c.id === columnId)
     updateColumnAction(columnId, projectId, updates)
-      .catch((err) => console.error('Failed to update column:', err))
+      .catch((err) => {
+        console.error('Failed to update column:', err)
+        useBoardStore.setState({ isDirty: false })
+        if (snapshot) {
+          useBoardStore.getState().updateColumn(columnId, snapshot)
+          toast('Failed to update column')
+        }
+      })
   }, [projectId])
 
   const handleColumnReorder = useCallback((updates: { id: string; orderIndex: number }[]) => {
+    const snapshot = useBoardStore.getState().columns.map(c => ({ id: c.id, orderIndex: c.orderIndex }))
     reorderColumnsAction(projectId, updates)
-      .catch((err) => console.error('Failed to reorder columns:', err))
+      .catch((err) => {
+        console.error('Failed to reorder columns:', err)
+        useBoardStore.setState({ isDirty: false })
+        snapshot.forEach(s => useBoardStore.getState().updateColumn(s.id, { orderIndex: s.orderIndex }))
+        toast('Failed to reorder columns')
+      })
   }, [projectId])
 
   const handleColumnDelete = useCallback((columnId: string) => {
-    const { tasks, removeTask, removeColumn } = useBoardStore.getState()
-    tasks.filter(t => t.columnId === columnId).forEach(t => removeTask(t.id))
+    const { tasks, columns, removeTask, removeColumn, addColumn, addTask } = useBoardStore.getState()
+    const colSnapshot = columns.find(c => c.id === columnId)
+    const taskSnapshots = tasks.filter(t => t.columnId === columnId)
+    taskSnapshots.forEach(t => removeTask(t.id))
     removeColumn(columnId)
     deleteColumnAction(columnId, projectId)
       .then(() => useBoardStore.setState({ isDirty: false }))
-      .catch((err) => console.error('Failed to delete column:', err))
+      .catch((err) => {
+        console.error('Failed to delete column:', err)
+        if (colSnapshot) addColumn(colSnapshot)
+        taskSnapshots.forEach(t => addTask(t))
+        toast('Failed to delete column')
+      })
   }, [projectId])
 
   const handleSendToVault = useCallback((taskId: string) => {

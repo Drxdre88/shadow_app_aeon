@@ -19,12 +19,17 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
   const { setNodes: setCanvasNodes, setEdges: setCanvasEdges } = useCanvasStore()
 
   useEffect(() => {
+    const cachedTasks = useBoardStore.getState().tasks
+    const hasCachedProject = cachedTasks.length > 0 && cachedTasks[0]?.projectId === projectId
+
     if (isInitialLoad.current) {
-      setIsLoading(true)
+      if (!hasCachedProject) {
+        setIsLoading(true)
+        useBoardStore.setState({ columns: [], labels: [], dependencies: [] })
+      }
       setLoadError(null)
       setGanttTasks([])
       setRows([])
-      useBoardStore.setState({ columns: [], labels: [], dependencies: [] })
     }
 
     loadBoardData(projectId)

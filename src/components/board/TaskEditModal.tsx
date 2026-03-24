@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, ChevronDown, Palette, Tag, Calendar, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
@@ -62,6 +62,16 @@ export function TaskEditModal({
   const { labels, tasks, updateTask } = useBoardStore()
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([])
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
+  const nameInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    const isDesktop = window.matchMedia('(hover: hover)').matches
+    if (isDesktop) {
+      const timer = setTimeout(() => nameInputRef.current?.focus(), 150)
+      return () => clearTimeout(timer)
+    }
+  }, [isOpen])
 
   useEffect(() => {
     if (!isOpen) return
@@ -203,16 +213,17 @@ export function TaskEditModal({
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             onClick={(e) => e.stopPropagation()}
             className={cn(
-              'w-full max-w-lg max-h-[90vh] flex flex-col rounded-xl mx-3 sm:mx-0',
+              'w-full h-full sm:h-auto sm:max-w-lg sm:max-h-[90vh] flex flex-col rounded-none sm:rounded-xl',
               'bg-gradient-to-b from-white/10 to-black/40',
-              'backdrop-blur-xl border border-white/10',
-              'shadow-[0_0_40px_rgba(99,102,241,0.3)]'
+              'backdrop-blur-xl border-0 sm:border border-white/10',
+              'shadow-none sm:shadow-[0_0_40px_rgba(99,102,241,0.3)]'
             )}
           >
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
               <div>
                 <label className="block text-sm text-slate-400 mb-1.5">Name</label>
                 <input
+                  ref={nameInputRef}
                   type="text"
                   value={formData.name}
                   onChange={(e) => onFormChange({ ...formData, name: e.target.value })}
@@ -224,7 +235,6 @@ export function TaskEditModal({
                     'focus:outline-none focus:ring-2 focus:ring-purple-500/50',
                     'transition-all duration-200'
                   )}
-                  autoFocus
                 />
               </div>
 
@@ -271,37 +281,34 @@ export function TaskEditModal({
                 </div>
               )}
 
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <button
-                    onClick={() => setColorPickerOpen(!colorPickerOpen)}
-                    className={cn(
-                      'flex items-center gap-2 px-3 py-1.5 rounded-lg',
-                      'bg-white/5 border border-white/10 hover:bg-white/10',
-                      'text-slate-400 hover:text-white transition-all'
-                    )}
-                  >
-                    <div
-                      className="w-4 h-4 rounded-full border border-white/20"
-                      style={{
-                        backgroundColor: currentColorHex,
-                        boxShadow: `0 0 8px ${currentColorHex}60`,
-                      }}
-                    />
-                    <Palette className="w-3.5 h-3.5" />
-                    <ChevronDown className={cn('w-3 h-3 transition-transform', colorPickerOpen && 'rotate-180')} />
-                  </button>
-
-                  <ColorSwatchPicker
-                    value={formData.color}
-                    onChange={(color) => onFormChange({ ...formData, color })}
-                    isOpen={colorPickerOpen}
-                    onClose={() => setColorPickerOpen(false)}
-                    swatchShape="square"
-                    animated
+              <div className="relative">
+                <button
+                  onClick={() => setColorPickerOpen(!colorPickerOpen)}
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-1.5 rounded-lg',
+                    'bg-white/5 border border-white/10 hover:bg-white/10',
+                    'text-slate-400 hover:text-white transition-all'
+                  )}
+                >
+                  <div
+                    className="w-4 h-4 rounded-full border border-white/20"
+                    style={{
+                      backgroundColor: currentColorHex,
+                      boxShadow: `0 0 8px ${currentColorHex}60`,
+                    }}
                   />
-                </div>
+                  <Palette className="w-3.5 h-3.5" />
+                  <ChevronDown className={cn('w-3 h-3 transition-transform', colorPickerOpen && 'rotate-180')} />
+                </button>
 
+                <ColorSwatchPicker
+                  value={formData.color}
+                  onChange={(color) => onFormChange({ ...formData, color })}
+                  isOpen={colorPickerOpen}
+                  onClose={() => setColorPickerOpen(false)}
+                  swatchShape="square"
+                  animated
+                />
               </div>
 
               <div>

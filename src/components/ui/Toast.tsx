@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Undo2 } from 'lucide-react'
@@ -14,6 +14,7 @@ interface ToastItem {
 }
 
 let addToastGlobal: ((toast: Omit<ToastItem, 'id'>) => void) | null = null
+let lastUndoRef: { id: string; fn: () => void } | null = null
 
 export function toast(message: string, options?: { onUndo?: () => void; duration?: number }) {
   addToastGlobal?.({ message, ...options })
@@ -22,17 +23,23 @@ export function toast(message: string, options?: { onUndo?: () => void; duration
 export function ToastContainer() {
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [mounted, setMounted] = useState(false)
+  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
   useEffect(() => { setMounted(true) }, [])
+
+  const removeToast = useCallback((id: string) => {
+    timersRef.current.delete(id)
+    if (lastUndoRef?.id === id) lastUndoRef = null
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }, [])
 
   const addToast = useCallback((item: Omit<ToastItem, 'id'>) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     setToasts((prev) => [...prev, { ...item, id }])
-  }, [])
-
-  const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id))
-  }, [])
+    if (item.onUndo) lastUndoRef = { id, fn: item.onUndo }
+    const timer = setTimeout(() => removeToast(id), item.duration || 5000)
+    timersRef.current.set(id, timer)
+  }, [removeToast])
 
   useEffect(() => {
     addToastGlobal = addToast
@@ -40,11 +47,22 @@ export function ToastContainer() {
   }, [addToast])
 
   useEffect(() => {
-    const timers = toasts.map((t) =>
-      setTimeout(() => removeToast(t.id), t.duration || 5000)
-    )
-    return () => timers.forEach(clearTimeout)
-  }, [toasts, removeToast])
+    return () => { timersRef.current.forEach(clearTimeout) }
+  }, [])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && lastUndoRef) {
+        e.preventDefault()
+        const { id, fn } = lastUndoRef
+        fn()
+        lastUndoRef = null
+        removeToast(id)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [removeToast])
 
   if (!mounted) return null
 

@@ -278,8 +278,10 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
 
       <div className="flex-1 min-h-0 overflow-y-auto relative">
         {isLoadingVault ? (
-          <div className="flex items-center justify-center h-40 text-slate-500 text-sm">
-            Loading vault...
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="h-28 rounded-xl bg-white/[0.04] animate-pulse" />
+            ))}
           </div>
         ) : filteredAndSorted.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-3 py-20">
