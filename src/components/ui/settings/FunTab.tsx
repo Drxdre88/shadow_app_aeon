@@ -40,6 +40,8 @@ export function FunTab() {
     cursorColor, setCursorColor,
     smokeVolume, setSmokeVolume,
     ambientBlobs, setAmbientBlobs,
+    spacePlanetGlow, setSpacePlanetGlow,
+    spaceOrbitSpeed, setSpaceOrbitSpeed,
     colors, glowIntensity,
   } = useThemeStore()
   const isSmokeEffect = cursorEffect.includes('smoke')
@@ -132,6 +134,35 @@ export function FunTab() {
             <CompactSlider label="Smoke Volume" value={smokeVolume} onChange={setSmokeVolume} min={0} max={100} color={colors.glowColor} unit="%" />
           </div>
         )}
+      </div>
+
+      <div className="space-y-3">
+        <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider">Space View</h4>
+        <ToggleRow label="Planet Glow Border" value={spacePlanetGlow} onChange={setSpacePlanetGlow} color={colors.glowColor} />
+        <div>
+          <span className="text-xs text-slate-400 block mb-1.5">Planet Orbit Speed</span>
+          <div className="flex gap-1">
+            {[0, 1, 2, 3, 4, 5].map((v) => {
+              const isActive = spaceOrbitSpeed === v
+              return (
+                <motion.button
+                  key={v}
+                  onClick={() => setSpaceOrbitSpeed(v)}
+                  className={cn(
+                    'px-3 py-1.5 rounded-md text-xs font-medium transition-all border',
+                    isActive
+                      ? 'border-white/30 bg-white/10 text-white'
+                      : 'bg-white/[0.03] border-white/10 text-slate-400 hover:bg-white/[0.06]'
+                  )}
+                  style={isActive ? { boxShadow: `0 0 ${10 * glowMult}px 1px ${colors.glowColor}` } : {}}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  {v === 0 ? 'Off' : v}
+                </motion.button>
+              )
+            })}
+          </div>
+        </div>
       </div>
 
       <div className="space-y-3">

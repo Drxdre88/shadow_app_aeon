@@ -6,7 +6,8 @@ import { X, Loader2, LayoutGrid, Bug } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils/cn'
 import { NeonButton } from '@/components/ui/NeonButton'
-import { createProject } from '@/lib/actions/projects'
+import { createProject, setProjectGroup, updateProject } from '@/lib/actions/projects'
+import { PlanetPicker } from './PlanetPicker'
 import { useRouter } from 'next/navigation'
 import { useThemeStore } from '@/stores/themeStore'
 import aeonLogo from '@/assets/aeon.png'
@@ -25,6 +26,8 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
+    group: '',
+    planetImage: '',
     startDate: new Date().toISOString().split('T')[0],
     endDate: `${new Date().getFullYear()}-12-31`,
   })
@@ -41,6 +44,12 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
         endDate: formData.endDate,
         template,
       })
+      if (formData.group.trim()) {
+        await setProjectGroup(project.id, formData.group.trim())
+      }
+      if (formData.planetImage) {
+        await updateProject(project.id, { planetImage: formData.planetImage })
+      }
       onClose()
       router.push(`/project/${project.id}`)
     } catch (error) {
@@ -78,7 +87,8 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
             className={cn(
               'w-full max-w-md p-4 sm:p-6 rounded-2xl relative overflow-hidden mx-3 sm:mx-0',
               'bg-gradient-to-b from-white/[0.08] to-black/40',
-              'backdrop-blur-xl border border-white/[0.08]'
+              'backdrop-blur-xl border border-white/[0.08]',
+              'max-h-[90vh] overflow-y-auto'
             )}
             style={{
               boxShadow: glowIntensity > 0
@@ -153,6 +163,28 @@ export function CreateProjectModal({ isOpen, onClose }: CreateProjectModalProps)
                   )}
                 />
               </div>
+
+              <div>
+                <label className="block text-sm text-[var(--text-muted)] mb-1.5">Group</label>
+                <input
+                  type="text"
+                  value={formData.group}
+                  onChange={(e) => setFormData({ ...formData, group: e.target.value })}
+                  placeholder="General (leave empty for default)"
+                  className={cn(
+                    'w-full px-4 py-2.5 rounded-xl',
+                    'bg-white/[0.05] border border-white/[0.1]',
+                    'text-white placeholder-slate-500',
+                    'focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/50 focus:border-[var(--primary)]/30',
+                    'transition-all'
+                  )}
+                />
+              </div>
+
+              <PlanetPicker
+                value={formData.planetImage}
+                onChange={(f) => setFormData({ ...formData, planetImage: f })}
+              />
 
               <div>
                 <label className="block text-sm text-[var(--text-muted)] mb-1.5">Board Template</label>

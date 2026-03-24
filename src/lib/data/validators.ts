@@ -32,6 +32,7 @@ export const updateProjectSchema = z.object({
   startDate: isoDate.optional(),
   endDate: isoDate.optional(),
   timeScale: z.enum(['day', 'week', 'month']).optional(),
+  planetImage: z.string().max(255).nullable().optional(),
 })
 
 export const createTaskSchema = z.object({
