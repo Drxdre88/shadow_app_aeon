@@ -158,6 +158,7 @@ export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowCo
         )}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: isDragging ? 0.3 : 1, y: 0, scale: isDragging ? 0.95 : 1 }}
+        whileTap={{ scale: 0.97 }}
         exit={{ opacity: 0, scale: 0.9 }}
         transition={{ duration: 0.2 }}
       >

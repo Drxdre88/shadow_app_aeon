@@ -6,6 +6,7 @@ import { PreferencesProvider } from '@/components/providers/PreferencesProvider'
 import { ThemeEffects } from '@/components/effects/ThemeEffects'
 import { CursorEffect } from '@/components/effects/cursor'
 import { ToastContainer } from '@/components/ui/Toast'
+import { ServiceWorkerRegistration } from '@/components/pwa/ServiceWorkerRegistration'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
@@ -16,11 +17,19 @@ const firaCode = Fira_Code({ subsets: ['latin'], variable: '--font-fira-code' })
 export const metadata: Metadata = {
   title: 'Aeon - Beautiful Project Timelines',
   description: 'Visualize your projects with stunning Gantt charts and task boards',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Aeon',
+  },
 }
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#8b5cf6',
 }
 
 export default function RootLayout({
@@ -40,6 +49,7 @@ export default function RootLayout({
             <ThemeEffects />
             <CursorEffect />
             <ToastContainer />
+            <ServiceWorkerRegistration />
             {children}
           </ThemeProvider>
           </PreferencesProvider>

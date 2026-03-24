@@ -63,8 +63,13 @@ export function VelocityTab({ projectId }: VelocityTabProps) {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center h-40 text-slate-500 text-sm">
-          Loading velocity data...
+        <div className="space-y-4 p-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="h-20 rounded-xl bg-white/[0.04] animate-pulse" />
+            ))}
+          </div>
+          <div className="h-48 rounded-xl bg-white/[0.03] animate-pulse" />
         </div>
       ) : data ? (
         <>

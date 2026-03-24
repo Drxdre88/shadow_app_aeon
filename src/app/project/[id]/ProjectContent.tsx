@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { LayoutGrid, Calendar, Lightbulb, ArrowLeft, RefreshCw, AlertTriangle, Filter, Link2, GitBranch, Trophy, RotateCcw, Columns3, Grid2x2, Package, Activity } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import dynamic from 'next/dynamic'
 import Image from 'next/image'
 import aeonLogo from '@/assets/aeon.png'
@@ -13,6 +14,7 @@ import { GanttChart } from '@/components/gantt/GanttChart'
 import { TimeScaleSelector } from '@/components/gantt/TimeScaleSelector'
 import { TaskBoard } from '@/components/board/TaskBoard'
 import { useThemeStore } from '@/stores/themeStore'
+import { useBoardStore } from '@/lib/store/boardStore'
 import { activeFilterCount, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { cn } from '@/lib/utils/cn'
@@ -44,6 +46,7 @@ export default function ProjectContent({ project }: ProjectContentProps) {
   const [showAllDeps, setShowAllDeps] = useState(false)
   const [connectMode, setConnectMode] = useState(false)
   const { boardLayout, setBoardLayout } = useThemeStore()
+  const isDirty = useBoardStore((s) => s.isDirty)
 
   const { isLoading, loadError, triggerReload } = useProjectData(project.id, activeTab)
 
@@ -82,6 +85,13 @@ export default function ProjectContent({ project }: ProjectContentProps) {
               style={{ filter: 'drop-shadow(0 0 6px var(--glow-color))' }}
             />
             <span className="text-sm sm:text-lg font-bold text-white truncate max-w-[120px] sm:max-w-none">{project.name}</span>
+            <div
+              className={cn(
+                'w-1.5 h-1.5 rounded-full transition-colors duration-500',
+                isDirty ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500/50'
+              )}
+              title={isDirty ? 'Syncing...' : 'Synced'}
+            />
 
             <div className="flex items-center gap-1 ml-2 sm:ml-4">
               <button
@@ -278,102 +288,110 @@ export default function ProjectContent({ project }: ProjectContentProps) {
             ))}
           </div>
         ) : (
-          <>
-            {activeTab === 'board' && (
-              <div className="sm:h-[calc(100vh-120px)]">
-                <TaskBoard
-                  projectId={project.id}
-                  showFilters={showFilters}
-                  filters={filters}
-                  onFiltersChange={setFilters}
-                  onTaskCreate={board.handleTaskCreate}
-                  onTaskUpdate={board.handleTaskUpdate}
-                  onTaskDelete={board.handleTaskDelete}
-                  onTaskMove={board.handleTaskMove}
-                  onColumnCreate={board.handleColumnCreate}
-                  onColumnUpdate={board.handleColumnUpdate}
-                  onColumnReorder={board.handleColumnReorder}
-                  onColumnDelete={board.handleColumnDelete}
-                  onAddDependency={handleAddDependency}
-                  onRemoveDependency={handleRemoveDependency}
-                  onLabelCreate={handleLabelCreate}
-                  onLabelUpdate={handleLabelUpdate}
-                  onLabelDelete={handleLabelDelete}
-                  onLabelToggle={handleLabelToggle}
-                  showAllDeps={showAllDeps}
-                  onShowAllDepsChange={setShowAllDeps}
-                  connectMode={connectMode}
-                  onConnectModeChange={setConnectMode}
-                  onPushToGantt={gantt.handlePushToGantt}
-                  onSendToVault={board.handleSendToVault}
-                  onVaultCompleted={board.handleVaultCompleted}
-                  onArchiveTask={board.handleArchiveTask}
-                  onArchiveColumn={board.handleArchiveColumn}
-                />
-                <VaultDaysModal
-                  isOpen={!!board.vaultTarget}
-                  taskName={board.vaultTarget?.taskName ?? ''}
-                  onConfirm={board.handleVaultConfirm}
-                  onClose={() => board.setVaultTarget(null)}
-                />
-                <BatchVaultModal
-                  isOpen={!!board.batchVaultTarget}
-                  columnName={board.batchVaultTarget?.columnName ?? ''}
-                  tasks={board.batchVaultTarget?.tasks ?? []}
-                  onConfirm={board.handleBatchVaultConfirm}
-                  onClose={() => board.setBatchVaultTarget(null)}
-                />
-                <ArchiveBrowser
-                  isOpen={board.showArchive}
-                  projectId={project.id}
-                  onClose={() => board.setShowArchive(false)}
-                />
-              </div>
-            )}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.15 }}
+            >
+              {activeTab === 'board' && (
+                <div className="h-[calc(100dvh-120px)]">
+                  <TaskBoard
+                    projectId={project.id}
+                    showFilters={showFilters}
+                    filters={filters}
+                    onFiltersChange={setFilters}
+                    onTaskCreate={board.handleTaskCreate}
+                    onTaskUpdate={board.handleTaskUpdate}
+                    onTaskDelete={board.handleTaskDelete}
+                    onTaskMove={board.handleTaskMove}
+                    onColumnCreate={board.handleColumnCreate}
+                    onColumnUpdate={board.handleColumnUpdate}
+                    onColumnReorder={board.handleColumnReorder}
+                    onColumnDelete={board.handleColumnDelete}
+                    onAddDependency={handleAddDependency}
+                    onRemoveDependency={handleRemoveDependency}
+                    onLabelCreate={handleLabelCreate}
+                    onLabelUpdate={handleLabelUpdate}
+                    onLabelDelete={handleLabelDelete}
+                    onLabelToggle={handleLabelToggle}
+                    showAllDeps={showAllDeps}
+                    onShowAllDepsChange={setShowAllDeps}
+                    connectMode={connectMode}
+                    onConnectModeChange={setConnectMode}
+                    onPushToGantt={gantt.handlePushToGantt}
+                    onSendToVault={board.handleSendToVault}
+                    onVaultCompleted={board.handleVaultCompleted}
+                    onArchiveTask={board.handleArchiveTask}
+                    onArchiveColumn={board.handleArchiveColumn}
+                  />
+                  <VaultDaysModal
+                    isOpen={!!board.vaultTarget}
+                    taskName={board.vaultTarget?.taskName ?? ''}
+                    onConfirm={board.handleVaultConfirm}
+                    onClose={() => board.setVaultTarget(null)}
+                  />
+                  <BatchVaultModal
+                    isOpen={!!board.batchVaultTarget}
+                    columnName={board.batchVaultTarget?.columnName ?? ''}
+                    tasks={board.batchVaultTarget?.tasks ?? []}
+                    onConfirm={board.handleBatchVaultConfirm}
+                    onClose={() => board.setBatchVaultTarget(null)}
+                  />
+                  <ArchiveBrowser
+                    isOpen={board.showArchive}
+                    projectId={project.id}
+                    onClose={() => board.setShowArchive(false)}
+                  />
+                </div>
+              )}
 
-            {activeTab === 'gantt' && (
-              <>
-                <GanttChart
+              {activeTab === 'gantt' && (
+                <>
+                  <GanttChart
+                    projectId={project.id}
+                    startDate={new Date(project.startDate)}
+                    endDate={new Date(project.endDate)}
+                    onTaskUpdate={gantt.handleGanttTaskUpdate}
+                    onTaskClick={gantt.handleGanttTaskClick}
+                  />
+                  <TaskEditModal
+                    isOpen={!!gantt.ganttEditTaskId}
+                    editingTaskId={gantt.ganttEditTaskId}
+                    newTaskStatus={null}
+                    formData={gantt.ganttFormData}
+                    projectId={project.id}
+                    onFormChange={gantt.setGanttFormData}
+                    onSubmit={gantt.handleGanttEditSubmit}
+                    onClose={() => gantt.setGanttEditTaskId(null)}
+                    onLabelToggle={handleLabelToggle}
+                    onDateChange={(taskId, dates) => board.handleTaskUpdate(taskId, dates as Record<string, unknown>)}
+                  />
+                </>
+              )}
+
+              {activeTab === 'canvas' && (
+                <CanvasView
                   projectId={project.id}
-                  startDate={new Date(project.startDate)}
-                  endDate={new Date(project.endDate)}
-                  onTaskUpdate={gantt.handleGanttTaskUpdate}
-                  onTaskClick={gantt.handleGanttTaskClick}
+                  onNodeCreate={canvas.handleCanvasNodeCreate}
+                  onNodeUpdate={canvas.handleCanvasNodeUpdate}
+                  onNodeDelete={canvas.handleCanvasNodeDelete}
+                  onEdgeCreate={canvas.handleCanvasEdgeCreate}
+                  onEdgeDelete={canvas.handleCanvasEdgeDelete}
                 />
-                <TaskEditModal
-                  isOpen={!!gantt.ganttEditTaskId}
-                  editingTaskId={gantt.ganttEditTaskId}
-                  newTaskStatus={null}
-                  formData={gantt.ganttFormData}
-                  projectId={project.id}
-                  onFormChange={gantt.setGanttFormData}
-                  onSubmit={gantt.handleGanttEditSubmit}
-                  onClose={() => gantt.setGanttEditTaskId(null)}
-                  onLabelToggle={handleLabelToggle}
-                  onDateChange={(taskId, dates) => board.handleTaskUpdate(taskId, dates as Record<string, unknown>)}
-                />
-              </>
-            )}
+              )}
 
-            {activeTab === 'canvas' && (
-              <CanvasView
-                projectId={project.id}
-                onNodeCreate={canvas.handleCanvasNodeCreate}
-                onNodeUpdate={canvas.handleCanvasNodeUpdate}
-                onNodeDelete={canvas.handleCanvasNodeDelete}
-                onEdgeCreate={canvas.handleCanvasEdgeCreate}
-                onEdgeDelete={canvas.handleCanvasEdgeDelete}
-              />
-            )}
+              {activeTab === 'trophy' && (
+                <TrophyRoom projectId={project.id} />
+              )}
 
-            {activeTab === 'trophy' && (
-              <TrophyRoom projectId={project.id} />
-            )}
-
-            {activeTab === 'velocity' && (
-              <VelocityTab projectId={project.id} />
-            )}
-          </>
+              {activeTab === 'velocity' && (
+                <VelocityTab projectId={project.id} />
+              )}
+            </motion.div>
+          </AnimatePresence>
         )}
       </main>
     </div>

@@ -2,25 +2,51 @@
 
 import { useCallback } from 'react'
 import { createLabel, updateLabel, deleteLabel, addLabelToTask, removeLabelFromTask } from '@/lib/actions/labels'
+import { useBoardStore } from '@/lib/store/boardStore'
+import { toast } from '@/components/ui/Toast'
 
 export function useLabelHandlers(projectId: string) {
   const handleLabelCreate = useCallback((label: { id: string; projectId: string; name: string; color: string }) => {
-    createLabel(label).catch((err) => console.error('Failed to create label:', err))
+    createLabel(label).catch((err) => {
+      console.error('Failed to create label:', err)
+      useBoardStore.getState().removeLabel(label.id)
+      toast('Failed to create label')
+    })
   }, [])
 
   const handleLabelUpdate = useCallback((labelId: string, updates: { name?: string; color?: string }) => {
-    updateLabel(labelId, projectId, updates).catch((err) => console.error('Failed to update label:', err))
+    const snapshot = useBoardStore.getState().labels.find(l => l.id === labelId)
+    updateLabel(labelId, projectId, updates).catch((err) => {
+      console.error('Failed to update label:', err)
+      if (snapshot) useBoardStore.getState().updateLabel(labelId, snapshot)
+      toast('Failed to update label')
+    })
   }, [projectId])
 
   const handleLabelDelete = useCallback((labelId: string) => {
-    deleteLabel(labelId, projectId).catch((err) => console.error('Failed to delete label:', err))
+    const snapshot = useBoardStore.getState().labels.find(l => l.id === labelId)
+    deleteLabel(labelId, projectId).catch((err) => {
+      console.error('Failed to delete label:', err)
+      if (snapshot) useBoardStore.getState().addLabel(snapshot)
+      toast('Failed to delete label')
+    })
   }, [projectId])
 
   const handleLabelToggle = useCallback((taskId: string, labelId: string, action: 'add' | 'remove') => {
     if (action === 'add') {
-      addLabelToTask(taskId, labelId, projectId).catch((err) => console.error('Failed to add label:', err))
+      addLabelToTask(taskId, labelId, projectId).catch((err) => {
+        console.error('Failed to add label:', err)
+        const task = useBoardStore.getState().tasks.find(t => t.id === taskId)
+        if (task) useBoardStore.getState().updateTask(taskId, { labels: task.labels.filter(l => l !== labelId) })
+        toast('Failed to add label')
+      })
     } else {
-      removeLabelFromTask(taskId, labelId, projectId).catch((err) => console.error('Failed to remove label:', err))
+      removeLabelFromTask(taskId, labelId, projectId).catch((err) => {
+        console.error('Failed to remove label:', err)
+        const task = useBoardStore.getState().tasks.find(t => t.id === taskId)
+        if (task) useBoardStore.getState().updateTask(taskId, { labels: [...task.labels, labelId] })
+        toast('Failed to remove label')
+      })
     }
   }, [projectId])
 
