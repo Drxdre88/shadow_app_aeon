@@ -87,7 +87,14 @@ export async function updateTask(
   if (data.name !== undefined) updates.name = data.name
   if (data.description !== undefined) updates.description = data.description ?? null
   if (data.columnId !== undefined) updates.columnId = data.columnId
-  if (data.status !== undefined) updates.status = data.status
+  if (data.status !== undefined) {
+    updates.status = data.status
+    if (data.status === 'done') {
+      updates.completedAt = new Date()
+    } else {
+      updates.completedAt = null
+    }
+  }
   if (data.priority !== undefined) updates.priority = data.priority
   if (data.color !== undefined) updates.color = data.color
   if (data.onTimeline !== undefined) updates.onTimeline = data.onTimeline
@@ -163,7 +170,14 @@ export async function reorderTasks(
         orderIndex,
         updatedAt: new Date(),
       }
-      if (status !== undefined) values.status = status
+      if (status !== undefined) {
+        values.status = status
+        if (status === 'done') {
+          values.completedAt = new Date()
+        } else {
+          values.completedAt = null
+        }
+      }
       if (columnId !== undefined) values.columnId = columnId
       await tx
         .update(boardTasks)

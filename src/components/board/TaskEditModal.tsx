@@ -9,7 +9,7 @@ import { AccentColor, ACCENT_COLORS, colorConfig, generateId, hexToRgba } from '
 import { NeonButton } from '@/components/ui/NeonButton'
 import { TaskChecklist, type ChecklistItem, type CheckState, type ChecklistStatus } from './TaskChecklist'
 import { TaskDependencySection } from './TaskDependencySection'
-import { getChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem } from '@/lib/actions/checklist'
+import { getChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, renameChecklistGroup } from '@/lib/actions/checklist'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
 import { TaskComments } from './TaskComments'
 
@@ -167,6 +167,22 @@ export function TaskEditModal({
     }).catch(() => {})
   }, [editingTaskId, projectId])
 
+  const handleItemTitleChange = useCallback((itemId: string, title: string) => {
+    if (!editingTaskId) return
+    setChecklistItems((prev) =>
+      prev.map((i) => (i.id === itemId ? { ...i, title } : i))
+    )
+    updateChecklistItem(itemId, editingTaskId, projectId, { title }).catch(() => {})
+  }, [editingTaskId, projectId])
+
+  const handleGroupRename = useCallback((oldName: string, newName: string) => {
+    if (!editingTaskId) return
+    setChecklistItems((prev) =>
+      prev.map((i) => (i.groupName === oldName ? { ...i, groupName: newName } : i))
+    )
+    renameChecklistGroup(editingTaskId, projectId, oldName, newName).catch(() => {})
+  }, [editingTaskId, projectId])
+
   const currentColorHex = formData.color.startsWith('#')
     ? formData.color
     : colorConfig[formData.color as AccentColor]?.hex ?? '#a855f7'
@@ -193,19 +209,7 @@ export function TaskEditModal({
               'shadow-[0_0_40px_rgba(99,102,241,0.3)]'
             )}
           >
-            <div className="flex items-center justify-between p-4 sm:p-6 pb-0 flex-shrink-0">
-              <h2 className="text-lg font-semibold text-white">
-                {editingTaskId ? 'Edit Task' : 'New Task'}
-              </h2>
-              <button
-                onClick={onClose}
-                className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 pt-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
               <div>
                 <label className="block text-sm text-slate-400 mb-1.5">Name</label>
                 <input
@@ -251,6 +255,22 @@ export function TaskEditModal({
                 />
               </div>
 
+              {editingTaskId && (
+                <div className="pt-4 border-t border-white/10">
+                  <TaskChecklist
+                    taskId={editingTaskId}
+                    items={checklistItems}
+                    onItemAdd={handleChecklistAdd}
+                    onItemToggle={handleChecklistToggle}
+                    onItemRemove={handleChecklistRemove}
+                    onItemStatusChange={handleChecklistStatusChange}
+                    onItemTitleChange={handleItemTitleChange}
+                    onGroupRename={handleGroupRename}
+                    onGroupAdd={handleGroupAdd}
+                  />
+                </div>
+              )}
+
               <div className="flex items-center gap-3">
                 <div className="relative">
                   <button
@@ -282,23 +302,6 @@ export function TaskEditModal({
                   />
                 </div>
 
-                <div className="flex gap-1.5 flex-1">
-                  {PRIORITIES.map((priority) => (
-                    <button
-                      key={priority}
-                      onClick={() => onFormChange({ ...formData, priority })}
-                      className={cn(
-                        'flex-1 px-2 py-1.5 rounded-lg text-xs font-medium capitalize transition-all duration-200',
-                        'border',
-                        formData.priority === priority
-                          ? 'bg-white/10 border-white/30 text-white'
-                          : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
-                      )}
-                    >
-                      {priority}
-                    </button>
-                  ))}
-                </div>
               </div>
 
               <div>
@@ -465,20 +468,35 @@ export function TaskEditModal({
                 )
               })()}
 
+              <div className="pt-4 border-t border-white/10">
+                <label className="block text-sm text-slate-400 mb-2">Priority</label>
+                <div className="flex gap-2">
+                  {PRIORITIES.map((priority) => {
+                    const isActive = formData.priority === priority
+                    const dotColor: Record<string, string> = { low: '#64748b', medium: '#3b82f6', high: '#f97316', urgent: '#ef4444' }
+                    return (
+                      <button
+                        key={priority}
+                        onClick={() => onFormChange({ ...formData, priority })}
+                        className={cn(
+                          'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all duration-200',
+                          'border',
+                          isActive
+                            ? 'bg-white/10 border-white/30 text-white'
+                            : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
+                        )}
+                        style={isActive ? { boxShadow: `0 0 8px ${dotColor[priority]}50` } : undefined}
+                      >
+                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: dotColor[priority] }} />
+                        {priority}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
               {editingTaskId && (
                 <>
-                  <div className="pt-4 border-t border-white/10">
-                    <TaskChecklist
-                      taskId={editingTaskId}
-                      items={checklistItems}
-                      onItemAdd={handleChecklistAdd}
-                      onItemToggle={handleChecklistToggle}
-                      onItemRemove={handleChecklistRemove}
-                      onItemStatusChange={handleChecklistStatusChange}
-                      onGroupAdd={handleGroupAdd}
-                    />
-                  </div>
-
                   <div className="pt-4 border-t border-white/10">
                     <TaskDependencySection
                       taskId={editingTaskId}
@@ -535,7 +553,7 @@ export function TaskEditModal({
                 className="flex-1"
                 color={resolveNeonColor(formData.color)}
               >
-                {editingTaskId ? 'Save Changes' : 'Create Task'}
+                {editingTaskId ? 'Save Changes' : 'Create Card'}
               </NeonButton>
               <button
                 onClick={onClose}

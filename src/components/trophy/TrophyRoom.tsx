@@ -18,6 +18,7 @@ import {
   type ViewMode,
   type DateGranularity,
 } from './trophy-utils'
+import { TrophyDetailModal } from './TrophyDetailModal'
 import { cn } from '@/lib/utils/cn'
 import type { ActivityEvent, TaskVault } from '@/lib/db/schema'
 
@@ -67,6 +68,7 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
     thisWeek: number
   } | null>(null)
   const [isLoadingVault, setIsLoadingVault] = useState(true)
+  const [selectedTrophy, setSelectedTrophy] = useState<TaskVault | null>(null)
 
   const handleRestore = useCallback(async (vaultId: string) => {
     try {
@@ -147,11 +149,13 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
     if (priorityFilter !== 'all') {
       result = result.filter((t) => t.priority === priorityFilter)
     }
+    const effectiveTime = (t: typeof vaultTasks[0]) =>
+      (t.completedAt ? new Date(t.completedAt) : new Date(t.archivedAt)).getTime()
     result.sort((a, b) => {
       if (sortMode === 'newest')
-        return new Date(b.archivedAt).getTime() - new Date(a.archivedAt).getTime()
+        return effectiveTime(b) - effectiveTime(a)
       if (sortMode === 'oldest')
-        return new Date(a.archivedAt).getTime() - new Date(b.archivedAt).getTime()
+        return effectiveTime(a) - effectiveTime(b)
       if (sortMode === 'priority')
         return (priorityRank[a.priority as keyof typeof priorityRank] ?? 2) - (priorityRank[b.priority as keyof typeof priorityRank] ?? 2)
       return a.name.localeCompare(b.name)
@@ -301,7 +305,7 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
                 </div>
                 <div className="flex-1 overflow-y-auto space-y-2 px-1">
                   {section.tasks.map((vt) => (
-                    <TrophyCard key={vt.id} vaultTask={vt} onRestore={handleRestore} />
+                    <TrophyCard key={vt.id} vaultTask={vt} onRestore={handleRestore} onClick={setSelectedTrophy} />
                   ))}
                 </div>
               </div>
@@ -315,6 +319,7 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
                 label={section.label}
                 tasks={section.tasks}
                 onRestore={handleRestore}
+                onCardClick={setSelectedTrophy}
                 defaultExpanded={idx < 3}
               />
             ))}
@@ -361,6 +366,14 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
           </>
         )}
       </AnimatePresence>
+
+      {selectedTrophy && (
+        <TrophyDetailModal
+          vaultTask={selectedTrophy}
+          onClose={() => setSelectedTrophy(null)}
+          onRestore={handleRestore}
+        />
+      )}
     </div>
   )
 }

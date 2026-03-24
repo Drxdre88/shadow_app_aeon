@@ -44,7 +44,12 @@ export function useBoardHandlers(projectId: string) {
       onTimeline?: boolean
       orderIndex?: number
     })
-      .then(() => useBoardStore.setState({ isDirty: false }))
+      .then((result) => {
+        useBoardStore.setState({ isDirty: false })
+        if (result && 'autoVaulted' in result && result.autoVaulted) {
+          useBoardStore.getState().removeTask(taskId)
+        }
+      })
       .catch((err) => console.error('Failed to update task:', err))
   }, [projectId])
 
@@ -62,7 +67,13 @@ export function useBoardHandlers(projectId: string) {
 
   const handleTaskMove = useCallback((updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[]) => {
     reorderBoardTasks(projectId, updates)
-      .then(() => useBoardStore.setState({ isDirty: false }))
+      .then((result) => {
+        useBoardStore.setState({ isDirty: false })
+        if (result?.autoVaultedIds?.length) {
+          const { removeTask } = useBoardStore.getState()
+          result.autoVaultedIds.forEach((id: string) => removeTask(id))
+        }
+      })
       .catch((err) => console.error('Failed to reorder tasks:', err))
   }, [projectId])
 

@@ -42,7 +42,7 @@ export async function getCycleTimeStats(projectId: string, range: VelocityRange)
 
   const conditions = [eq(taskVault.projectId, projectId)]
   if (since) {
-    conditions.push(gte(taskVault.archivedAt, since))
+    conditions.push(sql`coalesce(${taskVault.completedAt}, ${taskVault.archivedAt}) >= ${since}`)
   }
 
   const [result] = await db
@@ -151,7 +151,7 @@ export async function getPriorityBreakdown(projectId: string, range: VelocityRan
 
   const conditions = [eq(taskVault.projectId, projectId)]
   if (since) {
-    conditions.push(gte(taskVault.archivedAt, since))
+    conditions.push(sql`coalesce(${taskVault.completedAt}, ${taskVault.archivedAt}) >= ${since}`)
   }
 
   const rows = await db

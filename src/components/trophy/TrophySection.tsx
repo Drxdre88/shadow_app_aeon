@@ -11,6 +11,7 @@ interface TrophySectionProps {
   label: string
   tasks: TaskVault[]
   onRestore: (vaultId: string) => void
+  onCardClick?: (vaultTask: TaskVault) => void
   defaultExpanded?: boolean
 }
 
@@ -23,6 +24,7 @@ export function TrophySection({
   label,
   tasks,
   onRestore,
+  onCardClick,
   defaultExpanded = true,
 }: TrophySectionProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
@@ -64,7 +66,7 @@ export function TrophySection({
               animate="show"
             >
               {tasks.map((vt) => (
-                <TrophyCard key={vt.id} vaultTask={vt} onRestore={onRestore} />
+                <TrophyCard key={vt.id} vaultTask={vt} onRestore={onRestore} onClick={onCardClick} />
               ))}
             </motion.div>
           </motion.div>

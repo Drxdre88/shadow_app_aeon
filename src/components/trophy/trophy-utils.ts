@@ -59,7 +59,8 @@ export function groupByTimeline(
   const map = new Map<string, { label: string; tasks: TaskVault[] }>()
 
   for (const task of tasks) {
-    const { key, label } = getTimelineBucket(new Date(task.archivedAt), granularity)
+    const effectiveDate = task.completedAt ? new Date(task.completedAt) : new Date(task.archivedAt)
+    const { key, label } = getTimelineBucket(effectiveDate, granularity)
     if (!map.has(key)) map.set(key, { label, tasks: [] })
     map.get(key)!.tasks.push(task)
   }

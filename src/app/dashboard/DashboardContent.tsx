@@ -35,6 +35,7 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
   const isAdmin = user.role === 'admin'
   const { glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
+  const existingGroups = [...new Set(projects.map((p) => p.group).filter((g): g is string => !!g && g !== 'General'))].sort()
 
   return (
     <div className="min-h-screen">
@@ -124,21 +125,7 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="mb-8"
-        >
-          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-2">
-            Welcome back, {user.name?.split(' ')[0] || 'there'}
-          </h1>
-          <p className="text-[var(--text-muted)]">
-            Manage your projects and timelines
-          </p>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-          className="flex flex-wrap gap-4 mb-10"
+          className="flex flex-wrap gap-4 mb-6"
         >
           <div onClick={() => setShowCreateModal(true)} className="w-full sm:w-64">
             <GlowCard accentColor="purple" glowIntensity="sm" showAccentLine hover>
@@ -205,12 +192,13 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
         </motion.div>
       </main>
 
-      <CreateProjectModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} />
+      <CreateProjectModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} existingGroups={existingGroups} />
       {editingProject && (
         <EditProjectModal
           isOpen={true}
           project={editingProject}
           onClose={() => setEditingProject(null)}
+          existingGroups={existingGroups}
         />
       )}
     </div>

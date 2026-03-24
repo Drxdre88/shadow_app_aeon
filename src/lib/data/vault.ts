@@ -7,7 +7,7 @@ export async function findVaultTasks(projectId: string, limit = 200, offset = 0)
     .select()
     .from(taskVault)
     .where(eq(taskVault.projectId, projectId))
-    .orderBy(desc(taskVault.archivedAt))
+    .orderBy(sql`coalesce(${taskVault.completedAt}, ${taskVault.archivedAt}) desc`)
     .limit(limit)
     .offset(offset)
 }
@@ -21,7 +21,7 @@ export async function getVaultStats(projectId: string) {
       mediumCount: sql<number>`count(*) filter (where ${taskVault.priority} = 'medium')::int`,
       highCount: sql<number>`count(*) filter (where ${taskVault.priority} = 'high')::int`,
       urgentCount: sql<number>`count(*) filter (where ${taskVault.priority} = 'urgent')::int`,
-      thisWeek: sql<number>`count(*) filter (where ${taskVault.archivedAt} > now() - interval '7 days')::int`,
+      thisWeek: sql<number>`count(*) filter (where coalesce(${taskVault.completedAt}, ${taskVault.archivedAt}) > now() - interval '7 days')::int`,
     })
     .from(taskVault)
     .where(eq(taskVault.projectId, projectId))
@@ -96,6 +96,7 @@ export async function vaultTask(
         labelSnapshot: snapshot.labelSnapshot,
         checklistSnapshot: snapshot.checklistSnapshot,
         metadata: task.metadata,
+        completedAt: task.completedAt ?? new Date(),
         originalCreatedAt: task.createdAt,
       })
       .returning()
@@ -149,6 +150,7 @@ export async function vaultTasksBatch(
       labelSnapshot,
       checklistSnapshot,
       metadata: task.metadata,
+      completedAt: task.completedAt ?? new Date(),
       originalCreatedAt: task.createdAt,
     }))
 

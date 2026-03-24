@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { checklistItems, boardTasks } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 import { syncChecklistToGanttProgress } from './bridge'
 
 export async function findChecklistItems(taskId: string, projectId: string) {
@@ -83,6 +83,7 @@ export async function updateChecklistItem(
     title?: string
     state?: 'unchecked' | 'checked' | 'crossed'
     status?: string | null
+    groupName?: string
   }
 ) {
   const dbUpdates: Record<string, unknown> = {}
@@ -92,6 +93,7 @@ export async function updateChecklistItem(
     dbUpdates.completed = updates.state === 'checked'
   }
   if (updates.status !== undefined) dbUpdates.status = updates.status
+  if (updates.groupName !== undefined) dbUpdates.groupName = updates.groupName
 
   const [item] = await db
     .update(checklistItems)
@@ -101,6 +103,73 @@ export async function updateChecklistItem(
 
   syncChecklistToGanttProgress(taskId).catch(() => {})
   return item ?? null
+}
+
+export async function renameChecklistGroup(
+  taskId: string,
+  oldName: string,
+  newName: string
+) {
+  const items = await db
+    .select({ id: checklistItems.id })
+    .from(checklistItems)
+    .where(and(eq(checklistItems.taskId, taskId), eq(checklistItems.groupName, oldName)))
+
+  if (items.length === 0) return 0
+
+  await db
+    .update(checklistItems)
+    .set({ groupName: newName })
+    .where(and(eq(checklistItems.taskId, taskId), eq(checklistItems.groupName, oldName)))
+
+  return items.length
+}
+
+export async function updateChecklistItemsBatch(
+  taskId: string,
+  items: { itemId: string; state?: 'unchecked' | 'checked' | 'crossed'; title?: string; status?: string | null }[]
+) {
+  if (items.length === 0) return []
+
+  const results: Array<{ id: string; title: string; state: string }> = []
+
+  const byState = new Map<string, string[]>()
+  const customUpdates: typeof items = []
+
+  for (const item of items) {
+    const hasTitle = item.title !== undefined
+    const hasStatus = item.status !== undefined
+    if ((hasTitle || hasStatus) && item.state) {
+      customUpdates.push(item)
+    } else if (item.state && !hasTitle && !hasStatus) {
+      const ids = byState.get(item.state) ?? []
+      ids.push(item.itemId)
+      byState.set(item.state, ids)
+    } else {
+      customUpdates.push(item)
+    }
+  }
+
+  for (const [state, ids] of byState) {
+    const updated = await db
+      .update(checklistItems)
+      .set({ state, completed: state === 'checked' })
+      .where(and(eq(checklistItems.taskId, taskId), inArray(checklistItems.id, ids)))
+      .returning({ id: checklistItems.id, title: checklistItems.title, state: checklistItems.state })
+    results.push(...updated)
+  }
+
+  for (const item of customUpdates) {
+    const updated = await updateChecklistItem(item.itemId, taskId, {
+      state: item.state,
+      title: item.title,
+      status: item.status,
+    })
+    if (updated) results.push({ id: updated.id, title: updated.title, state: updated.state })
+  }
+
+  syncChecklistToGanttProgress(taskId).catch(() => {})
+  return results
 }
 
 export async function deleteChecklistItem(itemId: string, taskId: string) {

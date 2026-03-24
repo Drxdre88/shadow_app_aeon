@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Check, Plus, X, Calendar, ChevronDown, ChevronRight } from 'lucide-react'
 import { format } from 'date-fns'
@@ -35,6 +35,8 @@ interface TaskChecklistProps {
   onItemRemove?: (itemId: string) => void
   onItemStatusChange?: (itemId: string, status: ChecklistStatus) => void
   onItemUpdateDates?: (itemId: string, startDate?: string, endDate?: string) => void
+  onItemTitleChange?: (itemId: string, title: string) => void
+  onGroupRename?: (oldName: string, newName: string) => void
   onGroupAdd?: (groupName: string) => void
 }
 
@@ -140,6 +142,8 @@ export function TaskChecklist({
   onItemRemove,
   onItemStatusChange,
   onItemUpdateDates,
+  onItemTitleChange,
+  onGroupRename,
   onGroupAdd,
 }: TaskChecklistProps) {
   const [addingInGroup, setAddingInGroup] = useState<string | null>(null)
@@ -147,9 +151,21 @@ export function TaskChecklist({
   const [addingGroup, setAddingGroup] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const [editingItemTitle, setEditingItemTitle] = useState('')
+  const [editingGroupName, setEditingGroupName] = useState<string | null>(null)
+  const [editingGroupValue, setEditingGroupValue] = useState('')
 
   const groups = Array.from(new Set(items.map((i) => i.groupName)))
-  if (groups.length === 0) groups.push('Checklist')
+  const hasNoItems = items.length === 0
+  const defaultGroup = groups.length > 0 ? groups[0] : 'Checklist'
+
+  useEffect(() => {
+    if (hasNoItems && !addingInGroup) {
+      setAddingInGroup(defaultGroup)
+      setNewItemTitle('')
+    }
+  }, [hasNoItems])
 
   const toggleGroup = (name: string) => {
     setCollapsedGroups((prev) => {
@@ -165,16 +181,41 @@ export function TaskChecklist({
     if (!newItemTitle.trim()) return
     onItemAdd?.(newItemTitle.trim(), groupName)
     setNewItemTitle('')
-    setAddingInGroup(null)
+    setAddingInGroup(groupName)
   }
 
   const handleAddGroup = (e: React.FormEvent) => {
     e.preventDefault()
     if (!newGroupName.trim()) return
-    onGroupAdd?.(newGroupName.trim())
+    const name = newGroupName.trim()
+    onGroupAdd?.(name)
     setNewGroupName('')
     setAddingGroup(false)
+    setAddingInGroup(name)
+    setNewItemTitle('')
   }
+
+  const commitItemEdit = () => {
+    if (!editingItemId) return
+    const trimmed = editingItemTitle.trim()
+    if (trimmed && trimmed !== items.find((i) => i.id === editingItemId)?.title) {
+      onItemTitleChange?.(editingItemId, trimmed)
+    }
+    setEditingItemId(null)
+    setEditingItemTitle('')
+  }
+
+  const commitGroupRename = () => {
+    if (!editingGroupName) return
+    const trimmed = editingGroupValue.trim()
+    if (trimmed && trimmed !== editingGroupName) {
+      onGroupRename?.(editingGroupName, trimmed)
+    }
+    setEditingGroupName(null)
+    setEditingGroupValue('')
+  }
+
+  if (groups.length === 0) groups.push('Checklist')
 
   return (
     <div className="space-y-4">
@@ -189,21 +230,48 @@ export function TaskChecklist({
         return (
           <div key={groupName} className="space-y-2">
             <div className="flex items-center justify-between">
-              <button
-                onClick={() => toggleGroup(groupName)}
-                className="flex items-center gap-1.5 text-sm font-medium text-white hover:text-slate-300 transition-colors"
-              >
-                {isCollapsed
-                  ? <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
-                  : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
-                }
-                {groupName}
-                <span className="text-xs text-slate-500 font-normal ml-1">
-                  {checkedCount}/{total}
-                  {crossedCount > 0 && <span className="text-red-400/60 ml-1">({crossedCount} blocked)</span>}
-                </span>
-              </button>
-
+              {editingGroupName === groupName ? (
+                <form
+                  onSubmit={(e) => { e.preventDefault(); commitGroupRename() }}
+                  className="flex items-center gap-1.5 flex-1"
+                >
+                  <input
+                    type="text"
+                    value={editingGroupValue}
+                    onChange={(e) => setEditingGroupValue(e.target.value)}
+                    onBlur={commitGroupRename}
+                    onKeyDown={(e) => { if (e.key === 'Escape') { setEditingGroupName(null); setEditingGroupValue('') } }}
+                    className={cn(
+                      'flex-1 px-2 py-0.5 rounded-md text-sm font-medium',
+                      'bg-white/5 border border-white/20',
+                      'text-white',
+                      'focus:outline-none focus:ring-1 focus:ring-purple-500/40'
+                    )}
+                    autoFocus
+                    autoComplete="off"
+                  />
+                </form>
+              ) : (
+                <button
+                  onClick={() => toggleGroup(groupName)}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation()
+                    setEditingGroupName(groupName)
+                    setEditingGroupValue(groupName)
+                  }}
+                  className="flex items-center gap-1.5 text-sm font-medium text-white hover:text-slate-300 transition-colors"
+                >
+                  {isCollapsed
+                    ? <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                    : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                  }
+                  {groupName}
+                  <span className="text-xs text-slate-500 font-normal ml-1">
+                    {checkedCount}/{total}
+                    {crossedCount > 0 && <span className="text-red-400/60 ml-1">({crossedCount} blocked)</span>}
+                  </span>
+                </button>
+              )}
             </div>
 
             {total > 0 && !isCollapsed && (
@@ -241,16 +309,43 @@ export function TaskChecklist({
                       onClick={() => onItemToggle?.(item.id, nextState(item.state))}
                     />
 
-                    <p
-                      className={cn(
-                        'flex-1 text-sm transition-all duration-200 min-w-0',
-                        item.state === 'checked' && 'line-through text-slate-500',
-                        item.state === 'crossed' && 'line-through text-red-400/50',
-                        item.state === 'unchecked' && 'text-slate-300'
-                      )}
-                    >
-                      {item.title}
-                    </p>
+                    {editingItemId === item.id ? (
+                      <form
+                        onSubmit={(e) => { e.preventDefault(); commitItemEdit() }}
+                        className="flex-1 min-w-0"
+                      >
+                        <input
+                          type="text"
+                          value={editingItemTitle}
+                          onChange={(e) => setEditingItemTitle(e.target.value)}
+                          onBlur={commitItemEdit}
+                          onKeyDown={(e) => { if (e.key === 'Escape') { setEditingItemId(null); setEditingItemTitle('') } }}
+                          className={cn(
+                            'w-full px-2 py-0.5 rounded-md text-sm',
+                            'bg-white/5 border border-white/20',
+                            'text-white',
+                            'focus:outline-none focus:ring-1 focus:ring-emerald-500/40'
+                          )}
+                          autoFocus
+                          autoComplete="off"
+                        />
+                      </form>
+                    ) : (
+                      <p
+                        onDoubleClick={() => {
+                          setEditingItemId(item.id)
+                          setEditingItemTitle(item.title)
+                        }}
+                        className={cn(
+                          'flex-1 text-sm transition-all duration-200 min-w-0 cursor-text',
+                          item.state === 'checked' && 'line-through text-slate-500',
+                          item.state === 'crossed' && 'line-through text-red-400/50',
+                          item.state === 'unchecked' && 'text-slate-300'
+                        )}
+                      >
+                        {item.title}
+                      </p>
+                    )}
 
                     <StatusBadge
                       status={item.status}
@@ -281,58 +376,43 @@ export function TaskChecklist({
               ))}
             </AnimatePresence>
 
-            {addingInGroup === groupName ? (
+            {!isCollapsed && addingInGroup === groupName && (
               <motion.form
                 onSubmit={(e) => handleAddItem(e, groupName)}
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="p-2.5 rounded-lg border bg-white/[0.03] border-white/10"
+                className="flex items-center gap-2 px-2.5 py-1.5"
               >
+                <div className="flex-shrink-0 w-5 h-5 rounded border-2 border-white/10" />
                 <input
                   type="text"
                   value={newItemTitle}
                   onChange={(e) => setNewItemTitle(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Escape') { setAddingInGroup(null); setNewItemTitle('') } }}
-                  placeholder="Item title..."
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') { setAddingInGroup(null); setNewItemTitle('') }
+                  }}
+                  onBlur={() => {
+                    if (!newItemTitle.trim()) { setAddingInGroup(null); setNewItemTitle('') }
+                  }}
+                  placeholder="Add an item..."
                   className={cn(
-                    'w-full px-3 py-1.5 rounded-md mb-2 text-sm',
-                    'bg-white/5 border border-white/10',
+                    'flex-1 px-0 py-0 text-sm bg-transparent border-none',
                     'text-white placeholder-slate-500',
-                    'focus:outline-none focus:ring-1 focus:ring-emerald-500/40',
-                    'transition-all duration-200'
+                    'focus:outline-none'
                   )}
                   autoFocus
                   autoComplete="off"
                 />
-                <div className="flex items-center gap-2">
-                  <button
-                    type="submit"
-                    disabled={!newItemTitle.trim()}
-                    className={cn(
-                      'flex-1 px-3 py-1 rounded-md text-xs font-medium',
-                      'bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/25',
-                      'text-emerald-400 transition-all',
-                      'disabled:opacity-50 disabled:cursor-not-allowed'
-                    )}
-                  >
-                    Add
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setAddingInGroup(null); setNewItemTitle('') }}
-                    className="px-3 py-1 rounded-md text-xs hover:bg-white/10 text-slate-400 transition-all"
-                  >
-                    Cancel
-                  </button>
-                </div>
               </motion.form>
-            ) : (
+            )}
+
+            {!isCollapsed && addingInGroup !== groupName && (
               <button
                 onClick={() => { setAddingInGroup(groupName); setNewItemTitle('') }}
                 className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-400 transition-colors mt-1"
               >
                 <Plus className="w-3 h-3" />
-                Add checklist item
+                Add item
               </button>
             )}
           </div>
@@ -351,6 +431,7 @@ export function TaskChecklist({
             value={newGroupName}
             onChange={(e) => setNewGroupName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Escape') { setAddingGroup(false); setNewGroupName('') } }}
+            onBlur={() => { if (!newGroupName.trim()) { setAddingGroup(false); setNewGroupName('') } }}
             placeholder="Checklist name..."
             className={cn(
               'flex-1 px-3 py-1.5 rounded-md text-sm',
@@ -368,21 +449,14 @@ export function TaskChecklist({
           >
             Add
           </button>
-          <button
-            type="button"
-            onClick={() => { setAddingGroup(false); setNewGroupName('') }}
-            className="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-300"
-          >
-            Cancel
-          </button>
         </motion.form>
       ) : (
         <button
           onClick={() => { setAddingGroup(true); setNewGroupName('') }}
-          className="flex items-center gap-1.5 text-sm font-semibold text-slate-400 hover:text-slate-300 transition-colors mt-1"
+          className="flex items-center gap-1 p-1 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-all"
+          title="Add checklist"
         >
-          <Plus className="w-3.5 h-3.5" />
-          Add checklist
+          <Plus className="w-4 h-4" />
         </button>
       )}
     </div>

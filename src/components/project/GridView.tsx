@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Calendar, Trash2, Pencil, Palette } from 'lucide-react'
@@ -24,13 +24,30 @@ interface GridViewProps {
   onEdit: (project: ProjectWithStats) => void
 }
 
+function groupProjects(projects: ProjectWithStats[]) {
+  const groups = new Map<string, ProjectWithStats[]>()
+  for (const p of projects) {
+    const key = p.group || 'General'
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(p)
+  }
+  return Array.from(groups.entries())
+    .sort(([a], [b]) => {
+      if (a === 'General') return -1
+      if (b === 'General') return 1
+      return a.localeCompare(b)
+    })
+}
+
 export function GridView({ projects, onEdit }: GridViewProps) {
   const router = useRouter()
   const { glowIntensity, projectColors, setProjectColor, shortcuts } = useThemeStore()
-  const mult = glowIntensity / 75
   const [hoveredProjectId, setHoveredProjectId] = useState<string | null>(null)
   const [colorPickerProjectId, setColorPickerProjectId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const projectListRef = useRef<HTMLDivElement>(null)
+
+  const groups = useMemo(() => groupProjects(projects), [projects])
 
   useEffect(() => {
     const el = projectListRef.current
@@ -66,8 +83,6 @@ export function GridView({ projects, onEdit }: GridViewProps) {
     setColorPickerProjectId(null)
   }, [setProjectColor])
 
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-
   const handleDelete = async (e: React.MouseEvent, projectId: string) => {
     e.preventDefault()
     e.stopPropagation()
@@ -82,135 +97,149 @@ export function GridView({ projects, onEdit }: GridViewProps) {
     }
   }
 
-  return (
-    <div ref={projectListRef} className="flex flex-wrap gap-4">
-      {projects.map((project) => {
-        const projectColor = (projectColors[project.id] || 'purple') as AccentColor
-        return (
-          <div key={project.id} className="relative w-full sm:w-72" data-project-id={project.id}>
-            <Link href={`/project/${project.id}`}>
-              <GlowCard accentColor={projectColor} glowIntensity="sm" showAccentLine hover>
-                <div className="p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <h3 className="text-sm font-semibold text-white truncate">{project.name}</h3>
-                    <div className="flex items-center gap-0.5">
-                      <motion.button
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          setColorPickerProjectId((prev) => prev === project.id ? null : project.id)
-                        }}
-                        className="p-1.5 rounded-lg text-[var(--text-dim)] hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
-                      >
-                        <Palette className="w-3.5 h-3.5" />
-                      </motion.button>
-                      <motion.button
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(project) }}
-                        className="p-1.5 rounded-lg text-[var(--text-dim)] hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </motion.button>
-                      <motion.button
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={(e) => handleDelete(e, project.id)}
-                        className="p-1.5 rounded-lg text-[var(--text-dim)] hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </motion.button>
-                    </div>
-                  </div>
-                  {project.description && (
-                    <p className="text-xs text-[var(--text-dim)] mt-1 line-clamp-2">{project.description}</p>
-                  )}
-                  <div className="flex items-center mt-2 text-xs text-[var(--text-muted)]">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      {new Date(project.startDate).toLocaleDateString()}
-                    </span>
-                  </div>
+  const renderCard = (project: ProjectWithStats) => {
+    const projectColor = (projectColors[project.id] || 'purple') as AccentColor
+    return (
+      <div key={project.id} className="relative w-72 shrink-0" data-project-id={project.id}>
+        <Link href={`/project/${project.id}`}>
+          <GlowCard accentColor={projectColor} glowIntensity="sm" showAccentLine hover>
+            <div className="p-3">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-sm font-semibold text-white truncate flex-1 mr-2">{project.name}</h3>
+                <div className="flex items-center gap-0.5 shrink-0 rounded-lg bg-white/[0.04] px-0.5">
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setColorPickerProjectId((prev) => prev === project.id ? null : project.id)
+                    }}
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
+                  >
+                    <Palette className="w-3.5 h-3.5" />
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(project) }}
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={(e) => handleDelete(e, project.id)}
+                    disabled={deletingId === project.id}
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-40"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </motion.button>
                 </div>
-              </GlowCard>
-            </Link>
-            {colorPickerProjectId === project.id && (() => {
-              const recent = getRecentColors()
-              return (
-                <div className="absolute top-full left-0 mt-2 z-50 p-3 rounded-xl backdrop-blur-xl bg-[#1a1a24]/95 border border-white/15 shadow-[0_0_40px_rgba(0,0,0,0.6)] space-y-2">
-                  <div className="flex gap-2 flex-wrap">
-                    {ACCENT_COLORS.map((c) => (
+              </div>
+              {project.description && (
+                <p className="text-xs text-[var(--text-dim)] mt-1 line-clamp-2">{project.description}</p>
+              )}
+              <div className="flex items-center mt-2 text-xs text-[var(--text-muted)]">
+                <span className="flex items-center gap-1">
+                  <Calendar className="w-3 h-3" />
+                  {new Date(project.startDate).toLocaleDateString()}
+                </span>
+              </div>
+            </div>
+          </GlowCard>
+        </Link>
+        {colorPickerProjectId === project.id && (() => {
+          const recent = getRecentColors()
+          return (
+            <div className="absolute top-full left-0 mt-2 z-50 p-3 rounded-xl backdrop-blur-xl bg-[#1a1a24]/95 border border-white/15 shadow-[0_0_40px_rgba(0,0,0,0.6)] space-y-2">
+              <div className="flex gap-2 flex-wrap">
+                {ACCENT_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => handleColorChange(project.id, c)}
+                    className={cn(
+                      'w-7 h-7 rounded-full border-2 transition-all hover:scale-110',
+                      projectColor === c ? 'border-white scale-110' : 'border-transparent'
+                    )}
+                    style={{ backgroundColor: colorConfig[c].hex }}
+                  />
+                ))}
+              </div>
+              {recent.length > 0 && (
+                <div className="border-t border-white/10 pt-2">
+                  <span className="text-[10px] text-slate-500 mb-1 block">Recent</span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {recent.map((hex) => (
                       <button
-                        key={c}
-                        onClick={() => handleColorChange(project.id, c)}
+                        key={hex}
+                        onClick={() => handleColorChange(project.id, hex)}
                         className={cn(
-                          'w-7 h-7 rounded-full border-2 transition-all hover:scale-110',
-                          projectColor === c ? 'border-white scale-110' : 'border-transparent'
+                          'w-6 h-6 rounded-full border-2 transition-all hover:scale-110',
+                          projectColor === hex ? 'border-white scale-110' : 'border-transparent'
                         )}
-                        style={{ backgroundColor: colorConfig[c].hex }}
+                        style={{ backgroundColor: hex }}
                       />
                     ))}
                   </div>
-                  {recent.length > 0 && (
-                    <div className="border-t border-white/10 pt-2">
-                      <span className="text-[10px] text-slate-500 mb-1 block">Recent</span>
-                      <div className="flex gap-1.5 flex-wrap">
-                        {recent.map((hex) => (
-                          <button
-                            key={hex}
-                            onClick={() => handleColorChange(project.id, hex)}
-                            className={cn(
-                              'w-6 h-6 rounded-full border-2 transition-all hover:scale-110',
-                              projectColor === hex ? 'border-white scale-110' : 'border-transparent'
-                            )}
-                            style={{ backgroundColor: hex }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div className="border-t border-white/10 pt-2">
-                    <div className="grid grid-cols-7 gap-1">
-                      {PALETTE_COLORS.map((hex) => (
-                        <button
-                          key={hex}
-                          onClick={() => handleColorChange(project.id, hex)}
-                          className={cn(
-                            'w-6 h-6 rounded-full border-2 transition-all hover:scale-110',
-                            projectColor === hex ? 'border-white scale-110' : 'border-transparent'
-                          )}
-                          style={{ backgroundColor: hex }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  <div className="pt-1 border-t border-white/10">
-                    <label className="flex items-center gap-2 cursor-pointer group">
-                      <div className="relative">
-                        <input
-                          type="color"
-                          value={typeof projectColor === 'string' && projectColor.startsWith('#') ? projectColor : colorConfig[projectColor]?.hex ?? '#a855f7'}
-                          onChange={(e) => {
-                            addRecentColor(e.target.value)
-                            handleColorChange(project.id, e.target.value)
-                          }}
-                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                        />
-                        <div className="w-6 h-6 rounded-full border-2 border-dashed border-white/30 group-hover:border-white/60 transition-all flex items-center justify-center">
-                          <Palette className="w-3 h-3 text-slate-400" />
-                        </div>
-                      </div>
-                      <span className="text-[11px] text-slate-500 group-hover:text-slate-300 transition-colors">Custom</span>
-                    </label>
-                  </div>
                 </div>
-              )
-            })()}
+              )}
+              <div className="border-t border-white/10 pt-2">
+                <div className="grid grid-cols-7 gap-1">
+                  {PALETTE_COLORS.map((hex) => (
+                    <button
+                      key={hex}
+                      onClick={() => handleColorChange(project.id, hex)}
+                      className={cn(
+                        'w-6 h-6 rounded-full border-2 transition-all hover:scale-110',
+                        projectColor === hex ? 'border-white scale-110' : 'border-transparent'
+                      )}
+                      style={{ backgroundColor: hex }}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="pt-1 border-t border-white/10">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <div className="relative">
+                    <input
+                      type="color"
+                      value={typeof projectColor === 'string' && projectColor.startsWith('#') ? projectColor : colorConfig[projectColor]?.hex ?? '#a855f7'}
+                      onChange={(e) => {
+                        addRecentColor(e.target.value)
+                        handleColorChange(project.id, e.target.value)
+                      }}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                    <div className="w-6 h-6 rounded-full border-2 border-dashed border-white/30 group-hover:border-white/60 transition-all flex items-center justify-center">
+                      <Palette className="w-3 h-3 text-slate-400" />
+                    </div>
+                  </div>
+                  <span className="text-[11px] text-slate-500 group-hover:text-slate-300 transition-colors">Custom</span>
+                </label>
+              </div>
+            </div>
+          )
+        })()}
+      </div>
+    )
+  }
+
+  return (
+    <div ref={projectListRef} className="space-y-6">
+      {groups.map(([label, groupProjects]) => (
+        <div key={label}>
+          <div className="flex items-center gap-2 mb-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-dim)]">{label}</h3>
+            <span className="text-[10px] text-slate-600">{groupProjects.length}</span>
+            <div className="flex-1 h-px bg-white/[0.06]" />
           </div>
-        )
-      })}
+          <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+            {groupProjects.map(renderCard)}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

@@ -11,6 +11,7 @@ import { BoardFilterBar } from './BoardFilterBar'
 import { DependencyGlowTree } from './DependencyGlowTree'
 import { LabelPicker } from './LabelPicker'
 import { TaskColorPicker } from './TaskColorPicker'
+import { TaskPriorityPicker } from './TaskPriorityPicker'
 import { TrashDropZone } from './TrashDropZone'
 import { DragPreview } from './DragPreview'
 import { ConnectModeBanner } from './ConnectModeBanner'
@@ -123,6 +124,7 @@ export function TaskBoard({
   const [dependencyTreeTaskId, setDependencyTreeTaskId] = useState<string | null>(null)
   const [labelPickerTaskId, setLabelPickerTaskId] = useState<string | null>(null)
   const [colorPickerTaskId, setColorPickerTaskId] = useState<string | null>(null)
+  const [priorityPickerTaskId, setPriorityPickerTaskId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -193,6 +195,8 @@ export function TaskBoard({
     sortedColumns,
     onOpenLabel: setLabelPickerTaskId,
     onOpenColorPicker: setColorPickerTaskId,
+    onOpenPriorityPicker: setPriorityPickerTaskId,
+    onEditCard: handleTaskEdit,
     onAddTask: handleAddTask,
   })
 
@@ -397,6 +401,15 @@ export function TaskBoard({
           taskId={colorPickerTaskId}
           isOpen={!!colorPickerTaskId}
           onClose={() => setColorPickerTaskId(null)}
+          onTaskUpdate={onTaskUpdate}
+        />
+      )}
+
+      {priorityPickerTaskId && (
+        <TaskPriorityPicker
+          taskId={priorityPickerTaskId}
+          isOpen={!!priorityPickerTaskId}
+          onClose={() => setPriorityPickerTaskId(null)}
           onTaskUpdate={onTaskUpdate}
         />
       )}

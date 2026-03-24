@@ -58,11 +58,12 @@ const BOARD_FEATURES = [
 ]
 
 const SHORTCUTS = [
-  { key: 'T', action: 'Add new task' },
-  { key: 'L', action: 'Open label picker' },
-  { key: 'G', action: 'Change task glow' },
+  { key: 'C', action: 'New card' },
+  { key: 'E', action: 'Edit card (hover)' },
+  { key: 'V', action: 'Change priority (hover)' },
+  { key: 'L', action: 'Open label picker (hover)' },
+  { key: 'G', action: 'Change card glow (hover)' },
   { key: 'D', action: 'Toggle due dates' },
-  { key: 'Click task', action: 'Open task detail' },
 ]
 
 export function BoardTab() {

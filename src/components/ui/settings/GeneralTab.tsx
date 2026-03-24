@@ -3,9 +3,42 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { X, Plus } from 'lucide-react'
-import { useThemeStore, INITIAL_PRIORITIES } from '@/stores/themeStore'
+import { useThemeStore, INITIAL_PRIORITIES, type CompletionMode } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
 import { ToggleRow, CompactSlider } from './shared'
+
+function CompletionModeSetting() {
+  const { completionMode, setCompletionMode, colors } = useThemeStore()
+
+  const options: { id: CompletionMode; label: string; desc: string }[] = [
+    { id: 'done', label: 'On Done', desc: 'Timestamp recorded when task moves to Done column' },
+    { id: 'vault', label: 'On Vault', desc: 'Timestamp recorded when task is pushed to trophy vault' },
+  ]
+
+  return (
+    <div className="space-y-2 max-w-md">
+      <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider">Completion Tracking</h4>
+      <p className="text-[10px] text-slate-600">Controls when the completion timestamp is recorded for velocity metrics</p>
+      <div className="flex gap-2">
+        {options.map(({ id, label, desc }) => (
+          <button
+            key={id}
+            onClick={() => setCompletionMode(id)}
+            className={cn(
+              'flex-1 p-2.5 rounded-xl border transition-all text-left',
+              completionMode === id
+                ? 'border-[var(--primary)]/50 bg-[var(--primary)]/10'
+                : 'border-white/[0.1] bg-white/[0.03] hover:bg-white/[0.06]'
+            )}
+          >
+            <span className={cn('text-xs font-medium block mb-0.5', completionMode === id ? 'text-white' : 'text-slate-300')}>{label}</span>
+            <p className="text-[10px] text-slate-500 leading-tight">{desc}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function BoardLayoutSetting() {
   const { columnWidth, setColumnWidth, columnHeight, setColumnHeight, dynamicColumnWidth, setDynamicColumnWidth, dynamicColumnHeight, setDynamicColumnHeight, colors } = useThemeStore()
@@ -161,6 +194,7 @@ function PriorityManager() {
 export function GeneralTab() {
   return (
     <div className="space-y-6">
+      <CompletionModeSetting />
       <BoardLayoutSetting />
       <PriorityManager />
     </div>
