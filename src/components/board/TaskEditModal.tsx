@@ -186,12 +186,20 @@ export function TaskEditModal({
 
   const handleItemTitleChange = useCallback((itemId: string, title: string) => {
     if (!editingTaskId) return
-    const prevItems = checklistItems
+    let prevTitle: string | undefined
     setChecklistItems((prev) =>
-      prev.map((i) => (i.id === itemId ? { ...i, title } : i))
+      prev.map((i) => {
+        if (i.id === itemId) {
+          prevTitle = i.title
+          return { ...i, title }
+        }
+        return i
+      })
     )
     updateChecklistItem(itemId, editingTaskId, projectId, { title }).catch(() => {
-      setChecklistItems(prevItems)
+      setChecklistItems((prev) =>
+        prev.map((i) => (i.id === itemId ? { ...i, title: prevTitle ?? i.title } : i))
+      )
       toast('Checklist item too long — keep it under 2000 characters')
     })
   }, [editingTaskId, projectId])
