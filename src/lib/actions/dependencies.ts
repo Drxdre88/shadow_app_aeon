@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireOwnership } from './helpers'
-import { addDependencySchema } from '@/lib/data/validators'
+import { dependencyPairSchema } from '@/lib/data/validators'
 import {
   findDependencies as _findDependencies,
   addDependency as _addDependency,
@@ -18,7 +18,7 @@ export async function addTaskDependency(
 ) {
   const userId = await requireOwnership(projectId)
 
-  const parsed = addDependencySchema.parse({ blockerTaskId, blockedTaskId })
+  const parsed = dependencyPairSchema.parse({ blockerTaskId, blockedTaskId })
 
   const cyclic = await wouldCreateCycle(parsed.blockerTaskId, parsed.blockedTaskId, projectId)
   if (cyclic) {
