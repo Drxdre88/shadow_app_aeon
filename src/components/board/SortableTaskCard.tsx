@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, memo } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { motion } from 'framer-motion'
@@ -8,7 +8,7 @@ import { Calendar, Tag, MoreHorizontal, Check, X, Clock, Trash2 } from 'lucide-r
 import { cn } from '@/lib/utils/cn'
 import { colorConfig, AccentColor, hexToRgba } from '@/lib/utils/colors'
 import { GlowCard } from '@/components/ui/GlowCard'
-import { useBoardStore } from '@/lib/store/boardStore'
+import { useBoardStore, useSelectedTaskId, useLabels, useShowDates } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { DependencyIndicator } from './DependencyIndicator'
 import { TaskContextMenu } from './TaskContextMenu'
@@ -30,7 +30,7 @@ interface SortableTaskCardProps {
     size?: number | null
     updatedAt?: string
   }
-  onEdit?: () => void
+  onEdit?: (taskId: string) => void
   onDependencyClick?: (taskId: string) => void
   columnGlowColor: string
   showDropIndicator?: boolean
@@ -81,10 +81,13 @@ function triToStatus(tri: TriState, fallback: string): string {
   return fallback === 'done' ? 'todo' : fallback
 }
 
-export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowColor, showDropIndicator = false, onTaskUpdate, onTaskDelete, onPushToGantt, onSendToVault, onArchiveTask }: SortableTaskCardProps) {
-  const { selectedTaskId, labels, updateTask, checklistSummaries, showDates } = useBoardStore()
+export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowColor, showDropIndicator = false, onTaskUpdate, onTaskDelete, onPushToGantt, onSendToVault, onArchiveTask }: SortableTaskCardProps) {
+  const selectedTaskId = useSelectedTaskId()
+  const labels = useLabels()
+  const clSummary = useBoardStore((s) => s.checklistSummaries[task.id])
+  const showDates = useShowDates()
+  const updateTask = useBoardStore((s) => s.updateTask)
   const { glowIntensity: globalGlow, priorities } = useThemeStore()
-  const clSummary = checklistSummaries[task.id]
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const isSelected = selectedTaskId === task.id
   const mult = globalGlow / 75
@@ -153,7 +156,7 @@ export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowCo
       <motion.div
         {...attributes}
         {...listeners}
-        onClick={onEdit}
+        onClick={() => onEdit?.(task.id)}
         onContextMenu={handleContextMenu}
         style={{ touchAction: 'none' }}
         className={cn(
@@ -208,7 +211,7 @@ export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowCo
             </div>
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
               <button
-                onClick={(e) => { e.stopPropagation(); onEdit?.() }}
+                onClick={(e) => { e.stopPropagation(); onEdit?.(task.id) }}
                 className="p-1 rounded-md hover:bg-white/10 transition-colors"
               >
                 <MoreHorizontal className="w-4 h-4 text-slate-400" />
@@ -325,4 +328,4 @@ export function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowCo
       )}
     </div>
   )
-}
+})

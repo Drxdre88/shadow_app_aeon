@@ -21,8 +21,6 @@ import { findColumns as _findColumns, createDefaultColumns as _createDefaultColu
 import { findLabels as _findLabels, findTaskLabels as _findTaskLabels, setTaskLabels as _setTaskLabels } from '@/lib/data/labels'
 import { findDependencies as _findDependencies } from '@/lib/data/dependencies'
 import { findChecklistSummaries as _findChecklistSummaries, findChecklistItems as _findChecklistItems, createChecklistItemsBatch as _createChecklistItemsBatch } from '@/lib/data/checklist'
-import { vaultTask as _vaultTask } from '@/lib/data/vault'
-import { findPreferences } from '@/lib/data/preferences'
 
 export async function loadBoardData(projectId: string) {
   await requireOwnership(projectId)
@@ -104,18 +102,6 @@ export async function updateBoardTask(
 
   if (parsed.status === 'done') {
     emitActivity(projectId, 'task', taskId, 'completed', task?.name, undefined, userId).catch(() => {})
-
-    try {
-      const prefs = await findPreferences(userId)
-      if (prefs.completionMode === 'vault') {
-        const vaulted = await _vaultTask(taskId, projectId, null)
-        if (vaulted) {
-          emitActivity(projectId, 'task', taskId, 'vaulted', task?.name, { auto: true }, userId).catch(() => {})
-          revalidatePath(`/project/${projectId}`)
-          return { ...task, autoVaulted: true, vaultEntry: vaulted }
-        }
-      }
-    } catch {}
   } else if (parsed.columnId) {
     emitActivity(projectId, 'task', taskId, 'moved', task?.name, { fromColumnId: existing?.columnId, toColumnId: parsed.columnId }, userId).catch(() => {})
   } else {
@@ -162,24 +148,11 @@ export async function reorderBoardTasks(
   }
 
   const doneUpdates = updates.filter(u => u.status === 'done')
-  const autoVaultedIds: string[] = []
-
-  if (doneUpdates.length > 0) {
-    const prefs = await findPreferences(userId)
-    for (const u of doneUpdates) {
-      emitActivity(projectId, 'task', u.id, 'completed', u.name, { via: 'drag' }, userId).catch(() => {})
-      if (prefs.completionMode === 'vault') {
-        const vaulted = await _vaultTask(u.id, projectId, null)
-        if (vaulted) {
-          autoVaultedIds.push(u.id)
-          emitActivity(projectId, 'task', u.id, 'vaulted', u.name, { auto: true }, userId).catch(() => {})
-        }
-      }
-    }
+  for (const u of doneUpdates) {
+    emitActivity(projectId, 'task', u.id, 'completed', u.name, { via: 'drag' }, userId).catch(() => {})
   }
 
   revalidatePath(`/project/${projectId}`)
-  return { autoVaultedIds }
 }
 
 export async function archiveBoardTask(taskId: string, projectId: string) {

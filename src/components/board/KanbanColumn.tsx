@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, memo } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { AnimatePresence } from 'framer-motion'
@@ -65,18 +65,19 @@ interface KanbanColumnProps {
 }
 
 
-function getColumnColor(color: string) {
-  const colorMap: Record<string, { bg: string; text: string; border: string; glow: string; glowColor: string; styles?: Record<string, React.CSSProperties> }> = {
-    pink: { bg: 'bg-pink-500/10', text: 'text-pink-400', border: 'border-pink-500/30', glow: 'shadow-[0_0_10px_rgba(236,72,153,0.3)]', glowColor: 'rgba(236,72,153,0.6)' },
-    blue: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/30', glow: 'shadow-[0_0_10px_rgba(59,130,246,0.3)]', glowColor: 'rgba(59,130,246,0.6)' },
-    purple: { bg: 'bg-purple-500/10', text: 'text-purple-400', border: 'border-purple-500/30', glow: 'shadow-[0_0_10px_rgba(168,85,247,0.3)]', glowColor: 'rgba(168,85,247,0.6)' },
-    green: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30', glow: 'shadow-[0_0_10px_rgba(16,185,129,0.3)]', glowColor: 'rgba(16,185,129,0.6)' },
-    cyan: { bg: 'bg-cyan-500/10', text: 'text-cyan-400', border: 'border-cyan-500/30', glow: 'shadow-[0_0_10px_rgba(34,211,238,0.3)]', glowColor: 'rgba(34,211,238,0.6)' },
-    orange: { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/30', glow: 'shadow-[0_0_10px_rgba(249,115,22,0.3)]', glowColor: 'rgba(249,115,22,0.6)' },
-    red: { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/30', glow: 'shadow-[0_0_10px_rgba(239,68,68,0.3)]', glowColor: 'rgba(239,68,68,0.6)' },
-  }
+const COLUMN_COLOR_MAP: Record<string, { bg: string; text: string; border: string; glow: string; glowColor: string }> = {
+  pink: { bg: 'bg-pink-500/10', text: 'text-pink-400', border: 'border-pink-500/30', glow: 'shadow-[0_0_10px_rgba(236,72,153,0.3)]', glowColor: 'rgba(236,72,153,0.6)' },
+  blue: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/30', glow: 'shadow-[0_0_10px_rgba(59,130,246,0.3)]', glowColor: 'rgba(59,130,246,0.6)' },
+  purple: { bg: 'bg-purple-500/10', text: 'text-purple-400', border: 'border-purple-500/30', glow: 'shadow-[0_0_10px_rgba(168,85,247,0.3)]', glowColor: 'rgba(168,85,247,0.6)' },
+  green: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30', glow: 'shadow-[0_0_10px_rgba(16,185,129,0.3)]', glowColor: 'rgba(16,185,129,0.6)' },
+  cyan: { bg: 'bg-cyan-500/10', text: 'text-cyan-400', border: 'border-cyan-500/30', glow: 'shadow-[0_0_10px_rgba(34,211,238,0.3)]', glowColor: 'rgba(34,211,238,0.6)' },
+  orange: { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/30', glow: 'shadow-[0_0_10px_rgba(249,115,22,0.3)]', glowColor: 'rgba(249,115,22,0.6)' },
+  red: { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/30', glow: 'shadow-[0_0_10px_rgba(239,68,68,0.3)]', glowColor: 'rgba(239,68,68,0.6)' },
+}
 
-  if (colorMap[color]) return { ...colorMap[color], isCustom: false }
+function getColumnColor(color: string) {
+
+  if (COLUMN_COLOR_MAP[color]) return { ...COLUMN_COLOR_MAP[color], isCustom: false }
 
   const hex = color.startsWith('#') ? color : `#${color}`
   return {
@@ -99,7 +100,7 @@ function getColumnColor(color: string) {
   }
 }
 
-export function KanbanColumn({
+export const KanbanColumn = memo(function KanbanColumn({
   column,
   projectId,
   tasks,
@@ -402,7 +403,7 @@ export function KanbanColumn({
               <SortableTaskCard
                 key={task.id}
                 task={task}
-                onEdit={() => onTaskEdit?.(task.id)}
+                onEdit={onTaskEdit}
                 onDependencyClick={onDependencyClick}
                 columnGlowColor={config.glowColor}
                 showDropIndicator={overId === task.id && activeTaskId !== task.id}
@@ -468,4 +469,4 @@ export function KanbanColumn({
     />
     </div>
   )
-}
+})

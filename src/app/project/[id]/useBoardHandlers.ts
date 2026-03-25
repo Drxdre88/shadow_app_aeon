@@ -47,11 +47,8 @@ export function useBoardHandlers(projectId: string) {
       onTimeline?: boolean
       orderIndex?: number
     })
-      .then((result) => {
+      .then(() => {
         useBoardStore.setState({ isDirty: false })
-        if (result && 'autoVaulted' in result && result.autoVaulted) {
-          useBoardStore.getState().removeTask(taskId)
-        }
       })
       .catch((err) => {
         console.error('Failed to update task:', err)
@@ -97,17 +94,26 @@ export function useBoardHandlers(projectId: string) {
       })
   }, [projectId])
 
-  const handleTaskMove = useCallback((updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[]) => {
+  const handleTaskMove = useCallback((
+    updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[],
+    snapshot?: { id: string; columnId?: string; orderIndex: number }[]
+  ) => {
     reorderBoardTasks(projectId, updates)
-      .then((result) => {
+      .then(() => {
         useBoardStore.setState({ isDirty: false })
-        if (result?.autoVaultedIds?.length) {
-          const { removeTask } = useBoardStore.getState()
-          result.autoVaultedIds.forEach((id: string) => removeTask(id))
-        }
       })
       .catch((err) => {
         console.error('Failed to reorder tasks:', err)
+        if (snapshot) {
+          const { moveTask, updateTask: storeUpdate } = useBoardStore.getState()
+          for (const snap of snapshot) {
+            if (snap.columnId) {
+              moveTask(snap.id, snap.columnId, snap.orderIndex)
+            } else {
+              storeUpdate(snap.id, { orderIndex: snap.orderIndex })
+            }
+          }
+        }
         useBoardStore.setState({ isDirty: false })
         toast('Failed to move task')
       })

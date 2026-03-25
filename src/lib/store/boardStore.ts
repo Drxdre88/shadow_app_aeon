@@ -175,3 +175,12 @@ export const useBoardStore = create<BoardState>()(
     }
   )
 )
+
+export const useColumns = () => useBoardStore((s) => s.columns)
+export const useTasks = () => useBoardStore((s) => s.tasks)
+export const useLabels = () => useBoardStore((s) => s.labels)
+export const useDependencies = () => useBoardStore((s) => s.dependencies)
+export const useSelectedTaskId = () => useBoardStore((s) => s.selectedTaskId)
+export const useShowDates = () => useBoardStore((s) => s.showDates)
+export const useChecklistSummaries = () => useBoardStore((s) => s.checklistSummaries)
+export const useIsDirty = () => useBoardStore((s) => s.isDirty)

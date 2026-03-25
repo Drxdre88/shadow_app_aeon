@@ -3,7 +3,7 @@
 import { useCallback, useState, useMemo } from 'react'
 import { DndContext, DragOverlay, closestCenter } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
-import { useBoardStore, type BoardColumn } from '@/lib/store/boardStore'
+import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColumn } from '@/lib/store/boardStore'
 import { KanbanColumn } from './KanbanColumn'
 import { SortableColumn } from './SortableColumn'
 import { TaskEditModal } from './TaskEditModal'
@@ -54,7 +54,7 @@ interface TaskBoardProps {
   onTaskCreate?: (task: BoardTaskData) => void
   onTaskUpdate?: (taskId: string, updates: Partial<BoardTaskData>) => void
   onTaskDelete?: (taskId: string) => void
-  onTaskMove?: (updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[]) => void
+  onTaskMove?: (updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[], snapshot?: { id: string; columnId?: string; orderIndex: number }[]) => void
   onAddDependency?: (blockerTaskId: string, blockedTaskId: string) => void
   onRemoveDependency?: (blockerTaskId: string, blockedTaskId: string) => void
   onColumnCreate?: (column: { id: string; projectId: string; name: string; color: string; orderIndex: number }) => void
@@ -107,17 +107,15 @@ export function TaskBoard({
   onArchiveTask,
   onArchiveColumn,
 }: TaskBoardProps) {
-  const {
-    columns,
-    tasks,
-    addTask,
-    updateTask,
-    selectTask,
-    selectedTaskId,
-    addColumn,
-    updateColumn,
-    removeColumn,
-  } = useBoardStore()
+  const columns = useColumns()
+  const tasks = useTasks()
+  const selectedTaskId = useSelectedTaskId()
+  const addTask = useBoardStore((s) => s.addTask)
+  const updateTask = useBoardStore((s) => s.updateTask)
+  const selectTask = useBoardStore((s) => s.selectTask)
+  const addColumn = useBoardStore((s) => s.addColumn)
+  const updateColumn = useBoardStore((s) => s.updateColumn)
+  const removeColumn = useBoardStore((s) => s.removeColumn)
   const { colors: themeColors, glowIntensity: globalGlow, dragEffect, shortcuts, boardLayout } = useThemeStore()
 
   const [editingTask, setEditingTask] = useState<string | null>(null)
@@ -145,7 +143,7 @@ export function TaskBoard({
     [columns, projectId]
   )
 
-  const projectTasks = tasks.filter((t) => t.projectId === projectId)
+  const projectTasks = useMemo(() => tasks.filter((t) => t.projectId === projectId), [tasks, projectId])
   const filteredTasks = useMemo(() => applyBoardFilters(projectTasks, filters), [projectTasks, filters])
   const columnIds = sortedColumns.map((c) => c.id)
 

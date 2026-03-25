@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Palette, Flag, Trash2, MoveRight, Copy, Calendar, Archive, Package, ArrowRight, FolderInput, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { useBoardStore } from '@/lib/store/boardStore'
+import { useBoardStore, useTasks, useColumns } from '@/lib/store/boardStore'
 import { AccentColor, ACCENT_COLORS, PALETTE_COLORS, colorConfig, getRecentColors, addRecentColor } from '@/lib/utils/colors'
 import { useThemeStore } from '@/stores/themeStore'
 import { ContextMenuButton } from './ContextMenuButton'
@@ -30,7 +30,10 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
   const [transferMode, setTransferMode] = useState<'copy' | 'move'>('copy')
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
-  const { tasks, columns, updateTask, removeTask } = useBoardStore()
+  const tasks = useTasks()
+  const columns = useColumns()
+  const updateTask = useBoardStore((s) => s.updateTask)
+  const removeTask = useBoardStore((s) => s.removeTask)
   const { priorities, colors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
 
@@ -336,8 +339,13 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
                                 if (transferMode === 'copy') {
                                   await copyTaskToProject(taskId, task.projectId, project.id, col.id)
                                 } else {
+                                  const snapshot = { ...task }
                                   removeTask(taskId)
-                                  await moveTaskToProject(taskId, task.projectId, project.id, col.id)
+                                  try {
+                                    await moveTaskToProject(taskId, task.projectId, project.id, col.id)
+                                  } catch {
+                                    useBoardStore.getState().addTask(snapshot)
+                                  }
                                 }
                               } catch {}
                               onClose()
