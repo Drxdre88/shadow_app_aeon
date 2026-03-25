@@ -13,6 +13,8 @@ import {
   updateChecklistItem as _updateChecklistItem,
   deleteChecklistItem as _deleteChecklistItem,
   renameChecklistGroup as _renameChecklistGroup,
+  reorderChecklistItems as _reorderChecklistItems,
+  deleteChecklistGroup as _deleteChecklistGroup,
 } from '@/lib/data/checklist'
 import { findTaskById } from '@/lib/data/tasks'
 
@@ -88,6 +90,16 @@ export async function deleteChecklistItem(itemId: string, taskId: string, projec
   revalidatePath(`/project/${projectId}`)
 }
 
+export async function reorderChecklistItems(
+  taskId: string,
+  projectId: string,
+  updates: { id: string; orderIndex: number }[]
+) {
+  await requireTaskInProject(taskId, projectId)
+  await _reorderChecklistItems(taskId, updates)
+  revalidatePath(`/project/${projectId}`)
+}
+
 export async function renameChecklistGroup(
   taskId: string,
   projectId: string,
@@ -98,4 +110,14 @@ export async function renameChecklistGroup(
   const count = await _renameChecklistGroup(taskId, oldName, newName)
   revalidatePath(`/project/${projectId}`)
   return count
+}
+
+export async function deleteChecklistGroup(
+  taskId: string,
+  projectId: string,
+  groupName: string
+) {
+  await requireTaskInProject(taskId, projectId)
+  await _deleteChecklistGroup(taskId, groupName)
+  revalidatePath(`/project/${projectId}`)
 }

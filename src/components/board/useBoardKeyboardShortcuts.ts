@@ -23,6 +23,8 @@ interface UseBoardKeyboardShortcutsProps {
   onOpenPriorityPicker: (taskId: string) => void
   onEditCard: (taskId: string) => void
   onAddTask: (columnId: string) => void
+  onCopyCard?: (taskId: string) => void
+  onPasteCard?: () => void
 }
 
 export function useBoardKeyboardShortcuts({
@@ -35,6 +37,8 @@ export function useBoardKeyboardShortcuts({
   onOpenPriorityPicker,
   onEditCard,
   onAddTask,
+  onCopyCard,
+  onPasteCard,
 }: UseBoardKeyboardShortcutsProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -43,6 +47,19 @@ export function useBoardKeyboardShortcuts({
       const key = e.key.toLowerCase()
 
       const targetTaskId = hoveredTaskId ?? selectedTaskId
+
+      if ((e.ctrlKey || e.metaKey) && key === 'c' && targetTaskId) {
+        e.preventDefault()
+        onCopyCard?.(targetTaskId)
+        return
+      }
+
+      if ((e.ctrlKey || e.metaKey) && key === 'v') {
+        e.preventDefault()
+        onPasteCard?.()
+        return
+      }
+
       if (key === (shortcuts?.openLabel ?? 'l') && targetTaskId) {
         e.preventDefault()
         onOpenLabel(targetTaskId)
@@ -81,5 +98,5 @@ export function useBoardKeyboardShortcuts({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedTaskId, hoveredTaskId, shortcuts, sortedColumns, onOpenLabel, onOpenColorPicker, onOpenPriorityPicker, onEditCard, onAddTask])
+  }, [selectedTaskId, hoveredTaskId, shortcuts, sortedColumns, onOpenLabel, onOpenColorPicker, onOpenPriorityPicker, onEditCard, onAddTask, onCopyCard, onPasteCard])
 }

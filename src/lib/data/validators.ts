@@ -130,7 +130,7 @@ export const updateLabelSchema = z.object({
 })
 
 export const createChecklistItemSchema = z.object({
-  title: z.string().trim().min(1).max(500),
+  title: z.string().trim().min(1).max(2000),
   groupName: z.string().trim().max(255).optional(),
   orderIndex: z.number().int(),
 })
@@ -138,7 +138,7 @@ export const createChecklistItemSchema = z.object({
 export const checklistItemStateSchema = z.enum(['unchecked', 'checked', 'crossed'])
 
 export const updateChecklistItemSchema = z.object({
-  title: z.string().trim().min(1).max(500).optional(),
+  title: z.string().trim().min(1).max(2000).optional(),
   state: checklistItemStateSchema.optional(),
   status: z.string().trim().nullable().optional(),
 })

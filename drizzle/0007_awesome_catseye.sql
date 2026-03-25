@@ -1,0 +1,1 @@
+ALTER TABLE "checklist_items" ALTER COLUMN "title" SET DATA TYPE text;

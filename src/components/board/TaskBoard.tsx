@@ -25,6 +25,8 @@ import { useBoardDnD } from './useBoardDnD'
 import { useBoardKeyboardShortcuts } from './useBoardKeyboardShortcuts'
 import { useBoardHover } from './useBoardHover'
 import { useConnectMode } from './useConnectMode'
+import { duplicateBoardTask } from '@/lib/actions/board'
+import { toast } from '@/components/ui/Toast'
 
 interface BoardTaskData {
   id: string
@@ -120,6 +122,7 @@ export function TaskBoard({
 
   const [editingTask, setEditingTask] = useState<string | null>(null)
   const [newTaskColumnId, setNewTaskColumnId] = useState<string | null>(null)
+  const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null)
   const [internalFilters, setInternalFilters] = useState<BoardFilters>(DEFAULT_FILTERS)
   const [dependencyTreeTaskId, setDependencyTreeTaskId] = useState<string | null>(null)
   const [labelPickerTaskId, setLabelPickerTaskId] = useState<string | null>(null)
@@ -188,6 +191,39 @@ export function TaskBoard({
     handleConnectClick(taskId, handleTaskEdit)
   }, [handleConnectClick, handleTaskEdit])
 
+  const handleCopyCard = useCallback((taskId: string) => {
+    setCopiedTaskId(taskId)
+    toast('Card copied')
+  }, [])
+
+  const handlePasteCard = useCallback(() => {
+    if (!copiedTaskId) return
+    const { tasks: storeTasks, addTask: storeAddTask, checklistSummaries, setChecklistSummaries } = useBoardStore.getState()
+    const source = storeTasks.find(t => t.id === copiedTaskId)
+    if (!source) return
+
+    const newId = generateId()
+    const columnTasks = storeTasks.filter(t => t.columnId === source.columnId)
+    const maxOrder = columnTasks.reduce((max, t) => Math.max(max, t.orderIndex), -1)
+
+    const newTask = {
+      ...source,
+      id: newId,
+      name: `Copy of ${source.name}`,
+      orderIndex: maxOrder + 1,
+    }
+    storeAddTask(newTask)
+
+    if (checklistSummaries[copiedTaskId]) {
+      setChecklistSummaries({ ...checklistSummaries, [newId]: { ...checklistSummaries[copiedTaskId] } })
+    }
+
+    duplicateBoardTask(copiedTaskId, projectId, newId).catch(() => {
+      useBoardStore.getState().removeTask(newId)
+      toast('Failed to duplicate card')
+    })
+  }, [copiedTaskId, projectId])
+
   useBoardKeyboardShortcuts({
     hoveredTaskId,
     selectedTaskId,
@@ -198,6 +234,8 @@ export function TaskBoard({
     onOpenPriorityPicker: setPriorityPickerTaskId,
     onEditCard: handleTaskEdit,
     onAddTask: handleAddTask,
+    onCopyCard: handleCopyCard,
+    onPasteCard: handlePasteCard,
   })
 
   const handleColumnRename = useCallback((columnId: string, name: string) => {

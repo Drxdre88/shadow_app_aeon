@@ -18,9 +18,9 @@ import {
 import { syncBoardStatusToGantt, deleteLinkedGanttTask } from '@/lib/data/bridge'
 import { emitActivity } from '@/lib/data/activity'
 import { findColumns as _findColumns, createDefaultColumns as _createDefaultColumns } from '@/lib/data/columns'
-import { findLabels as _findLabels, findTaskLabels as _findTaskLabels } from '@/lib/data/labels'
+import { findLabels as _findLabels, findTaskLabels as _findTaskLabels, setTaskLabels as _setTaskLabels } from '@/lib/data/labels'
 import { findDependencies as _findDependencies } from '@/lib/data/dependencies'
-import { findChecklistSummaries as _findChecklistSummaries } from '@/lib/data/checklist'
+import { findChecklistSummaries as _findChecklistSummaries, findChecklistItems as _findChecklistItems, createChecklistItemsBatch as _createChecklistItemsBatch } from '@/lib/data/checklist'
 import { vaultTask as _vaultTask } from '@/lib/data/vault'
 import { findPreferences } from '@/lib/data/preferences'
 
@@ -215,4 +215,54 @@ export async function archiveColumnTasks(projectId: string, columnId: string) {
   }
   revalidatePath(`/project/${projectId}`)
   return archived
+}
+
+export async function duplicateBoardTask(
+  sourceTaskId: string,
+  projectId: string,
+  newTaskId: string
+) {
+  const userId = await requireOwnership(projectId)
+
+  const source = await _findTaskById(sourceTaskId, projectId)
+  if (!source) throw new Error('Source task not found')
+
+  const allTasks = await _findTasks(projectId)
+  const columnTasks = allTasks.filter(t => t.columnId === source.columnId)
+  const maxOrder = columnTasks.reduce((max, t) => Math.max(max, t.orderIndex), -1)
+
+  const parsed = createTaskSchema.parse({
+    name: `Copy of ${source.name}`,
+    description: source.description ?? undefined,
+    columnId: source.columnId ?? undefined,
+    status: source.status,
+    priority: source.priority,
+    color: source.color,
+    onTimeline: source.onTimeline,
+    size: source.size,
+    orderIndex: maxOrder + 1,
+  })
+
+  const newTask = await _createTask(projectId, parsed, newTaskId)
+
+  const allTaskLabels = await _findTaskLabels(projectId)
+  const sourceLabelIds = allTaskLabels
+    .filter(tl => tl.taskId === sourceTaskId)
+    .map(tl => tl.labelId)
+  if (sourceLabelIds.length > 0) {
+    await _setTaskLabels(newTaskId, sourceLabelIds, projectId)
+  }
+
+  const checklistItems = await _findChecklistItems(sourceTaskId, projectId)
+  if (checklistItems.length > 0) {
+    await _createChecklistItemsBatch(
+      newTaskId,
+      checklistItems.map(item => ({ title: item.title, groupName: item.groupName ?? undefined }))
+    )
+  }
+
+  emitActivity(projectId, 'task', newTaskId, 'created', newTask.name, { duplicatedFrom: sourceTaskId }, userId).catch(() => {})
+
+  revalidatePath(`/project/${projectId}`)
+  return newTask
 }

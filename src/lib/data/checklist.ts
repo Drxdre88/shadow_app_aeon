@@ -172,6 +172,28 @@ export async function updateChecklistItemsBatch(
   return results
 }
 
+export async function reorderChecklistItems(
+  taskId: string,
+  updates: { id: string; orderIndex: number }[]
+) {
+  if (updates.length === 0) return
+  for (const u of updates) {
+    await db.update(checklistItems)
+      .set({ orderIndex: u.orderIndex })
+      .where(and(eq(checklistItems.id, u.id), eq(checklistItems.taskId, taskId)))
+  }
+}
+
+export async function deleteChecklistGroup(taskId: string, groupName: string) {
+  const deleted = await db
+    .delete(checklistItems)
+    .where(and(eq(checklistItems.taskId, taskId), eq(checklistItems.groupName, groupName)))
+    .returning({ id: checklistItems.id })
+
+  syncChecklistToGanttProgress(taskId).catch(() => {})
+  return deleted.length
+}
+
 export async function deleteChecklistItem(itemId: string, taskId: string) {
   const [deleted] = await db
     .delete(checklistItems)

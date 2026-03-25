@@ -1,10 +1,26 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Check, Plus, X, Calendar, ChevronDown, ChevronRight } from 'lucide-react'
+import { motion } from 'framer-motion'
+import { Check, Plus, X, Calendar, ChevronDown, ChevronRight, GripVertical, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils/cn'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 export type CheckState = 'unchecked' | 'checked' | 'crossed'
 export type ChecklistStatus = 'live' | 'blocked' | 'awaiting_dev' | null
@@ -38,6 +54,9 @@ interface TaskChecklistProps {
   onItemTitleChange?: (itemId: string, title: string) => void
   onGroupRename?: (oldName: string, newName: string) => void
   onGroupAdd?: (groupName: string) => void
+  onGroupDelete?: (groupName: string) => void
+  onItemReorder?: (reorderedIds: { id: string; orderIndex: number }[]) => void
+  onGroupReorder?: (orderedGroups: string[]) => void
 }
 
 function nextState(current: CheckState): CheckState {
@@ -134,6 +153,375 @@ function StatusBadge({
   )
 }
 
+interface SortableChecklistItemProps {
+  item: ChecklistItem
+  editingItemId: string | null
+  editingItemTitle: string
+  onToggle: (itemId: string, newState: CheckState) => void
+  onRemove: (itemId: string) => void
+  onStatusChange: (itemId: string, status: ChecklistStatus) => void
+  onTitleChange: (itemId: string, title: string) => void
+  onEditStart: (itemId: string, title: string) => void
+  onEditCommit: () => void
+  onEditCancel: () => void
+  onEditTitleChange: (value: string) => void
+}
+
+function SortableChecklistItem({
+  item,
+  editingItemId,
+  editingItemTitle,
+  onToggle,
+  onRemove,
+  onStatusChange,
+  onTitleChange,
+  onEditStart,
+  onEditCommit,
+  onEditCancel,
+  onEditTitleChange,
+}: SortableChecklistItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        'group p-2.5 rounded-lg border transition-colors duration-200',
+        'bg-white/[0.03] border-white/[0.06]',
+        item.state === 'checked' && 'border-emerald-500/10',
+        item.state === 'crossed' && 'border-red-500/10',
+        isDragging && 'opacity-50 scale-[1.02] shadow-lg shadow-black/40 z-50 relative'
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <button
+          {...attributes}
+          {...listeners}
+          className="flex-shrink-0 opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity touch-none"
+          tabIndex={-1}
+        >
+          <GripVertical className="w-3 h-3 text-slate-600" />
+        </button>
+
+        <TriStateCheckbox
+          state={item.state}
+          onClick={() => onToggle(item.id, nextState(item.state))}
+        />
+
+        {editingItemId === item.id ? (
+          <form
+            onSubmit={(e) => { e.preventDefault(); onEditCommit() }}
+            className="flex-1 min-w-0"
+          >
+            <input
+              type="text"
+              value={editingItemTitle}
+              onChange={(e) => onEditTitleChange(e.target.value)}
+              onBlur={onEditCommit}
+              onKeyDown={(e) => { if (e.key === 'Escape') onEditCancel() }}
+              className={cn(
+                'w-full px-2 py-0.5 rounded-md text-sm',
+                'bg-white/5 border border-white/20',
+                'text-white',
+                'focus:outline-none focus:ring-1 focus:ring-emerald-500/40'
+              )}
+              autoFocus
+              autoComplete="off"
+            />
+          </form>
+        ) : (
+          <p
+            onDoubleClick={() => onEditStart(item.id, item.title)}
+            className={cn(
+              'flex-1 text-sm transition-all duration-200 min-w-0 cursor-text',
+              item.state === 'checked' && 'line-through text-slate-500',
+              item.state === 'crossed' && 'line-through text-red-400/50',
+              item.state === 'unchecked' && 'text-slate-300'
+            )}
+          >
+            {item.title}
+          </p>
+        )}
+
+        <StatusBadge
+          status={item.status}
+          onStatusChange={(s) => onStatusChange(item.id, s)}
+        />
+
+        <button
+          onClick={() => onRemove(item.id)}
+          className={cn(
+            'flex-shrink-0 p-1 rounded text-slate-600 hover:text-red-400',
+            'hover:bg-red-500/10 transition-all duration-200',
+            'opacity-0 group-hover:opacity-100'
+          )}
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </div>
+
+      {(item.startDate || item.endDate) && (
+        <div className="flex items-center gap-1 mt-1.5 ml-12 text-xs text-slate-500">
+          <Calendar className="w-3 h-3" />
+          {item.startDate && format(new Date(item.startDate), 'MMM d')}
+          {item.startDate && item.endDate && ' - '}
+          {item.endDate && format(new Date(item.endDate), 'MMM d')}
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface SortableGroupSectionProps {
+  groupName: string
+  items: ChecklistItem[]
+  isCollapsed: boolean
+  isEditing: boolean
+  editingGroupValue: string
+  confirmingDelete: boolean
+  editingItemId: string | null
+  editingItemTitle: string
+  addingInGroup: boolean
+  newItemTitle: string
+  titleMax: number
+  sensors: ReturnType<typeof useSensors>
+  onToggleCollapse: () => void
+  onEditGroupStart: () => void
+  onEditGroupChange: (v: string) => void
+  onEditGroupCommit: () => void
+  onEditGroupCancel: () => void
+  onDeleteStart: () => void
+  onDeleteConfirm: () => void
+  onDeleteCancel: () => void
+  onItemToggle: (id: string, state: CheckState) => void
+  onItemRemove: (id: string) => void
+  onItemStatusChange: (id: string, status: ChecklistStatus) => void
+  onItemTitleChange: (id: string, title: string) => void
+  onItemEditStart: (id: string, title: string) => void
+  onItemEditCommit: () => void
+  onItemEditCancel: () => void
+  onItemEditTitleChange: (v: string) => void
+  onItemDragEnd: (event: DragEndEvent) => void
+  onAddStart: () => void
+  onAddChange: (v: string) => void
+  onAddSubmit: (e: React.FormEvent) => void
+  onAddCancel: () => void
+}
+
+function SortableGroupSection({
+  groupName, items, isCollapsed, isEditing, editingGroupValue, confirmingDelete,
+  editingItemId, editingItemTitle, addingInGroup, newItemTitle, titleMax, sensors,
+  onToggleCollapse, onEditGroupStart, onEditGroupChange, onEditGroupCommit, onEditGroupCancel,
+  onDeleteStart, onDeleteConfirm, onDeleteCancel,
+  onItemToggle, onItemRemove, onItemStatusChange, onItemTitleChange,
+  onItemEditStart, onItemEditCommit, onItemEditCancel, onItemEditTitleChange,
+  onItemDragEnd, onAddStart, onAddChange, onAddSubmit, onAddCancel,
+}: SortableGroupSectionProps) {
+  const {
+    attributes: groupAttributes,
+    listeners: groupListeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: groupName })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
+  const checkedCount = items.filter((i) => i.state === 'checked').length
+  const crossedCount = items.filter((i) => i.state === 'crossed').length
+  const total = items.length
+  const progress = total > 0 ? (checkedCount / total) * 100 : 0
+
+  return (
+    <div ref={setNodeRef} style={style} className={cn('space-y-2', isDragging && 'opacity-50 z-50 relative')}>
+      <div className="flex items-center justify-between group/header">
+        {isEditing ? (
+          <form
+            onSubmit={(e) => { e.preventDefault(); onEditGroupCommit() }}
+            className="flex items-center gap-1.5 flex-1"
+          >
+            <input
+              type="text"
+              value={editingGroupValue}
+              onChange={(e) => onEditGroupChange(e.target.value)}
+              onBlur={onEditGroupCommit}
+              onKeyDown={(e) => { if (e.key === 'Escape') onEditGroupCancel() }}
+              className={cn(
+                'flex-1 px-2 py-0.5 rounded-md text-sm font-medium',
+                'bg-white/5 border border-white/20',
+                'text-white',
+                'focus:outline-none focus:ring-1 focus:ring-purple-500/40'
+              )}
+              autoFocus
+              autoComplete="off"
+            />
+          </form>
+        ) : (
+          <div className="flex items-center gap-1 flex-1 min-w-0">
+            <button
+              {...groupAttributes}
+              {...groupListeners}
+              className="flex-shrink-0 opacity-0 group-hover/header:opacity-100 cursor-grab active:cursor-grabbing transition-opacity touch-none"
+              tabIndex={-1}
+            >
+              <GripVertical className="w-3.5 h-3.5 text-slate-600" />
+            </button>
+            <button
+              onClick={onToggleCollapse}
+              onDoubleClick={(e) => { e.stopPropagation(); onEditGroupStart() }}
+              className="flex items-center gap-1.5 text-sm font-medium text-white hover:text-slate-300 transition-colors"
+            >
+              {isCollapsed
+                ? <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+              }
+              {groupName}
+              <span className="text-xs text-slate-500 font-normal ml-1">
+                {checkedCount}/{total}
+                {crossedCount > 0 && <span className="text-red-400/60 ml-1">({crossedCount} blocked)</span>}
+              </span>
+            </button>
+          </div>
+        )}
+
+        {confirmingDelete ? (
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <span className="text-[10px] text-red-400 mr-1">Delete {total} items?</span>
+            <button
+              onClick={onDeleteConfirm}
+              className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors"
+            >
+              Yes
+            </button>
+            <button
+              onClick={onDeleteCancel}
+              className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10 transition-colors"
+            >
+              No
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onDeleteStart}
+            className={cn(
+              'flex-shrink-0 p-1 rounded text-slate-600 hover:text-red-400',
+              'hover:bg-red-500/10 transition-all duration-200',
+              'opacity-0 group-hover/header:opacity-100'
+            )}
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+
+      {total > 0 && !isCollapsed && (
+        <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+          <motion.div
+            className="h-full rounded-full"
+            style={{
+              background: 'linear-gradient(90deg, #10b981, #06d6a0)',
+              boxShadow: '0 0 8px rgba(16,185,129,0.5)',
+            }}
+            initial={{ width: 0 }}
+            animate={{ width: `${progress}%` }}
+            transition={{ duration: 0.3 }}
+          />
+        </div>
+      )}
+
+      {!isCollapsed && (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onItemDragEnd}>
+          <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-1">
+              {items.map((item) => (
+                <SortableChecklistItem
+                  key={item.id}
+                  item={item}
+                  editingItemId={editingItemId}
+                  editingItemTitle={editingItemTitle}
+                  onToggle={onItemToggle}
+                  onRemove={onItemRemove}
+                  onStatusChange={onItemStatusChange}
+                  onTitleChange={onItemTitleChange}
+                  onEditStart={onItemEditStart}
+                  onEditCommit={onItemEditCommit}
+                  onEditCancel={onItemEditCancel}
+                  onEditTitleChange={onItemEditTitleChange}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      )}
+
+      {!isCollapsed && addingInGroup && (
+        <motion.form
+          onSubmit={onAddSubmit}
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-0.5"
+        >
+          <div className="flex items-center gap-2 px-2.5 py-1.5">
+            <div className="flex-shrink-0 w-3 h-3" />
+            <div className="flex-shrink-0 w-5 h-5 rounded border-2 border-white/10" />
+            <input
+              type="text"
+              value={newItemTitle}
+              onChange={(e) => onAddChange(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') onAddCancel() }}
+              onBlur={() => { if (!newItemTitle.trim()) onAddCancel() }}
+              placeholder="Add an item..."
+              className={cn(
+                'flex-1 px-0 py-0 text-sm bg-transparent border-none',
+                'text-white placeholder-slate-500',
+                'focus:outline-none',
+                newItemTitle.length > titleMax && 'text-red-400'
+              )}
+              autoFocus
+              autoComplete="off"
+            />
+          </div>
+          {newItemTitle.length > titleMax * 0.9 && (
+            <p className={cn(
+              'text-[10px] ml-9',
+              newItemTitle.length > titleMax ? 'text-red-400' : 'text-slate-500'
+            )}>
+              {newItemTitle.length}/{titleMax}
+            </p>
+          )}
+        </motion.form>
+      )}
+
+      {!isCollapsed && !addingInGroup && (
+        <button
+          onClick={onAddStart}
+          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-400 transition-colors mt-1"
+        >
+          <Plus className="w-3 h-3" />
+          Add item
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function TaskChecklist({
   taskId,
   items,
@@ -145,6 +533,9 @@ export function TaskChecklist({
   onItemTitleChange,
   onGroupRename,
   onGroupAdd,
+  onGroupDelete,
+  onItemReorder,
+  onGroupReorder,
 }: TaskChecklistProps) {
   const [addingInGroup, setAddingInGroup] = useState<string | null>(null)
   const [newItemTitle, setNewItemTitle] = useState('')
@@ -155,10 +546,16 @@ export function TaskChecklist({
   const [editingItemTitle, setEditingItemTitle] = useState('')
   const [editingGroupName, setEditingGroupName] = useState<string | null>(null)
   const [editingGroupValue, setEditingGroupValue] = useState('')
+  const [confirmDeleteGroup, setConfirmDeleteGroup] = useState<string | null>(null)
 
   const groups = Array.from(new Set(items.map((i) => i.groupName)))
   const hasNoItems = items.length === 0
   const defaultGroup = groups.length > 0 ? groups[0] : 'Checklist'
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor)
+  )
 
   useEffect(() => {
     if (hasNoItems && !addingInGroup) {
@@ -176,10 +573,13 @@ export function TaskChecklist({
     })
   }
 
+  const TITLE_MAX = 2000
+
   const handleAddItem = (e: React.FormEvent, groupName: string) => {
     e.preventDefault()
-    if (!newItemTitle.trim()) return
-    onItemAdd?.(newItemTitle.trim(), groupName)
+    const trimmed = newItemTitle.trim()
+    if (!trimmed || trimmed.length > TITLE_MAX) return
+    onItemAdd?.(trimmed, groupName)
     setNewItemTitle('')
     setAddingInGroup(groupName)
   }
@@ -215,209 +615,82 @@ export function TaskChecklist({
     setEditingGroupValue('')
   }
 
+  const handleDragEnd = (event: DragEndEvent, groupName: string) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const groupItems = items.filter((i) => i.groupName === groupName)
+    const oldIndex = groupItems.findIndex((i) => i.id === active.id)
+    const newIndex = groupItems.findIndex((i) => i.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+
+    const reordered = arrayMove(groupItems, oldIndex, newIndex)
+    const updates = reordered.map((item, idx) => ({ id: item.id, orderIndex: idx }))
+    onItemReorder?.(updates)
+  }
+
+  const handleGroupDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = groups.findIndex((g) => g === active.id)
+    const newIndex = groups.findIndex((g) => g === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+
+    const reordered = arrayMove(groups, oldIndex, newIndex)
+    onGroupReorder?.(reordered)
+  }
+
   if (groups.length === 0) groups.push('Checklist')
 
   return (
     <div className="space-y-4">
-      {groups.map((groupName) => {
-        const groupItems = items.filter((i) => i.groupName === groupName)
-        const checkedCount = groupItems.filter((i) => i.state === 'checked').length
-        const crossedCount = groupItems.filter((i) => i.state === 'crossed').length
-        const total = groupItems.length
-        const progress = total > 0 ? (checkedCount / total) * 100 : 0
-        const isCollapsed = collapsedGroups.has(groupName)
-
-        return (
-          <div key={groupName} className="space-y-2">
-            <div className="flex items-center justify-between">
-              {editingGroupName === groupName ? (
-                <form
-                  onSubmit={(e) => { e.preventDefault(); commitGroupRename() }}
-                  className="flex items-center gap-1.5 flex-1"
-                >
-                  <input
-                    type="text"
-                    value={editingGroupValue}
-                    onChange={(e) => setEditingGroupValue(e.target.value)}
-                    onBlur={commitGroupRename}
-                    onKeyDown={(e) => { if (e.key === 'Escape') { setEditingGroupName(null); setEditingGroupValue('') } }}
-                    className={cn(
-                      'flex-1 px-2 py-0.5 rounded-md text-sm font-medium',
-                      'bg-white/5 border border-white/20',
-                      'text-white',
-                      'focus:outline-none focus:ring-1 focus:ring-purple-500/40'
-                    )}
-                    autoFocus
-                    autoComplete="off"
-                  />
-                </form>
-              ) : (
-                <button
-                  onClick={() => toggleGroup(groupName)}
-                  onDoubleClick={(e) => {
-                    e.stopPropagation()
-                    setEditingGroupName(groupName)
-                    setEditingGroupValue(groupName)
-                  }}
-                  className="flex items-center gap-1.5 text-sm font-medium text-white hover:text-slate-300 transition-colors"
-                >
-                  {isCollapsed
-                    ? <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
-                    : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
-                  }
-                  {groupName}
-                  <span className="text-xs text-slate-500 font-normal ml-1">
-                    {checkedCount}/{total}
-                    {crossedCount > 0 && <span className="text-red-400/60 ml-1">({crossedCount} blocked)</span>}
-                  </span>
-                </button>
-              )}
-            </div>
-
-            {total > 0 && !isCollapsed && (
-              <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                <motion.div
-                  className="h-full rounded-full"
-                  style={{
-                    background: 'linear-gradient(90deg, #10b981, #06d6a0)',
-                    boxShadow: '0 0 8px rgba(16,185,129,0.5)',
-                  }}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${progress}%` }}
-                  transition={{ duration: 0.3 }}
-                />
-              </div>
-            )}
-
-            <AnimatePresence mode="popLayout">
-              {!isCollapsed && groupItems.map((item) => (
-                <motion.div
-                  key={item.id}
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  className={cn(
-                    'group p-2.5 rounded-lg border transition-all duration-200',
-                    'bg-white/[0.03] border-white/[0.06]',
-                    item.state === 'checked' && 'border-emerald-500/10',
-                    item.state === 'crossed' && 'border-red-500/10'
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <TriStateCheckbox
-                      state={item.state}
-                      onClick={() => onItemToggle?.(item.id, nextState(item.state))}
-                    />
-
-                    {editingItemId === item.id ? (
-                      <form
-                        onSubmit={(e) => { e.preventDefault(); commitItemEdit() }}
-                        className="flex-1 min-w-0"
-                      >
-                        <input
-                          type="text"
-                          value={editingItemTitle}
-                          onChange={(e) => setEditingItemTitle(e.target.value)}
-                          onBlur={commitItemEdit}
-                          onKeyDown={(e) => { if (e.key === 'Escape') { setEditingItemId(null); setEditingItemTitle('') } }}
-                          className={cn(
-                            'w-full px-2 py-0.5 rounded-md text-sm',
-                            'bg-white/5 border border-white/20',
-                            'text-white',
-                            'focus:outline-none focus:ring-1 focus:ring-emerald-500/40'
-                          )}
-                          autoFocus
-                          autoComplete="off"
-                        />
-                      </form>
-                    ) : (
-                      <p
-                        onDoubleClick={() => {
-                          setEditingItemId(item.id)
-                          setEditingItemTitle(item.title)
-                        }}
-                        className={cn(
-                          'flex-1 text-sm transition-all duration-200 min-w-0 cursor-text',
-                          item.state === 'checked' && 'line-through text-slate-500',
-                          item.state === 'crossed' && 'line-through text-red-400/50',
-                          item.state === 'unchecked' && 'text-slate-300'
-                        )}
-                      >
-                        {item.title}
-                      </p>
-                    )}
-
-                    <StatusBadge
-                      status={item.status}
-                      onStatusChange={(s) => onItemStatusChange?.(item.id, s)}
-                    />
-
-                    <button
-                      onClick={() => onItemRemove?.(item.id)}
-                      className={cn(
-                        'flex-shrink-0 p-1 rounded text-slate-600 hover:text-red-400',
-                        'hover:bg-red-500/10 transition-all duration-200',
-                        'opacity-0 group-hover:opacity-100'
-                      )}
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-
-                  {(item.startDate || item.endDate) && (
-                    <div className="flex items-center gap-1 mt-1.5 ml-7 text-xs text-slate-500">
-                      <Calendar className="w-3 h-3" />
-                      {item.startDate && format(new Date(item.startDate), 'MMM d')}
-                      {item.startDate && item.endDate && ' - '}
-                      {item.endDate && format(new Date(item.endDate), 'MMM d')}
-                    </div>
-                  )}
-                </motion.div>
-              ))}
-            </AnimatePresence>
-
-            {!isCollapsed && addingInGroup === groupName && (
-              <motion.form
-                onSubmit={(e) => handleAddItem(e, groupName)}
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex items-center gap-2 px-2.5 py-1.5"
-              >
-                <div className="flex-shrink-0 w-5 h-5 rounded border-2 border-white/10" />
-                <input
-                  type="text"
-                  value={newItemTitle}
-                  onChange={(e) => setNewItemTitle(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') { setAddingInGroup(null); setNewItemTitle('') }
-                  }}
-                  onBlur={() => {
-                    if (!newItemTitle.trim()) { setAddingInGroup(null); setNewItemTitle('') }
-                  }}
-                  placeholder="Add an item..."
-                  className={cn(
-                    'flex-1 px-0 py-0 text-sm bg-transparent border-none',
-                    'text-white placeholder-slate-500',
-                    'focus:outline-none'
-                  )}
-                  autoFocus
-                  autoComplete="off"
-                />
-              </motion.form>
-            )}
-
-            {!isCollapsed && addingInGroup !== groupName && (
-              <button
-                onClick={() => { setAddingInGroup(groupName); setNewItemTitle('') }}
-                className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-400 transition-colors mt-1"
-              >
-                <Plus className="w-3 h-3" />
-                Add item
-              </button>
-            )}
-          </div>
-        )
-      })}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleGroupDragEnd}
+      >
+        <SortableContext items={groups} strategy={verticalListSortingStrategy}>
+          {groups.map((groupName) => (
+            <SortableGroupSection
+              key={groupName}
+              groupName={groupName}
+              items={items.filter((i) => i.groupName === groupName)}
+              isCollapsed={collapsedGroups.has(groupName)}
+              isEditing={editingGroupName === groupName}
+              editingGroupValue={editingGroupValue}
+              confirmingDelete={confirmDeleteGroup === groupName}
+              editingItemId={editingItemId}
+              editingItemTitle={editingItemTitle}
+              addingInGroup={addingInGroup === groupName}
+              newItemTitle={newItemTitle}
+              titleMax={TITLE_MAX}
+              sensors={sensors}
+              onToggleCollapse={() => toggleGroup(groupName)}
+              onEditGroupStart={() => { setEditingGroupName(groupName); setEditingGroupValue(groupName) }}
+              onEditGroupChange={setEditingGroupValue}
+              onEditGroupCommit={commitGroupRename}
+              onEditGroupCancel={() => { setEditingGroupName(null); setEditingGroupValue('') }}
+              onDeleteStart={() => setConfirmDeleteGroup(groupName)}
+              onDeleteConfirm={() => { onGroupDelete?.(groupName); setConfirmDeleteGroup(null) }}
+              onDeleteCancel={() => setConfirmDeleteGroup(null)}
+              onItemToggle={(id, state) => onItemToggle?.(id, state)}
+              onItemRemove={(id) => onItemRemove?.(id)}
+              onItemStatusChange={(id, status) => onItemStatusChange?.(id, status)}
+              onItemTitleChange={(id, title) => onItemTitleChange?.(id, title)}
+              onItemEditStart={(id, title) => { setEditingItemId(id); setEditingItemTitle(title) }}
+              onItemEditCommit={commitItemEdit}
+              onItemEditCancel={() => { setEditingItemId(null); setEditingItemTitle('') }}
+              onItemEditTitleChange={setEditingItemTitle}
+              onItemDragEnd={(event) => handleDragEnd(event, groupName)}
+              onAddStart={() => { setAddingInGroup(groupName); setNewItemTitle('') }}
+              onAddChange={setNewItemTitle}
+              onAddSubmit={(e) => handleAddItem(e, groupName)}
+              onAddCancel={() => { setAddingInGroup(null); setNewItemTitle('') }}
+            />
+          ))}
+        </SortableContext>
+      </DndContext>
 
       {addingGroup ? (
         <motion.form
