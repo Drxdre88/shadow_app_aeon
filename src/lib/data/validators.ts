@@ -174,7 +174,15 @@ export type CreateGanttTaskInput = z.infer<typeof createGanttTaskSchema>
 export type UpdateGanttTaskInput = z.infer<typeof updateGanttTaskSchema>
 export type CreateGanttViewInput = z.infer<typeof createGanttViewSchema>
 export type UpdateGanttViewInput = z.infer<typeof updateGanttViewSchema>
-export const addDependencySchema = z.object({
+export const createCommentSchema = z.object({
+  content: z.string().trim().min(1).max(10000),
+})
+
+export const updateCommentSchema = z.object({
+  content: z.string().trim().min(1).max(10000),
+})
+
+export const dependencyPairSchema = z.object({
   blockerTaskId: z.string().uuid(),
   blockedTaskId: z.string().uuid(),
 }).refine((data) => data.blockerTaskId !== data.blockedTaskId, {

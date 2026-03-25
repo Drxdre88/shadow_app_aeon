@@ -105,15 +105,17 @@ export async function updateBoardTask(
   if (parsed.status === 'done') {
     emitActivity(projectId, 'task', taskId, 'completed', task?.name, undefined, userId).catch(() => {})
 
-    const prefs = await findPreferences(userId)
-    if (prefs.completionMode === 'done') {
-      const vaulted = await _vaultTask(taskId, projectId, null)
-      if (vaulted) {
-        emitActivity(projectId, 'task', taskId, 'vaulted', task?.name, { auto: true }, userId).catch(() => {})
-        revalidatePath(`/project/${projectId}`)
-        return { ...task, autoVaulted: true, vaultEntry: vaulted }
+    try {
+      const prefs = await findPreferences(userId)
+      if (prefs.completionMode === 'vault') {
+        const vaulted = await _vaultTask(taskId, projectId, null)
+        if (vaulted) {
+          emitActivity(projectId, 'task', taskId, 'vaulted', task?.name, { auto: true }, userId).catch(() => {})
+          revalidatePath(`/project/${projectId}`)
+          return { ...task, autoVaulted: true, vaultEntry: vaulted }
+        }
       }
-    }
+    } catch {}
   } else if (parsed.columnId) {
     emitActivity(projectId, 'task', taskId, 'moved', task?.name, { fromColumnId: existing?.columnId, toColumnId: parsed.columnId }, userId).catch(() => {})
   } else {
@@ -166,7 +168,7 @@ export async function reorderBoardTasks(
     const prefs = await findPreferences(userId)
     for (const u of doneUpdates) {
       emitActivity(projectId, 'task', u.id, 'completed', u.name, { via: 'drag' }, userId).catch(() => {})
-      if (prefs.completionMode === 'done') {
+      if (prefs.completionMode === 'vault') {
         const vaulted = await _vaultTask(u.id, projectId, null)
         if (vaulted) {
           autoVaultedIds.push(u.id)

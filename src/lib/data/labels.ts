@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { labels, taskLabels, boardTasks } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 import type { CreateLabelInput } from './validators'
 
 export async function findLabels(projectId: string, limit = 100, offset = 0) {
@@ -21,6 +21,14 @@ export async function findTaskLabels(projectId: string) {
     .from(taskLabels)
     .innerJoin(boardTasks, eq(boardTasks.id, taskLabels.taskId))
     .where(eq(boardTasks.projectId, projectId))
+}
+
+export async function findLabelsForTask(taskId: string, projectId: string) {
+  return db
+    .select({ labelId: taskLabels.labelId })
+    .from(taskLabels)
+    .innerJoin(boardTasks, and(eq(boardTasks.id, taskLabels.taskId), eq(boardTasks.projectId, projectId)))
+    .where(eq(taskLabels.taskId, taskId))
 }
 
 export async function createLabel(
@@ -86,10 +94,8 @@ export async function setTaskLabels(taskId: string, labelIds: string[], projectI
 
   if (labelIds.length > 0) {
     const validLabels = await db.select({ id: labels.id }).from(labels)
-      .where(and(eq(labels.projectId, projectId)))
-    const validIds = new Set(validLabels.map((l) => l.id))
-    const filtered = labelIds.filter((id) => validIds.has(id))
-    if (filtered.length !== labelIds.length) throw new Error('Some labels not found in project')
+      .where(and(eq(labels.projectId, projectId), inArray(labels.id, labelIds)))
+    if (validLabels.length !== labelIds.length) throw new Error('Some labels not found in project')
   }
 
   await db.transaction(async (tx) => {
@@ -106,6 +112,10 @@ export async function removeLabelFromTask(taskId: string, labelId: string, proje
   const [task] = await db.select({ id: boardTasks.id }).from(boardTasks)
     .where(and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, projectId)))
   if (!task) throw new Error('Task not found in project')
+
+  const [label] = await db.select({ id: labels.id }).from(labels)
+    .where(and(eq(labels.id, labelId), eq(labels.projectId, projectId)))
+  if (!label) throw new Error('Label not found in project')
 
   await db
     .delete(taskLabels)
