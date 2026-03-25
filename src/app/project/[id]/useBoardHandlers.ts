@@ -172,10 +172,13 @@ export function useBoardHandlers(projectId: string) {
 
   const handleVaultConfirm = useCallback((daysTaken: number | null) => {
     if (!vaultTarget) return
-    const { removeTask } = useBoardStore.getState()
+    const { tasks, removeTask, addTask } = useBoardStore.getState()
+    const snapshot = tasks.find(t => t.id === vaultTarget.taskId)
     removeTask(vaultTarget.taskId)
     sendToVault(vaultTarget.taskId, projectId, daysTaken, vaultTarget.taskName).catch((err) => {
       console.error('Failed to vault task:', err)
+      if (snapshot) addTask(snapshot)
+      toast('Failed to send to vault')
     })
     setVaultTarget(null)
   }, [vaultTarget, projectId])
@@ -193,25 +196,37 @@ export function useBoardHandlers(projectId: string) {
   }, [])
 
   const handleBatchVaultConfirm = useCallback((entries: { taskId: string; daysTaken: number | null; taskName: string }[]) => {
-    const { removeTask } = useBoardStore.getState()
+    const { tasks, removeTask, addTask } = useBoardStore.getState()
+    const snapshots = entries.map(e => tasks.find(t => t.id === e.taskId)).filter(Boolean)
     entries.forEach(e => removeTask(e.taskId))
     sendBatchToVault(projectId, entries).catch((err) => {
       console.error('Failed to batch vault:', err)
+      snapshots.forEach(s => { if (s) addTask(s) })
+      toast('Failed to send to vault')
     })
     setBatchVaultTarget(null)
   }, [projectId])
 
   const handleArchiveTask = useCallback((taskId: string) => {
-    const { removeTask } = useBoardStore.getState()
+    const { tasks, removeTask, addTask } = useBoardStore.getState()
+    const snapshot = tasks.find(t => t.id === taskId)
     removeTask(taskId)
-    archiveBoardTask(taskId, projectId).catch((err) => console.error('Failed to archive task:', err))
+    archiveBoardTask(taskId, projectId).catch((err) => {
+      console.error('Failed to archive task:', err)
+      if (snapshot) addTask(snapshot)
+      toast('Failed to archive task')
+    })
   }, [projectId])
 
   const handleArchiveColumn = useCallback((columnId: string) => {
-    const { tasks, removeTask } = useBoardStore.getState()
+    const { tasks, removeTask, addTask } = useBoardStore.getState()
     const columnTasks = tasks.filter(t => t.columnId === columnId)
     columnTasks.forEach(t => removeTask(t.id))
-    archiveColumnTasks(projectId, columnId).catch((err) => console.error('Failed to archive column tasks:', err))
+    archiveColumnTasks(projectId, columnId).catch((err) => {
+      console.error('Failed to archive column tasks:', err)
+      columnTasks.forEach(t => addTask(t))
+      toast('Failed to archive column tasks')
+    })
   }, [projectId])
 
   return {

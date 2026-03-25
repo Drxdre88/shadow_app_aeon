@@ -78,6 +78,13 @@ export async function vaultTask(
 
   if (!task) return null
 
+  const [existingVault] = await db
+    .select({ id: taskVault.id })
+    .from(taskVault)
+    .where(and(eq(taskVault.originalTaskId, taskId), eq(taskVault.projectId, projectId)))
+    .limit(1)
+  if (existingVault) return null
+
   const snapshot = await snapshotTaskData(taskId, projectId)
 
   const [vaulted] = await db.transaction(async (tx) => {

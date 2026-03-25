@@ -43,7 +43,7 @@ export function ToastContainer() {
 
   useEffect(() => {
     addToastGlobal = addToast
-    return () => { addToastGlobal = null }
+    return () => { addToastGlobal = null; lastUndoRef = null }
   }, [addToast])
 
   useEffect(() => {

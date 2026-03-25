@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createPortal } from 'react-dom'
-import { Archive, X, Flag } from 'lucide-react'
+import { Archive, X } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useThemeStore } from '@/stores/themeStore'
 
@@ -60,7 +60,7 @@ export function BatchVaultModal({ isOpen, columnName, tasks, onConfirm, onClose 
 
   const handleSubmit = () => {
     const result = entries.map(e => {
-      const parsed = e.daysTaken.trim() ? parseInt(e.daysTaken, 10) : null
+      const parsed = e.daysTaken.trim() ? Math.round(parseFloat(e.daysTaken)) : null
       return {
         taskId: e.taskId,
         daysTaken: parsed !== null && !isNaN(parsed) && parsed >= 0 ? parsed : null,
@@ -124,6 +124,7 @@ export function BatchVaultModal({ isOpen, columnName, tasks, onConfirm, onClose 
                   type="number"
                   min="0"
                   max="9999"
+                  step="1"
                   value={entry.daysTaken}
                   onChange={(e) => updateDays(entry.taskId, e.target.value)}
                   placeholder="Days"

@@ -7,11 +7,16 @@ import {
   deleteChecklistItem,
 } from '@/lib/data/checklist'
 import { verifyProjectOwnership } from '@/lib/data/projects'
+import { findTaskById } from '@/lib/data/tasks'
 import type { RegisterFn } from './types'
 import { getUserId, ok, notFound } from './types'
 
 async function requireOwnership(projectId: string, uid: string) {
   return !!(await verifyProjectOwnership(projectId, uid))
+}
+
+async function requireTaskInProject(taskId: string, projectId: string) {
+  return !!(await findTaskById(taskId, projectId))
 }
 
 export const registerChecklistTools: RegisterFn = (server) => {
@@ -27,6 +32,7 @@ export const registerChecklistTools: RegisterFn = (server) => {
     async ({ projectId, taskId, title, groupName }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
+      if (!await requireTaskInProject(taskId, projectId)) return notFound('Task')
       return ok(await createChecklistItem(taskId, { title, groupName }))
     }
   )
@@ -45,6 +51,7 @@ export const registerChecklistTools: RegisterFn = (server) => {
     async ({ projectId, taskId, itemId, ...updates }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
+      if (!await requireTaskInProject(taskId, projectId)) return notFound('Task')
       const item = await updateChecklistItem(itemId, taskId, updates)
       return item ? ok(item) : notFound('Checklist item')
     }
@@ -61,6 +68,7 @@ export const registerChecklistTools: RegisterFn = (server) => {
     async ({ projectId, taskId, itemId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
+      if (!await requireTaskInProject(taskId, projectId)) return notFound('Task')
       const deleted = await deleteChecklistItem(itemId, taskId)
       return deleted ? ok({ deleted: true }) : notFound('Checklist item')
     }
@@ -80,6 +88,7 @@ export const registerChecklistTools: RegisterFn = (server) => {
     async ({ projectId, taskId, items }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
+      if (!await requireTaskInProject(taskId, projectId)) return notFound('Task')
       const created = await createChecklistItemsBatch(taskId, items)
       return ok({ created: created.length, items: created.map((i) => ({ id: i.id, title: i.title })) })
     }
@@ -101,6 +110,7 @@ export const registerChecklistTools: RegisterFn = (server) => {
     async ({ projectId, taskId, items }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
+      if (!await requireTaskInProject(taskId, projectId)) return notFound('Task')
       const updated = await updateChecklistItemsBatch(taskId, items)
       return ok({ updated: updated.length, items: updated.map((i) => ({ id: i.id, title: i.title, state: i.state })) })
     }

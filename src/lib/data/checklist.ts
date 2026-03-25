@@ -2,6 +2,8 @@ import { db } from '@/lib/db'
 import { checklistItems, boardTasks } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { syncChecklistToGanttProgress } from './bridge'
+import { findTaskLabels } from './labels'
+import { findDependencies } from './dependencies'
 
 export async function findChecklistItems(taskId: string, projectId: string) {
   return db
@@ -214,13 +216,11 @@ export async function findTaskWithDetails(taskId: string, projectId: string) {
 
   const items = await findChecklistItems(taskId, projectId)
 
-  const { findTaskLabels } = await import('./labels')
   const taskLabels = await findTaskLabels(task.projectId)
   const assignedLabels = taskLabels
     .filter((tl) => tl.taskId === taskId)
     .map((tl) => tl.labelId)
 
-  const { findDependencies } = await import('./dependencies')
   const allDeps = await findDependencies(task.projectId)
   const blocks = allDeps
     .filter((d) => d.blockerTaskId === taskId)

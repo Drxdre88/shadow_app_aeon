@@ -59,6 +59,10 @@ type TriState = 'unchecked' | 'checked' | 'crossed'
 
 export const crossedTaskIds = new Set<string>()
 
+export function clearCrossedState() {
+  crossedTaskIds.clear()
+}
+
 function nextTriState(s: TriState): TriState {
   if (s === 'unchecked') return 'checked'
   if (s === 'checked') return 'crossed'
