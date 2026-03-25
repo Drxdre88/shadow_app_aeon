@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { X, Check, Columns3, Tag, AlertTriangle, GitBranch, ArrowDownAZ, ListOrdered } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { useBoardStore } from '@/lib/store/boardStore'
+import { useColumns, useTasks, useLabels, useDependencies } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { colorConfig, generateId } from '@/lib/utils/colors'
 
@@ -90,7 +90,10 @@ export function GanttViewModal({ projectId, mode, existingView, onConfirm, onClo
   const [allowMultipleRows, setAllowMultipleRows] = useState(existingView?.allowMultipleRows ?? false)
   const [allowOverlap, setAllowOverlap] = useState(existingView?.allowOverlap ?? false)
 
-  const { columns, tasks, labels, dependencies } = useBoardStore()
+  const columns = useColumns()
+  const tasks = useTasks()
+  const labels = useLabels()
+  const dependencies = useDependencies()
   const { colors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
 
@@ -167,14 +170,22 @@ export function GanttViewModal({ projectId, mode, existingView, onConfirm, onClo
           }
         }
 
-        const independentCount = tasks.filter((t) => !visited.has(t.id)).length +
-          tasks.filter((t) => visited.has(t.id) && !hasBlocker.has(t.id) && !graph.has(t.id)).length
+        const chainedIds = new Set<string>()
+        for (const root of rootTasks) {
+          if (!graph.has(root.id) && !hasBlocker.has(root.id)) continue
+          const queue = [root.id]
+          while (queue.length > 0) {
+            const current = queue.shift()!
+            if (chainedIds.has(current)) continue
+            chainedIds.add(current)
+            const children = graph.get(current) || []
+            queue.push(...children)
+          }
+        }
+        const independentCount = tasks.filter((t) => !chainedIds.has(t.id)).length
 
         if (independentCount > 0 || chains.length === 0) {
-          chains.push({ name: 'Independent', count: tasks.length - [...visited].filter((id) => {
-            const inChain = chains.some((c) => c.count > 1)
-            return inChain
-          }).length })
+          chains.push({ name: 'Independent', count: independentCount })
         }
 
         return chains.map((c) => ({ name: c.name, color: 'purple', count: c.count }))

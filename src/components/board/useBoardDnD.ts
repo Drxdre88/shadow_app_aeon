@@ -6,7 +6,7 @@ import { useBoardStore, type BoardColumn, type BoardTask } from '@/lib/store/boa
 interface UseBoardDnDProps {
   projectTasks: BoardTask[]
   sortedColumns: BoardColumn[]
-  onTaskMove?: (updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[]) => void
+  onTaskMove?: (updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[], snapshot?: { id: string; columnId?: string; orderIndex: number }[]) => void
   onTaskDelete?: (taskId: string) => void
   onColumnReorder?: (updates: { id: string; orderIndex: number }[]) => void
 }
@@ -18,10 +18,14 @@ export function useBoardDnD({
   onTaskDelete,
   onColumnReorder,
 }: UseBoardDnDProps) {
-  const { moveTask, removeTask, updateTask, reorderColumns } = useBoardStore()
+  const moveTask = useBoardStore((s) => s.moveTask)
+  const removeTask = useBoardStore((s) => s.removeTask)
+  const updateTask = useBoardStore((s) => s.updateTask)
+  const reorderColumns = useBoardStore((s) => s.reorderColumns)
   const [activeItem, setActiveItem] = useState<{ type: 'task' | 'column'; data: BoardTask | BoardColumn } | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
   const pendingMoveRef = useRef<{ id: string; columnId: string; orderIndex: number; name: string } | null>(null)
+  const dragSnapshotRef = useRef<{ id: string; columnId?: string; orderIndex: number }[] | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -37,7 +41,10 @@ export function useBoardDnD({
       if (col) setActiveItem({ type: 'column', data: col })
     } else {
       const task = projectTasks.find((t) => t.id === active.id)
-      if (task) setActiveItem({ type: 'task', data: task })
+      if (task) {
+        setActiveItem({ type: 'task', data: task })
+        dragSnapshotRef.current = projectTasks.map(t => ({ id: t.id, columnId: t.columnId, orderIndex: t.orderIndex }))
+      }
     }
   }, [projectTasks, sortedColumns])
 
@@ -69,14 +76,16 @@ export function useBoardDnD({
       moveTask(activeId, overColumnId, tasksInColumn.length)
       pendingMoveRef.current = { id: activeId, columnId: overColumnId, orderIndex: tasksInColumn.length, name: activeTask.name }
     }
-  }, [projectTasks, sortedColumns, moveTask, onTaskMove])
+  }, [projectTasks, sortedColumns, moveTask])
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
     const activeType = active.data.current?.type
 
     const pendingMove = pendingMoveRef.current
+    const snapshot = dragSnapshotRef.current
     pendingMoveRef.current = null
+    dragSnapshotRef.current = null
     setActiveItem(null)
     setOverId(null)
 
@@ -84,7 +93,7 @@ export function useBoardDnD({
       if (pendingMove) {
         const targetCol = sortedColumns.find((c) => c.id === pendingMove.columnId)
         const isDone = targetCol?.name.toLowerCase() === 'done'
-        onTaskMove?.([{ id: pendingMove.id, orderIndex: pendingMove.orderIndex, columnId: pendingMove.columnId, name: pendingMove.name, ...(isDone && { status: 'done' }) }])
+        onTaskMove?.([{ id: pendingMove.id, orderIndex: pendingMove.orderIndex, columnId: pendingMove.columnId, name: pendingMove.name, ...(isDone && { status: 'done' }) }], snapshot ?? undefined)
       }
       return
     }
@@ -138,9 +147,9 @@ export function useBoardDnD({
           const targetCol = sortedColumns.find((c) => c.id === pendingMove.columnId)
           const isDone = targetCol?.name.toLowerCase() === 'done'
           const crossColUpdate = { id: pendingMove.id, orderIndex: pendingMove.orderIndex, columnId: pendingMove.columnId, name: pendingMove.name, ...(isDone && { status: 'done' as const }) }
-          onTaskMove?.([crossColUpdate, ...moveUpdates])
+          onTaskMove?.([crossColUpdate, ...moveUpdates], snapshot ?? undefined)
         } else if (moveUpdates.length > 0) {
-          onTaskMove?.(moveUpdates)
+          onTaskMove?.(moveUpdates, snapshot ?? undefined)
         }
         return
       }
@@ -149,14 +158,24 @@ export function useBoardDnD({
     if (pendingMove) {
       const targetCol = sortedColumns.find((c) => c.id === pendingMove.columnId)
       const isDone = targetCol?.name.toLowerCase() === 'done'
-      onTaskMove?.([{ id: pendingMove.id, orderIndex: pendingMove.orderIndex, columnId: pendingMove.columnId, name: pendingMove.name, ...(isDone && { status: 'done' }) }])
+      onTaskMove?.([{ id: pendingMove.id, orderIndex: pendingMove.orderIndex, columnId: pendingMove.columnId, name: pendingMove.name, ...(isDone && { status: 'done' }) }], snapshot ?? undefined)
     }
   }, [projectTasks, sortedColumns, removeTask, updateTask, reorderColumns, onTaskMove, onTaskDelete, onColumnReorder])
 
   const handleDragCancel = useCallback(() => {
+    const snapshot = dragSnapshotRef.current
+    if (snapshot && pendingMoveRef.current) {
+      for (const snap of snapshot) {
+        if (snap.columnId) {
+          moveTask(snap.id, snap.columnId, snap.orderIndex)
+        }
+      }
+    }
+    pendingMoveRef.current = null
+    dragSnapshotRef.current = null
     setActiveItem(null)
     setOverId(null)
-  }, [])
+  }, [moveTask])
 
   return {
     sensors,

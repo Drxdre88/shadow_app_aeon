@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Plus, Tag, Check, Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { useBoardStore } from '@/lib/store/boardStore'
+import { useBoardStore, useLabels, useTasks } from '@/lib/store/boardStore'
 import { AccentColor, colorConfig, generateId, hexToRgba } from '@/lib/utils/colors'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
 
@@ -45,7 +45,12 @@ export function LabelPicker({
   const [newLabelName, setNewLabelName] = useState('')
   const [newLabelColor, setNewLabelColor] = useState<string>('purple')
   const menuRef = useRef<HTMLDivElement>(null)
-  const { labels, tasks, addLabel, updateLabel, removeLabel, updateTask } = useBoardStore()
+  const labels = useLabels()
+  const tasks = useTasks()
+  const addLabel = useBoardStore((s) => s.addLabel)
+  const updateLabel = useBoardStore((s) => s.updateLabel)
+  const removeLabel = useBoardStore((s) => s.removeLabel)
+  const updateTask = useBoardStore((s) => s.updateTask)
 
   const task = tasks.find((t) => t.id === taskId)
   const projectLabels = labels.filter((l) => l.projectId === projectId)
