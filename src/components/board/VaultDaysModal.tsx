@@ -41,7 +41,7 @@ export function VaultDaysModal({ isOpen, taskName, onConfirm, onClose }: VaultDa
   }, [isOpen, days])
 
   const handleSubmit = () => {
-    const parsed = days.trim() ? parseInt(days, 10) : null
+    const parsed = days.trim() ? Math.round(parseFloat(days)) : null
     if (parsed !== null && (isNaN(parsed) || parsed < 0)) return
     onConfirm(parsed)
   }
@@ -92,6 +92,7 @@ export function VaultDaysModal({ isOpen, taskName, onConfirm, onClose }: VaultDa
               type="number"
               min="0"
               max="9999"
+              step="1"
               value={days}
               onChange={(e) => setDays(e.target.value)}
               placeholder="Optional"

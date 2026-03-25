@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { activityEvents, taskVault, boardColumns } from '@/lib/db/schema'
-import { eq, and, gte, sql } from 'drizzle-orm'
+import { eq, and, gte, sql, inArray } from 'drizzle-orm'
 
 export type VelocityRange = '7d' | '30d' | '90d' | 'all'
 
@@ -12,13 +12,19 @@ function rangeToDate(range: VelocityRange): Date | null {
   return d
 }
 
+const DATE_TRUNC_FRAGMENTS: Record<string, ReturnType<typeof sql>> = {
+  day: sql`'day'`,
+  week: sql`'week'`,
+}
+
 export async function getCompletionVelocity(projectId: string, range: VelocityRange) {
   const since = rangeToDate(range)
   const interval = range === '7d' ? 'day' : range === '30d' ? 'day' : 'week'
+  const truncInterval = DATE_TRUNC_FRAGMENTS[interval]
 
   const conditions = [
     eq(activityEvents.projectId, projectId),
-    sql`${activityEvents.action} IN ('completed', 'vaulted')`,
+    inArray(activityEvents.action, ['completed', 'vaulted']),
   ]
   if (since) {
     conditions.push(gte(activityEvents.createdAt, since))
@@ -26,13 +32,13 @@ export async function getCompletionVelocity(projectId: string, range: VelocityRa
 
   const rows = await db
     .select({
-      period: sql<string>`date_trunc(${sql.raw(`'${interval}'`)}, ${activityEvents.createdAt})::date::text`,
+      period: sql<string>`date_trunc(${truncInterval}, ${activityEvents.createdAt})::date::text`,
       count: sql<number>`count(DISTINCT ${activityEvents.entityId})::int`,
     })
     .from(activityEvents)
     .where(and(...conditions))
-    .groupBy(sql`date_trunc(${sql.raw(`'${interval}'`)}, ${activityEvents.createdAt})`)
-    .orderBy(sql`date_trunc(${sql.raw(`'${interval}'`)}, ${activityEvents.createdAt})`)
+    .groupBy(sql`date_trunc(${truncInterval}, ${activityEvents.createdAt})`)
+    .orderBy(sql`date_trunc(${truncInterval}, ${activityEvents.createdAt})`)
 
   return rows
 }
@@ -107,9 +113,11 @@ export async function getColumnDwellTimes(projectId: string, range: VelocityRang
       dwellAccum.get(colName)!.push(dwellHours)
     }
 
-    prevEvent = toCol
-      ? { entityId: ev.entityId, toColumnId: toCol, time: new Date(ev.createdAt) }
-      : null
+    if (toCol) {
+      prevEvent = { entityId: ev.entityId, toColumnId: toCol, time: new Date(ev.createdAt) }
+    } else if (!prevEvent || prevEvent.entityId !== ev.entityId) {
+      prevEvent = null
+    }
   }
 
   return Array.from(dwellAccum.entries()).map(([column, hours]) => ({
@@ -124,7 +132,7 @@ export async function getActivityHeatmap(projectId: string, range: VelocityRange
 
   const conditions = [
     eq(activityEvents.projectId, projectId),
-    sql`${activityEvents.action} IN ('completed', 'vaulted')`,
+    inArray(activityEvents.action, ['completed', 'vaulted']),
   ]
   if (since) {
     conditions.push(gte(activityEvents.createdAt, since))

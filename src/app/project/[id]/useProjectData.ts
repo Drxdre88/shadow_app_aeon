@@ -8,6 +8,7 @@ import { getCanvasNodes, getCanvasEdges } from '@/lib/actions/canvas'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { useGanttStore } from '@/lib/store/ganttStore'
 import { useCanvasStore } from '@/lib/store/canvasStore'
+import { clearCrossedState } from '@/components/board/SortableTaskCard'
 
 export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' | 'canvas' | 'trophy' | 'velocity') {
   const [isLoading, setIsLoading] = useState(true)
@@ -18,6 +19,8 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
   const { setTasks: setGanttTasks, setRows } = useGanttStore()
   const { setNodes: setCanvasNodes, setEdges: setCanvasEdges } = useCanvasStore()
 
+  const fetchIdRef = useRef(0)
+
   useEffect(() => {
     const cachedTasks = useBoardStore.getState().tasks
     const hasCachedProject = cachedTasks.length > 0 && cachedTasks[0]?.projectId === projectId
@@ -26,14 +29,18 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
       if (!hasCachedProject) {
         setIsLoading(true)
         useBoardStore.setState({ columns: [], labels: [], dependencies: [] })
+        clearCrossedState()
       }
       setLoadError(null)
       setGanttTasks([])
       setRows([])
     }
 
+    const currentFetchId = ++fetchIdRef.current
+
     loadBoardData(projectId)
       .then(({ tasks: dbTasks, columns: dbColumns, labels: dbLabels, taskLabels: dbTaskLabels, dependencies: dbDependencies, checklistSummaries: dbChecklistSummaries }) => {
+        if (currentFetchId !== fetchIdRef.current) return
         if (!isInitialLoad.current && useBoardStore.getState().isDirty) return
 
         const taskLabelMap = new Map<string, string[]>()

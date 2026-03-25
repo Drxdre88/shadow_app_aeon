@@ -143,7 +143,7 @@ export async function reorderBoardTasks(
 ) {
   const userId = await requireOwnership(projectId)
   const movingIds = updates.filter(u => u.columnId).map(u => u.id)
-  let previousColumns = new Map<string, string | null>()
+  const previousColumns = new Map<string, string | null>()
   if (movingIds.length > 0) {
     const allTasks = await _findTasks(projectId)
     for (const t of allTasks) {
