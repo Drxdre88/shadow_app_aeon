@@ -7,9 +7,10 @@ import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { AccentColor, ACCENT_COLORS, colorConfig, generateId, hexToRgba } from '@/lib/utils/colors'
 import { NeonButton } from '@/components/ui/NeonButton'
+import { toast } from '@/components/ui/Toast'
 import { TaskChecklist, type ChecklistItem, type CheckState, type ChecklistStatus } from './TaskChecklist'
 import { TaskDependencySection } from './TaskDependencySection'
-import { getChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, renameChecklistGroup } from '@/lib/actions/checklist'
+import { getChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, renameChecklistGroup, reorderChecklistItems, deleteChecklistGroup } from '@/lib/actions/checklist'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
 import { TaskComments } from './TaskComments'
 
@@ -131,7 +132,10 @@ export function TaskEditModal({
       title,
       orderIndex: groupItems.length,
       groupName,
-    }).catch(() => {})
+    }).catch(() => {
+      setChecklistItems((prev) => prev.filter((i) => i.id !== newItem.id))
+      toast('Checklist item too long — keep it under 2000 characters')
+    })
   }, [editingTaskId, checklistItems, projectId])
 
   const handleChecklistToggle = useCallback((itemId: string, newState: CheckState) => {
@@ -174,15 +178,22 @@ export function TaskEditModal({
       title: placeholder.title,
       orderIndex: 0,
       groupName,
-    }).catch(() => {})
+    }).catch(() => {
+      setChecklistItems((prev) => prev.filter((i) => i.id !== placeholder.id))
+      toast('Failed to add checklist group')
+    })
   }, [editingTaskId, projectId])
 
   const handleItemTitleChange = useCallback((itemId: string, title: string) => {
     if (!editingTaskId) return
+    const prevItems = checklistItems
     setChecklistItems((prev) =>
       prev.map((i) => (i.id === itemId ? { ...i, title } : i))
     )
-    updateChecklistItem(itemId, editingTaskId, projectId, { title }).catch(() => {})
+    updateChecklistItem(itemId, editingTaskId, projectId, { title }).catch(() => {
+      setChecklistItems(prevItems)
+      toast('Checklist item too long — keep it under 2000 characters')
+    })
   }, [editingTaskId, projectId])
 
   const handleGroupRename = useCallback((oldName: string, newName: string) => {
@@ -192,6 +203,67 @@ export function TaskEditModal({
     )
     renameChecklistGroup(editingTaskId, projectId, oldName, newName).catch(() => {})
   }, [editingTaskId, projectId])
+
+  const handleChecklistReorder = useCallback((updates: { id: string; orderIndex: number }[]) => {
+    if (!editingTaskId) return
+    const orderMap = new Map(updates.map((u) => [u.id, u.orderIndex]))
+    setChecklistItems((prev) => {
+      const grouped = new Map<string, ChecklistItem[]>()
+      for (const item of prev) {
+        const g = grouped.get(item.groupName) ?? []
+        g.push(item)
+        grouped.set(item.groupName, g)
+      }
+      for (const [, group] of grouped) {
+        group.sort((a, b) => {
+          const ai = orderMap.has(a.id) ? orderMap.get(a.id)! : Infinity
+          const bi = orderMap.has(b.id) ? orderMap.get(b.id)! : Infinity
+          return ai - bi
+        })
+      }
+      return Array.from(grouped.values()).flat()
+    })
+    reorderChecklistItems(editingTaskId, projectId, updates).catch(() => {})
+  }, [editingTaskId, projectId])
+
+  const handleGroupDelete = useCallback((groupName: string) => {
+    if (!editingTaskId) return
+    const removedItems = checklistItems.filter((i) => i.groupName === groupName)
+    setChecklistItems((prev) => prev.filter((i) => i.groupName !== groupName))
+    deleteChecklistGroup(editingTaskId, projectId, groupName).catch(() => {
+      setChecklistItems((prev) => [...prev, ...removedItems])
+      toast('Failed to delete checklist group')
+    })
+  }, [editingTaskId, projectId, checklistItems])
+
+  const handleGroupReorder = useCallback((orderedGroups: string[]) => {
+    if (!editingTaskId) return
+    setChecklistItems((prev) => {
+      const grouped = new Map<string, ChecklistItem[]>()
+      for (const item of prev) {
+        const g = grouped.get(item.groupName) ?? []
+        g.push(item)
+        grouped.set(item.groupName, g)
+      }
+      const reordered: ChecklistItem[] = []
+      for (const gn of orderedGroups) {
+        const g = grouped.get(gn)
+        if (g) reordered.push(...g)
+      }
+      return reordered
+    })
+    const updates: { id: string; orderIndex: number }[] = []
+    let idx = 0
+    for (const gn of orderedGroups) {
+      const groupItems = checklistItems.filter((i) => i.groupName === gn)
+      for (const item of groupItems) {
+        updates.push({ id: item.id, orderIndex: idx++ })
+      }
+    }
+    if (updates.length > 0) {
+      reorderChecklistItems(editingTaskId, projectId, updates).catch(() => {})
+    }
+  }, [editingTaskId, projectId, checklistItems])
 
   const currentColorHex = formData.color.startsWith('#')
     ? formData.color
@@ -277,6 +349,9 @@ export function TaskEditModal({
                     onItemTitleChange={handleItemTitleChange}
                     onGroupRename={handleGroupRename}
                     onGroupAdd={handleGroupAdd}
+                    onGroupDelete={handleGroupDelete}
+                    onItemReorder={handleChecklistReorder}
+                    onGroupReorder={handleGroupReorder}
                   />
                 </div>
               )}

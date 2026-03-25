@@ -149,7 +149,7 @@ export const taskDependencies = pgTable('task_dependencies', {
 export const checklistItems = pgTable('checklist_items', {
   id: uuid('id').defaultRandom().primaryKey(),
   taskId: uuid('task_id').notNull().references(() => boardTasks.id, { onDelete: 'cascade' }),
-  title: varchar('title', { length: 255 }).notNull(),
+  title: text('title').notNull(),
   completed: boolean('completed').default(false).notNull(),
   state: varchar('state', { length: 20 }).default('unchecked').notNull(),
   status: varchar('status', { length: 30 }),
