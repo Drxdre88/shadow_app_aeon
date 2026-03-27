@@ -4,10 +4,14 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Calendar, Trash2, Pencil, Palette, Users } from 'lucide-react'
+import { Calendar, Trash2, Pencil, Palette, Users, Rows3, LayoutGrid, GripVertical } from 'lucide-react'
 import Link from 'next/link'
+import { DndContext, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import { SortableContext, useSortable, horizontalListSortingStrategy, rectSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import { GlowCard } from '@/components/ui/GlowCard'
-import { deleteProject } from '@/lib/actions/projects'
+import { deleteProject, setProjectGroup } from '@/lib/actions/projects'
 import { useThemeStore } from '@/stores/themeStore'
 import {
   ACCENT_COLORS,
@@ -25,6 +29,7 @@ interface GridViewProps {
   onEdit: (project: ProjectWithStats) => void
   onDelete?: (id: string) => void
   onShare?: (project: ProjectWithStats) => void
+  onGroupChange?: (projectId: string, newGroup: string | null) => void
 }
 
 function groupProjects(projects: ProjectWithStats[]) {
@@ -40,17 +45,73 @@ function groupProjects(projects: ProjectWithStats[]) {
       if (b === 'General') return 1
       return a.localeCompare(b)
     })
+    .map(([label, items]) => [label, items.sort((a, b) => a.name.localeCompare(b.name))] as [string, ProjectWithStats[]])
 }
 
-export function GridView({ projects, onEdit, onDelete, onShare }: GridViewProps) {
+function SortableProjectCard({ project, children }: { project: ProjectWithStats; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: project.id,
+    data: { type: 'project', project },
+  })
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(isDragging && 'opacity-40 z-50')}
+      {...attributes}
+      {...listeners}
+    >
+      {children}
+    </div>
+  )
+}
+
+export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange }: GridViewProps) {
   const router = useRouter()
   const { glowIntensity, projectColors, setProjectColor, shortcuts } = useThemeStore()
   const [hoveredProjectId, setHoveredProjectId] = useState<string | null>(null)
   const [colorPickerProjectId, setColorPickerProjectId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [layout, setLayout] = useState<'scroll' | 'wrap'>('wrap')
+  const [groupOrder, setGroupOrder] = useState<string[]>([])
+  const [draggedGroup, setDraggedGroup] = useState<string | null>(null)
+  const [dragOverGroup, setDragOverGroup] = useState<string | null>(null)
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
+  const [projectOrder, setProjectOrder] = useState<Record<string, string[]>>(() => {
+    if (typeof window === 'undefined') return {}
+    try { return JSON.parse(localStorage.getItem('aeon-project-order') || '{}') } catch { return {} }
+  })
   const projectListRef = useRef<HTMLDivElement>(null)
 
-  const groups = useMemo(() => groupProjects(projects), [projects])
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  )
+
+  const groups = useMemo(() => {
+    const base = groupProjects(projects)
+    return base.map(([label, items]) => {
+      const order = projectOrder[label]
+      if (!order || order.length === 0) return [label, items] as [string, ProjectWithStats[]]
+      const ordered: ProjectWithStats[] = []
+      for (const id of order) {
+        const found = items.find((p) => p.id === id)
+        if (found) ordered.push(found)
+      }
+      for (const p of items) {
+        if (!order.includes(p.id)) ordered.push(p)
+      }
+      return [label, ordered] as [string, ProjectWithStats[]]
+    })
+  }, [projects, projectOrder])
+
+  useEffect(() => {
+    const computedKeys = groups.map(([label]) => label)
+    const stored = localStorage.getItem('aeon-group-order')
+    const parsed: string[] = stored ? JSON.parse(stored) : []
+    const validStored = parsed.filter((k) => computedKeys.includes(k))
+    const missing = computedKeys.filter((k) => !validStored.includes(k))
+    setGroupOrder([...validStored, ...missing])
+  }, [groups])
 
   useEffect(() => {
     const el = projectListRef.current
@@ -76,14 +137,18 @@ export function GridView({ projects, onEdit, onDelete, onShare }: GridViewProps)
         e.preventDefault()
         setColorPickerProjectId((prev) => prev === hoveredProjectId ? null : hoveredProjectId)
       }
+      if (e.key.toLowerCase() === 'e' && hoveredProjectId) {
+        e.preventDefault()
+        const project = projects.find((p) => p.id === hoveredProjectId)
+        if (project) onEdit(project)
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [hoveredProjectId, shortcuts])
+  }, [hoveredProjectId, shortcuts, projects, onEdit])
 
   const handleColorChange = useCallback((projectId: string, color: string) => {
     setProjectColor(projectId, color)
-    setColorPickerProjectId(null)
   }, [setProjectColor])
 
   const handleDelete = async (e: React.MouseEvent, projectId: string) => {
@@ -100,94 +165,146 @@ export function GridView({ projects, onEdit, onDelete, onShare }: GridViewProps)
     }
   }
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveProjectId(event.active.id as string)
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveProjectId(null)
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const activeProject = projects.find((p) => p.id === active.id)
+    const overProject = projects.find((p) => p.id === over.id)
+    if (!activeProject || !overProject) return
+
+    const srcGroup = activeProject.group || 'General'
+    const dstGroup = overProject.group || 'General'
+
+    if (srcGroup === dstGroup) {
+      const currentItems = groups.find(([l]) => l === dstGroup)?.[1] || []
+      const ids = currentItems.map((p) => p.id)
+      const oldIdx = ids.indexOf(active.id as string)
+      const newIdx = ids.indexOf(over.id as string)
+      if (oldIdx === -1 || newIdx === -1) return
+      const reordered = [...ids]
+      reordered.splice(oldIdx, 1)
+      reordered.splice(newIdx, 0, active.id as string)
+      const next = { ...projectOrder, [dstGroup]: reordered }
+      setProjectOrder(next)
+      localStorage.setItem('aeon-project-order', JSON.stringify(next))
+    } else {
+      const newGroup = dstGroup === 'General' ? null : dstGroup
+      onGroupChange?.(active.id as string, newGroup)
+      setProjectGroup(active.id as string, newGroup).catch(() => {})
+    }
+  }
+
   const renderCard = (project: ProjectWithStats) => {
     const projectColor = (projectColors[project.id] || 'purple') as AccentColor
     return (
-      <div key={project.id} className="relative w-72 shrink-0" data-project-id={project.id}>
-        <Link href={`/project/${project.id}`}>
-          <GlowCard accentColor={projectColor} glowIntensity="sm" showAccentLine hover>
-            <div className="p-3">
-              <div className="flex items-center justify-between mb-1">
-                <h3 className="text-sm font-semibold text-white truncate flex-1 mr-2">{project.name}</h3>
-                <div className="flex items-center gap-0.5 shrink-0 rounded-lg bg-white/[0.04] px-0.5">
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      setColorPickerProjectId((prev) => prev === project.id ? null : project.id)
-                    }}
-                    className="p-1.5 rounded-lg text-slate-500 hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
-                  >
-                    <Palette className="w-3.5 h-3.5" />
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(project) }}
-                    className="p-1.5 rounded-lg text-slate-500 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); onShare?.(project) }}
-                    className="p-1.5 rounded-lg text-slate-500 hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
-                  >
-                    <Users className="w-3.5 h-3.5" />
-                  </motion.button>
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={(e) => handleDelete(e, project.id)}
-                    disabled={deletingId === project.id}
-                    className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-40"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </motion.button>
+      <SortableProjectCard key={project.id} project={project}>
+        <div className={cn('relative w-72', layout === 'scroll' && 'shrink-0')} data-project-id={project.id}>
+          <Link href={`/project/${project.id}`} draggable={false}>
+            <GlowCard accentColor={projectColor} glowIntensity="sm" showAccentLine hover>
+              <div className="p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="text-sm font-semibold text-white truncate flex-1 mr-2">{project.name}</h3>
+                  <div className="flex items-center gap-0.5 shrink-0 rounded-lg bg-white/[0.04] px-0.5">
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setColorPickerProjectId((prev) => prev === project.id ? null : project.id)
+                      }}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
+                    >
+                      <Palette className="w-3.5 h-3.5" />
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(project) }}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onShare?.(project) }}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={(e) => handleDelete(e, project.id)}
+                      disabled={deletingId === project.id}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-40"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </motion.button>
+                  </div>
+                </div>
+                {project.description && (
+                  <p className="text-xs text-[var(--text-dim)] mt-1 line-clamp-2">{project.description}</p>
+                )}
+                <div className="flex items-center mt-2 text-xs text-[var(--text-muted)]">
+                  <span className="flex items-center gap-1">
+                    <Calendar className="w-3 h-3" />
+                    {new Date(project.startDate).toLocaleDateString()}
+                  </span>
                 </div>
               </div>
-              {project.description && (
-                <p className="text-xs text-[var(--text-dim)] mt-1 line-clamp-2">{project.description}</p>
-              )}
-              <div className="flex items-center mt-2 text-xs text-[var(--text-muted)]">
-                <span className="flex items-center gap-1">
-                  <Calendar className="w-3 h-3" />
-                  {new Date(project.startDate).toLocaleDateString()}
-                </span>
-              </div>
-            </div>
-          </GlowCard>
-        </Link>
-        {colorPickerProjectId === project.id && createPortal(
-          <div
-            className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex items-center justify-center"
-            onClick={() => setColorPickerProjectId(null)}
-          >
+            </GlowCard>
+          </Link>
+          {colorPickerProjectId === project.id && createPortal(
             <div
-              className="p-4 rounded-xl bg-[#1a1a24]/95 backdrop-blur-xl border border-white/15 shadow-[0_0_40px_rgba(0,0,0,0.6)] min-w-[260px] space-y-2"
-              onClick={(e) => e.stopPropagation()}
+              className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex items-center justify-center"
+              onClick={() => setColorPickerProjectId(null)}
             >
-              <div className="flex gap-2 flex-wrap">
-                {ACCENT_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => handleColorChange(project.id, c)}
-                    className={cn(
-                      'w-7 h-7 rounded-full border-2 transition-all hover:scale-110',
-                      projectColor === c ? 'border-white scale-110' : 'border-transparent'
-                    )}
-                    style={{ backgroundColor: colorConfig[c].hex }}
-                  />
-                ))}
-              </div>
-              {(() => { const recent = getRecentColors(); return recent.length > 0 ? (
+              <div
+                className="p-4 rounded-xl bg-[#1a1a24]/95 backdrop-blur-xl border border-white/15 shadow-[0_0_40px_rgba(0,0,0,0.6)] min-w-[260px] space-y-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex gap-2 flex-wrap">
+                  {ACCENT_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      onClick={() => handleColorChange(project.id, c)}
+                      className={cn(
+                        'w-7 h-7 rounded-full border-2 transition-all hover:scale-110',
+                        projectColor === c ? 'border-white scale-110' : 'border-transparent'
+                      )}
+                      style={{ backgroundColor: colorConfig[c].hex }}
+                    />
+                  ))}
+                </div>
+                {(() => { const recent = getRecentColors(); return recent.length > 0 ? (
+                  <div className="border-t border-white/10 pt-2">
+                    <span className="text-[10px] text-slate-500 mb-1 block">Recent</span>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {recent.map((hex) => (
+                        <button
+                          key={hex}
+                          onClick={() => handleColorChange(project.id, hex)}
+                          className={cn(
+                            'w-6 h-6 rounded-full border-2 transition-all hover:scale-110',
+                            projectColor === hex ? 'border-white scale-110' : 'border-transparent'
+                          )}
+                          style={{ backgroundColor: hex }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : null })()}
                 <div className="border-t border-white/10 pt-2">
-                  <span className="text-[10px] text-slate-500 mb-1 block">Recent</span>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {recent.map((hex) => (
+                  <div className="grid grid-cols-7 gap-1">
+                    {PALETTE_COLORS.map((hex) => (
                       <button
                         key={hex}
                         onClick={() => handleColorChange(project.id, hex)}
@@ -200,63 +317,114 @@ export function GridView({ projects, onEdit, onDelete, onShare }: GridViewProps)
                     ))}
                   </div>
                 </div>
-              ) : null })()}
-              <div className="border-t border-white/10 pt-2">
-                <div className="grid grid-cols-7 gap-1">
-                  {PALETTE_COLORS.map((hex) => (
-                    <button
-                      key={hex}
-                      onClick={() => handleColorChange(project.id, hex)}
-                      className={cn(
-                        'w-6 h-6 rounded-full border-2 transition-all hover:scale-110',
-                        projectColor === hex ? 'border-white scale-110' : 'border-transparent'
-                      )}
-                      style={{ backgroundColor: hex }}
-                    />
-                  ))}
+                <div className="pt-1 border-t border-white/10">
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <div className="relative">
+                      <input
+                        type="color"
+                        value={typeof projectColor === 'string' && projectColor.startsWith('#') ? projectColor : colorConfig[projectColor]?.hex ?? '#a855f7'}
+                        onChange={(e) => {
+                          addRecentColor(e.target.value)
+                          handleColorChange(project.id, e.target.value)
+                        }}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
+                      <div className="w-6 h-6 rounded-full border-2 border-dashed border-white/30 group-hover:border-white/60 transition-all flex items-center justify-center">
+                        <Palette className="w-3 h-3 text-slate-400" />
+                      </div>
+                    </div>
+                    <span className="text-[11px] text-slate-500 group-hover:text-slate-300 transition-colors">Custom</span>
+                  </label>
                 </div>
               </div>
-              <div className="pt-1 border-t border-white/10">
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <div className="relative">
-                    <input
-                      type="color"
-                      value={typeof projectColor === 'string' && projectColor.startsWith('#') ? projectColor : colorConfig[projectColor]?.hex ?? '#a855f7'}
-                      onChange={(e) => {
-                        addRecentColor(e.target.value)
-                        handleColorChange(project.id, e.target.value)
-                      }}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    />
-                    <div className="w-6 h-6 rounded-full border-2 border-dashed border-white/30 group-hover:border-white/60 transition-all flex items-center justify-center">
-                      <Palette className="w-3 h-3 text-slate-400" />
-                    </div>
-                  </div>
-                  <span className="text-[11px] text-slate-500 group-hover:text-slate-300 transition-colors">Custom</span>
-                </label>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
-      </div>
+            </div>,
+            document.body
+          )}
+        </div>
+      </SortableProjectCard>
     )
   }
 
+  const allProjectIds = useMemo(() => {
+    return groups.flatMap(([, items]) => items.map((p) => p.id))
+  }, [groups])
+
+  const activeProject = activeProjectId ? projects.find((p) => p.id === activeProjectId) : null
+
   return (
-    <div ref={projectListRef} className="space-y-6">
-      {groups.map(([label, groupProjects]) => (
-        <div key={label}>
-          <div className="flex items-center gap-2 mb-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-dim)]">{label}</h3>
-            <span className="text-[10px] text-slate-600">{groupProjects.length}</span>
-            <div className="flex-1 h-px bg-white/[0.06]" />
-          </div>
-          <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-            {groupProjects.map(renderCard)}
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <div ref={projectListRef} className="space-y-6">
+        <div className="flex justify-end">
+          <div className="flex items-center gap-0.5 rounded-lg bg-white/[0.04] p-0.5">
+            <button
+              onClick={() => setLayout('wrap')}
+              className={cn('p-1.5 rounded-md transition-colors', layout === 'wrap' ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-slate-300')}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setLayout('scroll')}
+              className={cn('p-1.5 rounded-md transition-colors', layout === 'scroll' ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-slate-300')}
+            >
+              <Rows3 className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
-      ))}
-    </div>
+        <SortableContext items={allProjectIds} strategy={layout === 'scroll' ? horizontalListSortingStrategy : rectSortingStrategy}>
+          {groupOrder
+            .map((label) => groups.find(([l]) => l === label) as [string, ProjectWithStats[]] | undefined)
+            .filter((g): g is [string, ProjectWithStats[]] => g !== undefined)
+            .map(([label, groupItems]) => (
+              <div
+                key={label}
+                onDragOver={(e) => { e.preventDefault(); if (!activeProjectId) setDragOverGroup(label) }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  if (!draggedGroup || draggedGroup === label) { setDragOverGroup(null); return }
+                  setGroupOrder((prev) => {
+                    const next = prev.filter((g) => g !== draggedGroup)
+                    const idx = next.indexOf(label)
+                    next.splice(idx, 0, draggedGroup)
+                    localStorage.setItem('aeon-group-order', JSON.stringify(next))
+                    return next
+                  })
+                  setDraggedGroup(null)
+                  setDragOverGroup(null)
+                }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverGroup(null) }}
+                className={cn(
+                  dragOverGroup === label && draggedGroup && draggedGroup !== label && 'border-t-2 border-purple-500/60',
+                )}
+              >
+                <div
+                  className="flex items-center gap-2 mb-3 cursor-grab active:cursor-grabbing group/header"
+                  draggable
+                  onDragStart={() => setDraggedGroup(label)}
+                  onDragEnd={() => { setDraggedGroup(null); setDragOverGroup(null) }}
+                >
+                  <GripVertical className="w-3.5 h-3.5 text-slate-700 group-hover/header:text-slate-500 transition-colors shrink-0" />
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-dim)]">{label}</h3>
+                  <span className="text-[10px] text-slate-600">{groupItems.length}</span>
+                  <div className="flex-1 h-px bg-white/[0.06]" />
+                </div>
+                <div className={layout === 'scroll' ? 'flex gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent' : 'flex flex-wrap gap-4'}>
+                  {groupItems.map(renderCard)}
+                </div>
+              </div>
+            ))}
+        </SortableContext>
+      </div>
+      <DragOverlay>
+        {activeProject && (
+          <div className="w-72 opacity-80 rotate-2">
+            <GlowCard accentColor={(projectColors[activeProject.id] || 'purple') as AccentColor} glowIntensity="md" showAccentLine>
+              <div className="p-3">
+                <h3 className="text-sm font-semibold text-white truncate">{activeProject.name}</h3>
+              </div>
+            </GlowCard>
+          </div>
+        )}
+      </DragOverlay>
+    </DndContext>
   )
 }

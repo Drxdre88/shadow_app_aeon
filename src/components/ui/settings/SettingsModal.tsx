@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { X, Palette, PenTool, Wand2, Settings, Keyboard, PartyPopper, LayoutGrid } from 'lucide-react'
+import { X, Palette, PenTool, Wand2, Settings, Keyboard, PartyPopper, LayoutGrid, LayoutDashboard } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
 import { PaletteTab } from './PaletteTab'
@@ -12,10 +12,12 @@ import { EffectsTab } from './EffectsTab'
 import { GeneralTab } from './GeneralTab'
 import { ShortcutsTab } from './ShortcutsTab'
 import { FunTab } from './FunTab'
+import { DashboardTab } from './DashboardTab'
 
-type SettingsTab = 'board' | 'palette' | 'typography' | 'effects' | 'fun'
+type SettingsTab = 'projects' | 'board' | 'palette' | 'typography' | 'effects' | 'fun'
 
 const TAB_CONFIG: { id: SettingsTab; label: string; icon: typeof Palette }[] = [
+  { id: 'projects', label: 'Projects', icon: LayoutDashboard },
   { id: 'board', label: 'Board', icon: LayoutGrid },
   { id: 'palette', label: 'Palette', icon: Palette },
   { id: 'typography', label: 'Typography', icon: PenTool },
@@ -143,6 +145,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           {activeTab === 'typography' && <TypographyTab />}
           {activeTab === 'effects' && <EffectsTab />}
           {activeTab === 'fun' && <FunTab />}
+          {activeTab === 'projects' && <DashboardTab />}
         </div>
       </motion.div>
     </div>,

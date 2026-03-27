@@ -176,8 +176,36 @@ export default function LoginForm() {
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.5 }}
-              className="mt-6"
+              transition={{ delay: 0.4 }}
+              className="mt-4 flex flex-col items-center gap-3"
+            >
+              <div
+                className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold uppercase tracking-widest"
+                style={{
+                  backgroundColor: 'rgba(139, 92, 246, 0.12)',
+                  border: '1px solid rgba(139, 92, 246, 0.25)',
+                  color: '#a78bfa',
+                }}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full animate-pulse"
+                  style={{ backgroundColor: '#a78bfa' }}
+                />
+                Closed Beta
+              </div>
+              <p
+                className="text-xs"
+                style={{ color: 'var(--text-muted)', opacity: 0.7 }}
+              >
+                Invite-only access
+              </p>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.6 }}
+              className="mt-4"
             >
               <p
                 className="text-sm italic"

@@ -95,7 +95,10 @@ export function layoutPlanets(
   const planets: PlanetOrb[] = []
   const planetGroups = new Map<string, PlanetOrb[]>()
   const cols = Math.max(1, Math.ceil(Math.sqrt(groupNames.length)))
-  const spacing = 500
+
+  const maxGroupSize = Math.max(...Array.from(groupMap.values()).map((m) => m.length), 1)
+  const maxOrbitRadius = 140 + maxGroupSize * 55
+  const spacing = maxOrbitRadius * 2.2 + 80
 
   groupNames.forEach((gName, gi) => {
     const col = gi % cols
@@ -104,8 +107,8 @@ export function layoutPlanets(
     const cy = (row - (Math.ceil(groupNames.length / cols) - 1) / 2) * spacing
     const members = groupMap.get(gName)!
     const groupPlanets: PlanetOrb[] = []
-    const ringGap = 50
-    const innerRing = 80
+    const ringGap = members.length <= 3 ? 80 : Math.min(80, 320 / members.length)
+    const innerRing = 140
 
     members.forEach((p, pi) => {
       const angle = (pi / Math.max(members.length, 1)) * Math.PI * 2 - Math.PI / 2

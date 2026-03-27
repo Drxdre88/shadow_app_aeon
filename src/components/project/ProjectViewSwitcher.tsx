@@ -14,6 +14,7 @@ interface ProjectViewSwitcherProps {
   onEdit: (project: ProjectWithStats) => void
   onDelete?: (id: string) => void
   onShare?: (project: ProjectWithStats) => void
+  onGroupChange?: (projectId: string, newGroup: string | null) => void
 }
 
 const VIEW_OPTIONS: { value: ProjectViewMode; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -33,15 +34,14 @@ function useIsMobile() {
   return isMobile
 }
 
-export function ProjectViewSwitcher({ projects, onEdit, onDelete, onShare }: ProjectViewSwitcherProps) {
+export function ProjectViewSwitcher({ projects, onEdit, onDelete, onShare, onGroupChange }: ProjectViewSwitcherProps) {
   const [view, setView] = useViewPreference()
   const isMobile = useIsMobile()
   const effectiveView = isMobile && view === 'space' ? 'grid' : view
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-white">Your Projects</h2>
+      <div className="flex items-center justify-end mb-3">
         <div className="flex items-center bg-white/5 rounded-lg border border-white/10 p-0.5">
           {VIEW_OPTIONS.map((opt) => {
             const Icon = opt.icon
@@ -79,7 +79,7 @@ export function ProjectViewSwitcher({ projects, onEdit, onDelete, onShare }: Pro
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.2 }}
         >
-          {effectiveView === 'grid' && <GridView projects={projects} onEdit={onEdit} onDelete={onDelete} onShare={onShare} />}
+          {effectiveView === 'grid' && <GridView projects={projects} onEdit={onEdit} onDelete={onDelete} onShare={onShare} onGroupChange={onGroupChange} />}
           {effectiveView === 'tree' && <TreeView projects={projects} />}
           {effectiveView === 'space' && <SpaceView projects={projects} />}
         </motion.div>

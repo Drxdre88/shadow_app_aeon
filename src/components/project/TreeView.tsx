@@ -188,7 +188,8 @@ export function TreeView({ projects }: TreeViewProps) {
                     return (
                       <Link key={project.id} href={`/project/${project.id}`}>
                         <div
-                          className={`flex items-center gap-2 pl-11 pr-4 py-2 transition-colors hover:bg-white/5 group cursor-grab ${
+                          data-tree-item
+                          className={`flex items-center gap-2 pl-11 pr-4 py-2 transition-colors hover:bg-white/5 group cursor-pointer ${
                             focusedIndex === itemFlatIdx ? 'bg-white/10' : ''
                           }`}
                           draggable

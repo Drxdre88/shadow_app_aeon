@@ -17,6 +17,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
   if (!session?.user) redirect('/login')
+  if (!session.user.termsAccepted) redirect('/beta-terms')
 
   const { id } = await params
   const project = await verifyProjectOwnership(id, session.user.id)

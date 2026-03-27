@@ -11,6 +11,7 @@ declare module 'next-auth' {
     user: {
       id: string
       role: string
+      termsAccepted: boolean
       name?: string | null
       email?: string | null
       image?: string | null
@@ -95,6 +96,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         ...session.user,
         id: user.id,
         role: (user as unknown as Record<string, unknown>).role as string || 'user',
+        termsAccepted: !!(user as unknown as Record<string, unknown>).termsAcceptedAt,
       },
     }),
   },
