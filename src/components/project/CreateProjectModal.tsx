@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Loader2, LayoutGrid, Bug } from 'lucide-react'
+import { X, Loader2, LayoutGrid, Bug, Palette } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils/cn'
 import { NeonButton } from '@/components/ui/NeonButton'
@@ -11,6 +11,8 @@ import { PlanetPicker } from './PlanetPicker'
 import { useRouter } from 'next/navigation'
 import { useThemeStore } from '@/stores/themeStore'
 import aeonLogo from '@/assets/aeon.png'
+import { ColorSwatchPicker } from '@/components/board/ColorSwatchPicker'
+import { AccentColor, colorConfig } from '@/lib/utils/colors'
 
 interface CreateProjectModalProps {
   isOpen: boolean
@@ -21,14 +23,16 @@ interface CreateProjectModalProps {
 export function CreateProjectModal({ isOpen, onClose, existingGroups = [] }: CreateProjectModalProps) {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const { glowIntensity } = useThemeStore()
+  const { glowIntensity, setProjectColor } = useThemeStore()
   const mult = glowIntensity / 75
   const [template, setTemplate] = useState('default')
+  const [colorPickerOpen, setColorPickerOpen] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     group: '',
     planetImage: '',
+    color: '#c8cdd3',
     startDate: new Date().toISOString().split('T')[0],
     endDate: `${new Date().getFullYear()}-12-31`,
   })
@@ -51,6 +55,7 @@ export function CreateProjectModal({ isOpen, onClose, existingGroups = [] }: Cre
       if (formData.planetImage) {
         await updateProject(project.id, { planetImage: formData.planetImage })
       }
+      setProjectColor(project.id, formData.color)
       onClose()
       router.refresh()
       router.push(`/project/${project.id}`)
@@ -206,6 +211,38 @@ export function CreateProjectModal({ isOpen, onClose, existingGroups = [] }: Cre
                 value={formData.planetImage}
                 onChange={(f) => setFormData({ ...formData, planetImage: f })}
               />
+
+              <div>
+                <label className="block text-sm text-[var(--text-muted)] mb-1.5">Card Color</label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setColorPickerOpen(!colorPickerOpen)}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-2 rounded-xl',
+                      'bg-white/[0.05] border border-white/[0.1] hover:bg-white/[0.08]',
+                      'text-slate-400 hover:text-white transition-all'
+                    )}
+                  >
+                    <div
+                      className="w-5 h-5 rounded-full border border-white/20"
+                      style={{
+                        backgroundColor: formData.color.startsWith('#') ? formData.color : colorConfig[formData.color as AccentColor]?.hex ?? '#a855f7',
+                        boxShadow: `0 0 8px ${formData.color.startsWith('#') ? formData.color : colorConfig[formData.color as AccentColor]?.hex ?? '#a855f7'}60`,
+                      }}
+                    />
+                    <Palette className="w-3.5 h-3.5" />
+                  </button>
+                  <ColorSwatchPicker
+                    value={formData.color}
+                    onChange={(color) => { setFormData({ ...formData, color }); setColorPickerOpen(false) }}
+                    isOpen={colorPickerOpen}
+                    onClose={() => setColorPickerOpen(false)}
+                    swatchShape="circle"
+                    animated
+                  />
+                </div>
+              </div>
 
               <div>
                 <label className="block text-sm text-[var(--text-muted)] mb-1.5">Board Template</label>

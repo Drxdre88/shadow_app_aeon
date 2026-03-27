@@ -1,15 +1,14 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { signOut } from 'next-auth/react'
 import { motion } from 'framer-motion'
-import { Plus, LogOut, Eye, Crown, FolderOpen } from 'lucide-react'
+import { Plus, LogOut, Crown } from 'lucide-react'
 import Image from 'next/image'
 import aeonLogo from '@/assets/aeon.png'
-import Link from 'next/link'
 import { SettingsButton } from '@/components/ui/SettingsModal'
 import { HelpButton } from '@/components/ui/HelpModal'
-import { GlowCard } from '@/components/ui/GlowCard'
+import { StatsButton } from '@/components/ui/StatsModal'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { CreateProjectModal } from '@/components/project/CreateProjectModal'
 import { getProjectsWithStats } from '@/lib/actions/projects'
@@ -56,6 +55,19 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', handleVisibility) }
   }, [])
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
+      if (e.key.toLowerCase() === 'n' && !showCreateModal && !editingProject && !sharingProject) {
+        e.preventDefault()
+        setShowCreateModal(true)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showCreateModal, editingProject, sharingProject])
+
   return (
     <div className="min-h-screen">
       <GlassStage
@@ -68,7 +80,7 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
       />
 
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/5 border-b border-white/10">
-        <div className="px-3 sm:px-6 py-3 flex items-center justify-between">
+        <div className="px-3 sm:px-6 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3">
             <Image
               src={aeonLogo}
@@ -93,8 +105,20 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
                 Admin
               </span>
             )}
+            <div className="hidden sm:block h-5 w-px bg-white/10 mx-1" />
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => setShowCreateModal(true)}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-slate-300 hover:text-white"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              New Project
+            </motion.button>
           </div>
+
           <div className="flex items-center gap-2 sm:gap-4">
+            <StatsButton />
             <HelpButton />
             <SettingsButton />
             <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-4 border-l border-white/10">
@@ -139,76 +163,36 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
         </div>
       </header>
 
-      <main className="px-3 sm:px-6 py-4 sm:py-8 relative z-10">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="flex flex-wrap gap-4 mb-6"
-        >
-          <div onClick={() => setShowCreateModal(true)} className="w-full sm:w-64">
-            <GlowCard accentColor="purple" glowIntensity="sm" showAccentLine hover>
-              <div className="flex items-center gap-3 p-2">
-                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-purple-500/15">
-                  <Plus className="w-5 h-5 text-purple-400" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-white">New Project</h3>
-                  <p className="text-xs text-[var(--text-dim)]">Create timeline & board</p>
-                </div>
-              </div>
-            </GlowCard>
-          </div>
-
-          <Link href="/demo" className="w-full sm:w-64">
-            <GlowCard accentColor="cyan" glowIntensity="sm" showAccentLine hover>
-              <div className="flex items-center gap-3 p-2">
-                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-cyan-500/15">
-                  <Eye className="w-5 h-5 text-cyan-400" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-white">View Demo</h3>
-                  <p className="text-xs text-[var(--text-dim)]">Explore sample project</p>
-                </div>
-              </div>
-            </GlowCard>
-          </Link>
-
-          <div className="w-full sm:w-64">
-            <GlowCard accentColor="green" glowIntensity="sm" showAccentLine>
-              <div className="flex items-center gap-3 p-2">
-                <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-emerald-500/15">
-                  <FolderOpen className="w-5 h-5 text-emerald-400" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-white">{projects.length} Project{projects.length !== 1 ? 's' : ''}</h3>
-                  <p className="text-xs text-[var(--text-dim)]">{projects.length === 0 ? 'Get started below' : 'Active'}</p>
-                </div>
-              </div>
-            </GlowCard>
-          </div>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-        >
-          {projects.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]">
-              <p className="text-[var(--text-muted)] mb-1">No projects yet</p>
-              <p className="text-sm text-[var(--text-dim)] mb-6">Create your first project to get started</p>
-              <NeonButton color="purple" glowIntensity="md" onClick={() => setShowCreateModal(true)}>
-                <span className="flex items-center gap-2">
-                  <Plus className="w-4 h-4" />
-                  Create First Project
-                </span>
-              </NeonButton>
-            </div>
-          ) : (
-            <ProjectViewSwitcher projects={projects} onEdit={setEditingProject} onDelete={(id) => setProjects((prev) => prev.filter((p) => p.id !== id))} onShare={setSharingProject} />
-          )}
-        </motion.div>
+      <main className="px-3 sm:px-6 py-3 relative z-10">
+        {projects.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="flex flex-col items-center justify-center py-16 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]"
+          >
+            <p className="text-[var(--text-muted)] mb-1">No projects yet</p>
+            <p className="text-sm text-[var(--text-dim)] mb-6">Create your first project to get started</p>
+            <NeonButton color="purple" glowIntensity="md" onClick={() => setShowCreateModal(true)}>
+              <span className="flex items-center gap-2">
+                <Plus className="w-4 h-4" />
+                Create First Project
+              </span>
+            </NeonButton>
+          </motion.div>
+        ) : (
+          <ProjectViewSwitcher
+            projects={projects}
+            onEdit={setEditingProject}
+            onDelete={(id) => setProjects((prev) => prev.filter((p) => p.id !== id))}
+            onShare={setSharingProject}
+            onGroupChange={(projectId, newGroup) => {
+              setProjects((prev) => prev.map((p) =>
+                p.id === projectId ? { ...p, group: newGroup ?? undefined } as ProjectWithStats : p
+              ))
+            }}
+          />
+        )}
       </main>
 
       <CreateProjectModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} existingGroups={existingGroups} />

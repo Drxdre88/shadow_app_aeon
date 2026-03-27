@@ -13,6 +13,8 @@ export type DepViewMode = 'canvas' | 'arrows'
 export type CursorEffect = 'none' | 'glow' | 'particles' | 'combo' | 'trail' | 'neon' | 'fire' | 'ice' | 'portal' | 'venom' | 'plasma' | 'blood-moon' | 'smoke' | 'inferno-smoke' | 'venom-smoke' | 'plasma-smoke' | 'blood-moon-smoke' | 'custom-smoke'
 export type BoardLayout = 'scroll' | 'grid'
 export type CompletionMode = 'done' | 'vault'
+export type ProjectViewMode = 'grid' | 'tree' | 'space'
+export type ProjectSortMode = 'alphabetical' | 'custom'
 
 export interface CustomPriority {
   id: string
@@ -53,6 +55,8 @@ interface ThemeStore {
   spacePlanetGlow: boolean
   spaceOrbitSpeed: number
   boardLayout: BoardLayout
+  defaultProjectView: ProjectViewMode
+  defaultProjectSort: ProjectSortMode
   projectColors: Record<string, string>
   completionMode: CompletionMode
   depViewMode: DepViewMode
@@ -60,6 +64,8 @@ interface ThemeStore {
   priorities: CustomPriority[]
   _hydrateFromDB: (prefs: Record<string, unknown>) => void
   setBoardLayout: (layout: BoardLayout) => void
+  setDefaultProjectView: (view: ProjectViewMode) => void
+  setDefaultProjectSort: (sort: ProjectSortMode) => void
   setProjectColor: (projectId: string, color: string) => void
   setTheme: (theme: ThemeName) => void
   setGlowIntensity: (intensity: number) => void
@@ -113,6 +119,8 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   spacePlanetGlow: DEFAULT_PREFERENCES.spacePlanetGlow,
   spaceOrbitSpeed: DEFAULT_PREFERENCES.spaceOrbitSpeed,
   boardLayout: DEFAULT_PREFERENCES.boardLayout,
+  defaultProjectView: 'grid' as ProjectViewMode,
+  defaultProjectSort: 'alphabetical' as ProjectSortMode,
   projectColors: { ...DEFAULT_PREFERENCES.projectColors },
   completionMode: DEFAULT_PREFERENCES.completionMode as CompletionMode,
   depViewMode: DEFAULT_PREFERENCES.depViewMode,
@@ -202,6 +210,12 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   },
   setBoardLayout: (layout: BoardLayout) => {
     set({ boardLayout: layout })
+  },
+  setDefaultProjectView: (view: ProjectViewMode) => {
+    set({ defaultProjectView: view })
+  },
+  setDefaultProjectSort: (sort: ProjectSortMode) => {
+    set({ defaultProjectSort: sort })
   },
   setProjectColor: (projectId: string, color: string) => {
     set((s) => ({ projectColors: { ...s.projectColors, [projectId]: color } }))

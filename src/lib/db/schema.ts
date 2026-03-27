@@ -7,6 +7,7 @@ export const users = pgTable('users', {
   emailVerified: timestamp('email_verified', { mode: 'date' }),
   image: text('image'),
   role: varchar('role', { length: 20 }).default('user').notNull(),
+  termsAcceptedAt: timestamp('terms_accepted_at', { mode: 'date' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
