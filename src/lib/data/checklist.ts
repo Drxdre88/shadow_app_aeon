@@ -254,3 +254,29 @@ export async function findChecklistSummaries(projectId: string) {
   }
   return summaries
 }
+
+export async function findChecklistPreviews(projectId: string) {
+  const items = await db
+    .select({
+      taskId: checklistItems.taskId,
+      title: checklistItems.title,
+      state: checklistItems.state,
+      groupName: checklistItems.groupName,
+      orderIndex: checklistItems.orderIndex,
+    })
+    .from(checklistItems)
+    .innerJoin(boardTasks, eq(boardTasks.id, checklistItems.taskId))
+    .where(eq(boardTasks.projectId, projectId))
+    .orderBy(checklistItems.orderIndex)
+
+  const previews: Record<string, { title: string; state: string; groupName: string }[]> = {}
+  for (const item of items) {
+    if (!previews[item.taskId]) previews[item.taskId] = []
+    previews[item.taskId].push({
+      title: item.title,
+      state: item.state,
+      groupName: item.groupName,
+    })
+  }
+  return previews
+}

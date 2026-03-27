@@ -1,9 +1,22 @@
 import { db } from '@/lib/db'
-import { projects, boardTasks, ganttTasks } from '@/lib/db/schema'
-import { eq, and, desc, sql } from 'drizzle-orm'
+import { projects, projectMembers, boardTasks, ganttTasks } from '@/lib/db/schema'
+import { eq, and, desc, sql, or } from 'drizzle-orm'
 import type { CreateProjectInput, UpdateProjectInput } from './validators'
 
-export async function findProjectById(projectId: string, userId: string) {
+export async function verifyProjectOwnership(projectId: string, userId: string) {
+  const [membership] = await db
+    .select({ projectId: projectMembers.projectId, role: projectMembers.role })
+    .from(projectMembers)
+    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
+
+  if (membership) {
+    const [project] = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, projectId))
+    return project || null
+  }
+
   const [project] = await db
     .select()
     .from(projects)
@@ -12,13 +25,52 @@ export async function findProjectById(projectId: string, userId: string) {
   return project || null
 }
 
-export const verifyProjectOwnership = findProjectById
+export const findProjectById = verifyProjectOwnership
+
+export async function verifyProjectOwnerRole(projectId: string, userId: string) {
+  const [membership] = await db
+    .select({ role: projectMembers.role })
+    .from(projectMembers)
+    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
+
+  if (membership?.role === 'owner') return true
+
+  const [project] = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
+
+  return !!project
+}
+
+export async function getMemberRole(projectId: string, userId: string) {
+  const [membership] = await db
+    .select({ role: projectMembers.role })
+    .from(projectMembers)
+    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
+
+  return membership?.role || null
+}
 
 export async function findProjects(userId: string, limit = 100, offset = 0) {
   return db
-    .select()
+    .selectDistinct({
+      id: projects.id,
+      userId: projects.userId,
+      name: projects.name,
+      description: projects.description,
+      timeScale: projects.timeScale,
+      startDate: projects.startDate,
+      endDate: projects.endDate,
+      settings: projects.settings,
+      group: projects.group,
+      planetImage: projects.planetImage,
+      createdAt: projects.createdAt,
+      updatedAt: projects.updatedAt,
+    })
     .from(projects)
-    .where(eq(projects.userId, userId))
+    .leftJoin(projectMembers, eq(projectMembers.projectId, projects.id))
+    .where(or(eq(projects.userId, userId), eq(projectMembers.userId, userId)))
     .orderBy(desc(projects.createdAt))
     .limit(limit)
     .offset(offset)
@@ -26,7 +78,7 @@ export async function findProjects(userId: string, limit = 100, offset = 0) {
 
 export async function findProjectsWithStats(userId: string) {
   const projectRows = await db
-    .select({
+    .selectDistinct({
       id: projects.id,
       name: projects.name,
       description: projects.description,
@@ -50,7 +102,8 @@ export async function findProjectsWithStats(userId: string) {
       ), 0)`,
     })
     .from(projects)
-    .where(eq(projects.userId, userId))
+    .leftJoin(projectMembers, eq(projectMembers.projectId, projects.id))
+    .where(or(eq(projects.userId, userId), eq(projectMembers.userId, userId)))
     .orderBy(desc(projects.createdAt))
 
   return projectRows.map((row) => ({
@@ -87,6 +140,14 @@ export async function createProject(userId: string, data: CreateProjectInput) {
       })
       .returning()
 
+    await tx
+      .insert(projectMembers)
+      .values({
+        projectId: result[0].id,
+        userId,
+        role: 'owner',
+      })
+
     return result
   })
 
@@ -105,13 +166,16 @@ export async function updateProject(projectId: string, userId: string, data: Upd
   const [project] = await db
     .update(projects)
     .set(updates)
-    .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
+    .where(eq(projects.id, projectId))
     .returning()
 
   return project || null
 }
 
 export async function deleteProject(projectId: string, userId: string) {
+  const isOwner = await verifyProjectOwnerRole(projectId, userId)
+  if (!isOwner) return false
+
   const [deleted] = await db
     .delete(projects)
     .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
@@ -121,11 +185,7 @@ export async function deleteProject(projectId: string, userId: string) {
 }
 
 export async function getProjectSummary(projectId: string, userId: string) {
-  const [project] = await db
-    .select()
-    .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
-
+  const project = await verifyProjectOwnership(projectId, userId)
   if (!project) return null
 
   const statusCounts = await db

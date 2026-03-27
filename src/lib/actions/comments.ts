@@ -1,6 +1,6 @@
 'use server'
 
-import { requireOwnership, requireAuth } from './helpers'
+import { requireOwnership, requireEditor } from './helpers'
 import {
   findComments as _findComments,
   createComment as _createComment,
@@ -15,18 +15,18 @@ export async function getComments(taskId: string, projectId: string) {
 }
 
 export async function addComment(taskId: string, projectId: string, content: string) {
-  const userId = await requireOwnership(projectId)
+  const userId = await requireEditor(projectId)
   const comment = await _createComment(taskId, userId, content)
   emitActivity(projectId, 'comment', taskId, 'commented', content.slice(0, 80), { commentId: comment.id }, userId).catch(() => {})
   return comment
 }
 
 export async function editComment(commentId: string, taskId: string, projectId: string, content: string) {
-  const userId = await requireOwnership(projectId)
+  const userId = await requireEditor(projectId)
   return _updateComment(commentId, taskId, userId, content)
 }
 
 export async function removeComment(commentId: string, taskId: string, projectId: string) {
-  const userId = await requireOwnership(projectId)
+  const userId = await requireEditor(projectId)
   return _deleteComment(commentId, taskId, userId)
 }

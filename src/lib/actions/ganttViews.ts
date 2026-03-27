@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireOwnership } from './helpers'
+import { requireOwnership, requireEditor } from './helpers'
 import {
   findGanttViews as _findGanttViews,
   createGanttView as _createGanttView,
@@ -35,7 +35,7 @@ export async function createGanttView(data: {
   allowOverlap?: boolean
   filters?: Record<string, unknown>
 }) {
-  await requireOwnership(data.projectId)
+  await requireEditor(data.projectId)
 
   const taskOrder = taskOrderSchema.parse(data.taskOrder ?? 'column')
   const groupBy = groupByModeSchema.parse(data.groupBy)
@@ -77,7 +77,7 @@ export async function updateGanttView(
   projectId: string,
   data: { name?: string; groupBy?: string; filters?: Record<string, unknown> }
 ) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
 
   const parsed = updateGanttViewSchema.parse({
     ...data,
@@ -90,19 +90,19 @@ export async function updateGanttView(
 }
 
 export async function deleteGanttView(viewId: string, projectId: string) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
   await _deleteGanttView(viewId, projectId)
   revalidatePath(`/project/${projectId}`)
 }
 
 export async function reflowGanttView(projectId: string, viewId: string) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
   await _reflowGanttViewRows(projectId, viewId)
   revalidatePath(`/project/${projectId}`)
 }
 
 export async function resetGanttData(projectId: string) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
   await _resetGanttProjectData(projectId)
   revalidatePath(`/project/${projectId}`)
 }

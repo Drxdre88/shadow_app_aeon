@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireOwnership } from './helpers'
+import { requireEditor } from './helpers'
 import { dependencyPairSchema } from '@/lib/data/validators'
 import {
   findDependencies as _findDependencies,
@@ -16,7 +16,7 @@ export async function addTaskDependency(
   blockerTaskId: string,
   blockedTaskId: string
 ) {
-  const userId = await requireOwnership(projectId)
+  const userId = await requireEditor(projectId)
 
   const parsed = dependencyPairSchema.parse({ blockerTaskId, blockedTaskId })
 
@@ -38,7 +38,7 @@ export async function removeTaskDependency(
   blockerTaskId: string,
   blockedTaskId: string
 ) {
-  const userId = await requireOwnership(projectId)
+  const userId = await requireEditor(projectId)
   await _removeDependency(blockerTaskId, blockedTaskId, projectId)
   emitActivity(projectId, 'dependency', blockerTaskId, 'dependency_removed', undefined, {
     blockerTaskId,

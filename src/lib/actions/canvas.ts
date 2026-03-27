@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireOwnership } from './helpers'
+import { requireOwnership, requireEditor } from './helpers'
 import {
   findCanvasNodes as _findNodes,
   findCanvasEdges as _findEdges,
@@ -33,7 +33,7 @@ export async function createCanvasNode(data: {
   description?: string
   color: string
 }) {
-  await requireOwnership(data.projectId)
+  await requireEditor(data.projectId)
 
   const parsed = createCanvasNodeSchema.parse({
     type: data.type ?? 'idea',
@@ -62,7 +62,7 @@ export async function updateCanvasNode(
     color?: string
   }
 ) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
   const parsed = updateCanvasNodeSchema.parse(data)
   const node = await _updateNode(nodeId, projectId, parsed)
   revalidatePath(`/project/${projectId}`)
@@ -70,7 +70,7 @@ export async function updateCanvasNode(
 }
 
 export async function deleteCanvasNode(nodeId: string, projectId: string) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
   await _deleteNode(nodeId, projectId)
   revalidatePath(`/project/${projectId}`)
 }
@@ -83,7 +83,7 @@ export async function createCanvasEdge(data: {
   label?: string
   animated?: boolean
 }) {
-  await requireOwnership(data.projectId)
+  await requireEditor(data.projectId)
 
   const parsed = createCanvasEdgeSchema.parse({
     sourceNodeId: data.sourceNodeId,
@@ -99,7 +99,7 @@ export async function createCanvasEdge(data: {
 }
 
 export async function deleteCanvasEdge(edgeId: string, projectId: string) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
   await _deleteEdge(edgeId, projectId)
   revalidatePath(`/project/${projectId}`)
 }

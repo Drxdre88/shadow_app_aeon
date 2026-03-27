@@ -94,6 +94,12 @@ export function useBoardKeyboardShortcuts({
       if (key === (shortcuts?.toggleDates ?? 'd')) {
         e.preventDefault()
         useBoardStore.getState().toggleShowDates()
+        return
+      }
+
+      if (key === (shortcuts?.toggleChecklist ?? 'o')) {
+        e.preventDefault()
+        useBoardStore.getState().toggleChecklistPreview()
       }
     }
     window.addEventListener('keydown', handleKeyDown)

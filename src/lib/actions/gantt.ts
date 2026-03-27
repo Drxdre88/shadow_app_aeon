@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireOwnership } from './helpers'
+import { requireOwnership, requireEditor } from './helpers'
 import {
   findRows as _findRows,
   findGanttTasks as _findGanttTasks,
@@ -36,7 +36,7 @@ export async function createGanttTask(data: {
   color: string
   progress?: number
 }) {
-  await requireOwnership(data.projectId)
+  await requireEditor(data.projectId)
 
   const parsed = createGanttTaskSchema.parse({
     rowId: data.rowId,
@@ -67,7 +67,7 @@ export async function updateGanttTask(
     progress?: number
   }
 ) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
 
   const parsed = updateGanttTaskSchema.parse(data)
 
@@ -80,7 +80,7 @@ export async function updateGanttTask(
 }
 
 export async function deleteGanttTask(taskId: string, projectId: string) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
   await _deleteGanttTask(taskId, projectId)
   revalidatePath(`/project/${projectId}`)
 }
@@ -92,7 +92,7 @@ export async function createRow(data: {
   color: string
   orderIndex: number
 }) {
-  await requireOwnership(data.projectId)
+  await requireEditor(data.projectId)
 
   const parsed = createRowSchema.parse({
     name: data.name,
@@ -111,7 +111,7 @@ export async function updateRow(
   projectId: string,
   data: { name?: string; color?: string; orderIndex?: number }
 ) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
   const parsed = updateRowSchema.parse(data)
   const row = await _updateRow(rowId, projectId, parsed)
   revalidatePath(`/project/${projectId}`)
@@ -119,7 +119,7 @@ export async function updateRow(
 }
 
 export async function deleteRow(rowId: string, projectId: string) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
   await _deleteRow(rowId, projectId)
   revalidatePath(`/project/${projectId}`)
 }

@@ -57,6 +57,13 @@
       "when": 1774437826497,
       "tag": "0007_awesome_catseye",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1774512469750,
+      "tag": "0008_good_black_crow",
+      "breakpoints": true
     }
   ]
 }

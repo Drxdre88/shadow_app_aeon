@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireOwnership } from './helpers'
+import { requireOwnership, requireEditor } from './helpers'
 import {
   findVaultTasks as _findVaultTasks,
   getVaultStats as _getVaultStats,
@@ -28,7 +28,7 @@ export async function sendToVault(
   daysTaken: number | null,
   taskName?: string
 ) {
-  const userId = await requireOwnership(projectId)
+  const userId = await requireEditor(projectId)
   const { taskId: validTaskId, daysTaken: validDaysTaken } = sendToVaultSchema.parse({ taskId, daysTaken })
   const vaulted = await _vaultTask(validTaskId, projectId, validDaysTaken)
 
@@ -44,7 +44,7 @@ export async function sendBatchToVault(
   projectId: string,
   entries: { taskId: string; daysTaken: number | null; taskName?: string }[]
 ) {
-  const userId = await requireOwnership(projectId)
+  const userId = await requireEditor(projectId)
   const { entries: validEntries } = batchVaultSchema.parse({ entries })
   const vaulted = await _vaultTasksBatch(
     projectId,
@@ -60,7 +60,7 @@ export async function sendBatchToVault(
 }
 
 export async function restoreVaultTask(vaultId: string, projectId: string) {
-  const userId = await requireOwnership(projectId)
+  const userId = await requireEditor(projectId)
   const restored = await _restoreFromVault(vaultId, projectId)
   if (restored) {
     emitActivity(projectId, 'task', restored.id, 'restored', restored.name, undefined, userId).catch(() => {})

@@ -1,4 +1,6 @@
-import 'dotenv/config'
+import dotenv from 'dotenv'
+dotenv.config({ path: '.env.local' })
+dotenv.config({ path: '.env' })
 import { neonConfig } from '@neondatabase/serverless'
 import ws from 'ws'
 import { defineConfig } from 'drizzle-kit'

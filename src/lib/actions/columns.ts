@@ -2,7 +2,7 @@
 
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
-import { requireOwnership } from './helpers'
+import { requireOwnership, requireEditor } from './helpers'
 import {
   findColumns as _findColumns,
   createColumn as _createColumn,
@@ -28,7 +28,7 @@ export async function createColumn(
   data: { name: string; color?: string; icon?: string; orderIndex?: number },
   clientId?: string
 ) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
   const parsed = createColumnSchema.parse(data)
   const col = await _createColumn(projectId, parsed, clientId)
   revalidatePath(`/project/${projectId}`)
@@ -40,7 +40,7 @@ export async function updateColumn(
   projectId: string,
   data: { name?: string; color?: string; icon?: string | null; orderIndex?: number }
 ) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
   const parsed = updateColumnSchema.parse(data)
   const col = await _updateColumn(columnId, projectId, parsed)
   revalidatePath(`/project/${projectId}`)
@@ -48,7 +48,7 @@ export async function updateColumn(
 }
 
 export async function deleteColumn(columnId: string, projectId: string) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
   const { deleteTasksByColumn } = await import('@/lib/data/tasks')
   await deleteTasksByColumn(columnId, projectId)
   await _deleteColumn(columnId, projectId)
@@ -59,13 +59,13 @@ export async function reorderColumns(
   projectId: string,
   updates: { id: string; orderIndex: number }[]
 ) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
   const parsed = reorderColumnsSchema.parse(updates)
   await _reorderColumns(projectId, parsed)
   revalidatePath(`/project/${projectId}`)
 }
 
 export async function ensureDefaultColumns(projectId: string) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
   await _createDefaultColumns(projectId)
 }

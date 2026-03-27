@@ -57,9 +57,13 @@ function IdeaNodeComponent({ id, data, selected }: NodeProps & { data: IdeaNodeD
           : 'hover:shadow-md hover:scale-[1.01]'
       )}
       style={{
-        backgroundColor: 'rgba(255, 255, 255, 0.04)',
-        borderColor: selected ? cfg.hex : 'rgba(255, 255, 255, 0.08)',
-        boxShadow: selected ? `0 0 20px ${cfg.glow.replace('0.6', '0.15')}` : undefined,
+        background: `linear-gradient(to bottom, ${cfg.hex}12, rgba(0,0,0,0.3))`,
+        borderColor: selected ? cfg.hex : `${cfg.hex}35`,
+        boxShadow: [
+          selected ? `0 0 24px ${cfg.hex}30` : `0 0 12px ${cfg.hex}10`,
+          'inset 0 1px 0 0 rgba(255,255,255,0.08)',
+          '0 8px 32px rgba(0,0,0,0.3)',
+        ].join(', '),
         ...(selected ? { ringColor: cfg.hex } : {}),
       }}
     >
@@ -67,18 +71,18 @@ function IdeaNodeComponent({ id, data, selected }: NodeProps & { data: IdeaNodeD
         type="target"
         position={Position.Left}
         className="!w-2.5 !h-2.5 !border-2 !rounded-full !-left-1.5"
-        style={{ backgroundColor: cfg.hex, borderColor: 'rgba(0,0,0,0.3)' }}
+        style={{ backgroundColor: cfg.hex, borderColor: 'rgba(0,0,0,0.3)', boxShadow: `0 0 6px ${cfg.hex}50` }}
       />
       <Handle
         type="source"
         position={Position.Right}
         className="!w-2.5 !h-2.5 !border-2 !rounded-full !-right-1.5"
-        style={{ backgroundColor: cfg.hex, borderColor: 'rgba(0,0,0,0.3)' }}
+        style={{ backgroundColor: cfg.hex, borderColor: 'rgba(0,0,0,0.3)', boxShadow: `0 0 6px ${cfg.hex}50` }}
       />
 
       <div
-        className="h-1 rounded-t-xl"
-        style={{ backgroundColor: cfg.hex }}
+        className="h-[2px] rounded-t-xl"
+        style={{ backgroundColor: cfg.hex, boxShadow: `0 0 8px ${cfg.hex}60` }}
       />
 
       <div className="p-3 space-y-2">

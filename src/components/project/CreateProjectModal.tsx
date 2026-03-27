@@ -52,6 +52,7 @@ export function CreateProjectModal({ isOpen, onClose, existingGroups = [] }: Cre
         await updateProject(project.id, { planetImage: formData.planetImage })
       }
       onClose()
+      router.refresh()
       router.push(`/project/${project.id}`)
     } catch (error) {
       console.error('Failed to create project:', error)

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Palette, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
@@ -244,21 +245,29 @@ export function ColorSwatchPicker({
 
   if (!animated) return isOpen ? content : null
 
-  return (
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={onClose} />
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex items-center justify-center"
+          onClick={onClose}
+        >
           <motion.div
-            initial={{ opacity: 0, y: -5, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -5, scale: 0.95 }}
-            className="absolute left-0 top-full mt-2 z-50 p-3 rounded-xl bg-black/90 backdrop-blur-xl border border-white/10 shadow-xl min-w-[240px]"
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ duration: 0.15 }}
+            onClick={(e) => e.stopPropagation()}
+            className="p-4 rounded-xl bg-[#1a1a24]/95 backdrop-blur-xl border border-white/15 shadow-[0_0_40px_rgba(0,0,0,0.6)] min-w-[260px]"
           >
             {content}
           </motion.div>
-        </>
+        </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   )
 }

@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireOwnership } from './helpers'
+import { requireEditor } from './helpers'
 import {
   pushTaskToGantt as _pushTaskToGantt,
   findRowTargetForTask,
@@ -15,7 +15,7 @@ export async function pushToGantt(data: {
   ganttTaskId: string
   rowId?: string
 }) {
-  await requireOwnership(data.projectId)
+  await requireEditor(data.projectId)
 
   let rowId = data.rowId
   if (!rowId) {

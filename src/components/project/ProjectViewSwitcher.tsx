@@ -12,6 +12,8 @@ import type { ProjectWithStats } from './types'
 interface ProjectViewSwitcherProps {
   projects: ProjectWithStats[]
   onEdit: (project: ProjectWithStats) => void
+  onDelete?: (id: string) => void
+  onShare?: (project: ProjectWithStats) => void
 }
 
 const VIEW_OPTIONS: { value: ProjectViewMode; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -31,7 +33,7 @@ function useIsMobile() {
   return isMobile
 }
 
-export function ProjectViewSwitcher({ projects, onEdit }: ProjectViewSwitcherProps) {
+export function ProjectViewSwitcher({ projects, onEdit, onDelete, onShare }: ProjectViewSwitcherProps) {
   const [view, setView] = useViewPreference()
   const isMobile = useIsMobile()
   const effectiveView = isMobile && view === 'space' ? 'grid' : view
@@ -77,7 +79,7 @@ export function ProjectViewSwitcher({ projects, onEdit }: ProjectViewSwitcherPro
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.2 }}
         >
-          {effectiveView === 'grid' && <GridView projects={projects} onEdit={onEdit} />}
+          {effectiveView === 'grid' && <GridView projects={projects} onEdit={onEdit} onDelete={onDelete} onShare={onShare} />}
           {effectiveView === 'tree' && <TreeView projects={projects} />}
           {effectiveView === 'space' && <SpaceView projects={projects} />}
         </motion.div>

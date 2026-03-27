@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Folder } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { getProjects } from '@/lib/actions/projects'
 import { useThemeStore } from '@/stores/themeStore'
@@ -25,10 +26,14 @@ export function ProjectSwitcher({ currentProjectId, projectName, glowColor }: Pr
   const [isOpen, setIsOpen] = useState(false)
   const [projects, setProjects] = useState<ProjectEntry[]>([])
   const [loaded, setLoaded] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+  const [mounted, setMounted] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
-  const { glowIntensity } = useThemeStore()
+  const { glowIntensity, projectColors, colors } = useThemeStore()
   const mult = glowIntensity / 75
+
+  useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {
     if (isOpen && !loaded) {
@@ -47,21 +52,20 @@ export function ProjectSwitcher({ currentProjectId, projectName, glowColor }: Pr
   useEffect(() => {
     if (!isOpen) return
     const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node) &&
+          buttonRef.current && !buttonRef.current.contains(e.target as Node)) {
         setIsOpen(false)
       }
     }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [isOpen])
-
-  useEffect(() => {
-    if (!isOpen) return
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setIsOpen(false)
     }
+    document.addEventListener('mousedown', handleClick)
     window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('mousedown', handleClick)
+      window.removeEventListener('keydown', handleKey)
+    }
   }, [isOpen])
 
   const handleSelect = (projectId: string) => {
@@ -72,10 +76,24 @@ export function ProjectSwitcher({ currentProjectId, projectName, glowColor }: Pr
   }
 
   const otherProjects = projects.filter((p) => p.id !== currentProjectId)
+  const grouped = otherProjects.reduce<Record<string, ProjectEntry[]>>((acc, p) => {
+    const key = p.group || 'Ungrouped'
+    if (!acc[key]) acc[key] = []
+    acc[key].push(p)
+    return acc
+  }, {})
+  const groupNames = Object.keys(grouped).sort((a, b) => {
+    if (a === 'Ungrouped') return 1
+    if (b === 'Ungrouped') return -1
+    return a.localeCompare(b)
+  })
+
+  const rect = buttonRef.current?.getBoundingClientRect()
 
   return (
-    <div ref={ref} className="relative">
+    <>
       <button
+        ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-1.5 group cursor-pointer"
       >
@@ -98,56 +116,92 @@ export function ProjectSwitcher({ currentProjectId, projectName, glowColor }: Pr
         />
       </button>
 
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -4, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.98 }}
-            transition={{ duration: 0.15 }}
-            className="absolute top-full left-0 mt-2 z-50 min-w-[240px] max-w-[320px] rounded-xl border border-white/10 bg-slate-900/95 backdrop-blur-xl overflow-hidden"
-            style={{
-              boxShadow: `0 0 ${20 * mult}px ${glowColor}20, 0 4px 24px rgba(0,0,0,0.4)`,
-            }}
-          >
-            <div className="px-3 py-2 border-b border-white/10">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">Switch Project</span>
-            </div>
-            <div className="max-h-[300px] overflow-y-auto py-1">
-              {!loaded && (
-                <div className="px-3 py-4 text-center text-xs text-slate-500">Loading...</div>
-              )}
-              {loaded && otherProjects.length === 0 && (
-                <div className="px-3 py-4 text-center text-xs text-slate-500">No other projects</div>
-              )}
-              {otherProjects.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => handleSelect(p.id)}
-                  className="w-full px-3 py-2 flex items-center gap-2.5 hover:bg-white/5 transition-colors text-left"
-                >
-                  {p.planetImage && (
-                    <img
-                      src={`/planets/${p.planetImage}`}
-                      alt=""
-                      className="w-5 h-5 rounded-full object-cover shrink-0"
-                    />
-                  )}
-                  {!p.planetImage && (
-                    <div className="w-5 h-5 rounded-full bg-white/10 shrink-0" />
-                  )}
-                  <div className="min-w-0">
-                    <div className="text-sm text-slate-200 truncate">{p.name}</div>
-                    {p.group && (
-                      <div className="text-[10px] text-slate-500 truncate">{p.group}</div>
-                    )}
+      {mounted && createPortal(
+        <AnimatePresence>
+          {isOpen && rect && (
+            <motion.div
+              ref={menuRef}
+              initial={{ opacity: 0, y: -6, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.97 }}
+              transition={{ duration: 0.15 }}
+              className="fixed z-[100] min-w-[280px] max-w-[360px] rounded-2xl overflow-hidden"
+              style={{
+                top: rect.bottom + 8,
+                left: Math.max(8, rect.left),
+                backgroundColor: 'rgba(12, 12, 22, 0.95)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                boxShadow: `0 0 ${24 * mult}px ${glowColor}15, 0 8px 32px rgba(0,0,0,0.5)`,
+                backdropFilter: 'blur(24px)',
+              }}
+            >
+              <div
+                className="absolute top-0 left-4 right-4 h-[1px]"
+                style={{
+                  background: `linear-gradient(90deg, transparent, ${glowColor}60, transparent)`,
+                }}
+              />
+
+              <div className="px-4 py-3 border-b border-white/[0.06]">
+                <span className="text-[10px] uppercase tracking-wider text-slate-600 font-medium">Switch Project</span>
+              </div>
+
+              <div className="max-h-[360px] overflow-y-auto py-1">
+                {!loaded && (
+                  <div className="px-4 py-6 text-center">
+                    <div className="w-5 h-5 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mx-auto" />
                   </div>
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+                )}
+                {loaded && otherProjects.length === 0 && (
+                  <div className="px-4 py-6 text-center text-xs text-slate-600">No other projects</div>
+                )}
+                {groupNames.map((groupName) => (
+                  <div key={groupName}>
+                    <div className="px-4 pt-3 pb-1">
+                      <span className="text-[10px] uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                        <Folder className="w-3 h-3" />
+                        {groupName}
+                      </span>
+                    </div>
+                    {grouped[groupName].map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => handleSelect(p.id)}
+                        className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-white/[0.04] transition-all text-left group/item"
+                      >
+                        {(() => {
+                          const pColor = projectColors[p.id] || colors.glowColor || 'rgba(139, 92, 246, 0.5)'
+                          return (
+                            <div
+                              className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center ring-1 ring-white/10 group-hover/item:ring-white/20 transition-all"
+                              style={{
+                                background: `radial-gradient(circle at 30% 30%, ${pColor}40, ${pColor}15)`,
+                                boxShadow: `0 0 ${8 * mult}px ${pColor}50, inset 0 0 ${6 * mult}px ${pColor}30`,
+                              }}
+                            >
+                              <span className="text-[10px] font-medium" style={{ color: pColor }}>{p.name.charAt(0)}</span>
+                            </div>
+                          )
+                        })()}
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm text-slate-300 truncate group-hover/item:text-white transition-colors">{p.name}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+
+              <div className="px-4 py-2 border-t border-white/[0.06]">
+                <span className="text-[10px] text-slate-700 flex items-center gap-1">
+                  <kbd className="border border-white/10 rounded px-1">Ctrl+K</kbd> search all
+                </span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
+    </>
   )
 }

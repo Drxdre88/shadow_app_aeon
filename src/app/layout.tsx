@@ -7,6 +7,7 @@ import { ThemeEffects } from '@/components/effects/ThemeEffects'
 import { CursorEffect } from '@/components/effects/cursor'
 import { ToastContainer } from '@/components/ui/Toast'
 import { ServiceWorkerRegistration } from '@/components/pwa/ServiceWorkerRegistration'
+import { CommandPalette } from '@/components/ui/CommandPalette'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
@@ -57,6 +58,7 @@ export default function RootLayout({
             <CursorEffect />
             <ToastContainer />
             <ServiceWorkerRegistration />
+            <CommandPalette />
             {children}
           </ThemeProvider>
           </PreferencesProvider>
