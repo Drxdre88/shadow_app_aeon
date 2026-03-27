@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { X, Palette, PenTool, Wand2, Settings, Sliders, Keyboard, PartyPopper } from 'lucide-react'
+import { X, Palette, PenTool, Wand2, Settings, Keyboard, PartyPopper, LayoutGrid } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
 import { PaletteTab } from './PaletteTab'
@@ -13,15 +13,14 @@ import { GeneralTab } from './GeneralTab'
 import { ShortcutsTab } from './ShortcutsTab'
 import { FunTab } from './FunTab'
 
-type SettingsTab = 'general' | 'palette' | 'typography' | 'effects' | 'fun' | 'shortcuts'
+type SettingsTab = 'board' | 'palette' | 'typography' | 'effects' | 'fun'
 
 const TAB_CONFIG: { id: SettingsTab; label: string; icon: typeof Palette }[] = [
-  { id: 'general', label: 'General', icon: Sliders },
+  { id: 'board', label: 'Board', icon: LayoutGrid },
   { id: 'palette', label: 'Palette', icon: Palette },
   { id: 'typography', label: 'Typography', icon: PenTool },
   { id: 'effects', label: 'Effects', icon: Wand2 },
   { id: 'fun', label: 'Fun', icon: PartyPopper },
-  { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
 ]
 
 interface SettingsModalProps {
@@ -30,7 +29,7 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  const [activeTab, setActiveTab] = useState<SettingsTab>('board')
   const [mounted, setMounted] = useState(false)
   const { colors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
@@ -128,12 +127,22 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 min-h-[500px]">
-          {activeTab === 'general' && <GeneralTab />}
+          {activeTab === 'board' && (
+            <div className="space-y-8">
+              <GeneralTab />
+              <div className="border-t border-white/10 pt-6">
+                <h3 className="text-sm font-medium text-slate-400 mb-4 flex items-center gap-2">
+                  <Keyboard className="w-4 h-4" />
+                  Board Shortcuts
+                </h3>
+                <ShortcutsTab />
+              </div>
+            </div>
+          )}
           {activeTab === 'palette' && <PaletteTab />}
           {activeTab === 'typography' && <TypographyTab />}
           {activeTab === 'effects' && <EffectsTab />}
           {activeTab === 'fun' && <FunTab />}
-          {activeTab === 'shortcuts' && <ShortcutsTab />}
         </div>
       </motion.div>
     </div>,
@@ -148,6 +157,7 @@ export function SettingsButton() {
   return (
     <>
       <motion.button
+        data-settings-trigger
         onClick={() => setIsOpen(true)}
         className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200"
         whileHover={{ scale: 1.05 }}

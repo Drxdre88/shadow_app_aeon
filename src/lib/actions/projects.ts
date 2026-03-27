@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireAuth, requireOwnership } from './helpers'
+import { requireAuth, requireOwnership, requireEditor } from './helpers'
 import {
   findProjects as _findProjects,
   findProjectsWithStats as _findProjectsWithStats,
@@ -26,7 +26,7 @@ export async function getProjectsWithStats() {
 }
 
 export async function setProjectGroup(projectId: string, group: string | null) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
   return _setProjectGroup(projectId, group)
 }
 
@@ -60,7 +60,7 @@ export async function createProject(data: {
 }
 
 export async function updateProject(projectId: string, data: UpdateProjectInput) {
-  const userId = await requireOwnership(projectId)
+  const userId = await requireEditor(projectId)
   const parsed = updateProjectSchema.parse(data)
   const project = await _updateProject(projectId, userId, parsed)
   revalidatePath('/dashboard')
@@ -70,6 +70,7 @@ export async function updateProject(projectId: string, data: UpdateProjectInput)
 
 export async function deleteProject(projectId: string) {
   const userId = await requireOwnership(projectId)
-  await _deleteProject(projectId, userId)
+  const deleted = await _deleteProject(projectId, userId)
+  if (!deleted) throw new Error('Only project owners can delete projects')
   revalidatePath('/dashboard')
 }

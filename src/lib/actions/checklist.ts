@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireOwnership } from './helpers'
+import { requireEditor } from './helpers'
 import {
   createChecklistItemSchema,
   checklistItemStateSchema,
@@ -19,7 +19,7 @@ import {
 import { findTaskById } from '@/lib/data/tasks'
 
 async function requireTaskInProject(taskId: string, projectId: string) {
-  await requireOwnership(projectId)
+  await requireEditor(projectId)
   const task = await findTaskById(taskId, projectId)
   if (!task) throw new Error('Task not found or unauthorized')
   return task

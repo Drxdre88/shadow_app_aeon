@@ -56,6 +56,28 @@ export const projects = pgTable('projects', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 
+export const projectMembers = pgTable('project_members', {
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: varchar('role', { length: 20 }).default('editor').notNull(),
+  invitedBy: uuid('invited_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (pm) => ({
+  pk: primaryKey({ columns: [pm.projectId, pm.userId] }),
+}))
+
+export const projectInvites = pgTable('project_invites', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  email: varchar('email', { length: 255 }).notNull(),
+  role: varchar('role', { length: 20 }).default('editor').notNull(),
+  invitedBy: uuid('invited_by').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  token: varchar('token', { length: 64 }).notNull().unique(),
+  acceptedAt: timestamp('accepted_at', { mode: 'date' }),
+  expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
 export const ganttViews = pgTable('gantt_views', {
   id: uuid('id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -260,3 +282,5 @@ export type TaskVault = typeof taskVault.$inferSelect
 export type UserPreference = typeof userPreferences.$inferSelect
 export type TaskComment = typeof taskComments.$inferSelect
 export type ApiKeyRecord = typeof apiKeys.$inferSelect
+export type ProjectMember = typeof projectMembers.$inferSelect
+export type ProjectInvite = typeof projectInvites.$inferSelect

@@ -1,9 +1,10 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Calendar, Trash2, Pencil, Palette } from 'lucide-react'
+import { Calendar, Trash2, Pencil, Palette, Users } from 'lucide-react'
 import Link from 'next/link'
 import { GlowCard } from '@/components/ui/GlowCard'
 import { deleteProject } from '@/lib/actions/projects'
@@ -22,6 +23,8 @@ import type { ProjectWithStats } from './types'
 interface GridViewProps {
   projects: ProjectWithStats[]
   onEdit: (project: ProjectWithStats) => void
+  onDelete?: (id: string) => void
+  onShare?: (project: ProjectWithStats) => void
 }
 
 function groupProjects(projects: ProjectWithStats[]) {
@@ -39,7 +42,7 @@ function groupProjects(projects: ProjectWithStats[]) {
     })
 }
 
-export function GridView({ projects, onEdit }: GridViewProps) {
+export function GridView({ projects, onEdit, onDelete, onShare }: GridViewProps) {
   const router = useRouter()
   const { glowIntensity, projectColors, setProjectColor, shortcuts } = useThemeStore()
   const [hoveredProjectId, setHoveredProjectId] = useState<string | null>(null)
@@ -89,9 +92,9 @@ export function GridView({ projects, onEdit }: GridViewProps) {
     if (deletingId) return
     if (!confirm('Delete this project? All tasks will be permanently removed.')) return
     setDeletingId(projectId)
+    onDelete?.(projectId)
     try {
       await deleteProject(projectId)
-      router.refresh()
     } catch {
       setDeletingId(null)
     }
@@ -130,6 +133,14 @@ export function GridView({ projects, onEdit }: GridViewProps) {
                   <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); onShare?.(project) }}
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
                     onClick={(e) => handleDelete(e, project.id)}
                     disabled={deletingId === project.id}
                     className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-40"
@@ -150,10 +161,15 @@ export function GridView({ projects, onEdit }: GridViewProps) {
             </div>
           </GlowCard>
         </Link>
-        {colorPickerProjectId === project.id && (() => {
-          const recent = getRecentColors()
-          return (
-            <div className="absolute top-full left-0 mt-2 z-50 p-3 rounded-xl backdrop-blur-xl bg-[#1a1a24]/95 border border-white/15 shadow-[0_0_40px_rgba(0,0,0,0.6)] space-y-2">
+        {colorPickerProjectId === project.id && createPortal(
+          <div
+            className="fixed inset-0 z-[200] bg-black/40 backdrop-blur-sm flex items-center justify-center"
+            onClick={() => setColorPickerProjectId(null)}
+          >
+            <div
+              className="p-4 rounded-xl bg-[#1a1a24]/95 backdrop-blur-xl border border-white/15 shadow-[0_0_40px_rgba(0,0,0,0.6)] min-w-[260px] space-y-2"
+              onClick={(e) => e.stopPropagation()}
+            >
               <div className="flex gap-2 flex-wrap">
                 {ACCENT_COLORS.map((c) => (
                   <button
@@ -167,7 +183,7 @@ export function GridView({ projects, onEdit }: GridViewProps) {
                   />
                 ))}
               </div>
-              {recent.length > 0 && (
+              {(() => { const recent = getRecentColors(); return recent.length > 0 ? (
                 <div className="border-t border-white/10 pt-2">
                   <span className="text-[10px] text-slate-500 mb-1 block">Recent</span>
                   <div className="flex gap-1.5 flex-wrap">
@@ -184,7 +200,7 @@ export function GridView({ projects, onEdit }: GridViewProps) {
                     ))}
                   </div>
                 </div>
-              )}
+              ) : null })()}
               <div className="border-t border-white/10 pt-2">
                 <div className="grid grid-cols-7 gap-1">
                   {PALETTE_COLORS.map((hex) => (
@@ -220,8 +236,9 @@ export function GridView({ projects, onEdit }: GridViewProps) {
                 </label>
               </div>
             </div>
-          )
-        })()}
+          </div>,
+          document.body
+        )}
       </div>
     )
   }

@@ -11,7 +11,16 @@ const SHORTCUT_LABELS: Record<string, string> = {
   changePriority: 'Change Priority',
   changeGlow: 'Change Color/Glow',
   toggleDates: 'Toggle Dates Display',
+  toggleChecklist: 'Checklist Overview (off/preview/full)',
 }
+
+const GLOBAL_SHORTCUTS = [
+  { keys: 'Ctrl+K / /', label: 'Command Palette' },
+  { keys: 'Double-click', label: 'Inline Edit Card Title' },
+  { keys: 'Ctrl+Z', label: 'Undo Last Delete' },
+  { keys: 'Ctrl+C / V', label: 'Copy / Paste Card' },
+  { keys: 'Escape', label: 'Close Modal / Palette' },
+]
 
 export function ShortcutsTab() {
   const { shortcuts, setShortcut, colors } = useThemeStore()
@@ -60,6 +69,21 @@ export function ShortcutsTab() {
         ))}
       </div>
       <p className="text-[10px] text-slate-500">Click a key binding, then press any key to remap. Escape to cancel.</p>
+
+      <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider pt-4">Global Shortcuts</h4>
+      <div className="space-y-2">
+        {GLOBAL_SHORTCUTS.map(({ keys, label }) => (
+          <div
+            key={keys}
+            className="flex items-center justify-between px-4 py-3 rounded-lg bg-white/[0.03] border border-white/10"
+          >
+            <span className="text-sm text-slate-300">{label}</span>
+            <span className="px-3 py-1.5 rounded-lg text-xs font-mono font-bold border border-white/10 bg-white/5 text-slate-400 min-w-[60px] text-center">
+              {keys}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

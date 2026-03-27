@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { signOut } from 'next-auth/react'
 import { motion } from 'framer-motion'
 import { Plus, LogOut, Eye, Crown, FolderOpen } from 'lucide-react'
@@ -12,8 +12,10 @@ import { HelpButton } from '@/components/ui/HelpModal'
 import { GlowCard } from '@/components/ui/GlowCard'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { CreateProjectModal } from '@/components/project/CreateProjectModal'
+import { getProjectsWithStats } from '@/lib/actions/projects'
 import { EditProjectModal } from '@/components/project/EditProjectModal'
 import { ProjectViewSwitcher } from '@/components/project/ProjectViewSwitcher'
+import { ShareModal } from '@/components/board/ShareModal'
 import { GlassStage } from '@/components/ui/GlassStage'
 import { useThemeStore } from '@/stores/themeStore'
 import type { ProjectWithStats } from '@/components/project/types'
@@ -29,13 +31,30 @@ interface DashboardContentProps {
   projects: ProjectWithStats[]
 }
 
-export default function DashboardContent({ user, projects }: DashboardContentProps) {
+export default function DashboardContent({ user, projects: initialProjects }: DashboardContentProps) {
+  const [projects, setProjects] = useState(initialProjects)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingProject, setEditingProject] = useState<ProjectWithStats | null>(null)
+  const [sharingProject, setSharingProject] = useState<ProjectWithStats | null>(null)
   const isAdmin = user.role === 'admin'
   const { glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
   const existingGroups = [...new Set(projects.map((p) => p.group).filter((g): g is string => !!g && g !== 'General'))].sort()
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        getProjectsWithStats().then(setProjects).catch(() => {})
+      }
+    }, 10_000)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        getProjectsWithStats().then(setProjects).catch(() => {})
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', handleVisibility) }
+  }, [])
 
   return (
     <div className="min-h-screen">
@@ -187,7 +206,7 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
               </NeonButton>
             </div>
           ) : (
-            <ProjectViewSwitcher projects={projects} onEdit={setEditingProject} />
+            <ProjectViewSwitcher projects={projects} onEdit={setEditingProject} onDelete={(id) => setProjects((prev) => prev.filter((p) => p.id !== id))} onShare={setSharingProject} />
           )}
         </motion.div>
       </main>
@@ -199,6 +218,14 @@ export default function DashboardContent({ user, projects }: DashboardContentPro
           project={editingProject}
           onClose={() => setEditingProject(null)}
           existingGroups={existingGroups}
+        />
+      )}
+      {sharingProject && (
+        <ShareModal
+          isOpen={true}
+          projectId={sharingProject.id}
+          projectName={sharingProject.name}
+          onClose={() => setSharingProject(null)}
         />
       )}
     </div>

@@ -7,19 +7,28 @@
 }
 
 .canvas-flow .react-flow__edge-path {
-  stroke: rgba(148, 163, 184, 0.4);
+  stroke: rgba(148, 163, 184, 0.35);
   stroke-width: 2;
+  filter: drop-shadow(0 0 3px rgba(148, 163, 184, 0.15));
+}
+
+.canvas-flow .react-flow__edge:hover .react-flow__edge-path {
+  stroke: rgba(168, 85, 247, 0.6);
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.3));
 }
 
 .canvas-flow .react-flow__edge.selected .react-flow__edge-path {
-  stroke: rgba(168, 85, 247, 0.7);
-  stroke-width: 2.5;
+  stroke: rgba(168, 85, 247, 0.8);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 10px rgba(168, 85, 247, 0.5));
 }
 
 .canvas-flow .react-flow__connection-line {
-  stroke: rgba(168, 85, 247, 0.5);
+  stroke: rgba(168, 85, 247, 0.6);
   stroke-width: 2;
   stroke-dasharray: 5 5;
+  filter: drop-shadow(0 0 4px rgba(168, 85, 247, 0.4));
 }
 
 .canvas-controls .react-flow__controls {

@@ -49,6 +49,12 @@ export interface ChecklistSummary {
   total: number
 }
 
+export interface ChecklistPreviewItem {
+  title: string
+  state: string
+  groupName: string
+}
+
 interface BoardState {
   columns: BoardColumn[]
   tasks: BoardTask[]
@@ -81,6 +87,11 @@ interface BoardState {
 
   setChecklistSummaries: (summaries: Record<string, ChecklistSummary>) => void
 
+  checklistPreviews: Record<string, ChecklistPreviewItem[]>
+  setChecklistPreviews: (previews: Record<string, ChecklistPreviewItem[]>) => void
+  checklistViewMode: 'off' | 'preview' | 'full'
+  toggleChecklistPreview: () => void
+
   showDates: boolean
   toggleShowDates: () => void
 
@@ -97,6 +108,8 @@ export const useBoardStore = create<BoardState>()(
       labels: [],
       dependencies: [],
       checklistSummaries: {},
+      checklistPreviews: {},
+      checklistViewMode: 'off' as 'off' | 'preview' | 'full',
       selectedTaskId: null,
       isDirty: false,
       showDates: false,
@@ -145,6 +158,11 @@ export const useBoardStore = create<BoardState>()(
       })),
 
       setChecklistSummaries: (checklistSummaries) => set({ checklistSummaries }),
+      setChecklistPreviews: (checklistPreviews) => set({ checklistPreviews }),
+      toggleChecklistPreview: () => set((s) => {
+        const cycle = { off: 'preview', preview: 'full', full: 'off' } as const
+        return { checklistViewMode: cycle[s.checklistViewMode] }
+      }),
       setDependencies: (dependencies) => set({ dependencies }),
       addDependency: (dep) => set((s) => ({
         dependencies: [...s.dependencies, dep],
@@ -184,3 +202,4 @@ export const useSelectedTaskId = () => useBoardStore((s) => s.selectedTaskId)
 export const useShowDates = () => useBoardStore((s) => s.showDates)
 export const useChecklistSummaries = () => useBoardStore((s) => s.checklistSummaries)
 export const useIsDirty = () => useBoardStore((s) => s.isDirty)
+export const useChecklistViewMode = () => useBoardStore((s) => s.checklistViewMode)

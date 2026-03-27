@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, memo } from 'react'
+import { useState, useRef, memo } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { motion } from 'framer-motion'
@@ -8,7 +8,7 @@ import { Calendar, Tag, MoreHorizontal, Check, X, Clock, Trash2 } from 'lucide-r
 import { cn } from '@/lib/utils/cn'
 import { colorConfig, AccentColor, hexToRgba } from '@/lib/utils/colors'
 import { GlowCard } from '@/components/ui/GlowCard'
-import { useBoardStore, useSelectedTaskId, useLabels, useShowDates } from '@/lib/store/boardStore'
+import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { DependencyIndicator } from './DependencyIndicator'
 import { TaskContextMenu } from './TaskContextMenu'
@@ -85,10 +85,15 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const selectedTaskId = useSelectedTaskId()
   const labels = useLabels()
   const clSummary = useBoardStore((s) => s.checklistSummaries[task.id])
+  const clPreview = useBoardStore((s) => s.checklistPreviews[task.id])
   const showDates = useShowDates()
+  const checklistMode = useChecklistViewMode()
   const updateTask = useBoardStore((s) => s.updateTask)
   const { glowIntensity: globalGlow, priorities } = useThemeStore()
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editName, setEditName] = useState(task.name)
+  const editRef = useRef<HTMLInputElement>(null)
   const isSelected = selectedTaskId === task.id
   const mult = globalGlow / 75
   const triState = statusToTri(task.id, task.status)
@@ -133,6 +138,37 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
 
   const taskLabels = labels.filter((l) => task.labels.includes(l.id))
 
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    if (isEditing) return
+    if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null; return }
+    clickTimerRef.current = setTimeout(() => { clickTimerRef.current = null; onEdit?.(task.id) }, 250)
+  }
+
+  const handleInlineEdit = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null }
+    setEditName(task.name)
+    setIsEditing(true)
+    setTimeout(() => editRef.current?.select(), 0)
+  }
+
+  const handleInlineSubmit = () => {
+    const trimmed = editName.trim()
+    if (trimmed && trimmed !== task.name) {
+      updateTask(task.id, { name: trimmed })
+      onTaskUpdate?.(task.id, { name: trimmed })
+    }
+    setIsEditing(false)
+  }
+
+  const handleInlineKeyDown = (e: React.KeyboardEvent) => {
+    e.stopPropagation()
+    if (e.key === 'Enter') handleInlineSubmit()
+    if (e.key === 'Escape') { setIsEditing(false); setEditName(task.name) }
+  }
+
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -156,7 +192,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
       <motion.div
         {...attributes}
         {...listeners}
-        onClick={() => onEdit?.(task.id)}
+        onClick={handleCardClick}
         onContextMenu={handleContextMenu}
         style={{ touchAction: 'none' }}
         className={cn(
@@ -175,7 +211,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
           showAccentLine
           selected={isSelected}
           hover
-          className="p-3 group"
+          className="p-3 group min-h-[100px]"
         >
           <div className="flex items-start justify-between mb-1">
             <div className="flex items-start gap-2 flex-1 mr-2 min-w-0">
@@ -200,14 +236,30 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
                 {triState === 'checked' && <Check className="w-2.5 h-2.5 text-white" />}
                 {triState === 'crossed' && <X className="w-2.5 h-2.5 text-white" />}
               </button>
-              <h4 className={cn(
-                'text-sm font-medium line-clamp-2',
-                triState === 'checked' && 'line-through text-slate-500',
-                triState === 'crossed' && 'line-through text-red-400/50',
-                triState === 'unchecked' && 'text-white',
-              )}>
-                {task.name}
-              </h4>
+              {isEditing ? (
+                <input
+                  ref={editRef}
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  onBlur={handleInlineSubmit}
+                  onKeyDown={handleInlineKeyDown}
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-sm font-medium text-white bg-white/10 border border-purple-500/50 rounded px-1.5 py-0.5 w-full focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+                  autoFocus
+                />
+              ) : (
+                <h4
+                  onDoubleClick={handleInlineEdit}
+                  className={cn(
+                    'text-sm font-medium line-clamp-2',
+                    triState === 'checked' && 'line-through text-slate-500',
+                    triState === 'crossed' && 'line-through text-red-400/50',
+                    triState === 'unchecked' && 'text-white',
+                  )}
+                >
+                  {task.name}
+                </h4>
+              )}
             </div>
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
               <button
@@ -258,6 +310,77 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
               })}
             </div>
           )}
+
+          {checklistMode !== 'off' && clPreview && clPreview.length > 0 && (() => {
+            if (checklistMode === 'preview') {
+              return (
+                <div className="space-y-0.5 mb-1.5">
+                  {clPreview.slice(0, 5).map((item, i) => (
+                    <div key={i} className="flex items-center gap-1.5">
+                      <div className={cn(
+                        'w-2.5 h-2.5 rounded-sm border flex-shrink-0 flex items-center justify-center',
+                        item.state === 'checked' && 'bg-emerald-500/30 border-emerald-500/50',
+                        item.state === 'crossed' && 'bg-red-500/30 border-red-500/50',
+                        item.state === 'unchecked' && 'border-white/20',
+                      )}>
+                        {item.state === 'checked' && <Check className="w-1.5 h-1.5 text-emerald-400" />}
+                        {item.state === 'crossed' && <X className="w-1.5 h-1.5 text-red-400" />}
+                      </div>
+                      <span className={cn(
+                        'text-[10px] truncate leading-tight',
+                        item.state === 'checked' && 'text-slate-600 line-through',
+                        item.state === 'crossed' && 'text-red-400/40 line-through',
+                        item.state === 'unchecked' && 'text-slate-400',
+                      )}>
+                        {item.title}
+                      </span>
+                    </div>
+                  ))}
+                  {clPreview.length > 5 && (
+                    <span className="text-[9px] text-slate-600 pl-4">+{clPreview.length - 5} more</span>
+                  )}
+                </div>
+              )
+            }
+            const groups = new Map<string, typeof clPreview>()
+            for (const item of clPreview) {
+              const g = item.groupName || 'Checklist'
+              if (!groups.has(g)) groups.set(g, [])
+              groups.get(g)!.push(item)
+            }
+            return (
+              <div className="space-y-1.5 mb-1.5">
+                {[...groups.entries()].map(([groupName, items]) => (
+                  <div key={groupName}>
+                    <span className="text-[9px] uppercase tracking-wider text-slate-600 font-medium">{groupName}</span>
+                    <div className="space-y-0.5 mt-0.5">
+                      {items.map((item, i) => (
+                        <div key={i} className="flex items-center gap-1.5">
+                          <div className={cn(
+                            'w-2.5 h-2.5 rounded-sm border flex-shrink-0 flex items-center justify-center',
+                            item.state === 'checked' && 'bg-emerald-500/30 border-emerald-500/50',
+                            item.state === 'crossed' && 'bg-red-500/30 border-red-500/50',
+                            item.state === 'unchecked' && 'border-white/20',
+                          )}>
+                            {item.state === 'checked' && <Check className="w-1.5 h-1.5 text-emerald-400" />}
+                            {item.state === 'crossed' && <X className="w-1.5 h-1.5 text-red-400" />}
+                          </div>
+                          <span className={cn(
+                            'text-[10px] truncate leading-tight',
+                            item.state === 'checked' && 'text-slate-600 line-through',
+                            item.state === 'crossed' && 'text-red-400/40 line-through',
+                            item.state === 'unchecked' && 'text-slate-400',
+                          )}>
+                            {item.title}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
 
           <div className="flex items-center justify-between mt-auto pt-2 border-t border-white/5">
             <div className="flex items-center gap-1.5">

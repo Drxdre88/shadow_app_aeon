@@ -39,7 +39,7 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
     const currentFetchId = ++fetchIdRef.current
 
     loadBoardData(projectId)
-      .then(({ tasks: dbTasks, columns: dbColumns, labels: dbLabels, taskLabels: dbTaskLabels, dependencies: dbDependencies, checklistSummaries: dbChecklistSummaries }) => {
+      .then(({ tasks: dbTasks, columns: dbColumns, labels: dbLabels, taskLabels: dbTaskLabels, dependencies: dbDependencies, checklistSummaries: dbChecklistSummaries, checklistPreviews: dbChecklistPreviews }) => {
         if (currentFetchId !== fetchIdRef.current) return
         if (!isInitialLoad.current && useBoardStore.getState().isDirty) return
 
@@ -98,6 +98,7 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
             blockedTaskId: d.blockedTaskId,
           })),
           checklistSummaries: dbChecklistSummaries,
+          checklistPreviews: dbChecklistPreviews,
           isDirty: false,
         })
       })
@@ -183,15 +184,15 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
   }, [activeTab, projectId, isLoading, setCanvasNodes, setCanvasEdges])
 
   useEffect(() => {
-    const POLL_INTERVAL = 10_000
+    const POLL_INTERVAL = 3_000
     const interval = setInterval(() => {
-      if (document.visibilityState === 'visible' && !useBoardStore.getState().isDirty) {
+      if (document.visibilityState === 'visible') {
         setLoadKey((k) => k + 1)
       }
     }, POLL_INTERVAL)
 
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible' && !useBoardStore.getState().isDirty) {
+      if (document.visibilityState === 'visible') {
         setLoadKey((k) => k + 1)
       }
     }

@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireOwnership } from './helpers'
+import { requireOwnership, requireEditor } from './helpers'
 import { createTaskSchema, updateTaskSchema, reorderTaskEntrySchema } from '@/lib/data/validators'
 import {
   findTasks as _findTasks,
@@ -20,20 +20,21 @@ import { emitActivity } from '@/lib/data/activity'
 import { findColumns as _findColumns, createDefaultColumns as _createDefaultColumns } from '@/lib/data/columns'
 import { findLabels as _findLabels, findTaskLabels as _findTaskLabels, setTaskLabels as _setTaskLabels } from '@/lib/data/labels'
 import { findDependencies as _findDependencies } from '@/lib/data/dependencies'
-import { findChecklistSummaries as _findChecklistSummaries, findChecklistItems as _findChecklistItems, createChecklistItemsBatch as _createChecklistItemsBatch } from '@/lib/data/checklist'
+import { findChecklistSummaries as _findChecklistSummaries, findChecklistItems as _findChecklistItems, createChecklistItemsBatch as _createChecklistItemsBatch, findChecklistPreviews as _findChecklistPreviews } from '@/lib/data/checklist'
 
 export async function loadBoardData(projectId: string) {
   await requireOwnership(projectId)
   await _createDefaultColumns(projectId)
-  const [tasks, columns, labels, taskLabels, dependencies, checklistSummaries] = await Promise.all([
+  const [tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews] = await Promise.all([
     _findTasks(projectId),
     _findColumns(projectId),
     _findLabels(projectId),
     _findTaskLabels(projectId),
     _findDependencies(projectId),
     _findChecklistSummaries(projectId),
+    _findChecklistPreviews(projectId),
   ])
-  return { tasks, columns, labels, taskLabels, dependencies, checklistSummaries }
+  return { tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews }
 }
 
 export async function createBoardTask(data: {
@@ -51,7 +52,7 @@ export async function createBoardTask(data: {
   startDate?: string
   endDate?: string
 }) {
-  const userId = await requireOwnership(data.projectId)
+  const userId = await requireEditor(data.projectId)
 
   const parsed = createTaskSchema.parse({
     name: data.name,
@@ -92,7 +93,7 @@ export async function updateBoardTask(
     endDate?: string | null
   }
 ) {
-  const userId = await requireOwnership(projectId)
+  const userId = await requireEditor(projectId)
 
   const parsed = updateTaskSchema.parse(data)
 
@@ -117,7 +118,7 @@ export async function updateBoardTask(
 }
 
 export async function deleteBoardTask(taskId: string, projectId: string) {
-  const userId = await requireOwnership(projectId)
+  const userId = await requireEditor(projectId)
   const taskToDelete = await _findTaskById(taskId, projectId)
   emitActivity(projectId, 'task', taskId, 'deleted', taskToDelete?.name, undefined, userId).catch(() => {})
   await deleteLinkedGanttTask(taskId)
@@ -129,7 +130,7 @@ export async function reorderBoardTasks(
   projectId: string,
   updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[]
 ) {
-  const userId = await requireOwnership(projectId)
+  const userId = await requireEditor(projectId)
   const movingIds = updates.filter(u => u.columnId).map(u => u.id)
   const previousColumns = new Map<string, string | null>()
   if (movingIds.length > 0) {
@@ -156,7 +157,7 @@ export async function reorderBoardTasks(
 }
 
 export async function archiveBoardTask(taskId: string, projectId: string) {
-  const userId = await requireOwnership(projectId)
+  const userId = await requireEditor(projectId)
   const task = await _archiveTask(taskId, projectId)
   if (task) {
     emitActivity(projectId, 'task', taskId, 'archived', task.name, undefined, userId).catch(() => {})
@@ -166,7 +167,7 @@ export async function archiveBoardTask(taskId: string, projectId: string) {
 }
 
 export async function restoreBoardTask(taskId: string, projectId: string) {
-  const userId = await requireOwnership(projectId)
+  const userId = await requireEditor(projectId)
   const task = await _restoreTask(taskId, projectId)
   if (task) {
     emitActivity(projectId, 'task', taskId, 'restored', task.name, undefined, userId).catch(() => {})
@@ -181,7 +182,7 @@ export async function getArchivedTasks(projectId: string) {
 }
 
 export async function archiveColumnTasks(projectId: string, columnId: string) {
-  const userId = await requireOwnership(projectId)
+  const userId = await requireEditor(projectId)
   const allTasks = await _findTasks(projectId)
   const columnTaskIds = allTasks.filter(t => t.columnId === columnId).map(t => t.id)
   const archived = await _archiveTasksBatch(projectId, columnTaskIds)
@@ -197,7 +198,7 @@ export async function duplicateBoardTask(
   projectId: string,
   newTaskId: string
 ) {
-  const userId = await requireOwnership(projectId)
+  const userId = await requireEditor(projectId)
 
   const source = await _findTaskById(sourceTaskId, projectId)
   if (!source) throw new Error('Source task not found')

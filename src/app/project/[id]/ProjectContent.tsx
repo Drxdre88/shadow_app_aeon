@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { LayoutGrid, Calendar, Lightbulb, ArrowLeft, RefreshCw, AlertTriangle, Filter, Link2, GitBranch, Trophy, RotateCcw, Columns3, Grid2x2, Package, Activity } from 'lucide-react'
+import { LayoutGrid, Calendar, Lightbulb, ArrowLeft, RefreshCw, AlertTriangle, Filter, Link2, GitBranch, Trophy, RotateCcw, Columns3, Grid2x2, Package, Activity, Users } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import dynamic from 'next/dynamic'
 import Image from 'next/image'
@@ -10,7 +10,6 @@ import Link from 'next/link'
 import { SettingsButton } from '@/components/ui/SettingsModal'
 import { HelpButton } from '@/components/ui/HelpModal'
 import { GlassStage } from '@/components/ui/GlassStage'
-import { GanttChart } from '@/components/gantt/GanttChart'
 import { TimeScaleSelector } from '@/components/gantt/TimeScaleSelector'
 import { TaskBoard } from '@/components/board/TaskBoard'
 import { ProjectSwitcher } from '@/components/board/ProjectSwitcher'
@@ -20,12 +19,11 @@ import { activeFilterCount, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { cn } from '@/lib/utils/cn'
 import { GanttViewSelector } from '@/components/gantt/GanttViewSelector'
-import { TrophyRoom } from '@/components/trophy/TrophyRoom'
-import { VelocityTab } from '@/components/velocity/VelocityTab'
 import { TaskEditModal } from '@/components/board/TaskEditModal'
 import { VaultDaysModal } from '@/components/board/VaultDaysModal'
 import { BatchVaultModal } from '@/components/board/BatchVaultModal'
 import { ArchiveBrowser } from '@/components/board/ArchiveBrowser'
+import { ShareModal } from '@/components/board/ShareModal'
 import type { Project } from '@/lib/db/schema'
 import { useProjectData } from './useProjectData'
 import { useBoardHandlers } from './useBoardHandlers'
@@ -35,6 +33,9 @@ import { useGanttHandlers } from './useGanttHandlers'
 import { useCanvasHandlers } from './useCanvasHandlers'
 
 const CanvasView = dynamic(() => import('@/components/canvas/CanvasView'), { ssr: false })
+const GanttChart = dynamic(() => import('@/components/gantt/GanttChart').then(m => ({ default: m.GanttChart })), { ssr: false })
+const TrophyRoom = dynamic(() => import('@/components/trophy/TrophyRoom').then(m => ({ default: m.TrophyRoom })), { ssr: false })
+const VelocityTab = dynamic(() => import('@/components/velocity/VelocityTab').then(m => ({ default: m.VelocityTab })), { ssr: false })
 
 interface ProjectContentProps {
   project: Project
@@ -46,6 +47,7 @@ export default function ProjectContent({ project }: ProjectContentProps) {
   const [filters, setFilters] = useState<BoardFilters>(DEFAULT_FILTERS)
   const [showAllDeps, setShowAllDeps] = useState(false)
   const [connectMode, setConnectMode] = useState(false)
+  const [showShare, setShowShare] = useState(false)
   const { boardLayout, setBoardLayout, colors, projectColors, glowIntensity } = useThemeStore()
   const isDirty = useBoardStore((s) => s.isDirty)
   const projectGlow = projectColors[project.id] || colors.glowColor || 'rgba(139, 92, 246, 0.5)'
@@ -253,6 +255,13 @@ export default function ProjectContent({ project }: ProjectContentProps) {
                 </button>
               </>
             )}
+            <button
+              onClick={() => setShowShare(true)}
+              className="flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium text-slate-400 hover:text-white hover:bg-white/5 transition-all"
+            >
+              <Users className="w-4 h-4" />
+              <span className="hidden sm:inline">Share</span>
+            </button>
             <HelpButton />
             <SettingsButton />
           </div>
@@ -400,6 +409,12 @@ export default function ProjectContent({ project }: ProjectContentProps) {
           </AnimatePresence>
         )}
       </main>
+      <ShareModal
+        isOpen={showShare}
+        projectId={project.id}
+        projectName={project.name}
+        onClose={() => setShowShare(false)}
+      />
     </div>
   )
 }

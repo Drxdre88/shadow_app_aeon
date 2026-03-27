@@ -22,6 +22,7 @@ export const DEFAULT_SHORTCUTS: Record<string, string> = {
   changeGlow: 'g',
   changePriority: 'v',
   toggleDates: 'd',
+  toggleChecklist: 'o',
 }
 
 export const DEFAULT_PREFERENCES = {
@@ -33,8 +34,8 @@ export const DEFAULT_PREFERENCES = {
   dragEffect: 'glow' as DragEffect,
   cursorEffect: 'none' as CursorEffect,
   cursorColor: '',
-  columnWidth: 1100,
-  columnHeight: 300,
+  columnWidth: 300,
+  columnHeight: 1100,
   dynamicColumnWidth: false,
   dynamicColumnHeight: false,
   smokeVolume: 75,
@@ -43,7 +44,7 @@ export const DEFAULT_PREFERENCES = {
   depLineStyle: 'solid' as DepLineStyle,
   depCanvasBlur: 16,
   spacePlanetGlow: true,
-  spaceOrbitSpeed: 1 as number,
+  spaceOrbitSpeed: 1,
   boardLayout: 'scroll' as BoardLayout,
   projectColors: {} as Record<string, string>,
   depViewMode: 'canvas' as DepViewMode,
