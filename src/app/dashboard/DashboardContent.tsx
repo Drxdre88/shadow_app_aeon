@@ -122,6 +122,7 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
             <SettingsButton />
             <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-4 border-l border-white/10">
               {user.image ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
                 <img
                   src={user.image}
                   alt={user.name || ''}

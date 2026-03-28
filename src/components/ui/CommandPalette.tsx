@@ -144,6 +144,7 @@ export function CommandPalette() {
                       className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 cursor-pointer data-[selected=true]:bg-white/[0.06] data-[selected=true]:text-white transition-colors"
                     >
                       {p.planetImage ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
                         <img src={`/planets/${p.planetImage}`} alt="" className="w-4 h-4 rounded-full shrink-0" />
                       ) : (
                         <div className="w-4 h-4 rounded-full bg-purple-500/20 shrink-0" />

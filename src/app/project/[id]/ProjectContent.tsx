@@ -370,7 +370,7 @@ export default function ProjectContent({ project }: ProjectContentProps) {
                   <GanttChart
                     projectId={project.id}
                     startDate={project.startDate ? new Date(project.startDate) : new Date()}
-                    endDate={project.endDate ? new Date(project.endDate) : new Date(Date.now() + 90 * 86400_000)}
+                    endDate={project.endDate ? new Date(project.endDate) : new Date('2027-01-01')}
                     onTaskUpdate={gantt.handleGanttTaskUpdate}
                     onTaskClick={gantt.handleGanttTaskClick}
                   />

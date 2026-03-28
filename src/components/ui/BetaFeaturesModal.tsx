@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useHasMounted } from '@/lib/utils/useHasMounted'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
@@ -197,10 +197,13 @@ export function BetaFeaturesModal({ isOpen, onClose }: BetaFeaturesModalProps) {
 }
 
 export function BetaFeaturesButton() {
+  const mounted = useHasMounted()
+  const checkedRef = useRef(false)
   const [isOpen, setIsOpen] = useState(false)
   const { glowIntensity, colors } = useThemeStore()
 
-  useEffect(() => {
+  if (mounted && !checkedRef.current) {
+    checkedRef.current = true
     try {
       const seen = localStorage.getItem(STORAGE_KEY)
       if (!seen) {
@@ -208,7 +211,7 @@ export function BetaFeaturesButton() {
         localStorage.setItem(STORAGE_KEY, 'true')
       }
     } catch (e) { if (!(e instanceof DOMException)) console.warn('localStorage:', e) }
-  }, [])
+  }
 
   return (
     <>
