@@ -78,10 +78,12 @@ export default function BetaTermsContent() {
 
   const allChecked = checked.every(Boolean)
 
-  if (allChecked && !prevAllChecked.current && bloodMode) {
-    setBloodFloodKey((k) => k + 1)
-  }
-  prevAllChecked.current = allChecked
+  useEffect(() => { // eslint-disable-line react-hooks/set-state-in-effect, react-hooks/refs
+    if (allChecked && !prevAllChecked.current && bloodMode) {
+      setBloodFloodKey((k) => k + 1)
+    }
+    prevAllChecked.current = allChecked
+  }, [allChecked, bloodMode])
 
   const toggleItem = (idx: number) => {
     setChecked((prev) => prev.map((v, i) => (i === idx ? !v : v)))

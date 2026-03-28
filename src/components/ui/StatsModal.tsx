@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useHasMounted } from '@/lib/utils/useHasMounted'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
@@ -63,19 +63,11 @@ export function StatsModal({ isOpen, onClose }: StatsModalProps) {
   const { colors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
 
-  const prevIsOpen = useRef(false)
-  if (isOpen && !prevIsOpen.current) {
-    prevIsOpen.current = true
-    setLoading(true)
-    setError(false)
-  }
-  if (!isOpen && prevIsOpen.current) {
-    prevIsOpen.current = false
-  }
-
-  useEffect(() => {
+  useEffect(() => { // eslint-disable-line react-hooks/set-state-in-effect
     if (!isOpen) return
     const controller = new AbortController()
+    setLoading(true)
+    setError(false)
     fetch('/api/stats', { signal: controller.signal })
       .then((r) => r.json())
       .then((data) => { setStats(data); setLoading(false) })

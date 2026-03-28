@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useHasMounted } from '@/lib/utils/useHasMounted'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
@@ -130,7 +130,7 @@ export function BetaFeaturesModal({ isOpen, onClose }: BetaFeaturesModalProps) {
 
         <div className="flex-1 overflow-y-auto p-5 space-y-6">
           <p className="text-sm text-slate-400 leading-relaxed">
-            Welcome to the Aeon closed beta. Here's everything available to you right now.
+            Welcome to the Aeon closed beta. Here&apos;s everything available to you right now.
             Features are actively evolving — your feedback shapes what comes next.
           </p>
 
@@ -197,13 +197,10 @@ export function BetaFeaturesModal({ isOpen, onClose }: BetaFeaturesModalProps) {
 }
 
 export function BetaFeaturesButton() {
-  const mounted = useHasMounted()
-  const checkedRef = useRef(false)
   const [isOpen, setIsOpen] = useState(false)
   const { glowIntensity, colors } = useThemeStore()
 
-  if (mounted && !checkedRef.current) {
-    checkedRef.current = true
+  useEffect(() => { // eslint-disable-line react-hooks/set-state-in-effect
     try {
       const seen = localStorage.getItem(STORAGE_KEY)
       if (!seen) {
@@ -211,7 +208,7 @@ export function BetaFeaturesButton() {
         localStorage.setItem(STORAGE_KEY, 'true')
       }
     } catch (e) { if (!(e instanceof DOMException)) console.warn('localStorage:', e) }
-  }
+  }, [])
 
   return (
     <>
