@@ -127,7 +127,7 @@ export function BloodClots() {
         <motion.div key={`splat-${i}`} initial={{ scale: 0, opacity: 0 }} animate={{ scale: [0, 1.5, 1], opacity: [0, 0.8, 0.6, 0] }} transition={{ delay: s.delay, duration: s.duration, ease: 'easeOut' }} className="absolute rounded-full" style={{ left: s.x, top: s.y, width: s.size, height: s.size, background: '#2a0000', boxShadow: '0 0 3px rgba(30, 0, 0, 0.5)' }} />
       ))}
       {CLOTS.slice(0, 5).map((clot, i) => (
-        <motion.div key={`trail-${i}`} initial={{ height: 0, opacity: 0 }} animate={{ height: 8 + Math.random() * 15, opacity: [0, 0.7, 0.4, 0] }} transition={{ delay: clot.delay + 0.5, duration: clot.duration * 0.8, ease: [0.4, 0, 0.1, 1] }} className="absolute rounded-b-full" style={{ left: clot.x + clot.size / 2 - 1, top: clot.y + clot.size * clot.elongation, width: 2, background: 'linear-gradient(180deg, #2a0000, #1a0000, transparent)' }} />
+        <motion.div key={`trail-${i}`} initial={{ height: 0, opacity: 0 }} animate={{ height: 8 + clot.size, opacity: [0, 0.7, 0.4, 0] }} transition={{ delay: clot.delay + 0.5, duration: clot.duration * 0.8, ease: [0.4, 0, 0.1, 1] }} className="absolute rounded-b-full" style={{ left: clot.x + clot.size / 2 - 1, top: clot.y + clot.size * clot.elongation, width: 2, background: 'linear-gradient(180deg, #2a0000, #1a0000, transparent)' }} />
       ))}
     </div>
   )

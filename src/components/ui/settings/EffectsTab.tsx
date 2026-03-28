@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion'
 import { useThemeStore, type DepLineStyle, type DepViewMode } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
-import { CompactSlider } from './shared'
+import { ThemeSlider } from './shared'
 
 const DEP_LINE_STYLE_OPTIONS: { id: DepLineStyle; name: string }[] = [
   { id: 'solid', name: 'Solid' },
@@ -48,9 +48,9 @@ export function EffectsTab() {
 
         {depViewMode === 'arrows' && (
           <>
-            <div className="space-y-2 max-w-md">
-              <CompactSlider label="Line Width" value={depLineWidth} onChange={setDepLineWidth} min={0.3} max={3} step={0.1} color={colors.glowColor} unit="px" />
-              <CompactSlider label="Glow Brightness" value={depLineGlow} onChange={setDepLineGlow} min={0} max={100} color={colors.glowColor} unit="%" />
+            <div className="space-y-1 max-w-[300px]">
+              <ThemeSlider label="Line Width" value={depLineWidth} onChange={setDepLineWidth} min={0.3} max={3} step={0.1} color={colors.glowColor} unit="px" />
+              <ThemeSlider label="Glow Brightness" value={depLineGlow} onChange={setDepLineGlow} min={0} max={100} color={colors.glowColor} unit="%" />
             </div>
             <div className="flex gap-2">
               {DEP_LINE_STYLE_OPTIONS.map(({ id, name }) => {
@@ -76,8 +76,8 @@ export function EffectsTab() {
           </>
         )}
 
-        <div className="space-y-2 max-w-md">
-          <CompactSlider label="Canvas Backdrop Blur" value={depCanvasBlur} onChange={setDepCanvasBlur} min={0} max={40} color={colors.glowColor} unit="px" />
+        <div className="space-y-1 max-w-[300px]">
+          <ThemeSlider label="Canvas Backdrop Blur" value={depCanvasBlur} onChange={setDepCanvasBlur} min={0} max={40} color={colors.glowColor} unit="px" />
         </div>
       </div>
     </div>

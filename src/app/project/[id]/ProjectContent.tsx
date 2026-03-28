@@ -9,6 +9,7 @@ import aeonLogo from '@/assets/aeon.png'
 import Link from 'next/link'
 import { SettingsButton } from '@/components/ui/SettingsModal'
 import { HelpButton } from '@/components/ui/HelpModal'
+import { FeaturesShowcaseButton } from '@/components/ui/FeaturesShowcase'
 import { GlassStage } from '@/components/ui/GlassStage'
 import { TimeScaleSelector } from '@/components/gantt/TimeScaleSelector'
 import { TaskBoard } from '@/components/board/TaskBoard'
@@ -262,6 +263,7 @@ export default function ProjectContent({ project }: ProjectContentProps) {
               <Users className="w-4 h-4" />
               <span className="hidden sm:inline">Share</span>
             </button>
+            <FeaturesShowcaseButton />
             <HelpButton />
             <SettingsButton />
           </div>
@@ -367,8 +369,8 @@ export default function ProjectContent({ project }: ProjectContentProps) {
                 <>
                   <GanttChart
                     projectId={project.id}
-                    startDate={new Date(project.startDate)}
-                    endDate={new Date(project.endDate)}
+                    startDate={project.startDate ? new Date(project.startDate) : new Date()}
+                    endDate={project.endDate ? new Date(project.endDate) : new Date('2027-01-01')}
                     onTaskUpdate={gantt.handleGanttTaskUpdate}
                     onTaskClick={gantt.handleGanttTaskClick}
                   />

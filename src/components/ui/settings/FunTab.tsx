@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import { Sparkles, Ghost, Zap } from 'lucide-react'
 import { useThemeStore, type DragEffect, type CursorEffect } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
-import { ToggleRow, CompactSlider } from './shared'
+import { ToggleRow, ThemeSlider } from './shared'
 
 const DRAG_EFFECT_OPTIONS: { id: DragEffect; name: string; icon: typeof Sparkles }[] = [
   { id: 'glow', name: 'Aurora Glow', icon: Sparkles },
@@ -130,8 +130,8 @@ export function FunTab() {
           </div>
         </div>
         {isSmokeEffect && (
-          <div className="max-w-md mt-2">
-            <CompactSlider label="Smoke Volume" value={smokeVolume} onChange={setSmokeVolume} min={0} max={100} color={colors.glowColor} unit="%" />
+          <div className="max-w-[300px] mt-2">
+            <ThemeSlider label="Smoke Volume" value={smokeVolume} onChange={setSmokeVolume} min={0} max={100} color={colors.glowColor} unit="%" />
           </div>
         )}
       </div>

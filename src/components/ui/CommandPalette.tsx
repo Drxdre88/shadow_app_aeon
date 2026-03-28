@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useHasMounted } from '@/lib/utils/useHasMounted'
 import { Command } from 'cmdk'
 import { useRouter, usePathname } from 'next/navigation'
 import { createPortal } from 'react-dom'
@@ -22,15 +23,13 @@ interface ProjectItem {
 export function CommandPalette() {
   const [open, setOpen] = useState(false)
   const [projects, setProjects] = useState<ProjectItem[]>([])
-  const [mounted, setMounted] = useState(false)
+  const mounted = useHasMounted()
   const router = useRouter()
   const pathname = usePathname()
   const tasks = useBoardStore((s) => s.tasks)
 
   const projectMatch = pathname.match(/\/project\/([^/]+)/)
   const currentProjectId = projectMatch?.[1] || null
-
-  useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -145,6 +144,7 @@ export function CommandPalette() {
                       className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-300 cursor-pointer data-[selected=true]:bg-white/[0.06] data-[selected=true]:text-white transition-colors"
                     >
                       {p.planetImage ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
                         <img src={`/planets/${p.planetImage}`} alt="" className="w-4 h-4 rounded-full shrink-0" />
                       ) : (
                         <div className="w-4 h-4 rounded-full bg-purple-500/20 shrink-0" />

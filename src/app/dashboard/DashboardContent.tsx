@@ -9,6 +9,7 @@ import aeonLogo from '@/assets/aeon.png'
 import { SettingsButton } from '@/components/ui/SettingsModal'
 import { HelpButton } from '@/components/ui/HelpModal'
 import { StatsButton } from '@/components/ui/StatsModal'
+import { BetaFeaturesButton } from '@/components/ui/BetaFeaturesModal'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { CreateProjectModal } from '@/components/project/CreateProjectModal'
 import { getProjectsWithStats } from '@/lib/actions/projects'
@@ -41,18 +42,15 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
   const existingGroups = [...new Set(projects.map((p) => p.group).filter((g): g is string => !!g && g !== 'General'))].sort()
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    let alive = true
+    const refresh = () => {
       if (document.visibilityState === 'visible') {
-        getProjectsWithStats().then(setProjects).catch(() => {})
-      }
-    }, 10_000)
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        getProjectsWithStats().then(setProjects).catch(() => {})
+        getProjectsWithStats().then((data) => { if (alive) setProjects(data) }).catch(() => {})
       }
     }
-    document.addEventListener('visibilitychange', handleVisibility)
-    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', handleVisibility) }
+    const interval = setInterval(refresh, 10_000)
+    document.addEventListener('visibilitychange', refresh)
+    return () => { alive = false; clearInterval(interval); document.removeEventListener('visibilitychange', refresh) }
   }, [])
 
   useEffect(() => {
@@ -118,11 +116,13 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
+            <BetaFeaturesButton />
             <StatsButton />
             <HelpButton />
             <SettingsButton />
             <div className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-4 border-l border-white/10">
               {user.image ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
                 <img
                   src={user.image}
                   alt={user.name || ''}

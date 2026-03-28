@@ -3,9 +3,18 @@
 import { useEffect, useState } from 'react'
 import { useThemeStore, FONT_OPTIONS } from '@/stores/themeStore'
 
+function hexToRgb(hex: string): string {
+  const h = hex.replace('#', '')
+  if (h.length !== 6) return '128,128,128'
+  const r = parseInt(h.slice(0, 2), 16)
+  const g = parseInt(h.slice(2, 4), 16)
+  const b = parseInt(h.slice(4, 6), 16)
+  return `${r},${g},${b}`
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false)
-  const { colors, fontFamily, currentTheme, _hydrated } = useThemeStore()
+  const { colors, fontFamily, currentTheme, _hydrated, themeSaturation, themeBrightness, surfaceVibrancy } = useThemeStore()
 
   useEffect(() => {
     setMounted(true)
@@ -38,6 +47,21 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     root.style.setProperty('--glow-xl', `0 0 40px 15px ${colors.glowColor}`)
     root.style.setProperty('--glow-xxl', `0 0 60px 20px ${colors.glowColor}`)
 
+    const satFilter = themeSaturation !== 100 ? `saturate(${themeSaturation}%)` : ''
+    const briFilter = themeBrightness !== 100 ? `brightness(${themeBrightness}%)` : ''
+    const combinedFilter = [satFilter, briFilter].filter(Boolean).join(' ') || 'none'
+    root.style.setProperty('--theme-filter', combinedFilter)
+
+    const vibrancy = surfaceVibrancy / 100
+    root.style.setProperty('--surface-tint', vibrancy > 0
+      ? `rgba(${hexToRgb(colors.primary)}, ${vibrancy * 0.15})`
+      : 'transparent'
+    )
+    root.style.setProperty('--surface-tint-hover', vibrancy > 0
+      ? `rgba(${hexToRgb(colors.primary)}, ${vibrancy * 0.25})`
+      : 'transparent'
+    )
+
     const fontCss = FONT_OPTIONS.find((f) => f.id === fontFamily)?.css || FONT_OPTIONS[0].css
     document.body.style.fontFamily = fontCss
 
@@ -48,7 +72,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     } else {
       root.classList.remove('dark')
     }
-  }, [mounted, colors, fontFamily, currentTheme])
+  }, [mounted, colors, fontFamily, currentTheme, themeSaturation, themeBrightness, surfaceVibrancy])
 
   if (!mounted || !_hydrated) {
     return <div style={{ visibility: 'hidden' }}>{children}</div>
