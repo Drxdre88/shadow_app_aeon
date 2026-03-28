@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
+import { useHasMounted } from '@/lib/utils/useHasMounted'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { X, HelpCircle, LayoutGrid, Calendar, Lightbulb, Trophy, Terminal } from 'lucide-react'
@@ -29,11 +30,9 @@ interface HelpModalProps {
 
 export function HelpModal({ isOpen, onClose }: HelpModalProps) {
   const [activeTab, setActiveTab] = useState<HelpTab>('board')
-  const [mounted, setMounted] = useState(false)
+  const mounted = useHasMounted()
   const { colors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
-
-  useEffect(() => { setMounted(true) }, [])
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') onClose()

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useHasMounted } from '@/lib/utils/useHasMounted'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Undo2 } from 'lucide-react'
@@ -27,12 +28,11 @@ export function toast(message: string, options?: { onUndo?: () => void; duration
 
 export function ToastContainer() {
   const [toasts, setToasts] = useState<ToastItem[]>([])
-  const [mounted, setMounted] = useState(false)
+  const mounted = useHasMounted()
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const toastsRef = useRef<ToastItem[]>([])
 
   useEffect(() => { toastsRef.current = toasts }, [toasts])
-  useEffect(() => { setMounted(true) }, [])
 
   const removeToast = useCallback((id: string) => {
     timersRef.current.delete(id)
@@ -52,7 +52,8 @@ export function ToastContainer() {
   }, [addToast])
 
   useEffect(() => {
-    return () => { timersRef.current.forEach(clearTimeout) }
+    const timers = timersRef.current
+    return () => { timers.forEach(clearTimeout) }
   }, [])
 
   useEffect(() => {

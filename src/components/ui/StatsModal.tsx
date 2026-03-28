@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
+import { useHasMounted } from '@/lib/utils/useHasMounted'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { X, BarChart3, FolderOpen, CheckSquare, ListChecks, Sparkles, Calendar, Activity, Clock } from 'lucide-react'
@@ -55,14 +56,12 @@ interface StatsModalProps {
 }
 
 export function StatsModal({ isOpen, onClose }: StatsModalProps) {
-  const [mounted, setMounted] = useState(false)
+  const mounted = useHasMounted()
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const { colors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
-
-  useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {
     if (!isOpen) return

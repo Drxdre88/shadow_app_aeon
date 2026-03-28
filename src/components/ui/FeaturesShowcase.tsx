@@ -37,6 +37,7 @@ import {
 } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
+import { useHasMounted } from '@/lib/utils/useHasMounted'
 
 type Maturity = 'polished' | 'beta' | 'preview'
 
@@ -206,11 +207,9 @@ interface FeaturesShowcaseProps {
 }
 
 export function FeaturesShowcase({ isOpen, onClose }: FeaturesShowcaseProps) {
-  const [mounted, setMounted] = useState(false)
+  const mounted = useHasMounted()
   const { colors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
-
-  useEffect(() => { setMounted(true) }, [])
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') onClose()

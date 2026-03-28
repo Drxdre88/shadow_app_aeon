@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useHasMounted } from '@/lib/utils/useHasMounted'
 import { Command } from 'cmdk'
 import { useRouter, usePathname } from 'next/navigation'
 import { createPortal } from 'react-dom'
@@ -22,15 +23,13 @@ interface ProjectItem {
 export function CommandPalette() {
   const [open, setOpen] = useState(false)
   const [projects, setProjects] = useState<ProjectItem[]>([])
-  const [mounted, setMounted] = useState(false)
+  const mounted = useHasMounted()
   const router = useRouter()
   const pathname = usePathname()
   const tasks = useBoardStore((s) => s.tasks)
 
   const projectMatch = pathname.match(/\/project\/([^/]+)/)
   const currentProjectId = projectMatch?.[1] || null
-
-  useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
