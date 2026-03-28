@@ -37,6 +37,11 @@ export function useBoardHandlers(projectId: string) {
   }, [])
 
   const handleTaskUpdate = useCallback((taskId: string, updates: Record<string, unknown>) => {
+    const { tasks } = useBoardStore.getState()
+    const snapshot = tasks.find(t => t.id === taskId)
+    const changedFields = Object.keys(updates)
+    const isUndoable = changedFields.some(k => ['priority', 'color', 'name', 'status'].includes(k))
+
     updateBoardTask(taskId, projectId, updates as {
       name?: string
       description?: string | null
@@ -49,6 +54,18 @@ export function useBoardHandlers(projectId: string) {
     })
       .then(() => {
         useBoardStore.setState({ isDirty: false })
+        if (isUndoable && snapshot) {
+          const rollback: Record<string, unknown> = {}
+          for (const key of changedFields) {
+            rollback[key] = (snapshot as unknown as Record<string, unknown>)[key]
+          }
+          toast('Task updated', {
+            onUndo: () => {
+              useBoardStore.getState().updateTask(taskId, rollback as Partial<typeof snapshot>)
+              updateBoardTask(taskId, projectId, rollback as Record<string, unknown>).catch(() => toast('Failed to undo'))
+            },
+          })
+        }
       })
       .catch((err) => {
         console.error('Failed to update task:', err)
@@ -101,6 +118,32 @@ export function useBoardHandlers(projectId: string) {
     reorderBoardTasks(projectId, updates)
       .then(() => {
         useBoardStore.setState({ isDirty: false })
+        if (snapshot && snapshot.length > 0) {
+          const snapshotMap = new Map(snapshot.map(s => [s.id, s]))
+          const movedAcrossColumns = updates.some(u => u.columnId && u.columnId !== snapshotMap.get(u.id)?.columnId)
+          if (movedAcrossColumns) {
+            const movedId = updates.find(u => u.columnId && u.columnId !== snapshotMap.get(u.id)?.columnId)?.id
+            const taskName = (movedId && useBoardStore.getState().tasks.find(t => t.id === movedId)?.name) || 'Task'
+            const frozenSnapshot = snapshot.map(s => ({ ...s }))
+            toast(`Moved "${taskName}"`, {
+              onUndo: () => {
+                const { moveTask, updateTask: storeUpdate } = useBoardStore.getState()
+                for (const snap of frozenSnapshot) {
+                  if (snap.columnId) {
+                    moveTask(snap.id, snap.columnId, snap.orderIndex)
+                  } else {
+                    storeUpdate(snap.id, { orderIndex: snap.orderIndex })
+                  }
+                }
+                reorderBoardTasks(projectId, frozenSnapshot.map(s => ({
+                  id: s.id,
+                  orderIndex: s.orderIndex,
+                  ...(s.columnId ? { columnId: s.columnId } : {}),
+                }))).catch(() => toast('Failed to undo move'))
+              },
+            })
+          }
+        }
       })
       .catch((err) => {
         console.error('Failed to reorder tasks:', err)
@@ -132,6 +175,20 @@ export function useBoardHandlers(projectId: string) {
   const handleColumnUpdate = useCallback((columnId: string, updates: { name?: string; color?: string }) => {
     const snapshot = useBoardStore.getState().columns.find(c => c.id === columnId)
     updateColumnAction(columnId, projectId, updates)
+      .then(() => {
+        if (snapshot) {
+          const rollback: Record<string, unknown> = {}
+          for (const key of Object.keys(updates)) {
+            rollback[key] = (snapshot as unknown as Record<string, unknown>)[key]
+          }
+          toast('Column updated', {
+            onUndo: () => {
+              useBoardStore.getState().updateColumn(columnId, rollback as Partial<typeof snapshot>)
+              updateColumnAction(columnId, projectId, rollback as { name?: string; color?: string }).catch(() => toast('Failed to undo'))
+            },
+          })
+        }
+      })
       .catch((err) => {
         console.error('Failed to update column:', err)
         useBoardStore.setState({ isDirty: false })
@@ -160,7 +217,39 @@ export function useBoardHandlers(projectId: string) {
     taskSnapshots.forEach(t => removeTask(t.id))
     removeColumn(columnId)
     deleteColumnAction(columnId, projectId)
-      .then(() => useBoardStore.setState({ isDirty: false }))
+      .then(() => {
+        useBoardStore.setState({ isDirty: false })
+        if (colSnapshot) {
+          const frozenCol = { ...colSnapshot }
+          const frozenTasks = taskSnapshots.map(t => ({ ...t }))
+          toast(`Deleted column "${frozenCol.name}"`, {
+            onUndo: () => {
+              addColumn(frozenCol)
+              createColumn(projectId, { name: frozenCol.name, color: frozenCol.color, orderIndex: frozenCol.orderIndex }, frozenCol.id)
+                .then(() => {
+                  frozenTasks.forEach(t => {
+                    addTask(t)
+                    createBoardTask({
+                      id: t.id,
+                      projectId: t.projectId,
+                      name: t.name,
+                      description: t.description,
+                      columnId: t.columnId,
+                      status: t.status,
+                      priority: t.priority,
+                      color: t.color,
+                      onTimeline: t.onTimeline,
+                      orderIndex: t.orderIndex,
+                      startDate: t.startDate,
+                      endDate: t.endDate,
+                    }).catch(() => toast('Failed to restore some tasks'))
+                  })
+                })
+                .catch(() => toast('Failed to restore column'))
+            },
+          })
+        }
+      })
       .catch((err) => {
         console.error('Failed to delete column:', err)
         if (colSnapshot) addColumn(colSnapshot)

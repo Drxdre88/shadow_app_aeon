@@ -38,6 +38,9 @@ interface ThemeStore {
   colors: ThemeColors
   glowIntensity: number
   glassOpacity: number
+  themeSaturation: number
+  themeBrightness: number
+  surfaceVibrancy: number
   ambientBlobs: boolean
   fontFamily: FontFamily
   dragEffect: DragEffect
@@ -70,6 +73,9 @@ interface ThemeStore {
   setTheme: (theme: ThemeName) => void
   setGlowIntensity: (intensity: number) => void
   setGlassOpacity: (opacity: number) => void
+  setThemeSaturation: (saturation: number) => void
+  setThemeBrightness: (brightness: number) => void
+  setSurfaceVibrancy: (vibrancy: number) => void
   setAmbientBlobs: (enabled: boolean) => void
   setFontFamily: (font: FontFamily) => void
   setDragEffect: (effect: DragEffect) => void
@@ -102,6 +108,9 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   colors: themes[DEFAULT_PREFERENCES.currentTheme as ThemeName] ?? themes.deepSpace,
   glowIntensity: DEFAULT_PREFERENCES.glowIntensity,
   glassOpacity: DEFAULT_PREFERENCES.glassOpacity,
+  themeSaturation: DEFAULT_PREFERENCES.themeSaturation,
+  themeBrightness: DEFAULT_PREFERENCES.themeBrightness,
+  surfaceVibrancy: DEFAULT_PREFERENCES.surfaceVibrancy,
   ambientBlobs: DEFAULT_PREFERENCES.ambientBlobs,
   fontFamily: DEFAULT_PREFERENCES.fontFamily,
   dragEffect: DEFAULT_PREFERENCES.dragEffect,
@@ -150,6 +159,15 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   },
   setGlassOpacity: (opacity: number) => {
     set({ glassOpacity: Math.max(0, Math.min(100, opacity)) })
+  },
+  setThemeSaturation: (saturation: number) => {
+    set({ themeSaturation: Math.max(50, Math.min(200, Math.round(saturation))) })
+  },
+  setThemeBrightness: (brightness: number) => {
+    set({ themeBrightness: Math.max(50, Math.min(150, Math.round(brightness))) })
+  },
+  setSurfaceVibrancy: (vibrancy: number) => {
+    set({ surfaceVibrancy: Math.max(0, Math.min(100, Math.round(vibrancy))) })
   },
   setAmbientBlobs: (enabled: boolean) => {
     set({ ambientBlobs: enabled })

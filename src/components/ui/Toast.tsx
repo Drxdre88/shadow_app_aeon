@@ -5,45 +5,50 @@ import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Undo2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { useUndoStore } from '@/lib/store/undoStore'
 
 interface ToastItem {
   id: string
   message: string
-  onUndo?: () => void
+  undoId?: string
   duration?: number
 }
 
 let addToastGlobal: ((toast: Omit<ToastItem, 'id'>) => void) | null = null
-let lastUndoRef: { id: string; fn: () => void } | null = null
 
 export function toast(message: string, options?: { onUndo?: () => void; duration?: number }) {
-  addToastGlobal?.({ message, ...options })
+  if (!addToastGlobal) return
+  let undoId: string | undefined
+  if (options?.onUndo) {
+    undoId = useUndoStore.getState().push(message, options.onUndo)
+  }
+  addToastGlobal({ message, undoId, duration: options?.duration })
 }
 
 export function ToastContainer() {
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const [mounted, setMounted] = useState(false)
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const toastsRef = useRef<ToastItem[]>([])
 
+  useEffect(() => { toastsRef.current = toasts }, [toasts])
   useEffect(() => { setMounted(true) }, [])
 
   const removeToast = useCallback((id: string) => {
     timersRef.current.delete(id)
-    if (lastUndoRef?.id === id) lastUndoRef = null
     setToasts((prev) => prev.filter((t) => t.id !== id))
   }, [])
 
   const addToast = useCallback((item: Omit<ToastItem, 'id'>) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     setToasts((prev) => [...prev, { ...item, id }])
-    if (item.onUndo) lastUndoRef = { id, fn: item.onUndo }
     const timer = setTimeout(() => removeToast(id), item.duration || 5000)
     timersRef.current.set(id, timer)
   }, [removeToast])
 
   useEffect(() => {
     addToastGlobal = addToast
-    return () => { addToastGlobal = null; lastUndoRef = null }
+    return () => { addToastGlobal = null }
   }, [addToast])
 
   useEffect(() => {
@@ -52,17 +57,22 @@ export function ToastContainer() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && lastUndoRef) {
-        e.preventDefault()
-        const { id, fn } = lastUndoRef
-        fn()
-        lastUndoRef = null
-        removeToast(id)
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+        const entry = useUndoStore.getState().pop()
+        if (entry) {
+          e.preventDefault()
+          entry.undo()
+          const matchingToast = toastsRef.current.find((t) => t.undoId === entry.id)
+          if (matchingToast) removeToast(matchingToast.id)
+          addToast({ message: `Undid: ${entry.description}`, duration: 2500 })
+        }
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [removeToast])
+  }, [removeToast, addToast])
 
   if (!mounted) return null
 
@@ -83,13 +93,20 @@ export function ToastContainer() {
             )}
           >
             <span>{t.message}</span>
-            {t.onUndo && (
+            {t.undoId && (
               <button
                 onClick={() => {
-                  t.onUndo?.()
+                  const entry = useUndoStore.getState().popById(t.undoId!)
+                  if (entry) entry.undo()
                   removeToast(t.id)
                 }}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30 transition-colors text-xs font-medium"
+                className="flex items-center gap-1 px-2 py-1 rounded-lg transition-colors text-xs font-medium"
+                style={{
+                  background: 'var(--primary-muted)',
+                  borderWidth: 1,
+                  borderColor: 'var(--border-hover)',
+                  color: 'var(--primary)',
+                }}
               >
                 <Undo2 className="w-3 h-3" />
                 Undo

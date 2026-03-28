@@ -5,7 +5,7 @@ import { motion } from 'framer-motion'
 import { X, Plus } from 'lucide-react'
 import { useThemeStore, INITIAL_PRIORITIES, type CompletionMode } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
-import { ToggleRow, CompactSlider } from './shared'
+import { ToggleRow, ThemeSlider } from './shared'
 
 function CompletionModeSetting() {
   const { completionMode, setCompletionMode, colors } = useThemeStore()
@@ -46,13 +46,13 @@ function BoardLayoutSetting() {
   return (
     <div className="space-y-4 max-w-md">
       <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider">Column Size</h4>
-      <div className="space-y-3">
+      <div className="space-y-3 max-w-[300px]">
         <div className="space-y-1">
-          <CompactSlider label="Width" value={columnWidth} onChange={setColumnWidth} min={250} max={1200} color={colors.glowColor} unit="px" />
+          <ThemeSlider label="Width" value={columnWidth} onChange={setColumnWidth} min={250} max={1200} color={colors.glowColor} unit="px" />
           <ToggleRow label="Expand width with content" value={dynamicColumnWidth} onChange={setDynamicColumnWidth} color={colors.glowColor} />
         </div>
         <div className="space-y-1">
-          <CompactSlider label="Height" value={columnHeight} onChange={setColumnHeight} min={200} max={1600} color={colors.glowColor} unit="px" />
+          <ThemeSlider label="Height" value={columnHeight} onChange={setColumnHeight} min={200} max={1600} color={colors.glowColor} unit="px" />
           <ToggleRow label="Expand height with content" value={dynamicColumnHeight} onChange={setDynamicColumnHeight} color={colors.glowColor} />
         </div>
       </div>

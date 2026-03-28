@@ -1,11 +1,10 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Sparkles } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { themes, themeNames, type ThemeName } from '@/config/themes'
 import { cn } from '@/lib/utils/cn'
-import { GlowSlider } from './shared'
+import { ThemeSlider } from './shared'
 
 const themeLabels: Record<string, string> = Object.fromEntries(
   themeNames.map((name) => [
@@ -22,6 +21,12 @@ export function PaletteTab() {
     setGlowIntensity,
     glassOpacity,
     setGlassOpacity,
+    themeSaturation,
+    setThemeSaturation,
+    themeBrightness,
+    setThemeBrightness,
+    surfaceVibrancy,
+    setSurfaceVibrancy,
     colors,
   } = useThemeStore()
 
@@ -93,50 +98,13 @@ export function PaletteTab() {
         ))}
       </div>
 
-      <div className="space-y-3">
-        <GlowSlider
-          value={glowIntensity}
-          onChange={setGlowIntensity}
-          themeColor={colors.glowColor}
-          label="Glow Intensity"
-          icon={Sparkles}
-        />
-
-        <div className="py-1">
-          <div className="flex items-center justify-between mb-1.5">
-            <div className="flex items-center gap-2">
-              <div
-                className="w-4 h-4 rounded-md border border-white/20"
-                style={{
-                  background: `rgba(255,255,255,${glassOpacity / 400})`,
-                  backdropFilter: 'blur(4px)',
-                }}
-              />
-              <span className="text-xs font-medium text-slate-300">Glass Transparency</span>
-            </div>
-            <span className="text-xs font-bold tabular-nums px-1.5 py-0.5 rounded" style={{ color: colors.glowColor, backgroundColor: `${colors.glowColor}20` }}>
-              {glassOpacity}%
-            </span>
-          </div>
-          <div className="relative h-5 flex items-center max-w-[280px]">
-            <div className="absolute inset-x-0 h-1 rounded-full" style={{ background: 'rgba(255,255,255,0.08)' }}>
-              <div className="h-full rounded-full" style={{ width: `${glassOpacity}%`, background: `linear-gradient(90deg, ${colors.glowColor}60, ${colors.glowColor})` }} />
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={glassOpacity}
-              onChange={(e) => setGlassOpacity(Number(e.target.value))}
-              className="absolute inset-x-0 w-full h-5 opacity-0 cursor-pointer z-10"
-            />
-            <div
-              className="absolute w-3 h-3 rounded-full border border-white/40 pointer-events-none"
-              style={{ left: `calc(${glassOpacity}% - 6px)`, background: `radial-gradient(circle at 30% 30%, white, ${colors.glowColor})` }}
-            />
-          </div>
-        </div>
-
+      <div className="space-y-1 max-w-[300px]">
+        <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Visual Tuning</h4>
+        <ThemeSlider label="Glow Intensity" value={glowIntensity} onChange={setGlowIntensity} min={0} max={100} color={colors.glowColor} unit="%" />
+        <ThemeSlider label="Glass Transparency" value={glassOpacity} onChange={setGlassOpacity} min={0} max={100} color={colors.glowColor} unit="%" />
+        <ThemeSlider label="Saturation" value={themeSaturation} onChange={setThemeSaturation} min={50} max={200} color={colors.glowColor} unit="%" />
+        <ThemeSlider label="Brightness" value={themeBrightness} onChange={setThemeBrightness} min={50} max={150} color={colors.glowColor} unit="%" />
+        <ThemeSlider label="Surface Tint" value={surfaceVibrancy} onChange={setSurfaceVibrancy} min={0} max={100} color={colors.glowColor} unit="%" />
       </div>
     </div>
   )

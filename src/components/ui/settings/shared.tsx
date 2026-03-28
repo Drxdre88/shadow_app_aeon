@@ -1,70 +1,118 @@
 'use client'
 
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { type Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 
-export function GlowSlider({
+export function ThemeSlider({
+  label,
   value,
   onChange,
-  themeColor,
-  label,
-  icon: Icon,
+  min = 0,
+  max = 100,
+  step = 1,
+  color,
+  unit = '%',
 }: {
+  label: string
   value: number
   onChange: (v: number) => void
-  themeColor: string
-  label: string
-  icon: typeof Sparkles
+  min?: number
+  max?: number
+  step?: number
+  color: string
+  unit?: string
 }) {
-  const glowOpacity = value / 100
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const pct = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100))
+  const displayValue = step < 1 ? value.toFixed(1) : String(value)
+
+  const commitDraft = useCallback(() => {
+    const parsed = parseFloat(draft)
+    if (!isNaN(parsed)) {
+      const stepped = Math.round(parsed / step) * step
+      const clamped = Math.max(min, Math.min(max, stepped))
+      onChange(step < 1 ? parseFloat(clamped.toFixed(1)) : clamped)
+    }
+    setEditing(false)
+  }, [draft, min, max, step, onChange])
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.select()
+    }
+  }, [editing])
 
   return (
-    <div className="relative py-1">
+    <div className="group py-1">
       <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-2">
-          <Icon
-            className="w-4 h-4 transition-all duration-300"
+        <span className="text-[11px] font-medium text-slate-400 tracking-wide">{label}</span>
+
+        {editing ? (
+          <input
+            ref={inputRef}
+            type="text"
+            inputMode="decimal"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitDraft}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitDraft()
+              if (e.key === 'Escape') setEditing(false)
+            }}
+            className="w-16 h-6 text-center text-[11px] font-bold tabular-nums rounded-md bg-black/40 border outline-none"
             style={{
-              color: themeColor,
-              filter: `drop-shadow(0 0 ${8 * glowOpacity}px ${themeColor})`,
+              color,
+              borderColor: color,
+              boxShadow: `0 0 12px 2px ${color}40, inset 0 0 8px ${color}20`,
             }}
           />
-          <span className="text-xs font-medium text-slate-300">{label}</span>
-        </div>
-        <span
-          className="text-xs font-bold tabular-nums px-1.5 py-0.5 rounded"
-          style={{ color: themeColor, backgroundColor: `${themeColor}20` }}
-        >
-          {value}%
-        </span>
+        ) : (
+          <button
+            onClick={() => { setDraft(displayValue); setEditing(true) }}
+            className="h-6 px-2 rounded-md text-[11px] font-bold tabular-nums border border-transparent transition-all duration-200 hover:border-white/20 cursor-text"
+            style={{
+              color,
+              background: `${color}12`,
+              boxShadow: `0 0 8px 1px ${color}18`,
+            }}
+          >
+            {displayValue}{unit}
+          </button>
+        )}
       </div>
 
-      <div className="relative h-5 flex items-center max-w-[280px]">
-        <div className="absolute inset-x-0 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+      <div className="relative h-5 flex items-center">
+        <div className="absolute inset-x-0 h-[5px] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
           <div
-            className="h-full rounded-full"
+            className="h-full rounded-full transition-[width] duration-75"
             style={{
-              width: `${value}%`,
-              background: `linear-gradient(90deg, ${themeColor}60, ${themeColor})`,
-              boxShadow: `0 0 ${12 * glowOpacity}px ${3 * glowOpacity}px ${themeColor}`,
+              width: `${pct}%`,
+              background: `linear-gradient(90deg, ${color}50, ${color})`,
+              boxShadow: `0 0 10px 1px ${color}40`,
             }}
           />
         </div>
+
         <input
           type="range"
-          min="0"
-          max="100"
+          min={min}
+          max={max}
+          step={step}
           value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
+          onChange={(e) => onChange(step < 1 ? parseFloat(Number(e.target.value).toFixed(1)) : Number(e.target.value))}
           className="absolute inset-x-0 w-full h-5 opacity-0 cursor-pointer z-10"
         />
+
         <div
-          className="absolute w-3 h-3 rounded-full border border-white/40 pointer-events-none"
+          className="absolute w-3.5 h-3.5 rounded-full border border-white/50 pointer-events-none transition-[left] duration-75"
           style={{
-            left: `calc(${value}% - 6px)`,
-            background: `radial-gradient(circle at 30% 30%, white, ${themeColor})`,
-            boxShadow: `0 0 ${8 * glowOpacity}px ${3 * glowOpacity}px ${themeColor}`,
+            left: `calc(${pct}% - 7px)`,
+            background: `radial-gradient(circle at 35% 35%, rgba(255,255,255,0.9), ${color})`,
+            boxShadow: `0 0 10px 3px ${color}60, 0 0 4px 1px ${color}90`,
           }}
         />
       </div>
@@ -94,36 +142,11 @@ export function ToggleRow({ label, value, onChange, color }: { label: string; va
   )
 }
 
-export function CompactSlider({ label, value, onChange, min, max, color, unit = 'px', step = 1 }: {
+export const GlowSlider = ThemeSlider
+export const CompactSlider = ({
+  label, value, onChange, min, max, color, unit = 'px', step = 1,
+}: {
   label: string; value: number; onChange: (v: number) => void; min: number; max: number; color: string; unit?: string; step?: number
-}) {
-  const pct = ((value - min) / (max - min)) * 100
-  return (
-    <div className="space-y-1 max-w-[280px]">
-      <div className="flex items-center gap-3">
-        <span className="text-xs text-slate-400 min-w-[90px]">{label}</span>
-        <span className="text-xs font-bold tabular-nums px-1.5 py-0.5 rounded" style={{ color, backgroundColor: `${color}20` }}>
-          {value}{unit}
-        </span>
-      </div>
-      <div className="relative h-5 flex items-center">
-        <div className="absolute inset-x-0 h-1 rounded-full" style={{ background: 'rgba(255,255,255,0.08)' }}>
-          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${color}60, ${color})` }} />
-        </div>
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="absolute inset-x-0 w-full h-5 opacity-0 cursor-pointer z-10"
-        />
-        <div
-          className="absolute w-3 h-3 rounded-full border border-white/40 pointer-events-none"
-          style={{ left: `calc(${pct}% - 6px)`, background: `radial-gradient(circle at 30% 30%, white, ${color})` }}
-        />
-      </div>
-    </div>
-  )
-}
+}) => (
+  <ThemeSlider label={label} value={value} onChange={onChange} min={min} max={max} step={step} color={color} unit={unit} />
+)
