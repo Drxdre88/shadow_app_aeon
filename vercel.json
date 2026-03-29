@@ -1,4 +1,1 @@
-{
-  "installCommand": "npm ci --include=dev",
-  "buildCommand": "npm run db:push && npm run build"
-}
+{ "rootDirectory": "apps/web" }

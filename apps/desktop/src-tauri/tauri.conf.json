@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Aeon",
+  "version": "0.1.0",
+  "identifier": "com.aeon.desktop",
+  "build": {
+    "beforeDevCommand": "cd ../../.. && npm run dev --workspace=apps/web",
+    "devUrl": "http://localhost:3000",
+    "beforeBuildCommand": "cd ../../.. && npm run build --workspace=apps/web",
+    "frontendDist": "http://localhost:3000"
+  },
+  "app": {
+    "title": "Aeon",
+    "windows": [
+      {
+        "title": "Aeon",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

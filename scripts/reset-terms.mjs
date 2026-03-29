@@ -1,6 +1,6 @@
 import dotenv from 'dotenv'
-dotenv.config({ path: '.env.local' })
-dotenv.config({ path: '.env' })
+dotenv.config({ path: './apps/web/.env.local' })
+dotenv.config({ path: './apps/web/.env' })
 
 import { neonConfig, Pool } from '@neondatabase/serverless'
 import ws from 'ws'

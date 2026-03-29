@@ -56,6 +56,12 @@ desktop.ini
 .yarn/
 .npm/
 
+# Tauri
+apps/desktop/src-tauri/target/
+
+# Rust
+target/
+
 # Misc
 *.pem
 .cache/

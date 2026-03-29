@@ -38,7 +38,7 @@ echo [INIT] Cleaning port %WEB_PORT%...
 call :kill_port %WEB_PORT%
 timeout /t 1 /nobreak >nul
 
-if not exist "node_modules\" (
+if not exist "apps\web\node_modules\" (
     echo [INIT] node_modules not found - installing dependencies...
     call npm install
     if errorlevel 1 (
@@ -49,12 +49,12 @@ if not exist "node_modules\" (
     echo.
 )
 
-if not exist ".env.local" (
+if not exist "apps\web\.env.local" (
     echo.
     echo =============================================
-    echo  WARNING: .env.local not found!
+    echo  WARNING: apps\web\.env.local not found!
     echo =============================================
-    echo  Copy .env.example to .env.local and fill in:
+    echo  Copy .env.example to apps\web\.env.local and fill in:
     echo    DATABASE_URL, AUTH_SECRET,
     echo    AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET
     echo =============================================
@@ -63,7 +63,7 @@ if not exist ".env.local" (
 )
 
 echo Starting Next.js on port %WEB_PORT%...
-start "Aeon-Dev" cmd /k "cd /d %~dp0 && call npx next dev --port %WEB_PORT%"
+start "Aeon-Dev" cmd /k "cd /d %~dp0apps\web && call npx next dev --port %WEB_PORT%"
 
 echo.
 echo ========================================

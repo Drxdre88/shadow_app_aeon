@@ -21,4 +21,4 @@ jobs:
 
       - run: npm run lint
 
-      - run: npx tsc --noEmit
+      - run: npx tsc --noEmit --project apps/web/tsconfig.json

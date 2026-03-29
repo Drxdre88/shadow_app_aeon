@@ -1,26 +1,35 @@
 import { create } from 'zustand'
-import { themes, type ThemeName, type ThemeColors } from '@/config/themes'
-import type { CelebrationStyle } from '@/components/celebrations/types'
 import {
+  themes,
   DEFAULT_PREFERENCES,
   DEFAULT_SHORTCUTS,
   INITIAL_PRIORITIES,
-} from '@/config/defaults'
+  type ThemeName,
+  type ThemeColors,
+  type CelebrationStyle,
+  type FontFamily,
+  type DragEffect,
+  type DepLineStyle,
+  type DepViewMode,
+  type CursorEffect,
+  type BoardLayout,
+  type CompletionMode,
+  type ProjectViewMode,
+  type ProjectSortMode,
+  type CustomPriority,
+} from '@aeon/shared'
 
-export type FontFamily = 'system' | 'inter' | 'jetbrains' | 'space-grotesk' | 'fira-code'
-export type DragEffect = 'glow' | 'ghost' | 'lightning'
-export type DepLineStyle = 'solid' | 'dashed' | 'dotted'
-export type DepViewMode = 'canvas' | 'arrows'
-export type CursorEffect = 'none' | 'glow' | 'particles' | 'combo' | 'trail' | 'neon' | 'fire' | 'ice' | 'portal' | 'venom' | 'plasma' | 'blood-moon' | 'smoke' | 'inferno-smoke' | 'venom-smoke' | 'plasma-smoke' | 'blood-moon-smoke' | 'custom-smoke'
-export type BoardLayout = 'scroll' | 'grid'
-export type CompletionMode = 'done' | 'vault'
-export type ProjectViewMode = 'grid' | 'tree' | 'space'
-export type ProjectSortMode = 'alphabetical' | 'custom'
-
-export interface CustomPriority {
-  id: string
-  name: string
-  color: string
+export type {
+  FontFamily,
+  DragEffect,
+  DepLineStyle,
+  DepViewMode,
+  CursorEffect,
+  BoardLayout,
+  CompletionMode,
+  ProjectViewMode,
+  ProjectSortMode,
+  CustomPriority,
 }
 
 export { INITIAL_PRIORITIES, DEFAULT_SHORTCUTS }
