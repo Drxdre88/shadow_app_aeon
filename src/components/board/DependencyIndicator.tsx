@@ -1,5 +1,6 @@
 'use client'
 
+import { memo, useMemo } from 'react'
 import { Lock, Link2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
@@ -9,17 +10,20 @@ interface DependencyIndicatorProps {
   onClick?: () => void
 }
 
-export function DependencyIndicator({ taskId, onClick }: DependencyIndicatorProps) {
+export const DependencyIndicator = memo(function DependencyIndicator({ taskId, onClick }: DependencyIndicatorProps) {
   const dependencies = useBoardStore((s) => s.dependencies)
   const tasks = useBoardStore((s) => s.tasks)
 
-  const blockers = dependencies.filter((d) => d.blockedTaskId === taskId)
-  const unresolvedBlockers = blockers.filter((d) => {
-    const blocker = tasks.find((t) => t.id === d.blockerTaskId)
-    return blocker && blocker.status !== 'done'
-  })
+  const { unresolvedBlockers, blocking } = useMemo(() => {
+    const blockers = dependencies.filter((d) => d.blockedTaskId === taskId)
+    const unresolved = blockers.filter((d) => {
+      const blocker = tasks.find((t) => t.id === d.blockerTaskId)
+      return blocker && blocker.status !== 'done'
+    })
+    const blockingOthers = dependencies.filter((d) => d.blockerTaskId === taskId)
+    return { unresolvedBlockers: unresolved, blocking: blockingOthers }
+  }, [dependencies, tasks, taskId])
 
-  const blocking = dependencies.filter((d) => d.blockerTaskId === taskId)
   const isBlocked = unresolvedBlockers.length > 0
   const isBlocking = blocking.length > 0
 
@@ -64,4 +68,4 @@ export function DependencyIndicator({ taskId, onClick }: DependencyIndicatorProp
       )}
     </div>
   )
-}
+})

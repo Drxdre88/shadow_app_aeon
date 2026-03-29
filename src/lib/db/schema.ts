@@ -266,6 +266,17 @@ export const taskComments = pgTable('task_comments', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 
+export const boardSnapshots = pgTable('board_snapshots', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  createdBy: uuid('created_by').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  token: varchar('token', { length: 64 }).notNull().unique(),
+  projectName: varchar('project_name', { length: 255 }).notNull(),
+  snapshot: jsonb('snapshot').notNull(),
+  expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
 export type User = typeof users.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type GanttView = typeof ganttViews.$inferSelect
@@ -285,3 +296,4 @@ export type TaskComment = typeof taskComments.$inferSelect
 export type ApiKeyRecord = typeof apiKeys.$inferSelect
 export type ProjectMember = typeof projectMembers.$inferSelect
 export type ProjectInvite = typeof projectInvites.$inferSelect
+export type BoardSnapshot = typeof boardSnapshots.$inferSelect

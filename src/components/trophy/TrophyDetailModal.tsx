@@ -76,104 +76,90 @@ export function TrophyDetailModal({ vaultTask, onClose, onRestore }: TrophyDetai
             </button>
           </div>
 
-          <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
+          <div className="p-4 space-y-3 max-h-[50vh] overflow-y-auto">
             {vaultTask.description && (
-              <p className="text-sm text-slate-300 leading-relaxed">{vaultTask.description}</p>
+              <p className="text-xs text-slate-400 leading-relaxed line-clamp-3">{vaultTask.description}</p>
             )}
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               <span
-                className={cn('px-2.5 py-1 rounded-md text-xs font-medium border capitalize', pStyle.bg, pStyle.border, pStyle.text)}
-                style={{ boxShadow: `0 0 8px ${pStyle.glow}` }}
+                className={cn('px-2 py-0.5 rounded text-[10px] font-medium border capitalize', pStyle.bg, pStyle.border, pStyle.text)}
               >
                 {vaultTask.priority}
               </span>
-              {vaultTask.size !== null && (
-                <span className="px-2.5 py-1 rounded-md text-xs font-medium border bg-cyan-500/15 border-cyan-500/25 text-cyan-400">
-                  {vaultTask.size}d size
-                </span>
-              )}
               {vaultTask.daysTaken !== null && (
-                <span className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border bg-purple-500/15 border-purple-500/25 text-purple-400">
-                  <Timer className="w-3 h-3" />
-                  {vaultTask.daysTaken}d taken
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium border bg-purple-500/15 border-purple-500/25 text-purple-400">
+                  <Timer className="w-2.5 h-2.5" />
+                  {vaultTask.daysTaken}d
                 </span>
               )}
+              {vaultTask.size !== null && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-medium border bg-cyan-500/15 border-cyan-500/25 text-cyan-400">
+                  {vaultTask.size}d est
+                </span>
+              )}
+              {labelSnapshot.map((label, i) => {
+                const presetColors = colorConfig[label.color as AccentColor]
+                const isCustom = !presetColors
+                const hex = label.color.startsWith('#') ? label.color : `#${label.color}`
+                return (
+                  <span
+                    key={i}
+                    className={cn(
+                      'px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 border',
+                      !isCustom && presetColors?.bg,
+                      !isCustom && presetColors?.border,
+                      !isCustom && presetColors?.text,
+                      isCustom && 'text-white'
+                    )}
+                    style={isCustom ? {
+                      backgroundColor: hexToRgba(hex, 0.15),
+                      borderColor: hexToRgba(hex, 0.3),
+                      color: hex,
+                    } : undefined}
+                  >
+                    <Tag className="w-2.5 h-2.5" />
+                    {label.name}
+                  </span>
+                )
+              })}
             </div>
-
-            {labelSnapshot.length > 0 && (
-              <div className="space-y-1.5">
-                <span className="text-xs text-slate-500 font-medium">Labels</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {labelSnapshot.map((label, i) => {
-                    const presetColors = colorConfig[label.color as AccentColor]
-                    const isCustom = !presetColors
-                    const hex = label.color.startsWith('#') ? label.color : `#${label.color}`
-                    return (
-                      <span
-                        key={i}
-                        className={cn(
-                          'px-2 py-0.5 rounded text-xs font-medium flex items-center gap-1 border',
-                          !isCustom && presetColors?.bg,
-                          !isCustom && presetColors?.border,
-                          !isCustom && presetColors?.text,
-                          isCustom && 'text-white'
-                        )}
-                        style={isCustom ? {
-                          backgroundColor: hexToRgba(hex, 0.15),
-                          borderColor: hexToRgba(hex, 0.3),
-                          color: hex,
-                        } : undefined}
-                      >
-                        <Tag className="w-2.5 h-2.5" />
-                        {label.name}
-                      </span>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
 
             {checklistSnapshot.total && checklistSnapshot.total > 0 && (
-              <div className="space-y-1.5">
-                <span className="text-xs text-slate-500 font-medium">Checklist</span>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${((checklistSnapshot.checked ?? 0) / checklistSnapshot.total) * 100}%`,
-                        background: 'linear-gradient(90deg, #10b981, #06d6a0)',
-                        boxShadow: '0 0 6px rgba(16,185,129,0.4)',
-                      }}
-                    />
-                  </div>
-                  <span className="text-xs font-mono tabular-nums">
-                    <span className="text-emerald-400">{checklistSnapshot.checked ?? 0}</span>
-                    <span className="text-slate-600">/</span>
-                    <span className="text-slate-400">{checklistSnapshot.total}</span>
-                  </span>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${((checklistSnapshot.checked ?? 0) / checklistSnapshot.total) * 100}%`,
+                      background: 'linear-gradient(90deg, #10b981, #06d6a0)',
+                    }}
+                  />
                 </div>
+                <span className="text-[10px] font-mono tabular-nums">
+                  <span className="text-emerald-400">{checklistSnapshot.checked ?? 0}</span>
+                  <span className="text-slate-600">/</span>
+                  <span className="text-slate-400">{checklistSnapshot.total}</span>
+                </span>
               </div>
             )}
 
-            <div className="flex items-center gap-4 pt-2 border-t border-white/5 text-xs text-slate-500">
-              <div className="flex items-center gap-1.5">
-                <Check className="w-3.5 h-3.5 text-emerald-500" />
-                Completed {format(effectiveDate, 'MMM d, yyyy')}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5" />
+            <div className="flex items-center gap-3 pt-2 border-t border-white/5 text-[10px] text-slate-500">
+              <span className="flex items-center gap-1">
+                <Check className="w-3 h-3 text-emerald-500" />
+                {format(effectiveDate, 'dd MMM yyyy')}
+              </span>
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3" />
                 {formatDistanceToNow(effectiveDate, { addSuffix: true })}
-              </div>
+              </span>
+              {vaultTask.originalCreatedAt && (
+                <span className="flex items-center gap-1 ml-auto">
+                  <Calendar className="w-3 h-3" />
+                  created {format(new Date(vaultTask.originalCreatedAt), 'dd MMM')}
+                </span>
+              )}
             </div>
-
-            {vaultTask.originalCreatedAt && (
-              <div className="flex items-center gap-1.5 text-xs text-slate-600">
-                <Calendar className="w-3.5 h-3.5" />
-                Created {format(new Date(vaultTask.originalCreatedAt), 'MMM d, yyyy')}
-              </div>
-            )}
           </div>
 
           {onRestore && (

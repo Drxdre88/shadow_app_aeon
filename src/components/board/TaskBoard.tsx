@@ -320,7 +320,7 @@ export function TaskBoard({
     <>
       <BoardGlowBackground glowColor={themeColors.glowColor} globalGlow={globalGlow} />
 
-      <div ref={boardRef} className="relative">
+      <div ref={boardRef} data-board-export className="relative">
         <BoardFilterBar
           isOpen={showFilters}
           filters={filters}
@@ -337,6 +337,7 @@ export function TaskBoard({
         >
           <SortableContext items={columnIds} strategy={rectSortingStrategy}>
             <div
+              data-board-columns
               className={boardLayout === 'grid'
                 ? 'flex flex-wrap gap-3 sm:gap-4 pb-4 overflow-x-hidden overflow-y-auto sm:overflow-auto content-start sm:max-h-[calc(100dvh-140px)]'
                 : 'flex flex-nowrap gap-3 sm:gap-4 pb-4 overflow-x-auto overflow-y-hidden sm:overflow-auto sm:max-h-[calc(100dvh-140px)]'

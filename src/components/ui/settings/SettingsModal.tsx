@@ -20,7 +20,7 @@ type SettingsTab = 'projects' | 'board' | 'palette' | 'typography' | 'effects' |
 const TAB_CONFIG: { id: SettingsTab; label: string; icon: typeof Palette }[] = [
   { id: 'projects', label: 'Projects', icon: LayoutDashboard },
   { id: 'board', label: 'Board', icon: LayoutGrid },
-  { id: 'palette', label: 'Palette', icon: Palette },
+  { id: 'palette', label: 'Theme', icon: Palette },
   { id: 'typography', label: 'Typography', icon: PenTool },
   { id: 'effects', label: 'Effects', icon: Wand2 },
   { id: 'fun', label: 'Fun', icon: PartyPopper },

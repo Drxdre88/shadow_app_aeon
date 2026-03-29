@@ -4,6 +4,7 @@ import { ThemeProvider } from '@/components/providers/ThemeProvider'
 import { AuthProvider } from '@/components/providers/AuthProvider'
 import { PreferencesProvider } from '@/components/providers/PreferencesProvider'
 import { ThemeEffects } from '@/components/effects/ThemeEffects'
+import { CelebrationEngine } from '@/components/celebrations'
 import { CursorEffect } from '@/components/effects/cursor'
 import { ToastContainer } from '@/components/ui/Toast'
 import { ServiceWorkerRegistration } from '@/components/pwa/ServiceWorkerRegistration'
@@ -55,6 +56,7 @@ export default function RootLayout({
           <PreferencesProvider>
           <ThemeProvider>
             <ThemeEffects />
+            <CelebrationEngine />
             <CursorEffect />
             <ToastContainer />
             <ServiceWorkerRegistration />

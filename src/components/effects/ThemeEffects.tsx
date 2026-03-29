@@ -13,12 +13,13 @@ import { SakuraEffect } from './SakuraEffect'
 import { StarfieldEffect } from './StarfieldEffect'
 import { FireflyEffect } from './FireflyEffect'
 import { DeepSeaEffect } from './DeepSeaEffect'
+import { MercuryEffect } from './MercuryEffect'
 
 export function ThemeEffects() {
-  const { currentTheme } = useThemeStore()
+  const { currentTheme, businessMode } = useThemeStore()
   const theme = themes[currentTheme]
 
-  if (!theme?.effect) return null
+  if (businessMode || !theme?.effect) return null
 
   switch (theme.effect) {
     case 'matrix': return <MatrixEffect />
@@ -33,6 +34,7 @@ export function ThemeEffects() {
     case 'starfield': return <StarfieldEffect />
     case 'firefly': return <FireflyEffect />
     case 'deep-sea': return <DeepSeaEffect />
+    case 'mercury': return <MercuryEffect />
     default: return null
   }
 }
