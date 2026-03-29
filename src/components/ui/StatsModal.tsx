@@ -20,6 +20,8 @@ interface Stats {
 
 const FREE_TIER_MAX = 0.5 * 1024
 
+const LIMITS = { tasks: 500, canvasNodes: 200, ganttTasks: 200 }
+
 function estimateKB(stats: Stats): number {
   return (
     stats.tasks * 1 +
@@ -27,6 +29,33 @@ function estimateKB(stats: Stats): number {
     stats.canvasNodes * 0.5 +
     stats.ganttTasks * 0.5 +
     stats.activityEvents * 0.2
+  )
+}
+
+function LimitBar({ label, current, limit, color }: { label: string; current: number; limit: number; color: string }) {
+  const pct = Math.min((current / limit) * 100, 100)
+  const isWarning = pct >= 80
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-slate-500">{label}</span>
+        <span className={isWarning ? 'text-orange-400 font-medium' : 'text-slate-500'}>
+          {current} / {limit}
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-500"
+          style={{
+            width: `${pct}%`,
+            background: isWarning
+              ? 'linear-gradient(90deg, #f97316, #ef4444)'
+              : `linear-gradient(90deg, ${color}, ${color}88)`,
+          }}
+        />
+      </div>
+    </div>
   )
 }
 
@@ -193,6 +222,13 @@ export function StatsModal({ isOpen, onClose }: StatsModalProps) {
                   />
                 </div>
                 <p className="text-xs text-slate-600">Free tier estimate — based on ~1 KB per task</p>
+              </div>
+
+              <div className="space-y-2.5 pt-1">
+                <p className="text-xs text-slate-500 font-medium">Entity Limits</p>
+                <LimitBar label="Tasks" current={stats.tasks} limit={LIMITS.tasks} color={colors.primary} />
+                <LimitBar label="Canvas Nodes" current={stats.canvasNodes} limit={LIMITS.canvasNodes} color={colors.primary} />
+                <LimitBar label="Gantt Tasks" current={stats.ganttTasks} limit={LIMITS.ganttTasks} color={colors.primary} />
               </div>
             </>
           )}

@@ -15,7 +15,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(target, request.url))
   }
 
-  if (PUBLIC_PATHS.includes(pathname) || pathname.startsWith('/api/') || pathname.startsWith('/.well-known/')) {
+  if (PUBLIC_PATHS.includes(pathname) || pathname.startsWith('/api/') || pathname.startsWith('/.well-known/') || pathname.startsWith('/share/')) {
     return NextResponse.next()
   }
 

@@ -2,13 +2,13 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { X, Plus } from 'lucide-react'
+import { X, Plus, Briefcase } from 'lucide-react'
 import { useThemeStore, INITIAL_PRIORITIES, type CompletionMode } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
 import { ToggleRow, ThemeSlider } from './shared'
 
 function CompletionModeSetting() {
-  const { completionMode, setCompletionMode, colors } = useThemeStore()
+  const { completionMode, setCompletionMode } = useThemeStore()
 
   const options: { id: CompletionMode; label: string; desc: string }[] = [
     { id: 'done', label: 'On Done', desc: 'Timestamp recorded when task moves to Done column' },
@@ -191,9 +191,60 @@ function PriorityManager() {
   )
 }
 
+function BusinessModeSetting() {
+  const { businessMode, setBusinessMode, colors } = useThemeStore()
+
+  return (
+    <div className="space-y-2 max-w-md">
+      <div className="flex items-center gap-3">
+        <div
+          className="w-8 h-8 rounded-lg flex items-center justify-center"
+          style={{
+            background: businessMode ? `${colors.primary}25` : 'rgba(255,255,255,0.05)',
+            border: `1px solid ${businessMode ? colors.primary + '40' : 'rgba(255,255,255,0.1)'}`,
+          }}
+        >
+          <Briefcase className="w-4 h-4" style={{ color: businessMode ? colors.primary : 'rgb(100,116,139)' }} />
+        </div>
+        <div className="flex-1">
+          <ToggleRow
+            label="Business Mode"
+            value={businessMode}
+            onChange={setBusinessMode}
+            color={colors.primary}
+          />
+        </div>
+      </div>
+      <p className="text-[10px] text-slate-600 pl-11">
+        Strips all glows, effects, ambient blobs, cursor trails, and surface tint for a clean professional look. Your settings are restored when you toggle off.
+      </p>
+    </div>
+  )
+}
+
+function CardPreviewSetting() {
+  const { cardPreviewOnHover, setCardPreviewOnHover, colors } = useThemeStore()
+
+  return (
+    <div className="space-y-1 max-w-md">
+      <ToggleRow
+        label="Card Preview on Hover"
+        value={cardPreviewOnHover}
+        onChange={setCardPreviewOnHover}
+        color={colors.primary}
+      />
+      <p className="text-[10px] text-slate-600 pl-12">
+        Hold hover over a card for 600ms to see a rich preview with description, checklist, labels, and dependencies.
+      </p>
+    </div>
+  )
+}
+
 export function GeneralTab() {
   return (
     <div className="space-y-6">
+      <BusinessModeSetting />
+      <CardPreviewSetting />
       <CompletionModeSetting />
       <BoardLayoutSetting />
       <PriorityManager />

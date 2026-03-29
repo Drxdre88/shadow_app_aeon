@@ -1,5 +1,6 @@
 'use client'
 
+import { memo } from 'react'
 import { motion } from 'framer-motion'
 import { Trophy, Tag, Clock, Timer, RotateCcw } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
@@ -60,8 +61,8 @@ export const cardVariants = {
   },
 }
 
-export function TrophyCard({ vaultTask, onRestore, onClick }: TrophyCardProps) {
-  const { glowIntensity } = useThemeStore()
+export const TrophyCard = memo(function TrophyCard({ vaultTask, onRestore, onClick }: TrophyCardProps) {
+  const glowIntensity = useThemeStore((s) => s.glowIntensity)
   const mult = glowIntensity / 75
 
   const labelSnapshot = (vaultTask.labelSnapshot ?? []) as Array<{ name: string; color: string }>
@@ -176,4 +177,4 @@ export function TrophyCard({ vaultTask, onRestore, onClick }: TrophyCardProps) {
       </GlowCard>
     </motion.div>
   )
-}
+})

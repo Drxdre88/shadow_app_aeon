@@ -14,7 +14,7 @@ function hexToRgb(hex: string): string {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false)
-  const { colors, fontFamily, currentTheme, _hydrated, themeSaturation, themeBrightness, surfaceVibrancy } = useThemeStore()
+  const { colors, fontFamily, currentTheme, _hydrated, themeSaturation, themeBrightness, surfaceVibrancy, businessMode } = useThemeStore()
 
   useEffect(() => {
     setMounted(true)
@@ -39,28 +39,43 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     root.style.setProperty('--success', colors.success)
     root.style.setProperty('--warning', colors.warning)
     root.style.setProperty('--error', colors.error)
-    root.style.setProperty('--glow', colors.glow)
-    root.style.setProperty('--glow-color', colors.glowColor)
-    root.style.setProperty('--glow-sm', `0 0 10px 2px ${colors.glowColor}`)
-    root.style.setProperty('--glow-md', `0 0 20px 5px ${colors.glowColor}`)
-    root.style.setProperty('--glow-lg', `0 0 30px 10px ${colors.glowColor}`)
-    root.style.setProperty('--glow-xl', `0 0 40px 15px ${colors.glowColor}`)
-    root.style.setProperty('--glow-xxl', `0 0 60px 20px ${colors.glowColor}`)
+    if (businessMode) {
+      root.style.setProperty('--glow', 'none')
+      root.style.setProperty('--glow-color', 'transparent')
+      root.style.setProperty('--glow-sm', 'none')
+      root.style.setProperty('--glow-md', 'none')
+      root.style.setProperty('--glow-lg', 'none')
+      root.style.setProperty('--glow-xl', 'none')
+      root.style.setProperty('--glow-xxl', 'none')
+    } else {
+      root.style.setProperty('--glow', colors.glow)
+      root.style.setProperty('--glow-color', colors.glowColor)
+      root.style.setProperty('--glow-sm', `0 0 10px 2px ${colors.glowColor}`)
+      root.style.setProperty('--glow-md', `0 0 20px 5px ${colors.glowColor}`)
+      root.style.setProperty('--glow-lg', `0 0 30px 10px ${colors.glowColor}`)
+      root.style.setProperty('--glow-xl', `0 0 40px 15px ${colors.glowColor}`)
+      root.style.setProperty('--glow-xxl', `0 0 60px 20px ${colors.glowColor}`)
+    }
 
     const satFilter = themeSaturation !== 100 ? `saturate(${themeSaturation}%)` : ''
     const briFilter = themeBrightness !== 100 ? `brightness(${themeBrightness}%)` : ''
     const combinedFilter = [satFilter, briFilter].filter(Boolean).join(' ') || 'none'
     root.style.setProperty('--theme-filter', combinedFilter)
 
-    const vibrancy = surfaceVibrancy / 100
-    root.style.setProperty('--surface-tint', vibrancy > 0
-      ? `rgba(${hexToRgb(colors.primary)}, ${vibrancy * 0.15})`
-      : 'transparent'
-    )
-    root.style.setProperty('--surface-tint-hover', vibrancy > 0
-      ? `rgba(${hexToRgb(colors.primary)}, ${vibrancy * 0.25})`
-      : 'transparent'
-    )
+    if (businessMode) {
+      root.style.setProperty('--surface-tint', 'transparent')
+      root.style.setProperty('--surface-tint-hover', 'transparent')
+    } else {
+      const vibrancy = surfaceVibrancy / 100
+      root.style.setProperty('--surface-tint', vibrancy > 0
+        ? `rgba(${hexToRgb(colors.primary)}, ${vibrancy * 0.15})`
+        : 'transparent'
+      )
+      root.style.setProperty('--surface-tint-hover', vibrancy > 0
+        ? `rgba(${hexToRgb(colors.primary)}, ${vibrancy * 0.25})`
+        : 'transparent'
+      )
+    }
 
     const fontCss = FONT_OPTIONS.find((f) => f.id === fontFamily)?.css || FONT_OPTIONS[0].css
     document.body.style.fontFamily = fontCss
@@ -72,7 +87,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     } else {
       root.classList.remove('dark')
     }
-  }, [mounted, colors, fontFamily, currentTheme, themeSaturation, themeBrightness, surfaceVibrancy])
+  }, [mounted, colors, fontFamily, currentTheme, themeSaturation, themeBrightness, surfaceVibrancy, businessMode])
 
   if (!mounted || !_hydrated) {
     return <div style={{ visibility: 'hidden' }}>{children}</div>

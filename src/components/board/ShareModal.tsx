@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Mail, UserPlus, Crown, Pencil, Trash2, Loader2, Copy, Check, Clock } from 'lucide-react'
+import { X, Mail, UserPlus, Crown, Trash2, Loader2, Copy, Check, Clock, Image, Link2 } from 'lucide-react'
+import { toPng } from 'html-to-image'
 import { getProjectMembers, inviteMember, removeProjectMember, updateProjectMemberRole, getPendingInvites } from '@/lib/actions/members'
+import { createBoardSnapshot } from '@/lib/actions/snapshots'
 
 interface ShareModalProps {
   isOpen: boolean
@@ -42,6 +44,10 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
   const [success, setSuccess] = useState('')
   const [copied, setCopied] = useState(false)
   const [inviteLink, setInviteLink] = useState('')
+  const [exportingPng, setExportingPng] = useState(false)
+  const [creatingLink, setCreatingLink] = useState(false)
+  const [shareLink, setShareLink] = useState('')
+  const [shareLinkCopied, setShareLinkCopied] = useState('')
 
   useEffect(() => {
     if (!isOpen) return
@@ -57,6 +63,79 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
       .catch(() => setError('Failed to load members'))
       .finally(() => setLoading(false))
   }, [isOpen, projectId])
+
+  const handleExportPng = async () => {
+    const columnsEl = document.querySelector('[data-board-columns]') as HTMLElement
+    if (!columnsEl) return
+    setExportingPng(true)
+
+    const savedOverflow = columnsEl.style.overflow
+    const savedMaxH = columnsEl.style.maxHeight
+    const savedFlexWrap = columnsEl.style.flexWrap
+
+    const blurEls = columnsEl.querySelectorAll<HTMLElement>('*')
+    const savedFilters: { el: HTMLElement; bd: string; filter: string }[] = []
+
+    try {
+      columnsEl.style.overflow = 'visible'
+      columnsEl.style.maxHeight = 'none'
+      columnsEl.style.flexWrap = 'nowrap'
+
+      blurEls.forEach((el) => {
+        const computed = getComputedStyle(el)
+        if (computed.backdropFilter && computed.backdropFilter !== 'none') {
+          savedFilters.push({ el, bd: el.style.backdropFilter, filter: el.style.filter })
+          el.style.backdropFilter = 'none'
+        }
+      })
+
+      await new Promise((r) => requestAnimationFrame(r))
+
+      const fullW = columnsEl.scrollWidth
+      const fullH = columnsEl.scrollHeight
+
+      const dataUrl = await toPng(columnsEl, {
+        pixelRatio: 2,
+        backgroundColor: '#0a0a0f',
+        width: fullW,
+        height: fullH,
+      })
+      const link = document.createElement('a')
+      link.download = `${projectName.replace(/[^a-zA-Z0-9]/g, '_')}_board.png`
+      link.href = dataUrl
+      link.click()
+    } catch (err) {
+      console.error('PNG export failed:', err)
+    } finally {
+      savedFilters.forEach(({ el, bd, filter }) => {
+        el.style.backdropFilter = bd
+        el.style.filter = filter
+      })
+      columnsEl.style.overflow = savedOverflow
+      columnsEl.style.maxHeight = savedMaxH
+      columnsEl.style.flexWrap = savedFlexWrap
+      setExportingPng(false)
+    }
+  }
+
+  const handleCreateShareLink = async () => {
+    setCreatingLink(true)
+    try {
+      const result = await createBoardSnapshot(projectId)
+      const link = `${window.location.origin}/share/${result.token}`
+      setShareLink(link)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create share link')
+    } finally {
+      setCreatingLink(false)
+    }
+  }
+
+  const handleCopyShareLink = () => {
+    navigator.clipboard.writeText(shareLink)
+    setShareLinkCopied('copied')
+    setTimeout(() => setShareLinkCopied(''), 2000)
+  }
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -148,6 +227,57 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
           </div>
 
           <div className="p-5 space-y-4 overflow-y-auto">
+            <div className="space-y-2">
+              <p className="text-xs text-slate-500 uppercase tracking-wider px-1">Export & Share</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleExportPng}
+                  disabled={exportingPng}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all hover:brightness-110 disabled:opacity-50"
+                  style={{
+                    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                    border: '1px solid rgba(16, 185, 129, 0.3)',
+                    color: '#34d399',
+                  }}
+                >
+                  {exportingPng ? <Loader2 className="w-4 h-4 animate-spin" /> : <Image className="w-4 h-4" />}
+                  {exportingPng ? 'Exporting...' : 'Download PNG'}
+                </button>
+                <button
+                  onClick={handleCreateShareLink}
+                  disabled={creatingLink}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all hover:brightness-110 disabled:opacity-50"
+                  style={{
+                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    color: '#60a5fa',
+                  }}
+                >
+                  {creatingLink ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                  {creatingLink ? 'Creating...' : 'Share Link (7d)'}
+                </button>
+              </div>
+
+              {shareLink && (
+                <div className="flex items-center gap-2 p-3 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(59,130,246,0.2)' }}>
+                  <Link2 className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                  <input
+                    readOnly
+                    value={shareLink}
+                    className="flex-1 bg-transparent text-xs text-slate-300 focus:outline-none"
+                  />
+                  <button
+                    onClick={handleCopyShareLink}
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                  >
+                    {shareLinkCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-white/10 pt-4" />
+
             <form onSubmit={handleInvite} className="flex gap-2">
               <div className="relative flex-1">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />

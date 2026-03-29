@@ -1,10 +1,13 @@
 'use client'
 
+import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Sparkles, Ghost, Zap } from 'lucide-react'
+import { Sparkles, Ghost, Zap, ChevronRight, Trophy } from 'lucide-react'
 import { useThemeStore, type DragEffect, type CursorEffect } from '@/stores/themeStore'
+import type { CelebrationStyle } from '@/components/celebrations/types'
 import { cn } from '@/lib/utils/cn'
 import { ToggleRow, ThemeSlider } from './shared'
+import { triggerCelebration } from '@/components/celebrations/CelebrationEngine'
 
 const DRAG_EFFECT_OPTIONS: { id: DragEffect; name: string; icon: typeof Sparkles }[] = [
   { id: 'glow', name: 'Aurora Glow', icon: Sparkles },
@@ -33,6 +36,37 @@ const CURSOR_EFFECT_OPTIONS: { id: CursorEffect; name: string }[] = [
   { id: 'custom-smoke', name: 'Custom Smoke' },
 ]
 
+const CELEBRATION_OPTIONS: { category: string; styles: { id: CelebrationStyle; name: string }[] }[] = [
+  { category: 'Business', styles: [
+    { id: 'checkmark-pulse', name: 'Checkmark Pulse' },
+    { id: 'stock-rise', name: 'Stock Rise' },
+    { id: 'rubber-stamp', name: 'Rubber Stamp' },
+    { id: 'gold-seal', name: 'Gold Seal' },
+    { id: 'briefcase-snap', name: 'Briefcase Snap' },
+  ]},
+  { category: 'Fun', styles: [
+    { id: 'confetti-burst', name: 'Confetti Burst' },
+    { id: 'fireworks', name: 'Fireworks' },
+    { id: 'balloon-rise', name: 'Balloon Rise' },
+    { id: 'party-popper', name: 'Party Popper' },
+    { id: 'star-explosion', name: 'Star Explosion' },
+  ]},
+  { category: 'Alien', styles: [
+    { id: 'abduction-beam', name: 'Abduction Beam' },
+    { id: 'acid-dissolve', name: 'Acid Dissolve' },
+    { id: 'warp-drive', name: 'Warp Drive' },
+    { id: 'plasma-rift', name: 'Plasma Rift' },
+    { id: 'portal-vortex', name: 'Portal Vortex' },
+  ]},
+  { category: 'Medieval', styles: [
+    { id: 'transmutation', name: 'Transmutation' },
+    { id: 'sword-slash', name: 'Sword Slash' },
+    { id: 'dragon-fire', name: 'Dragon Fire' },
+    { id: 'potion-complete', name: 'Potion Complete' },
+    { id: 'scroll-seal', name: 'Scroll Seal' },
+  ]},
+]
+
 export function FunTab() {
   const {
     dragEffect, setDragEffect,
@@ -42,13 +76,86 @@ export function FunTab() {
     ambientBlobs, setAmbientBlobs,
     spacePlanetGlow, setSpacePlanetGlow,
     spaceOrbitSpeed, setSpaceOrbitSpeed,
+    celebrationStyle, setCelebrationStyle,
     colors, glowIntensity,
   } = useThemeStore()
   const isSmokeEffect = cursorEffect.includes('smoke')
   const glowMult = glowIntensity / 75
+  const [expandedCat, setExpandedCat] = useState<string | null>(
+    CELEBRATION_OPTIONS.find((c) => c.styles.some((s) => s.id === celebrationStyle))?.category ?? null
+  )
+
+  const handlePreview = (styleId: CelebrationStyle) => {
+    const prev = celebrationStyle
+    setCelebrationStyle(styleId)
+    setTimeout(() => triggerCelebration(window.innerWidth / 2, window.innerHeight / 2), 50)
+    if (styleId !== prev) return
+  }
 
   return (
     <div className="space-y-6">
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Trophy className="w-4 h-4 text-slate-400" />
+          <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider">Task Complete Celebration</h4>
+        </div>
+
+        <motion.button
+          onClick={() => setCelebrationStyle('none')}
+          className={cn(
+            'px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 border',
+            celebrationStyle === 'none'
+              ? 'border-white/30 bg-white/10 text-white'
+              : 'bg-white/[0.03] border-white/10 text-slate-400 hover:bg-white/[0.06]'
+          )}
+          whileTap={{ scale: 0.98 }}
+        >
+          Off
+        </motion.button>
+
+        {CELEBRATION_OPTIONS.map(({ category, styles }) => {
+          const isExpanded = expandedCat === category
+          const hasActive = styles.some((s) => s.id === celebrationStyle)
+          return (
+            <div key={category}>
+              <button
+                onClick={() => setExpandedCat(isExpanded ? null : category)}
+                className="flex items-center gap-2 w-full text-left px-1 py-1 rounded-lg hover:bg-white/[0.04] transition-colors group"
+              >
+                <motion.div animate={{ rotate: isExpanded ? 90 : 0 }} transition={{ duration: 0.15 }}>
+                  <ChevronRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-slate-400" />
+                </motion.div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest">{category}</span>
+                {hasActive && <div className="w-1.5 h-1.5 rounded-full ml-1" style={{ background: colors.primary }} />}
+              </button>
+              {isExpanded && (
+                <div className="flex flex-wrap gap-2 pt-1.5 pb-2 pl-5">
+                  {styles.map(({ id, name }) => {
+                    const isActive = celebrationStyle === id
+                    return (
+                      <motion.button
+                        key={id}
+                        onClick={() => handlePreview(id)}
+                        className={cn(
+                          'px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 border',
+                          isActive
+                            ? 'border-white/30 bg-white/10 text-white'
+                            : 'bg-white/[0.03] border-white/10 text-slate-400 hover:bg-white/[0.06] hover:text-slate-300'
+                        )}
+                        style={isActive ? { boxShadow: `0 0 ${12 * glowMult}px 2px ${colors.glowColor}` } : {}}
+                        whileTap={{ scale: 0.95 }}
+                      >
+                        {name}
+                      </motion.button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
       <div className="space-y-3">
         <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider">Drag Effect</h4>
         <div className="flex gap-2">

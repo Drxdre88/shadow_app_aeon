@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireOwnership, requireEditor } from './helpers'
 import { createTaskSchema, updateTaskSchema, reorderTaskEntrySchema } from '@/lib/data/validators'
+import { checkStorageLimit } from '@/lib/data/storage'
 import {
   findTasks as _findTasks,
   findTaskById as _findTaskById,
@@ -53,6 +54,11 @@ export async function createBoardTask(data: {
   endDate?: string
 }) {
   const userId = await requireEditor(data.projectId)
+
+  const storageCheck = await checkStorageLimit(userId, 'tasks')
+  if (!storageCheck.allowed) {
+    throw new Error(`Task limit reached (${storageCheck.limit}). Remove unused tasks to continue.`)
+  }
 
   const parsed = createTaskSchema.parse({
     name: data.name,

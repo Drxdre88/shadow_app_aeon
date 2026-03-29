@@ -14,6 +14,8 @@ import { DependencyIndicator } from './DependencyIndicator'
 import { TaskContextMenu } from './TaskContextMenu'
 import { TaskSizeBadge } from './TaskSizeBadge'
 import { StaleIndicator } from './StaleIndicator'
+import { CardPeekPreview } from './CardPeekPreview'
+import { triggerCelebration } from '@/components/celebrations'
 
 interface SortableTaskCardProps {
   task: {
@@ -94,6 +96,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const [isEditing, setIsEditing] = useState(false)
   const [editName, setEditName] = useState(task.name)
   const editRef = useRef<HTMLInputElement>(null)
+  const cardElRef = useRef<HTMLDivElement>(null)
   const isSelected = selectedTaskId === task.id
   const mult = globalGlow / 75
   const triState = statusToTri(task.id, task.status)
@@ -109,6 +112,10 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
     const newStatus = triToStatus(next, task.status)
     updateTask(task.id, { status: newStatus })
     onTaskUpdate?.(task.id, { status: newStatus })
+    if (newStatus === 'done') {
+      const rect = (e.target as HTMLElement).closest('[data-task-id]')?.getBoundingClientRect()
+      if (rect) triggerCelebration(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    }
   }
 
   const getPriorityInfo = (priority: string) => {
@@ -176,7 +183,8 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   }
 
   return (
-    <div ref={setNodeRef} style={style} className="relative" data-task-id={task.id}>
+    <div ref={(el) => { setNodeRef(el); (cardElRef as React.MutableRefObject<HTMLDivElement | null>).current = el }} style={style} className="relative" data-task-id={task.id}>
+      <CardPeekPreview taskId={task.id} triggerRef={cardElRef} />
       {showDropIndicator && globalGlow > 0 && (
         <motion.div
           initial={{ opacity: 0, scaleX: 0 }}

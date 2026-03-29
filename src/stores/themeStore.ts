@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { themes, type ThemeName, type ThemeColors } from '@/config/themes'
+import type { CelebrationStyle } from '@/components/celebrations/types'
 import {
   DEFAULT_PREFERENCES,
   DEFAULT_SHORTCUTS,
@@ -34,6 +35,8 @@ export const FONT_OPTIONS: { id: FontFamily; label: string; css: string }[] = [
 
 interface ThemeStore {
   _hydrated: boolean
+  businessMode: boolean
+  _businessSnapshot: { glowIntensity: number; glassOpacity: number; ambientBlobs: boolean; cursorEffect: CursorEffect; dragEffect: DragEffect; surfaceVibrancy: number } | null
   currentTheme: ThemeName
   colors: ThemeColors
   glowIntensity: number
@@ -61,6 +64,8 @@ interface ThemeStore {
   defaultProjectView: ProjectViewMode
   defaultProjectSort: ProjectSortMode
   projectColors: Record<string, string>
+  cardPreviewOnHover: boolean
+  celebrationStyle: CelebrationStyle
   completionMode: CompletionMode
   depViewMode: DepViewMode
   shortcuts: Record<string, string>
@@ -99,11 +104,16 @@ interface ThemeStore {
   setSpacePlanetGlow: (enabled: boolean) => void
   setSpaceOrbitSpeed: (speed: number) => void
   setCompletionMode: (mode: CompletionMode) => void
+  setCardPreviewOnHover: (enabled: boolean) => void
+  setCelebrationStyle: (style: CelebrationStyle) => void
+  setBusinessMode: (enabled: boolean) => void
   setShortcut: (action: string, key: string) => void
 }
 
 export const useThemeStore = create<ThemeStore>()((set) => ({
   _hydrated: false,
+  businessMode: false,
+  _businessSnapshot: null,
   currentTheme: DEFAULT_PREFERENCES.currentTheme as ThemeName,
   colors: themes[DEFAULT_PREFERENCES.currentTheme as ThemeName] ?? themes.deepSpace,
   glowIntensity: DEFAULT_PREFERENCES.glowIntensity,
@@ -131,6 +141,8 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   defaultProjectView: 'grid' as ProjectViewMode,
   defaultProjectSort: 'alphabetical' as ProjectSortMode,
   projectColors: { ...DEFAULT_PREFERENCES.projectColors },
+  cardPreviewOnHover: false,
+  celebrationStyle: 'confetti-burst' as CelebrationStyle,
   completionMode: DEFAULT_PREFERENCES.completionMode as CompletionMode,
   depViewMode: DEFAULT_PREFERENCES.depViewMode,
   shortcuts: { ...DEFAULT_PREFERENCES.shortcuts },
@@ -249,6 +261,49 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   },
   setCompletionMode: (mode: CompletionMode) => {
     set({ completionMode: mode })
+  },
+  setCardPreviewOnHover: (enabled: boolean) => {
+    set({ cardPreviewOnHover: enabled })
+  },
+  setCelebrationStyle: (style: CelebrationStyle) => {
+    set({ celebrationStyle: style })
+  },
+  setBusinessMode: (enabled: boolean) => {
+    set((s) => {
+      if (enabled === s.businessMode) return {}
+      if (enabled) {
+        return {
+          businessMode: true,
+          _businessSnapshot: {
+            glowIntensity: s.glowIntensity,
+            glassOpacity: s.glassOpacity,
+            ambientBlobs: s.ambientBlobs,
+            cursorEffect: s.cursorEffect,
+            dragEffect: s.dragEffect,
+            surfaceVibrancy: s.surfaceVibrancy,
+          },
+          glowIntensity: 0,
+          glassOpacity: 0,
+          ambientBlobs: false,
+          cursorEffect: 'none' as CursorEffect,
+          dragEffect: 'ghost' as DragEffect,
+          surfaceVibrancy: 0,
+        }
+      }
+      const snap = s._businessSnapshot
+      return {
+        businessMode: false,
+        _businessSnapshot: null,
+        ...(snap ? {
+          glowIntensity: snap.glowIntensity,
+          glassOpacity: snap.glassOpacity,
+          ambientBlobs: snap.ambientBlobs,
+          cursorEffect: snap.cursorEffect,
+          dragEffect: snap.dragEffect,
+          surfaceVibrancy: snap.surfaceVibrancy,
+        } : {}),
+      }
+    })
   },
   setShortcut: (action: string, key: string) => {
     set((s) => ({ shortcuts: { ...s.shortcuts, [action]: key } }))
