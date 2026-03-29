@@ -5,12 +5,16 @@ export interface BoardFilters {
   dateFilter: 'all' | 'has-dates' | 'no-dates' | 'overdue'
 }
 
-export const DEFAULT_FILTERS: BoardFilters = {
-  search: '',
-  priorities: new Set(),
-  labels: new Set(),
-  dateFilter: 'all',
+export function createDefaultFilters(): BoardFilters {
+  return {
+    search: '',
+    priorities: new Set(),
+    labels: new Set(),
+    dateFilter: 'all',
+  }
 }
+
+export const DEFAULT_FILTERS: BoardFilters = createDefaultFilters()
 
 export function hasActiveFilters(filters: BoardFilters): boolean {
   return (

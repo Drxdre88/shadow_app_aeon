@@ -21,4 +21,4 @@ jobs:
 
       - run: npm run lint
 
-      - run: npx tsc --noEmit
+      - run: npm run -w apps/web typecheck

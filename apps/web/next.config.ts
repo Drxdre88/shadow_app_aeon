@@ -11,6 +11,7 @@ const securityHeaders = [
 ]
 
 const nextConfig: NextConfig = {
+  transpilePackages: ['@aeon/shared'],
   experimental: {
     serverActions: {
       bodySizeLimit: '2mb',

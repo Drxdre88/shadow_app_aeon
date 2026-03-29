@@ -6,7 +6,7 @@ import type {
   BoardLayout,
   DepViewMode,
   CustomPriority,
-} from '@/stores/themeStore'
+} from '../types'
 
 export const INITIAL_PRIORITIES: CustomPriority[] = [
   { id: 'low', name: '🟢 low', color: '#64748b' },
