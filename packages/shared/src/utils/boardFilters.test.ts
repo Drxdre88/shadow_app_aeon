@@ -276,7 +276,7 @@ describe('applyBoardFilters property tests', () => {
           search: fc.string(),
           priorities: fc.array(fc.constantFrom('low', 'medium', 'high', 'urgent')),
           labels: fc.array(fc.string()),
-          dateFilter: fc.constantFrom('all', 'has-dates', 'no-dates', 'overdue' as const),
+          dateFilter: fc.constantFrom<'all' | 'has-dates' | 'no-dates' | 'overdue'>('all', 'has-dates', 'no-dates', 'overdue'),
         }),
         ({ search, priorities, labels, dateFilter }) => {
           const f: BoardFilters = {

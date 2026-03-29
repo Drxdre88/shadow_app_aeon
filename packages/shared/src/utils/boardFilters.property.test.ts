@@ -10,11 +10,11 @@ import {
 
 const taskArbitrary = fc.record({
   name: fc.string({ minLength: 1 }),
-  description: fc.option(fc.string()),
+  description: fc.option(fc.string()).map((v) => v ?? undefined),
   priority: fc.constantFrom('low', 'medium', 'high', 'urgent'),
   labels: fc.array(fc.string()),
-  startDate: fc.option(fc.date().map((d) => d.toISOString())),
-  endDate: fc.option(fc.date().map((d) => d.toISOString())),
+  startDate: fc.option(fc.date().map((d) => d.toISOString())).map((v) => v ?? undefined),
+  endDate: fc.option(fc.date().map((d) => d.toISOString())).map((v) => v ?? undefined),
 })
 
 describe('boardFilters property-based invariants', () => {
@@ -32,7 +32,7 @@ describe('boardFilters property-based invariants', () => {
       search: fc.string(),
       priorities: fc.array(fc.constantFrom('low', 'medium', 'high', 'urgent')).map((arr) => new Set(arr)),
       labels: fc.array(fc.string()).map((arr) => new Set(arr)),
-      dateFilter: fc.constantFrom('all', 'has-dates', 'no-dates', 'overdue' as const),
+      dateFilter: fc.constantFrom<'all' | 'has-dates' | 'no-dates' | 'overdue'>('all', 'has-dates', 'no-dates', 'overdue'),
     })
 
     fc.assert(
@@ -48,7 +48,7 @@ describe('boardFilters property-based invariants', () => {
       search: fc.string(),
       priorities: fc.array(fc.string()).map((arr) => new Set(arr)),
       labels: fc.array(fc.string()).map((arr) => new Set(arr)),
-      dateFilter: fc.constantFrom('all', 'has-dates', 'no-dates', 'overdue' as const),
+      dateFilter: fc.constantFrom<'all' | 'has-dates' | 'no-dates' | 'overdue'>('all', 'has-dates', 'no-dates', 'overdue'),
     })
 
     fc.assert(
