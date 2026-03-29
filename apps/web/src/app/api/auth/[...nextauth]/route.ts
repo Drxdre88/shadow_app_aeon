@@ -1,15 +1,22 @@
 import { handlers } from '@/lib/auth'
 import { NextRequest } from 'next/server'
 
-const wrappedPOST = async (req: NextRequest) => {
+const wrappedGET = async (req: NextRequest) => {
   try {
-    const response = await handlers.POST(req)
-    return response ?? new Response(null, { status: 200 })
+    return (await handlers.GET(req)) ?? Response.json({ error: 'No auth response' }, { status: 500 })
   } catch (error) {
-    console.error('[Auth POST Error]', error)
-    return new Response(JSON.stringify({ error: 'Auth error' }), { status: 500 })
+    console.error('[Auth GET Error]', error)
+    return Response.json({ error: 'Auth error' }, { status: 500 })
   }
 }
 
-export const { GET } = handlers
-export { wrappedPOST as POST }
+const wrappedPOST = async (req: NextRequest) => {
+  try {
+    return (await handlers.POST(req)) ?? Response.json({ error: 'No auth response' }, { status: 500 })
+  } catch (error) {
+    console.error('[Auth POST Error]', error)
+    return Response.json({ error: 'Auth error' }, { status: 500 })
+  }
+}
+
+export { wrappedGET as GET, wrappedPOST as POST }
