@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { signOut } from 'next-auth/react'
 import { motion } from 'framer-motion'
-import { Plus, LogOut, Crown, LayoutGrid, Rows3, User, Share2, Building2 } from 'lucide-react'
+import { Plus, LogOut, Crown, LayoutGrid, Rows3, User, Share2, Building2, Settings } from 'lucide-react'
 import Image from 'next/image'
 import aeonLogo from '@/assets/aeon.png'
 import { SettingsButton } from '@/components/ui/SettingsModal'
@@ -13,6 +13,8 @@ import { BetaFeaturesButton } from '@/components/ui/BetaFeaturesModal'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { CreateProjectModal } from '@/components/project/CreateProjectModal'
 import { getProjectsWithStats, getSharedProjects, getWorkspaceProjects } from '@/lib/actions/projects'
+import { migrateGroupsToWorkspaces, createGroup, listMyGroups } from '@/lib/actions/workspaces'
+import { WorkspaceSettingsModal } from '@/components/workspace/WorkspaceSettingsModal'
 import { EditProjectModal } from '@/components/project/EditProjectModal'
 import { ProjectViewSwitcher, VIEW_OPTIONS } from '@/components/project/ProjectViewSwitcher'
 import { useViewPreference, type ProjectViewMode } from '@/components/project/useViewPreference'
@@ -50,6 +52,8 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
   const [sharedProjects, setSharedProjects] = useState<ProjectWithStats[]>([])
   const [workspaceData, setWorkspaceData] = useState<{ groupId: string; groupName: string; groupColor: string; memberCount: number; projects: ProjectWithStats[] }[]>([])
   const [tabLoaded, setTabLoaded] = useState<Record<DashboardTab, boolean>>({ mine: true, shared: false, workspaces: false })
+  const [migrationDone, setMigrationDone] = useState(false)
+  const [workspaceSettingsId, setWorkspaceSettingsId] = useState<{ id: string; name: string; isOwner: boolean } | null>(null)
   const isAdmin = user.role === 'admin'
   const { glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
@@ -69,6 +73,28 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
     document.addEventListener('visibilitychange', refresh)
     return () => { alive = false; clearInterval(interval); document.removeEventListener('visibilitychange', refresh) }
   }, [])
+
+  useEffect(() => {
+    if (migrationDone) return
+    migrateGroupsToWorkspaces()
+      .then((count) => {
+        setMigrationDone(true)
+        if (count > 0) setTabLoaded((prev) => ({ ...prev, workspaces: false }))
+      })
+      .catch(() => setMigrationDone(true))
+  }, [migrationDone])
+
+  const handleCreateWorkspace = async () => {
+    const name = prompt('Workspace name:')
+    if (!name?.trim()) return
+    await createGroup({ name: name.trim() })
+    setTabLoaded((prev) => ({ ...prev, workspaces: false }))
+    setDashboardTab('workspaces')
+  }
+
+  const refreshWorkspaces = () => {
+    setTabLoaded((prev) => ({ ...prev, workspaces: false }))
+  }
 
   useEffect(() => {
     if (dashboardTab === 'shared' && !tabLoaded.shared) {
@@ -355,18 +381,36 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
             >
               <Building2 className="w-8 h-8 text-[var(--text-dim)] mb-3" />
               <p className="text-[var(--text-muted)] mb-1">No workspaces</p>
-              <p className="text-sm text-[var(--text-dim)]">Create a workspace to collaborate with your team</p>
+              <p className="text-sm text-[var(--text-dim)] mb-4">Create a workspace to collaborate with your team</p>
+              <NeonButton color="purple" glowIntensity="md" onClick={handleCreateWorkspace}>
+                <span className="flex items-center gap-2">
+                  <Plus className="w-4 h-4" />
+                  Create Workspace
+                </span>
+              </NeonButton>
             </motion.div>
           ) : (
             <div className="space-y-6">
               {workspaceData.map((ws) => (
                 <div key={ws.groupId}>
-                  <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center gap-2 mb-3 group/ws">
                     <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: ws.groupColor.startsWith('#') ? ws.groupColor : `var(--primary)` }} />
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-dim)]">{ws.groupName}</h3>
                     <span className="text-[10px] text-slate-600">{ws.memberCount} members</span>
                     <span className="text-[10px] text-slate-600">{ws.projects.length} projects</span>
+                    <button
+                      onClick={() => setWorkspaceSettingsId({ id: ws.groupId, name: ws.groupName, isOwner: true })}
+                      className="p-1 rounded-md text-slate-600 hover:text-white hover:bg-white/10 transition-all opacity-0 group-hover/ws:opacity-100"
+                    >
+                      <Settings className="w-3.5 h-3.5" />
+                    </button>
                     <div className="flex-1 h-px bg-white/[0.06]" />
+                    <button
+                      onClick={handleCreateWorkspace}
+                      className="p-1 rounded-md text-slate-600 hover:text-white hover:bg-white/10 transition-all opacity-0 group-hover/ws:opacity-100"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                   {ws.projects.length > 0 ? (
                     <ProjectViewSwitcher
@@ -403,6 +447,16 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
           projectId={sharingProject.id}
           projectName={sharingProject.name}
           onClose={() => setSharingProject(null)}
+        />
+      )}
+      {workspaceSettingsId && (
+        <WorkspaceSettingsModal
+          isOpen={true}
+          groupId={workspaceSettingsId.id}
+          groupName={workspaceSettingsId.name}
+          isOwner={workspaceSettingsId.isOwner}
+          onClose={() => setWorkspaceSettingsId(null)}
+          onUpdated={refreshWorkspaces}
         />
       )}
     </div>

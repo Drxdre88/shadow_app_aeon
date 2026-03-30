@@ -1,4 +1,4 @@
-import { eq, and, or, inArray } from 'drizzle-orm'
+import { eq, and, inArray, sql, isNotNull } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { workspaceGroups, groupMembers, projectGroups, projects, users } from '@/lib/db/schema'
 
@@ -140,4 +140,60 @@ export async function canAccessProject(userId: string, projectId: string): Promi
   }
 
   return false
+}
+
+export async function migrateTextGroupsToWorkspaces(userId: string): Promise<number> {
+  const userProjects = await db
+    .select({ id: projects.id, group: projects.group })
+    .from(projects)
+    .where(and(eq(projects.userId, userId), isNotNull(projects.group)))
+
+  const grouped = new Map<string, string[]>()
+  for (const p of userProjects) {
+    if (!p.group || p.group === 'General') continue
+    const existing = grouped.get(p.group) || []
+    existing.push(p.id)
+    grouped.set(p.group, existing)
+  }
+
+  if (grouped.size === 0) return 0
+
+  let migrated = 0
+
+  for (const [groupName, projectIds] of grouped) {
+    const [existingGroup] = await db
+      .select({ id: workspaceGroups.id })
+      .from(workspaceGroups)
+      .where(and(eq(workspaceGroups.ownerId, userId), eq(workspaceGroups.name, groupName)))
+
+    let groupId: string
+    if (existingGroup) {
+      groupId = existingGroup.id
+    } else {
+      const [newGroup] = await db.insert(workspaceGroups).values({
+        name: groupName,
+        ownerId: userId,
+        color: 'purple',
+      }).returning({ id: workspaceGroups.id })
+      groupId = newGroup.id
+
+      await db.insert(groupMembers).values({
+        groupId,
+        userId,
+        role: 'owner',
+      }).onConflictDoNothing()
+    }
+
+    for (const projectId of projectIds) {
+      await db.insert(projectGroups).values({
+        projectId,
+        groupId,
+        addedBy: userId,
+      }).onConflictDoNothing()
+    }
+
+    migrated += projectIds.length
+  }
+
+  return migrated
 }

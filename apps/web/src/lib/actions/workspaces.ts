@@ -15,6 +15,7 @@ import {
   deleteWorkspaceGroup as _delete,
   getGroupRole,
   canAccessProject,
+  migrateTextGroupsToWorkspaces as _migrate,
 } from '@/lib/data/workspaces'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
@@ -121,4 +122,9 @@ export async function updateGroup(groupId: string, data: { name?: string; icon?:
 export async function deleteGroup(groupId: string) {
   await requireGroupOwner(groupId)
   return _delete(groupId)
+}
+
+export async function migrateGroupsToWorkspaces() {
+  const userId = await requireAuth()
+  return _migrate(userId)
 }
