@@ -55,7 +55,8 @@ const BETA_FEATURES = [
   },
 ]
 
-const STORAGE_KEY = 'aeon-beta-features-seen'
+const BETA_VERSION = 2
+const STORAGE_KEY = `aeon-beta-features-seen-v${BETA_VERSION}`
 
 interface BetaFeaturesModalProps {
   isOpen: boolean
@@ -200,12 +201,15 @@ export function BetaFeaturesButton() {
   const [isOpen, setIsOpen] = useState(false)
   const { glowIntensity, colors } = useThemeStore()
 
-  useEffect(() => { // eslint-disable-line react-hooks/set-state-in-effect
+  useEffect(() => {
     try {
       const seen = localStorage.getItem(STORAGE_KEY)
       if (!seen) {
-        setIsOpen(true)
-        localStorage.setItem(STORAGE_KEY, 'true')
+        const timer = setTimeout(() => {
+          setIsOpen(true)
+          localStorage.setItem(STORAGE_KEY, 'true')
+        }, 800)
+        return () => clearTimeout(timer)
       }
     } catch (e) { if (!(e instanceof DOMException)) console.warn('localStorage:', e) }
   }, [])
