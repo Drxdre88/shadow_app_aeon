@@ -14,15 +14,33 @@ import {
   updateWorkspaceGroup as _update,
   deleteWorkspaceGroup as _delete,
   getGroupRole,
+  canAccessProject,
 } from '@/lib/data/workspaces'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
+const ASSIGNABLE_ROLES = ['editor', 'viewer'] as const
+type AssignableRole = typeof ASSIGNABLE_ROLES[number]
+
+function validateRole(role: string): AssignableRole {
+  if (!ASSIGNABLE_ROLES.includes(role as AssignableRole)) {
+    throw new Error(`Invalid role: ${role}. Must be editor or viewer`)
+  }
+  return role as AssignableRole
+}
+
 async function requireAuth() {
   const session = await auth()
   if (!session?.user?.id) throw new Error('Not authenticated')
   return session.user.id
+}
+
+async function requireGroupMember(groupId: string) {
+  const userId = await requireAuth()
+  const role = await getGroupRole(groupId, userId)
+  if (!role) throw new Error('Not a member of this workspace')
+  return userId
 }
 
 async function requireGroupOwner(groupId: string) {
@@ -50,17 +68,19 @@ export async function listMyGroups() {
 }
 
 export async function getGroupMembers(groupId: string) {
-  await requireAuth()
+  await requireGroupMember(groupId)
   return _findMembers(groupId)
 }
 
 export async function getGroupProjects(groupId: string) {
-  await requireAuth()
+  await requireGroupMember(groupId)
   return _findProjects(groupId)
 }
 
 export async function addProjectToGroup(projectId: string, groupId: string) {
   const userId = await requireGroupEditor(groupId)
+  const hasAccess = await canAccessProject(userId, projectId)
+  if (!hasAccess) throw new Error('No access to this project')
   return _addProject(projectId, groupId, userId)
 }
 
@@ -71,23 +91,26 @@ export async function removeProjectFromGroup(projectId: string, groupId: string)
 
 export async function inviteGroupMember(groupId: string, emailOrUserId: string, role: string = 'editor') {
   await requireGroupOwner(groupId)
+  const validRole = validateRole(role)
   let targetUserId = emailOrUserId
   if (emailOrUserId.includes('@')) {
     const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, emailOrUserId))
     if (!user) throw new Error('User not found — they must sign up first')
     targetUserId = user.id
   }
-  return _addMember(groupId, targetUserId, role)
+  return _addMember(groupId, targetUserId, validRole)
 }
 
-export async function removeGroupMember(groupId: string, userId: string) {
-  await requireGroupOwner(groupId)
-  return _removeMember(groupId, userId)
+export async function removeGroupMember(groupId: string, targetUserId: string) {
+  const callerId = await requireGroupOwner(groupId)
+  if (callerId === targetUserId) throw new Error('Cannot remove yourself as owner')
+  return _removeMember(groupId, targetUserId)
 }
 
 export async function updateMemberRole(groupId: string, userId: string, role: string) {
   await requireGroupOwner(groupId)
-  return _updateRole(groupId, userId, role)
+  const validRole = validateRole(role)
+  return _updateRole(groupId, userId, validRole)
 }
 
 export async function updateGroup(groupId: string, data: { name?: string; icon?: string | null; color?: string }) {

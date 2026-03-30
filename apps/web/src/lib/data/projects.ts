@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { projects, projectMembers, boardTasks, ganttTasks, projectGroups, groupMembers, workspaceGroups } from '@/lib/db/schema'
-import { eq, and, desc, sql, or, notInArray, inArray, ne } from 'drizzle-orm'
+import { eq, and, desc, sql, or, inArray, ne } from 'drizzle-orm'
 import type { CreateProjectInput, UpdateProjectInput } from './validators'
 
 export async function verifyProjectOwnership(projectId: string, userId: string) {
@@ -257,14 +257,6 @@ export async function findOwnProjects(userId: string) {
 }
 
 export async function findSharedProjects(userId: string) {
-  const workspaceProjectIds = db
-    .select({ projectId: projectGroups.projectId })
-    .from(projectGroups)
-    .innerJoin(groupMembers, and(
-      eq(groupMembers.groupId, projectGroups.groupId),
-      eq(groupMembers.userId, userId)
-    ))
-
   return db
     .select(PROJECT_COLUMNS)
     .from(projects)
@@ -274,7 +266,11 @@ export async function findSharedProjects(userId: string) {
     ))
     .where(and(
       ne(projects.userId, userId),
-      notInArray(projects.id, workspaceProjectIds)
+      sql`NOT EXISTS (
+        SELECT 1 FROM project_groups pg
+        INNER JOIN group_members gm ON gm.group_id = pg.group_id AND gm.user_id = ${userId}
+        WHERE pg.project_id = ${projects.id}
+      )`
     ))
     .orderBy(desc(projects.createdAt))
 }

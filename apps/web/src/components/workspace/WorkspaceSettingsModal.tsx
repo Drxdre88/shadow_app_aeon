@@ -195,7 +195,7 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, on
                   className={cn('text-white font-semibold', isOwner && 'cursor-pointer hover:text-purple-300')}
                   onDoubleClick={() => isOwner && setNameEditing(true)}
                 >
-                  {groupName}
+                  {name}
                 </h2>
               )}
             </div>
