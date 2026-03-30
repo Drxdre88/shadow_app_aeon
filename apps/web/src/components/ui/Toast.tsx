@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, Undo2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useUndoStore } from '@/lib/store/undoStore'
+import { useThemeStore } from '@/stores/themeStore'
 
 interface ToastItem {
   id: string
@@ -17,12 +18,13 @@ interface ToastItem {
 
 let addToastGlobal: ((toast: Omit<ToastItem, 'id'>) => void) | null = null
 
-export function toast(message: string, options?: { onUndo?: () => void; duration?: number }) {
+export function toast(message: string, options?: { onUndo?: () => void; duration?: number; force?: boolean }) {
   if (!addToastGlobal) return
   let undoId: string | undefined
   if (options?.onUndo) {
     undoId = useUndoStore.getState().push(message, options.onUndo)
   }
+  if (!undoId && !options?.force && !useThemeStore.getState().boardActionToasts) return
   addToastGlobal({ message, undoId, duration: options?.duration })
 }
 

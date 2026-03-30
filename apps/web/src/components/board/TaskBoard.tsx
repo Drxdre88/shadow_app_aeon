@@ -234,6 +234,8 @@ export function TaskBoard({
     onAddTask: handleAddTask,
     onCopyCard: handleCopyCard,
     onPasteCard: handlePasteCard,
+    onSelectTask: selectTask,
+    onTaskMove,
   })
 
   const handleColumnRename = useCallback((columnId: string, name: string) => {

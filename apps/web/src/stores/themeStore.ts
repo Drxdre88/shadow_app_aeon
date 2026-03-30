@@ -76,6 +76,7 @@ interface ThemeStore {
   cardPreviewOnHover: boolean
   celebrationStyle: CelebrationStyle
   completionMode: CompletionMode
+  boardActionToasts: boolean
   depViewMode: DepViewMode
   shortcuts: Record<string, string>
   priorities: CustomPriority[]
@@ -115,6 +116,7 @@ interface ThemeStore {
   setCompletionMode: (mode: CompletionMode) => void
   setCardPreviewOnHover: (enabled: boolean) => void
   setCelebrationStyle: (style: CelebrationStyle) => void
+  setBoardActionToasts: (enabled: boolean) => void
   setBusinessMode: (enabled: boolean) => void
   setShortcut: (action: string, key: string) => void
 }
@@ -153,6 +155,7 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   cardPreviewOnHover: false,
   celebrationStyle: 'confetti-burst' as CelebrationStyle,
   completionMode: DEFAULT_PREFERENCES.completionMode as CompletionMode,
+  boardActionToasts: DEFAULT_PREFERENCES.boardActionToasts,
   depViewMode: DEFAULT_PREFERENCES.depViewMode,
   shortcuts: { ...DEFAULT_PREFERENCES.shortcuts },
   priorities: [...DEFAULT_PREFERENCES.priorities],
@@ -276,6 +279,9 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   },
   setCelebrationStyle: (style: CelebrationStyle) => {
     set({ celebrationStyle: style })
+  },
+  setBoardActionToasts: (enabled: boolean) => {
+    set({ boardActionToasts: enabled })
   },
   setBusinessMode: (enabled: boolean) => {
     set((s) => {

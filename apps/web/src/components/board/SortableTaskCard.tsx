@@ -85,6 +85,7 @@ function triToStatus(tri: TriState, fallback: string): string {
 
 export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowColor, showDropIndicator = false, onTaskUpdate, onTaskDelete, onPushToGantt, onSendToVault, onArchiveTask }: SortableTaskCardProps) {
   const selectedTaskId = useSelectedTaskId()
+  const selectTask = useBoardStore((s) => s.selectTask)
   const labels = useLabels()
   const clSummary = useBoardStore((s) => s.checklistSummaries[task.id])
   const clPreview = useBoardStore((s) => s.checklistPreviews[task.id])
@@ -455,6 +456,8 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
           onPushToGantt={onPushToGantt}
           onSendToVault={onSendToVault}
           onArchiveTask={onArchiveTask}
+          onSelectTask={(id) => selectTask(id)}
+          isSelected={isSelected}
         />
       )}
     </div>

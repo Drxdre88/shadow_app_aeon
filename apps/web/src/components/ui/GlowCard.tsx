@@ -50,6 +50,11 @@ export const GlowCard = forwardRef<HTMLDivElement, GlowCardProps>(({
 
   const gradientOpacity = 0.15 * mult
 
+  const selectedStyle: React.CSSProperties = selected ? {
+    ...glowStyle,
+    animation: 'glow-pulse 2s ease-in-out infinite',
+  } : glowStyle
+
   return (
     <motion.div
       ref={ref}
@@ -63,7 +68,7 @@ export const GlowCard = forwardRef<HTMLDivElement, GlowCardProps>(({
         selected && presetColors && presetColors.ring,
         className
       )}
-      style={glowStyle}
+      style={selectedStyle}
       whileHover={hover ? { scale: 1.02, y: -2 } : {}}
       whileTap={hover ? { scale: 0.98 } : {}}
       {...props}

@@ -23,6 +23,7 @@ export const DEFAULT_SHORTCUTS: Record<string, string> = {
   changePriority: 'v',
   toggleDates: 'd',
   toggleChecklist: 'o',
+  selectCard: 's',
 }
 
 export const DEFAULT_PREFERENCES = {
@@ -52,6 +53,7 @@ export const DEFAULT_PREFERENCES = {
   projectColors: {} as Record<string, string>,
   depViewMode: 'canvas' as DepViewMode,
   completionMode: 'done' as 'done' | 'vault',
+  boardActionToasts: false,
   shortcuts: { ...DEFAULT_SHORTCUTS },
   priorities: [...INITIAL_PRIORITIES],
 }

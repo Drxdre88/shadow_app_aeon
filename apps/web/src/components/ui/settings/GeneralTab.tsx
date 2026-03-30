@@ -240,11 +240,30 @@ function CardPreviewSetting() {
   )
 }
 
+function BoardActionToastsSetting() {
+  const { boardActionToasts, setBoardActionToasts, colors } = useThemeStore()
+
+  return (
+    <div className="space-y-1 max-w-md">
+      <ToggleRow
+        label="Board Action Notifications"
+        value={boardActionToasts}
+        onChange={setBoardActionToasts}
+        color={colors.primary}
+      />
+      <p className="text-[10px] text-slate-600 pl-12">
+        Show toast notifications for card moves, updates, and deletes. Undo toasts always appear regardless.
+      </p>
+    </div>
+  )
+}
+
 export function GeneralTab() {
   return (
     <div className="space-y-6">
       <BusinessModeSetting />
       <CardPreviewSetting />
+      <BoardActionToastsSetting />
       <CompletionModeSetting />
       <BoardLayoutSetting />
       <PriorityManager />

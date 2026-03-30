@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Palette, Flag, Trash2, MoveRight, Copy, Calendar, Archive, Package, ArrowRight, FolderInput, Loader2 } from 'lucide-react'
+import { Palette, Flag, Trash2, MoveRight, Copy, Calendar, Archive, Package, ArrowRight, FolderInput, Loader2, MousePointerClick } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore, useTasks, useColumns } from '@/lib/store/boardStore'
 import { AccentColor, ACCENT_COLORS, PALETTE_COLORS, colorConfig, getRecentColors, addRecentColor } from '@/lib/utils/colors'
@@ -20,9 +20,11 @@ interface TaskContextMenuProps {
   onPushToGantt?: (taskId: string) => void
   onSendToVault?: (taskId: string) => void
   onArchiveTask?: (taskId: string) => void
+  onSelectTask?: (taskId: string) => void
+  isSelected?: boolean
 }
 
-export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTaskDelete, onPushToGantt, onSendToVault, onArchiveTask }: TaskContextMenuProps) {
+export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTaskDelete, onPushToGantt, onSendToVault, onArchiveTask, onSelectTask, isSelected }: TaskContextMenuProps) {
   const [submenu, setSubmenu] = useState<'move' | 'priority' | 'color' | 'transfer' | null>(null)
   const [mounted, setMounted] = useState(false)
   const [transferProjects, setTransferProjects] = useState<{ id: string; name: string; columns: { id: string; name: string; color: string }[] }[]>([])
@@ -134,6 +136,27 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
             boxShadow: `0 0 ${8 * mult}px ${colors.glowColor}`,
           }}
         />
+        <button
+          onClick={() => {
+            if (isSelected) {
+              useBoardStore.getState().selectTask(null)
+            } else {
+              onSelectTask?.(taskId)
+            }
+            onClose()
+          }}
+          className={cn(
+            'w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors',
+            isSelected
+              ? 'text-[var(--primary)] bg-white/10'
+              : 'text-slate-300 hover:bg-white/10 hover:text-white'
+          )}
+        >
+          <MousePointerClick className="w-4 h-4" />
+          {isSelected ? 'Deselect' : 'Select'}
+          <span className="ml-auto text-[10px] text-slate-500">S</span>
+        </button>
+
         <ContextMenuButton
           icon={MoveRight}
           label="Move to..."
