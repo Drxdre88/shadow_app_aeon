@@ -48,8 +48,6 @@ export const GlowCard = forwardRef<HTMLDivElement, GlowCardProps>(({
     boxShadow: `0 0 ${20 * mult}px ${5 * mult}px ${resolved.glow}`,
   } : {}
 
-  const gradientOpacity = 0.15 * mult
-
   const selectedStyle: React.CSSProperties = selected ? {
     ...glowStyle,
     animation: 'glow-pulse 2s ease-in-out infinite',

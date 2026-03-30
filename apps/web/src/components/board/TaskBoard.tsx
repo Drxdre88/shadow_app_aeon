@@ -76,8 +76,6 @@ interface TaskBoardProps {
   onArchiveColumn?: (columnId: string) => void
 }
 
-const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
-
 export function TaskBoard({
   projectId,
   showFilters: showFiltersFromParent,
@@ -130,7 +128,7 @@ export function TaskBoard({
     name: '',
     description: '',
     color: 'purple' as string,
-    priority: 'medium' as typeof PRIORITIES[number],
+    priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
     size: null as number | null,
   })
 
