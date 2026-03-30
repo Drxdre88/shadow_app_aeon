@@ -5,6 +5,9 @@ import { requireAuth, requireOwnership, requireEditor } from './helpers'
 import {
   findProjects as _findProjects,
   findProjectsWithStats as _findProjectsWithStats,
+  findOwnProjects as _findOwn,
+  findSharedProjects as _findShared,
+  findWorkspaceProjects as _findWorkspace,
   createProject as _createProject,
   updateProject as _updateProject,
   deleteProject as _deleteProject,
@@ -23,6 +26,21 @@ export async function getProjects() {
 export async function getProjectsWithStats() {
   const userId = await requireAuth()
   return _findProjectsWithStats(userId)
+}
+
+export async function getOwnProjects() {
+  const userId = await requireAuth()
+  return _findOwn(userId)
+}
+
+export async function getSharedProjects() {
+  const userId = await requireAuth()
+  return _findShared(userId)
+}
+
+export async function getWorkspaceProjects() {
+  const userId = await requireAuth()
+  return _findWorkspace(userId)
 }
 
 export async function setProjectGroup(projectId: string, group: string | null) {

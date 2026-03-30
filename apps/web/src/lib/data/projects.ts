@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
-import { projects, projectMembers, boardTasks, ganttTasks } from '@/lib/db/schema'
-import { eq, and, desc, sql, or } from 'drizzle-orm'
+import { projects, projectMembers, boardTasks, ganttTasks, projectGroups, groupMembers, workspaceGroups } from '@/lib/db/schema'
+import { eq, and, desc, sql, or, notInArray, inArray, ne } from 'drizzle-orm'
 import type { CreateProjectInput, UpdateProjectInput } from './validators'
 
 export async function verifyProjectOwnership(projectId: string, userId: string) {
@@ -231,4 +231,87 @@ export async function getProjectSummary(projectId: string, userId: string) {
     boardTasks: { total, statusCounts: counts, progressPct, overdue },
     ganttTasks: { total: ganttAgg.total, avgProgress: ganttAgg.avgProgress },
   }
+}
+
+const PROJECT_COLUMNS = {
+  id: projects.id,
+  name: projects.name,
+  description: projects.description,
+  timeScale: projects.timeScale,
+  startDate: projects.startDate,
+  endDate: projects.endDate,
+  settings: projects.settings,
+  userId: projects.userId,
+  group: projects.group,
+  planetImage: projects.planetImage,
+  createdAt: projects.createdAt,
+  updatedAt: projects.updatedAt,
+} as const
+
+export async function findOwnProjects(userId: string) {
+  return db
+    .select(PROJECT_COLUMNS)
+    .from(projects)
+    .where(eq(projects.userId, userId))
+    .orderBy(desc(projects.createdAt))
+}
+
+export async function findSharedProjects(userId: string) {
+  const workspaceProjectIds = db
+    .select({ projectId: projectGroups.projectId })
+    .from(projectGroups)
+    .innerJoin(groupMembers, and(
+      eq(groupMembers.groupId, projectGroups.groupId),
+      eq(groupMembers.userId, userId)
+    ))
+
+  return db
+    .select(PROJECT_COLUMNS)
+    .from(projects)
+    .innerJoin(projectMembers, and(
+      eq(projectMembers.projectId, projects.id),
+      eq(projectMembers.userId, userId)
+    ))
+    .where(and(
+      ne(projects.userId, userId),
+      notInArray(projects.id, workspaceProjectIds)
+    ))
+    .orderBy(desc(projects.createdAt))
+}
+
+export async function findWorkspaceProjects(userId: string) {
+  const userGroups = await db
+    .select({
+      groupId: workspaceGroups.id,
+      groupName: workspaceGroups.name,
+      groupColor: workspaceGroups.color,
+      groupIcon: workspaceGroups.icon,
+      ownerId: workspaceGroups.ownerId,
+      memberRole: groupMembers.role,
+      memberCount: sql<number>`(select count(*)::int from group_members gm2 where gm2.group_id = ${workspaceGroups.id})`,
+    })
+    .from(groupMembers)
+    .innerJoin(workspaceGroups, eq(workspaceGroups.id, groupMembers.groupId))
+    .where(eq(groupMembers.userId, userId))
+    .orderBy(workspaceGroups.name)
+
+  const multiMemberGroups = userGroups.filter((g) => g.memberCount > 1)
+  if (multiMemberGroups.length === 0) return []
+
+  const groupIds = multiMemberGroups.map((g) => g.groupId)
+
+  const groupProjectRows = await db
+    .select({
+      groupId: projectGroups.groupId,
+      ...PROJECT_COLUMNS,
+    })
+    .from(projectGroups)
+    .innerJoin(projects, eq(projects.id, projectGroups.projectId))
+    .where(inArray(projectGroups.groupId, groupIds))
+    .orderBy(desc(projects.createdAt))
+
+  return multiMemberGroups.map((g) => ({
+    ...g,
+    projects: groupProjectRows.filter((p) => p.groupId === g.groupId),
+  }))
 }
