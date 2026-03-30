@@ -15,6 +15,9 @@ import {
   deleteWorkspaceGroup as _delete,
   getGroupRole,
 } from '@/lib/data/workspaces'
+import { db } from '@/lib/db'
+import { users } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 
 async function requireAuth() {
   const session = await auth()
@@ -66,9 +69,15 @@ export async function removeProjectFromGroup(projectId: string, groupId: string)
   return _removeProject(projectId, groupId)
 }
 
-export async function inviteGroupMember(groupId: string, userId: string, role: string = 'editor') {
+export async function inviteGroupMember(groupId: string, emailOrUserId: string, role: string = 'editor') {
   await requireGroupOwner(groupId)
-  return _addMember(groupId, userId, role)
+  let targetUserId = emailOrUserId
+  if (emailOrUserId.includes('@')) {
+    const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, emailOrUserId))
+    if (!user) throw new Error('User not found — they must sign up first')
+    targetUserId = user.id
+  }
+  return _addMember(groupId, targetUserId, role)
 }
 
 export async function removeGroupMember(groupId: string, userId: string) {
