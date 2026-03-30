@@ -12,7 +12,7 @@ import { StatsButton } from '@/components/ui/StatsModal'
 import { BetaFeaturesButton } from '@/components/ui/BetaFeaturesModal'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { CreateProjectModal } from '@/components/project/CreateProjectModal'
-import { getProjectsWithStats, getOwnProjects, getSharedProjects, getWorkspaceProjects } from '@/lib/actions/projects'
+import { getProjectsWithStats, getSharedProjects, getWorkspaceProjects } from '@/lib/actions/projects'
 import { EditProjectModal } from '@/components/project/EditProjectModal'
 import { ProjectViewSwitcher, VIEW_OPTIONS } from '@/components/project/ProjectViewSwitcher'
 import { useViewPreference, type ProjectViewMode } from '@/components/project/useViewPreference'
@@ -77,7 +77,7 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
           setSharedProjects(data.map((p) => ({ ...p, totalTasks: 0, doneTasks: 0, completionPct: 0 })) as ProjectWithStats[])
           setTabLoaded((prev) => ({ ...prev, shared: true }))
         })
-        .catch(() => {})
+        .catch((err) => console.error('Failed to load shared projects:', err))
     }
     if (dashboardTab === 'workspaces' && !tabLoaded.workspaces) {
       getWorkspaceProjects()
@@ -91,7 +91,7 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
           })))
           setTabLoaded((prev) => ({ ...prev, workspaces: true }))
         })
-        .catch(() => {})
+        .catch((err) => console.error('Failed to load workspaces:', err))
     }
   }, [dashboardTab, tabLoaded])
 
