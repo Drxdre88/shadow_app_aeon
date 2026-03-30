@@ -11,17 +11,17 @@ const INITIAL_STATE = {
   timeScale: 'week' as const,
 }
 
-function makeTask(id: string, projectId = 'proj-1'): Parameters<typeof useGanttStore.getState>['0'] extends infer S ? S extends { tasks: (infer T)[] } ? T : never : never {
+function makeTask(id: string, projectId = 'proj-1') {
   return {
     id,
     projectId,
-    rowId: null,
+    rowId: null as string | null,
     name: `Task ${id}`,
     startDate: '2025-01-01',
     endDate: '2025-01-07',
     color: '#ffffff',
     progress: 0,
-    dependencies: [],
+    dependencies: [] as string[],
   }
 }
 

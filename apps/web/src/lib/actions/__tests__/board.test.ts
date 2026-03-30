@@ -114,8 +114,12 @@ const makeTask = (overrides = {}) => ({
   orderIndex: 0,
   size: null,
   description: null,
-  startDate: null,
-  endDate: null,
+  startDate: null as Date | null,
+  endDate: null as Date | null,
+  metadata: {} as unknown,
+  ganttTaskId: null as string | null,
+  completedAt: null as Date | null,
+  archivedAt: null as Date | null,
   createdAt: new Date(),
   updatedAt: new Date(),
   ...overrides,
@@ -127,6 +131,8 @@ const makeColumn = (overrides = {}) => ({
   name: 'Backlog',
   color: 'purple',
   orderIndex: 0,
+  icon: null as string | null,
+  createdAt: new Date(),
   ...overrides,
 })
 
@@ -135,6 +141,7 @@ const makeLabel = (overrides = {}) => ({
   projectId: PROJECT_ID,
   name: 'Bug',
   color: 'red',
+  createdAt: new Date(),
   ...overrides,
 })
 
@@ -144,7 +151,12 @@ const makeChecklistItem = (overrides = {}) => ({
   title: 'Step one',
   groupName: 'Steps',
   state: 'unchecked',
+  completed: false,
+  status: null as string | null,
+  startDate: null as Date | null,
+  endDate: null as Date | null,
   orderIndex: 0,
+  createdAt: new Date(),
   ...overrides,
 })
 
@@ -164,7 +176,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(requireOwnership).mockResolvedValue(USER_ID)
   vi.mocked(requireEditor).mockResolvedValue(USER_ID)
-  vi.mocked(checkStorageLimit).mockResolvedValue({ allowed: true, limit: 100, current: 5 })
+  vi.mocked(checkStorageLimit).mockResolvedValue({ allowed: true, limit: 100, current: 5, remaining: 95 })
   vi.mocked(emitActivity).mockResolvedValue(undefined)
   vi.mocked(syncBoardStatusToGantt).mockResolvedValue(undefined)
   vi.mocked(deleteLinkedGanttTask).mockResolvedValue(undefined)
@@ -195,8 +207,8 @@ describe('loadBoardData', () => {
     const labels = [makeLabel()]
     const taskLabels = [{ taskId: TASK_ID, labelId: LABEL_ID }]
     const dependencies = [{ id: 'dep-1', blockerTaskId: TASK_ID, blockedTaskId: NEW_TASK_ID }]
-    const checklistSummaries = { [TASK_ID]: { total: 2, checked: 1 } }
-    const checklistPreviews = { [TASK_ID]: [{ title: 'Step one', state: 'unchecked' }] }
+    const checklistSummaries = { [TASK_ID]: { total: 2, checked: 1, crossed: 0 } }
+    const checklistPreviews = { [TASK_ID]: [{ title: 'Step one', state: 'unchecked', groupName: 'Steps' }] }
 
     vi.mocked(_findTasks).mockResolvedValue(tasks)
     vi.mocked(_findColumns).mockResolvedValue(columns)
@@ -231,7 +243,7 @@ describe('createBoardTask', () => {
   })
 
   it('throws when storage limit is reached', async () => {
-    vi.mocked(checkStorageLimit).mockResolvedValue({ allowed: false, limit: 10, current: 10 })
+    vi.mocked(checkStorageLimit).mockResolvedValue({ allowed: false, limit: 10, current: 10, remaining: 0 })
     await expect(createBoardTask(validCreateData)).rejects.toThrow('Task limit reached (10)')
   })
 
@@ -425,7 +437,7 @@ describe('deleteBoardTask', () => {
     const deleteOrder: string[] = []
     vi.mocked(_findTaskById).mockResolvedValue(makeTask())
     vi.mocked(deleteLinkedGanttTask).mockImplementation(async () => { deleteOrder.push('gantt') })
-    vi.mocked(_deleteTask).mockImplementation(async () => { deleteOrder.push('task') })
+    vi.mocked(_deleteTask).mockImplementation(async () => { deleteOrder.push('task'); return true })
 
     await deleteBoardTask(TASK_ID, PROJECT_ID)
 
@@ -481,7 +493,7 @@ describe('archiveBoardTask', () => {
   })
 
   it('does not emit activity when task is not found', async () => {
-    vi.mocked(_archiveTask).mockResolvedValue(null)
+    vi.mocked(_archiveTask).mockResolvedValue(null as never)
 
     await archiveBoardTask(TASK_ID, PROJECT_ID)
 
@@ -523,7 +535,7 @@ describe('restoreBoardTask', () => {
   })
 
   it('does not emit activity when task is not found', async () => {
-    vi.mocked(_restoreTask).mockResolvedValue(null)
+    vi.mocked(_restoreTask).mockResolvedValue(null as never)
 
     await restoreBoardTask(TASK_ID, PROJECT_ID)
 
@@ -643,7 +655,7 @@ describe('duplicateBoardTask', () => {
   })
 
   it('throws when source task is not found', async () => {
-    vi.mocked(_findTaskById).mockResolvedValue(null)
+    vi.mocked(_findTaskById).mockResolvedValue(null as never)
     await expect(duplicateBoardTask(TASK_ID, PROJECT_ID, NEW_TASK_ID)).rejects.toThrow('Source task not found')
   })
 

@@ -67,8 +67,15 @@ const stubProject = {
   id: 'proj-1',
   name: 'Test Project',
   userId: 'user-1',
-  startDate: VALID_START,
-  endDate: VALID_END,
+  description: null as string | null,
+  timeScale: 'week',
+  startDate: new Date(VALID_START),
+  endDate: new Date(VALID_END),
+  settings: {} as unknown,
+  group: null as string | null,
+  planetImage: null as string | null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
 }
 
 beforeEach(() => {
@@ -100,7 +107,7 @@ describe('getProjects', () => {
 
 describe('getProjectsWithStats', () => {
   it('returns projects with stats for authenticated user', async () => {
-    const projectsWithStats = [{ ...stubProject, taskCount: 5 }]
+    const projectsWithStats = [{ ...stubProject, totalTasks: 5, doneTasks: 2, completionPct: 40 }]
     mockFindProjectsWithStats.mockResolvedValue(projectsWithStats)
 
     const result = await getProjectsWithStats()
@@ -120,22 +127,20 @@ describe('getProjectsWithStats', () => {
 
 describe('setProjectGroup', () => {
   it('sets group for project', async () => {
-    mockSetProjectGroup.mockResolvedValue({ ...stubProject, group: 'design' })
+    mockSetProjectGroup.mockResolvedValue(undefined)
 
-    const result = await setProjectGroup('proj-1', 'design')
+    await setProjectGroup('proj-1', 'design')
 
     expect(mockRequireEditor).toHaveBeenCalledWith('proj-1')
     expect(mockSetProjectGroup).toHaveBeenCalledWith('proj-1', 'design')
-    expect(result).toMatchObject({ group: 'design' })
   })
 
   it('sets group to null to remove from group', async () => {
-    mockSetProjectGroup.mockResolvedValue({ ...stubProject, group: null })
+    mockSetProjectGroup.mockResolvedValue(undefined)
 
-    const result = await setProjectGroup('proj-1', null)
+    await setProjectGroup('proj-1', null)
 
     expect(mockSetProjectGroup).toHaveBeenCalledWith('proj-1', null)
-    expect(result).toMatchObject({ group: null })
   })
 
   it('throws when not editor', async () => {
