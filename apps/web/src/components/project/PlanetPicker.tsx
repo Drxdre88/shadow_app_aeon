@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 
@@ -10,31 +10,13 @@ interface PlanetPickerProps {
 }
 
 const ROW_SIZE = 6
+const PLANETS = Array.from({ length: 55 }, (_, i) => `planet${i + 1}.png`)
 
 export function PlanetPicker({ value, onChange }: PlanetPickerProps) {
-  const [planets, setPlanets] = useState<string[]>([])
   const [expanded, setExpanded] = useState(false)
 
-  useEffect(() => {
-    fetch('/api/planets')
-      .then((r) => {
-        if (!r.ok) throw new Error('Failed to load planets')
-        return r.json()
-      })
-      .then((files: unknown) => {
-        if (Array.isArray(files) && files.every((f) => typeof f === 'string')) {
-          setPlanets(files)
-        } else {
-          setPlanets(['planet1.png'])
-        }
-      })
-      .catch(() => setPlanets(['planet1.png']))
-  }, [])
-
-  if (planets.length === 0) return null
-
-  const visiblePlanets = expanded ? planets : planets.slice(0, ROW_SIZE)
-  const hasMore = planets.length > ROW_SIZE
+  const visiblePlanets = expanded ? PLANETS : PLANETS.slice(0, ROW_SIZE)
+  const hasMore = PLANETS.length > ROW_SIZE
 
   return (
     <div>
@@ -46,7 +28,7 @@ export function PlanetPicker({ value, onChange }: PlanetPickerProps) {
             onClick={() => setExpanded(!expanded)}
             className="flex items-center gap-1 text-xs text-[var(--text-dim)] hover:text-white transition-colors"
           >
-            {expanded ? 'Collapse' : `${planets.length - ROW_SIZE} more`}
+            {expanded ? 'Collapse' : `${PLANETS.length - ROW_SIZE} more`}
             <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', expanded && 'rotate-180')} />
           </button>
         )}

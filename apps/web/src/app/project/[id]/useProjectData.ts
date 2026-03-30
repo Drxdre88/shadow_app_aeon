@@ -5,7 +5,7 @@ import { loadBoardData } from '@/lib/actions/board'
 import { getRows, getGanttTasks } from '@/lib/actions/gantt'
 import { getGanttViews } from '@/lib/actions/ganttViews'
 import { getCanvasNodes, getCanvasEdges } from '@/lib/actions/canvas'
-import { useBoardStore } from '@/lib/store/boardStore'
+import { useBoardStore, isDirtyOrGracePeriod } from '@/lib/store/boardStore'
 import { useGanttStore } from '@/lib/store/ganttStore'
 import { useCanvasStore } from '@/lib/store/canvasStore'
 import { clearCrossedState } from '@/components/board/SortableTaskCard'
@@ -41,7 +41,7 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
     loadBoardData(projectId)
       .then(({ tasks: dbTasks, columns: dbColumns, labels: dbLabels, taskLabels: dbTaskLabels, dependencies: dbDependencies, checklistSummaries: dbChecklistSummaries, checklistPreviews: dbChecklistPreviews }) => {
         if (currentFetchId !== fetchIdRef.current) return
-        if (!isInitialLoad.current && useBoardStore.getState().isDirty) return
+        if (!isInitialLoad.current && isDirtyOrGracePeriod()) return
 
         const taskLabelMap = new Map<string, string[]>()
         dbTaskLabels.forEach((tl) => {

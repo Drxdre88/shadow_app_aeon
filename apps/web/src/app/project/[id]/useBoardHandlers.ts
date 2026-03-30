@@ -164,6 +164,9 @@ export function useBoardHandlers(projectId: string) {
 
   const handleColumnCreate = useCallback((col: { id: string; projectId: string; name: string; color: string; orderIndex: number }) => {
     createColumn(projectId, { name: col.name, color: col.color, orderIndex: col.orderIndex }, col.id)
+      .then(() => {
+        useBoardStore.setState({ isDirty: false })
+      })
       .catch((err) => {
         console.error('Failed to create column:', err)
         useBoardStore.getState().removeColumn(col.id)
@@ -176,6 +179,7 @@ export function useBoardHandlers(projectId: string) {
     const snapshot = useBoardStore.getState().columns.find(c => c.id === columnId)
     updateColumnAction(columnId, projectId, updates)
       .then(() => {
+        useBoardStore.setState({ isDirty: false })
         if (snapshot) {
           const rollback: Record<string, unknown> = {}
           for (const key of Object.keys(updates)) {
@@ -202,10 +206,13 @@ export function useBoardHandlers(projectId: string) {
   const handleColumnReorder = useCallback((updates: { id: string; orderIndex: number }[]) => {
     const snapshot = useBoardStore.getState().columns.map(c => ({ id: c.id, orderIndex: c.orderIndex }))
     reorderColumnsAction(projectId, updates)
+      .then(() => {
+        useBoardStore.setState({ isDirty: false })
+      })
       .catch((err) => {
         console.error('Failed to reorder columns:', err)
-        useBoardStore.setState({ isDirty: false })
         snapshot.forEach(s => useBoardStore.getState().updateColumn(s.id, { orderIndex: s.orderIndex }))
+        useBoardStore.setState({ isDirty: false })
         toast('Failed to reorder columns')
       })
   }, [projectId])
