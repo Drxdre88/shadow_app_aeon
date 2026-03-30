@@ -63,6 +63,7 @@ interface BoardState {
   checklistSummaries: Record<string, ChecklistSummary>
   selectedTaskId: string | null
   isDirty: boolean
+  lastMutatedAt: number
 
   setColumns: (columns: BoardColumn[]) => void
   addColumn: (column: BoardColumn) => void
@@ -100,6 +101,8 @@ interface BoardState {
   markClean: () => void
 }
 
+const DIRTY_GRACE_MS = 5000
+
 export const useBoardStore = create<BoardState>()(
   persist(
     (set) => ({
@@ -112,15 +115,20 @@ export const useBoardStore = create<BoardState>()(
       checklistViewMode: 'off' as 'off' | 'preview' | 'full',
       selectedTaskId: null,
       isDirty: false,
+      lastMutatedAt: 0,
       showDates: false,
 
       setColumns: (columns) => set({ columns }),
-      addColumn: (column) => set((s) => ({ columns: [...s.columns, column] })),
+      addColumn: (column) => set((s) => ({ columns: [...s.columns, column], isDirty: true, lastMutatedAt: Date.now() })),
       updateColumn: (id, updates) => set((s) => ({
         columns: s.columns.map((c) => c.id === id ? { ...c, ...updates } : c),
+        isDirty: true,
+        lastMutatedAt: Date.now(),
       })),
       removeColumn: (id) => set((s) => ({
         columns: s.columns.filter((c) => c.id !== id),
+        isDirty: true,
+        lastMutatedAt: Date.now(),
       })),
       reorderColumns: (updates) => set((s) => {
         const map = new Map(updates.map((u) => [u.id, u.orderIndex]))
@@ -128,33 +136,40 @@ export const useBoardStore = create<BoardState>()(
           columns: s.columns
             .map((c) => map.has(c.id) ? { ...c, orderIndex: map.get(c.id)! } : c)
             .sort((a, b) => a.orderIndex - b.orderIndex),
+          isDirty: true,
+          lastMutatedAt: Date.now(),
         }
       }),
 
       setTasks: (tasks) => set({ tasks, isDirty: false }),
-      addTask: (task) => set((s) => ({ tasks: [...s.tasks, task], isDirty: true })),
+      addTask: (task) => set((s) => ({ tasks: [...s.tasks, task], isDirty: true, lastMutatedAt: Date.now() })),
       updateTask: (id, updates) => set((s) => ({
         tasks: s.tasks.map((t) => t.id === id ? { ...t, ...updates } : t),
         isDirty: true,
+        lastMutatedAt: Date.now(),
       })),
       removeTask: (id) => set((s) => ({
         tasks: s.tasks.filter((t) => t.id !== id),
         isDirty: true,
+        lastMutatedAt: Date.now(),
       })),
       moveTask: (id, columnId, orderIndex) => set((s) => ({
         tasks: s.tasks.map((t) => t.id === id ? { ...t, columnId, orderIndex } : t),
         isDirty: true,
+        lastMutatedAt: Date.now(),
       })),
 
       setLabels: (labels) => set({ labels }),
-      addLabel: (label) => set((s) => ({ labels: [...s.labels, label], isDirty: true })),
+      addLabel: (label) => set((s) => ({ labels: [...s.labels, label], isDirty: true, lastMutatedAt: Date.now() })),
       updateLabel: (id, updates) => set((s) => ({
         labels: s.labels.map((l) => l.id === id ? { ...l, ...updates } : l),
         isDirty: true,
+        lastMutatedAt: Date.now(),
       })),
       removeLabel: (id) => set((s) => ({
         labels: s.labels.filter((l) => l.id !== id),
         isDirty: true,
+        lastMutatedAt: Date.now(),
       })),
 
       setChecklistSummaries: (checklistSummaries) => set({ checklistSummaries }),
@@ -167,12 +182,14 @@ export const useBoardStore = create<BoardState>()(
       addDependency: (dep) => set((s) => ({
         dependencies: [...s.dependencies, dep],
         isDirty: true,
+        lastMutatedAt: Date.now(),
       })),
       removeDependency: (blockerTaskId, blockedTaskId) => set((s) => ({
         dependencies: s.dependencies.filter(
           (d) => !(d.blockerTaskId === blockerTaskId && d.blockedTaskId === blockedTaskId)
         ),
         isDirty: true,
+        lastMutatedAt: Date.now(),
       })),
 
       toggleShowDates: () => set((s) => ({ showDates: !s.showDates })),
@@ -184,6 +201,7 @@ export const useBoardStore = create<BoardState>()(
             : t
         ),
         isDirty: true,
+        lastMutatedAt: Date.now(),
       })),
       markClean: () => set({ isDirty: false }),
     }),
@@ -193,6 +211,11 @@ export const useBoardStore = create<BoardState>()(
     }
   )
 )
+
+export function isDirtyOrGracePeriod(): boolean {
+  const s = useBoardStore.getState()
+  return s.isDirty || Date.now() - s.lastMutatedAt < DIRTY_GRACE_MS
+}
 
 export const useColumns = () => useBoardStore((s) => s.columns)
 export const useTasks = () => useBoardStore((s) => s.tasks)
