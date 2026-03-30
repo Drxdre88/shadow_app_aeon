@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     default: 'Aeon',
     template: 'AEON - %s',
   },
-  description: 'Visualize your projects with stunning Gantt charts and task boards',
+  description: 'The last PM tool of this dying world',
   manifest: '/manifest.json',
   icons: {
     icon: [

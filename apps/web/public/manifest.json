@@ -1,7 +1,7 @@
 {
   "name": "Aeon",
   "short_name": "Aeon",
-  "description": "Beautiful Project Timelines — Gantt charts, task boards, and more",
+  "description": "The last PM tool of this dying world",
   "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#0a0a0f",
