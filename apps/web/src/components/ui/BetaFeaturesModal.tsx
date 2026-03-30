@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
+import { Tooltip } from './Tooltip'
 
 const BETA_FEATURES = [
   {
@@ -199,37 +200,50 @@ export function BetaFeaturesModal({ isOpen, onClose }: BetaFeaturesModalProps) {
 
 export function BetaFeaturesButton() {
   const [isOpen, setIsOpen] = useState(false)
+  const [unseen, setUnseen] = useState(false)
   const { glowIntensity, colors } = useThemeStore()
 
   useEffect(() => {
     try {
       const seen = localStorage.getItem(STORAGE_KEY)
-      if (!seen) {
-        const timer = setTimeout(() => {
-          setIsOpen(true)
-          localStorage.setItem(STORAGE_KEY, 'true')
-        }, 800)
-        return () => clearTimeout(timer)
-      }
-    } catch (e) { if (!(e instanceof DOMException)) console.warn('localStorage:', e) }
+      if (!seen) setUnseen(true)
+    } catch {}
+  }, [])
+
+  const handleClose = useCallback(() => {
+    setIsOpen(false)
+    setUnseen(false)
+    try { localStorage.setItem(STORAGE_KEY, 'true') } catch {}
   }, [])
 
   return (
     <>
-      <motion.button
-        onClick={() => setIsOpen(true)}
-        aria-label="Beta features"
-        className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200"
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        style={{
-          boxShadow: glowIntensity > 50 ? `0 0 ${10 * (glowIntensity / 100)}px ${colors.glowColor}` : 'none',
-        }}
-      >
-        <FlaskConical className="w-5 h-5 text-slate-400" />
-      </motion.button>
+      <Tooltip label="What's New">
+        <motion.button
+          onClick={() => setIsOpen(true)}
+          aria-label="Beta features"
+          className={cn(
+            'relative p-2 rounded-xl border transition-all duration-200',
+            unseen
+              ? 'bg-purple-500/15 border-purple-500/30 hover:bg-purple-500/25'
+              : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20'
+          )}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          style={{
+            boxShadow: unseen
+              ? `0 0 12px ${colors.glowColor}, 0 0 24px ${colors.glowColor}40`
+              : glowIntensity > 50 ? `0 0 ${10 * (glowIntensity / 100)}px ${colors.glowColor}` : 'none',
+          }}
+        >
+          <FlaskConical className={cn('w-5 h-5', unseen ? 'text-purple-400' : 'text-slate-400')} />
+          {unseen && (
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-purple-500 border-2 border-[#0a0a0c]" />
+          )}
+        </motion.button>
+      </Tooltip>
 
-      <BetaFeaturesModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
+      <BetaFeaturesModal isOpen={isOpen} onClose={handleClose} />
     </>
   )
 }
