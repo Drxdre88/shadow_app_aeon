@@ -79,6 +79,35 @@ export const projectInvites = pgTable('project_invites', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
+export const workspaceGroups = pgTable('workspace_groups', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  name: varchar('name', { length: 255 }).notNull(),
+  ownerId: uuid('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  icon: varchar('icon', { length: 50 }),
+  color: varchar('color', { length: 20 }).default('purple').notNull(),
+  settings: jsonb('settings').default({}).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
+
+export const groupMembers = pgTable('group_members', {
+  groupId: uuid('group_id').notNull().references(() => workspaceGroups.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: varchar('role', { length: 20 }).default('editor').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (gm) => ({
+  pk: primaryKey({ columns: [gm.groupId, gm.userId] }),
+}))
+
+export const projectGroups = pgTable('project_groups', {
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  groupId: uuid('group_id').notNull().references(() => workspaceGroups.id, { onDelete: 'cascade' }),
+  addedBy: uuid('added_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (pg) => ({
+  pk: primaryKey({ columns: [pg.projectId, pg.groupId] }),
+}))
+
 export const ganttViews = pgTable('gantt_views', {
   id: uuid('id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -297,3 +326,6 @@ export type ApiKeyRecord = typeof apiKeys.$inferSelect
 export type ProjectMember = typeof projectMembers.$inferSelect
 export type ProjectInvite = typeof projectInvites.$inferSelect
 export type BoardSnapshot = typeof boardSnapshots.$inferSelect
+export type WorkspaceGroup = typeof workspaceGroups.$inferSelect
+export type GroupMember = typeof groupMembers.$inferSelect
+export type ProjectGroup = typeof projectGroups.$inferSelect
