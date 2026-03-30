@@ -7,6 +7,7 @@ import { motion } from 'framer-motion'
 import { X, Palette, PenTool, Wand2, Settings, Keyboard, PartyPopper, LayoutGrid, LayoutDashboard } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
+import { Tooltip } from '../Tooltip'
 import { PaletteTab } from './PaletteTab'
 import { TypographyTab } from './TypographyTab'
 import { EffectsTab } from './EffectsTab'
@@ -158,18 +159,20 @@ export function SettingsButton() {
 
   return (
     <>
-      <motion.button
-        data-settings-trigger
-        onClick={() => setIsOpen(true)}
-        className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200"
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        style={{
-          boxShadow: glowIntensity > 50 ? `0 0 ${10 * (glowIntensity / 100)}px ${colors.glowColor}` : 'none',
-        }}
-      >
-        <Settings className="w-5 h-5 text-slate-400" />
-      </motion.button>
+      <Tooltip label="Settings">
+        <motion.button
+          data-settings-trigger
+          onClick={() => setIsOpen(true)}
+          className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          style={{
+            boxShadow: glowIntensity > 50 ? `0 0 ${10 * (glowIntensity / 100)}px ${colors.glowColor}` : 'none',
+          }}
+        >
+          <Settings className="w-5 h-5 text-slate-400" />
+        </motion.button>
+      </Tooltip>
       <SettingsModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
     </>
   )

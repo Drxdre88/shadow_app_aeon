@@ -7,6 +7,7 @@ import { motion } from 'framer-motion'
 import { X, HelpCircle, LayoutGrid, Calendar, Lightbulb, Trophy, Terminal } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
+import { Tooltip } from '../Tooltip'
 import { BoardTab } from './BoardTab'
 import { GanttTab } from './GanttTab'
 import { CanvasTab } from './CanvasTab'
@@ -156,17 +157,19 @@ export function HelpButton() {
 
   return (
     <>
-      <motion.button
-        onClick={() => setIsOpen(true)}
-        className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200"
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        style={{
-          boxShadow: glowIntensity > 50 ? `0 0 ${10 * (glowIntensity / 100)}px ${colors.glowColor}` : 'none',
-        }}
-      >
-        <HelpCircle className="w-5 h-5 text-slate-400" />
-      </motion.button>
+      <Tooltip label="Help">
+        <motion.button
+          onClick={() => setIsOpen(true)}
+          className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200"
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          style={{
+            boxShadow: glowIntensity > 50 ? `0 0 ${10 * (glowIntensity / 100)}px ${colors.glowColor}` : 'none',
+          }}
+        >
+          <HelpCircle className="w-5 h-5 text-slate-400" />
+        </motion.button>
+      </Tooltip>
       <HelpModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
     </>
   )
