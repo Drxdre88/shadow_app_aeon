@@ -5,6 +5,7 @@ import { useThemeStore, DEFAULT_SHORTCUTS } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
 
 const SHORTCUT_LABELS: Record<string, string> = {
+  selectCard: 'Select Card (hover)',
   addCard: 'New Card',
   editCard: 'Edit Card',
   openLabel: 'Open Label Picker',
@@ -19,7 +20,8 @@ const GLOBAL_SHORTCUTS = [
   { keys: 'Double-click', label: 'Inline Edit Card Title' },
   { keys: 'Ctrl+Z', label: 'Undo Last Delete' },
   { keys: 'Ctrl+C / V', label: 'Copy / Paste Card' },
-  { keys: 'Escape', label: 'Close Modal / Palette' },
+  { keys: 'Arrows', label: 'Move Selected Card (L/R columns, U/D reorder)' },
+  { keys: 'Escape', label: 'Deselect Card / Close Modal' },
 ]
 
 export function ShortcutsTab() {

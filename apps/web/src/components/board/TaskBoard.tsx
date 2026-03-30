@@ -222,11 +222,14 @@ export function TaskBoard({
     })
   }, [copiedTaskId, projectId])
 
+  const hasOpenOverlay = !!editingTask || !!newTaskColumnId || !!labelPickerTaskId || !!colorPickerTaskId || !!priorityPickerTaskId || !!dependencyTreeTaskId
+
   useBoardKeyboardShortcuts({
     hoveredTaskId,
     selectedTaskId,
     shortcuts,
     sortedColumns,
+    hasOpenOverlay,
     onOpenLabel: setLabelPickerTaskId,
     onOpenColorPicker: setColorPickerTaskId,
     onOpenPriorityPicker: setPriorityPickerTaskId,
@@ -234,6 +237,8 @@ export function TaskBoard({
     onAddTask: handleAddTask,
     onCopyCard: handleCopyCard,
     onPasteCard: handlePasteCard,
+    onSelectTask: selectTask,
+    onTaskMove,
   })
 
   const handleColumnRename = useCallback((columnId: string, name: string) => {

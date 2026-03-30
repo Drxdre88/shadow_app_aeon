@@ -76,6 +76,7 @@ interface BoardState {
   updateTask: (id: string, updates: Partial<BoardTask>) => void
   removeTask: (id: string) => void
   moveTask: (id: string, columnId: string, orderIndex: number) => void
+  swapTaskOrder: (idA: string, orderA: number, idB: string, orderB: number) => void
 
   setLabels: (labels: Label[]) => void
   addLabel: (label: Label) => void
@@ -155,6 +156,15 @@ export const useBoardStore = create<BoardState>()(
       })),
       moveTask: (id, columnId, orderIndex) => set((s) => ({
         tasks: s.tasks.map((t) => t.id === id ? { ...t, columnId, orderIndex } : t),
+        isDirty: true,
+        lastMutatedAt: Date.now(),
+      })),
+      swapTaskOrder: (idA, orderA, idB, orderB) => set((s) => ({
+        tasks: s.tasks.map((t) => {
+          if (t.id === idA) return { ...t, orderIndex: orderA }
+          if (t.id === idB) return { ...t, orderIndex: orderB }
+          return t
+        }),
         isDirty: true,
         lastMutatedAt: Date.now(),
       })),

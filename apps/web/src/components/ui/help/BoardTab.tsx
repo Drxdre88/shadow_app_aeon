@@ -58,6 +58,9 @@ const BOARD_FEATURES = [
 ]
 
 const SHORTCUTS = [
+  { key: 'S', action: 'Select card (hover) — enables arrow key movement' },
+  { key: 'Arrows', action: 'Move selected card (L/R: columns, U/D: reorder)' },
+  { key: 'Escape', action: 'Deselect card' },
   { key: 'C', action: 'New card' },
   { key: 'E', action: 'Edit card (hover)' },
   { key: 'V', action: 'Change priority (hover)' },
