@@ -2,9 +2,8 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Calendar, Trash2, Pencil, Palette, Users, Rows3, LayoutGrid, GripVertical } from 'lucide-react'
+import { Calendar, Trash2, Pencil, Palette, Users, GripVertical } from 'lucide-react'
 import Link from 'next/link'
 import { DndContext, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, useSortable, horizontalListSortingStrategy, rectSortingStrategy } from '@dnd-kit/sortable'
@@ -30,6 +29,8 @@ interface GridViewProps {
   onDelete?: (id: string) => void
   onShare?: (project: ProjectWithStats) => void
   onGroupChange?: (projectId: string, newGroup: string | null) => void
+  layout?: 'scroll' | 'wrap'
+  onLayoutChange?: (layout: 'scroll' | 'wrap') => void
 }
 
 function groupProjects(projects: ProjectWithStats[]) {
@@ -66,13 +67,12 @@ function SortableProjectCard({ project, children }: { project: ProjectWithStats;
   )
 }
 
-export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange }: GridViewProps) {
-  const router = useRouter()
+export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, layout: controlledLayout }: GridViewProps) {
   const { glowIntensity, projectColors, setProjectColor, shortcuts } = useThemeStore()
   const [hoveredProjectId, setHoveredProjectId] = useState<string | null>(null)
   const [colorPickerProjectId, setColorPickerProjectId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [layout, setLayout] = useState<'scroll' | 'wrap'>('wrap')
+  const layout = controlledLayout ?? 'wrap'
   const [groupOrder, setGroupOrder] = useState<string[]>([])
   const [draggedGroup, setDraggedGroup] = useState<string | null>(null)
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null)
@@ -354,22 +354,6 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange }:
   return (
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div ref={projectListRef} className="space-y-6">
-        <div className="flex justify-end">
-          <div className="flex items-center gap-0.5 rounded-lg bg-white/[0.04] p-0.5">
-            <button
-              onClick={() => setLayout('wrap')}
-              className={cn('p-1.5 rounded-md transition-colors', layout === 'wrap' ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-slate-300')}
-            >
-              <LayoutGrid className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => setLayout('scroll')}
-              className={cn('p-1.5 rounded-md transition-colors', layout === 'scroll' ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-slate-300')}
-            >
-              <Rows3 className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
         <SortableContext items={allProjectIds} strategy={layout === 'scroll' ? horizontalListSortingStrategy : rectSortingStrategy}>
           {groupOrder
             .map((label) => groups.find(([l]) => l === label) as [string, ProjectWithStats[]] | undefined)

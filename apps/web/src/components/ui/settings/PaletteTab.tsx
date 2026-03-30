@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronRight, ChevronDown, Sparkles, Star } from 'lucide-react'
+import { ChevronRight, ChevronDown, Sparkles, Star, CheckCircle2, Circle, GripVertical } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { themes, themeNames, type ThemeName } from '@/config/themes'
 import { cn } from '@/lib/utils/cn'
@@ -103,6 +103,181 @@ function ThemeTile({ themeName, isActive, glowMult, onSelect }: {
         {isActive && <Star className="w-3 h-3 ml-auto flex-shrink-0 fill-current" style={{ color: theme.primary }} />}
       </div>
     </motion.button>
+  )
+}
+
+function hexToRgb(hex: string): string {
+  const h = hex.replace('#', '')
+  if (h.length !== 6) return '128,128,128'
+  return `${parseInt(h.slice(0, 2), 16)},${parseInt(h.slice(2, 4), 16)},${parseInt(h.slice(4, 6), 16)}`
+}
+
+function ThemePreview({ glowMult }: { glowMult: number }) {
+  const { colors, currentTheme, glowIntensity, glassOpacity, themeSaturation, themeBrightness, surfaceVibrancy } = useThemeStore()
+  const theme = themes[currentTheme]
+
+  const vibrancy = surfaceVibrancy / 100
+  const tint = vibrancy > 0 ? `rgba(${hexToRgb(colors.primary)}, ${vibrancy * 0.15})` : 'transparent'
+  const satFilter = themeSaturation !== 100 ? `saturate(${themeSaturation}%)` : ''
+  const briFilter = themeBrightness !== 100 ? `brightness(${themeBrightness}%)` : ''
+  const combinedFilter = [satFilter, briFilter].filter(Boolean).join(' ') || 'none'
+  const glassAlpha = (glassOpacity / 100) * 0.12
+
+  const fakeCards = [
+    { name: 'Design system tokens', done: true, color: theme.chartColors[0] },
+    { name: 'API rate limiting', done: false, color: theme.chartColors[1] },
+    { name: 'Dashboard charts', done: false, color: theme.chartColors[2] },
+  ]
+
+  return (
+    <div
+      className="rounded-xl border overflow-hidden transition-all duration-300"
+      style={{
+        borderColor: `${colors.border}`,
+        boxShadow: glowIntensity > 0
+          ? `0 0 ${20 * glowMult}px ${4 * glowMult}px ${colors.glowColor}40, inset 0 1px 0 rgba(255,255,255,0.06)`
+          : 'inset 0 1px 0 rgba(255,255,255,0.06)',
+        filter: combinedFilter,
+      }}
+    >
+      <div
+        className="px-3 py-2 flex items-center gap-2 border-b"
+        style={{
+          background: colors.background,
+          borderColor: colors.border,
+        }}
+      >
+        <div
+          className="w-2 h-2 rounded-full"
+          style={{ background: colors.primary, boxShadow: `0 0 ${6 * glowMult}px ${colors.glowColor}` }}
+        />
+        <span className="text-[11px] font-semibold tracking-wide" style={{ color: colors.text }}>
+          {themeLabels[currentTheme]}
+        </span>
+        <div className="ml-auto flex gap-1">
+          {theme.chartColors.slice(0, 5).map((c, i) => (
+            <div
+              key={i}
+              className="w-2.5 h-2.5 rounded-full"
+              style={{ background: c, boxShadow: `0 0 ${4 * glowMult}px ${c}60` }}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div
+        className="p-3 space-y-2"
+        style={{
+          background: tint !== 'transparent'
+            ? `linear-gradient(180deg, ${tint}, transparent), linear-gradient(180deg, ${colors.background} 0%, ${colors.surface.startsWith('#') ? colors.surface : colors.surface.replace(/[\d.]+\)$/, '1)')} 100%)`
+            : `linear-gradient(180deg, ${colors.background} 0%, ${colors.surface.startsWith('#') ? colors.surface : colors.surface.replace(/[\d.]+\)$/, '1)')} 100%)`,
+        }}
+      >
+        <div className="flex gap-2">
+          {['In Dev', 'Review', 'Done'].map((col, ci) => (
+            <div key={col} className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <div
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ background: theme.chartColors[ci], boxShadow: `0 0 ${4 * glowMult}px ${theme.chartColors[ci]}80` }}
+                />
+                <span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: colors.textMuted }}>
+                  {col}
+                </span>
+                <span className="text-[8px] ml-auto" style={{ color: colors.textDim }}>
+                  {ci === 0 ? 2 : 1}
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {fakeCards
+                  .filter((_, idx) => (ci === 0 ? idx < 2 : ci === 1 ? idx === 2 : false))
+                  .map((card, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-lg border p-2 transition-all duration-200"
+                      style={{
+                        background: colors.surface.startsWith('#')
+                          ? `rgba(${hexToRgb(colors.surface)}, ${0.6 + glassAlpha})`
+                          : colors.surface.replace(/[\d.]+\)$/, `${0.6 + glassAlpha})`),
+                        borderColor: colors.border,
+                        backdropFilter: glassOpacity > 0 ? `blur(${glassOpacity / 10}px)` : undefined,
+                        boxShadow: glowIntensity > 10
+                          ? `0 0 ${8 * glowMult}px ${colors.glowColor}15`
+                          : undefined,
+                      }}
+                    >
+                      <div className="flex items-start gap-1.5">
+                        {card.done ? (
+                          <CheckCircle2 className="w-3 h-3 mt-px flex-shrink-0" style={{ color: colors.success }} />
+                        ) : (
+                          <Circle className="w-3 h-3 mt-px flex-shrink-0" style={{ color: colors.textDim }} />
+                        )}
+                        <span className="text-[10px] font-medium leading-tight" style={{ color: colors.text }}>
+                          {card.name}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-1.5 pl-[18px]">
+                        <div
+                          className="h-1 rounded-full flex-1"
+                          style={{
+                            background: `${colors.border}`,
+                          }}
+                        >
+                          <div
+                            className="h-full rounded-full transition-all duration-300"
+                            style={{
+                              width: card.done ? '100%' : `${40 + idx * 20}%`,
+                              background: card.color,
+                              boxShadow: `0 0 ${4 * glowMult}px ${card.color}60`,
+                            }}
+                          />
+                        </div>
+                        <span className="text-[8px]" style={{ color: colors.textDim }}>
+                          {card.done ? '3/3' : `${1 + idx}/3`}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                {ci === 2 && (
+                  <div
+                    className="rounded-lg border border-dashed p-2 flex items-center justify-center"
+                    style={{ borderColor: `${colors.border}`, opacity: 0.5 }}
+                  >
+                    <span className="text-[9px]" style={{ color: colors.textDim }}>
+                      Drop here
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div
+          className="rounded-lg border px-2.5 py-1.5 flex items-center gap-2 mt-2"
+          style={{
+            background: `${colors.primary}10`,
+            borderColor: `${colors.primary}30`,
+            boxShadow: glowIntensity > 20
+              ? `0 0 ${12 * glowMult}px ${colors.glowColor}20`
+              : undefined,
+          }}
+        >
+          <GripVertical className="w-3 h-3" style={{ color: colors.textDim }} />
+          <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: colors.border }}>
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{
+                width: '65%',
+                background: `linear-gradient(90deg, ${colors.primary}, ${colors.accent})`,
+                boxShadow: `0 0 ${6 * glowMult}px ${colors.glowColor}`,
+              }}
+            />
+          </div>
+          <span className="text-[9px] font-medium" style={{ color: colors.primary }}>65%</span>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -261,13 +436,19 @@ export function PaletteTab() {
 
   return (
     <div className="space-y-5">
-      <div className="space-y-1 max-w-[300px]">
-        <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Visual Tuning</h4>
-        <ThemeSlider label="Glow Intensity" value={glowIntensity} onChange={setGlowIntensity} min={0} max={100} color={colors.glowColor} unit="%" />
-        <ThemeSlider label="Glass Transparency" value={glassOpacity} onChange={setGlassOpacity} min={0} max={100} color={colors.glowColor} unit="%" />
-        <ThemeSlider label="Saturation" value={themeSaturation} onChange={setThemeSaturation} min={50} max={200} color={colors.glowColor} unit="%" />
-        <ThemeSlider label="Brightness" value={themeBrightness} onChange={setThemeBrightness} min={50} max={150} color={colors.glowColor} unit="%" />
-        <ThemeSlider label="Surface Tint" value={surfaceVibrancy} onChange={setSurfaceVibrancy} min={0} max={100} color={colors.glowColor} unit="%" />
+      <div className="flex gap-5 items-start">
+        <div className="space-y-1 min-w-[260px] max-w-[300px] flex-shrink-0">
+          <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Visual Tuning</h4>
+          <ThemeSlider label="Glow Intensity" value={glowIntensity} onChange={setGlowIntensity} min={0} max={100} color={colors.glowColor} unit="%" />
+          <ThemeSlider label="Glass Transparency" value={glassOpacity} onChange={setGlassOpacity} min={0} max={100} color={colors.glowColor} unit="%" />
+          <ThemeSlider label="Saturation" value={themeSaturation} onChange={setThemeSaturation} min={50} max={200} color={colors.glowColor} unit="%" />
+          <ThemeSlider label="Brightness" value={themeBrightness} onChange={setThemeBrightness} min={50} max={150} color={colors.glowColor} unit="%" />
+          <ThemeSlider label="Surface Tint" value={surfaceVibrancy} onChange={setSurfaceVibrancy} min={0} max={100} color={colors.glowColor} unit="%" />
+        </div>
+        <div className="flex-1 min-w-[280px] hidden sm:block">
+          <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Live Preview</h4>
+          <ThemePreview glowMult={glowMult} />
+        </div>
       </div>
 
       <div

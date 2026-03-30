@@ -1,9 +1,10 @@
 'use client'
 
+import type { ComponentType } from 'react'
 import { useEffect, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { LayoutGrid, GitBranch, Orbit } from 'lucide-react'
-import { useViewPreference, type ProjectViewMode } from './useViewPreference'
+import type { ProjectViewMode } from './useViewPreference'
 import { GridView } from './GridView'
 import { TreeView } from './TreeView'
 import { SpaceView } from './SpaceView'
@@ -15,9 +16,13 @@ interface ProjectViewSwitcherProps {
   onDelete?: (id: string) => void
   onShare?: (project: ProjectWithStats) => void
   onGroupChange?: (projectId: string, newGroup: string | null) => void
+  view: ProjectViewMode
+  onViewChange: (mode: ProjectViewMode) => void
+  layout?: 'scroll' | 'wrap'
+  onLayoutChange?: (layout: 'scroll' | 'wrap') => void
 }
 
-const VIEW_OPTIONS: { value: ProjectViewMode; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+export const VIEW_OPTIONS: { value: ProjectViewMode; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { value: 'grid', label: 'Grid', icon: LayoutGrid },
   { value: 'tree', label: 'Tree', icon: GitBranch },
   { value: 'space', label: 'Space', icon: Orbit },
@@ -34,43 +39,12 @@ function useIsMobile() {
   return isMobile
 }
 
-export function ProjectViewSwitcher({ projects, onEdit, onDelete, onShare, onGroupChange }: ProjectViewSwitcherProps) {
-  const [view, setView] = useViewPreference()
+export function ProjectViewSwitcher({ projects, onEdit, onDelete, onShare, onGroupChange, view, onViewChange, layout: controlledLayout, onLayoutChange }: ProjectViewSwitcherProps) {
   const isMobile = useIsMobile()
   const effectiveView = isMobile && view === 'space' ? 'grid' : view
 
   return (
     <div>
-      <div className="flex items-center justify-end mb-3">
-        <div className="flex items-center bg-white/5 rounded-lg border border-white/10 p-0.5">
-          {VIEW_OPTIONS.map((opt) => {
-            const Icon = opt.icon
-            const isActive = effectiveView === opt.value
-            return (
-              <button
-                key={opt.value}
-                onClick={() => setView(opt.value)}
-                className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  isActive
-                    ? 'text-white'
-                    : 'text-[var(--text-dim)] hover:text-[var(--text-muted)]'
-                }`}
-              >
-                {isActive && (
-                  <motion.div
-                    layoutId="view-indicator"
-                    className="absolute inset-0 bg-white/10 rounded-md border border-white/10"
-                    transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
-                  />
-                )}
-                <Icon className="w-3.5 h-3.5 relative z-10" />
-                <span className="relative z-10 hidden sm:inline">{opt.label}</span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
       <AnimatePresence mode="wait">
         <motion.div
           key={effectiveView}
@@ -79,7 +53,7 @@ export function ProjectViewSwitcher({ projects, onEdit, onDelete, onShare, onGro
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.2 }}
         >
-          {effectiveView === 'grid' && <GridView projects={projects} onEdit={onEdit} onDelete={onDelete} onShare={onShare} onGroupChange={onGroupChange} />}
+          {effectiveView === 'grid' && <GridView projects={projects} onEdit={onEdit} onDelete={onDelete} onShare={onShare} onGroupChange={onGroupChange} layout={controlledLayout} onLayoutChange={onLayoutChange} />}
           {effectiveView === 'tree' && <TreeView projects={projects} />}
           {effectiveView === 'space' && <SpaceView projects={projects} />}
         </motion.div>

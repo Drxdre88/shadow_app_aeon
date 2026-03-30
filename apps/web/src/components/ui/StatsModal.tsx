@@ -18,19 +18,7 @@ interface Stats {
   memberSince: string | null
 }
 
-const FREE_TIER_MAX = 0.5 * 1024
-
 const LIMITS = { tasks: 500, canvasNodes: 200, ganttTasks: 200 }
-
-function estimateKB(stats: Stats): number {
-  return (
-    stats.tasks * 1 +
-    stats.checklistItems * 0.3 +
-    stats.canvasNodes * 0.5 +
-    stats.ganttTasks * 0.5 +
-    stats.activityEvents * 0.2
-  )
-}
 
 function LimitBar({ label, current, limit, color }: { label: string; current: number; limit: number; color: string }) {
   const pct = Math.min((current / limit) * 100, 100)
@@ -116,9 +104,6 @@ export function StatsModal({ isOpen, onClose }: StatsModalProps) {
 
   if (!mounted || !isOpen) return null
 
-  const usedKB = stats ? estimateKB(stats) : 0
-  const usagePercent = Math.min((usedKB / FREE_TIER_MAX) * 100, 100)
-
   const memberSinceFormatted = stats?.memberSince
     ? new Date(stats.memberSince).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
     : '—'
@@ -203,29 +188,8 @@ export function StatsModal({ isOpen, onClose }: StatsModalProps) {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs text-slate-500">
-                  <span>Estimated usage</span>
-                  <span>{usedKB < 1024 ? `${usedKB.toFixed(0)} KB` : `${(usedKB / 1024).toFixed(2)} MB`} / 0.5 GB</span>
-                </div>
-                <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${usagePercent}%` }}
-                    transition={{ duration: 0.8, ease: 'easeOut' }}
-                    className="h-full rounded-full"
-                    style={{
-                      background: usagePercent > 80
-                        ? 'linear-gradient(90deg, #f97316, #ef4444)'
-                        : `linear-gradient(90deg, ${colors.primary}, ${colors.glowColor})`,
-                    }}
-                  />
-                </div>
-                <p className="text-xs text-slate-600">Free tier estimate — based on ~1 KB per task</p>
-              </div>
-
               <div className="space-y-2.5 pt-1">
-                <p className="text-xs text-slate-500 font-medium">Entity Limits</p>
+                <p className="text-xs text-slate-500 font-medium">Limits</p>
                 <LimitBar label="Tasks" current={stats.tasks} limit={LIMITS.tasks} color={colors.primary} />
                 <LimitBar label="Canvas Nodes" current={stats.canvasNodes} limit={LIMITS.canvasNodes} color={colors.primary} />
                 <LimitBar label="Gantt Tasks" current={stats.ganttTasks} limit={LIMITS.ganttTasks} color={colors.primary} />

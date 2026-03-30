@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import {
   X,
-  Rocket,
+  FlaskConical,
   LayoutGrid,
   Calendar,
   Lightbulb,
@@ -113,7 +113,7 @@ export function BetaFeaturesModal({ isOpen, onClose }: BetaFeaturesModalProps) {
 
         <div className="flex items-center justify-between p-5 border-b border-white/10">
           <div className="flex items-center gap-2">
-            <Rocket className="w-5 h-5 text-slate-400" />
+            <FlaskConical className="w-5 h-5 text-slate-400" />
             <h2 className="text-lg font-semibold text-white">Beta Features</h2>
             <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/25">
               Closed Beta
@@ -222,7 +222,7 @@ export function BetaFeaturesButton() {
           boxShadow: glowIntensity > 50 ? `0 0 ${10 * (glowIntensity / 100)}px ${colors.glowColor}` : 'none',
         }}
       >
-        <Rocket className="w-5 h-5 text-slate-400" />
+        <FlaskConical className="w-5 h-5 text-slate-400" />
       </motion.button>
 
       <BetaFeaturesModal isOpen={isOpen} onClose={() => setIsOpen(false)} />
