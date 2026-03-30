@@ -42,7 +42,7 @@ export async function inviteMember(projectId: string, email: string, role: strin
 
   const invite = await createInvite(projectId, email, role, userId)
   const project = await verifyProjectOwnership(projectId, userId)
-  const baseUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL
+  const baseUrl = process.env.AUTH_URL || process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL
   if (baseUrl) {
     sendInviteEmail(email, project?.name || 'Untitled', 'A team member', `${baseUrl}/invite/${invite.token}`).catch(() => {})
   }
