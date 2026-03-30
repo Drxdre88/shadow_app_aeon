@@ -88,9 +88,13 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
   }, [status, debouncedSave])
 
   useEffect(() => {
-    if (status === 'unauthenticated') {
-      useThemeStore.getState()._hydrateFromDB({})
-    }
+    if (status !== 'unauthenticated') return
+    const timer = setTimeout(() => {
+      if (!useThemeStore.getState()._hydrated) {
+        useThemeStore.getState()._hydrateFromDB({})
+      }
+    }, 600)
+    return () => clearTimeout(timer)
   }, [status])
 
   return <>{children}</>

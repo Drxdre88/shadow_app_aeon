@@ -19,6 +19,10 @@ declare module 'next-auth' {
   }
 }
 
+if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_EMAILS) {
+  console.warn('[auth] ALLOWED_EMAILS is not set — registration is open to everyone')
+}
+
 function buildProviders(): Provider[] {
   const providers: Provider[] = []
 

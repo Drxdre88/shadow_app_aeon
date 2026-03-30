@@ -38,9 +38,8 @@ export default function LoginForm() {
   const [emailError, setEmailError] = useState('')
   const searchParams = useSearchParams()
   const rawCallback = searchParams.get('callbackUrl') || '/dashboard'
-  const callbackUrl = rawCallback.startsWith('/') && !rawCallback.startsWith('//')
-    ? rawCallback
-    : '/dashboard'
+  const isSafePath = rawCallback === '/' || /^\/[a-zA-Z0-9]/.test(rawCallback)
+  const callbackUrl = isSafePath ? rawCallback : '/dashboard'
   const error = searchParams.get('error')
   const { glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75

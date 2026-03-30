@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono, Space_Grotesk, Fira_Code } from 'next/font/googl
 import { ThemeProvider } from '@/components/providers/ThemeProvider'
 import { AuthProvider } from '@/components/providers/AuthProvider'
 import { PreferencesProvider } from '@/components/providers/PreferencesProvider'
+import { auth } from '@/lib/auth'
 import { ThemeEffects } from '@/components/effects/ThemeEffects'
 import { CelebrationEngine } from '@/components/celebrations'
 import { CursorEffect } from '@/components/effects/cursor'
@@ -44,18 +45,20 @@ export const viewport: Viewport = {
   themeColor: '#8b5cf6',
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const session = await auth().catch(() => null)
+
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body
         className={`antialiased ${inter.variable} ${jetbrainsMono.variable} ${spaceGrotesk.variable} ${firaCode.variable}`}
         suppressHydrationWarning
       >
-        <AuthProvider>
+        <AuthProvider session={session}>
           <PreferencesProvider>
           <ThemeProvider>
             <ThemeEffects />
