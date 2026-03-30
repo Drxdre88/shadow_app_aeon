@@ -72,7 +72,7 @@ export default function ProjectContent({ project }: ProjectContentProps) {
         }}
       />
 
-      <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/5 border-b border-white/10">
+      <header className="sticky top-0 z-40 bg-[#0a0a0c]/95 backdrop-blur-xl border-b border-white/[0.06]">
         <div className="px-2 sm:px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link

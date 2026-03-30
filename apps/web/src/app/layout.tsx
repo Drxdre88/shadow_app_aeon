@@ -24,8 +24,11 @@ export const metadata: Metadata = {
   description: 'Visualize your projects with stunning Gantt charts and task boards',
   manifest: '/manifest.json',
   icons: {
-    icon: '/aeon.png',
-    apple: '/aeon.png',
+    icon: [
+      { url: '/aeon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/aeon.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: '/aeon-192.png',
   },
   appleWebApp: {
     capable: true,

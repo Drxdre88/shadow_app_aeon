@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { signOut } from 'next-auth/react'
 import { motion } from 'framer-motion'
-import { Plus, LogOut, Crown } from 'lucide-react'
+import { Plus, LogOut, Crown, LayoutGrid, Rows3 } from 'lucide-react'
 import Image from 'next/image'
 import aeonLogo from '@/assets/aeon.png'
 import { SettingsButton } from '@/components/ui/SettingsModal'
@@ -14,10 +14,12 @@ import { NeonButton } from '@/components/ui/NeonButton'
 import { CreateProjectModal } from '@/components/project/CreateProjectModal'
 import { getProjectsWithStats } from '@/lib/actions/projects'
 import { EditProjectModal } from '@/components/project/EditProjectModal'
-import { ProjectViewSwitcher } from '@/components/project/ProjectViewSwitcher'
+import { ProjectViewSwitcher, VIEW_OPTIONS } from '@/components/project/ProjectViewSwitcher'
+import { useViewPreference, type ProjectViewMode } from '@/components/project/useViewPreference'
 import { ShareModal } from '@/components/board/ShareModal'
 import { GlassStage } from '@/components/ui/GlassStage'
 import { useThemeStore } from '@/stores/themeStore'
+import { cn } from '@/lib/utils/cn'
 import type { ProjectWithStats } from '@/components/project/types'
 
 interface DashboardContentProps {
@@ -40,6 +42,9 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
   const { glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
   const existingGroups = [...new Set(projects.map((p) => p.group).filter((g): g is string => !!g && g !== 'General'))].sort()
+
+  const [view, setView] = useViewPreference()
+  const [gridLayout, setGridLayout] = useState<'scroll' | 'wrap'>('wrap')
 
   useEffect(() => {
     let alive = true
@@ -77,7 +82,7 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
         }}
       />
 
-      <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/5 border-b border-white/10">
+      <header className="sticky top-0 z-40 bg-[#0a0a0c]/95 backdrop-blur-xl border-b border-white/[0.06]">
         <div className="px-3 sm:px-6 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3">
             <Image
@@ -113,6 +118,55 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
               <Plus className="w-3.5 h-3.5" />
               New Project
             </motion.button>
+
+            {projects.length > 0 && (
+              <>
+                <div className="hidden sm:block h-5 w-px bg-white/10 mx-1" />
+                <div className="hidden sm:flex items-center bg-white/5 rounded-lg border border-white/10 p-0.5">
+                  {VIEW_OPTIONS.map((opt) => {
+                    const Icon = opt.icon
+                    const isActive = view === opt.value
+                    return (
+                      <button
+                        key={opt.value}
+                        onClick={() => setView(opt.value)}
+                        className={cn(
+                          'relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors',
+                          isActive ? 'text-white' : 'text-[var(--text-dim)] hover:text-[var(--text-muted)]'
+                        )}
+                      >
+                        {isActive && (
+                          <motion.div
+                            layoutId="header-view-indicator"
+                            className="absolute inset-0 bg-white/10 rounded-md border border-white/10"
+                            transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
+                          />
+                        )}
+                        <Icon className="w-3.5 h-3.5 relative z-10" />
+                        <span className="relative z-10 hidden lg:inline">{opt.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {view === 'grid' && (
+                  <div className="hidden sm:flex items-center gap-0.5 rounded-lg bg-white/[0.04] border border-white/10 p-0.5">
+                    <button
+                      onClick={() => setGridLayout('wrap')}
+                      className={cn('p-1.5 rounded-md transition-colors', gridLayout === 'wrap' ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-slate-300')}
+                    >
+                      <LayoutGrid className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => setGridLayout('scroll')}
+                      className={cn('p-1.5 rounded-md transition-colors', gridLayout === 'scroll' ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-slate-300')}
+                    >
+                      <Rows3 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4">
@@ -191,6 +245,10 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
                 p.id === projectId ? { ...p, group: newGroup ?? undefined } as ProjectWithStats : p
               ))
             }}
+            view={view}
+            onViewChange={setView}
+            layout={gridLayout}
+            onLayoutChange={setGridLayout}
           />
         )}
       </main>

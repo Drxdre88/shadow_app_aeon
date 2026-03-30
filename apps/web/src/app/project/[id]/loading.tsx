@@ -1,7 +1,7 @@
 export default function ProjectLoading() {
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/5 border-b border-white/10">
+      <header className="sticky top-0 z-40 bg-[#0a0a0c]/95 backdrop-blur-xl border-b border-white/[0.06]">
         <div className="px-2 sm:px-6 py-3 flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-white/[0.06] animate-pulse" />
           <div className="w-6 h-6 rounded bg-white/[0.06] animate-pulse" />
