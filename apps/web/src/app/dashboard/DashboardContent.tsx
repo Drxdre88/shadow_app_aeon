@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { signOut } from 'next-auth/react'
 import { motion } from 'framer-motion'
-import { Plus, LogOut, Crown, LayoutGrid, Rows3 } from 'lucide-react'
+import { Plus, LogOut, Crown, LayoutGrid, Rows3, User, Share2, Building2 } from 'lucide-react'
 import Image from 'next/image'
 import aeonLogo from '@/assets/aeon.png'
 import { SettingsButton } from '@/components/ui/SettingsModal'
@@ -12,7 +12,7 @@ import { StatsButton } from '@/components/ui/StatsModal'
 import { BetaFeaturesButton } from '@/components/ui/BetaFeaturesModal'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { CreateProjectModal } from '@/components/project/CreateProjectModal'
-import { getProjectsWithStats } from '@/lib/actions/projects'
+import { getProjectsWithStats, getOwnProjects, getSharedProjects, getWorkspaceProjects } from '@/lib/actions/projects'
 import { EditProjectModal } from '@/components/project/EditProjectModal'
 import { ProjectViewSwitcher, VIEW_OPTIONS } from '@/components/project/ProjectViewSwitcher'
 import { useViewPreference, type ProjectViewMode } from '@/components/project/useViewPreference'
@@ -33,11 +33,23 @@ interface DashboardContentProps {
   projects: ProjectWithStats[]
 }
 
+type DashboardTab = 'mine' | 'shared' | 'workspaces'
+
+const DASHBOARD_TABS: { id: DashboardTab; label: string; icon: typeof User }[] = [
+  { id: 'mine', label: 'Mine', icon: User },
+  { id: 'shared', label: 'Shared', icon: Share2 },
+  { id: 'workspaces', label: 'Workspaces', icon: Building2 },
+]
+
 export default function DashboardContent({ user, projects: initialProjects }: DashboardContentProps) {
   const [projects, setProjects] = useState(initialProjects)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingProject, setEditingProject] = useState<ProjectWithStats | null>(null)
   const [sharingProject, setSharingProject] = useState<ProjectWithStats | null>(null)
+  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('mine')
+  const [sharedProjects, setSharedProjects] = useState<ProjectWithStats[]>([])
+  const [workspaceData, setWorkspaceData] = useState<{ groupId: string; groupName: string; groupColor: string; memberCount: number; projects: ProjectWithStats[] }[]>([])
+  const [tabLoaded, setTabLoaded] = useState<Record<DashboardTab, boolean>>({ mine: true, shared: false, workspaces: false })
   const isAdmin = user.role === 'admin'
   const { glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
@@ -57,6 +69,31 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
     document.addEventListener('visibilitychange', refresh)
     return () => { alive = false; clearInterval(interval); document.removeEventListener('visibilitychange', refresh) }
   }, [])
+
+  useEffect(() => {
+    if (dashboardTab === 'shared' && !tabLoaded.shared) {
+      getSharedProjects()
+        .then((data) => {
+          setSharedProjects(data.map((p) => ({ ...p, totalTasks: 0, doneTasks: 0, completionPct: 0 })) as ProjectWithStats[])
+          setTabLoaded((prev) => ({ ...prev, shared: true }))
+        })
+        .catch(() => {})
+    }
+    if (dashboardTab === 'workspaces' && !tabLoaded.workspaces) {
+      getWorkspaceProjects()
+        .then((data) => {
+          setWorkspaceData(data.map((g) => ({
+            groupId: g.groupId,
+            groupName: g.groupName,
+            groupColor: g.groupColor ?? 'purple',
+            memberCount: g.memberCount,
+            projects: g.projects.map((p) => ({ ...p, totalTasks: 0, doneTasks: 0, completionPct: 0 })) as ProjectWithStats[],
+          })))
+          setTabLoaded((prev) => ({ ...prev, workspaces: true }))
+        })
+        .catch(() => {})
+    }
+  }, [dashboardTab, tabLoaded])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -121,6 +158,33 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
 
             {projects.length > 0 && (
               <>
+                <div className="hidden sm:block h-5 w-px bg-white/10 mx-1" />
+                <div className="hidden sm:flex items-center bg-white/5 rounded-lg border border-white/10 p-0.5">
+                  {DASHBOARD_TABS.map((tab) => {
+                    const Icon = tab.icon
+                    const isActive = dashboardTab === tab.id
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setDashboardTab(tab.id)}
+                        className={cn(
+                          'relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors',
+                          isActive ? 'text-white' : 'text-[var(--text-dim)] hover:text-[var(--text-muted)]'
+                        )}
+                      >
+                        {isActive && (
+                          <motion.div
+                            layoutId="dashboard-tab-indicator"
+                            className="absolute inset-0 bg-white/10 rounded-md border border-white/10"
+                            transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
+                          />
+                        )}
+                        <Icon className="w-3.5 h-3.5 relative z-10" />
+                        <span className="relative z-10 hidden lg:inline">{tab.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
                 <div className="hidden sm:block h-5 w-px bg-white/10 mx-1" />
                 <div className="hidden sm:flex items-center bg-white/5 rounded-lg border border-white/10 p-0.5">
                   {VIEW_OPTIONS.map((opt) => {
@@ -218,38 +282,109 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
       </header>
 
       <main className="px-3 sm:px-6 py-3 relative z-10">
-        {projects.length === 0 ? (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="flex flex-col items-center justify-center py-16 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]"
-          >
-            <p className="text-[var(--text-muted)] mb-1">No projects yet</p>
-            <p className="text-sm text-[var(--text-dim)] mb-6">Create your first project to get started</p>
-            <NeonButton color="purple" glowIntensity="md" onClick={() => setShowCreateModal(true)}>
-              <span className="flex items-center gap-2">
-                <Plus className="w-4 h-4" />
-                Create First Project
-              </span>
-            </NeonButton>
-          </motion.div>
-        ) : (
-          <ProjectViewSwitcher
-            projects={projects}
-            onEdit={setEditingProject}
-            onDelete={(id) => setProjects((prev) => prev.filter((p) => p.id !== id))}
-            onShare={setSharingProject}
-            onGroupChange={(projectId, newGroup) => {
-              setProjects((prev) => prev.map((p) =>
-                p.id === projectId ? { ...p, group: newGroup ?? undefined } as ProjectWithStats : p
-              ))
-            }}
-            view={view}
-            onViewChange={setView}
-            layout={gridLayout}
-            onLayoutChange={setGridLayout}
-          />
+        {dashboardTab === 'mine' && (
+          projects.length === 0 ? (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+              className="flex flex-col items-center justify-center py-16 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]"
+            >
+              <p className="text-[var(--text-muted)] mb-1">No projects yet</p>
+              <p className="text-sm text-[var(--text-dim)] mb-6">Create your first project to get started</p>
+              <NeonButton color="purple" glowIntensity="md" onClick={() => setShowCreateModal(true)}>
+                <span className="flex items-center gap-2">
+                  <Plus className="w-4 h-4" />
+                  Create First Project
+                </span>
+              </NeonButton>
+            </motion.div>
+          ) : (
+            <ProjectViewSwitcher
+              projects={projects}
+              onEdit={setEditingProject}
+              onDelete={(id) => setProjects((prev) => prev.filter((p) => p.id !== id))}
+              onShare={setSharingProject}
+              onGroupChange={(projectId, newGroup) => {
+                setProjects((prev) => prev.map((p) =>
+                  p.id === projectId ? { ...p, group: newGroup ?? undefined } as ProjectWithStats : p
+                ))
+              }}
+              view={view}
+              onViewChange={setView}
+              layout={gridLayout}
+              onLayoutChange={setGridLayout}
+            />
+          )
+        )}
+
+        {dashboardTab === 'shared' && (
+          !tabLoaded.shared ? (
+            <div className="flex items-center justify-center py-16 text-sm text-[var(--text-dim)]">Loading shared projects...</div>
+          ) : sharedProjects.length === 0 ? (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-col items-center justify-center py-16 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]"
+            >
+              <Share2 className="w-8 h-8 text-[var(--text-dim)] mb-3" />
+              <p className="text-[var(--text-muted)] mb-1">No shared projects</p>
+              <p className="text-sm text-[var(--text-dim)]">Projects shared with you will appear here</p>
+            </motion.div>
+          ) : (
+            <ProjectViewSwitcher
+              projects={sharedProjects}
+              onEdit={setEditingProject}
+              onShare={setSharingProject}
+              view={view}
+              onViewChange={setView}
+              layout={gridLayout}
+              onLayoutChange={setGridLayout}
+            />
+          )
+        )}
+
+        {dashboardTab === 'workspaces' && (
+          !tabLoaded.workspaces ? (
+            <div className="flex items-center justify-center py-16 text-sm text-[var(--text-dim)]">Loading workspaces...</div>
+          ) : workspaceData.length === 0 ? (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-col items-center justify-center py-16 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]"
+            >
+              <Building2 className="w-8 h-8 text-[var(--text-dim)] mb-3" />
+              <p className="text-[var(--text-muted)] mb-1">No workspaces</p>
+              <p className="text-sm text-[var(--text-dim)]">Create a workspace to collaborate with your team</p>
+            </motion.div>
+          ) : (
+            <div className="space-y-6">
+              {workspaceData.map((ws) => (
+                <div key={ws.groupId}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: ws.groupColor.startsWith('#') ? ws.groupColor : `var(--primary)` }} />
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-dim)]">{ws.groupName}</h3>
+                    <span className="text-[10px] text-slate-600">{ws.memberCount} members</span>
+                    <span className="text-[10px] text-slate-600">{ws.projects.length} projects</span>
+                    <div className="flex-1 h-px bg-white/[0.06]" />
+                  </div>
+                  {ws.projects.length > 0 ? (
+                    <ProjectViewSwitcher
+                      projects={ws.projects}
+                      onEdit={setEditingProject}
+                      onShare={setSharingProject}
+                      view={view}
+                      onViewChange={setView}
+                      layout={gridLayout}
+                      onLayoutChange={setGridLayout}
+                    />
+                  ) : (
+                    <p className="text-xs text-[var(--text-dim)] py-4 text-center">No projects in this workspace yet</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )
         )}
       </main>
 
