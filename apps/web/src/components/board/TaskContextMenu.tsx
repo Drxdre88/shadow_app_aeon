@@ -20,7 +20,7 @@ interface TaskContextMenuProps {
   onPushToGantt?: (taskId: string) => void
   onSendToVault?: (taskId: string) => void
   onArchiveTask?: (taskId: string) => void
-  onSelectTask?: (taskId: string) => void
+  onSelectTask?: (taskId: string | null) => void
   isSelected?: boolean
 }
 
@@ -138,11 +138,7 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
         />
         <button
           onClick={() => {
-            if (isSelected) {
-              useBoardStore.getState().selectTask(null)
-            } else {
-              onSelectTask?.(taskId)
-            }
+            onSelectTask?.(isSelected ? null : taskId)
             onClose()
           }}
           className={cn(
