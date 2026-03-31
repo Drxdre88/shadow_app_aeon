@@ -100,7 +100,7 @@ export function SortableGroupSection({
                 'flex-1 px-2 py-0.5 rounded-md text-sm font-medium',
                 'bg-white/5 border border-white/20',
                 'text-white',
-                'focus:outline-none focus:ring-1 focus:ring-purple-500/40'
+                'focus:outline-none focus:ring-1 focus:ring-white/20'
               )}
               autoFocus
               autoComplete="off"

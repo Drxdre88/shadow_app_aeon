@@ -284,7 +284,7 @@ export const KanbanColumn = memo(function KanbanColumn({
                     if (e.key === 'Enter') handleRenameSubmit()
                     if (e.key === 'Escape') setIsRenaming(false)
                   }}
-                  className="flex-1 px-2 py-1 rounded-md bg-white/10 border border-white/20 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                  className="flex-1 px-2 py-1 rounded-md bg-white/10 border border-white/20 text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/20"
                   autoFocus
                 />
                 <button onClick={handleRenameSubmit} className="p-1 rounded hover:bg-white/10 text-emerald-400">

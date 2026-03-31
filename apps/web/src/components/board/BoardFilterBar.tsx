@@ -84,7 +84,7 @@ export function BoardFilterBar({ isOpen, filters, onFiltersChange }: BoardFilter
                   'w-full pl-10 pr-4 py-2 rounded-lg',
                   'bg-white/5 border border-white/10',
                   'text-white placeholder-slate-500 text-sm',
-                  'focus:outline-none focus:ring-2 focus:ring-purple-500/50',
+                  'focus:outline-none focus:ring-2 focus:ring-white/20',
                   'transition-all duration-200'
                 )}
               />
@@ -159,10 +159,13 @@ export function BoardFilterBar({ isOpen, filters, onFiltersChange }: BoardFilter
                     onClick={() => onFiltersChange({ ...filters, dateFilter: value as BoardFilters['dateFilter'] })}
                     className={cn(
                       'flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200',
-                      filters.dateFilter === value
-                        ? 'bg-purple-500/20 text-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
-                        : 'text-slate-400 hover:text-white hover:bg-white/5'
+                      filters.dateFilter !== value && 'text-slate-400 hover:text-white hover:bg-white/5'
                     )}
+                    style={filters.dateFilter === value ? {
+                      backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)',
+                      color: 'var(--primary)',
+                      boxShadow: '0 0 10px var(--glow-color)',
+                    } : undefined}
                   >
                     {label}
                   </button>

@@ -107,7 +107,8 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, l
   useEffect(() => {
     const computedKeys = groups.map(([label]) => label)
     const stored = localStorage.getItem('aeon-group-order')
-    const parsed: string[] = stored ? JSON.parse(stored) : []
+    let parsed: string[] = []
+    try { parsed = stored ? JSON.parse(stored) : [] } catch { parsed = [] }
     const validStored = parsed.filter((k) => computedKeys.includes(k))
     const missing = computedKeys.filter((k) => !validStored.includes(k))
     setGroupOrder([...validStored, ...missing])
@@ -219,7 +220,10 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, l
                         e.stopPropagation()
                         setColorPickerProjectId((prev) => prev === project.id ? null : project.id)
                       }}
-                      className="p-1.5 rounded-lg text-slate-500 hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
+                      className="p-1.5 rounded-lg text-slate-500 transition-colors hover:bg-white/10"
+                      style={{ '--hover-color': 'var(--primary)' } as React.CSSProperties}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = '')}
                     >
                       <Palette className="w-3.5 h-3.5" />
                     </motion.button>
@@ -235,7 +239,9 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, l
                       whileHover={{ scale: 1.1 }}
                       whileTap={{ scale: 0.9 }}
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); onShare?.(project) }}
-                      className="p-1.5 rounded-lg text-slate-500 hover:text-purple-400 hover:bg-purple-500/10 transition-colors"
+                      className="p-1.5 rounded-lg text-slate-500 transition-colors hover:bg-white/10"
+                      onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = '')}
                     >
                       <Users className="w-3.5 h-3.5" />
                     </motion.button>
@@ -377,7 +383,7 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, l
                 }}
                 onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverGroup(null) }}
                 className={cn(
-                  dragOverGroup === label && draggedGroup && draggedGroup !== label && 'border-t-2 border-purple-500/60',
+                  dragOverGroup === label && draggedGroup && draggedGroup !== label && 'border-t-2 border-[color:var(--primary)]/60',
                 )}
               >
                 <div

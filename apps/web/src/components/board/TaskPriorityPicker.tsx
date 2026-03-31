@@ -80,7 +80,7 @@ export function TaskPriorityPicker({ taskId, isOpen, onClose, onTaskUpdate }: Ta
         >
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10">
             <div className="flex items-center gap-2">
-              <Gauge className="w-4 h-4 text-purple-400" />
+              <Gauge className="w-4 h-4" style={{ color: 'var(--primary)' }} />
               <span className="text-sm font-medium text-white">Priority</span>
             </div>
             <button onClick={onClose} className="p-1 rounded hover:bg-white/10 text-slate-400">

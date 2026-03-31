@@ -25,7 +25,7 @@ const MIN_ZOOM = 0.2
 const MAX_ZOOM = 2.0
 const MAX_FIT_ZOOM = 0.85
 const DOT_SPACING = 30
-const CLUSTER_GAP = 160
+const CLUSTER_GAP = 240
 
 export function DependencyGlowTree({ taskId, showAll, onClose, onTaskEdit, onTaskUpdate }: DependencyGlowTreeProps) {
   const tasks = useBoardStore((s) => s.tasks)
@@ -81,7 +81,14 @@ export function DependencyGlowTree({ taskId, showAll, onClose, onTaskEdit, onTas
         }
 
         if (chainNodes.size > 0) {
-          chains.push({ nodeIds: Array.from(chainNodes), edges: chainEdges })
+          const seen = new Set<string>()
+          const uniqueEdges = chainEdges.filter((e) => {
+            const key = `${e.sourceId}-${e.targetId}`
+            if (seen.has(key)) return false
+            seen.add(key)
+            return true
+          })
+          chains.push({ nodeIds: Array.from(chainNodes), edges: uniqueEdges })
         }
       }
 
@@ -89,7 +96,8 @@ export function DependencyGlowTree({ taskId, showAll, onClose, onTaskEdit, onTas
         if (!visited.has(id)) walkChain(id)
       }
 
-      return { allChains: chains }
+      const meaningfulChains = chains.filter(c => c.edges.length > 0)
+      return { allChains: meaningfulChains.length > 0 ? meaningfulChains : chains }
     }
 
     const visited = new Set<string>()
@@ -127,9 +135,10 @@ export function DependencyGlowTree({ taskId, showAll, onClose, onTaskEdit, onTas
     return { allChains: [{ nodeIds: Array.from(visited), edges }] }
   }, [focusId, taskId, dependencies, showAll])
 
-  const { mergedNodes, mergedEdges, totalWidth, totalHeight } = useMemo(() => {
+  const { mergedNodes, mergedEdges, totalWidth, totalHeight, clusterInfo } = useMemo(() => {
     const allNodes: (ReturnType<typeof calculateTreeLayout>['nodes'][0] & { clusterId: number })[] = []
     const allEdges: ReturnType<typeof calculateTreeLayout>['edges'] = []
+    const clusterInfo: { startY: number; endY: number }[] = []
     let yOffset = 0
 
     for (let i = 0; i < allChains.length; i++) {
@@ -150,13 +159,14 @@ export function DependencyGlowTree({ taskId, showAll, onClose, onTaskEdit, onTas
         })
       }
 
+      clusterInfo.push({ startY: yOffset, endY: yOffset + layout.height })
       yOffset += layout.height + CLUSTER_GAP
     }
 
     const maxX = allNodes.length > 0 ? Math.max(...allNodes.map((n) => n.x + NODE_WIDTH)) : 400
     const maxY = allNodes.length > 0 ? Math.max(...allNodes.map((n) => n.y + NODE_HEIGHT)) : 200
 
-    return { mergedNodes: allNodes, mergedEdges: allEdges, totalWidth: maxX, totalHeight: maxY }
+    return { mergedNodes: allNodes, mergedEdges: allEdges, totalWidth: maxX, totalHeight: maxY, clusterInfo }
   }, [allChains])
 
   const taskMap = useMemo(
@@ -177,6 +187,10 @@ export function DependencyGlowTree({ taskId, showAll, onClose, onTaskEdit, onTas
     setZoom(fitZoom)
     setPan({ x: centerX, y: centerY })
   }, [totalWidth, totalHeight, mergedNodes.length])
+
+  useEffect(() => {
+    hasAutoFit.current = false
+  }, [taskId, showAll])
 
   useEffect(() => {
     if (hasAutoFit.current) return
@@ -237,8 +251,8 @@ export function DependencyGlowTree({ taskId, showAll, onClose, onTaskEdit, onTas
 
   const glowMult = globalGlow / 75
   const glowHex = themeColors.glowColor
-  const bgOp1 = Math.round(6 * glowMult).toString(16).padStart(2, '0')
-  const bgOp2 = Math.round(12 * glowMult).toString(16).padStart(2, '0')
+  const bgOp1 = Math.min(255, Math.round(6 * glowMult)).toString(16).padStart(2, '0')
+  const bgOp2 = Math.min(255, Math.round(12 * glowMult)).toString(16).padStart(2, '0')
 
   const headerText = showAll ? 'All Dependency Chains' : 'Dependency Chain'
   const subtitleText = showAll
@@ -308,13 +322,16 @@ export function DependencyGlowTree({ taskId, showAll, onClose, onTaskEdit, onTas
                 style={{
                   transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                   willChange: 'transform',
+                  width: totalWidth,
+                  height: totalHeight,
                 }}
               >
                 <svg
-                  className="absolute pointer-events-none"
+                  className="pointer-events-none"
                   width={totalWidth}
                   height={totalHeight}
-                  style={{ overflow: 'visible' }}
+                  viewBox={`0 0 ${totalWidth} ${totalHeight}`}
+                  style={{ position: 'absolute', top: 0, left: 0, overflow: 'visible' }}
                 >
                   {mergedEdges.map((edge, i) => {
                     const sourceTask = taskMap.get(edge.sourceId)
@@ -340,6 +357,17 @@ export function DependencyGlowTree({ taskId, showAll, onClose, onTaskEdit, onTas
                   })}
                 </svg>
 
+                {showAll && clusterInfo.length > 1 && clusterInfo.slice(0, -1).map((cluster, i) => {
+                  const separatorY = cluster.endY + CLUSTER_GAP / 2
+                  return (
+                    <div
+                      key={`sep-${i}`}
+                      className="absolute pointer-events-none"
+                      style={{ top: separatorY, left: 0, width: totalWidth, height: 1, backgroundColor: 'rgba(255,255,255,0.06)' }}
+                    />
+                  )
+                })}
+
                 <div className="absolute" style={{ top: 0, left: 0 }}>
                   {mergedNodes.map((node) => {
                     const task = taskMap.get(node.id)
@@ -357,6 +385,7 @@ export function DependencyGlowTree({ taskId, showAll, onClose, onTaskEdit, onTas
                         priority={task.priority}
                         color={task.color}
                         isFocused={node.id === focusId}
+                        isRoot={node.level === 0}
                         level={node.level}
                         indexInLevel={node.indexInLevel}
                         onNodeClick={handleNodeClick}

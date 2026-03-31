@@ -162,7 +162,7 @@ export function LabelPicker({
         >
           <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
             <div className="flex items-center gap-2">
-              <Tag className="w-4 h-4 text-purple-400" />
+              <Tag className="w-4 h-4" style={{ color: 'var(--primary)' }} />
               <span className="text-sm font-medium text-white">Labels</span>
             </div>
             <button onClick={onClose} className="p-1 rounded hover:bg-white/10 text-slate-400">
@@ -191,7 +191,7 @@ export function LabelPicker({
                         if (e.key === 'Enter') handleSaveEdit()
                         if (e.key === 'Escape') setEditingId(null)
                       }}
-                      className="w-full px-3 py-1.5 rounded-md bg-white/10 border border-white/20 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                      className="w-full px-3 py-1.5 rounded-md bg-white/10 border border-white/20 text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/20"
                       autoFocus
                     />
                     <ColorSwatchPicker
@@ -201,23 +201,30 @@ export function LabelPicker({
                     />
                     <div className="flex gap-2">
                       <button
-                        onClick={handleSaveEdit}
-                        disabled={!editName.trim()}
-                        className="flex-1 px-3 py-1.5 rounded-md bg-purple-500/20 border border-purple-500/30 text-purple-400 text-sm font-medium hover:bg-purple-500/30 disabled:opacity-50"
-                      >
-                        Save
-                      </button>
-                      <button
                         onClick={() => handleDeleteLabel(label.id)}
                         className="px-3 py-1.5 rounded-md bg-red-500/10 border border-red-500/20 text-red-400 text-sm hover:bg-red-500/20"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
+                      <div className="flex-1" />
                       <button
                         onClick={() => setEditingId(null)}
                         className="px-3 py-1.5 rounded-md bg-white/5 border border-white/10 text-slate-400 text-sm hover:bg-white/10"
                       >
                         Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveEdit}
+                        disabled={!editName.trim()}
+                        className="px-3 py-1.5 rounded-md text-sm font-medium disabled:opacity-50"
+                        style={{
+                          backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)',
+                          borderColor: 'color-mix(in srgb, var(--primary) 30%, transparent)',
+                          border: '1px solid',
+                          color: 'var(--primary)',
+                        }}
+                      >
+                        Save
                       </button>
                     </div>
                   </div>
@@ -271,7 +278,7 @@ export function LabelPicker({
                     if (e.key === 'Escape') setIsCreating(false)
                   }}
                   placeholder="Label name..."
-                  className="w-full px-3 py-1.5 rounded-md bg-white/10 border border-white/20 text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                  className="w-full px-3 py-1.5 rounded-md bg-white/10 border border-white/20 text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/20"
                   autoFocus
                 />
                 <ColorSwatchPicker
@@ -280,18 +287,25 @@ export function LabelPicker({
                   swatchSize="sm"
                 />
                 <div className="flex gap-2">
-                  <button
-                    onClick={handleCreateLabel}
-                    disabled={!newLabelName.trim()}
-                    className="flex-1 px-3 py-1.5 rounded-md bg-purple-500/20 border border-purple-500/30 text-purple-400 text-sm font-medium hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Create
-                  </button>
+                  <div className="flex-1" />
                   <button
                     onClick={() => setIsCreating(false)}
                     className="px-3 py-1.5 rounded-md bg-white/5 border border-white/10 text-slate-400 text-sm hover:bg-white/10"
                   >
                     Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateLabel}
+                    disabled={!newLabelName.trim()}
+                    className="px-3 py-1.5 rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)',
+                      borderColor: 'color-mix(in srgb, var(--primary) 30%, transparent)',
+                      border: '1px solid',
+                      color: 'var(--primary)',
+                    }}
+                  >
+                    Create
                   </button>
                 </div>
               </div>

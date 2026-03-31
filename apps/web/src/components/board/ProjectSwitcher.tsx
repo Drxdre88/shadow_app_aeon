@@ -149,7 +149,7 @@ export function ProjectSwitcher({ currentProjectId, projectName, glowColor }: Pr
               <div className="max-h-[360px] overflow-y-auto py-1">
                 {!loaded && (
                   <div className="px-4 py-6 text-center">
-                    <div className="w-5 h-5 border-2 border-purple-500/30 border-t-purple-500 rounded-full animate-spin mx-auto" />
+                    <div className="w-5 h-5 rounded-full animate-spin mx-auto" style={{ border: '2px solid color-mix(in srgb, var(--primary) 30%, transparent)', borderTopColor: 'var(--primary)' }} />
                   </div>
                 )}
                 {loaded && otherProjects.length === 0 && (

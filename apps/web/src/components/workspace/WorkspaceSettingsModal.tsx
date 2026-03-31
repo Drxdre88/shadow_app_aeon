@@ -60,15 +60,16 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, on
   useEffect(() => {
     if (!isOpen) return
     setLoading(true)
-    Promise.all([
+    Promise.allSettled([
       getGroupMembers(groupId),
       getGroupProjects(groupId),
     ])
-      .then(([m, p]) => {
-        setMembers(m as GroupMemberRow[])
-        setGroupProjects(p as GroupProjectRow[])
+      .then(([membersResult, projectsResult]) => {
+        if (membersResult.status === 'fulfilled') setMembers(membersResult.value as GroupMemberRow[])
+        else setError('Failed to load members')
+        if (projectsResult.status === 'fulfilled') setGroupProjects(projectsResult.value as GroupProjectRow[])
+        else setError((prev) => prev ? `${prev}; failed to load projects` : 'Failed to load projects')
       })
-      .catch(() => setError('Failed to load workspace data'))
       .finally(() => setLoading(false))
   }, [isOpen, groupId])
 
@@ -187,7 +188,8 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, on
                   onChange={(e) => setName(e.target.value)}
                   onBlur={handleRename}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleRename(); if (e.key === 'Escape') setNameEditing(false) }}
-                  className="bg-transparent text-white font-semibold border-b border-purple-500/50 focus:outline-none"
+                  className="bg-transparent text-white font-semibold focus:outline-none"
+                  style={{ borderBottom: '1px solid color-mix(in srgb, var(--primary) 50%, transparent)' }}
                   autoFocus
                 />
               ) : (
@@ -199,7 +201,7 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, on
                 </h2>
               )}
             </div>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors">
+            <button onClick={onClose} aria-label="Close" className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -235,7 +237,7 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, on
                         onChange={(e) => { setEmail(e.target.value); setError('') }}
                         placeholder="Invite by email"
                         disabled={inviteLoading}
-                        className="w-full py-2.5 pl-9 pr-3 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 disabled:opacity-50"
+                        className="w-full py-2.5 pl-9 pr-3 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50"
                         style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
                       />
                     </div>
@@ -269,7 +271,7 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, on
                         {m.image ? (
                           <img src={m.image} alt="" className="w-7 h-7 rounded-full" />
                         ) : (
-                          <div className="w-7 h-7 rounded-full bg-purple-500/20 flex items-center justify-center text-xs text-purple-400 font-medium">
+                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)', color: 'var(--primary)' }}>
                             {(m.name || m.email).charAt(0).toUpperCase()}
                           </div>
                         )}
@@ -324,7 +326,7 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, on
                         {p.planetImage ? (
                           <img src={`/planets/${p.planetImage}`} alt="" className="w-6 h-6 rounded-full" />
                         ) : (
-                          <div className="w-6 h-6 rounded-full bg-purple-500/20" />
+                          <div className="w-6 h-6 rounded-full" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)' }} />
                         )}
                         <span className="text-sm text-white">{p.name}</span>
                       </div>

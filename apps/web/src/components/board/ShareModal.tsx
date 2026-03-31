@@ -132,7 +132,7 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
   }
 
   const handleCopyShareLink = () => {
-    navigator.clipboard.writeText(shareLink)
+    navigator.clipboard.writeText(shareLink).catch(() => {})
     setShareLinkCopied('copied')
     setTimeout(() => setShareLinkCopied(''), 2000)
   }
@@ -188,7 +188,7 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
   }
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(inviteLink)
+    navigator.clipboard.writeText(inviteLink).catch(() => {})
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -287,7 +287,7 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
                   onChange={(e) => { setEmail(e.target.value); setError('') }}
                   placeholder="Email address"
                   disabled={inviteLoading}
-                  className="w-full py-2.5 pl-9 pr-3 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 disabled:opacity-50"
+                  className="w-full py-2.5 pl-9 pr-3 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50"
                   style={{
                     backgroundColor: 'rgba(255,255,255,0.06)',
                     border: '1px solid rgba(255,255,255,0.1)',
@@ -297,7 +297,7 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
               <select
                 value={inviteRole}
                 onChange={(e) => setInviteRole(e.target.value)}
-                className="px-2 py-2.5 rounded-xl text-xs text-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                className="px-2 py-2.5 rounded-xl text-xs text-slate-300 focus:outline-none focus:ring-2 focus:ring-white/20"
                 style={{
                   backgroundColor: 'rgba(255,255,255,0.06)',
                   border: '1px solid rgba(255,255,255,0.1)',
@@ -312,9 +312,9 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
                 disabled={inviteLoading}
                 className="px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-all hover:brightness-110"
                 style={{
-                  backgroundColor: 'rgba(139, 92, 246, 0.2)',
-                  border: '1px solid rgba(139, 92, 246, 0.3)',
-                  color: '#a78bfa',
+                  backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--primary) 30%, transparent)',
+                  color: 'var(--primary)',
                 }}
               >
                 {inviteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
@@ -357,7 +357,7 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
                       {m.image ? (
                         <img src={m.image} alt="" className="w-7 h-7 rounded-full" />
                       ) : (
-                        <div className="w-7 h-7 rounded-full bg-purple-500/20 flex items-center justify-center text-xs text-purple-400 font-medium">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)', color: 'var(--primary)' }}>
                           {(m.name || m.email).charAt(0).toUpperCase()}
                         </div>
                       )}
@@ -376,7 +376,7 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
                         <select
                           value={m.role}
                           onChange={(e) => handleRoleChange(m.userId, e.target.value)}
-                          className="text-xs text-slate-400 bg-transparent border border-white/10 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-purple-500/50 cursor-pointer hover:border-white/20"
+                          className="text-xs text-slate-400 bg-transparent border border-white/10 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-white/20 cursor-pointer hover:border-white/20"
                         >
                           {ROLE_OPTIONS.map((r) => (
                             <option key={r} value={r} className="bg-slate-900">{r}</option>

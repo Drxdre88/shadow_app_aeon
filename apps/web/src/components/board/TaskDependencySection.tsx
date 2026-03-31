@@ -138,7 +138,7 @@ export function TaskDependencySection({
                 'w-full pl-9 pr-8 py-2 rounded-lg text-sm',
                 'bg-white/5 border border-white/10',
                 'text-white placeholder-slate-500',
-                'focus:outline-none focus:ring-2 focus:ring-purple-500/50',
+                'focus:outline-none focus:ring-2 focus:ring-white/20',
                 'transition-all duration-200'
               )}
               autoFocus

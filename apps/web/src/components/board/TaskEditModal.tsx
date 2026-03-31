@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, ChevronDown, Palette, Tag, Calendar, Trash2 } from 'lucide-react'
+import { X, ChevronDown, Palette, Tag, Calendar, Trash2, CheckCircle2, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { AccentColor, ACCENT_COLORS, colorConfig, hexToRgba } from '@/lib/utils/colors'
@@ -12,6 +12,8 @@ import { TaskDependencySection } from './TaskDependencySection'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
 import { TaskComments } from './TaskComments'
 import { useChecklistHandlers } from './useChecklistHandlers'
+import { LabelPicker } from './LabelPicker'
+import { triggerCelebration } from '@/components/celebrations'
 
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
 
@@ -37,6 +39,7 @@ interface TaskEditModalProps {
   onLabelToggle?: (taskId: string, labelId: string, action: 'add' | 'remove') => void
   onPushToGantt?: (taskId: string) => void
   onDateChange?: (taskId: string, dates: { startDate?: string | null; endDate?: string | null }) => void
+  onStatusChange?: (taskId: string, status: string) => void
   onTaskDelete?: (taskId: string) => void
 }
 
@@ -57,10 +60,12 @@ export function TaskEditModal({
   onLabelToggle,
   onPushToGantt,
   onDateChange,
+  onStatusChange,
   onTaskDelete,
 }: TaskEditModalProps) {
   const { labels, tasks, updateTask } = useBoardStore()
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
+  const [labelPickerOpen, setLabelPickerOpen] = useState(false)
   const nameInputRef = useRef<HTMLInputElement>(null)
 
   const {
@@ -102,6 +107,16 @@ export function TaskEditModal({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, onClose, onSubmit, formData.name])
 
+  const currentTask = editingTaskId ? tasks.find((t) => t.id === editingTaskId) : null
+  const isDone = currentTask?.status === 'done'
+  const handleToggleDone = (e: React.MouseEvent) => {
+    if (!editingTaskId) return
+    const newStatus = isDone ? 'todo' : 'done'
+    updateTask(editingTaskId, { status: newStatus })
+    onStatusChange?.(editingTaskId, newStatus)
+    if (newStatus === 'done') triggerCelebration(e.clientX, e.clientY)
+  }
+
   const currentColorHex = formData.color.startsWith('#')
     ? formData.color
     : colorConfig[formData.color as AccentColor]?.hex ?? '#a855f7'
@@ -130,7 +145,23 @@ export function TaskEditModal({
           >
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
               <div>
-                <label className="block text-sm text-slate-400 mb-1.5">Name</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-sm text-slate-400">Name</label>
+                  {editingTaskId && currentTask && (
+                    <button
+                      onClick={handleToggleDone}
+                      className={cn(
+                        'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-all duration-200',
+                        isDone
+                          ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+                          : 'bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
+                      )}
+                    >
+                      <CheckCircle2 className={cn('w-3.5 h-3.5', isDone && 'fill-emerald-500/20')} />
+                      {isDone ? 'Done' : 'Mark done'}
+                    </button>
+                  )}
+                </div>
                 <input
                   ref={nameInputRef}
                   type="text"
@@ -141,7 +172,7 @@ export function TaskEditModal({
                     'w-full px-4 py-2.5 rounded-lg',
                     'bg-white/5 border border-white/10',
                     'text-white placeholder-slate-500',
-                    'focus:outline-none focus:ring-2 focus:ring-purple-500/50',
+                    'focus:outline-none focus:ring-2 focus:ring-white/20',
                     'transition-all duration-200'
                   )}
                 />
@@ -163,7 +194,7 @@ export function TaskEditModal({
                     'w-full px-4 py-2.5 rounded-lg resize-none',
                     'bg-white/5 border border-white/10',
                     'text-white placeholder-slate-500',
-                    'focus:outline-none focus:ring-2 focus:ring-purple-500/50',
+                    'focus:outline-none focus:ring-2 focus:ring-white/20',
                     'transition-all duration-200'
                   )}
                   onFocus={(e) => {
@@ -335,57 +366,68 @@ export function TaskEditModal({
                 )
               })()}
 
-              {editingTaskId && labels.length > 0 && (() => {
-                const task = tasks.find((t) => t.id === editingTaskId)
-                const taskLabels = task?.labels ?? []
-                const projectLabels = labels.filter((l) => l.projectId === projectId)
-                if (projectLabels.length === 0) return null
-
-                const handleToggle = (labelId: string) => {
-                  const hasLabel = taskLabels.includes(labelId)
-                  const newLabels = hasLabel
-                    ? taskLabels.filter((id) => id !== labelId)
-                    : [...taskLabels, labelId]
-                  updateTask(editingTaskId, { labels: newLabels })
-                  onLabelToggle?.(editingTaskId, labelId, hasLabel ? 'remove' : 'add')
-                }
-
-                return (
-                  <div className="pt-4 border-t border-white/10">
-                    <label className="block text-sm text-slate-400 mb-2">Labels</label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {projectLabels.map((label) => {
-                        const lc = colorConfig[label.color as AccentColor]
-                        const isCustom = !lc
-                        const hex = label.color.startsWith('#') ? label.color : `#${label.color}`
-                        const isActive = taskLabels.includes(label.id)
-                        return (
-                          <button
-                            key={label.id}
-                            type="button"
-                            onClick={() => handleToggle(label.id)}
-                            className={cn(
-                              'px-2.5 py-1 rounded-md text-xs font-medium flex items-center gap-1.5',
-                              'border transition-all duration-200',
-                              isActive
-                                ? cn(!isCustom && lc?.bg, !isCustom && lc?.border, !isCustom && lc?.text, 'ring-1 ring-white/30', isCustom && 'text-white')
-                                : 'bg-white/5 border-white/10 text-slate-500 hover:text-slate-400 hover:border-white/20'
-                            )}
-                            style={isActive && isCustom ? {
-                              backgroundColor: hexToRgba(hex, 0.15),
-                              borderColor: hexToRgba(hex, 0.3),
-                              color: hex,
-                            } : undefined}
-                          >
-                            <Tag className="w-3 h-3" />
-                            {label.name}
-                          </button>
-                        )
-                      })}
-                    </div>
+              {editingTaskId && (
+                <div className="pt-4 border-t border-white/10">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm text-slate-400">Labels</label>
+                    <button
+                      onClick={() => setLabelPickerOpen(true)}
+                      className={cn(
+                        'flex items-center gap-1 px-2 py-1 rounded-md text-xs',
+                        'bg-white/5 border border-white/10 text-slate-400',
+                        'hover:bg-white/10 hover:text-white transition-all'
+                      )}
+                    >
+                      <Plus className="w-3 h-3" />
+                      {labels.filter(l => l.projectId === projectId).length === 0 ? 'Create label' : 'Manage'}
+                    </button>
                   </div>
-                )
-              })()}
+                  {(() => {
+                    const task = tasks.find((t) => t.id === editingTaskId)
+                    const taskLabels = task?.labels ?? []
+                    const projectLabels = labels.filter((l) => l.projectId === projectId)
+                    const appliedLabels = projectLabels.filter(l => taskLabels.includes(l.id))
+
+                    if (appliedLabels.length === 0) return null
+
+                    return (
+                      <div className="flex flex-wrap gap-1.5">
+                        {appliedLabels.map((label) => {
+                          const lc = colorConfig[label.color as AccentColor]
+                          const isCustom = !lc
+                          const hex = label.color.startsWith('#') ? label.color : `#${label.color}`
+                          return (
+                            <span
+                              key={label.id}
+                              className={cn(
+                                'px-2.5 py-1 rounded-md text-xs font-medium flex items-center gap-1.5',
+                                'border',
+                                !isCustom && lc?.bg, !isCustom && lc?.border, !isCustom && lc?.text,
+                                isCustom && 'text-white'
+                              )}
+                              style={isCustom ? {
+                                backgroundColor: hexToRgba(hex, 0.15),
+                                borderColor: hexToRgba(hex, 0.3),
+                                color: hex,
+                              } : undefined}
+                            >
+                              <Tag className="w-3 h-3" />
+                              {label.name}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
+                  <LabelPicker
+                    taskId={editingTaskId}
+                    projectId={projectId}
+                    isOpen={labelPickerOpen}
+                    onClose={() => setLabelPickerOpen(false)}
+                    onLabelToggle={onLabelToggle}
+                  />
+                </div>
+              )}
 
               <div className="pt-4 border-t border-white/10">
                 <label className="block text-sm text-slate-400 mb-2">Priority</label>
@@ -449,7 +491,7 @@ export function TaskEditModal({
               )}
             </div>
 
-            <div className="flex gap-3 p-4 sm:p-6 pt-4 flex-shrink-0 border-t border-white/10">
+            <div className="flex items-center gap-3 p-4 sm:p-6 pt-4 flex-shrink-0 border-t border-white/10">
               {editingTaskId && onTaskDelete && (
                 <button
                   onClick={() => {
@@ -466,14 +508,7 @@ export function TaskEditModal({
                   <Trash2 className="w-4 h-4" />
                 </button>
               )}
-              <NeonButton
-                onClick={onSubmit}
-                disabled={!formData.name.trim()}
-                className="flex-1"
-                color={resolveNeonColor(formData.color)}
-              >
-                {editingTaskId ? 'Save Changes' : 'Create Card'}
-              </NeonButton>
+              <div className="flex-1" />
               <button
                 onClick={onClose}
                 className={cn(
@@ -485,6 +520,13 @@ export function TaskEditModal({
               >
                 Cancel
               </button>
+              <NeonButton
+                onClick={onSubmit}
+                disabled={!formData.name.trim()}
+                color={resolveNeonColor(formData.color)}
+              >
+                {editingTaskId ? 'Save Changes' : 'Create Card'}
+              </NeonButton>
             </div>
           </motion.div>
         </motion.div>

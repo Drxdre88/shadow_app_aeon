@@ -19,11 +19,16 @@ export function ConnectModeBanner({ connectMode, connectSourceId, cursorPos, onC
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
-            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 px-6 py-3 rounded-2xl backdrop-blur-xl bg-purple-500/20 border border-purple-500/40 text-white flex items-center gap-3 shadow-[0_0_30px_rgba(168,85,247,0.3)]"
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-40 px-6 py-3 rounded-2xl backdrop-blur-xl text-white flex items-center gap-3"
+            style={{
+              backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--primary) 40%, transparent)',
+              boxShadow: '0 0 30px var(--glow-color)',
+            }}
           >
             <div className="relative">
-              <Link2 className="w-5 h-5 text-purple-400" />
-              <span className="absolute inset-0 rounded-full animate-ping bg-purple-400/30" />
+              <Link2 className="w-5 h-5" style={{ color: 'var(--primary)' }} />
+              <span className="absolute inset-0 rounded-full animate-ping" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 30%, transparent)' }} />
             </div>
             <span className="text-sm font-medium">
               {connectSourceId
@@ -42,8 +47,10 @@ export function ConnectModeBanner({ connectMode, connectSourceId, cursorPos, onC
 
       {connectMode && (
         <div
-          className="fixed pointer-events-none z-[150] px-3 py-1.5 rounded-lg backdrop-blur-xl bg-purple-500/30 border border-purple-500/50 text-white text-xs font-medium shadow-lg"
+          className="fixed pointer-events-none z-[150] px-3 py-1.5 rounded-lg backdrop-blur-xl text-white text-xs font-medium shadow-lg"
           style={{
+            backgroundColor: 'color-mix(in srgb, var(--primary) 30%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--primary) 50%, transparent)',
             left: cursorPos.x + 16,
             top: cursorPos.y + 16,
             transform: 'translateY(-50%)',
