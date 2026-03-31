@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Send, Trash2, Pencil, X, Check, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { getComments, addComment, editComment, removeComment } from '@/lib/actions/comments'
+import { toast } from '@/components/ui/Toast'
 
 interface Comment {
   id: string
@@ -59,7 +60,7 @@ export function TaskComments({ taskId, projectId }: TaskCommentsProps) {
         userImage: null,
       } as Comment])
       setNewComment('')
-    } catch { }
+    } catch (err) { console.error('Failed to add comment:', err); toast('Failed to add comment', { force: true }) }
     setSubmitting(false)
   }, [newComment, submitting, taskId, projectId])
 
@@ -72,7 +73,7 @@ export function TaskComments({ taskId, projectId }: TaskCommentsProps) {
           prev.map((c) => c.id === commentId ? { ...c, content: editContent.trim(), updatedAt: new Date() } : c)
         )
       }
-    } catch { }
+    } catch (err) { console.error('Failed to edit comment:', err); toast('Failed to edit comment', { force: true }) }
     setEditingId(null)
   }, [editContent, taskId, projectId])
 
@@ -80,7 +81,7 @@ export function TaskComments({ taskId, projectId }: TaskCommentsProps) {
     try {
       await removeComment(commentId, taskId, projectId)
       setComments((prev) => prev.filter((c) => c.id !== commentId))
-    } catch { }
+    } catch (err) { console.error('Failed to delete comment:', err); toast('Failed to delete comment', { force: true }) }
   }, [taskId, projectId])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -108,7 +109,7 @@ export function TaskComments({ taskId, projectId }: TaskCommentsProps) {
             >
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded-full bg-purple-500/30 flex items-center justify-center text-[10px] text-purple-300 font-medium">
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-medium" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 30%, transparent)', color: 'var(--primary)' }}>
                     {(comment.userName || '?')[0]?.toUpperCase()}
                   </div>
                   <span className="text-xs text-slate-400">{comment.userName || 'User'}</span>
@@ -134,14 +135,15 @@ export function TaskComments({ taskId, projectId }: TaskCommentsProps) {
                   <textarea
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
-                    className="flex-1 px-2 py-1.5 rounded bg-white/5 border border-white/10 text-xs text-white resize-none focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+                    className="flex-1 px-2 py-1.5 rounded bg-white/5 border border-white/10 text-xs text-white resize-none focus:outline-none focus:ring-1 focus:ring-white/20"
                     rows={2}
                     autoFocus
                   />
                   <div className="flex flex-col gap-1">
                     <button
                       onClick={() => handleEdit(comment.id)}
-                      className="p-1 rounded bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors"
+                      className="p-1 rounded transition-colors"
+                      style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)', color: 'var(--primary)' }}
                     >
                       <Check className="w-3 h-3" />
                     </button>
@@ -173,19 +175,26 @@ export function TaskComments({ taskId, projectId }: TaskCommentsProps) {
             'flex-1 px-3 py-2 rounded-lg text-xs resize-none',
             'bg-white/5 border border-white/10',
             'text-white placeholder-slate-500',
-            'focus:outline-none focus:ring-1 focus:ring-purple-500/50',
+            'focus:outline-none focus:ring-1 focus:ring-white/20',
             'transition-all duration-200'
           )}
         />
         <button
           onClick={handleSubmit}
           disabled={!newComment.trim() || submitting}
-          className={cn(
-            'p-2 rounded-lg transition-all',
-            newComment.trim()
-              ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30'
-              : 'bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed'
-          )}
+          className="p-2 rounded-lg transition-all"
+          style={newComment.trim() ? {
+            backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)',
+            borderColor: 'color-mix(in srgb, var(--primary) 30%, transparent)',
+            border: '1px solid',
+            color: 'var(--primary)',
+          } : {
+            backgroundColor: 'rgba(255,255,255,0.05)',
+            borderColor: 'rgba(255,255,255,0.05)',
+            border: '1px solid',
+            color: 'rgb(71 85 105)',
+            cursor: 'not-allowed',
+          }}
         >
           <Send className="w-3.5 h-3.5" />
         </button>

@@ -117,7 +117,7 @@ export function BetaFeaturesModal({ isOpen, onClose }: BetaFeaturesModalProps) {
           <div className="flex items-center gap-2">
             <FlaskConical className="w-5 h-5 text-slate-400" />
             <h2 className="text-lg font-semibold text-white">Beta Features</h2>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/25">
+            <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 15%, transparent)', color: 'var(--primary)', border: '1px solid color-mix(in srgb, var(--primary) 25%, transparent)' }}>
               Closed Beta
             </span>
           </div>
@@ -236,9 +236,9 @@ export function BetaFeaturesButton() {
               : glowIntensity > 50 ? `0 0 ${10 * (glowIntensity / 100)}px ${colors.glowColor}` : 'none',
           }}
         >
-          <FlaskConical className={cn('w-5 h-5', unseen ? 'text-purple-400' : 'text-slate-400')} />
+          <FlaskConical className={cn('w-5 h-5', !unseen && 'text-slate-400')} style={unseen ? { color: 'var(--primary)' } : undefined} />
           {unseen && (
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-purple-500 border-2 border-[#0a0a0c]" />
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-[#0a0a0c]" style={{ backgroundColor: 'var(--primary)' }} />
           )}
         </motion.button>
       </Tooltip>

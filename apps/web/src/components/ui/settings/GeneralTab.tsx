@@ -124,12 +124,14 @@ function PriorityManager() {
                   type="text"
                   value={editValue}
                   onChange={(e) => setEditValue(e.target.value)}
-                  onBlur={() => handleFinishEdit(p.id)}
+                  onBlur={(e) => { e.currentTarget.style.borderBottomColor = 'rgba(255,255,255,0.3)'; handleFinishEdit(p.id) }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleFinishEdit(p.id)
                     if (e.key === 'Escape') setEditingId(null)
                   }}
-                  className="flex-1 bg-transparent border-b border-white/30 text-white text-sm focus:outline-none focus:border-purple-400"
+                  className="flex-1 bg-transparent text-white text-sm focus:outline-none"
+                  style={{ borderBottom: '1px solid rgba(255,255,255,0.3)' }}
+                  onFocus={(e) => (e.currentTarget.style.borderBottomColor = 'var(--primary)')}
                   autoFocus
                 />
               ) : (
@@ -171,7 +173,7 @@ function PriorityManager() {
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') handleAdd() }}
           placeholder="New priority name..."
-          className="flex-1 px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+          className="flex-1 px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-white/20"
         />
         <motion.button
           onClick={handleAdd}

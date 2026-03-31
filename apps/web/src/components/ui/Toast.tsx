@@ -24,7 +24,7 @@ export function toast(message: string, options?: { onUndo?: () => void; duration
   if (options?.onUndo) {
     undoId = useUndoStore.getState().push(message, options.onUndo)
   }
-  if (!undoId && !options?.force && !useThemeStore.getState().boardActionToasts) return
+  if (!options?.force && !useThemeStore.getState().boardActionToasts) return
   addToastGlobal({ message, undoId, duration: options?.duration })
 }
 

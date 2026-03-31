@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
@@ -28,7 +28,6 @@ interface TaskChecklistProps {
   onItemToggle?: (itemId: string, newState: CheckState) => void
   onItemRemove?: (itemId: string) => void
   onItemStatusChange?: (itemId: string, status: ChecklistStatus) => void
-  onItemUpdateDates?: (itemId: string, startDate?: string, endDate?: string) => void
   onItemTitleChange?: (itemId: string, title: string) => void
   onGroupRename?: (oldName: string, newName: string) => void
   onGroupAdd?: (groupName: string) => void
@@ -44,7 +43,6 @@ export function TaskChecklist({
   onItemToggle,
   onItemRemove,
   onItemStatusChange,
-  onItemUpdateDates,
   onItemTitleChange,
   onGroupRename,
   onGroupAdd,
@@ -64,20 +62,11 @@ export function TaskChecklist({
   const [confirmDeleteGroup, setConfirmDeleteGroup] = useState<string | null>(null)
 
   const groups = Array.from(new Set(items.map((i) => i.groupName)))
-  const hasNoItems = items.length === 0
-  const defaultGroup = groups.length > 0 ? groups[0] : 'Checklist'
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor)
   )
-
-  useEffect(() => {
-    if (hasNoItems && !addingInGroup) {
-      setAddingInGroup(defaultGroup)
-      setNewItemTitle('')
-    }
-  }, [hasNoItems, defaultGroup, addingInGroup])
 
   const toggleGroup = (name: string) => {
     setCollapsedGroups((prev) => {
@@ -225,7 +214,7 @@ export function TaskChecklist({
               'flex-1 px-3 py-1.5 rounded-md text-sm',
               'bg-white/5 border border-white/10',
               'text-white placeholder-slate-500',
-              'focus:outline-none focus:ring-1 focus:ring-purple-500/40'
+              'focus:outline-none focus:ring-1 focus:ring-white/20'
             )}
             autoFocus
             autoComplete="off"
@@ -233,7 +222,13 @@ export function TaskChecklist({
           <button
             type="submit"
             disabled={!newGroupName.trim()}
-            className="px-3 py-1.5 rounded-md text-xs font-medium bg-purple-500/15 border border-purple-500/25 text-purple-400 disabled:opacity-50"
+            className="px-3 py-1.5 rounded-md text-xs font-medium disabled:opacity-50"
+            style={{
+              backgroundColor: 'color-mix(in srgb, var(--primary) 15%, transparent)',
+              borderColor: 'color-mix(in srgb, var(--primary) 25%, transparent)',
+              border: '1px solid',
+              color: 'var(--primary)',
+            }}
           >
             Add
           </button>

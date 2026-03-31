@@ -13,8 +13,9 @@ import { BetaFeaturesButton } from '@/components/ui/BetaFeaturesModal'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { CreateProjectModal } from '@/components/project/CreateProjectModal'
 import { getProjectsWithStats, getSharedProjects, getWorkspaceProjects } from '@/lib/actions/projects'
-import { migrateGroupsToWorkspaces, createGroup, listMyGroups } from '@/lib/actions/workspaces'
+import { migrateGroupsToWorkspaces, createGroup } from '@/lib/actions/workspaces'
 import { WorkspaceSettingsModal } from '@/components/workspace/WorkspaceSettingsModal'
+import { CreateWorkspaceModal } from '@/components/workspace/CreateWorkspaceModal'
 import { EditProjectModal } from '@/components/project/EditProjectModal'
 import { ProjectViewSwitcher, VIEW_OPTIONS } from '@/components/project/ProjectViewSwitcher'
 import { useViewPreference, type ProjectViewMode } from '@/components/project/useViewPreference'
@@ -54,6 +55,7 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
   const [tabLoaded, setTabLoaded] = useState<Record<DashboardTab, boolean>>({ mine: true, shared: false, workspaces: false })
   const [migrationDone, setMigrationDone] = useState(false)
   const [workspaceSettingsId, setWorkspaceSettingsId] = useState<{ id: string; name: string; isOwner: boolean } | null>(null)
+  const [showCreateWorkspace, setShowCreateWorkspace] = useState(false)
   const isAdmin = user.role === 'admin'
   const { glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
@@ -76,18 +78,25 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
 
   useEffect(() => {
     if (migrationDone) return
-    migrateGroupsToWorkspaces()
-      .then((count) => {
+    let cancelled = false
+    const attempt = async (retries: number) => {
+      if (retries >= 3 || cancelled) return
+      try {
+        const count = await migrateGroupsToWorkspaces()
+        if (cancelled) return
         setMigrationDone(true)
         if (count > 0) setTabLoaded((prev) => ({ ...prev, workspaces: false }))
-      })
-      .catch(() => setMigrationDone(true))
+      } catch (err) {
+        console.error('Workspace migration failed:', err)
+        if (!cancelled) setTimeout(() => attempt(retries + 1), 2000 * (retries + 1))
+      }
+    }
+    attempt(0)
+    return () => { cancelled = true }
   }, [migrationDone])
 
-  const handleCreateWorkspace = async () => {
-    const name = prompt('Workspace name:')
-    if (!name?.trim()) return
-    await createGroup({ name: name.trim() })
+  const handleWorkspaceCreate = async (name: string) => {
+    await createGroup({ name })
     setTabLoaded((prev) => ({ ...prev, workspaces: false }))
     setDashboardTab('workspaces')
   }
@@ -382,7 +391,7 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
               <Building2 className="w-8 h-8 text-[var(--text-dim)] mb-3" />
               <p className="text-[var(--text-muted)] mb-1">No workspaces</p>
               <p className="text-sm text-[var(--text-dim)] mb-4">Create a workspace to collaborate with your team</p>
-              <NeonButton color="purple" glowIntensity="md" onClick={handleCreateWorkspace}>
+              <NeonButton color="purple" glowIntensity="md" onClick={() => setShowCreateWorkspace(true)}>
                 <span className="flex items-center gap-2">
                   <Plus className="w-4 h-4" />
                   Create Workspace
@@ -406,7 +415,7 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
                     </button>
                     <div className="flex-1 h-px bg-white/[0.06]" />
                     <button
-                      onClick={handleCreateWorkspace}
+                      onClick={() => setShowCreateWorkspace(true)}
                       className="p-1 rounded-md text-slate-600 hover:text-white hover:bg-white/10 transition-all opacity-0 group-hover/ws:opacity-100"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -459,6 +468,11 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
           onUpdated={refreshWorkspaces}
         />
       )}
+      <CreateWorkspaceModal
+        isOpen={showCreateWorkspace}
+        onClose={() => setShowCreateWorkspace(false)}
+        onCreate={handleWorkspaceCreate}
+      />
     </div>
   )
 }

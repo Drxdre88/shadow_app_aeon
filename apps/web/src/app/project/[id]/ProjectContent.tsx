@@ -108,9 +108,14 @@ export default function ProjectContent({ project }: ProjectContentProps) {
                 className={cn(
                   'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                   activeTab === 'board'
-                    ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                    ? 'border text-white'
                     : 'text-slate-400 hover:text-white hover:bg-white/5'
                 )}
+                style={activeTab === 'board' ? {
+                  backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)',
+                  borderColor: 'color-mix(in srgb, var(--primary) 30%, transparent)',
+                  color: 'var(--primary)',
+                } : undefined}
               >
                 <LayoutGrid className="w-4 h-4" />
                 <span className="hidden sm:inline">Board</span>
@@ -188,7 +193,7 @@ export default function ProjectContent({ project }: ProjectContentProps) {
                   <Filter className="w-4 h-4" />
                   <span className="hidden sm:inline">Filter</span>
                   {activeFilterCount(filters) > 0 && (
-                    <span className="w-4 h-4 rounded-full bg-purple-500 text-white text-[10px] font-bold flex items-center justify-center">
+                    <span className="w-4 h-4 rounded-full text-white text-[10px] font-bold flex items-center justify-center" style={{ backgroundColor: 'var(--primary)' }}>
                       {activeFilterCount(filters)}
                     </span>
                   )}
@@ -210,9 +215,14 @@ export default function ProjectContent({ project }: ProjectContentProps) {
                   className={cn(
                     'hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
                     connectMode
-                      ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                      ? 'border text-white'
                       : 'text-slate-400 hover:text-white hover:bg-white/5'
                   )}
+                  style={connectMode ? {
+                    backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)',
+                    borderColor: 'color-mix(in srgb, var(--primary) 30%, transparent)',
+                    color: 'var(--primary)',
+                  } : undefined}
                 >
                   <GitBranch className="w-4 h-4" />
                   <span>Connect</span>
@@ -279,7 +289,12 @@ export default function ProjectContent({ project }: ProjectContentProps) {
             <p className="text-sm text-slate-400 mb-6 text-center max-w-md">{loadError}</p>
             <button
               onClick={triggerReload}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500/20 border border-purple-500/30 text-purple-400 hover:bg-purple-500/30 transition-all text-sm font-medium"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border transition-all text-sm font-medium"
+              style={{
+                backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)',
+                borderColor: 'color-mix(in srgb, var(--primary) 30%, transparent)',
+                color: 'var(--primary)',
+              }}
             >
               <RefreshCw className="w-4 h-4" />
               Retry

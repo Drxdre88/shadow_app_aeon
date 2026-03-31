@@ -33,8 +33,12 @@ export function TimeScaleSelector() {
             {isActive && (
               <motion.div
                 layoutId="timeScaleActiveTab"
-                className="absolute inset-0 rounded-md bg-gradient-to-b from-purple-500/30 to-purple-500/10 border border-purple-500/30"
-                style={{ boxShadow: '0 0 20px 5px rgba(139, 92, 246, 0.3)' }}
+                className="absolute inset-0 rounded-md"
+                style={{
+                  background: 'linear-gradient(to bottom, color-mix(in srgb, var(--primary) 30%, transparent), color-mix(in srgb, var(--primary) 10%, transparent))',
+                  border: '1px solid color-mix(in srgb, var(--primary) 30%, transparent)',
+                  boxShadow: '0 0 20px 5px var(--glow-color)',
+                }}
                 transition={{ type: 'spring', stiffness: 300, damping: 30 }}
               />
             )}

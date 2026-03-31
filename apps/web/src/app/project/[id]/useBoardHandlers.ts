@@ -28,11 +28,12 @@ export function useBoardHandlers(projectId: string) {
   }) => {
     createBoardTask(task)
       .then(() => useBoardStore.setState({ isDirty: false }))
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.error('Failed to create task:', err)
         useBoardStore.getState().removeTask(task.id)
         useBoardStore.setState({ isDirty: false })
-        toast('Failed to create task')
+        const msg = err instanceof Error && err.message.includes('Viewers cannot modify') ? 'You have view-only access to this project' : 'Failed to create task'
+        toast(msg, { force: true })
       })
   }, [])
 
@@ -40,7 +41,7 @@ export function useBoardHandlers(projectId: string) {
     const { tasks } = useBoardStore.getState()
     const snapshot = tasks.find(t => t.id === taskId)
     const changedFields = Object.keys(updates)
-    const isUndoable = changedFields.some(k => ['priority', 'color', 'name', 'status'].includes(k))
+    const isUndoable = changedFields.some(k => ['priority', 'color', 'name'].includes(k))
 
     updateBoardTask(taskId, projectId, updates as {
       name?: string
@@ -67,10 +68,11 @@ export function useBoardHandlers(projectId: string) {
           })
         }
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         console.error('Failed to update task:', err)
         useBoardStore.setState({ isDirty: false })
-        toast('Failed to update task')
+        const msg = err instanceof Error && err.message.includes('Viewers cannot modify') ? 'You have view-only access to this project' : 'Failed to update task'
+        toast(msg, { force: true })
       })
   }, [projectId])
 

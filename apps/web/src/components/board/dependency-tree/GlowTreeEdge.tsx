@@ -1,6 +1,5 @@
 'use client'
 
-import { motion } from 'framer-motion'
 import type { DepLineStyle, DepViewMode } from '@/stores/themeStore'
 
 interface GlowTreeEdgeProps {
@@ -30,30 +29,15 @@ export function GlowTreeEdge({
     const tHex = targetColor || sHex
     const sameColor = sHex === tHex
     const gradId = `arrow-grad-${index}`
-    const filterId = `arrow-glow-${index}`
-    const haloId = `arrow-halo-${index}`
     const markerId = `arrow-marker-${index}`
-    const glowMult = lineGlow / 60
-    const haloWidth = Math.max(lineWidth * 3, 4) * glowMult
-    const blurStd = Math.max(1, 4 * glowMult)
-    const haloBlurStd = Math.max(1, 6 * glowMult)
     const dashArray = lineStyle === 'dashed' ? '8 4' : lineStyle === 'dotted' ? '2 4' : undefined
     const strokeColor = sameColor ? sHex : `url(#${gradId})`
-    const delay = 0.2 + index * 0.1
+    const glowMult = lineGlow / 60
+    const haloWidth = Math.max(lineWidth * 3, 4) * glowMult
 
     return (
       <g>
         <defs>
-          <filter id={filterId} x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation={blurStd} result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter id={haloId} x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation={haloBlurStd} />
-          </filter>
           {!sameColor && (
             <linearGradient id={gradId} gradientUnits="userSpaceOnUse"
               x1={sourceX} y1={sourceY} x2={targetX} y2={targetY}
@@ -76,94 +60,56 @@ export function GlowTreeEdge({
         </defs>
 
         {lineGlow > 0 && (
-          <motion.path
+          <path
             d={d}
             fill="none"
             stroke={sHex}
             strokeWidth={haloWidth}
             strokeLinecap="round"
-            filter={`url(#${haloId})`}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: [0.3, 0.6, 0.3] }}
-            transition={{ delay, duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+            opacity={0.15}
           />
         )}
 
-        <motion.path
+        <path
           d={d}
           fill="none"
           stroke={strokeColor}
           strokeWidth={lineWidth}
           strokeDasharray={dashArray}
           strokeLinecap="round"
-          filter={lineGlow > 0 ? `url(#${filterId})` : undefined}
           markerEnd={`url(#${markerId})`}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay, duration: 0.4, ease: 'easeOut' }}
         />
       </g>
     )
   }
 
-  const edgeColor = isResolved ? 'rgba(16, 185, 129, 0.6)' : 'rgba(239, 68, 68, 0.5)'
+  const edgeColor = isResolved ? 'rgba(16, 185, 129, 0.7)' : 'rgba(239, 68, 68, 0.6)'
   const edgeColorBright = isResolved ? 'rgba(52, 211, 153, 0.9)' : 'rgba(248, 113, 113, 0.9)'
 
   return (
     <g>
-      <defs>
-        <filter id={`edge-glow-${index}`} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-
-      <motion.path
+      <path
         d={d}
         fill="none"
         stroke={edgeColor}
         strokeWidth={2}
         strokeLinecap="round"
-        filter={`url(#edge-glow-${index})`}
-        initial={{ pathLength: 0, opacity: 0 }}
-        animate={{ pathLength: 1, opacity: 0.8 }}
-        transition={{
-          pathLength: { delay: 0.3 + index * 0.15, duration: 0.6, ease: 'easeInOut' },
-          opacity: { delay: 0.3 + index * 0.15, duration: 0.3 },
-        }}
+        opacity={0.8}
       />
 
-      <motion.polygon
+      <polygon
         points={`${targetX},${targetY} ${targetX - 10},${targetY - 5} ${targetX - 10},${targetY + 5}`}
         fill={edgeColorBright}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.3 + index * 0.15 + 0.5, duration: 0.2 }}
-        filter={`url(#edge-glow-${index})`}
       />
 
-      <motion.circle
-        r={3}
-        fill={edgeColorBright}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: [0, 1, 0] }}
-        transition={{
-          delay: 0.9 + index * 0.15,
-          duration: 2,
-          repeat: Infinity,
-          ease: 'easeInOut',
-        }}
-      >
+      <circle r={3} fill={edgeColorBright}>
         <animateMotion
           dur="3s"
           repeatCount="indefinite"
           path={d}
           begin={`${0.9 + index * 0.15}s`}
         />
-      </motion.circle>
+      </circle>
     </g>
   )
 }

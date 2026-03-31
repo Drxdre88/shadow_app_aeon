@@ -88,7 +88,7 @@ export function TrophyDetailModal({ vaultTask, onClose, onRestore }: TrophyDetai
                 {vaultTask.priority}
               </span>
               {vaultTask.daysTaken !== null && (
-                <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium border bg-purple-500/15 border-purple-500/25 text-purple-400">
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 15%, transparent)', border: '1px solid color-mix(in srgb, var(--primary) 25%, transparent)', color: 'var(--primary)' }}>
                   <Timer className="w-2.5 h-2.5" />
                   {vaultTask.daysTaken}d
                 </span>

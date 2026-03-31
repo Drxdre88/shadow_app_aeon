@@ -37,6 +37,7 @@ interface GlowTreeNodeProps {
   priority: string
   color: string
   isFocused: boolean
+  isRoot?: boolean
   level: number
   indexInLevel: number
   onNodeClick?: (id: string) => void
@@ -69,6 +70,7 @@ export function GlowTreeNode({
   priority,
   color,
   isFocused,
+  isRoot = false,
   level,
   indexInLevel,
   onNodeClick,
@@ -104,13 +106,15 @@ export function GlowTreeNode({
         className={cn(
           'h-full rounded-xl overflow-hidden flex',
           'border transition-all duration-300',
-          isFocused ? 'border-white/30' : 'border-white/10'
+          isFocused ? 'border-white/30' : isRoot ? 'border-white/20' : 'border-white/10'
         )}
         style={{
           backgroundColor: isFocused ? 'rgba(30, 32, 45, 0.97)' : 'rgba(18, 20, 30, 0.97)',
           boxShadow: isFocused
             ? `0 0 30px 8px ${resolved.glow}, 0 0 60px 15px ${resolved.glowDark}`
-            : `0 0 15px 3px ${resolved.glowDark}`,
+            : isRoot
+              ? `0 0 22px 5px ${resolved.glow}, 0 0 40px 10px ${resolved.glowDark}`
+              : `0 0 15px 3px ${resolved.glowDark}`,
         }}
       >
         <div

@@ -118,7 +118,7 @@ export function CommandPalette() {
                             const el = document.querySelector(`[data-task-id="${t.id}"]`)
                             if (el) {
                               el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                              const btn = el.querySelector('button[class*="hover:bg-white"]') as HTMLButtonElement
+                              const btn = el.querySelector('[data-task-edit]') as HTMLButtonElement
                               btn?.click()
                             }
                           })
@@ -147,7 +147,7 @@ export function CommandPalette() {
                         /* eslint-disable-next-line @next/next/no-img-element */
                         <img src={`/planets/${p.planetImage}`} alt="" className="w-4 h-4 rounded-full shrink-0" />
                       ) : (
-                        <div className="w-4 h-4 rounded-full bg-purple-500/20 shrink-0" />
+                        <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)' }} />
                       )}
                       <span className="truncate">{p.name}</span>
                       {p.group && <span className="text-[10px] text-slate-600 ml-auto shrink-0">{p.group}</span>}

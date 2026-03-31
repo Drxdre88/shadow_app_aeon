@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireEditor } from './helpers'
+import { requireMember, requireEditor } from './helpers'
 import {
   createChecklistItemSchema,
   checklistItemStateSchema,
@@ -18,7 +18,14 @@ import {
 } from '@/lib/data/checklist'
 import { findTaskById } from '@/lib/data/tasks'
 
-async function requireTaskInProject(taskId: string, projectId: string) {
+async function requireTaskReadable(taskId: string, projectId: string) {
+  await requireMember(projectId)
+  const task = await findTaskById(taskId, projectId)
+  if (!task) throw new Error('Task not found or unauthorized')
+  return task
+}
+
+async function requireTaskEditable(taskId: string, projectId: string) {
   await requireEditor(projectId)
   const task = await findTaskById(taskId, projectId)
   if (!task) throw new Error('Task not found or unauthorized')
@@ -26,7 +33,7 @@ async function requireTaskInProject(taskId: string, projectId: string) {
 }
 
 export async function getChecklistItems(taskId: string, projectId: string) {
-  await requireTaskInProject(taskId, projectId)
+  await requireTaskReadable(taskId, projectId)
   return _findChecklistItems(taskId, projectId)
 }
 
@@ -38,7 +45,7 @@ export async function createChecklistItem(data: {
   orderIndex: number
   groupName?: string
 }) {
-  await requireTaskInProject(data.taskId, data.projectId)
+  await requireTaskEditable(data.taskId, data.projectId)
 
   const parsed = createChecklistItemSchema.parse({
     title: data.title,
@@ -65,7 +72,7 @@ export async function updateChecklistItem(
     endDate?: string
   }
 ) {
-  await requireTaskInProject(taskId, projectId)
+  await requireTaskEditable(taskId, projectId)
 
   const rawState = updates.state !== undefined
     ? checklistItemStateSchema.parse(updates.state)
@@ -85,7 +92,7 @@ export async function updateChecklistItem(
 }
 
 export async function deleteChecklistItem(itemId: string, taskId: string, projectId: string) {
-  await requireTaskInProject(taskId, projectId)
+  await requireTaskEditable(taskId, projectId)
   await _deleteChecklistItem(itemId, taskId)
   revalidatePath(`/project/${projectId}`)
 }
@@ -95,7 +102,7 @@ export async function reorderChecklistItems(
   projectId: string,
   updates: { id: string; orderIndex: number }[]
 ) {
-  await requireTaskInProject(taskId, projectId)
+  await requireTaskEditable(taskId, projectId)
   await _reorderChecklistItems(taskId, updates)
   revalidatePath(`/project/${projectId}`)
 }
@@ -106,7 +113,7 @@ export async function renameChecklistGroup(
   oldName: string,
   newName: string
 ) {
-  await requireTaskInProject(taskId, projectId)
+  await requireTaskEditable(taskId, projectId)
   const count = await _renameChecklistGroup(taskId, oldName, newName)
   revalidatePath(`/project/${projectId}`)
   return count
@@ -117,7 +124,7 @@ export async function deleteChecklistGroup(
   projectId: string,
   groupName: string
 ) {
-  await requireTaskInProject(taskId, projectId)
+  await requireTaskEditable(taskId, projectId)
   await _deleteChecklistGroup(taskId, groupName)
   revalidatePath(`/project/${projectId}`)
 }

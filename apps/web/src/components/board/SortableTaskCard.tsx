@@ -253,7 +253,8 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
                   onBlur={handleInlineSubmit}
                   onKeyDown={handleInlineKeyDown}
                   onClick={(e) => e.stopPropagation()}
-                  className="text-sm font-medium text-white bg-white/10 border border-purple-500/50 rounded px-1.5 py-0.5 w-full focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+                  className="text-sm font-medium text-white bg-white/10 rounded px-1.5 py-0.5 w-full focus:outline-none focus:ring-1 focus:ring-white/20"
+                  style={{ border: '1px solid color-mix(in srgb, var(--primary) 50%, transparent)' }}
                   autoFocus
                 />
               ) : (
@@ -272,6 +273,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
             </div>
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
               <button
+                data-task-edit
                 onClick={(e) => { e.stopPropagation(); onEdit?.(task.id) }}
                 className="p-1 rounded-md hover:bg-white/10 transition-colors"
               >
