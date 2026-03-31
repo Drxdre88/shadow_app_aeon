@@ -32,6 +32,7 @@ import { useLabelHandlers } from './useLabelHandlers'
 import { useDependencyHandlers } from './useDependencyHandlers'
 import { useGanttHandlers } from './useGanttHandlers'
 import { useCanvasHandlers } from './useCanvasHandlers'
+import { useBoardTheme } from './useBoardTheme'
 
 const CanvasView = dynamic(() => import('@/components/canvas/CanvasView'), { ssr: false })
 const GanttChart = dynamic(() => import('@/components/gantt/GanttChart').then(m => ({ default: m.GanttChart })), { ssr: false })
@@ -54,6 +55,7 @@ export default function ProjectContent({ project }: ProjectContentProps) {
   const projectGlow = projectColors[project.id] || colors.glowColor || 'rgba(139, 92, 246, 0.5)'
 
   const { isLoading, loadError, triggerReload } = useProjectData(project.id, activeTab)
+  useBoardTheme(project.id, (project.settings ?? {}) as Record<string, unknown>)
 
   const board = useBoardHandlers(project.id)
   const { handleLabelCreate, handleLabelUpdate, handleLabelDelete, handleLabelToggle } = useLabelHandlers(project.id)

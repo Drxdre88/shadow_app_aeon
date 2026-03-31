@@ -59,21 +59,9 @@ const priorityGlows = {
 
 type TriState = 'unchecked' | 'checked' | 'crossed'
 
-export const crossedTaskIds = new Set<string>()
-
-export function clearCrossedState() {
-  crossedTaskIds.clear()
-}
-
 function nextTriState(s: TriState): TriState {
   if (s === 'unchecked') return 'checked'
   if (s === 'checked') return 'crossed'
-  return 'unchecked'
-}
-
-function statusToTri(taskId: string, status: string): TriState {
-  if (status === 'done') return 'checked'
-  if (crossedTaskIds.has(taskId)) return 'crossed'
   return 'unchecked'
 }
 
@@ -92,6 +80,9 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const showDates = useShowDates()
   const checklistMode = useChecklistViewMode()
   const updateTask = useBoardStore((s) => s.updateTask)
+  const crossedTaskIds = useBoardStore((s) => s.crossedTaskIds)
+  const addCrossedTask = useBoardStore((s) => s.addCrossedTask)
+  const removeCrossedTask = useBoardStore((s) => s.removeCrossedTask)
   const { glowIntensity: globalGlow, priorities } = useThemeStore()
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
@@ -100,15 +91,15 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const cardElRef = useRef<HTMLDivElement>(null)
   const isSelected = selectedTaskId === task.id
   const mult = globalGlow / 75
-  const triState = statusToTri(task.id, task.status)
+  const triState: TriState = task.status === 'done' ? 'checked' : task.id in crossedTaskIds ? 'crossed' : 'unchecked'
 
   const handleTriToggle = (e: React.MouseEvent) => {
     e.stopPropagation()
     const next = nextTriState(triState)
     if (next === 'crossed') {
-      crossedTaskIds.add(task.id)
+      addCrossedTask(task.id)
     } else {
-      crossedTaskIds.delete(task.id)
+      removeCrossedTask(task.id)
     }
     const newStatus = triToStatus(next, task.status)
     updateTask(task.id, { status: newStatus })

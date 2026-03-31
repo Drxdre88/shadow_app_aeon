@@ -74,6 +74,7 @@ const stubProject = {
   settings: {} as unknown,
   group: null as string | null,
   planetImage: null as string | null,
+  boardVersion: 0,
   createdAt: new Date(),
   updatedAt: new Date(),
 }

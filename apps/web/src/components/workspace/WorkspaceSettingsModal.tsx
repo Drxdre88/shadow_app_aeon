@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Mail, UserPlus, Crown, Trash2, Loader2, Settings, FolderPlus, FolderMinus } from 'lucide-react'
+import { X, UserPlus, Crown, Trash2, Loader2, Settings, FolderPlus, FolderMinus } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import {
   getGroupMembers,
@@ -15,6 +15,8 @@ import {
   removeProjectFromGroup,
 } from '@/lib/actions/workspaces'
 import { getProjects } from '@/lib/actions/projects'
+import { autoSaveContact } from '@/lib/actions/contacts'
+import { ContactAutocomplete } from '@/components/ui/ContactAutocomplete'
 
 interface WorkspaceSettingsModalProps {
   isOpen: boolean
@@ -90,6 +92,7 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, on
     setInviteLoading(true)
     try {
       await inviteGroupMember(groupId, trimmed, inviteRole)
+      autoSaveContact(trimmed).catch((err) => console.error('autoSaveContact failed:', err))
       setSuccess(`Invited ${trimmed} as ${inviteRole}`)
       setEmail('')
       const updated = await getGroupMembers(groupId)
@@ -229,18 +232,13 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, on
               <>
                 {isOwner && (
                   <form onSubmit={handleInvite} className="flex gap-2">
-                    <div className="relative flex-1">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                      <input
-                        type="email"
-                        value={email}
-                        onChange={(e) => { setEmail(e.target.value); setError('') }}
-                        placeholder="Invite by email"
-                        disabled={inviteLoading}
-                        className="w-full py-2.5 pl-9 pr-3 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-50"
-                        style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-                      />
-                    </div>
+                    <ContactAutocomplete
+                      value={email}
+                      onChange={(val) => { setEmail(val); setError('') }}
+                      onSelect={(selectedEmail) => { setEmail(selectedEmail); setError('') }}
+                      placeholder="Invite by name or email"
+                      disabled={inviteLoading}
+                    />
                     <select
                       value={inviteRole}
                       onChange={(e) => setInviteRole(e.target.value)}
