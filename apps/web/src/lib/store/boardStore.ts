@@ -97,6 +97,11 @@ interface BoardState {
   showDates: boolean
   toggleShowDates: () => void
 
+  crossedTaskIds: Record<string, true>
+  addCrossedTask: (taskId: string) => void
+  removeCrossedTask: (taskId: string) => void
+  clearCrossedTasks: () => void
+
   selectTask: (id: string | null) => void
   convertToTimeline: (taskId: string, startDate: string, endDate: string) => void
   markClean: () => void
@@ -203,6 +208,17 @@ export const useBoardStore = create<BoardState>()(
       })),
 
       toggleShowDates: () => set((s) => ({ showDates: !s.showDates })),
+
+      crossedTaskIds: {} as Record<string, true>,
+      addCrossedTask: (taskId) => set((s) => ({
+        crossedTaskIds: { ...s.crossedTaskIds, [taskId]: true as const },
+      })),
+      removeCrossedTask: (taskId) => set((s) => {
+        const { [taskId]: _, ...rest } = s.crossedTaskIds
+        return { crossedTaskIds: rest }
+      }),
+      clearCrossedTasks: () => set({ crossedTaskIds: {} }),
+
       selectTask: (id) => set({ selectedTaskId: id }),
       convertToTimeline: (taskId, startDate, endDate) => set((s) => ({
         tasks: s.tasks.map((t) =>

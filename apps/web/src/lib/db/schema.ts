@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, integer, boolean, jsonb, primaryKey, real, type AnyPgColumn } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, text, timestamp, integer, boolean, jsonb, primaryKey, real, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core'
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -53,6 +53,7 @@ export const projects = pgTable('projects', {
   settings: jsonb('settings').default({}).notNull(),
   group: text('group'),
   planetImage: varchar('planet_image', { length: 255 }),
+  boardVersion: integer('board_version').default(0).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
@@ -306,6 +307,17 @@ export const boardSnapshots = pgTable('board_snapshots', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
+export const userContacts = pgTable('user_contacts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  contactEmail: varchar('contact_email', { length: 255 }).notNull(),
+  contactUserId: uuid('contact_user_id').references(() => users.id, { onDelete: 'set null' }),
+  displayName: varchar('display_name', { length: 255 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  userEmailUniq: uniqueIndex('user_contacts_user_email_uniq').on(table.userId, table.contactEmail),
+}))
+
 export type User = typeof users.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type GanttView = typeof ganttViews.$inferSelect
@@ -329,3 +341,4 @@ export type BoardSnapshot = typeof boardSnapshots.$inferSelect
 export type WorkspaceGroup = typeof workspaceGroups.$inferSelect
 export type GroupMember = typeof groupMembers.$inferSelect
 export type ProjectGroup = typeof projectGroups.$inferSelect
+export type UserContact = typeof userContacts.$inferSelect

@@ -4,19 +4,13 @@ import { motion } from 'framer-motion'
 import { Check, X } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { resolveColor } from '@/lib/utils/colors'
-import { crossedTaskIds } from '../SortableTaskCard'
+import { useBoardStore } from '@/lib/store/boardStore'
 
 type TriState = 'unchecked' | 'checked' | 'crossed'
 
 function nextTriState(current: TriState): TriState {
   if (current === 'unchecked') return 'checked'
   if (current === 'checked') return 'crossed'
-  return 'unchecked'
-}
-
-function statusToTriState(taskId: string, status: string): TriState {
-  if (status === 'done') return 'checked'
-  if (crossedTaskIds.has(taskId)) return 'crossed'
   return 'unchecked'
 }
 
@@ -79,15 +73,18 @@ export function GlowTreeNode({
 }: GlowTreeNodeProps) {
   const resolved = resolveColor(color)
   const delay = level * 0.1 + indexInLevel * 0.05
-  const triState = statusToTriState(id, status)
+  const crossedTaskIds = useBoardStore((s) => s.crossedTaskIds)
+  const addCrossedTask = useBoardStore((s) => s.addCrossedTask)
+  const removeCrossedTask = useBoardStore((s) => s.removeCrossedTask)
+  const triState: TriState = status === 'done' ? 'checked' : id in crossedTaskIds ? 'crossed' : 'unchecked'
 
   const handleCheckClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     const next = nextTriState(triState)
     if (next === 'crossed') {
-      crossedTaskIds.add(id)
+      addCrossedTask(id)
     } else {
-      crossedTaskIds.delete(id)
+      removeCrossedTask(id)
     }
     onStatusChange?.(id, triStateToStatus(next, status))
   }

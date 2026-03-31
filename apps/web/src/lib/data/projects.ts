@@ -91,6 +91,7 @@ export async function findProjectsWithStats(userId: string) {
       userId: projects.userId,
       group: projects.group,
       planetImage: projects.planetImage,
+      boardVersion: projects.boardVersion,
       totalTasks: sql<number>`coalesce((
         select count(*)::int from board_tasks
         where board_tasks.project_id = ${projects.id}
@@ -162,6 +163,7 @@ export async function updateProject(projectId: string, userId: string, data: Upd
   if (data.endDate !== undefined) updates.endDate = new Date(data.endDate)
   if (data.timeScale !== undefined) updates.timeScale = data.timeScale
   if (data.planetImage !== undefined) updates.planetImage = data.planetImage
+  if (data.settings !== undefined) updates.settings = data.settings
 
   const [project] = await db
     .update(projects)
@@ -244,6 +246,7 @@ const PROJECT_COLUMNS = {
   userId: projects.userId,
   group: projects.group,
   planetImage: projects.planetImage,
+  boardVersion: projects.boardVersion,
   createdAt: projects.createdAt,
   updatedAt: projects.updatedAt,
 } as const

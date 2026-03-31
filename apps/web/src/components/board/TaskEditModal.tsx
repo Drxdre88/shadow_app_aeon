@@ -2,17 +2,18 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, ChevronDown, Palette, Tag, Calendar, Trash2, CheckCircle2, Plus } from 'lucide-react'
+import { ChevronDown, Palette, Calendar, Trash2, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
-import { AccentColor, ACCENT_COLORS, colorConfig, hexToRgba } from '@/lib/utils/colors'
+import { AccentColor, ACCENT_COLORS, colorConfig } from '@/lib/utils/colors'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { TaskChecklist } from './checklist'
 import { TaskDependencySection } from './TaskDependencySection'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
 import { TaskComments } from './TaskComments'
 import { useChecklistHandlers } from './useChecklistHandlers'
-import { LabelPicker } from './LabelPicker'
+import { TaskDateSection } from './TaskDateSection'
+import { TaskLabelsSection } from './TaskLabelsSection'
 import { triggerCelebration } from '@/components/celebrations'
 
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
@@ -63,9 +64,8 @@ export function TaskEditModal({
   onStatusChange,
   onTaskDelete,
 }: TaskEditModalProps) {
-  const { labels, tasks, updateTask } = useBoardStore()
+  const { tasks, updateTask } = useBoardStore()
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
-  const [labelPickerOpen, setLabelPickerOpen] = useState(false)
   const nameInputRef = useRef<HTMLInputElement>(null)
 
   const {
@@ -285,148 +285,16 @@ export function TaskEditModal({
                 </div>
               </div>
 
-              {editingTaskId && (() => {
-                const task = tasks.find((t) => t.id === editingTaskId)
-                const startIso = task?.startDate ? new Date(task.startDate).toISOString().slice(0, 10) : ''
-                const endIso = task?.endDate ? new Date(task.endDate).toISOString().slice(0, 10) : ''
-                return (
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1.5">Dates</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="date"
-                        value={startIso}
-                        onChange={(e) => {
-                          const val = e.target.value
-                          const start = val ? new Date(val + 'T00:00:00').toISOString() : null
-                          updateTask(editingTaskId, { startDate: start ?? undefined })
-                          onDateChange?.(editingTaskId, { startDate: start })
-                          if (start && !endIso) {
-                            updateTask(editingTaskId, { endDate: start })
-                            onDateChange?.(editingTaskId, { endDate: start })
-                          }
-                        }}
-                        className={cn(
-                          'flex-1 px-3 py-2 rounded-lg text-sm',
-                          'bg-white/5 border border-white/10',
-                          'text-white',
-                          'focus:outline-none focus:ring-2 focus:ring-cyan-500/50',
-                          'transition-all duration-200',
-                          '[color-scheme:dark]'
-                        )}
-                      />
-                      <span className="text-slate-500 text-xs">to</span>
-                      <input
-                        type="date"
-                        value={endIso}
-                        onChange={(e) => {
-                          const val = e.target.value
-                          const end = val ? new Date(val + 'T00:00:00').toISOString() : null
-                          updateTask(editingTaskId, { endDate: end ?? undefined })
-                          onDateChange?.(editingTaskId, { endDate: end })
-                          if (end && !startIso) {
-                            updateTask(editingTaskId, { startDate: end })
-                            onDateChange?.(editingTaskId, { startDate: end })
-                          }
-                        }}
-                        className={cn(
-                          'flex-1 px-3 py-2 rounded-lg text-sm',
-                          'bg-white/5 border border-white/10',
-                          'text-white',
-                          'focus:outline-none focus:ring-2 focus:ring-cyan-500/50',
-                          'transition-all duration-200',
-                          '[color-scheme:dark]'
-                        )}
-                      />
-                      {(startIso || endIso) && (
-                        <button
-                          onClick={() => {
-                            updateTask(editingTaskId, { startDate: undefined, endDate: undefined })
-                            onDateChange?.(editingTaskId, { startDate: null, endDate: null })
-                          }}
-                          className="p-1.5 rounded-lg hover:bg-white/10 text-slate-500 hover:text-red-400 transition-colors"
-                          title="Clear dates"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                    {startIso && endIso && (() => {
-                      const s = new Date(startIso)
-                      const e = new Date(endIso)
-                      const days = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)))
-                      const sameDay = s.toDateString() === e.toDateString()
-                      return (
-                        <p className="text-xs text-slate-500 mt-1">
-                          {sameDay ? '1 day' : `${days} days`}
-                        </p>
-                      )
-                    })()}
-                  </div>
-                )
-              })()}
+              {editingTaskId && (
+                <TaskDateSection taskId={editingTaskId} onDateChange={onDateChange} />
+              )}
 
               {editingTaskId && (
-                <div className="pt-4 border-t border-white/10">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm text-slate-400">Labels</label>
-                    <button
-                      onClick={() => setLabelPickerOpen(true)}
-                      className={cn(
-                        'flex items-center gap-1 px-2 py-1 rounded-md text-xs',
-                        'bg-white/5 border border-white/10 text-slate-400',
-                        'hover:bg-white/10 hover:text-white transition-all'
-                      )}
-                    >
-                      <Plus className="w-3 h-3" />
-                      {labels.filter(l => l.projectId === projectId).length === 0 ? 'Create label' : 'Manage'}
-                    </button>
-                  </div>
-                  {(() => {
-                    const task = tasks.find((t) => t.id === editingTaskId)
-                    const taskLabels = task?.labels ?? []
-                    const projectLabels = labels.filter((l) => l.projectId === projectId)
-                    const appliedLabels = projectLabels.filter(l => taskLabels.includes(l.id))
-
-                    if (appliedLabels.length === 0) return null
-
-                    return (
-                      <div className="flex flex-wrap gap-1.5">
-                        {appliedLabels.map((label) => {
-                          const lc = colorConfig[label.color as AccentColor]
-                          const isCustom = !lc
-                          const hex = label.color.startsWith('#') ? label.color : `#${label.color}`
-                          return (
-                            <span
-                              key={label.id}
-                              className={cn(
-                                'px-2.5 py-1 rounded-md text-xs font-medium flex items-center gap-1.5',
-                                'border',
-                                !isCustom && lc?.bg, !isCustom && lc?.border, !isCustom && lc?.text,
-                                isCustom && 'text-white'
-                              )}
-                              style={isCustom ? {
-                                backgroundColor: hexToRgba(hex, 0.15),
-                                borderColor: hexToRgba(hex, 0.3),
-                                color: hex,
-                              } : undefined}
-                            >
-                              <Tag className="w-3 h-3" />
-                              {label.name}
-                            </span>
-                          )
-                        })}
-                      </div>
-                    )
-                  })()}
-                  <LabelPicker
-                    taskId={editingTaskId}
-                    projectId={projectId}
-                    isOpen={labelPickerOpen}
-                    onClose={() => setLabelPickerOpen(false)}
-                    onLabelToggle={onLabelToggle}
-                  />
-                </div>
+                <TaskLabelsSection
+                  taskId={editingTaskId}
+                  projectId={projectId}
+                  onLabelToggle={onLabelToggle}
+                />
               )}
 
               <div className="pt-4 border-t border-white/10">

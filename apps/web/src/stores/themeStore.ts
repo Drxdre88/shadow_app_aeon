@@ -119,6 +119,11 @@ interface ThemeStore {
   setBoardActionToasts: (enabled: boolean) => void
   setBusinessMode: (enabled: boolean) => void
   setShortcut: (action: string, key: string) => void
+
+  _boardThemeSnapshot: { currentTheme: ThemeName; colors: ThemeColors } | null
+  _boardThemeProjectId: string | null
+  applyBoardTheme: (projectId: string, themeName: ThemeName) => void
+  clearBoardTheme: () => void
 }
 
 export const useThemeStore = create<ThemeStore>()((set) => ({
@@ -322,5 +327,41 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   },
   setShortcut: (action: string, key: string) => {
     set((s) => ({ shortcuts: { ...s.shortcuts, [action]: key } }))
+  },
+
+  _boardThemeSnapshot: null,
+  _boardThemeProjectId: null,
+  applyBoardTheme: (projectId: string, themeName: ThemeName) => {
+    set((s) => {
+      const newColors = themes[themeName] ?? themes.deepSpace
+      const snapshot = s._boardThemeSnapshot
+        ? s._boardThemeSnapshot
+        : { currentTheme: s.currentTheme, colors: s.colors }
+      if (s._boardThemeProjectId && s._boardThemeProjectId !== projectId) {
+        return {
+          _boardThemeSnapshot: { currentTheme: s.currentTheme, colors: s.colors },
+          _boardThemeProjectId: projectId,
+          currentTheme: themeName,
+          colors: newColors,
+        }
+      }
+      return {
+        _boardThemeSnapshot: snapshot,
+        _boardThemeProjectId: projectId,
+        currentTheme: themeName,
+        colors: newColors,
+      }
+    })
+  },
+  clearBoardTheme: () => {
+    set((s) => {
+      if (!s._boardThemeSnapshot) return {}
+      return {
+        currentTheme: s._boardThemeSnapshot.currentTheme,
+        colors: s._boardThemeSnapshot.colors,
+        _boardThemeSnapshot: null,
+        _boardThemeProjectId: null,
+      }
+    })
   },
 }))

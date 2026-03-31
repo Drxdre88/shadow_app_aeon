@@ -86,6 +86,13 @@ export async function updateProject(projectId: string, data: UpdateProjectInput)
   return project
 }
 
+export async function updateProjectSettings(projectId: string, settings: Record<string, unknown>) {
+  const userId = await requireEditor(projectId)
+  const project = await _updateProject(projectId, userId, { settings })
+  revalidatePath(`/project/${projectId}`)
+  return project
+}
+
 export async function deleteProject(projectId: string) {
   const userId = await requireOwnership(projectId)
   const deleted = await _deleteProject(projectId, userId)

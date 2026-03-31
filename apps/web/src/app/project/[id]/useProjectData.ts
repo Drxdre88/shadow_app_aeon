@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { loadBoardData } from '@/lib/actions/board'
 import { getRows, getGanttTasks } from '@/lib/actions/gantt'
 import { getGanttViews } from '@/lib/actions/ganttViews'
@@ -8,34 +8,33 @@ import { getCanvasNodes, getCanvasEdges } from '@/lib/actions/canvas'
 import { useBoardStore, isDirtyOrGracePeriod } from '@/lib/store/boardStore'
 import { useGanttStore } from '@/lib/store/ganttStore'
 import { useCanvasStore } from '@/lib/store/canvasStore'
-import { clearCrossedState } from '@/components/board/SortableTaskCard'
+
+const POLL_INTERVAL = 5_000
+
+async function fetchBoardVersion(projectId: string): Promise<number | null> {
+  try {
+    const res = await fetch(`/api/sync/version/${projectId}`)
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.version ?? null
+  } catch {
+    return null
+  }
+}
 
 export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' | 'canvas' | 'trophy' | 'velocity') {
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [loadKey, setLoadKey] = useState(0)
   const isInitialLoad = useRef(true)
 
   const { setTasks: setGanttTasks, setRows } = useGanttStore()
   const { setNodes: setCanvasNodes, setEdges: setCanvasEdges } = useCanvasStore()
 
   const fetchIdRef = useRef(0)
+  const knownVersionRef = useRef<number | null>(null)
+  const pollingRef = useRef(false)
 
-  useEffect(() => {
-    const cachedTasks = useBoardStore.getState().tasks
-    const hasCachedProject = cachedTasks.length > 0 && cachedTasks[0]?.projectId === projectId
-
-    if (isInitialLoad.current) {
-      if (!hasCachedProject) {
-        setIsLoading(true)
-        useBoardStore.setState({ columns: [], labels: [], dependencies: [] })
-        clearCrossedState()
-      }
-      setLoadError(null)
-      setGanttTasks([])
-      setRows([])
-    }
-
+  const doFullLoad = useCallback(() => {
     const currentFetchId = ++fetchIdRef.current
 
     loadBoardData(projectId)
@@ -101,18 +100,38 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
           checklistPreviews: dbChecklistPreviews,
           isDirty: false,
         })
+
+        setIsLoading(false)
+        isInitialLoad.current = false
       })
       .catch((err) => {
         console.error('Failed to load project data:', err)
         if (isInitialLoad.current) {
           setLoadError('Failed to load project data. Check your connection and try again.')
+          setIsLoading(false)
+          isInitialLoad.current = false
         }
       })
-      .finally(() => {
-        setIsLoading(false)
-        isInitialLoad.current = false
-      })
-  }, [projectId, loadKey])
+  }, [projectId])
+
+  useEffect(() => {
+    const cachedTasks = useBoardStore.getState().tasks
+    const hasCachedProject = cachedTasks.length > 0 && cachedTasks[0]?.projectId === projectId
+
+    isInitialLoad.current = true
+    knownVersionRef.current = null
+
+    if (!hasCachedProject) {
+      setIsLoading(true)
+      useBoardStore.setState({ columns: [], labels: [], dependencies: [] })
+      useBoardStore.getState().clearCrossedTasks()
+    }
+    setLoadError(null)
+    setGanttTasks([])
+    setRows([])
+
+    doFullLoad()
+  }, [projectId, doFullLoad, setGanttTasks, setRows])
 
   useEffect(() => {
     if (activeTab !== 'gantt' || isLoading) return
@@ -184,16 +203,35 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
   }, [activeTab, projectId, isLoading, setCanvasNodes, setCanvasEdges])
 
   useEffect(() => {
-    const POLL_INTERVAL = 3_000
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        setLoadKey((k) => k + 1)
+    const poll = async () => {
+      if (document.visibilityState !== 'visible') return
+      if (isDirtyOrGracePeriod()) return
+      if (pollingRef.current) return
+      pollingRef.current = true
+
+      try {
+        const serverVersion = await fetchBoardVersion(projectId)
+        if (serverVersion === null) return
+
+        if (knownVersionRef.current === null) {
+          knownVersionRef.current = serverVersion
+          return
+        }
+
+        if (serverVersion !== knownVersionRef.current) {
+          knownVersionRef.current = serverVersion
+          doFullLoad()
+        }
+      } finally {
+        pollingRef.current = false
       }
-    }, POLL_INTERVAL)
+    }
+
+    const interval = setInterval(poll, POLL_INTERVAL)
 
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        setLoadKey((k) => k + 1)
+        poll()
       }
     }
     document.addEventListener('visibilitychange', handleVisibility)
@@ -202,9 +240,12 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
       clearInterval(interval)
       document.removeEventListener('visibilitychange', handleVisibility)
     }
-  }, [])
+  }, [projectId, doFullLoad])
 
-  const triggerReload = () => setLoadKey((k) => k + 1)
+  const triggerReload = useCallback(() => {
+    knownVersionRef.current = null
+    doFullLoad()
+  }, [doFullLoad])
 
   return {
     isLoading,
