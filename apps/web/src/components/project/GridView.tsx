@@ -21,6 +21,7 @@ import {
   addRecentColor,
 } from '@/lib/utils/colors'
 import { cn } from '@/lib/utils/cn'
+import { ProjectContextMenu, type RealmInfo } from './ProjectContextMenu'
 import type { ProjectWithStats } from './types'
 
 interface GridViewProps {
@@ -29,6 +30,9 @@ interface GridViewProps {
   onDelete?: (id: string) => void
   onShare?: (project: ProjectWithStats) => void
   onGroupChange?: (projectId: string, newGroup: string | null) => void
+  realms?: RealmInfo[]
+  projectRealmMap?: Record<string, string[]>
+  onToggleRealm?: (projectId: string, realmId: string) => void
   layout?: 'scroll' | 'wrap'
   onLayoutChange?: (layout: 'scroll' | 'wrap') => void
 }
@@ -67,11 +71,12 @@ function SortableProjectCard({ project, children }: { project: ProjectWithStats;
   )
 }
 
-export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, layout: controlledLayout }: GridViewProps) {
+export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, realms, projectRealmMap, onToggleRealm, layout: controlledLayout }: GridViewProps) {
   const { glowIntensity, projectColors, setProjectColor, shortcuts } = useThemeStore()
   const [hoveredProjectId, setHoveredProjectId] = useState<string | null>(null)
   const [colorPickerProjectId, setColorPickerProjectId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: ProjectWithStats } | null>(null)
   const layout = controlledLayout ?? 'wrap'
   const [groupOrder, setGroupOrder] = useState<string[]>([])
   const [draggedGroup, setDraggedGroup] = useState<string | null>(null)
@@ -205,7 +210,14 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, l
     const projectColor = (projectColors[project.id] || 'purple') as AccentColor
     return (
       <SortableProjectCard key={project.id} project={project}>
-        <div className={cn('relative w-72', layout === 'scroll' && 'shrink-0')} data-project-id={project.id}>
+        <div
+          className={cn('relative w-72', layout === 'scroll' && 'shrink-0')}
+          data-project-id={project.id}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            setContextMenu({ x: e.clientX, y: e.clientY, project })
+          }}
+        >
           <Link href={`/project/${project.id}`} draggable={false}>
             <GlowCard accentColor={projectColor} glowIntensity="sm" showAccentLine hover>
               <div className="p-3">
@@ -386,17 +398,19 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, l
                   dragOverGroup === label && draggedGroup && draggedGroup !== label && 'border-t-2 border-[color:var(--primary)]/60',
                 )}
               >
-                <div
-                  className="flex items-center gap-2 mb-3 cursor-grab active:cursor-grabbing group/header"
-                  draggable
-                  onDragStart={() => setDraggedGroup(label)}
-                  onDragEnd={() => { setDraggedGroup(null); setDragOverGroup(null) }}
-                >
-                  <GripVertical className="w-3.5 h-3.5 text-slate-700 group-hover/header:text-slate-500 transition-colors shrink-0" />
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-dim)]">{label}</h3>
-                  <span className="text-[10px] text-slate-600">{groupItems.length}</span>
-                  <div className="flex-1 h-px bg-white/[0.06]" />
-                </div>
+                {groups.length > 1 && (
+                  <div
+                    className="flex items-center gap-2 mb-3 cursor-grab active:cursor-grabbing group/header"
+                    draggable
+                    onDragStart={() => setDraggedGroup(label)}
+                    onDragEnd={() => { setDraggedGroup(null); setDragOverGroup(null) }}
+                  >
+                    <GripVertical className="w-3.5 h-3.5 text-slate-700 group-hover/header:text-slate-500 transition-colors shrink-0" />
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-dim)]">{label}</h3>
+                    <span className="text-[10px] text-slate-600">{groupItems.length}</span>
+                    <div className="flex-1 h-px bg-white/[0.06]" />
+                  </div>
+                )}
                 <div className={layout === 'scroll' ? 'flex gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent' : 'flex flex-wrap gap-4'}>
                   {groupItems.map(renderCard)}
                 </div>
@@ -415,6 +429,21 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, l
           </div>
         )}
       </DragOverlay>
+      {contextMenu && realms && (
+        <ProjectContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          projectId={contextMenu.project.id}
+          projectName={contextMenu.project.name}
+          realms={realms}
+          projectRealmIds={projectRealmMap?.[contextMenu.project.id] ?? []}
+          onClose={() => setContextMenu(null)}
+          onEdit={() => onEdit(contextMenu.project)}
+          onShare={() => onShare?.(contextMenu.project)}
+          onDelete={() => handleDelete({ preventDefault: () => {}, stopPropagation: () => {} } as React.MouseEvent, contextMenu.project.id)}
+          onToggleRealm={(realmId) => onToggleRealm?.(contextMenu.project.id, realmId)}
+        />
+      )}
     </DndContext>
   )
 }

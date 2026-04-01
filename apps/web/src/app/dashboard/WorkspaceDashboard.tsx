@@ -2,8 +2,10 @@
 
 import { useMemo } from 'react'
 import { motion } from 'framer-motion'
+
 import { Settings, Orbit } from 'lucide-react'
 import { ProjectViewSwitcher } from '@/components/project/ProjectViewSwitcher'
+import type { RealmInfo } from '@/components/project/ProjectContextMenu'
 import type { ProjectViewMode } from '@/components/project/useViewPreference'
 import type { ProjectWithStats } from '@/components/project/types'
 
@@ -29,13 +31,16 @@ interface WorkspaceDashboardProps {
   onShare: (project: ProjectWithStats) => void
   onDelete?: (id: string) => void
   onGroupChange?: (projectId: string, newGroup: string | null) => void
+  realms?: RealmInfo[]
+  projectRealmMap?: Record<string, string[]>
+  onToggleRealm?: (projectId: string, realmId: string) => void
   onOpenSettings: (ws: { id: string; name: string; isOwner: boolean; isPersonal: boolean }) => void
   onCreateWorkspace: () => void
 }
 
 export function WorkspaceDashboard({
   workspaces, sharedProjects = [], section, view, onViewChange, gridLayout, onGridLayoutChange,
-  onEdit, onShare, onDelete, onGroupChange, onOpenSettings,
+  onEdit, onShare, onDelete, onGroupChange, realms, projectRealmMap, onToggleRealm, onOpenSettings,
 }: WorkspaceDashboardProps) {
   const personalWorkspaces = useMemo(() => workspaces.filter((ws) => ws.isPersonal), [workspaces])
   const teamWorkspaces = useMemo(() => workspaces.filter((ws) => !ws.isPersonal), [workspaces])
@@ -54,6 +59,9 @@ export function WorkspaceDashboard({
         onDelete={onDelete}
         onShare={onShare}
         onGroupChange={onGroupChange}
+        realms={realms}
+        projectRealmMap={projectRealmMap}
+        onToggleRealm={onToggleRealm}
         view={view}
         onViewChange={onViewChange}
         layout={gridLayout}
@@ -90,6 +98,9 @@ export function WorkspaceDashboard({
           onShare={onShare}
           onDelete={onDelete}
           onGroupChange={onGroupChange}
+          realms={realms}
+          projectRealmMap={projectRealmMap}
+          onToggleRealm={onToggleRealm}
           onOpenSettings={onOpenSettings}
         />
       ))}
@@ -107,10 +118,18 @@ interface WorkspaceSectionProps {
   onShare: (project: ProjectWithStats) => void
   onDelete?: (id: string) => void
   onGroupChange?: (projectId: string, newGroup: string | null) => void
+  realms?: RealmInfo[]
+  projectRealmMap?: Record<string, string[]>
+  onToggleRealm?: (projectId: string, realmId: string) => void
   onOpenSettings: (ws: { id: string; name: string; isOwner: boolean; isPersonal: boolean }) => void
 }
 
-function WorkspaceSection({ workspace: ws, view, onViewChange, gridLayout, onGridLayoutChange, onEdit, onShare, onDelete, onGroupChange, onOpenSettings }: WorkspaceSectionProps) {
+function WorkspaceSection({ workspace: ws, view, onViewChange, gridLayout, onGridLayoutChange, onEdit, onShare, onDelete, onGroupChange, realms, projectRealmMap, onToggleRealm, onOpenSettings }: WorkspaceSectionProps) {
+  const flatProjects = useMemo(() =>
+    ws.projects.map((p) => ({ ...p, group: null })),
+    [ws.projects]
+  )
+
   return (
     <div>
       <div className="flex items-center gap-2 mb-3 group/ws">
@@ -132,11 +151,14 @@ function WorkspaceSection({ workspace: ws, view, onViewChange, gridLayout, onGri
       </div>
       {ws.projects.length > 0 ? (
         <ProjectViewSwitcher
-          projects={ws.projects}
+          projects={flatProjects}
           onEdit={onEdit}
           onDelete={onDelete}
           onShare={onShare}
           onGroupChange={onGroupChange}
+          realms={realms}
+          projectRealmMap={projectRealmMap}
+          onToggleRealm={onToggleRealm}
           view={view}
           onViewChange={onViewChange}
           layout={gridLayout}
