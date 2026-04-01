@@ -1,7 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
-import { Plus, LogOut, Crown, LayoutGrid, Rows3, User, Share2, Building2 } from 'lucide-react'
+import { Plus, LogOut, Crown, LayoutGrid, Rows3, User, Orbit } from 'lucide-react'
 import { signOut } from 'next-auth/react'
 import Image from 'next/image'
 import aeonLogo from '@/assets/aeon.png'
@@ -14,29 +14,29 @@ import type { ProjectViewMode } from '@/components/project/useViewPreference'
 import { useThemeStore } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
 
-export type DashboardTab = 'mine' | 'shared' | 'workspaces'
+export type DashboardSection = 'personal' | 'team'
 
-export const DASHBOARD_TABS: { id: DashboardTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { id: 'mine', label: 'Mine', icon: User },
-  { id: 'shared', label: 'Shared', icon: Share2 },
-  { id: 'workspaces', label: 'Workspaces', icon: Building2 },
+const SECTIONS: { id: DashboardSection; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: 'personal', label: 'Personal', icon: User },
+  { id: 'team', label: 'Team', icon: Orbit },
 ]
 
 interface DashboardHeaderProps {
   user: { name?: string | null; email?: string | null; image?: string | null; role: string }
   hasProjects: boolean
-  dashboardTab: DashboardTab
-  onTabChange: (tab: DashboardTab) => void
+  section: DashboardSection
+  onSectionChange: (section: DashboardSection) => void
   view: ProjectViewMode
   onViewChange: (view: ProjectViewMode) => void
   gridLayout: 'scroll' | 'wrap'
   onGridLayoutChange: (layout: 'scroll' | 'wrap') => void
   onCreateProject: () => void
+  onCreateWorkspace: () => void
 }
 
 export function DashboardHeader({
-  user, hasProjects, dashboardTab, onTabChange,
-  view, onViewChange, gridLayout, onGridLayoutChange, onCreateProject,
+  user, hasProjects, section, onSectionChange,
+  view, onViewChange, gridLayout, onGridLayoutChange, onCreateProject, onCreateWorkspace,
 }: DashboardHeaderProps) {
   const { glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
@@ -79,18 +79,27 @@ export function DashboardHeader({
             <Plus className="w-3.5 h-3.5" />
             New Project
           </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={onCreateWorkspace}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-slate-300 hover:text-white"
+          >
+            <Orbit className="w-3.5 h-3.5" />
+            New Realm
+          </motion.button>
 
           {hasProjects && (
             <>
               <div className="hidden sm:block h-5 w-px bg-white/10 mx-1" />
               <div className="hidden sm:flex items-center bg-white/5 rounded-lg border border-white/10 p-0.5">
-                {DASHBOARD_TABS.map((tab) => {
-                  const Icon = tab.icon
-                  const isActive = dashboardTab === tab.id
+                {SECTIONS.map((s) => {
+                  const Icon = s.icon
+                  const isActive = section === s.id
                   return (
                     <button
-                      key={tab.id}
-                      onClick={() => onTabChange(tab.id)}
+                      key={s.id}
+                      onClick={() => onSectionChange(s.id)}
                       className={cn(
                         'relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors',
                         isActive ? 'text-white' : 'text-[var(--text-dim)] hover:text-[var(--text-muted)]'
@@ -98,13 +107,13 @@ export function DashboardHeader({
                     >
                       {isActive && (
                         <motion.div
-                          layoutId="dashboard-tab-indicator"
+                          layoutId="ws-section-indicator"
                           className="absolute inset-0 bg-white/10 rounded-md border border-white/10"
                           transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
                         />
                       )}
                       <Icon className="w-3.5 h-3.5 relative z-10" />
-                      <span className="relative z-10 hidden lg:inline">{tab.label}</span>
+                      <span className="relative z-10 hidden lg:inline">{s.label}</span>
                     </button>
                   )
                 })}

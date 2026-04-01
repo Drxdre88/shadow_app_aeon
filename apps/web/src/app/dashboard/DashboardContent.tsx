@@ -1,21 +1,20 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Share2 } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { CreateProjectModal } from '@/components/project/CreateProjectModal'
-import { getProjectsWithStats, getSharedProjects, getWorkspaceProjects } from '@/lib/actions/projects'
-import { migrateGroupsToWorkspaces, createGroup } from '@/lib/actions/workspaces'
+import { getWorkspaceProjects, getSharedProjects } from '@/lib/actions/projects'
+import { ensurePersonalWorkspace, createGroup } from '@/lib/actions/workspaces'
 import { WorkspaceSettingsModal } from '@/components/workspace/WorkspaceSettingsModal'
 import { CreateWorkspaceModal } from '@/components/workspace/CreateWorkspaceModal'
 import { EditProjectModal } from '@/components/project/EditProjectModal'
-import { ProjectViewSwitcher } from '@/components/project/ProjectViewSwitcher'
-import { useViewPreference, type ProjectViewMode } from '@/components/project/useViewPreference'
 import { ShareModal } from '@/components/board/ShareModal'
 import { GlassStage } from '@/components/ui/GlassStage'
-import { DashboardHeader, type DashboardTab } from './DashboardHeader'
-import { WorkspacesTab, type WorkspaceGroup } from './WorkspacesTab'
+import { useViewPreference, type ProjectViewMode } from '@/components/project/useViewPreference'
+import { DashboardHeader, type DashboardSection } from './DashboardHeader'
+import { WorkspaceDashboard, type WorkspaceGroup } from './WorkspaceDashboard'
 import type { ProjectWithStats } from '@/components/project/types'
 
 interface DashboardContentProps {
@@ -30,88 +29,77 @@ interface DashboardContentProps {
 }
 
 export default function DashboardContent({ user, projects: initialProjects }: DashboardContentProps) {
-  const [projects, setProjects] = useState(initialProjects)
+  const [workspaces, setWorkspaces] = useState<WorkspaceGroup[]>([])
+  const [sharedProjects, setSharedProjects] = useState<ProjectWithStats[]>([])
+  const [loaded, setLoaded] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingProject, setEditingProject] = useState<ProjectWithStats | null>(null)
   const [sharingProject, setSharingProject] = useState<ProjectWithStats | null>(null)
-  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('mine')
-  const [sharedProjects, setSharedProjects] = useState<ProjectWithStats[]>([])
-  const [workspaceData, setWorkspaceData] = useState<WorkspaceGroup[]>([])
-  const [tabLoaded, setTabLoaded] = useState<Record<DashboardTab, boolean>>({ mine: true, shared: false, workspaces: false })
-  const [migrationDone, setMigrationDone] = useState(false)
-  const [workspaceSettingsId, setWorkspaceSettingsId] = useState<{ id: string; name: string; isOwner: boolean } | null>(null)
+  const [workspaceSettingsId, setWorkspaceSettingsId] = useState<{ id: string; name: string; isOwner: boolean; isPersonal: boolean } | null>(null)
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false)
-  const existingGroups = [...new Set(projects.map((p) => p.group).filter((g): g is string => !!g && g !== 'General'))].sort()
+  const existingGroups = [...new Set(initialProjects.map((p) => p.group).filter((g): g is string => !!g && g !== 'General'))].sort()
 
   const [view, setView] = useViewPreference()
   const [gridLayout, setGridLayout] = useState<'scroll' | 'wrap'>('wrap')
+  const [section, setSection] = useState<DashboardSection>('personal')
+  useEffect(() => {
+    const saved = localStorage.getItem('aeon-ws-section') as DashboardSection
+    if (saved === 'team') setSection('team')
+  }, [])
+  const handleSectionChange = useCallback((s: DashboardSection) => {
+    setSection(s)
+    localStorage.setItem('aeon-ws-section', s)
+  }, [])
+  const workspaceInitRef = useRef(false)
+  const fetchGenRef = useRef(0)
+
+  const loadWorkspaces = useCallback(async () => {
+    const gen = ++fetchGenRef.current
+    const [wsData, sharedData] = await Promise.all([
+      getWorkspaceProjects(),
+      getSharedProjects(),
+    ])
+
+    if (gen !== fetchGenRef.current) return
+
+    const mapped: WorkspaceGroup[] = wsData.map((g) => ({
+      groupId: g.groupId,
+      groupName: g.groupName,
+      groupColor: g.groupColor ?? 'purple',
+      isPersonal: g.isPersonal,
+      memberCount: g.memberCount,
+      isOwner: g.ownerId === user.id || g.memberRole === 'owner',
+      projects: g.projects.map((p) => ({ ...p, totalTasks: 0, doneTasks: 0, completionPct: 0 })) as ProjectWithStats[],
+    }))
+
+    const shared = sharedData.map((p) => ({ ...p, totalTasks: 0, doneTasks: 0, completionPct: 0 })) as ProjectWithStats[]
+    setSharedProjects(shared)
+
+    const personal = mapped.filter((g) => g.isPersonal)
+    const team = mapped.filter((g) => !g.isPersonal).sort((a, b) => a.groupName.localeCompare(b.groupName))
+    setWorkspaces([...personal, ...team])
+    setLoaded(true)
+  }, [user.id])
 
   useEffect(() => {
-    let alive = true
+    if (workspaceInitRef.current) return
+    workspaceInitRef.current = true
+    ensurePersonalWorkspace()
+      .then(() => loadWorkspaces())
+      .catch((err) => console.error('Personal workspace setup failed:', err))
+  }, [loadWorkspaces])
+
+  useEffect(() => {
+    if (!loaded) return
     const refresh = () => {
       if (document.visibilityState === 'visible') {
-        getProjectsWithStats().then((data) => { if (alive) setProjects(data) }).catch(() => {})
+        loadWorkspaces().catch(() => {})
       }
     }
     const interval = setInterval(refresh, 10_000)
     document.addEventListener('visibilitychange', refresh)
-    return () => { alive = false; clearInterval(interval); document.removeEventListener('visibilitychange', refresh) }
-  }, [])
-
-  useEffect(() => {
-    if (migrationDone) return
-    let cancelled = false
-    const attempt = async (retries: number) => {
-      if (retries >= 3 || cancelled) return
-      try {
-        const count = await migrateGroupsToWorkspaces()
-        if (cancelled) return
-        setMigrationDone(true)
-        if (count > 0) setTabLoaded((prev) => ({ ...prev, workspaces: false }))
-      } catch (err) {
-        console.error('Workspace migration failed:', err)
-        if (!cancelled) setTimeout(() => attempt(retries + 1), 2000 * (retries + 1))
-      }
-    }
-    attempt(0)
-    return () => { cancelled = true }
-  }, [migrationDone])
-
-  const handleWorkspaceCreate = async (name: string) => {
-    await createGroup({ name })
-    setTabLoaded((prev) => ({ ...prev, workspaces: false }))
-    setDashboardTab('workspaces')
-  }
-
-  const refreshWorkspaces = () => {
-    setTabLoaded((prev) => ({ ...prev, workspaces: false }))
-  }
-
-  useEffect(() => {
-    if (dashboardTab === 'shared' && !tabLoaded.shared) {
-      getSharedProjects()
-        .then((data) => {
-          setSharedProjects(data.map((p) => ({ ...p, totalTasks: 0, doneTasks: 0, completionPct: 0 })) as ProjectWithStats[])
-          setTabLoaded((prev) => ({ ...prev, shared: true }))
-        })
-        .catch((err) => console.error('Failed to load shared projects:', err))
-    }
-    if (dashboardTab === 'workspaces' && !tabLoaded.workspaces) {
-      getWorkspaceProjects()
-        .then((data) => {
-          setWorkspaceData(data.map((g) => ({
-            groupId: g.groupId,
-            groupName: g.groupName,
-            groupColor: g.groupColor ?? 'purple',
-            memberCount: g.memberCount,
-            isOwner: g.ownerId === user.id || g.memberRole === 'owner',
-            projects: g.projects.map((p) => ({ ...p, totalTasks: 0, doneTasks: 0, completionPct: 0 })) as ProjectWithStats[],
-          })))
-          setTabLoaded((prev) => ({ ...prev, workspaces: true }))
-        })
-        .catch((err) => console.error('Failed to load workspaces:', err))
-    }
-  }, [dashboardTab, tabLoaded, user.id])
+    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', refresh) }
+  }, [loaded, loadWorkspaces])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -126,6 +114,13 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [showCreateModal, editingProject, sharingProject])
 
+  const handleWorkspaceCreate = async (name: string) => {
+    await createGroup({ name })
+    await loadWorkspaces()
+  }
+
+  const hasProjects = workspaces.some((ws) => ws.projects.length > 0) || initialProjects.length > 0
+
   return (
     <div className="min-h-screen">
       <GlassStage
@@ -139,83 +134,40 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
 
       <DashboardHeader
         user={user}
-        hasProjects={projects.length > 0}
-        dashboardTab={dashboardTab}
-        onTabChange={setDashboardTab}
+        hasProjects={hasProjects}
+        section={section}
+        onSectionChange={handleSectionChange}
         view={view}
         onViewChange={setView}
         gridLayout={gridLayout}
         onGridLayoutChange={setGridLayout}
         onCreateProject={() => setShowCreateModal(true)}
+        onCreateWorkspace={() => setShowCreateWorkspace(true)}
       />
 
       <main className="px-3 sm:px-6 py-3 relative z-10">
-        {dashboardTab === 'mine' && (
-          projects.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              className="flex flex-col items-center justify-center py-16 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]"
-            >
-              <p className="text-[var(--text-muted)] mb-1">No projects yet</p>
-              <p className="text-sm text-[var(--text-dim)] mb-6">Create your first project to get started</p>
-              <NeonButton color="purple" glowIntensity="md" onClick={() => setShowCreateModal(true)}>
-                <span className="flex items-center gap-2">
-                  <Plus className="w-4 h-4" />
-                  Create First Project
-                </span>
-              </NeonButton>
-            </motion.div>
-          ) : (
-            <ProjectViewSwitcher
-              projects={projects}
-              onEdit={setEditingProject}
-              onDelete={(id) => setProjects((prev) => prev.filter((p) => p.id !== id))}
-              onShare={setSharingProject}
-              onGroupChange={(projectId, newGroup) => {
-                setProjects((prev) => prev.map((p) =>
-                  p.id === projectId ? { ...p, group: newGroup ?? undefined } as ProjectWithStats : p
-                ))
-              }}
-              view={view}
-              onViewChange={setView}
-              layout={gridLayout}
-              onLayoutChange={setGridLayout}
-            />
-          )
-        )}
-
-        {dashboardTab === 'shared' && (
-          !tabLoaded.shared ? (
-            <div className="flex items-center justify-center py-16 text-sm text-[var(--text-dim)]">Loading shared projects...</div>
-          ) : sharedProjects.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex flex-col items-center justify-center py-16 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]"
-            >
-              <Share2 className="w-8 h-8 text-[var(--text-dim)] mb-3" />
-              <p className="text-[var(--text-muted)] mb-1">No shared projects</p>
-              <p className="text-sm text-[var(--text-dim)]">Projects shared with you will appear here</p>
-            </motion.div>
-          ) : (
-            <ProjectViewSwitcher
-              projects={sharedProjects}
-              onEdit={setEditingProject}
-              onShare={setSharingProject}
-              view={view}
-              onViewChange={setView}
-              layout={gridLayout}
-              onLayoutChange={setGridLayout}
-            />
-          )
-        )}
-
-        {dashboardTab === 'workspaces' && (
-          <WorkspacesTab
-            loaded={tabLoaded.workspaces}
-            workspaceData={workspaceData}
+        {!loaded ? (
+          <div className="flex items-center justify-center py-16 text-sm text-[var(--text-dim)]">Loading realms...</div>
+        ) : workspaces.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="flex flex-col items-center justify-center py-16 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]"
+          >
+            <p className="text-[var(--text-muted)] mb-1">No projects yet</p>
+            <p className="text-sm text-[var(--text-dim)] mb-6">Create your first project to get started</p>
+            <NeonButton color="purple" glowIntensity="md" onClick={() => setShowCreateModal(true)}>
+              <span className="flex items-center gap-2">
+                <Plus className="w-4 h-4" />
+                Create First Project
+              </span>
+            </NeonButton>
+          </motion.div>
+        ) : (
+          <WorkspaceDashboard
+            workspaces={workspaces}
+            section={section}
             view={view}
             onViewChange={setView}
             gridLayout={gridLayout}
@@ -224,6 +176,9 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
             onShare={setSharingProject}
             onOpenSettings={setWorkspaceSettingsId}
             onCreateWorkspace={() => setShowCreateWorkspace(true)}
+            sharedProjects={sharedProjects}
+            onDelete={() => loadWorkspaces().catch(() => {})}
+            onGroupChange={() => loadWorkspaces().catch(() => {})}
           />
         )}
       </main>
@@ -251,8 +206,9 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
           groupId={workspaceSettingsId.id}
           groupName={workspaceSettingsId.name}
           isOwner={workspaceSettingsId.isOwner}
+          isPersonal={workspaceSettingsId.isPersonal}
           onClose={() => setWorkspaceSettingsId(null)}
-          onUpdated={refreshWorkspaces}
+          onUpdated={loadWorkspaces}
         />
       )}
       <CreateWorkspaceModal

@@ -15,7 +15,10 @@ import {
   deleteWorkspaceGroup as _delete,
   getGroupRole,
   canAccessProject,
-  migrateTextGroupsToWorkspaces as _migrate,
+  isPersonalWorkspace as _isPersonal,
+  findOrCreatePersonalWorkspace as _findOrCreatePersonal,
+  ensureOrphanProjectsInPersonalWorkspace as _ensureOrphans,
+  consolidateSoloWorkspaces as _consolidateSolo,
 } from '@/lib/data/workspaces'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
@@ -121,10 +124,14 @@ export async function updateGroup(groupId: string, data: { name?: string; icon?:
 
 export async function deleteGroup(groupId: string) {
   await requireGroupOwner(groupId)
+  if (await _isPersonal(groupId)) throw new Error('Cannot delete personal workspace')
   return _delete(groupId)
 }
 
-export async function migrateGroupsToWorkspaces() {
+export async function ensurePersonalWorkspace() {
   const userId = await requireAuth()
-  return _migrate(userId)
+  const personalId = await _findOrCreatePersonal(userId)
+  const orphans = await _ensureOrphans(userId)
+  const consolidated = await _consolidateSolo(userId)
+  return orphans + consolidated
 }

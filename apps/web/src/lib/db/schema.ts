@@ -1,4 +1,5 @@
 import { pgTable, uuid, varchar, text, timestamp, integer, boolean, jsonb, primaryKey, real, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -86,10 +87,13 @@ export const workspaceGroups = pgTable('workspace_groups', {
   ownerId: uuid('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   icon: varchar('icon', { length: 50 }),
   color: varchar('color', { length: 20 }).default('purple').notNull(),
+  isPersonal: boolean('is_personal').default(false).notNull(),
   settings: jsonb('settings').default({}).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-})
+}, (table) => ({
+  personalPerUser: uniqueIndex('workspace_groups_personal_per_user').on(table.ownerId).where(sql`is_personal = true`),
+}))
 
 export const groupMembers = pgTable('group_members', {
   groupId: uuid('group_id').notNull().references(() => workspaceGroups.id, { onDelete: 'cascade' }),

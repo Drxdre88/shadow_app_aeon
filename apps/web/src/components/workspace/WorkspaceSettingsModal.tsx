@@ -23,6 +23,7 @@ interface WorkspaceSettingsModalProps {
   groupId: string
   groupName: string
   isOwner: boolean
+  isPersonal?: boolean
   onClose: () => void
   onUpdated?: () => void
 }
@@ -45,7 +46,7 @@ type GroupProjectRow = {
 
 const ROLE_OPTIONS = ['editor', 'viewer'] as const
 
-export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, onClose, onUpdated }: WorkspaceSettingsModalProps) {
+export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, isPersonal, onClose, onUpdated }: WorkspaceSettingsModalProps) {
   const [tab, setTab] = useState<'members' | 'projects'>('members')
   const [members, setMembers] = useState<GroupMemberRow[]>([])
   const [groupProjects, setGroupProjects] = useState<GroupProjectRow[]>([])
@@ -315,7 +316,7 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, on
             {tab === 'projects' && (
               <>
                 <div className="space-y-1">
-                  <p className="text-xs text-slate-500 uppercase tracking-wider px-1 mb-2">In Workspace</p>
+                  <p className="text-xs text-slate-500 uppercase tracking-wider px-1 mb-2">In Realm</p>
                   {groupProjects.length === 0 ? (
                     <p className="text-xs text-slate-600 px-1 py-3">No projects added yet</p>
                   ) : groupProjects.map((p) => (
@@ -342,7 +343,7 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, on
 
                 {isOwner && availableProjects.length > 0 && (
                   <div className="space-y-1 border-t border-white/10 pt-4">
-                    <p className="text-xs text-slate-500 uppercase tracking-wider px-1 mb-2">Add to Workspace</p>
+                    <p className="text-xs text-slate-500 uppercase tracking-wider px-1 mb-2">Add to Realm</p>
                     {availableProjects.map((p) => (
                       <button
                         key={p.id}
