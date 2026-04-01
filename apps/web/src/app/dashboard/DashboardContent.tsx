@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Plus } from 'lucide-react'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { CreateProjectModal } from '@/components/project/CreateProjectModal'
 import { getWorkspaceProjects, getSharedProjects } from '@/lib/actions/projects'
-import { ensurePersonalWorkspace, createGroup } from '@/lib/actions/workspaces'
+import { ensurePersonalWorkspace, createGroup, addProjectToGroup, removeProjectFromGroup } from '@/lib/actions/workspaces'
+import type { RealmInfo } from '@/components/project/ProjectContextMenu'
 import { WorkspaceSettingsModal } from '@/components/workspace/WorkspaceSettingsModal'
 import { CreateWorkspaceModal } from '@/components/workspace/CreateWorkspaceModal'
 import { EditProjectModal } from '@/components/project/EditProjectModal'
@@ -80,6 +81,52 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
     setWorkspaces([...personal, ...team])
     setLoaded(true)
   }, [user.id])
+
+  const realms: RealmInfo[] = useMemo(() =>
+    workspaces.map((ws) => ({ id: ws.groupId, name: ws.groupName, color: ws.groupColor, isPersonal: ws.isPersonal })),
+    [workspaces]
+  )
+
+  const projectRealmMap: Record<string, string[]> = useMemo(() => {
+    const map: Record<string, string[]> = {}
+    for (const ws of workspaces) {
+      if (ws.isPersonal) continue
+      for (const p of ws.projects) {
+        if (!map[p.id]) map[p.id] = []
+        map[p.id].push(ws.groupId)
+      }
+    }
+    return map
+  }, [workspaces])
+
+  const handleToggleRealm = useCallback(async (projectId: string, realmId: string) => {
+    const ws = workspaces.find((w) => w.groupId === realmId)
+    if (!ws) return
+    const isCurrentlyIn = ws.projects.some((p) => p.id === projectId)
+
+    if (isCurrentlyIn) {
+      setWorkspaces((prev) => prev.map((w) =>
+        w.groupId === realmId ? { ...w, projects: w.projects.filter((p) => p.id !== projectId) } : w
+      ))
+      try {
+        await removeProjectFromGroup(projectId, realmId)
+      } catch {
+        loadWorkspaces()
+      }
+    } else {
+      const allProjects = workspaces.flatMap((w) => w.projects)
+      const project = allProjects.find((p) => p.id === projectId) || sharedProjects.find((p) => p.id === projectId)
+      if (!project) return
+      setWorkspaces((prev) => prev.map((w) =>
+        w.groupId === realmId ? { ...w, projects: [...w.projects, project] } : w
+      ))
+      try {
+        await addProjectToGroup(projectId, realmId)
+      } catch {
+        loadWorkspaces()
+      }
+    }
+  }, [workspaces, sharedProjects, loadWorkspaces])
 
   useEffect(() => {
     if (workspaceInitRef.current) return
@@ -177,6 +224,9 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
             onOpenSettings={setWorkspaceSettingsId}
             onCreateWorkspace={() => setShowCreateWorkspace(true)}
             sharedProjects={sharedProjects}
+            realms={realms}
+            projectRealmMap={projectRealmMap}
+            onToggleRealm={handleToggleRealm}
             onDelete={() => loadWorkspaces().catch(() => {})}
             onGroupChange={() => loadWorkspaces().catch(() => {})}
           />
@@ -190,6 +240,9 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
           project={editingProject}
           onClose={() => setEditingProject(null)}
           existingGroups={existingGroups}
+          realms={realms}
+          projectRealmIds={projectRealmMap[editingProject.id] ?? []}
+          onRealmToggled={loadWorkspaces}
         />
       )}
       {sharingProject && (

@@ -95,6 +95,25 @@ export const glowIntensity = {
 
 export const ACCENT_COLORS: AccentColor[] = ['purple', 'blue', 'cyan', 'green', 'pink', 'orange', 'red']
 
+export function hexToAccent(color: string): AccentColor {
+  if (!color.startsWith('#')) return (color in colorConfig ? color : 'purple') as AccentColor
+  const hex = color.toLowerCase()
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  let best: AccentColor = 'purple'
+  let bestDist = Infinity
+  for (const name of ACCENT_COLORS) {
+    const h = colorConfig[name].hex
+    const dr = r - parseInt(h.slice(1, 3), 16)
+    const dg = g - parseInt(h.slice(3, 5), 16)
+    const db = b - parseInt(h.slice(5, 7), 16)
+    const dist = dr * dr + dg * dg + db * db
+    if (dist < bestDist) { bestDist = dist; best = name }
+  }
+  return best
+}
+
 export const PALETTE_COLORS = [
   '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e', '#10b981',
   '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7',

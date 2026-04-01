@@ -1,18 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Loader2, Palette } from 'lucide-react'
+import { X, Loader2, Palette, Check } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils/cn'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { updateProject, setProjectGroup } from '@/lib/actions/projects'
+import { addProjectToGroup, removeProjectFromGroup } from '@/lib/actions/workspaces'
 import { useRouter } from 'next/navigation'
 import { useThemeStore } from '@/stores/themeStore'
 import aeonLogo from '@/assets/aeon.png'
 import { ColorSwatchPicker } from '@/components/board/ColorSwatchPicker'
 import { PlanetPicker } from './PlanetPicker'
-import { AccentColor, colorConfig } from '@/lib/utils/colors'
+import { AccentColor, colorConfig, hexToAccent } from '@/lib/utils/colors'
+import type { RealmInfo } from './ProjectContextMenu'
 import type { Project } from '@/lib/db/schema'
 
 interface EditProjectModalProps {
@@ -20,15 +22,19 @@ interface EditProjectModalProps {
   project: Project
   onClose: () => void
   existingGroups?: string[]
+  realms?: RealmInfo[]
+  projectRealmIds?: string[]
+  onRealmToggled?: () => void
 }
 
-export function EditProjectModal({ isOpen, project, onClose, existingGroups = [] }: EditProjectModalProps) {
+export function EditProjectModal({ isOpen, project, onClose, existingGroups = [], realms = [], projectRealmIds = [], onRealmToggled }: EditProjectModalProps) {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { glowIntensity, projectColors, setProjectColor } = useThemeStore()
   const mult = glowIntensity / 75
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
   const currentColor = (projectColors[project.id] || 'purple') as string
+  const accentColor = hexToAccent(currentColor)
   const currentColorHex = currentColor.startsWith('#')
     ? currentColor
     : colorConfig[currentColor as AccentColor]?.hex ?? '#a855f7'
@@ -40,6 +46,33 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
     startDate: new Date(project.startDate).toISOString().split('T')[0],
     endDate: new Date(project.endDate).toISOString().split('T')[0],
   })
+  const [activeRealmIds, setActiveRealmIds] = useState<string[]>(projectRealmIds)
+  const [togglingRealm, setTogglingRealm] = useState<string | null>(null)
+
+  useEffect(() => {
+    setActiveRealmIds(projectRealmIds)
+  }, [projectRealmIds])
+
+  const teamRealms = realms.filter((r) => !r.isPersonal)
+
+  const handleRealmToggle = async (realmId: string) => {
+    setTogglingRealm(realmId)
+    const isIn = activeRealmIds.includes(realmId)
+    try {
+      if (isIn) {
+        setActiveRealmIds((prev) => prev.filter((id) => id !== realmId))
+        await removeProjectFromGroup(project.id, realmId)
+      } else {
+        setActiveRealmIds((prev) => [...prev, realmId])
+        await addProjectToGroup(project.id, realmId)
+      }
+      onRealmToggled?.()
+    } catch {
+      setActiveRealmIds(isIn ? [...activeRealmIds, realmId] : activeRealmIds.filter((id) => id !== realmId))
+    } finally {
+      setTogglingRealm(null)
+    }
+  }
 
   const handleSubmit = async () => {
     if (!formData.name.trim() || isSubmitting) return
@@ -96,20 +129,20 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
             )}
             style={{
               boxShadow: glowIntensity > 0
-                ? `0 0 ${50 * mult}px ${12 * mult}px var(--glow-color)`
+                ? `0 0 ${50 * mult}px ${12 * mult}px ${currentColorHex}40`
                 : undefined,
             }}
           >
             <div
               className="absolute top-0 left-6 right-6 h-[1.5px]"
               style={{
-                background: 'linear-gradient(90deg, transparent, var(--primary), transparent)',
-                boxShadow: `0 0 ${15 * mult}px ${3 * mult}px var(--glow-color)`,
+                background: `linear-gradient(90deg, transparent, ${currentColorHex}, transparent)`,
+                boxShadow: `0 0 ${15 * mult}px ${3 * mult}px ${currentColorHex}60`,
               }}
             />
             <div
               className="absolute top-0 left-0 right-0 h-16 pointer-events-none"
-              style={{ background: 'linear-gradient(to bottom, var(--primary-muted), transparent)' }}
+              style={{ background: `linear-gradient(to bottom, ${currentColorHex}15, transparent)` }}
             />
 
             <div className="relative flex items-center justify-between mb-6">
@@ -169,12 +202,12 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
               </div>
 
               <div>
-                <label className="block text-sm text-[var(--text-muted)] mb-1.5">Group</label>
+                <label className="block text-sm text-[var(--text-muted)] mb-1.5">Personal Realm</label>
                 <input
                   type="text"
                   value={formData.group}
                   onChange={(e) => setFormData({ ...formData, group: e.target.value })}
-                  placeholder="General (leave empty for default)"
+                  placeholder="Group within your personal view"
                   className={cn(
                     'w-full px-4 py-2.5 rounded-xl',
                     'bg-white/[0.05] border border-white/[0.1]',
@@ -203,6 +236,41 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
                   </div>
                 )}
               </div>
+
+              {teamRealms.length > 0 && (
+                <div>
+                  <label className="block text-sm text-[var(--text-muted)] mb-1.5">Team Realms</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {teamRealms.map((realm) => {
+                      const isIn = activeRealmIds.includes(realm.id)
+                      const isToggling = togglingRealm === realm.id
+                      return (
+                        <button
+                          key={realm.id}
+                          type="button"
+                          disabled={isToggling}
+                          onClick={() => handleRealmToggle(realm.id)}
+                          className={cn(
+                            'flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all',
+                            isIn
+                              ? 'bg-[var(--primary)]/15 text-[var(--primary)] border border-[var(--primary)]/30'
+                              : 'bg-white/[0.05] text-slate-400 border border-white/[0.08] hover:bg-white/[0.1] hover:text-white',
+                            isToggling && 'opacity-50'
+                          )}
+                        >
+                          <div
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{ backgroundColor: realm.color.startsWith('#') ? realm.color : 'var(--primary)' }}
+                          />
+                          {realm.name}
+                          {isIn && <Check className="w-3 h-3" />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-[10px] text-slate-600 mt-1">Projects can belong to multiple team realms</p>
+                </div>
+              )}
 
               <PlanetPicker
                 value={formData.planetImage}
@@ -272,19 +340,7 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
               </div>
             </div>
 
-            <div className="relative flex gap-3 mt-6">
-              <NeonButton
-                onClick={handleSubmit}
-                disabled={!formData.name.trim() || isSubmitting}
-                className="flex-1"
-                color="purple"
-                glowIntensity="md"
-              >
-                <span className="flex items-center justify-center gap-2">
-                  {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {isSubmitting ? 'Saving...' : 'Save Changes'}
-                </span>
-              </NeonButton>
+            <div className="relative flex gap-3 mt-6 justify-end">
               <button
                 onClick={onClose}
                 className={cn(
@@ -295,6 +351,17 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
               >
                 Cancel
               </button>
+              <NeonButton
+                onClick={handleSubmit}
+                disabled={!formData.name.trim() || isSubmitting}
+                color={accentColor}
+                glowIntensity="md"
+              >
+                <span className="flex items-center justify-center gap-2">
+                  {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {isSubmitting ? 'Saving...' : 'Save'}
+                </span>
+              </NeonButton>
             </div>
           </motion.div>
         </motion.div>
