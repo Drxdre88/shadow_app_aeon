@@ -17,7 +17,7 @@ interface RealmSectionProps {
     projectCount: number
   }
   defaultExpanded?: boolean
-  onOpenSettings: (realm: { id: string; name: string; isOwner: boolean; isPersonal: boolean }) => void
+  onOpenSettings: ((realm: { id: string; name: string; isOwner: boolean; isPersonal: boolean }) => void) | null
   children: React.ReactNode
 }
 
@@ -92,31 +92,33 @@ export function RealmSection({ realm, defaultExpanded = true, onOpenSettings, ch
         }}
         onClick={() => setExpanded((v) => !v)}
       >
-        <div className="flex items-center gap-2.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-          <button
-            className={cn(
-              'flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200',
-              'border bg-transparent'
-            )}
-            style={{
-              borderColor: `${accentColor}55`,
-              color: accentColor,
-            }}
-            onMouseEnter={(e) => {
-              const el = e.currentTarget
-              el.style.boxShadow = `0 0 8px 2px ${accentColor}40`
-              el.style.borderColor = accentColor
-            }}
-            onMouseLeave={(e) => {
-              const el = e.currentTarget
-              el.style.boxShadow = 'none'
-              el.style.borderColor = `${accentColor}55`
-            }}
-            onClick={() => onOpenSettings({ id: realm.id, name: realm.name, isOwner: realm.isOwner, isPersonal: realm.isPersonal })}
-          >
-            <Settings size={15} />
-          </button>
-        </div>
+        {onOpenSettings && (
+          <div className="flex items-center gap-2.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+            <button
+              className={cn(
+                'flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200',
+                'border bg-transparent'
+              )}
+              style={{
+                borderColor: `${accentColor}55`,
+                color: accentColor,
+              }}
+              onMouseEnter={(e) => {
+                const el = e.currentTarget
+                el.style.boxShadow = `0 0 8px 2px ${accentColor}40`
+                el.style.borderColor = accentColor
+              }}
+              onMouseLeave={(e) => {
+                const el = e.currentTarget
+                el.style.boxShadow = 'none'
+                el.style.borderColor = `${accentColor}55`
+              }}
+              onClick={() => onOpenSettings({ id: realm.id, name: realm.name, isOwner: realm.isOwner, isPersonal: realm.isPersonal })}
+            >
+              <Settings size={15} />
+            </button>
+          </div>
+        )}
 
         <div
           className="w-[3px] self-stretch rounded-full shrink-0"

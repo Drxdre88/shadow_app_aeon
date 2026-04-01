@@ -17,7 +17,7 @@ export const notFound = (entity: string) => ({
 })
 
 export const ok = (data: unknown) => ({
-  content: [{ type: 'text' as const, text: JSON.stringify(data) }],
+  content: [{ type: 'text' as const, text: JSON.stringify(data ?? { success: true }) }],
 })
 
 export const fail = (message: string) => ({

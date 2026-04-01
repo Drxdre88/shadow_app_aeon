@@ -85,15 +85,17 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
   )
 
   const sidebarRealms = useMemo(() =>
-    workspaces.map((ws) => ({
-      id: ws.groupId,
-      name: ws.groupName,
-      color: ws.groupColor,
-      isPersonal: ws.isPersonal,
-      isOwner: ws.isOwner,
-      projectCount: ws.projects.length,
-      memberCount: ws.memberCount,
-    })),
+    workspaces
+      .filter((ws) => !ws.isPersonal)
+      .map((ws) => ({
+        id: ws.groupId,
+        name: ws.groupName,
+        color: ws.groupColor,
+        isPersonal: ws.isPersonal,
+        isOwner: ws.isOwner,
+        projectCount: ws.projects.length,
+        memberCount: ws.memberCount,
+      })),
     [workspaces]
   )
 
@@ -184,17 +186,21 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
     return workspaces.filter((ws) => ws.groupId === activeRealmId)
   }, [workspaces, activeRealmId])
 
-  const allPersonalProjects = useMemo(() => {
-    const personal = visibleWorkspaces.filter((ws) => ws.isPersonal)
-    const owned = personal.flatMap((ws) => ws.projects)
-    const shared = !activeRealmId ? sharedProjects.map((p) => ({ ...p, group: 'Shared with me' })) : []
-    return [...owned, ...shared]
-  }, [visibleWorkspaces, sharedProjects, activeRealmId])
-
-  const teamWorkspaces = useMemo(() =>
+  const realmSections = useMemo(() =>
     visibleWorkspaces.filter((ws) => !ws.isPersonal),
     [visibleWorkspaces]
   )
+
+  const generalProjects = useMemo(() => {
+    const personalWs = workspaces.find((ws) => ws.isPersonal)
+    if (!personalWs) return sharedProjects
+    const assignedIds = new Set(
+      workspaces.filter((ws) => !ws.isPersonal).flatMap((ws) => ws.projects.map((p) => p.id))
+    )
+    const unassigned = personalWs.projects.filter((p) => !assignedIds.has(p.id))
+    const shared = sharedProjects.map((p) => ({ ...p, group: 'Shared with me' }))
+    return [...unassigned, ...shared]
+  }, [workspaces, sharedProjects])
 
   const hasProjects = workspaces.some((ws) => ws.projects.length > 0) || initialProjects.length > 0
 
@@ -252,38 +258,7 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
             </motion.div>
           ) : (
             <div className="space-y-6">
-              {allPersonalProjects.length > 0 && (!activeRealmId || activeRealm?.isPersonal) && (
-                <RealmSection
-                  realm={{
-                    id: workspaces.find((ws) => ws.isPersonal)?.groupId ?? 'personal',
-                    name: 'Personal',
-                    color: 'var(--primary)',
-                    isPersonal: true,
-                    isOwner: true,
-                    memberCount: 1,
-                    projectCount: allPersonalProjects.length,
-                  }}
-                  defaultExpanded
-                  onOpenSettings={(r) => setWorkspaceSettingsId(r)}
-                >
-                  <ProjectViewSwitcher
-                    projects={allPersonalProjects}
-                    onEdit={setEditingProject}
-                    onDelete={() => loadWorkspaces().catch(() => {})}
-                    onShare={setSharingProject}
-                    onGroupChange={() => loadWorkspaces().catch(() => {})}
-                    realms={realms}
-                    projectRealmMap={projectRealmMap}
-                    onToggleRealm={handleToggleRealm}
-                    view={view}
-                    onViewChange={setView}
-                    layout={gridLayout}
-                    onLayoutChange={setGridLayout}
-                  />
-                </RealmSection>
-              )}
-
-              {teamWorkspaces.map((ws) => (
+              {realmSections.map((ws) => (
                 <RealmSection
                   key={ws.groupId}
                   realm={{
@@ -314,6 +289,37 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
                   />
                 </RealmSection>
               ))}
+
+              {generalProjects.length > 0 && !activeRealmId && (
+                <RealmSection
+                  realm={{
+                    id: 'general',
+                    name: 'General',
+                    color: 'rgba(148, 163, 184, 0.7)',
+                    isPersonal: false,
+                    isOwner: true,
+                    memberCount: 1,
+                    projectCount: generalProjects.length,
+                  }}
+                  defaultExpanded
+                  onOpenSettings={null}
+                >
+                  <ProjectViewSwitcher
+                    projects={generalProjects}
+                    onEdit={setEditingProject}
+                    onDelete={() => loadWorkspaces().catch(() => {})}
+                    onShare={setSharingProject}
+                    onGroupChange={() => loadWorkspaces().catch(() => {})}
+                    realms={realms}
+                    projectRealmMap={projectRealmMap}
+                    onToggleRealm={handleToggleRealm}
+                    view={view}
+                    onViewChange={setView}
+                    layout={gridLayout}
+                    onLayoutChange={setGridLayout}
+                  />
+                </RealmSection>
+              )}
             </div>
           )}
         </main>

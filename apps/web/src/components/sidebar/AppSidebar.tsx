@@ -18,7 +18,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Menu,
-  Crown,
   User,
 } from 'lucide-react'
 
@@ -193,7 +192,6 @@ function RealmList({
   collapsed,
   onSelect,
   onOpenSettings,
-  user,
 }: {
   realms: AppSidebarProps['realms']
   activeRealmId: string | null
@@ -202,9 +200,6 @@ function RealmList({
   onOpenSettings: AppSidebarProps['onOpenSettings']
   user: AppSidebarProps['user']
 }) {
-  const personalRealm = realms.find((r) => r.isPersonal)
-  const teamRealms = realms.filter((r) => !r.isPersonal)
-
   return (
     <div className="flex flex-col gap-0.5">
       {!collapsed && (
@@ -213,60 +208,43 @@ function RealmList({
         </span>
       )}
 
-      {personalRealm && (
-        <RealmPill
-          id={personalRealm.id}
-          name="Personal"
-          color={personalRealm.color}
-          isPersonal
-          projectCount={personalRealm.projectCount}
-          isActive={activeRealmId === personalRealm.id}
-          collapsed={collapsed}
-          onSelect={() => onSelect(personalRealm.id)}
-          onOpenSettings={() =>
-            onOpenSettings({
-              id: personalRealm.id,
-              name: personalRealm.name,
-              isOwner: true,
-              isPersonal: true,
-            })
-          }
-        />
-      )}
+      <RealmPill
+        id={null}
+        name="All"
+        color="var(--primary)"
+        isPersonal={false}
+        isTeam={false}
+        projectCount={0}
+        isActive={activeRealmId === null}
+        collapsed={collapsed}
+        onSelect={() => onSelect(null)}
+        onOpenSettings={null}
+      />
 
-      {teamRealms.length > 0 && (
-        <>
-          {!collapsed && (
-            <span className="text-[9px] font-semibold uppercase tracking-widest px-2 py-1 mt-2" style={{ color: 'var(--primary)', opacity: 0.5 }}>
-              Team
-            </span>
-          )}
-          <ul className="flex flex-col gap-0.5">
-            {teamRealms.map((realm) => (
-              <RealmPill
-                key={realm.id}
-                id={realm.id}
-                name={realm.name}
-                color={realm.color}
-                isPersonal={false}
-                projectCount={realm.projectCount}
-                isActive={activeRealmId === realm.id}
-                collapsed={collapsed}
-                onSelect={() => onSelect(realm.id)}
-                onOpenSettings={() =>
-                  onOpenSettings({
-                    id: realm.id,
-                    name: realm.name,
-                    isOwner: realm.isOwner,
-                    isPersonal: false,
-                  })
-                }
-                indent={!collapsed}
-              />
-            ))}
-          </ul>
-        </>
-      )}
+      <ul className="flex flex-col gap-0.5">
+        {realms.map((realm) => (
+          <RealmPill
+            key={realm.id}
+            id={realm.id}
+            name={realm.isPersonal ? 'Personal' : realm.name}
+            color={realm.color}
+            isPersonal={realm.isPersonal}
+            isTeam={!realm.isPersonal && realm.memberCount > 1}
+            projectCount={realm.projectCount}
+            isActive={activeRealmId === realm.id}
+            collapsed={collapsed}
+            onSelect={() => onSelect(activeRealmId === realm.id ? null : realm.id)}
+            onOpenSettings={() =>
+              onOpenSettings({
+                id: realm.id,
+                name: realm.name,
+                isOwner: realm.isOwner,
+                isPersonal: realm.isPersonal,
+              })
+            }
+          />
+        ))}
+      </ul>
     </div>
   )
 }
@@ -274,24 +252,23 @@ function RealmList({
 function RealmPill({
   name,
   color,
-  isPersonal,
+  isTeam,
   projectCount,
   isActive,
   collapsed,
   onSelect,
   onOpenSettings,
-  indent,
 }: {
   id: string | null
   name: string
   color: string
   isPersonal: boolean
+  isTeam: boolean
   projectCount: number
   isActive: boolean
   collapsed: boolean
   onSelect: () => void
   onOpenSettings: (() => void) | null
-  indent?: boolean
 }) {
   return (
     <li>
@@ -300,7 +277,6 @@ function RealmPill({
         onClick={onSelect}
         className={cn(
           'group relative w-full flex items-center gap-2.5 rounded-lg px-2 py-2',
-          indent && 'ml-2',
           'text-left text-sm font-medium overflow-hidden',
           'transition-all duration-200',
           isActive
@@ -338,7 +314,19 @@ function RealmPill({
               className="flex-1 truncate flex items-center gap-1.5 min-w-0"
             >
               <span className="truncate">{name}</span>
-              {isPersonal && <Crown className="w-3 h-3 shrink-0 text-yellow-400/70" />}
+              {isTeam && (
+                <span
+                  className="shrink-0 text-[8px] font-black tracking-wider px-1.5 py-[1px] rounded-full uppercase"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(59, 130, 246, 0.3))',
+                    color: 'rgba(167, 139, 250, 0.9)',
+                    boxShadow: '0 0 8px rgba(139, 92, 246, 0.3), inset 0 0 4px rgba(139, 92, 246, 0.1)',
+                    border: '1px solid rgba(139, 92, 246, 0.2)',
+                  }}
+                >
+                  team
+                </span>
+              )}
             </motion.span>
           )}
         </AnimatePresence>
