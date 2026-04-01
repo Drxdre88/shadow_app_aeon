@@ -1,4 +1,4 @@
-import { eq, and, inArray, sql, isNotNull } from 'drizzle-orm'
+import { eq, and, inArray, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { workspaceGroups, groupMembers, projectGroups, projects, users } from '@/lib/db/schema'
 
@@ -101,8 +101,24 @@ export async function updateWorkspaceGroup(groupId: string, data: { name?: strin
   return updated
 }
 
+export async function isPersonalWorkspace(groupId: string): Promise<boolean> {
+  const [ws] = await db
+    .select({ isPersonal: workspaceGroups.isPersonal })
+    .from(workspaceGroups)
+    .where(eq(workspaceGroups.id, groupId))
+  return ws?.isPersonal ?? false
+}
+
 export async function deleteWorkspaceGroup(groupId: string) {
-  await db.delete(workspaceGroups).where(eq(workspaceGroups.id, groupId))
+  return db.transaction(async (tx) => {
+    const [ws] = await tx
+      .select({ isPersonal: workspaceGroups.isPersonal })
+      .from(workspaceGroups)
+      .where(eq(workspaceGroups.id, groupId))
+    if (!ws) throw new Error('Workspace not found')
+    if (ws.isPersonal) throw new Error('Cannot delete personal workspace')
+    await tx.delete(workspaceGroups).where(eq(workspaceGroups.id, groupId))
+  })
 }
 
 export async function getGroupRole(groupId: string, userId: string): Promise<string | null> {
@@ -142,58 +158,133 @@ export async function canAccessProject(userId: string, projectId: string): Promi
   return false
 }
 
-export async function migrateTextGroupsToWorkspaces(userId: string): Promise<number> {
-  const userProjects = await db
-    .select({ id: projects.id, group: projects.group })
-    .from(projects)
-    .where(and(eq(projects.userId, userId), isNotNull(projects.group)))
-
-  const grouped = new Map<string, string[]>()
-  for (const p of userProjects) {
-    if (!p.group || p.group === 'General') continue
-    const existing = grouped.get(p.group) || []
-    existing.push(p.id)
-    grouped.set(p.group, existing)
-  }
-
-  if (grouped.size === 0) return 0
-
-  let migrated = 0
-
-  for (const [groupName, projectIds] of grouped) {
-    const [existingGroup] = await db
+export async function findOrCreatePersonalWorkspace(userId: string): Promise<string> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
       .select({ id: workspaceGroups.id })
       .from(workspaceGroups)
-      .where(and(eq(workspaceGroups.ownerId, userId), eq(workspaceGroups.name, groupName)))
+      .where(and(eq(workspaceGroups.ownerId, userId), eq(workspaceGroups.isPersonal, true)))
 
-    let groupId: string
-    if (existingGroup) {
-      groupId = existingGroup.id
-    } else {
-      const [newGroup] = await db.insert(workspaceGroups).values({
-        name: groupName,
-        ownerId: userId,
-        color: 'purple',
-      }).returning({ id: workspaceGroups.id })
-      groupId = newGroup.id
+    if (existing) return existing.id
 
-      await db.insert(groupMembers).values({
-        groupId,
+    const [ws] = await tx.insert(workspaceGroups).values({
+      name: 'Personal',
+      ownerId: userId,
+      isPersonal: true,
+      color: 'blue',
+    }).onConflictDoNothing().returning({ id: workspaceGroups.id })
+
+    if (!ws) {
+      const [fallback] = await tx
+        .select({ id: workspaceGroups.id })
+        .from(workspaceGroups)
+        .where(and(eq(workspaceGroups.ownerId, userId), eq(workspaceGroups.isPersonal, true)))
+      if (!fallback) throw new Error('Personal workspace race: row not found after conflict')
+      await tx.insert(groupMembers).values({
+        groupId: fallback.id,
         userId,
         role: 'owner',
       }).onConflictDoNothing()
+      return fallback.id
     }
 
-    for (const projectId of projectIds) {
-      await db.insert(projectGroups).values({
-        projectId,
-        groupId,
+    await tx.insert(groupMembers).values({
+      groupId: ws.id,
+      userId,
+      role: 'owner',
+    }).onConflictDoNothing()
+
+    return ws.id
+  })
+}
+
+export async function ensureOrphanProjectsInPersonalWorkspace(userId: string): Promise<number> {
+  const personalGroupId = await findOrCreatePersonalWorkspace(userId)
+
+  return db.transaction(async (tx) => {
+    const orphanProjects = await tx
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(
+        eq(projects.userId, userId),
+        sql`NOT EXISTS (
+          SELECT 1 FROM project_groups pg WHERE pg.project_id = ${projects.id}
+        )`
+      ))
+
+    if (orphanProjects.length === 0) return 0
+
+    await tx.insert(projectGroups).values(
+      orphanProjects.map((p) => ({
+        projectId: p.id,
+        groupId: personalGroupId,
         addedBy: userId,
-      }).onConflictDoNothing()
-    }
+      }))
+    ).onConflictDoNothing()
 
-    migrated += projectIds.length
+    return orphanProjects.length
+  })
+}
+
+export async function consolidateSoloWorkspaces(userId: string): Promise<number> {
+  const personalGroupId = await findOrCreatePersonalWorkspace(userId)
+
+  const [personalWs] = await db
+    .select({ settings: workspaceGroups.settings })
+    .from(workspaceGroups)
+    .where(eq(workspaceGroups.id, personalGroupId))
+
+  if ((personalWs?.settings as Record<string, unknown>)?.consolidated) return 0
+
+  const soloWorkspaces = await db
+    .select({
+      id: workspaceGroups.id,
+      name: workspaceGroups.name,
+      memberCount: sql<number>`(select count(*)::int from group_members gm2 where gm2.group_id = ${workspaceGroups.id})`,
+    })
+    .from(workspaceGroups)
+    .where(and(
+      eq(workspaceGroups.ownerId, userId),
+      eq(workspaceGroups.isPersonal, false)
+    ))
+
+  const soloIds = soloWorkspaces.filter((ws) => ws.memberCount <= 1)
+  if (soloIds.length === 0) return 0
+
+  let moved = 0
+
+  for (const ws of soloIds) {
+    await db.transaction(async (tx) => {
+      const [recheck] = await tx
+        .select({ memberCount: sql<number>`(select count(*)::int from group_members gm2 where gm2.group_id = ${workspaceGroups.id})` })
+        .from(workspaceGroups)
+        .where(eq(workspaceGroups.id, ws.id))
+      if (!recheck || recheck.memberCount > 1) return
+
+      const wsProjects = await tx
+        .select({ projectId: projectGroups.projectId })
+        .from(projectGroups)
+        .where(eq(projectGroups.groupId, ws.id))
+
+      for (const p of wsProjects) {
+        await tx.insert(projectGroups).values({
+          projectId: p.projectId,
+          groupId: personalGroupId,
+          addedBy: userId,
+        }).onConflictDoNothing()
+      }
+
+      await tx.delete(projectGroups).where(eq(projectGroups.groupId, ws.id))
+      await tx.delete(groupMembers).where(eq(groupMembers.groupId, ws.id))
+      await tx.delete(workspaceGroups).where(eq(workspaceGroups.id, ws.id))
+      moved += wsProjects.length
+    })
   }
 
-  return migrated
+  await db.update(workspaceGroups)
+    .set({ settings: { consolidated: true } })
+    .where(eq(workspaceGroups.id, personalGroupId))
+
+  return moved
 }
+

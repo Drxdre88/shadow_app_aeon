@@ -285,6 +285,7 @@ export async function findWorkspaceProjects(userId: string) {
       groupName: workspaceGroups.name,
       groupColor: workspaceGroups.color,
       groupIcon: workspaceGroups.icon,
+      isPersonal: workspaceGroups.isPersonal,
       ownerId: workspaceGroups.ownerId,
       memberRole: groupMembers.role,
       memberCount: sql<number>`(select count(*)::int from group_members gm2 where gm2.group_id = ${workspaceGroups.id})`,
@@ -294,10 +295,9 @@ export async function findWorkspaceProjects(userId: string) {
     .where(eq(groupMembers.userId, userId))
     .orderBy(workspaceGroups.name)
 
-  const multiMemberGroups = userGroups.filter((g) => g.memberCount > 1)
-  if (multiMemberGroups.length === 0) return []
+  if (userGroups.length === 0) return []
 
-  const groupIds = multiMemberGroups.map((g) => g.groupId)
+  const groupIds = userGroups.map((g) => g.groupId)
 
   const groupProjectRows = await db
     .select({
@@ -309,7 +309,7 @@ export async function findWorkspaceProjects(userId: string) {
     .where(inArray(projectGroups.groupId, groupIds))
     .orderBy(desc(projects.createdAt))
 
-  return multiMemberGroups.map((g) => ({
+  return userGroups.map((g) => ({
     ...g,
     projects: groupProjectRows.filter((p) => p.groupId === g.groupId),
   }))

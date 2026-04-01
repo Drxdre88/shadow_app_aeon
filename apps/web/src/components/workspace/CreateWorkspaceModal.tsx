@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Building2 } from 'lucide-react'
+import { X, Orbit } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { NeonButton } from '@/components/ui/NeonButton'
 
@@ -62,8 +62,8 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
           >
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-[var(--primary)]" />
-                <h2 className="text-lg font-semibold text-white">Create Workspace</h2>
+                <Orbit className="w-5 h-5 text-[var(--primary)]" />
+                <h2 className="text-lg font-semibold text-white">Create Realm</h2>
               </div>
               <button
                 onClick={onClose}
@@ -76,7 +76,7 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm text-slate-400 mb-1.5">Workspace name</label>
+                <label className="block text-sm text-slate-400 mb-1.5">Realm name</label>
                 <input
                   type="text"
                   value={name}
@@ -116,7 +116,7 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
                   color="purple"
                   glowIntensity="md"
                 >
-                  {loading ? 'Creating...' : 'Create Workspace'}
+                  {loading ? 'Creating...' : 'Create Realm'}
                 </NeonButton>
               </div>
             </div>
