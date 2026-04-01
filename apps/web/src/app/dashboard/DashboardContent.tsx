@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Plus } from 'lucide-react'
+import { signOut } from 'next-auth/react'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { CreateProjectModal } from '@/components/project/CreateProjectModal'
 import { getWorkspaceProjects, getSharedProjects } from '@/lib/actions/projects'
@@ -14,8 +15,12 @@ import { EditProjectModal } from '@/components/project/EditProjectModal'
 import { ShareModal } from '@/components/board/ShareModal'
 import { GlassStage } from '@/components/ui/GlassStage'
 import { useViewPreference, type ProjectViewMode } from '@/components/project/useViewPreference'
-import { DashboardHeader, type DashboardSection } from './DashboardHeader'
-import { WorkspaceDashboard, type WorkspaceGroup } from './WorkspaceDashboard'
+import { AppSidebar } from '@/components/sidebar/AppSidebar'
+import { TopBar } from '@/components/layout/TopBar'
+import { useSidebarStore } from '@/stores/sidebarStore'
+import { RealmSection } from '@/components/workspace/RealmSection'
+import { ProjectViewSwitcher } from '@/components/project/ProjectViewSwitcher'
+import type { WorkspaceGroup } from './WorkspaceDashboard'
 import type { ProjectWithStats } from '@/components/project/types'
 
 interface DashboardContentProps {
@@ -30,6 +35,7 @@ interface DashboardContentProps {
 }
 
 export default function DashboardContent({ user, projects: initialProjects }: DashboardContentProps) {
+  const { collapsed, activeRealmId } = useSidebarStore()
   const [workspaces, setWorkspaces] = useState<WorkspaceGroup[]>([])
   const [sharedProjects, setSharedProjects] = useState<ProjectWithStats[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -42,15 +48,6 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
 
   const [view, setView] = useViewPreference()
   const [gridLayout, setGridLayout] = useState<'scroll' | 'wrap'>('wrap')
-  const [section, setSection] = useState<DashboardSection>('personal')
-  useEffect(() => {
-    const saved = localStorage.getItem('aeon-ws-section') as DashboardSection
-    if (saved === 'team') setSection('team')
-  }, [])
-  const handleSectionChange = useCallback((s: DashboardSection) => {
-    setSection(s)
-    localStorage.setItem('aeon-ws-section', s)
-  }, [])
   const workspaceInitRef = useRef(false)
   const fetchGenRef = useRef(0)
 
@@ -84,6 +81,19 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
 
   const realms: RealmInfo[] = useMemo(() =>
     workspaces.map((ws) => ({ id: ws.groupId, name: ws.groupName, color: ws.groupColor, isPersonal: ws.isPersonal })),
+    [workspaces]
+  )
+
+  const sidebarRealms = useMemo(() =>
+    workspaces.map((ws) => ({
+      id: ws.groupId,
+      name: ws.groupName,
+      color: ws.groupColor,
+      isPersonal: ws.isPersonal,
+      isOwner: ws.isOwner,
+      projectCount: ws.projects.length,
+      memberCount: ws.memberCount,
+    })),
     [workspaces]
   )
 
@@ -166,10 +176,30 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
     await loadWorkspaces()
   }
 
+  const activeRealm = activeRealmId ? workspaces.find((w) => w.groupId === activeRealmId) : null
+  const activeRealmName = activeRealm?.groupName ?? (activeRealmId ? undefined : 'All Realms')
+
+  const visibleWorkspaces = useMemo(() => {
+    if (!activeRealmId) return workspaces
+    return workspaces.filter((ws) => ws.groupId === activeRealmId)
+  }, [workspaces, activeRealmId])
+
+  const allPersonalProjects = useMemo(() => {
+    const personal = visibleWorkspaces.filter((ws) => ws.isPersonal)
+    const owned = personal.flatMap((ws) => ws.projects)
+    const shared = !activeRealmId ? sharedProjects.map((p) => ({ ...p, group: 'Shared with me' })) : []
+    return [...owned, ...shared]
+  }, [visibleWorkspaces, sharedProjects, activeRealmId])
+
+  const teamWorkspaces = useMemo(() =>
+    visibleWorkspaces.filter((ws) => !ws.isPersonal),
+    [visibleWorkspaces]
+  )
+
   const hasProjects = workspaces.some((ws) => ws.projects.length > 0) || initialProjects.length > 0
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen flex">
       <GlassStage
         blobConfig={{
           blobs: [
@@ -179,59 +209,115 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
         }}
       />
 
-      <DashboardHeader
+      <AppSidebar
         user={user}
-        hasProjects={hasProjects}
-        section={section}
-        onSectionChange={handleSectionChange}
-        view={view}
-        onViewChange={setView}
-        gridLayout={gridLayout}
-        onGridLayoutChange={setGridLayout}
+        realms={sidebarRealms}
         onCreateProject={() => setShowCreateModal(true)}
         onCreateWorkspace={() => setShowCreateWorkspace(true)}
+        onOpenSettings={(realm) => setWorkspaceSettingsId(realm)}
+        onSignOut={() => signOut({ callbackUrl: '/' })}
       />
 
-      <main className="px-3 sm:px-6 py-3 relative z-10">
-        {!loaded ? (
-          <div className="flex items-center justify-center py-16 text-sm text-[var(--text-dim)]">Loading realms...</div>
-        ) : workspaces.length === 0 ? (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="flex flex-col items-center justify-center py-16 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]"
-          >
-            <p className="text-[var(--text-muted)] mb-1">No projects yet</p>
-            <p className="text-sm text-[var(--text-dim)] mb-6">Create your first project to get started</p>
-            <NeonButton color="purple" glowIntensity="md" onClick={() => setShowCreateModal(true)}>
-              <span className="flex items-center gap-2">
-                <Plus className="w-4 h-4" />
-                Create First Project
-              </span>
-            </NeonButton>
-          </motion.div>
-        ) : (
-          <WorkspaceDashboard
-            workspaces={workspaces}
-            section={section}
-            view={view}
-            onViewChange={setView}
-            gridLayout={gridLayout}
-            onGridLayoutChange={setGridLayout}
-            onEdit={setEditingProject}
-            onShare={setSharingProject}
-            onOpenSettings={setWorkspaceSettingsId}
-            onCreateWorkspace={() => setShowCreateWorkspace(true)}
-            sharedProjects={sharedProjects}
-            realms={realms}
-            projectRealmMap={projectRealmMap}
-            onToggleRealm={handleToggleRealm}
-            onDelete={() => loadWorkspaces().catch(() => {})}
-            onGroupChange={() => loadWorkspaces().catch(() => {})}
-          />
-        )}
-      </main>
+      <div
+        className="flex-1 min-h-screen transition-all duration-300"
+        style={{ marginLeft: collapsed ? 60 : 260 }}
+      >
+        <TopBar
+          activeRealmName={activeRealmName}
+          view={view}
+          onViewChange={setView}
+          gridLayout={gridLayout}
+          onGridLayoutChange={setGridLayout}
+          sidebarCollapsed={collapsed}
+        />
+
+        <main className="px-3 sm:px-6 py-4 relative z-10 overflow-x-hidden">
+          {!loaded ? (
+            <div className="flex items-center justify-center py-16 text-sm text-[var(--text-dim)]">Loading realms...</div>
+          ) : !hasProjects ? (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+              className="flex flex-col items-center justify-center py-16 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]"
+            >
+              <p className="text-[var(--text-muted)] mb-1">No projects yet</p>
+              <p className="text-sm text-[var(--text-dim)] mb-6">Create your first project to get started</p>
+              <NeonButton glowIntensity="md" onClick={() => setShowCreateModal(true)}>
+                <span className="flex items-center gap-2">
+                  <Plus className="w-4 h-4" />
+                  Create First Project
+                </span>
+              </NeonButton>
+            </motion.div>
+          ) : (
+            <div className="space-y-6">
+              {allPersonalProjects.length > 0 && (!activeRealmId || activeRealm?.isPersonal) && (
+                <RealmSection
+                  realm={{
+                    id: workspaces.find((ws) => ws.isPersonal)?.groupId ?? 'personal',
+                    name: 'Personal',
+                    color: 'var(--primary)',
+                    isPersonal: true,
+                    isOwner: true,
+                    memberCount: 1,
+                    projectCount: allPersonalProjects.length,
+                  }}
+                  defaultExpanded
+                  onOpenSettings={(r) => setWorkspaceSettingsId(r)}
+                >
+                  <ProjectViewSwitcher
+                    projects={allPersonalProjects}
+                    onEdit={setEditingProject}
+                    onDelete={() => loadWorkspaces().catch(() => {})}
+                    onShare={setSharingProject}
+                    onGroupChange={() => loadWorkspaces().catch(() => {})}
+                    realms={realms}
+                    projectRealmMap={projectRealmMap}
+                    onToggleRealm={handleToggleRealm}
+                    view={view}
+                    onViewChange={setView}
+                    layout={gridLayout}
+                    onLayoutChange={setGridLayout}
+                  />
+                </RealmSection>
+              )}
+
+              {teamWorkspaces.map((ws) => (
+                <RealmSection
+                  key={ws.groupId}
+                  realm={{
+                    id: ws.groupId,
+                    name: ws.groupName,
+                    color: ws.groupColor,
+                    isPersonal: false,
+                    isOwner: ws.isOwner,
+                    memberCount: ws.memberCount,
+                    projectCount: ws.projects.length,
+                  }}
+                  defaultExpanded
+                  onOpenSettings={(r) => setWorkspaceSettingsId(r)}
+                >
+                  <ProjectViewSwitcher
+                    projects={ws.projects.map((p) => ({ ...p, group: null }))}
+                    onEdit={setEditingProject}
+                    onDelete={() => loadWorkspaces().catch(() => {})}
+                    onShare={setSharingProject}
+                    onGroupChange={() => loadWorkspaces().catch(() => {})}
+                    realms={realms}
+                    projectRealmMap={projectRealmMap}
+                    onToggleRealm={handleToggleRealm}
+                    view={view}
+                    onViewChange={setView}
+                    layout={gridLayout}
+                    onLayoutChange={setGridLayout}
+                  />
+                </RealmSection>
+              ))}
+            </div>
+          )}
+        </main>
+      </div>
 
       <CreateProjectModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} existingGroups={existingGroups} />
       {editingProject && (
