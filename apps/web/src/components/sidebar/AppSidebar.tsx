@@ -52,11 +52,11 @@ export function AppSidebar({
   const glowColor = colors?.glow ?? 'rgba(139, 92, 246, 0.4)'
 
   return (
-    <motion.aside
-      animate={{ width: collapsed ? 60 : 260 }}
-      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+    <aside
       className="fixed top-0 left-0 flex flex-col h-screen shrink-0 overflow-hidden z-30"
       style={{
+        width: collapsed ? 60 : 260,
+        transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         background: 'rgba(10, 10, 15, 0.85)',
         backdropFilter: 'blur(24px)',
         borderRight: '1px solid rgba(255, 255, 255, 0.06)',
@@ -94,7 +94,7 @@ export function AppSidebar({
         collapsed={collapsed}
         onSignOut={onSignOut}
       />
-    </motion.aside>
+    </aside>
   )
 }
 

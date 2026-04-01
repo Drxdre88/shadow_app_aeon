@@ -205,7 +205,7 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
   const hasProjects = workspaces.some((ws) => ws.projects.length > 0) || initialProjects.length > 0
 
   return (
-    <div className="min-h-screen flex">
+    <div className="h-screen flex overflow-hidden">
       <GlassStage
         blobConfig={{
           blobs: [
@@ -225,7 +225,7 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
       />
 
       <div
-        className="flex-1 min-h-screen transition-all duration-300"
+        className="flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300"
         style={{ marginLeft: collapsed ? 60 : 260 }}
       >
         <TopBar
@@ -237,7 +237,7 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
           sidebarCollapsed={collapsed}
         />
 
-        <main className="px-3 sm:px-6 py-4 relative z-10 overflow-x-hidden">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-6 py-4 relative z-10">
           {!loaded ? (
             <div className="flex items-center justify-center py-16 text-sm text-[var(--text-dim)]">Loading realms...</div>
           ) : !hasProjects ? (
