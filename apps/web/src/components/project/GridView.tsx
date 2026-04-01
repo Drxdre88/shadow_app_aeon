@@ -411,7 +411,7 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, r
                     <div className="flex-1 h-px bg-white/[0.06]" />
                   </div>
                 )}
-                <div className={layout === 'scroll' ? 'flex gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent' : 'flex flex-wrap gap-4'}>
+                <div className={layout === 'scroll' ? 'flex gap-4 overflow-x-auto max-w-full pb-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent' : 'flex flex-wrap gap-4'}>
                   {groupItems.map(renderCard)}
                 </div>
               </div>

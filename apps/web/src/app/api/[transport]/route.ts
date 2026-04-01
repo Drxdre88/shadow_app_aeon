@@ -13,6 +13,7 @@ import {
   registerDependencyTools,
   registerAnalyticsTools,
   registerBulkTools,
+  registerRealmTools,
 } from './tools'
 
 async function verifyToken(_req: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
@@ -42,6 +43,7 @@ const mcpHandler = createMcpHandler(
     registerDependencyTools(server)
     registerAnalyticsTools(server)
     registerBulkTools(server)
+    registerRealmTools(server)
   },
   { capabilities: {} },
   {

@@ -34,10 +34,9 @@ export function ProjectContextMenu({
 
   useEffect(() => {
     const handle = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node) &&
-          subRef.current && !subRef.current.contains(e.target as Node)) {
-        onClose()
-      }
+      const inMenu = menuRef.current?.contains(e.target as Node)
+      const inSub = subRef.current?.contains(e.target as Node)
+      if (!inMenu && !inSub) onClose()
     }
     const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('mousedown', handle)
