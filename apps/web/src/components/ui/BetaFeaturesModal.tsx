@@ -206,6 +206,7 @@ export function BetaFeaturesButton() {
   useEffect(() => {
     try {
       const seen = localStorage.getItem(STORAGE_KEY)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (!seen) setUnseen(true)
     } catch {}
   }, [])

@@ -2,18 +2,21 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Orbit } from 'lucide-react'
+import { X } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { NeonButton } from '@/components/ui/NeonButton'
+import { RealmColorPicker, RealmIconPicker, REALM_ICON_MAP } from './RealmPickers'
 
 interface CreateWorkspaceModalProps {
   isOpen: boolean
   onClose: () => void
-  onCreate: (name: string) => Promise<void>
+  onCreate: (name: string, color?: string, icon?: string) => Promise<void>
 }
 
 export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorkspaceModalProps) {
   const [name, setName] = useState('')
+  const [color, setColor] = useState('purple')
+  const [icon, setIcon] = useState('orbit')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -22,8 +25,10 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
     setLoading(true)
     setError('')
     try {
-      await onCreate(name.trim())
+      await onCreate(name.trim(), color, icon)
       setName('')
+      setColor('purple')
+      setIcon('orbit')
       onClose()
     } catch (err) {
       console.error('CreateWorkspace failed:', err)
@@ -37,6 +42,8 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
     if (e.key === 'Enter' && name.trim() && !loading) handleSubmit()
     if (e.key === 'Escape') onClose()
   }
+
+  const IconComp = REALM_ICON_MAP[icon] || REALM_ICON_MAP.orbit
 
   return (
     <AnimatePresence>
@@ -62,7 +69,7 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
           >
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
-                <Orbit className="w-5 h-5 text-[var(--primary)]" />
+                <IconComp className="w-5 h-5 text-[var(--primary)]" />
                 <h2 className="text-lg font-semibold text-white">Create Realm</h2>
               </div>
               <button
@@ -93,6 +100,9 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
                   )}
                 />
               </div>
+
+              <RealmColorPicker selected={color} onSelect={setColor} />
+              <RealmIconPicker selected={icon} onSelect={setIcon} />
 
               {error && (
                 <p className="text-sm text-red-400">{error}</p>

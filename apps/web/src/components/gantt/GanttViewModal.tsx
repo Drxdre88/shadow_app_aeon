@@ -97,6 +97,7 @@ export function GanttViewModal({ projectId, mode, existingView, onConfirm, onClo
   const { colors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -196,6 +197,7 @@ export function GanttViewModal({ projectId, mode, existingView, onConfirm, onClo
     }
   }, [groupBy, columns, tasks, labels, dependencies])
 
+   
   useEffect(() => {
     if (mode === 'edit' && existingView?.excludedSections) {
       setExcluded(new Set(existingView.excludedSections))

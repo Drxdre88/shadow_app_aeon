@@ -96,6 +96,7 @@ export function SpaceView({ projects }: SpaceViewProps) {
     return { wx: (sx - dims.w / 2) / cam.zoom + cam.x, wy: (sy - dims.h / 2) / cam.zoom + cam.y }
   }, [dims])
 
+   
   const render = useCallback((time: number) => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -353,6 +354,7 @@ export function SpaceView({ projects }: SpaceViewProps) {
     animRef.current = requestAnimationFrame(render)
   }, [dims, stars, nebulas, dustClouds, asteroidBelts, planets, planetGroups, mult, hoveredPlanet, worldToScreen, spacePlanetGlow, spaceOrbitSpeed])
 
+   
   useEffect(() => {
     animRef.current = requestAnimationFrame(render)
     return () => cancelAnimationFrame(animRef.current)

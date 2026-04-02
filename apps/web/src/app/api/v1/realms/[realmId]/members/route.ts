@@ -1,11 +1,8 @@
 import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
-import { findGroupMembers, addGroupMember, getGroupRole } from '@/lib/data/workspaces'
+import { findGroupMembers, getGroupRole, inviteOrAddRealmMember } from '@/lib/data/workspaces'
 import { inviteMemberSchema } from '@/lib/data/validators'
-import { db } from '@/lib/db'
-import { users } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
 
 export const GET = withRateLimit(
   apiHandler(async (request: NextRequest, ctx: unknown) => {
@@ -43,11 +40,8 @@ export const POST = withRateLimit(
     const parsed = inviteMemberSchema.safeParse(body)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
-    const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, parsed.data.email))
-    if (!user) return jsonError('User not found — they must sign up first', 404)
-
-    const member = await addGroupMember(realmId, user.id, parsed.data.role)
-    return jsonData(member, 201)
+    const inviteResult = await inviteOrAddRealmMember(realmId, parsed.data.email, parsed.data.role, result.id)
+    return jsonData(inviteResult, 201)
   }),
   API_WRITE_LIMIT
 )

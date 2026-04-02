@@ -33,7 +33,7 @@ interface DashboardContentProps {
     image?: string | null
   }
   projects: ProjectWithStats[]
-  initialWorkspaces?: Array<{ groupId: string; groupName: string; groupColor: string | null; isPersonal: boolean; memberCount: number; ownerId: string; memberRole: string; projects: Array<Record<string, unknown>> }>
+  initialWorkspaces?: Array<{ groupId: string; groupName: string; groupColor: string | null; groupIcon: string | null; isPersonal: boolean; memberCount: number; ownerId: string; memberRole: string; projects: Array<Record<string, unknown>> }>
   initialShared?: Array<Record<string, unknown>>
 }
 
@@ -42,6 +42,7 @@ function mapWorkspaces(wsData: NonNullable<DashboardContentProps['initialWorkspa
     groupId: g.groupId,
     groupName: g.groupName,
     groupColor: g.groupColor ?? 'purple',
+    groupIcon: g.groupIcon ?? null,
     isPersonal: g.isPersonal,
     memberCount: g.memberCount,
     isOwner: g.ownerId === userId || g.memberRole === 'owner',
@@ -64,7 +65,7 @@ export default function DashboardContent({ user, projects: initialProjects, init
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingProject, setEditingProject] = useState<ProjectWithStats | null>(null)
   const [sharingProject, setSharingProject] = useState<ProjectWithStats | null>(null)
-  const [workspaceSettingsId, setWorkspaceSettingsId] = useState<{ id: string; name: string; isOwner: boolean; isPersonal: boolean } | null>(null)
+  const [workspaceSettingsId, setWorkspaceSettingsId] = useState<{ id: string; name: string; color?: string; icon?: string | null; isOwner: boolean; isPersonal: boolean } | null>(null)
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false)
   const existingGroups = [...new Set(initialProjects.map((p) => p.group).filter((g): g is string => !!g && g !== 'General'))].sort()
 
@@ -99,6 +100,7 @@ export default function DashboardContent({ user, projects: initialProjects, init
         id: ws.groupId,
         name: ws.groupName,
         color: ws.groupColor,
+        icon: ws.groupIcon,
         isPersonal: ws.isPersonal,
         isOwner: ws.isOwner,
         projectCount: ws.projects.filter((p) => !hiddenProjectIds.includes(p.id)).length,
@@ -152,6 +154,7 @@ export default function DashboardContent({ user, projects: initialProjects, init
     if (workspaceInitRef.current) return
     workspaceInitRef.current = true
     if (initialWorkspaces) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     Promise.all([ensurePersonalWorkspace(), loadWorkspaces()])
       .catch((err) => console.error('Workspace setup failed:', err))
   }, [loadWorkspaces, initialWorkspaces])
@@ -191,8 +194,8 @@ export default function DashboardContent({ user, projects: initialProjects, init
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [showCreateModal, editingProject, sharingProject, sidebarRealms])
 
-  const handleWorkspaceCreate = async (name: string) => {
-    await createGroup({ name })
+  const handleWorkspaceCreate = async (name: string, color?: string, icon?: string) => {
+    await createGroup({ name, color, icon })
     await loadWorkspaces()
   }
 
@@ -377,6 +380,8 @@ export default function DashboardContent({ user, projects: initialProjects, init
           isOpen={true}
           groupId={workspaceSettingsId.id}
           groupName={workspaceSettingsId.name}
+          groupColor={workspaceSettingsId.color}
+          groupIcon={workspaceSettingsId.icon}
           isOwner={workspaceSettingsId.isOwner}
           isPersonal={workspaceSettingsId.isPersonal}
           onClose={() => setWorkspaceSettingsId(null)}

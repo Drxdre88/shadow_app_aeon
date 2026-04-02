@@ -114,6 +114,18 @@ export const projectGroups = pgTable('project_groups', {
   pk: primaryKey({ columns: [pg.projectId, pg.groupId] }),
 }))
 
+export const realmInvites = pgTable('realm_invites', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  groupId: uuid('group_id').notNull().references(() => workspaceGroups.id, { onDelete: 'cascade' }),
+  email: varchar('email', { length: 255 }).notNull(),
+  role: varchar('role', { length: 20 }).default('editor').notNull(),
+  invitedBy: uuid('invited_by').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  token: varchar('token', { length: 64 }).notNull().unique(),
+  acceptedAt: timestamp('accepted_at', { mode: 'date' }),
+  expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
 export const ganttViews = pgTable('gantt_views', {
   id: uuid('id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -347,3 +359,4 @@ export type WorkspaceGroup = typeof workspaceGroups.$inferSelect
 export type GroupMember = typeof groupMembers.$inferSelect
 export type ProjectGroup = typeof projectGroups.$inferSelect
 export type UserContact = typeof userContacts.$inferSelect
+export type RealmInvite = typeof realmInvites.$inferSelect

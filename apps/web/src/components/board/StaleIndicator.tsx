@@ -12,6 +12,7 @@ interface StaleIndicatorProps {
 export function StaleIndicator({ updatedAt, status, staleDays = 7 }: StaleIndicatorProps) {
   if (!updatedAt || status === 'done') return null
 
+  // eslint-disable-next-line react-hooks/purity
   const daysSince = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86400000)
   if (daysSince < staleDays) return null
 

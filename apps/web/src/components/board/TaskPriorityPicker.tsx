@@ -29,6 +29,7 @@ export function TaskPriorityPicker({ taskId, isOpen, onClose, onTaskUpdate }: Ta
   const { priorities } = useThemeStore()
   const task = tasks.find((t) => t.id === taskId)
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {

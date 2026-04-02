@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, UserPlus, Crown, Trash2, Loader2, Settings, FolderPlus, FolderMinus, Eye, EyeOff } from 'lucide-react'
+import { X, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { timeAgo } from '@/lib/utils/timeAgo'
 import {
   getGroupMembers,
   getGroupProjects,
@@ -16,45 +15,33 @@ import {
   addProjectToGroup,
   removeProjectFromGroup,
   setProjectVisibility,
+  getPendingRealmInvites,
 } from '@/lib/actions/workspaces'
 import { getProjects } from '@/lib/actions/projects'
 import { autoSaveContact } from '@/lib/actions/contacts'
-import { ContactAutocomplete } from '@/components/ui/ContactAutocomplete'
+import { MembersTab } from './MembersTab'
+import { ProjectsTab } from './ProjectsTab'
+import type { GroupMemberRow, PendingInviteRow } from './MembersTab'
+import type { GroupProjectRow } from './ProjectsTab'
 
 interface WorkspaceSettingsModalProps {
   isOpen: boolean
   groupId: string
   groupName: string
+  groupColor?: string
+  groupIcon?: string | null
   isOwner: boolean
   isPersonal?: boolean
   onClose: () => void
   onUpdated?: () => void
 }
 
-type GroupMemberRow = {
-  userId: string
-  role: string
-  name: string | null
-  email: string
-  image: string | null
-  createdAt: Date
-}
-
-type GroupProjectRow = {
-  projectId: string
-  name: string
-  planetImage: string | null
-  ownerId: string
-  visibility: string
-}
-
-const ROLE_OPTIONS = ['editor', 'viewer'] as const
-
-export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, isPersonal, onClose, onUpdated }: WorkspaceSettingsModalProps) {
+export function WorkspaceSettingsModal({ isOpen, groupId, groupName, groupColor, groupIcon, isOwner, isPersonal, onClose, onUpdated }: WorkspaceSettingsModalProps) {
   const [tab, setTab] = useState<'members' | 'projects'>('members')
   const [members, setMembers] = useState<GroupMemberRow[]>([])
   const [groupProjects, setGroupProjects] = useState<GroupProjectRow[]>([])
   const [allProjects, setAllProjects] = useState<{ id: string; name: string }[]>([])
+  const [pendingInvites, setPendingInvites] = useState<PendingInviteRow[]>([])
   const [loading, setLoading] = useState(false)
   const [email, setEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<string>('editor')
@@ -62,6 +49,8 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, is
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [name, setName] = useState(groupName)
+  const [color, setColor] = useState(groupColor || 'purple')
+  const [icon, setIcon] = useState(groupIcon || 'orbit')
   const [nameEditing, setNameEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -73,15 +62,17 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, is
     Promise.allSettled([
       getGroupMembers(groupId),
       getGroupProjects(groupId),
+      isOwner ? getPendingRealmInvites(groupId) : Promise.resolve([]),
     ])
-      .then(([membersResult, projectsResult]) => {
+      .then(([membersResult, projectsResult, invitesResult]) => {
         if (membersResult.status === 'fulfilled') setMembers(membersResult.value as GroupMemberRow[])
         else setError('Failed to load members')
         if (projectsResult.status === 'fulfilled') setGroupProjects(projectsResult.value as GroupProjectRow[])
         else setError((prev) => prev ? `${prev}; failed to load projects` : 'Failed to load projects')
+        if (invitesResult.status === 'fulfilled') setPendingInvites(invitesResult.value as PendingInviteRow[])
       })
       .finally(() => setLoading(false))
-  }, [isOpen, groupId])
+  }, [isOpen, groupId, isOwner])
 
   useEffect(() => {
     if (!isOpen || tab !== 'projects') return
@@ -99,12 +90,20 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, is
     setSuccess('')
     setInviteLoading(true)
     try {
-      await inviteGroupMember(groupId, trimmed, inviteRole)
+      const result = await inviteGroupMember(groupId, trimmed, inviteRole)
       autoSaveContact(trimmed).catch((err) => console.error('autoSaveContact failed:', err))
-      setSuccess(`Invited ${trimmed} as ${inviteRole}`)
+      if (result.type === 'invited') {
+        setSuccess(`Invite sent to ${trimmed} (they need to sign up)`)
+        if (isOwner) {
+          const invites = await getPendingRealmInvites(groupId)
+          setPendingInvites(invites as PendingInviteRow[])
+        }
+      } else {
+        setSuccess(`Added ${trimmed} as ${inviteRole}`)
+        const updated = await getGroupMembers(groupId)
+        setMembers(updated as GroupMemberRow[])
+      }
       setEmail('')
-      const updated = await getGroupMembers(groupId)
-      setMembers(updated as GroupMemberRow[])
       onUpdated?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to invite')
@@ -113,7 +112,7 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, is
     }
   }
 
-  const handleRemove = async (userId: string) => {
+  const handleRemoveMember = async (userId: string) => {
     try {
       await removeGroupMember(groupId, userId)
       setMembers((prev) => prev.filter((m) => m.userId !== userId))
@@ -123,7 +122,7 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, is
     }
   }
 
-  const handleRoleChange = async (userId: string, newRole: string) => {
+  const handleMemberRoleChange = async (userId: string, newRole: string) => {
     try {
       await updateMemberRole(groupId, userId, newRole)
       setMembers((prev) => prev.map((m) => m.userId === userId ? { ...m, role: newRole } : m))
@@ -140,6 +139,26 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, is
       onUpdated?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to rename')
+    }
+  }
+
+  const handleColorChange = async (newColor: string) => {
+    setColor(newColor)
+    try {
+      await updateGroup(groupId, { color: newColor })
+      onUpdated?.()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update color')
+    }
+  }
+
+  const handleIconChange = async (newIcon: string) => {
+    setIcon(newIcon)
+    try {
+      await updateGroup(groupId, { icon: newIcon })
+      onUpdated?.()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update icon')
     }
   }
 
@@ -261,153 +280,36 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, is
             {success && <p className="text-xs text-emerald-400 px-1">{success}</p>}
 
             {tab === 'members' && (
-              <>
-                {isOwner && (
-                  <form onSubmit={handleInvite} className="flex gap-2">
-                    <ContactAutocomplete
-                      value={email}
-                      onChange={(val) => { setEmail(val); setError('') }}
-                      onSelect={(selectedEmail) => { setEmail(selectedEmail); setError('') }}
-                      placeholder="Invite by name or email"
-                      disabled={inviteLoading}
-                    />
-                    <select
-                      value={inviteRole}
-                      onChange={(e) => setInviteRole(e.target.value)}
-                      className="px-2 py-2.5 rounded-xl text-xs text-slate-300 focus:outline-none"
-                      style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-                    >
-                      {ROLE_OPTIONS.map((r) => (
-                        <option key={r} value={r} className="bg-slate-900">{r}</option>
-                      ))}
-                    </select>
-                    <button
-                      type="submit"
-                      disabled={inviteLoading}
-                      className="px-4 py-2.5 rounded-xl text-sm font-medium flex items-center gap-2 disabled:opacity-50 transition-all hover:brightness-110"
-                      style={{ backgroundColor: 'rgba(139, 92, 246, 0.2)', border: '1px solid rgba(139, 92, 246, 0.3)', color: '#a78bfa' }}
-                    >
-                      {inviteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                    </button>
-                  </form>
-                )}
-
-                <div className="space-y-1">
-                  {loading ? (
-                    <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
-                  ) : members.map((m) => (
-                    <div key={m.userId} className="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-white/[0.03] transition-colors">
-                      <div className="flex items-center gap-3">
-                        {m.image ? (
-                          <img src={m.image} alt="" className="w-7 h-7 rounded-full" />
-                        ) : (
-                          <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)', color: 'var(--primary)' }}>
-                            {(m.name || m.email).charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                        <div>
-                          <p className="text-sm text-white">{m.name || m.email}</p>
-                          {m.name && <p className="text-xs text-slate-500">{m.email}</p>}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex flex-col items-end gap-0.5">
-                          {m.role === 'owner' ? (
-                            <span className="text-xs text-slate-500 flex items-center gap-1">
-                              <Crown className="w-3 h-3 text-amber-400" />
-                              owner
-                            </span>
-                          ) : isOwner ? (
-                            <select
-                              value={m.role}
-                              onChange={(e) => handleRoleChange(m.userId, e.target.value)}
-                              className="text-xs text-slate-400 bg-transparent border border-white/10 rounded-lg px-2 py-1 focus:outline-none cursor-pointer hover:border-white/20"
-                            >
-                              {ROLE_OPTIONS.map((r) => (
-                                <option key={r} value={r} className="bg-slate-900">{r}</option>
-                              ))}
-                            </select>
-                          ) : (
-                            <span className="text-xs text-slate-500">{m.role}</span>
-                          )}
-                          <span className="text-[10px] text-slate-600">joined {timeAgo(m.createdAt)}</span>
-                        </div>
-                        {m.role !== 'owner' && isOwner && (
-                          <button
-                            onClick={() => handleRemove(m.userId)}
-                            className="p-1 rounded hover:bg-red-500/10 text-slate-500 hover:text-red-400 transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
+              <MembersTab
+                isOwner={isOwner}
+                isPersonal={isPersonal}
+                loading={loading}
+                members={members}
+                pendingInvites={pendingInvites}
+                email={email}
+                inviteRole={inviteRole}
+                inviteLoading={inviteLoading}
+                color={color}
+                icon={icon}
+                onEmailChange={(val) => { setEmail(val); setError('') }}
+                onRoleChange={setInviteRole}
+                onInvite={handleInvite}
+                onRemoveMember={handleRemoveMember}
+                onMemberRoleChange={handleMemberRoleChange}
+                onColorChange={handleColorChange}
+                onIconChange={handleIconChange}
+              />
             )}
 
             {tab === 'projects' && (
-              <>
-                <div className="space-y-1">
-                  <p className="text-xs text-slate-500 uppercase tracking-wider px-1 mb-2">In Realm</p>
-                  {groupProjects.length === 0 ? (
-                    <p className="text-xs text-slate-600 px-1 py-3">No projects added yet</p>
-                  ) : groupProjects.map((p) => (
-                    <div key={p.projectId} className="flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-white/[0.03] transition-colors">
-                      <div className="flex items-center gap-3">
-                        {p.planetImage ? (
-                          <img src={`/planets/${p.planetImage}`} alt="" className="w-6 h-6 rounded-full" />
-                        ) : (
-                          <div className="w-6 h-6 rounded-full" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)' }} />
-                        )}
-                        <span className="text-sm text-white">{p.name}</span>
-                      </div>
-                      {isOwner && (
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => handleToggleVisibility(p.projectId, p.visibility)}
-                            className={cn(
-                              'p-1.5 rounded-lg transition-colors',
-                              p.visibility === 'owners_only'
-                                ? 'text-amber-400 hover:bg-amber-500/10'
-                                : 'text-slate-500 hover:text-slate-300 hover:bg-white/10'
-                            )}
-                            title={p.visibility === 'owners_only' ? 'Owners only — click to make visible to all' : 'Visible to all — click to restrict to owners'}
-                          >
-                            {p.visibility === 'owners_only'
-                              ? <EyeOff className="w-3.5 h-3.5" />
-                              : <Eye className="w-3.5 h-3.5" />
-                            }
-                          </button>
-                          <button
-                            onClick={() => handleRemoveProject(p.projectId)}
-                            className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                          >
-                            <FolderMinus className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {isOwner && availableProjects.length > 0 && (
-                  <div className="space-y-1 border-t border-white/10 pt-4">
-                    <p className="text-xs text-slate-500 uppercase tracking-wider px-1 mb-2">Add to Realm</p>
-                    {availableProjects.map((p) => (
-                      <button
-                        key={p.id}
-                        onClick={() => handleAddProject(p.id)}
-                        className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/[0.05] transition-colors text-left"
-                      >
-                        <FolderPlus className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="text-sm text-slate-300">{p.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </>
+              <ProjectsTab
+                isOwner={isOwner}
+                groupProjects={groupProjects}
+                availableProjects={availableProjects}
+                onAddProject={handleAddProject}
+                onRemoveProject={handleRemoveProject}
+                onToggleVisibility={handleToggleVisibility}
+              />
             )}
 
             {isOwner && !isPersonal && (

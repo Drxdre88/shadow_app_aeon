@@ -11,6 +11,7 @@ export function useConnectMode({ connectMode, onAddDependency, onConnectModeChan
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 })
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!connectMode) setConnectSourceId(null)
   }, [connectMode])
 

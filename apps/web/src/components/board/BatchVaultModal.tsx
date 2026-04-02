@@ -36,6 +36,7 @@ export function BatchVaultModal({ isOpen, columnName, tasks, onConfirm, onClose 
 
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setEntries(tasks.map(t => ({
         taskId: t.id,
         taskName: t.name,

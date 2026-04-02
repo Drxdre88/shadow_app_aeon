@@ -112,6 +112,7 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, r
     })
   }, [projects, projectOrder])
 
+   
   useEffect(() => {
     const computedKeys = groups.map(([label]) => label)
     const stored = localStorage.getItem('aeon-group-order')

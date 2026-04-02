@@ -76,7 +76,7 @@ export async function createTask(
       .returning()
   })
 
-  touchProject(projectId)
+  await touchProject(projectId)
   return task
 }
 
@@ -111,7 +111,7 @@ export async function updateTask(
     .where(and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, projectId)))
     .returning()
 
-  touchProject(projectId)
+  await touchProject(projectId)
   return task || null
 }
 
@@ -121,7 +121,7 @@ export async function createTasksBatch(
 ) {
   if (tasks.length === 0) return []
 
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const [maxResult] = await tx
       .select({ max: sql<number>`coalesce(max(${boardTasks.orderIndex}), -1)` })
       .from(boardTasks)
@@ -144,9 +144,11 @@ export async function createTasksBatch(
       orderIndex: nextIndex++,
     }))
 
-    touchProject(projectId)
     return tx.insert(boardTasks).values(values).returning()
   })
+
+  await touchProject(projectId)
+  return result
 }
 
 export async function deleteTask(taskId: string, projectId: string) {
@@ -155,7 +157,7 @@ export async function deleteTask(taskId: string, projectId: string) {
     .where(and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, projectId)))
     .returning({ id: boardTasks.id })
 
-  touchProject(projectId)
+  await touchProject(projectId)
   return !!deleted
 }
 
@@ -163,7 +165,7 @@ export async function deleteTasksByColumn(columnId: string, projectId: string) {
   await db
     .delete(boardTasks)
     .where(and(eq(boardTasks.columnId, columnId), eq(boardTasks.projectId, projectId)))
-  touchProject(projectId)
+  await touchProject(projectId)
 }
 
 export async function reorderTasks(

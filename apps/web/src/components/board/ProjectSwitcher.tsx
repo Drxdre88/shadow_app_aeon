@@ -88,6 +88,7 @@ export function ProjectSwitcher({ currentProjectId, projectName, glowColor }: Pr
     return a.localeCompare(b)
   })
 
+  // eslint-disable-next-line react-hooks/refs
   const rect = buttonRef.current?.getBoundingClientRect()
 
   return (
