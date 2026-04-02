@@ -16,11 +16,12 @@ import { ShortcutsTab } from './ShortcutsTab'
 import { FunTab } from './FunTab'
 import { DashboardTab } from './DashboardTab'
 
-type SettingsTab = 'projects' | 'board' | 'palette' | 'typography' | 'effects' | 'fun'
+type SettingsTab = 'projects' | 'board' | 'shortcuts' | 'palette' | 'typography' | 'effects' | 'fun'
 
 const TAB_CONFIG: { id: SettingsTab; label: string; icon: typeof Palette }[] = [
   { id: 'projects', label: 'Projects', icon: LayoutDashboard },
   { id: 'board', label: 'Board', icon: LayoutGrid },
+  { id: 'shortcuts', label: 'Keys', icon: Keyboard },
   { id: 'palette', label: 'Theme', icon: Palette },
   { id: 'typography', label: 'Typography', icon: PenTool },
   { id: 'effects', label: 'Effects', icon: Wand2 },
@@ -129,18 +130,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 min-h-[500px]">
-          {activeTab === 'board' && (
-            <div className="space-y-8">
-              <GeneralTab />
-              <div className="border-t border-white/10 pt-6">
-                <h3 className="text-sm font-medium text-slate-400 mb-4 flex items-center gap-2">
-                  <Keyboard className="w-4 h-4" />
-                  Board Shortcuts
-                </h3>
-                <ShortcutsTab />
-              </div>
-            </div>
-          )}
+          {activeTab === 'board' && <GeneralTab />}
+          {activeTab === 'shortcuts' && <ShortcutsTab />}
           {activeTab === 'palette' && <PaletteTab />}
           {activeTab === 'typography' && <TypographyTab />}
           {activeTab === 'effects' && <EffectsTab />}

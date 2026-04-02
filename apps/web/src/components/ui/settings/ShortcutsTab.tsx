@@ -15,14 +15,44 @@ const SHORTCUT_LABELS: Record<string, string> = {
   toggleChecklist: 'Checklist Overview (off/preview/full)',
 }
 
-const GLOBAL_SHORTCUTS = [
-  { keys: 'Ctrl+K / /', label: 'Command Palette' },
-  { keys: 'Double-click', label: 'Inline Edit Card Title' },
-  { keys: 'Ctrl+Z', label: 'Undo Last Delete' },
-  { keys: 'Ctrl+C / V', label: 'Copy / Paste Card' },
-  { keys: 'Arrows', label: 'Move Selected Card (L/R columns, U/D reorder)' },
-  { keys: 'Escape', label: 'Deselect Card / Close Modal' },
+const DASHBOARD_SHORTCUTS = [
+  { keys: 'N', label: 'New project' },
+  { keys: '1-9', label: 'Switch realm (1 = All)' },
 ]
+
+const BOARD_FIXED_SHORTCUTS = [
+  { keys: 'Ctrl+C / V', label: 'Copy / Paste card' },
+  { keys: 'Arrows', label: 'Move selected card (L/R columns, U/D reorder)' },
+  { keys: 'Double-click', label: 'Inline edit card title' },
+]
+
+const GLOBAL_SHORTCUTS = [
+  { keys: '?', label: 'Open help' },
+  { keys: 'Ctrl+K / /', label: 'Command palette' },
+  { keys: 'Ctrl+Z', label: 'Undo last delete' },
+  { keys: 'Escape', label: 'Deselect card / close modal' },
+]
+
+function ShortcutSection({ title, items }: { title: string; items: { keys: string; label: string }[] }) {
+  return (
+    <>
+      <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider pt-4">{title}</h4>
+      <div className="space-y-2">
+        {items.map(({ keys, label }) => (
+          <div
+            key={keys}
+            className="flex items-center justify-between px-4 py-3 rounded-lg bg-white/[0.03] border border-white/10"
+          >
+            <span className="text-sm text-slate-300">{label}</span>
+            <span className="px-3 py-1.5 rounded-lg text-xs font-mono font-bold border border-white/10 bg-white/5 text-slate-400 min-w-[60px] text-center">
+              {keys}
+            </span>
+          </div>
+        ))}
+      </div>
+    </>
+  )
+}
 
 export function ShortcutsTab() {
   const { shortcuts, setShortcut, colors } = useThemeStore()
@@ -47,7 +77,7 @@ export function ShortcutsTab() {
 
   return (
     <div className="space-y-4 max-w-md">
-      <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider">Keyboard Shortcuts</h4>
+      <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider">Board Shortcuts (customizable)</h4>
       <div className="space-y-2">
         {Object.entries(SHORTCUT_LABELS).map(([action, label]) => (
           <div
@@ -72,20 +102,9 @@ export function ShortcutsTab() {
       </div>
       <p className="text-[10px] text-slate-500">Click a key binding, then press any key to remap. Escape to cancel.</p>
 
-      <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider pt-4">Global Shortcuts</h4>
-      <div className="space-y-2">
-        {GLOBAL_SHORTCUTS.map(({ keys, label }) => (
-          <div
-            key={keys}
-            className="flex items-center justify-between px-4 py-3 rounded-lg bg-white/[0.03] border border-white/10"
-          >
-            <span className="text-sm text-slate-300">{label}</span>
-            <span className="px-3 py-1.5 rounded-lg text-xs font-mono font-bold border border-white/10 bg-white/5 text-slate-400 min-w-[60px] text-center">
-              {keys}
-            </span>
-          </div>
-        ))}
-      </div>
+      <ShortcutSection title="Dashboard Shortcuts" items={DASHBOARD_SHORTCUTS} />
+      <ShortcutSection title="Board Shortcuts (fixed)" items={BOARD_FIXED_SHORTCUTS} />
+      <ShortcutSection title="Global Shortcuts" items={GLOBAL_SHORTCUTS} />
     </div>
   )
 }

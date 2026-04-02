@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, UserPlus, Crown, Trash2, Loader2, Settings, FolderPlus, FolderMinus } from 'lucide-react'
+import { X, UserPlus, Crown, Trash2, Loader2, Settings, FolderPlus, FolderMinus, Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { timeAgo } from '@/lib/utils/timeAgo'
 import {
   getGroupMembers,
   getGroupProjects,
@@ -14,6 +15,7 @@ import {
   deleteGroup,
   addProjectToGroup,
   removeProjectFromGroup,
+  setProjectVisibility,
 } from '@/lib/actions/workspaces'
 import { getProjects } from '@/lib/actions/projects'
 import { autoSaveContact } from '@/lib/actions/contacts'
@@ -43,6 +45,7 @@ type GroupProjectRow = {
   name: string
   planetImage: string | null
   ownerId: string
+  visibility: string
 }
 
 const ROLE_OPTIONS = ['editor', 'viewer'] as const
@@ -158,6 +161,16 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, is
       onUpdated?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to remove project')
+    }
+  }
+
+  const handleToggleVisibility = async (projectId: string, current: string) => {
+    const next = current === 'owners_only' ? 'all' : 'owners_only'
+    try {
+      await setProjectVisibility(projectId, groupId, next as 'all' | 'owners_only')
+      setGroupProjects((prev) => prev.map((p) => p.projectId === projectId ? { ...p, visibility: next } : p))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update visibility')
     }
   }
 
@@ -298,24 +311,27 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, is
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {m.role === 'owner' ? (
-                          <span className="text-xs text-slate-500 flex items-center gap-1">
-                            <Crown className="w-3 h-3 text-amber-400" />
-                            owner
-                          </span>
-                        ) : isOwner ? (
-                          <select
-                            value={m.role}
-                            onChange={(e) => handleRoleChange(m.userId, e.target.value)}
-                            className="text-xs text-slate-400 bg-transparent border border-white/10 rounded-lg px-2 py-1 focus:outline-none cursor-pointer hover:border-white/20"
-                          >
-                            {ROLE_OPTIONS.map((r) => (
-                              <option key={r} value={r} className="bg-slate-900">{r}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <span className="text-xs text-slate-500">{m.role}</span>
-                        )}
+                        <div className="flex flex-col items-end gap-0.5">
+                          {m.role === 'owner' ? (
+                            <span className="text-xs text-slate-500 flex items-center gap-1">
+                              <Crown className="w-3 h-3 text-amber-400" />
+                              owner
+                            </span>
+                          ) : isOwner ? (
+                            <select
+                              value={m.role}
+                              onChange={(e) => handleRoleChange(m.userId, e.target.value)}
+                              className="text-xs text-slate-400 bg-transparent border border-white/10 rounded-lg px-2 py-1 focus:outline-none cursor-pointer hover:border-white/20"
+                            >
+                              {ROLE_OPTIONS.map((r) => (
+                                <option key={r} value={r} className="bg-slate-900">{r}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className="text-xs text-slate-500">{m.role}</span>
+                          )}
+                          <span className="text-[10px] text-slate-600">joined {timeAgo(m.createdAt)}</span>
+                        </div>
                         {m.role !== 'owner' && isOwner && (
                           <button
                             onClick={() => handleRemove(m.userId)}
@@ -348,12 +364,29 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, is
                         <span className="text-sm text-white">{p.name}</span>
                       </div>
                       {isOwner && (
-                        <button
-                          onClick={() => handleRemoveProject(p.projectId)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                        >
-                          <FolderMinus className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => handleToggleVisibility(p.projectId, p.visibility)}
+                            className={cn(
+                              'p-1.5 rounded-lg transition-colors',
+                              p.visibility === 'owners_only'
+                                ? 'text-amber-400 hover:bg-amber-500/10'
+                                : 'text-slate-500 hover:text-slate-300 hover:bg-white/10'
+                            )}
+                            title={p.visibility === 'owners_only' ? 'Owners only — click to make visible to all' : 'Visible to all — click to restrict to owners'}
+                          >
+                            {p.visibility === 'owners_only'
+                              ? <EyeOff className="w-3.5 h-3.5" />
+                              : <Eye className="w-3.5 h-3.5" />
+                            }
+                          </button>
+                          <button
+                            onClick={() => handleRemoveProject(p.projectId)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          >
+                            <FolderMinus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       )}
                     </div>
                   ))}

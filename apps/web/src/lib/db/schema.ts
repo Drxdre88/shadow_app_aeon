@@ -108,6 +108,7 @@ export const projectGroups = pgTable('project_groups', {
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
   groupId: uuid('group_id').notNull().references(() => workspaceGroups.id, { onDelete: 'cascade' }),
   addedBy: uuid('added_by').references(() => users.id, { onDelete: 'set null' }),
+  visibility: varchar('visibility', { length: 20 }).default('all').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (pg) => ({
   pk: primaryKey({ columns: [pg.projectId, pg.groupId] }),

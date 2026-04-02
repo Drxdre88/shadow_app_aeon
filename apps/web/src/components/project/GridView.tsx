@@ -3,13 +3,14 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { Calendar, Trash2, Pencil, Palette, Users, GripVertical } from 'lucide-react'
+import { Clock, Trash2, Pencil, Palette, Users, GripVertical } from 'lucide-react'
 import Link from 'next/link'
 import { DndContext, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, useSortable, horizontalListSortingStrategy, rectSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import { GlowCard } from '@/components/ui/GlowCard'
+import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { deleteProject, setProjectGroup } from '@/lib/actions/projects'
 import { useThemeStore } from '@/stores/themeStore'
 import {
@@ -21,6 +22,7 @@ import {
   addRecentColor,
 } from '@/lib/utils/colors'
 import { cn } from '@/lib/utils/cn'
+import { timeAgo } from '@/lib/utils/timeAgo'
 import { ProjectContextMenu, type RealmInfo } from './ProjectContextMenu'
 import type { ProjectWithStats } from './types'
 
@@ -76,6 +78,7 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, r
   const [hoveredProjectId, setHoveredProjectId] = useState<string | null>(null)
   const [colorPickerProjectId, setColorPickerProjectId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: ProjectWithStats } | null>(null)
   const layout = controlledLayout ?? 'wrap'
   const [groupOrder, setGroupOrder] = useState<string[]>([])
@@ -157,11 +160,17 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, r
     setProjectColor(projectId, color)
   }, [setProjectColor])
 
-  const handleDelete = async (e: React.MouseEvent, projectId: string) => {
+  const handleDelete = (e: React.MouseEvent, projectId: string) => {
     e.preventDefault()
     e.stopPropagation()
     if (deletingId) return
-    if (!confirm('Delete this project? All tasks will be permanently removed.')) return
+    setPendingDeleteId(projectId)
+  }
+
+  const confirmDelete = async () => {
+    if (!pendingDeleteId) return
+    const projectId = pendingDeleteId
+    setPendingDeleteId(null)
     setDeletingId(projectId)
     onDelete?.(projectId)
     try {
@@ -270,8 +279,8 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, r
                 )}
                 <div className="flex items-center mt-2 text-xs text-[var(--text-muted)]">
                   <span className="flex items-center gap-1">
-                    <Calendar className="w-3 h-3" />
-                    {new Date(project.startDate).toLocaleDateString()}
+                    <Clock className="w-3 h-3" />
+                    {timeAgo(project.updatedAt)}
                   </span>
                 </div>
               </div>
@@ -437,10 +446,19 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, r
           onClose={() => setContextMenu(null)}
           onEdit={() => onEdit(contextMenu.project)}
           onShare={() => onShare?.(contextMenu.project)}
-          onDelete={() => handleDelete({ preventDefault: () => {}, stopPropagation: () => {} } as React.MouseEvent, contextMenu.project.id)}
+          onDelete={() => { setContextMenu(null); setPendingDeleteId(contextMenu.project.id) }}
           onToggleRealm={(realmId) => onToggleRealm?.(contextMenu.project.id, realmId)}
         />
       )}
+      <ConfirmModal
+        isOpen={!!pendingDeleteId}
+        title="Delete project?"
+        message="All tasks will be permanently removed. This cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDeleteId(null)}
+      />
     </DndContext>
   )
 }

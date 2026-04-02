@@ -332,6 +332,7 @@ export async function findWorkspaceProjects(userId: string) {
   const groupProjectRows = await db
     .select({
       groupId: projectGroups.groupId,
+      visibility: projectGroups.visibility,
       ...PROJECT_COLUMNS,
     })
     .from(projectGroups)
@@ -339,8 +340,15 @@ export async function findWorkspaceProjects(userId: string) {
     .where(inArray(projectGroups.groupId, groupIds))
     .orderBy(desc(projects.createdAt))
 
-  return userGroups.map((g) => ({
-    ...g,
-    projects: groupProjectRows.filter((p) => p.groupId === g.groupId),
-  }))
+  const roleByGroup = new Map(userGroups.map((g) => [g.groupId, g.memberRole]))
+
+  return userGroups.map((g) => {
+    const role = roleByGroup.get(g.groupId)
+    const canSeeAll = role === 'owner' || role === 'editor'
+    return {
+      ...g,
+      projects: groupProjectRows
+        .filter((p) => p.groupId === g.groupId && (canSeeAll || p.visibility !== 'owners_only')),
+    }
+  })
 }

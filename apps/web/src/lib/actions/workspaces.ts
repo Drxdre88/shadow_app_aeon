@@ -21,8 +21,8 @@ import {
   consolidateSoloWorkspaces as _consolidateSolo,
 } from '@/lib/data/workspaces'
 import { db } from '@/lib/db'
-import { users } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { users, projectGroups } from '@/lib/db/schema'
+import { eq, and } from 'drizzle-orm'
 
 const ASSIGNABLE_ROLES = ['editor', 'viewer'] as const
 type AssignableRole = typeof ASSIGNABLE_ROLES[number]
@@ -77,8 +77,10 @@ export async function getGroupMembers(groupId: string) {
 }
 
 export async function getGroupProjects(groupId: string) {
-  await requireGroupMember(groupId)
-  return _findProjects(groupId)
+  const userId = await requireAuth()
+  const role = await getGroupRole(groupId, userId)
+  if (!role) throw new Error('Not a member of this workspace')
+  return _findProjects(groupId, role)
 }
 
 export async function addProjectToGroup(projectId: string, groupId: string) {
@@ -126,6 +128,13 @@ export async function deleteGroup(groupId: string) {
   await requireGroupOwner(groupId)
   if (await _isPersonal(groupId)) throw new Error('Cannot delete personal workspace')
   return _delete(groupId)
+}
+
+export async function setProjectVisibility(projectId: string, groupId: string, visibility: 'all' | 'owners_only') {
+  await requireGroupOwner(groupId)
+  await db.update(projectGroups)
+    .set({ visibility })
+    .where(and(eq(projectGroups.projectId, projectId), eq(projectGroups.groupId, groupId)))
 }
 
 export async function ensurePersonalWorkspace() {

@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 import { useThemeStore } from '@/stores/themeStore'
 import { colorConfig, resolveColor, type AccentColor } from '@/lib/utils/colors'
 import { renameProjectGroup, setProjectGroup, deleteProject } from '@/lib/actions/projects'
+import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { ProjectContextMenu } from './ProjectContextMenu'
 import type { ProjectWithStats } from './types'
 
@@ -55,6 +56,7 @@ export function TreeView({ projects, onEdit, onDelete, onShare, realms = [], pro
   const [editGroupValue, setEditGroupValue] = useState('')
   const editInputRef = useRef<HTMLInputElement>(null)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; project: ProjectWithStats } | null>(null)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
 
   const groups = useMemo(() => groupByFluidGroup(projects), [projects])
 
@@ -257,13 +259,25 @@ export function TreeView({ projects, onEdit, onDelete, onShare, realms = [], pro
           onClose={() => setCtxMenu(null)}
           onEdit={() => onEdit?.(ctxMenu.project)}
           onShare={() => onShare?.(ctxMenu.project)}
-          onDelete={async () => {
-            await deleteProject(ctxMenu.project.id)
-            onDelete?.()
-          }}
+          onDelete={() => { setPendingDeleteId(ctxMenu.project.id); setCtxMenu(null) }}
           onToggleRealm={(realmId) => onToggleRealm?.(ctxMenu.project.id, realmId)}
         />
       )}
+      <ConfirmModal
+        isOpen={!!pendingDeleteId}
+        title="Delete project?"
+        message="All tasks will be permanently removed. This cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={async () => {
+          if (!pendingDeleteId) return
+          const id = pendingDeleteId
+          setPendingDeleteId(null)
+          await deleteProject(id)
+          onDelete?.()
+        }}
+        onCancel={() => setPendingDeleteId(null)}
+      />
     </div>
   )
 }

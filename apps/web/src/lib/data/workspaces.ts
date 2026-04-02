@@ -48,18 +48,21 @@ export async function findGroupMembers(groupId: string) {
     .where(eq(groupMembers.groupId, groupId))
 }
 
-export async function findProjectsInGroup(groupId: string) {
-  return db
+export async function findProjectsInGroup(groupId: string, callerRole?: string) {
+  const rows = await db
     .select({
       projectId: projectGroups.projectId,
       name: projects.name,
       planetImage: projects.planetImage,
       ownerId: projects.userId,
       addedBy: projectGroups.addedBy,
+      visibility: projectGroups.visibility,
     })
     .from(projectGroups)
     .innerJoin(projects, eq(projects.id, projectGroups.projectId))
     .where(eq(projectGroups.groupId, groupId))
+  if (callerRole === 'owner' || callerRole === 'editor') return rows
+  return rows.filter((r) => r.visibility !== 'owners_only')
 }
 
 export async function addProjectToGroup(projectId: string, groupId: string, addedBy: string) {
