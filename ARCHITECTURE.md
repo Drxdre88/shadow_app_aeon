@@ -66,7 +66,7 @@ shadow-specs/                      -- AI spec workflow directory
 | `project_invites` | id, projectId, email, token, expiresAt | Invite tokens |
 | `workspace_groups` | id, name, ownerId, isPersonal, color | Realms (workspace groups) |
 | `group_members` | groupId, userId, role | Realm membership |
-| `project_groups` | projectId, groupId | Project-to-realm assignment |
+| `project_groups` | projectId, groupId, visibility | Project-to-realm assignment (visibility: owners_only filtering) |
 | `board_columns` | id, projectId, name, color, orderIndex | Kanban columns |
 | `board_tasks` | id, projectId, columnId, name, priority, size, archivedAt, completedAt | Kanban cards |
 | `labels` | id, projectId, name, color | Card labels |
@@ -169,7 +169,7 @@ Auth: Bearer token (API key or master key). 52 tools across 11 categories:
 | **Task context menu** | Complete | `TaskContextMenu.tsx`, `ContextMenuButton.tsx` | Right-click actions |
 | **Column context menu** | Complete | `ColumnContextMenu.tsx`, `ColumnDeleteModal.tsx` | Rename, color, delete with migrate |
 | **Board filtering** | Complete | `BoardFilterBar.tsx`, `lib/utils/boardFilters.ts` | Text search, priority, label, column, date filters |
-| **Keyboard shortcuts** | Complete | `useBoardKeyboardShortcuts.ts`, `shared/config/defaults.ts` | 8 customizable shortcuts (l/c/e/g/v/d/o/s) |
+| **Keyboard shortcuts** | Complete | `useBoardKeyboardShortcuts.ts`, `shared/config/defaults.ts` | 8 customizable shortcuts (l/c/e/g/v/d/o/s), dedicated Keys tab in Help + Settings modals |
 | **Command Palette** | Complete | `ui/CommandPalette.tsx` | Cmd+K via cmdk library |
 | **Checklist (tri-state)** | Complete | `board/checklist/TaskChecklist.tsx`, `TriStateCheckbox.tsx`, `SortableChecklistItem.tsx` | Grouped, sortable, tri-state (check/cross/uncheck), status badges |
 | **Labels** | Complete | `LabelPicker.tsx`, `TaskLabelsSection.tsx` | Per-project labels, color-coded |
@@ -184,12 +184,12 @@ Auth: Bearer token (API key or master key). 52 tools across 11 categories:
 | **Trophy / Vault** | Complete | `components/trophy/TrophyRoom.tsx`, `TrophyCard.tsx`, `TrophyStats.tsx`, `TrophyTimeline.tsx` | Archived tasks, stats, timeline view |
 | **Vault archiving** | Complete | `BatchVaultModal.tsx`, `VaultDaysModal.tsx`, `lib/actions/vault.ts` | Auto-vault by days, batch vault |
 | **Velocity analytics** | Complete | `components/velocity/VelocityTab.tsx`, `VelocityChart.tsx`, `CycleTimeCard.tsx`, `HeatmapGrid.tsx`, `ColumnFlowBar.tsx` | Throughput, cycle time, heatmap, column flow |
-| **Realms (workspaces)** | Complete | `components/workspace/RealmSection.tsx`, `CreateWorkspaceModal.tsx`, `WorkspaceSettingsModal.tsx` | Flat realm list (no personal/team split), TEAM badge, member roles, Orbit icons, two-click delete confirm, number key shortcuts (1-9) for realm switching |
+| **Realms (workspaces)** | Complete | `components/workspace/RealmSection.tsx`, `CreateWorkspaceModal.tsx`, `WorkspaceSettingsModal.tsx` | Flat realm list (no personal/team split), TEAM badge, member roles, Orbit icons, two-click delete confirm, number key shortcuts (1-9) for realm switching, scoped visibility (Eye/EyeOff toggle), member "joined X ago" |
 | **Realm REST API** | Complete | `api/v1/realms/` (6 route files) | Full CRUD + members + projects, Zod validation, canAccessProject enforcement |
 | **Sidebar navigation** | Complete | `components/sidebar/AppSidebar.tsx`, `components/sidebar/ProjectSidebar.tsx`, `stores/sidebarStore.ts` | Dashboard uses AppSidebar (realm pills + project list). Project board view uses ProjectSidebar (view tabs: Board/Gantt/Canvas/Trophy/Velocity + back arrow to dashboard). ProjectContent uses ProjectSidebar with slim top bar (contextual actions + Cmd+K search bar). Both share `useSidebarStore` for collapse state (persisted with hydration guard). |
 | **Hide toggle** | Complete | `stores/sidebarStore.ts` | Per-project and per-realm hide via sidebarStore (persisted), unhide eye button in sidebar bottom |
 | **Project CRUD** | Complete | `components/project/CreateProjectModal.tsx`, `EditProjectModal.tsx` | Create, edit, delete, realm assignment (flat list, legacy group field removed) |
-| **Project views** | Complete | `SpaceView.tsx`, `TreeView.tsx`, `GridView.tsx`, `ProjectViewSwitcher.tsx` | SpaceView: single unified canvas with realm grouping (defaults fullscreen), TreeView: full right-click context menu, GridView: 3 views with context menus |
+| **Project views** | Complete | `SpaceView.tsx`, `TreeView.tsx`, `GridView.tsx`, `ProjectViewSwitcher.tsx` | SpaceView: single unified canvas with realm grouping (defaults fullscreen), TreeView: full right-click context menu + delete confirm, GridView: 3 views with context menus + relative time via timeAgo |
 | **Theming** | Complete | `packages/shared/src/config/themes/` (17 files), `stores/themeStore.ts` | 151 presets, saturation/brightness/vibrancy sliders |
 | **Visual effects** | Complete | `components/effects/` (13 effects), `cursor/` | Starfield, sakura, snowfall, matrix, storm, aurora, cursor trails |
 | **Celebrations** | Complete | `components/celebrations/CelebrationEngine.tsx` | 6 categories: alien, business, fun, horror, medieval + registry |
@@ -203,12 +203,16 @@ Auth: Bearer token (API key or master key). 52 tools across 11 categories:
 | **MCP server** | Complete | `api/[transport]/route.ts`, `tools/` (11 modules) | 52 tools, Bearer auth |
 | **Beta terms** | Complete | `app/beta-terms/` | Terms acceptance gate with effects |
 | **Undo system** | Complete | `lib/store/undoStore.ts` | 20-entry undo stack |
-| **Board sync (polling)** | Complete | `api/sync/version/[projectId]/route.ts`, `lib/actions/board.ts` | Version-based polling |
+| **Board sync (polling)** | Complete | `api/sync/version/[projectId]/route.ts`, `lib/actions/board.ts` | Version-based polling, boardVersion incremented on every mutation via touchProject |
 | **Board theme override** | Complete | `app/project/[id]/useBoardTheme.ts` | Per-project theme override |
 | **Toasts** | Complete | `ui/Toast.tsx` | Action confirmation toasts |
 | **PWA** | Partial | `components/pwa/ServiceWorkerRegistration.tsx` | Service worker registration exists |
 | **Desktop (Tauri)** | Scaffold | `apps/desktop/` | Tauri config + hello-world Rust, no integration |
 | **Real-time push** | Not Started | `lib/realtime/index.ts` | `publishBoardEvent()` is a no-op stub |
+| **Confirm modal** | Complete | `components/ui/ConfirmModal.tsx` | Reusable delete confirmation, wired into GridView + TreeView |
+| **Scoped visibility** | Complete | `WorkspaceSettingsModal.tsx`, migration `0010` | owners_only filtering on project_groups, Eye/EyeOff toggle per project |
+| **Access denied page** | Complete | `components/ui/AccessDenied.tsx` | Themed error page replacing raw 404 for unauthorized access |
+| **Server-side loading** | Complete | `app/project/[id]/page.tsx`, `app/dashboard/page.tsx` | Board page preloads 7 queries (hydrated via useProjectData initialBoardData), dashboard fetches workspaces in parallel |
 | **Activity feed UI** | Not Started | DB table `activity_events` exists | Events written but no UI to display them |
 
 ---
@@ -257,6 +261,8 @@ All stores use Zustand v5.
 | Activity feed has no UI | Low | `activity_events` table populated but no frontend display |
 | Zustand persist hydration flash | Low | sidebarStore now has hydration guard; board/canvas/gantt stores may still flash defaults |
 | Desktop app is scaffold only | Low | Tauri config exists, no web-shell integration |
+| `touchProject` is fire-and-forget | Low | No `await` on touchProject calls -- mutation response doesn't wait for version bump |
+| 44 lint warnings pending | Low | TypeScript/ESLint warnings accumulated across codebase |
 | TODO/FIXME count | None | 0 TODO/FIXME markers in source |
 | Test coverage | Low | 8 test files total (stores + actions), no component tests |
 | Stores split across two dirs | Low | `src/stores/` (theme, sidebar) vs `src/lib/store/` (board, canvas, gantt, undo) |
@@ -288,3 +294,15 @@ All stores use Zustand v5.
 21. ProjectSidebar component -- dedicated sidebar for project board view with view tabs, back arrow, slim top bar with only contextual actions
 22. ProjectSidebar refactor -- ProjectContent now uses ProjectSidebar exclusively (removed AppSidebar from board view, removed workspace loading). Cmd+K search bar added to project top bar. Dead imports/props cleaned (ChevronLeft, user prop on RealmList, etc.).
 23. MCP cleanup -- `set_project_group` tool removed (legacy, 53 -> 52 tools). `remove_realm_member` got target-owner guard. Realm sidebar colors simplified to primary-only.
+24. ConfirmModal.tsx -- reusable delete confirmation component, wired into GridView + TreeView project delete
+25. Scoped visibility -- `visibility` column on `project_groups` (migration 0010), owners_only filtering in data layer
+26. Eye/EyeOff toggle in WorkspaceSettingsModal for per-project scoped visibility
+27. timeAgo.ts utility -- GridView shows relative time ("3 days ago") instead of raw dates
+28. Member "joined X ago" display in WorkspaceSettingsModal
+29. Realm member access -- `verifyProjectOwnership` now checks realm membership as third access path
+30. AccessDenied.tsx -- themed error page replacing raw 404 for unauthorized access
+31. Server-side board data loading -- page.tsx preloads 7 queries, useProjectData hydrates from initialBoardData
+32. Server-side workspace loading on dashboard -- page.tsx fetches in parallel, DashboardContent uses initialWorkspaces
+33. touchProject -- bumps updatedAt + boardVersion on every task mutation (fire-and-forget)
+34. Neon connection timeout bumped 10s to 20s
+35. boardVersion now actually incremented (was static 0 before), dedicated Keys tab in Help + Settings modals
