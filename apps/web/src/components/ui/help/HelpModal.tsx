@@ -167,7 +167,7 @@ export function HelpButton() {
             boxShadow: glowIntensity > 50 ? `0 0 ${10 * (glowIntensity / 100)}px ${colors.glowColor}` : 'none',
           }}
         >
-          <HelpCircle className="w-5 h-5 text-slate-400" />
+          <HelpCircle className="w-5 h-5 text-current" />
         </motion.button>
       </Tooltip>
       <HelpModal isOpen={isOpen} onClose={() => setIsOpen(false)} />

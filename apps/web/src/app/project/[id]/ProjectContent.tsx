@@ -1,15 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { LayoutGrid, Calendar, Lightbulb, ArrowLeft, RefreshCw, AlertTriangle, Filter, Link2, GitBranch, Trophy, RotateCcw, Columns3, Grid2x2, Package, Activity, Users } from 'lucide-react'
+import { RefreshCw, AlertTriangle, Filter, Link2, GitBranch, RotateCcw, Columns3, Grid2x2, Package, Users, Search } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import dynamic from 'next/dynamic'
-import Image from 'next/image'
-import aeonLogo from '@/assets/aeon.png'
-import Link from 'next/link'
-import { SettingsButton } from '@/components/ui/SettingsModal'
-import { HelpButton } from '@/components/ui/HelpModal'
-import { FeaturesShowcaseButton } from '@/components/ui/FeaturesShowcase'
+import { signOut } from 'next-auth/react'
 import { GlassStage } from '@/components/ui/GlassStage'
 import { TimeScaleSelector } from '@/components/gantt/TimeScaleSelector'
 import { TaskBoard } from '@/components/board/TaskBoard'
@@ -25,6 +20,8 @@ import { VaultDaysModal } from '@/components/board/VaultDaysModal'
 import { BatchVaultModal } from '@/components/board/BatchVaultModal'
 import { ArchiveBrowser } from '@/components/board/ArchiveBrowser'
 import { ShareModal } from '@/components/board/ShareModal'
+import { ProjectSidebar } from '@/components/sidebar/ProjectSidebar'
+import { useSidebarStore } from '@/stores/sidebarStore'
 import type { Project } from '@/lib/db/schema'
 import { useProjectData } from './useProjectData'
 import { useBoardHandlers } from './useBoardHandlers'
@@ -41,18 +38,26 @@ const VelocityTab = dynamic(() => import('@/components/velocity/VelocityTab').th
 
 interface ProjectContentProps {
   project: Project
+  user: {
+    id: string
+    role: string
+    name?: string | null
+    email?: string | null
+    image?: string | null
+  }
 }
 
-export default function ProjectContent({ project }: ProjectContentProps) {
+export default function ProjectContent({ project, user }: ProjectContentProps) {
   const [activeTab, setActiveTab] = useState<'board' | 'gantt' | 'canvas' | 'trophy' | 'velocity'>('board')
   const [showFilters, setShowFilters] = useState(false)
   const [filters, setFilters] = useState<BoardFilters>(DEFAULT_FILTERS)
   const [showAllDeps, setShowAllDeps] = useState(false)
   const [connectMode, setConnectMode] = useState(false)
   const [showShare, setShowShare] = useState(false)
-  const { boardLayout, setBoardLayout, colors, projectColors, glowIntensity } = useThemeStore()
+  const { boardLayout, setBoardLayout, colors, projectColors } = useThemeStore()
   const isDirty = useBoardStore((s) => s.isDirty)
   const projectGlow = projectColors[project.id] || colors.glowColor || 'rgba(139, 92, 246, 0.5)'
+  const { collapsed } = useSidebarStore()
 
   const { isLoading, loadError, triggerReload } = useProjectData(project.id, activeTab)
   useBoardTheme(project.id, (project.settings ?? {}) as Record<string, unknown>)
@@ -64,7 +69,15 @@ export default function ProjectContent({ project }: ProjectContentProps) {
   const canvas = useCanvasHandlers(project.id)
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen flex">
+      <ProjectSidebar
+        user={user}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onSignOut={() => signOut({ callbackUrl: '/' })}
+      />
+
+      <div className="flex-1 min-w-0 transition-all duration-300" style={{ marginLeft: collapsed ? 60 : 260 }}>
       <GlassStage
         blobConfig={{
           blobs: [
@@ -77,20 +90,6 @@ export default function ProjectContent({ project }: ProjectContentProps) {
       <header className="sticky top-0 z-40 bg-[#0a0a0c]/95 backdrop-blur-xl border-b border-white/[0.06]">
         <div className="px-2 sm:px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Link
-              href="/dashboard"
-              className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Link>
-            <Image
-              src={aeonLogo}
-              alt="Aeon"
-              width={24}
-              height={24}
-              className="rounded"
-              style={{ filter: 'drop-shadow(0 0 6px var(--glow-color))' }}
-            />
             <ProjectSwitcher
               currentProjectId={project.id}
               projectName={project.name}
@@ -103,75 +102,18 @@ export default function ProjectContent({ project }: ProjectContentProps) {
               )}
               title={isDirty ? 'Syncing...' : 'Synced'}
             />
-
-            <div className="flex items-center gap-1 ml-2 sm:ml-4">
-              <button
-                onClick={() => setActiveTab('board')}
-                className={cn(
-                  'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
-                  activeTab === 'board'
-                    ? 'border text-white'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
-                )}
-                style={activeTab === 'board' ? {
-                  backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)',
-                  borderColor: 'color-mix(in srgb, var(--primary) 30%, transparent)',
-                  color: 'var(--primary)',
-                } : undefined}
-              >
-                <LayoutGrid className="w-4 h-4" />
-                <span className="hidden sm:inline">Board</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('gantt')}
-                className={cn(
-                  'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
-                  activeTab === 'gantt'
-                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
-                )}
-              >
-                <Calendar className="w-4 h-4" />
-                <span className="hidden sm:inline">Gantt</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('canvas')}
-                className={cn(
-                  'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
-                  activeTab === 'canvas'
-                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
-                )}
-              >
-                <Lightbulb className="w-4 h-4" />
-                <span className="hidden sm:inline">Canvas</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('trophy')}
-                className={cn(
-                  'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
-                  activeTab === 'trophy'
-                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
-                )}
-              >
-                <Trophy className="w-4 h-4" />
-                <span className="hidden sm:inline">Trophy</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('velocity')}
-                className={cn(
-                  'flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
-                  activeTab === 'velocity'
-                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
-                )}
-              >
-                <Activity className="w-4 h-4" />
-                <span className="hidden sm:inline">Velocity</span>
-              </button>
-            </div>
           </div>
+
+          <button
+            onClick={() => {
+              document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, ctrlKey: true, bubbles: true }))
+            }}
+            className="hidden sm:flex h-8 w-56 items-center gap-2 rounded-full px-3 text-xs text-white/30 transition-colors hover:bg-white/[0.06]"
+            style={{ background: 'rgba(255, 255, 255, 0.04)' }}
+          >
+            <Search className="h-3.5 w-3.5 shrink-0" />
+            <span>Search or Cmd+K...</span>
+          </button>
 
           <div className="flex items-center gap-2">
             {activeTab === 'board' && (
@@ -275,9 +217,6 @@ export default function ProjectContent({ project }: ProjectContentProps) {
               <Users className="w-4 h-4" />
               <span className="hidden sm:inline">Share</span>
             </button>
-            <FeaturesShowcaseButton />
-            <HelpButton />
-            <SettingsButton />
           </div>
         </div>
       </header>
@@ -434,6 +373,7 @@ export default function ProjectContent({ project }: ProjectContentProps) {
         projectName={project.name}
         onClose={() => setShowShare(false)}
       />
+      </div>
     </div>
   )
 }

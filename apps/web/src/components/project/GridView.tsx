@@ -232,10 +232,7 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, r
                         e.stopPropagation()
                         setColorPickerProjectId((prev) => prev === project.id ? null : project.id)
                       }}
-                      className="p-1.5 rounded-lg text-slate-500 transition-colors hover:bg-white/10"
-                      style={{ '--hover-color': 'var(--primary)' } as React.CSSProperties}
-                      onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--primary)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = '')}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-[color:var(--primary)] hover:bg-white/10 transition-colors"
                     >
                       <Palette className="w-3.5 h-3.5" />
                     </motion.button>

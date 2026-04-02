@@ -1,12 +1,12 @@
 # ARCHITECTURE.md
 
-Last updated: 2026-04-01
+Last updated: 2026-04-02
 
 ---
 
 ## 1. OVERVIEW
 
-Aeon is a project management web application built as a Turborepo monorepo (`apps/web` + `packages/shared`). The stack is **Next.js 16** (App Router) with **TypeScript**, **PostgreSQL** via **Neon** serverless driver, **Drizzle ORM**, **Zustand** for client state, **NextAuth v5** (beta) for authentication, **Tailwind CSS** for styling, and **Framer Motion** for animations. It features a kanban board, Gantt chart, canvas (whiteboard), trophy/vault archive, velocity analytics, 150+ theme presets, an MCP tool server (53 tools) for AI integration, and a Tauri-based desktop shell (scaffold).
+Aeon is a project management web application built as a Turborepo monorepo (`apps/web` + `packages/shared`). The stack is **Next.js 16** (App Router) with **TypeScript**, **PostgreSQL** via **Neon** serverless driver, **Drizzle ORM**, **Zustand** for client state, **NextAuth v5** (beta) for authentication, **Tailwind CSS** for styling, and **Framer Motion** for animations. It features a kanban board, Gantt chart, canvas (whiteboard), trophy/vault archive, velocity analytics, 150+ theme presets, an MCP tool server (52 tools) for AI integration, and a Tauri-based desktop shell (scaffold).
 
 ---
 
@@ -126,6 +126,11 @@ Auth: Session cookie OR `Bearer` API key (via `authenticateRequest`). Rate-limit
 | GET/POST | `/api/v1/projects/[id]/canvas` | Get / save canvas state |
 | GET/POST | `/api/v1/api-keys` | List / create API keys |
 | PATCH/DELETE | `/api/v1/api-keys/[id]` | Revoke / delete key |
+| GET/POST | `/api/v1/realms` | List / create realms |
+| GET/PUT/DELETE | `/api/v1/realms/[id]` | Get / update / delete realm |
+| GET/POST | `/api/v1/realms/[id]/members` | List / invite members |
+| PUT/DELETE | `/api/v1/realms/[id]/members/[userId]` | Update role / remove member |
+| GET/POST/DELETE | `/api/v1/realms/[id]/projects` | List / add / remove projects |
 | GET | `/api/export` | Full data export (JSON) |
 | GET | `/api/stats` | Dashboard statistics |
 | GET | `/api/planets` | Planet image list |
@@ -134,7 +139,7 @@ Auth: Session cookie OR `Bearer` API key (via `authenticateRequest`). Rate-limit
 
 ### MCP Tools (`/api/[transport]/`)
 
-Auth: Bearer token (API key or master key). 53 tools across 11 categories:
+Auth: Bearer token (API key or master key). 52 tools across 11 categories:
 
 | Category | Tools | Count |
 |---|---|---|
@@ -148,9 +153,9 @@ Auth: Bearer token (API key or master key). 53 tools across 11 categories:
 | dependencies | list, add, remove, batch_add | 4 |
 | analytics | get_velocity_stats | 1 |
 | bulk | batch_create_tasks | 1 |
-| realms | list, create, update, delete, members (list/invite/remove/update_role), projects (list/add/remove), set_project_group | 12 |
+| realms | list, create, update, delete, members (list/invite/remove/update_role), projects (list/add/remove) | 11 |
 
-**Parity gaps:** MCP has realm tools but REST has no `/api/v1/realms` endpoints. MCP has no canvas tools. REST has export/stats/planets endpoints that MCP lacks.
+**Parity gaps:** MCP has no canvas tools. REST has export/stats/planets endpoints that MCP lacks. Realm CRUD + members + projects now have full MCP and REST parity. Both MCP and REST enforce `canAccessProject` on realm project assignment. Zod validators added for realm operations. `remove_realm_member` has target-owner guard (cannot remove another owner). `set_project_group` removed (legacy tool).
 
 ---
 
@@ -179,10 +184,12 @@ Auth: Bearer token (API key or master key). 53 tools across 11 categories:
 | **Trophy / Vault** | Complete | `components/trophy/TrophyRoom.tsx`, `TrophyCard.tsx`, `TrophyStats.tsx`, `TrophyTimeline.tsx` | Archived tasks, stats, timeline view |
 | **Vault archiving** | Complete | `BatchVaultModal.tsx`, `VaultDaysModal.tsx`, `lib/actions/vault.ts` | Auto-vault by days, batch vault |
 | **Velocity analytics** | Complete | `components/velocity/VelocityTab.tsx`, `VelocityChart.tsx`, `CycleTimeCard.tsx`, `HeatmapGrid.tsx`, `ColumnFlowBar.tsx` | Throughput, cycle time, heatmap, column flow |
-| **Realms (workspaces)** | Complete | `components/workspace/RealmSection.tsx`, `CreateWorkspaceModal.tsx`, `WorkspaceSettingsModal.tsx` | Personal realm auto-created, team badge, member roles |
-| **Sidebar navigation** | Complete | `components/sidebar/AppSidebar.tsx`, `stores/sidebarStore.ts` | Collapsible, realm sections, persist state |
-| **Project CRUD** | Complete | `components/project/CreateProjectModal.tsx`, `EditProjectModal.tsx` | Create, edit, delete, realm assignment |
-| **Project views** | Complete | `SpaceView.tsx`, `TreeView.tsx`, `GridView.tsx`, `ProjectViewSwitcher.tsx` | 3D space, tree, grid views |
+| **Realms (workspaces)** | Complete | `components/workspace/RealmSection.tsx`, `CreateWorkspaceModal.tsx`, `WorkspaceSettingsModal.tsx` | Flat realm list (no personal/team split), TEAM badge, member roles, Orbit icons, two-click delete confirm, number key shortcuts (1-9) for realm switching |
+| **Realm REST API** | Complete | `api/v1/realms/` (6 route files) | Full CRUD + members + projects, Zod validation, canAccessProject enforcement |
+| **Sidebar navigation** | Complete | `components/sidebar/AppSidebar.tsx`, `components/sidebar/ProjectSidebar.tsx`, `stores/sidebarStore.ts` | Dashboard uses AppSidebar (realm pills + project list). Project board view uses ProjectSidebar (view tabs: Board/Gantt/Canvas/Trophy/Velocity + back arrow to dashboard). ProjectContent uses ProjectSidebar with slim top bar (contextual actions + Cmd+K search bar). Both share `useSidebarStore` for collapse state (persisted with hydration guard). |
+| **Hide toggle** | Complete | `stores/sidebarStore.ts` | Per-project and per-realm hide via sidebarStore (persisted), unhide eye button in sidebar bottom |
+| **Project CRUD** | Complete | `components/project/CreateProjectModal.tsx`, `EditProjectModal.tsx` | Create, edit, delete, realm assignment (flat list, legacy group field removed) |
+| **Project views** | Complete | `SpaceView.tsx`, `TreeView.tsx`, `GridView.tsx`, `ProjectViewSwitcher.tsx` | SpaceView: single unified canvas with realm grouping (defaults fullscreen), TreeView: full right-click context menu, GridView: 3 views with context menus |
 | **Theming** | Complete | `packages/shared/src/config/themes/` (17 files), `stores/themeStore.ts` | 151 presets, saturation/brightness/vibrancy sliders |
 | **Visual effects** | Complete | `components/effects/` (13 effects), `cursor/` | Starfield, sakura, snowfall, matrix, storm, aurora, cursor trails |
 | **Celebrations** | Complete | `components/celebrations/CelebrationEngine.tsx` | 6 categories: alien, business, fun, horror, medieval + registry |
@@ -193,7 +200,7 @@ Auth: Bearer token (API key or master key). 53 tools across 11 categories:
 | **Export** | Complete | `api/export/route.ts` | Full JSON export of all user data |
 | **Auth (OAuth)** | Complete | `lib/auth.ts` | Google, GitHub, email (Resend magic link) |
 | **API keys** | Complete | `api/v1/api-keys/`, `lib/data/api-keys.ts` | Create/revoke keys for MCP/REST |
-| **MCP server** | Complete | `api/[transport]/route.ts`, `tools/` (11 modules) | 53 tools, Bearer auth |
+| **MCP server** | Complete | `api/[transport]/route.ts`, `tools/` (11 modules) | 52 tools, Bearer auth |
 | **Beta terms** | Complete | `app/beta-terms/` | Terms acceptance gate with effects |
 | **Undo system** | Complete | `lib/store/undoStore.ts` | 20-entry undo stack |
 | **Board sync (polling)** | Complete | `api/sync/version/[projectId]/route.ts`, `lib/actions/board.ts` | Version-based polling |
@@ -217,7 +224,7 @@ All stores use Zustand v5.
 | `useGanttStore` | Gantt tasks, rows, views, active view, time scale | `apps/web/src/lib/store/ganttStore.ts` | `zustand/persist` |
 | `useUndoStore` | Undo stack (max 20 entries) | `apps/web/src/lib/store/undoStore.ts` | None (in-memory) |
 | `useThemeStore` | Theme, colors, glow/glass/saturation, font, effects, shortcuts, priorities, layout, board theme override | `apps/web/src/stores/themeStore.ts` | None (hydrates from DB preferences) |
-| `useSidebarStore` | Collapsed state, active realm ID | `apps/web/src/stores/sidebarStore.ts` | `zustand/persist` (key: `aeon-sidebar`) |
+| `useSidebarStore` | Collapsed state, active realm ID, hidden project/realm IDs | `apps/web/src/stores/sidebarStore.ts` | `zustand/persist` (key: `aeon-sidebar`), `onRehydrateStorage` hydration guard |
 
 ---
 
@@ -231,7 +238,7 @@ All stores use Zustand v5.
 | **GitHub OAuth** | Sign-in provider | Optional | Dynamic import if env vars present |
 | **Resend** | Email (magic link + invites) | Active | Auth provider + invite emails |
 | **Vercel** | Hosting (implied) | Active | Next.js deployment target |
-| **MCP Protocol** | AI tool integration | Active | 53 tools via `mcp-handler` library |
+| **MCP Protocol** | AI tool integration | Active | 52 tools via `mcp-handler` library |
 | **ReactFlow (@xyflow)** | Canvas whiteboard | Active | Nodes, edges, auto-layout |
 | **@dnd-kit** | Drag and drop | Active | Kanban columns + tasks |
 | **Tauri** | Desktop wrapper | Scaffold | `apps/desktop/` -- not functional |
@@ -245,10 +252,10 @@ All stores use Zustand v5.
 |---|---|---|
 | `publishBoardEvent()` is a no-op | High | `lib/realtime/index.ts` -- real-time push not implemented, relies on polling |
 | No virtual scrolling | Medium | Large boards render all cards; no virtualization in columns |
-| REST/MCP parity gaps | Medium | MCP has realm tools, REST does not. MCP lacks canvas tools. REST lacks realm endpoints. |
 | No `React.memo` usage | Medium | Zero `React.memo` calls across entire codebase |
+| MCP lacks canvas tools | Medium | REST has canvas endpoints, MCP does not |
 | Activity feed has no UI | Low | `activity_events` table populated but no frontend display |
-| Zustand persist hydration flash | Low | `_hydrated` flag on themeStore but board/canvas/gantt stores may flash defaults |
+| Zustand persist hydration flash | Low | sidebarStore now has hydration guard; board/canvas/gantt stores may still flash defaults |
 | Desktop app is scaffold only | Low | Tauri config exists, no web-shell integration |
 | TODO/FIXME count | None | 0 TODO/FIXME markers in source |
 | Test coverage | Low | 8 test files total (stores + actions), no component tests |
@@ -256,14 +263,28 @@ All stores use Zustand v5.
 
 ---
 
-## 9. RECENT CHANGES
+## 9. RECENT CHANGES (2026-04-02 session)
 
-From `git log --oneline` (most recent first):
-
-| Commit | Description |
-|---|---|
-| `d7e350c` | Merge PR #37 -- UI upgrade |
-| `0882dc2` | feat(ui): sidebar navigation, realm sections, MCP realm tools |
-| `8f3d9a6` | Merge PR #36 -- feature/tweaks_n_bugs |
-| `9dacd6f` | x1 |
-| `23c098b` | feat(realms): context menu, optimistic moves, edit modal realm selector, UX fixes |
+1. Killed Personal/Team split -- flat realm list in sidebar with TEAM badge
+2. Viewport-locked dashboard layout (h-screen overflow-hidden, only main scrolls)
+3. Added 6 REST API realm routes (`/api/v1/realms/`) with full CRUD + members + projects
+4. Fixed MCP `ok()` helper for void returns
+5. Added `canAccessProject` check to `add_project_to_realm` (MCP + REST)
+6. SpaceView renders as single unified canvas with realm grouping, defaults to fullscreen
+7. EditProjectModal removed legacy group field, flat realm list
+8. Sidebar added to ProjectContent (board view) with independent workspace data fetch
+9. Hide toggle on projects/realms via sidebarStore (persisted)
+10. Unhide eye button in sidebar bottom section
+11. TreeView now has full right-click context menu (same as GridView)
+12. "Open in new tab" added to ProjectContextMenu
+13. Realm delete with two-click confirm in WorkspaceSettingsModal
+14. Theme primary color on TopBar view icons + sidebar bottom buttons
+15. Realm color dots replaced with Orbit icons, simplified to primary-only coloring
+16. Number key shortcuts (1-9) for realm switching on dashboard
+17. Zustand persist hydration guard added to sidebarStore (`onRehydrateStorage`)
+18. 6 warden micro-fixes (lastUsedColor localStorage, clipboard fallback, GridView hover)
+19. Legacy `project.group` fields cleared on all projects
+20. Zod validators added for realm operations
+21. ProjectSidebar component -- dedicated sidebar for project board view with view tabs, back arrow, slim top bar with only contextual actions
+22. ProjectSidebar refactor -- ProjectContent now uses ProjectSidebar exclusively (removed AppSidebar from board view, removed workspace loading). Cmd+K search bar added to project top bar. Dead imports/props cleaned (ChevronLeft, user prop on RealmList, etc.).
+23. MCP cleanup -- `set_project_group` tool removed (legacy, 53 -> 52 tools). `remove_realm_member` got target-owner guard. Realm sidebar colors simplified to primary-only.

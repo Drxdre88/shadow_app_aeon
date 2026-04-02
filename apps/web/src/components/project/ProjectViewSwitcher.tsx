@@ -58,7 +58,7 @@ export function ProjectViewSwitcher({ projects, onEdit, onDelete, onShare, onGro
           transition={{ duration: 0.2 }}
         >
           {effectiveView === 'grid' && <GridView projects={projects} onEdit={onEdit} onDelete={onDelete} onShare={onShare} onGroupChange={onGroupChange} realms={realms} projectRealmMap={projectRealmMap} onToggleRealm={onToggleRealm} layout={controlledLayout} onLayoutChange={onLayoutChange} />}
-          {effectiveView === 'tree' && <TreeView projects={projects} />}
+          {effectiveView === 'tree' && <TreeView projects={projects} onEdit={onEdit} onDelete={onDelete} onShare={onShare} realms={realms} projectRealmMap={projectRealmMap} onToggleRealm={onToggleRealm} />}
           {effectiveView === 'space' && <SpaceView projects={projects} />}
         </motion.div>
       </AnimatePresence>

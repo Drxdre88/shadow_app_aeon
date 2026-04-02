@@ -15,10 +15,10 @@ import {
   Orbit,
   Settings,
   LogOut,
-  ChevronLeft,
   ChevronRight,
   Menu,
   User,
+  Eye,
 } from 'lucide-react'
 
 interface AppSidebarProps {
@@ -76,7 +76,6 @@ export function AppSidebar({
           collapsed={collapsed}
           onSelect={setActiveRealm}
           onOpenSettings={onOpenSettings}
-          user={user}
         />
       </nav>
 
@@ -198,7 +197,6 @@ function RealmList({
   collapsed: boolean
   onSelect: (id: string | null) => void
   onOpenSettings: AppSidebarProps['onOpenSettings']
-  user: AppSidebarProps['user']
 }) {
   return (
     <div className="flex flex-col gap-0.5">
@@ -286,7 +284,7 @@ function RealmPill({
         )}
         style={
           isActive
-            ? { borderLeft: `3px solid ${color}` }
+            ? { borderLeft: '3px solid var(--primary)' }
             : { borderLeft: '3px solid transparent' }
         }
       >
@@ -299,9 +297,9 @@ function RealmPill({
           )}
         />
 
-        <span
-          className="shrink-0 w-2 h-2 rounded-full"
-          style={{ backgroundColor: color }}
+        <Orbit
+          className="shrink-0 w-3.5 h-3.5"
+          style={{ color: isActive ? 'var(--primary)' : 'rgba(255, 255, 255, 0.3)' }}
         />
 
         <AnimatePresence>
@@ -318,10 +316,10 @@ function RealmPill({
                 <span
                   className="shrink-0 text-[8px] font-black tracking-wider px-1.5 py-[1px] rounded-full uppercase"
                   style={{
-                    background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(59, 130, 246, 0.3))',
-                    color: 'rgba(167, 139, 250, 0.9)',
-                    boxShadow: '0 0 8px rgba(139, 92, 246, 0.3), inset 0 0 4px rgba(139, 92, 246, 0.1)',
-                    border: '1px solid rgba(139, 92, 246, 0.2)',
+                    background: 'color-mix(in srgb, var(--primary) 20%, transparent)',
+                    color: 'var(--primary)',
+                    boxShadow: '0 0 8px color-mix(in srgb, var(--primary) 30%, transparent)',
+                    border: '1px solid color-mix(in srgb, var(--primary) 20%, transparent)',
                   }}
                 >
                   team
@@ -465,6 +463,7 @@ function BottomSection({
         <HelpButton />
         <StatsButton />
         <SettingsButton />
+        <UnhideButton collapsed={collapsed} />
       </div>
       <div className="mx-2 h-px bg-white/[0.06]" />
       <div
@@ -510,5 +509,28 @@ function BottomSection({
         </motion.button>
       </div>
     </div>
+  )
+}
+
+function UnhideButton({ collapsed }: { collapsed: boolean }) {
+  const { hiddenProjectIds, hiddenRealmIds, unhideAll } = useSidebarStore()
+  const count = hiddenProjectIds.length + hiddenRealmIds.length
+  if (count === 0) return null
+
+  return (
+    <motion.button
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ opacity: 1, scale: 1 }}
+      whileHover={{ scale: 1.1 }}
+      whileTap={{ scale: 0.95 }}
+      onClick={unhideAll}
+      className="relative p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200 text-current"
+      title={`${count} hidden item${count > 1 ? 's' : ''} — click to unhide all`}
+    >
+      <Eye className="w-4 h-4" />
+      <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-500 text-[8px] font-bold text-white flex items-center justify-center">
+        {count}
+      </span>
+    </motion.button>
   )
 }

@@ -170,7 +170,7 @@ export function SettingsButton() {
             boxShadow: glowIntensity > 50 ? `0 0 ${10 * (glowIntensity / 100)}px ${colors.glowColor}` : 'none',
           }}
         >
-          <Settings className="w-5 h-5 text-slate-400" />
+          <Settings className="w-5 h-5 text-current" />
         </motion.button>
       </Tooltip>
       <SettingsModal isOpen={isOpen} onClose={() => setIsOpen(false)} />

@@ -215,6 +215,31 @@ export const createCanvasEdgeSchema = z.object({
   animated: z.boolean().optional(),
 })
 
+export const createRealmSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  color: z.string().trim().max(20).default('purple'),
+  icon: z.string().trim().max(50).optional(),
+})
+
+export const updateRealmSchema = z.object({
+  name: z.string().trim().min(1).max(255).optional(),
+  color: z.string().trim().max(20).optional(),
+  icon: z.string().trim().max(50).nullable().optional(),
+})
+
+export const inviteMemberSchema = z.object({
+  email: z.string().email(),
+  role: z.enum(['editor', 'viewer']).default('editor'),
+})
+
+export const updateRoleSchema = z.object({
+  role: z.enum(['editor', 'viewer']),
+})
+
+export const addProjectSchema = z.object({
+  projectId: z.string().uuid(),
+})
+
 export const sendToVaultSchema = z.object({
   taskId: z.string().uuid(),
   daysTaken: z.number().int().min(0).max(9999).nullable(),

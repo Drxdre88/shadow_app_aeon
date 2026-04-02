@@ -8,7 +8,10 @@ import { useBoardStore } from '@/lib/store/boardStore'
 import { AccentColor, colorConfig, generateId, hexToRgba } from '@/lib/utils/colors'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
 
-let lastUsedColor = 'purple'
+function getLastUsedColor(): string {
+  if (typeof window === 'undefined') return 'purple'
+  return localStorage.getItem('aeon-last-task-color') || 'purple'
+}
 
 interface QuickAddTaskProps {
   projectId: string
@@ -31,7 +34,7 @@ interface QuickAddTaskProps {
 export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: QuickAddTaskProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [taskName, setTaskName] = useState('')
-  const [taskColor, setTaskColor] = useState<string>(lastUsedColor)
+  const [taskColor, setTaskColor] = useState<string>(getLastUsedColor)
   const [selectedLabels, setSelectedLabels] = useState<string[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const { addTask, tasks, labels } = useBoardStore()
@@ -73,7 +76,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
     addTask(newTask)
     onTaskCreate?.(newTask)
 
-    lastUsedColor = taskColor
+    localStorage.setItem('aeon-last-task-color', taskColor)
     setTaskName('')
     setSelectedLabels([])
     setIsOpen(false)
@@ -201,7 +204,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
             onClick={() => {
               setIsOpen(false)
               setTaskName('')
-              setTaskColor(lastUsedColor)
+              setTaskColor(getLastUsedColor())
               setSelectedLabels([])
               onClose?.()
             }}

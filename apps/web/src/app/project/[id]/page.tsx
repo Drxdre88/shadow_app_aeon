@@ -24,5 +24,16 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
 
   if (!project) notFound()
 
-  return <ProjectContent project={project} />
+  return (
+    <ProjectContent
+      project={project}
+      user={{
+        id: session.user.id,
+        role: session.user.role ?? 'user',
+        name: session.user.name,
+        email: session.user.email,
+        image: session.user.image,
+      }}
+    />
+  )
 }

@@ -49,9 +49,10 @@ export function TopBar({
               className={cn(
                 'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
                 view === id
-                  ? 'bg-white/10 text-white'
+                  ? 'text-current'
                   : 'text-white/30 hover:text-white/60'
               )}
+              style={view === id ? { color: 'var(--primary)', background: 'color-mix(in srgb, var(--primary) 15%, transparent)' } : undefined}
               whileTap={{ scale: 0.9 }}
               title={label}
             >
@@ -69,9 +70,10 @@ export function TopBar({
                 className={cn(
                   'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
                   gridLayout === id
-                    ? 'bg-white/10 text-white'
+                    ? 'text-current'
                     : 'text-white/30 hover:text-white/60'
                 )}
+                style={gridLayout === id ? { color: 'var(--primary)', background: 'color-mix(in srgb, var(--primary) 15%, transparent)' } : undefined}
                 whileTap={{ scale: 0.9 }}
                 title={label}
               >
