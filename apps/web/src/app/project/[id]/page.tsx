@@ -1,8 +1,10 @@
 import type { Metadata } from 'next'
 import { auth } from '@/lib/auth'
-import { redirect, notFound } from 'next/navigation'
+import { redirect } from 'next/navigation'
 import { verifyProjectOwnership } from '@/lib/data/projects'
+import { findProjectBasic } from '@/lib/data/projects'
 import ProjectContent from './ProjectContent'
+import { AccessDenied } from './AccessDenied'
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const session = await auth()
@@ -22,7 +24,10 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const { id } = await params
   const project = await verifyProjectOwnership(id, session.user.id)
 
-  if (!project) notFound()
+  if (!project) {
+    const exists = await findProjectBasic(id)
+    return <AccessDenied projectName={exists?.name} />
+  }
 
   return (
     <ProjectContent

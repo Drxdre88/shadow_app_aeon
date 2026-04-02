@@ -17,15 +17,45 @@ export async function verifyProjectOwnership(projectId: string, userId: string) 
     return project || null
   }
 
-  const [project] = await db
+  const [ownedProject] = await db
     .select()
     .from(projects)
     .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
 
-  return project || null
+  if (ownedProject) return ownedProject
+
+  const realmIds = await db
+    .select({ groupId: projectGroups.groupId })
+    .from(projectGroups)
+    .where(eq(projectGroups.projectId, projectId))
+
+  if (realmIds.length > 0) {
+    const [realmMembership] = await db
+      .select({ role: groupMembers.role })
+      .from(groupMembers)
+      .where(and(
+        inArray(groupMembers.groupId, realmIds.map((r) => r.groupId)),
+        eq(groupMembers.userId, userId)
+      ))
+
+    if (realmMembership) {
+      const [realmProject] = await db.select().from(projects).where(eq(projects.id, projectId))
+      return realmProject || null
+    }
+  }
+
+  return null
 }
 
 export const findProjectById = verifyProjectOwnership
+
+export async function findProjectBasic(projectId: string) {
+  const [project] = await db
+    .select({ id: projects.id, name: projects.name })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+  return project || null
+}
 
 export async function verifyProjectOwnerRole(projectId: string, userId: string) {
   const [membership] = await db
