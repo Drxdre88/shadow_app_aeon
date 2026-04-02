@@ -49,6 +49,13 @@ export async function verifyProjectOwnership(projectId: string, userId: string) 
 
 export const findProjectById = verifyProjectOwnership
 
+export async function touchProject(projectId: string) {
+  await db.update(projects).set({
+    updatedAt: new Date(),
+    boardVersion: sql`${projects.boardVersion} + 1`,
+  }).where(eq(projects.id, projectId))
+}
+
 export async function findProjectBasic(projectId: string) {
   const [project] = await db
     .select({ id: projects.id, name: projects.name })

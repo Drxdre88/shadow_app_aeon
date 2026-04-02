@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { boardTasks } from '@/lib/db/schema'
 import { eq, and, asc, sql, isNull, isNotNull } from 'drizzle-orm'
 import type { CreateTaskInput, UpdateTaskInput } from './validators'
+import { touchProject } from './projects'
 
 export async function findTasks(
   projectId: string,
@@ -75,6 +76,7 @@ export async function createTask(
       .returning()
   })
 
+  touchProject(projectId)
   return task
 }
 
@@ -109,6 +111,7 @@ export async function updateTask(
     .where(and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, projectId)))
     .returning()
 
+  touchProject(projectId)
   return task || null
 }
 
@@ -141,6 +144,7 @@ export async function createTasksBatch(
       orderIndex: nextIndex++,
     }))
 
+    touchProject(projectId)
     return tx.insert(boardTasks).values(values).returning()
   })
 }
@@ -151,6 +155,7 @@ export async function deleteTask(taskId: string, projectId: string) {
     .where(and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, projectId)))
     .returning({ id: boardTasks.id })
 
+  touchProject(projectId)
   return !!deleted
 }
 
@@ -158,6 +163,7 @@ export async function deleteTasksByColumn(columnId: string, projectId: string) {
   await db
     .delete(boardTasks)
     .where(and(eq(boardTasks.columnId, columnId), eq(boardTasks.projectId, projectId)))
+  touchProject(projectId)
 }
 
 export async function reorderTasks(
