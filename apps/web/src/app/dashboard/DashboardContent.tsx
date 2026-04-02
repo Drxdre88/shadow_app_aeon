@@ -33,13 +33,34 @@ interface DashboardContentProps {
     image?: string | null
   }
   projects: ProjectWithStats[]
+  initialWorkspaces?: Array<{ groupId: string; groupName: string; groupColor: string | null; isPersonal: boolean; memberCount: number; ownerId: string; memberRole: string; projects: Array<Record<string, unknown>> }>
+  initialShared?: Array<Record<string, unknown>>
 }
 
-export default function DashboardContent({ user, projects: initialProjects }: DashboardContentProps) {
+function mapWorkspaces(wsData: NonNullable<DashboardContentProps['initialWorkspaces']>, userId: string): WorkspaceGroup[] {
+  const mapped: WorkspaceGroup[] = wsData.map((g) => ({
+    groupId: g.groupId,
+    groupName: g.groupName,
+    groupColor: g.groupColor ?? 'purple',
+    isPersonal: g.isPersonal,
+    memberCount: g.memberCount,
+    isOwner: g.ownerId === userId || g.memberRole === 'owner',
+    projects: g.projects.map((p) => ({ ...p, totalTasks: 0, doneTasks: 0, completionPct: 0 })) as ProjectWithStats[],
+  }))
+  const personal = mapped.filter((g) => g.isPersonal)
+  const team = mapped.filter((g) => !g.isPersonal).sort((a, b) => a.groupName.localeCompare(b.groupName))
+  return [...personal, ...team]
+}
+
+export default function DashboardContent({ user, projects: initialProjects, initialWorkspaces, initialShared }: DashboardContentProps) {
   const { collapsed, activeRealmId, hiddenProjectIds, hiddenRealmIds } = useSidebarStore()
-  const [workspaces, setWorkspaces] = useState<WorkspaceGroup[]>([])
-  const [sharedProjects, setSharedProjects] = useState<ProjectWithStats[]>([])
-  const [loaded, setLoaded] = useState(false)
+  const [workspaces, setWorkspaces] = useState<WorkspaceGroup[]>(() =>
+    initialWorkspaces ? mapWorkspaces(initialWorkspaces, user.id) : []
+  )
+  const [sharedProjects, setSharedProjects] = useState<ProjectWithStats[]>(() =>
+    initialShared ? initialShared.map((p) => ({ ...p, totalTasks: 0, doneTasks: 0, completionPct: 0 }) as ProjectWithStats) : []
+  )
+  const [loaded, setLoaded] = useState(!!initialWorkspaces)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingProject, setEditingProject] = useState<ProjectWithStats | null>(null)
   const [sharingProject, setSharingProject] = useState<ProjectWithStats | null>(null)
@@ -61,22 +82,8 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
 
     if (gen !== fetchGenRef.current) return
 
-    const mapped: WorkspaceGroup[] = wsData.map((g) => ({
-      groupId: g.groupId,
-      groupName: g.groupName,
-      groupColor: g.groupColor ?? 'purple',
-      isPersonal: g.isPersonal,
-      memberCount: g.memberCount,
-      isOwner: g.ownerId === user.id || g.memberRole === 'owner',
-      projects: g.projects.map((p) => ({ ...p, totalTasks: 0, doneTasks: 0, completionPct: 0 })) as ProjectWithStats[],
-    }))
-
-    const shared = sharedData.map((p) => ({ ...p, totalTasks: 0, doneTasks: 0, completionPct: 0 })) as ProjectWithStats[]
-    setSharedProjects(shared)
-
-    const personal = mapped.filter((g) => g.isPersonal)
-    const team = mapped.filter((g) => !g.isPersonal).sort((a, b) => a.groupName.localeCompare(b.groupName))
-    setWorkspaces([...personal, ...team])
+    setWorkspaces(mapWorkspaces(wsData, user.id))
+    setSharedProjects(sharedData.map((p) => ({ ...p, totalTasks: 0, doneTasks: 0, completionPct: 0 })) as ProjectWithStats[])
     setLoaded(true)
   }, [user.id])
 
@@ -144,10 +151,10 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
   useEffect(() => {
     if (workspaceInitRef.current) return
     workspaceInitRef.current = true
-    ensurePersonalWorkspace()
-      .then(() => loadWorkspaces())
-      .catch((err) => console.error('Personal workspace setup failed:', err))
-  }, [loadWorkspaces])
+    if (initialWorkspaces) return
+    Promise.all([ensurePersonalWorkspace(), loadWorkspaces()])
+      .catch((err) => console.error('Workspace setup failed:', err))
+  }, [loadWorkspaces, initialWorkspaces])
 
   useEffect(() => {
     if (!loaded) return
