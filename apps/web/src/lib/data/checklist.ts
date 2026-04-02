@@ -238,24 +238,7 @@ export async function findTaskWithDetails(taskId: string, projectId: string) {
   }
 }
 
-export async function findChecklistSummaries(projectId: string) {
-  const items = await db
-    .select({ taskId: checklistItems.taskId, state: checklistItems.state })
-    .from(checklistItems)
-    .innerJoin(boardTasks, eq(checklistItems.taskId, boardTasks.id))
-    .where(eq(boardTasks.projectId, projectId))
-
-  const summaries: Record<string, { checked: number; crossed: number; total: number }> = {}
-  for (const item of items) {
-    if (!summaries[item.taskId]) summaries[item.taskId] = { checked: 0, crossed: 0, total: 0 }
-    summaries[item.taskId].total++
-    if (item.state === 'checked') summaries[item.taskId].checked++
-    if (item.state === 'crossed') summaries[item.taskId].crossed++
-  }
-  return summaries
-}
-
-export async function findChecklistPreviews(projectId: string) {
+export async function findChecklistSummariesAndPreviews(projectId: string) {
   const items = await db
     .select({
       taskId: checklistItems.taskId,
@@ -269,8 +252,14 @@ export async function findChecklistPreviews(projectId: string) {
     .where(eq(boardTasks.projectId, projectId))
     .orderBy(checklistItems.orderIndex)
 
+  const summaries: Record<string, { checked: number; crossed: number; total: number }> = {}
   const previews: Record<string, { title: string; state: string; groupName: string }[]> = {}
   for (const item of items) {
+    if (!summaries[item.taskId]) summaries[item.taskId] = { checked: 0, crossed: 0, total: 0 }
+    summaries[item.taskId].total++
+    if (item.state === 'checked') summaries[item.taskId].checked++
+    if (item.state === 'crossed') summaries[item.taskId].crossed++
+
     if (!previews[item.taskId]) previews[item.taskId] = []
     previews[item.taskId].push({
       title: item.title,
@@ -278,5 +267,15 @@ export async function findChecklistPreviews(projectId: string) {
       groupName: item.groupName,
     })
   }
+  return { summaries, previews }
+}
+
+export async function findChecklistSummaries(projectId: string) {
+  const { summaries } = await findChecklistSummariesAndPreviews(projectId)
+  return summaries
+}
+
+export async function findChecklistPreviews(projectId: string) {
+  const { previews } = await findChecklistSummariesAndPreviews(projectId)
   return previews
 }

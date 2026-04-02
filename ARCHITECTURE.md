@@ -85,8 +85,9 @@ shadow-specs/                      -- AI spec workflow directory
 | `api_keys` | id, userId, keyPrefix, keyHash | MCP/REST API keys |
 | `board_snapshots` | id, projectId, token, snapshot, expiresAt | Read-only share links |
 | `user_contacts` | id, userId, contactEmail | Contact autocomplete |
+| `realm_invites` | id, groupId, email, token, role, invitedBy, acceptedAt, expiresAt | Realm invite tokens (7-day expiry) |
 
-**Patterns:** Server actions in `lib/actions/` call data functions in `lib/data/`. API routes in `api/v1/` call the same `lib/data/` functions. All mutations bump `boardVersion` for polling-based sync.
+**Patterns:** Server actions in `lib/actions/` call data functions in `lib/data/`. API routes in `api/v1/` call the same `lib/data/` functions. All mutations bump `boardVersion` via `await touchProject()`. `auth()` wrapped with `React.cache()` for dedup within server renders.
 
 ---
 
@@ -184,9 +185,10 @@ Auth: Bearer token (API key or master key). 52 tools across 11 categories:
 | **Trophy / Vault** | Complete | `components/trophy/TrophyRoom.tsx`, `TrophyCard.tsx`, `TrophyStats.tsx`, `TrophyTimeline.tsx` | Archived tasks, stats, timeline view |
 | **Vault archiving** | Complete | `BatchVaultModal.tsx`, `VaultDaysModal.tsx`, `lib/actions/vault.ts` | Auto-vault by days, batch vault |
 | **Velocity analytics** | Complete | `components/velocity/VelocityTab.tsx`, `VelocityChart.tsx`, `CycleTimeCard.tsx`, `HeatmapGrid.tsx`, `ColumnFlowBar.tsx` | Throughput, cycle time, heatmap, column flow |
-| **Realms (workspaces)** | Complete | `components/workspace/RealmSection.tsx`, `CreateWorkspaceModal.tsx`, `WorkspaceSettingsModal.tsx` | Flat realm list (no personal/team split), TEAM badge, member roles, Orbit icons, two-click delete confirm, number key shortcuts (1-9) for realm switching, scoped visibility (Eye/EyeOff toggle), member "joined X ago" |
+| **Realms (workspaces)** | Complete | `components/workspace/RealmSection.tsx`, `CreateWorkspaceModal.tsx`, `WorkspaceSettingsModal.tsx`, `MembersTab.tsx`, `ProjectsTab.tsx`, `RealmPickers.tsx` | Flat realm list, TEAM badge, member roles, custom icons (16 Lucide), color picker (7 colors), two-click delete confirm, number key shortcuts (1-9), scoped visibility, member "joined X ago" |
+| **Realm invites** | Complete | `lib/data/workspaces.ts`, `app/invite/realm/[token]/page.tsx`, `WorkspaceSettingsModal.tsx` | Token-based invite for non-existing users, email notification (Resend), pending invites display, email verification on accept, dedup guard, 7-day expiry |
 | **Realm REST API** | Complete | `api/v1/realms/` (6 route files) | Full CRUD + members + projects, Zod validation, canAccessProject enforcement |
-| **Sidebar navigation** | Complete | `components/sidebar/AppSidebar.tsx`, `components/sidebar/ProjectSidebar.tsx`, `stores/sidebarStore.ts` | Dashboard uses AppSidebar (realm pills + project list). Project board view uses ProjectSidebar (view tabs: Board/Gantt/Canvas/Trophy/Velocity + back arrow to dashboard). ProjectContent uses ProjectSidebar with slim top bar (contextual actions + Cmd+K search bar). Both share `useSidebarStore` for collapse state (persisted with hydration guard). |
+| **Sidebar navigation** | Complete | `components/sidebar/AppSidebar.tsx`, `RealmList.tsx`, `ProjectSidebar.tsx`, `stores/sidebarStore.ts` | Dashboard uses AppSidebar (realm pills with custom icons + project list). Project board view uses ProjectSidebar (view tabs). Both share `useSidebarStore` for collapse state (persisted with hydration guard). |
 | **Hide toggle** | Complete | `stores/sidebarStore.ts` | Per-project and per-realm hide via sidebarStore (persisted), unhide eye button in sidebar bottom |
 | **Project CRUD** | Complete | `components/project/CreateProjectModal.tsx`, `EditProjectModal.tsx` | Create, edit, delete, realm assignment (flat list, legacy group field removed) |
 | **Project views** | Complete | `SpaceView.tsx`, `TreeView.tsx`, `GridView.tsx`, `ProjectViewSwitcher.tsx` | SpaceView: single unified canvas with realm grouping (defaults fullscreen), TreeView: full right-click context menu + delete confirm, GridView: 3 views with context menus + relative time via timeAgo |
@@ -212,7 +214,7 @@ Auth: Bearer token (API key or master key). 52 tools across 11 categories:
 | **Confirm modal** | Complete | `components/ui/ConfirmModal.tsx` | Reusable delete confirmation, wired into GridView + TreeView |
 | **Scoped visibility** | Complete | `WorkspaceSettingsModal.tsx`, migration `0010` | owners_only filtering on project_groups, Eye/EyeOff toggle per project |
 | **Access denied page** | Complete | `components/ui/AccessDenied.tsx` | Themed error page replacing raw 404 for unauthorized access |
-| **Server-side loading** | Complete | `app/project/[id]/page.tsx`, `app/dashboard/page.tsx` | Board page preloads 7 queries (hydrated via useProjectData initialBoardData), dashboard fetches workspaces in parallel |
+| **Server-side loading** | Complete | `app/project/[id]/page.tsx`, `app/dashboard/page.tsx` | Board page preloads 6 queries (checklist merged), dashboard fetches workspaces in parallel, auth() cached with React.cache() |
 | **Activity feed UI** | Not Started | DB table `activity_events` exists | Events written but no UI to display them |
 
 ---
@@ -261,11 +263,9 @@ All stores use Zustand v5.
 | Activity feed has no UI | Low | `activity_events` table populated but no frontend display |
 | Zustand persist hydration flash | Low | sidebarStore now has hydration guard; board/canvas/gantt stores may still flash defaults |
 | Desktop app is scaffold only | Low | Tauri config exists, no web-shell integration |
-| `touchProject` is fire-and-forget | Low | No `await` on touchProject calls -- mutation response doesn't wait for version bump |
-| 44 lint warnings pending | Low | TypeScript/ESLint warnings accumulated across codebase |
+| 9 lint warnings remaining | Low | React 19 strict mode warnings (refs during render, immutability) — can't suppress without structural refactor |
 | TODO/FIXME count | None | 0 TODO/FIXME markers in source |
 | Test coverage | Low | 8 test files total (stores + actions), no component tests |
-| Stores split across two dirs | Low | `src/stores/` (theme, sidebar) vs `src/lib/store/` (board, canvas, gantt, undo) |
 
 ---
 
@@ -306,3 +306,18 @@ All stores use Zustand v5.
 33. touchProject -- bumps updatedAt + boardVersion on every task mutation (fire-and-forget)
 34. Neon connection timeout bumped 10s to 20s
 35. boardVersion now actually incremented (was static 0 before), dedicated Keys tab in Help + Settings modals
+36. Realm invite token flow -- realm_invites table (migration 0012), createRealmInvite with atomic dedup, acceptRealmInvite with email verification, /invite/realm/[token] accept page with token validation + beta-terms gate
+37. Realm color/icon picker -- RealmPickers.tsx (7 colors, 16 Lucide icons), added to CreateWorkspaceModal + WorkspaceSettingsModal, sidebar renders custom icons per realm
+38. Pending invites display in WorkspaceSettingsModal members tab (safe column projection, no token leak)
+39. inviteOrAddRealmMember shared helper -- deduplicates invite-then-email logic across server action, MCP tool, REST route
+40. Email deduplication -- sendInvite shared helper + getBaseUrl() utility in email.ts
+41. auth() wrapped with React.cache() for dedup within server renders (~4 fewer DB calls per dashboard load)
+42. personalGroupId passthrough in ensureOrphanProjects + consolidateSolo (saves 2 queries per dashboard load)
+43. findChecklistSummariesAndPreviews merged -- single query instead of two, 7→6 parallel queries on project board
+44. All touchProject calls now awaited, moved outside transaction in createTasksBatch
+45. addGroupMember now has .returning() for proper API/MCP responses
+46. consolidateSoloWorkspaces fixed: ws.id used instead of workspaceGroups.id column ref in SQL subquery
+47. WorkspaceSettingsModal split: shell (341) + MembersTab (182) + ProjectsTab (95)
+48. AppSidebar split: 360 lines + RealmList.tsx (212) extracted
+49. Dead WorkspaceDashboard component removed (152 lines)
+50. Lint warnings reduced 46→9 (React 19 strict mode, unsuppressible without structural refactor)

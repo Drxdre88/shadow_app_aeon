@@ -56,6 +56,7 @@ function AvatarStack({ avatars, memberCount }: { avatars: Array<{ name?: string;
             }}
           >
             {avatar.image ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img src={avatar.image} alt={avatar.name ?? ''} className="w-full h-full object-cover" />
             ) : (
               getInitials(avatar.name)

@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import NextAuth from 'next-auth'
 import type { Provider } from 'next-auth/providers'
 import { DrizzleAdapter } from '@auth/drizzle-adapter'
@@ -58,7 +59,7 @@ function buildProviders(): Provider[] {
   return providers
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+const nextAuth = NextAuth({
   adapter: DrizzleAdapter(db, {
     usersTable: schema.users,
     accountsTable: schema.accounts,
@@ -105,3 +106,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   },
 })
+
+export const { handlers, signIn, signOut } = nextAuth
+export const auth = cache(nextAuth.auth)

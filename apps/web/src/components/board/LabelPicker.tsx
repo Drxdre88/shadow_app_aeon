@@ -55,6 +55,7 @@ export function LabelPicker({
   const task = tasks.find((t) => t.id === taskId)
   const projectLabels = labels.filter((l) => l.projectId === projectId)
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {

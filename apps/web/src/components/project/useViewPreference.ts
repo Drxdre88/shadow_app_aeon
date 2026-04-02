@@ -12,6 +12,7 @@ export function useViewPreference(): [ProjectViewMode, (mode: ProjectViewMode) =
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY) as ProjectViewMode | null
     if (stored && ['grid', 'tree', 'space'].includes(stored)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setViewState(stored)
     }
   }, [])

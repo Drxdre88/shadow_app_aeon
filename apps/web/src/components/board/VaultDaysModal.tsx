@@ -30,6 +30,12 @@ export function VaultDaysModal({ isOpen, taskName, onConfirm, onClose }: VaultDa
     }
   }, [isOpen])
 
+  const handleSubmit = () => {
+    const parsed = days.trim() ? Math.round(parseFloat(days)) : null
+    if (parsed !== null && (isNaN(parsed) || parsed < 0)) return
+    onConfirm(parsed)
+  }
+
   useEffect(() => {
     if (!isOpen) return
     const handleKey = (e: KeyboardEvent) => {
@@ -38,13 +44,8 @@ export function VaultDaysModal({ isOpen, taskName, onConfirm, onClose }: VaultDa
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [isOpen, days])
-
-  const handleSubmit = () => {
-    const parsed = days.trim() ? Math.round(parseFloat(days)) : null
-    if (parsed !== null && (isNaN(parsed) || parsed < 0)) return
-    onConfirm(parsed)
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, days, onClose])
 
   if (!isOpen) return null
 

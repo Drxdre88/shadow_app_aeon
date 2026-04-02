@@ -1,6 +1,8 @@
-import { eq, and, inArray, sql } from 'drizzle-orm'
+import { randomBytes } from 'crypto'
+import { eq, and, inArray, isNull, gte, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { workspaceGroups, groupMembers, projectGroups, projects, users } from '@/lib/db/schema'
+import { workspaceGroups, groupMembers, projectGroups, projects, users, realmInvites } from '@/lib/db/schema'
+import { sendRealmInviteEmail, getBaseUrl } from '@/lib/email'
 
 export async function createWorkspaceGroup(ownerId: string, data: { name: string; icon?: string; color?: string }) {
   const [group] = await db.insert(workspaceGroups).values({
@@ -76,7 +78,8 @@ export async function removeProjectFromGroup(projectId: string, groupId: string)
 }
 
 export async function addGroupMember(groupId: string, userId: string, role: string = 'editor') {
-  await db.insert(groupMembers).values({ groupId, userId, role }).onConflictDoNothing()
+  const [member] = await db.insert(groupMembers).values({ groupId, userId, role }).onConflictDoNothing().returning()
+  return member || null
 }
 
 export async function removeGroupMember(groupId: string, userId: string) {
@@ -201,8 +204,8 @@ export async function findOrCreatePersonalWorkspace(userId: string): Promise<str
   })
 }
 
-export async function ensureOrphanProjectsInPersonalWorkspace(userId: string): Promise<number> {
-  const personalGroupId = await findOrCreatePersonalWorkspace(userId)
+export async function ensureOrphanProjectsInPersonalWorkspace(userId: string, personalGroupId?: string): Promise<number> {
+  if (!personalGroupId) personalGroupId = await findOrCreatePersonalWorkspace(userId)
 
   return db.transaction(async (tx) => {
     const orphanProjects = await tx
@@ -229,8 +232,8 @@ export async function ensureOrphanProjectsInPersonalWorkspace(userId: string): P
   })
 }
 
-export async function consolidateSoloWorkspaces(userId: string): Promise<number> {
-  const personalGroupId = await findOrCreatePersonalWorkspace(userId)
+export async function consolidateSoloWorkspaces(userId: string, personalGroupId?: string): Promise<number> {
+  if (!personalGroupId) personalGroupId = await findOrCreatePersonalWorkspace(userId)
 
   const [personalWs] = await db
     .select({ settings: workspaceGroups.settings })
@@ -259,7 +262,7 @@ export async function consolidateSoloWorkspaces(userId: string): Promise<number>
   for (const ws of soloIds) {
     await db.transaction(async (tx) => {
       const [recheck] = await tx
-        .select({ memberCount: sql<number>`(select count(*)::int from group_members gm2 where gm2.group_id = ${workspaceGroups.id})` })
+        .select({ memberCount: sql<number>`(select count(*)::int from group_members gm2 where gm2.group_id = ${ws.id})` })
         .from(workspaceGroups)
         .where(eq(workspaceGroups.id, ws.id))
       if (!recheck || recheck.memberCount > 1) return
@@ -289,5 +292,97 @@ export async function consolidateSoloWorkspaces(userId: string): Promise<number>
     .where(eq(workspaceGroups.id, personalGroupId))
 
   return moved
+}
+
+export async function createRealmInvite(groupId: string, email: string, role: string, invitedBy: string) {
+  const lowerEmail = email.toLowerCase()
+  const token = randomBytes(32).toString('hex')
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+
+  return db.transaction(async (tx) => {
+    await tx.update(realmInvites)
+      .set({ acceptedAt: new Date() })
+      .where(and(
+        eq(realmInvites.groupId, groupId),
+        eq(realmInvites.email, lowerEmail),
+        isNull(realmInvites.acceptedAt),
+      ))
+
+    const [invite] = await tx
+      .insert(realmInvites)
+      .values({ groupId, email: lowerEmail, role, invitedBy, token, expiresAt })
+      .returning()
+
+    return invite
+  })
+}
+
+export async function findRealmInviteByToken(token: string) {
+  const [invite] = await db
+    .select()
+    .from(realmInvites)
+    .where(and(eq(realmInvites.token, token), isNull(realmInvites.acceptedAt)))
+
+  return invite || null
+}
+
+export async function acceptRealmInvite(token: string, userId: string, callerEmail: string) {
+  const invite = await findRealmInviteByToken(token)
+  if (!invite) return null
+  if (new Date() > invite.expiresAt) return null
+  if (callerEmail.toLowerCase() !== invite.email.toLowerCase()) return null
+
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(groupMembers)
+      .values({
+        groupId: invite.groupId,
+        userId,
+        role: invite.role,
+      })
+      .onConflictDoNothing()
+
+    await tx
+      .update(realmInvites)
+      .set({ acceptedAt: new Date() })
+      .where(eq(realmInvites.id, invite.id))
+  })
+
+  return invite
+}
+
+export async function findPendingRealmInvites(groupId: string) {
+  return db
+    .select({
+      id: realmInvites.id,
+      email: realmInvites.email,
+      role: realmInvites.role,
+      expiresAt: realmInvites.expiresAt,
+      createdAt: realmInvites.createdAt,
+    })
+    .from(realmInvites)
+    .where(and(
+      eq(realmInvites.groupId, groupId),
+      isNull(realmInvites.acceptedAt),
+      gte(realmInvites.expiresAt, new Date()),
+    ))
+}
+
+export async function inviteOrAddRealmMember(groupId: string, email: string, role: string, invitedBy: string) {
+  const lowerEmail = email.toLowerCase()
+  const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, lowerEmail))
+
+  if (user) {
+    const member = await addGroupMember(groupId, user.id, role)
+    return { type: 'added' as const, email: lowerEmail, member }
+  }
+
+  const invite = await createRealmInvite(groupId, lowerEmail, role, invitedBy)
+  const [group] = await db.select({ name: workspaceGroups.name }).from(workspaceGroups).where(eq(workspaceGroups.id, groupId))
+  const baseUrl = getBaseUrl()
+  if (baseUrl) {
+    sendRealmInviteEmail(lowerEmail, group?.name || 'Untitled', 'A team member', `${baseUrl}/invite/realm/${invite.token}`).catch(() => {})
+  }
+  return { type: 'invited' as const, email: lowerEmail }
 }
 

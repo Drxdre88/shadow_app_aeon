@@ -35,6 +35,7 @@ export function ColumnContextMenu({ columnId, position, onClose, onRename, onCol
 
   const column = columns.find((c) => c.id === columnId)
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {

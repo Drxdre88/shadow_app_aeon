@@ -8,7 +8,6 @@ import {
   findProjectsInGroup as _findProjects,
   addProjectToGroup as _addProject,
   removeProjectFromGroup as _removeProject,
-  addGroupMember as _addMember,
   removeGroupMember as _removeMember,
   updateGroupMemberRole as _updateRole,
   updateWorkspaceGroup as _update,
@@ -19,9 +18,12 @@ import {
   findOrCreatePersonalWorkspace as _findOrCreatePersonal,
   ensureOrphanProjectsInPersonalWorkspace as _ensureOrphans,
   consolidateSoloWorkspaces as _consolidateSolo,
+  acceptRealmInvite as _acceptRealmInvite,
+  findPendingRealmInvites as _findPendingRealmInvites,
+  inviteOrAddRealmMember as _inviteOrAdd,
 } from '@/lib/data/workspaces'
 import { db } from '@/lib/db'
-import { users, projectGroups } from '@/lib/db/schema'
+import { projectGroups } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 
 const ASSIGNABLE_ROLES = ['editor', 'viewer'] as const
@@ -95,16 +97,10 @@ export async function removeProjectFromGroup(projectId: string, groupId: string)
   return _removeProject(projectId, groupId)
 }
 
-export async function inviteGroupMember(groupId: string, emailOrUserId: string, role: string = 'editor') {
-  await requireGroupOwner(groupId)
+export async function inviteGroupMember(groupId: string, email: string, role: string = 'editor') {
+  const callerId = await requireGroupOwner(groupId)
   const validRole = validateRole(role)
-  let targetUserId = emailOrUserId
-  if (emailOrUserId.includes('@')) {
-    const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, emailOrUserId))
-    if (!user) throw new Error('User not found — they must sign up first')
-    targetUserId = user.id
-  }
-  return _addMember(groupId, targetUserId, validRole)
+  return _inviteOrAdd(groupId, email, validRole, callerId)
 }
 
 export async function removeGroupMember(groupId: string, targetUserId: string) {
@@ -140,7 +136,22 @@ export async function setProjectVisibility(projectId: string, groupId: string, v
 export async function ensurePersonalWorkspace() {
   const userId = await requireAuth()
   const personalId = await _findOrCreatePersonal(userId)
-  const orphans = await _ensureOrphans(userId)
-  const consolidated = await _consolidateSolo(userId)
+  const orphans = await _ensureOrphans(userId, personalId)
+  const consolidated = await _consolidateSolo(userId, personalId)
   return orphans + consolidated
+}
+
+export async function acceptRealmInvite(token: string) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Not authenticated')
+  const email = session.user.email
+  if (!email) throw new Error('No email on session')
+  const invite = await _acceptRealmInvite(token, session.user.id, email)
+  if (!invite) throw new Error('Invite expired or invalid')
+  return invite.groupId
+}
+
+export async function getPendingRealmInvites(groupId: string) {
+  await requireGroupOwner(groupId)
+  return _findPendingRealmInvites(groupId)
 }

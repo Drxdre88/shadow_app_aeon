@@ -6,7 +6,7 @@ import { findTasks } from '@/lib/data/tasks'
 import { findColumns } from '@/lib/data/columns'
 import { findLabels, findTaskLabels } from '@/lib/data/labels'
 import { findDependencies } from '@/lib/data/dependencies'
-import { findChecklistSummaries, findChecklistPreviews } from '@/lib/data/checklist'
+import { findChecklistSummariesAndPreviews } from '@/lib/data/checklist'
 import ProjectContent from './ProjectContent'
 import { AccessDenied } from './AccessDenied'
 
@@ -33,15 +33,15 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     return <AccessDenied projectName={exists?.name} />
   }
 
-  const [tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews] = await Promise.all([
+  const [tasks, columns, labels, taskLabels, dependencies, checklistData] = await Promise.all([
     findTasks(id),
     findColumns(id),
     findLabels(id),
     findTaskLabels(id),
     findDependencies(id),
-    findChecklistSummaries(id),
-    findChecklistPreviews(id),
+    findChecklistSummariesAndPreviews(id),
   ])
+  const { summaries: checklistSummaries, previews: checklistPreviews } = checklistData
 
   return (
     <ProjectContent

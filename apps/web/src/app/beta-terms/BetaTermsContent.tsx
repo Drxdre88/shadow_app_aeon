@@ -78,8 +78,9 @@ export default function BetaTermsContent() {
 
   const allChecked = checked.every(Boolean)
 
-  useEffect(() => { // eslint-disable-line react-hooks/set-state-in-effect, react-hooks/refs
+  useEffect(() => {
     if (allChecked && !prevAllChecked.current && bloodMode) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBloodFloodKey((k) => k + 1)
     }
     prevAllChecked.current = allChecked

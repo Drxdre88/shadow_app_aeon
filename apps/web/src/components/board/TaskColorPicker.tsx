@@ -21,6 +21,7 @@ export function TaskColorPicker({ taskId, isOpen, onClose, onTaskUpdate }: TaskC
   const { tasks, updateTask } = useBoardStore()
   const task = tasks.find((t) => t.id === taskId)
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {

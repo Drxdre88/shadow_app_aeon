@@ -42,6 +42,7 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
   const task = tasks.find((t) => t.id === taskId)
   const projectColumns = columns.filter((c) => c.projectId === task?.projectId)
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {

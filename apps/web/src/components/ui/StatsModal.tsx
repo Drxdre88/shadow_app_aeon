@@ -81,14 +81,18 @@ export function StatsModal({ isOpen, onClose }: StatsModalProps) {
   const { colors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
 
-  useEffect(() => { // eslint-disable-line react-hooks/set-state-in-effect
+  useEffect(() => {
     if (!isOpen) return
     const controller = new AbortController()
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true)
+     
     setError(false)
     fetch('/api/stats', { signal: controller.signal })
       .then((r) => r.json())
+       
       .then((data) => { setStats(data); setLoading(false) })
+       
       .catch((e) => { if (e.name !== 'AbortError') { setError(true); setLoading(false) } })
     return () => controller.abort()
   }, [isOpen])

@@ -37,6 +37,7 @@ export function TaskBar({ task, style, cellWidth, timeScale, onTaskClick, onResi
   const resizingRef = useRef<{ edge: 'left' | 'right'; startX: number } | null>(null)
   const [resizeDelta, setResizeDelta] = useState(0)
 
+   
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
     data: { type: 'task', task },
@@ -88,8 +89,11 @@ export function TaskBar({ task, style, cellWidth, timeScale, onTaskClick, onResi
     transform: CSS.Translate.toString(transform),
   } : undefined
 
+   
   const resizeStyle = useMemo(() => {
+    // eslint-disable-next-line react-hooks/refs
     if (!resizingRef.current || resizeDelta === 0) return { left: style.left, width: style.width }
+    // eslint-disable-next-line react-hooks/refs
     if (resizingRef.current.edge === 'left') {
       return {
         left: style.left + resizeDelta,
@@ -107,6 +111,11 @@ export function TaskBar({ task, style, cellWidth, timeScale, onTaskClick, onResi
       ? `0 0 30px 10px ${resolved.glow}`
       : `0 0 15px 3px ${resolved.glowDark}`,
   }), [isSelected, resolved])
+
+  // eslint-disable-next-line react-hooks/refs
+  const isResizing = !!resizingRef.current
+  const whileHoverProp = isResizing ? undefined : { scale: 1.02, y: -1 }
+  const whileTapProp = isResizing ? undefined : { scale: 0.98 }
 
   return (
     <motion.div
@@ -134,8 +143,8 @@ export function TaskBar({ task, style, cellWidth, timeScale, onTaskClick, onResi
         ...glowStyle,
         ...dragStyle,
       }}
-      whileHover={resizingRef.current ? undefined : { scale: 1.02, y: -1 }}
-      whileTap={resizingRef.current ? undefined : { scale: 0.98 }}
+      whileHover={whileHoverProp}
+      whileTap={whileTapProp}
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
     >

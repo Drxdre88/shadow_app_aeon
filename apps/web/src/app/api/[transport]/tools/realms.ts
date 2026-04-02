@@ -6,7 +6,6 @@ import {
   findProjectsInGroup,
   addProjectToGroup,
   removeProjectFromGroup,
-  addGroupMember,
   removeGroupMember,
   updateGroupMemberRole,
   updateWorkspaceGroup,
@@ -14,10 +13,8 @@ import {
   getGroupRole,
   isPersonalWorkspace,
   canAccessProject,
+  inviteOrAddRealmMember,
 } from '@/lib/data/workspaces'
-import { db } from '@/lib/db'
-import { users } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
 import type { RegisterFn } from './types'
 import { getUserId, ok, fail, notFound } from './types'
 
@@ -113,10 +110,8 @@ export const registerRealmTools: RegisterFn = (server) => {
     async ({ realmId, email, role }, extra) => {
       const uid = getUserId(extra)
       await requireOwner(realmId, uid)
-      const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, email))
-      if (!user) return fail('User not found — they must sign up first')
-      const member = await addGroupMember(realmId, user.id, role)
-      return ok(member)
+      const result = await inviteOrAddRealmMember(realmId, email, role, uid)
+      return ok(result)
     }
   )
 

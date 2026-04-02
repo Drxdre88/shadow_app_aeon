@@ -163,6 +163,7 @@ export function ContactAutocomplete({
                 )}
               >
                 {contact.userImage && isSafeImageUrl(contact.userImage) ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={contact.userImage} alt="" className="w-7 h-7 rounded-full flex-shrink-0" />
                 ) : (
                   <div

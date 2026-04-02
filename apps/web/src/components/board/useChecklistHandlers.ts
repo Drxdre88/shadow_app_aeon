@@ -11,11 +11,13 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
 
   useEffect(() => {
     if (!editingTaskId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setChecklistItems([])
       return
     }
     getChecklistItems(editingTaskId, projectId)
       .then((items) =>
+         
         setChecklistItems(
           items.map((i) => ({
             id: i.id,
@@ -29,6 +31,7 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
           }))
         )
       )
+       
       .catch(() => setChecklistItems([]))
   }, [editingTaskId, projectId])
 
