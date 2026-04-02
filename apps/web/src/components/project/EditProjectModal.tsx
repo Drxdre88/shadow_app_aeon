@@ -6,7 +6,7 @@ import { X, Loader2, Palette, Check } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils/cn'
 import { NeonButton } from '@/components/ui/NeonButton'
-import { updateProject, setProjectGroup } from '@/lib/actions/projects'
+import { updateProject } from '@/lib/actions/projects'
 import { addProjectToGroup, removeProjectFromGroup } from '@/lib/actions/workspaces'
 import { useRouter } from 'next/navigation'
 import { useThemeStore } from '@/stores/themeStore'
@@ -41,7 +41,6 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
   const [formData, setFormData] = useState({
     name: project.name,
     description: project.description || '',
-    group: project.group || '',
     planetImage: project.planetImage || '',
     startDate: new Date(project.startDate).toISOString().split('T')[0],
     endDate: new Date(project.endDate).toISOString().split('T')[0],
@@ -86,7 +85,6 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
         endDate: formData.endDate,
         planetImage: formData.planetImage || null,
       })
-      await setProjectGroup(project.id, formData.group.trim() || null)
       onClose()
       router.refresh()
     } catch (error) {
@@ -201,45 +199,9 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
                 />
               </div>
 
-              <div>
-                <label className="block text-sm text-[var(--text-muted)] mb-1.5">Personal Realm</label>
-                <input
-                  type="text"
-                  value={formData.group}
-                  onChange={(e) => setFormData({ ...formData, group: e.target.value })}
-                  placeholder="Group within your personal view"
-                  className={cn(
-                    'w-full px-4 py-2.5 rounded-xl',
-                    'bg-white/[0.05] border border-white/[0.1]',
-                    'text-white placeholder-slate-500',
-                    'focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/50 focus:border-[var(--primary)]/30',
-                    'transition-all'
-                  )}
-                />
-                {existingGroups.length > 0 && (
-                  <div className="flex gap-1.5 flex-wrap mt-1.5">
-                    {existingGroups.map((g) => (
-                      <button
-                        key={g}
-                        type="button"
-                        onClick={() => setFormData({ ...formData, group: g })}
-                        className={cn(
-                          'px-2 py-0.5 rounded-md text-[11px] transition-all',
-                          formData.group === g
-                            ? 'bg-[var(--primary)]/20 text-[var(--primary)] border border-[var(--primary)]/30'
-                            : 'bg-white/[0.05] text-slate-400 border border-white/[0.08] hover:bg-white/[0.1] hover:text-white'
-                        )}
-                      >
-                        {g}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
               {teamRealms.length > 0 && (
                 <div>
-                  <label className="block text-sm text-[var(--text-muted)] mb-1.5">Team Realms</label>
+                  <label className="block text-sm text-[var(--text-muted)] mb-1.5">Realms</label>
                   <div className="flex gap-2 flex-wrap">
                     {teamRealms.map((realm) => {
                       const isIn = activeRealmIds.includes(realm.id)

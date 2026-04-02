@@ -13,9 +13,10 @@ import {
   deleteWorkspaceGroup,
   getGroupRole,
   isPersonalWorkspace,
+  canAccessProject,
 } from '@/lib/data/workspaces'
 import { db } from '@/lib/db'
-import { users, projects } from '@/lib/db/schema'
+import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import type { RegisterFn } from './types'
 import { getUserId, ok, fail, notFound } from './types'
@@ -130,6 +131,8 @@ export const registerRealmTools: RegisterFn = (server) => {
       const callerId = getUserId(extra)
       await requireOwner(realmId, callerId)
       if (callerId === userId) return fail('Cannot remove yourself as owner')
+      const targetRole = await getGroupRole(realmId, userId)
+      if (targetRole === 'owner') return fail('Cannot remove another owner')
       await removeGroupMember(realmId, userId)
       return ok({ removed: userId })
     }
@@ -175,6 +178,8 @@ export const registerRealmTools: RegisterFn = (server) => {
     async ({ realmId, projectId }, extra) => {
       const uid = getUserId(extra)
       await requireEditor(realmId, uid)
+      const hasAccess = await canAccessProject(uid, projectId)
+      if (!hasAccess) return fail('Not authorized to add this project')
       const result = await addProjectToGroup(projectId, realmId, uid)
       return ok(result)
     }
@@ -195,19 +200,4 @@ export const registerRealmTools: RegisterFn = (server) => {
     }
   )
 
-  server.tool(
-    'set_project_group',
-    'Set or clear the legacy group label on a project',
-    {
-      projectId: z.string().uuid().describe('Project UUID'),
-      group: z.string().max(255).nullable().describe('Group name or null to clear'),
-    },
-    async ({ projectId, group }, extra) => {
-      const uid = getUserId(extra)
-      const [proj] = await db.select({ userId: projects.userId }).from(projects).where(eq(projects.id, projectId))
-      if (!proj || proj.userId !== uid) return fail('Not authorized to modify this project')
-      await db.update(projects).set({ group }).where(eq(projects.id, projectId))
-      return ok({ projectId, group })
-    }
-  )
 }

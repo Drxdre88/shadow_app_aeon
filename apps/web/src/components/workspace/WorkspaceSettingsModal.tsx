@@ -11,6 +11,7 @@ import {
   removeGroupMember,
   updateMemberRole,
   updateGroup,
+  deleteGroup,
   addProjectToGroup,
   removeProjectFromGroup,
 } from '@/lib/actions/workspaces'
@@ -59,9 +60,12 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, is
   const [success, setSuccess] = useState('')
   const [name, setName] = useState(groupName)
   const [nameEditing, setNameEditing] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (!isOpen) return
+    setConfirmDelete(false)
     setLoading(true)
     Promise.allSettled([
       getGroupMembers(groupId),
@@ -154,6 +158,20 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, is
       onUpdated?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to remove project')
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!confirmDelete) { setConfirmDelete(true); return }
+    setDeleting(true)
+    try {
+      await deleteGroup(groupId)
+      onUpdated?.()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete realm')
+      setDeleting(false)
+      setConfirmDelete(false)
     }
   }
 
@@ -357,6 +375,27 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, isOwner, is
                   </div>
                 )}
               </>
+            )}
+
+            {isOwner && !isPersonal && (
+              <div className="border-t border-white/10 pt-4 mt-4">
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className={cn(
+                    'w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all',
+                    confirmDelete
+                      ? 'bg-red-500/20 border border-red-500/40 text-red-400 hover:bg-red-500/30'
+                      : 'bg-white/[0.03] border border-white/[0.08] text-slate-500 hover:text-red-400 hover:border-red-500/30',
+                    deleting && 'opacity-50'
+                  )}
+                >
+                  {deleting ? 'Deleting...' : confirmDelete ? 'Confirm Delete Realm' : 'Delete Realm'}
+                </button>
+                {confirmDelete && (
+                  <p className="text-[10px] text-red-400/60 text-center mt-1">Projects will be unassigned, not deleted</p>
+                )}
+              </div>
             )}
           </div>
         </motion.div>

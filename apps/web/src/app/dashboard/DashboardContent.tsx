@@ -20,6 +20,7 @@ import { TopBar } from '@/components/layout/TopBar'
 import { useSidebarStore } from '@/stores/sidebarStore'
 import { RealmSection } from '@/components/workspace/RealmSection'
 import { ProjectViewSwitcher } from '@/components/project/ProjectViewSwitcher'
+import { SpaceView } from '@/components/project/SpaceView'
 import type { WorkspaceGroup } from './WorkspaceDashboard'
 import type { ProjectWithStats } from '@/components/project/types'
 
@@ -35,7 +36,7 @@ interface DashboardContentProps {
 }
 
 export default function DashboardContent({ user, projects: initialProjects }: DashboardContentProps) {
-  const { collapsed, activeRealmId } = useSidebarStore()
+  const { collapsed, activeRealmId, hiddenProjectIds, hiddenRealmIds } = useSidebarStore()
   const [workspaces, setWorkspaces] = useState<WorkspaceGroup[]>([])
   const [sharedProjects, setSharedProjects] = useState<ProjectWithStats[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -86,17 +87,17 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
 
   const sidebarRealms = useMemo(() =>
     workspaces
-      .filter((ws) => !ws.isPersonal)
+      .filter((ws) => !ws.isPersonal && !hiddenRealmIds.includes(ws.groupId))
       .map((ws) => ({
         id: ws.groupId,
         name: ws.groupName,
         color: ws.groupColor,
         isPersonal: ws.isPersonal,
         isOwner: ws.isOwner,
-        projectCount: ws.projects.length,
+        projectCount: ws.projects.filter((p) => !hiddenProjectIds.includes(p.id)).length,
         memberCount: ws.memberCount,
       })),
-    [workspaces]
+    [workspaces, hiddenRealmIds, hiddenProjectIds]
   )
 
   const projectRealmMap: Record<string, string[]> = useMemo(() => {
@@ -168,10 +169,20 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
         e.preventDefault()
         setShowCreateModal(true)
       }
+      const num = parseInt(e.key)
+      if (num >= 1 && num <= 9) {
+        e.preventDefault()
+        if (num === 1) {
+          useSidebarStore.getState().setActiveRealm(null)
+        } else {
+          const realm = sidebarRealms[num - 2]
+          if (realm) useSidebarStore.getState().setActiveRealm(realm.id)
+        }
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [showCreateModal, editingProject, sharingProject])
+  }, [showCreateModal, editingProject, sharingProject, sidebarRealms])
 
   const handleWorkspaceCreate = async (name: string) => {
     await createGroup({ name })
@@ -187,20 +198,22 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
   }, [workspaces, activeRealmId])
 
   const realmSections = useMemo(() =>
-    visibleWorkspaces.filter((ws) => !ws.isPersonal),
-    [visibleWorkspaces]
+    visibleWorkspaces
+      .filter((ws) => !ws.isPersonal && !hiddenRealmIds.includes(ws.groupId))
+      .map((ws) => ({ ...ws, projects: ws.projects.filter((p) => !hiddenProjectIds.includes(p.id)) })),
+    [visibleWorkspaces, hiddenRealmIds, hiddenProjectIds]
   )
 
   const generalProjects = useMemo(() => {
     const personalWs = workspaces.find((ws) => ws.isPersonal)
-    if (!personalWs) return sharedProjects
+    if (!personalWs) return sharedProjects.filter((p) => !hiddenProjectIds.includes(p.id))
     const assignedIds = new Set(
       workspaces.filter((ws) => !ws.isPersonal).flatMap((ws) => ws.projects.map((p) => p.id))
     )
-    const unassigned = personalWs.projects.filter((p) => !assignedIds.has(p.id))
-    const shared = sharedProjects.map((p) => ({ ...p, group: 'Shared with me' }))
+    const unassigned = personalWs.projects.filter((p) => !assignedIds.has(p.id) && !hiddenProjectIds.includes(p.id))
+    const shared = sharedProjects.filter((p) => !hiddenProjectIds.includes(p.id)).map((p) => ({ ...p, group: 'Shared with me' }))
     return [...unassigned, ...shared]
-  }, [workspaces, sharedProjects])
+  }, [workspaces, sharedProjects, hiddenProjectIds])
 
   const hasProjects = workspaces.some((ws) => ws.projects.length > 0) || initialProjects.length > 0
 
@@ -256,6 +269,13 @@ export default function DashboardContent({ user, projects: initialProjects }: Da
                 </span>
               </NeonButton>
             </motion.div>
+          ) : view === 'space' ? (
+            <SpaceView
+              projects={[
+                ...realmSections.flatMap((ws) => ws.projects.map((p) => ({ ...p, group: ws.groupName }))),
+                ...(!activeRealmId ? generalProjects : []),
+              ]}
+            />
           ) : (
             <div className="space-y-6">
               {realmSections.map((ws) => (

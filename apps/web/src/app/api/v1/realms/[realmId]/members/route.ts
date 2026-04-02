@@ -1,0 +1,53 @@
+import { NextRequest } from 'next/server'
+import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
+import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
+import { findGroupMembers, addGroupMember, getGroupRole } from '@/lib/data/workspaces'
+import { inviteMemberSchema } from '@/lib/data/validators'
+import { db } from '@/lib/db'
+import { users } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
+
+export const GET = withRateLimit(
+  apiHandler(async (request: NextRequest, ctx: unknown) => {
+    const result = await authenticateRequest(request)
+    if (!isApiUser(result)) return result
+
+    const { realmId } = (ctx as { params: { realmId: string } }).params
+
+    const role = await getGroupRole(realmId, result.id)
+    if (!role) return jsonError('Not a member of this realm', 403)
+
+    const members = await findGroupMembers(realmId)
+    return jsonData(members)
+  }),
+  API_READ_LIMIT
+)
+
+export const POST = withRateLimit(
+  apiHandler(async (request: NextRequest, ctx: unknown) => {
+    const result = await authenticateRequest(request)
+    if (!isApiUser(result)) return result
+
+    const { realmId } = (ctx as { params: { realmId: string } }).params
+
+    const role = await getGroupRole(realmId, result.id)
+    if (role !== 'owner') return jsonError('Only owner can perform this action', 403)
+
+    let body: unknown
+    try {
+      body = await request.json()
+    } catch {
+      return jsonError('Invalid JSON body', 400)
+    }
+
+    const parsed = inviteMemberSchema.safeParse(body)
+    if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
+
+    const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, parsed.data.email))
+    if (!user) return jsonError('User not found — they must sign up first', 404)
+
+    const member = await addGroupMember(realmId, user.id, parsed.data.role)
+    return jsonData(member, 201)
+  }),
+  API_WRITE_LIMIT
+)

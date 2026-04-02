@@ -236,7 +236,7 @@ export function BetaFeaturesButton() {
               : glowIntensity > 50 ? `0 0 ${10 * (glowIntensity / 100)}px ${colors.glowColor}` : 'none',
           }}
         >
-          <FlaskConical className={cn('w-5 h-5', !unseen && 'text-slate-400')} style={unseen ? { color: 'var(--primary)' } : undefined} />
+          <FlaskConical className="w-5 h-5 text-current" />
           {unseen && (
             <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-[#0a0a0c]" style={{ backgroundColor: 'var(--primary)' }} />
           )}

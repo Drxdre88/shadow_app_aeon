@@ -25,7 +25,7 @@ export function SpaceView({ projects }: SpaceViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dims, setDims] = useState({ w: 900, h: 600 })
   const [hoveredPlanet, setHoveredPlanet] = useState<PlanetOrb | null>(null)
-  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(true)
   const animRef = useRef(0)
   const autoZoom = Math.max(0.2, Math.min(0.8, 1.2 / Math.sqrt(Math.max(projects.length, 1))))
   const camRef = useRef({ x: 0, y: 0, zoom: autoZoom })
@@ -446,7 +446,7 @@ export function SpaceView({ projects }: SpaceViewProps) {
   const btnCn = 'p-1.5 rounded-lg bg-black/50 backdrop-blur-sm border border-white/10 text-white/50 hover:text-white hover:bg-white/10 transition-colors'
 
   return (
-    <div ref={containerRef} className={isFullscreen ? 'fixed inset-0 z-50 bg-[#08080f]' : 'w-full h-[calc(100vh-200px)] min-h-[500px] rounded-xl overflow-hidden relative border border-white/[0.06]'}>
+    <div ref={containerRef} className={isFullscreen ? 'fixed inset-0 z-50 bg-[#08080f]' : 'w-full h-[calc(100vh-80px)] min-h-[600px] rounded-xl overflow-hidden relative border border-white/[0.06]'}>
       <canvas
         ref={canvasRef}
         style={{ width: dims.w, height: dims.h, cursor: 'grab' }}

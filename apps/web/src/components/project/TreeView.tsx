@@ -7,11 +7,18 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useThemeStore } from '@/stores/themeStore'
 import { colorConfig, resolveColor, type AccentColor } from '@/lib/utils/colors'
-import { renameProjectGroup, setProjectGroup } from '@/lib/actions/projects'
+import { renameProjectGroup, setProjectGroup, deleteProject } from '@/lib/actions/projects'
+import { ProjectContextMenu } from './ProjectContextMenu'
 import type { ProjectWithStats } from './types'
 
 interface TreeViewProps {
   projects: ProjectWithStats[]
+  onEdit?: (project: ProjectWithStats) => void
+  onDelete?: (...args: never[]) => void
+  onShare?: (project: ProjectWithStats) => void
+  realms?: Array<{ id: string; name: string; color: string; isPersonal: boolean }>
+  projectRealmMap?: Record<string, string[]>
+  onToggleRealm?: (projectId: string, realmId: string) => void
 }
 
 interface TreeNode {
@@ -36,7 +43,7 @@ function groupByFluidGroup(projects: ProjectWithStats[]): TreeNode[] {
     .map(([label, prjs]) => ({ label, projects: prjs }))
 }
 
-export function TreeView({ projects }: TreeViewProps) {
+export function TreeView({ projects, onEdit, onDelete, onShare, realms = [], projectRealmMap = {}, onToggleRealm }: TreeViewProps) {
   const router = useRouter()
   const { projectColors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
@@ -47,6 +54,7 @@ export function TreeView({ projects }: TreeViewProps) {
   const [editingGroup, setEditingGroup] = useState<string | null>(null)
   const [editGroupValue, setEditGroupValue] = useState('')
   const editInputRef = useRef<HTMLInputElement>(null)
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; project: ProjectWithStats } | null>(null)
 
   const groups = useMemo(() => groupByFluidGroup(projects), [projects])
 
@@ -194,6 +202,11 @@ export function TreeView({ projects }: TreeViewProps) {
                           }`}
                           draggable
                           onDragStart={(e) => e.dataTransfer.setData('projectId', project.id)}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            setCtxMenu({ x: e.clientX, y: e.clientY, project })
+                          }}
                         >
                           <div className="relative flex items-center">
                             <div
@@ -231,6 +244,25 @@ export function TreeView({ projects }: TreeViewProps) {
         <div className="py-12 text-center text-[var(--text-dim)] text-sm">
           No projects yet
         </div>
+      )}
+
+      {ctxMenu && (
+        <ProjectContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          projectId={ctxMenu.project.id}
+          projectName={ctxMenu.project.name}
+          realms={realms}
+          projectRealmIds={projectRealmMap[ctxMenu.project.id] ?? []}
+          onClose={() => setCtxMenu(null)}
+          onEdit={() => onEdit?.(ctxMenu.project)}
+          onShare={() => onShare?.(ctxMenu.project)}
+          onDelete={async () => {
+            await deleteProject(ctxMenu.project.id)
+            onDelete?.()
+          }}
+          onToggleRealm={(realmId) => onToggleRealm?.(ctxMenu.project.id, realmId)}
+        />
       )}
     </div>
   )

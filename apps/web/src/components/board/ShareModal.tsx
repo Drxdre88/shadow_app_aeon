@@ -134,7 +134,9 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
   }
 
   const handleCopyShareLink = () => {
-    navigator.clipboard.writeText(shareLink).catch(() => {})
+    navigator.clipboard.writeText(shareLink).catch(() => {
+      window.prompt('Copy this link:', shareLink)
+    })
     setShareLinkCopied('copied')
     setTimeout(() => setShareLinkCopied(''), 2000)
   }
@@ -191,7 +193,9 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
   }
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(inviteLink).catch(() => {})
+    navigator.clipboard.writeText(inviteLink).catch(() => {
+      window.prompt('Copy this link:', inviteLink)
+    })
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
