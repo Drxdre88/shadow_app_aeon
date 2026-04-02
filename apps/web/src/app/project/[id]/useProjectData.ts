@@ -22,8 +22,8 @@ async function fetchBoardVersion(projectId: string): Promise<number | null> {
   }
 }
 
-export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' | 'canvas' | 'trophy' | 'velocity') {
-  const [isLoading, setIsLoading] = useState(true)
+export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' | 'canvas' | 'trophy' | 'velocity', initialBoardData?: Record<string, unknown>) {
+  const [isLoading, setIsLoading] = useState(!initialBoardData)
   const [loadError, setLoadError] = useState<string | null>(null)
   const isInitialLoad = useRef(true)
 
@@ -114,6 +114,8 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
       })
   }, [projectId])
 
+  const initialDataRef = useRef(initialBoardData)
+
   useEffect(() => {
     const cachedTasks = useBoardStore.getState().tasks
     const hasCachedProject = cachedTasks.length > 0 && cachedTasks[0]?.projectId === projectId
@@ -121,7 +123,7 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
     isInitialLoad.current = true
     knownVersionRef.current = null
 
-    if (!hasCachedProject) {
+    if (!hasCachedProject && !initialDataRef.current) {
       setIsLoading(true)
       useBoardStore.setState({ columns: [], labels: [], dependencies: [] })
       useBoardStore.getState().clearCrossedTasks()
@@ -130,7 +132,53 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
     setGanttTasks([])
     setRows([])
 
-    doFullLoad()
+    if (initialDataRef.current) {
+      const data = initialDataRef.current as { tasks: Array<Record<string, unknown>>; columns: Array<Record<string, unknown>>; labels: Array<Record<string, unknown>>; taskLabels: Array<{ taskId: string; labelId: string }>; dependencies: Array<Record<string, unknown>>; checklistSummaries: Record<string, never>; checklistPreviews: Record<string, never[]> }
+      initialDataRef.current = undefined
+
+      const taskLabelMap = new Map<string, string[]>()
+      data.taskLabels.forEach((tl) => {
+        const existing = taskLabelMap.get(tl.taskId) || []
+        existing.push(tl.labelId)
+        taskLabelMap.set(tl.taskId, existing)
+      })
+
+      const firstColumnId = (data.columns[0] as { id?: string })?.id
+      const columnByOldStatus = new Map<string, string>()
+      for (const col of data.columns) {
+        const c = col as { id: string; name: string }
+        const lower = c.name.toLowerCase()
+        if (lower === 'todo') columnByOldStatus.set('todo', c.id)
+        else if (lower === 'doing') columnByOldStatus.set('doing', c.id)
+        else if (lower === 'review') columnByOldStatus.set('review', c.id)
+        else if (lower === 'done') columnByOldStatus.set('done', c.id)
+      }
+
+      useBoardStore.setState({
+        columns: data.columns as never[],
+        tasks: (data.tasks as Array<Record<string, unknown>>).map((t) => ({
+          ...t,
+          columnId: (t.columnId as string) || columnByOldStatus.get(t.status as string) || firstColumnId,
+          description: (t.description as string) || undefined,
+          labels: taskLabelMap.get(t.id as string) || [],
+          startDate: t.startDate ? (t.startDate as Date).toISOString?.() ?? t.startDate : undefined,
+          endDate: t.endDate ? (t.endDate as Date).toISOString?.() ?? t.endDate : undefined,
+          updatedAt: t.updatedAt ? (t.updatedAt as Date).toISOString?.() ?? t.updatedAt : undefined,
+          size: (t.size as number) ?? null,
+          ganttTaskId: (t.ganttTaskId as string) ?? null,
+        })) as never[],
+        labels: data.labels as never[],
+        dependencies: data.dependencies as never[],
+        checklistSummaries: data.checklistSummaries,
+        checklistPreviews: data.checklistPreviews,
+        isDirty: false,
+      })
+
+      setIsLoading(false)
+      isInitialLoad.current = false
+    } else {
+      doFullLoad()
+    }
   }, [projectId, doFullLoad, setGanttTasks, setRows])
 
   useEffect(() => {

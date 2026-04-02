@@ -45,9 +45,10 @@ interface ProjectContentProps {
     email?: string | null
     image?: string | null
   }
+  initialBoardData?: Record<string, unknown>
 }
 
-export default function ProjectContent({ project, user }: ProjectContentProps) {
+export default function ProjectContent({ project, user, initialBoardData }: ProjectContentProps) {
   const [activeTab, setActiveTab] = useState<'board' | 'gantt' | 'canvas' | 'trophy' | 'velocity'>('board')
   const [showFilters, setShowFilters] = useState(false)
   const [filters, setFilters] = useState<BoardFilters>(DEFAULT_FILTERS)
@@ -59,7 +60,7 @@ export default function ProjectContent({ project, user }: ProjectContentProps) {
   const projectGlow = projectColors[project.id] || colors.glowColor || 'rgba(139, 92, 246, 0.5)'
   const { collapsed } = useSidebarStore()
 
-  const { isLoading, loadError, triggerReload } = useProjectData(project.id, activeTab)
+  const { isLoading, loadError, triggerReload } = useProjectData(project.id, activeTab, initialBoardData)
   useBoardTheme(project.id, (project.settings ?? {}) as Record<string, unknown>)
 
   const board = useBoardHandlers(project.id)

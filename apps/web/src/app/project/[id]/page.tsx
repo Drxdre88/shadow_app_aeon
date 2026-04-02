@@ -1,8 +1,12 @@
 import type { Metadata } from 'next'
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import { verifyProjectOwnership } from '@/lib/data/projects'
-import { findProjectBasic } from '@/lib/data/projects'
+import { verifyProjectOwnership, findProjectBasic } from '@/lib/data/projects'
+import { findTasks } from '@/lib/data/tasks'
+import { findColumns } from '@/lib/data/columns'
+import { findLabels, findTaskLabels } from '@/lib/data/labels'
+import { findDependencies } from '@/lib/data/dependencies'
+import { findChecklistSummaries, findChecklistPreviews } from '@/lib/data/checklist'
 import ProjectContent from './ProjectContent'
 import { AccessDenied } from './AccessDenied'
 
@@ -29,6 +33,16 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     return <AccessDenied projectName={exists?.name} />
   }
 
+  const [tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews] = await Promise.all([
+    findTasks(id),
+    findColumns(id),
+    findLabels(id),
+    findTaskLabels(id),
+    findDependencies(id),
+    findChecklistSummaries(id),
+    findChecklistPreviews(id),
+  ])
+
   return (
     <ProjectContent
       project={project}
@@ -39,6 +53,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         email: session.user.email,
         image: session.user.image,
       }}
+      initialBoardData={{ tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews }}
     />
   )
 }
