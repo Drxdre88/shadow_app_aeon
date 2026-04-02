@@ -57,18 +57,6 @@ const BOARD_FEATURES = [
   },
 ]
 
-const SHORTCUTS = [
-  { key: 'S', action: 'Select card (hover) — enables arrow key movement' },
-  { key: 'Arrows', action: 'Move selected card (L/R: columns, U/D: reorder)' },
-  { key: 'Escape', action: 'Deselect card' },
-  { key: 'C', action: 'New card' },
-  { key: 'E', action: 'Edit card (hover)' },
-  { key: 'V', action: 'Change priority (hover)' },
-  { key: 'L', action: 'Open label picker (hover)' },
-  { key: 'G', action: 'Change card glow (hover)' },
-  { key: 'D', action: 'Toggle due dates' },
-]
-
 export function BoardTab() {
   return (
     <div className="space-y-6">
@@ -85,25 +73,12 @@ export function BoardTab() {
         </div>
       </Section>
 
-      <Section title="Keyboard Shortcuts">
-        <div className="space-y-2">
-          {SHORTCUTS.map((s) => (
-            <div key={s.key} className="flex items-center gap-3">
-              <kbd className="px-2 py-1 rounded bg-white/10 text-xs font-mono text-slate-300 min-w-[80px] text-center">
-                {s.key}
-              </kbd>
-              <span className="text-xs text-slate-400">{s.action}</span>
-            </div>
-          ))}
-        </div>
-      </Section>
-
       <Section title="Tips">
         <ul className="space-y-1.5 text-xs text-slate-400">
           <li>Double-click a column header to rename it</li>
           <li>Tasks can have priorities: Critical, High, Medium, Low, None</li>
           <li>Use the layout toggle to switch between compact and comfortable views</li>
-          <li>All keyboard shortcuts are customizable in Settings &gt; Shortcuts</li>
+          <li>All keyboard shortcuts are in the Keys tab</li>
         </ul>
       </Section>
     </div>

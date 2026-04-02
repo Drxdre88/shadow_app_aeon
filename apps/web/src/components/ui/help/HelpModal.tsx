@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { useHasMounted } from '@/lib/utils/useHasMounted'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { X, HelpCircle, LayoutGrid, Calendar, Lightbulb, Trophy, Terminal } from 'lucide-react'
+import { X, HelpCircle, LayoutGrid, Calendar, Lightbulb, Trophy, Terminal, Keyboard } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
 import { Tooltip } from '../Tooltip'
@@ -13,14 +13,16 @@ import { GanttTab } from './GanttTab'
 import { CanvasTab } from './CanvasTab'
 import { TrophyTab } from './TrophyTab'
 import { McpTab } from './McpTab'
+import { ShortcutsHelpTab } from './ShortcutsHelpTab'
 
-type HelpTab = 'board' | 'gantt' | 'canvas' | 'trophy' | 'mcp'
+type HelpTab = 'board' | 'gantt' | 'canvas' | 'trophy' | 'mcp' | 'shortcuts'
 
 const TAB_CONFIG: { id: HelpTab; label: string; icon: typeof LayoutGrid }[] = [
   { id: 'board', label: 'Board', icon: LayoutGrid },
   { id: 'gantt', label: 'Gantt', icon: Calendar },
   { id: 'canvas', label: 'Canvas', icon: Lightbulb },
   { id: 'trophy', label: 'Vault', icon: Trophy },
+  { id: 'shortcuts', label: 'Keys', icon: Keyboard },
   { id: 'mcp', label: 'MCP', icon: Terminal },
 ]
 
@@ -130,6 +132,7 @@ export function HelpModal({ isOpen, onClose }: HelpModalProps) {
           {activeTab === 'gantt' && <GanttTab />}
           {activeTab === 'canvas' && <CanvasTab />}
           {activeTab === 'trophy' && <TrophyTab />}
+          {activeTab === 'shortcuts' && <ShortcutsHelpTab />}
           {activeTab === 'mcp' && <McpTab />}
         </div>
       </motion.div>
