@@ -35,10 +35,10 @@ export function AccessDenied({ projectName }: AccessDeniedProps) {
 
         {projectName ? (
           <p className="text-sm text-white/50 mb-2">
-            You don't have access to <span className="text-white/70 font-medium">{projectName}</span>
+            You don&apos;t have access to <span className="text-white/70 font-medium">{projectName}</span>
           </p>
         ) : (
-          <p className="text-sm text-white/50 mb-2">This project doesn't exist or you don't have access</p>
+          <p className="text-sm text-white/50 mb-2">This project doesn&apos;t exist or you don&apos;t have access</p>
         )}
 
         <p className="text-xs text-white/30 mb-8">
