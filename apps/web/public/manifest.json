@@ -1,15 +1,16 @@
 {
-  "id": "/dashboard",
+  "id": "aeon-pm",
   "name": "Aeon",
   "short_name": "Aeon",
   "description": "The last PM tool of this dying world",
-  "start_url": "/dashboard",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#0a0a0f",
   "theme_color": "#8b5cf6",
   "orientation": "any",
   "categories": ["productivity", "business"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/aeon-192.png",
