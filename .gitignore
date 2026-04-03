@@ -56,6 +56,10 @@ desktop.ini
 .yarn/
 .npm/
 
+# Capacitor native projects (generated)
+apps/web/ios/
+apps/web/android/
+
 # Tauri
 apps/desktop/src-tauri/target/
 

@@ -1,6 +1,6 @@
 import { randomBytes, createHash } from 'crypto'
 import { db } from '@/lib/db'
-import { mobileSessions, mobileLoginTokens, users } from '@/lib/db/schema'
+import { mobileSessions, mobileLoginTokens, users, accounts } from '@/lib/db/schema'
 import { eq, and, isNull, gt } from 'drizzle-orm'
 
 const SESSION_PREFIX = 'aeon_s1_'
@@ -100,6 +100,122 @@ export async function findUserByEmail(email: string) {
     })
     .from(users)
     .where(eq(users.email, email))
+    .limit(1)
+
+  return user || null
+}
+
+export type GoogleProfile = {
+  email: string
+  sub: string
+  name?: string
+  picture?: string
+}
+
+export async function verifyGoogleIdToken(
+  idToken: string
+): Promise<GoogleProfile | null> {
+  const res = await fetch(
+    `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`
+  )
+  if (!res.ok) return null
+
+  const payload = await res.json()
+
+  if (!payload.email || !payload.email_verified || payload.email_verified === 'false') {
+    return null
+  }
+
+  const expectedClientId = process.env.AUTH_GOOGLE_ID
+  if (expectedClientId && payload.aud !== expectedClientId) {
+    return null
+  }
+
+  return {
+    email: payload.email,
+    sub: payload.sub,
+    name: payload.name,
+    picture: payload.picture,
+  }
+}
+
+export async function findOrCreateGoogleUser(profile: GoogleProfile) {
+  const [existing] = await db
+    .select({ userId: accounts.userId })
+    .from(accounts)
+    .where(
+      and(
+        eq(accounts.provider, 'google'),
+        eq(accounts.providerAccountId, profile.sub)
+      )
+    )
+    .limit(1)
+
+  if (existing) {
+    return findUserById(existing.userId)
+  }
+
+  const existingUser = await findUserByEmail(profile.email)
+
+  if (existingUser) {
+    await db.insert(accounts).values({
+      userId: existingUser.id,
+      type: 'oauth',
+      provider: 'google',
+      providerAccountId: profile.sub,
+    })
+    if (profile.picture && !existingUser.image) {
+      await db
+        .update(users)
+        .set({ image: profile.picture })
+        .where(eq(users.id, existingUser.id))
+    }
+    return existingUser
+  }
+
+  const adminEmails = (process.env.ADMIN_EMAILS || '')
+    .split(',')
+    .map((e) => e.trim())
+    .filter(Boolean)
+
+  const [newUser] = await db
+    .insert(users)
+    .values({
+      email: profile.email,
+      name: profile.name || profile.email.split('@')[0],
+      image: profile.picture,
+      emailVerified: new Date(),
+      role: adminEmails.includes(profile.email) ? 'admin' : 'user',
+    })
+    .returning({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      role: users.role,
+      image: users.image,
+    })
+
+  await db.insert(accounts).values({
+    userId: newUser.id,
+    type: 'oauth',
+    provider: 'google',
+    providerAccountId: profile.sub,
+  })
+
+  return newUser
+}
+
+async function findUserById(id: string) {
+  const [user] = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      role: users.role,
+      image: users.image,
+    })
+    .from(users)
+    .where(eq(users.id, id))
     .limit(1)
 
   return user || null

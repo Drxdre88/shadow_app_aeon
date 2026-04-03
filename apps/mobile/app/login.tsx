@@ -10,13 +10,65 @@ import {
   StyleSheet,
 } from 'react-native'
 import * as Linking from 'expo-linking'
+import * as WebBrowser from 'expo-web-browser'
+import { router } from 'expo-router'
 import { apiClient } from '@/lib/api-client'
+import { useAuth } from '@/lib/auth-provider'
+
+WebBrowser.maybeCompleteAuthSession()
+
+const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID
+
+function buildGoogleAuthUrl(redirectUri: string): string {
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID || '',
+    redirect_uri: redirectUri,
+    response_type: 'id_token',
+    scope: 'openid email profile',
+    nonce: Math.random().toString(36).slice(2),
+  })
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+}
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState('')
+  const { signInWithGoogle } = useAuth()
+
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true)
+    setError('')
+    try {
+      const redirectUri = Linking.createURL('auth/google')
+      const authUrl = buildGoogleAuthUrl(redirectUri)
+      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri)
+
+      if (result.type === 'success' && result.url) {
+        const url = new URL(result.url)
+        const fragment = new URLSearchParams(url.hash.slice(1))
+        const idToken = fragment.get('id_token')
+
+        if (idToken) {
+          const success = await signInWithGoogle(idToken)
+          if (success) {
+            router.replace('/(tabs)')
+          } else {
+            setError('Google sign-in failed')
+          }
+        } else {
+          setError('No token received from Google')
+        }
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Google sign-in failed'
+      setError(msg)
+    } finally {
+      setGoogleLoading(false)
+    }
+  }
 
   const handleSend = async () => {
     if (!email.trim()) return
@@ -83,6 +135,28 @@ export default function LoginScreen() {
             <Text style={s.buttonText}>Send sign-in link</Text>
           )}
         </Pressable>
+
+        {GOOGLE_CLIENT_ID ? (
+          <>
+            <View style={s.divider}>
+              <View style={s.dividerLine} />
+              <Text style={s.dividerText}>or</Text>
+              <View style={s.dividerLine} />
+            </View>
+
+            <Pressable
+              onPress={handleGoogleSignIn}
+              disabled={googleLoading}
+              style={[s.googleButton, { opacity: googleLoading ? 0.5 : 1 }]}
+            >
+              {googleLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={s.buttonText}>Sign in with Google</Text>
+              )}
+            </Pressable>
+          </>
+        ) : null}
       </View>
     </KeyboardAvoidingView>
   )
@@ -139,5 +213,30 @@ const s = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginVertical: 20,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#333',
+  },
+  dividerText: {
+    color: '#666',
+    paddingHorizontal: 12,
+    fontSize: 14,
+  },
+  googleButton: {
+    width: '100%',
+    backgroundColor: '#1a1a2e',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#333',
   },
 })
