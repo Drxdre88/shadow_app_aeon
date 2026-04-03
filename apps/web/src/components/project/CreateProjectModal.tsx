@@ -2,40 +2,51 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Loader2, LayoutGrid, Bug, Palette } from 'lucide-react'
+import { X, Loader2, LayoutGrid, Bug, Palette, Check } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils/cn'
 import { NeonButton } from '@/components/ui/NeonButton'
-import { createProject, setProjectGroup, updateProject } from '@/lib/actions/projects'
+import { createProject, updateProject } from '@/lib/actions/projects'
+import { addProjectToGroup } from '@/lib/actions/workspaces'
 import { PlanetPicker } from './PlanetPicker'
 import { useRouter } from 'next/navigation'
 import { useThemeStore } from '@/stores/themeStore'
 import aeonLogo from '@/assets/aeon.png'
 import { ColorSwatchPicker } from '@/components/board/ColorSwatchPicker'
 import { AccentColor, colorConfig } from '@/lib/utils/colors'
+import type { RealmInfo } from './ProjectContextMenu'
 
 interface CreateProjectModalProps {
   isOpen: boolean
   onClose: () => void
-  existingGroups?: string[]
+  realms?: RealmInfo[]
+  onProjectCreated?: () => void
 }
 
-export function CreateProjectModal({ isOpen, onClose, existingGroups = [] }: CreateProjectModalProps) {
+export function CreateProjectModal({ isOpen, onClose, realms = [], onProjectCreated }: CreateProjectModalProps) {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { glowIntensity, setProjectColor } = useThemeStore()
   const mult = glowIntensity / 75
   const [template, setTemplate] = useState('default')
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
+  const [selectedRealmIds, setSelectedRealmIds] = useState<string[]>([])
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    group: '',
     planetImage: '',
     color: '#c8cdd3',
     startDate: new Date().toISOString().split('T')[0],
     endDate: `${new Date().getFullYear()}-12-31`,
   })
+
+  const teamRealms = realms.filter((r) => !r.isPersonal)
+
+  const handleRealmToggle = (realmId: string) => {
+    setSelectedRealmIds((prev) =>
+      prev.includes(realmId) ? prev.filter((id) => id !== realmId) : [...prev, realmId]
+    )
+  }
 
   const handleSubmit = async () => {
     if (!formData.name.trim() || isSubmitting) return
@@ -49,13 +60,16 @@ export function CreateProjectModal({ isOpen, onClose, existingGroups = [] }: Cre
         endDate: formData.endDate,
         template,
       })
-      if (formData.group.trim()) {
-        await setProjectGroup(project.id, formData.group.trim())
+      for (const realmId of selectedRealmIds) {
+        await addProjectToGroup(project.id, realmId)
       }
       if (formData.planetImage) {
         await updateProject(project.id, { planetImage: formData.planetImage })
       }
       setProjectColor(project.id, formData.color)
+      setSelectedRealmIds([])
+      setFormData({ name: '', description: '', planetImage: '', color: '#c8cdd3', startDate: new Date().toISOString().split('T')[0], endDate: `${new Date().getFullYear()}-12-31` })
+      onProjectCreated?.()
       onClose()
       router.refresh()
       router.push(`/project/${project.id}`)
@@ -171,41 +185,37 @@ export function CreateProjectModal({ isOpen, onClose, existingGroups = [] }: Cre
                 />
               </div>
 
-              <div>
-                <label className="block text-sm text-[var(--text-muted)] mb-1.5">Group</label>
-                <input
-                  type="text"
-                  value={formData.group}
-                  onChange={(e) => setFormData({ ...formData, group: e.target.value })}
-                  placeholder="General (leave empty for default)"
-                  className={cn(
-                    'w-full px-4 py-2.5 rounded-xl',
-                    'bg-white/[0.05] border border-white/[0.1]',
-                    'text-white placeholder-slate-500',
-                    'focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/50 focus:border-[var(--primary)]/30',
-                    'transition-all'
-                  )}
-                />
-                {existingGroups.length > 0 && (
-                  <div className="flex gap-1.5 flex-wrap mt-1.5">
-                    {existingGroups.map((g) => (
-                      <button
-                        key={g}
-                        type="button"
-                        onClick={() => setFormData({ ...formData, group: g })}
-                        className={cn(
-                          'px-2 py-0.5 rounded-md text-[11px] transition-all',
-                          formData.group === g
-                            ? 'bg-[var(--primary)]/20 text-[var(--primary)] border border-[var(--primary)]/30'
-                            : 'bg-white/[0.05] text-slate-400 border border-white/[0.08] hover:bg-white/[0.1] hover:text-white'
-                        )}
-                      >
-                        {g}
-                      </button>
-                    ))}
+              {teamRealms.length > 0 && (
+                <div>
+                  <label className="block text-sm text-[var(--text-muted)] mb-1.5">Realms</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {teamRealms.map((realm) => {
+                      const isIn = selectedRealmIds.includes(realm.id)
+                      return (
+                        <button
+                          key={realm.id}
+                          type="button"
+                          onClick={() => handleRealmToggle(realm.id)}
+                          className={cn(
+                            'flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all',
+                            isIn
+                              ? 'bg-[var(--primary)]/15 text-[var(--primary)] border border-[var(--primary)]/30'
+                              : 'bg-white/[0.05] text-slate-400 border border-white/[0.08] hover:bg-white/[0.1] hover:text-white'
+                          )}
+                        >
+                          <div
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{ backgroundColor: realm.color.startsWith('#') ? realm.color : 'var(--primary)' }}
+                          />
+                          {realm.name}
+                          {isIn && <Check className="w-3 h-3" />}
+                        </button>
+                      )
+                    })}
                   </div>
-                )}
-              </div>
+                  <p className="text-[10px] text-slate-600 mt-1">Projects can belong to multiple team realms</p>
+                </div>
+              )}
 
               <PlanetPicker
                 value={formData.planetImage}

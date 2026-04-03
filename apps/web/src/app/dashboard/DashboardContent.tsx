@@ -355,7 +355,7 @@ export default function DashboardContent({ user, projects: initialProjects, init
         </main>
       </div>
 
-      <CreateProjectModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} existingGroups={existingGroups} />
+      <CreateProjectModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} realms={realms} onProjectCreated={loadWorkspaces} />
       {editingProject && (
         <EditProjectModal
           isOpen={true}
