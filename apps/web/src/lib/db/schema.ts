@@ -335,6 +335,24 @@ export const userContacts = pgTable('user_contacts', {
   userEmailUniq: uniqueIndex('user_contacts_user_email_uniq').on(table.userId, table.contactEmail),
 }))
 
+export const mobileLoginTokens = pgTable('mobile_login_tokens', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  email: varchar('email', { length: 255 }).notNull(),
+  tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
+  callbackUrl: text('callback_url').notNull(),
+  usedAt: timestamp('used_at', { mode: 'date' }),
+  expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
+export const mobileSessions = pgTable('mobile_sessions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
+  expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
 export type User = typeof users.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type GanttView = typeof ganttViews.$inferSelect
@@ -360,3 +378,5 @@ export type GroupMember = typeof groupMembers.$inferSelect
 export type ProjectGroup = typeof projectGroups.$inferSelect
 export type UserContact = typeof userContacts.$inferSelect
 export type RealmInvite = typeof realmInvites.$inferSelect
+export type MobileLoginToken = typeof mobileLoginTokens.$inferSelect
+export type MobileSession = typeof mobileSessions.$inferSelect
