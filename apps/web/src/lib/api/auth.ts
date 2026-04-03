@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { verifyApiKey } from '@/lib/data/api-keys'
+import { verifyMobileSession } from '@/lib/data/mobile-auth'
 
 export type ApiUser = { id: string; role: string }
 
@@ -29,6 +30,11 @@ export async function authenticateRequest(
 
     if (token.startsWith('aeon_k1_')) {
       const result = await verifyApiKey(token)
+      if (result) return { id: result.userId, role: 'user' }
+    }
+
+    if (token.startsWith('aeon_s1_')) {
+      const result = await verifyMobileSession(token)
       if (result) return { id: result.userId, role: 'user' }
     }
 

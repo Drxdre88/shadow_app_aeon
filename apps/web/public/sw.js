@@ -1,7 +1,11 @@
-const CACHE_NAME = 'aeon-v2'
+const CACHE_NAME = 'aeon-v3'
 const STATIC_EXTENSIONS = /\.(js|css|woff2?|ttf|png|svg|ico|webp)$/
+const OFFLINE_URL = '/offline.html'
 
 self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.add(OFFLINE_URL))
+  )
   self.skipWaiting()
 })
 
@@ -39,5 +43,7 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  event.respondWith(fetch(request))
+  event.respondWith(
+    fetch(request).catch(() => caches.match(OFFLINE_URL))
+  )
 })
