@@ -64,7 +64,8 @@ export function TaskEditModal({
   onStatusChange,
   onTaskDelete,
 }: TaskEditModalProps) {
-  const { tasks, updateTask } = useBoardStore()
+  const tasks = useBoardStore((s) => s.tasks)
+  const updateTask = useBoardStore((s) => s.updateTask)
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
   const nameInputRef = useRef<HTMLInputElement>(null)
 
@@ -85,11 +86,11 @@ export function TaskEditModal({
   useEffect(() => {
     if (!isOpen) return
     const isDesktop = window.matchMedia('(hover: hover)').matches
-    if (isDesktop) {
+    if (isDesktop && !editingTaskId) {
       const timer = setTimeout(() => nameInputRef.current?.focus(), 150)
       return () => clearTimeout(timer)
     }
-  }, [isOpen])
+  }, [isOpen, editingTaskId])
 
   useEffect(() => {
     if (!isOpen) return
@@ -210,6 +211,7 @@ export function TaskEditModal({
                   <TaskChecklist
                     taskId={editingTaskId}
                     items={checklistItems}
+                    autoFocusAdd={!!editingTaskId}
                     onItemAdd={handleChecklistAdd}
                     onItemToggle={handleChecklistToggle}
                     onItemRemove={handleChecklistRemove}

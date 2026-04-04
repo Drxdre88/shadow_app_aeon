@@ -42,7 +42,6 @@ interface SortableGroupSectionProps {
   onItemToggle: (id: string, state: CheckState) => void
   onItemRemove: (id: string) => void
   onItemStatusChange: (id: string, status: ChecklistStatus) => void
-  onItemTitleChange: (id: string, title: string) => void
   onItemEditStart: (id: string, title: string) => void
   onItemEditCommit: () => void
   onItemEditCancel: () => void
@@ -59,7 +58,7 @@ export function SortableGroupSection({
   editingItemId, editingItemTitle, addingInGroup, newItemTitle, titleMax, sensors,
   onToggleCollapse, onEditGroupStart, onEditGroupChange, onEditGroupCommit, onEditGroupCancel,
   onDeleteStart, onDeleteConfirm, onDeleteCancel,
-  onItemToggle, onItemRemove, onItemStatusChange, onItemTitleChange,
+  onItemToggle, onItemRemove, onItemStatusChange,
   onItemEditStart, onItemEditCommit, onItemEditCancel, onItemEditTitleChange,
   onItemDragEnd, onAddStart, onAddChange, onAddSubmit, onAddCancel,
 }: SortableGroupSectionProps) {
@@ -192,7 +191,6 @@ export function SortableGroupSection({
                   onToggle={onItemToggle}
                   onRemove={onItemRemove}
                   onStatusChange={onItemStatusChange}
-                  onTitleChange={onItemTitleChange}
                   onEditStart={onItemEditStart}
                   onEditCommit={onItemEditCommit}
                   onEditCancel={onItemEditCancel}
@@ -205,28 +203,39 @@ export function SortableGroupSection({
       )}
 
       {!isCollapsed && addingInGroup && (
-        <motion.form
+        <form
           onSubmit={onAddSubmit}
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
           className="space-y-0.5"
         >
-          <div className="flex items-center gap-2 px-2.5 py-1.5">
-            <div className="flex-shrink-0 w-3 h-3" />
-            <div className="flex-shrink-0 w-5 h-5 rounded border-2 border-white/10" />
-            <input
-              type="text"
+          <div className="flex items-start gap-2 px-2.5 py-1.5">
+            <div className="flex-shrink-0 w-3 h-3 mt-1" />
+            <div className="flex-shrink-0 w-5 h-5 rounded border-2 border-white/10 mt-0.5" />
+            <textarea
               value={newItemTitle}
-              onChange={(e) => onAddChange(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Escape') onAddCancel() }}
+              onChange={(e) => {
+                onAddChange(e.target.value)
+                e.target.style.height = 'auto'
+                e.target.style.height = `${e.target.scrollHeight}px`
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') onAddCancel()
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  if (newItemTitle.trim()) {
+                    const form = e.currentTarget.closest('form')
+                    if (form) form.requestSubmit()
+                  }
+                }
+              }}
               onBlur={() => { if (!newItemTitle.trim()) onAddCancel() }}
               placeholder="Add an item..."
               className={cn(
-                'flex-1 px-0 py-0 text-sm bg-transparent border-none',
+                'flex-1 px-0 py-0 text-sm bg-transparent border-none resize-none',
                 'text-white placeholder-slate-500',
                 'focus:outline-none',
                 newItemTitle.length > titleMax && 'text-red-400'
               )}
+              rows={1}
               autoFocus
               autoComplete="off"
             />
@@ -239,15 +248,18 @@ export function SortableGroupSection({
               {newItemTitle.length}/{titleMax}
             </p>
           )}
-        </motion.form>
+        </form>
       )}
 
       {!isCollapsed && !addingInGroup && (
         <button
           onClick={onAddStart}
-          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-400 transition-colors mt-1"
+          className="flex items-center gap-2 text-sm text-slate-500 hover:text-slate-400 transition-colors px-2.5 py-1.5"
         >
-          <Plus className="w-3 h-3" />
+          <div className="flex-shrink-0 w-3 h-3" />
+          <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center">
+            <Plus className="w-3 h-3" />
+          </div>
           Add item
         </button>
       )}

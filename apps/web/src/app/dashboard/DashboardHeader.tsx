@@ -38,7 +38,7 @@ export function DashboardHeader({
   user, hasProjects, section, onSectionChange,
   view, onViewChange, gridLayout, onGridLayoutChange, onCreateProject, onCreateWorkspace,
 }: DashboardHeaderProps) {
-  const { glowIntensity } = useThemeStore()
+  const glowIntensity = useThemeStore((s) => s.glowIntensity)
   const mult = glowIntensity / 75
   const isAdmin = user.role === 'admin'
 

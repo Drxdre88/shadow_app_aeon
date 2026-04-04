@@ -17,6 +17,7 @@ import {
   type ProjectViewMode,
   type ProjectSortMode,
   type CustomPriority,
+  type GlowSource,
 } from '@aeon/shared'
 
 export type {
@@ -30,6 +31,7 @@ export type {
   ProjectViewMode,
   ProjectSortMode,
   CustomPriority,
+  GlowSource,
 }
 
 export { INITIAL_PRIORITIES, DEFAULT_SHORTCUTS }
@@ -48,6 +50,7 @@ interface ThemeStore {
   _businessSnapshot: { glowIntensity: number; glassOpacity: number; ambientBlobs: boolean; cursorEffect: CursorEffect; dragEffect: DragEffect; surfaceVibrancy: number } | null
   currentTheme: ThemeName
   colors: ThemeColors
+  glowSource: GlowSource
   glowIntensity: number
   glassOpacity: number
   themeSaturation: number
@@ -86,6 +89,7 @@ interface ThemeStore {
   setDefaultProjectSort: (sort: ProjectSortMode) => void
   setProjectColor: (projectId: string, color: string) => void
   setTheme: (theme: ThemeName) => void
+  setGlowSource: (source: GlowSource) => void
   setGlowIntensity: (intensity: number) => void
   setGlassOpacity: (opacity: number) => void
   setThemeSaturation: (saturation: number) => void
@@ -132,6 +136,7 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   _businessSnapshot: null,
   currentTheme: DEFAULT_PREFERENCES.currentTheme as ThemeName,
   colors: themes[DEFAULT_PREFERENCES.currentTheme as ThemeName] ?? themes.deepSpace,
+  glowSource: DEFAULT_PREFERENCES.glowSource,
   glowIntensity: DEFAULT_PREFERENCES.glowIntensity,
   glassOpacity: DEFAULT_PREFERENCES.glassOpacity,
   themeSaturation: DEFAULT_PREFERENCES.themeSaturation,
@@ -166,15 +171,35 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   priorities: [...DEFAULT_PREFERENCES.priorities],
 
   _hydrateFromDB: (prefs: Record<string, unknown>) => {
-    const themeName = (prefs.currentTheme as ThemeName) ?? DEFAULT_PREFERENCES.currentTheme
+    const SAFE_PREF_KEYS = new Set([
+      'currentTheme', 'glowSource', 'glowIntensity', 'glassOpacity', 'themeSaturation',
+      'themeBrightness', 'surfaceVibrancy', 'ambientBlobs', 'fontFamily', 'dragEffect',
+      'cursorEffect', 'cursorColor', 'columnWidth', 'columnHeight', 'dynamicColumnWidth',
+      'dynamicColumnHeight', 'smokeVolume', 'depLineWidth', 'depLineGlow', 'depLineStyle',
+      'depCanvasBlur', 'spacePlanetGlow', 'spaceOrbitSpeed', 'boardLayout', 'projectColors',
+      'depViewMode', 'completionMode', 'boardActionToasts', 'shortcuts', 'priorities',
+      'defaultProjectView', 'defaultProjectSort', 'cardPreviewOnHover', 'celebrationStyle',
+    ])
+    const safePrefs = Object.fromEntries(
+      Object.entries(prefs).filter(([k]) => SAFE_PREF_KEYS.has(k))
+    )
+    const themeName = (safePrefs.currentTheme as ThemeName) ?? DEFAULT_PREFERENCES.currentTheme
     const colors = themes[themeName] ?? themes.deepSpace
     set({
-      ...prefs,
+      ...safePrefs,
       currentTheme: themeName,
       colors,
-      shortcuts: { ...DEFAULT_SHORTCUTS, ...(prefs.shortcuts as Record<string, string> ?? {}) },
-      priorities: (prefs.priorities as CustomPriority[]) ?? [...INITIAL_PRIORITIES],
-      projectColors: (prefs.projectColors as Record<string, string>) ?? {},
+      shortcuts: { ...DEFAULT_SHORTCUTS, ...(safePrefs.shortcuts as Record<string, string> ?? {}) },
+      priorities: (() => {
+        const saved = safePrefs.priorities as CustomPriority[] | undefined
+        if (!saved) return [...INITIAL_PRIORITIES]
+        const coreColorMap = new Map(INITIAL_PRIORITIES.map((p) => [p.id, p.color]))
+        return saved.map((p) => {
+          const defaultColor = coreColorMap.get(p.id)
+          return defaultColor ? { ...p, color: defaultColor } : p
+        })
+      })(),
+      projectColors: (safePrefs.projectColors as Record<string, string>) ?? {},
       _hydrated: true,
     })
   },
@@ -182,6 +207,9 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   setTheme: (theme: ThemeName) => {
     const colors = themes[theme]
     set({ currentTheme: theme, colors })
+  },
+  setGlowSource: (source: GlowSource) => {
+    set({ glowSource: source })
   },
   setGlowIntensity: (intensity: number) => {
     set({ glowIntensity: Math.max(0, Math.min(100, intensity)) })

@@ -11,6 +11,7 @@ import { QuickAddTask } from './QuickAddTask'
 import { ColumnContextMenu } from './ColumnContextMenu'
 import { hexToRgba } from '@/lib/utils/colors'
 import { useThemeStore } from '@/stores/themeStore'
+import { useShallow } from 'zustand/shallow'
 import type { BoardColumn } from '@/lib/store/boardStore'
 import { COLUMN_ICONS, COLUMN_ICON_MAP } from '@/lib/utils/columnIcons'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
@@ -128,7 +129,9 @@ export const KanbanColumn = memo(function KanbanColumn({
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
-  const { glowIntensity: globalGlow, columnWidth: globalColumnWidth, columnHeight: globalColumnHeight, dynamicColumnWidth, dynamicColumnHeight } = useThemeStore()
+  const { glowIntensity: globalGlow, columnWidth: globalColumnWidth, columnHeight: globalColumnHeight, dynamicColumnWidth, dynamicColumnHeight } = useThemeStore(
+    useShallow((s) => ({ glowIntensity: s.glowIntensity, columnWidth: s.columnWidth, columnHeight: s.columnHeight, dynamicColumnWidth: s.dynamicColumnWidth, dynamicColumnHeight: s.dynamicColumnHeight }))
+  )
   const dynamicW = dynamicColumnWidth
     ? Math.min(900, globalColumnWidth + Math.max(0, tasks.length - 3) * 20)
     : globalColumnWidth

@@ -127,7 +127,7 @@ export async function verifyGoogleIdToken(
   }
 
   const expectedClientId = process.env.AUTH_GOOGLE_ID
-  if (expectedClientId && payload.aud !== expectedClientId) {
+  if (!expectedClientId || payload.aud !== expectedClientId) {
     return null
   }
 

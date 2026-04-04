@@ -88,6 +88,7 @@ interface BoardState {
   removeDependency: (blockerTaskId: string, blockedTaskId: string) => void
 
   setChecklistSummaries: (summaries: Record<string, ChecklistSummary>) => void
+  updateChecklistSummary: (taskId: string, summary: ChecklistSummary) => void
 
   checklistPreviews: Record<string, ChecklistPreviewItem[]>
   setChecklistPreviews: (previews: Record<string, ChecklistPreviewItem[]>) => void
@@ -188,6 +189,9 @@ export const useBoardStore = create<BoardState>()(
       })),
 
       setChecklistSummaries: (checklistSummaries) => set({ checklistSummaries }),
+      updateChecklistSummary: (taskId, summary) => set((s) => ({
+        checklistSummaries: { ...s.checklistSummaries, [taskId]: summary },
+      })),
       setChecklistPreviews: (checklistPreviews) => set({ checklistPreviews }),
       toggleChecklistPreview: () => set((s) => {
         const cycle = { off: 'preview', preview: 'full', full: 'off' } as const

@@ -14,7 +14,8 @@ interface TaskLabelsSectionProps {
 }
 
 export function TaskLabelsSection({ taskId, projectId, onLabelToggle }: TaskLabelsSectionProps) {
-  const { labels, tasks } = useBoardStore()
+  const labels = useBoardStore((s) => s.labels)
+  const tasks = useBoardStore((s) => s.tasks)
   const [labelPickerOpen, setLabelPickerOpen] = useState(false)
 
   const task = tasks.find((t) => t.id === taskId)

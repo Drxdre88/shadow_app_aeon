@@ -41,7 +41,7 @@ const VIEW_TABS = [
 ]
 
 export function ProjectSidebar({ user, activeTab, onTabChange, onSignOut }: ProjectSidebarProps) {
-  const { colors } = useThemeStore()
+  const colors = useThemeStore((s) => s.colors)
   const { collapsed, toggleCollapsed } = useSidebarStore()
 
   const glowColor = colors?.glow ?? 'rgba(139, 92, 246, 0.4)'

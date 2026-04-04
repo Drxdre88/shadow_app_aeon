@@ -83,7 +83,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const crossedTaskIds = useBoardStore((s) => s.crossedTaskIds)
   const addCrossedTask = useBoardStore((s) => s.addCrossedTask)
   const removeCrossedTask = useBoardStore((s) => s.removeCrossedTask)
-  const { glowIntensity: globalGlow, priorities } = useThemeStore()
+  const { glowIntensity: globalGlow, glowSource, priorities } = useThemeStore()
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [editName, setEditName] = useState(task.name)
@@ -91,6 +91,24 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const cardElRef = useRef<HTMLDivElement>(null)
   const isSelected = selectedTaskId === task.id
   const mult = globalGlow / 75
+
+  const resolvedGlowColor = (() => {
+    if (glowSource === 'manual') return task.color
+    if (glowSource === 'priority') {
+      const p = priorities.find((pr) => pr.id === task.priority)
+      return p?.color ?? task.color
+    }
+    if (glowSource === 'first-label') {
+      const firstLabelId = task.labels?.[0]
+      if (firstLabelId) {
+        const label = labels.find((l) => l.id === firstLabelId)
+        if (label?.color) return label.color
+      }
+      return task.color
+    }
+    if (glowSource === 'column') return columnGlowColor
+    return task.color
+  })()
   const triState: TriState = task.status === 'done' ? 'checked' : task.id in crossedTaskIds ? 'crossed' : 'unchecked'
 
   const handleTriToggle = (e: React.MouseEvent) => {
@@ -206,7 +224,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
         transition={{ duration: 0.2 }}
       >
         <GlowCard
-          accentColor={task.color}
+          accentColor={resolvedGlowColor}
           glowIntensity={priorityGlows[task.priority]}
           showAccentLine
           selected={isSelected}

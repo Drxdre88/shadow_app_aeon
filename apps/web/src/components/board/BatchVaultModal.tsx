@@ -31,7 +31,7 @@ const priorityDot: Record<string, string> = {
 
 export function BatchVaultModal({ isOpen, columnName, tasks, onConfirm, onClose }: BatchVaultModalProps) {
   const [entries, setEntries] = useState<VaultEntry[]>([])
-  const { glowIntensity } = useThemeStore()
+  const glowIntensity = useThemeStore((s) => s.glowIntensity)
   const mult = glowIntensity / 75
 
   useEffect(() => {

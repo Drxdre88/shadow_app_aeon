@@ -8,6 +8,7 @@ import { ChevronDown, Folder } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { getProjects } from '@/lib/actions/projects'
 import { useThemeStore } from '@/stores/themeStore'
+import { useShallow } from 'zustand/shallow'
 
 interface ProjectSwitcherProps {
   currentProjectId: string
@@ -30,7 +31,9 @@ export function ProjectSwitcher({ currentProjectId, projectName, glowColor }: Pr
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
-  const { glowIntensity, projectColors, colors } = useThemeStore()
+  const { glowIntensity, projectColors, colors } = useThemeStore(
+    useShallow((s) => ({ glowIntensity: s.glowIntensity, projectColors: s.projectColors, colors: s.colors }))
+  )
   const mult = glowIntensity / 75
 
   useEffect(() => { setMounted(true) }, [])

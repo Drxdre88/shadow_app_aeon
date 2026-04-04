@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
+import { useShallow } from 'zustand/shallow'
 import { colorConfig, type AccentColor } from '@/lib/utils/colors'
 
 interface CardPosition {
@@ -21,7 +22,9 @@ function resolveHex(color: string): string {
 export function BoardDependencyOverlay({ enabled }: { enabled: boolean }) {
   const dependencies = useBoardStore((s) => s.dependencies)
   const tasks = useBoardStore((s) => s.tasks)
-  const { colors, depLineWidth, depLineGlow, depLineStyle } = useThemeStore()
+  const { colors, depLineWidth, depLineGlow, depLineStyle } = useThemeStore(
+    useShallow((s) => ({ colors: s.colors, depLineWidth: s.depLineWidth, depLineGlow: s.depLineGlow, depLineStyle: s.depLineStyle }))
+  )
   const [positions, setPositions] = useState<Map<string, CardPosition>>(new Map())
   const svgRef = useRef<SVGSVGElement>(null)
   const rafRef = useRef<number>(0)

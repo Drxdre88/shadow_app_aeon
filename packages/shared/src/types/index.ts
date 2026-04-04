@@ -9,6 +9,7 @@ export type {
   ProjectViewMode,
   ProjectSortMode,
   CustomPriority,
+  GlowSource,
 } from './theme'
 
 export type {

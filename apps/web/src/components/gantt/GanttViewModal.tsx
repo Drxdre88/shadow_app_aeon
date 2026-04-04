@@ -22,10 +22,10 @@ const TASK_ORDER_OPTIONS = [
 ] as const
 
 const PRIORITY_COLORS: Record<string, string> = {
-  Urgent: 'red',
-  High: 'orange',
-  Medium: 'blue',
-  Low: 'none',
+  Urgent: '#ef4444',
+  High: '#fb923c',
+  Medium: '#fde68a',
+  Low: '#86efac',
 }
 
 interface SectionInfo {
@@ -94,7 +94,8 @@ export function GanttViewModal({ projectId, mode, existingView, onConfirm, onClo
   const tasks = useTasks()
   const labels = useLabels()
   const dependencies = useDependencies()
-  const { colors, glowIntensity } = useThemeStore()
+  const colors = useThemeStore((s) => s.colors)
+  const glowIntensity = useThemeStore((s) => s.glowIntensity)
   const mult = glowIntensity / 75
 
   // eslint-disable-next-line react-hooks/set-state-in-effect

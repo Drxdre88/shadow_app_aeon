@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useShallow } from 'zustand/shallow'
 import { useThemeStore, FONT_OPTIONS } from '@/stores/themeStore'
 
 function hexToRgb(hex: string): string {
@@ -14,9 +15,10 @@ function hexToRgb(hex: string): string {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false)
-  const { colors, fontFamily, currentTheme, _hydrated, themeSaturation, themeBrightness, surfaceVibrancy, businessMode } = useThemeStore()
+  const { colors, fontFamily, currentTheme, _hydrated, themeSaturation, themeBrightness, surfaceVibrancy, businessMode } = useThemeStore(
+    useShallow((s) => ({ colors: s.colors, fontFamily: s.fontFamily, currentTheme: s.currentTheme, _hydrated: s._hydrated, themeSaturation: s.themeSaturation, themeBrightness: s.themeBrightness, surfaceVibrancy: s.surfaceVibrancy, businessMode: s.businessMode }))
+  )
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {

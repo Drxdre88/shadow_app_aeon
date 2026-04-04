@@ -19,7 +19,8 @@ const dateInputClass = cn(
 )
 
 export function TaskDateSection({ taskId, onDateChange }: TaskDateSectionProps) {
-  const { tasks, updateTask } = useBoardStore()
+  const tasks = useBoardStore((s) => s.tasks)
+  const updateTask = useBoardStore((s) => s.updateTask)
   const task = tasks.find((t) => t.id === taskId)
   if (!task) return null
 
