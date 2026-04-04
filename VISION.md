@@ -1,6 +1,6 @@
 # VISION.md
 
-Last updated: 03/04/2026 (seer pass #3 — Capacitor pivot)
+Last updated: 04/04/2026 (Phase 2.5A/B shipped)
 
 For technical architecture, file paths, and feature inventory see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
@@ -34,6 +34,8 @@ Aeon is a **web-first project management platform** with a stunning visual ident
 | Date | Milestone | Impact |
 |---|---|---|
 | 03/04/2026 | React Native Phase A -- Expo scaffold, auth, API client | Mobile platform foundation |
+| 04/04/2026 | Phase 2.5A/B -- checklist UX fixes, glow source setting, priority color remap, React Compiler, PPR, Zustand selector audit (22 files), horsemen security fixes | Snappy UI foundation, security hardening |
+| 03/04/2026 | Capacitor pivot -- abandoned React Native, PWA enabled, Capacitor configured | Mobile strategy reset, preserves web UI investment |
 | 02/04/2026 | Phase 1.5 complete -- realm invites, color/icon picker, lint cleanup, file splits | Production-quality realms, codebase health |
 | 02/04/2026 | Server-side loading -- board + dashboard SSR, auth() caching | Eliminated loading spinners on initial render |
 | 01/04/2026 | Scoped visibility, access denied page, realm member access | Multi-tenant security layer |

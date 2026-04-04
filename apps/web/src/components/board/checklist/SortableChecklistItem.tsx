@@ -16,7 +16,6 @@ interface SortableChecklistItemProps {
   onToggle: (itemId: string, newState: CheckState) => void
   onRemove: (itemId: string) => void
   onStatusChange: (itemId: string, status: ChecklistStatus) => void
-  onTitleChange: (itemId: string, title: string) => void
   onEditStart: (itemId: string, title: string) => void
   onEditCommit: () => void
   onEditCancel: () => void
@@ -30,7 +29,6 @@ export function SortableChecklistItem({
   onToggle,
   onRemove,
   onStatusChange,
-  onTitleChange,
   onEditStart,
   onEditCommit,
   onEditCancel,
@@ -82,18 +80,34 @@ export function SortableChecklistItem({
             onSubmit={(e) => { e.preventDefault(); onEditCommit() }}
             className="flex-1 min-w-0"
           >
-            <input
-              type="text"
+            <textarea
               value={editingItemTitle}
-              onChange={(e) => onEditTitleChange(e.target.value)}
+              onChange={(e) => {
+                onEditTitleChange(e.target.value)
+                e.target.style.height = 'auto'
+                e.target.style.height = `${e.target.scrollHeight}px`
+              }}
               onBlur={onEditCommit}
-              onKeyDown={(e) => { if (e.key === 'Escape') onEditCancel() }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') onEditCancel()
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  onEditCommit()
+                }
+              }}
+              ref={(el) => {
+                if (el) {
+                  el.style.height = 'auto'
+                  el.style.height = `${el.scrollHeight}px`
+                }
+              }}
               className={cn(
-                'w-full px-2 py-0.5 rounded-md text-sm',
+                'w-full px-2 py-0.5 rounded-md text-sm resize-none',
                 'bg-white/5 border border-white/20',
                 'text-white',
                 'focus:outline-none focus:ring-1 focus:ring-emerald-500/40'
               )}
+              rows={1}
               autoFocus
               autoComplete="off"
             />

@@ -17,6 +17,7 @@ import {
   deleteChecklistGroup as _deleteChecklistGroup,
 } from '@/lib/data/checklist'
 import { findTaskById } from '@/lib/data/tasks'
+import { touchProject } from '@/lib/data/projects'
 
 async function requireTaskReadable(taskId: string, projectId: string) {
   await requireMember(projectId)
@@ -55,6 +56,7 @@ export async function createChecklistItem(data: {
 
   const item = await _createChecklistItem(data.taskId, parsed)
 
+  await touchProject(data.projectId)
   revalidatePath(`/project/${data.projectId}`)
   return item
 }
@@ -87,6 +89,7 @@ export async function updateChecklistItem(
   })
 
   const item = await _updateChecklistItem(itemId, taskId, parsed)
+  await touchProject(projectId)
   revalidatePath(`/project/${projectId}`)
   return item
 }

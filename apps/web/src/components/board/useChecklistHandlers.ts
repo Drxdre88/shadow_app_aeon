@@ -1,23 +1,37 @@
 'use client'
 
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState, useEffect, useRef } from 'react'
 import type { ChecklistItem, CheckState, ChecklistStatus } from './checklist'
 import { generateId } from '@/lib/utils/colors'
 import { toast } from '@/components/ui/Toast'
 import { getChecklistItems, createChecklistItem, updateChecklistItem, deleteChecklistItem, renameChecklistGroup, reorderChecklistItems, deleteChecklistGroup } from '@/lib/actions/checklist'
+import { useBoardStore } from '@/lib/store/boardStore'
+
+function computeSummary(items: ChecklistItem[]) {
+  return {
+    total: items.length,
+    checked: items.filter((i) => i.state === 'checked').length,
+    crossed: items.filter((i) => i.state === 'crossed').length,
+  }
+}
 
 export function useChecklistHandlers(editingTaskId: string | null, projectId: string) {
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([])
+  const itemsRef = useRef(checklistItems)
+  useEffect(() => { itemsRef.current = checklistItems }, [checklistItems])
+
+  const syncSummary = useCallback((items: ChecklistItem[]) => {
+    if (!editingTaskId) return
+    useBoardStore.getState().updateChecklistSummary(editingTaskId, computeSummary(items))
+  }, [editingTaskId])
 
   useEffect(() => {
     if (!editingTaskId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setChecklistItems([])
       return
     }
     getChecklistItems(editingTaskId, projectId)
       .then((items) =>
-         
         setChecklistItems(
           items.map((i) => ({
             id: i.id,
@@ -31,13 +45,12 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
           }))
         )
       )
-       
       .catch(() => setChecklistItems([]))
   }, [editingTaskId, projectId])
 
   const handleChecklistAdd = useCallback((title: string, groupName: string) => {
     if (!editingTaskId) return
-    const groupItems = checklistItems.filter((i) => i.groupName === groupName)
+    const groupItems = itemsRef.current.filter((i) => i.groupName === groupName)
     const newItem: ChecklistItem = {
       id: generateId(),
       title,
@@ -46,7 +59,9 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
       status: null,
       groupName,
     }
-    setChecklistItems((prev) => [...prev, newItem])
+    const next = [...checklistItems, newItem]
+    setChecklistItems(next)
+    syncSummary(next)
     createChecklistItem({
       id: newItem.id,
       taskId: editingTaskId,
@@ -58,15 +73,15 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
       setChecklistItems((prev) => prev.filter((i) => i.id !== newItem.id))
       toast('Checklist item too long — keep it under 2000 characters')
     })
-  }, [editingTaskId, checklistItems, projectId])
+  }, [editingTaskId, checklistItems, projectId, syncSummary])
 
   const handleChecklistToggle = useCallback((itemId: string, newState: CheckState) => {
     if (!editingTaskId) return
-    setChecklistItems((prev) =>
-      prev.map((i) => (i.id === itemId ? { ...i, state: newState, completed: newState === 'checked' } : i))
-    )
+    const next = checklistItems.map((i) => (i.id === itemId ? { ...i, state: newState, completed: newState === 'checked' } : i))
+    setChecklistItems(next)
+    syncSummary(next)
     updateChecklistItem(itemId, editingTaskId, projectId, { state: newState }).catch(() => {})
-  }, [editingTaskId, projectId])
+  }, [editingTaskId, projectId, checklistItems, syncSummary])
 
   const handleChecklistStatusChange = useCallback((itemId: string, status: ChecklistStatus) => {
     if (!editingTaskId) return
@@ -78,9 +93,11 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
 
   const handleChecklistRemove = useCallback((itemId: string) => {
     if (!editingTaskId) return
-    setChecklistItems((prev) => prev.filter((i) => i.id !== itemId))
+    const next = checklistItems.filter((i) => i.id !== itemId)
+    setChecklistItems(next)
+    syncSummary(next)
     deleteChecklistItem(itemId, editingTaskId, projectId).catch(() => {})
-  }, [editingTaskId, projectId])
+  }, [editingTaskId, projectId, checklistItems, syncSummary])
 
   const handleGroupAdd = useCallback((groupName: string) => {
     if (!editingTaskId) return
@@ -159,12 +176,14 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
   const handleGroupDelete = useCallback((groupName: string) => {
     if (!editingTaskId) return
     const removedItems = checklistItems.filter((i) => i.groupName === groupName)
-    setChecklistItems((prev) => prev.filter((i) => i.groupName !== groupName))
+    const next = checklistItems.filter((i) => i.groupName !== groupName)
+    setChecklistItems(next)
+    syncSummary(next)
     deleteChecklistGroup(editingTaskId, projectId, groupName).catch(() => {
       setChecklistItems((prev) => [...prev, ...removedItems])
       toast('Failed to delete checklist group')
     })
-  }, [editingTaskId, projectId, checklistItems])
+  }, [editingTaskId, projectId, checklistItems, syncSummary])
 
   const handleGroupReorder = useCallback((orderedGroups: string[]) => {
     if (!editingTaskId) return
@@ -185,7 +204,7 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
     const updates: { id: string; orderIndex: number }[] = []
     let idx = 0
     for (const gn of orderedGroups) {
-      const groupItems = checklistItems.filter((i) => i.groupName === gn)
+      const groupItems = itemsRef.current.filter((i) => i.groupName === gn)
       for (const item of groupItems) {
         updates.push({ id: item.id, orderIndex: idx++ })
       }

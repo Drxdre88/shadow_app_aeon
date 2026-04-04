@@ -1,7 +1,6 @@
 'use client'
 
-import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { useState, useEffect } from 'react'
 import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import {
@@ -18,12 +17,14 @@ import {
   verticalListSortingStrategy,
   arrayMove,
 } from '@dnd-kit/sortable'
+import { toast } from '@/components/ui/Toast'
 import { SortableGroupSection } from './SortableGroupSection'
 import type { ChecklistItem, CheckState, ChecklistStatus } from './types'
 
 interface TaskChecklistProps {
   taskId: string
   items: ChecklistItem[]
+  autoFocusAdd?: boolean
   onItemAdd?: (title: string, groupName: string) => void
   onItemToggle?: (itemId: string, newState: CheckState) => void
   onItemRemove?: (itemId: string) => void
@@ -39,6 +40,7 @@ interface TaskChecklistProps {
 export function TaskChecklist({
   taskId,
   items,
+  autoFocusAdd,
   onItemAdd,
   onItemToggle,
   onItemRemove,
@@ -52,16 +54,26 @@ export function TaskChecklist({
 }: TaskChecklistProps) {
   const [addingInGroup, setAddingInGroup] = useState<string | null>(null)
   const [newItemTitle, setNewItemTitle] = useState('')
-  const [addingGroup, setAddingGroup] = useState(false)
-  const [newGroupName, setNewGroupName] = useState('')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [editingItemTitle, setEditingItemTitle] = useState('')
   const [editingGroupName, setEditingGroupName] = useState<string | null>(null)
   const [editingGroupValue, setEditingGroupValue] = useState('')
   const [confirmDeleteGroup, setConfirmDeleteGroup] = useState<string | null>(null)
+  const [pendingGroups, setPendingGroups] = useState<string[]>([])
 
   const groups = Array.from(new Set(items.map((i) => i.groupName)))
+  const mergedGroups = [...groups, ...pendingGroups.filter((pg) => !groups.includes(pg))]
+
+  useEffect(() => {
+    if (!autoFocusAdd) return
+    const firstGroup = groups[0] || 'Checklist'
+    const timer = setTimeout(() => {
+      setAddingInGroup(firstGroup)
+      setNewItemTitle('')
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -84,17 +96,19 @@ export function TaskChecklist({
     const trimmed = newItemTitle.trim()
     if (!trimmed || trimmed.length > TITLE_MAX) return
     onItemAdd?.(trimmed, groupName)
+    setPendingGroups((prev) => prev.filter((pg) => pg !== groupName))
     setNewItemTitle('')
     setAddingInGroup(groupName)
   }
 
-  const handleAddGroup = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newGroupName.trim()) return
-    const name = newGroupName.trim()
-    onGroupAdd?.(name)
-    setNewGroupName('')
-    setAddingGroup(false)
+  const handleAddGroup = () => {
+    let idx = displayGroups.length + 1
+    let name = `Checklist ${idx}`
+    while (displayGroups.includes(name)) {
+      idx++
+      name = `Checklist ${idx}`
+    }
+    setPendingGroups((prev) => [...prev, name])
     setAddingInGroup(name)
     setNewItemTitle('')
   }
@@ -145,7 +159,7 @@ export function TaskChecklist({
     onGroupReorder?.(reordered)
   }
 
-  if (groups.length === 0) groups.push('Checklist')
+  const displayGroups = mergedGroups.length === 0 ? ['Checklist'] : mergedGroups
 
   return (
     <div className="space-y-4">
@@ -154,8 +168,8 @@ export function TaskChecklist({
         collisionDetection={closestCenter}
         onDragEnd={handleGroupDragEnd}
       >
-        <SortableContext items={groups} strategy={verticalListSortingStrategy}>
-          {groups.map((groupName) => (
+        <SortableContext items={displayGroups} strategy={verticalListSortingStrategy}>
+          {displayGroups.map((groupName) => (
             <SortableGroupSection
               key={groupName}
               groupName={groupName}
@@ -181,7 +195,6 @@ export function TaskChecklist({
               onItemToggle={(id, state) => onItemToggle?.(id, state)}
               onItemRemove={(id) => onItemRemove?.(id)}
               onItemStatusChange={(id, status) => onItemStatusChange?.(id, status)}
-              onItemTitleChange={(id, title) => onItemTitleChange?.(id, title)}
               onItemEditStart={(id, title) => { setEditingItemId(id); setEditingItemTitle(title) }}
               onItemEditCommit={commitItemEdit}
               onItemEditCancel={() => { setEditingItemId(null); setEditingItemTitle('') }}
@@ -196,52 +209,13 @@ export function TaskChecklist({
         </SortableContext>
       </DndContext>
 
-      {addingGroup ? (
-        <motion.form
-          onSubmit={handleAddGroup}
-          initial={{ opacity: 0, y: -5 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-2"
-        >
-          <input
-            type="text"
-            value={newGroupName}
-            onChange={(e) => setNewGroupName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Escape') { setAddingGroup(false); setNewGroupName('') } }}
-            onBlur={() => { if (!newGroupName.trim()) { setAddingGroup(false); setNewGroupName('') } }}
-            placeholder="Checklist name..."
-            className={cn(
-              'flex-1 px-3 py-1.5 rounded-md text-sm',
-              'bg-white/5 border border-white/10',
-              'text-white placeholder-slate-500',
-              'focus:outline-none focus:ring-1 focus:ring-white/20'
-            )}
-            autoFocus
-            autoComplete="off"
-          />
-          <button
-            type="submit"
-            disabled={!newGroupName.trim()}
-            className="px-3 py-1.5 rounded-md text-xs font-medium disabled:opacity-50"
-            style={{
-              backgroundColor: 'color-mix(in srgb, var(--primary) 15%, transparent)',
-              borderColor: 'color-mix(in srgb, var(--primary) 25%, transparent)',
-              border: '1px solid',
-              color: 'var(--primary)',
-            }}
-          >
-            Add
-          </button>
-        </motion.form>
-      ) : (
-        <button
-          onClick={() => { setAddingGroup(true); setNewGroupName('') }}
-          className="flex items-center gap-1 p-1 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-all"
-          title="Add checklist"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
-      )}
+      <button
+        onClick={handleAddGroup}
+        className="flex items-center gap-1 p-1 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-all"
+        title="Add checklist"
+      >
+        <Plus className="w-4 h-4" />
+      </button>
     </div>
   )
 }

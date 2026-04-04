@@ -16,7 +16,7 @@ interface ColumnDeleteModalProps {
 }
 
 export function ColumnDeleteModal({ isOpen, columnName, taskCount, onConfirm, onClose }: ColumnDeleteModalProps) {
-  const { glowIntensity } = useThemeStore()
+  const glowIntensity = useThemeStore((s) => s.glowIntensity)
   const mult = glowIntensity / 75
 
   useEffect(() => {

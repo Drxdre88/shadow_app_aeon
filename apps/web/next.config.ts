@@ -11,6 +11,7 @@ const securityHeaders = [
 ]
 
 const nextConfig: NextConfig = {
+  reactCompiler: true,
   transpilePackages: ['@aeon/shared'],
   experimental: {
     serverActions: {

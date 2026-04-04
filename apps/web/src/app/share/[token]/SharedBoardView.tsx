@@ -16,9 +16,9 @@ interface SnapshotData {
 
 const PRIORITY_COLORS: Record<string, string> = {
   urgent: '#ef4444',
-  high: '#f97316',
-  medium: '#3b82f6',
-  low: '#64748b',
+  high: '#fb923c',
+  medium: '#fde68a',
+  low: '#86efac',
 }
 
 export function SharedBoardView({ data }: { data: SnapshotData }) {

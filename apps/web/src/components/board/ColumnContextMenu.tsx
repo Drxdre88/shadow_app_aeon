@@ -7,6 +7,7 @@ import { Palette, Trash2, Copy, Pencil, Sparkles, X, Archive, Package, FolderInp
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
+import { useShallow } from 'zustand/shallow'
 import { COLUMN_ICONS } from '@/lib/utils/columnIcons'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
 import { ContextMenuButton } from './ContextMenuButton'
@@ -29,8 +30,11 @@ export function ColumnContextMenu({ columnId, position, onClose, onRename, onCol
   const [transferMode, setTransferMode] = useState<'copy' | 'move'>('copy')
   const [mounted, setMounted] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
-  const { columns, updateColumn, removeColumn } = useBoardStore()
-  const { colors, glowIntensity } = useThemeStore()
+  const { columns, updateColumn, removeColumn } = useBoardStore(
+    useShallow((s) => ({ columns: s.columns, updateColumn: s.updateColumn, removeColumn: s.removeColumn }))
+  )
+  const colors = useThemeStore((s) => s.colors)
+  const glowIntensity = useThemeStore((s) => s.glowIntensity)
   const mult = glowIntensity / 75
 
   const column = columns.find((c) => c.id === columnId)

@@ -3,12 +3,13 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { X, Plus, Briefcase } from 'lucide-react'
-import { useThemeStore, INITIAL_PRIORITIES, type CompletionMode } from '@/stores/themeStore'
+import { useThemeStore, INITIAL_PRIORITIES, type CompletionMode, type GlowSource } from '@/stores/themeStore'
+import { useShallow } from 'zustand/shallow'
 import { cn } from '@/lib/utils/cn'
 import { ToggleRow, ThemeSlider } from './shared'
 
 function CompletionModeSetting() {
-  const { completionMode, setCompletionMode } = useThemeStore()
+  const { completionMode, setCompletionMode } = useThemeStore(useShallow((s) => ({ completionMode: s.completionMode, setCompletionMode: s.setCompletionMode })))
 
   const options: { id: CompletionMode; label: string; desc: string }[] = [
     { id: 'done', label: 'On Done', desc: 'Timestamp recorded when task moves to Done column' },
@@ -41,7 +42,17 @@ function CompletionModeSetting() {
 }
 
 function BoardLayoutSetting() {
-  const { columnWidth, setColumnWidth, columnHeight, setColumnHeight, dynamicColumnWidth, setDynamicColumnWidth, dynamicColumnHeight, setDynamicColumnHeight, colors } = useThemeStore()
+  const { columnWidth, setColumnWidth, columnHeight, setColumnHeight, dynamicColumnWidth, setDynamicColumnWidth, dynamicColumnHeight, setDynamicColumnHeight, colors } = useThemeStore(useShallow((s) => ({
+    columnWidth: s.columnWidth,
+    setColumnWidth: s.setColumnWidth,
+    columnHeight: s.columnHeight,
+    setColumnHeight: s.setColumnHeight,
+    dynamicColumnWidth: s.dynamicColumnWidth,
+    setDynamicColumnWidth: s.setDynamicColumnWidth,
+    dynamicColumnHeight: s.dynamicColumnHeight,
+    setDynamicColumnHeight: s.setDynamicColumnHeight,
+    colors: s.colors,
+  })))
 
   return (
     <div className="space-y-4 max-w-md">
@@ -62,7 +73,13 @@ function BoardLayoutSetting() {
 }
 
 function PriorityManager() {
-  const { priorities, updatePriority, addPriority, removePriority, resetPriorities } = useThemeStore()
+  const { priorities, updatePriority, addPriority, removePriority, resetPriorities } = useThemeStore(useShallow((s) => ({
+    priorities: s.priorities,
+    updatePriority: s.updatePriority,
+    addPriority: s.addPriority,
+    removePriority: s.removePriority,
+    resetPriorities: s.resetPriorities,
+  })))
   const [newName, setNewName] = useState('')
   const [newColor, setNewColor] = useState('#e879f9')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -194,7 +211,7 @@ function PriorityManager() {
 }
 
 function BusinessModeSetting() {
-  const { businessMode, setBusinessMode, colors } = useThemeStore()
+  const { businessMode, setBusinessMode, colors } = useThemeStore(useShallow((s) => ({ businessMode: s.businessMode, setBusinessMode: s.setBusinessMode, colors: s.colors })))
 
   return (
     <div className="space-y-2 max-w-md">
@@ -225,7 +242,7 @@ function BusinessModeSetting() {
 }
 
 function CardPreviewSetting() {
-  const { cardPreviewOnHover, setCardPreviewOnHover, colors } = useThemeStore()
+  const { cardPreviewOnHover, setCardPreviewOnHover, colors } = useThemeStore(useShallow((s) => ({ cardPreviewOnHover: s.cardPreviewOnHover, setCardPreviewOnHover: s.setCardPreviewOnHover, colors: s.colors })))
 
   return (
     <div className="space-y-1 max-w-md">
@@ -243,7 +260,7 @@ function CardPreviewSetting() {
 }
 
 function BoardActionToastsSetting() {
-  const { boardActionToasts, setBoardActionToasts, colors } = useThemeStore()
+  const { boardActionToasts, setBoardActionToasts, colors } = useThemeStore(useShallow((s) => ({ boardActionToasts: s.boardActionToasts, setBoardActionToasts: s.setBoardActionToasts, colors: s.colors })))
 
   return (
     <div className="space-y-1 max-w-md">
@@ -260,6 +277,41 @@ function BoardActionToastsSetting() {
   )
 }
 
+function GlowSourceSetting() {
+  const { glowSource, setGlowSource } = useThemeStore(useShallow((s) => ({ glowSource: s.glowSource, setGlowSource: s.setGlowSource })))
+
+  const options: { id: GlowSource; label: string; desc: string }[] = [
+    { id: 'manual', label: 'Manual', desc: 'Card uses its own color' },
+    { id: 'priority', label: 'Priority', desc: 'Glow follows priority level' },
+    { id: 'first-label', label: 'Label', desc: 'Glow uses first label color' },
+    { id: 'column', label: 'Column', desc: 'Glow matches column color' },
+  ]
+
+  return (
+    <div className="space-y-2 max-w-md">
+      <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider">Glow Source</h4>
+      <p className="text-[10px] text-slate-600">Controls what drives the card glow color. Card colors are preserved when switching.</p>
+      <div className="flex gap-2">
+        {options.map(({ id, label, desc }) => (
+          <button
+            key={id}
+            onClick={() => setGlowSource(id)}
+            className={cn(
+              'flex-1 p-2.5 rounded-xl border transition-all text-left',
+              glowSource === id
+                ? 'border-[var(--primary)]/50 bg-[var(--primary)]/10'
+                : 'border-white/10 bg-white/[0.02] hover:bg-white/5'
+            )}
+          >
+            <span className={cn('text-xs font-medium', glowSource === id ? 'text-white' : 'text-slate-400')}>{label}</span>
+            <p className="text-[9px] text-slate-600 mt-0.5">{desc}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function GeneralTab() {
   return (
     <div className="space-y-6">
@@ -268,6 +320,7 @@ export function GeneralTab() {
       <BoardActionToastsSetting />
       <CompletionModeSetting />
       <BoardLayoutSetting />
+      <GlowSourceSetting />
       <PriorityManager />
     </div>
   )

@@ -12,12 +12,22 @@ export const POST = withRateLimit(
       return jsonError('Invalid JSON body', 400)
     }
 
-    const { email, callbackUrl } = body as {
+    const { email, callbackUrl: rawCallbackUrl } = body as {
       email?: string
       callbackUrl?: string
     }
-    if (!email || !callbackUrl) {
+    if (!email || !rawCallbackUrl) {
       return jsonError('email and callbackUrl are required', 400)
+    }
+
+    if (!rawCallbackUrl.startsWith('/') || rawCallbackUrl.startsWith('//')) {
+      return jsonError('Invalid callbackUrl', 400)
+    }
+    let callbackUrl: string
+    try {
+      callbackUrl = new URL(rawCallbackUrl, 'http://localhost').pathname
+    } catch {
+      return jsonError('Invalid callbackUrl', 400)
     }
 
     const user = await findUserByEmail(email)

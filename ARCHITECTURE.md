@@ -1,12 +1,12 @@
 # ARCHITECTURE.md
 
-Last updated: 2026-04-02
+Last updated: 2026-04-04
 
 ---
 
 ## 1. OVERVIEW
 
-Aeon is a project management web application built as a Turborepo monorepo (`apps/web` + `packages/shared`). The stack is **Next.js 16** (App Router) with **TypeScript**, **PostgreSQL** via **Neon** serverless driver, **Drizzle ORM**, **Zustand** for client state, **NextAuth v5** (beta) for authentication, **Tailwind CSS** for styling, and **Framer Motion** for animations. It features a kanban board, Gantt chart, canvas (whiteboard), trophy/vault archive, velocity analytics, 150+ theme presets, an MCP tool server (52 tools) for AI integration, and a Tauri-based desktop shell (scaffold).
+Aeon is a project management web application built as a Turborepo monorepo (`apps/web` + `apps/mobile` + `packages/shared`). The stack is **Next.js 16** (App Router, **React Compiler**, **Partial Prerendering**) with **TypeScript**, **PostgreSQL** via **Neon** serverless driver, **Drizzle ORM**, **Zustand** (scoped selectors) for client state, **NextAuth v5** (beta) for authentication, **Tailwind CSS** for styling, and **Framer Motion** for animations. It features a kanban board, Gantt chart, canvas (whiteboard), trophy/vault archive, velocity analytics, 150+ theme presets, an MCP tool server (52 tools) for AI integration, a **PWA** (manifest + service worker + offline fallback), a **Capacitor** mobile shell (configured), and a Tauri-based desktop shell (scaffold, parked).
 
 ---
 
@@ -192,7 +192,7 @@ Auth: Bearer token (API key or master key). 52 tools across 11 categories:
 | **Hide toggle** | Complete | `stores/sidebarStore.ts` | Per-project and per-realm hide via sidebarStore (persisted), unhide eye button in sidebar bottom |
 | **Project CRUD** | Complete | `components/project/CreateProjectModal.tsx`, `EditProjectModal.tsx` | Create, edit, delete, realm assignment (flat list, legacy group field removed) |
 | **Project views** | Complete | `SpaceView.tsx`, `TreeView.tsx`, `GridView.tsx`, `ProjectViewSwitcher.tsx` | SpaceView: single unified canvas with realm grouping (defaults fullscreen), TreeView: full right-click context menu + delete confirm, GridView: 3 views with context menus + relative time via timeAgo |
-| **Theming** | Complete | `packages/shared/src/config/themes/` (17 files), `stores/themeStore.ts` | 151 presets, saturation/brightness/vibrancy sliders |
+| **Theming** | Complete | `packages/shared/src/config/themes/` (17 files), `stores/themeStore.ts` | 151 presets, saturation/brightness/vibrancy sliders, priority colors (green/yellow/orange/red), GlowSource setting |
 | **Visual effects** | Complete | `components/effects/` (13 effects), `cursor/` | Starfield, sakura, snowfall, matrix, storm, aurora, cursor trails |
 | **Celebrations** | Complete | `components/celebrations/CelebrationEngine.tsx` | 6 categories: alien, business, fun, horror, medieval + registry |
 | **Settings modal** | Complete | `ui/settings/SettingsModal.tsx` | Tabs: General, Dashboard, Palette, Effects, Typography, Fun, Shortcuts |
@@ -208,8 +208,11 @@ Auth: Bearer token (API key or master key). 52 tools across 11 categories:
 | **Board sync (polling)** | Complete | `api/sync/version/[projectId]/route.ts`, `lib/actions/board.ts` | Version-based polling, boardVersion incremented on every mutation via touchProject |
 | **Board theme override** | Complete | `app/project/[id]/useBoardTheme.ts` | Per-project theme override |
 | **Toasts** | Complete | `ui/Toast.tsx` | Action confirmation toasts |
-| **PWA** | Partial | `components/pwa/ServiceWorkerRegistration.tsx` | Service worker registration exists |
-| **Desktop (Tauri)** | Scaffold | `apps/desktop/` | Tauri config + hello-world Rust, no integration |
+| **PWA** | Complete | `public/manifest.json`, `public/sw.js`, `public/offline.html`, `components/pwa/ServiceWorkerRegistration.tsx` | Manifest, SW precaching + offline fallback, middleware excludes static PWA files from auth |
+| **Capacitor (mobile shell)** | Configured | `apps/web/capacitor.config.ts` | Wraps web app in native iOS/Android shell; config exists, no build pipeline yet |
+| **Glow Source setting** | Complete | `packages/shared/src/types/theme.ts`, `stores/themeStore.ts`, `ui/settings/GeneralTab`, `board/SortableTaskCard.tsx` | 4 modes: manual / priority / first-label / column; render-only, never overwrites task.color |
+| **Checklist UX** | Complete | `board/useChecklistHandlers.ts`, `board/checklist/` | Auto-focus on card open, auto-expanding textarea, Enter auto-advance, optimistic board summary sync |
+| **Desktop (Tauri)** | Parked | `apps/desktop/` | Tauri config + hello-world Rust, explicitly deferred post-beta |
 | **Real-time push** | Not Started | `lib/realtime/index.ts` | `publishBoardEvent()` is a no-op stub |
 | **Confirm modal** | Complete | `components/ui/ConfirmModal.tsx` | Reusable delete confirmation, wired into GridView + TreeView |
 | **Scoped visibility** | Complete | `WorkspaceSettingsModal.tsx`, migration `0010` | owners_only filtering on project_groups, Eye/EyeOff toggle per project |
@@ -229,7 +232,7 @@ All stores use Zustand v5.
 | `useCanvasStore` | Canvas nodes, edges, selection | `apps/web/src/lib/store/canvasStore.ts` | `zustand/persist` |
 | `useGanttStore` | Gantt tasks, rows, views, active view, time scale | `apps/web/src/lib/store/ganttStore.ts` | `zustand/persist` |
 | `useUndoStore` | Undo stack (max 20 entries) | `apps/web/src/lib/store/undoStore.ts` | None (in-memory) |
-| `useThemeStore` | Theme, colors, glow/glass/saturation, font, effects, shortcuts, priorities, layout, board theme override | `apps/web/src/stores/themeStore.ts` | None (hydrates from DB preferences) |
+| `useThemeStore` | Theme, colors, glow/glass/saturation, font, effects, shortcuts, priorities, layout, board theme override, GlowSource | `apps/web/src/stores/themeStore.ts` | None (hydrates from DB via SAFE_PREF_KEYS allowlist) |
 | `useSidebarStore` | Collapsed state, active realm ID, hidden project/realm IDs | `apps/web/src/stores/sidebarStore.ts` | `zustand/persist` (key: `aeon-sidebar`), `onRehydrateStorage` hydration guard |
 
 ---
@@ -258,7 +261,7 @@ All stores use Zustand v5.
 |---|---|---|
 | `publishBoardEvent()` is a no-op | High | `lib/realtime/index.ts` -- real-time push not implemented, relies on polling |
 | No virtual scrolling | Medium | Large boards render all cards; no virtualization in columns |
-| No `React.memo` usage | Medium | Zero `React.memo` calls across entire codebase |
+| No `React.memo` usage | Low | React Compiler (enabled) auto-memoizes; manual memo no longer needed |
 | MCP lacks canvas tools | Medium | REST has canvas endpoints, MCP does not |
 | Activity feed has no UI | Low | `activity_events` table populated but no frontend display |
 | Zustand persist hydration flash | Low | sidebarStore now has hydration guard; board/canvas/gantt stores may still flash defaults |
@@ -269,7 +272,23 @@ All stores use Zustand v5.
 
 ---
 
-## 9. RECENT CHANGES (2026-04-02 session)
+## 9. RECENT CHANGES (2026-04-04 session)
+
+1. React Compiler enabled (`reactCompiler: true`) -- auto-memoization at build time
+2. Partial Prerendering enabled (`cacheComponents: true`) -- static shell from edge, dynamic streams in
+3. Capacitor configured (`capacitor.config.ts`) -- native iOS/Android shell wrapping web app
+4. PWA fully enabled -- manifest.json, sw.js (precaching + offline fallback), offline.html, middleware excludes static files
+5. GlowSource setting -- 4 modes (manual/priority/first-label/column), render-only resolver in SortableTaskCard
+6. Priority colors remapped -- pale green/yellow/orange/red scale
+7. Checklist UX -- auto-focus on card open, auto-expanding textarea, Enter auto-advance
+8. Zustand selector audit -- 22 files converted to scoped selectors, ThemeProvider uses useShallow
+9. boardStore.updateChecklistSummary -- optimistic checklist count sync to board cards
+10. Security: mobile-auth callbackUrl validation, Google ID token audience guard, themeStore SAFE_PREF_KEYS allowlist
+11. 4 new DEFAULT_PREFERENCES keys: defaultProjectView, defaultProjectSort, cardPreviewOnHover, celebrationStyle
+12. touchProject() added to checklist mutation actions
+13. Dead prop cleanup (onTitleChange removed from SortableChecklistItem)
+
+Previous session (2026-04-02):
 
 1. Killed Personal/Team split -- flat realm list in sidebar with TEAM badge
 2. Viewport-locked dashboard layout (h-screen overflow-hidden, only main scrolls)

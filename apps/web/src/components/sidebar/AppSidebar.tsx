@@ -47,7 +47,7 @@ export function AppSidebar({
   onOpenSettings,
   onSignOut,
 }: AppSidebarProps) {
-  const { colors } = useThemeStore()
+  const colors = useThemeStore((s) => s.colors)
   const { collapsed, activeRealmId, toggleCollapsed, setActiveRealm } = useSidebarStore()
 
   const glowColor = colors?.glow ?? 'rgba(139, 92, 246, 0.4)'

@@ -5,14 +5,18 @@ import type {
   DepLineStyle,
   BoardLayout,
   DepViewMode,
+  GlowSource,
   CustomPriority,
+  ProjectViewMode,
+  ProjectSortMode,
 } from '../types'
+import type { CelebrationStyle } from '../types/celebrations'
 
 export const INITIAL_PRIORITIES: CustomPriority[] = [
-  { id: 'low', name: '🟢 low', color: '#64748b' },
-  { id: 'medium', name: '🔵 medium', color: '#3b82f6' },
-  { id: 'high', name: '🟠 high', color: '#f97316' },
-  { id: 'urgent', name: '🔴 urgent', color: '#ef4444' },
+  { id: 'low', name: 'low', color: '#86efac' },
+  { id: 'medium', name: 'medium', color: '#fde68a' },
+  { id: 'high', name: 'high', color: '#fb923c' },
+  { id: 'urgent', name: 'urgent', color: '#ef4444' },
 ]
 
 export const DEFAULT_SHORTCUTS: Record<string, string> = {
@@ -28,6 +32,7 @@ export const DEFAULT_SHORTCUTS: Record<string, string> = {
 
 export const DEFAULT_PREFERENCES = {
   currentTheme: 'deepSpace' as string,
+  glowSource: 'manual' as GlowSource,
   glowIntensity: 40,
   glassOpacity: 40,
   themeSaturation: 100,
@@ -56,6 +61,10 @@ export const DEFAULT_PREFERENCES = {
   boardActionToasts: false,
   shortcuts: { ...DEFAULT_SHORTCUTS },
   priorities: [...INITIAL_PRIORITIES],
+  defaultProjectView: 'grid' as ProjectViewMode,
+  defaultProjectSort: 'alphabetical' as ProjectSortMode,
+  cardPreviewOnHover: false,
+  celebrationStyle: 'confetti-burst' as CelebrationStyle,
 }
 
 export type UserPreferences = typeof DEFAULT_PREFERENCES

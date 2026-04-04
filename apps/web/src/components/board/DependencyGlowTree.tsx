@@ -6,6 +6,7 @@ import { X, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
+import { useShallow } from 'zustand/shallow'
 import { resolveColor } from '@/lib/utils/colors'
 import { calculateTreeLayout } from './dependency-tree/TreeLayout'
 import { GlowTreeNode } from './dependency-tree/GlowTreeNode'
@@ -31,7 +32,9 @@ export function DependencyGlowTree({ taskId, showAll, onClose, onTaskEdit, onTas
   const tasks = useBoardStore((s) => s.tasks)
   const updateTask = useBoardStore((s) => s.updateTask)
   const dependencies = useBoardStore((s) => s.dependencies)
-  const { colors: themeColors, glowIntensity: globalGlow, depCanvasBlur, depViewMode, depLineWidth, depLineGlow, depLineStyle } = useThemeStore()
+  const { colors: themeColors, glowIntensity: globalGlow, depCanvasBlur, depViewMode, depLineWidth, depLineGlow, depLineStyle } = useThemeStore(
+    useShallow((s) => ({ colors: s.colors, glowIntensity: s.glowIntensity, depCanvasBlur: s.depCanvasBlur, depViewMode: s.depViewMode, depLineWidth: s.depLineWidth, depLineGlow: s.depLineGlow, depLineStyle: s.depLineStyle }))
+  )
   const [focusId, setFocusId] = useState(taskId)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)

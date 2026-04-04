@@ -18,7 +18,8 @@ interface TaskColorPickerProps {
 export function TaskColorPicker({ taskId, isOpen, onClose, onTaskUpdate }: TaskColorPickerProps) {
   const [mounted, setMounted] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
-  const { tasks, updateTask } = useBoardStore()
+  const tasks = useBoardStore((s) => s.tasks)
+  const updateTask = useBoardStore((s) => s.updateTask)
   const task = tasks.find((t) => t.id === taskId)
 
   // eslint-disable-next-line react-hooks/set-state-in-effect

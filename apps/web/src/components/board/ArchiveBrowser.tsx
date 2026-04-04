@@ -37,7 +37,8 @@ export function ArchiveBrowser({ isOpen, projectId, onClose }: ArchiveBrowserPro
   const [tasks, setTasks] = useState<ArchivedTask[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [restoringIds, setRestoringIds] = useState<Set<string>>(new Set())
-  const { colors, glowIntensity } = useThemeStore()
+  const colors = useThemeStore((s) => s.colors)
+  const glowIntensity = useThemeStore((s) => s.glowIntensity)
   const mult = glowIntensity / 75
 
   useEffect(() => {
