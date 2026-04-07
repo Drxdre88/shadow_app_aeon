@@ -9,7 +9,6 @@
     "dev": "npm run dev --workspace=apps/web",
     "build": "npm run build --workspace=apps/web",
     "lint": "npm run lint --workspace=apps/web",
-    "dev:desktop": "npm run dev --workspace=apps/desktop",
-    "dev:mobile": "npm run dev --workspace=apps/mobile"
+    "dev:desktop": "npm run dev --workspace=apps/desktop"
   }
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import PusherClient from 'pusher-js'
 import { loadBoardData } from '@/lib/actions/board'
 import { getRows, getGanttTasks } from '@/lib/actions/gantt'
 import { getGanttViews } from '@/lib/actions/ganttViews'
@@ -9,7 +10,8 @@ import { useBoardStore, isDirtyOrGracePeriod } from '@/lib/store/boardStore'
 import { useGanttStore } from '@/lib/store/ganttStore'
 import { useCanvasStore } from '@/lib/store/canvasStore'
 
-const POLL_INTERVAL = 5_000
+const POLL_INTERVAL = 30_000
+const PUSHER_DEBOUNCE_MS = 300
 
 async function fetchBoardVersion(projectId: string): Promise<number | null> {
   try {
@@ -287,6 +289,42 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
     return () => {
       clearInterval(interval)
       document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [projectId, doFullLoad])
+
+  const pusherRef = useRef<PusherClient | null>(null)
+
+  useEffect(() => {
+    const key = process.env.NEXT_PUBLIC_PUSHER_KEY
+    const cluster = process.env.NEXT_PUBLIC_PUSHER_CLUSTER
+    if (!key || !cluster) return
+
+    if (pusherRef.current) {
+      pusherRef.current.unsubscribe(`board-${projectId}`)
+      pusherRef.current.disconnect()
+    }
+
+    const pusher = new PusherClient(key, { cluster })
+    pusherRef.current = pusher
+    const channel = pusher.subscribe(`board-${projectId}`)
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+    channel.bind('board-update', () => {
+      if (isDirtyOrGracePeriod()) return
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        knownVersionRef.current = null
+        doFullLoad()
+      }, PUSHER_DEBOUNCE_MS)
+    })
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      channel.unbind_all()
+      pusher.unsubscribe(`board-${projectId}`)
+      pusher.disconnect()
+      pusherRef.current = null
     }
   }, [projectId, doFullLoad])
 

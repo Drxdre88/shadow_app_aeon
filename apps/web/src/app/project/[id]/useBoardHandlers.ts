@@ -70,6 +70,13 @@ export function useBoardHandlers(projectId: string) {
       })
       .catch((err: unknown) => {
         console.error('Failed to update task:', err)
+        if (snapshot) {
+          const rollback: Record<string, unknown> = {}
+          for (const key of changedFields) {
+            rollback[key] = (snapshot as unknown as Record<string, unknown>)[key]
+          }
+          useBoardStore.getState().updateTask(taskId, rollback as Partial<typeof snapshot>)
+        }
         useBoardStore.setState({ isDirty: false })
         const msg = err instanceof Error && err.message.includes('Viewers cannot modify') ? 'You have view-only access to this project' : 'Failed to update task'
         toast(msg, { force: true })

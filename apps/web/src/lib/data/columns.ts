@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { boardColumns } from '@/lib/db/schema'
 import { eq, and, asc, sql } from 'drizzle-orm'
+import { touchProject } from './projects'
 
 const BOARD_TEMPLATES: Record<string, { name: string; color: string; icon: string | null; orderIndex: number }[]> = {
   default: [
@@ -57,6 +58,7 @@ export async function createColumn(
         orderIndex: data.orderIndex,
       })
       .returning()
+    await touchProject(projectId, { type: 'column:created' })
     return col
   }
 
@@ -79,6 +81,7 @@ export async function createColumn(
       .returning()
   })
 
+  await touchProject(projectId, { type: 'column:created' })
   return col
 }
 
@@ -99,6 +102,7 @@ export async function updateColumn(
     .where(and(eq(boardColumns.id, columnId), eq(boardColumns.projectId, projectId)))
     .returning()
 
+  await touchProject(projectId, { type: 'column:updated' })
   return col || null
 }
 
@@ -108,6 +112,7 @@ export async function deleteColumn(columnId: string, projectId: string) {
     .where(and(eq(boardColumns.id, columnId), eq(boardColumns.projectId, projectId)))
     .returning({ id: boardColumns.id })
 
+  await touchProject(projectId, { type: 'column:deleted' })
   return !!deleted
 }
 
@@ -123,6 +128,7 @@ export async function reorderColumns(
         .where(and(eq(boardColumns.id, id), eq(boardColumns.projectId, projectId)))
     }
   })
+  await touchProject(projectId, { type: 'column:reordered' })
 }
 
 export async function createDefaultColumns(projectId: string, template?: string) {

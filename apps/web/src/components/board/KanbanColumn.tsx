@@ -2,12 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback, memo } from 'react'
 import { useDroppable } from '@dnd-kit/core'
-import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { AnimatePresence } from 'framer-motion'
 import { Plus, Check, X, Palette, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { SortableTaskCard } from './SortableTaskCard'
-import { QuickAddTask } from './QuickAddTask'
+import { VirtualizedTaskList } from './VirtualizedTaskList'
 import { ColumnContextMenu } from './ColumnContextMenu'
 import { hexToRgba } from '@/lib/utils/colors'
 import { useThemeStore } from '@/stores/themeStore'
@@ -399,35 +396,23 @@ export const KanbanColumn = memo(function KanbanColumn({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
-        <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
-          <AnimatePresence mode="popLayout">
-            {tasks.map((task) => (
-              <SortableTaskCard
-                key={task.id}
-                task={task}
-                onEdit={onTaskEdit}
-                onDependencyClick={onDependencyClick}
-                columnGlowColor={config.glowColor}
-                showDropIndicator={overId === task.id && activeTaskId !== task.id}
-                onTaskUpdate={onTaskUpdate}
-                onTaskDelete={onTaskDelete}
-                onPushToGantt={onPushToGantt}
-                onSendToVault={onSendToVault}
-                onArchiveTask={onArchiveTask}
-              />
-            ))}
-          </AnimatePresence>
-        </SortableContext>
-
-        <div className="mt-2">
-          <QuickAddTask
-            projectId={projectId}
-            columnId={column.id}
-            onTaskCreate={onTaskCreate}
-          />
-        </div>
-      </div>
+      <VirtualizedTaskList
+        tasks={tasks}
+        taskIds={taskIds}
+        columnId={column.id}
+        projectId={projectId}
+        glowColor={config.glowColor}
+        overId={overId}
+        activeTaskId={activeTaskId}
+        onTaskEdit={onTaskEdit}
+        onDependencyClick={onDependencyClick}
+        onTaskUpdate={onTaskUpdate}
+        onTaskDelete={onTaskDelete}
+        onPushToGantt={onPushToGantt}
+        onSendToVault={onSendToVault}
+        onArchiveTask={onArchiveTask}
+        onTaskCreate={onTaskCreate}
+      />
 
       <div
         className="h-2 cursor-row-resize flex items-center justify-center hover:bg-white/10 transition-colors group"

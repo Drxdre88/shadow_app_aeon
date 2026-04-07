@@ -1,6 +1,6 @@
 # VISION.md
 
-Last updated: 04/04/2026 (Phase 2.5A/B shipped)
+Last updated: 07/04/2026 (Phase 3 — Pusher, virtual scrolling, optimistic UI shipped)
 
 For technical architecture, file paths, and feature inventory see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
@@ -22,7 +22,7 @@ Aeon is a **web-first project management platform** with a stunning visual ident
 | Realm-based multi-tenancy | Full CRUD, invites, scoped visibility, REST + MCP parity | Shipped |
 | MCP-first AI integration | 52 tools, Bearer auth, dogfooded daily via Claude Code | Shipped |
 | Master Board (cross-project view) | 4 raw idea cards (schema, propagation, UI, permissions) | Medium |
-| Real-time sync (Pusher/WS) | ADR written, publishBoardEvent stub exists, 1 raw idea card | Speculative |
+| Real-time sync (Pusher) | Pusher Channels live, all mutations broadcast, 30s polling fallback | Shipped |
 | Agent-as-member (AI in realms) | 1 raw idea card, no spec | Speculative |
 | PWA desktop | ServiceWorkerRegistration.tsx exists, manifest needed | In Progress (enabling now) |
 | Desktop app (Tauri) | Scaffold committed, explicitly deferred to post-beta | Parked |
@@ -33,7 +33,9 @@ Aeon is a **web-first project management platform** with a stunning visual ident
 
 | Date | Milestone | Impact |
 |---|---|---|
-| 03/04/2026 | React Native Phase A -- Expo scaffold, auth, API client | Mobile platform foundation |
+| 07/04/2026 | Phase 3 -- Pusher real-time sync, virtual scrolling, optimistic UI rollback | Sub-second multi-user sync, large board performance, reliable mutations |
+| 07/04/2026 | React Native deleted -- apps/mobile/ removed, Capacitor-only mobile strategy | Clean codebase, no dead code |
+| 03/04/2026 | React Native Phase A -- Expo scaffold, auth, API client | Mobile platform foundation (later deleted) |
 | 04/04/2026 | Phase 2.5A/B -- checklist UX fixes, glow source setting, priority color remap, React Compiler, PPR, Zustand selector audit (22 files), horsemen security fixes | Snappy UI foundation, security hardening |
 | 03/04/2026 | Capacitor pivot -- abandoned React Native, PWA enabled, Capacitor configured | Mobile strategy reset, preserves web UI investment |
 | 02/04/2026 | Phase 1.5 complete -- realm invites, color/icon picker, lint cleanup, file splits | Production-quality realms, codebase health |
@@ -55,7 +57,7 @@ Aeon is a **web-first project management platform** with a stunning visual ident
 - **Why:** Aeon's primary differentiator is its visual design (151 themes, effects, animations). React Native would require a full UI rewrite (3-6 months) to reach 50-70% fidelity. Capacitor ships the same UI in weeks
 - **Risk:** WebView performance ceiling on low-end devices. Apple App Store review (mitigated by native plugins adding real native functionality). Mobile-specific UX (touch targets, gestures) may need CSS adjustments
 - **Status:** PIVOTED from React Native on 03/04/2026. mobile-auth.ts backend (session tokens, Google OAuth) remains valid. React Native UI code (~680 lines) to be discarded after Capacitor validated. PWA enabling in parallel
-- **Previous approach (React Native):** Expo scaffold + auth + API client built (823 lines). Abandoned because it required complete UI rewrite with no path to visual parity
+- **Previous approach (React Native):** Deleted on 07/04/2026. Expo scaffold + auth + API client (823 lines) abandoned — required complete UI rewrite with no path to visual parity
 
 ### Bet 2: MCP-first over Webhook-first
 
@@ -122,7 +124,7 @@ Aeon is a **web-first project management platform** with a stunning visual ident
 | **WebView performance on effects** | High | 151 themes with particle effects, aurora, snowfall — will they run smoothly in mobile WebView? May need to auto-disable heavy effects on mobile or detect low-end devices |
 | **Should Master Board block on virtual scrolling?** | High | Both are in analysis. Master Board without virtualization could be unusable at scale |
 | **Web next: what ships while mobile builds?** | Medium | Web is mature but not frozen. Master Board, virtual scrolling, real-time all wait. Incremental UX polish runs in parallel (Phase 2.5) |
-| **Real-time sync timing** | Medium | Polling works for single user. Multi-user realms need push. Capacitor mobile also benefits. Does this move up? |
+| **Real-time sync timing** | Resolved | Pusher shipped 07/04/2026. Sub-second push with 30s polling fallback. SSE rejected for serverless incompatibility. |
 | **Push notifications architecture** | Medium | Capacitor has @capacitor/push-notifications plugin. But backend notification service (FCM/APNs) doesn't exist yet. Plan early or bolt on later? |
 | **Tauri: kill or park?** | Low | Explicitly parked post-beta. PWA covers desktop install. Only revisit if beta users ask for offline/system tray/hotkeys |
 
@@ -159,9 +161,9 @@ With Capacitor, mobile IS the web app. The convergence is now about what native 
 | 2B | PWA + Capacitor | IN PROGRESS | Enable PWA (manifest, service worker, icons), Capacitor spike (native shell pointing at deployed app) |
 | 2C | Native Plugins | QUEUED | @capacitor/push-notifications, @capacitor/haptics, biometrics — justifies App Store packaging |
 | 2D | Mobile Polish | QUEUED | Responsive CSS audit, touch target sizing, effect auto-disable on mobile, store submission prep |
-| 2.5 | Web Polish | PARALLEL | Incremental UX fixes, perf (React.memo, virtual scrolling), minor feature gaps — runs alongside mobile |
-| 3 | Master Board | NOT STARTED | Cross-project aggregation, edit propagation, unified UI, MCP + permissions |
-| 4 | Real-time Sync | NOT STARTED | Pusher/WebSocket, publishBoardEvent implementation, multi-user collaboration (benefits both web + mobile) |
-| 5 | Advanced AI | NOT STARTED | Agent Dispatch, smart notifications, AI sprint planner, natural language filters |
+| 2.5 | Web Polish | PARALLEL | Incremental UX fixes, minor feature gaps — runs alongside mobile |
+| 3 | Performance | COMPLETE | Virtual scrolling (TanStack Virtual), optimistic UI rollback, Pusher real-time sync |
+| 4 | Cross-Board | NOT STARTED | Master Board (cross-project aggregation), Rift Board, urgency lens, staleness surface |
+| 5 | Collaboration | NOT STARTED | Chat (Pusher-based), notifications, agent dispatch, agent-as-member |
 
-Note: Phase 2 pivoted from React Native to Capacitor on 03/04/2026. 2A (auth backend) is reusable. 2B (PWA + Capacitor) is the current focus. React Native code (~680 lines in apps/mobile/) to be cleaned up after Capacitor validated. Phase 2.5 (Web Polish) runs in parallel. Tauri desktop explicitly parked.
+Note: Phase 2 pivoted from React Native to Capacitor on 03/04/2026. React Native code deleted 07/04/2026. 2A (auth backend) is reusable for Capacitor. 2B (PWA + Capacitor) is the current mobile focus. Phase 3 (Performance) shipped 07/04/2026. Tauri desktop explicitly parked.

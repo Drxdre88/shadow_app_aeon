@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { taskVault, boardTasks, labels, taskLabels, checklistItems, boardColumns } from '@/lib/db/schema'
 import { eq, and, desc, sql } from 'drizzle-orm'
+import { touchProject } from './projects'
 
 export async function findVaultTasks(projectId: string, limit = 200, offset = 0) {
   return db
@@ -115,6 +116,7 @@ export async function vaultTask(
     return result
   })
 
+  await touchProject(projectId, { type: 'task:deleted' })
   return vaulted
 }
 
@@ -143,7 +145,7 @@ export async function vaultTasksBatch(
     })
   )
 
-  return db.transaction(async (tx) => {
+  const vaulted = await db.transaction(async (tx) => {
     const values = snapshots.map(({ task, labelSnapshot, checklistSnapshot, columnName }) => ({
       projectId,
       originalTaskId: task.id,
@@ -161,7 +163,7 @@ export async function vaultTasksBatch(
       originalCreatedAt: task.createdAt,
     }))
 
-    const vaulted = await tx.insert(taskVault).values(values).returning()
+    const result = await tx.insert(taskVault).values(values).returning()
 
     for (const task of tasks) {
       await tx
@@ -169,8 +171,10 @@ export async function vaultTasksBatch(
         .where(and(eq(boardTasks.id, task.id), eq(boardTasks.projectId, projectId)))
     }
 
-    return vaulted
+    return result
   })
+  await touchProject(projectId, { type: 'task:deleted' })
+  return vaulted
 }
 
 export async function restoreFromVault(vaultId: string, projectId: string) {
@@ -186,8 +190,8 @@ export async function restoreFromVault(vaultId: string, projectId: string) {
     .from(boardTasks)
     .where(eq(boardTasks.projectId, projectId))
 
-  return db.transaction(async (tx) => {
-    const [restoredTask] = await tx
+  const restoredTask = await db.transaction(async (tx) => {
+    const [task] = await tx
       .insert(boardTasks)
       .values({
         projectId,
@@ -206,6 +210,8 @@ export async function restoreFromVault(vaultId: string, projectId: string) {
       .delete(taskVault)
       .where(eq(taskVault.id, vaultId))
 
-    return restoredTask
+    return task
   })
+  await touchProject(projectId, { type: 'task:created' })
+  return restoredTask
 }

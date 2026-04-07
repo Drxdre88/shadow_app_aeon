@@ -57,6 +57,7 @@ export async function createTask(
       .insert(boardTasks)
       .values({ ...baseValues, orderIndex: data.orderIndex })
       .returning()
+    await touchProject(projectId, { type: 'task:created' })
     return task
   }
 
@@ -76,7 +77,7 @@ export async function createTask(
       .returning()
   })
 
-  await touchProject(projectId)
+  await touchProject(projectId, { type: 'task:created' })
   return task
 }
 
@@ -111,7 +112,7 @@ export async function updateTask(
     .where(and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, projectId)))
     .returning()
 
-  await touchProject(projectId)
+  await touchProject(projectId, { type: 'task:updated' })
   return task || null
 }
 
@@ -147,7 +148,7 @@ export async function createTasksBatch(
     return tx.insert(boardTasks).values(values).returning()
   })
 
-  await touchProject(projectId)
+  await touchProject(projectId, { type: 'task:created' })
   return result
 }
 
@@ -157,7 +158,7 @@ export async function deleteTask(taskId: string, projectId: string) {
     .where(and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, projectId)))
     .returning({ id: boardTasks.id })
 
-  await touchProject(projectId)
+  await touchProject(projectId, { type: 'task:deleted' })
   return !!deleted
 }
 
@@ -165,7 +166,7 @@ export async function deleteTasksByColumn(columnId: string, projectId: string) {
   await db
     .delete(boardTasks)
     .where(and(eq(boardTasks.columnId, columnId), eq(boardTasks.projectId, projectId)))
-  await touchProject(projectId)
+  await touchProject(projectId, { type: 'task:deleted' })
 }
 
 export async function reorderTasks(
@@ -193,6 +194,7 @@ export async function reorderTasks(
         .where(and(eq(boardTasks.id, id), eq(boardTasks.projectId, projectId)))
     }
   })
+  await touchProject(projectId, { type: 'task:moved' })
 }
 
 export async function findArchivedTasks(projectId: string) {
@@ -209,6 +211,7 @@ export async function archiveTask(taskId: string, projectId: string) {
     .set({ archivedAt: new Date() })
     .where(and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, projectId)))
     .returning()
+  await touchProject(projectId, { type: 'task:updated' })
   return task || null
 }
 
@@ -218,6 +221,7 @@ export async function restoreTask(taskId: string, projectId: string) {
     .set({ archivedAt: null })
     .where(and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, projectId)))
     .returning()
+  await touchProject(projectId, { type: 'task:updated' })
   return task || null
 }
 
@@ -232,5 +236,6 @@ export async function archiveTasksBatch(projectId: string, taskIds: string[]) {
         .returning()
     )
   )
+  await touchProject(projectId, { type: 'task:updated' })
   return results.flat()
 }
