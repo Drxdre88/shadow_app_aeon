@@ -1,12 +1,12 @@
 # ARCHITECTURE.md
 
-Last updated: 2026-04-04
+Last updated: 2026-04-07
 
 ---
 
 ## 1. OVERVIEW
 
-Aeon is a project management web application built as a Turborepo monorepo (`apps/web` + `apps/mobile` + `packages/shared`). The stack is **Next.js 16** (App Router, **React Compiler**, **Partial Prerendering**) with **TypeScript**, **PostgreSQL** via **Neon** serverless driver, **Drizzle ORM**, **Zustand** (scoped selectors) for client state, **NextAuth v5** (beta) for authentication, **Tailwind CSS** for styling, and **Framer Motion** for animations. It features a kanban board, Gantt chart, canvas (whiteboard), trophy/vault archive, velocity analytics, 150+ theme presets, an MCP tool server (52 tools) for AI integration, a **PWA** (manifest + service worker + offline fallback), a **Capacitor** mobile shell (configured), and a Tauri-based desktop shell (scaffold, parked).
+Aeon is a project management web application built as a Turborepo monorepo (`apps/web` + `apps/desktop` + `packages/shared`). The stack is **Next.js 16** (App Router, **React Compiler**, **Partial Prerendering**) with **TypeScript**, **PostgreSQL** via **Neon** serverless driver, **Drizzle ORM**, **Zustand** (scoped selectors) for client state, **NextAuth v5** (beta) for authentication, **Tailwind CSS** for styling, and **Framer Motion** for animations. It features a kanban board (with virtual scrolling via TanStack Virtual), Gantt chart, canvas (whiteboard), trophy/vault archive, velocity analytics, 150+ theme presets, an MCP tool server (52 tools) for AI integration, **Pusher** real-time sync (with 30s polling fallback), a **PWA** (manifest + service worker + offline fallback), a **Capacitor** mobile shell (configured), and a Tauri-based desktop shell (scaffold, parked).
 
 ---
 
@@ -17,7 +17,7 @@ apps/web/                          -- Next.js web application
   src/app/                         -- App Router pages and API routes
   src/app/api/v1/                  -- REST API (session + API key auth)
   src/app/api/[transport]/         -- MCP server (Bearer token auth)
-  src/components/board/            -- Kanban board, task edit, DnD, filters
+  src/components/board/            -- Kanban board, task edit, DnD, filters, virtual scrolling
   src/components/canvas/           -- Canvas/whiteboard (ReactFlow)
   src/components/gantt/            -- Gantt chart components
   src/components/trophy/           -- Trophy room / vault archive
@@ -34,7 +34,8 @@ apps/web/                          -- Next.js web application
   src/lib/store/                   -- Zustand stores (board, canvas, gantt, undo)
   src/lib/db/                      -- Drizzle schema + connection
   src/lib/api/                     -- API auth, rate limiting
-  src/lib/realtime/                -- Real-time event types (stub)
+  src/lib/pusher.ts                -- Pusher server singleton
+  src/lib/realtime/                -- Real-time event publisher (Pusher)
   src/lib/utils/                   -- Shared utilities (cn, filters, colors)
   src/stores/                      -- Zustand stores (theme, sidebar)
 apps/desktop/                      -- Tauri desktop shell (scaffold)
@@ -205,7 +206,7 @@ Auth: Bearer token (API key or master key). 52 tools across 11 categories:
 | **MCP server** | Complete | `api/[transport]/route.ts`, `tools/` (11 modules) | 52 tools, Bearer auth |
 | **Beta terms** | Complete | `app/beta-terms/` | Terms acceptance gate with effects |
 | **Undo system** | Complete | `lib/store/undoStore.ts` | 20-entry undo stack |
-| **Board sync (polling)** | Complete | `api/sync/version/[projectId]/route.ts`, `lib/actions/board.ts` | Version-based polling, boardVersion incremented on every mutation via touchProject |
+| **Board sync (Pusher + polling)** | Complete | `lib/pusher.ts`, `lib/realtime/index.ts`, `api/sync/version/[projectId]/route.ts` | Pusher push (~1s) with 30s polling fallback. touchProject broadcasts events on all mutations. Channel per board. |
 | **Board theme override** | Complete | `app/project/[id]/useBoardTheme.ts` | Per-project theme override |
 | **Toasts** | Complete | `ui/Toast.tsx` | Action confirmation toasts |
 | **PWA** | Complete | `public/manifest.json`, `public/sw.js`, `public/offline.html`, `components/pwa/ServiceWorkerRegistration.tsx` | Manifest, SW precaching + offline fallback, middleware excludes static PWA files from auth |
@@ -213,7 +214,9 @@ Auth: Bearer token (API key or master key). 52 tools across 11 categories:
 | **Glow Source setting** | Complete | `packages/shared/src/types/theme.ts`, `stores/themeStore.ts`, `ui/settings/GeneralTab`, `board/SortableTaskCard.tsx` | 4 modes: manual / priority / first-label / column; render-only, never overwrites task.color |
 | **Checklist UX** | Complete | `board/useChecklistHandlers.ts`, `board/checklist/` | Auto-focus on card open, auto-expanding textarea, Enter auto-advance, optimistic board summary sync |
 | **Desktop (Tauri)** | Parked | `apps/desktop/` | Tauri config + hello-world Rust, explicitly deferred post-beta |
-| **Real-time push** | Not Started | `lib/realtime/index.ts` | `publishBoardEvent()` is a no-op stub |
+| **Real-time push (Pusher)** | Complete | `lib/pusher.ts`, `lib/realtime/index.ts` | Pusher Channels, fire-and-forget from touchProject, graceful degradation if unconfigured |
+| **Virtual scrolling** | Complete | `components/board/VirtualizedTaskList.tsx` | TanStack Virtual for columns with 15+ cards, dynamic measurement, 5-item overscan |
+| **Optimistic UI** | Complete | `app/project/[id]/useBoardHandlers.ts` | Snapshot-rollback on all mutations (create/update/delete/move/archive/vault), undo toasts |
 | **Confirm modal** | Complete | `components/ui/ConfirmModal.tsx` | Reusable delete confirmation, wired into GridView + TreeView |
 | **Scoped visibility** | Complete | `WorkspaceSettingsModal.tsx`, migration `0010` | owners_only filtering on project_groups, Eye/EyeOff toggle per project |
 | **Access denied page** | Complete | `components/ui/AccessDenied.tsx` | Themed error page replacing raw 404 for unauthorized access |
@@ -251,7 +254,8 @@ All stores use Zustand v5.
 | **ReactFlow (@xyflow)** | Canvas whiteboard | Active | Nodes, edges, auto-layout |
 | **@dnd-kit** | Drag and drop | Active | Kanban columns + tasks |
 | **Tauri** | Desktop wrapper | Scaffold | `apps/desktop/` -- not functional |
-| **Real-time (WebSocket)** | Push updates | Not Started | `ws` in deps but `publishBoardEvent` is no-op |
+| **Pusher Channels** | Real-time board sync | Active | Push events on all mutations, 30s polling fallback, `board-{projectId}` channels |
+| **@tanstack/react-virtual** | Column virtual scrolling | Active | Columns with 15+ cards use virtualized rendering |
 
 ---
 
@@ -259,8 +263,6 @@ All stores use Zustand v5.
 
 | Issue | Severity | Details |
 |---|---|---|
-| `publishBoardEvent()` is a no-op | High | `lib/realtime/index.ts` -- real-time push not implemented, relies on polling |
-| No virtual scrolling | Medium | Large boards render all cards; no virtualization in columns |
 | No `React.memo` usage | Low | React Compiler (enabled) auto-memoizes; manual memo no longer needed |
 | MCP lacks canvas tools | Medium | REST has canvas endpoints, MCP does not |
 | Activity feed has no UI | Low | `activity_events` table populated but no frontend display |
@@ -272,7 +274,20 @@ All stores use Zustand v5.
 
 ---
 
-## 9. RECENT CHANGES (2026-04-04 session)
+## 9. RECENT CHANGES (2026-04-07 session)
+
+1. Pusher real-time sync -- replaces 5s polling with push events (~1s latency), 30s polling fallback
+2. Virtual scrolling -- TanStack Virtual for columns with 15+ cards (VirtualizedTaskList.tsx extracted)
+3. Optimistic UI rollback -- handleTaskUpdate now restores snapshot on server failure
+4. React Native deleted -- apps/mobile/, shadow-specs/mobile/, docs/android-app-evaluation.md removed
+5. touchProject enhanced -- accepts optional event parameter, dynamically imports publishBoardEvent
+6. All mutation paths now fire Pusher events -- tasks, columns, labels, dependencies, checklist, vault
+7. CSP updated -- connect-src allows wss://*.pusher.com for Pusher WebSocket
+8. Dependency cycle check -- addDependency (single) now checks for cycles like batch version
+9. KanbanColumn split -- VirtualizedTaskList extracted to sibling file (581→460 lines)
+10. dev:mobile script removed from root package.json
+
+Previous session (2026-04-04):
 
 1. React Compiler enabled (`reactCompiler: true`) -- auto-memoization at build time
 2. Partial Prerendering enabled (`cacheComponents: true`) -- static shell from edge, dynamic streams in

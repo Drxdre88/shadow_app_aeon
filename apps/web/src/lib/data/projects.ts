@@ -49,11 +49,17 @@ export async function verifyProjectOwnership(projectId: string, userId: string) 
 
 export const findProjectById = verifyProjectOwnership
 
-export async function touchProject(projectId: string) {
+export async function touchProject(projectId: string, event?: { type: string }) {
   await db.update(projects).set({
     updatedAt: new Date(),
     boardVersion: sql`${projects.boardVersion} + 1`,
   }).where(eq(projects.id, projectId))
+
+  if (event) {
+    import('@/lib/realtime').then(({ publishBoardEvent }) =>
+      publishBoardEvent(projectId, event as import('@/lib/realtime').BoardEvent)
+    ).catch((err) => console.error('[touchProject] Pusher publish failed:', err))
+  }
 }
 
 export async function findProjectBasic(projectId: string) {
@@ -86,7 +92,26 @@ export async function getMemberRole(projectId: string, userId: string) {
     .from(projectMembers)
     .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
 
-  return membership?.role || null
+  if (membership?.role) return membership.role
+
+  const realmIds = await db
+    .select({ groupId: projectGroups.groupId })
+    .from(projectGroups)
+    .where(eq(projectGroups.projectId, projectId))
+
+  if (realmIds.length > 0) {
+    const [realmMembership] = await db
+      .select({ role: groupMembers.role })
+      .from(groupMembers)
+      .where(and(
+        inArray(groupMembers.groupId, realmIds.map((r) => r.groupId)),
+        eq(groupMembers.userId, userId)
+      ))
+
+    if (realmMembership) return realmMembership.role
+  }
+
+  return null
 }
 
 export async function findProjects(userId: string, limit = 100, offset = 0) {

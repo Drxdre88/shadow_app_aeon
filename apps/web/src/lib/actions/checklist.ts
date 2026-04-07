@@ -56,7 +56,7 @@ export async function createChecklistItem(data: {
 
   const item = await _createChecklistItem(data.taskId, parsed)
 
-  await touchProject(data.projectId)
+  await touchProject(data.projectId, { type: 'checklist:changed' })
   revalidatePath(`/project/${data.projectId}`)
   return item
 }
@@ -89,7 +89,7 @@ export async function updateChecklistItem(
   })
 
   const item = await _updateChecklistItem(itemId, taskId, parsed)
-  await touchProject(projectId)
+  await touchProject(projectId, { type: 'checklist:changed' })
   revalidatePath(`/project/${projectId}`)
   return item
 }
@@ -97,6 +97,7 @@ export async function updateChecklistItem(
 export async function deleteChecklistItem(itemId: string, taskId: string, projectId: string) {
   await requireTaskEditable(taskId, projectId)
   await _deleteChecklistItem(itemId, taskId)
+  await touchProject(projectId, { type: 'checklist:changed' })
   revalidatePath(`/project/${projectId}`)
 }
 
@@ -107,6 +108,7 @@ export async function reorderChecklistItems(
 ) {
   await requireTaskEditable(taskId, projectId)
   await _reorderChecklistItems(taskId, updates)
+  await touchProject(projectId, { type: 'checklist:changed' })
   revalidatePath(`/project/${projectId}`)
 }
 
@@ -118,6 +120,7 @@ export async function renameChecklistGroup(
 ) {
   await requireTaskEditable(taskId, projectId)
   const count = await _renameChecklistGroup(taskId, oldName, newName)
+  await touchProject(projectId, { type: 'checklist:changed' })
   revalidatePath(`/project/${projectId}`)
   return count
 }
@@ -129,5 +132,6 @@ export async function deleteChecklistGroup(
 ) {
   await requireTaskEditable(taskId, projectId)
   await _deleteChecklistGroup(taskId, groupName)
+  await touchProject(projectId, { type: 'checklist:changed' })
   revalidatePath(`/project/${projectId}`)
 }

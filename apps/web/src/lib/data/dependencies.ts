@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { taskDependencies, boardTasks } from '@/lib/db/schema'
 import { eq, and, or, inArray } from 'drizzle-orm'
+import { touchProject } from './projects'
 
 export async function findDependencies(projectId: string) {
   return db
@@ -14,6 +15,7 @@ export async function findDependencies(projectId: string) {
 }
 
 export async function addDependency(blockerTaskId: string, blockedTaskId: string, projectId: string) {
+  if (blockerTaskId === blockedTaskId) throw new Error('A task cannot block itself')
   const tasks = await db
     .select({ id: boardTasks.id })
     .from(boardTasks)
@@ -22,10 +24,13 @@ export async function addDependency(blockerTaskId: string, blockedTaskId: string
       or(eq(boardTasks.id, blockerTaskId), eq(boardTasks.id, blockedTaskId))
     ))
   if (tasks.length !== 2) throw new Error('Both tasks must belong to the project')
+  const isCycle = await wouldCreateCycle(blockerTaskId, blockedTaskId, projectId)
+  if (isCycle) throw new Error('Adding this dependency would create a circular chain')
   await db
     .insert(taskDependencies)
     .values({ blockerTaskId, blockedTaskId })
     .onConflictDoNothing()
+  await touchProject(projectId, { type: 'dependency:changed' })
 }
 
 export async function removeDependency(blockerTaskId: string, blockedTaskId: string, projectId: string) {
@@ -45,6 +50,7 @@ export async function removeDependency(blockerTaskId: string, blockedTaskId: str
         eq(taskDependencies.blockedTaskId, blockedTaskId)
       )
     )
+  await touchProject(projectId, { type: 'dependency:changed' })
 }
 
 export async function addDependenciesBatch(
@@ -93,6 +99,9 @@ export async function addDependenciesBatch(
     })
   }
 
+  if (toInsert.length > 0) {
+    await touchProject(projectId, { type: 'dependency:changed' })
+  }
   return { added: toInsert.length, skipped }
 }
 

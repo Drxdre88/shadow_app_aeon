@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { labels, taskLabels, boardTasks } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import type { CreateLabelInput } from './validators'
+import { touchProject } from './projects'
 
 export async function findLabels(projectId: string, limit = 100, offset = 0) {
   return db
@@ -46,6 +47,7 @@ export async function createLabel(
     })
     .returning()
 
+  await touchProject(projectId, { type: 'label:changed' })
   return label
 }
 
@@ -60,6 +62,7 @@ export async function updateLabel(
     .where(and(eq(labels.id, labelId), eq(labels.projectId, projectId)))
     .returning()
 
+  await touchProject(projectId, { type: 'label:changed' })
   return updated
 }
 
@@ -69,6 +72,7 @@ export async function deleteLabel(labelId: string, projectId: string) {
     .where(and(eq(labels.id, labelId), eq(labels.projectId, projectId)))
     .returning({ id: labels.id })
 
+  await touchProject(projectId, { type: 'label:changed' })
   return !!deleted
 }
 
@@ -85,6 +89,7 @@ export async function addLabelToTask(taskId: string, labelId: string, projectId:
     .insert(taskLabels)
     .values({ taskId, labelId })
     .onConflictDoNothing()
+  await touchProject(projectId, { type: 'label:changed' })
 }
 
 export async function setTaskLabels(taskId: string, labelIds: string[], projectId: string) {
@@ -106,6 +111,7 @@ export async function setTaskLabels(taskId: string, labelIds: string[], projectI
       ).onConflictDoNothing()
     }
   })
+  await touchProject(projectId, { type: 'label:changed' })
 }
 
 export async function removeLabelFromTask(taskId: string, labelId: string, projectId: string) {
@@ -120,4 +126,5 @@ export async function removeLabelFromTask(taskId: string, labelId: string, proje
   await db
     .delete(taskLabels)
     .where(and(eq(taskLabels.taskId, taskId), eq(taskLabels.labelId, labelId)))
+  await touchProject(projectId, { type: 'label:changed' })
 }
