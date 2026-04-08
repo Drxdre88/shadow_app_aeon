@@ -1,5 +1,6 @@
 'use client'
 
+import { useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, ChevronDown, ChevronRight, GripVertical, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
@@ -62,6 +63,8 @@ export function SortableGroupSection({
   onItemEditStart, onItemEditCommit, onItemEditCancel, onItemEditTitleChange,
   onItemDragEnd, onAddStart, onAddChange, onAddSubmit, onAddCancel,
 }: SortableGroupSectionProps) {
+  const justSubmittedRef = useRef(false)
+
   const {
     attributes: groupAttributes,
     listeners: groupListeners,
@@ -117,13 +120,17 @@ export function SortableGroupSection({
             </button>
             <button
               onClick={onToggleCollapse}
-              onDoubleClick={(e) => { e.stopPropagation(); onEditGroupStart() }}
-              className="flex items-center gap-1.5 text-sm font-medium text-white hover:text-slate-300 transition-colors"
+              className="flex-shrink-0 p-0.5 hover:bg-white/5 rounded transition-colors"
             >
               {isCollapsed
                 ? <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
                 : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
               }
+            </button>
+            <button
+              onClick={() => { if (isCollapsed) onToggleCollapse(); onEditGroupStart() }}
+              className="flex items-center gap-1.5 text-sm font-medium text-white hover:text-slate-300 transition-colors min-w-0"
+            >
               {groupName}
               <span className="text-xs text-slate-500 font-normal ml-1">
                 {checkedCount}/{total}
@@ -222,12 +229,14 @@ export function SortableGroupSection({
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
                   if (newItemTitle.trim()) {
+                    justSubmittedRef.current = true
                     const form = e.currentTarget.closest('form')
                     if (form) form.requestSubmit()
+                    setTimeout(() => { justSubmittedRef.current = false }, 100)
                   }
                 }
               }}
-              onBlur={() => { if (!newItemTitle.trim()) onAddCancel() }}
+              onBlur={() => { if (!newItemTitle.trim() && !justSubmittedRef.current) onAddCancel() }}
               placeholder="Add an item..."
               className={cn(
                 'flex-1 px-0 py-0 text-sm bg-transparent border-none resize-none',

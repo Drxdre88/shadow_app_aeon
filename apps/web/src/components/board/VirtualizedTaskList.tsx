@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useCallback, memo } from 'react'
+import { useRef, useEffect, memo } from 'react'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { AnimatePresence } from 'framer-motion'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -85,7 +85,13 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
     enabled: useVirtual,
   })
 
-  const renderCard = useCallback((task: TaskItem) => (
+  useEffect(() => {
+    if (useVirtual) {
+      virtualizer.measure()
+    }
+  }, [tasks.length, useVirtual, virtualizer])
+
+  const renderCard = (task: TaskItem) => (
     <SortableTaskCard
       key={task.id}
       task={task}
@@ -99,7 +105,7 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
       onSendToVault={onSendToVault}
       onArchiveTask={onArchiveTask}
     />
-  ), [onTaskEdit, onDependencyClick, glowColor, overId, activeTaskId, onTaskUpdate, onTaskDelete, onPushToGantt, onSendToVault, onArchiveTask])
+  )
 
   if (useVirtual) {
     return (
@@ -137,7 +143,7 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-3 space-y-3">
+    <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
       <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
         <AnimatePresence mode="popLayout">
           {tasks.map((task) => renderCard(task))}

@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto'
 import { eq, and, inArray, isNull, gte, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { workspaceGroups, groupMembers, projectGroups, projects, users, realmInvites } from '@/lib/db/schema'
+import { workspaceGroups, groupMembers, projectGroups, projects, users, realmInvites, projectMembers } from '@/lib/db/schema'
 import { sendRealmInviteEmail, getBaseUrl } from '@/lib/email'
 
 export async function createWorkspaceGroup(ownerId: string, data: { name: string; icon?: string; color?: string }) {
@@ -50,7 +50,7 @@ export async function findGroupMembers(groupId: string) {
     .where(eq(groupMembers.groupId, groupId))
 }
 
-export async function findProjectsInGroup(groupId: string, callerRole?: string) {
+export async function findProjectsInGroup(groupId: string, callerRole?: string, callerId?: string) {
   const rows = await db
     .select({
       projectId: projectGroups.projectId,
@@ -63,8 +63,65 @@ export async function findProjectsInGroup(groupId: string, callerRole?: string) 
     .from(projectGroups)
     .innerJoin(projects, eq(projects.id, projectGroups.projectId))
     .where(eq(projectGroups.groupId, groupId))
-  if (callerRole === 'owner' || callerRole === 'editor') return rows
-  return rows.filter((r) => r.visibility !== 'owners_only')
+  if (callerRole === 'owner') return rows
+
+  const membersOnlyIds = rows.filter((r) => r.visibility === 'members_only').map((r) => r.projectId)
+  let memberOfSet = new Set<string>()
+  if (membersOnlyIds.length > 0 && callerId) {
+    const memberRows = await db
+      .select({ projectId: projectMembers.projectId })
+      .from(projectMembers)
+      .where(and(inArray(projectMembers.projectId, membersOnlyIds), eq(projectMembers.userId, callerId)))
+    memberOfSet = new Set(memberRows.map((r) => r.projectId))
+  }
+
+  return rows.filter((r) => {
+    if (r.visibility === 'all') return true
+    if (r.visibility === 'members_only') {
+      return (callerId && r.ownerId === callerId) || memberOfSet.has(r.projectId)
+    }
+    return false
+  })
+}
+
+export async function findProjectAccessList(projectId: string) {
+  return db
+    .select({
+      userId: projectMembers.userId,
+      role: projectMembers.role,
+      name: users.name,
+      email: users.email,
+      image: users.image,
+    })
+    .from(projectMembers)
+    .innerJoin(users, eq(users.id, projectMembers.userId))
+    .where(eq(projectMembers.projectId, projectId))
+}
+
+export async function setProjectAccessList(projectId: string, groupId: string, userIds: string[], invitedBy: string) {
+  const realmMembers = await db
+    .select({ userId: groupMembers.userId })
+    .from(groupMembers)
+    .where(eq(groupMembers.groupId, groupId))
+  const realmUserIds = new Set(realmMembers.map((r) => r.userId))
+
+  await db.transaction(async (tx) => {
+    const existing = await tx
+      .select({ userId: projectMembers.userId })
+      .from(projectMembers)
+      .where(eq(projectMembers.projectId, projectId))
+    const realmScopedIds = existing.filter((r) => realmUserIds.has(r.userId)).map((r) => r.userId)
+    if (realmScopedIds.length > 0) {
+      await tx.delete(projectMembers).where(
+        and(eq(projectMembers.projectId, projectId), inArray(projectMembers.userId, realmScopedIds))
+      )
+    }
+    if (userIds.length > 0) {
+      await tx.insert(projectMembers).values(
+        userIds.map((userId) => ({ projectId, userId, role: 'editor' as const, invitedBy }))
+      ).onConflictDoNothing()
+    }
+  })
 }
 
 export async function addProjectToGroup(projectId: string, groupId: string, addedBy: string) {
