@@ -384,6 +384,7 @@ export default function DashboardContent({ user, projects: initialProjects, init
           groupIcon={workspaceSettingsId.icon}
           isOwner={workspaceSettingsId.isOwner}
           isPersonal={workspaceSettingsId.isPersonal}
+          currentUserId={user.id}
           onClose={() => setWorkspaceSettingsId(null)}
           onUpdated={loadWorkspaces}
         />

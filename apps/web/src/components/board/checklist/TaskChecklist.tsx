@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import {
@@ -17,7 +17,6 @@ import {
   verticalListSortingStrategy,
   arrayMove,
 } from '@dnd-kit/sortable'
-import { toast } from '@/components/ui/Toast'
 import { SortableGroupSection } from './SortableGroupSection'
 import type { ChecklistItem, CheckState, ChecklistStatus } from './types'
 
@@ -57,8 +56,10 @@ export function TaskChecklist({
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [editingItemTitle, setEditingItemTitle] = useState('')
+  const editingItemTitleRef = useRef('')
   const [editingGroupName, setEditingGroupName] = useState<string | null>(null)
   const [editingGroupValue, setEditingGroupValue] = useState('')
+  const editingGroupValueRef = useRef('')
   const [confirmDeleteGroup, setConfirmDeleteGroup] = useState<string | null>(null)
   const [pendingGroups, setPendingGroups] = useState<string[]>([])
 
@@ -66,14 +67,14 @@ export function TaskChecklist({
   const mergedGroups = [...groups, ...pendingGroups.filter((pg) => !groups.includes(pg))]
 
   useEffect(() => {
-    if (!autoFocusAdd) return
+    if (!autoFocusAdd || items.length === 0) return
     const firstGroup = groups[0] || 'Checklist'
     const timer = setTimeout(() => {
       setAddingInGroup(firstGroup)
       setNewItemTitle('')
     }, 200)
     return () => clearTimeout(timer)
-  }, [])
+  }, [autoFocusAdd, items.length])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -115,22 +116,24 @@ export function TaskChecklist({
 
   const commitItemEdit = () => {
     if (!editingItemId) return
-    const trimmed = editingItemTitle.trim()
+    const trimmed = editingItemTitleRef.current.trim()
     if (trimmed && trimmed !== items.find((i) => i.id === editingItemId)?.title) {
       onItemTitleChange?.(editingItemId, trimmed)
     }
     setEditingItemId(null)
     setEditingItemTitle('')
+    editingItemTitleRef.current = ''
   }
 
   const commitGroupRename = () => {
     if (!editingGroupName) return
-    const trimmed = editingGroupValue.trim()
+    const trimmed = editingGroupValueRef.current.trim()
     if (trimmed && trimmed !== editingGroupName) {
       onGroupRename?.(editingGroupName, trimmed)
     }
     setEditingGroupName(null)
     setEditingGroupValue('')
+    editingGroupValueRef.current = ''
   }
 
   const handleDragEnd = (event: DragEndEvent, groupName: string) => {
@@ -185,20 +188,20 @@ export function TaskChecklist({
               titleMax={TITLE_MAX}
               sensors={sensors}
               onToggleCollapse={() => toggleGroup(groupName)}
-              onEditGroupStart={() => { setEditingGroupName(groupName); setEditingGroupValue(groupName) }}
-              onEditGroupChange={setEditingGroupValue}
+              onEditGroupStart={() => { setEditingGroupName(groupName); setEditingGroupValue(groupName); editingGroupValueRef.current = groupName }}
+              onEditGroupChange={(v: string) => { setEditingGroupValue(v); editingGroupValueRef.current = v }}
               onEditGroupCommit={commitGroupRename}
-              onEditGroupCancel={() => { setEditingGroupName(null); setEditingGroupValue('') }}
+              onEditGroupCancel={() => { setEditingGroupName(null); setEditingGroupValue(''); editingGroupValueRef.current = '' }}
               onDeleteStart={() => setConfirmDeleteGroup(groupName)}
               onDeleteConfirm={() => { onGroupDelete?.(groupName); setConfirmDeleteGroup(null) }}
               onDeleteCancel={() => setConfirmDeleteGroup(null)}
               onItemToggle={(id, state) => onItemToggle?.(id, state)}
               onItemRemove={(id) => onItemRemove?.(id)}
               onItemStatusChange={(id, status) => onItemStatusChange?.(id, status)}
-              onItemEditStart={(id, title) => { setEditingItemId(id); setEditingItemTitle(title) }}
+              onItemEditStart={(id, title) => { setEditingItemId(id); setEditingItemTitle(title); editingItemTitleRef.current = title }}
               onItemEditCommit={commitItemEdit}
-              onItemEditCancel={() => { setEditingItemId(null); setEditingItemTitle('') }}
-              onItemEditTitleChange={setEditingItemTitle}
+              onItemEditCancel={() => { setEditingItemId(null); setEditingItemTitle(''); editingItemTitleRef.current = '' }}
+              onItemEditTitleChange={(v: string) => { setEditingItemTitle(v); editingItemTitleRef.current = v }}
               onItemDragEnd={(event) => handleDragEnd(event, groupName)}
               onAddStart={() => { setAddingInGroup(groupName); setNewItemTitle('') }}
               onAddChange={setNewItemTitle}

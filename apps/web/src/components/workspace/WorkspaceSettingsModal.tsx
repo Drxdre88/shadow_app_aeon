@@ -16,6 +16,8 @@ import {
   removeProjectFromGroup,
   setProjectVisibility,
   getPendingRealmInvites,
+  getProjectAccessList,
+  updateProjectAccessList,
 } from '@/lib/actions/workspaces'
 import { getProjects } from '@/lib/actions/projects'
 import { autoSaveContact } from '@/lib/actions/contacts'
@@ -32,16 +34,18 @@ interface WorkspaceSettingsModalProps {
   groupIcon?: string | null
   isOwner: boolean
   isPersonal?: boolean
+  currentUserId: string
   onClose: () => void
   onUpdated?: () => void
 }
 
-export function WorkspaceSettingsModal({ isOpen, groupId, groupName, groupColor, groupIcon, isOwner, isPersonal, onClose, onUpdated }: WorkspaceSettingsModalProps) {
+export function WorkspaceSettingsModal({ isOpen, groupId, groupName, groupColor, groupIcon, isOwner, isPersonal, currentUserId, onClose, onUpdated }: WorkspaceSettingsModalProps) {
   const [tab, setTab] = useState<'members' | 'projects'>('members')
   const [members, setMembers] = useState<GroupMemberRow[]>([])
   const [groupProjects, setGroupProjects] = useState<GroupProjectRow[]>([])
   const [allProjects, setAllProjects] = useState<{ id: string; name: string }[]>([])
   const [pendingInvites, setPendingInvites] = useState<PendingInviteRow[]>([])
+  const [projectAccessLists, setProjectAccessLists] = useState<Record<string, { userId: string }[]>>({})
   const [loading, setLoading] = useState(false)
   const [email, setEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<string>('editor')
@@ -183,13 +187,30 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, groupColor,
     }
   }
 
-  const handleToggleVisibility = async (projectId: string, current: string) => {
-    const next = current === 'owners_only' ? 'all' : 'owners_only'
+  const handleSetVisibility = async (projectId: string, visibility: 'all' | 'members_only') => {
     try {
-      await setProjectVisibility(projectId, groupId, next as 'all' | 'owners_only')
-      setGroupProjects((prev) => prev.map((p) => p.projectId === projectId ? { ...p, visibility: next } : p))
+      await setProjectVisibility(projectId, groupId, visibility)
+      setGroupProjects((prev) => prev.map((p) => p.projectId === projectId ? { ...p, visibility } : p))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update visibility')
+    }
+  }
+
+  const handleLoadAccessList = async (projectId: string) => {
+    try {
+      const list = await getProjectAccessList(projectId, groupId)
+      setProjectAccessLists((prev) => ({ ...prev, [projectId]: list.map((m) => ({ userId: m.userId })) }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load access list')
+    }
+  }
+
+  const handleUpdateAccessList = async (projectId: string, userIds: string[]) => {
+    try {
+      await updateProjectAccessList(projectId, groupId, userIds)
+      setProjectAccessLists((prev) => ({ ...prev, [projectId]: userIds.map((userId) => ({ userId })) }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update access list')
     }
   }
 
@@ -306,9 +327,14 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, groupColor,
                 isOwner={isOwner}
                 groupProjects={groupProjects}
                 availableProjects={availableProjects}
+                realmMembers={members.map((m) => ({ userId: m.userId, name: m.name, email: m.email, image: m.image }))}
+                currentUserId={currentUserId}
                 onAddProject={handleAddProject}
                 onRemoveProject={handleRemoveProject}
-                onToggleVisibility={handleToggleVisibility}
+                onSetVisibility={handleSetVisibility}
+                onUpdateAccessList={handleUpdateAccessList}
+                projectAccessLists={projectAccessLists}
+                onLoadAccessList={handleLoadAccessList}
               />
             )}
 

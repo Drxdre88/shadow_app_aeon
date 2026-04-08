@@ -374,13 +374,29 @@ export async function findWorkspaceProjects(userId: string) {
 
   const roleByGroup = new Map(userGroups.map((g) => [g.groupId, g.memberRole]))
 
+  const membersOnlyIds = groupProjectRows.filter((p) => p.visibility === 'members_only').map((p) => p.id)
+  let memberOfSet = new Set<string>()
+  if (membersOnlyIds.length > 0) {
+    const memberRows = await db
+      .select({ projectId: projectMembers.projectId })
+      .from(projectMembers)
+      .where(and(inArray(projectMembers.projectId, membersOnlyIds), eq(projectMembers.userId, userId)))
+    memberOfSet = new Set(memberRows.map((r) => r.projectId))
+  }
+
   return userGroups.map((g) => {
     const role = roleByGroup.get(g.groupId)
-    const canSeeAll = role === 'owner' || role === 'editor'
+    const isOwner = role === 'owner'
     return {
       ...g,
       projects: groupProjectRows
-        .filter((p) => p.groupId === g.groupId && (canSeeAll || p.visibility !== 'owners_only')),
+        .filter((p) => {
+          if (p.groupId !== g.groupId) return false
+          if (isOwner) return true
+          if (p.visibility === 'all') return true
+          if (p.visibility === 'members_only') return p.userId === userId || memberOfSet.has(p.id)
+          return false
+        }),
     }
   })
 }

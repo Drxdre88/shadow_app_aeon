@@ -21,6 +21,8 @@ import {
   acceptRealmInvite as _acceptRealmInvite,
   findPendingRealmInvites as _findPendingRealmInvites,
   inviteOrAddRealmMember as _inviteOrAdd,
+  findProjectAccessList as _findAccessList,
+  setProjectAccessList as _setAccessList,
 } from '@/lib/data/workspaces'
 import { db } from '@/lib/db'
 import { projectGroups } from '@/lib/db/schema'
@@ -82,7 +84,7 @@ export async function getGroupProjects(groupId: string) {
   const userId = await requireAuth()
   const role = await getGroupRole(groupId, userId)
   if (!role) throw new Error('Not a member of this workspace')
-  return _findProjects(groupId, role)
+  return _findProjects(groupId, role, userId)
 }
 
 export async function addProjectToGroup(projectId: string, groupId: string) {
@@ -126,11 +128,21 @@ export async function deleteGroup(groupId: string) {
   return _delete(groupId)
 }
 
-export async function setProjectVisibility(projectId: string, groupId: string, visibility: 'all' | 'owners_only') {
+export async function setProjectVisibility(projectId: string, groupId: string, visibility: 'all' | 'members_only') {
   await requireGroupOwner(groupId)
   await db.update(projectGroups)
     .set({ visibility })
     .where(and(eq(projectGroups.projectId, projectId), eq(projectGroups.groupId, groupId)))
+}
+
+export async function getProjectAccessList(projectId: string, groupId: string) {
+  await requireGroupOwner(groupId)
+  return _findAccessList(projectId)
+}
+
+export async function updateProjectAccessList(projectId: string, groupId: string, userIds: string[]) {
+  const ownerId = await requireGroupOwner(groupId)
+  await _setAccessList(projectId, groupId, userIds, ownerId)
 }
 
 export async function ensurePersonalWorkspace() {
