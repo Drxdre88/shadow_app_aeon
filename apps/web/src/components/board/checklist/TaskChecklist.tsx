@@ -58,16 +58,20 @@ export function TaskChecklist({
   const [editingItemTitle, setEditingItemTitle] = useState('')
   const editingItemTitleRef = useRef('')
   const [editingGroupName, setEditingGroupName] = useState<string | null>(null)
+  const editingGroupNameRef = useRef<string | null>(null)
   const [editingGroupValue, setEditingGroupValue] = useState('')
   const editingGroupValueRef = useRef('')
+  const groupCommittedRef = useRef(false)
   const [confirmDeleteGroup, setConfirmDeleteGroup] = useState<string | null>(null)
   const [pendingGroups, setPendingGroups] = useState<string[]>([])
 
   const groups = Array.from(new Set(items.map((i) => i.groupName)))
   const mergedGroups = [...groups, ...pendingGroups.filter((pg) => !groups.includes(pg))]
 
+  const autoFocusedRef = useRef(false)
   useEffect(() => {
-    if (!autoFocusAdd || items.length === 0) return
+    if (!autoFocusAdd || items.length === 0 || autoFocusedRef.current) return
+    autoFocusedRef.current = true
     const firstGroup = groups[0] || 'Checklist'
     const timer = setTimeout(() => {
       setAddingInGroup(firstGroup)
@@ -126,12 +130,17 @@ export function TaskChecklist({
   }
 
   const commitGroupRename = () => {
-    if (!editingGroupName) return
+    if (groupCommittedRef.current) return
+    const currentName = editingGroupNameRef.current
+    if (!currentName) return
+    groupCommittedRef.current = true
     const trimmed = editingGroupValueRef.current.trim()
-    if (trimmed && trimmed !== editingGroupName) {
-      onGroupRename?.(editingGroupName, trimmed)
+    if (trimmed && trimmed !== currentName) {
+      setPendingGroups((prev) => prev.map((pg) => pg === currentName ? trimmed : pg))
+      onGroupRename?.(currentName, trimmed)
     }
     setEditingGroupName(null)
+    editingGroupNameRef.current = null
     setEditingGroupValue('')
     editingGroupValueRef.current = ''
   }
@@ -188,10 +197,10 @@ export function TaskChecklist({
               titleMax={TITLE_MAX}
               sensors={sensors}
               onToggleCollapse={() => toggleGroup(groupName)}
-              onEditGroupStart={() => { setEditingGroupName(groupName); setEditingGroupValue(groupName); editingGroupValueRef.current = groupName }}
+              onEditGroupStart={() => { groupCommittedRef.current = false; setEditingGroupName(groupName); editingGroupNameRef.current = groupName; setEditingGroupValue(groupName); editingGroupValueRef.current = groupName }}
               onEditGroupChange={(v: string) => { setEditingGroupValue(v); editingGroupValueRef.current = v }}
               onEditGroupCommit={commitGroupRename}
-              onEditGroupCancel={() => { setEditingGroupName(null); setEditingGroupValue(''); editingGroupValueRef.current = '' }}
+              onEditGroupCancel={() => { groupCommittedRef.current = false; setEditingGroupName(null); editingGroupNameRef.current = null; setEditingGroupValue(''); editingGroupValueRef.current = '' }}
               onDeleteStart={() => setConfirmDeleteGroup(groupName)}
               onDeleteConfirm={() => { onGroupDelete?.(groupName); setConfirmDeleteGroup(null) }}
               onDeleteCancel={() => setConfirmDeleteGroup(null)}
@@ -215,7 +224,7 @@ export function TaskChecklist({
       <button
         onClick={handleAddGroup}
         className="flex items-center gap-1 p-1 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-all"
-        title="Add checklist"
+        aria-label="Add checklist group"
       >
         <Plus className="w-4 h-4" />
       </button>
