@@ -209,6 +209,7 @@ export function TaskEditModal({
               {editingTaskId && (
                 <div className="pt-4 border-t border-white/10">
                   <TaskChecklist
+                    key={editingTaskId}
                     taskId={editingTaskId}
                     items={checklistItems}
                     autoFocusAdd={!!editingTaskId}

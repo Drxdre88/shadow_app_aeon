@@ -1,6 +1,6 @@
 # ARCHITECTURE.md
 
-Last updated: 2026-04-07
+Last updated: 2026-04-08
 
 ---
 
@@ -192,7 +192,7 @@ Auth: Bearer token (API key or master key). 52 tools across 11 categories:
 | **Sidebar navigation** | Complete | `components/sidebar/AppSidebar.tsx`, `RealmList.tsx`, `ProjectSidebar.tsx`, `stores/sidebarStore.ts` | Dashboard uses AppSidebar (realm pills with custom icons + project list). Project board view uses ProjectSidebar (view tabs). Both share `useSidebarStore` for collapse state (persisted with hydration guard). |
 | **Hide toggle** | Complete | `stores/sidebarStore.ts` | Per-project and per-realm hide via sidebarStore (persisted), unhide eye button in sidebar bottom |
 | **Project CRUD** | Complete | `components/project/CreateProjectModal.tsx`, `EditProjectModal.tsx` | Create, edit, delete, realm assignment (flat list, legacy group field removed) |
-| **Project views** | Complete | `SpaceView.tsx`, `TreeView.tsx`, `GridView.tsx`, `ProjectViewSwitcher.tsx` | SpaceView: single unified canvas with realm grouping (defaults fullscreen), TreeView: full right-click context menu + delete confirm, GridView: 3 views with context menus + relative time via timeAgo |
+| **Project views** | Complete | `SpaceView.tsx`, `TreeView.tsx`, `GridView.tsx`, `ProjectViewSwitcher.tsx` | SpaceView: single unified canvas with realm grouping (defaults fullscreen), TreeView: single-group flattening (hides General folder when only one group), hover action icons (edit/share/delete) with aria-labels, race-guarded rename + project drop, GridView: 3 views with context menus + relative time via timeAgo |
 | **Theming** | Complete | `packages/shared/src/config/themes/` (17 files), `stores/themeStore.ts` | 151 presets, saturation/brightness/vibrancy sliders, priority colors (green/yellow/orange/red), GlowSource setting |
 | **Visual effects** | Complete | `components/effects/` (13 effects), `cursor/` | Starfield, sakura, snowfall, matrix, storm, aurora, cursor trails |
 | **Celebrations** | Complete | `components/celebrations/CelebrationEngine.tsx` | 6 categories: alien, business, fun, horror, medieval + registry |
@@ -212,7 +212,7 @@ Auth: Bearer token (API key or master key). 52 tools across 11 categories:
 | **PWA** | Complete | `public/manifest.json`, `public/sw.js`, `public/offline.html`, `components/pwa/ServiceWorkerRegistration.tsx` | Manifest, SW precaching + offline fallback, middleware excludes static PWA files from auth |
 | **Capacitor (mobile shell)** | Configured | `apps/web/capacitor.config.ts` | Wraps web app in native iOS/Android shell; config exists, no build pipeline yet |
 | **Glow Source setting** | Complete | `packages/shared/src/types/theme.ts`, `stores/themeStore.ts`, `ui/settings/GeneralTab`, `board/SortableTaskCard.tsx` | 4 modes: manual / priority / first-label / column; render-only, never overwrites task.color |
-| **Checklist UX** | Complete | `board/useChecklistHandlers.ts`, `board/checklist/` | Auto-focus on card open, auto-expanding textarea, Enter auto-advance, optimistic board summary sync |
+| **Checklist UX** | Complete | `board/useChecklistHandlers.ts`, `board/checklist/TaskChecklist.tsx` | Auto-focus on card open, auto-expanding textarea, Enter auto-advance, optimistic board summary sync; ref-based commit guards (groupCommittedRef, editingGroupNameRef, autoFocusedRef) for React Compiler closure safety; pendingGroups tracks renamed-before-persisted groups |
 | **Desktop (Tauri)** | Parked | `apps/desktop/` | Tauri config + hello-world Rust, explicitly deferred post-beta |
 | **Real-time push (Pusher)** | Complete | `lib/pusher.ts`, `lib/realtime/index.ts` | Pusher Channels, fire-and-forget from touchProject, graceful degradation if unconfigured |
 | **Virtual scrolling** | Complete | `components/board/VirtualizedTaskList.tsx` | TanStack Virtual for columns with 15+ cards, dynamic measurement, 5-item overscan |
@@ -264,6 +264,7 @@ All stores use Zustand v5.
 | Issue | Severity | Details |
 |---|---|---|
 | No `React.memo` usage | Low | React Compiler (enabled) auto-memoizes; manual memo no longer needed |
+| React Compiler closure staleness | Low | Compiler auto-memoization makes state closures unreliable in blur/commit handlers -- ref pattern (useRef) is now standard for blur-commit flows in checklist editing; other edit flows may not yet follow this pattern |
 | MCP lacks canvas tools | Medium | REST has canvas endpoints, MCP does not |
 | Activity feed has no UI | Low | `activity_events` table populated but no frontend display |
 | Zustand persist hydration flash | Low | sidebarStore now has hydration guard; board/canvas/gantt stores may still flash defaults |
@@ -271,10 +272,20 @@ All stores use Zustand v5.
 | 9 lint warnings remaining | Low | React 19 strict mode warnings (refs during render, immutability) — can't suppress without structural refactor |
 | TODO/FIXME count | None | 0 TODO/FIXME markers in source |
 | Test coverage | Low | 8 test files total (stores + actions), no component tests |
+| TreeView drag is legacy | Low | project.group field drives drag-drop grouping in TreeView -- not realm-based; cross-realm drag does not exist yet |
 
 ---
 
-## 9. RECENT CHANGES (2026-04-07 session)
+## 9. RECENT CHANGES (2026-04-08 session)
+
+1. TaskChecklist.tsx -- ref-based commit guards (groupCommittedRef, editingGroupNameRef) prevent double-commit on blur in React Compiler environment; pendingGroups tracks renamed-before-persisted groups; autoFocusedRef prevents cursor stealing on card open
+2. TreeView.tsx -- single-group flattening hides General folder when only one group exists; hover action icons (edit/share/delete) with aria-labels; race guard + error handling on group rename and project drop; onDelete type fix
+3. lib/actions/projects.ts (renameProjectGroup) -- input validation: 1-100 chars, rejects empty or overlong names
+4. lib/data/workspaces.ts (ensureOrphanProjectsInPersonalWorkspace) -- one-time data cleanup sets project.group = NULL where value is string null (NULLIF approach tried and reverted; broke selectDistinct in Drizzle)
+
+Architectural notes: TreeView drag is legacy (project.group field), not realm-based. Cross-realm drag does not exist yet.
+
+Previous session (2026-04-07):
 
 1. Pusher real-time sync -- replaces 5s polling with push events (~1s latency), 30s polling fallback
 2. Virtual scrolling -- TanStack Virtual for columns with 15+ cards (VirtualizedTaskList.tsx extracted)

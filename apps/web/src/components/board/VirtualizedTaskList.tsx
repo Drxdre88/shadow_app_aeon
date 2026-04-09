@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useEffect, memo } from 'react'
+import { useRef, useLayoutEffect, memo } from 'react'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { AnimatePresence } from 'framer-motion'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -85,7 +85,7 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
     enabled: useVirtual,
   })
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (useVirtual) {
       virtualizer.measure()
     }

@@ -55,8 +55,10 @@ export function TaskChecklist({
   const [newItemTitle, setNewItemTitle] = useState('')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const editingItemIdRef = useRef<string | null>(null)
   const [editingItemTitle, setEditingItemTitle] = useState('')
   const editingItemTitleRef = useRef('')
+  const itemCommittedRef = useRef(false)
   const [editingGroupName, setEditingGroupName] = useState<string | null>(null)
   const editingGroupNameRef = useRef<string | null>(null)
   const [editingGroupValue, setEditingGroupValue] = useState('')
@@ -119,12 +121,16 @@ export function TaskChecklist({
   }
 
   const commitItemEdit = () => {
-    if (!editingItemId) return
+    if (itemCommittedRef.current) return
+    const currentId = editingItemIdRef.current
+    if (!currentId) return
+    itemCommittedRef.current = true
     const trimmed = editingItemTitleRef.current.trim()
-    if (trimmed && trimmed !== items.find((i) => i.id === editingItemId)?.title) {
-      onItemTitleChange?.(editingItemId, trimmed)
+    if (trimmed) {
+      onItemTitleChange?.(currentId, trimmed)
     }
     setEditingItemId(null)
+    editingItemIdRef.current = null
     setEditingItemTitle('')
     editingItemTitleRef.current = ''
   }
@@ -136,7 +142,13 @@ export function TaskChecklist({
     groupCommittedRef.current = true
     const trimmed = editingGroupValueRef.current.trim()
     if (trimmed && trimmed !== currentName) {
-      setPendingGroups((prev) => prev.map((pg) => pg === currentName ? trimmed : pg))
+      setPendingGroups((prev) => {
+        if (prev.includes(currentName)) {
+          return prev.map((pg) => pg === currentName ? trimmed : pg)
+        }
+        return [...prev, trimmed]
+      })
+      setAddingInGroup((prev) => prev === currentName ? trimmed : prev)
       onGroupRename?.(currentName, trimmed)
     }
     setEditingGroupName(null)
@@ -207,9 +219,9 @@ export function TaskChecklist({
               onItemToggle={(id, state) => onItemToggle?.(id, state)}
               onItemRemove={(id) => onItemRemove?.(id)}
               onItemStatusChange={(id, status) => onItemStatusChange?.(id, status)}
-              onItemEditStart={(id, title) => { setEditingItemId(id); setEditingItemTitle(title); editingItemTitleRef.current = title }}
+              onItemEditStart={(id, title) => { itemCommittedRef.current = false; setEditingItemId(id); editingItemIdRef.current = id; setEditingItemTitle(title); editingItemTitleRef.current = title }}
               onItemEditCommit={commitItemEdit}
-              onItemEditCancel={() => { setEditingItemId(null); setEditingItemTitle(''); editingItemTitleRef.current = '' }}
+              onItemEditCancel={() => { itemCommittedRef.current = false; setEditingItemId(null); editingItemIdRef.current = null; setEditingItemTitle(''); editingItemTitleRef.current = '' }}
               onItemEditTitleChange={(v: string) => { setEditingItemTitle(v); editingItemTitleRef.current = v }}
               onItemDragEnd={(event) => handleDragEnd(event, groupName)}
               onAddStart={() => { setAddingInGroup(groupName); setNewItemTitle('') }}
