@@ -264,6 +264,10 @@ export async function findOrCreatePersonalWorkspace(userId: string): Promise<str
 export async function ensureOrphanProjectsInPersonalWorkspace(userId: string, personalGroupId?: string): Promise<number> {
   if (!personalGroupId) personalGroupId = await findOrCreatePersonalWorkspace(userId)
 
+  await db.update(projects)
+    .set({ group: null })
+    .where(and(eq(projects.userId, userId), eq(projects.group, 'null')))
+
   return db.transaction(async (tx) => {
     const orphanProjects = await tx
       .select({ id: projects.id })

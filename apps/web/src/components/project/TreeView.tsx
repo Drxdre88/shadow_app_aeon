@@ -2,12 +2,13 @@
 
 import { useState, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronRight, FolderOpen, Folder, LayoutGrid } from 'lucide-react'
+import { ChevronRight, FolderOpen, Folder, LayoutGrid, Pencil, Users, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useThemeStore } from '@/stores/themeStore'
 import { colorConfig, resolveColor, type AccentColor } from '@/lib/utils/colors'
 import { renameProjectGroup, setProjectGroup, deleteProject } from '@/lib/actions/projects'
+import { toast } from '@/components/ui/Toast'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { ProjectContextMenu } from './ProjectContextMenu'
 import type { ProjectWithStats } from './types'
@@ -15,7 +16,7 @@ import type { ProjectWithStats } from './types'
 interface TreeViewProps {
   projects: ProjectWithStats[]
   onEdit?: (project: ProjectWithStats) => void
-  onDelete?: (...args: never[]) => void
+  onDelete?: (id: string) => void
   onShare?: (project: ProjectWithStats) => void
   realms?: Array<{ id: string; name: string; color: string; isPersonal: boolean }>
   projectRealmMap?: Record<string, string[]>
@@ -59,19 +60,20 @@ export function TreeView({ projects, onEdit, onDelete, onShare, realms = [], pro
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
 
   const groups = useMemo(() => groupByFluidGroup(projects), [projects])
+  const singleDefaultGroup = groups.length === 1 && groups[0].label === 'General'
 
   const flatItems = useMemo(() => {
     const items: Array<{ type: 'group'; label: string } | { type: 'project'; project: ProjectWithStats; groupLabel: string }> = []
     for (const group of groups) {
-      items.push({ type: 'group', label: group.label })
-      if (expandedGroups.has(group.label)) {
+      if (!singleDefaultGroup) items.push({ type: 'group', label: group.label })
+      if (singleDefaultGroup || expandedGroups.has(group.label)) {
         for (const project of group.projects) {
           items.push({ type: 'project', project, groupLabel: group.label })
         }
       }
     }
     return items
-  }, [groups, expandedGroups])
+  }, [groups, expandedGroups, singleDefaultGroup])
 
   const toggleGroup = useCallback((label: string) => {
     setExpandedGroups((prev) => {
@@ -89,17 +91,30 @@ export function TreeView({ projects, onEdit, onDelete, onShare, realms = [], pro
     setTimeout(() => editInputRef.current?.focus(), 0)
   }, [])
 
+  const renamingRef = useRef(false)
   const handleGroupRenameSubmit = useCallback(async (oldName: string) => {
     const newName = editGroupValue.trim()
     setEditingGroup(null)
-    if (!newName || newName === oldName) return
-    await renameProjectGroup(oldName, newName)
-    router.refresh()
+    if (!newName || newName === oldName || renamingRef.current) return
+    renamingRef.current = true
+    try {
+      await renameProjectGroup(oldName, newName)
+      router.refresh()
+    } catch {
+      toast('Failed to rename group')
+    } finally {
+      renamingRef.current = false
+    }
   }, [editGroupValue, router])
 
   const handleProjectDrop = useCallback(async (projectId: string, targetGroup: string) => {
-    await setProjectGroup(projectId, targetGroup === 'General' ? null : targetGroup)
-    router.refresh()
+    try {
+      await setProjectGroup(projectId, targetGroup === 'General' ? null : targetGroup)
+      router.refresh()
+    } catch {
+      toast('Failed to move project')
+      router.refresh()
+    }
   }, [router])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -124,7 +139,7 @@ export function TreeView({ projects, onEdit, onDelete, onShare, realms = [], pro
       onKeyDown={handleKeyDown}
     >
       {groups.map((group, gi) => {
-        const isExpanded = expandedGroups.has(group.label)
+        const isExpanded = singleDefaultGroup || expandedGroups.has(group.label)
         const groupFlatIdx = flatItems.findIndex((f) => f.type === 'group' && f.label === group.label)
         return (
           <div
@@ -135,55 +150,57 @@ export function TreeView({ projects, onEdit, onDelete, onShare, realms = [], pro
               if (projectId) handleProjectDrop(projectId, group.label)
             }}
           >
-            <button
-              onClick={() => {
-                if (editingGroup !== group.label) toggleGroup(group.label)
-              }}
-              className={`w-full flex items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-white/5 ${
-                focusedIndex === groupFlatIdx ? 'bg-white/10' : ''
-              }`}
-            >
-              <motion.div
-                animate={{ rotate: isExpanded ? 90 : 0 }}
-                transition={{ duration: 0.2 }}
+            {!singleDefaultGroup && (
+              <button
+                onClick={() => {
+                  if (editingGroup !== group.label) toggleGroup(group.label)
+                }}
+                className={`w-full flex items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-white/5 ${
+                  focusedIndex === groupFlatIdx ? 'bg-white/10' : ''
+                }`}
               >
-                <ChevronRight className="w-3.5 h-3.5 text-[var(--text-dim)]" />
-              </motion.div>
-              {isExpanded
-                ? <FolderOpen className="w-4 h-4 text-[var(--primary)]" />
-                : <Folder className="w-4 h-4 text-[var(--text-muted)]" />
-              }
-              {editingGroup === group.label ? (
-                <input
-                  ref={editInputRef}
-                  value={editGroupValue}
-                  onChange={(e) => setEditGroupValue(e.target.value)}
-                  onBlur={() => handleGroupRenameSubmit(group.label)}
-                  onKeyDown={(e) => {
-                    e.stopPropagation()
-                    if (e.key === 'Enter') handleGroupRenameSubmit(group.label)
-                    if (e.key === 'Escape') setEditingGroup(null)
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                  className="bg-transparent border-b border-white/30 text-sm font-medium text-white outline-none flex-1"
-                />
-              ) : (
-                <span
-                  className="text-sm font-medium text-[var(--text-secondary)] flex-1"
-                  onDoubleClick={(e) => { e.stopPropagation(); handleGroupDoubleClick(group.label) }}
+                <motion.div
+                  animate={{ rotate: isExpanded ? 90 : 0 }}
+                  transition={{ duration: 0.2 }}
                 >
-                  {group.label}
+                  <ChevronRight className="w-3.5 h-3.5 text-[var(--text-dim)]" />
+                </motion.div>
+                {isExpanded
+                  ? <FolderOpen className="w-4 h-4 text-[var(--primary)]" />
+                  : <Folder className="w-4 h-4 text-[var(--text-muted)]" />
+                }
+                {editingGroup === group.label ? (
+                  <input
+                    ref={editInputRef}
+                    value={editGroupValue}
+                    onChange={(e) => setEditGroupValue(e.target.value)}
+                    onBlur={() => handleGroupRenameSubmit(group.label)}
+                    onKeyDown={(e) => {
+                      e.stopPropagation()
+                      if (e.key === 'Enter') handleGroupRenameSubmit(group.label)
+                      if (e.key === 'Escape') setEditingGroup(null)
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="bg-transparent border-b border-white/30 text-sm font-medium text-white outline-none flex-1"
+                  />
+                ) : (
+                  <span
+                    className="text-sm font-medium text-[var(--text-secondary)] flex-1"
+                    onDoubleClick={(e) => { e.stopPropagation(); handleGroupDoubleClick(group.label) }}
+                  >
+                    {group.label}
+                  </span>
+                )}
+                <span className="text-[10px] text-[var(--text-dim)] tabular-nums">
+                  {group.projects.length}
                 </span>
-              )}
-              <span className="text-[10px] text-[var(--text-dim)] tabular-nums">
-                {group.projects.length}
-              </span>
-            </button>
+              </button>
+            )}
 
             <AnimatePresence initial={false}>
               {isExpanded && (
                 <motion.div
-                  initial={{ height: 0, opacity: 0 }}
+                  initial={singleDefaultGroup ? false : { height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
                   transition={{ duration: 0.25, ease: 'easeInOut' }}
@@ -196,41 +213,65 @@ export function TreeView({ projects, onEdit, onDelete, onShare, realms = [], pro
                       (f) => f.type === 'project' && f.project.id === project.id
                     )
                     return (
-                      <Link key={project.id} href={`/project/${project.id}`}>
-                        <div
-                          data-tree-item
-                          className={`flex items-center gap-2 pl-11 pr-4 py-2 transition-colors hover:bg-white/5 group cursor-pointer ${
-                            focusedIndex === itemFlatIdx ? 'bg-white/10' : ''
-                          }`}
-                          draggable
-                          onDragStart={(e) => e.dataTransfer.setData('projectId', project.id)}
-                          onContextMenu={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            setCtxMenu({ x: e.clientX, y: e.clientY, project })
-                          }}
-                        >
-                          <div className="relative flex items-center">
+                      <div
+                        key={project.id}
+                        data-tree-item
+                        className={`flex items-center gap-2 ${singleDefaultGroup ? 'pl-4' : 'pl-11'} pr-2 py-2 transition-colors hover:bg-white/5 group/row cursor-pointer ${
+                          focusedIndex === itemFlatIdx ? 'bg-white/10' : ''
+                        }`}
+                        draggable
+                        onDragStart={(e) => e.dataTransfer.setData('projectId', project.id)}
+                        onContextMenu={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          setCtxMenu({ x: e.clientX, y: e.clientY, project })
+                        }}
+                      >
+                        <div className="relative flex items-center shrink-0">
+                          {!singleDefaultGroup && (
                             <div
                               className="absolute -left-5 top-1/2 w-3 h-px"
                               style={{ backgroundColor: `${resolved.hex}40` }}
                             />
-                            <div
-                              className="w-2.5 h-2.5 rounded-full"
-                              style={{
-                                backgroundColor: resolved.hex,
-                                boxShadow: glowIntensity > 0
-                                  ? `0 0 ${6 * mult}px ${resolved.glow}`
-                                  : undefined,
-                              }}
-                            />
-                          </div>
-                          <LayoutGrid className="w-3.5 h-3.5 text-[var(--text-dim)]" />
-                          <span className="text-sm text-white truncate flex-1 group-hover:text-[var(--primary)] transition-colors">
-                            {project.name}
-                          </span>
+                          )}
+                          <div
+                            className="w-2.5 h-2.5 rounded-full"
+                            style={{
+                              backgroundColor: resolved.hex,
+                              boxShadow: glowIntensity > 0
+                                ? `0 0 ${6 * mult}px ${resolved.glow}`
+                                : undefined,
+                            }}
+                          />
                         </div>
-                      </Link>
+                        <LayoutGrid className="w-3.5 h-3.5 text-[var(--text-dim)] shrink-0" />
+                        <Link href={`/project/${project.id}`} className="text-sm text-white truncate group-hover/row:text-[var(--primary)] transition-colors">
+                          {project.name}
+                        </Link>
+                        <div className="flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0">
+                          <button
+                            aria-label="Edit project"
+                            onClick={(e) => { e.stopPropagation(); onEdit?.(project) }}
+                            className="p-1 rounded text-slate-500 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          <button
+                            aria-label="Share project"
+                            onClick={(e) => { e.stopPropagation(); onShare?.(project) }}
+                            className="p-1 rounded text-slate-500 hover:text-[var(--primary)] hover:bg-white/10 transition-colors"
+                          >
+                            <Users className="w-3 h-3" />
+                          </button>
+                          <button
+                            aria-label="Delete project"
+                            onClick={(e) => { e.stopPropagation(); setPendingDeleteId(project.id) }}
+                            className="p-1 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
                     )
                   })}
                 </motion.div>
@@ -274,7 +315,7 @@ export function TreeView({ projects, onEdit, onDelete, onShare, realms = [], pro
           const id = pendingDeleteId
           setPendingDeleteId(null)
           await deleteProject(id)
-          onDelete?.()
+          onDelete?.(id)
         }}
         onCancel={() => setPendingDeleteId(null)}
       />

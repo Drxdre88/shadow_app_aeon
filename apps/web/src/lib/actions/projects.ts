@@ -50,7 +50,9 @@ export async function setProjectGroup(projectId: string, group: string | null) {
 
 export async function renameProjectGroup(oldName: string, newName: string) {
   const userId = await requireAuth()
-  return _renameGroup(userId, oldName, newName)
+  const trimmed = newName.trim()
+  if (!trimmed || trimmed.length > 100) throw new Error('Group name must be 1-100 characters')
+  return _renameGroup(userId, oldName, trimmed)
 }
 
 export async function createProject(data: {
