@@ -60,6 +60,8 @@ function buildProviders(): Provider[] {
   return providers
 }
 
+const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
+
 const nextAuth = NextAuth({
   adapter: DrizzleAdapter(db, {
     usersTable: schema.users,
@@ -67,7 +69,19 @@ const nextAuth = NextAuth({
     sessionsTable: schema.sessions,
     verificationTokensTable: schema.verificationTokens,
   }),
-  session: { strategy: 'database', maxAge: 30 * 24 * 60 * 60 },
+  session: { strategy: 'database', maxAge: SESSION_MAX_AGE_SECONDS },
+  cookies: {
+    sessionToken: {
+      name: process.env.NODE_ENV === 'production' ? '__Secure-authjs.session-token' : 'authjs.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: SESSION_MAX_AGE_SECONDS,
+      },
+    },
+  },
   pages: {
     signIn: '/login',
     error: '/login',
