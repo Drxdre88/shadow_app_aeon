@@ -259,7 +259,7 @@ export function CreateProjectModal({ isOpen, onClose, realms = [], onProjectCrea
                 <div className="flex gap-2">
                   {[
                     { id: 'default', label: 'Basic', icon: LayoutGrid, desc: 'Todo, Doing, Review, Done' },
-                    { id: 'devBoard', label: 'Dev Board', icon: Bug, desc: 'Bugs, Features, Analysis, In Dev, Review, Done' },
+                    { id: 'devBoard', label: 'Dev Board', icon: Bug, desc: 'Mission Control, Raw Ideas, Analysis, PBI Queue, Bugs, In Dev, AI/Human Review, Done' },
                   ].map(({ id, label, icon: Icon, desc }) => (
                     <button
                       key={id}

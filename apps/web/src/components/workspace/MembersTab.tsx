@@ -1,8 +1,8 @@
 'use client'
 
-import { Loader2, UserPlus, Crown, Trash2, Clock } from 'lucide-react'
+import { Loader2, UserPlus, Crown, Trash2, Clock, Send } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { timeAgo } from '@/lib/utils/timeAgo'
+import { timeAgo, timeUntil } from '@/lib/utils/timeAgo'
 import { ContactAutocomplete } from '@/components/ui/ContactAutocomplete'
 import { RealmColorPicker, RealmIconPicker } from './RealmPickers'
 
@@ -36,6 +36,8 @@ interface MembersTabProps {
   inviteLoading: boolean
   color: string
   icon: string
+  resendingInviteId?: string | null
+  cancellingInviteId?: string | null
   onEmailChange: (val: string) => void
   onRoleChange: (role: string) => void
   onInvite: (e: React.FormEvent) => void
@@ -43,6 +45,8 @@ interface MembersTabProps {
   onMemberRoleChange: (userId: string, newRole: string) => void
   onColorChange: (color: string) => void
   onIconChange: (icon: string) => void
+  onResendInvite?: (inviteId: string) => void
+  onCancelInvite?: (inviteId: string) => void
 }
 
 export function MembersTab({
@@ -56,6 +60,8 @@ export function MembersTab({
   inviteLoading,
   color,
   icon,
+  resendingInviteId,
+  cancellingInviteId,
   onEmailChange,
   onRoleChange,
   onInvite,
@@ -63,6 +69,8 @@ export function MembersTab({
   onMemberRoleChange,
   onColorChange,
   onIconChange,
+  onResendInvite,
+  onCancelInvite,
 }: MembersTabProps) {
   return (
     <>
@@ -111,7 +119,7 @@ export function MembersTab({
             <div className="flex items-center gap-3">
               {m.image ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={m.image} alt="" className="w-7 h-7 rounded-full" />
+                <img src={m.image} alt="" referrerPolicy="no-referrer" className="w-7 h-7 rounded-full" />
               ) : (
                 <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)', color: 'var(--primary)' }}>
                   {(m.name || m.email).charAt(0).toUpperCase()}
@@ -160,20 +168,48 @@ export function MembersTab({
       {isOwner && pendingInvites.length > 0 && (
         <div className="space-y-1 border-t border-white/10 pt-3 mt-3">
           <p className="text-xs text-slate-500 uppercase tracking-wider px-1 mb-2">Pending Invites</p>
-          {pendingInvites.map((inv) => (
-            <div key={inv.id} className="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-white/[0.03] transition-colors">
-              <div className="flex items-center gap-3">
-                <div className="w-7 h-7 rounded-full flex items-center justify-center bg-amber-500/10">
-                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+          {pendingInvites.map((inv) => {
+            const isResending = resendingInviteId === inv.id
+            const isCancelling = cancellingInviteId === inv.id
+            return (
+              <div key={inv.id} className="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-white/[0.03] transition-colors">
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center bg-amber-500/10">
+                    <Clock className="w-3.5 h-3.5 text-amber-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-white/70">{inv.email}</p>
+                    <p className="text-[10px] text-slate-600">expires {timeUntil(inv.expiresAt)}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-white/70">{inv.email}</p>
-                  <p className="text-[10px] text-slate-600">expires {timeAgo(inv.expiresAt)}</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">{inv.role}</span>
+                  {onResendInvite && (
+                    <button
+                      onClick={() => onResendInvite(inv.id)}
+                      disabled={isResending || isCancelling}
+                      aria-label="Resend invite"
+                      title="Resend invite"
+                      className="p-1 rounded hover:bg-purple-500/10 text-slate-500 hover:text-purple-400 transition-colors disabled:opacity-50"
+                    >
+                      {isResending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    </button>
+                  )}
+                  {onCancelInvite && (
+                    <button
+                      onClick={() => onCancelInvite(inv.id)}
+                      disabled={isResending || isCancelling}
+                      aria-label="Cancel invite"
+                      title="Cancel invite"
+                      className="p-1 rounded hover:bg-red-500/10 text-slate-500 hover:text-red-400 transition-colors disabled:opacity-50"
+                    >
+                      {isCancelling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                    </button>
+                  )}
                 </div>
               </div>
-              <span className="text-xs text-slate-500">{inv.role}</span>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </>

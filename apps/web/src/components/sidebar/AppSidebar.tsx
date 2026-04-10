@@ -298,7 +298,7 @@ function BottomSection({
         <div className="shrink-0 w-7 h-7 rounded-lg overflow-hidden flex items-center justify-center bg-white/[0.08] border border-white/[0.1]">
           {user.image ? (
             /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={user.image} alt={user.name ?? ''} className="w-7 h-7 object-cover" />
+            <img src={user.image} alt={user.name ?? ''} referrerPolicy="no-referrer" className="w-7 h-7 object-cover" />
           ) : (
             <User className="w-3.5 h-3.5 text-white/40" />
           )}

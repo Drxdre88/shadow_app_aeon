@@ -14,6 +14,9 @@ import {
   isPersonalWorkspace,
   canAccessProject,
   inviteOrAddRealmMember,
+  findPendingRealmInvites,
+  cancelRealmInvite,
+  resendRealmInvite,
 } from '@/lib/data/workspaces'
 import type { RegisterFn } from './types'
 import { getUserId, ok, fail, notFound } from './types'
@@ -112,6 +115,51 @@ export const registerRealmTools: RegisterFn = (server) => {
       await requireOwner(realmId, uid)
       const result = await inviteOrAddRealmMember(realmId, email, role, uid)
       return ok(result)
+    }
+  )
+
+  server.tool(
+    'list_pending_realm_invites',
+    'List pending (unaccepted, unexpired) invites for a realm',
+    {
+      realmId: z.string().uuid().describe('Realm UUID'),
+    },
+    async ({ realmId }, extra) => {
+      const uid = getUserId(extra)
+      await requireOwner(realmId, uid)
+      return ok(await findPendingRealmInvites(realmId))
+    }
+  )
+
+  server.tool(
+    'cancel_realm_invite',
+    'Cancel (delete) a pending realm invite',
+    {
+      realmId: z.string().uuid().describe('Realm UUID'),
+      inviteId: z.string().uuid().describe('Invite UUID'),
+    },
+    async ({ realmId, inviteId }, extra) => {
+      const uid = getUserId(extra)
+      await requireOwner(realmId, uid)
+      const cancelled = await cancelRealmInvite(realmId, inviteId)
+      if (!cancelled) return notFound('Invite not found')
+      return ok({ cancelled: cancelled.id })
+    }
+  )
+
+  server.tool(
+    'resend_realm_invite',
+    'Resend a pending realm invite (refreshes 7-day expiry and re-sends email)',
+    {
+      realmId: z.string().uuid().describe('Realm UUID'),
+      inviteId: z.string().uuid().describe('Invite UUID'),
+    },
+    async ({ realmId, inviteId }, extra) => {
+      const uid = getUserId(extra)
+      await requireOwner(realmId, uid)
+      const invite = await resendRealmInvite(realmId, inviteId)
+      if (!invite) return notFound('Invite not found or already accepted')
+      return ok(invite)
     }
   )
 

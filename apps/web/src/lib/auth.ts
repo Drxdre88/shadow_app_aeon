@@ -6,6 +6,7 @@ import Google from 'next-auth/providers/google'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import * as schema from '@/lib/db/schema'
+import { hasValidPendingInvite, resolveUserPendingInvites } from '@/lib/data/workspaces'
 
 declare module 'next-auth' {
   interface Session {
@@ -84,16 +85,23 @@ const nextAuth = NextAuth({
           .set({ role: 'admin' })
           .where(eq(schema.users.id, user.id))
       }
+      if (user.id && user.email) {
+        await resolveUserPendingInvites(user.id, user.email).catch((err) =>
+          console.error('[auth] resolveUserPendingInvites failed for', user.email, err)
+        )
+      }
     },
   },
   callbacks: {
-    signIn: ({ user }) => {
+    signIn: async ({ user }) => {
       const allowed = (process.env.ALLOWED_EMAILS || '')
         .split(',')
         .map(e => e.trim())
         .filter(Boolean)
       if (allowed.length === 0) return true
-      return !!user.email && allowed.includes(user.email)
+      if (!user.email) return false
+      if (allowed.includes(user.email)) return true
+      return hasValidPendingInvite(user.email)
     },
     session: ({ session, user }) => ({
       ...session,

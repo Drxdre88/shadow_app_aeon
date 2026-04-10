@@ -11,18 +11,17 @@ const BOARD_TEMPLATES: Record<string, { name: string; color: string; icon: strin
     { name: 'Done', color: 'green', icon: 'check-circle', orderIndex: 3 },
   ],
   devBoard: [
-    { name: 'Raw Ideas', color: '#fcd34d', icon: null, orderIndex: 0 },
-    { name: 'Queue', color: '#fda4af', icon: 'list-todo', orderIndex: 1 },
+    { name: 'Mission Control', color: '#fb7185', icon: null, orderIndex: 0 },
+    { name: 'Raw Ideas', color: '#fcd34d', icon: null, orderIndex: 1 },
     { name: 'Analysis', color: 'orange', icon: null, orderIndex: 2 },
-    { name: 'Blocked', color: '#67e8f9', icon: null, orderIndex: 3 },
-    { name: 'In Dev', color: '#fda4af', icon: null, orderIndex: 4 },
-    { name: 'AI Review', color: '#8b5cf6', icon: null, orderIndex: 5 },
-    { name: 'Human Review', color: '#a5b4fc', icon: null, orderIndex: 6 },
-    { name: 'Done', color: 'green', icon: 'check-circle', orderIndex: 7 },
+    { name: 'PBI Queue', color: '#fda4af', icon: 'list-todo', orderIndex: 3 },
+    { name: 'Bugs', color: '#f43f5e', icon: null, orderIndex: 4 },
+    { name: 'In Dev', color: '#fda4af', icon: null, orderIndex: 5 },
+    { name: 'AI Review', color: '#8b5cf6', icon: null, orderIndex: 6 },
+    { name: 'Human Review', color: '#a5b4fc', icon: null, orderIndex: 7 },
+    { name: 'Done', color: 'green', icon: 'check-circle', orderIndex: 8 },
   ],
 }
-
-const DEFAULT_COLUMNS = BOARD_TEMPLATES.default
 
 export async function findColumns(projectId: string) {
   return db
@@ -140,7 +139,7 @@ export async function createDefaultColumns(projectId: string, template?: string)
 
   if (existing.length > 0) return
 
-  const columns = (template && BOARD_TEMPLATES[template]) || DEFAULT_COLUMNS
+  const columns = (template && BOARD_TEMPLATES[template]) || BOARD_TEMPLATES.default
 
   await db.insert(boardColumns).values(
     columns.map((col) => ({

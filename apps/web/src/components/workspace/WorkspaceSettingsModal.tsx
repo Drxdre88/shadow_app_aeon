@@ -16,6 +16,8 @@ import {
   removeProjectFromGroup,
   setProjectVisibility,
   getPendingRealmInvites,
+  cancelRealmInvite,
+  resendRealmInvite,
   getProjectAccessList,
   updateProjectAccessList,
 } from '@/lib/actions/workspaces'
@@ -58,6 +60,8 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, groupColor,
   const [nameEditing, setNameEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [resendingInviteId, setResendingInviteId] = useState<string | null>(null)
+  const [cancellingInviteId, setCancellingInviteId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isOpen) return
@@ -113,6 +117,37 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, groupColor,
       setError(err instanceof Error ? err.message : 'Failed to invite')
     } finally {
       setInviteLoading(false)
+    }
+  }
+
+  const handleResendInvite = async (inviteId: string) => {
+    setError('')
+    setSuccess('')
+    setResendingInviteId(inviteId)
+    try {
+      await resendRealmInvite(groupId, inviteId)
+      const invites = await getPendingRealmInvites(groupId)
+      setPendingInvites(invites as PendingInviteRow[])
+      setSuccess('Invite resent')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to resend invite')
+    } finally {
+      setResendingInviteId(null)
+    }
+  }
+
+  const handleCancelInvite = async (inviteId: string) => {
+    setError('')
+    setSuccess('')
+    setCancellingInviteId(inviteId)
+    try {
+      await cancelRealmInvite(groupId, inviteId)
+      setPendingInvites((prev) => prev.filter((i) => i.id !== inviteId))
+      setSuccess('Invite cancelled')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to cancel invite')
+    } finally {
+      setCancellingInviteId(null)
     }
   }
 
@@ -312,6 +347,8 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, groupColor,
                 inviteLoading={inviteLoading}
                 color={color}
                 icon={icon}
+                resendingInviteId={resendingInviteId}
+                cancellingInviteId={cancellingInviteId}
                 onEmailChange={(val) => { setEmail(val); setError('') }}
                 onRoleChange={setInviteRole}
                 onInvite={handleInvite}
@@ -319,6 +356,8 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, groupColor,
                 onMemberRoleChange={handleMemberRoleChange}
                 onColorChange={handleColorChange}
                 onIconChange={handleIconChange}
+                onResendInvite={handleResendInvite}
+                onCancelInvite={handleCancelInvite}
               />
             )}
 

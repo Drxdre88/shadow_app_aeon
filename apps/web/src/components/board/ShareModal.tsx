@@ -354,7 +354,8 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
                   >
                     <div className="flex items-center gap-3">
                       {m.image ? (
-                        <img src={m.image} alt="" className="w-7 h-7 rounded-full" />
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={m.image} alt="" referrerPolicy="no-referrer" className="w-7 h-7 rounded-full" />
                       ) : (
                         <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)', color: 'var(--primary)' }}>
                           {(m.name || m.email).charAt(0).toUpperCase()}
