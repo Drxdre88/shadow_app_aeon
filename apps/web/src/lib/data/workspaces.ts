@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto'
 import { eq, and, inArray, isNull, gte, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { workspaceGroups, groupMembers, projectGroups, projects, users, realmInvites, projectMembers } from '@/lib/db/schema'
+import { workspaceGroups, groupMembers, projectGroups, projects, users, realmInvites, projectInvites, projectMembers } from '@/lib/db/schema'
 import { sendRealmInviteEmail, getBaseUrl } from '@/lib/email'
 
 export async function createWorkspaceGroup(ownerId: string, data: { name: string; icon?: string; color?: string }) {
@@ -355,19 +355,19 @@ export async function consolidateSoloWorkspaces(userId: string, personalGroupId?
   return moved
 }
 
+const REALM_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
 export async function createRealmInvite(groupId: string, email: string, role: string, invitedBy: string) {
   const lowerEmail = email.toLowerCase()
   const token = randomBytes(32).toString('hex')
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+  const expiresAt = new Date(Date.now() + REALM_INVITE_TTL_MS)
 
   return db.transaction(async (tx) => {
-    await tx.update(realmInvites)
-      .set({ acceptedAt: new Date() })
-      .where(and(
-        eq(realmInvites.groupId, groupId),
-        eq(realmInvites.email, lowerEmail),
-        isNull(realmInvites.acceptedAt),
-      ))
+    await tx.delete(realmInvites).where(and(
+      eq(realmInvites.groupId, groupId),
+      eq(realmInvites.email, lowerEmail),
+      isNull(realmInvites.acceptedAt),
+    ))
 
     const [invite] = await tx
       .insert(realmInvites)
@@ -434,7 +434,19 @@ export async function inviteOrAddRealmMember(groupId: string, email: string, rol
   const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, lowerEmail))
 
   if (user) {
-    const member = await addGroupMember(groupId, user.id, role)
+    const member = await db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(groupMembers)
+        .values({ groupId, userId: user.id, role })
+        .onConflictDoNothing()
+        .returning()
+      await tx.delete(realmInvites).where(and(
+        eq(realmInvites.groupId, groupId),
+        eq(realmInvites.email, lowerEmail),
+        isNull(realmInvites.acceptedAt),
+      ))
+      return inserted || null
+    })
     return { type: 'added' as const, email: lowerEmail, member }
   }
 
@@ -442,8 +454,157 @@ export async function inviteOrAddRealmMember(groupId: string, email: string, rol
   const [group] = await db.select({ name: workspaceGroups.name }).from(workspaceGroups).where(eq(workspaceGroups.id, groupId))
   const baseUrl = getBaseUrl()
   if (baseUrl) {
-    sendRealmInviteEmail(lowerEmail, group?.name || 'Untitled', 'A team member', `${baseUrl}/invite/realm/${invite.token}`).catch(() => {})
+    sendRealmInviteEmail(lowerEmail, group?.name || 'Untitled', 'A team member', `${baseUrl}/invite/realm/${invite.token}`)
+      .catch((err) => console.error('[inviteOrAddRealmMember] email dispatch failed', err))
   }
   return { type: 'invited' as const, email: lowerEmail }
+}
+
+export async function hasValidPendingInvite(email: string): Promise<boolean> {
+  const lowerEmail = email.toLowerCase()
+  const now = new Date()
+
+  const [realm] = await db
+    .select({ id: realmInvites.id })
+    .from(realmInvites)
+    .where(and(
+      eq(realmInvites.email, lowerEmail),
+      isNull(realmInvites.acceptedAt),
+      gte(realmInvites.expiresAt, now),
+    ))
+    .limit(1)
+  if (realm) return true
+
+  const [project] = await db
+    .select({ id: projectInvites.id })
+    .from(projectInvites)
+    .where(and(
+      eq(projectInvites.email, lowerEmail),
+      isNull(projectInvites.acceptedAt),
+      gte(projectInvites.expiresAt, now),
+    ))
+    .limit(1)
+  return !!project
+}
+
+export async function cancelRealmInvite(groupId: string, inviteId: string): Promise<{ id: string } | null> {
+  const [deleted] = await db
+    .delete(realmInvites)
+    .where(and(eq(realmInvites.id, inviteId), eq(realmInvites.groupId, groupId)))
+    .returning({ id: realmInvites.id })
+  return deleted ?? null
+}
+
+export async function resendRealmInvite(groupId: string, inviteId: string) {
+  const newExpiresAt = new Date(Date.now() + REALM_INVITE_TTL_MS)
+
+  const result = await db.transaction(async (tx) => {
+    const [invite] = await tx
+      .select()
+      .from(realmInvites)
+      .where(and(
+        eq(realmInvites.id, inviteId),
+        eq(realmInvites.groupId, groupId),
+        isNull(realmInvites.acceptedAt),
+      ))
+    if (!invite) return null
+
+    const [updated] = await tx
+      .update(realmInvites)
+      .set({ expiresAt: newExpiresAt })
+      .where(and(eq(realmInvites.id, inviteId), eq(realmInvites.groupId, groupId)))
+      .returning()
+
+    const [group] = await tx
+      .select({ name: workspaceGroups.name })
+      .from(workspaceGroups)
+      .where(eq(workspaceGroups.id, groupId))
+
+    return { invite, updated, groupName: group?.name || 'Untitled' }
+  })
+
+  if (!result) return null
+
+  const baseUrl = getBaseUrl()
+  if (baseUrl) {
+    sendRealmInviteEmail(
+      result.invite.email,
+      result.groupName,
+      'A team member',
+      `${baseUrl}/invite/realm/${result.invite.token}`,
+    ).catch((err) => console.error('[resendRealmInvite] email dispatch failed', err))
+  }
+
+  return result.updated
+}
+
+export async function resolveUserPendingInvites(userId: string, email: string): Promise<number> {
+  const lowerEmail = email.toLowerCase()
+  const now = new Date()
+
+  return db.transaction(async (tx) => {
+    const pendingRealms = await tx
+      .select({
+        id: realmInvites.id,
+        groupId: realmInvites.groupId,
+        role: realmInvites.role,
+      })
+      .from(realmInvites)
+      .where(and(
+        eq(realmInvites.email, lowerEmail),
+        isNull(realmInvites.acceptedAt),
+        gte(realmInvites.expiresAt, now),
+      ))
+
+    const pendingProjects = await tx
+      .select({
+        id: projectInvites.id,
+        projectId: projectInvites.projectId,
+        role: projectInvites.role,
+        invitedBy: projectInvites.invitedBy,
+      })
+      .from(projectInvites)
+      .where(and(
+        eq(projectInvites.email, lowerEmail),
+        isNull(projectInvites.acceptedAt),
+        gte(projectInvites.expiresAt, now),
+      ))
+
+    if (pendingRealms.length === 0 && pendingProjects.length === 0) return 0
+
+    for (const inv of pendingRealms) {
+      await tx
+        .insert(groupMembers)
+        .values({ groupId: inv.groupId, userId, role: inv.role })
+        .onConflictDoNothing()
+    }
+    for (const inv of pendingProjects) {
+      await tx
+        .insert(projectMembers)
+        .values({ projectId: inv.projectId, userId, role: inv.role, invitedBy: inv.invitedBy })
+        .onConflictDoNothing()
+    }
+
+    if (pendingRealms.length > 0) {
+      await tx
+        .update(realmInvites)
+        .set({ acceptedAt: now })
+        .where(and(
+          inArray(realmInvites.id, pendingRealms.map((p) => p.id)),
+          isNull(realmInvites.acceptedAt),
+        ))
+    }
+    if (pendingProjects.length > 0) {
+      await tx
+        .update(projectInvites)
+        .set({ acceptedAt: now })
+        .where(and(
+          inArray(projectInvites.id, pendingProjects.map((p) => p.id)),
+          isNull(projectInvites.acceptedAt),
+        ))
+    }
+
+    return pendingRealms.length + pendingProjects.length
+  })
 }
 

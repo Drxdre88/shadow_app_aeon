@@ -12,3 +12,19 @@ export function timeAgo(date: Date | string): string {
   const months = Math.floor(days / 30)
   return `${months}mo ago`
 }
+
+export function timeUntil(date: Date | string): string {
+  const now = Date.now()
+  const then = new Date(date).getTime()
+  const diff = then - now
+  if (diff <= 0) return 'expired'
+  const minutes = Math.floor(diff / 60000)
+  if (minutes < 1) return 'in <1m'
+  if (minutes < 60) return `in ${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `in ${hours}h`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `in ${days}d`
+  const months = Math.floor(days / 30)
+  return `in ${months}mo`
+}

@@ -21,6 +21,8 @@ import {
   acceptRealmInvite as _acceptRealmInvite,
   findPendingRealmInvites as _findPendingRealmInvites,
   inviteOrAddRealmMember as _inviteOrAdd,
+  cancelRealmInvite as _cancelRealmInvite,
+  resendRealmInvite as _resendRealmInvite,
   findProjectAccessList as _findAccessList,
   setProjectAccessList as _setAccessList,
 } from '@/lib/data/workspaces'
@@ -166,4 +168,18 @@ export async function acceptRealmInvite(token: string) {
 export async function getPendingRealmInvites(groupId: string) {
   await requireGroupOwner(groupId)
   return _findPendingRealmInvites(groupId)
+}
+
+export async function cancelRealmInvite(groupId: string, inviteId: string) {
+  await requireGroupOwner(groupId)
+  const result = await _cancelRealmInvite(groupId, inviteId)
+  if (!result) throw new Error('Invite not found')
+  return { cancelled: result.id }
+}
+
+export async function resendRealmInvite(groupId: string, inviteId: string) {
+  await requireGroupOwner(groupId)
+  const invite = await _resendRealmInvite(groupId, inviteId)
+  if (!invite) throw new Error('Invite not found or already accepted')
+  return invite
 }

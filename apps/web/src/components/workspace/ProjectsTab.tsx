@@ -184,7 +184,7 @@ export function ProjectsTab({
                         </div>
                         {m.image ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={m.image} alt="" className="w-5 h-5 rounded-full" />
+                          <img src={m.image} alt="" referrerPolicy="no-referrer" className="w-5 h-5 rounded-full" />
                         ) : (
                           <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px] text-slate-400">
                             {(m.name || m.email)[0]?.toUpperCase()}
