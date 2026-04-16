@@ -132,8 +132,8 @@ shadow_app_aeon/
 ```
 src/
 ├── app/                  # Next.js App Router routes
-│   ├── api/v1/           # REST API surface (~40 routes)
-│   ├── api/[transport]/  # MCP server surface (52 tools)
+│   ├── api/v1/           # REST API surface (~50 routes)
+│   ├── api/[transport]/  # MCP server surface (63 tools)
 │   ├── dashboard/        # Main authenticated app shell
 │   ├── project/          # Project-level pages
 │   ├── invite/           # Realm invite acceptance
@@ -297,16 +297,36 @@ AEON exposes the same data through two parallel APIs:
 
 ### MCP Server (`/api/[transport]/tools/`)
 
-52 tools across 11 categories — designed for AI agents (Claude Code, Cursor, etc.):
+63 tools across 11 categories — designed for AI agents (Claude Code, Cursor, etc.):
 
 - `list_projects`, `create_project`, `update_project`, `delete_project`
 - `list_tasks`, `create_task`, `update_task`, `batch_create_tasks`
 - `list_realms`, `invite_realm_member`, `cancel_realm_invite`, `resend_realm_invite`
-- `list_gantt_tasks`, `create_gantt_task`, `update_gantt_task`
+- `list_gantt_tasks`, `create_gantt_task`, `update_gantt_task`, `delete_gantt_task`, `batch_create_gantt_tasks`
+- `list_rows`, `create_row`, `update_row`, `delete_row`, `reorder_rows`
+- `list_gantt_views`, `create_gantt_view`, `update_gantt_view`, `delete_gantt_view`
 - `create_checklist_item`, `batch_create_checklist_items`, `update_checklist_item`
 - … and more
 
 **Auth:** `Authorization: Bearer <api_key>` only.
+
+**Parity guarantee:** MCP and REST share the same Zod validators and the same `lib/data/` functions. A static parity test (`src/app/api/__tests__/gantt-parity.test.ts`) locks the Gantt surface against drift — if either side grows a tool/route the other lacks, CI fails.
+
+### Gantt-only bootstrap (agents)
+
+Scriptable end-to-end from zero UI:
+
+```
+create_gantt_view     { projectId, name: "By Person", groupBy: "label" }
+create_row            { projectId, name: "Alice" }                    # orderIndex auto-assigns
+create_row            { projectId, name: "Bob" }
+batch_create_gantt_tasks
+  { projectId, tasks: [
+      { rowId: <alice>, name: "Spec API",    startDate: "...", endDate: "..." },
+      { rowId: <bob>,   name: "Build UI",    startDate: "...", endDate: "..." },
+      { rowId: <alice>, name: "Write tests", startDate: "...", endDate: "..." },
+  ] }
+```
 
 The MCP server makes AEON one of the few PM tools that an AI agent can drive end-to-end — create projects, move cards through columns, write checklists, watch real progress.
 
