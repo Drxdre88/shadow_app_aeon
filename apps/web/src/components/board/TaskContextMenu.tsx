@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Palette, Flag, Trash2, MoveRight, Copy, Calendar, Archive, Package, ArrowRight, FolderInput, Loader2, MousePointerClick } from 'lucide-react'
+import { Palette, Flag, Trash2, MoveRight, Copy, Calendar, Archive, Package, ArrowRight, FolderInput, Folder, Loader2, MousePointerClick } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore, useTasks, useColumns } from '@/lib/store/boardStore'
 import { AccentColor, ACCENT_COLORS, PALETTE_COLORS, colorConfig, getRecentColors, addRecentColor } from '@/lib/utils/colors'
@@ -27,7 +27,7 @@ interface TaskContextMenuProps {
 export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTaskDelete, onPushToGantt, onSendToVault, onArchiveTask, onSelectTask, isSelected }: TaskContextMenuProps) {
   const [submenu, setSubmenu] = useState<'move' | 'priority' | 'color' | 'transfer' | null>(null)
   const [mounted, setMounted] = useState(false)
-  const [transferProjects, setTransferProjects] = useState<{ id: string; name: string; columns: { id: string; name: string; color: string }[] }[]>([])
+  const [transferProjects, setTransferProjects] = useState<{ id: string; name: string; realm: string; columns: { id: string; name: string; color: string }[] }[]>([])
   const [transferLoading, setTransferLoading] = useState(false)
   const [transferMode, setTransferMode] = useState<'copy' | 'move'>('copy')
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
@@ -325,64 +325,85 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
           }}
           glowColor={colors.glowColor}
         />
-        {submenu === 'transfer' && (
-          <div className="pl-2 border-l border-white/10 ml-3 space-y-0.5 py-1">
-            {transferLoading ? (
-              <div className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                Loading...
-              </div>
-            ) : transferProjects.filter((p) => p.id !== task.projectId).length === 0 ? (
-              <div className="px-3 py-2 text-xs text-slate-500">No other projects</div>
-            ) : (
-              transferProjects
-                .filter((p) => p.id !== task.projectId)
-                .map((project) => (
-                  <div key={project.id}>
-                    <button
-                      onClick={() => setSelectedProjectId(selectedProjectId === project.id ? null : project.id)}
-                      className={cn(
-                        'w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors',
-                        selectedProjectId === project.id ? 'text-white bg-white/10' : 'text-slate-300 hover:bg-white/10 hover:text-white'
-                      )}
-                    >
-                      <ArrowRight className={cn('w-3 h-3 text-slate-500 transition-transform', selectedProjectId === project.id && 'rotate-90')} />
-                      {project.name}
-                    </button>
-                    {selectedProjectId === project.id && (
-                      <div className="pl-4 space-y-0.5 py-1 border-l border-white/10 ml-5">
-                        {project.columns.map((col) => (
-                          <button
-                            key={col.id}
-                            onClick={async () => {
-                              try {
-                                if (transferMode === 'copy') {
-                                  await copyTaskToProject(taskId, task.projectId, project.id, col.id)
-                                } else {
-                                  const snapshot = { ...task }
-                                  removeTask(taskId)
+        {submenu === 'transfer' && (() => {
+          const otherProjects = transferProjects.filter((p) => p.id !== task.projectId)
+          const grouped = otherProjects.reduce<Record<string, typeof otherProjects>>((acc, p) => {
+            const key = p.realm || 'Ungrouped'
+            if (!acc[key]) acc[key] = []
+            acc[key].push(p)
+            return acc
+          }, {})
+          const realmNames = Object.keys(grouped).sort((a, b) => {
+            if (a === 'Ungrouped') return 1
+            if (b === 'Ungrouped') return -1
+            return a.localeCompare(b)
+          })
+
+          return (
+            <div className="pl-2 border-l border-white/10 ml-3 py-1 max-h-[50vh] overflow-y-auto scrollbar-thin">
+              {transferLoading ? (
+                <div className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Loading...
+                </div>
+              ) : otherProjects.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-slate-500">No other projects</div>
+              ) : (
+                realmNames.map((realmName) => (
+                  <div key={realmName}>
+                    <div className="px-3 pt-2 pb-1 flex items-center gap-1.5">
+                      <Folder className="w-3 h-3 text-slate-600" />
+                      <span className="text-[10px] uppercase tracking-wider text-slate-600 font-medium">{realmName}</span>
+                    </div>
+                    {grouped[realmName].map((project) => (
+                      <div key={project.id}>
+                        <button
+                          onClick={() => setSelectedProjectId(selectedProjectId === project.id ? null : project.id)}
+                          className={cn(
+                            'w-full flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors',
+                            selectedProjectId === project.id ? 'text-white bg-white/10' : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                          )}
+                        >
+                          <ArrowRight className={cn('w-3 h-3 text-slate-500 transition-transform', selectedProjectId === project.id && 'rotate-90')} />
+                          {project.name}
+                        </button>
+                        {selectedProjectId === project.id && (
+                          <div className="pl-4 space-y-0.5 py-1 border-l border-white/10 ml-5">
+                            {project.columns.map((col) => (
+                              <button
+                                key={col.id}
+                                onClick={async () => {
                                   try {
-                                    await moveTaskToProject(taskId, task.projectId, project.id, col.id)
-                                  } catch {
-                                    useBoardStore.getState().addTask(snapshot)
-                                  }
-                                }
-                              } catch {}
-                              onClose()
-                            }}
-                            className="w-full flex items-center gap-2 px-3 py-1 text-xs text-slate-400 hover:bg-white/10 hover:text-white rounded-md transition-colors"
-                          >
-                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: col.color }} />
-                            {col.name}
-                          </button>
-                        ))}
+                                    if (transferMode === 'copy') {
+                                      await copyTaskToProject(taskId, task.projectId, project.id, col.id)
+                                    } else {
+                                      const snapshot = { ...task }
+                                      removeTask(taskId)
+                                      try {
+                                        await moveTaskToProject(taskId, task.projectId, project.id, col.id)
+                                      } catch {
+                                        useBoardStore.getState().addTask(snapshot)
+                                      }
+                                    }
+                                  } catch {}
+                                  onClose()
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1 text-xs text-slate-400 hover:bg-white/10 hover:text-white rounded-md transition-colors"
+                              >
+                                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: col.color }} />
+                                {col.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    )}
+                    ))}
                   </div>
                 ))
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )
+        })()}
 
         <button
           onClick={handleCopyId}

@@ -4,27 +4,43 @@ import { requireAuth } from './helpers'
 import { verifyProjectOwnership } from '@/lib/data/projects'
 import { findTaskById, createTask } from '@/lib/data/tasks'
 import { findColumns } from '@/lib/data/columns'
-import { findChecklistItems } from '@/lib/data/checklist'
-import { createChecklistItemsBatch } from '@/lib/data/checklist'
+import { findChecklistItems, createChecklistItemsBatch } from '@/lib/data/checklist'
 import { emitActivity } from '@/lib/data/activity'
 import { db } from '@/lib/db'
 import { boardTasks, boardColumns } from '@/lib/db/schema'
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, and, sql, inArray, asc } from 'drizzle-orm'
 
 export async function listProjectsForTransfer() {
   const userId = await requireAuth()
-  const { findProjects } = await import('@/lib/data/projects')
-  const projects = await findProjects(userId)
-  const result = []
-  for (const p of projects) {
-    const cols = await findColumns(p.id)
-    result.push({
-      id: p.id,
-      name: p.name,
-      columns: cols.map((c) => ({ id: c.id, name: c.name, color: c.color })),
+  const { findProjectsWithRealmName } = await import('@/lib/data/projects')
+  const projects = await findProjectsWithRealmName(userId)
+  const projectIds = projects.map((p) => p.id)
+
+  if (projectIds.length === 0) return []
+
+  const allColumns = await db
+    .select({
+      id: boardColumns.id,
+      name: boardColumns.name,
+      color: boardColumns.color,
+      projectId: boardColumns.projectId,
     })
+    .from(boardColumns)
+    .where(inArray(boardColumns.projectId, projectIds))
+    .orderBy(asc(boardColumns.orderIndex))
+
+  const colsByProject = new Map<string, { id: string; name: string; color: string }[]>()
+  for (const col of allColumns) {
+    if (!colsByProject.has(col.projectId)) colsByProject.set(col.projectId, [])
+    colsByProject.get(col.projectId)!.push({ id: col.id, name: col.name, color: col.color })
   }
-  return result
+
+  return projects.map((p) => ({
+    id: p.id,
+    name: p.name,
+    realm: p.realmName ?? 'Ungrouped',
+    columns: colsByProject.get(p.id) ?? [],
+  }))
 }
 
 export async function copyTaskToProject(
@@ -35,10 +51,11 @@ export async function copyTaskToProject(
 ) {
   const userId = await requireAuth()
 
-  const sourceProject = await verifyProjectOwnership(sourceProjectId, userId)
+  const [sourceProject, targetProject] = await Promise.all([
+    verifyProjectOwnership(sourceProjectId, userId),
+    verifyProjectOwnership(targetProjectId, userId),
+  ])
   if (!sourceProject) throw new Error('Source project not found')
-
-  const targetProject = await verifyProjectOwnership(targetProjectId, userId)
   if (!targetProject) throw new Error('Target project not found')
 
   const task = await findTaskById(taskId, sourceProjectId)
@@ -79,10 +96,11 @@ export async function moveTaskToProject(
 ) {
   const userId = await requireAuth()
 
-  const sourceProject = await verifyProjectOwnership(sourceProjectId, userId)
+  const [sourceProject, targetProject] = await Promise.all([
+    verifyProjectOwnership(sourceProjectId, userId),
+    verifyProjectOwnership(targetProjectId, userId),
+  ])
   if (!sourceProject) throw new Error('Source project not found')
-
-  const targetProject = await verifyProjectOwnership(targetProjectId, userId)
   if (!targetProject) throw new Error('Target project not found')
 
   const task = await findTaskById(taskId, sourceProjectId)
@@ -119,16 +137,20 @@ export async function copyColumnToProject(
 ) {
   const userId = await requireAuth()
 
-  const sourceProject = await verifyProjectOwnership(sourceProjectId, userId)
+  const [sourceProject, targetProject] = await Promise.all([
+    verifyProjectOwnership(sourceProjectId, userId),
+    verifyProjectOwnership(targetProjectId, userId),
+  ])
   if (!sourceProject) throw new Error('Source project not found')
-  const targetProject = await verifyProjectOwnership(targetProjectId, userId)
   if (!targetProject) throw new Error('Target project not found')
 
-  const sourceCols = await findColumns(sourceProjectId)
+  const [sourceCols, targetCols] = await Promise.all([
+    findColumns(sourceProjectId),
+    findColumns(targetProjectId),
+  ])
   const sourceCol = sourceCols.find(c => c.id === columnId)
   if (!sourceCol) throw new Error('Column not found')
 
-  const targetCols = await findColumns(targetProjectId)
   const maxOrder = targetCols.length > 0 ? Math.max(...targetCols.map(c => c.orderIndex)) + 1 : 0
 
   const { createColumn, deleteColumn } = await import('@/lib/data/columns')
@@ -139,9 +161,13 @@ export async function copyColumnToProject(
     orderIndex: maxOrder,
   })
 
-  const { findTasks, deleteTasksByColumn } = await import('@/lib/data/tasks')
-  const tasks = await findTasks(sourceProjectId)
-  const columnTasks = tasks.filter(t => t.columnId === columnId)
+  const { findTasksByColumn, deleteTasksByColumn } = await import('@/lib/data/tasks')
+  const columnTasks = await findTasksByColumn(sourceProjectId, columnId)
+
+  // Batch-fetch all checklist items for all column tasks
+  const taskIds = columnTasks.map(t => t.id)
+  const { findChecklistItemsBatch } = await import('@/lib/data/checklist')
+  const allChecklist = taskIds.length > 0 ? await findChecklistItemsBatch(taskIds) : new Map()
 
   try {
     for (const task of columnTasks) {
@@ -156,11 +182,11 @@ export async function copyColumnToProject(
         size: task.size,
       })
 
-      const checklistItems = await findChecklistItems(task.id, sourceProjectId)
-      if (checklistItems.length > 0) {
+      const items = allChecklist.get(task.id) ?? []
+      if (items.length > 0) {
         await createChecklistItemsBatch(
           newTask.id,
-          checklistItems.map(i => ({ title: i.title, groupName: i.groupName }))
+          items.map((i: { title: string; groupName: string }) => ({ title: i.title, groupName: i.groupName }))
         )
       }
     }
@@ -182,9 +208,11 @@ export async function moveColumnToProject(
 ) {
   const userId = await requireAuth()
 
-  const sourceProject = await verifyProjectOwnership(sourceProjectId, userId)
+  const [sourceProject, targetProject] = await Promise.all([
+    verifyProjectOwnership(sourceProjectId, userId),
+    verifyProjectOwnership(targetProjectId, userId),
+  ])
   if (!sourceProject) throw new Error('Source project not found')
-  const targetProject = await verifyProjectOwnership(targetProjectId, userId)
   if (!targetProject) throw new Error('Target project not found')
 
   const sourceCols = await findColumns(sourceProjectId)

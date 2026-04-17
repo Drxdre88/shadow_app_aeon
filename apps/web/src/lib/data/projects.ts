@@ -3,48 +3,62 @@ import { projects, projectMembers, boardTasks, ganttTasks, projectGroups, groupM
 import { eq, and, desc, sql, or, inArray, ne } from 'drizzle-orm'
 import type { CreateProjectInput, UpdateProjectInput } from './validators'
 
-export async function verifyProjectOwnership(projectId: string, userId: string) {
-  const [membership] = await db
-    .select({ projectId: projectMembers.projectId, role: projectMembers.role })
-    .from(projectMembers)
-    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
-
-  if (membership) {
-    const [project] = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.id, projectId))
-    return project || null
-  }
-
-  const [ownedProject] = await db
-    .select()
+export async function verifyProjectAccess(projectId: string, userId: string) {
+  // Query 1: project + direct membership in one shot
+  const [row] = await db
+    .select({
+      id: projects.id,
+      userId: projects.userId,
+      name: projects.name,
+      description: projects.description,
+      timeScale: projects.timeScale,
+      startDate: projects.startDate,
+      endDate: projects.endDate,
+      settings: projects.settings,
+      group: projects.group,
+      planetImage: projects.planetImage,
+      boardVersion: projects.boardVersion,
+      createdAt: projects.createdAt,
+      updatedAt: projects.updatedAt,
+      directRole: projectMembers.role,
+    })
     .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
+    .leftJoin(projectMembers, and(
+      eq(projectMembers.projectId, projects.id),
+      eq(projectMembers.userId, userId)
+    ))
+    .where(eq(projects.id, projectId))
+    .limit(1)
 
-  if (ownedProject) return ownedProject
+  if (!row) return null
 
-  const realmIds = await db
-    .select({ groupId: projectGroups.groupId })
+  const { directRole, ...project } = row
+
+  // Direct member — role is known
+  if (directRole) return { project, role: directRole }
+
+  // Project owner (legacy path — no membership row)
+  if (project.userId === userId) return { project, role: 'owner' }
+
+  // Query 2: realm membership (only when not direct member/owner)
+  const [realmMembership] = await db
+    .select({ role: groupMembers.role })
     .from(projectGroups)
+    .innerJoin(groupMembers, and(
+      eq(groupMembers.groupId, projectGroups.groupId),
+      eq(groupMembers.userId, userId)
+    ))
     .where(eq(projectGroups.projectId, projectId))
+    .limit(1)
 
-  if (realmIds.length > 0) {
-    const [realmMembership] = await db
-      .select({ role: groupMembers.role })
-      .from(groupMembers)
-      .where(and(
-        inArray(groupMembers.groupId, realmIds.map((r) => r.groupId)),
-        eq(groupMembers.userId, userId)
-      ))
-
-    if (realmMembership) {
-      const [realmProject] = await db.select().from(projects).where(eq(projects.id, projectId))
-      return realmProject || null
-    }
-  }
+  if (realmMembership) return { project, role: realmMembership.role }
 
   return null
+}
+
+export async function verifyProjectOwnership(projectId: string, userId: string) {
+  const access = await verifyProjectAccess(projectId, userId)
+  return access?.project ?? null
 }
 
 export const findProjectById = verifyProjectOwnership
@@ -87,31 +101,8 @@ export async function verifyProjectOwnerRole(projectId: string, userId: string) 
 }
 
 export async function getMemberRole(projectId: string, userId: string) {
-  const [membership] = await db
-    .select({ role: projectMembers.role })
-    .from(projectMembers)
-    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
-
-  if (membership?.role) return membership.role
-
-  const realmIds = await db
-    .select({ groupId: projectGroups.groupId })
-    .from(projectGroups)
-    .where(eq(projectGroups.projectId, projectId))
-
-  if (realmIds.length > 0) {
-    const [realmMembership] = await db
-      .select({ role: groupMembers.role })
-      .from(groupMembers)
-      .where(and(
-        inArray(groupMembers.groupId, realmIds.map((r) => r.groupId)),
-        eq(groupMembers.userId, userId)
-      ))
-
-    if (realmMembership) return realmMembership.role
-  }
-
-  return null
+  const access = await verifyProjectAccess(projectId, userId)
+  return access?.role ?? null
 }
 
 export async function findProjects(userId: string, limit = 100, offset = 0) {
@@ -136,6 +127,81 @@ export async function findProjects(userId: string, limit = 100, offset = 0) {
     .orderBy(desc(projects.createdAt))
     .limit(limit)
     .offset(offset)
+}
+
+export async function findProjectsWithRealmName(userId: string, limit = 500) {
+  const allProjects = await findProjects(userId, limit)
+  const projectIds = allProjects.map((p) => p.id)
+  if (projectIds.length === 0) return []
+
+  const realmInfo = await db
+    .select({
+      projectId: projectGroups.projectId,
+      realmName: workspaceGroups.name,
+      isPersonal: workspaceGroups.isPersonal,
+    })
+    .from(projectGroups)
+    .innerJoin(workspaceGroups, eq(workspaceGroups.id, projectGroups.groupId))
+    .where(inArray(projectGroups.projectId, projectIds))
+
+  const realmByProject = new Map<string, string>()
+  for (const r of realmInfo) {
+    if (!realmByProject.has(r.projectId) || !r.isPersonal)
+      realmByProject.set(r.projectId, r.isPersonal ? 'Personal' : r.realmName)
+  }
+
+  return allProjects.map((p) => ({
+    ...p,
+    realmName: realmByProject.get(p.id) ?? null,
+  }))
+}
+
+export async function findSiblingProjects(projectId: string, userId: string) {
+  const realmRows = await db
+    .select({
+      groupId: projectGroups.groupId,
+      name: workspaceGroups.name,
+      isPersonal: workspaceGroups.isPersonal,
+    })
+    .from(projectGroups)
+    .innerJoin(workspaceGroups, eq(workspaceGroups.id, projectGroups.groupId))
+    .where(eq(projectGroups.projectId, projectId))
+
+  if (realmRows.length === 0) return { realmName: null, projects: [] }
+
+  // Prefer team realm over personal
+  const realm = realmRows.find((r) => !r.isPersonal) ?? realmRows[0]
+  if (realm.isPersonal) return { realmName: null, projects: [] }
+
+  const siblingRows = await db
+    .select({
+      id: projects.id,
+      name: projects.name,
+      planetImage: projects.planetImage,
+    })
+    .from(projectGroups)
+    .innerJoin(projects, eq(projects.id, projectGroups.projectId))
+    .leftJoin(projectMembers, eq(projectMembers.projectId, projects.id))
+    .where(
+      and(
+        eq(projectGroups.groupId, realm.groupId),
+        ne(projectGroups.projectId, projectId),
+        or(eq(projects.userId, userId), eq(projectMembers.userId, userId))
+      )
+    )
+    .orderBy(desc(projects.updatedAt))
+
+  const seen = new Set<string>()
+  const unique = siblingRows.filter((r) => {
+    if (seen.has(r.id)) return false
+    seen.add(r.id)
+    return true
+  })
+
+  return {
+    realmName: realm.name,
+    projects: unique,
+  }
 }
 
 export async function findProjectsWithStats(userId: string) {
@@ -252,14 +318,21 @@ export async function getProjectSummary(projectId: string, userId: string) {
   const project = await verifyProjectOwnership(projectId, userId)
   if (!project) return null
 
-  const statusCounts = await db
-    .select({
-      status: boardTasks.status,
-      count: sql<number>`count(*)::int`,
-    })
-    .from(boardTasks)
-    .where(eq(boardTasks.projectId, projectId))
-    .groupBy(boardTasks.status)
+  const now = new Date()
+  const [statusCounts, overdue, [ganttAgg]] = await Promise.all([
+    db.select({ status: boardTasks.status, count: sql<number>`count(*)::int` })
+      .from(boardTasks).where(eq(boardTasks.projectId, projectId)).groupBy(boardTasks.status),
+    db.select({ id: boardTasks.id, name: boardTasks.name, endDate: boardTasks.endDate })
+      .from(boardTasks).where(and(
+        eq(boardTasks.projectId, projectId),
+        sql`${boardTasks.endDate} < ${now}`,
+        sql`${boardTasks.status} != 'done'`
+      )),
+    db.select({
+      total: sql<number>`count(*)::int`,
+      avgProgress: sql<number>`coalesce(avg(${ganttTasks.progress})::int, 0)`,
+    }).from(ganttTasks).where(eq(ganttTasks.projectId, projectId)),
+  ])
 
   const counts: Record<string, number> = { todo: 0, 'in-progress': 0, done: 0 }
   let total = 0
@@ -267,28 +340,7 @@ export async function getProjectSummary(projectId: string, userId: string) {
     counts[row.status] = row.count
     total += row.count
   }
-
-  const now = new Date()
-  const overdue = await db
-    .select({ id: boardTasks.id, name: boardTasks.name, endDate: boardTasks.endDate })
-    .from(boardTasks)
-    .where(
-      and(
-        eq(boardTasks.projectId, projectId),
-        sql`${boardTasks.endDate} < ${now}`,
-        sql`${boardTasks.status} != 'done'`
-      )
-    )
-
   const progressPct = total > 0 ? Math.round((counts['done'] / total) * 100) : 0
-
-  const [ganttAgg] = await db
-    .select({
-      total: sql<number>`count(*)::int`,
-      avgProgress: sql<number>`coalesce(avg(${ganttTasks.progress})::int, 0)`,
-    })
-    .from(ganttTasks)
-    .where(eq(ganttTasks.projectId, projectId))
 
   return {
     project: { id: project.id, name: project.name },

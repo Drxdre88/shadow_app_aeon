@@ -72,6 +72,7 @@ export default function ProjectContent({ project, user, initialBoardData }: Proj
   return (
     <div className="min-h-screen flex">
       <ProjectSidebar
+        projectId={project.id}
         user={user}
         activeTab={activeTab}
         onTabChange={setActiveTab}

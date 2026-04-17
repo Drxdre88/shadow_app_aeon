@@ -14,6 +14,16 @@ export async function findDependencies(projectId: string) {
     .where(eq(boardTasks.projectId, projectId))
 }
 
+export async function findDependenciesForTask(taskId: string) {
+  return db
+    .select({
+      blockerTaskId: taskDependencies.blockerTaskId,
+      blockedTaskId: taskDependencies.blockedTaskId,
+    })
+    .from(taskDependencies)
+    .where(or(eq(taskDependencies.blockerTaskId, taskId), eq(taskDependencies.blockedTaskId, taskId)))
+}
+
 export async function addDependency(blockerTaskId: string, blockedTaskId: string, projectId: string) {
   if (blockerTaskId === blockedTaskId) throw new Error('A task cannot block itself')
   const tasks = await db
@@ -89,14 +99,7 @@ export async function addDependenciesBatch(
   }
 
   if (toInsert.length > 0) {
-    await db.transaction(async (tx) => {
-      for (const pair of toInsert) {
-        await tx
-          .insert(taskDependencies)
-          .values(pair)
-          .onConflictDoNothing()
-      }
-    })
+    await db.insert(taskDependencies).values(toInsert).onConflictDoNothing()
   }
 
   if (toInsert.length > 0) {

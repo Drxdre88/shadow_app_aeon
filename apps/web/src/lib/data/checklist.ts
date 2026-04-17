@@ -2,8 +2,6 @@ import { db } from '@/lib/db'
 import { checklistItems, boardTasks } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { syncChecklistToGanttProgress } from './bridge'
-import { findTaskLabels } from './labels'
-import { findDependencies } from './dependencies'
 
 export async function findChecklistItems(taskId: string, projectId: string) {
   return db
@@ -24,6 +22,22 @@ export async function findChecklistItems(taskId: string, projectId: string) {
     .innerJoin(boardTasks, eq(boardTasks.id, checklistItems.taskId))
     .where(and(eq(checklistItems.taskId, taskId), eq(boardTasks.projectId, projectId)))
     .orderBy(checklistItems.orderIndex)
+}
+
+export async function findChecklistItemsBatch(taskIds: string[]) {
+  if (taskIds.length === 0) return new Map<string, { title: string; groupName: string }[]>()
+  const rows = await db
+    .select({ taskId: checklistItems.taskId, title: checklistItems.title, groupName: checklistItems.groupName })
+    .from(checklistItems)
+    .where(inArray(checklistItems.taskId, taskIds))
+    .orderBy(checklistItems.orderIndex)
+
+  const result = new Map<string, { title: string; groupName: string }[]>()
+  for (const row of rows) {
+    if (!result.has(row.taskId)) result.set(row.taskId, [])
+    result.get(row.taskId)!.push({ title: row.title, groupName: row.groupName })
+  }
+  return result
 }
 
 export async function createChecklistItem(
@@ -161,13 +175,21 @@ export async function updateChecklistItemsBatch(
     results.push(...updated)
   }
 
-  for (const item of customUpdates) {
-    const updated = await updateChecklistItem(item.itemId, taskId, {
-      state: item.state,
-      title: item.title,
-      status: item.status,
+  if (customUpdates.length > 0) {
+    await db.transaction(async (tx) => {
+      for (const item of customUpdates) {
+        const dbUpdates: Record<string, unknown> = {}
+        if (item.state !== undefined) { dbUpdates.state = item.state; dbUpdates.completed = item.state === 'checked' }
+        if (item.title !== undefined) dbUpdates.title = item.title
+        if (item.status !== undefined) dbUpdates.status = item.status
+        const [updated] = await tx
+          .update(checklistItems)
+          .set(dbUpdates)
+          .where(and(eq(checklistItems.id, item.itemId), eq(checklistItems.taskId, taskId)))
+          .returning({ id: checklistItems.id, title: checklistItems.title, state: checklistItems.state })
+        if (updated) results.push(updated)
+      }
     })
-    if (updated) results.push({ id: updated.id, title: updated.title, state: updated.state })
   }
 
   syncChecklistToGanttProgress(taskId).catch(() => {})
@@ -179,11 +201,13 @@ export async function reorderChecklistItems(
   updates: { id: string; orderIndex: number }[]
 ) {
   if (updates.length === 0) return
-  for (const u of updates) {
-    await db.update(checklistItems)
-      .set({ orderIndex: u.orderIndex })
-      .where(and(eq(checklistItems.id, u.id), eq(checklistItems.taskId, taskId)))
-  }
+  await db.transaction(async (tx) => {
+    for (const u of updates) {
+      await tx.update(checklistItems)
+        .set({ orderIndex: u.orderIndex })
+        .where(and(eq(checklistItems.id, u.id), eq(checklistItems.taskId, taskId)))
+    }
+  })
 }
 
 export async function deleteChecklistGroup(taskId: string, groupName: string) {
@@ -214,27 +238,21 @@ export async function findTaskWithDetails(taskId: string, projectId: string) {
 
   if (!task) return null
 
-  const items = await findChecklistItems(taskId, projectId)
+  const { findLabelsForTask } = await import('./labels')
+  const { findDependenciesForTask } = await import('./dependencies')
 
-  const taskLabels = await findTaskLabels(task.projectId)
-  const assignedLabels = taskLabels
-    .filter((tl) => tl.taskId === taskId)
-    .map((tl) => tl.labelId)
-
-  const allDeps = await findDependencies(task.projectId)
-  const blocks = allDeps
-    .filter((d) => d.blockerTaskId === taskId)
-    .map((d) => d.blockedTaskId)
-  const blockedBy = allDeps
-    .filter((d) => d.blockedTaskId === taskId)
-    .map((d) => d.blockerTaskId)
+  const [items, taskLabelRows, taskDeps] = await Promise.all([
+    findChecklistItems(taskId, projectId),
+    findLabelsForTask(taskId, projectId),
+    findDependenciesForTask(taskId),
+  ])
 
   return {
     ...task,
-    labels: assignedLabels,
+    labels: taskLabelRows.map((tl) => tl.labelId),
     checklist: items,
-    blocks,
-    blockedBy,
+    blocks: taskDeps.filter((d) => d.blockerTaskId === taskId).map((d) => d.blockedTaskId),
+    blockedBy: taskDeps.filter((d) => d.blockedTaskId === taskId).map((d) => d.blockerTaskId),
   }
 }
 

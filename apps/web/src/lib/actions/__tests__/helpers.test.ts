@@ -8,17 +8,17 @@ vi.mock('@/lib/db', () => ({ db: {} }))
 vi.mock('@/lib/db/schema', () => ({}))
 vi.mock('@/lib/auth', () => ({ auth: vi.fn() }))
 vi.mock('@/lib/data/projects', () => ({
+  verifyProjectAccess: vi.fn(),
   verifyProjectOwnership: vi.fn(),
   getMemberRole: vi.fn(),
 }))
 
 import { requireAuth, requireOwnership, requireEditor } from '../helpers'
 import { auth } from '@/lib/auth'
-import { verifyProjectOwnership, getMemberRole } from '@/lib/data/projects'
+import { verifyProjectAccess } from '@/lib/data/projects'
 
 const mockAuth = vi.mocked(auth)
-const mockVerifyProjectOwnership = vi.mocked(verifyProjectOwnership)
-const mockGetMemberRole = vi.mocked(getMemberRole)
+const mockVerifyProjectAccess = vi.mocked(verifyProjectAccess)
 
 const SESSION_USER_ID = 'user-abc'
 const PROJECT_ID = 'proj-xyz'
@@ -39,8 +39,14 @@ const makeProject = (userId = SESSION_USER_ID) => ({
   settings: null,
   group: null,
   planetImage: null,
+  boardVersion: 0,
   createdAt: new Date(),
   updatedAt: new Date(),
+})
+
+const makeAccess = (role: string, userId = SESSION_USER_ID) => ({
+  project: makeProject(userId),
+  role,
 })
 
 beforeEach(() => {
@@ -73,12 +79,12 @@ describe('requireAuth', () => {
 describe('requireOwnership', () => {
   it('returns userId when authenticated and project is found', async () => {
     mockAuth.mockResolvedValue(makeSession() as never)
-    mockVerifyProjectOwnership.mockResolvedValue(makeProject() as never)
+    mockVerifyProjectAccess.mockResolvedValue(makeAccess('owner') as never)
 
     const result = await requireOwnership(PROJECT_ID)
 
     expect(result).toBe(SESSION_USER_ID)
-    expect(mockVerifyProjectOwnership).toHaveBeenCalledWith(PROJECT_ID, SESSION_USER_ID)
+    expect(mockVerifyProjectAccess).toHaveBeenCalledWith(PROJECT_ID, SESSION_USER_ID)
   })
 
   it('throws Unauthorized when not authenticated', async () => {
@@ -88,7 +94,7 @@ describe('requireOwnership', () => {
 
   it('throws when project not found or user has no access', async () => {
     mockAuth.mockResolvedValue(makeSession() as never)
-    mockVerifyProjectOwnership.mockResolvedValue(null as never)
+    mockVerifyProjectAccess.mockResolvedValue(null as never)
 
     await expect(requireOwnership(PROJECT_ID)).rejects.toThrow(
       'Project not found or unauthorized'
@@ -97,10 +103,9 @@ describe('requireOwnership', () => {
 })
 
 describe('requireEditor', () => {
-  it('returns userId for owner when role is null but project.userId matches', async () => {
+  it('returns userId for owner role', async () => {
     mockAuth.mockResolvedValue(makeSession() as never)
-    mockVerifyProjectOwnership.mockResolvedValue(makeProject(SESSION_USER_ID) as never)
-    mockGetMemberRole.mockResolvedValue(null as never)
+    mockVerifyProjectAccess.mockResolvedValue(makeAccess('owner') as never)
 
     const result = await requireEditor(PROJECT_ID)
 
@@ -109,8 +114,7 @@ describe('requireEditor', () => {
 
   it('returns userId for editor role', async () => {
     mockAuth.mockResolvedValue(makeSession() as never)
-    mockVerifyProjectOwnership.mockResolvedValue(makeProject('other-user') as never)
-    mockGetMemberRole.mockResolvedValue('editor' as never)
+    mockVerifyProjectAccess.mockResolvedValue(makeAccess('editor', 'other-user') as never)
 
     const result = await requireEditor(PROJECT_ID)
 
@@ -119,8 +123,7 @@ describe('requireEditor', () => {
 
   it('returns userId for admin role', async () => {
     mockAuth.mockResolvedValue(makeSession() as never)
-    mockVerifyProjectOwnership.mockResolvedValue(makeProject('other-user') as never)
-    mockGetMemberRole.mockResolvedValue('admin' as never)
+    mockVerifyProjectAccess.mockResolvedValue(makeAccess('admin', 'other-user') as never)
 
     const result = await requireEditor(PROJECT_ID)
 
@@ -129,21 +132,10 @@ describe('requireEditor', () => {
 
   it('throws when role is viewer', async () => {
     mockAuth.mockResolvedValue(makeSession() as never)
-    mockVerifyProjectOwnership.mockResolvedValue(makeProject('other-user') as never)
-    mockGetMemberRole.mockResolvedValue('viewer' as never)
+    mockVerifyProjectAccess.mockResolvedValue(makeAccess('viewer', 'other-user') as never)
 
     await expect(requireEditor(PROJECT_ID)).rejects.toThrow(
       'Viewers cannot modify this project'
-    )
-  })
-
-  it('throws when role is null and project.userId does not match', async () => {
-    mockAuth.mockResolvedValue(makeSession() as never)
-    mockVerifyProjectOwnership.mockResolvedValue(makeProject('different-owner') as never)
-    mockGetMemberRole.mockResolvedValue(null as never)
-
-    await expect(requireEditor(PROJECT_ID)).rejects.toThrow(
-      'Not a member of this project'
     )
   })
 
@@ -154,7 +146,7 @@ describe('requireEditor', () => {
 
   it('throws when project not found', async () => {
     mockAuth.mockResolvedValue(makeSession() as never)
-    mockVerifyProjectOwnership.mockResolvedValue(null as never)
+    mockVerifyProjectAccess.mockResolvedValue(null as never)
 
     await expect(requireEditor(PROJECT_ID)).rejects.toThrow(
       'Project not found or unauthorized'

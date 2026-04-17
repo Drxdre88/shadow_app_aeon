@@ -1,6 +1,8 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useThemeStore } from '@/stores/themeStore'
 import { useSidebarStore } from '@/stores/sidebarStore'
 import { cn } from '@/lib/utils/cn'
@@ -9,6 +11,7 @@ import { SettingsButton } from '@/components/ui/SettingsModal'
 import { HelpButton } from '@/components/ui/HelpModal'
 import { StatsButton } from '@/components/ui/StatsModal'
 import { BetaFeaturesButton } from '@/components/ui/BetaFeaturesModal'
+import { getSiblingProjects } from '@/lib/actions/projects'
 import {
   LayoutGrid,
   Calendar,
@@ -21,11 +24,13 @@ import {
   User,
   ArrowLeft,
   Eye,
+  Folder,
 } from 'lucide-react'
 
 type ViewTab = 'board' | 'gantt' | 'canvas' | 'trophy' | 'velocity'
 
 interface ProjectSidebarProps {
+  projectId: string
   user: { name?: string | null; email?: string | null; image?: string | null; role: string }
   activeTab: ViewTab
   onTabChange: (tab: ViewTab) => void
@@ -40,11 +45,19 @@ const VIEW_TABS = [
   { id: 'velocity' as const, icon: Activity, label: 'Velocity' },
 ]
 
-export function ProjectSidebar({ user, activeTab, onTabChange, onSignOut }: ProjectSidebarProps) {
+export function ProjectSidebar({ projectId, user, activeTab, onTabChange, onSignOut }: ProjectSidebarProps) {
   const colors = useThemeStore((s) => s.colors)
   const { collapsed, toggleCollapsed } = useSidebarStore()
+  const [siblings, setSiblings] = useState<{ realmName: string | null; projects: { id: string; name: string; planetImage: string | null }[] }>({ realmName: null, projects: [] })
+  const router = useRouter()
 
   const glowColor = colors?.glow ?? 'rgba(139, 92, 246, 0.4)'
+
+  useEffect(() => {
+    getSiblingProjects(projectId)
+      .then(setSiblings)
+      .catch(() => setSiblings({ realmName: null, projects: [] }))
+  }, [projectId])
 
   return (
     <aside
@@ -118,6 +131,43 @@ export function ProjectSidebar({ user, activeTab, onTabChange, onSignOut }: Proj
             )
           })}
         </div>
+
+        {!collapsed && siblings.realmName && siblings.projects.length > 0 && (
+          <>
+            <div className="mx-1 my-3 h-px" style={{ background: 'linear-gradient(90deg, transparent, var(--primary), transparent)', opacity: 0.2 }} />
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5 px-2 py-1">
+                <Folder className="w-3 h-3" style={{ color: 'var(--primary)', opacity: 0.5 }} />
+                <span className="text-[9px] font-semibold uppercase tracking-widest" style={{ color: 'var(--primary)', opacity: 0.5 }}>
+                  {siblings.realmName}
+                </span>
+              </div>
+              <div className="max-h-[300px] overflow-y-auto scrollbar-thin">
+                {siblings.projects.map((p) => (
+                  <motion.button
+                    key={p.id}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => router.push(`/project/${p.id}`)}
+                    className={cn(
+                      'group relative w-full flex items-center gap-2.5 rounded-lg px-2 py-1.5',
+                      'text-left text-xs overflow-hidden',
+                      'transition-all duration-200',
+                      'text-white/40 hover:text-white/80 hover:translate-x-0.5 hover:bg-white/[0.04]'
+                    )}
+                  >
+                    <div
+                      className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center ring-1 ring-white/10"
+                      style={{ background: 'rgba(255, 255, 255, 0.06)' }}
+                    >
+                      <span className="text-[8px] font-medium text-white/50">{p.name.charAt(0)}</span>
+                    </div>
+                    <span className="flex-1 truncate min-w-0">{p.name}</span>
+                  </motion.button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </nav>
 
       <div className="mx-3 h-px" style={{ background: 'linear-gradient(90deg, transparent, var(--primary), transparent)', opacity: 0.2 }} />

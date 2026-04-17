@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { boardTasks } from '@/lib/db/schema'
-import { eq, and, asc, sql, isNull, isNotNull } from 'drizzle-orm'
+import { eq, and, asc, sql, isNull, isNotNull, inArray } from 'drizzle-orm'
 import type { CreateTaskInput, UpdateTaskInput } from './validators'
 import { touchProject } from './projects'
 
@@ -21,6 +21,14 @@ export async function findTasks(
     .orderBy(asc(boardTasks.orderIndex))
     .limit(limit)
     .offset(offset)
+}
+
+export async function findTasksByColumn(projectId: string, columnId: string) {
+  return db
+    .select()
+    .from(boardTasks)
+    .where(and(eq(boardTasks.projectId, projectId), eq(boardTasks.columnId, columnId), isNull(boardTasks.archivedAt)))
+    .orderBy(asc(boardTasks.orderIndex))
 }
 
 export async function findTaskById(taskId: string, projectId: string) {
@@ -227,15 +235,11 @@ export async function restoreTask(taskId: string, projectId: string) {
 
 export async function archiveTasksBatch(projectId: string, taskIds: string[]) {
   if (taskIds.length === 0) return []
-  const results = await Promise.all(
-    taskIds.map((id) =>
-      db
-        .update(boardTasks)
-        .set({ archivedAt: new Date() })
-        .where(and(eq(boardTasks.id, id), eq(boardTasks.projectId, projectId)))
-        .returning()
-    )
-  )
+  const results = await db
+    .update(boardTasks)
+    .set({ archivedAt: new Date() })
+    .where(and(inArray(boardTasks.id, taskIds), eq(boardTasks.projectId, projectId)))
+    .returning()
   await touchProject(projectId, { type: 'task:updated' })
-  return results.flat()
+  return results
 }
