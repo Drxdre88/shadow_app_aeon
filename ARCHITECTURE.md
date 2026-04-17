@@ -1,12 +1,12 @@
 # ARCHITECTURE.md
 
-Last updated: 2026-04-08
+Last updated: 2026-04-16
 
 ---
 
 ## 1. OVERVIEW
 
-Aeon is a project management web application built as a Turborepo monorepo (`apps/web` + `apps/desktop` + `packages/shared`). The stack is **Next.js 16** (App Router, **React Compiler**, **Partial Prerendering**) with **TypeScript**, **PostgreSQL** via **Neon** serverless driver, **Drizzle ORM**, **Zustand** (scoped selectors) for client state, **NextAuth v5** (beta) for authentication, **Tailwind CSS** for styling, and **Framer Motion** for animations. It features a kanban board (with virtual scrolling via TanStack Virtual), Gantt chart, canvas (whiteboard), trophy/vault archive, velocity analytics, 150+ theme presets, an MCP tool server (52 tools) for AI integration, **Pusher** real-time sync (with 30s polling fallback), a **PWA** (manifest + service worker + offline fallback), a **Capacitor** mobile shell (configured), and a Tauri-based desktop shell (scaffold, parked).
+Aeon is a project management web application built as a Turborepo monorepo (`apps/web` + `apps/desktop` + `packages/shared`). The stack is **Next.js 16** (App Router, **React Compiler**, **Partial Prerendering**) with **TypeScript**, **PostgreSQL** via **Neon** serverless driver, **Drizzle ORM**, **Zustand** (scoped selectors) for client state, **NextAuth v5** (beta) for authentication, **Tailwind CSS** for styling, and **Framer Motion** for animations. It features a kanban board (with virtual scrolling via TanStack Virtual), Gantt chart, canvas (whiteboard), trophy/vault archive, velocity analytics, 150+ theme presets, an MCP tool server (63 tools) for AI integration, **Pusher** real-time sync (with 30s polling fallback), a **PWA** (manifest + service worker + offline fallback), a **Capacitor** mobile shell (configured), and a Tauri-based desktop shell (scaffold, parked).
 
 ---
 
@@ -125,6 +125,12 @@ Auth: Session cookie OR `Bearer` API key (via `authenticateRequest`). Rate-limit
 | DELETE | `/api/v1/projects/[id]/dependencies/remove` | Remove dependency |
 | GET/POST | `/api/v1/projects/[id]/gantt` | List / create gantt tasks |
 | PUT/DELETE | `/api/v1/projects/[id]/gantt/[taskId]` | Update / delete gantt task |
+| POST | `/api/v1/projects/[id]/gantt/batch` | Batch create gantt tasks (all-or-nothing, bulk row-ownership check) |
+| GET/POST | `/api/v1/projects/[id]/rows` | List / create gantt swim-lane rows |
+| PUT/DELETE | `/api/v1/projects/[id]/rows/[rowId]` | Update / delete row |
+| PUT | `/api/v1/projects/[id]/rows/reorder` | Reorder rows |
+| GET/POST | `/api/v1/projects/[id]/gantt-views` | List / create saved Gantt views |
+| PUT/DELETE | `/api/v1/projects/[id]/gantt-views/[viewId]` | Update / delete Gantt view |
 | GET/POST | `/api/v1/projects/[id]/canvas` | Get / save canvas state |
 | GET/POST | `/api/v1/api-keys` | List / create API keys |
 | PATCH/DELETE | `/api/v1/api-keys/[id]` | Revoke / delete key |
@@ -141,23 +147,23 @@ Auth: Session cookie OR `Bearer` API key (via `authenticateRequest`). Rate-limit
 
 ### MCP Tools (`/api/[transport]/`)
 
-Auth: Bearer token (API key or master key). 52 tools across 11 categories:
+Auth: Bearer token (API key or master key). 63 tools across 11 categories:
 
 | Category | Tools | Count |
 |---|---|---|
 | projects | list, get, create, update, delete, summary | 6 |
 | columns | list, create, update, delete, reorder | 5 |
-| tasks | list, create, update, delete, get_detail, set_labels | 6 |
-| gantt | list, create, update | 3 |
+| tasks | list, create, update, delete, get_detail, batch_create_tasks | 6 |
+| gantt | list_gantt_tasks, create_gantt_task, update_gantt_task, delete_gantt_task, batch_create_gantt_tasks, list_rows, create_row, update_row, delete_row, reorder_rows, list_gantt_views, create_gantt_view, update_gantt_view, delete_gantt_view | 14 |
 | labels | list, create, update, delete, add_to_task, remove_from_task | 6 |
 | checklist | list, create, update, delete, batch_create | 5 |
 | comments | list, create, update, delete | 4 |
 | dependencies | list, add, remove, batch_add | 4 |
 | analytics | get_velocity_stats | 1 |
-| bulk | batch_create_tasks | 1 |
+| bulk | setup_board | 1 |
 | realms | list, create, update, delete, members (list/invite/remove/update_role), projects (list/add/remove) | 11 |
 
-**Parity gaps:** MCP has no canvas tools. REST has export/stats/planets endpoints that MCP lacks. Realm CRUD + members + projects now have full MCP and REST parity. Both MCP and REST enforce `canAccessProject` on realm project assignment. Zod validators added for realm operations. `remove_realm_member` has target-owner guard (cannot remove another owner). `set_project_group` removed (legacy tool).
+**Parity gaps:** MCP has no canvas tools. REST has export/stats/planets endpoints that MCP lacks. Realm CRUD + members + projects have full MCP and REST parity. Gantt surface (tasks + rows + views + batch + reorder) now has full MCP and REST parity — a static parity test in `src/app/api/__tests__/gantt-parity.test.ts` locks both surfaces against drift (tool count, validator sharing, data-function sharing, per-op ownership checks). Both MCP and REST enforce `canAccessProject` on realm project assignment. Zod validators added for realm operations. `remove_realm_member` has target-owner guard.
 
 ---
 
@@ -266,6 +272,7 @@ All stores use Zustand v5.
 | No `React.memo` usage | Low | React Compiler (enabled) auto-memoizes; manual memo no longer needed |
 | React Compiler closure staleness | Low | Compiler auto-memoization makes state closures unreliable in blur/commit handlers -- ref pattern (useRef) is now standard for blur-commit flows in checklist editing; other edit flows may not yet follow this pattern |
 | MCP lacks canvas tools | Medium | REST has canvas endpoints, MCP does not |
+| Gantt mutations don't fire Pusher/boardVersion | Low | `createGanttTask` / `createRow` / `createGanttView` (+ updates/deletes) don't call `touchProject` — unlike board tasks. Changes won't broadcast to other clients in real time; clients see them on next 30s poll only. Pre-existing gap, not introduced by parity work |
 | Activity feed has no UI | Low | `activity_events` table populated but no frontend display |
 | Zustand persist hydration flash | Low | sidebarStore now has hydration guard; board/canvas/gantt stores may still flash defaults |
 | Desktop app is scaffold only | Low | Tauri config exists, no web-shell integration |
@@ -276,7 +283,15 @@ All stores use Zustand v5.
 
 ---
 
-## 9. RECENT CHANGES (2026-04-08 session)
+## 9. RECENT CHANGES (2026-04-16 session)
+
+1. Gantt MCP parity — 11 new MCP tools (delete_gantt_task, batch_create_gantt_tasks, list/create/update/delete_row, reorder_rows, list/create/update/delete_gantt_view) bringing Gantt category to 14 tools, total MCP surface 52→63
+2. Gantt REST parity — 7 new route files: `/projects/[id]/gantt/batch`, `/rows/route.ts`, `/rows/[rowId]/route.ts`, `/rows/reorder/route.ts`, `/gantt-views/route.ts`, `/gantt-views/[viewId]/route.ts` (every new MCP tool has a matching REST route using the SAME validators + data functions)
+3. `lib/data/gantt.ts` — added `createGanttTasksBatch` (all-or-nothing insert), `reorderRows` (transactional update mirroring `reorderColumns`), `verifyRowsOwnership` (bulk row→project ownership check in one query)
+4. `lib/data/gantt.ts createRow` — orderIndex now optional; when omitted, auto-assigns via `max(orderIndex) + 1` in a transaction (mirrors `createColumn` pattern). `createRowSchema.orderIndex` becomes `.optional()` — backward compatible for existing action callers
+5. `src/app/api/__tests__/gantt-parity.test.ts` — new static parity test (53 assertions) locks MCP ↔ REST against drift: enforces matching tool/route count, shared validators, shared data functions, per-op ownership checks
+
+## 9.1 PREVIOUS CHANGES (2026-04-08 session)
 
 1. TaskChecklist.tsx -- ref-based commit guards (groupCommittedRef, editingGroupNameRef) prevent double-commit on blur in React Compiler environment; pendingGroups tracks renamed-before-persisted groups; autoFocusedRef prevents cursor stealing on card open
 2. TreeView.tsx -- single-group flattening hides General folder when only one group exists; hover action icons (edit/share/delete) with aria-labels; race guard + error handling on group rename and project drop; onDelete type fix

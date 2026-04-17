@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import Image from 'next/image'
 import aeonLogo from '@/assets/aeon.png'
 import { useThemeStore } from '@/stores/themeStore'
@@ -48,7 +49,11 @@ export function AppSidebar({
   onSignOut,
 }: AppSidebarProps) {
   const colors = useThemeStore((s) => s.colors)
-  const { collapsed, activeRealmId, toggleCollapsed, setActiveRealm } = useSidebarStore()
+  const { collapsed, activeRealmId, toggleCollapsed, setActiveRealm, maybeAutoCollapseForViewport } = useSidebarStore()
+
+  useEffect(() => {
+    maybeAutoCollapseForViewport()
+  }, [maybeAutoCollapseForViewport])
 
   const glowColor = colors?.glow ?? 'rgba(139, 92, 246, 0.4)'
 

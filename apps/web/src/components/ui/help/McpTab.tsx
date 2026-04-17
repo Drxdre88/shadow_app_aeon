@@ -40,7 +40,22 @@ const TOOL_CATEGORIES = [
   },
   {
     name: 'Gantt',
-    tools: ['list_gantt_tasks', 'create_gantt_task', 'update_gantt_task'],
+    tools: [
+      'list_gantt_tasks',
+      'create_gantt_task',
+      'update_gantt_task',
+      'delete_gantt_task',
+      'batch_create_gantt_tasks',
+      'list_rows',
+      'create_row',
+      'update_row',
+      'delete_row',
+      'reorder_rows',
+      'list_gantt_views',
+      'create_gantt_view',
+      'update_gantt_view',
+      'delete_gantt_view',
+    ],
   },
   {
     name: 'Dependencies',

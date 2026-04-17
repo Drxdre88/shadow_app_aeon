@@ -147,13 +147,20 @@ export const updateChecklistItemSchema = z.object({
 export const createRowSchema = z.object({
   name: z.string().trim().min(1).max(255),
   color: z.string().trim().max(20).default('purple'),
-  orderIndex: z.number().int(),
+  orderIndex: z.number().int().optional(),
 })
 
 export const updateRowSchema = z.object({
   name: z.string().trim().min(1).max(255).optional(),
   color: z.string().trim().max(20).optional(),
   orderIndex: z.number().int().optional(),
+})
+
+export const reorderRowsSchema = z.object({
+  updates: z.array(z.object({
+    id: z.string().uuid(),
+    orderIndex: z.number().int().min(0),
+  })).min(1),
 })
 
 export const reorderTaskEntrySchema = z.object({
@@ -289,5 +296,7 @@ export type PreferencesInput = z.infer<typeof preferencesSchema>
 export type CreateLabelInput = z.infer<typeof createLabelSchema>
 export type CreateColumnInput = z.infer<typeof createColumnSchema>
 export type UpdateColumnInput = z.infer<typeof updateColumnSchema>
+export type CreateRowInput = z.infer<typeof createRowSchema>
+export type UpdateRowInput = z.infer<typeof updateRowSchema>
 export type CreateCanvasNodeInput = z.infer<typeof createCanvasNodeSchema>
 export type UpdateCanvasNodeInput = z.infer<typeof updateCanvasNodeSchema>

@@ -1,4 +1,3 @@
-import { randomBytes } from 'crypto'
 import { eq, and, inArray, isNull, gte, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { workspaceGroups, groupMembers, projectGroups, projects, users, realmInvites, projectInvites, projectMembers } from '@/lib/db/schema'
@@ -359,7 +358,9 @@ const REALM_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 export async function createRealmInvite(groupId: string, email: string, role: string, invitedBy: string) {
   const lowerEmail = email.toLowerCase()
-  const token = randomBytes(32).toString('hex')
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  const token = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
   const expiresAt = new Date(Date.now() + REALM_INVITE_TTL_MS)
 
   return db.transaction(async (tx) => {

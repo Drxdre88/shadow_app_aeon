@@ -7,6 +7,7 @@ node_modules/
 CLAUDE.md
 .claude/
 .mcp.json
+claude_code_migration_guide.md
 
 # Build outputs
 .next/
