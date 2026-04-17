@@ -34,10 +34,9 @@ vi.mock('@/lib/data/dependencies', () => ({
 }))
 
 vi.mock('@/lib/data/checklist', () => ({
-  findChecklistSummaries: vi.fn(),
+  findChecklistSummariesAndPreviews: vi.fn(),
   findChecklistItems: vi.fn(),
   createChecklistItemsBatch: vi.fn(),
-  findChecklistPreviews: vi.fn(),
 }))
 
 vi.mock('@/lib/data/bridge', () => ({
@@ -73,10 +72,9 @@ import { findColumns as _findColumns, createDefaultColumns as _createDefaultColu
 import { findLabels as _findLabels, findTaskLabels as _findTaskLabels, setTaskLabels as _setTaskLabels } from '@/lib/data/labels'
 import { findDependencies as _findDependencies } from '@/lib/data/dependencies'
 import {
-  findChecklistSummaries as _findChecklistSummaries,
+  findChecklistSummariesAndPreviews as _findChecklistSummariesAndPreviews,
   findChecklistItems as _findChecklistItems,
   createChecklistItemsBatch as _createChecklistItemsBatch,
-  findChecklistPreviews as _findChecklistPreviews,
 } from '@/lib/data/checklist'
 import { syncBoardStatusToGantt, deleteLinkedGanttTask } from '@/lib/data/bridge'
 import { emitActivity } from '@/lib/data/activity'
@@ -186,8 +184,7 @@ beforeEach(() => {
   vi.mocked(_findLabels).mockResolvedValue([])
   vi.mocked(_findTaskLabels).mockResolvedValue([])
   vi.mocked(_findDependencies).mockResolvedValue([])
-  vi.mocked(_findChecklistSummaries).mockResolvedValue({})
-  vi.mocked(_findChecklistPreviews).mockResolvedValue({})
+  vi.mocked(_findChecklistSummariesAndPreviews).mockResolvedValue({ summaries: {}, previews: {} })
 })
 
 describe('loadBoardData', () => {
@@ -215,8 +212,7 @@ describe('loadBoardData', () => {
     vi.mocked(_findLabels).mockResolvedValue(labels)
     vi.mocked(_findTaskLabels).mockResolvedValue(taskLabels)
     vi.mocked(_findDependencies).mockResolvedValue(dependencies)
-    vi.mocked(_findChecklistSummaries).mockResolvedValue(checklistSummaries)
-    vi.mocked(_findChecklistPreviews).mockResolvedValue(checklistPreviews)
+    vi.mocked(_findChecklistSummariesAndPreviews).mockResolvedValue({ summaries: checklistSummaries, previews: checklistPreviews })
 
     const result = await loadBoardData(PROJECT_ID)
 

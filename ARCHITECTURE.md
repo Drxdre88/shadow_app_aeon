@@ -88,7 +88,7 @@ shadow-specs/                      -- AI spec workflow directory
 | `user_contacts` | id, userId, contactEmail | Contact autocomplete |
 | `realm_invites` | id, groupId, email, token, role, invitedBy, acceptedAt, expiresAt | Realm invite tokens (7-day expiry) |
 
-**Patterns:** Server actions in `lib/actions/` call data functions in `lib/data/`. API routes in `api/v1/` call the same `lib/data/` functions. All mutations bump `boardVersion` via `await touchProject()`. `auth()` wrapped with `React.cache()` for dedup within server renders. Auth helpers (`requireEditor`, `requireMember`, `requireOwnership` in `lib/actions/helpers.ts`) all delegate to `verifyProjectAccess()` — resolves direct membership, owner, and realm membership in 1–2 queries (down from 4). Batch helpers added this session: `findChecklistItemsBatch`, `snapshotTaskDataBatch`, `findTasksByColumn`, `findDependenciesForTask`, `findProjectsWithRealmName`, `findSiblingProjects` — eliminate N+1 patterns across vault, transfer, checklist, and task-detail flows.
+**Patterns:** Server actions in `lib/actions/` call data functions in `lib/data/`. API routes in `api/v1/` call the same `lib/data/` functions. All mutations bump `boardVersion` via `await touchProject()`. `auth()` wrapped with `React.cache()` for dedup within server renders. Auth helpers (`requireEditor`, `requireMember`, `requireOwnership` in `lib/actions/helpers.ts`) all delegate to `verifyProjectAccess()` — resolves direct membership, owner, and realm membership in 1–2 queries (down from 4). Batch helpers: `findChecklistItemsBatch`, `snapshotTaskDataBatch`, `findTasksByColumn`, `findDependenciesForTask`, `findProjectsWithRealmName`, `findSiblingProjects` — eliminate N+1 patterns across vault, transfer, checklist, and task-detail flows. `createChecklistItem` and `createChecklistItemsBatch` use `db.transaction()` with `MAX(orderIndex)` for atomic ordering. `findChecklistSummaries` / `findChecklistPreviews` wrapper functions removed — all callers use `findChecklistSummariesAndPreviews` directly.
 
 ---
 
@@ -171,7 +171,7 @@ Auth: Bearer token (API key or master key). 63 tools across 11 categories:
 
 | Feature | Status | Key Files | Notes |
 |---|---|---|---|
-| **Board view (Kanban)** | Complete | `components/board/TaskBoard.tsx`, `KanbanColumn.tsx`, `SortableColumn.tsx`, `SortableTaskCard.tsx` | Full DnD via @dnd-kit, column reorder, task move |
+| **Board view (Kanban)** | Complete | `components/board/TaskBoard.tsx`, `KanbanColumn.tsx`, `SortableColumn.tsx`, `SortableTaskCard.tsx` | Full DnD via @dnd-kit, column reorder, task move. `tasksByColumn` pre-computed as useMemo Map (replaces per-column .filter().sort()); module-level `EMPTY_TASKS` constant for stable empty array ref |
 | **Drag & Drop** | Complete | `components/board/useBoardDnD.ts`, `DragPreview.tsx` | Custom drag preview, glow/ghost effects |
 | **Task CRUD** | Complete | `TaskEditModal.tsx`, `QuickAddTask.tsx` | Inline add + full modal edit |
 | **Task context menu** | Complete | `TaskContextMenu.tsx`, `ContextMenuButton.tsx` | Right-click actions; transfer submenu groups projects by realm (scrollable) via `listProjectsForTransfer` |
@@ -222,7 +222,7 @@ Auth: Bearer token (API key or master key). 63 tools across 11 categories:
 | **Checklist UX** | Complete | `board/useChecklistHandlers.ts`, `board/checklist/TaskChecklist.tsx` | Auto-focus on card open, auto-expanding textarea, Enter auto-advance, optimistic board summary sync; ref-based commit guards (groupCommittedRef, editingGroupNameRef, autoFocusedRef) for React Compiler closure safety; pendingGroups tracks renamed-before-persisted groups |
 | **Desktop (Tauri)** | Parked | `apps/desktop/` | Tauri config + hello-world Rust, explicitly deferred post-beta |
 | **Real-time push (Pusher)** | Complete | `lib/pusher.ts`, `lib/realtime/index.ts` | Pusher Channels, fire-and-forget from touchProject, graceful degradation if unconfigured |
-| **Virtual scrolling** | Complete | `components/board/VirtualizedTaskList.tsx` | TanStack Virtual for columns with 15+ cards, dynamic measurement, 5-item overscan |
+| **Virtual scrolling** | Complete | `components/board/VirtualizedTaskList.tsx` | TanStack Virtual for columns with 15+ cards, dynamic measurement, 5-item overscan. `ESTIMATED_CARD_HEIGHT` 90→160; opacity gate (0→1 on rAF) prevents stagger flash on initial render of dense columns |
 | **Optimistic UI** | Complete | `app/project/[id]/useBoardHandlers.ts` | Snapshot-rollback on all mutations (create/update/delete/move/archive/vault), undo toasts |
 | **Confirm modal** | Complete | `components/ui/ConfirmModal.tsx` | Reusable delete confirmation, wired into GridView + TreeView |
 | **Scoped visibility** | Complete | `WorkspaceSettingsModal.tsx`, migration `0010` | owners_only filtering on project_groups, Eye/EyeOff toggle per project |
@@ -238,7 +238,7 @@ All stores use Zustand v5.
 
 | Store | Manages | File | Persistence |
 |---|---|---|---|
-| `useBoardStore` | Columns, tasks, labels, dependencies, checklist summaries/previews, selection, filters state, crossed tasks | `apps/web/src/lib/store/boardStore.ts` | `zustand/persist` (key: implicit) |
+| `useBoardStore` | Columns, tasks, labels, dependencies, checklist summaries/previews, selection, filters state, crossed tasks | `apps/web/src/lib/store/boardStore.ts` | `zustand/persist` (key: implicit). Project-switch clear (in `useProjectData`) now resets tasks + checklistSummaries + checklistPreviews alongside columns/labels/dependencies |
 | `useCanvasStore` | Canvas nodes, edges, selection | `apps/web/src/lib/store/canvasStore.ts` | `zustand/persist` |
 | `useGanttStore` | Gantt tasks, rows, views, active view, time scale | `apps/web/src/lib/store/ganttStore.ts` | `zustand/persist` |
 | `useUndoStore` | Undo stack (max 20 entries) | `apps/web/src/lib/store/undoStore.ts` | None (in-memory) |
@@ -284,7 +284,14 @@ All stores use Zustand v5.
 
 ---
 
-## 9. RECENT CHANGES (2026-04-17 session)
+## 9. RECENT CHANGES (2026-04-17 session — second pass)
+
+1. `lib/data/checklist.ts` — `createChecklistItem` and `createChecklistItemsBatch` now use `db.transaction()` with `MAX(orderIndex)` for atomic ordering; prevents duplicate orderIndex on concurrent inserts. `findChecklistSummaries` and `findChecklistPreviews` standalone wrapper functions removed — all callers invoke `findChecklistSummariesAndPreviews` directly.
+2. `components/board/VirtualizedTaskList.tsx` — `ESTIMATED_CARD_HEIGHT` raised 90→160 to match real card height, reducing virtualizer layout shifts. Opacity gate (render at 0, flip to 1 after first rAF) prevents stagger flash when virtualizer cold-starts on dense columns.
+3. `components/board/TaskBoard.tsx` — `tasksByColumn` pre-computed as a single `useMemo` Map<columnId, tasks[]> replacing per-column `.filter().sort()` in JSX. Module-level `EMPTY_TASKS` constant gives `KanbanColumn` a stable empty array reference, avoiding spurious re-renders.
+4. `app/project/[id]/useProjectData.ts` — Store clear on project switch now explicitly resets `tasks`, `checklistSummaries`, and `checklistPreviews` alongside `columns`, `labels`, and `dependencies`; prevents stale checklist data from a prior project bleeding through during load.
+
+## 9.1 PREVIOUS CHANGES (2026-04-17 session — first pass)
 
 1. `lib/data/projects.ts` — `verifyProjectAccess()` new consolidated auth function: resolves direct member, owner, and realm membership in 1–2 queries instead of 4; `verifyProjectOwnership` and `findProjectById` now delegate to it. `findProjectsWithRealmName()` and `findSiblingProjects()` added.
 2. `lib/data/tasks.ts` — `findTasksByColumn(projectId, columnId)` added; used by transfer to batch-fetch column tasks without loading the full project.
@@ -298,7 +305,7 @@ All stores use Zustand v5.
 10. `ProjectSwitcher.tsx` — uses `getProjectsWithRealmName` so the switcher dropdown labels each project with its realm name.
 11. `ProjectSidebar.tsx` — fetches sibling projects in the same realm via `getSiblingProjects` on mount; renders them below the velocity section when a non-personal realm is found.
 
-## 9.1 PREVIOUS CHANGES (2026-04-16 session)
+## 9.2 PREVIOUS CHANGES (2026-04-16 session)
 
 1. Gantt MCP parity — 11 new MCP tools (delete_gantt_task, batch_create_gantt_tasks, list/create/update/delete_row, reorder_rows, list/create/update/delete_gantt_view) bringing Gantt category to 14 tools, total MCP surface 52→63
 2. Gantt REST parity — 7 new route files: `/projects/[id]/gantt/batch`, `/rows/route.ts`, `/rows/[rowId]/route.ts`, `/rows/reorder/route.ts`, `/gantt-views/route.ts`, `/gantt-views/[viewId]/route.ts` (every new MCP tool has a matching REST route using the SAME validators + data functions)
@@ -306,7 +313,7 @@ All stores use Zustand v5.
 4. `lib/data/gantt.ts createRow` — orderIndex now optional; when omitted, auto-assigns via `max(orderIndex) + 1` in a transaction (mirrors `createColumn` pattern). `createRowSchema.orderIndex` becomes `.optional()` — backward compatible for existing action callers
 5. `src/app/api/__tests__/gantt-parity.test.ts` — new static parity test (53 assertions) locks MCP ↔ REST against drift: enforces matching tool/route count, shared validators, shared data functions, per-op ownership checks
 
-## 9.2 PREVIOUS CHANGES (2026-04-08 session)
+## 9.3 PREVIOUS CHANGES (2026-04-08 session)
 
 1. TaskChecklist.tsx -- ref-based commit guards (groupCommittedRef, editingGroupNameRef) prevent double-commit on blur in React Compiler environment; pendingGroups tracks renamed-before-persisted groups; autoFocusedRef prevents cursor stealing on card open
 2. TreeView.tsx -- single-group flattening hides General folder when only one group exists; hover action icons (edit/share/delete) with aria-labels; race guard + error handling on group rename and project drop; onDelete type fix

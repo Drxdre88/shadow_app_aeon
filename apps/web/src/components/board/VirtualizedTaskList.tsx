@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useLayoutEffect, memo } from 'react'
+import { useRef, useState, useLayoutEffect, useEffect, memo } from 'react'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { AnimatePresence } from 'framer-motion'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -8,7 +8,7 @@ import { SortableTaskCard } from './SortableTaskCard'
 import { QuickAddTask } from './QuickAddTask'
 
 const VIRTUAL_THRESHOLD = 15
-const ESTIMATED_CARD_HEIGHT = 90
+const ESTIMATED_CARD_HEIGHT = 160
 const VIRTUAL_OVERSCAN = 5
 const CARD_GAP = 12
 
@@ -75,6 +75,7 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
 }: VirtualizedTaskListProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const useVirtual = tasks.length >= VIRTUAL_THRESHOLD
+  const [measured, setMeasured] = useState(false)
 
   const virtualizer = useVirtualizer({
     count: tasks.length,
@@ -90,6 +91,15 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
       virtualizer.measure()
     }
   }, [tasks.length, useVirtual, virtualizer])
+
+  const hasMounted = useRef(false)
+  useEffect(() => {
+    if (!useVirtual) { setMeasured(false); hasMounted.current = false; return }
+    if (hasMounted.current) return
+    hasMounted.current = true
+    const raf = requestAnimationFrame(() => setMeasured(true))
+    return () => cancelAnimationFrame(raf)
+  }, [useVirtual, tasks.length])
 
   const renderCard = (task: TaskItem) => (
     <SortableTaskCard
@@ -112,7 +122,12 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3">
         <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
           <div
-            style={{ height: virtualizer.getTotalSize(), position: 'relative' }}
+            style={{
+              height: virtualizer.getTotalSize(),
+              position: 'relative',
+              opacity: measured ? 1 : 0,
+              transition: 'opacity 0.15s ease-in',
+            }}
           >
             {virtualizer.getVirtualItems().map((virtualItem) => {
               const task = tasks[virtualItem.index]
