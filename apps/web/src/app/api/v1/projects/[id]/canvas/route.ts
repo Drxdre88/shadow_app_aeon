@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
-import { verifyProjectOwnership, getMemberRole } from '@/lib/data/projects'
+import { verifyProjectAccess } from '@/lib/data/projects'
 import { findCanvasNodes, findCanvasEdges, createCanvasNode, createCanvasEdge } from '@/lib/data/canvas'
 import { z } from 'zod'
 
@@ -13,7 +13,7 @@ export const GET = withRateLimit(
     if (!isApiUser(result)) return result
     const { id } = await (ctx as Params).params
 
-    if (!await verifyProjectOwnership(id, result.id)) return jsonError('Project not found', 404)
+    if (!await verifyProjectAccess(id, result.id)) return jsonError('Project not found', 404)
 
     const [nodes, edges] = await Promise.all([findCanvasNodes(id), findCanvasEdges(id)])
     return jsonData({ nodes, edges })
@@ -45,9 +45,9 @@ export const POST = withRateLimit(
     if (!isApiUser(result)) return result
     const { id } = await (ctx as Params).params
 
-    if (!await verifyProjectOwnership(id, result.id)) return jsonError('Project not found', 404)
-    const role = await getMemberRole(id, result.id)
-    if (role === 'viewer') return jsonError('Viewers cannot modify this project', 403)
+    const access = await verifyProjectAccess(id, result.id)
+    if (!access) return jsonError('Project not found', 404)
+    if (access.role === 'viewer') return jsonError('Viewers cannot modify this project', 403)
 
     let body: unknown
     try { body = await request.json() } catch { return jsonError('Invalid JSON body', 400) }

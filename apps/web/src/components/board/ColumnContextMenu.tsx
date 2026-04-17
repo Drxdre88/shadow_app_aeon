@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Palette, Trash2, Copy, Pencil, Sparkles, X, Archive, Package, FolderInput, MoveRight, ArrowRight, Loader2 } from 'lucide-react'
+import { Palette, Trash2, Copy, Pencil, Sparkles, X, Archive, Package, FolderInput, Folder, MoveRight, ArrowRight, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
@@ -25,7 +25,7 @@ interface ColumnContextMenuProps {
 
 export function ColumnContextMenu({ columnId, position, onClose, onRename, onColumnDelete, onVaultCompleted, onArchiveAll }: ColumnContextMenuProps) {
   const [submenu, setSubmenu] = useState<'color' | 'icon' | 'transfer' | null>(null)
-  const [transferProjects, setTransferProjects] = useState<{ id: string; name: string; columns: { id: string; name: string; color: string }[] }[]>([])
+  const [transferProjects, setTransferProjects] = useState<{ id: string; name: string; realm: string; columns: { id: string; name: string; color: string }[] }[]>([])
   const [transferLoading, setTransferLoading] = useState(false)
   const [transferMode, setTransferMode] = useState<'copy' | 'move'>('copy')
   const [mounted, setMounted] = useState(false)
@@ -241,46 +241,67 @@ export function ColumnContextMenu({ columnId, position, onClose, onRename, onCol
           }}
           glowColor={colors.glowColor}
         />
-        {submenu === 'transfer' && column && (
-          <div className="pl-2 border-l border-white/10 ml-3 space-y-0.5 py-1">
-            {transferLoading ? (
-              <div className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                Loading...
-              </div>
-            ) : transferProjects.filter(p => p.id !== column.projectId).length === 0 ? (
-              <div className="px-3 py-2 text-xs text-slate-500">No other projects</div>
-            ) : (
-              transferProjects
-                .filter(p => p.id !== column.projectId)
-                .map((project) => (
-                  <button
-                    key={project.id}
-                    onClick={async () => {
-                      try {
-                        if (transferMode === 'copy') {
-                          await copyColumnToProject(columnId, column.projectId, project.id)
-                        } else {
-                          await moveColumnToProject(columnId, column.projectId, project.id)
-                          const { tasks, removeTask } = useBoardStore.getState()
-                          tasks.filter(t => t.columnId === columnId).forEach(t => removeTask(t.id))
-                          removeColumn(columnId)
-                          useBoardStore.setState({ isDirty: false })
-                        }
-                      } catch (err) {
-                        console.error('Transfer failed:', err)
-                      }
-                      onClose()
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/10 hover:text-white rounded-md transition-colors"
-                  >
-                    <ArrowRight className="w-3 h-3 text-slate-500" />
-                    {project.name}
-                  </button>
+        {submenu === 'transfer' && column && (() => {
+          const otherProjects = transferProjects.filter((p) => p.id !== column.projectId)
+          const grouped = otherProjects.reduce<Record<string, typeof otherProjects>>((acc, p) => {
+            const key = p.realm || 'Ungrouped'
+            if (!acc[key]) acc[key] = []
+            acc[key].push(p)
+            return acc
+          }, {})
+          const realmNames = Object.keys(grouped).sort((a, b) => {
+            if (a === 'Ungrouped') return 1
+            if (b === 'Ungrouped') return -1
+            return a.localeCompare(b)
+          })
+
+          return (
+            <div className="pl-2 border-l border-white/10 ml-3 py-1 max-h-[50vh] overflow-y-auto scrollbar-thin">
+              {transferLoading ? (
+                <div className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Loading...
+                </div>
+              ) : otherProjects.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-slate-500">No other projects</div>
+              ) : (
+                realmNames.map((realmName) => (
+                  <div key={realmName}>
+                    <div className="px-3 pt-2 pb-1 flex items-center gap-1.5">
+                      <Folder className="w-3 h-3 text-slate-600" />
+                      <span className="text-[10px] uppercase tracking-wider text-slate-600 font-medium">{realmName}</span>
+                    </div>
+                    {grouped[realmName].map((project) => (
+                      <button
+                        key={project.id}
+                        onClick={async () => {
+                          try {
+                            if (transferMode === 'copy') {
+                              await copyColumnToProject(columnId, column.projectId, project.id)
+                            } else {
+                              await moveColumnToProject(columnId, column.projectId, project.id)
+                              const { tasks, removeTask } = useBoardStore.getState()
+                              tasks.filter(t => t.columnId === columnId).forEach(t => removeTask(t.id))
+                              removeColumn(columnId)
+                              useBoardStore.setState({ isDirty: false })
+                            }
+                          } catch (err) {
+                            console.error('Transfer failed:', err)
+                          }
+                          onClose()
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/10 hover:text-white rounded-md transition-colors"
+                      >
+                        <ArrowRight className="w-3 h-3 text-slate-500" />
+                        {project.name}
+                      </button>
+                    ))}
+                  </div>
                 ))
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )
+        })()}
 
         {onArchiveAll && (
           <button

@@ -5,6 +5,8 @@ import { requireAuth, requireOwnership, requireEditor } from './helpers'
 import {
   findProjects as _findProjects,
   findProjectsWithStats as _findProjectsWithStats,
+  findProjectsWithRealmName as _findProjectsWithRealmName,
+  findSiblingProjects as _findSiblingProjects,
   findOwnProjects as _findOwn,
   findSharedProjects as _findShared,
   findWorkspaceProjects as _findWorkspace,
@@ -21,6 +23,16 @@ import { createDefaultColumns } from '@/lib/data/columns'
 export async function getProjects() {
   const userId = await requireAuth()
   return _findProjects(userId)
+}
+
+export async function getProjectsWithRealmName() {
+  const userId = await requireAuth()
+  return _findProjectsWithRealmName(userId)
+}
+
+export async function getSiblingProjects(projectId: string) {
+  const userId = await requireAuth()
+  return _findSiblingProjects(projectId, userId)
 }
 
 export async function getProjectsWithStats() {

@@ -128,6 +128,9 @@ export async function reflowGanttViewRows(projectId: string, viewId: string) {
     rowGroups.set(task.rowId!, group)
   }
 
+  const ganttUpdates: { id: string; startDate: Date; endDate: Date }[] = []
+  const boardUpdates: { id: string; startDate: Date; endDate: Date }[] = []
+
   for (const [, group] of rowGroups) {
     group.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
 
@@ -141,20 +144,27 @@ export async function reflowGanttViewRows(projectId: string, viewId: string) {
       const newStart = new Date(cursor)
       const newEnd = computeEndDate(newStart, duration, skipWk)
 
-      await db
-        .update(ganttTasks)
-        .set({ startDate: newStart, endDate: newEnd, updatedAt: new Date() })
-        .where(eq(ganttTasks.id, task.id))
-
+      ganttUpdates.push({ id: task.id, startDate: newStart, endDate: newEnd })
       if (task.boardTaskId) {
-        await db
-          .update(boardTasks)
-          .set({ startDate: newStart, endDate: newEnd, updatedAt: new Date() })
-          .where(eq(boardTasks.id, task.boardTaskId))
+        boardUpdates.push({ id: task.boardTaskId, startDate: newStart, endDate: newEnd })
       }
-
       cursor = newEnd
     }
+  }
+
+  if (ganttUpdates.length > 0) {
+    await db.transaction(async (tx) => {
+      for (const u of ganttUpdates) {
+        await tx.update(ganttTasks)
+          .set({ startDate: u.startDate, endDate: u.endDate, updatedAt: new Date() })
+          .where(eq(ganttTasks.id, u.id))
+      }
+      for (const u of boardUpdates) {
+        await tx.update(boardTasks)
+          .set({ startDate: u.startDate, endDate: u.endDate, updatedAt: new Date() })
+          .where(eq(boardTasks.id, u.id))
+      }
+    })
   }
 }
 

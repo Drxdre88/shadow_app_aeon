@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronDown, Folder } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { getProjects } from '@/lib/actions/projects'
+import { getProjectsWithRealmName } from '@/lib/actions/projects'
 import { useThemeStore } from '@/stores/themeStore'
 import { useShallow } from 'zustand/shallow'
 
@@ -40,11 +40,11 @@ export function ProjectSwitcher({ currentProjectId, projectName, glowColor }: Pr
 
   useEffect(() => {
     if (isOpen && !loaded) {
-      getProjects().then((p) => {
+      getProjectsWithRealmName().then((p) => {
         setProjects(p.map((proj) => ({
           id: proj.id,
           name: proj.name,
-          group: proj.group,
+          group: proj.realmName ?? proj.group,
           planetImage: proj.planetImage,
         })))
         setLoaded(true)

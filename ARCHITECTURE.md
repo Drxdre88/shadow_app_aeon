@@ -1,6 +1,6 @@
 # ARCHITECTURE.md
 
-Last updated: 2026-04-16
+Last updated: 2026-04-17
 
 ---
 
@@ -88,7 +88,7 @@ shadow-specs/                      -- AI spec workflow directory
 | `user_contacts` | id, userId, contactEmail | Contact autocomplete |
 | `realm_invites` | id, groupId, email, token, role, invitedBy, acceptedAt, expiresAt | Realm invite tokens (7-day expiry) |
 
-**Patterns:** Server actions in `lib/actions/` call data functions in `lib/data/`. API routes in `api/v1/` call the same `lib/data/` functions. All mutations bump `boardVersion` via `await touchProject()`. `auth()` wrapped with `React.cache()` for dedup within server renders.
+**Patterns:** Server actions in `lib/actions/` call data functions in `lib/data/`. API routes in `api/v1/` call the same `lib/data/` functions. All mutations bump `boardVersion` via `await touchProject()`. `auth()` wrapped with `React.cache()` for dedup within server renders. Auth helpers (`requireEditor`, `requireMember`, `requireOwnership` in `lib/actions/helpers.ts`) all delegate to `verifyProjectAccess()` — resolves direct membership, owner, and realm membership in 1–2 queries (down from 4). Batch helpers added this session: `findChecklistItemsBatch`, `snapshotTaskDataBatch`, `findTasksByColumn`, `findDependenciesForTask`, `findProjectsWithRealmName`, `findSiblingProjects` — eliminate N+1 patterns across vault, transfer, checklist, and task-detail flows.
 
 ---
 
@@ -174,8 +174,8 @@ Auth: Bearer token (API key or master key). 63 tools across 11 categories:
 | **Board view (Kanban)** | Complete | `components/board/TaskBoard.tsx`, `KanbanColumn.tsx`, `SortableColumn.tsx`, `SortableTaskCard.tsx` | Full DnD via @dnd-kit, column reorder, task move |
 | **Drag & Drop** | Complete | `components/board/useBoardDnD.ts`, `DragPreview.tsx` | Custom drag preview, glow/ghost effects |
 | **Task CRUD** | Complete | `TaskEditModal.tsx`, `QuickAddTask.tsx` | Inline add + full modal edit |
-| **Task context menu** | Complete | `TaskContextMenu.tsx`, `ContextMenuButton.tsx` | Right-click actions |
-| **Column context menu** | Complete | `ColumnContextMenu.tsx`, `ColumnDeleteModal.tsx` | Rename, color, delete with migrate |
+| **Task context menu** | Complete | `TaskContextMenu.tsx`, `ContextMenuButton.tsx` | Right-click actions; transfer submenu groups projects by realm (scrollable) via `listProjectsForTransfer` |
+| **Column context menu** | Complete | `ColumnContextMenu.tsx`, `ColumnDeleteModal.tsx` | Rename, color, delete with migrate; transfer submenu groups target projects by realm (scrollable) |
 | **Board filtering** | Complete | `BoardFilterBar.tsx`, `lib/utils/boardFilters.ts` | Text search, priority, label, column, date filters |
 | **Keyboard shortcuts** | Complete | `useBoardKeyboardShortcuts.ts`, `shared/config/defaults.ts` | 8 customizable shortcuts (l/c/e/g/v/d/o/s), dedicated Keys tab in Help + Settings modals |
 | **Command Palette** | Complete | `ui/CommandPalette.tsx` | Cmd+K via cmdk library |
@@ -190,14 +190,15 @@ Auth: Bearer token (API key or master key). 63 tools across 11 categories:
 | **Gantt views** | Complete | `GanttViewSelector.tsx`, `GanttViewModal.tsx` | Named saved views |
 | **Canvas view** | Complete | `components/canvas/CanvasView.tsx`, `IdeaNode.tsx`, `ProcessNode.tsx` | ReactFlow-based whiteboard, auto-layout (dagre), export |
 | **Trophy / Vault** | Complete | `components/trophy/TrophyRoom.tsx`, `TrophyCard.tsx`, `TrophyStats.tsx`, `TrophyTimeline.tsx` | Archived tasks, stats, timeline view |
-| **Vault archiving** | Complete | `BatchVaultModal.tsx`, `VaultDaysModal.tsx`, `lib/actions/vault.ts` | Auto-vault by days, batch vault |
+| **Vault archiving** | Complete | `BatchVaultModal.tsx`, `VaultDaysModal.tsx`, `lib/actions/vault.ts` | Auto-vault by days, batch vault; `vaultTasksBatch` uses `snapshotTaskDataBatch` (3 queries for N tasks, not 3×N) |
+| **Task / column transfer** | Complete | `lib/actions/transfer.ts`, `TaskContextMenu.tsx`, `ColumnContextMenu.tsx` | Copy/move tasks and full columns across projects; `listProjectsForTransfer` groups projects by realm + batch-fetches columns; submenus render realm section headers with scrollable project list |
 | **Velocity analytics** | Complete | `components/velocity/VelocityTab.tsx`, `VelocityChart.tsx`, `CycleTimeCard.tsx`, `HeatmapGrid.tsx`, `ColumnFlowBar.tsx` | Throughput, cycle time, heatmap, column flow |
 | **Realms (workspaces)** | Complete | `components/workspace/RealmSection.tsx`, `CreateWorkspaceModal.tsx`, `WorkspaceSettingsModal.tsx`, `MembersTab.tsx`, `ProjectsTab.tsx`, `RealmPickers.tsx` | Flat realm list, TEAM badge, member roles, custom icons (16 Lucide), color picker (7 colors), two-click delete confirm, number key shortcuts (1-9), scoped visibility, member "joined X ago" |
 | **Realm invites** | Complete | `lib/data/workspaces.ts`, `app/invite/realm/[token]/page.tsx`, `WorkspaceSettingsModal.tsx` | Token-based invite for non-existing users, email notification (Resend), pending invites display, email verification on accept, dedup guard, 7-day expiry |
 | **Realm REST API** | Complete | `api/v1/realms/` (6 route files) | Full CRUD + members + projects, Zod validation, canAccessProject enforcement |
-| **Sidebar navigation** | Complete | `components/sidebar/AppSidebar.tsx`, `RealmList.tsx`, `ProjectSidebar.tsx`, `stores/sidebarStore.ts` | Dashboard uses AppSidebar (realm pills with custom icons + project list). Project board view uses ProjectSidebar (view tabs). Both share `useSidebarStore` for collapse state (persisted with hydration guard). |
+| **Sidebar navigation** | Complete | `components/sidebar/AppSidebar.tsx`, `RealmList.tsx`, `ProjectSidebar.tsx`, `stores/sidebarStore.ts` | Dashboard uses AppSidebar (realm pills with custom icons + project list). Project board view uses ProjectSidebar (view tabs). Both share `useSidebarStore` for collapse state (persisted with hydration guard). ProjectSidebar shows realm sibling projects below velocity via `getSiblingProjects`. |
 | **Hide toggle** | Complete | `stores/sidebarStore.ts` | Per-project and per-realm hide via sidebarStore (persisted), unhide eye button in sidebar bottom |
-| **Project CRUD** | Complete | `components/project/CreateProjectModal.tsx`, `EditProjectModal.tsx` | Create, edit, delete, realm assignment (flat list, legacy group field removed) |
+| **Project CRUD** | Complete | `components/project/CreateProjectModal.tsx`, `EditProjectModal.tsx`, `ProjectSwitcher.tsx` | Create, edit, delete, realm assignment. `ProjectSwitcher` uses `getProjectsWithRealmName` so projects display with their realm name. |
 | **Project views** | Complete | `SpaceView.tsx`, `TreeView.tsx`, `GridView.tsx`, `ProjectViewSwitcher.tsx` | SpaceView: single unified canvas with realm grouping (defaults fullscreen), TreeView: single-group flattening (hides General folder when only one group), hover action icons (edit/share/delete) with aria-labels, race-guarded rename + project drop, GridView: 3 views with context menus + relative time via timeAgo |
 | **Theming** | Complete | `packages/shared/src/config/themes/` (17 files), `stores/themeStore.ts` | 151 presets, saturation/brightness/vibrancy sliders, priority colors (green/yellow/orange/red), GlowSource setting |
 | **Visual effects** | Complete | `components/effects/` (13 effects), `cursor/` | Starfield, sakura, snowfall, matrix, storm, aurora, cursor trails |
@@ -283,7 +284,21 @@ All stores use Zustand v5.
 
 ---
 
-## 9. RECENT CHANGES (2026-04-16 session)
+## 9. RECENT CHANGES (2026-04-17 session)
+
+1. `lib/data/projects.ts` — `verifyProjectAccess()` new consolidated auth function: resolves direct member, owner, and realm membership in 1–2 queries instead of 4; `verifyProjectOwnership` and `findProjectById` now delegate to it. `findProjectsWithRealmName()` and `findSiblingProjects()` added.
+2. `lib/data/tasks.ts` — `findTasksByColumn(projectId, columnId)` added; used by transfer to batch-fetch column tasks without loading the full project.
+3. `lib/data/checklist.ts` — `findChecklistItemsBatch(taskIds[])` added (single query returns Map<taskId, items[]>); `findTaskWithDetails` rewritten to use `Promise.all` with scoped `findDependenciesForTask`.
+4. `lib/data/dependencies.ts` — `findDependenciesForTask(taskId)` added; fetches both blocker and blocked edges for a single task without loading all project deps.
+5. `lib/data/vault.ts` — `snapshotTaskDataBatch(taskIds[])` added; `vaultTasksBatch` now fetches task snapshots in 3 queries total (was 3×N).
+6. `lib/actions/projects.ts` — `getProjectsWithRealmName()` and `getSiblingProjects(projectId)` server actions added.
+7. `lib/actions/transfer.ts` — `listProjectsForTransfer()` now returns realm grouping field and batch-fetches all columns in one query; `copyColumnToProject` uses `findChecklistItemsBatch` to eliminate N+1 on checklist copy.
+8. `lib/actions/helpers.ts` — `requireEditor`, `requireMember`, `requireOwnership` all consolidated to call `verifyProjectAccess()`; no more separate ownership + membership queries per action.
+9. `TaskContextMenu.tsx`, `ColumnContextMenu.tsx` — transfer project submenus now group projects by realm with realm section headers and a scrollable list.
+10. `ProjectSwitcher.tsx` — uses `getProjectsWithRealmName` so the switcher dropdown labels each project with its realm name.
+11. `ProjectSidebar.tsx` — fetches sibling projects in the same realm via `getSiblingProjects` on mount; renders them below the velocity section when a non-personal realm is found.
+
+## 9.1 PREVIOUS CHANGES (2026-04-16 session)
 
 1. Gantt MCP parity — 11 new MCP tools (delete_gantt_task, batch_create_gantt_tasks, list/create/update/delete_row, reorder_rows, list/create/update/delete_gantt_view) bringing Gantt category to 14 tools, total MCP surface 52→63
 2. Gantt REST parity — 7 new route files: `/projects/[id]/gantt/batch`, `/rows/route.ts`, `/rows/[rowId]/route.ts`, `/rows/reorder/route.ts`, `/gantt-views/route.ts`, `/gantt-views/[viewId]/route.ts` (every new MCP tool has a matching REST route using the SAME validators + data functions)
@@ -291,7 +306,7 @@ All stores use Zustand v5.
 4. `lib/data/gantt.ts createRow` — orderIndex now optional; when omitted, auto-assigns via `max(orderIndex) + 1` in a transaction (mirrors `createColumn` pattern). `createRowSchema.orderIndex` becomes `.optional()` — backward compatible for existing action callers
 5. `src/app/api/__tests__/gantt-parity.test.ts` — new static parity test (53 assertions) locks MCP ↔ REST against drift: enforces matching tool/route count, shared validators, shared data functions, per-op ownership checks
 
-## 9.1 PREVIOUS CHANGES (2026-04-08 session)
+## 9.2 PREVIOUS CHANGES (2026-04-08 session)
 
 1. TaskChecklist.tsx -- ref-based commit guards (groupCommittedRef, editingGroupNameRef) prevent double-commit on blur in React Compiler environment; pendingGroups tracks renamed-before-persisted groups; autoFocusedRef prevents cursor stealing on card open
 2. TreeView.tsx -- single-group flattening hides General folder when only one group exists; hover action icons (edit/share/delete) with aria-labels; race guard + error handling on group rename and project drop; onDelete type fix

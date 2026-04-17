@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { boardTasks, ganttTasks, boardColumns, labels, taskLabels, taskDependencies, rows, checklistItems } from '@/lib/db/schema'
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, sql } from 'drizzle-orm'
 
 const DEFAULT_DURATION_DAYS = 2
 
@@ -496,14 +496,17 @@ export async function bulkPushAllTasksToGantt(
     if (gt.boardTaskId) ganttByBoardId.set(gt.boardTaskId, gt.id)
   }
 
-  for (const task of allTasks) {
-    const ganttId = ganttByBoardId.get(task.id)
-    if (ganttId) {
-      await db
-        .update(boardTasks)
-        .set({ ganttTaskId: ganttId, onTimeline: true, updatedAt: new Date() })
-        .where(eq(boardTasks.id, task.id))
-    }
+  const taskIdsToUpdate = [...ganttByBoardId.keys()]
+  if (taskIdsToUpdate.length > 0) {
+    const caseParts = taskIdsToUpdate.map((tid) => sql`WHEN ${tid} THEN ${ganttByBoardId.get(tid)!}::uuid`)
+    await db
+      .update(boardTasks)
+      .set({
+        ganttTaskId: sql`CASE ${boardTasks.id} ${sql.join(caseParts, sql` `)} END`,
+        onTimeline: true,
+        updatedAt: new Date(),
+      })
+      .where(inArray(boardTasks.id, taskIdsToUpdate))
   }
 
   return created
