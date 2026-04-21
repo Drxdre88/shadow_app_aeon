@@ -127,8 +127,7 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
 
     if (!hasCachedProject && !initialDataRef.current) {
       setIsLoading(true)
-      useBoardStore.setState({ columns: [], labels: [], dependencies: [] })
-      useBoardStore.getState().clearCrossedTasks()
+      useBoardStore.setState({ tasks: [], columns: [], labels: [], dependencies: [], checklistSummaries: {}, checklistPreviews: {} })
     }
     setLoadError(null)
     setGanttTasks([])

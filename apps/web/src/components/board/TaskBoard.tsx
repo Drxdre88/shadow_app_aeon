@@ -3,7 +3,7 @@
 import { useCallback, useState, useMemo } from 'react'
 import { DndContext, DragOverlay, closestCenter } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
-import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColumn } from '@/lib/store/boardStore'
+import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColumn, type BoardTask } from '@/lib/store/boardStore'
 import { KanbanColumn } from './KanbanColumn'
 import { SortableColumn } from './SortableColumn'
 import { TaskEditModal } from './TaskEditModal'
@@ -27,6 +27,8 @@ import { useBoardHover } from './useBoardHover'
 import { useConnectMode } from './useConnectMode'
 import { duplicateBoardTask } from '@/lib/actions/board'
 import { toast } from '@/components/ui/Toast'
+
+const EMPTY_TASKS: BoardTask[] = []
 
 interface BoardTaskData {
   id: string
@@ -143,6 +145,18 @@ export function TaskBoard({
 
   const projectTasks = useMemo(() => tasks.filter((t) => t.projectId === projectId), [tasks, projectId])
   const filteredTasks = useMemo(() => applyBoardFilters(projectTasks, filters), [projectTasks, filters])
+  const tasksByColumn = useMemo(() => {
+    const map = new Map<string, typeof filteredTasks>()
+    for (const task of filteredTasks) {
+      const colId = task.columnId
+      if (!colId) continue
+      const arr = map.get(colId)
+      if (arr) arr.push(task)
+      else map.set(colId, [task])
+    }
+    for (const arr of map.values()) arr.sort((a, b) => a.orderIndex - b.orderIndex)
+    return map
+  }, [filteredTasks])
   const columnIds = sortedColumns.map((c) => c.id)
 
   const { boardRef, hoveredTaskId } = useBoardHover()
@@ -353,9 +367,7 @@ export function TaskBoard({
                     <KanbanColumn
                       column={column}
                       projectId={projectId}
-                      tasks={filteredTasks
-                        .filter((t) => t.columnId === column.id)
-                        .sort((a, b) => a.orderIndex - b.orderIndex)}
+                      tasks={tasksByColumn.get(column.id) ?? EMPTY_TASKS}
                       onTaskEdit={handleTaskClick}
                       onAddTask={() => handleAddTask(column.id)}
                       onTaskCreate={onTaskCreate}

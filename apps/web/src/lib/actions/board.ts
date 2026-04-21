@@ -21,19 +21,18 @@ import { emitActivity } from '@/lib/data/activity'
 import { findColumns as _findColumns, createDefaultColumns as _createDefaultColumns } from '@/lib/data/columns'
 import { findLabels as _findLabels, findTaskLabels as _findTaskLabels, setTaskLabels as _setTaskLabels } from '@/lib/data/labels'
 import { findDependencies as _findDependencies } from '@/lib/data/dependencies'
-import { findChecklistSummaries as _findChecklistSummaries, findChecklistItems as _findChecklistItems, createChecklistItemsBatch as _createChecklistItemsBatch, findChecklistPreviews as _findChecklistPreviews } from '@/lib/data/checklist'
+import { findChecklistSummariesAndPreviews as _findChecklistSummariesAndPreviews, findChecklistItems as _findChecklistItems, createChecklistItemsBatch as _createChecklistItemsBatch } from '@/lib/data/checklist'
 
 export async function loadBoardData(projectId: string) {
   await requireOwnership(projectId)
   await _createDefaultColumns(projectId)
-  const [tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews] = await Promise.all([
+  const [tasks, columns, labels, taskLabels, dependencies, { summaries: checklistSummaries, previews: checklistPreviews }] = await Promise.all([
     _findTasks(projectId),
     _findColumns(projectId),
     _findLabels(projectId),
     _findTaskLabels(projectId),
     _findDependencies(projectId),
-    _findChecklistSummaries(projectId),
-    _findChecklistPreviews(projectId),
+    _findChecklistSummariesAndPreviews(projectId),
   ])
   return { tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews }
 }

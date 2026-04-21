@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { checklistItems, boardTasks } from '@/lib/db/schema'
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, sql } from 'drizzle-orm'
 import { syncChecklistToGanttProgress } from './bridge'
 
 export async function findChecklistItems(taskId: string, projectId: string) {
@@ -44,22 +44,38 @@ export async function createChecklistItem(
   taskId: string,
   data: { title: string; groupName?: string; orderIndex?: number }
 ) {
-  const existing = await db
-    .select({ orderIndex: checklistItems.orderIndex })
-    .from(checklistItems)
-    .where(eq(checklistItems.taskId, taskId))
+  const [item] = await db.transaction(async (tx) => {
+    if (data.orderIndex !== undefined) {
+      return tx
+        .insert(checklistItems)
+        .values({
+          taskId,
+          title: data.title,
+          completed: false,
+          state: 'unchecked',
+          groupName: data.groupName ?? 'Checklist',
+          orderIndex: data.orderIndex,
+        })
+        .returning()
+    }
 
-  const [item] = await db
-    .insert(checklistItems)
-    .values({
-      taskId,
-      title: data.title,
-      completed: false,
-      state: 'unchecked',
-      groupName: data.groupName ?? 'Checklist',
-      orderIndex: data.orderIndex ?? existing.length,
-    })
-    .returning()
+    const [maxResult] = await tx
+      .select({ max: sql<number>`COALESCE(MAX(${checklistItems.orderIndex}), -1)` })
+      .from(checklistItems)
+      .where(eq(checklistItems.taskId, taskId))
+
+    return tx
+      .insert(checklistItems)
+      .values({
+        taskId,
+        title: data.title,
+        completed: false,
+        state: 'unchecked',
+        groupName: data.groupName ?? 'Checklist',
+        orderIndex: (maxResult?.max ?? -1) + 1,
+      })
+      .returning()
+  })
 
   syncChecklistToGanttProgress(taskId).catch(() => {})
   return item
@@ -71,23 +87,26 @@ export async function createChecklistItemsBatch(
 ) {
   if (items.length === 0) return []
 
-  const existing = await db
-    .select({ orderIndex: checklistItems.orderIndex })
-    .from(checklistItems)
-    .where(eq(checklistItems.taskId, taskId))
+  const created = await db.transaction(async (tx) => {
+    const [maxResult] = await tx
+      .select({ max: sql<number>`COALESCE(MAX(${checklistItems.orderIndex}), -1)` })
+      .from(checklistItems)
+      .where(eq(checklistItems.taskId, taskId))
 
-  let nextIndex = existing.length
+    let nextIndex = (maxResult?.max ?? -1) + 1
 
-  const values = items.map((item) => ({
-    taskId,
-    title: item.title,
-    completed: false,
-    state: 'unchecked',
-    groupName: item.groupName ?? 'Checklist',
-    orderIndex: nextIndex++,
-  }))
+    const values = items.map((item) => ({
+      taskId,
+      title: item.title,
+      completed: false,
+      state: 'unchecked',
+      groupName: item.groupName ?? 'Checklist',
+      orderIndex: nextIndex++,
+    }))
 
-  const created = await db.insert(checklistItems).values(values).returning()
+    return tx.insert(checklistItems).values(values).returning()
+  })
+
   syncChecklistToGanttProgress(taskId).catch(() => {})
   return created
 }
@@ -288,12 +307,3 @@ export async function findChecklistSummariesAndPreviews(projectId: string) {
   return { summaries, previews }
 }
 
-export async function findChecklistSummaries(projectId: string) {
-  const { summaries } = await findChecklistSummariesAndPreviews(projectId)
-  return summaries
-}
-
-export async function findChecklistPreviews(projectId: string) {
-  const { previews } = await findChecklistSummariesAndPreviews(projectId)
-  return previews
-}
