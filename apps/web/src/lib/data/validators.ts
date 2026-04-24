@@ -148,7 +148,6 @@ export const createRowSchema = z.object({
   name: z.string().trim().min(1).max(255),
   color: z.string().trim().max(20).default('purple'),
   orderIndex: z.number().int().optional(),
-  ganttViewId: z.string().uuid('A gantt view must be created before adding rows. Use create_gantt_view first.'),
 })
 
 export const updateRowSchema = z.object({

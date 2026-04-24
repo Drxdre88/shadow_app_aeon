@@ -15,7 +15,6 @@ import {
 } from '@/lib/data/gantt'
 import {
   findGanttViews,
-  findGanttViewById,
   createGanttView,
   updateGanttView,
   deleteGanttView,
@@ -138,18 +137,14 @@ export const registerGanttTools: RegisterFn = (server) => {
 
   server.tool(
     'create_row',
-    'Create a gantt swim-lane row. Requires a ganttViewId — create a gantt view first if none exists. orderIndex auto-assigns to max+1 when omitted.',
+    'Create a gantt swim-lane row. orderIndex auto-assigns to max+1 when omitted.',
     {
       projectId: z.string().uuid().describe('The project UUID'),
       ...createRowSchema.shape,
-      ganttViewId: createRowSchema.shape.ganttViewId.describe('The gantt view UUID. Create a view first with create_gantt_view.'),
     },
     async ({ projectId, ...data }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
-      if (!await findGanttViewById(data.ganttViewId, projectId)) {
-        return { content: [{ type: 'text' as const, text: 'Error: Gantt view not found. Create a gantt view first with create_gantt_view, then pass its ID as ganttViewId.' }], isError: true }
-      }
       return ok(await createRow(projectId, data))
     }
   )

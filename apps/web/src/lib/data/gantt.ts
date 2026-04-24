@@ -115,7 +115,7 @@ export async function findRows(projectId: string) {
 
 export async function createRow(
   projectId: string,
-  data: { name: string; color: string; orderIndex?: number; ganttViewId: string },
+  data: { name: string; color: string; orderIndex?: number },
   clientId?: string
 ) {
   if (data.orderIndex !== undefined) {
@@ -124,7 +124,6 @@ export async function createRow(
       .values({
         ...(clientId ? { id: clientId } : {}),
         projectId,
-        ganttViewId: data.ganttViewId,
         name: data.name,
         color: data.color,
         orderIndex: data.orderIndex,
@@ -144,7 +143,6 @@ export async function createRow(
       .values({
         ...(clientId ? { id: clientId } : {}),
         projectId,
-        ganttViewId: data.ganttViewId,
         name: data.name,
         color: data.color,
         orderIndex: result.max + 1,
