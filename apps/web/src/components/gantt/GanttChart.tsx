@@ -247,7 +247,7 @@ export function GanttChart({ projectId, startDate, endDate, onTaskUpdate, onTask
 
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-      <div className="bg-white/5 backdrop-blur-xl rounded-xl overflow-x-auto border border-white/10">
+      <div className="bg-white/5 backdrop-blur-xl rounded-xl overflow-auto border border-white/10" style={{ maxHeight: 'calc(100vh - 300px)' }}>
         <div style={{ minWidth: timeColumns.length * cellWidth + 192 }}>
           <TimelineHeader
             startDate={startDate}
