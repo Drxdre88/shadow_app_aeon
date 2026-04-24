@@ -331,6 +331,7 @@ export default function ProjectContent({ project, user, initialBoardData }: Proj
                     endDate={project.endDate ? new Date(project.endDate) : new Date('2027-01-01')}
                     onTaskUpdate={gantt.handleGanttTaskUpdate}
                     onTaskClick={gantt.handleGanttTaskClick}
+                    onRowUpdate={gantt.handleGanttRowUpdate}
                   />
                   <TaskEditModal
                     isOpen={!!gantt.ganttEditTaskId}

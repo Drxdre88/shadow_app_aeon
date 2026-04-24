@@ -1,14 +1,15 @@
 'use client'
 
-import { useMemo, useCallback } from 'react'
+import { useMemo, useCallback, useRef, useEffect } from 'react'
 import { DndContext, DragEndEvent, useSensor, useSensors, PointerSensor, TouchSensor } from '@dnd-kit/core'
-import { differenceInDays, eachDayOfInterval, eachWeekOfInterval, eachMonthOfInterval } from 'date-fns'
+import { differenceInDays, eachDayOfInterval, eachWeekOfInterval, eachMonthOfInterval, isToday } from 'date-fns'
 import { useGanttStore } from '@/lib/store/ganttStore'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { TimelineHeader } from './TimelineHeader'
 import { RowContainer } from './RowContainer'
 import { TaskBar } from './TaskBar'
 import { AccentColor } from '@/lib/utils/colors'
+import { toast } from '@/components/ui/Toast'
 
 interface GanttChartProps {
   projectId: string
@@ -16,6 +17,7 @@ interface GanttChartProps {
   endDate: Date
   onTaskUpdate?: (taskId: string, updates: Record<string, unknown>) => void
   onTaskClick?: (boardTaskId: string) => void
+  onRowUpdate?: (rowId: string, updates: { name?: string }) => void
 }
 
 const CELL_WIDTHS = { day: 120, week: 100, month: 150 }
@@ -25,9 +27,10 @@ const BAR_GAP = 4
 const ROW_PADDING = 8
 const MIN_ROW_HEIGHT = 56
 
-export function GanttChart({ projectId, startDate, endDate, onTaskUpdate, onTaskClick }: GanttChartProps) {
+export function GanttChart({ projectId, startDate, endDate, onTaskUpdate, onTaskClick, onRowUpdate }: GanttChartProps) {
   const { tasks, rows, views, activeViewId, timeScale, updateTask } = useGanttStore()
   const boardTasks = useBoardStore((s) => s.tasks)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   const activeView = views.find((v) => v.id === activeViewId)
   const allowMultipleRows = (activeView?.filters?.allowMultipleRows as boolean) ?? false
@@ -122,6 +125,23 @@ export function GanttChart({ projectId, startDate, endDate, onTaskUpdate, onTask
     }
   }, [startDate, endDate, timeScale])
 
+  const todayOffset = useMemo(() => {
+    const now = new Date()
+    const dayOffset = differenceInDays(now, startDate)
+    switch (timeScale) {
+      case 'day': return dayOffset * cellWidth
+      case 'week': return (dayOffset / 7) * cellWidth
+      case 'month': return (dayOffset / 30) * cellWidth
+    }
+  }, [startDate, cellWidth, timeScale])
+
+  useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    const targetScroll = todayOffset - el.clientWidth / 2 + 192
+    el.scrollLeft = Math.max(0, targetScroll)
+  }, [todayOffset, activeViewId])
+
   const getTaskStyle = useCallback((task: typeof projectTasks[0]) => {
     const taskStart = new Date(task.startDate)
     const taskEnd = new Date(task.endDate)
@@ -185,6 +205,10 @@ export function GanttChart({ projectId, startDate, endDate, onTaskUpdate, onTask
   const handleResize = useCallback((taskId: string, edge: 'left' | 'right', daysDelta: number) => {
     const task = projectTasks.find((t) => t.id === taskId)
     if (!task) return
+
+    const oldStart = task.startDate
+    const oldEnd = task.endDate
+
     let dateUpdates: { startDate?: string; endDate?: string }
     if (edge === 'left') {
       const newStart = new Date(new Date(task.startDate).getTime() + daysDelta * MS_PER_DAY)
@@ -198,6 +222,13 @@ export function GanttChart({ projectId, startDate, endDate, onTaskUpdate, onTask
     updateTask(taskId, dateUpdates)
     onTaskUpdate?.(taskId, dateUpdates)
 
+    toast(`Resized "${task.name}"`, {
+      onUndo: () => {
+        updateTask(taskId, { startDate: oldStart, endDate: oldEnd })
+        onTaskUpdate?.(taskId, { startDate: oldStart, endDate: oldEnd })
+      },
+    })
+
     if (!allowOverlap && task.rowId) {
       requestAnimationFrame(() => cascadePush(taskId, task.rowId!))
     }
@@ -209,6 +240,10 @@ export function GanttChart({ projectId, startDate, endDate, onTaskUpdate, onTask
 
     const task = projectTasks.find((t) => t.id === active.id)
     if (!task) return
+
+    const oldStart = task.startDate
+    const oldEnd = task.endDate
+    const oldRowId = task.rowId
 
     let daysMoved: number
     if (timeScale === 'day') {
@@ -223,10 +258,13 @@ export function GanttChart({ projectId, startDate, endDate, onTaskUpdate, onTask
       ? over.id as string
       : task.rowId
 
+    let changed = false
+
     if (over.data.current?.type === 'row' && over.id !== task.rowId) {
       const rowUpdate = { rowId: over.id as string }
       updateTask(task.id, rowUpdate)
       onTaskUpdate?.(task.id, rowUpdate)
+      changed = true
     }
 
     if (daysMoved !== 0) {
@@ -238,6 +276,16 @@ export function GanttChart({ projectId, startDate, endDate, onTaskUpdate, onTask
       }
       updateTask(task.id, dateUpdates)
       onTaskUpdate?.(task.id, dateUpdates)
+      changed = true
+    }
+
+    if (changed) {
+      toast(`Moved "${task.name}"`, {
+        onUndo: () => {
+          updateTask(task.id, { startDate: oldStart, endDate: oldEnd, rowId: oldRowId })
+          onTaskUpdate?.(task.id, { startDate: oldStart, endDate: oldEnd, rowId: oldRowId })
+        },
+      })
     }
 
     if (!allowOverlap && targetRowId) {
@@ -245,9 +293,45 @@ export function GanttChart({ projectId, startDate, endDate, onTaskUpdate, onTask
     }
   }, [projectTasks, updateTask, onTaskUpdate, cellWidth, timeScale, allowOverlap, cascadePush])
 
+  const handleTaskRename = useCallback((taskId: string, name: string) => {
+    const task = projectTasks.find((t) => t.id === taskId)
+    if (!task || task.name === name) return
+    const oldName = task.name
+    updateTask(taskId, { name })
+    onTaskUpdate?.(taskId, { name })
+    toast(`Renamed task`, {
+      onUndo: () => {
+        updateTask(taskId, { name: oldName })
+        onTaskUpdate?.(taskId, { name: oldName })
+      },
+    })
+  }, [projectTasks, updateTask, onTaskUpdate])
+
+  const handleRowRename = useCallback((rowId: string, name: string) => {
+    const row = projectRows.find((r) => r.id === rowId)
+    if (!row || row.name === name) return
+    const oldName = row.name
+    useGanttStore.getState().updateRow(rowId, { name })
+    onRowUpdate?.(rowId, { name })
+    toast(`Renamed row`, {
+      onUndo: () => {
+        useGanttStore.getState().updateRow(rowId, { name: oldName })
+        onRowUpdate?.(rowId, { name: oldName })
+      },
+    })
+  }, [projectRows, onRowUpdate])
+
+  const todayColumnIndex = useMemo(() => {
+    return timeColumns.findIndex((col) => isToday(col))
+  }, [timeColumns])
+
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-      <div className="bg-white/5 backdrop-blur-xl rounded-xl overflow-auto border border-white/10" style={{ maxHeight: 'calc(100vh - 300px)' }}>
+      <div
+        ref={scrollContainerRef}
+        className="bg-white/5 backdrop-blur-xl rounded-xl overflow-auto border border-white/10"
+        style={{ maxHeight: 'calc(100vh - 300px)' }}
+      >
         <div style={{ minWidth: timeColumns.length * cellWidth + 192 }}>
           <TimelineHeader
             startDate={startDate}
@@ -264,7 +348,14 @@ export function GanttChart({ projectId, startDate, endDate, onTaskUpdate, onTask
                 row={row}
                 height={getRowHeight(row.id)}
                 isEven={index % 2 === 0}
+                onRename={handleRowRename}
               >
+                {todayOffset > 0 && (
+                  <div
+                    className="absolute top-0 bottom-0 w-0.5 bg-cyan-400/60 z-10 pointer-events-none"
+                    style={{ left: `${todayOffset - 192}px` }}
+                  />
+                )}
                 {rowTasks.map((task) => (
                   <TaskBar
                     key={task.id}
@@ -274,6 +365,7 @@ export function GanttChart({ projectId, startDate, endDate, onTaskUpdate, onTask
                     timeScale={timeScale}
                     onTaskClick={onTaskClick}
                     onResize={handleResize}
+                    onRename={handleTaskRename}
                   />
                 ))}
               </RowContainer>

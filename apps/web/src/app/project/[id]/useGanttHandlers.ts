@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { createGanttTask, updateGanttTask, deleteGanttTask } from '@/lib/actions/gantt'
+import { createGanttTask, updateGanttTask, deleteGanttTask, updateRow as updateRowAction } from '@/lib/actions/gantt'
 import { createGanttView as createGanttViewAction, updateGanttView as updateGanttViewAction, deleteGanttView as deleteGanttViewAction, resetGanttData, reflowGanttView } from '@/lib/actions/ganttViews'
 import { pushToGantt } from '@/lib/actions/bridge'
 import { updateBoardTask } from '@/lib/actions/board'
@@ -170,6 +170,10 @@ export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' 
     })
   }, [projectId, setActiveTab])
 
+  const handleGanttRowUpdate = useCallback((rowId: string, updates: { name?: string }) => {
+    updateRowAction(rowId, projectId, updates).catch((err) => console.error('Failed to update row:', err))
+  }, [projectId])
+
   return {
     ganttEditTaskId,
     setGanttEditTaskId,
@@ -186,5 +190,6 @@ export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' 
     handleGanttTaskClick,
     handleGanttEditSubmit,
     handlePushToGantt,
+    handleGanttRowUpdate,
   }
 }

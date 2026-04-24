@@ -25,9 +25,10 @@ interface TaskBarProps {
   timeScale: 'day' | 'week' | 'month'
   onTaskClick?: (boardTaskId: string) => void
   onResize?: (taskId: string, edge: 'left' | 'right', daysDelta: number) => void
+  onRename?: (taskId: string, name: string) => void
 }
 
-export function TaskBar({ task, style, cellWidth, timeScale, onTaskClick, onResize }: TaskBarProps) {
+export function TaskBar({ task, style, cellWidth, timeScale, onTaskClick, onResize, onRename }: TaskBarProps) {
   const { selectedTaskId, selectTask } = useGanttStore()
   const isSelected = selectedTaskId === task.id
   const preset = colorConfig[task.color]
@@ -36,12 +37,15 @@ export function TaskBar({ task, style, cellWidth, timeScale, onTaskClick, onResi
 
   const resizingRef = useRef<{ edge: 'left' | 'right'; startX: number } | null>(null)
   const [resizeDelta, setResizeDelta] = useState(0)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editName, setEditName] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
 
-   
+
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
     data: { type: 'task', task },
-    disabled: !!resizingRef.current,
+    disabled: !!resizingRef.current || isEditing,
   })
 
   const pxPerDay = useMemo(() => {
@@ -85,11 +89,31 @@ export function TaskBar({ task, style, cellWidth, timeScale, onTaskClick, onResi
     }
   }, [pxPerDay, onResize, task.id])
 
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    setEditName(task.name)
+    setIsEditing(true)
+    requestAnimationFrame(() => inputRef.current?.select())
+  }, [task.name])
+
+  const commitRename = useCallback(() => {
+    const trimmed = editName.trim()
+    setIsEditing(false)
+    if (trimmed && trimmed !== task.name && onRename) {
+      onRename(task.id, trimmed)
+    }
+  }, [editName, task.id, task.name, onRename])
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') commitRename()
+    if (e.key === 'Escape') setIsEditing(false)
+  }, [commitRename])
+
   const dragStyle = transform ? {
     transform: CSS.Translate.toString(transform),
   } : undefined
 
-   
+
   const resizeStyle = useMemo(() => {
     // eslint-disable-next-line react-hooks/refs
     if (!resizingRef.current || resizeDelta === 0) return { left: style.left, width: style.width }
@@ -121,15 +145,15 @@ export function TaskBar({ task, style, cellWidth, timeScale, onTaskClick, onResi
     <motion.div
       ref={setNodeRef}
       {...attributes}
-      {...listeners}
+      {...(isEditing ? {} : listeners)}
       onClick={() => {
-        if (resizingRef.current) return
+        if (resizingRef.current || isEditing) return
         selectTask(task.id)
         if (task.boardTaskId && onTaskClick) onTaskClick(task.boardTaskId)
       }}
       className={cn(
         'absolute h-10 rounded-lg cursor-grab active:cursor-grabbing group',
-        'backdrop-blur-md border transition-all duration-200',
+        'backdrop-blur-md border',
         isPreset && preset.border,
         isDragging && 'opacity-80 z-50',
         isSelected && 'ring-2 ring-offset-2 ring-offset-background'
@@ -142,6 +166,7 @@ export function TaskBar({ task, style, cellWidth, timeScale, onTaskClick, onResi
         ...(!isPreset ? resolved.borderStyle : {}),
         ...glowStyle,
         ...dragStyle,
+        transition: isDragging || isResizing ? 'none' : 'left 150ms ease, width 150ms ease',
       }}
       whileHover={whileHoverProp}
       whileTap={whileTapProp}
@@ -149,9 +174,24 @@ export function TaskBar({ task, style, cellWidth, timeScale, onTaskClick, onResi
       animate={{ opacity: 1, scale: 1 }}
     >
       <div className="flex items-center h-full px-3">
-        <span className="text-sm font-medium text-white truncate drop-shadow-md">
-          {task.name}
-        </span>
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={handleKeyDown}
+            className="text-sm font-medium text-white bg-transparent outline-none w-full"
+            autoFocus
+          />
+        ) : (
+          <span
+            className="text-sm font-medium text-white truncate drop-shadow-md"
+            onDoubleClick={handleDoubleClick}
+          >
+            {task.name}
+          </span>
+        )}
       </div>
 
       {task.progress > 0 && (
