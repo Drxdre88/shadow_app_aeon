@@ -117,7 +117,13 @@ export const createGanttViewSchema = z.object({
 export const updateGanttViewSchema = z.object({
   name: z.string().trim().min(1).max(255).optional(),
   groupBy: z.enum(['column', 'label', 'dependency', 'priority']).optional(),
-  filters: ganttViewFiltersSchema.optional(),
+  filters: z.object({
+    excludedSections: z.array(z.string()).optional(),
+    taskOrder: z.enum(['column', 'alphabetical']).optional(),
+    allowWeekends: z.boolean().optional(),
+    allowMultipleRows: z.boolean().optional(),
+    allowOverlap: z.boolean().optional(),
+  }).optional(),
 })
 
 export const createLabelSchema = z.object({
