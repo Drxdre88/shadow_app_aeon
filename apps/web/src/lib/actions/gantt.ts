@@ -91,6 +91,7 @@ export async function createRow(data: {
   name: string
   color: string
   orderIndex: number
+  ganttViewId: string
 }) {
   await requireEditor(data.projectId)
 
@@ -98,6 +99,7 @@ export async function createRow(data: {
     name: data.name,
     color: data.color,
     orderIndex: data.orderIndex,
+    ganttViewId: data.ganttViewId,
   })
 
   const row = await _createRow(data.projectId, parsed, data.id)
