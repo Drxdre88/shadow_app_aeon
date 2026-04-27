@@ -63,6 +63,7 @@ function buildProviders(): Provider[] {
 const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 
 const nextAuth = NextAuth({
+  trustHost: true,
   adapter: DrizzleAdapter(db, {
     usersTable: schema.users,
     accountsTable: schema.accounts,
@@ -115,7 +116,12 @@ const nextAuth = NextAuth({
       if (allowed.length === 0) return true
       if (!user.email) return false
       if (allowed.includes(user.email)) return true
-      return hasValidPendingInvite(user.email)
+      try {
+        return await hasValidPendingInvite(user.email)
+      } catch (err) {
+        console.error('[auth] signIn invite check failed:', err)
+        return false
+      }
     },
     session: ({ session, user }) => ({
       ...session,
