@@ -234,6 +234,28 @@ export async function getNeighbours(
 }
 
 export async function createMemory(userId: string, input: CreateMemoryInput) {
+  // Idempotency for Claude-captured sessions: a given sessionId is a stable
+  // identity, so re-posting (from a SessionStart backfill, re-invoked hook,
+  // or manual recovery) should never duplicate. Other sources stay strict.
+  const sessionId =
+    input.source === 'claude' &&
+    typeof input.sourceMetadata === 'object' &&
+    input.sourceMetadata !== null
+      ? (input.sourceMetadata as Record<string, unknown>).sessionId
+      : undefined
+  if (typeof sessionId === 'string' && sessionId.length > 0) {
+    const [existing] = await db
+      .select()
+      .from(memories)
+      .where(and(
+        eq(memories.userId, userId),
+        eq(memories.source, 'claude'),
+        sql`${memories.sourceMetadata}->>'sessionId' = ${sessionId}`,
+      ))
+      .limit(1)
+    if (existing) return existing
+  }
+
   const [row] = await db
     .insert(memories)
     .values({
