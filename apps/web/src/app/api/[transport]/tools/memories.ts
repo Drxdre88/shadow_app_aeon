@@ -4,6 +4,7 @@ import {
   searchMemoriesSchema,
   addLinkSchema,
   getNeighboursSchema,
+  prepareContextSchema,
 } from '@/lib/data/validators'
 import {
   createMemory as _createMemory,
@@ -11,6 +12,7 @@ import {
   addLink as _addLink,
   findMemoryById,
   getNeighbours as _getNeighbours,
+  prepareContext as _prepareContext,
   targetMemoryExists,
 } from '@/lib/data/memories'
 import { verifyProjectAccess } from '@/lib/data/projects'
@@ -163,6 +165,50 @@ export const registerMemoryTools: RegisterFn = (server) => {
         linksCount: result.linksCount,
         created: result.created,
       })
+    }
+  )
+
+  server.tool(
+    'prepare_context',
+    'Build a budget-packed markdown context bundle from the user-scoped brain. ' +
+      'Combines BM25 full-text search + 1-hop typed graph walk + pinned items, ' +
+      'scores by relevance × recency, and packs into Pinned/Most-relevant/Related ' +
+      'sections sized to a token budget. Use this BEFORE answering open-ended ' +
+      'questions ("what should I focus on?", "what do I know about X?", "what was ' +
+      'the decision on Y?") — it returns ready-to-prepend context with cited sources.',
+    {
+      query: z.string().min(2).max(500).describe('What the user wants context for — a question, topic, or anchor phrase'),
+      budgetTokens: z.number().int().min(500).max(50_000).default(4000).optional().describe('Soft cap on returned context tokens; defaults to 4000'),
+      realmId: z.string().uuid().optional().describe('Scope retrieval to a single realm'),
+      type: z.union([
+        z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection']),
+        z.array(z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection'])),
+      ]).optional().describe('Filter by memory type(s)'),
+      hops: z.union([z.literal(0), z.literal(1)]).default(1).optional().describe('Graph walk depth from top FTS hits (0 = no graph)'),
+      maxSources: z.number().int().min(5).max(100).default(30).optional().describe('Cap on FTS hits considered before scoring'),
+      includePinned: z.boolean().default(true).optional().describe('Whether to surface pinned memories regardless of FTS match'),
+    },
+    async (args, extra) => {
+      const uid = getUserId(extra)
+      const parsed = prepareContextSchema.safeParse({
+        query: args.query,
+        budgetTokens: args.budgetTokens ?? 4000,
+        realmId: args.realmId,
+        type: args.type,
+        hops: args.hops ?? 1,
+        maxSources: args.maxSources ?? 30,
+        includePinned: args.includePinned ?? true,
+      })
+      if (!parsed.success) return fail(parsed.error.issues[0].message)
+
+      // Realm-scope guard (same shape as other tools).
+      if (parsed.data.realmId) {
+        const anchorErr = await verifyAnchors(uid, { realmId: parsed.data.realmId })
+        if (anchorErr) return fail(anchorErr)
+      }
+
+      const result = await _prepareContext(uid, parsed.data)
+      return ok(result)
     }
   )
 
