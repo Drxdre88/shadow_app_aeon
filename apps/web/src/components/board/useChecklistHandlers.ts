@@ -26,12 +26,14 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
   }, [editingTaskId])
 
   useEffect(() => {
-    if (!editingTaskId) {
-      setChecklistItems([])
-      return
-    }
+    // Clear immediately on switch so a fast-reopen (E shortcut, no debounce)
+    // never shows the previous task's items while the new fetch is in flight.
+    setChecklistItems([])
+    if (!editingTaskId) return
+    let cancelled = false
     getChecklistItems(editingTaskId, projectId)
-      .then((items) =>
+      .then((items) => {
+        if (cancelled) return
         setChecklistItems(
           items.map((i) => ({
             id: i.id,
@@ -44,13 +46,13 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
             endDate: i.endDate ? i.endDate.toISOString() : undefined,
           }))
         )
-      )
-      .catch(() => setChecklistItems([]))
+      })
+      .catch(() => { if (!cancelled) setChecklistItems([]) })
+    return () => { cancelled = true }
   }, [editingTaskId, projectId])
 
   const handleChecklistAdd = useCallback((title: string, groupName: string) => {
     if (!editingTaskId) return
-    const groupItems = itemsRef.current.filter((i) => i.groupName === groupName)
     const newItem: ChecklistItem = {
       id: generateId(),
       title,
@@ -62,12 +64,13 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
     const next = [...checklistItems, newItem]
     setChecklistItems(next)
     syncSummary(next)
+    // Omit orderIndex — let the DB transaction assign MAX(orderIndex)+1 globally.
+    // Group-local indices were colliding across groups, scrambling order on reopen.
     createChecklistItem({
       id: newItem.id,
       taskId: editingTaskId,
       projectId,
       title,
-      orderIndex: groupItems.length,
       groupName,
     }).catch(() => {
       setChecklistItems((prev) => prev.filter((i) => i.id !== newItem.id))
@@ -110,12 +113,12 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
       groupName,
     }
     setChecklistItems((prev) => [...prev, placeholder])
+    // Omit orderIndex — DB assigns MAX+1 so the new group lands at global end.
     createChecklistItem({
       id: placeholder.id,
       taskId: editingTaskId,
       projectId,
       title: placeholder.title,
-      orderIndex: 0,
       groupName,
     }).catch(() => {
       setChecklistItems((prev) => prev.filter((i) => i.id !== placeholder.id))
@@ -153,24 +156,27 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
 
   const handleChecklistReorder = useCallback((updates: { id: string; orderIndex: number }[]) => {
     if (!editingTaskId) return
-    const orderMap = new Map(updates.map((u) => [u.id, u.orderIndex]))
-    setChecklistItems((prev) => {
-      const grouped = new Map<string, ChecklistItem[]>()
-      for (const item of prev) {
-        const g = grouped.get(item.groupName) ?? []
-        g.push(item)
-        grouped.set(item.groupName, g)
-      }
-      for (const [, group] of grouped) {
-        group.sort((a, b) => {
-          const ai = orderMap.has(a.id) ? orderMap.get(a.id)! : Infinity
-          const bi = orderMap.has(b.id) ? orderMap.get(b.id)! : Infinity
-          return ai - bi
-        })
-      }
-      return Array.from(grouped.values()).flat()
-    })
-    reorderChecklistItems(editingTaskId, projectId, updates).catch(() => {})
+    // `updates` arrives with group-local indices from the drag handler. Persist
+    // them as *global* sequential indices so cross-group orderIndex values don't
+    // collide (which was scrambling order on reopen).
+    const localOrder = new Map(updates.map((u) => [u.id, u.orderIndex]))
+    const grouped = new Map<string, ChecklistItem[]>()
+    for (const item of itemsRef.current) {
+      const g = grouped.get(item.groupName) ?? []
+      g.push(item)
+      grouped.set(item.groupName, g)
+    }
+    for (const [, group] of grouped) {
+      group.sort((a, b) => {
+        const ai = localOrder.has(a.id) ? localOrder.get(a.id)! : Infinity
+        const bi = localOrder.has(b.id) ? localOrder.get(b.id)! : Infinity
+        return ai - bi
+      })
+    }
+    const newItems = Array.from(grouped.values()).flat()
+    setChecklistItems(newItems)
+    const globalUpdates = newItems.map((item, idx) => ({ id: item.id, orderIndex: idx }))
+    reorderChecklistItems(editingTaskId, projectId, globalUpdates).catch(() => {})
   }, [editingTaskId, projectId])
 
   const handleGroupDelete = useCallback((groupName: string) => {

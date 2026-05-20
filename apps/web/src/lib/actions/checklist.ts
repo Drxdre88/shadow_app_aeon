@@ -43,7 +43,7 @@ export async function createChecklistItem(data: {
   taskId: string
   projectId: string
   title: string
-  orderIndex: number
+  orderIndex?: number
   groupName?: string
 }) {
   await requireTaskEditable(data.taskId, data.projectId)

@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, integer, boolean, jsonb, primaryKey, real, uniqueIndex, type AnyPgColumn } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, text, timestamp, integer, boolean, jsonb, primaryKey, real, uniqueIndex, index, type AnyPgColumn } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
 export const users = pgTable('users', {
@@ -353,6 +353,37 @@ export const mobileSessions = pgTable('mobile_sessions', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
+// Brain Phase 1 — user-scoped memory substrate. See docs/brain/01-schema.md.
+// The `fts` tsvector generated column and the GIN indexes (memories_fts_idx,
+// memories_tags_idx) are NOT modelled here — they live in the raw SQL
+// migration 0013_brain_memories.sql because Drizzle cannot yet express
+// weighted tsvector generated columns. db:push leaves them alone if present.
+export const memories = pgTable('memories', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  realmId: uuid('realm_id').references(() => workspaceGroups.id, { onDelete: 'set null' }),
+  projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  taskId: uuid('task_id').references(() => boardTasks.id, { onDelete: 'set null' }),
+  title: varchar('title', { length: 255 }).notNull(),
+  bodyMd: text('body_md').notNull(),
+  summary: text('summary'),
+  type: varchar('type', { length: 30 }).default('note').notNull(),
+  source: varchar('source', { length: 20 }).default('manual').notNull(),
+  sourceMetadata: jsonb('source_metadata').default({}).notNull(),
+  links: jsonb('links').default([]).notNull(),
+  tags: jsonb('tags').default([]).notNull(),
+  pinned: boolean('pinned').default(false).notNull(),
+  archivedAt: timestamp('archived_at', { mode: 'date' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  userIdx: index('memories_user_idx').on(t.userId, t.createdAt),
+  realmIdx: index('memories_realm_idx').on(t.realmId),
+  projectIdx: index('memories_project_idx').on(t.projectId),
+  taskIdx: index('memories_task_idx').on(t.taskId),
+  typeIdx: index('memories_type_idx').on(t.userId, t.type),
+}))
+
 export type User = typeof users.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type GanttView = typeof ganttViews.$inferSelect
@@ -380,3 +411,4 @@ export type UserContact = typeof userContacts.$inferSelect
 export type RealmInvite = typeof realmInvites.$inferSelect
 export type MobileLoginToken = typeof mobileLoginTokens.$inferSelect
 export type MobileSession = typeof mobileSessions.$inferSelect
+export type Memory = typeof memories.$inferSelect

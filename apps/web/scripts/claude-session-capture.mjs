@@ -1,0 +1,396 @@
+#!/usr/bin/env node
+// ─────────────────────────────────────────────────────────────────────────
+// Aeon Brain — Claude SessionEnd capture hook.
+//
+// Reads the hook payload from stdin (JSON: { session_id, transcript_path,
+// cwd, hook_event_name, reason }), parses the transcript JSONL, and POSTs
+// a structured summary to /api/v1/memories as type=session_summary,
+// source=claude.
+//
+// Cross-platform: pure Node 18+ (built-in fetch, no extra deps).
+// Fail-safe: ALWAYS exits 0 so a failure here can never block your session.
+// Errors go to stderr (visible in Claude's hook log) but never propagate.
+//
+// Required env: AEON_API_KEY
+// Optional env: AEON_BASE_URL          (default http://localhost:3000)
+//               BRAIN_DEFAULT_REALM_ID (optional default realm anchor)
+//               BRAIN_DEBUG=1          (print verbose stderr)
+//               BRAIN_DRY_RUN=1        (skip the POST, print payload only)
+//               BRAIN_MIN_USER_TURNS   (default 3)
+//               BRAIN_MIN_TOOL_USES    (default 2)
+//
+// Install: see docs/brain/05-session-capture.md
+// ─────────────────────────────────────────────────────────────────────────
+
+import { readFileSync, existsSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { basename, dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// ─── helpers ────────────────────────────────────────────────────────────
+
+// Auto-load .env.local from this repo so the user doesn't need to export
+// anything in their shell profile. AEON_API_KEY + AEON_API_USER_ID + (optional)
+// AEON_BASE_URL + BRAIN_DEFAULT_REALM_ID are all read from there.
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const envPath = join(__dirname, '..', '.env.local')
+if (existsSync(envPath)) {
+  const envSrc = readFileSync(envPath, 'utf8').replace(/\r/g, '')
+  for (const rawLine of envSrc.split('\n')) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/)
+    if (!m) continue
+    let val = m[2].trim()
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1)
+    }
+    if (!process.env[m[1]]) process.env[m[1]] = val
+  }
+}
+
+const DEBUG = process.env.BRAIN_DEBUG === '1'
+const DRY_RUN = process.env.BRAIN_DRY_RUN === '1'
+const MIN_USER_TURNS = parseInt(process.env.BRAIN_MIN_USER_TURNS ?? '3', 10)
+const MIN_TOOL_USES = parseInt(process.env.BRAIN_MIN_TOOL_USES ?? '2', 10)
+const BASE_URL = (process.env.AEON_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '')
+const API_KEY = process.env.AEON_API_KEY
+const DEFAULT_REALM_ID = process.env.BRAIN_DEFAULT_REALM_ID || null
+
+const log = (...args) => DEBUG && console.error('[brain-capture]', ...args)
+const warn = (...args) => console.error('[brain-capture]', ...args)
+
+function bail(reason) {
+  log('skip:', reason)
+  process.exit(0)
+}
+
+function normalizeCwd(cwd) {
+  if (!cwd) return cwd
+  // Convert Git Bash / WSL style `/c/Users/...` to `C:/Users/...` on Windows.
+  if (process.platform === 'win32') {
+    const m = cwd.match(/^\/([a-zA-Z])\/(.*)$/)
+    if (m) return `${m[1].toUpperCase()}:/${m[2]}`
+  }
+  return cwd
+}
+
+function gitCmd(cwd, args) {
+  try {
+    return execFileSync('git', args, {
+      cwd: normalizeCwd(cwd),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 3000,
+    }).trim()
+  } catch {
+    return null
+  }
+}
+
+function readStdin() {
+  // Synchronous stdin read — small payload, fine for a hook.
+  try {
+    const buf = readFileSync(0, 'utf8')
+    return JSON.parse(buf)
+  } catch (err) {
+    bail(`stdin parse failed: ${err.message}`)
+  }
+}
+
+// ─── transcript parsing ─────────────────────────────────────────────────
+
+function parseTranscript(transcriptPath) {
+  if (!transcriptPath || !existsSync(transcriptPath)) return null
+  const raw = readFileSync(transcriptPath, 'utf8')
+  const lines = raw.split('\n').filter((l) => l.trim().length > 0)
+  const messages = []
+  for (const line of lines) {
+    try {
+      messages.push(JSON.parse(line))
+    } catch {
+      // Skip malformed lines silently — transcripts can have partial writes.
+    }
+  }
+  return messages
+}
+
+function extractFirstUserMessage(messages) {
+  for (const m of messages) {
+    if (m.type !== 'user') continue
+    const content = m.message?.content
+    if (typeof content === 'string') return content
+    if (Array.isArray(content)) {
+      const text = content.find((c) => c?.type === 'text')?.text
+      if (text) return text
+    }
+  }
+  return null
+}
+
+function extractLastAssistantText(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]
+    if (m.type !== 'assistant') continue
+    const content = m.message?.content
+    if (typeof content === 'string') return content
+    if (Array.isArray(content)) {
+      const text = content
+        .filter((c) => c?.type === 'text')
+        .map((c) => c.text)
+        .join('\n')
+        .trim()
+      if (text) return text
+    }
+  }
+  return null
+}
+
+function extractFilesTouched(messages) {
+  const files = new Set()
+  for (const m of messages) {
+    if (m.type !== 'assistant') continue
+    const content = m.message?.content
+    if (!Array.isArray(content)) continue
+    for (const c of content) {
+      if (c?.type !== 'tool_use') continue
+      const name = c.name
+      const input = c.input || {}
+      // Edit, Write, NotebookEdit, MultiEdit all carry a file_path
+      if ((name === 'Edit' || name === 'Write' || name === 'MultiEdit' || name === 'NotebookEdit') && typeof input.file_path === 'string') {
+        files.add(input.file_path)
+      }
+    }
+  }
+  return [...files]
+}
+
+function countSignals(messages) {
+  let userTurns = 0
+  let toolUses = 0
+  for (const m of messages) {
+    if (m.type === 'user') {
+      // Filter out tool_result pseudo-users (system-generated responses).
+      const c = m.message?.content
+      if (typeof c === 'string') {
+        userTurns++
+      } else if (Array.isArray(c) && c.some((p) => p?.type === 'text')) {
+        userTurns++
+      }
+    }
+    if (m.type === 'assistant') {
+      const c = m.message?.content
+      if (Array.isArray(c)) {
+        for (const p of c) if (p?.type === 'tool_use') toolUses++
+      }
+    }
+  }
+  return { userTurns, toolUses }
+}
+
+function sessionDurationMin(messages) {
+  // Scan for the first and last valid timestamp — early/late messages
+  // sometimes lack one.
+  let first = 0
+  let last = 0
+  for (const m of messages) {
+    if (!m.timestamp) continue
+    const t = new Date(m.timestamp).getTime()
+    if (!t || Number.isNaN(t)) continue
+    if (!first) first = t
+    last = t
+  }
+  if (!first || !last || last <= first) return 0
+  return Math.round((last - first) / 60000)
+}
+
+// ─── memory payload assembly ────────────────────────────────────────────
+
+function truncate(s, n) {
+  if (!s) return ''
+  if (s.length <= n) return s
+  return s.slice(0, n).trimEnd() + '…'
+}
+
+function buildPayload({ payload, messages, repo, branch, remote, commits, filesTouched, signals, duration }) {
+  const firstPrompt = extractFirstUserMessage(messages) || '(no user prompt)'
+  const lastAssistant = extractLastAssistantText(messages) || ''
+
+  // Subject line — use first ~60 chars of first prompt, single-line.
+  const subject = truncate(firstPrompt.replace(/\s+/g, ' '), 60)
+  const title = repo ? `${repo}: ${subject}` : subject
+
+  // Body sections
+  const sections = []
+  sections.push('## Session')
+  sections.push(`- Repo: ${repo || '(no git repo)'}`)
+  if (branch) sections.push(`- Branch: ${branch}`)
+  if (remote) sections.push(`- Remote: ${remote}`)
+  sections.push(`- User turns: ${signals.userTurns}`)
+  sections.push(`- Tool uses: ${signals.toolUses}`)
+  sections.push(`- Files touched: ${filesTouched.length}`)
+  if (duration > 0) sections.push(`- Duration: ${duration} min`)
+  if (payload.reason) sections.push(`- End reason: ${payload.reason}`)
+
+  sections.push('')
+  sections.push('## First user prompt')
+  sections.push('')
+  sections.push('> ' + truncate(firstPrompt, 1500).replace(/\n/g, '\n> '))
+
+  if (filesTouched.length > 0) {
+    sections.push('')
+    sections.push('## Files touched')
+    sections.push('')
+    for (const f of filesTouched.slice(0, 50)) sections.push(`- \`${f}\``)
+    if (filesTouched.length > 50) sections.push(`- … and ${filesTouched.length - 50} more`)
+  }
+
+  if (commits.length > 0) {
+    sections.push('')
+    sections.push('## Commits during session')
+    sections.push('')
+    for (const c of commits) sections.push(`- ${c}`)
+  }
+
+  if (lastAssistant) {
+    sections.push('')
+    sections.push('## Final assistant message (excerpt)')
+    sections.push('')
+    sections.push(truncate(lastAssistant, 2000))
+  }
+
+  const bodyMd = sections.join('\n')
+  const summary = truncate(firstPrompt.replace(/\s+/g, ' '), 240)
+
+  return {
+    title: truncate(title, 240),
+    bodyMd,
+    summary,
+    type: 'session_summary',
+    source: 'claude',
+    realmId: DEFAULT_REALM_ID,
+    projectId: null,
+    taskId: null,
+    sourceMetadata: {
+      repo: repo || null,
+      branch: branch || null,
+      remote: remote || null,
+      sessionId: payload.session_id || null,
+      cwd: payload.cwd || null,
+      hookEvent: payload.hook_event_name || null,
+      endReason: payload.reason || null,
+      filesTouched,
+      commits,
+      stats: {
+        userTurns: signals.userTurns,
+        toolUses: signals.toolUses,
+        durationMin: duration,
+        messageCount: messages.length,
+      },
+    },
+    tags: ['session', ...(repo ? [repo] : []), ...(branch && branch !== 'main' && branch !== 'master' ? [`branch:${branch}`] : [])],
+  }
+}
+
+// ─── HTTP POST ──────────────────────────────────────────────────────────
+
+async function postMemory(payload) {
+  const url = `${BASE_URL}/api/v1/memories`
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 8000)
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'authorization': `Bearer ${API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    })
+    const text = await res.text()
+    if (!res.ok) {
+      warn(`POST failed ${res.status}: ${text.slice(0, 500)}`)
+      return null
+    }
+    try {
+      const parsed = JSON.parse(text)
+      return parsed?.data?.id ?? null
+    } catch {
+      return null
+    }
+  } catch (err) {
+    warn(`POST error: ${err.message}`)
+    return null
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+// ─── main ───────────────────────────────────────────────────────────────
+
+async function main() {
+  if (!API_KEY) bail('AEON_API_KEY not set')
+
+  const payload = readStdin()
+  log('payload event:', payload.hook_event_name, 'reason:', payload.reason)
+
+  const messages = parseTranscript(payload.transcript_path)
+  if (!messages || messages.length === 0) bail('no transcript or empty')
+
+  const signals = countSignals(messages)
+  log('signals:', signals)
+
+  // Quality gate — skip trivial sessions.
+  if (signals.userTurns < MIN_USER_TURNS && signals.toolUses < MIN_TOOL_USES) {
+    bail(`below quality gate (userTurns=${signals.userTurns}, toolUses=${signals.toolUses})`)
+  }
+
+  // Git context
+  const cwd = payload.cwd || process.cwd()
+  const branch = gitCmd(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
+  const remote = gitCmd(cwd, ['remote', 'get-url', 'origin'])
+  const repo = remote
+    ? basename(remote).replace(/\.git$/, '')
+    : (branch ? basename(cwd) : null)
+
+  // Commits during session (last 24h is a generous window for any reasonable session).
+  const since = (() => {
+    const first = messages[0]?.timestamp
+    return first ? `--since=${first}` : '--since=24.hours.ago'
+  })()
+  const commitsRaw = gitCmd(cwd, ['log', '--pretty=%h %s', since, '-n', '20'])
+  const commits = commitsRaw ? commitsRaw.split('\n').filter(Boolean) : []
+
+  const filesTouched = extractFilesTouched(messages)
+  const duration = sessionDurationMin(messages)
+
+  const memoryPayload = buildPayload({
+    payload,
+    messages,
+    repo,
+    branch,
+    remote,
+    commits,
+    filesTouched,
+    signals,
+    duration,
+  })
+
+  if (DRY_RUN) {
+    console.error('[brain-capture] DRY RUN — payload follows:')
+    console.error(JSON.stringify(memoryPayload, null, 2))
+    return
+  }
+
+  const id = await postMemory(memoryPayload)
+  if (id) {
+    log(`memory created: ${id}`)
+  }
+}
+
+main().catch((err) => {
+  warn(`unhandled: ${err.message}`)
+  // Always exit 0 — never block the user's session.
+  process.exit(0)
+})

@@ -191,6 +191,8 @@ export const useBoardStore = create<BoardState>()(
       setChecklistSummaries: (checklistSummaries) => set({ checklistSummaries }),
       updateChecklistSummary: (taskId, summary) => set((s) => ({
         checklistSummaries: { ...s.checklistSummaries, [taskId]: summary },
+        isDirty: true,
+        lastMutatedAt: Date.now(),
       })),
       setChecklistPreviews: (checklistPreviews) => set({ checklistPreviews }),
       toggleChecklistPreview: () => set((s) => {
