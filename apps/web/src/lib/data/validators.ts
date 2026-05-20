@@ -139,7 +139,7 @@ export const updateLabelSchema = z.object({
 export const createChecklistItemSchema = z.object({
   title: z.string().trim().min(1).max(2000),
   groupName: z.string().trim().max(255).optional(),
-  orderIndex: z.number().int(),
+  orderIndex: z.number().int().optional(),
 })
 
 export const checklistItemStateSchema = z.enum(['unchecked', 'checked', 'crossed'])
@@ -306,3 +306,86 @@ export type CreateRowInput = z.infer<typeof createRowSchema>
 export type UpdateRowInput = z.infer<typeof updateRowSchema>
 export type CreateCanvasNodeInput = z.infer<typeof createCanvasNodeSchema>
 export type UpdateCanvasNodeInput = z.infer<typeof updateCanvasNodeSchema>
+
+// ─────────────────────────────────────────────────────────────────────────
+// Brain Phase 1 — memory validators. See docs/brain/02-mcp-tools.md.
+// Shared verbatim by REST routes and MCP tools (locked by memories-parity.test.ts).
+// ─────────────────────────────────────────────────────────────────────────
+
+export const memoryTypeSchema   = z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection'])
+export const memorySourceSchema = z.enum(['manual', 'claude', 'voice', 'hook', 'import'])
+export const memoryEdgeTypeSchema   = z.enum(['relates', 'supports', 'contradicts', 'supersedes', 'refers_to', 'blocks_thinking'])
+export const memoryTargetKindSchema = z.enum(['memory', 'task', 'project', 'realm', 'url'])
+
+export const memoryLinkSchema = z.object({
+  type: memoryEdgeTypeSchema,
+  target: z.string().min(1).max(2048),         // uuid for non-url kinds, URL string for url
+  target_kind: memoryTargetKindSchema,
+  note: z.string().trim().max(500).optional(),
+})
+
+export const createMemorySchema = z.object({
+  title:           z.string().trim().min(1).max(255),
+  bodyMd:          z.string().min(1).max(100_000),
+  summary:         z.string().trim().max(1000).optional(),
+  type:            memoryTypeSchema.default('note'),
+  source:          memorySourceSchema.default('manual'),
+  sourceMetadata:  z.record(z.string(), z.unknown()).optional(),
+  realmId:         z.string().uuid().nullable().optional(),
+  projectId:       z.string().uuid().nullable().optional(),
+  taskId:          z.string().uuid().nullable().optional(),
+  tags:            z.array(z.string().trim().min(1).max(50)).max(50).optional(),
+  links:           z.array(memoryLinkSchema).max(100).optional(),
+  pinned:          z.boolean().optional(),
+})
+
+export const updateMemorySchema = z.object({
+  title:           z.string().trim().min(1).max(255).optional(),
+  bodyMd:          z.string().min(1).max(100_000).optional(),
+  summary:         z.string().trim().max(1000).nullable().optional(),
+  type:            memoryTypeSchema.optional(),
+  realmId:         z.string().uuid().nullable().optional(),
+  projectId:       z.string().uuid().nullable().optional(),
+  taskId:          z.string().uuid().nullable().optional(),
+  tags:            z.array(z.string().trim().min(1).max(50)).max(50).optional(),
+  pinned:          z.boolean().optional(),
+  archivedAt:      z.string().datetime().nullable().optional(),
+})
+
+export const searchMemoriesSchema = z.object({
+  query:           z.string().trim().min(2).max(500),
+  type:            z.union([memoryTypeSchema, z.array(memoryTypeSchema)]).optional(),
+  source:          z.union([memorySourceSchema, z.array(memorySourceSchema)]).optional(),
+  realmId:         z.string().uuid().optional(),
+  projectId:       z.string().uuid().optional(),
+  taskId:          z.string().uuid().optional(),
+  tagsAny:         z.array(z.string()).max(50).optional(),
+  tagsAll:         z.array(z.string()).max(50).optional(),
+  pinnedOnly:      z.boolean().optional(),
+  limit:           z.number().int().min(1).max(100).default(20),
+  offset:          z.number().int().min(0).default(0),
+})
+
+export const addLinkSchema = z.object({
+  target:          z.string().min(1).max(2048),
+  targetKind:      memoryTargetKindSchema,
+  type:            memoryEdgeTypeSchema,
+  note:            z.string().trim().max(500).optional(),
+})
+
+export const getNeighboursSchema = z.object({
+  hops:            z.union([z.literal(1), z.literal(2)]).default(1),
+  includeReverse:  z.boolean().default(true),
+  limit:           z.number().int().min(1).max(100).default(20),
+})
+
+export type MemoryType        = z.infer<typeof memoryTypeSchema>
+export type MemorySource      = z.infer<typeof memorySourceSchema>
+export type MemoryEdgeType    = z.infer<typeof memoryEdgeTypeSchema>
+export type MemoryTargetKind  = z.infer<typeof memoryTargetKindSchema>
+export type MemoryLink        = z.infer<typeof memoryLinkSchema>
+export type CreateMemoryInput = z.infer<typeof createMemorySchema>
+export type UpdateMemoryInput = z.infer<typeof updateMemorySchema>
+export type SearchMemoriesInput = z.infer<typeof searchMemoriesSchema>
+export type AddLinkInput      = z.infer<typeof addLinkSchema>
+export type GetNeighboursInput = z.infer<typeof getNeighboursSchema>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useLayoutEffect, useEffect, memo } from 'react'
+import { useState, useLayoutEffect, useMemo, memo } from 'react'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { AnimatePresence } from 'framer-motion'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -73,33 +73,32 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
   onArchiveTask,
   onTaskCreate,
 }: VirtualizedTaskListProps) {
-  const scrollRef = useRef<HTMLDivElement>(null)
+  // Callback ref via useState: forces a re-render when the scroll element
+  // attaches, so the virtualizer's getScrollElement() never returns null on
+  // its first measurement pass. Using useRef here was the source of the
+  // blank-column bug — the virtualizer measured against null and cached an
+  // empty viewport until the next manual measure().
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null)
   const useVirtual = tasks.length >= VIRTUAL_THRESHOLD
-  const [measured, setMeasured] = useState(false)
 
   const virtualizer = useVirtualizer({
     count: tasks.length,
-    getScrollElement: () => scrollRef.current,
+    getScrollElement: () => scrollEl,
     estimateSize: () => ESTIMATED_CARD_HEIGHT,
     overscan: VIRTUAL_OVERSCAN,
     gap: CARD_GAP,
     enabled: useVirtual,
   })
 
+  // Invalidate the virtualizer's height cache whenever the task identity or
+  // order changes — covers Pusher resyncs and filters that swap items without
+  // changing length.
+  const taskIdsSignature = useMemo(() => taskIds.join('|'), [taskIds])
   useLayoutEffect(() => {
-    if (useVirtual) {
+    if (useVirtual && scrollEl) {
       virtualizer.measure()
     }
-  }, [tasks.length, useVirtual, virtualizer])
-
-  const hasMounted = useRef(false)
-  useEffect(() => {
-    if (!useVirtual) { setMeasured(false); hasMounted.current = false; return }
-    if (hasMounted.current) return
-    hasMounted.current = true
-    const raf = requestAnimationFrame(() => setMeasured(true))
-    return () => cancelAnimationFrame(raf)
-  }, [useVirtual, tasks.length])
+  }, [taskIdsSignature, useVirtual, virtualizer, scrollEl])
 
   const renderCard = (task: TaskItem) => (
     <SortableTaskCard
@@ -119,18 +118,12 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
 
   if (useVirtual) {
     return (
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3">
+      <div ref={setScrollEl} className="flex-1 overflow-y-auto p-3">
         <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
-          <div
-            style={{
-              height: virtualizer.getTotalSize(),
-              position: 'relative',
-              opacity: measured ? 1 : 0,
-              transition: 'opacity 0.15s ease-in',
-            }}
-          >
+          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
             {virtualizer.getVirtualItems().map((virtualItem) => {
               const task = tasks[virtualItem.index]
+              if (!task) return null
               return (
                 <div
                   key={task.id}
@@ -158,7 +151,7 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
   }
 
   return (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
+    <div className="flex-1 overflow-y-auto p-3 space-y-3">
       <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
         <AnimatePresence mode="popLayout">
           {tasks.map((task) => renderCard(task))}
