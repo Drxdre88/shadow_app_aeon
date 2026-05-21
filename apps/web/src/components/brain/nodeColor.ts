@@ -73,3 +73,28 @@ export function edgeColor(type: string): string {
 export function isAutoEdge(type: string): boolean {
   return type.startsWith('auto-')
 }
+
+// Display-only title cleanup. The real semantic naming layer is Track C's
+// AI auto-titling pass — until that lands, strip the worst formatting noise
+// from raw session-capture titles (repo prefixes, XML tags, file paths) and
+// cap length so the label reads as 1–6 words instead of a wall of slug text.
+export function cleanTitle(raw: string): string {
+  if (!raw) return ''
+  let t = raw
+  // "shadow_app_swarm: …" / "aeon_app: …" style prefixes
+  t = t.replace(/^[a-z][\w-]*(?:_[\w-]+)+\s*[:>]\s*/i, '')
+  // XML-like tags from system reminders / command stdout
+  t = t.replace(/<\/?[a-z][\w-]*[^>]*>/gi, ' ')
+  // Windows + unix paths
+  t = t.replace(/[a-z]:\\[\\\w. -]+/gi, '')
+  t = t.replace(/(?:^|\s)\/(?:[\w. -]+\/)+[\w. -]*/g, ' ')
+  // Surrounding punctuation / quotes
+  t = t.replace(/^["'`<>:\s]+|["'`<>:\s]+$/g, '')
+  // Collapse whitespace
+  t = t.trim().replace(/\s+/g, ' ')
+  if (!t || t.length < 3) return raw.slice(0, 40)
+  // Cap at 6 words.
+  const words = t.split(/\s+/)
+  if (words.length > 6) return words.slice(0, 6).join(' ') + '…'
+  return t
+}

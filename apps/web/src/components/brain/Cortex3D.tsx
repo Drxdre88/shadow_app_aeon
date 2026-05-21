@@ -113,9 +113,9 @@ function EdgeGraph({ data }: { data: { nodes: SceneNode[]; links: SceneLink[] } 
       linkDirectionalParticleSpeed={0.006}
       linkDirectionalParticleWidth={1.7}
       d3AlphaDecay={0.025}
-      d3VelocityDecay={0.32}
-      warmupTicks={120}
-      cooldownTicks={Infinity}
+      d3VelocityDecay={0.45}
+      warmupTicks={150}
+      cooldownTicks={600}
     />
   )
 }

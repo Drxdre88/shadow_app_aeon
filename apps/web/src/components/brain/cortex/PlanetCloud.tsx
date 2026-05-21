@@ -5,9 +5,8 @@ import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import type { GraphNode } from '@/lib/data/memories'
-import { nodeHue, type ColorMode } from '../nodeColor'
+import { cleanTitle, type ColorMode } from '../nodeColor'
 import { Planet } from './Planet'
-import { archetypeFromSeed } from './params'
 
 export type SceneNode = GraphNode & {
   _hex: string
@@ -30,39 +29,15 @@ type Props = {
   onHover: (id: string | null) => void
 }
 
-type Derived = {
-  archetype: ReturnType<typeof archetypeFromSeed>
-  surfaceHue: number
-  atmosphereHue: number
-  paletteShift: number
-  radius: number
-}
-
 export function PlanetCloud({
   nodes,
   selectedId,
   hoveredId,
   hubIds,
-  colorMode,
   onSelect,
   onHover,
 }: Props) {
   const groupRefs = useRef(new Map<string, THREE.Group>())
-
-  const derived = useMemo<Map<string, Derived>>(() => {
-    const m = new Map<string, Derived>()
-    for (const n of nodes) {
-      const hue = nodeHue(n, colorMode)
-      m.set(n.id, {
-        archetype: archetypeFromSeed(n.realmId ?? n.repo ?? n.type),
-        surfaceHue: hue / 360,
-        atmosphereHue: ((hue + 30) % 360) / 360,
-        paletteShift: hue / 360,
-        radius: n._radius,
-      })
-    }
-    return m
-  }, [nodes, colorMode])
 
   useEffect(() => {
     // Drop refs for nodes that left the scene so the map doesn't grow unbounded.
@@ -89,37 +64,30 @@ export function PlanetCloud({
 
   return (
     <>
-      {nodes.map((n) => {
-        const d = derived.get(n.id)
-        if (!d) return null
-        return (
-          <Planet
-            key={n.id}
-            ref={(g) => {
-              if (g) groupRefs.current.set(n.id, g)
-              else groupRefs.current.delete(n.id)
-            }}
-            radius={d.radius}
-            archetype={d.archetype}
-            surfaceHue={d.surfaceHue}
-            atmosphereHue={d.atmosphereHue}
-            paletteShift={d.paletteShift}
-            hasRing={n.pinned}
-            onPointerDown={(e) => {
-              e.stopPropagation()
-              onSelect(n.id)
-            }}
-            onPointerOver={(e) => {
-              e.stopPropagation()
-              onHover(n.id)
-            }}
-            onPointerOut={(e) => {
-              e.stopPropagation()
-              onHover(null)
-            }}
-          />
-        )
-      })}
+      {nodes.map((n) => (
+        <Planet
+          key={n.id}
+          ref={(g) => {
+            if (g) groupRefs.current.set(n.id, g)
+            else groupRefs.current.delete(n.id)
+          }}
+          radius={n._radius}
+          color={n._hex}
+          hasRing={n.pinned}
+          onPointerDown={(e) => {
+            e.stopPropagation()
+            onSelect(n.id)
+          }}
+          onPointerOver={(e) => {
+            e.stopPropagation()
+            onHover(n.id)
+          }}
+          onPointerOut={(e) => {
+            e.stopPropagation()
+            onHover(null)
+          }}
+        />
+      ))}
       <PlanetLabels
         nodes={nodes}
         selectedId={selectedId}
@@ -177,7 +145,7 @@ function FollowingLabel({ node, variant }: { node: SceneNode; variant: 'hover' |
     if (!groupRef.current) return
     groupRef.current.position.set(node.x ?? 0, (node.y ?? 0) + node._radius * 2.5 + 6, node.z ?? 0)
   })
-  const title = node.title.length > 56 ? node.title.slice(0, 53) + '…' : node.title
+  const title = cleanTitle(node.title)
   const subtitle = node.repo ?? node.type
   return (
     <group ref={groupRef}>
