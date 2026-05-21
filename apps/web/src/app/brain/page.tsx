@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { ArrowLeft, Search } from 'lucide-react'
@@ -25,9 +26,15 @@ const Cortex3D = dynamic(
 
 export default function BrainPage() {
   const { graph, loading, error, refresh } = useBrainData()
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const searchParams = useSearchParams()
+  const focusId = searchParams.get('focus')
+  const [selectedId, setSelectedId] = useState<string | null>(focusId)
   const [query, setQuery] = useState('')
   const [colorMode, setColorMode] = useState<ColorMode>('repo')
+
+  useEffect(() => {
+    if (focusId) setSelectedId(focusId)
+  }, [focusId])
 
   const filteredNodes = query.trim()
     ? graph.nodes.filter((n) => n.title.toLowerCase().includes(query.trim().toLowerCase()))
