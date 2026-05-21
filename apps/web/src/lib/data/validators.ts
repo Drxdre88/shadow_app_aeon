@@ -379,6 +379,19 @@ export const getNeighboursSchema = z.object({
   limit:           z.number().int().min(1).max(100).default(20),
 })
 
+// Brain Phase 4 — prepare_context. Single retrieval call that returns a
+// budget-packed markdown bundle ready to drop into an AI context window.
+// Spec: docs/brain/04-phase-roadmap.md (Phase 4)
+export const prepareContextSchema = z.object({
+  query:           z.string().trim().min(2).max(500),
+  budgetTokens:    z.number().int().min(500).max(50_000).default(4000),
+  realmId:         z.string().uuid().optional(),
+  type:            z.union([memoryTypeSchema, z.array(memoryTypeSchema)]).optional(),
+  hops:            z.union([z.literal(0), z.literal(1)]).default(1),
+  maxSources:      z.number().int().min(5).max(100).default(30),
+  includePinned:   z.boolean().default(true),
+})
+
 export type MemoryType        = z.infer<typeof memoryTypeSchema>
 export type MemorySource      = z.infer<typeof memorySourceSchema>
 export type MemoryEdgeType    = z.infer<typeof memoryEdgeTypeSchema>
@@ -389,3 +402,4 @@ export type UpdateMemoryInput = z.infer<typeof updateMemorySchema>
 export type SearchMemoriesInput = z.infer<typeof searchMemoriesSchema>
 export type AddLinkInput      = z.infer<typeof addLinkSchema>
 export type GetNeighboursInput = z.infer<typeof getNeighboursSchema>
+export type PrepareContextInput = z.infer<typeof prepareContextSchema>

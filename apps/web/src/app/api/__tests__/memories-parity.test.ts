@@ -33,6 +33,7 @@ const REST_ROUTE_FILES = [
   'route.ts',
   '[id]/route.ts',
   'search/route.ts',
+  'context/route.ts',
   '[id]/links/route.ts',
   '[id]/links/[linkIndex]/route.ts',
   '[id]/neighbours/route.ts',
@@ -59,12 +60,13 @@ describe('Memory MCP <-> REST parity', () => {
     .join('\n')
 
   describe('MCP tool surface', () => {
-    it('exposes exactly the four expected memory operations', () => {
+    it('exposes exactly the five expected memory operations', () => {
       expect(new Set(toolNames)).toEqual(new Set([
         'create_memory',
         'search_memories',
         'link_memory',
         'get_memory_with_neighbours',
+        'prepare_context',
       ]))
     })
   })
@@ -74,6 +76,7 @@ describe('Memory MCP <-> REST parity', () => {
       { path: 'route.ts',                          methods: ['GET', 'POST'] },
       { path: '[id]/route.ts',                     methods: ['GET', 'PATCH', 'DELETE'] },
       { path: 'search/route.ts',                   methods: ['GET'] },
+      { path: 'context/route.ts',                  methods: ['GET'] },
       { path: '[id]/links/route.ts',               methods: ['POST'] },
       { path: '[id]/links/[linkIndex]/route.ts',   methods: ['DELETE'] },
       { path: '[id]/neighbours/route.ts',          methods: ['GET'] },
@@ -97,6 +100,7 @@ describe('Memory MCP <-> REST parity', () => {
       'searchMemoriesSchema',
       'addLinkSchema',
       'getNeighboursSchema',
+      'prepareContextSchema',
     ]
 
     it.each(validators)('REST surface uses validator: %s', (v) => {
@@ -111,6 +115,7 @@ describe('Memory MCP <-> REST parity', () => {
       'searchMemoriesSchema',
       'addLinkSchema',
       'getNeighboursSchema',
+      'prepareContextSchema',
     ]
     it.each(mcpValidators)('MCP tool file uses validator: %s', (v) => {
       expect(mcpSrc, `MCP memories.ts missing ${v}`).toMatch(new RegExp(`\\b${v}\\b`))
@@ -124,6 +129,7 @@ describe('Memory MCP <-> REST parity', () => {
       'addLink',
       'findMemoryById',
       'getNeighbours',
+      'prepareContext',
     ]
 
     it.each(sharedFns)('MCP imports and uses: %s', (fn) => {

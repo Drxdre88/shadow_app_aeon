@@ -11,11 +11,13 @@ import {
   searchMemoriesSchema,
   addLinkSchema,
   getNeighboursSchema,
+  prepareContextSchema,
   type CreateMemoryInput,
   type UpdateMemoryInput,
   type SearchMemoriesInput,
   type AddLinkInput,
   type GetNeighboursInput,
+  type PrepareContextInput,
 } from '@/lib/data/validators'
 import {
   findMemoryById as _findMemoryById,
@@ -27,6 +29,7 @@ import {
   addLink as _addLink,
   removeLink as _removeLink,
   deleteMemory as _deleteMemory,
+  prepareContext as _prepareContext,
   targetMemoryExists,
 } from '@/lib/data/memories'
 
@@ -165,6 +168,17 @@ export async function deleteMemoryById(memoryId: string) {
   const ok = await _deleteMemory(memoryId, userId)
   if (!ok) throw new Error('Memory not found or unauthorized')
   return { deleted: true }
+}
+
+// Brain Phase 4 — context retrieval. Single auth-guarded call returning a
+// budget-packed markdown bundle. If realmId supplied, verifies user is a member.
+export async function prepareContextForUser(input: PrepareContextInput) {
+  const userId = await requireAuth()
+  const parsed = prepareContextSchema.parse(input)
+  if (parsed.realmId) {
+    await verifyAnchors(userId, { realmId: parsed.realmId })
+  }
+  return _prepareContext(userId, parsed)
 }
 
 // Stub for Phase 5 — broadcast memory events to a user-scoped Pusher channel.

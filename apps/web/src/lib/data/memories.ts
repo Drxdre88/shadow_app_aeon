@@ -1,12 +1,13 @@
 import { db } from '@/lib/db'
 import { memories } from '@/lib/db/schema'
-import { eq, and, desc, sql } from 'drizzle-orm'
+import { eq, and, desc, sql, inArray } from 'drizzle-orm'
 import type {
   CreateMemoryInput,
   UpdateMemoryInput,
   SearchMemoriesInput,
   AddLinkInput,
   MemoryLink,
+  PrepareContextInput,
 } from './validators'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -234,6 +235,28 @@ export async function getNeighbours(
 }
 
 export async function createMemory(userId: string, input: CreateMemoryInput) {
+  // Idempotency for Claude-captured sessions: a given sessionId is a stable
+  // identity, so re-posting (from a SessionStart backfill, re-invoked hook,
+  // or manual recovery) should never duplicate. Other sources stay strict.
+  const sessionId =
+    input.source === 'claude' &&
+    typeof input.sourceMetadata === 'object' &&
+    input.sourceMetadata !== null
+      ? (input.sourceMetadata as Record<string, unknown>).sessionId
+      : undefined
+  if (typeof sessionId === 'string' && sessionId.length > 0) {
+    const [existing] = await db
+      .select()
+      .from(memories)
+      .where(and(
+        eq(memories.userId, userId),
+        eq(memories.source, 'claude'),
+        sql`${memories.sourceMetadata}->>'sessionId' = ${sessionId}`,
+      ))
+      .limit(1)
+    if (existing) return existing
+  }
+
   const [row] = await db
     .insert(memories)
     .values({
@@ -365,4 +388,289 @@ export async function targetMemoryExists(targetId: string, userId: string) {
     .where(and(eq(memories.id, targetId), eq(memories.userId, userId)))
     .limit(1)
   return !!row
+}
+
+// Batch fetch full memories by id, user-scoped. Used by prepareContext to
+// pull bodies only for the subset of candidates that will actually be packed
+// — avoids loading bodyMd for the entire search/graph result set.
+export async function findMemoriesByIds(ids: string[], userId: string) {
+  if (ids.length === 0) return []
+  return db
+    .select()
+    .from(memories)
+    .where(and(
+      inArray(memories.id, ids),
+      eq(memories.userId, userId),
+      sql`${memories.archivedAt} IS NULL`,
+    ))
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Brain Phase 4 — prepare_context. Single retrieval call that returns a
+// budget-packed markdown bundle ready to drop into an AI context window.
+//
+// Algorithm:
+//   1. BM25 FTS search for candidates (top-K = maxSources)
+//   2. Pinned fetch (always or per includePinned flag), user-scoped, realm-scoped
+//   3. 1-hop graph walk from top-10 hits (in parallel) for typed neighbours
+//   4. Composite score = baseScore × (1 + recencyDecay × 0.3)
+//        - baseScore: pinned=2.0, hit=rank, neighbour=parentRank*0.5 + edgeBonus
+//        - recency: exp(-daysOld / 14) — 14-day half-life
+//   5. Sort, fetch full bodies for top items
+//   6. Pack into Pinned (≤30% budget, full body) → Most relevant (≤70% budget,
+//      full body) → Related (rest, summary only) until budget exhausted
+//   7. Return markdown + token estimate + source citations
+//
+// Token estimate uses a rough chars/4 heuristic — good enough for budget
+// guard rails; tiktoken refinement is a Phase 5 polish if needed.
+// ─────────────────────────────────────────────────────────────────────────
+
+const EDGE_BONUS: Record<string, number> = {
+  supports:        0.5,
+  contradicts:     0.4,
+  supersedes:      0.3,
+  refers_to:       0.3,
+  relates:         0.2,
+  blocks_thinking: 0.1,
+}
+
+function estimateTokens(s: string): number {
+  return Math.ceil(s.length / 4)
+}
+
+function recencyDecay(createdAt: Date): number {
+  const daysOld = (Date.now() - new Date(createdAt).getTime()) / 86_400_000
+  return Math.exp(-daysOld / 14)
+}
+
+type Candidate = {
+  id: string
+  title: string
+  summary: string | null
+  type: string
+  source: string
+  createdAt: Date
+  pinned: boolean
+  baseScore: number
+  origin: 'pinned' | 'hit' | 'neighbour'
+  snippet?: string  // populated for FTS hits
+  edgeType?: string // populated for neighbours
+}
+
+export async function prepareContext(userId: string, input: PrepareContextInput) {
+  const budget = input.budgetTokens
+  const realmId = input.realmId
+
+  // ── 1. FTS search ────────────────────────────────────────────────────
+  const search = await searchMemoriesFts(userId, {
+    query: input.query,
+    realmId,
+    type: input.type,
+    limit: input.maxSources,
+    offset: 0,
+  })
+  const hits = search.hits
+
+  // ── 2. Pinned fetch (user-scoped, realm-scoped if provided) ──────────
+  const pinned = input.includePinned
+    ? await listMemories(userId, {
+        pinnedOnly: true,
+        realmId,
+        limit: 20,
+      })
+    : []
+
+  // ── 3. 1-hop graph walk in parallel from top-10 hits ─────────────────
+  const seedIds = hits.slice(0, 10).map((h) => h.id)
+  const parentRanks = new Map<string, number>()
+  for (const h of hits.slice(0, 10)) parentRanks.set(h.id, h.rank)
+  let neighbours: Array<{ id: string; title: string; summary: string | null; type: string; source: string; createdAt: Date; edgeType: string; parentId: string }> = []
+  if (input.hops >= 1 && seedIds.length > 0) {
+    const walks = await Promise.all(
+      seedIds.map(async (sid) => {
+        const rows = await getNeighbours(sid, userId, { hops: 1, includeReverse: true, limit: 5 })
+        return rows.map((r) => ({
+          id: r.id,
+          title: r.title,
+          summary: r.summary,
+          type: r.type,
+          source: r.source,
+          createdAt: r.createdAt,
+          edgeType: r.edgeType,
+          parentId: sid,
+        }))
+      })
+    )
+    neighbours = walks.flat()
+  }
+
+  // ── 4. Build candidate set with composite scoring ────────────────────
+  const seen = new Set<string>()
+  const candidates: Candidate[] = []
+
+  for (const p of pinned) {
+    if (seen.has(p.id)) continue
+    seen.add(p.id)
+    candidates.push({
+      id: p.id,
+      title: p.title,
+      summary: p.summary,
+      type: p.type,
+      source: p.source,
+      createdAt: p.createdAt,
+      pinned: true,
+      baseScore: 2.0,
+      origin: 'pinned',
+    })
+  }
+  for (const h of hits) {
+    if (seen.has(h.id)) continue
+    seen.add(h.id)
+    candidates.push({
+      id: h.id,
+      title: h.title,
+      summary: h.summary,
+      type: h.type,
+      source: h.source,
+      createdAt: h.createdAt,
+      pinned: !!h.pinned,
+      baseScore: h.rank,
+      origin: 'hit',
+      snippet: h.snippet,
+    })
+  }
+  for (const n of neighbours) {
+    if (seen.has(n.id)) continue
+    seen.add(n.id)
+    const parentRank = parentRanks.get(n.parentId) ?? 0
+    const bonus = EDGE_BONUS[n.edgeType] ?? 0.1
+    candidates.push({
+      id: n.id,
+      title: n.title,
+      summary: n.summary,
+      type: n.type,
+      source: n.source,
+      createdAt: n.createdAt,
+      pinned: false,
+      baseScore: parentRank * 0.5 + bonus,
+      origin: 'neighbour',
+      edgeType: n.edgeType,
+    })
+  }
+
+  for (const c of candidates) {
+    const recency = recencyDecay(c.createdAt)
+    ;(c as Candidate & { compositeScore: number }).compositeScore = c.baseScore * (1 + recency * 0.3)
+  }
+  const scored = candidates as Array<Candidate & { compositeScore: number }>
+  scored.sort((a, b) => b.compositeScore - a.compositeScore)
+
+  // ── 5. Fetch full bodies for top items (cap at 40 — anything beyond
+  //      that will land in Related as summary only) ─────────────────────
+  const bodyFetchIds = scored.slice(0, 40).map((c) => c.id)
+  const bodies = await findMemoriesByIds(bodyFetchIds, userId)
+  const bodyById = new Map(bodies.map((b) => [b.id, b]))
+
+  // ── 6. Pack into Pinned → Most relevant → Related sections ──────────
+  const headerOverhead = 200  // tokens reserved for header + section titles + sources block
+  const pinnedBudget   = Math.floor((budget - headerOverhead) * 0.30)
+  const relevantBudget = Math.floor((budget - headerOverhead) * 0.55)
+  // related gets the remainder
+
+  const pinnedItems: Array<Candidate & { compositeScore: number; body: string }> = []
+  const relevantItems: typeof pinnedItems = []
+  const relatedItems: Array<Candidate & { compositeScore: number; summary: string | null }> = []
+
+  let pinnedUsed = 0
+  let relevantUsed = 0
+  let relatedUsed = 0
+  const relatedBudget = Math.max(budget - headerOverhead - pinnedBudget - relevantBudget, 200)
+
+  for (const c of scored) {
+    const body = bodyById.get(c.id)?.bodyMd ?? c.summary ?? ''
+    const bodyTokens = estimateTokens(body) + estimateTokens(c.title) + 30  // body + title + section overhead
+
+    if (c.origin === 'pinned' && pinnedUsed + bodyTokens <= pinnedBudget) {
+      pinnedItems.push({ ...c, body })
+      pinnedUsed += bodyTokens
+      continue
+    }
+    if (relevantUsed + bodyTokens <= relevantBudget && relevantItems.length < 8) {
+      relevantItems.push({ ...c, body })
+      relevantUsed += bodyTokens
+      continue
+    }
+    const summaryTokens = estimateTokens(c.summary ?? c.title) + 20
+    if (relatedUsed + summaryTokens <= relatedBudget) {
+      relatedItems.push({ ...c, summary: c.summary })
+      relatedUsed += summaryTokens
+    }
+    // Else: drop. Sources block at end will still cite it.
+  }
+
+  // ── 7. Render markdown ───────────────────────────────────────────────
+  const lines: string[] = []
+  lines.push(`# Context for: ${input.query}`)
+  lines.push('')
+  lines.push(`> Budget: ${budget} tokens · Pinned: ${pinnedItems.length} · Relevant: ${relevantItems.length} · Related: ${relatedItems.length}`)
+  lines.push('')
+
+  if (pinnedItems.length > 0) {
+    lines.push('## Pinned')
+    lines.push('')
+    for (const p of pinnedItems) {
+      const date = new Date(p.createdAt).toISOString().slice(0, 10)
+      lines.push(`### ${p.title}`)
+      lines.push(`*${date} · ${p.type} · ${p.source}*`)
+      lines.push('')
+      lines.push(p.body)
+      lines.push('')
+      lines.push('---')
+      lines.push('')
+    }
+  }
+
+  if (relevantItems.length > 0) {
+    lines.push('## Most relevant')
+    lines.push('')
+    for (const r of relevantItems) {
+      const date = new Date(r.createdAt).toISOString().slice(0, 10)
+      lines.push(`### ${r.title}`)
+      lines.push(`*${date} · ${r.type} · ${r.source}${r.origin === 'neighbour' && r.edgeType ? ` · linked: ${r.edgeType}` : ''}*`)
+      lines.push('')
+      lines.push(r.body)
+      lines.push('')
+      lines.push('---')
+      lines.push('')
+    }
+  }
+
+  if (relatedItems.length > 0) {
+    lines.push('## Related')
+    lines.push('')
+    for (const r of relatedItems) {
+      const date = new Date(r.createdAt).toISOString().slice(0, 10)
+      const summary = r.summary ?? r.title
+      const linked = r.origin === 'neighbour' && r.edgeType ? ` *(${r.edgeType})*` : ''
+      lines.push(`- **${r.title}** · ${date}${linked} — ${summary}`)
+    }
+    lines.push('')
+  }
+
+  if (candidates.length === 0) {
+    lines.push('_No matching memories found for this query._')
+    lines.push('')
+  }
+
+  lines.push('## Sources')
+  const sources: Array<{ id: string; title: string; score: number; section: 'pinned' | 'relevant' | 'related' }> = []
+  for (const p of pinnedItems) sources.push({ id: p.id, title: p.title, score: Number(p.compositeScore.toFixed(3)), section: 'pinned' })
+  for (const r of relevantItems) sources.push({ id: r.id, title: r.title, score: Number(r.compositeScore.toFixed(3)), section: 'relevant' })
+  for (const r of relatedItems) sources.push({ id: r.id, title: r.title, score: Number(r.compositeScore.toFixed(3)), section: 'related' })
+  for (const s of sources) lines.push(`- \`${s.id}\` · ${s.title} · score ${s.score} · ${s.section}`)
+
+  const contextMd = lines.join('\n')
+  const tokensUsed = estimateTokens(contextMd)
+
+  return { contextMd, tokensUsed, sources }
 }

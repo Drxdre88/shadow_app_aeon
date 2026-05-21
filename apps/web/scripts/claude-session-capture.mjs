@@ -22,10 +22,11 @@
 // Install: see docs/brain/05-session-capture.md
 // ─────────────────────────────────────────────────────────────────────────
 
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync, statSync, writeFileSync, unlinkSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { homedir, tmpdir } from 'node:os'
 
 // ─── helpers ────────────────────────────────────────────────────────────
 
@@ -327,46 +328,53 @@ async function postMemory(payload) {
   }
 }
 
-// ─── main ───────────────────────────────────────────────────────────────
+// ─── shared session processor ───────────────────────────────────────────
 
-async function main() {
-  if (!API_KEY) bail('AEON_API_KEY not set')
-
-  const payload = readStdin()
-  log('payload event:', payload.hook_event_name, 'reason:', payload.reason)
-
-  const messages = parseTranscript(payload.transcript_path)
-  if (!messages || messages.length === 0) bail('no transcript or empty')
-
-  const signals = countSignals(messages)
-  log('signals:', signals)
-
-  // Quality gate — skip trivial sessions.
-  if (signals.userTurns < MIN_USER_TURNS && signals.toolUses < MIN_TOOL_USES) {
-    bail(`below quality gate (userTurns=${signals.userTurns}, toolUses=${signals.toolUses})`)
+// Process a single session transcript end-to-end: parse, quality-gate,
+// build payload, post. Returns memory id on success, null on skip/fail.
+async function processSession({ transcriptPath, sessionId, cwd, hookEvent, reason }) {
+  const messages = parseTranscript(transcriptPath)
+  if (!messages || messages.length === 0) {
+    log(`skip ${basename(transcriptPath)}: no transcript or empty`)
+    return null
   }
 
-  // Git context
-  const cwd = payload.cwd || process.cwd()
-  const branch = gitCmd(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
-  const remote = gitCmd(cwd, ['remote', 'get-url', 'origin'])
+  const signals = countSignals(messages)
+  if (signals.userTurns < MIN_USER_TURNS && signals.toolUses < MIN_TOOL_USES) {
+    log(`skip ${basename(transcriptPath)}: below quality gate (userTurns=${signals.userTurns}, toolUses=${signals.toolUses})`)
+    return null
+  }
+
+  // Resolve cwd from the transcript itself if not provided (backfill path).
+  // Most Claude Code messages carry a `cwd` field — use the earliest one.
+  const resolvedCwd =
+    cwd ||
+    messages.find((m) => typeof m.cwd === 'string' && m.cwd.length > 0)?.cwd ||
+    process.cwd()
+
+  const branch = gitCmd(resolvedCwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
+  const remote = gitCmd(resolvedCwd, ['remote', 'get-url', 'origin'])
   const repo = remote
     ? basename(remote).replace(/\.git$/, '')
-    : (branch ? basename(cwd) : null)
+    : (branch ? basename(resolvedCwd) : null)
 
-  // Commits during session (last 24h is a generous window for any reasonable session).
   const since = (() => {
     const first = messages[0]?.timestamp
     return first ? `--since=${first}` : '--since=24.hours.ago'
   })()
-  const commitsRaw = gitCmd(cwd, ['log', '--pretty=%h %s', since, '-n', '20'])
+  const commitsRaw = gitCmd(resolvedCwd, ['log', '--pretty=%h %s', since, '-n', '20'])
   const commits = commitsRaw ? commitsRaw.split('\n').filter(Boolean) : []
 
   const filesTouched = extractFilesTouched(messages)
   const duration = sessionDurationMin(messages)
 
   const memoryPayload = buildPayload({
-    payload,
+    payload: {
+      session_id: sessionId,
+      cwd: resolvedCwd,
+      hook_event_name: hookEvent,
+      reason,
+    },
     messages,
     repo,
     branch,
@@ -378,14 +386,141 @@ async function main() {
   })
 
   if (DRY_RUN) {
-    console.error('[brain-capture] DRY RUN — payload follows:')
+    console.error(`[brain-capture] DRY RUN ${basename(transcriptPath)} — payload follows:`)
     console.error(JSON.stringify(memoryPayload, null, 2))
+    return null
+  }
+
+  return postMemory(memoryPayload)
+}
+
+// ─── backfill mode ──────────────────────────────────────────────────────
+
+const BACKFILL_LOCK = join(tmpdir(), 'aeon-brain-backfill.lock')
+const BACKFILL_LOCK_TTL_MS = 60_000
+const BACKFILL_MIN_IDLE_MS = 5 * 60_000  // skip transcripts mtime within last 5 min (likely still active)
+
+function acquireBackfillLock() {
+  try {
+    if (existsSync(BACKFILL_LOCK)) {
+      const lockAge = Date.now() - statSync(BACKFILL_LOCK).mtimeMs
+      if (lockAge < BACKFILL_LOCK_TTL_MS) return false
+      // Stale lock — overwrite below.
+    }
+    writeFileSync(BACKFILL_LOCK, String(process.pid))
+    return true
+  } catch {
+    return false
+  }
+}
+
+function releaseBackfillLock() {
+  try { unlinkSync(BACKFILL_LOCK) } catch { /* ignore */ }
+}
+
+// Find every *.jsonl under ~/.claude/projects/<projectDir>/ whose mtime
+// falls inside [now - hoursWindow, now - 5min]. Claude Code stores each
+// transcript as <sessionId>.jsonl directly under the project directory
+// (the uuid-named subdirs hold subagent state, not main transcripts).
+function findCandidateTranscripts(hoursWindow) {
+  const projectsRoot = join(homedir(), '.claude', 'projects')
+  if (!existsSync(projectsRoot)) return []
+  const now = Date.now()
+  const minMtime = now - hoursWindow * 3600 * 1000
+  const maxMtime = now - BACKFILL_MIN_IDLE_MS
+  const out = []
+  for (const projectDir of readdirSync(projectsRoot)) {
+    const dir = join(projectsRoot, projectDir)
+    let entries
+    try { entries = readdirSync(dir) } catch { continue }
+    for (const file of entries) {
+      if (!file.endsWith('.jsonl')) continue
+      const fullPath = join(dir, file)
+      let st
+      try { st = statSync(fullPath) } catch { continue }
+      if (!st.isFile()) continue
+      if (st.mtimeMs < minMtime || st.mtimeMs > maxMtime) continue
+      out.push({
+        path: fullPath,
+        sessionId: file.replace(/\.jsonl$/, ''),
+        mtime: st.mtimeMs,
+      })
+    }
+  }
+  // Process newest-first so a hard-cap stops after the most recent work.
+  out.sort((a, b) => b.mtime - a.mtime)
+  return out
+}
+
+async function runBackfill(hoursWindow) {
+  if (!API_KEY) bail('AEON_API_KEY not set')
+
+  if (!acquireBackfillLock()) {
+    log('backfill: another run holds the lock — skipping')
     return
   }
 
-  const id = await postMemory(memoryPayload)
-  if (id) {
-    log(`memory created: ${id}`)
+  try {
+    const candidates = findCandidateTranscripts(hoursWindow)
+    log(`backfill: ${candidates.length} candidate transcript(s) in last ${hoursWindow}h`)
+
+    let created = 0
+    let skipped = 0
+    let failed = 0
+    // Server-side dedupe by sessionId (createMemory is idempotent for
+    // source=claude) means we just iterate and post. If a session is already
+    // captured, the brain returns the existing row instead of inserting.
+    const MAX = parseInt(process.env.BRAIN_BACKFILL_MAX ?? '50', 10)
+    for (const c of candidates.slice(0, MAX)) {
+      const id = await processSession({
+        transcriptPath: c.path,
+        sessionId: c.sessionId,
+        cwd: null,
+        hookEvent: 'SessionEndBackfill',
+        reason: 'backfill',
+      })
+      if (id === null) skipped++
+      else if (id) created++
+      else failed++
+    }
+    log(`backfill: created/upserted=${created} skipped=${skipped} failed=${failed}`)
+  } finally {
+    releaseBackfillLock()
+  }
+}
+
+// ─── main ───────────────────────────────────────────────────────────────
+
+function parseArgs() {
+  const args = process.argv.slice(2)
+  const out = { backfill: false, hours: parseInt(process.env.BRAIN_BACKFILL_HOURS ?? '48', 10) }
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--backfill') out.backfill = true
+    else if (args[i] === '--hours' && args[i + 1]) { out.hours = parseInt(args[++i], 10) || out.hours }
+  }
+  return out
+}
+
+async function runFromHook() {
+  if (!API_KEY) bail('AEON_API_KEY not set')
+  const payload = readStdin()
+  log('payload event:', payload.hook_event_name, 'reason:', payload.reason)
+  const id = await processSession({
+    transcriptPath: payload.transcript_path,
+    sessionId: payload.session_id,
+    cwd: payload.cwd,
+    hookEvent: payload.hook_event_name,
+    reason: payload.reason,
+  })
+  if (id) log(`memory created/upserted: ${id}`)
+}
+
+async function main() {
+  const args = parseArgs()
+  if (args.backfill) {
+    await runBackfill(args.hours)
+  } else {
+    await runFromHook()
   }
 }
 
