@@ -74,6 +74,8 @@ export function Cortex3D({ nodes, edges, selectedId, onSelect, colorMode = 'real
         rotateSpeed={0.6}
         minDistance={120}
         maxDistance={1500}
+        minPolarAngle={Math.PI * 0.50}
+        maxPolarAngle={Math.PI * 0.92}
       />
 
       <PostFX />
