@@ -9,8 +9,6 @@ import type { GraphNode, GraphEdge } from '@/lib/data/memories'
 import { edgeColor, isAutoEdge, nodeHue, type ColorMode } from './nodeColor'
 import { SUN_DIR } from './cortex/params'
 import { Backdrop } from './cortex/Backdrop'
-import { CinematicStarfield } from './cortex/CinematicStarfield'
-import { NebulaSprite } from './cortex/NebulaSprite'
 import { PostFX } from './cortex/PostFX'
 import { PlanetCloud, type SceneNode } from './cortex/PlanetCloud'
 
@@ -39,17 +37,22 @@ export function Cortex3D({ nodes, edges, selectedId, onSelect, colorMode = 'real
     <Canvas
       camera={{ position: [0, 0, 380], fov: 55, near: 1, far: 5000 }}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
+      dpr={[1, 1.5]}
       style={{ background: '#000000' }}
       onPointerMissed={() => onSelect(null)}
+      onCreated={({ gl }) => {
+        const canvas = gl.domElement
+        canvas.addEventListener('webglcontextlost', (e) => {
+          e.preventDefault()
+          // Let the user know in dev so we don't silently white-screen.
+          if (typeof console !== 'undefined') console.warn('WebGL context lost — reload to recover.')
+        })
+      }}
     >
       <ambientLight intensity={0.22} />
       <directionalLight position={SUN_DIR.clone().multiplyScalar(800)} intensity={1.2} color="#fff4d6" />
 
       <Backdrop />
-      <CinematicStarfield />
-
-      <NebulaSprite position={[ 280,  120, -260]} color="#7c3aed" scale={360} driftSeed={0.12} opacity={0.30} />
-      <NebulaSprite position={[-260,  -80, -300]} color="#0ea5e9" scale={400} driftSeed={0.43} opacity={0.25} />
 
       <EdgeGraph data={sceneData} />
       <PlanetCloud

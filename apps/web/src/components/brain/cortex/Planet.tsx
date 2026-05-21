@@ -280,10 +280,10 @@ export const Planet = forwardRef<THREE.Group, PlanetProps>(function Planet(
         onPointerOut={onPointerOut}
       >
         <mesh material={surfaceMat}>
-          <sphereGeometry args={[radius, 96, 96]} />
+          <sphereGeometry args={[radius, 48, 48]} />
         </mesh>
         <mesh material={atmoMat} scale={1.12}>
-          <sphereGeometry args={[radius, 64, 64]} />
+          <sphereGeometry args={[radius, 32, 32]} />
         </mesh>
         {hasRing && <PlanetaryRing radius={radius} />}
       </group>
