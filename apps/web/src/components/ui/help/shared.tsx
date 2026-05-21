@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, type LucideIcon } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
 
@@ -28,7 +28,7 @@ export function FeatureCard({
   title,
   description,
 }: {
-  icon: React.ElementType
+  icon: LucideIcon
   title: string
   description: string
 }) {

@@ -1,7 +1,7 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { boardTasks, groupMembers, projects, memories as memoriesTable } from '@/lib/db/schema'
+import { boardTasks, groupMembers } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { requireAuth } from './helpers'
 import { verifyProjectAccess } from '@/lib/data/projects'
@@ -31,6 +31,7 @@ import {
   deleteMemory as _deleteMemory,
   prepareContext as _prepareContext,
   targetMemoryExists,
+  getGraphForUser as _getGraphForUser,
 } from '@/lib/data/memories'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -170,6 +171,17 @@ export async function deleteMemoryById(memoryId: string) {
   return { deleted: true }
 }
 
+// Brain Phase 5 — graph fetch for the Cortex view. User-scoped only; edges
+// are filtered server-side to memory→memory links where both endpoints are
+// owned by the caller, so this never leaks foreign IDs.
+export async function getBrainGraph(opts: { realmId?: string; includeArchived?: boolean } = {}) {
+  const userId = await requireAuth()
+  if (opts.realmId) {
+    await verifyAnchors(userId, { realmId: opts.realmId })
+  }
+  return _getGraphForUser(userId, opts)
+}
+
 // Brain Phase 4 — context retrieval. Single auth-guarded call returning a
 // budget-packed markdown bundle. If realmId supplied, verifies user is a member.
 export async function prepareContextForUser(input: PrepareContextInput) {
@@ -187,5 +199,3 @@ export async function broadcastMemoryEvent(_userId: string, _event: { type: stri
   // No-op in Phase 1.
 }
 
-// Cast-safe re-export of the table for callers that need it (e.g. parity test).
-export { memoriesTable }

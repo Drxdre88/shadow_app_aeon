@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
-import { listMemories as _listMemories, createMemory as _createMemory } from '@/lib/data/memories'
+import { listMemories as _listMemories, createMemory as _createMemory, getGraphForUser as _getGraphForUser } from '@/lib/data/memories'
 import { createMemorySchema } from '@/lib/data/validators'
 
 export const GET = withRateLimit(
@@ -10,6 +10,12 @@ export const GET = withRateLimit(
     if (!isApiUser(result)) return result
 
     const url = request.nextUrl
+    if (url.searchParams.get('graph') === 'true') {
+      const realmId = url.searchParams.get('realmId') || undefined
+      const includeArchived = url.searchParams.get('archived') === 'true'
+      const graph = await _getGraphForUser(result.id, { realmId, includeArchived })
+      return jsonData(graph)
+    }
     const limit = Number(url.searchParams.get('limit') ?? 50)
     const offset = Number(url.searchParams.get('offset') ?? 0)
     const pinnedOnly = url.searchParams.get('pinned') === 'true'

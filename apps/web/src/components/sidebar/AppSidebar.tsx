@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import aeonLogo from '@/assets/aeon.png'
 import { useThemeStore } from '@/stores/themeStore'
 import { useSidebarStore } from '@/stores/sidebarStore'
@@ -19,6 +20,7 @@ import {
   Menu,
   User,
   Eye,
+  Brain,
 } from 'lucide-react'
 import { RealmList } from '@/components/sidebar/RealmList'
 
@@ -287,6 +289,7 @@ function BottomSection({
     <div className="shrink-0">
       <div className="mx-2 h-px bg-white/[0.06]" />
       <div className={cn('flex items-center justify-center gap-1 px-2 py-2', collapsed && 'flex-col')} style={{ color: 'var(--primary)' }}>
+        <BrainButton />
         <BetaFeaturesButton />
         <HelpButton />
         <StatsButton />
@@ -337,6 +340,20 @@ function BottomSection({
         </motion.button>
       </div>
     </div>
+  )
+}
+
+function BrainButton() {
+  return (
+    <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
+      <Link
+        href="/brain"
+        title="Cortex — your memory graph"
+        className="block p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200 text-current"
+      >
+        <Brain className="w-4 h-4" />
+      </Link>
+    </motion.div>
   )
 }
 

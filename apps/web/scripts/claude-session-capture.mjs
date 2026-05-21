@@ -66,6 +66,72 @@ function bail(reason) {
   process.exit(0)
 }
 
+// ─── repo → Aeon project resolution ─────────────────────────────────────
+// Convention agreed with the user (May 2026):
+//   shadow_app_X            → "X APP"            (uppercase last word)
+//   <name>_dash             → "<NAME UPPERCASE> APP"
+//   *_lab (snake)           → "<Title-Cased> Lab"  ("ml" stays uppercase)
+// Anything outside the convention returns null and the session still gets
+// tagged with the repo slug but anchors to no Aeon project.
+function repoToProjectName(slug) {
+  if (!slug) return null
+  const s = String(slug).trim()
+  const appMatch = s.match(/^shadow_app_(.+)$/)
+  if (appMatch) return appMatch[1].toUpperCase() + ' APP'
+  if (s.endsWith('_dash')) {
+    return s.slice(0, -5).toUpperCase().replace(/_/g, ' ') + ' APP'
+  }
+  if (s.endsWith('_lab')) {
+    return s
+      .split('_')
+      .map((w) =>
+        w.toLowerCase() === 'ml'
+          ? 'ML'
+          : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+      )
+      .join(' ')
+  }
+  return null
+}
+
+// Derive the repo slug from cwd by walking up to the dev_26 root.
+function repoSlugFromCwd(cwd) {
+  if (!cwd) return null
+  const norm = normalizeCwd(cwd).replace(/\\/g, '/')
+  const m = norm.match(/\/dev_26\/([^/]+)/)
+  return m ? m[1] : basename(norm) || null
+}
+
+const projectCache = new Map() // projectName → { id, realmId, realmName } | null
+async function resolveProject(projectName) {
+  if (!projectName) return null
+  if (projectCache.has(projectName)) return projectCache.get(projectName)
+  const url = `${BASE_URL}/api/v1/projects/resolve?name=${encodeURIComponent(projectName)}`
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 6000)
+  try {
+    const res = await fetch(url, {
+      headers: { authorization: `Bearer ${API_KEY}` },
+      signal: controller.signal,
+    })
+    if (!res.ok) {
+      log(`resolveProject(${projectName}) → ${res.status}`)
+      projectCache.set(projectName, null)
+      return null
+    }
+    const parsed = await res.json()
+    const data = parsed?.data ?? null
+    projectCache.set(projectName, data)
+    return data
+  } catch (err) {
+    log(`resolveProject(${projectName}) error: ${err.message}`)
+    projectCache.set(projectName, null)
+    return null
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 function normalizeCwd(cwd) {
   if (!cwd) return cwd
   // Convert Git Bash / WSL style `/c/Users/...` to `C:/Users/...` on Windows.
@@ -213,7 +279,7 @@ function truncate(s, n) {
   return s.slice(0, n).trimEnd() + '…'
 }
 
-function buildPayload({ payload, messages, repo, branch, remote, commits, filesTouched, signals, duration }) {
+function buildPayload({ payload, messages, repo, branch, remote, commits, filesTouched, signals, duration, projectInfo }) {
   const firstPrompt = extractFirstUserMessage(messages) || '(no user prompt)'
   const lastAssistant = extractLastAssistantText(messages) || ''
 
@@ -269,8 +335,8 @@ function buildPayload({ payload, messages, repo, branch, remote, commits, filesT
     summary,
     type: 'session_summary',
     source: 'claude',
-    realmId: DEFAULT_REALM_ID,
-    projectId: null,
+    realmId: projectInfo?.realmId ?? DEFAULT_REALM_ID,
+    projectId: projectInfo?.id ?? null,
     taskId: null,
     sourceMetadata: {
       repo: repo || null,
@@ -280,6 +346,8 @@ function buildPayload({ payload, messages, repo, branch, remote, commits, filesT
       cwd: payload.cwd || null,
       hookEvent: payload.hook_event_name || null,
       endReason: payload.reason || null,
+      projectName: projectInfo?.name ?? null,
+      realmName: projectInfo?.realmName ?? null,
       filesTouched,
       commits,
       stats: {
@@ -289,7 +357,11 @@ function buildPayload({ payload, messages, repo, branch, remote, commits, filesT
         messageCount: messages.length,
       },
     },
-    tags: ['session', ...(repo ? [repo] : []), ...(branch && branch !== 'main' && branch !== 'master' ? [`branch:${branch}`] : [])],
+    tags: [
+      'session',
+      ...(repo ? [repo] : []),
+      ...(branch && branch !== 'main' && branch !== 'master' ? [`branch:${branch}`] : []),
+    ],
   }
 }
 
@@ -354,9 +426,17 @@ async function processSession({ transcriptPath, sessionId, cwd, hookEvent, reaso
 
   const branch = gitCmd(resolvedCwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
   const remote = gitCmd(resolvedCwd, ['remote', 'get-url', 'origin'])
-  const repo = remote
-    ? basename(remote).replace(/\.git$/, '')
-    : (branch ? basename(resolvedCwd) : null)
+  // Repo slug strategy: prefer the dev_26 folder name (stable across forks /
+  // remotes), fall back to git-remote basename, then cwd basename.
+  const repoSlug =
+    repoSlugFromCwd(resolvedCwd) ||
+    (remote ? basename(remote).replace(/\.git$/, '') : null) ||
+    (branch ? basename(resolvedCwd) : null)
+  const repo = repoSlug
+
+  // Resolve the matching Aeon project (and its realm) for this repo.
+  const projectName = repoToProjectName(repoSlug)
+  const projectInfo = projectName ? await resolveProject(projectName) : null
 
   const since = (() => {
     const first = messages[0]?.timestamp
@@ -383,6 +463,7 @@ async function processSession({ transcriptPath, sessionId, cwd, hookEvent, reaso
     filesTouched,
     signals,
     duration,
+    projectInfo,
   })
 
   if (DRY_RUN) {

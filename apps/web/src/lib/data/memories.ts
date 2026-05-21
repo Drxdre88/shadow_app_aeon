@@ -27,6 +27,7 @@ const SLIM_COLUMNS = {
   summary: memories.summary,
   type: memories.type,
   source: memories.source,
+  sourceMetadata: memories.sourceMetadata,
   createdAt: memories.createdAt,
   updatedAt: memories.updatedAt,
   realmId: memories.realmId,
@@ -77,6 +78,147 @@ export async function listMemories(userId: string, opts: ListOpts = {}) {
     .orderBy(desc(memories.pinned), desc(memories.createdAt))
     .limit(opts.limit ?? 50)
     .offset(opts.offset ?? 0)
+}
+
+type GraphOpts = { realmId?: string; includeArchived?: boolean }
+
+export type GraphNode = {
+  id: string
+  title: string
+  type: string
+  source: string
+  realmId: string | null
+  projectId: string | null
+  taskId: string | null
+  repo: string | null
+  tags: string[]
+  pinned: boolean
+  createdAt: Date
+}
+
+export type GraphEdge = {
+  source: string
+  target: string
+  type: string
+  note: string | null
+}
+
+export async function getGraphForUser(
+  userId: string,
+  opts: GraphOpts = {}
+): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }> {
+  const conditions = [eq(memories.userId, userId)]
+  if (!opts.includeArchived) conditions.push(sql`${memories.archivedAt} IS NULL`)
+  if (opts.realmId) conditions.push(eq(memories.realmId, opts.realmId))
+
+  const rows = await db
+    .select({
+      id: memories.id,
+      title: memories.title,
+      type: memories.type,
+      source: memories.source,
+      realmId: memories.realmId,
+      projectId: memories.projectId,
+      taskId: memories.taskId,
+      tags: memories.tags,
+      pinned: memories.pinned,
+      createdAt: memories.createdAt,
+      links: memories.links,
+      sourceMetadata: memories.sourceMetadata,
+    })
+    .from(memories)
+    .where(and(...conditions))
+    .orderBy(desc(memories.pinned), desc(memories.createdAt))
+
+  const ownedIds = new Set(rows.map((r) => r.id))
+  const nodes: GraphNode[] = rows.map(({ links: _links, sourceMetadata, ...rest }) => {
+    const meta = (sourceMetadata ?? {}) as Record<string, unknown>
+    const repo = typeof meta.repo === 'string' ? meta.repo : null
+    return {
+      ...rest,
+      repo,
+      tags: (rest.tags ?? []) as string[],
+    }
+  })
+
+  const edges: GraphEdge[] = []
+  const seenEdge = new Set<string>()
+  const pushEdge = (source: string, target: string, type: string, note: string | null) => {
+    if (source === target) return
+    const a = source < target ? source : target
+    const b = source < target ? target : source
+    const key = `${a}|${b}|${type}`
+    if (seenEdge.has(key)) return
+    seenEdge.add(key)
+    edges.push({ source, target, type, note })
+  }
+
+  for (const row of rows) {
+    const links = (row.links ?? []) as MemoryLink[]
+    for (const link of links) {
+      if (link.target_kind !== 'memory') continue
+      if (!ownedIds.has(link.target)) continue
+      pushEdge(row.id, link.target, link.type, link.note ?? null)
+    }
+  }
+
+  // Synthetic edges: surface clustering signal when user-asserted links are
+  // sparse. Marked with 'auto-*' types so the renderer can style them subtly.
+  // Same-day chains memories captured within one calendar day in time order.
+  // Shared-tag chains memories that share a tag (skip mega-tags > 30).
+  const byDay = new Map<string, GraphNode[]>()
+  for (const n of nodes) {
+    const day = new Date(n.createdAt).toISOString().slice(0, 10)
+    const bucket = byDay.get(day)
+    if (bucket) bucket.push(n)
+    else byDay.set(day, [n])
+  }
+  for (const group of byDay.values()) {
+    if (group.length < 2) continue
+    group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    for (let i = 0; i < group.length - 1; i++) {
+      pushEdge(group[i].id, group[i + 1].id, 'auto-day', null)
+    }
+  }
+
+  const byTag = new Map<string, GraphNode[]>()
+  for (const n of nodes) {
+    for (const tag of n.tags ?? []) {
+      const bucket = byTag.get(tag)
+      if (bucket) bucket.push(n)
+      else byTag.set(tag, [n])
+    }
+  }
+  for (const group of byTag.values()) {
+    if (group.length < 2 || group.length > 30) continue
+    group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    for (let i = 0; i < group.length - 1; i++) {
+      pushEdge(group[i].id, group[i + 1].id, 'auto-tag', null)
+    }
+  }
+
+  // Shared-repo: chain memories that come from the same repo (in temporal
+  // order). Produces the dense per-repo cluster shape seen in the concept.
+  const byRepo = new Map<string, GraphNode[]>()
+  for (const n of nodes) {
+    if (!n.repo) continue
+    const bucket = byRepo.get(n.repo)
+    if (bucket) bucket.push(n)
+    else byRepo.set(n.repo, [n])
+  }
+  for (const group of byRepo.values()) {
+    if (group.length < 2) continue
+    group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    // Chain consecutive + bridge every 3rd hop for richer connectivity.
+    for (let i = 0; i < group.length - 1; i++) {
+      pushEdge(group[i].id, group[i + 1].id, 'auto-repo', null)
+    }
+    for (let i = 0; i + 3 < group.length; i += 3) {
+      pushEdge(group[i].id, group[i + 3].id, 'auto-repo', null)
+    }
+  }
+
+  return { nodes, edges }
 }
 
 export async function searchMemoriesFts(userId: string, input: SearchMemoriesInput) {
