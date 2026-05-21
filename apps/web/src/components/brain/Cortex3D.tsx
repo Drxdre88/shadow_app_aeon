@@ -37,7 +37,7 @@ export function Cortex3D({ nodes, edges, selectedId, onSelect, colorMode = 'real
     <Canvas
       camera={{ position: [0, 0, 380], fov: 55, near: 1, far: 5000 }}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
-      dpr={[1, 1.5]}
+      dpr={[1, 2]}
       style={{ background: '#000000' }}
       onPointerMissed={() => onSelect(null)}
       onCreated={({ gl }) => {

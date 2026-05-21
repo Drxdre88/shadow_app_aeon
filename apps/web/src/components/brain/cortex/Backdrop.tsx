@@ -4,12 +4,12 @@ import { useEffect, useState } from 'react'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 
-// Flat painted backdrop. Loads via THREE.TextureLoader imperatively (NOT
-// useLoader) so a missing/slow image doesn't suspend the whole Canvas tree
-// and freeze the renderer at white. Sets the loaded texture as scene.background;
-// three.js stretches it across the viewport regardless of camera orientation.
+// Wraps the loaded texture as a 360° environment around the camera. The image
+// is treated as an equirectangular panorama (2:1 aspect ratio expected for a
+// distortion-free wrap). Non-2:1 images will warp at the poles but still
+// surround the camera as you orbit.
 export function Backdrop({ url = '/cortex/skybox.png' }: { url?: string }) {
-  const { scene } = useThree()
+  const { scene, gl } = useThree()
   const [texture, setTexture] = useState<THREE.Texture | null>(null)
 
   useEffect(() => {
@@ -23,17 +23,22 @@ export function Backdrop({ url = '/cortex/skybox.png' }: { url?: string }) {
           return
         }
         tex.colorSpace = THREE.SRGBColorSpace
+        tex.mapping = THREE.EquirectangularReflectionMapping
+        tex.magFilter = THREE.LinearFilter
+        tex.minFilter = THREE.LinearFilter
+        tex.anisotropy = gl.capabilities.getMaxAnisotropy()
+        tex.generateMipmaps = false
         setTexture(tex)
       },
       undefined,
       () => {
-        // Silent miss — the scene still renders against the canvas style background.
+        // Silent miss — scene falls back to canvas style background.
       },
     )
     return () => {
       disposed = true
     }
-  }, [url])
+  }, [url, gl])
 
   useEffect(() => {
     if (!texture) return
