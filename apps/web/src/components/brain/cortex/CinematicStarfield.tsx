@@ -116,14 +116,11 @@ function CinematicStarLayer({
   )
 }
 
-// Layer radii / depths / bases scaled ~5× from Swarm to fit Aeon's wider camera
-// (camera at z=380 vs Swarm's z~15). Counts kept identical → ~22k stars total.
+// Painted backdrop now carries the deep field — procedural layer is just for
+// subtle parallax + twinkle on top. Cut hard from Swarm's 22k preset.
 const LAYERS = [
-  { count: 2800, radius: 250,  depthRange: 125,  base: -75,   brightnessBoost: 0.55 },
-  { count: 3600, radius: 375,  depthRange: 250,  base: -225,  brightnessBoost: 0.65 },
-  { count: 4400, radius: 550,  depthRange: 400,  base: -500,  brightnessBoost: 0.75 },
-  { count: 5200, radius: 800,  depthRange: 550,  base: -900,  brightnessBoost: 0.85 },
-  { count: 6000, radius: 1100, depthRange: 700,  base: -1400, brightnessBoost: 0.95 },
+  { count: 1200, radius: 375,  depthRange: 250,  base: -225,  brightnessBoost: 0.70 },
+  { count: 1800, radius: 800,  depthRange: 550,  base: -900,  brightnessBoost: 0.90 },
 ]
 
 export function CinematicStarfield() {

@@ -8,9 +8,9 @@ import R3fForceGraph from 'r3f-forcegraph'
 import type { GraphNode, GraphEdge } from '@/lib/data/memories'
 import { edgeColor, isAutoEdge, nodeHue, type ColorMode } from './nodeColor'
 import { SUN_DIR } from './cortex/params'
+import { Backdrop } from './cortex/Backdrop'
 import { CinematicStarfield } from './cortex/CinematicStarfield'
 import { NebulaSprite } from './cortex/NebulaSprite'
-import { RaymarchedNebula } from './cortex/RaymarchedNebula'
 import { PostFX } from './cortex/PostFX'
 import { PlanetCloud, type SceneNode } from './cortex/PlanetCloud'
 
@@ -42,19 +42,14 @@ export function Cortex3D({ nodes, edges, selectedId, onSelect, colorMode = 'real
       style={{ background: '#000000' }}
       onPointerMissed={() => onSelect(null)}
     >
-      <ambientLight intensity={0.18} />
+      <ambientLight intensity={0.22} />
       <directionalLight position={SUN_DIR.clone().multiplyScalar(800)} intensity={1.2} color="#fff4d6" />
 
+      <Backdrop />
       <CinematicStarfield />
 
-      <NebulaSprite position={[ 280,  120, -250]} color="#7c3aed" scale={520} driftSeed={0.12} opacity={0.55} />
-      <NebulaSprite position={[-300,  -60, -300]} color="#0ea5e9" scale={580} driftSeed={0.43} opacity={0.50} />
-      <NebulaSprite position={[  60,  340, -180]} color="#ec4899" scale={420} driftSeed={0.71} opacity={0.45} />
-      <NebulaSprite position={[   0,    0, -460]} color="#f59e0b" scale={700} driftSeed={0.91} opacity={0.35} />
-      <NebulaSprite position={[-180, -280, -220]} color="#a855f7" scale={380} driftSeed={0.27} opacity={0.40} />
-
-      <RaymarchedNebula center={[ 200,  100, -350]} radius={180} color="#a855f7" opacity={0.55} driftSeed={0.4} />
-      <RaymarchedNebula center={[-220,  -80, -400]} radius={220} color="#22d3ee" opacity={0.5}  driftSeed={0.7} />
+      <NebulaSprite position={[ 280,  120, -260]} color="#7c3aed" scale={360} driftSeed={0.12} opacity={0.30} />
+      <NebulaSprite position={[-260,  -80, -300]} color="#0ea5e9" scale={400} driftSeed={0.43} opacity={0.25} />
 
       <EdgeGraph data={sceneData} />
       <PlanetCloud
@@ -100,8 +95,8 @@ function EdgeGraph({ data }: { data: { nodes: SceneNode[]; links: SceneLink[] } 
       nodeThreeObject={() => new THREE.Object3D()}
       nodeThreeObjectExtend={false}
       linkColor={(raw: unknown) => (raw as SceneLink)._color}
-      linkOpacity={0.55}
-      linkWidth={(raw: unknown) => (isAutoEdge((raw as SceneLink).type) ? 0.6 : 2.0)}
+      linkOpacity={0.85}
+      linkWidth={(raw: unknown) => (isAutoEdge((raw as SceneLink).type) ? 1.0 : 2.8)}
       linkDirectionalParticles={(raw: unknown) => {
         const t = (raw as SceneLink).type
         if (t === 'supports') return 4
