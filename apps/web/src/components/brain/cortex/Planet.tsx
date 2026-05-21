@@ -15,30 +15,16 @@ const ORB_VERTEX = `
   }
 `
 
-// View-aligned galaxy swirl. Project the surface normal onto a 2D frame built
-// around the camera direction so the spiral always faces the viewer — same
-// trick as billboarded sprites, but on a real 3D sphere with proper occlusion.
-// Two colors derived in-shader from a single tint (so the legend stays clean):
-// primary = the realm/repo hue passed in; accent = hue-shifted +0.18 on HSV.
+// Smooth dual-color gradient glass ball. No noise, no spiral, no stars.
+// View-radial composition: bright primary at the centre of the visible disc,
+// transitions to a hue-shifted accent toward the silhouette. Sun direction
+// adds a subtle directional warmth so the orb still reads as a 3D object.
 const ORB_FRAG = `
   precision highp float;
   varying vec3 vWorldNormal;
   varying vec3 vWorldPos;
   uniform vec3 uColor;
-  uniform float uTime;
-
-  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-  float noise(vec2 p) {
-    vec2 i = floor(p); vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x),
-               mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
-  }
-  float fbm(vec2 p) {
-    float v = 0.0; float a = 0.5;
-    for (int i = 0; i < 4; i++) { v += a * noise(p); p *= 2.0; a *= 0.5; }
-    return v;
-  }
+  uniform vec3 uSunDir;
 
   vec3 rgb2hsv(vec3 c) {
     vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
@@ -54,52 +40,35 @@ const ORB_FRAG = `
   }
 
   void main() {
-    // Build a view-aligned tangent frame on this fragment.
     vec3 toCam = normalize(cameraPosition - vWorldPos);
-    vec3 worldUp = vec3(0.0, 1.0, 0.0);
-    vec3 right = normalize(cross(worldUp, toCam));
-    vec3 up = normalize(cross(toCam, right));
     vec3 nrm = normalize(vWorldNormal);
 
-    vec2 viewUV = vec2(dot(nrm, right), dot(nrm, up));
-    float r = length(viewUV);
-    float ang = atan(viewUV.y, viewUV.x);
+    // 1.0 at the disc centre (facing the viewer head-on), 0.0 at the silhouette.
+    float facing = clamp(dot(nrm, toCam), 0.0, 1.0);
 
-    // Spiral galaxy arms — slow rotational drift (very gentle, no flashing).
-    float spiral = sin(ang * 2.5 + r * 14.0 + uTime * 0.06) * 0.5 + 0.5;
-    spiral *= smoothstep(1.0, 0.12, r);
-
-    // Nebula cloud structure inside the orb.
-    float clouds = fbm(viewUV * 4.5 + vec2(uTime * 0.015)) * smoothstep(1.0, 0.35, r);
-
-    // Bright core glow.
-    float core = exp(-r * 3.5) * 1.6;
-
-    // Stars: sparse high-frequency peaks — fixed in object space so they
-    // stay put on the sphere as the camera orbits (anchored to vWorldNormal,
-    // not viewUV, so the stars don't always face the viewer).
-    float stars = pow(fbm(nrm.xy * 60.0 + nrm.z * 30.0), 14.0) * 5.0;
-
-    // Two-color palette derived from the single tint uniform.
+    // Two-tone palette derived from the single legend tint.
     vec3 hsvA = rgb2hsv(uColor);
-    vec3 colA = hsv2rgb(vec3(hsvA.x, min(hsvA.y * 1.2, 1.0), min(hsvA.z * 1.1, 1.0)));
-    vec3 colB = hsv2rgb(vec3(fract(hsvA.x + 0.18), min(hsvA.y * 0.95, 1.0), hsvA.z));
+    vec3 colA = hsv2rgb(vec3(hsvA.x, min(hsvA.y * 1.1, 1.0), min(hsvA.z * 1.1, 1.0)));
+    vec3 colB = hsv2rgb(vec3(fract(hsvA.x + 0.15), min(hsvA.y * 0.9, 1.0), hsvA.z * 0.82));
 
-    // Mix swirl t = spiral × clouds weight, then composite.
-    float t = clamp(spiral * 0.6 + clouds * 0.55, 0.0, 1.0);
-    vec3 col = mix(colA, colB, t);
-    col *= 0.25 + clouds * 1.1 + spiral * 0.7;
-    col += colA * core * 1.8;
-    col += vec3(1.0, 0.96, 0.9) * stars * 1.4;
+    // Centre is primary, rim transitions to accent.
+    vec3 col = mix(colB, colA, pow(facing, 1.3));
+
+    // Bright core that triggers bloom.
+    col += colA * pow(facing, 4.0) * 1.3;
+
+    // Soft directional lift from the sun so the orb has a faint lit hemisphere.
+    float sun = clamp(dot(nrm, normalize(uSunDir)) * 0.5 + 0.5, 0.0, 1.0);
+    col *= 0.55 + sun * 0.55;
 
     gl_FragColor = vec4(col, 1.0);
   }
 `
 
-// Glass shell — fresnel rim glow. Transparent in the middle so the orb's
-// galaxy reads through cleanly.
 const SHELL_VERTEX = ORB_VERTEX
 
+// Fresnel glass rim. Additive blend — adds a tinted halo at the silhouette,
+// transparent through the centre so the gradient ball reads cleanly.
 const SHELL_FRAG = `
   precision highp float;
   varying vec3 vWorldNormal;
@@ -108,11 +77,11 @@ const SHELL_FRAG = `
   uniform vec3 uSunDir;
   void main() {
     vec3 viewDir = normalize(cameraPosition - vWorldPos);
-    float fres = pow(1.0 - abs(dot(viewDir, vWorldNormal)), 2.4);
+    float fres = pow(1.0 - abs(dot(viewDir, vWorldNormal)), 2.2);
     float sunDot = dot(normalize(vWorldNormal), normalize(uSunDir));
-    float dayLift = 0.5 + smoothstep(-0.3, 0.4, sunDot) * 0.5;
-    vec3 rim = uColor * fres * dayLift * 1.6;
-    float alpha = clamp(fres * 0.65, 0.0, 1.0);
+    float dayLift = 0.6 + smoothstep(-0.3, 0.4, sunDot) * 0.5;
+    vec3 rim = uColor * fres * dayLift * 1.5;
+    float alpha = clamp(fres * 0.6, 0.0, 1.0);
     gl_FragColor = vec4(rim, alpha);
   }
 `
@@ -178,7 +147,7 @@ export const Planet = forwardRef<THREE.Group, PlanetProps>(function Planet(
       new THREE.ShaderMaterial({
         uniforms: {
           uColor: { value: tint.clone() },
-          uTime: { value: 0 },
+          uSunDir: { value: SUN_DIR.clone() },
         },
         vertexShader: ORB_VERTEX,
         fragmentShader: ORB_FRAG,
@@ -201,10 +170,6 @@ export const Planet = forwardRef<THREE.Group, PlanetProps>(function Planet(
       }),
     [tint],
   )
-
-  useFrame((state) => {
-    orbMat.uniforms.uTime.value = state.clock.elapsedTime
-  })
 
   return (
     <group ref={groupRef}>
