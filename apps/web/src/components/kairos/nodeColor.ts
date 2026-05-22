@@ -1,8 +1,27 @@
 import type { GraphNode } from '@/lib/data/memories'
 
-export type ColorMode = 'realm' | 'repo' | 'type' | 'source'
+export type ColorMode = 'dominion' | 'realm' | 'repo' | 'type' | 'source'
 
 const REALM_HUES = [262, 200, 150, 32, 0, 320, 90, 220]
+
+const DOMINION_COLOR_HUE: Record<string, number> = {
+  purple:  270,
+  violet:  290,
+  sky:     210,
+  blue:    220,
+  cyan:    190,
+  teal:    175,
+  emerald: 150,
+  green:   130,
+  lime:    90,
+  yellow:  55,
+  amber:   40,
+  orange:  25,
+  red:     0,
+  rose:    350,
+  pink:    330,
+  fuchsia: 310,
+}
 
 const SOURCE_HUE: Record<string, number> = {
   claude:    268,
@@ -14,22 +33,21 @@ const SOURCE_HUE: Record<string, number> = {
 const TYPE_HUE: Record<string, number> = {
   reflection:      348,
   decision:        200,
-  fact:            60,
   note:            210,
   session_summary: 280,
-  link:            140,
 }
 
 const EDGE_COLOR: Record<string, string> = {
-  supports:        '#10b981',
-  contradicts:     '#f43f5e',
-  refers_to:       '#cbd5e1',
-  relates:         '#38bdf8',
-  supersedes:      '#a855f7',
-  blocks_thinking: '#f59e0b',
-  'auto-day':      '#475569',
-  'auto-tag':      '#64748b',
-  'auto-repo':     '#fbbf24',
+  supports:         '#10b981',
+  contradicts:      '#f43f5e',
+  refers_to:        '#cbd5e1',
+  relates:          '#38bdf8',
+  supersedes:       '#a855f7',
+  blocks_thinking:  '#f59e0b',
+  'auto-day':       '#475569',
+  'auto-tag':       '#64748b',
+  'auto-repo':      '#fbbf24',
+  'auto-dominion':  'hsla(45, 70%, 65%, 1)',
 }
 
 function hashHue(key: string | null | undefined, palette: number[]): number {
@@ -39,8 +57,13 @@ function hashHue(key: string | null | undefined, palette: number[]): number {
   return palette[h % palette.length]
 }
 
-export function nodeHue(node: GraphNode, mode: ColorMode = 'realm'): number {
+export function nodeHue(node: GraphNode, mode: ColorMode = 'dominion'): number {
   switch (mode) {
+    case 'dominion':
+      if (node.dominionColor && node.dominionColor in DOMINION_COLOR_HUE) {
+        return DOMINION_COLOR_HUE[node.dominionColor]
+      }
+      return 220
     case 'repo':
       return hashHue(node.repo, REALM_HUES)
     case 'type':
@@ -50,18 +73,18 @@ export function nodeHue(node: GraphNode, mode: ColorMode = 'realm'): number {
     case 'realm':
     default:
       if (node.realmId) return hashHue(node.realmId, REALM_HUES)
-      // Fallback so realmId=null memories still get some signal.
       return TYPE_HUE[node.type] ?? SOURCE_HUE[node.source] ?? 240
   }
 }
 
 export function nodeColorHex(
   node: GraphNode,
-  mode: ColorMode = 'realm',
+  mode: ColorMode = 'dominion',
   opts?: { lightness?: number; saturation?: number }
 ): string {
   const hue = nodeHue(node, mode)
-  const s = opts?.saturation ?? 85
+  const isUnassigned = mode === 'dominion' && !node.dominionColor
+  const s = opts?.saturation ?? (isUnassigned ? 18 : 85)
   const l = opts?.lightness ?? 60
   return `hsl(${hue}, ${s}%, ${l}%)`
 }

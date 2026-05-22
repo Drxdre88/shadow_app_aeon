@@ -2,32 +2,63 @@
 
 import { useState } from 'react'
 import dynamic from 'next/dynamic'
-import Link from 'next/link'
-import { ArrowLeft, Search } from 'lucide-react'
-import { useBrainData } from '@/components/brain/useBrainData'
-import { CaptureRail } from '@/components/brain/CaptureRail'
-import { TrackingRail } from '@/components/brain/TrackingRail'
-import { MemorySidePanel } from '@/components/brain/MemorySidePanel'
-import { CortexLegend } from '@/components/brain/CortexLegend'
-import type { ColorMode } from '@/components/brain/nodeColor'
+import { Search, Orbit, Network, Table2 } from 'lucide-react'
+import type { ComponentType } from 'react'
+import { useKairosData } from '@/components/kairos/useKairosData'
+import { TrackingRail } from '@/components/kairos/TrackingRail'
+import { MemorySidePanel } from '@/components/kairos/MemorySidePanel'
+import { KairosLegend } from '@/components/kairos/KairosLegend'
+import type { ColorMode } from '@/components/kairos/nodeColor'
+import type { SkyboxId } from '@/components/kairos/Kairos3D'
+import type { BackdropId } from '@/components/kairos/Kairos2D'
+import { useKairosStore } from '@/stores/kairosStore'
 
-const COLOR_MODES: { id: ColorMode; label: string }[] = [
-  { id: 'realm',  label: 'Realm' },
-  { id: 'repo',   label: 'Repo' },
-  { id: 'type',   label: 'Type' },
-  { id: 'source', label: 'Source' },
+type KairosViewMode = '3d' | '2d' | 'table'
+
+const VIEW_OPTIONS: { id: KairosViewMode; label: string; icon: ComponentType<{ className?: string }>; disabled?: boolean }[] = [
+  { id: '3d',    label: '3D',    icon: Orbit },
+  { id: '2d',    label: '2D',    icon: Network },
+  { id: 'table', label: 'Table', icon: Table2, disabled: true },
 ]
 
-const Cortex3D = dynamic(
-  () => import('@/components/brain/Cortex3D').then((m) => m.Cortex3D),
-  { ssr: false, loading: () => <Center muted>Booting Cortex…</Center> }
+const BACKDROP_OPTIONS: { id: BackdropId; label: string }[] = [
+  { id: 'cortex', label: 'Cortex' },
+  { id: 'aeon',   label: 'Aeon' },
+  { id: 'art',    label: 'Art' },
+]
+
+const COLOR_MODES: { id: ColorMode; label: string }[] = [
+  { id: 'dominion', label: 'Dominion' },
+  { id: 'repo',     label: 'Repo' },
+  { id: 'type',     label: 'Type' },
+  { id: 'source',   label: 'Source' },
+]
+
+const SKYBOX_OPTIONS: { id: SkyboxId; label: string }[] = [
+  { id: 'nebula-4k', label: 'Nebula 4K' },
+  { id: 'lunar-4k',  label: 'Lunar 4K' },
+  { id: 'lunar-8k',  label: 'Lunar 8K' },
+]
+
+const Kairos3D = dynamic(
+  () => import('@/components/kairos/Kairos3D').then((m) => m.Kairos3D),
+  { ssr: false, loading: () => <Center muted>Booting Kairos…</Center> }
 )
 
-export default function BrainPage() {
-  const { graph, loading, error, refresh } = useBrainData()
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+const Kairos2D = dynamic(
+  () => import('@/components/kairos/Kairos2D').then((m) => m.Kairos2D),
+  { ssr: false, loading: () => <Center muted>Booting Kairos 2D…</Center> }
+)
+
+export default function KairosPage() {
+  const { graph, loading, error, refresh } = useKairosData()
+  const selectedId = useKairosStore((s) => s.selectedMemoryId)
+  const setSelectedId = useKairosStore((s) => s.setSelected)
   const [query, setQuery] = useState('')
-  const [colorMode, setColorMode] = useState<ColorMode>('repo')
+  const [colorMode, setColorMode] = useState<ColorMode>('dominion')
+  const [skybox, setSkybox] = useState<SkyboxId>('lunar-4k')
+  const [view, setView] = useState<KairosViewMode>('3d')
+  const [backdrop, setBackdrop] = useState<BackdropId>('cortex')
 
   const filteredNodes = query.trim()
     ? graph.nodes.filter((n) => n.title.toLowerCase().includes(query.trim().toLowerCase()))
@@ -37,74 +68,133 @@ export default function BrainPage() {
 
   return (
     <div className="h-full w-full flex flex-col">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06] bg-black/40 backdrop-blur-md">
+      <header className="flex items-center px-4 py-3 border-b border-white/[0.06] bg-black/40 backdrop-blur-md gap-6">
         <div className="flex items-center gap-3">
-          <Link
-            href="/dashboard"
-            className="text-white/40 hover:text-white p-1.5 rounded-md hover:bg-white/[0.06]"
-            title="Back to dashboard"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
-          <span className="text-[11px] uppercase tracking-[0.28em] text-white/50">Cortex</span>
-          <span className="text-[11px] text-white/30">
-            {graph.nodes.length} memor{graph.nodes.length === 1 ? 'y' : 'ies'} • {graph.edges.length} link{graph.edges.length === 1 ? '' : 's'}
-          </span>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1 text-[10px] uppercase tracking-[0.2em] text-white/35">
-            <span>Color</span>
-            <div className="flex items-center gap-0.5 ml-1 p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
-              {COLOR_MODES.map((m) => (
+          <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+            {VIEW_OPTIONS.map((v) => {
+              const Icon = v.icon
+              return (
                 <button
-                  key={m.id}
-                  onClick={() => setColorMode(m.id)}
-                  className={`px-2 py-1 rounded-md transition-all ${
-                    colorMode === m.id
+                  key={v.id}
+                  onClick={() => !v.disabled && setView(v.id)}
+                  disabled={v.disabled}
+                  title={v.disabled ? `${v.label} (coming soon)` : v.label}
+                  className={`px-2 py-1 rounded-md transition-all flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] ${
+                    view === v.id
+                      ? 'bg-white/[0.12] text-white/90'
+                      : v.disabled
+                        ? 'text-white/20 cursor-not-allowed'
+                        : 'text-white/40 hover:text-white/70'
+                  }`}
+                >
+                  <Icon className="w-3 h-3" />
+                  <span>{v.label}</span>
+                </button>
+              )
+            })}
+          </div>
+          <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+            {COLOR_MODES.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setColorMode(m.id)}
+                className={`px-2 py-1 rounded-md transition-all text-[10px] uppercase tracking-[0.2em] ${
+                  colorMode === m.id
+                    ? 'bg-white/[0.12] text-white/90'
+                    : 'text-white/40 hover:text-white/70'
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex-1 flex justify-center">
+          <div
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] w-full max-w-[420px]"
+            style={{ boxShadow: 'inset 0 0 16px rgba(0,0,0,0.35)' }}
+          >
+            <Search className="w-3.5 h-3.5 text-white/35 shrink-0" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter memories…"
+              className="flex-1 bg-transparent outline-none text-[12px] text-white/85 placeholder:text-white/35"
+            />
+            <span className="text-[10px] text-white/30 font-mono shrink-0">⌘K</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {view === '3d' && (
+            <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+              {SKYBOX_OPTIONS.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => setSkybox(s.id)}
+                  className={`px-2 py-1 rounded-md transition-all text-[10px] uppercase tracking-[0.2em] ${
+                    skybox === s.id
                       ? 'bg-white/[0.12] text-white/90'
                       : 'text-white/40 hover:text-white/70'
                   }`}
                 >
-                  {m.label}
+                  {s.label}
                 </button>
               ))}
             </div>
-          </div>
-          <div className="flex items-center gap-2 w-[300px]">
-            <Search className="w-3.5 h-3.5 text-white/30" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filter memories by title…"
-              className="flex-1 bg-transparent border-b border-white/[0.08] focus:border-white/[0.2] outline-none text-[12px] text-white/85 placeholder:text-white/30 py-1"
-            />
-          </div>
+          )}
+          {view === '2d' && (
+            <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+              {BACKDROP_OPTIONS.map((b) => (
+                <button
+                  key={b.id}
+                  onClick={() => setBackdrop(b.id)}
+                  className={`px-2 py-1 rounded-md transition-all text-[10px] uppercase tracking-[0.2em] ${
+                    backdrop === b.id
+                      ? 'bg-white/[0.12] text-white/90'
+                      : 'text-white/40 hover:text-white/70'
+                  }`}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </header>
 
       <div className="flex-1 flex relative">
-        <CaptureRail onCaptured={refresh} selectedMemoryId={selectedId} />
-
         <main className="flex-1 relative">
           {loading ? (
-            <Center>Loading brain…</Center>
+            <Center>Loading Kairos…</Center>
           ) : error ? (
             <Center muted>Failed to load: {error}</Center>
           ) : graph.nodes.length === 0 ? (
             <Center muted>
-              No memories yet — press <Kbd>⌘⇧Space</Kbd> or use the Note button to capture your first thought.
+              No memories yet — use Note in the sidebar or press <Kbd>⌘⇧Space</Kbd> to capture your first thought.
             </Center>
-          ) : (
-            <Cortex3D
+          ) : view === '2d' ? (
+            <Kairos2D
               nodes={filteredNodes}
               edges={filteredEdges}
               selectedId={selectedId}
               onSelect={setSelectedId}
               colorMode={colorMode}
+              backdrop={backdrop}
+            />
+          ) : (
+            <Kairos3D
+              nodes={filteredNodes}
+              edges={filteredEdges}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              colorMode={colorMode}
+              skybox={skybox}
             />
           )}
           {!loading && !error && graph.nodes.length > 0 && (
-            <CortexLegend nodes={filteredNodes} mode={colorMode} />
+            <KairosLegend nodes={filteredNodes} mode={colorMode} />
           )}
           <MemorySidePanel
             memoryId={selectedId}

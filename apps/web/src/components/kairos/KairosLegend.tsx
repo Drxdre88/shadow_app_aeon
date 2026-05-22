@@ -11,7 +11,7 @@ type Props = {
 
 // Pull the distinct value for the current mode off each node, count it,
 // then surface the top ~10 with their colour swatch.
-export function CortexLegend({ nodes, mode }: Props) {
+export function KairosLegend({ nodes, mode }: Props) {
   const items = useMemo(() => buildLegend(nodes, mode), [nodes, mode])
   if (items.length === 0) return null
 
@@ -61,6 +61,9 @@ function buildLegend(nodes: GraphNode[], mode: ColorMode) {
 
 function keyForNode(n: GraphNode, mode: ColorMode): { key: string; label: string } | null {
   switch (mode) {
+    case 'dominion':
+      if (!n.dominionId) return { key: '__unassigned__', label: 'Unassigned' }
+      return { key: n.dominionId, label: n.dominionName ?? '(unnamed)' }
     case 'repo':
       return n.repo ? { key: n.repo, label: n.repo } : { key: '__none__', label: '(no repo)' }
     case 'type':
@@ -69,8 +72,6 @@ function keyForNode(n: GraphNode, mode: ColorMode): { key: string; label: string
       return { key: n.source, label: n.source }
     case 'realm':
     default:
-      // Realm has no name in GraphNode — fall back to the user-facing label
-      // we'd have used for hue. Group by realmId / type / source bucket.
       if (n.realmId) return { key: `realm:${n.realmId.slice(0, 8)}`, label: `realm ${n.realmId.slice(0, 8)}` }
       return { key: `unanchored:${n.type}`, label: `unanchored · ${n.type}` }
   }

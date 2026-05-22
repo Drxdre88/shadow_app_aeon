@@ -8,19 +8,23 @@ import type { GraphNode } from '@/lib/data/memories'
 import { cleanTitle, nodeHue, type ColorMode } from '../nodeColor'
 import { Planet } from './Planet'
 
-export type SceneNode = GraphNode & {
-  _hex: string
+export type SimNode2D = GraphNode & {
   _glow: number
   _radius: number
   _hue: number
   _degree: number
   x?: number
   y?: number
-  z?: number
+}
+
+export type SimLink2D = {
+  source: string
+  target: string
+  type: string
 }
 
 type Props = {
-  nodes: SceneNode[]
+  nodes: SimNode2D[]
   selectedId: string | null
   hoveredId: string | null
   hubIds: Set<string>
@@ -29,7 +33,7 @@ type Props = {
   onHover: (id: string | null) => void
 }
 
-export function PlanetCloud({
+export function PlanetCloud2D({
   nodes,
   selectedId,
   hoveredId,
@@ -41,7 +45,6 @@ export function PlanetCloud({
   const groupRefs = useRef(new Map<string, THREE.Group>())
 
   useEffect(() => {
-    // Drop refs for nodes that left the scene so the map doesn't grow unbounded.
     const live = new Set(nodes.map((n) => n.id))
     for (const id of Array.from(groupRefs.current.keys())) {
       if (!live.has(id)) groupRefs.current.delete(id)
@@ -52,12 +55,12 @@ export function PlanetCloud({
     for (const n of nodes) {
       const ref = groupRefs.current.get(n.id)
       if (!ref) continue
-      ref.position.set(n.x ?? 0, n.y ?? 0, n.z ?? 0)
-      const isSelected = n.id === selectedId
-      const isHovered = n.id === hoveredId
-      const targetScale = isSelected ? 1.55 : isHovered ? 1.25 : 1.0
+      ref.position.set(n.x ?? 0, n.y ?? 0, 0)
+      const isSel = n.id === selectedId
+      const isHov = n.id === hoveredId
+      const target = isSel ? 1.55 : isHov ? 1.25 : 1.0
       const k = 0.18
-      ref.scale.x += (targetScale - ref.scale.x) * k
+      ref.scale.x += (target - ref.scale.x) * k
       ref.scale.y = ref.scale.x
       ref.scale.z = ref.scale.x
     }
@@ -66,64 +69,64 @@ export function PlanetCloud({
   return (
     <>
       {nodes.map((n) => {
-        // Colour derived here at render-time from current colorMode — keeps
-        // the simulation graph reference stable so the force layout doesn't
-        // restart when the user toggles between Realm / Repo / Type / Source.
         const hue = nodeHue(n, colorMode)
         const hex = `hsl(${hue}, 92%, ${56 + 14 * n._glow}%)`
         return (
-        <Planet
-          key={n.id}
-          ref={(g) => {
-            if (g) groupRefs.current.set(n.id, g)
-            else groupRefs.current.delete(n.id)
-          }}
-          radius={n._radius}
-          color={hex}
-          hasRing={n.pinned}
-          onPointerDown={(e) => {
-            e.stopPropagation()
-            onSelect(n.id)
-          }}
-          onPointerOver={(e) => {
-            e.stopPropagation()
-            onHover(n.id)
-          }}
-          onPointerOut={(e) => {
-            e.stopPropagation()
-            onHover(null)
-          }}
-        />
+          <Planet
+            key={n.id}
+            ref={(g) => {
+              if (g) groupRefs.current.set(n.id, g)
+              else groupRefs.current.delete(n.id)
+            }}
+            radius={n._radius}
+            color={hex}
+            hasRing={n.pinned}
+            onPointerDown={(e) => {
+              e.stopPropagation()
+              onSelect(n.id)
+            }}
+            onPointerOver={(e) => {
+              e.stopPropagation()
+              onHover(n.id)
+            }}
+            onPointerOut={(e) => {
+              e.stopPropagation()
+              onHover(null)
+            }}
+          />
         )
       })}
-      <PlanetLabels
+      <Labels2D
         nodes={nodes}
         selectedId={selectedId}
         hoveredId={hoveredId}
         hubIds={hubIds}
+        colorMode={colorMode}
       />
     </>
   )
 }
 
-function PlanetLabels({
+function Labels2D({
   nodes,
   selectedId,
   hoveredId,
   hubIds,
+  colorMode,
 }: {
-  nodes: SceneNode[]
+  nodes: SimNode2D[]
   selectedId: string | null
   hoveredId: string | null
   hubIds: Set<string>
+  colorMode: ColorMode
 }) {
   const nodeMap = useMemo(() => {
-    const m = new Map<string, SceneNode>()
+    const m = new Map<string, SimNode2D>()
     for (const n of nodes) m.set(n.id, n)
     return m
   }, [nodes])
 
-  const labels: { node: SceneNode; variant: 'hover' | 'select' | 'hub' }[] = []
+  const labels: { node: SimNode2D; variant: 'hover' | 'select' | 'hub' }[] = []
   if (selectedId) {
     const n = nodeMap.get(selectedId)
     if (n) labels.push({ node: n, variant: 'select' })
@@ -141,20 +144,30 @@ function PlanetLabels({
   return (
     <>
       {labels.map((l) => (
-        <FollowingLabel key={`${l.variant}:${l.node.id}`} node={l.node} variant={l.variant} />
+        <FollowingLabel2D key={`${l.variant}:${l.node.id}`} node={l.node} variant={l.variant} colorMode={colorMode} />
       ))}
     </>
   )
 }
 
-function FollowingLabel({ node, variant }: { node: SceneNode; variant: 'hover' | 'select' | 'hub' }) {
+function FollowingLabel2D({
+  node,
+  variant,
+  colorMode,
+}: {
+  node: SimNode2D
+  variant: 'hover' | 'select' | 'hub'
+  colorMode: ColorMode
+}) {
   const groupRef = useRef<THREE.Group>(null)
   useFrame(() => {
     if (!groupRef.current) return
-    groupRef.current.position.set(node.x ?? 0, (node.y ?? 0) + node._radius * 2.5 + 6, node.z ?? 0)
+    groupRef.current.position.set(node.x ?? 0, (node.y ?? 0) + node._radius * 2.5 + 6, 0)
   })
   const title = cleanTitle(node.title)
   const subtitle = node.repo ?? node.type
+  // Derive hex fresh from current colorMode so label glow matches the orb colour.
+  const hex = `hsl(${nodeHue(node, colorMode)}, 92%, ${56 + 14 * node._glow}%)`
   return (
     <group ref={groupRef}>
       <Html center zIndexRange={[100, 0]}>
@@ -171,16 +184,16 @@ function FollowingLabel({ node, variant }: { node: SceneNode; variant: 'hover' |
                   : 'rgba(8,4,18,0.78)',
             border: `1px solid ${
               variant === 'select'
-                ? node._hex
+                ? hex
                 : variant === 'hub'
                   ? 'rgba(255,255,255,0.08)'
                   : 'rgba(255,255,255,0.10)'
             }`,
             boxShadow:
               variant === 'select'
-                ? `0 0 18px ${node._hex}66`
+                ? `0 0 18px ${hex}66`
                 : variant === 'hub'
-                  ? `0 0 12px ${node._hex}33`
+                  ? `0 0 12px ${hex}33`
                   : '0 4px 16px rgba(0,0,0,0.55)',
             backdropFilter: 'blur(8px)',
             transform: 'translate(-50%, -100%)',

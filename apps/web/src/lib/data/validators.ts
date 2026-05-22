@@ -340,6 +340,7 @@ export const createMemorySchema = z.object({
   realmId:         z.string().uuid().nullable().optional(),
   projectId:       z.string().uuid().nullable().optional(),
   taskId:          z.string().uuid().nullable().optional(),
+  dominionId:      z.string().uuid().nullable().optional(),
   tags:            z.array(z.string().trim().min(1).max(50)).max(50).optional(),
   links:           z.array(memoryLinkSchema).max(100).optional(),
   pinned:          z.boolean().optional(),
@@ -355,6 +356,7 @@ export const updateMemorySchema = z.object({
   realmId:         z.string().uuid().nullable().optional(),
   projectId:       z.string().uuid().nullable().optional(),
   taskId:          z.string().uuid().nullable().optional(),
+  dominionId:      z.string().uuid().nullable().optional(),
   tags:            z.array(z.string().trim().min(1).max(50)).max(50).optional(),
   pinned:          z.boolean().optional(),
   archivedAt:      z.string().datetime().nullable().optional(),
@@ -411,3 +413,30 @@ export type SearchMemoriesInput = z.infer<typeof searchMemoriesSchema>
 export type AddLinkInput      = z.infer<typeof addLinkSchema>
 export type GetNeighboursInput = z.infer<typeof getNeighboursSchema>
 export type PrepareContextInput = z.infer<typeof prepareContextSchema>
+
+// ─────────────────────────────────────────────────────────────────────────
+// Kairos Dominion validators. See VISION.md "Bet 5: K-3 Dominion".
+// ─────────────────────────────────────────────────────────────────────────
+
+export const createDominionSchema = z.object({
+  name:      z.string().trim().min(1).max(100),
+  color:     z.string().trim().max(30).default('purple'),
+  icon:      z.string().trim().max(50).optional(),
+  sortOrder: z.number().int().optional(),
+})
+
+export const updateDominionSchema = z.object({
+  name:      z.string().trim().min(1).max(100).optional(),
+  color:     z.string().trim().max(30).optional(),
+  icon:      z.string().trim().max(50).optional(),
+  sortOrder: z.number().int().optional(),
+})
+
+export const addDominionRepoSchema = z.object({
+  dominionId: z.string().uuid(),
+  repoSlug:   z.string().trim().min(1).max(120),
+})
+
+export type CreateDominionInput  = z.infer<typeof createDominionSchema>
+export type UpdateDominionInput  = z.infer<typeof updateDominionSchema>
+export type AddDominionRepoInput = z.infer<typeof addDominionRepoSchema>

@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { memories } from '@/lib/db/schema'
+import { memories, dominions, dominionRepos, projects } from '@/lib/db/schema'
 import { eq, and, desc, sql, inArray } from 'drizzle-orm'
 import type {
   CreateMemoryInput,
@@ -9,6 +9,7 @@ import type {
   MemoryLink,
   PrepareContextInput,
 } from './validators'
+import { resolveDominionForMemory } from './dominions'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Brain Phase 1 — pure DB queries for the user-scoped memory substrate.
@@ -94,6 +95,9 @@ export type GraphNode = {
   tags: string[]
   pinned: boolean
   createdAt: Date
+  dominionId: string | null
+  dominionName: string | null
+  dominionColor: string | null
 }
 
 export type GraphEdge = {
@@ -120,6 +124,7 @@ export async function getGraphForUser(
       realmId: memories.realmId,
       projectId: memories.projectId,
       taskId: memories.taskId,
+      dominionId: memories.dominionId,
       tags: memories.tags,
       pinned: memories.pinned,
       createdAt: memories.createdAt,
@@ -130,14 +135,45 @@ export async function getGraphForUser(
     .where(and(...conditions))
     .orderBy(desc(memories.pinned), desc(memories.createdAt))
 
+  // Bulk-load dominion data — 3 parallel queries, zero N+1.
+  const uniqueProjectIds = [...new Set(rows.map((r) => r.projectId).filter((id): id is string => id != null))]
+  const [dominionRows, dominionRepoRows, projectDominionRows] = await Promise.all([
+    db.select({ id: dominions.id, name: dominions.name, color: dominions.color })
+      .from(dominions)
+      .where(eq(dominions.userId, userId)),
+    db.select({ dominionId: dominionRepos.dominionId, repoSlug: dominionRepos.repoSlug })
+      .from(dominionRepos)
+      .innerJoin(dominions, and(eq(dominionRepos.dominionId, dominions.id), eq(dominions.userId, userId))),
+    uniqueProjectIds.length > 0
+      ? db.select({ id: projects.id, dominionId: projects.dominionId })
+          .from(projects)
+          .where(inArray(projects.id, uniqueProjectIds))
+      : Promise.resolve([] as Array<{ id: string; dominionId: string | null }>),
+  ])
+
+  const dominionMap = new Map(dominionRows.map((d) => [d.id, d]))
+  const repoDominionMap = new Map(dominionRepoRows.map((r) => [r.repoSlug, r.dominionId]))
+  const projectDominionMap = new Map(projectDominionRows.map((p) => [p.id, p.dominionId]))
+
   const ownedIds = new Set(rows.map((r) => r.id))
-  const nodes: GraphNode[] = rows.map(({ links: _links, sourceMetadata, ...rest }) => {
+  const nodes: GraphNode[] = rows.map(({ links: _links, sourceMetadata, dominionId: memDominionId, ...rest }) => {
     const meta = (sourceMetadata ?? {}) as Record<string, unknown>
     const repo = typeof meta.repo === 'string' ? meta.repo : null
+
+    const resolvedDominionId =
+      memDominionId ??
+      (rest.projectId ? (projectDominionMap.get(rest.projectId) ?? null) : null) ??
+      (repo ? (repoDominionMap.get(repo) ?? null) : null)
+
+    const dominion = resolvedDominionId ? dominionMap.get(resolvedDominionId) : null
+
     return {
       ...rest,
       repo,
       tags: (rest.tags ?? []) as string[],
+      dominionId: resolvedDominionId,
+      dominionName: dominion?.name ?? null,
+      dominionColor: dominion?.color ?? null,
     }
   })
 
@@ -215,6 +251,24 @@ export async function getGraphForUser(
     }
     for (let i = 0; i + 3 < group.length; i += 3) {
       pushEdge(group[i].id, group[i + 3].id, 'auto-repo', null)
+    }
+  }
+
+  const byDominion = new Map<string, GraphNode[]>()
+  for (const n of nodes) {
+    if (!n.dominionId) continue
+    const bucket = byDominion.get(n.dominionId)
+    if (bucket) bucket.push(n)
+    else byDominion.set(n.dominionId, [n])
+  }
+  for (const group of byDominion.values()) {
+    if (group.length < 2) continue
+    group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    for (let i = 0; i < group.length - 1; i++) {
+      pushEdge(group[i].id, group[i + 1].id, 'auto-dominion', null)
+    }
+    for (let i = 0; i + 3 < group.length; i += 3) {
+      pushEdge(group[i].id, group[i + 3].id, 'auto-dominion', null)
     }
   }
 
@@ -399,6 +453,13 @@ export async function createMemory(userId: string, input: CreateMemoryInput) {
     if (existing) return existing
   }
 
+  const resolvedDominionId = input.dominionId == null
+    ? await resolveDominionForMemory(userId, {
+        projectId: input.projectId,
+        sourceMetadata: (input.sourceMetadata ?? null) as Record<string, unknown> | null,
+      })
+    : null
+
   const [row] = await db
     .insert(memories)
     .values({
@@ -414,6 +475,7 @@ export async function createMemory(userId: string, input: CreateMemoryInput) {
       realmId: input.realmId ?? null,
       projectId: input.projectId ?? null,
       taskId: input.taskId ?? null,
+      dominionId: input.dominionId ?? resolvedDominionId ?? null,
       tags: input.tags ?? [],
       links: input.links ?? [],
       pinned: input.pinned ?? false,
@@ -433,6 +495,7 @@ export async function updateMemory(memoryId: string, userId: string, patch: Upda
   if (patch.realmId !== undefined)    update.realmId = patch.realmId
   if (patch.projectId !== undefined)  update.projectId = patch.projectId
   if (patch.taskId !== undefined)     update.taskId = patch.taskId
+  if (patch.dominionId !== undefined) update.dominionId = patch.dominionId
   if (patch.tags !== undefined)       update.tags = patch.tags
   if (patch.pinned !== undefined)     update.pinned = patch.pinned
   if (patch.archivedAt !== undefined) update.archivedAt = patch.archivedAt ? new Date(patch.archivedAt) : null

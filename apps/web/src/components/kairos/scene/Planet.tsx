@@ -5,84 +5,72 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { SUN_DIR } from './params'
 
-const ORB_VERTEX = `
-  varying vec3 vWorldNormal;
-  varying vec3 vWorldPos;
+// View direction is computed in the vertex shader and passed as a varying.
+// This avoids depending on `cameraPosition` being auto-injected into the
+// fragment stage — that injection silently failed on some three.js builds
+// and produced black planets. modelViewMatrix is always available, so this
+// works everywhere.
+const ORB_VERTEX = /* glsl */ `
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
   void main() {
-    vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
-    vWorldNormal = normalize(mat3(modelMatrix) * normal);
-    gl_Position = projectionMatrix * viewMatrix * vec4(vWorldPos, 1.0);
+    vec4 viewPos = modelViewMatrix * vec4(position, 1.0);
+    vNormal = normalize(normalMatrix * normal);
+    vViewDir = normalize(-viewPos.xyz);
+    gl_Position = projectionMatrix * viewPos;
   }
 `
 
-// Smooth dual-color gradient glass ball. No noise, no spiral, no stars.
-// View-radial composition: bright primary at the centre of the visible disc,
-// transitions to a hue-shifted accent toward the silhouette. Sun direction
-// adds a subtle directional warmth so the orb still reads as a 3D object.
-const ORB_FRAG = `
+// Two-tone gradient body with directional sun lift, bright core, and an
+// atmospheric rim halo on the silhouette. Output is unclamped so very bright
+// regions trigger bloom in post.
+const ORB_FRAG = /* glsl */ `
   precision highp float;
-  varying vec3 vWorldNormal;
-  varying vec3 vWorldPos;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
   uniform vec3 uColor;
-  uniform vec3 uSunDir;
-
-  vec3 rgb2hsv(vec3 c) {
-    vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
-    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
-    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
-    float d = q.x - min(q.w, q.y);
-    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + 1e-10)), d / (q.x + 1e-10), q.x);
-  }
-  vec3 hsv2rgb(vec3 c) {
-    vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
-    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
-    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
-  }
+  uniform vec3 uAccent;
+  uniform vec3 uSunDirView;
 
   void main() {
-    vec3 toCam = normalize(cameraPosition - vWorldPos);
-    vec3 nrm = normalize(vWorldNormal);
+    vec3 n = normalize(vNormal);
+    vec3 v = normalize(vViewDir);
 
-    // 1.0 at the disc centre (facing the viewer head-on), 0.0 at the silhouette.
-    float facing = clamp(dot(nrm, toCam), 0.0, 1.0);
+    // 1.0 at the centre of the visible disc, 0.0 at the silhouette.
+    float facing = clamp(dot(n, v), 0.0, 1.0);
 
-    // Two-tone palette derived from the single legend tint.
-    vec3 hsvA = rgb2hsv(uColor);
-    vec3 colA = hsv2rgb(vec3(hsvA.x, min(hsvA.y * 1.1, 1.0), min(hsvA.z * 1.1, 1.0)));
-    vec3 colB = hsv2rgb(vec3(fract(hsvA.x + 0.15), min(hsvA.y * 0.9, 1.0), hsvA.z * 0.82));
+    // Two-tone radial composition: accent at the rim, primary in the centre.
+    vec3 col = mix(uAccent, uColor, pow(facing, 1.4));
 
-    // Centre is primary, rim transitions to accent.
-    vec3 col = mix(colB, colA, pow(facing, 1.3));
+    // Bright over-bright core to trigger bloom.
+    col += uColor * pow(facing, 5.0) * 1.8;
 
-    // Bright core that triggers bloom.
-    col += colA * pow(facing, 4.0) * 1.3;
+    // Directional shading so the orb reads as a 3D object even at distance.
+    float sun = clamp(dot(n, normalize(uSunDirView)) * 0.5 + 0.5, 0.0, 1.0);
+    col *= 0.42 + sun * 0.62;
 
-    // Soft directional lift from the sun so the orb has a faint lit hemisphere.
-    float sun = clamp(dot(nrm, normalize(uSunDir)) * 0.5 + 0.5, 0.0, 1.0);
-    col *= 0.55 + sun * 0.55;
+    // Atmosphere glow that wraps onto the silhouette — adds depth and feeds bloom.
+    float rim = pow(1.0 - facing, 2.6);
+    col += uColor * rim * 1.1;
 
     gl_FragColor = vec4(col, 1.0);
   }
 `
 
-const SHELL_VERTEX = ORB_VERTEX
-
-// Fresnel glass rim. Additive blend — adds a tinted halo at the silhouette,
-// transparent through the centre so the gradient ball reads cleanly.
-const SHELL_FRAG = `
+// Backside additive halo. No view-direction maths — just renders the inside
+// of a slightly larger sphere with additive blending, which from outside reads
+// as a soft tinted glow wrapping the orb. Cheap and bloom-friendly.
+const SHELL_FRAG = /* glsl */ `
   precision highp float;
-  varying vec3 vWorldNormal;
-  varying vec3 vWorldPos;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
   uniform vec3 uColor;
-  uniform vec3 uSunDir;
   void main() {
-    vec3 viewDir = normalize(cameraPosition - vWorldPos);
-    float fres = pow(1.0 - abs(dot(viewDir, vWorldNormal)), 2.2);
-    float sunDot = dot(normalize(vWorldNormal), normalize(uSunDir));
-    float dayLift = 0.6 + smoothstep(-0.3, 0.4, sunDot) * 0.5;
-    vec3 rim = uColor * fres * dayLift * 1.5;
-    float alpha = clamp(fres * 0.6, 0.0, 1.0);
-    gl_FragColor = vec4(rim, alpha);
+    vec3 n = normalize(vNormal);
+    vec3 v = normalize(vViewDir);
+    float facing = clamp(dot(n, -v), 0.0, 1.0);
+    float fres = pow(facing, 1.8);
+    gl_FragColor = vec4(uColor * fres * 1.6, fres * 0.85);
   }
 `
 
@@ -93,17 +81,13 @@ function PlanetaryRing({ radius }: { radius: number }) {
   const inner = radius * 1.35
   const outer = radius * 2.1
   const data = useMemo(() => {
-    return Array.from({ length: COUNT }, () => {
-      const ang = Math.random() * Math.PI * 2
-      const r = inner + Math.pow(Math.random(), 0.5) * (outer - inner)
-      return {
-        ang,
-        r,
-        y: (Math.random() - 0.5) * 0.4,
-        scale: 0.06 + Math.random() * 0.25,
-        rotSpeed: 0.04 + Math.random() * 0.02,
-      }
-    })
+    return Array.from({ length: COUNT }, () => ({
+      ang: Math.random() * Math.PI * 2,
+      r: inner + Math.pow(Math.random(), 0.5) * (outer - inner),
+      y: (Math.random() - 0.5) * 0.4,
+      scale: 0.06 + Math.random() * 0.25,
+      rotSpeed: 0.04 + Math.random() * 0.02,
+    }))
   }, [inner, outer])
 
   useFrame((_, delta) => {
@@ -142,31 +126,42 @@ export const Planet = forwardRef<THREE.Group, PlanetProps>(function Planet(
 ) {
   const tint = useMemo(() => new THREE.Color(color), [color])
 
+  // Accent is a brighter, hue-shifted variant for the rim. We compute it once
+  // off the tint via HSL math in JS so the shader stays branchless.
+  const accent = useMemo(() => {
+    const c = tint.clone()
+    const hsl = { h: 0, s: 0, l: 0 }
+    c.getHSL(hsl)
+    c.setHSL((hsl.h + 0.08) % 1, Math.min(1, hsl.s * 1.05), Math.min(0.85, hsl.l * 1.25))
+    return c
+  }, [tint])
+
   const orbMat = useMemo(
     () =>
       new THREE.ShaderMaterial({
         uniforms: {
-          uColor: { value: tint.clone() },
-          uSunDir: { value: SUN_DIR.clone() },
+          uColor:      { value: tint.clone() },
+          uAccent:     { value: accent.clone() },
+          uSunDirView: { value: SUN_DIR.clone() },
         },
         vertexShader: ORB_VERTEX,
         fragmentShader: ORB_FRAG,
       }),
-    [tint],
+    [tint, accent],
   )
 
   const shellMat = useMemo(
     () =>
       new THREE.ShaderMaterial({
         uniforms: {
-          uColor: { value: tint.clone().lerp(new THREE.Color(0xffffff), 0.25) },
-          uSunDir: { value: SUN_DIR.clone() },
+          uColor: { value: tint.clone().lerp(new THREE.Color(0xffffff), 0.30) },
         },
-        vertexShader: SHELL_VERTEX,
+        vertexShader: ORB_VERTEX,
         fragmentShader: SHELL_FRAG,
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
+        side: THREE.BackSide,
       }),
     [tint],
   )
@@ -181,7 +176,7 @@ export const Planet = forwardRef<THREE.Group, PlanetProps>(function Planet(
         <mesh material={orbMat}>
           <sphereGeometry args={[radius, 48, 48]} />
         </mesh>
-        <mesh material={shellMat} scale={1.08}>
+        <mesh material={shellMat} scale={1.18}>
           <sphereGeometry args={[radius, 32, 32]} />
         </mesh>
         {hasRing && <PlanetaryRing radius={radius} />}

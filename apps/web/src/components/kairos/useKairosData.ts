@@ -3,13 +3,15 @@
 import { useEffect, useState, useCallback } from 'react'
 import { getBrainGraph } from '@/lib/actions/memories'
 import type { GraphNode, GraphEdge } from '@/lib/data/memories'
+import { useKairosStore } from '@/stores/kairosStore'
 
-export type BrainGraph = { nodes: GraphNode[]; edges: GraphEdge[] }
+export type KairosGraph = { nodes: GraphNode[]; edges: GraphEdge[] }
 
-export function useBrainData(realmId?: string) {
-  const [graph, setGraph] = useState<BrainGraph>({ nodes: [], edges: [] })
+export function useKairosData(realmId?: string) {
+  const [graph, setGraph] = useState<KairosGraph>({ nodes: [], edges: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const refreshSignal = useKairosStore((s) => s.refreshSignal)
 
   const refresh = useCallback(async () => {
     try {
@@ -17,7 +19,7 @@ export function useBrainData(realmId?: string) {
       const data = await getBrainGraph({ realmId })
       setGraph(data)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load brain')
+      setError(err instanceof Error ? err.message : 'Failed to load Kairos')
     } finally {
       setLoading(false)
     }
@@ -26,7 +28,7 @@ export function useBrainData(realmId?: string) {
   useEffect(() => {
     setLoading(true)
     refresh()
-  }, [refresh])
+  }, [refresh, refreshSignal])
 
   return { graph, loading, error, refresh }
 }
