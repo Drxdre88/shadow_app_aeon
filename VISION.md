@@ -1,6 +1,6 @@
 # VISION.md
 
-Last updated: 07/04/2026 (Phase 3 — Pusher, virtual scrolling, optimistic UI shipped)
+Last updated: 22/05/2026 (Kairos POC + sidebar consolidation + memory display rework)
 
 For technical architecture, file paths, and feature inventory see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
@@ -21,6 +21,8 @@ Aeon is a **web-first project management platform** with a stunning visual ident
 | Capacitor mobile app | Pivot from React Native on 03/04. WebView wrapper preserves full web UI. mobile-auth backend reusable | High (spike in progress) |
 | Realm-based multi-tenancy | Full CRUD, invites, scoped visibility, REST + MCP parity | Shipped |
 | MCP-first AI integration | 52 tools, Bearer auth, dogfooded daily via Claude Code | Shipped |
+| Kairos — personal memory layer | 3D + 2D cortex views, MCP capture path, dynamic sidebar shell, schema for AI title/exec summary | In Progress (POC on feature/cortex-swarm-port) |
+| BYOK AI credentials (Vercel AI SDK + AES-256-GCM) | Foundation built on feature/brain-ai-integration (commit 8465858) — router, encrypted-key schema, /settings/ai page, admin gate | Built, awaiting merge |
 | Master Board (cross-project view) | 4 raw idea cards (schema, propagation, UI, permissions) | Medium |
 | Real-time sync (Pusher) | Pusher Channels live, all mutations broadcast, 30s polling fallback | Shipped |
 | Agent-as-member (AI in realms) | 1 raw idea card, no spec | Speculative |
@@ -80,6 +82,27 @@ Aeon is a **web-first project management platform** with a stunning visual ident
 - **Risk:** Edit propagation across projects is architecturally complex (which project owns the mutation?). Performance at scale with no virtual scrolling yet
 - **Status:** 4 raw idea cards, no spec written. Dependent on virtual scrolling (in analysis)
 
+### Bet 5: Kairos as a personal productivity tool first, broader product later
+
+- **What:** Kairos (the renamed brain / cortex feature) is a personal memory layer with 3D + 2D visualisation, MCP-driven capture, and AI-cleaned exec summaries. **In 2026 it is exclusively the founder's own productivity tool, used via Claude Code.** Wider beta access is considered only after the founder uses it daily and considers it perfected
+- **Why:** The user runs a portfolio across asset trading, spec trading, quant modelling, and software engineering. Most knowledge capture happens via voice dumps into Claude Code. The MCP path is the primary capture surface — web voice has been killed. Building this for one user (the founder) first means decisions get made fast, the UX is opinionated, and the feedback loop is hours not weeks
+- **Risk:** Solo-user-driven UX may not generalise. Hard taste calls now (e.g. Constellation/Dominion grouping, killing Realm for memories, killing the secondary sidebar) bake in assumptions. Mitigation: revisit naming and information architecture before opening to others
+- **Status:** POC on `feature/cortex-swarm-port`. Schema ready for AI-generated title + exec summary (migration 0015). MCP tools to be extended with `aiTitle` + `execSummary` fields so Claude Code (the model itself) does the AI cleanup on the caller side. Server stays dumb
+
+### Bet 6: AI does the cleanup at the call site, not on the server
+
+- **What:** Claude Code self-prompts to clean voice dumps and session transcripts into title + 5–10 bullet exec summary, then sends the pre-cleaned payload through the MCP `create_memory` / `update_memory` tools. The Aeon server stores what it's sent and runs no LLM itself
+- **Why:** Claude Code already has the model that heard the dump, with full project context. Putting an LLM call on the write path duplicates that capability, adds latency, and complicates the MCP/REST parity invariant. Backfill is also user-triggered ("Claude, regenerate the last 30 days") — no cron needed
+- **Risk:** Capture quality depends on Claude Code being good at the cleanup. Mitigated by saving the original verbatim as an optional `rawTranscript` so the unpolished phrasing stays searchable
+- **Status:** Schema ready. MCP tool extension pending. Session-capture hook update pending (will use `claude --print` to self-clean before calling the tool). **BYOK is NOT a blocker for this — see Bet 7**
+
+### Bet 7: BYOK foundation built but waiting
+
+- **What:** Vercel AI SDK v6 + per-user encrypted API keys (AES-256-GCM) + provider-agnostic router (Anthropic / OpenAI / Google) + admin-gated `/settings/ai` page. Lives on `feature/brain-ai-integration` (commit 8465858)
+- **Why:** The longer-term play. Even though Kairos itself does AI work via Claude Code MCP today, BYOK is the foundation for any *other* AI feature (daily briefings, agent-as-member, project chat, code review hooks). Building it as encrypted-per-user and admin-gated from day one keeps options open for multi-user beta later
+- **Risk:** If never merged, the foundation rots and the migration number (0014) becomes a coordination headache against newer migrations. Mitigation: merge on a quiet day before any new AI feature is built
+- **Status:** Built, tested (1570 tests passing including crypto roundtrip + tampering rejection), waiting for a merge window. The current Kairos POC explicitly does not depend on it
+
 ---
 
 ## 5. EMERGING PATTERNS
@@ -127,6 +150,9 @@ Aeon is a **web-first project management platform** with a stunning visual ident
 | **Real-time sync timing** | Resolved | Pusher shipped 07/04/2026. Sub-second push with 30s polling fallback. SSE rejected for serverless incompatibility. |
 | **Push notifications architecture** | Medium | Capacitor has @capacitor/push-notifications plugin. But backend notification service (FCM/APNs) doesn't exist yet. Plan early or bolt on later? |
 | **Tauri: kill or park?** | Low | Explicitly parked post-beta. PWA covers desktop install. Only revisit if beta users ask for offline/system tray/hotkeys |
+| **Kairos: when do other users get in?** | Medium | 2026 is founder-only. Trigger for opening up = founder uses it daily for 30+ consecutive days without UX changes feeling necessary. Until then naming (Kairos, Dominion), grouping model, and capture surface are mutable |
+| **BYOK merge window** | Medium | Foundation is built but unmerged. Should land before any *new* AI feature that's not Claude Code MCP-driven (daily briefings, agent-as-member, etc.). Migration 0014 reserved for it — newer Kairos migrations start at 0015 to avoid collision |
+| **rawTranscript field?** | Low | Analyst recommended storing the unpolished voice/session transcript next to `bodyMd` so the original phrasing stays searchable. Pending decision — adds one nullable text column, no schema risk |
 
 ---
 
@@ -165,5 +191,13 @@ With Capacitor, mobile IS the web app. The convergence is now about what native 
 | 3 | Performance | COMPLETE | Virtual scrolling (TanStack Virtual), optimistic UI rollback, Pusher real-time sync |
 | 4 | Cross-Board | NOT STARTED | Master Board (cross-project aggregation), Rift Board, urgency lens, staleness surface |
 | 5 | Collaboration | NOT STARTED | Chat (Pusher-based), notifications, agent dispatch, agent-as-member |
+| K-0 | Kairos POC | IN PROGRESS | 3D cortex (skybox + orb shader), 2D cortex (d3-force), dynamic sidebar shell with `AEON : KAIROS` glow, view-switch regression fix, top bar cleanup |
+| K-1 | Kairos memory display | COMPLETE | aiTitle + execSummary schema (migration 0015), MemorySidePanel rework (title + colour pills + bullets + collapsed body), graceful empty-state |
+| K-2 | Kairos MCP capture path | NEXT | Extend MCP create_memory + update_memory to accept aiTitle + execSummary. Session-capture hook self-cleans via `claude --print` before sending. Optional `rawTranscript` field |
+| K-3 | Dominion (grouping) | QUEUED | New top-level concept above Project. Schema (dominions, dominionRepos, projects.dominionId, memories.dominionId). Colour cascade. Auto-assign from sourceMetadata.repo. Replaces broken Realm colour mode |
+| K-4 | 2D WebGL rebuild | QUEUED | Replace Canvas2D radial gradients with orthographic Three.js scene reusing the 3D orb shader. Real edge rendering. Fixes the "low-res Pokéball" look |
+| K-5 | BYOK merge + extension AI features | BLOCKED | Waiting for feature/brain-ai-integration merge. Then: daily briefings, suggested links, agent-as-member, anything not Claude-Code-driven |
 
 Note: Phase 2 pivoted from React Native to Capacitor on 03/04/2026. React Native code deleted 07/04/2026. 2A (auth backend) is reusable for Capacitor. 2B (PWA + Capacitor) is the current mobile focus. Phase 3 (Performance) shipped 07/04/2026. Tauri desktop explicitly parked.
+
+K-phase (Kairos) runs in parallel with the PM-side phases. K-0 through K-4 explicitly do NOT depend on BYOK because the AI work happens inside Claude Code at the call site. K-5 onward unlocks server-side AI features once BYOK is merged.

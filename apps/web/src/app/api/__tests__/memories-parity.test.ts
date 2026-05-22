@@ -60,9 +60,10 @@ describe('Memory MCP <-> REST parity', () => {
     .join('\n')
 
   describe('MCP tool surface', () => {
-    it('exposes exactly the five expected memory operations', () => {
+    it('exposes exactly the six expected memory operations', () => {
       expect(new Set(toolNames)).toEqual(new Set([
         'create_memory',
+        'update_memory',
         'search_memories',
         'link_memory',
         'get_memory_with_neighbours',
@@ -107,11 +108,12 @@ describe('Memory MCP <-> REST parity', () => {
       expect(restSrcConcat, `REST routes missing ${v}`).toMatch(new RegExp(`\\b${v}\\b`))
     })
 
-    // MCP uses every validator that has an MCP counterpart. updateMemorySchema
-    // is REST-only (no MCP update_memory tool in Phase 1 — Claude is expected
-    // to delete + recreate, which is also how mem0 semantically models updates).
+    // MCP uses every validator that has an MCP counterpart. update_memory
+    // was added in the Kairos rebrand to support backfilling AI-generated
+    // aiTitle + execSummary fields on existing memories via Claude Code.
     const mcpValidators = [
       'createMemorySchema',
+      'updateMemorySchema',
       'searchMemoriesSchema',
       'addLinkSchema',
       'getNeighboursSchema',
@@ -125,6 +127,7 @@ describe('Memory MCP <-> REST parity', () => {
   describe('data-function parity — MCP and REST call the same underlying functions', () => {
     const sharedFns = [
       'createMemory',
+      'updateMemory',
       'searchMemoriesFts',
       'addLink',
       'findMemoryById',

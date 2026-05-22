@@ -11,6 +11,8 @@ import { SettingsButton } from '@/components/ui/SettingsModal'
 import { HelpButton } from '@/components/ui/HelpModal'
 import { StatsButton } from '@/components/ui/StatsModal'
 import { BetaFeaturesButton } from '@/components/ui/BetaFeaturesModal'
+import { KairosSidebarSection } from '@/components/sidebar/KairosSidebarSection'
+import { SidebarCreateActions } from '@/components/sidebar/SidebarCreateActions'
 import { getSiblingProjects } from '@/lib/actions/projects'
 import {
   LayoutGrid,
@@ -170,7 +172,9 @@ export function ProjectSidebar({ projectId, user, activeTab, onTabChange, onSign
         )}
       </nav>
 
-      <div className="mx-3 h-px" style={{ background: 'linear-gradient(90deg, transparent, var(--primary), transparent)', opacity: 0.2 }} />
+      <KairosSidebarSection collapsed={collapsed} />
+
+      <SidebarCreateActions collapsed={collapsed} />
 
       <BottomSection user={user} collapsed={collapsed} onSignOut={onSignOut} />
     </aside>

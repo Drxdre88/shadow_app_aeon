@@ -67,6 +67,7 @@ const stubProject = {
   id: 'proj-1',
   name: 'Test Project',
   userId: 'user-1',
+  dominionId: null as string | null,
   description: null as string | null,
   timeScale: 'week',
   startDate: new Date(VALID_START),

@@ -404,8 +404,10 @@ export async function createMemory(userId: string, input: CreateMemoryInput) {
     .values({
       userId,
       title: input.title,
+      aiTitle: input.aiTitle ?? null,
       bodyMd: input.bodyMd,
       summary: input.summary ?? null,
+      execSummary: input.execSummary ?? [],
       type: input.type,
       source: input.source,
       sourceMetadata: input.sourceMetadata ?? {},
@@ -423,8 +425,10 @@ export async function createMemory(userId: string, input: CreateMemoryInput) {
 export async function updateMemory(memoryId: string, userId: string, patch: UpdateMemoryInput) {
   const update: Record<string, unknown> = { updatedAt: new Date() }
   if (patch.title !== undefined)      update.title = patch.title
+  if (patch.aiTitle !== undefined)    update.aiTitle = patch.aiTitle
   if (patch.bodyMd !== undefined)     update.bodyMd = patch.bodyMd
   if (patch.summary !== undefined)    update.summary = patch.summary
+  if (patch.execSummary !== undefined) update.execSummary = patch.execSummary
   if (patch.type !== undefined)       update.type = patch.type
   if (patch.realmId !== undefined)    update.realmId = patch.realmId
   if (patch.projectId !== undefined)  update.projectId = patch.projectId

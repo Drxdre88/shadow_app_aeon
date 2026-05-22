@@ -46,6 +46,10 @@ export const verificationTokens = pgTable('verification_tokens', {
 export const projects = pgTable('projects', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  // Kairos Dominion grouping (forward reference — dominions table defined
+  // later in this file). On delete: set null so projects aren't lost when
+  // a Dominion is removed.
+  dominionId: uuid('dominion_id').references((): AnyPgColumn => dominions.id, { onDelete: 'set null' }),
   name: varchar('name', { length: 255 }).notNull(),
   description: text('description'),
   timeScale: varchar('time_scale', { length: 20 }).default('week').notNull(),
@@ -364,9 +368,18 @@ export const memories = pgTable('memories', {
   realmId: uuid('realm_id').references(() => workspaceGroups.id, { onDelete: 'set null' }),
   projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
   taskId: uuid('task_id').references(() => boardTasks.id, { onDelete: 'set null' }),
+  // Kairos Dominion grouping — optional direct anchor. If null, the display
+  // layer resolves via project.dominionId, then via sourceMetadata.repo →
+  // dominionRepos, then "Unassigned".
+  dominionId: uuid('dominion_id').references((): AnyPgColumn => dominions.id, { onDelete: 'set null' }),
   title: varchar('title', { length: 255 }).notNull(),
+  // AI-generated short title (1–6 words). Falls back to `title` when null.
+  aiTitle: varchar('ai_title', { length: 120 }),
   bodyMd: text('body_md').notNull(),
   summary: text('summary'),
+  // AI-generated 5–10 bullet point exec summary. Front-of-house display.
+  // Empty array until generation runs.
+  execSummary: jsonb('exec_summary').default([]).notNull(),
   type: varchar('type', { length: 30 }).default('note').notNull(),
   source: varchar('source', { length: 20 }).default('manual').notNull(),
   sourceMetadata: jsonb('source_metadata').default({}).notNull(),
@@ -382,6 +395,38 @@ export const memories = pgTable('memories', {
   projectIdx: index('memories_project_idx').on(t.projectId),
   taskIdx: index('memories_task_idx').on(t.taskId),
   typeIdx: index('memories_type_idx').on(t.userId, t.type),
+  dominionIdx: index('memories_dominion_idx').on(t.dominionId),
+}))
+
+// Kairos Dominion — user-scoped top-level grouping that sits above Project
+// for the brain visualisation. Projects, repos, and memories all resolve up
+// to a Dominion for cluster colour and auto-edge generation. See VISION.md
+// "Bet 5: Kairos as a personal productivity tool first".
+export const dominions = pgTable('dominions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 100 }).notNull(),
+  // Theme-aligned colour key (e.g. "purple", "sky", "emerald") — drives the
+  // node tint and the legend pill. Free-form so the user isn't boxed in.
+  color: varchar('color', { length: 30 }).default('purple').notNull(),
+  // Optional icon slug (matches the realm icon picker conventions).
+  icon: varchar('icon', { length: 50 }),
+  sortOrder: integer('sort_order').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  userIdx: index('dominions_user_idx').on(t.userId, t.sortOrder),
+}))
+
+// Join table mapping Claude-session-capture repo slugs to a Dominion so a
+// memory whose sourceMetadata.repo matches can auto-resolve its Dominion
+// without manual assignment.
+export const dominionRepos = pgTable('dominion_repos', {
+  dominionId: uuid('dominion_id').notNull().references(() => dominions.id, { onDelete: 'cascade' }),
+  repoSlug: varchar('repo_slug', { length: 120 }).notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.dominionId, t.repoSlug] }),
+  slugIdx: index('dominion_repos_slug_idx').on(t.repoSlug),
 }))
 
 export type User = typeof users.$inferSelect
@@ -412,3 +457,5 @@ export type RealmInvite = typeof realmInvites.$inferSelect
 export type MobileLoginToken = typeof mobileLoginTokens.$inferSelect
 export type MobileSession = typeof mobileSessions.$inferSelect
 export type Memory = typeof memories.$inferSelect
+export type Dominion = typeof dominions.$inferSelect
+export type DominionRepo = typeof dominionRepos.$inferSelect

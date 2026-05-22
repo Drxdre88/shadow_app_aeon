@@ -18,6 +18,11 @@
 //               BRAIN_DRY_RUN=1        (skip the POST, print payload only)
 //               BRAIN_MIN_USER_TURNS   (default 3)
 //               BRAIN_MIN_TOOL_USES    (default 2)
+//               BRAIN_AI_CLEANUP=1     (call `claude --print` to generate
+//                                      aiTitle + execSummary before posting.
+//                                      Off by default. Adds 5–15s latency)
+//               BRAIN_AI_CLEANUP_BIN   (path to claude binary, default: `claude`)
+//               BRAIN_AI_CLEANUP_TIMEOUT_MS (default 60000)
 //
 // Install: see docs/brain/05-session-capture.md
 // ─────────────────────────────────────────────────────────────────────────
@@ -57,6 +62,9 @@ const MIN_TOOL_USES = parseInt(process.env.BRAIN_MIN_TOOL_USES ?? '2', 10)
 const BASE_URL = (process.env.AEON_BASE_URL || 'http://localhost:3000').replace(/\/+$/, '')
 const API_KEY = process.env.AEON_API_KEY
 const DEFAULT_REALM_ID = process.env.BRAIN_DEFAULT_REALM_ID || null
+const AI_CLEANUP = process.env.BRAIN_AI_CLEANUP === '1'
+const AI_CLEANUP_BIN = process.env.BRAIN_AI_CLEANUP_BIN || 'claude'
+const AI_CLEANUP_TIMEOUT_MS = parseInt(process.env.BRAIN_AI_CLEANUP_TIMEOUT_MS ?? '60000', 10)
 
 const log = (...args) => DEBUG && console.error('[brain-capture]', ...args)
 const warn = (...args) => console.error('[brain-capture]', ...args)
@@ -365,6 +373,86 @@ function buildPayload({ payload, messages, repo, branch, remote, commits, filesT
   }
 }
 
+// ─── AI cleanup via `claude --print` ────────────────────────────────────
+// Opt-in (BRAIN_AI_CLEANUP=1). The server stores whatever we send — there is
+// no LLM on the write path. Cleanup happens here, at the call site, by
+// invoking the Claude Code CLI in headless mode.
+//
+// Output contract: a JSON object { aiTitle: string, execSummary: string[] }.
+// On any failure (binary missing, timeout, malformed JSON) we silently fall
+// back to the un-enriched payload — the hook is never allowed to block.
+
+const CLEANUP_PROMPT = `You are summarising a Claude Code session for a personal memory layer.
+
+Output a JSON object with EXACTLY two keys:
+- "aiTitle": a 1-6 word title capturing the main subject (string).
+- "execSummary": 5-10 plain-English bullet points describing what happened, what was decided, what is still open. Array of strings, each max 120 characters.
+
+Reply with ONLY the raw JSON object — no markdown fences, no commentary.
+
+---SESSION BODY---
+`
+
+function extractJson(text) {
+  const trimmed = String(text || '').trim()
+  if (!trimmed) return null
+  try { return JSON.parse(trimmed) } catch { /* try fallbacks */ }
+  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (fence) {
+    try { return JSON.parse(fence[1].trim()) } catch { /* try next */ }
+  }
+  const obj = trimmed.match(/\{[\s\S]*\}/)
+  if (obj) {
+    try { return JSON.parse(obj[0]) } catch { /* give up */ }
+  }
+  return null
+}
+
+function enrichWithAiCleanup(payload) {
+  if (!AI_CLEANUP) return payload
+  const body = payload.bodyMd || ''
+  if (!body) return payload
+
+  // Cap the body we ship to the model so the prompt stays in budget. The
+  // raw body can be 4–8k chars after files/commits/transcript snippets —
+  // truncating to 6k is plenty for a faithful summary.
+  const capped = body.length > 6000 ? body.slice(0, 6000) + '\n…(truncated)…' : body
+  const prompt = CLEANUP_PROMPT + capped + '\n---END SESSION---'
+
+  let raw
+  try {
+    raw = execFileSync(AI_CLEANUP_BIN, ['--print'], {
+      input: prompt,
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+      timeout: AI_CLEANUP_TIMEOUT_MS,
+      maxBuffer: 1024 * 1024,
+    })
+  } catch (err) {
+    warn(`ai-cleanup: ${AI_CLEANUP_BIN} --print failed (${err.code ?? err.message}). Posting un-enriched payload.`)
+    return payload
+  }
+
+  const parsed = extractJson(raw)
+  if (!parsed || typeof parsed.aiTitle !== 'string' || !Array.isArray(parsed.execSummary)) {
+    warn('ai-cleanup: response did not match { aiTitle, execSummary } — posting un-enriched payload.')
+    log('ai-cleanup raw output:', String(raw).slice(0, 400))
+    return payload
+  }
+
+  const aiTitle = parsed.aiTitle.trim().slice(0, 120)
+  const execSummary = parsed.execSummary
+    .filter((b) => typeof b === 'string')
+    .map((b) => b.trim().slice(0, 500))
+    .filter((b) => b.length > 0)
+    .slice(0, 15)
+
+  if (!aiTitle || execSummary.length === 0) return payload
+
+  log(`ai-cleanup: title="${aiTitle}", bullets=${execSummary.length}`)
+  return { ...payload, aiTitle, execSummary }
+}
+
 // ─── HTTP POST ──────────────────────────────────────────────────────────
 
 async function postMemory(payload) {
@@ -448,7 +536,7 @@ async function processSession({ transcriptPath, sessionId, cwd, hookEvent, reaso
   const filesTouched = extractFilesTouched(messages)
   const duration = sessionDurationMin(messages)
 
-  const memoryPayload = buildPayload({
+  const rawPayload = buildPayload({
     payload: {
       session_id: sessionId,
       cwd: resolvedCwd,
@@ -465,6 +553,9 @@ async function processSession({ transcriptPath, sessionId, cwd, hookEvent, reaso
     duration,
     projectInfo,
   })
+
+  // Optional AI cleanup pass — adds aiTitle + execSummary when BRAIN_AI_CLEANUP=1.
+  const memoryPayload = enrichWithAiCleanup(rawPayload)
 
   if (DRY_RUN) {
     console.error(`[brain-capture] DRY RUN ${basename(transcriptPath)} — payload follows:`)

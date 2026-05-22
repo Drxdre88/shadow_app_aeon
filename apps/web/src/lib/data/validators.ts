@@ -326,8 +326,14 @@ export const memoryLinkSchema = z.object({
 
 export const createMemorySchema = z.object({
   title:           z.string().trim().min(1).max(255),
+  // AI-cleaned short title (1–6 words). Optional — caller supplies if it has
+  // already done the cleanup pass (e.g. Claude Code post-voice-dump).
+  aiTitle:         z.string().trim().min(1).max(120).nullable().optional(),
   bodyMd:          z.string().min(1).max(100_000),
   summary:         z.string().trim().max(1000).optional(),
+  // 5–10 cleaned bullet points. Front-of-house in the UI. Optional — caller
+  // supplies after self-prompting on the bodyMd.
+  execSummary:     z.array(z.string().trim().min(1).max(500)).max(15).optional(),
   type:            memoryTypeSchema.default('note'),
   source:          memorySourceSchema.default('manual'),
   sourceMetadata:  z.record(z.string(), z.unknown()).optional(),
@@ -341,8 +347,10 @@ export const createMemorySchema = z.object({
 
 export const updateMemorySchema = z.object({
   title:           z.string().trim().min(1).max(255).optional(),
+  aiTitle:         z.string().trim().min(1).max(120).nullable().optional(),
   bodyMd:          z.string().min(1).max(100_000).optional(),
   summary:         z.string().trim().max(1000).nullable().optional(),
+  execSummary:     z.array(z.string().trim().min(1).max(500)).max(15).optional(),
   type:            memoryTypeSchema.optional(),
   realmId:         z.string().uuid().nullable().optional(),
   projectId:       z.string().uuid().nullable().optional(),

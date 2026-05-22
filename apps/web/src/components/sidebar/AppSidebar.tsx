@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import aeonLogo from '@/assets/aeon.png'
 import { useThemeStore } from '@/stores/themeStore'
 import { useSidebarStore } from '@/stores/sidebarStore'
@@ -20,9 +21,11 @@ import {
   Menu,
   User,
   Eye,
-  Brain,
 } from 'lucide-react'
 import { RealmList } from '@/components/sidebar/RealmList'
+import { KairosSidebarSection } from '@/components/sidebar/KairosSidebarSection'
+import { SidebarCreateActions } from '@/components/sidebar/SidebarCreateActions'
+import { KairosSidebarContent } from '@/components/sidebar/KairosSidebarContent'
 
 interface AppSidebarProps {
   user: { name?: string | null; email?: string | null; image?: string | null; role: string }
@@ -36,9 +39,9 @@ interface AppSidebarProps {
     projectCount: number
     memberCount: number
   }>
-  onCreateProject: () => void
-  onCreateWorkspace: () => void
-  onOpenSettings: (realm: { id: string; name: string; color?: string; icon?: string | null; isOwner: boolean; isPersonal: boolean }) => void
+  onCreateProject?: () => void
+  onCreateWorkspace?: () => void
+  onOpenSettings?: (realm: { id: string; name: string; color?: string; icon?: string | null; isOwner: boolean; isPersonal: boolean }) => void
   onSignOut: () => void
 }
 
@@ -52,6 +55,8 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const colors = useThemeStore((s) => s.colors)
   const { collapsed, activeRealmId, toggleCollapsed, setActiveRealm, maybeAutoCollapseForViewport } = useSidebarStore()
+  const pathname = usePathname()
+  const onKairos = pathname?.startsWith('/kairos') ?? false
 
   useEffect(() => {
     maybeAutoCollapseForViewport()
@@ -75,26 +80,35 @@ export function AppSidebar({
         collapsed={collapsed}
         glowColor={glowColor}
         onToggle={toggleCollapsed}
+        onKairos={onKairos}
       />
 
       <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-2 scrollbar-none">
-        <RealmList
-          realms={realms}
-          activeRealmId={activeRealmId}
-          collapsed={collapsed}
-          onSelect={setActiveRealm}
-          onOpenSettings={onOpenSettings}
-        />
+        {onKairos ? (
+          <KairosSidebarContent collapsed={collapsed} />
+        ) : (
+          <RealmList
+            realms={realms}
+            activeRealmId={activeRealmId}
+            collapsed={collapsed}
+            onSelect={setActiveRealm}
+            onOpenSettings={onOpenSettings ?? (() => {})}
+          />
+        )}
       </nav>
 
-      <div className="mx-3 h-px" style={{ background: 'linear-gradient(90deg, transparent, var(--primary), transparent)', opacity: 0.2 }} />
+      <KairosSidebarSection collapsed={collapsed} />
 
-      <ActionButtons
-        collapsed={collapsed}
-        glowColor={glowColor}
-        onCreateProject={onCreateProject}
-        onCreateWorkspace={onCreateWorkspace}
-      />
+      {onCreateProject && onCreateWorkspace ? (
+        <ActionButtons
+          collapsed={collapsed}
+          glowColor={glowColor}
+          onCreateProject={onCreateProject}
+          onCreateWorkspace={onCreateWorkspace}
+        />
+      ) : (
+        <SidebarCreateActions collapsed={collapsed} />
+      )}
 
       <BottomSection
         user={user}
@@ -109,10 +123,12 @@ function Header({
   collapsed,
   glowColor,
   onToggle,
+  onKairos,
 }: {
   collapsed: boolean
   glowColor: string
   onToggle: () => void
+  onKairos: boolean
 }) {
   return (
     <div className="shrink-0 flex flex-col">
@@ -130,10 +146,27 @@ function Header({
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -8 }}
               transition={{ duration: 0.2 }}
-              className="text-xl font-bold tracking-[0.35em]"
-              style={{ color: 'var(--primary)', textShadow: `0 0 20px ${glowColor}, 0 0 40px ${glowColor}` }}
+              className="text-xl font-bold tracking-[0.35em] flex items-baseline gap-1"
+              style={{ color: 'var(--primary)' }}
             >
-              AEON
+              <span style={{ textShadow: `0 0 20px ${glowColor}, 0 0 40px ${glowColor}` }}>AEON</span>
+              {onKairos && (
+                <>
+                  <span style={{ opacity: 0.5 }}>:</span>
+                  <motion.span
+                    animate={{
+                      textShadow: [
+                        `0 0 8px ${glowColor}, 0 0 16px ${glowColor}`,
+                        `0 0 20px ${glowColor}, 0 0 36px ${glowColor}, 0 0 56px ${glowColor}`,
+                        `0 0 8px ${glowColor}, 0 0 16px ${glowColor}`,
+                      ],
+                    }}
+                    transition={{ duration: 3.4, repeat: Infinity, ease: 'easeInOut' }}
+                  >
+                    KAIROS
+                  </motion.span>
+                </>
+              )}
             </motion.span>
           )}
         </AnimatePresence>
@@ -289,7 +322,6 @@ function BottomSection({
     <div className="shrink-0">
       <div className="mx-2 h-px bg-white/[0.06]" />
       <div className={cn('flex items-center justify-center gap-1 px-2 py-2', collapsed && 'flex-col')} style={{ color: 'var(--primary)' }}>
-        <BrainButton />
         <BetaFeaturesButton />
         <HelpButton />
         <StatsButton />
@@ -340,20 +372,6 @@ function BottomSection({
         </motion.button>
       </div>
     </div>
-  )
-}
-
-function BrainButton() {
-  return (
-    <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
-      <Link
-        href="/brain"
-        title="Cortex — your memory graph"
-        className="block p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200 text-current"
-      >
-        <Brain className="w-4 h-4" />
-      </Link>
-    </motion.div>
   )
 }
 

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
   createMemorySchema,
+  updateMemorySchema,
   searchMemoriesSchema,
   addLinkSchema,
   getNeighboursSchema,
@@ -8,6 +9,7 @@ import {
 } from '@/lib/data/validators'
 import {
   createMemory as _createMemory,
+  updateMemory as _updateMemory,
   searchMemoriesFts as _searchMemoriesFts,
   addLink as _addLink,
   findMemoryById,
@@ -60,11 +62,15 @@ async function verifyAnchors(
 export const registerMemoryTools: RegisterFn = (server) => {
   server.tool(
     'create_memory',
-    'Create a memory in the user-scoped brain. Memories can optionally anchor to a realm, project, or task, and link to other entities with typed edges.',
+    'Create a memory in the user-scoped brain. Memories can optionally anchor to a realm, project, or task, and link to other entities with typed edges. ' +
+      'When capturing a voice dump or session transcript, the caller should pre-clean the content: pass the cleaned 1–6 word title via `aiTitle` and a 5–10 bullet ' +
+      'point exec summary via `execSummary`. The Aeon server does no LLM work — all summarisation happens at the call site.',
     {
-      title: z.string().min(1).max(255).describe('Short title for the memory'),
+      title: z.string().min(1).max(255).describe('Short title for the memory (raw / user-supplied)'),
+      aiTitle: z.string().min(1).max(120).nullable().optional().describe('AI-cleaned 1–6 word title. Display layer falls back to `title` when null'),
       bodyMd: z.string().min(1).max(100_000).describe('Markdown body — the full thought, note, or summary'),
       summary: z.string().max(1000).optional().describe('One-line compression used by context packing'),
+      execSummary: z.array(z.string().min(1).max(500)).max(15).optional().describe('5–10 cleaned bullet points. Front-of-house in the UI side panel'),
       type: z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection']).default('note').optional(),
       source: z.enum(['manual', 'claude', 'voice', 'hook', 'import']).default('claude').optional(),
       sourceMetadata: z.record(z.string(), z.unknown()).optional().describe('Provenance — e.g. {repo, branch, sessionId, filesTouched, commits}'),
@@ -89,9 +95,50 @@ export const registerMemoryTools: RegisterFn = (server) => {
       return ok({
         id: memory.id,
         title: memory.title,
+        aiTitle: memory.aiTitle,
         type: memory.type,
         source: memory.source,
+        execSummaryLength: Array.isArray(memory.execSummary) ? memory.execSummary.length : 0,
         createdAt: memory.createdAt,
+      })
+    }
+  )
+
+  server.tool(
+    'update_memory',
+    'Update an existing memory. Most commonly used to backfill or refresh AI-generated fields (aiTitle, execSummary) after re-reading the body. ' +
+      'Also handles re-tagging, re-anchoring (realm/project/task), pinning, and archiving. Pass only the fields you want to change.',
+    {
+      memoryId: z.string().uuid().describe('The memory UUID to update'),
+      title: z.string().min(1).max(255).optional(),
+      aiTitle: z.string().min(1).max(120).nullable().optional().describe('AI-cleaned 1–6 word title. Pass null to clear'),
+      bodyMd: z.string().min(1).max(100_000).optional(),
+      summary: z.string().max(1000).nullable().optional(),
+      execSummary: z.array(z.string().min(1).max(500)).max(15).optional().describe('Replace the bullet list. Pass [] to clear'),
+      type: z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection']).optional(),
+      realmId: z.string().uuid().nullable().optional(),
+      projectId: z.string().uuid().nullable().optional(),
+      taskId: z.string().uuid().nullable().optional(),
+      tags: z.array(z.string().min(1).max(50)).max(50).optional(),
+      pinned: z.boolean().optional(),
+      archivedAt: z.string().datetime().nullable().optional(),
+    },
+    async ({ memoryId, ...rest }, extra) => {
+      const uid = getUserId(extra)
+      const parsed = updateMemorySchema.safeParse(rest)
+      if (!parsed.success) return fail(parsed.error.issues[0].message)
+
+      const anchorErr = await verifyAnchors(uid, parsed.data)
+      if (anchorErr) return fail(anchorErr)
+
+      const memory = await _updateMemory(memoryId, uid, parsed.data)
+      if (!memory) return notFound('Memory')
+      return ok({
+        id: memory.id,
+        title: memory.title,
+        aiTitle: memory.aiTitle,
+        execSummaryLength: Array.isArray(memory.execSummary) ? memory.execSummary.length : 0,
+        updatedAt: memory.updatedAt,
       })
     }
   )
