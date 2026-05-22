@@ -14,6 +14,8 @@ import {
   addDominionRepo as _addDominionRepo,
   removeDominionRepo as _removeDominionRepo,
 } from '@/lib/data/dominions'
+import { updateProject as _updateProject } from '@/lib/data/projects'
+import { verifyProjectAccess } from '@/lib/data/projects'
 import type { RegisterFn } from './types'
 import { getUserId, ok, notFound, fail } from './types'
 
@@ -146,6 +148,53 @@ export const registerDominionTools: RegisterFn = (server) => {
       const removed = await _removeDominionRepo(dominionId, uid, repoSlug)
       if (!removed) return notFound('Repo assignment')
       return ok({ removed: true })
+    }
+  )
+
+  server.tool(
+    'assign_project_dominion',
+    'Assign (or clear) a Dominion on a single project. Pass dominionId=null to clear. The project must be owned/accessible by the caller.',
+    {
+      projectId:  z.string().uuid().describe('Project UUID'),
+      dominionId: z.string().uuid().nullable().describe('Dominion UUID, or null to clear'),
+    },
+    async ({ projectId, dominionId }, extra) => {
+      const uid = getUserId(extra)
+      const access = await verifyProjectAccess(projectId, uid)
+      if (!access) return notFound('Project')
+      if (dominionId !== null) {
+        const dom = await findDominionById(dominionId, uid)
+        if (!dom) return notFound('Dominion')
+      }
+      const updated = await _updateProject(projectId, uid, { dominionId })
+      if (!updated) return notFound('Project')
+      return ok({ projectId, dominionId, name: updated.name })
+    }
+  )
+
+  server.tool(
+    'bulk_assign_projects_to_dominion',
+    'Set the same Dominion on many projects in one call — built for voice prompts like "put all my coding projects in Engineering". Pass dominionId=null to clear the assignment on the listed projects. Inaccessible projects are skipped (reported in `skipped`).',
+    {
+      projectIds: z.array(z.string().uuid()).min(1).max(200).describe('List of project UUIDs'),
+      dominionId: z.string().uuid().nullable().describe('Dominion UUID, or null to clear'),
+    },
+    async ({ projectIds, dominionId }, extra) => {
+      const uid = getUserId(extra)
+      if (dominionId !== null) {
+        const dom = await findDominionById(dominionId, uid)
+        if (!dom) return notFound('Dominion')
+      }
+      const updated: string[] = []
+      const skipped: { id: string; reason: string }[] = []
+      for (const id of projectIds) {
+        const access = await verifyProjectAccess(id, uid)
+        if (!access) { skipped.push({ id, reason: 'not accessible' }); continue }
+        const row = await _updateProject(id, uid, { dominionId })
+        if (row) updated.push(id)
+        else skipped.push({ id, reason: 'update failed' })
+      }
+      return ok({ dominionId, updatedCount: updated.length, updated, skipped })
     }
   )
 }

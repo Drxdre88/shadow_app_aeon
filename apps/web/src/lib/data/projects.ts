@@ -296,6 +296,7 @@ export async function updateProject(projectId: string, userId: string, data: Upd
   if (data.timeScale !== undefined) updates.timeScale = data.timeScale
   if (data.planetImage !== undefined) updates.planetImage = data.planetImage
   if (data.settings !== undefined) updates.settings = data.settings
+  if (data.dominionId !== undefined) updates.dominionId = data.dominionId
 
   const [project] = await db
     .update(projects)

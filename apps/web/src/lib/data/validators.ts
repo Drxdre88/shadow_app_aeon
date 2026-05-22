@@ -34,6 +34,7 @@ export const updateProjectSchema = z.object({
   timeScale: z.enum(['day', 'week', 'month']).optional(),
   planetImage: z.string().max(255).nullable().optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
+  dominionId: z.string().uuid().nullable().optional(),
 })
 
 export const createTaskSchema = z.object({
