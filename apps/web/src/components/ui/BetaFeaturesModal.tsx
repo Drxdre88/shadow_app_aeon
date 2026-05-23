@@ -183,7 +183,7 @@ export function BetaFeaturesModal({ isOpen, onClose }: Props) {
 
   return createPortal(
     <div
-      className="fixed inset-0 bg-black/80 backdrop-blur-xl flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/80 backdrop-blur-xl flex items-center justify-center z-[200]"
       onClick={onClose}
     >
       <motion.div

@@ -153,7 +153,7 @@ export function ChangelogModal({ isOpen, onClose }: ChangelogModalProps) {
 
   return createPortal(
     <div
-      className="fixed inset-0 bg-black/75 backdrop-blur-lg flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/75 backdrop-blur-lg flex items-center justify-center z-[200]"
       onClick={onClose}
     >
       <motion.div
@@ -161,7 +161,7 @@ export function ChangelogModal({ isOpen, onClose }: ChangelogModalProps) {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 320, damping: 28, mass: 0.85 }}
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-3xl h-[85vh] mx-2 sm:mx-0 rounded-2xl border flex flex-col overflow-hidden"
+        className="relative w-full max-w-4xl h-[85vh] mx-2 sm:mx-0 rounded-2xl border flex flex-col overflow-hidden"
         style={{
           background: `linear-gradient(160deg, ${colors.background}f8, ${colors.background}e8, ${colors.background})`,
           borderColor: 'rgba(255,255,255,0.12)',
