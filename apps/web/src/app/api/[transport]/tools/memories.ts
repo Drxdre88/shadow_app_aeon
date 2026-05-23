@@ -16,6 +16,7 @@ import {
   getNeighbours as _getNeighbours,
   prepareContext as _prepareContext,
   targetMemoryExists,
+  listMemoriesNeedingSummary as _listMemoriesNeedingSummary,
 } from '@/lib/data/memories'
 import { verifyProjectAccess } from '@/lib/data/projects'
 import { db } from '@/lib/db'
@@ -256,6 +257,48 @@ export const registerMemoryTools: RegisterFn = (server) => {
 
       const result = await _prepareContext(uid, parsed.data)
       return ok(result)
+    }
+  )
+
+  server.tool(
+    'list_memories_needing_summary',
+    'Return memories with an empty execSummary (and/or null aiTitle) so the caller can backfill them. ' +
+      'Aeon does no LLM work — fetch a batch, clean each body into a 1–6 word `aiTitle` and 5–10 bullet `execSummary`, ' +
+      'then call `update_memory` for each. Loop until this returns an empty array. Defaults to oldest-first so the gaps ' +
+      'closest to the schema cutover get filled first.',
+    {
+      limit: z.number().int().min(1).max(50).default(20).optional().describe('Batch size (default 20)'),
+      offset: z.number().int().min(0).default(0).optional().describe('Pagination offset'),
+      realmId: z.string().uuid().optional().describe('Scope to a single realm'),
+      projectId: z.string().uuid().optional().describe('Scope to a single project'),
+      type: z.union([
+        z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection']),
+        z.array(z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection'])),
+      ]).optional(),
+      missing: z.enum(['execSummary', 'aiTitle', 'either']).default('execSummary').optional()
+        .describe('Which field to look for. Default: execSummary. Use "either" to catch both gaps in one pass'),
+      oldestFirst: z.boolean().default(true).optional().describe('Oldest first for chronological backfill (default true)'),
+    },
+    async (args, extra) => {
+      const uid = getUserId(extra)
+      if (args.realmId) {
+        const anchorErr = await verifyAnchors(uid, { realmId: args.realmId })
+        if (anchorErr) return fail(anchorErr)
+      }
+      if (args.projectId) {
+        const anchorErr = await verifyAnchors(uid, { projectId: args.projectId })
+        if (anchorErr) return fail(anchorErr)
+      }
+      const rows = await _listMemoriesNeedingSummary(uid, {
+        limit: args.limit ?? 20,
+        offset: args.offset ?? 0,
+        realmId: args.realmId,
+        projectId: args.projectId,
+        type: args.type,
+        missing: args.missing ?? 'execSummary',
+        oldestFirst: args.oldestFirst ?? true,
+      })
+      return ok({ count: rows.length, memories: rows })
     }
   )
 

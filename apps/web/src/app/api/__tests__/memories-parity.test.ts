@@ -38,6 +38,7 @@ const REST_ROUTE_FILES = [
   '[id]/links/[linkIndex]/route.ts',
   '[id]/neighbours/route.ts',
   '[id]/export/route.ts',
+  'needs-summary/route.ts',
 ]
 
 function readSource(p: string): string {
@@ -60,7 +61,7 @@ describe('Memory MCP <-> REST parity', () => {
     .join('\n')
 
   describe('MCP tool surface', () => {
-    it('exposes exactly the six expected memory operations', () => {
+    it('exposes exactly the seven expected memory operations', () => {
       expect(new Set(toolNames)).toEqual(new Set([
         'create_memory',
         'update_memory',
@@ -68,6 +69,7 @@ describe('Memory MCP <-> REST parity', () => {
         'link_memory',
         'get_memory_with_neighbours',
         'prepare_context',
+        'list_memories_needing_summary',
       ]))
     })
   })
@@ -82,6 +84,7 @@ describe('Memory MCP <-> REST parity', () => {
       { path: '[id]/links/[linkIndex]/route.ts',   methods: ['DELETE'] },
       { path: '[id]/neighbours/route.ts',          methods: ['GET'] },
       { path: '[id]/export/route.ts',              methods: ['GET'] },
+      { path: 'needs-summary/route.ts',            methods: ['GET'] },
     ]
 
     it.each(expectedRoutes)('has route file + methods: $path', ({ path: routePath, methods }) => {
@@ -133,6 +136,7 @@ describe('Memory MCP <-> REST parity', () => {
       'findMemoryById',
       'getNeighbours',
       'prepareContext',
+      'listMemoriesNeedingSummary',
     ]
 
     it.each(sharedFns)('MCP imports and uses: %s', (fn) => {

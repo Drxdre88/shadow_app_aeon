@@ -81,6 +81,56 @@ export async function listMemories(userId: string, opts: ListOpts = {}) {
     .offset(opts.offset ?? 0)
 }
 
+type NeedsSummaryOpts = {
+  limit?: number
+  offset?: number
+  realmId?: string
+  projectId?: string
+  type?: string | string[]
+  missing?: 'execSummary' | 'aiTitle' | 'either'
+  oldestFirst?: boolean
+}
+
+export async function listMemoriesNeedingSummary(userId: string, opts: NeedsSummaryOpts = {}) {
+  const conditions = [
+    eq(memories.userId, userId),
+    sql`${memories.archivedAt} IS NULL`,
+  ]
+  const missing = opts.missing ?? 'execSummary'
+  if (missing === 'execSummary') {
+    conditions.push(sql`jsonb_array_length(${memories.execSummary}) = 0`)
+  } else if (missing === 'aiTitle') {
+    conditions.push(sql`${memories.aiTitle} IS NULL`)
+  } else {
+    conditions.push(sql`(jsonb_array_length(${memories.execSummary}) = 0 OR ${memories.aiTitle} IS NULL)`)
+  }
+  if (opts.realmId)   conditions.push(eq(memories.realmId, opts.realmId))
+  if (opts.projectId) conditions.push(eq(memories.projectId, opts.projectId))
+  if (opts.type) {
+    const types = Array.isArray(opts.type) ? opts.type : [opts.type]
+    conditions.push(sql`${memories.type} = ANY(${types})`)
+  }
+
+  const order = opts.oldestFirst ? memories.createdAt : desc(memories.createdAt)
+  return db
+    .select({
+      id: memories.id,
+      title: memories.title,
+      aiTitle: memories.aiTitle,
+      bodyMd: memories.bodyMd,
+      type: memories.type,
+      source: memories.source,
+      createdAt: memories.createdAt,
+      hasExecSummary: sql<boolean>`jsonb_array_length(${memories.execSummary}) > 0`,
+      hasAiTitle: sql<boolean>`${memories.aiTitle} IS NOT NULL`,
+    })
+    .from(memories)
+    .where(and(...conditions))
+    .orderBy(order)
+    .limit(opts.limit ?? 20)
+    .offset(opts.offset ?? 0)
+}
+
 type GraphOpts = { realmId?: string; includeArchived?: boolean }
 
 export type GraphNode = {
