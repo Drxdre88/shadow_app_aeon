@@ -51,8 +51,9 @@ export function EdgeLayer2D({ links, nodeById }: Props) {
 
     for (let i = 0; i < links.length; i++) {
       const link = links[i]
-      const a = nodeById.get(link.source)
-      const b = nodeById.get(link.target)
+      // d3-force mutates source/target from string ID → node object after the first tick.
+      const a = typeof link.source === 'string' ? nodeById.get(link.source) : (link.source as SimNode2D)
+      const b = typeof link.target === 'string' ? nodeById.get(link.target) : (link.target as SimNode2D)
       if (!a || !b) continue
 
       const auto = isAutoEdge(link.type)
