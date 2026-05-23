@@ -13,6 +13,7 @@ import { SettingsButton } from '@/components/ui/SettingsModal'
 import { HelpButton } from '@/components/ui/HelpModal'
 import { StatsButton } from '@/components/ui/StatsModal'
 import { BetaFeaturesButton } from '@/components/ui/BetaFeaturesModal'
+import { ChangelogButton } from '@/components/ui/ChangelogModal'
 import {
   Plus,
   Orbit,
@@ -322,6 +323,7 @@ function BottomSection({
     <div className="shrink-0">
       <div className="mx-2 h-px bg-white/[0.06]" />
       <div className={cn('flex items-center justify-center gap-1 px-2 py-2', collapsed && 'flex-col')} style={{ color: 'var(--primary)' }}>
+        <ChangelogButton />
         <BetaFeaturesButton />
         <HelpButton />
         <StatsButton />
