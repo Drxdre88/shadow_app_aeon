@@ -265,6 +265,35 @@ export const apiKeys = pgTable('api_keys', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
+export const userAiCredentials = pgTable('user_ai_credentials', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  provider: varchar('provider', { length: 32 }).notNull(),
+  label: varchar('label', { length: 100 }).notNull(),
+  ciphertext: text('ciphertext').notNull(),
+  iv: text('iv').notNull(),
+  authTag: text('auth_tag').notNull(),
+  keyHint: varchar('key_hint', { length: 16 }),
+  lastUsedAt: timestamp('last_used_at', { mode: 'date' }),
+  revokedAt: timestamp('revoked_at', { mode: 'date' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  uniqUserProvider: uniqueIndex('user_ai_creds_user_provider_active')
+    .on(t.userId, t.provider)
+    .where(sql`revoked_at IS NULL`),
+}))
+
+export const userAiPreferences = pgTable('user_ai_preferences', {
+  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  cheapProviderId: varchar('cheap_provider_id', { length: 32 }).default('anthropic').notNull(),
+  cheapModelId: varchar('cheap_model_id', { length: 64 }).default('claude-haiku-4-5-20251001').notNull(),
+  standardProviderId: varchar('standard_provider_id', { length: 32 }).default('anthropic').notNull(),
+  standardModelId: varchar('standard_model_id', { length: 64 }).default('claude-sonnet-4-6').notNull(),
+  heavyProviderId: varchar('heavy_provider_id', { length: 32 }).default('anthropic').notNull(),
+  heavyModelId: varchar('heavy_model_id', { length: 64 }).default('claude-opus-4-7').notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
+
 export const canvasEdges = pgTable('canvas_edges', {
   id: uuid('id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -459,3 +488,5 @@ export type MobileSession = typeof mobileSessions.$inferSelect
 export type Memory = typeof memories.$inferSelect
 export type Dominion = typeof dominions.$inferSelect
 export type DominionRepo = typeof dominionRepos.$inferSelect
+export type UserAiCredential = typeof userAiCredentials.$inferSelect
+export type UserAiPreference = typeof userAiPreferences.$inferSelect
