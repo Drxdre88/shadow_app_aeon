@@ -22,6 +22,7 @@ import {
   Menu,
   User,
   Eye,
+  StickyNote,
 } from 'lucide-react'
 import { RealmList } from '@/components/sidebar/RealmList'
 import { KairosSidebarSection } from '@/components/sidebar/KairosSidebarSection'
@@ -324,6 +325,7 @@ function BottomSection({
       <div className="mx-2 h-px bg-white/[0.06]" />
       <div className={cn('flex items-center justify-center gap-1 px-2 py-2', collapsed && 'flex-col')} style={{ color: 'var(--primary)' }}>
         <ChangelogButton />
+        <NotesButton />
         <BetaFeaturesButton />
         <HelpButton />
         <StatsButton />
@@ -374,6 +376,20 @@ function BottomSection({
         </motion.button>
       </div>
     </div>
+  )
+}
+
+function NotesButton() {
+  return (
+    <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}>
+      <Link
+        href="/notes"
+        title="Notes — your memory bento"
+        className="block p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200 text-current"
+      >
+        <StickyNote className="w-4 h-4" />
+      </Link>
+    </motion.div>
   )
 }
 
