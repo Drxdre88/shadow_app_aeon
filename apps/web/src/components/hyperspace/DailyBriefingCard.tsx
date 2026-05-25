@@ -4,15 +4,38 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Sparkles, RefreshCw, ArrowRight } from 'lucide-react'
 import { motion } from 'framer-motion'
-import { prepareContextForUser } from '@/lib/actions/memories'
+import { getTodaysBriefings, prepareContextForUser } from '@/lib/actions/memories'
 
-type Briefing = {
+// Kairos Phase 1.5 — DailyBriefingCard reads from Briefer-generated
+// advisories (memory.type='advisory', source='cron'). One advisory per
+// Dominion per day. Falls back to the legacy prepare_context bundle when
+// no advisories exist yet (e.g. cron hasn't run, no BYOK credential set).
+
+type Advisory = {
+  id: string
+  title: string
+  bodyMd: string
+  createdAt: Date | string
+  dominionId: string | null
+  dominionName: string | null
+  dominionColor: string | null
+}
+
+type FallbackBriefing = {
+  kind: 'fallback'
   contextMd: string
   tokensUsed: number
   sources: { id: string; title: string; score: number; section: string }[]
 }
 
-const CACHE_KEY = (day: string) => `aeon.brain.briefing.${day}`
+type AdvisoryBriefing = {
+  kind: 'advisories'
+  advisories: Advisory[]
+}
+
+type Briefing = AdvisoryBriefing | FallbackBriefing
+
+const CACHE_KEY = (day: string) => `aeon.kairos.briefing.${day}`
 
 function todayKey(): string {
   return new Date().toISOString().slice(0, 10)
@@ -37,10 +60,19 @@ export function DailyBriefingCard() {
           return
         }
       } catch {
-        // ignore — corrupt cache, refetch.
+        // corrupt cache → refetch
       }
     }
+
     try {
+      const advisories = await getTodaysBriefings()
+      if (advisories.length > 0) {
+        const next: AdvisoryBriefing = { kind: 'advisories', advisories }
+        setBriefing(next)
+        try { localStorage.setItem(CACHE_KEY(day), JSON.stringify(next)) } catch {}
+        return
+      }
+      // Fallback to the legacy context bundle when nothing's been briefed yet.
       const res = await prepareContextForUser({
         query: 'what should I focus on today',
         budgetTokens: 1500,
@@ -48,13 +80,18 @@ export function DailyBriefingCard() {
         hops: 1,
         includePinned: true,
       })
-      // No memories — show empty briefing state and skip caching.
       if (!res.sources.length) {
         setSkipped(true)
         setBriefing(null)
       } else {
-        setBriefing(res)
-        try { localStorage.setItem(CACHE_KEY(day), JSON.stringify(res)) } catch {}
+        const fb: FallbackBriefing = {
+          kind: 'fallback',
+          contextMd: res.contextMd,
+          tokensUsed: res.tokensUsed,
+          sources: res.sources,
+        }
+        setBriefing(fb)
+        try { localStorage.setItem(CACHE_KEY(day), JSON.stringify(fb)) } catch {}
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load briefing')
@@ -63,9 +100,7 @@ export function DailyBriefingCard() {
     }
   }
 
-  useEffect(() => {
-    fetchBriefing()
-  }, [])
+  useEffect(() => { fetchBriefing() }, [])
 
   if (skipped) return null
 
@@ -88,10 +123,13 @@ export function DailyBriefingCard() {
           <div className="flex items-center gap-2">
             <Sparkles className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />
             <span className="text-[10px] uppercase tracking-[0.22em] text-white/55">Daily Briefing</span>
+            {briefing?.kind === 'advisories' && (
+              <span className="text-[10px] text-white/35">· {briefing.advisories.length} Dominion{briefing.advisories.length === 1 ? '' : 's'}</span>
+            )}
           </div>
           <div className="flex items-center gap-2">
-            {briefing && (
-              <span className="text-[10px] text-white/30">{briefing.tokensUsed} tokens</span>
+            {briefing?.kind === 'fallback' && (
+              <span className="text-[10px] text-white/30">{briefing.tokensUsed} tokens · fallback</span>
             )}
             <button
               onClick={() => fetchBriefing(true)}
@@ -108,7 +146,19 @@ export function DailyBriefingCard() {
           <div className="text-sm text-white/40 py-4">Loading briefing…</div>
         ) : error ? (
           <div className="text-sm text-rose-300 py-2">{error}</div>
-        ) : briefing ? (
+        ) : briefing?.kind === 'advisories' ? (
+          <div className="max-h-[420px] overflow-y-auto pr-1 flex flex-col gap-4">
+            {briefing.advisories.map((a) => (
+              <AdvisorySection key={a.id} advisory={a} />
+            ))}
+            <Link
+              href="/kairos"
+              className="mt-1 inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-white/45 hover:text-white/85 transition-colors w-fit"
+            >
+              Open Kairos <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+        ) : briefing?.kind === 'fallback' ? (
           <>
             <BriefingProse markdown={briefing.contextMd} />
             {briefing.sources.length > 0 && (
@@ -133,9 +183,35 @@ export function DailyBriefingCard() {
   )
 }
 
-// Stripped-down markdown render — `prepare_context` produces a controlled
-// shape (#/##/###/lists/citation block). We don't need a full markdown engine
-// here; classify by leading sigil and style accordingly.
+function AdvisorySection({ advisory }: { advisory: Advisory }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-1.5">
+        {advisory.dominionName && (
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded-md uppercase tracking-[0.18em] font-medium"
+            style={{
+              background: `color-mix(in oklab, var(--${advisory.dominionColor ?? 'primary'}, var(--primary)) 18%, transparent)`,
+              color: `color-mix(in oklab, var(--${advisory.dominionColor ?? 'primary'}, var(--primary)) 80%, white)`,
+            }}
+          >
+            {advisory.dominionName}
+          </span>
+        )}
+        <Link
+          href={`/kairos?focus=${advisory.id}`}
+          className="text-[10px] text-white/35 hover:text-white/80 transition-colors"
+        >
+          open →
+        </Link>
+      </div>
+      <BriefingProse markdown={advisory.bodyMd} />
+    </div>
+  )
+}
+
+// Lean markdown renderer — the Briefer produces controlled output (## sections,
+// short paragraphs, occasional lists). No need for a full markdown engine.
 function BriefingProse({ markdown }: { markdown: string }) {
   const lines = markdown.split('\n')
   const out: React.ReactNode[] = []
@@ -157,20 +233,5 @@ function BriefingProse({ markdown }: { markdown: string }) {
     out.push(<p key={key++} className="text-[12px] text-white/75 leading-relaxed">{line}</p>)
   }
 
-  // The trailing "## Sources" block is rendered as chips above — strip it
-  // from the prose stream visually if present.
-  const sourcesIdx = out.findIndex((n) => typeof n === 'object' && n !== null && (n as { props?: { children?: string } }).props?.children === 'Sources')
-  const head = sourcesIdx >= 0 ? out.slice(0, sourcesIdx) : out
-
-  return (
-    <div className="max-h-[320px] overflow-y-auto pr-1 flex flex-col gap-0.5">
-      {head}
-      <Link
-        href="/kairos"
-        className="mt-3 inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-white/45 hover:text-white/85 transition-colors w-fit"
-      >
-        Open Kairos <ArrowRight className="w-3 h-3" />
-      </Link>
-    </div>
-  )
+  return <div className="flex flex-col gap-0.5">{out}</div>
 }

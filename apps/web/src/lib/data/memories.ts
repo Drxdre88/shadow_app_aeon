@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { memories, dominions, dominionRepos, projects } from '@/lib/db/schema'
-import { eq, and, desc, sql, inArray } from 'drizzle-orm'
+import { eq, and, desc, sql, inArray, isNull } from 'drizzle-orm'
 import type {
   CreateMemoryInput,
   UpdateMemoryInput,
@@ -590,6 +590,33 @@ export async function captureMemory(userId: string, input: CaptureMemoryInput): 
     sourceMetadata: metadata,
   })
   return { memory, created: true }
+}
+
+// Kairos Phase 1.5 — list today's Briefer-generated advisories for a user,
+// joined with the Dominion they're scoped to so the dashboard card can
+// render "<Dominion name>" headers without a second query.
+export async function listTodaysAdvisories(userId: string, isoDate?: string) {
+  const date = isoDate ?? new Date().toISOString().slice(0, 10)
+  return db
+    .select({
+      id: memories.id,
+      title: memories.title,
+      bodyMd: memories.bodyMd,
+      createdAt: memories.createdAt,
+      dominionId: memories.dominionId,
+      dominionName: dominions.name,
+      dominionColor: dominions.color,
+    })
+    .from(memories)
+    .leftJoin(dominions, eq(memories.dominionId, dominions.id))
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.type, 'advisory'),
+      eq(memories.source, 'cron'),
+      sql`${memories.sourceMetadata}->>'briefingDate' = ${date}`,
+      isNull(memories.archivedAt),
+    ))
+    .orderBy(desc(memories.createdAt))
 }
 
 export async function updateMemory(memoryId: string, userId: string, patch: UpdateMemoryInput) {

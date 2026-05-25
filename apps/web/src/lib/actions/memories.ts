@@ -32,6 +32,7 @@ import {
   prepareContext as _prepareContext,
   targetMemoryExists,
   getGraphForUser as _getGraphForUser,
+  listTodaysAdvisories as _listTodaysAdvisories,
 } from '@/lib/data/memories'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -191,6 +192,12 @@ export async function prepareContextForUser(input: PrepareContextInput) {
     await verifyAnchors(userId, { realmId: parsed.realmId })
   }
   return _prepareContext(userId, parsed)
+}
+
+// Kairos Phase 1.5 — fetch today's Briefer advisories for the dashboard.
+export async function getTodaysBriefings(isoDate?: string) {
+  const userId = await requireAuth()
+  return _listTodaysAdvisories(userId, isoDate)
 }
 
 // Stub for Phase 5 — broadcast memory events to a user-scoped Pusher channel.
