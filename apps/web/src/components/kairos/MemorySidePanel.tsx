@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Pin, PinOff, Trash2, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react'
-import { getMemory, updateMemory, deleteMemoryById } from '@/lib/actions/memories'
+import { X, Pin, PinOff, Trash2, ExternalLink, ChevronDown, ChevronRight, ArrowRight, ArrowLeft as ArrowLeftIcon, Link as LinkIcon } from 'lucide-react'
+import { getMemory, updateMemory, deleteMemoryById, getMemoryNeighbours } from '@/lib/actions/memories'
 
 type MemoryRow = NonNullable<Awaited<ReturnType<typeof getMemory>>>
+type NeighbourBundle = Awaited<ReturnType<typeof getMemoryNeighbours>>
+type Neighbour = NeighbourBundle['neighbours'][number]
 
 type Props = {
   memoryId: string | null
@@ -18,14 +20,20 @@ export function MemorySidePanel({ memoryId, onClose, onChanged }: Props) {
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [bodyOpen, setBodyOpen] = useState(false)
+  const [neighbours, setNeighbours] = useState<NeighbourBundle['neighbours'] | null>(null)
 
   useEffect(() => {
     if (!memoryId) return
     setLoading(true)
     setBodyOpen(false)
+    setNeighbours(null)
     getMemory(memoryId)
       .then((m) => setData(m))
       .finally(() => setLoading(false))
+    // Neighbours load in the background — failure is non-fatal.
+    getMemoryNeighbours(memoryId, { hops: 1, includeReverse: true, limit: 12 })
+      .then((res) => setNeighbours(res.neighbours))
+      .catch(() => setNeighbours(null))
   }, [memoryId])
 
   const togglePin = async () => {
@@ -88,6 +96,23 @@ export function MemorySidePanel({ memoryId, onClose, onChanged }: Props) {
                   open={bodyOpen}
                   onToggle={() => setBodyOpen((v) => !v)}
                   body={data.bodyMd}
+                />
+
+                <NeighboursPanel
+                  neighbours={neighbours}
+                  onOpen={(id) => {
+                    // Re-seed: simulate switching seed memory by re-fetching.
+                    setData(null)
+                    setLoading(true)
+                    setBodyOpen(false)
+                    setNeighbours(null)
+                    getMemory(id)
+                      .then((m) => setData(m))
+                      .finally(() => setLoading(false))
+                    getMemoryNeighbours(id, { hops: 1, includeReverse: true, limit: 12 })
+                      .then((res) => setNeighbours(res.neighbours))
+                      .catch(() => setNeighbours(null))
+                  }}
                 />
 
                 <div className="text-[10px] text-white/30 pt-2 border-t border-white/[0.04]">
@@ -214,6 +239,68 @@ function BodyToggle({ open, onToggle, body }: { open: boolean; onToggle: () => v
           </motion.pre>
         )}
       </AnimatePresence>
+    </div>
+  )
+}
+
+function NeighboursPanel({
+  neighbours,
+  onOpen,
+}: {
+  neighbours: Neighbour[] | null
+  onOpen: (id: string) => void
+}) {
+  if (!neighbours) return null
+
+  if (neighbours.length === 0) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[10px] uppercase tracking-[0.22em] text-white/40 inline-flex items-center gap-1.5">
+          <LinkIcon className="w-3 h-3" /> Related
+        </span>
+        <div
+          className="px-3 py-2 rounded-lg text-[11px] text-white/35 italic leading-relaxed border border-dashed border-white/[0.05]"
+          style={{ background: 'rgba(255,255,255,0.015)' }}
+        >
+          No linked memories yet. Add a link from MCP or the body to surface neighbours here.
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[10px] uppercase tracking-[0.22em] text-white/40 inline-flex items-center gap-1.5">
+        <LinkIcon className="w-3 h-3" /> Related <span className="text-white/25 normal-case tracking-normal">· {neighbours.length}</span>
+      </span>
+      <ul className="flex flex-col gap-1">
+        {neighbours.map((n) => (
+          <li key={`${n.direction}:${n.id}`}>
+            <button
+              onClick={() => onOpen(n.id)}
+              className="group w-full text-left px-2.5 py-1.5 rounded-lg border border-white/[0.05] bg-white/[0.015] hover:bg-white/[0.05] hover:border-white/[0.10] transition-all"
+            >
+              <div className="flex items-center gap-1.5 text-[10px] text-white/40 mb-0.5">
+                {n.direction === 'outgoing' ? (
+                  <ArrowRight className="w-2.5 h-2.5" />
+                ) : (
+                  <ArrowLeftIcon className="w-2.5 h-2.5" />
+                )}
+                <span className="uppercase tracking-[0.12em]">{n.edgeType ?? 'relates'}</span>
+                <span className="text-white/25 ml-auto">{n.type}</span>
+              </div>
+              <div className="text-[11.5px] text-white/85 leading-snug line-clamp-2 group-hover:text-white">
+                {n.title}
+              </div>
+              {n.summary && (
+                <div className="text-[10.5px] text-white/45 line-clamp-1 mt-0.5">
+                  {n.summary}
+                </div>
+              )}
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

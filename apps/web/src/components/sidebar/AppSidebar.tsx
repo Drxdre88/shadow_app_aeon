@@ -325,17 +325,44 @@ function BottomSection({
   return (
     <div className="shrink-0">
       <div className="mx-2 h-px bg-white/[0.06]" />
-      <div className={cn('flex items-center justify-center gap-1 px-2 py-2', collapsed && 'flex-col')} style={{ color: 'var(--primary)' }}>
-        <ChangelogButton />
-        <NotesButton />
-        <AdvisoryFeed />
-        <LiveSessionsButton />
-        <BetaFeaturesButton />
-        <HelpButton />
-        <StatsButton />
-        <SettingsButton />
-        <UnhideButton collapsed={collapsed} />
-      </div>
+      {collapsed ? (
+        <div className="flex flex-col items-center justify-center gap-1 px-2 py-2" style={{ color: 'var(--primary)' }}>
+          <ChangelogButton />
+          <NotesButton />
+          <AdvisoryFeed />
+          <LiveSessionsButton />
+          <BetaFeaturesButton />
+          <HelpButton />
+          <StatsButton />
+          <SettingsButton />
+          <UnhideButton collapsed={collapsed} />
+        </div>
+      ) : (
+        <div className="px-2 py-2" style={{ color: 'var(--primary)' }}>
+          <div className="flex items-center justify-center gap-1">
+            <ChangelogButton />
+            <NotesButton />
+            <AdvisoryFeed />
+            <LiveSessionsButton />
+            <BetaFeaturesButton />
+          </div>
+          <div
+            className="my-1.5 h-px mx-6"
+            style={{
+              background:
+                'linear-gradient(to right, transparent, color-mix(in oklab, var(--primary) 55%, transparent), transparent)',
+              boxShadow:
+                '0 0 6px color-mix(in oklab, var(--primary) 40%, transparent)',
+            }}
+          />
+          <div className="flex items-center justify-center gap-1">
+            <HelpButton />
+            <StatsButton />
+            <SettingsButton />
+            <UnhideButton collapsed={collapsed} />
+          </div>
+        </div>
+      )}
       <div className="mx-2 h-px bg-white/[0.06]" />
       <div
         className={cn(

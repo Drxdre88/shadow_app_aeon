@@ -592,6 +592,37 @@ export async function captureMemory(userId: string, input: CaptureMemoryInput): 
   return { memory, created: true }
 }
 
+// Notes polish — list memories Kairos auto-captured today (sources other
+// than manual / voice / import). Surfaces what the system has been logging
+// on the operator's behalf in a single horizontal strip on /notes.
+export async function listAutoCapturedToday(userId: string, limit = 30) {
+  const startOfDay = new Date()
+  startOfDay.setHours(0, 0, 0, 0)
+  return db
+    .select({
+      id: memories.id,
+      title: memories.title,
+      aiTitle: memories.aiTitle,
+      summary: memories.summary,
+      type: memories.type,
+      source: memories.source,
+      createdAt: memories.createdAt,
+      dominionId: memories.dominionId,
+      dominionName: dominions.name,
+      dominionColor: dominions.color,
+    })
+    .from(memories)
+    .leftJoin(dominions, eq(memories.dominionId, dominions.id))
+    .where(and(
+      eq(memories.userId, userId),
+      isNull(memories.archivedAt),
+      sql`${memories.createdAt} >= ${startOfDay}`,
+      inArray(memories.source, ['claude', 'cron', 'system', 'webhook', 'hook']),
+    ))
+    .orderBy(desc(memories.createdAt))
+    .limit(Math.min(Math.max(limit, 1), 100))
+}
+
 // Kairos Phase 2 (E22) — list recent advisories across the last N days.
 // Joins with dominions so the feed can render Dominion pills.
 export async function listRecentAdvisories(

@@ -11,6 +11,7 @@ import { BentoGrid } from './BentoGrid'
 import { NoteCard, type MemoryListItem } from './NoteCard'
 import { NotesHeader, type FilterState } from './NotesHeader'
 import { PromoteToCardModal } from './PromoteToCardModal'
+import { TodaysAutoCaptures } from './TodaysAutoCaptures'
 
 const DEFAULT_LIMIT = 100
 
@@ -139,6 +140,8 @@ export function NotesView() {
       </header>
 
       <NotesHeader value={filters} onChange={onFiltersChange} tagSuggestions={tagSuggestions} />
+
+      <TodaysAutoCaptures onOpen={openPanel} />
 
       <main className="flex-1 relative overflow-y-auto">
         {loading ? (

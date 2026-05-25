@@ -34,6 +34,7 @@ import {
   getGraphForUser as _getGraphForUser,
   listTodaysAdvisories as _listTodaysAdvisories,
   listRecentAdvisories as _listRecentAdvisories,
+  listAutoCapturedToday as _listAutoCapturedToday,
   archiveMemory as _archiveMemory,
 } from '@/lib/data/memories'
 
@@ -203,6 +204,11 @@ export async function getTodaysBriefings(isoDate?: string) {
 }
 
 // Kairos Phase 2 (E22) — recent advisories for the sidebar feed.
+export async function getTodaysAutoCaptures(opts: { limit?: number } = {}) {
+  const userId = await requireAuth()
+  return _listAutoCapturedToday(userId, opts.limit ?? 30)
+}
+
 export async function getRecentAdvisories(opts: { days?: number; limit?: number } = {}) {
   const userId = await requireAuth()
   return _listRecentAdvisories(userId, opts)
