@@ -15,6 +15,7 @@ import { StatsButton } from '@/components/ui/StatsModal'
 import { BetaFeaturesButton } from '@/components/ui/BetaFeaturesModal'
 import { ChangelogButton } from '@/components/ui/ChangelogModal'
 import { AdvisoryFeed } from '@/components/kairos/AdvisoryFeed'
+import { LiveSessionsButton } from '@/components/kairos/LiveSessionsButton'
 import {
   Plus,
   Orbit,
@@ -328,6 +329,7 @@ function BottomSection({
         <ChangelogButton />
         <NotesButton />
         <AdvisoryFeed />
+        <LiveSessionsButton />
         <BetaFeaturesButton />
         <HelpButton />
         <StatsButton />

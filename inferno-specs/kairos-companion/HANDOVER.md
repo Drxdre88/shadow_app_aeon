@@ -1,7 +1,7 @@
 
 # Kairos Companion — Session Handover
 
-**Last updated:** 24/05/2026 (session 2 close)
+**Last updated:** 25/05/2026 (session 3 close — spawn primitive)
 **Active branch:** `feature/kairos-companion`
 **Working state:** clean, typecheck + full test suite (1576/1576) green
 **Purpose:** Pick up scoping or implementation without re-reading the originating conversations.
@@ -55,6 +55,17 @@ Lose any of these and it becomes a different product.
 ### Phase 2.5 (`e6ac0ec`)
 - **E22 — Advisory feed in sidebar** — `components/kairos/AdvisoryFeed.tsx`. Sparkle icon in `AppSidebar` BottomSection with unread badge. Popover lists last 3 days of advisories with Dominion pill + relative time + State-section preview. Acknowledge soft-archives. Open deep-links to `/kairos?focus=`. Unread tracked client-side via `localStorage`. `listRecentAdvisories` + `archiveMemory` data fns; `getRecentAdvisories` + `archiveMemoryById` actions.
 
+### Phase 3 — spawn primitive (this session, D14–D18)
+- **D15 — schema** — migration `0019_agent_sessions.sql`. Two tables: `agent_sessions` (user/realm/project/dominion-anchored, engine='claude'|'codex', goal, prompt, worker_host, worker_pid, status, exit_code, spawned_at/started_at/ended_at, cost_usd, memory_id, metadata) and `session_events` (session_id, monotonic seq UNIQUE, kind='status'|'tool_use'|'tool_result'|'message'|'stop'|'error', tool_name, payload). Indexes: user_status, dominion, live (partial), session_seq UNIQUE, created (for archival cron).
+- **D15 — data layer** — `lib/data/sessions.ts`. `createAgentSession`, `findAgentSessionById`, `listAgentSessions` (with status/dominion/project/liveOnly filters), `updateAgentSessionStatus`, `attachSessionMemory`, `recordSessionEvent` (onConflictDoNothing on seq), `listSessionEvents` (afterSeq tail), `getNextEventSeq`. Validators: `spawnSessionSchema`, `updateSessionStatusSchema`, `recordSessionEventSchema`, `listSessionsSchema`.
+- **D16 — server actions** — `lib/actions/sessions.ts`. `spawnSessionAction` creates row → calls `dispatchSpawn` → flips to running on success or records dispatch-failed event. `getSession`, `listSessions`, `updateSessionStatus`, `recordSessionEvent`, `getNextEventSeq`, `listSessionEvents`, `killSession`.
+- **D16 — REST surface** — `/api/v1/sessions/` route (GET list, POST spawn), `/api/v1/sessions/[id]` (GET, PATCH), `/api/v1/sessions/[id]/events` (GET, POST — seq auto-assigned if omitted), `/api/v1/sessions/[id]/kill` (POST). Bearer auth via existing `authenticateRequest`. Worker host PATCHes status; hooks POST events.
+- **D16 — MCP tools** — `tools/sessions.ts` with `spawn_session`, `list_sessions`, `get_session`, `kill_session`, `list_session_events`. Registered in `[transport]/route.ts`.
+- **D14 — worker host** — `apps/kairos-worker/` lean Node service (no framework). `POST /spawn` shells `claude -p <prompt>` (or `codex exec`) with `KAIROS_SESSION_ID`/`KAIROS_CALLBACK_URL`/`KAIROS_CALLBACK_TOKEN` injected, captures pid, pipes stdout/stderr into POST `/events`, PATCHes status to running/succeeded/failed/killed on exit. `POST /kill/:id` SIGTERMs. `GET /health` returns live registry. Bearer auth via `KAIROS_WORKER_SECRET`. `lib/kairos/spawn.ts` is the Aeon-side dispatcher; when `KAIROS_WORKER_URL` is unset the row is created but undispatched (UI/dev unblocked).
+- **D17 — Claude Code hook** — `apps/web/scripts/kairos-session-hook.mjs`. PostToolUse + Stop + (optional) PreToolUse/UserPromptSubmit/SubagentStop. Reads `KAIROS_SESSION_ID` etc from env (no-op if absent — safe to install globally). Reads JSON payload from stdin, maps hook name → event kind, POSTs to `/api/v1/sessions/{id}/events`. 5s timeout, always exits 0. Install doc: `apps/web/scripts/kairos-hook-install.md`.
+- **D18 — UI** — `components/kairos/LiveSessionsButton.tsx`. Bot icon in sidebar BottomSection (next to AdvisoryFeed). Pulsing badge with live count, polls every 4s. Popover lists live sessions with engine pill, status dot, goal preview, kill button. Click a row → slide-in `SessionTranscriptDrawer` (right-side, 480px) with header (engine·status·goal + kill·close) + scrollable mono transcript polling events every 2s with colour-coded kinds (error rose, stop emerald, tool_use sky, message white).
+- **Note:** 3D comet-trail rendering inside `Kairos3D` was scoped out for v1 — popover + drawer deliver the operator surface (see + tail + kill). Promoting sessions to first-class graph nodes can come in a follow-up if the orb metaphor matters.
+
 ---
 
 ## How to make the cron actually fire in production
@@ -64,6 +75,25 @@ Two things still needed in Vercel before the schedule runs:
 2. Deploy. Vercel Cron picks up the entries in `vercel.json` automatically.
 
 The cron endpoints (`/api/cron/briefer` and `/api/cron/project-snapshot`) accept the request without auth when `NODE_ENV !== 'production'` so they're callable via curl in dev.
+
+## How to run the spawn primitive locally
+
+Two side-by-side processes — Aeon web on :3000, kairos-worker on :8787.
+
+1. `npm run db:push --workspace=apps/web` — apply `0019_agent_sessions.sql` to dev DB (interactive, confirm create tables).
+2. Aeon `.env.local` additions:
+   ```
+   KAIROS_WORKER_URL=http://localhost:8787
+   KAIROS_WORKER_SECRET=<random>
+   AEON_API_KEY=<existing master key>
+   NEXT_PUBLIC_APP_URL=http://localhost:3000
+   ```
+3. Worker terminal:
+   ```bash
+   KAIROS_WORKER_SECRET=<same> npm run start --workspace=apps/kairos-worker
+   ```
+4. Install `apps/web/scripts/kairos-session-hook.mjs` in `~/.claude/settings.json` (see hook-install.md).
+5. Spawn a session via the MCP tool `spawn_session` or POST `/api/v1/sessions`. The Bot icon in the sidebar pulses; clicking opens the transcript drawer.
 
 ---
 
@@ -91,6 +121,7 @@ The cron endpoints (`/api/cron/briefer` and `/api/cron/project-snapshot`) accept
 | Project create/update | ✅ (A4) |
 | Nightly per-project snapshot | ✅ (A5 — 23:00 cron) |
 | Morning Briefer advisories | ✅ (E20 — 7am cron) |
+| **Spawned session events (Kairos-dispatched)** | **✅ (D14–D18 — worker + hook + UI)** |
 | Inbound channels (Slack, Teams, GitHub webhook) | ✖ (deferred; A2 endpoint exists, adapters not built) |
 | Voice | ✖ (deferred) |
 
@@ -100,9 +131,9 @@ The cron endpoints (`/api/cron/briefer` and `/api/cron/project-snapshot`) accept
 
 | Group | Items | Estimate | Notes |
 |---|---|---|---|
-| **Spawn primitive** | D14–D18 | ~3 days | Kairos grows hands. Worker host + agent_sessions schema + spawn server action + Claude Code hook config + live session orbs in graph. Biggest functional jump. |
+| **Spawn primitive** | D14–D18 | done | Worker, schema, action, hook, UI shipped this session. 3D orb rendering inside Kairos3D deferred. |
 | **Extra providers** | B7 (OpenRouter), B8 (Gemini), B9 (STAF) | ~½ day each | Makes the router actually route. Worth doing once you have real spend signal. |
-| **Codex integration** | F23–F25 | ~1.5 days | F23 + F24 independent of D14; F25 (worker engine path) depends on D14. |
+| **Codex integration** | F23–F25 | ~1.5 days | F23 + F24 independent of D14; F25 (worker engine path) is most of the way there — spawner already branches on `engine='codex'` with `codex exec <prompt>`; just needs the Codex CLI installed + Engine Router policy. |
 | **Cost budget enforcement** | E21 | ~½ day | Real value only when cron is live and BYOK is being billed. |
 | **Cron infra polish** | E19 | done | Both crons already in `vercel.json`. CRON_SECRET pattern in place. |
 
@@ -113,9 +144,11 @@ All seven critical-path items shipped. The minimum-viable persistent companion i
 
 ## Recommended next move
 
-**D14–D18 (spawn primitive).** Everything below this in the list is incremental polish; the spawn primitive is the next architectural step. Once Kairos can dispatch Claude/Codex sessions on behalf of the operator, the advisory feed gets a "Dispatch" button next to "Acknowledge" and the loop closes: briefer notices → operator clicks → session runs → memory captures the result → next morning's briefing references the work.
+**Close the loop: Dispatch button on advisory rows.** The spawn primitive is in place but it isn't wired into the briefer→action loop yet. The user-facing payoff is one button: on each advisory, "Dispatch" calls `spawnSessionAction` with the advisory's body as the goal and a default prompt pulled from the Dominion's mission_long. The advisory row becomes the briefing → click → session → memory loop in one gesture.
 
 If a smaller next step is wanted, **B8 (Gemini direct provider)** is the cheapest concrete unlock: drops `routeTask({taskType:'classify'})` onto Gemini Flash-Lite free tier instead of paying for Sonnet, immediately useful for any classification work the briefer eventually does internally.
+
+If the visual leap matters more than functional, **promote sessions to first-class graph nodes** in `Kairos3D` — `role:'session'` with pulse + comet trail anchored on the session's Dominion. The data is there (`listSessionsAction({ liveOnly: true })`); only rendering remains.
 
 ---
 
@@ -156,7 +189,7 @@ If a smaller next step is wanted, **B8 (Gemini direct provider)** is the cheapes
 
 ---
 
-## Quick reference — file map of what landed
+## Quick reference — file map of what landed (Phase 3 additions in bold)
 
 Backend / data layer
 - `apps/web/drizzle/0017_dominion_body.sql` — Dominion body + objectives
@@ -196,3 +229,21 @@ UI
 
 Infrastructure
 - `apps/web/vercel.json` — two cron entries (briefer 7am, snapshot 23:00)
+
+**Phase 3 — spawn primitive**
+- `apps/web/drizzle/0019_agent_sessions.sql` — agent_sessions + session_events
+- `apps/web/src/lib/db/schema.ts` — `agentSessions`, `sessionEvents` tables + types
+- `apps/web/src/lib/data/sessions.ts` — CRUD + event tail + getNextEventSeq
+- `apps/web/src/lib/data/validators.ts` — spawn/update/event/list schemas
+- `apps/web/src/lib/actions/sessions.ts` — `spawnSessionAction`, `killSessionAction`, et al
+- `apps/web/src/lib/kairos/spawn.ts` — Aeon-side worker dispatcher (no-op fallback)
+- `apps/web/src/app/api/v1/sessions/route.ts` — POST spawn, GET list
+- `apps/web/src/app/api/v1/sessions/[id]/route.ts` — GET, PATCH (worker)
+- `apps/web/src/app/api/v1/sessions/[id]/events/route.ts` — POST event, GET tail
+- `apps/web/src/app/api/v1/sessions/[id]/kill/route.ts` — POST kill
+- `apps/web/src/app/api/[transport]/tools/sessions.ts` — MCP tools
+- `apps/web/src/components/kairos/LiveSessionsButton.tsx` — sidebar + popover + drawer
+- `apps/web/src/components/sidebar/AppSidebar.tsx` — mounts LiveSessionsButton
+- `apps/web/scripts/kairos-session-hook.mjs` — Claude Code hook
+- `apps/web/scripts/kairos-hook-install.md` — install doc
+- `apps/kairos-worker/` — long-running Node service (package.json, tsconfig, src/index.ts, src/spawner.ts, src/callback.ts, README.md)

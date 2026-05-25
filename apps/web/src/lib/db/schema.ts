@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, integer, boolean, jsonb, primaryKey, real, uniqueIndex, index, type AnyPgColumn } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, text, timestamp, integer, boolean, jsonb, primaryKey, real, numeric, uniqueIndex, index, type AnyPgColumn } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
 export const users = pgTable('users', {
@@ -506,6 +506,57 @@ export const dominionRepos = pgTable('dominion_repos', {
   slugIdx: index('dominion_repos_slug_idx').on(t.repoSlug),
 }))
 
+// Kairos Phase 3 (D15) — Spawn primitive substrate. agent_sessions tracks
+// AI sessions (Claude Code, Codex) dispatched on the operator's behalf.
+// See drizzle/0019_agent_sessions.sql for column-level docs.
+export const agentSessions = pgTable('agent_sessions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  realmId: uuid('realm_id').references(() => workspaceGroups.id, { onDelete: 'set null' }),
+  projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  dominionId: uuid('dominion_id').references(() => dominions.id, { onDelete: 'set null' }),
+  engine: varchar('engine', { length: 40 }).notNull(),
+  repo: varchar('repo', { length: 200 }),
+  branch: varchar('branch', { length: 120 }),
+  goal: text('goal').notNull(),
+  prompt: text('prompt').notNull(),
+  workerHost: varchar('worker_host', { length: 120 }),
+  workerPid: integer('worker_pid'),
+  // 'queued' | 'running' | 'succeeded' | 'failed' | 'killed' | 'timeout'
+  status: varchar('status', { length: 20 }).default('queued').notNull(),
+  exitCode: integer('exit_code'),
+  spawnedAt: timestamp('spawned_at').defaultNow().notNull(),
+  startedAt: timestamp('started_at'),
+  endedAt: timestamp('ended_at'),
+  costUsd: numeric('cost_usd', { precision: 10, scale: 4 }),
+  // Forward link to the session-summary memory created on success.
+  memoryId: uuid('memory_id').references((): AnyPgColumn => memories.id, { onDelete: 'set null' }),
+  metadata: jsonb('metadata').default({}).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  userStatusIdx: index('agent_sessions_user_status_idx').on(t.userId, t.status, t.spawnedAt),
+  dominionIdx: index('agent_sessions_dominion_idx').on(t.dominionId, t.spawnedAt),
+  liveIdx: index('agent_sessions_live_idx').on(t.userId, t.spawnedAt),
+}))
+
+// Per-session timeline. Emitted by the worker host (status transitions) and
+// by Claude Code PostToolUse / Stop hooks (tool_use, tool_result, message,
+// stop). seq is monotonic per session and UNIQUE to make replays idempotent.
+export const sessionEvents = pgTable('session_events', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  sessionId: uuid('session_id').notNull().references(() => agentSessions.id, { onDelete: 'cascade' }),
+  seq: integer('seq').notNull(),
+  // 'status' | 'tool_use' | 'tool_result' | 'message' | 'stop' | 'error'
+  kind: varchar('kind', { length: 40 }).notNull(),
+  toolName: varchar('tool_name', { length: 80 }),
+  payload: jsonb('payload').default({}).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  sessionSeqIdx: uniqueIndex('session_events_session_seq_idx').on(t.sessionId, t.seq),
+  createdIdx: index('session_events_created_idx').on(t.createdAt),
+}))
+
 export type User = typeof users.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type GanttView = typeof ganttViews.$inferSelect
@@ -540,3 +591,5 @@ export type DominionObjective = typeof dominionObjectives.$inferSelect
 export type EnginePolicy = typeof enginePolicies.$inferSelect
 export type UserAiCredential = typeof userAiCredentials.$inferSelect
 export type UserAiPreference = typeof userAiPreferences.$inferSelect
+export type AgentSession = typeof agentSessions.$inferSelect
+export type SessionEvent = typeof sessionEvents.$inferSelect
