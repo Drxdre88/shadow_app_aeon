@@ -592,6 +592,38 @@ export async function captureMemory(userId: string, input: CaptureMemoryInput): 
   return { memory, created: true }
 }
 
+// Kairos Phase 2 (E22) — list recent advisories across the last N days.
+// Joins with dominions so the feed can render Dominion pills.
+export async function listRecentAdvisories(
+  userId: string,
+  opts: { days?: number; limit?: number } = {},
+) {
+  const days = Math.min(Math.max(opts.days ?? 3, 1), 30)
+  const limit = Math.min(Math.max(opts.limit ?? 25, 1), 100)
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+
+  return db
+    .select({
+      id: memories.id,
+      title: memories.title,
+      bodyMd: memories.bodyMd,
+      createdAt: memories.createdAt,
+      dominionId: memories.dominionId,
+      dominionName: dominions.name,
+      dominionColor: dominions.color,
+    })
+    .from(memories)
+    .leftJoin(dominions, eq(memories.dominionId, dominions.id))
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.type, 'advisory'),
+      sql`${memories.createdAt} >= ${since}`,
+      isNull(memories.archivedAt),
+    ))
+    .orderBy(desc(memories.createdAt))
+    .limit(limit)
+}
+
 // Kairos Phase 1.5 — list today's Briefer-generated advisories for a user,
 // joined with the Dominion they're scoped to so the dashboard card can
 // render "<Dominion name>" headers without a second query.
@@ -683,6 +715,18 @@ export async function removeLink(memoryId: string, userId: string, linkIndex: nu
     .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
     .returning()
   return updated ?? null
+}
+
+// Kairos Phase 2 (E22) — soft-archive a memory. Used by the advisory feed
+// for Acknowledge / Defer actions: the memory persists for retrospection
+// but stops surfacing in the feed.
+export async function archiveMemory(memoryId: string, userId: string) {
+  const [row] = await db
+    .update(memories)
+    .set({ archivedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
+    .returning()
+  return row ?? null
 }
 
 export async function deleteMemory(memoryId: string, userId: string) {

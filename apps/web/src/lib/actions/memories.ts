@@ -33,6 +33,8 @@ import {
   targetMemoryExists,
   getGraphForUser as _getGraphForUser,
   listTodaysAdvisories as _listTodaysAdvisories,
+  listRecentAdvisories as _listRecentAdvisories,
+  archiveMemory as _archiveMemory,
 } from '@/lib/data/memories'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -198,6 +200,21 @@ export async function prepareContextForUser(input: PrepareContextInput) {
 export async function getTodaysBriefings(isoDate?: string) {
   const userId = await requireAuth()
   return _listTodaysAdvisories(userId, isoDate)
+}
+
+// Kairos Phase 2 (E22) — recent advisories for the sidebar feed.
+export async function getRecentAdvisories(opts: { days?: number; limit?: number } = {}) {
+  const userId = await requireAuth()
+  return _listRecentAdvisories(userId, opts)
+}
+
+// Kairos Phase 2 (E22) — Acknowledge an advisory (or any memory) by
+// soft-archiving it. The memory persists for retrospection.
+export async function archiveMemoryById(memoryId: string) {
+  const userId = await requireAuth()
+  const row = await _archiveMemory(memoryId, userId)
+  if (!row) throw new Error('Memory not found or unauthorized')
+  return row
 }
 
 // Stub for Phase 5 — broadcast memory events to a user-scoped Pusher channel.

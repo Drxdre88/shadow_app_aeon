@@ -14,6 +14,7 @@ import { HelpButton } from '@/components/ui/HelpModal'
 import { StatsButton } from '@/components/ui/StatsModal'
 import { BetaFeaturesButton } from '@/components/ui/BetaFeaturesModal'
 import { ChangelogButton } from '@/components/ui/ChangelogModal'
+import { AdvisoryFeed } from '@/components/kairos/AdvisoryFeed'
 import {
   Plus,
   Orbit,
@@ -326,6 +327,7 @@ function BottomSection({
       <div className={cn('flex items-center justify-center gap-1 px-2 py-2', collapsed && 'flex-col')} style={{ color: 'var(--primary)' }}>
         <ChangelogButton />
         <NotesButton />
+        <AdvisoryFeed />
         <BetaFeaturesButton />
         <HelpButton />
         <StatsButton />
