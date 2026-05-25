@@ -48,6 +48,11 @@ vi.mock('@/lib/data/activity', () => ({
   emitActivity: vi.fn(),
 }))
 
+vi.mock('@/lib/kairos/auto-capture', () => ({
+  captureBoardEvent: vi.fn().mockResolvedValue(undefined),
+  captureProjectEvent: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock('@/lib/data/storage', () => ({
   checkStorageLimit: vi.fn(),
 }))

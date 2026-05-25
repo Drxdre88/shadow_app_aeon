@@ -5,6 +5,10 @@
     {
       "path": "/api/cron/briefer",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/project-snapshot",
+      "schedule": "0 23 * * *"
     }
   ]
 }

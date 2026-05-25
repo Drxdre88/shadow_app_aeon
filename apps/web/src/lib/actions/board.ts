@@ -18,6 +18,7 @@ import {
 } from '@/lib/data/tasks'
 import { syncBoardStatusToGantt, deleteLinkedGanttTask } from '@/lib/data/bridge'
 import { emitActivity } from '@/lib/data/activity'
+import { captureBoardEvent } from '@/lib/kairos/auto-capture'
 import { findColumns as _findColumns, createDefaultColumns as _createDefaultColumns } from '@/lib/data/columns'
 import { findLabels as _findLabels, findTaskLabels as _findTaskLabels, setTaskLabels as _setTaskLabels } from '@/lib/data/labels'
 import { findDependencies as _findDependencies } from '@/lib/data/dependencies'
@@ -76,6 +77,9 @@ export async function createBoardTask(data: {
   const task = await _createTask(data.projectId, parsed, data.id)
 
   emitActivity(data.projectId, 'task', task.id, 'created', data.name, undefined, userId).catch(() => {})
+  captureBoardEvent({
+    userId, projectId: data.projectId, taskId: task.id, taskName: data.name, action: 'created',
+  }).catch(() => {})
 
   revalidatePath(`/project/${data.projectId}`)
   return task
@@ -108,10 +112,16 @@ export async function updateBoardTask(
 
   if (parsed.status === 'done') {
     emitActivity(projectId, 'task', taskId, 'completed', task?.name, undefined, userId).catch(() => {})
+    captureBoardEvent({ userId, projectId, taskId, taskName: task?.name, action: 'completed' }).catch(() => {})
   } else if (parsed.columnId) {
     emitActivity(projectId, 'task', taskId, 'moved', task?.name, { fromColumnId: existing?.columnId, toColumnId: parsed.columnId }, userId).catch(() => {})
+    captureBoardEvent({
+      userId, projectId, taskId, taskName: task?.name, action: 'moved',
+      metadata: { fromColumnId: existing?.columnId, toColumnId: parsed.columnId },
+    }).catch(() => {})
   } else {
     emitActivity(projectId, 'task', taskId, 'updated', task?.name, undefined, userId).catch(() => {})
+    captureBoardEvent({ userId, projectId, taskId, taskName: task?.name, action: 'updated' }).catch(() => {})
   }
 
   if (parsed.status) {
@@ -126,6 +136,7 @@ export async function deleteBoardTask(taskId: string, projectId: string) {
   const userId = await requireEditor(projectId)
   const taskToDelete = await _findTaskById(taskId, projectId)
   emitActivity(projectId, 'task', taskId, 'deleted', taskToDelete?.name, undefined, userId).catch(() => {})
+  captureBoardEvent({ userId, projectId, taskId, taskName: taskToDelete?.name, action: 'deleted' }).catch(() => {})
   await deleteLinkedGanttTask(taskId)
   await _deleteTask(taskId, projectId)
   revalidatePath(`/project/${projectId}`)
@@ -151,11 +162,19 @@ export async function reorderBoardTasks(
   const moves = updates.filter(u => u.columnId)
   for (const move of moves) {
     emitActivity(projectId, 'task', move.id, 'moved', move.name, { fromColumnId: previousColumns.get(move.id) ?? null, toColumnId: move.columnId }, userId).catch(() => {})
+    captureBoardEvent({
+      userId, projectId, taskId: move.id, taskName: move.name, action: 'moved',
+      metadata: { fromColumnId: previousColumns.get(move.id) ?? null, toColumnId: move.columnId, via: 'drag' },
+    }).catch(() => {})
   }
 
   const doneUpdates = updates.filter(u => u.status === 'done')
   for (const u of doneUpdates) {
     emitActivity(projectId, 'task', u.id, 'completed', u.name, { via: 'drag' }, userId).catch(() => {})
+    captureBoardEvent({
+      userId, projectId, taskId: u.id, taskName: u.name, action: 'completed',
+      metadata: { via: 'drag' },
+    }).catch(() => {})
   }
 
   revalidatePath(`/project/${projectId}`)
