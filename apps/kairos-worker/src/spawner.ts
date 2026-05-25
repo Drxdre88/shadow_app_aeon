@@ -2,7 +2,7 @@
 // stdout/stderr into the Aeon session timeline. Holds a live registry so
 // /kill/:id can SIGTERM the process.
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { hostname } from 'node:os'
 import { resolve } from 'node:path'
 import type { CallbackContext } from './callback.js'
@@ -22,7 +22,7 @@ export interface SpawnRequest {
 }
 
 interface LiveSession {
-  child: ChildProcessWithoutNullStreams
+  child: ChildProcess
   startedAt: number
   seq: number
 }
@@ -73,12 +73,17 @@ export async function startSession(req: SpawnRequest): Promise<{ pid: number; wo
     shell: process.platform === 'win32',
   })
 
+  // Close stdin so `claude -p` doesn't sit waiting 3s for piped input.
+  // Platform-agnostic; works with shell: true on Windows where 'ignore'
+  // in the stdio option triggers a DLL init failure under cmd.exe.
+  child.stdin?.end()
+
   const session: LiveSession = { child, startedAt: Date.now(), seq: 1 }
   live.set(req.sessionId, session)
 
   const host = hostname()
 
-  child.stdout.on('data', (buf: Buffer) => {
+  child.stdout?.on('data', (buf: Buffer) => {
     void postEvent(ctx, {
       seq: session.seq++,
       kind: 'message',
@@ -86,7 +91,7 @@ export async function startSession(req: SpawnRequest): Promise<{ pid: number; wo
     })
   })
 
-  child.stderr.on('data', (buf: Buffer) => {
+  child.stderr?.on('data', (buf: Buffer) => {
     void postEvent(ctx, {
       seq: session.seq++,
       kind: 'error',
