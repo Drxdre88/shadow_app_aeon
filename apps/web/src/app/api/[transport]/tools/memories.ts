@@ -31,6 +31,15 @@ import { getUserId, ok, notFound, fail } from './types'
 // Parity lock: src/app/api/__tests__/memories-parity.test.ts (P1.8)
 // ─────────────────────────────────────────────────────────────────────────
 
+// Kairos Phase 1 (A1) — taxonomy mirrors validators.memoryTypeSchema.
+// Kept inline here because MCP tool argument schemas are advertised to the
+// client at registration time and must be literal.
+const MEMORY_TYPES = [
+  'note', 'decision', 'idea', 'observation', 'session_summary', 'reflection',
+  'snapshot', 'inbound', 'advisory', 'achievement', 'session_event', 'fact', 'contact', 'external_event',
+] as const
+const memoryTypeEnum = z.enum(MEMORY_TYPES)
+
 async function verifyAnchors(
   userId: string,
   anchors: { realmId?: string | null; projectId?: string | null; taskId?: string | null }
@@ -72,8 +81,16 @@ export const registerMemoryTools: RegisterFn = (server) => {
       bodyMd: z.string().min(1).max(100_000).describe('Markdown body — the full thought, note, or summary'),
       summary: z.string().max(1000).optional().describe('One-line compression used by context packing'),
       execSummary: z.array(z.string().min(1).max(500)).max(15).optional().describe('5–10 cleaned bullet points. Front-of-house in the UI side panel'),
-      type: z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection']).default('note').optional(),
-      source: z.enum(['manual', 'claude', 'voice', 'hook', 'import']).default('claude').optional(),
+      type: z.enum([
+        'note', 'decision', 'idea', 'observation', 'session_summary', 'reflection',
+        // Kairos Phase 1 (A1) additions:
+        'snapshot', 'inbound', 'advisory', 'achievement', 'session_event', 'fact', 'contact', 'external_event',
+      ]).default('note').optional(),
+      source: z.enum([
+        'manual', 'claude', 'voice', 'hook', 'import',
+        // Kairos Phase 1 (A1) additions:
+        'cron', 'system', 'webhook',
+      ]).default('claude').optional(),
       sourceMetadata: z.record(z.string(), z.unknown()).optional().describe('Provenance — e.g. {repo, branch, sessionId, filesTouched, commits}'),
       realmId: z.string().uuid().nullable().optional(),
       projectId: z.string().uuid().nullable().optional(),
@@ -116,7 +133,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       bodyMd: z.string().min(1).max(100_000).optional(),
       summary: z.string().max(1000).nullable().optional(),
       execSummary: z.array(z.string().min(1).max(500)).max(15).optional().describe('Replace the bullet list. Pass [] to clear'),
-      type: z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection']).optional(),
+      type: memoryTypeEnum.optional(),
       realmId: z.string().uuid().nullable().optional(),
       projectId: z.string().uuid().nullable().optional(),
       taskId: z.string().uuid().nullable().optional(),
@@ -150,8 +167,8 @@ export const registerMemoryTools: RegisterFn = (server) => {
     {
       query: z.string().min(2).max(500).describe('Search query — supports websearch syntax (quotes, OR, -term)'),
       type: z.union([
-        z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection']),
-        z.array(z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection'])),
+        memoryTypeEnum,
+        z.array(memoryTypeEnum),
       ]).optional(),
       realmId: z.string().uuid().optional(),
       projectId: z.string().uuid().optional(),
@@ -229,8 +246,8 @@ export const registerMemoryTools: RegisterFn = (server) => {
       budgetTokens: z.number().int().min(500).max(50_000).default(4000).optional().describe('Soft cap on returned context tokens; defaults to 4000'),
       realmId: z.string().uuid().optional().describe('Scope retrieval to a single realm'),
       type: z.union([
-        z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection']),
-        z.array(z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection'])),
+        memoryTypeEnum,
+        z.array(memoryTypeEnum),
       ]).optional().describe('Filter by memory type(s)'),
       hops: z.union([z.literal(0), z.literal(1)]).default(1).optional().describe('Graph walk depth from top FTS hits (0 = no graph)'),
       maxSources: z.number().int().min(5).max(100).default(30).optional().describe('Cap on FTS hits considered before scoring'),
@@ -272,8 +289,8 @@ export const registerMemoryTools: RegisterFn = (server) => {
       realmId: z.string().uuid().optional().describe('Scope to a single realm'),
       projectId: z.string().uuid().optional().describe('Scope to a single project'),
       type: z.union([
-        z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection']),
-        z.array(z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection'])),
+        memoryTypeEnum,
+        z.array(memoryTypeEnum),
       ]).optional(),
       missing: z.enum(['execSummary', 'aiTitle', 'either']).default('execSummary').optional()
         .describe('Which field to look for. Default: execSummary. Use "either" to catch both gaps in one pass'),

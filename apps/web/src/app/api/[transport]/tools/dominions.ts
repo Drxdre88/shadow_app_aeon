@@ -3,6 +3,9 @@ import {
   createDominionSchema,
   updateDominionSchema,
   addDominionRepoSchema,
+  createDominionObjectiveSchema,
+  updateDominionObjectiveSchema,
+  dominionObjectiveStatusSchema,
 } from '@/lib/data/validators'
 import {
   findDominionsByUser,
@@ -13,6 +16,11 @@ import {
   listDominionRepos,
   addDominionRepo as _addDominionRepo,
   removeDominionRepo as _removeDominionRepo,
+  inspectDominion as _inspectDominion,
+  listDominionObjectives as _listDominionObjectives,
+  createDominionObjective as _createDominionObjective,
+  updateDominionObjective as _updateDominionObjective,
+  archiveDominionObjective as _archiveDominionObjective,
 } from '@/lib/data/dominions'
 import { updateProject as _updateProject } from '@/lib/data/projects'
 import { verifyProjectAccess } from '@/lib/data/projects'
@@ -24,10 +32,12 @@ export const registerDominionTools: RegisterFn = (server) => {
     'create_dominion',
     'Create a Dominion — a user-scoped top-level grouping above Project for the Kairos memory layer; assign repos so Claude session captures auto-resolve their Dominion.',
     {
-      name:      z.string().min(1).max(100).describe('Display name for the Dominion'),
-      color:     z.string().max(30).optional().describe('Color token, e.g. "purple"'),
-      icon:      z.string().max(50).optional().describe('Icon identifier'),
-      sortOrder: z.number().int().optional().describe('Sort position among Dominions'),
+      name:        z.string().min(1).max(100).describe('Display name for the Dominion'),
+      color:       z.string().max(30).optional().describe('Color token, e.g. "purple"'),
+      icon:        z.string().max(50).optional().describe('Icon identifier'),
+      sortOrder:   z.number().int().optional().describe('Sort position among Dominions'),
+      vision:      z.string().max(4000).nullable().optional().describe('Long-form WHAT (Kairos Phase 1 body)'),
+      missionLong: z.string().max(8000).nullable().optional().describe('Long-form HOW (Kairos Phase 1 body)'),
     },
     async (args, extra) => {
       const uid = getUserId(extra)
@@ -40,6 +50,8 @@ export const registerDominionTools: RegisterFn = (server) => {
         color: row.color,
         icon: row.icon,
         sortOrder: row.sortOrder,
+        vision: row.vision,
+        missionLong: row.missionLong,
         createdAt: row.createdAt,
       })
     }
@@ -72,13 +84,16 @@ export const registerDominionTools: RegisterFn = (server) => {
 
   server.tool(
     'update_dominion',
-    'Update name, color, icon, or sortOrder on an existing Dominion. Pass only the fields you want to change.',
+    'Update an existing Dominion. Includes the Kairos body fields (vision, missionLong) so the Briefer has standing context. Pass archivedAt to soft-delete (archived Dominions are skipped by the Briefer).',
     {
-      dominionId: z.string().uuid().describe('Dominion UUID to update'),
-      name:      z.string().min(1).max(100).optional(),
-      color:     z.string().max(30).optional(),
-      icon:      z.string().max(50).optional(),
-      sortOrder: z.number().int().optional(),
+      dominionId:  z.string().uuid().describe('Dominion UUID to update'),
+      name:        z.string().min(1).max(100).optional(),
+      color:       z.string().max(30).optional(),
+      icon:        z.string().max(50).optional(),
+      sortOrder:   z.number().int().optional(),
+      vision:      z.string().max(4000).nullable().optional().describe('Long-form WHAT this Dominion is for'),
+      missionLong: z.string().max(8000).nullable().optional().describe('Long-form HOW — the operating mission'),
+      archivedAt:  z.string().datetime().nullable().optional().describe('ISO timestamp to archive, or null to restore'),
     },
     async ({ dominionId, ...rest }, extra) => {
       const uid = getUserId(extra)
@@ -86,6 +101,111 @@ export const registerDominionTools: RegisterFn = (server) => {
       if (!parsed.success) return fail(parsed.error.issues[0].message)
       const row = await _updateDominion(dominionId, uid, parsed.data)
       if (!row) return notFound('Dominion')
+      return ok(row)
+    }
+  )
+
+  server.tool(
+    'inspect_dominion',
+    'Return a one-shot Dominion briefing: vision + mission + open objectives + projects + repo bindings + recent memories. Built for the Briefer (and any future voice/advisory caller) so a single request yields enough context for an opinion.',
+    {
+      dominionId:  z.string().uuid().describe('Dominion UUID'),
+      memoryLimit: z.number().int().min(1).max(200).optional().describe('Max recent memories to include (default 25)'),
+    },
+    async ({ dominionId, memoryLimit }, extra) => {
+      const uid = getUserId(extra)
+      const briefing = await _inspectDominion(dominionId, uid, { memoryLimit })
+      if (!briefing) return notFound('Dominion')
+      return ok(briefing)
+    }
+  )
+
+  server.tool(
+    'set_dominion_vision',
+    'Convenience wrapper to set vision and/or missionLong on a Dominion in one call. Both fields are optional but at least one must be provided.',
+    {
+      dominionId:  z.string().uuid(),
+      vision:      z.string().max(4000).nullable().optional(),
+      missionLong: z.string().max(8000).nullable().optional(),
+    },
+    async ({ dominionId, vision, missionLong }, extra) => {
+      const uid = getUserId(extra)
+      if (vision === undefined && missionLong === undefined) {
+        return fail('Provide at least one of vision or missionLong')
+      }
+      const row = await _updateDominion(dominionId, uid, { vision, missionLong })
+      if (!row) return notFound('Dominion')
+      return ok({ id: row.id, vision: row.vision, missionLong: row.missionLong })
+    }
+  )
+
+  server.tool(
+    'list_objectives',
+    'List objectives for a Dominion, ordered by sortOrder. By default returns only non-archived ones.',
+    {
+      dominionId:      z.string().uuid(),
+      includeArchived: z.boolean().optional(),
+    },
+    async ({ dominionId, includeArchived }, extra) => {
+      const uid = getUserId(extra)
+      const rows = await _listDominionObjectives(dominionId, uid, { includeArchived: includeArchived ?? false })
+      return ok(rows)
+    }
+  )
+
+  server.tool(
+    'create_objective',
+    'Add a concrete objective to a Dominion. Objectives are the trackable goals the Briefer references — e.g. "Ship Kairos Phase 1 by EOM". Status defaults to "active".',
+    {
+      dominionId:  z.string().uuid(),
+      title:       z.string().min(1).max(255),
+      description: z.string().max(8000).nullable().optional(),
+      status:      dominionObjectiveStatusSchema.optional(),
+      targetDate:  z.string().datetime().nullable().optional(),
+      sortOrder:   z.number().int().optional(),
+    },
+    async (args, extra) => {
+      const uid = getUserId(extra)
+      const parsed = createDominionObjectiveSchema.safeParse(args)
+      if (!parsed.success) return fail(parsed.error.issues[0].message)
+      const row = await _createDominionObjective(uid, parsed.data)
+      if (!row) return notFound('Dominion')
+      return ok(row)
+    }
+  )
+
+  server.tool(
+    'update_objective',
+    'Update an objective (title, description, status, target date, sortOrder, or archivedAt).',
+    {
+      objectiveId: z.string().uuid(),
+      title:       z.string().min(1).max(255).optional(),
+      description: z.string().max(8000).nullable().optional(),
+      status:      dominionObjectiveStatusSchema.optional(),
+      targetDate:  z.string().datetime().nullable().optional(),
+      sortOrder:   z.number().int().optional(),
+      archivedAt:  z.string().datetime().nullable().optional(),
+    },
+    async ({ objectiveId, ...rest }, extra) => {
+      const uid = getUserId(extra)
+      const parsed = updateDominionObjectiveSchema.safeParse(rest)
+      if (!parsed.success) return fail(parsed.error.issues[0].message)
+      const row = await _updateDominionObjective(objectiveId, uid, parsed.data)
+      if (!row) return notFound('Objective')
+      return ok(row)
+    }
+  )
+
+  server.tool(
+    'archive_objective',
+    'Soft-archive an objective. It is hidden from the default list but kept for retrospective context.',
+    {
+      objectiveId: z.string().uuid(),
+    },
+    async ({ objectiveId }, extra) => {
+      const uid = getUserId(extra)
+      const row = await _archiveDominionObjective(objectiveId, uid)
+      if (!row) return notFound('Objective')
       return ok(row)
     }
   )

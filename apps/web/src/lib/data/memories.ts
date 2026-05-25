@@ -534,6 +534,64 @@ export async function createMemory(userId: string, input: CreateMemoryInput) {
   return row
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Kairos Phase 1 (A2) — generic capture endpoint backing function.
+//
+// The capture endpoint is the single ingestion point for any inbound source:
+// Aeon board events, Slack/Teams/email webhooks, mobile/voice, browser
+// extension, future channels. Callers POST a normalised payload; this
+// function performs:
+//   1. Channel normalisation: if `channel` is set, source becomes 'webhook'
+//      and sourceMetadata.channel records the origin.
+//   2. externalId idempotency: if sourceMetadata.externalId is set, any
+//      existing memory with the same (source, externalId) is returned
+//      instead of creating a duplicate. Crucial for webhooks that may
+//      retry.
+// Everything else delegates to createMemory (which still handles Claude
+// sessionId idempotency for that source).
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface CaptureMemoryInput extends Omit<CreateMemoryInput, 'sourceMetadata'> {
+  channel?: string | null
+  sourceMetadata?: Record<string, unknown>
+}
+
+export interface CaptureMemoryResult {
+  memory: typeof memories.$inferSelect
+  created: boolean
+}
+
+export async function captureMemory(userId: string, input: CaptureMemoryInput): Promise<CaptureMemoryResult> {
+  const metadata: Record<string, unknown> = { ...(input.sourceMetadata ?? {}) }
+  let source = input.source
+
+  if (input.channel) {
+    source = 'webhook'
+    metadata.channel = input.channel
+  }
+
+  const externalId = typeof metadata.externalId === 'string' ? metadata.externalId : undefined
+  if (externalId) {
+    const [existing] = await db
+      .select()
+      .from(memories)
+      .where(and(
+        eq(memories.userId, userId),
+        eq(memories.source, source),
+        sql`${memories.sourceMetadata}->>'externalId' = ${externalId}`,
+      ))
+      .limit(1)
+    if (existing) return { memory: existing, created: false }
+  }
+
+  const memory = await createMemory(userId, {
+    ...input,
+    source,
+    sourceMetadata: metadata,
+  })
+  return { memory, created: true }
+}
+
 export async function updateMemory(memoryId: string, userId: string, patch: UpdateMemoryInput) {
   const update: Record<string, unknown> = { updatedAt: new Date() }
   if (patch.title !== undefined)      update.title = patch.title

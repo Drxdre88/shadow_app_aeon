@@ -441,10 +441,58 @@ export const dominions = pgTable('dominions', {
   // Optional icon slug (matches the realm icon picker conventions).
   icon: varchar('icon', { length: 50 }),
   sortOrder: integer('sort_order').default(0).notNull(),
+  // Kairos Phase 1 (C11) — standing context for the Briefer.
+  vision: text('vision'),
+  missionLong: text('mission_long'),
+  archivedAt: timestamp('archived_at', { mode: 'date' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => ({
   userIdx: index('dominions_user_idx').on(t.userId, t.sortOrder),
+  archivedIdx: index('dominions_archived_idx').on(t.userId, t.archivedAt),
+}))
+
+// Kairos Phase 1 (B10) — Engine Router policy table. Each row maps a
+// (task_type, sensitivity, urgency) selector to the preferred engine.
+// Router falls back to DEFAULT_POLICIES constants when no row matches.
+// See drizzle/0018_engine_policies.sql for column-level docs.
+export const enginePolicies = pgTable('engine_policies', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  taskType: varchar('task_type', { length: 40 }).notNull(),
+  sensitivity: varchar('sensitivity', { length: 20 }).default('public').notNull(),
+  urgency: varchar('urgency', { length: 20 }).default('normal').notNull(),
+  providerId: varchar('provider_id', { length: 40 }).notNull(),
+  modelId: varchar('model_id', { length: 120 }),
+  tier: varchar('tier', { length: 20 }),
+  priority: integer('priority').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  userTaskIdx: index('engine_policies_user_task_idx').on(t.userId, t.taskType, t.priority),
+  taskIdx: index('engine_policies_task_idx').on(t.taskType, t.priority),
+}))
+
+// Kairos Phase 1 (C11) — concrete, trackable goals per Dominion. The Briefer
+// reads open objectives as the "what we said matters" frame; closed ones
+// remain for retrospective context.
+export const dominionObjectives = pgTable('dominion_objectives', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  dominionId: uuid('dominion_id').notNull().references(() => dominions.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  title: varchar('title', { length: 255 }).notNull(),
+  description: text('description'),
+  // 'active' | 'paused' | 'completed' | 'abandoned' — validated by Zod
+  // (see dominionObjectiveStatusSchema in validators.ts).
+  status: varchar('status', { length: 20 }).default('active').notNull(),
+  targetDate: timestamp('target_date', { mode: 'date' }),
+  sortOrder: integer('sort_order').default(0).notNull(),
+  archivedAt: timestamp('archived_at', { mode: 'date' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  dominionIdx: index('dominion_objectives_dominion_idx').on(t.dominionId, t.sortOrder),
+  userStatusIdx: index('dominion_objectives_user_status_idx').on(t.userId, t.status),
 }))
 
 // Join table mapping Claude-session-capture repo slugs to a Dominion so a
@@ -488,5 +536,7 @@ export type MobileSession = typeof mobileSessions.$inferSelect
 export type Memory = typeof memories.$inferSelect
 export type Dominion = typeof dominions.$inferSelect
 export type DominionRepo = typeof dominionRepos.$inferSelect
+export type DominionObjective = typeof dominionObjectives.$inferSelect
+export type EnginePolicy = typeof enginePolicies.$inferSelect
 export type UserAiCredential = typeof userAiCredentials.$inferSelect
 export type UserAiPreference = typeof userAiPreferences.$inferSelect

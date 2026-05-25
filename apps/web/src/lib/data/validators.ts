@@ -313,8 +313,28 @@ export type UpdateCanvasNodeInput = z.infer<typeof updateCanvasNodeSchema>
 // Shared verbatim by REST routes and MCP tools (locked by memories-parity.test.ts).
 // ─────────────────────────────────────────────────────────────────────────
 
-export const memoryTypeSchema   = z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection'])
-export const memorySourceSchema = z.enum(['manual', 'claude', 'voice', 'hook', 'import'])
+// Kairos Phase 1 (A1) — taxonomy expansion. Substrate carries everything
+// Kairos hears, not just Claude sessions. Added types: snapshot, inbound,
+// advisory, achievement, session_event, fact, contact, external_event.
+export const memoryTypeSchema   = z.enum([
+  'note',
+  'decision',
+  'idea',
+  'observation',
+  'session_summary',
+  'reflection',
+  'snapshot',
+  'inbound',
+  'advisory',
+  'achievement',
+  'session_event',
+  'fact',
+  'contact',
+  'external_event',
+])
+// Kairos Phase 1 (A1) — added sources: 'cron' (briefer/snapshot jobs),
+// 'system' (board mutations, project lifecycle), 'webhook' (channel adapters).
+export const memorySourceSchema = z.enum(['manual', 'claude', 'voice', 'hook', 'import', 'cron', 'system', 'webhook'])
 export const memoryEdgeTypeSchema   = z.enum(['relates', 'supports', 'contradicts', 'supersedes', 'refers_to', 'blocks_thinking'])
 export const memoryTargetKindSchema = z.enum(['memory', 'task', 'project', 'realm', 'url'])
 
@@ -362,6 +382,31 @@ export const updateMemorySchema = z.object({
   pinned:          z.boolean().optional(),
   archivedAt:      z.string().datetime().nullable().optional(),
 })
+
+// Kairos Phase 1 (A2) — capture endpoint payload. Superset of createMemory
+// with `channel` for inbound normalisation; the route handler will fold it
+// into sourceMetadata before persistence. externalId (inside sourceMetadata)
+// is the idempotency key.
+export const captureMemorySchema = z.object({
+  title:           z.string().trim().min(1).max(255),
+  bodyMd:          z.string().min(1).max(100_000),
+  aiTitle:         z.string().trim().min(1).max(120).optional(),
+  summary:         z.string().trim().max(1000).optional(),
+  execSummary:     z.array(z.string().trim().min(1).max(500)).max(15).optional(),
+  type:            memoryTypeSchema.default('note'),
+  source:          memorySourceSchema.default('manual'),
+  channel:         z.string().trim().min(1).max(60).nullable().optional(),
+  sourceMetadata:  z.record(z.string(), z.unknown()).optional(),
+  realmId:         z.string().uuid().nullable().optional(),
+  projectId:       z.string().uuid().nullable().optional(),
+  taskId:          z.string().uuid().nullable().optional(),
+  dominionId:      z.string().uuid().nullable().optional(),
+  tags:            z.array(z.string().trim().min(1).max(50)).max(50).optional(),
+  links:           z.array(memoryLinkSchema).max(50).optional(),
+  pinned:          z.boolean().optional(),
+})
+
+export type CaptureMemoryRequest = z.infer<typeof captureMemorySchema>
 
 export const searchMemoriesSchema = z.object({
   query:           z.string().trim().min(2).max(500),
@@ -420,17 +465,23 @@ export type PrepareContextInput = z.infer<typeof prepareContextSchema>
 // ─────────────────────────────────────────────────────────────────────────
 
 export const createDominionSchema = z.object({
-  name:      z.string().trim().min(1).max(100),
-  color:     z.string().trim().max(30).default('purple'),
-  icon:      z.string().trim().max(50).optional(),
-  sortOrder: z.number().int().optional(),
+  name:        z.string().trim().min(1).max(100),
+  color:       z.string().trim().max(30).default('purple'),
+  icon:        z.string().trim().max(50).optional(),
+  sortOrder:   z.number().int().optional(),
+  // Kairos Phase 1 (C11) — body fields can be set at creation or later.
+  vision:      z.string().trim().max(4000).nullable().optional(),
+  missionLong: z.string().trim().max(8000).nullable().optional(),
 })
 
 export const updateDominionSchema = z.object({
-  name:      z.string().trim().min(1).max(100).optional(),
-  color:     z.string().trim().max(30).optional(),
-  icon:      z.string().trim().max(50).optional(),
-  sortOrder: z.number().int().optional(),
+  name:        z.string().trim().min(1).max(100).optional(),
+  color:       z.string().trim().max(30).optional(),
+  icon:        z.string().trim().max(50).optional(),
+  sortOrder:   z.number().int().optional(),
+  vision:      z.string().trim().max(4000).nullable().optional(),
+  missionLong: z.string().trim().max(8000).nullable().optional(),
+  archivedAt:  z.coerce.date().nullable().optional(),
 })
 
 export const addDominionRepoSchema = z.object({
@@ -438,6 +489,30 @@ export const addDominionRepoSchema = z.object({
   repoSlug:   z.string().trim().min(1).max(120),
 })
 
-export type CreateDominionInput  = z.infer<typeof createDominionSchema>
-export type UpdateDominionInput  = z.infer<typeof updateDominionSchema>
-export type AddDominionRepoInput = z.infer<typeof addDominionRepoSchema>
+// Kairos Phase 1 (C11) — Dominion objectives.
+export const dominionObjectiveStatusSchema = z.enum(['active', 'paused', 'completed', 'abandoned'])
+
+export const createDominionObjectiveSchema = z.object({
+  dominionId:  z.string().uuid(),
+  title:       z.string().trim().min(1).max(255),
+  description: z.string().trim().max(8000).nullable().optional(),
+  status:      dominionObjectiveStatusSchema.default('active'),
+  targetDate:  z.coerce.date().nullable().optional(),
+  sortOrder:   z.number().int().optional(),
+})
+
+export const updateDominionObjectiveSchema = z.object({
+  title:       z.string().trim().min(1).max(255).optional(),
+  description: z.string().trim().max(8000).nullable().optional(),
+  status:      dominionObjectiveStatusSchema.optional(),
+  targetDate:  z.coerce.date().nullable().optional(),
+  sortOrder:   z.number().int().optional(),
+  archivedAt:  z.coerce.date().nullable().optional(),
+})
+
+export type CreateDominionInput          = z.infer<typeof createDominionSchema>
+export type UpdateDominionInput          = z.infer<typeof updateDominionSchema>
+export type AddDominionRepoInput         = z.infer<typeof addDominionRepoSchema>
+export type DominionObjectiveStatus      = z.infer<typeof dominionObjectiveStatusSchema>
+export type CreateDominionObjectiveInput = z.infer<typeof createDominionObjectiveSchema>
+export type UpdateDominionObjectiveInput = z.infer<typeof updateDominionObjectiveSchema>

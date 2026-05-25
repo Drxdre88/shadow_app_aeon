@@ -1,4 +1,10 @@
 {
   "installCommand": "npm ci --include=dev",
-  "buildCommand": "npm run db:push && npm run build"
+  "buildCommand": "npm run db:push && npm run build",
+  "crons": [
+    {
+      "path": "/api/cron/briefer",
+      "schedule": "0 7 * * *"
+    }
+  ]
 }
