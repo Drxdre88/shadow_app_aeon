@@ -16,6 +16,7 @@ import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { cn } from '@/lib/utils/cn'
 import { GanttViewSelector } from '@/components/gantt/GanttViewSelector'
 import { TaskEditModal } from '@/components/board/TaskEditModal'
+import { TaskAssigneeOverlay } from '@/components/board/TaskAssigneeOverlay'
 import { VaultDaysModal } from '@/components/board/VaultDaysModal'
 import { BatchVaultModal } from '@/components/board/BatchVaultModal'
 import { ArchiveBrowser } from '@/components/board/ArchiveBrowser'
@@ -376,6 +377,7 @@ export default function ProjectContent({ project, user, initialBoardData }: Proj
         projectName={project.name}
         onClose={() => setShowShare(false)}
       />
+      <TaskAssigneeOverlay projectId={project.id} />
       </div>
     </div>
   )

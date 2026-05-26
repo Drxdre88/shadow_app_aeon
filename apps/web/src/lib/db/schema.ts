@@ -540,6 +540,19 @@ export const agentSessions = pgTable('agent_sessions', {
   liveIdx: index('agent_sessions_live_idx').on(t.userId, t.spawnedAt),
 }))
 
+// Trello-style multi-assign on board cards. Auto-activates in boards with
+// more than one project member; single-member boards see a graceful hint.
+export const taskAssignees = pgTable('task_assignees', {
+  taskId: uuid('task_id').notNull().references(() => boardTasks.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  assignedBy: uuid('assigned_by').references(() => users.id, { onDelete: 'set null' }),
+  assignedAt: timestamp('assigned_at').defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.taskId, t.userId] }),
+  userIdx: index('task_assignees_user_idx').on(t.userId, t.assignedAt),
+  taskIdx: index('task_assignees_task_idx').on(t.taskId),
+}))
+
 // Per-session timeline. Emitted by the worker host (status transitions) and
 // by Claude Code PostToolUse / Stop hooks (tool_use, tool_result, message,
 // stop). seq is monotonic per session and UNIQUE to make replays idempotent.
@@ -593,3 +606,4 @@ export type UserAiCredential = typeof userAiCredentials.$inferSelect
 export type UserAiPreference = typeof userAiPreferences.$inferSelect
 export type AgentSession = typeof agentSessions.$inferSelect
 export type SessionEvent = typeof sessionEvents.$inferSelect
+export type TaskAssignee = typeof taskAssignees.$inferSelect
