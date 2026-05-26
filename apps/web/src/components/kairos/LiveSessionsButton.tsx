@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Bot, X, Square, Clock } from 'lucide-react'
 import {
@@ -26,6 +27,11 @@ export function LiveSessionsButton() {
   const [sessions, setSessions] = useState<AgentSession[]>([])
   const [open, setOpen] = useState(false)
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false)
+  const [anchor, setAnchor] = useState<{ top: number; left: number; width: number; height: number } | null>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => { setMounted(true) }, [])
 
   const load = useCallback(async () => {
     try {
@@ -44,6 +50,24 @@ export function LiveSessionsButton() {
     return () => clearInterval(t)
   }, [load])
 
+  const measureAnchor = useCallback(() => {
+    const el = buttonRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    setAnchor({ top: r.top, left: r.left, width: r.width, height: r.height })
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    measureAnchor()
+    window.addEventListener('resize', measureAnchor)
+    window.addEventListener('scroll', measureAnchor, true)
+    return () => {
+      window.removeEventListener('resize', measureAnchor)
+      window.removeEventListener('scroll', measureAnchor, true)
+    }
+  }, [open, measureAnchor])
+
   const liveCount = sessions.length
 
   const activeSession = useMemo(
@@ -53,29 +77,30 @@ export function LiveSessionsButton() {
 
   return (
     <>
-      <div className="relative">
-        <motion.button
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={open ? () => setOpen(false) : () => setOpen(true)}
-          title="Live sessions"
-          className="relative block p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200 text-current"
-        >
-          <Bot className="w-4 h-4" />
-          {liveCount > 0 && (
-            <motion.span
-              animate={{ opacity: [0.5, 1, 0.5] }}
-              transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
-              className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 flex items-center justify-center text-[9px] font-semibold rounded-full text-white"
-              style={{ background: 'var(--primary)', boxShadow: '0 0 8px var(--primary)' }}
-            >
-              {liveCount > 9 ? '9+' : liveCount}
-            </motion.span>
-          )}
-        </motion.button>
+      <motion.button
+        ref={buttonRef}
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={open ? () => setOpen(false) : () => setOpen(true)}
+        title="Live sessions"
+        className="relative block p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-200 text-current"
+      >
+        <Bot className="w-4 h-4" />
+        {liveCount > 0 && (
+          <motion.span
+            animate={{ opacity: [0.5, 1, 0.5] }}
+            transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+            className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 flex items-center justify-center text-[9px] font-semibold rounded-full text-white"
+            style={{ background: 'var(--primary)', boxShadow: '0 0 8px var(--primary)' }}
+          >
+            {liveCount > 9 ? '9+' : liveCount}
+          </motion.span>
+        )}
+      </motion.button>
 
+      {mounted && createPortal(
         <AnimatePresence>
-          {open && (
+          {open && anchor && (
             <>
               <motion.div
                 initial={{ opacity: 0 }}
@@ -89,7 +114,15 @@ export function LiveSessionsButton() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 8, scale: 0.96 }}
                 transition={{ duration: 0.15 }}
-                className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-[360px] sm:w-[400px] max-h-[480px] z-[171] rounded-2xl bg-[rgba(8,6,18,0.96)] backdrop-blur-xl border border-white/[0.08] shadow-2xl flex flex-col overflow-hidden"
+                style={{
+                  position: 'fixed',
+                  bottom: typeof window !== 'undefined' ? window.innerHeight - anchor.top + 8 : 0,
+                  left: Math.max(8, anchor.left),
+                  width: 'min(400px, calc(100vw - 16px))',
+                  maxHeight: 480,
+                  zIndex: 171,
+                }}
+                className="rounded-2xl bg-[rgba(8,6,18,0.96)] backdrop-blur-xl border border-white/[0.08] shadow-2xl flex flex-col overflow-hidden"
               >
                 <header className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
                   <div className="flex items-center gap-2">
@@ -128,8 +161,9 @@ export function LiveSessionsButton() {
               </motion.div>
             </>
           )}
-        </AnimatePresence>
-      </div>
+        </AnimatePresence>,
+        document.body,
+      )}
 
       <SessionTranscriptDrawer
         session={activeSession}

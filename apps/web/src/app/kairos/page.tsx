@@ -55,7 +55,7 @@ export default function KairosPage() {
   const selectedId = useKairosStore((s) => s.selectedMemoryId)
   const setSelectedId = useKairosStore((s) => s.setSelected)
   const [query, setQuery] = useState('')
-  const [colorMode, setColorMode] = useState<ColorMode>('dominion')
+  const [colorMode, setColorMode] = useState<ColorMode>('repo')
   const [skybox, setSkybox] = useState<SkyboxId>('lunar-4k')
   const [view, setView] = useState<KairosViewMode>('3d')
   const [backdrop, setBackdrop] = useState<BackdropId>('cortex')

@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles, Check, ArrowRight, X } from 'lucide-react'
 import Link from 'next/link'
@@ -48,8 +49,29 @@ export function AdvisoryFeed() {
   const [open, setOpen] = useState(false)
   const [lastViewed, setLastViewedState] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  const [anchor, setAnchor] = useState<{ top: number; left: number; width: number; height: number } | null>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
 
-  useEffect(() => { setLastViewedState(getLastViewed()) }, [])
+  useEffect(() => { setLastViewedState(getLastViewed()); setMounted(true) }, [])
+
+  const measureAnchor = useCallback(() => {
+    const el = buttonRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    setAnchor({ top: r.top, left: r.left, width: r.width, height: r.height })
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    measureAnchor()
+    window.addEventListener('resize', measureAnchor)
+    window.addEventListener('scroll', measureAnchor, true)
+    return () => {
+      window.removeEventListener('resize', measureAnchor)
+      window.removeEventListener('scroll', measureAnchor, true)
+    }
+  }, [open, measureAnchor])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -91,8 +113,9 @@ export function AdvisoryFeed() {
   }
 
   return (
-    <div className="relative">
+    <>
       <motion.button
+        ref={buttonRef}
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.95 }}
         onClick={open ? () => setOpen(false) : handleOpen}
@@ -110,23 +133,32 @@ export function AdvisoryFeed() {
         )}
       </motion.button>
 
-      <AnimatePresence>
-        {open && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[170]"
-              onClick={() => setOpen(false)}
-            />
-            <motion.div
-              initial={{ opacity: 0, y: 8, scale: 0.96 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.96 }}
-              transition={{ duration: 0.15 }}
-              className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-[360px] sm:w-[400px] max-h-[480px] z-[171] rounded-2xl bg-[rgba(8,6,18,0.96)] backdrop-blur-xl border border-white/[0.08] shadow-2xl flex flex-col overflow-hidden"
-            >
+      {mounted && createPortal(
+        <AnimatePresence>
+          {open && anchor && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[170]"
+                onClick={() => setOpen(false)}
+              />
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                transition={{ duration: 0.15 }}
+                style={{
+                  position: 'fixed',
+                  bottom: typeof window !== 'undefined' ? window.innerHeight - anchor.top + 8 : 0,
+                  left: Math.max(8, anchor.left),
+                  width: 'min(400px, calc(100vw - 16px))',
+                  maxHeight: 480,
+                  zIndex: 171,
+                }}
+                className="rounded-2xl bg-[rgba(8,6,18,0.96)] backdrop-blur-xl border border-white/[0.08] shadow-2xl flex flex-col overflow-hidden"
+              >
               <header className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />
@@ -164,10 +196,12 @@ export function AdvisoryFeed() {
                 )}
               </div>
             </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-    </div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body,
+      )}
+    </>
   )
 }
 

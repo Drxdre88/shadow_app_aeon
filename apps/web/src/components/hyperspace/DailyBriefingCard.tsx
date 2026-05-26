@@ -2,14 +2,15 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Sparkles, RefreshCw, ArrowRight } from 'lucide-react'
+import { Sparkles, RefreshCw, ArrowRight, KeyRound } from 'lucide-react'
 import { motion } from 'framer-motion'
-import { getTodaysBriefings, prepareContextForUser } from '@/lib/actions/memories'
+import { getTodaysBriefings } from '@/lib/actions/memories'
 
 // Kairos Phase 1.5 — DailyBriefingCard reads from Briefer-generated
 // advisories (memory.type='advisory', source='cron'). One advisory per
-// Dominion per day. Falls back to the legacy prepare_context bundle when
-// no advisories exist yet (e.g. cron hasn't run, no BYOK credential set).
+// Dominion per day. When no advisories exist (BYOK not set, cron not run
+// yet) we show a small Enable AI CTA pointing to /settings/ai instead of
+// dumping the raw retrieval bundle.
 
 type Advisory = {
   id: string
@@ -21,11 +22,8 @@ type Advisory = {
   dominionColor: string | null
 }
 
-type FallbackBriefing = {
-  kind: 'fallback'
-  contextMd: string
-  tokensUsed: number
-  sources: { id: string; title: string; score: number; section: string }[]
+type CtaBriefing = {
+  kind: 'cta'
 }
 
 type AdvisoryBriefing = {
@@ -33,7 +31,7 @@ type AdvisoryBriefing = {
   advisories: Advisory[]
 }
 
-type Briefing = AdvisoryBriefing | FallbackBriefing
+type Briefing = AdvisoryBriefing | CtaBriefing
 
 const CACHE_KEY = (day: string) => `aeon.kairos.briefing.${day}`
 
@@ -45,7 +43,6 @@ export function DailyBriefingCard() {
   const [briefing, setBriefing] = useState<Briefing | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [skipped, setSkipped] = useState(false)
 
   const fetchBriefing = async (force = false) => {
     setLoading(true)
@@ -70,28 +67,8 @@ export function DailyBriefingCard() {
         const next: AdvisoryBriefing = { kind: 'advisories', advisories }
         setBriefing(next)
         try { localStorage.setItem(CACHE_KEY(day), JSON.stringify(next)) } catch {}
-        return
-      }
-      // Fallback to the legacy context bundle when nothing's been briefed yet.
-      const res = await prepareContextForUser({
-        query: 'what should I focus on today',
-        budgetTokens: 1500,
-        maxSources: 12,
-        hops: 1,
-        includePinned: true,
-      })
-      if (!res.sources.length) {
-        setSkipped(true)
-        setBriefing(null)
       } else {
-        const fb: FallbackBriefing = {
-          kind: 'fallback',
-          contextMd: res.contextMd,
-          tokensUsed: res.tokensUsed,
-          sources: res.sources,
-        }
-        setBriefing(fb)
-        try { localStorage.setItem(CACHE_KEY(day), JSON.stringify(fb)) } catch {}
+        setBriefing({ kind: 'cta' })
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load briefing')
@@ -101,8 +78,6 @@ export function DailyBriefingCard() {
   }
 
   useEffect(() => { fetchBriefing() }, [])
-
-  if (skipped) return null
 
   return (
     <motion.div
@@ -128,9 +103,6 @@ export function DailyBriefingCard() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            {briefing?.kind === 'fallback' && (
-              <span className="text-[10px] text-white/30">{briefing.tokensUsed} tokens · fallback</span>
-            )}
             <button
               onClick={() => fetchBriefing(true)}
               disabled={loading}
@@ -158,25 +130,31 @@ export function DailyBriefingCard() {
               Open Kairos <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
-        ) : briefing?.kind === 'fallback' ? (
-          <>
-            <BriefingProse markdown={briefing.contextMd} />
-            {briefing.sources.length > 0 && (
-              <div className="mt-4 pt-3 border-t border-white/[0.05] flex flex-wrap gap-1.5">
-                <span className="text-[10px] uppercase tracking-[0.18em] text-white/35 mr-1">Sources</span>
-                {briefing.sources.slice(0, 8).map((s) => (
-                  <Link
-                    key={s.id}
-                    href={`/kairos?focus=${s.id}`}
-                    title={`Open in Kairos · ${s.section}`}
-                    className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.04] text-white/55 hover:bg-white/[0.10] hover:text-white/90 transition-colors"
-                  >
-                    {s.title.length > 36 ? s.title.slice(0, 33) + '…' : s.title}
-                  </Link>
-                ))}
+        ) : briefing?.kind === 'cta' ? (
+          <div className="flex flex-col items-start gap-3 py-2">
+            <div className="flex items-center gap-2.5">
+              <div
+                className="w-8 h-8 rounded-xl flex items-center justify-center"
+                style={{
+                  background: 'color-mix(in oklab, var(--primary) 18%, transparent)',
+                  boxShadow: '0 0 16px color-mix(in oklab, var(--primary) 30%, transparent)',
+                }}
+              >
+                <KeyRound className="w-4 h-4" style={{ color: 'var(--primary)' }} />
               </div>
-            )}
-          </>
+              <div>
+                <div className="text-[13px] text-white/90 font-medium">Enable AI to start your briefings</div>
+                <div className="text-[11px] text-white/45 mt-0.5">Bring your own Anthropic, OpenAI, or Gemini key. Stored encrypted, used only for your briefings.</div>
+              </div>
+            </div>
+            <Link
+              href="/settings/ai"
+              className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.2em] px-3 py-1.5 rounded-lg border border-white/[0.12] hover:border-white/30 hover:bg-white/[0.04] transition-colors"
+              style={{ color: 'var(--primary)' }}
+            >
+              Configure AI <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
         ) : null}
       </div>
     </motion.div>
