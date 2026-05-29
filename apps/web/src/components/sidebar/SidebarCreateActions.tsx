@@ -2,43 +2,61 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Orbit } from 'lucide-react'
+import { Plus, Orbit, Sparkles } from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils/cn'
 import { useThemeStore } from '@/stores/themeStore'
+import { useKairosStore } from '@/stores/kairosStore'
 import { CreateProjectModal } from '@/components/project/CreateProjectModal'
 import { CreateWorkspaceModal } from '@/components/workspace/CreateWorkspaceModal'
+import { CreateDominionModal } from '@/components/kairos/CreateDominionModal'
 import { createGroup } from '@/lib/actions/workspaces'
-import { useRouter } from 'next/navigation'
 
 // Self-contained "New Project / New Realm" actions for sidebars that don't
-// own the modal state (e.g. ProjectSidebar). Loads no realm list — the
-// project modal accepts empty realms and the user can re-anchor later.
+// own the modal state. On /kairos the actions swap to a single "New Dominion"
+// — the sidebar's contextual, projects and realms aren't the active surface.
 export function SidebarCreateActions({ collapsed }: { collapsed: boolean }) {
   const router = useRouter()
+  const pathname = usePathname()
+  const onKairos = pathname?.startsWith('/kairos') ?? false
   const colors = useThemeStore((s) => s.colors)
   const glowColor = colors?.glow ?? 'rgba(139, 92, 246, 0.4)'
+  const triggerKairosRefresh = useKairosStore((s) => s.triggerRefresh)
 
   const [projectOpen, setProjectOpen] = useState(false)
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
+  const [dominionOpen, setDominionOpen] = useState(false)
 
   return (
     <>
       <div className={cn('flex flex-col gap-1.5 px-2 py-3', collapsed && 'items-center')}>
-        <ActionButton
-          icon={<Plus className="w-3.5 h-3.5 shrink-0" />}
-          label="New Project"
-          collapsed={collapsed}
-          glowColor={glowColor}
-          onClick={() => setProjectOpen(true)}
-        />
-        <ActionButton
-          icon={<Orbit className="w-3.5 h-3.5 shrink-0" />}
-          label="New Realm"
-          collapsed={collapsed}
-          glowColor={glowColor}
-          onClick={() => setWorkspaceOpen(true)}
-          variant="subtle"
-        />
+        {onKairos ? (
+          <ActionButton
+            icon={<Sparkles className="w-3.5 h-3.5 shrink-0" />}
+            label="New Dominion"
+            collapsed={collapsed}
+            glowColor={glowColor}
+            onClick={() => setDominionOpen(true)}
+          />
+        ) : (
+          <>
+            <ActionButton
+              icon={<Plus className="w-3.5 h-3.5 shrink-0" />}
+              label="New Project"
+              collapsed={collapsed}
+              glowColor={glowColor}
+              onClick={() => setProjectOpen(true)}
+            />
+            <ActionButton
+              icon={<Orbit className="w-3.5 h-3.5 shrink-0" />}
+              label="New Realm"
+              collapsed={collapsed}
+              glowColor={glowColor}
+              onClick={() => setWorkspaceOpen(true)}
+              variant="subtle"
+            />
+          </>
+        )}
       </div>
 
       <CreateProjectModal
@@ -56,6 +74,16 @@ export function SidebarCreateActions({ collapsed }: { collapsed: boolean }) {
         onCreate={async (name, color, icon) => {
           await createGroup({ name, color, icon })
           setWorkspaceOpen(false)
+          router.refresh()
+        }}
+      />
+
+      <CreateDominionModal
+        isOpen={dominionOpen}
+        onClose={() => setDominionOpen(false)}
+        onCreated={() => {
+          setDominionOpen(false)
+          triggerKairosRefresh()
           router.refresh()
         }}
       />
