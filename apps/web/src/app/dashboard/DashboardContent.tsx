@@ -17,8 +17,6 @@ import { GlassStage } from '@/components/ui/GlassStage'
 import { useViewPreference, type ProjectViewMode } from '@/components/project/useViewPreference'
 import { AppSidebar } from '@/components/sidebar/AppSidebar'
 import { TopBar } from '@/components/layout/TopBar'
-import { DailyBriefingCard } from '@/components/hyperspace/DailyBriefingCard'
-import { EodReflectionCard } from '@/components/hyperspace/EodReflectionCard'
 import { useSidebarStore } from '@/stores/sidebarStore'
 import { RealmSection } from '@/components/workspace/RealmSection'
 import { ProjectViewSwitcher } from '@/components/project/ProjectViewSwitcher'
@@ -263,12 +261,6 @@ export default function DashboardContent({ user, projects: initialProjects, init
         />
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-6 py-4 relative z-10">
-          {loaded && (
-            <div className="flex flex-col gap-3 mb-4">
-              <EodReflectionCard />
-              <DailyBriefingCard />
-            </div>
-          )}
           {!loaded ? (
             <div className="flex items-center justify-center py-16 text-sm text-[var(--text-dim)]">Loading realms...</div>
           ) : !hasProjects ? (

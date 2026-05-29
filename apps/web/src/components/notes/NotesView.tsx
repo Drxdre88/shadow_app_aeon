@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
 import { listMemoriesForUser, searchMemories } from '@/lib/actions/memories'
 import type { MemoryType, MemorySource } from '@/lib/data/validators'
 import { MemorySidePanel } from '@/components/kairos/MemorySidePanel'
@@ -119,13 +118,6 @@ export function NotesView() {
     <div className="h-full w-full flex flex-col">
       <header className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06] bg-black/40 backdrop-blur-md shrink-0">
         <div className="flex items-center gap-3">
-          <Link
-            href="/dashboard"
-            className="text-white/40 hover:text-white p-1.5 rounded-md hover:bg-white/[0.06]"
-            title="Back to dashboard"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </Link>
           <span className="text-[11px] uppercase tracking-[0.28em] text-white/50">Notes</span>
           <span className="text-[11px] text-white/30">
             {memories.length} memor{memories.length === 1 ? 'y' : 'ies'}
