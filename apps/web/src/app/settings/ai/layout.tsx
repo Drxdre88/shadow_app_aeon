@@ -4,7 +4,7 @@ import { getWorkspaceProjects } from '@/lib/actions/projects'
 import { ensurePersonalWorkspace } from '@/lib/actions/workspaces'
 import { KairosShell } from '@/components/kairos/KairosShell'
 
-export default async function NotesLayout({ children }: { children: React.ReactNode }) {
+export default async function AiSettingsLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
   if (!session?.user) redirect('/login')
   if (!session.user.termsAccepted) redirect('/beta-terms')
@@ -13,9 +13,7 @@ export default async function NotesLayout({ children }: { children: React.ReactN
 
   return (
     <KairosShell user={session.user} initialWorkspaces={workspaceData}>
-      <div className="h-full w-full overflow-hidden bg-black text-white/90">
-        {children}
-      </div>
+      <div className="h-full w-full overflow-y-auto">{children}</div>
     </KairosShell>
   )
 }

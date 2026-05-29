@@ -51,7 +51,7 @@ export function HelpModal({ isOpen, onClose }: HelpModalProps) {
 
   return createPortal(
     <div
-      className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[200]"
       onClick={onClose}
     >
       <motion.div
