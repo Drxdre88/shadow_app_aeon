@@ -1,17 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { KeyRound, Lock, Sparkles, ShieldCheck, ArrowRight, ChevronLeft } from 'lucide-react'
+import { KeyRound, Lock, Sparkles, ArrowRight, ChevronLeft } from 'lucide-react'
 import AiSettingsClient from './AiSettingsClient'
 import type { CredentialSummary, PreferenceShape } from '@/lib/data/ai-credentials'
 
 // ─────────────────────────────────────────────────────────────────────────
-// Stunning gated entry surface for /settings/ai.
+// Gated entry surface for /settings/ai.
 //
-// Lands every visitor on a cinematic hold-screen. Admins press through to
-// the existing AI Settings registration workflow. Non-admins get a beta
-// hold message instead of a 404 — the page no longer rugs them.
+// Admins land on a hold-screen with a single "Wire a key" CTA before the
+// real settings form. The pill in the header reflects real credential
+// state. Non-admins see the closed-beta hold.
 // ─────────────────────────────────────────────────────────────────────────
 
 type Props = {
@@ -26,8 +26,28 @@ const PROVIDER_BRANDS: Array<{ id: string; label: string; tint: string }> = [
   { id: 'google',    label: 'Gemini',    tint: '#4f8df7' },
 ]
 
+const PROVIDER_LABEL: Record<string, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  google: 'Gemini',
+}
+
 export default function BYOKEntryScreen({ isAdmin, initialCredentials, initialPreferences }: Props) {
   const [entered, setEntered] = useState(false)
+
+  // Status-pill text reflects the real credential state. Briefings run on
+  // the heavy tier, so "active" tracks heavy-tier preference when its
+  // provider has a key; otherwise the first wired provider.
+  const credentialStatus = useMemo(() => {
+    if (!isAdmin) return 'Private beta'
+    const keys = initialCredentials ?? []
+    if (keys.length === 0) return 'Admin · no keys wired'
+    const heavyId = initialPreferences?.heavy?.providerId
+    const configured = new Set(keys.map((k) => k.provider))
+    const active = heavyId && configured.has(heavyId) ? heavyId : keys[0].provider
+    const label = PROVIDER_LABEL[active] ?? active
+    return `${keys.length} key${keys.length === 1 ? '' : 's'} wired · ${label} active`
+  }, [isAdmin, initialCredentials, initialPreferences])
 
   if (entered && isAdmin && initialCredentials && initialPreferences) {
     return (
@@ -133,18 +153,16 @@ export default function BYOKEntryScreen({ isAdmin, initialCredentials, initialPr
               }}
             >
               <Sparkles className="w-3 h-3" />
-              {isAdmin ? 'Admin · private beta' : 'Private beta'}
+              {credentialStatus}
             </div>
           </div>
 
           <h1 className="text-center text-3xl sm:text-4xl font-light tracking-tight mb-4">
-            Bring your own AI
+            Kairos runs on your key.
           </h1>
 
           <p className="text-center text-[14px] leading-relaxed text-white/55 mb-10 max-w-md mx-auto">
-            Plug an Anthropic, OpenAI, or Gemini key into Aeon. Encrypted at rest with
-            AES-256-GCM. Powers the morning briefer, advisory feed, and every AI-touched
-            surface across Kairos.
+            Plug in a key and Kairos starts thinking for you tomorrow morning.
           </p>
 
           {/* provider chips */}
@@ -168,25 +186,6 @@ export default function BYOKEntryScreen({ isAdmin, initialCredentials, initialPr
             ))}
           </div>
 
-          {/* value pillars */}
-          <div className="grid grid-cols-3 gap-3 mb-10">
-            <Pillar
-              icon={<ShieldCheck className="w-4 h-4" />}
-              title="Encrypted"
-              detail="AES-256-GCM at rest. Never logged."
-            />
-            <Pillar
-              icon={<KeyRound className="w-4 h-4" />}
-              title="Your account"
-              detail="Your provider, your quota, your bill."
-            />
-            <Pillar
-              icon={<Sparkles className="w-4 h-4" />}
-              title="Per-tier"
-              detail="Cheap / standard / heavy routed automatically."
-            />
-          </div>
-
           {/* CTA */}
           <div className="flex justify-center">
             {isAdmin ? (
@@ -204,7 +203,7 @@ export default function BYOKEntryScreen({ isAdmin, initialCredentials, initialPr
                   color: 'color-mix(in oklab, var(--primary) 15%, white)',
                 }}
               >
-                Begin setup
+                Wire a key
                 <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
               </motion.button>
             ) : (
@@ -212,35 +211,13 @@ export default function BYOKEntryScreen({ isAdmin, initialCredentials, initialPr
             )}
           </div>
 
-          <div className="mt-12 text-center text-[10px] uppercase tracking-[0.22em] text-white/25">
-            Aeon · Kairos · Bring-your-own-key
-          </div>
+          {isAdmin && (
+            <p className="mt-6 text-center text-[10.5px] leading-relaxed text-white/35 max-w-sm mx-auto">
+              Stored encrypted. Used only by you. Never sent anywhere except your chosen provider.
+            </p>
+          )}
         </motion.div>
       </div>
-    </div>
-  )
-}
-
-function Pillar({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }) {
-  return (
-    <div
-      className="px-3 py-3 rounded-xl text-center"
-      style={{
-        background: 'rgba(255,255,255,0.02)',
-        border: '1px solid rgba(255,255,255,0.06)',
-      }}
-    >
-      <div
-        className="inline-flex w-7 h-7 items-center justify-center rounded-md mb-2"
-        style={{
-          background: 'color-mix(in oklab, var(--primary) 14%, transparent)',
-          color: 'color-mix(in oklab, var(--primary) 25%, white)',
-        }}
-      >
-        {icon}
-      </div>
-      <div className="text-[11px] font-medium text-white/80 mb-1">{title}</div>
-      <div className="text-[10px] leading-snug text-white/40">{detail}</div>
     </div>
   )
 }

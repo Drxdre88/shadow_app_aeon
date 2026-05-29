@@ -2,15 +2,17 @@
 
 import { revalidatePath } from 'next/cache'
 import { generateText } from 'ai'
-import { requireAiAccess } from './helpers'
+import { requireAiAccess, requireAuth } from './helpers'
 import {
   listCredentials,
+  presenceFor,
   upsertCredential,
   revokeCredential,
   renameCredential,
   getPreferences,
   upsertPreferences,
   type PreferenceShape,
+  type CredentialPresence,
 } from '@/lib/data/ai-credentials'
 import { buildModelWithKey } from '@/lib/ai/router'
 import { isValidProvider, DEFAULT_PREFERENCES, getModelDescriptor, type ProviderId } from '@/lib/ai/providers'
@@ -18,6 +20,13 @@ import { isValidProvider, DEFAULT_PREFERENCES, getModelDescriptor, type Provider
 export async function fetchCredentials() {
   const userId = await requireAiAccess()
   return listCredentials(userId)
+}
+
+// Open to any authed user — surfaces (Daily Briefing card) need to know
+// whether AI is wired, even for non-admins who can't reach /settings/ai yet.
+export async function hasAiCredentials(): Promise<CredentialPresence> {
+  const userId = await requireAuth()
+  return presenceFor(userId)
 }
 
 export async function saveCredential(input: { provider: string; label: string; apiKey: string }) {

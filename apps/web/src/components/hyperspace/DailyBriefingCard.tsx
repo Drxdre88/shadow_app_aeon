@@ -2,15 +2,19 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Sparkles, RefreshCw, ArrowRight, KeyRound, Wand2, Loader2 } from 'lucide-react'
+import { Sparkles, RefreshCw, ArrowRight, KeyRound, Wand2, Loader2, Check } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { getTodaysBriefings, runBriefingNow } from '@/lib/actions/memories'
+import { hasAiCredentials } from '@/lib/actions/ai-credentials'
+import type { CredentialPresence } from '@/lib/data/ai-credentials'
+import type { ProviderId } from '@/lib/ai/providers'
 
 // Kairos Phase 1.5 — DailyBriefingCard reads from Briefer-generated
 // advisories (memory.type='advisory', source='cron'). One advisory per
-// Dominion per day. When no advisories exist (BYOK not set, cron not run
-// yet) we show a small Enable AI CTA pointing to /settings/ai instead of
-// dumping the raw retrieval bundle.
+// Dominion per day. Card branches on three states: no key wired → CTA,
+// key wired but no brief yet today → manual Run-now, advisories present →
+// render them. Provider pills live in the header so the user always sees
+// which key is on duty.
 
 type Advisory = {
   id: string
@@ -22,16 +26,11 @@ type Advisory = {
   dominionColor: string | null
 }
 
-type CtaBriefing = {
-  kind: 'cta'
-}
-
-type AdvisoryBriefing = {
-  kind: 'advisories'
-  advisories: Advisory[]
-}
-
-type Briefing = AdvisoryBriefing | CtaBriefing
+const PROVIDER_PILLS: Array<{ id: ProviderId; label: string; tint: string }> = [
+  { id: 'anthropic', label: 'Anthropic', tint: '#c97e4a' },
+  { id: 'openai',    label: 'OpenAI',    tint: '#10a37f' },
+  { id: 'google',    label: 'Gemini',    tint: '#4f8df7' },
+]
 
 const CACHE_KEY = (day: string) => `aeon.kairos.briefing.${day}`
 
@@ -40,7 +39,8 @@ function todayKey(): string {
 }
 
 export function DailyBriefingCard() {
-  const [briefing, setBriefing] = useState<Briefing | null>(null)
+  const [advisories, setAdvisories] = useState<Advisory[] | null>(null)
+  const [presence, setPresence] = useState<CredentialPresence | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
@@ -50,13 +50,14 @@ export function DailyBriefingCard() {
     setLoading(true)
     setError(null)
     const day = todayKey()
+
+    let cachedAdvisories: Advisory[] | null = null
     if (!force) {
       try {
         const cached = localStorage.getItem(CACHE_KEY(day))
         if (cached) {
-          setBriefing(JSON.parse(cached) as Briefing)
-          setLoading(false)
-          return
+          const parsed = JSON.parse(cached)
+          if (Array.isArray(parsed)) cachedAdvisories = parsed as Advisory[]
         }
       } catch {
         // corrupt cache → refetch
@@ -64,13 +65,14 @@ export function DailyBriefingCard() {
     }
 
     try {
-      const advisories = await getTodaysBriefings()
-      if (advisories.length > 0) {
-        const next: AdvisoryBriefing = { kind: 'advisories', advisories }
-        setBriefing(next)
-        try { localStorage.setItem(CACHE_KEY(day), JSON.stringify(next)) } catch {}
-      } else {
-        setBriefing({ kind: 'cta' })
+      const [freshAdvisories, freshPresence] = await Promise.all([
+        cachedAdvisories ? Promise.resolve(cachedAdvisories) : getTodaysBriefings(),
+        hasAiCredentials(),
+      ])
+      setAdvisories(freshAdvisories)
+      setPresence(freshPresence)
+      if (!cachedAdvisories && freshAdvisories.length > 0) {
+        try { localStorage.setItem(CACHE_KEY(day), JSON.stringify(freshAdvisories)) } catch {}
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load briefing')
@@ -108,6 +110,10 @@ export function DailyBriefingCard() {
     }
   }
 
+  const hasAdvisories = (advisories?.length ?? 0) > 0
+  const hasKey = presence?.hasAny === true
+  const showCta = !loading && !error && !hasKey
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -123,28 +129,31 @@ export function DailyBriefingCard() {
         }}
       />
       <div className="relative">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />
+        <div className="flex items-center justify-between mb-3 gap-3">
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <Sparkles className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--primary)' }} />
             <span className="text-[10px] uppercase tracking-[0.22em] text-white/55">Daily Briefing</span>
-            {briefing?.kind === 'advisories' && (
-              <span className="text-[10px] text-white/35">· {briefing.advisories.length} Dominion{briefing.advisories.length === 1 ? '' : 's'}</span>
+            {hasAdvisories && (
+              <span className="text-[10px] text-white/35">· {advisories!.length} Dominion{advisories!.length === 1 ? '' : 's'}</span>
             )}
+            {presence && <ProviderPills presence={presence} />}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {genStatus && (
               <span className="text-[10px] text-white/45 truncate max-w-[200px]" title={genStatus}>{genStatus}</span>
             )}
-            <button
-              onClick={generate}
-              disabled={generating || loading}
-              title="Run briefing now"
-              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] uppercase tracking-[0.18em] rounded-md border border-white/[0.10] hover:border-white/[0.25] hover:bg-white/[0.04] text-white/70 hover:text-white/95 disabled:opacity-40 transition-colors"
-              style={{ color: generating ? undefined : 'var(--primary)' }}
-            >
-              {generating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-              {generating ? 'Briefing…' : 'Run now'}
-            </button>
+            {hasKey && (
+              <button
+                onClick={generate}
+                disabled={generating || loading}
+                title="Run briefing now"
+                className="inline-flex items-center gap-1 px-2 py-1 text-[10px] uppercase tracking-[0.18em] rounded-md border border-white/[0.10] hover:border-white/[0.25] hover:bg-white/[0.04] text-white/70 hover:text-white/95 disabled:opacity-40 transition-colors"
+                style={{ color: generating ? undefined : 'var(--primary)' }}
+              >
+                {generating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                {generating ? 'Briefing…' : 'Run now'}
+              </button>
+            )}
             <button
               onClick={() => fetchBriefing(true)}
               disabled={loading}
@@ -160,9 +169,9 @@ export function DailyBriefingCard() {
           <div className="text-sm text-white/40 py-4">Loading briefing…</div>
         ) : error ? (
           <div className="text-sm text-rose-300 py-2">{error}</div>
-        ) : briefing?.kind === 'advisories' ? (
+        ) : hasAdvisories ? (
           <div className="max-h-[420px] overflow-y-auto pr-1 flex flex-col gap-4">
-            {briefing.advisories.map((a) => (
+            {advisories!.map((a) => (
               <AdvisorySection key={a.id} advisory={a} />
             ))}
             <Link
@@ -172,7 +181,11 @@ export function DailyBriefingCard() {
               Open Kairos <ArrowRight className="w-3 h-3" />
             </Link>
           </div>
-        ) : briefing?.kind === 'cta' ? (
+        ) : hasKey ? (
+          <div className="text-[12px] text-white/55 leading-relaxed py-2">
+            No briefing yet today. Hit <span className="text-white/80">Run now</span> to generate one for each active Dominion.
+          </div>
+        ) : showCta ? (
           <div className="flex flex-col items-start gap-3 py-2">
             <div className="flex items-center gap-2.5">
               <div
@@ -200,6 +213,53 @@ export function DailyBriefingCard() {
         ) : null}
       </div>
     </motion.div>
+  )
+}
+
+function ProviderPills({ presence }: { presence: CredentialPresence }) {
+  return (
+    <div className="flex items-center gap-1.5 ml-1">
+      {PROVIDER_PILLS.map((p) => {
+        const configured = presence.configured.includes(p.id)
+        const active = presence.activeProvider === p.id
+        const baseStyle: React.CSSProperties = configured
+          ? {
+              background: `color-mix(in oklab, ${p.tint} ${active ? 16 : 8}%, rgba(255,255,255,0.02))`,
+              border: `1px solid color-mix(in oklab, ${p.tint} ${active ? 50 : 24}%, transparent)`,
+              color: `color-mix(in oklab, ${p.tint} ${active ? 35 : 55}%, white)`,
+              opacity: 1,
+            }
+          : {
+              background: 'rgba(255,255,255,0.02)',
+              border: '1px dashed rgba(255,255,255,0.12)',
+              color: 'rgba(255,255,255,0.35)',
+              opacity: 0.65,
+            }
+        const title = configured
+          ? active
+            ? `${p.label} — active for briefings`
+            : `${p.label} — key wired (not active for briefings)`
+          : `${p.label} — not configured. Add a key in Settings → AI.`
+        return (
+          <span
+            key={p.id}
+            title={title}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9.5px] uppercase tracking-[0.14em]"
+            style={baseStyle}
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full"
+              style={{
+                background: configured ? p.tint : 'rgba(255,255,255,0.18)',
+                boxShadow: active ? `0 0 6px ${p.tint}` : 'none',
+              }}
+            />
+            {p.label}
+            {active && <Check className="w-2.5 h-2.5" style={{ color: p.tint }} />}
+          </span>
+        )
+      })}
+    </div>
   )
 }
 
