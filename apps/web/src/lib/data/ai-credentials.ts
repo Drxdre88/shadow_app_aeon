@@ -34,15 +34,12 @@ export async function listCredentials(userId: string): Promise<CredentialSummary
     .orderBy(desc(userAiCredentials.createdAt))
 }
 
-// Lightweight presence check used by surfaces that only need to know whether
-// the user has wired any AI keys (and which one the briefer would actually
-// pick today). Briefings run on the heavy tier, so the "active" provider is
-// the heavy-tier preference iff that provider has an unrevoked credential.
 export async function presenceFor(userId: string): Promise<CredentialPresence> {
   const rows = await db
     .select({ provider: userAiCredentials.provider })
     .from(userAiCredentials)
     .where(and(eq(userAiCredentials.userId, userId), isNull(userAiCredentials.revokedAt)))
+    .orderBy(desc(userAiCredentials.createdAt))
 
   const configured = Array.from(new Set(rows.map((r) => r.provider))) as ProviderId[]
   if (configured.length === 0) {

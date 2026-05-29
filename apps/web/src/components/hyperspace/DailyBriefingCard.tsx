@@ -7,14 +7,7 @@ import { motion } from 'framer-motion'
 import { getTodaysBriefings, runBriefingNow } from '@/lib/actions/memories'
 import { hasAiCredentials } from '@/lib/actions/ai-credentials'
 import type { CredentialPresence } from '@/lib/data/ai-credentials'
-import type { ProviderId } from '@/lib/ai/providers'
-
-// Kairos Phase 1.5 — DailyBriefingCard reads from Briefer-generated
-// advisories (memory.type='advisory', source='cron'). One advisory per
-// Dominion per day. Card branches on three states: no key wired → CTA,
-// key wired but no brief yet today → manual Run-now, advisories present →
-// render them. Provider pills live in the header so the user always sees
-// which key is on duty.
+import { PROVIDER_UI } from '@/lib/ai/providers-ui'
 
 type Advisory = {
   id: string
@@ -26,16 +19,18 @@ type Advisory = {
   dominionColor: string | null
 }
 
-const PROVIDER_PILLS: Array<{ id: ProviderId; label: string; tint: string }> = [
-  { id: 'anthropic', label: 'Anthropic', tint: '#c97e4a' },
-  { id: 'openai',    label: 'OpenAI',    tint: '#10a37f' },
-  { id: 'google',    label: 'Gemini',    tint: '#4f8df7' },
-]
+const PROVIDER_PILLS = PROVIDER_UI
 
 const CACHE_KEY = (day: string) => `aeon.kairos.briefing.${day}`
 
 function todayKey(): string {
   return new Date().toISOString().slice(0, 10)
+}
+
+function isAdvisoryShape(value: unknown): value is Advisory {
+  if (!value || typeof value !== 'object') return false
+  const v = value as Record<string, unknown>
+  return typeof v.id === 'string' && typeof v.title === 'string' && typeof v.bodyMd === 'string'
 }
 
 export function DailyBriefingCard() {
@@ -57,10 +52,14 @@ export function DailyBriefingCard() {
         const cached = localStorage.getItem(CACHE_KEY(day))
         if (cached) {
           const parsed = JSON.parse(cached)
-          if (Array.isArray(parsed)) cachedAdvisories = parsed as Advisory[]
+          if (Array.isArray(parsed) && parsed.every(isAdvisoryShape)) {
+            cachedAdvisories = parsed as Advisory[]
+          } else {
+            localStorage.removeItem(CACHE_KEY(day))
+          }
         }
       } catch {
-        // corrupt cache → refetch
+        try { localStorage.removeItem(CACHE_KEY(day)) } catch {}
       }
     }
 

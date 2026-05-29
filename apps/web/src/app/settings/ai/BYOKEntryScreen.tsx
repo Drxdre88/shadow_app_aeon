@@ -5,14 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { KeyRound, Lock, Sparkles, ArrowRight, ChevronLeft } from 'lucide-react'
 import AiSettingsClient from './AiSettingsClient'
 import type { CredentialSummary, PreferenceShape } from '@/lib/data/ai-credentials'
-
-// ─────────────────────────────────────────────────────────────────────────
-// Gated entry surface for /settings/ai.
-//
-// Admins land on a hold-screen with a single "Wire a key" CTA before the
-// real settings form. The pill in the header reflects real credential
-// state. Non-admins see the closed-beta hold.
-// ─────────────────────────────────────────────────────────────────────────
+import { PROVIDER_UI, PROVIDER_LABEL } from '@/lib/ai/providers-ui'
 
 type Props = {
   isAdmin: boolean
@@ -20,24 +13,9 @@ type Props = {
   initialPreferences: PreferenceShape | null
 }
 
-const PROVIDER_BRANDS: Array<{ id: string; label: string; tint: string }> = [
-  { id: 'anthropic', label: 'Anthropic', tint: '#c97e4a' },
-  { id: 'openai',    label: 'OpenAI',    tint: '#10a37f' },
-  { id: 'google',    label: 'Gemini',    tint: '#4f8df7' },
-]
-
-const PROVIDER_LABEL: Record<string, string> = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  google: 'Gemini',
-}
-
 export default function BYOKEntryScreen({ isAdmin, initialCredentials, initialPreferences }: Props) {
   const [entered, setEntered] = useState(false)
 
-  // Status-pill text reflects the real credential state. Briefings run on
-  // the heavy tier, so "active" tracks heavy-tier preference when its
-  // provider has a key; otherwise the first wired provider.
   const credentialStatus = useMemo(() => {
     if (!isAdmin) return 'Private beta'
     const keys = initialCredentials ?? []
@@ -45,7 +23,7 @@ export default function BYOKEntryScreen({ isAdmin, initialCredentials, initialPr
     const heavyId = initialPreferences?.heavy?.providerId
     const configured = new Set(keys.map((k) => k.provider))
     const active = heavyId && configured.has(heavyId) ? heavyId : keys[0].provider
-    const label = PROVIDER_LABEL[active] ?? active
+    const label = PROVIDER_LABEL[active as keyof typeof PROVIDER_LABEL] ?? active
     return `${keys.length} key${keys.length === 1 ? '' : 's'} wired · ${label} active`
   }, [isAdmin, initialCredentials, initialPreferences])
 
@@ -167,7 +145,7 @@ export default function BYOKEntryScreen({ isAdmin, initialCredentials, initialPr
 
           {/* provider chips */}
           <div className="flex items-center justify-center gap-2.5 mb-10 flex-wrap">
-            {PROVIDER_BRANDS.map((p) => (
+            {PROVIDER_UI.map((p) => (
               <div
                 key={p.id}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] tracking-wide"

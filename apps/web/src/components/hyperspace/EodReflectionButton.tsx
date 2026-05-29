@@ -1,15 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Moon, X, Check } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { motion } from 'framer-motion'
+import { Moon, Check } from 'lucide-react'
+import { AnchoredPopover } from '@/components/ui/AnchoredPopover'
 import { createMemory, listMemoriesForUser } from '@/lib/actions/memories'
 import { toast } from '@/components/ui/Toast'
-
-// Sidebar entry for the End-of-Day reflection. Replaces the auto-popping
-// card that used to slam into the top of /dashboard after 6pm — opens as a
-// small popover on click, persists nothing visual unless asked.
 
 function todayTag(): string {
   return new Date().toISOString().slice(0, 10)
@@ -17,45 +13,24 @@ function todayTag(): string {
 
 export function EodReflectionButton() {
   const [open, setOpen] = useState(false)
-  const [mounted, setMounted] = useState(false)
-  const [anchor, setAnchor] = useState<{ top: number; left: number; width: number; height: number } | null>(null)
-  const [alreadyToday, setAlreadyToday] = useState<boolean | null>(null)
+  const [todayCheck, setTodayCheck] = useState<{ day: string; present: boolean } | null>(null)
   const [happened, setHappened] = useState('')
   const [decided, setDecided] = useState('')
   const [stillOpen, setStillOpen] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
 
-  useEffect(() => { setMounted(true) }, [])
-
-  const measureAnchor = useCallback(() => {
-    const el = buttonRef.current
-    if (!el) return
-    const r = el.getBoundingClientRect()
-    setAnchor({ top: r.top, left: r.left, width: r.width, height: r.height })
-  }, [])
-
   useEffect(() => {
     if (!open) return
-    measureAnchor()
-    window.addEventListener('resize', measureAnchor)
-    window.addEventListener('scroll', measureAnchor, true)
-    return () => {
-      window.removeEventListener('resize', measureAnchor)
-      window.removeEventListener('scroll', measureAnchor, true)
-    }
-  }, [open, measureAnchor])
-
-  useEffect(() => {
-    if (!open) return
-    if (alreadyToday !== null) return
+    const tag = todayTag()
+    if (todayCheck && todayCheck.day === tag) return
     listMemoriesForUser({ type: 'reflection', limit: 20 })
       .then((rows) => {
-        const tag = todayTag()
-        setAlreadyToday(rows.some((m) => Array.isArray(m.tags) && (m.tags as string[]).includes(tag)))
+        const present = rows.some((m) => Array.isArray(m.tags) && (m.tags as string[]).includes(tag))
+        setTodayCheck({ day: tag, present })
       })
-      .catch(() => setAlreadyToday(false))
-  }, [open, alreadyToday])
+      .catch(() => setTodayCheck({ day: tag, present: false }))
+  }, [open, todayCheck])
 
   const submit = async () => {
     if (submitting) return
@@ -79,7 +54,7 @@ export function EodReflectionButton() {
         tags: ['eod', tag],
       })
       toast('EOD saved ✓', { force: true })
-      setAlreadyToday(true)
+      setTodayCheck({ day: tag, present: true })
       setHappened('')
       setDecided('')
       setStillOpen('')
@@ -102,81 +77,47 @@ export function EodReflectionButton() {
       >
         <Moon className="w-4 h-4" />
       </motion.button>
+      <AnchoredPopover
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={buttonRef}
+        icon={<Moon className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />}
+        title={
+          <>
+            <span className="text-[11px] uppercase tracking-[0.22em] text-white/65">End of Day</span>
+            <span className="text-[10px] text-white/30 ml-1">{todayTag()}</span>
+          </>
+        }
+      >
+        <div className="p-4 flex flex-col gap-3">
+          {todayCheck?.present ? (
+            <div className="flex items-center gap-2 text-[12px] text-white/65 py-2">
+              <Check className="w-3.5 h-3.5 text-emerald-300" />
+              Reflected today. Add more if anything else surfaced.
+            </div>
+          ) : null}
 
-      {mounted && createPortal(
-        <AnimatePresence>
-          {open && anchor && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[170]"
-                onClick={() => setOpen(false)}
-              />
-              <motion.div
-                initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                transition={{ duration: 0.15 }}
-                style={{
-                  position: 'fixed',
-                  bottom: typeof window !== 'undefined' ? window.innerHeight - anchor.top + 8 : 0,
-                  left: Math.max(8, anchor.left),
-                  width: 'min(440px, calc(100vw - 16px))',
-                  maxHeight: '70vh',
-                  zIndex: 171,
-                }}
-                className="rounded-2xl bg-[rgba(8,6,18,0.96)] backdrop-blur-xl border border-white/[0.08] shadow-2xl flex flex-col overflow-hidden"
-              >
-                <header className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.06] shrink-0">
-                  <div className="flex items-center gap-2">
-                    <Moon className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />
-                    <span className="text-[11px] uppercase tracking-[0.22em] text-white/65">End of Day</span>
-                    <span className="text-[10px] text-white/30">{todayTag()}</span>
-                  </div>
-                  <button
-                    onClick={() => setOpen(false)}
-                    className="p-1 rounded-md text-white/35 hover:text-white/85 hover:bg-white/[0.06]"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </header>
+          <Field label="What happened today?" value={happened} onChange={setHappened} />
+          <Field label="What did I decide?"  value={decided}  onChange={setDecided} />
+          <Field label="What's still open?"  value={stillOpen} onChange={setStillOpen} />
 
-                <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-                  {alreadyToday ? (
-                    <div className="flex items-center gap-2 text-[12px] text-white/65 py-2">
-                      <Check className="w-3.5 h-3.5 text-emerald-300" />
-                      Reflected today. Add more if anything else surfaced.
-                    </div>
-                  ) : null}
-
-                  <Field label="What happened today?" value={happened} onChange={setHappened} />
-                  <Field label="What did I decide?"  value={decided}  onChange={setDecided} />
-                  <Field label="What's still open?"  value={stillOpen} onChange={setStillOpen} />
-
-                  <div className="flex items-center justify-end gap-2 pt-1">
-                    <button
-                      onClick={submit}
-                      disabled={submitting}
-                      className="px-3 py-1.5 rounded-lg text-[11px] uppercase tracking-[0.18em] transition-all disabled:opacity-40"
-                      style={{
-                        background: 'color-mix(in oklab, var(--primary) 18%, transparent)',
-                        border: '1px solid color-mix(in oklab, var(--primary) 45%, transparent)',
-                        color: 'color-mix(in oklab, var(--primary) 22%, white)',
-                        boxShadow: '0 0 14px color-mix(in oklab, var(--primary) 25%, transparent)',
-                      }}
-                    >
-                      {submitting ? 'Saving…' : 'Save reflection'}
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>,
-        document.body,
-      )}
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button
+              onClick={submit}
+              disabled={submitting}
+              className="px-3 py-1.5 rounded-lg text-[11px] uppercase tracking-[0.18em] transition-all disabled:opacity-40"
+              style={{
+                background: 'color-mix(in oklab, var(--primary) 18%, transparent)',
+                border: '1px solid color-mix(in oklab, var(--primary) 45%, transparent)',
+                color: 'color-mix(in oklab, var(--primary) 22%, white)',
+                boxShadow: '0 0 14px color-mix(in oklab, var(--primary) 25%, transparent)',
+              }}
+            >
+              {submitting ? 'Saving…' : 'Save reflection'}
+            </button>
+          </div>
+        </div>
+      </AnchoredPopover>
     </>
   )
 }

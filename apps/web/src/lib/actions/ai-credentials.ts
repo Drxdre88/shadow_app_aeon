@@ -8,7 +8,6 @@ import {
   presenceFor,
   upsertCredential,
   revokeCredential,
-  renameCredential,
   getPreferences,
   upsertPreferences,
   type PreferenceShape,
@@ -22,8 +21,6 @@ export async function fetchCredentials() {
   return listCredentials(userId)
 }
 
-// Open to any authed user — surfaces (Daily Briefing card) need to know
-// whether AI is wired, even for non-admins who can't reach /settings/ai yet.
 export async function hasAiCredentials(): Promise<CredentialPresence> {
   const userId = await requireAuth()
   return presenceFor(userId)
@@ -46,16 +43,6 @@ export async function deleteCredential(id: string) {
   if (!ok) throw new Error('Credential not found')
   revalidatePath('/settings/ai')
   return { revoked: true }
-}
-
-export async function patchCredentialLabel(id: string, label: string) {
-  const userId = await requireAiAccess()
-  const trimmed = label.trim()
-  if (!trimmed) throw new Error('Label required')
-  const row = await renameCredential(id, userId, trimmed)
-  if (!row) throw new Error('Credential not found')
-  revalidatePath('/settings/ai')
-  return row
 }
 
 export async function testCandidateKey(input: { provider: string; apiKey: string; modelId?: string }) {
