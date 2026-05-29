@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Sparkles, RefreshCw, ArrowRight, KeyRound } from 'lucide-react'
+import { Sparkles, RefreshCw, ArrowRight, KeyRound, Wand2, Loader2 } from 'lucide-react'
 import { motion } from 'framer-motion'
-import { getTodaysBriefings } from '@/lib/actions/memories'
+import { getTodaysBriefings, runBriefingNow } from '@/lib/actions/memories'
 
 // Kairos Phase 1.5 — DailyBriefingCard reads from Briefer-generated
 // advisories (memory.type='advisory', source='cron'). One advisory per
@@ -43,6 +43,8 @@ export function DailyBriefingCard() {
   const [briefing, setBriefing] = useState<Briefing | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [generating, setGenerating] = useState(false)
+  const [genStatus, setGenStatus] = useState<string | null>(null)
 
   const fetchBriefing = async (force = false) => {
     setLoading(true)
@@ -79,6 +81,33 @@ export function DailyBriefingCard() {
 
   useEffect(() => { fetchBriefing() }, [])
 
+  const generate = async () => {
+    if (generating) return
+    setGenerating(true)
+    setGenStatus(null)
+    setError(null)
+    try {
+      const res = await runBriefingNow()
+      try { localStorage.removeItem(CACHE_KEY(todayKey())) } catch {}
+      if (res.ran === 0) {
+        setGenStatus('No Dominions yet — create one in Kairos first.')
+      } else if (res.created === 0 && res.existing === 0 && res.skipped.length > 0) {
+        const first = res.skipped[0]
+        setGenStatus(`Skipped: ${first.reason}${res.skipped.length > 1 ? ` (+${res.skipped.length - 1})` : ''}`)
+      } else if (res.created === 0 && res.existing > 0) {
+        setGenStatus(`Already briefed today (${res.existing} Dominion${res.existing === 1 ? '' : 's'}).`)
+        await fetchBriefing(true)
+      } else {
+        setGenStatus(`Brief generated for ${res.created} Dominion${res.created === 1 ? '' : 's'}.`)
+        await fetchBriefing(true)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Briefing failed')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -103,6 +132,19 @@ export function DailyBriefingCard() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            {genStatus && (
+              <span className="text-[10px] text-white/45 truncate max-w-[200px]" title={genStatus}>{genStatus}</span>
+            )}
+            <button
+              onClick={generate}
+              disabled={generating || loading}
+              title="Run briefing now"
+              className="inline-flex items-center gap-1 px-2 py-1 text-[10px] uppercase tracking-[0.18em] rounded-md border border-white/[0.10] hover:border-white/[0.25] hover:bg-white/[0.04] text-white/70 hover:text-white/95 disabled:opacity-40 transition-colors"
+              style={{ color: generating ? undefined : 'var(--primary)' }}
+            >
+              {generating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+              {generating ? 'Briefing…' : 'Run now'}
+            </button>
             <button
               onClick={() => fetchBriefing(true)}
               disabled={loading}

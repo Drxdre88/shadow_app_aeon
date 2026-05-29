@@ -223,6 +223,24 @@ export async function archiveMemoryById(memoryId: string) {
   return row
 }
 
+// Kairos Phase 1 (E20) — manually trigger the Briefer for the current user.
+// Wraps runBrieferForUser so the dashboard "Run briefing now" button has a
+// server action target. Returns a compact summary the UI can surface.
+export async function runBriefingNow() {
+  const userId = await requireAuth()
+  const { runBrieferForUser } = await import('@/lib/kairos/briefer')
+  const results = await runBrieferForUser(userId)
+  return {
+    ran: results.length,
+    created: results.filter((r) => r.status === 'created').length,
+    existing: results.filter((r) => r.status === 'existing').length,
+    skipped: results.filter((r) => r.status === 'skipped').map((r) => ({
+      dominionName: r.dominionName,
+      reason: r.reason ?? 'unknown',
+    })),
+  }
+}
+
 // Stub for Phase 5 — broadcast memory events to a user-scoped Pusher channel.
 // Kept here to lock the contract; the listener wiring lands in Phase 5.
 export async function broadcastMemoryEvent(_userId: string, _event: { type: string; memoryId: string }) {
