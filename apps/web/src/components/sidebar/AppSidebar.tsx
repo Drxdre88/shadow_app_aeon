@@ -332,12 +332,12 @@ function BottomSection({
       <div className="mx-2 h-px bg-white/[0.06]" />
       {collapsed ? (
         <div className="flex flex-col items-center justify-center gap-1 px-2 py-2" style={{ color: 'var(--primary)' }}>
-          <ChangelogButton />
           <NotesButton />
           <DailyBriefingButton />
           <AdvisoryFeed />
           <EodReflectionButton />
           <LiveSessionsButton />
+          <ChangelogButton />
           <BetaFeaturesButton />
           <HelpButton />
           <StatsButton />
@@ -347,13 +347,11 @@ function BottomSection({
       ) : (
         <div className="px-2 py-2" style={{ color: 'var(--primary)' }}>
           <div className="flex items-center justify-center gap-1">
-            <ChangelogButton />
             <NotesButton />
             <DailyBriefingButton />
             <AdvisoryFeed />
             <EodReflectionButton />
             <LiveSessionsButton />
-            <BetaFeaturesButton />
           </div>
           <div
             className="my-1.5 h-px mx-6"
@@ -365,6 +363,8 @@ function BottomSection({
             }}
           />
           <div className="flex items-center justify-center gap-1">
+            <ChangelogButton />
+            <BetaFeaturesButton />
             <HelpButton />
             <StatsButton />
             <SettingsButton />
