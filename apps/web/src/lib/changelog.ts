@@ -22,12 +22,84 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOMINION\` — top-level grouping above project (memories + projects + repos)
 - \`REALM\` — workspace groups, invites, member roles, scoped visibility
 - \`AUTH\` — NextAuth, OAuth providers, sessions, mobile auth
-- \`MCP\` — MCP tool server (76 tools across 13 categories)
+- \`MCP\` — MCP tool server (94 tools across 14 categories)
 - \`API\` — REST routes under \`/api/v1/\`
 - \`DATA\` — schema, migrations, Drizzle queries
 - \`INFRA\` — Capacitor, PWA, Pusher, build, deploy
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
+
+## [0.11.0] — 2026-05-30
+
+> Areas touched: \`KAIROS\` \`DOMINION\` \`UI\` \`MCP\` \`API\` \`DATA\` \`AUTH\` \`BOARD\` \`DOCS\`
+> Theme: Kairos becomes a daily companion — auto-capture, daily briefer, advisory feed, agent spawn — gated by your own AI keys. Sidebar gets a Home entry, the dashboard stops shouting at you, and the AI key page is rebuilt in product voice.
+
+### Added — Bring Your Own AI (BYOK) · \`KAIROS\` · \`AUTH\` · \`API\` · \`UI\`
+- Plug your own Anthropic, OpenAI, or Gemini key into Aeon. Encrypted at rest (AES-256-GCM), per-tier model routing (cheap / standard / heavy), one key active per provider.
+- Settings cog gains an **AI** tab; \`/settings/ai\` opens on a redesigned landing screen (provider-tinted glass) with three provider cards: paste, reveal-toggle, test, save → rotate. The provider you point the heavy tier at gets an **Active** badge.
+- Admin-gated during closed beta. Non-admin accounts see a held \`Rolling out soon\` state.
+
+### Added — Daily Briefer · \`KAIROS\`
+- A 7 a.m. cron writes one advisory per active Dominion using your BYOK heavy-tier model. The advisory is anchored to that Dominion and idempotent — running twice on the same day is a no-op.
+- The Daily Briefing card has three explicit states: no key wired → CTA, key wired but no advisory today → manual **Run now**, advisory present → render with provider pills in the header.
+
+### Added — Daily Briefing + EOD Reflection as sidebar popovers · \`UI\` · \`KAIROS\`
+- Both have moved out of the auto-pinned dashboard slot. The dashboard now opens directly on your realms.
+- Sun icon = Daily Briefing popover. Moon icon = End-of-Day reflection (three fields: what happened, what did I decide, what's still open; idempotent per day, day-resets after midnight).
+- Both share a new \`AnchoredPopover\` primitive that flips below the trigger when there isn't room above and closes on Escape.
+
+### Added — Advisory feed (ambient sidebar) · \`KAIROS\`
+- Sparkle icon in the sidebar shows an unread count. Popover lists the last 3 days of advisories with acknowledge (soft-archive) and \`open →\` deep-link to the memory in Kairos.
+
+### Added — Auto-capture (board + project events) · \`KAIROS\` · \`DATA\`
+- Task and project mutations now fire-and-forget into the memory layer (created, updated, moved, completed, deleted). The Notes bento and Kairos graph populate themselves as you work.
+- A nightly project-snapshot cron writes one memory per project per day: open / done / blocked counts plus the last 5 events.
+
+### Added — Kairos Spawn primitive · \`KAIROS\` · \`API\` · \`DATA\` · \`MCP\`
+- New \`agent_sessions\` + \`session_events\` tables and \`apps/kairos-worker/\` — a standalone Node HTTP service that shells the Claude Code / Codex CLI on your behalf.
+- Live Sessions button in the sidebar shows running sessions with a pulsing badge, a transcript that polls every 2 s, and a kill switch. Full REST (\`/api/v1/sessions/*\`) and MCP (\`spawn_session\`, \`list_sessions\`, \`get_session\`, \`list_session_events\`, \`kill_session\`) parity.
+
+### Added — Notes bento page (\`/notes\`) · \`KAIROS\` · \`UI\`
+- Pinterest-style grid of memories with today's auto-capture strip up top, a neighbours panel that re-seeds on any linked memory, and **Promote to Card** (convert a memory into a board task).
+
+### Added — Trello-style task assignment · \`BOARD\` · \`DATA\` · \`MCP\`
+- New \`task_assignees\` table. Press \`M\` on any selected card to open the assignee picker overlay. Multi-assign per task. Card-face avatar pile is not yet shipped — picker only.
+
+### Added — Home entry at the top of every sidebar · \`UI\`
+- Glowing **Home** tile sits above the realm list on every page, lighting up when you're on \`/dashboard\`. Replaces the ad-hoc \`← Dashboard\` arrows that were missing on several routes.
+- Bottom pill row reorganised: top cluster = today (Notes / Briefing / Advisories / EOD / Live sessions); bottom cluster = utilities (Changelog / Beta features / Help / Stats / Settings).
+
+### Added — Dominion editor + creator · \`DOMINION\` · \`UI\`
+- **New Dominion** sidebar action opens a glassy creation modal (name, color, icon).
+- Dominion edit drawer lets you inline-edit vision, long-form mission, objectives (status + target date), and the visual treatment.
+
+### Changed — \`/notes\` and \`/settings/ai\` now wrap in the standard sidebar shell · \`UI\`
+- Previously rendered bare — both pages now show the same sidebar as the rest of the app, with a working Home entry.
+
+### Changed — AI key wiring page redesigned · \`UI\` · \`KAIROS\`
+- Blue, generic settings form replaced with a theme-aware, glassy, provider-tinted dashboard. Reveal toggle on the input. Test result inlines as a tinted chip. Save button label flips to **Rotate** once a key exists. Tier-routing cards flag any tier whose chosen provider has no key.
+
+### Changed — MCP tool count: 76 → 94 · \`MCP\`
+- +16 in **dominions** (CRUD, vision, objectives, repo mapping, project assignment, bulk assign), +5 in **sessions** (spawn, list, get, events, kill). Realms grew +3 (members + invites). Total now 14 categories.
+
+### Fixed — Help / Stats / Settings modals no longer get overlapped by Kairos node labels · \`UI\`
+- Bumped from \`z-50\` to \`z-[200]\` so the 3D graph's planet labels (drei \`Html zIndexRange={[100,0]}\`) sit below them. Same fix as previously applied to the changelog + features modals.
+
+### Fixed — EOD reflection's "already today" flag persisted across midnight · \`KAIROS\`
+- A tab left open overnight kept showing yesterday's status. The flag now invalidates when the captured day no longer matches today's tag.
+
+### Fixed — Daily Briefing card no longer crashes on a corrupt cache entry · \`KAIROS\`
+- Each cached advisory is shape-checked on parse; mismatches trigger a clean refetch instead of throwing inside the markdown renderer.
+
+### Fixed — Briefing provider pill no longer flickers · \`KAIROS\` · \`DATA\`
+- When the heavy-tier preference isn't wired, the fallback active provider is now picked from a deterministically ordered credential list (was undefined Postgres row order).
+
+### Migrations required
+- \`0014_ai_integration.sql\` — \`user_ai_credentials\`, \`user_ai_preferences\`.
+- \`0017_dominion_body.sql\` — vision / mission / objectives on \`dominions\`; \`dominion_objectives\` table.
+- \`0018_engine_policies.sql\` — \`engine_policies\` for routing overrides.
+- \`0019_agent_sessions.sql\` — \`agent_sessions\` + \`session_events\`.
+- \`0020_task_assignees.sql\` — \`task_assignees\`.
 
 ## [0.10.0] — 2026-05-23
 
