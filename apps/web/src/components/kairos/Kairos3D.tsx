@@ -11,6 +11,7 @@ import { SUN_DIR } from './scene/params'
 import { Backdrop } from './scene/Backdrop'
 import { PostFX } from './scene/PostFX'
 import { PlanetCloud, type SceneNode } from './scene/PlanetCloud'
+import { useKairosStore } from '@/stores/kairosStore'
 
 export type SkyboxId = 'nebula-4k' | 'lunar-4k' | 'lunar-8k'
 
@@ -40,6 +41,7 @@ export function Kairos3D({ nodes, edges, selectedId, onSelect, colorMode = 'domi
   // per-frame from `colorMode` in PlanetCloud instead.
   const sceneData = useMemo(() => buildSceneData(nodes, edges), [nodes, edges])
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const showAllLabels = useKairosStore((s) => s.showAllLabels)
 
   const hubIds = useMemo(() => {
     const sorted = [...sceneData.nodes].sort((a, b) => b._degree - a._degree)
@@ -78,6 +80,7 @@ export function Kairos3D({ nodes, edges, selectedId, onSelect, colorMode = 'domi
         hoveredId={hoveredId}
         hubIds={hubIds}
         colorMode={colorMode}
+        showAllLabels={showAllLabels}
         onSelect={onSelect}
         onHover={setHoveredId}
       />

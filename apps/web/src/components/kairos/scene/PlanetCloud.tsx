@@ -25,6 +25,7 @@ type Props = {
   hoveredId: string | null
   hubIds: Set<string>
   colorMode: ColorMode
+  showAllLabels?: boolean
   onSelect: (id: string | null) => void
   onHover: (id: string | null) => void
 }
@@ -35,6 +36,7 @@ export function PlanetCloud({
   hoveredId,
   hubIds,
   colorMode,
+  showAllLabels = false,
   onSelect,
   onHover,
 }: Props) {
@@ -101,6 +103,7 @@ export function PlanetCloud({
         selectedId={selectedId}
         hoveredId={hoveredId}
         hubIds={hubIds}
+        showAllLabels={showAllLabels}
       />
     </>
   )
@@ -111,11 +114,13 @@ function PlanetLabels({
   selectedId,
   hoveredId,
   hubIds,
+  showAllLabels,
 }: {
   nodes: SceneNode[]
   selectedId: string | null
   hoveredId: string | null
   hubIds: Set<string>
+  showAllLabels: boolean
 }) {
   const nodeMap = useMemo(() => {
     const m = new Map<string, SceneNode>()
@@ -132,10 +137,17 @@ function PlanetLabels({
     const n = nodeMap.get(hoveredId)
     if (n) labels.push({ node: n, variant: 'hover' })
   }
-  for (const id of hubIds) {
-    if (id === selectedId || id === hoveredId) continue
-    const n = nodeMap.get(id)
-    if (n) labels.push({ node: n, variant: 'hub' })
+  if (showAllLabels) {
+    for (const n of nodes) {
+      if (n.id === selectedId || n.id === hoveredId) continue
+      labels.push({ node: n, variant: 'hub' })
+    }
+  } else {
+    for (const id of hubIds) {
+      if (id === selectedId || id === hoveredId) continue
+      const n = nodeMap.get(id)
+      if (n) labels.push({ node: n, variant: 'hub' })
+    }
   }
 
   return (

@@ -10,6 +10,7 @@ import { EdgeLayer2D } from './scene/EdgeLayer2D'
 import { Backdrop2D } from './scene/Backdrop2D'
 import { OrthoControls2D } from './scene/OrthoControls2D'
 import { PostFX } from './scene/PostFX'
+import { useKairosStore } from '@/stores/kairosStore'
 
 export type BackdropId = 'cortex' | 'aeon' | 'art'
 
@@ -39,6 +40,7 @@ export function Kairos2D({
   backdrop = 'cortex',
 }: Props) {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const showAllLabels = useKairosStore((s) => s.showAllLabels)
   const draggingRef = useRef(false)
 
   // Camera state shared between OrthoControls2D and Backdrop2D via a stable ref.
@@ -158,6 +160,7 @@ export function Kairos2D({
           hoveredId={hoveredId}
           hubIds={hubIds}
           colorMode={colorMode}
+          showAllLabels={showAllLabels}
           onSelect={onSelect}
           onHover={setHoveredId}
         />

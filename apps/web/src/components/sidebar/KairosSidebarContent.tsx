@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Plus, BookOpen, Pin, Link as LinkIcon } from 'lucide-react'
+import { ArrowLeft, Plus, BookOpen, Pin, Link as LinkIcon, Tag } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { createMemory } from '@/lib/actions/memories'
 import { useKairosStore } from '@/stores/kairosStore'
@@ -13,6 +13,8 @@ import { useKairosStore } from '@/stores/kairosStore'
 export function KairosSidebarContent({ collapsed }: { collapsed: boolean }) {
   const selectedMemoryId = useKairosStore((s) => s.selectedMemoryId)
   const triggerRefresh = useKairosStore((s) => s.triggerRefresh)
+  const showAllLabels = useKairosStore((s) => s.showAllLabels)
+  const toggleShowAllLabels = useKairosStore((s) => s.toggleShowAllLabels)
 
   return (
     <div className={cn('flex flex-col gap-1.5 px-2 py-2', collapsed && 'items-center px-1')}>
@@ -21,6 +23,15 @@ export function KairosSidebarContent({ collapsed }: { collapsed: boolean }) {
       <Section label="Capture" collapsed={collapsed} />
       <NoteButton collapsed={collapsed} onCaptured={triggerRefresh} />
       <EodButton collapsed={collapsed} onCaptured={triggerRefresh} />
+
+      <Section label="Display" collapsed={collapsed} />
+      <RailButton
+        icon={<Tag className="w-3.5 h-3.5" />}
+        label={showAllLabels ? 'Titles: All' : 'Titles: Hubs'}
+        onClick={toggleShowAllLabels}
+        active={showAllLabels}
+        collapsed={collapsed}
+      />
 
       <Section label="Selected" collapsed={collapsed} />
       <RailButton icon={<Pin className="w-3.5 h-3.5" />} label="Pin" disabled={!selectedMemoryId} collapsed={collapsed} />
@@ -111,13 +122,14 @@ function EodButton({ collapsed, onCaptured }: { collapsed: boolean; onCaptured: 
 }
 
 function RailButton({
-  icon, label, onClick, disabled, collapsed,
+  icon, label, onClick, disabled, collapsed, active,
 }: {
   icon: React.ReactNode
   label: string
   onClick?: () => void
   disabled?: boolean
   collapsed?: boolean
+  active?: boolean
 }) {
   return (
     <motion.button
@@ -130,7 +142,9 @@ function RailButton({
         collapsed ? 'w-9 h-9 justify-center px-0 py-0' : 'w-full px-3 py-2',
         disabled
           ? 'text-white/30 cursor-not-allowed'
-          : 'text-white/65 hover:text-white bg-white/[0.04] hover:bg-white/[0.10]',
+          : active
+            ? 'text-white bg-white/[0.14] hover:bg-white/[0.18]'
+            : 'text-white/65 hover:text-white bg-white/[0.04] hover:bg-white/[0.10]',
       )}
     >
       {icon}
