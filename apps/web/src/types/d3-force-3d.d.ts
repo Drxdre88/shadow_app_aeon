@@ -23,8 +23,7 @@ declare module 'd3-force-3d' {
     nodes(): N[]
     nodes(nodes: N[]): this
     force(name: string): unknown
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    force(name: string, force: any): this
+      force(name: string, force: any): this
     on(event: string, listener: () => void): this
   }
 
@@ -33,18 +32,11 @@ declare module 'd3-force-3d' {
     numDimensions?: 1 | 2 | 3,
   ): Simulation<N>
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export function forceManyBody(): any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export function forceLink<L = any>(links?: L[]): any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export function forceCenter(x?: number, y?: number, z?: number): any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export function forceCollide(radius?: number | ((d: unknown) => number)): any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export function forceX(x?: number): any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export function forceY(y?: number): any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export function forceZ(z?: number): any
 }

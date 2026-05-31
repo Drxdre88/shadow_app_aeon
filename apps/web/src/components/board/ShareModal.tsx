@@ -247,7 +247,7 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
                     color: '#34d399',
                   }}
                 >
-                  {exportingPng ? <Loader2 className="w-4 h-4 animate-spin" /> : <Image className="w-4 h-4" />}
+                  {exportingPng ? <Loader2 className="w-4 h-4 animate-spin" /> : <Image className="w-4 h-4" aria-hidden="true" />}
                   {exportingPng ? 'Exporting...' : 'Download PNG'}
                 </button>
                 <button

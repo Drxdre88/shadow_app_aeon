@@ -47,7 +47,7 @@ export function NebulaSprite({
   opacity?: number
 }) {
   const ref = useRef<THREE.Mesh>(null)
-  const tex = useMemo(buildTexture, [])
+  const tex = useMemo(() => buildTexture(), [])
   useFrame((state) => {
     if (!ref.current) return
     const t = state.clock.elapsedTime

@@ -25,6 +25,7 @@ export function AnchoredPopover({
 }: AnchoredPopoverProps) {
   const [mounted, setMounted] = useState(false)
   const [anchor, setAnchor] = useState<{ top: number; bottom: number; left: number } | null>(null)
+  const [popoverHeight, setPopoverHeight] = useState(HEIGHT_ESTIMATE_FALLBACK)
   const popoverRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { setMounted(true) }, [])
@@ -51,11 +52,20 @@ export function AnchoredPopover({
     }
   }, [open, measure, onClose])
 
+  // Sync measured popover height into state so the flip decision in the
+  // next render doesn't read popoverRef during render.
+  useEffect(() => {
+    if (!open) return
+    const el = popoverRef.current
+    if (!el) return
+    const measured = el.getBoundingClientRect().height
+    if (measured && measured !== popoverHeight) setPopoverHeight(measured)
+  }, [open, anchor, popoverHeight])
+
   if (!mounted) return null
 
   const viewportH = typeof window !== 'undefined' ? window.innerHeight : 0
   const viewportW = typeof window !== 'undefined' ? window.innerWidth : 0
-  const popoverHeight = popoverRef.current?.getBoundingClientRect().height ?? HEIGHT_ESTIMATE_FALLBACK
   const spaceAbove = anchor ? anchor.top : 0
   const flipBelow = anchor !== null && spaceAbove < popoverHeight + VIEWPORT_PAD
   const resolvedWidth = anchor ? Math.min(width, viewportW - VIEWPORT_PAD * 2) : width
