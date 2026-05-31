@@ -9,6 +9,7 @@ export async function verifyProjectAccess(projectId: string, userId: string) {
     .select({
       id: projects.id,
       userId: projects.userId,
+      dominionId: projects.dominionId,
       name: projects.name,
       description: projects.description,
       timeScale: projects.timeScale,
@@ -110,6 +111,7 @@ export async function findProjects(userId: string, limit = 100, offset = 0) {
     .selectDistinct({
       id: projects.id,
       userId: projects.userId,
+      dominionId: projects.dominionId,
       name: projects.name,
       description: projects.description,
       timeScale: projects.timeScale,
@@ -118,6 +120,7 @@ export async function findProjects(userId: string, limit = 100, offset = 0) {
       settings: projects.settings,
       group: projects.group,
       planetImage: projects.planetImage,
+      boardVersion: projects.boardVersion,
       createdAt: projects.createdAt,
       updatedAt: projects.updatedAt,
     })
@@ -217,6 +220,7 @@ export async function findProjectsWithStats(userId: string) {
       createdAt: projects.createdAt,
       updatedAt: projects.updatedAt,
       userId: projects.userId,
+      dominionId: projects.dominionId,
       group: projects.group,
       planetImage: projects.planetImage,
       boardVersion: projects.boardVersion,
@@ -292,6 +296,7 @@ export async function updateProject(projectId: string, userId: string, data: Upd
   if (data.timeScale !== undefined) updates.timeScale = data.timeScale
   if (data.planetImage !== undefined) updates.planetImage = data.planetImage
   if (data.settings !== undefined) updates.settings = data.settings
+  if (data.dominionId !== undefined) updates.dominionId = data.dominionId
 
   const [project] = await db
     .update(projects)
@@ -358,6 +363,7 @@ const PROJECT_COLUMNS = {
   endDate: projects.endDate,
   settings: projects.settings,
   userId: projects.userId,
+  dominionId: projects.dominionId,
   group: projects.group,
   planetImage: projects.planetImage,
   boardVersion: projects.boardVersion,

@@ -1,7 +1,7 @@
 'use server'
 
 import { db } from '@/lib/db'
-import { boardTasks, groupMembers, projects, memories as memoriesTable } from '@/lib/db/schema'
+import { boardTasks, groupMembers } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { requireAuth } from './helpers'
 import { verifyProjectAccess } from '@/lib/data/projects'
@@ -31,6 +31,11 @@ import {
   deleteMemory as _deleteMemory,
   prepareContext as _prepareContext,
   targetMemoryExists,
+  getGraphForUser as _getGraphForUser,
+  listTodaysAdvisories as _listTodaysAdvisories,
+  listRecentAdvisories as _listRecentAdvisories,
+  listAutoCapturedToday as _listAutoCapturedToday,
+  archiveMemory as _archiveMemory,
 } from '@/lib/data/memories'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -170,6 +175,17 @@ export async function deleteMemoryById(memoryId: string) {
   return { deleted: true }
 }
 
+// Brain Phase 5 — graph fetch for the Cortex view. User-scoped only; edges
+// are filtered server-side to memory→memory links where both endpoints are
+// owned by the caller, so this never leaks foreign IDs.
+export async function getBrainGraph(opts: { realmId?: string; includeArchived?: boolean } = {}) {
+  const userId = await requireAuth()
+  if (opts.realmId) {
+    await verifyAnchors(userId, { realmId: opts.realmId })
+  }
+  return _getGraphForUser(userId, opts)
+}
+
 // Brain Phase 4 — context retrieval. Single auth-guarded call returning a
 // budget-packed markdown bundle. If realmId supplied, verifies user is a member.
 export async function prepareContextForUser(input: PrepareContextInput) {
@@ -181,11 +197,53 @@ export async function prepareContextForUser(input: PrepareContextInput) {
   return _prepareContext(userId, parsed)
 }
 
+// Kairos Phase 1.5 — fetch today's Briefer advisories for the dashboard.
+export async function getTodaysBriefings(isoDate?: string) {
+  const userId = await requireAuth()
+  return _listTodaysAdvisories(userId, isoDate)
+}
+
+// Kairos Phase 2 (E22) — recent advisories for the sidebar feed.
+export async function getTodaysAutoCaptures(opts: { limit?: number } = {}) {
+  const userId = await requireAuth()
+  return _listAutoCapturedToday(userId, opts.limit ?? 30)
+}
+
+export async function getRecentAdvisories(opts: { days?: number; limit?: number } = {}) {
+  const userId = await requireAuth()
+  return _listRecentAdvisories(userId, opts)
+}
+
+// Kairos Phase 2 (E22) — Acknowledge an advisory (or any memory) by
+// soft-archiving it. The memory persists for retrospection.
+export async function archiveMemoryById(memoryId: string) {
+  const userId = await requireAuth()
+  const row = await _archiveMemory(memoryId, userId)
+  if (!row) throw new Error('Memory not found or unauthorized')
+  return row
+}
+
+// Kairos Phase 1 (E20) — manually trigger the Briefer for the current user.
+// Wraps runBrieferForUser so the dashboard "Run briefing now" button has a
+// server action target. Returns a compact summary the UI can surface.
+export async function runBriefingNow() {
+  const userId = await requireAuth()
+  const { runBrieferForUser } = await import('@/lib/kairos/briefer')
+  const results = await runBrieferForUser(userId)
+  return {
+    ran: results.length,
+    created: results.filter((r) => r.status === 'created').length,
+    existing: results.filter((r) => r.status === 'existing').length,
+    skipped: results.filter((r) => r.status === 'skipped').map((r) => ({
+      dominionName: r.dominionName,
+      reason: r.reason ?? 'unknown',
+    })),
+  }
+}
+
 // Stub for Phase 5 — broadcast memory events to a user-scoped Pusher channel.
 // Kept here to lock the contract; the listener wiring lands in Phase 5.
 export async function broadcastMemoryEvent(_userId: string, _event: { type: string; memoryId: string }) {
   // No-op in Phase 1.
 }
 
-// Cast-safe re-export of the table for callers that need it (e.g. parity test).
-export { memoriesTable }

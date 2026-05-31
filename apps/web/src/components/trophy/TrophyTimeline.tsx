@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, AnimatePresence } from 'framer-motion'
-import { Trophy, ArrowRight, Link2, Tag, Trash2, Plus, ChevronDown, Pencil, Archive } from 'lucide-react'
+import { Trophy, ArrowRight, Link2, Tag, Trash2, Plus, ChevronDown, Pencil, Archive, type LucideIcon } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { useThemeStore } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
@@ -15,7 +15,7 @@ interface TrophyTimelineProps {
   isLoading: boolean
 }
 
-const actionDotStyles: Record<string, { dot: string; ring?: boolean; icon: React.ElementType }> = {
+const actionDotStyles: Record<string, { dot: string; ring?: boolean; icon: LucideIcon }> = {
   created: { dot: 'bg-emerald-500', icon: Plus },
   completed: { dot: 'bg-emerald-500', ring: true, icon: Trophy },
   moved: { dot: 'bg-blue-500', icon: ArrowRight },

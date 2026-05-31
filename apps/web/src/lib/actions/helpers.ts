@@ -2,6 +2,7 @@
 
 import { auth } from '@/lib/auth'
 import { verifyProjectAccess } from '@/lib/data/projects'
+import { AiForbiddenError } from './errors'
 
 export async function requireAuth() {
   const session = await auth()
@@ -29,4 +30,11 @@ export async function requireEditor(projectId: string) {
   if (!access) throw new Error('Project not found or unauthorized')
   if (access.role === 'viewer') throw new Error('Viewers cannot modify this project')
   return userId
+}
+
+export async function requireAiAccess() {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error('Unauthorized')
+  if (session.user.role !== 'admin') throw new AiForbiddenError()
+  return session.user.id
 }

@@ -25,6 +25,11 @@ vi.mock('@/lib/data/columns', () => ({
   createDefaultColumns: vi.fn(),
 }))
 
+vi.mock('@/lib/kairos/auto-capture', () => ({
+  captureProjectEvent: vi.fn().mockResolvedValue(undefined),
+  captureBoardEvent: vi.fn().mockResolvedValue(undefined),
+}))
+
 import { revalidatePath } from 'next/cache'
 import { requireAuth, requireOwnership, requireEditor } from '@/lib/actions/helpers'
 import {
@@ -67,6 +72,7 @@ const stubProject = {
   id: 'proj-1',
   name: 'Test Project',
   userId: 'user-1',
+  dominionId: null as string | null,
   description: null as string | null,
   timeScale: 'week',
   startDate: new Date(VALID_START),

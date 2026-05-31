@@ -4,7 +4,8 @@ import { useState, useCallback, useEffect } from 'react'
 import { useHasMounted } from '@/lib/utils/useHasMounted'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { X, Palette, PenTool, Wand2, Settings, Keyboard, PartyPopper, LayoutGrid, LayoutDashboard } from 'lucide-react'
+import { X, Palette, PenTool, Wand2, Settings, Keyboard, PartyPopper, LayoutGrid, LayoutDashboard, KeyRound, ArrowRight } from 'lucide-react'
+import Link from 'next/link'
 import { useThemeStore } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
 import { Tooltip } from '../Tooltip'
@@ -16,7 +17,7 @@ import { ShortcutsTab } from './ShortcutsTab'
 import { FunTab } from './FunTab'
 import { DashboardTab } from './DashboardTab'
 
-type SettingsTab = 'projects' | 'board' | 'shortcuts' | 'palette' | 'typography' | 'effects' | 'fun'
+type SettingsTab = 'projects' | 'board' | 'shortcuts' | 'palette' | 'typography' | 'effects' | 'fun' | 'ai'
 
 const TAB_CONFIG: { id: SettingsTab; label: string; icon: typeof Palette }[] = [
   { id: 'projects', label: 'Projects', icon: LayoutDashboard },
@@ -26,6 +27,7 @@ const TAB_CONFIG: { id: SettingsTab; label: string; icon: typeof Palette }[] = [
   { id: 'typography', label: 'Typography', icon: PenTool },
   { id: 'effects', label: 'Effects', icon: Wand2 },
   { id: 'fun', label: 'Fun', icon: PartyPopper },
+  { id: 'ai', label: 'AI', icon: KeyRound },
 ]
 
 interface SettingsModalProps {
@@ -53,7 +55,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
 
   return createPortal(
     <div
-      className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[200]"
       onClick={onClose}
     >
       <motion.div
@@ -137,10 +139,69 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           {activeTab === 'effects' && <EffectsTab />}
           {activeTab === 'fun' && <FunTab />}
           {activeTab === 'projects' && <DashboardTab />}
+          {activeTab === 'ai' && <AiTab onClose={onClose} />}
         </div>
       </motion.div>
     </div>,
     document.body
+  )
+}
+
+function AiTab({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="flex flex-col items-start gap-5 py-6">
+      <div className="flex items-center gap-3">
+        <div
+          className="w-10 h-10 rounded-xl flex items-center justify-center"
+          style={{
+            background: 'color-mix(in oklab, var(--primary) 18%, transparent)',
+            boxShadow: '0 0 20px color-mix(in oklab, var(--primary) 30%, transparent)',
+          }}
+        >
+          <KeyRound className="w-5 h-5" style={{ color: 'var(--primary)' }} />
+        </div>
+        <div>
+          <h3 className="text-base font-semibold text-white">AI integration</h3>
+          <p className="text-[12px] text-white/55 mt-0.5">
+            Bring your own Anthropic, OpenAI, or Gemini key. Stored encrypted per account.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full max-w-2xl">
+        <Pillar tone="#f59e0b" label="Anthropic" hint="Claude Opus / Sonnet" />
+        <Pillar tone="#10b981" label="OpenAI" hint="GPT-4 / o-series" />
+        <Pillar tone="#3b82f6" label="Gemini" hint="Pro / Flash" />
+      </div>
+
+      <Link
+        href="/settings/ai"
+        onClick={onClose}
+        className="inline-flex items-center gap-2 text-[12px] uppercase tracking-[0.2em] px-4 py-2 rounded-lg border border-white/[0.14] hover:border-white/30 hover:bg-white/[0.04] transition-colors"
+        style={{ color: 'var(--primary)' }}
+      >
+        Open AI integration <ArrowRight className="w-3.5 h-3.5" />
+      </Link>
+
+      <p className="text-[11px] text-white/35 max-w-xl leading-relaxed">
+        During closed beta this surface is admin-only. Non-admin accounts see a &ldquo;rolling out soon&rdquo; state.
+      </p>
+    </div>
+  )
+}
+
+function Pillar({ tone, label, hint }: { tone: string; label: string; hint: string }) {
+  return (
+    <div
+      className="rounded-xl border px-3 py-2.5 flex flex-col gap-0.5"
+      style={{
+        borderColor: `color-mix(in oklab, ${tone} 30%, transparent)`,
+        background: `color-mix(in oklab, ${tone} 6%, transparent)`,
+      }}
+    >
+      <span className="text-[11px] uppercase tracking-[0.18em]" style={{ color: tone }}>{label}</span>
+      <span className="text-[11px] text-white/45">{hint}</span>
+    </div>
   )
 }
 

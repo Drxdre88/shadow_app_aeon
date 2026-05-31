@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
-import { memories } from '@/lib/db/schema'
-import { eq, and, desc, sql, inArray } from 'drizzle-orm'
+import { memories, dominions, dominionRepos, projects } from '@/lib/db/schema'
+import { eq, and, desc, sql, inArray, isNull } from 'drizzle-orm'
 import type {
   CreateMemoryInput,
   UpdateMemoryInput,
@@ -9,6 +9,7 @@ import type {
   MemoryLink,
   PrepareContextInput,
 } from './validators'
+import { resolveDominionForMemory } from './dominions'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Brain Phase 1 — pure DB queries for the user-scoped memory substrate.
@@ -27,6 +28,7 @@ const SLIM_COLUMNS = {
   summary: memories.summary,
   type: memories.type,
   source: memories.source,
+  sourceMetadata: memories.sourceMetadata,
   createdAt: memories.createdAt,
   updatedAt: memories.updatedAt,
   realmId: memories.realmId,
@@ -77,6 +79,250 @@ export async function listMemories(userId: string, opts: ListOpts = {}) {
     .orderBy(desc(memories.pinned), desc(memories.createdAt))
     .limit(opts.limit ?? 50)
     .offset(opts.offset ?? 0)
+}
+
+type NeedsSummaryOpts = {
+  limit?: number
+  offset?: number
+  realmId?: string
+  projectId?: string
+  type?: string | string[]
+  missing?: 'execSummary' | 'aiTitle' | 'either'
+  oldestFirst?: boolean
+}
+
+export async function listMemoriesNeedingSummary(userId: string, opts: NeedsSummaryOpts = {}) {
+  const conditions = [
+    eq(memories.userId, userId),
+    sql`${memories.archivedAt} IS NULL`,
+  ]
+  const missing = opts.missing ?? 'execSummary'
+  if (missing === 'execSummary') {
+    conditions.push(sql`jsonb_array_length(${memories.execSummary}) = 0`)
+  } else if (missing === 'aiTitle') {
+    conditions.push(sql`${memories.aiTitle} IS NULL`)
+  } else {
+    conditions.push(sql`(jsonb_array_length(${memories.execSummary}) = 0 OR ${memories.aiTitle} IS NULL)`)
+  }
+  if (opts.realmId)   conditions.push(eq(memories.realmId, opts.realmId))
+  if (opts.projectId) conditions.push(eq(memories.projectId, opts.projectId))
+  if (opts.type) {
+    const types = Array.isArray(opts.type) ? opts.type : [opts.type]
+    conditions.push(sql`${memories.type} = ANY(${types})`)
+  }
+
+  const order = opts.oldestFirst ? memories.createdAt : desc(memories.createdAt)
+  return db
+    .select({
+      id: memories.id,
+      title: memories.title,
+      aiTitle: memories.aiTitle,
+      bodyMd: memories.bodyMd,
+      type: memories.type,
+      source: memories.source,
+      createdAt: memories.createdAt,
+      hasExecSummary: sql<boolean>`jsonb_array_length(${memories.execSummary}) > 0`,
+      hasAiTitle: sql<boolean>`${memories.aiTitle} IS NOT NULL`,
+    })
+    .from(memories)
+    .where(and(...conditions))
+    .orderBy(order)
+    .limit(opts.limit ?? 20)
+    .offset(opts.offset ?? 0)
+}
+
+type GraphOpts = { realmId?: string; includeArchived?: boolean }
+
+export type GraphNode = {
+  id: string
+  title: string
+  type: string
+  source: string
+  realmId: string | null
+  projectId: string | null
+  taskId: string | null
+  repo: string | null
+  tags: string[]
+  pinned: boolean
+  createdAt: Date
+  dominionId: string | null
+  dominionName: string | null
+  dominionColor: string | null
+}
+
+export type GraphEdge = {
+  source: string
+  target: string
+  type: string
+  note: string | null
+}
+
+export async function getGraphForUser(
+  userId: string,
+  opts: GraphOpts = {}
+): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }> {
+  const conditions = [eq(memories.userId, userId)]
+  if (!opts.includeArchived) conditions.push(sql`${memories.archivedAt} IS NULL`)
+  if (opts.realmId) conditions.push(eq(memories.realmId, opts.realmId))
+
+  const rows = await db
+    .select({
+      id: memories.id,
+      title: memories.title,
+      type: memories.type,
+      source: memories.source,
+      realmId: memories.realmId,
+      projectId: memories.projectId,
+      taskId: memories.taskId,
+      dominionId: memories.dominionId,
+      tags: memories.tags,
+      pinned: memories.pinned,
+      createdAt: memories.createdAt,
+      links: memories.links,
+      sourceMetadata: memories.sourceMetadata,
+    })
+    .from(memories)
+    .where(and(...conditions))
+    .orderBy(desc(memories.pinned), desc(memories.createdAt))
+
+  // Bulk-load dominion data — 3 parallel queries, zero N+1.
+  const uniqueProjectIds = [...new Set(rows.map((r) => r.projectId).filter((id): id is string => id != null))]
+  const [dominionRows, dominionRepoRows, projectDominionRows] = await Promise.all([
+    db.select({ id: dominions.id, name: dominions.name, color: dominions.color })
+      .from(dominions)
+      .where(eq(dominions.userId, userId)),
+    db.select({ dominionId: dominionRepos.dominionId, repoSlug: dominionRepos.repoSlug })
+      .from(dominionRepos)
+      .innerJoin(dominions, and(eq(dominionRepos.dominionId, dominions.id), eq(dominions.userId, userId))),
+    uniqueProjectIds.length > 0
+      ? db.select({ id: projects.id, dominionId: projects.dominionId })
+          .from(projects)
+          .where(inArray(projects.id, uniqueProjectIds))
+      : Promise.resolve([] as Array<{ id: string; dominionId: string | null }>),
+  ])
+
+  const dominionMap = new Map(dominionRows.map((d) => [d.id, d]))
+  const repoDominionMap = new Map(dominionRepoRows.map((r) => [r.repoSlug, r.dominionId]))
+  const projectDominionMap = new Map(projectDominionRows.map((p) => [p.id, p.dominionId]))
+
+  const ownedIds = new Set(rows.map((r) => r.id))
+  const nodes: GraphNode[] = rows.map(({ links: _links, sourceMetadata, dominionId: memDominionId, ...rest }) => {
+    const meta = (sourceMetadata ?? {}) as Record<string, unknown>
+    const repo = typeof meta.repo === 'string' ? meta.repo : null
+
+    const resolvedDominionId =
+      memDominionId ??
+      (rest.projectId ? (projectDominionMap.get(rest.projectId) ?? null) : null) ??
+      (repo ? (repoDominionMap.get(repo) ?? null) : null)
+
+    const dominion = resolvedDominionId ? dominionMap.get(resolvedDominionId) : null
+
+    return {
+      ...rest,
+      repo,
+      tags: (rest.tags ?? []) as string[],
+      dominionId: resolvedDominionId,
+      dominionName: dominion?.name ?? null,
+      dominionColor: dominion?.color ?? null,
+    }
+  })
+
+  const edges: GraphEdge[] = []
+  const seenEdge = new Set<string>()
+  const pushEdge = (source: string, target: string, type: string, note: string | null) => {
+    if (source === target) return
+    const a = source < target ? source : target
+    const b = source < target ? target : source
+    const key = `${a}|${b}|${type}`
+    if (seenEdge.has(key)) return
+    seenEdge.add(key)
+    edges.push({ source, target, type, note })
+  }
+
+  for (const row of rows) {
+    const links = (row.links ?? []) as MemoryLink[]
+    for (const link of links) {
+      if (link.target_kind !== 'memory') continue
+      if (!ownedIds.has(link.target)) continue
+      pushEdge(row.id, link.target, link.type, link.note ?? null)
+    }
+  }
+
+  // Synthetic edges: surface clustering signal when user-asserted links are
+  // sparse. Marked with 'auto-*' types so the renderer can style them subtly.
+  // Same-day chains memories captured within one calendar day in time order.
+  // Shared-tag chains memories that share a tag (skip mega-tags > 30).
+  const byDay = new Map<string, GraphNode[]>()
+  for (const n of nodes) {
+    const day = new Date(n.createdAt).toISOString().slice(0, 10)
+    const bucket = byDay.get(day)
+    if (bucket) bucket.push(n)
+    else byDay.set(day, [n])
+  }
+  for (const group of byDay.values()) {
+    if (group.length < 2) continue
+    group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    for (let i = 0; i < group.length - 1; i++) {
+      pushEdge(group[i].id, group[i + 1].id, 'auto-day', null)
+    }
+  }
+
+  const byTag = new Map<string, GraphNode[]>()
+  for (const n of nodes) {
+    for (const tag of n.tags ?? []) {
+      const bucket = byTag.get(tag)
+      if (bucket) bucket.push(n)
+      else byTag.set(tag, [n])
+    }
+  }
+  for (const group of byTag.values()) {
+    if (group.length < 2 || group.length > 30) continue
+    group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    for (let i = 0; i < group.length - 1; i++) {
+      pushEdge(group[i].id, group[i + 1].id, 'auto-tag', null)
+    }
+  }
+
+  // Shared-repo: chain memories that come from the same repo (in temporal
+  // order). Produces the dense per-repo cluster shape seen in the concept.
+  const byRepo = new Map<string, GraphNode[]>()
+  for (const n of nodes) {
+    if (!n.repo) continue
+    const bucket = byRepo.get(n.repo)
+    if (bucket) bucket.push(n)
+    else byRepo.set(n.repo, [n])
+  }
+  for (const group of byRepo.values()) {
+    if (group.length < 2) continue
+    group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    // Chain consecutive + bridge every 3rd hop for richer connectivity.
+    for (let i = 0; i < group.length - 1; i++) {
+      pushEdge(group[i].id, group[i + 1].id, 'auto-repo', null)
+    }
+    for (let i = 0; i + 3 < group.length; i += 3) {
+      pushEdge(group[i].id, group[i + 3].id, 'auto-repo', null)
+    }
+  }
+
+  const byDominion = new Map<string, GraphNode[]>()
+  for (const n of nodes) {
+    if (!n.dominionId) continue
+    const bucket = byDominion.get(n.dominionId)
+    if (bucket) bucket.push(n)
+    else byDominion.set(n.dominionId, [n])
+  }
+  for (const group of byDominion.values()) {
+    if (group.length < 2) continue
+    group.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    for (let i = 0; i < group.length - 1; i++) {
+      pushEdge(group[i].id, group[i + 1].id, 'auto-dominion', null)
+    }
+    for (let i = 0; i + 3 < group.length; i += 3) {
+      pushEdge(group[i].id, group[i + 3].id, 'auto-dominion', null)
+    }
+  }
+
+  return { nodes, edges }
 }
 
 export async function searchMemoriesFts(userId: string, input: SearchMemoriesInput) {
@@ -257,19 +503,29 @@ export async function createMemory(userId: string, input: CreateMemoryInput) {
     if (existing) return existing
   }
 
+  const resolvedDominionId = input.dominionId == null
+    ? await resolveDominionForMemory(userId, {
+        projectId: input.projectId,
+        sourceMetadata: (input.sourceMetadata ?? null) as Record<string, unknown> | null,
+      })
+    : null
+
   const [row] = await db
     .insert(memories)
     .values({
       userId,
       title: input.title,
+      aiTitle: input.aiTitle ?? null,
       bodyMd: input.bodyMd,
       summary: input.summary ?? null,
+      execSummary: input.execSummary ?? [],
       type: input.type,
       source: input.source,
       sourceMetadata: input.sourceMetadata ?? {},
       realmId: input.realmId ?? null,
       projectId: input.projectId ?? null,
       taskId: input.taskId ?? null,
+      dominionId: input.dominionId ?? resolvedDominionId ?? null,
       tags: input.tags ?? [],
       links: input.links ?? [],
       pinned: input.pinned ?? false,
@@ -278,15 +534,166 @@ export async function createMemory(userId: string, input: CreateMemoryInput) {
   return row
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Kairos Phase 1 (A2) — generic capture endpoint backing function.
+//
+// The capture endpoint is the single ingestion point for any inbound source:
+// Aeon board events, Slack/Teams/email webhooks, mobile/voice, browser
+// extension, future channels. Callers POST a normalised payload; this
+// function performs:
+//   1. Channel normalisation: if `channel` is set, source becomes 'webhook'
+//      and sourceMetadata.channel records the origin.
+//   2. externalId idempotency: if sourceMetadata.externalId is set, any
+//      existing memory with the same (source, externalId) is returned
+//      instead of creating a duplicate. Crucial for webhooks that may
+//      retry.
+// Everything else delegates to createMemory (which still handles Claude
+// sessionId idempotency for that source).
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface CaptureMemoryInput extends Omit<CreateMemoryInput, 'sourceMetadata'> {
+  channel?: string | null
+  sourceMetadata?: Record<string, unknown>
+}
+
+export interface CaptureMemoryResult {
+  memory: typeof memories.$inferSelect
+  created: boolean
+}
+
+export async function captureMemory(userId: string, input: CaptureMemoryInput): Promise<CaptureMemoryResult> {
+  const metadata: Record<string, unknown> = { ...(input.sourceMetadata ?? {}) }
+  let source = input.source
+
+  if (input.channel) {
+    source = 'webhook'
+    metadata.channel = input.channel
+  }
+
+  const externalId = typeof metadata.externalId === 'string' ? metadata.externalId : undefined
+  if (externalId) {
+    const [existing] = await db
+      .select()
+      .from(memories)
+      .where(and(
+        eq(memories.userId, userId),
+        eq(memories.source, source),
+        sql`${memories.sourceMetadata}->>'externalId' = ${externalId}`,
+      ))
+      .limit(1)
+    if (existing) return { memory: existing, created: false }
+  }
+
+  const memory = await createMemory(userId, {
+    ...input,
+    source,
+    sourceMetadata: metadata,
+  })
+  return { memory, created: true }
+}
+
+// Notes polish — list memories Kairos auto-captured today (sources other
+// than manual / voice / import). Surfaces what the system has been logging
+// on the operator's behalf in a single horizontal strip on /notes.
+export async function listAutoCapturedToday(userId: string, limit = 30) {
+  const startOfDay = new Date()
+  startOfDay.setHours(0, 0, 0, 0)
+  return db
+    .select({
+      id: memories.id,
+      title: memories.title,
+      aiTitle: memories.aiTitle,
+      summary: memories.summary,
+      type: memories.type,
+      source: memories.source,
+      createdAt: memories.createdAt,
+      dominionId: memories.dominionId,
+      dominionName: dominions.name,
+      dominionColor: dominions.color,
+    })
+    .from(memories)
+    .leftJoin(dominions, eq(memories.dominionId, dominions.id))
+    .where(and(
+      eq(memories.userId, userId),
+      isNull(memories.archivedAt),
+      sql`${memories.createdAt} >= ${startOfDay}`,
+      inArray(memories.source, ['claude', 'cron', 'system', 'webhook', 'hook']),
+    ))
+    .orderBy(desc(memories.createdAt))
+    .limit(Math.min(Math.max(limit, 1), 100))
+}
+
+// Kairos Phase 2 (E22) — list recent advisories across the last N days.
+// Joins with dominions so the feed can render Dominion pills.
+export async function listRecentAdvisories(
+  userId: string,
+  opts: { days?: number; limit?: number } = {},
+) {
+  const days = Math.min(Math.max(opts.days ?? 3, 1), 30)
+  const limit = Math.min(Math.max(opts.limit ?? 25, 1), 100)
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+
+  return db
+    .select({
+      id: memories.id,
+      title: memories.title,
+      bodyMd: memories.bodyMd,
+      createdAt: memories.createdAt,
+      dominionId: memories.dominionId,
+      dominionName: dominions.name,
+      dominionColor: dominions.color,
+    })
+    .from(memories)
+    .leftJoin(dominions, eq(memories.dominionId, dominions.id))
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.type, 'advisory'),
+      sql`${memories.createdAt} >= ${since}`,
+      isNull(memories.archivedAt),
+    ))
+    .orderBy(desc(memories.createdAt))
+    .limit(limit)
+}
+
+// Kairos Phase 1.5 — list today's Briefer-generated advisories for a user,
+// joined with the Dominion they're scoped to so the dashboard card can
+// render "<Dominion name>" headers without a second query.
+export async function listTodaysAdvisories(userId: string, isoDate?: string) {
+  const date = isoDate ?? new Date().toISOString().slice(0, 10)
+  return db
+    .select({
+      id: memories.id,
+      title: memories.title,
+      bodyMd: memories.bodyMd,
+      createdAt: memories.createdAt,
+      dominionId: memories.dominionId,
+      dominionName: dominions.name,
+      dominionColor: dominions.color,
+    })
+    .from(memories)
+    .leftJoin(dominions, eq(memories.dominionId, dominions.id))
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.type, 'advisory'),
+      eq(memories.source, 'cron'),
+      sql`${memories.sourceMetadata}->>'briefingDate' = ${date}`,
+      isNull(memories.archivedAt),
+    ))
+    .orderBy(desc(memories.createdAt))
+}
+
 export async function updateMemory(memoryId: string, userId: string, patch: UpdateMemoryInput) {
   const update: Record<string, unknown> = { updatedAt: new Date() }
   if (patch.title !== undefined)      update.title = patch.title
+  if (patch.aiTitle !== undefined)    update.aiTitle = patch.aiTitle
   if (patch.bodyMd !== undefined)     update.bodyMd = patch.bodyMd
   if (patch.summary !== undefined)    update.summary = patch.summary
+  if (patch.execSummary !== undefined) update.execSummary = patch.execSummary
   if (patch.type !== undefined)       update.type = patch.type
   if (patch.realmId !== undefined)    update.realmId = patch.realmId
   if (patch.projectId !== undefined)  update.projectId = patch.projectId
   if (patch.taskId !== undefined)     update.taskId = patch.taskId
+  if (patch.dominionId !== undefined) update.dominionId = patch.dominionId
   if (patch.tags !== undefined)       update.tags = patch.tags
   if (patch.pinned !== undefined)     update.pinned = patch.pinned
   if (patch.archivedAt !== undefined) update.archivedAt = patch.archivedAt ? new Date(patch.archivedAt) : null
@@ -339,6 +746,18 @@ export async function removeLink(memoryId: string, userId: string, linkIndex: nu
     .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
     .returning()
   return updated ?? null
+}
+
+// Kairos Phase 2 (E22) — soft-archive a memory. Used by the advisory feed
+// for Acknowledge / Defer actions: the memory persists for retrospection
+// but stops surfacing in the feed.
+export async function archiveMemory(memoryId: string, userId: string) {
+  const [row] = await db
+    .update(memories)
+    .set({ archivedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
+    .returning()
+  return row ?? null
 }
 
 export async function deleteMemory(memoryId: string, userId: string) {

@@ -38,6 +38,7 @@ const REST_ROUTE_FILES = [
   '[id]/links/[linkIndex]/route.ts',
   '[id]/neighbours/route.ts',
   '[id]/export/route.ts',
+  'needs-summary/route.ts',
 ]
 
 function readSource(p: string): string {
@@ -60,13 +61,15 @@ describe('Memory MCP <-> REST parity', () => {
     .join('\n')
 
   describe('MCP tool surface', () => {
-    it('exposes exactly the five expected memory operations', () => {
+    it('exposes exactly the seven expected memory operations', () => {
       expect(new Set(toolNames)).toEqual(new Set([
         'create_memory',
+        'update_memory',
         'search_memories',
         'link_memory',
         'get_memory_with_neighbours',
         'prepare_context',
+        'list_memories_needing_summary',
       ]))
     })
   })
@@ -81,6 +84,7 @@ describe('Memory MCP <-> REST parity', () => {
       { path: '[id]/links/[linkIndex]/route.ts',   methods: ['DELETE'] },
       { path: '[id]/neighbours/route.ts',          methods: ['GET'] },
       { path: '[id]/export/route.ts',              methods: ['GET'] },
+      { path: 'needs-summary/route.ts',            methods: ['GET'] },
     ]
 
     it.each(expectedRoutes)('has route file + methods: $path', ({ path: routePath, methods }) => {
@@ -107,11 +111,12 @@ describe('Memory MCP <-> REST parity', () => {
       expect(restSrcConcat, `REST routes missing ${v}`).toMatch(new RegExp(`\\b${v}\\b`))
     })
 
-    // MCP uses every validator that has an MCP counterpart. updateMemorySchema
-    // is REST-only (no MCP update_memory tool in Phase 1 — Claude is expected
-    // to delete + recreate, which is also how mem0 semantically models updates).
+    // MCP uses every validator that has an MCP counterpart. update_memory
+    // was added in the Kairos rebrand to support backfilling AI-generated
+    // aiTitle + execSummary fields on existing memories via Claude Code.
     const mcpValidators = [
       'createMemorySchema',
+      'updateMemorySchema',
       'searchMemoriesSchema',
       'addLinkSchema',
       'getNeighboursSchema',
@@ -125,11 +130,13 @@ describe('Memory MCP <-> REST parity', () => {
   describe('data-function parity — MCP and REST call the same underlying functions', () => {
     const sharedFns = [
       'createMemory',
+      'updateMemory',
       'searchMemoriesFts',
       'addLink',
       'findMemoryById',
       'getNeighbours',
       'prepareContext',
+      'listMemoriesNeedingSummary',
     ]
 
     it.each(sharedFns)('MCP imports and uses: %s', (fn) => {

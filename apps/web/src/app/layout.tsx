@@ -10,6 +10,8 @@ import { CursorEffect } from '@/components/effects/cursor'
 import { ToastContainer } from '@/components/ui/Toast'
 import { ServiceWorkerRegistration } from '@/components/pwa/ServiceWorkerRegistration'
 import { CommandPalette } from '@/components/ui/CommandPalette'
+import { QuickCaptureOverlay } from '@/components/hyperspace/QuickCaptureOverlay'
+import { CaptureFab } from '@/components/hyperspace/CaptureFab'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
@@ -67,6 +69,8 @@ export default async function RootLayout({
             <ToastContainer />
             <ServiceWorkerRegistration />
             <CommandPalette />
+            <QuickCaptureOverlay />
+            <CaptureFab />
             {children}
           </ThemeProvider>
           </PreferencesProvider>

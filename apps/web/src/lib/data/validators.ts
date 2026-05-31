@@ -34,6 +34,7 @@ export const updateProjectSchema = z.object({
   timeScale: z.enum(['day', 'week', 'month']).optional(),
   planetImage: z.string().max(255).nullable().optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
+  dominionId: z.string().uuid().nullable().optional(),
 })
 
 export const createTaskSchema = z.object({
@@ -312,8 +313,28 @@ export type UpdateCanvasNodeInput = z.infer<typeof updateCanvasNodeSchema>
 // Shared verbatim by REST routes and MCP tools (locked by memories-parity.test.ts).
 // ─────────────────────────────────────────────────────────────────────────
 
-export const memoryTypeSchema   = z.enum(['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection'])
-export const memorySourceSchema = z.enum(['manual', 'claude', 'voice', 'hook', 'import'])
+// Kairos Phase 1 (A1) — taxonomy expansion. Substrate carries everything
+// Kairos hears, not just Claude sessions. Added types: snapshot, inbound,
+// advisory, achievement, session_event, fact, contact, external_event.
+export const memoryTypeSchema   = z.enum([
+  'note',
+  'decision',
+  'idea',
+  'observation',
+  'session_summary',
+  'reflection',
+  'snapshot',
+  'inbound',
+  'advisory',
+  'achievement',
+  'session_event',
+  'fact',
+  'contact',
+  'external_event',
+])
+// Kairos Phase 1 (A1) — added sources: 'cron' (briefer/snapshot jobs),
+// 'system' (board mutations, project lifecycle), 'webhook' (channel adapters).
+export const memorySourceSchema = z.enum(['manual', 'claude', 'voice', 'hook', 'import', 'cron', 'system', 'webhook'])
 export const memoryEdgeTypeSchema   = z.enum(['relates', 'supports', 'contradicts', 'supersedes', 'refers_to', 'blocks_thinking'])
 export const memoryTargetKindSchema = z.enum(['memory', 'task', 'project', 'realm', 'url'])
 
@@ -326,14 +347,21 @@ export const memoryLinkSchema = z.object({
 
 export const createMemorySchema = z.object({
   title:           z.string().trim().min(1).max(255),
+  // AI-cleaned short title (1–6 words). Optional — caller supplies if it has
+  // already done the cleanup pass (e.g. Claude Code post-voice-dump).
+  aiTitle:         z.string().trim().min(1).max(120).nullable().optional(),
   bodyMd:          z.string().min(1).max(100_000),
   summary:         z.string().trim().max(1000).optional(),
+  // 5–10 cleaned bullet points. Front-of-house in the UI. Optional — caller
+  // supplies after self-prompting on the bodyMd.
+  execSummary:     z.array(z.string().trim().min(1).max(500)).max(15).optional(),
   type:            memoryTypeSchema.default('note'),
   source:          memorySourceSchema.default('manual'),
   sourceMetadata:  z.record(z.string(), z.unknown()).optional(),
   realmId:         z.string().uuid().nullable().optional(),
   projectId:       z.string().uuid().nullable().optional(),
   taskId:          z.string().uuid().nullable().optional(),
+  dominionId:      z.string().uuid().nullable().optional(),
   tags:            z.array(z.string().trim().min(1).max(50)).max(50).optional(),
   links:           z.array(memoryLinkSchema).max(100).optional(),
   pinned:          z.boolean().optional(),
@@ -341,16 +369,44 @@ export const createMemorySchema = z.object({
 
 export const updateMemorySchema = z.object({
   title:           z.string().trim().min(1).max(255).optional(),
+  aiTitle:         z.string().trim().min(1).max(120).nullable().optional(),
   bodyMd:          z.string().min(1).max(100_000).optional(),
   summary:         z.string().trim().max(1000).nullable().optional(),
+  execSummary:     z.array(z.string().trim().min(1).max(500)).max(15).optional(),
   type:            memoryTypeSchema.optional(),
   realmId:         z.string().uuid().nullable().optional(),
   projectId:       z.string().uuid().nullable().optional(),
   taskId:          z.string().uuid().nullable().optional(),
+  dominionId:      z.string().uuid().nullable().optional(),
   tags:            z.array(z.string().trim().min(1).max(50)).max(50).optional(),
   pinned:          z.boolean().optional(),
   archivedAt:      z.string().datetime().nullable().optional(),
 })
+
+// Kairos Phase 1 (A2) — capture endpoint payload. Superset of createMemory
+// with `channel` for inbound normalisation; the route handler will fold it
+// into sourceMetadata before persistence. externalId (inside sourceMetadata)
+// is the idempotency key.
+export const captureMemorySchema = z.object({
+  title:           z.string().trim().min(1).max(255),
+  bodyMd:          z.string().min(1).max(100_000),
+  aiTitle:         z.string().trim().min(1).max(120).optional(),
+  summary:         z.string().trim().max(1000).optional(),
+  execSummary:     z.array(z.string().trim().min(1).max(500)).max(15).optional(),
+  type:            memoryTypeSchema.default('note'),
+  source:          memorySourceSchema.default('manual'),
+  channel:         z.string().trim().min(1).max(60).nullable().optional(),
+  sourceMetadata:  z.record(z.string(), z.unknown()).optional(),
+  realmId:         z.string().uuid().nullable().optional(),
+  projectId:       z.string().uuid().nullable().optional(),
+  taskId:          z.string().uuid().nullable().optional(),
+  dominionId:      z.string().uuid().nullable().optional(),
+  tags:            z.array(z.string().trim().min(1).max(50)).max(50).optional(),
+  links:           z.array(memoryLinkSchema).max(50).optional(),
+  pinned:          z.boolean().optional(),
+})
+
+export type CaptureMemoryRequest = z.infer<typeof captureMemorySchema>
 
 export const searchMemoriesSchema = z.object({
   query:           z.string().trim().min(2).max(500),
@@ -403,3 +459,129 @@ export type SearchMemoriesInput = z.infer<typeof searchMemoriesSchema>
 export type AddLinkInput      = z.infer<typeof addLinkSchema>
 export type GetNeighboursInput = z.infer<typeof getNeighboursSchema>
 export type PrepareContextInput = z.infer<typeof prepareContextSchema>
+
+// ─────────────────────────────────────────────────────────────────────────
+// Kairos Dominion validators. See VISION.md "Bet 5: K-3 Dominion".
+// ─────────────────────────────────────────────────────────────────────────
+
+export const createDominionSchema = z.object({
+  name:        z.string().trim().min(1).max(100),
+  color:       z.string().trim().max(30).default('purple'),
+  icon:        z.string().trim().max(50).optional(),
+  sortOrder:   z.number().int().optional(),
+  // Kairos Phase 1 (C11) — body fields can be set at creation or later.
+  vision:      z.string().trim().max(4000).nullable().optional(),
+  missionLong: z.string().trim().max(8000).nullable().optional(),
+})
+
+export const updateDominionSchema = z.object({
+  name:        z.string().trim().min(1).max(100).optional(),
+  color:       z.string().trim().max(30).optional(),
+  icon:        z.string().trim().max(50).optional(),
+  sortOrder:   z.number().int().optional(),
+  vision:      z.string().trim().max(4000).nullable().optional(),
+  missionLong: z.string().trim().max(8000).nullable().optional(),
+  archivedAt:  z.coerce.date().nullable().optional(),
+})
+
+export const addDominionRepoSchema = z.object({
+  dominionId: z.string().uuid(),
+  repoSlug:   z.string().trim().min(1).max(120),
+})
+
+// Kairos Phase 1 (C11) — Dominion objectives.
+export const dominionObjectiveStatusSchema = z.enum(['active', 'paused', 'completed', 'abandoned'])
+
+export const createDominionObjectiveSchema = z.object({
+  dominionId:  z.string().uuid(),
+  title:       z.string().trim().min(1).max(255),
+  description: z.string().trim().max(8000).nullable().optional(),
+  status:      dominionObjectiveStatusSchema.default('active'),
+  targetDate:  z.coerce.date().nullable().optional(),
+  sortOrder:   z.number().int().optional(),
+})
+
+export const updateDominionObjectiveSchema = z.object({
+  title:       z.string().trim().min(1).max(255).optional(),
+  description: z.string().trim().max(8000).nullable().optional(),
+  status:      dominionObjectiveStatusSchema.optional(),
+  targetDate:  z.coerce.date().nullable().optional(),
+  sortOrder:   z.number().int().optional(),
+  archivedAt:  z.coerce.date().nullable().optional(),
+})
+
+export type CreateDominionInput          = z.infer<typeof createDominionSchema>
+export type UpdateDominionInput          = z.infer<typeof updateDominionSchema>
+export type AddDominionRepoInput         = z.infer<typeof addDominionRepoSchema>
+export type DominionObjectiveStatus      = z.infer<typeof dominionObjectiveStatusSchema>
+export type CreateDominionObjectiveInput = z.infer<typeof createDominionObjectiveSchema>
+export type UpdateDominionObjectiveInput = z.infer<typeof updateDominionObjectiveSchema>
+
+// ─────────────────────────────────────────────────────────────────────────
+// Kairos Phase 3 (D15–D16) — agent_sessions / session_events validators.
+// ─────────────────────────────────────────────────────────────────────────
+
+export const agentSessionEngineSchema = z.enum(['claude', 'codex'])
+export const agentSessionStatusSchema = z.enum([
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+  'killed',
+  'timeout',
+])
+export const sessionEventKindSchema = z.enum([
+  'status',
+  'tool_use',
+  'tool_result',
+  'message',
+  'stop',
+  'error',
+])
+
+export const spawnSessionSchema = z.object({
+  engine:     agentSessionEngineSchema,
+  goal:       z.string().trim().min(1).max(2000),
+  prompt:     z.string().trim().min(1).max(20_000),
+  repo:       z.string().trim().max(200).nullable().optional(),
+  branch:     z.string().trim().max(120).nullable().optional(),
+  projectId:  z.string().uuid().nullable().optional(),
+  realmId:    z.string().uuid().nullable().optional(),
+  dominionId: z.string().uuid().nullable().optional(),
+  metadata:   z.record(z.string(), z.unknown()).optional(),
+})
+
+// Worker host calls this to flip status as the CLI starts / ends.
+export const updateSessionStatusSchema = z.object({
+  status:     agentSessionStatusSchema,
+  workerHost: z.string().trim().max(120).nullable().optional(),
+  workerPid:  z.number().int().nullable().optional(),
+  exitCode:   z.number().int().nullable().optional(),
+  startedAt:  z.coerce.date().nullable().optional(),
+  endedAt:    z.coerce.date().nullable().optional(),
+  costUsd:    z.number().nullable().optional(),
+})
+
+export const recordSessionEventSchema = z.object({
+  seq:      z.number().int().min(0),
+  kind:     sessionEventKindSchema,
+  toolName: z.string().trim().max(80).nullable().optional(),
+  payload:  z.record(z.string(), z.unknown()).optional(),
+})
+
+export const listSessionsSchema = z.object({
+  status:     z.union([agentSessionStatusSchema, z.array(agentSessionStatusSchema)]).optional(),
+  dominionId: z.string().uuid().optional(),
+  projectId:  z.string().uuid().optional(),
+  liveOnly:   z.boolean().default(false),
+  limit:      z.number().int().min(1).max(100).default(20),
+  offset:     z.number().int().min(0).default(0),
+})
+
+export type AgentSessionEngine    = z.infer<typeof agentSessionEngineSchema>
+export type AgentSessionStatus    = z.infer<typeof agentSessionStatusSchema>
+export type SessionEventKind      = z.infer<typeof sessionEventKindSchema>
+export type SpawnSessionInput     = z.infer<typeof spawnSessionSchema>
+export type UpdateSessionStatusInput = z.infer<typeof updateSessionStatusSchema>
+export type RecordSessionEventInput  = z.infer<typeof recordSessionEventSchema>
+export type ListSessionsInput     = z.infer<typeof listSessionsSchema>
