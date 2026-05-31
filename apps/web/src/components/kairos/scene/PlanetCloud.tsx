@@ -153,7 +153,7 @@ function FollowingLabel({ node, variant }: { node: SceneNode; variant: 'hover' |
     if (!groupRef.current) return
     groupRef.current.position.set(node.x ?? 0, (node.y ?? 0) + node._radius * 2.5 + 6, node.z ?? 0)
   })
-  const title = cleanTitle(node.title)
+  const title = node.aiTitle ?? cleanTitle(node.title)
   const subtitle = node.repo ?? node.type
   return (
     <group ref={groupRef}>

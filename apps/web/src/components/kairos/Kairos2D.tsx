@@ -68,6 +68,7 @@ export function Kairos2D({
       return {
         id: n.id,
         title: n.title,
+        aiTitle: n.aiTitle,
         type: n.type,
         source: n.source,
         realmId: n.realmId,

@@ -136,6 +136,7 @@ type GraphOpts = { realmId?: string; includeArchived?: boolean }
 export type GraphNode = {
   id: string
   title: string
+  aiTitle: string | null
   type: string
   source: string
   realmId: string | null
@@ -169,6 +170,7 @@ export async function getGraphForUser(
     .select({
       id: memories.id,
       title: memories.title,
+      aiTitle: memories.aiTitle,
       type: memories.type,
       source: memories.source,
       realmId: memories.realmId,

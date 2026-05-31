@@ -164,7 +164,7 @@ function FollowingLabel2D({
     if (!groupRef.current) return
     groupRef.current.position.set(node.x ?? 0, (node.y ?? 0) + node._radius * 2.5 + 6, 0)
   })
-  const title = cleanTitle(node.title)
+  const title = node.aiTitle ?? cleanTitle(node.title)
   const subtitle = node.repo ?? node.type
   // Derive hex fresh from current colorMode so label glow matches the orb colour.
   const hex = `hsl(${nodeHue(node, colorMode)}, 92%, ${56 + 14 * node._glow}%)`
