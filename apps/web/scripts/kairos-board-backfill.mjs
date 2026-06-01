@@ -1,18 +1,33 @@
 #!/usr/bin/env node
 // ─────────────────────────────────────────────────────────────────────────
-// Kairos board backfill — one-shot import of every Aeon board task as a
-// Kairos memory, plus a rollup memory per project.
+// DEPRECATED — Kairos Phase 2 (A3).
 //
+// This script was the original Phase 1 bridge: mirror every board task into
+// the brain so the Briefer could see them. Phase 2 replaces the mirror with
+// live board awareness — inspectDominion() now joins boardTasks directly, so
+// the Briefer reads the live source of truth instead of a stale import.
+//
+// The 211 memories this script created in Phase 1 are kept (decision: every
+// card is signal). But re-running it would duplicate execution-stream noise.
+// Left in tree as historical reference + safety bail-out below.
+//
+// DO NOT REMOVE without first verifying inspectDominion() board-task join is
+// active in the Briefer (apps/web/src/lib/kairos/briefer.ts).
+// ─────────────────────────────────────────────────────────────────────────
+
+if (!process.env.KAIROS_ALLOW_LEGACY_BOARD_BACKFILL) {
+  console.error('kairos-board-backfill is deprecated as of Phase 2.')
+  console.error('The Briefer now reads board state live via inspectDominion().')
+  console.error('To re-run anyway, set KAIROS_ALLOW_LEGACY_BOARD_BACKFILL=1 in the environment.')
+  process.exit(2)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Original implementation continues below.
 // Idempotent: each memory carries sourceMetadata.externalId =
 //   `board-task:${taskId}` or `project-rollup:${projectId}`. Re-runs hit
 //   /api/v1/memories/capture which short-circuits when the externalId
 //   already exists.
-//
-// Usage:
-//   node apps/web/scripts/kairos-board-backfill.mjs           # all projects
-//   node apps/web/scripts/kairos-board-backfill.mjs --dry-run # plan only
-//   node apps/web/scripts/kairos-board-backfill.mjs --skip="AS Sprint,..."
-//   node apps/web/scripts/kairos-board-backfill.mjs --concurrency=8
 // ─────────────────────────────────────────────────────────────────────────
 
 import { readFileSync, existsSync } from 'node:fs'

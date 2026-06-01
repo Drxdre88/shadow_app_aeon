@@ -24,6 +24,7 @@ interface BriefingContext {
   objectives: Array<{ title: string; description: string | null; status: string }>
   projects: Array<{ name: string }>
   recentMemories: Array<{ title: string; type: string; summary: string | null }>
+  boardTasks: Array<{ name: string; status: string; priority: string; projectName: string; endDate: Date | null }>
 }
 
 function buildPrompt(ctx: BriefingContext, today: string): string {
@@ -56,6 +57,16 @@ function buildPrompt(ctx: BriefingContext, today: string): string {
           .map((m) => `- [${m.type}] ${m.title}${m.summary ? ` — ${m.summary}` : ''}`)
           .join('\n'),
     '',
+    '## Open board cards (live)',
+    ctx.boardTasks.length === 0
+      ? '(none open)'
+      : ctx.boardTasks
+          .map((t) => {
+            const due = t.endDate ? ` due ${new Date(t.endDate).toISOString().slice(0, 10)}` : ''
+            return `- [${t.priority}/${t.status}] (${t.projectName}) ${t.name}${due}`
+          })
+          .join('\n'),
+    '',
     'Write the briefing using these required sections, in this order:',
     '',
     '## State',
@@ -65,10 +76,10 @@ function buildPrompt(ctx: BriefingContext, today: string): string {
     'What moved since the last briefing. If nothing did, say so.',
     '',
     '## Watch',
-    'What you (Kairos) are watching for. One sharp observation, not a list.',
+    'What you (Kairos) are watching for. One sharp observation, not a list. If a board card looks stuck or overdue, name it.',
     '',
     '## Suggested next',
-    'One concrete suggestion. Imperative voice. Skip if there genuinely is none.',
+    'One concrete suggestion. Imperative voice. Skip if there genuinely is none. Prefer suggestions tied to an actual open board card when one fits.',
     '',
     'Do not include preamble. Start directly with `## State`.',
   ]
@@ -117,6 +128,13 @@ export async function runBrieferForUser(userId: string): Promise<BrieferResult[]
         title: m.title,
         type: m.type,
         summary: m.summary,
+      })),
+      boardTasks: briefing.boardTasks.map((t) => ({
+        name: t.name,
+        status: t.status,
+        priority: t.priority,
+        projectName: t.projectName,
+        endDate: t.endDate,
       })),
     }
 
