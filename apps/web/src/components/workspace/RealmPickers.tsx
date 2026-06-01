@@ -3,6 +3,7 @@
 import {
   Orbit, Rocket, Globe, Zap, Shield, Flame, Star, Diamond,
   Crown, Swords, Anchor, Mountain, Atom, Bug, Coffee, Gamepad2,
+  Hourglass, Satellite, FlaskConical, Cpu, Factory, Banknote, Network, Truck,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
@@ -25,6 +26,16 @@ export const REALM_ICON_MAP: Record<string, LucideIcon> = {
   bug: Bug,
   coffee: Coffee,
   gamepad: Gamepad2,
+  // Kairos Phase 2 (A2) — Dominion-flavour icons. Also surfaced in the realm
+  // picker since Dominions reuse this map.
+  hourglass: Hourglass,
+  satellite: Satellite,
+  flask: FlaskConical,
+  cpu: Cpu,
+  factory: Factory,
+  banknote: Banknote,
+  network: Network,
+  truck: Truck,
 }
 
 export const REALM_ICON_KEYS = Object.keys(REALM_ICON_MAP)
