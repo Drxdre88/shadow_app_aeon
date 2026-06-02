@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { neutraliseFences, extractJsonBlock as _extractJsonBlock } from './_prompt-utils'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (B1) — pure helpers for the Archetype Generator.
@@ -48,14 +49,6 @@ export interface ArchetypeContext {
   pinned: SubstrateRow[]
   reflections: SubstrateRow[]
   existing: SubstrateRow[]
-}
-
-// Defense in depth against prompt-injection via memory titles/summaries:
-// strip triple-backtick sequences so a hostile substrate row cannot close
-// the JSON fence the model is asked to emit. Substrate is userId-scoped
-// so the blast radius is self-harm only, but the cost of escaping is zero.
-function neutraliseFences(s: string): string {
-  return s.replace(/```/g, "'''")
 }
 
 function renderMemoryLine(m: SubstrateRow): string {
@@ -134,14 +127,5 @@ export function buildArchetypePrompt(ctx: ArchetypeContext, today: string): stri
 }
 
 export function extractJsonBlock(text: string): unknown {
-  // Prefer ```json ... ``` fenced; fall back to the first balanced {...} span.
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  const candidate = fenced ? fenced[1] : text
-  const start = candidate.indexOf('{')
-  const end = candidate.lastIndexOf('}')
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error('archetype generator: no JSON object found in response')
-  }
-  const json = candidate.slice(start, end + 1)
-  return JSON.parse(json)
+  return _extractJsonBlock(text, 'archetype')
 }

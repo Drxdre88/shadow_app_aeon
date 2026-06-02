@@ -31,12 +31,16 @@ import { getUserId, ok, notFound, fail } from './types'
 // Parity lock: src/app/api/__tests__/memories-parity.test.ts (P1.8)
 // ─────────────────────────────────────────────────────────────────────────
 
-// Kairos Phase 1 (A1) — taxonomy mirrors validators.memoryTypeSchema.
-// Kept inline here because MCP tool argument schemas are advertised to the
-// client at registration time and must be literal.
+// Taxonomy mirrors validators.memoryTypeSchema. Kept inline here because
+// MCP tool argument schemas are advertised to the client at registration
+// time and must be literal — but the literal list is sourced from the
+// canonical enum so the two can never drift (horsemen B1+B2 review caught
+// the previous hand-maintained copy missing 'archetype' + 'dominion_cortex').
 const MEMORY_TYPES = [
   'note', 'decision', 'idea', 'observation', 'session_summary', 'reflection',
   'snapshot', 'inbound', 'advisory', 'achievement', 'session_event', 'fact', 'contact', 'external_event',
+  // Kairos Phase 2 (B1+B2):
+  'archetype', 'dominion_cortex',
 ] as const
 const memoryTypeEnum = z.enum(MEMORY_TYPES)
 
@@ -81,11 +85,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       bodyMd: z.string().min(1).max(100_000).describe('Markdown body — the full thought, note, or summary'),
       summary: z.string().max(1000).optional().describe('One-line compression used by context packing'),
       execSummary: z.array(z.string().min(1).max(500)).max(15).optional().describe('5–10 cleaned bullet points. Front-of-house in the UI side panel'),
-      type: z.enum([
-        'note', 'decision', 'idea', 'observation', 'session_summary', 'reflection',
-        // Kairos Phase 1 (A1) additions:
-        'snapshot', 'inbound', 'advisory', 'achievement', 'session_event', 'fact', 'contact', 'external_event',
-      ]).default('note').optional(),
+      type: memoryTypeEnum.default('note').optional(),
       source: z.enum([
         'manual', 'claude', 'voice', 'hook', 'import',
         // Kairos Phase 1 (A1) additions:

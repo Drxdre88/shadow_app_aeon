@@ -15,6 +15,7 @@ import {
   type PriorCortexRow,
   type ReflectionRow,
 } from './cortex-prompt'
+import { todayIso } from './_prompt-utils'
 
 export {
   buildCortexPrompt,
@@ -50,10 +51,6 @@ export {
 
 const MAX_REFLECTIONS = 30
 const MAX_ARCHETYPES = 12
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
-}
 
 async function alreadyRanToday(userId: string, dominionId: string): Promise<boolean> {
   const [row] = await db
@@ -215,6 +212,10 @@ async function persistCortex(
         eq(memories.userId, userId),
         eq(memories.dominionId, ctx.dominionId),
         eq(memories.streamClass, 'cortex'),
+        // Match archetypes.ts: pinned rows survive nightly archival so
+        // the operator can lock-in a cortex snapshot from the UI without
+        // it being silently overwritten the next night.
+        eq(memories.pinned, false),
         isNull(memories.archivedAt),
       ))
       .returning({ id: memories.id })
@@ -275,6 +276,23 @@ export async function runCortexRegenForDominion(
 
   const ctx = await gatherCortexContext(userId, dominionId)
   if (!ctx) return { dominionId, dominionName: dom.name, status: 'skipped', reason: 'no context' }
+
+  // Cross-job race defense: cortex runs 30 min after archetype synthesis,
+  // but heavy users with many Dominions can push the archetype job past
+  // its window. If this Dominion has activity signals but no archetype
+  // synthesised today, bail rather than write a cortex anchored to stale
+  // archetypes — tomorrow's regen will catch up with fresh data. We only
+  // bail when there *is* activity to synthesise from; first-ever runs
+  // (no archetypes EVER) still fall through to the hasSignal check.
+  const hasActivitySignal = ctx.reflections.length > 0 || ctx.boardTasks.length > 0
+  if (hasActivitySignal && ctx.archetypes.length === 0) {
+    return {
+      dominionId,
+      dominionName: dom.name,
+      status: 'skipped',
+      reason: 'archetypes not synthesised today — deferring to next regen',
+    }
+  }
 
   // Need *something* to synthesise. Cortex without any archetype, reflection,
   // or vision is just hallucination — skip and let the archetype generator

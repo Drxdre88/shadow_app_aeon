@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { neutraliseFences, extractJsonBlock as _extractJsonBlock } from './_prompt-utils'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (B2) — pure helpers for the Dominion Cortex generator.
@@ -67,10 +68,6 @@ export interface CortexContext {
   reflections: ReflectionRow[]
   archetypes: ArchetypeRow[]
   prior: PriorCortexRow | null
-}
-
-function neutraliseFences(s: string): string {
-  return s.replace(/```/g, "'''")
 }
 
 function renderReflection(r: ReflectionRow): string {
@@ -168,18 +165,7 @@ export function buildCortexPrompt(ctx: CortexContext, today: string): string {
 }
 
 export function extractJsonBlock(text: string): unknown {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  const candidate = fenced ? fenced[1] : text
-  const start = candidate.indexOf('{')
-  const end = candidate.lastIndexOf('}')
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error('cortex generator: no JSON object found in response')
-  }
-  try {
-    return JSON.parse(candidate.slice(start, end + 1))
-  } catch (err) {
-    throw new Error(`cortex generator: malformed JSON — ${err instanceof Error ? err.message : String(err)}`)
-  }
+  return _extractJsonBlock(text, 'cortex')
 }
 
 // Render the structured cortex into the markdown body stored on the memory

@@ -7,7 +7,7 @@ import {
   memories,
   boardTasks,
 } from '@/lib/db/schema'
-import { eq, and, asc, desc, isNull, sql } from 'drizzle-orm'
+import { eq, and, asc, desc, isNull, ne, sql } from 'drizzle-orm'
 import type {
   CreateDominionInput,
   UpdateDominionInput,
@@ -264,10 +264,18 @@ export async function inspectDominion(
         summary: memories.summary,
       })
       .from(memories)
+      // Kairos Phase 2 (B1+B2) — exclude synthesised rows (archetypes,
+      // cortex docs) from the briefing's "recent memories" stream. Those
+      // are Kairos's own output and feeding them back in causes a
+      // recursive context-collapse loop where the Briefer reasons over
+      // yesterday's reasoning. The cortex is loaded explicitly elsewhere
+      // when callers need it; archetypes surface via their own panel.
       .where(and(
         eq(memories.dominionId, id),
         eq(memories.userId, userId),
         isNull(memories.archivedAt),
+        ne(memories.streamClass, 'archetype'),
+        ne(memories.streamClass, 'cortex'),
       ))
       .orderBy(desc(memories.createdAt))
       .limit(memoryLimit),

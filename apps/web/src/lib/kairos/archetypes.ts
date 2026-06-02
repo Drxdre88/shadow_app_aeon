@@ -13,6 +13,7 @@ import {
   type ArchetypeOutput,
   type SubstrateRow,
 } from './archetypes-prompt'
+import { todayIso } from './_prompt-utils'
 
 // Re-export for callers (cron route + tests) that only import this module.
 export {
@@ -50,10 +51,6 @@ const MAX_RECENT = 80
 const MAX_PINNED = 30
 const MAX_REFLECTIONS = 30
 const MAX_EXISTING = 10
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
-}
 
 async function alreadyRanToday(userId: string, dominionId: string): Promise<boolean> {
   // Filter on isNull(archivedAt) so a previously-failed run (which archived
