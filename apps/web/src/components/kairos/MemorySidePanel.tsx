@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Pin, PinOff, Trash2, ExternalLink, ChevronDown, ChevronRight, ArrowRight, ArrowLeft as ArrowLeftIcon, Link as LinkIcon } from 'lucide-react'
 import { getMemory, updateMemory, deleteMemoryById, getMemoryNeighbours } from '@/lib/actions/memories'
+import { KairosMarkdown } from '@/components/ui/KairosMarkdown'
 
 type MemoryRow = NonNullable<Awaited<ReturnType<typeof getMemory>>>
 type NeighbourBundle = Awaited<ReturnType<typeof getMemoryNeighbours>>
@@ -228,15 +229,15 @@ function BodyToggle({ open, onToggle, body }: { open: boolean; onToggle: () => v
       </button>
       <AnimatePresence initial={false}>
         {open && (
-          <motion.pre
+          <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.18 }}
-            className="overflow-hidden text-[11.5px] text-white/75 whitespace-pre-wrap font-sans leading-relaxed bg-white/[0.02] border border-white/[0.04] rounded-lg px-3 py-2"
+            className="overflow-hidden bg-white/[0.02] border border-white/[0.04] rounded-lg px-3 py-2"
           >
-            {body}
-          </motion.pre>
+            <KairosMarkdown markdown={body} variant="briefing" />
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
