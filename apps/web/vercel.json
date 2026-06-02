@@ -3,12 +3,24 @@
   "buildCommand": "npm run db:push && npm run build",
   "crons": [
     {
+      "path": "/api/cron/project-snapshot",
+      "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/cron/archetype-synthesis",
+      "schedule": "30 2 * * *"
+    },
+    {
+      "path": "/api/cron/cortex-regen",
+      "schedule": "0 3 * * *"
+    },
+    {
       "path": "/api/cron/briefer",
       "schedule": "0 7 * * *"
     },
     {
-      "path": "/api/cron/project-snapshot",
-      "schedule": "0 23 * * *"
+      "path": "/api/cron/memory-compaction",
+      "schedule": "0 3 * * 0"
     }
   ]
 }
