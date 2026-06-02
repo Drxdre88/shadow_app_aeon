@@ -149,7 +149,7 @@ async function fetchSubstrate(
     .where(and(
       eq(memories.userId, userId),
       eq(memories.dominionId, dominionId),
-      inArray(memories.streamClass, SUBSTRATE_STREAMS as unknown as string[]),
+      inArray(memories.streamClass, [...SUBSTRATE_STREAMS]),
       isNull(memories.archivedAt),
       sql`"memories"."fts" @@ ${tsQuery}`,
       sql`${memories.createdAt} >= ${sinceTs}`,
@@ -164,13 +164,7 @@ async function fetchSubstrate(
     )
     .limit(SUBSTRATE_TOP_K)
 
-  return rows.map((r) => rowToMemory({
-    id: r.id,
-    title: r.title,
-    bodyMd: r.bodyMd,
-    streamClass: r.streamClass,
-    createdAt: r.createdAt,
-  }))
+  return rows.map(rowToMemory)
 }
 
 // Pure citation helpers live in chat-retrieval-citations.ts so unit tests

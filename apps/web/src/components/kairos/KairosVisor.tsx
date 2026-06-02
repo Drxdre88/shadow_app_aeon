@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence } from 'framer-motion'
 import { Plus, Send, Sparkles, X } from 'lucide-react'
 import { useKairosVisorStore } from '@/stores/kairosVisorStore'
 import {
@@ -12,21 +12,16 @@ import {
   type KairosChatActionResult,
 } from '@/lib/actions/kairos-chat'
 import type { ChatMessage, ChatThreadSummary } from '@/lib/data/kairos-chat'
+import { KairosVisorShell } from './KairosVisorShell'
+import { KairosThreadList } from './KairosThreadList'
+import { KairosNewThreadHeader } from './KairosNewThreadHeader'
+import { KairosMessageStream } from './KairosMessageStream'
+import { formatReason } from './kairos-citations'
 
-// ─────────────────────────────────────────────────────────────────────────
-// Kairos Phase 2 (C1 + C2) — slide-out chat panel.
-//
-// Right-edge overlay, ~420px wide. Three states inside:
-//   - thread picker (no active thread): list of recent threads + "new"
-//   - new-thread composer (active=null, intent=new): pick Dominion + send
-//   - thread view (active thread loaded): messages + composer
-//
-// C2 adds memory grounding: each assistant turn carries a `retrieval`
-// payload summarising the cortex + archetypes + substrate sent to the
-// model. We render that as a dim "Reading: …" line above the bubble,
-// and rewrite inline `[[uuid]]` tokens as small chips that surface the
-// memory title (truncated, hover-expand).
-// ─────────────────────────────────────────────────────────────────────────
+// Slide-out chat panel anchored to a Dominion. Top-level orchestrator —
+// state + send flow + composer. Subviews (shell, picker, composer header,
+// message stream + chip render) live in sibling files so this stays the
+// flow doc, not a render dump.
 
 interface DominionOption {
   id: string
@@ -34,9 +29,6 @@ interface DominionOption {
 }
 
 interface KairosVisorProps {
-  // Pre-fetched on the server so the picker opens instantly without a
-  // round-trip. If empty, the panel surfaces a "create a Dominion first"
-  // hint instead of a chat composer.
   dominions: DominionOption[]
 }
 
@@ -49,7 +41,7 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
     summary: ChatThreadSummary
     messages: ChatMessage[]
   } | null>(null)
-  const [composing, setComposing] = useState(false) // true = new-thread mode
+  const [composing, setComposing] = useState(false)
   const [selectedDominionId, setSelectedDominionId] = useState<string>(
     dominions[0]?.id ?? '',
   )
@@ -59,7 +51,6 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  // Load thread list when the Visor opens.
   useEffect(() => {
     if (!isOpen) return
     let cancelled = false
@@ -69,7 +60,6 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
     return () => { cancelled = true }
   }, [isOpen])
 
-  // Load active thread when the id changes (or on first open if persisted).
   useEffect(() => {
     if (!isOpen || !activeThreadId) {
       setActiveThreadData(null)
@@ -89,7 +79,6 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
     return () => { cancelled = true }
   }, [isOpen, activeThreadId, setActiveThread])
 
-  // Escape closes the Visor.
   useEffect(() => {
     if (!isOpen) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
@@ -97,18 +86,14 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
     return () => window.removeEventListener('keydown', onKey)
   }, [isOpen, close])
 
-  // Autofocus the composer when the Visor opens with a thread or new
-  // conversation surface (i.e. anything that renders the textarea).
   useEffect(() => {
     if (!isOpen) return
     if (!composing && !activeThread) return
-    // The slide-in animation completes around 250ms; wait one frame past
-    // mount to avoid stealing focus during the animation's first paint.
+    // Slide-in completes ~250ms; wait a tick to avoid stealing focus mid-paint.
     const id = window.setTimeout(() => textareaRef.current?.focus(), 50)
     return () => window.clearTimeout(id)
   }, [isOpen, composing, activeThread])
 
-  // Auto-scroll the message stream to the latest reply.
   useEffect(() => {
     if (!scrollRef.current) return
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -139,10 +124,8 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
 
     if (!result.ok) {
       setError(formatReason(result.reason, result.message))
-      // The user message was already persisted (we persist BEFORE the AI
-      // call so a model failure never loses input). Clear the draft so
-      // the user doesn't retype + double-send; the next send call will
-      // detect the orphan user message and retry just the AI half.
+      // User msg was already persisted (persist-before-AI). Clear draft so
+      // the next send retries the AI half instead of double-posting.
       const aiFailure = result.reason === 'ai_empty' || result.reason === 'ai_failed' || result.reason === 'no_credential'
       if (aiFailure) setDraft('')
       setPending(false)
@@ -152,17 +135,13 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
     setDraft('')
     setComposing(false)
     setActiveThread(result.threadId)
-    // Refresh the thread + list. The active-thread useEffect re-runs on
-    // setActiveThread, so we only need to nudge the list refresh here.
     listKairosThreads({ limit: 30 })
       .then(setThreads)
-      .catch(() => { /* non-fatal — list will refresh next open */ })
+      .catch(() => { /* non-fatal */ })
     setPending(false)
   }, [draft, pending, composing, activeThread, selectedDominionId, setActiveThread])
 
   const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Cmd/Ctrl+Enter sends. Plain Enter inserts a newline so multi-line
-    // reflections / questions are easy to compose.
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       handleSubmit()
@@ -181,11 +160,11 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
     return (
       <AnimatePresence>
         {isOpen && (
-          <VisorShell width={PANEL_WIDTH} onClose={close}>
+          <KairosVisorShell width={PANEL_WIDTH} onClose={close}>
             <div className="p-6 text-sm text-zinc-400">
               <p>Create a Dominion first to start talking to Kairos. Open the cosmic view and add one.</p>
             </div>
-          </VisorShell>
+          </KairosVisorShell>
         )}
       </AnimatePresence>
     )
@@ -194,8 +173,7 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
   return (
     <AnimatePresence>
       {isOpen && (
-        <VisorShell width={PANEL_WIDTH} onClose={close}>
-          {/* Header */}
+        <KairosVisorShell width={PANEL_WIDTH} onClose={close}>
           <div className="flex items-center gap-2 border-b border-zinc-800 bg-zinc-950/80 px-4 py-3 backdrop-blur">
             <Sparkles className="h-4 w-4 text-purple-400" />
             <h2 className="flex-1 truncate text-sm font-medium text-zinc-100">{headerLabel}</h2>
@@ -217,10 +195,9 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
             </button>
           </div>
 
-          {/* Body */}
           <div className="flex flex-1 flex-col overflow-hidden">
             {!composing && !activeThread && (
-              <ThreadList
+              <KairosThreadList
                 threads={threads}
                 onPick={(id) => setActiveThread(id)}
                 onNew={() => setComposing(true)}
@@ -228,7 +205,7 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
             )}
 
             {composing && (
-              <NewThreadHeader
+              <KairosNewThreadHeader
                 dominions={dominions}
                 selectedId={selectedDominionId}
                 onSelect={setSelectedDominionId}
@@ -236,14 +213,13 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
             )}
 
             {!composing && activeThread && (
-              <MessageStream
+              <KairosMessageStream
                 messages={activeThread.messages}
                 scrollRef={scrollRef}
               />
             )}
           </div>
 
-          {/* Composer (always rendered unless in thread-picker idle state) */}
           {(composing || activeThread) && (
             <div className="border-t border-zinc-800 bg-zinc-950/70 p-3">
               {error && (
@@ -276,237 +252,8 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
               </div>
             </div>
           )}
-        </VisorShell>
+        </KairosVisorShell>
       )}
     </AnimatePresence>
   )
-}
-
-function VisorShell({ width, onClose, children }: { width: number; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <>
-      <motion.div
-        className="fixed inset-0 z-40 bg-black/40"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-      />
-      <motion.aside
-        role="dialog"
-        aria-modal="true"
-        aria-label="Kairos chat"
-        className="fixed right-0 top-0 z-50 flex h-screen flex-col bg-zinc-950 border-l border-zinc-800 shadow-2xl"
-        style={{ width }}
-        initial={{ x: width }}
-        animate={{ x: 0 }}
-        exit={{ x: width }}
-        transition={{ type: 'spring', stiffness: 320, damping: 36 }}
-      >
-        {children}
-      </motion.aside>
-    </>
-  )
-}
-
-function ThreadList({
-  threads,
-  onPick,
-  onNew,
-}: {
-  threads: ChatThreadSummary[]
-  onPick: (id: string) => void
-  onNew: () => void
-}) {
-  if (threads.length === 0) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-        <p className="text-sm text-zinc-400">No conversations yet.</p>
-        <button
-          onClick={onNew}
-          className="rounded-md bg-purple-600 px-3 py-1.5 text-sm text-white hover:bg-purple-500"
-          type="button"
-        >
-          Start one
-        </button>
-      </div>
-    )
-  }
-  return (
-    <div className="flex-1 overflow-y-auto p-2">
-      {threads.map((t) => (
-        <button
-          key={t.id}
-          onClick={() => onPick(t.id)}
-          className="w-full rounded-md px-3 py-2 text-left transition hover:bg-zinc-900"
-          type="button"
-        >
-          <div className="truncate text-sm text-zinc-100">{t.title}</div>
-          <div className="mt-0.5 truncate text-xs text-zinc-500">
-            {t.dominionName ?? 'Unanchored'} · {t.messageCount} message{t.messageCount === 1 ? '' : 's'}
-          </div>
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function NewThreadHeader({
-  dominions,
-  selectedId,
-  onSelect,
-}: {
-  dominions: DominionOption[]
-  selectedId: string
-  onSelect: (id: string) => void
-}) {
-  return (
-    <div className="border-b border-zinc-900 bg-zinc-950 p-3">
-      <label className="block text-xs uppercase tracking-wider text-zinc-500">Anchor to</label>
-      <select
-        value={selectedId}
-        onChange={(e) => onSelect(e.target.value)}
-        className="mt-1 w-full rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-purple-600 focus:outline-none"
-      >
-        {dominions.map((d) => (
-          <option key={d.id} value={d.id}>{d.name}</option>
-        ))}
-      </select>
-    </div>
-  )
-}
-
-function MessageStream({
-  messages,
-  scrollRef,
-}: {
-  messages: ChatMessage[]
-  scrollRef: React.RefObject<HTMLDivElement | null>
-}) {
-  return (
-    <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-3">
-      {messages.length === 0 && (
-        <div className="text-center text-xs text-zinc-500">Conversation is empty — say something.</div>
-      )}
-      {messages.map((m) => (
-        <MessageBubble key={m.id} message={m} />
-      ))}
-    </div>
-  )
-}
-
-function MessageBubble({ message }: { message: ChatMessage }) {
-  const isUser = message.role === 'user'
-  const readingLabel = !isUser ? formatReadingLine(message.retrieval) : null
-  const titleById = !isUser ? buildTitleMap(message.retrieval) : EMPTY_TITLES
-
-  return (
-    <div className={isUser ? 'flex justify-end' : 'flex flex-col items-start'}>
-      {readingLabel && (
-        <div className="mb-1 px-1 text-[10px] uppercase tracking-wider text-zinc-500">
-          {readingLabel}
-        </div>
-      )}
-      <div
-        className={
-          isUser
-            ? 'max-w-[85%] rounded-2xl rounded-br-md bg-purple-600 px-3 py-2 text-sm text-white'
-            : 'max-w-[85%] rounded-2xl rounded-bl-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100'
-        }
-      >
-        <div className="whitespace-pre-wrap break-words">
-          {isUser
-            ? message.content
-            : renderWithCitations(message.content, titleById)}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// Citation token regex — must match the one in chat-retrieval-citations.ts
-// for the UI to surface chips for the same ids the server accepted as
-// real citations.
-const CITATION_TOKEN_RE = /\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]\]/gi
-
-const EMPTY_TITLES: Map<string, string> = new Map()
-
-function buildTitleMap(retrieval: ChatMessage['retrieval']): Map<string, string> {
-  if (!retrieval) return EMPTY_TITLES
-  const map = new Map<string, string>()
-  if (retrieval.cortex) map.set(retrieval.cortex.id.toLowerCase(), retrieval.cortex.title)
-  for (const a of retrieval.archetypes ?? []) map.set(a.id.toLowerCase(), a.title)
-  for (const s of retrieval.substrate ?? []) map.set(s.id.toLowerCase(), s.title)
-  return map
-}
-
-function formatReadingLine(retrieval: ChatMessage['retrieval']): string | null {
-  if (!retrieval) return null
-  const parts: string[] = []
-  if (retrieval.cortex) parts.push('cortex')
-  const arch = retrieval.archetypes?.length ?? 0
-  if (arch > 0) parts.push(`${arch} archetype${arch === 1 ? '' : 's'}`)
-  const sub = retrieval.substrate?.length ?? 0
-  if (sub > 0) parts.push(`${sub} memor${sub === 1 ? 'y' : 'ies'}`)
-  if (parts.length === 0) return null
-  return `Reading: ${parts.join(' · ')}`
-}
-
-function truncateTitle(title: string, max = 28): string {
-  const t = title.trim()
-  return t.length <= max ? t : t.slice(0, max - 1).trimEnd() + '…'
-}
-
-// Splits the assistant body into text + chip nodes. Hallucinated ids
-// (those not present in the retrieval snapshot) render as muted literals
-// so the operator can spot when the model invents citations.
-function renderWithCitations(content: string, titles: Map<string, string>): React.ReactNode {
-  const nodes: React.ReactNode[] = []
-  let lastIndex = 0
-  let key = 0
-  for (const match of content.matchAll(CITATION_TOKEN_RE)) {
-    const start = match.index ?? 0
-    if (start > lastIndex) nodes.push(content.slice(lastIndex, start))
-    const id = match[1].toLowerCase()
-    const title = titles.get(id)
-    if (title) {
-      nodes.push(
-        <span
-          key={`cite-${key++}`}
-          title={title}
-          className="mx-0.5 inline-flex items-center rounded-md border border-purple-700/50 bg-purple-950/40 px-1.5 py-0.5 align-baseline text-[11px] text-purple-200"
-        >
-          {truncateTitle(title)}
-        </span>,
-      )
-    } else {
-      nodes.push(
-        <span
-          key={`miss-${key++}`}
-          title="Unknown memory id"
-          className="mx-0.5 inline rounded-md border border-zinc-700/40 bg-zinc-800/40 px-1 py-0.5 align-baseline text-[10px] text-zinc-500"
-        >
-          ?
-        </span>,
-      )
-    }
-    lastIndex = start + match[0].length
-  }
-  if (lastIndex < content.length) nodes.push(content.slice(lastIndex))
-  return nodes
-}
-
-type FailReason = Extract<KairosChatActionResult, { ok: false }>['reason']
-
-function formatReason(reason: FailReason, message?: string): string {
-  switch (reason) {
-    case 'unauthorized':       return 'Not signed in.'
-    case 'dominion_not_found': return 'That Dominion is not accessible.'
-    case 'thread_not_found':   return 'Thread was removed.'
-    case 'no_credential':      return 'No BYOK credential — add an API key in settings.'
-    case 'ai_empty':           return 'Kairos returned an empty reply. Try again.'
-    case 'ai_failed':          return message ? `Kairos failed: ${message}` : 'Kairos failed. Try again.'
-    case 'invalid_input':      return message ? `Invalid input: ${message}` : 'Invalid input.'
-    default:                   return 'Something went wrong.'
-  }
 }

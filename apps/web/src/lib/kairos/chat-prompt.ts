@@ -1,17 +1,7 @@
-// ─────────────────────────────────────────────────────────────────────────
-// Kairos Phase 2 (C1 → C2) — pure prompt builder for the chat surface.
-//
-// C1 shipped bare chat: persona + Dominion vision/mission only. C2 adds
-// memory grounding — the latest cortex doc, all live archetypes, and the
-// top-k FTS substrate hits are injected as a system-prompt prefix, and
-// the model is asked to cite specific memories inline as [[uuid]] tokens.
-//
-// The retrieval is optional: when no grounding is passed the prompt
-// degrades cleanly to the C1 shape, so a Dominion with no cortex yet
-// still gets a usable reply.
-//
-// Kept pure (no DB / no AI imports) so unit tests don't boot the DB.
-// ─────────────────────────────────────────────────────────────────────────
+// Pure prompt builder for the Kairos chat surface. Optional retrieval
+// (cortex + archetypes + substrate) is injected as a system prompt
+// prefix; when absent the prompt degrades cleanly to a bare persona +
+// Dominion vision/mission shape. No DB / no AI imports — unit-testable.
 
 import type { AIMessage } from '@/lib/ai/provider'
 

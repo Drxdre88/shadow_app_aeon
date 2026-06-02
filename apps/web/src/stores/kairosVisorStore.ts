@@ -17,7 +17,6 @@ interface KairosVisorStore {
 
   open: () => void
   close: () => void
-  toggle: () => void
   setActiveThread: (id: string | null) => void
 }
 
@@ -28,7 +27,6 @@ export const useKairosVisorStore = create<KairosVisorStore>()(
       activeThreadId: null,
       open: () => set({ isOpen: true }),
       close: () => set({ isOpen: false }),
-      toggle: () => set((s) => ({ isOpen: !s.isOpen })),
       setActiveThread: (id) => set({ activeThreadId: id }),
     }),
     {

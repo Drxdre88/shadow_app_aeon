@@ -10,6 +10,18 @@ export async function requireAuth() {
   return session.user.id
 }
 
+// Non-throwing variant for actions that surface a structured failure
+// envelope to the client (e.g. chat actions where the UI shows a
+// friendly error string, not a stack trace).
+export async function safeAuth(): Promise<{ ok: true; userId: string } | { ok: false; reason: 'unauthorized' }> {
+  try {
+    const userId = await requireAuth()
+    return { ok: true, userId }
+  } catch {
+    return { ok: false, reason: 'unauthorized' }
+  }
+}
+
 export async function requireOwnership(projectId: string) {
   const userId = await requireAuth()
   const access = await verifyProjectAccess(projectId, userId)

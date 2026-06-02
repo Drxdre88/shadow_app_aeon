@@ -4,42 +4,31 @@ import { z } from 'zod'
 import { eq, and } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { dominions } from '@/lib/db/schema'
-import { requireAuth } from './helpers'
+import { safeAuth } from './helpers'
 import {
   createChatThread as _createChatThread,
   getChatThread as _getChatThread,
   listChatThreads as _listChatThreads,
   appendChatMessage as _appendChatMessage,
   archiveChatThread as _archiveChatThread,
-  type ChatRetrievalMeta,
+  updateChatMessageContent as _updateChatMessageContent,
 } from '@/lib/data/kairos-chat'
-import { buildChatMessages, type ChatPromptRetrieval } from '@/lib/kairos/chat-prompt'
+import type { ChatRetrievalMeta } from '@/lib/data/kairos-chat-payload'
+import { buildChatMessages } from '@/lib/kairos/chat-prompt'
 import {
   retrieveForChat,
   extractCitationIds,
   intersectWithRetrieved,
   type ChatRetrieval,
 } from '@/lib/kairos/chat-retrieval'
+import { toPromptRetrieval, toRetrievalMeta } from '@/lib/kairos/chat-retrieval-mapping'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError } from '@/lib/ai/router'
 
-// ─────────────────────────────────────────────────────────────────────────
-// Kairos Phase 2 (C1) — chat server actions.
-//
-// Two main entry points:
-//   - startKairosThread(dominionId, firstMessage): creates a new thread
-//     anchored to a Dominion, posts the first user message, calls the
-//     BYOK model, posts the assistant reply. Returns the thread + the
-//     two messages so the UI can render them immediately.
-//   - sendKairosMessage(threadId, body): appends the user message to an
-//     existing thread, calls the BYOK model with the full history, posts
-//     the assistant reply. Returns the two new messages.
-//
-// Both flows persist BEFORE calling the AI so a model failure doesn't
-// lose the user's message. If the AI call fails, the action returns
-// `{ok: false, reason}` and the user message stays in the thread; the
-// next call can retry without resending.
-// ─────────────────────────────────────────────────────────────────────────
+// Chat server actions. Both startKairosThread + sendKairosMessage persist
+// the user turn BEFORE calling the model so a model failure can never
+// silently lose input — the next call detects the orphan and retries the
+// AI half (or rewrites the orphan body if the user edited the retry).
 
 const startSchema = z.object({
   dominionId: z.string().uuid(),
@@ -94,18 +83,6 @@ export type KairosChatActionResult =
   | { ok: true; threadId: string; userSeq: number; assistantSeq: number; assistantContent: string; model: string | null }
   | { ok: false; reason: 'unauthorized' | 'dominion_not_found' | 'thread_not_found' | 'no_credential' | 'ai_empty' | 'ai_failed' | 'invalid_input'; message?: string }
 
-// Convert the requireAuth throw into the action's structured ok:false
-// envelope so callers don't have to wrap every action in a try/catch
-// just to surface "not signed in" instead of a raw exception string.
-async function safeAuth(): Promise<{ ok: true; userId: string } | { ok: false; reason: 'unauthorized' }> {
-  try {
-    const userId = await requireAuth()
-    return { ok: true, userId }
-  } catch {
-    return { ok: false, reason: 'unauthorized' }
-  }
-}
-
 export async function startKairosThread(input: z.infer<typeof startSchema>): Promise<KairosChatActionResult> {
   const auth = await safeAuth()
   if (!auth.ok) return auth
@@ -136,28 +113,31 @@ export async function sendKairosMessage(input: z.infer<typeof sendSchema>): Prom
   if (!loaded) return { ok: false, reason: 'thread_not_found' }
   if (!loaded.thread.dominionId) return { ok: false, reason: 'dominion_not_found' }
 
-  // Orphan-user-message recovery: if the last persisted message is a user
-  // message with the same body as this retry, the previous AI call failed
-  // mid-flight after the user message was already saved. Skip the duplicate
-  // append and re-run the AI turn against the existing orphan.
+  // Orphan-user-message recovery: any trailing user message means the
+  // previous AI call failed mid-flight after we'd already saved the user
+  // turn. Rather than double-post, either retry against the existing
+  // orphan (exact body) or rewrite the orphan's body to the new draft
+  // (edited retry) and then re-run only the AI half of the turn.
   const last = loaded.messages[loaded.messages.length - 1]
-  if (last && last.role === 'user' && last.content === parsed.data.body) {
-    return retryAssistantOnly(userId, parsed.data.threadId, loaded.thread.dominionId, last.seq)
+  if (last && last.role === 'user') {
+    if (last.content !== parsed.data.body) {
+      const updated = await _updateChatMessageContent(userId, parsed.data.threadId, last.seq, parsed.data.body)
+      if (!updated.ok) return { ok: false, reason: 'thread_not_found' }
+    }
+    return runAssistantTurn(userId, parsed.data.threadId, loaded.thread.dominionId, parsed.data.body, last.seq)
   }
 
   return runChatTurn(userId, parsed.data.threadId, loaded.thread.dominionId, parsed.data.body)
 }
 
-// Shared core: append user message → load dominion + history → call AI →
-// append assistant message → return both seqs. Centralised so start and
-// send can both rely on the same persistence ordering.
+// Shared core: persist user message → run assistant half.
 async function runChatTurn(
   userId: string,
   threadId: string,
   dominionId: string,
   body: string,
 ): Promise<KairosChatActionResult> {
-  // 1. Persist the user message FIRST. A model failure must not lose it.
+  // Persist BEFORE the AI call — see file header.
   const userAppend = await _appendChatMessage(userId, threadId, {
     role: 'user',
     content: body,
@@ -165,22 +145,6 @@ async function runChatTurn(
   if (!userAppend.ok) return { ok: false, reason: 'thread_not_found' }
 
   return runAssistantTurn(userId, threadId, dominionId, body, userAppend.seq)
-}
-
-// Re-runs only the AI + assistant-persist half of a turn against an
-// existing user message. Used when the previous turn errored after
-// persisting the user message — we don't want to append a second copy.
-async function retryAssistantOnly(
-  userId: string,
-  threadId: string,
-  dominionId: string,
-  userSeq: number,
-): Promise<KairosChatActionResult> {
-  const thread = await _getChatThread(userId, threadId)
-  if (!thread) return { ok: false, reason: 'thread_not_found' }
-  const orphan = thread.messages.find((m) => m.seq === userSeq)
-  if (!orphan) return { ok: false, reason: 'thread_not_found' }
-  return runAssistantTurn(userId, threadId, dominionId, orphan.content, userSeq)
 }
 
 async function runAssistantTurn(
@@ -260,48 +224,31 @@ async function runAssistantTurn(
   }
 }
 
-// Read-only fetchers exposed for the UI.
+// Read fetchers — all wrapped in safeAuth so an expired session surfaces
+// as an empty result rather than a raw exception that bubbles to the UI
+// error boundary.
 
 export async function listKairosThreads(input: z.infer<typeof listSchema> = {}) {
-  const userId = await requireAuth()
+  const auth = await safeAuth()
+  if (!auth.ok) return []
   const parsed = listSchema.safeParse(input)
   if (!parsed.success) return []
-  return _listChatThreads(userId, parsed.data)
+  return _listChatThreads(auth.userId, parsed.data)
 }
 
 export async function loadKairosThread(input: z.infer<typeof threadIdSchema>) {
-  const userId = await requireAuth()
+  const auth = await safeAuth()
+  if (!auth.ok) return null
   const parsed = threadIdSchema.safeParse(input)
   if (!parsed.success) return null
-  return _getChatThread(userId, parsed.data.threadId)
-}
-
-// Bridge retrieval shape (full bodies) → prompt builder shape (same fields).
-// Kept as a typed mapper so the prompt builder doesn't depend on the
-// retrieval module and stays unit-testable without DB.
-function toPromptRetrieval(r: ChatRetrieval): ChatPromptRetrieval {
-  return {
-    cortex: r.cortex ? { id: r.cortex.id, title: r.cortex.title, body: r.cortex.body } : null,
-    archetypes: r.archetypes.map((a) => ({ id: a.id, title: a.title, body: a.body })),
-    substrate: r.substrate.map((s) => ({ id: s.id, title: s.title, body: s.body, streamClass: s.streamClass })),
-  }
-}
-
-// Bridge retrieval shape → persisted snapshot shape (id + title only).
-// Bodies aren't persisted — they're regenerated from the live memory if
-// the UI ever wants to expand a chip into the full source.
-function toRetrievalMeta(r: ChatRetrieval): ChatRetrievalMeta {
-  const meta: ChatRetrievalMeta = {}
-  if (r.cortex) meta.cortex = { id: r.cortex.id, title: r.cortex.title }
-  if (r.archetypes.length) meta.archetypes = r.archetypes.map((a) => ({ id: a.id, title: a.title }))
-  if (r.substrate.length) meta.substrate = r.substrate.map((s) => ({ id: s.id, title: s.title }))
-  return meta
+  return _getChatThread(auth.userId, parsed.data.threadId)
 }
 
 export async function archiveKairosThread(input: z.infer<typeof threadIdSchema>) {
-  const userId = await requireAuth()
+  const auth = await safeAuth()
+  if (!auth.ok) return { ok: false as const }
   const parsed = threadIdSchema.safeParse(input)
   if (!parsed.success) return { ok: false as const }
-  const archived = await _archiveChatThread(userId, parsed.data.threadId)
+  const archived = await _archiveChatThread(auth.userId, parsed.data.threadId)
   return { ok: archived }
 }

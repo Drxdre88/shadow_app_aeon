@@ -27,20 +27,8 @@ export const CHAT_ENGINE = 'kairos-chat' as const
 
 export type ChatRole = 'user' | 'assistant'
 
-// Snapshot of a memory cited or considered at message time. We persist
-// title + id together so the UI can render chips without a follow-up fetch
-// and so a later rename/archive of the source memory doesn't break the
-// historical thread display.
-export interface CitedMemorySnapshot {
-  id: string
-  title: string
-}
-
-export interface ChatRetrievalMeta {
-  cortex?: CitedMemorySnapshot | null
-  archetypes?: CitedMemorySnapshot[]
-  substrate?: CitedMemorySnapshot[]
-}
+import type { CitedMemorySnapshot, ChatRetrievalMeta } from './kairos-chat-payload'
+import { parseRetrievalMeta, hasAnyRetrieval } from './kairos-chat-payload'
 
 export interface ChatMessagePayload {
   role: ChatRole
@@ -258,34 +246,32 @@ export async function appendChatMessage(
   })
 }
 
-function parseRetrievalMeta(raw: unknown): ChatRetrievalMeta | null {
-  if (!raw || typeof raw !== 'object') return null
-  const r = raw as Record<string, unknown>
-  const meta: ChatRetrievalMeta = {}
-  if (r.cortex && typeof r.cortex === 'object') {
-    const snap = parseSnapshot(r.cortex)
-    if (snap) meta.cortex = snap
-  }
-  if (Array.isArray(r.archetypes)) {
-    const arr = r.archetypes.map(parseSnapshot).filter((s): s is CitedMemorySnapshot => s !== null)
-    if (arr.length) meta.archetypes = arr
-  }
-  if (Array.isArray(r.substrate)) {
-    const arr = r.substrate.map(parseSnapshot).filter((s): s is CitedMemorySnapshot => s !== null)
-    if (arr.length) meta.substrate = arr
-  }
-  return hasAnyRetrieval(meta) ? meta : null
-}
+// Used by the orphan-retry path: when the user re-sends with an edited
+// body after a prior AI failure, replace the orphan's content in place
+// instead of double-posting. User-scoped via the parent thread row.
+export async function updateChatMessageContent(
+  userId: string,
+  threadId: string,
+  seq: number,
+  newContent: string,
+): Promise<{ ok: true } | { ok: false; reason: 'thread_not_found' | 'message_not_found' }> {
+  const row = await loadThreadRow(userId, threadId)
+  if (!row) return { ok: false, reason: 'thread_not_found' }
 
-function parseSnapshot(raw: unknown): CitedMemorySnapshot | null {
-  if (!raw || typeof raw !== 'object') return null
-  const r = raw as Record<string, unknown>
-  if (typeof r.id !== 'string' || typeof r.title !== 'string') return null
-  return { id: r.id, title: r.title }
-}
+  const [existing] = await db
+    .select({ id: sessionEvents.id, payload: sessionEvents.payload })
+    .from(sessionEvents)
+    .where(and(eq(sessionEvents.sessionId, threadId), eq(sessionEvents.seq, seq)))
+    .limit(1)
+  if (!existing) return { ok: false, reason: 'message_not_found' }
 
-function hasAnyRetrieval(meta: ChatRetrievalMeta): boolean {
-  return !!meta.cortex || (meta.archetypes?.length ?? 0) > 0 || (meta.substrate?.length ?? 0) > 0
+  const payload = (existing.payload ?? {}) as Partial<ChatMessagePayload>
+  await db
+    .update(sessionEvents)
+    .set({ payload: { ...payload, content: newContent } })
+    .where(eq(sessionEvents.id, existing.id))
+
+  return { ok: true }
 }
 
 export async function archiveChatThread(
