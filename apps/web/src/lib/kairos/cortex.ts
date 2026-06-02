@@ -142,8 +142,7 @@ async function fetchCortexInputs(
     // schema yields payload=null, which renders as "no prior cortex" in
     // the prompt and silently zeroes recent_shifts. Warn so it shows up
     // in cron logs instead of being indistinguishable from a first regen.
-    if (priorRow && candidate && parsed && !parsed.success) {
-      // eslint-disable-next-line no-console
+    if (parsed && !parsed.success) {
       console.warn(
         `[kairos:cortex] prior cortex row ${priorRow.id} failed schema — recent_shifts will be empty.`,
         parsed.error.issues.slice(0, 3),

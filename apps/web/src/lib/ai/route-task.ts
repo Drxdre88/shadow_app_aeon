@@ -50,6 +50,7 @@ const DEFAULT_POLICIES: PolicyDefault[] = [
   { taskType: 'advisory',     tier: 'heavy' },
   { taskType: 'archetype',    tier: 'heavy' },
   { taskType: 'cortex',       tier: 'heavy' },
+  { taskType: 'chat',         tier: 'standard' },
   { taskType: 'classify',     tier: 'cheap' },
   { taskType: 'summarise',    tier: 'cheap' },
   { taskType: 'reflect',      tier: 'standard' },
