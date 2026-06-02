@@ -574,6 +574,10 @@ export async function captureMemory(userId: string, input: CaptureMemoryInput): 
 
   const externalId = typeof metadata.externalId === 'string' ? metadata.externalId : undefined
   if (externalId) {
+    // Dedup only against LIVE rows. An archived row with the same externalId
+    // means the operator deliberately took it out of circulation (e.g.
+    // "regenerate today's briefing"); a fresh capture should create a new
+    // memory rather than resurrect the stale one.
     const [existing] = await db
       .select()
       .from(memories)
@@ -581,6 +585,7 @@ export async function captureMemory(userId: string, input: CaptureMemoryInput): 
         eq(memories.userId, userId),
         eq(memories.source, source),
         sql`${memories.sourceMetadata}->>'externalId' = ${externalId}`,
+        isNull(memories.archivedAt),
       ))
       .limit(1)
     if (existing) return { memory: existing, created: false }
@@ -592,6 +597,87 @@ export async function captureMemory(userId: string, input: CaptureMemoryInput): 
     sourceMetadata: metadata,
   })
   return { memory, created: true }
+}
+
+// Kairos Phase 2 (B3) — owner reflection capture.
+//
+// Reflections are the operator's first-class signal: beliefs, priorities,
+// observations, corrections fired from anywhere (MCP today, phone tomorrow).
+// They carry HIGHER weight than activity-derived memories in archetype and
+// cortex generation, and they can override drift flags.
+//
+// streamClass is forced to 'reflection' so the synthesis prompts pick them
+// up as the weighted block — this is why we bypass createMemorySchema and
+// insert directly: the schema does not (and should not) expose streamClass
+// to public callers, but the contract for *this* function is exactly that.
+// See docs/kairos/12-kairos-evolution-plan.md §"Reflections — the owner's
+// signal" and docs/kairos/14-quality-gates.md §5 (reflection weight).
+export interface CaptureReflectionInput {
+  dominionId: string
+  bodyMd: string
+  title?: string | null
+  summary?: string | null
+  tags?: string[]
+  source?: 'manual' | 'claude' | 'voice' | 'webhook'
+  sourceMetadata?: Record<string, unknown>
+}
+
+export type CaptureReflectionResult =
+  | { ok: true; memory: typeof memories.$inferSelect }
+  | { ok: false; reason: 'dominion_not_found' }
+
+export async function captureReflection(
+  userId: string,
+  input: CaptureReflectionInput,
+): Promise<CaptureReflectionResult> {
+  // Verify ownership inline rather than calling findDominionById to avoid
+  // an extra round-trip + a circular-ish import (this module is sibling to
+  // dominions.ts and they already cross-reference).
+  const [dom] = await db
+    .select({ id: dominions.id, name: dominions.name })
+    .from(dominions)
+    .where(and(
+      eq(dominions.id, input.dominionId),
+      eq(dominions.userId, userId),
+      isNull(dominions.archivedAt),
+    ))
+    .limit(1)
+  if (!dom) return { ok: false, reason: 'dominion_not_found' }
+
+  // Default title is the first non-empty line of the body, with leading
+  // markdown markers (#, -, *, >, backticks) stripped so the cosmic-view
+  // label reads as prose rather than as raw markup. Caps at 80 chars.
+  const firstLine = input.bodyMd.split('\n').map((l) => l.trim()).find((l) => l.length > 0) ?? ''
+  const stripped = firstLine.replace(/^([#>*\-`]+\s*)+/, '').trim()
+  const fallbackTitle = stripped.slice(0, 80) || 'Reflection'
+  const title = (input.title?.trim() || fallbackTitle).slice(0, 255)
+
+  const [memory] = await db
+    .insert(memories)
+    .values({
+      userId,
+      dominionId: input.dominionId,
+      title,
+      bodyMd: input.bodyMd,
+      summary: input.summary ?? null,
+      type: 'reflection',
+      streamClass: 'reflection',
+      source: input.source ?? 'manual',
+      sourceMetadata: {
+        ...(input.sourceMetadata ?? {}),
+        // Stamp the canonical channel so future audit queries can
+        // distinguish kairos_reflect captures from generic note creates.
+        kairosReflect: true,
+      },
+      tags: input.tags?.slice(0, 50) ?? [],
+      // Reflections are not auto-pinned — `streamClass='reflection'`
+      // already carries higher weight in synthesis. Pinning is reserved
+      // for the operator's explicit "always show me this" gesture.
+      pinned: false,
+    })
+    .returning()
+
+  return { ok: true, memory }
 }
 
 // Notes polish — list memories Kairos auto-captured today (sources other

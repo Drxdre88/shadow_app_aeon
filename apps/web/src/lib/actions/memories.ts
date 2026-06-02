@@ -226,10 +226,12 @@ export async function archiveMemoryById(memoryId: string) {
 // Kairos Phase 1 (E20) — manually trigger the Briefer for the current user.
 // Wraps runBrieferForUser so the dashboard "Run briefing now" button has a
 // server action target. Returns a compact summary the UI can surface.
-export async function runBriefingNow() {
+// When `force` is true, today's existing advisories are archived first so
+// the model regenerates them — surfaced as "Regenerate today" in the UI.
+export async function runBriefingNow(opts: { force?: boolean } = {}) {
   const userId = await requireAuth()
   const { runBrieferForUser } = await import('@/lib/kairos/briefer')
-  const results = await runBrieferForUser(userId)
+  const results = await runBrieferForUser(userId, { force: opts.force === true })
   return {
     ran: results.length,
     created: results.filter((r) => r.status === 'created').length,

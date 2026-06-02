@@ -29,6 +29,52 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.12.0] — 2026-06-02
+
+> Areas touched: \`KAIROS\` \`DOMINION\` \`DATA\` \`MCP\` \`INFRA\` \`UI\` \`DOCS\`
+> Theme: Kairos grows a brain. Every Dominion now synthesises itself overnight — 3–7 archetype themes plus one living cortex document — and you can chat with the result through a slide-out panel that cites the memories it reasons from.
+
+### Added — Slide-out chat Visor anchored per Dominion · \`KAIROS\` · \`UI\`
+- Sparkles button bottom-right opens a right-edge slide-out panel on \`/kairos\`, \`/notes\`, and \`/settings/ai\`. Pick a Dominion at thread creation, type, **Cmd/Ctrl+Enter** to send.
+- Single active thread per Visor open; threads persist across reloads in the existing \`agent_sessions\` + \`session_events\` tables. History capped at 30 messages per turn.
+- User message is persisted **before** the model call — a model failure never silently loses what you typed. Retry detects the trailing orphan; if you edit the body on retry, the orphan is rewritten in place instead of double-posting.
+
+### Added — Memory-grounded chat replies with citation chips · \`KAIROS\` · \`UI\`
+- Every reply pulls the anchored Dominion's live cortex doc, all live archetypes, and the top-5 FTS substrate hits over the last 90 days. They flow into the system prompt as a grounded context block.
+- Inline \`[[uuid]]\` citation tokens render as small purple chips bearing the source memory's title (truncated, hover-expand). Tokens the model invents (ids not in the retrieved set) render as a muted **?** so confabulation is visible at a glance.
+- A dim **Reading: cortex · N archetypes · M memories** line sits above each assistant bubble so you can see what was grounding the answer.
+- Falls back cleanly to bare chat when a Dominion has no cortex yet — newly-created Dominions are still usable on day one.
+
+### Added — Nightly Dominion synthesis (archetypes + cortex) · \`KAIROS\` · \`DATA\` · \`INFRA\`
+- **Archetype generator** (02:30 UTC): per-Dominion BYOK heavy-tier pass over the last 14 days of substrate + all reflections, emitting 3–7 master themes. Prior batches are soft-archived so "live archetypes" always equals today's run.
+- **Cortex regen** (03:00 UTC): one living document per Dominion, regenerated nightly from those archetypes + reflections + Dominion vision. Acts as the system-prompt prefix when you chat anchored to that Dominion. Old cortex rows are kept as historical record — scrub backwards to watch the brain change.
+- Both are gated by your BYOK heavy-tier key. No key wired for a Dominion → the synthesis skips that Dominion cleanly.
+
+### Added — \`kairos_reflect\` MCP tool — owner reflections from any Claude session · \`KAIROS\` · \`MCP\`
+- New MCP tool: \`{dominionId, body, tags?}\` captures a reflection into the anchored Dominion. Stored with \`streamClass='reflection'\` and weighted **higher** than any other class in synthesis prompts — reflections can override drift signals and are never archived by compaction.
+- Use \`list_dominions\` to find the target id, then \`kairos_reflect\` to fire. Designed for fast quick-fire capture from any Claude Code session — no UI, no friction.
+
+### Added — Three-layer memory classification (\`streamClass\`) · \`DATA\` · \`KAIROS\`
+- New \`streamClass\` field on every memory: \`reflection\` (highest weight, owner signal) / \`idea\` (manual notes) / \`agentic\` (Claude sessions, agent output) / \`execution\` (board imports, cron snapshots) / \`archetype\` (synthesised master nodes) / \`cortex\` (living Dominion doc).
+- All 378 existing memories backfilled via a source+type cascade. The Briefer, synthesis prompts, and chat retrieval all weight by class.
+
+### Added — Memory hygiene cron + quality gates · \`KAIROS\` · \`INFRA\` · \`DOCS\`
+- Weekly memory-compaction cron (Sun 03:00 UTC) — Phase 1A scaffolded in counts-only mode; Phase 1B will absorb stale execution-class memories into archetypes and soft-archive the originals. Pinned + reflection-class rows are never archived.
+- New \`docs/kairos/14-quality-gates.md\` documents what enters/leaves the brain, the memory↔board boundary, cross-user isolation rules, Dominion lifecycle, and reflection weighting.
+
+### Added — Dominion backfill — every memory now has a home · \`DOMINION\` · \`DATA\`
+- Phase 1A cascade-backfilled \`dominionId\` across the substrate (project → repo → fallback). 98% of memories landed; the 5 unanchored are a cross-user cron-leak symptom that's now tracked as a separate audit item.
+
+### Changed — Briefer now reads live board state · \`KAIROS\` · \`DATA\`
+- The 7 a.m. daily briefer no longer relies on a bulk-imported snapshot of every card. It now queries the board directly via \`inspectDominion()\`'s board-task join, so the advisory always reflects what's actually on the boards right now.
+- The bulk-import script that previously mirrored every card into the memory layer is deprecated behind a tripwire env flag — the board owns cards, the brain owns synthesis, no double-write.
+
+### Changed — MCP tool count: 94 → 95 · \`MCP\`
+- +1 in **kairos** (\`kairos_reflect\`).
+
+### Migrations required
+- \`0021_memory_stream_class.sql\` — adds \`stream_class\` to \`memories\` with the source+type cascade backfill.
+
 ## [0.11.0] — 2026-05-30
 
 > Areas touched: \`KAIROS\` \`DOMINION\` \`UI\` \`MCP\` \`API\` \`DATA\` \`AUTH\` \`BOARD\` \`DOCS\`

@@ -410,6 +410,15 @@ export const memories = pgTable('memories', {
   // Empty array until generation runs.
   execSummary: jsonb('exec_summary').default([]).notNull(),
   type: varchar('type', { length: 30 }).default('note').notNull(),
+  // Kairos Phase 2 (A1) — three-layer memory model classifier.
+  //   'agentic'    — produced by an agent session (claude / future agents)
+  //   'execution'  — board / project / cron / import activity ("what was done")
+  //   'idea'       — free-form user thought (default for manual notes)
+  //   'reflection' — owner-fired first-class signal (overrides drift, weighted)
+  //   'archetype'  — Kairos-synthesised master node for a Dominion (Phase 1B)
+  //   'cortex'     — the living Dominion document (Phase 1B)
+  // See docs/kairos/12-kairos-evolution-plan.md §"Three-layer memory model".
+  streamClass: varchar('stream_class', { length: 20 }).default('idea').notNull(),
   source: varchar('source', { length: 20 }).default('manual').notNull(),
   sourceMetadata: jsonb('source_metadata').default({}).notNull(),
   links: jsonb('links').default([]).notNull(),
@@ -425,6 +434,7 @@ export const memories = pgTable('memories', {
   taskIdx: index('memories_task_idx').on(t.taskId),
   typeIdx: index('memories_type_idx').on(t.userId, t.type),
   dominionIdx: index('memories_dominion_idx').on(t.dominionId),
+  streamClassIdx: index('memories_stream_class_idx').on(t.userId, t.streamClass),
 }))
 
 // Kairos Dominion — user-scoped top-level grouping that sits above Project

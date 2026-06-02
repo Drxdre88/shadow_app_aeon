@@ -5,8 +5,9 @@ import {
   dominionObjectives,
   projects,
   memories,
+  boardTasks,
 } from '@/lib/db/schema'
-import { eq, and, asc, desc, isNull } from 'drizzle-orm'
+import { eq, and, asc, desc, isNull, ne, sql } from 'drizzle-orm'
 import type {
   CreateDominionInput,
   UpdateDominionInput,
@@ -203,14 +204,35 @@ export async function deleteDominionObjective(id: string, userId: string): Promi
 export async function inspectDominion(
   id: string,
   userId: string,
-  opts: { memoryLimit?: number } = {}
+  opts: { memoryLimit?: number; boardTaskLimit?: number } = {}
 ) {
   const dominion = await findDominionById(id, userId)
   if (!dominion) return null
 
   const memoryLimit = Math.min(Math.max(opts.memoryLimit ?? 25, 1), 200)
+  const boardLimit = Math.min(Math.max(opts.boardTaskLimit ?? 20, 1), 100)
 
-  const [objectiveRows, projectRows, repoRows, memoryRows] = await Promise.all([
+  // Kairos Phase 2 (A3) — live board awareness. The Briefer needs to see open
+  // cards on the Dominion's projects so it can flag "you put 'finish DB
+  // migration' on AS Sprint yesterday — still untouched" the next morning.
+  // Priority sort puts high/urgent first, then in_progress before todo.
+  const priorityOrder = sql<number>`
+    CASE ${boardTasks.priority}
+      WHEN 'urgent' THEN 1
+      WHEN 'high'   THEN 2
+      WHEN 'medium' THEN 3
+      WHEN 'low'    THEN 4
+      ELSE 5
+    END`
+  const statusOrder = sql<number>`
+    CASE ${boardTasks.status}
+      WHEN 'in_progress' THEN 1
+      WHEN 'blocked'     THEN 2
+      WHEN 'todo'        THEN 3
+      ELSE 4
+    END`
+
+  const [objectiveRows, projectRows, repoRows, memoryRows, boardTaskRows] = await Promise.all([
     db
       .select()
       .from(dominionObjectives)
@@ -242,13 +264,42 @@ export async function inspectDominion(
         summary: memories.summary,
       })
       .from(memories)
+      // Kairos Phase 2 (B1+B2) — exclude synthesised rows (archetypes,
+      // cortex docs) from the briefing's "recent memories" stream. Those
+      // are Kairos's own output and feeding them back in causes a
+      // recursive context-collapse loop where the Briefer reasons over
+      // yesterday's reasoning. The cortex is loaded explicitly elsewhere
+      // when callers need it; archetypes surface via their own panel.
       .where(and(
         eq(memories.dominionId, id),
         eq(memories.userId, userId),
         isNull(memories.archivedAt),
+        ne(memories.streamClass, 'archetype'),
+        ne(memories.streamClass, 'cortex'),
       ))
       .orderBy(desc(memories.createdAt))
       .limit(memoryLimit),
+    db
+      .select({
+        id: boardTasks.id,
+        name: boardTasks.name,
+        status: boardTasks.status,
+        priority: boardTasks.priority,
+        projectName: projects.name,
+        startDate: boardTasks.startDate,
+        endDate: boardTasks.endDate,
+        updatedAt: boardTasks.updatedAt,
+      })
+      .from(boardTasks)
+      .innerJoin(projects, eq(boardTasks.projectId, projects.id))
+      .where(and(
+        eq(projects.dominionId, id),
+        eq(projects.userId, userId),
+        isNull(boardTasks.archivedAt),
+        isNull(boardTasks.completedAt),
+      ))
+      .orderBy(priorityOrder, statusOrder, desc(boardTasks.updatedAt))
+      .limit(boardLimit),
   ])
 
   return {
@@ -265,6 +316,7 @@ export async function inspectDominion(
     projects: projectRows,
     repos: repoRows.map((r) => r.repoSlug),
     recentMemories: memoryRows,
+    boardTasks: boardTaskRows,
   }
 }
 

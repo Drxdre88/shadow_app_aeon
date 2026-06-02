@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Sparkles, RefreshCw, ArrowRight, KeyRound, Wand2, Loader2, Check } from 'lucide-react'
+import { Sparkles, RefreshCw, ArrowRight, KeyRound, Wand2, Loader2, Check, RotateCw } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { getTodaysBriefings, runBriefingNow } from '@/lib/actions/memories'
 import { hasAiCredentials } from '@/lib/actions/ai-credentials'
 import type { CredentialPresence } from '@/lib/data/ai-credentials'
 import { PROVIDER_UI } from '@/lib/ai/providers-ui'
+import { KairosMarkdown } from '@/components/ui/KairosMarkdown'
 
 type Advisory = {
   id: string
@@ -40,6 +41,7 @@ export function DailyBriefingCard() {
   const [error, setError] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [genStatus, setGenStatus] = useState<string | null>(null)
+  const [selectedDominionId, setSelectedDominionId] = useState<string | null>(null)
 
   const fetchBriefing = async (force = false) => {
     setLoading(true)
@@ -82,13 +84,30 @@ export function DailyBriefingCard() {
 
   useEffect(() => { fetchBriefing() }, [])
 
-  const generate = async () => {
+  // Default the active pill to the first advisory once they load (or after
+  // a refresh that adds a new one). Preserve the user's selection if their
+  // current pick is still present.
+  useEffect(() => {
+    if (!advisories || advisories.length === 0) return
+    if (selectedDominionId && advisories.some((a) => a.dominionId === selectedDominionId)) return
+    setSelectedDominionId(advisories[0].dominionId)
+  }, [advisories, selectedDominionId])
+
+  const generate = async (force = false) => {
     if (generating) return
+    // Regenerate burns BYOK credits — one heavy-tier call per active
+    // Dominion — so a confirm guard before nuking today's run.
+    if (force && typeof window !== 'undefined') {
+      const ok = window.confirm(
+        'Regenerate today\'s briefing for every active Dominion?\n\nThis archives today\'s existing advisories and burns one BYOK heavy-tier call per Dominion.',
+      )
+      if (!ok) return
+    }
     setGenerating(true)
     setGenStatus(null)
     setError(null)
     try {
-      const res = await runBriefingNow()
+      const res = await runBriefingNow({ force })
       try { localStorage.removeItem(CACHE_KEY(todayKey())) } catch {}
       if (res.ran === 0) {
         setGenStatus('No Dominions yet — create one in Kairos first.')
@@ -99,7 +118,7 @@ export function DailyBriefingCard() {
         setGenStatus(`Already briefed today (${res.existing} Dominion${res.existing === 1 ? '' : 's'}).`)
         await fetchBriefing(true)
       } else {
-        setGenStatus(`Brief generated for ${res.created} Dominion${res.created === 1 ? '' : 's'}.`)
+        setGenStatus(`Brief ${force ? 'regenerated' : 'generated'} for ${res.created} Dominion${res.created === 1 ? '' : 's'}.`)
         await fetchBriefing(true)
       }
     } catch (err) {
@@ -143,14 +162,20 @@ export function DailyBriefingCard() {
             )}
             {hasKey && (
               <button
-                onClick={generate}
+                onClick={() => generate(hasAdvisories)}
                 disabled={generating || loading}
-                title="Run briefing now"
+                title={hasAdvisories
+                  ? 'Regenerate today — archives current briefings and burns one heavy-tier call per Dominion'
+                  : 'Run briefing now'}
                 className="inline-flex items-center gap-1 px-2 py-1 text-[10px] uppercase tracking-[0.18em] rounded-md border border-white/[0.10] hover:border-white/[0.25] hover:bg-white/[0.04] text-white/70 hover:text-white/95 disabled:opacity-40 transition-colors"
                 style={{ color: generating ? undefined : 'var(--primary)' }}
               >
-                {generating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-                {generating ? 'Briefing…' : 'Run now'}
+                {generating
+                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                  : hasAdvisories ? <RotateCw className="w-3 h-3" /> : <Wand2 className="w-3 h-3" />}
+                {generating
+                  ? (hasAdvisories ? 'Regenerating…' : 'Briefing…')
+                  : (hasAdvisories ? 'Regenerate today' : 'Run now')}
               </button>
             )}
             <button
@@ -169,16 +194,24 @@ export function DailyBriefingCard() {
         ) : error ? (
           <div className="text-sm text-rose-300 py-2">{error}</div>
         ) : hasAdvisories ? (
-          <div className="max-h-[420px] overflow-y-auto pr-1 flex flex-col gap-4">
-            {advisories!.map((a) => (
-              <AdvisorySection key={a.id} advisory={a} />
-            ))}
-            <Link
-              href="/kairos"
-              className="mt-1 inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-white/45 hover:text-white/85 transition-colors w-fit"
-            >
-              Open Kairos <ArrowRight className="w-3 h-3" />
-            </Link>
+          <div className="flex flex-col gap-3">
+            <DominionPillRow
+              advisories={advisories!}
+              selectedId={selectedDominionId}
+              onSelect={setSelectedDominionId}
+            />
+            <div className="max-h-[68vh] overflow-y-auto pr-1">
+              {(() => {
+                const active = advisories!.find((a) => a.dominionId === selectedDominionId) ?? advisories![0]
+                return <AdvisorySection advisory={active} />
+              })()}
+              <Link
+                href="/kairos"
+                className="mt-3 inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-white/45 hover:text-white/85 transition-colors w-fit"
+              >
+                Open Kairos <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
           </div>
         ) : hasKey ? (
           <div className="text-[12px] text-white/55 leading-relaxed py-2">
@@ -262,6 +295,44 @@ function ProviderPills({ presence }: { presence: CredentialPresence }) {
   )
 }
 
+function DominionPillRow({
+  advisories,
+  selectedId,
+  onSelect,
+}: {
+  advisories: Advisory[]
+  selectedId: string | null
+  onSelect: (id: string | null) => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-white/[0.05]">
+      {advisories.map((a) => {
+        const isActive = a.dominionId === selectedId
+        const colorVar = `var(--${a.dominionColor ?? 'primary'}, var(--primary))`
+        return (
+          <button
+            key={a.id}
+            onClick={() => onSelect(a.dominionId)}
+            className="text-[10px] uppercase tracking-[0.18em] px-2 py-1 rounded-md font-medium transition-all"
+            style={{
+              background: isActive
+                ? `color-mix(in oklab, ${colorVar} 28%, transparent)`
+                : `color-mix(in oklab, ${colorVar} 8%, transparent)`,
+              color: isActive
+                ? `color-mix(in oklab, ${colorVar} 30%, white)`
+                : `color-mix(in oklab, ${colorVar} 60%, white)`,
+              border: `1px solid color-mix(in oklab, ${colorVar} ${isActive ? 50 : 18}%, transparent)`,
+              boxShadow: isActive ? `0 0 12px color-mix(in oklab, ${colorVar} 30%, transparent)` : 'none',
+            }}
+          >
+            {a.dominionName ?? 'Unanchored'}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function AdvisorySection({ advisory }: { advisory: Advisory }) {
   return (
     <div>
@@ -284,33 +355,7 @@ function AdvisorySection({ advisory }: { advisory: Advisory }) {
           open →
         </Link>
       </div>
-      <BriefingProse markdown={advisory.bodyMd} />
+      <KairosMarkdown markdown={advisory.bodyMd} variant="briefing" />
     </div>
   )
-}
-
-// Lean markdown renderer — the Briefer produces controlled output (## sections,
-// short paragraphs, occasional lists). No need for a full markdown engine.
-function BriefingProse({ markdown }: { markdown: string }) {
-  const lines = markdown.split('\n')
-  const out: React.ReactNode[] = []
-  let key = 0
-
-  for (const raw of lines) {
-    const line = raw.trimEnd()
-    if (!line.trim()) { out.push(<div key={key++} className="h-2" />); continue }
-    if (line.startsWith('# '))   { out.push(<h2 key={key++} className="text-sm font-semibold text-white/95 mt-1 mb-1">{line.slice(2)}</h2>); continue }
-    if (line.startsWith('## '))  { out.push(<h3 key={key++} className="text-[11px] uppercase tracking-[0.2em] text-white/45 mt-3 mb-1">{line.slice(3)}</h3>); continue }
-    if (line.startsWith('### ')) { out.push(<h4 key={key++} className="text-[12px] font-semibold text-white/85 mt-2">{line.slice(4)}</h4>); continue }
-    if (line.startsWith('> '))   { out.push(<div key={key++} className="text-[10px] text-white/40 italic">{line.slice(2)}</div>); continue }
-    if (line.startsWith('- '))   { out.push(<li key={key++} className="text-[12px] text-white/70 ml-4 list-disc marker:text-white/30">{line.slice(2)}</li>); continue }
-    if (line === '---')          { out.push(<div key={key++} className="h-px bg-white/[0.04] my-1" />); continue }
-    if (line.startsWith('*') && line.endsWith('*')) {
-      out.push(<div key={key++} className="text-[10px] text-white/35 italic">{line.slice(1, -1)}</div>)
-      continue
-    }
-    out.push(<p key={key++} className="text-[12px] text-white/75 leading-relaxed">{line}</p>)
-  }
-
-  return <div className="flex flex-col gap-0.5">{out}</div>
 }

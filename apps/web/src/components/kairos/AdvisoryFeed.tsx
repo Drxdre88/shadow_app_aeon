@@ -124,12 +124,22 @@ export function AdvisoryFeed() {
       >
         <Sparkles className="w-4 h-4" />
         {unread > 0 && (
-          <span
-            className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 flex items-center justify-center text-[9px] font-semibold rounded-full text-white"
-            style={{ background: 'var(--primary)', boxShadow: '0 0 8px var(--primary)' }}
-          >
-            {unread > 9 ? '9+' : unread}
-          </span>
+          <>
+            {/* Pulse ring so a new advisory is impossible to miss in
+                peripheral vision while you're working in another tab. */}
+            <motion.span
+              className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full pointer-events-none"
+              style={{ background: 'var(--primary)' }}
+              animate={{ opacity: [0.5, 0, 0.5], scale: [1, 1.8, 1] }}
+              transition={{ duration: 1.6, repeat: Infinity, ease: 'easeOut' }}
+            />
+            <span
+              className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 flex items-center justify-center text-[9px] font-semibold rounded-full text-white z-[1]"
+              style={{ background: 'var(--primary)', boxShadow: '0 0 8px var(--primary)' }}
+            >
+              {unread > 9 ? '9+' : unread}
+            </span>
+          </>
         )}
       </motion.button>
 

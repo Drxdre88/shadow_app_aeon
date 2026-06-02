@@ -1,5 +1,8 @@
 import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
 import { captureMemory } from '@/lib/data/memories'
+import { db } from '@/lib/db'
+import { memories } from '@/lib/db/schema'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError } from '@/lib/ai/router'
 
@@ -24,13 +27,16 @@ interface BriefingContext {
   objectives: Array<{ title: string; description: string | null; status: string }>
   projects: Array<{ name: string }>
   recentMemories: Array<{ title: string; type: string; summary: string | null }>
+  boardTasks: Array<{ name: string; status: string; priority: string; projectName: string; endDate: Date | null }>
 }
 
 function buildPrompt(ctx: BriefingContext, today: string): string {
   const lines: string[] = [
     `You are Kairos, a persistent, opinionated companion. Produce the operator's morning briefing for the "${ctx.name}" Dominion. Date: ${today}.`,
     '',
-    'Frame the briefing as if you have been watching this part of their life and now owe them a tight, honest reading. Markdown only. Sections must be ## headed. Aim for 200–400 words total — dense, no filler.',
+    'Frame the briefing as if you have been watching this part of their life and now owe them a tight, honest reading.',
+    '',
+    '── INPUT ──',
     '',
     '## Vision',
     ctx.vision || '(none set)',
@@ -56,21 +62,41 @@ function buildPrompt(ctx: BriefingContext, today: string): string {
           .map((m) => `- [${m.type}] ${m.title}${m.summary ? ` — ${m.summary}` : ''}`)
           .join('\n'),
     '',
-    'Write the briefing using these required sections, in this order:',
+    '## Open board cards (live)',
+    ctx.boardTasks.length === 0
+      ? '(none open)'
+      : ctx.boardTasks
+          .map((t) => {
+            const due = t.endDate ? ` due ${new Date(t.endDate).toISOString().slice(0, 10)}` : ''
+            return `- [${t.priority}/${t.status}] (${t.projectName}) ${t.name}${due}`
+          })
+          .join('\n'),
+    '',
+    '── OUTPUT FORMAT ──',
+    '',
+    'Markdown only. 150–280 words total. Dense, no filler. Four required sections in this order, each ## headed:',
     '',
     '## State',
-    'Two or three sentences. What this Dominion looks like right now. Be specific.',
+    'One short paragraph (≤3 sentences) on what this Dominion looks like right now, followed by **2–4 bullets** of concrete specifics.',
     '',
     '## Movement',
-    'What moved since the last briefing. If nothing did, say so.',
+    'One short paragraph on what moved since the last briefing, followed by **0–3 bullets** of specific moves. If nothing moved, say so plainly in one sentence and skip the bullets.',
     '',
     '## Watch',
-    'What you (Kairos) are watching for. One sharp observation, not a list.',
+    'One paragraph naming the single sharpest thing to watch. Wrap CRITICAL semantics in `**!...!**` for emphasis — overdue cards, stalled urgents, broken invariants, anything that should trip the operator. Use sparingly: at most two `**!...!**` spans per Watch section.',
     '',
     '## Suggested next',
-    'One concrete suggestion. Imperative voice. Skip if there genuinely is none.',
+    'One concrete suggestion. Imperative voice. Skip if there genuinely is none. Prefer suggestions tied to an actual open board card when one fits.',
     '',
-    'Do not include preamble. Start directly with `## State`.',
+    'Formatting rules (mandatory — the UI renders them):',
+    '- Wrap **named entities** (project names, key numbers, time windows) in `**bold**` → renders bold-white',
+    '- Wrap **stuck/overdue/risk semantics** in `**!critical!**` (with `!` inside the bold) → renders bold-red. Use sparingly: 1–2 per section max',
+    '- Wrap **identifiers** (board card titles, dates like `2026-04-01`, status tags like `[high]` or `[todo]`) in backticks `` `...` `` → renders as a themed mono chip',
+    '- Bullets where they help density; prose where it carries judgement',
+    '- No preamble. Start directly with `## State`',
+    '',
+    'Worked example of the rhythm (do not copy the content, copy the rhythm):',
+    '> `Gas Analysis [HG] [OC]` is marked **high** and due `2026-04-01` — that\'s **!two months overdue!** sitting on the live board. Either it\'s done and the card is lying, or it\'s quietly rotting under newer urgent work.',
   ]
   return lines.join('\n')
 }
@@ -88,7 +114,18 @@ export interface BrieferResult {
   reason?: string
 }
 
-export async function runBrieferForUser(userId: string): Promise<BrieferResult[]> {
+export interface RunBrieferOpts {
+  // Archive today's existing advisory per Dominion before generating so the
+  // dedup (externalId = `briefer:{date}:{dominionId}`) lets a new one through.
+  // Used by the "Regenerate today" path in the UI; the nightly cron leaves
+  // this false so accidental double-fires stay idempotent.
+  force?: boolean
+}
+
+export async function runBrieferForUser(
+  userId: string,
+  opts: RunBrieferOpts = {},
+): Promise<BrieferResult[]> {
   const dominions = await findDominionsByUser(userId)
   const active = dominions.filter((d) => !d.archivedAt)
   if (active.length === 0) return []
@@ -97,6 +134,21 @@ export async function runBrieferForUser(userId: string): Promise<BrieferResult[]
   const results: BrieferResult[] = []
 
   for (const dom of active) {
+    if (opts.force) {
+      // Soft-archive today's existing advisory for this Dominion. captureMemory
+      // skips archived rows in its dedup lookup, so the next capture creates
+      // a fresh memory row with the new prompt/model output.
+      await db
+        .update(memories)
+        .set({ archivedAt: new Date() })
+        .where(and(
+          eq(memories.userId, userId),
+          eq(memories.type, 'advisory'),
+          sql`${memories.sourceMetadata}->>'externalId' = ${`briefer:${date}:${dom.id}`}`,
+          isNull(memories.archivedAt),
+        ))
+    }
+
     const briefing = await inspectDominion(dom.id, userId, { memoryLimit: 25 })
     if (!briefing) {
       results.push({ dominionId: dom.id, dominionName: dom.name, status: 'skipped', reason: 'not found' })
@@ -117,6 +169,13 @@ export async function runBrieferForUser(userId: string): Promise<BrieferResult[]
         title: m.title,
         type: m.type,
         summary: m.summary,
+      })),
+      boardTasks: briefing.boardTasks.map((t) => ({
+        name: t.name,
+        status: t.status,
+        priority: t.priority,
+        projectName: t.projectName,
+        endDate: t.endDate,
       })),
     }
 
