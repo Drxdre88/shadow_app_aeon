@@ -8,6 +8,7 @@ import { getTodaysBriefings, runBriefingNow } from '@/lib/actions/memories'
 import { hasAiCredentials } from '@/lib/actions/ai-credentials'
 import type { CredentialPresence } from '@/lib/data/ai-credentials'
 import { PROVIDER_UI } from '@/lib/ai/providers-ui'
+import { KairosMarkdown } from '@/components/ui/KairosMarkdown'
 
 type Advisory = {
   id: string
@@ -340,67 +341,7 @@ function AdvisorySection({ advisory }: { advisory: Advisory }) {
           open →
         </Link>
       </div>
-      <BriefingProse markdown={advisory.bodyMd} />
+      <KairosMarkdown markdown={advisory.bodyMd} variant="briefing" />
     </div>
   )
-}
-
-// Lean markdown renderer — handles block-level (## / ### / - / > / ---) plus
-// inline **bold** and **!critical!** spans. Theme-respecting: bold renders in
-// white/95, critical wraps in semantic red (rose) for stuck/overdue/risk.
-function BriefingProse({ markdown }: { markdown: string }) {
-  const lines = markdown.split('\n')
-  const out: React.ReactNode[] = []
-  let key = 0
-
-  for (const raw of lines) {
-    const line = raw.trimEnd()
-    if (!line.trim()) { out.push(<div key={key++} className="h-2" />); continue }
-    if (line.startsWith('# '))   { out.push(<h2 key={key++} className="text-sm font-semibold text-white/95 mt-1 mb-1">{renderInline(line.slice(2))}</h2>); continue }
-    if (line.startsWith('## '))  { out.push(<h3 key={key++} className="text-[11px] uppercase tracking-[0.2em] text-white/45 mt-3 mb-1">{line.slice(3)}</h3>); continue }
-    if (line.startsWith('### ')) { out.push(<h4 key={key++} className="text-[12px] font-semibold text-white/85 mt-2">{renderInline(line.slice(4))}</h4>); continue }
-    if (line.startsWith('> '))   { out.push(<div key={key++} className="text-[10px] text-white/40 italic">{renderInline(line.slice(2))}</div>); continue }
-    if (line.startsWith('- '))   { out.push(<li key={key++} className="text-[12px] text-white/70 ml-4 list-disc marker:text-white/30">{renderInline(line.slice(2))}</li>); continue }
-    if (line === '---')          { out.push(<div key={key++} className="h-px bg-white/[0.04] my-1" />); continue }
-    if (line.startsWith('*') && line.endsWith('*') && !line.includes('**')) {
-      out.push(<div key={key++} className="text-[10px] text-white/35 italic">{line.slice(1, -1)}</div>)
-      continue
-    }
-    out.push(<p key={key++} className="text-[12px] text-white/75 leading-relaxed">{renderInline(line)}</p>)
-  }
-
-  return <div className="flex flex-col gap-0.5">{out}</div>
-}
-
-// Inline parser for **bold** and **!critical!** spans. Greedy on outer **
-// then checks the inner content for the !...! critical marker. Anything
-// unmatched falls through as plain text.
-function renderInline(text: string): React.ReactNode {
-  const parts: React.ReactNode[] = []
-  const re = /\*\*(.+?)\*\*/g
-  let last = 0
-  let m: RegExpExecArray | null
-  let key = 0
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > last) parts.push(text.slice(last, m.index))
-    const inner = m[1]
-    if (inner.startsWith('!') && inner.endsWith('!') && inner.length > 2) {
-      // **!critical!** — semantic red, bold
-      parts.push(
-        <strong key={`crit-${key++}`} className="font-semibold text-rose-400">
-          {inner.slice(1, -1)}
-        </strong>,
-      )
-    } else {
-      // **bold** — theme-aware white
-      parts.push(
-        <strong key={`b-${key++}`} className="font-semibold text-white/95">
-          {inner}
-        </strong>,
-      )
-    }
-    last = m.index + m[0].length
-  }
-  if (last < text.length) parts.push(text.slice(last))
-  return parts.length === 0 ? text : parts
 }

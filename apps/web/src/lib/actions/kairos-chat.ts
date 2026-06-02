@@ -170,11 +170,17 @@ async function runAssistantTurn(
 
   // C2 — pull cortex + archetypes + top-k substrate for this Dominion.
   // Failure here must NOT block the reply (Dominions still warming up have
-  // no cortex yet); fall back to bare chat on any retrieval error.
+  // no cortex yet); fall back to bare chat on any retrieval error. Logged
+  // so a silently-bare reply (no chips, no Reading line) is debuggable.
   let retrieval: ChatRetrieval | null = null
   try {
     retrieval = await retrieveForChat(userId, dominionId, userBody)
-  } catch {
+  } catch (err) {
+    console.error('[kairos-chat] retrieval failed, falling back to bare chat', {
+      threadId,
+      dominionId,
+      error: err instanceof Error ? err.message : String(err),
+    })
     retrieval = null
   }
 

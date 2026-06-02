@@ -15,6 +15,7 @@ import { SidebarCreateActions } from '@/components/sidebar/SidebarCreateActions'
 import { KairosSidebarContent } from '@/components/sidebar/KairosSidebarContent'
 import { SidebarHome } from '@/components/sidebar/SidebarHome'
 import { SidebarBottom } from '@/components/sidebar/SidebarBottom'
+import { APP_VERSION } from '@/lib/version'
 
 interface AppSidebarProps {
   user: { name?: string | null; email?: string | null; image?: string | null; role: string }
@@ -137,6 +138,18 @@ function Header({
               style={{ color: 'var(--primary)' }}
             >
               <span style={{ textShadow: `0 0 20px ${glowColor}, 0 0 40px ${glowColor}` }}>AEON</span>
+              <span
+                title={`Aeon ${APP_VERSION}`}
+                className="text-[8px] font-medium tracking-[0.18em] uppercase px-1 py-px rounded-sm self-end mb-1 ml-0.5"
+                style={{
+                  background: 'rgba(255,255,255,0.04)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  color: 'rgba(255,255,255,0.45)',
+                  letterSpacing: '0.1em',
+                }}
+              >
+                v{APP_VERSION}
+              </span>
               {onKairos && (
                 <>
                   <span style={{ opacity: 0.5 }}>:</span>

@@ -48,6 +48,10 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Bump after every successful send so the thread-load useEffect re-fires
+  // even when setActiveThread is called with the same id (the common case —
+  // sending into an already-active thread).
+  const [refreshNonce, setRefreshNonce] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -77,7 +81,7 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
       })
       .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load thread') })
     return () => { cancelled = true }
-  }, [isOpen, activeThreadId, setActiveThread])
+  }, [isOpen, activeThreadId, refreshNonce, setActiveThread])
 
   useEffect(() => {
     if (!isOpen) return
@@ -135,6 +139,7 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
     setDraft('')
     setComposing(false)
     setActiveThread(result.threadId)
+    setRefreshNonce((n) => n + 1)
     listKairosThreads({ limit: 30 })
       .then(setThreads)
       .catch(() => { /* non-fatal */ })

@@ -38,10 +38,50 @@ export function truncateTitle(title: string, max = 28): string {
   return t.length <= max ? t : t.slice(0, max - 1).trimEnd() + '…'
 }
 
-// Splits the assistant body into text + chip nodes. Hallucinated ids
-// (those not present in the retrieval snapshot) render as a muted "?"
-// so the operator can spot when the model invents citations.
-export function renderWithCitations(content: string, titles: Map<string, string>): React.ReactNode {
+// Splits the assistant body into text + chip nodes (default), or returns
+// just the deduplicated chips for a sources-strip layout (`sourcesOnly`).
+// Hallucinated ids (not present in the retrieval snapshot) render as a
+// muted "?" so the operator can spot when the model invents citations.
+export function renderWithCitations(
+  content: string,
+  titles: Map<string, string>,
+  opts: { sourcesOnly?: boolean } = {},
+): React.ReactNode {
+  if (opts.sourcesOnly) {
+    const seen = new Set<string>()
+    const chips: React.ReactNode[] = []
+    let key = 0
+    for (const match of content.matchAll(citationTokenRegex())) {
+      const id = match[1].toLowerCase()
+      if (seen.has(id)) continue
+      seen.add(id)
+      const title = titles.get(id)
+      if (title) {
+        chips.push(
+          <span
+            key={`cite-${key++}`}
+            title={title}
+            className="inline-flex items-center rounded-md border border-purple-700/50 bg-purple-950/40 px-1.5 py-0.5 text-[10px] text-purple-200"
+          >
+            {truncateTitle(title)}
+          </span>,
+        )
+      } else {
+        chips.push(
+          <span
+            key={`miss-${key++}`}
+            title="Unknown memory id (model invented this citation)"
+            className="inline rounded-md border border-zinc-700/40 bg-zinc-800/40 px-1 py-0.5 text-[10px] text-zinc-500"
+          >
+            ?
+          </span>,
+        )
+      }
+    }
+    return chips
+  }
+
+  // Default: inline-splice mode for surfaces that render chips beside text.
   const nodes: React.ReactNode[] = []
   let lastIndex = 0
   let key = 0
