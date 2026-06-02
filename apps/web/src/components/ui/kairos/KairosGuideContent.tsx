@@ -16,7 +16,7 @@ export function KairosGuideContent() {
         </P>
       </Section>
 
-      <Section title="Three ways memories arrive">
+      <Section title="Four ways memories arrive">
         <Path
           label="Automatic — Claude session capture"
           when="When a Claude Code session ends."
@@ -32,6 +32,83 @@ export function KairosGuideContent() {
           when="On demand, any time."
           how="Call create_memory from any chat, or hit Note / EOD reflect in the sidebar. The caller writes the clean title and bullets — the server never calls an LLM on the way in."
         />
+        <Path
+          label="Reflection — kairos_reflect from any Claude session"
+          when="When you want to tell Kairos a belief, a priority, a correction."
+          how="Call kairos_reflect with the target Dominion id and your message. Stored as the highest-weight signal in synthesis — it can override drift flags and is never archived by compaction. See the Sending reflections section below."
+        />
+      </Section>
+
+      <Section title="Talking to Kairos">
+        <P>
+          The sparkles button bottom-right opens a slide-out chat panel anchored to a Dominion of
+          your choosing. The panel is available on <Mono>/kairos</Mono>, <Mono>/notes</Mono>, and{' '}
+          <Mono>/settings/ai</Mono>. Pick a Dominion at thread creation, type, and press{' '}
+          <Mono>Cmd/Ctrl+Enter</Mono> to send. Threads persist across reloads.
+        </P>
+        <P>
+          Every reply is grounded in that Dominion's live cortex doc, its active archetypes, and the
+          most relevant prior reflections, ideas, and session notes. When Kairos cites a specific
+          memory, a small purple chip appears bearing the source title — hover to confirm. When the
+          model invents a citation (a memory id that wasn't actually retrieved this turn), the chip
+          surfaces as a muted <strong>?</strong> so you can spot confabulation at a glance.
+        </P>
+        <P>
+          A dim <Mono>Reading: cortex · N archetypes · M memories</Mono> line sits above each
+          assistant bubble so you can see what was grounding the answer. Dominions with no cortex
+          yet still chat usefully — the panel degrades cleanly to bare conversation.
+        </P>
+        <P>
+          Your message is persisted <em>before</em> the model is called, so a model failure never
+          silently loses input. If a send fails, the next send detects the orphan and retries the
+          AI half — and if you edited the message between attempts, the orphan body is rewritten in
+          place rather than double-posted.
+        </P>
+      </Section>
+
+      <Section title="The nightly synthesis (archetypes + cortex)">
+        <P>
+          Every night, two BYOK passes turn the day's substrate into something Kairos can reason
+          from:
+        </P>
+        <Path
+          label="Archetype generator — 02:30 UTC"
+          when="Once per active Dominion, per night."
+          how="Reads the last 14 days of substrate plus every reflection, emits 3–7 master themes — the dominant currents in that Dominion. Prior batches are soft-archived so 'live archetypes' always means today's run. Skipped cleanly if no BYOK heavy-tier key is wired."
+        />
+        <Path
+          label="Dominion cortex — 03:00 UTC"
+          when="Right after archetypes finish."
+          how="Synthesises one living document per Dominion from today's archetypes + reflections + Dominion vision. This is what gets injected as the system-prompt prefix when you chat anchored to that Dominion. Old cortex rows are kept as historical record — scrub backwards to watch the brain change."
+        />
+        <P>
+          Both can be skipped per-Dominion (e.g. archived ones), and both are idempotent — running
+          the cron twice on the same day is a no-op. Day one of a new Dominion you'll see bare-chat
+          fallback; the morning after the first cron firing, you'll see a Reading line on every
+          reply.
+        </P>
+      </Section>
+
+      <Section title="Sending reflections">
+        <P>
+          Reflections are the operator's voice in how Kairos comes to see each Dominion over time —
+          deliberate beliefs, priorities, observations, corrections. They are first-class in three
+          ways no other memory class is:
+        </P>
+        <ul className="flex flex-col gap-2 text-[12.5px] text-white/70 leading-relaxed pl-4">
+          <Bullet><strong>Weighted higher</strong> in archetype + cortex generation prompts than any activity-derived class. A reflection saying "mobile is parked" outweighs ten board events suggesting otherwise.</Bullet>
+          <Bullet><strong>Can override drift</strong>. If activity suggests "user has lost interest" but a recent reflection contradicts that, the reflection wins.</Bullet>
+          <Bullet><strong>Never archived</strong>. The weekly compaction cron can absorb stale execution-class rows into archetypes, but reflections live forever — they are the trail of your evolving thinking.</Bullet>
+        </ul>
+        <P>From any Claude Code session with the Aeon MCP attached:</P>
+        <ul className="flex flex-col gap-2 text-[12.5px] text-white/70 leading-relaxed pl-4">
+          <Bullet><Mono>list_dominions</Mono> — find the target Dominion id.</Bullet>
+          <Bullet><Mono>kairos_reflect</Mono> — fire the reflection. Args: <Mono>{`{dominionId, body, tags?}`}</Mono>. Stored with <Mono>streamClass=&apos;reflection&apos;</Mono>, no further ceremony.</Bullet>
+        </ul>
+        <P>
+          A few reflections a week is enough — Kairos's job is to keep listening, not yours to keep
+          performing. The next nightly synthesis will fold them into the cortex.
+        </P>
       </Section>
 
       <Section title="The summarisation model">

@@ -1,6 +1,6 @@
 # VISION.md
 
-Last updated: 23/05/2026 (Kairos 2D WebGL shipped + Dominion grouping live + memory backfill MCP tool)
+Last updated: 02/06/2026 (Kairos Phase 1A + 1B + 1C-C1 + 1C-C2 shipped; nightly synthesis pipeline wired; chat Visor with memory grounding live)
 
 For technical architecture, file paths, and feature inventory see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
@@ -8,9 +8,11 @@ For technical architecture, file paths, and feature inventory see [ARCHITECTURE.
 
 ## 1. PROJECT PULSE
 
-Aeon is a **web-first project management platform** with a stunning visual identity (151 themes, particle effects, Framer Motion animations, @dnd-kit kanban, ReactFlow canvas). The web side (Phase 1 + 1.5) is feature-complete and hardened (lint 46 to 9, file splits, SSR, perf).
+Aeon is a **web-first project management platform** with a stunning visual identity (151 themes, particle effects, Framer Motion animations, @dnd-kit kanban, ReactFlow canvas). The PM side (Phases 1–3) is feature-complete and hardened (real-time Pusher sync, virtual scrolling, optimistic UI, lint clean, server-side loading, BYOK AI integration).
 
-**Strategic pivot (03/04/2026):** Mobile strategy shifted from React Native (full UI rewrite) to **Capacitor** (WebView wrapper preserving 100% of web UI). The React Native approach would have taken 3-6 months to reach 50-70% visual fidelity; Capacitor ships the same stunning UI in weeks. Desktop strategy: **PWA first** (near-zero effort), Tauri deferred to post-beta only if users explicitly request offline/system tray/hotkeys. The mobile-auth backend (session tokens, Google OAuth endpoint) remains valid for Capacitor's bearer auth needs.
+**Kairos is now Phase 2 of Aeon, not a side experiment.** What started in May as a personal memory layer has graduated, in eight weeks, into a multi-layer thinking partner: substrate (every memory classified into one of six stream classes), synthesis (3–7 archetypes per Dominion + one living cortex document, regenerated nightly), reflections (`kairos_reflect` MCP tool — the operator's first-class signal that outweighs activity-derived drift), and a slide-out chat Visor that grounds every reply in retrieved memories with cite-back chips. The full nightly cron pipeline — snapshot 23:00 → archetypes 02:30 → cortex 03:00 → briefer 07:00 — went live tonight.
+
+**Mobile strategy (03/04/2026):** Capacitor WebView wrapper over the existing Next.js app (preserves 100% of web UI). Tauri desktop parked post-beta; PWA enabled as the free desktop win.
 
 ---
 
@@ -18,16 +20,16 @@ Aeon is a **web-first project management platform** with a stunning visual ident
 
 | Direction | Evidence | Confidence |
 |---|---|---|
-| Capacitor mobile app | Pivot from React Native on 03/04. WebView wrapper preserves full web UI. mobile-auth backend reusable | High (spike in progress) |
+| Kairos as thinking partner (memory → synthesis → chat → loops) | Phase 1A/B/C-C1+C2 shipped; nightly synthesis live; chat Visor anchored per Dominion; 1688 tests | Shipped (Phase 1A–1C-C2) / In flight (C3–C5, D1–D3) |
+| BYOK AI integration (3 providers, AES-256-GCM, admin-gated) | Anthropic + OpenAI + Google via Vercel AI SDK; full REST + UI; tier-routed per user | Shipped |
 | Realm-based multi-tenancy | Full CRUD, invites, scoped visibility, REST + MCP parity | Shipped |
-| MCP-first AI integration | 52 tools, Bearer auth, dogfooded daily via Claude Code | Shipped |
-| Kairos — personal memory layer | 3D + 2D WebGL cortex live, MCP capture path with aiTitle/execSummary, sidebar pill with Setup+Guide, Dominion grouping, backfill tool | Shipped on feature/cortex-swarm-port (not yet merged to main) |
-| BYOK AI credentials (Vercel AI SDK + AES-256-GCM) | Foundation built on feature/brain-ai-integration (commit 8465858) — router, encrypted-key schema, /settings/ai page, admin gate | Built, awaiting merge |
-| Master Board (cross-project view) | 4 raw idea cards (schema, propagation, UI, permissions) | Medium |
-| Real-time sync (Pusher) | Pusher Channels live, all mutations broadcast, 30s polling fallback | Shipped |
-| Agent-as-member (AI in realms) | 1 raw idea card, no spec | Speculative |
-| PWA desktop | ServiceWorkerRegistration.tsx exists, manifest needed | In Progress (enabling now) |
-| Desktop app (Tauri) | Scaffold committed, explicitly deferred to post-beta | Parked |
+| MCP-first AI integration | 95 tools across 15 categories, Bearer auth, dogfooded daily | Shipped |
+| Capacitor mobile app | WebView wrapper preserves full web UI; mobile-auth backend reusable | Configured (build pipeline pending) |
+| Master / Rift Board (cross-board view) | Rift in Analysis (high priority); Master in Raw Ideas | Speculative |
+| Agent-as-member (AI in realms) | 1 raw idea card; `actorType` extension on `activityEvents` already in schema | Speculative |
+| Real-time sync (Pusher) | Live, all mutations broadcast, 30s polling fallback | Shipped |
+| PWA desktop | Manifest + service worker + offline fallback live | Shipped |
+| Desktop app (Tauri) | Scaffold committed, deferred post-beta | Parked |
 
 ---
 
@@ -35,21 +37,24 @@ Aeon is a **web-first project management platform** with a stunning visual ident
 
 | Date | Milestone | Impact |
 |---|---|---|
-| 23/05/2026 | Kairos 2D WebGL + Dominion grouping + memory backfill MCP tool + Setup/Guide modal | Cross-repo memory connections via shared Dominions; 2D edges render correctly after d3-force tick; Claude can now loop through old memories and backfill aiTitle/execSummary; new users get an in-app onboarding modal |
-| 22/05/2026 | Kairos rebrand (brain→kairos), aiTitle + execSummary schema, MemorySidePanel rework | Front-of-house memory display with 1-6 word AI title + 5-10 bullet exec summary |
-| 07/04/2026 | Phase 3 -- Pusher real-time sync, virtual scrolling, optimistic UI rollback | Sub-second multi-user sync, large board performance, reliable mutations |
-| 07/04/2026 | React Native deleted -- apps/mobile/ removed, Capacitor-only mobile strategy | Clean codebase, no dead code |
-| 03/04/2026 | React Native Phase A -- Expo scaffold, auth, API client | Mobile platform foundation (later deleted) |
-| 04/04/2026 | Phase 2.5A/B -- checklist UX fixes, glow source setting, priority color remap, React Compiler, PPR, Zustand selector audit (22 files), horsemen security fixes | Snappy UI foundation, security hardening |
-| 03/04/2026 | Capacitor pivot -- abandoned React Native, PWA enabled, Capacitor configured | Mobile strategy reset, preserves web UI investment |
-| 02/04/2026 | Phase 1.5 complete -- realm invites, color/icon picker, lint cleanup, file splits | Production-quality realms, codebase health |
-| 02/04/2026 | Server-side loading -- board + dashboard SSR, auth() caching | Eliminated loading spinners on initial render |
-| 01/04/2026 | Scoped visibility, access denied page, realm member access | Multi-tenant security layer |
-| 01/04/2026 | ProjectSidebar, REST realm API (6 routes), hide toggle | Clean navigation separation |
-| 31/03/2026 | Kill Personal/Team split -- flat realm list, viewport-locked layout | Simplified mental model |
-| 30/03/2026 | Sidebar navigation, realm sections, MCP realm tools (11 tools) | Full realm management from AI + UI |
-| 28/03/2026 | DB query audit, touchProject on all mutations | Data integrity, reliable polling |
-| 24/03/2026 | Phase 1 completion -- all gaps closed | Board, gantt, labels, checklist all wired to DB |
+| 02/06/2026 | Kairos Phase 1C-C2 — memory-grounded chat replies + citation chips + "Reading" line + horsemen fix-pack | Every chat reply pulls Dominion cortex + archetypes + top-5 substrate; inline `[[uuid]]` tokens rendered as chips bearing memory titles; hallucinated ids surface as muted `?` (server-side intersection guard). KairosVisor split 512 → 220 lines across 5 files; mapping + payload modules extracted to be unit-testable. Tests 1622 → 1688 (+66) |
+| 02/06/2026 | Kairos Phase 1C-C1 — slide-out chat Visor anchored per Dominion | Right-edge slide-out panel on `/kairos`, `/notes`, `/settings/ai`. Single active thread per Visor open; persists in `agent_sessions` + `session_events` (no schema change); row-lock on parent agent_sessions serialises message seq; orphan-message recovery handles edited retry bodies |
+| 02/06/2026 | Kairos Phase 1B B1+B2+B3 — archetype generator + Dominion cortex regen + `kairos_reflect` MCP tool | Nightly pipeline: snapshot 23:00 → archetypes 02:30 → cortex 03:00 → briefer 07:00. One living cortex document per Dominion used as chat system-prompt prefix. Owner reflections locked to `streamClass='reflection'` via dedicated MCP tool, weighted higher than activity-derived signals in synthesis, never archived by compaction |
+| 01/06/2026 | Kairos Phase 1A A1–A4 — `streamClass` axis + 8 Dominions partitioned + Briefer live-board reframe + quality gates doc | 326/378 memories classified into reflection/idea/agentic/execution/archetype/cortex; 370/378 resolved into 8 Dominions (Swarm, Shadow Lab, AEON, Shadow Apps, STP Dev, STP Asset Trading, STP Spec, STP Quant); morning Briefing now reads live board cards via `inspectDominion` instead of stale import memories; `docs/kairos/14-quality-gates.md` documents memory ingress/egress invariants |
+| 30/05/2026 | BYOK AI integration — 3 providers, AES-256-GCM at rest, admin-gated `/settings/ai` | Per-user encrypted keys; three-tier (cheap/standard/heavy) routing; provider-tinted glass UI with reveal toggle + inline test chip; REST CRUD at `/api/v1/ai/credentials` + `/preferences` |
+| 30/05/2026 | Kairos Daily Briefer cron + ambient advisory feed | One advisory per active Dominion per day at 07:00 UTC; idempotent; unread badge + acknowledge flow in sidebar; deep-link to Kairos graph |
+| 30/05/2026 | Kairos spawn primitive — `agent_sessions` + `kairos-worker` + Live Sessions button | Out-of-process Claude/Codex sessions spawned via HTTP; transcript polls every 2s; full REST + MCP CRUD with 5 session tools; kill switch |
+| 30/05/2026 | Auto-capture (board + project events) + nightly project snapshot | Fire-and-forget memory capture on every task/project mutation; nightly snapshot writes open/done/blocked counts + last 5 events per project |
+| 30/05/2026 | Dominions full body — vision + missionLong + objectives + Create modal + Edit drawer | Top-level grouping above projects with editable standing context; 16 MCP tools |
+| 30/05/2026 | Notes bento page + Promote-to-Card + today's auto-captures strip | `/notes` route with bento grid; neighbours panel re-seeds on linked memory; memory → board task promotion flow |
+| 30/05/2026 | Task assignees (Trello-style, M hotkey) | Multi-user assignment overlay on M keypress; `taskAssignees` table |
+| 30/05/2026 | Sidebar overhaul — Home button + AnchoredPopover + bottom pill rows | Glowing pinned Home entry; Briefing + EOD moved to popover-anchored icons; portal-based popover primitive with flip-when-near-top + Esc close |
+| 23/05/2026 | Kairos 2D WebGL + Dominion grouping + memory backfill MCP tool + Setup/Guide modal | Cross-repo memory connections via Dominions; Claude can loop through old memories and backfill aiTitle/execSummary; in-app onboarding modal |
+| 22/05/2026 | Kairos rebrand + aiTitle + execSummary schema + MemorySidePanel rework | 1–6 word AI title + 5–10 bullet exec summary as front-of-house |
+| 07/04/2026 | Phase 3 — Pusher real-time sync + virtual scrolling + optimistic UI rollback | Sub-second multi-user sync; large board perf; reliable mutations |
+| 03/04/2026 | Capacitor pivot — abandoned React Native, PWA enabled | Mobile strategy reset; preserves web UI investment |
+| 02/04/2026 | Phase 1.5 complete — realm invites, color/icon picker, lint cleanup, file splits | Production-quality realms; codebase health |
+| 24/03/2026 | Phase 1 completion — all gaps closed | Board, gantt, labels, checklist all wired to DB |
 
 ---
 
@@ -57,73 +62,65 @@ Aeon is a **web-first project management platform** with a stunning visual ident
 
 ### Bet 1: Mobile via Capacitor (WebView wrapper)
 
-- **What:** Capacitor wraps the existing Next.js web app in a native shell for iOS/Android, preserving 100% of the web UI
-- **Why:** Aeon's primary differentiator is its visual design (151 themes, effects, animations). React Native would require a full UI rewrite (3-6 months) to reach 50-70% fidelity. Capacitor ships the same UI in weeks
-- **Risk:** WebView performance ceiling on low-end devices. Apple App Store review (mitigated by native plugins adding real native functionality). Mobile-specific UX (touch targets, gestures) may need CSS adjustments
-- **Status:** PIVOTED from React Native on 03/04/2026. mobile-auth.ts backend (session tokens, Google OAuth) remains valid. React Native UI code (~680 lines) to be discarded after Capacitor validated. PWA enabling in parallel
-- **Previous approach (React Native):** Deleted on 07/04/2026. Expo scaffold + auth + API client (823 lines) abandoned — required complete UI rewrite with no path to visual parity
+- **What:** Capacitor wraps the existing Next.js web app in a native shell for iOS/Android, preserving 100% of the web UI.
+- **Why:** Aeon's primary differentiator is its visual design (151 themes, effects, animations). React Native would require a full UI rewrite (3–6 months) to reach 50–70% fidelity. Capacitor ships the same UI in weeks.
+- **Risk:** WebView performance ceiling on low-end devices; App Store review; mobile-specific UX (touch, gestures) may need CSS adjustments. PWA covers ~80% of desktop install cases for free.
+- **Status:** Configured (capacitor.config.ts wired, mobile-auth backend reusable for bearer auth). No active build pipeline. PWA shipped 03/04.
 
 ### Bet 2: MCP-first over Webhook-first
 
-- **What:** 52 MCP tools shipped before any webhook/event system. AI agents interact with Aeon as first-class citizens
-- **Why:** Dogfooding -- the developer uses Claude Code to manage the Aeon board daily. This tight feedback loop drives API quality faster than speculative webhook consumers would
-- **Risk:** MCP is a niche protocol. If the broader ecosystem doesn't adopt it, the 52-tool investment serves a single user. Webhooks (Phase 4 roadmap) would unlock broader integrations
-- **Status:** Shipped and actively used. Webhook system remains unstarted
+- **What:** 95 MCP tools shipped before any webhook/event system. AI agents interact with Aeon as first-class citizens.
+- **Why:** Dogfooding. The owner uses Claude Code to manage the Aeon board daily. Tight feedback loop drives API quality faster than speculative webhook consumers would.
+- **Risk:** MCP is a niche protocol. If the broader ecosystem doesn't adopt it, the investment serves a small audience. Webhook system remains unstarted.
+- **Status:** Shipped (95 tools / 15 categories) and actively used.
 
 ### Bet 3: Realms over traditional workspaces
 
-- **What:** "Realms" as fluid workspace groups with morphic project assignment, not rigid org/team hierarchies
-- **Why:** Core design philosophy of morphism over rigidity. Projects can belong to multiple realms. Visibility is scoped per-project-per-realm rather than per-org
-- **Risk:** Unconventional model -- new users may expect traditional org/team/project hierarchy. "Realm" terminology may confuse
-- **Status:** Shipped with full CRUD, invites, scoped visibility, custom icons/colors
+- **What:** Fluid workspace groups with morphic project assignment, not rigid org/team hierarchies.
+- **Why:** Core design philosophy — morphism over rigidity. Projects can belong to multiple realms; visibility is scoped per-project-per-realm.
+- **Risk:** Unconventional. New users may expect traditional org/team/project structure.
+- **Status:** Shipped with full CRUD, invites, scoped visibility, custom icons/colors.
 
-### Bet 4: Master Board as the next multiplier
+### Bet 4: Cross-board intelligence (Master / Rift / Urgency lens)
 
-- **What:** Cross-project board aggregating cards from multiple projects with edit propagation
-- **Why:** Once you have 5+ projects in multiple realms, per-project views become a bottleneck. A unified view is the natural next step for power users
-- **Risk:** Edit propagation across projects is architecturally complex (which project owns the mutation?). Performance at scale with no virtual scrolling yet
-- **Status:** 4 raw idea cards, no spec written. Dependent on virtual scrolling (in analysis)
+- **What:** A unified family of cross-board surfaces — Master Board (mirror cards across projects, edits propagate), Rift Board (canonical N:1 column mapping with bidirectional writes), Cross-board urgency lens (global priority signal), Agent Dispatch (card-move hooks → GitHub Actions).
+- **Why:** Once you have 5+ projects across multiple realms, per-project views become a bottleneck. Cross-board synthesis is the natural next multiplier.
+- **Risk:** Edit propagation is architecturally complex (which project owns the mutation?); virtual scrolling is a prerequisite; could fragment focus if all four ship as separate features instead of one cohesive view.
+- **Status:** Rift Board in Analysis (high priority); Master Board + Urgency Lens + Agent Dispatch in Raw Ideas. No spec written. Speculative.
 
-### Bet 5: Kairos as a personal productivity tool first, broader product later
+### Bet 5: Kairos as a thinking partner — the centre of Aeon
 
-- **What:** Kairos (the renamed brain / cortex feature) is a personal memory layer with 3D + 2D visualisation, MCP-driven capture, and AI-cleaned exec summaries. **In 2026 it is exclusively the founder's own productivity tool, used via Claude Code.** Wider beta access is considered only after the founder uses it daily and considers it perfected
-- **Why:** The user runs a portfolio across asset trading, spec trading, quant modelling, and software engineering. Most knowledge capture happens via voice dumps into Claude Code. The MCP path is the primary capture surface — web voice has been killed. Building this for one user (the founder) first means decisions get made fast, the UX is opinionated, and the feedback loop is hours not weeks
-- **Risk:** Solo-user-driven UX may not generalise. Hard taste calls now (e.g. Constellation/Dominion grouping, killing Realm for memories, killing the secondary sidebar) bake in assumptions. Mitigation: revisit naming and information architecture before opening to others
-- **Status:** Shipped on `feature/cortex-swarm-port` (not yet merged). 2D WebGL graph live with cross-repo Dominion edges, MCP `create_memory` / `update_memory` accept aiTitle + execSummary, MemorySidePanel renders both, and `list_memories_needing_summary` lets Claude loop through old entries and backfill. Setup + Guide modal onboards new users. Next: voice-mode session to bulk-assign projects to Dominions, then merge to main
+- **What:** A multi-layer personal cognition system. **Substrate** (every memory classified by stream class) → **synthesis** (per-Dominion archetypes + living cortex doc, regenerated nightly) → **chat surface** (Visor anchored per Dominion, replies grounded in retrieved memories with cite-back chips) → **loops** (Phase 1D evening + morning) → **active agent** (Phase 2, gated) → **identity layer** (Phase 3, speculative).
+- **Why:** The cortex *stores*; nothing yet *thinks*. The brain needs organising intelligence on top of the substrate. The arc is to grow Kairos from a memory store into a partner that holds context, surfaces what matters, and reasons with explicit citations. The owner declared on 01/06/2026: "Kairos is now Phase 2 of Aeon" — no longer a side experiment, the centre of product investment.
+- **Risk:** Solo-user-driven UX may not generalise. Hard taste calls now (Dominion grouping, killing Realm for memories, killing the secondary sidebar, reflection-as-first-class signal) bake in assumptions. BYOK cost is real (~$0.50–2.00/day for nightly synthesis across 8 Dominions). Morning-loop noise floor is unknown until real cortex data accumulates.
+- **Status:** Phase 1A (memory shape) + 1B (synthesis layer + reflections) + 1C-C1 (chat surface) + 1C-C2 (memory grounding) all shipped. First end-to-end nightly synthesis run lands tonight (02/06 → 03/06). C3 (`chat_with_kairos` MCP tool), C4 (two-way capture buttons), C5 (cosmic view enhancements) remain — ~6 hr. Phase 1D (loops) starts ~7 days after C ships, once cortex has accumulated.
 
 ### Bet 6: AI does the cleanup at the call site, not on the server
 
-- **What:** Claude Code self-prompts to clean voice dumps and session transcripts into title + 5–10 bullet exec summary, then sends the pre-cleaned payload through the MCP `create_memory` / `update_memory` tools. The Aeon server stores what it's sent and runs no LLM itself
-- **Why:** Claude Code already has the model that heard the dump, with full project context. Putting an LLM call on the write path duplicates that capability, adds latency, and complicates the MCP/REST parity invariant. Backfill is also user-triggered ("Claude, regenerate the last 30 days") — no cron needed
-- **Risk:** Capture quality depends on Claude Code being good at the cleanup. Mitigated by saving the original verbatim as an optional `rawTranscript` so the unpolished phrasing stays searchable
-- **Status:** Schema live (migration 0015), MCP tools accept + return aiTitle + execSummary, `list_memories_needing_summary` tool + REST mirror let Claude loop and backfill historical memories. Session-capture hook can flip `BRAIN_AI_CLEANUP=1` to enable self-cleaning on capture; older entries are caught by the backfill loop. **BYOK is NOT a blocker for this — see Bet 7**
-
-### Bet 7: BYOK foundation built but waiting
-
-- **What:** Vercel AI SDK v6 + per-user encrypted API keys (AES-256-GCM) + provider-agnostic router (Anthropic / OpenAI / Google) + admin-gated `/settings/ai` page. Lives on `feature/brain-ai-integration` (commit 8465858)
-- **Why:** The longer-term play. Even though Kairos itself does AI work via Claude Code MCP today, BYOK is the foundation for any *other* AI feature (daily briefings, agent-as-member, project chat, code review hooks). Building it as encrypted-per-user and admin-gated from day one keeps options open for multi-user beta later
-- **Risk:** If never merged, the foundation rots and the migration number (0014) becomes a coordination headache against newer migrations. Mitigation: merge on a quiet day before any new AI feature is built
-- **Status:** Built, tested (1570 tests passing including crypto roundtrip + tampering rejection), waiting for a merge window. The current Kairos POC explicitly does not depend on it
+- **What:** Claude Code self-prompts to clean voice dumps and session transcripts into title + 5–10 bullet exec summary, then sends pre-cleaned payload through MCP `create_memory` / `update_memory`. The Aeon server stores what it's sent and runs no LLM on the write path.
+- **Why:** Claude Code already has the model that heard the dump, with full project context. An LLM call on the write path duplicates that capability, adds latency, complicates the MCP/REST parity invariant. Backfill is also user-triggered ("Claude, regenerate the last 30 days") — no cron needed.
+- **Risk:** Capture quality depends on Claude Code being good at the cleanup. Mitigation: save the original verbatim as an optional `rawTranscript` so unpolished phrasing stays searchable (still pending — no schema change made).
+- **Status:** Shipped. Schema live (migration 0015), MCP tools accept + return aiTitle + execSummary, `list_memories_needing_summary` lets Claude loop and backfill historical memories. **Phase 1B synthesis runs on the server side using BYOK — that's the new exception**, but it's batched nightly (not write-path) and gated by the user's heavy-tier key.
 
 ---
 
 ## 5. EMERGING PATTERNS
 
-**AI-driven development velocity.** The shadow-specs directory contains 30+ spec packages across 7 categories. Every major feature goes through recon/spec/review before implementation. The commit history shows features landing in multi-commit bursts (50 changes in a single session on 02/04). This is not traditional sprint-based development -- it's spec-then-execute at AI speed.
+**Synthesis-before-chat discipline.** The original Kairos plan sequenced chat first; the owner rejected this in favour of A (memory shape) → B (synthesis) → C (chat). The consequence is that the chat surface ships with real archetype and cortex material underneath it from day one, rather than a bare persona. This sequencing decision is now a template for all future Kairos feature work: data fidelity gates the intelligence surface.
 
-**Infrastructure-before-features discipline.** Phase 1.5 was entirely about hardening: lint cleanup, file splits, server-side loading, query dedup, connection timeout tuning. The project resists shipping new features on shaky foundations. The 46-to-9 lint reduction and zero TODO/FIXME count reflect this.
+**Reflections as the operator's voice in the brain.** Reflections are the operator's direct line into how Kairos comes to see each Dominion — weighted higher than activity-derived signals, can override drift flags, never archived by compaction. This is the channel that prevents Kairos from drifting away from the owner's actual intent. Currently only via MCP (`kairos_reflect`); web UI button planned for C4; phone capture is Phase 2.
 
-**Surface area expansion pressure.** The raw ideas backlog (18 cards) is growing faster than the done column. Concepts like Agent Dispatch, Rift Board, Cross-board urgency lens, and Stream Chat represent a widening ambition that could fragment focus. The project is at an inflection point where saying "no" to good ideas matters more than saying "yes."
+**Cite-grounded reasoning baked into the chat contract.** Every Kairos claim links back to substrate. C2 implements this as inline `[[uuid]]` tokens with a server-side hallucination guard (model can invent ids; the server strips any not in the retrieved set before persisting; UI renders invented ids as muted `?`). This makes confabulation visible at a glance — defence-in-depth between the model and the persistence layer.
 
-**Morphism as architecture.** The "realms" model, the kill of Personal/Team split, the flat-list-over-hierarchy choices -- these all reflect a consistent design philosophy where structure is emergent rather than prescribed. This extends to the board itself (fluid columns, no enforced workflow). The risk is that power users who want guardrails (WIP limits, enforced workflows) may find the flexibility disorienting.
+**Horsemen-driven ship discipline.** Per-card warden + per-batch four-agent horsemen (butcher, warden, judge, stalker) before commit. Stalker added to the rotation now surfaces test coverage gaps as high-severity findings on every batch — C1+C2 batch caught 3 critical untested paths and prompted +50 tests. The pattern is shipping with confidence, not shipping with hope.
 
-**Stalled frontiers resolved.** Desktop (Tauri) explicitly parked post-beta. PWA being enabled now as the free desktop win. React Native abandoned in favor of Capacitor. All three stalled items now have clear dispositions instead of lingering ambiguity.
+**AI-driven development velocity.** The shadow-specs and docs/kairos directories now contain dozens of handover, spec, and quality-gate documents. Every major feature goes through recon → spec → review → implementation → horsemen. Features land in multi-commit bursts and the test count grows with them (1576 → 1688 in two weeks).
 
-**API as the unifier.** The mobile auth work forced the first mobile-specific backend code (`mobile-auth.ts`), but everything else goes through the same `/api/v1/` routes. This validates the REST API investment from Phase 1. The API is becoming the true product boundary -- both surfaces are clients of the same contract. This pattern should hold as long as mobile-specific endpoints stay exceptional, not routine.
+**Infrastructure-before-features discipline.** Phase 1.5 was entirely about hardening (lint, file splits, SSR, perf). Phase 2 (Kairos) follows the same pattern — the streamClass column + Dominion backfill landed before the synthesis layer, and the quality-gates doc landed before B1+B2. The horsemen passes are the same discipline applied per-feature.
 
-**Auth divergence is intentional.** Web uses NextAuth session cookies (browser-native). Mobile uses bearer tokens with 90-day sessions (app-native). Both authenticate the same users. This is the right split -- don't try to unify them. The mobile auth tables (`mobileSessions`, `mobileLoginTokens`) are clean additions, not hacks.
+**Morphism as architecture.** Realms over hierarchies; flat-list over Personal/Team split; fluid columns over enforced workflow; Dominions over fixed project taxonomy. Structure is emergent, not prescribed. The risk is power users wanting guardrails (WIP limits, enforced workflows) finding the flexibility disorienting.
 
-**Spec archaeology as institutional memory.** The shadow-specs directory is becoming a rich decision log -- ADRs, recon reports, code quality reviews dating back months. This is more valuable than traditional docs because it captures the "why not" alongside the "why."
+**Spec archaeology as institutional memory.** `shadow-specs/` and `docs/kairos/` are decision logs — ADRs, recon, code-quality reviews, session handovers. More valuable than traditional docs because they capture the "why not" alongside the "why." Every Kairos session begins with the previous session's handover so a fresh instance picks up without re-explanation.
 
 ---
 
@@ -131,13 +128,17 @@ Aeon is a **web-first project management platform** with a stunning visual ident
 
 | When | From | To | Why |
 |---|---|---|---|
-| 03/04/2026 | React Native mobile app | Capacitor WebView wrapper | Full UI rewrite (3-6 months) vs wrapping existing stunning web UI (weeks). Visual design is the differentiator — don't rewrite it |
-| 03/04/2026 | Tauri desktop (active plan) | PWA first, Tauri parked | PWA covers 80% of desktop use cases for free. Tauri only if beta users demand offline/tray/hotkeys |
-| 01/04/2026 | Personal/Team workspace split | Flat realm list with TEAM badge | Simpler mental model, morphism principle |
-| 31/03/2026 | AppSidebar everywhere | ProjectSidebar for board view | Board context needs dedicated nav, not dashboard nav |
-| 28/03/2026 | Legacy project.group field | Realm-based project assignment | Groups were rigid single-assignment; realms allow multi-membership |
-| ~24/03/2026 | Phase 2 features next | Phase 1.5 hardening sprint | Codebase health before feature expansion |
-| Early 2026 | Webhooks first (Phase 4 plan) | MCP first (52 tools shipped) | Dogfooding drove higher ROI than speculative integrations |
+| 02/06/2026 | C1 planned as thread list + multi-thread UX with optional Dominion routing | C1 narrowed: single active thread per Visor open, required Dominion anchor, no retrieval (pushed to C2) | Scope discipline. Real archetypes only exist after the first nightly cron, so C2 design benefits from actual archetype output before locking retrieval shape |
+| 02/06/2026 | Cite-grounded reasoning = evolution-plan principle, not yet implemented | Cite-grounded reasoning is the C2 chat contract — inline `[[uuid]]` markers post-processed as hover chips with server-side hallucination guard | Principle 3 of the evolution plan ("every Kairos claim links back to substrate. No floating assertions") becomes a C2 implementation spec |
+| 01/06/2026 | Phase 1A A3: prune ~200 empty-shell board-import memories as noise | Live board awareness via `inspectDominion` — keep all memories, deprecate the bulk-import script, Briefer reads board state live | Owner overruled the prune: "every card is signal." Architectural consequence: Briefer no longer consumes static imported memories; queries board live on every run |
+| 01/06/2026 | Board memories and synthesis input were the same population | Memory/board boundary clarified — board owns cards (live source of truth), brain owns synthesis (no double-write). Archetype + cortex stream classes excluded from Briefer's "recent memories" feed to prevent recursive context-collapse | Horsemen caught that feeding archetype/cortex back into the synthesis input would create a hallucination loop. Stream-class exclusion is now a structural invariant |
+| 01/06/2026 | Reflections = one MCP tool, lightweight capture | Reflections = first-class signal — higher synthesis weight than activity-derived drift, `streamClass='reflection'` locked by the tool schema, prompts for B1+B2 treat them as a dedicated weighted block, never archived | Evolution plan principle 4: "The owner reshapes the brain. Reflections carry higher weight than activity-derived drift." B4 (reflection weighting) became implicit in B1+B2 prompts, saving a discrete implementation block |
+| 01/06/2026 | Kairos = "personal memory store with WebGL cortex, founder-only, on a feature branch" | Kairos = "Phase 2 of Aeon" — owner-committed strategic pivot, the centre of product investment | Owner declared on 01/06/2026 that Kairos is no longer a side-car experiment |
+| 23–30/05/2026 | BYOK "built, awaiting merge window" (was Bet 7) | BYOK shipped and live — `/settings/ai` page, 3 providers, AES-256-GCM at rest, three-tier routing | BYOK is no longer a strategic bet; it's infrastructure |
+| 30/05/2026 | Daily Briefing + EOD Reflection auto-pinned to dashboard | Both moved to sidebar popovers behind Sun/Moon icons; dashboard opens directly on realms | Reduced noise on the dashboard; both surfaces now opt-in instead of always-visible |
+| 03/04/2026 | React Native mobile app | Capacitor WebView wrapper | Full UI rewrite (3–6 months) vs wrapping existing stunning web UI (weeks). Visual design is the differentiator — don't rewrite it |
+| 03/04/2026 | Tauri desktop (active plan) | PWA first, Tauri parked | PWA covers 80% of desktop use cases for free |
+| ~01/04/2026 | Personal/Team workspace split | Flat realm list with TEAM badge | Simpler mental model; morphism principle |
 
 ---
 
@@ -145,63 +146,78 @@ Aeon is a **web-first project management platform** with a stunning visual ident
 
 | Question | Impact | Notes |
 |---|---|---|
-| **Mobile-responsive CSS gaps** | High | Capacitor wraps the web app as-is. Which pages/components break on small screens? Touch targets, modals, DnD, sidebar — need a responsive audit before Capacitor ships |
-| **WebView performance on effects** | High | 151 themes with particle effects, aurora, snowfall — will they run smoothly in mobile WebView? May need to auto-disable heavy effects on mobile or detect low-end devices |
-| **Should Master Board block on virtual scrolling?** | High | Both are in analysis. Master Board without virtualization could be unusable at scale |
-| **Web next: what ships while mobile builds?** | Medium | Web is mature but not frozen. Master Board, virtual scrolling, real-time all wait. Incremental UX polish runs in parallel (Phase 2.5) |
-| **Real-time sync timing** | Resolved | Pusher shipped 07/04/2026. Sub-second push with 30s polling fallback. SSE rejected for serverless incompatibility. |
-| **Push notifications architecture** | Medium | Capacitor has @capacitor/push-notifications plugin. But backend notification service (FCM/APNs) doesn't exist yet. Plan early or bolt on later? |
-| **Tauri: kill or park?** | Low | Explicitly parked post-beta. PWA covers desktop install. Only revisit if beta users ask for offline/system tray/hotkeys |
-| **Kairos: when do other users get in?** | Medium | 2026 is founder-only. Trigger for opening up = founder uses it daily for 30+ consecutive days without UX changes feeling necessary. Until then naming (Kairos, Dominion), grouping model, and capture surface are mutable |
-| **BYOK merge window** | Medium | Foundation is built but unmerged. Should land before any *new* AI feature that's not Claude Code MCP-driven (daily briefings, agent-as-member, etc.). Migration 0014 reserved for it — newer Kairos migrations start at 0015 to avoid collision |
-| **rawTranscript field?** | Low | Analyst recommended storing the unpolished voice/session transcript next to `bodyMd` so the original phrasing stays searchable. Pending decision — adds one nullable text column, no schema risk |
+| **Phase 1D morning-loop calibration: what is the right noise floor?** | High | Evolution plan: "A morning ping that fires every day will get muted in a week." D2 picks 0–1 question per Dominion per day above an urgency × confidence threshold. The threshold is unknown until real cortex data accumulates. First synthesis cycle was tonight (02/06 → 03/06) |
+| **Phase 2 autonomy gates: what does the owner explicitly gate?** | High | Evolution plan: "Kairos can suggest. Kairos cannot spawn / commit / send without explicit gates." The gate mechanism (confirmation UI, per-action policy, per-Dominion override) is unspecified. Needs design before Phase 2 starts |
+| **Identity layer (Phase 3): does configurable personality precede multi-user Kairos?** | Medium | Phase 3 names "board of directors" multi-agent council + configurable Kairos persona. If second-user Kairos shares the owner's persona it may be fine for one beta user but wrong at scale. Decision deferred but should be named before Phase 2 ships |
+| **Cross-user cron snapshot leak: scope of contamination?** | Medium | 5 memories from other beta users in owner's table via `project-snapshot`. Not bleeding into synthesis (Dominion-scoped) but the root cause in `auto-capture.ts` is unaudited. Compounds as more beta users add data |
+| **Mobile-responsive CSS gaps** | High | Capacitor wraps the web app as-is. Which pages/components break on small screens? Touch targets, modals, DnD, sidebar — needs a responsive audit before Capacitor ships |
+| **WebView performance on effects** | High | 151 themes with particle effects, aurora, snowfall — may not run smoothly in mobile WebView. May need auto-disable heavy effects on mobile or detect low-end devices |
+| **Sessions parity lock: when does drift risk block?** | Low | REST + MCP session shapes match but no parity test exists. Spawn lifecycle is growing (C3 adds `chat_with_kairos`, Phase 2 adds more hooks). `sessions-parity.test.ts` should land before Phase 2 |
+| **Should Master / Rift Board block on virtual scrolling?** | Medium | Cross-board view without virtualisation could be unusable at scale. Virtual scrolling is shipped on the kanban; Rift would need its own |
+| **Push notifications architecture** | Medium | Capacitor has the plugin. FCM/APNs backend doesn't exist. Plan early or bolt on later? |
+| **rawTranscript field?** | Low | Storing the unpolished voice/session transcript next to `bodyMd` so original phrasing stays searchable. No schema change made yet — one nullable text column, no risk |
+| **Kairos: when do other users get in?** | Medium | The 30-day-of-founder-daily-use trigger from May still holds in principle, but Kairos has grown. New gates: (a) when does morning-loop calibration reach a stable noise floor? (b) what does Phase 2 autonomy look like for a non-owner? (c) does identity layer need to ship before multi-user is meaningful? |
 
 ---
 
 ## 8. WEB + MOBILE + DESKTOP CONVERGENCE MAP
 
-With Capacitor, mobile IS the web app. The convergence is now about what native features to layer on top.
+With Capacitor, mobile IS the web app. The convergence is about which native features to layer on top.
 
 | Layer | Web (browser) | Mobile (Capacitor) | Desktop (PWA) | Shared |
 |---|---|---|---|---|
 | **UI** | Full Next.js app | Same app in WebView | Same app via manifest | 100% shared |
 | **Auth** | NextAuth session cookies | Bearer tokens (mobile-auth.ts) | NextAuth cookies | users/accounts tables |
-| **Native features** | None | Push, haptics, biometrics (via plugins) | Install prompt, offline cache | -- |
+| **Native features** | None | Push, haptics, biometrics (via plugins) | Install prompt, offline cache | — |
 | **Offline** | None | Future: service worker + Capacitor storage | Service worker cache | Service worker |
-| **Performance** | Full browser engine | WebView (WKWebView/Chrome) | Full browser engine | -- |
+| **Performance** | Full browser engine | WebView (WKWebView/Chrome) | Full browser engine | — |
 
 ### Convergence principles
-- **One UI, multiple shells.** The web app IS the mobile app IS the desktop app. No separate UI codebases
-- **Native features via plugins, not rewrites.** Capacitor adds push/haptics/biometrics as a layer on top
-- **Auth is the only divergence.** Browser uses cookies, native app uses bearer tokens. Both authenticate the same users
-- **PWA is the free win.** Costs almost nothing, covers desktop install + offline basics
-- **Capacitor justifies App Store.** Native plugins (push, haptics) make it a "real" app, not just a website in a frame
+- **One UI, multiple shells.** No separate UI codebases.
+- **Native features via plugins, not rewrites.** Capacitor adds push/haptics/biometrics as a layer.
+- **Auth is the only divergence.** Browser uses cookies, native uses bearer tokens. Both authenticate the same users.
+- **PWA is the free desktop win.** Service worker + manifest cover install + offline basics.
 
 ---
 
 ## 9. PHASE MAP
 
+### PM-side
+
 | Phase | Name | Status | Key Deliverables |
 |---|---|---|---|
-| 1 | Close the Gaps | COMPLETE | Middleware fix, Gantt wired to DB, labels end-to-end, checklist integration, loading states |
-| 1.5 | Hardening | COMPLETE | Realms with invites, REST API parity, lint cleanup (46 to 9), file splits, server-side loading, perf (auth caching, query dedup) |
-| 2A | Mobile Auth Backend | COMPLETE | mobile-auth.ts (session tokens, Google OAuth endpoint), mobileSessions + mobileLoginTokens DB tables |
-| 2B | PWA + Capacitor | IN PROGRESS | Enable PWA (manifest, service worker, icons), Capacitor spike (native shell pointing at deployed app) |
-| 2C | Native Plugins | QUEUED | @capacitor/push-notifications, @capacitor/haptics, biometrics — justifies App Store packaging |
-| 2D | Mobile Polish | QUEUED | Responsive CSS audit, touch target sizing, effect auto-disable on mobile, store submission prep |
-| 2.5 | Web Polish | PARALLEL | Incremental UX fixes, minor feature gaps — runs alongside mobile |
-| 3 | Performance | COMPLETE | Virtual scrolling (TanStack Virtual), optimistic UI rollback, Pusher real-time sync |
-| 4 | Cross-Board | NOT STARTED | Master Board (cross-project aggregation), Rift Board, urgency lens, staleness surface |
-| 5 | Collaboration | NOT STARTED | Chat (Pusher-based), notifications, agent dispatch, agent-as-member |
-| K-0 | Kairos POC | COMPLETE | 3D cortex (skybox + orb shader), 2D cortex (d3-force), dynamic sidebar shell with `AEON : KAIROS` glow, view-switch regression fix, top bar cleanup |
-| K-1 | Kairos memory display | COMPLETE | aiTitle + execSummary schema (migration 0015), MemorySidePanel rework, graceful empty-state |
-| K-2 | Kairos MCP capture path | COMPLETE | create_memory + update_memory accept aiTitle + execSummary. Session-capture hook can self-clean via `BRAIN_AI_CLEANUP=1`. `list_memories_needing_summary` MCP tool + REST mirror for historical backfill |
-| K-3 | Dominion (grouping) | COMPLETE | New top-level concept above Project. Tables (dominions, dominion_repos), projects.dominion_id, memories.dominion_id. Colour cascade. Auto-resolve from sourceMetadata.repo. 10 MCP tools including bulk_assign_projects_to_dominion. **REST not yet implemented — flagged as known gap** |
-| K-4 | 2D WebGL rebuild | COMPLETE | Orthographic Three.js scene via @react-three/fiber + d3-force-3d. EdgeLayer2D with string→object guard so edges render after first tick. Real edge rendering. PlanetCloud2D + Backdrop2D + OrthoControls2D |
-| K-5 | Kairos onboarding (Setup + Guide modal) | COMPLETE | KairosLearnModal two-tab modal under sidebar pill. Setup walks through MCP config. Guide is usage reference |
-| K-6 | Dominion REST + bulk-assign UX | NEXT | Mirror 10 Dominion MCP tools to `/api/v1/dominions/`. Voice-mode session to bulk-assign existing projects to Dominions so cross-repo connections light up |
-| K-7 | BYOK merge + extension AI features | BLOCKED | Waiting for feature/brain-ai-integration merge. Then: daily briefings, suggested links, agent-as-member, anything not Claude-Code-driven |
+| 1 | Close the Gaps | COMPLETE | Middleware fix, Gantt wired to DB, labels end-to-end, checklist, loading states |
+| 1.5 | Hardening | COMPLETE | Realm invites, REST parity, lint cleanup, file splits, SSR, perf |
+| 2A | Mobile Auth Backend | COMPLETE | mobile-auth.ts, mobileSessions + mobileLoginTokens |
+| 2B | PWA + Capacitor | IN PROGRESS | PWA shipped; Capacitor configured, build pipeline pending |
+| 2C | Native Plugins | QUEUED | @capacitor/push-notifications, haptics, biometrics |
+| 2D | Mobile Polish | QUEUED | Responsive CSS audit, touch sizing, effect auto-disable, store submission |
+| 2.5 | Web Polish | PARALLEL | Incremental UX fixes alongside mobile |
+| 3 | Performance | COMPLETE | Virtual scrolling, optimistic UI, Pusher real-time |
+| 4 | Cross-board intelligence | SPECULATIVE | Master Board, Rift Board (in Analysis), Urgency lens, Agent Dispatch |
+| 5 | Collaboration | NOT STARTED | Chat, notifications, agent-as-member |
 
-Note: Phase 2 pivoted from React Native to Capacitor on 03/04/2026. React Native code deleted 07/04/2026. 2A (auth backend) is reusable for Capacitor. 2B (PWA + Capacitor) is the current mobile focus. Phase 3 (Performance) shipped 07/04/2026. Tauri desktop explicitly parked.
+### Kairos
 
-K-phase (Kairos) runs in parallel with the PM-side phases. K-0 through K-5 explicitly do NOT depend on BYOK because the AI work happens inside Claude Code at the call site. K-7 onward unlocks server-side AI features once BYOK is merged.
+| Phase | Name | Status | Key Deliverables |
+|---|---|---|---|
+| K-0 | Kairos POC | COMPLETE | 3D + 2D cortex, dynamic sidebar shell |
+| K-1 | Memory display | COMPLETE | aiTitle + execSummary schema, MemorySidePanel rework |
+| K-2 | MCP capture path | COMPLETE | `create_memory` + `update_memory` accept clean payload; backfill MCP tool |
+| K-3 | Dominions (grouping) | COMPLETE | Tables, FKs, 16 MCP tools, Create + Edit UI |
+| K-4 | 2D WebGL rebuild | COMPLETE | @react-three/fiber + d3-force-3d; edge rendering after first tick |
+| K-5 | Onboarding modal | COMPLETE | Setup + Guide modal under sidebar pill |
+| K-6 | Dominion REST API | NOT STARTED | Mirror 16 MCP tools to `/api/v1/dominions/` |
+| K-7 | BYOK + extension AI | COMPLETE | Vercel AI SDK, AES-256-GCM keys, 3 providers, `/settings/ai`, Briefer cron |
+| **1A** | Memory shape | COMPLETE | `streamClass` column + cascade backfill (326/378); 8 Dominions partitioned (370/378); Briefer reads live board; quality-gates doc; compaction stub |
+| **1B** | Synthesis layer | COMPLETE | Archetype generator (B1), Dominion cortex regen (B2), `kairos_reflect` MCP tool (B3). Reflection weighting (B4) implicit in B1+B2 prompts |
+| **1C-C1** | Chat shell | COMPLETE | Slide-out Visor anchored per Dominion; persists in `agent_sessions` + `session_events`; row-lock seq serialisation; orphan-retry recovery (now handles edited bodies) |
+| **1C-C2** | Memory-grounded responses | COMPLETE | Cortex + archetypes + top-5 substrate retrieved per turn; inline `[[uuid]]` citation chips with server-side hallucination guard; "Reading" line above each reply |
+| **1C-C3** | `chat_with_kairos` MCP tool | QUEUED | Second front door to the same chat threads from any Claude session |
+| **1C-C4** | Two-way capture buttons | QUEUED | "Save as memory" + "promote to card" + "send as reflection" in the Visor |
+| **1C-C5** | Cosmic view enhancements | QUEUED | Tier filter chips, stream chips, archetype orbs, reflection beacons, Dominion cortex orb |
+| **1D** | Loops + thinking chains | BLOCKED | Evening (extend cron, partially done by B2) + Morning (0–1 calibrated question per Dominion) + thinking-chain runner. Gated on ~7 days of accumulated cortex data |
+| **2** | Active agent | SPECULATIVE | Autonomous archetype refinement, cross-Dominion synthesis, workflow triggers (gated per action), calibrated proactive messaging, phone capture. Gate: owner trusts Phase 1 |
+| **3** | Identity layer | SPECULATIVE | Configurable persona, multi-agent council ("board of directors"), council deliberation, identity per Dominion |
+
+Phase 1 ran in parallel with PM phases. The synthesis-before-chat sequencing (A → B → C) is now a template for future Kairos blocks.
