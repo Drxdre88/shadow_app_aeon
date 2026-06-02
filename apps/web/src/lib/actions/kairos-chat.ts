@@ -11,8 +11,15 @@ import {
   listChatThreads as _listChatThreads,
   appendChatMessage as _appendChatMessage,
   archiveChatThread as _archiveChatThread,
+  type ChatRetrievalMeta,
 } from '@/lib/data/kairos-chat'
-import { buildChatMessages } from '@/lib/kairos/chat-prompt'
+import { buildChatMessages, type ChatPromptRetrieval } from '@/lib/kairos/chat-prompt'
+import {
+  retrieveForChat,
+  extractCitationIds,
+  intersectWithRetrieved,
+  type ChatRetrieval,
+} from '@/lib/kairos/chat-retrieval'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError } from '@/lib/ai/router'
 
@@ -197,6 +204,18 @@ async function runAssistantTurn(
     .filter((m) => m.seq < userSeq)
     .map((m) => ({ role: m.role, content: m.content }))
 
+  // C2 — pull cortex + archetypes + top-k substrate for this Dominion.
+  // Failure here must NOT block the reply (Dominions still warming up have
+  // no cortex yet); fall back to bare chat on any retrieval error.
+  let retrieval: ChatRetrieval | null = null
+  try {
+    retrieval = await retrieveForChat(userId, dominionId, userBody)
+  } catch {
+    retrieval = null
+  }
+
+  const promptRetrieval = retrieval ? toPromptRetrieval(retrieval) : undefined
+
   const messages = buildChatMessages({
     dominion: {
       name: domRow.name,
@@ -205,6 +224,7 @@ async function runAssistantTurn(
     },
     history: priorHistory,
     userMessage: userBody,
+    retrieval: promptRetrieval,
   })
 
   const reply = await callAssistant(userId, dominionId, messages)
@@ -214,10 +234,19 @@ async function runAssistantTurn(
     return { ok: false, reason: 'ai_failed', message: reply.message }
   }
 
+  // Strip hallucinated citations: only persist ids that were actually
+  // retrieved this turn. UI then renders only chips it can name.
+  const citedIds = retrieval
+    ? intersectWithRetrieved(extractCitationIds(reply.content), retrieval)
+    : []
+  const retrievalMeta: ChatRetrievalMeta | undefined = retrieval ? toRetrievalMeta(retrieval) : undefined
+
   const asstAppend = await _appendChatMessage(userId, threadId, {
     role: 'assistant',
     content: reply.content,
     model: reply.model ?? undefined,
+    ...(citedIds.length ? { citations: citedIds } : {}),
+    ...(retrievalMeta ? { retrieval: retrievalMeta } : {}),
   })
   if (!asstAppend.ok) return { ok: false, reason: 'thread_not_found' }
 
@@ -245,6 +274,28 @@ export async function loadKairosThread(input: z.infer<typeof threadIdSchema>) {
   const parsed = threadIdSchema.safeParse(input)
   if (!parsed.success) return null
   return _getChatThread(userId, parsed.data.threadId)
+}
+
+// Bridge retrieval shape (full bodies) → prompt builder shape (same fields).
+// Kept as a typed mapper so the prompt builder doesn't depend on the
+// retrieval module and stays unit-testable without DB.
+function toPromptRetrieval(r: ChatRetrieval): ChatPromptRetrieval {
+  return {
+    cortex: r.cortex ? { id: r.cortex.id, title: r.cortex.title, body: r.cortex.body } : null,
+    archetypes: r.archetypes.map((a) => ({ id: a.id, title: a.title, body: a.body })),
+    substrate: r.substrate.map((s) => ({ id: s.id, title: s.title, body: s.body, streamClass: s.streamClass })),
+  }
+}
+
+// Bridge retrieval shape → persisted snapshot shape (id + title only).
+// Bodies aren't persisted — they're regenerated from the live memory if
+// the UI ever wants to expand a chip into the full source.
+function toRetrievalMeta(r: ChatRetrieval): ChatRetrievalMeta {
+  const meta: ChatRetrievalMeta = {}
+  if (r.cortex) meta.cortex = { id: r.cortex.id, title: r.cortex.title }
+  if (r.archetypes.length) meta.archetypes = r.archetypes.map((a) => ({ id: a.id, title: a.title }))
+  if (r.substrate.length) meta.substrate = r.substrate.map((s) => ({ id: s.id, title: s.title }))
+  return meta
 }
 
 export async function archiveKairosThread(input: z.infer<typeof threadIdSchema>) {

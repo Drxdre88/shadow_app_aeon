@@ -14,15 +14,18 @@ import {
 import type { ChatMessage, ChatThreadSummary } from '@/lib/data/kairos-chat'
 
 // ─────────────────────────────────────────────────────────────────────────
-// Kairos Phase 2 (C1) — slide-out chat panel.
+// Kairos Phase 2 (C1 + C2) — slide-out chat panel.
 //
 // Right-edge overlay, ~420px wide. Three states inside:
 //   - thread picker (no active thread): list of recent threads + "new"
 //   - new-thread composer (active=null, intent=new): pick Dominion + send
 //   - thread view (active thread loaded): messages + composer
 //
-// Bare chat — no per-message memory retrieval yet (C2). System prompt
-// is persona + Dominion vision/mission only.
+// C2 adds memory grounding: each assistant turn carries a `retrieval`
+// payload summarising the cortex + archetypes + substrate sent to the
+// model. We render that as a dim "Reading: …" line above the bubble,
+// and rewrite inline `[[uuid]]` tokens as small chips that surface the
+// memory title (truncated, hover-expand).
 // ─────────────────────────────────────────────────────────────────────────
 
 interface DominionOption {
@@ -394,8 +397,16 @@ function MessageStream({
 
 function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user'
+  const readingLabel = !isUser ? formatReadingLine(message.retrieval) : null
+  const titleById = !isUser ? buildTitleMap(message.retrieval) : EMPTY_TITLES
+
   return (
-    <div className={isUser ? 'flex justify-end' : 'flex justify-start'}>
+    <div className={isUser ? 'flex justify-end' : 'flex flex-col items-start'}>
+      {readingLabel && (
+        <div className="mb-1 px-1 text-[10px] uppercase tracking-wider text-zinc-500">
+          {readingLabel}
+        </div>
+      )}
       <div
         className={
           isUser
@@ -403,10 +414,86 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             : 'max-w-[85%] rounded-2xl rounded-bl-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100'
         }
       >
-        <div className="whitespace-pre-wrap break-words">{message.content}</div>
+        <div className="whitespace-pre-wrap break-words">
+          {isUser
+            ? message.content
+            : renderWithCitations(message.content, titleById)}
+        </div>
       </div>
     </div>
   )
+}
+
+// Citation token regex — must match the one in chat-retrieval-citations.ts
+// for the UI to surface chips for the same ids the server accepted as
+// real citations.
+const CITATION_TOKEN_RE = /\[\[([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]\]/gi
+
+const EMPTY_TITLES: Map<string, string> = new Map()
+
+function buildTitleMap(retrieval: ChatMessage['retrieval']): Map<string, string> {
+  if (!retrieval) return EMPTY_TITLES
+  const map = new Map<string, string>()
+  if (retrieval.cortex) map.set(retrieval.cortex.id.toLowerCase(), retrieval.cortex.title)
+  for (const a of retrieval.archetypes ?? []) map.set(a.id.toLowerCase(), a.title)
+  for (const s of retrieval.substrate ?? []) map.set(s.id.toLowerCase(), s.title)
+  return map
+}
+
+function formatReadingLine(retrieval: ChatMessage['retrieval']): string | null {
+  if (!retrieval) return null
+  const parts: string[] = []
+  if (retrieval.cortex) parts.push('cortex')
+  const arch = retrieval.archetypes?.length ?? 0
+  if (arch > 0) parts.push(`${arch} archetype${arch === 1 ? '' : 's'}`)
+  const sub = retrieval.substrate?.length ?? 0
+  if (sub > 0) parts.push(`${sub} memor${sub === 1 ? 'y' : 'ies'}`)
+  if (parts.length === 0) return null
+  return `Reading: ${parts.join(' · ')}`
+}
+
+function truncateTitle(title: string, max = 28): string {
+  const t = title.trim()
+  return t.length <= max ? t : t.slice(0, max - 1).trimEnd() + '…'
+}
+
+// Splits the assistant body into text + chip nodes. Hallucinated ids
+// (those not present in the retrieval snapshot) render as muted literals
+// so the operator can spot when the model invents citations.
+function renderWithCitations(content: string, titles: Map<string, string>): React.ReactNode {
+  const nodes: React.ReactNode[] = []
+  let lastIndex = 0
+  let key = 0
+  for (const match of content.matchAll(CITATION_TOKEN_RE)) {
+    const start = match.index ?? 0
+    if (start > lastIndex) nodes.push(content.slice(lastIndex, start))
+    const id = match[1].toLowerCase()
+    const title = titles.get(id)
+    if (title) {
+      nodes.push(
+        <span
+          key={`cite-${key++}`}
+          title={title}
+          className="mx-0.5 inline-flex items-center rounded-md border border-purple-700/50 bg-purple-950/40 px-1.5 py-0.5 align-baseline text-[11px] text-purple-200"
+        >
+          {truncateTitle(title)}
+        </span>,
+      )
+    } else {
+      nodes.push(
+        <span
+          key={`miss-${key++}`}
+          title="Unknown memory id"
+          className="mx-0.5 inline rounded-md border border-zinc-700/40 bg-zinc-800/40 px-1 py-0.5 align-baseline text-[10px] text-zinc-500"
+        >
+          ?
+        </span>,
+      )
+    }
+    lastIndex = start + match[0].length
+  }
+  if (lastIndex < content.length) nodes.push(content.slice(lastIndex))
+  return nodes
 }
 
 type FailReason = Extract<KairosChatActionResult, { ok: false }>['reason']

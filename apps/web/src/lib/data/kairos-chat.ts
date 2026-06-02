@@ -27,10 +27,26 @@ export const CHAT_ENGINE = 'kairos-chat' as const
 
 export type ChatRole = 'user' | 'assistant'
 
+// Snapshot of a memory cited or considered at message time. We persist
+// title + id together so the UI can render chips without a follow-up fetch
+// and so a later rename/archive of the source memory doesn't break the
+// historical thread display.
+export interface CitedMemorySnapshot {
+  id: string
+  title: string
+}
+
+export interface ChatRetrievalMeta {
+  cortex?: CitedMemorySnapshot | null
+  archetypes?: CitedMemorySnapshot[]
+  substrate?: CitedMemorySnapshot[]
+}
+
 export interface ChatMessagePayload {
   role: ChatRole
   content: string
-  citations?: string[]      // memory ids referenced (C2 starts populating)
+  citations?: string[]      // memory ids the model actually cited inline (subset of retrieval)
+  retrieval?: ChatRetrievalMeta  // C2 — what was sent as grounding for this turn
   model?: string             // provider/model id, useful for audit
 }
 
@@ -52,6 +68,7 @@ export interface ChatMessage {
   role: ChatRole
   content: string
   citations: string[]
+  retrieval: ChatRetrievalMeta | null
   model: string | null
   createdAt: Date
 }
@@ -173,6 +190,7 @@ export async function getChatThread(
       role: (payload.role === 'assistant' ? 'assistant' : 'user'),
       content: typeof payload.content === 'string' ? payload.content : '',
       citations: Array.isArray(payload.citations) ? payload.citations.filter((c): c is string => typeof c === 'string') : [],
+      retrieval: parseRetrievalMeta(payload.retrieval),
       model: typeof payload.model === 'string' ? payload.model : null,
       createdAt: e.createdAt,
     }
@@ -230,6 +248,7 @@ export async function appendChatMessage(
           role: payload.role,
           content: payload.content,
           ...(payload.citations?.length ? { citations: payload.citations } : {}),
+          ...(payload.retrieval && hasAnyRetrieval(payload.retrieval) ? { retrieval: payload.retrieval } : {}),
           ...(payload.model ? { model: payload.model } : {}),
         },
       })
@@ -237,6 +256,36 @@ export async function appendChatMessage(
 
     return { ok: true as const, messageId: inserted.id, seq: nextSeq }
   })
+}
+
+function parseRetrievalMeta(raw: unknown): ChatRetrievalMeta | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const meta: ChatRetrievalMeta = {}
+  if (r.cortex && typeof r.cortex === 'object') {
+    const snap = parseSnapshot(r.cortex)
+    if (snap) meta.cortex = snap
+  }
+  if (Array.isArray(r.archetypes)) {
+    const arr = r.archetypes.map(parseSnapshot).filter((s): s is CitedMemorySnapshot => s !== null)
+    if (arr.length) meta.archetypes = arr
+  }
+  if (Array.isArray(r.substrate)) {
+    const arr = r.substrate.map(parseSnapshot).filter((s): s is CitedMemorySnapshot => s !== null)
+    if (arr.length) meta.substrate = arr
+  }
+  return hasAnyRetrieval(meta) ? meta : null
+}
+
+function parseSnapshot(raw: unknown): CitedMemorySnapshot | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  if (typeof r.id !== 'string' || typeof r.title !== 'string') return null
+  return { id: r.id, title: r.title }
+}
+
+function hasAnyRetrieval(meta: ChatRetrievalMeta): boolean {
+  return !!meta.cortex || (meta.archetypes?.length ?? 0) > 0 || (meta.substrate?.length ?? 0) > 0
 }
 
 export async function archiveChatThread(

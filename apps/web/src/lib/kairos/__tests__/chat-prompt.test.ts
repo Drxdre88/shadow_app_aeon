@@ -4,6 +4,7 @@ import {
   buildChatMessages,
   MAX_HISTORY_MESSAGES,
   type ChatPromptMessage,
+  type ChatPromptRetrieval,
 } from '../chat-prompt'
 
 function dom(overrides: Partial<{ name: string; vision: string | null; missionLong: string | null }> = {}) {
@@ -83,5 +84,89 @@ describe('buildChatMessages', () => {
     expect(messages.length).toBe(2)
     expect(messages[0].role).toBe('system')
     expect(messages[1]).toEqual({ role: 'user', content: 'hello' })
+  })
+})
+
+const cortexId = '11111111-1111-4111-8111-111111111111'
+const archId   = '22222222-2222-4222-8222-222222222222'
+const subId    = '33333333-3333-4333-8333-333333333333'
+
+function retrieval(overrides: Partial<ChatPromptRetrieval> = {}): ChatPromptRetrieval {
+  return {
+    cortex: { id: cortexId, title: 'AEON cortex 02/06', body: 'vision_anchor: ship beta exit by Q3.\ncurrent_state: Phase 1B shipped.' },
+    archetypes: [
+      { id: archId, title: 'Kairos brain build-out', body: 'Active synthesis layer. Reflections weighted high.' },
+    ],
+    substrate: [
+      { id: subId, title: 'Reflection — 28/05', body: 'Kairos is becoming the centrepiece, not a side feature.', streamClass: 'reflection' },
+    ],
+    ...overrides,
+  }
+}
+
+describe('buildChatSystemPrompt with retrieval (C2)', () => {
+  it('omits the grounded block when no retrieval is supplied', () => {
+    const out = buildChatSystemPrompt(dom())
+    expect(out).not.toContain('Grounded context')
+    expect(out).not.toContain('memory-id')
+  })
+
+  it('omits the grounded block when retrieval is empty', () => {
+    const out = buildChatSystemPrompt(dom(), { cortex: null, archetypes: [], substrate: [] })
+    expect(out).not.toContain('Grounded context')
+  })
+
+  it('renders cortex + archetype + substrate sections with [[uuid]] headers', () => {
+    const out = buildChatSystemPrompt(dom(), retrieval())
+    expect(out).toContain('# Grounded context')
+    expect(out).toContain('## Dominion cortex')
+    expect(out).toContain(`[[${cortexId}]]`)
+    expect(out).toContain('## Active archetypes')
+    expect(out).toContain(`[[${archId}]]`)
+    expect(out).toContain('## Relevant substrate')
+    expect(out).toContain(`[[${subId}]]`)
+  })
+
+  it('adds the citation style line only when grounding is present', () => {
+    const grounded = buildChatSystemPrompt(dom(), retrieval())
+    expect(grounded).toMatch(/Cite grounded sources with `\[\[memory-id\]\]`/)
+    const bare = buildChatSystemPrompt(dom())
+    expect(bare).not.toMatch(/Cite grounded sources/)
+  })
+
+  it('labels each substrate entry with its streamClass', () => {
+    const out = buildChatSystemPrompt(dom(), retrieval())
+    expect(out).toContain('_(reflection)_')
+  })
+
+  it('renders archetype-only retrieval without empty cortex/substrate sections', () => {
+    const out = buildChatSystemPrompt(dom(), retrieval({ cortex: null, substrate: [] }))
+    expect(out).toContain('## Active archetypes')
+    expect(out).not.toContain('## Dominion cortex')
+    expect(out).not.toContain('## Relevant substrate')
+  })
+
+  it('clips overlong bodies with an ellipsis marker', () => {
+    const long = 'x'.repeat(5000)
+    const out = buildChatSystemPrompt(dom(), retrieval({
+      cortex: { id: cortexId, title: 'huge', body: long },
+    }))
+    expect(out).toContain('…')
+    expect(out.length).toBeLessThan(long.length + 2000)
+  })
+})
+
+describe('buildChatMessages with retrieval (C2)', () => {
+  it('passes retrieval into the system prompt and preserves [system, history, user] shape', () => {
+    const messages = buildChatMessages({
+      dominion: dom(),
+      history: [{ role: 'user', content: 'older' }],
+      userMessage: 'new',
+      retrieval: retrieval(),
+    })
+    expect(messages.length).toBe(3)
+    expect(messages[0].role).toBe('system')
+    expect(messages[0].content).toContain('Grounded context')
+    expect(messages[messages.length - 1]).toEqual({ role: 'user', content: 'new' })
   })
 })
