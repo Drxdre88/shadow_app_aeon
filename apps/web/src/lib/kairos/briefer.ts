@@ -1,5 +1,8 @@
 import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
 import { captureMemory } from '@/lib/data/memories'
+import { db } from '@/lib/db'
+import { memories } from '@/lib/db/schema'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError } from '@/lib/ai/router'
 
@@ -111,7 +114,18 @@ export interface BrieferResult {
   reason?: string
 }
 
-export async function runBrieferForUser(userId: string): Promise<BrieferResult[]> {
+export interface RunBrieferOpts {
+  // Archive today's existing advisory per Dominion before generating so the
+  // dedup (externalId = `briefer:{date}:{dominionId}`) lets a new one through.
+  // Used by the "Regenerate today" path in the UI; the nightly cron leaves
+  // this false so accidental double-fires stay idempotent.
+  force?: boolean
+}
+
+export async function runBrieferForUser(
+  userId: string,
+  opts: RunBrieferOpts = {},
+): Promise<BrieferResult[]> {
   const dominions = await findDominionsByUser(userId)
   const active = dominions.filter((d) => !d.archivedAt)
   if (active.length === 0) return []
@@ -120,6 +134,21 @@ export async function runBrieferForUser(userId: string): Promise<BrieferResult[]
   const results: BrieferResult[] = []
 
   for (const dom of active) {
+    if (opts.force) {
+      // Soft-archive today's existing advisory for this Dominion. captureMemory
+      // skips archived rows in its dedup lookup, so the next capture creates
+      // a fresh memory row with the new prompt/model output.
+      await db
+        .update(memories)
+        .set({ archivedAt: new Date() })
+        .where(and(
+          eq(memories.userId, userId),
+          eq(memories.type, 'advisory'),
+          sql`${memories.sourceMetadata}->>'externalId' = ${`briefer:${date}:${dom.id}`}`,
+          isNull(memories.archivedAt),
+        ))
+    }
+
     const briefing = await inspectDominion(dom.id, userId, { memoryLimit: 25 })
     if (!briefing) {
       results.push({ dominionId: dom.id, dominionName: dom.name, status: 'skipped', reason: 'not found' })

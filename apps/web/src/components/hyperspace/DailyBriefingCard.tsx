@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Sparkles, RefreshCw, ArrowRight, KeyRound, Wand2, Loader2, Check } from 'lucide-react'
+import { Sparkles, RefreshCw, ArrowRight, KeyRound, Wand2, Loader2, Check, RotateCw } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { getTodaysBriefings, runBriefingNow } from '@/lib/actions/memories'
 import { hasAiCredentials } from '@/lib/actions/ai-credentials'
@@ -93,13 +93,21 @@ export function DailyBriefingCard() {
     setSelectedDominionId(advisories[0].dominionId)
   }, [advisories, selectedDominionId])
 
-  const generate = async () => {
+  const generate = async (force = false) => {
     if (generating) return
+    // Regenerate burns BYOK credits — one heavy-tier call per active
+    // Dominion — so a confirm guard before nuking today's run.
+    if (force && typeof window !== 'undefined') {
+      const ok = window.confirm(
+        'Regenerate today\'s briefing for every active Dominion?\n\nThis archives today\'s existing advisories and burns one BYOK heavy-tier call per Dominion.',
+      )
+      if (!ok) return
+    }
     setGenerating(true)
     setGenStatus(null)
     setError(null)
     try {
-      const res = await runBriefingNow()
+      const res = await runBriefingNow({ force })
       try { localStorage.removeItem(CACHE_KEY(todayKey())) } catch {}
       if (res.ran === 0) {
         setGenStatus('No Dominions yet — create one in Kairos first.')
@@ -110,7 +118,7 @@ export function DailyBriefingCard() {
         setGenStatus(`Already briefed today (${res.existing} Dominion${res.existing === 1 ? '' : 's'}).`)
         await fetchBriefing(true)
       } else {
-        setGenStatus(`Brief generated for ${res.created} Dominion${res.created === 1 ? '' : 's'}.`)
+        setGenStatus(`Brief ${force ? 'regenerated' : 'generated'} for ${res.created} Dominion${res.created === 1 ? '' : 's'}.`)
         await fetchBriefing(true)
       }
     } catch (err) {
@@ -154,14 +162,20 @@ export function DailyBriefingCard() {
             )}
             {hasKey && (
               <button
-                onClick={generate}
+                onClick={() => generate(hasAdvisories)}
                 disabled={generating || loading}
-                title="Run briefing now"
+                title={hasAdvisories
+                  ? 'Regenerate today — archives current briefings and burns one heavy-tier call per Dominion'
+                  : 'Run briefing now'}
                 className="inline-flex items-center gap-1 px-2 py-1 text-[10px] uppercase tracking-[0.18em] rounded-md border border-white/[0.10] hover:border-white/[0.25] hover:bg-white/[0.04] text-white/70 hover:text-white/95 disabled:opacity-40 transition-colors"
                 style={{ color: generating ? undefined : 'var(--primary)' }}
               >
-                {generating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-                {generating ? 'Briefing…' : 'Run now'}
+                {generating
+                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                  : hasAdvisories ? <RotateCw className="w-3 h-3" /> : <Wand2 className="w-3 h-3" />}
+                {generating
+                  ? (hasAdvisories ? 'Regenerating…' : 'Briefing…')
+                  : (hasAdvisories ? 'Regenerate today' : 'Run now')}
               </button>
             )}
             <button

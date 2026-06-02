@@ -574,6 +574,10 @@ export async function captureMemory(userId: string, input: CaptureMemoryInput): 
 
   const externalId = typeof metadata.externalId === 'string' ? metadata.externalId : undefined
   if (externalId) {
+    // Dedup only against LIVE rows. An archived row with the same externalId
+    // means the operator deliberately took it out of circulation (e.g.
+    // "regenerate today's briefing"); a fresh capture should create a new
+    // memory rather than resurrect the stale one.
     const [existing] = await db
       .select()
       .from(memories)
@@ -581,6 +585,7 @@ export async function captureMemory(userId: string, input: CaptureMemoryInput): 
         eq(memories.userId, userId),
         eq(memories.source, source),
         sql`${memories.sourceMetadata}->>'externalId' = ${externalId}`,
+        isNull(memories.archivedAt),
       ))
       .limit(1)
     if (existing) return { memory: existing, created: false }
