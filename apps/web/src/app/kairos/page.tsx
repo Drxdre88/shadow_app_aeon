@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import dynamic from 'next/dynamic'
-import { Search, Orbit, Network, Table2 } from 'lucide-react'
+import { Search, Orbit, Network, Table2, EyeOff } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { useKairosData } from '@/components/kairos/useKairosData'
 import { TrackingRail } from '@/components/kairos/TrackingRail'
@@ -12,6 +12,7 @@ import type { ColorMode } from '@/components/kairos/nodeColor'
 import type { SkyboxId } from '@/components/kairos/Kairos3D'
 import type { BackdropId } from '@/components/kairos/Kairos2D'
 import { useKairosStore } from '@/stores/kairosStore'
+import { useKairosPrefsStore } from '@/stores/kairosPrefsStore'
 
 type KairosViewMode = '3d' | '2d' | 'table'
 
@@ -54,15 +55,29 @@ export default function KairosPage() {
   const { graph, loading, error, refresh } = useKairosData()
   const selectedId = useKairosStore((s) => s.selectedMemoryId)
   const setSelectedId = useKairosStore((s) => s.setSelected)
+  const view = useKairosPrefsStore((s) => s.view)
+  const setView = useKairosPrefsStore((s) => s.setView)
+  const colorMode = useKairosPrefsStore((s) => s.colorMode)
+  const setColorMode = useKairosPrefsStore((s) => s.setColorMode)
+  const skybox = useKairosPrefsStore((s) => s.skybox)
+  const setSkybox = useKairosPrefsStore((s) => s.setSkybox)
+  const backdrop = useKairosPrefsStore((s) => s.backdrop)
+  const setBackdrop = useKairosPrefsStore((s) => s.setBackdrop)
+  const hideUnanchoredInRepo = useKairosPrefsStore((s) => s.hideUnanchoredInRepo)
+  const setHideUnanchoredInRepo = useKairosPrefsStore((s) => s.setHideUnanchoredInRepo)
   const [query, setQuery] = useState('')
-  const [colorMode, setColorMode] = useState<ColorMode>('repo')
-  const [skybox, setSkybox] = useState<SkyboxId>('lunar-4k')
-  const [view, setView] = useState<KairosViewMode>('3d')
-  const [backdrop, setBackdrop] = useState<BackdropId>('cortex')
 
-  const filteredNodes = query.trim()
+  const queryFiltered = query.trim()
     ? graph.nodes.filter((n) => n.title.toLowerCase().includes(query.trim().toLowerCase()))
     : graph.nodes
+
+  // Repo-mode discipline: when the operator is colouring by repo and asked
+  // to hide unanchored memories, drop nodes with no repo so the view stops
+  // being drowned by everything that isn't repo-attached.
+  const filteredNodes = (colorMode === 'repo' && hideUnanchoredInRepo)
+    ? queryFiltered.filter((n) => !!n.repo)
+    : queryFiltered
+
   const visibleIds = new Set(filteredNodes.map((n) => n.id))
   const filteredEdges = graph.edges.filter((e) => visibleIds.has(e.source) && visibleIds.has(e.target))
 
@@ -127,6 +142,20 @@ export default function KairosPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          {colorMode === 'repo' && (
+            <button
+              onClick={() => setHideUnanchoredInRepo(!hideUnanchoredInRepo)}
+              title={hideUnanchoredInRepo ? 'Showing only memories with a repo. Click to show all.' : 'Showing all memories. Click to hide unanchored.'}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-all text-[10px] uppercase tracking-[0.2em] border ${
+                hideUnanchoredInRepo
+                  ? 'bg-white/[0.10] text-white/85 border-white/[0.15]'
+                  : 'bg-white/[0.02] text-white/40 hover:text-white/70 border-white/[0.06]'
+              }`}
+            >
+              <EyeOff className="w-3 h-3" />
+              <span>{hideUnanchoredInRepo ? 'Repo only' : 'All memories'}</span>
+            </button>
+          )}
           {view === '3d' && (
             <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
               {SKYBOX_OPTIONS.map((s) => (
