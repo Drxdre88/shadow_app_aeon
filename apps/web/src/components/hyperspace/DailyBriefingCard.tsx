@@ -40,6 +40,7 @@ export function DailyBriefingCard() {
   const [error, setError] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [genStatus, setGenStatus] = useState<string | null>(null)
+  const [selectedDominionId, setSelectedDominionId] = useState<string | null>(null)
 
   const fetchBriefing = async (force = false) => {
     setLoading(true)
@@ -81,6 +82,15 @@ export function DailyBriefingCard() {
   }
 
   useEffect(() => { fetchBriefing() }, [])
+
+  // Default the active pill to the first advisory once they load (or after
+  // a refresh that adds a new one). Preserve the user's selection if their
+  // current pick is still present.
+  useEffect(() => {
+    if (!advisories || advisories.length === 0) return
+    if (selectedDominionId && advisories.some((a) => a.dominionId === selectedDominionId)) return
+    setSelectedDominionId(advisories[0].dominionId)
+  }, [advisories, selectedDominionId])
 
   const generate = async () => {
     if (generating) return
@@ -169,16 +179,24 @@ export function DailyBriefingCard() {
         ) : error ? (
           <div className="text-sm text-rose-300 py-2">{error}</div>
         ) : hasAdvisories ? (
-          <div className="max-h-[420px] overflow-y-auto pr-1 flex flex-col gap-4">
-            {advisories!.map((a) => (
-              <AdvisorySection key={a.id} advisory={a} />
-            ))}
-            <Link
-              href="/kairos"
-              className="mt-1 inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-white/45 hover:text-white/85 transition-colors w-fit"
-            >
-              Open Kairos <ArrowRight className="w-3 h-3" />
-            </Link>
+          <div className="flex flex-col gap-3">
+            <DominionPillRow
+              advisories={advisories!}
+              selectedId={selectedDominionId}
+              onSelect={setSelectedDominionId}
+            />
+            <div className="max-h-[68vh] overflow-y-auto pr-1">
+              {(() => {
+                const active = advisories!.find((a) => a.dominionId === selectedDominionId) ?? advisories![0]
+                return <AdvisorySection advisory={active} />
+              })()}
+              <Link
+                href="/kairos"
+                className="mt-3 inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-white/45 hover:text-white/85 transition-colors w-fit"
+              >
+                Open Kairos <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
           </div>
         ) : hasKey ? (
           <div className="text-[12px] text-white/55 leading-relaxed py-2">
@@ -262,6 +280,44 @@ function ProviderPills({ presence }: { presence: CredentialPresence }) {
   )
 }
 
+function DominionPillRow({
+  advisories,
+  selectedId,
+  onSelect,
+}: {
+  advisories: Advisory[]
+  selectedId: string | null
+  onSelect: (id: string | null) => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-white/[0.05]">
+      {advisories.map((a) => {
+        const isActive = a.dominionId === selectedId
+        const colorVar = `var(--${a.dominionColor ?? 'primary'}, var(--primary))`
+        return (
+          <button
+            key={a.id}
+            onClick={() => onSelect(a.dominionId)}
+            className="text-[10px] uppercase tracking-[0.18em] px-2 py-1 rounded-md font-medium transition-all"
+            style={{
+              background: isActive
+                ? `color-mix(in oklab, ${colorVar} 28%, transparent)`
+                : `color-mix(in oklab, ${colorVar} 8%, transparent)`,
+              color: isActive
+                ? `color-mix(in oklab, ${colorVar} 30%, white)`
+                : `color-mix(in oklab, ${colorVar} 60%, white)`,
+              border: `1px solid color-mix(in oklab, ${colorVar} ${isActive ? 50 : 18}%, transparent)`,
+              boxShadow: isActive ? `0 0 12px color-mix(in oklab, ${colorVar} 30%, transparent)` : 'none',
+            }}
+          >
+            {a.dominionName ?? 'Unanchored'}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function AdvisorySection({ advisory }: { advisory: Advisory }) {
   return (
     <div>
@@ -289,8 +345,9 @@ function AdvisorySection({ advisory }: { advisory: Advisory }) {
   )
 }
 
-// Lean markdown renderer — the Briefer produces controlled output (## sections,
-// short paragraphs, occasional lists). No need for a full markdown engine.
+// Lean markdown renderer — handles block-level (## / ### / - / > / ---) plus
+// inline **bold** and **!critical!** spans. Theme-respecting: bold renders in
+// white/95, critical wraps in semantic red (rose) for stuck/overdue/risk.
 function BriefingProse({ markdown }: { markdown: string }) {
   const lines = markdown.split('\n')
   const out: React.ReactNode[] = []
@@ -299,18 +356,51 @@ function BriefingProse({ markdown }: { markdown: string }) {
   for (const raw of lines) {
     const line = raw.trimEnd()
     if (!line.trim()) { out.push(<div key={key++} className="h-2" />); continue }
-    if (line.startsWith('# '))   { out.push(<h2 key={key++} className="text-sm font-semibold text-white/95 mt-1 mb-1">{line.slice(2)}</h2>); continue }
+    if (line.startsWith('# '))   { out.push(<h2 key={key++} className="text-sm font-semibold text-white/95 mt-1 mb-1">{renderInline(line.slice(2))}</h2>); continue }
     if (line.startsWith('## '))  { out.push(<h3 key={key++} className="text-[11px] uppercase tracking-[0.2em] text-white/45 mt-3 mb-1">{line.slice(3)}</h3>); continue }
-    if (line.startsWith('### ')) { out.push(<h4 key={key++} className="text-[12px] font-semibold text-white/85 mt-2">{line.slice(4)}</h4>); continue }
-    if (line.startsWith('> '))   { out.push(<div key={key++} className="text-[10px] text-white/40 italic">{line.slice(2)}</div>); continue }
-    if (line.startsWith('- '))   { out.push(<li key={key++} className="text-[12px] text-white/70 ml-4 list-disc marker:text-white/30">{line.slice(2)}</li>); continue }
+    if (line.startsWith('### ')) { out.push(<h4 key={key++} className="text-[12px] font-semibold text-white/85 mt-2">{renderInline(line.slice(4))}</h4>); continue }
+    if (line.startsWith('> '))   { out.push(<div key={key++} className="text-[10px] text-white/40 italic">{renderInline(line.slice(2))}</div>); continue }
+    if (line.startsWith('- '))   { out.push(<li key={key++} className="text-[12px] text-white/70 ml-4 list-disc marker:text-white/30">{renderInline(line.slice(2))}</li>); continue }
     if (line === '---')          { out.push(<div key={key++} className="h-px bg-white/[0.04] my-1" />); continue }
-    if (line.startsWith('*') && line.endsWith('*')) {
+    if (line.startsWith('*') && line.endsWith('*') && !line.includes('**')) {
       out.push(<div key={key++} className="text-[10px] text-white/35 italic">{line.slice(1, -1)}</div>)
       continue
     }
-    out.push(<p key={key++} className="text-[12px] text-white/75 leading-relaxed">{line}</p>)
+    out.push(<p key={key++} className="text-[12px] text-white/75 leading-relaxed">{renderInline(line)}</p>)
   }
 
   return <div className="flex flex-col gap-0.5">{out}</div>
+}
+
+// Inline parser for **bold** and **!critical!** spans. Greedy on outer **
+// then checks the inner content for the !...! critical marker. Anything
+// unmatched falls through as plain text.
+function renderInline(text: string): React.ReactNode {
+  const parts: React.ReactNode[] = []
+  const re = /\*\*(.+?)\*\*/g
+  let last = 0
+  let m: RegExpExecArray | null
+  let key = 0
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index))
+    const inner = m[1]
+    if (inner.startsWith('!') && inner.endsWith('!') && inner.length > 2) {
+      // **!critical!** — semantic red, bold
+      parts.push(
+        <strong key={`crit-${key++}`} className="font-semibold text-rose-400">
+          {inner.slice(1, -1)}
+        </strong>,
+      )
+    } else {
+      // **bold** — theme-aware white
+      parts.push(
+        <strong key={`b-${key++}`} className="font-semibold text-white/95">
+          {inner}
+        </strong>,
+      )
+    }
+    last = m.index + m[0].length
+  }
+  if (last < text.length) parts.push(text.slice(last))
+  return parts.length === 0 ? text : parts
 }

@@ -26,7 +26,8 @@ export function DailyBriefingButton() {
         open={open}
         onClose={() => setOpen(false)}
         anchorRef={buttonRef}
-        width={520}
+        width={920}
+        maxHeight="82vh"
         icon={<Sun className="w-3.5 h-3.5" style={{ color: 'var(--primary)' }} />}
         title={<span className="text-[11px] uppercase tracking-[0.22em] text-white/65">Daily Briefing</span>}
       >
