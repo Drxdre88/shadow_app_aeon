@@ -410,14 +410,12 @@ export const memories = pgTable('memories', {
   // Empty array until generation runs.
   execSummary: jsonb('exec_summary').default([]).notNull(),
   type: varchar('type', { length: 30 }).default('note').notNull(),
-  // Kairos Phase 2 (A1) — three-layer memory model classifier.
-  //   'agentic'    — produced by an agent session (claude / future agents)
-  //   'execution'  — board / project / cron / import activity ("what was done")
-  //   'idea'       — free-form user thought (default for manual notes)
-  //   'reflection' — owner-fired first-class signal (overrides drift, weighted)
-  //   'archetype'  — Kairos-synthesised master node for a Dominion (Phase 1B)
-  //   'cortex'     — the living Dominion document (Phase 1B)
-  // See docs/kairos/12-kairos-evolution-plan.md §"Three-layer memory model".
+  // Kairos memory stream classifier. Allowed values are canonical in
+  // apps/web/src/lib/kairos/streamClass.ts (STREAM_CLASSES const + StreamClass
+  // type + isStreamClass guard). Phase 2 added agentic/execution/idea/
+  // reflection/archetype/cortex; Phase 3 added 'advisory' and 'trace'. The
+  // column is varchar with no CHECK constraint — writers MUST narrow via
+  // isStreamClass() before insert.
   streamClass: varchar('stream_class', { length: 20 }).default('idea').notNull(),
   source: varchar('source', { length: 20 }).default('manual').notNull(),
   sourceMetadata: jsonb('source_metadata').default({}).notNull(),
