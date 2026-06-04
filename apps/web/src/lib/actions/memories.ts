@@ -223,23 +223,71 @@ export async function archiveMemoryById(memoryId: string) {
   return row
 }
 
-// Kairos Phase 1 (E20) — manually trigger the Briefer for the current user.
-// Wraps runBrieferForUser so the dashboard "Run briefing now" button has a
-// server action target. Returns a compact summary the UI can surface.
-// When `force` is true, today's existing advisories are archived first so
-// the model regenerates them — surfaced as "Regenerate today" in the UI.
+// Kairos Phase 3C — manually trigger the BRIEF recipe for the current user.
+// Dashboard "Run briefing now" / "Regenerate today" target. When `force` is
+// true, today's existing advisories per Dominion are archived first so the
+// dispatcher's externalId dedup lets the model produce a fresh row.
+// `force` is a UI-driven affordance — it lives here, NOT in runRecipe.
 export async function runBriefingNow(opts: { force?: boolean } = {}) {
   const userId = await requireAuth()
-  const { runBrieferForUser } = await import('@/lib/kairos/briefer')
-  const results = await runBrieferForUser(userId, { force: opts.force === true })
+  const { findDominionsByUser } = await import('@/lib/data/dominions')
+  const { runRecipe } = await import('@/lib/kairos/dispatch')
+  const { AiCredentialMissingError } = await import('@/lib/ai/router')
+  const { memories } = await import('@/lib/db/schema')
+  const { sql, isNull, and, eq } = await import('drizzle-orm')
+
+  const doms = await findDominionsByUser(userId)
+  const active = doms.filter((d) => !d.archivedAt)
+  const date = new Date().toISOString().slice(0, 10)
+  const force = opts.force === true
+
+  type Outcome =
+    | { status: 'created' | 'existing'; dominionName: string }
+    | { status: 'skipped'; dominionName: string; reason: string }
+
+  const outcomes: Outcome[] = []
+
+  for (const dom of active) {
+    if (force) {
+      await db
+        .update(memories)
+        .set({ archivedAt: new Date() })
+        .where(and(
+          eq(memories.userId, userId),
+          eq(memories.type, 'advisory'),
+          sql`${memories.sourceMetadata}->>'externalId' = ${`briefer:${date}:${dom.id}`}`,
+          isNull(memories.archivedAt),
+        ))
+    }
+
+    try {
+      const run = await runRecipe('BRIEF', { userId, dominionId: dom.id, surface: 'byok' })
+      outcomes.push({ status: run.status, dominionName: dom.name })
+    } catch (err) {
+      if (err instanceof AiCredentialMissingError) {
+        outcomes.push({ status: 'skipped', dominionName: dom.name, reason: 'no BYOK credential' })
+        continue
+      }
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.startsWith('BRIEF: no Dominion bundle')) {
+        outcomes.push({ status: 'skipped', dominionName: dom.name, reason: 'not found' })
+        continue
+      }
+      if (msg.startsWith('BRIEF: empty response')) {
+        outcomes.push({ status: 'skipped', dominionName: dom.name, reason: 'empty response' })
+        continue
+      }
+      throw err
+    }
+  }
+
   return {
-    ran: results.length,
-    created: results.filter((r) => r.status === 'created').length,
-    existing: results.filter((r) => r.status === 'existing').length,
-    skipped: results.filter((r) => r.status === 'skipped').map((r) => ({
-      dominionName: r.dominionName,
-      reason: r.reason ?? 'unknown',
-    })),
+    ran: outcomes.length,
+    created: outcomes.filter((o) => o.status === 'created').length,
+    existing: outcomes.filter((o) => o.status === 'existing').length,
+    skipped: outcomes
+      .filter((o): o is Extract<Outcome, { status: 'skipped' }> => o.status === 'skipped')
+      .map((o) => ({ dominionName: o.dominionName, reason: o.reason })),
   }
 }
 
