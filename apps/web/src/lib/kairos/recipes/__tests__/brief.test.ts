@@ -93,4 +93,56 @@ describe('BRIEF recipe', () => {
       temperature: 0.4,
     }))
   })
+
+  it('renders "(none)" for empty objectives in the prompt', async () => {
+    const ask = vi.fn(async () => ({ text: 'ok', modelId: 'm' }))
+    ;(getProviderForTask as ReturnType<typeof vi.fn>).mockResolvedValue({ provider: { ask } })
+    await BRIEF.flat(ctx({ bundle: fakeBundle({ objectives: [] }) }))
+    const prompt = promptFrom(ask)
+    expect(prompt).toMatch(/## Open objectives\n\(none\)/)
+  })
+
+  it('caps recentMemories rendering at 15 entries even when bundle has more', async () => {
+    const ask = vi.fn(async () => ({ text: 'ok', modelId: 'm' }))
+    ;(getProviderForTask as ReturnType<typeof vi.fn>).mockResolvedValue({ provider: { ask } })
+    const many = Array.from({ length: 25 }, (_, i) => ({
+      title: `mem-${i}`,
+      type: 'note',
+      summary: null,
+    }))
+    await BRIEF.flat(ctx({ bundle: fakeBundle({ recentMemories: many }) }))
+    const prompt = promptFrom(ask)
+    // Pull the section between "## Recent memories" and the next "##" header.
+    const section = prompt.split('## Recent memories\n')[1].split('\n##')[0]
+    const bullets = section.split('\n').filter((l) => l.startsWith('- '))
+    expect(bullets).toHaveLength(15)
+    expect(bullets[0]).toContain('mem-0')
+    expect(bullets[14]).toContain('mem-14')
+  })
+
+  it('formats boardTask endDate as ISO YYYY-MM-DD in the prompt', async () => {
+    const ask = vi.fn(async () => ({ text: 'ok', modelId: 'm' }))
+    ;(getProviderForTask as ReturnType<typeof vi.fn>).mockResolvedValue({ provider: { ask } })
+    const due = new Date('2026-07-01T15:30:00Z')
+    await BRIEF.flat(ctx({
+      bundle: fakeBundle({
+        boardTasks: [{ name: 'Ship 3D', status: 'todo', priority: 'high', projectName: 'Aeon', endDate: due }],
+      }),
+    }))
+    const prompt = promptFrom(ask)
+    expect(prompt).toMatch(/Ship 3D due 2026-07-01/)
+  })
+
+  it('renders "(none open)" for empty boardTasks', async () => {
+    const ask = vi.fn(async () => ({ text: 'ok', modelId: 'm' }))
+    ;(getProviderForTask as ReturnType<typeof vi.fn>).mockResolvedValue({ provider: { ask } })
+    await BRIEF.flat(ctx({ bundle: fakeBundle({ boardTasks: [] }) }))
+    const prompt = promptFrom(ask)
+    expect(prompt).toMatch(/## Open board cards \(live\)\n\(none open\)/)
+  })
 })
+
+function promptFrom(ask: ReturnType<typeof vi.fn>): string {
+  const calls = ask.mock.calls as Array<Array<{ prompt?: string }>>
+  return String(calls[0]?.[0]?.prompt ?? '')
+}

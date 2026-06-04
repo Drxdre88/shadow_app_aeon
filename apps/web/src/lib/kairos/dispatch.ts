@@ -76,10 +76,22 @@ export async function runRecipe(name: string, opts: RunRecipeArgs): Promise<RunR
     return { status: 'existing', memoryId: primary.id, traceId: null }
   }
 
-  // 2. Optional extras.
+  // 2. Optional extras. Each is wrapped — if one throws, the trace still
+  // writes (and records the failure in extrasErrors) so we never leave a
+  // primary persisted without an audit row. Re-fires return 'existing' on
+  // the primary's externalId so the failed extra can't be retried; the
+  // trace is the only signal that one was lost.
+  const extrasErrors: Array<{ title: string; message: string }> = []
   if (output.extras?.length) {
     for (const spec of output.extras) {
-      await captureMemory(opts.userId, toCaptureInput(spec))
+      try {
+        await captureMemory(opts.userId, toCaptureInput(spec))
+      } catch (err) {
+        extrasErrors.push({
+          title: spec.title,
+          message: err instanceof Error ? err.message : String(err),
+        })
+      }
     }
   }
 
@@ -89,6 +101,7 @@ export async function runRecipe(name: string, opts: RunRecipeArgs): Promise<RunR
     mode,
     durationMs,
     primaryMemoryId: primary.id,
+    ...(extrasErrors.length ? { extrasErrors } : {}),
     ...output.traceMeta,
   }
   const traceCapture = await captureMemory(opts.userId, {
@@ -98,13 +111,7 @@ export async function runRecipe(name: string, opts: RunRecipeArgs): Promise<RunR
     title: `${name} · ${primary.title}`,
     bodyMd: JSON.stringify(traceBody, null, 2),
     dominionId: opts.dominionId,
-    sourceMetadata: {
-      recipe: name,
-      mode,
-      durationMs,
-      primaryMemoryId: primary.id,
-      ...output.traceMeta,
-    },
+    sourceMetadata: traceBody,
   })
 
   return { status: 'created', memoryId: primary.id, traceId: traceCapture.memory.id }
