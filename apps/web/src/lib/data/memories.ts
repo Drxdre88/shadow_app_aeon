@@ -9,7 +9,15 @@ import type {
   MemoryLink,
   PrepareContextInput,
 } from './validators'
+import type { StreamClass } from '@/lib/kairos/streamClass'
 import { resolveDominionForMemory } from './dominions'
+
+// Internal extension: the public zod schema (createMemorySchema) intentionally
+// does NOT expose streamClass — public callers (MCP/REST) must not pick a
+// stream class. The dispatcher (lib/kairos/dispatch.ts) needs to write
+// 'advisory' primaries and 'trace' bookkeeping rows, so the function signature
+// is widened with this internal-only field. captureMemory forwards it through.
+type CreateMemoryParams = CreateMemoryInput & { streamClass?: StreamClass }
 
 // ─────────────────────────────────────────────────────────────────────────
 // Brain Phase 1 — pure DB queries for the user-scoped memory substrate.
@@ -499,7 +507,7 @@ export async function getNeighbours(
   return [...outgoing, ...incoming]
 }
 
-export async function createMemory(userId: string, input: CreateMemoryInput) {
+export async function createMemory(userId: string, input: CreateMemoryParams) {
   // Idempotency for Claude-captured sessions: a given sessionId is a stable
   // identity, so re-posting (from a SessionStart backfill, re-invoked hook,
   // or manual recovery) should never duplicate. Other sources stay strict.
@@ -548,6 +556,10 @@ export async function createMemory(userId: string, input: CreateMemoryInput) {
       tags: input.tags ?? [],
       links: input.links ?? [],
       pinned: input.pinned ?? false,
+      // Drizzle skips undefined keys → DB default ('idea') applies when
+      // caller omits streamClass. Internal callers (dispatcher) set it
+      // explicitly for advisory / trace writes.
+      ...(input.streamClass ? { streamClass: input.streamClass } : {}),
     })
     .returning()
   return row
@@ -573,6 +585,8 @@ export async function createMemory(userId: string, input: CreateMemoryInput) {
 export interface CaptureMemoryInput extends Omit<CreateMemoryInput, 'sourceMetadata'> {
   channel?: string | null
   sourceMetadata?: Record<string, unknown>
+  // Internal-only: forwarded to createMemory. See CreateMemoryParams above.
+  streamClass?: StreamClass
 }
 
 export interface CaptureMemoryResult {

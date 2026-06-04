@@ -1,13 +1,15 @@
 import { z } from 'zod'
 import { listTraceHistory as _listTraceHistory } from '@/lib/data/recipes'
+import { listRecipes } from '@/lib/kairos/recipes/registry'
+import { runRecipe, RecipeNotFoundError } from '@/lib/kairos/dispatch'
 import type { RegisterFn } from './types'
 import { getUserId, ok, fail } from './types'
 
 // ─────────────────────────────────────────────────────────────────────────
-// Kairos Phase 3B — recipe-surface MCP tools.
+// Kairos Phase 3B/3C — recipe-surface MCP tools.
 //
-// Currently exposes one tool: get_trace_history. Phase 3C adds list_recipes
-// and run_recipe here once the dispatcher lands.
+// Lives outside the memories-parity lock set (memories-parity.test.ts), so
+// new tools land here without disturbing the 7-tool count in tools/memories.ts.
 // ─────────────────────────────────────────────────────────────────────────
 
 export const registerRecipeTools: RegisterFn = (server) => {
@@ -28,14 +30,57 @@ export const registerRecipeTools: RegisterFn = (server) => {
       return ok({ count: rows.length, traces: rows })
     },
   )
+
+  server.tool(
+    'list_recipes',
+    'List every recipe registered in the Kairos catalogue (descriptor only: name, description, reads, writes). Use before run_recipe to discover what is available.',
+    {},
+    async (_args, extra) => {
+      getUserId(extra)
+      return ok({ recipes: listRecipes() })
+    },
+  )
+
+  server.tool(
+    'run_recipe',
+    'Execute a named recipe for one Dominion. Runs through the dispatcher (canonical retrieval → flat/expanded → primary memory + trace). ' +
+      'Returns { status: "created"|"existing", memoryId, traceId }. Idempotent on the recipe\'s primary externalId — re-firing returns "existing".',
+    {
+      name: z.string().min(1).max(64).describe('Recipe name (e.g. "BRIEF")'),
+      dominionId: z.string().uuid().describe('Dominion to scope retrieval and writes to'),
+      args: z.record(z.string(), z.unknown()).optional().describe('Optional recipe-specific arguments'),
+    },
+    async (args, extra) => {
+      const uid = getUserId(extra)
+      const parsed = runRecipeArgs.safeParse(args)
+      if (!parsed.success) return fail(parsed.error.issues[0].message)
+      try {
+        const result = await runRecipe(parsed.data.name, {
+          userId: uid,
+          dominionId: parsed.data.dominionId,
+          args: parsed.data.args,
+          surface: 'claude_code',
+        })
+        return ok(result)
+      } catch (err) {
+        if (err instanceof RecipeNotFoundError) return fail(err.message)
+        return fail(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
 }
 
-// Same shape as the MCP tool's inline declaration; shared so the REST
-// mirror parses identically. Lives in this file (not validators.ts)
-// because get_trace_history isn't a top-level brain entity — it's a
-// query helper for the recipe surface.
+// Shared so the REST mirror parses identically. Live in this file (not
+// validators.ts) because they aren't top-level brain entities — they're
+// query / dispatch helpers for the recipe surface.
 export const traceHistoryQuery = z.object({
   dominionId: z.string().uuid().optional(),
   recipe: z.string().min(1).max(64).optional(),
   limit: z.number().int().min(1).max(100).default(25).optional(),
+})
+
+export const runRecipeArgs = z.object({
+  name: z.string().min(1).max(64),
+  dominionId: z.string().uuid(),
+  args: z.record(z.string(), z.unknown()).optional(),
 })

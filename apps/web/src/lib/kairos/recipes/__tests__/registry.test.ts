@@ -1,4 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+
+// brief.ts → route-task.ts → db. Mock the db so importing the registry
+// doesn't trip DATABASE_URL during unit-test bootstrap.
+vi.mock('@/lib/db', () => ({ db: {} }))
+vi.mock('@/lib/ai/route-task', () => ({ getProviderForTask: vi.fn() }))
+
 import { getRecipe, listRecipes } from '../registry'
 
 describe('registry', () => {
@@ -27,7 +33,15 @@ describe('registry', () => {
     }
   })
 
-  it('listRecipes is empty until brief.ts lands', () => {
-    expect(listRecipes()).toEqual([])
+  it('listRecipes includes BRIEF', () => {
+    const names = listRecipes().map((d) => d.name)
+    expect(names).toContain('BRIEF')
+  })
+
+  it('getRecipe("BRIEF") returns the live recipe', () => {
+    const brief = getRecipe('BRIEF')
+    expect(brief).not.toBeNull()
+    expect(brief?.name).toBe('BRIEF')
+    expect(typeof brief?.flat).toBe('function')
   })
 })

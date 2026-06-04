@@ -9,18 +9,14 @@ import { AiCredentialMissingError } from '@/lib/ai/router'
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 1 (E20) — daily Briefer.
 //
-// Fires once per active Dominion per user via the 7am cron. For each:
-//   1. inspect_dominion to assemble the briefing context
-//   2. routeTask({taskType:'brief'}) → heavy-tier BYOK model
-//   3. Generate a markdown advisory
-//   4. Persist as memory.type='advisory', source='cron', anchored to the
-//      Dominion, idempotent on (date × dominionId)
-//
-// Idempotency: sourceMetadata.externalId = `briefer:${YYYY-MM-DD}:${dominionId}`
-// captureMemory will return the existing advisory if today's already exists.
+// Phase 3C exported BriefingContext + buildPrompt so the BRIEF recipe
+// (recipes/brief.ts) can reuse them bit-for-bit. runBrieferForUser stays
+// here transitionally; the cron and dashboard action still call it until
+// the rewire lands in the next commit, at which point this function is
+// deleted and only the prompt builder + its input type remain.
 // ─────────────────────────────────────────────────────────────────────────
 
-interface BriefingContext {
+export interface BriefingContext {
   name: string
   vision: string | null
   missionLong: string | null
@@ -30,7 +26,7 @@ interface BriefingContext {
   boardTasks: Array<{ name: string; status: string; priority: string; projectName: string; endDate: Date | null }>
 }
 
-function buildPrompt(ctx: BriefingContext, today: string): string {
+export function buildPrompt(ctx: BriefingContext, today: string): string {
   const lines: string[] = [
     `You are Kairos, a persistent, opinionated companion. Produce the operator's morning briefing for the "${ctx.name}" Dominion. Date: ${today}.`,
     '',
