@@ -412,19 +412,27 @@ export const captureMemorySchema = z.object({
 
 export type CaptureMemoryRequest = z.infer<typeof captureMemorySchema>
 
+// Kairos Phase 3B — `query` is optional when `dominionId` is provided, so
+// lieutenants can pull "recent memories on this Dominion" without inventing
+// a search term. `sinceDays` bounds the window (defaults to no bound).
 export const searchMemoriesSchema = z.object({
-  query:           z.string().trim().min(2).max(500),
+  query:           z.string().trim().min(2).max(500).optional(),
   type:            z.union([memoryTypeSchema, z.array(memoryTypeSchema)]).optional(),
   source:          z.union([memorySourceSchema, z.array(memorySourceSchema)]).optional(),
   realmId:         z.string().uuid().optional(),
   projectId:       z.string().uuid().optional(),
   taskId:          z.string().uuid().optional(),
+  dominionId:      z.string().uuid().optional(),
+  sinceDays:       z.number().int().min(1).max(365).optional(),
   tagsAny:         z.array(z.string()).max(50).optional(),
   tagsAll:         z.array(z.string()).max(50).optional(),
   pinnedOnly:      z.boolean().optional(),
   limit:           z.number().int().min(1).max(100).default(20),
   offset:          z.number().int().min(0).default(0),
-})
+}).refine(
+  (v) => Boolean(v.query) || Boolean(v.dominionId),
+  { message: 'query is required unless dominionId is provided', path: ['query'] },
+)
 
 export const addLinkSchema = z.object({
   target:          z.string().min(1).max(2048),
