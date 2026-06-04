@@ -118,6 +118,10 @@ export function TaskChecklist({
     setPendingGroups((prev) => [...prev, name])
     setAddingInGroup(name)
     setNewItemTitle('')
+    // Persist immediately so empty groups survive a reopen. Without this,
+    // pendingGroups lived only in local React state — clicking + six times
+    // and filling in only one would lose the other five on close.
+    onGroupAdd?.(name)
   }
 
   const commitItemEdit = () => {
