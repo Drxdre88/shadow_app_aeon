@@ -9,7 +9,15 @@ import type {
   MemoryLink,
   PrepareContextInput,
 } from './validators'
+import type { StreamClass } from '@/lib/kairos/streamClass'
 import { resolveDominionForMemory } from './dominions'
+
+// Internal extension: the public zod schema (createMemorySchema) intentionally
+// does NOT expose streamClass — public callers (MCP/REST) must not pick a
+// stream class. The dispatcher (lib/kairos/dispatch.ts) needs to write
+// 'advisory' primaries and 'trace' bookkeeping rows, so the function signature
+// is widened with this internal-only field. captureMemory forwards it through.
+type CreateMemoryParams = CreateMemoryInput & { streamClass?: StreamClass }
 
 // ─────────────────────────────────────────────────────────────────────────
 // Brain Phase 1 — pure DB queries for the user-scoped memory substrate.
@@ -328,15 +336,24 @@ export async function getGraphForUser(
 }
 
 export async function searchMemoriesFts(userId: string, input: SearchMemoriesInput) {
-  const tsQuery = sql`websearch_to_tsquery('english', ${input.query})`
-  const rank = sql<number>`ts_rank_cd("memories"."fts", ${tsQuery})`
-  const snippet = sql<string>`ts_headline('english', coalesce(${memories.summary}, ${memories.bodyMd}), ${tsQuery}, 'MaxFragments=2,MaxWords=18,MinWords=5')`
+  // Kairos Phase 3B — `query` is optional when scoped by `dominionId`. When
+  // no query is given, drop the FTS match condition and rank/snippet
+  // expressions; sort by recency instead. Result row shape stays identical
+  // (rank=0, snippet='') so callers don't branch on response shape.
+  const hasQuery = Boolean(input.query)
+  const tsQuery = hasQuery ? sql`websearch_to_tsquery('english', ${input.query})` : null
+  const rank = hasQuery
+    ? sql<number>`ts_rank_cd("memories"."fts", ${tsQuery})`
+    : sql<number>`0::float4`
+  const snippet = hasQuery
+    ? sql<string>`ts_headline('english', coalesce(${memories.summary}, ${memories.bodyMd}), ${tsQuery}, 'MaxFragments=2,MaxWords=18,MinWords=5')`
+    : sql<string>`''::text`
 
   const conditions = [
     eq(memories.userId, userId),
-    sql`"memories"."fts" @@ ${tsQuery}`,
     sql`${memories.archivedAt} IS NULL`,
   ]
+  if (hasQuery) conditions.push(sql`"memories"."fts" @@ ${tsQuery}`)
 
   if (input.type) {
     const types = Array.isArray(input.type) ? input.type : [input.type]
@@ -346,9 +363,13 @@ export async function searchMemoriesFts(userId: string, input: SearchMemoriesInp
     const sources = Array.isArray(input.source) ? input.source : [input.source]
     conditions.push(sql`${memories.source} = ANY(${sources})`)
   }
-  if (input.realmId)   conditions.push(eq(memories.realmId, input.realmId))
-  if (input.projectId) conditions.push(eq(memories.projectId, input.projectId))
-  if (input.taskId)    conditions.push(eq(memories.taskId, input.taskId))
+  if (input.realmId)    conditions.push(eq(memories.realmId, input.realmId))
+  if (input.projectId)  conditions.push(eq(memories.projectId, input.projectId))
+  if (input.taskId)     conditions.push(eq(memories.taskId, input.taskId))
+  if (input.dominionId) conditions.push(eq(memories.dominionId, input.dominionId))
+  if (input.sinceDays !== undefined) {
+    conditions.push(sql`${memories.createdAt} >= NOW() - make_interval(days => ${input.sinceDays})`)
+  }
   if (input.pinnedOnly) conditions.push(eq(memories.pinned, true))
   if (input.tagsAny && input.tagsAny.length > 0) {
     conditions.push(sql`${memories.tags} ?| ${input.tagsAny}::text[]`)
@@ -356,6 +377,10 @@ export async function searchMemoriesFts(userId: string, input: SearchMemoriesInp
   if (input.tagsAll && input.tagsAll.length > 0) {
     conditions.push(sql`${memories.tags} ?& ${input.tagsAll}::text[]`)
   }
+
+  const orderBy = hasQuery
+    ? [desc(rank), desc(memories.pinned), desc(memories.createdAt)]
+    : [desc(memories.pinned), desc(memories.createdAt)]
 
   const hits = await db
     .select({
@@ -365,7 +390,7 @@ export async function searchMemoriesFts(userId: string, input: SearchMemoriesInp
     })
     .from(memories)
     .where(and(...conditions))
-    .orderBy(desc(rank), desc(memories.pinned), desc(memories.createdAt))
+    .orderBy(...orderBy)
     .limit(input.limit)
     .offset(input.offset)
 
@@ -482,7 +507,7 @@ export async function getNeighbours(
   return [...outgoing, ...incoming]
 }
 
-export async function createMemory(userId: string, input: CreateMemoryInput) {
+export async function createMemory(userId: string, input: CreateMemoryParams) {
   // Idempotency for Claude-captured sessions: a given sessionId is a stable
   // identity, so re-posting (from a SessionStart backfill, re-invoked hook,
   // or manual recovery) should never duplicate. Other sources stay strict.
@@ -531,6 +556,10 @@ export async function createMemory(userId: string, input: CreateMemoryInput) {
       tags: input.tags ?? [],
       links: input.links ?? [],
       pinned: input.pinned ?? false,
+      // Drizzle skips undefined keys → DB default ('idea') applies when
+      // caller omits streamClass. Internal callers (dispatcher) set it
+      // explicitly for advisory / trace writes.
+      ...(input.streamClass ? { streamClass: input.streamClass } : {}),
     })
     .returning()
   return row
@@ -556,6 +585,8 @@ export async function createMemory(userId: string, input: CreateMemoryInput) {
 export interface CaptureMemoryInput extends Omit<CreateMemoryInput, 'sourceMetadata'> {
   channel?: string | null
   sourceMetadata?: Record<string, unknown>
+  // Internal-only: forwarded to createMemory. See CreateMemoryParams above.
+  streamClass?: StreamClass
 }
 
 export interface CaptureMemoryResult {

@@ -66,6 +66,11 @@ export function TaskChecklist({
   const groupCommittedRef = useRef(false)
   const [confirmDeleteGroup, setConfirmDeleteGroup] = useState<string | null>(null)
   const [pendingGroups, setPendingGroups] = useState<string[]>([])
+  // Same-frame double-click guard for handleAddGroup. Without this, two
+  // clicks fired before React re-renders both see the same displayGroups,
+  // compute the same name (e.g. "Checklist 2"), and double-fire onGroupAdd
+  // → server-side double create + duplicate React keys on render.
+  const addingGroupRef = useRef(false)
 
   const groups = Array.from(new Set(items.map((i) => i.groupName)))
   const mergedGroups = [...groups, ...pendingGroups.filter((pg) => !groups.includes(pg))]
@@ -109,15 +114,24 @@ export function TaskChecklist({
   }
 
   const handleAddGroup = () => {
+    if (addingGroupRef.current) return
+    addingGroupRef.current = true
+    // Release on next paint — single-frame block, no UX impact for normal use.
+    requestAnimationFrame(() => { addingGroupRef.current = false })
+
     let idx = displayGroups.length + 1
     let name = `Checklist ${idx}`
     while (displayGroups.includes(name)) {
       idx++
       name = `Checklist ${idx}`
     }
-    setPendingGroups((prev) => [...prev, name])
+    setPendingGroups((prev) => (prev.includes(name) ? prev : [...prev, name]))
     setAddingInGroup(name)
     setNewItemTitle('')
+    // Persist immediately so empty groups survive a reopen. Without this,
+    // pendingGroups lived only in local React state — clicking + six times
+    // and filling in only one would lose the other five on close.
+    onGroupAdd?.(name)
   }
 
   const commitItemEdit = () => {

@@ -1,26 +1,14 @@
-import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
-import { captureMemory } from '@/lib/data/memories'
-import { db } from '@/lib/db'
-import { memories } from '@/lib/db/schema'
-import { and, eq, isNull, sql } from 'drizzle-orm'
-import { getProviderForTask } from '@/lib/ai/route-task'
-import { AiCredentialMissingError } from '@/lib/ai/router'
-
 // ─────────────────────────────────────────────────────────────────────────
-// Kairos Phase 1 (E20) — daily Briefer.
+// Kairos Phase 3C — briefer prompt-only module.
 //
-// Fires once per active Dominion per user via the 7am cron. For each:
-//   1. inspect_dominion to assemble the briefing context
-//   2. routeTask({taskType:'brief'}) → heavy-tier BYOK model
-//   3. Generate a markdown advisory
-//   4. Persist as memory.type='advisory', source='cron', anchored to the
-//      Dominion, idempotent on (date × dominionId)
-//
-// Idempotency: sourceMetadata.externalId = `briefer:${YYYY-MM-DD}:${dominionId}`
-// captureMemory will return the existing advisory if today's already exists.
+// Phase 1 housed the full briefer pipeline (inspect → prompt → BYOK call →
+// captureMemory) in runBrieferForUser. Phase 3C moved orchestration into
+// the dispatcher (lib/kairos/dispatch.ts) and the BRIEF recipe; this file
+// is now just the prompt builder + its input type so brief.ts can reuse
+// them bit-for-bit, preserving the legacy output shape.
 // ─────────────────────────────────────────────────────────────────────────
 
-interface BriefingContext {
+export interface BriefingContext {
   name: string
   vision: string | null
   missionLong: string | null
@@ -30,7 +18,7 @@ interface BriefingContext {
   boardTasks: Array<{ name: string; status: string; priority: string; projectName: string; endDate: Date | null }>
 }
 
-function buildPrompt(ctx: BriefingContext, today: string): string {
+export function buildPrompt(ctx: BriefingContext, today: string): string {
   const lines: string[] = [
     `You are Kairos, a persistent, opinionated companion. Produce the operator's morning briefing for the "${ctx.name}" Dominion. Date: ${today}.`,
     '',
@@ -99,128 +87,4 @@ function buildPrompt(ctx: BriefingContext, today: string): string {
     '> `Gas Analysis [HG] [OC]` is marked **high** and due `2026-04-01` — that\'s **!two months overdue!** sitting on the live board. Either it\'s done and the card is lying, or it\'s quietly rotting under newer urgent work.',
   ]
   return lines.join('\n')
-}
-
-function todayIso(): string {
-  // YYYY-MM-DD in UTC so cron-day matches across timezones.
-  return new Date().toISOString().slice(0, 10)
-}
-
-export interface BrieferResult {
-  dominionId: string
-  dominionName: string
-  status: 'created' | 'existing' | 'skipped'
-  memoryId?: string
-  reason?: string
-}
-
-export interface RunBrieferOpts {
-  // Archive today's existing advisory per Dominion before generating so the
-  // dedup (externalId = `briefer:{date}:{dominionId}`) lets a new one through.
-  // Used by the "Regenerate today" path in the UI; the nightly cron leaves
-  // this false so accidental double-fires stay idempotent.
-  force?: boolean
-}
-
-export async function runBrieferForUser(
-  userId: string,
-  opts: RunBrieferOpts = {},
-): Promise<BrieferResult[]> {
-  const dominions = await findDominionsByUser(userId)
-  const active = dominions.filter((d) => !d.archivedAt)
-  if (active.length === 0) return []
-
-  const date = todayIso()
-  const results: BrieferResult[] = []
-
-  for (const dom of active) {
-    if (opts.force) {
-      // Soft-archive today's existing advisory for this Dominion. captureMemory
-      // skips archived rows in its dedup lookup, so the next capture creates
-      // a fresh memory row with the new prompt/model output.
-      await db
-        .update(memories)
-        .set({ archivedAt: new Date() })
-        .where(and(
-          eq(memories.userId, userId),
-          eq(memories.type, 'advisory'),
-          sql`${memories.sourceMetadata}->>'externalId' = ${`briefer:${date}:${dom.id}`}`,
-          isNull(memories.archivedAt),
-        ))
-    }
-
-    const briefing = await inspectDominion(dom.id, userId, { memoryLimit: 25 })
-    if (!briefing) {
-      results.push({ dominionId: dom.id, dominionName: dom.name, status: 'skipped', reason: 'not found' })
-      continue
-    }
-
-    const ctx: BriefingContext = {
-      name: briefing.name,
-      vision: briefing.vision,
-      missionLong: briefing.missionLong,
-      objectives: briefing.objectives.map((o) => ({
-        title: o.title,
-        description: o.description,
-        status: o.status,
-      })),
-      projects: briefing.projects.map((p) => ({ name: p.name })),
-      recentMemories: briefing.recentMemories.map((m) => ({
-        title: m.title,
-        type: m.type,
-        summary: m.summary,
-      })),
-      boardTasks: briefing.boardTasks.map((t) => ({
-        name: t.name,
-        status: t.status,
-        priority: t.priority,
-        projectName: t.projectName,
-        endDate: t.endDate,
-      })),
-    }
-
-    let text: string
-    try {
-      const { provider } = await getProviderForTask(userId, { taskType: 'brief', dominionId: dom.id })
-      const response = await provider.ask({
-        prompt: buildPrompt(ctx, date),
-        maxTokens: 1200,
-        temperature: 0.4,
-      })
-      text = response.text.trim()
-    } catch (err) {
-      if (err instanceof AiCredentialMissingError) {
-        results.push({ dominionId: dom.id, dominionName: dom.name, status: 'skipped', reason: 'no BYOK credential' })
-        continue
-      }
-      throw err
-    }
-
-    if (!text) {
-      results.push({ dominionId: dom.id, dominionName: dom.name, status: 'skipped', reason: 'empty response' })
-      continue
-    }
-
-    const { memory, created } = await captureMemory(userId, {
-      title: `${date} · ${dom.name} briefing`,
-      bodyMd: text,
-      type: 'advisory',
-      source: 'cron',
-      dominionId: dom.id,
-      sourceMetadata: {
-        externalId: `briefer:${date}:${dom.id}`,
-        briefingDate: date,
-        dominionId: dom.id,
-      },
-    })
-
-    results.push({
-      dominionId: dom.id,
-      dominionName: dom.name,
-      status: created ? 'created' : 'existing',
-      memoryId: memory.id,
-    })
-  }
-
-  return results
 }

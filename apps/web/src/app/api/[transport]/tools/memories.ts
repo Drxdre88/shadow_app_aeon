@@ -163,9 +163,10 @@ export const registerMemoryTools: RegisterFn = (server) => {
 
   server.tool(
     'search_memories',
-    'Full-text search the user-scoped brain. Returns ranked hits with snippet excerpts. Use this before answering questions that may have prior context.',
+    'Full-text search the user-scoped brain. Returns ranked hits with snippet excerpts. Use this before answering questions that may have prior context. ' +
+      'Kairos Phase 3B: `query` is optional when `dominionId` is given — the Dominion scope plus optional `sinceDays` is sufficient to bound results, so lieutenants can pull "recent memories on this Dominion" without inventing a search term.',
     {
-      query: z.string().min(2).max(500).describe('Search query — supports websearch syntax (quotes, OR, -term)'),
+      query: z.string().min(2).max(500).optional().describe('Search query — websearch syntax (quotes, OR, -term). Optional if `dominionId` is set'),
       type: z.union([
         memoryTypeEnum,
         z.array(memoryTypeEnum),
@@ -173,6 +174,8 @@ export const registerMemoryTools: RegisterFn = (server) => {
       realmId: z.string().uuid().optional(),
       projectId: z.string().uuid().optional(),
       taskId: z.string().uuid().optional(),
+      dominionId: z.string().uuid().optional().describe('Scope to a single Dominion. When set, `query` is optional'),
+      sinceDays: z.number().int().min(1).max(365).optional().describe('Only memories created within the last N days'),
       pinnedOnly: z.boolean().optional(),
       limit: z.number().int().min(1).max(100).default(20).optional(),
     },
@@ -184,6 +187,8 @@ export const registerMemoryTools: RegisterFn = (server) => {
         realmId: args.realmId,
         projectId: args.projectId,
         taskId: args.taskId,
+        dominionId: args.dominionId,
+        sinceDays: args.sinceDays,
         pinnedOnly: args.pinnedOnly,
         limit: args.limit ?? 20,
         offset: 0,
