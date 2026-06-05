@@ -47,10 +47,10 @@ export function KairosGuideContent() {
           <Mono>Cmd/Ctrl+Enter</Mono> to send. Threads persist across reloads.
         </P>
         <P>
-          Every reply is grounded in that Dominion's live cortex doc, its active archetypes, and the
+          Every reply is grounded in that Dominion&apos;s live cortex doc, its active archetypes, and the
           most relevant prior reflections, ideas, and session notes. When Kairos cites a specific
           memory, a small purple chip appears bearing the source title — hover to confirm. When the
-          model invents a citation (a memory id that wasn't actually retrieved this turn), the chip
+          model invents a citation (a memory id that wasn&apos;t actually retrieved this turn), the chip
           surfaces as a muted <strong>?</strong> so you can spot confabulation at a glance.
         </P>
         <P>
@@ -68,7 +68,7 @@ export function KairosGuideContent() {
 
       <Section title="The nightly synthesis (archetypes + cortex)">
         <P>
-          Every night, two BYOK passes turn the day's substrate into something Kairos can reason
+          Every night, two BYOK passes turn the day&apos;s substrate into something Kairos can reason
           from:
         </P>
         <Path
@@ -83,21 +83,21 @@ export function KairosGuideContent() {
         />
         <P>
           Both can be skipped per-Dominion (e.g. archived ones), and both are idempotent — running
-          the cron twice on the same day is a no-op. Day one of a new Dominion you'll see bare-chat
-          fallback; the morning after the first cron firing, you'll see a Reading line on every
+          the cron twice on the same day is a no-op. Day one of a new Dominion you&apos;ll see bare-chat
+          fallback; the morning after the first cron firing, you&apos;ll see a Reading line on every
           reply.
         </P>
       </Section>
 
       <Section title="Sending reflections">
         <P>
-          Reflections are the operator's voice in how Kairos comes to see each Dominion over time —
+          Reflections are the operator&apos;s voice in how Kairos comes to see each Dominion over time —
           deliberate beliefs, priorities, observations, corrections. They are first-class in three
           ways no other memory class is:
         </P>
         <ul className="flex flex-col gap-2 text-[12.5px] text-white/70 leading-relaxed pl-4">
-          <Bullet><strong>Weighted higher</strong> in archetype + cortex generation prompts than any activity-derived class. A reflection saying "mobile is parked" outweighs ten board events suggesting otherwise.</Bullet>
-          <Bullet><strong>Can override drift</strong>. If activity suggests "user has lost interest" but a recent reflection contradicts that, the reflection wins.</Bullet>
+          <Bullet><strong>Weighted higher</strong> in archetype + cortex generation prompts than any activity-derived class. A reflection saying &quot;mobile is parked&quot; outweighs ten board events suggesting otherwise.</Bullet>
+          <Bullet><strong>Can override drift</strong>. If activity suggests &quot;user has lost interest&quot; but a recent reflection contradicts that, the reflection wins.</Bullet>
           <Bullet><strong>Never archived</strong>. The weekly compaction cron can absorb stale execution-class rows into archetypes, but reflections live forever — they are the trail of your evolving thinking.</Bullet>
         </ul>
         <P>From any Claude Code session with the Aeon MCP attached:</P>
@@ -106,7 +106,7 @@ export function KairosGuideContent() {
           <Bullet><Mono>kairos_reflect</Mono> — fire the reflection. Args: <Mono>{`{dominionId, body, tags?}`}</Mono>. Stored with <Mono>streamClass=&apos;reflection&apos;</Mono>, no further ceremony.</Bullet>
         </ul>
         <P>
-          A few reflections a week is enough — Kairos's job is to keep listening, not yours to keep
+          A few reflections a week is enough — Kairos&apos;s job is to keep listening, not yours to keep
           performing. The next nightly synthesis will fold them into the cortex.
         </P>
       </Section>
