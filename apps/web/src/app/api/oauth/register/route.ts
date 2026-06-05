@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server'
 import { registerClient } from '@/lib/data/oauth'
 import { OAUTH_CORS_HEADERS } from '@/lib/oauth/origin'
 
+export const dynamic = 'force-dynamic'
+
 // RFC 7591 Dynamic Client Registration. Open registration (no auth) is the
 // norm for MCP — a client_id alone is inert; nothing happens until a real user
 // signs in at /authorize. We only validate that redirect_uris are http(s) URLs.

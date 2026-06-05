@@ -1,5 +1,9 @@
 import { getOrigin, OAUTH_CORS_HEADERS } from '@/lib/oauth/origin'
 
+// Reads per-request headers (getOrigin) — must never be statically optimized,
+// or PPR serves an empty prerender as a 500 ("No response is returned").
+export const dynamic = 'force-dynamic'
+
 // RFC 8414 authorization-server metadata. Reached via a rewrite from
 // /.well-known/oauth-authorization-server (App Router won't serve dot-folders).
 export async function GET(req: Request) {

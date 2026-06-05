@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { getClient, createAuthCode } from '@/lib/data/oauth'
 
+export const dynamic = 'force-dynamic'
+
 // OAuth 2.1 authorization endpoint. Browser-facing: the user must already hold
 // a NextAuth session; if not we bounce through /login and return here. On
 // success we mint a PKCE-bound, single-use code and redirect it to the client.

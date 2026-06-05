@@ -3,6 +3,8 @@ import { consumeAuthCode, issueTokens, rotateRefreshToken } from '@/lib/data/oau
 import { verifyPkceS256 } from '@/lib/oauth/pkce'
 import { OAUTH_CORS_HEADERS } from '@/lib/oauth/origin'
 
+export const dynamic = 'force-dynamic'
+
 // OAuth 2.1 token endpoint. Accepts authorization_code (with PKCE) and
 // refresh_token grants. Public clients only — no client_secret, the PKCE
 // verifier is the proof of possession.
