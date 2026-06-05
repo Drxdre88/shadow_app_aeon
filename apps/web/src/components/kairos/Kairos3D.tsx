@@ -41,12 +41,7 @@ export function Kairos3D({ nodes, edges, selectedId, onSelect, colorMode = 'domi
   // per-frame from `colorMode` in PlanetCloud instead.
   const sceneData = useMemo(() => buildSceneData(nodes, edges), [nodes, edges])
   const [hoveredId, setHoveredId] = useState<string | null>(null)
-  const showAllLabels = useKairosStore((s) => s.showAllLabels)
-
-  const hubIds = useMemo(() => {
-    const sorted = [...sceneData.nodes].sort((a, b) => b._degree - a._degree)
-    return new Set(sorted.slice(0, Math.min(5, sorted.length)).map((n) => n.id))
-  }, [sceneData.nodes])
+  const labelMode = useKairosStore((s) => s.labelMode)
 
   return (
     <Canvas
@@ -78,9 +73,8 @@ export function Kairos3D({ nodes, edges, selectedId, onSelect, colorMode = 'domi
         nodes={sceneData.nodes}
         selectedId={selectedId}
         hoveredId={hoveredId}
-        hubIds={hubIds}
         colorMode={colorMode}
-        showAllLabels={showAllLabels}
+        labelMode={labelMode}
         onSelect={onSelect}
         onHover={setHoveredId}
       />

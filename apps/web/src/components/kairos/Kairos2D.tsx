@@ -40,7 +40,7 @@ export function Kairos2D({
   backdrop = 'cortex',
 }: Props) {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
-  const showAllLabels = useKairosStore((s) => s.showAllLabels)
+  const labelMode = useKairosStore((s) => s.labelMode)
   const draggingRef = useRef(false)
 
   // Camera state shared between OrthoControls2D and Backdrop2D via a stable ref.
@@ -109,11 +109,6 @@ export function Kairos2D({
     [edges, nodeById],
   )
 
-  const hubIds = useMemo(() => {
-    const sorted = [...simNodes].sort((a, b) => b._degree - a._degree)
-    return new Set(sorted.slice(0, Math.min(5, sorted.length)).map((n) => n.id))
-  }, [simNodes])
-
   // d3-force simulation — 2D mode (numDimensions=2), z stays 0.
   useEffect(() => {
     if (simNodes.length === 0) return
@@ -158,9 +153,8 @@ export function Kairos2D({
           nodes={simNodes}
           selectedId={selectedId}
           hoveredId={hoveredId}
-          hubIds={hubIds}
           colorMode={colorMode}
-          showAllLabels={showAllLabels}
+          labelMode={labelMode}
           onSelect={onSelect}
           onHover={setHoveredId}
         />

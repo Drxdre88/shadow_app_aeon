@@ -6,6 +6,7 @@ import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import type { GraphNode } from '@/lib/data/memories'
 import { cleanTitle, nodeHue, type ColorMode } from '../nodeColor'
+import { labelRecencyCutoff, type LabelMode } from '@/stores/kairosStore'
 import { Planet } from './Planet'
 
 export type SceneNode = GraphNode & {
@@ -23,9 +24,8 @@ type Props = {
   nodes: SceneNode[]
   selectedId: string | null
   hoveredId: string | null
-  hubIds: Set<string>
   colorMode: ColorMode
-  showAllLabels?: boolean
+  labelMode: LabelMode
   onSelect: (id: string | null) => void
   onHover: (id: string | null) => void
 }
@@ -34,9 +34,8 @@ export function PlanetCloud({
   nodes,
   selectedId,
   hoveredId,
-  hubIds,
   colorMode,
-  showAllLabels = false,
+  labelMode,
   onSelect,
   onHover,
 }: Props) {
@@ -102,8 +101,7 @@ export function PlanetCloud({
         nodes={nodes}
         selectedId={selectedId}
         hoveredId={hoveredId}
-        hubIds={hubIds}
-        showAllLabels={showAllLabels}
+        labelMode={labelMode}
       />
     </>
   )
@@ -113,20 +111,22 @@ function PlanetLabels({
   nodes,
   selectedId,
   hoveredId,
-  hubIds,
-  showAllLabels,
+  labelMode,
 }: {
   nodes: SceneNode[]
   selectedId: string | null
   hoveredId: string | null
-  hubIds: Set<string>
-  showAllLabels: boolean
+  labelMode: LabelMode
 }) {
   const nodeMap = useMemo(() => {
     const m = new Map<string, SceneNode>()
     for (const n of nodes) m.set(n.id, n)
     return m
   }, [nodes])
+
+  // Recompute the cutoff only when the mode flips — keeps Date.now() out of the
+  // render body and the label set stable between mode changes.
+  const cutoff = useMemo(() => labelRecencyCutoff(labelMode), [labelMode])
 
   const labels: { node: SceneNode; variant: 'hover' | 'select' | 'hub' }[] = []
   if (selectedId) {
@@ -137,16 +137,12 @@ function PlanetLabels({
     const n = nodeMap.get(hoveredId)
     if (n) labels.push({ node: n, variant: 'hover' })
   }
-  if (showAllLabels) {
+  if (cutoff !== null) {
     for (const n of nodes) {
       if (n.id === selectedId || n.id === hoveredId) continue
-      labels.push({ node: n, variant: 'hub' })
-    }
-  } else {
-    for (const id of hubIds) {
-      if (id === selectedId || id === hoveredId) continue
-      const n = nodeMap.get(id)
-      if (n) labels.push({ node: n, variant: 'hub' })
+      if (new Date(n.createdAt).getTime() >= cutoff) {
+        labels.push({ node: n, variant: 'hub' })
+      }
     }
   }
 
