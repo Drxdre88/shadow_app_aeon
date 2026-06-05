@@ -6,6 +6,7 @@ import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import type { GraphNode } from '@/lib/data/memories'
 import { cleanTitle, nodeHue, type ColorMode } from '../nodeColor'
+import { labelRecencyCutoff, type LabelMode } from '@/stores/kairosStore'
 import { Planet } from './Planet'
 
 export type SimNode2D = GraphNode & {
@@ -27,9 +28,8 @@ type Props = {
   nodes: SimNode2D[]
   selectedId: string | null
   hoveredId: string | null
-  hubIds: Set<string>
   colorMode: ColorMode
-  showAllLabels?: boolean
+  labelMode: LabelMode
   onSelect: (id: string | null) => void
   onHover: (id: string | null) => void
 }
@@ -38,9 +38,8 @@ export function PlanetCloud2D({
   nodes,
   selectedId,
   hoveredId,
-  hubIds,
   colorMode,
-  showAllLabels = false,
+  labelMode,
   onSelect,
   onHover,
 }: Props) {
@@ -102,9 +101,8 @@ export function PlanetCloud2D({
         nodes={nodes}
         selectedId={selectedId}
         hoveredId={hoveredId}
-        hubIds={hubIds}
         colorMode={colorMode}
-        showAllLabels={showAllLabels}
+        labelMode={labelMode}
       />
     </>
   )
@@ -114,22 +112,24 @@ function Labels2D({
   nodes,
   selectedId,
   hoveredId,
-  hubIds,
   colorMode,
-  showAllLabels,
+  labelMode,
 }: {
   nodes: SimNode2D[]
   selectedId: string | null
   hoveredId: string | null
-  hubIds: Set<string>
   colorMode: ColorMode
-  showAllLabels: boolean
+  labelMode: LabelMode
 }) {
   const nodeMap = useMemo(() => {
     const m = new Map<string, SimNode2D>()
     for (const n of nodes) m.set(n.id, n)
     return m
   }, [nodes])
+
+  // Recompute the cutoff only when the mode flips — keeps Date.now() out of the
+  // render body and the label set stable between mode changes.
+  const cutoff = useMemo(() => labelRecencyCutoff(labelMode), [labelMode])
 
   const labels: { node: SimNode2D; variant: 'hover' | 'select' | 'hub' }[] = []
   if (selectedId) {
@@ -140,16 +140,12 @@ function Labels2D({
     const n = nodeMap.get(hoveredId)
     if (n) labels.push({ node: n, variant: 'hover' })
   }
-  if (showAllLabels) {
+  if (cutoff !== null) {
     for (const n of nodes) {
       if (n.id === selectedId || n.id === hoveredId) continue
-      labels.push({ node: n, variant: 'hub' })
-    }
-  } else {
-    for (const id of hubIds) {
-      if (id === selectedId || id === hoveredId) continue
-      const n = nodeMap.get(id)
-      if (n) labels.push({ node: n, variant: 'hub' })
+      if (new Date(n.createdAt).getTime() >= cutoff) {
+        labels.push({ node: n, variant: 'hub' })
+      }
     }
   }
 

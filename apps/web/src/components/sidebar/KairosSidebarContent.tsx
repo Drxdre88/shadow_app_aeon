@@ -3,18 +3,22 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Plus, BookOpen, Pin, Link as LinkIcon, Tag } from 'lucide-react'
+import { ArrowLeft, Plus, BookOpen, Pin, Link as LinkIcon, Tag, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { createMemory } from '@/lib/actions/memories'
-import { useKairosStore } from '@/stores/kairosStore'
+import { useKairosStore, type LabelMode } from '@/stores/kairosStore'
+
+const LABEL_MODE_OPTIONS: { value: LabelMode; label: string }[] = [
+  { value: 'today', label: 'Titles: Today' },
+  { value: 'week', label: 'Titles: This Week' },
+  { value: 'none', label: 'Titles: None' },
+]
 
 // Sidebar middle section shown on /kairos — replaces the realm list with
 // Kairos-specific actions (back arrow, capture controls, selected actions).
 export function KairosSidebarContent({ collapsed }: { collapsed: boolean }) {
   const selectedMemoryId = useKairosStore((s) => s.selectedMemoryId)
   const triggerRefresh = useKairosStore((s) => s.triggerRefresh)
-  const showAllLabels = useKairosStore((s) => s.showAllLabels)
-  const toggleShowAllLabels = useKairosStore((s) => s.toggleShowAllLabels)
 
   return (
     <div className={cn('flex flex-col gap-1.5 px-2 py-2', collapsed && 'items-center px-1')}>
@@ -25,13 +29,7 @@ export function KairosSidebarContent({ collapsed }: { collapsed: boolean }) {
       <EodButton collapsed={collapsed} onCaptured={triggerRefresh} />
 
       <Section label="Display" collapsed={collapsed} />
-      <RailButton
-        icon={<Tag className="w-3.5 h-3.5" />}
-        label={showAllLabels ? 'Titles: All' : 'Titles: Hubs'}
-        onClick={toggleShowAllLabels}
-        active={showAllLabels}
-        collapsed={collapsed}
-      />
+      <LabelModeControl collapsed={collapsed} />
 
       <Section label="Selected" collapsed={collapsed} />
       <RailButton icon={<Pin className="w-3.5 h-3.5" />} label="Pin" disabled={!selectedMemoryId} collapsed={collapsed} />
@@ -118,6 +116,65 @@ function EodButton({ collapsed, onCaptured }: { collapsed: boolean; onCaptured: 
         />
       )}
     </>
+  )
+}
+
+// A native <select> dressed up to read like the rail buttons. Native is
+// deliberate: it's keyboard-accessible, closes on outside-click for free, and
+// needs no popover state. When the rail is collapsed the select sits invisibly
+// over the icon so the icon stays the only visible affordance.
+function LabelModeControl({ collapsed }: { collapsed: boolean }) {
+  const labelMode = useKairosStore((s) => s.labelMode)
+  const setLabelMode = useKairosStore((s) => s.setLabelMode)
+  const active = labelMode !== 'none'
+
+  const select = (
+    <select
+      aria-label="Title display"
+      value={labelMode}
+      onChange={(e) => setLabelMode(e.target.value as LabelMode)}
+      className={cn(
+        'appearance-none bg-transparent text-[11px] font-semibold text-inherit outline-none cursor-pointer',
+        collapsed ? 'absolute inset-0 w-full h-full opacity-0' : 'w-full pr-4',
+      )}
+    >
+      {LABEL_MODE_OPTIONS.map((o) => (
+        <option key={o.value} value={o.value} className="bg-[#0b0713] text-white">
+          {o.label}
+        </option>
+      ))}
+    </select>
+  )
+
+  if (collapsed) {
+    return (
+      <div className="relative w-9 h-9">
+        <div
+          className={cn(
+            'flex items-center justify-center w-9 h-9 rounded-lg transition-all',
+            active ? 'text-white bg-white/[0.14]' : 'text-white/65 bg-white/[0.04]',
+          )}
+        >
+          <Tag className="w-3.5 h-3.5" />
+        </div>
+        {select}
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className={cn(
+        'relative flex items-center gap-2 rounded-lg px-3 py-2 transition-all',
+        active
+          ? 'text-white bg-white/[0.14] hover:bg-white/[0.18]'
+          : 'text-white/65 hover:text-white bg-white/[0.04] hover:bg-white/[0.10]',
+      )}
+    >
+      <Tag className="w-3.5 h-3.5 shrink-0" />
+      {select}
+      <ChevronDown className="w-3 h-3 shrink-0 opacity-60 pointer-events-none absolute right-2.5" />
+    </div>
   )
 }
 
