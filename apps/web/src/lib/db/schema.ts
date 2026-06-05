@@ -265,6 +265,45 @@ export const apiKeys = pgTable('api_keys', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
+// OAuth 2.1 authorization server (used by claude.ai / remote MCP connectors).
+// Static aeon_k1_ keys remain valid independently; these tables only back the
+// browser OAuth dance: register a client (DCR) -> authorize (PKCE) -> token.
+export const oauthClients = pgTable('oauth_clients', {
+  id: uuid('id').defaultRandom().primaryKey(), // serves as the public client_id
+  clientName: varchar('client_name', { length: 255 }),
+  redirectUris: jsonb('redirect_uris').$type<string[]>().notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
+export const oauthAuthCodes = pgTable('oauth_auth_codes', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  codeHash: varchar('code_hash', { length: 64 }).notNull().unique(),
+  clientId: uuid('client_id').notNull().references(() => oauthClients.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  redirectUri: text('redirect_uri').notNull(),
+  codeChallenge: varchar('code_challenge', { length: 128 }).notNull(),
+  scope: varchar('scope', { length: 255 }).notNull().default('mcp'),
+  resource: text('resource'),
+  expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+  usedAt: timestamp('used_at', { mode: 'date' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
+export const oauthAccessTokens = pgTable('oauth_access_tokens', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
+  tokenPrefix: varchar('token_prefix', { length: 12 }).notNull(),
+  refreshHash: varchar('refresh_hash', { length: 64 }).unique(),
+  clientId: uuid('client_id').notNull().references(() => oauthClients.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  scope: varchar('scope', { length: 255 }).notNull().default('mcp'),
+  expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+  refreshExpiresAt: timestamp('refresh_expires_at', { mode: 'date' }),
+  revokedAt: timestamp('revoked_at', { mode: 'date' }),
+  lastUsedAt: timestamp('last_used_at', { mode: 'date' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
 export const userAiCredentials = pgTable('user_ai_credentials', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

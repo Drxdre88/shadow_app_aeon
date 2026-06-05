@@ -22,6 +22,18 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: '/(.*)', headers: securityHeaders }]
   },
+  async rewrites() {
+    // App Router won't serve a dot-prefixed folder, so map the OAuth discovery
+    // well-knowns (and the resource-path-suffixed variants some MCP clients
+    // probe) onto real /api routes.
+    return [
+      { source: '/.well-known/oauth-authorization-server', destination: '/api/well-known/oauth-authorization-server' },
+      { source: '/.well-known/oauth-authorization-server/:path*', destination: '/api/well-known/oauth-authorization-server' },
+      { source: '/.well-known/openid-configuration', destination: '/api/well-known/oauth-authorization-server' },
+      { source: '/.well-known/oauth-protected-resource', destination: '/api/well-known/oauth-protected-resource' },
+      { source: '/.well-known/oauth-protected-resource/:path*', destination: '/api/well-known/oauth-protected-resource' },
+    ]
+  },
 }
 
 export default nextConfig

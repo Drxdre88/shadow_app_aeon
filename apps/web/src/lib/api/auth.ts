@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { verifyApiKey } from '@/lib/data/api-keys'
 import { verifyMobileSession } from '@/lib/data/mobile-auth'
+import { verifyOAuthAccessToken } from '@/lib/data/oauth'
 
 export type ApiUser = { id: string; role: string }
 
@@ -35,6 +36,11 @@ export async function authenticateRequest(
 
     if (token.startsWith('aeon_s1_')) {
       const result = await verifyMobileSession(token)
+      if (result) return { id: result.userId, role: 'user' }
+    }
+
+    if (token.startsWith('aeon_at_')) {
+      const result = await verifyOAuthAccessToken(token)
       if (result) return { id: result.userId, role: 'user' }
     }
 
