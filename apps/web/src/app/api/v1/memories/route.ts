@@ -4,6 +4,10 @@ import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLi
 import { listMemories as _listMemories, createMemory as _createMemory, getGraphForUser as _getGraphForUser } from '@/lib/data/memories'
 import { createMemorySchema } from '@/lib/data/validators'
 
+// Give DB-bound handlers headroom above the 8s pool-acquire timeout so a hung
+// connection surfaces as a caught 503, never a silent function-kill.
+export const maxDuration = 30
+
 export const GET = withRateLimit(
   apiHandler(async (request: NextRequest) => {
     const result = await authenticateRequest(request)

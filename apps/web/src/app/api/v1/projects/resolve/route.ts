@@ -6,6 +6,10 @@ import { db } from '@/lib/db'
 import { projectGroups, workspaceGroups } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 
+// Headroom above the 8s pool-acquire timeout so a hung connection surfaces as a
+// caught 503, never a silent function-kill ("No response is returned").
+export const maxDuration = 30
+
 // GET /api/v1/projects/resolve?name=<exact-name>
 // Case-insensitive exact-match resolver used by the Brain capture pipeline.
 // Returns the project ID for a known name so per-repo session captures can

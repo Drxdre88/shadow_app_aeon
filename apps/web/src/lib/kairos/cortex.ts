@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
 import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
 import { getProviderForTask } from '@/lib/ai/route-task'
-import { AiCredentialMissingError } from '@/lib/ai/router'
+import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import {
   buildCortexPrompt,
   cortexOutSchema,
@@ -318,6 +318,9 @@ export async function runCortexRegenForDominion(
   } catch (err) {
     if (err instanceof AiCredentialMissingError) {
       return { dominionId, dominionName: dom.name, status: 'skipped', reason: 'no BYOK credential' }
+    }
+    if (err instanceof AiCredentialDecryptError) {
+      return { dominionId, dominionName: dom.name, status: 'skipped', reason: 'key undecryptable' }
     }
     throw err
   }

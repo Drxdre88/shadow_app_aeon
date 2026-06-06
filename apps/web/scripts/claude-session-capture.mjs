@@ -455,6 +455,10 @@ function enrichWithAiCleanup(payload) {
 
 // ─── HTTP POST ──────────────────────────────────────────────────────────
 
+// Returns { id, status }: id is the created/upserted memory id (or null on
+// skip/fail); status is the HTTP status (0 on network error/timeout, null when
+// not attempted). The backfill loop reads status to pace itself and back off
+// when the server is under pressure instead of barrelling through the batch.
 async function postMemory(payload) {
   const url = `${BASE_URL}/api/v1/memories`
   const controller = new AbortController()
@@ -472,21 +476,23 @@ async function postMemory(payload) {
     const text = await res.text()
     if (!res.ok) {
       warn(`POST failed ${res.status}: ${text.slice(0, 500)}`)
-      return null
+      return { id: null, status: res.status }
     }
     try {
       const parsed = JSON.parse(text)
-      return parsed?.data?.id ?? null
+      return { id: parsed?.data?.id ?? null, status: res.status }
     } catch {
-      return null
+      return { id: null, status: res.status }
     }
   } catch (err) {
     warn(`POST error: ${err.message}`)
-    return null
+    return { id: null, status: 0 }
   } finally {
     clearTimeout(timeout)
   }
 }
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // ─── shared session processor ───────────────────────────────────────────
 
@@ -496,13 +502,13 @@ async function processSession({ transcriptPath, sessionId, cwd, hookEvent, reaso
   const messages = parseTranscript(transcriptPath)
   if (!messages || messages.length === 0) {
     log(`skip ${basename(transcriptPath)}: no transcript or empty`)
-    return null
+    return { id: null, status: null }
   }
 
   const signals = countSignals(messages)
   if (signals.userTurns < MIN_USER_TURNS && signals.toolUses < MIN_TOOL_USES) {
     log(`skip ${basename(transcriptPath)}: below quality gate (userTurns=${signals.userTurns}, toolUses=${signals.toolUses})`)
-    return null
+    return { id: null, status: null }
   }
 
   // Resolve cwd from the transcript itself if not provided (backfill path).
@@ -560,7 +566,7 @@ async function processSession({ transcriptPath, sessionId, cwd, hookEvent, reaso
   if (DRY_RUN) {
     console.error(`[brain-capture] DRY RUN ${basename(transcriptPath)} — payload follows:`)
     console.error(JSON.stringify(memoryPayload, null, 2))
-    return null
+    return { id: null, status: null }
   }
 
   return postMemory(memoryPayload)
@@ -643,17 +649,42 @@ async function runBackfill(hoursWindow) {
     // source=claude) means we just iterate and post. If a session is already
     // captured, the brain returns the existing row instead of inserting.
     const MAX = parseInt(process.env.BRAIN_BACKFILL_MAX ?? '50', 10)
+
+    // Gentle pacing + adaptive backoff. A 50-session batch fired back-to-back
+    // at the server's response rate looks like a request storm and, when the
+    // server is degraded, amplifies the load (every post 500s, we just keep
+    // going). Pace healthy posts apart, exponentially back off on 429/5xx, and
+    // abort the batch entirely after a few consecutive server errors.
+    const BASE_DELAY_MS = parseInt(process.env.BRAIN_BACKFILL_DELAY_MS ?? '150', 10)
+    const MAX_CONSECUTIVE_ERRORS = 3
+    let consecutiveServerErrors = 0
+
     for (const c of candidates.slice(0, MAX)) {
-      const id = await processSession({
+      const { id, status } = await processSession({
         transcriptPath: c.path,
         sessionId: c.sessionId,
         cwd: null,
         hookEvent: 'SessionEndBackfill',
         reason: 'backfill',
       })
-      if (id === null) skipped++
-      else if (id) created++
+      if (id) created++
+      else if (status === null) skipped++  // not attempted (empty/below-gate/dry-run)
       else failed++
+
+      // status: 0 = network/timeout, 429 = rate limited, >=500 = server error.
+      const underPressure = status === 0 || status === 429 || (status != null && status >= 500)
+      if (underPressure) {
+        consecutiveServerErrors++
+        if (consecutiveServerErrors >= MAX_CONSECUTIVE_ERRORS) {
+          warn(`backfill: ${consecutiveServerErrors} consecutive server errors — aborting batch to avoid amplifying load`)
+          break
+        }
+        // Exponential backoff: 1s, 2s, 4s …
+        await sleep(1000 * 2 ** (consecutiveServerErrors - 1))
+      } else {
+        consecutiveServerErrors = 0
+        if (BASE_DELAY_MS > 0) await sleep(BASE_DELAY_MS)
+      }
     }
     log(`backfill: created/upserted=${created} skipped=${skipped} failed=${failed}`)
   } finally {
@@ -677,7 +708,7 @@ async function runFromHook() {
   if (!API_KEY) bail('AEON_API_KEY not set')
   const payload = readStdin()
   log('payload event:', payload.hook_event_name, 'reason:', payload.reason)
-  const id = await processSession({
+  const { id } = await processSession({
     transcriptPath: payload.transcript_path,
     sessionId: payload.session_id,
     cwd: payload.cwd,

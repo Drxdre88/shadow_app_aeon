@@ -4,7 +4,7 @@ import { userAiCredentials, dominions } from '@/lib/db/schema'
 import { and, eq, isNull, inArray } from 'drizzle-orm'
 import { findDominionsByUser } from '@/lib/data/dominions'
 import { runRecipe } from '@/lib/kairos/dispatch'
-import { AiCredentialMissingError } from '@/lib/ai/router'
+import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 3C — daily Briefer cron endpoint, dispatcher-driven.
@@ -59,6 +59,10 @@ async function briefUser(userId: string): Promise<BrieferResult[]> {
     } catch (err) {
       if (err instanceof AiCredentialMissingError) {
         out.push({ dominionId: dom.id, dominionName: dom.name, status: 'skipped', reason: 'no BYOK credential' })
+        continue
+      }
+      if (err instanceof AiCredentialDecryptError) {
+        out.push({ dominionId: dom.id, dominionName: dom.name, status: 'skipped', reason: 'key undecryptable' })
         continue
       }
       const msg = err instanceof Error ? err.message : String(err)

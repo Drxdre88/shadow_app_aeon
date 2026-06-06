@@ -23,7 +23,7 @@ import {
 } from '@/lib/kairos/chat-retrieval'
 import { toPromptRetrieval, toRetrievalMeta } from '@/lib/kairos/chat-retrieval-mapping'
 import { getProviderForTask } from '@/lib/ai/route-task'
-import { AiCredentialMissingError } from '@/lib/ai/router'
+import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 
 // Chat server actions. Both startKairosThread + sendKairosMessage persist
 // the user turn BEFORE calling the model so a model failure can never
@@ -75,6 +75,7 @@ async function callAssistant(
     return { content: text, model: response.modelId }
   } catch (err) {
     if (err instanceof AiCredentialMissingError) return { error: 'no_credential' }
+    if (err instanceof AiCredentialDecryptError) return { error: 'no_credential' }
     return { error: 'failed', message: err instanceof Error ? err.message : String(err) }
   }
 }

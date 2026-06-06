@@ -135,10 +135,17 @@ export async function verifyOAuthAccessToken(
   if (!row) return null
   if (row.expiresAt.getTime() < Date.now()) return null
 
-  db.update(oauthAccessTokens)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(oauthAccessTokens.id, row.id))
-    .catch(() => {})
+  // Throttle the lastUsedAt write: under a request storm every authenticated
+  // call otherwise checks out a second pooled connection for a fire-and-forget
+  // UPDATE, accelerating pool exhaustion. One write per 60s of activity is
+  // plenty for a "last used" timestamp.
+  const lastUsed = row.lastUsedAt?.getTime() ?? 0
+  if (Date.now() - lastUsed > 60_000) {
+    db.update(oauthAccessTokens)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(oauthAccessTokens.id, row.id))
+      .catch(() => {})
+  }
 
   return { userId: row.userId, scope: row.scope }
 }
