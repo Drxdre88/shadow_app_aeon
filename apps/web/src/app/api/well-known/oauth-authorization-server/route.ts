@@ -1,14 +1,14 @@
 import { getOrigin, OAUTH_CORS_HEADERS } from '@/lib/oauth/origin'
 
-// getOrigin() calls headers() from next/headers — a true dynamic signal that
-// forces per-request execution. Belt-and-suspenders with force-dynamic, which
-// alone was not reliably honoured (route was statically prerendered to a 500).
+// Primary path is middleware.ts (serveOAuthDiscovery), which intercepts this
+// before the request ever reaches this handler — Next was prerendering/stale-
+// caching this route into an empty 500. This handler is kept only as a fallback.
 export const dynamic = 'force-dynamic'
 
 // RFC 8414 authorization-server metadata. Reached via a rewrite from
 // /.well-known/oauth-authorization-server (App Router won't serve dot-folders).
-export async function GET() {
-  const origin = await getOrigin()
+export async function GET(req: Request) {
+  const origin = getOrigin(req)
   return Response.json(
     {
       issuer: origin,
