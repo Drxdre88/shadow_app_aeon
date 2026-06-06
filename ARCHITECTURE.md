@@ -1,6 +1,6 @@
 # ARCHITECTURE.md
 
-Last updated: 2026-06-02
+Last updated: 2026-06-06
 
 ---
 
@@ -21,8 +21,10 @@ apps/web/                          -- Next.js web application
   src/app/api/v1/memories/         -- Memory REST surface (incl. capture, needs-summary)
   src/app/api/v1/ai/               -- BYOK credentials + preferences (admin-gated)
   src/app/api/v1/sessions/         -- Agent session lifecycle (spawn, events, kill)
-  src/app/api/[transport]/         -- MCP server (Bearer token auth, 94 tools)
-  src/app/api/cron/                -- Briefer + project-snapshot cron (CRON_SECRET)
+  src/app/api/[transport]/         -- MCP server (Bearer API key OR OAuth aeon_at_ token, 98 tools)
+  src/app/api/oauth/               -- OAuth 2.1 AS for claude.ai connector (register, authorize, token)
+  src/app/api/well-known/          -- OAuth discovery (AS metadata + protected-resource metadata)
+  src/app/api/cron/                -- keep-warm + briefer + snapshot + synthesis crons (CRON_SECRET)
   src/app/kairos/                  -- Kairos memory graph page
   src/app/notes/                   -- Notes bento page
   src/app/settings/ai/             -- BYOK provider key + tier routing page
@@ -41,7 +43,8 @@ apps/web/                          -- Next.js web application
   src/lib/actions/                 -- Server actions (mutations)
   src/lib/data/                    -- Pure data-layer queries
   src/lib/ai/                      -- BYOK router, provider envelope, route-task, crypto
-  src/lib/kairos/                  -- briefer, auto-capture, project-snapshot, spawn
+  src/lib/oauth/                   -- PKCE S256 verify + origin helper for OAuth AS
+  src/lib/kairos/                  -- briefer, auto-capture, project-snapshot, spawn, dispatch + recipes/
   src/lib/store/                   -- Zustand stores (board, canvas, gantt, undo)
   src/stores/                      -- Zustand stores (theme, sidebar, kairos)
 apps/kairos-worker/                -- Standalone Node HTTP server (spawn / kill / health)
@@ -59,7 +62,7 @@ packages/shared/                   -- Shared types, theme presets, filter utils
 
 **ORM:** Drizzle ORM with `@neondatabase/serverless` driver.
 **Schema file:** `apps/web/src/lib/db/schema.ts`
-**Migrations:** `apps/web/drizzle/` — through `0021_memory_stream_class.sql`. Latest eight: `0014_ai_integration`, `0015_kairos_summaries`, `0016_dominion`, `0017_dominion_body`, `0018_engine_policies`, `0019_agent_sessions`, `0020_task_assignees`, `0021_memory_stream_class`.
+**Migrations:** `apps/web/drizzle/` — through `0022_oauth.sql`. Latest eight: `0015_kairos_summaries`, `0016_dominion`, `0017_dominion_body`, `0018_engine_policies`, `0019_agent_sessions`, `0020_task_assignees`, `0021_memory_stream_class`, `0022_oauth`.
 
 | Table | Key Columns | Purpose |
 |---|---|---|
@@ -99,10 +102,15 @@ packages/shared/                   -- Shared types, theme presets, filter utils
 | `agentSessions` | userId, dominionId, engine, repo, branch, goal, prompt, status, workerHost, workerPid, costUsd (numeric(10,4)), memoryId, exitCode | Spawn primitive — AI agent sessions. Phase 2 C1 also stores chat threads here (`engine='kairos-chat'`, `goal` = thread title) |
 | `sessionEvents` | sessionId, seq (unique per session), kind, toolName, payload jsonb | Monotonic event timeline; replay-idempotent. Phase 2 C1 also stores chat messages here (`kind='message'`, `payload={role, content, citations?, model?}`) |
 | `taskAssignees` | (taskId, userId), assignedBy, assignedAt | Trello-style multi-assign |
+| `oauthClients` | id (=client_id), redirectUris jsonb, clientName | OAuth 2.1 Dynamic Client Registration (RFC 7591); no client secret — bare id is inert until a real user authorizes |
+| `oauthAuthCodes` | codeHash (sha256, unique), clientId, userId, redirectUri, codeChallenge, scope, usedAt, expiresAt | Single-use PKCE auth codes; `usedAt IS NULL` guard makes consume atomic; 10-min TTL |
+| `oauthAccessTokens` | tokenHash (sha256), tokenPrefix, refreshHash, clientId, userId, scope, expiresAt, refreshExpiresAt, revokedAt, lastUsedAt | Bearer access (`aeon_at_`, 30d) + refresh (`aeon_rt_`, 1y, rotated) pairs; `lastUsedAt` write throttled to 1/60s |
 
 **Patterns:** Three-layer invariant — `lib/data/` (pure queries) → `lib/actions/` (auth-guarded server actions) → API surfaces. All mutations call `touchProject()` to bump `boardVersion`. `verifyProjectAccess()` resolves direct membership, ownership, and realm membership in 1–2 queries. Dominion resolution: `memory.dominionId` ?? `project.dominionId` ?? `dominionRepos` via `sourceMetadata.repo` ?? null. Two partial unique indexes (one personal realm per user; one active AI key per user × provider). Forward-referenced FKs (`projects.dominionId`, `memories.dominionId`, `boardTasks ↔ ganttTasks`) avoid Drizzle circular imports.
 
-`lib/data/` modules: `tasks`, `projects`, `columns`, `labels`, `dependencies`, `checklist`, `gantt`, `ganttViews`, `vault`, `canvas`, `comments`, `members`, `workspaces`, `activity`, `preferences`, `api-keys`, `contacts`, `mobile-auth`, `velocity`, `storage`, `bridge`, `memories` (incl. `captureReflection`), `memoriesMarkdown`, `dominions`, `ai-credentials`, `sessions`, `assignees`, `kairos-chat` (Phase 2 C1; `updateChatMessageContent` added in C2 for orphan-retry-replace), `kairos-chat-payload` (Phase 2 C2; DB-free defensive parser for retrieval JSONB), `validators`.
+`lib/data/` modules: `tasks`, `projects`, `columns`, `labels`, `dependencies`, `checklist`, `gantt`, `ganttViews`, `vault`, `canvas`, `comments`, `members`, `workspaces`, `activity`, `preferences`, `api-keys`, `contacts`, `mobile-auth`, `velocity`, `storage`, `bridge`, `memories` (incl. `captureReflection`), `memoriesMarkdown`, `dominions`, `ai-credentials`, `sessions`, `assignees`, `kairos-chat` (Phase 2 C1; `updateChatMessageContent` added in C2 for orphan-retry-replace), `kairos-chat-payload` (Phase 2 C2; DB-free defensive parser for retrieval JSONB), `oauth` (token mint/hash, DCR, PKCE consume, refresh rotation), `validators`.
+
+**DB driver (reliability):** `lib/db/index.ts` Pool — `max: 20`, `connectionTimeoutMillis: 8000`. The acquire timeout is deliberately kept **below** the v1 route `maxDuration` (30s): if a connection wait outlives the function's run budget, Vercel hard-kills the function mid-await and Next logs "No response is returned from route handler" (no throw to catch). 8s acquire → `apiHandler` try/catch returns a clean 503 instead. `max` raised to 20 is safe on the `-pooler` (PgBouncer) endpoint.
 
 ---
 
@@ -127,6 +135,7 @@ Notable additions since 2026-05-23:
 | POST | `/api/v1/memories/capture` | Idempotent inbound capture (channel + externalId dedup) |
 | GET | `/api/v1/memories/needs-summary` | Memories with missing aiTitle / execSummary |
 | GET | `/api/v1/projects/resolve` | Repo-slug → project resolution |
+| GET | `/api/cron/keep-warm` | `SELECT 1` every 4 min, London active hours (`*/4 5-23 * * *`) — defeats Neon scale-to-zero cold starts (CRON_SECRET) |
 | POST | `/api/cron/briefer` | Daily Briefer cron — 07:00 UTC (CRON_SECRET) |
 | POST | `/api/cron/project-snapshot` | Nightly snapshot cron — 23:00 UTC (CRON_SECRET) |
 | GET | `/api/cron/archetype-synthesis` | Daily archetype synthesis — 02:30 UTC, Phase 2 B1 (CRON_SECRET) |
@@ -135,9 +144,23 @@ Notable additions since 2026-05-23:
 
 Existing memory + board + Gantt + realm + canvas routes preserved.
 
+### OAuth 2.1 Server (`/api/oauth/` + `/api/well-known/`)
+
+The claude.ai remote MCP connector is an OAuth-only client (no static-token field), so Aeon runs its own OAuth 2.1 authorization server. All five routes export `force-dynamic` (PPR would otherwise cache the origin-derived JSON at build time — the bug fixed in `73f2ae7`). `next.config.ts` rewrites the dot-prefixed `/.well-known/*` paths (incl. a `:path*` variant for claude.ai's suffixed discovery and an `openid-configuration` alias) onto these handlers.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/oauth/register` | RFC 7591 Dynamic Client Registration — open, validates http(s) redirect URIs, returns `client_id` |
+| GET | `/api/oauth/authorize` | Validates client + redirect, enforces PKCE S256, requires NextAuth session (bounces to `/login`), mints single-use auth code |
+| POST | `/api/oauth/token` | `authorization_code` (PKCE verifier) + `refresh_token` (rotation) grants; no client secret |
+| GET | `/api/well-known/oauth-authorization-server` | RFC 8414 AS metadata (S256 only, scope=mcp) |
+| GET | `/api/well-known/oauth-protected-resource` | RFC 9728 metadata declaring `resource=/api/mcp` |
+
+Tokens are minted as `{prefix}{32-hex-bytes}`, stored only as SHA-256 hashes (raw returned once). `verifyOAuthAccessToken` plugs into `authenticateRequest` as a third token branch (`aeon_at_` alongside static `aeon_k1_` keys and mobile sessions). The MCP transport wraps its handler in `withMcpAuth`, which emits a 401 with a `resource_metadata` pointer to start claude.ai's discovery walk.
+
 ### MCP Tools (`/api/[transport]/`)
 
-Auth: Bearer (API key or master key). **95 tools** across 15 categories:
+Auth: Bearer (API key, master key, or OAuth `aeon_at_` token). **98 tools** across 16 categories:
 
 | Category | Count | Notes |
 |---|---|---|
@@ -156,6 +179,9 @@ Auth: Bearer (API key or master key). **95 tools** across 15 categories:
 | **dominions** | **16** | CRUD + vision/objectives + repo mapping + project assignment + bulk assign |
 | **sessions** | **5** | spawn_session, list_sessions, get_session, list_session_events, kill_session |
 | **reflections** | **1** | kairos_reflect — fire owner reflection into a Dominion (Phase 2 B3) |
+| **recipes** | **3** | list_recipes, run_recipe (dispatcher, `surface='claude_code'`), get_trace_history (trace-stream meta-cognition) |
+
+memories grew to 7 (added `link_memory`, `prepare_context`, `get_memory_with_neighbours` alongside `list_memories_needing_summary`).
 
 **Parity locks:**
 - `gantt-parity.test.ts` — locks the Gantt MCP ↔ REST surface.
@@ -256,7 +282,10 @@ Auth: Bearer (API key or master key). **95 tools** across 15 categories:
 | **Export** | Complete | `api/export/route.ts` | Full JSON export |
 | **Auth (OAuth + magic link)** | Complete | `lib/auth.ts` | Google, GitHub (optional), Resend |
 | **API keys** | Complete | `api/v1/api-keys/`, `lib/data/api-keys.ts` | Create/revoke |
-| **MCP server** | Complete | `api/[transport]/route.ts`, `tools/*` (14 categories) | 94 tools |
+| **MCP server** | Complete | `api/[transport]/route.ts`, `tools/*` (16 categories) | 98 tools |
+| **OAuth 2.1 connector (claude.ai)** | Complete | `api/oauth/*`, `api/well-known/*`, `lib/data/oauth.ts`, `lib/oauth/pkce.ts`, migration 0022 | DCR + PKCE S256 + refresh rotation; lets claude.ai's OAuth-only connector reach the remote MCP server |
+| **Kairos — recipes + dispatcher** | Complete | `lib/kairos/dispatch.ts`, `lib/kairos/recipes/` (`_recipe.ts`, `registry.ts`, `brief.ts`), `tools/recipes.ts` | `runRecipe` single entry: shared retrieval → surface-routed (`flat` BYOK/cron vs `expanded` claude_code) → idempotent primary write + trace. BRIEF is the sole registered recipe; briefer cron + `runBriefingNow` + MCP `run_recipe` all route through it |
+| **DB / cold-start reliability layer** | Complete | `lib/db/index.ts`, `api/cron/keep-warm/route.ts`, v1 route `maxDuration`, `lib/data/oauth.ts` | 8s pool acquire under 30s route budget (no silent function-kill); keep-warm cron defeats Neon scale-to-zero; `lastUsedAt` throttle stops per-request pool burn |
 | **Beta terms gate** | Complete | `app/beta-terms/` | Terms acceptance |
 | **Undo system** | Complete | `lib/store/undoStore.ts` | 20-entry stack |
 | **Real-time sync (Pusher + polling)** | Complete | `lib/pusher.ts`, `lib/realtime/index.ts` | ~1s push, 30s polling fallback |
@@ -302,7 +331,8 @@ All stores use Zustand v5.
 | `@ai-sdk/anthropic` | Claude Haiku 4.5 / Sonnet 4.6 / Opus 4.7 | Active (BYOK) |
 | `@ai-sdk/openai` | GPT-5.5 mini / 5.5 / 5.5 Pro | Active (BYOK) |
 | `@ai-sdk/google` | Gemini 2.5 Flash / Pro | Active (BYOK) |
-| MCP Protocol | AI tool server | Active (94 tools) |
+| MCP Protocol | AI tool server | Active (98 tools) |
+| claude.ai remote connector | OAuth 2.1 MCP client → `/api/mcp` | Active (DCR + PKCE) |
 | Pusher Channels | Real-time | Active |
 | ReactFlow (@xyflow) | Canvas | Active |
 | @react-three/fiber | Kairos WebGL | Active |
@@ -332,14 +362,15 @@ All three AI provider SDKs are consumed exclusively through the Vercel AI SDK ad
 | Gantt mutations don't fire Pusher / boardVersion | Low | `createGanttTask` / `createRow` / `createGanttView` don't call `touchProject` |
 | Activity feed has no UI | Low | Table populated, no standalone feed page |
 | Desktop app scaffold only | Low | Tauri config, no integration |
-| Test coverage thin | Low | 26 test files (1688 tests) — no E2E tests; first React-component test added in C2 fix-pack (`kairos-citations.test.tsx`, jsdom) |
+| Test coverage thin | Low | 37 test files (1777 tests) — no E2E tests; no test on the new OAuth token/PKCE roundtrip beyond `pkce.test.ts`, none on the session-capture backoff loop |
+| Sessions/OAuth parity & smoke tests | Low | OAuth AS has unit coverage for PKCE only; no end-to-end DCR→authorize→token smoke test; sessions REST/MCP still lack a parity lock |
 | Inbound channel adapters absent | Low | Schema allows `'webhook'` source; no `/api/webhooks/slack`, `/teams`, `/github` routes |
 | Memory titles backfill not automated | Low | `list_memories_needing_summary` + REST endpoint exist; no cron sweep, manual invocation only |
 | Archetype + cortex cron concurrency | Medium | TOCTOU on `alreadyRanToday` + soft-archive + insert; horsemen flagged on B1/B2. Fix: postgres advisory lock per `(userId, dominionId)`. Card in PBI Queue |
 | memories.ts past 500-line size standard | Medium | 1178 lines after B3's `captureReflection`. Card in PBI Queue: split into `core` / `capture` / `graph` / `context` |
 | Chat assistant Markdown rendered as text | Medium | C1 ships plain-text rendering; system prompt asks for Markdown. Card in PBI Queue: add react-markdown + sanitiser |
 | Cross-user cron snapshot leak | Medium | 5 memories from other beta users captured into owner's memory table by `project-snapshot`. Documented in `docs/kairos/14-quality-gates.md` §3 |
-| Cron `isAuthorized` copied 5 times | Low | Briefer, snapshot, archetype-synthesis, cortex-regen, memory-compaction all redefine the same auth helper. Card in PBI Queue: hoist to `lib/cron/auth.ts` |
+| Cron `isAuthorized` copied 6 times | Low | Briefer, snapshot, archetype-synthesis, cortex-regen, memory-compaction, keep-warm all redefine the same auth helper. Card in PBI Queue: hoist to `lib/cron/auth.ts` |
 | Kairos B1/B2/B3 pure helpers untested | Low | Stalker flagged: `deriveReflectionTitle`, `hasArchetypeSignal`, `hasCortexSignal`, `parsePriorCortexPayload`, `alreadyRanToday` SQL contract. Card in PBI Queue |
 | Chat Visor lacks focus trap | Low | Dialog has Escape + autofocus + role=dialog but tab leaks to underlying page. Card in PBI Queue |
 | chat_with_kairos MCP tool absent | Low | Chat surface is server-action only; planned for Phase 1C C3 — second front door to the same threads |
@@ -353,6 +384,22 @@ All three AI provider SDKs are consumed exclusively through the Vercel AI SDK ad
 ---
 
 ## 9. RECENT CHANGES
+
+### 2026-06-06 — DB/cold-start reliability hardening + AI key decrypt safety
+
+1. **Root-caused the "No response is returned from route handler" incidents.** Not an app bug — under burst load the DB pool acquire (`connectionTimeoutMillis: 20000`) outlived the v1 route's default function budget, so Vercel hard-killed the function mid-await before `apiHandler`'s try/catch could return. Fix: pool `connectionTimeoutMillis` 20s→**8s**, `max` 10→**20**, and `export const maxDuration = 30` added to `/api/v1/memories` + `/api/v1/projects/resolve` so a hung connection now surfaces as a caught 503.
+2. **Keep-warm cron** (`/api/cron/keep-warm`, `*/4 5-23 * * *`) — `SELECT 1` through London active hours so Neon compute never scale-to-zeros and the first real request is warm. Stopgap; durable alternative is disabling scale-to-zero on the Neon plan.
+3. **OAuth `lastUsedAt` throttle** — `verifyOAuthAccessToken` (called on every authenticated MCP/REST request) was firing a fire-and-forget UPDATE that checked out a *second* pool connection per call; now throttled to once per 60s.
+4. **`AiCredentialDecryptError`** — a rotated `AI_KEYS_MASTER_KEY` made `decryptSecret` throw the raw OpenSSL "Unsupported state or unable to authenticate data" 500 (surfaced when running a briefing). `getDecryptedKey` now wraps the decrypt and throws a typed error; briefer cron, `runBriefingNow`, kairos-chat, cortex, and archetypes all catch it and skip with "key undecryptable — re-enter API key" instead of crashing.
+5. **Session-capture client backoff** (`scripts/claude-session-capture.mjs`) — the ~3/sec "memories storm" was the 50-session backfill firing back-to-back, not retries. `postMemory` now returns `{ id, status }`; the backfill paces posts (~150ms), backs off exponentially on 429/5xx, and aborts after 3 consecutive server errors so a degraded server is no longer amplified.
+6. **Tests** — 1688 → 1777; all green after adding `AiCredentialDecryptError` to the three router mocks.
+
+### 2026-06-05 — OAuth 2.1 remote connector + recipes/dispatcher (Phase 3C)
+
+1. **OAuth 2.1 authorization server** (migration 0022) so claude.ai's OAuth-only MCP connector can reach `/api/mcp`. New `oauthClients` / `oauthAuthCodes` / `oauthAccessTokens` tables; `/api/oauth/{register,authorize,token}` (RFC 7591 DCR + PKCE S256 + refresh rotation, no client secret) and `/api/well-known/oauth-{authorization-server,protected-resource}` discovery. `verifyOAuthAccessToken` accepts `aeon_at_` tokens in `authenticateRequest`; `next.config.ts` rewrites the dot-folder `.well-known` paths. All OAuth routes `force-dynamic` (PPR was statically caching origin-derived JSON → 500s, fixed in 73f2ae7).
+2. **Recipes + dispatcher** — `lib/kairos/dispatch.ts` `runRecipe` is now the single entry for synthesis writes: one shared `retrieveContext`, surface-routed (`flat` for BYOK/cron vs `expanded` for claude_code), idempotent primary write + linked trace row. `BRIEF` is the first registered recipe; the briefer cron and `runBriefingNow` action were rewired through the dispatcher, and a new MCP `recipes` category (`list_recipes`, `run_recipe`, `get_trace_history`) exposes it.
+3. **MCP surface — 94/95 → 98 tools** across 16 categories (recipes +3; memories confirmed at 7 with `link_memory` / `prepare_context` / `get_memory_with_neighbours`).
+4. **Kairos title display** — recency dropdown (today / this week / none).
 
 ### 2026-06-02 (afternoon) — Phase 1C C2 + horsemen fix-pack + user-facing docs
 

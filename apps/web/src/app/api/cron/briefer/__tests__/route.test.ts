@@ -67,6 +67,12 @@ vi.mock('@/lib/ai/router', () => ({
       this.name = 'AiCredentialMissingError'
     }
   },
+  AiCredentialDecryptError: class AiCredentialDecryptError extends Error {
+    constructor(public providerId?: string) {
+      super('undecryptable')
+      this.name = 'AiCredentialDecryptError'
+    }
+  },
 }))
 
 import { GET } from '../route'

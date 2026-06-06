@@ -17,6 +17,22 @@ export class AiCredentialMissingError extends Error {
   }
 }
 
+/**
+ * Thrown when a stored credential exists but cannot be decrypted — almost always
+ * because AI_KEYS_MASTER_KEY was rotated/changed since the key was saved, so the
+ * AES-GCM auth tag no longer verifies. Surfaced as an actionable "re-enter your
+ * key" instead of the raw OpenSSL "Unsupported state or unable to authenticate
+ * data" crypto error that otherwise 500s the whole request.
+ */
+export class AiCredentialDecryptError extends Error {
+  readonly provider: ProviderId
+  constructor(provider: ProviderId) {
+    super(`Stored credential for ${provider} could not be decrypted — please re-enter your API key in Settings`)
+    this.name = 'AiCredentialDecryptError'
+    this.provider = provider
+  }
+}
+
 type TierResolution = { providerId: ProviderId; modelId: string }
 
 async function resolveTier(userId: string, tier: AiTier): Promise<TierResolution> {
@@ -44,7 +60,13 @@ async function getDecryptedKey(userId: string, providerId: ProviderId): Promise<
     .where(eq(userAiCredentials.id, cred.id))
     .catch(() => {})
 
-  return decryptSecret({ ciphertext: cred.ciphertext, iv: cred.iv, authTag: cred.authTag })
+  try {
+    return decryptSecret({ ciphertext: cred.ciphertext, iv: cred.iv, authTag: cred.authTag })
+  } catch {
+    // Auth-tag failure (master key changed) or corrupt ciphertext — turn the raw
+    // OpenSSL error into a typed, actionable one callers can present cleanly.
+    throw new AiCredentialDecryptError(providerId)
+  }
 }
 
 function buildModel(providerId: ProviderId, modelId: string, apiKey: string): LanguageModel {

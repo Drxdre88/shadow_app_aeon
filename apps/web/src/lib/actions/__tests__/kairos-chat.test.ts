@@ -41,6 +41,7 @@ vi.mock('@/lib/ai/route-task', () => ({
 
 vi.mock('@/lib/ai/router', () => ({
   AiCredentialMissingError: class AiCredentialMissingError extends Error {},
+  AiCredentialDecryptError: class AiCredentialDecryptError extends Error {},
 }))
 
 vi.mock('@/lib/db', () => ({

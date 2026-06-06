@@ -232,7 +232,7 @@ export async function runBriefingNow(opts: { force?: boolean } = {}) {
   const userId = await requireAuth()
   const { findDominionsByUser } = await import('@/lib/data/dominions')
   const { runRecipe } = await import('@/lib/kairos/dispatch')
-  const { AiCredentialMissingError } = await import('@/lib/ai/router')
+  const { AiCredentialMissingError, AiCredentialDecryptError } = await import('@/lib/ai/router')
   const { memories } = await import('@/lib/db/schema')
   const { sql, isNull, and, eq } = await import('drizzle-orm')
 
@@ -266,6 +266,10 @@ export async function runBriefingNow(opts: { force?: boolean } = {}) {
     } catch (err) {
       if (err instanceof AiCredentialMissingError) {
         outcomes.push({ status: 'skipped', dominionName: dom.name, reason: 'no BYOK credential' })
+        continue
+      }
+      if (err instanceof AiCredentialDecryptError) {
+        outcomes.push({ status: 'skipped', dominionName: dom.name, reason: 'key undecryptable — re-enter API key' })
         continue
       }
       const msg = err instanceof Error ? err.message : String(err)
