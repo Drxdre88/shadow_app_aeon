@@ -1,0 +1,34 @@
+{
+  "_README": {
+    "format": "Array of fixture objects. Each has: query (string), relevantIds (array of memory UUIDs that SHOULD appear in the top results), and note (human-readable explanation). relevantIds are obtained by running `GET /api/v1/memories/context?query=<query>` manually and copying the UUIDs from sources[] that are genuinely relevant. Leave relevantIds empty ([]) until you have populated them — the harness will warn and skip scoring for that fixture.",
+    "workflow": "1. Run harness once with empty relevantIds to see what the server currently returns (keyword baseline). 2. Copy relevant UUIDs into relevantIds. 3. Re-run to get scored metrics. 4. After enabling embeddings, re-run and compare.",
+    "uuidSource": "GET /api/v1/memories/context?query=<url-encoded-query>&budgetTokens=4000&maxSources=10&hops=1 — look at sources[].id in the response"
+  },
+  "fixtures": [
+    {
+      "query": "what did we decide about the mobile strategy",
+      "relevantIds": [],
+      "note": "Should surface the Capacitor-over-React-Native pivot decision and PWA-for-desktop notes. Fill from /context sources."
+    },
+    {
+      "query": "kairos retrieval architecture",
+      "relevantIds": [],
+      "note": "Should surface memories about the Brain Phase 1 substrate, retrieve.ts design, FTS vs hybrid search decisions."
+    },
+    {
+      "query": "how does MCP OAuth discovery work",
+      "relevantIds": [],
+      "note": "Should surface the OAuth 2.1 connector and middleware-based discovery fix (claude.ai connector, force-dynamic issue)."
+    },
+    {
+      "query": "session capture hook setup",
+      "relevantIds": [],
+      "note": "Should surface claude-session-capture.mjs design notes and the Brain Phase 2 session-capture spec."
+    },
+    {
+      "query": "aeon board column semantics and workflow",
+      "relevantIds": [],
+      "note": "Should surface memories about the Aeon dev workflow — Mission Control, In Dev, AI Review transitions and automation rules."
+    }
+  ]
+}
