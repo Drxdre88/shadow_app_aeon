@@ -146,17 +146,19 @@ Existing memory + board + Gantt + realm + canvas routes preserved.
 
 ### OAuth 2.1 Server (`/api/oauth/` + `/api/well-known/`)
 
-The claude.ai remote MCP connector is an OAuth-only client (no static-token field), so Aeon runs its own OAuth 2.1 authorization server. All five routes export `force-dynamic` (PPR would otherwise cache the origin-derived JSON at build time — the bug fixed in `73f2ae7`). `next.config.ts` rewrites the dot-prefixed `/.well-known/*` paths (incl. a `:path*` variant for claude.ai's suffixed discovery and an `openid-configuration` alias) onto these handlers.
+The claude.ai remote MCP connector is an OAuth-only client (no static-token field), so Aeon runs its own OAuth 2.1 authorization server.
 
-| Method | Path | Purpose |
-|---|---|---|
-| POST | `/api/oauth/register` | RFC 7591 Dynamic Client Registration — open, validates http(s) redirect URIs, returns `client_id` |
-| GET | `/api/oauth/authorize` | Validates client + redirect, enforces PKCE S256, requires NextAuth session (bounces to `/login`), mints single-use auth code |
-| POST | `/api/oauth/token` | `authorization_code` (PKCE verifier) + `refresh_token` (rotation) grants; no client secret |
-| GET | `/api/well-known/oauth-authorization-server` | RFC 8414 AS metadata (S256 only, scope=mcp) |
-| GET | `/api/well-known/oauth-protected-resource` | RFC 9728 metadata declaring `resource=/api/mcp` |
+**Discovery is served from `middleware.ts` (`serveOAuthDiscovery`), NOT the route handlers.** Next.js statically prerenders / stale-build-caches `force-dynamic` GET route handlers into empty `500` shells (a Turbopack/PPR delivery bug — `force-dynamic` is not reliably honoured on route handlers). Middleware runs per-request, can never be statically optimised, and intercepts `/.well-known/oauth-*` (incl. the `:path*`-suffixed and `openid-configuration` variants) before they reach the handlers. The `/api/well-known/*` route handlers + `next.config.ts` rewrites remain only as a fallback. **Do not move discovery back into route handlers**, and do not import `next/headers` into `lib/oauth/origin.ts` — it bundles into every OAuth route via `OAUTH_CORS_HEADERS` and breaks them all (caused the `register` POST `500`s on 2026-06-06). See [[project_mcp_oauth_discovery_delivery]].
 
-Tokens are minted as `{prefix}{32-hex-bytes}`, stored only as SHA-256 hashes (raw returned once). `verifyOAuthAccessToken` plugs into `authenticateRequest` as a third token branch (`aeon_at_` alongside static `aeon_k1_` keys and mobile sessions). The MCP transport wraps its handler in `withMcpAuth`, which emits a 401 with a `resource_metadata` pointer to start claude.ai's discovery walk.
+| Method | Path | Served by | Purpose |
+|---|---|---|---|
+| GET | `/.well-known/oauth-authorization-server` | middleware | RFC 8414 AS metadata (S256 only, scope=mcp) |
+| GET | `/.well-known/oauth-protected-resource` | middleware | RFC 9728 metadata: `resource=/api/mcp`, `authorization_servers`, `scopes_supported`, `bearer_methods_supported` |
+| POST | `/api/oauth/register` | route handler | RFC 7591 Dynamic Client Registration — open, validates http(s) redirect URIs, returns `client_id` |
+| GET | `/api/oauth/authorize` | route handler | Validates client + redirect, enforces PKCE S256, requires NextAuth session (bounces to `/login`), mints single-use auth code |
+| POST | `/api/oauth/token` | route handler | `authorization_code` (PKCE verifier) + `refresh_token` (rotation) grants; no client secret |
+
+Tokens are minted as `{prefix}{32-hex-bytes}`, stored only as SHA-256 hashes (raw returned once). `verifyOAuthAccessToken` plugs into `authenticateRequest` as a third token branch (`aeon_at_` alongside static `aeon_k1_` keys and mobile sessions). The MCP transport wraps its handler in `withMcpAuth`, which emits a 401 with a `resource_metadata` pointer to start claude.ai's discovery walk. Confirmed working end-to-end 2026-06-06 (register 201 → authorize → token 200 → mcp 200/202); access token 30d, refresh 1y rotated.
 
 ### MCP Tools (`/api/[transport]/`)
 
@@ -384,6 +386,13 @@ All three AI provider SDKs are consumed exclusively through the Vercel AI SDK ad
 ---
 
 ## 9. RECENT CHANGES
+
+### 2026-06-06 (later) — claude.ai MCP connector finally connects (discovery → middleware)
+
+1. **Root-caused the persistent connector failure.** Discovery routes (`/.well-known/oauth-*`) returned `500 "No response is returned from route handler"` with `Cache-Control: public, max-age=0` + `Content-Length: 0` — the static-prerender signature on a no-DB route. Next.js statically prerenders/stale-build-caches `force-dynamic` GET route handlers into empty 500 shells (the `dynamic` export is not reliably honoured; a real dynamic route emits `private, no-store`). Not load, not the pool — pure Next/Turbopack delivery.
+2. **A failed first fix made it worse.** Importing `headers()` from `next/headers` into the shared `lib/oauth/origin.ts` (which exports `OAUTH_CORS_HEADERS`, imported by every OAuth route) poisoned them all — `register` (a POST that can't be prerendered) started returning "No response is returned". Reverted.
+3. **The working fix:** serve both discovery docs directly from `middleware.ts` (`serveOAuthDiscovery`) — middleware is per-request and can never be statically optimised, intercepting `/.well-known/oauth-*` before the route handlers. Added `scopes_supported` + `bearer_methods_supported` to the protected-resource metadata (spec best-practice).
+4. **Verified against claude.ai's 2026 requirements** (web-researched): DCR/RFC 7591 + PKCE S256 + protected-resource & authorization-server metadata + WWW-Authenticate `resource_metadata` + streamable HTTP — Aeon's OAuth *design* was always spec-correct; only the Next delivery was broken. Connected end-to-end 2026-06-06 10:13.
 
 ### 2026-06-06 — DB/cold-start reliability hardening + AI key decrypt safety
 
