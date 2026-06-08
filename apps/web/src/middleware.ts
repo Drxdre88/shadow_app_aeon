@@ -94,5 +94,10 @@ export default auth((request) => {
 })
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|manifest\\.json|sw\\.js|offline\\.html|aeon.*\\.png).*)'],
+  // IMPORTANT: `api` is excluded. The `auth()` wrapper must NOT run in front of
+  // the NextAuth route handlers (/api/auth/*) — on the sign-in POST it consumes
+  // the request before the handler can issue its redirect, yielding a 500
+  // "No response is returned from route handler". (Auth.js-recommended matcher.)
+  // Discovery still works: it lives under /.well-known/* which stays matched.
+  matcher: ['/((?!api|_next/static|_next/image|favicon.ico|manifest\\.json|sw\\.js|offline\\.html|aeon.*\\.png).*)'],
 }
