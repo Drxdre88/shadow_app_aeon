@@ -6,6 +6,7 @@ import {
   addLinkSchema,
   getNeighboursSchema,
   prepareContextSchema,
+  acceptProposalSchema,
 } from '@/lib/data/validators'
 import {
   createMemory as _createMemory,
@@ -15,6 +16,7 @@ import {
   findMemoryById,
   getNeighbours as _getNeighbours,
   prepareContext as _prepareContext,
+  acceptProposal as _acceptProposal,
   targetMemoryExists,
   listMemoriesNeedingSummary as _listMemoriesNeedingSummary,
 } from '@/lib/data/memories'
@@ -347,6 +349,35 @@ export const registerMemoryTools: RegisterFn = (server) => {
 
       const neighbours = await _getNeighbours(memoryId, uid, parsed.data)
       return ok({ memory, neighbours })
+    }
+  )
+
+  server.tool(
+    'accept_proposal',
+    'Promote a staged introspection proposal (a type="inbound" memory Kairos proposed, carrying its citation links) into a committed, operator-endorsed memory — the operator gate in propose-not-commit. Optionally pin it and supersede the beliefs it replaces (stamped superseded, not deleted). To REJECT a proposal instead, call update_memory with archivedAt set; to LIST pending proposals, call search_memories with type:"inbound".',
+    {
+      memoryId: z.string().uuid().describe('The proposal (inbound memory) UUID to accept'),
+      pin: z.boolean().default(false).optional().describe('Pin the committed memory so it always surfaces'),
+      asType: z.enum(['reflection', 'observation', 'note', 'decision']).optional()
+        .describe('Override the committed memory type (default derived from the proposal kind)'),
+      supersedes: z.array(z.string().uuid()).max(20).optional()
+        .describe('Memory ids this accepted belief replaces'),
+    },
+    async ({ memoryId, ...rest }, extra) => {
+      const uid = getUserId(extra)
+      const parsed = acceptProposalSchema.safeParse(rest)
+      if (!parsed.success) return fail(parsed.error.issues[0].message)
+
+      const res = await _acceptProposal(memoryId, uid, parsed.data)
+      if (!res) return notFound('Memory')
+      if (!res.ok) return fail('Memory is not a pending proposal')
+      return ok({
+        id: res.memory.id,
+        type: res.memory.type,
+        streamClass: res.memory.streamClass,
+        pinned: res.memory.pinned,
+        updatedAt: res.memory.updatedAt,
+      })
     }
   )
 }

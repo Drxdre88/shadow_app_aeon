@@ -472,6 +472,18 @@ export type AddLinkInput      = z.infer<typeof addLinkSchema>
 export type GetNeighboursInput = z.infer<typeof getNeighboursSchema>
 export type PrepareContextInput = z.infer<typeof prepareContextSchema>
 
+// Guided introspection — accept a staged proposal (type='inbound' memory Kairos
+// proposed) into a committed, operator-endorsed memory. Reject is just
+// update_memory(archivedAt); list is search_memories(type:'inbound').
+export const acceptProposalSchema = z.object({
+  pin:        z.boolean().default(false),
+  asType:     z.enum(['reflection', 'observation', 'note', 'decision']).optional()
+                .describe('Override the committed memory type (default derived from the proposal kind)'),
+  supersedes: z.array(z.string().uuid()).max(20).optional()
+                .describe('Memory ids this accepted belief replaces (stamped superseded, not deleted)'),
+})
+export type AcceptProposalInput = z.infer<typeof acceptProposalSchema>
+
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Dominion validators. See VISION.md "Bet 5: K-3 Dominion".
 // ─────────────────────────────────────────────────────────────────────────

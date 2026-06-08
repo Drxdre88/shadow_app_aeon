@@ -8,9 +8,17 @@ import type {
   AddLinkInput,
   MemoryLink,
   PrepareContextInput,
+  AcceptProposalInput,
 } from './validators'
 import type { StreamClass } from '@/lib/kairos/streamClass'
 import { resolveDominionForMemory } from './dominions'
+import {
+  embedTexts,
+  embedOne,
+  toVectorLiteral,
+  embeddingsEnabled,
+  activeEmbeddingModel,
+} from '@/lib/kairos/embeddings'
 
 // Internal extension: the public zod schema (createMemorySchema) intentionally
 // does NOT expose streamClass — public callers (MCP/REST) must not pick a
@@ -29,6 +37,36 @@ type CreateMemoryParams = CreateMemoryInput & { streamClass?: StreamClass }
 // modelled in the Drizzle schema. We reference it via raw SQL identifiers.
 // Spec: docs/brain/02-mcp-tools.md
 // ─────────────────────────────────────────────────────────────────────────
+
+// Provenance: a coarse trust prior derived from the stream a memory came from.
+// Operator reflections are near-ground-truth; agent/execution output is lower.
+// Stamped at write time; weights retrieval/synthesis and gates whether a
+// proposal can ever auto-promote (autonomy L2+). Tunable, not load-bearing yet.
+const CONFIDENCE_BY_STREAM: Record<string, number> = {
+  reflection: 0.9,
+  cortex: 0.7,
+  idea: 0.6,
+  archetype: 0.6,
+  advisory: 0.5,
+  agentic: 0.45,
+  execution: 0.35,
+  trace: 0.3,
+}
+
+function confidenceForStreamClass(streamClass: string): number {
+  return CONFIDENCE_BY_STREAM[streamClass] ?? 0.5
+}
+
+// When an introspection proposal is accepted, what does it become? Endorsing a
+// proposal makes it operator-weighted (streamClass 'reflection'); a 'question'
+// stays a lighter note. Override-able via acceptProposal({ asType }).
+function committedTypeForKind(kind: string): string {
+  switch (kind) {
+    case 'reflection': return 'reflection'
+    case 'question':   return 'note'
+    default:           return 'observation' // tension / connection / unknown
+  }
+}
 
 const SLIM_COLUMNS = {
   id: memories.id,
@@ -402,6 +440,76 @@ export async function searchMemoriesFts(userId: string, input: SearchMemoriesInp
   return { hits, total }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Brain Phase 4 (P2) — semantic vector search (hybrid retrieval's second leg).
+//
+// Flat `ORDER BY embedding <=> $vec LIMIT n` so the HNSW index is actually
+// used (pgvector's planner skips HNSW inside CTEs / behind heavy filters).
+// Runs in a transaction with `SET LOCAL hnsw.ef_search` so recall is bounded
+// above the LIMIT and the GUC auto-reverts on commit (never leaks across the
+// pooled Neon connection). Returns SLIM rows in nearest-first order; callers
+// fuse with the FTS hit list via RRF. Embeddings from different models are not
+// comparable — the active model is enforced at write time, not here.
+// ─────────────────────────────────────────────────────────────────────────
+
+type VectorSearchInput = {
+  realmId?: string
+  projectId?: string
+  taskId?: string
+  dominionId?: string
+  type?: string | string[]
+  limit: number
+}
+
+export async function vectorSearchMemories(
+  userId: string,
+  queryVec: number[],
+  input: VectorSearchInput,
+) {
+  const vecLiteral = toVectorLiteral(queryVec)
+  const distance = sql`${memories.embedding} <=> ${vecLiteral}::vector`
+
+  const conditions = [
+    eq(memories.userId, userId),
+    sql`${memories.archivedAt} IS NULL`,
+    sql`${memories.embedding} IS NOT NULL`,
+  ]
+  if (input.type) {
+    const types = Array.isArray(input.type) ? input.type : [input.type]
+    conditions.push(sql`${memories.type} = ANY(${types})`)
+  }
+  if (input.realmId)    conditions.push(eq(memories.realmId, input.realmId))
+  if (input.projectId)  conditions.push(eq(memories.projectId, input.projectId))
+  if (input.taskId)     conditions.push(eq(memories.taskId, input.taskId))
+  if (input.dominionId) conditions.push(eq(memories.dominionId, input.dominionId))
+
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL hnsw.ef_search = 100`)
+    return tx
+      .select(SLIM_COLUMNS)
+      .from(memories)
+      .where(and(...conditions))
+      .orderBy(distance)
+      .limit(input.limit)
+  })
+}
+
+// Reciprocal Rank Fusion (Cormack et al.) — fuse N ranked id lists in rank
+// space. Score-scale-agnostic: only positions matter, so FTS ts_rank and
+// vector cosine never need to be normalised against each other. k=60 is the
+// literature default. Per-list weights bias one signal without breaking RRF.
+const RRF_K = 60
+
+function rrfFuse(lists: Array<{ ids: string[]; weight: number }>, k = RRF_K): Map<string, number> {
+  const scores = new Map<string, number>()
+  for (const { ids, weight } of lists) {
+    ids.forEach((id, i) => {
+      scores.set(id, (scores.get(id) ?? 0) + weight / (k + i + 1))
+    })
+  }
+  return scores
+}
+
 type NeighbourRow = {
   id: string
   title: string
@@ -556,6 +664,7 @@ export async function createMemory(userId: string, input: CreateMemoryParams) {
       tags: input.tags ?? [],
       links: input.links ?? [],
       pinned: input.pinned ?? false,
+      confidence: confidenceForStreamClass(input.streamClass ?? 'idea'),
       // Drizzle skips undefined keys → DB default ('idea') applies when
       // caller omits streamClass. Internal callers (dispatcher) set it
       // explicitly for advisory / trace writes.
@@ -693,6 +802,7 @@ export async function captureReflection(
       summary: input.summary ?? null,
       type: 'reflection',
       streamClass: 'reflection',
+      confidence: confidenceForStreamClass('reflection'),
       source: input.source ?? 'manual',
       sourceMetadata: {
         ...(input.sourceMetadata ?? {}),
@@ -817,6 +927,13 @@ export async function updateMemory(memoryId: string, userId: string, patch: Upda
   if (patch.pinned !== undefined)     update.pinned = patch.pinned
   if (patch.archivedAt !== undefined) update.archivedAt = patch.archivedAt ? new Date(patch.archivedAt) : null
 
+  // Brain Phase 4 (P2) — the embedding is derived from title+summary+body. If
+  // any of those change, drop the vector so the backfill re-embeds this row.
+  if (patch.title !== undefined || patch.summary !== undefined || patch.bodyMd !== undefined) {
+    update.embedding = null
+    update.embeddingModel = null
+  }
+
   const [row] = await db
     .update(memories)
     .set(update)
@@ -877,6 +994,69 @@ export async function archiveMemory(memoryId: string, userId: string) {
     .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
     .returning()
   return row ?? null
+}
+
+export type AcceptProposalResult =
+  | { ok: true; memory: typeof memories.$inferSelect }
+  | { ok: false; reason: 'not_a_proposal' }
+
+// Guided introspection — promote a staged proposal (a type='inbound' memory
+// Kairos proposed, carrying its citation links) into a committed, operator-
+// endorsed memory. This is the operator gate in propose-not-commit: nothing
+// becomes a belief until accepted here (or, equivalently, rewritten via
+// kairos_reflect). Optionally supersedes the beliefs it replaces — stamped,
+// never deleted, so the trail stays honest. Returns null if the memory isn't
+// found; { ok:false } if it isn't a pending proposal.
+export async function acceptProposal(
+  memoryId: string,
+  userId: string,
+  input: AcceptProposalInput,
+): Promise<AcceptProposalResult | null> {
+  const proposal = await findMemoryById(memoryId, userId)
+  if (!proposal) return null
+
+  const meta = (proposal.sourceMetadata ?? {}) as Record<string, unknown>
+  if (proposal.type !== 'inbound' || meta.introspection !== true) {
+    return { ok: false, reason: 'not_a_proposal' }
+  }
+
+  const kind = typeof meta.kind === 'string' ? meta.kind : 'reflection'
+  const committedType = input.asType ?? committedTypeForKind(kind)
+  const committedStream = committedType === 'note' ? 'idea' : 'reflection'
+  const now = new Date()
+
+  const existingLinks = (proposal.links as MemoryLink[]) ?? []
+  const supersedeIds = input.supersedes ?? []
+  const supersedeLinks: MemoryLink[] = supersedeIds.map((target) => ({
+    type: 'supersedes',
+    target,
+    target_kind: 'memory',
+  }))
+
+  const [updated] = await db
+    .update(memories)
+    .set({
+      type: committedType,
+      streamClass: committedStream,
+      confidence: confidenceForStreamClass(committedStream),
+      pinned: input.pin ?? false,
+      links: [...existingLinks, ...supersedeLinks],
+      sourceMetadata: { ...meta, status: 'accepted', acceptedAt: now.toISOString(), promotedFrom: 'inbound' },
+      updatedAt: now,
+    })
+    .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
+    .returning()
+
+  // Stamp the superseded beliefs (user-scoped). Soft pointer + timestamp; the
+  // rows stay queryable for time-travel, they just stop being "current".
+  if (supersedeIds.length > 0) {
+    await db
+      .update(memories)
+      .set({ supersededAt: now, supersededById: memoryId, updatedAt: now })
+      .where(and(eq(memories.userId, userId), inArray(memories.id, supersedeIds)))
+  }
+
+  return updated ? { ok: true, memory: updated } : null
 }
 
 export async function deleteMemory(memoryId: string, userId: string) {
@@ -944,6 +1124,64 @@ export async function findMemoriesByIds(ids: string[], userId: string) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Brain Phase 4 (P2) — embedding backfill. Embeds rows that have no vector yet
+// (or whose vector came from a model other than the active provider). Embeds
+// `title + summary + body` as a "document" so retrieval can use asymmetric
+// query/document embeddings. Idempotent + incremental: returns how many it
+// embedded and how many remain, so the caller (cron/script) can loop to drain.
+// No-op when no embedding provider is configured.
+// ─────────────────────────────────────────────────────────────────────────
+export async function backfillEmbeddings(
+  opts: { userId?: string; limit?: number } = {},
+): Promise<{ embedded: number; remaining: number; skipped?: 'embeddings_disabled' }> {
+  const model = activeEmbeddingModel()
+  if (!model) return { embedded: 0, remaining: 0, skipped: 'embeddings_disabled' }
+  const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500)
+
+  const staleFilter = sql`(${memories.embedding} IS NULL OR ${memories.embeddingModel} IS DISTINCT FROM ${model})`
+  const conditions = [sql`${memories.archivedAt} IS NULL`, staleFilter]
+  if (opts.userId) conditions.push(eq(memories.userId, opts.userId))
+
+  const rows = await db
+    .select({
+      id: memories.id,
+      title: memories.title,
+      summary: memories.summary,
+      bodyMd: memories.bodyMd,
+    })
+    .from(memories)
+    .where(and(...conditions))
+    .orderBy(memories.createdAt)
+    .limit(limit)
+
+  if (rows.length === 0) return { embedded: 0, remaining: 0 }
+
+  const texts = rows.map((r) =>
+    [r.title, r.summary ?? '', r.bodyMd].filter(Boolean).join('\n\n'),
+  )
+  const vectors = await embedTexts(texts, 'document')
+  if (!vectors) return { embedded: 0, remaining: rows.length, skipped: 'embeddings_disabled' }
+
+  let embedded = 0
+  for (let i = 0; i < rows.length; i++) {
+    const vec = vectors[i]
+    if (!vec) continue
+    await db
+      .update(memories)
+      .set({ embedding: vec, embeddingModel: model })
+      .where(eq(memories.id, rows[i].id))
+    embedded++
+  }
+
+  const [{ remaining }] = await db
+    .select({ remaining: sql<number>`count(*)::int` })
+    .from(memories)
+    .where(and(...conditions))
+
+  return { embedded, remaining }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Brain Phase 4 — prepare_context. Single retrieval call that returns a
 // budget-packed markdown bundle ready to drop into an AI context window.
 //
@@ -995,6 +1233,28 @@ type Candidate = {
   edgeType?: string // populated for neighbours
 }
 
+type FtsHits = Awaited<ReturnType<typeof searchMemoriesFts>>['hits']
+type VecHits = Awaited<ReturnType<typeof vectorSearchMemories>>
+
+// Merge FTS + vector hit lists into one RRF-ranked list shaped like the FTS
+// hits, so the downstream candidate builder needs no changes. FTS rows win on
+// metadata (they carry the ts_headline snippet); vector-only rows fold in with
+// an empty snippet. Each row's `rank` is replaced by its fused RRF score.
+function fuseHybrid(ftsHits: FtsHits, vecHits: VecHits): FtsHits {
+  const rrf = rrfFuse([
+    { ids: ftsHits.map((h) => h.id), weight: 1 },
+    { ids: vecHits.map((h) => h.id), weight: 1 },
+  ])
+  const byId = new Map<string, FtsHits[number]>()
+  for (const h of ftsHits) byId.set(h.id, h)
+  for (const h of vecHits) {
+    if (!byId.has(h.id)) byId.set(h.id, { ...h, rank: 0, snippet: '' })
+  }
+  return [...byId.values()]
+    .map((h) => ({ ...h, rank: rrf.get(h.id) ?? 0 }))
+    .sort((a, b) => b.rank - a.rank)
+}
+
 export async function prepareContext(userId: string, input: PrepareContextInput) {
   const budget = input.budgetTokens
   const realmId = input.realmId
@@ -1007,7 +1267,26 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
     limit: input.maxSources,
     offset: 0,
   })
-  const hits = search.hits
+  let hits = search.hits
+
+  // ── 1b. Hybrid: fuse a semantic vector search via RRF. Best-effort — if
+  //        embeddings are disabled or the embedding call fails, we keep the
+  //        FTS result set untouched (graceful degradation, prod-safe). ─────
+  if (input.query && embeddingsEnabled()) {
+    try {
+      const queryVec = await embedOne(input.query, 'query')
+      if (queryVec) {
+        const vecHits = await vectorSearchMemories(userId, queryVec, {
+          realmId,
+          type: input.type,
+          limit: input.maxSources,
+        })
+        hits = fuseHybrid(hits, vecHits)
+      }
+    } catch (err) {
+      console.warn('[prepareContext] semantic search failed, FTS-only:', err instanceof Error ? err.message : err)
+    }
+  }
 
   // ── 2. Pinned fetch (user-scoped, realm-scoped if provided) ──────────
   const pinned = input.includePinned
