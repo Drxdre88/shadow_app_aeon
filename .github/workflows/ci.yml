@@ -22,3 +22,8 @@ jobs:
       - run: npm run lint
 
       - run: npm run -w apps/web typecheck
+
+      # Tests were never run in CI before 2026-06-08 — the login outage proved
+      # the gap. The suite includes the middleware auth-safety invariant
+      # (apps/web/src/middleware.test.ts) that guards the sign-in path.
+      - run: npm run -w apps/web test
