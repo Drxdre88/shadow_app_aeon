@@ -33,6 +33,10 @@
     {
       "path": "/api/cron/embed-backfill",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/memory-dedup",
+      "schedule": "0 5 * * 0"
     }
   ]
 }
