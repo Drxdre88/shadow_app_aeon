@@ -1,7 +1,8 @@
 import { db } from '@/lib/db'
-import { projects, boardTasks, activityEvents } from '@/lib/db/schema'
-import { and, eq, isNull, gte, desc, sql } from 'drizzle-orm'
+import { projects, boardTasks, activityEvents, memories } from '@/lib/db/schema'
+import { and, eq, isNull, gte, lt, desc, sql } from 'drizzle-orm'
 import { captureMemory } from '@/lib/data/memories'
+import { SNAPSHOT_TTL_DAYS, ADVISORY_TTL_DAYS, cutoffDate } from './lifecycle'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (A5) — nightly project snapshot.
@@ -89,6 +90,9 @@ async function snapshotProject(
     title: `${bounds.iso} · ${project.name} snapshot`,
     bodyMd: lines.join('\n'),
     type: 'snapshot',
+    // Ephemeral status — NOT 'idea'. Keeps snapshots out of the briefer's
+    // substrate so they never pollute the operator's real idea stream.
+    streamClass: 'snapshot',
     source: 'cron',
     projectId: project.id,
     dominionId: project.dominionId,
@@ -134,4 +138,63 @@ export async function runProjectSnapshotsForUser(userId: string): Promise<Projec
     }
   }
   return results
+}
+
+export interface EphemeralLifecycleResult {
+  reclassified: number
+  snapshotsArchived: number
+  advisoriesArchived: number
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Snapshot / advisory lifecycle — the "compost" pass. Runs nightly after the
+// snapshot creation so ephemeral machine-memories don't balloon the brain:
+//   1. Reclassify any stray snapshot off whatever stream it landed on (older
+//      rows defaulted to 'idea', polluting the briefer's substrate) → 'snapshot'.
+//   2. Archive snapshots past SNAPSHOT_TTL_DAYS and advisories past
+//      ADVISORY_TTL_DAYS — stamped archivedAt, never deleted, so the trail
+//      survives but retrieval/graph stop carrying the dead weight.
+// User-scoped; multi-tenant safe.
+// ─────────────────────────────────────────────────────────────────────────
+export async function runEphemeralLifecycleForUser(userId: string): Promise<EphemeralLifecycleResult> {
+  const now = new Date()
+
+  const reclassed = await db
+    .update(memories)
+    .set({ streamClass: 'snapshot' })
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.type, 'snapshot'),
+      sql`${memories.streamClass} <> 'snapshot'`,
+      isNull(memories.archivedAt),
+    ))
+    .returning({ id: memories.id })
+
+  const snapArchived = await db
+    .update(memories)
+    .set({ archivedAt: now })
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.type, 'snapshot'),
+      isNull(memories.archivedAt),
+      lt(memories.createdAt, cutoffDate(now, SNAPSHOT_TTL_DAYS)),
+    ))
+    .returning({ id: memories.id })
+
+  const advArchived = await db
+    .update(memories)
+    .set({ archivedAt: now })
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.type, 'advisory'),
+      isNull(memories.archivedAt),
+      lt(memories.createdAt, cutoffDate(now, ADVISORY_TTL_DAYS)),
+    ))
+    .returning({ id: memories.id })
+
+  return {
+    reclassified: reclassed.length,
+    snapshotsArchived: snapArchived.length,
+    advisoriesArchived: advArchived.length,
+  }
 }
