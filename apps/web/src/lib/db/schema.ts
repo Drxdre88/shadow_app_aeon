@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, integer, boolean, jsonb, primaryKey, real, numeric, uniqueIndex, index, type AnyPgColumn } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, text, timestamp, integer, boolean, jsonb, primaryKey, real, numeric, uniqueIndex, index, vector, type AnyPgColumn } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
 export const users = pgTable('users', {
@@ -448,6 +448,22 @@ export const memories = pgTable('memories', {
   // AI-generated 5–10 bullet point exec summary. Front-of-house display.
   // Empty array until generation runs.
   execSummary: jsonb('exec_summary').default([]).notNull(),
+  // Brain Phase 4 (P2) — semantic search vector (1024-dim: voyage-3.5 /
+  // openai-3-small@1024). NULL until the embed-backfill cron populates it;
+  // re-nulled by updateMemory when title/summary/body change so it re-embeds.
+  // The HNSW cosine index (memories_embedding_idx) lives in raw SQL migration
+  // 0023_memory_embeddings.sql — like `fts`, db:push leaves the index alone.
+  embedding: vector('embedding', { dimensions: 1024 }),
+  embeddingModel: varchar('embedding_model', { length: 40 }),
+  // Provenance / trust — coarse confidence prior (0–1) stamped from streamClass
+  // at write time; weights retrieval + gates proposal auto-promotion (L2+).
+  // Raw SQL migration 0024_memory_provenance.sql.
+  confidence: real('confidence'),
+  // Bi-temporal-lite: when a newer memory supersedes this one's claim, stamp it
+  // instead of deleting — keeps the belief trail honest + time-travelable.
+  // supersededById is a soft pointer (no FK) so a hard delete never blocks.
+  supersededAt: timestamp('superseded_at', { mode: 'date' }),
+  supersededById: uuid('superseded_by_id'),
   type: varchar('type', { length: 30 }).default('note').notNull(),
   // Kairos memory stream classifier. Allowed values are canonical in
   // apps/web/src/lib/kairos/streamClass.ts (STREAM_CLASSES const + StreamClass

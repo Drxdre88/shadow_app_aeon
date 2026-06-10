@@ -38,6 +38,7 @@ const REST_ROUTE_FILES = [
   '[id]/links/[linkIndex]/route.ts',
   '[id]/neighbours/route.ts',
   '[id]/export/route.ts',
+  '[id]/accept/route.ts',
   'needs-summary/route.ts',
 ]
 
@@ -61,7 +62,7 @@ describe('Memory MCP <-> REST parity', () => {
     .join('\n')
 
   describe('MCP tool surface', () => {
-    it('exposes exactly the seven expected memory operations', () => {
+    it('exposes exactly the eight expected memory operations', () => {
       expect(new Set(toolNames)).toEqual(new Set([
         'create_memory',
         'update_memory',
@@ -70,6 +71,7 @@ describe('Memory MCP <-> REST parity', () => {
         'get_memory_with_neighbours',
         'prepare_context',
         'list_memories_needing_summary',
+        'accept_proposal',
       ]))
     })
   })
@@ -84,6 +86,7 @@ describe('Memory MCP <-> REST parity', () => {
       { path: '[id]/links/[linkIndex]/route.ts',   methods: ['DELETE'] },
       { path: '[id]/neighbours/route.ts',          methods: ['GET'] },
       { path: '[id]/export/route.ts',              methods: ['GET'] },
+      { path: '[id]/accept/route.ts',              methods: ['POST'] },
       { path: 'needs-summary/route.ts',            methods: ['GET'] },
     ]
 
@@ -105,6 +108,7 @@ describe('Memory MCP <-> REST parity', () => {
       'addLinkSchema',
       'getNeighboursSchema',
       'prepareContextSchema',
+      'acceptProposalSchema',
     ]
 
     it.each(validators)('REST surface uses validator: %s', (v) => {
@@ -121,6 +125,7 @@ describe('Memory MCP <-> REST parity', () => {
       'addLinkSchema',
       'getNeighboursSchema',
       'prepareContextSchema',
+      'acceptProposalSchema',
     ]
     it.each(mcpValidators)('MCP tool file uses validator: %s', (v) => {
       expect(mcpSrc, `MCP memories.ts missing ${v}`).toMatch(new RegExp(`\\b${v}\\b`))
@@ -137,6 +142,7 @@ describe('Memory MCP <-> REST parity', () => {
       'getNeighbours',
       'prepareContext',
       'listMemoriesNeedingSummary',
+      'acceptProposal',
     ]
 
     it.each(sharedFns)('MCP imports and uses: %s', (fn) => {

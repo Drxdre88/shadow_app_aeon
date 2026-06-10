@@ -190,15 +190,43 @@ function parseTranscript(transcriptPath) {
   return messages
 }
 
+// Strip noise injected by the harness before it reaches the user's real prompt.
+function sanitizeCapturedText(s) {
+  if (!s) return ''
+  let out = s
+  // Remove <system-reminder>...</system-reminder> blocks (multiline, case-insensitive).
+  out = out.replace(/<system-reminder[\s\S]*?<\/system-reminder>/gi, '')
+  // Remove known command-wrapper tags and their content.
+  const cmdTags = ['command-name', 'command-message', 'command-args', 'local-command-stdout']
+  for (const tag of cmdTags) {
+    // Paired tags with content.
+    out = out.replace(new RegExp(`<${tag}[\\s\\S]*?<\\/${tag}>`, 'gi'), '')
+    // Self-closing or lone opening/closing tags.
+    out = out.replace(new RegExp(`<\\/?${tag}[^>]*>`, 'gi'), '')
+  }
+  // Remove pasted tool-output lines (trimmed form starts with ⎿).
+  out = out
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('⎿'))
+    .join('\n')
+  // Collapse 3+ consecutive blank lines to 2.
+  out = out.replace(/(\n\s*){3,}/g, '\n\n').trim()
+  return out
+}
+
 function extractFirstUserMessage(messages) {
   for (const m of messages) {
     if (m.type !== 'user') continue
     const content = m.message?.content
-    if (typeof content === 'string') return content
-    if (Array.isArray(content)) {
-      const text = content.find((c) => c?.type === 'text')?.text
-      if (text) return text
+    let raw = null
+    if (typeof content === 'string') {
+      raw = content
+    } else if (Array.isArray(content)) {
+      raw = content.find((c) => c?.type === 'text')?.text ?? null
     }
+    if (raw == null) continue
+    const cleaned = sanitizeCapturedText(raw)
+    if (cleaned.trim()) return cleaned
   }
   return null
 }
@@ -279,6 +307,36 @@ function sessionDurationMin(messages) {
   return Math.round((last - first) / 60000)
 }
 
+// ─── executive summary extraction ───────────────────────────────────────
+
+function extractExecutiveSummary(assistantText) {
+  if (!assistantText) return ''
+  // Find a heading like ## Executive Summary (any depth, case-insensitive).
+  const headingMatch = assistantText.match(/^#{2,}\s*executive summary\s*$/im)
+  if (!headingMatch) return ''
+  const start = headingMatch.index + headingMatch[0].length
+  // Find the next ## heading (two or more hashes at line start).
+  const rest = assistantText.slice(start)
+  const nextHeading = rest.match(/^#{2,}\s/m)
+  const block = nextHeading ? rest.slice(0, nextHeading.index) : rest
+  return block.trim()
+}
+
+function parseExecBullets(execSummaryText) {
+  if (!execSummaryText) return []
+  const bullets = []
+  for (const raw of execSummaryText.split('\n')) {
+    const line = raw.trim()
+    if (!/^[-*]/.test(line)) continue
+    // Strip the bullet marker and any leading bold label like **Key points:**
+    let text = line.replace(/^[-*]\s*/, '').replace(/^\*\*[^*]+\*\*\s*/, '').trim()
+    if (!text) continue
+    bullets.push(text.slice(0, 200))
+    if (bullets.length >= 10) break
+  }
+  return bullets
+}
+
 // ─── memory payload assembly ────────────────────────────────────────────
 
 function truncate(s, n) {
@@ -335,12 +393,20 @@ function buildPayload({ payload, messages, repo, branch, remote, commits, filesT
   }
 
   const bodyMd = sections.join('\n')
-  const summary = truncate(firstPrompt.replace(/\s+/g, ' '), 240)
+
+  const execText = extractExecutiveSummary(lastAssistant)
+  const summary = execText
+    ? truncate(execText.replace(/\s+/g, ' '), 240)
+    : truncate(firstPrompt.replace(/\s+/g, ' '), 240)
+
+  const bullets = parseExecBullets(execText)
+  const execSummaryField = bullets.length > 0 ? { execSummary: bullets } : {}
 
   return {
     title: truncate(title, 240),
     bodyMd,
     summary,
+    ...execSummaryField,
     type: 'session_summary',
     source: 'claude',
     realmId: projectInfo?.realmId ?? DEFAULT_REALM_ID,

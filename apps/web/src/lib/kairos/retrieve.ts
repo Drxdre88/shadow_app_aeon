@@ -25,6 +25,7 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories } from '@/lib/db/schema'
 import { inspectDominion } from '@/lib/data/dominions'
+import { embeddingsEnabled, embedOne, toVectorLiteral } from './embeddings'
 import { isStreamClass, type StreamClass } from './streamClass'
 import type {
   RetrievalResult,
@@ -118,6 +119,16 @@ async function fetchArchetypes(userId: string, dominionId: string): Promise<Retr
   return rows.map(rowToMemory)
 }
 
+// Row shape shared by the FTS and vector legs so either query can rebuild a
+// RetrievedMemory and feed the id->row map during fusion.
+type SubstrateRow = {
+  id: string
+  title: string
+  bodyMd: string | null
+  streamClass: string
+  createdAt: Date
+}
+
 async function fetchSubstrate(
   userId: string,
   dominionId: string,
@@ -125,11 +136,16 @@ async function fetchSubstrate(
 ): Promise<RetrievedMemory[]> {
   if (query.length < MIN_QUERY_CHARS) return []
 
+  const hybrid = embeddingsEnabled()
+  // Over-fetch on both legs when hybrid so RRF has enough overlap to work with;
+  // FTS-only still slices to TOP_K at the query level (preserves prod/test behaviour).
+  const ftsLimit = hybrid ? SUBSTRATE_TOP_K * 3 : SUBSTRATE_TOP_K
+
   const tsQuery = sql`websearch_to_tsquery('english', ${query})`
   const rank = sql<number>`ts_rank_cd("memories"."fts", ${tsQuery})`
   const sinceTs = sql`NOW() - make_interval(days => ${SUBSTRATE_WINDOW_DAYS})`
 
-  const rows = await db
+  const ftsRows = await db
     .select({
       id: memories.id,
       title: memories.title,
@@ -153,9 +169,100 @@ async function fetchSubstrate(
       desc(rank),
       desc(memories.createdAt),
     )
-    .limit(SUBSTRATE_TOP_K)
+    .limit(ftsLimit)
 
-  return rows.map(rowToMemory)
+  // ── FTS-only: embeddings disabled (no key in tests / no-key prod). Behaves
+  //    exactly as the original implementation. ───────────────────────────────
+  if (!hybrid) return ftsRows.map(rowToMemory)
+
+  // ── Hybrid: fuse a semantic vector leg via RRF. Best-effort — on any error
+  //    (embed call, vector query) we keep the FTS rows untouched. ────────────
+  try {
+    const qVec = await embedOne(query, 'query')
+    if (!qVec) return ftsRows.slice(0, SUBSTRATE_TOP_K).map(rowToMemory)
+
+    const distance = sql`${memories.embedding} <=> ${toVectorLiteral(qVec)}::vector`
+
+    // Flat ORDER BY ... LIMIT inside a txn with SET LOCAL hnsw.ef_search so the
+    // HNSW index is used and the GUC auto-reverts on commit (no leak across the
+    // pooled Neon connection).
+    const vecRows = await db.transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL hnsw.ef_search = 100`)
+      return tx
+        .select({
+          id: memories.id,
+          title: memories.title,
+          bodyMd: memories.bodyMd,
+          streamClass: memories.streamClass,
+          createdAt: memories.createdAt,
+        })
+        .from(memories)
+        .where(and(
+          eq(memories.userId, userId),
+          eq(memories.dominionId, dominionId),
+          inArray(memories.streamClass, [...SUBSTRATE_STREAMS]),
+          isNull(memories.archivedAt),
+          sql`${memories.embedding} IS NOT NULL`,
+          sql`${memories.createdAt} >= ${sinceTs}`,
+        ))
+        .orderBy(distance)
+        .limit(SUBSTRATE_TOP_K * 3)
+    })
+
+    // id -> row so the fused list can be rebuilt from whichever leg produced it.
+    const byId = new Map<string, SubstrateRow>()
+    for (const r of ftsRows) byId.set(r.id, r)
+    for (const r of vecRows) if (!byId.has(r.id)) byId.set(r.id, r)
+
+    const fused = rrfFuse([
+      { ids: ftsRows.map((r) => r.id), weight: 1 },
+      { ids: vecRows.map((r) => r.id), weight: 1 },
+    ])
+
+    // Reflections-first boost AFTER fusion: a reflection should still outrank a
+    // non-reflection at a comparable fused score, mirroring the FTS-only order.
+    const ranked = [...fused.entries()]
+      .map(([id, score]) => {
+        const rowItem = byId.get(id)
+        const isReflection = rowItem?.streamClass === 'reflection'
+        return { id, isReflection, score: score + (isReflection ? REFLECTION_BONUS : 0) }
+      })
+      .sort((a, b) =>
+        a.isReflection !== b.isReflection
+          ? Number(b.isReflection) - Number(a.isReflection)
+          : b.score - a.score,
+      )
+
+    return ranked
+      .slice(0, SUBSTRATE_TOP_K)
+      .map((e) => byId.get(e.id))
+      .filter((r): r is SubstrateRow => r != null)
+      .map(rowToMemory)
+  } catch (err) {
+    console.warn(
+      '[fetchSubstrate] semantic search failed, FTS-only:',
+      err instanceof Error ? err.message : err,
+    )
+    return ftsRows.slice(0, SUBSTRATE_TOP_K).map(rowToMemory)
+  }
+}
+
+// Reciprocal Rank Fusion (Cormack et al.) — fuse N ranked id lists in rank
+// space. Score-scale-agnostic: only positions matter, so FTS ts_rank and vector
+// cosine never need normalising against each other. k=60 is the literature
+// default. Self-contained here (not imported) to keep retrieve.ts decoupled.
+const RRF_K = 60
+// Small post-fusion nudge keeping reflections ahead of ties in the same band.
+const REFLECTION_BONUS = 1 / (RRF_K + 1)
+
+function rrfFuse(lists: Array<{ ids: string[]; weight: number }>, k = RRF_K): Map<string, number> {
+  const scores = new Map<string, number>()
+  for (const { ids, weight } of lists) {
+    ids.forEach((id, rank) => {
+      scores.set(id, (scores.get(id) ?? 0) + weight / (k + rank + 1))
+    })
+  }
+  return scores
 }
 
 async function fetchTraces(userId: string, dominionId: string): Promise<RetrievedMemory[]> {

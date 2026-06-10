@@ -18,7 +18,10 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "eval:retrieval": "node scripts/eval-retrieval.mjs",
+    "backfill:embeddings": "node scripts/backfill-embeddings.mjs",
+    "smoke:auth": "node scripts/smoke-auth.mjs"
   },
   "dependencies": {
     "@aeon/shared": "*",

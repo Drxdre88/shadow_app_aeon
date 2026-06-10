@@ -25,6 +25,14 @@
     {
       "path": "/api/cron/memory-compaction",
       "schedule": "0 3 * * 0"
+    },
+    {
+      "path": "/api/cron/introspection",
+      "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/cron/embed-backfill",
+      "schedule": "0 4 * * *"
     }
   ]
 }
