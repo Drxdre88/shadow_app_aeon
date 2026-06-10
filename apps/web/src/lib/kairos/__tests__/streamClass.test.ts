@@ -13,6 +13,7 @@ describe('STREAM_CLASSES', () => {
       'advisory',
       'trace',
       'snapshot',
+      'aether',
     ])
   })
 })

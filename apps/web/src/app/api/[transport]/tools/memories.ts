@@ -43,6 +43,8 @@ const MEMORY_TYPES = [
   'snapshot', 'inbound', 'advisory', 'achievement', 'session_event', 'fact', 'contact', 'external_event',
   // Kairos Phase 2 (B1+B2):
   'archetype', 'dominion_cortex',
+  // Aether — daily cross-Dominion synthesis.
+  'aether',
 ] as const
 const memoryTypeEnum = z.enum(MEMORY_TYPES)
 

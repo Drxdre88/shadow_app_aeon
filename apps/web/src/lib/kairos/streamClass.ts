@@ -11,6 +11,8 @@ export const STREAM_CLASSES = [
   // briefer's SUBSTRATE_STREAMS — snapshots must not pollute the 'idea' pool.
   // Short-lived: the snapshot lifecycle pass archives them past their TTL.
   'snapshot',
+  // Aether — daily cross-Dominion synthesis. One per UTC day; not in briefer substrate.
+  'aether',
 ] as const
 
 export type StreamClass = (typeof STREAM_CLASSES)[number]

@@ -19,6 +19,10 @@
       "schedule": "0 3 * * *"
     },
     {
+      "path": "/api/cron/aether-regen",
+      "schedule": "15 3 * * *"
+    },
+    {
       "path": "/api/cron/briefer",
       "schedule": "0 7 * * *"
     },
