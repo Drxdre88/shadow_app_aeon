@@ -37,7 +37,7 @@ async function alreadyRanToday(userId: string): Promise<boolean> {
   return (row?.n ?? 0) > 0
 }
 
-async function fetchAetherInputs(userId: string): Promise<{
+export async function fetchAetherInputs(userId: string): Promise<{
   cortexSnapshots: CortexSnapshotRow[]
   topReflections: GlobalReflectionRow[]
   archetypes: GlobalArchetypeRow[]
@@ -193,11 +193,12 @@ async function fetchAetherInputs(userId: string): Promise<{
   return { cortexSnapshots, topReflections, archetypes, prior }
 }
 
-async function persistAether(
+export async function persistAether(
   userId: string,
   payload: AetherPayload,
   runId: string,
   today: string,
+  source: 'cron' | 'claude' = 'cron',
 ): Promise<{ aetherMemoryId: string | null; archivedPrior: number }> {
   const now = new Date()
   const body = renderAetherMarkdown(payload, today)
@@ -225,7 +226,7 @@ async function persistAether(
         summary,
         type: 'aether',
         streamClass: 'aether',
-        source: 'cron',
+        source,
         sourceMetadata: {
           runId,
           runDate: today,
