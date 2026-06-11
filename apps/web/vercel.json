@@ -19,6 +19,10 @@
       "schedule": "0 3 * * *"
     },
     {
+      "path": "/api/cron/aether-regen",
+      "schedule": "15 3 * * *"
+    },
+    {
       "path": "/api/cron/briefer",
       "schedule": "0 7 * * *"
     },
@@ -33,6 +37,10 @@
     {
       "path": "/api/cron/embed-backfill",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/memory-dedup",
+      "schedule": "0 5 * * 0"
     }
   ]
 }

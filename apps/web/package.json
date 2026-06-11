@@ -21,6 +21,7 @@
     "db:studio": "drizzle-kit studio",
     "eval:retrieval": "node scripts/eval-retrieval.mjs",
     "backfill:embeddings": "node scripts/backfill-embeddings.mjs",
+    "dedup:memories": "node scripts/dedup-memories.mjs",
     "smoke:auth": "node scripts/smoke-auth.mjs"
   },
   "dependencies": {

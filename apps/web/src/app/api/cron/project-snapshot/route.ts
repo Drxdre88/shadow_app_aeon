@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { projects } from '@/lib/db/schema'
-import { runProjectSnapshotsForUser } from '@/lib/kairos/project-snapshot'
+import { runProjectSnapshotsForUser, runEphemeralLifecycleForUser } from '@/lib/kairos/project-snapshot'
 
 // Kairos Phase 2 (A5) — nightly project snapshot cron.
 // Vercel Cron 23:00 UTC. Iterates every user with at least one project,
@@ -25,13 +25,16 @@ export async function GET(req: NextRequest) {
   const userResults: Array<{
     userId: string
     results: Awaited<ReturnType<typeof runProjectSnapshotsForUser>>
+    lifecycle?: Awaited<ReturnType<typeof runEphemeralLifecycleForUser>>
     error?: string
   }> = []
 
   for (const { userId } of users) {
     try {
       const results = await runProjectSnapshotsForUser(userId)
-      userResults.push({ userId, results })
+      // Compost the old/misclassified ephemera right after writing today's.
+      const lifecycle = await runEphemeralLifecycleForUser(userId)
+      userResults.push({ userId, results, lifecycle })
     } catch (err) {
       userResults.push({ userId, results: [], error: err instanceof Error ? err.message : String(err) })
     }
@@ -41,10 +44,19 @@ export async function GET(req: NextRequest) {
     (n, u) => n + u.results.filter((r) => r.status === 'created').length,
     0,
   )
+  const lifecycle = userResults.reduce(
+    (acc, u) => ({
+      reclassified: acc.reclassified + (u.lifecycle?.reclassified ?? 0),
+      snapshotsArchived: acc.snapshotsArchived + (u.lifecycle?.snapshotsArchived ?? 0),
+      advisoriesArchived: acc.advisoriesArchived + (u.lifecycle?.advisoriesArchived ?? 0),
+    }),
+    { reclassified: 0, snapshotsArchived: 0, advisoriesArchived: 0 },
+  )
 
   return NextResponse.json({
     ran: users.length,
     snapshotsCreated: totalCreated,
+    lifecycle,
     users: userResults,
   })
 }

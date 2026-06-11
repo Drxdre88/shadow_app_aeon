@@ -12,6 +12,8 @@ describe('STREAM_CLASSES', () => {
       'archetype',
       'advisory',
       'trace',
+      'snapshot',
+      'aether',
     ])
   })
 })

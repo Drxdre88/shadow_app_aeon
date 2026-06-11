@@ -19,6 +19,13 @@ import {
   embeddingsEnabled,
   activeEmbeddingModel,
 } from '@/lib/kairos/embeddings'
+import {
+  buildClusters,
+  pickCanonical,
+  AUTO_DEDUP_TYPES,
+  DEFAULT_DEDUP_THRESHOLD,
+  type DedupCandidate,
+} from '@/lib/kairos/dedup'
 
 // Internal extension: the public zod schema (createMemorySchema) intentionally
 // does NOT expose streamClass — public callers (MCP/REST) must not pick a
@@ -154,7 +161,7 @@ export async function listMemoriesNeedingSummary(userId: string, opts: NeedsSumm
   if (opts.projectId) conditions.push(eq(memories.projectId, opts.projectId))
   if (opts.type) {
     const types = Array.isArray(opts.type) ? opts.type : [opts.type]
-    conditions.push(sql`${memories.type} = ANY(${types})`)
+    conditions.push(inArray(memories.type, types))
   }
 
   const order = opts.oldestFirst ? memories.createdAt : desc(memories.createdAt)
@@ -390,12 +397,13 @@ export async function searchMemoriesFts(userId: string, input: SearchMemoriesInp
   const conditions = [
     eq(memories.userId, userId),
     sql`${memories.archivedAt} IS NULL`,
+    isNull(memories.supersededAt),
   ]
   if (hasQuery) conditions.push(sql`"memories"."fts" @@ ${tsQuery}`)
 
   if (input.type) {
     const types = Array.isArray(input.type) ? input.type : [input.type]
-    conditions.push(sql`${memories.type} = ANY(${types})`)
+    conditions.push(inArray(memories.type, types))
   }
   if (input.source) {
     const sources = Array.isArray(input.source) ? input.source : [input.source]
@@ -472,11 +480,12 @@ export async function vectorSearchMemories(
   const conditions = [
     eq(memories.userId, userId),
     sql`${memories.archivedAt} IS NULL`,
+    isNull(memories.supersededAt),
     sql`${memories.embedding} IS NOT NULL`,
   ]
   if (input.type) {
     const types = Array.isArray(input.type) ? input.type : [input.type]
-    conditions.push(sql`${memories.type} = ANY(${types})`)
+    conditions.push(inArray(memories.type, types))
   }
   if (input.realmId)    conditions.push(eq(memories.realmId, input.realmId))
   if (input.projectId)  conditions.push(eq(memories.projectId, input.projectId))
@@ -1179,6 +1188,80 @@ export async function backfillEmbeddings(
     .where(and(...conditions))
 
   return { embedded, remaining }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Consolidation — embedding dedup pass. Collapses near-duplicate memories
+// (within the same machine-generated type) by superseding the redundant rows
+// against one canonical — stamped (superseded_at / superseded_by_id), never
+// deleted, so the belief trail stays time-travelable and retrieval (which now
+// filters `superseded_at IS NULL`) simply stops surfacing them. Operator-
+// authored types are excluded here — those go through a propose-not-commit
+// pass. Self-join over the same (user, type) finds candidate pairs by cosine
+// distance; clustering + canonical selection are pure (lib/kairos/dedup.ts).
+// ─────────────────────────────────────────────────────────────────────────
+export async function dedupMemories(
+  opts: {
+    userId?: string
+    types?: readonly string[]
+    threshold?: number
+    dryRun?: boolean
+  } = {},
+): Promise<{ clusters: number; superseded: number; dryRun: boolean }> {
+  const types = opts.types?.length ? [...opts.types] : [...AUTO_DEDUP_TYPES]
+  const maxDist = 1 - (opts.threshold ?? DEFAULT_DEDUP_THRESHOLD)
+  const dryRun = opts.dryRun ?? false
+
+  // `a.user_id = b.user_id` keeps merges strictly within a single user's brain
+  // (multi-tenant safe). `a.id < b.id` dedups the unordered pair.
+  const typeList = sql.join(types.map((t) => sql`${t}`), sql`, `)
+  const userScope = opts.userId ? sql`AND a.user_id = ${opts.userId}` : sql``
+  const res = await db.execute(sql`
+    SELECT a.id AS a, b.id AS b
+    FROM memories a
+    JOIN memories b
+      ON a.user_id = b.user_id AND a.type = b.type AND a.id < b.id
+    WHERE a.embedding IS NOT NULL AND b.embedding IS NOT NULL
+      AND a.superseded_at IS NULL AND b.superseded_at IS NULL
+      AND a.archived_at IS NULL AND b.archived_at IS NULL
+      AND a.type IN (${typeList})
+      AND (a.embedding <=> b.embedding) < ${maxDist}
+      ${userScope}
+  `)
+  const pairs = (res.rows as Array<{ a: string; b: string }>).map(
+    (r) => [r.a, r.b] as [string, string],
+  )
+  const clusters = buildClusters(pairs)
+  if (clusters.length === 0) return { clusters: 0, superseded: 0, dryRun }
+
+  const meta = await db
+    .select({
+      id: memories.id,
+      pinned: memories.pinned,
+      confidence: memories.confidence,
+      createdAt: memories.createdAt,
+    })
+    .from(memories)
+    .where(inArray(memories.id, clusters.flat()))
+  const byId = new Map(meta.map((m) => [m.id, m]))
+
+  let superseded = 0
+  for (const cluster of clusters) {
+    const cands = cluster
+      .map((id) => byId.get(id))
+      .filter((m): m is DedupCandidate => Boolean(m))
+    if (cands.length < 2) continue
+    const { canonicalId, loserIds } = pickCanonical(cands)
+    if (loserIds.length === 0) continue
+    if (!dryRun) {
+      await db
+        .update(memories)
+        .set({ supersededAt: new Date(), supersededById: canonicalId })
+        .where(and(inArray(memories.id, loserIds), isNull(memories.supersededAt)))
+    }
+    superseded += loserIds.length
+  }
+  return { clusters: clusters.length, superseded, dryRun }
 }
 
 // ─────────────────────────────────────────────────────────────────────────

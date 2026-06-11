@@ -335,6 +335,8 @@ export const memoryTypeSchema   = z.enum([
   'archetype',
   // Kairos Phase 2 (B2) — living document per Dominion (one per Dominion).
   'dominion_cortex',
+  // Aether — daily cross-Dominion synthesis (one per UTC day).
+  'aether',
 ])
 // Kairos Phase 1 (A1) — added sources: 'cron' (briefer/snapshot jobs),
 // 'system' (board mutations, project lifecycle), 'webhook' (channel adapters).
