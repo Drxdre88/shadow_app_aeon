@@ -1,39 +1,24 @@
 'use client'
 
-import { useMemo } from 'react'
-import {
-  EffectComposer,
-  Bloom,
-  DepthOfField,
-  ChromaticAberration,
-  Vignette,
-} from '@react-three/postprocessing'
-import { BlendFunction } from 'postprocessing'
-import * as THREE from 'three'
+import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
 
+// Prototype post-FX diet. With a static equirect skybox:
+//   – DepthOfField removed: the skybox sits at the far plane, so DoF would
+//     blur the whole nebula to mush (and bokeh is fullscreen-expensive).
+//   – ChromaticAberration removed: cheap visually, but reads as smear over a
+//     detailed photographic background.
+//   – multisampling 0: MSAA on the HDR buffer buys nothing here; bloom hides edges.
+//   – Bloom threshold raised (0.28 → 0.62) so only the hot orb cores bloom,
+//     instead of washing the whole skybox.
 export function AetherPostFX() {
-  const aberrationOffset = useMemo(() => new THREE.Vector2(0.0008, 0.0006), [])
-
   return (
-    <EffectComposer multisampling={4}>
+    <EffectComposer multisampling={0}>
       <Bloom
-        intensity={1.4}
-        luminanceThreshold={0.28}
-        luminanceSmoothing={0.4}
-        radius={0.9}
+        intensity={0.7}
+        luminanceThreshold={0.78}
+        luminanceSmoothing={0.3}
+        radius={0.7}
         mipmapBlur
-      />
-      <DepthOfField
-        focalLength={0.045}
-        bokehScale={3.5}
-        height={480}
-        focusDistance={0.0}
-      />
-      <ChromaticAberration
-        offset={aberrationOffset}
-        blendFunction={BlendFunction.NORMAL}
-        radialModulation={true}
-        modulationOffset={0.55}
       />
       <Vignette eskil={false} offset={0.28} darkness={0.72} />
     </EffectComposer>

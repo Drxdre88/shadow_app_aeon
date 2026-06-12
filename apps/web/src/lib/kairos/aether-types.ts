@@ -4,7 +4,7 @@
 export interface AetherThought {
   /** Stable UUID assigned at generation time. */
   id: string
-  /** Short headline for the thought (1–8 words). */
+  /** Short tag for the thought (1–3 words). */
   title: string
   /** One-paragraph insight text. */
   insight: string

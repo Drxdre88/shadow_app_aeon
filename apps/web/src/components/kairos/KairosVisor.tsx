@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence } from 'framer-motion'
-import { Plus, Send, Sparkles, X } from 'lucide-react'
+import { Send, X } from 'lucide-react'
 import { useKairosVisorStore } from '@/stores/kairosVisorStore'
 import {
   listKairosThreads,
@@ -18,10 +18,10 @@ import { KairosNewThreadHeader } from './KairosNewThreadHeader'
 import { KairosMessageStream } from './KairosMessageStream'
 import { formatReason } from './kairos-citations'
 
-// Slide-out chat panel anchored to a Dominion. Top-level orchestrator —
-// state + send flow + composer. Subviews (shell, picker, composer header,
-// message stream + chip render) live in sibling files so this stays the
-// flow doc, not a render dump.
+// Full-screen Kairos AI — a two-pane takeover: always-visible history rail on
+// the left, the active conversation on the right. Top-level orchestrator:
+// state + send flow + composer. Subviews (shell, rail, picker, message stream)
+// live in sibling files so this stays the flow doc, not a render dump.
 
 interface DominionOption {
   id: string
@@ -31,8 +31,6 @@ interface DominionOption {
 interface KairosVisorProps {
   dominions: DominionOption[]
 }
-
-const PANEL_WIDTH = 440
 
 export function KairosVisor({ dominions }: KairosVisorProps) {
   const { isOpen, close, activeThreadId, setActiveThread } = useKairosVisorStore()
@@ -93,8 +91,7 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
   useEffect(() => {
     if (!isOpen) return
     if (!composing && !activeThread) return
-    // Slide-in completes ~250ms; wait a tick to avoid stealing focus mid-paint.
-    const id = window.setTimeout(() => textareaRef.current?.focus(), 50)
+    const id = window.setTimeout(() => textareaRef.current?.focus(), 80)
     return () => window.clearTimeout(id)
   }, [isOpen, composing, activeThread])
 
@@ -106,11 +103,15 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
   const handleSubmit = useCallback(async () => {
     const body = draft.trim()
     if (!body || pending) return
+    // Capture send intent up-front so post-await store writes don't act on a
+    // thread the user has since navigated away from.
+    const wasComposing = composing || !activeThread
+    const sentToThreadId = activeThread?.summary.id ?? null
     setError(null)
     setPending(true)
     let result: KairosChatActionResult
     try {
-      if (composing || !activeThread) {
+      if (wasComposing) {
         if (!selectedDominionId) {
           setError('Pick a Dominion to anchor the conversation.')
           setPending(false)
@@ -118,7 +119,7 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
         }
         result = await startKairosThread({ dominionId: selectedDominionId, body })
       } else {
-        result = await sendKairosMessage({ threadId: activeThread.summary.id, body })
+        result = await sendKairosMessage({ threadId: sentToThreadId!, body })
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Send failed')
@@ -128,17 +129,32 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
 
     if (!result.ok) {
       setError(formatReason(result.reason, result.message))
-      // User msg was already persisted (persist-before-AI). Clear draft so
-      // the next send retries the AI half instead of double-posting.
+      // User msg was already persisted (persist-before-AI). Clear draft so the
+      // next send retries the AI half. If the thread was created (AI-failure on
+      // a new thread), commit to it so the retry replies into THIS thread
+      // instead of starting a duplicate.
       const aiFailure = result.reason === 'ai_empty' || result.reason === 'ai_failed' || result.reason === 'no_credential'
-      if (aiFailure) setDraft('')
+      if (aiFailure) {
+        setDraft('')
+        if (result.threadId) {
+          setComposing(false)
+          setActiveThread(result.threadId)
+          setRefreshNonce((n) => n + 1)
+          listKairosThreads({ limit: 30 }).then(setThreads).catch(() => { /* non-fatal */ })
+        }
+      }
       setPending(false)
       return
     }
 
     setDraft('')
     setComposing(false)
-    setActiveThread(result.threadId)
+    // Only switch the view to the send's thread if the user hasn't navigated
+    // to a different one while the request was in flight.
+    const liveActive = useKairosVisorStore.getState().activeThreadId
+    if (wasComposing || liveActive === sentToThreadId || liveActive === null) {
+      setActiveThread(result.threadId)
+    }
     setRefreshNonce((n) => n + 1)
     listKairosThreads({ limit: 30 })
       .then(setThreads)
@@ -154,111 +170,146 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
   }, [handleSubmit])
 
   const headerLabel = useMemo(() => {
-    if (composing || !activeThread) {
-      return composing ? 'New conversation' : 'Kairos'
-    }
+    if (composing) return 'New conversation'
+    if (!activeThread) return 'Kairos'
     const domName = activeThread.summary.dominionName ?? 'Dominion'
     return `${domName} · ${activeThread.summary.title}`
   }, [composing, activeThread])
 
-  if (dominions.length === 0) {
-    return (
-      <AnimatePresence>
-        {isOpen && (
-          <KairosVisorShell width={PANEL_WIDTH} onClose={close}>
-            <div className="p-6 text-sm text-zinc-400">
-              <p>Create a Dominion first to start talking to Kairos. Open the cosmic view and add one.</p>
-            </div>
-          </KairosVisorShell>
-        )}
-      </AnimatePresence>
-    )
-  }
+  const startNew = useCallback(() => {
+    setComposing(true)
+    setActiveThread(null)
+    setDraft('')
+    setError(null)
+  }, [setActiveThread])
+
+  const showComposer = composing || !!activeThread
 
   return (
     <AnimatePresence>
       {isOpen && (
-        <KairosVisorShell width={PANEL_WIDTH} onClose={close}>
-          <div className="flex items-center gap-2 border-b border-zinc-800 bg-zinc-950/80 px-4 py-3 backdrop-blur">
-            <Sparkles className="h-4 w-4 text-purple-400" />
-            <h2 className="flex-1 truncate text-sm font-medium text-zinc-100">{headerLabel}</h2>
-            <button
-              onClick={() => { setComposing(true); setActiveThread(null); setDraft('') }}
-              className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
-              title="New conversation"
-              type="button"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-            <button
-              onClick={close}
-              className="rounded-md p-1.5 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-100"
-              title="Close"
-              type="button"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+        <KairosVisorShell onClose={close}>
+          <KairosThreadList
+            threads={threads}
+            activeId={composing ? null : activeThread?.summary.id ?? null}
+            onPick={(id) => { setComposing(false); setActiveThread(id) }}
+            onNew={startNew}
+          />
 
-          <div className="flex flex-1 flex-col overflow-hidden">
-            {!composing && !activeThread && (
-              <KairosThreadList
-                threads={threads}
-                onPick={(id) => setActiveThread(id)}
-                onNew={() => setComposing(true)}
-              />
-            )}
-
-            {composing && (
-              <KairosNewThreadHeader
-                dominions={dominions}
-                selectedId={selectedDominionId}
-                onSelect={setSelectedDominionId}
-              />
-            )}
-
-            {!composing && activeThread && (
-              <KairosMessageStream
-                messages={activeThread.messages}
-                scrollRef={scrollRef}
-              />
-            )}
-          </div>
-
-          {(composing || activeThread) && (
-            <div className="border-t border-zinc-800 bg-zinc-950/70 p-3">
-              {error && (
-                <div className="mb-2 rounded-md border border-red-800/60 bg-red-950/40 px-2 py-1 text-xs text-red-300">
-                  {error}
-                </div>
-              )}
-              <div className="flex items-end gap-2">
-                <textarea
-                  ref={textareaRef}
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={onKeyDown}
-                  placeholder={composing
-                    ? 'Start the conversation. Cmd/Ctrl+Enter to send.'
-                    : 'Reply. Cmd/Ctrl+Enter to send.'}
-                  rows={3}
-                  disabled={pending}
-                  className="flex-1 resize-none rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-purple-600 focus:outline-none disabled:opacity-50"
-                />
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={pending || !draft.trim()}
-                  className="rounded-md bg-purple-600 p-2 text-white transition hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-50"
-                  title="Send (Cmd/Ctrl+Enter)"
-                >
-                  <Send className="h-4 w-4" />
-                </button>
-              </div>
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-950">
+            {/* Header */}
+            <div className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-5 py-3">
+              <Avatar size={26} />
+              <h2 className="flex-1 truncate text-sm font-medium text-zinc-100">{headerLabel}</h2>
+              <button
+                onClick={close}
+                className="rounded-md p-1.5 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100"
+                title="Close (Esc)"
+                type="button"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
-          )}
+
+            {/* Anchor picker — only while composing a new thread */}
+            {composing && dominions.length > 0 && (
+              <div className="mx-auto w-full max-w-[760px] px-6 pt-4">
+                <KairosNewThreadHeader
+                  dominions={dominions}
+                  selectedId={selectedDominionId}
+                  onSelect={setSelectedDominionId}
+                />
+              </div>
+            )}
+
+            {/* Body */}
+            {dominions.length === 0 ? (
+              <Centered>
+                <p className="max-w-sm text-sm text-zinc-400">
+                  Create a Dominion first to start talking to Kairos. Open the cosmic view and add one.
+                </p>
+              </Centered>
+            ) : activeThread && !composing ? (
+              <KairosMessageStream messages={activeThread.messages} scrollRef={scrollRef} />
+            ) : composing ? (
+              <div className="flex-1" />
+            ) : (
+              <EmptyState onNew={startNew} />
+            )}
+
+            {/* Composer */}
+            {showComposer && dominions.length > 0 && (
+              <div className="shrink-0 border-t border-white/[0.06] px-6 pb-5 pt-3">
+                <div className="mx-auto w-full max-w-[760px]">
+                  {error && (
+                    <div className="mb-2 rounded-md border border-red-800/60 bg-red-950/40 px-2.5 py-1.5 text-xs text-red-300">
+                      {error}
+                    </div>
+                  )}
+                  <div className="flex items-end gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-2 transition focus-within:border-purple-600/60">
+                    <textarea
+                      ref={textareaRef}
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={onKeyDown}
+                      placeholder={composing
+                        ? 'Start the conversation. Cmd/Ctrl+Enter to send.'
+                        : 'Reply. Cmd/Ctrl+Enter to send.'}
+                      rows={2}
+                      disabled={pending}
+                      className="flex-1 resize-none bg-transparent px-2 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none disabled:opacity-50"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSubmit}
+                      disabled={pending || !draft.trim()}
+                      className="rounded-lg bg-purple-600 p-2 text-white transition hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      title="Send (Cmd/Ctrl+Enter)"
+                    >
+                      <Send className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </main>
         </KairosVisorShell>
       )}
     </AnimatePresence>
+  )
+}
+
+function Avatar({ size = 28 }: { size?: number }) {
+  return (
+    <span
+      className="shrink-0 overflow-hidden rounded-full bg-zinc-900 bg-cover bg-center ring-1 ring-purple-400/30"
+      style={{ width: size, height: size, backgroundImage: "url('/kairos_2.png')", boxShadow: '0 0 12px rgba(139,92,246,0.3)' }}
+    />
+  )
+}
+
+function Centered({ children }: { children: React.ReactNode }) {
+  return <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center">{children}</div>
+}
+
+function EmptyState({ onNew }: { onNew: () => void }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
+      <Avatar size={72} />
+      <div className="space-y-1.5">
+        <h3 className="text-lg font-semibold tracking-wide text-zinc-100">Ask Kairos</h3>
+        <p className="max-w-md text-sm text-zinc-400">
+          Your memory, anchored to a Dominion. Pick a past conversation on the left, or start a new one.
+        </p>
+      </div>
+      <button
+        onClick={onNew}
+        type="button"
+        className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-500"
+        style={{ boxShadow: '0 0 18px rgba(139,92,246,0.35)' }}
+      >
+        New conversation
+      </button>
+    </div>
   )
 }

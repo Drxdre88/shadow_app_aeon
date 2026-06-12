@@ -16,13 +16,15 @@ export function KairosMessageStream({
   scrollRef: React.RefObject<HTMLDivElement | null>
 }) {
   return (
-    <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-3">
-      {messages.length === 0 && (
-        <div className="text-center text-xs text-zinc-500">Conversation is empty — say something.</div>
-      )}
-      {messages.map((m) => (
-        <KairosMessageBubble key={m.id} message={m} />
-      ))}
+    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+      <div className="mx-auto flex max-w-[760px] flex-col gap-4">
+        {messages.length === 0 && (
+          <div className="text-center text-xs text-zinc-500">Conversation is empty — say something.</div>
+        )}
+        {messages.map((m) => (
+          <KairosMessageBubble key={m.id} message={m} />
+        ))}
+      </div>
     </div>
   )
 }
@@ -57,10 +59,7 @@ function KairosMessageBubble({ message }: { message: ChatMessage }) {
             variant="chat"
           />
         )}
-        {/* When assistant content carries citations, render them inline.
-            We do this by intercepting via the shared markdown's renderChildren
-            hook above — but for now, the simpler approach is to render the
-            citation chips beneath the message as a sources strip. */}
+        {/* Assistant citations render as a sources strip beneath the message. */}
         {!isUser && titleById.size > 0 && (
           <div className="mt-2 -mb-0.5 flex flex-wrap gap-1">
             {renderWithCitations(message.content, titleById, { sourcesOnly: true })}

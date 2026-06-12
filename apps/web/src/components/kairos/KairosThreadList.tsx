@@ -1,45 +1,69 @@
 'use client'
 
+import { Plus } from 'lucide-react'
 import type { ChatThreadSummary } from '@/lib/data/kairos-chat'
 
+// Always-visible left history rail (ChatGPT/Claude pattern). New-chat button
+// up top, then the conversation list with an active accent bar. Width is fixed
+// so the conversation pane flexes to fill the rest.
 export function KairosThreadList({
   threads,
+  activeId,
   onPick,
   onNew,
 }: {
   threads: ChatThreadSummary[]
+  activeId: string | null
   onPick: (id: string) => void
   onNew: () => void
 }) {
-  if (threads.length === 0) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-        <p className="text-sm text-zinc-400">No conversations yet.</p>
+  return (
+    <aside className="flex h-full w-[280px] shrink-0 flex-col border-r border-white/[0.06] bg-black/40">
+      <div className="p-3">
         <button
           onClick={onNew}
-          className="rounded-md bg-purple-600 px-3 py-1.5 text-sm text-white hover:bg-purple-500"
           type="button"
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600/90 px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-purple-500"
+          style={{ textShadow: '0 0 8px rgba(139,92,246,0.5)' }}
         >
-          Start one
+          <Plus className="h-4 w-4" />
+          New chat
         </button>
       </div>
-    )
-  }
-  return (
-    <div className="flex-1 overflow-y-auto p-2">
-      {threads.map((t) => (
-        <button
-          key={t.id}
-          onClick={() => onPick(t.id)}
-          className="w-full rounded-md px-3 py-2 text-left transition hover:bg-zinc-900"
-          type="button"
-        >
-          <div className="truncate text-sm text-zinc-100">{t.title}</div>
-          <div className="mt-0.5 truncate text-xs text-zinc-500">
-            {t.dominionName ?? 'Unanchored'} · {t.messageCount} message{t.messageCount === 1 ? '' : 's'}
-          </div>
-        </button>
-      ))}
-    </div>
+
+      <div className="mx-3 h-px bg-gradient-to-r from-transparent via-white/[0.12] to-transparent" />
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        {threads.length === 0 ? (
+          <p className="px-3 py-8 text-center text-xs text-zinc-500">
+            No conversations yet.
+          </p>
+        ) : (
+          threads.map((t) => {
+            const active = t.id === activeId
+            return (
+              <button
+                key={t.id}
+                onClick={() => onPick(t.id)}
+                type="button"
+                className={`relative mb-0.5 w-full rounded-lg px-3 py-2 text-left transition ${
+                  active ? 'bg-white/[0.08]' : 'hover:bg-white/[0.04]'
+                }`}
+              >
+                {active && (
+                  <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-purple-400 shadow-[0_0_6px_rgba(139,92,246,0.7)]" />
+                )}
+                <div className={`truncate text-[12.5px] ${active ? 'font-medium text-white' : 'text-zinc-200'}`}>
+                  {t.title}
+                </div>
+                <div className="mt-0.5 truncate text-[10.5px] text-zinc-500">
+                  {t.dominionName ?? 'Unanchored'} · {t.messageCount} msg{t.messageCount === 1 ? '' : 's'}
+                </div>
+              </button>
+            )
+          })
+        )}
+      </div>
+    </aside>
   )
 }

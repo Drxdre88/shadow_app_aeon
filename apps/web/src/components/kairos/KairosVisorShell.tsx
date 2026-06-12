@@ -2,40 +2,40 @@
 
 import { motion } from 'framer-motion'
 
-// Slide-out aside + scrim. Pure shell — no business logic, no state.
-// Kept separate so the animation transition + a11y attributes live in
-// one place and the parent can focus on flow.
+const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1]
+
+// Full-screen focus modal — scrim + a near-full-bleed framed surface. The
+// chat is a takeover (history rail + conversation), not a side drawer, so the
+// operator can focus. Pure shell: animation + a11y only, no business logic.
 export function KairosVisorShell({
-  width,
   onClose,
   children,
 }: {
-  width: number
   onClose: () => void
   children: React.ReactNode
 }) {
   return (
     <>
       <motion.div
-        className="fixed inset-0 z-40 bg-black/40"
+        className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
       />
-      <motion.aside
+      <motion.div
         role="dialog"
         aria-modal="true"
-        aria-label="Kairos chat"
-        className="fixed right-0 top-0 z-50 flex h-screen flex-col bg-zinc-950 border-l border-zinc-800 shadow-2xl"
-        style={{ width }}
-        initial={{ x: width }}
-        animate={{ x: 0 }}
-        exit={{ x: width }}
-        transition={{ type: 'spring', stiffness: 320, damping: 36 }}
+        aria-label="Kairos AI"
+        className="fixed inset-3 z-50 flex overflow-hidden rounded-2xl border border-white/[0.08] bg-zinc-950 shadow-2xl md:inset-6"
+        style={{ boxShadow: '0 0 60px rgba(139,92,246,0.12), 0 24px 80px rgba(0,0,0,0.6)' }}
+        initial={{ opacity: 0, scale: 0.975, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.975, y: 12 }}
+        transition={{ duration: 0.32, ease: EASE }}
       >
         {children}
-      </motion.aside>
+      </motion.div>
     </>
   )
 }
