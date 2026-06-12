@@ -3,11 +3,11 @@
 import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import type { ThoughtVisual } from '@/lib/kairos/aether-types'
+import type { AetherThought } from '@/lib/kairos/aether-types'
 
-// View direction computed in vertex stage — avoids silent cameraPosition
-// injection failures that produce black output on some three.js builds.
-const ORB_VERTEX = /* glsl */ `
+// Fresnel corona shared by the inner rim halo and the wide outer "dark glow".
+// uPow controls spread (high = tight rim, low = broad aura).
+const HALO_VERTEX = /* glsl */ `
   varying vec3 vNormal;
   varying vec3 vViewDir;
   void main() {
@@ -17,89 +17,18 @@ const ORB_VERTEX = /* glsl */ `
     gl_Position = projectionMatrix * viewPos;
   }
 `
-
-// Core vessel body. uGlow [0..1] drives over-bright output so bloom picks it
-// up proportionally — high-salience thoughts blaze; stale ones barely glow.
-const ORB_FRAG = /* glsl */ `
+const HALO_FRAG = /* glsl */ `
   precision highp float;
   varying vec3 vNormal;
   varying vec3 vViewDir;
   uniform vec3 uColor;
-  uniform vec3 uAccent;
-  uniform float uGlow;
-
+  uniform float uIntensity;
+  uniform float uPow;
   void main() {
     vec3 n = normalize(vNormal);
     vec3 v = normalize(vViewDir);
-
-    // 1.0 at visible disc centre, 0.0 at silhouette.
-    float facing = clamp(dot(n, v), 0.0, 1.0);
-
-    // Two-tone radial: accent at rim, primary at centre.
-    vec3 col = mix(uAccent, uColor, pow(facing, 1.4));
-
-    // Over-bright core — intensity rides uGlow so bloom scales with salience.
-    col += uColor * pow(facing, 5.0) * (1.8 + uGlow * 2.2);
-
-    // Soft ambient self-illumination — aether vessels have no sun direction.
-    col *= 0.55 + uGlow * 0.45;
-
-    // Rim halo on the silhouette — feeds bloom. Eureka (uGlow~1) blazes.
-    float rim = pow(1.0 - facing, 2.6);
-    col += uColor * rim * (1.1 + uGlow * 2.8);
-
-    gl_FragColor = vec4(col, 1.0);
-  }
-`
-
-// Additive backside halo shell — reads from outside as a soft tinted corona.
-// Intensity is gated by uGlow so dim/stale thoughts don't bleed.
-const SHELL_FRAG = /* glsl */ `
-  precision highp float;
-  varying vec3 vNormal;
-  varying vec3 vViewDir;
-  uniform vec3 uColor;
-  uniform float uGlow;
-  void main() {
-    vec3 n = normalize(vNormal);
-    vec3 v = normalize(vViewDir);
-    float facing = clamp(dot(n, -v), 0.0, 1.0);
-    float fres = pow(facing, 1.8);
-    float intensity = 1.0 + uGlow * 2.2;
-    gl_FragColor = vec4(uColor * fres * intensity, fres * (0.55 + uGlow * 0.45));
-  }
-`
-
-// Rayleigh/Mie atmosphere rim adapted from Swarm's ATMO_FRAG.
-// uHueVec drives the Rayleigh colour family; uGlow gates overall opacity so
-// high-salience thoughts carry a vivid atmospheric halo.
-const ATMO_VERT = /* glsl */ `
-  varying vec3 vWorldNormal;
-  varying vec3 vWorldPos;
-  void main() {
-    vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
-    vWorldNormal = normalize(mat3(modelMatrix) * normalize(position));
-    gl_Position = projectionMatrix * viewMatrix * vec4(vWorldPos, 1.0);
-  }
-`
-
-const ATMO_FRAG = /* glsl */ `
-  precision highp float;
-  varying vec3 vWorldNormal;
-  varying vec3 vWorldPos;
-  uniform vec3 uColor;
-  uniform float uGlow;
-  void main() {
-    vec3 viewDir = normalize(cameraPosition - vWorldPos);
-    float viewDotN = abs(dot(viewDir, vWorldNormal));
-    float limb = pow(1.0 - viewDotN, 3.0);
-    // Rayleigh-tinted to vessel hue, no directional sun in the aether field.
-    vec3 rayleigh = uColor * limb * (0.8 + uGlow * 1.4);
-    // Mie-like forward scatter — viewSunDot replaced with a static soft glow.
-    vec3 mie = uColor * 0.6 * limb * uGlow * 1.2;
-    vec3 col = rayleigh + mie;
-    float alpha = limb * (0.35 + uGlow * 0.55);
-    gl_FragColor = vec4(col, clamp(alpha, 0.0, 1.0));
+    float fres = pow(clamp(dot(n, -v), 0.0, 1.0), uPow);
+    gl_FragColor = vec4(uColor * fres * uIntensity, fres * 0.5 * uIntensity);
   }
 `
 
@@ -117,7 +46,17 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   return [r + m, g + m, b + m]
 }
 
-export type ThoughtContainerProps = ThoughtVisual & {
+export type ThoughtContainerProps = {
+  thought: AetherThought
+  hue: number
+  radius: number
+  glow: number
+  seed: number
+  position: [number, number, number]
+  selected: boolean
+  hovered: boolean
+  /** Another thought is selected and this one isn't — recede into the dark. */
+  dimmed: boolean
   onSelect?: (id: string) => void
   onHover?: (id: string | null) => void
 }
@@ -127,99 +66,127 @@ export function ThoughtContainer({
   hue,
   radius,
   glow,
+  seed,
   position,
   selected,
+  hovered,
+  dimmed,
   onSelect,
   onHover,
 }: ThoughtContainerProps) {
   const groupRef = useRef<THREE.Group>(null)
+  const orbRef = useRef<THREE.Mesh>(null)
+  const matRef = useRef<THREE.MeshPhysicalMaterial>(null)
   const scaleRef = useRef(1)
-  const hovered = useRef(false)
+  const dimRef = useRef(1)
 
-  // Eureka thoughts never fall below 0.92 glow regardless of salience.
   const effectiveGlow = thought.kind === 'eureka' ? Math.max(glow, 0.92) : glow
+  const h = hue / 360
 
-  // Core colour — vivid saturation, lightness rides glow so dim = less luminous.
-  const [cr, cg, cb] = hslToRgb(hue, 0.78, 0.38 + effectiveGlow * 0.28)
-  const tint = useMemo(() => new THREE.Color(cr, cg, cb), [cr, cg, cb])
+  const baseColor = useMemo(() => new THREE.Color().setHSL(h, 0.6, 0.34), [h])
+  const emissiveColor = useMemo(() => new THREE.Color().setHSL(h, 0.75, 0.55), [h])
+  const rimColor = useMemo(() => new THREE.Color().setHSL(h, 0.85, 0.55), [h])
+  const deepGlowColor = useMemo(() => new THREE.Color().setHSL(h, 0.95, 0.42), [h])
 
-  // Accent: hue-shifted +25° for the two-tone rim gradient.
-  const accent = useMemo(() => {
-    const [ar, ag, ab] = hslToRgb((hue + 25) % 360, 0.72, 0.55 + effectiveGlow * 0.2)
-    return new THREE.Color(ar, ag, ab)
-  }, [hue, effectiveGlow])
-
-  const orbMat = useMemo(
+  // Inner rim halo — tight, bright-ish edge.
+  const innerHaloMat = useMemo(
     () =>
       new THREE.ShaderMaterial({
         uniforms: {
-          uColor:  { value: tint.clone() },
-          uAccent: { value: accent.clone() },
-          uGlow:   { value: effectiveGlow },
+          uColor: { value: rimColor.clone() },
+          uIntensity: { value: 0.35 + effectiveGlow * 0.5 },
+          uPow: { value: 2.6 },
         },
-        vertexShader: ORB_VERTEX,
-        fragmentShader: ORB_FRAG,
-      }),
-    [tint, accent, effectiveGlow],
-  )
-
-  const shellMat = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        uniforms: {
-          uColor: { value: tint.clone().lerp(new THREE.Color(1, 1, 1), 0.25) },
-          uGlow:  { value: effectiveGlow },
-        },
-        vertexShader: ORB_VERTEX,
-        fragmentShader: SHELL_FRAG,
+        vertexShader: HALO_VERTEX,
+        fragmentShader: HALO_FRAG,
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         side: THREE.BackSide,
       }),
-    [tint, effectiveGlow],
+    [rimColor, effectiveGlow],
   )
 
-  const atmoMat = useMemo(
+  // Outer luminescent dark glow — wide, deep, soft aura around the orb.
+  const outerGlowMat = useMemo(
     () =>
       new THREE.ShaderMaterial({
         uniforms: {
-          uColor: { value: tint.clone() },
-          uGlow:  { value: effectiveGlow },
+          uColor: { value: deepGlowColor.clone() },
+          uIntensity: { value: 0.22 + effectiveGlow * 0.4 },
+          uPow: { value: 1.5 },
         },
-        vertexShader: ATMO_VERT,
-        fragmentShader: ATMO_FRAG,
-        side: THREE.BackSide,
+        vertexShader: HALO_VERTEX,
+        fragmentShader: HALO_FRAG,
         transparent: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
+        side: THREE.BackSide,
       }),
-    [tint, effectiveGlow],
+    [deepGlowColor, effectiveGlow],
   )
 
-  // Target scale: selected = 1.22, hovered = 1.10, default = 1.0
-  useFrame((_, delta) => {
-    if (!groupRef.current) return
-    const target = selected ? 1.22 : hovered.current ? 1.10 : 1.0
-    scaleRef.current += (target - scaleRef.current) * Math.min(1, delta * 8)
-    groupRef.current.scale.setScalar(scaleRef.current)
+  useFrame((state, delta) => {
+    const t = state.clock.elapsedTime
+    const phase = seed * 6.2831
+    const pulse = 0.5 + 0.5 * Math.sin(t * 0.5 + phase) // 0..1
+    const shimmer = 0.82 + 0.18 * Math.sin(t * 0.55 + phase)
+
+    // Spotlight: lerp toward dim when another thought owns the focus.
+    dimRef.current += ((dimmed ? 0.26 : 1) - dimRef.current) * Math.min(1, delta * 5)
+    const d = dimRef.current
+
+    if (matRef.current) {
+      matRef.current.emissiveIntensity = (0.1 + pulse * 0.16) * (0.55 + effectiveGlow * 0.65) * d
+      matRef.current.envMapIntensity = 1.1 * (0.4 + 0.6 * d)
+      matRef.current.iridescenceThicknessRange[1] = 280 + Math.sin(t * 0.35 + phase) * 130
+    }
+    innerHaloMat.uniforms.uIntensity.value = (0.35 + effectiveGlow * 0.5) * shimmer * d
+    outerGlowMat.uniforms.uIntensity.value = (0.22 + effectiveGlow * 0.4) * shimmer * d
+
+    if (orbRef.current) {
+      orbRef.current.rotation.y += delta * 0.05
+      orbRef.current.rotation.x += delta * 0.018
+    }
+
+    if (groupRef.current) {
+      const breathe = 1 + Math.sin(t * 0.5 + phase) * 0.03
+      const focusScale = selected ? 1.24 : hovered ? 1.12 : 1.0
+      const target = focusScale * breathe * (0.9 + 0.1 * d)
+      scaleRef.current += (target - scaleRef.current) * Math.min(1, delta * 8)
+      groupRef.current.scale.setScalar(scaleRef.current)
+    }
   })
 
   return (
     <group ref={groupRef} position={position}>
       <group
         onPointerDown={(e) => { e.stopPropagation(); onSelect?.(thought.id) }}
-        onPointerOver={(e) => { e.stopPropagation(); hovered.current = true; onHover?.(thought.id) }}
-        onPointerOut={(e)  => { e.stopPropagation(); hovered.current = false; onHover?.(null) }}
+        onPointerOver={(e) => { e.stopPropagation(); onHover?.(thought.id) }}
+        onPointerOut={(e)  => { e.stopPropagation(); onHover?.(null) }}
       >
-        <mesh material={orbMat}>
-          <sphereGeometry args={[radius, 48, 48]} />
+        <mesh ref={orbRef}>
+          <sphereGeometry args={[radius, 64, 64]} />
+          <meshPhysicalMaterial
+            ref={matRef}
+            color={baseColor}
+            emissive={emissiveColor}
+            emissiveIntensity={0.2}
+            roughness={0.16}
+            metalness={0.2}
+            clearcoat={1}
+            clearcoatRoughness={0.12}
+            iridescence={1}
+            iridescenceIOR={1.4}
+            iridescenceThicknessRange={[120, 320]}
+            envMapIntensity={1.1}
+          />
         </mesh>
-        <mesh material={shellMat} scale={1.18}>
-          <sphereGeometry args={[radius, 32, 32]} />
+        <mesh material={innerHaloMat} scale={1.4}>
+          <sphereGeometry args={[radius, 24, 24]} />
         </mesh>
-        <mesh material={atmoMat} scale={1.32}>
-          <sphereGeometry args={[radius, 32, 32]} />
+        <mesh material={outerGlowMat} scale={2.3}>
+          <sphereGeometry args={[radius, 24, 24]} />
         </mesh>
       </group>
     </group>

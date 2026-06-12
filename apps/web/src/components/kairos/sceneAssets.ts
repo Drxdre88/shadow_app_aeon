@@ -36,7 +36,6 @@ export function nebulaBrushUrl(name: NebulaBrushName): string {
   return `${CORTEX_ASSET_ROOT}/nebulae/${name}.png`
 }
 
-export const SKYBOX_URL = `${CORTEX_ASSET_ROOT}/skybox.png`
 export const RINGS_URL = `${CORTEX_ASSET_ROOT}/rings_saturn.png`
 export const SPACESHIP_URL = `${CORTEX_ASSET_ROOT}/spaceship.png`
 

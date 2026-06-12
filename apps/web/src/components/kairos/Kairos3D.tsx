@@ -12,14 +12,9 @@ import { Backdrop } from './scene/Backdrop'
 import { PostFX } from './scene/PostFX'
 import { PlanetCloud, type SceneNode } from './scene/PlanetCloud'
 import { useKairosStore } from '@/stores/kairosStore'
+import { SKYBOX_BY_ID, type SkyboxId } from '@/components/skybox/skyboxes'
 
-export type SkyboxId = 'nebula-4k' | 'lunar-4k' | 'lunar-8k'
-
-export const SKYBOX_URLS: Record<SkyboxId, string> = {
-  'nebula-4k': '/cortex/skybox-nebula-4k.png',
-  'lunar-4k': '/cortex/skybox-lunar-4k.png',
-  'lunar-8k': '/cortex/skybox-lunar-8k.png',
-}
+export type { SkyboxId }
 
 type Props = {
   nodes: GraphNode[]
@@ -66,7 +61,7 @@ export function Kairos3D({ nodes, edges, selectedId, onSelect, colorMode = 'domi
       <ambientLight intensity={0.22} />
       <directionalLight position={SUN_DIR.clone().multiplyScalar(800)} intensity={1.2} color="#fff4d6" />
 
-      <Backdrop url={SKYBOX_URLS[skybox]} />
+      <Backdrop url={SKYBOX_BY_ID[skybox].url} />
 
       <EdgeGraph data={sceneData} />
       <PlanetCloud

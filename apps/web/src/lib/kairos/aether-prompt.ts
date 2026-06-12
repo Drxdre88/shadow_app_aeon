@@ -160,7 +160,7 @@ export function buildAetherPrompt(ctx: AetherContext): string {
     '  - `coreNarrative`: 2–4 sentences. Who is this operator? What are they building across all their work? What is the overarching movement or arc? Honest, grounded, no flattery.',
     '  - `thoughts`: 5–15 items. Mix of kinds. Each:',
     '    - `id`: UUID v4 (fresh, unique)',
-    '    - `title`: 1–8 words',
+    '    - `title`: 1–3 words — a short tag, never a sentence (e.g. "Velocity Drift", "BYOK Gate")',
     '    - `insight`: one paragraph, ≤800 chars',
     '    - `dominionId`: UUID of the source Dominion, or null for cross-cutting',
     '    - `dominionName`: display name of the Dominion at generation time, or null',

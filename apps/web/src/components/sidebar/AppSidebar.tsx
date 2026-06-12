@@ -15,7 +15,6 @@ import { SidebarCreateActions } from '@/components/sidebar/SidebarCreateActions'
 import { KairosSidebarContent } from '@/components/sidebar/KairosSidebarContent'
 import { SidebarHome } from '@/components/sidebar/SidebarHome'
 import { SidebarBottom } from '@/components/sidebar/SidebarBottom'
-import { APP_VERSION } from '@/lib/version'
 
 interface AppSidebarProps {
   user: { name?: string | null; email?: string | null; image?: string | null; role: string }
@@ -59,7 +58,7 @@ export function AppSidebar({
       className="fixed top-0 left-0 flex flex-col h-screen shrink-0 overflow-hidden z-30"
       style={{
         width: collapsed ? 60 : 260,
-        transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        transition: 'width 0.42s cubic-bezier(0.16, 1, 0.3, 1)',
         background: 'rgba(10, 10, 15, 0.85)',
         backdropFilter: 'blur(24px)',
         borderRight: '1px solid rgba(255, 255, 255, 0.06)',
@@ -70,7 +69,6 @@ export function AppSidebar({
         collapsed={collapsed}
         glowColor={glowColor}
         onToggle={toggleCollapsed}
-        onKairos={onKairos}
       />
 
       <SidebarHome collapsed={collapsed} glowColor={glowColor} pathname={pathname} />
@@ -111,12 +109,10 @@ function Header({
   collapsed,
   glowColor,
   onToggle,
-  onKairos,
 }: {
   collapsed: boolean
   glowColor: string
   onToggle: () => void
-  onKairos: boolean
 }) {
   return (
     <div className="shrink-0 flex flex-col">
@@ -134,39 +130,10 @@ function Header({
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -8 }}
               transition={{ duration: 0.2 }}
-              className="text-xl font-bold tracking-[0.35em] flex items-baseline gap-1"
+              className="text-xl font-bold tracking-[0.35em]"
               style={{ color: 'var(--primary)' }}
             >
               <span style={{ textShadow: `0 0 20px ${glowColor}, 0 0 40px ${glowColor}` }}>AEON</span>
-              <span
-                title={`Aeon ${APP_VERSION}`}
-                className="text-[8px] font-medium tracking-[0.18em] uppercase px-1 py-px rounded-sm self-end mb-1 ml-0.5"
-                style={{
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  color: 'rgba(255,255,255,0.45)',
-                  letterSpacing: '0.1em',
-                }}
-              >
-                v{APP_VERSION}
-              </span>
-              {onKairos && (
-                <>
-                  <span style={{ opacity: 0.5 }}>:</span>
-                  <motion.span
-                    animate={{
-                      textShadow: [
-                        `0 0 8px ${glowColor}, 0 0 16px ${glowColor}`,
-                        `0 0 20px ${glowColor}, 0 0 36px ${glowColor}, 0 0 56px ${glowColor}`,
-                        `0 0 8px ${glowColor}, 0 0 16px ${glowColor}`,
-                      ],
-                    }}
-                    transition={{ duration: 3.4, repeat: Infinity, ease: 'easeInOut' }}
-                  >
-                    KAIROS
-                  </motion.span>
-                </>
-              )}
             </motion.span>
           )}
         </AnimatePresence>

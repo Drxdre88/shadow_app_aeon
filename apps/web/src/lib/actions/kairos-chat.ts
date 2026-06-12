@@ -82,7 +82,10 @@ async function callAssistant(
 
 export type KairosChatActionResult =
   | { ok: true; threadId: string; userSeq: number; assistantSeq: number; assistantContent: string; model: string | null }
-  | { ok: false; reason: 'unauthorized' | 'dominion_not_found' | 'thread_not_found' | 'no_credential' | 'ai_empty' | 'ai_failed' | 'invalid_input'; message?: string }
+  // `threadId` is present on AI-failure cases (no_credential/ai_empty/ai_failed):
+  // the thread was created and the user message persisted before the AI call,
+  // so the client can recover to it on retry instead of starting a new thread.
+  | { ok: false; reason: 'unauthorized' | 'dominion_not_found' | 'thread_not_found' | 'no_credential' | 'ai_empty' | 'ai_failed' | 'invalid_input'; message?: string; threadId?: string }
 
 export async function startKairosThread(input: z.infer<typeof startSchema>): Promise<KairosChatActionResult> {
   const auth = await safeAuth()
@@ -200,9 +203,11 @@ async function runAssistantTurn(
 
   const reply = await callAssistant(userId, dominionId, messages)
   if ('error' in reply) {
-    if (reply.error === 'no_credential') return { ok: false, reason: 'no_credential' }
-    if (reply.error === 'empty') return { ok: false, reason: 'ai_empty' }
-    return { ok: false, reason: 'ai_failed', message: reply.message }
+    // The user message is already persisted on `threadId` — surface it so the
+    // client recovers to this thread on retry (no duplicate thread).
+    if (reply.error === 'no_credential') return { ok: false, reason: 'no_credential', threadId }
+    if (reply.error === 'empty') return { ok: false, reason: 'ai_empty', threadId }
+    return { ok: false, reason: 'ai_failed', message: reply.message, threadId }
   }
 
   // Strip hallucinated citations: only persist ids that were actually
