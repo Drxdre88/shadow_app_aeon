@@ -20,6 +20,7 @@ import {
   registerReflectionTools,
   registerRecipeTools,
   registerSynthesisTools,
+  registerAskTools,
 } from './tools'
 
 async function verifyToken(_req: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
@@ -56,6 +57,7 @@ const mcpHandler = createMcpHandler(
     registerReflectionTools(server)
     registerRecipeTools(server)
     registerSynthesisTools(server)
+    registerAskTools(server)
   },
   { capabilities: {} },
   {
