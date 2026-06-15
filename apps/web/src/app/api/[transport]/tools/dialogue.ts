@@ -100,11 +100,12 @@ export const registerDialogueTools: RegisterFn = (server) => {
 
   server.tool(
     'commit_dialogue',
-    'Distill a finished dialogue into durable memory. YOU (Claude Code) supply the reflections drawn from the exchange — each anchored to a Dominion (dominionId) or floating (null). The server persists them as reflections tagged kairos-dialogue, links them to the seed ask, marks that ask answered, and closes the thread. This is the conversational analogue of commit_aether.',
+    'Distill a finished dialogue into durable memory. YOU (Claude Code) supply the reflections drawn from the exchange. PREFER soft auto-tagging over hard pinning: pass dominionIds (every Dominion the insight touches) and leave dominionId null for cross-front insights — the reflection then surfaces from each of those Dominions\' retrieval without being owned by one. Set dominionId only when there is a genuine single "home". The server persists them as reflections tagged kairos-dialogue (+ dominion:<id> reference tags), links them to the seed ask, marks that ask answered, and closes the thread. This is the conversational analogue of commit_aether.',
     {
       threadId: z.string().uuid().describe('The dialogue thread id.'),
       reflections: z.array(z.object({
-        dominionId: z.string().uuid().nullable().optional().describe('Dominion to anchor this reflection to, or null/omit for a floating reflection.'),
+        dominionId: z.string().uuid().nullable().optional().describe('Optional "home" Dominion (anchors the FK). Often null for cross-front reflections — prefer dominionIds.'),
+        dominionIds: z.array(z.string().uuid()).optional().describe('Every Dominion this insight touches — written as soft reference tags so it surfaces from each. Invalid/foreign ids are dropped.'),
         bodyMd: z.string().trim().min(1).max(10000).describe('The distilled insight — markdown.'),
         title: z.string().trim().max(255).optional().describe('Optional title; defaults to the first line.'),
         summary: z.string().trim().max(2000).optional().describe('Optional one-line summary.'),

@@ -9,6 +9,7 @@ import {
   fetchMemoriesByIds,
   fetchAetherPayload,
   writeFloatingReflection,
+  filterLiveDominionIds,
   type DialogueRole,
   type DialogueSeedMeta,
   type DialogueThread,
@@ -16,6 +17,7 @@ import {
   type SourceMemorySnapshot,
 } from '@/lib/data/dialogue'
 import { retrieveContext } from './retrieve'
+import { dominionTag } from './dominionTags'
 import type { RetrievedMemory } from './recipes/_recipe'
 import type { AetherThought } from './aether-types'
 
@@ -173,7 +175,12 @@ export async function appendDialogueTurn(
 // ── commit ─────────────────────────────────────────────────────────────────
 
 export interface DialogueDistillationReflection {
+  /** Optional "home" Dominion — anchors the reflection's dominionId FK. Often
+   *  null for cross-front reflections, which lean on dominionIds tags instead. */
   dominionId?: string | null
+  /** Dominions this reflection *touches* — written as soft `dominion:<id>`
+   *  reference tags so it surfaces from each without being owned by one. */
+  dominionIds?: string[]
   bodyMd: string
   title?: string | null
   summary?: string | null
@@ -204,7 +211,11 @@ export async function commitDialogue(
 
   for (const r of input.reflections) {
     const dominionId = r.dominionId ?? null
-    const tags = ['kairos-dialogue', ...(r.tags ?? [])]
+    // Auto-tag the Dominions this reflection touches (validated, deduped against
+    // the home FK which already covers it). Fluid grouping over hard pinning.
+    const requestedRefs = (r.dominionIds ?? []).filter((id) => id && id !== dominionId)
+    const liveRefs = requestedRefs.length ? await filterLiveDominionIds(userId, requestedRefs) : []
+    const tags = ['kairos-dialogue', ...liveRefs.map(dominionTag), ...(r.tags ?? [])]
     if (dominionId) {
       const result = await captureReflection(userId, {
         dominionId,
