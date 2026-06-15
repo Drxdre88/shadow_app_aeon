@@ -291,7 +291,10 @@ export const registerMemoryTools: RegisterFn = (server) => {
     'Return memories with an empty execSummary (and/or null aiTitle) so the caller can backfill them. ' +
       'Aeon does no LLM work — fetch a batch, clean each body into a 1–6 word `aiTitle` and 5–10 bullet `execSummary`, ' +
       'then call `update_memory` for each. Loop until this returns an empty array. Defaults to oldest-first so the gaps ' +
-      'closest to the schema cutover get filled first.',
+      'closest to the schema cutover get filled first. By default scopes to summary-worthy types ' +
+      '(note, decision, idea, observation, session_summary, reflection) — machine/synthesis types ' +
+      '(snapshot, achievement, advisory, archetype, dominion_cortex, aether, …) are excluded so the backlog ' +
+      'stays signal. Pass `type` explicitly to override and target any type.',
     {
       limit: z.number().int().min(1).max(50).default(20).optional().describe('Batch size (default 20)'),
       offset: z.number().int().min(0).default(0).optional().describe('Pagination offset'),
