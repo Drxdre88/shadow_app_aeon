@@ -25,6 +25,7 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories } from '@/lib/db/schema'
 import { inspectDominion } from '@/lib/data/dominions'
+import { dominionTag } from './dominionTags'
 import { embeddingsEnabled, embedOne, toVectorLiteral } from './embeddings'
 import { isStreamClass, type StreamClass } from './streamClass'
 import type {
@@ -43,6 +44,15 @@ const DEFAULT_MEMORY_LIMIT = 25
 // FTS queries shorter than this fall back to substrate=[]. websearch_to_tsquery
 // drops stop words but won't rank "hi" / "ok" usefully.
 const MIN_QUERY_CHARS = 3
+
+// A memory belongs to a Dominion either by its dominionId FK (its home) OR by a
+// soft `dominion:<id>` reference tag. Substrate retrieval unions both so a
+// cross-front reflection surfaces from every Dominion it touches. The FK leg
+// uses memories_dominion_idx; the tag leg uses the memories_tags_idx GIN index.
+function inDominionScope(dominionId: string) {
+  const tagMatch = JSON.stringify([dominionTag(dominionId)])
+  return sql`(${memories.dominionId} = ${dominionId} OR ${memories.tags} @> ${tagMatch}::jsonb)`
+}
 
 export interface RetrievalArgs {
   userId: string
@@ -157,7 +167,7 @@ async function fetchSubstrate(
     .from(memories)
     .where(and(
       eq(memories.userId, userId),
-      eq(memories.dominionId, dominionId),
+      inDominionScope(dominionId),
       inArray(memories.streamClass, [...SUBSTRATE_STREAMS]),
       isNull(memories.archivedAt),
       sql`"memories"."fts" @@ ${tsQuery}`,
@@ -199,7 +209,7 @@ async function fetchSubstrate(
         .from(memories)
         .where(and(
           eq(memories.userId, userId),
-          eq(memories.dominionId, dominionId),
+          inDominionScope(dominionId),
           inArray(memories.streamClass, [...SUBSTRATE_STREAMS]),
           isNull(memories.archivedAt),
           sql`${memories.embedding} IS NOT NULL`,

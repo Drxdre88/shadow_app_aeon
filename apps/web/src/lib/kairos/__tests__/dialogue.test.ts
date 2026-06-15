@@ -19,6 +19,7 @@ vi.mock('@/lib/data/dialogue', () => ({
   fetchMemoriesByIds: vi.fn(),
   fetchAetherPayload: vi.fn(),
   writeFloatingReflection: vi.fn(),
+  filterLiveDominionIds: vi.fn(),
 }))
 
 vi.mock('../retrieve', () => ({
@@ -37,6 +38,7 @@ import {
   fetchMemoriesByIds,
   fetchAetherPayload,
   writeFloatingReflection,
+  filterLiveDominionIds,
 } from '@/lib/data/dialogue'
 import { retrieveContext } from '../retrieve'
 
@@ -46,6 +48,8 @@ const THREAD = 't0000000-0000-4000-8000-000000000002'
 const AETHER_ID = 'e0000000-0000-4000-8000-000000000003'
 const THOUGHT_ID = '11111111-1111-4111-8111-111111111111'
 const DOM_ID = 'd0000000-0000-4000-8000-000000000004'
+const DOM_SWARM = 'd0000000-0000-4000-8000-000000000005'
+const DOM_LAB = 'd0000000-0000-4000-8000-000000000006'
 
 const mock = (fn: unknown) => fn as ReturnType<typeof vi.fn>
 
@@ -215,6 +219,52 @@ describe('commitDialogue', () => {
     expect(closeDialogue).toHaveBeenCalledWith(USER, THREAD)
     // kairos-dialogue tag always added
     expect(mock(captureReflection).mock.calls[0][1].tags).toContain('kairos-dialogue')
+  })
+
+  it('auto-tags a floating reflection with dominion:<id> refs for the fronts it touches', async () => {
+    mock(loadDialogue).mockResolvedValue(threadWithAsk)
+    mock(writeFloatingReflection).mockResolvedValue('ref-1')
+    mock(getPendingKairosAsk).mockResolvedValue(pendingAsk())
+    mock(closeDialogue).mockResolvedValue(true)
+    // both requested fronts are live + owned
+    mock(filterLiveDominionIds).mockResolvedValue([DOM_SWARM, DOM_LAB])
+
+    await commitDialogue(USER, THREAD, {
+      reflections: [{ dominionId: null, dominionIds: [DOM_SWARM, DOM_LAB], bodyMd: 'spans two fronts' }],
+    })
+
+    expect(filterLiveDominionIds).toHaveBeenCalledWith(USER, [DOM_SWARM, DOM_LAB])
+    const tags = mock(writeFloatingReflection).mock.calls[0][1].tags
+    expect(tags).toEqual(['kairos-dialogue', `dominion:${DOM_SWARM}`, `dominion:${DOM_LAB}`])
+  })
+
+  it('drops the home dominionId and any foreign ids from the reference tags', async () => {
+    mock(loadDialogue).mockResolvedValue(threadWithAsk)
+    mock(captureReflection).mockResolvedValue({ ok: true, memory: { id: 'ref-anchored' } })
+    mock(getPendingKairosAsk).mockResolvedValue(pendingAsk())
+    mock(closeDialogue).mockResolvedValue(true)
+    // DOM_SWARM survives validation; the foreign id is dropped by the data layer
+    mock(filterLiveDominionIds).mockResolvedValue([DOM_SWARM])
+
+    await commitDialogue(USER, THREAD, {
+      reflections: [{ dominionId: DOM_ID, dominionIds: [DOM_ID, DOM_SWARM, 'foreign'], bodyMd: 'has a home' }],
+    })
+
+    // home (DOM_ID) is excluded BEFORE validation — the FK already covers it
+    expect(filterLiveDominionIds).toHaveBeenCalledWith(USER, [DOM_SWARM, 'foreign'])
+    const tags = mock(captureReflection).mock.calls[0][1].tags
+    expect(tags).toEqual(['kairos-dialogue', `dominion:${DOM_SWARM}`])
+  })
+
+  it('does not validate dominions when no dominionIds are supplied', async () => {
+    mock(loadDialogue).mockResolvedValue(threadWithAsk)
+    mock(writeFloatingReflection).mockResolvedValue('ref-1')
+    mock(closeDialogue).mockResolvedValue(true)
+
+    await commitDialogue(USER, THREAD, { reflections: [{ bodyMd: 'plain' }], closeAsk: false })
+
+    expect(filterLiveDominionIds).not.toHaveBeenCalled()
+    expect(mock(writeFloatingReflection).mock.calls[0][1].tags).toEqual(['kairos-dialogue'])
   })
 
   it('does not close the ask when closeAsk is false', async () => {

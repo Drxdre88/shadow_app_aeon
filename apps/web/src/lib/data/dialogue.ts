@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { agentSessions, sessionEvents, memories } from '@/lib/db/schema'
+import { agentSessions, sessionEvents, memories, dominions } from '@/lib/db/schema'
 import type { AetherPayload } from '@/lib/kairos/aether-types'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -223,6 +223,26 @@ export interface SourceMemorySnapshot {
   body: string
   streamClass: string
   dominionId: string | null
+}
+
+/**
+ * Narrow a set of Dominion ids to those that are live and owned by the user —
+ * so auto-tagging a reflection with `dominion:<id>` references can't persist a
+ * phantom tag for an id the operator (or the cognition engine) hallucinated.
+ * Preserves caller order. Returns [] for an empty input without a query.
+ */
+export async function filterLiveDominionIds(userId: string, ids: string[]): Promise<string[]> {
+  if (ids.length === 0) return []
+  const rows = await db
+    .select({ id: dominions.id })
+    .from(dominions)
+    .where(and(
+      eq(dominions.userId, userId),
+      inArray(dominions.id, ids),
+      isNull(dominions.archivedAt),
+    ))
+  const live = new Set(rows.map((r) => r.id))
+  return ids.filter((id) => live.has(id))
 }
 
 /** Fetch a set of memories by id (user-scoped) for grounding a dialogue turn. */
