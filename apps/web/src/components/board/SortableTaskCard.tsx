@@ -311,7 +311,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
                     key={label.id}
                     className={cn(
                       'px-2 py-0.5 rounded-md text-[10px] font-medium flex items-center gap-1',
-                      'backdrop-blur-md border',
+                      'border',
                       !isCustom && labelColors?.bg,
                       !isCustom && labelColors?.border,
                       !isCustom && labelColors?.text,
