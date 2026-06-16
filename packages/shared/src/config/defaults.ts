@@ -28,6 +28,7 @@ export const DEFAULT_SHORTCUTS: Record<string, string> = {
   toggleDates: 'd',
   toggleChecklist: 'o',
   selectCard: 's',
+  assignMember: 'm',
 }
 
 export const DEFAULT_PREFERENCES = {

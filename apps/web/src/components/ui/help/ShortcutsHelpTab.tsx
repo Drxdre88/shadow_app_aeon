@@ -9,6 +9,7 @@ const BOARD_CUSTOMIZABLE = [
   { key: 'G', action: 'Change card glow (hover)' },
   { key: 'D', action: 'Toggle due dates' },
   { key: 'O', action: 'Toggle checklist preview' },
+  { key: 'M', action: 'Assign members (hover)' },
 ]
 
 const BOARD_FIXED = [

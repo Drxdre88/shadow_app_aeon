@@ -7,6 +7,7 @@ import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColum
 import { KanbanColumn } from './KanbanColumn'
 import { SortableColumn } from './SortableColumn'
 import { TaskEditModal } from './TaskEditModal'
+import { TaskAssigneeOverlay } from './TaskAssigneeOverlay'
 import { BoardFilterBar } from './BoardFilterBar'
 import { DependencyGlowTree } from './DependencyGlowTree'
 import { LabelPicker } from './LabelPicker'
@@ -126,6 +127,7 @@ export function TaskBoard({
   const [labelPickerTaskId, setLabelPickerTaskId] = useState<string | null>(null)
   const [colorPickerTaskId, setColorPickerTaskId] = useState<string | null>(null)
   const [priorityPickerTaskId, setPriorityPickerTaskId] = useState<string | null>(null)
+  const [assigneeTaskId, setAssigneeTaskId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -238,7 +240,7 @@ export function TaskBoard({
     })
   }, [copiedTaskId, projectId])
 
-  const hasOpenOverlay = !!editingTask || !!newTaskColumnId || !!labelPickerTaskId || !!colorPickerTaskId || !!priorityPickerTaskId || !!dependencyTreeTaskId
+  const hasOpenOverlay = !!editingTask || !!newTaskColumnId || !!labelPickerTaskId || !!colorPickerTaskId || !!priorityPickerTaskId || !!dependencyTreeTaskId || !!assigneeTaskId
 
   useBoardKeyboardShortcuts({
     hoveredTaskId,
@@ -254,6 +256,7 @@ export function TaskBoard({
     onCopyCard: handleCopyCard,
     onPasteCard: handlePasteCard,
     onSelectTask: selectTask,
+    onOpenAssignee: (taskId) => setAssigneeTaskId((prev) => (prev === taskId ? null : taskId)),
     onTaskMove,
   })
 
@@ -456,6 +459,12 @@ export function TaskBoard({
         onDateChange={(taskId, dates) => onTaskUpdate?.(taskId, dates as Record<string, unknown>)}
         onStatusChange={(taskId, status) => onTaskUpdate?.(taskId, { status })}
         onTaskDelete={onTaskDelete}
+      />
+
+      <TaskAssigneeOverlay
+        projectId={projectId}
+        taskId={assigneeTaskId}
+        onClose={() => setAssigneeTaskId(null)}
       />
 
       {dependencyTreeTaskId && (

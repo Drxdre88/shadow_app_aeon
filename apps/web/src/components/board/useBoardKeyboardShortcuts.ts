@@ -11,6 +11,7 @@ interface Shortcuts {
   editCard?: string
   toggleDates?: string
   selectCard?: string
+  assignMember?: string
   [key: string]: string | undefined
 }
 
@@ -28,6 +29,7 @@ interface UseBoardKeyboardShortcutsProps {
   onCopyCard?: (taskId: string) => void
   onPasteCard?: () => void
   onSelectTask: (taskId: string | null) => void
+  onOpenAssignee?: (taskId: string) => void
   onTaskMove?: (updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[], snapshot?: { id: string; columnId?: string; orderIndex: number }[]) => void
 }
 
@@ -45,6 +47,7 @@ export function useBoardKeyboardShortcuts({
   onCopyCard,
   onPasteCard,
   onSelectTask,
+  onOpenAssignee,
   onTaskMove,
 }: UseBoardKeyboardShortcutsProps) {
   useEffect(() => {
@@ -116,6 +119,12 @@ export function useBoardKeyboardShortcuts({
         return
       }
 
+      if (key === (shortcuts?.assignMember ?? 'm').toLowerCase() && targetTaskId) {
+        e.preventDefault()
+        onOpenAssignee?.(targetTaskId)
+        return
+      }
+
       const addKey = (shortcuts?.addCard ?? shortcuts?.addTask ?? 'c').toLowerCase()
       if (key === addKey && sortedColumns.length > 0) {
         e.preventDefault()
@@ -136,7 +145,7 @@ export function useBoardKeyboardShortcuts({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedTaskId, hoveredTaskId, shortcuts, sortedColumns, hasOpenOverlay, onOpenLabel, onOpenColorPicker, onOpenPriorityPicker, onEditCard, onAddTask, onCopyCard, onPasteCard, onSelectTask, onTaskMove])
+  }, [selectedTaskId, hoveredTaskId, shortcuts, sortedColumns, hasOpenOverlay, onOpenLabel, onOpenColorPicker, onOpenPriorityPicker, onEditCard, onAddTask, onCopyCard, onPasteCard, onSelectTask, onOpenAssignee, onTaskMove])
 }
 
 function handleArrowMove(

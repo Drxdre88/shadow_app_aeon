@@ -9,7 +9,7 @@ import {
   unassignTaskAction,
 } from '@/lib/actions/assignees'
 import { getProjectMembers } from '@/lib/actions/members'
-import { useBoardStore, useSelectedTaskId } from '@/lib/store/boardStore'
+import { useBoardStore } from '@/lib/store/boardStore'
 import { toast } from '@/components/ui/Toast'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -37,58 +37,48 @@ type Assignee = {
 
 interface Props {
   projectId: string
+  taskId: string | null
+  onClose: () => void
 }
 
-export function TaskAssigneeOverlay({ projectId }: Props) {
-  const selectedTaskId = useSelectedTaskId()
+export function TaskAssigneeOverlay({ projectId, taskId, onClose }: Props) {
   const tasks = useBoardStore((s) => s.tasks)
-  const [open, setOpen] = useState(false)
   const [members, setMembers] = useState<Member[]>([])
   const [assignees, setAssignees] = useState<Assignee[]>([])
   const [busyId, setBusyId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
 
   const taskName = useMemo(() => {
-    if (!selectedTaskId) return ''
-    return tasks.find((t) => t.id === selectedTaskId)?.name ?? ''
-  }, [tasks, selectedTaskId])
+    if (!taskId) return ''
+    return tasks.find((t) => t.id === taskId)?.name ?? ''
+  }, [tasks, taskId])
 
-  // Hotkey: `m` opens the overlay when a task is selected and no input is focused.
+  // Opening is controlled by the parent (the board `M` shortcut, hover-aware).
+  // Close on Escape.
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && open) {
-        setOpen(false)
-        return
-      }
-      if (e.key !== 'm' && e.key !== 'M') return
-      if (e.metaKey || e.ctrlKey || e.altKey) return
-      const tgt = e.target as HTMLElement | null
-      if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return
-      if (!selectedTaskId) return
-      e.preventDefault()
-      setOpen((v) => !v)
-    }
+    if (!taskId) return
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [selectedTaskId, open])
+  }, [taskId, onClose])
 
-  // Hydrate on open / when target task changes.
+  // Hydrate when the target task changes.
   useEffect(() => {
-    if (!open || !selectedTaskId) return
+    if (!taskId) return
     void (async () => {
       try {
         const [memberRows, assigneeRows] = await Promise.all([
           getProjectMembers(projectId),
-          listTaskAssignees(projectId, selectedTaskId),
+          listTaskAssignees(projectId, taskId),
         ])
         setMembers(memberRows as Member[])
         setAssignees(assigneeRows)
       } catch (err) {
         toast(err instanceof Error ? err.message : 'Failed to load members', { force: true })
-        setOpen(false)
+        onClose()
       }
     })()
-  }, [open, selectedTaskId, projectId])
+  }, [taskId, projectId, onClose])
 
   const assignedIds = useMemo(() => new Set(assignees.map((a) => a.userId)), [assignees])
 
@@ -101,14 +91,14 @@ export function TaskAssigneeOverlay({ projectId }: Props) {
   }, [members, query])
 
   const toggleMember = useCallback(async (member: Member) => {
-    if (!selectedTaskId) return
+    if (!taskId) return
     setBusyId(member.userId)
     try {
       if (assignedIds.has(member.userId)) {
-        await unassignTaskAction(projectId, selectedTaskId, member.userId)
+        await unassignTaskAction(projectId, taskId, member.userId)
         setAssignees((prev) => prev.filter((a) => a.userId !== member.userId))
       } else {
-        await assignTaskAction(projectId, selectedTaskId, member.userId)
+        await assignTaskAction(projectId, taskId, member.userId)
         setAssignees((prev) => [
           ...prev,
           { userId: member.userId, name: member.name, email: member.email, image: member.image },
@@ -119,9 +109,9 @@ export function TaskAssigneeOverlay({ projectId }: Props) {
     } finally {
       setBusyId(null)
     }
-  }, [assignedIds, projectId, selectedTaskId])
+  }, [assignedIds, projectId, taskId])
 
-  if (!open || !selectedTaskId) return null
+  if (!taskId) return null
 
   return (
     <AnimatePresence>
@@ -130,7 +120,7 @@ export function TaskAssigneeOverlay({ projectId }: Props) {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-[250] flex items-center justify-center"
-        onClick={() => setOpen(false)}
+        onClick={onClose}
       >
         <div className="absolute inset-0 bg-black/55 backdrop-blur-[2px]" />
         <motion.div
@@ -148,7 +138,7 @@ export function TaskAssigneeOverlay({ projectId }: Props) {
               <div className="text-[13px] text-white/85 truncate">{taskName || 'Task'}</div>
             </div>
             <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.05] text-white/45 border border-white/[0.08]">M</kbd>
-            <button onClick={() => setOpen(false)} className="p-1 rounded-md text-white/35 hover:text-white/85">
+            <button onClick={onClose} className="p-1 rounded-md text-white/35 hover:text-white/85">
               <X className="w-3.5 h-3.5" />
             </button>
           </header>
