@@ -133,14 +133,15 @@ export function TaskEditModal({
           onClick={onClose}
         >
           <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            initial={{ opacity: 0, scale: 0.96, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            exit={{ opacity: 0, scale: 0.96, y: 12 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
             onClick={(e) => e.stopPropagation()}
             className={cn(
               'w-full h-full sm:h-auto sm:max-w-lg sm:max-h-[90vh] flex flex-col rounded-none sm:rounded-xl',
               'bg-gradient-to-b from-white/10 to-black/40',
-              'backdrop-blur-xl border-0 sm:border border-white/10',
+              'backdrop-blur-md border-0 sm:border border-white/10',
               'shadow-none sm:shadow-[0_0_40px_rgba(99,102,241,0.3)]'
             )}
           >

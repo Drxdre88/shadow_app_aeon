@@ -4,7 +4,7 @@
   "crons": [
     {
       "path": "/api/cron/keep-warm",
-      "schedule": "*/4 5-23 * * *"
+      "schedule": "*/4 * * * *"
     },
     {
       "path": "/api/cron/project-snapshot",

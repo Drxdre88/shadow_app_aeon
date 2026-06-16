@@ -2,6 +2,7 @@
 
 import { useThemeStore } from '@/stores/themeStore'
 import { themes } from '@/config/themes'
+import { useEffectsSuspended } from './useEffectsSuspended'
 import { MatrixEffect } from './MatrixEffect'
 import { VulcanEffect } from './VulcanEffect'
 import { DraculaEffect } from './DraculaEffect'
@@ -17,9 +18,10 @@ import { MercuryEffect } from './MercuryEffect'
 
 export function ThemeEffects() {
   const { currentTheme, businessMode } = useThemeStore()
+  const suspended = useEffectsSuspended()
   const theme = themes[currentTheme]
 
-  if (businessMode || !theme?.effect) return null
+  if (businessMode || suspended || !theme?.effect) return null
 
   switch (theme.effect) {
     case 'matrix': return <MatrixEffect />

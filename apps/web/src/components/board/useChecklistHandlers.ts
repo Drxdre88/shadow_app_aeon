@@ -20,16 +20,39 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
   const itemsRef = useRef(checklistItems)
   useEffect(() => { itemsRef.current = checklistItems }, [checklistItems])
 
+  // Becomes true once the real items (with real ids) have loaded. Until then
+  // the list is seeded from the store preview for instant display, and
+  // mutations are gated off so they can't fire against synthetic preview ids.
+  const hydratedRef = useRef(false)
+
   const syncSummary = useCallback((items: ChecklistItem[]) => {
-    if (!editingTaskId) return
+    if (!editingTaskId) { return }
     useBoardStore.getState().updateChecklistSummary(editingTaskId, computeSummary(items))
   }, [editingTaskId])
 
   useEffect(() => {
-    // Clear immediately on switch so a fast-reopen (E shortcut, no debounce)
-    // never shows the previous task's items while the new fetch is in flight.
-    setChecklistItems([])
-    if (!editingTaskId) return
+    hydratedRef.current = false
+    if (!editingTaskId) {
+      setChecklistItems([])
+      return
+    }
+    // Seed instantly from the store preview so the items paint on the same
+    // frame the modal opens — no empty-then-pop while the fetch is in flight.
+    // Seeded rows carry synthetic ids and stay non-interactive (hydratedRef)
+    // until the real items arrive a moment later.
+    const preview = useBoardStore.getState().checklistPreviews[editingTaskId]
+    setChecklistItems(
+      preview && preview.length > 0
+        ? preview.map((p, idx) => ({
+            id: `__preview_${idx}`,
+            title: p.title,
+            completed: p.state === 'checked',
+            state: (p.state as CheckState) ?? 'unchecked',
+            status: null,
+            groupName: p.groupName ?? 'Checklist',
+          }))
+        : []
+    )
     let cancelled = false
     getChecklistItems(editingTaskId, projectId)
       .then((items) => {
@@ -46,13 +69,14 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
             endDate: i.endDate ? i.endDate.toISOString() : undefined,
           }))
         )
+        hydratedRef.current = true
       })
-      .catch(() => { if (!cancelled) setChecklistItems([]) })
+      .catch(() => { if (!cancelled) { setChecklistItems([]); hydratedRef.current = true } })
     return () => { cancelled = true }
   }, [editingTaskId, projectId])
 
   const handleChecklistAdd = useCallback((title: string, groupName: string) => {
-    if (!editingTaskId) return
+    if (!editingTaskId || !hydratedRef.current) return
     const newItem: ChecklistItem = {
       id: generateId(),
       title,
@@ -79,7 +103,7 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
   }, [editingTaskId, checklistItems, projectId, syncSummary])
 
   const handleChecklistToggle = useCallback((itemId: string, newState: CheckState) => {
-    if (!editingTaskId) return
+    if (!editingTaskId || !hydratedRef.current) return
     const next = checklistItems.map((i) => (i.id === itemId ? { ...i, state: newState, completed: newState === 'checked' } : i))
     setChecklistItems(next)
     syncSummary(next)
@@ -87,7 +111,7 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
   }, [editingTaskId, projectId, checklistItems, syncSummary])
 
   const handleChecklistStatusChange = useCallback((itemId: string, status: ChecklistStatus) => {
-    if (!editingTaskId) return
+    if (!editingTaskId || !hydratedRef.current) return
     setChecklistItems((prev) =>
       prev.map((i) => (i.id === itemId ? { ...i, status } : i))
     )
@@ -95,7 +119,7 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
   }, [editingTaskId, projectId])
 
   const handleChecklistRemove = useCallback((itemId: string) => {
-    if (!editingTaskId) return
+    if (!editingTaskId || !hydratedRef.current) return
     const next = checklistItems.filter((i) => i.id !== itemId)
     setChecklistItems(next)
     syncSummary(next)
@@ -103,7 +127,7 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
   }, [editingTaskId, projectId, checklistItems, syncSummary])
 
   const handleGroupAdd = useCallback((groupName: string) => {
-    if (!editingTaskId) return
+    if (!editingTaskId || !hydratedRef.current) return
     const placeholder: ChecklistItem = {
       id: generateId(),
       title: 'New item',
@@ -127,7 +151,7 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
   }, [editingTaskId, projectId])
 
   const handleItemTitleChange = useCallback((itemId: string, title: string) => {
-    if (!editingTaskId) return
+    if (!editingTaskId || !hydratedRef.current) return
     let prevTitle: string | undefined
     setChecklistItems((prev) =>
       prev.map((i) => {
@@ -147,7 +171,7 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
   }, [editingTaskId, projectId])
 
   const handleGroupRename = useCallback((oldName: string, newName: string) => {
-    if (!editingTaskId) return
+    if (!editingTaskId || !hydratedRef.current) return
     setChecklistItems((prev) =>
       prev.map((i) => (i.groupName === oldName ? { ...i, groupName: newName } : i))
     )
@@ -155,7 +179,7 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
   }, [editingTaskId, projectId])
 
   const handleChecklistReorder = useCallback((updates: { id: string; orderIndex: number }[]) => {
-    if (!editingTaskId) return
+    if (!editingTaskId || !hydratedRef.current) return
     // `updates` arrives with group-local indices from the drag handler. Persist
     // them as *global* sequential indices so cross-group orderIndex values don't
     // collide (which was scrambling order on reopen).
@@ -180,7 +204,7 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
   }, [editingTaskId, projectId])
 
   const handleGroupDelete = useCallback((groupName: string) => {
-    if (!editingTaskId) return
+    if (!editingTaskId || !hydratedRef.current) return
     const removedItems = checklistItems.filter((i) => i.groupName === groupName)
     const next = checklistItems.filter((i) => i.groupName !== groupName)
     setChecklistItems(next)
@@ -192,7 +216,7 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
   }, [editingTaskId, projectId, checklistItems, syncSummary])
 
   const handleGroupReorder = useCallback((orderedGroups: string[]) => {
-    if (!editingTaskId) return
+    if (!editingTaskId || !hydratedRef.current) return
     setChecklistItems((prev) => {
       const grouped = new Map<string, ChecklistItem[]>()
       for (const item of prev) {
