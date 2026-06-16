@@ -7,6 +7,7 @@ import { findColumns } from '@/lib/data/columns'
 import { findLabels, findTaskLabels } from '@/lib/data/labels'
 import { findDependencies } from '@/lib/data/dependencies'
 import { findChecklistSummariesAndPreviews } from '@/lib/data/checklist'
+import { getAssigneesForProject } from '@/lib/data/assignees'
 import ProjectContent from './ProjectContent'
 import { AccessDenied } from './AccessDenied'
 
@@ -33,13 +34,14 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     return <AccessDenied projectName={exists?.name} />
   }
 
-  const [tasks, columns, labels, taskLabels, dependencies, checklistData] = await Promise.all([
+  const [tasks, columns, labels, taskLabels, dependencies, checklistData, assignees] = await Promise.all([
     findTasks(id, undefined, 2000),
     findColumns(id),
     findLabels(id),
     findTaskLabels(id),
     findDependencies(id),
     findChecklistSummariesAndPreviews(id),
+    getAssigneesForProject(id),
   ])
   const { summaries: checklistSummaries, previews: checklistPreviews } = checklistData
 
@@ -53,7 +55,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         email: session.user.email,
         image: session.user.image,
       }}
-      initialBoardData={{ tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews }}
+      initialBoardData={{ tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees }}
     />
   )
 }

@@ -94,22 +94,24 @@ export function TaskAssigneeOverlay({ projectId, taskId, onClose }: Props) {
     if (!taskId) return
     setBusyId(member.userId)
     try {
-      if (assignedIds.has(member.userId)) {
+      const isAssigned = assignedIds.has(member.userId)
+      if (isAssigned) {
         await unassignTaskAction(projectId, taskId, member.userId)
-        setAssignees((prev) => prev.filter((a) => a.userId !== member.userId))
       } else {
         await assignTaskAction(projectId, taskId, member.userId)
-        setAssignees((prev) => [
-          ...prev,
-          { userId: member.userId, name: member.name, email: member.email, image: member.image },
-        ])
       }
+      const next = isAssigned
+        ? assignees.filter((a) => a.userId !== member.userId)
+        : [...assignees, { userId: member.userId, name: member.name, email: member.email, image: member.image }]
+      setAssignees(next)
+      // Keep the board store in sync so the card's avatar pile updates live.
+      useBoardStore.getState().setTaskAssignees(taskId, next.map((a) => ({ userId: a.userId, name: a.name, image: a.image })))
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Assignment failed', { force: true })
     } finally {
       setBusyId(null)
     }
-  }, [assignedIds, projectId, taskId])
+  }, [assignedIds, assignees, projectId, taskId])
 
   if (!taskId) return null
 

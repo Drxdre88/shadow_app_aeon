@@ -23,19 +23,21 @@ import { findColumns as _findColumns, createDefaultColumns as _createDefaultColu
 import { findLabels as _findLabels, findTaskLabels as _findTaskLabels, setTaskLabels as _setTaskLabels } from '@/lib/data/labels'
 import { findDependencies as _findDependencies } from '@/lib/data/dependencies'
 import { findChecklistSummariesAndPreviews as _findChecklistSummariesAndPreviews, findChecklistItems as _findChecklistItems, createChecklistItemsBatch as _createChecklistItemsBatch } from '@/lib/data/checklist'
+import { getAssigneesForProject as _getAssigneesForProject } from '@/lib/data/assignees'
 
 export async function loadBoardData(projectId: string) {
   await requireOwnership(projectId)
   await _createDefaultColumns(projectId)
-  const [tasks, columns, labels, taskLabels, dependencies, { summaries: checklistSummaries, previews: checklistPreviews }] = await Promise.all([
+  const [tasks, columns, labels, taskLabels, dependencies, { summaries: checklistSummaries, previews: checklistPreviews }, assignees] = await Promise.all([
     _findTasks(projectId, undefined, 2000),
     _findColumns(projectId),
     _findLabels(projectId),
     _findTaskLabels(projectId),
     _findDependencies(projectId),
     _findChecklistSummariesAndPreviews(projectId),
+    _getAssigneesForProject(projectId),
   ])
-  return { tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews }
+  return { tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees }
 }
 
 export async function createBoardTask(data: {
