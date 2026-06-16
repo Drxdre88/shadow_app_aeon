@@ -34,7 +34,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   }
 
   const [tasks, columns, labels, taskLabels, dependencies, checklistData] = await Promise.all([
-    findTasks(id),
+    findTasks(id, undefined, 2000),
     findColumns(id),
     findLabels(id),
     findTaskLabels(id),

@@ -28,7 +28,7 @@ export async function loadBoardData(projectId: string) {
   await requireOwnership(projectId)
   await _createDefaultColumns(projectId)
   const [tasks, columns, labels, taskLabels, dependencies, { summaries: checklistSummaries, previews: checklistPreviews }] = await Promise.all([
-    _findTasks(projectId),
+    _findTasks(projectId, undefined, 2000),
     _findColumns(projectId),
     _findLabels(projectId),
     _findTaskLabels(projectId),
