@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState, useMemo } from 'react'
+import { useCallback, useState, useMemo, useRef, useEffect } from 'react'
 import { DndContext, DragOverlay, closestCenter } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColumn, type BoardTask } from '@/lib/store/boardStore'
@@ -54,7 +54,7 @@ interface TaskBoardProps {
   filters?: BoardFilters
   onFiltersChange?: (filters: BoardFilters) => void
   onTaskCreate?: (task: BoardTaskData) => void
-  onTaskUpdate?: (taskId: string, updates: Partial<BoardTaskData>) => void
+  onTaskUpdate?: (taskId: string, updates: Partial<BoardTaskData>, options?: { silent?: boolean }) => void
   onTaskDelete?: (taskId: string) => void
   onTaskMove?: (updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[], snapshot?: { id: string; columnId?: string; orderIndex: number }[]) => void
   onAddDependency?: (blockerTaskId: string, blockedTaskId: string) => void
@@ -133,6 +133,10 @@ export function TaskBoard({
     priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
     size: null as number | null,
   })
+
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const formDataRef = useRef(formData)
+  formDataRef.current = formData
 
   const showFilters = showFiltersFromParent ?? false
   const filters = filtersFromParent ?? internalFilters
@@ -287,21 +291,52 @@ export function TaskBoard({
     onColumnCreate?.({ id: newCol.id, projectId, name: newCol.name, color: newCol.color, orderIndex: newCol.orderIndex })
   }, [projectId, sortedColumns, addColumn, onColumnCreate])
 
+  const persistEdit = useCallback((data: typeof formData, taskId: string) => {
+    const name = data.name.trim()
+    if (!name) return
+    const updates = {
+      name,
+      description: data.description.trim() || undefined,
+      color: data.color,
+      priority: data.priority,
+      size: data.size,
+    }
+    updateTask(taskId, updates)
+    onTaskUpdate?.(taskId, updates, { silent: true })
+  }, [updateTask, onTaskUpdate])
+
+  const flushAutosave = useCallback(() => {
+    if (autosaveTimer.current) { clearTimeout(autosaveTimer.current); autosaveTimer.current = null }
+    if (editingTask) persistEdit(formDataRef.current, editingTask)
+  }, [editingTask, persistEdit])
+
+  // Autosave title/description (Linear/Trello-style): debounce while typing and
+  // flush on blur / close / unmount, so edits aren't lost when the modal is
+  // dismissed without pressing the button.
+  const handleFormChange = useCallback((data: typeof formData) => {
+    setFormData(data)
+    if (!editingTask) return
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
+    const taskId = editingTask
+    autosaveTimer.current = setTimeout(() => {
+      autosaveTimer.current = null
+      persistEdit(data, taskId)
+    }, 700)
+  }, [editingTask, persistEdit])
+
+  useEffect(() => () => { if (autosaveTimer.current) clearTimeout(autosaveTimer.current) }, [])
+
   const handleSubmit = useCallback(() => {
+    if (editingTask) {
+      // Edits already autosaved; the button just flushes any pending write
+      // and closes.
+      flushAutosave()
+      setEditingTask(null)
+      return
+    }
     if (!formData.name.trim()) return
 
-    if (editingTask) {
-      const updates = {
-        name: formData.name.trim(),
-        description: formData.description.trim() || undefined,
-        color: formData.color,
-        priority: formData.priority,
-        size: formData.size,
-      }
-      updateTask(editingTask, updates)
-      onTaskUpdate?.(editingTask, updates)
-      setEditingTask(null)
-    } else if (newTaskColumnId) {
+    if (newTaskColumnId) {
       const maxOrder = Math.max(0, ...projectTasks.filter((t) => t.columnId === newTaskColumnId).map((t) => t.orderIndex))
       const newTask = {
         id: generateId(),
@@ -323,12 +358,13 @@ export function TaskBoard({
         document.querySelector(`[data-task-id="${CSS.escape(newTask.id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
       })
     }
-  }, [formData, editingTask, newTaskColumnId, projectTasks, projectId, updateTask, addTask, onTaskCreate, onTaskUpdate])
+  }, [formData, editingTask, newTaskColumnId, projectTasks, projectId, addTask, onTaskCreate, flushAutosave])
 
-  const closeModal = () => {
+  const closeModal = useCallback(() => {
+    flushAutosave()
     setEditingTask(null)
     setNewTaskColumnId(null)
-  }
+  }, [flushAutosave])
 
   const isModalOpen = editingTask !== null || newTaskColumnId !== null
   const isTaskDrag = activeItem?.type === 'task'
@@ -409,9 +445,10 @@ export function TaskBoard({
         newTaskStatus={newTaskColumnId}
         formData={formData}
         projectId={projectId}
-        onFormChange={setFormData}
+        onFormChange={handleFormChange}
         onSubmit={handleSubmit}
         onClose={closeModal}
+        onBlurPersist={flushAutosave}
         onAddDependency={onAddDependency}
         onRemoveDependency={onRemoveDependency}
         onLabelToggle={onLabelToggle}

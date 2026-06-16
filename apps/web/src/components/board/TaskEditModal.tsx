@@ -42,6 +42,7 @@ interface TaskEditModalProps {
   onDateChange?: (taskId: string, dates: { startDate?: string | null; endDate?: string | null }) => void
   onStatusChange?: (taskId: string, status: string) => void
   onTaskDelete?: (taskId: string) => void
+  onBlurPersist?: () => void
 }
 
 const resolveNeonColor = (color: string): AccentColor =>
@@ -63,6 +64,7 @@ export function TaskEditModal({
   onDateChange,
   onStatusChange,
   onTaskDelete,
+  onBlurPersist,
 }: TaskEditModalProps) {
   const tasks = useBoardStore((s) => s.tasks)
   const updateTask = useBoardStore((s) => s.updateTask)
@@ -169,6 +171,7 @@ export function TaskEditModal({
                   type="text"
                   value={formData.name}
                   onChange={(e) => onFormChange({ ...formData, name: e.target.value })}
+                  onBlur={onBlurPersist}
                   placeholder="Task name..."
                   className={cn(
                     'w-full px-4 py-2.5 rounded-lg',
@@ -190,6 +193,7 @@ export function TaskEditModal({
                     el.style.height = 'auto'
                     el.style.height = `${Math.min(el.scrollHeight, 300)}px`
                   }}
+                  onBlur={onBlurPersist}
                   placeholder="Optional description..."
                   rows={2}
                   className={cn(
@@ -397,7 +401,7 @@ export function TaskEditModal({
                 disabled={!formData.name.trim()}
                 color={resolveNeonColor(formData.color)}
               >
-                {editingTaskId ? 'Save Changes' : 'Create Card'}
+                {editingTaskId ? 'Done' : 'Create Card'}
               </NeonButton>
             </div>
           </motion.div>
