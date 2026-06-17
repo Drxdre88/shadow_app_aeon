@@ -42,11 +42,28 @@ export function TaskComments({ taskId, projectId }: TaskCommentsProps) {
   const [editContent, setEditContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
 
+  // Lazy-load comments only when the section scrolls into view. The comments
+  // block sits below the fold in the edit modal, so fetching it on open just
+  // adds a round-trip to the critical "card opened" path for nothing.
   useEffect(() => {
-    getComments(taskId, projectId)
-      .then((data) => setComments(data as Comment[]))
-      .catch(() => setComments([]))
+    setComments([])
+    const el = containerRef.current
+    if (!el) return
+    let done = false
+    const fetchComments = () => {
+      if (done) return
+      done = true
+      getComments(taskId, projectId)
+        .then((data) => setComments(data as Comment[]))
+        .catch(() => setComments([]))
+    }
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting) { io.disconnect(); fetchComments() }
+    }, { rootMargin: '120px' })
+    io.observe(el)
+    return () => io.disconnect()
   }, [taskId, projectId])
 
   const handleSubmit = useCallback(async () => {
@@ -92,7 +109,7 @@ export function TaskComments({ taskId, projectId }: TaskCommentsProps) {
   }
 
   return (
-    <div className="space-y-3">
+    <div ref={containerRef} className="space-y-3">
       <div className="flex items-center gap-2">
         <MessageSquare className="w-4 h-4 text-slate-400" />
         <span className="text-sm font-medium text-slate-300">

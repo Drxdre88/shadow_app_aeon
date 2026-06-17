@@ -8,7 +8,7 @@ import { Calendar, Tag, MoreHorizontal, Check, X, Clock, Trash2 } from 'lucide-r
 import { cn } from '@/lib/utils/cn'
 import { colorConfig, AccentColor, hexToRgba } from '@/lib/utils/colors'
 import { GlowCard } from '@/components/ui/GlowCard'
-import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode } from '@/lib/store/boardStore'
+import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { DependencyIndicator } from './DependencyIndicator'
 import { TaskContextMenu } from './TaskContextMenu'
@@ -77,6 +77,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const labels = useLabels()
   const clSummary = useBoardStore((s) => s.checklistSummaries[task.id])
   const clPreview = useBoardStore((s) => s.checklistPreviews[task.id])
+  const assignees = useTaskAssignees(task.id)
   const showDates = useShowDates()
   const checklistMode = useChecklistViewMode()
   const updateTask = useBoardStore((s) => s.updateTask)
@@ -311,7 +312,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
                     key={label.id}
                     className={cn(
                       'px-2 py-0.5 rounded-md text-[10px] font-medium flex items-center gap-1',
-                      'backdrop-blur-md border',
+                      'border',
                       !isCustom && labelColors?.bg,
                       !isCustom && labelColors?.border,
                       !isCustom && labelColors?.text,
@@ -328,6 +329,19 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
                   </span>
                 )
               })}
+            </div>
+          )}
+
+          {assignees && assignees.length > 0 && (
+            <div className="flex items-center -space-x-1.5 mb-1.5">
+              {assignees.slice(0, 4).map((a) => (
+                <AssigneeDot key={a.userId} name={a.name} image={a.image} />
+              ))}
+              {assignees.length > 4 && (
+                <span className="w-5 h-5 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-[8px] text-white/60">
+                  +{assignees.length - 4}
+                </span>
+              )}
             </div>
           )}
 
@@ -474,3 +488,20 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
     </div>
   )
 })
+
+function AssigneeDot({ name, image }: { name: string | null; image: string | null }) {
+  if (image) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={image} alt="" className="w-5 h-5 rounded-full object-cover border border-white/15" title={name ?? undefined} />
+  }
+  const initials = (name ?? '?').trim().split(/\s+/).map((s) => s[0]).slice(0, 2).join('').toUpperCase()
+  return (
+    <span
+      className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-medium border border-white/15 text-white/80"
+      style={{ background: 'rgba(255,255,255,0.08)' }}
+      title={name ?? undefined}
+    >
+      {initials || '?'}
+    </span>
+  )
+}

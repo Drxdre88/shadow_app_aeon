@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback, memo } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { Plus, Check, X, Palette, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
@@ -155,7 +155,9 @@ export const KanbanColumn = memo(function KanbanColumn({
     data: { type: 'column', columnId: column.id },
   })
 
-  const taskIds = tasks.map((t) => t.id)
+  // Stable identity while the column's tasks are unchanged, so SortableContext
+  // and the virtualized list don't see a fresh array on every unrelated render.
+  const taskIds = useMemo(() => tasks.map((t) => t.id), [tasks])
 
   const dynamicGlow = globalGlow > 0 && !config.isCustom
     ? { boxShadow: config.glow.replace(/0_0_(\d+)px/g, (_, num: string) => `0_0_${Math.round(parseInt(num) * mult)}px`) }

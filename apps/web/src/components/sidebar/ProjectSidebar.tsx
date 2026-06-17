@@ -149,6 +149,7 @@ export function ProjectSidebar({ projectId, user, activeTab, onTabChange, onSign
                   <motion.button
                     key={p.id}
                     whileTap={{ scale: 0.97 }}
+                    onMouseEnter={() => router.prefetch(`/project/${p.id}`)}
                     onClick={() => router.push(`/project/${p.id}`)}
                     className={cn(
                       'group relative w-full flex items-center gap-2.5 rounded-lg px-2 py-1.5',

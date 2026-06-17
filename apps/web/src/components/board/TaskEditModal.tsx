@@ -42,6 +42,7 @@ interface TaskEditModalProps {
   onDateChange?: (taskId: string, dates: { startDate?: string | null; endDate?: string | null }) => void
   onStatusChange?: (taskId: string, status: string) => void
   onTaskDelete?: (taskId: string) => void
+  onBlurPersist?: () => void
 }
 
 const resolveNeonColor = (color: string): AccentColor =>
@@ -63,6 +64,7 @@ export function TaskEditModal({
   onDateChange,
   onStatusChange,
   onTaskDelete,
+  onBlurPersist,
 }: TaskEditModalProps) {
   const tasks = useBoardStore((s) => s.tasks)
   const updateTask = useBoardStore((s) => s.updateTask)
@@ -133,14 +135,15 @@ export function TaskEditModal({
           onClick={onClose}
         >
           <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            initial={{ opacity: 0, scale: 0.96, y: 12 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            exit={{ opacity: 0, scale: 0.96, y: 12 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
             onClick={(e) => e.stopPropagation()}
             className={cn(
               'w-full h-full sm:h-auto sm:max-w-lg sm:max-h-[90vh] flex flex-col rounded-none sm:rounded-xl',
               'bg-gradient-to-b from-white/10 to-black/40',
-              'backdrop-blur-xl border-0 sm:border border-white/10',
+              'backdrop-blur-md border-0 sm:border border-white/10',
               'shadow-none sm:shadow-[0_0_40px_rgba(99,102,241,0.3)]'
             )}
           >
@@ -168,6 +171,7 @@ export function TaskEditModal({
                   type="text"
                   value={formData.name}
                   onChange={(e) => onFormChange({ ...formData, name: e.target.value })}
+                  onBlur={onBlurPersist}
                   placeholder="Task name..."
                   className={cn(
                     'w-full px-4 py-2.5 rounded-lg',
@@ -189,6 +193,7 @@ export function TaskEditModal({
                     el.style.height = 'auto'
                     el.style.height = `${Math.min(el.scrollHeight, 300)}px`
                   }}
+                  onBlur={onBlurPersist}
                   placeholder="Optional description..."
                   rows={2}
                   className={cn(
@@ -396,7 +401,7 @@ export function TaskEditModal({
                 disabled={!formData.name.trim()}
                 color={resolveNeonColor(formData.color)}
               >
-                {editingTaskId ? 'Save Changes' : 'Create Card'}
+                {editingTaskId ? 'Done' : 'Create Card'}
               </NeonButton>
             </div>
           </motion.div>

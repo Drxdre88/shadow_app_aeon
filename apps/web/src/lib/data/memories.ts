@@ -134,6 +134,25 @@ export async function listMemories(userId: string, opts: ListOpts = {}) {
     .offset(opts.offset ?? 0)
 }
 
+// Types worth an LLM summary backfill — human / narrative memories only.
+// Machine types (snapshot, achievement, session_event, advisory, external_event,
+// inbound, fact, contact) and synthesis types (archetype, dominion_cortex, aether)
+// carry their own structure and must NOT flood the summary backlog — otherwise the
+// nightly hygiene loop refills with noise and never empties.
+// Allowlist, not blocklist: a machine type added later is excluded by default
+// instead of silently leaking in.
+export const SUMMARY_WORTHY_TYPES = [
+  'note', 'decision', 'idea', 'observation', 'session_summary', 'reflection',
+] as const
+
+// The set of types the backlog query should scope to: an explicit caller filter
+// when given, otherwise the summary-worthy allowlist. Pure so it can be unit-tested
+// without a DB.
+export function summaryBacklogTypes(optType?: string | string[]): string[] {
+  if (optType) return Array.isArray(optType) ? optType : [optType]
+  return [...SUMMARY_WORTHY_TYPES]
+}
+
 type NeedsSummaryOpts = {
   limit?: number
   offset?: number
@@ -159,10 +178,7 @@ export async function listMemoriesNeedingSummary(userId: string, opts: NeedsSumm
   }
   if (opts.realmId)   conditions.push(eq(memories.realmId, opts.realmId))
   if (opts.projectId) conditions.push(eq(memories.projectId, opts.projectId))
-  if (opts.type) {
-    const types = Array.isArray(opts.type) ? opts.type : [opts.type]
-    conditions.push(inArray(memories.type, types))
-  }
+  conditions.push(inArray(memories.type, summaryBacklogTypes(opts.type)))
 
   const order = opts.oldestFirst ? memories.createdAt : desc(memories.createdAt)
   return db

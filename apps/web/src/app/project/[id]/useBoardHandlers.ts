@@ -37,11 +37,12 @@ export function useBoardHandlers(projectId: string) {
       })
   }, [])
 
-  const handleTaskUpdate = useCallback((taskId: string, updates: Record<string, unknown>) => {
+  const handleTaskUpdate = useCallback((taskId: string, updates: Record<string, unknown>, options?: { silent?: boolean }) => {
     const { tasks } = useBoardStore.getState()
     const snapshot = tasks.find(t => t.id === taskId)
     const changedFields = Object.keys(updates)
-    const isUndoable = changedFields.some(k => ['priority', 'color', 'name'].includes(k))
+    // Autosave fires this on every debounce; suppress the undo toast for those.
+    const isUndoable = !options?.silent && changedFields.some(k => ['priority', 'color', 'name'].includes(k))
 
     updateBoardTask(taskId, projectId, updates as {
       name?: string

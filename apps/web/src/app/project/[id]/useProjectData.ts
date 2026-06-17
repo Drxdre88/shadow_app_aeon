@@ -13,6 +13,16 @@ import { useCanvasStore } from '@/lib/store/canvasStore'
 const POLL_INTERVAL = 30_000
 const PUSHER_DEBOUNCE_MS = 300
 
+type AssigneeLite = { userId: string; name: string | null; image: string | null }
+function toAssigneePills(raw: Record<string, AssigneeLite[]> | undefined): Record<string, AssigneeLite[]> {
+  const out: Record<string, AssigneeLite[]> = {}
+  if (!raw) return out
+  for (const [taskId, list] of Object.entries(raw)) {
+    out[taskId] = list.map((a) => ({ userId: a.userId, name: a.name, image: a.image }))
+  }
+  return out
+}
+
 async function fetchBoardVersion(projectId: string): Promise<number | null> {
   try {
     const res = await fetch(`/api/sync/version/${projectId}`)
@@ -40,7 +50,7 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
     const currentFetchId = ++fetchIdRef.current
 
     loadBoardData(projectId)
-      .then(({ tasks: dbTasks, columns: dbColumns, labels: dbLabels, taskLabels: dbTaskLabels, dependencies: dbDependencies, checklistSummaries: dbChecklistSummaries, checklistPreviews: dbChecklistPreviews }) => {
+      .then(({ tasks: dbTasks, columns: dbColumns, labels: dbLabels, taskLabels: dbTaskLabels, dependencies: dbDependencies, checklistSummaries: dbChecklistSummaries, checklistPreviews: dbChecklistPreviews, assignees: dbAssignees }) => {
         if (currentFetchId !== fetchIdRef.current) return
         if (!isInitialLoad.current && isDirtyOrGracePeriod()) return
 
@@ -100,6 +110,7 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
           })),
           checklistSummaries: dbChecklistSummaries,
           checklistPreviews: dbChecklistPreviews,
+          assigneesByTask: toAssigneePills(dbAssignees),
           isDirty: false,
         })
 
@@ -134,7 +145,7 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
     setRows([])
 
     if (initialDataRef.current) {
-      const data = initialDataRef.current as { tasks: Array<Record<string, unknown>>; columns: Array<Record<string, unknown>>; labels: Array<Record<string, unknown>>; taskLabels: Array<{ taskId: string; labelId: string }>; dependencies: Array<Record<string, unknown>>; checklistSummaries: Record<string, never>; checklistPreviews: Record<string, never[]> }
+      const data = initialDataRef.current as { tasks: Array<Record<string, unknown>>; columns: Array<Record<string, unknown>>; labels: Array<Record<string, unknown>>; taskLabels: Array<{ taskId: string; labelId: string }>; dependencies: Array<Record<string, unknown>>; checklistSummaries: Record<string, never>; checklistPreviews: Record<string, never[]>; assignees?: Record<string, AssigneeLite[]> }
       initialDataRef.current = undefined
 
       const taskLabelMap = new Map<string, string[]>()
@@ -172,6 +183,7 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
         dependencies: data.dependencies as never[],
         checklistSummaries: data.checklistSummaries,
         checklistPreviews: data.checklistPreviews,
+        assigneesByTask: toAssigneePills(data.assignees),
         isDirty: false,
       })
 

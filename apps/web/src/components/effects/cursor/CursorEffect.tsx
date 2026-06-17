@@ -2,12 +2,17 @@
 
 import { useRef } from 'react'
 import { useThemeStore } from '@/stores/themeStore'
+import { useEffectsSuspended } from '../useEffectsSuspended'
 import { useGlowFollower, useParticles, useTrail, useNeonLine, useIce, usePortal } from './simpleEffects'
 import { useFlameEffect } from './flameEffect'
 import { useSmokeEffect } from './smokeEffect'
 
 export function CursorEffect() {
-  const { cursorEffect, cursorColor, colors, smokeVolume } = useThemeStore()
+  const { cursorEffect: rawCursorEffect, cursorColor, colors, smokeVolume, businessMode } = useThemeStore()
+  const suspended = useEffectsSuspended()
+  // Business mode already kills theme effects; extend it (and reduced-motion /
+  // backgrounded tab) to the cursor rAF loops too, which previously leaked.
+  const cursorEffect = suspended || businessMode ? 'none' : rawCursorEffect
   const containerRef = useRef<HTMLDivElement>(null)
   const effectColor = cursorColor || colors.glowColor
 

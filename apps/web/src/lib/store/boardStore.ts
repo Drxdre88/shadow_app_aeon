@@ -55,6 +55,12 @@ export interface ChecklistPreviewItem {
   groupName: string
 }
 
+export interface TaskAssigneePill {
+  userId: string
+  name: string | null
+  image: string | null
+}
+
 interface BoardState {
   columns: BoardColumn[]
   tasks: BoardTask[]
@@ -95,6 +101,10 @@ interface BoardState {
   checklistViewMode: 'off' | 'preview' | 'full'
   toggleChecklistPreview: () => void
 
+  assigneesByTask: Record<string, TaskAssigneePill[]>
+  setAssigneesByTask: (m: Record<string, TaskAssigneePill[]>) => void
+  setTaskAssignees: (taskId: string, list: TaskAssigneePill[]) => void
+
   showDates: boolean
   toggleShowDates: () => void
 
@@ -119,6 +129,7 @@ export const useBoardStore = create<BoardState>()(
       dependencies: [],
       checklistSummaries: {},
       checklistPreviews: {},
+      assigneesByTask: {},
       checklistViewMode: 'off' as 'off' | 'preview' | 'full',
       selectedTaskId: null,
       isDirty: false,
@@ -195,6 +206,8 @@ export const useBoardStore = create<BoardState>()(
         lastMutatedAt: Date.now(),
       })),
       setChecklistPreviews: (checklistPreviews) => set({ checklistPreviews }),
+      setAssigneesByTask: (assigneesByTask) => set({ assigneesByTask }),
+      setTaskAssignees: (taskId, list) => set((s) => ({ assigneesByTask: { ...s.assigneesByTask, [taskId]: list } })),
       toggleChecklistPreview: () => set((s) => {
         const cycle = { off: 'preview', preview: 'full', full: 'off' } as const
         return { checklistViewMode: cycle[s.checklistViewMode] }
@@ -258,3 +271,4 @@ export const useShowDates = () => useBoardStore((s) => s.showDates)
 export const useChecklistSummaries = () => useBoardStore((s) => s.checklistSummaries)
 export const useIsDirty = () => useBoardStore((s) => s.isDirty)
 export const useChecklistViewMode = () => useBoardStore((s) => s.checklistViewMode)
+export const useTaskAssignees = (taskId: string) => useBoardStore((s) => s.assigneesByTask[taskId])
