@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { requireEditor, requireMember } from './helpers'
-import { findMembers } from '@/lib/data/members'
+import { findAssignableMembers } from '@/lib/data/members'
 import {
   getTaskAssignees as _getTaskAssignees,
   getAssigneesForProject as _getAssigneesForProject,
@@ -34,8 +34,8 @@ export async function assignTaskAction(projectId: string, taskId: string, userId
   idSchema.parse(taskId)
   idSchema.parse(userId)
 
-  // Guard: only project members can be assigned.
-  const members = await findMembers(projectId)
+  // Guard: only project members can be assigned (owner + explicit + realm).
+  const members = await findAssignableMembers(projectId)
   if (!members.some((m) => m.userId === userId)) {
     throw new Error('User is not a member of this project')
   }

@@ -8,7 +8,7 @@ import {
   assignTaskAction,
   unassignTaskAction,
 } from '@/lib/actions/assignees'
-import { getProjectMembers } from '@/lib/actions/members'
+import { getAssignableMembers } from '@/lib/actions/members'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { toast } from '@/components/ui/Toast'
 
@@ -68,7 +68,7 @@ export function TaskAssigneeOverlay({ projectId, taskId, onClose }: Props) {
     void (async () => {
       try {
         const [memberRows, assigneeRows] = await Promise.all([
-          getProjectMembers(projectId),
+          getAssignableMembers(projectId),
           listTaskAssignees(projectId, taskId),
         ])
         setMembers(memberRows as Member[])
