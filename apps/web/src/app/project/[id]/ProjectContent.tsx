@@ -10,7 +10,7 @@ import { TimeScaleSelector } from '@/components/gantt/TimeScaleSelector'
 import { TaskBoard } from '@/components/board/TaskBoard'
 import { ProjectSwitcher } from '@/components/board/ProjectSwitcher'
 import { useThemeStore } from '@/stores/themeStore'
-import { useBoardStore } from '@/lib/store/boardStore'
+import { SaveStatusPill } from '@/components/board/SaveStatusPill'
 import { activeFilterCount, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { cn } from '@/lib/utils/cn'
@@ -56,7 +56,6 @@ export default function ProjectContent({ project, user, initialBoardData }: Proj
   const [connectMode, setConnectMode] = useState(false)
   const [showShare, setShowShare] = useState(false)
   const { boardLayout, setBoardLayout, colors, projectColors } = useThemeStore()
-  const isDirty = useBoardStore((s) => s.isDirty)
   const projectGlow = projectColors[project.id] || colors.glowColor || 'rgba(139, 92, 246, 0.5)'
   const { collapsed } = useSidebarStore()
 
@@ -97,13 +96,7 @@ export default function ProjectContent({ project, user, initialBoardData }: Proj
               projectName={project.name}
               glowColor={projectGlow}
             />
-            <div
-              className={cn(
-                'w-1.5 h-1.5 rounded-full transition-colors duration-500',
-                isDirty ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500/50'
-              )}
-              title={isDirty ? 'Syncing...' : 'Synced'}
-            />
+            <SaveStatusPill />
           </div>
 
           <button
