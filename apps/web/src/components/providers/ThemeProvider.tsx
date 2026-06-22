@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { MotionConfig } from 'framer-motion'
 import { useShallow } from 'zustand/shallow'
 import { useThemeStore, FONT_OPTIONS } from '@/stores/themeStore'
 
@@ -15,8 +16,8 @@ function hexToRgb(hex: string): string {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false)
-  const { colors, fontFamily, currentTheme, _hydrated, themeSaturation, themeBrightness, surfaceVibrancy, businessMode } = useThemeStore(
-    useShallow((s) => ({ colors: s.colors, fontFamily: s.fontFamily, currentTheme: s.currentTheme, _hydrated: s._hydrated, themeSaturation: s.themeSaturation, themeBrightness: s.themeBrightness, surfaceVibrancy: s.surfaceVibrancy, businessMode: s.businessMode }))
+  const { colors, fontFamily, currentTheme, _hydrated, themeSaturation, themeBrightness, surfaceVibrancy, businessMode, smoothUiRenders } = useThemeStore(
+    useShallow((s) => ({ colors: s.colors, fontFamily: s.fontFamily, currentTheme: s.currentTheme, _hydrated: s._hydrated, themeSaturation: s.themeSaturation, themeBrightness: s.themeBrightness, surfaceVibrancy: s.surfaceVibrancy, businessMode: s.businessMode, smoothUiRenders: s.smoothUiRenders }))
   )
 
   useEffect(() => { setMounted(true) }, [])
@@ -88,11 +89,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     } else {
       root.classList.remove('dark')
     }
-  }, [mounted, colors, fontFamily, currentTheme, themeSaturation, themeBrightness, surfaceVibrancy, businessMode])
+
+    // Master motion switch — see globals.css [data-reduce-motion] rule.
+    if (smoothUiRenders) root.removeAttribute('data-reduce-motion')
+    else root.setAttribute('data-reduce-motion', 'true')
+  }, [mounted, colors, fontFamily, currentTheme, themeSaturation, themeBrightness, surfaceVibrancy, businessMode, smoothUiRenders])
 
   if (!mounted || !_hydrated) {
     return <div style={{ visibility: 'hidden' }}>{children}</div>
   }
 
-  return <>{children}</>
+  // reducedMotion="always" tells Framer Motion to skip transform/layout
+  // animations; combined with the CSS kill-switch this makes the app instant.
+  return <MotionConfig reducedMotion={smoothUiRenders ? 'never' : 'always'}>{children}</MotionConfig>
 }

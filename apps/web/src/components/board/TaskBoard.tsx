@@ -117,7 +117,7 @@ export function TaskBoard({
   const addColumn = useBoardStore((s) => s.addColumn)
   const updateColumn = useBoardStore((s) => s.updateColumn)
   const removeColumn = useBoardStore((s) => s.removeColumn)
-  const { colors: themeColors, glowIntensity: globalGlow, dragEffect, shortcuts, boardLayout } = useThemeStore()
+  const { colors: themeColors, glowIntensity: globalGlow, dragEffect, shortcuts, boardLayout, smoothUiRenders } = useThemeStore()
 
   const [editingTask, setEditingTask] = useState<string | null>(null)
   const [newTaskColumnId, setNewTaskColumnId] = useState<string | null>(null)
@@ -434,7 +434,7 @@ export function TaskBoard({
             </div>
           </SortableContext>
 
-          <DragOverlay dropAnimation={{ duration: 300, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' }}>
+          <DragOverlay dropAnimation={smoothUiRenders ? { duration: 300, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' } : { duration: 0 }}>
             {activeItem?.type === 'task' && <DragPreview task={activeItem.data as BoardTaskData} effect={dragEffect} globalGlow={globalGlow} />}
           </DragOverlay>
 

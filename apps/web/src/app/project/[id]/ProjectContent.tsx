@@ -55,7 +55,7 @@ export default function ProjectContent({ project, user, initialBoardData }: Proj
   const [showAllDeps, setShowAllDeps] = useState(false)
   const [connectMode, setConnectMode] = useState(false)
   const [showShare, setShowShare] = useState(false)
-  const { boardLayout, setBoardLayout, colors, projectColors } = useThemeStore()
+  const { boardLayout, setBoardLayout, colors, projectColors, smoothUiRenders } = useThemeStore()
   const projectGlow = projectColors[project.id] || colors.glowColor || 'rgba(139, 92, 246, 0.5)'
   const { collapsed } = useSidebarStore()
 
@@ -256,13 +256,13 @@ export default function ProjectContent({ project, user, initialBoardData }: Proj
             ))}
           </div>
         ) : (
-          <AnimatePresence mode="wait">
+          <AnimatePresence mode={smoothUiRenders ? 'wait' : 'sync'}>
             <motion.div
               key={activeTab}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.15 }}
+              transition={{ duration: smoothUiRenders ? 0.15 : 0 }}
             >
               {activeTab === 'board' && (
                 <div className="h-[calc(100dvh-120px)]">

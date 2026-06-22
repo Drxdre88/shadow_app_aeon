@@ -3,6 +3,7 @@
 import type { ComponentType } from 'react'
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import { useSmoothUiRenders } from '@/stores/themeStore'
 import { LayoutGrid, GitBranch, Orbit } from 'lucide-react'
 import type { ProjectViewMode } from './useViewPreference'
 import { GridView } from './GridView'
@@ -46,16 +47,17 @@ function useIsMobile() {
 export function ProjectViewSwitcher({ projects, onEdit, onDelete, onShare, onGroupChange, realms, projectRealmMap, onToggleRealm, view, onViewChange, layout: controlledLayout, onLayoutChange }: ProjectViewSwitcherProps) {
   const isMobile = useIsMobile()
   const effectiveView = isMobile && view === 'space' ? 'grid' : view
+  const smoothUiRenders = useSmoothUiRenders()
 
   return (
     <div>
-      <AnimatePresence mode="wait">
+      <AnimatePresence mode={smoothUiRenders ? 'wait' : 'sync'}>
         <motion.div
           key={effectiveView}
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
-          transition={{ duration: 0.2 }}
+          transition={{ duration: smoothUiRenders ? 0.2 : 0 }}
         >
           {effectiveView === 'grid' && <GridView projects={projects} onEdit={onEdit} onDelete={onDelete} onShare={onShare} onGroupChange={onGroupChange} realms={realms} projectRealmMap={projectRealmMap} onToggleRealm={onToggleRealm} layout={controlledLayout} onLayoutChange={onLayoutChange} />}
           {effectiveView === 'tree' && <TreeView projects={projects} onEdit={onEdit} onDelete={onDelete} onShare={onShare} realms={realms} projectRealmMap={projectRealmMap} onToggleRealm={onToggleRealm} />}
