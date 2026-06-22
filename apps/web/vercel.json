@@ -3,10 +3,6 @@
   "buildCommand": "npm run db:push && npm run build",
   "crons": [
     {
-      "path": "/api/cron/keep-warm",
-      "schedule": "*/4 * * * *"
-    },
-    {
       "path": "/api/cron/project-snapshot",
       "schedule": "0 23 * * *"
     },

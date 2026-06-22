@@ -1,9 +1,10 @@
 'use server'
 
-import { requireAuth } from './helpers'
+import { requireAuth, requireMember } from './helpers'
 import { verifyProjectOwnerRole, verifyProjectOwnership } from '@/lib/data/projects'
 import {
   findMembers,
+  findAssignableMembers,
   addMember,
   removeMember,
   updateMemberRole,
@@ -25,6 +26,13 @@ function validateRole(role: string) {
 export async function getProjectMembers(projectId: string) {
   await requireAuth()
   return findMembers(projectId)
+}
+
+// Candidate list for task assignment — owner + explicit members + realm members.
+// Gated on project access so only members of the project can read it.
+export async function getAssignableMembers(projectId: string) {
+  await requireMember(projectId)
+  return findAssignableMembers(projectId)
 }
 
 export async function inviteMember(projectId: string, email: string, role: string = 'editor') {
