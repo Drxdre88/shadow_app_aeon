@@ -5,6 +5,7 @@ import { motion, AnimatePresence, useDragControls } from 'framer-motion'
 import { X, ChevronLeft } from 'lucide-react'
 import type { AetherPayload, AetherThought } from '@/lib/kairos/aether-types'
 import { useAetherUi } from './useAetherUi'
+import { useSmoothUiRenders } from '@/stores/themeStore'
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1]
 
@@ -35,6 +36,7 @@ export function ReaderPane({ payload }: { payload: AetherPayload }) {
   const select = useAetherUi((s) => s.select)
   const hover = useAetherUi((s) => s.hover)
   const closeReader = useAetherUi((s) => s.closeReader)
+  const smoothUiRenders = useSmoothUiRenders()
 
   const controls = useDragControls()
   const [colH, setColH] = useState(560)
@@ -88,14 +90,14 @@ export function ReaderPane({ payload }: { payload: AetherPayload }) {
       onMouseLeave={() => hover(null)}
     >
       {/* Detail — rolls out to the LEFT of the column on selection. */}
-      <AnimatePresence mode="wait">
+      <AnimatePresence mode={smoothUiRenders ? 'wait' : 'sync'}>
         {selected && (
           <motion.div
             key={selected.id}
             initial={{ opacity: 0, width: 0, x: 18 }}
             animate={{ opacity: 1, width: 344, x: 0 }}
             exit={{ opacity: 0, width: 0, x: 18 }}
-            transition={{ duration: 0.36, ease: EASE }}
+            transition={{ duration: smoothUiRenders ? 0.36 : 0, ease: EASE }}
             style={{ overflow: 'hidden', flexShrink: 0, height: colH }}
           >
             <div

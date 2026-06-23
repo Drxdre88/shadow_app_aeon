@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useCallback } from 'react'
-import { createBoardTask, updateBoardTask, deleteBoardTask, reorderBoardTasks, archiveBoardTask, archiveColumnTasks } from '@/lib/actions/board'
+import { createBoardTask, updateBoardTask, reorderBoardTasks, archiveBoardTask, archiveColumnTasks } from '@/lib/actions/board'
 import { createColumn, updateColumn as updateColumnAction, reorderColumns as reorderColumnsAction, deleteColumn as deleteColumnAction } from '@/lib/actions/columns'
 import { sendToVault, sendBatchToVault } from '@/lib/actions/vault'
 import { useBoardStore } from '@/lib/store/boardStore'
+import { useMutationQueue } from '@/lib/store/mutationQueue'
 import { toast } from '@/components/ui/Toast'
 
 export function useBoardHandlers(projectId: string) {
@@ -26,15 +27,13 @@ export function useBoardHandlers(projectId: string) {
     startDate?: string
     endDate?: string
   }) => {
-    createBoardTask(task)
-      .then(() => useBoardStore.setState({ isDirty: false }))
-      .catch((err: unknown) => {
-        console.error('Failed to create task:', err)
-        useBoardStore.getState().removeTask(task.id)
-        useBoardStore.setState({ isDirty: false })
-        const msg = err instanceof Error && err.message.includes('Viewers cannot modify') ? 'You have view-only access to this project' : 'Failed to create task'
-        toast(msg, { force: true })
-      })
+    useMutationQueue.getState().enqueue(
+      { id: crypto.randomUUID(), type: 'task.create', args: task },
+      {
+        rollback: () => useBoardStore.getState().removeTask(task.id),
+        failMessage: 'Could not create card — reverted',
+      },
+    )
   }, [])
 
   const handleTaskUpdate = useCallback((taskId: string, updates: Record<string, unknown>, options?: { silent?: boolean }) => {
@@ -44,53 +43,44 @@ export function useBoardHandlers(projectId: string) {
     // Autosave fires this on every debounce; suppress the undo toast for those.
     const isUndoable = !options?.silent && changedFields.some(k => ['priority', 'color', 'name'].includes(k))
 
-    updateBoardTask(taskId, projectId, updates as {
-      name?: string
-      description?: string | null
-      columnId?: string
-      status?: string
-      priority?: string
-      color?: string
-      onTimeline?: boolean
-      orderIndex?: number
-    })
-      .then(() => {
-        useBoardStore.setState({ isDirty: false })
-        if (isUndoable && snapshot) {
-          const rollback: Record<string, unknown> = {}
-          for (const key of changedFields) {
-            rollback[key] = (snapshot as unknown as Record<string, unknown>)[key]
+    const buildRollback = (): Record<string, unknown> => {
+      const rb: Record<string, unknown> = {}
+      if (snapshot) for (const key of changedFields) rb[key] = (snapshot as unknown as Record<string, unknown>)[key]
+      return rb
+    }
+
+    useMutationQueue.getState().enqueue(
+      { id: crypto.randomUUID(), type: 'task.update', args: { taskId, projectId, updates } },
+      {
+        failMessage: 'Could not save card — reverted',
+        rollback: () => {
+          if (snapshot) useBoardStore.getState().updateTask(taskId, buildRollback() as Partial<typeof snapshot>)
+        },
+        onSuccess: () => {
+          if (isUndoable && snapshot) {
+            const rollback = buildRollback()
+            toast('Task updated', {
+              onUndo: () => {
+                useBoardStore.getState().updateTask(taskId, rollback as Partial<typeof snapshot>)
+                updateBoardTask(taskId, projectId, rollback as Record<string, unknown>).catch(() => toast('Failed to undo'))
+              },
+            })
           }
-          toast('Task updated', {
-            onUndo: () => {
-              useBoardStore.getState().updateTask(taskId, rollback as Partial<typeof snapshot>)
-              updateBoardTask(taskId, projectId, rollback as Record<string, unknown>).catch(() => toast('Failed to undo'))
-            },
-          })
-        }
-      })
-      .catch((err: unknown) => {
-        console.error('Failed to update task:', err)
-        if (snapshot) {
-          const rollback: Record<string, unknown> = {}
-          for (const key of changedFields) {
-            rollback[key] = (snapshot as unknown as Record<string, unknown>)[key]
-          }
-          useBoardStore.getState().updateTask(taskId, rollback as Partial<typeof snapshot>)
-        }
-        useBoardStore.setState({ isDirty: false })
-        const msg = err instanceof Error && err.message.includes('Viewers cannot modify') ? 'You have view-only access to this project' : 'Failed to update task'
-        toast(msg, { force: true })
-      })
+        },
+      },
+    )
   }, [projectId])
 
   const handleTaskDelete = useCallback((taskId: string) => {
     const { tasks, removeTask, addTask } = useBoardStore.getState()
     const snapshot = tasks.find(t => t.id === taskId)
     removeTask(taskId)
-    deleteBoardTask(taskId, projectId)
-      .then(() => {
-        useBoardStore.setState({ isDirty: false })
+    useMutationQueue.getState().enqueue(
+      { id: crypto.randomUUID(), type: 'task.delete', args: { taskId, projectId } },
+      {
+      failMessage: 'Could not delete card — restored',
+      rollback: () => { if (snapshot) addTask(snapshot) },
+      onSuccess: () => {
         if (snapshot) {
           toast('Task deleted', {
             onUndo: () => {
@@ -112,22 +102,28 @@ export function useBoardHandlers(projectId: string) {
             },
           })
         }
-      })
-      .catch((err) => {
-        console.error('Failed to delete task:', err)
-        useBoardStore.setState({ isDirty: false })
-        if (snapshot) addTask(snapshot)
-        toast('Failed to delete task')
-      })
+      },
+    })
   }, [projectId])
 
   const handleTaskMove = useCallback((
     updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[],
     snapshot?: { id: string; columnId?: string; orderIndex: number }[]
   ) => {
-    reorderBoardTasks(projectId, updates)
-      .then(() => {
-        useBoardStore.setState({ isDirty: false })
+    useMutationQueue.getState().enqueue(
+      { id: crypto.randomUUID(), type: 'task.move', args: { projectId, updates } },
+      {
+      failMessage: 'Could not move card — reverted',
+      rollback: () => {
+        if (snapshot) {
+          const { moveTask, updateTask: storeUpdate } = useBoardStore.getState()
+          for (const snap of snapshot) {
+            if (snap.columnId) moveTask(snap.id, snap.columnId, snap.orderIndex)
+            else storeUpdate(snap.id, { orderIndex: snap.orderIndex })
+          }
+        }
+      },
+      onSuccess: () => {
         if (snapshot && snapshot.length > 0) {
           const snapshotMap = new Map(snapshot.map(s => [s.id, s]))
           const movedAcrossColumns = updates.some(u => u.columnId && u.columnId !== snapshotMap.get(u.id)?.columnId)
@@ -139,11 +135,8 @@ export function useBoardHandlers(projectId: string) {
               onUndo: () => {
                 const { moveTask, updateTask: storeUpdate } = useBoardStore.getState()
                 for (const snap of frozenSnapshot) {
-                  if (snap.columnId) {
-                    moveTask(snap.id, snap.columnId, snap.orderIndex)
-                  } else {
-                    storeUpdate(snap.id, { orderIndex: snap.orderIndex })
-                  }
+                  if (snap.columnId) moveTask(snap.id, snap.columnId, snap.orderIndex)
+                  else storeUpdate(snap.id, { orderIndex: snap.orderIndex })
                 }
                 reorderBoardTasks(projectId, frozenSnapshot.map(s => ({
                   id: s.id,
@@ -154,22 +147,8 @@ export function useBoardHandlers(projectId: string) {
             })
           }
         }
-      })
-      .catch((err) => {
-        console.error('Failed to reorder tasks:', err)
-        if (snapshot) {
-          const { moveTask, updateTask: storeUpdate } = useBoardStore.getState()
-          for (const snap of snapshot) {
-            if (snap.columnId) {
-              moveTask(snap.id, snap.columnId, snap.orderIndex)
-            } else {
-              storeUpdate(snap.id, { orderIndex: snap.orderIndex })
-            }
-          }
-        }
-        useBoardStore.setState({ isDirty: false })
-        toast('Failed to move task')
-      })
+      },
+    })
   }, [projectId])
 
   const handleColumnCreate = useCallback((col: { id: string; projectId: string; name: string; color: string; orderIndex: number }) => {

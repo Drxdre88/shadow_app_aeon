@@ -84,7 +84,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const crossedTaskIds = useBoardStore((s) => s.crossedTaskIds)
   const addCrossedTask = useBoardStore((s) => s.addCrossedTask)
   const removeCrossedTask = useBoardStore((s) => s.removeCrossedTask)
-  const { glowIntensity: globalGlow, glowSource, priorities } = useThemeStore()
+  const { glowIntensity: globalGlow, glowSource, priorities, smoothUiRenders } = useThemeStore()
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [editName, setEditName] = useState(task.name)
@@ -160,6 +160,8 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
 
   const handleCardClick = (e: React.MouseEvent) => {
     if (isEditing) return
+    // Instant mode: open on first click, skip the double-click disambiguation wait.
+    if (!smoothUiRenders) { onEdit?.(task.id); return }
     if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null; return }
     clickTimerRef.current = setTimeout(() => { clickTimerRef.current = null; onEdit?.(task.id) }, 250)
   }

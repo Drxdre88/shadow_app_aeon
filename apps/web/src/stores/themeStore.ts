@@ -80,6 +80,7 @@ interface ThemeStore {
   celebrationStyle: CelebrationStyle
   completionMode: CompletionMode
   boardActionToasts: boolean
+  smoothUiRenders: boolean
   depViewMode: DepViewMode
   shortcuts: Record<string, string>
   priorities: CustomPriority[]
@@ -121,6 +122,7 @@ interface ThemeStore {
   setCardPreviewOnHover: (enabled: boolean) => void
   setCelebrationStyle: (style: CelebrationStyle) => void
   setBoardActionToasts: (enabled: boolean) => void
+  setSmoothUiRenders: (enabled: boolean) => void
   setBusinessMode: (enabled: boolean) => void
   setShortcut: (action: string, key: string) => void
 
@@ -166,6 +168,7 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   celebrationStyle: 'confetti-burst' as CelebrationStyle,
   completionMode: DEFAULT_PREFERENCES.completionMode as CompletionMode,
   boardActionToasts: DEFAULT_PREFERENCES.boardActionToasts,
+  smoothUiRenders: true,
   depViewMode: DEFAULT_PREFERENCES.depViewMode,
   shortcuts: { ...DEFAULT_PREFERENCES.shortcuts },
   priorities: [...DEFAULT_PREFERENCES.priorities],
@@ -177,7 +180,7 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
       'cursorEffect', 'cursorColor', 'columnWidth', 'columnHeight', 'dynamicColumnWidth',
       'dynamicColumnHeight', 'smokeVolume', 'depLineWidth', 'depLineGlow', 'depLineStyle',
       'depCanvasBlur', 'spacePlanetGlow', 'spaceOrbitSpeed', 'boardLayout', 'projectColors',
-      'depViewMode', 'completionMode', 'boardActionToasts', 'shortcuts', 'priorities',
+      'depViewMode', 'completionMode', 'boardActionToasts', 'smoothUiRenders', 'shortcuts', 'priorities',
       'defaultProjectView', 'defaultProjectSort', 'cardPreviewOnHover', 'celebrationStyle',
     ])
     const safePrefs = Object.fromEntries(
@@ -316,6 +319,9 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   setBoardActionToasts: (enabled: boolean) => {
     set({ boardActionToasts: enabled })
   },
+  setSmoothUiRenders: (enabled: boolean) => {
+    set({ smoothUiRenders: enabled })
+  },
   setBusinessMode: (enabled: boolean) => {
     set((s) => {
       if (enabled === s.businessMode) return {}
@@ -393,3 +399,9 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
     })
   },
 }))
+
+// Single source of truth for UI motion. true = polished animations (default),
+// false = everything instant (flattens CSS/Tailwind transitions via the global
+// reduce-motion stylesheet, disables Framer motion, and skips JS transition
+// timers like the card-click open delay). See ThemeProvider + globals.css.
+export const useSmoothUiRenders = () => useThemeStore((s) => s.smoothUiRenders)

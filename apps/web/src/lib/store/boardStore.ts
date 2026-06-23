@@ -61,6 +61,8 @@ export interface TaskAssigneePill {
   image: string | null
 }
 
+export type SaveStatus = 'idle' | 'saving' | 'saved' | 'retrying' | 'error' | 'offline'
+
 interface BoardState {
   columns: BoardColumn[]
   tasks: BoardTask[]
@@ -69,6 +71,7 @@ interface BoardState {
   checklistSummaries: Record<string, ChecklistSummary>
   selectedTaskId: string | null
   isDirty: boolean
+  saveStatus: SaveStatus
   lastMutatedAt: number
 
   setColumns: (columns: BoardColumn[]) => void
@@ -116,9 +119,13 @@ interface BoardState {
   selectTask: (id: string | null) => void
   convertToTimeline: (taskId: string, startDate: string, endDate: string) => void
   markClean: () => void
+  setSaveStatus: (status: SaveStatus) => void
 }
 
 const DIRTY_GRACE_MS = 5000
+
+// Holds the timer that fades a terminal save state (saved/error) back to idle.
+let saveFadeTimer: ReturnType<typeof setTimeout> | null = null
 
 export const useBoardStore = create<BoardState>()(
   persist(
@@ -133,6 +140,7 @@ export const useBoardStore = create<BoardState>()(
       checklistViewMode: 'off' as 'off' | 'preview' | 'full',
       selectedTaskId: null,
       isDirty: false,
+      saveStatus: 'idle' as SaveStatus,
       lastMutatedAt: 0,
       showDates: false,
 
@@ -249,6 +257,15 @@ export const useBoardStore = create<BoardState>()(
         lastMutatedAt: Date.now(),
       })),
       markClean: () => set({ isDirty: false }),
+      setSaveStatus: (status) => {
+        if (saveFadeTimer) { clearTimeout(saveFadeTimer); saveFadeTimer = null }
+        set({ saveStatus: status })
+        // A terminal state shows briefly, then settles back to the resting "saved" dot.
+        // 'offline' is sticky — it must persist until the queue actually drains.
+        if (status === 'saved' || status === 'error') {
+          saveFadeTimer = setTimeout(() => set({ saveStatus: 'idle' }), status === 'saved' ? 1500 : 4000)
+        }
+      },
     }),
     {
       name: 'aeon-board',

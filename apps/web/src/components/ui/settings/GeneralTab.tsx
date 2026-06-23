@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { X, Plus, Briefcase } from 'lucide-react'
+import { X, Plus, Briefcase, Zap } from 'lucide-react'
 import { useThemeStore, INITIAL_PRIORITIES, type CompletionMode, type GlowSource } from '@/stores/themeStore'
 import { useShallow } from 'zustand/shallow'
 import { cn } from '@/lib/utils/cn'
@@ -312,9 +312,41 @@ function GlowSourceSetting() {
   )
 }
 
+function SmoothRendersSetting() {
+  const { smoothUiRenders, setSmoothUiRenders, colors } = useThemeStore(useShallow((s) => ({ smoothUiRenders: s.smoothUiRenders, setSmoothUiRenders: s.setSmoothUiRenders, colors: s.colors })))
+
+  return (
+    <div className="space-y-2 max-w-md">
+      <div className="flex items-center gap-3">
+        <div
+          className="w-8 h-8 rounded-lg flex items-center justify-center"
+          style={{
+            background: smoothUiRenders ? `${colors.primary}25` : 'rgba(255,255,255,0.05)',
+            border: `1px solid ${smoothUiRenders ? colors.primary + '40' : 'rgba(255,255,255,0.1)'}`,
+          }}
+        >
+          <Zap className="w-4 h-4" style={{ color: smoothUiRenders ? colors.primary : 'rgb(100,116,139)' }} />
+        </div>
+        <div className="flex-1">
+          <ToggleRow
+            label="Smooth UI Renders"
+            value={smoothUiRenders}
+            onChange={setSmoothUiRenders}
+            color={colors.primary}
+          />
+        </div>
+      </div>
+      <p className="text-[10px] text-slate-600 pl-11">
+        On: polished animations and transitions everywhere (default). Off: every transition, card open, tab switch, and modal becomes instant — maximum speed, zero motion.
+      </p>
+    </div>
+  )
+}
+
 export function GeneralTab() {
   return (
     <div className="space-y-6">
+      <SmoothRendersSetting />
       <BusinessModeSetting />
       <CardPreviewSetting />
       <BoardActionToastsSetting />

@@ -10,7 +10,7 @@ import { TimeScaleSelector } from '@/components/gantt/TimeScaleSelector'
 import { TaskBoard } from '@/components/board/TaskBoard'
 import { ProjectSwitcher } from '@/components/board/ProjectSwitcher'
 import { useThemeStore } from '@/stores/themeStore'
-import { useBoardStore } from '@/lib/store/boardStore'
+import { SaveStatusPill } from '@/components/board/SaveStatusPill'
 import { activeFilterCount, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { cn } from '@/lib/utils/cn'
@@ -55,8 +55,7 @@ export default function ProjectContent({ project, user, initialBoardData }: Proj
   const [showAllDeps, setShowAllDeps] = useState(false)
   const [connectMode, setConnectMode] = useState(false)
   const [showShare, setShowShare] = useState(false)
-  const { boardLayout, setBoardLayout, colors, projectColors } = useThemeStore()
-  const isDirty = useBoardStore((s) => s.isDirty)
+  const { boardLayout, setBoardLayout, colors, projectColors, smoothUiRenders } = useThemeStore()
   const projectGlow = projectColors[project.id] || colors.glowColor || 'rgba(139, 92, 246, 0.5)'
   const { collapsed } = useSidebarStore()
 
@@ -97,13 +96,7 @@ export default function ProjectContent({ project, user, initialBoardData }: Proj
               projectName={project.name}
               glowColor={projectGlow}
             />
-            <div
-              className={cn(
-                'w-1.5 h-1.5 rounded-full transition-colors duration-500',
-                isDirty ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500/50'
-              )}
-              title={isDirty ? 'Syncing...' : 'Synced'}
-            />
+            <SaveStatusPill />
           </div>
 
           <button
@@ -263,13 +256,13 @@ export default function ProjectContent({ project, user, initialBoardData }: Proj
             ))}
           </div>
         ) : (
-          <AnimatePresence mode="wait">
+          <AnimatePresence mode={smoothUiRenders ? 'wait' : 'sync'}>
             <motion.div
               key={activeTab}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.15 }}
+              transition={{ duration: smoothUiRenders ? 0.15 : 0 }}
             >
               {activeTab === 'board' && (
                 <div className="h-[calc(100dvh-120px)]">
