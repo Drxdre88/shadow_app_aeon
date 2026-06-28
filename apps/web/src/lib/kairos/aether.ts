@@ -244,9 +244,14 @@ export async function persistAether(
   })
 }
 
-export async function runAetherForUser(userId: string): Promise<{ generated: boolean }> {
+// Returns a `reason` on every path so the cron logs WHY a run produced nothing
+// instead of an undiagnosable `generated: 0`. Runs on the `aether` task type
+// (heavy tier — Opus, like cortex/archetypes) and sends NO temperature: Opus
+// 4.7/4.8 reject sampling params with a 400, and the strict aether schema is
+// far more reliably satisfied by the heavy model than by the standard tier.
+export async function runAetherForUser(userId: string): Promise<{ generated: boolean; reason: string }> {
   if (await alreadyRanToday(userId)) {
-    return { generated: false }
+    return { generated: false, reason: 'already_ran' }
   }
 
   const inputs = await fetchAetherInputs(userId)
@@ -257,7 +262,7 @@ export async function runAetherForUser(userId: string): Promise<{ generated: boo
     inputs.archetypes.length > 0
 
   if (!hasSignal) {
-    return { generated: false }
+    return { generated: false, reason: 'no_signal' }
   }
 
   const today = todayIso()
@@ -266,22 +271,21 @@ export async function runAetherForUser(userId: string): Promise<{ generated: boo
 
   let rawText: string
   try {
-    const { provider } = await getProviderForTask(userId, { taskType: 'reflect' })
+    const { provider } = await getProviderForTask(userId, { taskType: 'aether' })
     const response = await provider.ask({
       prompt,
       maxTokens: 4000,
-      temperature: 0.35,
     })
     rawText = response.text.trim()
   } catch (err) {
     if (err instanceof AiCredentialMissingError || err instanceof AiCredentialDecryptError) {
-      return { generated: false }
+      return { generated: false, reason: 'no_credential' }
     }
     throw err
   }
 
   if (!rawText) {
-    return { generated: false }
+    return { generated: false, reason: 'empty_response' }
   }
 
   let parsed: AetherPayload
@@ -294,15 +298,17 @@ export async function runAetherForUser(userId: string): Promise<{ generated: boo
       thoughts: raw.thoughts.filter((t) => t.sourceMemoryIds.length > 0),
     } as AetherPayload
   } catch {
-    return { generated: false }
+    return { generated: false, reason: 'parse_failed' }
   }
 
   if (parsed.thoughts.length === 0) {
-    return { generated: false }
+    return { generated: false, reason: 'all_thoughts_ungrounded' }
   }
 
   const runId = `aether:${userId}:${today}`
   const { aetherMemoryId } = await persistAether(userId, parsed, runId, today)
 
-  return { generated: Boolean(aetherMemoryId) }
+  return aetherMemoryId
+    ? { generated: true, reason: 'ok' }
+    : { generated: false, reason: 'persist_failed' }
 }

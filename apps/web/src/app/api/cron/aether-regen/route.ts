@@ -30,13 +30,14 @@ export async function GET(req: NextRequest) {
   const userResults: Array<{
     userId: string
     generated: boolean
+    reason?: string
     error?: string
   }> = []
 
   for (const { userId } of usersWithDominions) {
     try {
       const result = await runAetherForUser(userId)
-      userResults.push({ userId, generated: result.generated })
+      userResults.push({ userId, generated: result.generated, reason: result.reason })
     } catch (err) {
       userResults.push({
         userId,
