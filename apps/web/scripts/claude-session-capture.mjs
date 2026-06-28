@@ -271,14 +271,17 @@ function extractFilesTouched(messages) {
 function countSignals(messages) {
   let userTurns = 0
   let toolUses = 0
+  let userTextChars = 0
   for (const m of messages) {
     if (m.type === 'user') {
       // Filter out tool_result pseudo-users (system-generated responses).
       const c = m.message?.content
       if (typeof c === 'string') {
         userTurns++
+        userTextChars += sanitizeCapturedText(c).length
       } else if (Array.isArray(c) && c.some((p) => p?.type === 'text')) {
         userTurns++
+        for (const p of c) if (p?.type === 'text') userTextChars += sanitizeCapturedText(p.text || '').length
       }
     }
     if (m.type === 'assistant') {
@@ -288,7 +291,37 @@ function countSignals(messages) {
       }
     }
   }
-  return { userTurns, toolUses }
+  return { userTurns, toolUses, userTextChars }
+}
+
+// ─── automation / stub filtration ───────────────────────────────────────
+// Sessions spawned BY our own hooks (the async summariser's `claude -p`, the
+// optional AI-cleanup `claude --print`) would otherwise be captured as junk
+// "memories about summarising memories". The primary guard is the
+// AEON_HOOK_CHILD env var set when we spawn those children; this text-sentinel
+// pass is the backfill-path backstop (old meta transcripts carry no env).
+const AUTOMATION_SENTINELS = [
+  'drain the aeon memory summary backlog',
+  'summarising a claude code session for a personal memory layer',
+  'you are running headless to drain',
+]
+
+function isAutomatedSession(messages) {
+  const first = (extractFirstUserMessage(messages) || '').toLowerCase()
+  if (!first) return false
+  return AUTOMATION_SENTINELS.some((s) => first.includes(s))
+}
+
+// A 1-6 word headline derived deterministically from the first prompt, so a
+// capture never lands with a NULL ai_title. The async summariser still upgrades
+// the prose for sessions that lack an Executive Summary; this is the floor.
+function deriveAiTitle(firstPrompt) {
+  if (!firstPrompt) return ''
+  let s = firstPrompt.replace(/\s+/g, ' ').trim()
+  s = s.replace(/^\/[\w-]+\s*/, '')          // drop a leading slash-command token
+  s = s.replace(/^(can you|could you|please|let'?s|i want to|i need to|help me)\s+/i, '')
+  const words = s.split(' ').filter(Boolean).slice(0, 8).join(' ')
+  return truncate(words, 120)
 }
 
 function sessionDurationMin(messages) {
@@ -402,10 +435,16 @@ function buildPayload({ payload, messages, repo, branch, remote, commits, filesT
   const bullets = parseExecBullets(execText)
   const execSummaryField = bullets.length > 0 ? { execSummary: bullets } : {}
 
+  // Deterministic floor for the card headline so nothing lands with a NULL
+  // ai_title. enrichWithAiCleanup (if enabled) and the async summariser both
+  // override this with better prose.
+  const aiTitle = deriveAiTitle(firstPrompt === '(no user prompt)' ? '' : firstPrompt)
+
   return {
     title: truncate(title, 240),
     bodyMd,
     summary,
+    ...(aiTitle ? { aiTitle } : {}),
     ...execSummaryField,
     type: 'session_summary',
     source: 'claude',
@@ -493,6 +532,7 @@ function enrichWithAiCleanup(payload) {
       stdio: ['pipe', 'pipe', 'ignore'],
       timeout: AI_CLEANUP_TIMEOUT_MS,
       maxBuffer: 1024 * 1024,
+      env: { ...process.env, AEON_HOOK_CHILD: '1' },
     })
   } catch (err) {
     warn(`ai-cleanup: ${AI_CLEANUP_BIN} --print failed (${err.code ?? err.message}). Posting un-enriched payload.`)
@@ -571,9 +611,28 @@ async function processSession({ transcriptPath, sessionId, cwd, hookEvent, reaso
     return { id: null, status: null }
   }
 
+  // Drop sessions our own hooks spawned (summariser / AI-cleanup children) so
+  // the brain never fills with "memories about summarising memories".
+  if (isAutomatedSession(messages)) {
+    log(`skip ${basename(transcriptPath)}: automated hook-child session`)
+    return { id: null, status: null }
+  }
+
   const signals = countSignals(messages)
-  if (signals.userTurns < MIN_USER_TURNS && signals.toolUses < MIN_TOOL_USES) {
-    log(`skip ${basename(transcriptPath)}: below quality gate (userTurns=${signals.userTurns}, toolUses=${signals.toolUses})`)
+  const filesTouched = extractFilesTouched(messages)
+  const hasExecSummary = !!extractExecutiveSummary(extractLastAssistantText(messages) || '')
+
+  // Substance gate. Keep anything with real output (files / tool work / a proper
+  // Executive Summary) AND genuine multi-turn conversations (design & planning
+  // sessions touch no files but are worth remembering). Drop empty stubs and
+  // one-line throwaways — the "half of it is dirty" complaint.
+  const substantive =
+    hasExecSummary ||
+    filesTouched.length > 0 ||
+    signals.toolUses >= MIN_TOOL_USES ||
+    (signals.userTurns >= MIN_USER_TURNS && signals.userTextChars >= 240)
+  if (!substantive) {
+    log(`skip ${basename(transcriptPath)}: below substance gate (turns=${signals.userTurns}, tools=${signals.toolUses}, files=${filesTouched.length}, chars=${signals.userTextChars})`)
     return { id: null, status: null }
   }
 
@@ -605,7 +664,6 @@ async function processSession({ transcriptPath, sessionId, cwd, hookEvent, reaso
   const commitsRaw = gitCmd(resolvedCwd, ['log', '--pretty=%h %s', since, '-n', '20'])
   const commits = commitsRaw ? commitsRaw.split('\n').filter(Boolean) : []
 
-  const filesTouched = extractFilesTouched(messages)
   const duration = sessionDurationMin(messages)
 
   const rawPayload = buildPayload({
@@ -772,6 +830,9 @@ function parseArgs() {
 
 async function runFromHook() {
   if (!API_KEY) bail('AEON_API_KEY not set')
+  // Hooks tag the Claude processes they spawn (summariser, AI cleanup) with
+  // this env var. Such children must never capture themselves as a memory.
+  if (process.env.AEON_HOOK_CHILD === '1') bail('hook-child session — skip capture')
   const payload = readStdin()
   log('payload event:', payload.hook_event_name, 'reason:', payload.reason)
   const { id } = await processSession({
