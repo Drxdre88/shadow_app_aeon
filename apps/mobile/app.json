@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Aeon",
+    "slug": "aeon-mobile",
+    "scheme": "aeon",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "app.aeon.mobile",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "app.aeon.mobile"
+    },
+    "plugins": [
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_WITH_REVERSED_IOS_CLIENT_ID"
+        }
+      ],
+      "expo-secure-store"
+    ]
+  }
+}

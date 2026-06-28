@@ -25,6 +25,7 @@ export const PROVIDERS: ProviderDescriptor[] = [
     models: [
       { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', contextK: 200, tiers: ['cheap'] },
       { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', contextK: 200, tiers: ['standard'] },
+      { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', contextK: 1000, tiers: ['heavy'] },
       { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', contextK: 1000, tiers: ['heavy'] },
     ],
   },
@@ -54,7 +55,7 @@ export const PROVIDERS: ProviderDescriptor[] = [
 export const DEFAULT_PREFERENCES = {
   cheap: { providerId: 'anthropic' as ProviderId, modelId: 'claude-haiku-4-5-20251001' },
   standard: { providerId: 'anthropic' as ProviderId, modelId: 'claude-sonnet-4-6' },
-  heavy: { providerId: 'anthropic' as ProviderId, modelId: 'claude-opus-4-7' },
+  heavy: { providerId: 'anthropic' as ProviderId, modelId: 'claude-opus-4-8' },
 }
 
 export function getProvider(id: ProviderId): ProviderDescriptor | undefined {
