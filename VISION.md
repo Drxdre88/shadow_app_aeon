@@ -1,6 +1,6 @@
 # VISION.md
 
-Last updated: 02/06/2026 (Kairos Phase 1A + 1B + 1C-C1 + 1C-C2 shipped; nightly synthesis pipeline wired; chat Visor with memory grounding live)
+Last updated: 23/06/2026 (Kairos Phase 1A + 1B + 1C-C1 + 1C-C2 shipped; nightly synthesis pipeline wired; chat Visor with memory grounding live. "Never-asleep" reliability Tiers 0–1 shipped; Tiers 3–5 + snappiness batch parked — see §9)
 
 For technical architecture, file paths, and feature inventory see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
@@ -177,6 +177,21 @@ With Capacitor, mobile IS the web app. The convergence is about which native fea
 - **Native features via plugins, not rewrites.** Capacitor adds push/haptics/biometrics as a layer.
 - **Auth is the only divergence.** Browser uses cookies, native uses bearer tokens. Both authenticate the same users.
 - **PWA is the free desktop win.** Service worker + manifest cover install + offline basics.
+
+---
+
+## 9. PARKED — "NEVER-ASLEEP" RELIABILITY + SNAPPINESS (next round)
+
+A research pass on "a board edit must never silently vanish when Neon is waking up or the network drops" produced a tiered plan. **Tier 0 + Tier 1 shipped** (durable offline mutation queue + auto-retry + save-status pill, task mutations; PR #66). The rest is deliberately parked for a future round — captured here so it isn't re-derived.
+
+| Item | What | Why it's worth doing | Status |
+|---|---|---|---|
+| **Tier 3 — lighten dashboard poll** | The dashboard runs **two full server actions every 10s** with no version short-circuit (`DashboardContent.tsx`) — the heaviest recurring DB load. Adopt the board's cheap version-check, add a Pusher connection badge + apply deltas instead of full re-download, and move the board Pusher channel from public `board-<projectId>` to **private/authed**. | Biggest recurring compute draw after the keep-warm cron removal; also a security tidy (public channel). | Parked |
+| **Tier 4 — Neon cold-start (operator decision)** | For zero work-hours cold-start, **disable scale-to-zero** on the Neon compute (Launch plan), giving an always-on floor ≈ 187.5 CU-h ≈ **~$20/mo**. This is the honest replacement for the keep-warm cron — **do NOT re-add a cron**. Console path: Neon Console → Branches → select branch → Computes → Edit → toggle Scale to zero off → Save. Caveat: an always-on compute won't auto-pick-up Neon image updates — restart it weekly. | Removes cold-start latency for live beta users without re-introducing the 24/7 compute bleed. | **Operator parked** — revisit if first-load latency hurts users. Retry/queue already prevents data loss meanwhile. |
+| **Tier 5 — local-first sync engine** | When the next fluid React app is built, adopt a real local-first sync engine (Zero/Rocicorp or ElectricSQL) from day one rather than bolting reliability on. Linear's lesson: sync engine first. | Structural fix that makes Tiers 0–3 obsolete; only viable at a rebuild boundary. | Parked (rebuild-gated) |
+| **Snappiness quick-wins** | From a 4-prowler interaction-delay audit (separate from the Smooth-UI toggle): card-click → `onDoubleClick` (also fixes the "E shortcut" bug), shorten 300ms checkbox/drop durations to 150ms, focus `setTimeout` → `requestAnimationFrame` (TaskEditModal / VaultDaysModal / KairosVisor / TaskChecklist), QuickCapture 600→300ms close, and **prefetch Gantt/Canvas data at project mount** (currently gated behind tab-click + board load → slow first visit). | High felt-impact, low risk; independent of the master motion toggle. | Parked |
+| **Queue coverage** | Extend the durable mutation queue beyond the 4 task mutations to **column / vault / archive** handlers (today they still use the simpler retry path or raw `.then/.catch`). | Closes the one coverage gap in the shipped never-asleep work. | Parked |
+| **Smooth-UI modal fades** | Framer *modal* open/close opacity fades (Settings/Help/Stats/Gantt/Changelog spring family, NarrativeModal 500ms, KairosVisorShell 320ms) still fade in fast mode — `reducedMotion` kills transform/slide but not opacity. Clean fix: a shared motion-duration helper wired to `smoothUiRenders`. | Finishes the "instant app" promise of the Smooth-UI toggle. | Parked |
 
 ---
 
