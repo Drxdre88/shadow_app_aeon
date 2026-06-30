@@ -1,16 +1,16 @@
 'use client'
 
-import { useState, useLayoutEffect, useMemo, memo } from 'react'
+import { memo } from 'react'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { AnimatePresence } from 'framer-motion'
-import { useVirtualizer } from '@tanstack/react-virtual'
 import { SortableTaskCard } from './SortableTaskCard'
 import { QuickAddTask } from './QuickAddTask'
 
-const VIRTUAL_THRESHOLD = 15
+// Threshold above which we stop running the per-card mount animation and let
+// the browser skip painting offscreen cards (content-visibility). Below it the
+// column is small enough that the entry animation is cheap and looks nice.
+const DENSE_THRESHOLD = 15
 const ESTIMATED_CARD_HEIGHT = 160
-const VIRTUAL_OVERSCAN = 5
-const CARD_GAP = 12
 
 type TaskItem = {
   id: string
@@ -56,6 +56,11 @@ interface VirtualizedTaskListProps {
   }) => void
 }
 
+// Renders every card in normal document flow. Offscreen cards are skipped by
+// the browser via CSS `content-visibility: auto` — native virtualization with
+// no JS measurement cache, no scroll-element observer, and therefore none of
+// the blank-column / phantom-gap failure modes the @tanstack/react-virtual
+// windowing kept producing on dense columns. Scales cleanly past 100 cards.
 export const VirtualizedTaskList = memo(function VirtualizedTaskList({
   tasks,
   taskIds,
@@ -73,32 +78,7 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
   onArchiveTask,
   onTaskCreate,
 }: VirtualizedTaskListProps) {
-  // Callback ref via useState: forces a re-render when the scroll element
-  // attaches, so the virtualizer's getScrollElement() never returns null on
-  // its first measurement pass. Using useRef here was the source of the
-  // blank-column bug — the virtualizer measured against null and cached an
-  // empty viewport until the next manual measure().
-  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null)
-  const useVirtual = tasks.length >= VIRTUAL_THRESHOLD
-
-  const virtualizer = useVirtualizer({
-    count: tasks.length,
-    getScrollElement: () => scrollEl,
-    estimateSize: () => ESTIMATED_CARD_HEIGHT,
-    overscan: VIRTUAL_OVERSCAN,
-    gap: CARD_GAP,
-    enabled: useVirtual,
-  })
-
-  // Invalidate the virtualizer's height cache whenever the task identity or
-  // order changes — covers Pusher resyncs and filters that swap items without
-  // changing length.
-  const taskIdsSignature = useMemo(() => taskIds.join('|'), [taskIds])
-  useLayoutEffect(() => {
-    if (useVirtual && scrollEl) {
-      virtualizer.measure()
-    }
-  }, [taskIdsSignature, useVirtual, virtualizer, scrollEl])
+  const dense = tasks.length >= DENSE_THRESHOLD
 
   const renderCard = (task: TaskItem) => (
     <SortableTaskCard
@@ -113,49 +93,33 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
       onPushToGantt={onPushToGantt}
       onSendToVault={onSendToVault}
       onArchiveTask={onArchiveTask}
+      animateOnMount={!dense}
     />
   )
-
-  if (useVirtual) {
-    return (
-      <div ref={setScrollEl} className="flex-1 overflow-y-auto p-3">
-        <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
-          <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
-            {virtualizer.getVirtualItems().map((virtualItem) => {
-              const task = tasks[virtualItem.index]
-              if (!task) return null
-              return (
-                <div
-                  key={task.id}
-                  data-index={virtualItem.index}
-                  ref={virtualizer.measureElement}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    transform: `translateY(${virtualItem.start}px)`,
-                  }}
-                >
-                  {renderCard(task)}
-                </div>
-              )
-            })}
-          </div>
-        </SortableContext>
-        <div className="mt-3">
-          <QuickAddTask projectId={projectId} columnId={columnId} onTaskCreate={onTaskCreate} />
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="flex-1 overflow-y-auto p-3 space-y-3">
       <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
-        <AnimatePresence mode="popLayout">
-          {tasks.map((task) => renderCard(task))}
-        </AnimatePresence>
+        {dense ? (
+          // No AnimatePresence on dense columns: with many cards its layout
+          // bookkeeping is the expensive part, and content-visibility already
+          // keeps offscreen cards cheap.
+          tasks.map((task) => (
+            <div
+              key={task.id}
+              style={{
+                contentVisibility: 'auto',
+                containIntrinsicSize: `auto ${ESTIMATED_CARD_HEIGHT}px`,
+              }}
+            >
+              {renderCard(task)}
+            </div>
+          ))
+        ) : (
+          <AnimatePresence mode="popLayout">
+            {tasks.map((task) => renderCard(task))}
+          </AnimatePresence>
+        )}
       </SortableContext>
       <div className="mt-2">
         <QuickAddTask projectId={projectId} columnId={columnId} onTaskCreate={onTaskCreate} />
