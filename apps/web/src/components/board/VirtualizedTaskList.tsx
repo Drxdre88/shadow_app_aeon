@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useLayoutEffect, useMemo, memo } from 'react'
+import { useState, memo } from 'react'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { AnimatePresence } from 'framer-motion'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -88,17 +88,15 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
     overscan: VIRTUAL_OVERSCAN,
     gap: CARD_GAP,
     enabled: useVirtual,
+    // Key measured heights by task id, NOT by row index (the default). Without
+    // this, a reorder (drag, or a Pusher/poll resync that changes orderIndex)
+    // leaves each slot's cached height pointing at whatever card USED to sit
+    // there — tall card in a short slot (overlap) or short card in a tall slot
+    // (gap). Keying by id makes each card carry its own height across reorders,
+    // so we no longer need to wipe the whole cache on every resync (which was
+    // snapping every card back to the flat estimate and causing the flicker).
+    getItemKey: (index) => taskIds[index],
   })
-
-  // Invalidate the virtualizer's height cache whenever the task identity or
-  // order changes — covers Pusher resyncs and filters that swap items without
-  // changing length.
-  const taskIdsSignature = useMemo(() => taskIds.join('|'), [taskIds])
-  useLayoutEffect(() => {
-    if (useVirtual && scrollEl) {
-      virtualizer.measure()
-    }
-  }, [taskIdsSignature, useVirtual, virtualizer, scrollEl])
 
   const renderCard = (task: TaskItem) => (
     <SortableTaskCard
@@ -113,6 +111,7 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
       onPushToGantt={onPushToGantt}
       onSendToVault={onSendToVault}
       onArchiveTask={onArchiveTask}
+      animateOnMount={!useVirtual}
     />
   )
 
