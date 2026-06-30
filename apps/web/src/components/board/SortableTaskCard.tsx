@@ -41,6 +41,7 @@ interface SortableTaskCardProps {
   onPushToGantt?: (taskId: string) => void
   onSendToVault?: (taskId: string) => void
   onArchiveTask?: (taskId: string) => void
+  animateOnMount?: boolean
 }
 
 const priorityColors = {
@@ -71,7 +72,7 @@ function triToStatus(tri: TriState, fallback: string): string {
   return fallback === 'done' ? 'todo' : fallback
 }
 
-export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowColor, showDropIndicator = false, onTaskUpdate, onTaskDelete, onPushToGantt, onSendToVault, onArchiveTask }: SortableTaskCardProps) {
+export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowColor, showDropIndicator = false, onTaskUpdate, onTaskDelete, onPushToGantt, onSendToVault, onArchiveTask, animateOnMount = true }: SortableTaskCardProps) {
   const selectedTaskId = useSelectedTaskId()
   const selectTask = useBoardStore((s) => s.selectTask)
   const labels = useLabels()
@@ -220,7 +221,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
           'cursor-grab active:cursor-grabbing',
           isDragging && 'opacity-30 scale-95'
         )}
-        initial={{ opacity: 0, y: 10 }}
+        initial={animateOnMount ? { opacity: 0, y: 10 } : false}
         animate={{ opacity: isDragging ? 0.3 : 1, y: 0, scale: isDragging ? 0.95 : 1 }}
         whileTap={{ scale: 0.97 }}
         exit={{ opacity: 0, scale: 0.9 }}
