@@ -11,6 +11,7 @@ const SHORTCUT_LABELS: Record<string, string> = {
   openLabel: 'Open Label Picker',
   changePriority: 'Change Priority',
   changeGlow: 'Change Color/Glow',
+  toggleDone: 'Complete Card (done / not-doing / none)',
   toggleDates: 'Toggle Dates Display',
   toggleChecklist: 'Checklist Overview (off/preview/full)',
 }

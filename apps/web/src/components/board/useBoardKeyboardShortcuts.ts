@@ -10,6 +10,7 @@ interface Shortcuts {
   addTask?: string
   editCard?: string
   toggleDates?: string
+  toggleDone?: string
   selectCard?: string
   assignMember?: string
   [key: string]: string | undefined
@@ -25,6 +26,7 @@ interface UseBoardKeyboardShortcutsProps {
   onOpenColorPicker: (taskId: string) => void
   onOpenPriorityPicker: (taskId: string) => void
   onEditCard: (taskId: string) => void
+  onToggleDone: (taskId: string) => void
   onAddTask: (columnId: string) => void
   onCopyCard?: (taskId: string) => void
   onPasteCard?: () => void
@@ -43,6 +45,7 @@ export function useBoardKeyboardShortcuts({
   onOpenColorPicker,
   onOpenPriorityPicker,
   onEditCard,
+  onToggleDone,
   onAddTask,
   onCopyCard,
   onPasteCard,
@@ -119,6 +122,13 @@ export function useBoardKeyboardShortcuts({
         return
       }
 
+      if (key === (shortcuts?.toggleDone ?? 'x').toLowerCase() && targetTaskId) {
+        e.preventDefault()
+        // Ignore auto-repeat so holding the key doesn't spam the tri-state cycle.
+        if (!e.repeat) onToggleDone(targetTaskId)
+        return
+      }
+
       if (key === (shortcuts?.assignMember ?? 'm').toLowerCase() && targetTaskId) {
         e.preventDefault()
         onOpenAssignee?.(targetTaskId)
@@ -145,7 +155,7 @@ export function useBoardKeyboardShortcuts({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedTaskId, hoveredTaskId, shortcuts, sortedColumns, hasOpenOverlay, onOpenLabel, onOpenColorPicker, onOpenPriorityPicker, onEditCard, onAddTask, onCopyCard, onPasteCard, onSelectTask, onOpenAssignee, onTaskMove])
+  }, [selectedTaskId, hoveredTaskId, shortcuts, sortedColumns, hasOpenOverlay, onOpenLabel, onOpenColorPicker, onOpenPriorityPicker, onEditCard, onToggleDone, onAddTask, onCopyCard, onPasteCard, onSelectTask, onOpenAssignee, onTaskMove])
 }
 
 function handleArrowMove(

@@ -26,6 +26,7 @@ export const DEFAULT_SHORTCUTS: Record<string, string> = {
   changeGlow: 'g',
   changePriority: 'v',
   toggleDates: 'd',
+  toggleDone: 'x',
   toggleChecklist: 'o',
   selectCard: 's',
   assignMember: 'm',

@@ -25,6 +25,7 @@ import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { useBoardDnD } from './useBoardDnD'
 import { useBoardKeyboardShortcuts } from './useBoardKeyboardShortcuts'
 import { useBoardHover } from './useBoardHover'
+import { cycleTaskCompletion } from './triState'
 import { useConnectMode } from './useConnectMode'
 import { duplicateBoardTask } from '@/lib/actions/board'
 import { toast } from '@/components/ui/Toast'
@@ -252,6 +253,7 @@ export function TaskBoard({
     onOpenColorPicker: setColorPickerTaskId,
     onOpenPriorityPicker: setPriorityPickerTaskId,
     onEditCard: handleTaskEdit,
+    onToggleDone: (taskId) => cycleTaskCompletion(taskId, onTaskUpdate),
     onAddTask: handleAddTask,
     onCopyCard: handleCopyCard,
     onPasteCard: handlePasteCard,
