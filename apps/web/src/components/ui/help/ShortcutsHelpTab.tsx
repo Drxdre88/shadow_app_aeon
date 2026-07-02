@@ -7,6 +7,7 @@ const BOARD_CUSTOMIZABLE = [
   { key: 'V', action: 'Change priority (hover)' },
   { key: 'L', action: 'Open label picker (hover)' },
   { key: 'G', action: 'Change card glow (hover)' },
+  { key: 'X', action: 'Complete card — done / not-doing / none (hover)' },
   { key: 'D', action: 'Toggle due dates' },
   { key: 'O', action: 'Toggle checklist preview' },
   { key: 'M', action: 'Assign members (hover)' },

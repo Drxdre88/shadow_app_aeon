@@ -15,7 +15,7 @@ import { TaskContextMenu } from './TaskContextMenu'
 import { TaskSizeBadge } from './TaskSizeBadge'
 import { StaleIndicator } from './StaleIndicator'
 import { CardPeekPreview } from './CardPeekPreview'
-import { triggerCelebration } from '@/components/celebrations'
+import { getTriState, cycleTaskCompletion, type TriState } from './triState'
 
 interface SortableTaskCardProps {
   task: {
@@ -58,20 +58,6 @@ const priorityGlows = {
   urgent: 'lg' as const,
 }
 
-type TriState = 'unchecked' | 'checked' | 'crossed'
-
-function nextTriState(s: TriState): TriState {
-  if (s === 'unchecked') return 'checked'
-  if (s === 'checked') return 'crossed'
-  return 'unchecked'
-}
-
-function triToStatus(tri: TriState, fallback: string): string {
-  if (tri === 'checked') return 'done'
-  if (tri === 'crossed') return 'todo'
-  return fallback === 'done' ? 'todo' : fallback
-}
-
 export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowColor, showDropIndicator = false, onTaskUpdate, onTaskDelete, onPushToGantt, onSendToVault, onArchiveTask, animateOnMount = true }: SortableTaskCardProps) {
   const selectedTaskId = useSelectedTaskId()
   const selectTask = useBoardStore((s) => s.selectTask)
@@ -83,8 +69,6 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const checklistMode = useChecklistViewMode()
   const updateTask = useBoardStore((s) => s.updateTask)
   const crossedTaskIds = useBoardStore((s) => s.crossedTaskIds)
-  const addCrossedTask = useBoardStore((s) => s.addCrossedTask)
-  const removeCrossedTask = useBoardStore((s) => s.removeCrossedTask)
   const { glowIntensity: globalGlow, glowSource, priorities, smoothUiRenders } = useThemeStore()
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
@@ -111,23 +95,11 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
     if (glowSource === 'column') return columnGlowColor
     return task.color
   })()
-  const triState: TriState = task.status === 'done' ? 'checked' : task.id in crossedTaskIds ? 'crossed' : 'unchecked'
+  const triState: TriState = getTriState(task.status, crossedTaskIds, task.id)
 
   const handleTriToggle = (e: React.MouseEvent) => {
     e.stopPropagation()
-    const next = nextTriState(triState)
-    if (next === 'crossed') {
-      addCrossedTask(task.id)
-    } else {
-      removeCrossedTask(task.id)
-    }
-    const newStatus = triToStatus(next, task.status)
-    updateTask(task.id, { status: newStatus })
-    onTaskUpdate?.(task.id, { status: newStatus })
-    if (newStatus === 'done') {
-      const rect = (e.target as HTMLElement).closest('[data-task-id]')?.getBoundingClientRect()
-      if (rect) triggerCelebration(rect.left + rect.width / 2, rect.top + rect.height / 2)
-    }
+    cycleTaskCompletion(task.id, onTaskUpdate)
   }
 
   const getPriorityInfo = (priority: string) => {
@@ -239,12 +211,14 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
             <div className="flex items-start gap-2 flex-1 mr-2 min-w-0">
               <button
                 onClick={handleTriToggle}
+                title="Toggle done / not-doing / none — or press X while hovering the card"
+                aria-label="Cycle completion state"
                 className={cn(
-                  'flex-shrink-0 w-[18px] h-[18px] rounded border-2 mt-0.5 transition-all duration-300',
+                  'flex-shrink-0 w-6 h-6 rounded-md border-2 mt-px transition-all duration-300',
                   'flex items-center justify-center',
                   triState === 'checked' && 'bg-emerald-500 border-emerald-400',
                   triState === 'crossed' && 'bg-red-500 border-red-400',
-                  triState === 'unchecked' && 'border-white/25 hover:border-white/50'
+                  triState === 'unchecked' && 'border-white/25 hover:border-white/50 hover:bg-white/5'
                 )}
                 style={{
                   boxShadow:
@@ -255,8 +229,8 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
                         : undefined,
                 }}
               >
-                {triState === 'checked' && <Check className="w-2.5 h-2.5 text-white" />}
-                {triState === 'crossed' && <X className="w-2.5 h-2.5 text-white" />}
+                {triState === 'checked' && <Check className="w-3.5 h-3.5 text-white" />}
+                {triState === 'crossed' && <X className="w-3.5 h-3.5 text-white" />}
               </button>
               {isEditing ? (
                 <input
