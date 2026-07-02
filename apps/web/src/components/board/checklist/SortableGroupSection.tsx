@@ -5,11 +5,6 @@ import { motion } from 'framer-motion'
 import { Plus, ChevronDown, ChevronRight, GripVertical, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import {
-  DndContext,
-  closestCenter,
-  DragEndEvent,
-} from '@dnd-kit/core'
-import {
   SortableContext,
   verticalListSortingStrategy,
   useSortable,
@@ -17,7 +12,6 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { SortableChecklistItem } from './SortableChecklistItem'
 import type { ChecklistItem, CheckState, ChecklistStatus } from './types'
-import type { useSensors } from '@dnd-kit/core'
 
 interface SortableGroupSectionProps {
   groupName: string
@@ -31,7 +25,6 @@ interface SortableGroupSectionProps {
   addingInGroup: boolean
   newItemTitle: string
   titleMax: number
-  sensors: ReturnType<typeof useSensors>
   onToggleCollapse: () => void
   onEditGroupStart: () => void
   onEditGroupChange: (v: string) => void
@@ -47,7 +40,6 @@ interface SortableGroupSectionProps {
   onItemEditCommit: () => void
   onItemEditCancel: () => void
   onItemEditTitleChange: (v: string) => void
-  onItemDragEnd: (event: DragEndEvent) => void
   onAddStart: () => void
   onAddChange: (v: string) => void
   onAddSubmit: (e: React.FormEvent) => void
@@ -56,12 +48,12 @@ interface SortableGroupSectionProps {
 
 export function SortableGroupSection({
   groupName, items, isCollapsed, isEditing, editingGroupValue, confirmingDelete,
-  editingItemId, editingItemTitle, addingInGroup, newItemTitle, titleMax, sensors,
+  editingItemId, editingItemTitle, addingInGroup, newItemTitle, titleMax,
   onToggleCollapse, onEditGroupStart, onEditGroupChange, onEditGroupCommit, onEditGroupCancel,
   onDeleteStart, onDeleteConfirm, onDeleteCancel,
   onItemToggle, onItemRemove, onItemStatusChange,
   onItemEditStart, onItemEditCommit, onItemEditCancel, onItemEditTitleChange,
-  onItemDragEnd, onAddStart, onAddChange, onAddSubmit, onAddCancel,
+  onAddStart, onAddChange, onAddSubmit, onAddCancel,
 }: SortableGroupSectionProps) {
   const justSubmittedRef = useRef(false)
 
@@ -72,7 +64,7 @@ export function SortableGroupSection({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: groupName })
+  } = useSortable({ id: groupName, data: { type: 'group' } })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -186,27 +178,25 @@ export function SortableGroupSection({
       )}
 
       {!isCollapsed && (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onItemDragEnd}>
-          <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
-            <div className="space-y-1">
-              {items.map((item) => (
-                <SortableChecklistItem
-                  key={item.id}
-                  item={item}
-                  editingItemId={editingItemId}
-                  editingItemTitle={editingItemTitle}
-                  onToggle={onItemToggle}
-                  onRemove={onItemRemove}
-                  onStatusChange={onItemStatusChange}
-                  onEditStart={onItemEditStart}
-                  onEditCommit={onItemEditCommit}
-                  onEditCancel={onItemEditCancel}
-                  onEditTitleChange={onItemEditTitleChange}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
+        <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+          <div className="space-y-1 min-h-[8px]">
+            {items.map((item) => (
+              <SortableChecklistItem
+                key={item.id}
+                item={item}
+                editingItemId={editingItemId}
+                editingItemTitle={editingItemTitle}
+                onToggle={onItemToggle}
+                onRemove={onItemRemove}
+                onStatusChange={onItemStatusChange}
+                onEditStart={onItemEditStart}
+                onEditCommit={onItemEditCommit}
+                onEditCancel={onItemEditCancel}
+                onEditTitleChange={onItemEditTitleChange}
+              />
+            ))}
+          </div>
+        </SortableContext>
       )}
 
       {!isCollapsed && addingInGroup && (

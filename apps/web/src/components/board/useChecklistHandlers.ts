@@ -178,29 +178,22 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
     renameChecklistGroup(editingTaskId, projectId, oldName, newName).catch(() => {})
   }, [editingTaskId, projectId])
 
-  const handleChecklistReorder = useCallback((updates: { id: string; orderIndex: number }[]) => {
+  const handleChecklistReorder = useCallback((orderedItems: { id: string; groupName: string }[]) => {
     if (!editingTaskId || !hydratedRef.current) return
-    // `updates` arrives with group-local indices from the drag handler. Persist
-    // them as *global* sequential indices so cross-group orderIndex values don't
-    // collide (which was scrambling order on reopen).
-    const localOrder = new Map(updates.map((u) => [u.id, u.orderIndex]))
-    const grouped = new Map<string, ChecklistItem[]>()
-    for (const item of itemsRef.current) {
-      const g = grouped.get(item.groupName) ?? []
-      g.push(item)
-      grouped.set(item.groupName, g)
-    }
-    for (const [, group] of grouped) {
-      group.sort((a, b) => {
-        const ai = localOrder.has(a.id) ? localOrder.get(a.id)! : Infinity
-        const bi = localOrder.has(b.id) ? localOrder.get(b.id)! : Infinity
-        return ai - bi
+    // `orderedItems` is the full item set in its new on-screen order, each tagged
+    // with its (possibly changed) group. We persist global sequential indices plus
+    // the group so an item dragged across checklists lands — and stays — put.
+    const byId = new Map(itemsRef.current.map((i) => [i.id, i]))
+    const newItems = orderedItems
+      .map((o) => {
+        const it = byId.get(o.id)
+        return it ? { ...it, groupName: o.groupName } : null
       })
-    }
-    const newItems = Array.from(grouped.values()).flat()
+      .filter((i): i is ChecklistItem => i !== null)
+    if (newItems.length === 0) return
     setChecklistItems(newItems)
-    const globalUpdates = newItems.map((item, idx) => ({ id: item.id, orderIndex: idx }))
-    reorderChecklistItems(editingTaskId, projectId, globalUpdates).catch(() => {})
+    const updates = newItems.map((item, idx) => ({ id: item.id, orderIndex: idx, groupName: item.groupName }))
+    reorderChecklistItems(editingTaskId, projectId, updates).catch(() => {})
   }, [editingTaskId, projectId])
 
   const handleGroupDelete = useCallback((groupName: string) => {

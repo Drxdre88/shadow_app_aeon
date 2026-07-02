@@ -217,13 +217,16 @@ export async function updateChecklistItemsBatch(
 
 export async function reorderChecklistItems(
   taskId: string,
-  updates: { id: string; orderIndex: number }[]
+  updates: { id: string; orderIndex: number; groupName?: string }[]
 ) {
   if (updates.length === 0) return
   await db.transaction(async (tx) => {
     for (const u of updates) {
+      const set: Record<string, unknown> = { orderIndex: u.orderIndex }
+      // Cross-group drags carry a new groupName; persist it in the same pass.
+      if (u.groupName !== undefined) set.groupName = u.groupName
       await tx.update(checklistItems)
-        .set({ orderIndex: u.orderIndex })
+        .set(set)
         .where(and(eq(checklistItems.id, u.id), eq(checklistItems.taskId, taskId)))
     }
   })
