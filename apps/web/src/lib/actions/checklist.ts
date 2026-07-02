@@ -104,7 +104,7 @@ export async function deleteChecklistItem(itemId: string, taskId: string, projec
 export async function reorderChecklistItems(
   taskId: string,
   projectId: string,
-  updates: { id: string; orderIndex: number }[]
+  updates: { id: string; orderIndex: number; groupName?: string }[]
 ) {
   await requireTaskEditable(taskId, projectId)
   await _reorderChecklistItems(taskId, updates)

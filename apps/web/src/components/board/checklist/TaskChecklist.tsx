@@ -5,19 +5,24 @@ import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import {
   DndContext,
-  closestCenter,
+  closestCorners,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
+  DragOverlay,
   DragEndEvent,
+  DragStartEvent,
 } from '@dnd-kit/core'
 import {
   SortableContext,
   verticalListSortingStrategy,
   arrayMove,
 } from '@dnd-kit/sortable'
+import { GripVertical } from 'lucide-react'
 import { SortableGroupSection } from './SortableGroupSection'
+import { TriStateCheckbox } from './TriStateCheckbox'
+import { arrangeItemDrag } from './reorder'
 import type { ChecklistItem, CheckState, ChecklistStatus } from './types'
 
 interface TaskChecklistProps {
@@ -32,7 +37,7 @@ interface TaskChecklistProps {
   onGroupRename?: (oldName: string, newName: string) => void
   onGroupAdd?: (groupName: string) => void
   onGroupDelete?: (groupName: string) => void
-  onItemReorder?: (reorderedIds: { id: string; orderIndex: number }[]) => void
+  onItemReorder?: (orderedItems: { id: string; groupName: string }[]) => void
   onGroupReorder?: (orderedGroups: string[]) => void
 }
 
@@ -66,6 +71,7 @@ export function TaskChecklist({
   const groupCommittedRef = useRef(false)
   const [confirmDeleteGroup, setConfirmDeleteGroup] = useState<string | null>(null)
   const [pendingGroups, setPendingGroups] = useState<string[]>([])
+  const [activeDragItemId, setActiveDragItemId] = useState<string | null>(null)
   // Same-frame double-click guard for handleAddGroup. Without this, two
   // clicks fired before React re-renders both see the same displayGroups,
   // compute the same name (e.g. "Checklist 2"), and double-fire onGroupAdd
@@ -171,40 +177,46 @@ export function TaskChecklist({
     editingGroupValueRef.current = ''
   }
 
-  const handleDragEnd = (event: DragEndEvent, groupName: string) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-
-    const groupItems = items.filter((i) => i.groupName === groupName)
-    const oldIndex = groupItems.findIndex((i) => i.id === active.id)
-    const newIndex = groupItems.findIndex((i) => i.id === over.id)
-    if (oldIndex === -1 || newIndex === -1) return
-
-    const reordered = arrayMove(groupItems, oldIndex, newIndex)
-    const updates = reordered.map((item, idx) => ({ id: item.id, orderIndex: idx }))
-    onItemReorder?.(updates)
-  }
-
-  const handleGroupDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-
-    const oldIndex = groups.findIndex((g) => g === active.id)
-    const newIndex = groups.findIndex((g) => g === over.id)
-    if (oldIndex === -1 || newIndex === -1) return
-
-    const reordered = arrayMove(groups, oldIndex, newIndex)
-    onGroupReorder?.(reordered)
-  }
-
   const displayGroups = mergedGroups.length === 0 ? ['Checklist'] : mergedGroups
+
+  const handleDragStart = (event: DragStartEvent) => {
+    if (event.active.data.current?.type === 'item') {
+      setActiveDragItemId(String(event.active.id))
+    }
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveDragItemId(null)
+    const { active, over } = event
+    if (!over) return
+    const activeType = active.data.current?.type
+
+    if (activeType === 'group') {
+      const overGroup = displayGroups.includes(String(over.id))
+        ? String(over.id)
+        : items.find((i) => i.id === over.id)?.groupName
+      if (!overGroup || overGroup === active.id) return
+      const oldIndex = displayGroups.findIndex((g) => g === active.id)
+      const newIndex = displayGroups.findIndex((g) => g === overGroup)
+      if (oldIndex === -1 || newIndex === -1) return
+      onGroupReorder?.(arrayMove(displayGroups, oldIndex, newIndex))
+      return
+    }
+
+    const arrangement = arrangeItemDrag(items, displayGroups, String(active.id), String(over.id))
+    if (arrangement) onItemReorder?.(arrangement)
+  }
+
+  const activeDragItem = activeDragItemId ? items.find((i) => i.id === activeDragItemId) : null
 
   return (
     <div className="space-y-4">
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleGroupDragEnd}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => setActiveDragItemId(null)}
       >
         <SortableContext items={displayGroups} strategy={verticalListSortingStrategy}>
           {displayGroups.map((groupName) => (
@@ -221,7 +233,6 @@ export function TaskChecklist({
               addingInGroup={addingInGroup === groupName}
               newItemTitle={newItemTitle}
               titleMax={TITLE_MAX}
-              sensors={sensors}
               onToggleCollapse={() => toggleGroup(groupName)}
               onEditGroupStart={() => { groupCommittedRef.current = false; setEditingGroupName(groupName); editingGroupNameRef.current = groupName; setEditingGroupValue(groupName); editingGroupValueRef.current = groupName }}
               onEditGroupChange={(v: string) => { setEditingGroupValue(v); editingGroupValueRef.current = v }}
@@ -237,7 +248,6 @@ export function TaskChecklist({
               onItemEditCommit={commitItemEdit}
               onItemEditCancel={() => { itemCommittedRef.current = false; setEditingItemId(null); editingItemIdRef.current = null; setEditingItemTitle(''); editingItemTitleRef.current = '' }}
               onItemEditTitleChange={(v: string) => { setEditingItemTitle(v); editingItemTitleRef.current = v }}
-              onItemDragEnd={(event) => handleDragEnd(event, groupName)}
               onAddStart={() => { setAddingInGroup(groupName); setNewItemTitle('') }}
               onAddChange={setNewItemTitle}
               onAddSubmit={(e) => handleAddItem(e, groupName)}
@@ -245,6 +255,23 @@ export function TaskChecklist({
             />
           ))}
         </SortableContext>
+
+        <DragOverlay dropAnimation={null}>
+          {activeDragItem ? (
+            <div className="flex items-center gap-2 p-2.5 rounded-lg border bg-slate-800/95 border-white/15 shadow-lg shadow-black/50 backdrop-blur-sm">
+              <GripVertical className="w-3 h-3 text-slate-500 flex-shrink-0" />
+              <TriStateCheckbox state={activeDragItem.state} onClick={() => {}} />
+              <span className={cn(
+                'text-sm min-w-0 truncate',
+                activeDragItem.state === 'checked' && 'line-through text-slate-500',
+                activeDragItem.state === 'crossed' && 'line-through text-red-400/50',
+                activeDragItem.state === 'unchecked' && 'text-slate-200',
+              )}>
+                {activeDragItem.title}
+              </span>
+            </div>
+          ) : null}
+        </DragOverlay>
       </DndContext>
 
       <button

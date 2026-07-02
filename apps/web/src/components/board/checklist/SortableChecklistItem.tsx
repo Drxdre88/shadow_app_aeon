@@ -41,7 +41,7 @@ export function SortableChecklistItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: item.id })
+  } = useSortable({ id: item.id, data: { type: 'item', groupName: item.groupName } })
 
   const style = {
     transform: CSS.Transform.toString(transform),
