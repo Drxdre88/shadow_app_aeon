@@ -221,6 +221,15 @@ export type GraphNode = {
   tags: string[]
   pinned: boolean
   createdAt: Date
+  // Governed-memory state for the galaxy's visual grammar (Phase 2):
+  // confidence→brightness (decayed via updatedAt), superseded/expired→ghost,
+  // supersededById→ghost-thread (a lineage edge from the retired belief to the
+  // one that replaced it).
+  updatedAt: Date
+  confidence: number | null
+  supersededAt: Date | null
+  supersededById: string | null
+  invalidAt: Date | null
   dominionId: string | null
   dominionName: string | null
   dominionColor: string | null
@@ -255,6 +264,11 @@ export async function getGraphForUser(
       tags: memories.tags,
       pinned: memories.pinned,
       createdAt: memories.createdAt,
+      updatedAt: memories.updatedAt,
+      confidence: memories.confidence,
+      supersededAt: memories.supersededAt,
+      supersededById: memories.supersededById,
+      invalidAt: memories.invalidAt,
       links: memories.links,
       sourceMetadata: memories.sourceMetadata,
     })
@@ -322,6 +336,35 @@ export async function getGraphForUser(
       if (link.target_kind !== 'memory') continue
       if (!ownedIds.has(link.target)) continue
       pushEdge(row.id, link.target, link.type, link.note ?? null)
+    }
+  }
+
+  // Ghost-thread (Phase 2). supersededById is a soft pointer from a retired
+  // belief to the one that replaced it. Surface it as a real, DIRECTIONAL edge
+  // old→new so the galaxy draws the belief's lineage — a fading thread from the
+  // ghost to its living successor — instead of leaving the ghost floating.
+  // Emitted only when the successor is itself in view; chained supersessions
+  // (A→B→C) yield one thread per hop, so the whole lineage renders.
+  for (const row of rows) {
+    if (row.supersededById && ownedIds.has(row.supersededById)) {
+      pushEdge(row.id, row.supersededById, 'supersedes', 'superseded')
+    }
+  }
+
+  // Tension-arc (Phase 2). A pending contradiction NOTICE (from the nightly
+  // scan) records, in its metadata, the two beliefs it found in conflict. Draw
+  // a direct arc between THEM — the tension is belief-to-belief, not routed
+  // through the notice node — so the galaxy shows where the brain currently
+  // disagrees with itself. The arc clears itself once the operator resolves the
+  // notice: accepting supersedes the loser, dismissing archives the notice, and
+  // either way it stops being a pending contradiction and the edge drops.
+  for (const row of rows) {
+    const meta = (row.sourceMetadata ?? {}) as Record<string, unknown>
+    if (meta.kind !== 'contradiction' || meta.status !== 'pending') continue
+    const winnerId = typeof meta.winnerId === 'string' ? meta.winnerId : null
+    const loserId = typeof meta.loserId === 'string' ? meta.loserId : null
+    if (winnerId && loserId && ownedIds.has(winnerId) && ownedIds.has(loserId)) {
+      pushEdge(winnerId, loserId, 'tension', 'contradiction')
     }
   }
 

@@ -43,6 +43,7 @@ const EDGE_COLOR: Record<string, string> = {
   refers_to:        '#cbd5e1',
   relates:          '#38bdf8',
   supersedes:       '#a855f7',
+  tension:          '#f43f5e',
   blocks_thinking:  '#f59e0b',
   'auto-day':       '#475569',
   'auto-tag':       '#64748b',

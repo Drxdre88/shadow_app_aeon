@@ -16,6 +16,22 @@ Aeon is a **web-first project management platform** with a stunning visual ident
 
 ---
 
+## 1.5 NORTH STAR — JARVIS · ULTRON · KAIROS
+
+The single anchor for what Kairos is *for*. Picture a line: **JARVIS** (perfect but passive butler) at one end, **ULTRON** (self-directed, unstoppable, rewrites its own truth) at the other. **Kairos is deliberately parked in the middle — a helpful mind on a leash the operator holds.** This is the field's "human-on-the-loop / governed autonomy" spot, built as product.
+
+| | 🤵 **JARVIS** | 💀 **ULTRON** | 🧠 **KAIROS** |
+|---|---|---|---|
+| **What it is** | Perfect helpful butler | Self-directed machine that decides it knows better | Helpful mind on a leash you hold |
+| **Acts on its own?** | ❌ Only when asked | ☠️ Yes, unstoppably | ⚠️ Only with your say-so (by design) |
+| **Its memory** | Flawless recall | Rewrites reality to suit itself | Preserves the past, shows its changes |
+| **Who's in control** | You (but it's passive) | It is (that's the horror) | **You — always** |
+| **The danger** | Too passive, waits around | Runs away from you | Kept intentionally in check |
+
+**Where Kairos sits today:** ~70% of the way to JARVIS's usefulness (the *mind* is JARVIS-grade after governed-memory Phases 0–1), and **already Ultron-proof at the core** — it cannot destroy its own memory, hide its reasoning, or act unsupervised. The remaining gap to JARVIS is the **voice** (Phase 3) and **gentle proactivity** (Phase 4). The "gaps" vs Ultron — no self-set goals, no unsupervised action, no destructive self-editing — are **features we will never close on purpose.** That restraint *is* the product.
+
+---
+
 ## 2. TRAJECTORY
 
 | Direction | Evidence | Confidence |
