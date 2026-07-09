@@ -29,7 +29,12 @@ const USER = 'user-1'
 
 function row(
   id: string,
-  opts: Partial<{ supersededAt: Date | null; supersededById: string | null }> = {},
+  opts: Partial<{
+    supersededAt: Date | null
+    supersededById: string | null
+    sourceMetadata: Record<string, unknown>
+    links: unknown[]
+  }> = {},
 ) {
   return {
     id,
@@ -49,9 +54,26 @@ function row(
     supersededAt: opts.supersededAt ?? null,
     supersededById: opts.supersededById ?? null,
     invalidAt: null,
-    links: [] as unknown[],
-    sourceMetadata: {},
+    links: opts.links ?? ([] as unknown[]),
+    sourceMetadata: opts.sourceMetadata ?? {},
   }
+}
+
+// A pending contradiction NOTICE, as the nightly scan writes it: kind/status +
+// winnerId/loserId in metadata pointing at the two conflicting beliefs.
+function contradictionNotice(
+  id: string,
+  winnerId: string,
+  loserId: string,
+  status: 'pending' | 'resolved' = 'pending',
+) {
+  return row(id, {
+    sourceMetadata: { kind: 'contradiction', status, winnerId, loserId },
+    links: [
+      { type: 'contradicts', target: loserId, target_kind: 'memory' },
+      { type: 'refers_to', target: winnerId, target_kind: 'memory' },
+    ],
+  })
 }
 
 // getGraphForUser fires: main rows, then Promise.all(dominions, dominionRepos,
@@ -112,5 +134,29 @@ describe('getGraphForUser — ghost-thread edges', () => {
       .map((e) => `${e.source}->${e.target}`)
       .sort()
     expect(thread).toEqual(['A->B', 'B->C'])
+  })
+})
+
+describe('getGraphForUser — tension-arc edges', () => {
+  it('draws a tension arc between the two beliefs of a pending contradiction', async () => {
+    queueGraph([row('win'), row('lose'), contradictionNotice('note', 'win', 'lose')])
+    const { edges } = await getGraphForUser(USER)
+    const tension = edges.filter((e) => e.type === 'tension')
+    expect(tension).toHaveLength(1)
+    // Undirected conflict — endpoints are the two beliefs, not the notice.
+    expect([tension[0].source, tension[0].target].sort()).toEqual(['lose', 'win'])
+  })
+
+  it('does not draw a tension arc once the contradiction is resolved', async () => {
+    queueGraph([row('win'), row('lose'), contradictionNotice('note', 'win', 'lose', 'resolved')])
+    const { edges } = await getGraphForUser(USER)
+    expect(edges.some((e) => e.type === 'tension')).toBe(false)
+  })
+
+  it('skips the arc when a conflicting belief is out of view', async () => {
+    // 'lose' is not among the returned rows.
+    queueGraph([row('win'), contradictionNotice('note', 'win', 'lose')])
+    const { edges } = await getGraphForUser(USER)
+    expect(edges.some((e) => e.type === 'tension')).toBe(false)
   })
 })

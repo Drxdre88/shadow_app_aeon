@@ -118,11 +118,17 @@ function EdgeGraph({ data }: { data: { nodes: SceneNode[]; links: SceneLink[] } 
       linkOpacity={0.85}
       linkWidth={(raw: unknown) => {
         const t = (raw as SceneLink).type
+        // Tension-arc: a taut, prominent line between two conflicting beliefs.
+        if (t === 'tension') return 2.4
         // Ghost-thread: a thin whisper of lineage — thinner than a live
         // semantic edge (2.8), a touch above the faint auto-links (1.0).
         if (t === 'supersedes') return 1.4
         return isAutoEdge(t) ? 1.0 : 2.8
       }}
+      // Tension-arc bows the line between two conflicting beliefs into a
+      // visible arc — a straight red line reads as any other edge; a curved one
+      // reads as strain. Everything else stays straight.
+      linkCurvature={(raw: unknown) => ((raw as SceneLink).type === 'tension' ? 0.35 : 0)}
       linkDirectionalParticles={(raw: unknown) => {
         const t = (raw as SceneLink).type
         if (t === 'supports') return 4

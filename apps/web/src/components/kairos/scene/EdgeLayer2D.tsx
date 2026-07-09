@@ -44,10 +44,11 @@ export function EdgeLayer2D({ links, nodeById }: Props) {
 
   const tmp = useMemo(() => new THREE.Color(), [])
 
-  useFrame(() => {
+  useFrame((state) => {
     const pos = positionBuf
     const col = colorBuf
     let count = 0
+    const t = state.clock.elapsedTime
 
     for (let i = 0; i < links.length; i++) {
       const link = links[i]
@@ -57,6 +58,7 @@ export function EdgeLayer2D({ links, nodeById }: Props) {
       if (!a || !b) continue
 
       const ghost = link.type === 'supersedes'
+      const tension = link.type === 'tension'
       const auto = isAutoEdge(link.type)
       tmp.set(edgeColor(link.type))
 
@@ -65,8 +67,12 @@ export function EdgeLayer2D({ links, nodeById }: Props) {
       // (target), so the lineage literally lightens toward the present. Every
       // other edge is a flat alpha at both ends. AdditiveBlending bakes alpha
       // into the vertex colour, so per-endpoint alpha gives the gradient free.
-      const alphaA = ghost ? 0.14 : auto ? 0.38 : 0.78
-      const alphaB = ghost ? 0.55 : auto ? 0.38 : 0.78
+      // Tension-arc can't curve in the batched 2D line layer, so it BREATHES
+      // instead: a slow alpha pulse (per-edge phase so they don't blink in
+      // unison) reads as strain where the brain disagrees with itself.
+      const pulse = tension ? 0.55 + 0.35 * Math.sin(t * 2.2 + i * 0.7) : 0
+      const alphaA = ghost ? 0.14 : tension ? pulse : auto ? 0.38 : 0.78
+      const alphaB = ghost ? 0.55 : tension ? pulse : auto ? 0.38 : 0.78
 
       const base = count * 6
       pos[base]     = a.x ?? 0;  pos[base + 1] = a.y ?? 0;  pos[base + 2] = 0

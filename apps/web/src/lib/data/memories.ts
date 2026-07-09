@@ -351,6 +351,23 @@ export async function getGraphForUser(
     }
   }
 
+  // Tension-arc (Phase 2). A pending contradiction NOTICE (from the nightly
+  // scan) records, in its metadata, the two beliefs it found in conflict. Draw
+  // a direct arc between THEM — the tension is belief-to-belief, not routed
+  // through the notice node — so the galaxy shows where the brain currently
+  // disagrees with itself. The arc clears itself once the operator resolves the
+  // notice: accepting supersedes the loser, dismissing archives the notice, and
+  // either way it stops being a pending contradiction and the edge drops.
+  for (const row of rows) {
+    const meta = (row.sourceMetadata ?? {}) as Record<string, unknown>
+    if (meta.kind !== 'contradiction' || meta.status !== 'pending') continue
+    const winnerId = typeof meta.winnerId === 'string' ? meta.winnerId : null
+    const loserId = typeof meta.loserId === 'string' ? meta.loserId : null
+    if (winnerId && loserId && ownedIds.has(winnerId) && ownedIds.has(loserId)) {
+      pushEdge(winnerId, loserId, 'tension', 'contradiction')
+    }
+  }
+
   // Synthetic edges: surface clustering signal when user-asserted links are
   // sparse. Marked with 'auto-*' types so the renderer can style them subtly.
   // Same-day chains memories captured within one calendar day in time order.
