@@ -1114,7 +1114,7 @@ export async function archiveMemory(memoryId: string, userId: string) {
 
 export type AcceptProposalResult =
   | { ok: true; memory: typeof memories.$inferSelect }
-  | { ok: false; reason: 'not_a_proposal' }
+  | { ok: false; reason: 'not_a_proposal' | 'invalid_pair' | 'winner_not_found' | 'loser_already_superseded' }
 
 // Guided introspection — promote a staged proposal (a type='inbound' memory
 // Kairos proposed, carrying its citation links) into a committed, operator-
@@ -1123,6 +1123,13 @@ export type AcceptProposalResult =
 // kairos_reflect). Optionally supersedes the beliefs it replaces — stamped,
 // never deleted, so the trail stays honest. Returns null if the memory isn't
 // found; { ok:false } if it isn't a pending proposal.
+//
+// Kairos — Contradiction detection widens this same gate: a proposal carrying
+// `sourceMetadata.contradictionCheck === true` is a conflict NOTICE, not a
+// candidate belief — accepting it does not promote the notice into a belief
+// type. Instead it supersedes the LOSING belief (winnerId/loserId were
+// resolved at scan time, see lib/kairos/contradiction.ts) and archives the
+// notice as resolved. The introspection branch below is unchanged.
 export async function acceptProposal(
   memoryId: string,
   userId: string,
@@ -1132,8 +1139,52 @@ export async function acceptProposal(
   if (!proposal) return null
 
   const meta = (proposal.sourceMetadata ?? {}) as Record<string, unknown>
-  if (proposal.type !== 'inbound' || meta.introspection !== true) {
+  if (proposal.type !== 'inbound' || (meta.introspection !== true && meta.contradictionCheck !== true)) {
     return { ok: false, reason: 'not_a_proposal' }
+  }
+
+  if (meta.contradictionCheck === true) {
+    const winnerId = typeof meta.winnerId === 'string' ? meta.winnerId : null
+    const loserId = typeof meta.loserId === 'string' ? meta.loserId : null
+    if (!winnerId || !loserId) return { ok: false, reason: 'not_a_proposal' }
+    if (winnerId === loserId) return { ok: false, reason: 'invalid_pair' }
+
+    // supersededById is a soft pointer (no FK) — validate the winner is a real
+    // belief this user owns before we point the loser's trail at it.
+    const winner = await findMemoryById(winnerId, userId)
+    if (!winner) return { ok: false, reason: 'winner_not_found' }
+
+    const now = new Date()
+    // Notice-archive + loser-supersede must be atomic (no split-brain) and the
+    // supersede must only touch a still-LIVE loser: isNull(supersededAt) stops
+    // a stale/flipped proposal from overwriting an already-retired belief's
+    // honest trail — the exact thing this feature exists to protect.
+    return db.transaction(async (tx) => {
+      const superseded = await tx
+        .update(memories)
+        .set({ supersededAt: now, supersededById: winnerId, updatedAt: now })
+        .where(and(
+          eq(memories.userId, userId),
+          eq(memories.id, loserId),
+          isNull(memories.supersededAt),
+        ))
+        .returning({ id: memories.id })
+
+      const [updated] = await tx
+        .update(memories)
+        .set({
+          sourceMetadata: { ...meta, status: superseded.length ? 'resolved' : 'stale' },
+          archivedAt: now,
+          updatedAt: now,
+        })
+        .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
+        .returning()
+
+      if (!updated) return null
+      // Loser was already superseded (stale conflict): notice is closed out, but
+      // report the no-op honestly rather than claiming a supersede happened.
+      return superseded.length ? { ok: true, memory: updated } : { ok: false, reason: 'loser_already_superseded' }
+    })
   }
 
   const kind = typeof meta.kind === 'string' ? meta.kind : 'reflection'
@@ -1369,6 +1420,83 @@ export async function dedupMemories(
     superseded += loserIds.length
   }
   return { clusters: clusters.length, superseded, dryRun }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Kairos — Contradiction detection (governance). Candidate retrieval: given a
+// probe memory's own stored embedding, find its nearest semantic neighbours
+// among the user's other operator-authored beliefs. Feeds the contradiction
+// judge (lib/kairos/contradiction.ts) — this function only retrieves
+// candidates, it never mutates anything.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Operator-authored belief types — the only types a contradiction can be
+// judged against. Deliberately excludes machine/execution streams
+// (session_event, snapshot, agentic, trace, …): those are activity log, not
+// beliefs to reconcile.
+export const BELIEF_TYPES = ['reflection', 'fact', 'decision', 'observation', 'note', 'idea'] as const
+
+export interface SimilarBelief {
+  id: string
+  title: string
+  aiTitle: string | null
+  bodyMd: string
+  type: string
+  createdAt: Date
+  confidence: number | null
+}
+
+export async function findSimilarBeliefs(
+  memoryId: string,
+  userId: string,
+  opts: { dominionId?: string | null; limit?: number; maxDistance?: number } = {},
+): Promise<SimilarBelief[]> {
+  const [target] = await db
+    .select({ embedding: memories.embedding, dominionId: memories.dominionId })
+    .from(memories)
+    .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
+    .limit(1)
+  // No vector yet — the embed-backfill cron hasn't reached this row. Common,
+  // non-fatal: the caller just skips this probe for now.
+  if (!target?.embedding) return []
+
+  const limit = Math.min(Math.max(opts.limit ?? 5, 1), 20)
+  const maxDistance = opts.maxDistance ?? 0.35
+  const dominionId = opts.dominionId ?? target.dominionId
+  const distance = sql`${memories.embedding} <=> ${toVectorLiteral(target.embedding as number[])}::vector`
+  const dominionScope = dominionId
+    ? sql`(${memories.dominionId} = ${dominionId} OR ${memories.dominionId} IS NULL)`
+    : sql`TRUE`
+
+  // Same txn/hnsw.ef_search idiom as fetchSubstrate's vector leg — forces the
+  // HNSW index and auto-reverts the GUC on commit (no leak across the pooled
+  // Neon connection).
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL hnsw.ef_search = 100`)
+    return tx
+      .select({
+        id: memories.id,
+        title: memories.title,
+        aiTitle: memories.aiTitle,
+        bodyMd: memories.bodyMd,
+        type: memories.type,
+        createdAt: memories.createdAt,
+        confidence: memories.confidence,
+      })
+      .from(memories)
+      .where(and(
+        eq(memories.userId, userId),
+        dominionScope,
+        inArray(memories.type, [...BELIEF_TYPES]),
+        sql`${memories.id} != ${memoryId}`,
+        isNull(memories.archivedAt),
+        isNull(memories.supersededAt),
+        sql`${memories.embedding} IS NOT NULL`,
+        sql`${distance} < ${maxDistance}`,
+      ))
+      .orderBy(distance)
+      .limit(limit)
+  })
 }
 
 // ─────────────────────────────────────────────────────────────────────────
