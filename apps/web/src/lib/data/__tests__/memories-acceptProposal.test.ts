@@ -91,15 +91,36 @@ describe('acceptProposal — contradiction branch', () => {
     if (!result?.ok) throw new Error('expected ok:true')
     expect(result.memory.archivedAt).toBeInstanceOf(Date)
 
-    // First update (inside txn) supersedes the LOSER with the WINNER's id.
+    // First update (inside txn) supersedes the LOSER with the WINNER's id and
+    // closes its valid window (invalidAt). Winner here has no valid_at → now.
     expect(setCalls[0]).toEqual({
       supersededAt: expect.any(Date),
       supersededById: WINNER_ID,
+      invalidAt: expect.any(Date),
       updatedAt: expect.any(Date),
     })
     // Second update archives + resolves the notice row.
     expect(setCalls[1]).toMatchObject({ archivedAt: expect.any(Date) })
     expect((setCalls[1].sourceMetadata as Record<string, unknown>).status).toBe('resolved')
+  })
+
+  it("closes the loser's valid window at acceptance time (never backdated to the winner)", async () => {
+    // The winner is judge-chosen, not recency-ordered, so it can be older than
+    // the loser — backdating invalid_at to winner.validAt would invert the
+    // window and could future-date it. invalid_at is stamped with the same
+    // acceptance timestamp as superseded_at, keeping invalid_at <= NOW().
+    const winnerValidAt = new Date('2026-03-01T00:00:00Z')
+    selectQueue.push([contradictionProposal()])                          // findMemoryById(proposalId)
+    selectQueue.push([{ id: WINNER_ID, userId: USER, validAt: winnerValidAt }]) // winner (older validAt)
+    updateQueue.push([{ id: LOSER_ID }])                                 // loser supersede — still live
+    updateQueue.push([{ id: PROPOSAL_ID, archivedAt: new Date() }])      // notice archive
+
+    const result = await acceptProposal(PROPOSAL_ID, USER, { pin: false })
+    expect(result?.ok).toBe(true)
+    expect(setCalls[0].supersededById).toBe(WINNER_ID)
+    // invalid_at is acceptance-time, NOT the winner's (older) validAt.
+    expect(setCalls[0].invalidAt).not.toEqual(winnerValidAt)
+    expect(setCalls[0].invalidAt).toEqual(setCalls[0].supersededAt)
   })
 
   it('does not claim success when the loser is already superseded (stale conflict)', async () => {
@@ -164,5 +185,28 @@ describe('acceptProposal — introspection branch (unchanged)', () => {
     // Only one update call — the introspection branch never touches a second row
     // unless `supersedes` is passed.
     expect(setCalls).toHaveLength(1)
+  })
+
+  it('closes the valid window of beliefs the promoted memory supersedes', async () => {
+    const proposal = {
+      id: PROPOSAL_ID,
+      userId: USER,
+      type: 'inbound',
+      links: [],
+      sourceMetadata: { introspection: true, kind: 'reflection', confidence: 0.6, citations: [], runId: 'introspection:dom-1', status: 'pending' },
+    }
+    selectQueue.push([proposal])                                // findMemoryById
+    updateQueue.push([{ ...proposal, type: 'reflection' }])     // promote update (.returning)
+
+    const result = await acceptProposal(PROPOSAL_ID, USER, { pin: false, supersedes: ['old-1', 'old-2'] })
+
+    expect(result?.ok).toBe(true)
+    // Second update stamps the losers: supersededById = the promoted memory,
+    // invalidAt = acceptance time (the new belief becomes the truth now).
+    expect(setCalls).toHaveLength(2)
+    expect(setCalls[1]).toMatchObject({
+      supersededById: PROPOSAL_ID,
+      invalidAt: expect.any(Date),
+    })
   })
 })

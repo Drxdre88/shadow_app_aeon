@@ -105,6 +105,25 @@ describe('getBeliefTrail', () => {
     expect(trail!.find((n) => n.id === 't')!.isCurrent).toBe(true)
   })
 
+  it('prefers real valid-time columns over transaction-time fallbacks', async () => {
+    // Bi-temporal: a belief true in the world before we recorded it, and expired
+    // (invalid_at) without a superseding successor — supersededAt stays null.
+    const validAt = new Date('2025-12-01')
+    const invalidAt = new Date('2026-02-15')
+    const t = { ...row('t', { supersededAt: null, supersededById: null }), validAt, invalidAt }
+
+    selectQueue.push([t]) // target lookup
+    selectQueue.push([])  // predecessors → none
+
+    const trail = await getBeliefTrail('t', USER)
+    const n = trail![0]
+    expect(n.validFrom).toEqual(validAt)      // not createdAt
+    expect(n.invalidFrom).toEqual(invalidAt)  // not supersededAt (which is null)
+    // A still-live tip (never superseded) is current even though it has expired
+    // in valid-time — isCurrent tracks the supersession chain, not the window.
+    expect(n.isCurrent).toBe(true)
+  })
+
   it('terminates on a mutual cycle A↔B without infinite looping', async () => {
     const a = row('a', { createdAt: new Date('2026-01-01'), supersededAt: new Date('2026-01-02'), supersededById: 'b' })
     const b = row('b', { createdAt: new Date('2026-01-02'), supersededAt: new Date('2026-01-01'), supersededById: 'a' })
