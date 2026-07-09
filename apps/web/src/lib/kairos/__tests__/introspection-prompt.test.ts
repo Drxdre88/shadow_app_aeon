@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   buildIntrospectionPrompt,
   introspectionOutSchema,
@@ -7,6 +7,44 @@ import {
   type IntrospectionContext,
   type IntrospectionOutput,
 } from '../introspection-prompt'
+
+// Pure-function tests only below (see archetypes.test.ts for rationale).
+// Exception (C1): one targeted describe block at the bottom mocks just
+// enough of the data layer to assert the failure-trace wiring fires.
+
+const selectQueue: unknown[][] = []
+
+vi.mock('@/lib/db', () => {
+  function makeChain(rows: unknown[]) {
+    const chain: Record<string, unknown> = {}
+    const pass = () => chain
+    chain.from = pass
+    chain.where = pass
+    chain.orderBy = pass
+    chain.limit = pass
+    chain.then = (resolve: (v: unknown[]) => unknown) => resolve(rows)
+    return chain
+  }
+  return {
+    db: {
+      select: vi.fn(() => makeChain(selectQueue.shift() ?? [])),
+      insert: vi.fn(() => ({ values: () => Promise.resolve([]) })),
+    },
+  }
+})
+
+vi.mock('@/lib/data/dominions', () => ({
+  findDominionsByUser: vi.fn(),
+  inspectDominion: vi.fn(),
+}))
+
+vi.mock('@/lib/data/memories', () => ({
+  captureMemory: vi.fn(),
+}))
+
+vi.mock('@/lib/ai/route-task', () => ({
+  getProviderForTask: vi.fn(),
+}))
 
 const ID_A = '11111111-1111-4111-8111-111111111111'
 const ID_B = '22222222-2222-4222-8222-222222222222'
@@ -122,5 +160,42 @@ describe('extractJsonBlock', () => {
 
   it('throws a contextual error when no json is present', () => {
     expect(() => extractJsonBlock('no json here')).toThrow(/introspection/)
+  })
+})
+
+describe('runIntrospectionForDominion — failure trace (C1)', () => {
+  const USER_ID = 'user-1'
+  const DOMINION_ID = '33333333-3333-4333-8333-333333333333'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    selectQueue.length = 0
+  })
+
+  it('writes a failure trace on empty model response', async () => {
+    const { inspectDominion } = await import('@/lib/data/dominions')
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+
+    selectQueue.push([{ id: DOMINION_ID, name: 'AEON', archivedAt: null }]) // dominion lookup
+    selectQueue.push([{ n: 0 }]) // alreadyRanToday
+    vi.mocked(inspectDominion).mockResolvedValueOnce({
+      name: 'AEON',
+      vision: null,
+      recentMemories: [{ id: ID_A, title: 'Shipped hybrid retrieval', type: 'session_summary', summary: null, createdAt: new Date('2026-07-01') }],
+    } as never)
+    selectQueue.push([]) // fetchCortexBody
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask: vi.fn().mockResolvedValue({ text: '' }) } } as never)
+
+    const { runIntrospectionForDominion } = await import('../introspection')
+    const result = await runIntrospectionForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.status).toBe('error')
+    expect(result.reason).toBe('empty model response')
+    const traceCalls = vi.mocked(captureMemory).mock.calls.filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
+    expect(traceCalls).toHaveLength(1)
+    const sm = (traceCalls[0][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata
+    expect(sm.cronName).toBe('introspection')
+    expect(sm.reason).toBe('empty_response')
   })
 })

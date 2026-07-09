@@ -4,6 +4,7 @@ import { userAiCredentials, dominions } from '@/lib/db/schema'
 import { and, eq, isNull, inArray } from 'drizzle-orm'
 import { findDominionsByUser } from '@/lib/data/dominions'
 import { runRecipe } from '@/lib/kairos/dispatch'
+import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -113,6 +114,7 @@ export async function GET(req: NextRequest) {
       const results = await briefUser(userId)
       userResults.push({ userId, results })
     } catch (err) {
+      await writeCronFailureTrace(userId, { cronName: 'briefer', reason: 'uncaught_exception', error: err })
       userResults.push({ userId, results: [], error: err instanceof Error ? err.message : String(err) })
     }
   }

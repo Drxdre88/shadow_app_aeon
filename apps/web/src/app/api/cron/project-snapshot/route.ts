@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { projects } from '@/lib/db/schema'
 import { runProjectSnapshotsForUser, runEphemeralLifecycleForUser } from '@/lib/kairos/project-snapshot'
+import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 
 // Kairos Phase 2 (A5) — nightly project snapshot cron.
 // Vercel Cron 23:00 UTC. Iterates every user with at least one project,
@@ -36,6 +37,7 @@ export async function GET(req: NextRequest) {
       const lifecycle = await runEphemeralLifecycleForUser(userId)
       userResults.push({ userId, results, lifecycle })
     } catch (err) {
+      await writeCronFailureTrace(userId, { cronName: 'project-snapshot', reason: 'uncaught_exception', error: err })
       userResults.push({ userId, results: [], error: err instanceof Error ? err.message : String(err) })
     }
   }

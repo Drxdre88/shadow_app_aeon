@@ -1,7 +1,9 @@
 import { captureMemory } from '@/lib/data/memories'
 import { retrieveContext } from './retrieve'
 import { getRecipe } from './recipes/registry'
-import type { MemoryWriteSpec, RecipeContext, Surface } from './recipes/_recipe'
+import { writeCronFailureTrace } from './cron-trace'
+import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
+import type { MemoryWriteSpec, RecipeContext, RecipeOutput, Surface } from './recipes/_recipe'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 3C — recipe dispatcher.
@@ -62,7 +64,26 @@ export async function runRecipe(name: string, opts: RunRecipeArgs): Promise<RunR
   const mode = fn === recipe.expanded ? 'expanded' : 'flat'
 
   const startedAt = Date.now()
-  const output = await fn(ctx)
+  let output: RecipeOutput
+  try {
+    output = await fn(ctx)
+  } catch (err) {
+    // Credential-missing/undecryptable are the universal benign-skip path
+    // (every cron treats them as "no BYOK credential" / "key undecryptable",
+    // never a failure) — the caller re-throws these to map them to a
+    // 'skipped' status. Anything else is a genuine recipe failure the cron
+    // route would otherwise swallow into a 200 with no durable trace.
+    if (!(err instanceof AiCredentialMissingError) && !(err instanceof AiCredentialDecryptError)) {
+      await writeCronFailureTrace(opts.userId, {
+        cronName: `recipe:${name}`,
+        dominionId: opts.dominionId,
+        reason: 'recipe_threw',
+        error: err,
+        durationMs: Date.now() - startedAt,
+      })
+    }
+    throw err
+  }
   const durationMs = Date.now() - startedAt
 
   // 1. Primary write — externalId idempotency happens inside captureMemory.

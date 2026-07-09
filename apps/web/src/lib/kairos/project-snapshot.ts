@@ -3,6 +3,7 @@ import { projects, boardTasks, activityEvents, memories } from '@/lib/db/schema'
 import { and, eq, isNull, gte, lt, desc, sql } from 'drizzle-orm'
 import { captureMemory } from '@/lib/data/memories'
 import { SNAPSHOT_TTL_DAYS, ADVISORY_TTL_DAYS, cutoffDate } from './lifecycle'
+import { writeCronFailureTrace } from './cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (A5) — nightly project snapshot.
@@ -129,6 +130,12 @@ export async function runProjectSnapshotsForUser(userId: string): Promise<Projec
     try {
       results.push(await snapshotProject(userId, p, bounds))
     } catch (err) {
+      await writeCronFailureTrace(userId, {
+        cronName: 'project-snapshot',
+        dominionId: p.dominionId,
+        reason: 'uncaught_exception',
+        error: err,
+      })
       results.push({
         projectId: p.id,
         projectName: p.name,

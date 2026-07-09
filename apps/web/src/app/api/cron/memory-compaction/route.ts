@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
 import { sql, and, eq, isNull } from 'drizzle-orm'
+import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (A4) — weekly memory compaction.
@@ -89,6 +90,7 @@ export async function GET(req: NextRequest) {
         const eligible = snapshot.reduce((n, r) => n + r.oldEligible, 0)
         return { userId, status: 'ok' as const, snapshot, eligibleForCompaction: eligible }
       } catch (err) {
+        await writeCronFailureTrace(userId, { cronName: 'memory-compaction', reason: 'uncaught_exception', error: err })
         return {
           userId,
           status: 'error' as const,

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { userAiCredentials, dominions } from '@/lib/db/schema'
 import { and, isNull, inArray } from 'drizzle-orm'
 import { runIntrospectionForUser } from '@/lib/kairos/introspection'
+import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos — Guided Introspection cron (propose-not-commit, L1 autonomy).
@@ -51,6 +52,7 @@ export async function GET(req: NextRequest) {
     try {
       userResults.push({ userId, results: await runIntrospectionForUser(userId) })
     } catch (err) {
+      await writeCronFailureTrace(userId, { cronName: 'introspection', reason: 'uncaught_exception', error: err })
       userResults.push({ userId, results: [], error: err instanceof Error ? err.message : String(err) })
     }
   }

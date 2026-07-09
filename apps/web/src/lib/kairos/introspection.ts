@@ -13,6 +13,7 @@ import {
   type IntrospectionMemoryRow,
 } from './introspection-prompt'
 import { todayIso } from './_prompt-utils'
+import { writeCronFailureTrace } from './cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos — Guided Introspection runner (propose-not-commit).
@@ -139,7 +140,10 @@ export async function runIntrospectionForDominion(
     throw err
   }
 
-  if (!rawText) return { dominionId, dominionName: dom.name, status: 'error', reason: 'empty model response' }
+  if (!rawText) {
+    await writeCronFailureTrace(userId, { cronName: 'introspection', dominionId, reason: 'empty_response' })
+    return { dominionId, dominionName: dom.name, status: 'error', reason: 'empty model response' }
+  }
 
   let proposals
   try {
@@ -147,6 +151,7 @@ export async function runIntrospectionForDominion(
     const validIds = new Set(ctx.recentMemories.map((m) => m.id))
     proposals = filterGroundedProposals(parsed, validIds)
   } catch (err) {
+    await writeCronFailureTrace(userId, { cronName: 'introspection', dominionId, reason: 'parse_failed', error: err })
     return {
       dominionId,
       dominionName: dom.name,
@@ -156,6 +161,7 @@ export async function runIntrospectionForDominion(
   }
 
   if (proposals.length === 0) {
+    await writeCronFailureTrace(userId, { cronName: 'introspection', dominionId, reason: 'all_thoughts_ungrounded' })
     return { dominionId, dominionName: dom.name, status: 'created', proposalsCreated: 0, reason: 'no grounded proposals' }
   }
 
@@ -200,6 +206,12 @@ export async function runIntrospectionForUser(userId: string): Promise<Introspec
     try {
       results.push(await runIntrospectionForDominion(userId, dom.id))
     } catch (err) {
+      await writeCronFailureTrace(userId, {
+        cronName: 'introspection',
+        dominionId: dom.id,
+        reason: 'uncaught_exception',
+        error: err,
+      })
       results.push({
         dominionId: dom.id,
         dominionName: dom.name,

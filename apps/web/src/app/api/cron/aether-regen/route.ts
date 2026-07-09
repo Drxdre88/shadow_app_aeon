@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { dominions } from '@/lib/db/schema'
 import { isNull } from 'drizzle-orm'
 import { runAetherForUser } from '@/lib/kairos/aether'
+import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 
 // Aether cron — 03:15 UTC daily (after cortex-regen at 03:00). Idempotent.
 
@@ -39,6 +40,7 @@ export async function GET(req: NextRequest) {
       const result = await runAetherForUser(userId)
       userResults.push({ userId, generated: result.generated, reason: result.reason })
     } catch (err) {
+      await writeCronFailureTrace(userId, { cronName: 'aether-regen', reason: 'uncaught_exception', error: err })
       userResults.push({
         userId,
         generated: false,
