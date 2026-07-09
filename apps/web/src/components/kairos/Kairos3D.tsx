@@ -116,11 +116,20 @@ function EdgeGraph({ data }: { data: { nodes: SceneNode[]; links: SceneLink[] } 
       nodeThreeObjectExtend={false}
       linkColor={(raw: unknown) => (raw as SceneLink)._color}
       linkOpacity={0.85}
-      linkWidth={(raw: unknown) => (isAutoEdge((raw as SceneLink).type) ? 1.0 : 2.8)}
+      linkWidth={(raw: unknown) => {
+        const t = (raw as SceneLink).type
+        // Ghost-thread: a thin whisper of lineage — thinner than a live
+        // semantic edge (2.8), a touch above the faint auto-links (1.0).
+        if (t === 'supersedes') return 1.4
+        return isAutoEdge(t) ? 1.0 : 2.8
+      }}
       linkDirectionalParticles={(raw: unknown) => {
         const t = (raw as SceneLink).type
         if (t === 'supports') return 4
         if (t === 'relates' || t === 'refers_to') return 2
+        // Ghost-thread: particles drift old→new, the belief flowing forward
+        // in time toward the version that replaced it.
+        if (t === 'supersedes') return 3
         if (t === 'auto-repo') return 2
         if (t === 'auto-day') return 1
         return 0
@@ -178,6 +187,7 @@ function buildSceneData(
       updatedAt: n.updatedAt,
       confidence: n.confidence,
       supersededAt: n.supersededAt,
+      supersededById: n.supersededById,
       invalidAt: n.invalidAt,
       dominionId: n.dominionId,
       dominionName: n.dominionName,

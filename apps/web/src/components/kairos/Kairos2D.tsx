@@ -83,6 +83,7 @@ export function Kairos2D({
         updatedAt: n.updatedAt,
         confidence: n.confidence,
         supersededAt: n.supersededAt,
+        supersededById: n.supersededById,
         invalidAt: n.invalidAt,
         dominionId: n.dominionId,
         dominionName: n.dominionName,
