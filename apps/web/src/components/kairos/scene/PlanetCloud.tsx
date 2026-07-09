@@ -71,7 +71,11 @@ export function PlanetCloud({
         // the simulation graph reference stable so the force layout doesn't
         // restart when the user toggles between Realm / Repo / Type / Source.
         const hue = nodeHue(n, colorMode)
-        const hex = `hsl(${hue}, 92%, ${56 + 14 * n._glow}%)`
+        // Confidence → appearance (Phase 2): _glow carries decayed confidence
+        // (ghosts forced low). Widen both lightness AND saturation off it so a
+        // sure belief reads vivid + bright and an uncertain / retired one reads
+        // dim + greyed — visible at a glance, not a 10% lightness nudge.
+        const hex = `hsl(${hue}, ${62 + 30 * n._glow}%, ${40 + 32 * n._glow}%)`
         return (
         <Planet
           key={n.id}

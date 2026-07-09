@@ -7,6 +7,7 @@ import * as THREE from 'three'
 import R3fForceGraph from 'r3f-forcegraph'
 import type { GraphNode, GraphEdge } from '@/lib/data/memories'
 import { edgeColor, isAutoEdge, nodeHue, type ColorMode } from './nodeColor'
+import { effectiveConfidence } from '@/lib/kairos/confidence'
 import { SUN_DIR } from './scene/params'
 import { Backdrop } from './scene/Backdrop'
 import { PostFX } from './scene/PostFX'
@@ -151,6 +152,16 @@ function buildSceneData(
   const sceneNodes: SceneNode[] = nodes.map((n) => {
     const ageDays = (now - new Date(n.createdAt).getTime()) / DAY_MS
     const recency = Math.max(0.32, 1 - ageDays / 14)
+    // Phase 2 visual grammar — dual encoding:
+    //   size    = recency + pinned (unchanged)
+    //   brightness = confidence, decayed the SAME way retrieval decays it
+    //     (effectiveConfidence off updatedAt) so the galaxy and search agree:
+    //     a sure, reinforced belief glows; a low-trust or stale one dims.
+    // Superseded / expired memories go ghostly-dim regardless of their prior —
+    // they are retired beliefs, present but receded.
+    const isGhost = n.supersededAt != null || (n.invalidAt != null && new Date(n.invalidAt).getTime() <= now)
+    const effConf = effectiveConfidence({ confidence: n.confidence, updatedAt: n.updatedAt, pinned: n.pinned }, now)
+    const glow = isGhost ? 0.22 : Math.max(0.28, Math.min(1, effConf * 1.1))
     return {
       id: n.id,
       title: n.title,
@@ -164,12 +175,16 @@ function buildSceneData(
       tags: n.tags,
       pinned: n.pinned,
       createdAt: n.createdAt,
+      updatedAt: n.updatedAt,
+      confidence: n.confidence,
+      supersededAt: n.supersededAt,
+      invalidAt: n.invalidAt,
       dominionId: n.dominionId,
       dominionName: n.dominionName,
       dominionColor: n.dominionColor,
       _hex: '#888888',
-      _glow: recency,
-      _radius: n.pinned ? 7.5 : 4.2 + recency * 2.4,
+      _glow: glow,
+      _radius: (n.pinned ? 7.5 : 4.2 + recency * 2.4) * (isGhost ? 0.7 : 1),
       _hue: 240,
       _degree: degree.get(n.id) ?? 0,
     }

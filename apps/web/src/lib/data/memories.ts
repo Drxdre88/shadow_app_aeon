@@ -221,6 +221,12 @@ export type GraphNode = {
   tags: string[]
   pinned: boolean
   createdAt: Date
+  // Governed-memory state for the galaxy's visual grammar (Phase 2):
+  // confidence→brightness (decayed via updatedAt), superseded/expired→ghost.
+  updatedAt: Date
+  confidence: number | null
+  supersededAt: Date | null
+  invalidAt: Date | null
   dominionId: string | null
   dominionName: string | null
   dominionColor: string | null
@@ -255,6 +261,10 @@ export async function getGraphForUser(
       tags: memories.tags,
       pinned: memories.pinned,
       createdAt: memories.createdAt,
+      updatedAt: memories.updatedAt,
+      confidence: memories.confidence,
+      supersededAt: memories.supersededAt,
+      invalidAt: memories.invalidAt,
       links: memories.links,
       sourceMetadata: memories.sourceMetadata,
     })
