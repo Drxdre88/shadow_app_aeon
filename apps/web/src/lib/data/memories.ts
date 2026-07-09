@@ -625,6 +625,112 @@ export async function getNeighbours(
   return [...outgoing, ...incoming]
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Belief trail — read-path over the supersession lineage a memory already
+// carries (confidence / supersededAt / supersededById, stamped by
+// acceptProposal). Additive, read-only: no schema changes, no new writes.
+// Predecessors: rows whose supersededById points at a node already in the
+// trail. Successors: follow supersededById forward to the live tip. Both
+// walks are visited-set guarded and capped — supersededById is a soft
+// pointer with no FK, so a bad write could in principle cycle.
+// ─────────────────────────────────────────────────────────────────────────
+
+const BELIEF_TRAIL_MAX_NODES = 50
+
+const BELIEF_TRAIL_COLUMNS = {
+  id: memories.id,
+  title: memories.title,
+  aiTitle: memories.aiTitle,
+  confidence: memories.confidence,
+  createdAt: memories.createdAt,
+  supersededAt: memories.supersededAt,
+  supersededById: memories.supersededById,
+} as const
+
+type BeliefTrailRow = {
+  id: string
+  title: string
+  aiTitle: string | null
+  confidence: number | null
+  createdAt: Date
+  supersededAt: Date | null
+  supersededById: string | null
+}
+
+export type BeliefTrailNode = {
+  id: string
+  title: string
+  aiTitle: string | null
+  confidence: number | null
+  validFrom: Date
+  invalidFrom: Date | null
+  supersededById: string | null
+  isCurrent: boolean
+  isTarget: boolean
+}
+
+async function loadBeliefTrailRow(id: string, userId: string): Promise<BeliefTrailRow | null> {
+  const [row] = await db
+    .select(BELIEF_TRAIL_COLUMNS)
+    .from(memories)
+    .where(and(eq(memories.id, id), eq(memories.userId, userId)))
+    .limit(1)
+  return row ?? null
+}
+
+export async function getBeliefTrail(memoryId: string, userId: string): Promise<BeliefTrailNode[] | null> {
+  const target = await loadBeliefTrailRow(memoryId, userId)
+  if (!target) return null
+
+  const visited = new Set<string>([target.id])
+  const byId = new Map<string, BeliefTrailRow>([[target.id, target]])
+
+  // Successors first: follow supersededById forward to the live tip, one hop per
+  // iteration. Walking successors before predecessors guarantees the current
+  // version is always in the trail even if the node budget is exhausted — a
+  // trust read-path must never make a superseded belief look like it has no
+  // current successor.
+  let nextId = target.supersededById
+  while (nextId && !visited.has(nextId) && byId.size < BELIEF_TRAIL_MAX_NODES) {
+    const row = await loadBeliefTrailRow(nextId, userId)
+    if (!row) break
+    visited.add(row.id)
+    byId.set(row.id, row)
+    nextId = row.supersededById
+  }
+
+  // Predecessors: level-order walk of rows superseded INTO the target, filling
+  // whatever node budget the successor walk left. Branches (two predecessors
+  // merging into one successor) collapse naturally — both land in `visited`.
+  let frontier = [target.id]
+  while (frontier.length > 0 && byId.size < BELIEF_TRAIL_MAX_NODES) {
+    const rows = await db
+      .select(BELIEF_TRAIL_COLUMNS)
+      .from(memories)
+      .where(and(eq(memories.userId, userId), inArray(memories.supersededById, frontier)))
+    const fresh = rows.filter((r) => !visited.has(r.id))
+    for (const r of fresh) {
+      visited.add(r.id)
+      byId.set(r.id, r)
+    }
+    frontier = fresh.map((r) => r.id)
+  }
+
+  return Array.from(byId.values())
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id))
+    .map((row) => ({
+      id: row.id,
+      title: row.title,
+      aiTitle: row.aiTitle,
+      confidence: row.confidence,
+      validFrom: row.createdAt,
+      invalidFrom: row.supersededAt,
+      supersededById: row.supersededById,
+      isCurrent: row.supersededAt === null,
+      isTarget: row.id === target.id,
+    }))
+}
+
 export async function createMemory(userId: string, input: CreateMemoryParams) {
   // Idempotency for Claude-captured sessions: a given sessionId is a stable
   // identity, so re-posting (from a SessionStart backfill, re-invoked hook,

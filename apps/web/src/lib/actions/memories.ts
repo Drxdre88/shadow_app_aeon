@@ -11,6 +11,7 @@ import {
   searchMemoriesSchema,
   addLinkSchema,
   getNeighboursSchema,
+  getBeliefTrailSchema,
   prepareContextSchema,
   type CreateMemoryInput,
   type UpdateMemoryInput,
@@ -24,6 +25,7 @@ import {
   listMemories as _listMemories,
   searchMemoriesFts as _searchMemoriesFts,
   getNeighbours as _getNeighbours,
+  getBeliefTrail as _getBeliefTrail,
   createMemory as _createMemory,
   updateMemory as _updateMemory,
   addLink as _addLink,
@@ -166,6 +168,14 @@ export async function getMemoryNeighbours(memoryId: string, input: GetNeighbours
 
   const neighbours = await _getNeighbours(memoryId, userId, parsed)
   return { memory: seed, neighbours }
+}
+
+export async function getMemoryBeliefTrail(memoryId: string) {
+  const userId = await requireAuth()
+  const parsed = getBeliefTrailSchema.parse({ id: memoryId })
+  const trail = await _getBeliefTrail(parsed.id, userId)
+  if (!trail) throw new Error('Memory not found or unauthorized')
+  return trail
 }
 
 export async function deleteMemoryById(memoryId: string) {

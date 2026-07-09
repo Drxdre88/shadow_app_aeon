@@ -449,6 +449,12 @@ export const getNeighboursSchema = z.object({
   limit:           z.number().int().min(1).max(100).default(20),
 })
 
+// Belief trail — supersession lineage read-path. Single-field validator: the
+// memory to trace, nothing else is tunable.
+export const getBeliefTrailSchema = z.object({
+  id:              z.string().uuid(),
+})
+
 // Brain Phase 4 — prepare_context. Single retrieval call that returns a
 // budget-packed markdown bundle ready to drop into an AI context window.
 // Spec: docs/brain/04-phase-roadmap.md (Phase 4)
@@ -472,6 +478,7 @@ export type UpdateMemoryInput = z.infer<typeof updateMemorySchema>
 export type SearchMemoriesInput = z.infer<typeof searchMemoriesSchema>
 export type AddLinkInput      = z.infer<typeof addLinkSchema>
 export type GetNeighboursInput = z.infer<typeof getNeighboursSchema>
+export type GetBeliefTrailInput = z.infer<typeof getBeliefTrailSchema>
 export type PrepareContextInput = z.infer<typeof prepareContextSchema>
 
 // Guided introspection — accept a staged proposal (type='inbound' memory Kairos

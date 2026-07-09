@@ -37,6 +37,7 @@ const REST_ROUTE_FILES = [
   '[id]/links/route.ts',
   '[id]/links/[linkIndex]/route.ts',
   '[id]/neighbours/route.ts',
+  '[id]/trail/route.ts',
   '[id]/export/route.ts',
   '[id]/accept/route.ts',
   'needs-summary/route.ts',
@@ -62,13 +63,14 @@ describe('Memory MCP <-> REST parity', () => {
     .join('\n')
 
   describe('MCP tool surface', () => {
-    it('exposes exactly the eight expected memory operations', () => {
+    it('exposes exactly the nine expected memory operations', () => {
       expect(new Set(toolNames)).toEqual(new Set([
         'create_memory',
         'update_memory',
         'search_memories',
         'link_memory',
         'get_memory_with_neighbours',
+        'get_belief_trail',
         'prepare_context',
         'list_memories_needing_summary',
         'accept_proposal',
@@ -85,6 +87,7 @@ describe('Memory MCP <-> REST parity', () => {
       { path: '[id]/links/route.ts',               methods: ['POST'] },
       { path: '[id]/links/[linkIndex]/route.ts',   methods: ['DELETE'] },
       { path: '[id]/neighbours/route.ts',          methods: ['GET'] },
+      { path: '[id]/trail/route.ts',               methods: ['GET'] },
       { path: '[id]/export/route.ts',              methods: ['GET'] },
       { path: '[id]/accept/route.ts',              methods: ['POST'] },
       { path: 'needs-summary/route.ts',            methods: ['GET'] },
@@ -107,6 +110,7 @@ describe('Memory MCP <-> REST parity', () => {
       'searchMemoriesSchema',
       'addLinkSchema',
       'getNeighboursSchema',
+      'getBeliefTrailSchema',
       'prepareContextSchema',
       'acceptProposalSchema',
     ]
@@ -124,6 +128,7 @@ describe('Memory MCP <-> REST parity', () => {
       'searchMemoriesSchema',
       'addLinkSchema',
       'getNeighboursSchema',
+      'getBeliefTrailSchema',
       'prepareContextSchema',
       'acceptProposalSchema',
     ]
@@ -140,6 +145,7 @@ describe('Memory MCP <-> REST parity', () => {
       'addLink',
       'findMemoryById',
       'getNeighbours',
+      'getBeliefTrail',
       'prepareContext',
       'listMemoriesNeedingSummary',
       'acceptProposal',

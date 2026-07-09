@@ -5,6 +5,7 @@ import {
   searchMemoriesSchema,
   addLinkSchema,
   getNeighboursSchema,
+  getBeliefTrailSchema,
   prepareContextSchema,
   acceptProposalSchema,
 } from '@/lib/data/validators'
@@ -15,6 +16,7 @@ import {
   addLink as _addLink,
   findMemoryById,
   getNeighbours as _getNeighbours,
+  getBeliefTrail as _getBeliefTrail,
   prepareContext as _prepareContext,
   acceptProposal as _acceptProposal,
   targetMemoryExists,
@@ -354,6 +356,23 @@ export const registerMemoryTools: RegisterFn = (server) => {
 
       const neighbours = await _getNeighbours(memoryId, uid, parsed.data)
       return ok({ memory, neighbours })
+    }
+  )
+
+  server.tool(
+    'get_belief_trail',
+    'Read the supersession lineage for a memory — every belief it replaced and everything that replaced it, oldest to newest, with confidence and validity window per node. This is the provenance/trust read-path: use it to see whether a memory is still current or has been superseded, and by what.',
+    {
+      memoryId: z.string().uuid().describe('The memory UUID to trace lineage for'),
+    },
+    async ({ memoryId }, extra) => {
+      const uid = getUserId(extra)
+      const parsed = getBeliefTrailSchema.safeParse({ id: memoryId })
+      if (!parsed.success) return fail(parsed.error.issues[0].message)
+
+      const trail = await _getBeliefTrail(parsed.data.id, uid)
+      if (!trail) return notFound('Memory')
+      return ok({ trail })
     }
   )
 
