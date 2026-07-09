@@ -28,6 +28,7 @@ import { inspectDominion } from '@/lib/data/dominions'
 import { dominionTag } from './dominionTags'
 import { embeddingsEnabled, embedOne, toVectorLiteral } from './embeddings'
 import { rrfFuse, RRF_K } from './rrf'
+import { confidenceBoost } from './confidence'
 import { isStreamClass, type StreamClass } from './streamClass'
 import type {
   RetrievalResult,
@@ -138,6 +139,9 @@ type SubstrateRow = {
   bodyMd: string | null
   streamClass: string
   createdAt: Date
+  updatedAt: Date          // reinforcement signal for confidence decay
+  confidence: number | null // stored trust prior; absent → neutral (no effect)
+  pinned: boolean          // ranking-exempt from decay (mirrors prepareContext)
 }
 
 async function fetchSubstrate(
@@ -163,6 +167,9 @@ async function fetchSubstrate(
       bodyMd: memories.bodyMd,
       streamClass: memories.streamClass,
       createdAt: memories.createdAt,
+      updatedAt: memories.updatedAt,
+      confidence: memories.confidence,
+      pinned: memories.pinned,
       rank,
     })
     .from(memories)
@@ -206,6 +213,9 @@ async function fetchSubstrate(
           bodyMd: memories.bodyMd,
           streamClass: memories.streamClass,
           createdAt: memories.createdAt,
+          updatedAt: memories.updatedAt,
+          confidence: memories.confidence,
+          pinned: memories.pinned,
         })
         .from(memories)
         .where(and(
@@ -236,7 +246,11 @@ async function fetchSubstrate(
       .map(([id, score]) => {
         const rowItem = byId.get(id)
         const isReflection = rowItem?.streamClass === 'reflection'
-        return { id, isReflection, score: score + (isReflection ? REFLECTION_BONUS : 0) }
+        // Confidence decay weights the fused score before the reflection nudge;
+        // neutral (×1) when the prior is absent, so behaviour is unchanged for
+        // rows predating the confidence column.
+        const weighted = score * confidenceBoost({ confidence: rowItem?.confidence ?? null, updatedAt: rowItem?.updatedAt, pinned: rowItem?.pinned })
+        return { id, isReflection, score: weighted + (isReflection ? REFLECTION_BONUS : 0) }
       })
       .sort((a, b) =>
         a.isReflection !== b.isReflection

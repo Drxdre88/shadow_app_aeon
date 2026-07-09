@@ -27,6 +27,7 @@ import {
   type DedupCandidate,
 } from '@/lib/kairos/dedup'
 import { rrfFuse } from '@/lib/kairos/rrf'
+import { confidenceBoost } from '@/lib/kairos/confidence'
 
 // Internal extension: the public zod schema (createMemorySchema) intentionally
 // does NOT expose streamClass — public callers (MCP/REST) must not pick a
@@ -90,6 +91,10 @@ const SLIM_COLUMNS = {
   taskId: memories.taskId,
   tags: memories.tags,
   pinned: memories.pinned,
+  // Governed-memory trust prior, peer to `pinned`. Feeds read-time confidence
+  // decay in retrieval scoring; intentionally surfaced to search consumers (the
+  // caller's own non-sensitive prior) — MCP/REST stay in parity via this shared set.
+  confidence: memories.confidence,
 } as const
 
 export async function findMemoryById(memoryId: string, userId: string) {
@@ -1570,6 +1575,8 @@ type Candidate = {
   type: string
   source: string
   createdAt: Date
+  updatedAt?: Date | null   // reinforcement signal for confidence decay
+  confidence?: number | null // stored trust prior; absent → neutral (no effect)
   pinned: boolean
   baseScore: number
   origin: 'pinned' | 'hit' | 'neighbour'
@@ -1679,6 +1686,8 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
       type: p.type,
       source: p.source,
       createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+      confidence: p.confidence,
       pinned: true,
       baseScore: 2.0,
       origin: 'pinned',
@@ -1694,6 +1703,8 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
       type: h.type,
       source: h.source,
       createdAt: h.createdAt,
+      updatedAt: h.updatedAt,
+      confidence: h.confidence,
       pinned: !!h.pinned,
       baseScore: h.rank,
       origin: 'hit',
@@ -1721,7 +1732,11 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
 
   for (const c of candidates) {
     const recency = recencyDecay(c.createdAt)
-    ;(c as Candidate & { compositeScore: number }).compositeScore = c.baseScore * (1 + recency * 0.3)
+    // Confidence decay: dim stale, low-trust beliefs; boost fresh, high-trust
+    // ones. Neutral (×1) for pinned, neighbours, and rows without a stored prior.
+    const confidence = confidenceBoost({ confidence: c.confidence, updatedAt: c.updatedAt, pinned: c.pinned })
+    ;(c as Candidate & { compositeScore: number }).compositeScore =
+      c.baseScore * (1 + recency * 0.3) * confidence
   }
   const scored = candidates as Array<Candidate & { compositeScore: number }>
   scored.sort((a, b) => b.compositeScore - a.compositeScore)
