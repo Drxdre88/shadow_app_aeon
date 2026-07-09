@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+// router.ts (source of the credential-error classes) imports '@/lib/db' at
+// module scope, which throws outside a real DB env — stub it, unused here.
+vi.mock('@/lib/db', () => ({ db: {} }))
+
 vi.mock('@/lib/data/memories', () => ({
   captureMemory: vi.fn(),
 }))
@@ -16,6 +20,7 @@ import { runRecipe, RecipeNotFoundError } from '../dispatch'
 import { captureMemory } from '@/lib/data/memories'
 import { retrieveContext } from '../retrieve'
 import { getRecipe } from '../recipes/registry'
+import { AiCredentialMissingError } from '@/lib/ai/router'
 import type { Recipe, RecipeContext, RecipeOutput } from '../recipes/_recipe'
 
 const USER_ID = 'user-1'
@@ -140,7 +145,7 @@ describe('runRecipe', () => {
     expect((traceInput.sourceMetadata as Record<string, unknown>).mode).toBe('flat')
   })
 
-  it('writes nothing when the recipe throws (no partial primary)', async () => {
+  it('writes a failure trace (no partial primary) when the recipe throws', async () => {
     const throwingRecipe: Recipe = {
       name: 'BOOM',
       description: 'throws on flat',
@@ -149,9 +154,34 @@ describe('runRecipe', () => {
       flat: vi.fn(async () => { throw new Error('upstream provider down') }),
     }
     ;(getRecipe as ReturnType<typeof vi.fn>).mockReturnValue(throwingRecipe)
+    ;(captureMemory as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ memory: { id: 'trace-boom', title: 'trace' }, created: true })
 
     await expect(runRecipe('BOOM', { userId: USER_ID, dominionId: DOMINION_ID, surface: 'byok' }))
       .rejects.toThrow('upstream provider down')
+
+    expect(captureMemory).toHaveBeenCalledTimes(1)
+    const traceInput = (captureMemory as ReturnType<typeof vi.fn>).mock.calls[0][1] as Record<string, unknown>
+    expect(traceInput.streamClass).toBe('trace')
+    expect(traceInput.dominionId).toBe(DOMINION_ID)
+    const sm = traceInput.sourceMetadata as Record<string, unknown>
+    expect(sm.cronName).toBe('recipe:BOOM')
+    expect(sm.reason).toBe('recipe_threw')
+    expect(sm.error).toBe('upstream provider down')
+  })
+
+  it('does NOT write a failure trace when the recipe throws a credential error', async () => {
+    const throwingRecipe: Recipe = {
+      name: 'BOOM',
+      description: 'throws on flat',
+      reads: ['cortex'],
+      writes: ['advisory'],
+      flat: vi.fn(async () => { throw new AiCredentialMissingError('anthropic') }),
+    }
+    ;(getRecipe as ReturnType<typeof vi.fn>).mockReturnValue(throwingRecipe)
+
+    await expect(runRecipe('BOOM', { userId: USER_ID, dominionId: DOMINION_ID, surface: 'byok' }))
+      .rejects.toBeInstanceOf(AiCredentialMissingError)
 
     expect(captureMemory).not.toHaveBeenCalled()
   })

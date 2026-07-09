@@ -16,6 +16,7 @@ import {
   type ReflectionRow,
 } from './cortex-prompt'
 import { todayIso } from './_prompt-utils'
+import { writeCronFailureTrace } from './cron-trace'
 
 export {
   buildCortexPrompt,
@@ -326,6 +327,7 @@ export async function runCortexRegenForDominion(
   }
 
   if (!rawText) {
+    await writeCronFailureTrace(userId, { cronName: 'cortex-regen', dominionId, reason: 'empty_response' })
     return { dominionId, dominionName: dom.name, status: 'error', reason: 'empty model response' }
   }
 
@@ -333,6 +335,7 @@ export async function runCortexRegenForDominion(
   try {
     parsed = cortexOutSchema.parse(extractJsonBlock(rawText))
   } catch (err) {
+    await writeCronFailureTrace(userId, { cronName: 'cortex-regen', dominionId, reason: 'parse_failed', error: err })
     return {
       dominionId,
       dominionName: dom.name,
@@ -342,6 +345,10 @@ export async function runCortexRegenForDominion(
   }
 
   const { cortexMemoryId, archivedPrior } = await persistCortex(userId, ctx, parsed, runId, date)
+
+  if (!cortexMemoryId) {
+    await writeCronFailureTrace(userId, { cronName: 'cortex-regen', dominionId, reason: 'persist_failed' })
+  }
 
   return {
     dominionId,
@@ -361,6 +368,12 @@ export async function runCortexRegenForUser(userId: string): Promise<CortexRunRe
     try {
       results.push(await runCortexRegenForDominion(userId, dom.id))
     } catch (err) {
+      await writeCronFailureTrace(userId, {
+        cronName: 'cortex-regen',
+        dominionId: dom.id,
+        reason: 'uncaught_exception',
+        error: err,
+      })
       results.push({
         dominionId: dom.id,
         dominionName: dom.name,

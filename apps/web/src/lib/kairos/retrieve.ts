@@ -27,6 +27,7 @@ import { memories } from '@/lib/db/schema'
 import { inspectDominion } from '@/lib/data/dominions'
 import { dominionTag } from './dominionTags'
 import { embeddingsEnabled, embedOne, toVectorLiteral } from './embeddings'
+import { rrfFuse, RRF_K } from './rrf'
 import { isStreamClass, type StreamClass } from './streamClass'
 import type {
   RetrievalResult,
@@ -257,23 +258,8 @@ async function fetchSubstrate(
   }
 }
 
-// Reciprocal Rank Fusion (Cormack et al.) — fuse N ranked id lists in rank
-// space. Score-scale-agnostic: only positions matter, so FTS ts_rank and vector
-// cosine never need normalising against each other. k=60 is the literature
-// default. Self-contained here (not imported) to keep retrieve.ts decoupled.
-const RRF_K = 60
 // Small post-fusion nudge keeping reflections ahead of ties in the same band.
 const REFLECTION_BONUS = 1 / (RRF_K + 1)
-
-function rrfFuse(lists: Array<{ ids: string[]; weight: number }>, k = RRF_K): Map<string, number> {
-  const scores = new Map<string, number>()
-  for (const { ids, weight } of lists) {
-    ids.forEach((id, rank) => {
-      scores.set(id, (scores.get(id) ?? 0) + weight / (k + rank + 1))
-    })
-  }
-  return scores
-}
 
 async function fetchTraces(userId: string, dominionId: string): Promise<RetrievedMemory[]> {
   const rows = await db

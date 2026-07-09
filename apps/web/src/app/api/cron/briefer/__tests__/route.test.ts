@@ -60,6 +60,10 @@ vi.mock('@/lib/kairos/dispatch', () => ({
   runRecipe: vi.fn(),
 }))
 
+vi.mock('@/lib/kairos/cron-trace', () => ({
+  writeCronFailureTrace: vi.fn(),
+}))
+
 vi.mock('@/lib/ai/router', () => ({
   AiCredentialMissingError: class AiCredentialMissingError extends Error {
     constructor(public providerId?: string) {

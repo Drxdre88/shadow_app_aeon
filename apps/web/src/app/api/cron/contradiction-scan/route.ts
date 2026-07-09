@@ -2,18 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { userAiCredentials, dominions } from '@/lib/db/schema'
 import { and, isNull, inArray } from 'drizzle-orm'
-import { runIntrospectionForUser } from '@/lib/kairos/introspection'
+import { runContradictionScanForUser } from '@/lib/kairos/contradiction'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { embeddingsEnabled } from '@/lib/kairos/embeddings'
 
 // ─────────────────────────────────────────────────────────────────────────
-// Kairos — Guided Introspection cron (propose-not-commit, L1 autonomy).
+// Kairos — Contradiction detection cron (propose-not-commit, L1 autonomy).
 //
-// Per eligible user (has a non-archived Dominion AND an active BYOK credential):
-// read recent substrate per Dominion and write a few grounded proposals as
-// staged `inbound` memories for the operator to accept (via kairos_reflect) or
-// dismiss (archive). Idempotent per UTC day. Auth + iteration mirror
-// app/api/cron/archetype-synthesis. Suggested schedule: daily ~06:30 UTC,
-// before the 07:00 Briefer so the morning brief can surface fresh proposals.
+// Per eligible user (has a non-archived Dominion, an active BYOK credential,
+// AND an embedding provider configured — candidate retrieval is vector-only):
+// scan recently-touched beliefs against their nearest semantic neighbours and
+// stage grounded contradictions as `inbound` proposals for the operator to
+// accept (supersedes the loser) or dismiss (archive). Idempotent per UTC day.
+// Auth + per-user iteration mirror app/api/cron/introspection; the
+// embeddings guard mirrors app/api/cron/memory-dedup. Suggested schedule:
+// daily ~05:00 UTC, after the 04:00 embed-backfill so same-day beliefs
+// already have a vector.
 // ─────────────────────────────────────────────────────────────────────────
 
 export const maxDuration = 300
@@ -26,6 +30,12 @@ function isAuthorized(req: NextRequest): boolean {
 
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!embeddingsEnabled()) {
+    return NextResponse.json(
+      { error: 'embeddings_disabled', note: 'Set VOYAGE_API_KEY or OPENAI_API_KEY to enable.' },
+      { status: 200 },
+    )
+  }
 
   const usersWithDominions = await db
     .selectDistinct({ userId: dominions.userId })
@@ -44,15 +54,15 @@ export async function GET(req: NextRequest) {
 
   const userResults: Array<{
     userId: string
-    results: Awaited<ReturnType<typeof runIntrospectionForUser>>
+    results: Awaited<ReturnType<typeof runContradictionScanForUser>>
     error?: string
   }> = []
 
   for (const userId of eligibleIds) {
     try {
-      userResults.push({ userId, results: await runIntrospectionForUser(userId) })
+      userResults.push({ userId, results: await runContradictionScanForUser(userId) })
     } catch (err) {
-      await writeCronFailureTrace(userId, { cronName: 'introspection', reason: 'uncaught_exception', error: err })
+      await writeCronFailureTrace(userId, { cronName: 'contradiction-scan', reason: 'uncaught_exception', error: err })
       userResults.push({ userId, results: [], error: err instanceof Error ? err.message : String(err) })
     }
   }

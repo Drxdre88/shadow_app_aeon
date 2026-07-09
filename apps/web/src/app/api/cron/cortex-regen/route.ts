@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { userAiCredentials, dominions } from '@/lib/db/schema'
 import { and, isNull, inArray } from 'drizzle-orm'
 import { runCortexRegenForUser } from '@/lib/kairos/cortex'
+import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (B2) — daily Dominion Cortex regen cron endpoint.
@@ -67,6 +68,7 @@ export async function GET(req: NextRequest) {
       const results = await runCortexRegenForUser(userId)
       userResults.push({ userId, results })
     } catch (err) {
+      await writeCronFailureTrace(userId, { cronName: 'cortex-regen', reason: 'uncaught_exception', error: err })
       userResults.push({
         userId,
         results: [],

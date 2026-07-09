@@ -26,6 +26,7 @@ import {
   DEFAULT_DEDUP_THRESHOLD,
   type DedupCandidate,
 } from '@/lib/kairos/dedup'
+import { rrfFuse } from '@/lib/kairos/rrf'
 
 // Internal extension: the public zod schema (createMemorySchema) intentionally
 // does NOT expose streamClass — public callers (MCP/REST) must not pick a
@@ -519,22 +520,6 @@ export async function vectorSearchMemories(
   })
 }
 
-// Reciprocal Rank Fusion (Cormack et al.) — fuse N ranked id lists in rank
-// space. Score-scale-agnostic: only positions matter, so FTS ts_rank and
-// vector cosine never need to be normalised against each other. k=60 is the
-// literature default. Per-list weights bias one signal without breaking RRF.
-const RRF_K = 60
-
-function rrfFuse(lists: Array<{ ids: string[]; weight: number }>, k = RRF_K): Map<string, number> {
-  const scores = new Map<string, number>()
-  for (const { ids, weight } of lists) {
-    ids.forEach((id, i) => {
-      scores.set(id, (scores.get(id) ?? 0) + weight / (k + i + 1))
-    })
-  }
-  return scores
-}
-
 type NeighbourRow = {
   id: string
   title: string
@@ -638,6 +623,112 @@ export async function getNeighbours(
   }
 
   return [...outgoing, ...incoming]
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Belief trail — read-path over the supersession lineage a memory already
+// carries (confidence / supersededAt / supersededById, stamped by
+// acceptProposal). Additive, read-only: no schema changes, no new writes.
+// Predecessors: rows whose supersededById points at a node already in the
+// trail. Successors: follow supersededById forward to the live tip. Both
+// walks are visited-set guarded and capped — supersededById is a soft
+// pointer with no FK, so a bad write could in principle cycle.
+// ─────────────────────────────────────────────────────────────────────────
+
+const BELIEF_TRAIL_MAX_NODES = 50
+
+const BELIEF_TRAIL_COLUMNS = {
+  id: memories.id,
+  title: memories.title,
+  aiTitle: memories.aiTitle,
+  confidence: memories.confidence,
+  createdAt: memories.createdAt,
+  supersededAt: memories.supersededAt,
+  supersededById: memories.supersededById,
+} as const
+
+type BeliefTrailRow = {
+  id: string
+  title: string
+  aiTitle: string | null
+  confidence: number | null
+  createdAt: Date
+  supersededAt: Date | null
+  supersededById: string | null
+}
+
+export type BeliefTrailNode = {
+  id: string
+  title: string
+  aiTitle: string | null
+  confidence: number | null
+  validFrom: Date
+  invalidFrom: Date | null
+  supersededById: string | null
+  isCurrent: boolean
+  isTarget: boolean
+}
+
+async function loadBeliefTrailRow(id: string, userId: string): Promise<BeliefTrailRow | null> {
+  const [row] = await db
+    .select(BELIEF_TRAIL_COLUMNS)
+    .from(memories)
+    .where(and(eq(memories.id, id), eq(memories.userId, userId)))
+    .limit(1)
+  return row ?? null
+}
+
+export async function getBeliefTrail(memoryId: string, userId: string): Promise<BeliefTrailNode[] | null> {
+  const target = await loadBeliefTrailRow(memoryId, userId)
+  if (!target) return null
+
+  const visited = new Set<string>([target.id])
+  const byId = new Map<string, BeliefTrailRow>([[target.id, target]])
+
+  // Successors first: follow supersededById forward to the live tip, one hop per
+  // iteration. Walking successors before predecessors guarantees the current
+  // version is always in the trail even if the node budget is exhausted — a
+  // trust read-path must never make a superseded belief look like it has no
+  // current successor.
+  let nextId = target.supersededById
+  while (nextId && !visited.has(nextId) && byId.size < BELIEF_TRAIL_MAX_NODES) {
+    const row = await loadBeliefTrailRow(nextId, userId)
+    if (!row) break
+    visited.add(row.id)
+    byId.set(row.id, row)
+    nextId = row.supersededById
+  }
+
+  // Predecessors: level-order walk of rows superseded INTO the target, filling
+  // whatever node budget the successor walk left. Branches (two predecessors
+  // merging into one successor) collapse naturally — both land in `visited`.
+  let frontier = [target.id]
+  while (frontier.length > 0 && byId.size < BELIEF_TRAIL_MAX_NODES) {
+    const rows = await db
+      .select(BELIEF_TRAIL_COLUMNS)
+      .from(memories)
+      .where(and(eq(memories.userId, userId), inArray(memories.supersededById, frontier)))
+    const fresh = rows.filter((r) => !visited.has(r.id))
+    for (const r of fresh) {
+      visited.add(r.id)
+      byId.set(r.id, r)
+    }
+    frontier = fresh.map((r) => r.id)
+  }
+
+  return Array.from(byId.values())
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id))
+    .map((row) => ({
+      id: row.id,
+      title: row.title,
+      aiTitle: row.aiTitle,
+      confidence: row.confidence,
+      validFrom: row.createdAt,
+      invalidFrom: row.supersededAt,
+      supersededById: row.supersededById,
+      isCurrent: row.supersededAt === null,
+      isTarget: row.id === target.id,
+    }))
 }
 
 export async function createMemory(userId: string, input: CreateMemoryParams) {
@@ -1023,7 +1114,7 @@ export async function archiveMemory(memoryId: string, userId: string) {
 
 export type AcceptProposalResult =
   | { ok: true; memory: typeof memories.$inferSelect }
-  | { ok: false; reason: 'not_a_proposal' }
+  | { ok: false; reason: 'not_a_proposal' | 'invalid_pair' | 'winner_not_found' | 'loser_already_superseded' }
 
 // Guided introspection — promote a staged proposal (a type='inbound' memory
 // Kairos proposed, carrying its citation links) into a committed, operator-
@@ -1032,6 +1123,13 @@ export type AcceptProposalResult =
 // kairos_reflect). Optionally supersedes the beliefs it replaces — stamped,
 // never deleted, so the trail stays honest. Returns null if the memory isn't
 // found; { ok:false } if it isn't a pending proposal.
+//
+// Kairos — Contradiction detection widens this same gate: a proposal carrying
+// `sourceMetadata.contradictionCheck === true` is a conflict NOTICE, not a
+// candidate belief — accepting it does not promote the notice into a belief
+// type. Instead it supersedes the LOSING belief (winnerId/loserId were
+// resolved at scan time, see lib/kairos/contradiction.ts) and archives the
+// notice as resolved. The introspection branch below is unchanged.
 export async function acceptProposal(
   memoryId: string,
   userId: string,
@@ -1041,8 +1139,52 @@ export async function acceptProposal(
   if (!proposal) return null
 
   const meta = (proposal.sourceMetadata ?? {}) as Record<string, unknown>
-  if (proposal.type !== 'inbound' || meta.introspection !== true) {
+  if (proposal.type !== 'inbound' || (meta.introspection !== true && meta.contradictionCheck !== true)) {
     return { ok: false, reason: 'not_a_proposal' }
+  }
+
+  if (meta.contradictionCheck === true) {
+    const winnerId = typeof meta.winnerId === 'string' ? meta.winnerId : null
+    const loserId = typeof meta.loserId === 'string' ? meta.loserId : null
+    if (!winnerId || !loserId) return { ok: false, reason: 'not_a_proposal' }
+    if (winnerId === loserId) return { ok: false, reason: 'invalid_pair' }
+
+    // supersededById is a soft pointer (no FK) — validate the winner is a real
+    // belief this user owns before we point the loser's trail at it.
+    const winner = await findMemoryById(winnerId, userId)
+    if (!winner) return { ok: false, reason: 'winner_not_found' }
+
+    const now = new Date()
+    // Notice-archive + loser-supersede must be atomic (no split-brain) and the
+    // supersede must only touch a still-LIVE loser: isNull(supersededAt) stops
+    // a stale/flipped proposal from overwriting an already-retired belief's
+    // honest trail — the exact thing this feature exists to protect.
+    return db.transaction(async (tx) => {
+      const superseded = await tx
+        .update(memories)
+        .set({ supersededAt: now, supersededById: winnerId, updatedAt: now })
+        .where(and(
+          eq(memories.userId, userId),
+          eq(memories.id, loserId),
+          isNull(memories.supersededAt),
+        ))
+        .returning({ id: memories.id })
+
+      const [updated] = await tx
+        .update(memories)
+        .set({
+          sourceMetadata: { ...meta, status: superseded.length ? 'resolved' : 'stale' },
+          archivedAt: now,
+          updatedAt: now,
+        })
+        .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
+        .returning()
+
+      if (!updated) return null
+      // Loser was already superseded (stale conflict): notice is closed out, but
+      // report the no-op honestly rather than claiming a supersede happened.
+      return superseded.length ? { ok: true, memory: updated } : { ok: false, reason: 'loser_already_superseded' }
+    })
   }
 
   const kind = typeof meta.kind === 'string' ? meta.kind : 'reflection'
@@ -1278,6 +1420,83 @@ export async function dedupMemories(
     superseded += loserIds.length
   }
   return { clusters: clusters.length, superseded, dryRun }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Kairos — Contradiction detection (governance). Candidate retrieval: given a
+// probe memory's own stored embedding, find its nearest semantic neighbours
+// among the user's other operator-authored beliefs. Feeds the contradiction
+// judge (lib/kairos/contradiction.ts) — this function only retrieves
+// candidates, it never mutates anything.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Operator-authored belief types — the only types a contradiction can be
+// judged against. Deliberately excludes machine/execution streams
+// (session_event, snapshot, agentic, trace, …): those are activity log, not
+// beliefs to reconcile.
+export const BELIEF_TYPES = ['reflection', 'fact', 'decision', 'observation', 'note', 'idea'] as const
+
+export interface SimilarBelief {
+  id: string
+  title: string
+  aiTitle: string | null
+  bodyMd: string
+  type: string
+  createdAt: Date
+  confidence: number | null
+}
+
+export async function findSimilarBeliefs(
+  memoryId: string,
+  userId: string,
+  opts: { dominionId?: string | null; limit?: number; maxDistance?: number } = {},
+): Promise<SimilarBelief[]> {
+  const [target] = await db
+    .select({ embedding: memories.embedding, dominionId: memories.dominionId })
+    .from(memories)
+    .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
+    .limit(1)
+  // No vector yet — the embed-backfill cron hasn't reached this row. Common,
+  // non-fatal: the caller just skips this probe for now.
+  if (!target?.embedding) return []
+
+  const limit = Math.min(Math.max(opts.limit ?? 5, 1), 20)
+  const maxDistance = opts.maxDistance ?? 0.35
+  const dominionId = opts.dominionId ?? target.dominionId
+  const distance = sql`${memories.embedding} <=> ${toVectorLiteral(target.embedding as number[])}::vector`
+  const dominionScope = dominionId
+    ? sql`(${memories.dominionId} = ${dominionId} OR ${memories.dominionId} IS NULL)`
+    : sql`TRUE`
+
+  // Same txn/hnsw.ef_search idiom as fetchSubstrate's vector leg — forces the
+  // HNSW index and auto-reverts the GUC on commit (no leak across the pooled
+  // Neon connection).
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SET LOCAL hnsw.ef_search = 100`)
+    return tx
+      .select({
+        id: memories.id,
+        title: memories.title,
+        aiTitle: memories.aiTitle,
+        bodyMd: memories.bodyMd,
+        type: memories.type,
+        createdAt: memories.createdAt,
+        confidence: memories.confidence,
+      })
+      .from(memories)
+      .where(and(
+        eq(memories.userId, userId),
+        dominionScope,
+        inArray(memories.type, [...BELIEF_TYPES]),
+        sql`${memories.id} != ${memoryId}`,
+        isNull(memories.archivedAt),
+        isNull(memories.supersededAt),
+        sql`${memories.embedding} IS NOT NULL`,
+        sql`${distance} < ${maxDistance}`,
+      ))
+      .orderBy(distance)
+      .limit(limit)
+  })
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -14,6 +14,7 @@ import {
   type SubstrateRow,
 } from './archetypes-prompt'
 import { todayIso } from './_prompt-utils'
+import { writeCronFailureTrace } from './cron-trace'
 
 // Re-export for callers (cron route + tests) that only import this module.
 export {
@@ -268,6 +269,7 @@ export async function runArchetypeSynthesisForDominion(
   }
 
   if (!rawText) {
+    await writeCronFailureTrace(userId, { cronName: 'archetype-synthesis', dominionId, reason: 'empty_response' })
     return { dominionId, dominionName: dom.name, status: 'error', reason: 'empty model response' }
   }
 
@@ -276,6 +278,7 @@ export async function runArchetypeSynthesisForDominion(
     const json = extractJsonBlock(rawText)
     parsed = archetypeOutSchema.parse(json)
   } catch (err) {
+    await writeCronFailureTrace(userId, { cronName: 'archetype-synthesis', dominionId, reason: 'parse_failed', error: err })
     return {
       dominionId,
       dominionName: dom.name,
@@ -285,6 +288,10 @@ export async function runArchetypeSynthesisForDominion(
   }
 
   const { inserted, archivedPrior, archetypeMemoryIds } = await persistArchetypes(userId, ctx, parsed, runId)
+
+  if (inserted === 0) {
+    await writeCronFailureTrace(userId, { cronName: 'archetype-synthesis', dominionId, reason: 'persist_failed' })
+  }
 
   return {
     dominionId,
@@ -304,6 +311,12 @@ export async function runArchetypeSynthesisForUser(userId: string): Promise<Arch
     try {
       results.push(await runArchetypeSynthesisForDominion(userId, dom.id))
     } catch (err) {
+      await writeCronFailureTrace(userId, {
+        cronName: 'archetype-synthesis',
+        dominionId: dom.id,
+        reason: 'uncaught_exception',
+        error: err,
+      })
       results.push({
         dominionId: dom.id,
         dominionName: dom.name,

@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
+import { withRetry } from '@/lib/ai/retry'
+import { writeCronFailureTrace } from './cron-trace'
 import {
   buildAetherPrompt,
   aetherOutSchema,
@@ -270,12 +272,10 @@ export async function runAetherForUser(userId: string): Promise<{ generated: boo
   const prompt = buildAetherPrompt(ctx)
 
   let rawText: string
+  let provider: Awaited<ReturnType<typeof getProviderForTask>>['provider']
   try {
-    const { provider } = await getProviderForTask(userId, { taskType: 'aether' })
-    const response = await provider.ask({
-      prompt,
-      maxTokens: 4000,
-    })
+    ;({ provider } = await getProviderForTask(userId, { taskType: 'aether' }))
+    const response = await withRetry(() => provider.ask({ prompt, maxTokens: 4000 }))
     rawText = response.text.trim()
   } catch (err) {
     if (err instanceof AiCredentialMissingError || err instanceof AiCredentialDecryptError) {
@@ -285,30 +285,68 @@ export async function runAetherForUser(userId: string): Promise<{ generated: boo
   }
 
   if (!rawText) {
+    await writeCronFailureTrace(userId, { cronName: 'aether-regen', reason: 'empty_response' })
     return { generated: false, reason: 'empty_response' }
+  }
+
+  const parseAndGround = (text: string): AetherPayload => {
+    const raw = aetherOutSchema.parse(extractJsonBlock(text))
+    // Anti-drift leash: strip any thought the schema let through with zero
+    // sourceMemoryIds (schema requires min 1, but be defensive).
+    return {
+      ...raw,
+      thoughts: raw.thoughts.filter((t) => t.sourceMemoryIds.length > 0),
+    } as AetherPayload
   }
 
   let parsed: AetherPayload
   try {
-    const raw = aetherOutSchema.parse(extractJsonBlock(rawText))
-    // Anti-drift leash: strip any thought the schema let through with zero
-    // sourceMemoryIds (schema requires min 1, but be defensive).
-    parsed = {
-      ...raw,
-      thoughts: raw.thoughts.filter((t) => t.sourceMemoryIds.length > 0),
-    } as AetherPayload
-  } catch {
-    return { generated: false, reason: 'parse_failed' }
+    parsed = parseAndGround(rawText)
+  } catch (firstErr) {
+    // ONE JSON-repair round-trip: re-prompt the same provider with the raw
+    // output + the validation error and ask it to fix the JSON. If the
+    // repair also fails, give up rather than looping indefinitely.
+    try {
+      const repairResponse = await provider.ask({ prompt: buildRepairPrompt(rawText, firstErr), maxTokens: 4000 })
+      parsed = parseAndGround(repairResponse.text.trim())
+    } catch (repairErr) {
+      // The repair round-trip also failed. Preserve firstErr — the original
+      // schema/parse failure is the real diagnostic; repairErr may be a
+      // transient transport error that would otherwise mask why Aether failed.
+      const firstMessage = firstErr instanceof Error ? firstErr.message : String(firstErr)
+      const repairMessage = repairErr instanceof Error ? repairErr.message : String(repairErr)
+      await writeCronFailureTrace(userId, { cronName: 'aether-regen', reason: 'parse_failed', error: firstErr })
+      return { generated: false, reason: `parse_failed: ${firstMessage} (repair also failed: ${repairMessage})` }
+    }
   }
 
   if (parsed.thoughts.length === 0) {
+    await writeCronFailureTrace(userId, { cronName: 'aether-regen', reason: 'all_thoughts_ungrounded' })
     return { generated: false, reason: 'all_thoughts_ungrounded' }
   }
 
   const runId = `aether:${userId}:${today}`
   const { aetherMemoryId } = await persistAether(userId, parsed, runId, today)
 
+  if (!aetherMemoryId) {
+    await writeCronFailureTrace(userId, { cronName: 'aether-regen', reason: 'persist_failed' })
+  }
+
   return aetherMemoryId
     ? { generated: true, reason: 'ok' }
     : { generated: false, reason: 'persist_failed' }
+}
+
+function buildRepairPrompt(rawText: string, err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err)
+  return [
+    'The previous response failed JSON validation. Fix it and return ONLY the',
+    'corrected JSON in a single ```json fenced block — no prose before or after.',
+    '',
+    '## Validation error',
+    message,
+    '',
+    '## Previous response',
+    rawText,
+  ].join('\n')
 }

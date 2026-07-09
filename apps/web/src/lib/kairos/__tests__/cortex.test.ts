@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   buildCortexPrompt,
   cortexOutSchema,
@@ -7,6 +7,50 @@ import {
   type CortexContext,
   type CortexOutput,
 } from '../cortex-prompt'
+
+// Pure-function tests only below (see archetypes.test.ts for rationale).
+// Exception (C1): one targeted describe block at the bottom mocks just
+// enough of the data layer to assert the failure-trace wiring fires.
+
+const selectQueue: unknown[][] = []
+
+vi.mock('@/lib/db', () => {
+  function makeChain(rows: unknown[]) {
+    const chain: Record<string, unknown> = {}
+    const pass = () => chain
+    chain.from = pass
+    chain.where = pass
+    chain.orderBy = pass
+    chain.limit = pass
+    chain.then = (resolve: (v: unknown[]) => unknown) => resolve(rows)
+    return chain
+  }
+  return {
+    db: {
+      select: vi.fn(() => makeChain(selectQueue.shift() ?? [])),
+      transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          update: () => ({ set: () => ({ where: () => ({ returning: () => Promise.resolve([]) }) }) }),
+          insert: () => ({ values: () => ({ returning: () => Promise.resolve([]) }) }),
+        }
+        return fn(tx)
+      }),
+    },
+  }
+})
+
+vi.mock('@/lib/data/dominions', () => ({
+  findDominionsByUser: vi.fn(),
+  inspectDominion: vi.fn(),
+}))
+
+vi.mock('@/lib/data/memories', () => ({
+  captureMemory: vi.fn(),
+}))
+
+vi.mock('@/lib/ai/route-task', () => ({
+  getProviderForTask: vi.fn(),
+}))
 
 function makeCtx(overrides: Partial<CortexContext> = {}): CortexContext {
   return {
@@ -250,5 +294,51 @@ describe('renderCortexMarkdown', () => {
     )
     expect(md).toContain('## Recent shifts')
     expect(md).toContain('Briefer became board-aware')
+  })
+})
+
+// Heavier DB-mocked tests than the pure-function suite above; give them
+// headroom so they don't flake on the default 5s timeout under full-suite load.
+describe('runCortexRegenForDominion — failure trace (C1)', { timeout: 20000 }, () => {
+  const USER_ID = 'user-1'
+  const DOMINION_ID = '11111111-1111-4111-8111-111111111111'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    selectQueue.length = 0
+  })
+
+  it('writes a failure trace on empty model response', async () => {
+    const { inspectDominion } = await import('@/lib/data/dominions')
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+
+    selectQueue.push([{ id: DOMINION_ID, name: 'AEON', archivedAt: null }]) // dominion lookup
+    selectQueue.push([{ n: 0 }]) // alreadyRanToday
+    vi.mocked(inspectDominion).mockResolvedValueOnce({
+      name: 'AEON',
+      // vision (not reflections/boardTasks) satisfies hasSignal without
+      // tripping the "archetypes not synthesised today" race-defense skip,
+      // which fires whenever there's activity signal but zero archetypes.
+      vision: 'Fluid board/project app.',
+      missionLong: null,
+      objectives: [],
+      boardTasks: [],
+    } as never)
+    selectQueue.push([]) // reflections
+    selectQueue.push([]) // archetypes
+    selectQueue.push([]) // prior
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask: vi.fn().mockResolvedValue({ text: '' }) } } as never)
+
+    const { runCortexRegenForDominion } = await import('../cortex')
+    const result = await runCortexRegenForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.status).toBe('error')
+    expect(result.reason).toBe('empty model response')
+    const traceCalls = vi.mocked(captureMemory).mock.calls.filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
+    expect(traceCalls).toHaveLength(1)
+    const sm = (traceCalls[0][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata
+    expect(sm.cronName).toBe('cortex-regen')
+    expect(sm.reason).toBe('empty_response')
   })
 })

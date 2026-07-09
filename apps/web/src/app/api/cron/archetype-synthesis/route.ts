@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { userAiCredentials, dominions } from '@/lib/db/schema'
 import { and, isNull, inArray } from 'drizzle-orm'
 import { runArchetypeSynthesisForUser } from '@/lib/kairos/archetypes'
+import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (B1) — daily Archetype Synthesis cron endpoint.
@@ -60,6 +61,7 @@ export async function GET(req: NextRequest) {
       const results = await runArchetypeSynthesisForUser(userId)
       userResults.push({ userId, results })
     } catch (err) {
+      await writeCronFailureTrace(userId, { cronName: 'archetype-synthesis', reason: 'uncaught_exception', error: err })
       userResults.push({
         userId,
         results: [],

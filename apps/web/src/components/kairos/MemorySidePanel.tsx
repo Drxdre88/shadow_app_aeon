@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Pin, PinOff, Trash2, ExternalLink, ChevronDown, ChevronRight, ArrowRight, ArrowLeft as ArrowLeftIcon, Link as LinkIcon } from 'lucide-react'
-import { getMemory, updateMemory, deleteMemoryById, getMemoryNeighbours } from '@/lib/actions/memories'
+import { X, Pin, PinOff, Trash2, ExternalLink, ChevronDown, ChevronRight, ArrowRight, ArrowLeft as ArrowLeftIcon, Link as LinkIcon, History as HistoryIcon } from 'lucide-react'
+import { getMemory, updateMemory, deleteMemoryById, getMemoryNeighbours, getMemoryBeliefTrail } from '@/lib/actions/memories'
 import { KairosMarkdown } from '@/components/ui/KairosMarkdown'
 
 type MemoryRow = NonNullable<Awaited<ReturnType<typeof getMemory>>>
 type NeighbourBundle = Awaited<ReturnType<typeof getMemoryNeighbours>>
 type Neighbour = NeighbourBundle['neighbours'][number]
+type BeliefTrail = Awaited<ReturnType<typeof getMemoryBeliefTrail>>
 
 type Props = {
   memoryId: string | null
@@ -22,12 +23,14 @@ export function MemorySidePanel({ memoryId, onClose, onChanged }: Props) {
   const [busy, setBusy] = useState(false)
   const [bodyOpen, setBodyOpen] = useState(false)
   const [neighbours, setNeighbours] = useState<NeighbourBundle['neighbours'] | null>(null)
+  const [beliefTrail, setBeliefTrail] = useState<BeliefTrail | null>(null)
 
   useEffect(() => {
     if (!memoryId) return
     setLoading(true)
     setBodyOpen(false)
     setNeighbours(null)
+    setBeliefTrail(null)
     getMemory(memoryId)
       .then((m) => setData(m))
       .finally(() => setLoading(false))
@@ -35,6 +38,10 @@ export function MemorySidePanel({ memoryId, onClose, onChanged }: Props) {
     getMemoryNeighbours(memoryId, { hops: 1, includeReverse: true, limit: 12 })
       .then((res) => setNeighbours(res.neighbours))
       .catch(() => setNeighbours(null))
+    // Belief trail loads in the background — failure is non-fatal.
+    getMemoryBeliefTrail(memoryId)
+      .then((trail) => setBeliefTrail(trail))
+      .catch(() => setBeliefTrail(null))
   }, [memoryId])
 
   const togglePin = async () => {
@@ -107,14 +114,20 @@ export function MemorySidePanel({ memoryId, onClose, onChanged }: Props) {
                     setLoading(true)
                     setBodyOpen(false)
                     setNeighbours(null)
+                    setBeliefTrail(null)
                     getMemory(id)
                       .then((m) => setData(m))
                       .finally(() => setLoading(false))
                     getMemoryNeighbours(id, { hops: 1, includeReverse: true, limit: 12 })
                       .then((res) => setNeighbours(res.neighbours))
                       .catch(() => setNeighbours(null))
+                    getMemoryBeliefTrail(id)
+                      .then((trail) => setBeliefTrail(trail))
+                      .catch(() => setBeliefTrail(null))
                   }}
                 />
+
+                <BeliefTrailPanel trail={beliefTrail} />
 
                 <div className="text-[10px] text-white/30 pt-2 border-t border-white/[0.04]">
                   {new Date(data.createdAt).toLocaleString()}
@@ -299,6 +312,42 @@ function NeighboursPanel({
                 </div>
               )}
             </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function BeliefTrailPanel({ trail }: { trail: BeliefTrail | null }) {
+  if (!trail || trail.length <= 1) return null
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[10px] uppercase tracking-[0.22em] text-white/40 inline-flex items-center gap-1.5">
+        <HistoryIcon className="w-3 h-3" /> History <span className="text-white/25 normal-case tracking-normal">· {trail.length}</span>
+      </span>
+      <ul className="flex flex-col gap-1">
+        {trail.map((node) => (
+          <li
+            key={node.id}
+            className="px-2.5 py-1.5 rounded-lg border border-white/[0.05] bg-white/[0.015]"
+          >
+            <div className="flex items-center gap-1.5 text-[10px] text-white/40 mb-0.5">
+              {node.isTarget && <span className="uppercase tracking-[0.12em] text-white/50">viewing</span>}
+              {!node.isCurrent && node.invalidFrom && (
+                <span className="ml-auto normal-case tracking-normal">
+                  superseded {new Date(node.invalidFrom).toLocaleDateString()}
+                </span>
+              )}
+            </div>
+            <div
+              className={`text-[11.5px] leading-snug line-clamp-2 ${
+                node.isCurrent ? 'text-white/85' : 'text-white/45 line-through decoration-white/15'
+              }`}
+            >
+              {node.aiTitle ?? node.title}
+            </div>
           </li>
         ))}
       </ul>
