@@ -10,7 +10,7 @@
 // from ./retrieve directly.
 // ─────────────────────────────────────────────────────────────────────────
 
-import { retrieveContext } from './retrieve'
+import { retrieveContext, retrieveGlobalContext } from './retrieve'
 
 export interface RetrievedMemory {
   id: string
@@ -32,6 +32,18 @@ export async function retrieveForChat(
   userQuery: string,
 ): Promise<ChatRetrieval> {
   const r = await retrieveContext({ userId, dominionId, query: userQuery })
+  return { cortex: r.cortex, archetypes: r.archetypes, substrate: r.substrate }
+}
+
+// JARVIS-level chat retrieval — whole-brain, no Dominion scope. Kairos recalls
+// across every Dominion (Aether as the self-model), so the operator talks to
+// him without pinpointing which front they mean. Same three buckets the chat
+// caller persists, so the prompt / citation plumbing is unchanged downstream.
+export async function retrieveForChatGlobal(
+  userId: string,
+  userQuery: string,
+): Promise<ChatRetrieval> {
+  const r = await retrieveGlobalContext({ userId, query: userQuery })
   return { cortex: r.cortex, archetypes: r.archetypes, substrate: r.substrate }
 }
 

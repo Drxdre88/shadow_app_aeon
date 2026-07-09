@@ -56,6 +56,19 @@ function inDominionScope(dominionId: string) {
   return sql`(${memories.dominionId} = ${dominionId} OR ${memories.tags} @> ${tagMatch}::jsonb)`
 }
 
+// JARVIS-level global retrieval. Passing dominionId=null collapses the Dominion
+// predicate to TRUE so a leg spans the WHOLE brain — the operator talks to
+// Kairos without pinpointing a Dominion and relevance (+ confidence decay)
+// surfaces the right memories wherever they live. domScope covers the substrate
+// leg (FK OR soft dominion: tag); domEq covers the home-only legs (cortex-class
+// rows are never cross-tagged, so an FK match is enough).
+function domScope(dominionId: string | null) {
+  return dominionId ? inDominionScope(dominionId) : sql`TRUE`
+}
+function domEq(dominionId: string | null) {
+  return dominionId ? eq(memories.dominionId, dominionId) : sql`TRUE`
+}
+
 export interface RetrievalArgs {
   userId: string
   dominionId: string
@@ -77,6 +90,28 @@ export async function retrieveContext(args: RetrievalArgs): Promise<RetrievalRes
   ])
 
   return { bundle, cortex, archetypes, substrate, traces }
+}
+
+// JARVIS-level entry point. Whole-brain retrieval with NO Dominion scope: the
+// Aether self-model stands in for cortex, and substrate / archetypes / traces
+// span every Dominion. There is no single-Dominion bundle to fetch, so bundle
+// is null. Confidence decay + RRF fusion in fetchSubstrate are unchanged — the
+// only difference from retrieveContext is the dropped scope, so a sure, recent
+// belief still outranks a stale one no matter which Dominion it belongs to.
+export async function retrieveGlobalContext(
+  args: { userId: string; query?: string },
+): Promise<RetrievalResult> {
+  const { userId, query } = args
+  const trimmedQuery = query?.trim() ?? ''
+
+  const [cortex, archetypes, substrate, traces] = await Promise.all([
+    fetchAetherDoc(userId),
+    fetchArchetypes(userId, null),
+    fetchSubstrate(userId, null, trimmedQuery),
+    fetchTraces(userId, null),
+  ])
+
+  return { bundle: null, cortex, archetypes, substrate, traces }
 }
 
 async function fetchBundle(
@@ -109,7 +144,7 @@ async function fetchCortex(userId: string, dominionId: string): Promise<Retrieve
   return row ? rowToMemory(row) : null
 }
 
-async function fetchArchetypes(userId: string, dominionId: string): Promise<RetrievedMemory[]> {
+async function fetchArchetypes(userId: string, dominionId: string | null): Promise<RetrievedMemory[]> {
   const rows = await db
     .select({
       id: memories.id,
@@ -121,7 +156,7 @@ async function fetchArchetypes(userId: string, dominionId: string): Promise<Retr
     .from(memories)
     .where(and(
       eq(memories.userId, userId),
-      eq(memories.dominionId, dominionId),
+      domEq(dominionId),
       eq(memories.streamClass, 'archetype'),
       isNull(memories.archivedAt),
     ))
@@ -129,6 +164,30 @@ async function fetchArchetypes(userId: string, dominionId: string): Promise<Retr
     .limit(ARCHETYPES_LIMIT)
 
   return rows.map(rowToMemory)
+}
+
+// The global self-model — Kairos's single Aether doc across all Dominions —
+// stands in for a per-Dominion cortex when the operator is talking to Kairos
+// globally. One live row (the synthesiser archives its prior on each run).
+async function fetchAetherDoc(userId: string): Promise<RetrievedMemory | null> {
+  const [row] = await db
+    .select({
+      id: memories.id,
+      title: memories.title,
+      bodyMd: memories.bodyMd,
+      streamClass: memories.streamClass,
+      createdAt: memories.createdAt,
+    })
+    .from(memories)
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.streamClass, 'aether'),
+      isNull(memories.archivedAt),
+    ))
+    .orderBy(desc(memories.createdAt))
+    .limit(1)
+
+  return row ? rowToMemory(row) : null
 }
 
 // Row shape shared by the FTS and vector legs so either query can rebuild a
@@ -146,7 +205,7 @@ type SubstrateRow = {
 
 async function fetchSubstrate(
   userId: string,
-  dominionId: string,
+  dominionId: string | null,
   query: string,
 ): Promise<RetrievedMemory[]> {
   if (query.length < MIN_QUERY_CHARS) return []
@@ -175,7 +234,7 @@ async function fetchSubstrate(
     .from(memories)
     .where(and(
       eq(memories.userId, userId),
-      inDominionScope(dominionId),
+      domScope(dominionId),
       inArray(memories.streamClass, [...SUBSTRATE_STREAMS]),
       isNull(memories.archivedAt),
       sql`"memories"."fts" @@ ${tsQuery}`,
@@ -220,7 +279,7 @@ async function fetchSubstrate(
         .from(memories)
         .where(and(
           eq(memories.userId, userId),
-          inDominionScope(dominionId),
+          domScope(dominionId),
           inArray(memories.streamClass, [...SUBSTRATE_STREAMS]),
           isNull(memories.archivedAt),
           sql`${memories.embedding} IS NOT NULL`,
@@ -275,7 +334,7 @@ async function fetchSubstrate(
 // Small post-fusion nudge keeping reflections ahead of ties in the same band.
 const REFLECTION_BONUS = 1 / (RRF_K + 1)
 
-async function fetchTraces(userId: string, dominionId: string): Promise<RetrievedMemory[]> {
+async function fetchTraces(userId: string, dominionId: string | null): Promise<RetrievedMemory[]> {
   const rows = await db
     .select({
       id: memories.id,
@@ -287,7 +346,7 @@ async function fetchTraces(userId: string, dominionId: string): Promise<Retrieve
     .from(memories)
     .where(and(
       eq(memories.userId, userId),
-      eq(memories.dominionId, dominionId),
+      domEq(dominionId),
       eq(memories.streamClass, 'trace'),
       isNull(memories.archivedAt),
     ))
