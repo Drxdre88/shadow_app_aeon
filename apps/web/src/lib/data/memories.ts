@@ -397,6 +397,13 @@ export async function getGraphForUser(
   return { nodes, edges }
 }
 
+// Bi-temporal valid-time gate. A belief participates in retrieval only while it
+// is valid as-of now: invalid_at unset, or still in the future. Composes with
+// the supersededAt gate — accepting a supersession stamps invalid_at, but a
+// belief can also expire on its own without a successor. Reused across every
+// retrieval leg so the corpus is filtered identically.
+const validAsOfNow = sql`(${memories.invalidAt} IS NULL OR ${memories.invalidAt} > NOW())`
+
 export async function searchMemoriesFts(userId: string, input: SearchMemoriesInput) {
   // Kairos Phase 3B — `query` is optional when scoped by `dominionId`. When
   // no query is given, drop the FTS match condition and rank/snippet
@@ -415,6 +422,7 @@ export async function searchMemoriesFts(userId: string, input: SearchMemoriesInp
     eq(memories.userId, userId),
     sql`${memories.archivedAt} IS NULL`,
     isNull(memories.supersededAt),
+    validAsOfNow,
   ]
   if (hasQuery) conditions.push(sql`"memories"."fts" @@ ${tsQuery}`)
 
@@ -498,6 +506,7 @@ export async function vectorSearchMemories(
     eq(memories.userId, userId),
     sql`${memories.archivedAt} IS NULL`,
     isNull(memories.supersededAt),
+    validAsOfNow,
     sql`${memories.embedding} IS NOT NULL`,
   ]
   if (input.type) {
@@ -643,6 +652,8 @@ const BELIEF_TRAIL_COLUMNS = {
   aiTitle: memories.aiTitle,
   confidence: memories.confidence,
   createdAt: memories.createdAt,
+  validAt: memories.validAt,
+  invalidAt: memories.invalidAt,
   supersededAt: memories.supersededAt,
   supersededById: memories.supersededById,
 } as const
@@ -653,6 +664,8 @@ type BeliefTrailRow = {
   aiTitle: string | null
   confidence: number | null
   createdAt: Date
+  validAt: Date | null
+  invalidAt: Date | null
   supersededAt: Date | null
   supersededById: string | null
 }
@@ -723,8 +736,11 @@ export async function getBeliefTrail(memoryId: string, userId: string): Promise<
       title: row.title,
       aiTitle: row.aiTitle,
       confidence: row.confidence,
-      validFrom: row.createdAt,
-      invalidFrom: row.supersededAt,
+      // Prefer real valid-time; fall back to transaction time for rows written
+      // before migration 0025 backfilled valid_at (invalidFrom stays null unless
+      // an expiry/supersession actually closed the window).
+      validFrom: row.validAt ?? row.createdAt,
+      invalidFrom: row.invalidAt ?? row.supersededAt,
       supersededById: row.supersededById,
       isCurrent: row.supersededAt === null,
       isTarget: row.id === target.id,
@@ -1159,10 +1175,16 @@ export async function acceptProposal(
     // supersede must only touch a still-LIVE loser: isNull(supersededAt) stops
     // a stale/flipped proposal from overwriting an already-retired belief's
     // honest trail — the exact thing this feature exists to protect.
+    // Valid-time: close the loser's window at acceptance time. We deliberately
+    // do NOT backdate to winner.validAt — the winner is chosen by the judge, not
+    // by recency, so it's frequently *older* than the loser; backdating would
+    // invert the window (invalid before valid) and could future-date invalid_at
+    // past NOW(), letting a retired belief slip through the validAsOfNow gate.
+    // `now` is a truthful lower bound and keeps invalid_at <= NOW() invariant.
     return db.transaction(async (tx) => {
       const superseded = await tx
         .update(memories)
-        .set({ supersededAt: now, supersededById: winnerId, updatedAt: now })
+        .set({ supersededAt: now, supersededById: winnerId, invalidAt: now, updatedAt: now })
         .where(and(
           eq(memories.userId, userId),
           eq(memories.id, loserId),
@@ -1214,12 +1236,14 @@ export async function acceptProposal(
     .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
     .returning()
 
-  // Stamp the superseded beliefs (user-scoped). Soft pointer + timestamp; the
-  // rows stay queryable for time-travel, they just stop being "current".
+  // Stamp the superseded beliefs (user-scoped). Soft pointer + timestamps; the
+  // rows stay queryable for time-travel, they just stop being "current". The
+  // promoted memory is the new truth as of acceptance, so the losers' valid
+  // window closes at `now`.
   if (supersedeIds.length > 0) {
     await db
       .update(memories)
-      .set({ supersededAt: now, supersededById: memoryId, updatedAt: now })
+      .set({ supersededAt: now, supersededById: memoryId, invalidAt: now, updatedAt: now })
       .where(and(eq(memories.userId, userId), inArray(memories.id, supersedeIds)))
   }
 
@@ -1412,9 +1436,10 @@ export async function dedupMemories(
     const { canonicalId, loserIds } = pickCanonical(cands)
     if (loserIds.length === 0) continue
     if (!dryRun) {
+      const at = new Date()
       await db
         .update(memories)
-        .set({ supersededAt: new Date(), supersededById: canonicalId })
+        .set({ supersededAt: at, supersededById: canonicalId, invalidAt: at })
         .where(and(inArray(memories.id, loserIds), isNull(memories.supersededAt)))
     }
     superseded += loserIds.length
@@ -1491,6 +1516,7 @@ export async function findSimilarBeliefs(
         sql`${memories.id} != ${memoryId}`,
         isNull(memories.archivedAt),
         isNull(memories.supersededAt),
+        validAsOfNow,
         sql`${memories.embedding} IS NOT NULL`,
         sql`${distance} < ${maxDistance}`,
       ))

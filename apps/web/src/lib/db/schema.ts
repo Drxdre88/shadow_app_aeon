@@ -464,6 +464,16 @@ export const memories = pgTable('memories', {
   // supersededById is a soft pointer (no FK) so a hard delete never blocks.
   supersededAt: timestamp('superseded_at', { mode: 'date' }),
   supersededById: uuid('superseded_by_id'),
+  // Bi-temporal valid-time (migration 0025_memory_valid_time.sql). supersededAt
+  // above is TRANSACTION time ("when we learned this belief was replaced");
+  // these are VALID time ("when the claim was true in the world"), independent
+  // of learn-order — so a late memory about a past truth can't wrongly override
+  // the current belief, and a fact can expire without needing a successor.
+  // validAt defaults to write time; invalidAt is stamped when a supersession/
+  // contradiction is accepted (loser.invalidAt = winner.validAt). Retrieval
+  // gates on (invalidAt IS NULL OR invalidAt > now()) so stale facts drop out.
+  validAt: timestamp('valid_at', { mode: 'date' }).defaultNow().notNull(),
+  invalidAt: timestamp('invalid_at', { mode: 'date' }),
   type: varchar('type', { length: 30 }).default('note').notNull(),
   // Kairos memory stream classifier. Allowed values are canonical in
   // apps/web/src/lib/kairos/streamClass.ts (STREAM_CLASSES const + StreamClass
