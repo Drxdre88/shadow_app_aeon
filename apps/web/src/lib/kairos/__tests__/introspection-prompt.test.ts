@@ -163,7 +163,9 @@ describe('extractJsonBlock', () => {
   })
 })
 
-describe('runIntrospectionForDominion — failure trace (C1)', () => {
+// Heavier DB-mocked tests than the pure-function suite above; give them
+// headroom so they don't flake on the default 5s timeout under full-suite load.
+describe('runIntrospectionForDominion — failure trace (C1)', { timeout: 20000 }, () => {
   const USER_ID = 'user-1'
   const DOMINION_ID = '33333333-3333-4333-8333-333333333333'
 

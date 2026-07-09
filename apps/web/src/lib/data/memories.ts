@@ -26,6 +26,7 @@ import {
   DEFAULT_DEDUP_THRESHOLD,
   type DedupCandidate,
 } from '@/lib/kairos/dedup'
+import { rrfFuse } from '@/lib/kairos/rrf'
 
 // Internal extension: the public zod schema (createMemorySchema) intentionally
 // does NOT expose streamClass — public callers (MCP/REST) must not pick a
@@ -517,22 +518,6 @@ export async function vectorSearchMemories(
       .orderBy(distance)
       .limit(input.limit)
   })
-}
-
-// Reciprocal Rank Fusion (Cormack et al.) — fuse N ranked id lists in rank
-// space. Score-scale-agnostic: only positions matter, so FTS ts_rank and
-// vector cosine never need to be normalised against each other. k=60 is the
-// literature default. Per-list weights bias one signal without breaking RRF.
-const RRF_K = 60
-
-function rrfFuse(lists: Array<{ ids: string[]; weight: number }>, k = RRF_K): Map<string, number> {
-  const scores = new Map<string, number>()
-  for (const { ids, weight } of lists) {
-    ids.forEach((id, i) => {
-      scores.set(id, (scores.get(id) ?? 0) + weight / (k + i + 1))
-    })
-  }
-  return scores
 }
 
 type NeighbourRow = {

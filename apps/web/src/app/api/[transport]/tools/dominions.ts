@@ -121,25 +121,6 @@ export const registerDominionTools: RegisterFn = (server) => {
   )
 
   server.tool(
-    'set_dominion_vision',
-    'Convenience wrapper to set vision and/or missionLong on a Dominion in one call. Both fields are optional but at least one must be provided.',
-    {
-      dominionId:  z.string().uuid(),
-      vision:      z.string().max(4000).nullable().optional(),
-      missionLong: z.string().max(8000).nullable().optional(),
-    },
-    async ({ dominionId, vision, missionLong }, extra) => {
-      const uid = getUserId(extra)
-      if (vision === undefined && missionLong === undefined) {
-        return fail('Provide at least one of vision or missionLong')
-      }
-      const row = await _updateDominion(dominionId, uid, { vision, missionLong })
-      if (!row) return notFound('Dominion')
-      return ok({ id: row.id, vision: row.vision, missionLong: row.missionLong })
-    }
-  )
-
-  server.tool(
     'list_objectives',
     'List objectives for a Dominion, ordered by sortOrder. By default returns only non-archived ones.',
     {

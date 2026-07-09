@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import { listTraceHistory as _listTraceHistory } from '@/lib/data/recipes'
-import { listRecipes } from '@/lib/kairos/recipes/registry'
 import { runRecipe, RecipeNotFoundError } from '@/lib/kairos/dispatch'
 import type { RegisterFn } from './types'
 import { getUserId, ok, fail } from './types'
@@ -28,16 +27,6 @@ export const registerRecipeTools: RegisterFn = (server) => {
       if (!parsed.success) return fail(parsed.error.issues[0].message)
       const rows = await _listTraceHistory(uid, parsed.data)
       return ok({ count: rows.length, traces: rows })
-    },
-  )
-
-  server.tool(
-    'list_recipes',
-    'List every recipe registered in the Kairos catalogue (descriptor only: name, description, reads, writes). Use before run_recipe to discover what is available.',
-    {},
-    async (_args, extra) => {
-      getUserId(extra)
-      return ok({ recipes: listRecipes() })
     },
   )
 

@@ -257,7 +257,9 @@ describe('neutraliseFences (via prompt builder)', () => {
   })
 })
 
-describe('runArchetypeSynthesisForDominion — failure trace (C1)', () => {
+// Heavier DB-mocked tests than the pure-function suite above; give them
+// headroom so they don't flake on the default 5s timeout under full-suite load.
+describe('runArchetypeSynthesisForDominion — failure trace (C1)', { timeout: 20000 }, () => {
   const USER_ID = 'user-1'
   const DOMINION_ID = '11111111-1111-4111-8111-111111111111'
 

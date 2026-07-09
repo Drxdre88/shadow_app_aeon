@@ -98,7 +98,9 @@ beforeEach(() => {
   txInsertedRows = []
 })
 
-describe('runAetherForUser — failure traces (C1) + retry/repair (C2)', () => {
+// Heavier DB-mocked tests than the pure-function suites; give them headroom so
+// they don't flake on the default 5s timeout under full-suite load.
+describe('runAetherForUser — failure traces (C1) + retry/repair (C2)', { timeout: 20000 }, () => {
   it('writes a failure trace on empty model response', async () => {
     queueSignalInputs()
     const ask = vi.fn().mockResolvedValue({ text: '   ' })
