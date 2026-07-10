@@ -15,7 +15,7 @@ vi.mock('@/lib/data/kairos-chat', () => ({
 }))
 
 vi.mock('@/lib/kairos/chat-retrieval', () => ({
-  retrieveForChat: vi.fn(),
+  retrieveForChatGlobal: vi.fn(),
   extractCitationIds: (text: string) => {
     const ids: string[] = []
     const seen = new Set<string>()
@@ -62,7 +62,7 @@ import {
   appendChatMessage as _appendChatMessage,
   updateChatMessageContent as _updateChatMessageContent,
 } from '@/lib/data/kairos-chat'
-import { retrieveForChat } from '@/lib/kairos/chat-retrieval'
+import { retrieveForChatGlobal } from '@/lib/kairos/chat-retrieval'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError } from '@/lib/ai/router'
 import { sendKairosMessage } from '../kairos-chat'
@@ -114,7 +114,7 @@ function fakeProvider(replyText: string) {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(safeAuth).mockResolvedValue({ ok: true, userId: USER_ID })
-  vi.mocked(retrieveForChat).mockResolvedValue({
+  vi.mocked(retrieveForChatGlobal).mockResolvedValue({
     cortex: { id: KNOWN_A, title: 'cortex', body: '', streamClass: 'cortex', createdAt: new Date() },
     archetypes: [{ id: KNOWN_B, title: 'arch', body: '', streamClass: 'archetype', createdAt: new Date() }],
     substrate: [],
@@ -161,7 +161,7 @@ describe('sendKairosMessage — hallucination guard', () => {
   })
 
   it('falls back to bare chat when retrieval throws', async () => {
-    vi.mocked(retrieveForChat).mockRejectedValueOnce(new Error('FTS down'))
+    vi.mocked(retrieveForChatGlobal).mockRejectedValueOnce(new Error('FTS down'))
     vi.mocked(_getChatThread)
       .mockResolvedValueOnce(fakeThread([]))
       .mockResolvedValueOnce(fakeThread([{ seq: 1, role: 'user', content: 'hello' }]))

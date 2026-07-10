@@ -29,13 +29,14 @@ vi.mock('@/lib/data/dominions', () => ({
   inspectDominion: vi.fn(),
 }))
 
-import { retrieveContext } from '../retrieve'
+import { retrieveContext, retrieveGlobalContext } from '../retrieve'
 import { inspectDominion } from '@/lib/data/dominions'
 
 const USER_ID = 'user-1'
 const DOMINION_ID = 'b0000000-0000-4000-8000-000000000002'
 
 const CORTEX_ID = '11111111-1111-4111-8111-111111111111'
+const AETHER_ID = '55555555-5555-4555-8555-555555555555'
 const ARCHETYPE_ID = '22222222-2222-4222-8222-222222222222'
 const SUBSTRATE_ID = '33333333-3333-4333-8333-333333333333'
 const TRACE_ID = '44444444-4444-4444-8444-444444444444'
@@ -153,5 +154,52 @@ describe('retrieveContext', () => {
     const r = await retrieveContext({ userId: USER_ID, dominionId: DOMINION_ID })
 
     expect(r.cortex?.streamClass).toBe('reflection')
+  })
+})
+
+describe('retrieveGlobalContext (JARVIS-level, no Dominion scope)', () => {
+  it('uses the Aether doc as cortex and never touches a single-Dominion bundle', async () => {
+    // Fires: aether(cortex), archetypes, substrate (query present), traces.
+    selectQueue.push([row(AETHER_ID, 'aether', 'global self-model')])
+    selectQueue.push([row(ARCHETYPE_ID, 'archetype', 'arch')])
+    selectQueue.push([row(SUBSTRATE_ID, 'reflection', 'cross-front reflection')])
+    selectQueue.push([row(TRACE_ID, 'trace', 'trace')])
+
+    const r = await retrieveGlobalContext({ userId: USER_ID, query: 'what did we decide about mobile' })
+
+    expect(r.bundle).toBeNull()
+    expect(r.cortex?.id).toBe(AETHER_ID)
+    expect(r.cortex?.streamClass).toBe('aether')
+    expect(r.substrate).toHaveLength(1)
+    expect(r.substrate[0].id).toBe(SUBSTRATE_ID)
+    expect(r.archetypes[0].id).toBe(ARCHETYPE_ID)
+    expect(r.traces[0].id).toBe(TRACE_ID)
+    // Global retrieval must not go through the per-Dominion snapshot.
+    expect(inspectDominion).not.toHaveBeenCalled()
+  })
+
+  it('no query → substrate empty, self-model still returned', async () => {
+    selectQueue.push([row(AETHER_ID, 'aether', 'global self-model')])
+    selectQueue.push([]) // archetypes
+    selectQueue.push([]) // traces — substrate skipped (no query)
+
+    const r = await retrieveGlobalContext({ userId: USER_ID })
+
+    expect(r.cortex?.id).toBe(AETHER_ID)
+    expect(r.substrate).toEqual([])
+  })
+
+  it('empty brain → all buckets null/empty, no throw', async () => {
+    selectQueue.push([]) // aether
+    selectQueue.push([]) // archetypes
+    selectQueue.push([]) // substrate
+    selectQueue.push([]) // traces
+
+    const r = await retrieveGlobalContext({ userId: USER_ID, query: 'anything' })
+
+    expect(r.cortex).toBeNull()
+    expect(r.archetypes).toEqual([])
+    expect(r.substrate).toEqual([])
+    expect(r.traces).toEqual([])
   })
 })

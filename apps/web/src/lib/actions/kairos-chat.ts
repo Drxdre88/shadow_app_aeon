@@ -16,7 +16,7 @@ import {
 import type { ChatRetrievalMeta } from '@/lib/data/kairos-chat-payload'
 import { buildChatMessages } from '@/lib/kairos/chat-prompt'
 import {
-  retrieveForChat,
+  retrieveForChatGlobal,
   extractCitationIds,
   intersectWithRetrieved,
   type ChatRetrieval,
@@ -172,13 +172,15 @@ async function runAssistantTurn(
     .filter((m) => m.seq < userSeq)
     .map((m) => ({ role: m.role, content: m.content }))
 
-  // C2 — pull cortex + archetypes + top-k substrate for this Dominion.
-  // Failure here must NOT block the reply (Dominions still warming up have
-  // no cortex yet); fall back to bare chat on any retrieval error. Logged
-  // so a silently-bare reply (no chips, no Reading line) is debuggable.
+  // JARVIS-level recall — whole-brain, no Dominion scope. Kairos pulls the
+  // Aether self-model + top-k substrate across EVERY Dominion, so the operator
+  // talks to him without pinpointing a front (the thread's home Dominion still
+  // frames the prompt + routes the provider). Failure here must NOT block the
+  // reply (a warming brain has no Aether yet); fall back to bare chat on any
+  // retrieval error. Logged so a silently-bare reply is debuggable.
   let retrieval: ChatRetrieval | null = null
   try {
-    retrieval = await retrieveForChat(userId, dominionId, userBody)
+    retrieval = await retrieveForChatGlobal(userId, userBody)
   } catch (err) {
     console.error('[kairos-chat] retrieval failed, falling back to bare chat', {
       threadId,
