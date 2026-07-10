@@ -28,6 +28,8 @@ import {
 } from '@/lib/kairos/dedup'
 import { rrfFuse } from '@/lib/kairos/rrf'
 import { confidenceBoost } from '@/lib/kairos/confidence'
+import { dominionTag } from '@/lib/kairos/dominionTags'
+import { autoFileEligible, autoFileMinSim, autoFileText, cosineSimilarity } from '@/lib/kairos/autofile'
 
 // Internal extension: the public zod schema (createMemorySchema) intentionally
 // does NOT expose streamClass — public callers (MCP/REST) must not pick a
@@ -825,6 +827,27 @@ export async function createMemory(userId: string, input: CreateMemoryParams) {
       })
     : null
 
+  // Slice 2 — content fallback when structural resolution failed. Best-effort:
+  // any embed/classify failure captures the memory unfiled rather than losing
+  // it. The vector is computed in the backfill's document shape, so it is
+  // stored on the row either way (assignment or not) — the row becomes
+  // vector-searchable immediately instead of waiting for the backfill cron.
+  let autoFiled: { dominionId: string; similarity: number } | null = null
+  let contentEmbedding: number[] | null = null
+  if (input.dominionId == null && resolvedDominionId == null && autoFileEligible(input.streamClass ?? 'idea')) {
+    try {
+      contentEmbedding = await embedOne(autoFileText(input.title, input.summary, input.bodyMd), 'document')
+      if (contentEmbedding) {
+        const match = await classifyDominionByContent(userId, contentEmbedding)
+        if (match && match.similarity >= autoFileMinSim()) autoFiled = match
+      }
+    } catch (err) {
+      console.warn('[kairos] dominion auto-file failed; capturing unfiled', err)
+      contentEmbedding = null
+    }
+  }
+
+  const tags = input.tags ?? []
   const [row] = await db
     .insert(memories)
     .values({
@@ -836,15 +859,24 @@ export async function createMemory(userId: string, input: CreateMemoryParams) {
       execSummary: input.execSummary ?? [],
       type: input.type,
       source: input.source,
-      sourceMetadata: input.sourceMetadata ?? {},
+      // Auto-file provenance rides in sourceMetadata so threshold tuning has
+      // an audit trail (which memories were filed at what similarity).
+      sourceMetadata: autoFiled
+        ? { ...(input.sourceMetadata ?? {}), kairosAutoFiled: { similarity: autoFiled.similarity } }
+        : input.sourceMetadata ?? {},
       realmId: input.realmId ?? null,
       projectId: input.projectId ?? null,
       taskId: input.taskId ?? null,
-      dominionId: input.dominionId ?? resolvedDominionId ?? null,
-      tags: input.tags ?? [],
+      dominionId: input.dominionId ?? resolvedDominionId ?? autoFiled?.dominionId ?? null,
+      // Soft many-to-many association on top of the FK, consistent with how
+      // dialogue stamps cross-front memories.
+      tags: autoFiled && !tags.includes(dominionTag(autoFiled.dominionId))
+        ? [...tags, dominionTag(autoFiled.dominionId)]
+        : tags,
       links: input.links ?? [],
       pinned: input.pinned ?? false,
       confidence: confidenceForStreamClass(input.streamClass ?? 'idea'),
+      ...(contentEmbedding ? { embedding: contentEmbedding, embeddingModel: activeEmbeddingModel() } : {}),
       // Drizzle skips undefined keys → DB default ('idea') applies when
       // caller omits streamClass. Internal callers (dispatcher) set it
       // explicitly for advisory / trace writes.
@@ -852,6 +884,51 @@ export async function createMemory(userId: string, input: CreateMemoryParams) {
     })
     .returning()
   return row
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Slice 2 — nearest Dominion by content. Each Dominion's LIVE cortex row
+// doubles as its semantic centroid: one non-superseded row per Dominion,
+// embedded by the backfill in the same document shape as the probe. Returns
+// the single nearest match with its cosine similarity (threshold is the
+// caller's policy, keeping this function tunable/testable). Null when no
+// cortex row is embedded yet — graceful before the backfill has run.
+//
+// Deliberately an EXACT scan with in-process cosine, not the ef_search/HNSW
+// idiom retrieve.ts uses: cortex rows are ~one per Dominion, and an HNSW scan
+// post-filtered to a subset that sparse can return 0 rows even when a live
+// cortex exists (the corpus-wide nearest candidates rarely include them).
+// ─────────────────────────────────────────────────────────────────────────
+export async function classifyDominionByContent(
+  userId: string,
+  embedding: number[],
+): Promise<{ dominionId: string; similarity: number } | null> {
+  const rows = await db
+    .select({
+      dominionId: memories.dominionId,
+      embedding: memories.embedding,
+    })
+    .from(memories)
+    .innerJoin(dominions, eq(memories.dominionId, dominions.id))
+    .where(and(
+      eq(memories.userId, userId),
+      // Redundant with memories.userId (a cortex row's Dominion is the same
+      // user's) — kept as defense-in-depth on a multi-tenant path.
+      eq(dominions.userId, userId),
+      eq(memories.streamClass, 'cortex'),
+      isNull(memories.archivedAt),
+      isNull(memories.supersededAt),
+      isNull(dominions.archivedAt),
+      sql`${memories.embedding} IS NOT NULL`,
+    ))
+
+  let best: { dominionId: string; similarity: number } | null = null
+  for (const row of rows) {
+    if (!row.dominionId || !Array.isArray(row.embedding)) continue
+    const similarity = cosineSimilarity(embedding, row.embedding as number[])
+    if (!best || similarity > best.similarity) best = { dominionId: row.dominionId, similarity }
+  }
+  return best
 }
 
 // ─────────────────────────────────────────────────────────────────────────
