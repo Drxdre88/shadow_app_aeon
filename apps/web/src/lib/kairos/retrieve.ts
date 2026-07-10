@@ -29,6 +29,7 @@ import { dominionTag } from './dominionTags'
 import { embeddingsEnabled, embedOne, toVectorLiteral } from './embeddings'
 import { rrfFuse, RRF_K } from './rrf'
 import { confidenceBoost } from './confidence'
+import { rerank } from './rerank'
 import { isStreamClass, type StreamClass } from './streamClass'
 import type {
   RetrievalResult,
@@ -37,6 +38,10 @@ import type {
 } from './recipes/_recipe'
 
 const SUBSTRATE_TOP_K = 5
+// Candidate pool handed to the cross-encoder rerank before the final TOP_K
+// slice. Wider than TOP_K so rerank has room to promote a strong match the RRF
+// fusion buried; bounded so the extra Voyage latency/cost stays small.
+const RERANK_POOL = 12
 const SUBSTRATE_WINDOW_DAYS = 90
 const SUBSTRATE_STREAMS = ['reflection', 'idea', 'agentic'] as const
 const TRACES_LIMIT = 10
@@ -317,11 +322,25 @@ async function fetchSubstrate(
           : b.score - a.score,
       )
 
-    return ranked
-      .slice(0, SUBSTRATE_TOP_K)
+    // Rerank pool: take a wider slice of the fused, confidence-weighted order
+    // (reflections/confidence already shaped WHICH rows qualify), then let the
+    // cross-encoder pick the final top-k by true query↔document relevance.
+    const poolRows = ranked
+      .slice(0, RERANK_POOL)
       .map((e) => byId.get(e.id))
       .filter((r): r is SubstrateRow => r != null)
-      .map(rowToMemory)
+
+    // Precision pass. No-op (null) without a Voyage key or on API error, in
+    // which case we keep the confidence-weighted RRF order — identical to the
+    // pre-rerank behaviour once sliced to TOP_K.
+    const reranked = await rerank(
+      query,
+      poolRows,
+      (r) => `${r.title}\n${r.bodyMd ?? ''}`,
+      { topK: SUBSTRATE_TOP_K },
+    )
+
+    return (reranked ?? poolRows).slice(0, SUBSTRATE_TOP_K).map(rowToMemory)
   } catch (err) {
     console.warn(
       '[fetchSubstrate] semantic search failed, FTS-only:',
