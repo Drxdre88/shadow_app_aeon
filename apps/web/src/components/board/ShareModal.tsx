@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, UserPlus, Crown, Trash2, Loader2, Copy, Check, Clock, Image, Link2 } from 'lucide-react'
+import { X, UserPlus, Crown, Trash2, Loader2, Copy, Check, Clock, ImageIcon, Link2 } from 'lucide-react'
 import { toPng } from 'html-to-image'
 import { getProjectMembers, inviteMember, removeProjectMember, updateProjectMemberRole, getPendingInvites } from '@/lib/actions/members'
 import { createBoardSnapshot } from '@/lib/actions/snapshots'
@@ -247,7 +247,7 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
                     color: '#34d399',
                   }}
                 >
-                  {exportingPng ? <Loader2 className="w-4 h-4 animate-spin" /> : <Image className="w-4 h-4" aria-hidden="true" />}
+                  {exportingPng ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" aria-hidden="true" />}
                   {exportingPng ? 'Exporting...' : 'Download PNG'}
                 </button>
                 <button
@@ -355,7 +355,7 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
                     <div className="flex items-center gap-3">
                       {m.image ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={m.image} alt="" referrerPolicy="no-referrer" className="w-7 h-7 rounded-full" />
+                        <img src={m.image} alt={`${m.name || m.email} avatar`} referrerPolicy="no-referrer" className="w-7 h-7 rounded-full" />
                       ) : (
                         <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)', color: 'var(--primary)' }}>
                           {(m.name || m.email).charAt(0).toUpperCase()}
