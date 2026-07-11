@@ -63,15 +63,18 @@ export interface ChatMessage {
 
 export async function createChatThread(
   userId: string,
-  input: { dominionId: string; title?: string | null },
+  input: { dominionId: string | null; title?: string | null },
 ): Promise<{ ok: true; threadId: string } | { ok: false; reason: 'dominion_not_found' }> {
-  // Ownership guard — the dominion must exist for this user and not be archived.
-  const [dom] = await db
-    .select({ id: dominions.id, name: dominions.name })
-    .from(dominions)
-    .where(and(eq(dominions.id, input.dominionId), eq(dominions.userId, userId)))
-    .limit(1)
-  if (!dom) return { ok: false, reason: 'dominion_not_found' }
+  // Ownership guard — an anchored thread's dominion must exist for this user.
+  // Null dominion = unanchored whole-brain thread, no guard needed.
+  if (input.dominionId) {
+    const [dom] = await db
+      .select({ id: dominions.id, name: dominions.name })
+      .from(dominions)
+      .where(and(eq(dominions.id, input.dominionId), eq(dominions.userId, userId)))
+      .limit(1)
+    if (!dom) return { ok: false, reason: 'dominion_not_found' }
+  }
 
   const title = (input.title?.trim() || 'New conversation').slice(0, 200)
 

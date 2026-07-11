@@ -156,6 +156,31 @@ describe('buildChatSystemPrompt with retrieval (C2)', () => {
   })
 })
 
+describe('buildChatSystemPrompt — unanchored whole-brain (slice 3)', () => {
+  it('uses the whole-brain persona and omits vision/mission blocks', () => {
+    const out = buildChatSystemPrompt(null)
+    expect(out).toContain('whole brain')
+    expect(out).not.toContain('Dominion.')
+    expect(out).not.toContain('— vision')
+    expect(out).not.toContain('— mission')
+    expect(out).toContain('Markdown for replies')
+  })
+
+  it('labels the cortex block as the Aether self-model', () => {
+    const out = buildChatSystemPrompt(null, retrieval())
+    expect(out).toContain('## Aether self-model')
+    expect(out).not.toContain('## Dominion cortex')
+    expect(out).toContain(`[[${cortexId}]]`)
+    expect(out).toContain('across the whole brain')
+  })
+
+  it('keeps the Dominion cortex label for anchored threads', () => {
+    const out = buildChatSystemPrompt(dom(), retrieval())
+    expect(out).toContain('## Dominion cortex')
+    expect(out).not.toContain('## Aether self-model')
+  })
+})
+
 describe('buildChatMessages with retrieval (C2)', () => {
   it('passes retrieval into the system prompt and preserves [system, history, user] shape', () => {
     const messages = buildChatMessages({

@@ -14,25 +14,16 @@ import {
 import type { ChatMessage, ChatThreadSummary } from '@/lib/data/kairos-chat'
 import { KairosVisorShell } from './KairosVisorShell'
 import { KairosThreadList } from './KairosThreadList'
-import { KairosNewThreadHeader } from './KairosNewThreadHeader'
 import { KairosMessageStream } from './KairosMessageStream'
 import { formatReason } from './kairos-citations'
 
 // Full-screen Kairos AI — a two-pane takeover: always-visible history rail on
 // the left, the active conversation on the right. Top-level orchestrator:
-// state + send flow + composer. Subviews (shell, rail, picker, message stream)
-// live in sibling files so this stays the flow doc, not a render dump.
+// state + send flow + composer. Subviews (shell, rail, message stream) live in
+// sibling files so this stays the flow doc, not a render dump. Threads are
+// whole-brain by default — no Dominion anchor at creation.
 
-interface DominionOption {
-  id: string
-  name: string
-}
-
-interface KairosVisorProps {
-  dominions: DominionOption[]
-}
-
-export function KairosVisor({ dominions }: KairosVisorProps) {
+export function KairosVisor() {
   const { isOpen, close, activeThreadId, setActiveThread } = useKairosVisorStore()
   const [threads, setThreads] = useState<ChatThreadSummary[]>([])
   const [activeThread, setActiveThreadData] = useState<{
@@ -40,9 +31,6 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
     messages: ChatMessage[]
   } | null>(null)
   const [composing, setComposing] = useState(false)
-  const [selectedDominionId, setSelectedDominionId] = useState<string>(
-    dominions[0]?.id ?? '',
-  )
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -112,12 +100,7 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
     let result: KairosChatActionResult
     try {
       if (wasComposing) {
-        if (!selectedDominionId) {
-          setError('Pick a Dominion to anchor the conversation.')
-          setPending(false)
-          return
-        }
-        result = await startKairosThread({ dominionId: selectedDominionId, body })
+        result = await startKairosThread({ body })
       } else {
         result = await sendKairosMessage({ threadId: sentToThreadId!, body })
       }
@@ -160,7 +143,7 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
       .then(setThreads)
       .catch(() => { /* non-fatal */ })
     setPending(false)
-  }, [draft, pending, composing, activeThread, selectedDominionId, setActiveThread])
+  }, [draft, pending, composing, activeThread, setActiveThread])
 
   const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -172,8 +155,8 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
   const headerLabel = useMemo(() => {
     if (composing) return 'New conversation'
     if (!activeThread) return 'Kairos'
-    const domName = activeThread.summary.dominionName ?? 'Dominion'
-    return `${domName} · ${activeThread.summary.title}`
+    const domName = activeThread.summary.dominionName
+    return domName ? `${domName} · ${activeThread.summary.title}` : activeThread.summary.title
   }, [composing, activeThread])
 
   const startNew = useCallback(() => {
@@ -211,25 +194,8 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
               </button>
             </div>
 
-            {/* Anchor picker — only while composing a new thread */}
-            {composing && dominions.length > 0 && (
-              <div className="mx-auto w-full max-w-[760px] px-6 pt-4">
-                <KairosNewThreadHeader
-                  dominions={dominions}
-                  selectedId={selectedDominionId}
-                  onSelect={setSelectedDominionId}
-                />
-              </div>
-            )}
-
             {/* Body */}
-            {dominions.length === 0 ? (
-              <Centered>
-                <p className="max-w-sm text-sm text-zinc-400">
-                  Create a Dominion first to start talking to Kairos. Open the cosmic view and add one.
-                </p>
-              </Centered>
-            ) : activeThread && !composing ? (
+            {activeThread && !composing ? (
               <KairosMessageStream messages={activeThread.messages} scrollRef={scrollRef} />
             ) : composing ? (
               <div className="flex-1" />
@@ -238,7 +204,7 @@ export function KairosVisor({ dominions }: KairosVisorProps) {
             )}
 
             {/* Composer */}
-            {showComposer && dominions.length > 0 && (
+            {showComposer && (
               <div className="shrink-0 border-t border-white/[0.06] px-6 pb-5 pt-3">
                 <div className="mx-auto w-full max-w-[760px]">
                   {error && (
@@ -288,10 +254,6 @@ function Avatar({ size = 28 }: { size?: number }) {
   )
 }
 
-function Centered({ children }: { children: React.ReactNode }) {
-  return <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center">{children}</div>
-}
-
 function EmptyState({ onNew }: { onNew: () => void }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
@@ -299,7 +261,7 @@ function EmptyState({ onNew }: { onNew: () => void }) {
       <div className="space-y-1.5">
         <h3 className="text-lg font-semibold tracking-wide text-zinc-100">Ask Kairos</h3>
         <p className="max-w-md text-sm text-zinc-400">
-          Your memory, anchored to a Dominion. Pick a past conversation on the left, or start a new one.
+          Your whole memory, one conversation. Pick a past thread on the left, or start a new one.
         </p>
       </div>
       <button

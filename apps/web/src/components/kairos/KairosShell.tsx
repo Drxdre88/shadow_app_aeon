@@ -19,11 +19,6 @@ interface WorkspaceData {
   projects: Array<Record<string, unknown>>
 }
 
-interface DominionOption {
-  id: string
-  name: string
-}
-
 interface KairosShellProps {
   user: {
     id: string
@@ -33,13 +28,10 @@ interface KairosShellProps {
     image?: string | null
   }
   initialWorkspaces: WorkspaceData[]
-  // Kairos Phase 2 (C1) — pre-fetched Dominion list for the chat Visor
-  // anchor picker. Server-side fetch so the panel opens without latency.
-  dominions: DominionOption[]
   children: React.ReactNode
 }
 
-export function KairosShell({ user, initialWorkspaces, dominions, children }: KairosShellProps) {
+export function KairosShell({ user, initialWorkspaces, children }: KairosShellProps) {
   const { collapsed, hiddenRealmIds, hiddenProjectIds } = useSidebarStore()
 
   const sidebarRealms = useMemo(
@@ -74,7 +66,7 @@ export function KairosShell({ user, initialWorkspaces, dominions, children }: Ka
       >
         {children}
       </div>
-      <KairosVisor dominions={dominions} />
+      <KairosVisor />
       <KairosVisorToggle />
     </div>
   )

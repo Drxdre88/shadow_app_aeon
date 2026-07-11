@@ -58,6 +58,7 @@ vi.mock('@/lib/db', () => ({
 
 import { safeAuth } from '@/lib/actions/helpers'
 import {
+  createChatThread as _createChatThread,
   getChatThread as _getChatThread,
   appendChatMessage as _appendChatMessage,
   updateChatMessageContent as _updateChatMessageContent,
@@ -65,7 +66,7 @@ import {
 import { retrieveForChatGlobal } from '@/lib/kairos/chat-retrieval'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError } from '@/lib/ai/router'
-import { sendKairosMessage } from '../kairos-chat'
+import { sendKairosMessage, startKairosThread } from '../kairos-chat'
 
 const USER_ID = 'user-1'
 const THREAD_ID = 'a0000000-0000-4000-8000-000000000001'
@@ -74,12 +75,15 @@ const KNOWN_A = '11111111-1111-4111-8111-111111111111'
 const KNOWN_B = '22222222-2222-4222-8222-222222222222'
 const HALLUCINATED = '99999999-9999-4999-8999-999999999999'
 
-function fakeThread(messages: Array<{ seq: number; role: 'user' | 'assistant'; content: string }> = []) {
+function fakeThread(
+  messages: Array<{ seq: number; role: 'user' | 'assistant'; content: string }> = [],
+  dominionId: string | null = DOMINION_ID,
+) {
   return {
     thread: {
       id: THREAD_ID,
-      dominionId: DOMINION_ID,
-      dominionName: 'AEON',
+      dominionId,
+      dominionName: dominionId ? 'AEON' : null,
       title: 't',
       status: 'running',
       createdAt: new Date(),
@@ -232,6 +236,60 @@ describe('sendKairosMessage — persist before AI', () => {
 
     const out = await sendKairosMessage({ threadId: THREAD_ID, body: 'hello' })
     expect(out.ok === false && out.reason).toBe('ai_empty')
+  })
+})
+
+describe('unanchored whole-brain threads (slice 3)', () => {
+  it('startKairosThread without dominionId creates a null-dominion thread', async () => {
+    vi.mocked(_createChatThread).mockResolvedValue({ ok: true, threadId: THREAD_ID })
+    vi.mocked(_getChatThread).mockResolvedValue(fakeThread([{ seq: 1, role: 'user', content: 'hello' }], null))
+    vi.mocked(getProviderForTask).mockResolvedValue(fakeProvider('reply'))
+
+    const out = await startKairosThread({ body: 'hello' })
+    expect(out.ok).toBe(true)
+    expect(vi.mocked(_createChatThread)).toHaveBeenCalledWith(USER_ID, {
+      dominionId: null,
+      title: 'hello',
+    })
+  })
+
+  it('unanchored turn uses the whole-brain persona (no Dominion lookup)', async () => {
+    vi.mocked(_createChatThread).mockResolvedValue({ ok: true, threadId: THREAD_ID })
+    vi.mocked(_getChatThread).mockResolvedValue(fakeThread([{ seq: 1, role: 'user', content: 'hello' }], null))
+    const provider = fakeProvider('reply')
+    vi.mocked(getProviderForTask).mockResolvedValue(provider)
+
+    const out = await startKairosThread({ body: 'hello' })
+    expect(out.ok).toBe(true)
+
+    const askArgs = vi.mocked(provider.provider.ask).mock.calls[0][0]
+    const system = askArgs.messages!.find((m: { role: string }) => m.role === 'system')
+    expect(system!.content).toContain('whole brain')
+    expect(system!.content).not.toContain('anchored to the')
+  })
+
+  it('sendKairosMessage into a null-dominion thread succeeds', async () => {
+    vi.mocked(_getChatThread)
+      .mockResolvedValueOnce(fakeThread([], null))
+      .mockResolvedValueOnce(fakeThread([{ seq: 1, role: 'user', content: 'hello' }], null))
+    vi.mocked(getProviderForTask).mockResolvedValue(fakeProvider('reply'))
+
+    const out = await sendKairosMessage({ threadId: THREAD_ID, body: 'hello' })
+    expect(out.ok).toBe(true)
+  })
+
+  it('anchored threads keep the Dominion persona', async () => {
+    vi.mocked(_getChatThread)
+      .mockResolvedValueOnce(fakeThread([]))
+      .mockResolvedValueOnce(fakeThread([{ seq: 1, role: 'user', content: 'hello' }]))
+    const provider = fakeProvider('reply')
+    vi.mocked(getProviderForTask).mockResolvedValue(provider)
+
+    await sendKairosMessage({ threadId: THREAD_ID, body: 'hello' })
+
+    const askArgs = vi.mocked(provider.provider.ask).mock.calls[0][0]
+    const system = askArgs.messages!.find((m: { role: string }) => m.role === 'system')
+    expect(system!.content).toContain('anchored to the "AEON" Dominion')
   })
 })
 
