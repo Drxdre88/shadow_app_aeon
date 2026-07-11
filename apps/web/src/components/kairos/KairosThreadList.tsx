@@ -57,7 +57,7 @@ export function KairosThreadList({
                   {t.title}
                 </div>
                 <div className="mt-0.5 truncate text-[10.5px] text-zinc-500">
-                  {t.dominionName ?? 'Unanchored'} · {t.messageCount} msg{t.messageCount === 1 ? '' : 's'}
+                  {t.dominionName ?? 'Whole brain'} · {t.messageCount} msg{t.messageCount === 1 ? '' : 's'}
                 </div>
               </button>
             )

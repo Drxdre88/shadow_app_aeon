@@ -31,7 +31,8 @@ import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/rou
 // AI half (or rewrites the orphan body if the user edited the retry).
 
 const startSchema = z.object({
-  dominionId: z.string().uuid(),
+  // Optional anchor — omitted/null starts an unanchored whole-brain thread.
+  dominionId: z.string().uuid().nullish(),
   body: z.string().trim().min(1).max(20_000),
   title: z.string().trim().min(1).max(200).nullable().optional(),
 })
@@ -57,7 +58,7 @@ interface AssistantReply {
 
 async function callAssistant(
   userId: string,
-  dominionId: string,
+  dominionId: string | null,
   systemMessages: ReturnType<typeof buildChatMessages>,
 ): Promise<AssistantReply | { error: 'no_credential' } | { error: 'empty' } | { error: 'failed'; message: string }> {
   try {
@@ -97,13 +98,14 @@ export async function startKairosThread(input: z.infer<typeof startSchema>): Pro
   // Derive thread title from first message when caller didn't supply one.
   const derivedTitle = parsed.data.title ?? parsed.data.body.split('\n')[0].slice(0, 80)
 
+  const dominionId = parsed.data.dominionId ?? null
   const created = await _createChatThread(userId, {
-    dominionId: parsed.data.dominionId,
+    dominionId,
     title: derivedTitle,
   })
   if (!created.ok) return { ok: false, reason: 'dominion_not_found' }
 
-  return runChatTurn(userId, created.threadId, parsed.data.dominionId, parsed.data.body)
+  return runChatTurn(userId, created.threadId, dominionId, parsed.data.body)
 }
 
 export async function sendKairosMessage(input: z.infer<typeof sendSchema>): Promise<KairosChatActionResult> {
@@ -115,7 +117,6 @@ export async function sendKairosMessage(input: z.infer<typeof sendSchema>): Prom
 
   const loaded = await _getChatThread(userId, parsed.data.threadId)
   if (!loaded) return { ok: false, reason: 'thread_not_found' }
-  if (!loaded.thread.dominionId) return { ok: false, reason: 'dominion_not_found' }
 
   // Orphan-user-message recovery: any trailing user message means the
   // previous AI call failed mid-flight after we'd already saved the user
@@ -138,7 +139,7 @@ export async function sendKairosMessage(input: z.infer<typeof sendSchema>): Prom
 async function runChatTurn(
   userId: string,
   threadId: string,
-  dominionId: string,
+  dominionId: string | null,
   body: string,
 ): Promise<KairosChatActionResult> {
   // Persist BEFORE the AI call — see file header.
@@ -154,16 +155,23 @@ async function runChatTurn(
 async function runAssistantTurn(
   userId: string,
   threadId: string,
-  dominionId: string,
+  dominionId: string | null,
   userBody: string,
   userSeq: number,
 ): Promise<KairosChatActionResult> {
-  const [domRow] = await db
-    .select({ name: dominions.name, vision: dominions.vision, missionLong: dominions.missionLong })
-    .from(dominions)
-    .where(and(eq(dominions.id, dominionId), eq(dominions.userId, userId)))
-    .limit(1)
-  if (!domRow) return { ok: false, reason: 'dominion_not_found' }
+  // An anchored thread's Dominion frames the prompt (persona + vision/mission).
+  // Unanchored (null) threads get the whole-brain persona; provider routing is
+  // Dominion-agnostic either way (routeTask resolves on taskType + tier).
+  let dominion: { name: string; vision: string | null; missionLong: string | null } | null = null
+  if (dominionId) {
+    const [domRow] = await db
+      .select({ name: dominions.name, vision: dominions.vision, missionLong: dominions.missionLong })
+      .from(dominions)
+      .where(and(eq(dominions.id, dominionId), eq(dominions.userId, userId)))
+      .limit(1)
+    if (!domRow) return { ok: false, reason: 'dominion_not_found' }
+    dominion = domRow
+  }
 
   const thread = await _getChatThread(userId, threadId)
   if (!thread) return { ok: false, reason: 'thread_not_found' }
@@ -174,8 +182,7 @@ async function runAssistantTurn(
 
   // JARVIS-level recall — whole-brain, no Dominion scope. Kairos pulls the
   // Aether self-model + top-k substrate across EVERY Dominion, so the operator
-  // talks to him without pinpointing a front (the thread's home Dominion still
-  // frames the prompt + routes the provider). Failure here must NOT block the
+  // talks to him without pinpointing a front. Failure here must NOT block the
   // reply (a warming brain has no Aether yet); fall back to bare chat on any
   // retrieval error. Logged so a silently-bare reply is debuggable.
   let retrieval: ChatRetrieval | null = null
@@ -193,11 +200,7 @@ async function runAssistantTurn(
   const promptRetrieval = retrieval ? toPromptRetrieval(retrieval) : undefined
 
   const messages = buildChatMessages({
-    dominion: {
-      name: domRow.name,
-      vision: domRow.vision,
-      missionLong: domRow.missionLong,
-    },
+    dominion,
     history: priorHistory,
     userMessage: userBody,
     retrieval: promptRetrieval,

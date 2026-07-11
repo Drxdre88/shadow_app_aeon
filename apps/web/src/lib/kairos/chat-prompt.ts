@@ -46,7 +46,7 @@ export interface ChatPromptRetrieval {
 }
 
 export interface BuildChatPromptInput {
-  dominion: ChatPromptDominion
+  dominion: ChatPromptDominion | null // null = unanchored whole-brain thread
   history: ChatPromptMessage[]   // chronological, oldest first
   userMessage: string             // the new message about to be sent
   retrieval?: ChatPromptRetrieval // C2 grounding — optional, degrades cleanly
@@ -66,11 +66,13 @@ function renderSubstrateSource(s: ChatPromptSubstrateSource): string {
   return `### ${s.title} _(${s.streamClass})_ [[${s.id}]]\n${clipBody(s.body)}`
 }
 
-function renderRetrieval(retrieval: ChatPromptRetrieval): string {
+function renderRetrieval(retrieval: ChatPromptRetrieval, anchored: boolean): string {
   const sections: string[] = []
 
   if (retrieval.cortex) {
-    sections.push('## Dominion cortex (the living model of this Dominion)')
+    sections.push(anchored
+      ? '## Dominion cortex (the living model of this Dominion)'
+      : '## Aether self-model (the global model across every Dominion)')
     sections.push(renderSource(retrieval.cortex))
     sections.push('')
   }
@@ -95,20 +97,26 @@ function renderRetrieval(retrieval: ChatPromptRetrieval): string {
 }
 
 export function buildChatSystemPrompt(
-  dominion: ChatPromptDominion,
+  dominion: ChatPromptDominion | null,
   retrieval?: ChatPromptRetrieval,
 ): string {
-  const lines: string[] = [
-    `You are Kairos, a persistent, opinionated companion anchored to the "${dominion.name}" Dominion.`,
-    '',
-    'Your job: hold context, surface what matters, and answer the operator with tight, honest reasoning grounded in what you know about this part of their life. No filler, no hedging-for-its-own-sake. When you don\'t know something, say so.',
-    '',
-    `## ${dominion.name} — vision`,
-    dominion.vision?.trim() || '(none set yet)',
-    '',
-    `## ${dominion.name} — mission`,
-    dominion.missionLong?.trim() || '(none set yet)',
-  ]
+  const lines: string[] = dominion
+    ? [
+      `You are Kairos, a persistent, opinionated companion anchored to the "${dominion.name}" Dominion.`,
+      '',
+      'Your job: hold context, surface what matters, and answer the operator with tight, honest reasoning grounded in what you know about this part of their life. No filler, no hedging-for-its-own-sake. When you don\'t know something, say so.',
+      '',
+      `## ${dominion.name} — vision`,
+      dominion.vision?.trim() || '(none set yet)',
+      '',
+      `## ${dominion.name} — mission`,
+      dominion.missionLong?.trim() || '(none set yet)',
+    ]
+    : [
+      'You are Kairos, a persistent, opinionated companion with recall across the operator\'s whole brain — every Dominion of their life.',
+      '',
+      'Your job: hold context, surface what matters, and answer the operator with tight, honest reasoning grounded in what you know about their life. No filler, no hedging-for-its-own-sake. When you don\'t know something, say so.',
+    ]
 
   const hasRetrieval = retrieval && (
     retrieval.cortex !== null
@@ -122,9 +130,9 @@ export function buildChatSystemPrompt(
     lines.push('')
     lines.push('# Grounded context')
     lines.push('')
-    lines.push('The blocks below are the live Kairos brain state for this Dominion. Reason from them when the operator asks about specifics. When you make a claim that rests on one of them, cite it inline as `[[memory-id]]` using the exact id shown in the block header. Reflections carry higher weight than activity-derived signals. If grounded context disagrees with the operator\'s latest message, surface the tension instead of papering over it.')
+    lines.push(`The blocks below are the live Kairos brain state ${dominion ? 'for this Dominion' : 'across the whole brain'}. Reason from them when the operator asks about specifics. When you make a claim that rests on one of them, cite it inline as \`[[memory-id]]\` using the exact id shown in the block header. Reflections carry higher weight than activity-derived signals. If grounded context disagrees with the operator's latest message, surface the tension instead of papering over it.`)
     lines.push('')
-    lines.push(renderRetrieval(retrieval!))
+    lines.push(renderRetrieval(retrieval!, dominion !== null))
   }
 
   lines.push('')
