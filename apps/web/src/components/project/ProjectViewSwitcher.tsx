@@ -21,6 +21,8 @@ interface ProjectViewSwitcherProps {
   realms?: RealmInfo[]
   projectRealmMap?: Record<string, string[]>
   onToggleRealm?: (projectId: string, realmId: string) => void
+  favoriteIds?: Set<string>
+  onToggleFavorite?: (projectId: string) => void
   view: ProjectViewMode
   onViewChange: (mode: ProjectViewMode) => void
   layout?: 'scroll' | 'wrap'
@@ -44,7 +46,7 @@ function useIsMobile() {
   return isMobile
 }
 
-export function ProjectViewSwitcher({ projects, onEdit, onDelete, onShare, onGroupChange, realms, projectRealmMap, onToggleRealm, view, onViewChange, layout: controlledLayout, onLayoutChange }: ProjectViewSwitcherProps) {
+export function ProjectViewSwitcher({ projects, onEdit, onDelete, onShare, onGroupChange, realms, projectRealmMap, onToggleRealm, favoriteIds, onToggleFavorite, view, onViewChange, layout: controlledLayout, onLayoutChange }: ProjectViewSwitcherProps) {
   const isMobile = useIsMobile()
   const effectiveView = isMobile && view === 'space' ? 'grid' : view
   const smoothUiRenders = useSmoothUiRenders()
@@ -59,8 +61,8 @@ export function ProjectViewSwitcher({ projects, onEdit, onDelete, onShare, onGro
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: smoothUiRenders ? 0.2 : 0 }}
         >
-          {effectiveView === 'grid' && <GridView projects={projects} onEdit={onEdit} onDelete={onDelete} onShare={onShare} onGroupChange={onGroupChange} realms={realms} projectRealmMap={projectRealmMap} onToggleRealm={onToggleRealm} layout={controlledLayout} onLayoutChange={onLayoutChange} />}
-          {effectiveView === 'tree' && <TreeView projects={projects} onEdit={onEdit} onDelete={onDelete} onShare={onShare} realms={realms} projectRealmMap={projectRealmMap} onToggleRealm={onToggleRealm} />}
+          {effectiveView === 'grid' && <GridView projects={projects} onEdit={onEdit} onDelete={onDelete} onShare={onShare} onGroupChange={onGroupChange} realms={realms} projectRealmMap={projectRealmMap} onToggleRealm={onToggleRealm} favoriteIds={favoriteIds} onToggleFavorite={onToggleFavorite} layout={controlledLayout} onLayoutChange={onLayoutChange} />}
+          {effectiveView === 'tree' && <TreeView projects={projects} onEdit={onEdit} onDelete={onDelete} onShare={onShare} realms={realms} projectRealmMap={projectRealmMap} onToggleRealm={onToggleRealm} favoriteIds={favoriteIds} onToggleFavorite={onToggleFavorite} />}
           {effectiveView === 'space' && <SpaceView projects={projects} />}
         </motion.div>
       </AnimatePresence>

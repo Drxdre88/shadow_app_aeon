@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { Clock, Trash2, Pencil, Palette, Users, GripVertical } from 'lucide-react'
+import { Clock, Trash2, Pencil, Palette, Users, GripVertical, Star } from 'lucide-react'
 import Link from 'next/link'
 import { DndContext, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, useSortable, horizontalListSortingStrategy, rectSortingStrategy } from '@dnd-kit/sortable'
@@ -35,6 +35,8 @@ interface GridViewProps {
   realms?: RealmInfo[]
   projectRealmMap?: Record<string, string[]>
   onToggleRealm?: (projectId: string, realmId: string) => void
+  favoriteIds?: Set<string>
+  onToggleFavorite?: (projectId: string) => void
   layout?: 'scroll' | 'wrap'
   onLayoutChange?: (layout: 'scroll' | 'wrap') => void
 }
@@ -73,7 +75,7 @@ function SortableProjectCard({ project, children }: { project: ProjectWithStats;
   )
 }
 
-export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, realms, projectRealmMap, onToggleRealm, layout: controlledLayout }: GridViewProps) {
+export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, realms, projectRealmMap, onToggleRealm, favoriteIds, onToggleFavorite, layout: controlledLayout }: GridViewProps) {
   const { glowIntensity, projectColors, setProjectColor, shortcuts } = useThemeStore()
   const [hoveredProjectId, setHoveredProjectId] = useState<string | null>(null)
   const [colorPickerProjectId, setColorPickerProjectId] = useState<string | null>(null)
@@ -234,6 +236,17 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, r
                 <div className="flex items-center justify-between mb-1">
                   <h3 className="text-sm font-semibold text-white truncate flex-1 mr-2">{project.name}</h3>
                   <div className="flex items-center gap-0.5 shrink-0 rounded-lg bg-white/[0.04] px-0.5">
+                    {onToggleFavorite && (
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleFavorite(project.id) }}
+                        title={favoriteIds?.has(project.id) ? 'Remove from favorites' : 'Add to favorites'}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
+                      >
+                        <Star className={`w-3.5 h-3.5 ${favoriteIds?.has(project.id) ? 'fill-amber-400 text-amber-400' : ''}`} />
+                      </motion.button>
+                    )}
                     <motion.button
                       whileHover={{ scale: 1.1 }}
                       whileTap={{ scale: 0.9 }}
@@ -444,11 +457,13 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, r
           projectName={contextMenu.project.name}
           realms={realms}
           projectRealmIds={projectRealmMap?.[contextMenu.project.id] ?? []}
+          isFavorite={favoriteIds?.has(contextMenu.project.id)}
           onClose={() => setContextMenu(null)}
           onEdit={() => onEdit(contextMenu.project)}
           onShare={() => onShare?.(contextMenu.project)}
           onDelete={() => { setContextMenu(null); setPendingDeleteId(contextMenu.project.id) }}
           onToggleRealm={(realmId) => onToggleRealm?.(contextMenu.project.id, realmId)}
+          onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(contextMenu.project.id) : undefined}
         />
       )}
       <ConfirmModal

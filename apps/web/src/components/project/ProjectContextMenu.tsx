@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Pencil, Users, Trash2, Orbit, Check, EyeOff, ExternalLink } from 'lucide-react'
+import { Pencil, Users, Trash2, Orbit, Check, EyeOff, ExternalLink, Star } from 'lucide-react'
 import { useSidebarStore } from '@/stores/sidebarStore'
 
 export interface RealmInfo {
@@ -19,16 +19,18 @@ interface ProjectContextMenuProps {
   projectName: string
   realms: RealmInfo[]
   projectRealmIds: string[]
+  isFavorite?: boolean
   onClose: () => void
   onEdit: () => void
   onShare: () => void
   onDelete: () => void
   onToggleRealm: (realmId: string) => void
+  onToggleFavorite?: () => void
 }
 
 export function ProjectContextMenu({
-  x, y, projectId, projectName, realms, projectRealmIds,
-  onClose, onEdit, onShare, onDelete, onToggleRealm,
+  x, y, projectId, projectName, realms, projectRealmIds, isFavorite,
+  onClose, onEdit, onShare, onDelete, onToggleRealm, onToggleFavorite,
 }: ProjectContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const subRef = useRef<HTMLDivElement>(null)
@@ -63,6 +65,13 @@ export function ProjectContextMenu({
         <MenuButton icon={<Pencil className="w-3.5 h-3.5" />} label="Edit" onClick={() => { onEdit(); onClose() }} />
         <MenuButton icon={<Users className="w-3.5 h-3.5" />} label="Share" onClick={() => { onShare(); onClose() }} />
         <MenuButton icon={<ExternalLink className="w-3.5 h-3.5" />} label="Open in new tab" onClick={() => { window.open(`/project/${projectId}`, '_blank'); onClose() }} />
+        {onToggleFavorite && (
+          <MenuButton
+            icon={<Star className={`w-3.5 h-3.5 ${isFavorite ? 'fill-amber-400 text-amber-400' : ''}`} />}
+            label={isFavorite ? 'Unfavorite' : 'Favorite'}
+            onClick={() => { onToggleFavorite(); onClose() }}
+          />
+        )}
 
         <div className="my-1 h-px bg-white/10" />
 

@@ -8,6 +8,7 @@ import { findLabels, findTaskLabels } from '@/lib/data/labels'
 import { findDependencies } from '@/lib/data/dependencies'
 import { findChecklistSummariesAndPreviews } from '@/lib/data/checklist'
 import { getAssigneesForProject } from '@/lib/data/assignees'
+import { findFavoriteProjectIds } from '@/lib/data/projects'
 import ProjectContent from './ProjectContent'
 import { AccessDenied } from './AccessDenied'
 
@@ -34,7 +35,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     return <AccessDenied projectName={exists?.name} />
   }
 
-  const [tasks, columns, labels, taskLabels, dependencies, checklistData, assignees] = await Promise.all([
+  const [tasks, columns, labels, taskLabels, dependencies, checklistData, assignees, favoriteIds] = await Promise.all([
     findTasks(id, undefined, 2000),
     findColumns(id),
     findLabels(id),
@@ -42,6 +43,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     findDependencies(id),
     findChecklistSummariesAndPreviews(id),
     getAssigneesForProject(id),
+    findFavoriteProjectIds(session.user.id),
   ])
   const { summaries: checklistSummaries, previews: checklistPreviews } = checklistData
 
@@ -56,6 +58,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         image: session.user.image,
       }}
       initialBoardData={{ tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees }}
+      initialFavorite={favoriteIds.has(id)}
     />
   )
 }

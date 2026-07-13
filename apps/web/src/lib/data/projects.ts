@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { projects, projectMembers, boardTasks, ganttTasks, projectGroups, groupMembers, workspaceGroups } from '@/lib/db/schema'
+import { projects, projectMembers, boardTasks, ganttTasks, projectGroups, groupMembers, workspaceGroups, favoriteProjects } from '@/lib/db/schema'
 import { eq, and, desc, sql, or, inArray, ne } from 'drizzle-orm'
 import type { CreateProjectInput, UpdateProjectInput } from './validators'
 
@@ -243,6 +243,24 @@ export async function findProjectsWithStats(userId: string) {
     ...row,
     completionPct: row.totalTasks > 0 ? Math.round((row.doneTasks / row.totalTasks) * 100) : 0,
   }))
+}
+
+export async function toggleProjectFavorite(userId: string, projectId: string, favorite: boolean) {
+  if (favorite) {
+    await db.insert(favoriteProjects).values({ userId, projectId }).onConflictDoNothing()
+  } else {
+    await db.delete(favoriteProjects).where(
+      and(eq(favoriteProjects.userId, userId), eq(favoriteProjects.projectId, projectId))
+    )
+  }
+}
+
+export async function findFavoriteProjectIds(userId: string) {
+  const rows = await db
+    .select({ projectId: favoriteProjects.projectId })
+    .from(favoriteProjects)
+    .where(eq(favoriteProjects.userId, userId))
+  return new Set(rows.map((r) => r.projectId))
 }
 
 export async function setProjectGroup(projectId: string, group: string | null) {

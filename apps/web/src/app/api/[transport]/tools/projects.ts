@@ -7,8 +7,9 @@ import {
   deleteProject,
   getProjectSummary,
   verifyProjectOwnership,
+  toggleProjectFavorite,
 } from '@/lib/data/projects'
-import { createProjectSchema, updateProjectSchema } from '@/lib/data/validators'
+import { createProjectSchema, updateProjectSchema, setFavoriteSchema } from '@/lib/data/validators'
 import { emitActivity } from '@/lib/data/activity'
 import type { RegisterFn } from './types'
 import { getUserId, ok, notFound } from './types'
@@ -66,6 +67,20 @@ export const registerProjectTools: RegisterFn = (server) => {
       const project = await updateProject(projectId, uid, data)
       if (project) emitActivity(projectId, 'project', projectId, 'updated', project.name, undefined, uid, 'agent').catch(() => {})
       return project ? ok(project) : notFound('Project')
+    }
+  )
+
+  server.tool(
+    'set_project_favorite',
+    'Star or unstar a project for the authenticated user',
+    {
+      projectId: z.string().uuid().describe('The project UUID'),
+      ...setFavoriteSchema.shape,
+    },
+    async ({ projectId, favorite }, extra) => {
+      const uid = getUserId(extra)
+      await toggleProjectFavorite(uid, projectId, favorite)
+      return ok({ favorite })
     }
   )
 

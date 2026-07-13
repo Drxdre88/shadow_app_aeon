@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireAuth, requireOwnership, requireEditor } from './helpers'
+import { requireAuth, requireOwnership, requireEditor, requireMember } from './helpers'
 import {
   findProjects as _findProjects,
   findProjectsWithStats as _findProjectsWithStats,
@@ -15,6 +15,8 @@ import {
   deleteProject as _deleteProject,
   setProjectGroup as _setProjectGroup,
   renameGroup as _renameGroup,
+  toggleProjectFavorite as _toggleProjectFavorite,
+  findFavoriteProjectIds as _findFavoriteProjectIds,
 } from '@/lib/data/projects'
 import { createProjectSchema, updateProjectSchema } from '@/lib/data/validators'
 import type { UpdateProjectInput } from '@/lib/data/validators'
@@ -113,6 +115,19 @@ export async function updateProjectSettings(projectId: string, settings: Record<
   const project = await _updateProject(projectId, userId, { settings })
   revalidatePath(`/project/${projectId}`)
   return project
+}
+
+export async function toggleProjectFavorite(projectId: string, favorite: boolean) {
+  const userId = await requireMember(projectId)
+  await _toggleProjectFavorite(userId, projectId, favorite)
+  revalidatePath('/dashboard')
+  return { favorite }
+}
+
+export async function getFavoriteProjectIds() {
+  const userId = await requireAuth()
+  const ids = await _findFavoriteProjectIds(userId)
+  return Array.from(ids)
 }
 
 export async function deleteProject(projectId: string) {
