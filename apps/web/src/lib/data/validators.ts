@@ -26,6 +26,8 @@ export const createProjectSchema = z.object({
   timeScale: z.enum(['day', 'week', 'month']).default('week'),
 })
 
+export const setFavoriteSchema = z.object({ favorite: z.boolean() })
+
 export const updateProjectSchema = z.object({
   name: z.string().trim().min(1).max(255).optional(),
   description: z.string().trim().max(5000).nullable().optional(),

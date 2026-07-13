@@ -11,6 +11,7 @@ import { TaskBoard } from '@/components/board/TaskBoard'
 import { ProjectSwitcher } from '@/components/board/ProjectSwitcher'
 import { useThemeStore } from '@/stores/themeStore'
 import { SaveStatusPill } from '@/components/board/SaveStatusPill'
+import { FavoriteStar } from '@/components/board/FavoriteStar'
 import { activeFilterCount, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { cn } from '@/lib/utils/cn'
@@ -46,9 +47,10 @@ interface ProjectContentProps {
     image?: string | null
   }
   initialBoardData?: Record<string, unknown>
+  initialFavorite?: boolean
 }
 
-export default function ProjectContent({ project, user, initialBoardData }: ProjectContentProps) {
+export default function ProjectContent({ project, user, initialBoardData, initialFavorite = false }: ProjectContentProps) {
   const [activeTab, setActiveTab] = useState<'board' | 'gantt' | 'canvas' | 'trophy' | 'velocity'>('board')
   const [showFilters, setShowFilters] = useState(false)
   const [filters, setFilters] = useState<BoardFilters>(DEFAULT_FILTERS)
@@ -97,6 +99,7 @@ export default function ProjectContent({ project, user, initialBoardData }: Proj
               glowColor={projectGlow}
             />
             <SaveStatusPill />
+            <FavoriteStar projectId={project.id} initialFavorite={initialFavorite} />
           </div>
 
           <button

@@ -6,7 +6,7 @@ import { Plus } from 'lucide-react'
 import { signOut } from 'next-auth/react'
 import { NeonButton } from '@/components/ui/NeonButton'
 import { CreateProjectModal } from '@/components/project/CreateProjectModal'
-import { getWorkspaceProjects, getSharedProjects } from '@/lib/actions/projects'
+import { getWorkspaceProjects, getSharedProjects, getFavoriteProjectIds, toggleProjectFavorite } from '@/lib/actions/projects'
 import { ensurePersonalWorkspace, createGroup, addProjectToGroup, removeProjectFromGroup } from '@/lib/actions/workspaces'
 import type { RealmInfo } from '@/components/project/ProjectContextMenu'
 import { WorkspaceSettingsModal } from '@/components/workspace/WorkspaceSettingsModal'
@@ -35,6 +35,7 @@ interface DashboardContentProps {
   projects: ProjectWithStats[]
   initialWorkspaces?: Array<{ groupId: string; groupName: string; groupColor: string | null; groupIcon: string | null; isPersonal: boolean; memberCount: number; ownerId: string; memberRole: string; projects: Array<Record<string, unknown>> }>
   initialShared?: Array<Record<string, unknown>>
+  initialFavoriteIds?: string[]
 }
 
 function mapWorkspaces(wsData: NonNullable<DashboardContentProps['initialWorkspaces']>, userId: string): WorkspaceGroup[] {
@@ -53,7 +54,7 @@ function mapWorkspaces(wsData: NonNullable<DashboardContentProps['initialWorkspa
   return [...personal, ...team]
 }
 
-export default function DashboardContent({ user, projects: initialProjects, initialWorkspaces, initialShared }: DashboardContentProps) {
+export default function DashboardContent({ user, projects: initialProjects, initialWorkspaces, initialShared, initialFavoriteIds = [] }: DashboardContentProps) {
   const { collapsed, activeRealmId, hiddenProjectIds, hiddenRealmIds } = useSidebarStore()
   const [workspaces, setWorkspaces] = useState<WorkspaceGroup[]>(() =>
     initialWorkspaces ? mapWorkspaces(initialWorkspaces, user.id) : []
@@ -61,6 +62,7 @@ export default function DashboardContent({ user, projects: initialProjects, init
   const [sharedProjects, setSharedProjects] = useState<ProjectWithStats[]>(() =>
     initialShared ? initialShared.map((p) => ({ ...p, totalTasks: 0, doneTasks: 0, completionPct: 0 }) as ProjectWithStats) : []
   )
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set(initialFavoriteIds))
   const [loaded, setLoaded] = useState(!!initialWorkspaces)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingProject, setEditingProject] = useState<ProjectWithStats | null>(null)
@@ -76,15 +78,17 @@ export default function DashboardContent({ user, projects: initialProjects, init
 
   const loadWorkspaces = useCallback(async () => {
     const gen = ++fetchGenRef.current
-    const [wsData, sharedData] = await Promise.all([
+    const [wsData, sharedData, favoriteData] = await Promise.all([
       getWorkspaceProjects(),
       getSharedProjects(),
+      getFavoriteProjectIds(),
     ])
 
     if (gen !== fetchGenRef.current) return
 
     setWorkspaces(mapWorkspaces(wsData, user.id))
     setSharedProjects(sharedData.map((p) => ({ ...p, totalTasks: 0, doneTasks: 0, completionPct: 0 })) as ProjectWithStats[])
+    setFavoriteIds(new Set(favoriteData))
     setLoaded(true)
   }, [user.id])
 
@@ -149,6 +153,21 @@ export default function DashboardContent({ user, projects: initialProjects, init
       }
     }
   }, [workspaces, sharedProjects, loadWorkspaces])
+
+  const handleToggleFavorite = useCallback(async (projectId: string) => {
+    const nextValue = !favoriteIds.has(projectId)
+    setFavoriteIds((prev) => {
+      const next = new Set(prev)
+      if (nextValue) next.add(projectId)
+      else next.delete(projectId)
+      return next
+    })
+    try {
+      await toggleProjectFavorite(projectId, nextValue)
+    } catch {
+      loadWorkspaces()
+    }
+  }, [favoriteIds, loadWorkspaces])
 
   useEffect(() => {
     if (workspaceInitRef.current) return
@@ -225,6 +244,15 @@ export default function DashboardContent({ user, projects: initialProjects, init
     return [...unassigned, ...shared]
   }, [workspaces, sharedProjects, hiddenProjectIds])
 
+  const favoriteProjects = useMemo(() => {
+    const allProjects = new Map<string, ProjectWithStats>()
+    for (const ws of workspaces) {
+      for (const p of ws.projects) allProjects.set(p.id, p)
+    }
+    for (const p of sharedProjects) allProjects.set(p.id, p)
+    return Array.from(allProjects.values()).filter((p) => favoriteIds.has(p.id) && !hiddenProjectIds.includes(p.id))
+  }, [workspaces, sharedProjects, favoriteIds, hiddenProjectIds])
+
   const hasProjects = workspaces.some((ws) => ws.projects.length > 0) || initialProjects.length > 0
 
   return (
@@ -288,6 +316,39 @@ export default function DashboardContent({ user, projects: initialProjects, init
             />
           ) : (
             <div className="space-y-6">
+              {favoriteProjects.length > 0 && (
+                <RealmSection
+                  realm={{
+                    id: 'favorites',
+                    name: 'Favorites',
+                    color: '#f59e0b',
+                    isPersonal: false,
+                    isOwner: true,
+                    memberCount: 1,
+                    projectCount: favoriteProjects.length,
+                  }}
+                  defaultExpanded
+                  onOpenSettings={null}
+                >
+                  <ProjectViewSwitcher
+                    projects={favoriteProjects}
+                    onEdit={setEditingProject}
+                    onDelete={() => loadWorkspaces().catch(() => {})}
+                    onShare={setSharingProject}
+                    onGroupChange={() => loadWorkspaces().catch(() => {})}
+                    realms={realms}
+                    projectRealmMap={projectRealmMap}
+                    onToggleRealm={handleToggleRealm}
+                    favoriteIds={favoriteIds}
+                    onToggleFavorite={handleToggleFavorite}
+                    view={view}
+                    onViewChange={setView}
+                    layout={gridLayout}
+                    onLayoutChange={setGridLayout}
+                  />
+                </RealmSection>
+              )}
+
               {realmSections.map((ws) => (
                 <RealmSection
                   key={ws.groupId}
@@ -312,6 +373,8 @@ export default function DashboardContent({ user, projects: initialProjects, init
                     realms={realms}
                     projectRealmMap={projectRealmMap}
                     onToggleRealm={handleToggleRealm}
+                    favoriteIds={favoriteIds}
+                    onToggleFavorite={handleToggleFavorite}
                     view={view}
                     onViewChange={setView}
                     layout={gridLayout}
@@ -343,6 +406,8 @@ export default function DashboardContent({ user, projects: initialProjects, init
                     realms={realms}
                     projectRealmMap={projectRealmMap}
                     onToggleRealm={handleToggleRealm}
+                    favoriteIds={favoriteIds}
+                    onToggleFavorite={handleToggleFavorite}
                     view={view}
                     onViewChange={setView}
                     layout={gridLayout}

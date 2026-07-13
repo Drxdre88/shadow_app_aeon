@@ -21,6 +21,8 @@ interface TreeViewProps {
   realms?: Array<{ id: string; name: string; color: string; isPersonal: boolean }>
   projectRealmMap?: Record<string, string[]>
   onToggleRealm?: (projectId: string, realmId: string) => void
+  favoriteIds?: Set<string>
+  onToggleFavorite?: (projectId: string) => void
 }
 
 interface TreeNode {
@@ -45,7 +47,7 @@ function groupByFluidGroup(projects: ProjectWithStats[]): TreeNode[] {
     .map(([label, prjs]) => ({ label, projects: prjs }))
 }
 
-export function TreeView({ projects, onEdit, onDelete, onShare, realms = [], projectRealmMap = {}, onToggleRealm }: TreeViewProps) {
+export function TreeView({ projects, onEdit, onDelete, onShare, realms = [], projectRealmMap = {}, onToggleRealm, favoriteIds, onToggleFavorite }: TreeViewProps) {
   const router = useRouter()
   const { projectColors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
@@ -297,11 +299,13 @@ export function TreeView({ projects, onEdit, onDelete, onShare, realms = [], pro
           projectName={ctxMenu.project.name}
           realms={realms}
           projectRealmIds={projectRealmMap[ctxMenu.project.id] ?? []}
+          isFavorite={favoriteIds?.has(ctxMenu.project.id)}
           onClose={() => setCtxMenu(null)}
           onEdit={() => onEdit?.(ctxMenu.project)}
           onShare={() => onShare?.(ctxMenu.project)}
           onDelete={() => { setPendingDeleteId(ctxMenu.project.id); setCtxMenu(null) }}
           onToggleRealm={(realmId) => onToggleRealm?.(ctxMenu.project.id, realmId)}
+          onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(ctxMenu.project.id) : undefined}
         />
       )}
       <ConfirmModal

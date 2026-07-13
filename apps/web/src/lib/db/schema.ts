@@ -73,6 +73,14 @@ export const projectMembers = pgTable('project_members', {
   pk: primaryKey({ columns: [pm.projectId, pm.userId] }),
 }))
 
+export const favoriteProjects = pgTable('favorite_projects', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (fp) => ({
+  pk: primaryKey({ columns: [fp.userId, fp.projectId] }),
+}))
+
 export const projectInvites = pgTable('project_invites', {
   id: uuid('id').defaultRandom().primaryKey(),
   projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
@@ -661,6 +669,7 @@ export type UserPreference = typeof userPreferences.$inferSelect
 export type TaskComment = typeof taskComments.$inferSelect
 export type ApiKeyRecord = typeof apiKeys.$inferSelect
 export type ProjectMember = typeof projectMembers.$inferSelect
+export type FavoriteProject = typeof favoriteProjects.$inferSelect
 export type ProjectInvite = typeof projectInvites.$inferSelect
 export type BoardSnapshot = typeof boardSnapshots.$inferSelect
 export type WorkspaceGroup = typeof workspaceGroups.$inferSelect
