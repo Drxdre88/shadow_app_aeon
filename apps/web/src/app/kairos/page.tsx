@@ -2,31 +2,15 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import dynamic from 'next/dynamic'
-import { Search, Orbit, Network, Table2, Sparkles, EyeOff, Maximize2, Minimize2 } from 'lucide-react'
-import type { ComponentType } from 'react'
+import { Search, EyeOff, Maximize2, Minimize2 } from 'lucide-react'
 import { useKairosData } from '@/components/kairos/useKairosData'
 import { TrackingRail } from '@/components/kairos/TrackingRail'
 import { MemorySidePanel } from '@/components/kairos/MemorySidePanel'
 import { KairosLegend } from '@/components/kairos/KairosLegend'
 import type { ColorMode } from '@/components/kairos/nodeColor'
-import type { BackdropId } from '@/components/kairos/Kairos2D'
 import { SkyboxDropdown } from '@/components/skybox/SkyboxDropdown'
 import { useKairosStore } from '@/stores/kairosStore'
-import { useKairosPrefsStore, type KairosViewMode, type KairosTimeWindow } from '@/stores/kairosPrefsStore'
-import { useAetherUi } from '@/components/aether/useAetherUi'
-
-const VIEW_OPTIONS: { id: KairosViewMode; label: string; icon: ComponentType<{ className?: string }>; disabled?: boolean }[] = [
-  { id: '3d',     label: '3D',     icon: Orbit },
-  { id: '2d',     label: '2D',     icon: Network },
-  { id: 'aether', label: 'Aether', icon: Sparkles },
-  { id: 'table',  label: 'Table',  icon: Table2, disabled: true },
-]
-
-const BACKDROP_OPTIONS: { id: BackdropId; label: string }[] = [
-  { id: 'cortex', label: 'Cortex' },
-  { id: 'aeon',   label: 'Aeon' },
-  { id: 'art',    label: 'Art' },
-]
+import { useKairosPrefsStore, type KairosTimeWindow } from '@/stores/kairosPrefsStore'
 
 const COLOR_MODES: { id: ColorMode; label: string }[] = [
   { id: 'dominion', label: 'Dominion' },
@@ -48,28 +32,14 @@ const Kairos3D = dynamic(
   { ssr: false, loading: () => <Center muted>Booting Kairos…</Center> }
 )
 
-const Kairos2D = dynamic(
-  () => import('@/components/kairos/Kairos2D').then((m) => m.Kairos2D),
-  { ssr: false, loading: () => <Center muted>Booting Kairos 2D…</Center> }
-)
-
-const AetherView = dynamic(
-  () => import('@/components/aether/AetherView').then((m) => m.AetherView),
-  { ssr: false, loading: () => <Center muted>Entering Aether…</Center> }
-)
-
 export default function KairosPage() {
   const { graph, loading, error, refresh } = useKairosData()
   const selectedId = useKairosStore((s) => s.selectedMemoryId)
   const setSelectedId = useKairosStore((s) => s.setSelected)
-  const view = useKairosPrefsStore((s) => s.view)
-  const setView = useKairosPrefsStore((s) => s.setView)
   const colorMode = useKairosPrefsStore((s) => s.colorMode)
   const setColorMode = useKairosPrefsStore((s) => s.setColorMode)
   const skybox = useKairosPrefsStore((s) => s.skybox)
   const setSkybox = useKairosPrefsStore((s) => s.setSkybox)
-  const backdrop = useKairosPrefsStore((s) => s.backdrop)
-  const setBackdrop = useKairosPrefsStore((s) => s.setBackdrop)
   const timeWindow = useKairosPrefsStore((s) => s.timeWindow)
   const setTimeWindow = useKairosPrefsStore((s) => s.setTimeWindow)
   const zenMode = useKairosPrefsStore((s) => s.zenMode)
@@ -77,16 +47,9 @@ export default function KairosPage() {
   const setZenMode = useKairosPrefsStore((s) => s.setZenMode)
   const hideUnanchoredInRepo = useKairosPrefsStore((s) => s.hideUnanchoredInRepo)
   const setHideUnanchoredInRepo = useKairosPrefsStore((s) => s.setHideUnanchoredInRepo)
-  const legendOpen = useAetherUi((s) => s.legendOpen)
-  const toggleLegend = useAetherUi((s) => s.toggleLegend)
-  const aetherReaderOpen = useAetherUi((s) => s.readerOpen)
-  const toggleReader = useAetherUi((s) => s.toggleReader)
   const railCollapsed = useKairosPrefsStore((s) => s.railCollapsed)
   const toggleRail = useKairosPrefsStore((s) => s.toggleRail)
   const [query, setQuery] = useState('')
-
-  const isGraph = view === '3d' || view === '2d'
-  const isAether = view === 'aether'
 
   // 'z' toggles zen; Esc leaves it. Skip while typing in the filter box.
   useEffect(() => {
@@ -133,87 +96,40 @@ export default function KairosPage() {
         <header className="relative z-50 flex items-center px-4 py-3 border-b border-white/[0.06] bg-black/40 backdrop-blur-md gap-6">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
-              {VIEW_OPTIONS.map((v) => {
-                const Icon = v.icon
-                return (
-                  <button
-                    key={v.id}
-                    onClick={() => !v.disabled && setView(v.id)}
-                    disabled={v.disabled}
-                    title={v.disabled ? `${v.label} (coming soon)` : v.label}
-                    className={`px-2 py-1 rounded-md transition-all flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] ${
-                      view === v.id
-                        ? 'bg-white/[0.12] text-white/90'
-                        : v.disabled
-                          ? 'text-white/20 cursor-not-allowed'
-                          : 'text-white/40 hover:text-white/70'
-                    }`}
-                  >
-                    <Icon className="w-3 h-3" />
-                    <span>{v.label}</span>
-                  </button>
-                )
-              })}
+              {COLOR_MODES.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => setColorMode(m.id)}
+                  className={`px-2 py-1 rounded-md transition-all text-[10px] uppercase tracking-[0.2em] ${
+                    colorMode === m.id
+                      ? 'bg-white/[0.12] text-white/90'
+                      : 'text-white/40 hover:text-white/70'
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
             </div>
-            {isGraph && (
-              <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
-                {COLOR_MODES.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => setColorMode(m.id)}
-                    className={`px-2 py-1 rounded-md transition-all text-[10px] uppercase tracking-[0.2em] ${
-                      colorMode === m.id
-                        ? 'bg-white/[0.12] text-white/90'
-                        : 'text-white/40 hover:text-white/70'
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
-            )}
-            {isAether && (
-              <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
-                <button
-                  onClick={toggleLegend}
-                  className={`px-2 py-1 rounded-md transition-all text-[10px] uppercase tracking-[0.2em] ${
-                    legendOpen ? 'bg-white/[0.12] text-white/90' : 'text-white/40 hover:text-white/70'
-                  }`}
-                >
-                  Legend
-                </button>
-                <button
-                  onClick={toggleReader}
-                  className={`px-2 py-1 rounded-md transition-all text-[10px] uppercase tracking-[0.2em] ${
-                    aetherReaderOpen ? 'bg-white/[0.12] text-white/90' : 'text-white/40 hover:text-white/70'
-                  }`}
-                >
-                  Reader
-                </button>
-              </div>
-            )}
           </div>
 
           <div className="flex-1 flex justify-center">
-            {isGraph && (
-              <div
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] w-full max-w-[420px]"
-                style={{ boxShadow: 'inset 0 0 16px rgba(0,0,0,0.35)' }}
-              >
-                <Search className="w-3.5 h-3.5 text-white/35 shrink-0" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Filter memories…"
-                  className="flex-1 bg-transparent outline-none text-[12px] text-white/85 placeholder:text-white/35"
-                />
-                <span className="text-[10px] text-white/30 font-mono shrink-0">⌘K</span>
-              </div>
-            )}
+            <div
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] w-full max-w-[420px]"
+              style={{ boxShadow: 'inset 0 0 16px rgba(0,0,0,0.35)' }}
+            >
+              <Search className="w-3.5 h-3.5 text-white/35 shrink-0" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Filter memories…"
+                className="flex-1 bg-transparent outline-none text-[12px] text-white/85 placeholder:text-white/35"
+              />
+              <span className="text-[10px] text-white/30 font-mono shrink-0">⌘K</span>
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
-            {isGraph && colorMode === 'repo' && (
+            {colorMode === 'repo' && (
               <button
                 onClick={() => setHideUnanchoredInRepo(!hideUnanchoredInRepo)}
                 title={hideUnanchoredInRepo ? 'Showing only memories with a repo. Click to show all.' : 'Showing all memories. Click to hide unanchored.'}
@@ -227,26 +143,7 @@ export default function KairosPage() {
                 <span>{hideUnanchoredInRepo ? 'Repo only' : 'All memories'}</span>
               </button>
             )}
-            {(view === '3d' || isAether) && (
-              <SkyboxDropdown value={skybox} onChange={setSkybox} align="right" />
-            )}
-            {view === '2d' && (
-              <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
-                {BACKDROP_OPTIONS.map((b) => (
-                  <button
-                    key={b.id}
-                    onClick={() => setBackdrop(b.id)}
-                    className={`px-2 py-1 rounded-md transition-all text-[10px] uppercase tracking-[0.2em] ${
-                      backdrop === b.id
-                        ? 'bg-white/[0.12] text-white/90'
-                        : 'text-white/40 hover:text-white/70'
-                    }`}
-                  >
-                    {b.label}
-                  </button>
-                ))}
-              </div>
-            )}
+            <SkyboxDropdown value={skybox} onChange={setSkybox} align="right" />
             <button
               onClick={toggleZen}
               title="Zen mode — hide all chrome (Z)"
@@ -260,9 +157,7 @@ export default function KairosPage() {
 
       <div className="flex-1 flex relative">
         <main className="flex-1 relative">
-          {isAether ? (
-            <AetherView />
-          ) : loading ? (
+          {loading ? (
             <Center>Loading Kairos…</Center>
           ) : error ? (
             <Center muted>Failed to load: {error}</Center>
@@ -270,15 +165,6 @@ export default function KairosPage() {
             <Center muted>
               No memories yet — use Note in the sidebar or press <Kbd>⌘⇧Space</Kbd> to capture your first thought.
             </Center>
-          ) : view === '2d' ? (
-            <Kairos2D
-              nodes={filteredNodes}
-              edges={filteredEdges}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              colorMode={colorMode}
-              backdrop={backdrop}
-            />
           ) : (
             <Kairos3D
               nodes={filteredNodes}
@@ -289,10 +175,10 @@ export default function KairosPage() {
               skybox={skybox}
             />
           )}
-          {isGraph && !zenMode && !loading && !error && graph.nodes.length > 0 && (
+          {!zenMode && !loading && !error && graph.nodes.length > 0 && (
             <KairosLegend nodes={filteredNodes} mode={colorMode} />
           )}
-          {isGraph && !zenMode && (
+          {!zenMode && (
             <MemorySidePanel
               memoryId={selectedId}
               onClose={() => setSelectedId(null)}
@@ -312,7 +198,7 @@ export default function KairosPage() {
           )}
         </main>
 
-        {isGraph && !zenMode && (
+        {!zenMode && (
           <TrackingRail
             nodes={graph.nodes}
             onSelect={setSelectedId}
