@@ -7,6 +7,7 @@ import { useKairosData } from '@/components/kairos/useKairosData'
 import { TrackingRail } from '@/components/kairos/TrackingRail'
 import { MemorySidePanel } from '@/components/kairos/MemorySidePanel'
 import { KairosLegend } from '@/components/kairos/KairosLegend'
+import { KairosInbox } from '@/components/kairos/KairosInbox'
 import type { ColorMode } from '@/components/kairos/nodeColor'
 import { SkyboxDropdown } from '@/components/skybox/SkyboxDropdown'
 import { useKairosStore } from '@/stores/kairosStore'
@@ -144,6 +145,7 @@ export default function KairosPage() {
               </button>
             )}
             <SkyboxDropdown value={skybox} onChange={setSkybox} align="right" />
+            <KairosInbox />
             <button
               onClick={toggleZen}
               title="Zen mode — hide all chrome (Z)"
