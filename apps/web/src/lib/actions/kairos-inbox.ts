@@ -2,8 +2,7 @@
 
 import { z } from 'zod'
 import { requireAuth } from '@/lib/actions/helpers'
-import { getKairosInbox } from '@/lib/data/inbox'
-import { acceptProposal, archiveMemory, findMemoryById } from '@/lib/data/memories'
+import { acceptInboxProposal, dismissInboxMemory, getKairosInbox } from '@/lib/data/inbox'
 import { answerKairosAsk } from '@/lib/kairos/ask'
 
 const memoryIdSchema = z.string().uuid()
@@ -31,24 +30,18 @@ export async function answerKairosInboxAsk(questionMemoryId: string, answer: str
 
 export async function acceptKairosInboxProposal(memoryId: string) {
   const userId = await requireAuth()
-  const result = await acceptProposal(memoryIdSchema.parse(memoryId), userId, { pin: false })
+  const result = await acceptInboxProposal(userId, memoryIdSchema.parse(memoryId))
 
-  if (!result) throw new Error('Proposal not found')
-  if (!result.ok) throw new Error('Memory is not a pending proposal')
-  return { id: result.memory.id }
+  if (!result.ok) {
+    throw new Error(result.reason === 'not_found' ? 'Proposal not found' : 'Memory is not a pending proposal')
+  }
+  return { id: result.id }
 }
 
 export async function dismissKairosInboxProposal(memoryId: string) {
   const userId = await requireAuth()
-  const id = memoryIdSchema.parse(memoryId)
-  const proposal = await findMemoryById(id, userId)
-  const metadata = (proposal?.sourceMetadata ?? {}) as Record<string, unknown>
+  const result = await dismissInboxMemory(userId, memoryIdSchema.parse(memoryId))
 
-  if (!proposal || proposal.type !== 'inbound' || metadata.status !== 'pending') {
-    throw new Error('Proposal not found')
-  }
-
-  const archived = await archiveMemory(id, userId)
-  if (!archived) throw new Error('Proposal not found')
-  return { id: archived.id }
+  if (!result.ok) throw new Error('Proposal not found')
+  return { id: result.id }
 }
