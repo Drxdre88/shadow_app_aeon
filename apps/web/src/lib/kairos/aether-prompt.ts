@@ -123,13 +123,63 @@ function renderPriorAether(prior: PriorAetherRow | null): string {
   return lines.join('\n')
 }
 
-export function buildAetherPrompt(ctx: AetherContext): string {
+// Static instruction prefix — sent as the (cached) system block. Keep this
+// free of per-run values so the Anthropic prompt-cache prefix stays stable.
+export const AETHER_SYSTEM_PROMPT = [
+  "You are Kairos, synthesising the global Aether — the operator's living self-model across ALL Dominions.",
+  '',
+  'The Aether is the highest-level synthesis: who this person is, what they are building across all their work, and what the cross-cutting patterns, tensions, and movements are. It is NOT a summary of any one Dominion — it is the shape they form together.',
+  '',
+  'Reflections carry HIGHER weight than activity signals. If a reflection contradicts an archetype, the reflection wins.',
+  '',
+  'Output requirements:',
+  '- Return ONLY a JSON object inside a single ```json fenced block. No prose before or after.',
+  '- Assign a fresh UUID v4 to every thought id.',
+  '- Anti-drift rule: every thought MUST have at least one real memory id in sourceMemoryIds drawn from the ids shown above. Thoughts with no real grounding MUST be omitted.',
+  '- Field rules:',
+  '  - `generatedAt`: current UTC ISO 8601 timestamp.',
+  '  - `coreNarrative`: 2–4 sentences. Who is this operator? What are they building across all their work? What is the overarching movement or arc? Honest, grounded, no flattery.',
+  '  - `thoughts`: 5–15 items. Mix of kinds. Each:',
+  '    - `id`: UUID v4 (fresh, unique)',
+  '    - `title`: 1–3 words — a short tag, never a sentence (e.g. "Velocity Drift", "BYOK Gate")',
+  '    - `insight`: one paragraph, ≤800 chars',
+  '    - `dominionId`: UUID of the source Dominion, or null for cross-cutting',
+  '    - `dominionName`: display name of the Dominion at generation time, or null',
+  '    - `dominionColor`: color token (e.g. "purple") from the Dominion, or null',
+  '    - `salience`: 0..1 — how central / load-bearing is this right now',
+  '    - `kind`: conclusion | tension | connection | question | eureka',
+  '    - `sourceMemoryIds`: array of real memory UUIDs from the substrate above (min 1)',
+  '    - `ageDays`: integer, how many days old is the core source material',
+  '  - `tensions`: 0–6 cross-Dominion or intra-Dominion tension pairs, each with `aId`, `bId` (thought ids), `note` (≤280 chars)',
+  '  - `shifts`: 0–6 bullets — how this synthesis differs from the prior Aether. If first run, leave empty.',
+  '',
+  'Schema:',
+  '```json',
+  '{',
+  '  "generatedAt": "2024-01-01T00:00:00.000Z",',
+  '  "coreNarrative": "...",',
+  '  "thoughts": [{',
+  '    "id": "uuid-v4",',
+  '    "title": "...",',
+  '    "insight": "...",',
+  '    "dominionId": "uuid-or-null",',
+  '    "dominionName": "...",',
+  '    "dominionColor": "...",',
+  '    "salience": 0.8,',
+  '    "kind": "eureka",',
+  '    "sourceMemoryIds": ["uuid"],',
+  '    "ageDays": 2',
+  '  }],',
+  '  "tensions": [{ "aId": "uuid", "bId": "uuid", "note": "..." }],',
+  '  "shifts": ["..."]',
+  '}',
+  '```',
+].join('\n')
+
+// Per-run payload — date plus the operator's live cross-Dominion substrate.
+export function buildAetherUserPrompt(ctx: AetherContext): string {
   const parts: string[] = [
-    `You are Kairos, synthesising the global Aether — the operator's living self-model across ALL Dominions. Date: ${ctx.today}.`,
-    '',
-    'The Aether is the highest-level synthesis: who this person is, what they are building across all their work, and what the cross-cutting patterns, tensions, and movements are. It is NOT a summary of any one Dominion — it is the shape they form together.',
-    '',
-    'Reflections carry HIGHER weight than activity signals. If a reflection contradicts an archetype, the reflection wins.',
+    `Date: ${ctx.today}.`,
     '',
     '## Dominion cortex snapshots (latest per-Dominion synthesis)',
     ctx.cortexSnapshots.length === 0
@@ -148,53 +198,14 @@ export function buildAetherPrompt(ctx: AetherContext): string {
     '',
     '## Prior Aether (detect shifts — what has changed since the last synthesis)',
     renderPriorAether(ctx.prior),
-    '',
-    '---',
-    '',
-    'Output requirements:',
-    '- Return ONLY a JSON object inside a single ```json fenced block. No prose before or after.',
-    '- Assign a fresh UUID v4 to every thought id.',
-    '- Anti-drift rule: every thought MUST have at least one real memory id in sourceMemoryIds drawn from the ids shown above. Thoughts with no real grounding MUST be omitted.',
-    '- Field rules:',
-    '  - `generatedAt`: current UTC ISO 8601 timestamp.',
-    '  - `coreNarrative`: 2–4 sentences. Who is this operator? What are they building across all their work? What is the overarching movement or arc? Honest, grounded, no flattery.',
-    '  - `thoughts`: 5–15 items. Mix of kinds. Each:',
-    '    - `id`: UUID v4 (fresh, unique)',
-    '    - `title`: 1–3 words — a short tag, never a sentence (e.g. "Velocity Drift", "BYOK Gate")',
-    '    - `insight`: one paragraph, ≤800 chars',
-    '    - `dominionId`: UUID of the source Dominion, or null for cross-cutting',
-    '    - `dominionName`: display name of the Dominion at generation time, or null',
-    '    - `dominionColor`: color token (e.g. "purple") from the Dominion, or null',
-    '    - `salience`: 0..1 — how central / load-bearing is this right now',
-    '    - `kind`: conclusion | tension | connection | question | eureka',
-    '    - `sourceMemoryIds`: array of real memory UUIDs from the substrate above (min 1)',
-    '    - `ageDays`: integer, how many days old is the core source material',
-    '  - `tensions`: 0–6 cross-Dominion or intra-Dominion tension pairs, each with `aId`, `bId` (thought ids), `note` (≤280 chars)',
-    '  - `shifts`: 0–6 bullets — how this synthesis differs from the prior Aether. If first run, leave empty.',
-    '',
-    'Schema:',
-    '```json',
-    '{',
-    '  "generatedAt": "2024-01-01T00:00:00.000Z",',
-    '  "coreNarrative": "...",',
-    '  "thoughts": [{',
-    '    "id": "uuid-v4",',
-    '    "title": "...",',
-    '    "insight": "...",',
-    '    "dominionId": "uuid-or-null",',
-    '    "dominionName": "...",',
-    '    "dominionColor": "...",',
-    '    "salience": 0.8,',
-    '    "kind": "eureka",',
-    '    "sourceMemoryIds": ["uuid"],',
-    '    "ageDays": 2',
-    '  }],',
-    '  "tensions": [{ "aId": "uuid", "bId": "uuid", "note": "..." }],',
-    '  "shifts": ["..."]',
-    '}',
-    '```',
   ]
   return parts.join('\n')
+}
+
+// Combined single-string prompt (system + user). Kept for tests and any
+// caller that doesn't split the request into cacheable blocks.
+export function buildAetherPrompt(ctx: AetherContext): string {
+  return [AETHER_SYSTEM_PROMPT, buildAetherUserPrompt(ctx)].join('\n\n')
 }
 
 export function extractJsonBlock(text: string): unknown {

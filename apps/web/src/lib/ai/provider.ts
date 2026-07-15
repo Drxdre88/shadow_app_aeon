@@ -25,6 +25,11 @@ export interface AIRequest {
   prompt?: string
   system?: string
   messages?: AIMessage[]
+  // Mark `system` as a static, cacheable prefix. On the Anthropic BYOK path
+  // this places a prompt-caching breakpoint (cache_control: ephemeral) on the
+  // system block so repeated calls in a run reuse it; other providers ignore
+  // the namespaced option, so it is a no-op for them.
+  cacheSystem?: boolean
   maxTokens?: number
   temperature?: number
   stopSequences?: string[]
@@ -66,6 +71,16 @@ export interface AIProvider {
   stream(req: AIRequest): AsyncIterable<StreamChunk>
 }
 
+// Anthropic prompt-caching breakpoint for the static prefix. GUARDRAIL: cache
+// hits are an exact byte-prefix match — the `system` string sent with
+// cacheSystem MUST stay fully static across calls (no dates, names, IDs, or
+// other per-run interpolation), or every call silently misses the cache.
+// Non-Anthropic providers only read their own providerOptions namespace, so
+// this is a no-op for them.
+const ANTHROPIC_CACHE_PREFIX = {
+  anthropic: { cacheControl: { type: 'ephemeral' as const } },
+}
+
 // Convert AIRequest into Vercel SDK kwargs. Either prompt or messages must
 // be provided; messages take precedence.
 function toSdkArgs(model: LanguageModel, req: AIRequest) {
@@ -78,6 +93,18 @@ function toSdkArgs(model: LanguageModel, req: AIRequest) {
   }
   if (req.messages) {
     return { ...base, messages: req.messages.map((m) => ({ role: m.role, content: m.content })) }
+  }
+  if (req.system && req.cacheSystem) {
+    // System moves into the messages array so the cache_control breakpoint
+    // can ride on it as a per-message provider option.
+    return {
+      ...base,
+      system: undefined,
+      messages: [
+        { role: 'system' as const, content: req.system, providerOptions: ANTHROPIC_CACHE_PREFIX },
+        { role: 'user' as const, content: req.prompt ?? '' },
+      ],
+    }
   }
   return { ...base, prompt: req.prompt ?? '' }
 }

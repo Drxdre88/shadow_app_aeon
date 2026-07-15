@@ -5,7 +5,8 @@ import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import {
-  buildIntrospectionPrompt,
+  INTROSPECTION_SYSTEM_PROMPT,
+  buildIntrospectionUserPrompt,
   extractJsonBlock,
   introspectionOutSchema,
   filterGroundedProposals,
@@ -123,12 +124,16 @@ export async function runIntrospectionForDominion(
 
   const date = todayIso()
   const runId = `introspection:${dominionId}:${date}`
-  const prompt = buildIntrospectionPrompt(ctx, date)
 
   let rawText: string
   try {
     const { provider } = await getProviderForTask(userId, { taskType: 'reflect', dominionId })
-    const response = await provider.ask({ prompt, maxTokens: 2000, temperature: 0.4 })
+    const response = await provider.ask({
+      system: INTROSPECTION_SYSTEM_PROMPT,
+      prompt: buildIntrospectionUserPrompt(ctx, date),
+      cacheSystem: true,
+      maxTokens: 2000,
+    })
     rawText = response.text.trim()
   } catch (err) {
     if (err instanceof AiCredentialMissingError) {

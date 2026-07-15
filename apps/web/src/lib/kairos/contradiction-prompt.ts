@@ -71,44 +71,56 @@ function renderBelief(m: {
   return `- [${m.id}] (${date} · ${m.type} · confidence ${conf}) ${neutraliseFences(m.title)}\n  ${body}`
 }
 
-export function buildContradictionPrompt(
+// Static instruction prefix — sent as the (cached) system block. Keep this
+// free of per-run values so the Anthropic prompt-cache prefix stays stable.
+export const CONTRADICTION_SYSTEM_PROMPT = [
+  'You are Kairos, checking one belief against its nearest neighbours for contradictions.',
+  '',
+  'For EACH candidate below, decide whether it and the probe make a CONTRADICTORY claim — including IMPLICIT conflict (e.g. a newer state silently invalidating an older one), not just an explicit factual clash. You are NOT deciding anything final — this is a flagged notice for the operator to review.',
+  '',
+  'Hard rules:',
+  '- Only flag genuine contradictions, not mere difference of topic, scope, or nuance.',
+  '- If they contradict, decide which is currently AUTHORITATIVE. Default policy: more recent wins; if confidence differs significantly, higher confidence wins. You may override this default with a rationale if the content clearly warrants it.',
+  '- `candidateId` MUST be one of the exact [id]s listed below. Never invent an id.',
+  '- Set `confidence` honestly (0–1): your certainty that this IS a contradiction.',
+  '- `rationale`: ≤280 chars, plain English, cite what conflicts.',
+  '',
+  'Output requirements:',
+  '- Return ONLY a JSON object inside a single ```json fenced block. No prose before or after.',
+  '- One finding per candidate worth flagging. Candidates with no contradiction can be omitted entirely.',
+  '',
+  'Schema:',
+  '```json',
+  '{',
+  '  "findings": [',
+  '    { "candidateId": "uuid", "contradicts": true, "winner": "probe", "confidence": 0.8, "rationale": "..." }',
+  '  ]',
+  '}',
+  '```',
+].join('\n')
+
+// Per-run payload — the probe belief and its retrieved neighbours.
+export function buildContradictionUserPrompt(
   probe: ContradictionProbe,
   candidates: ContradictionCandidate[],
 ): string {
   const parts: string[] = [
-    'You are Kairos, checking one belief against its nearest neighbours for contradictions.',
-    '',
-    'For EACH candidate below, decide whether it and the probe make a CONTRADICTORY claim — including IMPLICIT conflict (e.g. a newer state silently invalidating an older one), not just an explicit factual clash. You are NOT deciding anything final — this is a flagged notice for the operator to review.',
-    '',
-    'Hard rules:',
-    '- Only flag genuine contradictions, not mere difference of topic, scope, or nuance.',
-    '- If they contradict, decide which is currently AUTHORITATIVE. Default policy: more recent wins; if confidence differs significantly, higher confidence wins. You may override this default with a rationale if the content clearly warrants it.',
-    '- `candidateId` MUST be one of the exact [id]s listed below. Never invent an id.',
-    '- Set `confidence` honestly (0–1): your certainty that this IS a contradiction.',
-    '- `rationale`: ≤280 chars, plain English, cite what conflicts.',
-    '',
     '## Probe belief',
     renderBelief(probe),
     '',
     '## Candidates (nearest neighbours by semantic similarity)',
     candidates.map(renderBelief).join('\n'),
-    '',
-    '---',
-    '',
-    'Output requirements:',
-    '- Return ONLY a JSON object inside a single ```json fenced block. No prose before or after.',
-    '- One finding per candidate worth flagging. Candidates with no contradiction can be omitted entirely.',
-    '',
-    'Schema:',
-    '```json',
-    '{',
-    '  "findings": [',
-    '    { "candidateId": "uuid", "contradicts": true, "winner": "probe", "confidence": 0.8, "rationale": "..." }',
-    '  ]',
-    '}',
-    '```',
   ]
   return parts.join('\n')
+}
+
+// Combined single-string prompt (system + user). Kept for tests and any
+// caller that doesn't split the request into cacheable blocks.
+export function buildContradictionPrompt(
+  probe: ContradictionProbe,
+  candidates: ContradictionCandidate[],
+): string {
+  return [CONTRADICTION_SYSTEM_PROMPT, buildContradictionUserPrompt(probe, candidates)].join('\n\n')
 }
 
 export function extractJsonBlock(text: string): unknown {

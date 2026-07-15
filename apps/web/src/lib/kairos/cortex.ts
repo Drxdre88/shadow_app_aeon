@@ -5,7 +5,9 @@ import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import {
+  CORTEX_SYSTEM_PROMPT,
   buildCortexPrompt,
+  buildCortexUserPrompt,
   cortexOutSchema,
   extractJsonBlock,
   renderCortexMarkdown,
@@ -305,15 +307,15 @@ export async function runCortexRegenForDominion(
 
   const date = todayIso()
   const runId = `cortex:${dominionId}:${date}`
-  const prompt = buildCortexPrompt(ctx, date)
 
   let rawText: string
   try {
     const { provider } = await getProviderForTask(userId, { taskType: 'cortex', dominionId })
     const response = await provider.ask({
-      prompt,
+      system: CORTEX_SYSTEM_PROMPT,
+      prompt: buildCortexUserPrompt(ctx, date),
+      cacheSystem: true,
       maxTokens: 3000,
-      temperature: 0.3,
     })
     rawText = response.text.trim()
   } catch (err) {

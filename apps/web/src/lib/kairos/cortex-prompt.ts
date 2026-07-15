@@ -102,11 +102,40 @@ function renderPriorThreads(prior: PriorCortexRow | null): string {
   return parts.join('\n')
 }
 
-export function buildCortexPrompt(ctx: CortexContext, today: string): string {
+// Static instruction prefix — sent as the (cached) system block. Keep this
+// free of per-run values so the Anthropic prompt-cache prefix stays stable.
+export const CORTEX_SYSTEM_PROMPT = [
+  'You are Kairos, regenerating the living cortex for a single Dominion.',
+  '',
+  'The cortex is your *model of how this Dominion is shaping right now*. It is what you read first whenever the operator asks anything about this area, so it must be tight, honest, and grounded. Reflections carry HIGHER weight than activity-derived signals; if a reflection contradicts the activity, the reflection wins.',
+  '',
+  'Output requirements:',
+  '- Return ONLY a JSON object inside a single ```json fenced block. No prose before or after.',
+  '- Field rules:',
+  '  - `visionAnchor`: 1–2 sentence headline. Restate the vision in your own words, anchored to the operator\'s current reality. Honest about scope drift if present.',
+  '  - `currentState`: 2–6 bullets. What this Dominion *is* right now (rolled up from archetypes + reflections).',
+  '  - `activeThreads`: 0–6 in-progress items, each with `title`, `pulse` (high/steady/low), `lastAdvance` (one sentence). Reference archetypes by `id` when applicable.',
+  '  - `driftSignals`: 0–6 bullets — things stalled, ignored, or diverging from the vision. Each ≤280 chars.',
+  '  - `openQuestions`: 0–6 bullets — gaps the substrate makes you wonder about. Questions, not assertions.',
+  '  - `recentShifts`: 0–4 bullets — how today\'s reading differs from the prior cortex snapshot. If first regen, leave empty.',
+  '',
+  'Schema:',
+  '```json',
+  '{',
+  '  "visionAnchor": "...",',
+  '  "currentState": ["..."],',
+  '  "activeThreads": [{ "id": "uuid?", "title": "...", "pulse": "high|steady|low", "lastAdvance": "..." }],',
+  '  "driftSignals": ["..."],',
+  '  "openQuestions": ["..."],',
+  '  "recentShifts": ["..."]',
+  '}',
+  '```',
+].join('\n')
+
+// Per-run payload — Dominion identity, date, and the live substrate.
+export function buildCortexUserPrompt(ctx: CortexContext, today: string): string {
   const parts: string[] = [
-    `You are Kairos, regenerating the living cortex for the "${ctx.name}" Dominion. Date: ${today}.`,
-    '',
-    'The cortex is your *model of how this Dominion is shaping right now*. It is what you read first whenever the operator asks anything about this area, so it must be tight, honest, and grounded. Reflections carry HIGHER weight than activity-derived signals; if a reflection contradicts the activity, the reflection wins.',
+    `Dominion: "${ctx.name}". Date: ${today}.`,
     '',
     '## Vision',
     ctx.vision || '(none set)',
@@ -136,32 +165,14 @@ export function buildCortexPrompt(ctx: CortexContext, today: string): string {
     '',
     "## Prior cortex snapshot (yesterday's reading — detect recent_shifts by comparing to today)",
     renderPriorThreads(ctx.prior),
-    '',
-    '---',
-    '',
-    'Output requirements:',
-    '- Return ONLY a JSON object inside a single ```json fenced block. No prose before or after.',
-    '- Field rules:',
-    '  - `visionAnchor`: 1–2 sentence headline. Restate the vision in your own words, anchored to the operator\'s current reality. Honest about scope drift if present.',
-    '  - `currentState`: 2–6 bullets. What this Dominion *is* right now (rolled up from archetypes + reflections).',
-    '  - `activeThreads`: 0–6 in-progress items, each with `title`, `pulse` (high/steady/low), `lastAdvance` (one sentence). Reference archetypes by `id` when applicable.',
-    '  - `driftSignals`: 0–6 bullets — things stalled, ignored, or diverging from the vision. Each ≤280 chars.',
-    '  - `openQuestions`: 0–6 bullets — gaps the substrate makes you wonder about. Questions, not assertions.',
-    '  - `recentShifts`: 0–4 bullets — how today\'s reading differs from the prior cortex snapshot. If first regen, leave empty.',
-    '',
-    'Schema:',
-    '```json',
-    '{',
-    '  "visionAnchor": "...",',
-    '  "currentState": ["..."],',
-    '  "activeThreads": [{ "id": "uuid?", "title": "...", "pulse": "high|steady|low", "lastAdvance": "..." }],',
-    '  "driftSignals": ["..."],',
-    '  "openQuestions": ["..."],',
-    '  "recentShifts": ["..."]',
-    '}',
-    '```',
   ]
   return parts.join('\n')
+}
+
+// Combined single-string prompt (system + user). Kept for tests and any
+// caller that doesn't split the request into cacheable blocks.
+export function buildCortexPrompt(ctx: CortexContext, today: string): string {
+  return [CORTEX_SYSTEM_PROMPT, buildCortexUserPrompt(ctx, today)].join('\n\n')
 }
 
 export function extractJsonBlock(text: string): unknown {

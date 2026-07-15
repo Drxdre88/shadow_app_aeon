@@ -56,13 +56,41 @@ function renderMemoryLine(m: SubstrateRow): string {
   return `- [${m.id}] (${m.streamClass}/${m.type}) ${neutraliseFences(m.title)}${tail}`
 }
 
-export function buildArchetypePrompt(ctx: ArchetypeContext, today: string): string {
+// Static instruction prefix — sent as the (cached) system block. Keep this
+// free of per-run values so the Anthropic prompt-cache prefix stays stable.
+export const ARCHETYPE_SYSTEM_PROMPT = [
+  'You are Kairos, synthesising the current shape of a single Dominion.',
+  '',
+  'Your job: read the substrate below and emit 3–7 ARCHETYPES — master themes that capture what is actually shaping this Dominion right now. Each archetype is a synthesis, not a recap of any single memory.',
+  '',
+  'Reflections carry HIGHER weight than activity-derived signals. If a reflection contradicts activity, the reflection wins. If silence in an area, that is itself signal.',
+  '',
+  'Output requirements:',
+  '- Return ONLY a JSON object inside a single ```json fenced block. No prose before or after.',
+  '- 3 to 7 archetypes. Quality over quantity — if the Dominion is quiet, prefer 3.',
+  '- Each archetype:',
+  '  - `title`: ≤80 chars, noun phrase, e.g. "Kairos brain build-out", "Beta auth hardening".',
+  '  - `summary`: ≤300 chars, one-sentence synthesis (this is what surfaces in the cosmic view).',
+  '  - `body`: 100–800 chars markdown — the *reading* of what is happening, why, and what to watch. Cite memory ids inline as `[mem:UUID]` when grounding a claim.',
+  '  - `themes`: 1–5 short tags (lowercase kebab).',
+  '  - `citedMemoryIds`: the memory ids you grounded this archetype in. Use the UUIDs shown above. 0 is allowed if the archetype is purely a vision/reflection synthesis.',
+  '- `shifts`: 0–5 short notes describing how this reading differs from the existing archetypes shown above (if any).',
+  '',
+  'Schema:',
+  '```json',
+  '{',
+  '  "archetypes": [',
+  '    { "title": "...", "summary": "...", "body": "...", "themes": ["..."], "citedMemoryIds": ["..."] }',
+  '  ],',
+  '  "shifts": ["..."]',
+  '}',
+  '```',
+].join('\n')
+
+// Per-run payload — Dominion identity, date, and the live substrate.
+export function buildArchetypeUserPrompt(ctx: ArchetypeContext, today: string): string {
   const parts: string[] = [
-    `You are Kairos, synthesising the current shape of the "${ctx.name}" Dominion. Date: ${today}.`,
-    '',
-    'Your job: read the substrate below and emit 3–7 ARCHETYPES — master themes that capture what is actually shaping this Dominion right now. Each archetype is a synthesis, not a recap of any single memory.',
-    '',
-    'Reflections carry HIGHER weight than activity-derived signals. If a reflection contradicts activity, the reflection wins. If silence in an area, that is itself signal.',
+    `Dominion: "${ctx.name}". Date: ${today}.`,
     '',
     '## Vision',
     ctx.vision || '(none set)',
@@ -99,31 +127,14 @@ export function buildArchetypePrompt(ctx: ArchetypeContext, today: string): stri
     ctx.existing.length === 0
       ? '(none — first run)'
       : ctx.existing.map((m) => `- [${m.id}] ${neutraliseFences(m.title)}${m.summary ? ` — ${neutraliseFences(m.summary)}` : ''}`).join('\n'),
-    '',
-    '---',
-    '',
-    'Output requirements:',
-    '- Return ONLY a JSON object inside a single ```json fenced block. No prose before or after.',
-    '- 3 to 7 archetypes. Quality over quantity — if the Dominion is quiet, prefer 3.',
-    '- Each archetype:',
-    '  - `title`: ≤80 chars, noun phrase, e.g. "Kairos brain build-out", "Beta auth hardening".',
-    '  - `summary`: ≤300 chars, one-sentence synthesis (this is what surfaces in the cosmic view).',
-    '  - `body`: 100–800 chars markdown — the *reading* of what is happening, why, and what to watch. Cite memory ids inline as `[mem:UUID]` when grounding a claim.',
-    '  - `themes`: 1–5 short tags (lowercase kebab).',
-    '  - `citedMemoryIds`: the memory ids you grounded this archetype in. Use the UUIDs shown above. 0 is allowed if the archetype is purely a vision/reflection synthesis.',
-    '- `shifts`: 0–5 short notes describing how this reading differs from the existing archetypes shown above (if any).',
-    '',
-    'Schema:',
-    '```json',
-    '{',
-    '  "archetypes": [',
-    '    { "title": "...", "summary": "...", "body": "...", "themes": ["..."], "citedMemoryIds": ["..."] }',
-    '  ],',
-    '  "shifts": ["..."]',
-    '}',
-    '```',
   ]
   return parts.join('\n')
+}
+
+// Combined single-string prompt (system + user). Kept for tests and any
+// caller that doesn't split the request into cacheable blocks.
+export function buildArchetypePrompt(ctx: ArchetypeContext, today: string): string {
+  return [ARCHETYPE_SYSTEM_PROMPT, buildArchetypeUserPrompt(ctx, today)].join('\n\n')
 }
 
 export function extractJsonBlock(text: string): unknown {
