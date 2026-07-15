@@ -98,6 +98,24 @@ export async function createChatThread(
   return { ok: true, threadId: row.id }
 }
 
+// Telegram bridge — the operator's persistent Telegram thread is found by a
+// title convention (no schema change). Returns the newest still-open thread
+// with that exact title, or null.
+export async function findOpenChatThreadByTitle(userId: string, title: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: agentSessions.id })
+    .from(agentSessions)
+    .where(and(
+      eq(agentSessions.userId, userId),
+      eq(agentSessions.engine, CHAT_ENGINE),
+      eq(agentSessions.goal, title),
+      eq(agentSessions.status, 'running'),
+    ))
+    .orderBy(desc(agentSessions.spawnedAt))
+    .limit(1)
+  return row?.id ?? null
+}
+
 async function loadThreadRow(userId: string, threadId: string) {
   const [row] = await db
     .select()
