@@ -227,7 +227,7 @@ export function SortableGroupSection({
                 }
               }}
               onBlur={() => { if (!newItemTitle.trim() && !justSubmittedRef.current) onAddCancel() }}
-              placeholder="Add an item..."
+              placeholder="New item…"
               className={cn(
                 'flex-1 px-0 py-0 text-sm bg-transparent border-none resize-none',
                 'text-white placeholder-slate-500',

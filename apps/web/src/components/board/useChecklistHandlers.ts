@@ -126,30 +126,6 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
     deleteChecklistItem(itemId, editingTaskId, projectId).catch(() => {})
   }, [editingTaskId, projectId, checklistItems, syncSummary])
 
-  const handleGroupAdd = useCallback((groupName: string) => {
-    if (!editingTaskId || !hydratedRef.current) return
-    const placeholder: ChecklistItem = {
-      id: generateId(),
-      title: 'New item',
-      completed: false,
-      state: 'unchecked',
-      status: null,
-      groupName,
-    }
-    setChecklistItems((prev) => [...prev, placeholder])
-    // Omit orderIndex — DB assigns MAX+1 so the new group lands at global end.
-    createChecklistItem({
-      id: placeholder.id,
-      taskId: editingTaskId,
-      projectId,
-      title: placeholder.title,
-      groupName,
-    }).catch(() => {
-      setChecklistItems((prev) => prev.filter((i) => i.id !== placeholder.id))
-      toast('Failed to add checklist group')
-    })
-  }, [editingTaskId, projectId])
-
   const handleItemTitleChange = useCallback((itemId: string, title: string) => {
     if (!editingTaskId || !hydratedRef.current) return
     let prevTitle: string | undefined
@@ -243,7 +219,6 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
     handleChecklistToggle,
     handleChecklistStatusChange,
     handleChecklistRemove,
-    handleGroupAdd,
     handleItemTitleChange,
     handleGroupRename,
     handleChecklistReorder,
