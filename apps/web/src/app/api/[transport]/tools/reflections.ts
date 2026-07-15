@@ -40,6 +40,7 @@ export const registerReflectionTools: RegisterFn = (server) => {
       summary: z.string().min(1).max(1000).optional().describe('Optional one-line compression used by context packing.'),
       tags: z.array(z.string().min(1).max(50)).max(20).optional().describe('Optional free-form tags, e.g. ["belief", "ml-direction"]'),
     },
+    { title: 'Kairos Reflect', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const result = await captureReflection(uid, {

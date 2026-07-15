@@ -22,6 +22,7 @@ export const registerCommentTools: RegisterFn = (server) => {
       projectId: z.string().uuid().describe('The project UUID'),
       taskId: z.string().uuid().describe('The task UUID'),
     },
+    { title: 'List Comments', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, taskId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -37,6 +38,7 @@ export const registerCommentTools: RegisterFn = (server) => {
       taskId: z.string().uuid().describe('The task UUID'),
       content: z.string().min(1).max(5000).describe('Comment text'),
     },
+    { title: 'Add Comment', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, taskId, content }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -55,6 +57,7 @@ export const registerCommentTools: RegisterFn = (server) => {
       commentId: z.string().uuid().describe('The comment UUID'),
       content: z.string().min(1).max(5000).describe('Updated comment text'),
     },
+    { title: 'Update Comment', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ projectId, taskId, commentId, content }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -71,6 +74,7 @@ export const registerCommentTools: RegisterFn = (server) => {
       taskId: z.string().uuid().describe('The task UUID'),
       commentId: z.string().uuid().describe('The comment UUID'),
     },
+    { title: 'Delete Comment', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     async ({ projectId, taskId, commentId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')

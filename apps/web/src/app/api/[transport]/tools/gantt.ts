@@ -43,6 +43,7 @@ export const registerGanttTools: RegisterFn = (server) => {
     'list_gantt_tasks',
     'List gantt tasks and rows for a project',
     { projectId: z.string().uuid().describe('The project UUID') },
+    { title: 'List Gantt Tasks', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -60,6 +61,7 @@ export const registerGanttTools: RegisterFn = (server) => {
       startDate: createGanttTaskSchema.shape.startDate.describe('Start date (ISO 8601)'),
       endDate: createGanttTaskSchema.shape.endDate.describe('End date (ISO 8601)'),
     },
+    { title: 'Create Gantt Task', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, ...data }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -76,6 +78,7 @@ export const registerGanttTools: RegisterFn = (server) => {
       taskId: z.string().uuid().describe('The gantt task UUID'),
       ...updateGanttTaskSchema.shape,
     },
+    { title: 'Update Gantt Task', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ projectId, taskId, ...data }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -94,6 +97,7 @@ export const registerGanttTools: RegisterFn = (server) => {
       projectId: z.string().uuid().describe('The project UUID'),
       taskId: z.string().uuid().describe('The gantt task UUID'),
     },
+    { title: 'Delete Gantt Task', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     async ({ projectId, taskId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -110,6 +114,7 @@ export const registerGanttTools: RegisterFn = (server) => {
       tasks: z.array(createGanttTaskSchema).min(1).max(100)
         .describe('Array of gantt tasks to create (max 100)'),
     },
+    { title: 'Batch Create Gantt Tasks', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, tasks }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -128,6 +133,7 @@ export const registerGanttTools: RegisterFn = (server) => {
     'list_rows',
     'List gantt swim-lane rows for a project',
     { projectId: z.string().uuid().describe('The project UUID') },
+    { title: 'List Rows', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -142,6 +148,7 @@ export const registerGanttTools: RegisterFn = (server) => {
       projectId: z.string().uuid().describe('The project UUID'),
       ...createRowSchema.shape,
     },
+    { title: 'Create Row', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, ...data }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -157,6 +164,7 @@ export const registerGanttTools: RegisterFn = (server) => {
       rowId: z.string().uuid().describe('The row UUID'),
       ...updateRowSchema.shape,
     },
+    { title: 'Update Row', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ projectId, rowId, ...data }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -172,6 +180,7 @@ export const registerGanttTools: RegisterFn = (server) => {
       projectId: z.string().uuid().describe('The project UUID'),
       rowId: z.string().uuid().describe('The row UUID'),
     },
+    { title: 'Delete Row', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     async ({ projectId, rowId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -187,6 +196,7 @@ export const registerGanttTools: RegisterFn = (server) => {
       projectId: z.string().uuid().describe('The project UUID'),
       ...reorderRowsSchema.shape,
     },
+    { title: 'Reorder Rows', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ projectId, updates }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -205,6 +215,7 @@ export const registerGanttTools: RegisterFn = (server) => {
     'list_gantt_views',
     'List saved gantt views (by-person / by-initiative / etc.) for a project',
     { projectId: z.string().uuid().describe('The project UUID') },
+    { title: 'List Gantt Views', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -219,6 +230,7 @@ export const registerGanttTools: RegisterFn = (server) => {
       projectId: z.string().uuid().describe('The project UUID'),
       ...createGanttViewSchema.shape,
     },
+    { title: 'Create Gantt View', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, ...data }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -234,6 +246,7 @@ export const registerGanttTools: RegisterFn = (server) => {
       viewId: z.string().uuid().describe('The gantt view UUID'),
       ...updateGanttViewSchema.shape,
     },
+    { title: 'Update Gantt View', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ projectId, viewId, ...data }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -249,6 +262,7 @@ export const registerGanttTools: RegisterFn = (server) => {
       projectId: z.string().uuid().describe('The project UUID'),
       viewId: z.string().uuid().describe('The gantt view UUID'),
     },
+    { title: 'Delete Gantt View', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     async ({ projectId, viewId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')

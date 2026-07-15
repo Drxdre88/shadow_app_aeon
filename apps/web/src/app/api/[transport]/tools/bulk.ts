@@ -41,6 +41,7 @@ export const registerBulkTools: RegisterFn = (server) => {
         })).optional(),
       })).optional().describe('Tasks to create with optional checklist and label links'),
     },
+    { title: 'Set Up Board', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, columns, labels: labelDefs, tasks }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')

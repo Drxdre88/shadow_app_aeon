@@ -32,6 +32,7 @@ export const registerDialogueTools: RegisterFn = (server) => {
       topic: z.string().trim().min(1).max(500).optional().describe('Free-standing topic (used when no questionMemoryId).'),
       dominionId: z.string().uuid().optional().describe('Anchor a free-standing dialogue to a Dominion (enables per-turn retrieval). Ignored when seeding from an ask.'),
     },
+    { title: 'Open Dialogue', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const result = await openKairosDialogue(uid, {
@@ -51,6 +52,7 @@ export const registerDialogueTools: RegisterFn = (server) => {
     'prepare_dialogue_context',
     'Pack everything needed to author Kairos\'s next turn in a dialogue: the seed Aether thought + its grounding memories + the global core narrative, the full turn history, and fresh retrieval (cortex / archetypes / substrate) keyed on the latest operator turn. Workflow: call this → compose Kairos\'s reply yourself, grounded in the bundle → append_dialogue_turn(role:"kairos"). This is the Claude-Code cognition path — no BYOK key.',
     { threadId: z.string().uuid().describe('The dialogue thread id from open_dialogue.') },
+    { title: 'Prepare Dialogue Context', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const ctx = await prepareDialogueContext(uid, args.threadId)
@@ -68,6 +70,7 @@ export const registerDialogueTools: RegisterFn = (server) => {
       content: z.string().trim().min(1).max(20000).describe('The turn text — markdown supported.'),
       citations: z.array(z.string().uuid()).optional().describe('Memory ids this turn cited.'),
     },
+    { title: 'Append Dialogue Turn', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const res = await appendDialogueTurn(uid, args.threadId, args.role, args.content, args.citations)
@@ -80,6 +83,7 @@ export const registerDialogueTools: RegisterFn = (server) => {
     'get_dialogue',
     'Read a dialogue thread and all its turns (no synthesis, no new turn). Use from a delivery surface or to resume an in-flight conversation.',
     { threadId: z.string().uuid().describe('The dialogue thread id.') },
+    { title: 'Get Dialogue', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const loaded = await loadDialogue(uid, args.threadId)
@@ -113,6 +117,7 @@ export const registerDialogueTools: RegisterFn = (server) => {
       })).min(1).max(10).describe('One or more reflections distilled from the conversation.'),
       closeAsk: z.boolean().optional().describe('Mark the originating kairos-ask answered (default true).'),
     },
+    { title: 'Commit Dialogue', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const result = await commitDialogue(uid, args.threadId, {

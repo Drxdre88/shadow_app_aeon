@@ -22,6 +22,7 @@ export const registerTaskTools: RegisterFn = (server) => {
       limit: z.number().int().min(1).max(500).default(100).describe('Max results (default 100, max 500)'),
       offset: z.number().int().min(0).default(0).describe('Skip N results (default 0)'),
     },
+    { title: 'List Tasks', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, status, priority, limit, offset }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -40,6 +41,7 @@ export const registerTaskTools: RegisterFn = (server) => {
         size: true, startDate: true, endDate: true, onTimeline: true,
       }).shape,
     },
+    { title: 'Create Task', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, columnId, ...data }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -67,6 +69,7 @@ export const registerTaskTools: RegisterFn = (server) => {
         size: true, startDate: true, endDate: true, onTimeline: true,
       }).shape,
     },
+    { title: 'Update Task', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ projectId, taskId, columnId, ...data }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -91,6 +94,7 @@ export const registerTaskTools: RegisterFn = (server) => {
       projectId: z.string().uuid().describe('The project UUID'),
       taskId: z.string().uuid().describe('The task UUID'),
     },
+    { title: 'Delete Task', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     async ({ projectId, taskId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -107,6 +111,7 @@ export const registerTaskTools: RegisterFn = (server) => {
       projectId: z.string().uuid().describe('The project UUID'),
       taskId: z.string().uuid().describe('The task UUID'),
     },
+    { title: 'Get Task Detail', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, taskId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -132,6 +137,7 @@ export const registerTaskTools: RegisterFn = (server) => {
         columnId: z.string().uuid().optional(),
       })).min(1).max(100).describe('Array of tasks to create (max 100)'),
     },
+    { title: 'Batch Create Tasks', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, tasks }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
