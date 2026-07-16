@@ -21,6 +21,7 @@ export const registerColumnTools: RegisterFn = (server) => {
     'list_columns',
     'List board columns for a project',
     { projectId: z.string().uuid().describe('The project UUID') },
+    { title: 'List Columns', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -35,6 +36,7 @@ export const registerColumnTools: RegisterFn = (server) => {
       projectId: z.string().uuid().describe('The project UUID'),
       ...createColumnSchema.shape,
     },
+    { title: 'Create Column', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, ...data }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -52,6 +54,7 @@ export const registerColumnTools: RegisterFn = (server) => {
       columnId: z.string().uuid().describe('The column UUID'),
       ...updateColumnSchema.shape,
     },
+    { title: 'Update Column', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ projectId, columnId, ...data }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -68,6 +71,7 @@ export const registerColumnTools: RegisterFn = (server) => {
       projectId: z.string().uuid().describe('The project UUID'),
       columnId: z.string().uuid().describe('The column UUID'),
     },
+    { title: 'Delete Column', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     async ({ projectId, columnId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -87,6 +91,7 @@ export const registerColumnTools: RegisterFn = (server) => {
         orderIndex: z.number().int(),
       })).describe('Array of column IDs with new order indices'),
     },
+    { title: 'Reorder Columns', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ projectId, updates }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')

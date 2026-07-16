@@ -38,6 +38,7 @@ export const registerRealmTools: RegisterFn = (server) => {
     'list_realms',
     'List all realms (workspaces) the user belongs to',
     {},
+    { title: 'List Realms', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (_args, extra) => ok(await findGroupsForUser(getUserId(extra)))
   )
 
@@ -49,6 +50,7 @@ export const registerRealmTools: RegisterFn = (server) => {
       color: z.string().max(20).default('purple').describe('Accent color'),
       icon: z.string().max(50).optional().describe('Icon name'),
     },
+    { title: 'Create Realm', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ name, color, icon }, extra) => {
       const uid = getUserId(extra)
       const realm = await createWorkspaceGroup(uid, { name, color, icon })
@@ -65,6 +67,7 @@ export const registerRealmTools: RegisterFn = (server) => {
       color: z.string().max(20).optional().describe('New color'),
       icon: z.string().max(50).nullable().optional().describe('New icon'),
     },
+    { title: 'Update Realm', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ realmId, ...data }, extra) => {
       const uid = getUserId(extra)
       await requireOwner(realmId, uid)
@@ -79,6 +82,7 @@ export const registerRealmTools: RegisterFn = (server) => {
     {
       realmId: z.string().uuid().describe('Realm UUID'),
     },
+    { title: 'Delete Realm', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     async ({ realmId }, extra) => {
       const uid = getUserId(extra)
       await requireOwner(realmId, uid)
@@ -94,6 +98,7 @@ export const registerRealmTools: RegisterFn = (server) => {
     {
       realmId: z.string().uuid().describe('Realm UUID'),
     },
+    { title: 'List Realm Members', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ realmId }, extra) => {
       const uid = getUserId(extra)
       const role = await getGroupRole(realmId, uid)
@@ -110,6 +115,7 @@ export const registerRealmTools: RegisterFn = (server) => {
       email: z.string().email().describe('User email'),
       role: z.enum(['editor', 'viewer']).default('editor').describe('Member role'),
     },
+    { title: 'Invite Realm Member', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ realmId, email, role }, extra) => {
       const uid = getUserId(extra)
       await requireOwner(realmId, uid)
@@ -124,6 +130,7 @@ export const registerRealmTools: RegisterFn = (server) => {
     {
       realmId: z.string().uuid().describe('Realm UUID'),
     },
+    { title: 'List Pending Realm Invites', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ realmId }, extra) => {
       const uid = getUserId(extra)
       await requireOwner(realmId, uid)
@@ -138,6 +145,7 @@ export const registerRealmTools: RegisterFn = (server) => {
       realmId: z.string().uuid().describe('Realm UUID'),
       inviteId: z.string().uuid().describe('Invite UUID'),
     },
+    { title: 'Cancel Realm Invite', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     async ({ realmId, inviteId }, extra) => {
       const uid = getUserId(extra)
       await requireOwner(realmId, uid)
@@ -154,6 +162,7 @@ export const registerRealmTools: RegisterFn = (server) => {
       realmId: z.string().uuid().describe('Realm UUID'),
       inviteId: z.string().uuid().describe('Invite UUID'),
     },
+    { title: 'Resend Realm Invite', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ realmId, inviteId }, extra) => {
       const uid = getUserId(extra)
       await requireOwner(realmId, uid)
@@ -170,6 +179,7 @@ export const registerRealmTools: RegisterFn = (server) => {
       realmId: z.string().uuid().describe('Realm UUID'),
       userId: z.string().uuid().describe('User UUID to remove'),
     },
+    { title: 'Remove Realm Member', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     async ({ realmId, userId }, extra) => {
       const callerId = getUserId(extra)
       await requireOwner(realmId, callerId)
@@ -189,6 +199,7 @@ export const registerRealmTools: RegisterFn = (server) => {
       userId: z.string().uuid().describe('User UUID'),
       role: z.enum(['editor', 'viewer']).describe('New role'),
     },
+    { title: 'Update Realm Member Role', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ realmId, userId, role }, extra) => {
       const uid = getUserId(extra)
       await requireOwner(realmId, uid)
@@ -203,6 +214,7 @@ export const registerRealmTools: RegisterFn = (server) => {
     {
       realmId: z.string().uuid().describe('Realm UUID'),
     },
+    { title: 'List Realm Projects', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ realmId }, extra) => {
       const uid = getUserId(extra)
       const role = await getGroupRole(realmId, uid)
@@ -218,6 +230,7 @@ export const registerRealmTools: RegisterFn = (server) => {
       realmId: z.string().uuid().describe('Realm UUID'),
       projectId: z.string().uuid().describe('Project UUID'),
     },
+    { title: 'Add Project To Realm', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ realmId, projectId }, extra) => {
       const uid = getUserId(extra)
       await requireEditor(realmId, uid)
@@ -235,6 +248,7 @@ export const registerRealmTools: RegisterFn = (server) => {
       realmId: z.string().uuid().describe('Realm UUID'),
       projectId: z.string().uuid().describe('Project UUID'),
     },
+    { title: 'Remove Project From Realm', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     async ({ realmId, projectId }, extra) => {
       const uid = getUserId(extra)
       await requireEditor(realmId, uid)

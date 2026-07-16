@@ -39,6 +39,7 @@ export const registerDominionTools: RegisterFn = (server) => {
       vision:      z.string().max(4000).nullable().optional().describe('Long-form WHAT (Kairos Phase 1 body)'),
       missionLong: z.string().max(8000).nullable().optional().describe('Long-form HOW (Kairos Phase 1 body)'),
     },
+    { title: 'Create Dominion', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = createDominionSchema.safeParse(args)
@@ -61,6 +62,7 @@ export const registerDominionTools: RegisterFn = (server) => {
     'list_dominions',
     'List all Dominions owned by the calling user, ordered by sortOrder then name.',
     {},
+    { title: 'List Dominions', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (_args, extra) => {
       const uid = getUserId(extra)
       const rows = await findDominionsByUser(uid)
@@ -74,6 +76,7 @@ export const registerDominionTools: RegisterFn = (server) => {
     {
       dominionId: z.string().uuid().describe('Dominion UUID'),
     },
+    { title: 'Get Dominion', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ dominionId }, extra) => {
       const uid = getUserId(extra)
       const row = await findDominionById(dominionId, uid)
@@ -95,6 +98,7 @@ export const registerDominionTools: RegisterFn = (server) => {
       missionLong: z.string().max(8000).nullable().optional().describe('Long-form HOW — the operating mission'),
       archivedAt:  z.string().datetime().nullable().optional().describe('ISO timestamp to archive, or null to restore'),
     },
+    { title: 'Update Dominion', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ dominionId, ...rest }, extra) => {
       const uid = getUserId(extra)
       const parsed = updateDominionSchema.safeParse(rest)
@@ -112,6 +116,7 @@ export const registerDominionTools: RegisterFn = (server) => {
       dominionId:  z.string().uuid().describe('Dominion UUID'),
       memoryLimit: z.number().int().min(1).max(200).optional().describe('Max recent memories to include (default 25)'),
     },
+    { title: 'Inspect Dominion', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ dominionId, memoryLimit }, extra) => {
       const uid = getUserId(extra)
       const briefing = await _inspectDominion(dominionId, uid, { memoryLimit })
@@ -127,6 +132,7 @@ export const registerDominionTools: RegisterFn = (server) => {
       dominionId:      z.string().uuid(),
       includeArchived: z.boolean().optional(),
     },
+    { title: 'List Objectives', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ dominionId, includeArchived }, extra) => {
       const uid = getUserId(extra)
       const rows = await _listDominionObjectives(dominionId, uid, { includeArchived: includeArchived ?? false })
@@ -145,6 +151,7 @@ export const registerDominionTools: RegisterFn = (server) => {
       targetDate:  z.string().datetime().nullable().optional(),
       sortOrder:   z.number().int().optional(),
     },
+    { title: 'Create Objective', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = createDominionObjectiveSchema.safeParse(args)
@@ -167,6 +174,7 @@ export const registerDominionTools: RegisterFn = (server) => {
       sortOrder:   z.number().int().optional(),
       archivedAt:  z.string().datetime().nullable().optional(),
     },
+    { title: 'Update Objective', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ objectiveId, ...rest }, extra) => {
       const uid = getUserId(extra)
       const parsed = updateDominionObjectiveSchema.safeParse(rest)
@@ -183,6 +191,7 @@ export const registerDominionTools: RegisterFn = (server) => {
     {
       objectiveId: z.string().uuid(),
     },
+    { title: 'Archive Objective', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ objectiveId }, extra) => {
       const uid = getUserId(extra)
       const row = await _archiveDominionObjective(objectiveId, uid)
@@ -197,6 +206,7 @@ export const registerDominionTools: RegisterFn = (server) => {
     {
       dominionId: z.string().uuid().describe('Dominion UUID to delete'),
     },
+    { title: 'Delete Dominion', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     async ({ dominionId }, extra) => {
       const uid = getUserId(extra)
       const deleted = await _deleteDominion(dominionId, uid)
@@ -211,6 +221,7 @@ export const registerDominionTools: RegisterFn = (server) => {
     {
       dominionId: z.string().uuid().describe('Dominion UUID'),
     },
+    { title: 'List Dominion Repos', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ dominionId }, extra) => {
       const uid = getUserId(extra)
       const owned = await findDominionById(dominionId, uid)
@@ -227,6 +238,7 @@ export const registerDominionTools: RegisterFn = (server) => {
       dominionId: z.string().uuid().describe('Dominion UUID'),
       repoSlug:   z.string().min(1).max(120).describe('Repo slug, e.g. "owner/repo"'),
     },
+    { title: 'Add Dominion Repo', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ dominionId, repoSlug }, extra) => {
       const uid = getUserId(extra)
       const parsed = addDominionRepoSchema.safeParse({ dominionId, repoSlug })
@@ -244,6 +256,7 @@ export const registerDominionTools: RegisterFn = (server) => {
       dominionId: z.string().uuid().describe('Dominion UUID'),
       repoSlug:   z.string().min(1).max(120).describe('Repo slug to remove'),
     },
+    { title: 'Remove Dominion Repo', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     async ({ dominionId, repoSlug }, extra) => {
       const uid = getUserId(extra)
       const removed = await _removeDominionRepo(dominionId, uid, repoSlug)
@@ -259,6 +272,7 @@ export const registerDominionTools: RegisterFn = (server) => {
       projectId:  z.string().uuid().describe('Project UUID'),
       dominionId: z.string().uuid().nullable().describe('Dominion UUID, or null to clear'),
     },
+    { title: 'Assign Project Dominion', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ projectId, dominionId }, extra) => {
       const uid = getUserId(extra)
       const access = await verifyProjectAccess(projectId, uid)
@@ -280,6 +294,7 @@ export const registerDominionTools: RegisterFn = (server) => {
       projectIds: z.array(z.string().uuid()).min(1).max(200).describe('List of project UUIDs'),
       dominionId: z.string().uuid().nullable().describe('Dominion UUID, or null to clear'),
     },
+    { title: 'Bulk Assign Projects To Dominion', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ projectIds, dominionId }, extra) => {
       const uid = getUserId(extra)
       if (dominionId !== null) {

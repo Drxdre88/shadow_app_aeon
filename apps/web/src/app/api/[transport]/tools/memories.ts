@@ -104,6 +104,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       tags: z.array(z.string().min(1).max(50)).max(50).optional(),
       pinned: z.boolean().optional(),
     },
+    { title: 'Create Memory', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = createMemorySchema.safeParse({
@@ -147,6 +148,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       pinned: z.boolean().optional(),
       archivedAt: z.string().datetime().nullable().optional(),
     },
+    { title: 'Update Memory', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ memoryId, ...rest }, extra) => {
       const uid = getUserId(extra)
       const parsed = updateMemorySchema.safeParse(rest)
@@ -185,6 +187,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       pinnedOnly: z.boolean().optional(),
       limit: z.number().int().min(1).max(100).default(20).optional(),
     },
+    { title: 'Search Memories', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = searchMemoriesSchema.safeParse({
@@ -215,6 +218,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       type: z.enum(['relates', 'supports', 'contradicts', 'supersedes', 'refers_to', 'blocks_thinking']),
       note: z.string().max(500).optional().describe('Optional one-liner describing the edge'),
     },
+    { title: 'Link Memory', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ memoryId, ...rest }, extra) => {
       const uid = getUserId(extra)
       const parsed = addLinkSchema.safeParse(rest)
@@ -264,6 +268,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       maxSources: z.number().int().min(5).max(100).default(30).optional().describe('Cap on FTS hits considered before scoring'),
       includePinned: z.boolean().default(true).optional().describe('Whether to surface pinned memories regardless of FTS match'),
     },
+    { title: 'Prepare Context', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = prepareContextSchema.safeParse({
@@ -310,6 +315,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
         .describe('Which field to look for. Default: execSummary. Use "either" to catch both gaps in one pass'),
       oldestFirst: z.boolean().default(true).optional().describe('Oldest first for chronological backfill (default true)'),
     },
+    { title: 'List Memories Needing Summary', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       if (args.realmId) {
@@ -342,6 +348,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       includeReverse: z.boolean().default(true).optional().describe('Also include memories that link TO this one'),
       limit: z.number().int().min(1).max(100).default(20).optional(),
     },
+    { title: 'Get Memory With Neighbours', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ memoryId, hops, includeReverse, limit }, extra) => {
       const uid = getUserId(extra)
       const parsed = getNeighboursSchema.safeParse({
@@ -365,6 +372,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
     {
       memoryId: z.string().uuid().describe('The memory UUID to trace lineage for'),
     },
+    { title: 'Get Belief Trail', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ memoryId }, extra) => {
       const uid = getUserId(extra)
       const parsed = getBeliefTrailSchema.safeParse({ id: memoryId })
@@ -387,6 +395,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       supersedes: z.array(z.string().uuid()).max(20).optional()
         .describe('Memory ids this accepted belief replaces'),
     },
+    { title: 'Accept Proposal', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ memoryId, ...rest }, extra) => {
       const uid = getUserId(extra)
       const parsed = acceptProposalSchema.safeParse(rest)

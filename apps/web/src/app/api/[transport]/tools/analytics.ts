@@ -16,6 +16,7 @@ export const registerAnalyticsTools: RegisterFn = (server) => {
       projectId: z.string().uuid().describe('The project UUID'),
       range: z.enum(['7d', '30d', '90d', 'all']).default('30d').describe('Time range for analysis'),
     },
+    { title: 'Get Velocity Stats', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, range }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')

@@ -26,6 +26,7 @@ export const registerAskTools: RegisterFn = (server) => {
     'run_kairos_ask',
     'Select and persist the single best proactive question from the latest Aether synthesis. Returns the pending question if one already exists (never stacks two). Returns a silent/reason object if cadence window hasn\'t elapsed or there is no qualifying signal. Call this from a Claude Code session or a future scheduler to drive the Kairos proactive-question loop.',
     {},
+    { title: 'Run Kairos Ask', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (_args, extra) => {
       const uid = getUserId(extra)
       const result = await runKairosAsk(uid)
@@ -64,6 +65,7 @@ export const registerAskTools: RegisterFn = (server) => {
     'get_pending_kairos_ask',
     'Read the current pending (unanswered) Kairos question WITHOUT triggering a new selection. Returns { pending: null } when Kairos is not waiting on anything. Use this from a delivery surface (the Kairos view, a notification poller, a session opener) to check whether the operator owes Kairos an answer.',
     {},
+    { title: 'Get Pending Kairos Ask', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (_args, extra) => {
       const uid = getUserId(extra)
       const pending = await getPendingKairosAsk(uid)
@@ -90,6 +92,7 @@ export const registerAskTools: RegisterFn = (server) => {
       answer: z.string().trim().min(1).max(10000).describe('The operator\'s answer — markdown supported. Plain text is fine.'),
       dominionId: z.string().uuid().optional().describe('Override the Dominion to anchor the answer reflection. Defaults to the question\'s Dominion.'),
     },
+    { title: 'Answer Kairos Ask', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const result = await answerKairosAsk(

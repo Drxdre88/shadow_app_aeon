@@ -20,6 +20,7 @@ export const registerDependencyTools: RegisterFn = (server) => {
     'list_dependencies',
     'List all task dependencies (blocker relationships) for a project',
     { projectId: z.string().uuid().describe('The project UUID') },
+    { title: 'List Dependencies', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -35,6 +36,7 @@ export const registerDependencyTools: RegisterFn = (server) => {
       blockerTaskId: z.string().uuid().describe('The task that must complete first'),
       blockedTaskId: z.string().uuid().describe('The task that is blocked'),
     },
+    { title: 'Add Dependency', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, blockerTaskId, blockedTaskId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -58,6 +60,7 @@ export const registerDependencyTools: RegisterFn = (server) => {
       blockerTaskId: z.string().uuid().describe('The blocker task UUID'),
       blockedTaskId: z.string().uuid().describe('The blocked task UUID'),
     },
+    { title: 'Remove Dependency', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     async ({ projectId, blockerTaskId, blockedTaskId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -77,6 +80,7 @@ export const registerDependencyTools: RegisterFn = (server) => {
         blockedTaskId: z.string().uuid().describe('Task that is blocked'),
       })).min(1).max(100).describe('Array of dependency pairs'),
     },
+    { title: 'Batch Add Dependencies', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ projectId, dependencies }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')

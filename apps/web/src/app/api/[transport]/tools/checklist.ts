@@ -29,6 +29,7 @@ export const registerChecklistTools: RegisterFn = (server) => {
       title: z.string().min(1).max(255).describe('Checklist item title'),
       groupName: z.string().max(100).default('Checklist').describe('Group name for organizing items'),
     },
+    { title: 'Create Checklist Item', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, taskId, title, groupName }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -48,6 +49,7 @@ export const registerChecklistTools: RegisterFn = (server) => {
       state: z.enum(['unchecked', 'checked', 'crossed']).optional().describe('Check state'),
       status: z.string().max(30).nullable().optional().describe('Status label'),
     },
+    { title: 'Update Checklist Item', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ projectId, taskId, itemId, ...updates }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -65,6 +67,7 @@ export const registerChecklistTools: RegisterFn = (server) => {
       taskId: z.string().uuid().describe('The task UUID'),
       itemId: z.string().uuid().describe('The checklist item UUID'),
     },
+    { title: 'Delete Checklist Item', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     async ({ projectId, taskId, itemId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -85,6 +88,7 @@ export const registerChecklistTools: RegisterFn = (server) => {
         groupName: z.string().max(100).optional(),
       })).min(1).max(100).describe('Array of checklist items to create'),
     },
+    { title: 'Batch Create Checklist Items', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, taskId, items }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -107,6 +111,7 @@ export const registerChecklistTools: RegisterFn = (server) => {
         status: z.string().max(30).nullable().optional().describe('Status label'),
       })).min(1).max(100).describe('Array of items to update'),
     },
+    { title: 'Batch Update Checklist Items', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ projectId, taskId, items }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')

@@ -21,6 +21,7 @@ export const registerRecipeTools: RegisterFn = (server) => {
       recipe: z.string().min(1).max(64).optional().describe('Filter to runs of one named recipe (matches sourceMetadata.recipe)'),
       limit: z.number().int().min(1).max(100).default(25).optional(),
     },
+    { title: 'Get Trace History', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = traceHistoryQuery.safeParse(args)
@@ -39,6 +40,7 @@ export const registerRecipeTools: RegisterFn = (server) => {
       dominionId: z.string().uuid().describe('Dominion to scope retrieval and writes to'),
       args: z.record(z.string(), z.unknown()).optional().describe('Optional recipe-specific arguments'),
     },
+    { title: 'Run Recipe', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = runRecipeArgs.safeParse(args)

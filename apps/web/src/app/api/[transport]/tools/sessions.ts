@@ -35,6 +35,7 @@ export const registerSessionTools: RegisterFn = (server) => {
       dominionId: z.string().uuid().nullable().optional().describe('Optional Dominion anchor'),
       metadata:   z.record(z.string(), z.unknown()).optional().describe('Free-form metadata'),
     },
+    { title: 'Spawn Session', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = spawnSessionSchema.safeParse(args)
@@ -76,6 +77,7 @@ export const registerSessionTools: RegisterFn = (server) => {
       limit:      z.number().int().min(1).max(100).optional(),
       offset:     z.number().int().min(0).optional(),
     },
+    { title: 'List Sessions', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = listSessionsSchema.safeParse({
@@ -96,6 +98,7 @@ export const registerSessionTools: RegisterFn = (server) => {
     'get_session',
     'Fetch an agent session by id.',
     { sessionId: z.string().uuid() },
+    { title: 'Get Session', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ sessionId }, extra) => {
       const uid = getUserId(extra)
       const row = await findAgentSessionById(sessionId, uid)
@@ -112,6 +115,7 @@ export const registerSessionTools: RegisterFn = (server) => {
       afterSeq:  z.number().int().min(-1).optional(),
       limit:     z.number().int().min(1).max(1000).optional(),
     },
+    { title: 'List Session Events', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ sessionId, afterSeq, limit }, extra) => {
       const uid = getUserId(extra)
       const session = await findAgentSessionById(sessionId, uid)
@@ -125,6 +129,7 @@ export const registerSessionTools: RegisterFn = (server) => {
     'kill_session',
     'Terminate a live agent session. Marks status=killed even if the worker host is unreachable.',
     { sessionId: z.string().uuid() },
+    { title: 'Kill Session', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     async ({ sessionId }, extra) => {
       const uid = getUserId(extra)
       const session = await findAgentSessionById(sessionId, uid)

@@ -25,6 +25,7 @@ export const registerSynthesisTools: RegisterFn = (server) => {
     'prepare_aether_context',
     'Gather the full substrate for an Aether synthesis (the global self-model above ALL Dominions): every Dominion\'s latest cortex (with its structured currentState/driftSignals), the operator\'s highest-weight reflections, today\'s archetypes, and the prior Aether (for shift detection). Returns a structured bundle. Workflow: call this → synthesise an AetherPayload yourself → call commit_aether. This is the Claude-Code cognition path — no BYOK key required.',
     {},
+    { title: 'Prepare Aether Context', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (_args, extra) => {
       const uid = getUserId(extra)
       const inputs = await fetchAetherInputs(uid)
@@ -47,6 +48,7 @@ export const registerSynthesisTools: RegisterFn = (server) => {
     'commit_aether',
     'Persist a synthesised Aether — the single living self-model across all Dominions. YOU (Claude Code) supply the structured payload built from prepare_aether_context; the server only stores it (no LLM, no BYOK), forcing type/streamClass=\'aether\' and archiving the prior Aether. Every thought MUST cite real sourceMemoryIds (anti-drift) — ungrounded thoughts are dropped. Call prepare_aether_context first.',
     { payload: aetherOutSchema.describe('The synthesised AetherPayload: coreNarrative (global self-model prose), thoughts[] (each grounded in ≥1 real memory id), tensions[] (cross-Dominion), shifts[] (what changed vs the prior Aether).') },
+    { title: 'Commit Aether', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const payload = args.payload as AetherPayload

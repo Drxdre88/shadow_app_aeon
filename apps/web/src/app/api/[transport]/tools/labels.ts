@@ -19,6 +19,7 @@ export const registerLabelTools: RegisterFn = (server) => {
       limit: z.number().int().min(1).max(500).default(100).describe('Max results (default 100, max 500)'),
       offset: z.number().int().min(0).default(0).describe('Skip N results (default 0)'),
     },
+    { title: 'List Labels', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, limit, offset }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -37,6 +38,7 @@ export const registerLabelTools: RegisterFn = (server) => {
       projectId: z.string().uuid().describe('The project UUID'),
       ...createLabelSchema.shape,
     },
+    { title: 'Create Label', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, ...data }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -51,6 +53,7 @@ export const registerLabelTools: RegisterFn = (server) => {
       projectId: z.string().uuid().describe('The project UUID'),
       labelId: z.string().uuid().describe('The label UUID'),
     },
+    { title: 'Delete Label', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     async ({ projectId, labelId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -67,6 +70,7 @@ export const registerLabelTools: RegisterFn = (server) => {
       taskId: z.string().uuid().describe('The task UUID'),
       labelId: z.string().uuid().describe('The label UUID'),
     },
+    { title: 'Add Label To Task', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ projectId, taskId, labelId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -84,6 +88,7 @@ export const registerLabelTools: RegisterFn = (server) => {
       taskId: z.string().uuid().describe('The task UUID'),
       labelId: z.string().uuid().describe('The label UUID'),
     },
+    { title: 'Remove Label From Task', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     async ({ projectId, taskId, labelId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
@@ -101,6 +106,7 @@ export const registerLabelTools: RegisterFn = (server) => {
       taskId: z.string().uuid().describe('The task UUID'),
       labelIds: z.array(z.string().uuid()).max(50).describe('Label IDs to assign (replaces all current labels)'),
     },
+    { title: 'Set Task Labels', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ projectId, taskId, labelIds }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
