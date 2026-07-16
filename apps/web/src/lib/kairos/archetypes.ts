@@ -5,8 +5,10 @@ import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import {
+  ARCHETYPE_SYSTEM_PROMPT,
   archetypeOutSchema,
   buildArchetypePrompt,
+  buildArchetypeUserPrompt,
   extractJsonBlock,
   RECENT_WINDOW_DAYS,
   type ArchetypeContext,
@@ -247,15 +249,15 @@ export async function runArchetypeSynthesisForDominion(
 
   const date = todayIso()
   const runId = `archetype:${dominionId}:${date}`
-  const prompt = buildArchetypePrompt(ctx, date)
 
   let rawText: string
   try {
     const { provider } = await getProviderForTask(userId, { taskType: 'archetype', dominionId })
     const response = await provider.ask({
-      prompt,
+      system: ARCHETYPE_SYSTEM_PROMPT,
+      prompt: buildArchetypeUserPrompt(ctx, date),
+      cacheSystem: true,
       maxTokens: 3000,
-      temperature: 0.3,
     })
     rawText = response.text.trim()
   } catch (err) {

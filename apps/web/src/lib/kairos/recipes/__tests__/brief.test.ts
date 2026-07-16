@@ -90,7 +90,8 @@ describe('BRIEF recipe', () => {
     expect(getProviderForTask).toHaveBeenCalledWith(USER_ID, { taskType: 'brief', dominionId: DOMINION_ID })
     expect(ask).toHaveBeenCalledWith(expect.objectContaining({
       maxTokens: 1200,
-      temperature: 0.4,
+      cacheSystem: true,
+      system: expect.stringContaining('── OUTPUT FORMAT ──'),
     }))
   })
 

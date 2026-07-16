@@ -113,7 +113,7 @@ describe('buildCortexPrompt', () => {
     })
     const prompt = buildCortexPrompt(ctx, '2026-06-02')
 
-    expect(prompt).toContain('"AEON" Dominion')
+    expect(prompt).toContain('Dominion: "AEON"')
     expect(prompt).toContain('2026-06-02')
     expect(prompt).toContain('Fluid board/project app')
     expect(prompt).toContain('Ship closed beta exit')

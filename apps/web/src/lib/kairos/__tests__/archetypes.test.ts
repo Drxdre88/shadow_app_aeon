@@ -92,7 +92,7 @@ describe('buildArchetypePrompt', () => {
   it('includes vision, mission, objectives, board cards, reflections, and recent substrate', () => {
     const prompt = buildArchetypePrompt(makeCtx(), '2026-06-02')
 
-    expect(prompt).toContain('"AEON" Dominion')
+    expect(prompt).toContain('Dominion: "AEON"')
     expect(prompt).toContain('2026-06-02')
     expect(prompt).toContain('Fluid board/project app')
     expect(prompt).toContain('Ship closed beta exit')

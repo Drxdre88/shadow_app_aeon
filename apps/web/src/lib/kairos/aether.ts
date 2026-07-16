@@ -6,7 +6,8 @@ import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/rou
 import { withRetry } from '@/lib/ai/retry'
 import { writeCronFailureTrace } from './cron-trace'
 import {
-  buildAetherPrompt,
+  AETHER_SYSTEM_PROMPT,
+  buildAetherUserPrompt,
   aetherOutSchema,
   extractJsonBlock,
   renderAetherMarkdown,
@@ -269,13 +270,17 @@ export async function runAetherForUser(userId: string): Promise<{ generated: boo
 
   const today = todayIso()
   const ctx: AetherContext = { userId, today, ...inputs }
-  const prompt = buildAetherPrompt(ctx)
 
   let rawText: string
   let provider: Awaited<ReturnType<typeof getProviderForTask>>['provider']
   try {
     ;({ provider } = await getProviderForTask(userId, { taskType: 'aether' }))
-    const response = await withRetry(() => provider.ask({ prompt, maxTokens: 4000 }))
+    const response = await withRetry(() => provider.ask({
+      system: AETHER_SYSTEM_PROMPT,
+      prompt: buildAetherUserPrompt(ctx),
+      cacheSystem: true,
+      maxTokens: 4000,
+    }))
     rawText = response.text.trim()
   } catch (err) {
     if (err instanceof AiCredentialMissingError || err instanceof AiCredentialDecryptError) {

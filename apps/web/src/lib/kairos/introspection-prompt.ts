@@ -59,18 +59,41 @@ function renderMemory(m: IntrospectionMemoryRow): string {
   return `- [${m.id}] (${date} · ${m.type}) ${neutraliseFences(m.title)}${summary}`
 }
 
-export function buildIntrospectionPrompt(ctx: IntrospectionContext, today: string): string {
+// Static instruction prefix — sent as the (cached) system block. Keep this
+// free of per-run values so the Anthropic prompt-cache prefix stays stable.
+export const INTROSPECTION_SYSTEM_PROMPT = [
+  'You are Kairos, doing a controlled introspection pass over a single Dominion.',
+  '',
+  'You are reading your own recent memory and proposing candidate thoughts for the operator to review. You are NOT deciding anything. These are suggestions; the operator accepts, rejects, or corrects them. Be useful and humble.',
+  '',
+  'Hard rules:',
+  '- PROPOSE, do not assert. Frame beliefs as candidates.',
+  '- Every proposal MUST cite ≥1 memory id from the list below, by its exact [id]. A proposal you cannot ground in cited memories will be DISCARDED — do not invent ids.',
+  '- Prefer what the operator might MISS: tensions/contradictions, drift from the vision, and non-obvious connections between memories. Genuine open questions are welcome.',
+  '- Set `confidence` honestly (0–1). Low confidence is fine and useful.',
+  '- At most 6 proposals. Fewer, sharper proposals beat many weak ones. If nothing is worth surfacing, return an empty list.',
+  '',
+  'Output requirements:',
+  '- Return ONLY a JSON object inside a single ```json fenced block. No prose before or after.',
+  '- `kind`: one of "reflection" | "tension" | "connection" | "question".',
+  '- `title`: ≤120 chars. `body`: ≤800 chars, plain English.',
+  '- `citations`: array of memory [id]s from the list above (≥1).',
+  '- `confidence`: number 0–1.',
+  '',
+  'Schema:',
+  '```json',
+  '{',
+  '  "proposals": [',
+  '    { "kind": "tension", "title": "...", "body": "...", "citations": ["uuid"], "confidence": 0.6 }',
+  '  ]',
+  '}',
+  '```',
+].join('\n')
+
+// Per-run payload — Dominion identity, date, and the live substrate.
+export function buildIntrospectionUserPrompt(ctx: IntrospectionContext, today: string): string {
   const parts: string[] = [
-    `You are Kairos, doing a controlled introspection pass over the "${ctx.name}" Dominion. Date: ${today}.`,
-    '',
-    'You are reading your own recent memory and proposing candidate thoughts for the operator to review. You are NOT deciding anything. These are suggestions; the operator accepts, rejects, or corrects them. Be useful and humble.',
-    '',
-    'Hard rules:',
-    '- PROPOSE, do not assert. Frame beliefs as candidates.',
-    '- Every proposal MUST cite ≥1 memory id from the list below, by its exact [id]. A proposal you cannot ground in cited memories will be DISCARDED — do not invent ids.',
-    '- Prefer what the operator might MISS: tensions/contradictions, drift from the vision, and non-obvious connections between memories. Genuine open questions are welcome.',
-    '- Set `confidence` honestly (0–1). Low confidence is fine and useful.',
-    '- At most 6 proposals. Fewer, sharper proposals beat many weak ones. If nothing is worth surfacing, return an empty list.',
+    `Dominion: "${ctx.name}". Date: ${today}.`,
     '',
     '## Vision',
     ctx.vision || '(none set)',
@@ -82,26 +105,14 @@ export function buildIntrospectionPrompt(ctx: IntrospectionContext, today: strin
     ctx.recentMemories.length === 0
       ? '(none)'
       : ctx.recentMemories.map(renderMemory).join('\n'),
-    '',
-    '---',
-    '',
-    'Output requirements:',
-    '- Return ONLY a JSON object inside a single ```json fenced block. No prose before or after.',
-    '- `kind`: one of "reflection" | "tension" | "connection" | "question".',
-    '- `title`: ≤120 chars. `body`: ≤800 chars, plain English.',
-    '- `citations`: array of memory [id]s from the list above (≥1).',
-    '- `confidence`: number 0–1.',
-    '',
-    'Schema:',
-    '```json',
-    '{',
-    '  "proposals": [',
-    '    { "kind": "tension", "title": "...", "body": "...", "citations": ["uuid"], "confidence": 0.6 }',
-    '  ]',
-    '}',
-    '```',
   ]
   return parts.join('\n')
+}
+
+// Combined single-string prompt (system + user). Kept for tests and any
+// caller that doesn't split the request into cacheable blocks.
+export function buildIntrospectionPrompt(ctx: IntrospectionContext, today: string): string {
+  return [INTROSPECTION_SYSTEM_PROMPT, buildIntrospectionUserPrompt(ctx, today)].join('\n\n')
 }
 
 export function extractJsonBlock(text: string): unknown {

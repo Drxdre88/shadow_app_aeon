@@ -1,5 +1,5 @@
 import type { Recipe, RecipeContext, RecipeOutput } from './_recipe'
-import { buildPrompt, type BriefingContext } from '../briefer'
+import { BRIEF_SYSTEM_PROMPT, buildBriefUserPrompt, type BriefingContext } from '../briefer'
 import { getProviderForTask } from '@/lib/ai/route-task'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -55,9 +55,10 @@ async function flat(ctx: RecipeContext): Promise<RecipeOutput> {
     dominionId: ctx.dominionId,
   })
   const response = await provider.ask({
-    prompt: buildPrompt(briefingCtx, date),
+    system: BRIEF_SYSTEM_PROMPT,
+    prompt: buildBriefUserPrompt(briefingCtx, date),
+    cacheSystem: true,
     maxTokens: 1200,
-    temperature: 0.4,
   })
   const text = response.text.trim()
   if (!text) throw new Error('BRIEF: empty response from provider')

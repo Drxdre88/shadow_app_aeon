@@ -7,7 +7,8 @@ import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import { withRetry } from '@/lib/ai/retry'
 import {
-  buildContradictionPrompt,
+  CONTRADICTION_SYSTEM_PROMPT,
+  buildContradictionUserPrompt,
   contradictionOutSchema,
   filterGroundedFindings,
   extractJsonBlock,
@@ -135,12 +136,15 @@ export async function runContradictionScanForDominion(
     const candidates = await findSimilarBeliefs(probe.id, userId, { dominionId })
     if (candidates.length === 0) continue
 
-    const prompt = buildContradictionPrompt(probe, candidates as ContradictionCandidate[])
-
     let rawText: string
     try {
-      const { provider } = await getProviderForTask(userId, { taskType: 'reflect', dominionId })
-      const response = await withRetry(() => provider.ask({ prompt, maxTokens: 1200, temperature: 0.2 }))
+      const { provider } = await getProviderForTask(userId, { taskType: 'contradiction', dominionId })
+      const response = await withRetry(() => provider.ask({
+        system: CONTRADICTION_SYSTEM_PROMPT,
+        prompt: buildContradictionUserPrompt(probe, candidates as ContradictionCandidate[]),
+        cacheSystem: true,
+        maxTokens: 1200,
+      }))
       rawText = response.text.trim()
     } catch (err) {
       if (err instanceof AiCredentialMissingError) {

@@ -48,8 +48,11 @@ interface PolicyDefault {
 const DEFAULT_POLICIES: PolicyDefault[] = [
   { taskType: 'brief',        tier: 'heavy' },
   { taskType: 'advisory',     tier: 'heavy' },
-  { taskType: 'archetype',    tier: 'heavy' },
-  { taskType: 'cortex',       tier: 'heavy' },
+  // Mechanical synthesis (structured JSON over a fed substrate) runs on the
+  // standard tier; judgment-heavy tasks (brief, advisory, aether) stay heavy.
+  { taskType: 'archetype',    tier: 'standard' },
+  { taskType: 'cortex',       tier: 'standard' },
+  { taskType: 'contradiction', tier: 'standard' },
   { taskType: 'aether',       tier: 'heavy' },
   { taskType: 'chat',         tier: 'standard' },
   { taskType: 'classify',     tier: 'cheap' },
