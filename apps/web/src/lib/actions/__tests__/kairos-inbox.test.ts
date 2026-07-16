@@ -6,12 +6,8 @@ vi.mock('@/lib/actions/helpers', () => ({
 
 vi.mock('@/lib/data/inbox', () => ({
   getKairosInbox: vi.fn(),
-}))
-
-vi.mock('@/lib/data/memories', () => ({
-  acceptProposal: vi.fn(),
-  archiveMemory: vi.fn(),
-  findMemoryById: vi.fn(),
+  acceptInboxProposal: vi.fn(),
+  dismissInboxMemory: vi.fn(),
 }))
 
 vi.mock('@/lib/kairos/ask', () => ({
@@ -19,8 +15,7 @@ vi.mock('@/lib/kairos/ask', () => ({
 }))
 
 import { requireAuth } from '@/lib/actions/helpers'
-import { getKairosInbox } from '@/lib/data/inbox'
-import { acceptProposal, archiveMemory, findMemoryById } from '@/lib/data/memories'
+import { acceptInboxProposal, dismissInboxMemory, getKairosInbox } from '@/lib/data/inbox'
 import { answerKairosAsk } from '@/lib/kairos/ask'
 import {
   acceptKairosInboxProposal,
@@ -40,7 +35,7 @@ beforeEach(() => {
 
 describe('Kairos inbox actions', () => {
   it('lists the current user inbox', async () => {
-    const inbox = { ask: null, proposals: [] }
+    const inbox = { items: [] }
     vi.mocked(getKairosInbox).mockResolvedValue(inbox)
 
     await expect(listKairosInbox()).resolves.toBe(inbox)
@@ -67,45 +62,29 @@ describe('Kairos inbox actions', () => {
     await expect(answerKairosInboxAsk(ASK_ID, 'Answer')).rejects.toThrow('Kairos question not found')
   })
 
-  it('accepts with the existing default proposal semantics', async () => {
-    vi.mocked(acceptProposal).mockResolvedValue({
-      ok: true,
-      memory: { id: PROPOSAL_ID },
-    } as Awaited<ReturnType<typeof acceptProposal>>)
+  it('accepts through the shared inbox helper', async () => {
+    vi.mocked(acceptInboxProposal).mockResolvedValue({ ok: true, id: PROPOSAL_ID })
 
     await expect(acceptKairosInboxProposal(PROPOSAL_ID)).resolves.toEqual({ id: PROPOSAL_ID })
-    expect(acceptProposal).toHaveBeenCalledWith(PROPOSAL_ID, USER_ID, { pin: false })
+    expect(acceptInboxProposal).toHaveBeenCalledWith(USER_ID, PROPOSAL_ID)
   })
 
   it('rejects a row that the proposal gate will not accept', async () => {
-    vi.mocked(acceptProposal).mockResolvedValue({ ok: false, reason: 'not_a_proposal' })
+    vi.mocked(acceptInboxProposal).mockResolvedValue({ ok: false, reason: 'already_resolved' })
 
     await expect(acceptKairosInboxProposal(PROPOSAL_ID)).rejects.toThrow('Memory is not a pending proposal')
   })
 
-  it('dismisses a pending inbound proposal through soft archival', async () => {
-    vi.mocked(findMemoryById).mockResolvedValue({
-      id: PROPOSAL_ID,
-      type: 'inbound',
-      sourceMetadata: { introspection: true, status: 'pending' },
-    } as Awaited<ReturnType<typeof findMemoryById>>)
-    vi.mocked(archiveMemory).mockResolvedValue({
-      id: PROPOSAL_ID,
-    } as Awaited<ReturnType<typeof archiveMemory>>)
+  it('dismisses through the shared inbox helper', async () => {
+    vi.mocked(dismissInboxMemory).mockResolvedValue({ ok: true, id: PROPOSAL_ID })
 
     await expect(dismissKairosInboxProposal(PROPOSAL_ID)).resolves.toEqual({ id: PROPOSAL_ID })
-    expect(findMemoryById).toHaveBeenCalledWith(PROPOSAL_ID, USER_ID)
-    expect(archiveMemory).toHaveBeenCalledWith(PROPOSAL_ID, USER_ID)
+    expect(dismissInboxMemory).toHaveBeenCalledWith(USER_ID, PROPOSAL_ID)
   })
 
-  it('does not dismiss an arbitrary memory', async () => {
-    vi.mocked(findMemoryById).mockResolvedValue({
-      id: PROPOSAL_ID,
-      type: 'note',
-      sourceMetadata: {},
-    } as Awaited<ReturnType<typeof findMemoryById>>)
+  it('surfaces a non-dismissable memory as not found', async () => {
+    vi.mocked(dismissInboxMemory).mockResolvedValue({ ok: false, reason: 'not_found' })
 
     await expect(dismissKairosInboxProposal(PROPOSAL_ID)).rejects.toThrow('Proposal not found')
-    expect(archiveMemory).not.toHaveBeenCalled()
   })
 })
