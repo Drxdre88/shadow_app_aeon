@@ -35,7 +35,6 @@ interface TaskChecklistProps {
   onItemStatusChange?: (itemId: string, status: ChecklistStatus) => void
   onItemTitleChange?: (itemId: string, title: string) => void
   onGroupRename?: (oldName: string, newName: string) => void
-  onGroupAdd?: (groupName: string) => void
   onGroupDelete?: (groupName: string) => void
   onItemReorder?: (orderedItems: { id: string; groupName: string }[]) => void
   onGroupReorder?: (orderedGroups: string[]) => void
@@ -51,7 +50,6 @@ export function TaskChecklist({
   onItemStatusChange,
   onItemTitleChange,
   onGroupRename,
-  onGroupAdd,
   onGroupDelete,
   onItemReorder,
   onGroupReorder,
@@ -74,8 +72,7 @@ export function TaskChecklist({
   const [activeDragItemId, setActiveDragItemId] = useState<string | null>(null)
   // Same-frame double-click guard for handleAddGroup. Without this, two
   // clicks fired before React re-renders both see the same displayGroups,
-  // compute the same name (e.g. "Checklist 2"), and double-fire onGroupAdd
-  // → server-side double create + duplicate React keys on render.
+  // compute the same name (e.g. "Checklist 2") and duplicate React keys on render.
   const addingGroupRef = useRef(false)
 
   const groups = Array.from(new Set(items.map((i) => i.groupName)))
@@ -131,13 +128,11 @@ export function TaskChecklist({
       idx++
       name = `Checklist ${idx}`
     }
+    // Ghost group: lives only in local state until its first item is
+    // committed — escape/blur with nothing typed persists nothing.
     setPendingGroups((prev) => (prev.includes(name) ? prev : [...prev, name]))
     setAddingInGroup(name)
     setNewItemTitle('')
-    // Persist immediately so empty groups survive a reopen. Without this,
-    // pendingGroups lived only in local React state — clicking + six times
-    // and filling in only one would lose the other five on close.
-    onGroupAdd?.(name)
   }
 
   const commitItemEdit = () => {
@@ -239,7 +234,7 @@ export function TaskChecklist({
               onEditGroupCommit={commitGroupRename}
               onEditGroupCancel={() => { groupCommittedRef.current = false; setEditingGroupName(null); editingGroupNameRef.current = null; setEditingGroupValue(''); editingGroupValueRef.current = '' }}
               onDeleteStart={() => setConfirmDeleteGroup(groupName)}
-              onDeleteConfirm={() => { onGroupDelete?.(groupName); setConfirmDeleteGroup(null) }}
+              onDeleteConfirm={() => { onGroupDelete?.(groupName); setConfirmDeleteGroup(null); setPendingGroups((prev) => prev.filter((pg) => pg !== groupName)); setAddingInGroup((prev) => (prev === groupName ? null : prev)) }}
               onDeleteCancel={() => setConfirmDeleteGroup(null)}
               onItemToggle={(id, state) => onItemToggle?.(id, state)}
               onItemRemove={(id) => onItemRemove?.(id)}

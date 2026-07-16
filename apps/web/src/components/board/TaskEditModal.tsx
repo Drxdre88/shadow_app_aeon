@@ -77,7 +77,6 @@ export function TaskEditModal({
     handleChecklistToggle,
     handleChecklistStatusChange,
     handleChecklistRemove,
-    handleGroupAdd,
     handleItemTitleChange,
     handleGroupRename,
     handleChecklistReorder,
@@ -224,7 +223,6 @@ export function TaskEditModal({
                     onItemStatusChange={handleChecklistStatusChange}
                     onItemTitleChange={handleItemTitleChange}
                     onGroupRename={handleGroupRename}
-                    onGroupAdd={handleGroupAdd}
                     onGroupDelete={handleGroupDelete}
                     onItemReorder={handleChecklistReorder}
                     onGroupReorder={handleGroupReorder}
