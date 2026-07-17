@@ -1168,6 +1168,31 @@ export async function listTodaysAdvisories(userId: string, isoDate?: string) {
     .orderBy(desc(memories.createdAt))
 }
 
+// Kairos speaks-first — recent /kairos/speak deliveries, newest first. Powers
+// the speak route's throttle. Archived (dismissed) speaks still count: a
+// dismissed message was still an interrupt, so it must not reopen the window.
+export async function listRecentKairosSpeaks(
+  userId: string,
+  opts: { hours?: number; limit?: number } = {},
+) {
+  const hours = Math.min(Math.max(opts.hours ?? 24, 1), 168)
+  const limit = Math.min(Math.max(opts.limit ?? 10, 1), 50)
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000)
+
+  return db
+    .select({ id: memories.id, title: memories.title, createdAt: memories.createdAt })
+    .from(memories)
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.type, 'inbound'),
+      eq(memories.source, 'system'),
+      sql`${memories.sourceMetadata}->>'kairosSpeak' = 'true'`,
+      sql`${memories.createdAt} >= ${since}`,
+    ))
+    .orderBy(desc(memories.createdAt))
+    .limit(limit)
+}
+
 export async function updateMemory(memoryId: string, userId: string, patch: UpdateMemoryInput) {
   const update: Record<string, unknown> = { updatedAt: new Date() }
   if (patch.title !== undefined)      update.title = patch.title
