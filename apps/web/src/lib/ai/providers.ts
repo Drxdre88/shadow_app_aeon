@@ -36,6 +36,9 @@ export const PROVIDERS: ProviderDescriptor[] = [
     docsUrl: 'https://platform.openai.com/api-keys',
     keyPrefix: 'sk-',
     models: [
+      { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', contextK: 1000, tiers: ['cheap'] },
+      { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', contextK: 1000, tiers: ['standard'] },
+      { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', contextK: 1000, tiers: ['heavy'] },
       { id: 'gpt-5.5-mini', label: 'GPT-5.5 mini', contextK: 256, tiers: ['cheap'] },
       { id: 'gpt-5.5', label: 'GPT-5.5', contextK: 256, tiers: ['standard'] },
       { id: 'gpt-5.5-pro', label: 'GPT-5.5 Pro', contextK: 1024, tiers: ['heavy'] },
