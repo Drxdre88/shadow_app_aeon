@@ -291,6 +291,19 @@ describe('unanchored whole-brain threads (slice 3)', () => {
     const system = askArgs.messages!.find((m: { role: string }) => m.role === 'system')
     expect(system!.content).toContain('anchored to the "AEON" Dominion')
   })
+
+  it('never sends temperature to the model (current-gen Claude 400s on it)', async () => {
+    vi.mocked(_getChatThread)
+      .mockResolvedValueOnce(fakeThread([]))
+      .mockResolvedValueOnce(fakeThread([{ seq: 1, role: 'user', content: 'hello' }]))
+    const provider = fakeProvider('reply')
+    vi.mocked(getProviderForTask).mockResolvedValue(provider)
+
+    await sendKairosMessage({ threadId: THREAD_ID, body: 'hello' })
+
+    const askArgs = vi.mocked(provider.provider.ask).mock.calls[0][0]
+    expect(askArgs).not.toHaveProperty('temperature')
+  })
 })
 
 describe('sendKairosMessage — orphan-retry recovery', () => {

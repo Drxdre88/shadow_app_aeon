@@ -142,6 +142,8 @@ describe('chat distillation', () => {
     expect(result.threads[0].status).toBe('dry_run')
     expect(result.threads[0].modelInput?.system).toContain('durable operator memories')
     expect(result.threads[0].modelInput?.prompt).toContain('I prefer weekly written updates.')
+    // Current-gen Claude models 400 on non-default temperature.
+    expect(result.threads[0].modelInput).not.toHaveProperty('temperature')
   })
 
   it('skips threads with no messages', async () => {
