@@ -7,6 +7,10 @@
       "schedule": "0 23 * * *"
     },
     {
+      "path": "/api/cron/chat-distill",
+      "schedule": "0 2 * * *"
+    },
+    {
       "path": "/api/cron/archetype-synthesis",
       "schedule": "30 2 * * *"
     },

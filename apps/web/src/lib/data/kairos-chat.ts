@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { agentSessions, sessionEvents, dominions } from '@/lib/db/schema'
+import { agentSessions, sessionEvents, dominions, userAiCredentials } from '@/lib/db/schema'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (C1) — chat thread persistence.
@@ -59,6 +59,13 @@ export interface ChatMessage {
   retrieval: ChatRetrievalMeta | null
   model: string | null
   createdAt: Date
+}
+
+export interface DailyChatThread {
+  id: string
+  dominionId: string | null
+  title: string
+  messages: ChatMessage[]
 }
 
 export async function createChatThread(
@@ -168,6 +175,94 @@ export async function listChatThreads(
     .limit(limit)
 
   return rows
+}
+
+export async function listChatThreadsWithMessagesOn(
+  userId: string,
+  start: Date,
+  end: Date,
+  messageLimit = 80,
+): Promise<DailyChatThread[]> {
+  const cap = Math.min(Math.max(messageLimit, 1), 100)
+  const scope = and(
+    eq(agentSessions.userId, userId),
+    eq(agentSessions.engine, CHAT_ENGINE),
+    eq(sessionEvents.kind, 'message'),
+    gte(sessionEvents.createdAt, start),
+    lt(sessionEvents.createdAt, end),
+  )
+
+  const threads = await db
+    .select({
+      id: agentSessions.id,
+      dominionId: agentSessions.dominionId,
+      title: agentSessions.goal,
+    })
+    .from(agentSessions)
+    .innerJoin(sessionEvents, eq(sessionEvents.sessionId, agentSessions.id))
+    .where(scope)
+    .groupBy(agentSessions.id)
+    .orderBy(asc(agentSessions.spawnedAt))
+
+  return Promise.all(threads.map(async (thread) => {
+    const events = await db
+      .select({
+        id: sessionEvents.id,
+        seq: sessionEvents.seq,
+        payload: sessionEvents.payload,
+        createdAt: sessionEvents.createdAt,
+      })
+      .from(sessionEvents)
+      .where(and(
+        eq(sessionEvents.sessionId, thread.id),
+        eq(sessionEvents.kind, 'message'),
+        gte(sessionEvents.createdAt, start),
+        lt(sessionEvents.createdAt, end),
+      ))
+      .orderBy(desc(sessionEvents.seq))
+      .limit(cap)
+
+    const messages = events.reverse().flatMap((event): ChatMessage[] => {
+      const payload = (event.payload ?? {}) as Partial<ChatMessagePayload>
+      if ((payload.role !== 'user' && payload.role !== 'assistant') || typeof payload.content !== 'string') {
+        return []
+      }
+      return [{
+        id: event.id,
+        threadId: thread.id,
+        seq: event.seq,
+        role: payload.role,
+        content: payload.content,
+        citations: Array.isArray(payload.citations)
+          ? payload.citations.filter((citation): citation is string => typeof citation === 'string')
+          : [],
+        retrieval: parseRetrievalMeta(payload.retrieval),
+        model: typeof payload.model === 'string' ? payload.model : null,
+        createdAt: event.createdAt,
+      }]
+    })
+
+    return { ...thread, messages }
+  }))
+}
+
+export async function listChatDistillEligibleUserIds(): Promise<string[]> {
+  const usersWithDominions = await db
+    .selectDistinct({ userId: dominions.userId })
+    .from(dominions)
+    .where(isNull(dominions.archivedAt))
+
+  if (usersWithDominions.length === 0) return []
+
+  const credentialed = await db
+    .selectDistinct({ userId: userAiCredentials.userId })
+    .from(userAiCredentials)
+    .where(and(
+      isNull(userAiCredentials.revokedAt),
+      inArray(userAiCredentials.userId, usersWithDominions.map((row) => row.userId)),
+    ))
+
+  return credentialed.map((row) => row.userId)
 }
 
 export async function getChatThread(
