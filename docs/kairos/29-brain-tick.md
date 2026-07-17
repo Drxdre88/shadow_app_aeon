@@ -100,6 +100,8 @@ curl -sS -X POST "$AEON_APP_URL/api/v1/kairos/speak" \
 - `429` → report `tick — silent: server throttle (<spokenLast24h> in 24h)`. Expected, not
   an error; do NOT retry and do NOT set `force` to get around it.
 - Other non-200 → retry **once**, then report the failure. No other delivery channel.
+  Retry only when a real non-2xx response came back — do NOT retry a network timeout
+  (the first call may have landed server-side, and a blind retry double-posts).
 
 ## Report
 

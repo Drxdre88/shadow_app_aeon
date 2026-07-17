@@ -133,16 +133,30 @@ describe('POST /api/v1/kairos/speak', () => {
     expect(captureMemory).not.toHaveBeenCalled()
   })
 
-  it('force bypasses the throttle without consulting recent speaks', async () => {
+  it('force bypasses the gap and daily cap', async () => {
     vi.mocked(listRecentKairosSpeaks).mockResolvedValue([
       { id: 'm1', title: 'earlier', createdAt: new Date() },
+      { id: 'm2', title: 'earlier2', createdAt: new Date() },
+      { id: 'm3', title: 'earlier3', createdAt: new Date() },
     ] as never)
     vi.stubGlobal('fetch', fetchOk())
 
     const res = await POST(makeReq({ title: 't', message: 'm', force: true }, 'Bearer cron-secret'))
     expect(res.status).toBe(200)
-    expect(listRecentKairosSpeaks).not.toHaveBeenCalled()
     expect(captureMemory).toHaveBeenCalledOnce()
+  })
+
+  it('force still throttles at the absolute ceiling', async () => {
+    vi.mocked(listRecentKairosSpeaks).mockResolvedValue(
+      Array.from({ length: 10 }, (_, i) => ({
+        id: `m${i}`, title: `t${i}`, createdAt: new Date(),
+      })) as never,
+    )
+    vi.stubGlobal('fetch', fetchOk())
+
+    const res = await POST(makeReq({ title: 't', message: 'm', force: true }, 'Bearer cron-secret'))
+    expect(res.status).toBe(429)
+    expect(captureMemory).not.toHaveBeenCalled()
   })
 
   it('reports telegram:false when the channel is unconfigured', async () => {
