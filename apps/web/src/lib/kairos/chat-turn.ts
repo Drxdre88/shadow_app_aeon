@@ -54,10 +54,11 @@ async function callAssistant(
       taskType: 'chat',
       dominionId,
     })
+    // No temperature: current-gen Claude models 400 on non-default values
+    // (same reason PR #84 stripped it from the synthesis call sites).
     const response = await provider.ask({
       messages: systemMessages,
       maxTokens: 2000,
-      temperature: 0.5,
     })
     const text = response.text.trim()
     if (!text) return { error: 'empty' }

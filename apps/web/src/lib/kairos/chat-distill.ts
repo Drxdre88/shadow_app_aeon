@@ -33,7 +33,6 @@ export interface ChatDistillThreadResult {
     prompt: string
     cacheSystem: boolean
     maxTokens: number
-    temperature: number
   }
 }
 
@@ -83,12 +82,13 @@ export async function runChatDistillForUser(
       }
 
       const prompt = buildChatDistillUserPrompt(thread, target.date)
+      // No temperature: current-gen Claude models 400 on non-default values
+      // (same reason PR #84 stripped it from the synthesis call sites).
       const modelInput = {
         system: CHAT_DISTILL_SYSTEM_PROMPT,
         prompt,
         cacheSystem: true,
         maxTokens: MAX_OUTPUT_TOKENS,
-        temperature: 0.1,
       }
       if (dryRun) {
         results.push({ ...base, status: 'dry_run', modelInput })
