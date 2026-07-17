@@ -73,6 +73,9 @@ Last verified: 2026-06-28 (git HEAD `056d8f2`).
 | Medium | Introspection cron `parse_failed` streak | Briefings report failures Jul 11–15 — brain consolidating without introspection proposals; needs log pull |
 | Low | Chat-distill error branches undertested | Stalker findings 2026-07-17: resolveDate/parse-failure/cron-catch branches dark (fix queued) |
 | Low | Stale remote branches | ~40 old `feature/*` + post-merge `feat/*` refs on origin; `git remote prune origin` + a cleanup pass |
+| Medium | Chat-distill trust model (Codex cross-model finding, 2026-07-17) | Distilled chat auto-persists as operator-grade reflections (0.9 confidence) with no review step; alternative = stage as `inbound` proposals through the Will inbox (propose-not-commit pattern). **Operator decision pending** |
+| Low | externalId dedup lacks a DB constraint | select-then-insert only; hand-write migration 0027: partial unique index on (user, source, `sourceMetadata->>'externalId'`) + conflict-safe insert |
+| Low | Chat-distill edges (Codex) | 80-msg/day cap silently drops the earliest turns of very long days; eligibility starts from Dominions (a credentialed user with only chat threads is skipped) |
 
 ### New gaps (2026-06-28)
 

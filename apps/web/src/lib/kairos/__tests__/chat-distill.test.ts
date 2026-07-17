@@ -221,11 +221,18 @@ describe('chat distillation', () => {
     expect(parseChatDistillResponse('```json\n{}\n```')).toEqual([])
   })
 
-  it('throws when a title exceeds the 100-char bound', () => {
+  it('drops an invalid candidate but keeps the valid ones alongside it', () => {
     const longTitle = 'x'.repeat(101)
-    const text = `\`\`\`json\n${JSON.stringify({ reflections: [{ title: longTitle, bodyMd: 'body' }] })}\n\`\`\``
+    const text = `\`\`\`json\n${JSON.stringify({
+      reflections: [
+        { title: 'Valid one', bodyMd: 'body 1' },
+        { title: longTitle, bodyMd: 'body 2' },
+        { title: 'Valid two', bodyMd: 'body 3' },
+      ],
+    })}\n\`\`\``
 
-    expect(() => parseChatDistillResponse(text)).toThrow()
+    const result = parseChatDistillResponse(text)
+    expect(result.map((r) => r.title)).toEqual(['Valid one', 'Valid two'])
   })
 
   it('slices an over-eager reply down to exactly 5 reflections', () => {
