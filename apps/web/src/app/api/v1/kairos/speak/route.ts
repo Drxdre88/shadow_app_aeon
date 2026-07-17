@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { captureMemory } from '@/lib/data/memories'
+import { captureMemory, listRecentKairosSpeaks } from '@/lib/data/memories'
 import { sendKairosSpeak } from '@/lib/kairos/telegram'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -23,7 +23,20 @@ const speakSchema = z.object({
   message: z.string().trim().min(1).max(20_000),
   kind: z.enum(['notify', 'question']).default('notify'),
   urgency: z.enum(['low', 'normal', 'high']).default('normal'),
+  // Operator-initiated pulses bypass the throttle; automation must not set it.
+  force: z.boolean().default(false),
 })
+
+// Server-side interrupt throttle: an unprompted Kairos message is only
+// valuable while it is rare, and the guard must hold for EVERY caller (tick
+// routines, hooks, future recipes), so it lives here rather than in any one
+// scheduler's prompt. All callers share one CRON_SECRET, so `force` is a
+// convention, not an identity check — forced sends are logged and still
+// bounded by an absolute ceiling to cap the blast radius of a runaway
+// automation that sets it anyway.
+const MIN_GAP_HOURS = 4
+const DAILY_CAP = 3
+const FORCE_CEILING = 10
 
 function isAuthorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET
@@ -49,7 +62,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 })
   }
 
-  const { title, message, kind, urgency } = parsed.data
+  const { title, message, kind, urgency, force } = parsed.data
+
+  const recent = await listRecentKairosSpeaks(operatorUserId, { hours: 24 })
+  const last = recent[0]
+  const gapMs = last ? Date.now() - last.createdAt.getTime() : Infinity
+  const overLimit = force
+    ? recent.length >= FORCE_CEILING
+    : recent.length >= DAILY_CAP || gapMs < MIN_GAP_HOURS * 60 * 60 * 1000
+  if (overLimit) {
+    return NextResponse.json(
+      {
+        error: 'throttled',
+        lastSpokeAt: last?.createdAt ?? null,
+        spokenLast24h: recent.length,
+      },
+      { status: 429 },
+    )
+  }
+  if (force && recent.length > 0) {
+    console.warn('[kairos-speak] forced throttle bypass', { spokenLast24h: recent.length })
+  }
+
   const { memory } = await captureMemory(operatorUserId, {
     title,
     bodyMd: message,

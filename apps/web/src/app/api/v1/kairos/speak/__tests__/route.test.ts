@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/data/memories', () => ({
   captureMemory: vi.fn(),
+  listRecentKairosSpeaks: vi.fn(),
 }))
 
-import { captureMemory } from '@/lib/data/memories'
+import { captureMemory, listRecentKairosSpeaks } from '@/lib/data/memories'
 import { POST } from '../route'
 
 const OPERATOR = 'operator-user-1'
@@ -38,6 +39,7 @@ beforeEach(() => {
     memory: { id: MEMORY_ID } as never,
     created: true,
   })
+  vi.mocked(listRecentKairosSpeaks).mockResolvedValue([])
 })
 
 afterEach(() => {
@@ -100,6 +102,61 @@ describe('POST /api/v1/kairos/speak', () => {
     const res = await POST(makeReq({ title: 't', message: 'm' }, 'Bearer cron-secret'))
     expect(res.status).toBe(200)
     expect((await res.json()).delivered).toEqual({ inbox: true, telegram: false })
+  })
+
+  it('throttles with 429 when a speak landed within the minimum gap', async () => {
+    const lastSpokeAt = new Date(Date.now() - 30 * 60 * 1000)
+    vi.mocked(listRecentKairosSpeaks).mockResolvedValue([
+      { id: 'm1', title: 'earlier', createdAt: lastSpokeAt },
+    ] as never)
+    vi.stubGlobal('fetch', fetchOk())
+
+    const res = await POST(makeReq({ title: 't', message: 'm' }, 'Bearer cron-secret'))
+    expect(res.status).toBe(429)
+    const body = await res.json()
+    expect(body.error).toBe('throttled')
+    expect(body.spokenLast24h).toBe(1)
+    expect(captureMemory).not.toHaveBeenCalled()
+  })
+
+  it('throttles with 429 at the daily cap even when the gap has passed', async () => {
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 60 * 60 * 1000)
+    vi.mocked(listRecentKairosSpeaks).mockResolvedValue([
+      { id: 'm1', title: 'a', createdAt: hoursAgo(6) },
+      { id: 'm2', title: 'b', createdAt: hoursAgo(12) },
+      { id: 'm3', title: 'c', createdAt: hoursAgo(18) },
+    ] as never)
+    vi.stubGlobal('fetch', fetchOk())
+
+    const res = await POST(makeReq({ title: 't', message: 'm' }, 'Bearer cron-secret'))
+    expect(res.status).toBe(429)
+    expect(captureMemory).not.toHaveBeenCalled()
+  })
+
+  it('force bypasses the gap and daily cap', async () => {
+    vi.mocked(listRecentKairosSpeaks).mockResolvedValue([
+      { id: 'm1', title: 'earlier', createdAt: new Date() },
+      { id: 'm2', title: 'earlier2', createdAt: new Date() },
+      { id: 'm3', title: 'earlier3', createdAt: new Date() },
+    ] as never)
+    vi.stubGlobal('fetch', fetchOk())
+
+    const res = await POST(makeReq({ title: 't', message: 'm', force: true }, 'Bearer cron-secret'))
+    expect(res.status).toBe(200)
+    expect(captureMemory).toHaveBeenCalledOnce()
+  })
+
+  it('force still throttles at the absolute ceiling', async () => {
+    vi.mocked(listRecentKairosSpeaks).mockResolvedValue(
+      Array.from({ length: 10 }, (_, i) => ({
+        id: `m${i}`, title: `t${i}`, createdAt: new Date(),
+      })) as never,
+    )
+    vi.stubGlobal('fetch', fetchOk())
+
+    const res = await POST(makeReq({ title: 't', message: 'm', force: true }, 'Bearer cron-secret'))
+    expect(res.status).toBe(429)
+    expect(captureMemory).not.toHaveBeenCalled()
   })
 
   it('reports telegram:false when the channel is unconfigured', async () => {
