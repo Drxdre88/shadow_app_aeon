@@ -14,6 +14,7 @@ vi.mock('@/lib/kairos/cron-trace', () => ({
 
 import { listChatDistillEligibleUserIds } from '@/lib/data/kairos-chat'
 import { runChatDistillForUser } from '@/lib/kairos/chat-distill'
+import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 import { GET } from '../route'
 
 function request(authorization?: string) {
@@ -77,5 +78,38 @@ describe('cron/chat-distill route', () => {
     expect(body).toMatchObject({ ran: 1, skipped: 1, skippedUserIds: ['user-2'] })
     expect(runChatDistillForUser).toHaveBeenCalledTimes(1)
     expect(runChatDistillForUser).toHaveBeenCalledWith('user-1')
+  })
+
+  it('isolates a per-user failure, traces it, and continues to the next user', async () => {
+    process.env.CRON_SECRET = 'cron-secret'
+    ;(listChatDistillEligibleUserIds as ReturnType<typeof vi.fn>).mockResolvedValue(['user-1', 'user-2'])
+    ;(runChatDistillForUser as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ date: '2026-07-16', dryRun: false, reflectionsCreated: 3, threads: [] })
+
+    const response = await GET(request('Bearer cron-secret'))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.ran).toBe(2)
+    expect(body.users[0].error).toBe('boom')
+    expect(body.users[1].result).toMatchObject({ reflectionsCreated: 3 })
+    expect(writeCronFailureTrace).toHaveBeenCalledTimes(1)
+  })
+
+  it('continues to the next user even when the trace write itself fails', async () => {
+    process.env.CRON_SECRET = 'cron-secret'
+    ;(listChatDistillEligibleUserIds as ReturnType<typeof vi.fn>).mockResolvedValue(['user-1', 'user-2'])
+    ;(runChatDistillForUser as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ date: '2026-07-16', dryRun: false, reflectionsCreated: 1, threads: [] })
+    ;(writeCronFailureTrace as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('trace write failed'))
+
+    const response = await GET(request('Bearer cron-secret'))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.ran).toBe(2)
+    expect(body.users[1].result).toMatchObject({ reflectionsCreated: 1 })
   })
 })

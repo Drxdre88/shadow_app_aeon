@@ -32,11 +32,15 @@ export async function GET(req: NextRequest) {
     try {
       users.push({ userId, result: await runChatDistillForUser(userId) })
     } catch (error) {
-      await writeCronFailureTrace(userId, {
-        cronName: 'chat-distill',
-        reason: 'uncaught_exception',
-        error,
-      })
+      try {
+        await writeCronFailureTrace(userId, {
+          cronName: 'chat-distill',
+          reason: 'uncaught_exception',
+          error,
+        })
+      } catch (traceErr) {
+        console.error('[chat-distill] failed to write failure trace', traceErr)
+      }
       users.push({ userId, error: error instanceof Error ? error.message : String(error) })
     }
   }
