@@ -3,7 +3,7 @@ import { captureMemory } from '@/lib/data/memories'
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos reliability (C1) — durable failure traces for the nightly crons.
 //
-// All 9 Kairos crons return HTTP 200 even when a run fails internally (the
+// All Kairos crons return HTTP 200 even when a run fails internally (the
 // route always resolves, per-user/per-Dominion errors are caught and
 // reported in the JSON body only) — Vercel's cron monitor never sees a
 // failure, so a broken generator can go dark for days before anyone notices

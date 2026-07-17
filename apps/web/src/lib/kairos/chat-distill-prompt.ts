@@ -7,10 +7,10 @@ const reflectionSchema = z.object({
   bodyMd: z.string().trim().min(1).max(2000),
 })
 
-// No upper bound on the array itself — an over-eager model reply is
-// truncated to 5 after parsing rather than failing the whole thread.
+// Envelope stays loose — candidates are validated INDIVIDUALLY below so one
+// malformed entry drops alone instead of voiding the thread's valid ones.
 const outputSchema = z.object({
-  reflections: z.array(reflectionSchema).default([]),
+  reflections: z.array(z.unknown()).default([]),
 })
 
 export type ChatDistillCandidate = z.infer<typeof reflectionSchema>
@@ -51,5 +51,9 @@ export function buildChatDistillUserPrompt(
 
 export function parseChatDistillResponse(text: string): ChatDistillCandidate[] {
   const parsed = outputSchema.parse(extractJsonBlock(text, 'chat-distill'))
-  return parsed.reflections.slice(0, 5)
+  return parsed.reflections
+    .map((candidate) => reflectionSchema.safeParse(candidate))
+    .filter((result): result is { success: true; data: ChatDistillCandidate } => result.success)
+    .map((result) => result.data)
+    .slice(0, 5)
 }

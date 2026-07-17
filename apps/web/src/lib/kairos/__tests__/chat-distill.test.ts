@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/data/kairos-chat', () => ({
   listChatThreadsWithMessagesOn: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock('@/lib/ai/router', () => ({
 import { listChatThreadsWithMessagesOn } from '@/lib/data/kairos-chat'
 import { captureMemory } from '@/lib/data/memories'
 import { getProviderForTask } from '@/lib/ai/route-task'
-import { AiCredentialMissingError } from '@/lib/ai/router'
+import { AiCredentialDecryptError, AiCredentialMissingError } from '@/lib/ai/router'
 import { parseChatDistillResponse, runChatDistillForUser } from '../chat-distill'
 
 const USER_ID = 'user-1'
@@ -74,6 +74,10 @@ beforeEach(() => {
       created: true,
     }),
   )
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe('chat distillation', () => {
@@ -186,5 +190,109 @@ describe('chat distillation', () => {
     expect(result.threads[0]).toMatchObject({ status: 'error', reason: 'provider timeout' })
     expect(result.threads[1]).toMatchObject({ status: 'created', reflectionsCreated: 1 })
     expect(captureMemory).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects an invalid date format', async () => {
+    await expect(runChatDistillForUser(USER_ID, { date: 'not-a-date' })).rejects.toThrow(/YYYY-MM-DD/)
+  })
+
+  it('rejects a calendar date that does not exist', async () => {
+    await expect(runChatDistillForUser(USER_ID, { date: '2026-02-30' })).rejects.toThrow(/valid UTC calendar date/)
+  })
+
+  it('defaults to yesterday (UTC) when no date is given', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-17T10:00:00.000Z'))
+
+    const result = await runChatDistillForUser(USER_ID)
+
+    expect(result.date).toBe('2026-07-16')
+  })
+
+  it('throws when the response has no JSON block', () => {
+    expect(() => parseChatDistillResponse('just some prose, no braces')).toThrow()
+  })
+
+  it('throws on malformed JSON inside the fence', () => {
+    expect(() => parseChatDistillResponse('```json\n{reflections: [}\n```')).toThrow(/malformed JSON/)
+  })
+
+  it('defaults reflections to an empty array when the key is missing', () => {
+    expect(parseChatDistillResponse('```json\n{}\n```')).toEqual([])
+  })
+
+  it('drops an invalid candidate but keeps the valid ones alongside it', () => {
+    const longTitle = 'x'.repeat(101)
+    const text = `\`\`\`json\n${JSON.stringify({
+      reflections: [
+        { title: 'Valid one', bodyMd: 'body 1' },
+        { title: longTitle, bodyMd: 'body 2' },
+        { title: 'Valid two', bodyMd: 'body 3' },
+      ],
+    })}\n\`\`\``
+
+    const result = parseChatDistillResponse(text)
+    expect(result.map((r) => r.title)).toEqual(['Valid one', 'Valid two'])
+  })
+
+  it('slices an over-eager reply down to exactly 5 reflections', () => {
+    const reflections = Array.from({ length: 30 }, (_, index) => ({ title: `T${index}`, bodyMd: `B${index}` }))
+    const text = `\`\`\`json\n${JSON.stringify({ reflections })}\n\`\`\``
+
+    expect(parseChatDistillResponse(text)).toHaveLength(5)
+  })
+
+  it('lands a thread with a malformed (non-JSON) model reply as error and continues the run', async () => {
+    ;(listChatThreadsWithMessagesOn as ReturnType<typeof vi.fn>).mockResolvedValue([
+      thread(),
+      { ...thread(), id: 'thread-2', title: 'Second thread' },
+    ])
+    const ask = vi.fn()
+      .mockResolvedValueOnce({ text: 'not json at all', providerId: 'byok', modelId: 'standard-model' })
+      .mockResolvedValueOnce(modelResponse(1))
+    ;(getProviderForTask as ReturnType<typeof vi.fn>).mockResolvedValue({ provider: { ask } })
+
+    const result = await runChatDistillForUser(USER_ID, { date: DATE })
+
+    expect(result.threads[0].status).toBe('error')
+    expect(result.threads[0].reason).toMatch(/no JSON object found/)
+    expect(result.threads[1]).toMatchObject({ status: 'created', reflectionsCreated: 1 })
+  })
+
+  it('skips gracefully when the stored credential cannot be decrypted', async () => {
+    ;(getProviderForTask as ReturnType<typeof vi.fn>).mockRejectedValue(new AiCredentialDecryptError('anthropic'))
+
+    const result = await runChatDistillForUser(USER_ID, { date: DATE })
+
+    expect(result.threads[0]).toMatchObject({ status: 'skipped', reason: 'key undecryptable' })
+    expect(captureMemory).not.toHaveBeenCalled()
+  })
+
+  it('propagates a mid-thread captureMemory rejection as thread status error', async () => {
+    const ask = vi.fn().mockResolvedValue(modelResponse(5))
+    ;(getProviderForTask as ReturnType<typeof vi.fn>).mockResolvedValue({ provider: { ask } })
+    ;(captureMemory as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ memory: { id: 'memory-1' }, created: true })
+      .mockResolvedValueOnce({ memory: { id: 'memory-2' }, created: true })
+      .mockRejectedValueOnce(new Error('db unavailable'))
+
+    const result = await runChatDistillForUser(USER_ID, { date: DATE })
+
+    expect(result.threads[0]).toMatchObject({ status: 'error', reason: 'db unavailable' })
+  })
+
+  it('recovers via index-based externalIds when earlier captures already existed', async () => {
+    const ask = vi.fn().mockResolvedValue(modelResponse(5))
+    ;(getProviderForTask as ReturnType<typeof vi.fn>).mockResolvedValue({ provider: { ask } })
+    ;(captureMemory as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ memory: { id: 'memory-1' }, created: false })
+      .mockResolvedValueOnce({ memory: { id: 'memory-2' }, created: false })
+      .mockResolvedValueOnce({ memory: { id: 'memory-3' }, created: true })
+      .mockResolvedValueOnce({ memory: { id: 'memory-4' }, created: true })
+      .mockResolvedValueOnce({ memory: { id: 'memory-5' }, created: true })
+
+    const result = await runChatDistillForUser(USER_ID, { date: DATE })
+
+    expect(result.threads[0]).toMatchObject({ status: 'created', reflectionsCreated: 3 })
   })
 })

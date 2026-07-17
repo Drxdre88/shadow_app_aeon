@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
   const { title, message, kind, urgency, force } = parsed.data
 
-  const recent = await listRecentKairosSpeaks(operatorUserId, { hours: 24 })
+  const recent = await listRecentKairosSpeaks(operatorUserId, { hours: 24, limit: FORCE_CEILING })
   const last = recent[0]
   const gapMs = last ? Date.now() - last.createdAt.getTime() : Infinity
   const overLimit = force

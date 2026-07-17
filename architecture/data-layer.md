@@ -3,8 +3,8 @@
 > Part of the Aeon architecture set — index: [../ARCHITECTURE.md](../ARCHITECTURE.md)
 
 **ORM:** Drizzle ORM with `@neondatabase/serverless` driver.
-**Schema file:** `apps/web/src/lib/db/schema.ts` (table defs lines 4–634, inferred-type exports 636–673).
-**Migrations:** `apps/web/drizzle/` — through **`0024_memory_provenance.sql`**. Recent: `0021_memory_stream_class`, `0022_oauth`, `0023_memory_embeddings` (pgvector 1024-dim `embedding` + HNSW cosine index, managed in raw SQL like `fts`), `0024_memory_provenance` (`confidence`, `superseded_at`, `superseded_by_id` on `memories`). (`0009`/`0010` are preexisting duplicate-numbered pairs, not an error.)
+**Schema file:** `apps/web/src/lib/db/schema.ts` (~691 lines).
+**Migrations:** `apps/web/drizzle/` — through **`0026_favorite_projects.sql`**. Recent: `0023_memory_embeddings` (pgvector 1024-dim `embedding` + HNSW cosine index, raw SQL like `fts`), `0024_memory_provenance` (`confidence`, `superseded_at`, `superseded_by_id`), **`0025_memory_valid_time`** (bi-temporal `valid_at`/`invalid_at` — when a claim was true in the WORLD, vs supersededAt = when we LEARNED it changed), **`0026_favorite_projects`**. (`0009`/`0010` are preexisting duplicate-numbered pairs, not an error.)
 
 | Table | Key Columns | Purpose |
 |---|---|---|
@@ -34,7 +34,8 @@
 | `apiKeys` | keyPrefix, keyHash, revokedAt | REST/MCP keys (`aeon_k1_`) |
 | `userContacts` | userId, contactEmail | Invite autocomplete |
 | `mobileLoginTokens` / `mobileSessions` | tokenHash, expiresAt | Mobile login tokens (10-min, single-use) + bearer sessions (`aeon_s1_…`, 90-day; minted by `/api/v1/auth/mobile/*`, verified via `lib/api/auth.ts#verifyMobileSession`) |
-| `memories` | userId, dominionId, realmId, projectId, taskId, aiTitle, execSummary jsonb, type, streamClass, source, sourceMetadata, tags, pinned, **embedding (vector 1024)**, **embeddingModel**, **confidence (real)**, **supersededAt**, **supersededById**, archivedAt | Kairos memory nodes — the single substrate for nearly all brain features. FTS (`tsvector`+GIN, 0013) + pgvector HNSW (0023) + provenance/trust (0024). `streamClass` spans: `idea`, `agentic`, `execution`, `reflection`, `cortex`, `archetype`, `advisory`, `trace`, `snapshot`, `aether`. `type` discriminates feature rows (`note`, `aether`, `dominion_cortex`, `inbound`, …) |
+| `memories` | userId, dominionId, realmId, projectId, taskId, aiTitle, execSummary jsonb, type, streamClass, source, sourceMetadata, tags, pinned, **embedding (vector 1024)**, **embeddingModel**, **confidence (real)**, **supersededAt**, **supersededById**, **validAt (NOT NULL, defaultNow)**, **invalidAt (nullable)**, archivedAt | Kairos memory nodes — the single substrate for nearly all brain features. FTS (`tsvector`+GIN, 0013) + pgvector HNSW (0023) + provenance/trust (0024) + **bi-temporal validity (0025: validAt/invalidAt = world-time, supersededAt = learn-time; read path = `getBeliefTrail` → MCP `get_belief_trail`)**. `streamClass` spans: `idea`, `agentic`, `execution`, `reflection`, `cortex`, `archetype`, `advisory`, `trace`, `snapshot`, `aether`. `type` discriminates feature rows (`note`, `aether`, `dominion_cortex`, `inbound`, …) |
+| `favoriteProjects` | (userId, projectId) composite PK, cascade FKs | Per-user project stars (PR #80, migration 0026); surfaces the dashboard Favorites section; mirrored MCP `set_project_favorite` + REST `PUT /projects/[id]/favorite` |
 | `dominions` | id, userId, name, color, icon, sortOrder, vision, missionLong, archivedAt | Kairos top-level grouping above project; standing context for Briefer |
 | `dominionObjectives` | dominionId, title, status, targetDate, sortOrder | Concrete goals; Briefer reads open ones |
 | `dominionRepos` | (dominionId, repoSlug) | Repo-slug → Dominion mapping for auto-resolution |

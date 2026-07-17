@@ -41,6 +41,10 @@ NextAuth session cookie is the fallback when no bearer is present (`auth.ts:50-5
 | `ai` | `ai/credentials`(+`[id]`,test), `ai/preferences` — **admin-gated** |
 | `sessions` | `sessions`, `[id]`(+events,kill) |
 | `recipes` | `recipes`, `recipes/run`, `recipes/traces` — REST mirror of `run_recipe`, sharing `runRecipeArgs` + `dispatch.runRecipe` so MCP/REST never drift |
+| `projects/[id]/favorite` | PUT toggle for per-user project favorites (PR #80; mirrors MCP `set_project_favorite`) |
+| `kairos/speak` | `POST /api/v1/kairos/speak` — **Kairos-initiated delivery** (Will-inbox `notify` memory + best-effort Telegram fan-out). Auth `Bearer ${CRON_SECRET}` (cron idiom, not user bearer). Server-side interrupt throttle: 4h min gap + 3/24h cap → 429; `force:true` bypass audit-logged and ceilinged at 10/24h. **Deliberately OUTSIDE MCP/REST parity** — internal delivery channel, no MCP mirror. |
+
+**Auxiliary (non-v1):** `POST /api/telegram/webhook` — Telegram bot webhook (PRs #85/#87). Auth = `X-Telegram-Bot-Api-Secret-Token` match; single-operator gate (`TELEGRAM_OPERATOR_CHAT_ID`); handles inbox accept/dismiss callbacks + free text into the persistent whole-brain "Telegram · Kairos" chat thread; always returns 200 (Telegram redelivers on 5xx). Client: `lib/kairos/telegram.ts` (fetch-only, markdown→Telegram-HTML renderer + plain-text fallback). See [kairos/chat.md](kairos/chat.md).
 
 ---
 
@@ -78,11 +82,11 @@ Tokens: `aeon_at_` access (30d) + `aeon_rt_` refresh (1y, rotated), SHA-256-hash
 
 ## 4. MCP tools (`/api/[transport]/`)
 
-Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via `verifyToken` → `authenticateRequest`. **109 tools across 19 categories** (`tools/index.ts`, `route.ts:44-62`):
+Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via `verifyToken` → `authenticateRequest`. **109 tools across 19 categories** (`tools/index.ts`, `route.ts:44-62`). **As of PR #83 every tool carries MCP annotation hints** (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint:false`) — 109/109 coverage, enabling client-side defer-loading and safe-tool filtering:
 
 | Category | Count | Notes |
 |---|---|---|
-| projects | 6 | list, get, create, update, delete, summary |
+| projects | 7 | list, get, create, update, delete, summary, **set_project_favorite** (PR #80) |
 | columns | 5 | CRUD + reorder |
 | tasks | 6 | CRUD + get_detail + batch_create |
 | gantt | 14 | tasks + rows + saved views (CRUD + batch + reorder) |
@@ -93,11 +97,11 @@ Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via
 | analytics | 1 | get_velocity_stats |
 | bulk | 1 | setup_board |
 | realms | 14 | CRUD + members + invites + projects |
-| memories | 8 | create, update, search, link, prepare_context, get_with_neighbours, list_needs_summary, **accept_proposal** |
-| dominions | 16 | CRUD + vision/objectives + repo mapping + project assignment (MCP-only) |
+| memories | 9 | create, update, search, link, prepare_context, get_with_neighbours, list_needs_summary, **accept_proposal**, **get_belief_trail** (bi-temporal chain walk, PR #72) |
+| dominions | 15 | CRUD + vision/objectives + repo mapping + project assignment (MCP-only) |
 | sessions | 5 | spawn, list, get, list_events, kill |
 | reflections | 1 | `kairos_reflect` |
-| recipes | 3 | list_recipes, run_recipe, get_trace_history |
+| recipes | 2 | run_recipe, get_trace_history |
 | **synthesis** | 2 | `prepare_aether_context`, `commit_aether` — Aether (global self-model) via the Claude-Code cognition path (no BYOK) |
 | **ask** | 3 | `run_kairos_ask`, `get_pending_kairos_ask`, `answer_kairos_ask` — proactive one-question loop |
 | **dialogue** | 5 | `open_dialogue`, `prepare_dialogue_context`, `append_dialogue_turn`, `get_dialogue`, `commit_dialogue` |
@@ -110,9 +114,10 @@ Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via
 
 Three-tier BYOK routing (cheap / standard / heavy) over user-supplied keys, all through the **Vercel AI SDK** envelope.
 
-- **`route-task.ts`** — `routeTask(userId, req)` is the single entry for Kairos inference: user `enginePolicies` → global row → hard-coded `DEFAULT_POLICIES`. Task→tier: `brief`/`advisory`/`archetype`/`cortex` → heavy; `chat`/`reflect`/`code` → standard; `classify`/`summarise`/`voice` → cheap.
+- **`route-task.ts`** — `routeTask(userId, req)` is the single entry for Kairos inference: user `enginePolicies` → global row → hard-coded `DEFAULT_POLICIES`. Task→tier (post cost-retier PR #84): `brief`/`advisory`/`aether` → heavy; `archetype`/`cortex`/`contradiction`/`chat`/`reflect`/`shell_heavy`/`code` → standard; `classify`/`summarise`/`voice` → cheap.
 - **`router.ts`** — `resolveTier` from `userAiPreferences`; `getDecryptedKey` loads the active credential, stamps `lastUsedAt`, decrypts; wraps decrypt failures in `AiCredentialDecryptError`. `buildModel` maps `anthropic`/`openai`/`google` → `@ai-sdk/*`.
-- **`provider.ts`** — `VercelAIProvider` implements `ask()` (generateText) **and `stream()` (streamText)**. Streaming is available at the provider level; the chat action currently uses `ask()`.
+- **`provider.ts`** — `VercelAIProvider` implements `ask()` (generateText) **and `stream()` (streamText)**. Streaming is available at the provider level; the chat action currently uses `ask()`. `cacheSystem` seam (PR #84) sends the system prompt with an Anthropic `cache_control` breakpoint via `providerOptions` (no-op on other providers). **Fixed latent bug (commit `1512228`):** `toSdkArgs` now maps `req.maxTokens` → the SDK's `maxOutputTokens` — the old key was silently dropped by AI SDK v5, so per-call output caps were no-ops until this fix (wire-level regression test pins it).
+- **`providers.ts`** — model catalog. Anthropic tier defaults: `claude-haiku-4-5` cheap / `claude-sonnet-5` standard / `claude-opus-4-8` heavy. OpenAI catalog carries the **GPT-5.6 family** (`gpt-5.6-luna`/`-terra`/`-sol`) alongside legacy 5.5 entries — catalog-only until a user selects OpenAI in prefs. Google: gemini-2.5-flash/pro.
 - **`crypto.ts`** — AES-256-GCM at rest (`AI_KEYS_MASTER_KEY`).
 
 ---
@@ -159,13 +164,17 @@ Cron schedule (`apps/web/vercel.json`, all `Bearer ${CRON_SECRET}`):
 | UTC | Cron | Purpose |
 |---|---|---|
 | 23:00 | `project-snapshot` | per-project snapshot + ephemeral lifecycle compost |
+| **02:00** | **`chat-distill`** | **distil yesterday's kairos-chat threads (incl. Telegram) into reflections — runs BEFORE archetypes so they feed the same night's chain (PR #89)** |
 | 02:30 | `archetype-synthesis` | 3–7 archetypes / Dominion |
 | 03:00 | `cortex-regen` | living cortex / Dominion |
 | 03:15 | `aether-regen` | global Aether self-model |
 | 04:00 | `embed-backfill` | drain missing/stale embeddings |
+| **05:00** | **`contradiction-scan`** | **belief-contradiction sweep (standard tier, `contradiction` task policy)** |
 | 06:30 | `introspection` | staged `inbound` proposals / Dominion |
 | 07:00 | `briefer` | one advisory / Dominion |
 | Sun 03:00 | `memory-compaction` | weekly substrate count/report (stub) |
 | Sun 05:00 | `memory-dedup` | weekly near-duplicate supersession |
+
+**11 crons total.** The Kairos **brain-tick** is deliberately NOT a Vercel cron — it runs as a Claude cloud routine 3×/day executing `docs/kairos/29-brain-tick.md`, POSTing to `/api/v1/kairos/speak` when a signal clears the interrupt bar.
 
 See [kairos/synthesis.md](kairos/synthesis.md) for what each synthesis cron produces.
