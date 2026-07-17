@@ -87,7 +87,9 @@ function toSdkArgs(model: LanguageModel, req: AIRequest) {
   const base = {
     model,
     system: req.system,
-    maxTokens: req.maxTokens,
+    // AI SDK v5 renamed this option; the old `maxTokens` key is silently
+    // ignored, which disables every per-call output cap (found 2026-07-15).
+    maxOutputTokens: req.maxTokens,
     temperature: req.temperature,
     stopSequences: req.stopSequences,
   }

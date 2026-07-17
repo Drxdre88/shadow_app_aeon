@@ -66,6 +66,16 @@ describe('Anthropic prompt caching (BYOK path)', () => {
     expect(JSON.stringify(messages[0])).not.toContain('cache_control')
   })
 
+  it('forwards the per-call output cap to the wire (maxOutputTokens rename)', async () => {
+    const provider = await getProviderWithKey('anthropic', 'claude-sonnet-5', 'sk-ant-test')
+    await provider.ask({ prompt: 'dynamic payload', maxTokens: 123 })
+
+    expect(bodies).toHaveLength(1)
+    // AI SDK v5+ only serializes max_tokens from `maxOutputTokens`; the old
+    // `maxTokens` kwarg is silently dropped and the SDK default wins.
+    expect(bodies[0].max_tokens).toBe(123)
+  })
+
   it('without cacheSystem the request carries no cache_control', async () => {
     const provider = await getProviderWithKey('anthropic', 'claude-sonnet-5', 'sk-ant-test')
     await provider.ask({ system: 'STATIC INSTRUCTIONS', prompt: 'dynamic payload', maxTokens: 100 })

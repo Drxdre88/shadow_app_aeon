@@ -195,3 +195,28 @@ describe('buildChatMessages with retrieval (C2)', () => {
     expect(messages[messages.length - 1]).toEqual({ role: 'user', content: 'new' })
   })
 })
+
+describe('surface steering', () => {
+  it('defaults to the app style block', () => {
+    const out = buildChatSystemPrompt(null)
+    expect(out).toContain('Markdown for replies')
+    expect(out).not.toContain('Telegram')
+  })
+
+  it('swaps in the Telegram texting style when surface is telegram', () => {
+    const out = buildChatSystemPrompt(null, undefined, 'telegram')
+    expect(out).toContain('texting the operator on Telegram')
+    expect(out).toContain('emojis')
+    expect(out).not.toContain('Markdown for replies')
+  })
+
+  it('threads surface through buildChatMessages', () => {
+    const messages = buildChatMessages({
+      dominion: null,
+      history: [],
+      userMessage: 'hi',
+      surface: 'telegram',
+    })
+    expect(messages[0].content).toContain('texting the operator on Telegram')
+  })
+})

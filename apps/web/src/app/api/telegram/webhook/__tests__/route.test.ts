@@ -183,13 +183,34 @@ describe('telegram webhook — chat with Kairos', () => {
     expect(res.status).toBe(200)
     expect(findOpenChatThreadByTitle).toHaveBeenCalledWith(OPERATOR_USER, 'Telegram · Kairos')
     expect(createChatThread).not.toHaveBeenCalled()
-    expect(sendChatMessage).toHaveBeenCalledWith(OPERATOR_USER, THREAD_ID, 'status of hydra?')
+    expect(sendChatMessage).toHaveBeenCalledWith(OPERATOR_USER, THREAD_ID, 'status of hydra?', { surface: 'telegram' })
 
     const calls = telegramCalls(fetchMock)
     expect(calls).toHaveLength(1)
     expect(calls[0].method).toBe('sendMessage')
-    // Citation markers are stripped for Telegram.
+    // Citation markers are stripped for Telegram; reply goes out as HTML.
     expect(calls[0].body.text).toBe('On it.')
+    expect(calls[0].body.parse_mode).toBe('HTML')
+  })
+
+  it('falls back to a plain-text send when Telegram rejects the HTML', async () => {
+    vi.mocked(sendChatMessage).mockResolvedValue({
+      ok: true, threadId: THREAD_ID, userSeq: 1, assistantSeq: 2,
+      assistantContent: '**broken markup', model: null,
+    })
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ ok: false, description: "Bad Request: can't parse entities" }),
+      })
+
+    const res = await POST(makeReq(textUpdate('hi'), 'hook-secret'))
+    expect(res.status).toBe(200)
+    const calls = telegramCalls(fetchMock)
+    expect(calls).toHaveLength(2)
+    expect(calls[1].body.parse_mode).toBeUndefined()
+    expect(calls[1].body.text).toBe('**broken markup')
   })
 
   it('creates the persistent thread on first contact', async () => {
@@ -204,7 +225,7 @@ describe('telegram webhook — chat with Kairos', () => {
       dominionId: null,
       title: 'Telegram · Kairos',
     })
-    expect(sendChatMessage).toHaveBeenCalledWith(OPERATOR_USER, THREAD_ID, 'hi')
+    expect(sendChatMessage).toHaveBeenCalledWith(OPERATOR_USER, THREAD_ID, 'hi', { surface: 'telegram' })
   })
 
   it('replies "brain offline" when no BYOK credential is configured', async () => {

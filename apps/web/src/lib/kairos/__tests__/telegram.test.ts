@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  escapeHtml,
   escapeMarkdownV2,
+  renderTelegramHtml,
   sendKairosSpeak,
   sendMessage,
   splitTelegramMessage,
@@ -33,6 +35,41 @@ describe('escapeMarkdownV2', () => {
     expect(escapeMarkdownV2(reserved)).toBe('\\_\\*\\[\\]\\(\\)\\~\\`\\>\\#\\+\\-\\=\\|\\{\\}\\.\\!')
     expect(escapeMarkdownV2('back\\slash')).toBe('back\\\\slash')
     expect(escapeMarkdownV2('plain words 123')).toBe('plain words 123')
+  })
+})
+
+describe('renderTelegramHtml', () => {
+  it('renders bold, italic, and inline code', () => {
+    expect(renderTelegramHtml('**bold** and *soft* and `x = 1`'))
+      .toBe('<b>bold</b> and <i>soft</i> and <code>x = 1</code>')
+  })
+
+  it('converts headings to bold lines and bullets to •', () => {
+    expect(renderTelegramHtml('## Plan\n- first\n- second'))
+      .toBe('<b>Plan</b>\n• first\n• second')
+  })
+
+  it('escapes HTML-sensitive characters outside and inside code', () => {
+    expect(renderTelegramHtml('a < b & c')).toBe('a &lt; b &amp; c')
+    expect(renderTelegramHtml('`<div>`')).toBe('<code>&lt;div&gt;</code>')
+  })
+
+  it('renders fenced code blocks as <pre> without styling their contents', () => {
+    expect(renderTelegramHtml('```ts\nconst **x** = 1\n```'))
+      .toBe('<pre>const **x** = 1</pre>')
+  })
+
+  it('renders markdown links as anchors', () => {
+    expect(renderTelegramHtml('see [docs](https://x.dev/a)'))
+      .toBe('see <a href="https://x.dev/a">docs</a>')
+  })
+
+  it('leaves plain text with emojis untouched', () => {
+    expect(renderTelegramHtml('✅ done — nothing fancy')).toBe('✅ done — nothing fancy')
+  })
+
+  it('does not treat multiplication or file globs as italics', () => {
+    expect(renderTelegramHtml('3 * 4 and src/*.ts')).toBe('3 * 4 and src/*.ts')
   })
 })
 
@@ -100,17 +137,37 @@ describe('sendKairosSpeak', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('sends a MarkdownV2 message with a Dismiss button for notify', async () => {
+  it('sends an HTML message with a Dismiss button for notify', async () => {
     const fetchMock = fetchOk()
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(sendKairosSpeak({ memoryId: 'm1', title: 'Heads up!', message: 'A thing.', kind: 'notify' }))
+    await expect(sendKairosSpeak({ memoryId: 'm1', title: 'Heads up!', message: 'A **big** thing.', kind: 'notify' }))
       .resolves.toBe(true)
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
-    expect(body.text).toBe('*Heads up\\!*\n\nA thing\\.')
-    expect(body.parse_mode).toBe('MarkdownV2')
+    expect(body.text).toBe('<b>Heads up!</b>\n\nA <b>big</b> thing.')
+    expect(body.parse_mode).toBe('HTML')
     expect(body.reply_markup.inline_keyboard).toEqual([[{ text: 'Dismiss', callback_data: 'dismiss:m1' }]])
+  })
+
+  it('falls back to plain text when Telegram rejects the HTML formatting', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ ok: false, description: "Bad Request: can't parse entities" }),
+      })
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, result: { message_id: 8 } }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(sendKairosSpeak({ memoryId: 'm1', title: 'T', message: 'weird **markup', kind: 'notify' }))
+      .resolves.toBe(true)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const retry = JSON.parse(fetchMock.mock.calls[1][1].body)
+    expect(retry.parse_mode).toBeUndefined()
+    expect(retry.text).toBe('T\n\nweird **markup')
+    expect(retry.reply_markup.inline_keyboard).toEqual([[{ text: 'Dismiss', callback_data: 'dismiss:m1' }]])
   })
 
   it('uses an Open-in-Aeon URL button for questions when a base URL is set', async () => {

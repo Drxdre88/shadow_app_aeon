@@ -5,8 +5,10 @@ import { sendChatMessage } from '@/lib/kairos/chat-turn'
 import {
   answerCallbackQuery,
   editMessageText,
+  renderTelegramHtml,
   sendMessage,
   splitTelegramMessage,
+  TELEGRAM_HTML_SPLIT_LIMIT,
 } from '@/lib/kairos/telegram'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -138,13 +140,20 @@ async function handleTextMessage(
     threadId = created.threadId
   }
 
-  const result = await sendChatMessage(operatorUserId, threadId, body)
+  const result = await sendChatMessage(operatorUserId, threadId, body, { surface: 'telegram' })
 
   if (result.ok) {
     // Citation markers are UI chips in Aeon; plain noise in Telegram.
     const reply = result.assistantContent.replace(CITATION_RE, '')
-    for (const chunk of splitTelegramMessage(reply)) {
-      await sendMessage(chatId!, chunk)
+    // Split the raw markdown (tags must not straddle chunks), render each
+    // chunk to Telegram HTML, and fall back to plain text if Telegram
+    // rejects the formatting — delivery beats styling.
+    for (const chunk of splitTelegramMessage(reply, TELEGRAM_HTML_SPLIT_LIMIT)) {
+      try {
+        await sendMessage(chatId!, renderTelegramHtml(chunk), { parseMode: 'HTML' })
+      } catch {
+        await sendMessage(chatId!, chunk)
+      }
     }
     return
   }
