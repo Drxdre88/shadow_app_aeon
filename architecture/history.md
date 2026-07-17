@@ -5,6 +5,19 @@
 Reverse-chronological. The most recent work is at the top; the pre-2026-06-06 trail is preserved
 verbatim below.
 
+### 2026-07-17 — Kairos autonomy wave (PRs #71–89): whole-brain chat, Telegram, speaks-first, chat-distill
+
+Full refresh of the architecture set (all 9 subsystem files) covering three weeks of Kairos work:
+
+1. **Mind hardening** — bi-temporal `validAt`/`invalidAt` (0025) + belief trail (PR #72); read-time confidence decay (PR #73, same fn drives galaxy brightness); Voyage `rerank-2.5` cross-encoder stage (PR #75); Dominion **auto-filing** as resolution step 4 (PR #76, cortex-centroid cosine). Retrieval pipeline is now fuse → decay → rerank → top-5.
+2. **Subtract pass (PR #81)** — Aether UI + `/aether` route + `Kairos2D` DELETED; the galaxy is the only spatial view. Lieutenants cut 4→1 (Sentinel); Oracle's pulse became the brain-tick.
+3. **Whole-brain chat (PRs #75/#77)** — Dominion picker dropped; unanchored threads ground in the **Aether self-model**; turn engine extracted to `lib/kairos/chat-turn.ts` so web + Telegram share it.
+4. **Will inbox (PR #82)** — bell/panel with brief/ask/notify/proposal kinds; same idempotent triage fns serve web + Telegram callbacks.
+5. **Telegram two-way (PRs #85/#87)** — webhook + speak fan-out + markdown→Telegram-HTML renderer + surface-steered texting persona.
+6. **Speaks-first (PR #88)** — `POST /api/v1/kairos/speak` with server-side interrupt throttle (4h gap / 3 per day / force ceiling 10); brain-tick playbook `docs/kairos/29-brain-tick.md` executed by a Claude cloud routine 3×/day.
+7. **Chat→brain closed (PR #89)** — nightly `chat-distill` cron (02:00 UTC, before archetypes) distils operator signal from the day's threads into reflections. Cron fleet now **11**.
+8. **Platform** — all 109 MCP tools annotated (PR #83); cost retier + prompt caching (PR #84: synthesis → standard tier, `cacheSystem` seam); `maxTokens`→`maxOutputTokens` fix (`1512228` — per-call caps were silently ignored); GPT-5.6 catalog; tiers sonnet-5/opus-4-8. Project favorites (PR #80, 0026) + checklist ghost-input fix (PR #86).
+
 ### 2026-06-27 — Mobile app (Google login slice) + memory-capture overhaul + architecture-folder restructure
 
 1. **Mobile app scaffolded** — new `apps/mobile/` Expo app (SDK 53 / RN 0.79 / React 19), v1 = Kairos chat. The **login slice** is built: native Google sign-in (`@react-native-google-signin/google-signin`) → POST id token to the pre-existing `/api/v1/auth/mobile/google` → 90-day `aeon_s1_` session in the keychain → `apiFetch` Bearer. Reverses the Capacitor-over-RN decision. Awaiting operator Google Cloud client IDs + a dev build to run. See [mobile.md](mobile.md).

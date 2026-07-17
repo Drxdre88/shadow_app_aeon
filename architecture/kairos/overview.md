@@ -27,11 +27,12 @@ corpus shifts (`docs/kairos/26-cognitive-hierarchy-and-consolidation.md`):
 
 ## How a piece of information flows in and gets compartmentalized
 
-Every inbound write lands through `captureMemory()` (`apps/web/src/lib/data/memories.ts:731`)
-→ `createMemory()` (`:643`). At write time two things happen: (1) **Dominion resolution** —
+Every inbound write lands through `captureMemory()` (`apps/web/src/lib/data/memories.ts:963`)
+→ `createMemory()` (`:800`). At write time two things happen: (1) **Dominion resolution** —
 `resolveDominionForMemory()` (`apps/web/src/lib/data/dominions.ts:323`) picks the home Dominion
 in strict order `explicit dominionId` ?? `project.dominionId` ?? `dominionRepos` via
-`sourceMetadata.repo` ?? `null`; (2) **stream classification** — a `streamClass` axis
+`sourceMetadata.repo` ?? **content-based auto-filing** (cosine vs cortex centroids, PR #76)
+?? `null`; (2) **stream classification** — a `streamClass` axis
 (`apps/web/src/lib/kairos/streamClass.ts`) tags the cognitive layer and stamps a provenance
 `confidence` prior (`CONFIDENCE_BY_STREAM`, `memories.ts:52`). A memory has ONE home Dominion
 (the FK) but can be *referenced* by any number via soft `dominion:<uuid>` tags
@@ -51,8 +52,9 @@ board/project events; the nightly **project-snapshot** cron; **quick capture** +
 `POST /api/v1/memories/capture` endpoint; the **Claude session-capture hook**
 (`apps/web/scripts/claude-session-capture.mjs`) that distils each finished Claude Code session
 into a `session_summary`; **reflections** (`kairos_reflect`, the operator's first-class
-high-weight signal); and the **guided-introspection** propose-not-commit loop that stages
-Kairos's own thoughts as `inbound` proposals.
+high-weight signal); the **guided-introspection** propose-not-commit loop that stages
+Kairos's own thoughts as `inbound` proposals; and **chat distillation** (PR #89) — the nightly
+pass that turns the day's chat conversations (Telegram included) into operator reflections.
 
 **Synthesis (consolidation).** Nightly, the substrate is distilled upward: **archetypes** (3–7
 master nodes per Dominion), the per-Dominion living **cortex**, and **Aether** — the single
@@ -60,9 +62,11 @@ global self-model. The **Briefer** writes one morning advisory per active Domini
 runs through a single `runRecipe()` **dispatcher** + **retrieval** module. See
 [synthesis.md](synthesis.md).
 
-**Retrieval.** `retrieveContext()` (`apps/web/src/lib/kairos/retrieve.ts:65`) is the canonical
-fetch: Dominion bundle + live cortex + live archetypes + top-5 hybrid (FTS+vector RRF-fused)
-substrate hits + recent traces. The generic `prepareContext()` (`memories.ts:1357`) packs a
+**Retrieval.** `retrieveContext()` (`apps/web/src/lib/kairos/retrieve.ts`) is the canonical
+Dominion-scoped fetch: Dominion bundle + live cortex + live archetypes + top-5 substrate
+(FTS+vector RRF fuse → confidence decay → rerank-2.5 cross-encoder) + recent traces.
+`retrieveGlobalContext()` (`:106`) is the **whole-brain** variant (Aether stands in for cortex)
+that grounds unanchored chat. The generic `prepareContext()` (`memories.ts:1754`) packs a
 budget-bounded markdown bundle for any AI window.
 
 **Reflection / ask / dialogue.** Beyond passive capture, Kairos initiates: **Kairos Asks**
@@ -71,10 +75,12 @@ select the single proactive question worth interrupting with (derived from Aethe
 turn-by-turn from grounded context (Claude Code as the cognition engine, no BYOK key), and
 distils the finished thread back into durable reflections. See [chat.md](chat.md).
 
-**Chat + lieutenants.** The right-side **Visor** is a per-Dominion slide-out chat grounded in
-that Dominion's cortex + archetypes + substrate. The **lieutenants** (acolyte / sentinel /
-cartographer / oracle) operate over the same retrieval + recipe machinery — detail in
-[chat.md](chat.md).
+**Chat + autonomy.** The **Visor** is a whole-brain chat by default (Dominion anchor dropped,
+PR #77) — the operator talks to Kairos, who activates **Aether** for grounding. The same turn
+engine powers the **Telegram** surface (two-way, PRs #85/#87), and the **brain-tick** cloud
+routine lets Kairos speak FIRST through `/api/v1/kairos/speak` (Will inbox + Telegram, server-
+throttled). Of the four lieutenants only **Sentinel** remains (PR #81) — Oracle's pulse became
+the brain-tick. Detail in [chat.md](chat.md).
 
 ## Layering diagram
 

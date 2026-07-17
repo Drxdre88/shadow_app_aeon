@@ -71,7 +71,8 @@ Create/edit/delete/realm-assign (`components/project/`); Space/Tree/Grid views; 
 |---|---|---|
 | Board (Kanban) + DnD | Complete | `components/board/TaskBoard.tsx`, `useBoardDnD.ts` |
 | Task CRUD / modal / context menu / autosave | Complete | `TaskEditModal.tsx`, `TaskContextMenu.tsx`, `QuickAddTask.tsx` |
-| Checklist / Labels / Dependencies / Comments | Complete | `board/checklist/`, `LabelPicker.tsx`, `TaskDependencySection.tsx`, `TaskComments.tsx` |
+| Checklist / Labels / Dependencies / Comments | Complete | `board/checklist/` (ghost new-item flow — pending groups live in local state until first commit, PR #86, `TaskChecklist.tsx:131`), `LabelPicker.tsx`, `TaskDependencySection.tsx`, `TaskComments.tsx` |
+| **Project Favorites (star + dashboard section)** | Complete | `board/FavoriteStar.tsx`, `lib/actions/projects.ts` (`toggleProjectFavorite`), `favoriteProjects` table (0026); MCP `set_project_favorite` + REST `PUT /projects/[id]/favorite` (PR #80) |
 | Sizing / stale / peek | Complete | `TaskSizeBadge.tsx`, `StaleIndicator.tsx`, `CardPeekPreview.tsx` |
 | Assignees (overlay, M-hotkey, owner+realm) | Complete | `TaskAssigneeOverlay.tsx`, `lib/data/members.ts:27` |
 | **Avatar pile on cards** | Complete | `SortableTaskCard.tsx:337,494`, `boardStore.assigneesByTask` |
@@ -101,4 +102,4 @@ Create/edit/delete/realm-assign (`components/project/`); Space/Tree/Grid views; 
 | `useSidebarStore` | collapsed, active realm, hidden ids | `stores/sidebarStore.ts` | `zustand/persist` |
 | `useKairosStore` | selected memory id, refresh signal | `stores/kairosStore.ts` | in-memory |
 | `useKairosVisorStore` | Visor open + active thread id | `stores/kairosVisorStore.ts` | active thread id only |
-| `useKairosPrefsStore` | Kairos view prefs (graph / Aether lens) | `stores/kairosPrefsStore.ts` | `zustand/persist` |
+| `useKairosPrefsStore` | Kairos galaxy prefs (view/backdrop keys dropped with the Aether-UI retirement, PR #81) | `stores/kairosPrefsStore.ts` | `zustand/persist` |

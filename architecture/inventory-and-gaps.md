@@ -11,7 +11,8 @@ Per-domain inventories live in the subsystem docs (this avoids drift):
 - **Mobile app** → [mobile.md](mobile.md).
 
 Top-line status: the PM app is feature-complete + hardened; Kairos is a multi-layer brain
-(substrate → synthesis → Aether → chat/ask/dialogue) running a 9-cron nightly pipeline; the mobile
+(substrate → synthesis → Aether self-model → chat/ask/dialogue → **speaks-first autonomy**)
+running an **11-cron** nightly pipeline plus a 3×/day cloud-routine brain-tick; the mobile
 app is at the login slice (Google auth scaffolded, awaiting operator client IDs).
 
 ## Known Gaps & Technical Debt
@@ -51,6 +52,27 @@ Last verified: 2026-06-28 (git HEAD `056d8f2`).
 | Low | `chat_with_kairos` MCP tool absent | OPEN |
 | Low | Visor send-race against thread switch | OPEN |
 | Low | `MIN_QUERY_CHARS` retrieval cutoff untested | OPEN |
+
+### Closed since 2026-06-28 (verified 2026-07-17)
+
+| Was | Closed by |
+|---|---|
+| Proposal inbox had no UI (search-only) | **Will inbox** bell/panel — brief/ask/notify/proposal kinds (PR #82) |
+| No outbound push channel (Kairos couldn't reach the operator) | **Telegram** — speak fan-out + tap-to-triage + whole-brain chat (PRs #85/#87), speak throttle (PR #88) |
+| Chat→brain one-way (free chat never became memories) | **chat-distill** nightly cron (PR #89) |
+| Per-call AI output caps silently ignored | `maxTokens`→`maxOutputTokens` fix (`1512228`) + wire-level regression test |
+| MCP tools unannotated (~50K always-on context) | All 109 tools annotated (PR #83) |
+| Test count | now **2,144** (from ~1,902); still no E2E |
+
+### Open gaps (2026-07-17)
+
+| Severity | Issue | Details |
+|---|---|---|
+| Medium | Brain-tick delivery not wired | Cloud routine live (3×/day) but `AEON_APP_URL`+`CRON_SECRET` env vars + network allowlist pending in the claude.ai cloud environment — ticks dry-run until set |
+| Medium | Board digest unbuilt | Autonomy slice 3: curated Mission Control deltas → Telegram via /speak; zero code yet |
+| Medium | Introspection cron `parse_failed` streak | Briefings report failures Jul 11–15 — brain consolidating without introspection proposals; needs log pull |
+| Low | Chat-distill error branches undertested | Stalker findings 2026-07-17: resolveDate/parse-failure/cron-catch branches dark (fix queued) |
+| Low | Stale remote branches | ~40 old `feature/*` + post-merge `feat/*` refs on origin; `git remote prune origin` + a cleanup pass |
 
 ### New gaps (2026-06-28)
 
