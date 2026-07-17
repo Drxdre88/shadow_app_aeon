@@ -10,7 +10,10 @@ import {
 
 const DAY_MS = 86_400_000
 const MAX_MESSAGES_PER_THREAD = 80
-const MAX_OUTPUT_TOKENS = 1600
+// Must comfortably fit 5 max-length reflections (~2500+ tokens of JSON) —
+// the cap genuinely binds since the maxOutputTokens fix, and a truncated
+// reply fails the whole thread's parse instead of degrading.
+const MAX_OUTPUT_TOKENS = 4000
 
 export interface ChatDistillOptions {
   date?: string

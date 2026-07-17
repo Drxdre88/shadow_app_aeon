@@ -7,8 +7,10 @@ const reflectionSchema = z.object({
   bodyMd: z.string().trim().min(1).max(2000),
 })
 
+// No upper bound on the array itself — an over-eager model reply is
+// truncated to 5 after parsing rather than failing the whole thread.
 const outputSchema = z.object({
-  reflections: z.array(reflectionSchema).max(25).default([]),
+  reflections: z.array(reflectionSchema).default([]),
 })
 
 export type ChatDistillCandidate = z.infer<typeof reflectionSchema>
