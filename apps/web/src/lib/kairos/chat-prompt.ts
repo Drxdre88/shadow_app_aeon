@@ -45,11 +45,16 @@ export interface ChatPromptRetrieval {
   substrate: ChatPromptSubstrateSource[]
 }
 
+// Where the reply will be read. 'app' renders full markdown; 'telegram' is
+// a phone messenger — tight texts, light emoji, flat formatting.
+export type ChatPromptSurface = 'app' | 'telegram'
+
 export interface BuildChatPromptInput {
   dominion: ChatPromptDominion | null // null = unanchored whole-brain thread
   history: ChatPromptMessage[]   // chronological, oldest first
   userMessage: string             // the new message about to be sent
   retrieval?: ChatPromptRetrieval // C2 grounding — optional, degrades cleanly
+  surface?: ChatPromptSurface     // defaults to 'app'
 }
 
 function clipBody(body: string): string {
@@ -99,6 +104,7 @@ function renderRetrieval(retrieval: ChatPromptRetrieval, anchored: boolean): str
 export function buildChatSystemPrompt(
   dominion: ChatPromptDominion | null,
   retrieval?: ChatPromptRetrieval,
+  surface: ChatPromptSurface = 'app',
 ): string {
   const lines: string[] = dominion
     ? [
@@ -139,7 +145,14 @@ export function buildChatSystemPrompt(
   lines.push('---')
   lines.push('')
   lines.push('Style:')
-  lines.push('- Markdown for replies. Default to short paragraphs and bullets, not walls of text.')
+  if (surface === 'telegram') {
+    lines.push('- You are texting the operator on Telegram — write like the sharpest person in their contacts, not like a report. A few short sentences, or a compact bullet list when there are genuinely several items.')
+    lines.push('- Lead with the point. One idea per message; expand only when asked.')
+    lines.push('- Use a few well-chosen emojis as visual anchors (✅ ⚠️ 🔴 💡 …) where they help scanning — never decorate every line.')
+    lines.push('- Formatting stays flat: occasional **bold** for the one thing that matters, `code` for identifiers. No headings, no tables, no nested lists.')
+  } else {
+    lines.push('- Markdown for replies. Default to short paragraphs and bullets, not walls of text.')
+  }
   lines.push('- Cite specifics from the operator\'s context when relevant. When you\'re reasoning from general knowledge, say so.')
   lines.push('- Disagree with the operator when their plan has a hole. Diplomacy without disagreement is just flattery.')
   if (hasRetrieval) {
@@ -150,7 +163,7 @@ export function buildChatSystemPrompt(
 }
 
 export function buildChatMessages(input: BuildChatPromptInput): AIMessage[] {
-  const system = buildChatSystemPrompt(input.dominion, input.retrieval)
+  const system = buildChatSystemPrompt(input.dominion, input.retrieval, input.surface)
   const trimmedHistory = input.history.slice(-MAX_HISTORY_MESSAGES)
 
   const messages: AIMessage[] = [

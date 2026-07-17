@@ -7,7 +7,7 @@ import {
   updateChatMessageContent,
 } from '@/lib/data/kairos-chat'
 import type { ChatRetrievalMeta } from '@/lib/data/kairos-chat-payload'
-import { buildChatMessages } from '@/lib/kairos/chat-prompt'
+import { buildChatMessages, type ChatPromptSurface } from '@/lib/kairos/chat-prompt'
 import {
   retrieveForChatGlobal,
   extractCitationIds,
@@ -27,6 +27,10 @@ import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/rou
 // model failure can never silently lose input — the next call detects the
 // orphan and retries the AI half (or rewrites the orphan body on an edited
 // retry).
+
+export interface ChatTurnOptions {
+  surface?: ChatPromptSurface
+}
 
 interface AssistantReply {
   content: string
@@ -74,6 +78,7 @@ export async function sendChatMessage(
   userId: string,
   threadId: string,
   body: string,
+  opts: ChatTurnOptions = {},
 ): Promise<KairosChatTurnResult> {
   const loaded = await getChatThread(userId, threadId)
   if (!loaded) return { ok: false, reason: 'thread_not_found' }
@@ -84,10 +89,10 @@ export async function sendChatMessage(
       const updated = await updateChatMessageContent(userId, threadId, last.seq, body)
       if (!updated.ok) return { ok: false, reason: 'thread_not_found' }
     }
-    return runAssistantTurn(userId, threadId, loaded.thread.dominionId, body, last.seq)
+    return runAssistantTurn(userId, threadId, loaded.thread.dominionId, body, last.seq, opts)
   }
 
-  return runChatTurn(userId, threadId, loaded.thread.dominionId, body)
+  return runChatTurn(userId, threadId, loaded.thread.dominionId, body, opts)
 }
 
 // Shared core: persist user message → run assistant half.
@@ -96,6 +101,7 @@ export async function runChatTurn(
   threadId: string,
   dominionId: string | null,
   body: string,
+  opts: ChatTurnOptions = {},
 ): Promise<KairosChatTurnResult> {
   // Persist BEFORE the AI call — see file header.
   const userAppend = await appendChatMessage(userId, threadId, {
@@ -104,7 +110,7 @@ export async function runChatTurn(
   })
   if (!userAppend.ok) return { ok: false, reason: 'thread_not_found' }
 
-  return runAssistantTurn(userId, threadId, dominionId, body, userAppend.seq)
+  return runAssistantTurn(userId, threadId, dominionId, body, userAppend.seq, opts)
 }
 
 export async function runAssistantTurn(
@@ -113,6 +119,7 @@ export async function runAssistantTurn(
   dominionId: string | null,
   userBody: string,
   userSeq: number,
+  opts: ChatTurnOptions = {},
 ): Promise<KairosChatTurnResult> {
   // An anchored thread's Dominion frames the prompt (persona + vision/mission).
   // Unanchored (null) threads get the whole-brain persona; provider routing is
@@ -159,6 +166,7 @@ export async function runAssistantTurn(
     history: priorHistory,
     userMessage: userBody,
     retrieval: promptRetrieval,
+    surface: opts.surface,
   })
 
   const reply = await callAssistant(userId, dominionId, messages)
