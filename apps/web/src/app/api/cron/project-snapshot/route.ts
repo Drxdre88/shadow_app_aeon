@@ -1,3 +1,4 @@
+import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { projects } from '@/lib/db/schema'
@@ -17,7 +18,7 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!isAuthorized(req)) return jsonResponse({ error: 'unauthorized' }, { status: 401 })
 
   const users = await db
     .selectDistinct({ userId: projects.userId })
@@ -55,7 +56,7 @@ export async function GET(req: NextRequest) {
     { reclassified: 0, snapshotsArchived: 0, advisoriesArchived: 0 },
   )
 
-  return NextResponse.json({
+  return jsonResponse({
     ran: users.length,
     snapshotsCreated: totalCreated,
     lifecycle,

@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { redirectResponse } from '@/lib/api/response'
+import { NextRequest } from 'next/server'
 import { auth } from '@/lib/auth'
 import { getClient, createAuthCode } from '@/lib/data/oauth'
 
-export const dynamic = 'force-dynamic'
+
 
 // OAuth 2.1 authorization endpoint. Browser-facing: the user must already hold
 // a NextAuth session; if not we bounce through /login and return here. On
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
     const target = new URL(redirectUri)
     if (state) params.state = state
     for (const [k, v] of Object.entries(params)) target.searchParams.set(k, v)
-    return NextResponse.redirect(target)
+    return redirectResponse(target)
   }
 
   if (responseType !== 'code') return bounce({ error: 'unsupported_response_type' })
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
     // Not signed in — send to login, then back to this exact authorize URL.
     const login = new URL('/login', url.origin)
     login.searchParams.set('callbackUrl', url.pathname + url.search)
-    return NextResponse.redirect(login)
+    return redirectResponse(login)
   }
 
   const code = await createAuthCode({

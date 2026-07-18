@@ -1,3 +1,4 @@
+import { jsonResponse } from '@/lib/api/response'
 import { getOrigin, OAUTH_CORS_HEADERS } from '@/lib/oauth/origin'
 
 // Primary path is middleware.ts (serveOAuthDiscovery), which intercepts this
@@ -10,7 +11,7 @@ export const dynamic = 'force-dynamic'
 // /.well-known/oauth-protected-resource (and the /api/mcp-suffixed variant).
 export async function GET(req: Request) {
   const origin = getOrigin(req)
-  return Response.json(
+  return jsonResponse(
     {
       resource: `${origin}/api/mcp`,
       authorization_servers: [origin],

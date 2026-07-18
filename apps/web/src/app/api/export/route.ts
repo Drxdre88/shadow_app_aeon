@@ -1,3 +1,4 @@
+import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
@@ -8,7 +9,7 @@ import { withRateLimit, API_READ_LIMIT } from '@/lib/api/rateLimit'
 async function handler() {
   const session = await auth()
   if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return jsonResponse({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const userId = session.user.id
@@ -91,4 +92,4 @@ async function handler() {
   })
 }
 
-export const GET = withRateLimit(handler as (req: NextRequest, ctx: unknown) => Promise<NextResponse>, API_READ_LIMIT)
+export const GET = withRateLimit(handler as (req: NextRequest, ctx: unknown) => Promise<Response>, API_READ_LIMIT)

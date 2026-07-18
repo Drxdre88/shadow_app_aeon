@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
+import { jsonResponse } from '@/lib/api/response'
 
 export type RateLimitConfig = {
   windowMs: number
@@ -49,10 +50,10 @@ export function checkRateLimit(
 }
 
 export function withRateLimit(
-  handler: (req: NextRequest, ctx: unknown) => Promise<NextResponse>,
+  handler: (req: NextRequest, ctx: unknown) => Promise<Response>,
   config: RateLimitConfig
 ) {
-  return async (req: NextRequest, ctx: unknown): Promise<NextResponse> => {
+  return async (req: NextRequest, ctx: unknown): Promise<Response> => {
     const masterKey = process.env.AEON_API_KEY
     const authHeader = req.headers.get('authorization')
     if (masterKey && authHeader === `Bearer ${masterKey}`) {
@@ -67,7 +68,7 @@ export function withRateLimit(
 
     if (!allowed) {
       const retryAfter = Math.ceil((resetAt - Date.now()) / 1000)
-      return NextResponse.json(
+      return jsonResponse(
         { error: 'Too many requests' },
         {
           status: 429,

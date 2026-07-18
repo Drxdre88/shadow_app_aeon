@@ -1,3 +1,4 @@
+import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { userAiCredentials, dominions } from '@/lib/db/schema'
@@ -29,9 +30,9 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!isAuthorized(req)) return jsonResponse({ error: 'unauthorized' }, { status: 401 })
   if (!embeddingsEnabled()) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: 'embeddings_disabled', note: 'Set VOYAGE_API_KEY or OPENAI_API_KEY to enable.' },
       { status: 200 },
     )
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
     .from(dominions)
     .where(isNull(dominions.archivedAt))
 
-  if (usersWithDominions.length === 0) return NextResponse.json({ ran: 0, users: [] })
+  if (usersWithDominions.length === 0) return jsonResponse({ ran: 0, users: [] })
 
   const userIds = usersWithDominions.map((r) => r.userId)
   const credentialed = await db
@@ -78,5 +79,5 @@ export async function GET(req: NextRequest) {
     { proposalsCreated: 0, byStatus: {} as Record<string, number> },
   )
 
-  return NextResponse.json({ ran: eligibleIds.length, ...totals, users: userResults })
+  return jsonResponse({ ran: eligibleIds.length, ...totals, users: userResults })
 }

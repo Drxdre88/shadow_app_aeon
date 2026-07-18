@@ -1,9 +1,10 @@
+import { jsonResponse } from '@/lib/api/response'
 import { NextRequest } from 'next/server'
 import { consumeAuthCode, issueTokens, rotateRefreshToken } from '@/lib/data/oauth'
 import { verifyPkceS256 } from '@/lib/oauth/pkce'
 import { OAUTH_CORS_HEADERS } from '@/lib/oauth/origin'
 
-export const dynamic = 'force-dynamic'
+
 
 // OAuth 2.1 token endpoint. Accepts authorization_code (with PKCE) and
 // refresh_token grants. Public clients only — no client_secret, the PKCE
@@ -58,7 +59,7 @@ async function readBody(req: NextRequest): Promise<Record<string, string>> {
 }
 
 function tokenResponse(tokens: { accessToken: string; refreshToken: string; expiresIn: number; scope: string }) {
-  return Response.json(
+  return jsonResponse(
     {
       access_token: tokens.accessToken,
       token_type: 'Bearer',
@@ -71,7 +72,7 @@ function tokenResponse(tokens: { accessToken: string; refreshToken: string; expi
 }
 
 function tokenError(error: string, description?: string) {
-  return Response.json(
+  return jsonResponse(
     { error, ...(description ? { error_description: description } : {}) },
     { status: 400, headers: { ...OAUTH_CORS_HEADERS, 'Cache-Control': 'no-store' } }
   )

@@ -1,3 +1,4 @@
+import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { captureMemory, listRecentKairosSpeaks } from '@/lib/data/memories'
@@ -46,11 +47,11 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!isAuthorized(req)) return jsonResponse({ error: 'unauthorized' }, { status: 401 })
 
   const operatorUserId = process.env.KAIROS_OPERATOR_USER_ID
   if (!operatorUserId) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: 'KAIROS_OPERATOR_USER_ID is not set — cannot resolve the operator to speak to' },
       { status: 500 },
     )
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
   const json = await req.json().catch(() => null)
   const parsed = speakSchema.safeParse(json)
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 })
+    return jsonResponse({ error: parsed.error.issues[0].message }, { status: 400 })
   }
 
   const { title, message, kind, urgency, force } = parsed.data
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
     ? recent.length >= FORCE_CEILING
     : recent.length >= DAILY_CAP || gapMs < MIN_GAP_HOURS * 60 * 60 * 1000
   if (overLimit) {
-    return NextResponse.json(
+    return jsonResponse(
       {
         error: 'throttled',
         lastSpokeAt: last?.createdAt ?? null,
@@ -100,5 +101,5 @@ export async function POST(req: NextRequest) {
     console.error('[kairos-speak] telegram fan-out failed', err)
   }
 
-  return NextResponse.json({ id: memory.id, delivered: { inbox: true, telegram } })
+  return jsonResponse({ id: memory.id, delivered: { inbox: true, telegram } })
 }

@@ -1,3 +1,4 @@
+import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { userAiCredentials, dominions } from '@/lib/db/schema'
@@ -27,7 +28,7 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!isAuthorized(req)) return jsonResponse({ error: 'unauthorized' }, { status: 401 })
 
   const usersWithDominions = await db
     .selectDistinct({ userId: dominions.userId })
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
   if (usersWithDominions.length === 0) {
     // Return the same shape as the populated path so monitoring/alerting
     // that pattern-matches on byStatus / cortexCreated doesn't misfire.
-    return NextResponse.json({
+    return jsonResponse({
       ran: 0,
       cortexCreated: 0,
       priorArchived: 0,
@@ -91,7 +92,7 @@ export async function GET(req: NextRequest) {
     { cortexCreated: 0, priorArchived: 0, byStatus: {} as Record<string, number> },
   )
 
-  return NextResponse.json({
+  return jsonResponse({
     ran: eligibleIds.length,
     ...totals,
     users: userResults,

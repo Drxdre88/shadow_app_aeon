@@ -1,3 +1,4 @@
+import { jsonResponse } from '@/lib/api/response'
 import { getOrigin, OAUTH_CORS_HEADERS } from '@/lib/oauth/origin'
 
 // Primary path is middleware.ts (serveOAuthDiscovery), which intercepts this
@@ -9,7 +10,7 @@ export const dynamic = 'force-dynamic'
 // /.well-known/oauth-authorization-server (App Router won't serve dot-folders).
 export async function GET(req: Request) {
   const origin = getOrigin(req)
-  return Response.json(
+  return jsonResponse(
     {
       issuer: origin,
       authorization_endpoint: `${origin}/api/oauth/authorize`,

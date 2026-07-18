@@ -1,3 +1,4 @@
+import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { userAiCredentials, dominions } from '@/lib/db/schema'
@@ -86,7 +87,7 @@ async function briefUser(userId: string): Promise<BrieferResult[]> {
 }
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!isAuthorized(req)) return jsonResponse({ error: 'unauthorized' }, { status: 401 })
 
   const usersWithDominions = await db
     .selectDistinct({ userId: dominions.userId })
@@ -94,7 +95,7 @@ export async function GET(req: NextRequest) {
     .where(isNull(dominions.archivedAt))
 
   if (usersWithDominions.length === 0) {
-    return NextResponse.json({ ran: 0, users: [] })
+    return jsonResponse({ ran: 0, users: [] })
   }
 
   const userIds = usersWithDominions.map((r) => r.userId)
@@ -124,7 +125,7 @@ export async function GET(req: NextRequest) {
     0,
   )
 
-  return NextResponse.json({
+  return jsonResponse({
     ran: eligibleIds.length,
     advisoriesCreated: totalCreated,
     users: userResults,

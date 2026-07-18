@@ -1,3 +1,4 @@
+import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
@@ -72,7 +73,7 @@ async function snapshotForUser(userId: string): Promise<DominionStreamCount[]> {
 
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+    return jsonResponse({ error: 'unauthorized' }, { status: 401 })
   }
 
   const usersWithDominions = await db
@@ -113,7 +114,7 @@ export async function GET(req: NextRequest) {
     { totalMemories: 0, eligibleForCompaction: 0 },
   )
 
-  return NextResponse.json({
+  return jsonResponse({
     startedAt,
     finishedAt: new Date().toISOString(),
     phase: '1A-stub',
