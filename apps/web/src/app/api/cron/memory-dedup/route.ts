@@ -1,3 +1,4 @@
+import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { dedupMemories } from '@/lib/data/memories'
 import { embeddingsEnabled } from '@/lib/kairos/embeddings'
@@ -25,10 +26,10 @@ function isAuthorized(req: NextRequest): boolean {
 
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+    return jsonResponse({ error: 'unauthorized' }, { status: 401 })
   }
   if (!embeddingsEnabled()) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: 'embeddings_disabled', note: 'Set VOYAGE_API_KEY or OPENAI_API_KEY to enable.' },
       { status: 200 },
     )
@@ -42,9 +43,9 @@ export async function GET(req: NextRequest) {
   const startedAt = new Date().toISOString()
   try {
     const result = await dedupMemories({ dryRun, threshold })
-    return NextResponse.json({ startedAt, finishedAt: new Date().toISOString(), ...result })
+    return jsonResponse({ startedAt, finishedAt: new Date().toISOString(), ...result })
   } catch (err) {
-    return NextResponse.json(
+    return jsonResponse(
       { startedAt, error: err instanceof Error ? err.message : String(err) },
       { status: 500 },
     )

@@ -1,3 +1,4 @@
+import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dominions } from '@/lib/db/schema'
@@ -17,7 +18,7 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!isAuthorized(req)) return jsonResponse({ error: 'unauthorized' }, { status: 401 })
 
   const usersWithDominions = await db
     .selectDistinct({ userId: dominions.userId })
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
     .where(isNull(dominions.archivedAt))
 
   if (usersWithDominions.length === 0) {
-    return NextResponse.json({ ran: 0, generated: 0, users: [] })
+    return jsonResponse({ ran: 0, generated: 0, users: [] })
   }
 
   const userResults: Array<{
@@ -49,7 +50,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({
+  return jsonResponse({
     ran: userResults.length,
     generated: userResults.filter((r) => r.generated).length,
     users: userResults,

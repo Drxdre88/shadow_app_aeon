@@ -1,3 +1,4 @@
+import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { listChatDistillEligibleUserIds } from '@/lib/data/kairos-chat'
 import { runChatDistillForUser, type ChatDistillRunResult } from '@/lib/kairos/chat-distill'
@@ -17,7 +18,7 @@ function isAuthorized(req: NextRequest): boolean {
 }
 
 export async function GET(req: NextRequest) {
-  if (!isAuthorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!isAuthorized(req)) return jsonResponse({ error: 'unauthorized' }, { status: 401 })
 
   const startedAt = Date.now()
   const userIds = await listChatDistillEligibleUserIds()
@@ -49,7 +50,7 @@ export async function GET(req: NextRequest) {
     console.warn('[chat-distill] deadline reached — users skipped this run', { skippedUserIds })
   }
 
-  return NextResponse.json({
+  return jsonResponse({
     ran: users.length,
     skipped: skippedUserIds.length,
     ...(skippedUserIds.length ? { skippedUserIds } : {}),

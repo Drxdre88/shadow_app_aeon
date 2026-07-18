@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'crypto'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
+import { jsonResponse } from '@/lib/api/response'
 import { auth } from '@/lib/auth'
 import { verifyApiKey } from '@/lib/data/api-keys'
 import { verifyMobileSession } from '@/lib/data/mobile-auth'
@@ -7,7 +8,7 @@ import { verifyOAuthAccessToken } from '@/lib/data/oauth'
 
 export type ApiUser = { id: string; role: string }
 
-export function isApiUser(result: ApiUser | NextResponse): result is ApiUser {
+export function isApiUser(result: ApiUser | Response): result is ApiUser {
   return 'id' in result && typeof (result as ApiUser).id === 'string'
 }
 
@@ -18,7 +19,7 @@ function constantTimeCompare(a: string, b: string): boolean {
 
 export async function authenticateRequest(
   request: NextRequest
-): Promise<ApiUser | NextResponse> {
+): Promise<ApiUser | Response> {
   const authHeader = request.headers.get('authorization')
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7)
@@ -44,19 +45,19 @@ export async function authenticateRequest(
       if (result) return { id: result.userId, role: 'user' }
     }
 
-    return NextResponse.json({ error: 'Invalid API key' }, { status: 401 })
+    return jsonResponse({ error: 'Invalid API key' }, { status: 401 })
   }
 
   const session = await auth()
   if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return jsonResponse({ error: 'Unauthorized' }, { status: 401 })
   }
 
   return { id: session.user.id, role: session.user.role || 'user' }
 }
 
 export function apiHandler(
-  handler: (req: NextRequest, ctx: unknown) => Promise<NextResponse>
+  handler: (req: NextRequest, ctx: unknown) => Promise<Response>
 ) {
   return async (req: NextRequest, ctx: unknown) => {
     try {
@@ -69,9 +70,9 @@ export function apiHandler(
 }
 
 export function jsonError(message: string, status: number) {
-  return NextResponse.json({ error: message }, { status })
+  return jsonResponse({ error: message }, { status })
 }
 
 export function jsonData(data: unknown, status = 200) {
-  return NextResponse.json({ data }, { status })
+  return jsonResponse({ data }, { status })
 }

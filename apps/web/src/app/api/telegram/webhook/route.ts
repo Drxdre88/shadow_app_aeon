@@ -1,3 +1,4 @@
+import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { acceptInboxProposal, dismissInboxMemory } from '@/lib/data/inbox'
 import { createChatThread, findOpenChatThreadByTitle } from '@/lib/data/kairos-chat'
@@ -49,7 +50,7 @@ type TelegramUpdate = {
 }
 
 function accepted() {
-  return NextResponse.json({ ok: true })
+  return jsonResponse({ ok: true })
 }
 
 function isOperatorChat(chatId: number | string | undefined, operatorChatId: string): boolean {
@@ -59,7 +60,7 @@ function isOperatorChat(chatId: number | string | undefined, operatorChatId: str
 export async function POST(req: NextRequest) {
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET
   if (!secret || req.headers.get('x-telegram-bot-api-secret-token') !== secret) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+    return jsonResponse({ error: 'unauthorized' }, { status: 401 })
   }
 
   const operatorChatId = process.env.TELEGRAM_OPERATOR_CHAT_ID
