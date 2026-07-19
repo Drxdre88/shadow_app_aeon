@@ -1,7 +1,8 @@
 import { jsonResponse } from '@/lib/api/response'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { acceptInboxProposal, dismissInboxMemory } from '@/lib/data/inbox'
 import { createChatThread, findOpenChatThreadByTitle } from '@/lib/data/kairos-chat'
+import { markKairosSpeaksReplied } from '@/lib/data/memories'
 import { sendChatMessage } from '@/lib/kairos/chat-turn'
 import {
   answerCallbackQuery,
@@ -94,16 +95,29 @@ async function handleCallbackQuery(
   const chatId = callback.message?.chat?.id
   if (!isOperatorChat(chatId, operatorChatId)) return
 
+  const repliedAt = new Date()
   const match = CALLBACK_RE.exec(callback.data ?? '')
   if (!match) {
+    await markKairosSpeaksReplied(operatorUserId, repliedAt)
+      .catch((err) => console.error('[telegram-webhook] reply marker failed', err))
     await answerCallbackQuery(callback.id, 'Unknown action')
     return
   }
 
   const [, action, memoryId] = match
-  const result = action.toLowerCase() === 'accept'
-    ? await acceptInboxProposal(operatorUserId, memoryId)
-    : await dismissInboxMemory(operatorUserId, memoryId)
+  const result = await (async () => {
+    try {
+      return action.toLowerCase() === 'accept'
+        ? await acceptInboxProposal(operatorUserId, memoryId)
+        : await dismissInboxMemory(operatorUserId, memoryId)
+    } finally {
+      // Resolve the callback target before the bulk reply marker changes its
+      // pending status; otherwise the existing dismiss/accept gate would
+      // treat this first click as an already-handled Telegram retry.
+      await markKairosSpeaksReplied(operatorUserId, repliedAt)
+        .catch((err) => console.error('[telegram-webhook] reply marker failed', err))
+    }
+  })()
 
   const outcome = result.ok
     ? (action.toLowerCase() === 'accept' ? 'Accepted' : 'Dismissed')
@@ -124,6 +138,8 @@ async function handleTextMessage(
 ) {
   const chatId = message.chat?.id
   if (!isOperatorChat(chatId, operatorChatId)) return
+  await markKairosSpeaksReplied(operatorUserId, new Date())
+    .catch((err) => console.error('[telegram-webhook] reply marker failed', err))
   const body = (message.text ?? '').trim()
   if (!body) return
 

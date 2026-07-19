@@ -1,7 +1,8 @@
 import { jsonResponse } from '@/lib/api/response'
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { captureMemory, listRecentKairosSpeaks } from '@/lib/data/memories'
+import { AWAIT_WINDOW_HOURS, getConversationState } from '@/lib/kairos/engagement'
 import { sendKairosSpeak } from '@/lib/kairos/telegram'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -35,8 +36,6 @@ const speakSchema = z.object({
 // convention, not an identity check — forced sends are logged and still
 // bounded by an absolute ceiling to cap the blast radius of a runaway
 // automation that sets it anyway.
-const MIN_GAP_HOURS = 4
-const DAILY_CAP = 3
 const FORCE_CEILING = 10
 
 function isAuthorized(req: NextRequest): boolean {
@@ -65,12 +64,45 @@ export async function POST(req: NextRequest) {
 
   const { title, message, kind, urgency, force } = parsed.data
 
-  const recent = await listRecentKairosSpeaks(operatorUserId, { hours: 24, limit: FORCE_CEILING })
+  const state = await getConversationState(operatorUserId)
+  if (state.awaitingReply && !force && urgency !== 'high') {
+    return jsonResponse(
+      {
+        error: 'awaiting_reply',
+        lastOutboundAt: state.lastOutbound!.createdAt,
+        expiresAt: new Date(
+          state.lastOutbound!.createdAt.getTime() + AWAIT_WINDOW_HOURS * 60 * 60 * 1000,
+        ),
+      },
+      { status: 429 },
+    )
+  }
+
+  let gapHours = 8
+  let cap = 2
+  let cadenceWindowHours = 24
+
+  if (!force && state.replyRate7d >= 0.5) {
+    gapHours = 4
+    cap = 3
+  } else if (!force && state.replyRate7d === 0 && state.lastOutbound) {
+    const recent7d = await listRecentKairosSpeaks(operatorUserId, { hours: 168, limit: 3 })
+    if (recent7d.length >= 3) {
+      gapHours = 24
+      cap = 1
+      cadenceWindowHours = 72
+    }
+  }
+
+  const recent = await listRecentKairosSpeaks(operatorUserId, {
+    hours: force ? 24 : cadenceWindowHours,
+    limit: FORCE_CEILING,
+  })
   const last = recent[0]
   const gapMs = last ? Date.now() - last.createdAt.getTime() : Infinity
   const overLimit = force
     ? recent.length >= FORCE_CEILING
-    : recent.length >= DAILY_CAP || gapMs < MIN_GAP_HOURS * 60 * 60 * 1000
+    : recent.length >= cap || gapMs < gapHours * 60 * 60 * 1000
   if (overLimit) {
     return jsonResponse(
       {

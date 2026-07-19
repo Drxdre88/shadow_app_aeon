@@ -10,12 +10,17 @@ vi.mock('@/lib/data/kairos-chat', () => ({
   findOpenChatThreadByTitle: vi.fn(),
 }))
 
+vi.mock('@/lib/data/memories', () => ({
+  markKairosSpeaksReplied: vi.fn(),
+}))
+
 vi.mock('@/lib/kairos/chat-turn', () => ({
   sendChatMessage: vi.fn(),
 }))
 
 import { acceptInboxProposal, dismissInboxMemory } from '@/lib/data/inbox'
 import { createChatThread, findOpenChatThreadByTitle } from '@/lib/data/kairos-chat'
+import { markKairosSpeaksReplied } from '@/lib/data/memories'
 import { sendChatMessage } from '@/lib/kairos/chat-turn'
 import { POST } from '../route'
 
@@ -73,6 +78,7 @@ beforeEach(() => {
   fetchMock = fetchOk()
   vi.stubGlobal('fetch', fetchMock)
   vi.mocked(findOpenChatThreadByTitle).mockResolvedValue(THREAD_ID)
+  vi.mocked(markKairosSpeaksReplied).mockResolvedValue(0)
 })
 
 afterEach(() => {
@@ -119,6 +125,7 @@ describe('telegram webhook — callback triage', () => {
     const res = await POST(makeReq(callbackUpdate(`dismiss:${MEMORY_ID}`), 'hook-secret'))
     expect(res.status).toBe(200)
     expect(dismissInboxMemory).toHaveBeenCalledWith(OPERATOR_USER, MEMORY_ID)
+    expect(markKairosSpeaksReplied).toHaveBeenCalledWith(OPERATOR_USER, expect.any(Date))
 
     const calls = telegramCalls(fetchMock)
     expect(calls[0]).toMatchObject({
@@ -146,6 +153,25 @@ describe('telegram webhook — callback triage', () => {
     })
   })
 
+  it('still dismisses and answers when the reply marker fails', async () => {
+    vi.mocked(dismissInboxMemory).mockResolvedValue({ ok: true, id: MEMORY_ID })
+    vi.mocked(markKairosSpeaksReplied).mockRejectedValue(new Error('marker down'))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const res = await POST(makeReq(callbackUpdate(`dismiss:${MEMORY_ID}`), 'hook-secret'))
+
+    expect(res.status).toBe(200)
+    expect(dismissInboxMemory).toHaveBeenCalledWith(OPERATOR_USER, MEMORY_ID)
+    const calls = telegramCalls(fetchMock)
+    expect(calls[0].body.text).toBe('Dismissed')
+    expect(calls[1].body.text).toContain('Dismissed')
+    expect(consoleError).toHaveBeenCalledWith(
+      '[telegram-webhook] reply marker failed',
+      expect.any(Error),
+    )
+    consoleError.mockRestore()
+  })
+
   it('accepts via the shared inbox helper', async () => {
     vi.mocked(acceptInboxProposal).mockResolvedValue({ ok: true, id: MEMORY_ID })
 
@@ -165,6 +191,7 @@ describe('telegram webhook — callback triage', () => {
     vi.mocked(dismissInboxMemory).mockRejectedValue(new Error('db down'))
     const res = await POST(makeReq(callbackUpdate(`dismiss:${MEMORY_ID}`), 'hook-secret'))
     expect(res.status).toBe(200)
+    expect(markKairosSpeaksReplied).toHaveBeenCalledWith(OPERATOR_USER, expect.any(Date))
   })
 })
 
@@ -184,6 +211,7 @@ describe('telegram webhook — chat with Kairos', () => {
     expect(findOpenChatThreadByTitle).toHaveBeenCalledWith(OPERATOR_USER, 'Telegram · Kairos')
     expect(createChatThread).not.toHaveBeenCalled()
     expect(sendChatMessage).toHaveBeenCalledWith(OPERATOR_USER, THREAD_ID, 'status of hydra?', { surface: 'telegram' })
+    expect(markKairosSpeaksReplied).toHaveBeenCalledWith(OPERATOR_USER, expect.any(Date))
 
     const calls = telegramCalls(fetchMock)
     expect(calls).toHaveLength(1)
@@ -191,6 +219,30 @@ describe('telegram webhook — chat with Kairos', () => {
     // Citation markers are stripped for Telegram; reply goes out as HTML.
     expect(calls[0].body.text).toBe('On it.')
     expect(calls[0].body.parse_mode).toBe('HTML')
+  })
+
+  it('still replies when marking earlier speaks as replied fails', async () => {
+    vi.mocked(markKairosSpeaksReplied).mockRejectedValue(new Error('db down'))
+    vi.mocked(sendChatMessage).mockResolvedValue({
+      ok: true,
+      threadId: THREAD_ID,
+      userSeq: 1,
+      assistantSeq: 2,
+      assistantContent: 'Still here.',
+      model: 'fake-model',
+    })
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const res = await POST(makeReq(textUpdate('hello'), 'hook-secret'))
+
+    expect(res.status).toBe(200)
+    expect(sendChatMessage).toHaveBeenCalledWith(OPERATOR_USER, THREAD_ID, 'hello', { surface: 'telegram' })
+    expect(telegramCalls(fetchMock)[0].body.text).toBe('Still here.')
+    expect(consoleError).toHaveBeenCalledWith(
+      '[telegram-webhook] reply marker failed',
+      expect.any(Error),
+    )
+    consoleError.mockRestore()
   })
 
   it('falls back to a plain-text send when Telegram rejects the HTML', async () => {
