@@ -4,6 +4,7 @@
 // Dominion vision/mission shape. No DB / no AI imports — unit-testable.
 
 import type { AIMessage } from '@/lib/ai/provider'
+import { neutraliseFences } from './_prompt-utils'
 
 // Cap message history sent to the model. Heavy chats can accumulate
 // hundreds of messages; we send the most recent N to keep latency and
@@ -45,6 +46,13 @@ export interface ChatPromptRetrieval {
   substrate: ChatPromptSubstrateSource[]
 }
 
+export interface ChatPromptPendingAsk {
+  question: string
+  kind: string
+  rationale: string
+  sourceSnippets: ChatPromptSource[]
+}
+
 // Where the reply will be read. 'app' renders full markdown; 'telegram' is
 // a phone messenger — tight texts, light emoji, flat formatting.
 export type ChatPromptSurface = 'app' | 'telegram'
@@ -55,7 +63,18 @@ export interface BuildChatPromptInput {
   userMessage: string             // the new message about to be sent
   retrieval?: ChatPromptRetrieval // C2 grounding — optional, degrades cleanly
   surface?: ChatPromptSurface     // defaults to 'app'
+  pendingAsk?: ChatPromptPendingAsk
 }
+
+export const TELEGRAM_CHAT_PERSONA = [
+  '- Start with exactly one concrete **bold headline** of at most 60 characters and at most one emoji. Do not use a Markdown heading.',
+  '- Follow with a one-sentence hook, then 2–4 short flat paragraphs. Use italics only for asides and `code` for identifiers. Never write bullet walls, tables, nested lists, or more than two emoji total.',
+  '- Include exactly one visible blockquote quoting real evidence from the supplied context. Put deeper receipts, sources, and source ids in one expandable blockquote at the bottom using `>>!` lines.',
+  "- Use strikethrough only for a concrete declared-versus-verified contrast. On asks only, you may include at most one hidden guess as `My guess: ||...|| — tell me I'm wrong.`",
+  '- Close with a single question or call to action. Never present a text menu.',
+  '- When the operator has answered your open ask, probe motive or reasons with at most ONE follow-up question. Never leave more than one open question on the table.',
+  '- When the operator pushes a topic, follow their lead instead of steering back to your prior agenda.',
+]
 
 function clipBody(body: string): string {
   const trimmed = body.trim()
@@ -101,10 +120,29 @@ function renderRetrieval(retrieval: ChatPromptRetrieval, anchored: boolean): str
   return sections.join('\n').trimEnd()
 }
 
+function renderPendingAsk(pendingAsk: ChatPromptPendingAsk): string {
+  // Snippet bodies can carry text authored by realm co-members (shared-project
+  // cards) — neutralise fences like every other synthesis path does.
+  const snippets = pendingAsk.sourceSnippets.length > 0
+    ? pendingAsk.sourceSnippets.map((source) => neutraliseFences(renderSource(source))).join('\n\n')
+    : '(No source snippets were available.)'
+  return [
+    '## Open question from you',
+    '',
+    `Question: ${pendingAsk.question}`,
+    `Kind: ${pendingAsk.kind}`,
+    `Rationale: ${pendingAsk.rationale}`,
+    '',
+    '### Source snippets',
+    snippets,
+  ].join('\n')
+}
+
 export function buildChatSystemPrompt(
   dominion: ChatPromptDominion | null,
   retrieval?: ChatPromptRetrieval,
   surface: ChatPromptSurface = 'app',
+  pendingAsk?: ChatPromptPendingAsk,
 ): string {
   const lines: string[] = dominion
     ? [
@@ -141,15 +179,20 @@ export function buildChatSystemPrompt(
     lines.push(renderRetrieval(retrieval!, dominion !== null))
   }
 
+  if (pendingAsk) {
+    lines.push('')
+    lines.push('---')
+    lines.push('')
+    lines.push(renderPendingAsk(pendingAsk))
+  }
+
   lines.push('')
   lines.push('---')
   lines.push('')
   lines.push('Style:')
   if (surface === 'telegram') {
-    lines.push('- You are texting the operator on Telegram — write like the sharpest person in their contacts, not like a report. A few short sentences, or a compact bullet list when there are genuinely several items.')
-    lines.push('- Lead with the point. One idea per message; expand only when asked.')
-    lines.push('- Use a few well-chosen emojis as visual anchors (✅ ⚠️ 🔴 💡 …) where they help scanning — never decorate every line.')
-    lines.push('- Formatting stays flat: occasional **bold** for the one thing that matters, `code` for identifiers. No headings, no tables, no nested lists.')
+    lines.push('- You are texting the operator on Telegram — write like the sharpest person in their contacts, not like a report.')
+    lines.push(...TELEGRAM_CHAT_PERSONA)
   } else {
     lines.push('- Markdown for replies. Default to short paragraphs and bullets, not walls of text.')
   }
@@ -163,7 +206,7 @@ export function buildChatSystemPrompt(
 }
 
 export function buildChatMessages(input: BuildChatPromptInput): AIMessage[] {
-  const system = buildChatSystemPrompt(input.dominion, input.retrieval, input.surface)
+  const system = buildChatSystemPrompt(input.dominion, input.retrieval, input.surface, input.pendingAsk)
   const trimmedHistory = input.history.slice(-MAX_HISTORY_MESSAGES)
 
   const messages: AIMessage[] = [

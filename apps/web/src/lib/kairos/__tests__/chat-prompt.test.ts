@@ -206,7 +206,7 @@ describe('surface steering', () => {
   it('swaps in the Telegram texting style when surface is telegram', () => {
     const out = buildChatSystemPrompt(null, undefined, 'telegram')
     expect(out).toContain('texting the operator on Telegram')
-    expect(out).toContain('emojis')
+    expect(out).toContain('two emoji total')
     expect(out).not.toContain('Markdown for replies')
   })
 

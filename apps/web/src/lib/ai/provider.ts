@@ -30,6 +30,7 @@ export interface AIRequest {
   // system block so repeated calls in a run reuse it; other providers ignore
   // the namespaced option, so it is a no-op for them.
   cacheSystem?: boolean
+  maxOutputTokens?: number
   maxTokens?: number
   temperature?: number
   stopSequences?: string[]
@@ -89,7 +90,7 @@ function toSdkArgs(model: LanguageModel, req: AIRequest) {
     system: req.system,
     // AI SDK v5 renamed this option; the old `maxTokens` key is silently
     // ignored, which disables every per-call output cap (found 2026-07-15).
-    maxOutputTokens: req.maxTokens,
+    maxOutputTokens: req.maxOutputTokens ?? req.maxTokens,
     temperature: req.temperature,
     stopSequences: req.stopSequences,
   }

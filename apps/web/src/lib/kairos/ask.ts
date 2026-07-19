@@ -8,6 +8,7 @@ import {
   getNewestKairosAsk,
   createKairosAskMemory,
   markKairosAskAnswered,
+  archiveOrphanAnswerMemory,
   type KairosAskRow,
 } from '@/lib/data/ask'
 import { captureReflection } from '@/lib/data/memories'
@@ -185,6 +186,11 @@ export async function answerKairosAsk(
     answerMemoryId = result.memory.id
   }
 
-  await markKairosAskAnswered(userId, questionMemoryId, answerMemoryId, new Date().toISOString())
+  const claimed = await markKairosAskAnswered(userId, questionMemoryId, answerMemoryId, new Date().toISOString())
+  if (!claimed) {
+    // A concurrent turn answered first — drop our duplicate answer memory.
+    await archiveOrphanAnswerMemory(userId, answerMemoryId)
+    return { error: 'not_found' }
+  }
   return { reflectionId: answerMemoryId }
 }

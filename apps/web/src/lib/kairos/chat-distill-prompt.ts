@@ -34,19 +34,24 @@ export const CHAT_DISTILL_SYSTEM_PROMPT = [
 export function buildChatDistillUserPrompt(
   thread: { title: string; messages: ChatMessage[] },
   date: string,
+  askId?: string,
 ): string {
   const transcript = thread.messages.map((message) => ({
     seq: message.seq,
     role: message.role,
     content: neutraliseFences(message.content),
   }))
-  return [
+  const prompt = [
     `UTC date: ${date}`,
     `Thread: ${neutraliseFences(thread.title)}`,
     '',
     'Transcript JSON:',
     JSON.stringify(transcript, null, 2),
-  ].join('\n')
+  ]
+  if (askId) {
+    prompt.splice(2, 0, `Resolved ask memory: ${askId}`, 'Treat the user answer to that ask as durable signal when it meets the rules above.')
+  }
+  return prompt.join('\n')
 }
 
 export function parseChatDistillResponse(text: string): ChatDistillCandidate[] {

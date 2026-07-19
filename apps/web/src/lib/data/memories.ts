@@ -1193,6 +1193,33 @@ export async function listRecentKairosSpeaks(
     .limit(limit)
 }
 
+// An operator response closes every earlier pending interrupt, not just the
+// item they happened to answer from. Keeping this as one user-scoped update
+// makes Telegram retries harmless and prevents stale speaks from stacking.
+export async function markKairosSpeaksReplied(userId: string, before: Date): Promise<number> {
+  const now = new Date()
+  const updated = await db
+    .update(memories)
+    .set({
+      sourceMetadata: sql`${memories.sourceMetadata} || jsonb_build_object(
+        'status', 'replied',
+        'repliedAt', ${now.toISOString()}
+      )`,
+      updatedAt: now,
+    })
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.type, 'inbound'),
+      eq(memories.source, 'system'),
+      sql`${memories.sourceMetadata}->>'kairosSpeak' = 'true'`,
+      sql`${memories.sourceMetadata}->>'status' = 'pending'`,
+      sql`${memories.createdAt} <= ${before}`,
+    ))
+    .returning({ id: memories.id })
+
+  return updated.length
+}
+
 export async function updateMemory(memoryId: string, userId: string, patch: UpdateMemoryInput) {
   const update: Record<string, unknown> = { updatedAt: new Date() }
   if (patch.title !== undefined)      update.title = patch.title
