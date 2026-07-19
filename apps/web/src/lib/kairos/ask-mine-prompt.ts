@@ -98,7 +98,17 @@ export function buildAskMineUserPrompt(bundle: AskMineSignalBundle): string {
 }
 
 export function parseAskMineResponse(text: string): AskMineCandidate[] {
-  const parsed = outputSchema.parse(extractJsonBlock(text, 'ask-mine'))
+  // A malformed top-level response (non-JSON or schema-violating) degrades to
+  // "no candidates today" — one bad model reply must not fail the whole run.
+  let raw: unknown
+  try {
+    raw = extractJsonBlock(text, 'ask-mine')
+  } catch {
+    return []
+  }
+  const result = outputSchema.safeParse(raw)
+  if (!result.success) return []
+  const parsed = result.data
   return parsed.candidates.flatMap((candidate, candidateIndex) => {
     const validated = candidateSchema.safeParse(candidate)
     if (!validated.success) return []

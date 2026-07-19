@@ -227,6 +227,18 @@ must never cut inside a blockquote.
 **Tests:** renderer round-trips for the three new constructs, illegal-nesting stripping,
 split-never-inside-blockquote, fallback path unchanged.
 
+## Deferred hardening (warden Wave-1, accepted 2026-07-19)
+
+Bounded by the single-operator threat model; revisit if the engine ever multi-tenants:
+- `ask.ts` externalId idempotency is check-then-insert (no unique index — schema frozen).
+  Single daily cron instance makes the race academic; option: 0027 partial unique index.
+- Shared-project card names flow into the operator's ask-mine BYOK prompt (member
+  projects included). Mitigations live: fence neutralisation, output grounding against
+  validSourceIds/validDominionIds, zod caps. Residual risk = question phrasing only,
+  shown only to the operator.
+- Speak-route TOCTOU between state read and insert: two concurrent speaks could stack
+  once; FORCE_CEILING bounds it. Not worth a lock at current call rates.
+
 ## Sequencing for the Codex swarm
 
 ```

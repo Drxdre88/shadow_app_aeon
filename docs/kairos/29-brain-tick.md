@@ -45,6 +45,17 @@ the queries above lean on the stable title conventions. **Do not try to read pri
 throttling** — the speak route enforces the throttle server-side (4h minimum gap, 3 per 24h)
 and answers `429 throttled`, which is a normal silent outcome, not an error.
 
+## Phase 1.5: Conversation state (initiative engine, doc 30)
+
+The speak route now enforces a no-stacking governor server-side: if Kairos's last
+outbound message is still awaiting the operator's reply (< 48h old, no reply seen), any
+speak attempt answers `429 { error: 'awaiting_reply' }`. The tick stays stateless — do
+NOT try to read conversation state yourself; just treat that 429 as a normal silent
+outcome and report `tick — silent: awaiting operator reply`. The route also adapts the
+gap/cap throttle to the operator's 7-day reply rate — active repliers get a faster
+Kairos, silent ones a quieter one. Same rule as before: a 429 of either flavour is
+expected behaviour, never an error, never a reason to set `force`.
+
 ## Phase 2: Decide — the interrupt bar
 
 Speak **only** if at least one of these clears, checked in priority order:
@@ -55,6 +66,12 @@ Speak **only** if at least one of these clears, checked in priority order:
 | 2 | Aether tension/shift | Today's Aether has a thought/tension with salience ≥ 0.8 | `notify` |
 | 3 | Time-sensitive advisory | Today's briefing names something that expires today/tomorrow | `notify` |
 | 4 | `--force` | Operator asked for a pulse — compose a short state-of-the-brain text | `notify` |
+
+The nightly ask-miner (04:30 UTC, doc 30) keeps one grounded question pending most days,
+so signal 1 is now the common speak path — the **evening tick (17:00 UTC) is the ask
+ritual slot**. Relay the pending ask's question text verbatim: it is already composed in
+the Telegram typography (bold headline, evidence quote, `>>!` receipts block) — do not
+rewrite or summarise it.
 
 Hard veto (overrides everything except `--force`): the latest Aether is **older than 48h**
 and the only candidate is signal 2 → silence (never re-announce stale synthesis as news).
