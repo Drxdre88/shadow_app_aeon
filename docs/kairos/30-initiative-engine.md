@@ -160,7 +160,9 @@ For the operator's accessible projects (reuse `verifyProjectAccess`-compatible l
   ordered oldest-first; include project name, column name, priority, age.
 - `listRecentlyCompletedTasks({ days: 7, limit: 12 })` — `completedAt` within N days.
 - `listRecentlyCreatedTasks({ days: 7, limit: 12 })` — `createdAt` within N days, non-done.
-Exclude archived tasks and archived projects everywhere. Return plain serializable rows —
+Exclude archived tasks (`boardTasks.archivedAt`) everywhere; the projects table has no
+archived flag, so project-level archiving is not filtered (build deviation, 2026-07-19).
+Return plain serializable rows —
 the ask-mine prompt quotes them verbatim (card name + project + age), so no lossy summary.
 
 **Tests:** window edges, archived exclusion, ordering, limit, multi-project scoping.
@@ -194,6 +196,36 @@ answered→never cited, expired), stats window edges.
   silenced every tick for two days; freshness is a hard dependency of this whole engine.
   (Claude-side `/kairos-aether` stays the manual/BYOK-free path.)
 - This document is the spec of record; update it in the same PR as any behaviour change.
+
+## WP7 — Voice & typography pass (Telegram output that doesn't look botlike)
+
+Verified against Bot API HTML parse mode (2026-07-19): supported are b/i/u/s, `code`/`pre`,
+links, `<span class="tg-spoiler">`, `<blockquote>`, and `<blockquote expandable>`
+(collapsed until tapped). Custom emoji require a Fragment username — out of scope.
+
+**Renderer** (`lib/kairos/telegram.ts`): extend `renderTelegramHtml` to support three more
+constructs from the compose markdown — strikethrough (`~~x~~` → `<s>`), spoiler
+(`||x||` → `<span class="tg-spoiler">`), and a collapsed-context block (lines opening with
+`>>!` → `<blockquote expandable>`; plain `>` stays a normal blockquote). Blockquotes can't
+nest and code/pre can't carry other styles — the renderer must strip, not emit, illegal
+nesting. Plain-text fallback on Telegram 400 stays (delivery beats styling). Split logic
+must never cut inside a blockquote.
+
+**Message anatomy** (encode in tick Phase 3, ask-mine prompt, telegram chat persona):
+1. ONE bold headline ≤60 chars, ≤1 emoji, concrete not generic.
+2. A 1-sentence hook, then 2–4 short flat paragraphs. Italic for asides, `code` for
+   identifiers. Never bullet walls; ≤2 emoji total.
+3. Exactly ONE visible `<blockquote>` quoting real evidence (a drift signal, a card + age).
+4. All depth (sources, receipts, source ids) goes in ONE `<blockquote expandable>` at the
+   bottom — the message reads tight, detail on demand.
+5. Strikethrough for declared-vs-verified contrast ("<s>fully live</s> → unsigned").
+6. Sparingly (≤1/message, asks only): Kairos's own guess hidden in a spoiler —
+   "My guess: ||you'll pick X|| — tell me I'm wrong."
+7. Close with the single question/CTA; actions ride inline keyboard buttons (existing
+   inbox callbacks), never text menus.
+
+**Tests:** renderer round-trips for the three new constructs, illegal-nesting stripping,
+split-never-inside-blockquote, fallback path unchanged.
 
 ## Sequencing for the Codex swarm
 

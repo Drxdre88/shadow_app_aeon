@@ -23,6 +23,10 @@
       "schedule": "15 3 * * *"
     },
     {
+      "path": "/api/cron/ask-mine",
+      "schedule": "30 4 * * *"
+    },
+    {
       "path": "/api/cron/briefer",
       "schedule": "0 7 * * *"
     },
