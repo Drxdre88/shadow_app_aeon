@@ -4,6 +4,7 @@
 // Dominion vision/mission shape. No DB / no AI imports — unit-testable.
 
 import type { AIMessage } from '@/lib/ai/provider'
+import { neutraliseFences } from './_prompt-utils'
 
 // Cap message history sent to the model. Heavy chats can accumulate
 // hundreds of messages; we send the most recent N to keep latency and
@@ -120,8 +121,10 @@ function renderRetrieval(retrieval: ChatPromptRetrieval, anchored: boolean): str
 }
 
 function renderPendingAsk(pendingAsk: ChatPromptPendingAsk): string {
+  // Snippet bodies can carry text authored by realm co-members (shared-project
+  // cards) — neutralise fences like every other synthesis path does.
   const snippets = pendingAsk.sourceSnippets.length > 0
-    ? pendingAsk.sourceSnippets.map((source) => renderSource(source)).join('\n\n')
+    ? pendingAsk.sourceSnippets.map((source) => neutraliseFences(renderSource(source))).join('\n\n')
     : '(No source snippets were available.)'
   return [
     '## Open question from you',

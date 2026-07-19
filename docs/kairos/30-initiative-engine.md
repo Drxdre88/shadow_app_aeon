@@ -239,6 +239,13 @@ Bounded by the single-operator threat model; revisit if the engine ever multi-te
 - Speak-route TOCTOU between state read and insert: two concurrent speaks could stack
   once; FORCE_CEILING bounds it. Not worth a lock at current call rates.
 
+Warden Wave-2 additions (2026-07-19): the double-answer race is FIXED (atomic
+`kairosAskStatus='pending'` claim in `markKairosAskAnswered`; losing caller archives its
+duplicate answer). ACCEPTED as designed: the ask-resolution classifier runs on the reply
+critical path (~one extra small model call, only on ask-answering turns) — chosen over
+fire-and-forget, which is unreliable in serverless without waitUntil plumbing; revisit if
+reply latency ever bothers the operator.
+
 ## Sequencing for the Codex swarm
 
 ```

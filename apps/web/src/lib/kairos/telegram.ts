@@ -175,7 +175,15 @@ export function splitTelegramMessage(text: string, limit = TELEGRAM_MESSAGE_LIMI
     const hit = findBlockquoteRanges(rest).find(([start, end]) => cut > start && cut < end)
     if (hit) {
       const [start, end] = hit
-      cut = start > 0 ? start - 1 : end < rest.length ? end - 1 : end
+      if (start > 1) {
+        cut = start - 1
+      } else if (end - 1 <= limit) {
+        // Run starts the chunk — push past it so the loop makes progress.
+        cut = end < rest.length ? end - 1 : end
+      }
+      // else: the run alone exceeds the limit. Keep the naive newline cut so
+      // no chunk can exceed the limit — the run splits into two valid
+      // blockquote runs (each line keeps its own >/>>! prefix).
     }
 
     chunks.push(rest.slice(0, cut))
