@@ -31,12 +31,19 @@ function hoursAgo(hours: number) {
   return new Date(NOW.getTime() - hours * 60 * 60 * 1000)
 }
 
-function outbound(hours: number, status = 'pending') {
+function outbound(hours: number, status = 'pending', repliedAfterHours?: number) {
+  const createdAt = hoursAgo(hours)
+  const sourceMetadata: Record<string, unknown> = { kairosSpeak: true, status }
+  if (repliedAfterHours !== undefined) {
+    sourceMetadata.repliedAt = new Date(
+      createdAt.getTime() + repliedAfterHours * 60 * 60 * 1000,
+    ).toISOString()
+  }
   return {
     id: `outbound-${hours}`,
     title: `Speak ${hours}`,
-    createdAt: hoursAgo(hours),
-    sourceMetadata: { kairosSpeak: true, status },
+    createdAt,
+    sourceMetadata,
   }
 }
 
@@ -118,10 +125,10 @@ describe('getConversationState', () => {
 
   it('computes the seven-day rate from mixed status and chat outcomes', async () => {
     const recent = [
-      outbound(24, 'replied'),
-      outbound(48),
-      outbound(96, 'accepted'),
-      outbound(144),
+      outbound(24, 'replied', 2), // timely stamped reply — status credit
+      outbound(48), // pending, but a chat turn lands 12h later — chat credit
+      outbound(96, 'replied', 40), // stamped 40h late — resolves, no rate credit
+      outbound(144, 'accepted'), // inbox action, no timing evidence — no credit
     ]
     selectQueue.push([recent[0]])
     selectQueue.push(recent)
@@ -129,6 +136,6 @@ describe('getConversationState', () => {
 
     const state = await getConversationState(USER)
 
-    expect(state.replyRate7d).toBe(0.75)
+    expect(state.replyRate7d).toBe(0.5)
   })
 })

@@ -22,6 +22,19 @@ function hasReplyStatus(metadata: unknown): boolean {
   return status !== null && REPLIED_STATUSES.has(status)
 }
 
+// Status-credit only counts toward the reply RATE when the reply landed inside
+// the credit window; a 40h-late reply still resolves the conversation but must
+// not bump cadence. Rows resolved without a repliedAt stamp (inbox actions)
+// carry no timing evidence, so they earn no rate credit either.
+function repliedWithinCredit(outbound: { createdAt: Date; sourceMetadata: unknown }): boolean {
+  if (!hasReplyStatus(outbound.sourceMetadata)) return false
+  const raw = (outbound.sourceMetadata as SourceMetadata).repliedAt
+  if (typeof raw !== 'string') return false
+  const repliedAt = Date.parse(raw)
+  if (Number.isNaN(repliedAt)) return false
+  return repliedAt - outbound.createdAt.getTime() <= REPLY_CREDIT_HOURS * 60 * 60 * 1000
+}
+
 // The initiative engine needs one shared view of whether Kairos still has the
 // operator's attention. Archived speaks remain part of that conversation:
 // dismissing an interrupt resolves it, but must never make it disappear from
@@ -85,9 +98,7 @@ export async function getConversationState(userId: string) {
     }
   }
 
-  let repliedWithin24h = recentOutbounds.filter((outbound) => (
-    hasReplyStatus(outbound.sourceMetadata)
-  )).length
+  let repliedWithin24h = recentOutbounds.filter(repliedWithinCredit).length
 
   if (recentOutbounds.length > repliedWithin24h) {
     const oldestOutboundAt = recentOutbounds.at(-1)!.createdAt
@@ -108,7 +119,7 @@ export async function getConversationState(userId: string) {
       ))
 
     repliedWithin24h += recentOutbounds.filter((outbound) => {
-      if (hasReplyStatus(outbound.sourceMetadata)) return false
+      if (repliedWithinCredit(outbound)) return false
       const replyDeadline = outbound.createdAt.getTime() + REPLY_CREDIT_HOURS * 60 * 60 * 1000
       return chatTurns.some((turn) => {
         const repliedAt = turn.createdAt.getTime()
