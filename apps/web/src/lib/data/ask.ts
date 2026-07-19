@@ -201,6 +201,35 @@ export async function listRecentKairosAsks(
   })
 }
 
+export async function listKairosAsksAnsweredBetween(
+  userId: string,
+  start: Date,
+  end: Date,
+): Promise<Array<{ id: string; answeredAt: Date }>> {
+  const rows = await db
+    .select({
+      id: memories.id,
+      sourceMetadata: memories.sourceMetadata,
+    })
+    .from(memories)
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.type, 'advisory'),
+      sql`${memories.sourceMetadata}->'kairosAsk'->>'status' = 'answered'`,
+      sql`NULLIF(${memories.sourceMetadata}->'kairosAsk'->>'answeredAt', '')::timestamptz >= ${start}`,
+      sql`NULLIF(${memories.sourceMetadata}->'kairosAsk'->>'answeredAt', '')::timestamptz < ${end}`,
+    ))
+    .orderBy(sql`NULLIF(${memories.sourceMetadata}->'kairosAsk'->>'answeredAt', '')::timestamptz`)
+
+  return rows.flatMap((row) => {
+    const metadata = (row.sourceMetadata ?? {}) as Record<string, unknown>
+    const kairosAsk = metadata.kairosAsk as Record<string, unknown> | undefined
+    if (typeof kairosAsk?.answeredAt !== 'string') return []
+    const answeredAt = new Date(kairosAsk.answeredAt)
+    return Number.isNaN(answeredAt.getTime()) ? [] : [{ id: row.id, answeredAt }]
+  })
+}
+
 export async function listKairosReflectionStaleness(userId: string): Promise<Array<{
   dominionId: string
   dominionName: string
@@ -367,41 +396,44 @@ export async function createKairosAskMemory(
   return row!.id
 }
 
-/** Mark a kairos-ask memory as answered and archive it. */
+/**
+ * Atomically claim a pending kairos-ask as answered and archive it. The
+ * `kairosAskStatus = 'pending'` guard makes concurrent answers race-safe:
+ * exactly one caller gets `true`, everyone else gets `false` and must not
+ * keep their answer memory (warden wave-2 finding — the old read-modify-write
+ * let two overlapping turns both mark and both keep a reflection).
+ */
 export async function markKairosAskAnswered(
   userId: string,
   questionMemoryId: string,
   answerMemoryId: string,
   answeredAt: string,
-): Promise<void> {
-  const [existing] = await db
-    .select({ sourceMetadata: memories.sourceMetadata })
-    .from(memories)
-    .where(and(eq(memories.id, questionMemoryId), eq(memories.userId, userId)))
-    .limit(1)
-
-  if (!existing) return
-
-  const meta = (existing.sourceMetadata ?? {}) as Record<string, unknown>
-  const prior = (meta.kairosAsk ?? {}) as Record<string, unknown>
-
-  const updated: KairosAskMeta = {
-    ...(prior as KairosAskMeta),
-    status: 'answered',
-    answeredAt,
-    answerMemoryId,
-  }
-
-  await db
+): Promise<boolean> {
+  const patch = JSON.stringify({ status: 'answered', answeredAt, answerMemoryId })
+  const claimed = await db
     .update(memories)
     .set({
-      sourceMetadata: {
-        ...meta,
-        kairosAsk: updated,
-        kairosAskStatus: 'answered',
-      },
+      sourceMetadata: sql`jsonb_set(
+        jsonb_set(coalesce(${memories.sourceMetadata}, '{}'::jsonb), '{kairosAskStatus}', '"answered"'),
+        '{kairosAsk}',
+        coalesce(${memories.sourceMetadata}->'kairosAsk', '{}'::jsonb) || ${patch}::jsonb
+      )`,
       archivedAt: new Date(answeredAt),
       updatedAt: new Date(),
     })
-    .where(and(eq(memories.id, questionMemoryId), eq(memories.userId, userId)))
+    .where(and(
+      eq(memories.id, questionMemoryId),
+      eq(memories.userId, userId),
+      sql`${memories.sourceMetadata}->>'kairosAskStatus' = 'pending'`,
+    ))
+    .returning({ id: memories.id })
+  return claimed.length > 0
+}
+
+/** Archive a just-written answer memory that lost the claim race. */
+export async function archiveOrphanAnswerMemory(userId: string, memoryId: string): Promise<void> {
+  await db
+    .update(memories)
+    .set({ archivedAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
 }

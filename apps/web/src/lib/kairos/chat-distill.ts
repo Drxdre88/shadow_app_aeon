@@ -1,3 +1,4 @@
+import { listKairosAsksAnsweredBetween } from '@/lib/data/ask'
 import { listChatThreadsWithMessagesOn } from '@/lib/data/kairos-chat'
 import { captureMemory } from '@/lib/data/memories'
 import { getProviderForTask } from '@/lib/ai/route-task'
@@ -59,12 +60,23 @@ export async function runChatDistillForUser(
 ): Promise<ChatDistillRunResult> {
   const target = resolveDate(options.date)
   const dryRun = options.dryRun ?? false
-  const threads = await listChatThreadsWithMessagesOn(
-    userId,
-    target.start,
-    target.end,
-    MAX_MESSAGES_PER_THREAD,
-  )
+  const [threads, answeredAsks] = await Promise.all([
+    listChatThreadsWithMessagesOn(userId, target.start, target.end, MAX_MESSAGES_PER_THREAD),
+    listKairosAsksAnsweredBetween(userId, target.start, target.end),
+  ])
+  const askIdByThreadId = new Map<string, string>()
+  for (const ask of answeredAsks) {
+    let match: { threadId: string; createdAt: number } | null = null
+    for (const thread of threads) {
+      for (const message of thread.messages) {
+        if (message.role !== 'user') continue
+        const createdAt = message.createdAt.getTime()
+        if (createdAt > ask.answeredAt.getTime() || createdAt <= (match?.createdAt ?? -Infinity)) continue
+        match = { threadId: thread.id, createdAt }
+      }
+    }
+    if (match) askIdByThreadId.set(match.threadId, ask.id)
+  }
   const results: ChatDistillThreadResult[] = []
 
   for (const thread of threads) {
@@ -81,7 +93,7 @@ export async function runChatDistillForUser(
         continue
       }
 
-      const prompt = buildChatDistillUserPrompt(thread, target.date)
+      const prompt = buildChatDistillUserPrompt(thread, target.date, askIdByThreadId.get(thread.id))
       // No temperature: current-gen Claude models 400 on non-default values
       // (same reason PR #84 stripped it from the synthesis call sites).
       const modelInput = {
@@ -118,6 +130,7 @@ export async function runChatDistillForUser(
           sourceMetadata: {
             externalId: `chat-distill:${target.date}:${thread.id}:${index + 1}`,
             chatDistill: { threadId: thread.id, date: target.date, messageSeqs },
+            ...(askIdByThreadId.has(thread.id) ? { askId: askIdByThreadId.get(thread.id) } : {}),
           },
         }))
       }

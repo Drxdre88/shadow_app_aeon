@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+vi.mock('@/lib/data/ask', () => ({
+  listKairosAsksAnsweredBetween: vi.fn(),
+}))
+
 vi.mock('@/lib/data/kairos-chat', () => ({
   listChatThreadsWithMessagesOn: vi.fn(),
 }))
@@ -17,11 +21,13 @@ vi.mock('@/lib/ai/router', () => ({
   AiCredentialDecryptError: class AiCredentialDecryptError extends Error {},
 }))
 
+import { listKairosAsksAnsweredBetween } from '@/lib/data/ask'
 import { listChatThreadsWithMessagesOn } from '@/lib/data/kairos-chat'
 import { captureMemory } from '@/lib/data/memories'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialDecryptError, AiCredentialMissingError } from '@/lib/ai/router'
 import { parseChatDistillResponse, runChatDistillForUser } from '../chat-distill'
+import { buildChatDistillUserPrompt } from '../chat-distill-prompt'
 
 const USER_ID = 'user-1'
 const DATE = '2026-07-16'
@@ -64,6 +70,7 @@ function modelResponse(count: number) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(listKairosAsksAnsweredBetween).mockResolvedValue([])
   ;(listChatThreadsWithMessagesOn as ReturnType<typeof vi.fn>).mockResolvedValue([thread()])
   ;(getProviderForTask as ReturnType<typeof vi.fn>).mockResolvedValue({
     provider: { ask: vi.fn().mockResolvedValue(modelResponse(1)) },
@@ -86,6 +93,53 @@ describe('chat distillation', () => {
     expect(parseChatDistillResponse(
       '```json\n{"reflections":[{"title":"Decision","bodyMd":"I decided to ship Friday."}]}\n```',
     )).toEqual([{ title: 'Decision', bodyMd: 'I decided to ship Friday.' }])
+  })
+
+  it('keeps the no-ask prompt and provenance fixture byte-identical', async () => {
+    const expectedPrompt = [
+      `UTC date: ${DATE}`,
+      'Thread: Telegram · Kairos',
+      '',
+      'Transcript JSON:',
+      '[',
+      '  {',
+      '    "seq": 1,',
+      '    "role": "user",',
+      '    "content": "I prefer weekly written updates."',
+      '  }',
+      ']',
+    ].join('\n')
+
+    expect(buildChatDistillUserPrompt(thread(), DATE)).toBe(expectedPrompt)
+    await runChatDistillForUser(USER_ID, { date: DATE })
+
+    const captured = (captureMemory as ReturnType<typeof vi.fn>).mock.calls[0][1]
+    expect(captured.sourceMetadata).toEqual({
+      externalId: `chat-distill:${DATE}:thread-1:1`,
+      chatDistill: { threadId: 'thread-1', date: DATE, messageSeqs: [1] },
+    })
+  })
+
+  it('stamps reflections when the nearest operator turn resolved an ask that day', async () => {
+    vi.mocked(listKairosAsksAnsweredBetween).mockResolvedValue([{
+      id: 'ask-1',
+      answeredAt: new Date(`${DATE}T12:00:01.000Z`),
+    }])
+
+    await runChatDistillForUser(USER_ID, { date: DATE })
+
+    const captured = (captureMemory as ReturnType<typeof vi.fn>).mock.calls[0][1]
+    expect(captured.sourceMetadata).toEqual({
+      externalId: `chat-distill:${DATE}:thread-1:1`,
+      chatDistill: { threadId: 'thread-1', date: DATE, messageSeqs: [1] },
+      askId: 'ask-1',
+    })
+    expect(buildChatDistillUserPrompt(thread(), DATE, 'ask-1')).toContain('Resolved ask memory: ask-1')
+    expect(listKairosAsksAnsweredBetween).toHaveBeenCalledWith(
+      USER_ID,
+      new Date(`${DATE}T00:00:00.000Z`),
+      new Date('2026-07-17T00:00:00.000Z'),
+    )
   })
 
   it('caps model output at five reflections', async () => {
