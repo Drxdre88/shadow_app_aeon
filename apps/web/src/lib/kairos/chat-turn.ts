@@ -1,13 +1,23 @@
 import { eq, and } from 'drizzle-orm'
+import { z } from 'zod'
 import { db } from '@/lib/db'
 import { dominions } from '@/lib/db/schema'
+import {
+  getKairosAskSourceSnippets,
+  getPendingKairosAsk,
+  type KairosAskRow,
+} from '@/lib/data/ask'
 import {
   getChatThread,
   appendChatMessage,
   updateChatMessageContent,
 } from '@/lib/data/kairos-chat'
 import type { ChatRetrievalMeta } from '@/lib/data/kairos-chat-payload'
-import { buildChatMessages, type ChatPromptSurface } from '@/lib/kairos/chat-prompt'
+import {
+  buildChatMessages,
+  type ChatPromptPendingAsk,
+  type ChatPromptSurface,
+} from '@/lib/kairos/chat-prompt'
 import {
   retrieveForChatGlobal,
   extractCitationIds,
@@ -17,6 +27,9 @@ import {
 import { toPromptRetrieval, toRetrievalMeta } from '@/lib/kairos/chat-retrieval-mapping'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
+import type { AIProvider } from '@/lib/ai/provider'
+import { answerKairosAsk } from '@/lib/kairos/ask'
+import { extractJsonBlock, neutraliseFences } from '@/lib/kairos/_prompt-utils'
 
 // Whole-brain chat turn engine, extracted from the chat server actions so
 // non-session surfaces (the Telegram webhook) can run the SAME machinery
@@ -35,6 +48,101 @@ export interface ChatTurnOptions {
 interface AssistantReply {
   content: string
   model: string | null
+  askResolution?: AskResolution
+}
+
+export const askResolutionSchema = z.object({
+  answersPending: z.boolean(),
+  distilledAnswer: z.string().trim().min(1).max(10000).optional(),
+})
+
+export type AskResolution = z.infer<typeof askResolutionSchema>
+
+const ASK_RESOLUTION_SYSTEM_PROMPT = [
+  'Decide whether the operator turn answers the single open Kairos question.',
+  'True means the turn supplies a substantive answer, decision, correction, preference, or reason relevant to that question.',
+  'False means it is a greeting, deflection, clarification request, unrelated topic, or too ambiguous to preserve as an answer.',
+  'When true, distil only what the operator explicitly said into concise first-person text. Never add Kairos\'s inference.',
+  'Return only JSON: {"answersPending":boolean,"distilledAnswer"?:string}.',
+].join('\n')
+
+export function parseAskResolutionResponse(text: string): AskResolution {
+  return askResolutionSchema.parse(extractJsonBlock(text, 'ask-resolution'))
+}
+
+function pendingAskRationale(pending: KairosAskRow): string {
+  if (pending.askMine?.rationale) return pending.askMine.rationale
+  if (pending.summary?.trim() && pending.summary.trim() !== pending.title.trim()) {
+    return pending.summary.trim()
+  }
+  if (pending.askMine) {
+    return `Selected as a high-leverage ${pending.askMine.kind} question from ${pending.askMine.sourceMemoryIds.length} grounded source(s) (leverage ${pending.askMine.leverage.toFixed(2)}).`
+  }
+  return 'Selected from the latest Aether question or tension.'
+}
+
+async function loadPendingAskContext(
+  userId: string,
+): Promise<{ pending: KairosAskRow; prompt: ChatPromptPendingAsk } | null> {
+  try {
+    const pending = await getPendingKairosAsk(userId)
+    if (!pending) return null
+    const sourceSnippets = await getKairosAskSourceSnippets(
+      userId,
+      pending.askMine?.sourceMemoryIds ?? pending.kairosAsk.sourceMemoryIds,
+    ).catch((error) => {
+      console.error('[kairos-chat] ask source lookup failed', {
+        askId: pending.id,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return []
+    })
+    return {
+      pending,
+      prompt: {
+        question: pending.title,
+        kind: pending.askMine?.kind ?? 'aether',
+        rationale: pendingAskRationale(pending),
+        sourceSnippets,
+      },
+    }
+  } catch (error) {
+    console.error('[kairos-chat] pending ask lookup failed', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
+  }
+}
+
+async function classifyAskResolution(
+  provider: AIProvider,
+  pending: KairosAskRow,
+  userBody: string,
+): Promise<AskResolution> {
+  try {
+    const response = await provider.ask({
+      system: ASK_RESOLUTION_SYSTEM_PROMPT,
+      prompt: [
+        'Open question JSON:',
+        neutraliseFences(JSON.stringify({
+          question: pending.title,
+          kind: pending.askMine?.kind ?? 'aether',
+          rationale: pendingAskRationale(pending),
+        })),
+        '',
+        'Operator turn:',
+        neutraliseFences(userBody),
+      ].join('\n'),
+      maxOutputTokens: 240,
+    })
+    return parseAskResolutionResponse(response.text.trim())
+  } catch (error) {
+    console.error('[kairos-chat] ask resolution classification failed', {
+      askId: pending.id,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return { answersPending: false }
+  }
 }
 
 export type KairosChatTurnResult =
@@ -48,6 +156,8 @@ async function callAssistant(
   userId: string,
   dominionId: string | null,
   systemMessages: ReturnType<typeof buildChatMessages>,
+  pendingAsk: KairosAskRow | null,
+  userBody: string,
 ): Promise<AssistantReply | { error: 'no_credential' } | { error: 'empty' } | { error: 'failed'; message: string }> {
   try {
     const { provider } = await getProviderForTask(userId, {
@@ -58,11 +168,14 @@ async function callAssistant(
     // (same reason PR #84 stripped it from the synthesis call sites).
     const response = await provider.ask({
       messages: systemMessages,
-      maxTokens: 2000,
+      maxOutputTokens: 2000,
     })
     const text = response.text.trim()
     if (!text) return { error: 'empty' }
-    return { content: text, model: response.modelId }
+    const askResolution = pendingAsk
+      ? await classifyAskResolution(provider, pendingAsk, userBody)
+      : undefined
+    return { content: text, model: response.modelId, askResolution }
   } catch (err) {
     if (err instanceof AiCredentialMissingError) return { error: 'no_credential' }
     if (err instanceof AiCredentialDecryptError) return { error: 'no_credential' }
@@ -143,6 +256,8 @@ export async function runAssistantTurn(
     .filter((m) => m.seq < userSeq)
     .map((m) => ({ role: m.role, content: m.content }))
 
+  const pendingAskContext = await loadPendingAskContext(userId)
+
   // JARVIS-level recall — whole-brain, no Dominion scope. Kairos pulls the
   // Aether self-model + top-k substrate across EVERY Dominion, so the operator
   // talks to him without pinpointing a front. Failure here must NOT block the
@@ -168,9 +283,16 @@ export async function runAssistantTurn(
     userMessage: userBody,
     retrieval: promptRetrieval,
     surface: opts.surface,
+    pendingAsk: pendingAskContext?.prompt,
   })
 
-  const reply = await callAssistant(userId, dominionId, messages)
+  const reply = await callAssistant(
+    userId,
+    dominionId,
+    messages,
+    pendingAskContext?.pending ?? null,
+    userBody,
+  )
   if ('error' in reply) {
     // The user message is already persisted on `threadId` — surface it so the
     // client recovers to this thread on retry (no duplicate thread).
@@ -194,6 +316,27 @@ export async function runAssistantTurn(
     ...(retrievalMeta ? { retrieval: retrievalMeta } : {}),
   })
   if (!asstAppend.ok) return { ok: false, reason: 'thread_not_found' }
+
+  if (pendingAskContext && reply.askResolution?.answersPending) {
+    const answer = reply.askResolution.distilledAnswer ?? userBody
+    try {
+      const resolution = await answerKairosAsk(
+        userId,
+        pendingAskContext.pending.id,
+        answer,
+      )
+      if ('error' in resolution && resolution.error === 'dominion_not_found') {
+        console.error('[kairos-chat] pending ask answer Dominion was not found', {
+          askId: pendingAskContext.pending.id,
+        })
+      }
+    } catch (error) {
+      console.error('[kairos-chat] pending ask resolution failed', {
+        askId: pendingAskContext.pending.id,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
 
   return {
     ok: true,

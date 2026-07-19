@@ -294,6 +294,9 @@ export async function runAskMineForUser(
         kind: candidate.kind,
         sourceMemoryIds: candidate.sourceMemoryIds,
         leverage: candidate.leverage,
+        // Persisted so the chat surface can quote WHY this was asked instead
+        // of reconstructing it from kind/leverage (WP3 reads it when present).
+        rationale: candidate.rationale,
       },
     })
     return { status: 'created', date, askId, candidate, expiresAt }

@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
-import { dominions, memories } from '@/lib/db/schema'
-import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm'
+import { boardTasks, dominions, memories, projectMembers, projects } from '@/lib/db/schema'
+import { and, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { AetherPayload } from '@/lib/kairos/aether-types'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -25,6 +25,13 @@ export type KairosAskMineMeta = {
   kind: 'decision' | 'calibration' | 'doctrine' | 'retrospective' | 'revival' | 'premortem' | 'values'
   sourceMemoryIds: string[]
   leverage: number
+  rationale?: string
+}
+
+export type KairosAskSourceSnippet = {
+  id: string
+  title: string
+  body: string
 }
 
 export type KairosAskRow = {
@@ -105,6 +112,62 @@ export async function getPendingKairosAsk(userId: string): Promise<KairosAskRow 
     if (ask?.kairosAsk.status === 'pending') return ask
   }
   return null
+}
+
+export async function getKairosAskSourceSnippets(
+  userId: string,
+  sourceIds: string[],
+): Promise<KairosAskSourceSnippet[]> {
+  if (sourceIds.length === 0) return []
+
+  const [memoryRows, taskRows] = await Promise.all([
+    db
+      .select({
+        id: memories.id,
+        title: memories.title,
+        body: memories.bodyMd,
+      })
+      .from(memories)
+      .where(and(eq(memories.userId, userId), inArray(memories.id, sourceIds))),
+    db
+      .selectDistinct({
+        id: boardTasks.id,
+        name: boardTasks.name,
+        description: boardTasks.description,
+        projectName: projects.name,
+        status: boardTasks.status,
+        priority: boardTasks.priority,
+        updatedAt: boardTasks.updatedAt,
+      })
+      .from(boardTasks)
+      .innerJoin(projects, eq(projects.id, boardTasks.projectId))
+      .leftJoin(projectMembers, and(
+        eq(projectMembers.projectId, projects.id),
+        eq(projectMembers.userId, userId),
+      ))
+      .where(and(
+        inArray(boardTasks.id, sourceIds),
+        or(eq(projects.userId, userId), eq(projectMembers.userId, userId)),
+      )),
+  ])
+
+  const byId = new Map<string, KairosAskSourceSnippet>()
+  for (const row of taskRows) {
+    const taskState = `${row.projectName} · ${row.status} · ${row.priority} · updated ${row.updatedAt.toISOString()}`
+    byId.set(row.id, {
+      id: row.id,
+      title: row.name,
+      body: row.description?.trim() ? `${taskState}\n${row.description.trim()}` : taskState,
+    })
+  }
+  for (const row of memoryRows) {
+    byId.set(row.id, { id: row.id, title: row.title, body: row.body })
+  }
+
+  return sourceIds.flatMap((id) => {
+    const source = byId.get(id)
+    return source ? [source] : []
+  })
 }
 
 export async function listRecentKairosAsks(

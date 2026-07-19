@@ -311,12 +311,13 @@ describe('ask mining', () => {
       askedAt: NOW.toISOString(),
       expiresAt: '2026-07-22T04:30:00.000Z',
       externalId: `ask-mine:${DATE}:1`,
-      askMine: {
+      askMine: expect.objectContaining({
         date: DATE,
         kind: 'decision',
         sourceMemoryIds: ['memory-1'],
         leverage: 0.88,
-      },
+        rationale: expect.any(String),
+      }),
     }))
   })
 

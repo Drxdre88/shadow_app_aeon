@@ -6,6 +6,8 @@ import {
   sendKairosSpeak,
   sendMessage,
   splitTelegramMessage,
+  stripTelegramFallbackMarkers,
+  TELEGRAM_HTML_SPLIT_LIMIT,
   TELEGRAM_MESSAGE_LIMIT,
 } from '../telegram'
 
@@ -71,6 +73,50 @@ describe('renderTelegramHtml', () => {
   it('does not treat multiplication or file globs as italics', () => {
     expect(renderTelegramHtml('3 * 4 and src/*.ts')).toBe('3 * 4 and src/*.ts')
   })
+
+  it('renders strikethrough and spoiler', () => {
+    expect(renderTelegramHtml('~~old~~ price, now ||half off||'))
+      .toBe('<s>old</s> price, now <span class="tg-spoiler">half off</span>')
+  })
+
+  it('renders a plain blockquote', () => {
+    expect(renderTelegramHtml('> hello world')).toBe('<blockquote>hello world</blockquote>')
+  })
+
+  it('renders a multi-line plain blockquote', () => {
+    expect(renderTelegramHtml('> line one\n> line two'))
+      .toBe('<blockquote>line one\nline two</blockquote>')
+  })
+
+  it('renders a collapsed expandable blockquote', () => {
+    expect(renderTelegramHtml('>>! detail one\n>>! detail two'))
+      .toBe('<blockquote expandable>detail one\ndetail two</blockquote>')
+  })
+
+  it('keeps separate blockquote runs distinct when not contiguous', () => {
+    expect(renderTelegramHtml('> first\ntext between\n>>! second'))
+      .toBe('<blockquote>first</blockquote>\ntext between\n<blockquote expandable>second</blockquote>')
+  })
+
+  it('flattens a plain quote line inside a collapsed run instead of nesting tags', () => {
+    expect(renderTelegramHtml('>>! outer\n> nested\n>>! outer again'))
+      .toBe('<blockquote expandable>outer\nnested\nouter again</blockquote>')
+  })
+
+  it('applies inline styling inside blockquote content', () => {
+    expect(renderTelegramHtml('> a **bold** claim, `verified` false'))
+      .toBe('<blockquote>a <b>bold</b> claim, <code>verified</code> false</blockquote>')
+  })
+
+  it('never restyles the new constructs inside inline code', () => {
+    expect(renderTelegramHtml('`~~x~~ ||y|| >>! z`'))
+      .toBe('<code>~~x~~ ||y|| &gt;&gt;! z</code>')
+  })
+
+  it('never restyles the new constructs inside fenced code', () => {
+    expect(renderTelegramHtml('```\n~~x~~\n||y||\n>>! z\n```'))
+      .toBe('<pre>~~x~~\n||y||\n&gt;&gt;! z</pre>')
+  })
 })
 
 describe('splitTelegramMessage', () => {
@@ -91,6 +137,32 @@ describe('splitTelegramMessage', () => {
     const text = `${'a'.repeat(TELEGRAM_MESSAGE_LIMIT - 1)}\\.tail`
     const chunks = splitTelegramMessage(text)
     for (const chunk of chunks) expect(chunk.endsWith('\\')).toBe(false)
+  })
+
+  it('never cuts inside a blockquote run, even when the naive newline cut lands inside one', () => {
+    // No newlines in the filler, so the nearest newline within the window
+    // sits partway through the quote block below — without the fix, the
+    // naive cut would land there and split the block across two chunks.
+    const filler = 'a'.repeat(3000)
+    const quoteLines = Array.from({ length: 10 }, (_, i) => `>>! detail ${i} ${'b'.repeat(80)}`)
+    const block = quoteLines.join('\n')
+    const text = `${filler}\n${block}\ntail`
+
+    const chunks = splitTelegramMessage(text, TELEGRAM_HTML_SPLIT_LIMIT)
+    expect(chunks.length).toBeGreaterThan(1)
+    expect(chunks.join('\n')).toBe(text)
+    expect(chunks.some((chunk) => chunk.includes(block))).toBe(true)
+  })
+})
+
+describe('stripTelegramFallbackMarkers', () => {
+  it('strips ~~, ||, and >>! markers while keeping their content', () => {
+    expect(stripTelegramFallbackMarkers('~~old~~ ||secret|| \n>>! detail line'))
+      .toBe('old secret \ndetail line')
+  })
+
+  it('leaves untouched text (including other markdown) unchanged', () => {
+    expect(stripTelegramFallbackMarkers('weird **markup')).toBe('weird **markup')
   })
 })
 
@@ -168,6 +240,27 @@ describe('sendKairosSpeak', () => {
     expect(retry.parse_mode).toBeUndefined()
     expect(retry.text).toBe('T\n\nweird **markup')
     expect(retry.reply_markup.inline_keyboard).toEqual([[{ text: 'Dismiss', callback_data: 'dismiss:m1' }]])
+  })
+
+  it('strips the new typography markers from the plain-text fallback', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ ok: false, description: "Bad Request: can't parse entities" }),
+      })
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, result: { message_id: 9 } }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(sendKairosSpeak({
+      memoryId: 'm1',
+      title: 'T',
+      message: '~~declared live~~ actually unsigned. My guess: ||still blocked||.\n>>! source: card X',
+      kind: 'notify',
+    })).resolves.toBe(true)
+
+    const retry = JSON.parse(fetchMock.mock.calls[1][1].body)
+    expect(retry.text).toBe('T\n\ndeclared live actually unsigned. My guess: still blocked.\nsource: card X')
   })
 
   it('uses an Open-in-Aeon URL button for questions when a base URL is set', async () => {
