@@ -64,6 +64,7 @@ export interface BuildChatPromptInput {
   retrieval?: ChatPromptRetrieval // C2 grounding — optional, degrades cleanly
   surface?: ChatPromptSurface     // defaults to 'app'
   pendingAsk?: ChatPromptPendingAsk
+  boardSection?: string           // pre-rendered live board state (chat-board-context.ts) — deterministic, fresher than retrieval
 }
 
 export const TELEGRAM_CHAT_PERSONA = [
@@ -143,6 +144,7 @@ export function buildChatSystemPrompt(
   retrieval?: ChatPromptRetrieval,
   surface: ChatPromptSurface = 'app',
   pendingAsk?: ChatPromptPendingAsk,
+  boardSection?: string,
 ): string {
   const lines: string[] = dominion
     ? [
@@ -167,8 +169,9 @@ export function buildChatSystemPrompt(
     || retrieval.archetypes.length > 0
     || retrieval.substrate.length > 0
   )
+  const hasBoardSection = !!boardSection?.trim()
 
-  if (hasRetrieval) {
+  if (hasRetrieval || hasBoardSection) {
     lines.push('')
     lines.push('---')
     lines.push('')
@@ -176,7 +179,13 @@ export function buildChatSystemPrompt(
     lines.push('')
     lines.push(`The blocks below are the live Kairos brain state ${dominion ? 'for this Dominion' : 'across the whole brain'}. Reason from them when the operator asks about specifics. When you make a claim that rests on one of them, cite it inline as \`[[memory-id]]\` using the exact id shown in the block header. Reflections carry higher weight than activity-derived signals. If grounded context disagrees with the operator's latest message, surface the tension instead of papering over it.`)
     lines.push('')
-    lines.push(renderRetrieval(retrieval!, dominion !== null))
+    if (hasRetrieval) {
+      lines.push(renderRetrieval(retrieval!, dominion !== null))
+      lines.push('')
+    }
+    if (hasBoardSection) {
+      lines.push(boardSection!.trim())
+    }
   }
 
   if (pendingAsk) {
@@ -206,7 +215,7 @@ export function buildChatSystemPrompt(
 }
 
 export function buildChatMessages(input: BuildChatPromptInput): AIMessage[] {
-  const system = buildChatSystemPrompt(input.dominion, input.retrieval, input.surface, input.pendingAsk)
+  const system = buildChatSystemPrompt(input.dominion, input.retrieval, input.surface, input.pendingAsk, input.boardSection)
   const trimmedHistory = input.history.slice(-MAX_HISTORY_MESSAGES)
 
   const messages: AIMessage[] = [

@@ -25,6 +25,13 @@ import {
   type ChatRetrieval,
 } from '@/lib/kairos/chat-retrieval'
 import { toPromptRetrieval, toRetrievalMeta } from '@/lib/kairos/chat-retrieval-mapping'
+import {
+  matchProjectsInMessage,
+  fetchLiveBoardContext,
+  renderLiveBoardSection,
+  type LiveBoardContext,
+} from '@/lib/kairos/chat-board-context'
+import { buildChatTools, runChatToolLoop } from '@/lib/kairos/chat-tools'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import type { AIProvider } from '@/lib/ai/provider'
@@ -114,6 +121,32 @@ async function loadPendingAskContext(
   }
 }
 
+// Deterministic live-board grounding: if the operator names one of their
+// projects in-message, fetch its current state straight from the data layer
+// and render it into a prompt block. Retrieval-derived memories are always
+// somewhat stale; this leg gives Kairos ground truth for the boards named.
+// Non-fatal by design — mirrors the retrieval fallback above.
+async function loadBoardSection(userId: string, threadId: string, userBody: string): Promise<string | undefined> {
+  try {
+    const matches = await matchProjectsInMessage(userId, userBody)
+    if (matches.length === 0) return undefined
+
+    const contexts = await Promise.all(
+      matches.map((m) => fetchLiveBoardContext(userId, m.id)),
+    )
+    const found = contexts.filter((c): c is LiveBoardContext => c !== null)
+    if (found.length === 0) return undefined
+
+    return renderLiveBoardSection(found)
+  } catch (err) {
+    console.warn('[kairos-chat] live board context failed, proceeding without it', {
+      threadId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return undefined
+  }
+}
+
 async function classifyAskResolution(
   provider: AIProvider,
   pending: KairosAskRow,
@@ -166,10 +199,17 @@ async function callAssistant(
     })
     // No temperature: current-gen Claude models 400 on non-default values
     // (same reason PR #84 stripped it from the synthesis call sites).
-    const response = await provider.ask({
-      messages: systemMessages,
-      maxOutputTokens: 2000,
-    })
+    // Agentic tools ship dark: flag unset keeps this call byte-identical to
+    // the plain path (no tools key on the request). The WP1 deterministic
+    // board section is already baked into systemMessages in both modes.
+    const response = process.env.KAIROS_CHAT_AGENTIC_TOOLS === '1'
+      ? await runChatToolLoop(provider, systemMessages, buildChatTools(userId), {
+          maxOutputTokens: 2000,
+        })
+      : await provider.ask({
+          messages: systemMessages,
+          maxOutputTokens: 2000,
+        })
     const text = response.text.trim()
     if (!text) return { error: 'empty' }
     const askResolution = pendingAsk
@@ -276,6 +316,7 @@ export async function runAssistantTurn(
   }
 
   const promptRetrieval = retrieval ? toPromptRetrieval(retrieval) : undefined
+  const boardSection = await loadBoardSection(userId, threadId, userBody)
 
   const messages = buildChatMessages({
     dominion,
@@ -284,6 +325,7 @@ export async function runAssistantTurn(
     retrieval: promptRetrieval,
     surface: opts.surface,
     pendingAsk: pendingAskContext?.prompt,
+    boardSection,
   })
 
   const reply = await callAssistant(

@@ -196,6 +196,45 @@ describe('buildChatMessages with retrieval (C2)', () => {
   })
 })
 
+describe('buildChatSystemPrompt with live board section', () => {
+  const boardSection = [
+    '## LIVE BOARD STATE (authoritative — fetched now, fresher than any memory)',
+    '',
+    'If this contradicts retrieved memories, trust THIS.',
+    '',
+    '### AS Sprint',
+    '26 tasks total (10 todo, 8 in-progress, 8 done)',
+  ].join('\n')
+
+  it('renders the board section under Grounded context even without retrieval', () => {
+    const out = buildChatSystemPrompt(dom(), undefined, 'app', undefined, boardSection)
+    expect(out).toContain('# Grounded context')
+    expect(out).toContain('LIVE BOARD STATE')
+    expect(out).toContain('AS Sprint')
+  })
+
+  it('renders the board section alongside retrieval when both are present', () => {
+    const out = buildChatSystemPrompt(dom(), retrieval(), 'app', undefined, boardSection)
+    expect(out).toContain('## Dominion cortex')
+    expect(out).toContain('LIVE BOARD STATE')
+  })
+
+  it('omits the Grounded context block entirely when board section is blank', () => {
+    const out = buildChatSystemPrompt(dom(), undefined, 'app', undefined, '   ')
+    expect(out).not.toContain('Grounded context')
+  })
+
+  it('threads the board section through buildChatMessages', () => {
+    const messages = buildChatMessages({
+      dominion: dom(),
+      history: [],
+      userMessage: 'how is AS Sprint looking?',
+      boardSection,
+    })
+    expect(messages[0].content).toContain('LIVE BOARD STATE')
+  })
+})
+
 describe('surface steering', () => {
   it('defaults to the app style block', () => {
     const out = buildChatSystemPrompt(null)
