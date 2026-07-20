@@ -37,6 +37,11 @@ import type {
   RetrievalBundle,
 } from './recipes/_recipe'
 
+// Bi-temporal valid-time gate, mirrors lib/data/memories.ts. A superseded or
+// WP3-reconciled (task done/deleted) fact is stamped invalidAt and must never
+// re-enter chat substrate retrieval even though it isn't archived.
+const validAsOfNow = sql`(${memories.invalidAt} IS NULL OR ${memories.invalidAt} > NOW())`
+
 const SUBSTRATE_TOP_K = 5
 // Candidate pool handed to the cross-encoder rerank before the final TOP_K
 // slice. Wider than TOP_K so rerank has room to promote a strong match the RRF
@@ -242,6 +247,7 @@ async function fetchSubstrate(
       domScope(dominionId),
       inArray(memories.streamClass, [...SUBSTRATE_STREAMS]),
       isNull(memories.archivedAt),
+      validAsOfNow,
       sql`"memories"."fts" @@ ${tsQuery}`,
       sql`${memories.createdAt} >= ${sinceTs}`,
     ))
@@ -287,6 +293,7 @@ async function fetchSubstrate(
           domScope(dominionId),
           inArray(memories.streamClass, [...SUBSTRATE_STREAMS]),
           isNull(memories.archivedAt),
+          validAsOfNow,
           sql`${memories.embedding} IS NOT NULL`,
           sql`${memories.createdAt} >= ${sinceTs}`,
         ))

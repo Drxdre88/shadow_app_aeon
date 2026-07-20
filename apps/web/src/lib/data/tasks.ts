@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
-import { boardTasks } from '@/lib/db/schema'
+import { boardTasks, memories } from '@/lib/db/schema'
 import { eq, and, asc, sql, isNull, isNotNull, inArray } from 'drizzle-orm'
+import type { SQL } from 'drizzle-orm'
 import type { CreateTaskInput, UpdateTaskInput } from './validators'
 import { touchProject } from './projects'
 
@@ -160,20 +161,50 @@ export async function createTasksBatch(
   return result
 }
 
+// memories.taskId is ON DELETE SET NULL, so fact-memories anchored to a task
+// must be stamped invalidAt BEFORE the task row is deleted — afterwards the
+// anchor is nulled and the nightly reconcileDerivedMemories sweep
+// (lib/kairos/project-snapshot.ts) can no longer see which task they described.
+// Pinned facts are operator-protected and never auto-invalidated.
+async function invalidateFactsForTasks(
+  tx: Pick<typeof db, 'update' | 'select'>,
+  taskFilter: SQL | undefined,
+) {
+  await tx
+    .update(memories)
+    .set({ invalidAt: new Date() })
+    .where(and(
+      eq(memories.type, 'fact'),
+      eq(memories.pinned, false),
+      isNull(memories.invalidAt),
+      inArray(
+        memories.taskId,
+        tx.select({ id: boardTasks.id }).from(boardTasks).where(taskFilter),
+      ),
+    ))
+}
+
 export async function deleteTask(taskId: string, projectId: string) {
-  const [deleted] = await db
-    .delete(boardTasks)
-    .where(and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, projectId)))
-    .returning({ id: boardTasks.id })
+  const deleted = await db.transaction(async (tx) => {
+    const filter = and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, projectId))
+    await invalidateFactsForTasks(tx, filter)
+    const [row] = await tx
+      .delete(boardTasks)
+      .where(filter)
+      .returning({ id: boardTasks.id })
+    return row
+  })
 
   await touchProject(projectId, { type: 'task:deleted' })
   return !!deleted
 }
 
 export async function deleteTasksByColumn(columnId: string, projectId: string) {
-  await db
-    .delete(boardTasks)
-    .where(and(eq(boardTasks.columnId, columnId), eq(boardTasks.projectId, projectId)))
+  await db.transaction(async (tx) => {
+    const filter = and(eq(boardTasks.columnId, columnId), eq(boardTasks.projectId, projectId))
+    await invalidateFactsForTasks(tx, filter)
+    await tx.delete(boardTasks).where(filter)
+  })
   await touchProject(projectId, { type: 'task:deleted' })
 }
 

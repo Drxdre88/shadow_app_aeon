@@ -205,3 +205,66 @@ export async function runEphemeralLifecycleForUser(userId: string): Promise<Ephe
     advisoriesArchived: advArchived.length,
   }
 }
+
+export interface ReconcileDerivedMemoriesResult {
+  invalidatedTaskFacts: number
+  backfillArchived: number
+}
+
+// Safety-net TTL for the 'board-backfill' tag — bulk board-card imports that
+// slip through without the write-path streamClass guard (createMemory in
+// lib/data/memories.ts) still age out.
+const BOARD_BACKFILL_TAG = 'board-backfill'
+const BOARD_BACKFILL_TTL_DAYS = 30
+
+// ─────────────────────────────────────────────────────────────────────────
+// WP3 — derived-state invalidation tier. A memory.type='fact' anchored to a
+// board task (taskId) is only true while the task it describes is still
+// live: once the task is done, the fact is stale. Stamp invalidAt — never
+// archive — so the belief trail survives but retrieval's validAsOfNow gate
+// (lib/data/memories.ts, lib/kairos/retrieve.ts) drops it from every leg
+// immediately. Also sweeps any 'board-backfill'-tagged memory past its TTL
+// as a safety net for future bulk imports.
+//
+// Task DELETION is handled at delete time (deleteTask/deleteTasksByColumn in
+// lib/data/tasks.ts), not here: memories.taskId is ON DELETE SET NULL, so by
+// sweep time a deleted task's facts have a nulled anchor and are invisible
+// to this query. This sweep only catches the done transition.
+//
+// Real incident 2026-07-20: 21 frozen card-facts from a 2026-05-31 board
+// backfill poisoned Telegram chat (archived by hand at the time).
+//
+// Global pass, not user-scoped — a single table scan across all users is
+// cheap and each row's task-liveness check is self-contained (the EXISTS
+// subquery only ever matches the row's own project's task).
+// ─────────────────────────────────────────────────────────────────────────
+export async function reconcileDerivedMemories(now: Date = new Date()): Promise<ReconcileDerivedMemoriesResult> {
+  const invalidated = await db
+    .update(memories)
+    .set({ invalidAt: now })
+    .where(and(
+      eq(memories.type, 'fact'),
+      isNull(memories.archivedAt),
+      eq(memories.pinned, false),
+      isNull(memories.invalidAt),
+      sql`${memories.taskId} IS NOT NULL`,
+      sql`EXISTS (SELECT 1 FROM ${boardTasks} WHERE ${boardTasks.id} = ${memories.taskId} AND (${boardTasks.status} = 'done' OR ${boardTasks.archivedAt} IS NOT NULL))`,
+    ))
+    .returning({ id: memories.id })
+
+  const backfillArchived = await db
+    .update(memories)
+    .set({ archivedAt: now })
+    .where(and(
+      isNull(memories.archivedAt),
+      eq(memories.pinned, false),
+      sql`${memories.tags} @> ${JSON.stringify([BOARD_BACKFILL_TAG])}::jsonb`,
+      lt(memories.createdAt, cutoffDate(now, BOARD_BACKFILL_TTL_DAYS)),
+    ))
+    .returning({ id: memories.id })
+
+  return {
+    invalidatedTaskFacts: invalidated.length,
+    backfillArchived: backfillArchived.length,
+  }
+}

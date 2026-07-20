@@ -2,7 +2,11 @@ import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { projects } from '@/lib/db/schema'
-import { runProjectSnapshotsForUser, runEphemeralLifecycleForUser } from '@/lib/kairos/project-snapshot'
+import {
+  runProjectSnapshotsForUser,
+  runEphemeralLifecycleForUser,
+  reconcileDerivedMemories,
+} from '@/lib/kairos/project-snapshot'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 
 // Kairos Phase 2 (A5) — nightly project snapshot cron.
@@ -56,10 +60,25 @@ export async function GET(req: NextRequest) {
     { reclassified: 0, snapshotsArchived: 0, advisoriesArchived: 0 },
   )
 
+  // WP3 — derived-state reconciliation. Global (not per-user), same as the
+  // per-user ephemeral compost above but for task-anchored facts. No single
+  // userId owns a failure here, so we log and surface it in the response
+  // body rather than writing a per-user cron-trace memory.
+  let derivedReconciliation: Awaited<ReturnType<typeof reconcileDerivedMemories>> | null = null
+  let derivedReconciliationError: string | undefined
+  try {
+    derivedReconciliation = await reconcileDerivedMemories()
+  } catch (err) {
+    console.error('[cron:project-snapshot] reconcileDerivedMemories failed:', err)
+    derivedReconciliationError = err instanceof Error ? err.message : String(err)
+  }
+
   return jsonResponse({
     ran: users.length,
     snapshotsCreated: totalCreated,
     lifecycle,
+    derivedReconciliation,
+    ...(derivedReconciliationError ? { derivedReconciliationError } : {}),
     users: userResults,
   })
 }
