@@ -1,4 +1,5 @@
-import { generateText, streamText, type LanguageModel } from 'ai'
+import { generateText, streamText, tool as sdkTool, type LanguageModel } from 'ai'
+import type { z } from 'zod'
 import type { AiTier, ProviderId } from './providers'
 import { getModelForUser, buildModelWithKey } from './router'
 
@@ -21,6 +22,21 @@ export interface AIMessage {
   content: string
 }
 
+// Additive tool-calling seam (Kairos WP2). A request MAY declare read-only
+// tools; the provider forwards the definitions to the model but NEVER
+// executes them — requested calls surface on AIResponse.toolCalls and the
+// caller owns the loop. Call sites that don't pass `tools` are untouched.
+export interface AIToolSpec {
+  description: string
+  inputSchema: z.ZodType
+}
+
+export interface AIToolCall {
+  toolCallId: string
+  toolName: string
+  input: unknown
+}
+
 export interface AIRequest {
   prompt?: string
   system?: string
@@ -38,6 +54,7 @@ export interface AIRequest {
   // decisions (taskType, sensitivity, dominionId, etc.) and for downstream
   // accounting. Providers can ignore or read as they see fit.
   meta?: Record<string, unknown>
+  tools?: Record<string, AIToolSpec>
 }
 
 export interface AIUsage {
@@ -54,6 +71,9 @@ export interface AIResponse {
   modelId: string
   usage?: AIUsage
   finishReason?: string
+  // Tool calls the model requested this turn (only when the request carried
+  // `tools`). Empty/absent means the model answered with text.
+  toolCalls?: AIToolCall[]
   raw?: unknown
 }
 
@@ -82,6 +102,18 @@ const ANTHROPIC_CACHE_PREFIX = {
   anthropic: { cacheControl: { type: 'ephemeral' as const } },
 }
 
+// Execute-less SDK tool definitions: without `execute` the SDK returns the
+// model's requested calls instead of running a step loop, keeping loop
+// ownership (round caps, result serialization) with the caller.
+function toSdkTools(tools: Record<string, AIToolSpec>) {
+  return Object.fromEntries(
+    Object.entries(tools).map(([name, t]) => [
+      name,
+      sdkTool({ description: t.description, inputSchema: t.inputSchema }),
+    ]),
+  )
+}
+
 // Convert AIRequest into Vercel SDK kwargs. Either prompt or messages must
 // be provided; messages take precedence.
 function toSdkArgs(model: LanguageModel, req: AIRequest) {
@@ -93,6 +125,7 @@ function toSdkArgs(model: LanguageModel, req: AIRequest) {
     maxOutputTokens: req.maxOutputTokens ?? req.maxTokens,
     temperature: req.temperature,
     stopSequences: req.stopSequences,
+    ...(req.tools ? { tools: toSdkTools(req.tools) } : {}),
   }
   if (req.messages) {
     return { ...base, messages: req.messages.map((m) => ({ role: m.role, content: m.content })) }
@@ -123,6 +156,11 @@ export class VercelAIProvider implements AIProvider {
 
   async ask(req: AIRequest): Promise<AIResponse> {
     const result = await generateText(toSdkArgs(this.model, req))
+    const toolCalls = (result.toolCalls ?? []).map((c) => ({
+      toolCallId: c.toolCallId,
+      toolName: c.toolName,
+      input: c.input as unknown,
+    }))
     return {
       text: result.text,
       providerId: this.providerId,
@@ -131,6 +169,7 @@ export class VercelAIProvider implements AIProvider {
         ? { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens }
         : undefined,
       finishReason: result.finishReason,
+      ...(toolCalls.length ? { toolCalls } : {}),
       raw: result,
     }
   }

@@ -827,6 +827,16 @@ export async function createMemory(userId: string, input: CreateMemoryParams) {
       })
     : null
 
+  // WP3 — derived-state invalidation tier. Bulk board-card imports must never
+  // silently land in the reflection/idea/agentic substrate pool: when the
+  // caller doesn't explicitly pick a streamClass, an 'import' source defaults
+  // to 'execution' (machine-derived, outside SUBSTRATE_STREAMS in
+  // lib/kairos/retrieve.ts) instead of the DB's 'idea' default. Real incident
+  // 2026-07-20: 21 frozen card-facts from a stale board backfill poisoned
+  // Telegram chat because they defaulted to 'idea'.
+  const effectiveStreamClass: StreamClass | undefined =
+    input.streamClass ?? (input.source === 'import' ? 'execution' : undefined)
+
   // Slice 2 — content fallback when structural resolution failed. Best-effort:
   // any embed/classify failure captures the memory unfiled rather than losing
   // it. The vector is computed in the backfill's document shape, so it is
@@ -834,7 +844,7 @@ export async function createMemory(userId: string, input: CreateMemoryParams) {
   // vector-searchable immediately instead of waiting for the backfill cron.
   let autoFiled: { dominionId: string; similarity: number } | null = null
   let contentEmbedding: number[] | null = null
-  if (input.dominionId == null && resolvedDominionId == null && autoFileEligible(input.streamClass ?? 'idea')) {
+  if (input.dominionId == null && resolvedDominionId == null && autoFileEligible(effectiveStreamClass ?? 'idea')) {
     try {
       contentEmbedding = await embedOne(autoFileText(input.title, input.summary, input.bodyMd), 'document')
       if (contentEmbedding) {
@@ -875,12 +885,13 @@ export async function createMemory(userId: string, input: CreateMemoryParams) {
         : tags,
       links: input.links ?? [],
       pinned: input.pinned ?? false,
-      confidence: confidenceForStreamClass(input.streamClass ?? 'idea'),
+      confidence: confidenceForStreamClass(effectiveStreamClass ?? 'idea'),
       ...(contentEmbedding ? { embedding: contentEmbedding, embeddingModel: activeEmbeddingModel() } : {}),
       // Drizzle skips undefined keys → DB default ('idea') applies when
-      // caller omits streamClass. Internal callers (dispatcher) set it
-      // explicitly for advisory / trace writes.
-      ...(input.streamClass ? { streamClass: input.streamClass } : {}),
+      // neither the caller nor the import-source guard above set a
+      // streamClass. Internal callers (dispatcher) set it explicitly for
+      // advisory / trace writes.
+      ...(effectiveStreamClass ? { streamClass: effectiveStreamClass } : {}),
     })
     .returning()
   return row
