@@ -13,6 +13,7 @@ import {
 // enough of the data layer to assert the failure-trace wiring fires.
 
 const selectQueue: unknown[][] = []
+let txInsertedRows: Array<{ id: string }> = []
 
 vi.mock('@/lib/db', () => {
   function makeChain(rows: unknown[]) {
@@ -31,7 +32,7 @@ vi.mock('@/lib/db', () => {
       transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
           update: () => ({ set: () => ({ where: () => ({ returning: () => Promise.resolve([]) }) }) }),
-          insert: () => ({ values: () => ({ returning: () => Promise.resolve([]) }) }),
+          insert: () => ({ values: () => ({ returning: () => Promise.resolve(txInsertedRows) }) }),
         }
         return fn(tx)
       }),
@@ -306,6 +307,7 @@ describe('runCortexRegenForDominion — failure trace (C1)', { timeout: 20000 },
   beforeEach(() => {
     vi.clearAllMocks()
     selectQueue.length = 0
+    txInsertedRows = []
   })
 
   it('writes a failure trace on empty model response', async () => {
@@ -340,5 +342,114 @@ describe('runCortexRegenForDominion — failure trace (C1)', { timeout: 20000 },
     const sm = (traceCalls[0][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata
     expect(sm.cronName).toBe('cortex-regen')
     expect(sm.reason).toBe('empty_response')
+  })
+
+  function queueDominionAndContext() {
+    selectQueue.push([{ id: DOMINION_ID, name: 'AEON', archivedAt: null }]) // dominion lookup
+    selectQueue.push([{ n: 0 }]) // alreadyRanToday
+    selectQueue.push([]) // reflections
+    selectQueue.push([]) // archetypes
+    selectQueue.push([]) // prior
+  }
+
+  async function mockInspectDominionWithVision() {
+    const { inspectDominion } = await import('@/lib/data/dominions')
+    vi.mocked(inspectDominion).mockResolvedValueOnce({
+      name: 'AEON',
+      vision: 'Fluid board/project app.',
+      missionLong: null,
+      objectives: [],
+      boardTasks: [],
+    } as never)
+  }
+
+  it('repairs malformed JSON on the second attempt and creates a cortex row (T-A1)', async () => {
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    queueDominionAndContext()
+    await mockInspectDominionWithVision()
+
+    // Embedded unescaped quote mid-array reproduces the real prod signature:
+    // `Expected ',' or ']' after array element`.
+    const malformed = '{"visionAnchor":"AEON is deep in Kairos build-out.","currentState":["a "quoted" fragment breaks this array"]}'
+    const ask = vi.fn()
+      .mockResolvedValueOnce({ text: malformed })
+      .mockResolvedValueOnce({ text: JSON.stringify(validPayload) })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask } } as never)
+    txInsertedRows = [{ id: 'cortex-mem-1' }]
+
+    const { runCortexRegenForDominion } = await import('../cortex')
+    const result = await runCortexRegenForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.status).toBe('created')
+    expect(ask).toHaveBeenCalledTimes(2)
+    const traceCalls = vi.mocked(captureMemory).mock.calls.filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
+    expect(traceCalls).toHaveLength(0)
+  })
+
+  it('writes exactly one failure trace when both parse attempts fail (T-A2)', async () => {
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    queueDominionAndContext()
+    await mockInspectDominionWithVision()
+
+    const ask = vi.fn().mockResolvedValue({ text: 'not json at all' })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask } } as never)
+
+    const { runCortexRegenForDominion } = await import('../cortex')
+    const result = await runCortexRegenForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.status).toBe('error')
+    expect(result.reason).toMatch(/^parse_failed:/)
+    expect(result.reason).toContain('repair also failed')
+    expect(ask).toHaveBeenCalledTimes(2)
+    const traceCalls = vi.mocked(captureMemory).mock.calls.filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
+    expect(traceCalls).toHaveLength(1)
+    const sm = (traceCalls[0][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata
+    expect(sm.reason).toBe('parse_failed:syntax')
+  })
+
+  it('repairs a zod-boundary schema violation, not just JSON syntax errors (T-A3)', async () => {
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    queueDominionAndContext()
+    await mockInspectDominionWithVision()
+
+    // Structurally valid JSON, but currentState[0] is 281 chars — one over
+    // cortexOutSchema's max(280) — so this fails zod, not extractJsonBlock.
+    const overLong = { ...validPayload, currentState: ['a'.repeat(281)] }
+    const ask = vi.fn()
+      .mockResolvedValueOnce({ text: JSON.stringify(overLong) })
+      .mockResolvedValueOnce({ text: JSON.stringify(validPayload) })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask } } as never)
+    txInsertedRows = [{ id: 'cortex-mem-2' }]
+
+    const { runCortexRegenForDominion } = await import('../cortex')
+    const result = await runCortexRegenForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.status).toBe('created')
+    expect(ask).toHaveBeenCalledTimes(2)
+    const traceCalls = vi.mocked(captureMemory).mock.calls.filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
+    expect(traceCalls).toHaveLength(0)
+  })
+
+  it('records finishReason on the trace when the model truncates (T-A4)', async () => {
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    queueDominionAndContext()
+    await mockInspectDominionWithVision()
+
+    const ask = vi.fn().mockResolvedValue({ text: '{"visionAnchor":"truncated mid-array', finishReason: 'length' })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask } } as never)
+
+    const { runCortexRegenForDominion } = await import('../cortex')
+    const result = await runCortexRegenForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.status).toBe('error')
+    const traceCalls = vi.mocked(captureMemory).mock.calls.filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
+    expect(traceCalls).toHaveLength(1)
+    const sm = (traceCalls[0][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata
+    expect(sm.finishReason).toBe('length')
+    expect(typeof sm.rawExcerpt).toBe('string')
   })
 })

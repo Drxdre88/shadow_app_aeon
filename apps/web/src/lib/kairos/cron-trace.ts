@@ -24,16 +24,24 @@ export interface CronFailureTraceInput {
   reason: string
   error?: unknown
   durationMs?: number
+  // Synthesis reliability (docs/kairos/31, A6) — the model's own finishReason
+  // ('length' etc.) makes truncation distinguishable from malformed content.
+  finishReason?: string
+  // Bounded (≤500 char) excerpt of the raw model output that failed to
+  // parse, so failure sub-modes are diagnosable retroactively.
+  rawExcerpt?: string
 }
 
 export async function writeCronFailureTrace(userId: string, input: CronFailureTraceInput): Promise<void> {
-  const { cronName, dominionId = null, reason, error, durationMs } = input
+  const { cronName, dominionId = null, reason, error, durationMs, finishReason, rawExcerpt } = input
   const errorMessage = error instanceof Error ? error.message : error !== undefined ? String(error) : undefined
 
   const body: Record<string, unknown> = { cronName, reason }
   if (durationMs !== undefined) body.durationMs = durationMs
   if (errorMessage !== undefined) body.error = errorMessage
   if (error instanceof Error && error.stack) body.stack = error.stack
+  if (finishReason !== undefined) body.finishReason = finishReason
+  if (rawExcerpt !== undefined) body.rawExcerpt = rawExcerpt
 
   try {
     await captureMemory(userId, {

@@ -15,7 +15,7 @@ import {
   type ContradictionCandidate,
   type ContradictionProbe,
 } from './contradiction-prompt'
-import { todayIso } from './_prompt-utils'
+import { todayIso, parseWithRepair, ParseRepairError } from './_prompt-utils'
 import { writeCronFailureTrace } from './cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -137,8 +137,10 @@ export async function runContradictionScanForDominion(
     if (candidates.length === 0) continue
 
     let rawText: string
+    let finishReason: string | undefined
+    let provider: Awaited<ReturnType<typeof getProviderForTask>>['provider']
     try {
-      const { provider } = await getProviderForTask(userId, { taskType: 'contradiction', dominionId })
+      ;({ provider } = await getProviderForTask(userId, { taskType: 'contradiction', dominionId }))
       const response = await withRetry(() => provider.ask({
         system: CONTRADICTION_SYSTEM_PROMPT,
         prompt: buildContradictionUserPrompt(probe, candidates as ContradictionCandidate[]),
@@ -146,6 +148,7 @@ export async function runContradictionScanForDominion(
         maxTokens: 1200,
       }))
       rawText = response.text.trim()
+      finishReason = response.finishReason
     } catch (err) {
       if (err instanceof AiCredentialMissingError) {
         return { dominionId, dominionName: dom.name, status: 'skipped', reason: 'no BYOK credential' }
@@ -161,18 +164,33 @@ export async function runContradictionScanForDominion(
     }
 
     if (!rawText) {
-      await writeCronFailureTrace(userId, { cronName: 'contradiction-scan', dominionId, reason: 'empty_response' })
+      await writeCronFailureTrace(userId, { cronName: 'contradiction-scan', dominionId, reason: 'empty_response', finishReason })
       continue
     }
 
     let findings
     try {
-      const parsed = contradictionOutSchema.parse(extractJsonBlock(rawText))
       const validIds = new Set(candidates.map((c) => c.id))
-      findings = filterGroundedFindings(parsed, validIds)
+      findings = await parseWithRepair({
+        provider,
+        rawText,
+        parse: (text) => filterGroundedFindings(contradictionOutSchema.parse(extractJsonBlock(text)), validIds),
+        generatorLabel: 'contradiction',
+        maxTokens: 1200,
+      })
     } catch (err) {
-      await writeCronFailureTrace(userId, { cronName: 'contradiction-scan', dominionId, reason: 'parse_failed', error: err })
-      continue
+      if (err instanceof ParseRepairError) {
+        await writeCronFailureTrace(userId, {
+          cronName: 'contradiction-scan',
+          dominionId,
+          reason: `parse_failed:${err.kind}`,
+          error: err,
+          finishReason,
+          rawExcerpt: err.rawExcerpt,
+        })
+        continue
+      }
+      throw err
     }
 
     const candidateById = new Map(candidates.map((c) => [c.id, c]))

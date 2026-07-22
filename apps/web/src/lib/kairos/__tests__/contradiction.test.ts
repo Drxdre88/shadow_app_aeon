@@ -171,25 +171,54 @@ describe('runContradictionScanForDominion', { timeout: 20000 }, () => {
     expect(writeCronFailureTrace).not.toHaveBeenCalled()
   })
 
-  it('writes a failure trace on parse failure', async () => {
+  it('writes a failure trace on parse failure (both attempts malformed)', async () => {
     const { findSimilarBeliefs } = await import('@/lib/data/memories')
     const { getProviderForTask } = await import('@/lib/ai/route-task')
     const { writeCronFailureTrace } = await import('../cron-trace')
 
     queueDominionAndProbes()
     vi.mocked(findSimilarBeliefs).mockResolvedValueOnce([candidateRow] as never)
-    vi.mocked(getProviderForTask).mockResolvedValue({
-      provider: { ask: vi.fn().mockResolvedValue({ text: 'not json at all' }) },
-    } as never)
+    const ask = vi.fn().mockResolvedValue({ text: 'not json at all' })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask } } as never)
 
     const { runContradictionScanForDominion } = await import('../contradiction')
     const result = await runContradictionScanForDominion(USER_ID, DOMINION_ID)
 
     expect(result.proposalsCreated).toBe(0)
     expect(insertedRows).toBeNull()
+    // One repair round-trip on top of the original judge call.
+    expect(ask).toHaveBeenCalledTimes(2)
+    expect(writeCronFailureTrace).toHaveBeenCalledTimes(1)
     expect(writeCronFailureTrace).toHaveBeenCalledWith(
       USER_ID,
-      expect.objectContaining({ cronName: 'contradiction-scan', reason: 'parse_failed' }),
+      expect.objectContaining({ cronName: 'contradiction-scan', reason: 'parse_failed:syntax' }),
     )
+  })
+
+  it('repairs malformed JSON on the second attempt and stages the finding', async () => {
+    const { findSimilarBeliefs } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    const { writeCronFailureTrace } = await import('../cron-trace')
+
+    queueDominionAndProbes()
+    selectQueue.push([{ n: 0 }]) // hasPendingProposalFor — no existing proposal
+    vi.mocked(findSimilarBeliefs).mockResolvedValueOnce([candidateRow] as never)
+    const validJson = `\`\`\`json\n${JSON.stringify({
+      findings: [{ candidateId: CANDIDATE_ID, contradicts: true, winner: 'probe', confidence: 0.85, rationale: 'cadence changed' }],
+    })}\n\`\`\``
+    const ask = vi.fn()
+      .mockResolvedValueOnce({ text: 'not json at all — embedded "quote breaks the array' })
+      .mockResolvedValueOnce({ text: validJson })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask } } as never)
+
+    const { runContradictionScanForDominion } = await import('../contradiction')
+    const result = await runContradictionScanForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.status).toBe('created')
+    expect(result.proposalsCreated).toBe(1)
+    expect(ask).toHaveBeenCalledTimes(2)
+    const repairPrompt = ask.mock.calls[1][0].prompt as string
+    expect(repairPrompt).toContain('not json at all')
+    expect(writeCronFailureTrace).not.toHaveBeenCalled()
   })
 })
