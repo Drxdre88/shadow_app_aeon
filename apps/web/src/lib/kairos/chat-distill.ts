@@ -8,6 +8,7 @@ import {
   buildChatDistillUserPrompt,
   parseChatDistillResponse,
 } from './chat-distill-prompt'
+import { writeCronFailureTrace } from './cron-trace'
 
 const DAY_MS = 86_400_000
 const MAX_MESSAGES_PER_THREAD = 80
@@ -152,6 +153,12 @@ export async function runChatDistillForUser(
           ...base,
           status: 'error',
           reason: error instanceof Error ? error.message : String(error),
+        })
+        await writeCronFailureTrace(userId, {
+          cronName: 'chat-distill',
+          dominionId: thread.dominionId,
+          reason: 'thread_distill_failed',
+          error,
         })
       }
     }

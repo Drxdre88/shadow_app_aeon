@@ -2,6 +2,7 @@ import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { dedupMemories } from '@/lib/data/memories'
 import { embeddingsEnabled } from '@/lib/kairos/embeddings'
+import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Consolidation — memory dedup cron.
@@ -45,6 +46,10 @@ export async function GET(req: NextRequest) {
     const result = await dedupMemories({ dryRun, threshold })
     return jsonResponse({ startedAt, finishedAt: new Date().toISOString(), ...result })
   } catch (err) {
+    const operatorUserId = process.env.KAIROS_OPERATOR_USER_ID
+    if (operatorUserId) {
+      await writeCronFailureTrace(operatorUserId, { cronName: 'memory-dedup', reason: 'uncaught_exception', error: err })
+    }
     return jsonResponse(
       { startedAt, error: err instanceof Error ? err.message : String(err) },
       { status: 500 },

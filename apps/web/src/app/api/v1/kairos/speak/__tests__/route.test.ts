@@ -301,6 +301,26 @@ describe('POST /api/v1/kairos/speak', () => {
     expect(captureMemory).not.toHaveBeenCalled()
   })
 
+  it('persists opsAlert:true in sourceMetadata for a synthesis-health alert', async () => {
+    vi.stubGlobal('fetch', fetchOk())
+
+    const res = await POST(makeReq(
+      { title: 'Synthesis health alert', message: 'cortex-regen failed 2 nights.', urgency: 'high', force: true, opsAlert: true },
+      'Bearer cron-secret',
+    ))
+
+    expect(res.status).toBe(200)
+    expect(captureMemory).toHaveBeenCalledWith(OPERATOR, expect.objectContaining({
+      sourceMetadata: {
+        kairosSpeak: true,
+        status: 'pending',
+        kind: 'notify',
+        urgency: 'high',
+        opsAlert: true,
+      },
+    }))
+  })
+
   it('reports telegram:false when the channel is unconfigured', async () => {
     delete process.env.TELEGRAM_BOT_TOKEN
     const fetchMock = fetchOk()
