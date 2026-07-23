@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { boardTasks, dominions, memories, projectMembers, projects } from '@/lib/db/schema'
 import { and, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm'
+import { decodeDateOrNull } from './sql-decoders'
 import type { AetherPayload } from '@/lib/kairos/aether-types'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -239,7 +240,7 @@ export async function listKairosReflectionStaleness(userId: string): Promise<Arr
     .select({
       dominionId: dominions.id,
       dominionName: dominions.name,
-      lastReflectedAt: sql<Date | null>`MAX(${memories.createdAt})`,
+      lastReflectedAt: sql`MAX(${memories.createdAt})`.mapWith(decodeDateOrNull),
     })
     .from(dominions)
     .leftJoin(memories, and(

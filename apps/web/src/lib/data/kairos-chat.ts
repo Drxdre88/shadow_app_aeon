@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { agentSessions, sessionEvents, dominions, userAiCredentials } from '@/lib/db/schema'
+import { decodeDateOrNull } from './sql-decoders'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (C1) — chat thread persistence.
@@ -160,7 +161,7 @@ export async function listChatThreads(
       title: agentSessions.goal,
       status: agentSessions.status,
       createdAt: agentSessions.spawnedAt,
-      lastMessageAt: sql<Date | null>`MAX(${sessionEvents.createdAt})`,
+      lastMessageAt: sql`MAX(${sessionEvents.createdAt})`.mapWith(decodeDateOrNull),
       messageCount: sql<number>`COUNT(${sessionEvents.id})::int`,
     })
     .from(agentSessions)

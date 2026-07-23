@@ -17,12 +17,19 @@ import { neutraliseFences, extractJsonBlock as _extractJsonBlock } from './_prom
 // signal); dismissing is an archive. See docs/kairos/12-kairos-evolution-plan.
 // ─────────────────────────────────────────────────────────────────────────
 
+// Clamp instead of reject: an over-long title must degrade to an ellipsis,
+// not kill the Dominion's whole night. The 2026-07-23 healing run showed the
+// repair round-trip fixing JSON syntax only for .max() to reject titles a few
+// chars over — the dominant remaining kill-path after PR #95.
+const clampedString = (max: number) =>
+  z.string().trim().min(1).transform((s) => (s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s))
+
 const proposalSchema = z.object({
   // reflection = candidate belief/priority · tension = contradiction/drift ·
   // connection = a link worth drawing between memories · question = a gap.
   kind: z.enum(['reflection', 'tension', 'connection', 'question']),
-  title: z.string().trim().min(1).max(120),
-  body: z.string().trim().min(1).max(800),
+  title: clampedString(120),
+  body: clampedString(800),
   // Memory ids this proposal is grounded in. Must reference the fed substrate.
   citations: z.array(z.string().uuid()).min(1).max(8),
   // Honest self-assessed strength of the inference, 0–1.

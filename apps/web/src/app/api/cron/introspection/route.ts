@@ -17,7 +17,9 @@ import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 // before the 07:00 Briefer so the morning brief can surface fresh proposals.
 // ─────────────────────────────────────────────────────────────────────────
 
-export const maxDuration = 300
+// 800s (Pro/fluid ceiling): a failure night doubles model calls per Dominion
+// (generate + repair) — 300s timed out mid-fleet with no trace (2026-07-23 504).
+export const maxDuration = 800
 
 function isAuthorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET

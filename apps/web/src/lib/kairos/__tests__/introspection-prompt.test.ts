@@ -123,6 +123,23 @@ describe('introspectionOutSchema', () => {
       }),
     ).toThrow()
   })
+
+  // Regression: 2026-07-23 — over-long titles must clamp to an ellipsis, not
+  // reject the payload and kill the Dominion's night.
+  it('clamps an over-long title instead of rejecting it', () => {
+    const out = introspectionOutSchema.parse({
+      proposals: [{ kind: 'reflection', title: 'x'.repeat(300), body: 'b', citations: [ID_A], confidence: 0.5 }],
+    })
+    expect(out.proposals[0].title.length).toBeLessThanOrEqual(120)
+    expect(out.proposals[0].title.endsWith('…')).toBe(true)
+  })
+
+  it('clamps an over-long body instead of rejecting it', () => {
+    const out = introspectionOutSchema.parse({
+      proposals: [{ kind: 'reflection', title: 't', body: 'y'.repeat(2000), citations: [ID_A], confidence: 0.5 }],
+    })
+    expect(out.proposals[0].body.length).toBeLessThanOrEqual(800)
+  })
 })
 
 describe('filterGroundedProposals', () => {
