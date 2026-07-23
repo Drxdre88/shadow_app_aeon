@@ -10,6 +10,15 @@ missing/undecryptable BYOK keys.
 
 ## Stages
 
+**Parse reliability (docs/kairos/31, `feat/kairos-synthesis-reliability`).** The four standard-tier
+generators (archetypes, cortex, introspection, contradiction) each wrap `extractJsonBlock → zod
+.parse()` in `parseWithRepair` (`_prompt-utils.ts`): on a parse/schema failure they re-prompt the
+SAME provider **once** with the raw text + validation error as a user-turn message
+(`buildRepairPrompt`, generalised from aether's 07-09 one-shot retry, `aether.ts:305-357`), then
+fail via `ParseRepairError`. Failure traces now carry `finishReason` (truncation vs malformed
+content), a bounded 500-char `sourceMetadata.rawExcerpt`, and split `parse_failed:syntax` vs
+`parse_failed:schema`. No temperature reintroduced — reliability is the repair path, not sampling.
+
 ### Chat distillation (nightly, per user — feeds the chain)
 `lib/kairos/chat-distill.ts` → `runChatDistillForUser()`. Runs FIRST (02:00 UTC, before
 archetypes): every kairos-chat thread with turns on the prior UTC day (Telegram included, ≤80
@@ -77,12 +86,13 @@ cron, `runBriefingNow`, and MCP `run_recipe` all route through it.
 | 05:00 daily | `contradiction-scan` | auto-contradiction detection (`contradiction.ts`) |
 | 06:30 daily | `introspection` | staged `inbound` proposals / Dominion |
 | 07:00 daily | `briefer` | one advisory / Dominion |
+| 08:00 daily | `synthesis-health` | nightly trace rollup → one idempotent `SYNTHESIS_HEALTH` memory (externalId `synthesis-health:{date}`); a stage failing 2 consecutive UTC nights fires ONE batched Telegram ops alert. Pure SQL read, no LLM/BYOK. (docs/kairos/31) |
 | Sun 03:00 | `memory-compaction` | weekly substrate count/report (stub) |
 | Sun 05:00 | `memory-dedup` | weekly near-duplicate supersession |
 
 The snapshot→**chat-distill**→archetypes→cortex→aether→embed→**contradiction-scan**→introspection→briefer
 ordering is deliberate: each stage consumes the fresh output of the one before it, and the
-cross-job race defenses in cortex/aether protect against a slow upstream job. **11 crons total**
+cross-job race defenses in cortex/aether protect against a slow upstream job. **12 crons total**
 (the brain-tick is a cloud routine, not a Vercel cron — see [chat.md](chat.md) §1b).
 
 ## Model tiers, caching, output caps (PR #84 + `1512228`)
@@ -103,7 +113,8 @@ cross-job race defenses in cortex/aether protect against a slow upstream job. **
 
 ## Key files
 
-- `lib/kairos/{archetypes,cortex,aether,briefer,introspection,contradiction,chat-distill}.ts` (+ matching `*-prompt.ts`, `aether-types.ts`), `cron-trace.ts`
-- `lib/kairos/dispatch.ts`, `recipes/{_recipe,registry,brief}.ts`, `retrieve.ts`, `_prompt-utils.ts`
+- `lib/kairos/{archetypes,cortex,aether,briefer,introspection,contradiction,chat-distill}.ts` (+ matching `*-prompt.ts`, `aether-types.ts`), `cron-trace.ts` (+ `finishReason`/`rawExcerpt` inputs)
+- `lib/kairos/synthesis-health.ts` — daily trace rollup + 2-strike alert (docs/kairos/31)
+- `lib/kairos/dispatch.ts`, `recipes/{_recipe,registry,brief}.ts`, `retrieve.ts`, `_prompt-utils.ts` (now holds the shared `parseWithRepair`/`buildRepairPrompt`/`ParseRepairError` helpers)
 - `apps/web/src/app/api/cron/*/route.ts`
 - `apps/web/vercel.json` — cron schedule

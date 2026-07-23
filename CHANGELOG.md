@@ -20,6 +20,28 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - `DOCS` — `ARCHITECTURE.md`, `VISION.md`, `CLAUDE.md`
 - `UI` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.13.0] — 2026-07-23
+
+> Areas touched: `KAIROS` `INFRA` `API` `DOCS`
+> Theme: Heal the instrument. Kairos's nightly self-synthesis had been silently parse-failing for ~12 nights — the brain every autonomy surface reads from was quietly degrading with nobody watching. This drop makes synthesis self-repair when the model returns slightly malformed output, and puts a health scorecard behind it so a broken night can never go unseen again.
+
+### Fixed — Nightly synthesis now self-repairs malformed model output · `KAIROS`
+- The four standard-tier generators — **cortex, archetypes, introspection, contradiction** — parse-failed whenever the model returned slightly off-spec JSON (an unescaped quote mid-array, an over-long field). They had no recovery path: one bad response killed the whole night's synthesis for that Dominion, and it had been happening quietly since ~2026-07-10.
+- On a parse or schema failure they now re-prompt the **same** model once with the raw output plus the exact validation error, then retry. Only the top-level Aether synthesis had this before; it's now shared across all four.
+- Exactly **one** repair round-trip per run (cost-bounded). Genuinely truncated responses (hard output-cap hits) are still reported as failures rather than papered over — that's a real budget problem, not a parse glitch, and the trace now says which one it was.
+
+### Added — Synthesis health scorecard + 2-strike ops alert · `KAIROS` · `INFRA` · `API`
+- Every cron failure now leaves a **trace** — including the model's finish reason and a bounded excerpt of the raw output — so a failed night is diagnosable after the fact instead of vanishing.
+- A daily **08:00 UTC** rollup buckets the last 48h of traces per synthesis stage per night and writes one scorecard. Absence of a trace counts as **"no signal"**, never as success.
+- If a stage fails **two consecutive nights**, Kairos sends exactly one high-urgency ops alert (Will inbox + Telegram), then stays silent until the stage recovers and breaks again — no daily nagging, and structurally impossible to spam.
+- These ops alerts **bypass Kairos's conversational speak budget**: an outage warning can never be suppressed by his normal "don't talk too much" cadence rules, and never eats into that budget either.
+
+### Fixed — Closed three silent-failure gaps in the brain's background jobs · `KAIROS` · `INFRA`
+- Chat-distillation, memory-deduplication, and embedding-backfill could previously fail leaving no trace at all. All three now write a failure trace, so the new scorecard sees them.
+
+### Changed — Reliability spec + housekeeping surfacing · `DOCS`
+- New `docs/kairos/31-synthesis-reliability.md` — root-cause analysis and as-built record. The Kairos housekeeping sweep gains a synthesis-health check that reads the latest scorecard.
+
 ## [0.12.0] — 2026-06-02
 
 > Areas touched: `KAIROS` `DOMINION` `DATA` `MCP` `INFRA` `UI` `DOCS`
