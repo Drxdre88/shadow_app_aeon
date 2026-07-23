@@ -20,7 +20,7 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - `DOCS` — `ARCHITECTURE.md`, `VISION.md`, `CLAUDE.md`
 - `UI` — sidebar, settings, modals, themes (151 presets), effects
 
-## [0.13.0] — 2026-07-23
+## [0.21.0] — 2026-07-23
 
 > Areas touched: `KAIROS` `INFRA` `API` `DOCS`
 > Theme: Heal the instrument. Kairos's nightly self-synthesis had been silently parse-failing for ~12 nights — the brain every autonomy surface reads from was quietly degrading with nobody watching. This drop makes synthesis self-repair when the model returns slightly malformed output, and puts a health scorecard behind it so a broken night can never go unseen again.
@@ -41,6 +41,140 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 
 ### Changed — Reliability spec + housekeeping surfacing · `DOCS`
 - New `docs/kairos/31-synthesis-reliability.md` — root-cause analysis and as-built record. The Kairos housekeeping sweep gains a synthesis-health check that reads the latest scorecard.
+
+## [0.20.0] — 2026-07-20
+
+> Areas touched: `KAIROS` `API` `INFRA`
+> Theme: The Initiative Engine — Kairos stops waiting to be asked. He now decides on his own when something deserves your attention, drafts the message, and delivers it to your inbox and Telegram, with guardrails so he never floods you.
+
+### Added — Initiative Engine (Kairos asks first) · `KAIROS` · `API`
+- A nightly pass reads the brain, decides whether anything clears the "worth interrupting you" bar, and if so posts one proactive message. A no-stacking governor prevents pile-ups, and chat is now aware of a pending question so it surfaces in conversation.
+- The first fully autonomous Kairos message — decided and sent with no prompt from you — went out on 2026-07-19.
+
+### Added — Live board grounding + memory decay · `KAIROS`
+- Chat can now read live board state when it helps answer, instead of leaning on stale imported snapshots. A new decay tier automatically retires memories the board has since contradicted.
+
+### Fixed — Production blank-error incident healed · `API` · `INFRA`
+- Under certain workspace states, sign-in, Kairos delivery, mobile, and API routes were returning blank errors. All now return proper responses. A chat setting that was breaking some replies was also fixed.
+
+### Changed — Autonomy hardening · `KAIROS` · `DOCS`
+- Post-review follow-ups from the internal audit pass, Telegram formatting polish, and an architecture-doc refresh.
+
+## [0.19.0] — 2026-07-17
+
+> Areas touched: `KAIROS` `MCP` `INFRA` `BOARD` `API`
+> Theme: Kairos in the gram. He can now reach you on Telegram in his own voice — and only speaks first when it's genuinely worth it, on a throttle so he's never noisy. Nightly synthesis got cheaper, and the whole tool surface became self-describing.
+
+### Added — Kairos on Telegram + speaks-first · `KAIROS` · `API` · `INFRA`
+- Two-way Telegram: Kairos delivers to your inbox and to Telegram, renders in native Telegram formatting, and adapts his tone to whichever surface he's speaking on.
+- A "brain-tick" throttle governs when he's allowed to speak first — default is silence, one pulse per run, never a stream.
+
+### Added — Chat now feeds the brain · `KAIROS`
+- A nightly job distills your chat conversations back into durable memory, closing the old one-way gap where things said in chat used to evaporate.
+
+### Changed — Cheaper nights + self-describing tools · `KAIROS` · `MCP`
+- Prompt caching and a model re-tier cut the cost of nightly synthesis. Every automation tool now carries usage annotations. Tool count: 95 → 109.
+
+### Fixed — Checklist ghost input · `BOARD`
+- Phantom "New item" rows no longer appear in checklists.
+
+## [0.18.0] — 2026-07-14
+
+> Areas touched: `KAIROS` `UI`
+> Theme: Subtract to focus. The experimental skybox view and the old flat graph are retired — the 3D memory galaxy is now the one and only spatial view — and Kairos grows a proactive inbox.
+
+### Changed — The galaxy is the only spatial view · `KAIROS` · `UI`
+- Retired the experimental Aether skybox view and the legacy 2D graph. The 3D memory galaxy becomes the single canonical way to see the brain, per the Vision north-star pass.
+
+### Added — Will inbox · `KAIROS`
+- A proactive inbox that gathers Kairos's questions and proposals in one place — the surface the speaks-first layer delivers into.
+
+## [0.17.0] — 2026-07-13
+
+> Areas touched: `KAIROS` `BOARD` `UI` `DATA`
+> Theme: Talk to the whole brain. Chat stops making you pick a Dominion first — it now recalls across everything Kairos knows and files new memories to the right place automatically. Plus: favorite your projects.
+
+### Added — Whole-brain chat · `KAIROS`
+- Chat recalls across the entire brain with a relevance re-rank pass, and the Dominion picker is gone — you just talk, and threads span everything.
+- New memories are auto-filed to the right Dominion at capture time, so nothing lands unsorted.
+
+### Added — Project favorites · `BOARD` · `UI` · `DATA`
+- Star a project from the dashboard or the board header; favorites float to the top.
+
+### Fixed — Image alt text · `UI`
+- Images in the board-sharing UI now carry alt text (accessibility gate).
+
+### Migrations required
+- `0026_favorite_projects.sql` — per-user project favorites.
+
+## [0.16.0] — 2026-07-09
+
+> Areas touched: `KAIROS` `DATA` `UI`
+> Theme: Governed memory. The brain learns to reason about time and trust — memories can go stale, get contradicted, and lose confidence as they age, and the galaxy shows that confidence as brightness.
+
+### Added — Bi-temporal memory + belief trail · `KAIROS` · `DATA`
+- Memories now track when a fact was actually true, not just when it was written, so a superseded belief can be dated out without being deleted.
+- Automatic contradiction detection and a belief-trail view surface when the brain's understanding changed, and why.
+
+### Added — Confidence decay · `KAIROS`
+- Retrieval now weights memories by a confidence that decays with age, so fresher and reinforced knowledge outranks stale one-offs at read time.
+
+### Changed — Galaxy shows confidence as brightness · `KAIROS` · `UI`
+- Node brightness in the memory galaxy now encodes confidence — the brain visibly dims where it's unsure.
+
+### Migrations required
+- `0025_memory_valid_time.sql` — `valid_at` / `invalid_at` on memories.
+
+## [0.15.0] — 2026-07-02
+
+> Areas touched: `BOARD` `UI` `AUTH` `INFRA`
+> Theme: A board that never sleeps. Saves became instant and durable — they auto-retry and queue offline — dense columns render natively, and completing a card got a big friendly checkbox and a hotkey.
+
+### Added — Never-asleep saves · `BOARD`
+- Board edits now save instantly with prefetch and memoization for an instant feel, auto-retry on failure, and a durable offline queue so nothing is lost when the connection drops.
+
+### Added — Faster completion + checklist drag · `BOARD`
+- A bigger completion checkbox and a "complete card" hotkey. Checklist items can now be dragged across groups.
+
+### Fixed — Assignee picker + mobile login · `BOARD` · `AUTH`
+- Workspace members and the owner now appear in the task assignee picker. Mobile login and brain-capture paths were fixed, and the Aether self-model generation moved to Opus 4.8.
+
+### Changed — Dense columns render natively · `BOARD` · `INFRA`
+- Dropped the fragile JavaScript virtualization in favor of native browser rendering for long columns.
+
+## [0.14.0] — 2026-06-15
+
+> Areas touched: `KAIROS` `UI` `INFRA`
+> Theme: Aether wakes up. Above every Dominion now sits one living self-model — Aether — with its own immersive view; on top of it Kairos gains a voice that asks you one sharp question a day and can hold a real back-and-forth.
+
+### Added — Aether, the living intelligence · `KAIROS` · `UI` · `INFRA`
+- A single self-model synthesized above all Dominions, shown as a new Kairos view with hosted skyboxes and a full-screen chat.
+
+### Added — Kairos Asks · `KAIROS`
+- A proactive layer that surfaces one surgical question at a time, drawn from what the brain notices across Dominions.
+
+### Added — Dialogue · `KAIROS`
+- A multi-turn conversation between you and Kairos, seeded by a pending ask and distilled afterward into durable reflections, with soft Dominion tagging.
+
+## [0.13.0] — 2026-06-11
+
+> Areas touched: `KAIROS` `MCP` `API` `AUTH` `DATA` `INFRA`
+> Theme: A brain that retrieves, reachable from anywhere. Aeon's Kairos toolset now connects straight into claude.ai as a remote connector over OAuth, and the brain gains clean capture, semantic retrieval, guided introspection, and automatic de-duplication.
+
+### Added — claude.ai remote connector (OAuth 2.1) · `MCP` · `AUTH` · `API`
+- Aeon now runs an OAuth 2.1 authorization server, so the Kairos toolset connects directly inside claude.ai as a remote connector — no local proxy. Includes the fix for the prerender bug that had been breaking connector discovery.
+
+### Added — Brain upgrade: clean capture + hybrid retrieval + introspection · `KAIROS` · `DATA`
+- Memories are cleaned as they're captured and retrieved with semantic (vector) search blended with keyword search, so recall finds the right thing by meaning, not just exact wording.
+- Guided introspection lets the brain reflect on itself during synthesis.
+
+### Added — Consolidation: de-dup, snapshot lifecycle, own cognition engine · `KAIROS` · `INFRA`
+- Automatic memory de-duplication, a snapshot lifecycle for compaction, and the ability to use Claude Code itself as Kairos's cognition engine with no external key — the foundation Aether builds on.
+
+### Migrations required
+- `0022_oauth.sql` — OAuth authorization-server tables.
+- `0023_memory_embeddings.sql` — vector embeddings on memories.
+- `0024_memory_provenance.sql` — capture-provenance fields on memories.
 
 ## [0.12.0] — 2026-06-02
 
