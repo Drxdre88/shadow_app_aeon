@@ -134,7 +134,10 @@ export async function runIntrospectionForDominion(
       system: INTROSPECTION_SYSTEM_PROMPT,
       prompt: buildIntrospectionUserPrompt(ctx, date),
       cacheSystem: true,
-      maxTokens: 2000,
+      // Must exceed the schema's worst-case payload (8 proposals × 920 chars +
+      // UUID citations, which tokenize at ~1 char/token). 2000 truncated every
+      // night — finishReason=length across all 2026-07-23 failure traces.
+      maxTokens: 8000,
     })
     rawText = response.text.trim()
     finishReason = response.finishReason
@@ -161,7 +164,7 @@ export async function runIntrospectionForDominion(
       rawText,
       parse: (text) => filterGroundedProposals(introspectionOutSchema.parse(extractJsonBlock(text)), validIds),
       generatorLabel: 'introspection',
-      maxTokens: 2000,
+      maxTokens: 8000,
     })
   } catch (err) {
     if (err instanceof ParseRepairError) {

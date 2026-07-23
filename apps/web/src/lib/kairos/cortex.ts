@@ -317,7 +317,7 @@ export async function runCortexRegenForDominion(
       system: CORTEX_SYSTEM_PROMPT,
       prompt: buildCortexUserPrompt(ctx, date),
       cacheSystem: true,
-      maxTokens: 3000,
+      maxTokens: 8000,
     })
     rawText = response.text.trim()
     finishReason = response.finishReason
@@ -343,7 +343,7 @@ export async function runCortexRegenForDominion(
       rawText,
       parse: (text) => cortexOutSchema.parse(extractJsonBlock(text)),
       generatorLabel: 'cortex',
-      maxTokens: 3000,
+      maxTokens: 8000,
     })
   } catch (err) {
     if (err instanceof ParseRepairError) {

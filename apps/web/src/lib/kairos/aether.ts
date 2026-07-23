@@ -279,7 +279,7 @@ export async function runAetherForUser(userId: string): Promise<{ generated: boo
       system: AETHER_SYSTEM_PROMPT,
       prompt: buildAetherUserPrompt(ctx),
       cacheSystem: true,
-      maxTokens: 4000,
+      maxTokens: 10000,
     }))
     rawText = response.text.trim()
   } catch (err) {
@@ -312,7 +312,7 @@ export async function runAetherForUser(userId: string): Promise<{ generated: boo
     // output + the validation error and ask it to fix the JSON. If the
     // repair also fails, give up rather than looping indefinitely.
     try {
-      const repairResponse = await provider.ask({ prompt: buildRepairPrompt(rawText, firstErr), maxTokens: 4000 })
+      const repairResponse = await provider.ask({ prompt: buildRepairPrompt(rawText, firstErr), maxTokens: 10000 })
       parsed = parseAndGround(repairResponse.text.trim())
     } catch (repairErr) {
       // The repair round-trip also failed. Preserve firstErr — the original
