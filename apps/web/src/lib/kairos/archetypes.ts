@@ -259,7 +259,7 @@ export async function runArchetypeSynthesisForDominion(
       system: ARCHETYPE_SYSTEM_PROMPT,
       prompt: buildArchetypeUserPrompt(ctx, date),
       cacheSystem: true,
-      maxTokens: 3000,
+      maxTokens: 8000,
     })
     rawText = response.text.trim()
     finishReason = response.finishReason
@@ -285,7 +285,7 @@ export async function runArchetypeSynthesisForDominion(
       rawText,
       parse: (text) => archetypeOutSchema.parse(extractJsonBlock(text)),
       generatorLabel: 'archetype',
-      maxTokens: 3000,
+      maxTokens: 8000,
     })
   } catch (err) {
     if (err instanceof ParseRepairError) {
