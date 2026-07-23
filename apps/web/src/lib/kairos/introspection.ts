@@ -13,7 +13,7 @@ import {
   type IntrospectionContext,
   type IntrospectionMemoryRow,
 } from './introspection-prompt'
-import { todayIso } from './_prompt-utils'
+import { todayIso, parseWithRepair, ParseRepairError } from './_prompt-utils'
 import { writeCronFailureTrace } from './cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -126,8 +126,10 @@ export async function runIntrospectionForDominion(
   const runId = `introspection:${dominionId}:${date}`
 
   let rawText: string
+  let finishReason: string | undefined
+  let provider: Awaited<ReturnType<typeof getProviderForTask>>['provider']
   try {
-    const { provider } = await getProviderForTask(userId, { taskType: 'reflect', dominionId })
+    ;({ provider } = await getProviderForTask(userId, { taskType: 'reflect', dominionId }))
     const response = await provider.ask({
       system: INTROSPECTION_SYSTEM_PROMPT,
       prompt: buildIntrospectionUserPrompt(ctx, date),
@@ -135,6 +137,7 @@ export async function runIntrospectionForDominion(
       maxTokens: 2000,
     })
     rawText = response.text.trim()
+    finishReason = response.finishReason
   } catch (err) {
     if (err instanceof AiCredentialMissingError) {
       return { dominionId, dominionName: dom.name, status: 'skipped', reason: 'no BYOK credential' }
@@ -146,23 +149,33 @@ export async function runIntrospectionForDominion(
   }
 
   if (!rawText) {
-    await writeCronFailureTrace(userId, { cronName: 'introspection', dominionId, reason: 'empty_response' })
+    await writeCronFailureTrace(userId, { cronName: 'introspection', dominionId, reason: 'empty_response', finishReason })
     return { dominionId, dominionName: dom.name, status: 'error', reason: 'empty model response' }
   }
 
+  const validIds = new Set(ctx.recentMemories.map((m) => m.id))
   let proposals
   try {
-    const parsed = introspectionOutSchema.parse(extractJsonBlock(rawText))
-    const validIds = new Set(ctx.recentMemories.map((m) => m.id))
-    proposals = filterGroundedProposals(parsed, validIds)
+    proposals = await parseWithRepair({
+      provider,
+      rawText,
+      parse: (text) => filterGroundedProposals(introspectionOutSchema.parse(extractJsonBlock(text)), validIds),
+      generatorLabel: 'introspection',
+      maxTokens: 2000,
+    })
   } catch (err) {
-    await writeCronFailureTrace(userId, { cronName: 'introspection', dominionId, reason: 'parse_failed', error: err })
-    return {
-      dominionId,
-      dominionName: dom.name,
-      status: 'error',
-      reason: `parse failure: ${err instanceof Error ? err.message : String(err)}`,
+    if (err instanceof ParseRepairError) {
+      await writeCronFailureTrace(userId, {
+        cronName: 'introspection',
+        dominionId,
+        reason: `parse_failed:${err.kind}`,
+        error: err,
+        finishReason,
+        rawExcerpt: err.rawExcerpt,
+      })
+      return { dominionId, dominionName: dom.name, status: 'error', reason: err.message }
     }
+    throw err
   }
 
   if (proposals.length === 0) {

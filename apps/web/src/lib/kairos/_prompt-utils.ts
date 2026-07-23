@@ -1,3 +1,6 @@
+import { ZodError } from 'zod'
+import type { AIProvider } from '@/lib/ai/provider'
+
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 — shared helpers for synthesis prompt builders.
 //
@@ -6,6 +9,12 @@
 // cortex-prompt, archetypes, cortex, and briefer. One copy means a future
 // threat-model tightening (e.g. stripping XML fences too) updates exactly
 // one place.
+//
+// Synthesis reliability (docs/kairos/31, Part A) — buildRepairPrompt +
+// parseWithRepair generalise the one-shot JSON-repair round-trip that
+// aether.ts pioneered (aether.ts:305-357) so cortex/archetypes/
+// introspection/contradiction all get the same retry instead of a bare
+// parse/schema `.parse()` with zero recovery.
 // ─────────────────────────────────────────────────────────────────────────
 
 // Defense in depth against prompt-injection via memory titles/summaries:
@@ -39,4 +48,80 @@ export function extractJsonBlock(text: string, generatorLabel = 'kairos'): unkno
 // same UTC day looks identical across timezones.
 export function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
+}
+
+// Re-prompt payload for the ONE JSON-repair round-trip: sent as a user-turn
+// message, never as a system-prompt change (the cached system prefix must
+// stay byte-exact).
+export function buildRepairPrompt(rawText: string, err: unknown, generatorLabel = 'kairos'): string {
+  const message = err instanceof Error ? err.message : String(err)
+  return [
+    `The previous ${generatorLabel} response failed JSON validation. Fix it and return ONLY the`,
+    'corrected JSON in a single ```json fenced block — no prose before or after.',
+    '',
+    '## Validation error',
+    message,
+    '',
+    '## Previous response',
+    rawText,
+  ].join('\n')
+}
+
+// Thrown by parseWithRepair when BOTH the original parse and the repair
+// round-trip fail. Carries enough structure (kind, rawExcerpt) for callers
+// to write a diagnosable failure trace without re-deriving it.
+export class ParseRepairError extends Error {
+  readonly kind: 'syntax' | 'schema'
+  readonly rawExcerpt: string
+
+  constructor(message: string, kind: 'syntax' | 'schema', rawExcerpt: string) {
+    super(message)
+    this.name = 'ParseRepairError'
+    this.kind = kind
+    this.rawExcerpt = rawExcerpt
+  }
+}
+
+// Syntax failures (extractJsonBlock: no fence/braces, malformed JSON) vs
+// schema failures (zod .parse() rejects a structurally-valid object) are
+// different failure modes worth distinguishing in the trace.
+function classifyParseError(err: unknown): 'syntax' | 'schema' {
+  return err instanceof ZodError ? 'schema' : 'syntax'
+}
+
+export interface ParseWithRepairInput<T> {
+  provider: Pick<AIProvider, 'ask'>
+  rawText: string
+  parse: (text: string) => T
+  generatorLabel: string
+  maxTokens?: number
+}
+
+// ONE JSON-repair round-trip: try the raw response as-is, and on parse/schema
+// failure, re-prompt the SAME provider with the raw text + validation error
+// as a plain user-turn message. If the repair also fails, throw a
+// ParseRepairError carrying the original failure (the real diagnostic — a
+// repair-call transport error would otherwise mask it) plus a bounded excerpt
+// of the original raw output for retroactive debugging.
+export async function parseWithRepair<T>(input: ParseWithRepairInput<T>): Promise<T> {
+  const { provider, rawText, parse, generatorLabel, maxTokens = 4000 } = input
+  try {
+    return parse(rawText)
+  } catch (firstErr) {
+    try {
+      const repairResponse = await provider.ask({
+        prompt: buildRepairPrompt(rawText, firstErr, generatorLabel),
+        maxTokens,
+      })
+      return parse(repairResponse.text.trim())
+    } catch (repairErr) {
+      const firstMessage = firstErr instanceof Error ? firstErr.message : String(firstErr)
+      const repairMessage = repairErr instanceof Error ? repairErr.message : String(repairErr)
+      throw new ParseRepairError(
+        `parse_failed: ${firstMessage} (repair also failed: ${repairMessage})`,
+        classifyParseError(firstErr),
+        rawText.slice(0, 500),
+      )
+    }
+  }
 }

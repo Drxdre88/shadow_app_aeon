@@ -1182,6 +1182,12 @@ export async function listTodaysAdvisories(userId: string, isoDate?: string) {
 // Kairos speaks-first — recent /kairos/speak deliveries, newest first. Powers
 // the speak route's throttle. Archived (dismissed) speaks still count: a
 // dismissed message was still an interrupt, so it must not reopen the window.
+//
+// Synthesis reliability (docs/kairos/31, B5) — ops alerts (sourceMetadata.
+// opsAlert:true) are excluded: they're system health signals, not
+// conversational turns, and must never consume Kairos's gap/cap cadence
+// budget. IS DISTINCT FROM handles both a missing key and an explicit
+// `false` the same way (only a literal 'true' is excluded).
 export async function listRecentKairosSpeaks(
   userId: string,
   opts: { hours?: number; limit?: number } = {},
@@ -1198,6 +1204,7 @@ export async function listRecentKairosSpeaks(
       eq(memories.type, 'inbound'),
       eq(memories.source, 'system'),
       sql`${memories.sourceMetadata}->>'kairosSpeak' = 'true'`,
+      sql`(${memories.sourceMetadata}->>'opsAlert') IS DISTINCT FROM 'true'`,
       sql`${memories.createdAt} >= ${since}`,
     ))
     .orderBy(desc(memories.createdAt))

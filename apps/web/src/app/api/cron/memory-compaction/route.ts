@@ -17,9 +17,7 @@ import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 // changed Dominions. See docs/kairos/14-quality-gates.md §6 for the policy.
 //
 // Auth + cron pattern mirrors apps/web/src/app/api/cron/briefer/route.ts.
-// Vercel Cron suggested schedule: weekly Sunday 03:00 UTC. Add to
-// vercel.json when wiring up; until then the route is callable manually by
-// the owner.
+// Runs weekly, Sunday 03:00 UTC — wired up in apps/web/vercel.json.
 // ─────────────────────────────────────────────────────────────────────────
 
 export const maxDuration = 300

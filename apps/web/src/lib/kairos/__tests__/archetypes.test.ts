@@ -11,6 +11,7 @@ import { buildArchetypePrompt, extractJsonBlock, archetypeOutSchema } from '../a
 // wiring is the whole point of the reliability pass and is worth the cost.
 
 const selectQueue: unknown[][] = []
+let txInsertedRows: Array<{ id: string }> = []
 
 vi.mock('@/lib/db', () => {
   function makeChain(rows: unknown[]) {
@@ -29,7 +30,7 @@ vi.mock('@/lib/db', () => {
       transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
           update: () => ({ set: () => ({ where: () => ({ returning: () => Promise.resolve([]) }) }) }),
-          insert: () => ({ values: () => ({ returning: () => Promise.resolve([]) }) }),
+          insert: () => ({ values: () => ({ returning: () => Promise.resolve(txInsertedRows) }) }),
         }
         return fn(tx)
       }),
@@ -266,6 +267,132 @@ describe('runArchetypeSynthesisForDominion — failure trace (C1)', { timeout: 2
   beforeEach(() => {
     vi.clearAllMocks()
     selectQueue.length = 0
+    txInsertedRows = []
+  })
+
+  const validArchetypeRow = {
+    title: 'Kairos brain build-out',
+    summary: 'Phase 1A shipped — partitioned brain, live board awareness.',
+    body: 'Substrate now tagged by stream class. Eight Dominions live. The next move is archetype synthesis layered on top of that partition. Watch: reflection capture is the missing ingredient — without it, weighting has nothing to weight.',
+    themes: ['kairos', 'phase-1a'],
+    citedMemoryIds: [],
+  }
+
+  function queueDominionAndContext() {
+    selectQueue.push([{ id: DOMINION_ID, name: 'AEON', archivedAt: null }]) // dominion lookup
+    selectQueue.push([{ n: 0 }]) // alreadyRanToday
+    selectQueue.push([]) // recent
+    selectQueue.push([]) // pinned
+    selectQueue.push([{ // reflections — satisfies hasSignal
+      id: '22222222-2222-4222-8222-222222222222',
+      title: 'Reflection',
+      type: 'reflection',
+      streamClass: 'reflection',
+      summary: null,
+      pinned: false,
+      createdAt: new Date('2026-07-01'),
+    }])
+    selectQueue.push([]) // existing archetypes
+  }
+
+  async function mockInspectDominion() {
+    const { inspectDominion } = await import('@/lib/data/dominions')
+    vi.mocked(inspectDominion).mockResolvedValueOnce({
+      name: 'AEON',
+      vision: null,
+      missionLong: null,
+      objectives: [],
+      boardTasks: [],
+    } as never)
+  }
+
+  it('repairs malformed JSON on the second attempt and persists (T-A1)', async () => {
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    queueDominionAndContext()
+    await mockInspectDominion()
+
+    // Embedded unescaped quote mid-array — the real prod signature.
+    const malformed = '{"archetypes":[{"title":"a "quoted" break"}]}'
+    const ask = vi.fn()
+      .mockResolvedValueOnce({ text: malformed })
+      .mockResolvedValueOnce({ text: JSON.stringify({ archetypes: [validArchetypeRow], shifts: [] }) })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask } } as never)
+    txInsertedRows = [{ id: 'archetype-mem-1' }]
+
+    const { runArchetypeSynthesisForDominion } = await import('../archetypes')
+    const result = await runArchetypeSynthesisForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.status).toBe('created')
+    expect(ask).toHaveBeenCalledTimes(2)
+    const traceCalls = vi.mocked(captureMemory).mock.calls.filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
+    expect(traceCalls).toHaveLength(0)
+  })
+
+  it('writes exactly one failure trace when both parse attempts fail (T-A2)', async () => {
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    queueDominionAndContext()
+    await mockInspectDominion()
+
+    const ask = vi.fn().mockResolvedValue({ text: 'not json at all' })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask } } as never)
+
+    const { runArchetypeSynthesisForDominion } = await import('../archetypes')
+    const result = await runArchetypeSynthesisForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.status).toBe('error')
+    expect(result.reason).toMatch(/^parse_failed:/)
+    expect(result.reason).toContain('repair also failed')
+    expect(ask).toHaveBeenCalledTimes(2)
+    const traceCalls = vi.mocked(captureMemory).mock.calls.filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
+    expect(traceCalls).toHaveLength(1)
+    const sm = (traceCalls[0][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata
+    expect(sm.reason).toBe('parse_failed:syntax')
+  })
+
+  it('repairs a zod-boundary schema violation, not just JSON syntax errors (T-A3)', async () => {
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    queueDominionAndContext()
+    await mockInspectDominion()
+
+    // Structurally valid JSON, but body is 99 chars — one under
+    // archetypeOutSchema's min(100) — so this fails zod, not extractJsonBlock.
+    const tooShort = { ...validArchetypeRow, body: 'a'.repeat(99) }
+    const ask = vi.fn()
+      .mockResolvedValueOnce({ text: JSON.stringify({ archetypes: [tooShort], shifts: [] }) })
+      .mockResolvedValueOnce({ text: JSON.stringify({ archetypes: [validArchetypeRow], shifts: [] }) })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask } } as never)
+    txInsertedRows = [{ id: 'archetype-mem-2' }]
+
+    const { runArchetypeSynthesisForDominion } = await import('../archetypes')
+    const result = await runArchetypeSynthesisForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.status).toBe('created')
+    expect(ask).toHaveBeenCalledTimes(2)
+    const traceCalls = vi.mocked(captureMemory).mock.calls.filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
+    expect(traceCalls).toHaveLength(0)
+  })
+
+  it('records finishReason on the trace when the model truncates (T-A4)', async () => {
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    queueDominionAndContext()
+    await mockInspectDominion()
+
+    const ask = vi.fn().mockResolvedValue({ text: '{"archetypes":[{"title":"truncated', finishReason: 'length' })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask } } as never)
+
+    const { runArchetypeSynthesisForDominion } = await import('../archetypes')
+    const result = await runArchetypeSynthesisForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.status).toBe('error')
+    const traceCalls = vi.mocked(captureMemory).mock.calls.filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
+    expect(traceCalls).toHaveLength(1)
+    const sm = (traceCalls[0][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata
+    expect(sm.finishReason).toBe('length')
+    expect(typeof sm.rawExcerpt).toBe('string')
   })
 
   it('writes a failure trace on empty model response', async () => {

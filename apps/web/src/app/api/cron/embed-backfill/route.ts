@@ -2,6 +2,7 @@ import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { backfillEmbeddings } from '@/lib/data/memories'
 import { embeddingsEnabled, activeEmbeddingModel } from '@/lib/kairos/embeddings'
+import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Brain Phase 4 (P2) — embedding backfill.
@@ -46,6 +47,10 @@ export async function GET(req: NextRequest) {
       ...result,
     })
   } catch (err) {
+    const operatorUserId = process.env.KAIROS_OPERATOR_USER_ID
+    if (operatorUserId) {
+      await writeCronFailureTrace(operatorUserId, { cronName: 'embed-backfill', reason: 'uncaught_exception', error: err })
+    }
     return jsonResponse(
       { startedAt, error: err instanceof Error ? err.message : String(err) },
       { status: 500 },

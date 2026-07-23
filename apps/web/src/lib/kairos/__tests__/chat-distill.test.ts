@@ -21,11 +21,16 @@ vi.mock('@/lib/ai/router', () => ({
   AiCredentialDecryptError: class AiCredentialDecryptError extends Error {},
 }))
 
+vi.mock('../cron-trace', () => ({
+  writeCronFailureTrace: vi.fn(),
+}))
+
 import { listKairosAsksAnsweredBetween } from '@/lib/data/ask'
 import { listChatThreadsWithMessagesOn } from '@/lib/data/kairos-chat'
 import { captureMemory } from '@/lib/data/memories'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialDecryptError, AiCredentialMissingError } from '@/lib/ai/router'
+import { writeCronFailureTrace } from '../cron-trace'
 import { parseChatDistillResponse, runChatDistillForUser } from '../chat-distill'
 import { buildChatDistillUserPrompt } from '../chat-distill-prompt'
 
@@ -246,6 +251,29 @@ describe('chat distillation', () => {
     expect(result.threads[0]).toMatchObject({ status: 'error', reason: 'provider timeout' })
     expect(result.threads[1]).toMatchObject({ status: 'created', reflectionsCreated: 1 })
     expect(captureMemory).toHaveBeenCalledTimes(1)
+  })
+
+  it('writes a cron failure trace for a per-thread distill failure (docs/kairos/31 B1)', async () => {
+    ;(listChatThreadsWithMessagesOn as ReturnType<typeof vi.fn>).mockResolvedValue([thread()])
+    const ask = vi.fn().mockRejectedValue(new Error('provider timeout'))
+    ;(getProviderForTask as ReturnType<typeof vi.fn>).mockResolvedValue({ provider: { ask } })
+
+    await runChatDistillForUser(USER_ID, { date: DATE })
+
+    expect(writeCronFailureTrace).toHaveBeenCalledWith(USER_ID, {
+      cronName: 'chat-distill',
+      dominionId: null,
+      reason: 'thread_distill_failed',
+      error: expect.any(Error),
+    })
+  })
+
+  it('does not trace a benign BYOK skip as a failure', async () => {
+    ;(getProviderForTask as ReturnType<typeof vi.fn>).mockRejectedValue(new AiCredentialMissingError('anthropic'))
+
+    await runChatDistillForUser(USER_ID, { date: DATE })
+
+    expect(writeCronFailureTrace).not.toHaveBeenCalled()
   })
 
   it('rejects an invalid date format', async () => {
