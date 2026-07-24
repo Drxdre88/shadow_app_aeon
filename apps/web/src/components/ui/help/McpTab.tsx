@@ -14,6 +14,7 @@ const TOOL_CATEGORIES = [
       'get_project',
       'create_project',
       'update_project',
+      'set_project_favorite',
       'delete_project',
       'project_summary',
     ],
@@ -81,16 +82,98 @@ const TOOL_CATEGORIES = [
     ],
   },
   {
+    name: 'Comments',
+    tools: ['list_comments', 'add_comment', 'update_comment', 'delete_comment'],
+  },
+  {
+    name: 'Realms',
+    tools: [
+      'list_realms',
+      'create_realm',
+      'update_realm',
+      'delete_realm',
+      'list_realm_members',
+      'invite_realm_member',
+      'list_pending_realm_invites',
+      'cancel_realm_invite',
+      'resend_realm_invite',
+      'remove_realm_member',
+      'update_realm_member_role',
+      'list_realm_projects',
+      'add_project_to_realm',
+      'remove_project_from_realm',
+    ],
+  },
+  {
+    name: 'Sessions',
+    tools: ['spawn_session', 'list_sessions', 'get_session', 'list_session_events', 'kill_session'],
+  },
+  {
     name: 'Batch & Analytics',
     tools: [
       'batch_create_tasks',
       'batch_create_checklist_items',
+      'batch_update_checklist_items',
       'batch_add_dependencies',
       'setup_board',
       'get_velocity_stats',
     ],
   },
+  {
+    name: 'Kairos — memory & brain',
+    tools: [
+      'create_memory',
+      'update_memory',
+      'search_memories',
+      'link_memory',
+      'prepare_context',
+      'list_memories_needing_summary',
+      'get_memory_with_neighbours',
+      'get_belief_trail',
+      'accept_proposal',
+      'kairos_reflect',
+    ],
+  },
+  {
+    name: 'Kairos — Dominions & recipes',
+    tools: [
+      'create_dominion',
+      'list_dominions',
+      'get_dominion',
+      'update_dominion',
+      'inspect_dominion',
+      'list_objectives',
+      'create_objective',
+      'update_objective',
+      'archive_objective',
+      'delete_dominion',
+      'list_dominion_repos',
+      'add_dominion_repo',
+      'remove_dominion_repo',
+      'assign_project_dominion',
+      'bulk_assign_projects_to_dominion',
+      'get_trace_history',
+      'run_recipe',
+    ],
+  },
+  {
+    name: 'Kairos — Ask, Dialogue & Aether',
+    tools: [
+      'run_kairos_ask',
+      'get_pending_kairos_ask',
+      'answer_kairos_ask',
+      'open_dialogue',
+      'prepare_dialogue_context',
+      'append_dialogue_turn',
+      'get_dialogue',
+      'commit_dialogue',
+      'prepare_aether_context',
+      'commit_aether',
+    ],
+  },
 ]
+
+const TOTAL_TOOL_COUNT = TOOL_CATEGORIES.reduce((sum, cat) => sum + cat.tools.length, 0)
 
 type ApiKeyEntry = {
   id: string
@@ -261,7 +344,8 @@ export function McpTab() {
     <div className="space-y-6">
       <p className="text-sm text-slate-300 leading-relaxed">
         Connect AI assistants (Claude, Cursor, etc.) to Aeon via the Model Context Protocol (MCP).
-        This gives your AI full access to manage projects, tasks, and boards programmatically.
+        This gives your AI full access to manage projects, tasks, boards, realms, and Kairos&apos;s
+        memory brain programmatically.
       </p>
 
       <Section title="API Keys">
@@ -324,13 +408,13 @@ export function McpTab() {
           />
           <FeatureCard
             icon={Wrench}
-            title="36 Tools"
-            description="Full CRUD for projects, columns, tasks, Gantt, dependencies, labels, checklists, batch ops, and analytics."
+            title={`${TOTAL_TOOL_COUNT} Tools`}
+            description="Full CRUD for projects, columns, tasks, Gantt, dependencies, labels, checklists, comments, realms, sessions, batch ops, analytics, and the Kairos memory brain."
           />
         </div>
       </Section>
 
-      <Section title="Available Tools (36)">
+      <Section title={`Available Tools (${TOTAL_TOOL_COUNT})`}>
         <div className="grid grid-cols-2 gap-4">
           {TOOL_CATEGORIES.map((cat) => (
             <div key={cat.name}>

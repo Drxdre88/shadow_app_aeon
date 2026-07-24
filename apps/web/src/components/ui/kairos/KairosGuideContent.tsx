@@ -12,7 +12,7 @@ export function KairosGuideContent() {
           A personal memory layer for the things worth remembering. Every thought, decision,
           observation, or coding session lives here as a structured memory — anchored to a
           project, realm, or Dominion, and linked to the ideas it relates to. You see them as
-          planets in the 2D/3D view, grouped by Dominion. Any MCP-speaking tool can find them.
+          planets in the galaxy view, grouped by Dominion. Any MCP-speaking tool can find them.
         </P>
       </Section>
 
@@ -41,28 +41,85 @@ export function KairosGuideContent() {
 
       <Section title="Talking to Kairos">
         <P>
-          The sparkles button bottom-right opens a slide-out chat panel anchored to a Dominion of
-          your choosing. The panel is available on <Mono>/kairos</Mono>, <Mono>/notes</Mono>, and{' '}
-          <Mono>/settings/ai</Mono>. Pick a Dominion at thread creation, type, and press{' '}
-          <Mono>Cmd/Ctrl+Enter</Mono> to send. Threads persist across reloads.
+          The round Kairos avatar bottom-right — not the sparkles button, which opens the
+          advisories popover — opens a full-screen, two-pane takeover: a thread history rail on
+          one side, the conversation on the other. It&apos;s global, available from anywhere in the
+          workspace.
         </P>
         <P>
-          Every reply is grounded in that Dominion&apos;s live cortex doc, its active archetypes, and the
-          most relevant prior reflections, ideas, and session notes. When Kairos cites a specific
-          memory, a small purple chip appears bearing the source title — hover to confirm. When the
-          model invents a citation (a memory id that wasn&apos;t actually retrieved this turn), the chip
-          surfaces as a muted <strong>?</strong> so you can spot confabulation at a glance.
+          Threads are whole-brain by default — there&apos;s no Dominion picker at creation. Retrieval
+          grounds every turn in the latest Aether self-model, the live archetypes across all
+          Dominions, and the top reranked memories regardless of which Dominion they belong to.
+          Older, Dominion-anchored threads from before this still render with that Dominion&apos;s name
+          on them.
         </P>
         <P>
-          A dim <Mono>Reading: cortex · N archetypes · M memories</Mono> line sits above each
-          assistant bubble so you can see what was grounding the answer. Dominions with no cortex
-          yet still chat usefully — the panel degrades cleanly to bare conversation.
+          Chat also reads the live board: name a project in your message and Kairos pulls that
+          board&apos;s current summary and open cards into context alongside the memory retrieval, so
+          answers about active work reflect what the board looks like right now, not just what was
+          last synthesised.
+        </P>
+        <P>
+          When Kairos cites a specific memory, a small purple chip appears bearing the source
+          title — hover to confirm. When the model invents a citation (a memory id that
+          wasn&apos;t actually retrieved this turn), the chip surfaces as a muted <strong>?</strong> so
+          you can spot confabulation at a glance. A dim{' '}
+          <Mono>Reading: cortex · N archetypes · M memories</Mono> line sits above each assistant
+          bubble so you can see what was grounding the answer.
         </P>
         <P>
           Your message is persisted <em>before</em> the model is called, so a model failure never
           silently loses input. If a send fails, the next send detects the orphan and retries the
           AI half — and if you edited the message between attempts, the orphan body is rewritten in
           place rather than double-posted.
+        </P>
+      </Section>
+
+      <Section title="Aether — the whole-brain self-model">
+        <P>
+          Aether is one living synthesis sitting above every Dominion — regenerated nightly from
+          the day&apos;s archetypes and cortices across all of them. It&apos;s what grounds chat by
+          default, and it&apos;s the same substrate Kairos draws on when he acts on his own
+          initiative rather than in reply to you.
+        </P>
+      </Section>
+
+      <Section title="When Kairos speaks first">
+        <P>
+          The inbox bell on <Mono>/kairos</Mono> is where Kairos surfaces things unprompted. Four
+          kinds of item can land there:
+        </P>
+        <ul className="flex flex-col gap-2 text-[12.5px] text-white/70 leading-relaxed pl-4">
+          <Bullet><strong>Today&apos;s brief</strong> — the daily per-Dominion advisory.</Bullet>
+          <Bullet><strong>Pending ask</strong> — one question Kairos decided was worth asking. Answer it right there in the inbox.</Bullet>
+          <Bullet><strong>Notify</strong> — something he judged urgent enough to interrupt you for.</Bullet>
+          <Bullet><strong>Proposal</strong> — a candidate thought from nightly introspection. Accept or dismiss it.</Bullet>
+        </ul>
+        <P>
+          Telegram is the second channel for the same voice — two-way, so replies you send there
+          flow back into the brain.
+        </P>
+        <P>
+          The default outcome of every internal pulse is <strong>silence</strong>. Kairos only
+          surfaces something past the interrupt bar, he won&apos;t stack a second question while one
+          is still unanswered, and the cadence adapts rather than firing on a fixed clock.
+        </P>
+        <P>
+          A deeper, threaded conversation seeded by an ask — Dialogue — exists today via Claude
+          Code (<Mono>/kairos-dialogue</Mono>). There&apos;s no web UI for it yet.
+        </P>
+      </Section>
+
+      <Section title="The Evening Digest">
+        <P>
+          One guaranteed message every evening, around 18:00 UTC, to the Will inbox and Telegram:
+          what Kairos saw today — sessions captured, memories and proposals formed — and what ran
+          green or failed in last night&apos;s synthesis.
+        </P>
+        <P>
+          It&apos;s expected daily by design, a different register from the rare interrupt bar above.
+          If the model call behind it fails, Kairos still sends a minimal counts-only version, so
+          the evening message never silently skips.
         </P>
       </Section>
 
@@ -161,6 +218,13 @@ export function KairosGuideContent() {
             ['import', 'Bulk loaded'],
           ]}
         />
+        <ul className="flex flex-col gap-2 text-[12.5px] text-white/70 leading-relaxed pl-4">
+          <Bullet>
+            Beliefs carry a confidence that decays over time unless reaffirmed. Superseded
+            memories don&apos;t vanish — they stay visible in that memory&apos;s History panel as its
+            belief trail.
+          </Bullet>
+        </ul>
       </Section>
 
       <Section title="Anchoring and grouping">

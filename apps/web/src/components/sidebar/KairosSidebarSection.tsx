@@ -7,11 +7,12 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Wrench, BookMarked } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { KairosLearnModal, type KairosLearnTab } from '@/components/ui/kairos/KairosLearnModal'
+import { KAIROS_VERSION_SHORT } from '@/lib/kairos/version'
 
 // Slim Kairos entry that lives between the realm/nav body and the
 // "New Project / New Realm" actions. Renders as:
 //   faint glowing divider
-//   Kairos 0.1 pill (links to /kairos)
+//   Kairos version pill (links to /kairos)
 //   Setup + Guide child buttons (open KairosLearnModal)
 //   faint glowing divider
 export function KairosSidebarSection({ collapsed }: { collapsed: boolean }) {
@@ -55,7 +56,7 @@ export function KairosSidebarSection({ collapsed }: { collapsed: boolean }) {
             whileHover={{ scale: 1.04 }}
             whileTap={{ scale: 0.96 }}
           >
-            {collapsed ? 'K' : 'Kairos 0.1'}
+            {collapsed ? 'K' : `Kairos ${KAIROS_VERSION_SHORT}`}
           </motion.div>
         </Link>
       </div>
