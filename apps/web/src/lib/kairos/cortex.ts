@@ -2,6 +2,7 @@ import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
 import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
+import { validAsOfNow } from '@/lib/data/memories'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import {
@@ -68,11 +69,6 @@ async function alreadyRanToday(userId: string, dominionId: string): Promise<bool
     ))
   return (row?.n ?? 0) > 0
 }
-
-// Bi-temporal valid-time gate — matches lib/data/memories.ts's validAsOfNow.
-// A memory resolved by an incident-lifecycle 'resolves' link (invalidAt
-// stamped) must not feed tonight's synthesis even if it's still live/unarchived.
-const validAsOfNow = sql`(${memories.invalidAt} IS NULL OR ${memories.invalidAt} > NOW())`
 
 // "Today so far" grounding (C) — the latest micro-consolidation delta for
 // this Dominion if one landed today, else a lightweight new-memory count

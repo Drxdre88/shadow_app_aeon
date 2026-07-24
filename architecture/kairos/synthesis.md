@@ -103,6 +103,7 @@ cron, `runBriefingNow`, and MCP `run_recipe` all route through it.
 | 07:00 daily | `briefer` | one advisory / Dominion |
 | 08:00 daily | `synthesis-health` | nightly trace rollup → one idempotent `SYNTHESIS_HEALTH` memory (externalId `synthesis-health:{date}`); a stage failing 2 consecutive UTC nights fires ONE batched Telegram ops alert. Pure SQL read, no LLM/BYOK. (docs/kairos/31) |
 | 18:00 daily | `digest` | guaranteed Evening Digest speak (`digest:true` register, layered fallbacks — see stage section above) |
+| 6h·9h·12h·15h·18h·21h :15 | `micro-consolidate` | intraday per-Dominion `delta` fold (skip-if-quiet <3 new; hour-bucket externalId) |
 | Sun 03:00 | `memory-compaction` | weekly substrate count/report (stub) |
 | Sun 05:00 | `memory-dedup` | weekly near-duplicate supersession |
 
@@ -110,8 +111,26 @@ The snapshot→**chat-distill**→archetypes→cortex→aether→embed→**contr
 ordering is deliberate: each stage consumes the fresh output of the one before it, and the
 cross-job race defenses in cortex/aether protect against a slow upstream job. The 18:00 digest
 deliberately runs 10h after the 08:00 health rollup it reads (freshness-checked, comment in
-`digest.ts`). **13 crons total** (the brain-tick is a cloud routine, not a Vercel cron — see
+`digest.ts`). **14 crons total** (the brain-tick is a cloud routine, not a Vercel cron — see
 [chat.md](chat.md) §1b).
+
+## Live Mind layer (2026-07-24 — intraday awareness + incident lifecycle)
+
+- **Micro-consolidation** (`micro-consolidate.ts`): 6×/day, per active Dominion, folds new
+  memories + board deltas since the last cortex reading into ONE `streamClass='delta'` memory
+  (`type='observation'` — deliberately NOT `snapshot`, which the ephemeral lifecycle would TTL
+  and reclassify). Skip-if-quiet (<3 new), hour-bucketed `externalId` idempotency, heavy tier.
+  Cortex/aether prompts consume the latest delta (or a live counts line) as a "## Today so far"
+  user-prompt section — `recentShifts` grounded in same-day events, not re-derived cold.
+- **Incident lifecycle**: new `resolves` link type (`memoryEdgeTypeSchema`). A memory carrying
+  `resolves` links stamps its targets' `invalidAt` (same-user, first-resolution-wins), and the
+  `validAsOfNow` bi-temporal gate is now applied to archetype/cortex/aether input fetches and
+  the traces retrieval leg — a resolved incident exits synthesis and briefing in one cycle
+  instead of narrating for weeks (the post-heal hysteresis of 07-24).
+- **Quality-over-cost retier** (operator directive 2026-07-24): every cognition path
+  (archetype/cortex/contradiction/chat/reflect/digest/delta + the always-heavy brief/aether)
+  runs the heavy tier (Opus). Mechanical lanes (classify/summarise/voice) stay cheap. Prompt
+  caching unchanged.
 
 ## Model tiers, caching, output caps (PR #84 + `1512228`)
 

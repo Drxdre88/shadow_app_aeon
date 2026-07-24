@@ -48,6 +48,9 @@ vi.mock('@/lib/data/dominions', () => ({
 
 vi.mock('@/lib/data/memories', () => ({
   captureMemory: vi.fn(),
+  // Stand-in for the real bi-temporal gate — content doesn't matter here,
+  // db.select is fully mocked below and never inspects the SQL it's given.
+  validAsOfNow: 'mock-valid-as-of-now',
 }))
 
 vi.mock('@/lib/ai/route-task', () => ({
@@ -478,5 +481,67 @@ describe('runCortexRegenForDominion — failure trace (C1)', { timeout: 20000 },
     const sm = (traceCalls[0][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata
     expect(sm.finishReason).toBe('length')
     expect(typeof sm.rawExcerpt).toBe('string')
+  })
+})
+
+describe('gatherCortexContext — "Today so far" grounding', () => {
+  const USER_ID = 'user-1'
+  const DOMINION_ID = '11111111-1111-4111-8111-111111111111'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    selectQueue.length = 0
+  })
+
+  async function mockBriefingWithVision() {
+    const { inspectDominion } = await import('@/lib/data/dominions')
+    vi.mocked(inspectDominion).mockResolvedValueOnce({
+      name: 'AEON',
+      vision: 'Fluid board/project app.',
+      missionLong: null,
+      objectives: [],
+      boardTasks: [],
+    } as never)
+  }
+
+  it('uses the delta row body verbatim when a delta landed today', async () => {
+    await mockBriefingWithVision()
+    selectQueue.push([]) // reflections
+    selectQueue.push([]) // archetypes
+    selectQueue.push([]) // prior
+    selectQueue.push([{ bodyMd: 'Kairos shipped micro-consolidation today.' }]) // todaySoFar: delta row hit
+
+    const { gatherCortexContext } = await import('../cortex')
+    const ctx = await gatherCortexContext(USER_ID, DOMINION_ID)
+
+    expect(ctx?.todaySoFar).toBe('Kairos shipped micro-consolidation today.')
+  })
+
+  it('renders singular wording when exactly one new memory landed today', async () => {
+    await mockBriefingWithVision()
+    selectQueue.push([]) // reflections
+    selectQueue.push([]) // archetypes
+    selectQueue.push([]) // prior
+    selectQueue.push([]) // todaySoFar: delta row — none
+    selectQueue.push([{ n: 1 }]) // todaySoFar: fallback count — exactly one
+
+    const { gatherCortexContext } = await import('../cortex')
+    const ctx = await gatherCortexContext(USER_ID, DOMINION_ID)
+
+    expect(ctx?.todaySoFar).toBe("1 new memory captured today (since this morning's reading).")
+  })
+
+  it('renders plural wording when more than one new memory landed today', async () => {
+    await mockBriefingWithVision()
+    selectQueue.push([]) // reflections
+    selectQueue.push([]) // archetypes
+    selectQueue.push([]) // prior
+    selectQueue.push([]) // todaySoFar: delta row — none
+    selectQueue.push([{ n: 4 }]) // todaySoFar: fallback count
+
+    const { gatherCortexContext } = await import('../cortex')
+    const ctx = await gatherCortexContext(USER_ID, DOMINION_ID)
+
+    expect(ctx?.todaySoFar).toBe("4 new memories captured today (since this morning's reading).")
   })
 })

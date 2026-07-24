@@ -4,6 +4,7 @@ import { memories, dominions } from '@/lib/db/schema'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import { withRetry } from '@/lib/ai/retry'
+import { validAsOfNow } from '@/lib/data/memories'
 import { writeCronFailureTrace } from './cron-trace'
 import {
   AETHER_SYSTEM_PROMPT,
@@ -26,11 +27,6 @@ import type { AetherPayload } from './aether-types'
 
 const MAX_REFLECTIONS = 40
 const MAX_ARCHETYPES_PER_DOMINION = 3
-
-// Bi-temporal valid-time gate — matches lib/data/memories.ts's validAsOfNow.
-// A memory resolved by an incident-lifecycle 'resolves' link (invalidAt
-// stamped) must not feed tonight's synthesis even if it's still live/unarchived.
-const validAsOfNow = sql`(${memories.invalidAt} IS NULL OR ${memories.invalidAt} > NOW())`
 
 async function alreadyRanToday(userId: string): Promise<boolean> {
   const [row] = await db

@@ -2,7 +2,7 @@ import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
 import { findDominionsByUser } from '@/lib/data/dominions'
-import { captureMemory } from '@/lib/data/memories'
+import { captureMemory, validAsOfNow } from '@/lib/data/memories'
 import { countTasksCompletedBetween, countTasksCreatedBetween } from '@/lib/data/board-signals'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
@@ -61,6 +61,7 @@ async function lastDeltaCreatedAt(userId: string, dominionId: string): Promise<D
       eq(memories.dominionId, dominionId),
       eq(memories.streamClass, 'delta'),
       isNull(memories.archivedAt),
+      validAsOfNow,
     ))
     .orderBy(desc(memories.createdAt))
     .limit(1)
@@ -77,6 +78,7 @@ async function todaysCortexCreatedAt(userId: string, dominionId: string, dayStar
       eq(memories.streamClass, 'cortex'),
       isNull(memories.archivedAt),
       gte(memories.createdAt, dayStart),
+      validAsOfNow,
     ))
     .orderBy(desc(memories.createdAt))
     .limit(1)
@@ -96,23 +98,39 @@ async function computeWindowStart(userId: string, dominionId: string): Promise<D
 
 // Excludes 'trace' (cron bookkeeping) and 'delta' (this generator's own prior
 // folds) — neither is substrate a delta should re-summarise.
+//
+// Runs the LIMIT-30 fetch alongside a COUNT(*) over the same predicate so a
+// window with more than MAX_NEW_MEMORY_ROWS new memories is visible as a
+// truncation rather than silently summarising only the newest 30 — the
+// caller stamps sourceMetadata.truncated when total exceeds rows.length.
 async function fetchNewMemoriesSince(
   userId: string,
   dominionId: string,
   since: Date,
-): Promise<MicroConsolidateNewMemory[]> {
-  return db
-    .select({ title: memories.title, type: memories.type, streamClass: memories.streamClass })
-    .from(memories)
-    .where(and(
-      eq(memories.userId, userId),
-      eq(memories.dominionId, dominionId),
-      isNull(memories.archivedAt),
-      sql`${memories.streamClass} NOT IN ('trace', 'delta')`,
-      gte(memories.createdAt, since),
-    ))
-    .orderBy(desc(memories.createdAt))
-    .limit(MAX_NEW_MEMORY_ROWS)
+): Promise<{ rows: MicroConsolidateNewMemory[]; total: number }> {
+  const scope = and(
+    eq(memories.userId, userId),
+    eq(memories.dominionId, dominionId),
+    isNull(memories.archivedAt),
+    sql`${memories.streamClass} NOT IN ('trace', 'delta')`,
+    gte(memories.createdAt, since),
+    validAsOfNow,
+  )
+
+  const [rows, [{ total }]] = await Promise.all([
+    db
+      .select({ title: memories.title, type: memories.type, streamClass: memories.streamClass })
+      .from(memories)
+      .where(scope)
+      .orderBy(desc(memories.createdAt))
+      .limit(MAX_NEW_MEMORY_ROWS),
+    db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(memories)
+      .where(scope),
+  ])
+
+  return { rows, total }
 }
 
 export interface MicroConsolidateRunResult {
@@ -137,7 +155,7 @@ export async function runMicroConsolidateForDominion(
   if (dom.archivedAt) return { dominionId, dominionName: dom.name, status: 'skipped', reason: 'archived' }
 
   const since = await computeWindowStart(userId, dominionId)
-  const newMemories = await fetchNewMemoriesSince(userId, dominionId, since)
+  const { rows: newMemories, total: newMemoryTotal } = await fetchNewMemoriesSince(userId, dominionId, since)
 
   if (newMemories.length < MIN_NEW_MEMORIES) {
     return {
@@ -192,6 +210,7 @@ export async function runMicroConsolidateForDominion(
   }
 
   const bucket = hourBucket(now)
+  const truncated = newMemoryTotal > newMemories.length
   const { memory, created } = await captureMemory(userId, {
     title: `${dom.name} · delta ${bucket}`,
     bodyMd: text,
@@ -206,6 +225,9 @@ export async function runMicroConsolidateForDominion(
       newMemoryCount: newMemories.length,
       tasksCompleted,
       tasksCreated,
+      // Visibility for a window with more substrate than the LIMIT-30 fetch
+      // summarised — otherwise this is a silent truncation.
+      ...(truncated ? { truncated: true, newMemoryTotal } : {}),
     },
   })
 

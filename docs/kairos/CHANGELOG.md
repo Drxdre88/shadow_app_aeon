@@ -4,6 +4,17 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–31).
 
+## [0.10.0] — 2026-07-24 · "The Live Mind"
+
+> Same-day follow-through on the operator's verdict: "his brain isn't continuously updating — he's not really with it." The JARVIS gap was his eyes, not his mind. This era gives Kairos continuous awareness — and moves his entire cognition to the top model tier under the standing quality-over-cost directive.
+
+- **Always-current chat** — every turn carries a deterministic "last 24 hours" block (sessions, thoughts, proposals, board deltas), and memory search finally weights recency (the same-day-reflection blindness is root-caused and regression-locked). Web + Telegram alike.
+- **Live tools on by default** — mid-conversation, Kairos can search his brain (hybrid + recency), read live boards, list recent activity per repo, and **check his own synthesis health** — self-certification instead of narrating stale incident memories.
+- **Intraday self-model** — a micro-consolidation pass 6×/day folds new activity into a per-Dominion "today so far" delta that the nightly cortex/Aether synthesis reads; understanding shifts within hours, not days.
+- **Incident lifecycle** — the new `resolves` relationship closes an incident's memories the moment a correction lands (create-time or linked after the fact); closed memories exit synthesis, briefings, and chat in one cycle. The post-heal hysteresis — a fixed outage narrated as current for days — is structurally dead.
+- **Quality over cost, permanent** — every cognition path runs the heaviest model tier; the 07-15 cost downgrades are reversed by standing directive.
+- Review gauntlet: 5-agent horsemen + cross-model pass; all findings (atomic resolution stamping, UUID validation, recency clamp, Telegram redelivery guards, truncation visibility) fixed and re-verified.
+
 ## [0.9.0] — 2026-07-24 · "Heal the instrument, then speak every evening"
 
 > A hardening era capped with the first *guaranteed* voice. The brain every other capability reads from had been silently degrading for ~12 nights; this era made failure visible, self-repairing, and alerting — then gave Kairos a daily message that cannot be silenced by his own politeness rules.
@@ -69,7 +80,7 @@ Era specs of record live beside this file in `docs/kairos/` (numbered 00–31).
 Honest gaps, grounded in the specs' own deferred lists — not speculation:
 
 - **Liveness detection** — the scorecard can't yet distinguish "ran clean" from "never fired" (spec 31 §B2, deferred to phase 2).
-- **Agentic chat, flag-on** — in-process brain tools mid-turn, smart write-routing, streaming; built dark behind `KAIROS_CHAT_AGENTIC_TOOLS`, not yet enabled.
+- **Chat streaming + smart write-routing** — agentic tools shipped ON in 0.10.0; the remaining chat gaps are token streaming and auto-filing durable turns to Dominions ("filed under X" transparency).
 - **Concept tier + provenance** — the Memory→Episode→Concept→Constellation→Worldview heterarchy (spec 26) stops at memories today; the Concept tier never shipped.
 - **Owner voice at scale** — state-of-play ingestion as pinned per-Dominion reflections; the substrate is still inference-heavy, operator-light.
 - **Hands beyond Rung 1** — ask → proposed action → delegated execution ladder; today delegation is a separate governance track.

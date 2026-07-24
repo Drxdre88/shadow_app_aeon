@@ -25,7 +25,7 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories } from '@/lib/db/schema'
 import { inspectDominion } from '@/lib/data/dominions'
-import { recencyDecay } from '@/lib/data/memories'
+import { recencyDecay, validAsOfNow } from '@/lib/data/memories'
 import { dominionTag } from './dominionTags'
 import { embeddingsEnabled, embedOne, toVectorLiteral } from './embeddings'
 import { rrfFuse, RRF_K } from './rrf'
@@ -37,11 +37,6 @@ import type {
   RetrievedMemory,
   RetrievalBundle,
 } from './recipes/_recipe'
-
-// Bi-temporal valid-time gate, mirrors lib/data/memories.ts. A superseded or
-// WP3-reconciled (task done/deleted) fact is stamped invalidAt and must never
-// re-enter chat substrate retrieval even though it isn't archived.
-const validAsOfNow = sql`(${memories.invalidAt} IS NULL OR ${memories.invalidAt} > NOW())`
 
 const SUBSTRATE_TOP_K = 5
 // Candidate pool handed to the cross-encoder rerank before the final TOP_K

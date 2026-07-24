@@ -80,6 +80,20 @@ describe('fetchRecentActivityContext', () => {
 
     expect(ctx!.windowHours).toBe(168)
   })
+
+  it('clamps a zero (or negative) hours value up to the 1-hour floor', async () => {
+    vi.mocked(listRecentMemories).mockResolvedValue([
+      { id: 's1', title: 'x', createdAt: new Date(), streamClass: 'agentic' },
+    ])
+    vi.mocked(countTasksCompletedBetween).mockResolvedValue(0)
+    vi.mocked(countTasksCreatedBetween).mockResolvedValue(0)
+
+    const zero = await fetchRecentActivityContext(USER_ID, { hours: 0 })
+    expect(zero!.windowHours).toBe(1)
+
+    const negative = await fetchRecentActivityContext(USER_ID, { hours: -5 })
+    expect(negative!.windowHours).toBe(1)
+  })
 })
 
 describe('renderRecentActivitySection', () => {

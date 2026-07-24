@@ -48,6 +48,15 @@ const AGENT_SESSIONS_LIMIT = 100
 // indefinitely. Checked before firing each round; the loop still forces one
 // final tool-less call to get an answer out of whatever was gathered so far.
 const TOOL_LOOP_BUDGET_MS = 30_000
+// Hard ceiling on total wall time, enforced independently of the round-start
+// budget above: TOOL_LOOP_BUDGET_MS only gates whether a NEW round starts, so
+// a single slow in-flight provider.ask (network stall, provider outage) could
+// otherwise block indefinitely with no round-start check ever firing again.
+// Every provider.ask call in this module — each round AND the mandatory
+// trailing call — races against the remaining slice of this ceiling; a
+// timeout breaks out of the loop (or, for the trailing call, returns a
+// synthetic fallback) instead of throwing.
+const TOOL_LOOP_HARD_DEADLINE_MS = 45_000
 
 export const searchBrainInputSchema = z.object({
   query: z.string().trim().min(2).max(500),
@@ -196,9 +205,41 @@ function renderAssistantToolTurn(text: string, calls: AIToolCall[]): string {
   return [text.trim(), ...lines].filter(Boolean).join('\n')
 }
 
+// Sentinel distinct from any real AIResponse so callers can branch on it
+// without an `in`/typeof check on the response shape.
+const DEADLINE_EXCEEDED = Symbol('tool-loop-deadline-exceeded')
+
+// Runs `ask()` racing the remaining `ms` budget. `ms <= 0` resolves to the
+// timeout sentinel WITHOUT ever calling `ask()` — no point starting a
+// provider round-trip against an already-exhausted deadline. The timer is
+// always cleared so a fast-resolving call never leaves a dangling handle.
+function askWithDeadline(ask: () => Promise<AIResponse>, ms: number): Promise<AIResponse | typeof DEADLINE_EXCEEDED> {
+  if (ms <= 0) return Promise.resolve(DEADLINE_EXCEEDED)
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<typeof DEADLINE_EXCEEDED>((resolve) => {
+    timer = setTimeout(() => resolve(DEADLINE_EXCEEDED), ms)
+  })
+  return Promise.race([ask(), timeout]).finally(() => clearTimeout(timer))
+}
+
+// Never-throw fallback for when even the trailing tool-less call can't beat
+// the hard deadline — the operator still gets a reply, just an honest one
+// about running out of time, instead of the chat turn failing outright.
+function deadlineFallbackResponse(): AIResponse {
+  return {
+    text: "I ran out of time gathering context for this — I wasn't able to finish forming a full answer. Try asking again, or narrow the question.",
+    providerId: 'kairos-chat-tool-loop',
+    modelId: 'deadline-fallback',
+  }
+}
+
 // Bounded agentic loop: up to MAX_TOOL_ROUNDS provider calls WITH tools;
 // any round without tool calls is the answer. If the model is still asking
 // for tools after the cap, one final tool-less call forces a text answer.
+// Every provider.ask call — each round and the trailing call — is raced
+// against the remaining slice of TOOL_LOOP_HARD_DEADLINE_MS so total wall
+// time is genuinely bounded even if TOOL_LOOP_BUDGET_MS's round-start check
+// never gets to fire again (e.g. one very slow in-flight call).
 export async function runChatToolLoop(
   provider: AIProvider,
   messages: AIMessage[],
@@ -209,18 +250,22 @@ export async function runChatToolLoop(
   const providerTools = toProviderTools(tools)
   const convo = [...messages]
   const startedAt = Date.now()
+  let elapsedMs = 0
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const elapsedMs = Date.now() - startedAt
+    elapsedMs = Date.now() - startedAt
     if (elapsedMs > TOOL_LOOP_BUDGET_MS) {
       console.warn('[kairos-chat] tool loop budget exceeded, forcing final answer', { round, elapsedMs })
       break
     }
-    const response = await provider.ask({
-      messages: convo,
-      maxOutputTokens,
-      tools: providerTools,
-    })
+    const response = await askWithDeadline(
+      () => provider.ask({ messages: convo, maxOutputTokens, tools: providerTools }),
+      TOOL_LOOP_HARD_DEADLINE_MS - elapsedMs,
+    )
+    if (response === DEADLINE_EXCEEDED) {
+      console.warn('[kairos-chat] tool loop hard deadline exceeded mid-round, forcing final answer', { round })
+      break
+    }
     const calls = response.toolCalls ?? []
     if (calls.length === 0) return response
 
@@ -231,5 +276,13 @@ export async function runChatToolLoop(
     }
   }
 
-  return provider.ask({ messages: convo, maxOutputTokens })
+  const final = await askWithDeadline(
+    () => provider.ask({ messages: convo, maxOutputTokens }),
+    TOOL_LOOP_HARD_DEADLINE_MS - elapsedMs,
+  )
+  if (final === DEADLINE_EXCEEDED) {
+    console.warn('[kairos-chat] tool loop hard deadline exceeded on final answer, returning fallback', { elapsedMs })
+    return deadlineFallbackResponse()
+  }
+  return final
 }

@@ -89,6 +89,9 @@ vi.mock('@/lib/data/dominions', () => ({
 
 vi.mock('@/lib/data/memories', () => ({
   captureMemory: vi.fn(),
+  // Stand-in for the real bi-temporal gate — content doesn't matter here,
+  // db.select is fully mocked below and never inspects the SQL it's given.
+  validAsOfNow: 'mock-valid-as-of-now',
 }))
 
 vi.mock('@/lib/data/board-signals', () => ({
@@ -129,7 +132,8 @@ describe('runMicroConsolidateForDominion', { timeout: 20000 }, () => {
     selectQueue.push([
       { title: 'a', type: 'note', streamClass: 'idea' },
       { title: 'b', type: 'note', streamClass: 'idea' },
-    ]) // fetchNewMemoriesSince — only 2, below MIN_NEW_MEMORIES (3)
+    ]) // fetchNewMemoriesSince rows — only 2, below MIN_NEW_MEMORIES (3)
+    selectQueue.push([{ total: 2 }]) // fetchNewMemoriesSince total — no truncation
 
     const { runMicroConsolidateForDominion } = await import('../micro-consolidate')
     const result = await runMicroConsolidateForDominion(USER_ID, DOMINION_ID)
@@ -157,7 +161,8 @@ describe('runMicroConsolidateForDominion', { timeout: 20000 }, () => {
       { title: 'a', type: 'note', streamClass: 'idea' },
       { title: 'b', type: 'note', streamClass: 'idea' },
       { title: 'c', type: 'note', streamClass: 'idea' },
-    ]) // fetchNewMemoriesSince — 3, meets threshold
+    ]) // fetchNewMemoriesSince rows — 3, meets threshold
+    selectQueue.push([{ total: 3 }]) // fetchNewMemoriesSince total — no truncation
 
     vi.mocked(countTasksCompletedBetween).mockResolvedValue(1)
     vi.mocked(countTasksCreatedBetween).mockResolvedValue(2)
@@ -188,7 +193,8 @@ describe('runMicroConsolidateForDominion', { timeout: 20000 }, () => {
       { title: 'a', type: 'note', streamClass: 'idea' },
       { title: 'b', type: 'note', streamClass: 'idea' },
       { title: 'c', type: 'note', streamClass: 'idea' },
-    ])
+    ]) // fetchNewMemoriesSince rows
+    selectQueue.push([{ total: 3 }]) // fetchNewMemoriesSince total — no truncation
     vi.mocked(countTasksCompletedBetween).mockResolvedValue(0)
     vi.mocked(countTasksCreatedBetween).mockResolvedValue(0)
     const ask = vi.fn().mockResolvedValue({ text: 'Same-hour retry.' })
@@ -206,6 +212,163 @@ describe('runMicroConsolidateForDominion', { timeout: 20000 }, () => {
     expect(result.status).toBe('existing')
     const call = vi.mocked(captureMemory).mock.calls[0][1] as { sourceMetadata: Record<string, unknown> }
     expect(call.sourceMetadata.externalId).toBe(`micro-consolidate:${DOMINION_ID}:2026-07-24T15`)
+  })
+
+  it('flags truncation in sourceMetadata when new memories exceed the LIMIT-30 fetch', async () => {
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { countTasksCompletedBetween, countTasksCreatedBetween } = await import('@/lib/data/board-signals')
+
+    queueDominionLookup()
+    selectQueue.push([]) // lastDeltaCreatedAt
+    selectQueue.push([]) // todaysCortexCreatedAt
+    selectQueue.push(
+      Array.from({ length: 30 }, (_, i) => ({ title: `m${i}`, type: 'note', streamClass: 'idea' })),
+    ) // fetchNewMemoriesSince rows — capped at 30
+    selectQueue.push([{ total: 47 }]) // fetchNewMemoriesSince total — 47 actually landed
+    vi.mocked(countTasksCompletedBetween).mockResolvedValue(0)
+    vi.mocked(countTasksCreatedBetween).mockResolvedValue(0)
+    const ask = vi.fn().mockResolvedValue({ text: 'A very busy window.' })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask }, decision: {} } as never)
+    vi.mocked(captureMemory).mockResolvedValue({ memory: { id: 'delta-mem-1' }, created: true } as never)
+
+    const { runMicroConsolidateForDominion } = await import('../micro-consolidate')
+    const result = await runMicroConsolidateForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.status).toBe('created')
+    expect(result.newMemoryCount).toBe(30)
+    const call = vi.mocked(captureMemory).mock.calls[0][1] as { sourceMetadata: Record<string, unknown> }
+    expect(call.sourceMetadata.truncated).toBe(true)
+    expect(call.sourceMetadata.newMemoryTotal).toBe(47)
+  })
+
+  it('does not flag truncation when the total matches the fetched rows', async () => {
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { countTasksCompletedBetween, countTasksCreatedBetween } = await import('@/lib/data/board-signals')
+
+    queueDominionLookup()
+    selectQueue.push([]) // lastDeltaCreatedAt
+    selectQueue.push([]) // todaysCortexCreatedAt
+    selectQueue.push([
+      { title: 'a', type: 'note', streamClass: 'idea' },
+      { title: 'b', type: 'note', streamClass: 'idea' },
+      { title: 'c', type: 'note', streamClass: 'idea' },
+    ]) // fetchNewMemoriesSince rows
+    selectQueue.push([{ total: 3 }]) // fetchNewMemoriesSince total — matches rows.length
+    vi.mocked(countTasksCompletedBetween).mockResolvedValue(0)
+    vi.mocked(countTasksCreatedBetween).mockResolvedValue(0)
+    const ask = vi.fn().mockResolvedValue({ text: 'A quiet window.' })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask }, decision: {} } as never)
+    vi.mocked(captureMemory).mockResolvedValue({ memory: { id: 'delta-mem-1' }, created: true } as never)
+
+    const { runMicroConsolidateForDominion } = await import('../micro-consolidate')
+    await runMicroConsolidateForDominion(USER_ID, DOMINION_ID)
+
+    const call = vi.mocked(captureMemory).mock.calls[0][1] as { sourceMetadata: Record<string, unknown> }
+    expect(call.sourceMetadata.truncated).toBeUndefined()
+    expect(call.sourceMetadata.newMemoryTotal).toBeUndefined()
+  })
+
+  it('scopes the fetch window from lastDelta when it is later than today\'s cortex (GREATEST anchor)', async () => {
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { countTasksCompletedBetween, countTasksCreatedBetween } = await import('@/lib/data/board-signals')
+
+    const lastDeltaAt = new Date('2026-07-24T15:00:00.000Z')
+    const cortexAt = new Date('2026-07-24T14:00:00.000Z')
+
+    queueDominionLookup()
+    selectQueue.push([{ createdAt: lastDeltaAt }]) // lastDeltaCreatedAt
+    selectQueue.push([{ createdAt: cortexAt }]) // todaysCortexCreatedAt
+    selectQueue.push([
+      { title: 'a', type: 'note', streamClass: 'idea' },
+      { title: 'b', type: 'note', streamClass: 'idea' },
+      { title: 'c', type: 'note', streamClass: 'idea' },
+    ]) // fetchNewMemoriesSince rows
+    selectQueue.push([{ total: 3 }]) // fetchNewMemoriesSince total
+    vi.mocked(countTasksCompletedBetween).mockResolvedValue(0)
+    vi.mocked(countTasksCreatedBetween).mockResolvedValue(0)
+    const ask = vi.fn().mockResolvedValue({ text: 'Delta since 15:00.' })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask }, decision: {} } as never)
+    vi.mocked(captureMemory).mockResolvedValue({ memory: { id: 'delta-mem-1' }, created: true } as never)
+
+    const { runMicroConsolidateForDominion } = await import('../micro-consolidate')
+    await runMicroConsolidateForDominion(USER_ID, DOMINION_ID)
+
+    const call = vi.mocked(captureMemory).mock.calls[0][1] as { sourceMetadata: Record<string, unknown> }
+    expect(call.sourceMetadata.since).toBe(lastDeltaAt.toISOString())
+  })
+
+  it('scopes the fetch window from today\'s cortex when it is later than lastDelta (GREATEST anchor)', async () => {
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { countTasksCompletedBetween, countTasksCreatedBetween } = await import('@/lib/data/board-signals')
+
+    const lastDeltaAt = new Date('2026-07-24T14:00:00.000Z')
+    const cortexAt = new Date('2026-07-24T15:00:00.000Z')
+
+    queueDominionLookup()
+    selectQueue.push([{ createdAt: lastDeltaAt }]) // lastDeltaCreatedAt
+    selectQueue.push([{ createdAt: cortexAt }]) // todaysCortexCreatedAt
+    selectQueue.push([
+      { title: 'a', type: 'note', streamClass: 'idea' },
+      { title: 'b', type: 'note', streamClass: 'idea' },
+      { title: 'c', type: 'note', streamClass: 'idea' },
+    ]) // fetchNewMemoriesSince rows
+    selectQueue.push([{ total: 3 }]) // fetchNewMemoriesSince total
+    vi.mocked(countTasksCompletedBetween).mockResolvedValue(0)
+    vi.mocked(countTasksCreatedBetween).mockResolvedValue(0)
+    const ask = vi.fn().mockResolvedValue({ text: 'Delta since cortex.' })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask }, decision: {} } as never)
+    vi.mocked(captureMemory).mockResolvedValue({ memory: { id: 'delta-mem-1' }, created: true } as never)
+
+    const { runMicroConsolidateForDominion } = await import('../micro-consolidate')
+    await runMicroConsolidateForDominion(USER_ID, DOMINION_ID)
+
+    const call = vi.mocked(captureMemory).mock.calls[0][1] as { sourceMetadata: Record<string, unknown> }
+    expect(call.sourceMetadata.since).toBe(cortexAt.toISOString())
+  })
+
+  it('produces distinct externalIds across an hour-bucket rollover (:59 -> :00)', async () => {
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { countTasksCompletedBetween, countTasksCreatedBetween } = await import('@/lib/data/board-signals')
+    vi.mocked(countTasksCompletedBetween).mockResolvedValue(0)
+    vi.mocked(countTasksCreatedBetween).mockResolvedValue(0)
+    const ask = vi.fn().mockResolvedValue({ text: 'Rolling over.' })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask }, decision: {} } as never)
+    vi.mocked(captureMemory).mockResolvedValue({ memory: { id: 'delta-mem-1' }, created: true } as never)
+
+    const newMemoryRows = [
+      { title: 'a', type: 'note', streamClass: 'idea' },
+      { title: 'b', type: 'note', streamClass: 'idea' },
+      { title: 'c', type: 'note', streamClass: 'idea' },
+    ]
+
+    const { runMicroConsolidateForDominion } = await import('../micro-consolidate')
+
+    vi.setSystemTime(new Date('2026-07-24T15:59:30.000Z'))
+    queueDominionLookup()
+    selectQueue.push([]) // lastDeltaCreatedAt
+    selectQueue.push([]) // todaysCortexCreatedAt
+    selectQueue.push(newMemoryRows)
+    selectQueue.push([{ total: 3 }])
+    await runMicroConsolidateForDominion(USER_ID, DOMINION_ID)
+
+    vi.setSystemTime(new Date('2026-07-24T16:00:01.000Z'))
+    queueDominionLookup()
+    selectQueue.push([]) // lastDeltaCreatedAt
+    selectQueue.push([]) // todaysCortexCreatedAt
+    selectQueue.push(newMemoryRows)
+    selectQueue.push([{ total: 3 }])
+    await runMicroConsolidateForDominion(USER_ID, DOMINION_ID)
+
+    const firstCall = vi.mocked(captureMemory).mock.calls[0][1] as { sourceMetadata: Record<string, unknown> }
+    const secondCall = vi.mocked(captureMemory).mock.calls[1][1] as { sourceMetadata: Record<string, unknown> }
+    expect(firstCall.sourceMetadata.externalId).toBe(`micro-consolidate:${DOMINION_ID}:2026-07-24T15`)
+    expect(secondCall.sourceMetadata.externalId).toBe(`micro-consolidate:${DOMINION_ID}:2026-07-24T16`)
+    expect(firstCall.sourceMetadata.externalId).not.toBe(secondCall.sourceMetadata.externalId)
   })
 
   it('skips archived Dominions', async () => {
@@ -250,7 +413,8 @@ describe('runMicroConsolidateForUser — per-Dominion failure isolation', { time
         2: [{ id: DOM_B, name: 'Dominion B', archivedAt: null }],
         3: [], // lastDeltaCreatedAt
         4: [], // todaysCortexCreatedAt
-        5: [], // fetchNewMemoriesSince — 0, below threshold
+        5: [], // fetchNewMemoriesSince rows — 0, below threshold
+        6: [{ total: 0 }], // fetchNewMemoriesSince total
       }
       const rows = rowsByCall[call] ?? []
       const chain: Record<string, unknown> = {}

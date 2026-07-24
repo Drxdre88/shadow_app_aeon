@@ -359,4 +359,71 @@ describe('runChatToolLoop', () => {
     nowSpy.mockRestore()
     warnSpy.mockRestore()
   })
+
+  it('proceeds with a new round when elapsed exactly equals the budget boundary (30_000ms is not > 30_000ms)', async () => {
+    const nowSpy = vi.spyOn(Date, 'now')
+      .mockReturnValueOnce(0)      // startedAt
+      .mockReturnValueOnce(30_000) // round 0 elapsed check — exactly at the boundary
+    vi.mocked(findProjects).mockResolvedValue([])
+    providerAsk.mockResolvedValueOnce(textResponse('Still on time.'))
+
+    const result = await runChatToolLoop(provider, baseMessages, buildChatTools(USER_ID))
+
+    expect(result.text).toBe('Still on time.')
+    expect(providerAsk).toHaveBeenCalledTimes(1)
+    expect(providerAsk.mock.calls[0]![0]!.tools).toBeDefined()
+
+    nowSpy.mockRestore()
+  })
+
+  it('races an in-flight provider.ask against the hard deadline and forces a final answer when it loses', async () => {
+    vi.useFakeTimers()
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(findProjects).mockResolvedValue([])
+
+    const hanging = new Promise<AIResponse>(() => {}) // never resolves
+    providerAsk
+      .mockReturnValueOnce(hanging)
+      .mockResolvedValueOnce(textResponse('Answering with what I have.'))
+
+    const resultPromise = runChatToolLoop(provider, baseMessages, buildChatTools(USER_ID))
+    await vi.advanceTimersByTimeAsync(45_000)
+    const result = await resultPromise
+
+    expect(result.text).toBe('Answering with what I have.')
+    expect(providerAsk).toHaveBeenCalledTimes(2)
+    expect(providerAsk.mock.calls[1]![0]).not.toHaveProperty('tools')
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[kairos-chat] tool loop hard deadline exceeded mid-round, forcing final answer',
+      expect.objectContaining({ round: 0 }),
+    )
+
+    vi.useRealTimers()
+    warnSpy.mockRestore()
+  })
+
+  it('returns a never-throw fallback when even the forced final answer loses the hard deadline race', async () => {
+    vi.useFakeTimers()
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    // Every round's provider.ask hangs, including the trailing tool-less call.
+    providerAsk.mockReturnValue(new Promise<AIResponse>(() => {}))
+
+    const resultPromise = runChatToolLoop(provider, baseMessages, buildChatTools(USER_ID))
+    // Two separate deadline windows fire in sequence: round 0's mid-round
+    // race, then the trailing call's own race — each needs its own advance.
+    await vi.advanceTimersByTimeAsync(45_000)
+    await vi.advanceTimersByTimeAsync(45_000)
+    const result = await resultPromise
+
+    expect(result.providerId).toBe('kairos-chat-tool-loop')
+    expect(result.text.length).toBeGreaterThan(0)
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[kairos-chat] tool loop hard deadline exceeded on final answer, returning fallback',
+      expect.any(Object),
+    )
+
+    vi.useRealTimers()
+    warnSpy.mockRestore()
+  })
 })

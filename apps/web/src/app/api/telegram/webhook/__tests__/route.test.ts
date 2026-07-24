@@ -48,8 +48,8 @@ function callbackUpdate(data: string, chatId: number | string = Number(OPERATOR_
   }
 }
 
-function textUpdate(text: string, chatId: number | string = Number(OPERATOR_CHAT)) {
-  return { message: { text, chat: { id: chatId } } }
+function textUpdate(text: string, chatId: number | string = Number(OPERATOR_CHAT), updateId?: number) {
+  return { update_id: updateId, message: { text, chat: { id: chatId } } }
 }
 
 function fetchOk() {
@@ -306,5 +306,43 @@ describe('telegram webhook — chat with Kairos', () => {
       expect(call.method).toBe('sendMessage')
       expect(call.body.text.length).toBeLessThanOrEqual(4096)
     }
+  })
+})
+
+describe('telegram webhook — redelivery dedup (best-effort, warm-instance only)', () => {
+  it('answers ok without re-processing a text message redelivered with the same update_id', async () => {
+    vi.mocked(sendChatMessage).mockResolvedValue({
+      ok: true, threadId: THREAD_ID, userSeq: 1, assistantSeq: 2, assistantContent: 'Hi.', model: null,
+    })
+
+    const first = await POST(makeReq(textUpdate('hello', undefined, 555_001), 'hook-secret'))
+    expect(first.status).toBe(200)
+    expect(sendChatMessage).toHaveBeenCalledTimes(1)
+
+    const second = await POST(makeReq(textUpdate('hello', undefined, 555_001), 'hook-secret'))
+    expect(second.status).toBe(200)
+    expect(sendChatMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('processes two text messages with different update_ids normally', async () => {
+    vi.mocked(sendChatMessage).mockResolvedValue({
+      ok: true, threadId: THREAD_ID, userSeq: 1, assistantSeq: 2, assistantContent: 'Hi.', model: null,
+    })
+
+    await POST(makeReq(textUpdate('hello', undefined, 555_002), 'hook-secret'))
+    await POST(makeReq(textUpdate('hello again', undefined, 555_003), 'hook-secret'))
+
+    expect(sendChatMessage).toHaveBeenCalledTimes(2)
+  })
+
+  it('processes normally when update_id is absent (best-effort only, never blocks delivery)', async () => {
+    vi.mocked(sendChatMessage).mockResolvedValue({
+      ok: true, threadId: THREAD_ID, userSeq: 1, assistantSeq: 2, assistantContent: 'Hi.', model: null,
+    })
+
+    await POST(makeReq(textUpdate('no id one'), 'hook-secret'))
+    await POST(makeReq(textUpdate('no id two'), 'hook-secret'))
+
+    expect(sendChatMessage).toHaveBeenCalledTimes(2)
   })
 })

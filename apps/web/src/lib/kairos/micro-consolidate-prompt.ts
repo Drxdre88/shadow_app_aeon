@@ -59,9 +59,3 @@ export function buildMicroConsolidateUserPrompt(ctx: MicroConsolidateContext): s
   ]
   return parts.join('\n')
 }
-
-// Combined single-string prompt (system + user). Kept for tests and any
-// caller that doesn't split the request into cacheable blocks.
-export function buildMicroConsolidatePrompt(ctx: MicroConsolidateContext): string {
-  return [MICRO_CONSOLIDATE_SYSTEM_PROMPT, buildMicroConsolidateUserPrompt(ctx)].join('\n\n')
-}

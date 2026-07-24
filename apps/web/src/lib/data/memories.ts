@@ -455,8 +455,11 @@ export async function getGraphForUser(
 // is valid as-of now: invalid_at unset, or still in the future. Composes with
 // the supersededAt gate — accepting a supersession stamps invalid_at, but a
 // belief can also expire on its own without a successor. Reused across every
-// retrieval leg so the corpus is filtered identically.
-const validAsOfNow = sql`(${memories.invalidAt} IS NULL OR ${memories.invalidAt} > NOW())`
+// retrieval leg so the corpus is filtered identically. Exported so every
+// other synthesis/retrieval module (archetypes.ts, cortex.ts, aether.ts,
+// retrieve.ts, micro-consolidate.ts) shares this ONE definition instead of
+// each carrying its own copy.
+export const validAsOfNow = sql`(${memories.invalidAt} IS NULL OR ${memories.invalidAt} > NOW())`
 
 export async function searchMemoriesFts(userId: string, input: SearchMemoriesInput) {
   // Kairos Phase 3B — `query` is optional when scoped by `dominionId`. When
@@ -801,6 +804,41 @@ export async function getBeliefTrail(memoryId: string, userId: string): Promise<
     }))
 }
 
+// UUID shape check (any RFC-4122 version/variant) — a memoryLinkSchema target
+// is only `.min(1).max(2048)` at the zod layer (it doubles as a URL string for
+// target_kind='url'), so a schema-valid but non-UUID 'resolves' target must be
+// filtered out here BEFORE it hits the UUID-typed `id` column, or the stamp
+// UPDATE below throws after the write it's meant to follow.
+const UUID_SHAPE_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Incident lifecycle stamp — shared by createMemory (a 'resolves' link on a
+// freshly-inserted row) and addLink (a 'resolves' link appended to an
+// existing row later; post-hoc resolution is a legitimate operator action,
+// e.g. linking a new correction back to an old incident memory). Same-user
+// scoped; missing/foreign/non-UUID targets and already-invalidated rows are
+// silently skipped (isNull guard — first resolution wins). Caller supplies
+// the transaction so this composes atomically with the write that
+// introduced the link.
+async function stampResolvedTargets(
+  tx: Pick<typeof db, 'update'>,
+  userId: string,
+  links: MemoryLink[],
+): Promise<void> {
+  const targets = links
+    .filter((l) => l.type === 'resolves' && l.target_kind === 'memory' && UUID_SHAPE_RE.test(l.target))
+    .map((l) => l.target)
+  if (targets.length === 0) return
+
+  await tx
+    .update(memories)
+    .set({ invalidAt: new Date(), updatedAt: new Date() })
+    .where(and(
+      eq(memories.userId, userId),
+      inArray(memories.id, targets),
+      isNull(memories.invalidAt),
+    ))
+}
+
 export async function createMemory(userId: string, input: CreateMemoryParams) {
   // Idempotency for Claude-captured sessions: a given sessionId is a stable
   // identity, so re-posting (from a SessionStart backfill, re-invoked hook,
@@ -862,65 +900,59 @@ export async function createMemory(userId: string, input: CreateMemoryParams) {
   }
 
   const tags = input.tags ?? []
-  const [row] = await db
-    .insert(memories)
-    .values({
-      userId,
-      title: input.title,
-      aiTitle: input.aiTitle ?? null,
-      bodyMd: input.bodyMd,
-      summary: input.summary ?? null,
-      execSummary: input.execSummary ?? [],
-      type: input.type,
-      source: input.source,
-      // Auto-file provenance rides in sourceMetadata so threshold tuning has
-      // an audit trail (which memories were filed at what similarity).
-      sourceMetadata: autoFiled
-        ? { ...(input.sourceMetadata ?? {}), kairosAutoFiled: { similarity: autoFiled.similarity } }
-        : input.sourceMetadata ?? {},
-      realmId: input.realmId ?? null,
-      projectId: input.projectId ?? null,
-      taskId: input.taskId ?? null,
-      dominionId: input.dominionId ?? resolvedDominionId ?? autoFiled?.dominionId ?? null,
-      // Soft many-to-many association on top of the FK, consistent with how
-      // dialogue stamps cross-front memories.
-      tags: autoFiled && !tags.includes(dominionTag(autoFiled.dominionId))
-        ? [...tags, dominionTag(autoFiled.dominionId)]
-        : tags,
-      links: input.links ?? [],
-      pinned: input.pinned ?? false,
-      confidence: confidenceForStreamClass(effectiveStreamClass ?? 'idea'),
-      ...(contentEmbedding ? { embedding: contentEmbedding, embeddingModel: activeEmbeddingModel() } : {}),
-      // Drizzle skips undefined keys → DB default ('idea') applies when
-      // neither the caller nor the import-source guard above set a
-      // streamClass. Internal callers (dispatcher) set it explicitly for
-      // advisory / trace writes.
-      ...(effectiveStreamClass ? { streamClass: effectiveStreamClass } : {}),
-    })
-    .returning()
 
-  // Incident lifecycle — a 'resolves' link closes its target's valid window.
-  // Single choke point: createMemory backs both captureMemory (webhooks,
-  // dispatch.ts advisory/trace writes) and any future MCP/REST write, so this
-  // covers every insertion path without acceptProposal needing a parallel
-  // wire-up (acceptProposal stamps invalidAt itself via a direct UPDATE for
-  // its own 'supersedes' links — it never routes through createMemory and
-  // never writes 'resolves' links, so there is no double-stamp risk).
-  // Same-user scoped; missing/foreign targets and already-invalidated rows
-  // are silently skipped (isNull guard — first resolution wins).
-  const resolvesTargets = (input.links ?? [])
-    .filter((l) => l.type === 'resolves' && l.target_kind === 'memory')
-    .map((l) => l.target)
-  if (resolvesTargets.length > 0) {
-    await db
-      .update(memories)
-      .set({ invalidAt: new Date(), updatedAt: new Date() })
-      .where(and(
-        eq(memories.userId, userId),
-        inArray(memories.id, resolvesTargets),
-        isNull(memories.invalidAt),
-      ))
-  }
+  // Insert + incident-lifecycle stamp run atomically: a 'resolves' link
+  // closes its target's valid window (stampResolvedTargets), and a stamp
+  // failure must roll back the insert rather than leave a half-written
+  // memory with an unclosed target. Single choke point: createMemory backs
+  // both captureMemory (webhooks, dispatch.ts advisory/trace writes) and any
+  // future MCP/REST write, so this covers every insertion path without
+  // acceptProposal needing a parallel wire-up (acceptProposal stamps
+  // invalidAt itself via a direct UPDATE for its own 'supersedes' links — it
+  // never routes through createMemory and never writes 'resolves' links, so
+  // there is no double-stamp risk).
+  const row = await db.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(memories)
+      .values({
+        userId,
+        title: input.title,
+        aiTitle: input.aiTitle ?? null,
+        bodyMd: input.bodyMd,
+        summary: input.summary ?? null,
+        execSummary: input.execSummary ?? [],
+        type: input.type,
+        source: input.source,
+        // Auto-file provenance rides in sourceMetadata so threshold tuning has
+        // an audit trail (which memories were filed at what similarity).
+        sourceMetadata: autoFiled
+          ? { ...(input.sourceMetadata ?? {}), kairosAutoFiled: { similarity: autoFiled.similarity } }
+          : input.sourceMetadata ?? {},
+        realmId: input.realmId ?? null,
+        projectId: input.projectId ?? null,
+        taskId: input.taskId ?? null,
+        dominionId: input.dominionId ?? resolvedDominionId ?? autoFiled?.dominionId ?? null,
+        // Soft many-to-many association on top of the FK, consistent with how
+        // dialogue stamps cross-front memories.
+        tags: autoFiled && !tags.includes(dominionTag(autoFiled.dominionId))
+          ? [...tags, dominionTag(autoFiled.dominionId)]
+          : tags,
+        links: input.links ?? [],
+        pinned: input.pinned ?? false,
+        confidence: confidenceForStreamClass(effectiveStreamClass ?? 'idea'),
+        ...(contentEmbedding ? { embedding: contentEmbedding, embeddingModel: activeEmbeddingModel() } : {}),
+        // Drizzle skips undefined keys → DB default ('idea') applies when
+        // neither the caller nor the import-source guard above set a
+        // streamClass. Internal callers (dispatcher) set it explicitly for
+        // advisory / trace writes.
+        ...(effectiveStreamClass ? { streamClass: effectiveStreamClass } : {}),
+      })
+      .returning()
+
+    await stampResolvedTargets(tx, userId, input.links ?? [])
+
+    return inserted
+  })
 
   return row
 }
@@ -1319,11 +1351,22 @@ export async function addLink(memoryId: string, userId: string, input: AddLinkIn
   if (dup) return { memory, link: dup, linksCount: existing.length, created: false }
 
   const next = [...existing, newLink]
-  const [updated] = await db
-    .update(memories)
-    .set({ links: next, updatedAt: new Date() })
-    .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
-    .returning()
+
+  // Same atomic pairing as createMemory: appending a 'resolves' link here
+  // (e.g. linking a new correction back to an old incident memory) must
+  // stamp the target's invalidAt in lockstep with the link append, not as a
+  // separate best-effort follow-up call.
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(memories)
+      .set({ links: next, updatedAt: new Date() })
+      .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
+      .returning()
+
+    await stampResolvedTargets(tx, userId, [newLink])
+
+    return row
+  })
 
   return { memory: updated, link: newLink, linksCount: next.length, created: true }
 }
@@ -1788,7 +1831,11 @@ function estimateTokens(s: string): number {
 // lib/kairos/retrieve.ts) can share the same 14-day half-life instead of
 // duplicating the curve. `now` is injectable for deterministic tests.
 export function recencyDecay(createdAt: Date, now: number = Date.now()): number {
-  const daysOld = (now - new Date(createdAt).getTime()) / 86_400_000
+  // Clamp at 0: a future-dated createdAt (clock skew, bad backfill, a stray
+  // test fixture) must not push daysOld negative and exceed the intended
+  // ceiling — exp(-daysOld/14) grows past 1 for negative input, which would
+  // let a future-dated row out-rank a legitimately fresh one.
+  const daysOld = Math.max(0, (now - new Date(createdAt).getTime()) / 86_400_000)
   return Math.exp(-daysOld / 14)
 }
 

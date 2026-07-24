@@ -5,6 +5,16 @@
 Reverse-chronological. The most recent work is at the top; the pre-2026-06-06 trail is preserved
 verbatim below.
 
+### 2026-07-24 (evening) — Live Mind wave: continuous awareness + incident lifecycle + quality retier
+
+Operator directive: Kairos's JARVIS gap is his eyes (nightly-batch mind, day-behind chat), and quality now beats cost. One branch, swarm-built (3 recon prowlers → 2 parallel executioners + main-agent retier → 5-horsemen review incl. Codex → consolidated fix pass):
+
+1. **Live chat grounding** — recency term (14d half-life) added to chat substrate scoring on both search paths (was absent entirely — root cause of the same-day-reflection miss); deterministic LAST-24H block every turn; agentic tools DEFAULT ON with new `recent_activity` + `synthesis_status` (self-certification) tools; `search_brain` upgraded to the hybrid path; 30s tool budget; sessions data layer gains a `since` filter.
+2. **Micro-consolidation** — `micro-consolidate` cron 6×/day: per-Dominion `delta` fold of the day's new memories; cortex/aether prompts gain "Today so far" grounding. Cron fleet 14. New streamClass `delta`.
+3. **Incident lifecycle** — `resolves` link type stamps targets' `invalidAt` (create-time AND post-hoc via addLink); `validAsOfNow` gate unified into one shared helper and applied across synthesis inputs + traces + chat retrieval. Kills the post-heal narrative-hysteresis class.
+4. **Quality-over-cost retier** — archetype/cortex/contradiction/chat/reflect/digest/delta all heavy tier (operator standing directive; ~1.3-1.5× nightly cost accepted).
+5. Hardening from review: resolves stamping transactional + UUID-filtered; recency clamp for future timestamps; Telegram update_id best-effort dedup + hard tool-loop deadline; micro-consolidate truncation visibility.
+
 ### 2026-07-24 — Kairos 0.9.0: reliability heal (PRs #95–98) + Evening Digest + guide refresh
 
 1. **Synthesis reliability arc closed** — one-shot JSON repair shared across all 4 standard generators + health scorecard + 2-strike Telegram ops alert (PR #95); TRUE root cause of the ~12-night outage was output-cap truncation, caps raised (PR #97); ask-mine string-date crash + cron maxDuration 800 + title clamp (PR #96); introspection citation tolerance — schema degrades per-proposal, unique ≥8-char prefix resolution, repair call now gets the system block + valid-id list (PR #98). First 9/9 synthesis day in ~13 nights on 07-24.
