@@ -58,6 +58,7 @@ const DEFAULT_POLICIES: PolicyDefault[] = [
   { taskType: 'classify',     tier: 'cheap' },
   { taskType: 'summarise',    tier: 'cheap' },
   { taskType: 'reflect',      tier: 'standard' },
+  { taskType: 'digest',       tier: 'standard' },
   { taskType: 'voice',        tier: 'cheap' },
   { taskType: 'shell_heavy',  tier: 'standard' },
   { taskType: 'code',         tier: 'standard' },

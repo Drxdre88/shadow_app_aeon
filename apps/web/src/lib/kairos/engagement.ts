@@ -43,6 +43,11 @@ export async function getConversationState(userId: string) {
   const now = new Date()
   const sevenDaysAgo = new Date(now.getTime() - REPLY_RATE_DAYS * 24 * 60 * 60 * 1000)
 
+  // Ops alerts and the Evening Digest are system registers, not conversational
+  // turns — excluding them here (as well as from listRecentKairosSpeaks) fixes
+  // a pre-existing bug where an ops alert set awaitingReply and silently
+  // blocked the tick channel for up to 48h waiting on a reply nobody was ever
+  // going to send to a health-check message.
   const [lastOutboundRow] = await db
     .select({
       id: memories.id,
@@ -56,6 +61,8 @@ export async function getConversationState(userId: string) {
       eq(memories.type, 'inbound'),
       eq(memories.source, 'system'),
       sql`${memories.sourceMetadata}->>'kairosSpeak' = 'true'`,
+      sql`(${memories.sourceMetadata}->>'opsAlert') IS DISTINCT FROM 'true'`,
+      sql`(${memories.sourceMetadata}->>'digest') IS DISTINCT FROM 'true'`,
     ))
     .orderBy(desc(memories.createdAt))
     .limit(1)
@@ -72,6 +79,8 @@ export async function getConversationState(userId: string) {
       eq(memories.type, 'inbound'),
       eq(memories.source, 'system'),
       sql`${memories.sourceMetadata}->>'kairosSpeak' = 'true'`,
+      sql`(${memories.sourceMetadata}->>'opsAlert') IS DISTINCT FROM 'true'`,
+      sql`(${memories.sourceMetadata}->>'digest') IS DISTINCT FROM 'true'`,
       gte(memories.createdAt, sevenDaysAgo),
     ))
     .orderBy(desc(memories.createdAt))

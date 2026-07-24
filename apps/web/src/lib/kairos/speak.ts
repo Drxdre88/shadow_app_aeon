@@ -23,6 +23,10 @@ export const speakSchema = z.object({
   // conversational turns. Persisted so listRecentKairosSpeaks can exclude
   // them from Kairos's gap/cap cadence bookkeeping.
   opsAlert: z.boolean().default(false),
+  // Evening Digest (docs/kairos/29 note) — a guaranteed-daily register, not
+  // a conversational turn. Same exclusion treatment as opsAlert: it must
+  // never consume the gap/cap cadence budget or set awaitingReply.
+  digest: z.boolean().default(false),
 })
 
 export type SpeakInput = z.infer<typeof speakSchema>
@@ -41,7 +45,7 @@ export type SpeakOutcome =
 const FORCE_CEILING = 10
 
 export async function deliverKairosSpeak(operatorUserId: string, input: SpeakInput): Promise<SpeakOutcome> {
-  const { title, message, kind, urgency, force, opsAlert } = input
+  const { title, message, kind, urgency, force, opsAlert, digest } = input
 
   const state = await getConversationState(operatorUserId)
   if (state.awaitingReply && !force && urgency !== 'high') {
@@ -108,6 +112,7 @@ export async function deliverKairosSpeak(operatorUserId: string, input: SpeakInp
       kind,
       urgency,
       ...(opsAlert ? { opsAlert: true } : {}),
+      ...(digest ? { digest: true } : {}),
     },
   })
 
