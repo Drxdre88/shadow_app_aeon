@@ -140,6 +140,17 @@ tick — ERROR: speak route 401 after retry — check CRON_SECRET in the routine
 - Never speak when the MCP read failed — silence over hallucination, always.
 - Never editorialise the board or move cards from a tick.
 
+## Evening Digest — a separate, guaranteed-daily register
+
+`/api/cron/digest` (18:00 UTC) is NOT a tick and does not follow this playbook. It is a
+fixed daily message — "what I saw today, what I formulated" — that always sends, falling
+back to a deterministic (zero-model) narrative on provider failure so the operator never
+gets total silence. Because it is guaranteed rather than interrupt-gated, the tick's
+silence-by-default rule and the governor's `awaiting_reply`/cadence rules (Phase 1.5 above)
+do not apply to it: digest sends are tagged `sourceMetadata.digest:true` and excluded from
+`listRecentKairosSpeaks` and `getConversationState`, so a digest never counts against the
+speak-route throttle and never sets `awaitingReply` — it is never a blocking outbound.
+
 ## Routine setup (the scheduled driver)
 
 Create via `/schedule` (CLI) or claude.ai/code/routines. Target shape:

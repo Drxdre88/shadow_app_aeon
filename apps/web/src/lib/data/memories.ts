@@ -1187,7 +1187,9 @@ export async function listTodaysAdvisories(userId: string, isoDate?: string) {
 // opsAlert:true) are excluded: they're system health signals, not
 // conversational turns, and must never consume Kairos's gap/cap cadence
 // budget. IS DISTINCT FROM handles both a missing key and an explicit
-// `false` the same way (only a literal 'true' is excluded).
+// `false` the same way (only a literal 'true' is excluded). Evening Digest
+// rows (sourceMetadata.digest:true) get the same exclusion — a guaranteed
+// daily register, not a conversational turn.
 export async function listRecentKairosSpeaks(
   userId: string,
   opts: { hours?: number; limit?: number } = {},
@@ -1205,6 +1207,7 @@ export async function listRecentKairosSpeaks(
       eq(memories.source, 'system'),
       sql`${memories.sourceMetadata}->>'kairosSpeak' = 'true'`,
       sql`(${memories.sourceMetadata}->>'opsAlert') IS DISTINCT FROM 'true'`,
+      sql`(${memories.sourceMetadata}->>'digest') IS DISTINCT FROM 'true'`,
       sql`${memories.createdAt} >= ${since}`,
     ))
     .orderBy(desc(memories.createdAt))

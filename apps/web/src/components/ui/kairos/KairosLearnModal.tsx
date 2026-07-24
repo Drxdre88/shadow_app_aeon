@@ -9,6 +9,7 @@ import { useThemeStore } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
 import { KairosSetupContent } from './KairosSetupContent'
 import { KairosGuideContent } from './KairosGuideContent'
+import { KAIROS_VERSION_SHORT } from '@/lib/kairos/version'
 
 export type KairosLearnTab = 'setup' | 'guide'
 
@@ -85,7 +86,7 @@ export function KairosLearnModal({ isOpen, onClose, defaultTab = 'setup' }: Prop
                 background: 'rgba(8,6,18,0.4)',
               }}
             >
-              Kairos 0.1
+              Kairos {KAIROS_VERSION_SHORT}
             </div>
             <h2 className="text-lg font-semibold text-white">Memory · Setup &amp; Guide</h2>
           </div>

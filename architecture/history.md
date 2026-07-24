@@ -5,6 +5,14 @@
 Reverse-chronological. The most recent work is at the top; the pre-2026-06-06 trail is preserved
 verbatim below.
 
+### 2026-07-24 — Kairos 0.9.0: reliability heal (PRs #95–98) + Evening Digest + guide refresh
+
+1. **Synthesis reliability arc closed** — one-shot JSON repair shared across all 4 standard generators + health scorecard + 2-strike Telegram ops alert (PR #95); TRUE root cause of the ~12-night outage was output-cap truncation, caps raised (PR #97); ask-mine string-date crash + cron maxDuration 800 + title clamp (PR #96); introspection citation tolerance — schema degrades per-proposal, unique ≥8-char prefix resolution, repair call now gets the system block + valid-id list (PR #98). First 9/9 synthesis day in ~13 nights on 07-24.
+2. **Evening Digest** (`lib/kairos/digest.ts` + `digest-prompt.ts` + `api/cron/digest`, 18:00 UTC — cron fleet now **13**) — guaranteed daily speak in the new `digest:true` register; layered fallbacks (model → counts-only template → minimal message), stale-rollup freshness check, `delivery_blocked` visibility, `externalId` dedup closing the double-send race. New window-bounded `countTasksCompletedBetween`/`countTasksCreatedBetween` in `board-signals.ts`.
+3. **Speak registers hardened** — `opsAlert`/`digest` rows excluded from cadence counting AND `getConversationState` (fixes latent ops-alert `awaitingReply` deadlock); optional `externalId` on `speakSchema` with dedup-hit fan-out skip (`alreadyDelivered`). First test file for `deliverKairosSpeak`.
+4. **Kairos versioned as its own product** — `lib/kairos/version.ts` (0.9.0) + `docs/kairos/CHANGELOG.md` era history 0.1→0.9; sidebar/Learn-modal pills now derive from it.
+5. **In-app guide refresh** — KairosGuideContent rewritten to current reality (galaxy-only, full-screen visor, whole-brain threads, live board grounding) + new Aether/speaks-first/Evening-Digest sections; McpTab rebuilt from the real registry (109 tools, count derived); galaxy page gained a help button.
+
 ### 2026-07-17 — Kairos autonomy wave (PRs #71–89): whole-brain chat, Telegram, speaks-first, chat-distill
 
 Full refresh of the architecture set (all 9 subsystem files) covering three weeks of Kairos work:

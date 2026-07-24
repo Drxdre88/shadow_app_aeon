@@ -1,6 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const selectQueue: unknown[][] = []
+const sqlCalls: TemplateStringsArray[] = []
+
+vi.mock('drizzle-orm', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('drizzle-orm')>()
+  const sqlSpy = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+    sqlCalls.push(strings)
+    return actual.sql(strings, ...values)
+  }) as typeof actual.sql
+  Object.assign(sqlSpy, actual.sql)
+  return { ...actual, sql: sqlSpy }
+})
 
 vi.mock('@/lib/db', () => {
   function makeSelectChain(rows: unknown[]) {
@@ -52,6 +63,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   vi.setSystemTime(NOW)
   selectQueue.length = 0
+  sqlCalls.length = 0
 })
 
 afterEach(() => {
@@ -137,5 +149,20 @@ describe('getConversationState', () => {
     const state = await getConversationState(USER)
 
     expect(state.replyRate7d).toBe(0.5)
+  })
+
+  it('excludes both opsAlert:true and digest:true rows from lastOutbound/recentOutbounds at the query level', async () => {
+    selectQueue.push([])
+    selectQueue.push([])
+
+    await getConversationState(USER)
+
+    const predicates = sqlCalls.map((strings) => Array.from(strings).join(' '))
+    const opsAlertExclusions = predicates.filter((text) => text.includes("->>'opsAlert'") && text.includes('IS DISTINCT FROM'))
+    const digestExclusions = predicates.filter((text) => text.includes("->>'digest'") && text.includes('IS DISTINCT FROM'))
+
+    // Both queries (lastOutboundRow + recentOutbounds) must carry both exclusions.
+    expect(opsAlertExclusions.length).toBe(2)
+    expect(digestExclusions.length).toBe(2)
   })
 })

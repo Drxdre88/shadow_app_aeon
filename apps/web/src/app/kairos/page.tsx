@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import dynamic from 'next/dynamic'
-import { Search, EyeOff, Maximize2, Minimize2 } from 'lucide-react'
+import { Search, EyeOff, Maximize2, Minimize2, HelpCircle } from 'lucide-react'
 import { useKairosData } from '@/components/kairos/useKairosData'
 import { TrackingRail } from '@/components/kairos/TrackingRail'
 import { MemorySidePanel } from '@/components/kairos/MemorySidePanel'
@@ -10,6 +10,7 @@ import { KairosLegend } from '@/components/kairos/KairosLegend'
 import { KairosInbox } from '@/components/kairos/KairosInbox'
 import type { ColorMode } from '@/components/kairos/nodeColor'
 import { SkyboxDropdown } from '@/components/skybox/SkyboxDropdown'
+import { KairosLearnModal } from '@/components/ui/kairos/KairosLearnModal'
 import { useKairosStore } from '@/stores/kairosStore'
 import { useKairosPrefsStore, type KairosTimeWindow } from '@/stores/kairosPrefsStore'
 
@@ -51,6 +52,7 @@ export default function KairosPage() {
   const railCollapsed = useKairosPrefsStore((s) => s.railCollapsed)
   const toggleRail = useKairosPrefsStore((s) => s.toggleRail)
   const [query, setQuery] = useState('')
+  const [helpOpen, setHelpOpen] = useState(false)
 
   // 'z' toggles zen; Esc leaves it. Skip while typing in the filter box.
   useEffect(() => {
@@ -147,6 +149,13 @@ export default function KairosPage() {
             <SkyboxDropdown value={skybox} onChange={setSkybox} align="right" />
             <KairosInbox />
             <button
+              onClick={() => setHelpOpen(true)}
+              title="Kairos guide"
+              className="flex items-center justify-center w-7 h-7 rounded-md text-white/40 hover:text-white/85 hover:bg-white/[0.06] transition-colors"
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+            </button>
+            <button
               onClick={toggleZen}
               title="Zen mode — hide all chrome (Z)"
               className="flex items-center justify-center w-7 h-7 rounded-md text-white/40 hover:text-white/85 hover:bg-white/[0.06] transition-colors"
@@ -212,6 +221,8 @@ export default function KairosPage() {
           />
         )}
       </div>
+
+      <KairosLearnModal isOpen={helpOpen} defaultTab="guide" onClose={() => setHelpOpen(false)} />
     </div>
   )
 }

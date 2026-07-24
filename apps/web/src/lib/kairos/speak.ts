@@ -23,12 +23,21 @@ export const speakSchema = z.object({
   // conversational turns. Persisted so listRecentKairosSpeaks can exclude
   // them from Kairos's gap/cap cadence bookkeeping.
   opsAlert: z.boolean().default(false),
+  // Evening Digest (docs/kairos/29 note) — a guaranteed-daily register, not
+  // a conversational turn. Same exclusion treatment as opsAlert: it must
+  // never consume the gap/cap cadence budget or set awaitingReply.
+  digest: z.boolean().default(false),
+  // Atomic idempotency key (F2, horsemen review) — forwarded into
+  // captureMemory's own (source, externalId) dedup so two concurrent callers
+  // racing the same logical send (e.g. two cron overlaps) fan out at most
+  // once. Optional: callers without one get byte-identical prior behavior.
+  externalId: z.string().trim().min(1).max(255).optional(),
 })
 
 export type SpeakInput = z.infer<typeof speakSchema>
 
 export type SpeakOutcome =
-  | { status: 200; body: { id: string; delivered: { inbox: boolean; telegram: boolean } } }
+  | { status: 200; body: { id: string; delivered: { inbox: boolean; telegram: boolean }; alreadyDelivered?: boolean } }
   | { status: 429; body: Record<string, unknown> }
 
 // Server-side interrupt throttle: an unprompted Kairos message is only
@@ -41,7 +50,7 @@ export type SpeakOutcome =
 const FORCE_CEILING = 10
 
 export async function deliverKairosSpeak(operatorUserId: string, input: SpeakInput): Promise<SpeakOutcome> {
-  const { title, message, kind, urgency, force, opsAlert } = input
+  const { title, message, kind, urgency, force, opsAlert, digest, externalId } = input
 
   const state = await getConversationState(operatorUserId)
   if (state.awaitingReply && !force && urgency !== 'high') {
@@ -96,7 +105,7 @@ export async function deliverKairosSpeak(operatorUserId: string, input: SpeakInp
     console.warn('[kairos-speak] forced throttle bypass', { spokenLast24h: recent.length })
   }
 
-  const { memory } = await captureMemory(operatorUserId, {
+  const { memory, created } = await captureMemory(operatorUserId, {
     title,
     bodyMd: message,
     summary: message.slice(0, 1000),
@@ -108,8 +117,16 @@ export async function deliverKairosSpeak(operatorUserId: string, input: SpeakInp
       kind,
       urgency,
       ...(opsAlert ? { opsAlert: true } : {}),
+      ...(digest ? { digest: true } : {}),
+      ...(externalId ? { externalId } : {}),
     },
   })
+
+  // A dedup hit means an earlier call with the same externalId already ran
+  // the Telegram/web-push fan-out — resending here would double-deliver.
+  if (!created) {
+    return { status: 200, body: { id: memory.id, delivered: { inbox: false, telegram: false }, alreadyDelivered: true } }
+  }
 
   let telegram = false
   try {

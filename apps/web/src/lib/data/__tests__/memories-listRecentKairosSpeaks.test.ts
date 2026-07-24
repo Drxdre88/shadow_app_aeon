@@ -74,6 +74,18 @@ describe('listRecentKairosSpeaks (docs/kairos/31 B5 — opsAlert exclusion)', ()
     ))).toBe(true)
   })
 
+  it('excludes rows where sourceMetadata.digest is true (Evening Digest register)', async () => {
+    selectQueue.push([])
+    await listRecentKairosSpeaks(USER)
+
+    const predicates = drizzleMocks.sql.mock.calls.map(([strings]) => (
+      Array.from(strings as TemplateStringsArray).join(' ')
+    ))
+    expect(predicates.some((text) => (
+      text.includes("->>'digest'") && text.includes('IS DISTINCT FROM')
+    ))).toBe(true)
+  })
+
   it('builds exactly one where clause combining every predicate', async () => {
     selectQueue.push([])
     await listRecentKairosSpeaks(USER, { hours: 48, limit: 5 })

@@ -5,7 +5,10 @@
 Kairos is Aeon's memory-and-cognition layer: a user-scoped substrate of `memories`,
 captured from many sources, consolidated nightly into a layered self-model, and served back
 as grounded context to the operator and to AI assistants. This is the mental model from
-substrate up to chat. Lieutenant detail lives in [chat.md](chat.md).
+substrate up to chat. Lieutenant detail lives in [chat.md](chat.md). Kairos is versioned as
+its own product — **0.9.0** (`lib/kairos/version.ts`, era history in
+`docs/kairos/CHANGELOG.md`); its guaranteed daily voice is the 18:00 UTC **Evening Digest**
+([synthesis.md](synthesis.md)).
 
 > **Conceptual frame (2026-06-27):** the operator talks to **Kairos** (the entity); **Aether**
 > is his super-brain — the apex self-model above ALL Dominions. Kairos draws on Aether to pull

@@ -63,6 +63,21 @@ as the cognition engine; `persistAether` accepts `source='claude'`).
 Writes one `streamClass='advisory'` memory per active Dominion per day, live board-aware, idempotent
 on `briefer:{date}:{dominionId}`. Cron: `briefer`, **07:00 UTC**.
 
+### The Evening Digest (daily, guaranteed — Kairos 0.9.0)
+`lib/kairos/digest.ts` → `runEveningDigestForUser()`. One GUARANTEED message every evening
+(**18:00 UTC**) to the Will inbox + Telegram via `deliverKairosSpeak` with the **`digest:true`
+register** (see [chat.md](chat.md) §1b): what Kairos saw today (session summaries, introspection
+proposals, reflections, asks, board completed/created via the window-bounded
+`countTasksCompletedBetween`/`countTasksCreatedBetween` in `lib/data/board-signals.ts`) plus
+overnight stage health read from **today's** synthesis-health rollup only (stale rollups → "no
+signal", never presented as current). Delivery guarantee is layered: model narrative
+(`digest-prompt.ts`, standard tier, plain text — no JSON/repair) → deterministic counts-only
+template on any model/credential failure → minimal "couldn't tally" message on a gather failure.
+Every degradation writes a trace (`model_call_failed`/`gather_failed`); a blocked speak
+(force-ceiling 429) traces `delivery_blocked` and reports `blocked`, never a false `sent`.
+Idempotent per UTC day (pre-check + `externalId kairos-digest:{date}` dedup inside speak —
+closes the cron-retry double-send race). Cron: `digest`, **18:00 UTC**.
+
 ## Recipes + dispatcher
 
 `lib/kairos/dispatch.ts` → `runRecipe()` (`:44`) is the single entry for synthesis writes: one
@@ -87,13 +102,16 @@ cron, `runBriefingNow`, and MCP `run_recipe` all route through it.
 | 06:30 daily | `introspection` | staged `inbound` proposals / Dominion |
 | 07:00 daily | `briefer` | one advisory / Dominion |
 | 08:00 daily | `synthesis-health` | nightly trace rollup → one idempotent `SYNTHESIS_HEALTH` memory (externalId `synthesis-health:{date}`); a stage failing 2 consecutive UTC nights fires ONE batched Telegram ops alert. Pure SQL read, no LLM/BYOK. (docs/kairos/31) |
+| 18:00 daily | `digest` | guaranteed Evening Digest speak (`digest:true` register, layered fallbacks — see stage section above) |
 | Sun 03:00 | `memory-compaction` | weekly substrate count/report (stub) |
 | Sun 05:00 | `memory-dedup` | weekly near-duplicate supersession |
 
 The snapshot→**chat-distill**→archetypes→cortex→aether→embed→**contradiction-scan**→introspection→briefer
 ordering is deliberate: each stage consumes the fresh output of the one before it, and the
-cross-job race defenses in cortex/aether protect against a slow upstream job. **12 crons total**
-(the brain-tick is a cloud routine, not a Vercel cron — see [chat.md](chat.md) §1b).
+cross-job race defenses in cortex/aether protect against a slow upstream job. The 18:00 digest
+deliberately runs 10h after the 08:00 health rollup it reads (freshness-checked, comment in
+`digest.ts`). **13 crons total** (the brain-tick is a cloud routine, not a Vercel cron — see
+[chat.md](chat.md) §1b).
 
 ## Model tiers, caching, output caps (PR #84 + `1512228`)
 
@@ -113,7 +131,7 @@ cross-job race defenses in cortex/aether protect against a slow upstream job. **
 
 ## Key files
 
-- `lib/kairos/{archetypes,cortex,aether,briefer,introspection,contradiction,chat-distill}.ts` (+ matching `*-prompt.ts`, `aether-types.ts`), `cron-trace.ts` (+ `finishReason`/`rawExcerpt` inputs)
+- `lib/kairos/{archetypes,cortex,aether,briefer,introspection,contradiction,chat-distill,digest}.ts` (+ matching `*-prompt.ts`, `aether-types.ts`), `cron-trace.ts` (+ `finishReason`/`rawExcerpt` inputs), `version.ts` (`KAIROS_VERSION` — version log in `docs/kairos/CHANGELOG.md`)
 - `lib/kairos/synthesis-health.ts` — daily trace rollup + 2-strike alert (docs/kairos/31)
 - `lib/kairos/dispatch.ts`, `recipes/{_recipe,registry,brief}.ts`, `retrieve.ts`, `_prompt-utils.ts` (now holds the shared `parseWithRepair`/`buildRepairPrompt`/`ParseRepairError` helpers)
 - `apps/web/src/app/api/cron/*/route.ts`

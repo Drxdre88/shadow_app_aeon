@@ -78,6 +78,7 @@ async function fireTwoStrikeAlert(stages: string[]): Promise<void> {
       urgency: 'high',
       force: true,
       opsAlert: true,
+      digest: false,
     })
   } catch (err) {
     // Best-effort — a broken alert must never block the rollup write below,
