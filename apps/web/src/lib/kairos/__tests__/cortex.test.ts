@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   buildCortexPrompt,
+  CORTEX_SYSTEM_PROMPT,
   cortexOutSchema,
   extractJsonBlock,
   renderCortexMarkdown,
@@ -191,6 +192,28 @@ describe('buildCortexPrompt', () => {
   })
 })
 
+describe('buildCortexPrompt — "Today so far" grounding (C)', () => {
+  it('renders the section when todaySoFar is present', () => {
+    const prompt = buildCortexPrompt(makeCtx({ todaySoFar: '3 new memories captured today.' }), '2026-06-02')
+    expect(prompt).toContain('## Today so far')
+    expect(prompt).toContain('3 new memories captured today.')
+  })
+
+  it('omits the section when todaySoFar is absent', () => {
+    const prompt = buildCortexPrompt(makeCtx({ todaySoFar: null }), '2026-06-02')
+    expect(prompt).not.toContain('## Today so far')
+  })
+
+  it('omits the section when todaySoFar is not set at all (back-compat fixture)', () => {
+    const prompt = buildCortexPrompt(makeCtx(), '2026-06-02')
+    expect(prompt).not.toContain('## Today so far')
+  })
+
+  it('keeps the system prompt byte-identical regardless of todaySoFar (cache rule)', () => {
+    expect(CORTEX_SYSTEM_PROMPT).not.toContain('Today so far')
+  })
+})
+
 describe('extractJsonBlock (cortex)', () => {
   it('parses a fenced ```json``` block', () => {
     expect(extractJsonBlock('```json\n{"a":1}\n```')).toEqual({ a: 1 })
@@ -330,6 +353,8 @@ describe('runCortexRegenForDominion — failure trace (C1)', { timeout: 20000 },
     selectQueue.push([]) // reflections
     selectQueue.push([]) // archetypes
     selectQueue.push([]) // prior
+    selectQueue.push([]) // todaySoFar: latest delta memory — none
+    selectQueue.push([{ n: 0 }]) // todaySoFar: fallback new-memory count — zero
     vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask: vi.fn().mockResolvedValue({ text: '' }) } } as never)
 
     const { runCortexRegenForDominion } = await import('../cortex')
@@ -350,6 +375,8 @@ describe('runCortexRegenForDominion — failure trace (C1)', { timeout: 20000 },
     selectQueue.push([]) // reflections
     selectQueue.push([]) // archetypes
     selectQueue.push([]) // prior
+    selectQueue.push([]) // todaySoFar: latest delta memory — none
+    selectQueue.push([{ n: 0 }]) // todaySoFar: fallback new-memory count — zero
   }
 
   async function mockInspectDominionWithVision() {

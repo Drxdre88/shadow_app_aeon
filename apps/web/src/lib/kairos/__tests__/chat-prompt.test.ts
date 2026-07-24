@@ -235,6 +235,52 @@ describe('buildChatSystemPrompt with live board section', () => {
   })
 })
 
+describe('buildChatSystemPrompt with recency section', () => {
+  const recencySection = [
+    '## LAST 24H (deterministic — fresher than retrieval)',
+    '',
+    'BEGIN RECENT ACTIVITY',
+    '### Coding sessions (2)',
+    '- Shipped export _(agentic)_ — 09:15 UTC',
+    'END RECENT ACTIVITY',
+  ].join('\n')
+
+  it('renders the recency section under Grounded context even without retrieval', () => {
+    const out = buildChatSystemPrompt(dom(), undefined, 'app', undefined, undefined, recencySection)
+    expect(out).toContain('# Grounded context')
+    expect(out).toContain('LAST 24H')
+    expect(out).toContain('Shipped export')
+  })
+
+  it('renders after the grounded-context block and before the board section', () => {
+    const boardSection = '## LIVE BOARD STATE (authoritative — fetched now, fresher than any memory)\n\n### AS Sprint'
+    const out = buildChatSystemPrompt(dom(), retrieval(), 'app', undefined, boardSection, recencySection)
+
+    const groundedIdx = out.indexOf('# Grounded context')
+    const recencyIdx = out.indexOf('LAST 24H')
+    const boardIdx = out.indexOf('LIVE BOARD STATE')
+
+    expect(groundedIdx).toBeGreaterThanOrEqual(0)
+    expect(recencyIdx).toBeGreaterThan(groundedIdx)
+    expect(boardIdx).toBeGreaterThan(recencyIdx)
+  })
+
+  it('omits the Grounded context block entirely when recency section is blank', () => {
+    const out = buildChatSystemPrompt(dom(), undefined, 'app', undefined, undefined, '   ')
+    expect(out).not.toContain('Grounded context')
+  })
+
+  it('threads the recency section through buildChatMessages', () => {
+    const messages = buildChatMessages({
+      dominion: dom(),
+      history: [],
+      userMessage: 'what did we ship today?',
+      recencySection,
+    })
+    expect(messages[0].content).toContain('LAST 24H')
+  })
+})
+
 describe('surface steering', () => {
   it('defaults to the app style block', () => {
     const out = buildChatSystemPrompt(null)

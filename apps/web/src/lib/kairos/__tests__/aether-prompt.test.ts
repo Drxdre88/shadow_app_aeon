@@ -90,6 +90,29 @@ describe('buildAetherPrompt', () => {
   })
 })
 
+describe('buildAetherPrompt — "Today so far" grounding (C)', () => {
+  it('renders the section when todaySoFar is present', () => {
+    const prompt = buildAetherPrompt(makeCtx({ todaySoFar: '5 new memories captured today across all Dominions.' }))
+    expect(prompt).toContain('## Today so far')
+    expect(prompt).toContain('5 new memories captured today across all Dominions.')
+  })
+
+  it('omits the section when todaySoFar is absent', () => {
+    const prompt = buildAetherPrompt(makeCtx({ todaySoFar: null }))
+    expect(prompt).not.toContain('## Today so far')
+  })
+
+  it('omits the section when todaySoFar is not set at all (back-compat fixture)', () => {
+    const prompt = buildAetherPrompt(makeCtx())
+    expect(prompt).not.toContain('## Today so far')
+  })
+
+  it('keeps the system prompt byte-identical regardless of todaySoFar (cache rule)', async () => {
+    const { AETHER_SYSTEM_PROMPT } = await import('../aether-prompt')
+    expect(AETHER_SYSTEM_PROMPT).not.toContain('Today so far')
+  })
+})
+
 describe('extractJsonBlock (aether)', () => {
   it('parses a fenced ```json``` block', () => {
     expect(extractJsonBlock('```json\n{"a":1}\n```')).toEqual({ a: 1 })

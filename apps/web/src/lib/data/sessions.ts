@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { agentSessions, sessionEvents } from '@/lib/db/schema'
-import { eq, and, desc, inArray, sql } from 'drizzle-orm'
+import { eq, and, desc, gte, inArray, sql } from 'drizzle-orm'
 import type {
   SpawnSessionInput,
   UpdateSessionStatusInput,
@@ -53,6 +53,8 @@ export async function listAgentSessions(userId: string, input: ListSessionsInput
 
   if (input.dominionId) where.push(eq(agentSessions.dominionId, input.dominionId))
   if (input.projectId) where.push(eq(agentSessions.projectId, input.projectId))
+  // spawnedAt is covered by an index (see schema) — since-filtering stays index-backed.
+  if (input.since) where.push(gte(agentSessions.spawnedAt, input.since))
 
   return db
     .select()

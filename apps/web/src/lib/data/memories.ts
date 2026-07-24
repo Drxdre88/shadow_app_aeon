@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { memories, dominions, dominionRepos, projects } from '@/lib/db/schema'
-import { eq, and, desc, sql, inArray, isNull } from 'drizzle-orm'
+import { eq, and, desc, sql, inArray, isNull, gte, lt, type SQL } from 'drizzle-orm'
 import type {
   CreateMemoryInput,
   UpdateMemoryInput,
@@ -60,6 +60,10 @@ const CONFIDENCE_BY_STREAM: Record<string, number> = {
   archetype: 0.6,
   advisory: 0.5,
   agentic: 0.45,
+  // Micro-consolidation fold — agentic-level trust (Kairos's own compacted
+  // read of the interval, not an operator signal), sitting just below agentic
+  // since it's a rollup of a rollup rather than a fresh thought.
+  delta: 0.4,
   execution: 0.35,
   trace: 0.3,
 }
@@ -894,6 +898,30 @@ export async function createMemory(userId: string, input: CreateMemoryParams) {
       ...(effectiveStreamClass ? { streamClass: effectiveStreamClass } : {}),
     })
     .returning()
+
+  // Incident lifecycle — a 'resolves' link closes its target's valid window.
+  // Single choke point: createMemory backs both captureMemory (webhooks,
+  // dispatch.ts advisory/trace writes) and any future MCP/REST write, so this
+  // covers every insertion path without acceptProposal needing a parallel
+  // wire-up (acceptProposal stamps invalidAt itself via a direct UPDATE for
+  // its own 'supersedes' links — it never routes through createMemory and
+  // never writes 'resolves' links, so there is no double-stamp risk).
+  // Same-user scoped; missing/foreign targets and already-invalidated rows
+  // are silently skipped (isNull guard — first resolution wins).
+  const resolvesTargets = (input.links ?? [])
+    .filter((l) => l.type === 'resolves' && l.target_kind === 'memory')
+    .map((l) => l.target)
+  if (resolvesTargets.length > 0) {
+    await db
+      .update(memories)
+      .set({ invalidAt: new Date(), updatedAt: new Date() })
+      .where(and(
+        eq(memories.userId, userId),
+        inArray(memories.id, resolvesTargets),
+        isNull(memories.invalidAt),
+      ))
+  }
+
   return row
 }
 
@@ -1756,9 +1784,49 @@ function estimateTokens(s: string): number {
   return Math.ceil(s.length / 4)
 }
 
-function recencyDecay(createdAt: Date): number {
-  const daysOld = (Date.now() - new Date(createdAt).getTime()) / 86_400_000
+// Exported so other retrieval paths (chat substrate ranking in
+// lib/kairos/retrieve.ts) can share the same 14-day half-life instead of
+// duplicating the curve. `now` is injectable for deterministic tests.
+export function recencyDecay(createdAt: Date, now: number = Date.now()): number {
+  const daysOld = (now - new Date(createdAt).getTime()) / 86_400_000
   return Math.exp(-daysOld / 14)
+}
+
+// Windowed row lookup shared by anything that needs "what landed in the last
+// N hours/days" (Evening Digest counts, Kairos chat's deterministic recency
+// grounding). `extra` mirrors digest.ts's countMemories signature — raw
+// condition builders (type/streamClass/sourceMetadata predicates) rather than
+// a narrow filter object, so category-specific queries compose the same way
+// the digest counters already do.
+export interface RecentMemoryRow {
+  id: string
+  title: string
+  createdAt: Date
+  streamClass: string
+}
+
+export async function listRecentMemories(
+  userId: string,
+  extra: SQL[],
+  window: { start: Date; end: Date },
+  limit: number,
+): Promise<RecentMemoryRow[]> {
+  return db
+    .select({
+      id: memories.id,
+      title: memories.title,
+      createdAt: memories.createdAt,
+      streamClass: memories.streamClass,
+    })
+    .from(memories)
+    .where(and(
+      eq(memories.userId, userId),
+      ...extra,
+      gte(memories.createdAt, window.start),
+      lt(memories.createdAt, window.end),
+    ))
+    .orderBy(desc(memories.createdAt))
+    .limit(limit)
 }
 
 type Candidate = {

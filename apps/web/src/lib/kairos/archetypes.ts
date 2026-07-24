@@ -72,11 +72,17 @@ async function alreadyRanToday(userId: string, dominionId: string): Promise<bool
   return (row?.n ?? 0) > 0
 }
 
+// Bi-temporal valid-time gate — matches lib/data/memories.ts's validAsOfNow.
+// A memory resolved by an incident-lifecycle 'resolves' link (invalidAt
+// stamped) must not feed tonight's synthesis even if it's still live/unarchived.
+const validAsOfNow = sql`(${memories.invalidAt} IS NULL OR ${memories.invalidAt} > NOW())`
+
 async function fetchSubstrate(userId: string, dominionId: string) {
   const baseScope = and(
     eq(memories.userId, userId),
     eq(memories.dominionId, dominionId),
     isNull(memories.archivedAt),
+    validAsOfNow,
   )
   const cols = {
     id: memories.id,

@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
 import { getProviderForTask } from '@/lib/ai/route-task'
@@ -27,6 +27,11 @@ import type { AetherPayload } from './aether-types'
 const MAX_REFLECTIONS = 40
 const MAX_ARCHETYPES_PER_DOMINION = 3
 
+// Bi-temporal valid-time gate — matches lib/data/memories.ts's validAsOfNow.
+// A memory resolved by an incident-lifecycle 'resolves' link (invalidAt
+// stamped) must not feed tonight's synthesis even if it's still live/unarchived.
+const validAsOfNow = sql`(${memories.invalidAt} IS NULL OR ${memories.invalidAt} > NOW())`
+
 async function alreadyRanToday(userId: string): Promise<boolean> {
   const [row] = await db
     .select({ n: sql<number>`COUNT(*)::int` })
@@ -40,11 +45,44 @@ async function alreadyRanToday(userId: string): Promise<boolean> {
   return (row?.n ?? 0) > 0
 }
 
+// "Today so far" grounding (C) — the latest micro-consolidation delta across
+// ANY active Dominion today, else a lightweight global new-memory count.
+// Best-effort: a null return just omits the prompt section.
+async function fetchTodaySoFarGlobal(userId: string): Promise<string | null> {
+  const dayStart = new Date(`${todayIso()}T00:00:00.000Z`)
+
+  const [deltaRow] = await db
+    .select({ bodyMd: memories.bodyMd })
+    .from(memories)
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.streamClass, 'delta'),
+      isNull(memories.archivedAt),
+      gte(memories.createdAt, dayStart),
+    ))
+    .orderBy(desc(memories.createdAt))
+    .limit(1)
+  if (deltaRow) return deltaRow.bodyMd
+
+  const [countRow] = await db
+    .select({ n: sql<number>`COUNT(*)::int` })
+    .from(memories)
+    .where(and(
+      eq(memories.userId, userId),
+      isNull(memories.archivedAt),
+      sql`${memories.streamClass} NOT IN ('trace', 'delta')`,
+      gte(memories.createdAt, dayStart),
+    ))
+  const n = countRow?.n ?? 0
+  return n > 0 ? `${n} new ${n === 1 ? 'memory' : 'memories'} captured today across all Dominions.` : null
+}
+
 export async function fetchAetherInputs(userId: string): Promise<{
   cortexSnapshots: CortexSnapshotRow[]
   topReflections: GlobalReflectionRow[]
   archetypes: GlobalArchetypeRow[]
   prior: PriorAetherRow | null
+  todaySoFar: string | null
 }> {
   const activeDoms = await db
     .select({ id: dominions.id, name: dominions.name, color: dominions.color })
@@ -69,6 +107,7 @@ export async function fetchAetherInputs(userId: string): Promise<{
         eq(memories.userId, userId),
         eq(memories.streamClass, 'cortex'),
         isNull(memories.archivedAt),
+        validAsOfNow,
       ))
       .orderBy(desc(memories.createdAt))
       .limit(activeDoms.length * 3 + 10),
@@ -85,6 +124,7 @@ export async function fetchAetherInputs(userId: string): Promise<{
         eq(memories.userId, userId),
         eq(memories.streamClass, 'reflection'),
         isNull(memories.archivedAt),
+        validAsOfNow,
       ))
       .orderBy(desc(memories.createdAt))
       .limit(MAX_REFLECTIONS),
@@ -101,6 +141,7 @@ export async function fetchAetherInputs(userId: string): Promise<{
         eq(memories.userId, userId),
         eq(memories.streamClass, 'archetype'),
         isNull(memories.archivedAt),
+        validAsOfNow,
         sql`${memories.createdAt} >= DATE_TRUNC('day', NOW())`,
       ))
       .orderBy(desc(memories.createdAt))
@@ -193,7 +234,11 @@ export async function fetchAetherInputs(userId: string): Promise<{
     }
   }
 
-  return { cortexSnapshots, topReflections, archetypes, prior }
+  // Sequential (not folded into the Promise.all above) — keeps db.select()
+  // call order deterministic for the failure-trace test suite's FIFO mock queue.
+  const todaySoFar = await fetchTodaySoFarGlobal(userId)
+
+  return { cortexSnapshots, topReflections, archetypes, prior, todaySoFar }
 }
 
 export async function persistAether(

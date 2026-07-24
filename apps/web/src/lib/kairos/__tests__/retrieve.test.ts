@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // Queue of arrays returned by successive db.select() chains, in the order
 // retrieveContext fires them: cortex, archetypes, substrate, traces. Bundle
@@ -201,5 +201,58 @@ describe('retrieveGlobalContext (JARVIS-level, no Dominion scope)', () => {
     expect(r.archetypes).toEqual([])
     expect(r.substrate).toEqual([])
     expect(r.traces).toEqual([])
+  })
+})
+
+describe('fetchSubstrate recency weighting (FTS-only path — no embeddings key in tests)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  // Regression for the 15:37→16:50 miss: with zero recency term, pure FTS
+  // rank ordering let a stale high-overlap memory bury a same-day low-overlap
+  // one. Both rows are the SAME streamClass (non-reflection) so the
+  // reflection-first tie-break can't be what decides this — only recency can.
+  it('a same-day, weak-lexical-overlap memory outranks a 60-day-old, strong-lexical-overlap one', async () => {
+    vi.stubEnv('VOYAGE_API_KEY', '')
+    vi.stubEnv('OPENAI_API_KEY', '')
+
+    const TODAY_ID = 'a1111111-1111-4111-8111-111111111111'
+    const STALE_ID = 'a2222222-2222-4222-8222-222222222222'
+    const now = new Date()
+    const sixtyDaysAgo = new Date(now.getTime() - 60 * 86_400_000)
+
+    selectQueue.push([row(AETHER_ID, 'aether', 'global self-model')])
+    selectQueue.push([row(ARCHETYPE_ID, 'archetype', 'arch')])
+    selectQueue.push([
+      {
+        id: STALE_ID,
+        title: 'Strong lexical match, 60 days stale',
+        bodyMd: 'body',
+        streamClass: 'idea',
+        createdAt: sixtyDaysAgo,
+        updatedAt: sixtyDaysAgo,
+        confidence: null,
+        pinned: false,
+        rank: 0.115,
+      },
+      {
+        id: TODAY_ID,
+        title: 'Weak lexical match, same-day',
+        bodyMd: 'body',
+        streamClass: 'idea',
+        createdAt: now,
+        updatedAt: now,
+        confidence: null,
+        pinned: false,
+        rank: 0.10,
+      },
+    ])
+    selectQueue.push([row(TRACE_ID, 'trace', 'trace')])
+
+    const r = await retrieveGlobalContext({ userId: USER_ID, query: 'launch plan status' })
+
+    expect(r.substrate[0].id).toBe(TODAY_ID)
+    expect(r.substrate.map((s) => s.id)).toContain(STALE_ID)
   })
 })

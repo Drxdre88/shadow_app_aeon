@@ -13,6 +13,11 @@ export const STREAM_CLASSES = [
   'snapshot',
   // Aether — daily cross-Dominion synthesis. One per UTC day; not in briefer substrate.
   'aether',
+  // Micro-consolidation — intraday "what changed since the last cortex
+  // reading" fold, one per Dominion per off-peak run (see micro-consolidate.ts).
+  // Below reflection/idea in trust; feeds the nightly cortex/aether generators'
+  // "Today so far" grounding section, not the briefer substrate.
+  'delta',
 ] as const
 
 export type StreamClass = (typeof STREAM_CLASSES)[number]

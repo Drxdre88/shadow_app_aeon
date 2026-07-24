@@ -3,8 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Same chainable-query mock pattern as retrieve.test.ts. `selectQueue` feeds
 // db.select() calls in the exact order runAetherForUser fires them:
 // alreadyRanToday -> active dominions -> cortexRows -> reflectionRows ->
-// archetypeRows -> priorRows. `txArchivedRows`/`txInsertedRows` feed the
-// archive+insert inside persistAether's db.transaction.
+// archetypeRows -> priorRows -> todaySoFar(delta lookup) -> todaySoFar(fallback
+// count). `txArchivedRows`/`txInsertedRows` feed the archive+insert inside
+// persistAether's db.transaction.
 const selectQueue: unknown[][] = []
 let txArchivedRows: Array<{ id: string }> = []
 let txInsertedRows: Array<{ id: string }> = []
@@ -60,6 +61,8 @@ function queueSignalInputs() {
   ])
   selectQueue.push([]) // archetypeRows
   selectQueue.push([]) // priorRows
+  selectQueue.push([]) // todaySoFar: latest delta memory — none
+  selectQueue.push([{ n: 0 }]) // todaySoFar: fallback new-memory count — zero
 }
 
 function validAetherJson(): string {
