@@ -165,6 +165,11 @@ export async function runIntrospectionForDominion(
       parse: (text) => filterGroundedProposals(introspectionOutSchema.parse(extractJsonBlock(text)), validIds),
       generatorLabel: 'introspection',
       maxTokens: 8000,
+      system: INTROSPECTION_SYSTEM_PROMPT,
+      repairContext: [
+        'Valid memory ids — every citation MUST be one of these, copied in full:',
+        ...ctx.recentMemories.map((m) => `- ${m.id}`),
+      ].join('\n'),
     })
   } catch (err) {
     if (err instanceof ParseRepairError) {

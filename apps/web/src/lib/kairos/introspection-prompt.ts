@@ -24,6 +24,16 @@ import { neutraliseFences, extractJsonBlock as _extractJsonBlock } from './_prom
 const clampedString = (max: number) =>
   z.string().trim().min(1).transform((s) => (s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s))
 
+// Citations arrive messy on bad nights: shortened to an 8-char prefix, wrapped
+// in brackets, a bare string, or the array omitted entirely (2026-07-24 Shadow
+// Apps trace: all 5 proposals lost the field, and .uuid()/.min(1) turned that
+// into a whole-night kill). Grounding is enforced by filterGroundedProposals
+// against the actual fed substrate — the schema only needs shape.
+const citationsSchema = z.preprocess(
+  (v) => (typeof v === 'string' ? [v] : Array.isArray(v) ? v : []),
+  z.array(z.string()).transform((a) => a.slice(0, 8)),
+)
+
 const proposalSchema = z.object({
   // reflection = candidate belief/priority · tension = contradiction/drift ·
   // connection = a link worth drawing between memories · question = a gap.
@@ -31,7 +41,7 @@ const proposalSchema = z.object({
   title: clampedString(120),
   body: clampedString(800),
   // Memory ids this proposal is grounded in. Must reference the fed substrate.
-  citations: z.array(z.string().uuid()).min(1).max(8),
+  citations: citationsSchema,
   // Honest self-assessed strength of the inference, 0–1.
   confidence: z.number().min(0).max(1),
 })
@@ -75,7 +85,7 @@ export const INTROSPECTION_SYSTEM_PROMPT = [
   '',
   'Hard rules:',
   '- PROPOSE, do not assert. Frame beliefs as candidates.',
-  '- Every proposal MUST cite ≥1 memory id from the list below, by its exact [id]. A proposal you cannot ground in cited memories will be DISCARDED — do not invent ids.',
+  '- Every proposal MUST cite ≥1 memory id from the list below, by its exact [id]. Copy each id IN FULL — a shortened or truncated id cannot be verified. A proposal you cannot ground in cited memories will be DISCARDED — do not invent ids.',
   '- Prefer what the operator might MISS: tensions/contradictions, drift from the vision, and non-obvious connections between memories. Genuine open questions are welcome.',
   '- Set `confidence` honestly (0–1). Low confidence is fine and useful.',
   '- At most 6 proposals. Fewer, sharper proposals beat many weak ones. If nothing is worth surfacing, return an empty list.',
@@ -84,7 +94,7 @@ export const INTROSPECTION_SYSTEM_PROMPT = [
   '- Return ONLY a JSON object inside a single ```json fenced block. No prose before or after.',
   '- `kind`: one of "reflection" | "tension" | "connection" | "question".',
   '- `title`: ≤120 chars. `body`: ≤800 chars, plain English.',
-  '- `citations`: array of memory [id]s from the list above (≥1).',
+  '- `citations`: array of memory [id]s from the list above (≥1), each copied in full — never shortened.',
   '- `confidence`: number 0–1.',
   '',
   'Schema:',
@@ -126,11 +136,34 @@ export function extractJsonBlock(text: string): unknown {
   return _extractJsonBlock(text, 'introspection')
 }
 
-// Anti-drift filter: keep only citations that reference memories we actually
+// Models cite ids as "[3b11ff33]" or a bare prefix despite the full-id rule.
+// Strip decoration and lowercase so an honest-but-messy citation still gets a
+// chance to resolve against the substrate.
+function normaliseCitationId(raw: string): string {
+  return raw.trim().replace(/^[[`'"]+|[\]`'"]+$/g, '').trim().toLowerCase()
+}
+
+// Anti-drift filter: keep only citations that resolve to memories we actually
 // fed the model, and drop any proposal left with zero valid citations. This is
 // what guarantees every surfaced proposal is grounded in real substrate.
+// A citation resolves by exact id, or by a UNIQUE prefix of ≥8 chars (models
+// shorten uuids to their first block; a unique prefix is still real evidence).
+// An unresolvable citation costs that one proposal, never the whole run.
 export function filterGroundedProposals(out: IntrospectionOutput, validIds: Set<string>): Proposal[] {
+  const ids = [...validIds]
+  const resolve = (raw: string): string | null => {
+    const c = normaliseCitationId(raw)
+    if (validIds.has(c)) return c
+    if (/^[0-9a-f][0-9a-f-]{7,}$/.test(c)) {
+      const matches = ids.filter((id) => id.startsWith(c))
+      if (matches.length === 1) return matches[0]
+    }
+    return null
+  }
   return out.proposals
-    .map((p) => ({ ...p, citations: p.citations.filter((id) => validIds.has(id)) }))
+    .map((p) => {
+      const citations = [...new Set(p.citations.map(resolve).filter((id): id is string => id !== null))]
+      return { ...p, citations }
+    })
     .filter((p) => p.citations.length > 0)
 }

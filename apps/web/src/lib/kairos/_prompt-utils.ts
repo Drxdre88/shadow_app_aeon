@@ -53,18 +53,23 @@ export function todayIso(): string {
 // Re-prompt payload for the ONE JSON-repair round-trip: sent as a user-turn
 // message, never as a system-prompt change (the cached system prefix must
 // stay byte-exact).
-export function buildRepairPrompt(rawText: string, err: unknown, generatorLabel = 'kairos'): string {
+export function buildRepairPrompt(rawText: string, err: unknown, generatorLabel = 'kairos', context?: string): string {
   const message = err instanceof Error ? err.message : String(err)
-  return [
+  const parts = [
     `The previous ${generatorLabel} response failed JSON validation. Fix it and return ONLY the`,
     'corrected JSON in a single ```json fenced block — no prose before or after.',
     '',
     '## Validation error',
     message,
-    '',
-    '## Previous response',
-    rawText,
-  ].join('\n')
+  ]
+  // Context-dependent fields (e.g. citation ids) are unrepairable from the
+  // broken JSON alone — the 2026-07-24 Shadow Apps trace showed repair copying
+  // shortened ids into `citations` because it had no id list to consult.
+  if (context) {
+    parts.push('', '## Reference context', context)
+  }
+  parts.push('', '## Previous response', rawText)
+  return parts.join('\n')
 }
 
 // Thrown by parseWithRepair when BOTH the original parse and the repair
@@ -95,6 +100,14 @@ export interface ParseWithRepairInput<T> {
   parse: (text: string) => T
   generatorLabel: string
   maxTokens?: number
+  // Re-send the generator's own static system block on the repair call. Same
+  // bytes as the original call, so the Anthropic prompt-cache prefix is reused
+  // rather than broken. Without it the repair model sees only broken JSON + a
+  // zod error and cannot recover context-dependent mistakes.
+  system?: string
+  // Extra grounding appended to the repair user-turn (e.g. the valid memory-id
+  // list) so fields that reference the original context are actually fixable.
+  repairContext?: string
 }
 
 // ONE JSON-repair round-trip: try the raw response as-is, and on parse/schema
@@ -104,14 +117,15 @@ export interface ParseWithRepairInput<T> {
 // repair-call transport error would otherwise mask it) plus a bounded excerpt
 // of the original raw output for retroactive debugging.
 export async function parseWithRepair<T>(input: ParseWithRepairInput<T>): Promise<T> {
-  const { provider, rawText, parse, generatorLabel, maxTokens = 4000 } = input
+  const { provider, rawText, parse, generatorLabel, maxTokens = 4000, system, repairContext } = input
   try {
     return parse(rawText)
   } catch (firstErr) {
     try {
       const repairResponse = await provider.ask({
-        prompt: buildRepairPrompt(rawText, firstErr, generatorLabel),
+        prompt: buildRepairPrompt(rawText, firstErr, generatorLabel, repairContext),
         maxTokens,
+        ...(system ? { system, cacheSystem: true } : {}),
       })
       return parse(repairResponse.text.trim())
     } catch (repairErr) {
