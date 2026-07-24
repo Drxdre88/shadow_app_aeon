@@ -108,12 +108,28 @@ describe('introspectionOutSchema', () => {
     ).toThrow()
   })
 
-  it('rejects a proposal with zero citations', () => {
-    expect(() =>
-      introspectionOutSchema.parse({
-        proposals: [{ kind: 'reflection', title: 't', body: 'b', citations: [], confidence: 0.5 }],
-      }),
-    ).toThrow()
+  // Regression: 2026-07-24 — a proposal with missing/malformed citations must
+  // degrade to an empty array (the grounding filter then drops just that
+  // proposal), not schema-reject the payload and kill the Dominion's night.
+  it('defaults a missing citations field to an empty array instead of rejecting', () => {
+    const out = introspectionOutSchema.parse({
+      proposals: [{ kind: 'reflection', title: 't', body: 'b', confidence: 0.5 }],
+    })
+    expect(out.proposals[0].citations).toEqual([])
+  })
+
+  it('wraps a bare-string citation into an array', () => {
+    const out = introspectionOutSchema.parse({
+      proposals: [{ kind: 'reflection', title: 't', body: 'b', citations: ID_A, confidence: 0.5 }],
+    })
+    expect(out.proposals[0].citations).toEqual([ID_A])
+  })
+
+  it('clamps more than 8 citations instead of rejecting', () => {
+    const out = introspectionOutSchema.parse({
+      proposals: [{ kind: 'reflection', title: 't', body: 'b', citations: Array(12).fill(ID_A), confidence: 0.5 }],
+    })
+    expect(out.proposals[0].citations).toHaveLength(8)
   })
 
   it('rejects confidence outside 0–1', () => {
@@ -166,6 +182,41 @@ describe('filterGroundedProposals', () => {
       proposals: [{ kind: 'question', title: 't', body: 'b', citations: [ID_HALLUCINATED], confidence: 0.6 }],
     }
     expect(filterGroundedProposals(out, validIds)).toHaveLength(0)
+  })
+
+  // Regression: 2026-07-24 Shadow Apps — models cite "[3b11ff33]"-style
+  // shortened bracketed ids. A unique ≥8-char prefix must resolve to the full
+  // substrate id instead of dropping the proposal.
+  it('resolves a bracketed shortened id via unique prefix match', () => {
+    const out: IntrospectionOutput = {
+      proposals: [{ kind: 'tension', title: 't', body: 'b', citations: ['[11111111]'], confidence: 0.6 }],
+    }
+    const kept = filterGroundedProposals(out, validIds)
+    expect(kept).toHaveLength(1)
+    expect(kept[0].citations).toEqual([ID_A])
+  })
+
+  it('drops an ambiguous prefix that matches multiple substrate ids', () => {
+    const twin = '11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    const out: IntrospectionOutput = {
+      proposals: [{ kind: 'tension', title: 't', body: 'b', citations: ['11111111'], confidence: 0.6 }],
+    }
+    expect(filterGroundedProposals(out, new Set([ID_A, twin]))).toHaveLength(0)
+  })
+
+  it('drops a too-short prefix even when unique', () => {
+    const out: IntrospectionOutput = {
+      proposals: [{ kind: 'tension', title: 't', body: 'b', citations: ['[111]'], confidence: 0.6 }],
+    }
+    expect(filterGroundedProposals(out, validIds)).toHaveLength(0)
+  })
+
+  it('dedupes citations that resolve to the same memory', () => {
+    const out: IntrospectionOutput = {
+      proposals: [{ kind: 'tension', title: 't', body: 'b', citations: ['[11111111]', ID_A, ID_A.toUpperCase()], confidence: 0.6 }],
+    }
+    const kept = filterGroundedProposals(out, validIds)
+    expect(kept[0].citations).toEqual([ID_A])
   })
 })
 
