@@ -37,8 +37,8 @@ vi.mock('@/lib/db', () => {
 })
 
 vi.mock('@/lib/data/board-signals', () => ({
-  listRecentlyCompletedTasks: vi.fn(),
-  listRecentlyCreatedTasks: vi.fn(),
+  countTasksCompletedBetween: vi.fn(),
+  countTasksCreatedBetween: vi.fn(),
 }))
 
 vi.mock('@/lib/data/ask', () => ({
@@ -67,7 +67,8 @@ vi.mock('../cron-trace', () => ({
   writeCronFailureTrace: vi.fn(),
 }))
 
-import { listRecentlyCompletedTasks, listRecentlyCreatedTasks } from '@/lib/data/board-signals'
+import { db } from '@/lib/db'
+import { countTasksCompletedBetween, countTasksCreatedBetween } from '@/lib/data/board-signals'
 import { listKairosAsksAnsweredBetween } from '@/lib/data/ask'
 import { listTraceHistory } from '@/lib/data/recipes'
 import { getProviderForTask } from '@/lib/ai/route-task'
@@ -87,8 +88,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   selectQueue.length = 0
   boundCalls.length = 0
-  vi.mocked(listRecentlyCompletedTasks).mockResolvedValue([])
-  vi.mocked(listRecentlyCreatedTasks).mockResolvedValue([])
+  vi.mocked(countTasksCompletedBetween).mockResolvedValue(0)
+  vi.mocked(countTasksCreatedBetween).mockResolvedValue(0)
   vi.mocked(listKairosAsksAnsweredBetween).mockResolvedValue([])
   vi.mocked(listTraceHistory).mockResolvedValue([])
   vi.mocked(deliverKairosSpeak).mockResolvedValue({
@@ -108,10 +109,11 @@ describe('gatherDigestCounts', () => {
       { id: 'a', answeredAt: new Date() },
       { id: 'b', answeredAt: new Date() },
     ])
-    vi.mocked(listRecentlyCompletedTasks).mockResolvedValue(Array(5).fill({}) as never)
-    vi.mocked(listRecentlyCreatedTasks).mockResolvedValue(Array(6).fill({}) as never)
+    vi.mocked(countTasksCompletedBetween).mockResolvedValue(5)
+    vi.mocked(countTasksCreatedBetween).mockResolvedValue(6)
     vi.mocked(listTraceHistory).mockResolvedValue([{
-      id: 'rollup', title: 'Synthesis health', summary: null, dominionId: null, createdAt: new Date(),
+      id: 'rollup', title: 'Synthesis health', summary: null, dominionId: null,
+      createdAt: new Date('2026-07-24T10:00:00.000Z'),
       sourceMetadata: {
         byStage: {
           'stage-a': { '2026-07-24': 'ok' },
@@ -137,6 +139,32 @@ describe('gatherDigestCounts', () => {
   it('reports null synthesis when no rollup has materialised for today yet', async () => {
     queueCounts([0, 0, 0, 0])
     vi.mocked(listTraceHistory).mockResolvedValue([])
+
+    const counts = await gatherDigestCounts(USER, WINDOW)
+
+    expect(counts.synthesis).toBeNull()
+  })
+
+  it('reports null synthesis when the only rollup on record is stale (from a prior day)', async () => {
+    queueCounts([0, 0, 0, 0])
+    vi.mocked(listTraceHistory).mockResolvedValue([{
+      id: 'rollup', title: 'Synthesis health', summary: null, dominionId: null,
+      createdAt: new Date('2026-07-23T10:00:00.000Z'),
+      sourceMetadata: { byStage: { 'stage-a': { '2026-07-23': 'ok' } } },
+    }])
+
+    const counts = await gatherDigestCounts(USER, WINDOW)
+
+    expect(counts.synthesis).toBeNull()
+  })
+
+  it('reports null synthesis when a fresh rollup has an empty byStage map', async () => {
+    queueCounts([0, 0, 0, 0])
+    vi.mocked(listTraceHistory).mockResolvedValue([{
+      id: 'rollup', title: 'Synthesis health', summary: null, dominionId: null,
+      createdAt: new Date('2026-07-24T10:00:00.000Z'),
+      sourceMetadata: { byStage: {} },
+    }])
 
     const counts = await gatherDigestCounts(USER, WINDOW)
 
@@ -317,10 +345,27 @@ describe('runEveningDigestForUser', () => {
     expect(deliverKairosSpeak).not.toHaveBeenCalled()
   })
 
-  it('traces an uncaught gather exception without throwing, and never sends', async () => {
+  it('still sends a minimal digest and traces gather_failed when gatherDigestCounts throws (F3 — never total silence)', async () => {
     queueAlreadyRan(false)
     vi.mocked(listTraceHistory).mockRejectedValueOnce(new Error('db unavailable'))
-    queueCounts([0, 0, 0, 0])
+
+    const result = await runEveningDigestForUser(USER)
+
+    expect(result.status).toBe('sent_fallback')
+    expect(getProviderForTask).not.toHaveBeenCalled()
+    expect(deliverKairosSpeak).toHaveBeenCalledOnce()
+    const sentMessage = vi.mocked(deliverKairosSpeak).mock.calls[0][1].message
+    expect(sentMessage).toContain('trace log')
+    expect(writeCronFailureTrace).toHaveBeenCalledWith(USER, expect.objectContaining({
+      cronName: 'digest',
+      reason: 'gather_failed',
+    }))
+  })
+
+  it('traces an uncaught exception outside gather/send and never sends, as a last resort', async () => {
+    vi.mocked(db.select).mockImplementationOnce(() => {
+      throw new Error('db unavailable')
+    })
 
     const result = await runEveningDigestForUser(USER)
 
@@ -331,6 +376,42 @@ describe('runEveningDigestForUser', () => {
     expect(writeCronFailureTrace).toHaveBeenCalledWith(USER, expect.objectContaining({
       cronName: 'digest',
       reason: 'uncaught_exception',
+    }))
+  })
+
+  it('writes a delivery_blocked trace and reports blocked when deliverKairosSpeak returns non-200 (F1)', async () => {
+    queueAlreadyRan(false)
+    queueCounts([0, 0, 0, 0])
+    vi.mocked(getProviderForTask).mockResolvedValue({
+      decision: { providerId: 'byok', modelId: null, tier: 'standard', source: 'default' },
+      provider: { ask: vi.fn().mockResolvedValue({ text: 'A quiet, tidy day.', modelId: 'm', finishReason: 'stop' }) },
+    } as never)
+    vi.mocked(deliverKairosSpeak).mockResolvedValueOnce({
+      status: 429,
+      body: { error: 'throttled', spokenLast24h: 10 },
+    })
+
+    const result = await runEveningDigestForUser(USER)
+
+    expect(result.status).toBe('blocked')
+    expect(writeCronFailureTrace).toHaveBeenCalledWith(USER, expect.objectContaining({
+      cronName: 'digest',
+      reason: 'delivery_blocked',
+    }))
+  })
+
+  it('passes a stable per-day externalId to deliverKairosSpeak so concurrent runs dedupe (F2)', async () => {
+    queueAlreadyRan(false)
+    queueCounts([0, 0, 0, 0])
+    vi.mocked(getProviderForTask).mockResolvedValue({
+      decision: { providerId: 'byok', modelId: null, tier: 'standard', source: 'default' },
+      provider: { ask: vi.fn().mockResolvedValue({ text: 'A quiet, tidy day.', modelId: 'm', finishReason: 'stop' }) },
+    } as never)
+
+    await runEveningDigestForUser(USER)
+
+    expect(deliverKairosSpeak).toHaveBeenCalledWith(USER, expect.objectContaining({
+      externalId: 'kairos-digest:2026-07-24',
     }))
   })
 })

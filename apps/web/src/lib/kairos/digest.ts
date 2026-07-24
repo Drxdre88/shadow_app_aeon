@@ -1,7 +1,7 @@
 import { db } from '@/lib/db'
 import { memories } from '@/lib/db/schema'
 import { and, eq, gte, lt, sql, type SQL } from 'drizzle-orm'
-import { listRecentlyCompletedTasks, listRecentlyCreatedTasks } from '@/lib/data/board-signals'
+import { countTasksCompletedBetween, countTasksCreatedBetween } from '@/lib/data/board-signals'
 import { listKairosAsksAnsweredBetween } from '@/lib/data/ask'
 import { listTraceHistory } from '@/lib/data/recipes'
 import { getProviderForTask } from '@/lib/ai/route-task'
@@ -17,7 +17,8 @@ import { DIGEST_SYSTEM_PROMPT, buildDigestUserPrompt } from './digest-prompt'
 // today, what he formulated. Unlike the brain-tick (silence-by-default,
 // docs/kairos/29), this is a fixed daily register — it always sends,
 // falling back to a deterministic (zero-model) narrative if the provider
-// call fails so the operator never gets a night of total silence.
+// call fails, or to a minimal trace-log pointer if even gathering the
+// day's counts fails, so the operator never gets a night of total silence.
 //
 // Single-operator convention (matches /api/v1/kairos/speak + the
 // synthesis-health 2-strike alert): driven by KAIROS_OPERATOR_USER_ID, no
@@ -66,7 +67,11 @@ async function countMemories(userId: string, extra: SQL[], window: DigestWindow)
 // materialises once per UTC day (08:00Z, before this cron's 18:00Z slot) —
 // gatherDigestCounts depends on that ordering and reports "no signal" rather
 // than "healthy" when no rollup exists yet for today.
-function summariseSynthesis(byStage: Record<string, Record<string, 'ok' | 'failed'>>): SynthesisSnapshot {
+// Empty/absent byStage means no rollup has meaningfully materialised
+// (nothing to summarise) — treated the same as "no signal", never as
+// "0 stages, all healthy".
+function summariseSynthesis(byStage: Record<string, Record<string, 'ok' | 'failed'>>): SynthesisSnapshot | null {
+  if (Object.keys(byStage).length === 0) return null
   let green = 0
   const failedStages: string[] = []
   for (const [stage, nights] of Object.entries(byStage)) {
@@ -86,8 +91,8 @@ export async function gatherDigestCounts(userId: string, window: DigestWindow): 
     reflections,
     asksDispatched,
     answeredAsks,
-    completedTasks,
-    createdTasks,
+    boardTasksCompleted,
+    boardTasksCreated,
     synthesisRollup,
   ] = await Promise.all([
     countMemories(userId, [eq(memories.type, 'session_summary'), eq(memories.source, 'claude')], window),
@@ -95,13 +100,17 @@ export async function gatherDigestCounts(userId: string, window: DigestWindow): 
     countMemories(userId, [eq(memories.type, 'reflection'), eq(memories.streamClass, 'reflection')], window),
     countMemories(userId, [eq(memories.type, 'advisory'), sql`${memories.sourceMetadata} ? 'kairosAsk'`], window),
     listKairosAsksAnsweredBetween(userId, window.start, window.end),
-    listRecentlyCompletedTasks({ userId, days: 1 }),
-    listRecentlyCreatedTasks({ userId, days: 1 }),
+    countTasksCompletedBetween(userId, window.start, window.end),
+    countTasksCreatedBetween(userId, window.start, window.end),
     listTraceHistory(userId, { recipe: SYNTHESIS_HEALTH_RECIPE, limit: 1 }),
   ])
 
+  // Only trust the rollup if it materialised for TODAY's window — an absent
+  // or stale (yesterday-or-older) rollup must fall through to "no signal",
+  // never masquerade as tonight's health.
   const rollup = synthesisRollup[0]
-  const byStage = rollup ? (rollup.sourceMetadata as Record<string, unknown> | null)?.byStage : undefined
+  const isFreshRollup = rollup !== undefined && rollup.createdAt >= window.start
+  const byStage = isFreshRollup ? (rollup.sourceMetadata as Record<string, unknown> | null)?.byStage : undefined
   const synthesis = byStage && typeof byStage === 'object'
     ? summariseSynthesis(byStage as Record<string, Record<string, 'ok' | 'failed'>>)
     : null
@@ -112,8 +121,8 @@ export async function gatherDigestCounts(userId: string, window: DigestWindow): 
     reflections,
     asksDispatched,
     asksAnswered: answeredAsks.length,
-    boardTasksCompleted: completedTasks.length,
-    boardTasksCreated: createdTasks.length,
+    boardTasksCompleted,
+    boardTasksCreated,
     synthesis,
   }
 }
@@ -162,7 +171,20 @@ export function buildDeterministicDigest(counts: DigestCounts, date: string): st
   return lines.join('\n')
 }
 
-async function alreadyRanToday(userId: string): Promise<boolean> {
+// The last-resort fallback when even gatherDigestCounts fails — no counts to
+// narrate at all, but the operator still hears from Kairos every night.
+function buildMinimalDigest(date: string): string {
+  return [
+    `Evening digest · ${date}`,
+    '',
+    "I couldn't tally today's activity, but I'm here. Details are in my trace log.",
+  ].join('\n')
+}
+
+// dayStart is passed in (rather than DATE_TRUNC('day', NOW()) in SQL) so the
+// day boundary is the same explicit UTC instant the rest of the module uses,
+// independent of the DB session's timezone.
+async function alreadyRanToday(userId: string, dayStart: Date): Promise<boolean> {
   const [row] = await db
     .select({ n: sql<number>`COUNT(*)::int` })
     .from(memories)
@@ -172,12 +194,12 @@ async function alreadyRanToday(userId: string): Promise<boolean> {
       eq(memories.source, 'system'),
       sql`${memories.sourceMetadata}->>'kairosSpeak' = 'true'`,
       sql`${memories.sourceMetadata}->>'digest' = 'true'`,
-      sql`${memories.createdAt} >= DATE_TRUNC('day', NOW())`,
+      gte(memories.createdAt, dayStart),
     ))
   return (row?.n ?? 0) > 0
 }
 
-export type DigestRunStatus = 'sent' | 'sent_fallback' | 'skipped'
+export type DigestRunStatus = 'sent' | 'sent_fallback' | 'blocked' | 'skipped'
 
 export interface EveningDigestResult {
   status: DigestRunStatus
@@ -187,44 +209,60 @@ export interface EveningDigestResult {
 
 export async function runEveningDigestForUser(userId: string): Promise<EveningDigestResult> {
   try {
-    if (await alreadyRanToday(userId)) {
-      return { status: 'skipped', reason: 'already ran today' }
-    }
-
     const date = todayIso()
     const start = new Date(`${date}T00:00:00.000Z`)
     const end = new Date(start.getTime() + DAY_MS)
 
-    const counts = await gatherDigestCounts(userId, { start, end })
+    if (await alreadyRanToday(userId, start)) {
+      return { status: 'skipped', reason: 'already ran today' }
+    }
+
+    // Gather failure must not mean total silence: fall through to the
+    // minimal message below rather than letting the outer catch skip the
+    // whole night.
+    let counts: DigestCounts | null = null
+    try {
+      counts = await gatherDigestCounts(userId, { start, end })
+    } catch (err) {
+      await writeCronFailureTrace(userId, { cronName: 'digest', reason: 'gather_failed', error: err })
+    }
 
     let message: string
     let sentFallback = false
 
-    try {
-      const { provider } = await getProviderForTask(userId, { taskType: 'digest' })
-      const response = await provider.ask({
-        system: DIGEST_SYSTEM_PROMPT,
-        prompt: buildDigestUserPrompt(counts, date),
-        cacheSystem: true,
-        maxTokens: 1500,
-      })
-      const text = response.text.trim()
-      if (!text) throw new Error('digest: empty response from provider')
-      message = text
-    } catch (err) {
-      message = buildDeterministicDigest(counts, date)
+    if (counts === null) {
+      message = buildMinimalDigest(date)
       sentFallback = true
-      // The promise is one message every evening regardless — even on a
-      // benign missing/undecryptable BYOK credential we still send the
-      // deterministic fallback; only the trace write is skipped for those,
-      // matching writeCronFailureTrace's "expected skip, not a failure" contract.
-      const benign = err instanceof AiCredentialMissingError || err instanceof AiCredentialDecryptError
-      if (!benign) {
-        await writeCronFailureTrace(userId, { cronName: 'digest', reason: 'model_call_failed', error: err })
+    } else {
+      try {
+        const { provider } = await getProviderForTask(userId, { taskType: 'digest' })
+        const response = await provider.ask({
+          system: DIGEST_SYSTEM_PROMPT,
+          prompt: buildDigestUserPrompt(counts, date),
+          cacheSystem: true,
+          maxTokens: 1500,
+        })
+        const text = response.text.trim()
+        if (!text) throw new Error('digest: empty response from provider')
+        message = text
+      } catch (err) {
+        message = buildDeterministicDigest(counts, date)
+        sentFallback = true
+        // The promise is one message every evening regardless — even on a
+        // benign missing/undecryptable BYOK credential we still send the
+        // deterministic fallback; only the trace write is skipped for those,
+        // matching writeCronFailureTrace's "expected skip, not a failure" contract.
+        const benign = err instanceof AiCredentialMissingError || err instanceof AiCredentialDecryptError
+        if (!benign) {
+          await writeCronFailureTrace(userId, { cronName: 'digest', reason: 'model_call_failed', error: err })
+        }
       }
     }
 
-    await deliverKairosSpeak(userId, {
+    // force:true only bypasses the awaitingReply gate, not the forced-speak
+    // ceiling in speak.ts — a 429 here means real delivery failure, not a
+    // benign skip, so it must be traced and reported distinctly (F1).
+    const outcome = await deliverKairosSpeak(userId, {
       title: `Evening digest · ${date}`,
       message,
       kind: 'notify',
@@ -232,7 +270,18 @@ export async function runEveningDigestForUser(userId: string): Promise<EveningDi
       force: true,
       opsAlert: false,
       digest: true,
+      externalId: `kairos-digest:${date}`,
     })
+
+    if (outcome.status !== 200) {
+      await writeCronFailureTrace(userId, {
+        cronName: 'digest',
+        reason: 'delivery_blocked',
+        error: new Error(`kairos-speak blocked delivery with status ${outcome.status}`),
+        rawExcerpt: JSON.stringify(outcome.body).slice(0, 500),
+      })
+      return { status: 'blocked', date }
+    }
 
     return { status: sentFallback ? 'sent_fallback' : 'sent', date }
   } catch (err) {

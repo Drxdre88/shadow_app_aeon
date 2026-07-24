@@ -49,12 +49,19 @@ vi.mock('@/lib/db', () => {
         queryCaptures.push(capture)
         return makeChain(selectQueue.shift() ?? [], capture)
       }),
+      select: vi.fn((selection: Record<string, unknown>) => {
+        const capture: QueryCapture = { selection, joins: [] }
+        queryCaptures.push(capture)
+        return makeChain(selectQueue.shift() ?? [], capture)
+      }),
     },
   }
 })
 
 import { boardColumns, projectMembers, projects } from '@/lib/db/schema'
 import {
+  countTasksCompletedBetween,
+  countTasksCreatedBetween,
   listRecentlyCompletedTasks,
   listRecentlyCreatedTasks,
   listStaleTasks,
@@ -191,5 +198,72 @@ describe('listRecentlyCreatedTasks', () => {
     expectSharedScope(lastQuery())
     expect(rows).toEqual([accessible])
     expect(rows).not.toContainEqual(expect.objectContaining({ projectId: 'inaccessible-project' }))
+  })
+})
+
+function expectCountScope(query: QueryCapture) {
+  const compiled = compile(query.where)
+  expect(compiled.sql).toContain('"projects"."user_id" = $1 or "project_members"."user_id" = $2')
+  expect(compiled.params.slice(0, 2)).toEqual([USER_ID, USER_ID])
+  expect(compiled.sql).toContain('"board_tasks"."archived_at" is null')
+  expect(query.joins).toEqual(expect.arrayContaining([
+    expect.objectContaining({ kind: 'inner', table: projects }),
+    expect.objectContaining({ kind: 'left', table: projectMembers }),
+  ]))
+}
+
+describe('countTasksCompletedBetween', () => {
+  const start = new Date('2026-07-24T00:00:00.000Z')
+  const end = new Date('2026-07-25T00:00:00.000Z')
+
+  it('scopes to the exact [start, end) window, requires completed tasks, and uses COUNT(DISTINCT id)', async () => {
+    selectQueue.push([{ n: 3 }])
+
+    await expect(countTasksCompletedBetween(USER_ID, start, end)).resolves.toBe(3)
+
+    const query = lastQuery()
+    const where = compile(query.where)
+    const n = compile(query.selection.n)
+    expectCountScope(query)
+    expect(n.sql).toContain('COUNT(DISTINCT "board_tasks"."id")::int')
+    expect(where.sql).toContain('"board_tasks"."completed_at" is not null')
+    expect(where.sql).toContain('"board_tasks"."completed_at" >= $3')
+    expect(where.sql).toContain('"board_tasks"."completed_at" < $4')
+    expect(where.params[2]).toEqual(start.toISOString())
+    expect(where.params[3]).toEqual(end.toISOString())
+  })
+
+  it('returns 0 when no row comes back', async () => {
+    selectQueue.push([])
+
+    await expect(countTasksCompletedBetween(USER_ID, start, end)).resolves.toBe(0)
+  })
+})
+
+describe('countTasksCreatedBetween', () => {
+  const start = new Date('2026-07-24T00:00:00.000Z')
+  const end = new Date('2026-07-25T00:00:00.000Z')
+
+  it('scopes to the exact [start, end) window and does NOT exclude done tasks', async () => {
+    selectQueue.push([{ n: 4 }])
+
+    await expect(countTasksCreatedBetween(USER_ID, start, end)).resolves.toBe(4)
+
+    const query = lastQuery()
+    const where = compile(query.where)
+    const n = compile(query.selection.n)
+    expectCountScope(query)
+    expect(n.sql).toContain('COUNT(DISTINCT "board_tasks"."id")::int')
+    expect(where.sql).not.toContain('"board_tasks"."status"')
+    expect(where.sql).toContain('"board_tasks"."created_at" >= $3')
+    expect(where.sql).toContain('"board_tasks"."created_at" < $4')
+    expect(where.params[2]).toEqual(start.toISOString())
+    expect(where.params[3]).toEqual(end.toISOString())
+  })
+
+  it('returns 0 when no row comes back', async () => {
+    selectQueue.push([])
+
+    await expect(countTasksCreatedBetween(USER_ID, start, end)).resolves.toBe(0)
   })
 })
