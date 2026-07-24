@@ -21,19 +21,20 @@ import { DEFAULT_PREFERENCES } from '../providers'
 
 const USER = 'user-1'
 
-describe('routeTask default policies (nightly synthesis retier)', () => {
+describe('routeTask default policies (quality-over-cost, 2026-07-24)', () => {
   it.each([
-    // Mechanical synthesis → standard tier
-    ['archetype', 'standard'],
-    ['cortex', 'standard'],
-    ['contradiction', 'standard'],
-    // Judgment-heavy stays on the top tier
+    // Everything that shapes the self-model or speaks to the operator → heavy
+    ['archetype', 'heavy'],
+    ['cortex', 'heavy'],
+    ['contradiction', 'heavy'],
     ['brief', 'heavy'],
     ['advisory', 'heavy'],
     ['aether', 'heavy'],
-    // Unchanged lanes
-    ['chat', 'standard'],
-    ['reflect', 'standard'],
+    ['chat', 'heavy'],
+    ['reflect', 'heavy'],
+    ['digest', 'heavy'],
+    ['delta', 'heavy'],
+    // Genuinely mechanical lanes stay cheap
     ['classify', 'cheap'],
   ] as const)('%s → %s', async (taskType, tier) => {
     const decision = await routeTask(USER, { taskType })

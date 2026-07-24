@@ -48,17 +48,25 @@ interface PolicyDefault {
 const DEFAULT_POLICIES: PolicyDefault[] = [
   { taskType: 'brief',        tier: 'heavy' },
   { taskType: 'advisory',     tier: 'heavy' },
-  // Mechanical synthesis (structured JSON over a fed substrate) runs on the
-  // standard tier; judgment-heavy tasks (brief, advisory, aether) stay heavy.
-  { taskType: 'archetype',    tier: 'standard' },
-  { taskType: 'cortex',       tier: 'standard' },
-  { taskType: 'contradiction', tier: 'standard' },
+  // Quality-over-cost directive (operator, 2026-07-24): every path that shapes
+  // the self-model or speaks to the operator runs the heavy tier. This reverses
+  // the 2026-07-15 cost retier for archetype/cortex/contradiction and promotes
+  // chat/reflect/digest, which were standard by original design. Only genuinely
+  // mechanical extraction lanes stay below heavy.
+  { taskType: 'archetype',    tier: 'heavy' },
+  { taskType: 'cortex',       tier: 'heavy' },
+  { taskType: 'contradiction', tier: 'heavy' },
   { taskType: 'aether',       tier: 'heavy' },
-  { taskType: 'chat',         tier: 'standard' },
+  // Micro-consolidation fold (intraday "today so far" grounding) — mechanical
+  // summarisation of new memories + board deltas, but its output feeds the
+  // nightly cortex/aether "Today so far" section, so it stays heavy under the
+  // same quality-over-cost directive as the generators that read it.
+  { taskType: 'delta',        tier: 'heavy' },
+  { taskType: 'chat',         tier: 'heavy' },
   { taskType: 'classify',     tier: 'cheap' },
   { taskType: 'summarise',    tier: 'cheap' },
-  { taskType: 'reflect',      tier: 'standard' },
-  { taskType: 'digest',       tier: 'standard' },
+  { taskType: 'reflect',      tier: 'heavy' },
+  { taskType: 'digest',       tier: 'heavy' },
   { taskType: 'voice',        tier: 'cheap' },
   { taskType: 'shell_heavy',  tier: 'standard' },
   { taskType: 'code',         tier: 'standard' },
