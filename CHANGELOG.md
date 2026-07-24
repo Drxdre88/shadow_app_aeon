@@ -20,7 +20,29 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - `DOCS` — `ARCHITECTURE.md`, `VISION.md`, `CLAUDE.md`
 - `UI` — sidebar, settings, modals, themes (151 presets), effects
 
-## [0.21.0] — 2026-07-23
+## [0.22.0] — 2026-07-24
+
+> Areas touched: `KAIROS` `INFRA` `UI` `DOCS`
+> Theme: Kairos speaks every evening — and owns his own history. One guaranteed message each evening summarising what he saw and formulated, built so it cannot silently skip. Kairos also gets his own changelog and version (0.9.0), and the in-app guides finally catch up with everything he can do.
+
+### Added — The Evening Digest · `KAIROS` · `INFRA`
+- Every evening at **18:00 UTC**, Kairos sends one message to your inbox and Telegram: what he saw today (coding sessions captured, thoughts proposed, reflections formed, questions asked, board cards completed/created) and whether last night's synthesis ran clean.
+- The promise is **guaranteed by construction**: if his AI narrative fails, a plain counts-only version still sends; if even the data-gathering fails, a minimal "couldn't tally today" message still sends. Every degradation leaves a diagnosable trace, and a blocked delivery is reported as blocked — never falsely as sent.
+- Expected daily by design — a separate register from his rare-interrupt voice, so it can't become noise and never blocks his normal speech.
+
+### Fixed — Kairos's speech governor unblocked · `KAIROS`
+- Ops alerts (and now digests) no longer count as "questions awaiting your reply" — previously an outage alert could silently mute Kairos's proactive voice for up to 48 hours.
+- Scheduled messages are now delivery-deduplicated, so a retried run can't double-send the same digest.
+
+### Added — Kairos gets his own changelog and version · `KAIROS` · `DOCS`
+- New `docs/kairos/CHANGELOG.md`: the full evolution reconstructed as eras 0.1 → **0.9.0** — from "a memory that survives the session" (May) through Aether, Asks, the Initiative Engine, and this month's reliability heal — each pinned to real PRs and dates, plus an honest road-to-1.0.
+- The sidebar pill now reads **Kairos 0.9**, driven by a single version constant.
+
+### Changed — In-app guides catch up with reality · `UI` · `DOCS`
+- The Kairos Guide no longer describes deleted features: it now covers the galaxy view, the full-screen chat (whole-brain by default, live board grounding), Aether, the inbox's four message kinds, Telegram, the silence-by-default governance, and the new Evening Digest. A help button was added to the galaxy page itself.
+- The MCP help tab now lists all **109** tools across 14 categories (it claimed 36) — and the count is derived from the list, so it can't drift again.
+
+
 
 > Areas touched: `KAIROS` `INFRA` `API` `DOCS`
 > Theme: Heal the instrument. Kairos's nightly self-synthesis had been silently parse-failing for ~12 nights — the brain every autonomy surface reads from was quietly degrading with nobody watching. This drop makes synthesis self-repair when the model returns slightly malformed output, and puts a health scorecard behind it so a broken night can never go unseen again.
