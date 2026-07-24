@@ -34,6 +34,16 @@ vi.mock('@/lib/db', () => {
     db: {
       select: vi.fn(() => makeSelectChain(selectQueue.shift() ?? [])),
       insert: vi.fn(() => makeInsertChain()),
+      // createMemory wraps insert + incident-lifecycle stamp in one
+      // transaction; none of these fixtures pass 'resolves' links, so
+      // tx.update is never actually invoked, but tx must still expose it.
+      transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+        const tx = {
+          insert: vi.fn(() => makeInsertChain()),
+          update: vi.fn(() => ({ set: () => ({ where: () => Promise.resolve(undefined) }) })),
+        }
+        return fn(tx)
+      }),
     },
   }
 })

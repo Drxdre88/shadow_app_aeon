@@ -34,7 +34,30 @@ const TELEGRAM_THREAD_TITLE = 'Telegram · Kairos'
 const CALLBACK_RE = /^(dismiss|accept):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
 const CITATION_RE = /\s*\[\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\]\]/gi
 
+// Best-effort redelivery dedup for text messages (Telegram is at-least-once
+// delivery; a slow chat turn can outlast Telegram's own retry window and
+// trigger a genuine resend). Module-scope Map, so this ONLY survives within
+// a single warm serverless instance — cold starts and concurrent instances
+// each get their own empty set. That's a real gap, not durable dedup, but
+// migrations stay hand-managed (see CLAUDE.md) so a DB-backed dedup table is
+// out of scope here; this is cheap insurance against the common case of one
+// warm lambda seeing the same retry twice.
+const SEEN_UPDATE_IDS_MAX = 200
+const seenUpdateIds = new Map<number, true>()
+
+function isDuplicateUpdate(updateId: number | undefined): boolean {
+  if (updateId === undefined) return false
+  if (seenUpdateIds.has(updateId)) return true
+  seenUpdateIds.set(updateId, true)
+  if (seenUpdateIds.size > SEEN_UPDATE_IDS_MAX) {
+    const oldest = seenUpdateIds.keys().next().value
+    if (oldest !== undefined) seenUpdateIds.delete(oldest)
+  }
+  return false
+}
+
 type TelegramUpdate = {
+  update_id?: number
   callback_query?: {
     id: string
     data?: string
@@ -78,6 +101,7 @@ export async function POST(req: NextRequest) {
     if (update.callback_query) {
       await handleCallbackQuery(update.callback_query, operatorChatId, operatorUserId)
     } else if (update.message?.text) {
+      if (isDuplicateUpdate(update.update_id)) return accepted()
       await handleTextMessage(update.message, operatorChatId, operatorUserId)
     }
   } catch (err) {

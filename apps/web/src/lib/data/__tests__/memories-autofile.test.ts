@@ -11,6 +11,15 @@ let insertedValues: Record<string, unknown> | null = null
 const selectQueue: unknown[][] = []
 let selectCalls = 0
 
+function makeInsertChain() {
+  return {
+    values: (v: Record<string, unknown>) => {
+      insertedValues = v
+      return { returning: async () => [{ id: 'row-1', ...v }] }
+    },
+  }
+}
+
 vi.mock('@/lib/db', () => ({
   db: {
     select: vi.fn(() => {
@@ -25,12 +34,17 @@ vi.mock('@/lib/db', () => ({
       chain.then = (resolve: (v: unknown[]) => unknown) => resolve(rows)
       return chain
     }),
-    insert: vi.fn(() => ({
-      values: (v: Record<string, unknown>) => {
-        insertedValues = v
-        return { returning: async () => [{ id: 'row-1', ...v }] }
-      },
-    })),
+    insert: vi.fn(() => makeInsertChain()),
+    // createMemory wraps insert + incident-lifecycle stamp in one
+    // transaction; none of these fixtures pass 'resolves' links, so tx.update
+    // is never actually invoked, but the tx object must still expose it.
+    transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        insert: vi.fn(() => makeInsertChain()),
+        update: vi.fn(() => ({ set: () => ({ where: () => Promise.resolve(undefined) }) })),
+      }
+      return fn(tx)
+    }),
   },
 }))
 

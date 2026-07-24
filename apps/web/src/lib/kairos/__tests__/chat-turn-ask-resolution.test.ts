@@ -5,6 +5,7 @@ vi.mock('@/lib/db', () => ({ db: {} }))
 // Leaf data mocks for the agentic chat tools (chat-tools.ts closures).
 vi.mock('@/lib/data/memories', () => ({
   searchMemoriesFts: vi.fn(),
+  listRecentMemories: vi.fn(),
 }))
 
 vi.mock('@/lib/data/projects', () => ({
@@ -43,6 +44,11 @@ vi.mock('@/lib/kairos/chat-board-context', () => ({
   renderLiveBoardSection: vi.fn(),
 }))
 
+vi.mock('@/lib/kairos/chat-recency-context', () => ({
+  fetchRecentActivityContext: vi.fn(),
+  renderRecentActivitySection: vi.fn(),
+}))
+
 vi.mock('@/lib/ai/route-task', () => ({
   getProviderForTask: vi.fn(),
 }))
@@ -64,6 +70,7 @@ import {
   fetchLiveBoardContext,
   renderLiveBoardSection,
 } from '@/lib/kairos/chat-board-context'
+import { fetchRecentActivityContext, renderRecentActivitySection } from '@/lib/kairos/chat-recency-context'
 import {
   askResolutionSchema,
   parseAskResolutionResponse,
@@ -144,6 +151,7 @@ beforeEach(() => {
   vi.mocked(matchProjectsInMessage).mockResolvedValue([])
   vi.mocked(fetchLiveBoardContext).mockResolvedValue(null)
   vi.mocked(renderLiveBoardSection).mockReturnValue('')
+  vi.mocked(fetchRecentActivityContext).mockResolvedValue(null)
   vi.mocked(getProviderForTask).mockResolvedValue({
     decision: {
       providerId: 'fake',
@@ -212,12 +220,13 @@ describe('ask-aware assistant turns', () => {
   })
 })
 
-describe('agentic tools flag', () => {
+describe('agentic tools flag (default ON — 2026-07-24 live-mind flip)', () => {
   afterEach(() => {
     vi.unstubAllEnvs()
   })
 
-  it('flag unset: provider is asked exactly as before, with no tools key', async () => {
+  it.each(['0', 'false', 'FALSE'])('explicit kill switch %s: provider is asked exactly as before, with no tools key', async (value) => {
+    vi.stubEnv('KAIROS_CHAT_AGENTIC_TOOLS', value)
     vi.mocked(getPendingKairosAsk).mockResolvedValue(null)
     providerAsk.mockResolvedValueOnce(aiResponse('Plain reply.'))
 
@@ -230,8 +239,7 @@ describe('agentic tools flag', () => {
     expect(request.maxOutputTokens).toBe(2000)
   })
 
-  it('flag on: runs the tool loop, userId-scoped, then persists the final answer', async () => {
-    vi.stubEnv('KAIROS_CHAT_AGENTIC_TOOLS', '1')
+  it('flag unset: runs the tool loop by default, userId-scoped, then persists the final answer', async () => {
     vi.mocked(getPendingKairosAsk).mockResolvedValue(null)
     vi.mocked(findProjects).mockResolvedValue([
       { id: 'ffffffff-ffff-4fff-8fff-ffffffffffff', name: 'AS Sprint' } as never,
@@ -249,7 +257,7 @@ describe('agentic tools flag', () => {
     expect(providerAsk).toHaveBeenCalledTimes(2)
     const firstRequest = providerAsk.mock.calls[0]![0]!
     expect(Object.keys(firstRequest.tools ?? {}).sort()).toEqual([
-      'board_state', 'list_boards', 'search_brain',
+      'board_state', 'list_boards', 'recent_activity', 'search_brain', 'synthesis_status',
     ])
     expect(findProjects).toHaveBeenCalledWith(USER_ID, expect.any(Number))
     expect(appendChatMessage).toHaveBeenCalledWith(
@@ -257,6 +265,19 @@ describe('agentic tools flag', () => {
       THREAD_ID,
       expect.objectContaining({ role: 'assistant', content: 'One board: AS Sprint.' }),
     )
+  })
+
+  it('flag explicitly "1": also runs the tool loop (legacy opt-in value still works)', async () => {
+    vi.stubEnv('KAIROS_CHAT_AGENTIC_TOOLS', '1')
+    vi.mocked(getPendingKairosAsk).mockResolvedValue(null)
+    vi.mocked(findProjects).mockResolvedValue([])
+    providerAsk.mockResolvedValueOnce(aiResponse('No boards yet.'))
+
+    const result = await runAssistantTurn(USER_ID, THREAD_ID, null, 'what boards do I have?', 1)
+
+    expect(result.ok).toBe(true)
+    const firstRequest = providerAsk.mock.calls[0]![0]!
+    expect(firstRequest.tools).toBeDefined()
   })
 })
 
@@ -300,5 +321,41 @@ describe('live board grounding', () => {
     expect(systemMessage.content).not.toContain('LIVE BOARD STATE')
     expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
+  })
+})
+
+describe('recency grounding', () => {
+  const recencySection = '## LAST 24H (deterministic — fresher than retrieval)\n\nBEGIN RECENT ACTIVITY\n### Coding sessions (1)\nEND RECENT ACTIVITY'
+
+  it('lands the recency section in the prompt when there is activity to report', async () => {
+    vi.mocked(getPendingKairosAsk).mockResolvedValue(null)
+    vi.mocked(fetchRecentActivityContext).mockResolvedValue({
+      windowHours: 24,
+      since: new Date('2026-07-23T08:00:00.000Z'),
+      sessionSummaries: { label: 'Coding sessions', count: 1, items: [] },
+      reflections: { label: 'Reflections', count: 0, items: [] },
+      introspectionProposals: { label: 'Introspection proposals', count: 0, items: [] },
+      asks: { label: 'Asks dispatched', count: 0, items: [] },
+      boardTasksCompleted: 0,
+      boardTasksCreated: 0,
+    })
+    vi.mocked(renderRecentActivitySection).mockReturnValue(recencySection)
+    providerAsk.mockResolvedValueOnce(aiResponse('Today you shipped one session.'))
+
+    await runAssistantTurn(USER_ID, THREAD_ID, null, 'what did I ship today?', 1)
+
+    const systemMessage = providerAsk.mock.calls[0]![0]!.messages![0]!
+    expect(systemMessage.content).toContain('LAST 24H')
+  })
+
+  it('omits the recency section from the prompt when the window is quiet', async () => {
+    vi.mocked(getPendingKairosAsk).mockResolvedValue(null)
+    vi.mocked(fetchRecentActivityContext).mockResolvedValue(null)
+    providerAsk.mockResolvedValueOnce(aiResponse('Quiet day.'))
+
+    await runAssistantTurn(USER_ID, THREAD_ID, null, 'anything new?', 1)
+
+    const systemMessage = providerAsk.mock.calls[0]![0]!.messages![0]!
+    expect(systemMessage.content).not.toContain('LAST 24H')
   })
 })

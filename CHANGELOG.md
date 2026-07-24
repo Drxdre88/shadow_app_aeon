@@ -20,6 +20,28 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - `DOCS` — `ARCHITECTURE.md`, `VISION.md`, `CLAUDE.md`
 - `UI` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.23.0] — 2026-07-24
+
+> Areas touched: `KAIROS` `INFRA` `DATA`
+> Theme: The Live Mind. Kairos stops being a day behind. His chat now always knows what happened in the last 24 hours, he can look things up live mid-conversation (including his own health), his self-model updates every few hours instead of once a night, resolved incidents stop haunting his narrative, and his entire cognition runs on the best models — quality over cost, by standing directive.
+
+### Added — Kairos is continuously aware in chat · `KAIROS`
+- Every conversation turn (app and Telegram) now includes a guaranteed "last 24 hours" summary — the sessions, thoughts, and board changes that just happened — independent of what you asked. "What landed today?" always has a live answer.
+- Recency now genuinely matters in his memory search: something from this afternoon can no longer lose to a stale but wordier match (this was the root cause of him missing brand-new information).
+- Live tools are now ON by default in chat: he can search his brain, read live boards, list what happened recently, and — new — check his own overnight synthesis health before making claims about it.
+
+### Added — His self-model updates during the day · `KAIROS` · `INFRA`
+- A new background pass runs six times a day and folds the day's new activity into a compact "today so far" note per area, which the nightly deep synthesis then reads — so his understanding shifts within hours, not overnight.
+
+### Added — Resolved incidents stop haunting the narrative · `KAIROS` · `DATA`
+- A new "resolves" relationship lets a correction (like "the outage is fixed") formally close the memories describing the incident. Closed memories immediately stop feeding his briefings, self-model, and chat — ending the pattern where a fixed problem kept being narrated as current for weeks.
+
+### Changed — Quality over cost, permanently · `KAIROS`
+- All of Kairos's thinking — nightly synthesis, chat, proactive questions, the Evening Digest — now runs on the top-tier model. The earlier cost-saving downgrades are reversed by standing directive.
+
+### Fixed — Hardening from the review gauntlet · `KAIROS` · `INFRA`
+- Resolution stamping is atomic and rejects malformed references; a clock-skewed memory can't dominate rankings; Telegram replies are protected against duplicate delivery on slow turns; the intraday pass reports when it had to truncate a very busy window.
+
 ## [0.22.0] — 2026-07-24
 
 > Areas touched: `KAIROS` `INFRA` `UI` `DOCS`

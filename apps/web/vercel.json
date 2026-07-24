@@ -23,6 +23,10 @@
       "schedule": "15 3 * * *"
     },
     {
+      "path": "/api/cron/micro-consolidate",
+      "schedule": "15 6,9,12,15,18,21 * * *"
+    },
+    {
       "path": "/api/cron/ask-mine",
       "schedule": "30 4 * * *"
     },

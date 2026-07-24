@@ -3,8 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Same chainable-query mock pattern as retrieve.test.ts. `selectQueue` feeds
 // db.select() calls in the exact order runAetherForUser fires them:
 // alreadyRanToday -> active dominions -> cortexRows -> reflectionRows ->
-// archetypeRows -> priorRows. `txArchivedRows`/`txInsertedRows` feed the
-// archive+insert inside persistAether's db.transaction.
+// archetypeRows -> priorRows -> todaySoFar(delta lookup) -> todaySoFar(fallback
+// count). `txArchivedRows`/`txInsertedRows` feed the archive+insert inside
+// persistAether's db.transaction.
 const selectQueue: unknown[][] = []
 let txArchivedRows: Array<{ id: string }> = []
 let txInsertedRows: Array<{ id: string }> = []
@@ -36,6 +37,9 @@ vi.mock('@/lib/db', () => {
 
 vi.mock('@/lib/data/memories', () => ({
   captureMemory: vi.fn(),
+  // Stand-in for the real bi-temporal gate — content doesn't matter here,
+  // db.select is fully mocked below and never inspects the SQL it's given.
+  validAsOfNow: 'mock-valid-as-of-now',
 }))
 
 vi.mock('@/lib/ai/route-task', () => ({
@@ -60,6 +64,8 @@ function queueSignalInputs() {
   ])
   selectQueue.push([]) // archetypeRows
   selectQueue.push([]) // priorRows
+  selectQueue.push([]) // todaySoFar: latest delta memory — none
+  selectQueue.push([{ n: 0 }]) // todaySoFar: fallback new-memory count — zero
 }
 
 function validAetherJson(): string {
@@ -197,5 +203,56 @@ describe('runAetherForUser — failure traces (C1) + retry/repair (C2)', { timeo
     const traces = traceCalls()
     expect(traces).toHaveLength(1)
     expect((traces[0][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata.reason).toBe('persist_failed')
+  })
+})
+
+describe('fetchAetherInputs — "Today so far" grounding', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    selectQueue.length = 0
+  })
+
+  it('uses the delta row body verbatim when a delta landed today across any Dominion', async () => {
+    selectQueue.push([]) // active dominions
+    selectQueue.push([]) // cortexRows
+    selectQueue.push([]) // reflectionRows
+    selectQueue.push([]) // archetypeRows
+    selectQueue.push([]) // priorRows
+    selectQueue.push([{ bodyMd: 'Global delta note across Dominions.' }]) // todaySoFar: delta row hit
+
+    const { fetchAetherInputs } = await import('../aether')
+    const inputs = await fetchAetherInputs(USER_ID)
+
+    expect(inputs.todaySoFar).toBe('Global delta note across Dominions.')
+  })
+
+  it('renders singular wording when exactly one new memory landed today', async () => {
+    selectQueue.push([]) // active dominions
+    selectQueue.push([]) // cortexRows
+    selectQueue.push([]) // reflectionRows
+    selectQueue.push([]) // archetypeRows
+    selectQueue.push([]) // priorRows
+    selectQueue.push([]) // todaySoFar: delta row — none
+    selectQueue.push([{ n: 1 }]) // todaySoFar: fallback count — exactly one
+
+    const { fetchAetherInputs } = await import('../aether')
+    const inputs = await fetchAetherInputs(USER_ID)
+
+    expect(inputs.todaySoFar).toBe('1 new memory captured today across all Dominions.')
+  })
+
+  it('renders plural wording when more than one new memory landed today', async () => {
+    selectQueue.push([]) // active dominions
+    selectQueue.push([]) // cortexRows
+    selectQueue.push([]) // reflectionRows
+    selectQueue.push([]) // archetypeRows
+    selectQueue.push([]) // priorRows
+    selectQueue.push([]) // todaySoFar: delta row — none
+    selectQueue.push([{ n: 5 }]) // todaySoFar: fallback count
+
+    const { fetchAetherInputs } = await import('../aether')
+    const inputs = await fetchAetherInputs(USER_ID)
+
+    expect(inputs.todaySoFar).toBe('5 new memories captured today across all Dominions.')
   })
 })

@@ -74,6 +74,10 @@ export interface AetherContext {
   topReflections: GlobalReflectionRow[]
   archetypes: GlobalArchetypeRow[]
   prior: PriorAetherRow | null
+  // Micro-consolidation grounding (C) — latest cross-Dominion intraday delta
+  // fold, or a lightweight new-memory count line. Optional so existing
+  // fixtures/tests that predate this field still compile.
+  todaySoFar?: string | null
 }
 
 function renderCortexSnapshot(c: CortexSnapshotRow): string {
@@ -195,6 +199,7 @@ export function buildAetherUserPrompt(ctx: AetherContext): string {
     ctx.archetypes.length === 0
       ? '(none)'
       : ctx.archetypes.map(renderArchetypeLine).join('\n'),
+    ...(ctx.todaySoFar ? ['', '## Today so far', neutraliseFences(ctx.todaySoFar)] : []),
     '',
     '## Prior Aether (detect shifts — what has changed since the last synthesis)',
     renderPriorAether(ctx.prior),

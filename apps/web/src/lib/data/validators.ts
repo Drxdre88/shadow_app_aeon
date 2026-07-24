@@ -343,7 +343,9 @@ export const memoryTypeSchema   = z.enum([
 // Kairos Phase 1 (A1) — added sources: 'cron' (briefer/snapshot jobs),
 // 'system' (board mutations, project lifecycle), 'webhook' (channel adapters).
 export const memorySourceSchema = z.enum(['manual', 'claude', 'voice', 'hook', 'import', 'cron', 'system', 'webhook'])
-export const memoryEdgeTypeSchema   = z.enum(['relates', 'supports', 'contradicts', 'supersedes', 'refers_to', 'blocks_thinking'])
+// 'resolves' — incident lifecycle: a memory carrying this link closes its
+// target's valid window (invalidAt stamped by createMemory, lib/data/memories.ts).
+export const memoryEdgeTypeSchema   = z.enum(['relates', 'supports', 'contradicts', 'supersedes', 'refers_to', 'blocks_thinking', 'resolves'])
 export const memoryTargetKindSchema = z.enum(['memory', 'task', 'project', 'realm', 'url'])
 
 export const memoryLinkSchema = z.object({
@@ -609,6 +611,7 @@ export const listSessionsSchema = z.object({
   dominionId: z.string().uuid().optional(),
   projectId:  z.string().uuid().optional(),
   liveOnly:   z.boolean().default(false),
+  since:      z.coerce.date().optional(),
   limit:      z.number().int().min(1).max(100).default(20),
   offset:     z.number().int().min(0).default(0),
 })

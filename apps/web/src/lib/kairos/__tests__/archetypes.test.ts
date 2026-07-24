@@ -45,6 +45,9 @@ vi.mock('@/lib/data/dominions', () => ({
 
 vi.mock('@/lib/data/memories', () => ({
   captureMemory: vi.fn(),
+  // Stand-in for the real bi-temporal gate — content doesn't matter here,
+  // db.select is fully mocked below and never inspects the SQL it's given.
+  validAsOfNow: 'mock-valid-as-of-now',
 }))
 
 vi.mock('@/lib/ai/route-task', () => ({

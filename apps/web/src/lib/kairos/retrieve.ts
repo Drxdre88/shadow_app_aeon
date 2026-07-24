@@ -25,6 +25,7 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories } from '@/lib/db/schema'
 import { inspectDominion } from '@/lib/data/dominions'
+import { recencyDecay, validAsOfNow } from '@/lib/data/memories'
 import { dominionTag } from './dominionTags'
 import { embeddingsEnabled, embedOne, toVectorLiteral } from './embeddings'
 import { rrfFuse, RRF_K } from './rrf'
@@ -37,11 +38,6 @@ import type {
   RetrievalBundle,
 } from './recipes/_recipe'
 
-// Bi-temporal valid-time gate, mirrors lib/data/memories.ts. A superseded or
-// WP3-reconciled (task done/deleted) fact is stamped invalidAt and must never
-// re-enter chat substrate retrieval even though it isn't archived.
-const validAsOfNow = sql`(${memories.invalidAt} IS NULL OR ${memories.invalidAt} > NOW())`
-
 const SUBSTRATE_TOP_K = 5
 // Candidate pool handed to the cross-encoder rerank before the final TOP_K
 // slice. Wider than TOP_K so rerank has room to promote a strong match the RRF
@@ -52,6 +48,17 @@ const SUBSTRATE_STREAMS = ['reflection', 'idea', 'agentic'] as const
 const TRACES_LIMIT = 10
 const ARCHETYPES_LIMIT = 10
 const DEFAULT_MEMORY_LIMIT = 25
+
+// Same 14-day half-life + 0.3 weight as prepareContext's composite score
+// (lib/data/memories.ts) — a same-day, weak-lexical-match reflection must be
+// able to outrank a 60-day-old, strong-lexical-match one. Chat substrate had
+// NO recency term before this: RRF fusion + confidenceBoost alone let a stale
+// high-overlap memory bury today's signal (the 15:37→16:50 miss).
+const RECENCY_WEIGHT = 0.3
+function recencyMultiplier(createdAt: Date | null | undefined, now = Date.now()): number {
+  if (!createdAt) return 1
+  return 1 + recencyDecay(createdAt, now) * RECENCY_WEIGHT
+}
 
 // FTS queries shorter than this fall back to substrate=[]. websearch_to_tsquery
 // drops stop words but won't rank "hi" / "ok" usefully.
@@ -122,6 +129,19 @@ export async function retrieveGlobalContext(
   ])
 
   return { bundle: null, cortex, archetypes, substrate, traces }
+}
+
+// Standalone substrate-only lookup for the chat `search_brain` tool. Whole-
+// brain scope (no Dominion), same hybrid + recency + confidence weighted
+// pipeline as retrieveGlobalContext's substrate leg — replaces a raw FTS-only
+// searchMemoriesFts call so an ad-hoc mid-turn lookup gets the same quality
+// bar as the automatic grounding context.
+export async function searchSubstrateForChat(
+  userId: string,
+  query: string,
+  limit: number = SUBSTRATE_TOP_K,
+): Promise<RetrievedMemory[]> {
+  return fetchSubstrate(userId, null, query.trim(), limit)
 }
 
 async function fetchBundle(
@@ -213,17 +233,46 @@ type SubstrateRow = {
   pinned: boolean          // ranking-exempt from decay (mirrors prepareContext)
 }
 
+type FtsSubstrateRow = SubstrateRow & { rank: number }
+
+// Shared FTS-leg ranking: raw ts_rank_cd is a pure lexical-overlap score with
+// no time signal, so re-weight it by confidence + recency the same way the
+// hybrid RRF path does, then keep reflections pinned ahead of ties. Used both
+// for the FTS-only branch (no embeddings configured) and the hybrid branch's
+// no-embedding-result fallback, so those two paths never diverge in ranking.
+function rankByRecencyAndConfidence(rows: FtsSubstrateRow[]): FtsSubstrateRow[] {
+  return rows
+    .map((r) => {
+      const isReflection = r.streamClass === 'reflection'
+      const base = Number(r.rank) || 0
+      const score = base
+        * confidenceBoost({ confidence: r.confidence, updatedAt: r.updatedAt, pinned: r.pinned })
+        * recencyMultiplier(r.createdAt)
+      return { row: r, isReflection, score }
+    })
+    .sort((a, b) =>
+      a.isReflection !== b.isReflection
+        ? Number(b.isReflection) - Number(a.isReflection)
+        : b.score - a.score,
+    )
+    .map((w) => w.row)
+}
+
 async function fetchSubstrate(
   userId: string,
   dominionId: string | null,
   query: string,
+  topK: number = SUBSTRATE_TOP_K,
 ): Promise<RetrievedMemory[]> {
   if (query.length < MIN_QUERY_CHARS) return []
 
   const hybrid = embeddingsEnabled()
-  // Over-fetch on both legs when hybrid so RRF has enough overlap to work with;
-  // FTS-only still slices to TOP_K at the query level (preserves prod/test behaviour).
-  const ftsLimit = hybrid ? SUBSTRATE_TOP_K * 3 : SUBSTRATE_TOP_K
+  // Over-fetch on both legs (hybrid AND FTS-only) so the recency/confidence
+  // re-rank below has real candidates to work with — a same-day, weak-overlap
+  // row must be IN the pool before it can out-rank a stale, strong-overlap
+  // one; SQL fetching only the top-topK by raw rank would exclude it before
+  // JS ever sees it.
+  const ftsLimit = topK * 3
 
   const tsQuery = sql`websearch_to_tsquery('english', ${query})`
   const rank = sql<number>`ts_rank_cd("memories"."fts", ${tsQuery})`
@@ -259,15 +308,16 @@ async function fetchSubstrate(
     )
     .limit(ftsLimit)
 
-  // ── FTS-only: embeddings disabled (no key in tests / no-key prod). Behaves
-  //    exactly as the original implementation. ───────────────────────────────
-  if (!hybrid) return ftsRows.map(rowToMemory)
+  // ── FTS-only: embeddings disabled (no key in tests / no-key prod). Still
+  //    recency + confidence weighted (previously pure SQL rank order with no
+  //    time signal at all). ─────────────────────────────────────────────────
+  if (!hybrid) return rankByRecencyAndConfidence(ftsRows).slice(0, topK).map(rowToMemory)
 
   // ── Hybrid: fuse a semantic vector leg via RRF. Best-effort — on any error
   //    (embed call, vector query) we keep the FTS rows untouched. ────────────
   try {
     const qVec = await embedOne(query, 'query')
-    if (!qVec) return ftsRows.slice(0, SUBSTRATE_TOP_K).map(rowToMemory)
+    if (!qVec) return rankByRecencyAndConfidence(ftsRows).slice(0, topK).map(rowToMemory)
 
     const distance = sql`${memories.embedding} <=> ${toVectorLiteral(qVec)}::vector`
 
@@ -298,7 +348,7 @@ async function fetchSubstrate(
           sql`${memories.createdAt} >= ${sinceTs}`,
         ))
         .orderBy(distance)
-        .limit(SUBSTRATE_TOP_K * 3)
+        .limit(topK * 3)
     })
 
     // id -> row so the fused list can be rebuilt from whichever leg produced it.
@@ -317,10 +367,13 @@ async function fetchSubstrate(
       .map(([id, score]) => {
         const rowItem = byId.get(id)
         const isReflection = rowItem?.streamClass === 'reflection'
-        // Confidence decay weights the fused score before the reflection nudge;
-        // neutral (×1) when the prior is absent, so behaviour is unchanged for
-        // rows predating the confidence column.
-        const weighted = score * confidenceBoost({ confidence: rowItem?.confidence ?? null, updatedAt: rowItem?.updatedAt, pinned: rowItem?.pinned })
+        // Confidence decay and recency both weight the fused score before the
+        // reflection nudge; each is a neutral ×1 when its signal is absent
+        // (no prior / no createdAt), so behaviour is unchanged for rows that
+        // predate those columns.
+        const weighted = score
+          * confidenceBoost({ confidence: rowItem?.confidence ?? null, updatedAt: rowItem?.updatedAt, pinned: rowItem?.pinned })
+          * recencyMultiplier(rowItem?.createdAt)
         return { id, isReflection, score: weighted + (isReflection ? REFLECTION_BONUS : 0) }
       })
       .sort((a, b) =>
@@ -329,25 +382,27 @@ async function fetchSubstrate(
           : b.score - a.score,
       )
 
-    // Rerank pool: take a wider slice of the fused, confidence-weighted order
-    // (reflections/confidence already shaped WHICH rows qualify), then let the
-    // cross-encoder pick the final top-k by true query↔document relevance.
+    // Rerank pool: take a wider slice of the fused, confidence/recency-weighted
+    // order (reflections/confidence/recency already shaped WHICH rows qualify),
+    // then let the cross-encoder pick the final top-k by true query↔document
+    // relevance. Floor at RERANK_POOL so a wider topK (e.g. the search_brain
+    // chat tool) still gets a proper rerank pool, not just topK candidates.
     const poolRows = ranked
-      .slice(0, RERANK_POOL)
+      .slice(0, Math.max(RERANK_POOL, topK))
       .map((e) => byId.get(e.id))
       .filter((r): r is SubstrateRow => r != null)
 
     // Precision pass. No-op (null) without a Voyage key or on API error, in
-    // which case we keep the confidence-weighted RRF order — identical to the
-    // pre-rerank behaviour once sliced to TOP_K.
+    // which case we keep the confidence/recency-weighted RRF order — identical
+    // to the pre-rerank behaviour once sliced to topK.
     const reranked = await rerank(
       query,
       poolRows,
       (r) => `${r.title}\n${r.bodyMd ?? ''}`,
-      { topK: SUBSTRATE_TOP_K },
+      { topK },
     )
 
-    return (reranked ?? poolRows).slice(0, SUBSTRATE_TOP_K).map(rowToMemory)
+    return (reranked ?? poolRows).slice(0, topK).map(rowToMemory)
   } catch (err) {
     console.warn(
       '[fetchSubstrate] semantic search failed, FTS-only:',
@@ -375,6 +430,9 @@ async function fetchTraces(userId: string, dominionId: string | null): Promise<R
       domEq(dominionId),
       eq(memories.streamClass, 'trace'),
       isNull(memories.archivedAt),
+      // Resolved-incident traces (invalidAt stamped via a 'resolves' link) must
+      // not keep narrating a closed incident to brief/advisory surfaces.
+      validAsOfNow,
     ))
     .orderBy(desc(memories.createdAt))
     .limit(TRACES_LIMIT)

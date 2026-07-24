@@ -2,6 +2,7 @@ import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
 import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
+import { validAsOfNow } from '@/lib/data/memories'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import {
@@ -77,6 +78,7 @@ async function fetchSubstrate(userId: string, dominionId: string) {
     eq(memories.userId, userId),
     eq(memories.dominionId, dominionId),
     isNull(memories.archivedAt),
+    validAsOfNow,
   )
   const cols = {
     id: memories.id,

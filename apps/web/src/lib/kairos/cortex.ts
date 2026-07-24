@@ -1,7 +1,8 @@
-import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
 import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
+import { validAsOfNow } from '@/lib/data/memories'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import {
@@ -69,6 +70,41 @@ async function alreadyRanToday(userId: string, dominionId: string): Promise<bool
   return (row?.n ?? 0) > 0
 }
 
+// "Today so far" grounding (C) — the latest micro-consolidation delta for
+// this Dominion if one landed today, else a lightweight new-memory count
+// since the start of the UTC day. Best-effort: a null return just omits the
+// prompt section (buildCortexUserPrompt renders nothing when absent).
+async function fetchTodaySoFar(userId: string, dominionId: string): Promise<string | null> {
+  const dayStart = new Date(`${todayIso()}T00:00:00.000Z`)
+
+  const [deltaRow] = await db
+    .select({ bodyMd: memories.bodyMd })
+    .from(memories)
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.dominionId, dominionId),
+      eq(memories.streamClass, 'delta'),
+      isNull(memories.archivedAt),
+      gte(memories.createdAt, dayStart),
+    ))
+    .orderBy(desc(memories.createdAt))
+    .limit(1)
+  if (deltaRow) return deltaRow.bodyMd
+
+  const [countRow] = await db
+    .select({ n: sql<number>`COUNT(*)::int` })
+    .from(memories)
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.dominionId, dominionId),
+      isNull(memories.archivedAt),
+      sql`${memories.streamClass} NOT IN ('trace', 'delta')`,
+      gte(memories.createdAt, dayStart),
+    ))
+  const n = countRow?.n ?? 0
+  return n > 0 ? `${n} new ${n === 1 ? 'memory' : 'memories'} captured today (since this morning's reading).` : null
+}
+
 async function fetchCortexInputs(
   userId: string,
   dominionId: string,
@@ -77,6 +113,7 @@ async function fetchCortexInputs(
     eq(memories.userId, userId),
     eq(memories.dominionId, dominionId),
     isNull(memories.archivedAt),
+    validAsOfNow,
   )
 
   const [reflectionRows, archetypeRows, priorRows] = await Promise.all([
@@ -168,7 +205,10 @@ export async function gatherCortexContext(
   const briefing = await inspectDominion(dominionId, userId, { memoryLimit: 1, boardTaskLimit: 20 })
   if (!briefing) return null
 
+  // Sequential (not Promise.all) — keeps db.select() call order deterministic
+  // for the failure-trace test suite's FIFO mock queue below.
   const inputs = await fetchCortexInputs(userId, dominionId)
+  const todaySoFar = await fetchTodaySoFar(userId, dominionId)
 
   return {
     dominionId,
@@ -187,6 +227,7 @@ export async function gatherCortexContext(
       projectName: t.projectName,
     })),
     ...inputs,
+    todaySoFar,
   }
 }
 

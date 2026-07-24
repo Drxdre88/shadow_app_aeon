@@ -65,6 +65,7 @@ export interface BuildChatPromptInput {
   surface?: ChatPromptSurface     // defaults to 'app'
   pendingAsk?: ChatPromptPendingAsk
   boardSection?: string           // pre-rendered live board state (chat-board-context.ts) — deterministic, fresher than retrieval
+  recencySection?: string         // pre-rendered last-N-hours activity (chat-recency-context.ts) — deterministic, fresher than retrieval
 }
 
 export const TELEGRAM_CHAT_PERSONA = [
@@ -145,6 +146,7 @@ export function buildChatSystemPrompt(
   surface: ChatPromptSurface = 'app',
   pendingAsk?: ChatPromptPendingAsk,
   boardSection?: string,
+  recencySection?: string,
 ): string {
   const lines: string[] = dominion
     ? [
@@ -169,9 +171,10 @@ export function buildChatSystemPrompt(
     || retrieval.archetypes.length > 0
     || retrieval.substrate.length > 0
   )
+  const hasRecencySection = !!recencySection?.trim()
   const hasBoardSection = !!boardSection?.trim()
 
-  if (hasRetrieval || hasBoardSection) {
+  if (hasRetrieval || hasRecencySection || hasBoardSection) {
     lines.push('')
     lines.push('---')
     lines.push('')
@@ -181,6 +184,10 @@ export function buildChatSystemPrompt(
     lines.push('')
     if (hasRetrieval) {
       lines.push(renderRetrieval(retrieval!, dominion !== null))
+      lines.push('')
+    }
+    if (hasRecencySection) {
+      lines.push(recencySection!.trim())
       lines.push('')
     }
     if (hasBoardSection) {
@@ -215,7 +222,7 @@ export function buildChatSystemPrompt(
 }
 
 export function buildChatMessages(input: BuildChatPromptInput): AIMessage[] {
-  const system = buildChatSystemPrompt(input.dominion, input.retrieval, input.surface, input.pendingAsk, input.boardSection)
+  const system = buildChatSystemPrompt(input.dominion, input.retrieval, input.surface, input.pendingAsk, input.boardSection, input.recencySection)
   const trimmedHistory = input.history.slice(-MAX_HISTORY_MESSAGES)
 
   const messages: AIMessage[] = [

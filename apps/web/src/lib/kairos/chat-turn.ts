@@ -31,6 +31,10 @@ import {
   renderLiveBoardSection,
   type LiveBoardContext,
 } from '@/lib/kairos/chat-board-context'
+import {
+  fetchRecentActivityContext,
+  renderRecentActivitySection,
+} from '@/lib/kairos/chat-recency-context'
 import { buildChatTools, runChatToolLoop } from '@/lib/kairos/chat-tools'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
@@ -147,6 +151,17 @@ async function loadBoardSection(userId: string, threadId: string, userBody: stri
   }
 }
 
+// Deterministic recency grounding: last-24h coding sessions, reflections,
+// introspection proposals, asks, and board activity — fresher than any
+// synthesised memory (see chat-recency-context.ts header). Non-fatal by
+// design: fetchRecentActivityContext already catches internally and returns
+// null on error or on a genuinely quiet window, so there is nothing to log
+// here beyond that call.
+async function loadRecencySection(userId: string): Promise<string | undefined> {
+  const ctx = await fetchRecentActivityContext(userId)
+  return ctx ? renderRecentActivitySection(ctx) : undefined
+}
+
 async function classifyAskResolution(
   provider: AIProvider,
   pending: KairosAskRow,
@@ -185,6 +200,14 @@ export type KairosChatTurnResult =
   // so the client can recover to it on retry instead of starting a new thread.
   | { ok: false; reason: 'unauthorized' | 'dominion_not_found' | 'thread_not_found' | 'no_credential' | 'ai_empty' | 'ai_failed' | 'invalid_input'; message?: string; threadId?: string }
 
+// Default ON: the agentic tool loop is the standard chat path now. Only an
+// explicit '0' or 'false' (any case) opts back out — the kill switch from the
+// original opt-in flag, inverted.
+function agenticToolsEnabled(): boolean {
+  const raw = process.env.KAIROS_CHAT_AGENTIC_TOOLS?.trim().toLowerCase()
+  return raw !== '0' && raw !== 'false'
+}
+
 async function callAssistant(
   userId: string,
   dominionId: string | null,
@@ -199,10 +222,12 @@ async function callAssistant(
     })
     // No temperature: current-gen Claude models 400 on non-default values
     // (same reason PR #84 stripped it from the synthesis call sites).
-    // Agentic tools ship dark: flag unset keeps this call byte-identical to
-    // the plain path (no tools key on the request). The WP1 deterministic
-    // board section is already baked into systemMessages in both modes.
-    const response = process.env.KAIROS_CHAT_AGENTIC_TOOLS === '1'
+    // Agentic tools default ON as of the live-mind work: only an explicit
+    // '0'/'false' opts back out to the plain (no tools key) call — the kill
+    // switch stays, but the WP2 lookup loop is now the default path. The
+    // deterministic board/recency sections are already baked into
+    // systemMessages in both modes.
+    const response = agenticToolsEnabled()
       ? await runChatToolLoop(provider, systemMessages, buildChatTools(userId), {
           maxOutputTokens: 2000,
         })
@@ -316,7 +341,10 @@ export async function runAssistantTurn(
   }
 
   const promptRetrieval = retrieval ? toPromptRetrieval(retrieval) : undefined
-  const boardSection = await loadBoardSection(userId, threadId, userBody)
+  const [boardSection, recencySection] = await Promise.all([
+    loadBoardSection(userId, threadId, userBody),
+    loadRecencySection(userId),
+  ])
 
   const messages = buildChatMessages({
     dominion,
@@ -326,6 +354,7 @@ export async function runAssistantTurn(
     surface: opts.surface,
     pendingAsk: pendingAskContext?.prompt,
     boardSection,
+    recencySection,
   })
 
   const reply = await callAssistant(

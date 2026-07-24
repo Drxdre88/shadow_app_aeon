@@ -68,6 +68,10 @@ export interface CortexContext {
   reflections: ReflectionRow[]
   archetypes: ArchetypeRow[]
   prior: PriorCortexRow | null
+  // Micro-consolidation grounding (C) — the latest intraday delta fold for
+  // this Dominion, or a lightweight new-memory count line. Optional so
+  // existing fixtures/tests that predate this field still compile.
+  todaySoFar?: string | null
 }
 
 function renderReflection(r: ReflectionRow): string {
@@ -152,6 +156,7 @@ export function buildCortexUserPrompt(ctx: CortexContext, today: string): string
     ctx.boardTasks.length === 0
       ? '(none open)'
       : ctx.boardTasks.map((t) => `- [${t.priority}/${t.status}] (${t.projectName}) ${t.name}`).join('\n'),
+    ...(ctx.todaySoFar ? ['', '## Today so far', neutraliseFences(ctx.todaySoFar)] : []),
     '',
     '## Owner reflections (highest weight, chronological — most recent first)',
     ctx.reflections.length === 0

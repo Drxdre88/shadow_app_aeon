@@ -188,6 +188,7 @@ beforeEach(() => {
         shifts: [],
       },
     },
+    todaySoFar: null,
   })
   vi.mocked(listStaleTasks).mockResolvedValue([{
     taskId: 'task-1',
