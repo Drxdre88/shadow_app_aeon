@@ -30,6 +30,7 @@ export const DEFAULT_SHORTCUTS: Record<string, string> = {
   toggleChecklist: 'o',
   selectCard: 's',
   assignMember: 'm',
+  setProgress: 'p',
 }
 
 export const DEFAULT_PREFERENCES = {

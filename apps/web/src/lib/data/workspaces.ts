@@ -185,18 +185,24 @@ export async function removeGroupMember(groupId: string, userId: string) {
     if (orphaned.length === 0) return []
 
     const stale = await tx
-      .select({ taskId: taskAssignees.taskId, projectId: boardTasks.projectId })
+      .selectDistinct({ projectId: boardTasks.projectId })
       .from(taskAssignees)
       .innerJoin(boardTasks, eq(boardTasks.id, taskAssignees.taskId))
       .where(and(eq(taskAssignees.userId, userId), inArray(boardTasks.projectId, orphaned)))
     if (stale.length === 0) return []
 
+    // Subquery, not an id list: a long-tenured member can hold tens of
+    // thousands of assignment rows — binding one param per row would blow the
+    // driver's parameter cap mid-transaction and roll back the removal.
     await tx.delete(taskAssignees).where(and(
       eq(taskAssignees.userId, userId),
-      inArray(taskAssignees.taskId, stale.map((r) => r.taskId)),
+      inArray(
+        taskAssignees.taskId,
+        tx.select({ id: boardTasks.id }).from(boardTasks).where(inArray(boardTasks.projectId, orphaned)),
+      ),
     ))
 
-    return [...new Set(stale.map((r) => r.projectId))]
+    return stale.map((r) => r.projectId)
   })
 
   for (const projectId of touched) {

@@ -35,7 +35,7 @@ export function TaskProgressPopover({ taskId, onClose, onTaskUpdate }: TaskProgr
   const task = useBoardStore((s) => s.tasks.find((t) => t.id === taskId))
   const updateTask = useBoardStore((s) => s.updateTask)
   const [value, setValue] = useState(() => task?.progress ?? 0)
-  const [position] = useState(() => anchorPosition(taskId))
+  const [position, setPosition] = useState(() => anchorPosition(taskId))
   const containerRef = useRef<HTMLDivElement>(null)
   const committedRef = useRef(false)
   const valueRef = useRef(value)
@@ -77,6 +77,25 @@ export function TaskProgressPopover({ taskId, onClose, onTaskUpdate }: TaskProgr
     return () => document.removeEventListener('mousedown', handlePointerDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Track the anchor card through scroll/reflow so the popover stays attached.
+  useEffect(() => {
+    const reposition = () => setPosition(anchorPosition(taskId))
+    window.addEventListener('scroll', reposition, true)
+    window.addEventListener('resize', reposition)
+    return () => {
+      window.removeEventListener('scroll', reposition, true)
+      window.removeEventListener('resize', reposition)
+    }
+  }, [taskId])
+
+  // The task can vanish under us (deleted by a teammate via realtime sync).
+  // Without this, the popover renders null but its capture-phase key handlers
+  // stay alive and eat Escape board-wide until navigation.
+  useEffect(() => {
+    if (!task) { committedRef.current = true; onClose() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task])
 
   if (!task) return null
 

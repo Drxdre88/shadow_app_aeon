@@ -1,3 +1,9 @@
+-- MUST run inside a transaction. The lock blocks concurrent checklist
+-- reorders for the duration — without it, a user reorder racing the CTE
+-- snapshot would be silently reverted (UPDATE re-reads the row but keeps the
+-- pre-snapshot new_idx).
+LOCK TABLE checklist_items IN SHARE ROW EXCLUSIVE MODE;
+
 -- Checklist order determinism: legacy rows (Mar-May 2026 group-local indexing
 -- bug) carry duplicate order_index values per task; ORDER BY order_index alone
 -- then returns ties in arbitrary, query-to-query-unstable order ("checklists

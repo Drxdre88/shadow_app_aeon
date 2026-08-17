@@ -7,11 +7,24 @@ import { getSettingsTemplate, saveSettingsTemplate } from '@/lib/actions/setting
 
 const TEMPLATE_NAME = 'business_admin'
 
+// Mirror of _hydrateFromDB's SAFE_PREF_KEYS, minus per-account data that must
+// never be baked into a template stamped onto every new user (projectColors is
+// keyed by the admin's own project UUIDs).
+const TEMPLATE_KEYS = new Set([
+  'currentTheme', 'glowSource', 'glowIntensity', 'glassOpacity', 'themeSaturation',
+  'themeBrightness', 'surfaceVibrancy', 'ambientBlobs', 'fontFamily', 'dragEffect',
+  'cursorEffect', 'cursorColor', 'columnWidth', 'columnHeight', 'dynamicColumnWidth',
+  'dynamicColumnHeight', 'smokeVolume', 'depLineWidth', 'depLineGlow', 'depLineStyle',
+  'depCanvasBlur', 'spacePlanetGlow', 'spaceOrbitSpeed', 'boardLayout',
+  'depViewMode', 'completionMode', 'boardActionToasts', 'smoothUiRenders', 'shortcuts', 'priorities',
+  'defaultProjectView', 'defaultProjectSort', 'cardPreviewOnHover', 'celebrationStyle', 'businessMode',
+])
+
 function snapshotCurrentPreferences() {
   const state = useThemeStore.getState() as unknown as Record<string, unknown>
   const prefs: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(state)) {
-    if (key.startsWith('_') || key === 'colors' || typeof value === 'function') continue
+    if (!TEMPLATE_KEYS.has(key) || typeof value === 'function') continue
     prefs[key] = value
   }
   return prefs

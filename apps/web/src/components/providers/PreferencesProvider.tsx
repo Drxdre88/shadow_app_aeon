@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useThemeStore } from '@/stores/themeStore'
-import { getPreferences, savePreferences } from '@/lib/actions/preferences'
+import { getPreferencesWithMeta, savePreferences } from '@/lib/actions/preferences'
 
 const DEBOUNCE_MS = 1500
 const LOCAL_STORAGE_KEY = 'aeon-theme'
@@ -48,8 +48,17 @@ export function PreferencesProvider({ children }: { children: React.ReactNode })
           }
         } catch {}
 
-        const dbPrefs = await getPreferences()
+        const { prefs: dbPrefs, seeded } = await getPreferencesWithMeta()
         if (cancelled) return
+
+        // The localStorage migration exists for pre-DB accounts only. Once a
+        // DB row exists the DB wins — otherwise a stale aeon-theme blob
+        // (written while browsing /demo before signup) would overwrite the
+        // business_admin template stamped at account creation and then be
+        // saved back over it.
+        if (migratedLocal && seeded) {
+          migratedLocal = null
+        }
 
         const merged = migratedLocal
           ? { ...dbPrefs, ...migratedLocal }

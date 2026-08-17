@@ -39,6 +39,7 @@ vi.mock('@/lib/db', () => {
   }
   const tx = {
     select: vi.fn(() => makeSelectChain()),
+    selectDistinct: vi.fn(() => makeSelectChain()),
     delete: vi.fn((table: unknown) => makeDeleteChain(table)),
     insert: vi.fn(() => makeSelectChain()),
     update: vi.fn(() => makeSelectChain()),
@@ -103,7 +104,7 @@ describe('removeGroupMember', () => {
     selectRows.push([]) // owned
     selectRows.push([{ projectId: P_KEEP }]) // direct project_members
     selectRows.push([]) // other realms
-    selectRows.push([{ taskId: TASK_ORPHAN, projectId: P_ORPHAN }]) // stale assignments
+    selectRows.push([{ projectId: P_ORPHAN }]) // stale assignment projects (distinct)
 
     await removeGroupMember(GROUP_ID, USER_ID)
 
@@ -115,10 +116,16 @@ describe('removeGroupMember', () => {
     expect(staleWhere).toContain(P_ORPHAN)
     expect(staleWhere).not.toContain(P_KEEP)
 
+    // The delete scopes by user + a project-id SUBQUERY — never a per-task id
+    // list (which would blow the bind-param cap on large realms). The mock
+    // records the subquery's own where-clause as the last captured select.
     const cleanupWhere = flatten(deleteCalls[1].where)
     expect(cleanupWhere).toContain(USER_ID)
-    expect(cleanupWhere).toContain(TASK_ORPHAN)
+    expect(cleanupWhere).not.toContain(TASK_ORPHAN)
     expect(cleanupWhere).not.toContain(TASK_KEEP)
+    const subqueryWhere = flatten(selectWheres[selectWheres.length - 1])
+    expect(subqueryWhere).toContain(P_ORPHAN)
+    expect(subqueryWhere).not.toContain(P_KEEP)
 
     expect(touchProject).toHaveBeenCalledTimes(1)
     expect(touchProject).toHaveBeenCalledWith(P_ORPHAN, { type: 'task:unassigned' })

@@ -14,6 +14,8 @@ const SHORTCUT_LABELS: Record<string, string> = {
   toggleDone: 'Complete Card (done / not-doing / none)',
   toggleDates: 'Toggle Dates Display',
   toggleChecklist: 'Checklist Overview (off/preview/full)',
+  assignMember: 'Assign Member (hover)',
+  setProgress: 'Set Progress % (hover)',
 }
 
 const DASHBOARD_SHORTCUTS = [

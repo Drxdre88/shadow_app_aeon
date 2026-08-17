@@ -85,6 +85,14 @@ export async function findProjectBasic(projectId: string) {
   return project || null
 }
 
+export async function findProjectSettings(projectId: string) {
+  const [project] = await db
+    .select({ settings: projects.settings })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+  return (project?.settings as Record<string, unknown>) ?? null
+}
+
 export async function verifyProjectOwnerRole(projectId: string, userId: string) {
   const [membership] = await db
     .select({ role: projectMembers.role })

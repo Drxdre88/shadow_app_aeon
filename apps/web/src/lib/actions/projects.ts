@@ -17,6 +17,7 @@ import {
   renameGroup as _renameGroup,
   toggleProjectFavorite as _toggleProjectFavorite,
   findFavoriteProjectIds as _findFavoriteProjectIds,
+  findProjectSettings as _findProjectSettings,
 } from '@/lib/data/projects'
 import { createProjectSchema, updateProjectSchema } from '@/lib/data/validators'
 import type { UpdateProjectInput } from '@/lib/data/validators'
@@ -112,7 +113,12 @@ export async function updateProject(projectId: string, data: UpdateProjectInput)
 
 export async function updateProjectSettings(projectId: string, settings: Record<string, unknown>) {
   const userId = await requireEditor(projectId)
-  const project = await _updateProject(projectId, userId, { settings })
+  // Shallow-merge into the CURRENT stored settings: callers build their
+  // payload from a client-side snapshot, so a whole-object replace would let
+  // two editors (or two tabs) saving different keys silently revert each
+  // other (e.g. saving sizing reverting a concurrent boardTheme change).
+  const current = await _findProjectSettings(projectId)
+  const project = await _updateProject(projectId, userId, { settings: { ...(current ?? {}), ...settings } })
   revalidatePath(`/project/${projectId}`)
   return project
 }

@@ -98,7 +98,10 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
     return task.color
   })()
   const triState: TriState = getTriState(task.status, crossedTaskIds, task.id)
-  const progressAccent = resolvedGlowColor.startsWith('rgb') ? resolvedGlowColor : labelHex(resolvedGlowColor)
+  // labelHex can emit a bare '#' for empty/unknown colors, which invalidates
+  // the whole color-mix() declaration — fall back to the theme primary.
+  const progressAccentRaw = resolvedGlowColor.startsWith('rgb') ? resolvedGlowColor : labelHex(resolvedGlowColor)
+  const progressAccent = /^(rgb|#[0-9a-fA-F]{3,8}$)/.test(progressAccentRaw) ? progressAccentRaw : 'var(--primary)'
 
   const handleTriToggle = (e: React.MouseEvent) => {
     e.stopPropagation()

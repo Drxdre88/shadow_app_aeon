@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, useRef } from 'react'
 import { DragEndEvent, DragStartEvent, DragOverEvent, useSensor, useSensors, PointerSensor, TouchSensor } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 import { useBoardStore, type BoardColumn, type BoardTask } from '@/lib/store/boardStore'
-import { nearestInsertionIndex, reorderWithInsertion, readCardRects } from './dropIndex'
+import { insertionIndexInFullOrder, reorderWithInsertion, readCardRects } from './dropIndex'
 
 type MoveUpdate = { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }
 
@@ -124,9 +124,12 @@ export function useBoardDnD({
 
     const rects = readCardRects(targetColumnId, activeTask.id)
     const fallbackIndex = orderedIds.indexOf(activeTask.id)
-    const index = pointerY === null
+    // rects hold only the cards surviving the active filter/search — anchor
+    // the pointer gap on rect ids, never apply a visible-count index to the
+    // unfiltered order. rects === null means the column DOM wasn't found.
+    const index = pointerY === null || rects === null
       ? (fallbackIndex === -1 ? orderedIds.length : fallbackIndex)
-      : nearestInsertionIndex(pointerY, rects)
+      : insertionIndexInFullOrder(pointerY, rects, orderedIds)
 
     const finalIds = reorderWithInsertion(orderedIds, activeTask.id, index)
     const isDone = sortedColumns.find((c) => c.id === targetColumnId)?.name.toLowerCase() === 'done'
