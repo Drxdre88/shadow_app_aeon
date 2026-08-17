@@ -52,7 +52,7 @@ async function handler() {
   const taskIds = allTasks.map((t) => t.id)
   const [allChecklist, allTaskLabels] = taskIds.length > 0
     ? await Promise.all([
-        db.select({ id: checklistItems.id, taskId: checklistItems.taskId, title: checklistItems.title, completed: checklistItems.completed, state: checklistItems.state, groupName: checklistItems.groupName, orderIndex: checklistItems.orderIndex }).from(checklistItems).where(inArray(checklistItems.taskId, taskIds)),
+        db.select({ id: checklistItems.id, taskId: checklistItems.taskId, title: checklistItems.title, completed: checklistItems.completed, state: checklistItems.state, groupName: checklistItems.groupName, orderIndex: checklistItems.orderIndex }).from(checklistItems).where(inArray(checklistItems.taskId, taskIds)).orderBy(checklistItems.orderIndex, checklistItems.createdAt, checklistItems.id),
         db.select({ taskId: taskLabels.taskId, labelId: taskLabels.labelId }).from(taskLabels).where(inArray(taskLabels.taskId, taskIds)),
       ])
     : [[], []]
