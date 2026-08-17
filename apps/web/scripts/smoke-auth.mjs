@@ -69,6 +69,37 @@ async function main() {
   }
   pass(`signin → 302 → ${loc.slice(0, 56)}…`)
 
+  // 4. The 2026-08-17 regression: the BROWSER sign-in path. next-auth/react's
+  // signIn()/signOut() always send X-Auth-Return-Redirect, which makes
+  // @auth/core return `Response.json({url})` instead of a 302 — and on
+  // Next 16.1.x Turbopack production builds that Response was built from a
+  // differently-bundled class the route runtime didn't recognise, so EVERY
+  // UI login/logout button 500'd while this smoke test (302 path) stayed
+  // green. Assert the JSON path explicitly so that can never ship again.
+  const csrfRes2 = await fetch(`${BASE}/api/auth/csrf`)
+  const { csrfToken: csrfToken2 } = await csrfRes2.json().catch(() => ({}))
+  const cookie2 =
+    (typeof csrfRes2.headers.getSetCookie === 'function' ? csrfRes2.headers.getSetCookie() : [])
+      .join('; ') || csrfRes2.headers.get('set-cookie') || ''
+  const browserRes = await fetch(`${BASE}/api/auth/signin/google`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      cookie: cookie2,
+      'X-Auth-Return-Redirect': '1',
+    },
+    body: new URLSearchParams({ csrfToken: csrfToken2, callbackUrl: `${BASE}/dashboard` }),
+    redirect: 'manual',
+  })
+  if (browserRes.status !== 200) {
+    fail(`browser-path signin POST → ${browserRes.status} (expected 200 JSON). UI LOGIN/LOGOUT IS BROKEN.`)
+  }
+  const browserData = await browserRes.json().catch(() => ({}))
+  if (!String(browserData.url || '').startsWith('https://accounts.google.com/')) {
+    fail(`browser-path signin returned url "${String(browserData.url).slice(0, 80)}" (expected accounts.google.com)`)
+  }
+  pass(`browser-path signin → 200 {url: ${String(browserData.url).slice(0, 40)}…}`)
+
   console.log(`\nAuth smoke PASSED against ${BASE}`)
 }
 
