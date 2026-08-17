@@ -24,6 +24,7 @@ type TaskItem = {
   endDate?: string
   onTimeline: boolean
   size?: number | null
+  progress?: number | null
   updatedAt?: string
 }
 

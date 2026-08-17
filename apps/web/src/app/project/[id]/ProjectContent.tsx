@@ -12,6 +12,7 @@ import { ProjectSwitcher } from '@/components/board/ProjectSwitcher'
 import { useThemeStore } from '@/stores/themeStore'
 import { SaveStatusPill } from '@/components/board/SaveStatusPill'
 import { FavoriteStar } from '@/components/board/FavoriteStar'
+import { BoardSizingButton } from '@/components/board/BoardSizingButton'
 import { activeFilterCount, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { cn } from '@/lib/utils/cn'
@@ -169,6 +170,10 @@ export default function ProjectContent({ project, user, initialBoardData, initia
                   <GitBranch className="w-4 h-4" />
                   <span>Connect</span>
                 </button>
+                <BoardSizingButton
+                  projectId={project.id}
+                  settings={(project.settings ?? {}) as Record<string, unknown>}
+                />
                 <button
                   onClick={() => setBoardLayout(boardLayout === 'scroll' ? 'grid' : 'scroll')}
                   className={cn(

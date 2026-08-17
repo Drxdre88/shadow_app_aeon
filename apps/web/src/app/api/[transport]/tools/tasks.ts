@@ -66,7 +66,7 @@ export const registerTaskTools: RegisterFn = (server) => {
       columnId: z.string().uuid().optional().describe('Move task to this column'),
       ...updateTaskSchema.pick({
         name: true, description: true, status: true, priority: true, color: true,
-        size: true, startDate: true, endDate: true, onTimeline: true,
+        size: true, progress: true, startDate: true, endDate: true, onTimeline: true,
       }).shape,
     },
     { title: 'Update Task', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },

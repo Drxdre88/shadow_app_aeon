@@ -29,6 +29,7 @@ interface KanbanColumnProps {
     endDate?: string
     onTimeline: boolean
     size?: number | null
+    progress?: number | null
     updatedAt?: string
   }>
   onTaskEdit?: (taskId: string) => void
@@ -257,6 +258,7 @@ export const KanbanColumn = memo(function KanbanColumn({
     <div className="relative flex-shrink-0 kanban-col-outer" style={{ '--col-w': `${columnWidth}px` } as React.CSSProperties}>
     <div
       ref={setNodeRef}
+      data-column-id={column.id}
       className={cn(
         'flex flex-col rounded-xl',
         'glass transition-all duration-200',

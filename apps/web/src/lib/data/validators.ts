@@ -62,6 +62,8 @@ export const updateTaskSchema = z.object({
   color: z.string().trim().max(20).optional(),
   onTimeline: z.boolean().optional(),
   size: z.number().min(0.5).max(20).multipleOf(0.5).nullable().optional(),
+  // null clears tracking; 0-100 otherwise
+  progress: z.number().int().min(0).max(100).nullable().optional(),
   orderIndex: z.number().int().optional(),
   startDate: optionalIsoDate,
   endDate: optionalIsoDate,

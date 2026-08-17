@@ -27,6 +27,7 @@ export interface BoardTask {
   onTimeline: boolean
   ganttTaskId?: string | null
   size?: number | null
+  progress?: number | null
   updatedAt?: string
   orderIndex: number
 }

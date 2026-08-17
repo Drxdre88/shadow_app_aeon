@@ -121,6 +121,7 @@ const makeTask = (overrides = {}) => ({
   onTimeline: false,
   orderIndex: 0,
   size: null,
+  progress: null,
   description: null,
   startDate: null as Date | null,
   endDate: null as Date | null,

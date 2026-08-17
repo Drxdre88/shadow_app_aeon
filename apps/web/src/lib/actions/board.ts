@@ -99,6 +99,7 @@ export async function updateBoardTask(
     color?: string
     onTimeline?: boolean
     size?: number | null
+    progress?: number | null
     orderIndex?: number
     startDate?: string | null
     endDate?: string | null

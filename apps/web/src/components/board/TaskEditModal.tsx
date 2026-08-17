@@ -14,6 +14,7 @@ import { TaskComments } from './TaskComments'
 import { useChecklistHandlers } from './useChecklistHandlers'
 import { TaskDateSection } from './TaskDateSection'
 import { TaskLabelsSection } from './TaskLabelsSection'
+import { useBoardSizing, sizingTooltip, sizingUnitLabel } from './sizing'
 import { triggerCelebration } from '@/components/celebrations'
 
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
@@ -68,6 +69,7 @@ export function TaskEditModal({
 }: TaskEditModalProps) {
   const tasks = useBoardStore((s) => s.tasks)
   const updateTask = useBoardStore((s) => s.updateTask)
+  const sizing = useBoardSizing()
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
   const nameInputRef = useRef<HTMLInputElement>(null)
 
@@ -260,8 +262,36 @@ export function TaskEditModal({
                 />
               </div>
 
+              {sizing.enabled && (
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1.5">Size</label>
+                  <div className="flex flex-wrap gap-2">
+                    {sizing.labels.map((sizeLabel) => {
+                      const isActive = formData.size === sizeLabel.value
+                      return (
+                        <button
+                          key={sizeLabel.key}
+                          onClick={() => onFormChange({ ...formData, size: isActive ? null : sizeLabel.value })}
+                          title={sizingTooltip(sizing, sizeLabel)}
+                          className={cn(
+                            'px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200',
+                            isActive
+                              ? 'bg-white/10 border-white/30 text-white'
+                              : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
+                          )}
+                        >
+                          {sizeLabel.key}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div>
-                <label className="block text-sm text-slate-400 mb-1.5">Size (days)</label>
+                <label className="block text-sm text-slate-400 mb-1.5">
+                  {sizing.enabled ? `Size (${sizing.unit})` : 'Size (days)'}
+                </label>
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
@@ -283,10 +313,7 @@ export function TaskEditModal({
                     )}
                   />
                   <span className="text-xs text-slate-500">
-                    {formData.size
-                      ? `${formData.size} day${formData.size !== 1 ? 's' : ''}`
-                      : 'Auto (2d)'
-                    }
+                    {formData.size ? sizingUnitLabel(sizing.unit, formData.size) : 'Auto (2d)'}
                   </span>
                 </div>
               </div>
