@@ -165,7 +165,7 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   defaultProjectSort: 'alphabetical' as ProjectSortMode,
   projectColors: { ...DEFAULT_PREFERENCES.projectColors },
   cardPreviewOnHover: false,
-  celebrationStyle: 'confetti-burst' as CelebrationStyle,
+  celebrationStyle: DEFAULT_PREFERENCES.celebrationStyle as CelebrationStyle,
   completionMode: DEFAULT_PREFERENCES.completionMode as CompletionMode,
   boardActionToasts: DEFAULT_PREFERENCES.boardActionToasts,
   smoothUiRenders: true,
@@ -181,7 +181,7 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
       'dynamicColumnHeight', 'smokeVolume', 'depLineWidth', 'depLineGlow', 'depLineStyle',
       'depCanvasBlur', 'spacePlanetGlow', 'spaceOrbitSpeed', 'boardLayout', 'projectColors',
       'depViewMode', 'completionMode', 'boardActionToasts', 'smoothUiRenders', 'shortcuts', 'priorities',
-      'defaultProjectView', 'defaultProjectSort', 'cardPreviewOnHover', 'celebrationStyle',
+      'defaultProjectView', 'defaultProjectSort', 'cardPreviewOnHover', 'celebrationStyle', 'businessMode',
     ])
     const safePrefs = Object.fromEntries(
       Object.entries(prefs).filter(([k]) => SAFE_PREF_KEYS.has(k))
@@ -203,6 +203,19 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
         })
       })(),
       projectColors: (safePrefs.projectColors as Record<string, string>) ?? {},
+      // Business mode arrives from the DB without the snapshot the toggle
+      // normally captures, so seed it from defaults — otherwise turning it
+      // off after a reload would restore nothing.
+      _businessSnapshot: safePrefs.businessMode
+        ? {
+            glowIntensity: DEFAULT_PREFERENCES.glowIntensity,
+            glassOpacity: DEFAULT_PREFERENCES.glassOpacity,
+            ambientBlobs: DEFAULT_PREFERENCES.ambientBlobs,
+            cursorEffect: DEFAULT_PREFERENCES.cursorEffect,
+            dragEffect: DEFAULT_PREFERENCES.dragEffect,
+            surfaceVibrancy: DEFAULT_PREFERENCES.surfaceVibrancy,
+          }
+        : null,
       _hydrated: true,
     })
   },

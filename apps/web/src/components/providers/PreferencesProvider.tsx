@@ -9,7 +9,7 @@ const DEBOUNCE_MS = 1500
 const LOCAL_STORAGE_KEY = 'aeon-theme'
 
 function extractPrefsFromState(state: Record<string, unknown>) {
-  const { _hydrated, _hydrateFromDB, colors, businessMode: _bm, _businessSnapshot: _bs, ...actions } = state
+  const { _hydrated, _hydrateFromDB, colors, _businessSnapshot: _bs, ...actions } = state
   const prefs: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(actions)) {
     if (typeof value !== 'function') {

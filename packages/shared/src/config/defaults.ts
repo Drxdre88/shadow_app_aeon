@@ -66,7 +66,7 @@ export const DEFAULT_PREFERENCES = {
   defaultProjectView: 'grid' as ProjectViewMode,
   defaultProjectSort: 'alphabetical' as ProjectSortMode,
   cardPreviewOnHover: false,
-  celebrationStyle: 'confetti-burst' as CelebrationStyle,
+  celebrationStyle: 'checkmark-pulse' as CelebrationStyle,
 }
 
 export type UserPreferences = typeof DEFAULT_PREFERENCES
