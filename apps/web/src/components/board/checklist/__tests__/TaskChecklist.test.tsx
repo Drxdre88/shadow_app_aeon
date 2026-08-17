@@ -79,13 +79,26 @@ describe('TaskChecklist ghost input', () => {
     expect(screen.queryByPlaceholderText('New item…')).toBeNull()
   })
 
-  it('keeps the input open (uncommitted) on blur with text', () => {
+  // Click-away with text now commits (Trello-style) — before this, typed-but-
+  // not-Enter'd items were silently discarded when the modal closed.
+  it('commits the typed text on blur and closes the input', () => {
     const { onItemAdd } = setup()
     const input = openGhostInput()
     fireEvent.change(input, { target: { value: 'draft' } })
     fireEvent.blur(input)
-    expect(onItemAdd).not.toHaveBeenCalled()
+    expect(onItemAdd).toHaveBeenCalledTimes(1)
+    expect(onItemAdd).toHaveBeenCalledWith('draft', 'Checklist')
+    expect(screen.queryByPlaceholderText('New item…')).toBeNull()
+  })
+
+  it('does not commit typed text when the add is rejected (still hydrating)', () => {
+    const { onItemAdd } = setup()
+    onItemAdd.mockReturnValue(false)
+    const input = openGhostInput()
+    fireEvent.change(input, { target: { value: 'draft' } })
+    fireEvent.blur(input)
     expect(screen.getByPlaceholderText('New item…')).toBeTruthy()
+    expect((screen.getByPlaceholderText('New item…') as HTMLTextAreaElement).value).toBe('draft')
   })
 
   it('adding a group persists no item — only commits on typed Enter', () => {
@@ -98,5 +111,51 @@ describe('TaskChecklist ghost input', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(onItemAdd).toHaveBeenCalledTimes(1)
     expect(onItemAdd).toHaveBeenCalledWith('Real first item', 'Checklist 2')
+  })
+})
+
+// The modal's Done/close unmounts TaskChecklist, possibly in the same React
+// batch as an Escape or Ctrl+Enter — these lock the commit-on-unmount contract:
+// typed text commits exactly once, and a cancel is never resurrected.
+describe('TaskChecklist unmount commit', () => {
+  function setupUnmountable(items: ChecklistItem[] = []) {
+    const onItemAdd = vi.fn()
+    const view = render(<TaskChecklist taskId="task-1" items={items} onItemAdd={onItemAdd} />)
+    return { onItemAdd, unmount: view.unmount }
+  }
+
+  it('commits typed-but-unsubmitted text exactly once on unmount', () => {
+    const { onItemAdd, unmount } = setupUnmountable()
+    const input = openGhostInput()
+    fireEvent.change(input, { target: { value: 'saved on close' } })
+    unmount()
+    expect(onItemAdd).toHaveBeenCalledTimes(1)
+    expect(onItemAdd).toHaveBeenCalledWith('saved on close', 'Checklist')
+  })
+
+  it('does not commit on unmount after Escape cancelled the input', () => {
+    const { onItemAdd, unmount } = setupUnmountable()
+    const input = openGhostInput()
+    fireEvent.change(input, { target: { value: 'abandoned' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    unmount()
+    expect(onItemAdd).not.toHaveBeenCalled()
+  })
+
+  it('does not double-commit on unmount after Enter already submitted', () => {
+    const { onItemAdd, unmount } = setupUnmountable()
+    const input = openGhostInput()
+    fireEvent.change(input, { target: { value: 'once only' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onItemAdd).toHaveBeenCalledTimes(1)
+    unmount()
+    expect(onItemAdd).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not commit an empty input on unmount', () => {
+    const { onItemAdd, unmount } = setupUnmountable()
+    openGhostInput()
+    unmount()
+    expect(onItemAdd).not.toHaveBeenCalled()
   })
 })

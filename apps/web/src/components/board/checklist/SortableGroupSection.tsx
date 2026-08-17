@@ -43,6 +43,7 @@ interface SortableGroupSectionProps {
   onAddStart: () => void
   onAddChange: (v: string) => void
   onAddSubmit: (e: React.FormEvent) => void
+  onAddCommit: () => void
   onAddCancel: () => void
 }
 
@@ -53,9 +54,10 @@ export function SortableGroupSection({
   onDeleteStart, onDeleteConfirm, onDeleteCancel,
   onItemToggle, onItemRemove, onItemStatusChange,
   onItemEditStart, onItemEditCommit, onItemEditCancel, onItemEditTitleChange,
-  onAddStart, onAddChange, onAddSubmit, onAddCancel,
+  onAddStart, onAddChange, onAddSubmit, onAddCommit, onAddCancel,
 }: SortableGroupSectionProps) {
   const justSubmittedRef = useRef(false)
+  const justCancelledRef = useRef(false)
 
   const {
     attributes: groupAttributes,
@@ -215,7 +217,11 @@ export function SortableGroupSection({
                 e.target.style.height = `${e.target.scrollHeight}px`
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Escape') onAddCancel()
+                if (e.key === 'Escape') {
+                  justCancelledRef.current = true
+                  setTimeout(() => { justCancelledRef.current = false }, 100)
+                  onAddCancel()
+                }
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
                   if (newItemTitle.trim()) {
@@ -226,7 +232,13 @@ export function SortableGroupSection({
                   }
                 }
               }}
-              onBlur={() => { if (!newItemTitle.trim() && !justSubmittedRef.current) onAddCancel() }}
+              onBlur={() => {
+                if (justSubmittedRef.current || justCancelledRef.current) return
+                // Click-away with text typed commits it (Trello-style); an
+                // empty input just closes. Esc still cancels via onKeyDown.
+                if (newItemTitle.trim()) onAddCommit()
+                else onAddCancel()
+              }}
               placeholder="New item…"
               className={cn(
                 'flex-1 px-0 py-0 text-sm bg-transparent border-none resize-none',

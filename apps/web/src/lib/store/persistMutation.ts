@@ -1,6 +1,6 @@
 'use client'
 
-import { useBoardStore } from './boardStore'
+import { useBoardStore, beginDirectWrite, endDirectWrite } from './boardStore'
 import { toast } from '@/components/ui/Toast'
 
 // A failure worth retrying: a Neon cold-start resume, a dropped serverless
@@ -43,6 +43,7 @@ export async function persistMutation<T>(
   opts: { rollback?: () => void; failMessage?: string; onSuccess?: (result: T) => void } = {},
 ): Promise<void> {
   useBoardStore.getState().setSaveStatus('saving')
+  beginDirectWrite()
   try {
     const result = await withRetry(run, () => useBoardStore.getState().setSaveStatus('retrying'))
     useBoardStore.setState({ isDirty: false })
@@ -58,5 +59,7 @@ export async function persistMutation<T>(
       viewOnly ? 'You have view-only access to this project' : (opts.failMessage ?? 'Could not save — changes reverted'),
       { force: true },
     )
+  } finally {
+    endDirectWrite()
   }
 }

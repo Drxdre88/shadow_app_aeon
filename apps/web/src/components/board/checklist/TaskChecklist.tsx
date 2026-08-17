@@ -29,7 +29,9 @@ interface TaskChecklistProps {
   taskId: string
   items: ChecklistItem[]
   autoFocusAdd?: boolean
-  onItemAdd?: (title: string, groupName: string) => void
+  // Returns false when the add was not accepted (still hydrating) — the typed
+  // text must then stay in the input rather than being silently discarded.
+  onItemAdd?: (title: string, groupName: string) => boolean | void
   onItemToggle?: (itemId: string, newState: CheckState) => void
   onItemRemove?: (itemId: string) => void
   onItemStatusChange?: (itemId: string, status: ChecklistStatus) => void
@@ -84,8 +86,8 @@ export function TaskChecklist({
     autoFocusedRef.current = true
     const firstGroup = groups[0] || 'Checklist'
     const timer = setTimeout(() => {
-      setAddingInGroup(firstGroup)
-      setNewItemTitle('')
+      setAddingInGroupSynced(firstGroup)
+      setNewItemTitleSynced('')
     }, 200)
     return () => clearTimeout(timer)
   }, [autoFocusAdd, items.length])
@@ -106,15 +108,44 @@ export function TaskChecklist({
 
   const TITLE_MAX = 2000
 
+  // Commit whatever is typed in the add-item input without an explicit Enter —
+  // fired on input blur and on unmount (modal "Done"/close). Before this,
+  // typed-but-not-submitted items were silently discarded when the modal closed.
+  //
+  // The refs are updated SYNCHRONOUSLY in the event handlers below (never
+  // during render, never in a passive effect): an Escape or Ctrl+Enter cancels/
+  // commits AND unmounts the modal in the same React batch, so an effect-synced
+  // ref would still hold the typed text when the unmount cleanup runs — turning
+  // a cancel into a commit or a commit into a duplicate.
+  const newItemTitleRef = useRef('')
+  const addingInGroupRef = useRef<string | null>(null)
+  const onItemAddRef = useRef(onItemAdd)
+  useEffect(() => { onItemAddRef.current = onItemAdd })
+  const setNewItemTitleSynced = (v: string) => { newItemTitleRef.current = v; setNewItemTitle(v) }
+  const setAddingInGroupSynced = (g: string | null) => { addingInGroupRef.current = g; setAddingInGroup(g) }
+
   const handleAddItem = (e: React.FormEvent, groupName: string) => {
     e.preventDefault()
     const trimmed = newItemTitle.trim()
     if (!trimmed || trimmed.length > TITLE_MAX) return
-    onItemAdd?.(trimmed, groupName)
+    if (onItemAdd?.(trimmed, groupName) === false) return
     setPendingGroups((prev) => prev.filter((pg) => pg !== groupName))
-    setNewItemTitle('')
-    setAddingInGroup(groupName)
+    setNewItemTitleSynced('')
+    setAddingInGroupSynced(groupName)
   }
+
+  const commitPendingAdd = () => {
+    const groupName = addingInGroupRef.current
+    const trimmed = newItemTitleRef.current.trim()
+    if (!groupName || !trimmed || trimmed.length > TITLE_MAX) return
+    if (onItemAddRef.current?.(trimmed, groupName) === false) return
+    setPendingGroups((prev) => prev.filter((pg) => pg !== groupName))
+    setNewItemTitleSynced('')
+    setAddingInGroupSynced(null)
+  }
+  const commitPendingAddRef = useRef(commitPendingAdd)
+  useEffect(() => { commitPendingAddRef.current = commitPendingAdd })
+  useEffect(() => () => { commitPendingAddRef.current() }, [])
 
   const handleAddGroup = () => {
     if (addingGroupRef.current) return
@@ -131,8 +162,8 @@ export function TaskChecklist({
     // Ghost group: lives only in local state until its first item is
     // committed — escape/blur with nothing typed persists nothing.
     setPendingGroups((prev) => (prev.includes(name) ? prev : [...prev, name]))
-    setAddingInGroup(name)
-    setNewItemTitle('')
+    setAddingInGroupSynced(name)
+    setNewItemTitleSynced('')
   }
 
   const commitItemEdit = () => {
@@ -163,7 +194,7 @@ export function TaskChecklist({
         }
         return [...prev, trimmed]
       })
-      setAddingInGroup((prev) => prev === currentName ? trimmed : prev)
+      if (addingInGroupRef.current === currentName) setAddingInGroupSynced(trimmed)
       onGroupRename?.(currentName, trimmed)
     }
     setEditingGroupName(null)
@@ -234,7 +265,7 @@ export function TaskChecklist({
               onEditGroupCommit={commitGroupRename}
               onEditGroupCancel={() => { groupCommittedRef.current = false; setEditingGroupName(null); editingGroupNameRef.current = null; setEditingGroupValue(''); editingGroupValueRef.current = '' }}
               onDeleteStart={() => setConfirmDeleteGroup(groupName)}
-              onDeleteConfirm={() => { onGroupDelete?.(groupName); setConfirmDeleteGroup(null); setPendingGroups((prev) => prev.filter((pg) => pg !== groupName)); setAddingInGroup((prev) => (prev === groupName ? null : prev)) }}
+              onDeleteConfirm={() => { onGroupDelete?.(groupName); setConfirmDeleteGroup(null); setPendingGroups((prev) => prev.filter((pg) => pg !== groupName)); if (addingInGroupRef.current === groupName) setAddingInGroupSynced(null) }}
               onDeleteCancel={() => setConfirmDeleteGroup(null)}
               onItemToggle={(id, state) => onItemToggle?.(id, state)}
               onItemRemove={(id) => onItemRemove?.(id)}
@@ -243,10 +274,11 @@ export function TaskChecklist({
               onItemEditCommit={commitItemEdit}
               onItemEditCancel={() => { itemCommittedRef.current = false; setEditingItemId(null); editingItemIdRef.current = null; setEditingItemTitle(''); editingItemTitleRef.current = '' }}
               onItemEditTitleChange={(v: string) => { setEditingItemTitle(v); editingItemTitleRef.current = v }}
-              onAddStart={() => { setAddingInGroup(groupName); setNewItemTitle('') }}
-              onAddChange={setNewItemTitle}
+              onAddStart={() => { setAddingInGroupSynced(groupName); setNewItemTitleSynced('') }}
+              onAddChange={setNewItemTitleSynced}
               onAddSubmit={(e) => handleAddItem(e, groupName)}
-              onAddCancel={() => { setAddingInGroup(null); setNewItemTitle('') }}
+              onAddCommit={commitPendingAdd}
+              onAddCancel={() => { setAddingInGroupSynced(null); setNewItemTitleSynced('') }}
             />
           ))}
         </SortableContext>

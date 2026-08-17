@@ -42,13 +42,18 @@ export async function findChecklistItemsBatch(taskIds: string[]) {
 
 export async function createChecklistItem(
   taskId: string,
-  data: { title: string; groupName?: string; orderIndex?: number }
+  data: { id?: string; title: string; groupName?: string; orderIndex?: number }
 ) {
+  // onConflictDoNothing makes offline-queue replays idempotent server-side:
+  // production masks Server Action error messages, so the client cannot
+  // classify a duplicate-key rejection — the replay must simply succeed and
+  // hand back the row that already landed.
   const [item] = await db.transaction(async (tx) => {
     if (data.orderIndex !== undefined) {
       return tx
         .insert(checklistItems)
         .values({
+          ...(data.id ? { id: data.id } : {}),
           taskId,
           title: data.title,
           completed: false,
@@ -56,6 +61,7 @@ export async function createChecklistItem(
           groupName: data.groupName ?? 'Checklist',
           orderIndex: data.orderIndex,
         })
+        .onConflictDoNothing()
         .returning()
     }
 
@@ -67,6 +73,7 @@ export async function createChecklistItem(
     return tx
       .insert(checklistItems)
       .values({
+        ...(data.id ? { id: data.id } : {}),
         taskId,
         title: data.title,
         completed: false,
@@ -74,8 +81,25 @@ export async function createChecklistItem(
         groupName: data.groupName ?? 'Checklist',
         orderIndex: (maxResult?.max ?? -1) + 1,
       })
+      .onConflictDoNothing()
       .returning()
   })
+
+  if (!item && data.id) {
+    // Conflict: this id already landed on a prior attempt — return that row.
+    const [existing] = await db
+      .select()
+      .from(checklistItems)
+      .where(and(eq(checklistItems.id, data.id), eq(checklistItems.taskId, taskId)))
+    if (!existing) {
+      // The id exists but belongs to a different task — only a malicious or
+      // corrupted client can produce this; fail loudly rather than resolving
+      // undefined and letting the queue record a success that never landed.
+      throw new Error('Checklist item id conflict')
+    }
+    syncChecklistToGanttProgress(taskId).catch(() => {})
+    return existing
+  }
 
   syncChecklistToGanttProgress(taskId).catch(() => {})
   return item

@@ -140,6 +140,9 @@ export const updateLabelSchema = z.object({
 })
 
 export const createChecklistItemSchema = z.object({
+  // Client-supplied id makes offline-queue replays idempotent (duplicate key
+  // instead of a second row) and keeps optimistic local ids valid server-side.
+  id: z.string().uuid().optional(),
   title: z.string().trim().min(1).max(2000),
   groupName: z.string().trim().max(255).optional(),
   orderIndex: z.number().int().optional(),

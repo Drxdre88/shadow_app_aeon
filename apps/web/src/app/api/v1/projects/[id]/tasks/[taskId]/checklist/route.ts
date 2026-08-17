@@ -43,7 +43,9 @@ export const POST = withRateLimit(
       return jsonError('Invalid JSON body', 400)
     }
 
-    const parsed = createChecklistItemSchema.safeParse(body)
+    // `id` in the shared schema exists for the web client's offline-replay
+    // idempotency only — not part of the public REST contract, so strip it.
+    const parsed = createChecklistItemSchema.omit({ id: true }).safeParse(body)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
     const item = await createChecklistItem(taskId, parsed.data)

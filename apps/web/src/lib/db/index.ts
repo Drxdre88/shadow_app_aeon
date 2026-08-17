@@ -17,8 +17,15 @@ if (!connectionString) {
 // hammered /api/auth/* specifically because the NextAuth adapter runs a DB
 // query on EVERY signin/signout/session check, so it always sat on the stale
 // socket. With poolQueryViaFetch those single-statement queries use HTTP (no
-// socket to go stale); db.transaction() still uses WebSocket, which is fine —
-// transactions are request-scoped board mutations, never the auth hot path.
+// socket to go stale); db.transaction() still uses the WebSocket pool, so the
+// SAME dead-socket class hit transactional board writes (checklist create/
+// update run in db.transaction) — an idle-resumed instance pulled a dead
+// socket and the write hung until the function died, silently from the
+// client's perspective. idleTimeoutMillis + query_timeout below bound that:
+// idle sockets are evicted before they can straddle an instance freeze, and a
+// query on a dead socket rejects instead of hanging until the function is
+// killed — the client then at least sees a failure (retried in dev, rolled
+// back + toasted in prod, where action error messages are masked).
 // The connectionTimeoutMillis below only covered the *different* failure of a
 // slow connection acquire, not a dead-socket reuse, which is why the 500s
 // outlived it. Ref: Neon serverless CONFIG.md (poolQueryViaFetch) + Neon docs
@@ -35,6 +42,12 @@ neonConfig.poolQueryViaFetch = true
 const pool = new Pool({
   connectionString,
   connectionTimeoutMillis: 8000,
+  // Evict idle sockets fast: one that sat "available" across an instance
+  // freeze is dead, and reusing it hangs the next transaction.
+  idleTimeoutMillis: 10_000,
+  // Client-side per-query deadline so a dead-socket query rejects instead of
+  // awaiting until Vercel kills the function with no response.
+  query_timeout: 15_000,
   max: 20,
 })
 export const db = drizzle(pool, { schema })

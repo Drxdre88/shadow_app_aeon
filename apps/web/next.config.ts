@@ -12,6 +12,9 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  // Next 16.3 writes AGENTS.md + a stub CLAUDE.md into apps/web on every dev
+  // boot; the stub CLAUDE.md would shadow the repo-root agent instructions.
+  agentRules: false,
   transpilePackages: ['@aeon/shared'],
   experimental: {
     serverActions: {

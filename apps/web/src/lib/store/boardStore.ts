@@ -274,9 +274,30 @@ export const useBoardStore = create<BoardState>()(
   )
 )
 
+// External in-flight-write sources (the mutation queue, direct action calls).
+// isDirty is a single boolean that several uncoordinated writers reset to
+// false on their OWN completion — so on its own it can go false while another
+// write is still on the wire, letting a poll/Pusher reload clobber the store
+// with a pre-write DB read. These sources close that gap without a circular
+// import: mutationQueue registers its pending count, direct callers hold a
+// refcount via beginDirectWrite/endDirectWrite.
+const pendingWriteSources: Array<() => boolean> = []
+export function registerPendingWritesSource(source: () => boolean) {
+  pendingWriteSources.push(source)
+}
+
+let directWrites = 0
+export function beginDirectWrite() { directWrites++ }
+export function endDirectWrite() { directWrites = Math.max(0, directWrites - 1) }
+
 export function isDirtyOrGracePeriod(): boolean {
   const s = useBoardStore.getState()
-  return s.isDirty || Date.now() - s.lastMutatedAt < DIRTY_GRACE_MS
+  return (
+    s.isDirty ||
+    directWrites > 0 ||
+    pendingWriteSources.some((hasPending) => hasPending()) ||
+    Date.now() - s.lastMutatedAt < DIRTY_GRACE_MS
+  )
 }
 
 export const useColumns = () => useBoardStore((s) => s.columns)
