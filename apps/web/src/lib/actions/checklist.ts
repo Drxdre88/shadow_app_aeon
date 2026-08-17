@@ -49,6 +49,9 @@ export async function createChecklistItem(data: {
   await requireTaskEditable(data.taskId, data.projectId)
 
   const parsed = createChecklistItemSchema.parse({
+    // Non-uuid ids (legacy generateId fallback) are dropped, not rejected —
+    // the DB then assigns one, same as before ids were passed through.
+    id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.id) ? data.id : undefined,
     title: data.title,
     groupName: data.groupName,
     orderIndex: data.orderIndex,

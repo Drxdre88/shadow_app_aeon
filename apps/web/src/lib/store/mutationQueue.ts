@@ -2,7 +2,7 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { useBoardStore } from './boardStore'
+import { useBoardStore, registerPendingWritesSource } from './boardStore'
 import { withRetry, isTransientError } from './persistMutation'
 import { toast } from '@/components/ui/Toast'
 import { dispatchMutation, isAlreadyApplied, type QueuedMutation } from './mutationDispatch'
@@ -43,6 +43,7 @@ export const useMutationQueue = create<QueueState>()(
 
       enqueue: (mutation, fx) => {
         if (fx) sideEffects.set(mutation.id, fx)
+        if (pendingSince === null) pendingSince = Date.now()
         set((s) => ({ pending: [...s.pending, mutation] }))
         void get().flush()
       },
@@ -101,6 +102,7 @@ export const useMutationQueue = create<QueueState>()(
               )
             }
           }
+          pendingSince = null
           useBoardStore.setState({ isDirty: false })
           useBoardStore.getState().setSaveStatus('saved')
         } finally {
@@ -115,6 +117,26 @@ export const useMutationQueue = create<QueueState>()(
     },
   ),
 )
+
+// While anything is queued or mid-flush, board reloads (poll / Pusher echo)
+// must not wholesale-replace the store — the read could predate the write.
+// Registered here (not computed in boardStore) to avoid a circular import.
+//
+// Bounded: the pending records persist to localStorage and a record that keeps
+// failing transiently retries every 8s forever, so an unbounded source would
+// suppress reloads for this browser profile indefinitely (across sessions).
+// After the cap, reloads resume — queued optimistic edits may briefly leave
+// view, but the records stay queued and re-apply when the flush finally lands.
+const MAX_RELOAD_SUPPRESS_MS = 5 * 60_000
+let pendingSince: number | null = null
+registerPendingWritesSource(() => {
+  const s = useMutationQueue.getState()
+  if (s.flushing) return true
+  if (s.pending.length === 0) return false
+  // Records restored from localStorage on load never went through enqueue.
+  if (pendingSince === null) pendingSince = Date.now()
+  return Date.now() - pendingSince < MAX_RELOAD_SUPPRESS_MS
+})
 
 // Re-flush the moment we can reach the server again: on reconnect, on tab
 // focus, and once on load — so edits made offline (or queued when a tab was

@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react'
 import { createBoardTask, updateBoardTask, reorderBoardTasks, archiveBoardTask, archiveColumnTasks } from '@/lib/actions/board'
 import { createColumn, updateColumn as updateColumnAction, reorderColumns as reorderColumnsAction, deleteColumn as deleteColumnAction } from '@/lib/actions/columns'
 import { sendToVault, sendBatchToVault } from '@/lib/actions/vault'
-import { useBoardStore } from '@/lib/store/boardStore'
+import { useBoardStore, beginDirectWrite, endDirectWrite } from '@/lib/store/boardStore'
 import { useMutationQueue } from '@/lib/store/mutationQueue'
 import { toast } from '@/components/ui/Toast'
 
@@ -152,6 +152,7 @@ export function useBoardHandlers(projectId: string) {
   }, [projectId])
 
   const handleColumnCreate = useCallback((col: { id: string; projectId: string; name: string; color: string; orderIndex: number }) => {
+    beginDirectWrite()
     createColumn(projectId, { name: col.name, color: col.color, orderIndex: col.orderIndex }, col.id)
       .then(() => {
         useBoardStore.setState({ isDirty: false })
@@ -162,10 +163,12 @@ export function useBoardHandlers(projectId: string) {
         useBoardStore.setState({ isDirty: false })
         toast('Failed to create column')
       })
+      .finally(endDirectWrite)
   }, [projectId])
 
   const handleColumnUpdate = useCallback((columnId: string, updates: { name?: string; color?: string }) => {
     const snapshot = useBoardStore.getState().columns.find(c => c.id === columnId)
+    beginDirectWrite()
     updateColumnAction(columnId, projectId, updates)
       .then(() => {
         useBoardStore.setState({ isDirty: false })
@@ -190,10 +193,12 @@ export function useBoardHandlers(projectId: string) {
           toast('Failed to update column')
         }
       })
+      .finally(endDirectWrite)
   }, [projectId])
 
   const handleColumnReorder = useCallback((updates: { id: string; orderIndex: number }[]) => {
     const snapshot = useBoardStore.getState().columns.map(c => ({ id: c.id, orderIndex: c.orderIndex }))
+    beginDirectWrite()
     reorderColumnsAction(projectId, updates)
       .then(() => {
         useBoardStore.setState({ isDirty: false })
@@ -204,6 +209,7 @@ export function useBoardHandlers(projectId: string) {
         useBoardStore.setState({ isDirty: false })
         toast('Failed to reorder columns')
       })
+      .finally(endDirectWrite)
   }, [projectId])
 
   const handleColumnDelete = useCallback((columnId: string) => {
@@ -212,6 +218,7 @@ export function useBoardHandlers(projectId: string) {
     const taskSnapshots = tasks.filter(t => t.columnId === columnId)
     taskSnapshots.forEach(t => removeTask(t.id))
     removeColumn(columnId)
+    beginDirectWrite()
     deleteColumnAction(columnId, projectId)
       .then(() => {
         useBoardStore.setState({ isDirty: false })
@@ -252,6 +259,7 @@ export function useBoardHandlers(projectId: string) {
         taskSnapshots.forEach(t => addTask(t))
         toast('Failed to delete column')
       })
+      .finally(endDirectWrite)
   }, [projectId])
 
   const handleSendToVault = useCallback((taskId: string) => {
