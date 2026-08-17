@@ -197,6 +197,8 @@ export const boardTasks = pgTable('board_tasks', {
   endDate: timestamp('end_date', { mode: 'date' }),
   onTimeline: boolean('on_timeline').default(false).notNull(),
   size: real('size'),
+  // 0-100, null = no progress tracked (app-enforced range)
+  progress: integer('progress'),
   orderIndex: integer('order_index').notNull(),
   metadata: jsonb('metadata').default({}).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -259,6 +261,17 @@ export const canvasNodes = pgTable('canvas_nodes', {
 export const userPreferences = pgTable('user_preferences', {
   userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
   preferences: jsonb('preferences').default({}).notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+})
+
+// Admin-curated default preference sets, stamped into user_preferences at
+// account creation (e.g. 'business_admin' — the professional new-user
+// defaults). Editable only by role=admin.
+export const settingsTemplates = pgTable('settings_templates', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  name: varchar('name', { length: 50 }).notNull().unique(),
+  preferences: jsonb('preferences').default({}).notNull(),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 
