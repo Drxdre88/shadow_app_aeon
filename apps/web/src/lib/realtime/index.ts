@@ -2,6 +2,7 @@ import { getPusher, boardChannel } from '@/lib/pusher'
 
 export type BoardEvent =
   | { type: 'task:created' | 'task:updated' | 'task:deleted' | 'task:moved' }
+  | { type: 'task:assigned' | 'task:unassigned' }
   | { type: 'column:reordered' | 'column:created' | 'column:deleted' | 'column:updated' }
   | { type: 'label:changed' }
   | { type: 'dependency:changed' }

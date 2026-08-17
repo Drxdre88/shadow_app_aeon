@@ -1,7 +1,8 @@
 import { eq, and, inArray, isNull, gte, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { workspaceGroups, groupMembers, projectGroups, projects, users, realmInvites, projectInvites, projectMembers } from '@/lib/db/schema'
+import { workspaceGroups, groupMembers, projectGroups, projects, users, realmInvites, projectInvites, projectMembers, boardTasks, taskAssignees } from '@/lib/db/schema'
 import { sendRealmInviteEmail, getBaseUrl } from '@/lib/email'
+import { touchProject } from './projects'
 
 export async function createWorkspaceGroup(ownerId: string, data: { name: string; icon?: string; color?: string }) {
   const [group] = await db.insert(workspaceGroups).values({
@@ -138,10 +139,69 @@ export async function addGroupMember(groupId: string, userId: string, role: stri
   return member || null
 }
 
+// Losing realm membership can strip the last access path to a project, which
+// would leave the user assigned to its tasks as a ghost pill. Assignments are
+// dropped only on projects where no other access path survives — owner, direct
+// project_members row, or another realm that also holds the project (mirrors
+// verifyProjectAccess in ./projects).
 export async function removeGroupMember(groupId: string, userId: string) {
-  await db.delete(groupMembers).where(
-    and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId))
-  )
+  const touched = await db.transaction(async (tx) => {
+    await tx.delete(groupMembers).where(
+      and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId))
+    )
+
+    const groupProjects = await tx
+      .select({ projectId: projectGroups.projectId })
+      .from(projectGroups)
+      .where(eq(projectGroups.groupId, groupId))
+    const projectIds = groupProjects.map((p) => p.projectId)
+    if (projectIds.length === 0) return []
+
+    const owned = await tx
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(inArray(projects.id, projectIds), eq(projects.userId, userId)))
+
+    const direct = await tx
+      .select({ projectId: projectMembers.projectId })
+      .from(projectMembers)
+      .where(and(inArray(projectMembers.projectId, projectIds), eq(projectMembers.userId, userId)))
+
+    const viaOtherRealm = await tx
+      .select({ projectId: projectGroups.projectId })
+      .from(projectGroups)
+      .innerJoin(groupMembers, and(
+        eq(groupMembers.groupId, projectGroups.groupId),
+        eq(groupMembers.userId, userId),
+      ))
+      .where(inArray(projectGroups.projectId, projectIds))
+
+    const stillAccessible = new Set<string>([
+      ...owned.map((r) => r.id),
+      ...direct.map((r) => r.projectId),
+      ...viaOtherRealm.map((r) => r.projectId),
+    ])
+    const orphaned = projectIds.filter((id) => !stillAccessible.has(id))
+    if (orphaned.length === 0) return []
+
+    const stale = await tx
+      .select({ taskId: taskAssignees.taskId, projectId: boardTasks.projectId })
+      .from(taskAssignees)
+      .innerJoin(boardTasks, eq(boardTasks.id, taskAssignees.taskId))
+      .where(and(eq(taskAssignees.userId, userId), inArray(boardTasks.projectId, orphaned)))
+    if (stale.length === 0) return []
+
+    await tx.delete(taskAssignees).where(and(
+      eq(taskAssignees.userId, userId),
+      inArray(taskAssignees.taskId, stale.map((r) => r.taskId)),
+    ))
+
+    return [...new Set(stale.map((r) => r.projectId))]
+  })
+
+  for (const projectId of touched) {
+    await touchProject(projectId, { type: 'task:unassigned' })
+  }
 }
 
 export async function updateGroupMemberRole(groupId: string, userId: string, role: string) {
@@ -432,7 +492,7 @@ export async function findPendingRealmInvites(groupId: string) {
 
 export async function inviteOrAddRealmMember(groupId: string, email: string, role: string, invitedBy: string) {
   const lowerEmail = email.toLowerCase()
-  const [user] = await db.select({ id: users.id }).from(users).where(eq(users.email, lowerEmail))
+  const [user] = await db.select({ id: users.id }).from(users).where(sql`lower(${users.email}) = ${lowerEmail}`)
 
   if (user) {
     const member = await db.transaction(async (tx) => {
