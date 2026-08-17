@@ -17,7 +17,8 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: '2mb',
     },
-    turbopackUseSystemTlsCerts: true,
+    // turbopackUseSystemTlsCerts was removed in Next 16.3 — system TLS certs
+    // (needed on corp networks with TLS interception) are now the default.
   },
   async headers() {
     return [{ source: '/(.*)', headers: securityHeaders }]
