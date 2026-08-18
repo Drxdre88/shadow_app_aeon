@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { ProgressControl } from './ProgressControl'
+import { anchorToCard } from './popoverAnchor'
 
 interface TaskProgressPopoverProps {
   taskId: string
@@ -14,22 +15,7 @@ interface TaskProgressPopoverProps {
 const POPOVER_WIDTH = 208
 const POPOVER_HEIGHT = 96
 
-function anchorPosition(taskId: string) {
-  if (typeof document === 'undefined') return { top: 0, left: 0 }
-  const card = document.querySelector(`[data-task-id="${CSS.escape(taskId)}"]`)
-  const rect = card?.getBoundingClientRect()
-  if (!rect || rect.width === 0) {
-    return {
-      top: Math.round(window.innerHeight / 2 - POPOVER_HEIGHT / 2),
-      left: Math.round(window.innerWidth / 2 - POPOVER_WIDTH / 2),
-    }
-  }
-  const top = rect.bottom + 8 + POPOVER_HEIGHT > window.innerHeight
-    ? Math.max(8, rect.top - POPOVER_HEIGHT - 8)
-    : rect.bottom + 8
-  const left = Math.min(Math.max(8, rect.left), window.innerWidth - POPOVER_WIDTH - 8)
-  return { top: Math.round(top), left: Math.round(left) }
-}
+const anchorPosition = (taskId: string) => anchorToCard(taskId, POPOVER_WIDTH, POPOVER_HEIGHT)
 
 export function TaskProgressPopover({ taskId, onClose, onTaskUpdate }: TaskProgressPopoverProps) {
   const task = useBoardStore((s) => s.tasks.find((t) => t.id === taskId))

@@ -14,6 +14,7 @@ import { LabelPicker } from './LabelPicker'
 import { TaskColorPicker } from './TaskColorPicker'
 import { TaskPriorityPicker } from './TaskPriorityPicker'
 import { TaskProgressPopover } from './TaskProgressPopover'
+import { TaskSizePopover } from './TaskSizePopover'
 import { TrashDropZone } from './TrashDropZone'
 import { DragPreview } from './DragPreview'
 import { ConnectModeBanner } from './ConnectModeBanner'
@@ -133,6 +134,7 @@ export function TaskBoard({
   const [priorityPickerTaskId, setPriorityPickerTaskId] = useState<string | null>(null)
   const [assigneeTaskId, setAssigneeTaskId] = useState<string | null>(null)
   const [progressTaskId, setProgressTaskId] = useState<string | null>(null)
+  const [sizeTaskId, setSizeTaskId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -245,7 +247,7 @@ export function TaskBoard({
     })
   }, [copiedTaskId, projectId])
 
-  const hasOpenOverlay = !!editingTask || !!newTaskColumnId || !!labelPickerTaskId || !!colorPickerTaskId || !!priorityPickerTaskId || !!dependencyTreeTaskId || !!assigneeTaskId || !!progressTaskId
+  const hasOpenOverlay = !!editingTask || !!newTaskColumnId || !!labelPickerTaskId || !!colorPickerTaskId || !!priorityPickerTaskId || !!dependencyTreeTaskId || !!assigneeTaskId || !!progressTaskId || !!sizeTaskId
 
   useBoardKeyboardShortcuts({
     hoveredTaskId,
@@ -264,6 +266,7 @@ export function TaskBoard({
     onSelectTask: selectTask,
     onOpenAssignee: (taskId) => setAssigneeTaskId((prev) => (prev === taskId ? null : taskId)),
     onOpenProgress: (taskId) => setProgressTaskId((prev) => (prev === taskId ? null : taskId)),
+    onOpenSize: (taskId) => setSizeTaskId((prev) => (prev === taskId ? null : taskId)),
     onTaskMove,
   })
 
@@ -359,6 +362,7 @@ export function TaskBoard({
         color: formData.color,
         labels: [],
         onTimeline: false,
+        size: formData.size,
         orderIndex: maxOrder + 1,
       }
       addTask(newTask)
@@ -479,6 +483,14 @@ export function TaskBoard({
         <TaskProgressPopover
           taskId={progressTaskId}
           onClose={() => setProgressTaskId(null)}
+          onTaskUpdate={onTaskUpdate}
+        />
+      )}
+
+      {sizeTaskId && (
+        <TaskSizePopover
+          taskId={sizeTaskId}
+          onClose={() => setSizeTaskId(null)}
           onTaskUpdate={onTaskUpdate}
         />
       )}

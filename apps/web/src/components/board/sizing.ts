@@ -25,9 +25,9 @@ export const DEFAULT_SIZING: BoardSizing = {
   unit: 'days',
   labels: [
     { key: 'S', value: 1 },
-    { key: 'M', value: 2 },
-    { key: 'L', value: 5 },
-    { key: 'XL', value: 10 },
+    { key: 'M', value: 5 },
+    { key: 'L', value: 10 },
+    { key: 'XL', value: 20 },
   ],
 }
 

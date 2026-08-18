@@ -31,6 +31,7 @@ export const DEFAULT_SHORTCUTS: Record<string, string> = {
   selectCard: 's',
   assignMember: 'm',
   setProgress: 'p',
+  setSize: 't',
 }
 
 export const DEFAULT_PREFERENCES = {

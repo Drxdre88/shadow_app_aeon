@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronDown, Palette, Calendar, Trash2, Check } from 'lucide-react'
+import { ChevronDown, Palette, Calendar, Trash2, Check, Ruler } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { AccentColor, ACCENT_COLORS, colorConfig } from '@/lib/utils/colors'
@@ -16,6 +16,7 @@ import { TaskDateSection } from './TaskDateSection'
 import { TaskLabelsSection } from './TaskLabelsSection'
 import { useBoardSizing, sizingTooltip, sizingUnitLabel } from './sizing'
 import { TaskProgressRow } from './TaskProgressRow'
+import { BoardSizingModal } from './BoardSizingModal'
 import { triggerCelebration } from '@/components/celebrations'
 
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
@@ -74,6 +75,7 @@ export function TaskEditModal({
   const updateTask = useBoardStore((s) => s.updateTask)
   const sizing = useBoardSizing()
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
+  const [sizingModalOpen, setSizingModalOpen] = useState(false)
   const nameInputRef = useRef<HTMLInputElement>(null)
 
   const {
@@ -102,6 +104,8 @@ export function TaskEditModal({
     if (!isOpen) return
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // The sizing overlay sits on top — let it take the key first.
+        if (sizingModalOpen) { setSizingModalOpen(false); return }
         onClose()
         return
       }
@@ -112,7 +116,7 @@ export function TaskEditModal({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose, onSubmit, formData.name])
+  }, [isOpen, onClose, onSubmit, formData.name, sizingModalOpen])
 
   const currentTask = editingTaskId ? tasks.find((t) => t.id === editingTaskId) : null
   const isDone = currentTask?.status === 'done'
@@ -148,7 +152,7 @@ export function TaskEditModal({
               'w-full h-full sm:h-auto sm:max-w-lg sm:max-h-[90vh] flex flex-col rounded-none sm:rounded-xl',
               'bg-gradient-to-b from-white/10 to-black/40',
               'backdrop-blur-md border-0 sm:border border-white/10',
-              'shadow-none sm:shadow-[0_0_40px_rgba(99,102,241,0.3)]'
+              'shadow-none sm:shadow-[0_0_40px_color-mix(in_srgb,var(--primary)_30%,transparent)]'
             )}
           >
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
@@ -267,9 +271,19 @@ export function TaskEditModal({
               </div>
 
               <div>
-                <label className="block text-sm text-slate-400 mb-1.5">
-                  {sizing.enabled ? 'Size' : 'Size (days)'}
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-sm text-slate-400">
+                    {sizing.enabled ? 'Size' : 'Size (days)'}
+                  </label>
+                  <button
+                    onClick={() => setSizingModalOpen(true)}
+                    title={`Change what each size means in ${sizing.unit}`}
+                    className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-white transition-colors"
+                  >
+                    <Ruler className="w-3 h-3" />
+                    Edit sizes
+                  </button>
+                </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {sizing.enabled && sizing.labels.map((sizeLabel) => {
                     const isActive = formData.size === sizeLabel.value
@@ -436,6 +450,12 @@ export function TaskEditModal({
                 {editingTaskId ? 'Done' : 'Create Card'}
               </NeonButton>
             </div>
+
+            <BoardSizingModal
+              isOpen={sizingModalOpen}
+              projectId={projectId}
+              onClose={() => setSizingModalOpen(false)}
+            />
           </motion.div>
         </motion.div>
       )}

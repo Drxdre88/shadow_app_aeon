@@ -15,10 +15,21 @@ describe('parseSizing', () => {
     expect(parseSizing({ sizing: 'nonsense' })).toEqual(DEFAULT_SIZING)
   })
 
-  it('ships enabled so every board gets S/M/L/XL out of the box', () => {
+  it('ships enabled with the S1/M5/L10/XL20 ladder', () => {
     expect(DEFAULT_SIZING.enabled).toBe(true)
-    expect(DEFAULT_SIZING.labels.map((l) => l.key)).toEqual(['S', 'M', 'L', 'XL'])
+    expect(DEFAULT_SIZING.labels).toEqual([
+      { key: 'S', value: 1 },
+      { key: 'M', value: 5 },
+      { key: 'L', value: 10 },
+      { key: 'XL', value: 20 },
+    ])
     expect(parseSizing({ sizing: { labels: [{ key: 'S', value: 1 }] } }).enabled).toBe(true)
+  })
+
+  it('keeps every default value inside the persistable size range', () => {
+    for (const label of DEFAULT_SIZING.labels) {
+      expect(clampSizingValue(label.value)).toBe(label.value)
+    }
   })
 
   it('stays off when a board explicitly disabled it', () => {
