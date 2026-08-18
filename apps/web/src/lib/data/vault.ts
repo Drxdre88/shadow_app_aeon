@@ -238,6 +238,7 @@ export async function restoreFromVault(vaultId: string, projectId: string) {
         color: vaultEntry.color,
         status: 'todo',
         onTimeline: false,
+        size: vaultEntry.size,
         orderIndex: maxResult.max + 1,
         metadata: vaultEntry.metadata,
       })

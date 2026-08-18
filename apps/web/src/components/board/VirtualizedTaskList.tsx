@@ -53,6 +53,7 @@ interface VirtualizedTaskListProps {
     color: string
     labels: string[]
     onTimeline: boolean
+    size?: number | null
     orderIndex: number
   }) => void
 }

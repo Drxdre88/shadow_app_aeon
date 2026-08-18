@@ -57,6 +57,7 @@ export async function createTask(
     color: data.color,
     onTimeline: data.onTimeline,
     size: data.size ?? null,
+    progress: data.progress ?? null,
     startDate: data.startDate ? new Date(data.startDate) : null,
     endDate: data.endDate ? new Date(data.endDate) : null,
   }

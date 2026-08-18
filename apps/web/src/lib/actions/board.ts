@@ -51,6 +51,8 @@ export async function createBoardTask(data: {
   color: string
   onTimeline: boolean
   size?: number | null
+  progress?: number | null
+  labels?: string[]
   orderIndex: number
   startDate?: string
   endDate?: string
@@ -71,12 +73,20 @@ export async function createBoardTask(data: {
     color: data.color,
     onTimeline: data.onTimeline,
     size: data.size,
+    progress: data.progress,
     orderIndex: data.orderIndex,
     startDate: data.startDate,
     endDate: data.endDate,
   })
 
   const task = await _createTask(data.projectId, parsed, data.id)
+
+  // Labels live in their own join table, so a card created with labels already
+  // picked (quick-add, delete-undo) has to write them explicitly or they are
+  // silently lost on the next board load.
+  if (data.labels && data.labels.length > 0) {
+    await _setTaskLabels(task.id, data.labels, data.projectId)
+  }
 
   emitActivity(data.projectId, 'task', task.id, 'created', data.name, undefined, userId).catch(() => {})
   captureBoardEvent({
@@ -243,6 +253,7 @@ export async function duplicateBoardTask(
     color: source.color,
     onTimeline: source.onTimeline,
     size: source.size,
+    progress: source.progress,
     orderIndex: maxOrder + 1,
   })
 

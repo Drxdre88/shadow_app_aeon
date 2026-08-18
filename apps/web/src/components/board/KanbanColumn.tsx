@@ -44,6 +44,7 @@ interface KanbanColumnProps {
     color: string
     labels: string[]
     onTimeline: boolean
+    size?: number | null
     orderIndex: number
   }) => void
   onColumnRename?: (columnId: string, name: string) => void

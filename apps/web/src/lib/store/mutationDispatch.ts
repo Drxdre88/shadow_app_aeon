@@ -24,6 +24,9 @@ export type CreateTaskArgs = {
   priority: string
   color: string
   onTimeline: boolean
+  size?: number | null
+  progress?: number | null
+  labels?: string[]
   orderIndex: number
   startDate?: string
   endDate?: string

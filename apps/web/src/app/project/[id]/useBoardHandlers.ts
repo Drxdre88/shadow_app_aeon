@@ -22,7 +22,10 @@ export function useBoardHandlers(projectId: string) {
     status: string
     priority: string
     color: string
+    labels?: string[]
     onTimeline: boolean
+    size?: number | null
+    progress?: number | null
     orderIndex: number
     startDate?: string
     endDate?: string
@@ -94,7 +97,10 @@ export function useBoardHandlers(projectId: string) {
                 status: snapshot.status,
                 priority: snapshot.priority,
                 color: snapshot.color,
+                labels: snapshot.labels,
                 onTimeline: snapshot.onTimeline,
+                size: snapshot.size,
+                progress: snapshot.progress,
                 orderIndex: snapshot.orderIndex,
                 startDate: snapshot.startDate,
                 endDate: snapshot.endDate,
@@ -241,7 +247,10 @@ export function useBoardHandlers(projectId: string) {
                       status: t.status,
                       priority: t.priority,
                       color: t.color,
+                      labels: t.labels,
                       onTimeline: t.onTimeline,
+                      size: t.size,
+                      progress: t.progress,
                       orderIndex: t.orderIndex,
                       startDate: t.startDate,
                       endDate: t.endDate,
