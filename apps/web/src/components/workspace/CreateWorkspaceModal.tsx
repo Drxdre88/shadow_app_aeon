@@ -64,7 +64,7 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
               'w-full max-w-md rounded-xl p-6',
               'bg-gradient-to-b from-white/10 to-black/40',
               'backdrop-blur-xl border border-white/10',
-              'shadow-[0_0_40px_rgba(99,102,241,0.3)]'
+              'shadow-[0_0_40px_color-mix(in_srgb,var(--primary)_30%,transparent)]'
             )}
           >
             <div className="flex items-center justify-between mb-6">
@@ -123,7 +123,6 @@ export function CreateWorkspaceModal({ isOpen, onClose, onCreate }: CreateWorksp
                 <NeonButton
                   onClick={handleSubmit}
                   disabled={!name.trim() || loading}
-                  color="purple"
                   glowIntensity="md"
                 >
                   {loading ? 'Creating...' : 'Create Realm'}

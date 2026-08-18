@@ -190,7 +190,7 @@ export function MembersTab({
                       disabled={isResending || isCancelling}
                       aria-label="Resend invite"
                       title="Resend invite"
-                      className="p-1 rounded hover:bg-purple-500/10 text-slate-500 hover:text-purple-400 transition-colors disabled:opacity-50"
+                      className="p-1 rounded text-slate-500 transition-colors hover:bg-[color-mix(in_srgb,var(--primary)_10%,transparent)] hover:text-[color:var(--primary)] disabled:opacity-50"
                     >
                       {isResending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                     </button>

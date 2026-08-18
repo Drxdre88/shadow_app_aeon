@@ -231,9 +231,9 @@ export default function BetaTermsContent() {
                 onClick={toggleAll}
                 className="w-full py-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-2 hover:bg-white/[0.06]"
                 style={{
-                  backgroundColor: allChecked ? 'rgba(139, 92, 246, 0.08)' : 'rgba(255,255,255,0.04)',
-                  border: `1px solid ${allChecked ? 'rgba(139, 92, 246, 0.25)' : 'rgba(255,255,255,0.08)'}`,
-                  color: allChecked ? '#a78bfa' : 'var(--text-dim)',
+                  backgroundColor: allChecked ? 'color-mix(in srgb, var(--primary) 8%, transparent)' : 'rgba(255,255,255,0.04)',
+                  border: `1px solid ${allChecked ? 'color-mix(in srgb, var(--primary) 25%, transparent)' : 'rgba(255,255,255,0.08)'}`,
+                  color: allChecked ? 'var(--primary-hover)' : 'var(--text-dim)',
                 }}
               >
                 <GlowCheckbox

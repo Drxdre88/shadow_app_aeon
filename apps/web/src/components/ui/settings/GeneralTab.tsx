@@ -198,9 +198,14 @@ function PriorityManager() {
           className={cn(
             'p-2 rounded-lg transition-all border',
             newName.trim()
-              ? 'bg-purple-500/20 border-purple-500/30 text-purple-400 hover:bg-purple-500/30'
+              ? 'hover:brightness-125'
               : 'bg-white/[0.03] border-white/10 text-slate-600 cursor-not-allowed'
           )}
+          style={newName.trim() ? {
+            backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)',
+            borderColor: 'color-mix(in srgb, var(--primary) 30%, transparent)',
+            color: 'var(--primary)',
+          } : undefined}
           whileTap={{ scale: 0.95 }}
         >
           <Plus className="w-4 h-4" />
