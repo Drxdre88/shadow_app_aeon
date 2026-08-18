@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
+import { ProgressControl } from './ProgressControl'
 
 interface TaskProgressPopoverProps {
   taskId: string
@@ -102,39 +102,26 @@ export function TaskProgressPopover({ taskId, onClose, onTaskUpdate }: TaskProgr
   const body = (
     <div
       ref={containerRef}
-      className={cn(
-        'fixed z-[60] p-3 rounded-xl space-y-2',
-        'backdrop-blur-xl bg-[#1a1a24]/95 border border-white/15',
-        'shadow-[0_0_30px_rgba(0,0,0,0.6)]'
-      )}
-      style={{ top: position.top, left: position.left, width: POPOVER_WIDTH }}
+      className="fixed z-[60] p-3 space-y-2 glass-elevated"
+      style={{
+        top: position.top,
+        left: position.left,
+        width: POPOVER_WIDTH,
+        background: 'linear-gradient(var(--surface-tint), var(--surface-tint)), var(--surface)',
+        borderColor: 'var(--border)',
+        boxShadow: 'inset 0 1px 0 0 rgba(255,255,255,0.08), 0 12px 32px rgba(0,0,0,0.5)',
+      }}
     >
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] uppercase tracking-wider text-slate-400">Progress</span>
-        <input
-          type="number"
-          min={0}
-          max={100}
-          value={value}
-          autoFocus
-          onChange={(e) => setValue(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
-          className="w-14 px-1.5 py-0.5 rounded-md bg-white/5 border border-white/10 text-white text-xs text-right focus:outline-none focus:ring-1 focus:ring-white/25"
-        />
-      </div>
-      <input
-        type="range"
-        min={0}
-        max={100}
-        step={5}
-        value={value}
-        onChange={(e) => setValue(Number(e.target.value))}
-        className="w-full accent-[var(--primary)]"
-      />
-      <div className="flex items-center justify-between text-[10px] text-slate-500">
+      <span className="block text-[11px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+        Progress
+      </span>
+      <ProgressControl value={value} onChange={setValue} autoFocus />
+      <div className="flex items-center justify-between text-[10px]" style={{ color: 'var(--text-dim)' }}>
         <span>Enter to save</span>
         <button
           onClick={() => { committedRef.current = true; updateTask(taskId, { progress: null }); onTaskUpdate?.(taskId, { progress: null }, { silent: true }); onClose() }}
-          className="text-slate-400 hover:text-white transition-colors"
+          className="hover:text-white transition-colors"
+          style={{ color: 'var(--text-muted)' }}
         >
           Clear
         </button>

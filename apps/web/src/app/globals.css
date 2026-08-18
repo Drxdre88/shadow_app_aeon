@@ -37,6 +37,20 @@ body {
   filter: var(--theme-filter);
 }
 
+/* Native number spinners paint as bright unstyled buttons over the dark glass
+   surfaces. Typing and arrow keys still adjust the value. */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 @keyframes pulse-glow {
   0%, 100% { opacity: 1; filter: brightness(1.2); text-shadow: 0 0 10px currentColor; }
   50% { opacity: 0.55; filter: brightness(0.7); text-shadow: none; }

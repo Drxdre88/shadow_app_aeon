@@ -21,7 +21,7 @@ export const MIN_SIZING_VALUE = 0.5
 export const MAX_SIZING_VALUE = 20
 
 export const DEFAULT_SIZING: BoardSizing = {
-  enabled: false,
+  enabled: true,
   unit: 'days',
   labels: [
     { key: 'S', value: 1 },
@@ -51,7 +51,8 @@ export function parseSizing(settings: Record<string, unknown> | null | undefined
     : DEFAULT_SIZING.labels
 
   return {
-    enabled: raw.enabled === true,
+    // Sizing is on unless a board explicitly turned it off.
+    enabled: raw.enabled !== false,
     unit: raw.unit === 'points' ? 'points' : 'days',
     labels: labels.length > 0 ? labels : DEFAULT_SIZING.labels,
   }

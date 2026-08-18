@@ -465,6 +465,7 @@ export function TaskBoard({
         onPushToGantt={onPushToGantt}
         onDateChange={(taskId, dates) => onTaskUpdate?.(taskId, dates as Record<string, unknown>)}
         onStatusChange={(taskId, status) => onTaskUpdate?.(taskId, { status })}
+        onProgressChange={(taskId, progress) => onTaskUpdate?.(taskId, { progress }, { silent: true })}
         onTaskDelete={onTaskDelete}
       />
 

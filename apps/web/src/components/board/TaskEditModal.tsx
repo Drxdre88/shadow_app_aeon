@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronDown, Palette, Calendar, Trash2, CheckCircle2 } from 'lucide-react'
+import { ChevronDown, Palette, Calendar, Trash2, Check } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { AccentColor, ACCENT_COLORS, colorConfig } from '@/lib/utils/colors'
@@ -15,6 +15,7 @@ import { useChecklistHandlers } from './useChecklistHandlers'
 import { TaskDateSection } from './TaskDateSection'
 import { TaskLabelsSection } from './TaskLabelsSection'
 import { useBoardSizing, sizingTooltip, sizingUnitLabel } from './sizing'
+import { TaskProgressRow } from './TaskProgressRow'
 import { triggerCelebration } from '@/components/celebrations'
 
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
@@ -44,6 +45,7 @@ interface TaskEditModalProps {
   onStatusChange?: (taskId: string, status: string) => void
   onTaskDelete?: (taskId: string) => void
   onBlurPersist?: () => void
+  onProgressChange?: (taskId: string, progress: number | null) => void
 }
 
 const resolveNeonColor = (color: string): AccentColor =>
@@ -66,6 +68,7 @@ export function TaskEditModal({
   onStatusChange,
   onTaskDelete,
   onBlurPersist,
+  onProgressChange,
 }: TaskEditModalProps) {
   const tasks = useBoardStore((s) => s.tasks)
   const updateTask = useBoardStore((s) => s.updateTask)
@@ -149,24 +152,25 @@ export function TaskEditModal({
             )}
           >
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-sm text-slate-400">Name</label>
-                  {editingTaskId && currentTask && (
-                    <button
-                      onClick={handleToggleDone}
-                      className={cn(
-                        'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-all duration-200',
-                        isDone
-                          ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
-                          : 'bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
-                      )}
-                    >
-                      <CheckCircle2 className={cn('w-3.5 h-3.5', isDone && 'fill-emerald-500/20')} />
-                      {isDone ? 'Done' : 'Mark done'}
-                    </button>
-                  )}
-                </div>
+              <div className="flex items-stretch gap-2">
+                {editingTaskId && currentTask && (
+                  <button
+                    onClick={handleToggleDone}
+                    title={isDone ? 'Mark not done' : 'Mark done'}
+                    aria-label={isDone ? 'Mark not done' : 'Mark done'}
+                    aria-pressed={isDone}
+                    className={cn(
+                      'aspect-square min-w-[2.5rem] flex-shrink-0 rounded-lg border-2 flex items-center justify-center',
+                      'transition-all duration-200',
+                      isDone
+                        ? 'bg-emerald-500 border-emerald-400'
+                        : 'bg-white/5 border-white/25 hover:border-white/50 hover:bg-white/10'
+                    )}
+                    style={isDone ? { boxShadow: '0 0 10px rgba(16,185,129,0.5)' } : undefined}
+                  >
+                    {isDone && <Check className="w-5 h-5 text-white" />}
+                  </button>
+                )}
                 <input
                   ref={nameInputRef}
                   type="text"
@@ -175,7 +179,7 @@ export function TaskEditModal({
                   onBlur={onBlurPersist}
                   placeholder="Task name..."
                   className={cn(
-                    'w-full px-4 py-2.5 rounded-lg',
+                    'flex-1 min-w-0 px-4 py-2.5 rounded-lg',
                     'bg-white/5 border border-white/10',
                     'text-white placeholder-slate-500',
                     'focus:outline-none focus:ring-2 focus:ring-white/20',
@@ -262,37 +266,30 @@ export function TaskEditModal({
                 />
               </div>
 
-              {sizing.enabled && (
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1.5">Size</label>
-                  <div className="flex flex-wrap gap-2">
-                    {sizing.labels.map((sizeLabel) => {
-                      const isActive = formData.size === sizeLabel.value
-                      return (
-                        <button
-                          key={sizeLabel.key}
-                          onClick={() => onFormChange({ ...formData, size: isActive ? null : sizeLabel.value })}
-                          title={sizingTooltip(sizing, sizeLabel)}
-                          className={cn(
-                            'px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-200',
-                            isActive
-                              ? 'bg-white/10 border-white/30 text-white'
-                              : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
-                          )}
-                        >
-                          {sizeLabel.key}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-
               <div>
                 <label className="block text-sm text-slate-400 mb-1.5">
-                  {sizing.enabled ? `Size (${sizing.unit})` : 'Size (days)'}
+                  {sizing.enabled ? 'Size' : 'Size (days)'}
                 </label>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {sizing.enabled && sizing.labels.map((sizeLabel) => {
+                    const isActive = formData.size === sizeLabel.value
+                    return (
+                      <button
+                        key={sizeLabel.key}
+                        onClick={() => onFormChange({ ...formData, size: isActive ? null : sizeLabel.value })}
+                        title={sizingTooltip(sizing, sizeLabel)}
+                        className={cn(
+                          'px-3 py-1.5 rounded-lg text-sm font-medium border transition-all duration-200',
+                          isActive
+                            ? 'bg-white/10 border-white/30 text-white'
+                            : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
+                        )}
+                        style={isActive ? { boxShadow: '0 0 8px color-mix(in srgb, var(--primary) 45%, transparent)' } : undefined}
+                      >
+                        {sizeLabel.key}
+                      </button>
+                    )
+                  })}
                   <input
                     type="number"
                     value={formData.size ?? ''}
@@ -304,12 +301,14 @@ export function TaskEditModal({
                     step={0.5}
                     min={0.5}
                     max={20}
+                    title={sizing.enabled ? `Custom size in ${sizing.unit}` : 'Size in days'}
                     className={cn(
-                      'w-24 px-3 py-2 rounded-lg',
+                      'px-2.5 py-1.5 rounded-lg',
                       'bg-white/5 border border-white/10',
-                      'text-white placeholder-slate-500 text-sm',
-                      'focus:outline-none focus:ring-2 focus:ring-cyan-500/50',
-                      'transition-all duration-200'
+                      'text-white placeholder-slate-500',
+                      'focus:outline-none focus:ring-2 focus:ring-white/20',
+                      'transition-all duration-200',
+                      sizing.enabled ? 'w-16 text-xs' : 'w-24 text-sm'
                     )}
                   />
                   <span className="text-xs text-slate-500">
@@ -317,6 +316,14 @@ export function TaskEditModal({
                   </span>
                 </div>
               </div>
+
+              {editingTaskId && (
+                <TaskProgressRow
+                  key={editingTaskId}
+                  taskId={editingTaskId}
+                  onProgressChange={onProgressChange}
+                />
+              )}
 
               {editingTaskId && (
                 <TaskDateSection taskId={editingTaskId} onDateChange={onDateChange} />

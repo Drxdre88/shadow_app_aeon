@@ -345,6 +345,7 @@ export default function ProjectContent({ project, user, initialBoardData, initia
                     onClose={() => gantt.setGanttEditTaskId(null)}
                     onLabelToggle={handleLabelToggle}
                     onDateChange={(taskId, dates) => board.handleTaskUpdate(taskId, dates as Record<string, unknown>)}
+                    onProgressChange={(taskId, progress) => board.handleTaskUpdate(taskId, { progress }, { silent: true })}
                   />
                 </>
               )}

@@ -305,6 +305,7 @@ export function TaskChecklist({
         onClick={handleAddGroup}
         className="flex items-center gap-1 p-1 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-all"
         aria-label="Add checklist group"
+        title="Add checklist"
       >
         <Plus className="w-4 h-4" />
       </button>

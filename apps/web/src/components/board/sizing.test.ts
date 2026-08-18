@@ -9,10 +9,20 @@ import {
 } from './sizing'
 
 describe('parseSizing', () => {
-  it('falls back to the disabled default ladder when settings are empty', () => {
+  it('falls back to the default ladder when settings are empty', () => {
     expect(parseSizing({})).toEqual(DEFAULT_SIZING)
     expect(parseSizing(null)).toEqual(DEFAULT_SIZING)
     expect(parseSizing({ sizing: 'nonsense' })).toEqual(DEFAULT_SIZING)
+  })
+
+  it('ships enabled so every board gets S/M/L/XL out of the box', () => {
+    expect(DEFAULT_SIZING.enabled).toBe(true)
+    expect(DEFAULT_SIZING.labels.map((l) => l.key)).toEqual(['S', 'M', 'L', 'XL'])
+    expect(parseSizing({ sizing: { labels: [{ key: 'S', value: 1 }] } }).enabled).toBe(true)
+  })
+
+  it('stays off when a board explicitly disabled it', () => {
+    expect(parseSizing({ sizing: { enabled: false } }).enabled).toBe(false)
   })
 
   it('reads a stored config', () => {

@@ -8,6 +8,7 @@ import { Calendar, MoreHorizontal, Check, X, Clock, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { hexToRgba } from '@/lib/utils/colors'
 import { labelHex, readableTextColor } from './labelTile'
+import { progressBarStyle } from './progressColor'
 import { GlowCard } from '@/components/ui/GlowCard'
 import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
@@ -98,10 +99,6 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
     return task.color
   })()
   const triState: TriState = getTriState(task.status, crossedTaskIds, task.id)
-  // labelHex can emit a bare '#' for empty/unknown colors, which invalidates
-  // the whole color-mix() declaration — fall back to the theme primary.
-  const progressAccentRaw = resolvedGlowColor.startsWith('rgb') ? resolvedGlowColor : labelHex(resolvedGlowColor)
-  const progressAccent = /^(rgb|#[0-9a-fA-F]{3,8}$)/.test(progressAccentRaw) ? progressAccentRaw : 'var(--primary)'
 
   const handleTriToggle = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -449,24 +446,29 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
         </GlowCard>
       </motion.div>
 
-      {typeof task.progress === 'number' && (
-        <div
-          className={cn(
-            'absolute bottom-0 left-0 right-0 h-[3px] rounded-b-xl overflow-hidden bg-white/[0.06] pointer-events-none',
-            isDragging && 'opacity-30'
-          )}
-          title={`${task.progress}% complete`}
-        >
+      {typeof task.progress === 'number' && (() => {
+        const pct = Math.min(100, Math.max(0, task.progress))
+        const bar = progressBarStyle(pct)
+        return (
           <div
-            className="h-full transition-[width] duration-300 ease-out"
-            style={{
-              width: `${Math.min(100, Math.max(0, task.progress))}%`,
-              background: `linear-gradient(90deg, color-mix(in srgb, ${progressAccent} 40%, transparent), ${progressAccent})`,
-              boxShadow: task.progress >= 100 ? `0 0 8px 1px ${progressAccent}` : undefined,
-            }}
-          />
-        </div>
-      )}
+            className={cn(
+              'absolute bottom-0 left-0 right-0 h-1 rounded-b-xl overflow-hidden bg-white/[0.06] pointer-events-none',
+              isDragging && 'opacity-30'
+            )}
+            title={`${pct}% complete`}
+          >
+            <div
+              className="relative h-full transition-[width] duration-500 ease-out"
+              style={{ width: `${pct}%`, background: bar.fill, boxShadow: bar.glow }}
+            >
+              <div
+                className="absolute inset-0 mix-blend-screen"
+                style={{ background: bar.cloud, filter: 'blur(1.5px)' }}
+              />
+            </div>
+          </div>
+        )
+      })()}
 
       {contextMenu && (
         <TaskContextMenu
