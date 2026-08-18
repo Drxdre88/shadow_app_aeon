@@ -129,6 +129,7 @@ export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' 
       description: ganttFormData.description || null,
       color: ganttFormData.color,
       priority: ganttFormData.priority,
+      size: ganttFormData.size,
     }).catch((err) => console.error('Failed to update task from gantt:', err))
     setGanttEditTaskId(null)
   }, [ganttEditTaskId, ganttFormData, projectId])

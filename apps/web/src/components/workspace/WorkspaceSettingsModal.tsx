@@ -304,7 +304,7 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, groupColor,
                 />
               ) : (
                 <h2
-                  className={cn('text-white font-semibold', isOwner && 'cursor-pointer hover:text-purple-300')}
+                  className={cn('text-white font-semibold', isOwner && 'cursor-pointer hover:text-[color:var(--primary-hover)]')}
                   onDoubleClick={() => isOwner && setNameEditing(true)}
                 >
                   {name}
@@ -323,8 +323,9 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, groupColor,
                 onClick={() => setTab(t)}
                 className={cn(
                   'flex-1 px-4 py-2.5 text-xs font-medium uppercase tracking-wider transition-colors',
-                  tab === t ? 'text-white border-b-2 border-purple-500' : 'text-slate-500 hover:text-slate-300'
+                  tab === t ? 'text-white border-b-2' : 'text-slate-500 hover:text-slate-300'
                 )}
+                style={tab === t ? { borderBottomColor: 'var(--primary)' } : undefined}
               >
                 {t}
               </button>

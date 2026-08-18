@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { taskAssignees, users, boardTasks } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
+import { touchProject } from './projects'
 
 // Aeon side quest — task assignees data layer.
 
@@ -68,12 +69,29 @@ export async function getAssigneesForProject(projectId: string): Promise<Record<
   return out
 }
 
+// Assign/unassign carry no projectId of their own — the owning project is
+// resolved from the task so every caller (actions, MCP, REST) gets the
+// boardVersion bump + Pusher event without having to pass it down.
+async function projectIdForTask(taskId: string): Promise<string | null> {
+  const [task] = await db
+    .select({ projectId: boardTasks.projectId })
+    .from(boardTasks)
+    .where(eq(boardTasks.id, taskId))
+  return task?.projectId ?? null
+}
+
 export async function assignUserToTask(taskId: string, userId: string, assignedBy: string) {
   const [row] = await db
     .insert(taskAssignees)
     .values({ taskId, userId, assignedBy })
     .onConflictDoNothing({ target: [taskAssignees.taskId, taskAssignees.userId] })
     .returning()
+
+  if (row) {
+    const projectId = await projectIdForTask(taskId)
+    if (projectId) await touchProject(projectId, { type: 'task:assigned' })
+  }
+
   return row ?? null
 }
 
@@ -82,5 +100,11 @@ export async function unassignUserFromTask(taskId: string, userId: string) {
     .delete(taskAssignees)
     .where(and(eq(taskAssignees.taskId, taskId), eq(taskAssignees.userId, userId)))
     .returning({ taskId: taskAssignees.taskId })
+
+  if (deleted) {
+    const projectId = await projectIdForTask(taskId)
+    if (projectId) await touchProject(projectId, { type: 'task:unassigned' })
+  }
+
   return !!deleted
 }

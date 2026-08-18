@@ -1,14 +1,33 @@
-import { useCallback, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { DragEndEvent, DragStartEvent, DragOverEvent, useSensor, useSensors, PointerSensor, TouchSensor } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 import { useBoardStore, type BoardColumn, type BoardTask } from '@/lib/store/boardStore'
+import { insertionIndexInFullOrder, reorderWithInsertion, readCardRects } from './dropIndex'
+
+type MoveUpdate = { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }
 
 interface UseBoardDnDProps {
   projectTasks: BoardTask[]
   sortedColumns: BoardColumn[]
-  onTaskMove?: (updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[], snapshot?: { id: string; columnId?: string; orderIndex: number }[]) => void
+  onTaskMove?: (updates: MoveUpdate[], snapshot?: { id: string; columnId?: string; orderIndex: number }[]) => void
   onTaskDelete?: (taskId: string) => void
   onColumnReorder?: (updates: { id: string; orderIndex: number }[]) => void
+}
+
+// Fallback when no pointer has been observed (keyboard drags): the activator
+// position plus the accumulated delta, then the centre of the dragged card.
+function pointerYFromEvent(event: DragEndEvent | DragOverEvent): number | null {
+  const activator = event.activatorEvent as { clientY?: number } | undefined
+  if (activator && typeof activator.clientY === 'number') return activator.clientY + event.delta.y
+  const translated = event.active.rect.current.translated
+  if (translated) return translated.top + translated.height / 2
+  return null
+}
+
+function resolveTargetColumnId(overId: string, columns: BoardColumn[]): string | null {
+  if (columns.some((c) => c.id === overId)) return overId
+  const task = useBoardStore.getState().tasks.find((t) => t.id === overId)
+  return task?.columnId ?? null
 }
 
 export function useBoardDnD({
@@ -20,12 +39,22 @@ export function useBoardDnD({
 }: UseBoardDnDProps) {
   const moveTask = useBoardStore((s) => s.moveTask)
   const removeTask = useBoardStore((s) => s.removeTask)
-  const updateTask = useBoardStore((s) => s.updateTask)
   const reorderColumns = useBoardStore((s) => s.reorderColumns)
   const [activeItem, setActiveItem] = useState<{ type: 'task' | 'column'; data: BoardTask | BoardColumn } | null>(null)
   const [overId, setOverId] = useState<string | null>(null)
   const pendingMoveRef = useRef<{ id: string; columnId: string; orderIndex: number; name: string } | null>(null)
   const dragSnapshotRef = useRef<{ id: string; columnId?: string; orderIndex: number }[] | null>(null)
+  const pointerYRef = useRef<number | null>(null)
+
+  // The live pointer beats activator+delta: auto-scrolling a column inflates
+  // the delta while the card rects move the other way, which would bias the
+  // computed drop index.
+  useEffect(() => {
+    if (!activeItem) return
+    const onPointerMove = (e: PointerEvent) => { pointerYRef.current = e.clientY }
+    window.addEventListener('pointermove', onPointerMove, { passive: true })
+    return () => window.removeEventListener('pointermove', onPointerMove)
+  }, [activeItem])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -35,6 +64,7 @@ export function useBoardDnD({
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event
     const dragType = active.data.current?.type
+    pointerYRef.current = null
 
     if (dragType === 'column') {
       const col = sortedColumns.find((c) => c.id === active.id)
@@ -78,6 +108,52 @@ export function useBoardDnD({
     }
   }, [projectTasks, sortedColumns, moveTask])
 
+  // Final placement is always derived from the pointer against the target
+  // column's live card rects, so releasing between two cards — or anywhere in
+  // the column's empty space — snaps to the nearest gap instead of bouncing.
+  const computePlacement = useCallback((
+    activeTask: BoardTask,
+    targetColumnId: string,
+    pointerY: number | null,
+  ): MoveUpdate[] => {
+    const tasks = useBoardStore.getState().tasks
+    const columnTasks = tasks
+      .filter((t) => t.columnId === targetColumnId)
+      .sort((a, b) => a.orderIndex - b.orderIndex)
+    const orderedIds = columnTasks.map((t) => t.id)
+
+    const rects = readCardRects(targetColumnId, activeTask.id)
+    const fallbackIndex = orderedIds.indexOf(activeTask.id)
+    // rects hold only the cards surviving the active filter/search — anchor
+    // the pointer gap on rect ids, never apply a visible-count index to the
+    // unfiltered order. rects === null means the column DOM wasn't found.
+    const index = pointerY === null || rects === null
+      ? (fallbackIndex === -1 ? orderedIds.length : fallbackIndex)
+      : insertionIndexInFullOrder(pointerY, rects, orderedIds)
+
+    const finalIds = reorderWithInsertion(orderedIds, activeTask.id, index)
+    const isDone = sortedColumns.find((c) => c.id === targetColumnId)?.name.toLowerCase() === 'done'
+    const byId = new Map(columnTasks.map((t) => [t.id, t]))
+
+    const updates: MoveUpdate[] = []
+    finalIds.forEach((id, orderIndex) => {
+      if (id === activeTask.id) {
+        updates.push({
+          id,
+          orderIndex,
+          columnId: targetColumnId,
+          name: activeTask.name,
+          ...(isDone && { status: 'done' }),
+        })
+        return
+      }
+      const sibling = byId.get(id)
+      if (!sibling || sibling.orderIndex === orderIndex) return
+      updates.push({ id, orderIndex })
+    })
+    return updates
+  }, [sortedColumns])
+
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
     const activeType = active.data.current?.type
@@ -89,22 +165,13 @@ export function useBoardDnD({
     setActiveItem(null)
     setOverId(null)
 
-    if (!over) {
-      if (pendingMove) {
-        const targetCol = sortedColumns.find((c) => c.id === pendingMove.columnId)
-        const isDone = targetCol?.name.toLowerCase() === 'done'
-        onTaskMove?.([{ id: pendingMove.id, orderIndex: pendingMove.orderIndex, columnId: pendingMove.columnId, name: pendingMove.name, ...(isDone && { status: 'done' }) }], snapshot ?? undefined)
-      }
-      return
-    }
-
     if (activeType === 'column') {
       const activeId = active.id as string
-      const overId = over.id as string
-      if (activeId === overId) return
+      const overColumnId = over?.id as string | undefined
+      if (!overColumnId || activeId === overColumnId) return
 
       const oldIndex = sortedColumns.findIndex((c) => c.id === activeId)
-      const newIndex = sortedColumns.findIndex((c) => c.id === overId)
+      const newIndex = sortedColumns.findIndex((c) => c.id === overColumnId)
       if (oldIndex === -1 || newIndex === -1) return
 
       const reordered = arrayMove(sortedColumns, oldIndex, newIndex)
@@ -115,52 +182,42 @@ export function useBoardDnD({
     }
 
     const activeId = active.id as string
-    const overIdVal = over.id as string
 
-    if (overIdVal === 'trash') {
+    if (over?.id === 'trash') {
       removeTask(activeId)
       onTaskDelete?.(activeId)
       return
     }
 
-    const activeTask = projectTasks.find((t) => t.id === activeId)
-    const overTask = projectTasks.find((t) => t.id === overIdVal)
+    const activeTask = useBoardStore.getState().tasks.find((t) => t.id === activeId)
+    if (!activeTask) return
 
-    if (activeTask && overTask && activeTask.columnId === overTask.columnId && activeId !== overIdVal) {
-      const columnTasks = projectTasks
-        .filter((t) => t.columnId === activeTask.columnId)
-        .sort((a, b) => a.orderIndex - b.orderIndex)
+    const targetColumnId = over ? resolveTargetColumnId(over.id as string, sortedColumns) : null
 
-      const oldIndex = columnTasks.findIndex((t) => t.id === activeId)
-      const newIndex = columnTasks.findIndex((t) => t.id === overIdVal)
-
-      if (oldIndex !== -1 && newIndex !== -1) {
-        const reordered = arrayMove(columnTasks, oldIndex, newIndex)
-        const moveUpdates: { id: string; orderIndex: number }[] = []
-        reordered.forEach((task, index) => {
-          if (task.orderIndex !== index) {
-            updateTask(task.id, { orderIndex: index })
-            moveUpdates.push({ id: task.id, orderIndex: index })
-          }
-        })
-        if (pendingMove) {
-          const targetCol = sortedColumns.find((c) => c.id === pendingMove.columnId)
-          const isDone = targetCol?.name.toLowerCase() === 'done'
-          const crossColUpdate = { id: pendingMove.id, orderIndex: pendingMove.orderIndex, columnId: pendingMove.columnId, name: pendingMove.name, ...(isDone && { status: 'done' as const }) }
-          onTaskMove?.([crossColUpdate, ...moveUpdates], snapshot ?? undefined)
-        } else if (moveUpdates.length > 0) {
-          onTaskMove?.(moveUpdates, snapshot ?? undefined)
-        }
-        return
+    if (!targetColumnId) {
+      if (pendingMove) {
+        const isDone = sortedColumns.find((c) => c.id === pendingMove.columnId)?.name.toLowerCase() === 'done'
+        onTaskMove?.([{ id: pendingMove.id, orderIndex: pendingMove.orderIndex, columnId: pendingMove.columnId, name: pendingMove.name, ...(isDone && { status: 'done' }) }], snapshot ?? undefined)
       }
+      return
     }
 
-    if (pendingMove) {
-      const targetCol = sortedColumns.find((c) => c.id === pendingMove.columnId)
-      const isDone = targetCol?.name.toLowerCase() === 'done'
-      onTaskMove?.([{ id: pendingMove.id, orderIndex: pendingMove.orderIndex, columnId: pendingMove.columnId, name: pendingMove.name, ...(isDone && { status: 'done' }) }], snapshot ?? undefined)
+    const updates = computePlacement(activeTask, targetColumnId, pointerYRef.current ?? pointerYFromEvent(event))
+
+    const { moveTask: storeMove, updateTask: storeUpdate } = useBoardStore.getState()
+    for (const update of updates) {
+      if (update.columnId) storeMove(update.id, update.columnId, update.orderIndex)
+      else storeUpdate(update.id, { orderIndex: update.orderIndex })
     }
-  }, [projectTasks, sortedColumns, removeTask, updateTask, reorderColumns, onTaskMove, onTaskDelete, onColumnReorder])
+
+    const original = snapshot?.find((s) => s.id === activeId)
+    const isNoOp = updates.length === 1
+      && original?.columnId === targetColumnId
+      && original.orderIndex === updates[0].orderIndex
+    if (isNoOp) return
+
+    onTaskMove?.(updates, snapshot ?? undefined)
+  }, [sortedColumns, removeTask, reorderColumns, computePlacement, onTaskMove, onTaskDelete, onColumnReorder])
 
   const handleDragCancel = useCallback(() => {
     const snapshot = dragSnapshotRef.current

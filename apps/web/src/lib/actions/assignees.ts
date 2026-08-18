@@ -34,6 +34,12 @@ export async function assignTaskAction(projectId: string, taskId: string, userId
   idSchema.parse(taskId)
   idSchema.parse(userId)
 
+  // Guard: the task must belong to the project the caller was authorized for —
+  // without this, an editor of project A could write assignees onto project
+  // B's tasks (and broadcast on B's channel) by passing a foreign taskId.
+  const task = await _findTaskById(taskId, projectId)
+  if (!task) throw new Error('Task not found or unauthorized')
+
   // Guard: only project members can be assigned (owner + explicit + realm).
   const members = await findAssignableMembers(projectId)
   if (!members.some((m) => m.userId === userId)) {
@@ -42,7 +48,6 @@ export async function assignTaskAction(projectId: string, taskId: string, userId
 
   const row = await _assignUserToTask(taskId, userId, actorId)
   if (row) {
-    const task = await _findTaskById(taskId, projectId)
     const assignedMember = members.find((m) => m.userId === userId)
     const displayName = assignedMember?.name ?? assignedMember?.email ?? null
     emitActivity(
@@ -73,9 +78,12 @@ export async function unassignTaskAction(projectId: string, taskId: string, user
   idSchema.parse(taskId)
   idSchema.parse(userId)
 
+  // Same cross-project guard as assignTaskAction.
+  const task = await _findTaskById(taskId, projectId)
+  if (!task) throw new Error('Task not found or unauthorized')
+
   const ok = await _unassignUserFromTask(taskId, userId)
   if (ok) {
-    const task = await _findTaskById(taskId, projectId)
     emitActivity(
       projectId,
       'task',

@@ -14,6 +14,9 @@ const SHORTCUT_LABELS: Record<string, string> = {
   toggleDone: 'Complete Card (done / not-doing / none)',
   toggleDates: 'Toggle Dates Display',
   toggleChecklist: 'Checklist Overview (off/preview/full)',
+  assignMember: 'Assign Member (hover)',
+  setProgress: 'Set Progress % (hover)',
+  setSize: 'Set Size — S/M/L/XL (hover)',
 }
 
 const DASHBOARD_SHORTCUTS = [
@@ -91,10 +94,16 @@ export function ShortcutsTab() {
               className={cn(
                 'px-3 py-1.5 rounded-lg text-sm font-mono font-bold border transition-all min-w-[60px] text-center',
                 remapping === action
-                  ? 'border-purple-500 bg-purple-500/20 text-purple-300 animate-pulse'
+                  ? 'animate-pulse'
                   : 'border-white/20 bg-white/5 text-white hover:border-white/40 hover:bg-white/10'
               )}
-              style={remapping !== action ? { boxShadow: `0 0 8px ${colors.glowColor}40` } : {}}
+              style={remapping === action
+                ? {
+                    borderColor: 'var(--primary)',
+                    backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)',
+                    color: 'var(--primary)',
+                  }
+                : { boxShadow: `0 0 8px ${colors.glowColor}40` }}
             >
               {remapping === action ? '...' : (shortcuts[action] ?? DEFAULT_SHORTCUTS[action]).toUpperCase()}
             </button>

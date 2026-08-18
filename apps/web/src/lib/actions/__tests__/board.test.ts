@@ -121,6 +121,7 @@ const makeTask = (overrides = {}) => ({
   onTimeline: false,
   orderIndex: 0,
   size: null,
+  progress: null,
   description: null,
   startDate: null as Date | null,
   endDate: null as Date | null,
@@ -274,6 +275,34 @@ describe('createBoardTask', () => {
     const result = await createBoardTask(validCreateData)
 
     expect(result).toEqual(task)
+  })
+
+  it('forwards size and progress so a card created with them keeps them', async () => {
+    vi.mocked(_createTask).mockResolvedValue(makeTask({ size: 5, progress: 40 }))
+
+    await createBoardTask({ ...validCreateData, size: 5, progress: 40 })
+
+    expect(_createTask).toHaveBeenCalledWith(
+      PROJECT_ID,
+      expect.objectContaining({ size: 5, progress: 40 }),
+      NEW_TASK_ID
+    )
+  })
+
+  it('writes labels picked at creation time to the join table', async () => {
+    vi.mocked(_createTask).mockResolvedValue(makeTask())
+
+    await createBoardTask({ ...validCreateData, labels: [LABEL_ID] })
+
+    expect(_setTaskLabels).toHaveBeenCalledWith(TASK_ID, [LABEL_ID], PROJECT_ID)
+  })
+
+  it('skips the label write when no labels were picked', async () => {
+    vi.mocked(_createTask).mockResolvedValue(makeTask())
+
+    await createBoardTask(validCreateData)
+
+    expect(_setTaskLabels).not.toHaveBeenCalled()
   })
 
   it('emits created activity after task creation', async () => {

@@ -18,10 +18,13 @@ export function KairosVisorToggle() {
       className="group fixed bottom-5 right-5 z-30 h-14 w-14 overflow-hidden rounded-full border border-white/15 bg-zinc-900 bg-cover bg-center transition hover:scale-105 active:scale-95"
       style={{
         backgroundImage: "url('/kairos_2.png')",
-        boxShadow: '0 0 22px rgba(139,92,246,0.4), 0 6px 18px rgba(0,0,0,0.55)',
+        boxShadow: '0 0 22px color-mix(in srgb, var(--primary) 40%, transparent), 0 6px 18px rgba(0,0,0,0.55)',
       }}
     >
-      <span className="pointer-events-none absolute inset-0 rounded-full ring-1 ring-inset ring-purple-400/30" />
+      <span
+        className="pointer-events-none absolute inset-0 rounded-full ring-1 ring-inset"
+        style={{ '--tw-ring-color': 'color-mix(in srgb, var(--primary) 30%, transparent)' } as React.CSSProperties}
+      />
     </button>
   )
 }

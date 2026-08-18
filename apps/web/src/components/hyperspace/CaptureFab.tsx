@@ -40,8 +40,8 @@ export function CaptureFab() {
           title="Quick capture · ⌘⇧Space"
           className="fixed z-[300] bottom-6 right-6 w-12 h-12 rounded-full flex items-center justify-center"
           style={{
-            background: 'linear-gradient(135deg, rgba(139,92,246,0.95), rgba(99,102,241,0.95))',
-            boxShadow: '0 0 0 1px rgba(255,255,255,0.10), 0 14px 40px rgba(0,0,0,0.55), 0 0 28px rgba(139,92,246,0.35)',
+            background: 'linear-gradient(135deg, color-mix(in srgb, var(--primary) 95%, transparent), color-mix(in srgb, var(--accent) 95%, transparent))',
+            boxShadow: '0 0 0 1px rgba(255,255,255,0.10), 0 14px 40px rgba(0,0,0,0.55), 0 0 28px color-mix(in srgb, var(--primary) 35%, transparent)',
             color: 'white',
           }}
         >

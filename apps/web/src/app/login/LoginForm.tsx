@@ -329,7 +329,7 @@ export default function LoginForm() {
                       onChange={(e) => { setEmail(e.target.value); setEmailError('') }}
                       placeholder="you@email.com"
                       disabled={isLoading}
-                      className="w-full py-3.5 pl-10 pr-4 rounded-xl text-sm text-white placeholder-slate-500 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500/50 disabled:opacity-50"
+                      className="w-full py-3.5 pl-10 pr-4 rounded-xl text-sm text-white placeholder-slate-500 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[color:var(--primary-muted)] disabled:opacity-50"
                       style={{
                         backgroundColor: 'rgba(255,255,255,0.06)',
                         border: emailError ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(255,255,255,0.1)',
@@ -344,9 +344,9 @@ export default function LoginForm() {
                     disabled={isLoading}
                     className="w-full py-3.5 rounded-xl text-sm font-semibold transition-all duration-200 hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2.5"
                     style={{
-                      backgroundColor: 'rgba(139, 92, 246, 0.15)',
-                      border: '1px solid rgba(139, 92, 246, 0.3)',
-                      color: '#a78bfa',
+                      backgroundColor: 'color-mix(in srgb, var(--primary) 15%, transparent)',
+                      border: '1px solid color-mix(in srgb, var(--primary) 30%, transparent)',
+                      color: 'var(--primary-hover)',
                     }}
                   >
                     {loadingProvider === 'resend' ? (

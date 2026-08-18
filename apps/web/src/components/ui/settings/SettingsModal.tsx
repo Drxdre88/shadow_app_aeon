@@ -4,8 +4,9 @@ import { useState, useCallback, useEffect } from 'react'
 import { useHasMounted } from '@/lib/utils/useHasMounted'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { X, Palette, PenTool, Wand2, Settings, Keyboard, PartyPopper, LayoutGrid, LayoutDashboard, KeyRound, ArrowRight } from 'lucide-react'
+import { X, Palette, PenTool, Wand2, Settings, Keyboard, PartyPopper, LayoutGrid, LayoutDashboard, KeyRound, ArrowRight, ShieldCheck } from 'lucide-react'
 import Link from 'next/link'
+import { useSession } from 'next-auth/react'
 import { useThemeStore } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
 import { Tooltip } from '../Tooltip'
@@ -16,8 +17,9 @@ import { GeneralTab } from './GeneralTab'
 import { ShortcutsTab } from './ShortcutsTab'
 import { FunTab } from './FunTab'
 import { DashboardTab } from './DashboardTab'
+import { DefaultsTemplateTab } from './DefaultsTemplateTab'
 
-type SettingsTab = 'projects' | 'board' | 'shortcuts' | 'palette' | 'typography' | 'effects' | 'fun' | 'ai'
+type SettingsTab = 'projects' | 'board' | 'shortcuts' | 'palette' | 'typography' | 'effects' | 'fun' | 'ai' | 'defaults'
 
 const TAB_CONFIG: { id: SettingsTab; label: string; icon: typeof Palette }[] = [
   { id: 'projects', label: 'Projects', icon: LayoutDashboard },
@@ -30,6 +32,8 @@ const TAB_CONFIG: { id: SettingsTab; label: string; icon: typeof Palette }[] = [
   { id: 'ai', label: 'AI', icon: KeyRound },
 ]
 
+const ADMIN_TAB: { id: SettingsTab; label: string; icon: typeof Palette } = { id: 'defaults', label: 'Defaults', icon: ShieldCheck }
+
 interface SettingsModalProps {
   isOpen: boolean
   onClose: () => void
@@ -40,6 +44,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const mounted = useHasMounted()
   const { colors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
+  const { data: session } = useSession()
+  const isAdmin = session?.user?.role === 'admin'
+  const tabs = isAdmin ? [...TAB_CONFIG, ADMIN_TAB] : TAB_CONFIG
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') onClose()
@@ -106,7 +113,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         </div>
 
         <div className="flex border-b border-white/10">
-          {TAB_CONFIG.map(({ id, label, icon: Icon }) => (
+          {tabs.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setActiveTab(id)}
@@ -140,6 +147,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           {activeTab === 'fun' && <FunTab />}
           {activeTab === 'projects' && <DashboardTab />}
           {activeTab === 'ai' && <AiTab onClose={onClose} />}
+          {activeTab === 'defaults' && isAdmin && <DefaultsTemplateTab />}
         </div>
       </motion.div>
     </div>,

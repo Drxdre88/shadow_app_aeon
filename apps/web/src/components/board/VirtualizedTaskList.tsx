@@ -24,6 +24,7 @@ type TaskItem = {
   endDate?: string
   onTimeline: boolean
   size?: number | null
+  progress?: number | null
   updatedAt?: string
 }
 
@@ -52,6 +53,7 @@ interface VirtualizedTaskListProps {
     color: string
     labels: string[]
     onTimeline: boolean
+    size?: number | null
     orderIndex: number
   }) => void
 }

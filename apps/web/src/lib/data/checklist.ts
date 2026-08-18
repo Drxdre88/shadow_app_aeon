@@ -21,7 +21,7 @@ export async function findChecklistItems(taskId: string, projectId: string) {
     .from(checklistItems)
     .innerJoin(boardTasks, eq(boardTasks.id, checklistItems.taskId))
     .where(and(eq(checklistItems.taskId, taskId), eq(boardTasks.projectId, projectId)))
-    .orderBy(checklistItems.orderIndex)
+    .orderBy(checklistItems.orderIndex, checklistItems.createdAt, checklistItems.id)
 }
 
 export async function findChecklistItemsBatch(taskIds: string[]) {
@@ -30,7 +30,7 @@ export async function findChecklistItemsBatch(taskIds: string[]) {
     .select({ taskId: checklistItems.taskId, title: checklistItems.title, groupName: checklistItems.groupName })
     .from(checklistItems)
     .where(inArray(checklistItems.taskId, taskIds))
-    .orderBy(checklistItems.orderIndex)
+    .orderBy(checklistItems.orderIndex, checklistItems.createdAt, checklistItems.id)
 
   const result = new Map<string, { title: string; groupName: string }[]>()
   for (const row of rows) {
@@ -314,7 +314,7 @@ export async function findChecklistSummariesAndPreviews(projectId: string) {
     .from(checklistItems)
     .innerJoin(boardTasks, eq(boardTasks.id, checklistItems.taskId))
     .where(eq(boardTasks.projectId, projectId))
-    .orderBy(checklistItems.orderIndex)
+    .orderBy(checklistItems.orderIndex, checklistItems.createdAt, checklistItems.id)
 
   const summaries: Record<string, { checked: number; crossed: number; total: number }> = {}
   const previews: Record<string, { title: string; state: string; groupName: string }[]> = {}

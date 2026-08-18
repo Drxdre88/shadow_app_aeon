@@ -321,7 +321,6 @@ export function CreateProjectModal({ isOpen, onClose, realms = [], onProjectCrea
                 onClick={handleSubmit}
                 disabled={!formData.name.trim() || isSubmitting}
                 className="flex-1"
-                color="purple"
                 glowIntensity="md"
               >
                 <span className="flex items-center justify-center gap-2">

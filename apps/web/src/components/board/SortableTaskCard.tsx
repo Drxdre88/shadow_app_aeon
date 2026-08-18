@@ -4,9 +4,11 @@ import { useState, useRef, memo } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { motion } from 'framer-motion'
-import { Calendar, Tag, MoreHorizontal, Check, X, Clock, Trash2 } from 'lucide-react'
+import { Calendar, MoreHorizontal, Check, X, Clock, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { colorConfig, AccentColor, hexToRgba } from '@/lib/utils/colors'
+import { hexToRgba } from '@/lib/utils/colors'
+import { labelHex, readableTextColor } from './labelTile'
+import { progressBarStyle } from './progressColor'
 import { GlowCard } from '@/components/ui/GlowCard'
 import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
@@ -30,6 +32,7 @@ interface SortableTaskCardProps {
     endDate?: string
     onTimeline: boolean
     size?: number | null
+    progress?: number | null
     updatedAt?: string
   }
   onEdit?: (taskId: string) => void
@@ -279,33 +282,27 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
           </div>
 
           {taskLabels.length > 0 && (
-            <div className="flex flex-wrap gap-1 mb-2">
-              {taskLabels.map((label) => {
-                const labelColors = colorConfig[label.color as AccentColor]
-                const isCustom = !labelColors
-                const hex = label.color.startsWith('#') ? label.color : `#${label.color}`
+            <div className="flex flex-wrap items-center gap-1 mb-2">
+              {taskLabels.slice(0, 4).map((label) => {
+                const hex = labelHex(label.color)
                 return (
                   <span
                     key={label.id}
-                    className={cn(
-                      'px-2 py-0.5 rounded-md text-[10px] font-medium flex items-center gap-1',
-                      'border',
-                      !isCustom && labelColors?.bg,
-                      !isCustom && labelColors?.border,
-                      !isCustom && labelColors?.text,
-                      isCustom && 'text-white'
-                    )}
-                    style={isCustom ? {
-                      backgroundColor: hexToRgba(hex, 0.15),
-                      borderColor: hexToRgba(hex, 0.3),
-                      color: hex,
-                    } : undefined}
+                    title={label.name}
+                    className="max-w-[96px] truncate px-1.5 rounded text-[9px] font-semibold leading-[15px] border"
+                    style={{
+                      backgroundColor: hex,
+                      borderColor: hexToRgba(hex, 0.55),
+                      color: readableTextColor(hex),
+                    }}
                   >
-                    <Tag className="w-2.5 h-2.5" />
                     {label.name}
                   </span>
                 )
               })}
+              {taskLabels.length > 4 && (
+                <span className="text-[9px] text-slate-500">+{taskLabels.length - 4}</span>
+              )}
             </div>
           )}
 
@@ -445,8 +442,33 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
               </div>
             )
           })()}
+
         </GlowCard>
       </motion.div>
+
+      {typeof task.progress === 'number' && (() => {
+        const pct = Math.min(100, Math.max(0, task.progress))
+        const bar = progressBarStyle(pct)
+        return (
+          <div
+            className={cn(
+              'absolute bottom-0 left-0 right-0 h-1 rounded-b-xl overflow-hidden bg-white/[0.06] pointer-events-none',
+              isDragging && 'opacity-30'
+            )}
+            title={`${pct}% complete`}
+          >
+            <div
+              className="relative h-full transition-[width] duration-500 ease-out"
+              style={{ width: `${pct}%`, background: bar.fill, boxShadow: bar.glow }}
+            >
+              <div
+                className="absolute inset-0 mix-blend-screen"
+                style={{ background: bar.cloud, filter: 'blur(1.5px)' }}
+              />
+            </div>
+          </div>
+        )
+      })()}
 
       {contextMenu && (
         <TaskContextMenu

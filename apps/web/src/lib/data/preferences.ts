@@ -13,6 +13,18 @@ export async function findPreferences(userId: string) {
   return { ...DEFAULT_PREFERENCES, ...(row?.preferences as Record<string, unknown> ?? {}) }
 }
 
+// Whether the user has a stored preferences row at all — distinguishes a
+// seeded account (e.g. business_admin template stamped at signup) from a
+// legacy pre-DB account, since findPreferences always merges defaults in.
+export async function hasPreferencesRow(userId: string) {
+  const row = await db
+    .select({ userId: userPreferences.userId })
+    .from(userPreferences)
+    .where(eq(userPreferences.userId, userId))
+    .then((rows) => rows[0])
+  return !!row
+}
+
 export async function upsertPreferences(userId: string, prefs: Record<string, unknown>) {
   await db
     .insert(userPreferences)

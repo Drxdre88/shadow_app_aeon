@@ -212,7 +212,10 @@ export function KairosVisor() {
                       {error}
                     </div>
                   )}
-                  <div className="flex items-end gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-2 transition focus-within:border-purple-600/60">
+                  <div
+                    className="flex items-end gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-2 transition focus-within:border-[color:var(--focus-accent)]"
+                    style={{ '--focus-accent': 'color-mix(in srgb, var(--primary) 60%, transparent)' } as React.CSSProperties}
+                  >
                     <textarea
                       ref={textareaRef}
                       value={draft}
@@ -229,7 +232,8 @@ export function KairosVisor() {
                       type="button"
                       onClick={handleSubmit}
                       disabled={pending || !draft.trim()}
-                      className="rounded-lg bg-purple-600 p-2 text-white transition hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-lg p-2 text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{ backgroundColor: 'var(--primary)' }}
                       title="Send (Cmd/Ctrl+Enter)"
                     >
                       <Send className="h-4 w-4" />
@@ -267,8 +271,11 @@ function EmptyState({ onNew }: { onNew: () => void }) {
       <button
         onClick={onNew}
         type="button"
-        className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-500"
-        style={{ boxShadow: '0 0 18px rgba(139,92,246,0.35)' }}
+        className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition hover:brightness-110"
+        style={{
+          backgroundColor: 'var(--primary)',
+          boxShadow: '0 0 18px color-mix(in srgb, var(--primary) 35%, transparent)',
+        }}
       >
         New conversation
       </button>

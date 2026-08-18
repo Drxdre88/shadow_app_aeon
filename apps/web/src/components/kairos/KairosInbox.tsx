@@ -117,7 +117,13 @@ export function KairosInbox() {
       >
         <Bell className="w-3.5 h-3.5" />
         {count > 0 && (
-          <span className="absolute -right-1.5 -top-1.5 min-w-4 h-4 px-1 rounded-full bg-violet-500 text-[9px] leading-4 font-semibold text-white shadow-[0_0_10px_rgba(139,92,246,0.65)]">
+          <span
+            className="absolute -right-1.5 -top-1.5 min-w-4 h-4 px-1 rounded-full text-[9px] leading-4 font-semibold text-white"
+            style={{
+              backgroundColor: 'var(--primary)',
+              boxShadow: '0 0 10px color-mix(in srgb, var(--primary) 65%, transparent)',
+            }}
+          >
             {count > 99 ? '99+' : count}
           </span>
         )}
@@ -251,7 +257,11 @@ export function KairosInbox() {
                                 type="button"
                                 onClick={submitAnswer}
                                 disabled={!answer.trim() || workingId === ask.id}
-                                className="px-3 py-1.5 rounded-md bg-violet-500/20 border border-violet-400/20 text-[10px] uppercase tracking-[0.16em] text-violet-100 hover:bg-violet-500/30 disabled:opacity-35 disabled:cursor-not-allowed"
+                                className="px-3 py-1.5 rounded-md border text-[10px] uppercase tracking-[0.16em] text-white hover:brightness-125 disabled:opacity-35 disabled:cursor-not-allowed"
+                                style={{
+                                  backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)',
+                                  borderColor: 'color-mix(in srgb, var(--primary) 25%, transparent)',
+                                }}
                               >
                                 {workingId === ask.id ? 'Sending…' : 'Send answer'}
                               </button>

@@ -8,7 +8,9 @@ import { useThemeStore } from '@/stores/themeStore'
 
 interface NeonButtonProps extends Omit<HTMLMotionProps<'button'>, 'children'> {
   children: React.ReactNode
-  color?: AccentColor
+  // 'theme' (the default) follows the active theme's primary colour; a named
+  // accent pins the button to that colour regardless of theme.
+  color?: AccentColor | 'theme'
   glowIntensity?: GlowIntensity
   size?: 'sm' | 'md' | 'lg'
   variant?: 'solid' | 'outline' | 'ghost'
@@ -16,9 +18,13 @@ interface NeonButtonProps extends Omit<HTMLMotionProps<'button'>, 'children'> {
   disabled?: boolean
 }
 
+const THEME_ACCENT = 'var(--primary)'
+const THEME_BORDER = 'color-mix(in srgb, var(--primary) 45%, transparent)'
+const THEME_GLOW = 'color-mix(in srgb, var(--primary) 55%, transparent)'
+
 export const NeonButton = forwardRef<HTMLButtonElement, NeonButtonProps>(({
   children,
-  color = 'purple',
+  color = 'theme',
   glowIntensity: intensity = 'md',
   size = 'md',
   variant = 'solid',
@@ -28,7 +34,10 @@ export const NeonButton = forwardRef<HTMLButtonElement, NeonButtonProps>(({
   ...props
 }, ref) => {
   const { glowIntensity: globalGlow } = useThemeStore()
-  const colors = colorConfig[color]
+  // An unrecognised colour falls back to the theme rather than a hardcoded accent.
+  const colors = color === 'theme' ? null : colorConfig[color] ?? null
+  const themed = colors === null
+  const accentGlow = colors ? colors.glow : THEME_GLOW
   const glow = glowConfig[intensity]
   const mult = globalGlow / 75
 
@@ -41,24 +50,28 @@ export const NeonButton = forwardRef<HTMLButtonElement, NeonButtonProps>(({
   const variantClasses = {
     solid: cn(
       'bg-gradient-to-b from-white/20 to-black/40',
-      colors.border,
-      colors.text
+      colors?.border,
+      colors?.text
     ),
     outline: cn(
       'bg-transparent',
-      colors.border,
-      colors.text,
+      colors?.border,
+      colors?.text,
       'hover:bg-white/5'
     ),
     ghost: cn(
       'bg-transparent border-transparent',
-      colors.text,
+      colors?.text,
       'hover:bg-white/5'
     ),
   }
 
+  const themeStyle: React.CSSProperties = themed
+    ? { color: THEME_ACCENT, borderColor: variant === 'ghost' ? 'transparent' : THEME_BORDER }
+    : {}
+
   const glowStyle = intensity !== 'none' && !disabled && globalGlow > 0 ? {
-    boxShadow: `0 0 ${glow.blur * mult}px ${glow.spread * mult}px ${colors.glow}`,
+    boxShadow: `0 0 ${glow.blur * mult}px ${glow.spread * mult}px ${accentGlow}`,
   } : {}
 
   return (
@@ -74,7 +87,7 @@ export const NeonButton = forwardRef<HTMLButtonElement, NeonButtonProps>(({
         disabled && 'opacity-50 cursor-not-allowed',
         className
       )}
-      style={glowStyle}
+      style={{ ...themeStyle, ...glowStyle }}
       whileHover={!disabled ? { scale: 1.02 } : {}}
       whileTap={!disabled ? { scale: 0.98 } : {}}
       {...props}
@@ -83,7 +96,7 @@ export const NeonButton = forwardRef<HTMLButtonElement, NeonButtonProps>(({
         <div
           className="absolute inset-0 -z-10 animate-glow-breathe"
           style={{
-            background: `radial-gradient(circle at center, ${colors.glow} 0%, transparent 70%)`,
+            background: `radial-gradient(circle at center, ${accentGlow} 0%, transparent 70%)`,
             opacity: glow.opacity * 0.5 * mult,
             filter: `blur(${20 * mult}px)`,
           }}

@@ -23,8 +23,11 @@ export function KairosThreadList({
         <button
           onClick={onNew}
           type="button"
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600/90 px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-white transition hover:bg-purple-500"
-          style={{ textShadow: '0 0 8px rgba(139,92,246,0.5)' }}
+          className="flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-white transition hover:brightness-110"
+          style={{
+            backgroundColor: 'color-mix(in srgb, var(--primary) 90%, transparent)',
+            textShadow: '0 0 8px color-mix(in srgb, var(--primary) 50%, transparent)',
+          }}
         >
           <Plus className="h-4 w-4" />
           New chat
@@ -51,7 +54,13 @@ export function KairosThreadList({
                 }`}
               >
                 {active && (
-                  <span className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-purple-400 shadow-[0_0_6px_rgba(139,92,246,0.7)]" />
+                  <span
+                    className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full"
+                    style={{
+                      backgroundColor: 'var(--primary)',
+                      boxShadow: '0 0 6px color-mix(in srgb, var(--primary) 70%, transparent)',
+                    }}
+                  />
                 )}
                 <div className={`truncate text-[12.5px] ${active ? 'font-medium text-white' : 'text-zinc-200'}`}>
                   {t.title}

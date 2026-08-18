@@ -57,6 +57,7 @@ export async function createTask(
     color: data.color,
     onTimeline: data.onTimeline,
     size: data.size ?? null,
+    progress: data.progress ?? null,
     startDate: data.startDate ? new Date(data.startDate) : null,
     endDate: data.endDate ? new Date(data.endDate) : null,
   }
@@ -111,6 +112,7 @@ export async function updateTask(
   if (data.color !== undefined) updates.color = data.color
   if (data.onTimeline !== undefined) updates.onTimeline = data.onTimeline
   if (data.size !== undefined) updates.size = data.size
+  if (data.progress !== undefined) updates.progress = data.progress
   if (data.orderIndex !== undefined) updates.orderIndex = data.orderIndex
   if (data.startDate !== undefined) updates.startDate = data.startDate ? new Date(data.startDate) : null
   if (data.endDate !== undefined) updates.endDate = data.endDate ? new Date(data.endDate) : null

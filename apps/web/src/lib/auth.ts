@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import * as schema from '@/lib/db/schema'
 import { hasValidPendingInvite, resolveUserPendingInvites } from '@/lib/data/workspaces'
+import { applyDefaultTemplateToUser } from '@/lib/data/settingsTemplates'
 
 declare module 'next-auth' {
   interface Session {
@@ -104,6 +105,13 @@ const nextAuth = NextAuth({
         await resolveUserPendingInvites(user.id, user.email).catch((err) =>
           console.error('[auth] resolveUserPendingInvites failed for', user.email, err)
         )
+      }
+      if (user.id) {
+        try {
+          await applyDefaultTemplateToUser(user.id)
+        } catch (err) {
+          console.error('[auth] applyDefaultTemplateToUser failed for', user.email, err)
+        }
       }
     },
   },

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useState, useMemo, useRef, useEffect } from 'react'
-import { DndContext, DragOverlay, closestCenter } from '@dnd-kit/core'
+import { DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColumn, type BoardTask } from '@/lib/store/boardStore'
 import { KanbanColumn } from './KanbanColumn'
@@ -13,6 +13,8 @@ import { DependencyGlowTree } from './DependencyGlowTree'
 import { LabelPicker } from './LabelPicker'
 import { TaskColorPicker } from './TaskColorPicker'
 import { TaskPriorityPicker } from './TaskPriorityPicker'
+import { TaskProgressPopover } from './TaskProgressPopover'
+import { TaskSizePopover } from './TaskSizePopover'
 import { TrashDropZone } from './TrashDropZone'
 import { DragPreview } from './DragPreview'
 import { ConnectModeBanner } from './ConnectModeBanner'
@@ -23,6 +25,7 @@ import { useThemeStore } from '@/stores/themeStore'
 import { applyBoardFilters, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { useBoardDnD } from './useBoardDnD'
+import { boardCollisionDetection } from './boardCollision'
 import { useBoardKeyboardShortcuts } from './useBoardKeyboardShortcuts'
 import { useBoardHover } from './useBoardHover'
 import { cycleTaskCompletion } from './triState'
@@ -47,6 +50,7 @@ interface BoardTaskData {
   startDate?: string
   endDate?: string
   size?: number | null
+  progress?: number | null
   ganttTaskId?: string | null
 }
 
@@ -129,6 +133,8 @@ export function TaskBoard({
   const [colorPickerTaskId, setColorPickerTaskId] = useState<string | null>(null)
   const [priorityPickerTaskId, setPriorityPickerTaskId] = useState<string | null>(null)
   const [assigneeTaskId, setAssigneeTaskId] = useState<string | null>(null)
+  const [progressTaskId, setProgressTaskId] = useState<string | null>(null)
+  const [sizeTaskId, setSizeTaskId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -241,7 +247,7 @@ export function TaskBoard({
     })
   }, [copiedTaskId, projectId])
 
-  const hasOpenOverlay = !!editingTask || !!newTaskColumnId || !!labelPickerTaskId || !!colorPickerTaskId || !!priorityPickerTaskId || !!dependencyTreeTaskId || !!assigneeTaskId
+  const hasOpenOverlay = !!editingTask || !!newTaskColumnId || !!labelPickerTaskId || !!colorPickerTaskId || !!priorityPickerTaskId || !!dependencyTreeTaskId || !!assigneeTaskId || !!progressTaskId || !!sizeTaskId
 
   useBoardKeyboardShortcuts({
     hoveredTaskId,
@@ -259,6 +265,8 @@ export function TaskBoard({
     onPasteCard: handlePasteCard,
     onSelectTask: selectTask,
     onOpenAssignee: (taskId) => setAssigneeTaskId((prev) => (prev === taskId ? null : taskId)),
+    onOpenProgress: (taskId) => setProgressTaskId((prev) => (prev === taskId ? null : taskId)),
+    onOpenSize: (taskId) => setSizeTaskId((prev) => (prev === taskId ? null : taskId)),
     onTaskMove,
   })
 
@@ -354,6 +362,7 @@ export function TaskBoard({
         color: formData.color,
         labels: [],
         onTimeline: false,
+        size: formData.size,
         orderIndex: maxOrder + 1,
       }
       addTask(newTask)
@@ -387,7 +396,7 @@ export function TaskBoard({
 
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCenter}
+          collisionDetection={boardCollisionDetection}
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
@@ -460,6 +469,7 @@ export function TaskBoard({
         onPushToGantt={onPushToGantt}
         onDateChange={(taskId, dates) => onTaskUpdate?.(taskId, dates as Record<string, unknown>)}
         onStatusChange={(taskId, status) => onTaskUpdate?.(taskId, { status })}
+        onProgressChange={(taskId, progress) => onTaskUpdate?.(taskId, { progress }, { silent: true })}
         onTaskDelete={onTaskDelete}
       />
 
@@ -468,6 +478,22 @@ export function TaskBoard({
         taskId={assigneeTaskId}
         onClose={() => setAssigneeTaskId(null)}
       />
+
+      {progressTaskId && (
+        <TaskProgressPopover
+          taskId={progressTaskId}
+          onClose={() => setProgressTaskId(null)}
+          onTaskUpdate={onTaskUpdate}
+        />
+      )}
+
+      {sizeTaskId && (
+        <TaskSizePopover
+          taskId={sizeTaskId}
+          onClose={() => setSizeTaskId(null)}
+          onTaskUpdate={onTaskUpdate}
+        />
+      )}
 
       {dependencyTreeTaskId && (
         <DependencyGlowTree

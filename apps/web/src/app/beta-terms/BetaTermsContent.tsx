@@ -1,14 +1,13 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Loader2, Shield, Database, MessageSquare, AlertTriangle, Download, Sparkles, Check, Skull } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { motion } from 'framer-motion'
+import { Loader2, Shield, Database, MessageSquare, AlertTriangle, Download, Sparkles, Check } from 'lucide-react'
 import Image from 'next/image'
 import { useThemeStore } from '@/stores/themeStore'
 import { GlassStage } from '@/components/ui/GlassStage'
 import { acceptBetaTerms } from '@/lib/actions/terms'
 import aeonLogo from '@/assets/aeon.png'
-import { BloodDrips, BloodFlood, BloodClots } from './GoreEffects'
 
 const TERMS_SECTIONS = [
   {
@@ -69,22 +68,11 @@ function GlowCheckbox({ checked, color }: { checked: boolean; color: string; onC
 export default function BetaTermsContent() {
   const [accepting, setAccepting] = useState(false)
   const [checked, setChecked] = useState<boolean[]>(TERMS_SECTIONS.map(() => false))
-  const [bloodMode, setBloodMode] = useState(false)
-  const [bloodFloodKey, setBloodFloodKey] = useState(0)
-  const prevAllChecked = useRef(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const { glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
 
   const allChecked = checked.every(Boolean)
-
-  useEffect(() => {
-    if (allChecked && !prevAllChecked.current && bloodMode) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setBloodFloodKey((k) => k + 1)
-    }
-    prevAllChecked.current = allChecked
-  }, [allChecked, bloodMode])
 
   const toggleItem = (idx: number) => {
     setChecked((prev) => prev.map((v, i) => (i === idx ? !v : v)))
@@ -112,10 +100,6 @@ export default function BetaTermsContent() {
         background: 'radial-gradient(ellipse at center, rgba(15, 15, 25, 0.95) 0%, #0a0a0f 70%)',
       }}
     >
-      <AnimatePresence>
-        {bloodFloodKey > 0 && <BloodFlood key={bloodFloodKey} />}
-      </AnimatePresence>
-
       <GlassStage
         blobConfig={{
           blobs: [
@@ -191,19 +175,6 @@ export default function BetaTermsContent() {
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                 Before you dive in, here is what you should know.
               </p>
-              <button
-                onClick={() => setBloodMode((b) => !b)}
-                className="mt-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium uppercase tracking-wider transition-all duration-300"
-                style={{
-                  backgroundColor: bloodMode ? 'rgba(60, 0, 0, 0.4)' : 'rgba(255,255,255,0.04)',
-                  border: `1px solid ${bloodMode ? 'rgba(120, 20, 20, 0.5)' : 'rgba(255,255,255,0.06)'}`,
-                  color: bloodMode ? '#a44' : 'rgba(255,255,255,0.25)',
-                  boxShadow: bloodMode ? '0 0 12px rgba(80, 0, 0, 0.3)' : 'none',
-                }}
-              >
-                <Skull className="w-3 h-3" />
-                {bloodMode ? 'Gore mode on' : 'Gore mode'}
-              </button>
             </motion.div>
           </div>
 
@@ -240,14 +211,10 @@ export default function BetaTermsContent() {
                       {section.content}
                     </p>
                   </div>
-                  <div className="relative">
-                    <GlowCheckbox
-                      checked={checked[idx]}
-                      color={section.color}
-                    />
-                    {bloodMode && idx === 0 && checked[0] && !allChecked && <BloodClots />}
-                    {bloodMode && idx === 4 && checked[4] && !allChecked && <BloodDrips />}
-                  </div>
+                  <GlowCheckbox
+                    checked={checked[idx]}
+                    color={section.color}
+                  />
                 </motion.div>
               ))}
             </div>
@@ -264,9 +231,9 @@ export default function BetaTermsContent() {
                 onClick={toggleAll}
                 className="w-full py-2.5 rounded-xl text-xs font-medium transition-all duration-200 flex items-center justify-center gap-2 hover:bg-white/[0.06]"
                 style={{
-                  backgroundColor: allChecked ? 'rgba(139, 92, 246, 0.08)' : 'rgba(255,255,255,0.04)',
-                  border: `1px solid ${allChecked ? 'rgba(139, 92, 246, 0.25)' : 'rgba(255,255,255,0.08)'}`,
-                  color: allChecked ? '#a78bfa' : 'var(--text-dim)',
+                  backgroundColor: allChecked ? 'color-mix(in srgb, var(--primary) 8%, transparent)' : 'rgba(255,255,255,0.04)',
+                  border: `1px solid ${allChecked ? 'color-mix(in srgb, var(--primary) 25%, transparent)' : 'rgba(255,255,255,0.08)'}`,
+                  color: allChecked ? 'var(--primary-hover)' : 'var(--text-dim)',
                 }}
               >
                 <GlowCheckbox
