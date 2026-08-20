@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { taskComments, boardTasks, users } from '@/lib/db/schema'
 import { eq, and, asc, desc } from 'drizzle-orm'
+import { after } from 'next/server'
 import { touchProject } from './projects'
 
 export async function findComments(taskId: string, projectId: string) {
@@ -32,9 +33,18 @@ export async function findComments(taskId: string, projectId: string) {
 // Every caller already holds the project it verified access to, so the touch
 // takes it directly instead of re-resolving it from the task. Fire-and-forget
 // like emitActivity: the comment is committed, a failed boardVersion bump must
-// not turn a successful write into an error.
+// not turn a successful write into an error. Scheduled via after() — a bare
+// dangling promise can be frozen with the isolate once the response is sent
+// on Vercel, which would silently drop the very event peers rely on; after()
+// keeps the response fast AND guarantees the touch runs. Falls back to a
+// plain dangling call outside a request scope (unit tests).
 function touchOwningProject(projectId: string) {
-  touchProject(projectId, { type: 'comment:changed' }).catch(() => {})
+  const touch = () => touchProject(projectId, { type: 'comment:changed' }).catch(() => {})
+  try {
+    after(touch)
+  } catch {
+    void touch()
+  }
 }
 
 export async function createComment(

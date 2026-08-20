@@ -52,26 +52,32 @@ function buildDispatchPrompt(taskId: string, name: string, hangar: HangarCardMet
   return lines.join('\n')
 }
 
-// Registry gate. The registry is realm-scoped and a project can belong to
-// several realms, so the card's repo has to match an entry in any of them.
-// Enforcement is opt-in by adoption: a realm with an empty registry is one
-// that hasn't onboarded yet, and blocking its missions would break the
-// existing pull flow for no safety gain.
+// Registry gate — ADVISORY, not a security boundary. It catches operator
+// mistakes (retired repo, engine never onboarded) at launch time, but the
+// other session-creation surfaces (REST/MCP spawn) take a free repo string,
+// and the real containment is runner-side: a slug absent from the host's
+// repos.local.yaml is refused at claim time. The registry is realm-scoped and
+// a project can belong to several realms, so the repo passes if ANY realm's
+// entry permits it (divergent configs must not make the same card flap).
+// Enforcement is opt-in by adoption: realms with empty registries haven't
+// onboarded and skip the gate entirely.
 async function assertRepoIsRegistered(projectId: string, hangar: HangarCardMetadata) {
   const realmIds = await findProjectRealmIds(projectId)
   if (realmIds.length === 0) return
 
-  for (const realmId of realmIds) {
-    const repo = await findHangarRepoBySlug(realmId, hangar.repo)
-    if (!repo) continue
-    if (!repo.active) {
+  const matches = (
+    await Promise.all(realmIds.map((realmId) => findHangarRepoBySlug(realmId, hangar.repo)))
+  ).filter((repo) => repo !== null)
+
+  if (matches.length > 0) {
+    const permitted = matches.some(
+      (repo) => repo.active && (repo.allowedEngines.length === 0 || repo.allowedEngines.includes(hangar.agent))
+    )
+    if (permitted) return
+    if (matches.every((repo) => !repo.active)) {
       throw new Error(`Repo "${hangar.repo}" is retired in the Hangar registry`)
     }
-    const allowed = repo.allowedEngines
-    if (allowed.length > 0 && !allowed.includes(hangar.agent)) {
-      throw new Error(`Engine "${hangar.agent}" is not allowed for repo "${hangar.repo}"`)
-    }
-    return
+    throw new Error(`Engine "${hangar.agent}" is not allowed for repo "${hangar.repo}"`)
   }
 
   const registries = await Promise.all(realmIds.map((id) => listHangarRepos(id)))

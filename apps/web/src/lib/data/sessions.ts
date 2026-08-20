@@ -9,11 +9,9 @@ import type {
   AgentSessionStatus,
   HangarAgent,
   HangarResultEnvelope,
-  UpdateTaskInput,
 } from './validators'
 import { findColumns } from './columns'
-import { findProjectSettings } from './projects'
-import { updateTask } from './tasks'
+import { findProjectSettings, touchProject } from './projects'
 
 const LIVE_STATUSES: AgentSessionStatus[] = ['queued', 'running']
 const TERMINAL_STATUSES: AgentSessionStatus[] = ['succeeded', 'failed', 'killed', 'timeout']
@@ -200,53 +198,66 @@ export async function recordSessionResult(
     .limit(1)
   if (!session) return null
 
-  // Replay guard lives in the WHERE clause, not in a prior read: two result
-  // posts racing on the same session would both pass a read-then-write check
-  // and process the card twice. Postgres settles it — the loser updates zero
-  // rows and stops here, so the card move and result cache happen exactly once.
+  // Reads (task snapshot, column lookup) happen before the transaction; the
+  // two WRITES — session flip and card patch — commit atomically. Without the
+  // transaction, a card-patch failure after the flip would strand the mission:
+  // the terminal guard turns every retry into a no-op and the card never
+  // receives its result (house rule: multi-write mutations are transactional).
+  const task = session.taskId
+    ? (await db.select().from(boardTasks).where(eq(boardTasks.id, session.taskId)).limit(1))[0] ?? null
+    : null
+
+  const columnId = task ? await resolveResultColumn(task.projectId, envelope.status) : null
+
   const now = new Date()
-  const [updatedSession] = await db
-    .update(agentSessions)
-    .set({
-      status: envelope.status === 'failed' ? 'failed' : 'succeeded',
-      endedAt: now,
-      updatedAt: now,
-    })
-    .where(and(
-      eq(agentSessions.id, sessionId),
-      notInArray(agentSessions.status, TERMINAL_STATUSES),
-    ))
-    .returning()
-  if (!updatedSession) return { session, task: null }
+  const result = await db.transaction(async (tx) => {
+    // Replay guard lives in the WHERE clause, not in a prior read: two result
+    // posts racing on the same session would both pass a read-then-write check
+    // and process the card twice. Postgres settles it — the loser updates zero
+    // rows and stops here, so the card move and result cache happen exactly once.
+    const [updatedSession] = await tx
+      .update(agentSessions)
+      .set({
+        status: envelope.status === 'failed' ? 'failed' : 'succeeded',
+        endedAt: now,
+        updatedAt: now,
+      })
+      .where(and(
+        eq(agentSessions.id, sessionId),
+        notInArray(agentSessions.status, TERMINAL_STATUSES),
+      ))
+      .returning()
+    if (!updatedSession) return { session, task: null, guarded: true }
+    if (!task) return { session: updatedSession, task: null, guarded: false }
 
-  if (!session.taskId) return { session: updatedSession, task: null }
-
-  const [task] = await db
-    .select()
-    .from(boardTasks)
-    .where(eq(boardTasks.id, session.taskId))
-    .limit(1)
-  if (!task) return { session: updatedSession, task: null }
-
-  const metadata = (task.metadata as Record<string, unknown>) ?? {}
-  const hangar = (metadata.hangar as Record<string, unknown>) ?? {}
-  const sessionIds = Array.isArray(hangar.sessionIds) ? (hangar.sessionIds as string[]) : []
-
-  const patch: UpdateTaskInput = {
-    metadata: {
+    const metadata = (task.metadata as Record<string, unknown>) ?? {}
+    const hangar = (metadata.hangar as Record<string, unknown>) ?? {}
+    const sessionIds = Array.isArray(hangar.sessionIds) ? (hangar.sessionIds as string[]) : []
+    const mergedHangar = {
       hangar: {
         ...hangar,
         lastResult: envelope,
         sessionIds: sessionIds.includes(sessionId) ? sessionIds : [...sessionIds, sessionId],
       },
-    },
-  }
+    }
 
-  const columnId = await resolveResultColumn(task.projectId, envelope.status)
-  if (columnId) patch.columnId = columnId
+    const [updatedTask] = await tx
+      .update(boardTasks)
+      .set({
+        metadata: sql`coalesce(${boardTasks.metadata}, '{}'::jsonb) || ${JSON.stringify(mergedHangar)}::jsonb`,
+        ...(columnId ? { columnId } : {}),
+        updatedAt: now,
+      })
+      .where(eq(boardTasks.id, task.id))
+      .returning()
+    return { session: updatedSession, task: updatedTask ?? null, guarded: false }
+  })
 
-  const updatedTask = await updateTask(task.id, task.projectId, patch)
-  return { session: updatedSession, task: updatedTask }
+  // Version bump + realtime after commit — one event, same as updateTask would
+  // have emitted. Skipped for guarded replays (nothing changed).
+  if (result.task && task) await touchProject(task.projectId, { type: 'task:updated' })
+
+  return { session: result.session, task: result.task }
 }
 
 export async function attachSessionMemory(id: string, userId: string, memoryId: string) {

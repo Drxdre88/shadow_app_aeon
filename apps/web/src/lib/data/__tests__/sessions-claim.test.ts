@@ -58,14 +58,22 @@ vi.mock('@/lib/db', () => {
 })
 
 vi.mock('../columns', () => ({ findColumns: vi.fn(async () => []) }))
-vi.mock('../projects', () => ({ findProjectSettings: vi.fn(async () => null) }))
+vi.mock('../projects', () => ({
+  findProjectSettings: vi.fn(async () => null),
+  touchProject: vi.fn(async () => {}),
+}))
 vi.mock('../tasks', () => ({ updateTask: vi.fn(async () => ({ id: 'task', columnId: null })) }))
 
 import { claimNextSession, recordSessionResult } from '../sessions'
 import { sessionEventsTailSchema } from '../validators'
 import { updateTask } from '../tasks'
-import { findProjectSettings } from '../projects'
+import { findProjectSettings, touchProject } from '../projects'
 import { findColumns } from '../columns'
+
+// The card patch is a tx.update whose set carries the jsonb metadata merge —
+// this picks those captures out from the session-flip updates.
+const cardUpdates = () =>
+  captures.filter((c) => c.set !== undefined && Object.hasOwn(c.set as object, 'metadata'))
 
 const USER_ID = '10000000-0000-4000-8000-000000000001'
 const OTHER_USER = '10000000-0000-4000-8000-0000000000ff'
@@ -199,18 +207,22 @@ describe('recordSessionResult', () => {
 
     // Winner: the guarded UPDATE matches, so it settles the session and the card.
     selectQueue.push([running])
-    updateQueue.push([{ id: SESSION_ID, status: 'succeeded' }])
     selectQueue.push([card])
+    updateQueue.push([{ id: SESSION_ID, status: 'succeeded' }])
+    updateQueue.push([{ id: TASK_ID, projectId: PROJECT_ID }])
     await recordSessionResult(SESSION_ID, ENVELOPE)
-    expect(updateTask).toHaveBeenCalledTimes(1)
+    expect(cardUpdates()).toHaveLength(1)
+    expect(touchProject).toHaveBeenCalledTimes(1)
 
     // Loser: it read the same pre-race row, but its UPDATE now matches nothing.
     selectQueue.push([running])
+    selectQueue.push([card])
     updateQueue.push([])
     const second = await recordSessionResult(SESSION_ID, ENVELOPE)
 
     expect(second).toEqual({ session: running, task: null })
-    expect(updateTask).toHaveBeenCalledTimes(1)
+    expect(cardUpdates()).toHaveLength(1)
+    expect(touchProject).toHaveBeenCalledTimes(1)
   })
 
   it('settles a chat-style session with no card and stops there', async () => {
@@ -236,60 +248,66 @@ describe('recordSessionResult', () => {
 
   it('caches the envelope on the card and appends the session id', async () => {
     selectQueue.push([{ id: SESSION_ID, status: 'running', taskId: TASK_ID }])
-    updateQueue.push([{ id: SESSION_ID, status: 'succeeded' }])
     selectQueue.push([{
       id: TASK_ID,
       projectId: PROJECT_ID,
       metadata: { hangar: { repo: 'aeon', sessionIds: ['older-session'] } },
     }])
+    updateQueue.push([{ id: SESSION_ID, status: 'succeeded' }])
+    updateQueue.push([{ id: TASK_ID, projectId: PROJECT_ID }])
 
     await recordSessionResult(SESSION_ID, ENVELOPE)
 
-    expect(updateTask).toHaveBeenCalledWith(TASK_ID, PROJECT_ID, {
-      metadata: {
-        hangar: {
-          repo: 'aeon',
-          lastResult: ENVELOPE,
-          sessionIds: ['older-session', SESSION_ID],
-        },
+    const [patch] = cardUpdates()
+    const merge = compile((patch.set as { metadata: unknown }).metadata)
+    // The jsonb || merge carries the whole hangar object as one bound param.
+    expect(JSON.parse(merge.params[merge.params.length - 1] as string)).toEqual({
+      hangar: {
+        repo: 'aeon',
+        lastResult: ENVELOPE,
+        sessionIds: ['older-session', SESSION_ID],
       },
     })
+    expect(touchProject).toHaveBeenCalledWith(PROJECT_ID, { type: 'task:updated' })
   })
 
   it('does not move the card when the project is not a Hangar board', async () => {
     selectQueue.push([{ id: SESSION_ID, status: 'running', taskId: TASK_ID }])
-    updateQueue.push([{ id: SESSION_ID, status: 'succeeded' }])
     selectQueue.push([{ id: TASK_ID, projectId: PROJECT_ID, metadata: {} }])
+    updateQueue.push([{ id: SESSION_ID, status: 'succeeded' }])
+    updateQueue.push([{ id: TASK_ID, projectId: PROJECT_ID }])
     vi.mocked(findProjectSettings).mockResolvedValueOnce({ boardMode: 'board' } as never)
 
     await recordSessionResult(SESSION_ID, ENVELOPE)
 
     expect(findColumns).not.toHaveBeenCalled()
-    expect(vi.mocked(updateTask).mock.calls[0][2]).not.toHaveProperty('columnId')
+    expect(cardUpdates()[0].set).not.toHaveProperty('columnId')
   })
 
   it('moves a completed mission into the Hangar landing column', async () => {
     selectQueue.push([{ id: SESSION_ID, status: 'running', taskId: TASK_ID }])
-    updateQueue.push([{ id: SESSION_ID, status: 'succeeded' }])
     selectQueue.push([{ id: TASK_ID, projectId: PROJECT_ID, metadata: {} }])
+    updateQueue.push([{ id: SESSION_ID, status: 'succeeded' }])
+    updateQueue.push([{ id: TASK_ID, projectId: PROJECT_ID }])
     vi.mocked(findProjectSettings).mockResolvedValueOnce({ boardMode: 'hangar' } as never)
     vi.mocked(findColumns).mockResolvedValueOnce([{ id: 'col-landing', name: 'Landing' }] as never)
 
     await recordSessionResult(SESSION_ID, ENVELOPE)
 
-    expect(vi.mocked(updateTask).mock.calls[0][2]).toMatchObject({ columnId: 'col-landing' })
+    expect(cardUpdates()[0].set).toMatchObject({ columnId: 'col-landing' })
   })
 
   it('leaves a failed mission where it was launched', async () => {
     selectQueue.push([{ id: SESSION_ID, status: 'running', taskId: TASK_ID }])
-    updateQueue.push([{ id: SESSION_ID, status: 'failed' }])
     selectQueue.push([{ id: TASK_ID, projectId: PROJECT_ID, metadata: {} }])
+    updateQueue.push([{ id: SESSION_ID, status: 'failed' }])
+    updateQueue.push([{ id: TASK_ID, projectId: PROJECT_ID }])
     vi.mocked(findProjectSettings).mockResolvedValueOnce({ boardMode: 'hangar' } as never)
 
     await recordSessionResult(SESSION_ID, { ...ENVELOPE, status: 'failed', outcome: 'blocked' })
 
     expect(findColumns).not.toHaveBeenCalled()
-    expect(vi.mocked(updateTask).mock.calls[0][2]).not.toHaveProperty('columnId')
+    expect(cardUpdates()[0].set).not.toHaveProperty('columnId')
   })
 })
 
