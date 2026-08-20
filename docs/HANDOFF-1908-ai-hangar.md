@@ -76,6 +76,17 @@ Card creation must NEVER spawn a mission — launching is a separate conscious c
 - Board settings `settings.hangar`: `membersCanCreateCards` (teammates draft on shared boards) + `launchRoles` (owner-only initially) — drafting and launching are separate privileges.
 - Constraint: post-C1 the runner claims only its owner's sessions, so shared-board V1 = teammates draft, operator launches. True multi-user launch needs a runner-identity concept (who runs whose missions on which host) — deliberate later step.
 
+## 🏁 POC RESULTS 2008 — all three missions flew, loop proven live
+
+- **Mission 1 (claude, recon):** completed — realtime-sync report + 4 recommended follow-up cards on the card face. `docs/investigations/20260820-realtime-sync-pipeline.md`.
+- **Mission 2 (copilot, recon):** first attempt did the work but wrote `status:'complete'` (skills not junctioned to Copilot → never saw the field spec) and was failed on validation. Fixes: runner status-alias normalization + envelope schema inlined in every dispatch prompt + repo-root path rule. Retry on **claude-sonnet-5** (probed: Copilot carries the Claude 5 family, NO opus tier, no fable; `claude-sonnet-4.6/4.5`, `claude-haiku-4.5`, `gpt-5.4`, `gpt-5.3-codex` also valid) → completed cleanly. `docs/investigations/20260820-api-auth-chain.md`.
+- **Mission 3 (claude, bug_fix):** fixed the comment-realtime bug mission 1 discovered — data-layer touchProject('comment:changed') repairing web+MCP+REST at once, 6 new tests, 2601 suite green, commit ff-merged to feat/ai-hangar.
+- Ops: `start-hangar-runner.bat` + `runner.env.example.bat` = any machine becomes a mission host. Known dev-only noise: event POSTs can 10s-timeout against a busy `next dev` (fire-and-forget by design; terminal writes retry).
+
+## 🗺️ Owner roadmap 2008 — V1→V5 (see memory project-hangar-roadmap-v1-v5)
+
+V1 = this POC. **V2 (MVP, priority order):** 1) storage — full report text stored in Aeon + rendered on the card (non-repo users see everything in-app; NO repo copy needed), a dedicated **hangar-vault** git repo as the version-controlled archive of deliverables (product repos stay clean), SharePoint mirror for work missions (StaffOne RAG); 2) model lists per engine probe-driven + surfaced in the card model picker; 3) AGENTS.md/CLAUDE.md bridge verified per engine. Plus spawn UI (trigger field manual/on_drop, launch+abort toast) and 4-5-mission parallelization via git worktrees. **V3:** admin tower (all sessions across machines, live transcript drawer, kill/retry, cost). **V4:** team layer (draft-vs-launch roles, runner identity, prod-box runners). **V5:** copilot-cloud engine, plan→auto-cards, Telegram verbs, resume.
+
 ## ⚠️ Warden 2008 — deferred findings (Sprint 2 debts, criticals/highs were fixed pre-commit)
 
 - **Trust ladder (N8):** `hangarRepos.runCmd`/`envSetupCmd` are realm-editor-writable but the runner does NOT execute them yet. Before Sprint 2 wires them up, decide the trust model — "realm editor writes a command the operator's host executes" is a higher bar than card editing. Options: operator-side allowlist, owner-only fields, or keep execution config runner-local.
