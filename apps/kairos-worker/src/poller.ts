@@ -252,6 +252,20 @@ interface FinalizeArgs {
   release: () => void
 }
 
+// Engines that can't discover the objective skills (no junctions yet) improvise
+// envelope enums — 'complete' for 'completed' cost the first Copilot mission its
+// result. Normalize the common aliases; Aeon's schema stays strict.
+const STATUS_ALIASES: Record<string, string> = {
+  complete: 'completed', done: 'completed', success: 'completed', succeeded: 'completed',
+  failure: 'failed', error: 'failed',
+}
+
+function normalizeEnvelope(envelope: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!envelope || typeof envelope.status !== 'string') return envelope
+  const mapped = STATUS_ALIASES[envelope.status.toLowerCase().trim()]
+  return mapped && mapped !== envelope.status ? { ...envelope, status: mapped } : envelope
+}
+
 async function finalize(args: FinalizeArgs): Promise<void> {
   const { ctx, nextSeq, engine, entry, outFile, briefFile, code, signal, killed, stdout, release } = args
   const endedAt = new Date().toISOString()
@@ -259,7 +273,7 @@ async function finalize(args: FinalizeArgs): Promise<void> {
 
   await postEvent(ctx, { seq: nextSeq(), kind: 'stop', payload: { exitCode: code, signal } })
 
-  const envelope = readEnvelope(engine, stdout, outFile)
+  const envelope = normalizeEnvelope(readEnvelope(engine, stdout, outFile))
 
   // The result event and the final status are the two writes that must land:
   // losing either leaves a finished mission showing as 'running' on the board.

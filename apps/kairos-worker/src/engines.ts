@@ -64,7 +64,7 @@ const copilot: EngineAdapter = {
   },
   envelopeSource: 'stdout',
   // Copilot's picker slug for Opus 5 must be confirmed on the POC host — see README.
-  defaultModel: process.env.KAIROS_COPILOT_DEFAULT_MODEL ?? 'claude-opus-5',
+  defaultModel: process.env.KAIROS_COPILOT_DEFAULT_MODEL ?? 'claude-sonnet-5',
 }
 
 const codex: EngineAdapter = {

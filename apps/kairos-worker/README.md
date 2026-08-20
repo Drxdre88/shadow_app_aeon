@@ -53,12 +53,13 @@ KAIROS_MODE=poll npm run start --workspace=apps/kairos-worker
 | `KAIROS_CODEX_BIN` | both | `codex` | Override the `codex` executable |
 | `KAIROS_COPILOT_BIN` | both | `copilot` | Override the `copilot` executable |
 | `KAIROS_CLAUDE_DEFAULT_MODEL` | poll | — | Model when the card names none |
-| `KAIROS_COPILOT_DEFAULT_MODEL` | poll | `claude-opus-5` | Model when the card names none — **verify the slug**, see below |
+| `KAIROS_COPILOT_DEFAULT_MODEL` | poll | `claude-sonnet-5` | Model when the card names none (probed valid 2026-08-20; Copilot offers no Opus tier) |
 | `KAIROS_CODEX_DEFAULT_MODEL` | poll | — | Model when the card names none |
 
-> **Confirm the Copilot model slug once per host** before the POC:
-> `copilot -p "reply OK" --model claude-opus-5 --allow-all-tools --no-ask-user`
-> If Copilot's picker names Opus 5 differently, set `KAIROS_COPILOT_DEFAULT_MODEL`.
+> Copilot model slugs probed 2026-08-20 on this host: `claude-sonnet-5` ✓,
+> `claude-sonnet-4.6` ✓, `claude-sonnet-4.5` ✓, `claude-haiku-4.5` ✓, `gpt-5.4` ✓,
+> `gpt-5.3-codex` ✓; every `*opus*` spelling rejected. Re-probe with
+> `copilot -p "Reply: OK" --model <slug> --allow-all-tools --no-ask-user` (invalid slugs error free of charge).
 
 ## Poll mode (AI Hangar)
 

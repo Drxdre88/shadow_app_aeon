@@ -32,9 +32,19 @@ function buildDispatchPrompt(taskId: string, name: string, hangar: HangarCardMet
     hangar.instruction,
     '',
     `Load the aeon-dispatch-contract skill and the aeon-objective-${hangar.objective} skill and follow them.`,
-    'Read the repo CLAUDE.md (or canonical AGENTS.md) fully.',
+    'Read the repo CLAUDE.md (or canonical AGENTS.md) fully. All file paths are relative to the REPO ROOT.',
     'Fetch more context via Aeon MCP get_task_detail if available.',
-    'End with the result envelope in a fenced json block.'
+    // Engines without skill discovery (Copilot/Codex until the junctions land)
+    // never see the contract's field spec — the first Copilot mission invented
+    // status:'complete' and failed validation. Inline the exact shape.
+    'Your FINAL output MUST end with exactly one fenced ```json block — the result envelope. Exact schema (enum values are strict):',
+    '```',
+    '{ "status": "completed" | "needs_input" | "failed",',
+    '  "outcome": "fixed" | "implemented" | "investigation_complete" | "analysis_complete" | "planned" | "blocked",',
+    '  "summary": "3-6 plain-English sentences", "branch": "string or null", "commit": "short sha or null",',
+    '  "artifacts": ["repo-relative paths"], "tests": { "status": "passed" | "failed" | "not_run", "summary": "..." },',
+    '  "questions": [], "recommended_tasks": [{ "title", "objective", "instruction" }] }',
+    '```'
   )
 
   return lines.join('\n')
