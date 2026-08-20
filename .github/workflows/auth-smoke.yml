@@ -27,7 +27,11 @@ jobs:
           node-version: '24'
 
       # smoke-auth.mjs is dependency-free (global fetch) — no npm ci needed.
+      # Previews lack the Google OAuth env vars, so they run in liveness-only
+      # mode (handlers must answer well-formed JSON — the exact thing the
+      # response-class 500 breaks); Production runs the full sign-in paths.
       - name: Run auth smoke against the deployment
         env:
           AEON_BASE_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+          SMOKE_ALLOW_MISSING_PROVIDER: ${{ github.event.deployment_status.environment == 'Production' && '0' || '1' }}
         run: node apps/web/scripts/smoke-auth.mjs
