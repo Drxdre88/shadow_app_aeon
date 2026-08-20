@@ -609,6 +609,10 @@ export const agentSessions = pgTable('agent_sessions', {
   realmId: uuid('realm_id').references(() => workspaceGroups.id, { onDelete: 'set null' }),
   projectId: uuid('project_id').references(() => projects.id, { onDelete: 'set null' }),
   dominionId: uuid('dominion_id').references(() => dominions.id, { onDelete: 'set null' }),
+  // AI Hangar — set when the session was launched from a board card. Also the
+  // marker that separates runner-claimable rows from kairos-chat/dialogue rows
+  // sharing this table.
+  taskId: uuid('task_id').references(() => boardTasks.id, { onDelete: 'set null' }),
   engine: varchar('engine', { length: 40 }).notNull(),
   repo: varchar('repo', { length: 200 }),
   branch: varchar('branch', { length: 120 }),
@@ -616,6 +620,10 @@ export const agentSessions = pgTable('agent_sessions', {
   prompt: text('prompt').notNull(),
   workerHost: varchar('worker_host', { length: 120 }),
   workerPid: integer('worker_pid'),
+  // Pull-mode dispatch: the runner claims a queued row, then heartbeats.
+  claimedBy: varchar('claimed_by', { length: 120 }),
+  claimedAt: timestamp('claimed_at'),
+  lastHeartbeatAt: timestamp('last_heartbeat_at'),
   // 'queued' | 'running' | 'succeeded' | 'failed' | 'killed' | 'timeout'
   status: varchar('status', { length: 20 }).default('queued').notNull(),
   exitCode: integer('exit_code'),
@@ -632,6 +640,11 @@ export const agentSessions = pgTable('agent_sessions', {
   userStatusIdx: index('agent_sessions_user_status_idx').on(t.userId, t.status, t.spawnedAt),
   dominionIdx: index('agent_sessions_dominion_idx').on(t.dominionId, t.spawnedAt),
   liveIdx: index('agent_sessions_live_idx').on(t.userId, t.spawnedAt),
+  taskIdx: index('agent_sessions_task_idx').on(t.taskId),
+  // Partial — backs the runner's pull-mode claim query only.
+  claimIdx: index('agent_sessions_claim_idx')
+    .on(t.userId, t.spawnedAt)
+    .where(sql`status = 'queued' AND task_id IS NOT NULL`),
 }))
 
 // Trello-style multi-assign on board cards. Auto-activates in boards with
@@ -662,6 +675,33 @@ export const sessionEvents = pgTable('session_events', {
 }, (t) => ({
   sessionSeqIdx: uniqueIndex('session_events_session_seq_idx').on(t.sessionId, t.seq),
   createdIdx: index('session_events_created_idx').on(t.createdAt),
+}))
+
+// AI Hangar registry — the realm-scoped logical config of every repo an agent
+// mission can target. Host-local disk paths stay runner-side (repos.local.yaml);
+// slug matches the repo:* label taxonomy.
+export const hangarRepos = pgTable('hangar_repos', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  realmId: uuid('realm_id').notNull().references(() => workspaceGroups.id, { onDelete: 'cascade' }),
+  slug: varchar('slug', { length: 120 }).notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  gitUrl: text('git_url').notNull(),
+  // owner/repo — required for the copilot-cloud assign path.
+  ghSlug: varchar('gh_slug', { length: 200 }),
+  defaultBranch: varchar('default_branch', { length: 120 }).default('main').notNull(),
+  branchPrefix: varchar('branch_prefix', { length: 60 }).default('aeon/').notNull(),
+  allowedEngines: jsonb('allowed_engines').default([]).notNull(),
+  runCmd: text('run_cmd'),
+  envSetupCmd: text('env_setup_cmd'),
+  appUrl: text('app_url'),
+  notes: text('notes'),
+  active: boolean('active').default(true).notNull(),
+  metadata: jsonb('metadata').default({}).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  realmSlugIdx: uniqueIndex('hangar_repos_realm_slug_idx').on(t.realmId, t.slug),
+  realmActiveIdx: index('hangar_repos_realm_active_idx').on(t.realmId, t.active),
 }))
 
 export type User = typeof users.$inferSelect
@@ -701,4 +741,5 @@ export type UserAiCredential = typeof userAiCredentials.$inferSelect
 export type UserAiPreference = typeof userAiPreferences.$inferSelect
 export type AgentSession = typeof agentSessions.$inferSelect
 export type SessionEvent = typeof sessionEvents.$inferSelect
+export type HangarRepo = typeof hangarRepos.$inferSelect
 export type TaskAssignee = typeof taskAssignees.$inferSelect

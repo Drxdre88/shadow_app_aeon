@@ -60,6 +60,7 @@ export async function createTask(
     progress: data.progress ?? null,
     startDate: data.startDate ? new Date(data.startDate) : null,
     endDate: data.endDate ? new Date(data.endDate) : null,
+    metadata: data.metadata ?? {},
   }
 
   if (data.orderIndex !== undefined) {
@@ -116,10 +117,15 @@ export async function updateTask(
   if (data.orderIndex !== undefined) updates.orderIndex = data.orderIndex
   if (data.startDate !== undefined) updates.startDate = data.startDate ? new Date(data.startDate) : null
   if (data.endDate !== undefined) updates.endDate = data.endDate ? new Date(data.endDate) : null
+  // jsonb || jsonb is a top-level shallow merge, so the patch applies inside the
+  // UPDATE — a concurrent writer can no longer lose keys to a read-modify-write.
+  const metadataSet = data.metadata !== undefined
+    ? { metadata: sql`coalesce(${boardTasks.metadata}, '{}'::jsonb) || ${JSON.stringify(data.metadata)}::jsonb` }
+    : {}
 
   const [task] = await db
     .update(boardTasks)
-    .set(updates)
+    .set({ ...updates, ...metadataSet })
     .where(and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, projectId)))
     .returning()
 
