@@ -37,8 +37,11 @@ jobs:
       # Previews lack the Google OAuth env vars, so they run in liveness-only
       # mode (handlers must answer well-formed JSON — the exact thing the
       # response-class 500 breaks); Production runs the full sign-in paths.
+      # environment_url is the deployment-specific *.vercel.app URL, which
+      # Vercel deployment protection 302-walls even for production deployments
+      # — only the canonical alias is publicly reachable, so smoke that.
       - name: Run auth smoke against the deployment
         env:
-          AEON_BASE_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+          AEON_BASE_URL: https://aeon.shadow-lab.ai
           SMOKE_ALLOW_MISSING_PROVIDER: ${{ github.event.deployment_status.environment == 'Production' && '0' || '1' }}
         run: node apps/web/scripts/smoke-auth.mjs
