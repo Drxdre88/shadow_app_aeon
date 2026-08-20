@@ -1,6 +1,8 @@
 import { db } from '@/lib/db'
 import { taskComments, boardTasks, users } from '@/lib/db/schema'
 import { eq, and, asc, desc } from 'drizzle-orm'
+import { after } from 'next/server'
+import { touchProject } from './projects'
 
 export async function findComments(taskId: string, projectId: string) {
   const task = await db
@@ -28,8 +30,26 @@ export async function findComments(taskId: string, projectId: string) {
     .orderBy(asc(taskComments.createdAt))
 }
 
+// Every caller already holds the project it verified access to, so the touch
+// takes it directly instead of re-resolving it from the task. Fire-and-forget
+// like emitActivity: the comment is committed, a failed boardVersion bump must
+// not turn a successful write into an error. Scheduled via after() — a bare
+// dangling promise can be frozen with the isolate once the response is sent
+// on Vercel, which would silently drop the very event peers rely on; after()
+// keeps the response fast AND guarantees the touch runs. Falls back to a
+// plain dangling call outside a request scope (unit tests).
+function touchOwningProject(projectId: string) {
+  const touch = () => touchProject(projectId, { type: 'comment:changed' }).catch(() => {})
+  try {
+    after(touch)
+  } catch {
+    void touch()
+  }
+}
+
 export async function createComment(
   taskId: string,
+  projectId: string,
   userId: string,
   content: string
 ) {
@@ -37,12 +57,14 @@ export async function createComment(
     .insert(taskComments)
     .values({ taskId, userId, content })
     .returning()
+  if (comment) touchOwningProject(projectId)
   return comment
 }
 
 export async function updateComment(
   commentId: string,
   taskId: string,
+  projectId: string,
   userId: string,
   content: string
 ) {
@@ -57,12 +79,14 @@ export async function updateComment(
       )
     )
     .returning()
+  if (comment) touchOwningProject(projectId)
   return comment || null
 }
 
 export async function deleteComment(
   commentId: string,
   taskId: string,
+  projectId: string,
   userId: string
 ) {
   const [deleted] = await db
@@ -75,6 +99,7 @@ export async function deleteComment(
       )
     )
     .returning({ id: taskComments.id })
+  if (deleted) touchOwningProject(projectId)
   return !!deleted
 }
 

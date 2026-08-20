@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Send, Trash2, Pencil, X, Check, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { getComments, addComment, editComment, removeComment } from '@/lib/actions/comments'
+import { useCommentsSignal } from '@/lib/store/boardStore'
 import { toast } from '@/components/ui/Toast'
 
 interface Comment {
@@ -43,18 +44,20 @@ export function TaskComments({ taskId, projectId }: TaskCommentsProps) {
   const [submitting, setSubmitting] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const hasLoadedRef = useRef(false)
+  const commentsSignal = useCommentsSignal()
 
   // Lazy-load comments only when the section scrolls into view. The comments
   // block sits below the fold in the edit modal, so fetching it on open just
   // adds a round-trip to the critical "card opened" path for nothing.
   useEffect(() => {
     setComments([])
+    hasLoadedRef.current = false
     const el = containerRef.current
     if (!el) return
-    let done = false
     const fetchComments = () => {
-      if (done) return
-      done = true
+      if (hasLoadedRef.current) return
+      hasLoadedRef.current = true
       getComments(taskId, projectId)
         .then((data) => setComments(data as Comment[]))
         .catch(() => setComments([]))
@@ -65,6 +68,18 @@ export function TaskComments({ taskId, projectId }: TaskCommentsProps) {
     io.observe(el)
     return () => io.disconnect()
   }, [taskId, projectId])
+
+  // A peer wrote a comment (Pusher comment:changed). Refresh an already-open
+  // thread only — an unopened one stays lazy, and a failed refresh keeps what
+  // is already on screen rather than blanking it.
+  useEffect(() => {
+    if (commentsSignal === 0 || !hasLoadedRef.current) return
+    let cancelled = false
+    getComments(taskId, projectId)
+      .then((data) => { if (!cancelled) setComments(data as Comment[]) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [commentsSignal, taskId, projectId])
 
   const handleSubmit = useCallback(async () => {
     if (!newComment.trim() || submitting) return

@@ -3,6 +3,8 @@ import {
   spawnSessionSchema,
   listSessionsSchema,
   agentSessionStatusSchema,
+  agentSessionEngineSchema,
+  claimSessionSchema,
 } from '@/lib/data/validators'
 import {
   createAgentSession,
@@ -10,6 +12,7 @@ import {
   listAgentSessions,
   updateAgentSessionStatus,
   listSessionEvents,
+  claimNextSession,
 } from '@/lib/data/sessions'
 import { dispatchSpawn } from '@/lib/kairos/spawn'
 import type { RegisterFn } from './types'
@@ -17,20 +20,21 @@ import { getUserId, ok, notFound, fail } from './types'
 
 // Kairos Phase 3 (D16) — MCP surface mirrors the REST endpoints under
 // /api/v1/sessions/. Tools: spawn_session, list_sessions, get_session,
-// kill_session, list_session_events. The MCP parity invariant requires
-// these to share validators + data layer with the REST routes.
+// kill_session, list_session_events, claim_session. The MCP parity invariant
+// requires these to share validators + data layer with the REST routes.
 
 export const registerSessionTools: RegisterFn = (server) => {
   server.tool(
     'spawn_session',
     'Dispatch an AI session (Claude Code, Codex) on the operator\'s behalf. Creates an agent_sessions row, asks the worker host to shell the CLI, returns the session id and live status.',
     {
-      engine:     z.enum(['claude', 'codex']).describe('Which CLI to spawn'),
+      engine:     agentSessionEngineSchema.describe('Which CLI to spawn'),
       goal:       z.string().min(1).max(2000).describe('One-line operator-facing goal'),
       prompt:     z.string().min(1).max(20_000).describe('Prompt sent to the engine'),
       repo:       z.string().max(200).nullable().optional().describe('Repo slug the session runs against'),
       branch:     z.string().max(120).nullable().optional().describe('Git branch to start from'),
       projectId:  z.string().uuid().nullable().optional().describe('Optional project anchor'),
+      taskId:     z.string().uuid().nullable().optional().describe('Board card this session executes'),
       realmId:    z.string().uuid().nullable().optional().describe('Optional realm anchor'),
       dominionId: z.string().uuid().nullable().optional().describe('Optional Dominion anchor'),
       metadata:   z.record(z.string(), z.unknown()).optional().describe('Free-form metadata'),
@@ -152,6 +156,23 @@ export const registerSessionTools: RegisterFn = (server) => {
         endedAt: new Date(),
       })
       return ok(row)
+    }
+  )
+
+  server.tool(
+    'claim_session',
+    'Claim the next queued Hangar session for a runner. Atomically marks the oldest matching queued session owned by the calling user as claimed and returns it; returns null when the queue is empty.',
+    {
+      workerId: z.string().min(1).max(120).describe('Stable identifier of the claiming runner'),
+      engines:  z.array(agentSessionEngineSchema).min(1).optional().describe('Engines this runner can execute; defaults to all Hangar engines'),
+    },
+    { title: 'Claim Session', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    async (args, extra) => {
+      const uid = getUserId(extra)
+      const parsed = claimSessionSchema.safeParse(args)
+      if (!parsed.success) return fail(parsed.error.issues[0].message)
+      const session = await claimNextSession(uid, parsed.data.workerId, parsed.data.engines)
+      return ok({ session: session ?? null })
     }
   )
 }

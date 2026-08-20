@@ -29,7 +29,7 @@ export const PUT = withRateLimit(
     const parsed = updateCommentSchema.safeParse(body)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
-    const comment = await updateComment(commentId, taskId, result.id, parsed.data.content)
+    const comment = await updateComment(commentId, taskId, id, result.id, parsed.data.content)
     if (!comment) return jsonError('Comment not found', 404)
     return jsonData(comment)
   }),
@@ -47,7 +47,7 @@ export const DELETE = withRateLimit(
     const task = await findTaskById(taskId, id)
     if (!task) return jsonError('Task not found', 404)
 
-    const deleted = await deleteComment(commentId, taskId, result.id)
+    const deleted = await deleteComment(commentId, taskId, id, result.id)
     if (!deleted) return jsonError('Comment not found', 404)
     return jsonData({ deleted: true })
   }),

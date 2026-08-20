@@ -6,12 +6,19 @@ import {
   deleteComment,
 } from '@/lib/data/comments'
 import { verifyProjectOwnership } from '@/lib/data/projects'
+import { findTaskById } from '@/lib/data/tasks'
 import { emitActivity } from '@/lib/data/activity'
 import type { RegisterFn } from './types'
 import { getUserId, ok, notFound } from './types'
 
 async function requireOwnership(projectId: string, uid: string) {
   return !!(await verifyProjectOwnership(projectId, uid))
+}
+
+// Ownership is checked per project, so the task must be proven to live in it —
+// the REST surface does the same check before every comment mutation.
+async function taskInProject(taskId: string, projectId: string) {
+  return !!(await findTaskById(taskId, projectId))
 }
 
 export const registerCommentTools: RegisterFn = (server) => {
@@ -42,7 +49,8 @@ export const registerCommentTools: RegisterFn = (server) => {
     async ({ projectId, taskId, content }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
-      const comment = await createComment(taskId, uid, content)
+      if (!await taskInProject(taskId, projectId)) return notFound('Task')
+      const comment = await createComment(taskId, projectId, uid, content)
       emitActivity(projectId, 'comment', taskId, 'commented', content.slice(0, 80), { commentId: comment.id }, uid, 'agent').catch(() => {})
       return ok(comment)
     }
@@ -61,7 +69,8 @@ export const registerCommentTools: RegisterFn = (server) => {
     async ({ projectId, taskId, commentId, content }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
-      const comment = await updateComment(commentId, taskId, uid, content)
+      if (!await taskInProject(taskId, projectId)) return notFound('Task')
+      const comment = await updateComment(commentId, taskId, projectId, uid, content)
       return comment ? ok(comment) : notFound('Comment')
     }
   )
@@ -78,7 +87,8 @@ export const registerCommentTools: RegisterFn = (server) => {
     async ({ projectId, taskId, commentId }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
-      const deleted = await deleteComment(commentId, taskId, uid)
+      if (!await taskInProject(taskId, projectId)) return notFound('Task')
+      const deleted = await deleteComment(commentId, taskId, projectId, uid)
       return deleted ? ok({ deleted: true }) : notFound('Comment')
     }
   )

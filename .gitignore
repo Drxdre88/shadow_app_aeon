@@ -74,3 +74,6 @@ target/
 # Skybox HDRs — large (~130MB total), served from Cloudflare R2, never committed.
 # The PNG classics under public/cortex/ stay tracked; only the HDR worlds are external.
 apps/web/public/cortex/*.hdr
+
+# playwright MCP session artifacts
+.playwright-mcp/

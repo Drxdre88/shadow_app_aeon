@@ -1,15 +1,29 @@
 import { db } from '@/lib/db'
-import { agentSessions, sessionEvents } from '@/lib/db/schema'
-import { eq, and, desc, gte, inArray, sql } from 'drizzle-orm'
+import { agentSessions, sessionEvents, boardTasks } from '@/lib/db/schema'
+import { eq, and, asc, desc, gte, inArray, notInArray, isNotNull, sql } from 'drizzle-orm'
 import type {
   SpawnSessionInput,
   UpdateSessionStatusInput,
   RecordSessionEventInput,
   ListSessionsInput,
   AgentSessionStatus,
+  HangarAgent,
+  HangarResultEnvelope,
 } from './validators'
+import { findColumns } from './columns'
+import { findProjectSettings, touchProject } from './projects'
 
 const LIVE_STATUSES: AgentSessionStatus[] = ['queued', 'running']
+const TERMINAL_STATUSES: AgentSessionStatus[] = ['succeeded', 'failed', 'killed', 'timeout']
+const CLAIMABLE_ENGINES: HangarAgent[] = ['claude', 'codex', 'copilot']
+
+// Hangar lifecycle columns a finished mission lands in. Failures stay put so a
+// human triages them where they were launched.
+const RESULT_COLUMN_NAMES: Record<HangarResultEnvelope['status'], string | null> = {
+  completed: 'Landing',
+  needs_input: 'Tower',
+  failed: null,
+}
 
 export async function createAgentSession(userId: string, input: SpawnSessionInput) {
   const [row] = await db
@@ -24,6 +38,7 @@ export async function createAgentSession(userId: string, input: SpawnSessionInpu
       projectId: input.projectId ?? null,
       realmId: input.realmId ?? null,
       dominionId: input.dominionId ?? null,
+      taskId: input.taskId ?? null,
       metadata: input.metadata ?? {},
       status: 'queued',
     })
@@ -87,6 +102,162 @@ export async function updateAgentSessionStatus(
     .where(and(eq(agentSessions.id, id), eq(agentSessions.userId, userId)))
     .returning()
   return row ?? null
+}
+
+// Pull-mode dispatch. The runner polls; this hands it exactly one queued
+// mission owned by the authenticated caller — a runner must never execute
+// another user's prompt. taskId IS NOT NULL is mandatory — kairos-chat and
+// dialogue threads live in this table too and must never be claimed. SKIP
+// LOCKED lets several runners poll concurrently without blocking each other.
+// Nothing but the lock and the update happens inside the transaction: the Neon
+// pool times an acquire out at 8s, so a transaction that waits on anything
+// else can strand the pool.
+export async function claimNextSession(
+  userId: string,
+  workerId: string,
+  engines: HangarAgent[] = CLAIMABLE_ENGINES,
+) {
+  return db.transaction(async (tx) => {
+    const [candidate] = await tx
+      .select({ id: agentSessions.id })
+      .from(agentSessions)
+      .where(and(
+        eq(agentSessions.userId, userId),
+        eq(agentSessions.status, 'queued'),
+        isNotNull(agentSessions.taskId),
+        inArray(agentSessions.engine, engines),
+      ))
+      .orderBy(asc(agentSessions.spawnedAt))
+      .limit(1)
+      .for('update', { skipLocked: true })
+
+    if (!candidate) return null
+
+    const now = new Date()
+    const [row] = await tx
+      .update(agentSessions)
+      .set({
+        status: 'running',
+        claimedBy: workerId,
+        claimedAt: now,
+        lastHeartbeatAt: now,
+        startedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(agentSessions.id, candidate.id))
+      .returning()
+    return row ?? null
+  })
+}
+
+// Liveness ping from the runner that holds the claim. Returns null when the
+// session was reassigned, killed or finished — the runner treats that as a
+// cooperative stop signal. Scoped to the owning user like every other session
+// read/write: a worker id is guessable, the session owner is not.
+export async function heartbeatSession(id: string, userId: string, workerId: string) {
+  const now = new Date()
+  const [row] = await db
+    .update(agentSessions)
+    .set({ lastHeartbeatAt: now, updatedAt: now })
+    .where(and(
+      eq(agentSessions.id, id),
+      eq(agentSessions.userId, userId),
+      eq(agentSessions.claimedBy, workerId),
+      eq(agentSessions.status, 'running'),
+    ))
+    .returning()
+  return row ?? null
+}
+
+async function resolveResultColumn(
+  projectId: string,
+  status: HangarResultEnvelope['status'],
+): Promise<string | null> {
+  const target = RESULT_COLUMN_NAMES[status]
+  if (!target) return null
+
+  const settings = await findProjectSettings(projectId)
+  if (settings?.boardMode !== 'hangar') return null
+
+  const columns = await findColumns(projectId)
+  const match = columns.find((c) => c.name.trim().toLowerCase() === target.toLowerCase())
+  return match?.id ?? null
+}
+
+// Terminal envelope handling: flip the session, cache the result on the card
+// and move it along the Hangar lifecycle. needs_input still counts as a clean
+// exit — the process finished, the mission is just waiting on a human.
+export async function recordSessionResult(
+  sessionId: string,
+  envelope: HangarResultEnvelope,
+) {
+  const [session] = await db
+    .select()
+    .from(agentSessions)
+    .where(eq(agentSessions.id, sessionId))
+    .limit(1)
+  if (!session) return null
+
+  // Reads (task snapshot, column lookup) happen before the transaction; the
+  // two WRITES — session flip and card patch — commit atomically. Without the
+  // transaction, a card-patch failure after the flip would strand the mission:
+  // the terminal guard turns every retry into a no-op and the card never
+  // receives its result (house rule: multi-write mutations are transactional).
+  const task = session.taskId
+    ? (await db.select().from(boardTasks).where(eq(boardTasks.id, session.taskId)).limit(1))[0] ?? null
+    : null
+
+  const columnId = task ? await resolveResultColumn(task.projectId, envelope.status) : null
+
+  const now = new Date()
+  const result = await db.transaction(async (tx) => {
+    // Replay guard lives in the WHERE clause, not in a prior read: two result
+    // posts racing on the same session would both pass a read-then-write check
+    // and process the card twice. Postgres settles it — the loser updates zero
+    // rows and stops here, so the card move and result cache happen exactly once.
+    const [updatedSession] = await tx
+      .update(agentSessions)
+      .set({
+        status: envelope.status === 'failed' ? 'failed' : 'succeeded',
+        endedAt: now,
+        updatedAt: now,
+      })
+      .where(and(
+        eq(agentSessions.id, sessionId),
+        notInArray(agentSessions.status, TERMINAL_STATUSES),
+      ))
+      .returning()
+    if (!updatedSession) return { session, task: null, guarded: true }
+    if (!task) return { session: updatedSession, task: null, guarded: false }
+
+    const metadata = (task.metadata as Record<string, unknown>) ?? {}
+    const hangar = (metadata.hangar as Record<string, unknown>) ?? {}
+    const sessionIds = Array.isArray(hangar.sessionIds) ? (hangar.sessionIds as string[]) : []
+    const mergedHangar = {
+      hangar: {
+        ...hangar,
+        lastResult: envelope,
+        sessionIds: sessionIds.includes(sessionId) ? sessionIds : [...sessionIds, sessionId],
+      },
+    }
+
+    const [updatedTask] = await tx
+      .update(boardTasks)
+      .set({
+        metadata: sql`coalesce(${boardTasks.metadata}, '{}'::jsonb) || ${JSON.stringify(mergedHangar)}::jsonb`,
+        ...(columnId ? { columnId } : {}),
+        updatedAt: now,
+      })
+      .where(eq(boardTasks.id, task.id))
+      .returning()
+    return { session: updatedSession, task: updatedTask ?? null, guarded: false }
+  })
+
+  // Version bump + realtime after commit — one event, same as updateTask would
+  // have emitted. Skipped for guarded replays (nothing changed).
+  if (result.task && task) await touchProject(task.projectId, { type: 'task:updated' })
+
+  return { session: result.session, task: result.task }
 }
 
 export async function attachSessionMemory(id: string, userId: string, memoryId: string) {

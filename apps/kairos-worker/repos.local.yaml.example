@@ -1,0 +1,19 @@
+# Host-local repo registry for poll mode (AI Hangar).
+# Copy to repos.local.yaml (gitignored) and point the paths at this machine.
+#
+# Aeon holds the logical repo config (hangar_repos: engines, gh slug, run cmd).
+# Only disk paths live here, because Aeon cannot know a host's layout.
+#
+# Shape: two levels, plain scalars. `null` / `~` / empty means unset.
+#   <slug> must match the repo:* label taxonomy and the card's `repo` field.
+
+repos:
+  aeon:
+    path: C:/Users/anselikhov/data_science/dev_26/shadow_app_aeon
+    defaultBranch: main
+    envSetupCmd: null
+
+  arq:
+    path: C:/Users/anselikhov/data_science/dev_26/shadow_app_arq
+    defaultBranch: main
+    envSetupCmd: null
