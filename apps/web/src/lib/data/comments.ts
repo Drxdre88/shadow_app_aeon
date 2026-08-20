@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { taskComments, boardTasks, users } from '@/lib/db/schema'
 import { eq, and, asc, desc } from 'drizzle-orm'
+import { touchProject } from './projects'
 
 export async function findComments(taskId: string, projectId: string) {
   const task = await db
@@ -28,6 +29,22 @@ export async function findComments(taskId: string, projectId: string) {
     .orderBy(asc(taskComments.createdAt))
 }
 
+// Comment mutations carry no projectId of their own — the owning project is
+// resolved from the task so every caller (actions, MCP, REST) gets the
+// boardVersion bump + Pusher event without having to pass it down.
+async function projectIdForTask(taskId: string): Promise<string | null> {
+  const [task] = await db
+    .select({ projectId: boardTasks.projectId })
+    .from(boardTasks)
+    .where(eq(boardTasks.id, taskId))
+  return task?.projectId ?? null
+}
+
+async function touchOwningProject(taskId: string) {
+  const projectId = await projectIdForTask(taskId)
+  if (projectId) await touchProject(projectId, { type: 'comment:changed' })
+}
+
 export async function createComment(
   taskId: string,
   userId: string,
@@ -37,6 +54,7 @@ export async function createComment(
     .insert(taskComments)
     .values({ taskId, userId, content })
     .returning()
+  if (comment) await touchOwningProject(taskId)
   return comment
 }
 
@@ -57,6 +75,7 @@ export async function updateComment(
       )
     )
     .returning()
+  if (comment) await touchOwningProject(taskId)
   return comment || null
 }
 
@@ -75,6 +94,7 @@ export async function deleteComment(
       )
     )
     .returning({ id: taskComments.id })
+  if (deleted) await touchOwningProject(taskId)
   return !!deleted
 }
 
