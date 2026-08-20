@@ -1,0 +1,4 @@
+# Host-local state — never commit machine paths or the worker identity.
+repos.local.yaml
+repos.local.json
+.worker-id

@@ -18,9 +18,16 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { startSession, killSession, listLive, type SpawnRequest } from './spawner.js'
+import { getPollerState, startPoller } from './poller.js'
 
 const PORT = Number(process.env.KAIROS_WORKER_PORT ?? '8787')
 const SECRET = process.env.KAIROS_WORKER_SECRET
+
+// 'push'  — Aeon calls /spawn (Kairos hands, unchanged default)
+// 'poll'  — worker claims queued AI Hangar sessions from Aeon
+// 'both'  — run either dispatch path
+const RAW_MODE = (process.env.KAIROS_MODE ?? 'push').toLowerCase()
+const MODE = RAW_MODE === 'poll' || RAW_MODE === 'both' ? RAW_MODE : 'push'
 
 function authOk(req: IncomingMessage): boolean {
   if (!SECRET) return true // dev-mode: no auth
@@ -53,7 +60,7 @@ function isSpawnRequest(value: unknown): value is SpawnRequest {
   if (!value || typeof value !== 'object') return false
   const v = value as Record<string, unknown>
   return typeof v.sessionId === 'string'
-    && (v.engine === 'claude' || v.engine === 'codex')
+    && (v.engine === 'claude' || v.engine === 'codex' || v.engine === 'copilot')
     && typeof v.goal === 'string'
     && typeof v.prompt === 'string'
     && typeof v.callbackBaseUrl === 'string'
@@ -64,7 +71,14 @@ const server = createServer(async (req, res) => {
   if (!req.url || !req.method) return send(res, 400, { error: 'bad_request' })
 
   if (req.method === 'GET' && req.url === '/health') {
-    return send(res, 200, { ok: true, live: listLive() })
+    const poller = getPollerState()
+    return send(res, 200, {
+      ok: true,
+      mode: MODE,
+      lastPollAt: poller.lastPollAt,
+      workerId: poller.workerId || null,
+      live: listLive(),
+    })
   }
 
   if (!authOk(req)) return send(res, 401, { error: 'unauthorized' })
@@ -97,6 +111,8 @@ const server = createServer(async (req, res) => {
 })
 
 server.listen(PORT, () => {
-  console.log(`[kairos-worker] listening on :${PORT}`)
+  console.log(`[kairos-worker] listening on :${PORT} (mode=${MODE})`)
+  if (RAW_MODE !== MODE) console.warn(`[kairos-worker] unknown KAIROS_MODE "${RAW_MODE}" — falling back to push`)
   if (!SECRET) console.warn('[kairos-worker] WARNING: KAIROS_WORKER_SECRET unset — no auth on /spawn')
+  if (MODE === 'poll' || MODE === 'both') startPoller()
 })
