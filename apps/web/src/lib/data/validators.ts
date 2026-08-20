@@ -690,6 +690,15 @@ export const heartbeatSessionSchema = z.object({
   workerId: z.string().trim().min(1).max(120),
 })
 
+// Event-tail params (REST ?afterSeq=&limit=). Coerced because they arrive as
+// query strings — un-coerced, `?limit=abc` reaches the driver as NaN (raw DB
+// error → 500) and an unbounded limit lets one request pull a whole
+// transcript. afterSeq allows -1 ("everything") to match list_session_events.
+export const sessionEventsTailSchema = z.object({
+  afterSeq: z.coerce.number().int().min(-1).optional(),
+  limit:    z.coerce.number().int().min(1).max(500).default(500),
+})
+
 // Engine-agnostic terminal envelope — the runner extracts it from stdout and
 // posts it as the session's kind:'result' event.
 export const hangarResultEnvelopeSchema = z.object({

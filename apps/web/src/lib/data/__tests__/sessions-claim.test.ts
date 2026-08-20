@@ -62,6 +62,7 @@ vi.mock('../projects', () => ({ findProjectSettings: vi.fn(async () => null) }))
 vi.mock('../tasks', () => ({ updateTask: vi.fn(async () => ({ id: 'task', columnId: null })) }))
 
 import { claimNextSession, recordSessionResult } from '../sessions'
+import { sessionEventsTailSchema } from '../validators'
 import { updateTask } from '../tasks'
 import { findProjectSettings } from '../projects'
 import { findColumns } from '../columns'
@@ -170,15 +171,47 @@ describe('recordSessionResult', () => {
     async (status) => {
       const session = { id: SESSION_ID, status, taskId: TASK_ID }
       selectQueue.push([session])
+      // The guarded UPDATE matches nothing once the session has settled.
+      updateQueue.push([])
 
       const result = await recordSessionResult(SESSION_ID, ENVELOPE)
 
       expect(result).toEqual({ session, task: null })
       expect(updateTask).not.toHaveBeenCalled()
-      // Only the lookup ran — no UPDATE was even issued against the session.
-      expect(captures).toHaveLength(1)
     }
   )
+
+  it('carries the terminal-status guard in the UPDATE, not in a prior read', async () => {
+    selectQueue.push([{ id: SESSION_ID, status: 'running', taskId: null }])
+    updateQueue.push([{ id: SESSION_ID, status: 'succeeded' }])
+
+    await recordSessionResult(SESSION_ID, ENVELOPE)
+
+    const update = compile(captures[1].where)
+    expect(update.sql).toContain('"agent_sessions"."id" = $1')
+    expect(update.sql).toContain('"agent_sessions"."status" not in ($2, $3, $4, $5)')
+    expect(update.params).toEqual([SESSION_ID, 'succeeded', 'failed', 'killed', 'timeout'])
+  })
+
+  it('processes the card exactly once when two result posts race', async () => {
+    const running = { id: SESSION_ID, status: 'running', taskId: TASK_ID }
+    const card = { id: TASK_ID, projectId: PROJECT_ID, metadata: {} }
+
+    // Winner: the guarded UPDATE matches, so it settles the session and the card.
+    selectQueue.push([running])
+    updateQueue.push([{ id: SESSION_ID, status: 'succeeded' }])
+    selectQueue.push([card])
+    await recordSessionResult(SESSION_ID, ENVELOPE)
+    expect(updateTask).toHaveBeenCalledTimes(1)
+
+    // Loser: it read the same pre-race row, but its UPDATE now matches nothing.
+    selectQueue.push([running])
+    updateQueue.push([])
+    const second = await recordSessionResult(SESSION_ID, ENVELOPE)
+
+    expect(second).toEqual({ session: running, task: null })
+    expect(updateTask).toHaveBeenCalledTimes(1)
+  })
 
   it('settles a chat-style session with no card and stops there', async () => {
     selectQueue.push([{ id: SESSION_ID, status: 'running', taskId: null }])
@@ -257,5 +290,29 @@ describe('recordSessionResult', () => {
 
     expect(findColumns).not.toHaveBeenCalled()
     expect(vi.mocked(updateTask).mock.calls[0][2]).not.toHaveProperty('columnId')
+  })
+})
+
+describe('sessionEventsTailSchema', () => {
+  it('coerces the query strings a URL actually carries', () => {
+    expect(sessionEventsTailSchema.parse({ afterSeq: '12', limit: '50' })).toEqual({ afterSeq: 12, limit: 50 })
+  })
+
+  it('defaults limit and leaves afterSeq absent when the tail params are omitted', () => {
+    expect(sessionEventsTailSchema.parse({})).toEqual({ limit: 500 })
+  })
+
+  it('rejects garbage instead of passing NaN to the driver', () => {
+    expect(sessionEventsTailSchema.safeParse({ limit: 'abc' }).success).toBe(false)
+    expect(sessionEventsTailSchema.safeParse({ afterSeq: 'abc' }).success).toBe(false)
+    expect(sessionEventsTailSchema.safeParse({ limit: '10.5' }).success).toBe(false)
+  })
+
+  it('bounds limit to 1..500 and afterSeq to >= -1', () => {
+    expect(sessionEventsTailSchema.safeParse({ limit: '500' }).success).toBe(true)
+    expect(sessionEventsTailSchema.safeParse({ limit: '501' }).success).toBe(false)
+    expect(sessionEventsTailSchema.safeParse({ limit: '0' }).success).toBe(false)
+    expect(sessionEventsTailSchema.safeParse({ afterSeq: '-1' }).success).toBe(true)
+    expect(sessionEventsTailSchema.safeParse({ afterSeq: '-2' }).success).toBe(false)
   })
 })

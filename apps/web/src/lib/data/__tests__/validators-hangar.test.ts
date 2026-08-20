@@ -6,6 +6,7 @@ import {
   hangarCardMetadataSchema,
   hangarResultEnvelopeSchema,
   createHangarRepoSchema,
+  sessionEventsTailSchema,
 } from '../validators'
 
 // The Hangar card metadata is operator-supplied and ends up on a runner's CLI
@@ -139,5 +140,28 @@ describe('hangarResultEnvelopeSchema', () => {
       ...ENVELOPE,
       tests: { status: 'passed', summary: '42 passed' },
     }).success).toBe(true)
+  })
+})
+
+describe('sessionEventsTailSchema', () => {
+  it('rejects non-numeric, zero, negative and oversized limits', () => {
+    expect(sessionEventsTailSchema.safeParse({ limit: 'abc' }).success).toBe(false)
+    expect(sessionEventsTailSchema.safeParse({ limit: '0' }).success).toBe(false)
+    expect(sessionEventsTailSchema.safeParse({ limit: '501' }).success).toBe(false)
+    expect(sessionEventsTailSchema.safeParse({ limit: '-5' }).success).toBe(false)
+  })
+
+  it('defaults limit to 500 when absent and accepts in-range values', () => {
+    const parsed = sessionEventsTailSchema.parse({})
+    expect(parsed.limit).toBe(500)
+    expect(parsed.afterSeq).toBeUndefined()
+    expect(sessionEventsTailSchema.parse({ limit: '250', afterSeq: '10' })).toEqual({ limit: 250, afterSeq: 10 })
+  })
+
+  it('allows afterSeq -1 (everything) but rejects below and non-integers', () => {
+    expect(sessionEventsTailSchema.parse({ afterSeq: '-1' }).afterSeq).toBe(-1)
+    expect(sessionEventsTailSchema.safeParse({ afterSeq: '-2' }).success).toBe(false)
+    expect(sessionEventsTailSchema.safeParse({ afterSeq: '1.5' }).success).toBe(false)
+    expect(sessionEventsTailSchema.safeParse({ afterSeq: 'abc' }).success).toBe(false)
   })
 })

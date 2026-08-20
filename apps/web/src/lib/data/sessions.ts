@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { agentSessions, sessionEvents, boardTasks } from '@/lib/db/schema'
-import { eq, and, asc, desc, gte, inArray, isNotNull, sql } from 'drizzle-orm'
+import { eq, and, asc, desc, gte, inArray, notInArray, isNotNull, sql } from 'drizzle-orm'
 import type {
   SpawnSessionInput,
   UpdateSessionStatusInput,
