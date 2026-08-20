@@ -39,7 +39,25 @@ async function main() {
   }
   if (!provRes.ok) fail(`GET /api/auth/providers → ${provRes.status}`)
   const providers = await provRes.json().catch(() => ({}))
-  if (!providers.google) fail('providers response does not list "google"')
+  if (!providers.google) {
+    // Preview deployments don't carry the Google OAuth env vars, so the
+    // provider is legitimately absent there — the sign-in POST paths can only
+    // be exercised where the provider exists. SMOKE_ALLOW_MISSING_PROVIDER=1
+    // (set by the auth-smoke workflow for non-production environments)
+    // downgrades this to a liveness check: the handlers answered with
+    // well-formed JSON, which is exactly what the "No response is returned"
+    // 500 class breaks. Production stays strict.
+    if (process.env.SMOKE_ALLOW_MISSING_PROVIDER === '1') {
+      const csrfProbe = await fetch(`${BASE}/api/auth/csrf`)
+      if (!csrfProbe.ok) fail(`GET /api/auth/csrf → ${csrfProbe.status}`)
+      const { csrfToken } = await csrfProbe.json().catch(() => ({}))
+      if (!csrfToken) fail('csrf response is not well-formed JSON')
+      pass('auth handlers respond (providers + csrf JSON) — google absent, sign-in paths skipped on this environment')
+      console.log('\nAuth smoke: LIVENESS-ONLY PASS (no google provider in this environment)')
+      process.exit(0)
+    }
+    fail('providers response does not list "google"')
+  }
   pass('providers lists google')
 
   // 2. CSRF token + cookie.
