@@ -12,9 +12,16 @@ name: Auth Smoke
 on:
   deployment_status:
 
+# Production only: preview deployments 302 every unauthenticated /api/auth/*
+# request (deployment protection / middleware), so nothing about the handlers
+# can be asserted there without a protection-bypass secret. Every historical
+# incident hit production; that's where the gate stands. To add preview
+# coverage later: set a Vercel protection bypass secret and send it as
+# x-vercel-protection-bypass in smoke-auth.mjs.
+
 jobs:
   auth-smoke:
-    if: github.event.deployment_status.state == 'success'
+    if: github.event.deployment_status.state == 'success' && github.event.deployment_status.environment == 'Production'
     name: Auth smoke (${{ github.event.deployment_status.environment }})
     runs-on: ubuntu-latest
     steps:
