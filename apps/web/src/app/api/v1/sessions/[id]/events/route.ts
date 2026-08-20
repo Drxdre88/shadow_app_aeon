@@ -1,8 +1,12 @@
 import { NextRequest } from 'next/server'
+import { z } from 'zod'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
 import { recordSessionEventSchema, hangarResultEnvelopeSchema } from '@/lib/data/validators'
 import { findAgentSessionById, listSessionEvents, recordSessionEvent, getNextEventSeq, recordSessionResult } from '@/lib/data/sessions'
+
+// A non-uuid path param would raise Postgres 22P02 and surface as a 500.
+const sessionIdSchema = z.string().uuid()
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -22,6 +26,7 @@ export const POST = withRateLimit(
     const auth = await authenticateRequest(request)
     if (!isApiUser(auth)) return auth
     const { id } = await (ctx as Params).params
+    if (!sessionIdSchema.safeParse(id).success) return jsonError('Session not found', 404)
 
     const session = await findAgentSessionById(id, auth.id)
     if (!session) return jsonError('Session not found', 404)
@@ -75,6 +80,7 @@ export const GET = withRateLimit(
     const auth = await authenticateRequest(request)
     if (!isApiUser(auth)) return auth
     const { id } = await (ctx as Params).params
+    if (!sessionIdSchema.safeParse(id).success) return jsonError('Session not found', 404)
 
     const session = await findAgentSessionById(id, auth.id)
     if (!session) return jsonError('Session not found', 404)

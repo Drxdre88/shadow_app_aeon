@@ -32,7 +32,7 @@ export const POST = withRateLimit(
     const parsed = heartbeatSessionSchema.safeParse(body)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
-    const session = await heartbeatSession(id, parsed.data.workerId)
+    const session = await heartbeatSession(id, auth.id, parsed.data.workerId)
     if (!session) return jsonError('Session not found for this worker', 404)
 
     return jsonData({ session })

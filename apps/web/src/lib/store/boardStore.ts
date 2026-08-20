@@ -117,6 +117,11 @@ interface BoardState {
   removeCrossedTask: (taskId: string) => void
   clearCrossedTasks: () => void
 
+  // Bumped when a peer's comment lands over Pusher. Comments live outside the
+  // board payload, so a comment must refresh the open thread, not the board.
+  commentsSignal: number
+  bumpCommentsSignal: () => void
+
   selectTask: (id: string | null) => void
   convertToTimeline: (taskId: string, startDate: string, endDate: string) => void
   markClean: () => void
@@ -144,6 +149,7 @@ export const useBoardStore = create<BoardState>()(
       saveStatus: 'idle' as SaveStatus,
       lastMutatedAt: 0,
       showDates: false,
+      commentsSignal: 0,
 
       setColumns: (columns) => set({ columns }),
       addColumn: (column) => set((s) => ({ columns: [...s.columns, column], isDirty: true, lastMutatedAt: Date.now() })),
@@ -257,6 +263,7 @@ export const useBoardStore = create<BoardState>()(
         isDirty: true,
         lastMutatedAt: Date.now(),
       })),
+      bumpCommentsSignal: () => set((s) => ({ commentsSignal: s.commentsSignal + 1 })),
       markClean: () => set({ isDirty: false }),
       setSaveStatus: (status) => {
         if (saveFadeTimer) { clearTimeout(saveFadeTimer); saveFadeTimer = null }
@@ -311,3 +318,4 @@ export const useChecklistSummaries = () => useBoardStore((s) => s.checklistSumma
 export const useIsDirty = () => useBoardStore((s) => s.isDirty)
 export const useChecklistViewMode = () => useBoardStore((s) => s.checklistViewMode)
 export const useTaskAssignees = (taskId: string) => useBoardStore((s) => s.assigneesByTask[taskId])
+export const useCommentsSignal = () => useBoardStore((s) => s.commentsSignal)

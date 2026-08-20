@@ -33,12 +33,13 @@ export function reposFilePath(): string {
   return process.env.KAIROS_REPOS_FILE ?? join(WORKER_DIR, 'repos.local.yaml')
 }
 
+// Only a whitespace-preceded ` #` opens a comment, so Windows paths and urls
+// that embed a hash survive — and the scan finds the first such marker rather
+// than giving up on the first '#' in the line.
 function stripComment(line: string): string {
-  const hash = line.indexOf('#')
-  if (hash < 0) return line
-  if (hash === 0) return ''
-  // Only treat ` #` as a comment so Windows paths and urls survive.
-  return /\s/.test(line[hash - 1]) ? line.slice(0, hash) : line
+  if (line.startsWith('#')) return ''
+  const marker = /\s#/.exec(line)
+  return marker ? line.slice(0, marker.index) : line
 }
 
 function scalar(raw: string): string | null {

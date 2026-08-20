@@ -46,7 +46,7 @@ export const POST = withRateLimit(
     const parsed = createCommentSchema.safeParse(body)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
-    const comment = await createComment(taskId, result.id, parsed.data.content)
+    const comment = await createComment(taskId, id, result.id, parsed.data.content)
     return jsonData(comment, 201)
   }),
   API_WRITE_LIMIT

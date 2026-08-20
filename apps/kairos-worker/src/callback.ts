@@ -77,11 +77,13 @@ export function pollContext(sessionId: string): CallbackContext {
   return { sessionId, callbackBaseUrl: AEON_BASE_URL, callbackToken: AEON_API_KEY }
 }
 
-export async function postEvent(
+// Generic so the terminal result post can read Aeon's acknowledgement shape;
+// every other call site keeps the default `unknown` payload.
+export async function postEvent<T = unknown>(
   ctx: CallbackContext,
   body: { seq?: number; kind: string; toolName?: string | null; payload?: unknown },
-): Promise<AeonResponse> {
-  return aeonFetch(ctx.callbackBaseUrl, ctx.callbackToken, `/api/v1/sessions/${ctx.sessionId}/events`, {
+): Promise<AeonResponse<T>> {
+  return aeonFetch<T>(ctx.callbackBaseUrl, ctx.callbackToken, `/api/v1/sessions/${ctx.sessionId}/events`, {
     method: 'POST',
     body,
   })
@@ -109,10 +111,10 @@ function sleep(ms: number): Promise<void> {
 
 // Wraps the terminal result event / final status PATCH so a rate-limited write
 // can't leave a finished session stuck on 'running'.
-export async function withRetry(
+export async function withRetry<T = unknown>(
   label: string,
-  attempt: () => Promise<AeonResponse>,
-): Promise<AeonResponse> {
+  attempt: () => Promise<AeonResponse<T>>,
+): Promise<AeonResponse<T>> {
   let res = await attempt()
   for (const delay of RETRY_DELAYS_MS) {
     if (res.ok || !retriable(res.status)) break

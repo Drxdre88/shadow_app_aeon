@@ -29,24 +29,17 @@ export async function findComments(taskId: string, projectId: string) {
     .orderBy(asc(taskComments.createdAt))
 }
 
-// Comment mutations carry no projectId of their own — the owning project is
-// resolved from the task so every caller (actions, MCP, REST) gets the
-// boardVersion bump + Pusher event without having to pass it down.
-async function projectIdForTask(taskId: string): Promise<string | null> {
-  const [task] = await db
-    .select({ projectId: boardTasks.projectId })
-    .from(boardTasks)
-    .where(eq(boardTasks.id, taskId))
-  return task?.projectId ?? null
-}
-
-async function touchOwningProject(taskId: string) {
-  const projectId = await projectIdForTask(taskId)
-  if (projectId) await touchProject(projectId, { type: 'comment:changed' })
+// Every caller already holds the project it verified access to, so the touch
+// takes it directly instead of re-resolving it from the task. Fire-and-forget
+// like emitActivity: the comment is committed, a failed boardVersion bump must
+// not turn a successful write into an error.
+function touchOwningProject(projectId: string) {
+  touchProject(projectId, { type: 'comment:changed' }).catch(() => {})
 }
 
 export async function createComment(
   taskId: string,
+  projectId: string,
   userId: string,
   content: string
 ) {
@@ -54,13 +47,14 @@ export async function createComment(
     .insert(taskComments)
     .values({ taskId, userId, content })
     .returning()
-  if (comment) await touchOwningProject(taskId)
+  if (comment) touchOwningProject(projectId)
   return comment
 }
 
 export async function updateComment(
   commentId: string,
   taskId: string,
+  projectId: string,
   userId: string,
   content: string
 ) {
@@ -75,13 +69,14 @@ export async function updateComment(
       )
     )
     .returning()
-  if (comment) await touchOwningProject(taskId)
+  if (comment) touchOwningProject(projectId)
   return comment || null
 }
 
 export async function deleteComment(
   commentId: string,
   taskId: string,
+  projectId: string,
   userId: string
 ) {
   const [deleted] = await db
@@ -94,7 +89,7 @@ export async function deleteComment(
       )
     )
     .returning({ id: taskComments.id })
-  if (deleted) await touchOwningProject(taskId)
+  if (deleted) touchOwningProject(projectId)
   return !!deleted
 }
 

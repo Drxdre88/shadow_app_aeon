@@ -117,7 +117,7 @@ export async function updateAgentSessionStatus(
 export async function claimNextSession(
   userId: string,
   workerId: string,
-  engines: string[] = CLAIMABLE_ENGINES,
+  engines: HangarAgent[] = CLAIMABLE_ENGINES,
 ) {
   return db.transaction(async (tx) => {
     const [candidate] = await tx
@@ -154,14 +154,16 @@ export async function claimNextSession(
 
 // Liveness ping from the runner that holds the claim. Returns null when the
 // session was reassigned, killed or finished — the runner treats that as a
-// cooperative stop signal.
-export async function heartbeatSession(id: string, workerId: string) {
+// cooperative stop signal. Scoped to the owning user like every other session
+// read/write: a worker id is guessable, the session owner is not.
+export async function heartbeatSession(id: string, userId: string, workerId: string) {
   const now = new Date()
   const [row] = await db
     .update(agentSessions)
     .set({ lastHeartbeatAt: now, updatedAt: now })
     .where(and(
       eq(agentSessions.id, id),
+      eq(agentSessions.userId, userId),
       eq(agentSessions.claimedBy, workerId),
       eq(agentSessions.status, 'running'),
     ))
@@ -198,12 +200,10 @@ export async function recordSessionResult(
     .limit(1)
   if (!session) return null
 
-  // Replay guard: a result envelope re-posted for an already-finished session
-  // must not re-move the card or overwrite a triaged outcome.
-  if (TERMINAL_STATUSES.includes(session.status as AgentSessionStatus)) {
-    return { session, task: null }
-  }
-
+  // Replay guard lives in the WHERE clause, not in a prior read: two result
+  // posts racing on the same session would both pass a read-then-write check
+  // and process the card twice. Postgres settles it — the loser updates zero
+  // rows and stops here, so the card move and result cache happen exactly once.
   const now = new Date()
   const [updatedSession] = await db
     .update(agentSessions)
@@ -212,8 +212,12 @@ export async function recordSessionResult(
       endedAt: now,
       updatedAt: now,
     })
-    .where(eq(agentSessions.id, sessionId))
+    .where(and(
+      eq(agentSessions.id, sessionId),
+      notInArray(agentSessions.status, TERMINAL_STATUSES),
+    ))
     .returning()
+  if (!updatedSession) return { session, task: null }
 
   if (!session.taskId) return { session: updatedSession, task: null }
 

@@ -3,8 +3,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 // Comment writes are board mutations: without a touchProject call the
 // boardVersion never bumps and no Pusher event fires, so other viewers keep
 // showing stale comment threads until a manual reload. These tests pin that
-// create/update/delete touch the owning project with comment:changed — and
-// only when a row actually changed.
+// create/update/delete touch the caller's project with comment:changed — and
+// only when a row actually changed. The touch is fire-and-forget: a Pusher or
+// DB hiccup must never fail a comment that is already committed.
 
 const insertReturning: unknown[][] = []
 const updateReturning: unknown[][] = []
@@ -37,7 +38,7 @@ vi.mock('@/lib/db', () => {
 })
 
 vi.mock('../projects', () => ({
-  touchProject: vi.fn(),
+  touchProject: vi.fn(() => Promise.resolve()),
 }))
 
 import { createComment, updateComment, deleteComment } from '../comments'
@@ -57,32 +58,38 @@ beforeEach(() => {
 })
 
 describe('createComment', () => {
-  it('touches the owning project with comment:changed after the insert', async () => {
+  it('touches the caller-verified project with comment:changed after the insert', async () => {
     insertReturning.push([{ id: COMMENT_ID, taskId: TASK_ID }])
-    selectRows.push([{ projectId: PROJECT_ID }])
 
-    const comment = await createComment(TASK_ID, USER_ID, 'hello')
+    const comment = await createComment(TASK_ID, PROJECT_ID, USER_ID, 'hello')
 
     expect(comment).toEqual({ id: COMMENT_ID, taskId: TASK_ID })
     expect(touchProject).toHaveBeenCalledWith(PROJECT_ID, { type: 'comment:changed' })
   })
 
-  it('skips the touch when the task row is gone', async () => {
+  it('does not re-resolve the project from the task', async () => {
     insertReturning.push([{ id: COMMENT_ID, taskId: TASK_ID }])
-    selectRows.push([])
 
-    await createComment(TASK_ID, USER_ID, 'hello')
+    const { db } = await import('@/lib/db')
+    await createComment(TASK_ID, PROJECT_ID, USER_ID, 'hello')
 
-    expect(touchProject).not.toHaveBeenCalled()
+    expect(db.select).not.toHaveBeenCalled()
+  })
+
+  it('returns the comment even when the touch rejects', async () => {
+    insertReturning.push([{ id: COMMENT_ID, taskId: TASK_ID }])
+    vi.mocked(touchProject).mockRejectedValueOnce(new Error('pusher down'))
+
+    await expect(createComment(TASK_ID, PROJECT_ID, USER_ID, 'hello'))
+      .resolves.toEqual({ id: COMMENT_ID, taskId: TASK_ID })
   })
 })
 
 describe('updateComment', () => {
-  it('touches the owning project with comment:changed after the update', async () => {
+  it('touches the caller-verified project with comment:changed after the update', async () => {
     updateReturning.push([{ id: COMMENT_ID, content: 'edited' }])
-    selectRows.push([{ projectId: PROJECT_ID }])
 
-    const comment = await updateComment(COMMENT_ID, TASK_ID, USER_ID, 'edited')
+    const comment = await updateComment(COMMENT_ID, TASK_ID, PROJECT_ID, USER_ID, 'edited')
 
     expect(comment).toEqual({ id: COMMENT_ID, content: 'edited' })
     expect(touchProject).toHaveBeenCalledWith(PROJECT_ID, { type: 'comment:changed' })
@@ -91,7 +98,7 @@ describe('updateComment', () => {
   it('skips the touch when no comment matched (wrong author or id)', async () => {
     updateReturning.push([])
 
-    const comment = await updateComment(COMMENT_ID, TASK_ID, USER_ID, 'edited')
+    const comment = await updateComment(COMMENT_ID, TASK_ID, PROJECT_ID, USER_ID, 'edited')
 
     expect(comment).toBeNull()
     expect(touchProject).not.toHaveBeenCalled()
@@ -99,11 +106,10 @@ describe('updateComment', () => {
 })
 
 describe('deleteComment', () => {
-  it('touches the owning project with comment:changed after the delete', async () => {
+  it('touches the caller-verified project with comment:changed after the delete', async () => {
     deleteReturning.push([{ id: COMMENT_ID }])
-    selectRows.push([{ projectId: PROJECT_ID }])
 
-    const ok = await deleteComment(COMMENT_ID, TASK_ID, USER_ID)
+    const ok = await deleteComment(COMMENT_ID, TASK_ID, PROJECT_ID, USER_ID)
 
     expect(ok).toBe(true)
     expect(touchProject).toHaveBeenCalledWith(PROJECT_ID, { type: 'comment:changed' })
@@ -112,7 +118,7 @@ describe('deleteComment', () => {
   it('skips the touch when nothing was deleted', async () => {
     deleteReturning.push([])
 
-    const ok = await deleteComment(COMMENT_ID, TASK_ID, USER_ID)
+    const ok = await deleteComment(COMMENT_ID, TASK_ID, PROJECT_ID, USER_ID)
 
     expect(ok).toBe(false)
     expect(touchProject).not.toHaveBeenCalled()

@@ -124,6 +124,17 @@ export async function setProjectAccessList(projectId: string, groupId: string, u
   })
 }
 
+// A project can sit in more than one realm (or none, if it predates the
+// workspace-first model), so callers that need realm-scoped config have to
+// handle a list rather than a single id.
+export async function findProjectRealmIds(projectId: string): Promise<string[]> {
+  const rows = await db
+    .select({ groupId: projectGroups.groupId })
+    .from(projectGroups)
+    .where(eq(projectGroups.projectId, projectId))
+  return rows.map((r) => r.groupId)
+}
+
 export async function addProjectToGroup(projectId: string, groupId: string, addedBy: string) {
   await db.insert(projectGroups).values({ projectId, groupId, addedBy }).onConflictDoNothing()
 }

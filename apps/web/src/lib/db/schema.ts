@@ -1,5 +1,7 @@
 import { pgTable, uuid, varchar, text, timestamp, integer, boolean, jsonb, primaryKey, real, numeric, uniqueIndex, index, vector, type AnyPgColumn } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
+// Type-only: the engine union has a single definition, in the validators.
+import type { AgentSessionEngine } from '../data/validators'
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -690,7 +692,8 @@ export const hangarRepos = pgTable('hangar_repos', {
   ghSlug: varchar('gh_slug', { length: 200 }),
   defaultBranch: varchar('default_branch', { length: 120 }).default('main').notNull(),
   branchPrefix: varchar('branch_prefix', { length: 60 }).default('aeon/').notNull(),
-  allowedEngines: jsonb('allowed_engines').default([]).notNull(),
+  // Empty means "any registered engine" — a repo opts into a narrower set.
+  allowedEngines: jsonb('allowed_engines').$type<AgentSessionEngine[]>().default([]).notNull(),
   runCmd: text('run_cmd'),
   envSetupCmd: text('env_setup_cmd'),
   appUrl: text('app_url'),

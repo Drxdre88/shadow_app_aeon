@@ -18,6 +18,13 @@ import {
   postEvent,
   withRetry,
 } from './callback.js'
+import {
+  collectText,
+  decideFinalStatus,
+  extractEnvelope,
+  normalizeEnvelope,
+  tryParse,
+} from './envelope.js'
 import { engineIds, getEngine, outFileFor, type EngineAdapter } from './engines.js'
 import { getWorkerId, reposFilePath, resolveRepo, type RepoEntry } from './registry.js'
 import { createSeq, killSession, releaseSession, runEngine } from './spawner.js'
@@ -48,9 +55,13 @@ interface HangarMeta {
 // Every argv component that comes from the session row is held to this charset
 // before it is ever passed to a process. Aeon validates the same shape server
 // side; this is the layer that has to hold if that one is bypassed.
-const SAFE_ARG = /^[A-Za-z0-9._:/@-]+$/
+//
+// The first character must be alphanumeric: a value that may start with '-' is
+// a flag, and a model of '--dangerously-skip-permissions' would be handed
+// straight to the engine CLI as an option rather than a value.
+const SAFE_ARG = /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/
 
-function unsafeArg(label: string, value: string | null | undefined): string | null {
+export function unsafeArg(label: string, value: string | null | undefined): string | null {
   if (!value) return null
   return SAFE_ARG.test(value) ? null : `${label} contains unsupported characters — mission refused`
 }
@@ -252,18 +263,18 @@ interface FinalizeArgs {
   release: () => void
 }
 
-// Engines that can't discover the objective skills (no junctions yet) improvise
-// envelope enums — 'complete' for 'completed' cost the first Copilot mission its
-// result. Normalize the common aliases; Aeon's schema stays strict.
-const STATUS_ALIASES: Record<string, string> = {
-  complete: 'completed', done: 'completed', success: 'completed', succeeded: 'completed',
-  failure: 'failed', error: 'failed',
+// POST /events answers a kind:'result' post with whether the envelope actually
+// landed on the card. resultProcessed also reads false for a replay or an
+// unlinked session, so only a resultError means Aeon refused the payload.
+interface ResultAck {
+  resultProcessed?: boolean
+  resultError?: string
 }
 
-function normalizeEnvelope(envelope: Record<string, unknown> | null): Record<string, unknown> | null {
-  if (!envelope || typeof envelope.status !== 'string') return envelope
-  const mapped = STATUS_ALIASES[envelope.status.toLowerCase().trim()]
-  return mapped && mapped !== envelope.status ? { ...envelope, status: mapped } : envelope
+function envelopeRejection(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null
+  const ack = data as ResultAck
+  return ack.resultProcessed === false && typeof ack.resultError === 'string' ? ack.resultError : null
 }
 
 async function finalize(args: FinalizeArgs): Promise<void> {
@@ -283,13 +294,23 @@ async function finalize(args: FinalizeArgs): Promise<void> {
     summary: 'engine exited without a result envelope',
     raw_tail: stdout.slice(-2000),
   }
-  const reported = envelope && typeof envelope.status === 'string' ? envelope.status : ''
-  const status = wasKilled
-    ? 'killed'
-    : (reported === 'completed' || reported === 'needs_input' ? 'succeeded' : 'failed')
+  const reported = envelope && typeof envelope.status === 'string' ? envelope.status : null
 
   const seq = nextSeq()
-  await withRetry('result event', () => postEvent(ctx, { seq, kind: 'result', payload: result }))
+  const ack = await withRetry<ResultAck>('result event', () =>
+    postEvent<ResultAck>(ctx, { seq, kind: 'result', payload: result }))
+
+  const rejection = envelopeRejection(ack.data)
+  if (rejection) {
+    console.error(`[worker/poll] Aeon refused the result envelope: ${rejection}`)
+    await postEvent(ctx, {
+      seq: nextSeq(),
+      kind: 'error',
+      payload: { message: `result envelope rejected by Aeon: ${rejection}` },
+    })
+  }
+
+  const status = decideFinalStatus(reported, wasKilled, rejection !== null)
   await withRetry('final status', () => patchSession(ctx, { status, exitCode: code, endedAt }))
 
   if (outFile) rmSync(outFile, { force: true })
@@ -453,63 +474,15 @@ function readEnvelope(
 ): Record<string, unknown> | null {
   if (engine.envelopeSource === 'file' && outFile && existsSync(outFile)) {
     try {
+      // Same decode as the stdout path: codex writes JSONL to -o, so the
+      // fenced block is escaped inside a "text" field rather than sitting
+      // in the file plain.
       const text = readFileSync(outFile, 'utf8')
-      const fromFile = extractEnvelope(text) ?? tryParse(text)
+      const fromFile = extractEnvelope(collectText(text)) ?? tryParse(text)
       if (fromFile) return fromFile
     } catch (err) {
       console.error('[worker/poll] could not read engine output file', err)
     }
   }
   return extractEnvelope(collectText(stdout))
-}
-
-function tryParse(text: string): Record<string, unknown> | null {
-  try {
-    const parsed: unknown = JSON.parse(text.trim())
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : null
-  } catch {
-    return null
-  }
-}
-
-// stream-json / --output-format json wrap the agent's prose in JSON, so the
-// fenced block arrives escaped. Append the decoded text after the raw stream
-// and scan both — decoded wins because it is searched last-first.
-export function collectText(raw: string): string {
-  const decoded: string[] = []
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim()
-    if (!trimmed.startsWith('{')) continue
-    const parsed = tryParse(trimmed)
-    if (parsed) decoded.push(...textFragments(parsed, 0))
-  }
-  return decoded.length ? `${raw}\n${decoded.join('\n')}` : raw
-}
-
-function textFragments(value: unknown, depth: number): string[] {
-  if (depth > 6 || !value || typeof value !== 'object') return []
-  const out: string[] = []
-  if (Array.isArray(value)) {
-    for (const item of value) out.push(...textFragments(item, depth + 1))
-    return out
-  }
-  for (const [key, item] of Object.entries(value)) {
-    if (typeof item === 'string') {
-      if (key === 'text' || key === 'result' || key === 'content') out.push(item)
-    } else if (item && typeof item === 'object') {
-      out.push(...textFragments(item, depth + 1))
-    }
-  }
-  return out
-}
-
-export function extractEnvelope(text: string): Record<string, unknown> | null {
-  const blocks = [...text.matchAll(/```json\s*([\s\S]*?)```/gi)]
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    const parsed = tryParse(blocks[i][1])
-    if (parsed) return parsed
-  }
-  return null
 }

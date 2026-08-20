@@ -5,6 +5,8 @@ import { requireEditor } from './helpers'
 import { hangarCardMetadataSchema, HANGAR_MODEL_RE, type HangarCardMetadata } from '@/lib/data/validators'
 import { findTaskById, updateTask } from '@/lib/data/tasks'
 import { createAgentSession } from '@/lib/data/sessions'
+import { findHangarRepoBySlug, listHangarRepos } from '@/lib/data/hangar-repos'
+import { findProjectRealmIds } from '@/lib/data/workspaces'
 
 // AI Hangar (Sprint 1) — turn a board card into a queued agent mission.
 // The row is deliberately left in 'queued' with no dispatchSpawn call: the
@@ -50,6 +52,34 @@ function buildDispatchPrompt(taskId: string, name: string, hangar: HangarCardMet
   return lines.join('\n')
 }
 
+// Registry gate. The registry is realm-scoped and a project can belong to
+// several realms, so the card's repo has to match an entry in any of them.
+// Enforcement is opt-in by adoption: a realm with an empty registry is one
+// that hasn't onboarded yet, and blocking its missions would break the
+// existing pull flow for no safety gain.
+async function assertRepoIsRegistered(projectId: string, hangar: HangarCardMetadata) {
+  const realmIds = await findProjectRealmIds(projectId)
+  if (realmIds.length === 0) return
+
+  for (const realmId of realmIds) {
+    const repo = await findHangarRepoBySlug(realmId, hangar.repo)
+    if (!repo) continue
+    if (!repo.active) {
+      throw new Error(`Repo "${hangar.repo}" is retired in the Hangar registry`)
+    }
+    const allowed = repo.allowedEngines
+    if (allowed.length > 0 && !allowed.includes(hangar.agent)) {
+      throw new Error(`Engine "${hangar.agent}" is not allowed for repo "${hangar.repo}"`)
+    }
+    return
+  }
+
+  const registries = await Promise.all(realmIds.map((id) => listHangarRepos(id)))
+  if (registries.some((entries) => entries.length > 0)) {
+    throw new Error(`Repo "${hangar.repo}" is not in the Hangar registry`)
+  }
+}
+
 export async function spawnSessionFromCard(projectId: string, taskId: string) {
   const userId = await requireEditor(projectId)
 
@@ -62,6 +92,8 @@ export async function spawnSessionFromCard(projectId: string, taskId: string) {
     throw new Error(`Card is not a valid Hangar mission: ${parsed.error.issues[0].message}`)
   }
   const hangar = parsed.data
+
+  await assertRepoIsRegistered(projectId, hangar)
 
   // Session metadata is untyped jsonb the runner feeds to a CLI — re-check the
   // model charset here rather than trusting the card round-trip.

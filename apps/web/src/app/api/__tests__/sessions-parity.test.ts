@@ -166,10 +166,10 @@ describe('Hangar registry MCP <-> REST parity', () => {
   describe('MCP tool surface', () => {
     it('exposes every expected registry operation', () => {
       expect(new Set(toolNames)).toEqual(new Set([
-        'register_repo',
-        'list_repos',
-        'update_repo',
-        'delete_repo',
+        'register_hangar_repo',
+        'list_hangar_repos',
+        'update_hangar_repo',
+        'delete_hangar_repo',
       ]))
     })
 

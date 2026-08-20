@@ -63,7 +63,6 @@ const copilot: EngineAdapter = {
     ]
   },
   envelopeSource: 'stdout',
-  // Copilot's picker slug for Opus 5 must be confirmed on the POC host — see README.
   defaultModel: process.env.KAIROS_COPILOT_DEFAULT_MODEL ?? 'claude-sonnet-5',
 }
 
@@ -86,8 +85,10 @@ const codex: EngineAdapter = {
 
 const adapters: Record<EngineId, EngineAdapter> = { claude, copilot, codex }
 
+// hasOwn, not a plain lookup: a session engine of 'constructor' or 'toString'
+// would otherwise resolve to an inherited member instead of being refused.
 export function getEngine(id: string): EngineAdapter | null {
-  return adapters[id as EngineId] ?? null
+  return Object.hasOwn(adapters, id) ? adapters[id as EngineId] : null
 }
 
 export function engineIds(): EngineId[] {

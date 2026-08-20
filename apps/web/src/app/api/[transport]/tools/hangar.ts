@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import {
-  agentSessionEngineSchema,
   createHangarRepoSchema,
   updateHangarRepoSchema,
 } from '@/lib/data/validators'
@@ -33,27 +32,41 @@ async function requireRealmEditor(
   return { role }
 }
 
+// The advertised shapes are derived from the shared validators so MCP cannot
+// drift from REST; only the agent-facing wording is written by hand here.
+const REPO_FIELD_DOCS: Record<string, string> = {
+  realmId:        'Realm that owns this registry entry',
+  slug:           'Repo slug, matching the repo:* label taxonomy',
+  name:           'Human-facing repo name',
+  gitUrl:         'Git remote URL',
+  ghSlug:         'owner/repo — required for GitHub-hosted engines',
+  defaultBranch:  'Base branch missions branch from',
+  branchPrefix:   'Prefix for mission branches',
+  allowedEngines: 'Engines permitted for this repo',
+  runCmd:         'Command that starts the live app, when a mission needs it',
+  envSetupCmd:    'Command run before the engine starts',
+  appUrl:         'Local URL the running app serves on',
+  notes:          'Free-form operator notes',
+  active:         'Whether missions may target this repo',
+  metadata:       'Runner-reported capabilities and other free-form data',
+}
+
+function documented<T extends z.ZodRawShape>(shape: T): T {
+  const entries = Object.entries(shape) as Array<[string, z.ZodType]>
+  return Object.fromEntries(
+    entries.map(([key, schema]) => {
+      const doc = REPO_FIELD_DOCS[key]
+      return [key, doc ? schema.describe(doc) : schema]
+    })
+  ) as unknown as T
+}
+
 export const registerHangarTools: RegisterFn = (server) => {
   server.tool(
-    'register_repo',
+    'register_hangar_repo',
     'Register a repo in the Hangar registry so agent missions can target it. Realm-scoped; holds the logical repo config only (git remote, default branch, allowed engines) — host paths stay on the runner.',
-    {
-      realmId:       z.string().uuid().describe('Realm that owns this registry entry'),
-      slug:          z.string().min(1).max(120).describe('Repo slug, matching the repo:* label taxonomy'),
-      name:          z.string().min(1).max(255).describe('Human-facing repo name'),
-      gitUrl:        z.string().min(1).max(500).describe('Git remote URL'),
-      ghSlug:        z.string().max(200).nullable().optional().describe('owner/repo — required for GitHub-hosted engines'),
-      defaultBranch: z.string().max(120).optional().describe('Base branch missions branch from'),
-      branchPrefix:  z.string().max(60).optional().describe('Prefix for mission branches'),
-      allowedEngines: z.array(agentSessionEngineSchema).optional().describe('Engines permitted for this repo'),
-      runCmd:        z.string().max(500).nullable().optional().describe('Command that starts the live app, when a mission needs it'),
-      envSetupCmd:   z.string().max(500).nullable().optional().describe('Command run before the engine starts'),
-      appUrl:        z.string().max(500).nullable().optional().describe('Local URL the running app serves on'),
-      notes:         z.string().max(4000).nullable().optional().describe('Free-form operator notes'),
-      active:        z.boolean().optional().describe('Whether missions may target this repo'),
-      metadata:      z.record(z.string(), z.unknown()).optional().describe('Runner-reported capabilities and other free-form data'),
-    },
-    { title: 'Register Repo', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    documented(createHangarRepoSchema.shape),
+    { title: 'Register Hangar Repo', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = createHangarRepoSchema.safeParse(args)
@@ -66,13 +79,13 @@ export const registerHangarTools: RegisterFn = (server) => {
   )
 
   server.tool(
-    'list_repos',
+    'list_hangar_repos',
     'List repos in a realm Hangar registry. Use activeOnly to hide retired entries.',
     {
       realmId:    z.string().uuid().describe('Realm UUID'),
       activeOnly: z.boolean().optional().describe('Only repos still accepting missions'),
     },
-    { title: 'List Repos', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    { title: 'List Hangar Repos', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async ({ realmId, activeOnly }, extra) => {
       const uid = getUserId(extra)
       const role = await getGroupRole(realmId, uid)
@@ -82,25 +95,13 @@ export const registerHangarTools: RegisterFn = (server) => {
   )
 
   server.tool(
-    'update_repo',
+    'update_hangar_repo',
     'Update a Hangar registry entry — branch defaults, allowed engines, run commands, or retire it with active=false.',
     {
-      repoId:        z.string().uuid().describe('Registry entry UUID'),
-      slug:          z.string().min(1).max(120).optional().describe('Repo slug'),
-      name:          z.string().min(1).max(255).optional().describe('Human-facing repo name'),
-      gitUrl:        z.string().min(1).max(500).optional().describe('Git remote URL'),
-      ghSlug:        z.string().max(200).nullable().optional().describe('owner/repo'),
-      defaultBranch: z.string().max(120).optional().describe('Base branch missions branch from'),
-      branchPrefix:  z.string().max(60).optional().describe('Prefix for mission branches'),
-      allowedEngines: z.array(agentSessionEngineSchema).optional().describe('Engines permitted for this repo'),
-      runCmd:        z.string().max(500).nullable().optional().describe('Command that starts the live app'),
-      envSetupCmd:   z.string().max(500).nullable().optional().describe('Command run before the engine starts'),
-      appUrl:        z.string().max(500).nullable().optional().describe('Local URL the running app serves on'),
-      notes:         z.string().max(4000).nullable().optional().describe('Free-form operator notes'),
-      active:        z.boolean().optional().describe('Whether missions may target this repo'),
-      metadata:      z.record(z.string(), z.unknown()).optional().describe('Runner-reported capabilities'),
+      repoId: z.string().uuid().describe('Registry entry UUID'),
+      ...documented(updateHangarRepoSchema.shape),
     },
-    { title: 'Update Repo', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'Update Hangar Repo', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ repoId, ...data }, extra) => {
       const uid = getUserId(extra)
       const existing = await findHangarRepoById(repoId)
@@ -115,12 +116,12 @@ export const registerHangarTools: RegisterFn = (server) => {
   )
 
   server.tool(
-    'delete_repo',
-    'Permanently delete a Hangar registry entry. Realm owners only — prefer update_repo with active=false to retire a repo while keeping its history.',
+    'delete_hangar_repo',
+    'Permanently delete a Hangar registry entry. Realm owners only — prefer update_hangar_repo with active=false to retire a repo while keeping its history.',
     {
       repoId: z.string().uuid().describe('Registry entry UUID'),
     },
-    { title: 'Delete Repo', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    { title: 'Delete Hangar Repo', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     async ({ repoId }, extra) => {
       const uid = getUserId(extra)
       const existing = await findHangarRepoById(repoId)

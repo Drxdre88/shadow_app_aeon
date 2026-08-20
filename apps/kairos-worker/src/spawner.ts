@@ -8,7 +8,7 @@
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { hostname } from 'node:os'
-import { resolve } from 'node:path'
+import { resolve, sep } from 'node:path'
 import type { CallbackContext } from './callback.js'
 import { patchSession, postEvent } from './callback.js'
 
@@ -36,13 +36,24 @@ interface LiveSession {
 
 const live = new Map<string, LiveSession>()
 
-const REPO_ROOT = process.env.KAIROS_WORKER_REPO_ROOT ?? process.cwd()
+function repoRoot(): string {
+  return resolve(process.env.KAIROS_WORKER_REPO_ROOT ?? process.cwd())
+}
 
-function resolveRepoPath(repo: string | null): string {
-  if (!repo) return REPO_ROOT
-  // Naive: treat `repo` as a sibling directory under REPO_ROOT. The operator
-  // can override with KAIROS_WORKER_REPO_ROOT if their layout differs.
-  return resolve(REPO_ROOT, repo)
+// `repo` is treated as a sibling directory under the root — the operator can
+// override the root with KAIROS_WORKER_REPO_ROOT if their layout differs.
+//
+// /spawn only shape-checks its payload, so a repo of '../../Windows/System32'
+// or an absolute path would otherwise resolve outside the root and run the
+// engine — with --allow-all-tools — somewhere the operator never sanctioned.
+export function resolveRepoPath(repo: string | null): string {
+  const root = repoRoot()
+  if (!repo) return root
+  const target = resolve(root, repo)
+  if (target !== root && !target.startsWith(root + sep)) {
+    throw new Error(`repo "${repo}" resolves outside the worker repo root — spawn refused`)
+  }
+  return target
 }
 
 function buildArgs(engine: Engine, prompt: string): string[] {

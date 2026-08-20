@@ -39,6 +39,7 @@ export const registerTaskTools: RegisterFn = (server) => {
       ...createTaskSchema.pick({
         name: true, description: true, status: true, priority: true, color: true,
         size: true, progress: true, startDate: true, endDate: true, onTimeline: true,
+        metadata: true,
       }).shape,
     },
     { title: 'Create Task', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -67,6 +68,7 @@ export const registerTaskTools: RegisterFn = (server) => {
       ...updateTaskSchema.pick({
         name: true, description: true, status: true, priority: true, color: true,
         size: true, progress: true, startDate: true, endDate: true, onTimeline: true,
+        metadata: true,
       }).shape,
     },
     { title: 'Update Task', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },

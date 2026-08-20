@@ -54,7 +54,8 @@ export const createTaskSchema = z.object({
   startDate: optionalIsoDate,
   endDate: optionalIsoDate,
   // Free-form card payload (AI Hangar mission lives under the `hangar` key).
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional()
+    .describe('Free-form card payload. An AI Hangar mission lives under the "hangar" key.'),
 })
 
 export const updateTaskSchema = z.object({
@@ -72,7 +73,8 @@ export const updateTaskSchema = z.object({
   startDate: optionalIsoDate,
   endDate: optionalIsoDate,
   // Shallow-merged into the existing metadata, top-level keys only.
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional()
+    .describe('Shallow-merged into the existing metadata, top-level keys only. An AI Hangar mission lives under the "hangar" key.'),
 })
 
 export const createColumnSchema = z.object({
@@ -651,14 +653,16 @@ export const hangarObjectiveSchema = z.enum([
   'analysis',
   'plan',
 ])
-export const hangarAgentSchema = z.enum(['claude', 'copilot', 'codex'])
+// One engine enum for the whole system — a card's agent, a session's engine and
+// a repo's allowed engines must never drift apart.
+export const hangarAgentSchema = agentSessionEngineSchema
 // Single value for now — the deliverable is derived from the objective.
 export const hangarOutputModeSchema = z.enum(['auto'])
 
 // Model ids are passed straight to an engine CLI by the runner, so the charset
-// is restricted to what a real model id needs — no spaces, quotes or dashes
-// leading a new flag.
-export const HANGAR_MODEL_RE = /^[A-Za-z0-9._:-]+$/
+// is restricted to what a real model id needs. The leading character must be
+// alphanumeric so an id can never be read as a flag ('-p', '--dangerously-…').
+export const HANGAR_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/
 
 // Stored under boardTasks.metadata.hangar. Card title carries the mission
 // name; session_ids / last_result are system-written, never user-supplied.

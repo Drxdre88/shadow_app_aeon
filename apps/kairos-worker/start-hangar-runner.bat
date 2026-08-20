@@ -1,4 +1,7 @@
 @echo off
+REM setlocal keeps the API key and the KAIROS_* defaults inside this process —
+REM without it, double-clicking from a terminal leaves the key in that shell.
+setlocal
 REM ── AI Hangar mission runner ──────────────────────────────────────────────
 REM Start this on ANY machine that should execute missions. The runner dials
 REM OUT to Aeon (no inbound ports, NAT/corp-network friendly) and runs agents
@@ -14,6 +17,13 @@ REM      in front of you).
 REM ─────────────────────────────────────────────────────────────────────────
 
 cd /d "%~dp0"
+
+REM Workspace install: tsx and the worker's deps hoist to the monorepo root.
+if not exist "..\..\node_modules" (
+  echo [runner] dependencies are not installed — run "npm install" in the repo root first.
+  pause
+  exit /b 1
+)
 
 if exist runner.env.bat (
   call runner.env.bat

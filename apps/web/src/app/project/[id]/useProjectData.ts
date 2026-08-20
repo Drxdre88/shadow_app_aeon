@@ -323,7 +323,15 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
-    channel.bind('board-update', () => {
+    channel.bind('board-update', (payload?: { type?: string }) => {
+      // A peer's comment changes nothing the board payload carries, so it only
+      // signals the open card's thread to refresh. Reloading the whole board
+      // for every comment would be pure waste. Version drift still triggers a
+      // full reload on the next poll, which is fine.
+      if (payload?.type === 'comment:changed') {
+        useBoardStore.getState().bumpCommentsSignal()
+        return
+      }
       if (isDirtyOrGracePeriod()) return
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = setTimeout(() => {

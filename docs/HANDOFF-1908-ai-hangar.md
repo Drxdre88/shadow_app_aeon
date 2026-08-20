@@ -26,7 +26,7 @@
 - [ ] B1. Fresh branch `feat/ai-hangar` off main (land/park `feat/pro-wave-1708` first — single-branch discipline).
 - [ ] B2. Hand-written migration `0031_hangar.sql` (journal frozen — NEVER db:generate; head is 0030, data-layer.md stale): `agentSessions` += `taskId` FK (SET NULL) / `claimedBy` / `claimedAt` / `lastHeartbeatAt`; new **`hangarRepos`** registry table (slug, gitUrl, ghSlug, defaultBranch, branchPrefix, allowedEngines[], runCmd, envSetupCmd, appUrl, notes, active, metadata).
 - [ ] B3. `claimNextSession()` — atomic `FOR UPDATE SKIP LOCKED` claim, filtered `engine IN ('claude','codex')` (kairos-chat/dialogue share the table). New pattern for this codebase → warden review mandatory (Neon 8s pool-timeout risk).
-- [ ] B4. REST `POST /api/v1/sessions/claim` + registry routes; MCP mirrors (`claim_session`, `register_repo`, `list_repos`); add the missing `sessions-parity.test.ts` in the same pass.
+- [ ] B4. REST `POST /api/v1/sessions/claim` + registry routes; MCP mirrors (`claim_session`, `register_hangar_repo`, `list_hangar_repos`); add the missing `sessions-parity.test.ts` in the same pass.
 - [ ] B5. Card payload in `boardTasks.metadata.hangar` (~18 fields, Zod-validated) — no new boardTasks columns. Result envelope = terminal `sessionEvents` row `kind:'result'`; on terminal status → write `metadata.hangar.last_result`, move card column, `publishBoardEvent`.
 - [ ] B6. `spawnSessionFromCard(taskId)` action — creates `queued` session, no `dispatchSpawn` (push path stays untouched for Kairos).
 
@@ -87,6 +87,16 @@ Card creation must NEVER spawn a mission — launching is a separate conscious c
 
 V1 = this POC. **V2 (MVP, priority order):** 1) storage — full report text stored in Aeon + rendered on the card (non-repo users see everything in-app; NO repo copy needed), a dedicated **hangar-vault** git repo as the version-controlled archive of deliverables (product repos stay clean), SharePoint mirror for work missions (StaffOne RAG); 2) model lists per engine probe-driven + surfaced in the card model picker; 3) AGENTS.md/CLAUDE.md bridge verified per engine. Plus spawn UI (trigger field manual/on_drop, launch+abort toast) and 4-5-mission parallelization via git worktrees. **V3:** admin tower (all sessions across machines, live transcript drawer, kill/retry, cost). **V4:** team layer (draft-vs-launch roles, runner identity, prod-box runners). **V5:** copilot-cloud engine, plan→auto-cards, Telegram verbs, resume.
 
+## 🐎 Horsemen 2008 — full review verdicts + accepted risks (post-POC, pre-PR)
+
+Verdicts: butcher PASS · warden PASS_WITH_NOTES · judge PASS_WITH_NOTES · stalker FAIL · codex PASS_WITH_NOTES → fix wave applied (both lanes), all criticals/highs + cheap mediums closed: leading-dash flag-injection regexes (stalker+codex convergent find), comment realtime now consumed client-side (signal → TaskComments refetch, no full-board reload per comment), silent envelope-rejection detection, worker vitest harness wired into root scripts (65 tests), heartbeat user scope, engine enum unified, MCP hangar tool renames + schema-derived shapes, MCP task metadata parity, registry enforcement (adoption-gated), conditional terminal-guard UPDATE, uuid/param gates, path containment, codex out-file decode.
+
+**Accepted risks (deliberate, revisit before multi-user/Sprint 3):**
+- Non-terminal transcript events are fire-and-forget — a 429/5xx drops that batch permanently (seq gap). Terminal writes retry. Acceptable for dev-server noise; revisit if transcript fidelity matters.
+- No reclamation of sessions claimed by a dead worker — stays 'running' until human action (E1 rule: never auto-fail). The "surface as unresponsive" UI is the Sprint 3 admin tower's job.
+- Spawned agents inherit worker env (incl. the API key) while running acceptEdits/allow-all-tools on repo content — prompt-injection exfil vector. Acceptable solo-operator; MUST be scrubbed (pass a minimal env) before any multi-user runner.
+- recordSessionResult's three writes are not one transaction (session flip is now conditionally guarded; card update failure after a session flip leaves the card without lastResult — visible via resultProcessed:false to the runner, which posts an error event).
+
 ## ⚠️ Warden 2008 — deferred findings (Sprint 2 debts, criticals/highs were fixed pre-commit)
 
 - **Trust ladder (N8):** `hangarRepos.runCmd`/`envSetupCmd` are realm-editor-writable but the runner does NOT execute them yet. Before Sprint 2 wires them up, decide the trust model — "realm editor writes a command the operator's host executes" is a higher bar than card editing. Options: operator-side allowlist, owner-only fields, or keep execution config runner-local.
@@ -95,18 +105,4 @@ V1 = this POC. **V2 (MVP, priority order):** 1) storage — full report text sto
 - **Seq reset on reclaim (N6):** per-launch event seq restarts at 1; if session reclaim is ever added, old (session_id, seq) rows collide and new events (incl. result) are silently dropped. Persist a seq floor before adding reclaim.
 - **Killed missions keep no envelope (LOW-2, deliberate for now):** operator-kill flips status to 'killed' before the runner's result event arrives, so the terminal guard refuses it and `lastResult` stays empty — a killed run's partial summary is lost. Revisit if operators want kill post-mortems on the card.
 - **Runner dispatch fallback is dead code (LOW-4):** poller's local prompt builder never fires because Aeon always sends a non-empty prompt; if session.prompt ever becomes optional, wire `instruction` into session metadata first.
-- **metadata.hangar writability (M3 residue):** any project editor can write `metadata.hangar.sessionIds/lastResult` via update_task — validator comment says system-written. Acceptable solo; revisit for multi-user realms (strip system keys from user-supplied metadata).
-
----
-
-# ✅ CONFIRMED 2008 — owner sign-off (supersedes the proposals above)
-
-**Gate closed 2026-08-20. Build authorized.** Amendments vs the A–E proposals:
-
-1. **Naming: `aeon`, not `eon`, everywhere** — branch prefix `aeon/<taskId>`, skills `aeon-objective-*` ("eon" was a voice-mode artefact).
-2. **Multi-engine Sprint 1 (major change).** This was always the *GitHub Copilot POC* at heart. Runner ships with spawn adapters for **claude / copilot / codex** from day one; engine is a per-card field, envelope engine-agnostic. Mission 1 (recon) on claude proves the loop; mission 2 re-runs the same recon on **copilot-cli** (the true POC proof); mission 3 = real bug_fix. AGENTS.md 3-line stub (→ CLAUDE.md canonical) is the Copilot/Codex entry door — verify Copilot actually follows the pointer.
-3. **Card payload SLIMMED to 5 user fields + 2 system** (`metadata.hangar`): `objective`, `repo`, `agent` (**default `copilot`**), `model` (nullable; **copilot default = Opus 5** — verify exact slug during runner build), `instruction`; system: `session_ids[]`, `last_result`. Title = the card name itself.
-4. **Cut from the card:** `skills` (auto-loaded/inferred — not user-managed), `base_branch` (registry default only), `output_mode` (**auto-derived from objective** for now, field addable later), `subagents` (inferred from `~/.claude/agents`; POC set = `inferno-executioner` + `inferno-prowler` only), `attachments`/`linked_cards`/`linked_docs` (defer — paste into instruction), `artifact_dir` (objective skill defaults it).
-5. **B1 moot:** pro-wave-1708 was already merged (PR #103); `feat/ai-hangar` cut clean off main 2026-08-20.
-6. Claim filter widens to `engine IN ('claude','codex','copilot')` (kairos rows still excluded).
-7. A1–A3 (with aeon-naming), B2–B6, C1–C3, D2–D3, E1–E3: **confirmed as written.** D1 (first repo) implicitly aeon-side POC; AGENTS.md stub goes in regardless for the copilot leg.
+- **metadata.hangar writability (M3 residue):** any project editor can write `metadata.hangar.sessionIds/lastResult` — through the board editor, and (since the horsemen parity fix) through MCP `create_task`/`update_task` too, which now accept `metadata` so missions are authorable by agents. The validator comment still calls those two keys system-written. Acceptable solo; revisit for multi-user realms (strip system keys from user-supplied metadata).
