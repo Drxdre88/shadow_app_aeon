@@ -1,0 +1,10 @@
+# Host-local repo paths for the Hangar runner (gitignored, machine-specific).
+# POC note: defaultBranch pinned to feat/ai-hangar until Sprint 1 merges —
+# missions branch from (and restore to) the feature branch, not main.
+repos:
+  aeon:
+    path: C:/Users/anselikhov/data_science/dev_26/shadow_app_aeon
+    defaultBranch: feat/ai-hangar
+  arq:
+    path: C:/Users/anselikhov/data_science/dev_26/shadow_app_arq
+    defaultBranch: main

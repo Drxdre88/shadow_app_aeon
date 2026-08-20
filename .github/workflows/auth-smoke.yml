@@ -1,0 +1,33 @@
+name: Auth Smoke
+
+# Runs the auth smoke test against EVERY Vercel deployment — previews and
+# production — the moment it reports success. This is the enforcement layer
+# for the recurring /api/auth/* 500s (the "No response is returned from route
+# handler" class): the check existed as a manual script since the 2026-06-08
+# outage, but nothing ran it automatically, so regressions surfaced as user
+# reports instead of red checks. Exercises exactly the failing path: providers,
+# csrf, the signin POST redirect, and the browser-header (X-Auth-Return-Redirect)
+# variant that the class-identity bug breaks.
+
+on:
+  deployment_status:
+
+jobs:
+  auth-smoke:
+    if: github.event.deployment_status.state == 'success'
+    name: Auth smoke (${{ github.event.deployment_status.environment }})
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.deployment.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # smoke-auth.mjs is dependency-free (global fetch) — no npm ci needed.
+      - name: Run auth smoke against the deployment
+        env:
+          AEON_BASE_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+        run: node apps/web/scripts/smoke-auth.mjs
