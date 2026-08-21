@@ -113,18 +113,19 @@ export const registerSessionTools: RegisterFn = (server) => {
 
   server.tool(
     'list_session_events',
-    'List events for an agent session, optionally after a given seq for incremental tailing.',
+    'List events for an agent session, optionally after a given seq for incremental tailing. tail=true returns the LAST n events (ascending) — the right seed for reading a finished transcript.',
     {
       sessionId: z.string().uuid(),
       afterSeq:  z.number().int().min(-1).optional(),
       limit:     z.number().int().min(1).max(1000).optional(),
+      tail:      z.boolean().optional(),
     },
     { title: 'List Session Events', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-    async ({ sessionId, afterSeq, limit }, extra) => {
+    async ({ sessionId, afterSeq, limit, tail }, extra) => {
       const uid = getUserId(extra)
       const session = await findAgentSessionById(sessionId, uid)
       if (!session) return notFound('Session')
-      const events = await listSessionEvents(sessionId, { afterSeq, limit })
+      const events = await listSessionEvents(sessionId, { afterSeq, limit, tail })
       return ok(events)
     }
   )

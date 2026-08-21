@@ -48,6 +48,23 @@ const RESULT_CAP = 600
 // eslint-disable-next-line no-control-regex
 const JSONB_UNSAFE = /\u0000/g
 
+// Raw text posted outside the parser (legacy batching, stderr, engines with
+// no streamParser) needs the same jsonb safety: NUL stripped, and no chunk
+// boundary splitting a surrogate pair.
+export function jsonbSafeChunks(text: string, limit: number): string[] {
+  const clean = text.replace(JSONB_UNSAFE, '')
+  const chunks: string[] = []
+  let i = 0
+  while (i < clean.length) {
+    let end = Math.min(i + limit, clean.length)
+    const last = clean.charCodeAt(end - 1)
+    if (end < clean.length && last >= 0xd800 && last <= 0xdbff) end++
+    chunks.push(clean.slice(i, end))
+    i = end
+  }
+  return chunks
+}
+
 function cap(text: string, limit: number): string {
   let out = text.replace(JSONB_UNSAFE, '')
   if (out.length > limit) {

@@ -2,7 +2,7 @@
 // --verbose` (CLI v2.1.x, 2026-08-21) — the contract this parser is built on.
 
 import { describe, expect, it } from 'vitest'
-import { createClaudeStreamParser, type TypedEvent } from './stream-parser.js'
+import { createClaudeStreamParser, jsonbSafeChunks, type TypedEvent } from './stream-parser.js'
 
 const INIT_LINE = JSON.stringify({
   type: 'system', subtype: 'init', cwd: 'C:\\repo', session_id: 's1',
@@ -59,6 +59,27 @@ function feedAll(lines: string[]): { events: TypedEvent[]; raw: string } {
   raw += tail.raw
   return { events, raw }
 }
+
+describe('jsonbSafeChunks', () => {
+  it('strips NUL bytes and never splits a surrogate pair at a chunk boundary', () => {
+    const nul = String.fromCharCode(0)
+    expect(jsonbSafeChunks(`a${nul}b`, 10)).toEqual(['ab'])
+
+    // Boundary lands on the high half of the emoji — the chunk extends by one
+    // so both halves stay together.
+    const text = 'abc😀def'
+    const chunks = jsonbSafeChunks(text, 4)
+    expect(chunks.join('')).toBe(text)
+    for (const chunk of chunks) {
+      const last = chunk.charCodeAt(chunk.length - 1)
+      expect(last >= 0xd800 && last <= 0xdbff).toBe(false)
+    }
+  })
+
+  it('returns no chunks for empty input', () => {
+    expect(jsonbSafeChunks('', 100)).toEqual([])
+  })
+})
 
 describe('claude stream parser', () => {
   it('maps an init line to a system event with the config snapshot', () => {

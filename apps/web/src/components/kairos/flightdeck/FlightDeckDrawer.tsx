@@ -63,9 +63,17 @@ export function FlightDeckDrawer({
   const lastSeqRef = useRef<number | undefined>(undefined)
   const inFlightRef = useRef(false)
 
+  // After N consecutive empty polls on a session whose row is already
+  // terminal, stop — a runner that died without ever posting a result event
+  // must not keep the drawer polling forever.
+  const emptyPollsRef = useRef(0)
+  const [exhausted, setExhausted] = useState(false)
+  const statusRef = useRef<string | null>(null)
+
   const sessionId = session?.id ?? null
   const current = (sessionRow && sessionRow.id === sessionId ? sessionRow : null) ?? session
   const isLive = current ? LIVE_STATUSES.has(current.status) : false
+  statusRef.current = current?.status ?? null
 
   const appendEvents = useCallback((next: SessionEvent[]) => {
     if (next.length === 0) return
@@ -74,7 +82,9 @@ export function FlightDeckDrawer({
       const seen = new Set(prev.map((e) => e.seq))
       const fresh = next.filter((e) => !seen.has(e.seq))
       if (fresh.length === 0) return prev
-      const merged = [...prev, ...fresh]
+      // Sort, don't append: a terminal re-drain can deliver lower seqs than
+      // the cursor (late-landing runner chunks) and they must render in order.
+      const merged = [...prev, ...fresh].sort((a, b) => a.seq - b.seq)
       return merged.length > EVENT_RETENTION ? merged.slice(-EVENT_RETENTION) : merged
     })
   }, [])
@@ -82,25 +92,41 @@ export function FlightDeckDrawer({
   useEffect(() => {
     setEvents([])
     setSessionRow(null)
+    setExhausted(false)
+    emptyPollsRef.current = 0
     lastSeqRef.current = undefined
     if (!sessionId) return
+    let cancelled = false
     setLoading(true)
     inFlightRef.current = true
     void (async () => {
       try {
-        // Drain forward until a short page so a long finished transcript is
-        // complete on open (retention keeps the tail).
-        for (let page = 0; page < 6; page++) {
-          const rows = await listSessionEventsAction(sessionId, { afterSeq: lastSeqRef.current, limit: EVENT_PAGE }) as SessionEvent[]
+        const row = await getSessionAction(sessionId) as AgentSession
+        if (cancelled) return
+        setSessionRow(row)
+        if (LIVE_STATUSES.has(row.status)) {
+          // Live: walk forward so the poll cursor continues seamlessly.
+          for (let page = 0; page < 6; page++) {
+            const rows = await listSessionEventsAction(sessionId, { afterSeq: lastSeqRef.current, limit: EVENT_PAGE }) as SessionEvent[]
+            if (cancelled) return
+            appendEvents(rows)
+            if (rows.length < EVENT_PAGE) break
+          }
+        } else {
+          // Finished: seed from the END — the result card is the point, and a
+          // forward walk can never reach it on a long transcript.
+          const rows = await listSessionEventsAction(sessionId, { tail: true, limit: EVENT_PAGE }) as SessionEvent[]
+          if (cancelled) return
           appendEvents(rows)
-          if (rows.length < EVENT_PAGE) break
         }
-        setSessionRow(await getSessionAction(sessionId) as AgentSession)
       } catch { /* header falls back to the prop */ } finally {
-        setLoading(false)
-        inFlightRef.current = false
+        if (!cancelled) {
+          setLoading(false)
+          inFlightRef.current = false
+        }
       }
     })()
+    return () => { cancelled = true }
   }, [sessionId, appendEvents])
 
   const pollEvents = useCallback(async () => {
@@ -109,26 +135,44 @@ export function FlightDeckDrawer({
     try {
       const next = await listSessionEventsAction(sessionId, { afterSeq: lastSeqRef.current, limit: EVENT_PAGE })
       appendEvents(next as SessionEvent[])
+      const rowFinished = statusRef.current !== null && !LIVE_STATUSES.has(statusRef.current)
+      if (next.length === 0 && rowFinished) {
+        emptyPollsRef.current += 1
+        if (emptyPollsRef.current >= 5) setExhausted(true)
+      } else if (next.length > 0) {
+        emptyPollsRef.current = 0
+      }
     } catch { /* poll again next tick */ } finally {
       inFlightRef.current = false
     }
   }, [sessionId, appendEvents])
 
   const timeline = useMemo(() => buildTimeline(events), [events])
-  const finished = timeline.terminal || (current ? !LIVE_STATUSES.has(current.status) : false)
 
   useEffect(() => {
-    if (!sessionId || finished) return
+    if (!sessionId || timeline.terminal || exhausted) return
     const t = setInterval(pollEvents, EVENT_POLL_INTERVAL_MS)
     return () => clearInterval(t)
-  }, [sessionId, finished, pollEvents])
+  }, [sessionId, timeline.terminal, exhausted, pollEvents])
 
-  // One session-row refresh when the mission ends, so status flips and the
-  // final cost lands in the header without reopening.
+  // When the mission ends: refresh the session row (status flip, final cost)
+  // AND re-read the tail — sequentially-chunked runner flushes can land rows
+  // with LOWER seqs after the result event, which a forward cursor would skip
+  // forever. One extra round-trip, at the only moment it matters.
   useEffect(() => {
     if (!sessionId || !timeline.terminal) return
+    const drain = (): void => {
+      listSessionEventsAction(sessionId, { tail: true, limit: EVENT_PAGE })
+        .then((rows) => appendEvents(rows as SessionEvent[]))
+        .catch(() => { })
+    }
     getSessionAction(sessionId).then((row) => setSessionRow(row as AgentSession)).catch(() => { })
-  }, [sessionId, timeline.terminal])
+    drain()
+    // A runner chunk can still be retrying for ~13s after the result lands —
+    // sweep once more after that window.
+    const t = setTimeout(drain, 15_000)
+    return () => clearTimeout(t)
+  }, [sessionId, timeline.terminal, appendEvents])
 
   // Follow the stream only while the reader is at the bottom.
   useEffect(() => {

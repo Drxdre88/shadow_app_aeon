@@ -157,7 +157,7 @@ describe('sessionEventsTailSchema', () => {
     const parsed = sessionEventsTailSchema.parse({})
     expect(parsed.limit).toBe(500)
     expect(parsed.afterSeq).toBeUndefined()
-    expect(sessionEventsTailSchema.parse({ limit: '250', afterSeq: '10' })).toEqual({ limit: 250, afterSeq: 10 })
+    expect(sessionEventsTailSchema.parse({ limit: '250', afterSeq: '10' })).toEqual({ limit: 250, afterSeq: 10, tail: false })
   })
 
   it('allows afterSeq -1 (everything) but rejects below and non-integers', () => {
@@ -165,6 +165,13 @@ describe('sessionEventsTailSchema', () => {
     expect(sessionEventsTailSchema.safeParse({ afterSeq: '-2' }).success).toBe(false)
     expect(sessionEventsTailSchema.safeParse({ afterSeq: '1.5' }).success).toBe(false)
     expect(sessionEventsTailSchema.safeParse({ afterSeq: 'abc' }).success).toBe(false)
+  })
+
+  it("parses tail as a strict string bool — 'false' means false", () => {
+    expect(sessionEventsTailSchema.parse({}).tail).toBe(false)
+    expect(sessionEventsTailSchema.parse({ tail: 'false' }).tail).toBe(false)
+    expect(sessionEventsTailSchema.parse({ tail: 'true' }).tail).toBe(true)
+    expect(sessionEventsTailSchema.safeParse({ tail: '1' }).success).toBe(false)
   })
 })
 

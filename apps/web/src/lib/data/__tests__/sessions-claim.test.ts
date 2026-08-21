@@ -313,11 +313,11 @@ describe('recordSessionResult', () => {
 
 describe('sessionEventsTailSchema', () => {
   it('coerces the query strings a URL actually carries', () => {
-    expect(sessionEventsTailSchema.parse({ afterSeq: '12', limit: '50' })).toEqual({ afterSeq: 12, limit: 50 })
+    expect(sessionEventsTailSchema.parse({ afterSeq: '12', limit: '50' })).toEqual({ afterSeq: 12, limit: 50, tail: false })
   })
 
   it('defaults limit and leaves afterSeq absent when the tail params are omitted', () => {
-    expect(sessionEventsTailSchema.parse({})).toEqual({ limit: 500 })
+    expect(sessionEventsTailSchema.parse({})).toEqual({ limit: 500, tail: false })
   })
 
   it('rejects garbage instead of passing NaN to the driver', () => {

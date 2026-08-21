@@ -11,7 +11,7 @@ import { hostname } from 'node:os'
 import { resolve, sep } from 'node:path'
 import type { CallbackContext } from './callback.js'
 import { patchSession, postEvent, postEventsBatch } from './callback.js'
-import type { StreamParser, TypedEvent } from './stream-parser.js'
+import { jsonbSafeChunks, type StreamParser, type TypedEvent } from './stream-parser.js'
 
 export type Engine = 'claude' | 'codex' | 'copilot'
 
@@ -233,11 +233,11 @@ export function runEngine(opts: RunEngineOptions): RunHandle {
   let lastBatchFlushAt = 0
 
   const emit = (text: string): void => {
-    for (let i = 0; i < text.length; i += EVENT_LIMIT) {
+    for (const chunk of jsonbSafeChunks(text, EVENT_LIMIT)) {
       void postEvent(opts.ctx, {
         seq: nextSeq(),
         kind: 'message',
-        payload: { stream: 'stdout', text: text.slice(i, i + EVENT_LIMIT) },
+        payload: { stream: 'stdout', text: chunk },
       })
     }
   }
@@ -322,7 +322,7 @@ export function runEngine(opts: RunEngineOptions): RunHandle {
     void postEvent(opts.ctx, {
       seq: nextSeq(),
       kind: 'error',
-      payload: { stream: 'stderr', text: buf.toString('utf8').slice(0, 8000) },
+      payload: { stream: 'stderr', text: jsonbSafeChunks(buf.toString('utf8'), 8000)[0] ?? '' },
     })
   })
 

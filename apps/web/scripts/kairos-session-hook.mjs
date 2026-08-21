@@ -37,6 +37,23 @@ function mapHookToKind(name) {
   }
 }
 
+// Deep-clamp every string so tool_response of a large Read/Bash can't push
+// the serialized payload over the server's 32K-char cap. NULs stripped —
+// Postgres jsonb refuses them.
+const STRING_CLAMP = 8000
+function clampStrings(value, depth = 0) {
+  if (typeof value === 'string') {
+    // eslint-disable-next-line no-control-regex
+    const clean = value.replace(/\u0000/g, '')
+    return clean.length > STRING_CLAMP ? `${clean.slice(0, STRING_CLAMP)}…` : clean
+  }
+  if (depth >= 6 || value === null || typeof value !== 'object') return value
+  if (Array.isArray(value)) return value.slice(0, 100).map((v) => clampStrings(v, depth + 1))
+  const out = {}
+  for (const [k, v] of Object.entries(value)) out[k] = clampStrings(v, depth + 1)
+  return out
+}
+
 async function readStdin() {
   return new Promise((resolveBody) => {
     const chunks = []
@@ -57,17 +74,21 @@ async function main() {
   }
 
   const kind = mapHookToKind(hookName)
-  const toolName =
+  const rawToolName =
     typeof payload.tool_name === 'string'
       ? payload.tool_name
       : typeof payload.tool === 'string'
       ? payload.tool
       : null
+  // Server contract: toolName column caps at 80, event payloads at 32K chars
+  // serialized — an oversized post 400s and this hook fails silently, so
+  // clamp at the producer.
+  const toolName = rawToolName ? rawToolName.slice(0, 80) : null
 
   const body = {
     kind,
     toolName,
-    payload: { hook: hookName, ...payload },
+    payload: clampStrings({ hook: hookName, ...payload }),
   }
 
   try {

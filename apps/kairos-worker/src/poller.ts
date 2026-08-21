@@ -293,7 +293,7 @@ export function missionStats(stats: MissionStats | null): Record<string, number 
   if (stats.totalCostUsd !== undefined && Number.isFinite(stats.totalCostUsd) && stats.totalCostUsd !== 0) {
     out.totalCostUsd = stats.totalCostUsd
   }
-  if (stats.toolCalls > 0) out.toolCalls = stats.toolCalls
+  out.toolCalls = stats.toolCalls
   if (stats.model) out.model = stats.model
   return Object.keys(out).length > 0 ? out : null
 }

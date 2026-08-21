@@ -620,11 +620,13 @@ export const updateSessionStatusSchema = z.object({
   costUsd:    z.number().nullable().optional(),
 })
 
-// Payload byte bound: the runner caps its texts at ~4KB, so 32KB is generous
+// Payload size bound, measured in serialized UTF-16 chars (bytes can run up
+// to ~3x for multi-byte content — the bound is a guardrail, not an exact
+// wire size). The runner caps its texts at ~4KB, so 32K chars is generous
 // headroom for typed telemetry; the terminal result envelope legitimately
 // carries up to 20 recommended tasks and gets its own ceiling.
-const EVENT_PAYLOAD_MAX_BYTES = 32_000
-const RESULT_PAYLOAD_MAX_BYTES = 512_000
+const EVENT_PAYLOAD_MAX_CHARS = 32_000
+const RESULT_PAYLOAD_MAX_CHARS = 512_000
 
 export const recordSessionEventSchema = z.object({
   seq:      z.number().int().min(0),
@@ -633,7 +635,7 @@ export const recordSessionEventSchema = z.object({
   payload:  z.record(z.string(), z.unknown()).optional(),
 }).superRefine((event, ctx) => {
   if (!event.payload) return
-  const limit = event.kind === 'result' ? RESULT_PAYLOAD_MAX_BYTES : EVENT_PAYLOAD_MAX_BYTES
+  const limit = event.kind === 'result' ? RESULT_PAYLOAD_MAX_CHARS : EVENT_PAYLOAD_MAX_CHARS
   let size: number
   try {
     size = JSON.stringify(event.payload).length
@@ -641,7 +643,7 @@ export const recordSessionEventSchema = z.object({
     size = limit + 1
   }
   if (size > limit) {
-    ctx.addIssue({ code: 'custom', path: ['payload'], message: `payload too large (${size} > ${limit} bytes)` })
+    ctx.addIssue({ code: 'custom', path: ['payload'], message: `payload too large (${size} > ${limit} chars)` })
   }
 })
 
@@ -730,6 +732,9 @@ export const heartbeatSessionSchema = z.object({
 export const sessionEventsTailSchema = z.object({
   afterSeq: z.coerce.number().int().min(-1).optional(),
   limit:    z.coerce.number().int().min(1).max(500).default(500),
+  // Read the LAST n events instead of the first (still ascending in the
+  // response). NOT z.coerce.boolean — that turns the string "false" into true.
+  tail:     z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
 })
 
 // Engine-agnostic terminal envelope — the runner extracts it from stdout and

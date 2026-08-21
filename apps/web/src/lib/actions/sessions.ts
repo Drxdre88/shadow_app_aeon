@@ -98,7 +98,7 @@ export async function getNextEventSeqAction(id: string) {
   return getNextEventSeq(id)
 }
 
-export async function listSessionEventsAction(id: string, opts: { limit?: number; afterSeq?: number } = {}) {
+export async function listSessionEventsAction(id: string, opts: { limit?: number; afterSeq?: number; tail?: boolean } = {}) {
   const userId = await requireAuth()
   const session = await findAgentSessionById(id, userId)
   if (!session) throw new Error('Session not found or unauthorized')

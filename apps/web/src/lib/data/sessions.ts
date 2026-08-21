@@ -310,13 +310,26 @@ export async function recordSessionEvents(
     .returning()
 }
 
+// tail=true reads the LAST n events (still returned in ascending seq order) —
+// the correct seed for a transcript viewer opening a finished mission, where
+// walking forward from seq 0 shows the beginning and can never reach the
+// result card within one page budget.
 export async function listSessionEvents(
   sessionId: string,
-  opts: { limit?: number; afterSeq?: number } = {},
+  opts: { limit?: number; afterSeq?: number; tail?: boolean } = {},
 ) {
   const where = [eq(sessionEvents.sessionId, sessionId)]
   if (opts.afterSeq !== undefined) {
     where.push(sql`${sessionEvents.seq} > ${opts.afterSeq}`)
+  }
+  if (opts.tail) {
+    const rows = await db
+      .select()
+      .from(sessionEvents)
+      .where(and(...where))
+      .orderBy(desc(sessionEvents.seq))
+      .limit(opts.limit ?? 500)
+    return rows.reverse()
   }
   return db
     .select()
