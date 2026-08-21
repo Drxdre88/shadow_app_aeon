@@ -93,8 +93,9 @@ describe('Sessions MCP <-> REST parity', () => {
 
     // Ingest-only schemas: the worker host and Claude Code hooks post status
     // and event rows over REST. There is deliberately no MCP tool for them —
-    // an agent reads its own transcript, it doesn't rewrite it.
-    const restOnlyValidators = ['updateSessionStatusSchema', 'recordSessionEventSchema']
+    // an agent reads its own transcript, it doesn't rewrite it. The batch
+    // schema (Flight Deck typed telemetry) is ingest-only for the same reason.
+    const restOnlyValidators = ['updateSessionStatusSchema', 'recordSessionEventSchema', 'recordSessionEventBatchSchema']
 
     it.each(sharedValidators)('MCP uses validator: %s', (v) => {
       expect(mcpSrc, `MCP sessions.ts missing ${v}`).toMatch(new RegExp(`\\b${v}\\b`))

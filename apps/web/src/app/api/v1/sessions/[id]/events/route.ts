@@ -2,8 +2,8 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
-import { recordSessionEventSchema, hangarResultEnvelopeSchema, sessionEventsTailSchema } from '@/lib/data/validators'
-import { findAgentSessionById, listSessionEvents, recordSessionEvent, getNextEventSeq, recordSessionResult } from '@/lib/data/sessions'
+import { recordSessionEventSchema, recordSessionEventBatchSchema, hangarResultEnvelopeSchema, sessionEventsTailSchema } from '@/lib/data/validators'
+import { findAgentSessionById, listSessionEvents, recordSessionEvent, recordSessionEvents, getNextEventSeq, recordSessionResult } from '@/lib/data/sessions'
 
 // A non-uuid path param would raise Postgres 22P02 and surface as a 500.
 const sessionIdSchema = z.string().uuid()
@@ -42,8 +42,23 @@ export const POST = withRateLimit(
       return jsonError('Invalid JSON body', 400)
     }
 
+    // Flight Deck batch ingest: {events: [...]} — one write for a runner's 2s
+    // flush of typed events. Every event carries its runner-assigned seq, and
+    // a kind:'result' is deliberately NOT accepted here: the terminal envelope
+    // needs its per-post ack (resultProcessed) and stays on the single path.
+    const rawBody = (body ?? {}) as Record<string, unknown>
+    if (Array.isArray(rawBody.events)) {
+      const batch = recordSessionEventBatchSchema.safeParse(rawBody)
+      if (!batch.success) return jsonError(batch.error.issues[0].message, 400)
+      if (batch.data.events.some((e) => e.kind === 'result')) {
+        return jsonError('kind:result must be posted as a single event, not in a batch', 400)
+      }
+      const rows = await recordSessionEvents(id, batch.data.events)
+      return jsonData({ accepted: rows.length, received: batch.data.events.length }, 201)
+    }
+
     // Allow seq to be omitted — server assigns the next slot.
-    const raw = (body ?? {}) as Record<string, unknown>
+    const raw = rawBody
     if (raw.seq === undefined || raw.seq === null) {
       raw.seq = await getNextEventSeq(id)
     }

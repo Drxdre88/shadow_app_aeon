@@ -89,6 +89,36 @@ export async function postEvent<T = unknown>(
   })
 }
 
+export interface BatchEvent {
+  seq: number
+  kind: string
+  toolName?: string | null
+  payload?: unknown
+}
+
+// Typed telemetry flush: many events, one write against the 60/min budget.
+// One bounded retry — a lost mid-stream batch degrades the timeline, it does
+// not corrupt it (seq gaps are tolerated by the reader), so we never block
+// subsequent flushes behind a struggling one.
+export async function postEventsBatch(
+  ctx: CallbackContext,
+  events: BatchEvent[],
+): Promise<AeonResponse> {
+  if (events.length === 0) return { ok: true, status: 200, data: null }
+  const attempt = (): Promise<AeonResponse> =>
+    aeonFetch(ctx.callbackBaseUrl, ctx.callbackToken, `/api/v1/sessions/${ctx.sessionId}/events`, {
+      method: 'POST',
+      body: { events },
+    })
+  let res = await attempt()
+  if (!res.ok && retriable(res.status)) {
+    await sleep(3_000)
+    res = await attempt()
+  }
+  if (!res.ok) console.warn(`[worker/callback] event batch dropped (${res.status}, ${events.length} events)`)
+  return res
+}
+
 export async function patchSession(
   ctx: CallbackContext,
   patch: Record<string, unknown>,

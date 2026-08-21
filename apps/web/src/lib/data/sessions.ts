@@ -289,6 +289,27 @@ export async function recordSessionEvent(
   return row ?? null
 }
 
+// Flight Deck batch ingest — one INSERT for a runner's 2s flush of typed
+// events. Same idempotency contract as the single-event path: the UNIQUE
+// (session_id, seq) index swallows replayed rows.
+export async function recordSessionEvents(
+  sessionId: string,
+  inputs: RecordSessionEventInput[],
+) {
+  if (inputs.length === 0) return []
+  return db
+    .insert(sessionEvents)
+    .values(inputs.map((input) => ({
+      sessionId,
+      seq: input.seq,
+      kind: input.kind,
+      toolName: input.toolName ?? null,
+      payload: input.payload ?? {},
+    })))
+    .onConflictDoNothing({ target: [sessionEvents.sessionId, sessionEvents.seq] })
+    .returning()
+}
+
 export async function listSessionEvents(
   sessionId: string,
   opts: { limit?: number; afterSeq?: number } = {},

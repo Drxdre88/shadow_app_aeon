@@ -28,6 +28,7 @@ import {
 import { engineIds, getEngine, outFileFor, type EngineAdapter } from './engines.js'
 import { getWorkerId, reposFilePath, resolveRepo, type RepoEntry } from './registry.js'
 import { createSeq, killSession, releaseSession, runEngine } from './spawner.js'
+import type { MissionStats, StreamParser } from './stream-parser.js'
 
 const POLL_INTERVAL_MS = Number(process.env.KAIROS_POLL_INTERVAL_MS ?? '15000')
 const HEARTBEAT_MS = Number(process.env.KAIROS_HEARTBEAT_MS ?? '30000')
@@ -184,6 +185,8 @@ async function launch(session: ClaimedSession): Promise<void> {
     const args = engine.buildArgs(prompt, { model: meta.model ?? null, cwd: entry.path, outFile })
     console.log(`[worker/poll] ${session.id} → ${engine.bin} in ${entry.path} on ${branch}`)
 
+    const parser = engine.streamParser?.() ?? null
+
     const handle = runEngine({
       sessionId: session.id,
       ctx,
@@ -192,6 +195,7 @@ async function launch(session: ClaimedSession): Promise<void> {
       cwd: entry.path,
       capture: true,
       batchStdout: true,
+      parser: parser ?? undefined,
       nextSeq,
       extraEnv: {
         KAIROS_SESSION_ID: session.id,
@@ -241,6 +245,7 @@ async function launch(session: ClaimedSession): Promise<void> {
         signal,
         killed: handle.killed(),
         stdout: handle.captured(),
+        parser,
         release,
       })
     })
@@ -260,7 +265,34 @@ interface FinalizeArgs {
   signal: NodeJS.Signals | null
   killed: boolean
   stdout: string
+  parser: StreamParser | null
   release: () => void
+}
+
+// Omit-when-zero: an absent field means "the engine reported no usage," which
+// must stay distinguishable from a genuine zero. Single aggregation point —
+// stats land here once (envelope + session PATCH) and nowhere else, so a
+// second write site can never double-count.
+export function missionStats(stats: MissionStats | null): Record<string, number | string> | null {
+  if (!stats) return null
+  const out: Record<string, number | string> = {}
+  const numeric: Array<[key: keyof MissionStats & string, value: number | undefined]> = [
+    ['totalCostUsd', stats.totalCostUsd],
+    ['inputTokens', stats.inputTokens],
+    ['outputTokens', stats.outputTokens],
+    ['cacheReadTokens', stats.cacheReadTokens],
+    ['cacheCreationTokens', stats.cacheCreationTokens],
+    ['thinkingTokens', stats.thinkingTokens],
+    ['numTurns', stats.numTurns],
+    ['durationMs', stats.durationMs],
+    ['durationApiMs', stats.durationApiMs],
+  ]
+  for (const [key, value] of numeric) {
+    if (value !== undefined && Number.isFinite(value) && value !== 0) out[key] = value
+  }
+  if (stats.toolCalls > 0) out.toolCalls = stats.toolCalls
+  if (stats.model) out.model = stats.model
+  return Object.keys(out).length > 0 ? out : null
 }
 
 // POST /events answers a kind:'result' post with whether the envelope actually
@@ -278,22 +310,24 @@ function envelopeRejection(data: unknown): string | null {
 }
 
 async function finalize(args: FinalizeArgs): Promise<void> {
-  const { ctx, nextSeq, engine, entry, outFile, briefFile, code, signal, killed, stdout, release } = args
+  const { ctx, nextSeq, engine, entry, outFile, briefFile, code, signal, killed, stdout, parser, release } = args
   const endedAt = new Date().toISOString()
   const wasKilled = killed || signal === 'SIGTERM'
 
   await postEvent(ctx, { seq: nextSeq(), kind: 'stop', payload: { exitCode: code, signal } })
 
   const envelope = normalizeEnvelope(readEnvelope(engine, stdout, outFile))
+  const stats = missionStats(parser?.stats() ?? null)
 
   // The result event and the final status are the two writes that must land:
   // losing either leaves a finished mission showing as 'running' on the board.
-  const result = envelope ?? {
+  const base = envelope ?? {
     status: 'failed',
     outcome: 'blocked',
     summary: 'engine exited without a result envelope',
     raw_tail: stdout.slice(-2000),
   }
+  const result = stats ? { ...base, stats } : base
   const reported = envelope && typeof envelope.status === 'string' ? envelope.status : null
 
   const seq = nextSeq()
@@ -311,7 +345,13 @@ async function finalize(args: FinalizeArgs): Promise<void> {
   }
 
   const status = decideFinalStatus(reported, wasKilled, rejection !== null)
-  await withRetry('final status', () => patchSession(ctx, { status, exitCode: code, endedAt }))
+  const costUsd = typeof stats?.totalCostUsd === 'number' ? stats.totalCostUsd : undefined
+  await withRetry('final status', () => patchSession(ctx, {
+    status,
+    exitCode: code,
+    endedAt,
+    ...(costUsd !== undefined ? { costUsd } : {}),
+  }))
 
   if (outFile) rmSync(outFile, { force: true })
   rmSync(briefFile, { force: true })

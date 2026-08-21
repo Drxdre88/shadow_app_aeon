@@ -589,6 +589,10 @@ export const sessionEventKindSchema = z.enum([
   'error',
   // AI Hangar — terminal envelope the runner posts when a mission ends.
   'result',
+  // Flight Deck typed telemetry, parsed runner-side from the engine stream.
+  'thinking',
+  'usage',
+  'system',
 ])
 
 export const spawnSessionSchema = z.object({
@@ -623,6 +627,13 @@ export const recordSessionEventSchema = z.object({
   payload:  z.record(z.string(), z.unknown()).optional(),
 })
 
+// Flight Deck: the runner coalesces typed events into ~2s batches so a chatty
+// mission stays inside the 60 writes/min budget. Every event carries its own
+// runner-assigned seq — the batch is a transport envelope, not a unit of order.
+export const recordSessionEventBatchSchema = z.object({
+  events: z.array(recordSessionEventSchema).min(1).max(100),
+})
+
 export const listSessionsSchema = z.object({
   status:     z.union([agentSessionStatusSchema, z.array(agentSessionStatusSchema)]).optional(),
   dominionId: z.string().uuid().optional(),
@@ -639,6 +650,7 @@ export type SessionEventKind      = z.infer<typeof sessionEventKindSchema>
 export type SpawnSessionInput     = z.infer<typeof spawnSessionSchema>
 export type UpdateSessionStatusInput = z.infer<typeof updateSessionStatusSchema>
 export type RecordSessionEventInput  = z.infer<typeof recordSessionEventSchema>
+export type RecordSessionEventBatchInput = z.infer<typeof recordSessionEventBatchSchema>
 export type ListSessionsInput     = z.infer<typeof listSessionsSchema>
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -718,6 +730,22 @@ export const hangarResultEnvelopeSchema = z.object({
     objective:   hangarObjectiveSchema,
     instruction: z.string().trim().max(10_000),
   })).max(20).optional(),
+  // Flight Deck mission stats, aggregated runner-side from the engine stream
+  // (single aggregation point in poller.finalize). Omit-when-zero convention:
+  // absent field = engine reported nothing, never "zero spend".
+  stats: z.object({
+    totalCostUsd:        z.number().finite().optional(),
+    inputTokens:         z.number().int().optional(),
+    outputTokens:        z.number().int().optional(),
+    cacheReadTokens:     z.number().int().optional(),
+    cacheCreationTokens: z.number().int().optional(),
+    thinkingTokens:      z.number().int().optional(),
+    numTurns:            z.number().int().optional(),
+    durationMs:          z.number().optional(),
+    durationApiMs:       z.number().optional(),
+    toolCalls:           z.number().int().optional(),
+    model:               z.string().trim().max(120).optional(),
+  }).optional(),
 })
 
 export const createHangarRepoSchema = z.object({

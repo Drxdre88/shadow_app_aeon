@@ -7,6 +7,8 @@ import {
   hangarResultEnvelopeSchema,
   createHangarRepoSchema,
   sessionEventsTailSchema,
+  recordSessionEventSchema,
+  recordSessionEventBatchSchema,
 } from '../validators'
 
 // The Hangar card metadata is operator-supplied and ends up on a runner's CLI
@@ -163,5 +165,56 @@ describe('sessionEventsTailSchema', () => {
     expect(sessionEventsTailSchema.safeParse({ afterSeq: '-2' }).success).toBe(false)
     expect(sessionEventsTailSchema.safeParse({ afterSeq: '1.5' }).success).toBe(false)
     expect(sessionEventsTailSchema.safeParse({ afterSeq: 'abc' }).success).toBe(false)
+  })
+})
+
+// Flight Deck typed telemetry — new event kinds + the batch transport envelope.
+
+describe('recordSessionEventSchema — typed kinds', () => {
+  it.each(['thinking', 'usage', 'system', 'tool_use', 'tool_result'])('accepts kind %s', (kind) => {
+    expect(recordSessionEventSchema.safeParse({ seq: 1, kind }).success).toBe(true)
+  })
+
+  it('rejects an unknown kind', () => {
+    expect(recordSessionEventSchema.safeParse({ seq: 1, kind: 'tool_call' }).success).toBe(false)
+  })
+})
+
+describe('recordSessionEventBatchSchema', () => {
+  const event = (seq: number) => ({ seq, kind: 'tool_use', toolName: 'Bash', payload: { input: 'ls' } })
+
+  it('accepts a batch of typed events', () => {
+    const parsed = recordSessionEventBatchSchema.safeParse({ events: [event(1), event(2)] })
+    expect(parsed.success).toBe(true)
+  })
+
+  it('rejects an empty batch and one over 100 events', () => {
+    expect(recordSessionEventBatchSchema.safeParse({ events: [] }).success).toBe(false)
+    const oversize = Array.from({ length: 101 }, (_, i) => event(i))
+    expect(recordSessionEventBatchSchema.safeParse({ events: oversize }).success).toBe(false)
+  })
+
+  it('rejects a batch containing an invalid event', () => {
+    expect(recordSessionEventBatchSchema.safeParse({ events: [event(1), { seq: 2, kind: 'nope' }] }).success).toBe(false)
+  })
+})
+
+describe('hangarResultEnvelopeSchema — mission stats', () => {
+  const ENVELOPE = { status: 'completed', outcome: 'implemented', summary: 'Done.' }
+
+  it('accepts and preserves a stats block', () => {
+    const parsed = hangarResultEnvelopeSchema.parse({
+      ...ENVELOPE,
+      stats: { totalCostUsd: 0.42, inputTokens: 18, outputTokens: 176, toolCalls: 7, model: 'claude-sonnet-5', durationMs: 9152 },
+    })
+    expect(parsed.stats).toMatchObject({ totalCostUsd: 0.42, toolCalls: 7, model: 'claude-sonnet-5' })
+  })
+
+  it('stays valid with stats absent — omit-when-zero convention', () => {
+    expect(hangarResultEnvelopeSchema.safeParse(ENVELOPE).success).toBe(true)
+  })
+
+  it('rejects a non-finite cost', () => {
+    expect(hangarResultEnvelopeSchema.safeParse({ ...ENVELOPE, stats: { totalCostUsd: Infinity } }).success).toBe(false)
   })
 })

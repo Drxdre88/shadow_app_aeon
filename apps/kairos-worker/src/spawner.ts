@@ -10,7 +10,8 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { hostname } from 'node:os'
 import { resolve, sep } from 'node:path'
 import type { CallbackContext } from './callback.js'
-import { patchSession, postEvent } from './callback.js'
+import { patchSession, postEvent, postEventsBatch } from './callback.js'
+import type { StreamParser, TypedEvent } from './stream-parser.js'
 
 export type Engine = 'claude' | 'codex' | 'copilot'
 
@@ -87,6 +88,10 @@ export interface RunEngineOptions {
   // Poll mode coalesces stdout into ~2s batches so a chatty stream doesn't
   // spend Aeon's 60 writes/min budget before the terminal post lands.
   batchStdout?: boolean
+  // Typed telemetry (Flight Deck): stream output goes through this parser and
+  // lands as batched typed events; only unparseable lines fall back to the
+  // raw message path above. Same 2s flush cadence, same write budget.
+  parser?: StreamParser
 }
 
 export interface RunHandle {
@@ -214,8 +219,10 @@ export function runEngine(opts: RunEngineOptions): RunHandle {
   const EVENT_LIMIT = 8000
   const FLUSH_MS = 2000
   const FLUSH_BYTES = 6000
+  const BATCH_MAX_EVENTS = 40
 
   let pending = ''
+  let pendingEvents: TypedEvent[] = []
   let flushTimer: NodeJS.Timeout | null = null
 
   const emit = (text: string): void => {
@@ -233,10 +240,38 @@ export function runEngine(opts: RunEngineOptions): RunHandle {
       clearTimeout(flushTimer)
       flushTimer = null
     }
+    if (pendingEvents.length > 0) {
+      // seqs are assigned at flush so typed events interleave correctly with
+      // the raw/stderr/terminal posts sharing the same counter.
+      const batch = pendingEvents.map((e) => ({
+        seq: nextSeq(),
+        kind: e.kind,
+        toolName: e.toolName ?? null,
+        payload: e.payload,
+      }))
+      pendingEvents = []
+      void postEventsBatch(opts.ctx, batch)
+    }
     if (!pending) return
     const text = pending
     pending = ''
     emit(text)
+  }
+
+  const scheduleFlush = (): void => {
+    if (pendingEvents.length >= BATCH_MAX_EVENTS || pending.length >= FLUSH_BYTES) return flush()
+    if ((pendingEvents.length > 0 || pending) && !flushTimer) flushTimer = setTimeout(flush, FLUSH_MS)
+  }
+
+  // Stream end: drain what the parser still buffers (partial line, pending
+  // usage) before the final flush.
+  const finalFlush = (): void => {
+    if (opts.parser) {
+      const out = opts.parser.flush()
+      pendingEvents.push(...out.events)
+      if (out.raw) pending += out.raw
+    }
+    flush()
   }
 
   child.stdout?.on('data', (buf: Buffer) => {
@@ -245,19 +280,24 @@ export function runEngine(opts: RunEngineOptions): RunHandle {
       buffer += text
       if (buffer.length > CAPTURE_LIMIT) buffer = buffer.slice(-CAPTURE_LIMIT)
     }
+    if (opts.parser) {
+      const out = opts.parser.feed(text)
+      pendingEvents.push(...out.events)
+      if (out.raw) pending += out.raw
+      return scheduleFlush()
+    }
     if (!opts.batchStdout) {
       emit(text.slice(0, EVENT_LIMIT))
       return
     }
     pending += text
-    if (pending.length >= FLUSH_BYTES) return flush()
-    if (!flushTimer) flushTimer = setTimeout(flush, FLUSH_MS)
+    scheduleFlush()
   })
 
   // Registered before the caller's own 'close' handler, so the tail of the
   // transcript is always posted ahead of the terminal stop/result events.
-  child.stdout?.on('end', flush)
-  child.on('close', flush)
+  child.stdout?.on('end', finalFlush)
+  child.on('close', finalFlush)
 
   child.stderr?.on('data', (buf: Buffer) => {
     void postEvent(opts.ctx, {

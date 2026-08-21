@@ -11,6 +11,7 @@
 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createClaudeStreamParser, type StreamParser } from './stream-parser.js'
 
 export type EngineId = 'claude' | 'copilot' | 'codex'
 
@@ -27,6 +28,9 @@ export interface EngineAdapter {
   // Where the fenced-json envelope is recovered from once the CLI exits.
   envelopeSource: 'stdout' | 'file'
   defaultModel: string | null
+  // Typed telemetry: parses the CLI's stream output into tool_use / thinking /
+  // usage events. Engines without one fall back to raw text batching.
+  streamParser?: () => StreamParser
 }
 
 function modelArgs(flag: string, model: string | null | undefined, fallback: string | null): string[] {
@@ -48,6 +52,7 @@ const claude: EngineAdapter = {
   },
   envelopeSource: 'stdout',
   defaultModel: process.env.KAIROS_CLAUDE_DEFAULT_MODEL ?? null,
+  streamParser: createClaudeStreamParser,
 }
 
 const copilot: EngineAdapter = {
