@@ -167,4 +167,35 @@ describe('claude stream parser', () => {
     const tool = events.find((e) => e.kind === 'tool_use')
     expect((tool!.payload.input as string).length).toBeLessThan(2100)
   })
+
+  it('strips NUL bytes and never cuts inside a surrogate pair — jsonb safety', () => {
+    const nul = String.fromCharCode(0)
+    const { events } = feedAll([
+      JSON.stringify({
+        type: 'user',
+        message: { content: [{ type: 'tool_result', tool_use_id: 'tx', is_error: false, content: `bin${nul}ary` }] },
+      }),
+    ])
+    const result = events.find((e) => e.kind === 'tool_result')
+    expect(result!.payload.content).toBe('binary')
+
+    // Text capped mid-emoji must drop the lone high surrogate, not keep it.
+    const emojiText = 'a'.repeat(3999) + '😀'
+    const { events: capped } = feedAll([assistantLine({ type: 'text', text: emojiText })])
+    const text = (capped.find((e) => e.kind === 'message')!.payload.text) as string
+    const last = text.charCodeAt(text.length - 2) // char before the ellipsis
+    expect(last >= 0xd800 && last <= 0xdbff).toBe(false)
+  })
+
+  it('truncates tool names to the server column cap of 80', () => {
+    const longName = `mcp__server__${'v'.repeat(100)}`
+    const { events } = feedAll([
+      assistantLine({ type: 'tool_use', id: 't3', name: longName, input: {} }),
+      JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't3', content: 'ok' }] } }),
+    ])
+    const tool = events.find((e) => e.kind === 'tool_use')
+    const result = events.find((e) => e.kind === 'tool_result')
+    expect(tool!.toolName!.length).toBe(80)
+    expect(result!.toolName).toBe(tool!.toolName)
+  })
 })

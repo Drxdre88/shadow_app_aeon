@@ -269,15 +269,15 @@ interface FinalizeArgs {
   release: () => void
 }
 
-// Omit-when-zero: an absent field means "the engine reported no usage," which
-// must stay distinguishable from a genuine zero. Single aggregation point —
-// stats land here once (envelope + session PATCH) and nowhere else, so a
-// second write site can never double-count.
+// Absent field = "the engine reported nothing". Counters keep genuine zeros;
+// only cost is omit-when-zero (a $0 report is indistinguishable from no
+// report). Single aggregation point — stats land here once (envelope +
+// session PATCH) and nowhere else, so a second write site can never
+// double-count.
 export function missionStats(stats: MissionStats | null): Record<string, number | string> | null {
   if (!stats) return null
   const out: Record<string, number | string> = {}
-  const numeric: Array<[key: keyof MissionStats & string, value: number | undefined]> = [
-    ['totalCostUsd', stats.totalCostUsd],
+  const counters: Array<[key: keyof MissionStats & string, value: number | undefined]> = [
     ['inputTokens', stats.inputTokens],
     ['outputTokens', stats.outputTokens],
     ['cacheReadTokens', stats.cacheReadTokens],
@@ -287,8 +287,11 @@ export function missionStats(stats: MissionStats | null): Record<string, number 
     ['durationMs', stats.durationMs],
     ['durationApiMs', stats.durationApiMs],
   ]
-  for (const [key, value] of numeric) {
-    if (value !== undefined && Number.isFinite(value) && value !== 0) out[key] = value
+  for (const [key, value] of counters) {
+    if (value !== undefined && Number.isFinite(value)) out[key] = value
+  }
+  if (stats.totalCostUsd !== undefined && Number.isFinite(stats.totalCostUsd) && stats.totalCostUsd !== 0) {
+    out.totalCostUsd = stats.totalCostUsd
   }
   if (stats.toolCalls > 0) out.toolCalls = stats.toolCalls
   if (stats.model) out.model = stats.model

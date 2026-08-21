@@ -43,18 +43,32 @@ export const POST = withRateLimit(
     }
 
     // Flight Deck batch ingest: {events: [...]} — one write for a runner's 2s
-    // flush of typed events. Every event carries its runner-assigned seq, and
-    // a kind:'result' is deliberately NOT accepted here: the terminal envelope
-    // needs its per-post ack (resultProcessed) and stays on the single path.
+    // flush of typed events. The envelope (array, 1-100) is strict; members
+    // are validated individually so one malformed event rejects itself, not
+    // the whole flush (a batch 400 is unretriable = silently eaten telemetry).
+    // kind:'result' is refused per-event: the terminal envelope needs its
+    // per-post ack (resultProcessed) and stays on the single path.
     const rawBody = (body ?? {}) as Record<string, unknown>
     if (Array.isArray(rawBody.events)) {
       const batch = recordSessionEventBatchSchema.safeParse(rawBody)
       if (!batch.success) return jsonError(batch.error.issues[0].message, 400)
-      if (batch.data.events.some((e) => e.kind === 'result')) {
-        return jsonError('kind:result must be posted as a single event, not in a batch', 400)
+
+      const valid: Array<typeof recordSessionEventSchema['_output']> = []
+      const rejections: string[] = []
+      for (const candidate of batch.data.events) {
+        const parsed = recordSessionEventSchema.safeParse(candidate)
+        if (!parsed.success) rejections.push(parsed.error.issues[0].message)
+        else if (parsed.data.kind === 'result') rejections.push('kind:result must be posted as a single event, not in a batch')
+        else valid.push(parsed.data)
       }
-      const rows = await recordSessionEvents(id, batch.data.events)
-      return jsonData({ accepted: rows.length, received: batch.data.events.length }, 201)
+
+      const rows = valid.length > 0 ? await recordSessionEvents(id, valid) : []
+      return jsonData({
+        accepted: rows.length,
+        received: batch.data.events.length,
+        rejected: rejections.length,
+        ...(rejections.length > 0 ? { rejectedReasons: rejections.slice(0, 3) } : {}),
+      }, 201)
     }
 
     // Allow seq to be omitted — server assigns the next slot.

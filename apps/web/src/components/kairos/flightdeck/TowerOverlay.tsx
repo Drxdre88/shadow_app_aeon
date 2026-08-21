@@ -174,7 +174,7 @@ function TowerRow({
           <button
             onClick={async (e) => {
               e.stopPropagation()
-              try { await killSessionAction(session.id) } catch { }
+              try { await killSessionAction(session.id) } catch (err) { console.error('[tower] kill failed', err) }
               onKilled()
             }}
             className="opacity-0 group-hover:opacity-100 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/[0.04] hover:bg-rose-500/15 text-white/65 hover:text-rose-200 transition-opacity"

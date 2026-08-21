@@ -620,18 +620,39 @@ export const updateSessionStatusSchema = z.object({
   costUsd:    z.number().nullable().optional(),
 })
 
+// Payload byte bound: the runner caps its texts at ~4KB, so 32KB is generous
+// headroom for typed telemetry; the terminal result envelope legitimately
+// carries up to 20 recommended tasks and gets its own ceiling.
+const EVENT_PAYLOAD_MAX_BYTES = 32_000
+const RESULT_PAYLOAD_MAX_BYTES = 512_000
+
 export const recordSessionEventSchema = z.object({
   seq:      z.number().int().min(0),
   kind:     sessionEventKindSchema,
   toolName: z.string().trim().max(80).nullable().optional(),
   payload:  z.record(z.string(), z.unknown()).optional(),
+}).superRefine((event, ctx) => {
+  if (!event.payload) return
+  const limit = event.kind === 'result' ? RESULT_PAYLOAD_MAX_BYTES : EVENT_PAYLOAD_MAX_BYTES
+  let size: number
+  try {
+    size = JSON.stringify(event.payload).length
+  } catch {
+    size = limit + 1
+  }
+  if (size > limit) {
+    ctx.addIssue({ code: 'custom', path: ['payload'], message: `payload too large (${size} > ${limit} bytes)` })
+  }
 })
 
 // Flight Deck: the runner coalesces typed events into ~2s batches so a chatty
 // mission stays inside the 60 writes/min budget. Every event carries its own
-// runner-assigned seq — the batch is a transport envelope, not a unit of order.
+// runner-assigned seq — the batch is a transport envelope, not a unit of
+// order. Members are validated INDIVIDUALLY at the route so one malformed
+// event drops itself, never the 39 valid events beside it (a batch-level 400
+// is unretriable and would silently eat telemetry).
 export const recordSessionEventBatchSchema = z.object({
-  events: z.array(recordSessionEventSchema).min(1).max(100),
+  events: z.array(z.unknown()).min(1).max(100),
 })
 
 export const listSessionsSchema = z.object({

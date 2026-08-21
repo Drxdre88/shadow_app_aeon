@@ -43,9 +43,22 @@ export interface StreamParser {
 const TEXT_CAP = 4000
 const INPUT_CAP = 2000
 const RESULT_CAP = 600
+// Postgres jsonb refuses \u0000 escapes, and the events route stores payloads
+// as jsonb — one NUL in a Bash result would 500 the whole batch away.
+// eslint-disable-next-line no-control-regex
+const JSONB_UNSAFE = /\u0000/g
 
 function cap(text: string, limit: number): string {
-  return text.length > limit ? `${text.slice(0, limit)}…` : text
+  let out = text.replace(JSONB_UNSAFE, '')
+  if (out.length > limit) {
+    out = out.slice(0, limit)
+    // A cut can land between the halves of a surrogate pair; a lone high half
+    // serializes to an unpaired escape jsonb also refuses.
+    const last = out.charCodeAt(out.length - 1)
+    if (last >= 0xd800 && last <= 0xdbff) out = out.slice(0, -1)
+    out += '…'
+  }
+  return out
 }
 
 function num(value: unknown): number | undefined {
@@ -155,11 +168,14 @@ function mapAssistantLine(ctx: ClaudeCtx, line: ClaudeLine): TypedEvent[] {
       events.push({ kind: 'message', payload: { stream: 'assistant', text: cap(b.text, TEXT_CAP), ...parent } })
     } else if (b.type === 'tool_use' && typeof b.name === 'string') {
       const toolUseId = typeof b.id === 'string' ? b.id : null
-      if (toolUseId) ctx.toolNames.set(toolUseId, b.name)
+      // The server's toolName column caps at 80; a long MCP tool name must
+      // not 400 the events beside it.
+      const name = b.name.slice(0, 80)
+      if (toolUseId) ctx.toolNames.set(toolUseId, name)
       ctx.stats.toolCalls++
       events.push({
         kind: 'tool_use',
-        toolName: b.name,
+        toolName: name,
         payload: { toolUseId, input: summarizeInput(b.input), ...parent },
       })
     }
@@ -180,9 +196,13 @@ function mapUserLine(ctx: ClaudeCtx, line: ClaudeLine): TypedEvent[] {
     const b = block as Record<string, unknown>
     if (b.type !== 'tool_result') continue
     const toolUseId = typeof b.tool_use_id === 'string' ? b.tool_use_id : null
+    const toolName = toolUseId ? ctx.toolNames.get(toolUseId) ?? null : null
+    // The pair is resolved — drop the entry so the map doesn't grow for the
+    // mission's lifetime.
+    if (toolUseId) ctx.toolNames.delete(toolUseId)
     events.push({
       kind: 'tool_result',
-      toolName: toolUseId ? ctx.toolNames.get(toolUseId) ?? null : null,
+      toolName,
       payload: {
         toolUseId,
         isError: b.is_error === true,

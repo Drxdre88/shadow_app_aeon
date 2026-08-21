@@ -178,8 +178,18 @@ describe('recordSessionEventSchema — typed kinds', () => {
   it('rejects an unknown kind', () => {
     expect(recordSessionEventSchema.safeParse({ seq: 1, kind: 'tool_call' }).success).toBe(false)
   })
+
+  it('rejects an oversized payload, with a higher ceiling for kind:result', () => {
+    const big = { text: 'x'.repeat(40_000) }
+    expect(recordSessionEventSchema.safeParse({ seq: 1, kind: 'message', payload: big }).success).toBe(false)
+    expect(recordSessionEventSchema.safeParse({ seq: 1, kind: 'result', payload: big }).success).toBe(true)
+    const huge = { text: 'x'.repeat(600_000) }
+    expect(recordSessionEventSchema.safeParse({ seq: 1, kind: 'result', payload: huge }).success).toBe(false)
+  })
 })
 
+// The batch schema bounds only the transport envelope; members are validated
+// individually at the route so one malformed event can't reject its batch.
 describe('recordSessionEventBatchSchema', () => {
   const event = (seq: number) => ({ seq, kind: 'tool_use', toolName: 'Bash', payload: { input: 'ls' } })
 
@@ -194,8 +204,9 @@ describe('recordSessionEventBatchSchema', () => {
     expect(recordSessionEventBatchSchema.safeParse({ events: oversize }).success).toBe(false)
   })
 
-  it('rejects a batch containing an invalid event', () => {
-    expect(recordSessionEventBatchSchema.safeParse({ events: [event(1), { seq: 2, kind: 'nope' }] }).success).toBe(false)
+  it('passes a malformed member through for the route to reject individually', () => {
+    expect(recordSessionEventBatchSchema.safeParse({ events: [event(1), { seq: 2, kind: 'nope' }] }).success).toBe(true)
+    expect(recordSessionEventSchema.safeParse({ seq: 2, kind: 'nope' }).success).toBe(false)
   })
 })
 

@@ -6,7 +6,7 @@ import {
   Bot, Brain, ChevronDown, ChevronRight, Check, FileText, Globe,
   Pencil, Plug, Search, Square, Terminal, Wrench, X, AlertTriangle,
 } from 'lucide-react'
-import { killSessionAction, listSessionEventsAction } from '@/lib/actions/sessions'
+import { getSessionAction, killSessionAction, listSessionEventsAction } from '@/lib/actions/sessions'
 import type { AgentSession, SessionEvent } from '@/lib/db/schema'
 import {
   buildTimeline, formatCost, formatDuration, formatTokens,
@@ -18,6 +18,10 @@ import {
 // live telemetry strip) and degrades to raw text for legacy sessions.
 
 const EVENT_POLL_INTERVAL_MS = 2000
+const EVENT_PAGE = 500
+// Client-side retention bound: a very long mission must not grow the events
+// array (and the rendered DOM) without limit.
+const EVENT_RETENTION = 2000
 const LIVE_STATUSES = new Set(['queued', 'running'])
 
 const TOOL_ICONS: Record<ToolClass, typeof Terminal> = {
@@ -48,39 +52,83 @@ export function FlightDeckDrawer({
 }) {
   const [events, setEvents] = useState<SessionEvent[]>([])
   const [loading, setLoading] = useState(false)
+  // The prop can go stale (a finished mission drops off the live list); the
+  // drawer keeps its own fresh row for header status / cost / elapsed.
+  const [sessionRow, setSessionRow] = useState<AgentSession | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const pinnedToBottom = useRef(true)
+  // The tail cursor lives in a ref, not derived from state: an overlapping
+  // fetch would otherwise re-read the same window and double-append (dup keys,
+  // doubled usage totals).
+  const lastSeqRef = useRef<number | undefined>(undefined)
+  const inFlightRef = useRef(false)
 
   const sessionId = session?.id ?? null
-  const isLive = session ? LIVE_STATUSES.has(session.status) : false
+  const current = (sessionRow && sessionRow.id === sessionId ? sessionRow : null) ?? session
+  const isLive = current ? LIVE_STATUSES.has(current.status) : false
+
+  const appendEvents = useCallback((next: SessionEvent[]) => {
+    if (next.length === 0) return
+    lastSeqRef.current = next.reduce((max, e) => Math.max(max, e.seq), lastSeqRef.current ?? -1)
+    setEvents((prev) => {
+      const seen = new Set(prev.map((e) => e.seq))
+      const fresh = next.filter((e) => !seen.has(e.seq))
+      if (fresh.length === 0) return prev
+      const merged = [...prev, ...fresh]
+      return merged.length > EVENT_RETENTION ? merged.slice(-EVENT_RETENTION) : merged
+    })
+  }, [])
 
   useEffect(() => {
     setEvents([])
+    setSessionRow(null)
+    lastSeqRef.current = undefined
     if (!sessionId) return
     setLoading(true)
+    inFlightRef.current = true
     void (async () => {
       try {
-        setEvents(await listSessionEventsAction(sessionId, { limit: 500 }) as SessionEvent[])
-      } finally {
+        // Drain forward until a short page so a long finished transcript is
+        // complete on open (retention keeps the tail).
+        for (let page = 0; page < 6; page++) {
+          const rows = await listSessionEventsAction(sessionId, { afterSeq: lastSeqRef.current, limit: EVENT_PAGE }) as SessionEvent[]
+          appendEvents(rows)
+          if (rows.length < EVENT_PAGE) break
+        }
+        setSessionRow(await getSessionAction(sessionId) as AgentSession)
+      } catch { /* header falls back to the prop */ } finally {
         setLoading(false)
+        inFlightRef.current = false
       }
     })()
-  }, [sessionId])
+  }, [sessionId, appendEvents])
 
   const pollEvents = useCallback(async () => {
-    if (!sessionId) return
+    if (!sessionId || inFlightRef.current) return
+    inFlightRef.current = true
     try {
-      const lastSeq = events.length > 0 ? events[events.length - 1].seq : undefined
-      const next = await listSessionEventsAction(sessionId, { afterSeq: lastSeq, limit: 500 })
-      if (next.length > 0) setEvents((prev) => [...prev, ...(next as SessionEvent[])])
-    } catch { /* poll again next tick */ }
-  }, [sessionId, events])
+      const next = await listSessionEventsAction(sessionId, { afterSeq: lastSeqRef.current, limit: EVENT_PAGE })
+      appendEvents(next as SessionEvent[])
+    } catch { /* poll again next tick */ } finally {
+      inFlightRef.current = false
+    }
+  }, [sessionId, appendEvents])
+
+  const timeline = useMemo(() => buildTimeline(events), [events])
+  const finished = timeline.terminal || (current ? !LIVE_STATUSES.has(current.status) : false)
 
   useEffect(() => {
-    if (!sessionId) return
+    if (!sessionId || finished) return
     const t = setInterval(pollEvents, EVENT_POLL_INTERVAL_MS)
     return () => clearInterval(t)
-  }, [sessionId, pollEvents])
+  }, [sessionId, finished, pollEvents])
+
+  // One session-row refresh when the mission ends, so status flips and the
+  // final cost lands in the header without reopening.
+  useEffect(() => {
+    if (!sessionId || !timeline.terminal) return
+    getSessionAction(sessionId).then((row) => setSessionRow(row as AgentSession)).catch(() => { })
+  }, [sessionId, timeline.terminal])
 
   // Follow the stream only while the reader is at the bottom.
   useEffect(() => {
@@ -88,11 +136,11 @@ export function FlightDeckDrawer({
     if (el && pinnedToBottom.current) el.scrollTop = el.scrollHeight
   }, [events])
 
-  const timeline = useMemo(() => buildTimeline(events), [events])
+  const view = current
 
   return (
     <AnimatePresence>
-      {session && (
+      {view && (
         <motion.aside
           initial={{ x: '100%' }}
           animate={{ x: 0 }}
@@ -104,18 +152,21 @@ export function FlightDeckDrawer({
             <Bot className="w-4 h-4 shrink-0" style={{ color: 'var(--primary)' }} />
             <div className="flex-1 min-w-0">
               <div className="text-[11px] uppercase tracking-[0.22em] text-white/65 flex items-center gap-2">
-                {session.engine} · {session.status}
+                {view.engine} · {view.status}
                 {timeline.stats?.model && (
                   <span className="normal-case tracking-normal text-[10px] px-1.5 py-0.5 rounded bg-white/[0.06] text-white/50">
                     {timeline.stats.model}
                   </span>
                 )}
               </div>
-              <div className="text-[13px] text-white/85 truncate">{session.goal}</div>
+              <div className="text-[13px] text-white/85 truncate">{view.goal}</div>
             </div>
             {isLive && (
               <button
-                onClick={async () => { try { await killSessionAction(session.id) } catch { } onKilled() }}
+                onClick={async () => {
+                  try { await killSessionAction(view.id) } catch (err) { console.error('[flightdeck] kill failed', err) }
+                  onKilled()
+                }}
                 className="text-[10px] px-2 py-1 rounded-md bg-white/[0.04] hover:bg-rose-500/15 text-white/65 hover:text-rose-200 inline-flex items-center gap-1"
               >
                 <Square className="w-2.5 h-2.5" /> Kill
@@ -126,7 +177,7 @@ export function FlightDeckDrawer({
             </button>
           </header>
 
-          <TelemetryStrip session={session} stats={timeline.stats} totals={timeline.totals} live={isLive} />
+          <TelemetryStrip session={view} stats={timeline.stats} totals={timeline.totals} live={isLive} />
 
           <div
             ref={scrollRef}

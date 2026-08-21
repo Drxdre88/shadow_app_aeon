@@ -220,10 +220,17 @@ export function runEngine(opts: RunEngineOptions): RunHandle {
   const FLUSH_MS = 2000
   const FLUSH_BYTES = 6000
   const BATCH_MAX_EVENTS = 40
+  // Bursts must not defeat the pacing the 60 writes/min budget relies on: a
+  // size-triggered flush still waits out this floor. The cap bounds memory on
+  // a stalled network — beyond it the oldest telemetry is dropped (warned),
+  // never the process.
+  const MIN_BATCH_INTERVAL_MS = 1500
+  const PENDING_HARD_CAP = 1000
 
   let pending = ''
   let pendingEvents: TypedEvent[] = []
   let flushTimer: NodeJS.Timeout | null = null
+  let lastBatchFlushAt = 0
 
   const emit = (text: string): void => {
     for (let i = 0; i < text.length; i += EVENT_LIMIT) {
@@ -243,6 +250,7 @@ export function runEngine(opts: RunEngineOptions): RunHandle {
     if (pendingEvents.length > 0) {
       // seqs are assigned at flush so typed events interleave correctly with
       // the raw/stderr/terminal posts sharing the same counter.
+      // postEventsBatch chunks to the server's batch limit internally.
       const batch = pendingEvents.map((e) => ({
         seq: nextSeq(),
         kind: e.kind,
@@ -250,6 +258,7 @@ export function runEngine(opts: RunEngineOptions): RunHandle {
         payload: e.payload,
       }))
       pendingEvents = []
+      lastBatchFlushAt = Date.now()
       void postEventsBatch(opts.ctx, batch)
     }
     if (!pending) return
@@ -259,7 +268,17 @@ export function runEngine(opts: RunEngineOptions): RunHandle {
   }
 
   const scheduleFlush = (): void => {
-    if (pendingEvents.length >= BATCH_MAX_EVENTS || pending.length >= FLUSH_BYTES) return flush()
+    if (pendingEvents.length > PENDING_HARD_CAP) {
+      console.warn(`[worker/spawn] ${opts.sessionId} event backlog over ${PENDING_HARD_CAP} — dropping oldest`)
+      pendingEvents = pendingEvents.slice(-PENDING_HARD_CAP)
+    }
+    const sizeTriggered = pendingEvents.length >= BATCH_MAX_EVENTS || pending.length >= FLUSH_BYTES
+    if (sizeTriggered) {
+      const wait = MIN_BATCH_INTERVAL_MS - (Date.now() - lastBatchFlushAt)
+      if (wait <= 0) return flush()
+      if (!flushTimer) flushTimer = setTimeout(flush, wait)
+      return
+    }
     if ((pendingEvents.length > 0 || pending) && !flushTimer) flushTimer = setTimeout(flush, FLUSH_MS)
   }
 
