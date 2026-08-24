@@ -14,6 +14,7 @@ repos:
     envSetupCmd: null
     # git-ignored content seeded into mission worktrees (comma-separated):
     # link -> junctioned dirs (deps), copy -> copied files (.env)
+    # junctioned dirs are SHARED with the live checkout: missions must not run installs
     link: node_modules
     copy: null
 

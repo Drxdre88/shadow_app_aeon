@@ -31,17 +31,28 @@ import { engineIds, getEngine, outFileFor, type EngineAdapter } from './engines.
 import { getWorkerId, reposFilePath, resolveRepo, type RepoEntry } from './registry.js'
 import { createSeq, killSession, releaseSession, runEngine } from './spawner.js'
 import {
-  branchAhead,
   createWorktree,
   deleteBranchIfEmpty,
+  missionCommits,
   pushBranch,
   removeWorktree,
 } from './worktree.js'
+import { exec } from 'node:child_process'
+import { promisify } from 'node:util'
 import type { MissionStats, StreamParser } from './stream-parser.js'
 
-const POLL_INTERVAL_MS = Number(process.env.KAIROS_POLL_INTERVAL_MS ?? '15000')
-const HEARTBEAT_MS = Number(process.env.KAIROS_HEARTBEAT_MS ?? '30000')
-const MAX_CONCURRENT = Number(process.env.KAIROS_MAX_CONCURRENT ?? '1')
+const execAsync = promisify(exec)
+
+// A malformed value ("two", "") must degrade to the default, never to NaN —
+// `activeCount < NaN` is false and the runner would silently claim nothing.
+function envInt(name: string, fallback: number, min: number): number {
+  const n = Math.trunc(Number(process.env[name]))
+  return Number.isFinite(n) && n >= min ? n : fallback
+}
+
+const POLL_INTERVAL_MS = envInt('KAIROS_POLL_INTERVAL_MS', 15000, 1000)
+const HEARTBEAT_MS = envInt('KAIROS_HEARTBEAT_MS', 30000, 1000)
+const MAX_CONCURRENT = envInt('KAIROS_MAX_CONCURRENT', 1, 1)
 
 export interface ClaimedSession {
   id: string
@@ -99,10 +110,11 @@ export function startPoller(): void {
 
 // Recursive setTimeout, never setInterval: a slow claim must not stack ticks.
 // Claims drain to capacity in one tick so five queued cards start together
-// instead of one per poll interval.
+// instead of one per poll interval — bounded per tick so a queue of
+// fast-failing sessions cannot burn the write budget in one synchronous burst.
 async function tick(): Promise<void> {
   try {
-    while (activeCount < MAX_CONCURRENT) {
+    for (let i = 0; i < MAX_CONCURRENT && activeCount < MAX_CONCURRENT; i++) {
       const claimed = await claimOnce()
       if (!claimed) break
     }
@@ -140,10 +152,12 @@ async function launch(session: ClaimedSession): Promise<void> {
   const ctx = pollContext(session.id)
   const nextSeq = createSeq(1)
 
-  // Set once the mission worktree exists / the brief is on disk, so an abort
-  // tears down everything it created and nothing it didn't.
-  let mission: { entry: RepoEntry; branch: string } | null = null
+  // Set once the mission worktree exists / the brief is on disk / the child is
+  // running, so an abort tears down everything it created and nothing it
+  // didn't — including killing a child that already started.
+  let mission: { entry: RepoEntry; branch: string; startSha: string } | null = null
   let brief: string | null = null
+  let childRunning = false
 
   let released = false
   const release = (): void => {
@@ -155,10 +169,11 @@ async function launch(session: ClaimedSession): Promise<void> {
 
   const abort = async (message: string): Promise<void> => {
     console.error(`[worker/poll] ${session.id} ${message}`)
+    if (childRunning) killSession(session.id)
     await postEvent(ctx, { seq: nextSeq(), kind: 'error', payload: { message } })
     await patchSession(ctx, { status: 'failed', endedAt: new Date().toISOString() })
     if (brief) rmSync(brief, { force: true })
-    if (mission) teardownWorktree(mission.entry, mission.branch)
+    if (mission) await teardownWorktree(mission.entry, mission.branch, mission.startSha)
     release()
   }
 
@@ -181,10 +196,18 @@ async function launch(session: ClaimedSession): Promise<void> {
       ?? unsafeArg('session id', session.id)
     if (rejected) return await abort(rejected)
 
-    const tree = createWorktree(entry, branch)
+    const tree = await createWorktree(entry, branch)
     if (!tree.ok) return await abort(tree.error)
-    mission = { entry, branch }
+    mission = { entry, branch, startSha: tree.startSha }
     const workPath = tree.path
+
+    if (entry.envSetupCmd) {
+      try {
+        await execAsync(entry.envSetupCmd, { cwd: workPath, windowsHide: true, timeout: 600_000 })
+      } catch (err) {
+        return await abort(`envSetupCmd failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
 
     const text = session.prompt?.trim() || buildDispatchPrompt(session, entry, branch, meta)
     // The brief goes to a file and argv carries a one-line pointer: a cmd.exe
@@ -228,18 +251,27 @@ async function launch(session: ClaimedSession): Promise<void> {
       startedAt: new Date().toISOString(),
     })
 
+    childRunning = true
+
     const stopHeartbeat = startHeartbeat(session.id, () => {
       killSession(session.id)
     })
 
+    // One terminal handler only: a failed spawn emits 'error' AND 'close', and
+    // `released` flips too late (after awaits) to guard the second entry — the
+    // synchronous flag settles the race before the first await runs.
+    let settled = false
+
     handle.child.on('error', (err) => {
-      if (released) return
+      if (settled) return
+      settled = true
+      childRunning = false
       stopHeartbeat()
       void (async () => {
         await postEvent(ctx, { seq: nextSeq(), kind: 'error', payload: { message: err.message } })
         await patchSession(ctx, { status: 'failed', endedAt: new Date().toISOString() })
         rmSync(briefFile, { force: true })
-        teardownWorktree(entry, branch)
+        await teardownWorktree(entry, branch, tree.startSha)
         release()
       })()
     })
@@ -248,7 +280,9 @@ async function launch(session: ClaimedSession): Promise<void> {
     // envelope sitting in the last stdout chunk would be missing and a
     // successful mission would be reported as failed.
     handle.child.on('close', (code, signal) => {
-      if (released) return
+      if (settled) return
+      settled = true
+      childRunning = false
       stopHeartbeat()
       void finalize({
         ctx,
@@ -256,6 +290,7 @@ async function launch(session: ClaimedSession): Promise<void> {
         engine,
         entry,
         branch,
+        startSha: tree.startSha,
         outFile,
         briefFile,
         code,
@@ -277,6 +312,7 @@ interface FinalizeArgs {
   engine: EngineAdapter
   entry: RepoEntry
   branch: string
+  startSha: string
   outFile: string | null
   briefFile: string
   code: number | null
@@ -331,7 +367,7 @@ function envelopeRejection(data: unknown): string | null {
 }
 
 async function finalize(args: FinalizeArgs): Promise<void> {
-  const { ctx, nextSeq, engine, entry, branch, outFile, briefFile, code, signal, killed, stdout, parser, release } = args
+  const { ctx, nextSeq, engine, entry, branch, startSha, outFile, briefFile, code, signal, killed, stdout, parser, release } = args
   const endedAt = new Date().toISOString()
   const wasKilled = killed || signal === 'SIGTERM'
 
@@ -379,35 +415,50 @@ async function finalize(args: FinalizeArgs): Promise<void> {
 
   // Publish-or-vanish teardown: a productive branch is pushed before its
   // worktree goes, so the work survives the disposable checkout; an empty one
-  // leaves no litter. The event makes the outcome visible on the card.
-  const shipped = teardownWorktree(entry, branch)
+  // leaves no litter. The events make the outcome visible on the card.
+  const shipped = await teardownWorktree(entry, branch, startSha)
   if (shipped.ahead > 0) {
     const message = shipped.pushed
       ? `branch ${branch} pushed to origin (${shipped.ahead} commit${shipped.ahead === 1 ? '' : 's'})`
       : `branch ${branch} has ${shipped.ahead} commit(s) but push failed: ${shipped.error ?? 'unknown'} — it survives locally`
     await postEvent(ctx, { seq: nextSeq(), kind: 'system', payload: { subtype: 'branch', message } })
   }
+  if (shipped.depsMutated) {
+    await postEvent(ctx, {
+      seq: nextSeq(),
+      kind: 'system',
+      payload: {
+        subtype: 'warning',
+        message: 'mission replaced a shared dependency dir (junction gone) — dependencies are shared with the live checkout and must not be installed in-mission',
+      },
+    })
+  }
   release()
 }
 
-// Push-if-productive: compute ahead-of-base before anything is torn down, push
-// when there is work, always remove the worktree, and drop the branch only
-// when it holds nothing. Never pushes or deletes the repo default branch.
-function teardownWorktree(entry: RepoEntry, branch: string): { pushed: boolean; ahead: number; error: string | null } {
-  const ahead = branch === entry.defaultBranch ? 0 : branchAhead(entry, branch)
+// Push-if-productive: count only the commits THIS mission added (from the tip
+// captured at worktree creation), push when there is work, always remove the
+// worktree, and drop the branch only when it holds nothing anywhere. Never
+// pushes or deletes the repo default branch.
+async function teardownWorktree(
+  entry: RepoEntry,
+  branch: string,
+  startSha: string | null,
+): Promise<{ pushed: boolean; ahead: number; error: string | null; depsMutated: boolean }> {
+  const ahead = branch === entry.defaultBranch ? 0 : await missionCommits(entry, branch, startSha)
   let pushed = false
   let error: string | null = null
   if (ahead > 0) {
-    const res = pushBranch(entry, branch)
+    const res = await pushBranch(entry, branch)
     pushed = res.ok
     if (!res.ok) {
       error = res.stderr.trim()
       console.warn(`[worker/poll] push ${branch} failed: ${error}`)
     }
   }
-  removeWorktree(entry, branch)
-  if (ahead === 0) deleteBranchIfEmpty(entry, branch)
-  return { pushed, ahead, error }
+  const destroyed = await removeWorktree(entry, branch)
+  if (ahead === 0) await deleteBranchIfEmpty(entry, branch)
+  return { pushed, ahead, error, depsMutated: destroyed.depsMutated }
 }
 
 // ── heartbeat ────────────────────────────────────────────────────────────
@@ -496,6 +547,7 @@ function buildDispatchPrompt(
     meta.subagents?.length ? `Preferred subagents: ${meta.subagents.join(', ')}.` : null,
     `Output mode: ${meta.outputMode ?? 'auto'} — derive the deliverable from the objective.`,
     'Read the repo instructions (CLAUDE.md / AGENTS.md) before acting.',
+    'Do NOT install, update or remove dependencies (node_modules is shared with the live checkout via a junction).',
     '',
     'Finish by ending your final message with a fenced json result envelope:',
     '```json',

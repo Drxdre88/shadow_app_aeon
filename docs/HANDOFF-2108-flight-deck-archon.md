@@ -55,7 +55,7 @@ Per aeon-dev-live: create ONE new directional card on AI Mission Control — "AE
 - Corp network drops curls (000/DNS fail → retry); `aeon.app` does NOT resolve — prod is `https://aeon.shadow-lab.ai`.
 - Event POSTs from runner can 10s-timeout against busy servers (fire-and-forget by design today).
 - Single-branch discipline: one feature branch off main (suggest `feat/flight-deck`), structured commits, no parallel branches.
-- Runner claims are user-scoped; `KAIROS_MAX_CONCURRENT=1` — don't raise it until worktree isolation exists.
+- Runner claims are user-scoped; ~~`KAIROS_MAX_CONCURRENT=1` — don't raise it until worktree isolation exists~~ (2408: worktree isolation SHIPPED — missions run in disposable worktrees, concurrency raised to 4).
 - Verification tier: LIGHT/MEDIUM (vitest + targeted smoke); owner tests UI visually — hand over early.
 
 ## State at handover (2026-08-21 ~16:00Z)

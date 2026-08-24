@@ -14,5 +14,7 @@ REM Optional overrides (defaults shown):
 REM set KAIROS_MODE=poll
 REM set KAIROS_WORKER_PORT=8790
 REM set KAIROS_POLL_INTERVAL_MS=15000
-REM set KAIROS_MAX_CONCURRENT=1
+REM Missions run in disposable worktrees under KAIROS_WORKTREE_ROOT (default ~/.aeon/worktrees)
+set KAIROS_MAX_CONCURRENT=4
+REM set KAIROS_WORKTREE_ROOT=D:/aeon-worktrees
 REM set KAIROS_COPILOT_DEFAULT_MODEL=claude-sonnet-5
