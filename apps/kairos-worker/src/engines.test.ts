@@ -35,6 +35,22 @@ describe('buildArgs', () => {
     expect(pairAt(args, '--permission-mode')).toBe('acceptEdits')
   })
 
+  it('passes effort and fallback-model to claude only when the env knobs are set', () => {
+    const clean = argsFor('claude')
+    expect(clean).not.toContain('--effort')
+    expect(clean).not.toContain('--fallback-model')
+    process.env.KAIROS_CLAUDE_EFFORT = 'high'
+    process.env.KAIROS_CLAUDE_FALLBACK_MODEL = 'sonnet'
+    try {
+      const args = argsFor('claude')
+      expect(pairAt(args, '--effort')).toBe('high')
+      expect(pairAt(args, '--fallback-model')).toBe('sonnet')
+    } finally {
+      delete process.env.KAIROS_CLAUDE_EFFORT
+      delete process.env.KAIROS_CLAUDE_FALLBACK_MODEL
+    }
+  })
+
   it('runs copilot unattended with json output', () => {
     const args = argsFor('copilot', 'claude-sonnet-5')
     expect(args).toContain('--allow-all-tools')

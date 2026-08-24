@@ -48,6 +48,11 @@ const claude: EngineAdapter = {
       '--verbose',
       '--permission-mode', 'acceptEdits',
       ...modelArgs('--model', opts.model, this.defaultModel),
+      // Operator-set knobs from runner env (trusted, same trust level as
+      // defaultModel). Read at spawn time so env edits apply without restart
+      // of the module — only of the runner process.
+      ...modelArgs('--effort', process.env.KAIROS_CLAUDE_EFFORT ?? null, null),
+      ...modelArgs('--fallback-model', process.env.KAIROS_CLAUDE_FALLBACK_MODEL ?? null, null),
     ]
   },
   envelopeSource: 'stdout',
