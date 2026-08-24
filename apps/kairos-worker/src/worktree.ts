@@ -331,7 +331,7 @@ async function destroyLocked(entry: RepoEntry, branch: string): Promise<DestroyR
 function sweepTrash(slugDir: string): void {
   try {
     for (const d of readdirSync(slugDir, { withFileTypes: true })) {
-      if (!d.isDirectory() || !/\.trash-\d+$/.test(d.name)) continue
+      if (!d.isDirectory() || !/\.trash-\d{13,}$/.test(d.name)) continue
       const stamp = Number(d.name.slice(d.name.lastIndexOf('-') + 1))
       if (!Number.isFinite(stamp) || Date.now() - stamp < 24 * 60 * 60 * 1000) continue
       try {
@@ -372,8 +372,11 @@ export async function deleteBranchIfEmpty(entry: RepoEntry, branch: string): Pro
   if (!del.ok && /used by worktree|checked out/i.test(del.stderr) && !existsSync(worktreeDirFor(entry, branch))) {
     // The prune expiry window keeps the just-removed worktree's admin entry
     // for 10 minutes, and git counts that as "checked out". The directory is
-    // verifiably gone and ours, so a targeted full prune here is safe.
-    await gitAsync(entry.path, ['worktree', 'prune'])
-    await gitAsync(entry.path, ['branch', '-d', branch])
+    // verifiably gone and ours — but a bare prune is repo-wide, so it must
+    // hold the repo lock or it could unregister a sibling's in-flight add.
+    await withRepoLock(entry.path, async () => {
+      await gitAsync(entry.path, ['worktree', 'prune'])
+      await gitAsync(entry.path, ['branch', '-d', branch])
+    })
   }
 }

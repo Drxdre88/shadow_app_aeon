@@ -36,6 +36,7 @@ import {
   missionCommits,
   pushBranch,
   removeWorktree,
+  worktreeDirFor,
 } from './worktree.js'
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -178,12 +179,17 @@ async function launch(session: ClaimedSession): Promise<void> {
     if (settled) return // a terminal handler already owns the sequence
     settled = true
     console.error(`[worker/poll] ${session.id} ${message}`)
-    if (childRunning) killSession(session.id)
-    await postEvent(ctx, { seq: nextSeq(), kind: 'error', payload: { message } })
-    await patchSession(ctx, { status: 'failed', endedAt: new Date().toISOString() })
-    if (brief) rmSync(brief, { force: true })
-    if (mission) await teardownWorktree(mission.entry, mission.branch, mission.startSha)
-    release()
+    try {
+      if (childRunning) killSession(session.id)
+      await postEvent(ctx, { seq: nextSeq(), kind: 'error', payload: { message } })
+      await patchSession(ctx, { status: 'failed', endedAt: new Date().toISOString() })
+      if (brief) rmSync(brief, { force: true })
+      if (mission) await teardownWorktree(mission.entry, mission.branch, mission.startSha)
+    } catch (cleanupErr) {
+      console.error(`[worker/poll] ${session.id} abort cleanup failed`, cleanupErr)
+    } finally {
+      release()
+    }
   }
 
   try {
@@ -272,11 +278,16 @@ async function launch(session: ClaimedSession): Promise<void> {
       childRunning = false
       stopHeartbeat()
       void (async () => {
-        await postEvent(ctx, { seq: nextSeq(), kind: 'error', payload: { message: err.message } })
-        await patchSession(ctx, { status: 'failed', endedAt: new Date().toISOString() })
-        rmSync(briefFile, { force: true })
-        await teardownWorktree(entry, branch, tree.startSha)
-        release()
+        try {
+          await postEvent(ctx, { seq: nextSeq(), kind: 'error', payload: { message: err.message } })
+          await patchSession(ctx, { status: 'failed', endedAt: new Date().toISOString() })
+          rmSync(briefFile, { force: true })
+          await teardownWorktree(entry, branch, tree.startSha)
+        } catch (cleanupErr) {
+          console.error(`[worker/poll] ${session.id} error-path cleanup failed`, cleanupErr)
+        } finally {
+          release()
+        }
       })()
     })
 
@@ -303,6 +314,11 @@ async function launch(session: ClaimedSession): Promise<void> {
         stdout: handle.captured(),
         parser,
         release,
+      }).catch((err) => {
+        // finalize is written not to throw, but a slot leak is the one
+        // failure this runner must never have — belt and braces.
+        console.error(`[worker/poll] ${session.id} finalize escaped`, err)
+        release()
       })
     })
 
@@ -382,6 +398,17 @@ function envelopeRejection(data: unknown): string | null {
 
 async function finalize(args: FinalizeArgs): Promise<void> {
   const { ctx, nextSeq, engine, entry, branch, startSha, outFile, briefFile, code, signal, killed, stdout, parser, release } = args
+  try {
+    await finalizeInner(args)
+  } finally {
+    // The slot must free on EVERY path — an unreleased slot is a permanent
+    // capacity leak the log would never explain.
+    release()
+  }
+}
+
+async function finalizeInner(args: FinalizeArgs): Promise<void> {
+  const { ctx, nextSeq, engine, entry, branch, startSha, outFile, briefFile, code, signal, killed, stdout, parser } = args
   const endedAt = new Date().toISOString()
   const wasKilled = killed || signal === 'SIGTERM'
 
@@ -457,32 +484,57 @@ async function finalize(args: FinalizeArgs): Promise<void> {
       payload: { subtype: 'warning', message: `mission worktree could not be removed — manual sweep needed: ${shipped.path}` },
     })
   }
-  release()
 }
 
 // Push-if-productive: count only the commits THIS mission added (from the tip
 // captured at worktree creation), push when there is work, always remove the
 // worktree, and drop the branch only when it holds nothing anywhere. Never
 // pushes or deletes the repo default branch.
+interface TeardownReport {
+  pushed: boolean
+  ahead: number
+  error: string | null
+  depsMutated: boolean
+  removed: boolean
+  path: string
+}
+
+// NEVER throws: the repo-lock timebox rejects on a wedged git op, and every
+// caller (finalize, abort, the 'error' handler) treats teardown as the last
+// step before release() — a throw here would either kill the runner as an
+// unhandled rejection or silently leak an activeCount slot. Failure routes
+// through removed:false, which finalize surfaces as a warning on the card.
 async function teardownWorktree(
   entry: RepoEntry,
   branch: string,
   startSha: string | null,
-): Promise<{ pushed: boolean; ahead: number; error: string | null; depsMutated: boolean; removed: boolean; path: string }> {
-  const ahead = branch === entry.defaultBranch ? 0 : await missionCommits(entry, branch, startSha)
-  let pushed = false
-  let error: string | null = null
-  if (ahead > 0) {
-    const res = await pushBranch(entry, branch)
-    pushed = res.ok
-    if (!res.ok) {
-      error = res.stderr.trim()
-      console.warn(`[worker/poll] push ${branch} failed: ${error}`)
+): Promise<TeardownReport> {
+  try {
+    const ahead = branch === entry.defaultBranch ? 0 : await missionCommits(entry, branch, startSha)
+    let pushed = false
+    let error: string | null = null
+    if (ahead > 0) {
+      const res = await pushBranch(entry, branch)
+      pushed = res.ok
+      if (!res.ok) {
+        error = res.stderr.trim()
+        console.warn(`[worker/poll] push ${branch} failed: ${error}`)
+      }
+    }
+    const destroyed = await removeWorktree(entry, branch)
+    if (ahead === 0) await deleteBranchIfEmpty(entry, branch)
+    return { pushed, ahead, error, depsMutated: destroyed.depsMutated, removed: destroyed.removed, path: destroyed.path }
+  } catch (err) {
+    console.error(`[worker/poll] teardown failed for ${branch}`, err)
+    return {
+      pushed: false,
+      ahead: 0,
+      error: err instanceof Error ? err.message : String(err),
+      depsMutated: false,
+      removed: false,
+      path: worktreeDirFor(entry, branch),
     }
   }
-  const destroyed = await removeWorktree(entry, branch)
-  if (ahead === 0) await deleteBranchIfEmpty(entry, branch)
-  return { pushed, ahead, error, depsMutated: destroyed.depsMutated, removed: destroyed.removed, path: destroyed.path }
 }
 
 // ── heartbeat ────────────────────────────────────────────────────────────
