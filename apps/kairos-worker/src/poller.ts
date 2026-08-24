@@ -144,7 +144,11 @@ async function claimOnce(): Promise<boolean> {
 
   activeCount++
   console.log(`[worker/poll] claimed ${session.id} engine=${session.engine} repo=${session.repo}`)
-  await launch(session)
+  // Not awaited: launch can legitimately take minutes (worktree add on a big
+  // repo, envSetupCmd), and awaiting it here would freeze claiming for every
+  // other repo. activeCount is already up, so capacity stays correct; launch
+  // handles its own failures and release() is its every exit path.
+  void launch(session).catch((err) => console.error(`[worker/poll] launch escaped for ${session.id}`, err))
   return true
 }
 
@@ -158,6 +162,9 @@ async function launch(session: ClaimedSession): Promise<void> {
   let mission: { entry: RepoEntry; branch: string; startSha: string } | null = null
   let brief: string | null = null
   let childRunning = false
+  // Shared with the child's terminal handlers: whoever sets it first owns the
+  // terminal sequence, so abort and a racing 'error'/'close' cannot both run.
+  let settled = false
 
   let released = false
   const release = (): void => {
@@ -168,6 +175,8 @@ async function launch(session: ClaimedSession): Promise<void> {
   }
 
   const abort = async (message: string): Promise<void> => {
+    if (settled) return // a terminal handler already owns the sequence
+    settled = true
     console.error(`[worker/poll] ${session.id} ${message}`)
     if (childRunning) killSession(session.id)
     await postEvent(ctx, { seq: nextSeq(), kind: 'error', payload: { message } })
@@ -244,24 +253,19 @@ async function launch(session: ClaimedSession): Promise<void> {
       },
     })
 
-    await patchSession(ctx, {
-      status: 'running',
-      workerHost: hostname(),
-      workerPid: handle.child.pid ?? null,
-      startedAt: new Date().toISOString(),
-    })
-
+    // Everything between spawn and handler attachment stays SYNCHRONOUS: a
+    // spawn failure is delivered on the next tick, so the first `await` before
+    // the 'error' listener exists would turn it into an uncaught exception
+    // that kills the whole runner and orphans every in-flight mission.
     childRunning = true
 
     const stopHeartbeat = startHeartbeat(session.id, () => {
       killSession(session.id)
     })
 
-    // One terminal handler only: a failed spawn emits 'error' AND 'close', and
-    // `released` flips too late (after awaits) to guard the second entry — the
-    // synchronous flag settles the race before the first await runs.
-    let settled = false
-
+    // One terminal owner only: a failed spawn emits 'error' AND 'close', and
+    // an abort can race both — the shared synchronous `settled` flag admits
+    // exactly one terminal sequence.
     handle.child.on('error', (err) => {
       if (settled) return
       settled = true
@@ -300,6 +304,16 @@ async function launch(session: ClaimedSession): Promise<void> {
         parser,
         release,
       })
+    })
+
+    // First await only now that both terminal handlers exist. If this PATCH
+    // throws, abort() kills the child and the settled flag keeps the close
+    // handler from double-finalizing.
+    await patchSession(ctx, {
+      status: 'running',
+      workerHost: hostname(),
+      workerPid: handle.child.pid ?? null,
+      startedAt: new Date().toISOString(),
     })
   } catch (err) {
     await abort(`launch failed: ${err instanceof Error ? err.message : String(err)}`)
@@ -433,6 +447,16 @@ async function finalize(args: FinalizeArgs): Promise<void> {
       },
     })
   }
+  if (!shipped.removed) {
+    // The destroy safety valve refused (a link survived) or deletion failed —
+    // without this event the next run of the card dies at the "already
+    // exists" refusal with no context anywhere the operator looks.
+    await postEvent(ctx, {
+      seq: nextSeq(),
+      kind: 'system',
+      payload: { subtype: 'warning', message: `mission worktree could not be removed — manual sweep needed: ${shipped.path}` },
+    })
+  }
   release()
 }
 
@@ -444,7 +468,7 @@ async function teardownWorktree(
   entry: RepoEntry,
   branch: string,
   startSha: string | null,
-): Promise<{ pushed: boolean; ahead: number; error: string | null; depsMutated: boolean }> {
+): Promise<{ pushed: boolean; ahead: number; error: string | null; depsMutated: boolean; removed: boolean; path: string }> {
   const ahead = branch === entry.defaultBranch ? 0 : await missionCommits(entry, branch, startSha)
   let pushed = false
   let error: string | null = null
@@ -458,7 +482,7 @@ async function teardownWorktree(
   }
   const destroyed = await removeWorktree(entry, branch)
   if (ahead === 0) await deleteBranchIfEmpty(entry, branch)
-  return { pushed, ahead, error, depsMutated: destroyed.depsMutated }
+  return { pushed, ahead, error, depsMutated: destroyed.depsMutated, removed: destroyed.removed, path: destroyed.path }
 }
 
 // ── heartbeat ────────────────────────────────────────────────────────────

@@ -32,7 +32,7 @@ import {
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { createHash } from 'node:crypto'
-import { dirname, isAbsolute, join } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { execFile, spawnSync } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { RepoEntry } from './registry.js'
@@ -52,6 +52,9 @@ export function git(cwd: string, args: string[]): GitResult {
   }
 }
 
+// Timeout is mandatory: a fetch/push wedged on a credential prompt or dead
+// TCP connection would otherwise own the repo lock forever and silently
+// poison every later mission on that repo.
 export async function gitAsync(cwd: string, args: string[]): Promise<GitResult> {
   try {
     const { stdout, stderr } = await execFileAsync('git', args, {
@@ -59,6 +62,8 @@ export async function gitAsync(cwd: string, args: string[]): Promise<GitResult> 
       encoding: 'utf8',
       windowsHide: true,
       maxBuffer: 16 * 1024 * 1024,
+      timeout: 120_000,
+      killSignal: 'SIGKILL',
     })
     return { ok: true, stdout: stdout ?? '', stderr: stderr ?? '' }
   } catch (err) {
@@ -69,14 +74,38 @@ export async function gitAsync(cwd: string, args: string[]): Promise<GitResult> 
 
 // Worktree admin ops (add / prune / branch bookkeeping) on one repo must not
 // interleave: prune during a sibling's add window can unregister it. Simple
-// promise-chain mutex keyed by repo path — enough for one runner process;
-// cross-process safety comes from one-runner-per-host topology.
+// promise-chain mutex — enough for one runner process; cross-process safety
+// comes from one-runner-per-host topology plus prune's expiry window. The key
+// is the resolved, case-folded path so two registry spellings of one checkout
+// share a chain, and a raced timeout guarantees a wedged op can never own the
+// chain forever.
 const repoLocks = new Map<string, Promise<unknown>>()
+const LOCK_TIMEOUT_MS = 300_000
+
+function lockKey(repoPath: string): string {
+  const resolved = resolve(repoPath)
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved
+}
+
+function timeboxed<T>(fn: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolvePromise, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`repo-lock operation exceeded ${LOCK_TIMEOUT_MS}ms`)),
+      LOCK_TIMEOUT_MS,
+    )
+    fn().then(
+      (value) => { clearTimeout(timer); resolvePromise(value) },
+      (err) => { clearTimeout(timer); reject(err instanceof Error ? err : new Error(String(err))) },
+    )
+  })
+}
 
 export async function withRepoLock<T>(repoPath: string, fn: () => Promise<T>): Promise<T> {
-  const prev = repoLocks.get(repoPath) ?? Promise.resolve()
-  const next = prev.then(fn, fn)
-  repoLocks.set(repoPath, next.then(() => undefined, () => undefined))
+  const key = lockKey(repoPath)
+  const prev = repoLocks.get(key) ?? Promise.resolve()
+  const run = (): Promise<T> => timeboxed(fn)
+  const next = prev.then(run, run)
+  repoLocks.set(key, next.then(() => undefined, () => undefined))
   return next
 }
 
@@ -98,6 +127,11 @@ export type WorktreeResult =
   | { ok: false; error: string }
 
 export async function createWorktree(entry: RepoEntry, branch: string): Promise<WorktreeResult> {
+  // Fetch is best-effort and only touches remote refs — outside the lock so a
+  // slow network does not serialize sibling mission starts on this repo.
+  const fetched = await gitAsync(entry.path, ['fetch', 'origin'])
+  if (!fetched.ok) console.warn(`[worker/worktree] git fetch origin failed in ${entry.slug}: ${fetched.stderr.trim()}`)
+
   return withRepoLock(entry.path, () => createLocked(entry, branch))
 }
 
@@ -115,20 +149,24 @@ async function createLocked(entry: RepoEntry, branch: string): Promise<WorktreeR
     }
   }
 
-  // Fetch is best-effort: a flaky network must not sink the mission.
-  const fetched = await gitAsync(entry.path, ['fetch', 'origin'])
-  if (!fetched.ok) console.warn(`[worker/worktree] git fetch origin failed in ${entry.slug}: ${fetched.stderr.trim()}`)
-
   mkdirSync(dirname(path), { recursive: true })
 
-  // A re-run reuses the existing mission branch; a first run branches from the
-  // remote default, falling back to the local one on fetch-less hosts.
-  let added: GitResult
-  if ((await gitAsync(entry.path, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])).ok) {
-    added = await gitAsync(entry.path, ['worktree', 'add', path, branch])
-  } else {
-    added = await gitAsync(entry.path, ['worktree', 'add', '--no-track', '-b', branch, path, `origin/${entry.defaultBranch}`])
-    if (!added.ok) added = await gitAsync(entry.path, ['worktree', 'add', '-b', branch, path, entry.defaultBranch])
+  const addOnce = async (): Promise<GitResult> => {
+    // A re-run reuses the existing mission branch; a first run branches from
+    // the remote default, falling back to the local one on fetch-less hosts.
+    if ((await gitAsync(entry.path, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])).ok) {
+      return gitAsync(entry.path, ['worktree', 'add', path, branch])
+    }
+    const remote = await gitAsync(entry.path, ['worktree', 'add', '--no-track', '-b', branch, path, `origin/${entry.defaultBranch}`])
+    return remote.ok ? remote : gitAsync(entry.path, ['worktree', 'add', '-b', branch, path, entry.defaultBranch])
+  }
+
+  let added = await addOnce()
+  if (!added.ok && /already (checked out|registered|used by worktree)/i.test(added.stderr) && !existsSync(path)) {
+    // Stale admin entry for a worktree we already deleted (prune keeps a
+    // 10-minute expiry window) — clear it deterministically and retry once.
+    await gitAsync(entry.path, ['worktree', 'prune'])
+    added = await addOnce()
   }
   if (!added.ok) {
     // A half-created target would block this card forever at the existsSync
@@ -199,19 +237,36 @@ function dropLink(at: string): boolean {
 
 // Every reparse point anywhere in the tree — including ones the MISSION
 // created (npm link, mklink); the destroy guard must reflect what is actually
-// on disk, not what the runner seeded. readdirSync does not follow symlinks,
-// so the scan cannot wander into the live checkout.
+// on disk, not what the runner seeded. Hand-rolled walk because Windows'
+// recursive readdirSync DESCENDS through junctions (warden round 2, proven):
+// links are recorded and never entered, so the scan cannot wander into the
+// live checkout, cannot loop on a self-referential junction, and never walks
+// a large linked tree on the event loop. An unreadable directory is logged,
+// not silently treated as link-free — this is a safety scan.
 export function findLinks(root: string): string[] {
-  try {
-    return readdirSync(root, { recursive: true, withFileTypes: true })
-      .filter((d) => d.isSymbolicLink())
-      .map((d) => join(d.parentPath, d.name))
-  } catch {
-    return []
+  const out: string[] = []
+  const walk = (dir: string): void => {
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch (err) {
+      console.warn(`[worker/worktree] link scan could not read ${dir}: ${err instanceof Error ? err.message : String(err)}`)
+      return
+    }
+    for (const d of entries) {
+      const p = join(dir, d.name)
+      if (d.isSymbolicLink()) {
+        out.push(p) // record, NEVER descend
+        continue
+      }
+      if (d.isDirectory()) walk(p)
+    }
   }
+  walk(root)
+  return out
 }
 
-export interface DestroyResult { removed: boolean; depsMutated: boolean }
+export interface DestroyResult { removed: boolean; depsMutated: boolean; path: string }
 
 export async function removeWorktree(entry: RepoEntry, branch: string): Promise<DestroyResult> {
   return withRepoLock(entry.path, () => destroyLocked(entry, branch))
@@ -220,6 +275,8 @@ export async function removeWorktree(entry: RepoEntry, branch: string): Promise<
 async function destroyLocked(entry: RepoEntry, branch: string): Promise<DestroyResult> {
   const path = worktreeDirFor(entry, branch)
   let depsMutated = false
+
+  sweepTrash(dirname(path))
 
   if (existsSync(path)) {
     // 1. Seeded junctions by hand. A configured link that is no longer a link
@@ -241,7 +298,7 @@ async function destroyLocked(entry: RepoEntry, branch: string): Promise<DestroyR
     const leftover = findLinks(path)
     if (leftover.length > 0) {
       console.error(`[worker/worktree] ${path} still holds a link (${leftover[0]}) — refusing recursive delete, manual sweep needed`)
-      return { removed: false, depsMutated }
+      return { removed: false, depsMutated, path }
     }
 
     // 4. Our own delete — NEVER `git worktree remove`, which traverses
@@ -255,13 +312,33 @@ async function destroyLocked(entry: RepoEntry, branch: string): Promise<DestroyR
         renameSync(path, trash)
         rmSync(trash, { recursive: true, force: true, maxRetries: 3, retryDelay: 500 })
       } catch (err) {
-        console.warn(`[worker/worktree] could not fully remove ${path}: ${err instanceof Error ? err.message : String(err)}`)
+        console.warn(`[worker/worktree] could not fully remove ${path} (trash: ${trash}): ${err instanceof Error ? err.message : String(err)}`)
       }
     }
   }
 
-  await gitAsync(entry.path, ['worktree', 'prune'])
-  return { removed: !existsSync(path), depsMutated }
+  // Expiry window instead of bare prune: a second runner process (or a
+  // restart overlapping shutdown) must not unregister a sibling's in-flight
+  // add. Entries younger than the window are swept by a later teardown, or
+  // deterministically by createLocked's stale-entry retry.
+  await gitAsync(entry.path, ['worktree', 'prune', '--expire=10.minutes.ago'])
+  return { removed: !existsSync(path), depsMutated, path }
+}
+
+// .trash-* dirs are rename-then-delete leftovers: provably link-free by
+// construction (renamed only after the link scan came back clean), so a
+// recursive delete is safe. Swept once they are a day old.
+function sweepTrash(slugDir: string): void {
+  try {
+    for (const d of readdirSync(slugDir, { withFileTypes: true })) {
+      if (!d.isDirectory() || !/\.trash-\d+$/.test(d.name)) continue
+      const stamp = Number(d.name.slice(d.name.lastIndexOf('-') + 1))
+      if (!Number.isFinite(stamp) || Date.now() - stamp < 24 * 60 * 60 * 1000) continue
+      try {
+        rmSync(join(slugDir, d.name), { recursive: true, force: true })
+      } catch { /* still locked — next teardown retries */ }
+    }
+  } catch { /* slug dir absent — nothing to sweep */ }
 }
 
 // Commits the mission itself added: from the tip captured at worktree creation
@@ -291,5 +368,12 @@ export async function pushBranch(entry: RepoEntry, branch: string): Promise<GitR
 export async function deleteBranchIfEmpty(entry: RepoEntry, branch: string): Promise<void> {
   if (branch === entry.defaultBranch) return
   if ((await missionCommits(entry, branch, null)) !== 0) return
-  await gitAsync(entry.path, ['branch', '-d', branch])
+  const del = await gitAsync(entry.path, ['branch', '-d', branch])
+  if (!del.ok && /used by worktree|checked out/i.test(del.stderr) && !existsSync(worktreeDirFor(entry, branch))) {
+    // The prune expiry window keeps the just-removed worktree's admin entry
+    // for 10 minutes, and git counts that as "checked out". The directory is
+    // verifiably gone and ours, so a targeted full prune here is safe.
+    await gitAsync(entry.path, ['worktree', 'prune'])
+    await gitAsync(entry.path, ['branch', '-d', branch])
+  }
 }
