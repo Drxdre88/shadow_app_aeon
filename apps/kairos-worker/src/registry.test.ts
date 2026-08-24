@@ -41,8 +41,10 @@ describe('loadRepos (yaml)', () => {
         path: 'C:/Users/dev/shadow_app_aeon',
         defaultBranch: 'main',
         envSetupCmd: null,
+        link: [],
+        copy: [],
       },
-      swarm: { slug: 'swarm', path: 'D:/code/swarm', defaultBranch: 'main', envSetupCmd: null },
+      swarm: { slug: 'swarm', path: 'D:/code/swarm', defaultBranch: 'main', envSetupCmd: null, link: [], copy: [] },
     })
   })
 
@@ -61,6 +63,8 @@ describe('loadRepos (yaml)', () => {
       path: 'C:/x#y',
       defaultBranch: 'trunk',
       envSetupCmd: null,
+      link: [],
+      copy: [],
     })
   })
 
@@ -79,7 +83,23 @@ describe('loadRepos (yaml)', () => {
       path: 'C:/Program Files/repo',
       defaultBranch: 'develop',
       envSetupCmd: 'nvm use 22',
+      link: [],
+      copy: [],
     })
+  })
+
+  it('splits link/copy csv scalars into trimmed lists', () => {
+    withRegistry('repos.local.yaml', [
+      'repos:',
+      '  seeded:',
+      '    path: C:/code/seeded',
+      '    link: node_modules, apps/web/node_modules',
+      '    copy: apps/web/.env.local',
+      '',
+    ].join('\n'))
+
+    expect(loadRepos().seeded.link).toEqual(['node_modules', 'apps/web/node_modules'])
+    expect(loadRepos().seeded.copy).toEqual(['apps/web/.env.local'])
   })
 
   it('skips entries with no path — an unusable repo must not be claimable', () => {
@@ -139,6 +159,8 @@ describe('loadRepos (json)', () => {
       path: 'C:/code/aeon',
       defaultBranch: 'main',
       envSetupCmd: 'npm ci',
+      link: [],
+      copy: [],
     })
   })
 })

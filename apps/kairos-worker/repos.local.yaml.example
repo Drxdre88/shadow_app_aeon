@@ -12,6 +12,10 @@ repos:
     path: C:/Users/anselikhov/data_science/dev_26/shadow_app_aeon
     defaultBranch: main
     envSetupCmd: null
+    # git-ignored content seeded into mission worktrees (comma-separated):
+    # link -> junctioned dirs (deps), copy -> copied files (.env)
+    link: node_modules
+    copy: null
 
   arq:
     path: C:/Users/anselikhov/data_science/dev_26/shadow_app_arq

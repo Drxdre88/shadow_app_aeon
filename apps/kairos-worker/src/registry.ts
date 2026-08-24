@@ -25,6 +25,16 @@ export interface RepoEntry {
   path: string
   defaultBranch: string
   envSetupCmd: string | null
+  // Git-ignored content seeded into mission worktrees: `link` dirs become
+  // junctions (node_modules), `copy` files are copied (.env.local). Comma-
+  // separated in the yaml — the narrow parser only does scalars.
+  link: string[]
+  copy: string[]
+}
+
+function csv(value: string | null | undefined): string[] {
+  if (!value) return []
+  return value.split(',').map((s) => s.trim()).filter(Boolean)
 }
 
 const WORKER_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -103,6 +113,8 @@ export function loadRepos(): Record<string, RepoEntry> {
       path,
       defaultBranch: entry.defaultBranch ?? 'main',
       envSetupCmd: entry.envSetupCmd ?? null,
+      link: csv(entry.link),
+      copy: csv(entry.copy),
     }
   }
   return out
