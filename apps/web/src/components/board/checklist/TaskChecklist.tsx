@@ -23,6 +23,7 @@ import { GripVertical } from 'lucide-react'
 import { SortableGroupSection } from './SortableGroupSection'
 import { TriStateCheckbox } from './TriStateCheckbox'
 import { arrangeItemDrag } from './reorder'
+import { mergeGroupOrder, extendGroupOrderMemory } from './groupOrder'
 import type { ChecklistItem, CheckState, ChecklistStatus } from './types'
 
 interface TaskChecklistProps {
@@ -31,7 +32,7 @@ interface TaskChecklistProps {
   autoFocusAdd?: boolean
   // Returns false when the add was not accepted (still hydrating) — the typed
   // text must then stay in the input rather than being silently discarded.
-  onItemAdd?: (title: string, groupName: string) => boolean | void
+  onItemAdd?: (title: string, groupName: string, orderedGroups?: string[]) => boolean | void
   onItemToggle?: (itemId: string, newState: CheckState) => void
   onItemRemove?: (itemId: string) => void
   onItemStatusChange?: (itemId: string, status: ChecklistStatus) => void
@@ -77,8 +78,13 @@ export function TaskChecklist({
   // compute the same name (e.g. "Checklist 2") and duplicate React keys on render.
   const addingGroupRef = useRef(false)
 
+  // Order memory: the order groups were first displayed this mount, updated by
+  // explicit user edits (drag, rename, delete). Display order is memory-first
+  // so a group gaining or losing items never changes its slot — deriving order
+  // from items alone made empty groups jump when their first item committed.
+  const [groupOrder, setGroupOrder] = useState<string[]>([])
   const groups = Array.from(new Set(items.map((i) => i.groupName)))
-  const mergedGroups = [...groups, ...pendingGroups.filter((pg) => !groups.includes(pg))]
+  const mergedGroups = mergeGroupOrder(groupOrder, groups, pendingGroups)
 
   const autoFocusedRef = useRef(false)
   useEffect(() => {
@@ -128,7 +134,7 @@ export function TaskChecklist({
     e.preventDefault()
     const trimmed = newItemTitle.trim()
     if (!trimmed || trimmed.length > TITLE_MAX) return
-    if (onItemAdd?.(trimmed, groupName) === false) return
+    if (onItemAdd?.(trimmed, groupName, displayGroups) === false) return
     setPendingGroups((prev) => prev.filter((pg) => pg !== groupName))
     setNewItemTitleSynced('')
     setAddingInGroupSynced(groupName)
@@ -138,7 +144,7 @@ export function TaskChecklist({
     const groupName = addingInGroupRef.current
     const trimmed = newItemTitleRef.current.trim()
     if (!groupName || !trimmed || trimmed.length > TITLE_MAX) return
-    if (onItemAddRef.current?.(trimmed, groupName) === false) return
+    if (onItemAddRef.current?.(trimmed, groupName, displayGroupsRef.current) === false) return
     setPendingGroups((prev) => prev.filter((pg) => pg !== groupName))
     setNewItemTitleSynced('')
     setAddingInGroupSynced(null)
@@ -188,6 +194,12 @@ export function TaskChecklist({
     groupCommittedRef.current = true
     const trimmed = editingGroupValueRef.current.trim()
     if (trimmed && trimmed !== currentName) {
+      // Rename in place in the order memory (dedupe keeps the earliest slot
+      // when renaming merges into an existing group).
+      setGroupOrder((prev) => {
+        const mapped = prev.map((g) => (g === currentName ? trimmed : g))
+        return mapped.filter((g, idx) => mapped.indexOf(g) === idx)
+      })
       setPendingGroups((prev) => {
         if (prev.includes(currentName)) {
           return prev.map((pg) => pg === currentName ? trimmed : pg)
@@ -204,6 +216,15 @@ export function TaskChecklist({
   }
 
   const displayGroups = mergedGroups.length === 0 ? ['Checklist'] : mergedGroups
+
+  // Memorize the rendered order (append-only; guard keeps the same reference
+  // when nothing new appeared, so this cannot loop). The ref mirrors the last
+  // painted order for ref-based commit paths (blur/unmount commits).
+  const displayGroupsRef = useRef<string[]>(displayGroups)
+  useEffect(() => {
+    displayGroupsRef.current = displayGroups
+    setGroupOrder((prev) => extendGroupOrderMemory(prev, mergedGroups))
+  })
 
   const handleDragStart = (event: DragStartEvent) => {
     if (event.active.data.current?.type === 'item') {
@@ -225,7 +246,11 @@ export function TaskChecklist({
       const oldIndex = displayGroups.findIndex((g) => g === active.id)
       const newIndex = displayGroups.findIndex((g) => g === overGroup)
       if (oldIndex === -1 || newIndex === -1) return
-      onGroupReorder?.(arrayMove(displayGroups, oldIndex, newIndex))
+      const newOrder = arrayMove(displayGroups, oldIndex, newIndex)
+      // Rewrite the order memory so the drag sticks even for empty groups
+      // (which have no items to encode the new order in).
+      setGroupOrder((prev) => [...newOrder, ...prev.filter((g) => !newOrder.includes(g))])
+      onGroupReorder?.(newOrder)
       return
     }
 
@@ -265,7 +290,7 @@ export function TaskChecklist({
               onEditGroupCommit={commitGroupRename}
               onEditGroupCancel={() => { groupCommittedRef.current = false; setEditingGroupName(null); editingGroupNameRef.current = null; setEditingGroupValue(''); editingGroupValueRef.current = '' }}
               onDeleteStart={() => setConfirmDeleteGroup(groupName)}
-              onDeleteConfirm={() => { onGroupDelete?.(groupName); setConfirmDeleteGroup(null); setPendingGroups((prev) => prev.filter((pg) => pg !== groupName)); if (addingInGroupRef.current === groupName) setAddingInGroupSynced(null) }}
+              onDeleteConfirm={() => { onGroupDelete?.(groupName); setConfirmDeleteGroup(null); setPendingGroups((prev) => prev.filter((pg) => pg !== groupName)); setGroupOrder((prev) => prev.filter((g) => g !== groupName)); if (addingInGroupRef.current === groupName) setAddingInGroupSynced(null) }}
               onDeleteCancel={() => setConfirmDeleteGroup(null)}
               onItemToggle={(id, state) => onItemToggle?.(id, state)}
               onItemRemove={(id) => onItemRemove?.(id)}

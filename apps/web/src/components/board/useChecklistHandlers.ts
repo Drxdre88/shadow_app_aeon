@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useEffect, useRef } from 'react'
 import type { ChecklistItem, CheckState, ChecklistStatus } from './checklist'
+import { arrangeItemAdd } from './checklist/groupOrder'
 import { generateId } from '@/lib/utils/colors'
 import { getChecklistItems } from '@/lib/actions/checklist'
 import { useBoardStore } from '@/lib/store/boardStore'
@@ -152,7 +153,9 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
 
   // Returns false when the add could not be accepted (modal still hydrating) —
   // the caller must keep the typed text in the input instead of clearing it.
-  const handleChecklistAdd = useCallback((title: string, groupName: string): boolean => {
+  // `orderedGroups` is the on-screen group order (including still-empty ghost
+  // groups) so the persisted orderIndex sequence matches what the user sees.
+  const handleChecklistAdd = useCallback((title: string, groupName: string, orderedGroups?: string[]): boolean => {
     if (!editingTaskId || !hydratedRef.current) return false
     const taskId = editingTaskId
     const snapshot = itemsRef.current
@@ -164,7 +167,7 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
       status: null,
       groupName,
     }
-    const next = [...snapshot, newItem]
+    const { next, reindex } = arrangeItemAdd(snapshot, newItem, orderedGroups)
     setChecklistItems(next)
     syncSummary(next)
     // Omit orderIndex — let the DB transaction assign MAX(orderIndex)+1 globally.
@@ -178,6 +181,22 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
       () => rollbackToSnapshot(taskId, snapshot),
       'Could not add checklist item — reverted',
     )
+    // When the item's on-screen position is not the global end (its group sits
+    // above other groups' items), follow the append with a full contiguous
+    // rewrite in display order — otherwise the group order derived from
+    // orderIndex on reload would differ from what the user arranged. The queue
+    // is FIFO, so the create always lands before this reorder.
+    if (reindex) {
+      enqueue(
+        {
+          id: crypto.randomUUID(),
+          type: 'checklist.reorder',
+          args: { taskId, projectId, updates: reindex },
+        },
+        () => rollbackToSnapshot(taskId, snapshot),
+        'Could not reorder checklist — reverted',
+      )
+    }
     return true
   }, [editingTaskId, projectId, syncSummary, enqueue, rollbackToSnapshot])
 
