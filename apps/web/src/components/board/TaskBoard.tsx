@@ -13,6 +13,8 @@ import { SortableColumn } from './SortableColumn'
 import { TaskEditModal } from './TaskEditModal'
 import { FloatingCardsLayer } from './FloatingCardsLayer'
 import { usePinnedCardsStore, isCardPinned } from '@/lib/store/pinnedCardsStore'
+import { ZenModeLayer } from './ZenModeLayer'
+import { useZenModeStore } from '@/lib/store/zenModeStore'
 import { TaskAssigneeOverlay } from './TaskAssigneeOverlay'
 import { BoardFilterBar } from './BoardFilterBar'
 import { DependencyGlowTree } from './DependencyGlowTree'
@@ -280,6 +282,18 @@ export function TaskBoard({
 
   const hasOpenOverlay = !!editingTask || !!newTaskColumnId || !!labelPickerTaskId || !!colorPickerTaskId || !!priorityPickerTaskId || !!dependencyTreeTaskId || !!assigneeTaskId || !!progressTaskId || !!sizeTaskId
 
+  const zenColumnId = useZenModeStore((s) => s.columnId)
+  const zenColumn = useMemo(
+    () => (zenColumnId ? sortedColumns.find((c) => c.id === zenColumnId) ?? null : null),
+    [zenColumnId, sortedColumns]
+  )
+
+  // Focused column deleted or the board switched projects: drop Zen rather
+  // than exit-fly into a slot that no longer exists.
+  useEffect(() => {
+    if (zenColumnId && !zenColumn) useZenModeStore.getState().clear()
+  }, [zenColumnId, zenColumn])
+
   useBoardKeyboardShortcuts({
     hoveredTaskId,
     selectedTaskId,
@@ -481,7 +495,7 @@ export function TaskBoard({
                 style={activeItem ? { willChange: 'transform' } : undefined}
               >
               {sortedColumns.map((column) => (
-                <SortableColumn key={column.id} column={column}>
+                <SortableColumn key={column.id} column={column} zenHidden={zenColumnId === column.id}>
                   {(dragHandleProps) => (
                     <KanbanColumn
                       column={column}
@@ -546,6 +560,24 @@ export function TaskBoard({
         onTaskDelete={onTaskDelete}
         onPin={handlePinCard}
       />
+
+      {zenColumn && (
+        <ZenModeLayer
+          column={zenColumn}
+          projectId={projectId}
+          tasks={tasksByColumn.get(zenColumn.id) ?? EMPTY_TASKS}
+          escapeDisabled={hasOpenOverlay}
+          onTaskEdit={handleTaskClick}
+          onTaskCreate={onTaskCreate}
+          onTaskUpdate={onTaskUpdate}
+          onTaskDelete={onTaskDelete}
+          onPushToGantt={onPushToGantt}
+          onSendToVault={onSendToVault}
+          onArchiveTask={onArchiveTask}
+          onDependencyClick={setDependencyTreeTaskId}
+          onTaskMove={onTaskMove}
+        />
+      )}
 
       <FloatingCardsLayer
         projectId={projectId}

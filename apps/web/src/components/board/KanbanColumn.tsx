@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react'
 import { useDroppable } from '@dnd-kit/core'
-import { Plus, Check, X, Palette, Trash2 } from 'lucide-react'
+import { Plus, Check, X, Palette, Trash2, Focus } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { VirtualizedTaskList } from './VirtualizedTaskList'
 import { ColumnContextMenu } from './ColumnContextMenu'
@@ -13,6 +13,7 @@ import type { BoardColumn } from '@/lib/store/boardStore'
 import { COLUMN_ICONS, COLUMN_ICON_MAP } from '@/lib/utils/columnIcons'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
 import { ColumnDeleteModal } from './ColumnDeleteModal'
+import { openZenMode } from './zenFlight'
 
 interface KanbanColumnProps {
   column: BoardColumn
@@ -326,6 +327,19 @@ export const KanbanColumn = memo(function KanbanColumn({
               <button
                 onClick={(e) => {
                   e.stopPropagation()
+                  openZenMode(column.id)
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                title="Zen mode"
+              >
+                <Focus className="w-3.5 h-3.5 text-slate-400" />
+              </button>
+            )}
+            {!isRenaming && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
                   setShowColorPicker(!showColorPicker)
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
@@ -447,6 +461,7 @@ export const KanbanColumn = memo(function KanbanColumn({
           setRenameValue(column.name)
           setIsRenaming(true)
         }}
+        onZenMode={() => openZenMode(column.id)}
         onColumnDelete={() => setShowDeleteConfirm(true)}
         onVaultCompleted={onVaultCompleted}
         onArchiveAll={onArchiveColumn}

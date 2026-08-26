@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Palette, Trash2, Copy, Pencil, Sparkles, X, Archive, Package, FolderInput, Folder, MoveRight, ArrowRight, Loader2 } from 'lucide-react'
+import { Palette, Trash2, Copy, Pencil, Sparkles, X, Archive, Package, FolderInput, Folder, MoveRight, ArrowRight, Loader2, Focus } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
@@ -18,12 +18,13 @@ interface ColumnContextMenuProps {
   position: { x: number; y: number }
   onClose: () => void
   onRename: () => void
+  onZenMode?: () => void
   onColumnDelete?: (columnId: string) => void
   onVaultCompleted?: (columnId: string) => void
   onArchiveAll?: (columnId: string) => void
 }
 
-export function ColumnContextMenu({ columnId, position, onClose, onRename, onColumnDelete, onVaultCompleted, onArchiveAll }: ColumnContextMenuProps) {
+export function ColumnContextMenu({ columnId, position, onClose, onRename, onZenMode, onColumnDelete, onVaultCompleted, onArchiveAll }: ColumnContextMenuProps) {
   const [submenu, setSubmenu] = useState<'color' | 'icon' | 'transfer' | null>(null)
   const [transferProjects, setTransferProjects] = useState<{ id: string; name: string; realm: string; columns: { id: string; name: string; color: string }[] }[]>([])
   const [transferLoading, setTransferLoading] = useState(false)
@@ -128,6 +129,18 @@ export function ColumnContextMenu({ columnId, position, onClose, onRename, onCol
             boxShadow: `0 0 ${8 * mult}px ${colors.glowColor}`,
           }}
         />
+        {onZenMode && (
+          <ContextMenuButton
+            icon={Focus}
+            label="Zen Mode"
+            onClick={() => {
+              onZenMode()
+              onClose()
+            }}
+            glowColor={colors.glowColor}
+          />
+        )}
+
         <ContextMenuButton
           icon={Pencil}
           label="Rename"
