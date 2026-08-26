@@ -6,6 +6,7 @@ import { format, formatDistanceToNow } from 'date-fns'
 import { cn } from '@/lib/utils/cn'
 import { useThemeStore } from '@/stores/themeStore'
 import { colorConfig, AccentColor, hexToRgba } from '@/lib/utils/colors'
+import { resolvePriority } from '@/lib/utils/priorities'
 import type { TaskVault } from '@/lib/db/schema'
 
 interface TrophyDetailModalProps {
@@ -14,22 +15,23 @@ interface TrophyDetailModalProps {
   onRestore?: (vaultId: string) => void
 }
 
-const priorityStyles: Record<string, { bg: string; border: string; text: string; glow: string }> = {
-  low: { bg: 'bg-slate-500/20', border: 'border-slate-500/30', text: 'text-slate-400', glow: 'rgba(100,116,139,0.4)' },
-  medium: { bg: 'bg-blue-500/20', border: 'border-blue-500/30', text: 'text-blue-400', glow: 'rgba(59,130,246,0.4)' },
-  high: { bg: 'bg-orange-500/20', border: 'border-orange-500/30', text: 'text-orange-400', glow: 'rgba(249,115,22,0.4)' },
-  urgent: { bg: 'bg-red-500/20', border: 'border-red-500/30', text: 'text-red-400', glow: 'rgba(239,68,68,0.4)' },
-}
-
 export function TrophyDetailModal({ vaultTask, onClose, onRestore }: TrophyDetailModalProps) {
-  const { glowIntensity } = useThemeStore()
+  const { glowIntensity, priorities } = useThemeStore()
   const mult = glowIntensity / 75
 
   if (!vaultTask) return null
 
   const labelSnapshot = (vaultTask.labelSnapshot ?? []) as Array<{ name: string; color: string }>
   const checklistSnapshot = (vaultTask.checklistSnapshot ?? {}) as { total?: number; checked?: number }
-  const pStyle = priorityStyles[vaultTask.priority] ?? priorityStyles.medium
+  const resolvedPriority = resolvePriority(priorities, vaultTask.priority)
+  const pStyle = {
+    boxStyle: {
+      backgroundColor: hexToRgba(resolvedPriority.color, 0.2),
+      borderColor: hexToRgba(resolvedPriority.color, 0.3),
+    },
+    color: resolvedPriority.color,
+    glow: hexToRgba(resolvedPriority.color, 0.4),
+  }
   const effectiveDate = vaultTask.completedAt ? new Date(vaultTask.completedAt) : new Date(vaultTask.archivedAt)
 
   return (
@@ -50,16 +52,20 @@ export function TrophyDetailModal({ vaultTask, onClose, onRestore }: TrophyDetai
             'w-full max-w-md mx-3 rounded-xl overflow-hidden',
             'bg-gradient-to-b from-white/10 to-black/40',
             'backdrop-blur-xl border border-white/10',
-            'shadow-[0_0_40px_rgba(16,185,129,0.2)]'
+            'shadow-[0_0_40px_rgba(245,158,11,0.18)]'
           )}
         >
           <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
             <div className="flex items-center gap-2.5">
               <div
-                className={cn('w-8 h-8 rounded-lg border flex items-center justify-center', pStyle.bg, pStyle.border)}
-                style={{ boxShadow: `0 0 ${12 * mult}px ${pStyle.glow}` }}
+                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                style={{
+                  background: 'linear-gradient(140deg, rgba(251,191,36,0.28), rgba(180,83,9,0.22))',
+                  border: '1px solid rgba(245,158,11,0.5)',
+                  boxShadow: `0 0 ${12 * mult}px rgba(245,158,11,0.45)`,
+                }}
               >
-                <Trophy className={cn('w-4 h-4', pStyle.text)} />
+                <Trophy className="w-4 h-4 text-amber-300" />
               </div>
               <div>
                 <h3 className="text-base font-semibold text-white">{vaultTask.name}</h3>
@@ -83,9 +89,10 @@ export function TrophyDetailModal({ vaultTask, onClose, onRestore }: TrophyDetai
 
             <div className="flex flex-wrap items-center gap-1.5">
               <span
-                className={cn('px-2 py-0.5 rounded text-[10px] font-medium border capitalize', pStyle.bg, pStyle.border, pStyle.text)}
+                className="px-2 py-0.5 rounded text-[10px] font-medium border capitalize"
+                style={{ ...pStyle.boxStyle, color: pStyle.color }}
               >
-                {vaultTask.priority}
+                {resolvedPriority.name}
               </span>
               {vaultTask.daysTaken !== null && (
                 <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 15%, transparent)', border: '1px solid color-mix(in srgb, var(--primary) 25%, transparent)', color: 'var(--primary)' }}>
@@ -94,7 +101,7 @@ export function TrophyDetailModal({ vaultTask, onClose, onRestore }: TrophyDetai
                 </span>
               )}
               {vaultTask.size !== null && (
-                <span className="px-2 py-0.5 rounded text-[10px] font-medium border bg-cyan-500/15 border-cyan-500/25 text-cyan-400">
+                <span className="px-2 py-0.5 rounded text-[10px] font-medium border bg-white/5 border-white/10 text-slate-300">
                   {vaultTask.size}d est
                 </span>
               )}
