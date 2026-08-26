@@ -224,7 +224,6 @@ export function FloatingCardWindow({
         'pointer-events-auto absolute flex flex-col rounded-xl overflow-hidden',
         'bg-gradient-to-b from-white/10 to-black/60',
         'backdrop-blur-md border border-white/15',
-        'shadow-[0_8px_40px_color-mix(in_srgb,var(--primary)_25%,rgba(0,0,0,0.5))]',
         'focus:outline-none'
       )}
       style={{
@@ -234,6 +233,10 @@ export function FloatingCardWindow({
         maxWidth: 'calc(100vw - 16px)',
         maxHeight: '80vh',
         zIndex: card.z,
+        // Inline, not a Tailwind arbitrary value: a comma-bearing color inside
+        // color-mix() breaks the generated --tw-shadow-colored variant and
+        // fails the production CSS parse.
+        boxShadow: '0 8px 40px color-mix(in srgb, var(--primary) 25%, rgba(0, 0, 0, 0.5))',
       }}
     >
       <div
