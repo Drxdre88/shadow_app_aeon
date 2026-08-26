@@ -270,7 +270,10 @@ export const KanbanColumn = memo(function KanbanColumn({
     >
       <div
         className={cn('p-4 border-b border-white/10', dragHandleProps && !isRenaming && 'cursor-grab active:cursor-grabbing')}
-        style={dragHandleProps && !isRenaming ? { touchAction: 'none' } : undefined}
+        // manipulation, not none: horizontal board panning must still work
+        // from a column header; the delayed TouchSensor long-press picks the
+        // column up instead.
+        style={dragHandleProps && !isRenaming ? { touchAction: 'manipulation', WebkitUserSelect: 'none', userSelect: 'none' } : undefined}
         {...(dragHandleProps && !isRenaming ? dragHandleProps : {})}
         onContextMenu={(e) => {
           e.preventDefault()

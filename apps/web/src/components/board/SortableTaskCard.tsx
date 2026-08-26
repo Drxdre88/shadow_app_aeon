@@ -6,7 +6,8 @@ import { CSS } from '@dnd-kit/utilities'
 import { motion } from 'framer-motion'
 import { Calendar, MoreHorizontal, Check, X, Clock, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { hexToRgba } from '@/lib/utils/colors'
+import { hexToRgba, colorConfig, type AccentColor } from '@/lib/utils/colors'
+import { resolvePriority } from '@/lib/utils/priorities'
 import { labelHex, readableTextColor } from './labelTile'
 import { progressBarStyle } from './progressColor'
 import { GlowCard } from '@/components/ui/GlowCard'
@@ -45,13 +46,6 @@ interface SortableTaskCardProps {
   onSendToVault?: (taskId: string) => void
   onArchiveTask?: (taskId: string) => void
   animateOnMount?: boolean
-}
-
-const priorityColors = {
-  low: 'bg-slate-500/20 text-slate-400',
-  medium: 'bg-blue-500/20 text-blue-400',
-  high: 'bg-orange-500/20 text-orange-400',
-  urgent: 'bg-red-500/20 text-red-400',
 }
 
 const priorityGlows = {
@@ -106,11 +100,8 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   }
 
   const getPriorityInfo = (priority: string) => {
-    const custom = priorities.find((p) => p.id === priority)
-    if (custom) return { label: custom.name, style: { backgroundColor: `${custom.color}33`, color: custom.color } }
-    const defaultMatch = priorityColors[priority as keyof typeof priorityColors]
-    if (defaultMatch) return { label: priority, className: defaultMatch }
-    return { label: priority, className: priorityColors.medium }
+    const resolved = resolvePriority(priorities, priority)
+    return { label: resolved.name, style: { backgroundColor: `${resolved.color}33`, color: resolved.color } }
   }
 
   const {
@@ -191,7 +182,12 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
         {...listeners}
         onClick={handleCardClick}
         onContextMenu={handleContextMenu}
-        style={{ touchAction: 'none' }}
+        // touch-action: manipulation (NOT none): a finger landing on a card
+        // must still be able to scroll the column / pan the board. The delayed
+        // TouchSensor takes over only after a 250ms hold; 'manipulation' just
+        // strips double-tap zoom so taps stay snappy. user-select/touch-callout
+        // are off so the long-press shows a drag, not iOS text selection.
+        style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
         className={cn(
           'cursor-grab active:cursor-grabbing',
           isDragging && 'opacity-30 scale-95'
@@ -309,7 +305,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
           {assignees && assignees.length > 0 && (
             <div className="flex items-center -space-x-1.5 mb-1.5">
               {assignees.slice(0, 4).map((a) => (
-                <AssigneeDot key={a.userId} name={a.name} image={a.image} />
+                <AssigneeDot key={a.userId} name={a.name} image={a.image} kind={a.kind} color={a.color} />
               ))}
               {assignees.length > 4 && (
                 <span className="w-5 h-5 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-[8px] text-white/60">
@@ -396,7 +392,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
                 const pi = getPriorityInfo(task.priority)
                 return (
                   <span
-                    className={cn('px-2 py-0.5 rounded-md text-xs font-medium', pi.className)}
+                    className="px-2 py-0.5 rounded-md text-xs font-medium"
                     style={pi.style}
                   >
                     {pi.label}
@@ -488,12 +484,26 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   )
 })
 
-function AssigneeDot({ name, image }: { name: string | null; image: string | null }) {
+function AssigneeDot({ name, image, kind, color }: { name: string | null; image: string | null; kind?: 'virtual'; color?: string | null }) {
   if (image) {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={image} alt="" className="w-5 h-5 rounded-full object-cover border border-white/15" title={name ?? undefined} />
   }
   const initials = (name ?? '?').trim().split(/\s+/).map((s) => s[0]).slice(0, 2).join('').toUpperCase()
+  // Virtual members: colored initials avatar with a dashed ring — subtly
+  // distinct from real accounts in the pile.
+  if (kind === 'virtual') {
+    const hex = (colorConfig[(color ?? 'purple') as AccentColor] as { hex: string } | undefined)?.hex ?? colorConfig.purple.hex
+    return (
+      <span
+        className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-semibold border border-dashed border-white/45 text-white"
+        style={{ background: `linear-gradient(135deg, ${hex}cc, ${hex}66)` }}
+        title={name ? `${name} (virtual)` : undefined}
+      >
+        {initials || '?'}
+      </span>
+    )
+  }
   return (
     <span
       className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-medium border border-white/15 text-white/80"

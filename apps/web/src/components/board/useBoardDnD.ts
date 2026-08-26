@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
-import { DragEndEvent, DragStartEvent, DragOverEvent, useSensor, useSensors, PointerSensor, TouchSensor } from '@dnd-kit/core'
+import { DragEndEvent, DragStartEvent, DragOverEvent, useSensor, useSensors, MouseSensor, TouchSensor } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 import { useBoardStore, type BoardColumn, type BoardTask } from '@/lib/store/boardStore'
 import { insertionIndexInFullOrder, reorderWithInsertion, readCardRects } from './dropIndex'
@@ -56,9 +56,18 @@ export function useBoardDnD({
     return () => window.removeEventListener('pointermove', onPointerMove)
   }, [activeItem])
 
+  // MouseSensor (not PointerSensor) on purpose: PointerSensor also claims
+  // touch pointers, and its 5px distance constraint would start a drag on the
+  // first finger movement — exactly the gesture that should scroll a column.
+  // Touch input goes exclusively through TouchSensor's long-press activation:
+  // hold 250ms to lift a card, swipe within the delay to scroll (movement past
+  // the tolerance aborts activation and the browser pans natively, since cards
+  // use touch-action: manipulation instead of none). Tolerance 8px absorbs
+  // finger tremble during the hold — dnd-kit docs recommend a looser tolerance
+  // with delay-based touch activation.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } })
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } })
   )
 
   const handleDragStart = useCallback((event: DragStartEvent) => {

@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, UserPlus, Crown, Trash2, Loader2, Copy, Check, Clock, ImageIcon, Link2 } from 'lucide-react'
 import { toPng } from 'html-to-image'
 import { getProjectMembers, inviteMember, removeProjectMember, updateProjectMemberRole, getPendingInvites } from '@/lib/actions/members'
+import { invalidateAssignablePeople } from '@/lib/store/membersCache'
 import { createBoardSnapshot } from '@/lib/actions/snapshots'
 import { autoSaveContact } from '@/lib/actions/contacts'
 import { ContactAutocomplete } from '@/components/ui/ContactAutocomplete'
@@ -69,11 +70,17 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
   const handleExportPng = async () => {
     const columnsEl = document.querySelector('[data-board-columns]') as HTMLElement
     if (!columnsEl) return
+    // The flex row + pinch-zoom transform live on the inner scale wrapper now;
+    // neutralize both for the capture so the export is always full-scale.
+    const scaleEl = document.querySelector('[data-board-scale]') as HTMLElement | null
     setExportingPng(true)
 
     const savedOverflow = columnsEl.style.overflow
     const savedMaxH = columnsEl.style.maxHeight
-    const savedFlexWrap = columnsEl.style.flexWrap
+    const savedFlexWrap = scaleEl?.style.flexWrap ?? ''
+    const savedTransform = scaleEl?.style.transform ?? ''
+    const savedMarginRight = scaleEl?.style.marginRight ?? ''
+    const savedMarginBottom = scaleEl?.style.marginBottom ?? ''
 
     const blurEls = columnsEl.querySelectorAll<HTMLElement>('*')
     const savedFilters: { el: HTMLElement; bd: string; filter: string }[] = []
@@ -81,7 +88,12 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
     try {
       columnsEl.style.overflow = 'visible'
       columnsEl.style.maxHeight = 'none'
-      columnsEl.style.flexWrap = 'nowrap'
+      if (scaleEl) {
+        scaleEl.style.flexWrap = 'nowrap'
+        scaleEl.style.transform = 'none'
+        scaleEl.style.marginRight = '0'
+        scaleEl.style.marginBottom = '0'
+      }
 
       blurEls.forEach((el) => {
         const computed = getComputedStyle(el)
@@ -115,7 +127,12 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
       })
       columnsEl.style.overflow = savedOverflow
       columnsEl.style.maxHeight = savedMaxH
-      columnsEl.style.flexWrap = savedFlexWrap
+      if (scaleEl) {
+        scaleEl.style.flexWrap = savedFlexWrap
+        scaleEl.style.transform = savedTransform
+        scaleEl.style.marginRight = savedMarginRight
+        scaleEl.style.marginBottom = savedMarginBottom
+      }
       setExportingPng(false)
     }
   }
@@ -155,16 +172,20 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
     try {
       const result = await inviteMember(projectId, trimmed, inviteRole)
       autoSaveContact(trimmed).catch((err) => console.error('autoSaveContact failed:', err))
+      // Membership changed — refresh lists in the background instead of
+      // blocking the modal on another round trip, and drop the cached
+      // assignable-people list so the assignee overlay picks the change up.
+      invalidateAssignablePeople(projectId)
       if (result.type === 'added') {
         setSuccess(`${trimmed} added to project`)
-        const updated = await getProjectMembers(projectId)
-        setMembers(updated)
+        getProjectMembers(projectId).then(setMembers).catch(() => {})
       } else {
         const link = `${window.location.origin}/invite/${result.token}`
         setInviteLink(link)
         setSuccess(`Invite created for ${trimmed}`)
-        const updatedInvites = await getPendingInvites(projectId).catch(() => [])
-        setPendingInvites(updatedInvites as PendingInvite[])
+        getPendingInvites(projectId)
+          .then((updatedInvites) => setPendingInvites(updatedInvites as PendingInvite[]))
+          .catch(() => {})
       }
       setEmail('')
     } catch (err) {
@@ -175,10 +196,14 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
   }
 
   const handleRemove = async (targetUserId: string) => {
+    // Optimistic: the row disappears immediately, restored on failure.
+    const prev = members
+    setMembers((p) => p.filter((m) => m.userId !== targetUserId))
+    invalidateAssignablePeople(projectId)
     try {
       await removeProjectMember(projectId, targetUserId)
-      setMembers((prev) => prev.filter((m) => m.userId !== targetUserId))
     } catch (err) {
+      setMembers(prev)
       setError(err instanceof Error ? err.message : 'Failed to remove')
     }
   }
@@ -187,6 +212,7 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
     try {
       await updateProjectMemberRole(projectId, targetUserId, newRole)
       setMembers((prev) => prev.map((m) => m.userId === targetUserId ? { ...m, role: newRole } : m))
+      invalidateAssignablePeople(projectId)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update role')
     }
