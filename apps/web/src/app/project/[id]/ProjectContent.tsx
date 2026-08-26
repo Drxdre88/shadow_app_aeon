@@ -100,7 +100,7 @@ export default function ProjectContent({ project, user, initialBoardData, initia
               glowColor={projectGlow}
             />
             <SaveStatusPill />
-            <FavoriteStar projectId={project.id} initialFavorite={initialFavorite} />
+            <FavoriteStar projectId={project.id} initialFavorite={initialFavorite} projectName={project.name} />
           </div>
 
           <button
@@ -343,6 +343,9 @@ export default function ProjectContent({ project, user, initialBoardData, initia
                     onFormChange={gantt.setGanttFormData}
                     onSubmit={gantt.handleGanttEditSubmit}
                     onClose={() => gantt.setGanttEditTaskId(null)}
+                    onLabelCreate={handleLabelCreate}
+                    onLabelUpdate={handleLabelUpdate}
+                    onLabelDelete={handleLabelDelete}
                     onLabelToggle={handleLabelToggle}
                     onDateChange={(taskId, dates) => board.handleTaskUpdate(taskId, dates as Record<string, unknown>)}
                     onProgressChange={(taskId, progress) => board.handleTaskUpdate(taskId, { progress }, { silent: true })}

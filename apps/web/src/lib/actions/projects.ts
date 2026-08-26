@@ -17,6 +17,7 @@ import {
   renameGroup as _renameGroup,
   toggleProjectFavorite as _toggleProjectFavorite,
   findFavoriteProjectIds as _findFavoriteProjectIds,
+  findFavoriteProjects as _findFavoriteProjects,
   findProjectSettings as _findProjectSettings,
 } from '@/lib/data/projects'
 import { createProjectSchema, updateProjectSchema } from '@/lib/data/validators'
@@ -128,6 +129,12 @@ export async function toggleProjectFavorite(projectId: string, favorite: boolean
   await _toggleProjectFavorite(userId, projectId, favorite)
   revalidatePath('/dashboard')
   return { favorite }
+}
+
+export async function getFavoriteProjects() {
+  const userId = await requireAuth()
+  const rows = await _findFavoriteProjects(userId)
+  return rows.map((r) => ({ id: r.id, name: r.name, favoritedAt: r.favoritedAt.getTime() }))
 }
 
 export async function getFavoriteProjectIds() {
