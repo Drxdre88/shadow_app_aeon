@@ -13,7 +13,7 @@ export const GET = withRateLimit(
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
 
-    const { realmId } = (ctx as { params: { realmId: string } }).params
+    const { realmId } = await (ctx as { params: Promise<{ realmId: string }> }).params
 
     const role = await getGroupRole(realmId, result.id)
     if (!role) return jsonError('Not a member of this realm', 403)
@@ -29,7 +29,7 @@ export const POST = withRateLimit(
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
 
-    const { realmId } = (ctx as { params: { realmId: string } }).params
+    const { realmId } = await (ctx as { params: Promise<{ realmId: string }> }).params
 
     const role = await getGroupRole(realmId, result.id)
     if (!role || role === 'viewer') return jsonError('Insufficient permissions', 403)

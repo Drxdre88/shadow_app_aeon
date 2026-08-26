@@ -8,7 +8,7 @@ export const DELETE = withRateLimit(
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
 
-    const { realmId, projectId } = (ctx as { params: { realmId: string; projectId: string } }).params
+    const { realmId, projectId } = await (ctx as { params: Promise<{ realmId: string; projectId: string }> }).params
 
     const role = await getGroupRole(realmId, result.id)
     if (!role || role === 'viewer') return jsonError('Insufficient permissions', 403)

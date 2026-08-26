@@ -5,14 +5,14 @@ import { getGroupRole } from '@/lib/data/workspaces'
 import { updateVirtualMember, deleteVirtualMember } from '@/lib/data/virtual-members'
 import { updateVirtualMemberSchema } from '@/lib/data/validators'
 
-type Params = { params: { realmId: string; virtualMemberId: string } }
+type Params = { params: Promise<{ realmId: string; virtualMemberId: string }> }
 
 export const PATCH = withRateLimit(
   apiHandler(async (request: NextRequest, ctx: unknown) => {
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
 
-    const { realmId, virtualMemberId } = (ctx as Params).params
+    const { realmId, virtualMemberId } = await (ctx as Params).params
 
     const role = await getGroupRole(realmId, result.id)
     if (!role || role === 'viewer') return jsonError('Insufficient permissions', 403)
@@ -40,7 +40,7 @@ export const DELETE = withRateLimit(
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
 
-    const { realmId, virtualMemberId } = (ctx as Params).params
+    const { realmId, virtualMemberId } = await (ctx as Params).params
 
     const role = await getGroupRole(realmId, result.id)
     if (!role || role === 'viewer') return jsonError('Insufficient permissions', 403)
