@@ -64,7 +64,7 @@ const ORIGINAL_ENQUEUE = useMutationQueue.getState().enqueue
 beforeEach(() => {
   enqueue = vi.fn()
   useMutationQueue.setState({ pending: [], enqueue })
-  useBoardStore.setState({ checklistPreviews: {} })
+  useBoardStore.setState({ checklistPreviews: {}, checklistSummaries: {} })
   getChecklistItems.mockResolvedValue([
     serverItem('item-a', 'Sketch it', 'Design'),
     serverItem('item-b', 'Build it', 'Build'),
@@ -142,20 +142,55 @@ describe('useChecklistHandlers — add + reindex queueing', () => {
     expect(enqueue.mock.invocationCallOrder[0]).toBeLessThan(enqueue.mock.invocationCallOrder[1])
   })
 
-  it('both mutations roll back to the SAME pre-add snapshot', async () => {
+  it('the create rolls back to the pre-add snapshot', async () => {
     const { result } = await mountHydrated()
     act(() => {
       result.current.handleChecklistAdd('Wireframe', 'Design', ['Design', 'Build'])
     })
     expect(result.current.checklistItems.map((i) => i.title)).toEqual(['Sketch it', 'Wireframe', 'Build it'])
 
-    // A failure of EITHER half must restore the list as it was before the add —
-    // a reorder rolling back to a post-add snapshot would leave a phantom row.
-    act(() => enqueued(1).fx.rollback?.())
+    act(() => enqueued(0).fx.rollback?.())
     expect(result.current.checklistItems.map((i) => i.title)).toEqual(['Sketch it', 'Build it'])
 
     expect(enqueued(0).fx.failMessage).toBeTruthy()
     expect(enqueued(1).fx.failMessage).toBeTruthy()
+  })
+
+  // THE data-loss case. The reindex is queued BEHIND the create and used to
+  // share its pre-add rollback. When the create commits and only the reorder is
+  // rejected, that shared rollback stripped the item from the list — and from
+  // the card-face summary — while its row was alive in Postgres. The user
+  // retyped it and ended up with a duplicate on the next reload.
+  it('a reorder failing AFTER the create committed keeps the created item', async () => {
+    const { result } = await mountHydrated()
+    act(() => {
+      result.current.handleChecklistAdd('Wireframe', 'Design', ['Design', 'Build'])
+    })
+    const createdId = (enqueued(0).mutation.args as { itemId: string }).itemId
+
+    // Only the reorder is rejected; the create never rolled back.
+    act(() => enqueued(1).fx.rollback?.())
+
+    expect(result.current.checklistItems.map((i) => i.title)).toEqual(['Sketch it', 'Wireframe', 'Build it'])
+    expect(result.current.checklistItems.some((i) => i.id === createdId)).toBe(true)
+    // …and the card face still counts it, so reopening the card agrees.
+    expect(useBoardStore.getState().checklistSummaries[TASK_ID]?.total).toBe(3)
+  })
+
+  // The other direction: when the create is rejected too (a viewer, say), the
+  // reindex behind it must NOT resurrect a row the server never made.
+  it('a reorder failing after the create ALSO failed leaves no phantom row', async () => {
+    const { result } = await mountHydrated()
+    act(() => {
+      result.current.handleChecklistAdd('Wireframe', 'Design', ['Design', 'Build'])
+    })
+
+    // FIFO: the create is decided first.
+    act(() => enqueued(0).fx.rollback?.())
+    act(() => enqueued(1).fx.rollback?.())
+
+    expect(result.current.checklistItems.map((i) => i.title)).toEqual(['Sketch it', 'Build it'])
+    expect(useBoardStore.getState().checklistSummaries[TASK_ID]?.total).toBe(2)
   })
 
   it('adding to the LAST displayed group needs no reindex — one enqueue only', async () => {

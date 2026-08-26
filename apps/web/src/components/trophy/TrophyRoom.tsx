@@ -32,7 +32,15 @@ import {
   type ViewMode,
   type DateGranularity,
 } from './trophy-utils'
-import { computeStreak, monthComparison, sumSize, trophyDate } from './trophy-stats'
+import {
+  comparePriority,
+  computeStreak,
+  monthComparison,
+  priorityRankMap,
+  sumSize,
+  trophyDate,
+  NO_PRIORITY_KEY,
+} from './trophy-stats'
 import { GOLD, goldText, hexAlpha } from './trophy-theme'
 import { resolvePriority } from '@/lib/utils/priorities'
 import { TrophyDetailModal } from './TrophyDetailModal'
@@ -169,11 +177,12 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
 
   // Rank follows the user's configured priority order (low -> urgent),
   // so custom levels sort correctly too; unknown ids sink to the bottom.
-  const priorityRank = useMemo(() => {
-    const m = new Map<string, number>()
-    priorities.forEach((p, i) => m.set(p.id, i))
-    return m
-  }, [priorities])
+  // Shared with TrophyTable so both surfaces rank identically.
+  const priorityRank = useMemo(() => priorityRankMap(priorities), [priorities])
+
+  // Configured ids, highest level first — the display order for priority
+  // grouping and the insights breakdown.
+  const priorityOrder = useMemo(() => [...priorities].reverse().map((p) => p.id), [priorities])
 
   const filteredAndSorted = useMemo(() => {
     let result = [...vaultTasks]
@@ -183,8 +192,7 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
     result.sort((a, b) => {
       if (sortMode === 'newest') return trophyDate(b).getTime() - trophyDate(a).getTime()
       if (sortMode === 'oldest') return trophyDate(a).getTime() - trophyDate(b).getTime()
-      if (sortMode === 'priority')
-        return (priorityRank.get(b.priority) ?? -1) - (priorityRank.get(a.priority) ?? -1)
+      if (sortMode === 'priority') return comparePriority(b.priority, a.priority, priorityRank)
       return a.name.localeCompare(b.name)
     })
     return result
@@ -192,9 +200,9 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
 
   const sections = useMemo(() => {
     if (viewMode === 'timeline') return groupByTimeline(filteredAndSorted, dateGranularity)
-    if (viewMode === 'priority') return groupByPriority(filteredAndSorted)
+    if (viewMode === 'priority') return groupByPriority(filteredAndSorted, priorityOrder)
     return groupByLabel(filteredAndSorted)
-  }, [filteredAndSorted, viewMode, dateGranularity])
+  }, [filteredAndSorted, viewMode, dateGranularity, priorityOrder])
 
   const hasActiveFilters = sortMode !== 'newest' || priorityFilter !== 'all'
 
@@ -389,24 +397,31 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
           <TrophyTable tasks={filteredAndSorted} onRestore={handleRestore} onSelect={setSelectedTrophy} />
         ) : viewMode === 'priority' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {sections.map((section) => (
-              <div key={section.key} className="flex flex-col min-h-0">
-                <div
-                  className="flex items-center gap-2 px-2 py-1.5 mb-2 border-b"
-                  style={{ borderColor: hexAlpha(resolvePriority(priorities, section.key).color, 0.35) }}
-                >
-                  <span className="text-sm font-medium capitalize" style={{ color: resolvePriority(priorities, section.key).color }}>
-                    {resolvePriority(priorities, section.key).name}
-                  </span>
-                  <span className="text-xs tabular-nums" style={{ color: colors.textDim }}>{section.tasks.length}</span>
+            {sections.map((section) => {
+              // The "no priority recorded" bucket is not a real level — it keeps
+              // its own neutral heading instead of being resolved to a colour.
+              const isNone = section.key === NO_PRIORITY_KEY
+              const resolved = isNone ? null : resolvePriority(priorities, section.key)
+              const headingColor = resolved ? resolved.color : colors.textDim
+              return (
+                <div key={section.key} className="flex flex-col min-h-0">
+                  <div
+                    className="flex items-center gap-2 px-2 py-1.5 mb-2 border-b"
+                    style={{ borderColor: hexAlpha(headingColor, 0.35) }}
+                  >
+                    <span className="text-sm font-medium capitalize" style={{ color: headingColor }}>
+                      {resolved ? resolved.name : section.label}
+                    </span>
+                    <span className="text-xs tabular-nums" style={{ color: colors.textDim }}>{section.tasks.length}</span>
+                  </div>
+                  <div className="space-y-2 px-1">
+                    {section.tasks.map((vt) => (
+                      <TrophyCard key={vt.id} vaultTask={vt} onRestore={handleRestore} onClick={setSelectedTrophy} />
+                    ))}
+                  </div>
                 </div>
-                <div className="space-y-2 px-1">
-                  {section.tasks.map((vt) => (
-                    <TrophyCard key={vt.id} vaultTask={vt} onRestore={handleRestore} onClick={setSelectedTrophy} />
-                  ))}
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         ) : (
           <div>

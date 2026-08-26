@@ -170,6 +170,9 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
     const { next, reindex } = arrangeItemAdd(snapshot, newItem, orderedGroups)
     setChecklistItems(next)
     syncSummary(next)
+    // Set when the create is hard-rejected, so the reindex behind it knows
+    // whether the row it was reordering ever came into existence.
+    let createRolledBack = false
     // Omit orderIndex — let the DB transaction assign MAX(orderIndex)+1 globally.
     // Group-local indices were colliding across groups, scrambling order on reopen.
     enqueue(
@@ -178,7 +181,7 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
         type: 'checklist.create',
         args: { itemId: newItem.id, taskId, projectId, title, groupName },
       },
-      () => rollbackToSnapshot(taskId, snapshot),
+      () => { createRolledBack = true; rollbackToSnapshot(taskId, snapshot) },
       'Could not add checklist item — reverted',
     )
     // When the item's on-screen position is not the global end (its group sits
@@ -193,7 +196,15 @@ export function useChecklistHandlers(editingTaskId: string | null, projectId: st
           type: 'checklist.reorder',
           args: { taskId, projectId, updates: reindex },
         },
-        () => rollbackToSnapshot(taskId, snapshot),
+        // The rollback target depends on what happened to the create ahead of
+        // it (FIFO, so that is always already decided):
+        //  - create also rejected  -> pre-add snapshot, no phantom row for an
+        //    item the server never made;
+        //  - create committed      -> the POST-add arrangement. Rolling back to
+        //    `snapshot` here would strip the item from the list and the
+        //    card-face summary while its row lived on in Postgres, and the user
+        //    would retype it into a duplicate. Only the ORDER is in doubt.
+        () => rollbackToSnapshot(taskId, createRolledBack ? snapshot : next),
         'Could not reorder checklist — reverted',
       )
     }

@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { DndContext, DragOverlay, MouseSensor, TouchSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
-import { arrayMove } from '@dnd-kit/sortable'
+import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
 import { Minimize2 } from 'lucide-react'
 import { useShallow } from 'zustand/shallow'
 import { useBoardStore, type BoardColumn, type BoardTask } from '@/lib/store/boardStore'
@@ -14,9 +13,9 @@ import { COLUMN_ICON_MAP } from '@/lib/utils/columnIcons'
 import { VirtualizedTaskList, type TaskItem } from './VirtualizedTaskList'
 import { DragPreview } from './DragPreview'
 import { ZenScrollbar } from './ZenScrollbar'
+import { useBoardSensors } from './useBoardSensors'
+import { buildMoveUpdates, reorderWithInsertion, type MoveUpdate } from './dropIndex'
 import { zenTargetRect, flightTransform, measureColumnRect, type FlightTransform, type ZenRect } from './zenFlight'
-
-type MoveUpdate = { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }
 
 interface ZenModeLayerProps {
   column: BoardColumn
@@ -138,12 +137,9 @@ export function ZenModeLayer({
 
   const taskIds = useMemo(() => tasks.map((t) => t.id), [tasks])
 
-  // Same activation tuning as the board: hold 250ms on touch to lift a card,
-  // flick within the delay to scroll.
-  const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } })
-  )
+  // Zen keeps its OWN DndContext (deliberate isolation from the board's
+  // cross-column machinery) but shares the board's activation tuning.
+  const sensors = useBoardSensors()
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const task = useBoardStore.getState().tasks.find((t) => t.id === event.active.id)
@@ -168,18 +164,14 @@ export function ZenModeLayer({
     if (from === -1 || to === -1 || from === to) return
 
     const snapshot = columnTasks.map((t) => ({ id: t.id, columnId: t.columnId, orderIndex: t.orderIndex }))
-    const byId = new Map(columnTasks.map((t) => [t.id, t]))
-    const finalIds = arrayMove(orderedIds, from, to)
-
-    const updates: MoveUpdate[] = []
-    finalIds.forEach((id, orderIndex) => {
-      if (id === active.id) {
-        updates.push({ id, orderIndex, columnId: column.id, name: byId.get(id)?.name })
-        return
-      }
-      const sibling = byId.get(id)
-      if (!sibling || sibling.orderIndex === orderIndex) return
-      updates.push({ id, orderIndex })
+    const movedId = active.id as string
+    // Same tested reorder math the board uses, so a Zen drop and a board drop
+    // can never disagree about the resulting order.
+    const finalIds = reorderWithInsertion(orderedIds, movedId, to)
+    const updates: MoveUpdate[] = buildMoveUpdates(finalIds, columnTasks, {
+      id: movedId,
+      columnId: column.id,
+      name: columnTasks.find((t) => t.id === movedId)?.name,
     })
 
     const { updateTask } = useBoardStore.getState()
@@ -227,7 +219,10 @@ export function ZenModeLayer({
             width: target.width,
             height: target.height,
             transformOrigin: '0 0',
-            background: 'linear-gradient(to bottom, rgba(20, 20, 32, 0.96), rgba(12, 12, 20, 0.98))',
+            // Themed, not a fixed slate: the surface reads from the active
+            // preset the same way CardPeekPreview does, so Zen carries the
+            // board's palette instead of a hardcoded dark.
+            background: `linear-gradient(to bottom, ${colors.surface}, ${colors.background}fa)`,
             borderColor: glow02,
             // Static layered glow: the surface (shadow included) is scaled by
             // the flight transform, so the elevation visually grows in-flight.

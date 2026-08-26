@@ -171,27 +171,68 @@ export interface BreakdownRow {
   color?: string
 }
 
-const PRIORITY_ORDER = ['urgent', 'high', 'medium', 'low'] as const
-const PRIORITY_LABELS: Record<string, string> = {
-  urgent: 'Urgent',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
+/** Bucket key for trophies archived with no priority recorded at all. */
+export const NO_PRIORITY_KEY = '__no_priority__'
+/** Human label for the {@link NO_PRIORITY_KEY} bucket. */
+export const NO_PRIORITY_LABEL = 'No priority'
+
+/**
+ * Rank map over the user's configured priority order (index 0 = lowest level).
+ *
+ * Single source of priority ranking for every trophy surface — the room's
+ * gallery sort and the table's column sort both read from here, so custom
+ * levels rank identically on both.
+ */
+export function priorityRankMap(priorities: readonly { id: string }[]): Map<string, number> {
+  const rank = new Map<string, number>()
+  priorities.forEach((p, i) => rank.set(p.id, i))
+  return rank
 }
 
-export function breakdownByPriority(tasks: TrophyDatum[]): BreakdownRow[] {
+/**
+ * Ascending priority comparator (lowest configured level first).
+ * Ids outside the configured set sink below the lowest level.
+ */
+export function comparePriority(
+  a: string | null | undefined,
+  b: string | null | undefined,
+  rank: Map<string, number>
+): number {
+  return (rank.get(a ?? '') ?? -1) - (rank.get(b ?? '') ?? -1)
+}
+
+/**
+ * Counts by RAW priority id — a user-defined level keeps its own bucket instead
+ * of being folded into 'medium'. Names and colors are the caller's job
+ * (`resolvePriority`); `order` is the caller's configured id list, highest
+ * level first. Ids outside `order` (and the no-priority bucket) sort last.
+ */
+export function breakdownByPriority(
+  tasks: TrophyDatum[],
+  order: readonly string[] = []
+): BreakdownRow[] {
   const counts = new Map<string, number>()
   for (const t of tasks) {
-    const p = t.priority && PRIORITY_LABELS[t.priority] ? t.priority : 'medium'
-    counts.set(p, (counts.get(p) ?? 0) + 1)
+    const raw = typeof t.priority === 'string' ? t.priority.trim() : ''
+    const key = raw.length > 0 ? raw : NO_PRIORITY_KEY
+    counts.set(key, (counts.get(key) ?? 0) + 1)
   }
+
+  const rank = new Map<string, number>()
+  order.forEach((id, i) => rank.set(id, i))
+  const rankOf = (key: string) => rank.get(key) ?? Number.MAX_SAFE_INTEGER
+
   const total = tasks.length || 1
-  return PRIORITY_ORDER.filter((p) => (counts.get(p) ?? 0) > 0).map((p) => ({
-    key: p,
-    label: PRIORITY_LABELS[p],
-    count: counts.get(p)!,
-    share: counts.get(p)! / total,
-  }))
+  return [...counts.entries()]
+    .map(([key, count]) => ({
+      key,
+      label: key === NO_PRIORITY_KEY ? NO_PRIORITY_LABEL : key,
+      count,
+      share: count / total,
+    }))
+    .sort(
+      (a, b) => rankOf(a.key) - rankOf(b.key) || b.count - a.count || a.key.localeCompare(b.key)
+    )
 }
 
 export function breakdownByLabel(tasks: TrophyDatum[], top = 6): BreakdownRow[] {

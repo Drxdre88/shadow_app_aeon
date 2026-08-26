@@ -51,7 +51,7 @@ export function BoardFilterBar({ isOpen, filters, onFiltersChange }: BoardFilter
   }, [assigneesByTask, virtualMembers])
 
   const toggleAssignee = useCallback((id: string) => {
-    const next = new Set(filters.assignees)
+    const next = new Set(filters.assignees ?? [])
     if (next.has(id)) next.delete(id)
     else next.add(id)
     onFiltersChange({ ...filters, assignees: next })
@@ -179,7 +179,7 @@ export function BoardFilterBar({ isOpen, filters, onFiltersChange }: BoardFilter
                 </label>
                 <div className="flex flex-wrap gap-2">
                   {people.map((p) => {
-                    const isActive = filters.assignees.has(p.id)
+                    const isActive = filters.assignees?.has(p.id) ?? false
                     const hex = p.virtual
                       ? resolveAccentHex(p.color)
                       : null

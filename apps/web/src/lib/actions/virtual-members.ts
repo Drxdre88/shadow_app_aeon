@@ -52,7 +52,7 @@ export async function createVirtualMemberAction(projectId: string, input: unknow
 }
 
 export async function updateVirtualMemberAction(projectId: string, virtualMemberId: string, updates: unknown) {
-  await requireEditor(projectId)
+  const userId = await requireEditor(projectId)
   idSchema.parse(virtualMemberId)
   const data = updateVirtualMemberSchema.parse(updates)
 
@@ -63,6 +63,14 @@ export async function updateVirtualMemberAction(projectId: string, virtualMember
   }
   const member = await _findVirtualMemberById(virtualMemberId)
   if (!member) throw new Error('Virtual member not found')
+
+  // A rename/recolor rewrites a SHARED identity that shows up on every project
+  // in the realm, so — like delete, and like the REST PATCH and MCP tool — it
+  // demands realm-level editor rights, not merely editor on this one project.
+  const role = await getGroupRole(member.realmId, userId)
+  if (!role || role === 'viewer') {
+    throw new Error('Editing a virtual member requires realm editor access')
+  }
 
   const updated = await _updateVirtualMember(virtualMemberId, member.realmId, data)
   revalidatePath(`/project/${projectId}`)

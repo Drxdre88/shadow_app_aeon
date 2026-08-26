@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
-import { DragEndEvent, DragStartEvent, DragOverEvent, useSensor, useSensors, MouseSensor, TouchSensor } from '@dnd-kit/core'
+import { DragEndEvent, DragStartEvent, DragOverEvent } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 import { useBoardStore, type BoardColumn, type BoardTask } from '@/lib/store/boardStore'
-import { insertionIndexInFullOrder, reorderWithInsertion, readCardRects } from './dropIndex'
-
-type MoveUpdate = { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }
+import { insertionIndexInFullOrder, reorderWithInsertion, readCardRects, buildMoveUpdates, type MoveUpdate } from './dropIndex'
+import { useBoardSensors } from './useBoardSensors'
 
 interface UseBoardDnDProps {
   projectTasks: BoardTask[]
@@ -56,19 +55,7 @@ export function useBoardDnD({
     return () => window.removeEventListener('pointermove', onPointerMove)
   }, [activeItem])
 
-  // MouseSensor (not PointerSensor) on purpose: PointerSensor also claims
-  // touch pointers, and its 5px distance constraint would start a drag on the
-  // first finger movement — exactly the gesture that should scroll a column.
-  // Touch input goes exclusively through TouchSensor's long-press activation:
-  // hold 250ms to lift a card, swipe within the delay to scroll (movement past
-  // the tolerance aborts activation and the browser pans natively, since cards
-  // use touch-action: manipulation instead of none). Tolerance 8px absorbs
-  // finger tremble during the hold — dnd-kit docs recommend a looser tolerance
-  // with delay-based touch activation.
-  const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } })
-  )
+  const sensors = useBoardSensors()
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event
@@ -142,25 +129,13 @@ export function useBoardDnD({
 
     const finalIds = reorderWithInsertion(orderedIds, activeTask.id, index)
     const isDone = sortedColumns.find((c) => c.id === targetColumnId)?.name.toLowerCase() === 'done'
-    const byId = new Map(columnTasks.map((t) => [t.id, t]))
 
-    const updates: MoveUpdate[] = []
-    finalIds.forEach((id, orderIndex) => {
-      if (id === activeTask.id) {
-        updates.push({
-          id,
-          orderIndex,
-          columnId: targetColumnId,
-          name: activeTask.name,
-          ...(isDone && { status: 'done' }),
-        })
-        return
-      }
-      const sibling = byId.get(id)
-      if (!sibling || sibling.orderIndex === orderIndex) return
-      updates.push({ id, orderIndex })
+    return buildMoveUpdates(finalIds, columnTasks, {
+      id: activeTask.id,
+      columnId: targetColumnId,
+      name: activeTask.name,
+      ...(isDone && { status: 'done' }),
     })
-    return updates
   }, [sortedColumns])
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {

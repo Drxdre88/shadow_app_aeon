@@ -8,6 +8,9 @@ import {
   breakdownByLabel,
   breakdownByColumn,
   sumSize,
+  priorityRankMap,
+  comparePriority,
+  NO_PRIORITY_KEY,
   type TrophyDatum,
 } from './trophy-stats'
 
@@ -143,21 +146,87 @@ describe('monthComparison', () => {
 })
 
 describe('breakdownByPriority', () => {
-  it('orders urgent -> low and skips empty priorities', () => {
+  // Highest level first, as the caller derives it from themeStore's low->urgent list.
+  const FACTORY_ORDER = ['urgent', 'high', 'medium', 'low']
+
+  it('orders by the configured priority order and skips empty priorities', () => {
     const tasks = [
       t('2026-08-01T09:00:00', { priority: 'low' }),
       t('2026-08-02T09:00:00', { priority: 'urgent' }),
       t('2026-08-03T09:00:00', { priority: 'low' }),
     ]
-    const rows = breakdownByPriority(tasks)
+    const rows = breakdownByPriority(tasks, FACTORY_ORDER)
     expect(rows.map((r) => r.key)).toEqual(['urgent', 'low'])
     expect(rows.map((r) => r.count)).toEqual([1, 2])
     expect(rows[1].share).toBeCloseTo(2 / 3)
   })
 
-  it('treats unknown priorities as medium', () => {
-    const rows = breakdownByPriority([t('2026-08-01T09:00:00', { priority: 'bananas' })])
-    expect(rows).toEqual([{ key: 'medium', label: 'Medium', count: 1, share: 1 }])
+  it('follows a customized order, not the factory one', () => {
+    const tasks = [
+      t('2026-08-01T09:00:00', { priority: 'low' }),
+      t('2026-08-02T09:00:00', { priority: 'urgent' }),
+    ]
+    const rows = breakdownByPriority(tasks, ['low', 'urgent'])
+    expect(rows.map((r) => r.key)).toEqual(['low', 'urgent'])
+  })
+
+  it('gives a custom priority level its own bucket instead of inflating medium', () => {
+    // A user-defined level ('p0') sitting above urgent in their configured order.
+    const tasks = [
+      t('2026-08-01T09:00:00', { priority: 'p0' }),
+      t('2026-08-02T09:00:00', { priority: 'p0' }),
+      t('2026-08-03T09:00:00', { priority: 'medium' }),
+    ]
+    const rows = breakdownByPriority(tasks, ['p0', ...FACTORY_ORDER])
+
+    expect(rows.map((r) => r.key)).toEqual(['p0', 'medium'])
+    expect(rows.find((r) => r.key === 'p0')!.count).toBe(2)
+    // The old aggregation folded 'p0' into medium — medium would have read 3.
+    expect(rows.find((r) => r.key === 'medium')!.count).toBe(1)
+  })
+
+  it('keeps an unconfigured priority id visible under its own key, sorted last', () => {
+    const tasks = [
+      t('2026-08-01T09:00:00', { priority: 'bananas' }),
+      t('2026-08-02T09:00:00', { priority: 'medium' }),
+    ]
+    const rows = breakdownByPriority(tasks, FACTORY_ORDER)
+    expect(rows.map((r) => r.key)).toEqual(['medium', 'bananas'])
+    expect(rows.find((r) => r.key === 'bananas')).toMatchObject({ count: 1, share: 0.5 })
+  })
+
+  it('buckets missing/blank priorities honestly rather than as a real level', () => {
+    const rows = breakdownByPriority(
+      [t('2026-08-01T09:00:00', { priority: null }), t('2026-08-02T09:00:00', { priority: '  ' })],
+      FACTORY_ORDER
+    )
+    expect(rows).toEqual([
+      { key: NO_PRIORITY_KEY, label: 'No priority', count: 2, share: 1 },
+    ])
+  })
+})
+
+describe('priority ranking helpers', () => {
+  const priorities = [{ id: 'low' }, { id: 'medium' }, { id: 'high' }, { id: 'urgent' }]
+
+  it('ranks by configured index, lowest level first', () => {
+    const rank = priorityRankMap(priorities)
+    expect(rank.get('low')).toBe(0)
+    expect(rank.get('urgent')).toBe(3)
+  })
+
+  it('compares ascending and sinks unknown ids below the lowest level', () => {
+    const rank = priorityRankMap(priorities)
+    expect(comparePriority('low', 'urgent', rank)).toBeLessThan(0)
+    expect(comparePriority('urgent', 'low', rank)).toBeGreaterThan(0)
+    expect(comparePriority('medium', 'medium', rank)).toBe(0)
+    expect(comparePriority('bananas', 'low', rank)).toBeLessThan(0)
+    expect(comparePriority(null, 'low', rank)).toBeLessThan(0)
+  })
+
+  it('ranks a custom level by its configured position', () => {
+    const rank = priorityRankMap([{ id: 'low' }, { id: 'urgent' }, { id: 'p0' }])
+    expect(comparePriority('p0', 'urgent', rank)).toBeGreaterThan(0)
   })
 })
 

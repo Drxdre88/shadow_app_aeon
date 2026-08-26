@@ -77,6 +77,7 @@ const TASKS = [makeTask('task-1', 'Alpha card', 0), makeTask('task-2', 'Beta car
 const FIVE = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'].map((n, i) => makeTask(`task-${i + 1}`, `${n} card`, i))
 
 const ORIGINAL_CLEAR = useZenModeStore.getState().clear
+const ORIGINAL_COLORS = useThemeStore.getState().colors
 
 class ObserverStub {
   observe() {}
@@ -106,7 +107,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
-  useThemeStore.setState({ smoothUiRenders: true })
+  useThemeStore.setState({ smoothUiRenders: true, colors: ORIGINAL_COLORS })
   useZenModeStore.setState({ clear: ORIGINAL_CLEAR })
   dnd.onDragEnd = null
   document.querySelectorAll('[data-column-id]').forEach((el) => el.remove())
@@ -218,6 +219,19 @@ describe('ZenModeLayer', () => {
     await renderZenOpen({ escapeDisabled: true })
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(useZenModeStore.getState().columnId).toBe(COLUMN.id)
+  })
+
+  // The surface used to be a hardcoded slate gradient, so every one of the
+  // theme presets rendered the same dark panel over its own palette.
+  it('paints the surface from the active theme, not a fixed dark', async () => {
+    act(() => useThemeStore.setState({
+      colors: { ...useThemeStore.getState().colors, surface: 'rgba(1, 2, 3, 0.9)', background: '#040506' },
+    }))
+    await renderZenOpen()
+
+    const surface = document.querySelector<HTMLElement>('[data-zen-surface]')!
+    expect(surface.style.background).toContain('rgba(1, 2, 3, 0.9)')
+    expect(surface.style.background).toContain('#040506')
   })
 
   it('renders with the flight animation enabled too', async () => {

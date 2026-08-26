@@ -7,7 +7,7 @@ import { useThemeStore } from '@/stores/themeStore'
 import { resolveAccentHex } from '@/lib/utils/colors'
 import { resolvePriority } from '@/lib/utils/priorities'
 import { cn } from '@/lib/utils/cn'
-import { trophyDate } from './trophy-stats'
+import { comparePriority, priorityRankMap, trophyDate } from './trophy-stats'
 import { goldText, hexAlpha } from './trophy-theme'
 import type { CustomPriority } from '@aeon/shared'
 import type { TaskVault } from '@/lib/db/schema'
@@ -144,23 +144,24 @@ export const TrophyTable = memo(function TrophyTable({ tasks, onRestore, onSelec
   const [sortKey, setSortKey] = useState<SortKey>('completed')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
-  const toggleSort = useCallback((key: SortKey) => {
-    setSortKey((prevKey) => {
-      if (prevKey === key) {
+  // Two independent, pure setState calls. Queueing setSortDir from *inside* the
+  // setSortKey updater made the updater impure: Strict Mode (and any discarded
+  // render) double-invokes it, so the direction flipped twice and clicking the
+  // active header appeared to do nothing.
+  const toggleSort = useCallback(
+    (key: SortKey) => {
+      if (sortKey === key) {
         setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-        return prevKey
+        return
       }
+      setSortKey(key)
       setSortDir(key === 'name' || key === 'column' ? 'asc' : 'desc')
-      return key
-    })
-  }, [])
+    },
+    [sortKey]
+  )
 
   // Rank follows the user's configured priority order (low -> urgent)
-  const priorityRank = useMemo(() => {
-    const m = new Map<string, number>()
-    priorities.forEach((p, i) => m.set(p.id, i))
-    return m
-  }, [priorities])
+  const priorityRank = useMemo(() => priorityRankMap(priorities), [priorities])
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -181,7 +182,7 @@ export const TrophyTable = memo(function TrophyTable({ tasks, onRestore, onSelec
         case 'column':
           return (a.columnName ?? '').localeCompare(b.columnName ?? '') * dir
         case 'priority':
-          return ((priorityRank.get(a.priority) ?? -1) - (priorityRank.get(b.priority) ?? -1)) * dir
+          return comparePriority(a.priority, b.priority, priorityRank) * dir
         case 'size':
           return ((a.size ?? -1) - (b.size ?? -1)) * dir
         case 'days':

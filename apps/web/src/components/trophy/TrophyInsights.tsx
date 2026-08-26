@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useMemo, useState } from 'react'
+import { memo, useId, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useThemeStore } from '@/stores/themeStore'
 import { resolveAccentHex } from '@/lib/utils/colors'
@@ -11,6 +11,7 @@ import {
   breakdownByLabel,
   breakdownByPriority,
   breakdownByColumn,
+  NO_PRIORITY_KEY,
   type TrophyDatum,
   type ChartGranularity,
   type BreakdownRow,
@@ -24,6 +25,12 @@ import { GOLD, goldText, hexAlpha } from './trophy-theme'
 const CHART_W = 640
 const CHART_H = 180
 const PAD = { top: 24, right: 8, bottom: 22, left: 8 }
+/**
+ * Buckets drawn at either granularity: a rolling 12 weeks (~a quarter) or a
+ * rolling 12 months (a year). Both windows are the intended default, and 12
+ * bars is also what fits CHART_W legibly — hence one constant, not a branch.
+ */
+const CHART_PERIODS = 12
 
 interface CompletionChartProps {
   tasks: TrophyDatum[]
@@ -34,8 +41,13 @@ function CompletionChart({ tasks }: CompletionChartProps) {
   const [granularity, setGranularity] = useState<ChartGranularity>('week')
   const gold = goldText(colors.isDark)
 
+  // Per-instance gradient id — a document-global one collided when two charts
+  // shared a page (the second silently painted with the first's gradient).
+  // useId's delimiters aren't safe inside url(#…), so strip to [A-Za-z0-9_-].
+  const gradientId = `trophyBarFill-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
+
   const buckets = useMemo(
-    () => bucketByPeriod(tasks, granularity, granularity === 'week' ? 12 : 12),
+    () => bucketByPeriod(tasks, granularity, CHART_PERIODS),
     [tasks, granularity]
   )
 
@@ -76,7 +88,7 @@ function CompletionChart({ tasks }: CompletionChartProps) {
 
       <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} className="w-full" role="img" aria-label="Trophies completed over time">
         <defs>
-          <linearGradient id="trophyBarFill" x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={GOLD.bright} stopOpacity={colors.isDark ? 0.95 : 0.9} />
             <stop offset="100%" stopColor={GOLD.deep} stopOpacity={colors.isDark ? 0.55 : 0.65} />
           </linearGradient>
@@ -103,7 +115,7 @@ function CompletionChart({ tasks }: CompletionChartProps) {
                   x={x}
                   width={barW}
                   rx={Math.min(5, barW / 2)}
-                  fill="url(#trophyBarFill)"
+                  fill={`url(#${gradientId})`}
                   initial={{ y: PAD.top + innerH, height: 0 }}
                   animate={{ y, height: h }}
                   transition={{ type: 'spring', stiffness: 220, damping: 26, delay: i * 0.035 }}
@@ -181,12 +193,12 @@ function BreakdownPanel({ title, rows, variant }: BreakdownPanelProps) {
       ) : (
         <div className="space-y-2.5">
           {rows.map((row, i) => {
-            const resolved = variant === 'priority' ? resolvePriority(priorities, row.key) : null
-            const barColor = resolved
-              ? resolved.color
-              : row.key === 'unlabeled'
-                ? colors.textDim
-                : gold
+            // Sentinel buckets ("Unlabeled", "No priority") aren't real levels
+            // or labels — they stay neutral rather than being resolved.
+            const isNeutral = row.key === 'unlabeled' || row.key === NO_PRIORITY_KEY
+            const resolved =
+              variant === 'priority' && !isNeutral ? resolvePriority(priorities, row.key) : null
+            const barColor = resolved ? resolved.color : isNeutral ? colors.textDim : gold
             const displayLabel = resolved ? resolved.name : row.label
             return (
               <div key={row.key} className="group">
@@ -235,8 +247,13 @@ interface TrophyInsightsProps {
 }
 
 export const TrophyInsights = memo(function TrophyInsights({ tasks, className }: TrophyInsightsProps) {
+  const { priorities } = useThemeStore()
+  // Configured ids highest level first — the aggregation buckets by raw id and
+  // this decides the display order, so custom levels get their own honest row.
+  const priorityOrder = useMemo(() => [...priorities].reverse().map((p) => p.id), [priorities])
+
   const byLabel = useMemo(() => breakdownByLabel(tasks, 5), [tasks])
-  const byPriority = useMemo(() => breakdownByPriority(tasks), [tasks])
+  const byPriority = useMemo(() => breakdownByPriority(tasks, priorityOrder), [tasks, priorityOrder])
   const byColumn = useMemo(() => breakdownByColumn(tasks, 5), [tasks])
 
   return (

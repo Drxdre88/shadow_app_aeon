@@ -230,6 +230,27 @@ describe('applyBoardFilters', () => {
       expect(applyBoardFilters(tasks, f)).toHaveLength(0)
     })
 
+    // Filter objects persisted before `assignees` existed come back without
+    // the field at all. Every entry point must treat that as "no assignee
+    // filter" rather than throwing on `.size` / `.has`.
+    it('survives a persisted filter object that predates the field', () => {
+      const legacy = { ...createDefaultFilters(), assignees: undefined }
+      expect(hasActiveFilters(legacy)).toBe(false)
+      expect(activeFilterCount(legacy)).toBe(0)
+
+      const tasks = [
+        makeTask({ name: 'Mine', assigneeIds: ['user-1'] }),
+        makeTask({ name: 'Nobody' }),
+      ]
+      expect(applyBoardFilters(tasks, legacy)).toHaveLength(2)
+
+      // …and still filters on its other fields.
+      const searching = { ...legacy, search: 'Mine' }
+      expect(hasActiveFilters(searching)).toBe(true)
+      expect(activeFilterCount(searching)).toBe(1)
+      expect(applyBoardFilters(tasks, searching).map((t) => t.name)).toEqual(['Mine'])
+    })
+
     it('matches any of multiple selected assignees (OR semantics)', () => {
       const tasks = [
         makeTask({ name: 'A', assigneeIds: ['user-1'] }),

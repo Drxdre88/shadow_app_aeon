@@ -196,14 +196,25 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
   }
 
   const handleRemove = async (targetUserId: string) => {
-    // Optimistic: the row disappears immediately, restored on failure.
-    const prev = members
+    // Optimistic: the row disappears immediately, restored on failure. The
+    // restore re-inserts only THIS row, at its old position, via the functional
+    // form — snapshotting the render-closure list and setting it back wholesale
+    // resurrected rows a second, concurrent removal had already taken out.
+    const index = members.findIndex((m) => m.userId === targetUserId)
+    const removed = index >= 0 ? members[index] : undefined
     setMembers((p) => p.filter((m) => m.userId !== targetUserId))
     invalidateAssignablePeople(projectId)
     try {
       await removeProjectMember(projectId, targetUserId)
     } catch (err) {
-      setMembers(prev)
+      if (removed) {
+        setMembers((p) => {
+          if (p.some((m) => m.userId === targetUserId)) return p
+          const next = [...p]
+          next.splice(Math.min(index, next.length), 0, removed)
+          return next
+        })
+      }
       setError(err instanceof Error ? err.message : 'Failed to remove')
     }
   }
@@ -412,6 +423,7 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
                       {m.role !== 'owner' && (
                         <button
                           onClick={() => handleRemove(m.userId)}
+                          aria-label={`Remove ${m.name || m.email}`}
                           className="p-1 rounded hover:bg-red-500/10 text-slate-500 hover:text-red-400 transition-colors"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

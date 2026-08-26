@@ -1,28 +1,16 @@
 'use client'
 
-import { useCallback, useState, useMemo, useRef, useEffect } from 'react'
+import { useCallback, useState, useMemo, useEffect } from 'react'
 import { DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColumn, type BoardTask, type TaskAssigneePill } from '@/lib/store/boardStore'
-
-// Stable empty map so the assignee selector returns a referentially-identical
-// value while no assignee filter is active (see filteredTasks below).
-const EMPTY_ASSIGNEES: Record<string, TaskAssigneePill[]> = {}
 import { KanbanColumn } from './KanbanColumn'
 import { SortableColumn } from './SortableColumn'
 import { TaskEditModal } from './TaskEditModal'
 import { FloatingCardsLayer } from './FloatingCardsLayer'
-import { usePinnedCardsStore, isCardPinned } from '@/lib/store/pinnedCardsStore'
 import { ZenModeLayer } from './ZenModeLayer'
-import { useZenModeStore } from '@/lib/store/zenModeStore'
-import { TaskAssigneeOverlay } from './TaskAssigneeOverlay'
 import { BoardFilterBar } from './BoardFilterBar'
-import { DependencyGlowTree } from './DependencyGlowTree'
-import { LabelPicker } from './LabelPicker'
-import { TaskColorPicker } from './TaskColorPicker'
-import { TaskPriorityPicker } from './TaskPriorityPicker'
-import { TaskProgressPopover } from './TaskProgressPopover'
-import { TaskSizePopover } from './TaskSizePopover'
+import { BoardOverlays } from './BoardOverlays'
 import { TrashDropZone } from './TrashDropZone'
 import { DragPreview } from './DragPreview'
 import { ConnectModeBanner } from './ConnectModeBanner'
@@ -33,6 +21,7 @@ import { useThemeStore } from '@/stores/themeStore'
 import { applyBoardFilters, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { useBoardDnD } from './useBoardDnD'
+import { useBoardOverlays, type BoardTaskData } from './useBoardOverlays'
 import { useBoardPinchZoom } from './useBoardPinchZoom'
 import { boardCollisionDetection } from './boardCollision'
 import { useBoardKeyboardShortcuts } from './useBoardKeyboardShortcuts'
@@ -45,24 +34,9 @@ import { toast } from '@/components/ui/Toast'
 
 const EMPTY_TASKS: BoardTask[] = []
 
-interface BoardTaskData {
-  id: string
-  projectId: string
-  name: string
-  description?: string
-  columnId?: string
-  status: string
-  priority: string
-  color: string
-  labels: string[]
-  onTimeline: boolean
-  orderIndex: number
-  startDate?: string
-  endDate?: string
-  size?: number | null
-  progress?: number | null
-  ganttTaskId?: string | null
-}
+// Stable empty map so the assignee selector returns a referentially-identical
+// value while no assignee filter is active (see filteredTasks below).
+const EMPTY_ASSIGNEES: Record<string, TaskAssigneePill[]> = {}
 
 interface TaskBoardProps {
   projectId: string
@@ -126,36 +100,14 @@ export function TaskBoard({
   const columns = useColumns()
   const tasks = useTasks()
   const selectedTaskId = useSelectedTaskId()
-  const addTask = useBoardStore((s) => s.addTask)
-  const updateTask = useBoardStore((s) => s.updateTask)
   const selectTask = useBoardStore((s) => s.selectTask)
   const addColumn = useBoardStore((s) => s.addColumn)
   const updateColumn = useBoardStore((s) => s.updateColumn)
   const removeColumn = useBoardStore((s) => s.removeColumn)
   const { colors: themeColors, glowIntensity: globalGlow, dragEffect, shortcuts, boardLayout, smoothUiRenders } = useThemeStore()
 
-  const [editingTask, setEditingTask] = useState<string | null>(null)
-  const [newTaskColumnId, setNewTaskColumnId] = useState<string | null>(null)
   const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null)
   const [internalFilters, setInternalFilters] = useState<BoardFilters>(DEFAULT_FILTERS)
-  const [dependencyTreeTaskId, setDependencyTreeTaskId] = useState<string | null>(null)
-  const [labelPickerTaskId, setLabelPickerTaskId] = useState<string | null>(null)
-  const [colorPickerTaskId, setColorPickerTaskId] = useState<string | null>(null)
-  const [priorityPickerTaskId, setPriorityPickerTaskId] = useState<string | null>(null)
-  const [assigneeTaskId, setAssigneeTaskId] = useState<string | null>(null)
-  const [progressTaskId, setProgressTaskId] = useState<string | null>(null)
-  const [sizeTaskId, setSizeTaskId] = useState<string | null>(null)
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    color: 'purple' as string,
-    priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
-    size: null as number | null,
-  })
-
-  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const formDataRef = useRef(formData)
-  formDataRef.current = formData
 
   const showFilters = showFiltersFromParent ?? false
   const filters = filtersFromParent ?? internalFilters
@@ -215,33 +167,24 @@ export function TaskBoard({
     onColumnReorder,
   })
 
-  const handleAddTask = useCallback((columnId: string) => {
-    setFormData({ name: '', description: '', color: 'purple', priority: 'medium', size: null })
-    setNewTaskColumnId(columnId)
-    setEditingTask(null)
-  }, [])
-
-  const handleTaskEdit = useCallback((taskId: string) => {
-    selectTask(taskId)
-    // Already open as a floating window — refocus it instead of opening a
-    // second editor on the same card.
-    if (isCardPinned(taskId)) {
-      usePinnedCardsStore.getState().openCard(taskId)
-      return
-    }
-    const task = tasks.find((t) => t.id === taskId)
-    if (task) {
-      setFormData({
-        name: task.name,
-        description: task.description || '',
-        color: task.color,
-        priority: task.priority,
-        size: task.size ?? null,
-      })
-      setEditingTask(taskId)
-      setNewTaskColumnId(null)
-    }
-  }, [tasks, selectTask])
+  const {
+    editingTask,
+    newTaskColumnId,
+    formData,
+    isModalOpen,
+    hasOpenOverlay,
+    zenColumnId,
+    zenColumn,
+    overlayState,
+    handleAddTask,
+    handleTaskEdit,
+    handleFormChange,
+    handleSubmit,
+    closeModal,
+    flushAutosave,
+    handlePinCard,
+    handleUnpinCard,
+  } = useBoardOverlays({ projectId, projectTasks, sortedColumns, onTaskCreate, onTaskUpdate })
 
   const handleTaskClick = useCallback((taskId: string) => {
     handleConnectClick(taskId, handleTaskEdit)
@@ -280,38 +223,24 @@ export function TaskBoard({
     })
   }, [copiedTaskId, projectId])
 
-  const hasOpenOverlay = !!editingTask || !!newTaskColumnId || !!labelPickerTaskId || !!colorPickerTaskId || !!priorityPickerTaskId || !!dependencyTreeTaskId || !!assigneeTaskId || !!progressTaskId || !!sizeTaskId
-
-  const zenColumnId = useZenModeStore((s) => s.columnId)
-  const zenColumn = useMemo(
-    () => (zenColumnId ? sortedColumns.find((c) => c.id === zenColumnId) ?? null : null),
-    [zenColumnId, sortedColumns]
-  )
-
-  // Focused column deleted or the board switched projects: drop Zen rather
-  // than exit-fly into a slot that no longer exists.
-  useEffect(() => {
-    if (zenColumnId && !zenColumn) useZenModeStore.getState().clear()
-  }, [zenColumnId, zenColumn])
-
   useBoardKeyboardShortcuts({
     hoveredTaskId,
     selectedTaskId,
     shortcuts,
     sortedColumns,
     hasOpenOverlay,
-    onOpenLabel: setLabelPickerTaskId,
-    onOpenColorPicker: setColorPickerTaskId,
-    onOpenPriorityPicker: setPriorityPickerTaskId,
+    onOpenLabel: overlayState.setLabelPickerTaskId,
+    onOpenColorPicker: overlayState.setColorPickerTaskId,
+    onOpenPriorityPicker: overlayState.setPriorityPickerTaskId,
     onEditCard: handleTaskEdit,
     onToggleDone: (taskId) => cycleTaskCompletion(taskId, onTaskUpdate),
     onAddTask: handleAddTask,
     onCopyCard: handleCopyCard,
     onPasteCard: handlePasteCard,
     onSelectTask: selectTask,
-    onOpenAssignee: (taskId) => setAssigneeTaskId((prev) => (prev === taskId ? null : taskId)),
-    onOpenProgress: (taskId) => setProgressTaskId((prev) => (prev === taskId ? null : taskId)),
-    onOpenSize: (taskId) => setSizeTaskId((prev) => (prev === taskId ? null : taskId)),
+    onOpenAssignee: (taskId) => overlayState.setAssigneeTaskId((prev) => (prev === taskId ? null : taskId)),
+    onOpenProgress: (taskId) => overlayState.setProgressTaskId((prev) => (prev === taskId ? null : taskId)),
+    onOpenSize: (taskId) => overlayState.setSizeTaskId((prev) => (prev === taskId ? null : taskId)),
     onTaskMove,
   })
 
@@ -349,98 +278,6 @@ export function TaskBoard({
     onColumnCreate?.({ id: newCol.id, projectId, name: newCol.name, color: newCol.color, orderIndex: newCol.orderIndex })
   }, [projectId, sortedColumns, addColumn, onColumnCreate])
 
-  const persistEdit = useCallback((data: typeof formData, taskId: string) => {
-    const name = data.name.trim()
-    if (!name) return
-    const updates = {
-      name,
-      description: data.description.trim() || undefined,
-      color: data.color,
-      priority: data.priority,
-      size: data.size,
-    }
-    updateTask(taskId, updates)
-    onTaskUpdate?.(taskId, updates, { silent: true })
-  }, [updateTask, onTaskUpdate])
-
-  const flushAutosave = useCallback(() => {
-    if (autosaveTimer.current) { clearTimeout(autosaveTimer.current); autosaveTimer.current = null }
-    if (editingTask) persistEdit(formDataRef.current, editingTask)
-  }, [editingTask, persistEdit])
-
-  // Autosave title/description (Linear/Trello-style): debounce while typing and
-  // flush on blur / close / unmount, so edits aren't lost when the modal is
-  // dismissed without pressing the button.
-  const handleFormChange = useCallback((data: typeof formData) => {
-    setFormData(data)
-    if (!editingTask) return
-    if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
-    const taskId = editingTask
-    autosaveTimer.current = setTimeout(() => {
-      autosaveTimer.current = null
-      persistEdit(data, taskId)
-    }, 700)
-  }, [editingTask, persistEdit])
-
-  useEffect(() => () => { if (autosaveTimer.current) clearTimeout(autosaveTimer.current) }, [])
-
-  const handleSubmit = useCallback(() => {
-    if (editingTask) {
-      // Edits already autosaved; the button just flushes any pending write
-      // and closes.
-      flushAutosave()
-      setEditingTask(null)
-      return
-    }
-    if (!formData.name.trim()) return
-
-    if (newTaskColumnId) {
-      const maxOrder = Math.max(0, ...projectTasks.filter((t) => t.columnId === newTaskColumnId).map((t) => t.orderIndex))
-      const newTask = {
-        id: generateId(),
-        projectId,
-        name: formData.name.trim(),
-        description: formData.description.trim() || undefined,
-        columnId: newTaskColumnId,
-        status: 'todo',
-        priority: formData.priority,
-        color: formData.color,
-        labels: [],
-        onTimeline: false,
-        size: formData.size,
-        orderIndex: maxOrder + 1,
-      }
-      addTask(newTask)
-      onTaskCreate?.(newTask)
-      setNewTaskColumnId(null)
-      requestAnimationFrame(() => {
-        document.querySelector(`[data-task-id="${CSS.escape(newTask.id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-      })
-    }
-  }, [formData, editingTask, newTaskColumnId, projectTasks, projectId, addTask, onTaskCreate, flushAutosave])
-
-  const closeModal = useCallback(() => {
-    flushAutosave()
-    setEditingTask(null)
-    setNewTaskColumnId(null)
-  }, [flushAutosave])
-
-  // Pin: pop the open modal card out as a floating window. The modal (and
-  // its backdrop) closes, leaving the board fully interactive.
-  const handlePinCard = useCallback((taskId: string) => {
-    flushAutosave()
-    setEditingTask(null)
-    setNewTaskColumnId(null)
-    usePinnedCardsStore.getState().openCard(taskId)
-  }, [flushAutosave])
-
-  // Unpin: close the floating window and reopen the card as a normal modal.
-  const handleUnpinCard = useCallback((taskId: string) => {
-    usePinnedCardsStore.getState().closeCard(taskId)
-    handleTaskEdit(taskId)
-  }, [handleTaskEdit])
-
-  const isModalOpen = editingTask !== null || newTaskColumnId !== null
   const isTaskDrag = activeItem?.type === 'task'
 
   return (
@@ -518,7 +355,7 @@ export function TaskBoard({
                       onArchiveColumn={onArchiveColumn}
                       overId={overId}
                       activeTaskId={activeItem?.type === 'task' ? (activeItem.data as BoardTaskData).id : null}
-                      onDependencyClick={setDependencyTreeTaskId}
+                      onDependencyClick={overlayState.setDependencyTreeTaskId}
                       dragHandleProps={dragHandleProps}
                     />
                   )}
@@ -575,7 +412,7 @@ export function TaskBoard({
           onPushToGantt={onPushToGantt}
           onSendToVault={onSendToVault}
           onArchiveTask={onArchiveTask}
-          onDependencyClick={setDependencyTreeTaskId}
+          onDependencyClick={overlayState.setDependencyTreeTaskId}
           onTaskMove={onTaskMove}
         />
       )}
@@ -594,77 +431,18 @@ export function TaskBoard({
         onPushToGantt={onPushToGantt}
       />
 
-      <TaskAssigneeOverlay
+      <BoardOverlays
         projectId={projectId}
-        taskId={assigneeTaskId}
-        onClose={() => setAssigneeTaskId(null)}
+        state={overlayState}
+        showAllDeps={showAllDeps}
+        onShowAllDepsChange={onShowAllDepsChange}
+        onTaskEdit={handleTaskEdit}
+        onTaskUpdate={onTaskUpdate}
+        onLabelCreate={onLabelCreate}
+        onLabelUpdate={onLabelUpdate}
+        onLabelDelete={onLabelDelete}
+        onLabelToggle={onLabelToggle}
       />
-
-      {progressTaskId && (
-        <TaskProgressPopover
-          taskId={progressTaskId}
-          onClose={() => setProgressTaskId(null)}
-          onTaskUpdate={onTaskUpdate}
-        />
-      )}
-
-      {sizeTaskId && (
-        <TaskSizePopover
-          taskId={sizeTaskId}
-          onClose={() => setSizeTaskId(null)}
-          onTaskUpdate={onTaskUpdate}
-        />
-      )}
-
-      {dependencyTreeTaskId && (
-        <DependencyGlowTree
-          taskId={dependencyTreeTaskId}
-          onClose={() => setDependencyTreeTaskId(null)}
-          onTaskEdit={(id) => { setDependencyTreeTaskId(null); handleTaskEdit(id) }}
-          onTaskUpdate={onTaskUpdate}
-        />
-      )}
-
-      {showAllDeps && (
-        <DependencyGlowTree
-          taskId={null}
-          showAll
-          onClose={() => onShowAllDepsChange?.(false)}
-          onTaskEdit={(id) => { onShowAllDepsChange?.(false); handleTaskEdit(id) }}
-          onTaskUpdate={onTaskUpdate}
-        />
-      )}
-
-      {labelPickerTaskId && (
-        <LabelPicker
-          taskId={labelPickerTaskId}
-          projectId={projectId}
-          isOpen={!!labelPickerTaskId}
-          onClose={() => setLabelPickerTaskId(null)}
-          onLabelCreate={onLabelCreate}
-          onLabelUpdate={onLabelUpdate}
-          onLabelDelete={onLabelDelete}
-          onLabelToggle={onLabelToggle}
-        />
-      )}
-
-      {colorPickerTaskId && (
-        <TaskColorPicker
-          taskId={colorPickerTaskId}
-          isOpen={!!colorPickerTaskId}
-          onClose={() => setColorPickerTaskId(null)}
-          onTaskUpdate={onTaskUpdate}
-        />
-      )}
-
-      {priorityPickerTaskId && (
-        <TaskPriorityPicker
-          taskId={priorityPickerTaskId}
-          isOpen={!!priorityPickerTaskId}
-          onClose={() => setPriorityPickerTaskId(null)}
-          onTaskUpdate={onTaskUpdate}
-        />
-      )}
 
       <ConnectModeBanner
         connectMode={connectMode ?? false}

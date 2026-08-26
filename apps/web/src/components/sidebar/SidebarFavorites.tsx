@@ -48,16 +48,20 @@ export function SidebarFavorites({ collapsed, className }: { collapsed: boolean;
         {favorites.map((fav) => {
           const isActive = pathname?.startsWith(`/project/${fav.id}`) ?? false
           return (
-            <li key={fav.id} className={cn(!collapsed && 'w-full')}>
+            // `group`/`relative` live on the LI, not the button: the hide
+            // toggle is a sibling of the nav button (a button inside a button
+            // is invalid HTML and reads as one control to assistive tech), so
+            // it is positioned over the row and shares the row's hover group.
+            <li key={fav.id} className={cn('group relative', !collapsed && 'w-full')}>
               <motion.button
                 whileTap={{ scale: 0.97 }}
                 title={fav.name}
                 onMouseEnter={() => router.prefetch(`/project/${fav.id}`)}
                 onClick={() => router.push(`/project/${fav.id}`)}
                 className={cn(
-                  'group relative flex items-center gap-2.5 rounded-lg overflow-hidden',
+                  'relative flex items-center gap-2.5 rounded-lg overflow-hidden',
                   'text-left text-xs font-medium transition-all duration-200',
-                  collapsed ? 'justify-center w-9 h-9 px-0' : 'w-full px-2 py-1.5',
+                  collapsed ? 'justify-center w-9 h-9 px-0' : 'w-full pl-2 pr-7 py-1.5',
                   isActive
                     ? 'bg-white/[0.08] text-white'
                     : 'text-white/50 hover:text-white/80 hover:bg-white/[0.04]',
@@ -106,27 +110,19 @@ export function SidebarFavorites({ collapsed, className }: { collapsed: boolean;
                   )}
                 </AnimatePresence>
 
-                {!collapsed && (
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    title="Hide from sidebar"
-                    className="shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-white/[0.1] text-white/40 hover:text-white/70 transition-all cursor-pointer relative"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      toggleHideProject(fav.id)
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.stopPropagation()
-                        toggleHideProject(fav.id)
-                      }
-                    }}
-                  >
-                    <EyeOff className="w-3 h-3" />
-                  </span>
-                )}
               </motion.button>
+
+              {!collapsed && (
+                <button
+                  type="button"
+                  title="Hide from sidebar"
+                  aria-label={`Hide ${fav.name} from sidebar`}
+                  className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 rounded hover:bg-white/[0.1] text-white/40 hover:text-white/70 transition-all"
+                  onClick={() => toggleHideProject(fav.id)}
+                >
+                  <EyeOff className="w-3 h-3" />
+                </button>
+              )}
             </li>
           )
         })}

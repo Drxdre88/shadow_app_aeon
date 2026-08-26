@@ -97,6 +97,18 @@ describe('Virtual members MCP <-> REST parity', () => {
       }
     })
 
+    // The MCP tools declare realmId as z.string().uuid(). Unvalidated, a
+    // malformed path segment reached Postgres and came back as a 22P02 cast
+    // error — a 500 where the tool surface answers with a validation error.
+    it('validates the realm id as a uuid before it reaches the query layer', () => {
+      for (const [file, src] of Object.entries(restSrc)) {
+        expect(src, `${file} missing uuid validation`).toMatch(/z\.string\(\)\.uuid\(\)/)
+        expect(src, `${file} must 400 a malformed realm id`)
+          .toMatch(/safeParse\(realmId\)\.success\) return jsonError\('Invalid realm id', 400\)/)
+      }
+      expect(mcpSrc).toMatch(/realmId:\s*z\.string\(\)\.uuid\(\)/)
+    })
+
     it('rate-limits every verb', () => {
       expect(restSrc[REST_COLLECTION]).toMatch(/withRateLimit\([\s\S]*API_READ_LIMIT/)
       for (const src of Object.values(restSrc)) {
@@ -238,6 +250,19 @@ describe('Virtual members MCP <-> REST parity', () => {
       const del = actionsSrc.slice(actionsSrc.indexOf('export async function deleteVirtualMemberAction'))
       expect(del).toMatch(/getGroupRole\(member\.realmId, userId\)/)
       expect(del).toMatch(/!role \|\| role === 'viewer'/)
+    })
+
+    // A rename/recolor rewrites a SHARED identity visible on every project in
+    // the realm, exactly like delete does — so it carries the same realm gate.
+    // Project-editor rights alone used to be enough here, which was strictly
+    // more permissive than the REST PATCH and the MCP tool.
+    it('update demands realm-editor rights too, matching REST PATCH / MCP', () => {
+      const update = actionsSrc.slice(
+        actionsSrc.indexOf('export async function updateVirtualMemberAction'),
+        actionsSrc.indexOf('export async function deleteVirtualMemberAction'),
+      )
+      expect(update).toMatch(/getGroupRole\(member\.realmId, userId\)/)
+      expect(update).toMatch(/!role \|\| role === 'viewer'/)
     })
 
     it('REST/MCP delete does NOT carry the project-reachability check — realm rights are the contract there', () => {
