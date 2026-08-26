@@ -22,13 +22,39 @@ metadata, and an always-on durable save pipeline.
 - Inline quick-add (`QuickAddTask.tsx`) + full modal edit (`TaskEditModal.tsx`) + per-card menu (`TaskContextMenu.tsx`); card title/description **autosave**.
 - **Checklist** (tri-state, grouped, sortable; atomic ordering via `db.transaction()`), **Labels** (per-project), **Dependencies** (blocker/blocked + overlay + glow tree), **Comments** (threaded), **Sizing/stale/peek**, **Dates**.
 
+### Instant assign + virtual team members (commit `7733956`)
+Assignment is optimistic end to end — the pill lands synchronously and the write happens behind it.
+- `lib/store/assigneeMutations.ts` — plain functions over `boardStore.assigneesByTask` (not a store). Serializes the network write per `(taskId, memberId)` through a promise lane + generation counter, so a fast assign→unassign cannot settle backwards on the server; reverts **only its own pill**, never a whole-map snapshot (that would clobber concurrent toggles).
+- `lib/store/membersCache.ts` — per-project TTL cache of `getAssignablePeople()` with prefetch on board mount and stale-while-revalidate reads, so the overlay opens without a Neon round trip.
+- **Virtual members** — realm-scoped people with no account, assignable like real ones: `TaskAssigneeVirtualSection.tsx` (create/rename/recolor/delete, each optimistic with surgical per-member revert; delete is two-click and self-disarms), `components/ui/MemberAvatar.tsx` (dashed ring marks a virtual member), filterable in `BoardFilterBar.tsx`. Data layer + parity surfaces in [data-layer.md](data-layer.md) and [platform.md](platform.md).
+
 ### Assignees + avatar pile (shipped)
 - Multi-assign overlay on the **M hotkey** / on hover (`TaskAssigneeOverlay.tsx`, `lib/data/assignees.ts`).
 - The assignable list includes **owner + explicit project members + realm members** via `findAssignableMembers()` (`lib/data/members.ts:27`) — previously projectMembers-only (commit `22b281a`).
 - **Avatar pile on cards** (commit `95537d0`): overlapping pile (image/initials, `+N` overflow >4) via `AssigneeDot` (`SortableTaskCard.tsx:337,494`). Assignees bulk-load into `boardStore.assigneesByTask`, read via scoped `useTaskAssignees(taskId)`; overlay writes through to the store so the pile updates live.
 
+### Pinnable floating card windows (commit `1686352`)
+An open card can be pinned out of the modal into a draggable, non-modal panel — the board behind stays fully interactive, and several cards can sit side by side.
+- `lib/store/pinnedCardsStore.ts` — open windows (taskId, x/y, width, folded, z-stack), cascade spawn positions, viewport clamping so a title bar is always reachable. In-memory.
+- `FloatingCardWindow.tsx` — pointer-capture drag (no dnd-kit, works under reduce-motion); its own 700ms debounced autosave gated on a `dirty` ref so closing an untouched window can't overwrite a newer peer edit; flushes on close/fold/unmount.
+- `FloatingCardsLayer.tsx` — `pointer-events-none` layer with **no backdrop** (that is what keeps the board live), plus a bottom dock of folded chips; auto-closes windows whose task was deleted.
+- `TaskEditContent.tsx` — the modal body extracted so modal and floating shells share one implementation.
+- Pin/unpin handover lives in `useBoardOverlays.ts`; clicking an already-pinned card refocuses its window instead of opening a second editor.
+
+### Column Zen mode (commit `29bf116`)
+Right-click a column (or tap its header focus button — the touch path, since a header long-press already means "drag") and it FLIP-flies from its on-board rect onto a centered, full-height focus surface over a blurred backdrop.
+- `lib/store/zenModeStore.ts` — focused column id + the entry `sourceRect` (the FLIP origin). In-memory.
+- `ZenModeLayer.tsx` — portal at z-35 (below pinned cards z-40 and modals z-50, so a card opened from Zen stacks on top). Its own `DndContext` isolates it from cross-column board dnd, but sensor tuning comes from the shared `useBoardSensors()` and the reorder maths from `dropIndex.ts` — the same tested path the board uses, so a Zen drop and a board drop cannot disagree. Within-column reorder only, computed against the column's FULL order so hidden (filtered) cards keep correct indices.
+- `zenFlight.ts` / `zenScroller.ts` + `ZenScrollbar.tsx` — pure FLIP geometry, and a finger-friendly scroller (28px hit strip, slim visual, tap-track paging) built because dragging a long column by thumb is the point of the feature on a phone.
+- Teardown carries a 700ms fallback: a pose already at its target can settle without firing `onAnimationComplete`, which would otherwise strand the app behind the blur. Zen auto-clears if its column is deleted or the project switches.
+
+### Contained pinch-zoom + touch ergonomics (commits `7481931`, `c605206`)
+Page-level zoom is disabled app-wide; the board owns the gesture instead, so zooming out gives a bird's-eye view of the columns rather than the browser pulling the whole app out of frame.
+- `useBoardPinchZoom.ts` + `pinchZoom.ts` — non-passive touch events (pointer events would be killed by `pointercancel` mid-scroll); all per-frame work is imperative ref writes, so a 100-card board holds gesture framerate. While zoomed, the wrapper is laid out at **container height ÷ scale** so the transform lands exactly on the container's bottom edge — without that the columns keep their own height, shrink toward the origin and leave the screen empty below (owner-reported). Grid layout keeps its natural wrapped height. Metrics re-measure per gesture and on resize. Safari's proprietary `gesturestart`/`gesturechange` is prevented because iOS Safari ignores `user-scalable=no`.
+- Touch scroll vs drag: cards use `touch-action: manipulation` (**not** `none`, which made the browser ignore every pan starting on a card), `MouseSensor` for mouse (PointerSensor would also claim touch), and `TouchSensor` at `delay 250 / tolerance 8` — swipe scrolls, hold lifts.
+
 ### Filtering, shortcuts, palette, performance
-- Filter bar (text + priority + label + column + date), customizable keyboard shortcuts, Cmd+K command palette, TanStack Virtual at a 15+ card threshold, project nav prefetched on hover.
+- Filter bar (text + priority + label + **assignee, real + virtual** + column + date), customizable keyboard shortcuts, Cmd+K command palette, TanStack Virtual at a 15+ card threshold, project nav prefetched on hover.
 
 ### Optimistic UI + never-asleep durable save queue
 The snapshot-rollback optimistic path is now backed by a durable, offline-safe pipeline (commit `fc9806c`):
@@ -43,7 +69,12 @@ Day/week/month-scale Gantt with saved views + swimlanes (`components/gantt/`, `l
 ReactFlow whiteboard (`components/canvas/CanvasView.tsx`, `lib/store/canvasStore.ts`). REST-only (no MCP tools by design).
 
 ## 4. Trophy / Vault
-Archived-task archive + stats + timeline (`components/trophy/`). Batch archiving via `BatchVaultModal.tsx` + `lib/actions/vault.ts` (`snapshotTaskDataBatch`); `taskVault` snapshot table.
+Archived-task archive with a gold celebratory identity (rebuilt `fd02b6f`; the old `TrophyStats.tsx` is deleted).
+- `trophy-stats.ts` — pure aggregation: period bucketing, streaks, month-over-month, breakdowns by priority/label/column, effort banked, and `priorityRankMap`/`comparePriority` (one ranking shared by the gallery sort and the table's column sort). Buckets by **raw** priority id so user-defined levels keep their own row.
+- `trophy-theme.ts` — gold palette + `goldText(isDark)`; re-exports the canonical `hexToRgba` as `hexAlpha` rather than keeping a second implementation.
+- `TrophyHero.tsx` (medallion stat row), `TrophyInsights.tsx` (inline-SVG charts, per-instance gradient ids), `TrophyTable.tsx` (sortable/searchable); `TrophyRoom.tsx` orchestrates a gallery/table toggle over the existing timeline/priority/label groupings. No chart library — all SVG/CSS, palette derived from theme tokens.
+- Batch archiving unchanged: `BatchVaultModal.tsx` + `lib/actions/vault.ts` (`snapshotTaskDataBatch`); `taskVault` snapshot table.
+- Stats are computed client-side over the loaded vault window (default 200), so charts and streaks reflect the most recent 200 while totals come from server aggregates.
 
 ## 5. Velocity
 Throughput / cycle-time / heatmap analytics (`components/velocity/`, `lib/data/velocity.ts`).
@@ -56,6 +87,7 @@ Full CRUD + 7-day email invites + scoped project visibility (`components/workspa
 
 ## 8. Sidebar
 Home glowing pinned entry, Today/utility bottom pills, Kairos pill + Setup/Guide, per-project/per-realm hide toggle (`SidebarHome.tsx`, `SidebarBottom.tsx`, `KairosSidebarSection.tsx`, `sidebarStore.ts`).
+**Favorites first** (commit `52559fd`): starred boards render as the top group, above the realm/dominion groupings — `stores/favoritesStore.ts` (hydrated once per load; `entries: null` until then so a lone toggle can't masquerade as the full list) + `SidebarFavorites.tsx`, mounted in `AppSidebar` and `ProjectSidebar`. Live-updates from any star toggle (board header or dashboard); hidden entirely when empty.
 
 ## 9. Theming, effects, celebrations, motion
 - **Theming**: 151 presets across 17 categories (`packages/shared/src/config/themes/`, `stores/themeStore.ts`) — glow, glass, saturation, fonts, per-project board themes, Business Mode.
@@ -72,6 +104,14 @@ Create/edit/delete/realm-assign (`components/project/`); Space/Tree/Grid views; 
 | Board (Kanban) + DnD | Complete | `components/board/TaskBoard.tsx`, `useBoardDnD.ts` |
 | Task CRUD / modal / context menu / autosave | Complete | `TaskEditModal.tsx`, `TaskContextMenu.tsx`, `QuickAddTask.tsx` |
 | Checklist / Labels / Dependencies / Comments | Complete | `board/checklist/` (ghost new-item flow — pending groups live in local state until first commit, PR #86, `TaskChecklist.tsx:131`), `LabelPicker.tsx`, `TaskDependencySection.tsx`, `TaskComments.tsx` |
+| **Stable checklist group order** | Complete | `checklist/groupOrder.ts` (`mergeGroupOrder` — order is a remembered list, not derived from items, so empty groups hold their slot), `useChecklistHandlers.ts` (`arrangeItemAdd` + contiguous reindex for reload parity) |
+| **Pinnable floating card windows** | Complete | `lib/store/pinnedCardsStore.ts`, `FloatingCardWindow.tsx`, `FloatingCardsLayer.tsx`, `TaskEditContent.tsx`, `useBoardOverlays.ts` |
+| **Column Zen mode** | Complete | `ZenModeLayer.tsx`, `ZenScrollbar.tsx`, `zenFlight.ts`, `zenScroller.ts`, `lib/store/zenModeStore.ts`, `useBoardSensors.ts` |
+| **Contained pinch-zoom (bird's-eye) + touch drag/scroll** | Complete | `useBoardPinchZoom.ts`, `pinchZoom.ts`, `useBoardSensors.ts`, `SortableTaskCard.tsx` |
+| **Instant optimistic assign** | Complete | `lib/store/assigneeMutations.ts`, `lib/store/membersCache.ts` |
+| **Virtual team members (accountless, realm-scoped)** | Complete | `TaskAssigneeVirtualSection.tsx`, `components/ui/MemberAvatar.tsx`, `lib/data/virtual-members.ts`, migration 0032 |
+| **Sidebar favorites section** | Complete | `stores/favoritesStore.ts`, `components/sidebar/SidebarFavorites.tsx` |
+| **Unified priority / label appearance** | Complete | `lib/utils/priorities.ts` (`resolvePriority` — user's set first, factory only as fallback), `lib/utils/labels.ts`, `lib/utils/initials.ts`, `resolveAccentHex` in `lib/utils/colors.ts` |
 | **Project Favorites (star + dashboard section)** | Complete | `board/FavoriteStar.tsx`, `lib/actions/projects.ts` (`toggleProjectFavorite`), `favoriteProjects` table (0026); MCP `set_project_favorite` + REST `PUT /projects/[id]/favorite` (PR #80) |
 | Sizing / stale / peek | Complete | `TaskSizeBadge.tsx`, `StaleIndicator.tsx`, `CardPeekPreview.tsx` |
 | Assignees (overlay, M-hotkey, owner+realm) | Complete | `TaskAssigneeOverlay.tsx`, `lib/data/members.ts:27` |
@@ -93,8 +133,11 @@ Create/edit/delete/realm-assign (`components/project/`); Space/Tree/Grid views; 
 
 | Store | Manages | File | Persistence |
 |---|---|---|---|
-| `useBoardStore` | columns, tasks, labels, deps, checklists, **assigneesByTask**, selection, filters, **saveStatus/isDirty** | `lib/store/boardStore.ts` | `zustand/persist` |
+| `useBoardStore` | columns, tasks, labels, deps, checklists, **assigneesByTask**, **virtualMembers**, selection, filters, **saveStatus/isDirty** | `lib/store/boardStore.ts` | `zustand/persist` |
 | `useMutationQueue` | durable FIFO mutation queue | `lib/store/mutationQueue.ts` | `zustand/persist` (localStorage; records only) |
+| **`usePinnedCardsStore`** | floating card windows — position, width, folded, z-stack | `lib/store/pinnedCardsStore.ts` | in-memory |
+| **`useZenModeStore`** | Zen-focused column id + entry source rect | `lib/store/zenModeStore.ts` | in-memory |
+| **`useFavoritesStore`** | starred projects (id, name, favoritedAt); `null` until hydrated | `stores/favoritesStore.ts` | in-memory, server-hydrated |
 | `useCanvasStore` | canvas nodes/edges/selection | `lib/store/canvasStore.ts` | `zustand/persist` |
 | `useGanttStore` | gantt tasks/rows/views/scale | `lib/store/ganttStore.ts` | `zustand/persist` |
 | `useUndoStore` | undo stack (max 20) | `lib/store/undoStore.ts` | in-memory |
@@ -103,3 +146,5 @@ Create/edit/delete/realm-assign (`components/project/`); Space/Tree/Grid views; 
 | `useKairosStore` | selected memory id, refresh signal | `stores/kairosStore.ts` | in-memory |
 | `useKairosVisorStore` | Visor open + active thread id | `stores/kairosVisorStore.ts` | active thread id only |
 | `useKairosPrefsStore` | Kairos galaxy prefs (view/backdrop keys dropped with the Aether-UI retirement, PR #81) | `stores/kairosPrefsStore.ts` | `zustand/persist` |
+
+Living under `lib/store/` but **not** Zustand stores: `persistMutation.ts` (retry helper), `mutationDispatch.ts` (dispatch types), `assigneeMutations.ts` and `membersCache.ts` (plain module functions + a Map).

@@ -7,7 +7,7 @@ Aeon exposes four programmatic front doors over the same three-layer data core (
 1. **REST API** (`/api/v1/*`) — session- or bearer-authenticated; the surface the web app, scripts, and the mobile app call.
 2. **Mobile auth** (`/api/v1/auth/mobile/*`) — issues 90-day bearer sessions for the mobile app.
 3. **OAuth 2.1 authorization server** (`/api/oauth/*` + `/.well-known/*`) — lets claude.ai's OAuth-only remote MCP connector reach the MCP server.
-4. **MCP tool server** (`/api/[transport]/`) — **109 tools across 19 categories** for AI agents.
+4. **MCP tool server** (`/api/[transport]/`) — **118 tools across 21 categories** for AI agents.
 
 ---
 
@@ -36,13 +36,17 @@ NextAuth session cookie is the fallback when no bearer is present (`auth.ts:50-5
 | `projects` | `projects`, `projects/resolve` (repo-slug → project), `[id]` + `summary`/`velocity` |
 | `projects/[id]/…` | `columns`(+reorder), `rows`(+reorder), `gantt`(+`[taskId]`,batch), `gantt-views`, `labels`, `dependencies`(+batch,remove), `canvas` |
 | `projects/[id]/tasks/…` | `tasks`(+batch), `[taskId]` + detail/checklist/comments/labels |
-| `realms` | `realms`, `[realmId]` + members/projects |
+| `realms` | `realms`, `[realmId]` + members/projects, **`[realmId]/virtual-members`**(+`[virtualMemberId]`) |
 | `memories` | `memories`(+search,capture,context,needs-summary), `[id]`(+export,neighbours,accept,links) |
 | `ai` | `ai/credentials`(+`[id]`,test), `ai/preferences` — **admin-gated** |
 | `sessions` | `sessions`, `[id]`(+events,kill) |
 | `recipes` | `recipes`, `recipes/run`, `recipes/traces` — REST mirror of `run_recipe`, sharing `runRecipeArgs` + `dispatch.runRecipe` so MCP/REST never drift |
 | `projects/[id]/favorite` | PUT toggle for per-user project favorites (PR #80; mirrors MCP `set_project_favorite`) |
 | `kairos/speak` | `POST /api/v1/kairos/speak` — **Kairos-initiated delivery** (Will-inbox `notify` memory + best-effort Telegram fan-out). Auth `Bearer ${CRON_SECRET}` (cron idiom, not user bearer). Server-side interrupt throttle: 4h min gap + 3/24h cap → 429; `force:true` bypass audit-logged and ceilinged at 10/24h. **Deliberately OUTSIDE MCP/REST parity** — internal delivery channel, no MCP mirror. |
+
+> ⚠️ **Route params are a Promise in Next 16 — always `await` them.** A handler that reads `(ctx as {params:{…}}).params` synchronously gets `undefined` for every segment, so an id-scoped guard like `getGroupRole(undefined, userId)` matches nothing and the route answers **403 for every caller**. It fails closed, compiles cleanly, and no test or typecheck catches it. Five routes under `api/v1/realms/` were written that way on 2026-04-02 and had never worked; found and fixed 2026-08-26 (`daeb93d`), all 7 param-reading route files now `await`. Use `type Params = { params: Promise<{ … }> }` + `const { x } = await (ctx as Params).params` — the pattern every other v1 family already uses.
+
+**Virtual members (REST):** `GET`/`POST` on `[realmId]/virtual-members`, `PATCH`/`DELETE` on `[realmId]/virtual-members/[virtualMemberId]`. Role gate via `getGroupRole` — reads need any realm member, writes need non-viewer; both path segments are uuid-validated before reaching Postgres (a malformed id 400s instead of surfacing as a 500). Rate-limited like the rest of v1. Mirrored by 4 MCP tools sharing the same Zod validators and `lib/data` functions; `api/__tests__/virtual-members-parity.test.ts` locks the pair, including a **deliberate asymmetry**: the board server action is *stricter* than REST/MCP — it also demands project-editor rights and project reachability, because it is reached from a board the caller is already inside.
 
 **Auxiliary (non-v1):** `POST /api/telegram/webhook` — Telegram bot webhook (PRs #85/#87). Auth = `X-Telegram-Bot-Api-Secret-Token` match; single-operator gate (`TELEGRAM_OPERATOR_CHAT_ID`); handles inbox accept/dismiss callbacks + free text into the persistent whole-brain "Telegram · Kairos" chat thread; always returns 200 (Telegram redelivers on 5xx). Client: `lib/kairos/telegram.ts` (fetch-only, markdown→Telegram-HTML renderer + plain-text fallback). See [kairos/chat.md](kairos/chat.md).
 
@@ -82,7 +86,7 @@ Tokens: `aeon_at_` access (30d) + `aeon_rt_` refresh (1y, rotated), SHA-256-hash
 
 ## 4. MCP tools (`/api/[transport]/`)
 
-Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via `verifyToken` → `authenticateRequest`. **109 tools across 19 categories** (`tools/index.ts`, `route.ts:44-62`). **As of PR #83 every tool carries MCP annotation hints** (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint:false`) — 109/109 coverage, enabling client-side defer-loading and safe-tool filtering:
+Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via `verifyToken` → `authenticateRequest`. **118 tools across 21 categories** (`tools/index.ts`, `route.ts:44-62`). **As of PR #83 every tool carries MCP annotation hints** (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint:false`) — full coverage, enabling client-side defer-loading and safe-tool filtering:
 
 | Category | Count | Notes |
 |---|---|---|
@@ -99,7 +103,9 @@ Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via
 | realms | 14 | CRUD + members + invites + projects |
 | memories | 9 | create, update, search, link, prepare_context, get_with_neighbours, list_needs_summary, **accept_proposal**, **get_belief_trail** (bi-temporal chain walk, PR #72) |
 | dominions | 15 | CRUD + vision/objectives + repo mapping + project assignment (MCP-only) |
-| sessions | 5 | spawn, list, get, list_events, kill |
+| sessions | 6 | spawn, list, get, list_events, kill, claim |
+| **virtual-members** | 4 | list / create / update / delete — accountless realm-scoped assignees; shares `createVirtualMemberSchema`/`updateVirtualMemberSchema` with the REST side, locked by `api/__tests__/virtual-members-parity.test.ts` |
+| hangar | 4 | mission repo registry |
 | reflections | 1 | `kairos_reflect` |
 | recipes | 2 | run_recipe, get_trace_history |
 | **synthesis** | 2 | `prepare_aether_context`, `commit_aether` — Aether (global self-model) via the Claude-Code cognition path (no BYOK) |
@@ -138,7 +144,7 @@ Three-tier BYOK routing (cheap / standard / heavy) over user-supplied keys, all 
 | **Voyage AI (`voyage-3.5`, 1024-dim)** | App-owned memory embeddings (primary) | Active |
 | **OpenAI `text-embedding-3-small`** | Embedding fallback (truncated to 1024-dim) | Active (fallback) |
 | pgvector | 1024-dim memory vector column + HNSW | Active |
-| MCP Protocol | AI tool server | Active (109 tools) |
+| MCP Protocol | AI tool server | Active (118 tools) |
 | claude.ai remote connector | OAuth 2.1 MCP client → `/api/mcp` | Active (DCR + PKCE) |
 | Pusher Channels | Real-time (30s polling fallback) | Active |
 | ReactFlow (`@xyflow/react`) | Canvas | Active |
