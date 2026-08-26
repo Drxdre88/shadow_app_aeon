@@ -488,6 +488,7 @@ export function TaskBoard({
               <div
                 ref={pinchContentRef}
                 data-board-scale
+                data-board-layout={boardLayout}
                 className={boardLayout === 'grid'
                   ? 'flex flex-wrap gap-3 sm:gap-4 pb-4 content-start'
                   : 'flex flex-nowrap gap-3 sm:gap-4 pb-4 w-max min-w-full'

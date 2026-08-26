@@ -209,3 +209,69 @@ describe('useBoardPinchZoom — a third finger stays contained', () => {
     expect(content.style.transform).toBe('')
   })
 })
+
+// Owner-reported 2026-08-26: "you zoom out and there's nothing below" — the
+// columns kept their own height, shrank toward the origin and left the bottom
+// of the screen empty. Zooming out must fill the viewport at every scale so it
+// reads as a bird's-eye view of the board rather than a shrunken postage stamp.
+describe('useBoardPinchZoom — bird\'s-eye fill', () => {
+  const VIEWPORT_HEIGHT = 600
+
+  beforeEach(() => {
+    Object.defineProperty(container, 'clientHeight', { value: VIEWPORT_HEIGHT, configurable: true })
+  })
+
+  it('lays the wrapper out at viewport / scale so it still reaches the bottom edge', () => {
+    mountHook()
+    container.dispatchEvent(touchEvent('touchstart', OPEN))
+    container.dispatchEvent(touchEvent('touchmove', closedTo(100)))
+
+    // scale 0.5 -> laid out at double height, so 0.5 * 1200 == the viewport.
+    expect(content.style.height).toBe(`${VIEWPORT_HEIGHT / 0.5}px`)
+    expect(content.dataset.boardZoomed).toBe('')
+    // Compensation follows the new layout height, not the columns' own.
+    expect(content.style.marginBottom).toBe(`${-0.5 * (VIEWPORT_HEIGHT / 0.5)}px`)
+  })
+
+  it('fills at the furthest zoom-out too', () => {
+    mountHook()
+    container.dispatchEvent(touchEvent('touchstart', OPEN))
+    container.dispatchEvent(touchEvent('touchmove', closedTo(1)))
+
+    expect(content.style.height).toBe(`${VIEWPORT_HEIGHT / MIN_BOARD_SCALE}px`)
+  })
+
+  it('releases the fill when the board snaps back to normal scale', () => {
+    mountHook()
+    container.dispatchEvent(touchEvent('touchstart', OPEN))
+    container.dispatchEvent(touchEvent('touchmove', closedTo(100)))
+    // End just inside the snap threshold so the board returns to scale 1.
+    container.dispatchEvent(touchEvent('touchmove', closedTo(200 * SNAP_TO_NORMAL_THRESHOLD + 1)))
+    container.dispatchEvent(touchEvent('touchend', []))
+
+    expect(content.style.height).toBe('')
+    expect(content.dataset.boardZoomed).toBeUndefined()
+  })
+
+  it('leaves grid layout to its own wrapped height', () => {
+    content.dataset.boardLayout = 'grid'
+    mountHook()
+    container.dispatchEvent(touchEvent('touchstart', OPEN))
+    container.dispatchEvent(touchEvent('touchmove', closedTo(100)))
+
+    expect(content.style.height).toBe('')
+    expect(content.style.transform).toBe('scale(0.5)')
+  })
+
+  it('re-fits to the new viewport when the device rotates mid-zoom', () => {
+    mountHook()
+    container.dispatchEvent(touchEvent('touchstart', OPEN))
+    container.dispatchEvent(touchEvent('touchmove', closedTo(100)))
+    container.dispatchEvent(touchEvent('touchend', []))
+
+    Object.defineProperty(container, 'clientHeight', { value: 900, configurable: true })
+    window.dispatchEvent(new Event('resize'))
+
+    expect(content.style.height).toBe(`${900 / 0.5}px`)
+  })
+})

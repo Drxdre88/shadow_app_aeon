@@ -17,8 +17,16 @@ interface PinchGesture {
   idB: number
   startDistance: number
   startScale: number
+}
+
+/**
+ * Layout inputs the scale write needs. Measured at gesture start and on
+ * resize rather than per frame: reading offsetWidth inside touchmove would
+ * force a synchronous layout on every move event.
+ */
+interface BoardMetrics {
   baseWidth: number
-  baseHeight: number
+  containerHeight: number
 }
 
 function findTouch(list: TouchList, identifier: number): Touch | null {
@@ -54,12 +62,21 @@ export function useBoardPinchZoom() {
   const contentRef = useRef<HTMLDivElement | null>(null)
   const scaleRef = useRef(MAX_BOARD_SCALE)
   const gestureRef = useRef<PinchGesture | null>(null)
+  const metricsRef = useRef<BoardMetrics>({ baseWidth: 0, containerHeight: 0 })
 
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
 
-    const applyScale = (scale: number, focal: { x: number; y: number } | null, gesture: PinchGesture) => {
+    const measure = () => {
+      const content = contentRef.current
+      if (!content) return
+      // offsetWidth ignores transforms and our own negative margins, so this is
+      // the columns' true unscaled width.
+      metricsRef.current = { baseWidth: content.offsetWidth, containerHeight: container.clientHeight }
+    }
+
+    const applyScale = (scale: number, focal: { x: number; y: number } | null) => {
       const content = contentRef.current
       if (!content) return
       const prevScale = scaleRef.current
@@ -72,10 +89,24 @@ export function useBoardPinchZoom() {
         content.style.transformOrigin = ''
         content.style.marginRight = ''
         content.style.marginBottom = ''
+        content.style.height = ''
+        delete content.dataset.boardZoomed
       } else {
+        // Lay the wrapper out at viewport-height / scale so the transform lands
+        // it exactly on the container's bottom edge. Without this the columns
+        // keep their own height, shrink toward the origin and leave the rest of
+        // the screen empty — a postage stamp floating on the canvas rather than
+        // a bird's-eye view. Columns stretch into the taller box (globals.css),
+        // so zooming out reveals MORE cards instead of merely smaller ones.
+        // Grid layout wraps its own rows, so it keeps its natural height.
+        const { baseWidth, containerHeight } = metricsRef.current
+        const fills = content.dataset.boardLayout !== 'grid' && containerHeight > 0
+        const layoutHeight = fills ? containerHeight / scale : content.offsetHeight
+        if (fills) content.style.height = `${layoutHeight}px`
+        content.dataset.boardZoomed = ''
         content.style.transform = `scale(${scale})`
         content.style.transformOrigin = '0 0'
-        const comp = layoutCompensation(scale, gesture.baseWidth, gesture.baseHeight)
+        const comp = layoutCompensation(scale, baseWidth || content.offsetWidth, layoutHeight)
         content.style.marginRight = `${comp.marginRight}px`
         content.style.marginBottom = `${comp.marginBottom}px`
       }
@@ -97,16 +128,17 @@ export function useBoardPinchZoom() {
       // A third finger joining an active pinch is swallowed, not promoted: the
       // gesture keeps tracking the two fingers that opened it.
       if (gestureRef.current) return
+      // Re-measure per gesture: a column added or the device rotated since the
+      // last pinch would otherwise size the board against a stale layout.
+      // Safe while already zoomed — neither metric is affected by our own
+      // transform, height or margin writes.
+      measure()
       const [a, b] = [event.touches[0], event.touches[1]]
       gestureRef.current = {
         idA: a.identifier,
         idB: b.identifier,
         startDistance: touchDistance(a, b),
         startScale: scaleRef.current,
-        // offsetWidth/Height ignore transforms — this is the unscaled layout
-        // size the negative-margin compensation is computed against.
-        baseWidth: content.offsetWidth,
-        baseHeight: content.offsetHeight,
       }
     }
 
@@ -123,7 +155,7 @@ export function useBoardPinchZoom() {
       // Extra pointers are ignored for the scale math rather than releasing it.
       if (!a || !b) return
       const scale = nextScale(gesture.startScale, gesture.startDistance, touchDistance(a, b))
-      applyScale(scale, touchMidpoint(a, b), gesture)
+      applyScale(scale, touchMidpoint(a, b))
     }
 
     const onTouchEnd = (event: TouchEvent) => {
@@ -135,9 +167,17 @@ export function useBoardPinchZoom() {
       // Near-1 scales snap back to exactly 1 so the board doesn't sit at a
       // barely-off zoom forever.
       if (scaleRef.current >= SNAP_TO_NORMAL_THRESHOLD) {
-        applyScale(MAX_BOARD_SCALE, null, gesture)
+        applyScale(MAX_BOARD_SCALE, null)
       }
       gestureRef.current = null
+    }
+
+    // A rotate or window resize while zoomed leaves the board sized against the
+    // old viewport — dead space or clipped columns until the next pinch.
+    const onResize = () => {
+      if (scaleRef.current >= MAX_BOARD_SCALE) return
+      measure()
+      applyScale(scaleRef.current, null)
     }
 
     // iOS Safari in-browser ignores user-scalable=no; its proprietary gesture
@@ -151,8 +191,10 @@ export function useBoardPinchZoom() {
     container.addEventListener('touchcancel', onTouchEnd)
     container.addEventListener('gesturestart', onGesture)
     container.addEventListener('gesturechange', onGesture)
+    window.addEventListener('resize', onResize)
 
     return () => {
+      window.removeEventListener('resize', onResize)
       container.removeEventListener('touchstart', onTouchStart)
       container.removeEventListener('touchmove', onTouchMove)
       container.removeEventListener('touchend', onTouchEnd)

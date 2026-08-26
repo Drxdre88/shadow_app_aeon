@@ -75,6 +75,16 @@ input[type='number'] {
   }
 }
 
+/* Pinched out to a bird's-eye view: the wrapper is laid out at
+   viewport-height / scale (see useBoardPinchZoom), so columns stretch to fill
+   it and land exactly on the screen edges once scaled. Their configured height
+   is overridden only while zoomed — zooming out then shows MORE of each column
+   instead of shrinking the board away from the bottom of the screen. */
+[data-board-zoomed] .kanban-col-outer,
+[data-board-zoomed] .kanban-col-inner {
+  height: 100%;
+}
+
 @layer components {
   .glass {
     @apply backdrop-blur-xl border border-white/10 rounded-xl;
