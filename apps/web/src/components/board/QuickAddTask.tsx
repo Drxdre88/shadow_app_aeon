@@ -6,6 +6,7 @@ import { Plus, X, Tag } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { AccentColor, colorConfig, generateId, hexToRgba } from '@/lib/utils/colors'
+import { sortLabelsByName } from '@/lib/utils/labels'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
 
 function getLastUsedColor(): string {
@@ -153,7 +154,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
 
         {labels.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">
-            {labels.map((label) => {
+            {sortLabelsByName(labels).map((label) => {
               const lc = colorConfig[label.color as AccentColor]
               const isCustom = !lc
               const hex = label.color.startsWith('#') ? label.color : `#${label.color}`

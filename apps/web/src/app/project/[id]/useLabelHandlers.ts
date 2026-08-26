@@ -6,12 +6,18 @@ import { useBoardStore } from '@/lib/store/boardStore'
 import { toast } from '@/components/ui/Toast'
 
 export function useLabelHandlers(projectId: string) {
-  const handleLabelCreate = useCallback((label: { id: string; projectId: string; name: string; color: string }) => {
-    createLabel(label).catch((err) => {
-      console.error('Failed to create label:', err)
-      useBoardStore.getState().removeLabel(label.id)
-      toast('Failed to create label')
-    })
+  // Resolves true once the label exists server-side (false on failure) so
+  // callers can sequence follow-up writes (e.g. assigning the fresh label
+  // to a task) instead of racing the create.
+  const handleLabelCreate = useCallback((label: { id: string; projectId: string; name: string; color: string }): Promise<boolean> => {
+    return createLabel(label)
+      .then(() => true)
+      .catch((err) => {
+        console.error('Failed to create label:', err)
+        useBoardStore.getState().removeLabel(label.id)
+        toast('Failed to create label')
+        return false
+      })
   }, [])
 
   const handleLabelUpdate = useCallback((labelId: string, updates: { name?: string; color?: string }) => {

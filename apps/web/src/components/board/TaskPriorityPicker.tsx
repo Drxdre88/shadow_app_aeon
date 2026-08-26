@@ -7,19 +7,13 @@ import { X, Gauge } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
+import { hexToRgba } from '@/lib/utils/colors'
 
 interface TaskPriorityPickerProps {
   taskId: string
   isOpen: boolean
   onClose: () => void
   onTaskUpdate?: (taskId: string, updates: Record<string, unknown>) => void
-}
-
-const PRIORITY_COLORS: Record<string, { bg: string; border: string; text: string; glow: string }> = {
-  low: { bg: 'bg-slate-500/20', border: 'border-slate-500/30', text: 'text-slate-400', glow: 'rgba(100,116,139,0.4)' },
-  medium: { bg: 'bg-blue-500/20', border: 'border-blue-500/30', text: 'text-blue-400', glow: 'rgba(59,130,246,0.4)' },
-  high: { bg: 'bg-orange-500/20', border: 'border-orange-500/30', text: 'text-orange-400', glow: 'rgba(249,115,22,0.4)' },
-  urgent: { bg: 'bg-red-500/20', border: 'border-red-500/30', text: 'text-red-400', glow: 'rgba(239,68,68,0.4)' },
 }
 
 export function TaskPriorityPicker({ taskId, isOpen, onClose, onTaskUpdate }: TaskPriorityPickerProps) {
@@ -91,7 +85,6 @@ export function TaskPriorityPicker({ taskId, isOpen, onClose, onTaskUpdate }: Ta
 
           <div className="p-3 space-y-1">
             {priorities.map((p) => {
-              const colors = PRIORITY_COLORS[p.id] ?? PRIORITY_COLORS.medium
               const isActive = task.priority === p.id
               return (
                 <button
@@ -100,17 +93,20 @@ export function TaskPriorityPicker({ taskId, isOpen, onClose, onTaskUpdate }: Ta
                   className={cn(
                     'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200',
                     'border text-sm font-medium',
-                    isActive
-                      ? cn(colors.bg, colors.border, colors.text)
-                      : 'border-transparent text-slate-400 hover:bg-white/[0.06] hover:text-slate-300'
+                    !isActive && 'border-transparent text-slate-400 hover:bg-white/[0.06] hover:text-slate-300'
                   )}
-                  style={isActive ? { boxShadow: `0 0 10px ${colors.glow}` } : undefined}
+                  style={isActive ? {
+                    backgroundColor: hexToRgba(p.color, 0.2),
+                    borderColor: hexToRgba(p.color, 0.3),
+                    color: p.color,
+                    boxShadow: `0 0 10px ${hexToRgba(p.color, 0.4)}`,
+                  } : undefined}
                 >
                   <div
                     className="w-3 h-3 rounded-full"
                     style={{ backgroundColor: p.color }}
                   />
-                  <span className="capitalize">{p.id}</span>
+                  <span className="capitalize">{p.name}</span>
                 </button>
               )
             })}
