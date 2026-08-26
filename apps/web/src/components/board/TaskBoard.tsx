@@ -3,10 +3,16 @@
 import { useCallback, useState, useMemo, useRef, useEffect } from 'react'
 import { DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
-import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColumn, type BoardTask } from '@/lib/store/boardStore'
+import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColumn, type BoardTask, type TaskAssigneePill } from '@/lib/store/boardStore'
+
+// Stable empty map so the assignee selector returns a referentially-identical
+// value while no assignee filter is active (see filteredTasks below).
+const EMPTY_ASSIGNEES: Record<string, TaskAssigneePill[]> = {}
 import { KanbanColumn } from './KanbanColumn'
 import { SortableColumn } from './SortableColumn'
 import { TaskEditModal } from './TaskEditModal'
+import { FloatingCardsLayer } from './FloatingCardsLayer'
+import { usePinnedCardsStore, isCardPinned } from '@/lib/store/pinnedCardsStore'
 import { TaskAssigneeOverlay } from './TaskAssigneeOverlay'
 import { BoardFilterBar } from './BoardFilterBar'
 import { DependencyGlowTree } from './DependencyGlowTree'
@@ -25,12 +31,14 @@ import { useThemeStore } from '@/stores/themeStore'
 import { applyBoardFilters, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { useBoardDnD } from './useBoardDnD'
+import { useBoardPinchZoom } from './useBoardPinchZoom'
 import { boardCollisionDetection } from './boardCollision'
 import { useBoardKeyboardShortcuts } from './useBoardKeyboardShortcuts'
 import { useBoardHover } from './useBoardHover'
 import { cycleTaskCompletion } from './triState'
 import { useConnectMode } from './useConnectMode'
 import { duplicateBoardTask } from '@/lib/actions/board'
+import { prefetchAssignablePeople } from '@/lib/store/membersCache'
 import { toast } from '@/components/ui/Toast'
 
 const EMPTY_TASKS: BoardTask[] = []
@@ -69,7 +77,7 @@ interface TaskBoardProps {
   onColumnUpdate?: (columnId: string, updates: Partial<BoardColumn>) => void
   onColumnReorder?: (updates: { id: string; orderIndex: number }[]) => void
   onColumnDelete?: (columnId: string) => void
-  onLabelCreate?: (label: { id: string; projectId: string; name: string; color: string }) => void
+  onLabelCreate?: (label: { id: string; projectId: string; name: string; color: string }) => void | boolean | Promise<void | boolean>
   onLabelUpdate?: (labelId: string, updates: { name?: string; color?: string }) => void
   onLabelDelete?: (labelId: string) => void
   onLabelToggle?: (taskId: string, labelId: string, action: 'add' | 'remove') => void
@@ -156,8 +164,24 @@ export function TaskBoard({
     [columns, projectId]
   )
 
+  // Warm the assignable-people cache so the assignee overlay opens instantly.
+  useEffect(() => {
+    prefetchAssignablePeople(projectId)
+  }, [projectId])
+
+  // Subscribe to assignee data only while an assignee filter is active —
+  // otherwise every optimistic assignment would re-render the whole board.
+  const assigneeFilterActive = (filters.assignees?.size ?? 0) > 0
+  const assigneesByTask = useBoardStore((s) => (assigneeFilterActive ? s.assigneesByTask : EMPTY_ASSIGNEES))
   const projectTasks = useMemo(() => tasks.filter((t) => t.projectId === projectId), [tasks, projectId])
-  const filteredTasks = useMemo(() => applyBoardFilters(projectTasks, filters), [projectTasks, filters])
+  const filteredTasks = useMemo(() => {
+    // Assignee data lives outside the task rows — enrich only when the
+    // assignee filter is active so the common path allocates nothing extra.
+    const source = filters.assignees?.size
+      ? projectTasks.map((t) => ({ ...t, assigneeIds: (assigneesByTask[t.id] ?? []).map((a) => a.userId) }))
+      : projectTasks
+    return applyBoardFilters(source, filters)
+  }, [projectTasks, filters, assigneesByTask])
   const tasksByColumn = useMemo(() => {
     const map = new Map<string, typeof filteredTasks>()
     for (const task of filteredTasks) {
@@ -173,6 +197,7 @@ export function TaskBoard({
   const columnIds = sortedColumns.map((c) => c.id)
 
   const { boardRef, hoveredTaskId } = useBoardHover()
+  const { containerRef: pinchContainerRef, contentRef: pinchContentRef } = useBoardPinchZoom()
 
   const { connectSourceId, cursorPos, handleConnectClick, cancelConnect } = useConnectMode({
     connectMode,
@@ -196,6 +221,12 @@ export function TaskBoard({
 
   const handleTaskEdit = useCallback((taskId: string) => {
     selectTask(taskId)
+    // Already open as a floating window — refocus it instead of opening a
+    // second editor on the same card.
+    if (isCardPinned(taskId)) {
+      usePinnedCardsStore.getState().openCard(taskId)
+      return
+    }
     const task = tasks.find((t) => t.id === taskId)
     if (task) {
       setFormData({
@@ -380,6 +411,21 @@ export function TaskBoard({
     setNewTaskColumnId(null)
   }, [flushAutosave])
 
+  // Pin: pop the open modal card out as a floating window. The modal (and
+  // its backdrop) closes, leaving the board fully interactive.
+  const handlePinCard = useCallback((taskId: string) => {
+    flushAutosave()
+    setEditingTask(null)
+    setNewTaskColumnId(null)
+    usePinnedCardsStore.getState().openCard(taskId)
+  }, [flushAutosave])
+
+  // Unpin: close the floating window and reopen the card as a normal modal.
+  const handleUnpinCard = useCallback((taskId: string) => {
+    usePinnedCardsStore.getState().closeCard(taskId)
+    handleTaskEdit(taskId)
+  }, [handleTaskEdit])
+
   const isModalOpen = editingTask !== null || newTaskColumnId !== null
   const isTaskDrag = activeItem?.type === 'task'
 
@@ -403,14 +449,37 @@ export function TaskBoard({
           onDragCancel={handleDragCancel}
         >
           <SortableContext items={columnIds} strategy={rectSortingStrategy}>
+            {/*
+              Two-layer board surface:
+              - outer div = the scroll container. `touch-action: pan-x pan-y`
+                allows one-finger panning but forbids NATIVE pinch-zoom for any
+                touch starting on the board (touch-action of ancestors
+                constrains descendants), so pinch never escapes the app canvas.
+                useBoardPinchZoom then implements the contained bird's-eye
+                pinch on this element. overscroll-x-contain stops horizontal
+                edge-swipes from triggering browser back/forward navigation.
+              - inner div = the scaled columns wrapper the pinch transform is
+                applied to. DragOverlay stays OUTSIDE it: dnd-kit overlays
+                inside transformed ancestors drift (clauderic/dnd-kit#464).
+            */}
             <div
+              ref={pinchContainerRef}
               data-board-columns
               className={boardLayout === 'grid'
-                ? 'flex flex-wrap gap-3 sm:gap-4 pb-4 overflow-x-hidden overflow-y-auto sm:overflow-auto content-start sm:max-h-[calc(100dvh-140px)]'
-                : 'flex flex-nowrap gap-3 sm:gap-4 pb-4 overflow-x-auto overflow-y-hidden sm:overflow-auto sm:max-h-[calc(100dvh-140px)]'
+                ? 'overflow-x-hidden overflow-y-auto sm:overflow-auto sm:max-h-[calc(100dvh-140px)] overscroll-x-contain'
+                : 'overflow-x-auto overflow-y-hidden sm:overflow-auto sm:max-h-[calc(100dvh-140px)] overscroll-x-contain'
               }
-              style={activeItem ? { willChange: 'transform' } : undefined}
+              style={{ touchAction: 'pan-x pan-y' }}
             >
+              <div
+                ref={pinchContentRef}
+                data-board-scale
+                className={boardLayout === 'grid'
+                  ? 'flex flex-wrap gap-3 sm:gap-4 pb-4 content-start'
+                  : 'flex flex-nowrap gap-3 sm:gap-4 pb-4 w-max min-w-full'
+                }
+                style={activeItem ? { willChange: 'transform' } : undefined}
+              >
               {sortedColumns.map((column) => (
                 <SortableColumn key={column.id} column={column}>
                   {(dragHandleProps) => (
@@ -441,7 +510,8 @@ export function TaskBoard({
                 </SortableColumn>
               ))}
 
-              <AddColumnButton onClick={handleAddColumn} />
+                <AddColumnButton onClick={handleAddColumn} />
+              </div>
             </div>
           </SortableContext>
 
@@ -465,12 +535,30 @@ export function TaskBoard({
         onBlurPersist={flushAutosave}
         onAddDependency={onAddDependency}
         onRemoveDependency={onRemoveDependency}
+        onLabelCreate={onLabelCreate}
+        onLabelUpdate={onLabelUpdate}
+        onLabelDelete={onLabelDelete}
         onLabelToggle={onLabelToggle}
         onPushToGantt={onPushToGantt}
         onDateChange={(taskId, dates) => onTaskUpdate?.(taskId, dates as Record<string, unknown>)}
         onStatusChange={(taskId, status) => onTaskUpdate?.(taskId, { status })}
         onProgressChange={(taskId, progress) => onTaskUpdate?.(taskId, { progress }, { silent: true })}
         onTaskDelete={onTaskDelete}
+        onPin={handlePinCard}
+      />
+
+      <FloatingCardsLayer
+        projectId={projectId}
+        onUnpin={handleUnpinCard}
+        onTaskUpdate={onTaskUpdate}
+        onTaskDelete={onTaskDelete}
+        onAddDependency={onAddDependency}
+        onRemoveDependency={onRemoveDependency}
+        onLabelCreate={onLabelCreate}
+        onLabelUpdate={onLabelUpdate}
+        onLabelDelete={onLabelDelete}
+        onLabelToggle={onLabelToggle}
+        onPushToGantt={onPushToGantt}
       />
 
       <TaskAssigneeOverlay
