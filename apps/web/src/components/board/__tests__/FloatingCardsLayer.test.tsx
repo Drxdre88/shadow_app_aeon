@@ -161,6 +161,42 @@ describe('FloatingCardsLayer', () => {
     expect(usePinnedCardsStore.getState().cards).toEqual([])
   })
 
+  // A pinned window seeds its form at MOUNT and can sit open for hours. If
+  // closing/folding flushed that snapshot unconditionally it would overwrite
+  // whatever the task became in the meantime (a peer's Pusher update, a
+  // context-menu rename) with stale text.
+  it('closing an untouched card does not write its stale mount snapshot back', async () => {
+    act(() => usePinnedCardsStore.getState().openCard('task-1'))
+    await renderLayer()
+
+    act(() => useBoardStore.getState().updateTask('task-1', { name: 'Renamed by a peer' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close pinned card' }))
+
+    expect(useBoardStore.getState().tasks.find((t) => t.id === 'task-1')?.name).toBe('Renamed by a peer')
+  })
+
+  it('folding an untouched card does not write its stale mount snapshot back', async () => {
+    act(() => usePinnedCardsStore.getState().openCard('task-1'))
+    await renderLayer()
+
+    act(() => useBoardStore.getState().updateTask('task-1', { name: 'Renamed by a peer' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Fold away' }))
+
+    expect(useBoardStore.getState().tasks.find((t) => t.id === 'task-1')?.name).toBe('Renamed by a peer')
+  })
+
+  // ...but the real contract still holds: an edit inside the debounce window
+  // must survive closing the window.
+  it('an edit made just before closing is still saved', async () => {
+    act(() => usePinnedCardsStore.getState().openCard('task-1'))
+    await renderLayer()
+
+    fireEvent.change(screen.getByPlaceholderText('Task name...'), { target: { value: 'Alpha card v2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Close pinned card' }))
+
+    expect(useBoardStore.getState().tasks.find((t) => t.id === 'task-1')?.name).toBe('Alpha card v2')
+  })
+
   it('drops cards whose task no longer exists', async () => {
     act(() => usePinnedCardsStore.getState().openCard('task-1'))
     await renderLayer()

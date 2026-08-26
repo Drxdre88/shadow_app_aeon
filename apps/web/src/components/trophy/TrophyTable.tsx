@@ -4,7 +4,7 @@ import { memo, useMemo, useState, useCallback } from 'react'
 import { ArrowUp, ArrowDown, ArrowUpDown, RotateCcw, Search, Trophy } from 'lucide-react'
 import { format } from 'date-fns'
 import { useThemeStore } from '@/stores/themeStore'
-import { colorConfig, type AccentColor } from '@/lib/utils/colors'
+import { resolveAccentHex } from '@/lib/utils/colors'
 import { resolvePriority } from '@/lib/utils/priorities'
 import { cn } from '@/lib/utils/cn'
 import { trophyDate } from './trophy-stats'
@@ -75,9 +75,7 @@ const TrophyTableRow = memo(function TrophyTableRow({
         {labels.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1 pl-[22px]">
             {labels.slice(0, 4).map((label, i) => {
-              const hex = label.color?.startsWith('#')
-                ? label.color
-                : colorConfig[label.color as AccentColor]?.hex ?? gold
+              const hex = resolveAccentHex(label.color, gold)
               return (
                 <span
                   key={i}

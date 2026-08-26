@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { virtualMembers, taskVirtualAssignees, boardTasks, projectGroups } from '@/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, TransactionRollbackError } from 'drizzle-orm'
 import { touchProject } from './projects'
 import type { CreateVirtualMemberInput, UpdateVirtualMemberInput } from './validators'
 
@@ -37,7 +37,12 @@ export function deriveInitials(name: string): string {
     .slice(0, 2)
     .join('')
     .toUpperCase()
-  return initials || ([...seed][0]?.toUpperCase() ?? '?')
+  const out = initials || ([...seed][0]?.toUpperCase() ?? '?')
+  // Hard clamp to the varchar(4) column. Two code points in is not two out:
+  // uppercasing expands some characters (ﬃ -> FFI, ß -> SS), so a name like
+  // "ﬃx ﬃy" derives six characters and the INSERT fails with "value too long".
+  // Slice by code point so an astral lead never loses half its surrogate pair.
+  return [...out].slice(0, 4).join('')
 }
 
 export async function listVirtualMembers(realmId: string): Promise<VirtualMemberRow[]> {
@@ -151,8 +156,10 @@ export async function deleteVirtualMember(id: string, realmId: string): Promise<
     return { projectIds: [...new Set(taskRows.map((r) => r.projectId))] }
   }).catch((err: unknown) => {
     // drizzle tx.rollback() throws TransactionRollbackError — a missing member
-    // is a boolean outcome here, not an exception.
-    if (err instanceof Error && /rollback/i.test(err.message)) return null
+    // is a boolean outcome here, not an exception. Match the class, never the
+    // message: a real infrastructure failure that happens to say "rollback"
+    // must fail loudly instead of being reported as a clean 404.
+    if (err instanceof TransactionRollbackError) return null
     throw err
   })
 

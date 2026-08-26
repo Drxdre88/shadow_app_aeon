@@ -21,7 +21,10 @@ interface ZenScrollbarProps {
  */
 export function ZenScrollbar({ scrollRef, accentColor, glowColor, reduceMotion, contentKey }: ZenScrollbarProps) {
   const trackRef = useRef<HTMLDivElement | null>(null)
-  const dragStart = useRef<{ pointerY: number; thumbTop: number } | null>(null)
+  // pointerId is part of the drag identity: on touch, a second finger landing
+  // on the thumb would otherwise overwrite the origin and make the scrollbar
+  // jump using the wrong pointer's coordinates.
+  const dragStart = useRef<{ pointerId: number; pointerY: number; thumbTop: number } | null>(null)
   const [geom, setGeom] = useState<ThumbGeometry>({ visible: false, thumbHeight: 0, thumbTop: 0 })
   const [dragging, setDragging] = useState(false)
 
@@ -57,7 +60,9 @@ export function ZenScrollbar({ scrollRef, accentColor, glowColor, reduceMotion, 
   const onThumbPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.stopPropagation()
-    dragStart.current = { pointerY: e.clientY, thumbTop: geom.thumbTop }
+    // First pointer down owns the drag until it lifts; extra fingers are inert.
+    if (dragStart.current) return
+    dragStart.current = { pointerId: e.pointerId, pointerY: e.clientY, thumbTop: geom.thumbTop }
     setDragging(true)
     e.currentTarget.setPointerCapture(e.pointerId)
   }
@@ -66,14 +71,18 @@ export function ZenScrollbar({ scrollRef, accentColor, glowColor, reduceMotion, 
     const start = dragStart.current
     const el = scrollRef.current
     const track = trackRef.current
-    if (!start || !el || !track) return
+    if (!start || start.pointerId !== e.pointerId || !el || !track) return
     const nextTop = start.thumbTop + (e.clientY - start.pointerY)
     el.scrollTop = scrollTopForThumbTop(nextTop, el.scrollHeight, el.clientHeight, track.clientHeight, geom.thumbHeight)
   }
 
-  const endThumbDrag = () => {
+  const endThumbDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragStart.current?.pointerId !== e.pointerId) return
     dragStart.current = null
     setDragging(false)
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
   }
 
   const onTrackPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {

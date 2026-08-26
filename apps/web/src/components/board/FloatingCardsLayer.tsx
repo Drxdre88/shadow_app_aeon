@@ -5,7 +5,7 @@ import { X } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { usePinnedCardsStore } from '@/lib/store/pinnedCardsStore'
-import { AccentColor, colorConfig } from '@/lib/utils/colors'
+import { resolveAccentHex } from '@/lib/utils/colors'
 import { FloatingCardWindow, type FloatingCardCallbacks } from './FloatingCardWindow'
 
 interface FloatingCardsLayerProps extends FloatingCardCallbacks {
@@ -74,11 +74,7 @@ export function FloatingCardsLayer({
           {foldedCards.map((card) => {
             const task = tasks.find((t) => t.id === card.taskId)
             const name = task?.name || 'Untitled card'
-            const colorHex = task
-              ? task.color.startsWith('#')
-                ? task.color
-                : colorConfig[task.color as AccentColor]?.hex ?? '#a855f7'
-              : '#a855f7'
+            const colorHex = resolveAccentHex(task?.color)
             return (
               <div
                 key={card.taskId}

@@ -4,7 +4,8 @@ import { useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, X, CalendarDays, Users } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { colorConfig, AccentColor, hexToRgba } from '@/lib/utils/colors'
+import { colorConfig, AccentColor, hexToRgba, resolveAccentHex } from '@/lib/utils/colors'
+import { getInitials } from '@/lib/utils/initials'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { sortLabelsByName } from '@/lib/utils/labels'
@@ -180,7 +181,7 @@ export function BoardFilterBar({ isOpen, filters, onFiltersChange }: BoardFilter
                   {people.map((p) => {
                     const isActive = filters.assignees.has(p.id)
                     const hex = p.virtual
-                      ? (colorConfig[(p.color ?? 'purple') as AccentColor] as { hex: string } | undefined)?.hex ?? colorConfig.purple.hex
+                      ? resolveAccentHex(p.color)
                       : null
                     return (
                       <button
@@ -203,7 +204,7 @@ export function BoardFilterBar({ isOpen, filters, onFiltersChange }: BoardFilter
                             ? { background: `linear-gradient(135deg, ${hex}cc, ${hex}66)` }
                             : { background: 'rgba(255,255,255,0.12)' }}
                         >
-                          {p.name.trim().split(/\s+/).map((s) => s[0]).slice(0, 2).join('').toUpperCase() || '?'}
+                          {getInitials(p.name)}
                         </span>
                         {p.name}
                       </button>

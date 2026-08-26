@@ -14,10 +14,17 @@ import {
   updateVirtualMemberAction,
   deleteVirtualMemberAction,
 } from '@/lib/actions/virtual-members'
-import { useBoardStore, useTaskAssignees, useVirtualMembers, type VirtualMemberLite } from '@/lib/store/boardStore'
-import { toggleAssigneeOptimistic } from '@/lib/store/assigneeMutations'
+import {
+  useBoardStore,
+  useTaskAssignees,
+  useVirtualMembers,
+  type TaskAssigneePill,
+  type VirtualMemberLite,
+} from '@/lib/store/boardStore'
+import { currentAssignees, toggleAssigneeOptimistic } from '@/lib/store/assigneeMutations'
 import { getAssignablePeopleCached, peekAssignablePeople, invalidateAssignablePeople } from '@/lib/store/membersCache'
-import { colorConfig, ACCENT_COLORS, type AccentColor } from '@/lib/utils/colors'
+import { colorConfig, resolveAccentHex, ACCENT_COLORS } from '@/lib/utils/colors'
+import { getInitials } from '@/lib/utils/initials'
 import { toast } from '@/components/ui/Toast'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -47,11 +54,6 @@ interface Props {
   projectId: string
   taskId: string | null
   onClose: () => void
-}
-
-function accentHex(color: string): string {
-  const cfg = colorConfig[color as AccentColor] as { hex: string } | undefined
-  return cfg?.hex ?? colorConfig.purple.hex
 }
 
 export function TaskAssigneeOverlay({ projectId, taskId, onClose }: Props) {
@@ -107,9 +109,12 @@ export function TaskAssigneeOverlay({ projectId, taskId, onClose }: Props) {
   }, [virtualMembers, query])
 
   // Optimistic: pill updates instantly, server write rides the retry pipeline.
+  // Intent is read from the STORE, not from the rendered `assignedIds` — two
+  // clicks inside one React commit would otherwise both see the pre-click
+  // state and send the same verb twice.
   const toggleMember = useCallback((member: Member) => {
     if (!taskId) return
-    const isAssigned = assignedIds.has(member.userId)
+    const isAssigned = currentAssignees(taskId).some((a) => a.userId === member.userId)
     void toggleAssigneeOptimistic({
       taskId,
       pill: { userId: member.userId, name: member.name, image: member.image },
@@ -118,11 +123,11 @@ export function TaskAssigneeOverlay({ projectId, taskId, onClose }: Props) {
         ? unassignTaskAction(projectId, taskId, member.userId)
         : assignTaskAction(projectId, taskId, member.userId),
     })
-  }, [assignedIds, projectId, taskId])
+  }, [projectId, taskId])
 
   const toggleVirtual = useCallback((member: VirtualMemberLite) => {
     if (!taskId) return
-    const isAssigned = assignedIds.has(member.id)
+    const isAssigned = currentAssignees(taskId).some((a) => a.userId === member.id)
     void toggleAssigneeOptimistic({
       taskId,
       pill: { userId: member.id, name: member.name, image: null, kind: 'virtual', color: member.color },
@@ -131,7 +136,7 @@ export function TaskAssigneeOverlay({ projectId, taskId, onClose }: Props) {
         ? unassignVirtualTaskAction(projectId, taskId, member.id)
         : assignVirtualTaskAction(projectId, taskId, member.id),
     })
-  }, [assignedIds, projectId, taskId])
+  }, [projectId, taskId])
 
   if (!taskId) return null
 
@@ -215,12 +220,16 @@ export function TaskAssigneeOverlay({ projectId, taskId, onClose }: Props) {
               </ul>
             )}
 
+            {/* Keyed by task: switching cards without closing the overlay
+                remounts the section, so no delete arm or half-typed rename
+                leaks from the previous card. */}
             <VirtualMemberSection
+              key={taskId}
               projectId={projectId}
               members={filteredVirtual}
               assignedIds={assignedIds}
               onToggle={toggleVirtual}
-              hasQuery={!!query.trim()}
+              query={query}
             />
           </div>
 
@@ -250,25 +259,89 @@ function AssignCheck({ assigned }: { assigned: boolean }) {
 
 // ─── Virtual members — list + inline manage (create/rename/recolor/delete) ──
 
+/**
+ * Rewrites ONLY the pills belonging to one virtual member, against whatever
+ * the store holds at call time. Never snapshot-and-restore the whole
+ * assigneesByTask map: a write that fails seconds later would then erase every
+ * assignment the user made in the meantime (the exact rule
+ * lib/store/assigneeMutations.ts documents for the toggle path).
+ */
+function patchVirtualPills(memberId: string, patch: { name?: string; color?: string }): void {
+  const { assigneesByTask, setAssigneesByTask } = useBoardStore.getState()
+  const next = { ...assigneesByTask }
+  let changed = false
+  for (const [tid, list] of Object.entries(assigneesByTask)) {
+    if (!list.some((p) => p.userId === memberId)) continue
+    next[tid] = list.map((p) =>
+      p.userId === memberId ? { ...p, name: patch.name ?? p.name, color: patch.color ?? p.color } : p,
+    )
+    changed = true
+  }
+  if (changed) setAssigneesByTask(next)
+}
+
+/** Drops one virtual member's pills everywhere, returning what was removed. */
+function removeVirtualPills(memberId: string): Array<{ taskId: string; pill: TaskAssigneePill }> {
+  const { assigneesByTask, setAssigneesByTask } = useBoardStore.getState()
+  const removed: Array<{ taskId: string; pill: TaskAssigneePill }> = []
+  const next = { ...assigneesByTask }
+  for (const [tid, list] of Object.entries(assigneesByTask)) {
+    const pill = list.find((p) => p.userId === memberId)
+    if (!pill) continue
+    removed.push({ taskId: tid, pill })
+    next[tid] = list.filter((p) => p.userId !== memberId)
+  }
+  if (removed.length > 0) setAssigneesByTask(next)
+  return removed
+}
+
+/** Puts those pills back, merging into the CURRENT lists rather than replacing them. */
+function restoreVirtualPills(memberId: string, removed: Array<{ taskId: string; pill: TaskAssigneePill }>): void {
+  if (removed.length === 0) return
+  const { assigneesByTask, setAssigneesByTask } = useBoardStore.getState()
+  const next = { ...assigneesByTask }
+  for (const { taskId, pill } of removed) {
+    const list = next[taskId] ?? []
+    if (list.some((p) => p.userId === memberId)) continue
+    next[taskId] = [...list, pill]
+  }
+  setAssigneesByTask(next)
+}
+
+// A stale two-click delete arm is dangerous: deleting a virtual member strips
+// that person's assignments across every project in the realm. Disarm fast.
+const DELETE_ARM_TTL_MS = 3000
+
 function VirtualMemberSection({
   projectId,
   members,
   assignedIds,
   onToggle,
-  hasQuery,
+  query,
 }: {
   projectId: string
   members: VirtualMemberLite[]
   assignedIds: Set<string>
   onToggle: (m: VirtualMemberLite) => void
-  hasQuery: boolean
+  query: string
 }) {
+  const hasQuery = !!query.trim()
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [newColor, setNewColor] = useState<string>('purple')
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [armedDeleteId, setArmedDeleteId] = useState<string | null>(null)
+
+  // An arm expires on its own, and never survives a change to what the list is
+  // showing — otherwise one stray click on a later visit deletes a person.
+  useEffect(() => {
+    if (!armedDeleteId) return
+    const t = setTimeout(() => setArmedDeleteId(null), DELETE_ARM_TTL_MS)
+    return () => clearTimeout(t)
+  }, [armedDeleteId])
+
+  useEffect(() => { setArmedDeleteId(null) }, [query])
 
   const create = useCallback(async () => {
     const name = newName.trim()
@@ -291,20 +364,22 @@ function VirtualMemberSection({
   // Rename/recolor is optimistic: the store updates instantly, the server
   // write happens in the background and reverts on hard failure.
   const update = useCallback((id: string, updates: { name?: string; color?: string }) => {
-    const { virtualMembers, setVirtualMembers, assigneesByTask, setAssigneesByTask } = useBoardStore.getState()
-    const prevMembers = virtualMembers
-    const prevAssignees = assigneesByTask
+    const { virtualMembers, setVirtualMembers } = useBoardStore.getState()
+    const before = virtualMembers.find((v) => v.id === id)
     setVirtualMembers(virtualMembers.map((v) => v.id === id ? { ...v, ...updates } : v))
     // Pills carry name/color — keep them in sync.
-    const nextAssignees: typeof assigneesByTask = {}
-    for (const [tid, list] of Object.entries(assigneesByTask)) {
-      nextAssignees[tid] = list.map((p) => p.userId === id ? { ...p, name: updates.name ?? p.name, color: updates.color ?? p.color } : p)
-    }
-    setAssigneesByTask(nextAssignees)
+    patchVirtualPills(id, updates)
     invalidateAssignablePeople(projectId)
     updateVirtualMemberAction(projectId, id, updates).catch((err) => {
-      useBoardStore.getState().setVirtualMembers(prevMembers)
-      useBoardStore.getState().setAssigneesByTask(prevAssignees)
+      // Surgical revert: only this member's row and only this member's pills,
+      // recomputed from current state so concurrent assignments survive.
+      if (before) {
+        const store = useBoardStore.getState()
+        store.setVirtualMembers(
+          store.virtualMembers.map((v) => v.id === id ? { ...v, name: before.name, color: before.color } : v),
+        )
+        patchVirtualPills(id, { name: before.name, color: before.color })
+      }
       toast(err instanceof Error ? err.message : 'Could not update virtual member — reverted', { force: true })
     })
   }, [projectId])
@@ -312,20 +387,26 @@ function VirtualMemberSection({
   // Delete is optimistic too: member + its pills vanish immediately; the
   // server cleans assignments in a transaction and reverts on failure.
   const remove = useCallback((id: string) => {
-    const { virtualMembers, setVirtualMembers, assigneesByTask, setAssigneesByTask } = useBoardStore.getState()
-    const prevMembers = virtualMembers
-    const prevAssignees = assigneesByTask
+    const { virtualMembers, setVirtualMembers } = useBoardStore.getState()
+    const removedMember = virtualMembers.find((v) => v.id === id)
+    const removedIndex = virtualMembers.findIndex((v) => v.id === id)
     setVirtualMembers(virtualMembers.filter((v) => v.id !== id))
-    const nextAssignees: typeof assigneesByTask = {}
-    for (const [tid, list] of Object.entries(assigneesByTask)) {
-      nextAssignees[tid] = list.filter((p) => p.userId !== id)
-    }
-    setAssigneesByTask(nextAssignees)
+    const removedPills = removeVirtualPills(id)
     invalidateAssignablePeople(projectId)
     setArmedDeleteId(null)
     deleteVirtualMemberAction(projectId, id).catch((err) => {
-      useBoardStore.getState().setVirtualMembers(prevMembers)
-      useBoardStore.getState().setAssigneesByTask(prevAssignees)
+      // Surgical revert: re-insert this member and its own pills into the
+      // CURRENT lists — a whole-map restore would wipe out anything the user
+      // assigned elsewhere while the delete was in flight.
+      if (removedMember) {
+        const store = useBoardStore.getState()
+        if (!store.virtualMembers.some((v) => v.id === id)) {
+          const next = [...store.virtualMembers]
+          next.splice(Math.min(Math.max(removedIndex, 0), next.length), 0, removedMember)
+          store.setVirtualMembers(next)
+        }
+      }
+      restoreVirtualPills(id, removedPills)
       toast(err instanceof Error ? err.message : 'Could not delete virtual member — reverted', { force: true })
     })
   }, [projectId])
@@ -497,7 +578,7 @@ function ColorDots({ value, onChange }: { value: string; onChange: (c: string) =
 }
 
 export function VirtualAvatar({ name, initials, color, size = 'md' }: { name: string; initials: string; color: string; size?: 'sm' | 'md' }) {
-  const hex = accentHex(color)
+  const hex = resolveAccentHex(color)
   const cls = size === 'md' ? 'w-7 h-7 text-[10px]' : 'w-5 h-5 text-[8px]'
   return (
     <span
@@ -516,12 +597,7 @@ function Avatar({ member }: { member: { name: string | null; email: string; imag
     return <img src={member.image} alt="" className="w-7 h-7 rounded-full shrink-0 object-cover border border-white/[0.08]" />
   }
   const seed = (member.name ?? member.email).trim()
-  const initials = seed
-    .split(/\s+/)
-    .map((s) => s[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase() || seed[0]?.toUpperCase()
+  const initials = getInitials(seed)
   const hue = [...seed].reduce((a, c) => a + c.charCodeAt(0), 0) % 360
   return (
     <span

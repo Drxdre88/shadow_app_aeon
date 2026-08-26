@@ -23,11 +23,13 @@ export function goldText(isDark: boolean): string {
   return isDark ? GOLD.bright : GOLD.deep
 }
 
-/** #rrggbb -> rgba() with alpha. */
-export function hexAlpha(hex: string, alpha: number): string {
-  const h = hex.replace('#', '')
-  const r = parseInt(h.slice(0, 2), 16)
-  const g = parseInt(h.slice(2, 4), 16)
-  const b = parseInt(h.slice(4, 6), 16)
-  return `rgba(${r},${g},${b},${alpha})`
-}
+/**
+ * `#rrggbb` -> `rgba()` with alpha.
+ *
+ * Not a second implementation: this is the canonical `hexToRgba`, re-exported
+ * under the name the vault's call sites already read by. Folding the vault's
+ * old hand-rolled copy into it also picked up its NaN / short-hex guard, so a
+ * malformed color now degrades to slate instead of emitting `rgba(NaN,…)`,
+ * which the browser drops entirely.
+ */
+export { hexToRgba as hexAlpha } from '@/lib/utils/colors'

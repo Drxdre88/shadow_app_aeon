@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { test, fc } from '@fast-check/vitest'
-import { zenTargetRect, flightTransform, ZEN_MAX_WIDTH, ZEN_GUTTER, type ZenRect } from '../zenFlight'
+import { zenTargetRect, flightTransform, measureColumnRect, ZEN_MAX_WIDTH, ZEN_GUTTER, type ZenRect } from '../zenFlight'
 
 const rectArb = fc.record({
   left: fc.double({ min: -2000, max: 4000, noNaN: true, noDefaultInfinity: true }),
@@ -77,5 +77,64 @@ describe('flightTransform', () => {
     const pose = flightTransform(source, target)
     expect(pose.scaleX).toBe(1)
     expect(pose.scaleY).toBe(1)
+  })
+})
+
+// measureColumnRect is what both the entry (openZenMode) and the exit flight
+// read: a wrong answer here is either a flight from nowhere or — worse — a
+// selector that throws and blocks Zen entirely.
+describe('measureColumnRect', () => {
+  function mountColumn(id: string, rect?: Partial<DOMRect>): HTMLElement {
+    const el = document.createElement('div')
+    el.setAttribute('data-column-id', id)
+    if (rect) {
+      el.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON: () => ({}), ...rect }) as DOMRect
+    }
+    document.body.appendChild(el)
+    return el
+  }
+
+  afterEach(() => {
+    document.body.innerHTML = ''
+    vi.unstubAllGlobals()
+  })
+
+  it('returns the element\'s visual rect', () => {
+    mountColumn('col-1', { left: 40, top: 90, width: 320, height: 620 })
+    expect(measureColumnRect('col-1')).toEqual({ left: 40, top: 90, width: 320, height: 620 })
+  })
+
+  it('returns null when no column with that id is mounted', () => {
+    mountColumn('col-1', { left: 0, top: 0, width: 10, height: 10 })
+    expect(measureColumnRect('col-2')).toBeNull()
+  })
+
+  // A detached / display:none column measures 0x0. Flying to a zero rect would
+  // scale the surface to nothing, so the caller must get null and fall back.
+  it('returns null for a zero-size (unrendered) column', () => {
+    mountColumn('col-hidden') // jsdom's default rect is all zeros
+    expect(measureColumnRect('col-hidden')).toBeNull()
+  })
+
+  it('a zero-WIDTH but visible column still measures (only fully-empty rects bail)', () => {
+    mountColumn('col-thin', { left: 5, top: 6, width: 0, height: 400 })
+    expect(measureColumnRect('col-thin')).toEqual({ left: 5, top: 6, width: 0, height: 400 })
+  })
+
+  it('escapes ids that would otherwise break the attribute selector', () => {
+    // Real column ids are uuids, but nothing in the type system stops a quote
+    // or backslash from reaching here — an unescaped one throws SyntaxError
+    // out of querySelector and takes the whole board down.
+    mountColumn('col"1\\odd', { left: 1, top: 2, width: 3, height: 4 })
+    expect(measureColumnRect('col"1\\odd')).toEqual({ left: 1, top: 2, width: 3, height: 4 })
+  })
+
+  it('falls back to manual escaping where CSS.escape is unavailable', () => {
+    // Older WebViews (the Capacitor shell's floor) have no CSS.escape.
+    vi.stubGlobal('CSS', undefined)
+    mountColumn('col"1', { left: 7, top: 8, width: 9, height: 10 })
+    expect(measureColumnRect('col"1')).toEqual({ left: 7, top: 8, width: 9, height: 10 })
+    expect(() => measureColumnRect('col\\weird')).not.toThrow()
   })
 })

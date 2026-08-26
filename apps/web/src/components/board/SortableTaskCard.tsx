@@ -6,7 +6,8 @@ import { CSS } from '@dnd-kit/utilities'
 import { motion } from 'framer-motion'
 import { Calendar, MoreHorizontal, Check, X, Clock, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { hexToRgba, colorConfig, type AccentColor } from '@/lib/utils/colors'
+import { hexToRgba, resolveAccentHex } from '@/lib/utils/colors'
+import { getInitials } from '@/lib/utils/initials'
 import { resolvePriority } from '@/lib/utils/priorities'
 import { labelHex, readableTextColor } from './labelTile'
 import { progressBarStyle } from './progressColor'
@@ -489,11 +490,11 @@ function AssigneeDot({ name, image, kind, color }: { name: string | null; image:
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={image} alt="" className="w-5 h-5 rounded-full object-cover border border-white/15" title={name ?? undefined} />
   }
-  const initials = (name ?? '?').trim().split(/\s+/).map((s) => s[0]).slice(0, 2).join('').toUpperCase()
+  const initials = getInitials(name)
   // Virtual members: colored initials avatar with a dashed ring — subtly
   // distinct from real accounts in the pile.
   if (kind === 'virtual') {
-    const hex = (colorConfig[(color ?? 'purple') as AccentColor] as { hex: string } | undefined)?.hex ?? colorConfig.purple.hex
+    const hex = resolveAccentHex(color)
     return (
       <span
         className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-semibold border border-dashed border-white/45 text-white"

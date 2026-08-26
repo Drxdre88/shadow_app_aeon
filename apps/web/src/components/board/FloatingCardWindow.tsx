@@ -86,6 +86,12 @@ export function FloatingCardWindow({
   const [sizingModalOpen, setSizingModalOpen] = useState(false)
   const shellRef = useRef<HTMLDivElement>(null)
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // formData is seeded at MOUNT. Until the user actually edits something it is
+  // a snapshot that the task may have drifted away from (a peer's Pusher
+  // update, a rename from the context menu). Persisting it unconditionally on
+  // close/fold would write that stale snapshot back over the newer data — so
+  // every flush is gated on this flag.
+  const dirty = useRef(false)
   const formDataRef = useRef(formData)
   formDataRef.current = formData
 
@@ -111,6 +117,8 @@ export function FloatingCardWindow({
       clearTimeout(autosaveTimer.current)
       autosaveTimer.current = null
     }
+    if (!dirty.current) return
+    dirty.current = false
     persist(formDataRef.current)
   }, [persist])
 
@@ -119,9 +127,11 @@ export function FloatingCardWindow({
   const handleFormChange = useCallback(
     (data: TaskEditFormData) => {
       setFormData(data)
+      dirty.current = true
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
       autosaveTimer.current = setTimeout(() => {
         autosaveTimer.current = null
+        dirty.current = false
         persist(data)
       }, 700)
     },
@@ -133,6 +143,9 @@ export function FloatingCardWindow({
       if (autosaveTimer.current) {
         clearTimeout(autosaveTimer.current)
         autosaveTimer.current = null
+      }
+      if (dirty.current) {
+        dirty.current = false
         persist(formDataRef.current)
       }
     },

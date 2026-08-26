@@ -3,7 +3,7 @@
 import { memo, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useThemeStore } from '@/stores/themeStore'
-import { colorConfig, type AccentColor } from '@/lib/utils/colors'
+import { resolveAccentHex } from '@/lib/utils/colors'
 import { resolvePriority } from '@/lib/utils/priorities'
 import { cn } from '@/lib/utils/cn'
 import {
@@ -158,9 +158,7 @@ interface BreakdownPanelProps {
 }
 
 function labelDotColor(row: BreakdownRow, fallback: string): string {
-  if (!row.color) return fallback
-  if (row.color.startsWith('#')) return row.color
-  return colorConfig[row.color as AccentColor]?.hex ?? fallback
+  return resolveAccentHex(row.color, fallback)
 }
 
 function BreakdownPanel({ title, rows, variant }: BreakdownPanelProps) {

@@ -95,6 +95,23 @@ export const glowIntensity = {
 
 export const ACCENT_COLORS: AccentColor[] = ['purple', 'blue', 'cyan', 'green', 'pink', 'orange', 'red']
 
+/**
+ * One accent value -> a concrete hex. Accepts either a preset accent name
+ * (`'purple'`) or an already-literal `#rrggbb`; anything unknown or missing
+ * falls back (purple unless the caller supplies its own fallback).
+ *
+ * Canonical: every avatar / dot / pill that needs "the hex behind this accent"
+ * goes through here rather than re-inlining the colorConfig lookup.
+ */
+export function resolveAccentHex(
+  color: string | null | undefined,
+  fallback: string = colorConfig.purple.hex,
+): string {
+  if (!color) return fallback
+  if (color.startsWith('#')) return color
+  return (colorConfig[color as AccentColor] as { hex: string } | undefined)?.hex ?? fallback
+}
+
 export function hexToAccent(color: string): AccentColor {
   if (!color.startsWith('#')) return (color in colorConfig ? color : 'purple') as AccentColor
   const hex = color.toLowerCase()

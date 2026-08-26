@@ -12,10 +12,20 @@ import {
 } from './pinchZoom'
 
 interface PinchGesture {
+  /** identifiers of the two fingers that opened the pinch */
+  idA: number
+  idB: number
   startDistance: number
   startScale: number
   baseWidth: number
   baseHeight: number
+}
+
+function findTouch(list: TouchList, identifier: number): Touch | null {
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].identifier === identifier) return list[i]
+  }
+  return null
 }
 
 /**
@@ -78,14 +88,20 @@ export function useBoardPinchZoom() {
     }
 
     const onTouchStart = (event: TouchEvent) => {
-      if (event.touches.length !== 2) return
+      if (event.touches.length < 2) return
       const content = contentRef.current
       if (!content) return
       // Stop the browser from starting a native pinch-zoom or scroll with
-      // these two fingers — the board owns two-finger gestures.
+      // these fingers — the board owns multi-finger gestures.
       event.preventDefault()
+      // A third finger joining an active pinch is swallowed, not promoted: the
+      // gesture keeps tracking the two fingers that opened it.
+      if (gestureRef.current) return
+      const [a, b] = [event.touches[0], event.touches[1]]
       gestureRef.current = {
-        startDistance: touchDistance(event.touches[0], event.touches[1]),
+        idA: a.identifier,
+        idB: b.identifier,
+        startDistance: touchDistance(a, b),
         startScale: scaleRef.current,
         // offsetWidth/Height ignore transforms — this is the unscaled layout
         // size the negative-margin compensation is computed against.
@@ -96,19 +112,26 @@ export function useBoardPinchZoom() {
 
     const onTouchMove = (event: TouchEvent) => {
       const gesture = gestureRef.current
-      if (!gesture || event.touches.length !== 2) return
+      if (!gesture) return
+      // While a pinch is live the gesture stays ours no matter how many fingers
+      // are down. Bailing out on a third finger would hand the move back to the
+      // browser mid-pinch — native page zoom, i.e. exactly the black-void
+      // escape this hook exists to prevent.
       event.preventDefault()
-      const scale = nextScale(
-        gesture.startScale,
-        gesture.startDistance,
-        touchDistance(event.touches[0], event.touches[1]),
-      )
-      applyScale(scale, touchMidpoint(event.touches[0], event.touches[1]), gesture)
+      const a = findTouch(event.touches, gesture.idA)
+      const b = findTouch(event.touches, gesture.idB)
+      // Extra pointers are ignored for the scale math rather than releasing it.
+      if (!a || !b) return
+      const scale = nextScale(gesture.startScale, gesture.startDistance, touchDistance(a, b))
+      applyScale(scale, touchMidpoint(a, b), gesture)
     }
 
     const onTouchEnd = (event: TouchEvent) => {
       const gesture = gestureRef.current
-      if (!gesture || event.touches.length >= 2) return
+      if (!gesture) return
+      // Still pinching for as long as both of the gesture's OWN fingers are
+      // down — a raw count would keep a dead gesture alive on a stray third.
+      if (findTouch(event.touches, gesture.idA) && findTouch(event.touches, gesture.idB)) return
       // Near-1 scales snap back to exactly 1 so the board doesn't sit at a
       // barely-off zoom forever.
       if (scaleRef.current >= SNAP_TO_NORMAL_THRESHOLD) {
