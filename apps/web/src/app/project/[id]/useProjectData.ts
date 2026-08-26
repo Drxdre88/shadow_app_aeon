@@ -14,13 +14,36 @@ const POLL_INTERVAL = 30_000
 const PUSHER_DEBOUNCE_MS = 300
 
 type AssigneeLite = { userId: string; name: string | null; image: string | null }
-function toAssigneePills(raw: Record<string, AssigneeLite[]> | undefined): Record<string, AssigneeLite[]> {
-  const out: Record<string, AssigneeLite[]> = {}
-  if (!raw) return out
-  for (const [taskId, list] of Object.entries(raw)) {
-    out[taskId] = list.map((a) => ({ userId: a.userId, name: a.name, image: a.image }))
+type VirtualAssigneeLite = { virtualMemberId: string; name: string; initials: string; color: string }
+type VirtualMemberRaw = { id: string; name: string; initials: string; color: string }
+type AssigneePill = AssigneeLite & { kind?: 'virtual'; color?: string | null }
+
+// Real + virtual assignees merge into one pill list per task — virtual pills
+// reuse the userId slot for their member id (uuids never collide) and carry
+// kind/color so avatars render the dashed initials style.
+function toAssigneePills(
+  raw: Record<string, AssigneeLite[]> | undefined,
+  rawVirtual?: Record<string, VirtualAssigneeLite[]>,
+): Record<string, AssigneePill[]> {
+  const out: Record<string, AssigneePill[]> = {}
+  if (raw) {
+    for (const [taskId, list] of Object.entries(raw)) {
+      out[taskId] = list.map((a) => ({ userId: a.userId, name: a.name, image: a.image }))
+    }
+  }
+  if (rawVirtual) {
+    for (const [taskId, list] of Object.entries(rawVirtual)) {
+      const target = out[taskId] ?? (out[taskId] = [])
+      for (const v of list) {
+        target.push({ userId: v.virtualMemberId, name: v.name, image: null, kind: 'virtual', color: v.color })
+      }
+    }
   }
   return out
+}
+
+function toVirtualMemberLites(raw: VirtualMemberRaw[] | undefined) {
+  return (raw ?? []).map((v) => ({ id: v.id, name: v.name, initials: v.initials, color: v.color }))
 }
 
 async function fetchBoardVersion(projectId: string): Promise<number | null> {
@@ -50,7 +73,7 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
     const currentFetchId = ++fetchIdRef.current
 
     loadBoardData(projectId)
-      .then(({ tasks: dbTasks, columns: dbColumns, labels: dbLabels, taskLabels: dbTaskLabels, dependencies: dbDependencies, checklistSummaries: dbChecklistSummaries, checklistPreviews: dbChecklistPreviews, assignees: dbAssignees }) => {
+      .then(({ tasks: dbTasks, columns: dbColumns, labels: dbLabels, taskLabels: dbTaskLabels, dependencies: dbDependencies, checklistSummaries: dbChecklistSummaries, checklistPreviews: dbChecklistPreviews, assignees: dbAssignees, virtualAssignees: dbVirtualAssignees, virtualMembers: dbVirtualMembers }) => {
         if (currentFetchId !== fetchIdRef.current) return
         if (!isInitialLoad.current && isDirtyOrGracePeriod()) return
 
@@ -111,7 +134,8 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
           })),
           checklistSummaries: dbChecklistSummaries,
           checklistPreviews: dbChecklistPreviews,
-          assigneesByTask: toAssigneePills(dbAssignees),
+          assigneesByTask: toAssigneePills(dbAssignees, dbVirtualAssignees),
+          virtualMembers: toVirtualMemberLites(dbVirtualMembers),
           isDirty: false,
         })
 
@@ -146,7 +170,7 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
     setRows([])
 
     if (initialDataRef.current) {
-      const data = initialDataRef.current as { tasks: Array<Record<string, unknown>>; columns: Array<Record<string, unknown>>; labels: Array<Record<string, unknown>>; taskLabels: Array<{ taskId: string; labelId: string }>; dependencies: Array<Record<string, unknown>>; checklistSummaries: Record<string, never>; checklistPreviews: Record<string, never[]>; assignees?: Record<string, AssigneeLite[]> }
+      const data = initialDataRef.current as { tasks: Array<Record<string, unknown>>; columns: Array<Record<string, unknown>>; labels: Array<Record<string, unknown>>; taskLabels: Array<{ taskId: string; labelId: string }>; dependencies: Array<Record<string, unknown>>; checklistSummaries: Record<string, never>; checklistPreviews: Record<string, never[]>; assignees?: Record<string, AssigneeLite[]>; virtualAssignees?: Record<string, VirtualAssigneeLite[]>; virtualMembers?: VirtualMemberRaw[] }
       initialDataRef.current = undefined
 
       const taskLabelMap = new Map<string, string[]>()
@@ -185,7 +209,8 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
         dependencies: data.dependencies as never[],
         checklistSummaries: data.checklistSummaries,
         checklistPreviews: data.checklistPreviews,
-        assigneesByTask: toAssigneePills(data.assignees),
+        assigneesByTask: toAssigneePills(data.assignees, data.virtualAssignees),
+        virtualMembers: toVirtualMemberLites(data.virtualMembers),
         isDirty: false,
       })
 

@@ -2,6 +2,9 @@ export interface BoardFilters {
   search: string
   priorities: Set<string>
   labels: Set<string>
+  // Assignee ids — real user ids and virtual member ids share one namespace
+  // (uuids from distinct tables never collide).
+  assignees: Set<string>
   dateFilter: 'all' | 'has-dates' | 'no-dates' | 'overdue'
 }
 
@@ -10,6 +13,7 @@ export function createDefaultFilters(): BoardFilters {
     search: '',
     priorities: new Set(),
     labels: new Set(),
+    assignees: new Set(),
     dateFilter: 'all',
   }
 }
@@ -21,6 +25,7 @@ export function hasActiveFilters(filters: BoardFilters): boolean {
     filters.search.length > 0 ||
     filters.priorities.size > 0 ||
     filters.labels.size > 0 ||
+    (filters.assignees?.size ?? 0) > 0 ||
     filters.dateFilter !== 'all'
   )
 }
@@ -30,6 +35,7 @@ export function activeFilterCount(filters: BoardFilters): number {
   if (filters.search.length > 0) count++
   if (filters.priorities.size > 0) count++
   if (filters.labels.size > 0) count++
+  if ((filters.assignees?.size ?? 0) > 0) count++
   if (filters.dateFilter !== 'all') count++
   return count
 }
@@ -39,6 +45,9 @@ interface FilterableTask {
   description?: string
   priority: string
   labels: string[]
+  // Assignee ids (real + virtual). Optional — callers without assignee data
+  // simply never match an assignee filter.
+  assigneeIds?: string[]
   startDate?: string
   endDate?: string
 }
@@ -65,6 +74,11 @@ export function applyBoardFilters<T extends FilterableTask>(
     if (filters.labels.size > 0) {
       const hasMatchingLabel = task.labels.some((l) => filters.labels.has(l))
       if (!hasMatchingLabel) return false
+    }
+
+    if ((filters.assignees?.size ?? 0) > 0) {
+      const hasMatchingAssignee = (task.assigneeIds ?? []).some((id) => filters.assignees.has(id))
+      if (!hasMatchingAssignee) return false
     }
 
     if (filters.dateFilter !== 'all') {

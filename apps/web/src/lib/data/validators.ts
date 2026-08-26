@@ -739,6 +739,23 @@ export const createHangarRepoSchema = z.object({
 
 export const updateHangarRepoSchema = createHangarRepoSchema.omit({ realmId: true }).partial()
 
+// Virtual team members — shared by server actions, REST v1 and MCP (parity).
+// initials are optional on create (derived from name server-side when absent).
+export const createVirtualMemberSchema = z.object({
+  name:     z.string().trim().min(1).max(120),
+  color:    z.string().trim().min(1).max(20).default('purple'),
+  initials: z.string().trim().min(1).max(4).optional(),
+})
+
+export const updateVirtualMemberSchema = z.object({
+  name:     z.string().trim().min(1).max(120).optional(),
+  color:    z.string().trim().min(1).max(20).optional(),
+  initials: z.string().trim().min(1).max(4).optional(),
+})
+
+export type CreateVirtualMemberInput = z.infer<typeof createVirtualMemberSchema>
+export type UpdateVirtualMemberInput = z.infer<typeof updateVirtualMemberSchema>
+
 export type HangarObjective        = z.infer<typeof hangarObjectiveSchema>
 export type HangarAgent            = z.infer<typeof hangarAgentSchema>
 export type HangarOutputMode       = z.infer<typeof hangarOutputModeSchema>

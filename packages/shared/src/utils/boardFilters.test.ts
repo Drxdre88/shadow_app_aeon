@@ -14,6 +14,7 @@ const makeTask = (overrides: Partial<{
   description: string
   priority: string
   labels: string[]
+  assigneeIds: string[]
   startDate: string
   endDate: string
 }> = {}) => ({
@@ -116,14 +117,22 @@ describe('activeFilterCount', () => {
     expect(activeFilterCount({ ...createDefaultFilters(), dateFilter: 'overdue' })).toBe(1)
   })
 
-  it('counts all four active filters as 4', () => {
+  it('counts all five active filters as 5', () => {
     const f: BoardFilters = {
       search: 'hello',
       priorities: new Set(['high']),
       labels: new Set(['bug']),
+      assignees: new Set(['user-1']),
       dateFilter: 'overdue',
     }
-    expect(activeFilterCount(f)).toBe(4)
+    expect(activeFilterCount(f)).toBe(5)
+  })
+
+  it('counts assignees as 1 regardless of set size', () => {
+    const f = createDefaultFilters()
+    f.assignees.add('user-1')
+    f.assignees.add('vm-1')
+    expect(activeFilterCount(f)).toBe(1)
   })
 })
 
@@ -175,6 +184,61 @@ describe('applyBoardFilters', () => {
       const f = createDefaultFilters()
       f.priorities.add('low')
       f.priorities.add('high')
+      expect(applyBoardFilters(tasks, f)).toHaveLength(2)
+    })
+  })
+
+  describe('assignee filter', () => {
+    it('defaults to an empty set', () => {
+      expect(createDefaultFilters().assignees.size).toBe(0)
+    })
+
+    it('activates hasActiveFilters when an assignee is selected', () => {
+      const f = createDefaultFilters()
+      f.assignees.add('user-1')
+      expect(hasActiveFilters(f)).toBe(true)
+    })
+
+    it('returns only tasks assigned to the selected person', () => {
+      const tasks = [
+        makeTask({ name: 'Mine', assigneeIds: ['user-1'] }),
+        makeTask({ name: 'Theirs', assigneeIds: ['user-2'] }),
+      ]
+      const f = createDefaultFilters()
+      f.assignees.add('user-1')
+      const result = applyBoardFilters(tasks, f)
+      expect(result).toHaveLength(1)
+      expect(result[0].name).toBe('Mine')
+    })
+
+    it('matches virtual member ids the same as real user ids', () => {
+      const tasks = [
+        makeTask({ name: 'Virtual work', assigneeIds: ['vm-1', 'user-1'] }),
+        makeTask({ name: 'Unassigned' }),
+      ]
+      const f = createDefaultFilters()
+      f.assignees.add('vm-1')
+      const result = applyBoardFilters(tasks, f)
+      expect(result).toHaveLength(1)
+      expect(result[0].name).toBe('Virtual work')
+    })
+
+    it('excludes tasks without assignee data when the filter is active', () => {
+      const tasks = [makeTask({ name: 'No data' })]
+      const f = createDefaultFilters()
+      f.assignees.add('user-1')
+      expect(applyBoardFilters(tasks, f)).toHaveLength(0)
+    })
+
+    it('matches any of multiple selected assignees (OR semantics)', () => {
+      const tasks = [
+        makeTask({ name: 'A', assigneeIds: ['user-1'] }),
+        makeTask({ name: 'B', assigneeIds: ['vm-1'] }),
+        makeTask({ name: 'C', assigneeIds: ['user-3'] }),
+      ]
+      const f = createDefaultFilters()
+      f.assignees.add('user-1')
+      f.assignees.add('vm-1')
       expect(applyBoardFilters(tasks, f)).toHaveLength(2)
     })
   })
@@ -283,6 +347,7 @@ describe('applyBoardFilters property tests', () => {
             search,
             priorities: new Set(priorities),
             labels: new Set(labels),
+            assignees: new Set<string>(),
             dateFilter,
           }
           expect(applyBoardFilters([], f)).toEqual([])

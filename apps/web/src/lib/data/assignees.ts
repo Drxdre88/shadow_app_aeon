@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { taskAssignees, users, boardTasks } from '@/lib/db/schema'
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and } from 'drizzle-orm'
 import { touchProject } from './projects'
 
 // Aeon side quest — task assignees data layer.
@@ -32,14 +32,8 @@ export async function getTaskAssignees(taskId: string): Promise<AssigneeRow[]> {
 // Bulk fetch for a project — the board store hydrates assignees per card
 // using this map keyed by taskId.
 export async function getAssigneesForProject(projectId: string): Promise<Record<string, AssigneeRow[]>> {
-  const taskIds = (await db
-    .select({ id: boardTasks.id })
-    .from(boardTasks)
-    .where(eq(boardTasks.projectId, projectId))
-  ).map((r) => r.id)
-
-  if (taskIds.length === 0) return {}
-
+  // Single round trip: join through board_tasks instead of prefetching the
+  // project's task ids (this runs on every board load, cold Neon included).
   const rows = await db
     .select({
       taskId: taskAssignees.taskId,
@@ -51,8 +45,9 @@ export async function getAssigneesForProject(projectId: string): Promise<Record<
       assignedBy: taskAssignees.assignedBy,
     })
     .from(taskAssignees)
+    .innerJoin(boardTasks, eq(boardTasks.id, taskAssignees.taskId))
     .innerJoin(users, eq(users.id, taskAssignees.userId))
-    .where(inArray(taskAssignees.taskId, taskIds))
+    .where(eq(boardTasks.projectId, projectId))
 
   const out: Record<string, AssigneeRow[]> = {}
   for (const r of rows) {
@@ -80,7 +75,10 @@ async function projectIdForTask(taskId: string): Promise<string | null> {
   return task?.projectId ?? null
 }
 
-export async function assignUserToTask(taskId: string, userId: string, assignedBy: string) {
+// knownProjectId is optional purely as a round-trip saver — callers that
+// already verified the task belongs to a project pass it to skip the lookup
+// (one less query against a possibly-cold Neon).
+export async function assignUserToTask(taskId: string, userId: string, assignedBy: string, knownProjectId?: string) {
   const [row] = await db
     .insert(taskAssignees)
     .values({ taskId, userId, assignedBy })
@@ -88,21 +86,21 @@ export async function assignUserToTask(taskId: string, userId: string, assignedB
     .returning()
 
   if (row) {
-    const projectId = await projectIdForTask(taskId)
+    const projectId = knownProjectId ?? await projectIdForTask(taskId)
     if (projectId) await touchProject(projectId, { type: 'task:assigned' })
   }
 
   return row ?? null
 }
 
-export async function unassignUserFromTask(taskId: string, userId: string) {
+export async function unassignUserFromTask(taskId: string, userId: string, knownProjectId?: string) {
   const [deleted] = await db
     .delete(taskAssignees)
     .where(and(eq(taskAssignees.taskId, taskId), eq(taskAssignees.userId, userId)))
     .returning({ taskId: taskAssignees.taskId })
 
   if (deleted) {
-    const projectId = await projectIdForTask(taskId)
+    const projectId = knownProjectId ?? await projectIdForTask(taskId)
     if (projectId) await touchProject(projectId, { type: 'task:unassigned' })
   }
 
