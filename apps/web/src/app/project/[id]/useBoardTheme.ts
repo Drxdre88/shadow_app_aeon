@@ -20,11 +20,7 @@ export function useBoardTheme(projectId: string, settings: Record<string, unknow
   }, [projectId, settings?.boardTheme, applyBoardTheme, clearBoardTheme])
 }
 
-export async function setProjectBoardTheme(
-  projectId: string,
-  themeName: ThemeName | null,
-  currentSettings: Record<string, unknown> = {},
-) {
+export async function setProjectBoardTheme(projectId: string, themeName: ThemeName | null) {
   const store = useThemeStore.getState()
 
   if (themeName) {
@@ -32,5 +28,7 @@ export async function setProjectBoardTheme(
   } else {
     store.clearBoardTheme()
   }
-  await updateProjectSettings(projectId, { ...currentSettings, boardTheme: themeName })
+  // Send ONLY the key being changed: settings is merged in SQL, so replaying
+  // a whole client snapshot would resurrect keys another writer removed.
+  await updateProjectSettings(projectId, { boardTheme: themeName })
 }

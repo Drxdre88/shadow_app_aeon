@@ -9,6 +9,9 @@ import { useBoardStore, beginDirectWrite, endDirectWrite } from '@/lib/store/boa
 import { useMutationQueue } from '@/lib/store/mutationQueue'
 import { toast } from '@/components/ui/Toast'
 
+/** A queued drop stops meaning "launch now" once it is this stale. */
+const LAUNCH_INTENT_TTL_MS = 60_000
+
 export function useBoardHandlers(projectId: string) {
   const [vaultTarget, setVaultTarget] = useState<{ taskId: string; taskName: string } | null>(null)
   const [batchVaultTarget, setBatchVaultTarget] = useState<{ columnId: string; columnName: string; tasks: { id: string; name: string; priority: string }[] } | null>(null)
@@ -21,8 +24,7 @@ export function useBoardHandlers(projectId: string) {
   const launchMission = useCallback((taskId: string) => {
     if (launchingRef.current.has(taskId)) return
     launchingRef.current.add(taskId)
-    toast('Mission armed — launching…')
-    spawnSessionFromCard(projectId, taskId)
+    spawnSessionFromCard(projectId, taskId, 'auto-drop')
       .then(() => toast('Mission launched — the runner will claim it shortly'))
       .catch((err) => toast(err instanceof Error ? err.message : 'Launch failed'))
       .finally(() => { launchingRef.current.delete(taskId) })
@@ -119,6 +121,9 @@ export function useBoardHandlers(projectId: string) {
                 orderIndex: snapshot.orderIndex,
                 startDate: snapshot.startDate,
                 endDate: snapshot.endDate,
+                // Carries the AI mission: without it, undoing a delete
+                // silently demotes a mission card to a plain one.
+                metadata: snapshot.metadata,
               }).catch(() => toast('Failed to restore task'))
             },
           })
@@ -130,8 +135,9 @@ export function useBoardHandlers(projectId: string) {
   const handleTaskMove = useCallback((
     updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[],
     snapshot?: { id: string; columnId?: string; orderIndex: number }[],
-    launch?: { autoRunTaskId: string }
+    launch?: { autoRunTaskId: string; armedAt: number }
   ) => {
+    if (launch) toast('Mission will launch once the move saves…')
     useMutationQueue.getState().enqueue(
       { id: crypto.randomUUID(), type: 'task.move', args: { projectId, updates } },
       {
@@ -148,7 +154,14 @@ export function useBoardHandlers(projectId: string) {
       onSuccess: () => {
         // Auto AI: the launch waits for the move to be DURABLE. Firing it at
         // drop time would leave a live agent behind a rolled-back move.
+        // A move that only persists much later (offline queue, long retry
+        // loop) is no longer the gesture the operator made — spawning an
+        // agent then would be a surprise, so the intent expires.
         if (launch) {
+          if (Date.now() - launch.armedAt > LAUNCH_INTENT_TTL_MS) {
+            toast('Mission not launched — the move took too long to save')
+            return
+          }
           launchMission(launch.autoRunTaskId)
           // No "Moved — Undo" toast here: undo would put the card back while
           // the mission is already gone, which is not an undo.

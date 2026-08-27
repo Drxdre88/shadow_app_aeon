@@ -669,14 +669,21 @@ export const HANGAR_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/
 // The repo slug reaches the runner the same way the model id does (argv, then
 // a host path lookup), so it gets the same shell-inert treatment: leading
 // alphanumeric so it can never read as a flag, no spaces or shell
-// metacharacters, and no '..' traversal into a sibling checkout.
+// metacharacters. The charset alone does NOT stop traversal (a leading dot is
+// banned, an inner '/../' is not), so segment checking is mandatory — see
+// isSafeRepoSlug.
 export const HANGAR_REPO_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
+
+/** Shell-inert AND traversal-free: the full repo-slug contract. */
+export function isSafeRepoSlug(value: string): boolean {
+  return HANGAR_REPO_RE.test(value) && !value.split('/').includes('..')
+}
 
 // Stored under boardTasks.metadata.hangar. Card title carries the mission
 // name; session_ids / last_result are system-written, never user-supplied.
 export const hangarCardMetadataSchema = z.object({
   objective:   hangarObjectiveSchema,
-  repo:        z.string().trim().min(1).max(120).regex(HANGAR_REPO_RE, 'Invalid repo slug'),
+  repo:        z.string().trim().min(1).max(120).refine(isSafeRepoSlug, 'Invalid repo slug'),
   agent:       hangarAgentSchema.default('copilot'),
   // The model id reaches the runner's CLI argv — keep it to a shell-inert
   // charset so a card can never smuggle flags or shell metacharacters.
@@ -704,7 +711,7 @@ export const hangarCardMetadataSchema = z.object({
 export const hangarCardDraftSchema = z.object({
   objective:   hangarObjectiveSchema,
   // Empty is a legal draft; anything non-empty must already be shell-inert.
-  repo:        z.string().trim().max(120).refine((v) => v === '' || HANGAR_REPO_RE.test(v), 'Invalid repo slug'),
+  repo:        z.string().trim().max(120).refine((v) => v === '' || isSafeRepoSlug(v), 'Invalid repo slug'),
   agent:       hangarAgentSchema,
   model:       z.string().trim().max(80).regex(HANGAR_MODEL_RE, 'Invalid model id').nullable(),
   instruction: z.string().trim().max(20_000),

@@ -25,25 +25,44 @@ const RESULT_COLUMN_NAMES: Record<HangarResultEnvelope['status'], string | null>
   failed: null,
 }
 
+/** Thrown when a card already has a queued/running mission. */
+export class LiveMissionExistsError extends Error {
+  constructor() {
+    super('This card already has a live mission — kill it before launching again')
+    this.name = 'LiveMissionExistsError'
+  }
+}
+
+const ONE_LIVE_PER_TASK_IDX = 'agent_sessions_one_live_per_task_idx'
+
 export async function createAgentSession(userId: string, input: SpawnSessionInput) {
-  const [row] = await db
-    .insert(agentSessions)
-    .values({
-      userId,
-      engine: input.engine,
-      goal: input.goal,
-      prompt: input.prompt,
-      repo: input.repo ?? null,
-      branch: input.branch ?? null,
-      projectId: input.projectId ?? null,
-      realmId: input.realmId ?? null,
-      dominionId: input.dominionId ?? null,
-      taskId: input.taskId ?? null,
-      metadata: input.metadata ?? {},
-      status: 'queued',
-    })
-    .returning()
-  return row
+  try {
+    const [row] = await db
+      .insert(agentSessions)
+      .values({
+        userId,
+        engine: input.engine,
+        goal: input.goal,
+        prompt: input.prompt,
+        repo: input.repo ?? null,
+        branch: input.branch ?? null,
+        projectId: input.projectId ?? null,
+        realmId: input.realmId ?? null,
+        dominionId: input.dominionId ?? null,
+        taskId: input.taskId ?? null,
+        metadata: input.metadata ?? {},
+        status: 'queued',
+      })
+      .returning()
+    return row
+  } catch (err) {
+    // The partial unique index (migration 0033) is the authoritative
+    // one-live-mission-per-card guard: it closes the check-then-insert race
+    // AND covers the REST/MCP spawn surfaces, which never ran that check.
+    const message = err instanceof Error ? err.message : String(err)
+    if (message.includes(ONE_LIVE_PER_TASK_IDX)) throw new LiveMissionExistsError()
+    throw err
+  }
 }
 
 /**

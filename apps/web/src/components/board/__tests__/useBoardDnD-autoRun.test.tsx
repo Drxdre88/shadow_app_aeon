@@ -68,27 +68,38 @@ function dragEndEvent(taskId: string, overId: string): DragEndEvent {
   } as unknown as DragEndEvent
 }
 
-function setup(task = makeTask()) {
-  useBoardStore.setState({ tasks: [task] as never[], columns: COLUMNS as never[] })
+/**
+ * Mounts the hook over `tasks`. The drag snapshot is built from this list at
+ * handleDragStart, so a card's STARTING column must be set here — mutating
+ * the store mid-drag would not change the recorded provenance.
+ */
+function setup(tasks = [makeTask()]) {
+  useBoardStore.setState({ tasks: tasks as never[], columns: COLUMNS as never[] })
   const onTaskMove = vi.fn()
   const hook = renderHook(() =>
-    useBoardDnD({ projectTasks: [task] as never[], sortedColumns: COLUMNS as never[], onTaskMove })
+    useBoardDnD({ projectTasks: tasks as never[], sortedColumns: COLUMNS as never[], onTaskMove })
   )
   return { hook, onTaskMove }
 }
 
-/** Drives a drag from `from` into `to` with a known snapshot origin. */
-function drag(hook: ReturnType<typeof setup>['hook'], from: string, to: string) {
+/** Drives a real drag of task-1 onto `overId` (a column or a sibling card). */
+function drag(hook: ReturnType<typeof setup>['hook'], overId: string) {
   act(() => {
     hook.result.current.handleDragStart({
       active: { id: 'task-1', data: { current: { type: 'task' } } },
     } as never)
-    useBoardStore.getState().updateTask('task-1', { columnId: from } as never)
-    hook.result.current.handleDragEnd(dragEndEvent('task-1', to))
+    hook.result.current.handleDragEnd(dragEndEvent('task-1', overId))
   })
 }
 
+/**
+ * The launch intent from the last move — asserting the move ACTUALLY
+ * happened first. Without that, a negative case passes for the wrong reason
+ * (a no-op drop never calls onTaskMove at all, so the intent is undefined
+ * even if the arming logic were broken).
+ */
 function launchIntent(onTaskMove: ReturnType<typeof vi.fn>) {
+  expect(onTaskMove).toHaveBeenCalled()
   return onTaskMove.mock.calls.at(-1)?.[2]
 }
 
@@ -103,33 +114,42 @@ describe('useBoardDnD — Auto AI drop launches', () => {
 
   it('hands the launch to the move callback when an armed mission lands in the launch column', () => {
     const { hook, onTaskMove } = setup()
-    drag(hook, BACKLOG, LAUNCH)
-    expect(launchIntent(onTaskMove)).toEqual({ autoRunTaskId: 'task-1' })
+    drag(hook, LAUNCH)
+    expect(launchIntent(onTaskMove)).toMatchObject({ autoRunTaskId: 'task-1' })
+  })
+
+  // The launch must be DEFERRED, not performed here: it rides the move
+  // mutation so a rolled-back move cannot leave a live agent behind.
+  it('never launches inline — it only hands over an intent', () => {
+    const { hook, onTaskMove } = setup()
+    drag(hook, LAUNCH)
+    expect(typeof launchIntent(onTaskMove).armedAt).toBe('number')
+    // The hook exposes no launch capability of its own.
+    expect(Object.keys(hook.result.current)).not.toContain('launchMission')
   })
 
   it('does NOT launch on a drop into an ordinary column', () => {
-    const { hook, onTaskMove } = setup()
-    drag(hook, LAUNCH, BACKLOG)
+    const { hook, onTaskMove } = setup([makeTask({ columnId: LAUNCH })])
+    drag(hook, BACKLOG)
     expect(launchIntent(onTaskMove)).toBeUndefined()
   })
 
   it('does NOT launch a card whose auto-run is off', () => {
-    const task = makeTask({ metadata: { hangar: { ...MISSION.hangar, autoRun: false } } })
-    const { hook, onTaskMove } = setup(task)
-    drag(hook, BACKLOG, LAUNCH)
+    const { hook, onTaskMove } = setup([makeTask({ metadata: { hangar: { ...MISSION.hangar, autoRun: false } } })])
+    drag(hook, LAUNCH)
     expect(launchIntent(onTaskMove)).toBeUndefined()
   })
 
   it('does NOT launch a plain card', () => {
-    const { hook, onTaskMove } = setup(makeTask({ metadata: {} }))
-    drag(hook, BACKLOG, LAUNCH)
+    const { hook, onTaskMove } = setup([makeTask({ metadata: {} })])
+    drag(hook, LAUNCH)
     expect(launchIntent(onTaskMove)).toBeUndefined()
   })
 
   it('does NOT launch while the board has Auto AI switched off', () => {
     useHangarUiStore.setState({ config: { enabled: false, triggerColumnId: LAUNCH } })
     const { hook, onTaskMove } = setup()
-    drag(hook, BACKLOG, LAUNCH)
+    drag(hook, LAUNCH)
     expect(launchIntent(onTaskMove)).toBeUndefined()
   })
 
@@ -138,13 +158,21 @@ describe('useBoardDnD — Auto AI drop launches', () => {
   it('does NOT launch when the armed config belongs to a different board', () => {
     useHangarUiStore.setState({ projectId: 'some-other-project' })
     const { hook, onTaskMove } = setup()
-    drag(hook, BACKLOG, LAUNCH)
+    drag(hook, LAUNCH)
     expect(launchIntent(onTaskMove)).toBeUndefined()
   })
 
-  it('does NOT re-launch when the card is re-ordered inside the launch column', () => {
-    const { hook, onTaskMove } = setup(makeTask({ columnId: LAUNCH }))
-    drag(hook, LAUNCH, LAUNCH)
-    expect(launchIntent(onTaskMove)).toBeUndefined()
+  // Re-dropping inside the launch column must never re-fire the mission.
+  // Ordering within a column is decided from layout rects, which jsdom does
+  // not produce, so this asserts the invariant that holds either way: NO call
+  // to onTaskMove ever carries a launch intent. (The predicate-level proof
+  // for same-column drops lives in autoRun.test.ts.)
+  it('does NOT re-launch when the card is dropped back into the launch column', () => {
+    const { hook, onTaskMove } = setup([
+      makeTask({ id: 'task-1', columnId: LAUNCH, orderIndex: 0 }),
+      makeTask({ id: 'task-2', columnId: LAUNCH, orderIndex: 1, metadata: {} }),
+    ])
+    drag(hook, LAUNCH)
+    for (const call of onTaskMove.mock.calls) expect(call[2]).toBeUndefined()
   })
 })

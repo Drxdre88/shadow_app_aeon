@@ -120,6 +120,9 @@ export function ZenModeLayer({
 
   useEffect(() => {
     const onResize = () => {
+      // Mid-exit the pose is already frozen against the offset captured in
+      // beginExit; moving the panel now would land it off the source column.
+      if (closingRef.current) return
       const next = zenTargetRect(window.innerWidth, window.innerHeight, columnWidth)
       setTarget(next)
       // Re-clamp the dragged offset against the NEW viewport: framer only

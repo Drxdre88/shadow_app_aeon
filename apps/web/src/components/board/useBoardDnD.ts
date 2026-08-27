@@ -10,6 +10,8 @@ import { shouldAutoRunOnDrop } from './autoRun'
 /** Auto AI: the move that should launch a mission ONCE it is persisted. */
 export interface MoveLaunchIntent {
   autoRunTaskId: string
+  /** When the drop happened — the intent expires if the move saves late. */
+  armedAt: number
 }
 
 interface UseBoardDnDProps {
@@ -20,6 +22,7 @@ interface UseBoardDnDProps {
     snapshot?: { id: string; columnId?: string; orderIndex: number }[],
     launch?: MoveLaunchIntent,
   ) => void
+
   onTaskDelete?: (taskId: string) => void
   onColumnReorder?: (updates: { id: string; orderIndex: number }[]) => void
 }
@@ -226,7 +229,7 @@ export function useBoardDnD({
         toColumnId: targetColumnId,
       })
 
-    onTaskMove?.(updates, snapshot ?? undefined, armed ? { autoRunTaskId: activeId } : undefined)
+    onTaskMove?.(updates, snapshot ?? undefined, armed ? { autoRunTaskId: activeId, armedAt: Date.now() } : undefined)
   }, [sortedColumns, removeTask, reorderColumns, computePlacement, onTaskMove, onTaskDelete, onColumnReorder])
 
   const handleDragCancel = useCallback(() => {

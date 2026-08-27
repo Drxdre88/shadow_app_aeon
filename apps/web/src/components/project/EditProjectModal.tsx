@@ -100,10 +100,13 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
         endDate: formData.endDate,
         planetImage: formData.planetImage || null,
       })
-      // Auto AI config is its own action (settings merge, editor-gated), and
-      // the live store is updated so the board reacts without a reload.
-      await setHangarBoardSettings(project.id, hangar)
-      useHangarUiStore.getState().setConfig(project.id, hangar)
+      // Auto AI config is its own action (SQL settings merge, owner-gated).
+      // Trust what the SERVER stored, not the local draft: it drops a trigger
+      // column that doesn't belong to this project, and a client that kept
+      // believing in it would arm drops the server considers unarmed.
+      const savedHangar = await setHangarBoardSettings(project.id, hangar)
+      setHangar(savedHangar)
+      useHangarUiStore.getState().setConfig(project.id, savedHangar)
       onClose()
       router.refresh()
     } catch (error) {

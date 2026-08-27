@@ -133,6 +133,40 @@ export async function updateTask(
   return task || null
 }
 
+/**
+ * Record a launch on a card's mission WITHOUT a read-modify-write.
+ *
+ * `metadata || patch` is a TOP-LEVEL merge, so writing the whole `hangar`
+ * object back would clobber a concurrent editor save (and could re-arm a card
+ * that was just disarmed). These jsonb_set calls touch only the three keys
+ * the launch owns, against the row as it exists at write time.
+ */
+export async function recordMissionLaunch(taskId: string, projectId: string, sessionId: string, launchedAt: string) {
+  const [task] = await db
+    .update(boardTasks)
+    .set({
+      metadata: sql`
+        jsonb_set(
+          jsonb_set(
+            jsonb_set(
+              coalesce(${boardTasks.metadata}, '{}'::jsonb),
+              '{hangar,sessionIds}',
+              coalesce(${boardTasks.metadata} -> 'hangar' -> 'sessionIds', '[]'::jsonb) || ${JSON.stringify([sessionId])}::jsonb,
+              true
+            ),
+            '{hangar,autoRun}', 'false'::jsonb, true
+          ),
+          '{hangar,lastLaunchedAt}', ${JSON.stringify(launchedAt)}::jsonb, true
+        )`,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, projectId)))
+    .returning()
+
+  await touchProject(projectId, { type: 'task:updated' })
+  return task || null
+}
+
 export async function createTasksBatch(
   projectId: string,
   tasks: { name: string; description?: string; status?: string; priority?: string; color?: string; size?: number | null; startDate?: string; endDate?: string; columnId?: string }[]

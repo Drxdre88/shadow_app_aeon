@@ -1,14 +1,14 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireEditor, requireOwnership } from './helpers'
+import { requireEditor, requireOwner } from './helpers'
 import {
   hangarCardMetadataSchema,
   hangarCardDraftSchema,
   HANGAR_MODEL_RE,
   type HangarCardMetadata,
 } from '@/lib/data/validators'
-import { findTaskById, updateTask } from '@/lib/data/tasks'
+import { findTaskById, updateTask, recordMissionLaunch } from '@/lib/data/tasks'
 import { createAgentSession, findLiveSessionForTask } from '@/lib/data/sessions'
 import { findHangarRepoBySlug, listHangarRepos } from '@/lib/data/hangar-repos'
 import { findProjectRealmIds } from '@/lib/data/workspaces'
@@ -94,7 +94,19 @@ async function assertRepoIsRegistered(projectId: string, hangar: HangarCardMetad
   }
 }
 
-export async function spawnSessionFromCard(projectId: string, taskId: string) {
+/**
+ * @param origin 'manual' = the operator explicitly hit Execute / Save &
+ * Launch. 'auto-drop' = a column move fired it, which is only legitimate
+ * while the card is armed IN THE DATABASE — the client's copy of `autoRun`
+ * can be stale (a launch disarms the card, and that write reaches the board
+ * asynchronously), so an auto-drop must re-check the stored value or a stale
+ * card could launch a second agent after its first mission finished.
+ */
+export async function spawnSessionFromCard(
+  projectId: string,
+  taskId: string,
+  origin: 'manual' | 'auto-drop' = 'manual'
+) {
   const userId = await requireEditor(projectId)
 
   const task = await findTaskById(taskId, projectId)
@@ -107,11 +119,15 @@ export async function spawnSessionFromCard(projectId: string, taskId: string) {
   }
   const hangar = parsed.data
 
-  // Idempotency gate. A duplicate launch is not cosmetic: every extra session
-  // is another real agent on a real repo, opening its own branch. Client-side
-  // in-flight tracking cannot cover a second tab, device or operator — only
-  // this check can, and every launch path (drop, context menu, editor,
-  // MCP/REST) funnels through here.
+  // A drop can only launch a card the DATABASE says is armed. The client's
+  // view of autoRun goes stale the moment a launch disarms the card.
+  if (origin === 'auto-drop' && hangar.autoRun !== true) {
+    throw new Error('This mission is not armed for auto-run')
+  }
+
+  // Fast, friendly duplicate check. The authoritative guard is the partial
+  // unique index behind createAgentSession (migration 0033) — this one just
+  // avoids doing the registry round-trips before failing.
   const live = await findLiveSessionForTask(taskId)
   if (live) {
     throw new Error(`This card already has a ${live.status} mission — kill it before launching again`)
@@ -143,16 +159,9 @@ export async function spawnSessionFromCard(projectId: string, taskId: string) {
 
   // Disarm after launch: an armed card that stays armed re-fires every time
   // it is dragged back into the launch column. Arming is a per-flight act.
-  await updateTask(taskId, projectId, {
-    metadata: {
-      hangar: {
-        ...hangar,
-        autoRun: false,
-        sessionIds: [...(hangar.sessionIds ?? []), session.id],
-        lastLaunchedAt: new Date().toISOString(),
-      },
-    },
-  })
+  // Written key-by-key in SQL so a concurrent editor save cannot be clobbered
+  // (and cannot re-arm the card we just disarmed).
+  await recordMissionLaunch(taskId, projectId, session.id, new Date().toISOString())
 
   revalidatePath(`/project/${projectId}`)
   return session
@@ -235,7 +244,7 @@ export async function setHangarBoardSettings(
   projectId: string,
   input: { enabled: boolean; triggerColumnId: string | null }
 ) {
-  await requireOwnership(projectId)
+  await requireOwner(projectId)
   const parsed = hangarSettingsSchema.parse(input)
 
   // A trigger column from another board would sit in settings looking armed
