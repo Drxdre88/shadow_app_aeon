@@ -4,20 +4,29 @@ import { useState } from 'react'
 import { Star } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { toggleProjectFavorite } from '@/lib/actions/projects'
+import { useFavoritesStore } from '@/stores/favoritesStore'
 import { cn } from '@/lib/utils/cn'
 
 // Header star next to the save pill. Optimistic: flips instantly, rolls back
 // if the server action fails so the UI never lies about persisted state.
-export function FavoriteStar({ projectId, initialFavorite = false }: { projectId: string; initialFavorite?: boolean }) {
+// Also patches the shared favoritesStore so the sidebar Favorites group
+// live-updates without a refetch.
+export function FavoriteStar({ projectId, initialFavorite = false, projectName }: { projectId: string; initialFavorite?: boolean; projectName?: string }) {
   const [favorite, setFavorite] = useState(initialFavorite)
+
+  const syncStore = (value: boolean) => {
+    useFavoritesStore.getState().applyToggle(projectId, value, projectName ? { name: projectName } : undefined)
+  }
 
   const handleToggle = async () => {
     const next = !favorite
     setFavorite(next)
+    syncStore(next)
     try {
       await toggleProjectFavorite(projectId, next)
     } catch {
       setFavorite(!next)
+      syncStore(!next)
     }
   }
 

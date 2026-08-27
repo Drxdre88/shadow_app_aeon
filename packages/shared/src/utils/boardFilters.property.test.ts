@@ -32,6 +32,7 @@ describe('boardFilters property-based invariants', () => {
       search: fc.string(),
       priorities: fc.array(fc.constantFrom('low', 'medium', 'high', 'urgent')).map((arr) => new Set(arr)),
       labels: fc.array(fc.string()).map((arr) => new Set(arr)),
+      assignees: fc.array(fc.string()).map((arr) => new Set(arr)),
       dateFilter: fc.constantFrom<'all' | 'has-dates' | 'no-dates' | 'overdue'>('all', 'has-dates', 'no-dates', 'overdue'),
     })
 
@@ -43,18 +44,19 @@ describe('boardFilters property-based invariants', () => {
     )
   })
 
-  it('activeFilterCount is always between 0 and 4 inclusive', () => {
+  it('activeFilterCount is always between 0 and 5 inclusive', () => {
     const filtersArbitrary: fc.Arbitrary<BoardFilters> = fc.record({
       search: fc.string(),
       priorities: fc.array(fc.string()).map((arr) => new Set(arr)),
       labels: fc.array(fc.string()).map((arr) => new Set(arr)),
+      assignees: fc.array(fc.string()).map((arr) => new Set(arr)),
       dateFilter: fc.constantFrom<'all' | 'has-dates' | 'no-dates' | 'overdue'>('all', 'has-dates', 'no-dates', 'overdue'),
     })
 
     fc.assert(
       fc.property(filtersArbitrary, (filters) => {
         const count = activeFilterCount(filters)
-        return count >= 0 && count <= 4
+        return count >= 0 && count <= 5
       })
     )
   })

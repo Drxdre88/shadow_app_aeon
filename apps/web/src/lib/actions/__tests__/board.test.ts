@@ -43,6 +43,11 @@ vi.mock('@/lib/data/assignees', () => ({
   getAssigneesForProject: vi.fn(),
 }))
 
+vi.mock('@/lib/data/virtual-members', () => ({
+  getVirtualAssigneesForProject: vi.fn(),
+  findVirtualMembersForProject: vi.fn(),
+}))
+
 vi.mock('@/lib/data/bridge', () => ({
   syncBoardStatusToGantt: vi.fn(),
   deleteLinkedGanttTask: vi.fn(),
@@ -89,6 +94,10 @@ import { syncBoardStatusToGantt, deleteLinkedGanttTask } from '@/lib/data/bridge
 import { emitActivity } from '@/lib/data/activity'
 import { checkStorageLimit } from '@/lib/data/storage'
 import { getAssigneesForProject as _getAssigneesForProject } from '@/lib/data/assignees'
+import {
+  getVirtualAssigneesForProject as _getVirtualAssigneesForProject,
+  findVirtualMembersForProject as _findVirtualMembersForProject,
+} from '@/lib/data/virtual-members'
 
 import {
   loadBoardData,
@@ -197,6 +206,8 @@ beforeEach(() => {
   vi.mocked(_findDependencies).mockResolvedValue([])
   vi.mocked(_findChecklistSummariesAndPreviews).mockResolvedValue({ summaries: {}, previews: {} })
   vi.mocked(_getAssigneesForProject).mockResolvedValue({})
+  vi.mocked(_getVirtualAssigneesForProject).mockResolvedValue({})
+  vi.mocked(_findVirtualMembersForProject).mockResolvedValue([])
 })
 
 describe('loadBoardData', () => {
@@ -228,7 +239,7 @@ describe('loadBoardData', () => {
 
     const result = await loadBoardData(PROJECT_ID)
 
-    expect(result).toEqual({ tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees: {} })
+    expect(result).toEqual({ tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees: {}, virtualAssignees: {}, virtualMembers: [] })
   })
 
   it('throws when requireOwnership rejects', async () => {

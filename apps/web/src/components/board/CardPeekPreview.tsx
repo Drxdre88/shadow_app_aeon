@@ -7,6 +7,7 @@ import { Tag, CheckSquare, Calendar, Link2, Clock } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { useBoardStore, useLabels } from '@/lib/store/boardStore'
 import { colorConfig, AccentColor, hexToRgba } from '@/lib/utils/colors'
+import { resolvePriority } from '@/lib/utils/priorities'
 import { formatDistanceToNow } from 'date-fns'
 
 interface CardPeekPreviewProps {
@@ -15,9 +16,6 @@ interface CardPeekPreviewProps {
 }
 
 const HOVER_DELAY = 600
-const PRIORITY_COLORS: Record<string, string> = {
-  urgent: '#ef4444', high: '#f97316', medium: '#3b82f6', low: '#64748b',
-}
 
 export function CardPeekPreview({ taskId, triggerRef }: CardPeekPreviewProps) {
   const [visible, setVisible] = useState(false)
@@ -26,6 +24,7 @@ export function CardPeekPreview({ taskId, triggerRef }: CardPeekPreviewProps) {
   const previewRef = useRef<HTMLDivElement>(null)
 
   const enabled = useThemeStore((s) => s.cardPreviewOnHover)
+  const priorities = useThemeStore((s) => s.priorities)
   const colors = useThemeStore((s) => s.colors)
   const glowIntensity = useThemeStore((s) => s.glowIntensity)
   const mult = glowIntensity / 75
@@ -73,7 +72,8 @@ export function CardPeekPreview({ taskId, triggerRef }: CardPeekPreviewProps) {
   const checkTotal = clSummary?.total ?? 0
   const checkDone = clSummary?.checked ?? 0
   const checkPct = checkTotal > 0 ? Math.round((checkDone / checkTotal) * 100) : 0
-  const priColor = PRIORITY_COLORS[task.priority] ?? '#64748b'
+  const resolvedPriority = resolvePriority(priorities, task.priority)
+  const priColor = resolvedPriority.color
   const updatedAgo = task.updatedAt ? formatDistanceToNow(new Date(task.updatedAt), { addSuffix: true }) : null
 
   return createPortal(
@@ -183,7 +183,7 @@ export function CardPeekPreview({ taskId, triggerRef }: CardPeekPreviewProps) {
                 className="px-1.5 py-0.5 rounded text-[10px] font-medium"
                 style={{ backgroundColor: `${priColor}20`, color: priColor }}
               >
-                {task.priority}
+                {resolvedPriority.name}
               </span>
               {task.startDate && (
                 <span className="text-[10px] text-slate-500 flex items-center gap-1">

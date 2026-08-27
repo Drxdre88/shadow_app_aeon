@@ -263,6 +263,19 @@ export async function toggleProjectFavorite(userId: string, projectId: string, f
   }
 }
 
+export async function findFavoriteProjects(userId: string) {
+  return db
+    .select({
+      id: projects.id,
+      name: projects.name,
+      favoritedAt: favoriteProjects.createdAt,
+    })
+    .from(favoriteProjects)
+    .innerJoin(projects, eq(favoriteProjects.projectId, projects.id))
+    .where(eq(favoriteProjects.userId, userId))
+    .orderBy(favoriteProjects.createdAt)
+}
+
 export async function findFavoriteProjectIds(userId: string) {
   const rows = await db
     .select({ projectId: favoriteProjects.projectId })

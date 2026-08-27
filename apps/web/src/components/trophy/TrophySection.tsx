@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronRight } from 'lucide-react'
+import { useThemeStore } from '@/stores/themeStore'
 import { TrophyCard } from './TrophyCard'
 import { cn } from '@/lib/utils/cn'
 import type { TaskVault } from '@/lib/db/schema'
@@ -28,6 +29,7 @@ export function TrophySection({
   defaultExpanded = true,
 }: TrophySectionProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
+  const colors = useThemeStore((s) => s.colors)
 
   return (
     <div className="mb-4">
@@ -42,10 +44,10 @@ export function TrophySection({
           animate={{ rotate: expanded ? 90 : 0 }}
           transition={{ duration: 0.15 }}
         >
-          <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-slate-400" />
+          <ChevronRight className="w-4 h-4" style={{ color: colors.textDim }} />
         </motion.div>
-        <span className="text-sm font-medium text-slate-300">{label}</span>
-        <span className="text-xs text-slate-600 ml-1">
+        <span className="text-sm font-medium" style={{ color: colors.textMuted }}>{label}</span>
+        <span className="text-xs ml-1 tabular-nums" style={{ color: colors.textDim }}>
           {tasks.length} {tasks.length === 1 ? 'trophy' : 'trophies'}
         </span>
       </button>

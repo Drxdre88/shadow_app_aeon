@@ -56,10 +56,24 @@ export interface ChecklistPreviewItem {
   groupName: string
 }
 
+// One avatar pill on a card. `userId` is the generic id: a real user's id, or
+// a virtual member's id when kind === 'virtual' (uuids never collide across
+// the two tables). Virtual pills carry a color for their initials avatar.
 export interface TaskAssigneePill {
   userId: string
   name: string | null
   image: string | null
+  kind?: 'virtual'
+  color?: string | null
+}
+
+// Realm-scoped virtual member visible on this board (hydrated with the board
+// payload so the overlay + filter bar never fetch them separately).
+export interface VirtualMemberLite {
+  id: string
+  name: string
+  initials: string
+  color: string
 }
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'retrying' | 'error' | 'offline'
@@ -108,6 +122,9 @@ interface BoardState {
   assigneesByTask: Record<string, TaskAssigneePill[]>
   setAssigneesByTask: (m: Record<string, TaskAssigneePill[]>) => void
   setTaskAssignees: (taskId: string, list: TaskAssigneePill[]) => void
+
+  virtualMembers: VirtualMemberLite[]
+  setVirtualMembers: (list: VirtualMemberLite[]) => void
 
   showDates: boolean
   toggleShowDates: () => void
@@ -223,6 +240,8 @@ export const useBoardStore = create<BoardState>()(
       setChecklistPreviews: (checklistPreviews) => set({ checklistPreviews }),
       setAssigneesByTask: (assigneesByTask) => set({ assigneesByTask }),
       setTaskAssignees: (taskId, list) => set((s) => ({ assigneesByTask: { ...s.assigneesByTask, [taskId]: list } })),
+      virtualMembers: [],
+      setVirtualMembers: (virtualMembers) => set({ virtualMembers }),
       toggleChecklistPreview: () => set((s) => {
         const cycle = { off: 'preview', preview: 'full', full: 'off' } as const
         return { checklistViewMode: cycle[s.checklistViewMode] }
@@ -318,4 +337,5 @@ export const useChecklistSummaries = () => useBoardStore((s) => s.checklistSumma
 export const useIsDirty = () => useBoardStore((s) => s.isDirty)
 export const useChecklistViewMode = () => useBoardStore((s) => s.checklistViewMode)
 export const useTaskAssignees = (taskId: string) => useBoardStore((s) => s.assigneesByTask[taskId])
+export const useVirtualMembers = () => useBoardStore((s) => s.virtualMembers)
 export const useCommentsSignal = () => useBoardStore((s) => s.commentsSignal)

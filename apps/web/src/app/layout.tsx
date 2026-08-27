@@ -43,6 +43,13 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  // App-shell PWA: page-level pinch-zoom escapes the board canvas and leaves
+  // black void, so it is disabled (Chrome/Android + installed PWAs honour
+  // this; iOS Safari in-browser ignores it and is handled by the board's own
+  // gesture capture). The board provides its own contained pinch-zoom
+  // (useBoardPinchZoom) as the zoom affordance in exchange.
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: 'cover',
   themeColor: '#8b5cf6',
 }

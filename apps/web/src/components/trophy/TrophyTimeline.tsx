@@ -15,17 +15,18 @@ interface TrophyTimelineProps {
   isLoading: boolean
 }
 
+// Gold marks the celebratory moments; everything else stays neutral.
 const actionDotStyles: Record<string, { dot: string; ring?: boolean; icon: LucideIcon }> = {
   created: { dot: 'bg-emerald-500', icon: Plus },
-  completed: { dot: 'bg-emerald-500', ring: true, icon: Trophy },
-  moved: { dot: 'bg-blue-500', icon: ArrowRight },
+  completed: { dot: 'bg-amber-500', ring: true, icon: Trophy },
+  moved: { dot: 'bg-slate-500', icon: ArrowRight },
   deleted: { dot: 'bg-red-500', icon: Trash2 },
-  dependency_added: { dot: 'bg-purple-500', icon: Link2 },
-  dependency_removed: { dot: 'bg-purple-500', icon: Link2 },
-  label_added: { dot: 'bg-cyan-500', icon: Tag },
-  label_removed: { dot: 'bg-cyan-500', icon: Tag },
+  dependency_added: { dot: 'bg-slate-500', icon: Link2 },
+  dependency_removed: { dot: 'bg-slate-500', icon: Link2 },
+  label_added: { dot: 'bg-slate-500', icon: Tag },
+  label_removed: { dot: 'bg-slate-500', icon: Tag },
   updated: { dot: 'bg-slate-500', icon: Pencil },
-  vaulted: { dot: 'bg-emerald-400', ring: true, icon: Archive },
+  vaulted: { dot: 'bg-amber-400', ring: true, icon: Archive },
 }
 
 function buildEventDescription(event: ActivityEvent): string {
@@ -74,7 +75,7 @@ export function TrophyTimeline({ events, onLoadMore, hasMore, isLoading }: Troph
   return (
     <div className="backdrop-blur-xl bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 flex flex-col h-full">
       <div className="flex items-center gap-2 mb-4">
-        <Trophy className="w-4 h-4 text-emerald-400" />
+        <Trophy className="w-4 h-4 text-amber-400" />
         <h3 className="text-sm font-semibold text-white">Activity Timeline</h3>
         <span className="ml-auto text-xs text-slate-500">{events.length} events</span>
       </div>
@@ -112,7 +113,7 @@ export function TrophyTimeline({ events, onLoadMore, hasMore, isLoading }: Troph
                     )}
                     style={
                       actionStyle.ring && glowIntensity > 0
-                        ? { boxShadow: `0 0 ${10 * mult}px ${3 * mult}px rgba(16,185,129,0.5)` }
+                        ? { boxShadow: `0 0 ${10 * mult}px ${3 * mult}px rgba(245,158,11,0.5)` }
                         : undefined
                     }
                   >
@@ -134,7 +135,7 @@ export function TrophyTimeline({ events, onLoadMore, hasMore, isLoading }: Troph
 
         {isLoading && (
           <div className="flex items-center justify-center py-4">
-            <div className="w-4 h-4 rounded-full border-2 border-emerald-500/30 border-t-emerald-400 animate-spin" />
+            <div className="w-4 h-4 rounded-full border-2 border-amber-500/30 border-t-amber-400 animate-spin" />
           </div>
         )}
       </div>

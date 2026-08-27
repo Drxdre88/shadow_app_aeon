@@ -12,7 +12,7 @@ import { QuickAddTask } from './QuickAddTask'
 const DENSE_THRESHOLD = 15
 const ESTIMATED_CARD_HEIGHT = 160
 
-type TaskItem = {
+export type TaskItem = {
   id: string
   name: string
   description?: string
@@ -36,6 +36,7 @@ interface VirtualizedTaskListProps {
   glowColor: string
   overId?: string | null
   activeTaskId?: string | null
+  scrollRef?: React.Ref<HTMLDivElement>
   onTaskEdit?: (taskId: string) => void
   onDependencyClick?: (taskId: string) => void
   onTaskUpdate?: (taskId: string, updates: Record<string, unknown>) => void
@@ -71,6 +72,7 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
   glowColor,
   overId,
   activeTaskId,
+  scrollRef,
   onTaskEdit,
   onDependencyClick,
   onTaskUpdate,
@@ -100,7 +102,11 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
   )
 
   return (
-    <div className="flex-1 overflow-y-auto p-3 space-y-3">
+    // overscroll-y-contain: hitting the top/bottom of a card list must not
+    // chain into page scroll / pull-to-refresh mid-gesture. y-axis only — an
+    // all-axis contain would swallow horizontal swipes that should pan the
+    // board row underneath.
+    <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-y-contain p-3 space-y-3">
       <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
         {dense ? (
           // No AnimatePresence on dense columns: with many cards its layout

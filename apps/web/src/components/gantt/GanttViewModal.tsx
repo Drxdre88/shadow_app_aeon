@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils/cn'
 import { useColumns, useTasks, useLabels, useDependencies } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { colorConfig, generateId } from '@/lib/utils/colors'
+import { sortLabelsByName } from '@/lib/utils/labels'
 
 const GROUP_BY_OPTIONS = [
   { value: 'column', label: 'By Column', icon: Columns3 },
@@ -122,7 +123,7 @@ export function GanttViewModal({ projectId, mode, existingView, onConfirm, onClo
           }))
 
       case 'label': {
-        const labelSections = labels.map((l) => ({
+        const labelSections = sortLabelsByName(labels).map((l) => ({
           name: l.name,
           color: l.color,
           count: tasks.filter((t) => t.labels.includes(l.id)).length,

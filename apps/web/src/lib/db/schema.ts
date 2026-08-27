@@ -662,6 +662,38 @@ export const taskAssignees = pgTable('task_assignees', {
   taskIdx: index('task_assignees_task_idx').on(t.taskId),
 }))
 
+// Virtual team members — people who don't use Aeon (no account, no access)
+// but whom the owner wants on the board: a colleague you won't invite, a
+// contractor, a client. Realm-scoped so they are assignable across every
+// project in the realm, exactly like real realm members.
+export const virtualMembers = pgTable('virtual_members', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  realmId: uuid('realm_id').notNull().references(() => workspaceGroups.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 120 }).notNull(),
+  // Derived from name at creation but stored so a rename doesn't silently
+  // change the avatar everyone recognises.
+  initials: varchar('initials', { length: 4 }).notNull(),
+  color: varchar('color', { length: 20 }).default('purple').notNull(),
+  createdById: uuid('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  realmIdx: index('virtual_members_realm_idx').on(t.realmId, t.createdAt),
+}))
+
+// Parallel assignment table to task_assignees — keeps every existing
+// real-member query (users innerJoin) untouched and type-safe instead of
+// widening task_assignees with a nullable userId + CHECK.
+export const taskVirtualAssignees = pgTable('task_virtual_assignees', {
+  taskId: uuid('task_id').notNull().references(() => boardTasks.id, { onDelete: 'cascade' }),
+  virtualMemberId: uuid('virtual_member_id').notNull().references(() => virtualMembers.id, { onDelete: 'cascade' }),
+  assignedBy: uuid('assigned_by').references(() => users.id, { onDelete: 'set null' }),
+  assignedAt: timestamp('assigned_at').defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.taskId, t.virtualMemberId] }),
+  memberIdx: index('task_virtual_assignees_member_idx').on(t.virtualMemberId, t.assignedAt),
+  taskIdx: index('task_virtual_assignees_task_idx').on(t.taskId),
+}))
+
 // Per-session timeline. Emitted by the worker host (status transitions) and
 // by Claude Code PostToolUse / Stop hooks (tool_use, tool_result, message,
 // stop). seq is monotonic per session and UNIQUE to make replays idempotent.
@@ -746,3 +778,5 @@ export type AgentSession = typeof agentSessions.$inferSelect
 export type SessionEvent = typeof sessionEvents.$inferSelect
 export type HangarRepo = typeof hangarRepos.$inferSelect
 export type TaskAssignee = typeof taskAssignees.$inferSelect
+export type VirtualMember = typeof virtualMembers.$inferSelect
+export type TaskVirtualAssignee = typeof taskVirtualAssignees.$inferSelect

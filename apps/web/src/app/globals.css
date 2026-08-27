@@ -75,6 +75,16 @@ input[type='number'] {
   }
 }
 
+/* Pinched out to a bird's-eye view: the wrapper is laid out at
+   viewport-height / scale (see useBoardPinchZoom), so columns stretch to fill
+   it and land exactly on the screen edges once scaled. Their configured height
+   is overridden only while zoomed — zooming out then shows MORE of each column
+   instead of shrinking the board away from the bottom of the screen. */
+[data-board-zoomed] .kanban-col-outer,
+[data-board-zoomed] .kanban-col-inner {
+  height: 100%;
+}
+
 @layer components {
   .glass {
     @apply backdrop-blur-xl border border-white/10 rounded-xl;
@@ -228,4 +238,34 @@ html[data-reduce-motion='true'] *::after {
   animation-delay: 0ms !important;
   animation-iteration-count: 1 !important;
   scroll-behavior: auto !important;
+}
+
+/* Zen mode: cards settle into the focused column with a short stagger after
+   the flight lands. Targets the card list's direct children (cards or their
+   dense-mode wrappers + the quick-add row) so both list modes stagger the
+   same. Gated on [data-zen-enter], which the layer drops once the entry
+   beat is over — DOM reorders (drag & drop) restart CSS animations, so the
+   rule must not stay live. Killed to instant by the reduce-motion rule. */
+@keyframes zen-card-settle {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+[data-zen-cards][data-zen-enter] > :first-child > * {
+  animation: zen-card-settle 0.45s cubic-bezier(0.22, 1, 0.36, 1) 0.34s backwards;
+}
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(1) { animation-delay: 0.06s; }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(2) { animation-delay: 0.1s; }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(3) { animation-delay: 0.14s; }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(4) { animation-delay: 0.18s; }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(5) { animation-delay: 0.22s; }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(6) { animation-delay: 0.26s; }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(7) { animation-delay: 0.3s; }
+
+/* The custom Zen scroller replaces the native scrollbar on the focused list. */
+[data-zen-cards] > :first-child {
+  scrollbar-width: none;
+}
+[data-zen-cards] > :first-child::-webkit-scrollbar {
+  display: none;
 }

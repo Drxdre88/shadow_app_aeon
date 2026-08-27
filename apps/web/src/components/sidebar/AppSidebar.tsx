@@ -14,6 +14,7 @@ import { KairosSidebarSection } from '@/components/sidebar/KairosSidebarSection'
 import { SidebarCreateActions } from '@/components/sidebar/SidebarCreateActions'
 import { KairosSidebarContent } from '@/components/sidebar/KairosSidebarContent'
 import { SidebarHome } from '@/components/sidebar/SidebarHome'
+import { SidebarFavorites } from '@/components/sidebar/SidebarFavorites'
 import { SidebarBottom } from '@/components/sidebar/SidebarBottom'
 
 interface AppSidebarProps {
@@ -74,6 +75,7 @@ export function AppSidebar({
       <SidebarHome collapsed={collapsed} glowColor={glowColor} pathname={pathname} />
 
       <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-2 scrollbar-none">
+        <SidebarFavorites collapsed={collapsed} />
         {onKairos ? (
           <KairosSidebarContent collapsed={collapsed} />
         ) : (

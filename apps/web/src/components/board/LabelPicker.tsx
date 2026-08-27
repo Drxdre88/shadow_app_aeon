@@ -7,6 +7,7 @@ import { X, Plus, Tag, Check, Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore, useLabels, useTasks } from '@/lib/store/boardStore'
 import { AccentColor, colorConfig, generateId, hexToRgba } from '@/lib/utils/colors'
+import { sortLabelsByName } from '@/lib/utils/labels'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
 
 function resolveLabelColor(color: string) {
@@ -21,7 +22,8 @@ interface LabelPickerProps {
   projectId: string
   isOpen: boolean
   onClose: () => void
-  onLabelCreate?: (label: { id: string; projectId: string; name: string; color: string }) => void
+  /** May return a promise resolving `false` when server persistence failed (assignment is then rolled back). */
+  onLabelCreate?: (label: { id: string; projectId: string; name: string; color: string }) => void | boolean | Promise<void | boolean>
   onLabelUpdate?: (labelId: string, updates: { name?: string; color?: string }) => void
   onLabelDelete?: (labelId: string) => void
   onLabelToggle?: (taskId: string, labelId: string, action: 'add' | 'remove') => void
@@ -53,7 +55,7 @@ export function LabelPicker({
   const updateTask = useBoardStore((s) => s.updateTask)
 
   const task = tasks.find((t) => t.id === taskId)
-  const projectLabels = labels.filter((l) => l.projectId === projectId)
+  const projectLabels = sortLabelsByName(labels.filter((l) => l.projectId === projectId))
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
@@ -100,11 +102,25 @@ export function LabelPicker({
       name: newLabelName.trim(),
       color: newLabelColor,
     }
+    // Optimistic: the label appears in the picker and on the card instantly.
     addLabel(newLabel)
-    onLabelCreate?.(newLabel)
-    const newLabels = [...task.labels, newLabel.id]
-    updateTask(taskId, { labels: newLabels })
-    onLabelToggle?.(taskId, newLabel.id, 'add')
+    updateTask(taskId, { labels: [...task.labels, newLabel.id] })
+    const created = onLabelCreate?.(newLabel)
+    // Persist the assignment only after the label exists server-side —
+    // firing both in parallel loses the race (the FK insert fails and the
+    // label silently drops off the card, forcing the user to retry).
+    Promise.resolve(created).then((ok) => {
+      if (ok === false) {
+        const current = useBoardStore.getState().tasks.find((t) => t.id === taskId)
+        if (current) {
+          useBoardStore.getState().updateTask(taskId, {
+            labels: current.labels.filter((id) => id !== newLabel.id),
+          })
+        }
+        return
+      }
+      onLabelToggle?.(taskId, newLabel.id, 'add')
+    })
     setNewLabelName('')
     setIsCreating(false)
   }
