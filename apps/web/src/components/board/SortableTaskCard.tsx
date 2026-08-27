@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useRef, memo } from 'react'
+import { useState, useRef, useMemo, memo } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { motion } from 'framer-motion'
-import { Calendar, MoreHorizontal, Check, X, Clock, Trash2 } from 'lucide-react'
+import { Calendar, MoreHorizontal, Check, X, Clock, Trash2, Bot, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { hexToRgba, resolveAccentHex } from '@/lib/utils/colors'
 import { getInitials } from '@/lib/utils/initials'
@@ -20,6 +20,7 @@ import { TaskSizeBadge } from './TaskSizeBadge'
 import { StaleIndicator } from './StaleIndicator'
 import { CardPeekPreview } from './CardPeekPreview'
 import { getTriState, cycleTaskCompletion, type TriState } from './triState'
+import { readHangarMission } from './autoRun'
 
 interface SortableTaskCardProps {
   task: {
@@ -36,6 +37,7 @@ interface SortableTaskCardProps {
     size?: number | null
     progress?: number | null
     updatedAt?: string
+    metadata?: Record<string, unknown>
   }
   onEdit?: (taskId: string) => void
   onDependencyClick?: (taskId: string) => void
@@ -71,6 +73,16 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [editName, setEditName] = useState(task.name)
+  // Auto AI cards wear their mission on the board face.
+  const mission = useMemo(() => {
+    const hangar = readHangarMission(task.metadata)
+    if (!hangar) return null
+    return {
+      repo: typeof hangar.repo === 'string' ? hangar.repo : '',
+      objective: typeof hangar.objective === 'string' ? hangar.objective : 'mission',
+      armed: hangar.autoRun === true,
+    }
+  }, [task.metadata])
   const editRef = useRef<HTMLInputElement>(null)
   const cardElRef = useRef<HTMLDivElement>(null)
   const isSelected = selectedTaskId === task.id
@@ -277,6 +289,27 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
               </button>
             </div>
           </div>
+
+          {mission && (
+            <div className="flex flex-wrap items-center gap-1 mb-2">
+              <span
+                title={`AI mission — ${mission.objective} in ${mission.repo}${mission.armed ? ' (auto-run armed)' : ''}`}
+                className="inline-flex items-center gap-1 px-1.5 rounded text-[9px] font-semibold leading-[15px] border"
+                style={{
+                  backgroundColor: 'color-mix(in srgb, var(--primary) 18%, transparent)',
+                  borderColor: 'color-mix(in srgb, var(--primary) 45%, transparent)',
+                  color: 'var(--primary)',
+                }}
+              >
+                <Bot className="w-2.5 h-2.5" />
+                {mission.repo || 'mission'}
+                {mission.armed && <Zap className="w-2.5 h-2.5" />}
+              </span>
+              <span className="px-1.5 rounded text-[9px] font-medium leading-[15px] border border-white/10 bg-white/5 text-slate-400">
+                {mission.objective}
+              </span>
+            </div>
+          )}
 
           {taskLabels.length > 0 && (
             <div className="flex flex-wrap items-center gap-1 mb-2">

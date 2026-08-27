@@ -46,6 +46,12 @@ vi.mock('@/lib/actions/virtual-members', () => ({
   updateVirtualMemberAction: vi.fn(),
   deleteVirtualMemberAction: vi.fn(),
 }))
+vi.mock('@/lib/actions/hangar', () => ({
+  spawnSessionFromCard: vi.fn(),
+  saveCardMission: vi.fn(),
+  listProjectHangarRepos: vi.fn().mockResolvedValue([]),
+  setHangarBoardSettings: vi.fn(),
+}))
 
 import { TaskBoard } from '../TaskBoard'
 import { useBoardStore, type BoardTask, type BoardColumn } from '@/lib/store/boardStore'

@@ -301,6 +301,8 @@ export const preferencesSchema = z.object({
   columnHeight: z.number().min(200).max(1600).optional(),
   dynamicColumnWidth: z.boolean().optional(),
   dynamicColumnHeight: z.boolean().optional(),
+  zenEnterSeconds: z.number().min(1).max(6).optional(),
+  zenExitSeconds: z.number().min(1).max(4).optional(),
   smokeVolume: z.number().min(0).max(100).optional(),
   depLineWidth: z.number().min(0.3).max(3).optional(),
   depLineGlow: z.number().min(0).max(100).optional(),
@@ -675,6 +677,10 @@ export const hangarCardMetadataSchema = z.object({
   model:       z.string().trim().max(80).regex(HANGAR_MODEL_RE, 'Invalid model id').nullable().optional(),
   instruction: z.string().trim().min(1).max(20_000),
   outputMode:  hangarOutputModeSchema.default('auto'),
+  // Launch-on-drop consent: only cards that opted in fire when dragged into
+  // the board's designated launch column. Defaults off — every launch is a
+  // conscious act unless the owner armed the card.
+  autoRun:     z.boolean().default(false),
   subagents:   z.array(z.string().trim().min(1).max(60)).max(20).default([]),
   sessionIds:  z.array(z.string().uuid()).default([]),
   lastResult:  z.record(z.string(), z.unknown()).optional(),

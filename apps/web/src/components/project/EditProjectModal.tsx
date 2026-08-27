@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Loader2, Palette, Check } from 'lucide-react'
+import { X, Loader2, Palette, Check, Bot } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils/cn'
 import { NeonButton } from '@/components/ui/NeonButton'
@@ -12,6 +12,9 @@ import { useRouter } from 'next/navigation'
 import { useThemeStore } from '@/stores/themeStore'
 import aeonLogo from '@/assets/aeon.png'
 import { ColorSwatchPicker } from '@/components/board/ColorSwatchPicker'
+import { setHangarBoardSettings } from '@/lib/actions/hangar'
+import { parseHangarConfig, useHangarUiStore } from '@/lib/store/hangarUiStore'
+import { useBoardStore } from '@/lib/store/boardStore'
 import { PlanetPicker } from './PlanetPicker'
 import { AccentColor, colorConfig, hexToAccent } from '@/lib/utils/colors'
 import type { RealmInfo } from './ProjectContextMenu'
@@ -47,6 +50,8 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
   })
   const [activeRealmIds, setActiveRealmIds] = useState<string[]>(projectRealmIds)
   const [togglingRealm, setTogglingRealm] = useState<string | null>(null)
+  const [hangar, setHangar] = useState(() => parseHangarConfig(project.settings))
+  const boardColumns = useBoardStore((s) => s.columns).filter((c) => c.projectId === project.id)
 
   useEffect(() => {
     setActiveRealmIds(projectRealmIds)
@@ -85,6 +90,10 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
         endDate: formData.endDate,
         planetImage: formData.planetImage || null,
       })
+      // Auto AI config is its own action (settings merge, editor-gated), and
+      // the live store is updated so the board reacts without a reload.
+      await setHangarBoardSettings(project.id, hangar)
+      useHangarUiStore.getState().setConfig(project.id, hangar)
       onClose()
       router.refresh()
     } catch (error) {
@@ -233,6 +242,62 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
                   <p className="text-[10px] text-slate-600 mt-1">Projects can belong to multiple team realms</p>
                 </div>
               )}
+
+              <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3 space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setHangar({ ...hangar, enabled: !hangar.enabled })}
+                  className="w-full flex items-center justify-between gap-3"
+                  aria-pressed={hangar.enabled}
+                >
+                  <span className="flex items-center gap-2 min-w-0 text-left">
+                    <Bot className="w-4 h-4 text-[var(--primary)] flex-shrink-0" />
+                    <span>
+                      <span className="block text-sm text-white">Auto AI</span>
+                      <span className="block text-[10px] text-slate-500">Turn cards on this board into agent missions</span>
+                    </span>
+                  </span>
+                  <span
+                    className={cn(
+                      'w-9 h-5 rounded-full relative transition-colors flex-shrink-0',
+                      hangar.enabled ? 'bg-[var(--primary)]/70' : 'bg-white/15'
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
+                        hangar.enabled ? 'translate-x-[18px]' : 'translate-x-0.5'
+                      )}
+                    />
+                  </span>
+                </button>
+
+                {hangar.enabled && (
+                  <div>
+                    <label className="block text-xs text-[var(--text-muted)] mb-1.5">Launch column</label>
+                    <select
+                      value={hangar.triggerColumnId ?? ''}
+                      onChange={(e) => setHangar({ ...hangar, triggerColumnId: e.target.value || null })}
+                      className={cn(
+                        'w-full px-3 py-2 rounded-lg text-sm [color-scheme:dark]',
+                        'bg-white/[0.05] border border-white/[0.1] text-white',
+                        'focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/50'
+                      )}
+                    >
+                      <option value="">None — launch manually only</option>
+                      {boardColumns
+                        .slice()
+                        .sort((a, b) => a.orderIndex - b.orderIndex)
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                    </select>
+                    <p className="text-[10px] text-slate-600 mt-1">
+                      Dropping an armed mission card here launches it. Cards must have auto-run switched on individually.
+                    </p>
+                  </div>
+                )}
+              </div>
 
               <PlanetPicker
                 value={formData.planetImage}

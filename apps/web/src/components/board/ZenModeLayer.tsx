@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { motion } from 'framer-motion'
+import { motion, useDragControls, useMotionValue } from 'framer-motion'
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
-import { Minimize2 } from 'lucide-react'
+import { Minimize2, Pin, PinOff } from 'lucide-react'
+import { cn } from '@/lib/utils/cn'
 import { useShallow } from 'zustand/shallow'
 import { useBoardStore, type BoardColumn, type BoardTask } from '@/lib/store/boardStore'
 import { useZenModeStore } from '@/lib/store/zenModeStore'
@@ -15,7 +16,7 @@ import { DragPreview } from './DragPreview'
 import { ZenScrollbar } from './ZenScrollbar'
 import { useBoardSensors } from './useBoardSensors'
 import { buildMoveUpdates, reorderWithInsertion, type MoveUpdate } from './dropIndex'
-import { zenTargetRect, flightTransform, measureColumnRect, type FlightTransform, type ZenRect } from './zenFlight'
+import { zenTargetRect, flightTransform, measureColumnRect, ZEN_GUTTER, type FlightTransform, type ZenRect } from './zenFlight'
 
 interface ZenModeLayerProps {
   column: BoardColumn
@@ -49,9 +50,12 @@ interface ZenModeLayerProps {
 /**
  * The Zen focus surface: the chosen column FLIP-flies from its on-board rect
  * to a centered, full-height panel above a blurred backdrop, then flies back
- * on exit. Lives in a portal above the (possibly pinch-scaled) board —
- * z-[35]: above the board, below pinned floating cards (z-40) and modals
- * (z-50), so a card opened from Zen still stacks on top.
+ * on exit. Lives in a portal above the (possibly pinch-scaled) board.
+ *
+ * z-[45]: the panel spans the full viewport height, so anything in the z-40
+ * band — the app's sticky header, pinned floating cards — would otherwise
+ * cover its top strip and swallow clicks on the drag handle and exit button.
+ * Modals (z-50) still stack above, so a card opened from Zen lands on top.
  */
 export function ZenModeLayer({
   column,
@@ -70,15 +74,30 @@ export function ZenModeLayer({
 }: ZenModeLayerProps) {
   const sourceRect = useZenModeStore((s) => s.sourceRect)
   const clearZen = useZenModeStore((s) => s.clear)
-  const { colors, glowIntensity, smoothUiRenders, dragEffect } = useThemeStore(
-    useShallow((s) => ({ colors: s.colors, glowIntensity: s.glowIntensity, smoothUiRenders: s.smoothUiRenders, dragEffect: s.dragEffect }))
+  const { colors, glowIntensity, smoothUiRenders, dragEffect, columnWidth, zenEnterSeconds, zenExitSeconds } = useThemeStore(
+    useShallow((s) => ({
+      colors: s.colors,
+      glowIntensity: s.glowIntensity,
+      smoothUiRenders: s.smoothUiRenders,
+      dragEffect: s.dragEffect,
+      columnWidth: s.columnWidth,
+      zenEnterSeconds: s.zenEnterSeconds,
+      zenExitSeconds: s.zenExitSeconds,
+    }))
   )
   const reduceMotion = !smoothUiRenders
   const mult = glowIntensity / 75
+  const enterS = Math.max(1, Math.min(6, zenEnterSeconds || 3))
+  const exitS = Math.max(1, Math.min(4, zenExitSeconds || 2))
 
   const [target, setTarget] = useState<ZenRect | null>(() =>
-    typeof window === 'undefined' ? null : zenTargetRect(window.innerWidth, window.innerHeight)
+    typeof window === 'undefined' ? null : zenTargetRect(window.innerWidth, window.innerHeight, columnWidth)
   )
+  // Owner spec 2708: the surface is a movable panel — drag it by the header,
+  // pin it to a side, and the backdrop unblurs so the board stays live.
+  const [pinned, setPinned] = useState(false)
+  const dragControls = useDragControls()
+  const dragX = useMotionValue(0)
   const [phase, setPhase] = useState<'open' | 'closing'>('open')
   const [exitPose, setExitPose] = useState<FlightTransform | null>(null)
   const [activeTask, setActiveTask] = useState<BoardTask | null>(null)
@@ -92,17 +111,18 @@ export function ZenModeLayer({
   }, [])
 
   // The card-settle stagger (globals.css) lives only through the entry beat:
-  // DOM reorders restart CSS animations, so the rule can't stay armed.
+  // DOM reorders restart CSS animations, so the rule can't stay armed. It is
+  // paced to the configurable flight, so it must outlive it.
   useEffect(() => {
-    const t = setTimeout(() => setEntering(false), 900)
+    const t = setTimeout(() => setEntering(false), enterS * 1000 + 600)
     return () => clearTimeout(t)
-  }, [])
+  }, [enterS])
 
   useEffect(() => {
-    const onResize = () => setTarget(zenTargetRect(window.innerWidth, window.innerHeight))
+    const onResize = () => setTarget(zenTargetRect(window.innerWidth, window.innerHeight, columnWidth))
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
-  }, [])
+  }, [columnWidth])
 
   const beginExit = useCallback(() => {
     if (closingRef.current) return
@@ -112,13 +132,16 @@ export function ZenModeLayer({
       return
     }
     closingRef.current = true
-    setExitPose(flightTransform(backRect, target))
+    // The panel may have been dragged off-center: the return flight starts
+    // from the dragged rect, so land it on the source by compensating x.
+    const draggedTarget = { ...target, left: target.left + dragX.get() }
+    setExitPose(flightTransform(backRect, draggedTarget))
     setPhase('closing')
     // Teardown must not depend solely on onAnimationComplete: a pose that is
     // already at its target can settle without firing it, which would strand
     // the app behind the blur.
-    exitFallbackRef.current = setTimeout(clearZen, 700)
-  }, [column.id, reduceMotion, target, clearZen])
+    exitFallbackRef.current = setTimeout(clearZen, exitS * 1000 + 400)
+  }, [column.id, reduceMotion, target, clearZen, exitS, dragX])
 
   // Escape during an in-Zen card drag belongs to dnd-kit (cancels the drag);
   // only a free Escape exits Zen.
@@ -185,22 +208,58 @@ export function ZenModeLayer({
   const glow02 = colors.glowColor.replace(/[\d.]+\)$/, '0.2)')
   const glow025 = colors.glowColor.replace(/[\d.]+\)$/, '0.25)')
 
+  const viewportWidth = typeof window !== 'undefined'
+    ? window.innerWidth
+    : target.left * 2 + target.width
+
   return createPortal(
-    <div className="fixed inset-0 z-[35]" data-zen-layer>
+    // While pinned the layer stops eating pointer events — the board behind
+    // is fully live and only the panel itself opts back in.
+    <div className={cn('fixed inset-0 z-[45]', pinned && 'pointer-events-none')} data-zen-layer>
       <motion.div
         data-zen-backdrop
         initial={reduceMotion ? false : { opacity: 0 }}
-        animate={{ opacity: phase === 'closing' ? 0 : 1 }}
-        transition={{ duration: 0.28, ease: 'easeOut' }}
-        className="absolute inset-0 bg-black/60 backdrop-blur-md"
+        // SOTA note (verified 2026-08): the blur itself is never animated —
+        // Chromium glitches mid-animation of backdrop-filter. The pre-blurred
+        // layer cross-fades via opacity, which is GPU-composited.
+        animate={{ opacity: phase === 'closing' || pinned ? 0 : 1 }}
+        transition={{
+          duration: reduceMotion ? 0 : phase === 'closing' ? exitS * 0.85 : entering ? enterS * 0.85 : 0.5,
+          ease: 'easeInOut',
+        }}
+        className="absolute inset-0 bg-black/70 backdrop-blur-2xl"
+        style={{ pointerEvents: pinned || phase === 'closing' ? 'none' : 'auto' }}
         onClick={beginExit}
       />
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setActiveTask(null)}>
+        {/* Drag wrapper owns the layout rect + the header-drag x offset;
+            the flight transform lives one level down so the entry/exit
+            animation and a user drag never fight over the same x. */}
+        <motion.div
+          data-zen-drag
+          drag="x"
+          dragListener={false}
+          dragControls={dragControls}
+          dragMomentum={false}
+          dragElastic={0.12}
+          dragConstraints={{
+            left: -(target.left - ZEN_GUTTER),
+            right: Math.max(0, viewportWidth - ZEN_GUTTER - (target.left + target.width)),
+          }}
+          className="absolute pointer-events-auto"
+          style={{
+            left: target.left,
+            top: target.top,
+            width: target.width,
+            height: target.height,
+            x: dragX,
+          }}
+        >
         <motion.div
           data-zen-surface
           role="dialog"
-          aria-modal="true"
+          aria-modal={!pinned}
           aria-label={`${column.name} — Zen mode`}
           initial={reduceMotion || !entryPose ? false : { ...entryPose, opacity: 0.85 }}
           animate={
@@ -208,16 +267,21 @@ export function ZenModeLayer({
               ? { ...exitPose, opacity: 0.85 }
               : { x: 0, y: 0, scaleX: 1, scaleY: 1, opacity: 1 }
           }
-          transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 300, damping: 32, mass: 0.9 }}
+          // Cinematic tween, not a spring: a long expo-out expansion on entry
+          // (fast lift-off, slow majestic settle) and an expo-in-out shrink
+          // back on exit. Durations are owner-configurable in Settings.
+          transition={
+            reduceMotion
+              ? { duration: 0 }
+              : phase === 'closing'
+                ? { duration: exitS, ease: [0.85, 0, 0.3, 1] }
+                : { duration: enterS, ease: [0.16, 1, 0.3, 1] }
+          }
           onAnimationComplete={() => {
             if (closingRef.current) clearZen()
           }}
-          className="absolute flex flex-col rounded-2xl overflow-hidden backdrop-blur-2xl border"
+          className="w-full h-full flex flex-col rounded-2xl overflow-hidden backdrop-blur-2xl border"
           style={{
-            left: target.left,
-            top: target.top,
-            width: target.width,
-            height: target.height,
             transformOrigin: '0 0',
             // Themed, not a fixed slate: the surface reads from the active
             // preset the same way CardPeekPreview does, so Zen carries the
@@ -235,22 +299,42 @@ export function ZenModeLayer({
           }}
         >
           <div
-            className="flex items-center justify-between gap-3 px-4 py-3 border-b border-white/10 flex-shrink-0"
-            style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+            className="flex items-center justify-between gap-3 px-4 py-3 border-b border-white/10 flex-shrink-0 cursor-grab active:cursor-grabbing"
+            // The header is the panel's drag handle; touchAction none so the
+            // browser hands the gesture to framer instead of scrolling.
+            style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))', touchAction: 'none' }}
+            onPointerDown={(e) => {
+              if ((e.target as HTMLElement).closest('button')) return
+              dragControls.start(e)
+            }}
           >
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border border-white/15 bg-white/10 text-white backdrop-blur-md min-w-0">
               {SelectedIcon && <SelectedIcon className="w-3.5 h-3.5 flex-shrink-0" />}
               <span className="truncate">{column.name}</span>
               <span className="text-[11px] opacity-60 font-normal">{tasks.length}</span>
             </span>
-            <button
-              onClick={beginExit}
-              title="Exit Zen mode"
-              aria-label="Exit Zen mode"
-              className="p-2 rounded-lg hover:bg-white/10 transition-colors text-slate-400 hover:text-white flex-shrink-0"
-            >
-              <Minimize2 className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <button
+                onClick={() => setPinned((v) => !v)}
+                title={pinned ? 'Unpin — restore the blurred focus' : 'Pin — unblur the board and keep the panel here'}
+                aria-label={pinned ? 'Unpin panel' : 'Pin panel'}
+                aria-pressed={pinned}
+                className={cn(
+                  'p-2 rounded-lg hover:bg-white/10 transition-colors',
+                  pinned ? 'text-[var(--primary)]' : 'text-slate-400 hover:text-white'
+                )}
+              >
+                {pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={beginExit}
+                title="Exit Zen mode"
+                aria-label="Exit Zen mode"
+                className="p-2 rounded-lg hover:bg-white/10 transition-colors text-slate-400 hover:text-white"
+              >
+                <Minimize2 className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           <div
@@ -259,7 +343,12 @@ export function ZenModeLayer({
             className="relative flex-1 min-h-0 flex flex-col pr-7"
             data-zen-cards
             data-zen-enter={entering ? '' : undefined}
-            style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+            // The card-settle stagger starts mid-flight and is paced off the
+            // configurable entry duration (globals.css reads the var).
+            style={{
+              paddingBottom: 'env(safe-area-inset-bottom)',
+              '--zen-settle-base': `${(reduceMotion ? 0 : enterS * 0.45).toFixed(2)}s`,
+            } as React.CSSProperties}
           >
             <VirtualizedTaskList
               tasks={tasks}
@@ -287,6 +376,7 @@ export function ZenModeLayer({
               contentKey={tasks.length}
             />
           </div>
+        </motion.div>
         </motion.div>
 
         {/* Outside the transformed surface: fixed-position overlays inside a

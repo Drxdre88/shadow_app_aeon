@@ -121,6 +121,7 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
             ganttTaskId: t.ganttTaskId ?? null,
             orderIndex: t.orderIndex,
             updatedAt: t.updatedAt?.toISOString(),
+            metadata: (t.metadata as Record<string, unknown> | null) ?? {},
           })),
           labels: dbLabels.map((l) => ({
             id: l.id,

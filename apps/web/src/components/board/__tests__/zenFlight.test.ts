@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { test, fc } from '@fast-check/vitest'
-import { zenTargetRect, flightTransform, measureColumnRect, ZEN_MAX_WIDTH, ZEN_GUTTER, type ZenRect } from '../zenFlight'
+import { zenTargetRect, flightTransform, measureColumnRect, ZEN_WIDTH_FACTOR, ZEN_GUTTER, type ZenRect } from '../zenFlight'
 
 const rectArb = fc.record({
   left: fc.double({ min: -2000, max: 4000, noNaN: true, noDefaultInfinity: true }),
@@ -20,29 +20,41 @@ function applyTransform(target: ZenRect, pose: { x: number; y: number; scaleX: n
 }
 
 describe('zenTargetRect', () => {
-  test.prop([fc.integer({ min: 320, max: 4000 }), fc.integer({ min: 400, max: 3000 })])(
+  test.prop([
+    fc.integer({ min: 320, max: 4000 }),
+    fc.integer({ min: 400, max: 3000 }),
+    fc.integer({ min: 250, max: 1200 }),
+  ])(
     'stays inside the viewport with the gutter respected',
-    (vw, vh) => {
-      const rect = zenTargetRect(vw, vh)
+    (vw, vh, cw) => {
+      const rect = zenTargetRect(vw, vh, cw)
       expect(rect.left).toBeGreaterThanOrEqual(ZEN_GUTTER - 1e-9)
       expect(rect.top).toBe(ZEN_GUTTER)
       expect(rect.left + rect.width).toBeLessThanOrEqual(vw - ZEN_GUTTER + 1e-9)
       expect(rect.top + rect.height).toBeLessThanOrEqual(vh - ZEN_GUTTER + 1e-9)
-      expect(rect.width).toBeLessThanOrEqual(ZEN_MAX_WIDTH)
     }
   )
 
-  test.prop([fc.integer({ min: 320, max: 4000 }), fc.integer({ min: 400, max: 3000 })])(
+  test.prop([
+    fc.integer({ min: 320, max: 4000 }),
+    fc.integer({ min: 400, max: 3000 }),
+    fc.integer({ min: 250, max: 1200 }),
+  ])(
     'is horizontally centered',
-    (vw, vh) => {
-      const rect = zenTargetRect(vw, vh)
+    (vw, vh, cw) => {
+      const rect = zenTargetRect(vw, vh, cw)
       const centerX = rect.left + rect.width / 2
       expect(centerX).toBeCloseTo(vw / 2, 6)
     }
   )
 
+  it('surface is 1.5x the configured column width when the viewport allows', () => {
+    const rect = zenTargetRect(2000, 1000, 400)
+    expect(rect.width).toBe(400 * ZEN_WIDTH_FACTOR)
+  })
+
   it('narrow phone viewport gets the full width minus gutters', () => {
-    const rect = zenTargetRect(390, 844)
+    const rect = zenTargetRect(390, 844, 400)
     expect(rect.width).toBe(390 - ZEN_GUTTER * 2)
     expect(rect.height).toBe(844 - ZEN_GUTTER * 2)
   })

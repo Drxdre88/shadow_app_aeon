@@ -5,6 +5,8 @@ import { DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColumn, type BoardTask, type TaskAssigneePill } from '@/lib/store/boardStore'
 import { cn } from '@/lib/utils/cn'
+import { spawnSessionFromCard } from '@/lib/actions/hangar'
+import { MissionEditorModal } from './MissionEditorModal'
 import { KanbanColumn } from './KanbanColumn'
 import { SortableColumn } from './SortableColumn'
 import { TaskEditModal } from './TaskEditModal'
@@ -160,12 +162,21 @@ export function TaskBoard({
     onConnectModeChange,
   })
 
+  // Auto AI: an armed mission card dropped into the board's launch column.
+  const handleAutoRunMission = useCallback((taskId: string) => {
+    toast('Mission armed — launching…')
+    spawnSessionFromCard(projectId, taskId)
+      .then(() => toast('Mission launched — the runner will claim it shortly'))
+      .catch((err) => toast(err instanceof Error ? err.message : 'Launch failed'))
+  }, [projectId])
+
   const { sensors, activeItem, overId, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel } = useBoardDnD({
     projectTasks,
     sortedColumns,
     onTaskMove,
     onTaskDelete,
     onColumnReorder,
+    onAutoRunMission: handleAutoRunMission,
   })
 
   const {
@@ -409,6 +420,8 @@ export function TaskBoard({
         onTaskDelete={onTaskDelete}
         onPin={handlePinCard}
       />
+
+      <MissionEditorModal projectId={projectId} />
 
       {zenColumn && (
         <ZenModeLayer

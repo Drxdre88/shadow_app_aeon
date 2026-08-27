@@ -2,11 +2,20 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireEditor } from './helpers'
-import { hangarCardMetadataSchema, HANGAR_MODEL_RE, type HangarCardMetadata } from '@/lib/data/validators'
+import {
+  hangarCardMetadataSchema,
+  hangarObjectiveSchema,
+  hangarAgentSchema,
+  hangarOutputModeSchema,
+  HANGAR_MODEL_RE,
+  type HangarCardMetadata,
+} from '@/lib/data/validators'
 import { findTaskById, updateTask } from '@/lib/data/tasks'
 import { createAgentSession } from '@/lib/data/sessions'
 import { findHangarRepoBySlug, listHangarRepos } from '@/lib/data/hangar-repos'
 import { findProjectRealmIds } from '@/lib/data/workspaces'
+import { findProjectSettings, updateProject } from '@/lib/data/projects'
+import { z } from 'zod'
 
 // AI Hangar (Sprint 1) — turn a board card into a queued agent mission.
 // The row is deliberately left in 'queued' with no dispatchSpawn call: the
@@ -131,4 +140,84 @@ export async function spawnSessionFromCard(projectId: string, taskId: string) {
 
   revalidatePath(`/project/${projectId}`)
   return session
+}
+
+/**
+ * Repos the mission editor can offer for this board: the union of every
+ * realm registry the project belongs to (active entries only).
+ */
+export async function listProjectHangarRepos(projectId: string) {
+  await requireEditor(projectId)
+  const realmIds = await findProjectRealmIds(projectId)
+  const registries = await Promise.all(realmIds.map((id) => listHangarRepos(id)))
+  const bySlug = new Map<string, { slug: string; name: string; allowedEngines: string[] }>()
+  for (const repo of registries.flat()) {
+    if (!repo.active) continue
+    const existing = bySlug.get(repo.slug)
+    if (existing) {
+      // Divergent realm configs must not hide an engine one realm permits.
+      existing.allowedEngines = [...new Set([...existing.allowedEngines, ...repo.allowedEngines])]
+    } else {
+      bySlug.set(repo.slug, { slug: repo.slug, name: repo.name, allowedEngines: [...repo.allowedEngines] })
+    }
+  }
+  return [...bySlug.values()].sort((a, b) => a.slug.localeCompare(b.slug))
+}
+
+// A DRAFT is deliberately laxer than hangarCardMetadataSchema: the editor
+// must be able to save a half-filled mission. Launching still runs the strict
+// schema, so an incomplete card can never spawn an agent.
+const hangarDraftSchema = z.object({
+  objective:   hangarObjectiveSchema,
+  repo:        z.string().trim().max(120),
+  agent:       hangarAgentSchema,
+  model:       z.string().trim().max(80).regex(HANGAR_MODEL_RE, 'Invalid model id').nullable(),
+  instruction: z.string().trim().max(20_000),
+  outputMode:  hangarOutputModeSchema,
+  autoRun:     z.boolean(),
+})
+
+/** Write a card's mission payload (metadata.hangar) without touching the rest. */
+export async function saveCardMission(
+  projectId: string,
+  taskId: string,
+  draft: z.input<typeof hangarDraftSchema>
+) {
+  await requireEditor(projectId)
+  const task = await findTaskById(taskId, projectId)
+  if (!task) throw new Error('Task not found or unauthorized')
+
+  const parsed = hangarDraftSchema.parse(draft)
+  const existing = ((task.metadata ?? {}) as Record<string, unknown>).hangar
+  const preserved = (existing && typeof existing === 'object' && !Array.isArray(existing))
+    ? existing as Record<string, unknown>
+    : {}
+
+  // sessionIds / lastResult are system-written — never clobbered by an edit.
+  await updateTask(taskId, projectId, {
+    metadata: { hangar: { ...preserved, ...parsed } },
+  })
+
+  revalidatePath(`/project/${projectId}`)
+  return parsed
+}
+
+const hangarSettingsSchema = z.object({
+  enabled: z.boolean(),
+  triggerColumnId: z.string().uuid().nullable(),
+})
+
+/** Board-level Auto AI config, stored under projects.settings.hangar. */
+export async function setHangarBoardSettings(
+  projectId: string,
+  input: { enabled: boolean; triggerColumnId: string | null }
+) {
+  const userId = await requireEditor(projectId)
+  const parsed = hangarSettingsSchema.parse(input)
+  const settings = (await findProjectSettings(projectId)) ?? {}
+  await updateProject(projectId, userId, {
+    settings: { ...settings, hangar: parsed },
+  })
+  revalidatePath(`/project/${projectId}`)
+  return parsed
 }

@@ -47,6 +47,12 @@ vi.mock('@/lib/actions/transfer', () => ({
   copyColumnToProject: vi.fn(),
   moveColumnToProject: vi.fn(),
 }))
+vi.mock('@/lib/actions/hangar', () => ({
+  spawnSessionFromCard: vi.fn(),
+  saveCardMission: vi.fn(),
+  listProjectHangarRepos: vi.fn().mockResolvedValue([]),
+  setHangarBoardSettings: vi.fn(),
+}))
 
 import { ZenModeLayer } from '../ZenModeLayer'
 import { KanbanColumn } from '../KanbanColumn'
@@ -187,6 +193,32 @@ describe('ZenModeLayer', () => {
     expect(screen.getByText('Beta card')).toBeTruthy()
     expect(document.querySelector('[data-zen-backdrop]')).toBeTruthy()
     expect(screen.getByText('Add card')).toBeTruthy()
+  })
+
+  // Regression: at z-35 the app's sticky header (z-40) covered the panel's
+  // top strip, swallowing real clicks on the drag handle and exit button.
+  it('stacks above the z-40 chrome band so its header stays clickable', async () => {
+    await renderZenOpen()
+    const layer = document.querySelector('[data-zen-layer]')!
+    const z = Number((layer.className.match(/z-\[(\d+)\]/) ?? [])[1])
+    expect(z).toBeGreaterThan(40)
+    expect(z).toBeLessThan(50)
+  })
+
+  it('the panel is a drag surface with a pin control', async () => {
+    await renderZenOpen()
+    expect(document.querySelector('[data-zen-drag]')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Pin panel' })).toBeTruthy()
+  })
+
+  it('pinning unblurs the board and lets pointer events through the layer', async () => {
+    await renderZenOpen()
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Pin panel' })) })
+    const layer = document.querySelector('[data-zen-layer]')!
+    expect(layer.className).toContain('pointer-events-none')
+    expect(screen.getByRole('button', { name: 'Unpin panel' })).toBeTruthy()
+    // The panel itself must stay interactive while the layer is inert.
+    expect(document.querySelector('[data-zen-drag]')!.className).toContain('pointer-events-auto')
   })
 
   it('cards stay interactive — clicking one opens the editor flow', async () => {
@@ -356,12 +388,16 @@ describe('ZenModeLayer reorder', () => {
 // runs the user is left behind a full-screen blur with no way out.
 describe('ZenModeLayer exit teardown', () => {
   let clearSpy: ReturnType<typeof vi.fn>
+  // The exit flight is owner-configurable; the safety net is paced off it
+  // (duration + slack), so pin the setting and derive the wait.
+  const EXIT_SECONDS = 2
+  const EXIT_FALLBACK_MS = EXIT_SECONDS * 1000 + 400
 
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     clearSpy = vi.fn(ORIGINAL_CLEAR)
     useZenModeStore.setState({ clear: clearSpy })
-    useThemeStore.setState({ smoothUiRenders: true })
+    useThemeStore.setState({ smoothUiRenders: true, zenExitSeconds: EXIT_SECONDS })
     mountBoardColumn()
   })
 
@@ -381,7 +417,7 @@ describe('ZenModeLayer exit teardown', () => {
     expect(useZenModeStore.getState().columnId).toBe(COLUMN.id)
     expect(clearSpy).not.toHaveBeenCalled()
 
-    act(() => { vi.advanceTimersByTime(700) })
+    act(() => { vi.advanceTimersByTime(EXIT_FALLBACK_MS) })
     expect(clearSpy).toHaveBeenCalledTimes(1)
     expect(useZenModeStore.getState().columnId).toBeNull()
     expect(useZenModeStore.getState().sourceRect).toBeNull()
@@ -396,7 +432,7 @@ describe('ZenModeLayer exit teardown', () => {
     act(() => { fireEvent.click(exit) })
     expect(vi.getTimerCount()).toBe(armed)
 
-    act(() => { vi.advanceTimersByTime(700) })
+    act(() => { vi.advanceTimersByTime(EXIT_FALLBACK_MS) })
     expect(clearSpy).toHaveBeenCalledTimes(1)
   })
 
@@ -406,7 +442,7 @@ describe('ZenModeLayer exit teardown', () => {
     act(() => { fireEvent.click(document.querySelector('[data-zen-backdrop]')!) })
     act(() => { fireEvent.keyDown(document, { key: 'Escape' }) })
 
-    act(() => { vi.advanceTimersByTime(700) })
+    act(() => { vi.advanceTimersByTime(EXIT_FALLBACK_MS) })
     expect(clearSpy).toHaveBeenCalledTimes(1)
   })
 
@@ -415,7 +451,7 @@ describe('ZenModeLayer exit teardown', () => {
     act(() => { fireEvent.click(screen.getByRole('button', { name: 'Exit Zen mode' })) })
     act(() => { unmount() })
 
-    act(() => { vi.advanceTimersByTime(2000) })
+    act(() => { vi.advanceTimersByTime(EXIT_FALLBACK_MS + 1000) })
     expect(clearSpy).not.toHaveBeenCalled()
   })
 
@@ -426,7 +462,7 @@ describe('ZenModeLayer exit teardown', () => {
 
     // Still an animated exit (the stored entry rect is a valid landing site).
     expect(clearSpy).not.toHaveBeenCalled()
-    act(() => { vi.advanceTimersByTime(700) })
+    act(() => { vi.advanceTimersByTime(EXIT_FALLBACK_MS) })
     expect(useZenModeStore.getState().columnId).toBeNull()
   })
 

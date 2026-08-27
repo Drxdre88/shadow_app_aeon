@@ -4,6 +4,8 @@ import { arrayMove } from '@dnd-kit/sortable'
 import { useBoardStore, type BoardColumn, type BoardTask } from '@/lib/store/boardStore'
 import { insertionIndexInFullOrder, reorderWithInsertion, readCardRects, buildMoveUpdates, type MoveUpdate } from './dropIndex'
 import { useBoardSensors } from './useBoardSensors'
+import { useHangarUiStore } from '@/lib/store/hangarUiStore'
+import { shouldAutoRunOnDrop } from './autoRun'
 
 interface UseBoardDnDProps {
   projectTasks: BoardTask[]
@@ -11,6 +13,8 @@ interface UseBoardDnDProps {
   onTaskMove?: (updates: MoveUpdate[], snapshot?: { id: string; columnId?: string; orderIndex: number }[]) => void
   onTaskDelete?: (taskId: string) => void
   onColumnReorder?: (updates: { id: string; orderIndex: number }[]) => void
+  /** Auto AI: called when an armed mission card lands in the launch column. */
+  onAutoRunMission?: (taskId: string) => void
 }
 
 // Fallback when no pointer has been observed (keyboard drags): the activator
@@ -35,6 +39,7 @@ export function useBoardDnD({
   onTaskMove,
   onTaskDelete,
   onColumnReorder,
+  onAutoRunMission,
 }: UseBoardDnDProps) {
   const moveTask = useBoardStore((s) => s.moveTask)
   const removeTask = useBoardStore((s) => s.removeTask)
@@ -201,7 +206,21 @@ export function useBoardDnD({
     if (isNoOp) return
 
     onTaskMove?.(updates, snapshot ?? undefined)
-  }, [sortedColumns, removeTask, reorderColumns, computePlacement, onTaskMove, onTaskDelete, onColumnReorder])
+
+    // Auto AI: the column move IS the launch commitment, but only for a card
+    // the operator armed. Fired after the move is persisted so the runner
+    // never claims a mission whose card position is still in flight.
+    if (
+      onAutoRunMission &&
+      shouldAutoRunOnDrop(useHangarUiStore.getState().config, {
+        metadata: activeTask.metadata,
+        fromColumnId: original?.columnId ?? null,
+        toColumnId: targetColumnId,
+      })
+    ) {
+      onAutoRunMission(activeId)
+    }
+  }, [sortedColumns, removeTask, reorderColumns, computePlacement, onTaskMove, onTaskDelete, onColumnReorder, onAutoRunMission])
 
   const handleDragCancel = useCallback(() => {
     const snapshot = dragSnapshotRef.current
