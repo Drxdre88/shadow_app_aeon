@@ -30,6 +30,8 @@ export interface BoardTask {
   progress?: number | null
   updatedAt?: string
   orderIndex: number
+  /** Free-form card payload; an AI Hangar mission lives under the `hangar` key. */
+  metadata?: Record<string, unknown>
 }
 
 interface Label {

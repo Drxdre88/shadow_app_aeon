@@ -284,16 +284,18 @@ html[data-reduce-motion='true'] *::after {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* --zen-settle-base is set by the layer to ~45% of the configurable entry
+   flight, so cards begin settling mid-expansion however slow the flight is. */
 [data-zen-cards][data-zen-enter] > :first-child > * {
-  animation: zen-card-settle 0.45s cubic-bezier(0.22, 1, 0.36, 1) 0.34s backwards;
+  animation: zen-card-settle 0.6s cubic-bezier(0.22, 1, 0.36, 1) calc(var(--zen-settle-base, 0.34s) + 0.34s) backwards;
 }
-[data-zen-cards][data-zen-enter] > :first-child > :nth-child(1) { animation-delay: 0.06s; }
-[data-zen-cards][data-zen-enter] > :first-child > :nth-child(2) { animation-delay: 0.1s; }
-[data-zen-cards][data-zen-enter] > :first-child > :nth-child(3) { animation-delay: 0.14s; }
-[data-zen-cards][data-zen-enter] > :first-child > :nth-child(4) { animation-delay: 0.18s; }
-[data-zen-cards][data-zen-enter] > :first-child > :nth-child(5) { animation-delay: 0.22s; }
-[data-zen-cards][data-zen-enter] > :first-child > :nth-child(6) { animation-delay: 0.26s; }
-[data-zen-cards][data-zen-enter] > :first-child > :nth-child(7) { animation-delay: 0.3s; }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(1) { animation-delay: calc(var(--zen-settle-base, 0.34s) + 0.06s); }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(2) { animation-delay: calc(var(--zen-settle-base, 0.34s) + 0.1s); }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(3) { animation-delay: calc(var(--zen-settle-base, 0.34s) + 0.14s); }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(4) { animation-delay: calc(var(--zen-settle-base, 0.34s) + 0.18s); }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(5) { animation-delay: calc(var(--zen-settle-base, 0.34s) + 0.22s); }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(6) { animation-delay: calc(var(--zen-settle-base, 0.34s) + 0.26s); }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(7) { animation-delay: calc(var(--zen-settle-base, 0.34s) + 0.3s); }
 
 /* The custom Zen scroller replaces the native scrollbar on the focused list. */
 [data-zen-cards] > :first-child {

@@ -4,11 +4,25 @@ import { arrayMove } from '@dnd-kit/sortable'
 import { useBoardStore, type BoardColumn, type BoardTask } from '@/lib/store/boardStore'
 import { insertionIndexInFullOrder, reorderWithInsertion, readCardRects, buildMoveUpdates, type MoveUpdate } from './dropIndex'
 import { useBoardSensors } from './useBoardSensors'
+import { useHangarUiStore } from '@/lib/store/hangarUiStore'
+import { shouldAutoRunOnDrop } from './autoRun'
+
+/** Auto AI: the move that should launch a mission ONCE it is persisted. */
+export interface MoveLaunchIntent {
+  autoRunTaskId: string
+  /** When the drop happened — the intent expires if the move saves late. */
+  armedAt: number
+}
 
 interface UseBoardDnDProps {
   projectTasks: BoardTask[]
   sortedColumns: BoardColumn[]
-  onTaskMove?: (updates: MoveUpdate[], snapshot?: { id: string; columnId?: string; orderIndex: number }[]) => void
+  onTaskMove?: (
+    updates: MoveUpdate[],
+    snapshot?: { id: string; columnId?: string; orderIndex: number }[],
+    launch?: MoveLaunchIntent,
+  ) => void
+
   onTaskDelete?: (taskId: string) => void
   onColumnReorder?: (updates: { id: string; orderIndex: number }[]) => void
 }
@@ -200,7 +214,22 @@ export function useBoardDnD({
       && original.orderIndex === updates[0].orderIndex
     if (isNoOp) return
 
-    onTaskMove?.(updates, snapshot ?? undefined)
+    // Auto AI: the column move IS the launch commitment, but only for a card
+    // the operator armed on THIS board. The launch is handed to the move
+    // callback rather than fired here — the move is queued, not yet durable,
+    // and a launch that outlives a rolled-back move puts an agent on a repo
+    // for a card that never moved.
+    const hangarState = useHangarUiStore.getState()
+    // projectId match matters: the store is board-scoped, and a config left
+    // over from another board must never arm drops on this one.
+    const armed = hangarState.projectId === activeTask.projectId
+      && shouldAutoRunOnDrop(hangarState.config, {
+        metadata: activeTask.metadata,
+        fromColumnId: original?.columnId ?? null,
+        toColumnId: targetColumnId,
+      })
+
+    onTaskMove?.(updates, snapshot ?? undefined, armed ? { autoRunTaskId: activeId, armedAt: Date.now() } : undefined)
   }, [sortedColumns, removeTask, reorderColumns, computePlacement, onTaskMove, onTaskDelete, onColumnReorder])
 
   const handleDragCancel = useCallback(() => {

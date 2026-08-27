@@ -2,9 +2,10 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, X, Tag } from 'lucide-react'
+import { Plus, X, Tag, Bot } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
+import { useHangarUiStore } from '@/lib/store/hangarUiStore'
 import { AccentColor, colorConfig, generateId, hexToRgba } from '@/lib/utils/colors'
 import { sortLabelsByName } from '@/lib/utils/labels'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
@@ -39,6 +40,8 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
   const [selectedLabels, setSelectedLabels] = useState<string[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const { addTask, tasks, labels } = useBoardStore()
+  const aiEnabled = useHangarUiStore((s) => s.config.enabled)
+  const openMissionEditor = useHangarUiStore((s) => s.openMissionEditor)
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -52,8 +55,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
     )
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+  const createCard = (asAiMission: boolean) => {
     if (!taskName.trim()) return
 
     const maxOrder = Math.max(
@@ -82,6 +84,15 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
     setSelectedLabels([])
     setIsOpen(false)
     onClose?.()
+
+    // Creating the card never launches anything — the mission editor opens so
+    // the payload gets filled in, and launching stays its own explicit act.
+    if (asAiMission) openMissionEditor(newTask.id)
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    createCard(false)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -199,6 +210,27 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
           >
             Add
           </button>
+
+          {aiEnabled && (
+            <button
+              type="button"
+              disabled={!taskName.trim()}
+              onClick={() => createCard(true)}
+              title="Add as AI mission card"
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium',
+                'border transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed'
+              )}
+              style={{
+                backgroundColor: 'color-mix(in srgb, var(--primary) 12%, transparent)',
+                borderColor: 'color-mix(in srgb, var(--primary) 40%, transparent)',
+                color: 'var(--primary)',
+              }}
+            >
+              <Bot className="w-3.5 h-3.5" />
+              AI
+            </button>
+          )}
 
           <button
             type="button"

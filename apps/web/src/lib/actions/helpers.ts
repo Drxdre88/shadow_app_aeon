@@ -22,10 +22,28 @@ export async function safeAuth(): Promise<{ ok: true; userId: string } | { ok: f
   }
 }
 
+/**
+ * NOTE: despite the name this only proves ACCESS, not ownership — it is the
+ * historical alias of requireMember and several callers depend on that. For a
+ * real owner-only gate use requireOwner below.
+ */
 export async function requireOwnership(projectId: string) {
   const userId = await requireAuth()
   const access = await verifyProjectAccess(projectId, userId)
   if (!access) throw new Error('Project not found or unauthorized')
+  return userId
+}
+
+/**
+ * A genuine owner gate: the project's owner (direct member role, legacy
+ * owner column, or realm owner). For switches whose blast radius exceeds
+ * editing content — e.g. whether dropping a card may start an agent.
+ */
+export async function requireOwner(projectId: string) {
+  const userId = await requireAuth()
+  const access = await verifyProjectAccess(projectId, userId)
+  if (!access) throw new Error('Project not found or unauthorized')
+  if (access.role !== 'owner') throw new Error('Only the project owner can change this')
   return userId
 }
 

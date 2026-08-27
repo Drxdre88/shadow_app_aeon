@@ -301,6 +301,8 @@ export const preferencesSchema = z.object({
   columnHeight: z.number().min(200).max(1600).optional(),
   dynamicColumnWidth: z.boolean().optional(),
   dynamicColumnHeight: z.boolean().optional(),
+  zenEnterSeconds: z.number().min(1).max(6).optional(),
+  zenExitSeconds: z.number().min(1).max(4).optional(),
   smokeVolume: z.number().min(0).max(100).optional(),
   depLineWidth: z.number().min(0.3).max(3).optional(),
   depLineGlow: z.number().min(0).max(100).optional(),
@@ -664,20 +666,57 @@ export const hangarOutputModeSchema = z.enum(['auto'])
 // alphanumeric so an id can never be read as a flag ('-p', '--dangerously-…').
 export const HANGAR_MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/
 
+// The repo slug reaches the runner the same way the model id does (argv, then
+// a host path lookup), so it gets the same shell-inert treatment: leading
+// alphanumeric so it can never read as a flag, no spaces or shell
+// metacharacters. The charset alone does NOT stop traversal (a leading dot is
+// banned, an inner '/../' is not), so segment checking is mandatory — see
+// isSafeRepoSlug.
+export const HANGAR_REPO_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/
+
+/** Shell-inert AND traversal-free: the full repo-slug contract. */
+export function isSafeRepoSlug(value: string): boolean {
+  return HANGAR_REPO_RE.test(value) && !value.split('/').includes('..')
+}
+
 // Stored under boardTasks.metadata.hangar. Card title carries the mission
 // name; session_ids / last_result are system-written, never user-supplied.
 export const hangarCardMetadataSchema = z.object({
   objective:   hangarObjectiveSchema,
-  repo:        z.string().trim().min(1).max(120),
+  repo:        z.string().trim().min(1).max(120).refine(isSafeRepoSlug, 'Invalid repo slug'),
   agent:       hangarAgentSchema.default('copilot'),
   // The model id reaches the runner's CLI argv — keep it to a shell-inert
   // charset so a card can never smuggle flags or shell metacharacters.
   model:       z.string().trim().max(80).regex(HANGAR_MODEL_RE, 'Invalid model id').nullable().optional(),
   instruction: z.string().trim().min(1).max(20_000),
   outputMode:  hangarOutputModeSchema.default('auto'),
+  // Launch-on-drop consent: only cards that opted in fire when dragged into
+  // the board's designated launch column. Defaults off — every launch is a
+  // conscious act unless the owner armed the card. Cleared again on launch.
+  autoRun:     z.boolean().default(false),
+  lastLaunchedAt: z.string().datetime().optional(),
   subagents:   z.array(z.string().trim().min(1).max(60)).max(20).default([]),
   sessionIds:  z.array(z.string().uuid()).default([]),
   lastResult:  z.record(z.string(), z.unknown()).optional(),
+})
+
+/**
+ * What a card EDITOR may write. Deliberately laxer than the strict schema on
+ * completeness (a half-filled draft must be saveable) and strictly narrower on
+ * surface: the system-written fields — sessionIds, lastResult, lastLaunchedAt
+ * — are absent, so zod strips a client that tries to forge launch history or
+ * hide a live mission. Launching still runs the strict schema, so an
+ * incomplete draft can never spawn an agent.
+ */
+export const hangarCardDraftSchema = z.object({
+  objective:   hangarObjectiveSchema,
+  // Empty is a legal draft; anything non-empty must already be shell-inert.
+  repo:        z.string().trim().max(120).refine((v) => v === '' || isSafeRepoSlug(v), 'Invalid repo slug'),
+  agent:       hangarAgentSchema,
+  model:       z.string().trim().max(80).regex(HANGAR_MODEL_RE, 'Invalid model id').nullable(),
+  instruction: z.string().trim().max(20_000),
+  outputMode:  hangarOutputModeSchema,
+  autoRun:     z.boolean(),
 })
 
 // Runner polls with its own id; engines narrows the claim to what it can spawn.

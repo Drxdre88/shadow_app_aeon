@@ -9,14 +9,16 @@ export interface FlightTransform {
   scaleY: number
 }
 
-export const ZEN_MAX_WIDTH = 640
 export const ZEN_GUTTER = 12
+/** Owner spec 2708: the Zen surface is 1.5× the configured column width. */
+export const ZEN_WIDTH_FACTOR = 1.5
+const ZEN_MIN_WIDTH = 320
 
-/** The centered Zen surface rect for a given viewport. */
-export function zenTargetRect(viewportWidth: number, viewportHeight: number): ZenRect {
+/** The centered Zen surface rect for a given viewport and column width. */
+export function zenTargetRect(viewportWidth: number, viewportHeight: number, columnWidth = 320): ZenRect {
   const availWidth = Math.max(0, viewportWidth - ZEN_GUTTER * 2)
   const availHeight = Math.max(0, viewportHeight - ZEN_GUTTER * 2)
-  const width = Math.min(ZEN_MAX_WIDTH, availWidth)
+  const width = Math.min(Math.max(ZEN_MIN_WIDTH, columnWidth * ZEN_WIDTH_FACTOR), availWidth)
   return {
     left: ZEN_GUTTER + (availWidth - width) / 2,
     top: ZEN_GUTTER,

@@ -53,7 +53,10 @@ export function FloatingCardsLayer({
 
   return (
     <div
-      className="fixed inset-0 z-40 pointer-events-none"
+      // z-46: above the Zen focus layer (z-45). The whole point of pinning a
+      // card is that it stays visible — sliding under Zen's full-height panel
+      // and its backdrop would defeat it.
+      className="fixed inset-0 z-[46] pointer-events-none"
       data-floating-cards-layer
     >
       {openCards.map((card) => (

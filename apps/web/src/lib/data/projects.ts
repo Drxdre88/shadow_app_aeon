@@ -326,6 +326,26 @@ export async function createProject(userId: string, data: CreateProjectInput) {
   return project
 }
 
+/**
+ * Shallow-merge a patch into projects.settings IN SQL.
+ *
+ * Read-modify-write in JS loses concurrent writes: two savers both read the
+ * old blob and the second one's assign reverts the first (board theme vs
+ * sizing vs Auto AI config all live in this one column). `||` merges against
+ * the row as it exists at write time, so unrelated keys always survive.
+ */
+export async function mergeProjectSettings(projectId: string, patch: Record<string, unknown>) {
+  const [project] = await db
+    .update(projects)
+    .set({
+      settings: sql`coalesce(${projects.settings}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(eq(projects.id, projectId))
+    .returning()
+  return project || null
+}
+
 export async function updateProject(projectId: string, userId: string, data: UpdateProjectInput) {
   const updates: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() }
   if (data.name !== undefined) updates.name = data.name

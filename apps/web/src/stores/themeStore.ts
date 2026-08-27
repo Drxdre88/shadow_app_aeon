@@ -65,6 +65,8 @@ interface ThemeStore {
   columnHeight: number
   dynamicColumnWidth: boolean
   dynamicColumnHeight: boolean
+  zenEnterSeconds: number
+  zenExitSeconds: number
   smokeVolume: number
   depLineWidth: number
   depLineGlow: number
@@ -110,6 +112,8 @@ interface ThemeStore {
   setColumnHeight: (height: number) => void
   setDynamicColumnWidth: (enabled: boolean) => void
   setDynamicColumnHeight: (enabled: boolean) => void
+  setZenEnterSeconds: (seconds: number) => void
+  setZenExitSeconds: (seconds: number) => void
   setSmokeVolume: (volume: number) => void
   setDepLineWidth: (width: number) => void
   setDepLineGlow: (glow: number) => void
@@ -153,6 +157,8 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   columnHeight: DEFAULT_PREFERENCES.columnHeight,
   dynamicColumnWidth: DEFAULT_PREFERENCES.dynamicColumnWidth,
   dynamicColumnHeight: DEFAULT_PREFERENCES.dynamicColumnHeight,
+  zenEnterSeconds: DEFAULT_PREFERENCES.zenEnterSeconds,
+  zenExitSeconds: DEFAULT_PREFERENCES.zenExitSeconds,
   smokeVolume: DEFAULT_PREFERENCES.smokeVolume,
   depLineWidth: DEFAULT_PREFERENCES.depLineWidth,
   depLineGlow: DEFAULT_PREFERENCES.depLineGlow,
@@ -178,7 +184,8 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
       'currentTheme', 'glowSource', 'glowIntensity', 'glassOpacity', 'themeSaturation',
       'themeBrightness', 'surfaceVibrancy', 'ambientBlobs', 'fontFamily', 'dragEffect',
       'cursorEffect', 'cursorColor', 'columnWidth', 'columnHeight', 'dynamicColumnWidth',
-      'dynamicColumnHeight', 'smokeVolume', 'depLineWidth', 'depLineGlow', 'depLineStyle',
+      'dynamicColumnHeight', 'zenEnterSeconds', 'zenExitSeconds',
+      'smokeVolume', 'depLineWidth', 'depLineGlow', 'depLineStyle',
       'depCanvasBlur', 'spacePlanetGlow', 'spaceOrbitSpeed', 'boardLayout', 'projectColors',
       'depViewMode', 'completionMode', 'boardActionToasts', 'smoothUiRenders', 'shortcuts', 'priorities',
       'defaultProjectView', 'defaultProjectSort', 'cardPreviewOnHover', 'celebrationStyle', 'businessMode',
@@ -283,6 +290,12 @@ export const useThemeStore = create<ThemeStore>()((set) => ({
   },
   setDynamicColumnHeight: (enabled: boolean) => {
     set({ dynamicColumnHeight: enabled })
+  },
+  setZenEnterSeconds: (seconds: number) => {
+    set({ zenEnterSeconds: Math.max(1, Math.min(6, Math.round(seconds))) })
+  },
+  setZenExitSeconds: (seconds: number) => {
+    set({ zenExitSeconds: Math.max(1, Math.min(4, Math.round(seconds))) })
   },
   setSmokeVolume: (volume: number) => {
     set({ smokeVolume: Math.max(0, Math.min(100, Math.round(volume))) })

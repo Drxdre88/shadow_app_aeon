@@ -32,6 +32,7 @@ import { useDependencyHandlers } from './useDependencyHandlers'
 import { useGanttHandlers } from './useGanttHandlers'
 import { useCanvasHandlers } from './useCanvasHandlers'
 import { useBoardTheme } from './useBoardTheme'
+import { useHangarBoardConfig } from './useHangarBoardConfig'
 
 const CanvasView = dynamic(() => import('@/components/canvas/CanvasView'), { ssr: false })
 const GanttChart = dynamic(() => import('@/components/gantt/GanttChart').then(m => ({ default: m.GanttChart })), { ssr: false })
@@ -64,6 +65,7 @@ export default function ProjectContent({ project, user, initialBoardData, initia
 
   const { isLoading, loadError, triggerReload } = useProjectData(project.id, activeTab, initialBoardData)
   useBoardTheme(project.id, (project.settings ?? {}) as Record<string, unknown>)
+  useHangarBoardConfig(project.id, project.settings)
 
   const board = useBoardHandlers(project.id)
   const { handleLabelCreate, handleLabelUpdate, handleLabelDelete, handleLabelToggle } = useLabelHandlers(project.id)

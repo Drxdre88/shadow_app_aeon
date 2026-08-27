@@ -643,6 +643,14 @@ export const agentSessions = pgTable('agent_sessions', {
   dominionIdx: index('agent_sessions_dominion_idx').on(t.dominionId, t.spawnedAt),
   liveIdx: index('agent_sessions_live_idx').on(t.userId, t.spawnedAt),
   taskIdx: index('agent_sessions_task_idx').on(t.taskId),
+  // At most ONE live mission per card, enforced by the DB so every spawn
+  // surface (server action, REST, MCP) is covered — an application-level
+  // check-then-insert is a race, and each duplicate is a real agent on a
+  // real repo. Terminal sessions are unconstrained, so a finished card can
+  // be relaunched. Migration 0033.
+  oneLivePerTaskIdx: uniqueIndex('agent_sessions_one_live_per_task_idx')
+    .on(t.taskId)
+    .where(sql`task_id IS NOT NULL AND status IN ('queued', 'running')`),
   // Partial — backs the runner's pull-mode claim query only.
   claimIdx: index('agent_sessions_claim_idx')
     .on(t.userId, t.spawnedAt)

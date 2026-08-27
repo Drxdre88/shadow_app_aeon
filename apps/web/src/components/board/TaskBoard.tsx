@@ -5,6 +5,7 @@ import { DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColumn, type BoardTask, type TaskAssigneePill } from '@/lib/store/boardStore'
 import { cn } from '@/lib/utils/cn'
+import { MissionEditorModal } from './MissionEditorModal'
 import { KanbanColumn } from './KanbanColumn'
 import { SortableColumn } from './SortableColumn'
 import { TaskEditModal } from './TaskEditModal'
@@ -160,6 +161,8 @@ export function TaskBoard({
     onConnectModeChange,
   })
 
+  // Auto AI launches ride on the move mutation (see useBoardHandlers): the
+  // agent is spawned only once the card's move is durable.
   const { sensors, activeItem, overId, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel } = useBoardDnD({
     projectTasks,
     sortedColumns,
@@ -409,6 +412,8 @@ export function TaskBoard({
         onTaskDelete={onTaskDelete}
         onPin={handlePinCard}
       />
+
+      <MissionEditorModal projectId={projectId} />
 
       {zenColumn && (
         <ZenModeLayer

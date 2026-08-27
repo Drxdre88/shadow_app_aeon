@@ -3,13 +3,16 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Palette, Flag, Trash2, MoveRight, Copy, Calendar, Archive, Package, ArrowRight, FolderInput, Folder, Loader2, MousePointerClick } from 'lucide-react'
+import { Palette, Flag, Trash2, MoveRight, Copy, Calendar, Archive, Package, ArrowRight, FolderInput, Folder, Loader2, MousePointerClick, Rocket, Bot } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore, useTasks, useColumns } from '@/lib/store/boardStore'
 import { AccentColor, ACCENT_COLORS, PALETTE_COLORS, colorConfig, getRecentColors, addRecentColor } from '@/lib/utils/colors'
 import { useThemeStore } from '@/stores/themeStore'
+import { useHangarUiStore } from '@/lib/store/hangarUiStore'
 import { ContextMenuButton } from './ContextMenuButton'
 import { listProjectsForTransfer, copyTaskToProject, moveTaskToProject } from '@/lib/actions/transfer'
+import { spawnSessionFromCard } from '@/lib/actions/hangar'
+import { toast } from '@/components/ui/Toast'
 
 interface TaskContextMenuProps {
   taskId: string
@@ -41,6 +44,9 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
 
   const task = tasks.find((t) => t.id === taskId)
   const projectColumns = columns.filter((c) => c.projectId === task?.projectId)
+  const aiEnabled = useHangarUiStore((s) => s.config.enabled)
+  const openMissionEditor = useHangarUiStore((s) => s.openMissionEditor)
+  const isAiCard = Boolean((task?.metadata as { hangar?: unknown } | undefined)?.hangar)
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
@@ -104,6 +110,21 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
     onClose()
   }
 
+  const handleExecuteMission = async () => {
+    // Captured before the menu closes: a realtime delete between render and
+    // click would otherwise throw inside the handler.
+    const missionProjectId = task?.projectId
+    onClose()
+    if (!missionProjectId) return
+    toast('Launching mission…')
+    try {
+      await spawnSessionFromCard(missionProjectId, taskId)
+      toast('Mission launched — the runner will claim it shortly')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Launch failed')
+    }
+  }
+
   return createPortal(
     <AnimatePresence>
       <motion.div
@@ -153,6 +174,34 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
           {isSelected ? 'Deselect' : 'Select'}
           <span className="ml-auto text-[10px] text-slate-500">S</span>
         </button>
+
+        {isAiCard && (
+          <>
+            <button
+              onClick={handleExecuteMission}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors text-[var(--primary)] hover:bg-white/10 font-medium"
+            >
+              <Rocket className="w-4 h-4" />
+              Execute mission
+            </button>
+            <button
+              onClick={() => { openMissionEditor(taskId); onClose() }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors text-slate-300 hover:bg-white/10 hover:text-white"
+            >
+              <Bot className="w-4 h-4" />
+              Edit AI mission
+            </button>
+          </>
+        )}
+        {!isAiCard && aiEnabled && (
+          <button
+            onClick={() => { openMissionEditor(taskId); onClose() }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors text-slate-300 hover:bg-white/10 hover:text-white"
+          >
+            <Bot className="w-4 h-4" />
+            Make AI card
+          </button>
+        )}
 
         <ContextMenuButton
           icon={MoveRight}
