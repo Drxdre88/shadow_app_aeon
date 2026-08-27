@@ -70,6 +70,21 @@ describe('flightTransform', () => {
     expect(applied.height).toBeCloseTo(source.height, 6)
   })
 
+  // The exit flight must land on the source column even when the operator has
+  // dragged the panel across the screen first. ZenModeLayer composes the pose
+  // against the DRAGGED rect (target.left + dragX); if that compensation is
+  // ever dropped, the panel shrinks into the wrong place.
+  test.prop([rectArb, rectArb, fc.integer({ min: -800, max: 800 })])(
+    'exit lands on the source column after the panel was dragged',
+    (source, target, dragX) => {
+      const draggedTarget = { ...target, left: target.left + dragX }
+      const pose = flightTransform(source, draggedTarget)
+      const applied = applyTransform(draggedTarget, pose)
+      expect(applied.left).toBeCloseTo(source.left, 6)
+      expect(applied.width).toBeCloseTo(source.width, 6)
+    }
+  )
+
   test.prop([rectArb, rectArb])('scales are finite and positive', (source, target) => {
     const pose = flightTransform(source, target)
     expect(Number.isFinite(pose.scaleX)).toBe(true)

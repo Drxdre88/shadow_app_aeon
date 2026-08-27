@@ -119,10 +119,21 @@ export function ZenModeLayer({
   }, [enterS])
 
   useEffect(() => {
-    const onResize = () => setTarget(zenTargetRect(window.innerWidth, window.innerHeight, columnWidth))
+    const onResize = () => {
+      const next = zenTargetRect(window.innerWidth, window.innerHeight, columnWidth)
+      setTarget(next)
+      // Re-clamp the dragged offset against the NEW viewport: framer only
+      // applies dragConstraints to fresh drags, so a panel dragged wide on a
+      // large window would keep that offset when the window shrinks and take
+      // its header — drag handle and exit button — off screen.
+      const min = -(next.left - ZEN_GUTTER)
+      const max = Math.max(0, window.innerWidth - ZEN_GUTTER - (next.left + next.width))
+      const current = dragX.get()
+      if (current < min || current > max) dragX.set(Math.min(max, Math.max(min, current)))
+    }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
-  }, [columnWidth])
+  }, [columnWidth, dragX])
 
   const beginExit = useCallback(() => {
     if (closingRef.current) return
@@ -305,6 +316,10 @@ export function ZenModeLayer({
             style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))', touchAction: 'none' }}
             onPointerDown={(e) => {
               if ((e.target as HTMLElement).closest('button')) return
+              // Dragging mid-exit would keep moving the wrapper while the
+              // surface flies to a pose computed for the old offset, landing
+              // it off the source column.
+              if (closingRef.current) return
               dragControls.start(e)
             }}
           >

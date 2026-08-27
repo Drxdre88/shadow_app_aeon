@@ -46,6 +46,22 @@ export async function createAgentSession(userId: string, input: SpawnSessionInpu
   return row
 }
 
+/**
+ * A queued/running mission already launched from this card, if any.
+ *
+ * This is the ONE launch guard that holds across tabs, devices and users —
+ * client-side in-flight tracking cannot. A duplicate launch is not a cosmetic
+ * bug: each one puts a real agent on a real repo, opening its own branch.
+ */
+export async function findLiveSessionForTask(taskId: string) {
+  const [row] = await db
+    .select()
+    .from(agentSessions)
+    .where(and(eq(agentSessions.taskId, taskId), inArray(agentSessions.status, LIVE_STATUSES)))
+    .limit(1)
+  return row ?? null
+}
+
 export async function findAgentSessionById(id: string, userId: string) {
   const [row] = await db
     .select()

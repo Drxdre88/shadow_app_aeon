@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
+import { spawnSessionFromCard } from '@/lib/actions/hangar'
 import { createBoardTask, updateBoardTask, reorderBoardTasks, archiveBoardTask, archiveColumnTasks } from '@/lib/actions/board'
 import { createColumn, updateColumn as updateColumnAction, reorderColumns as reorderColumnsAction, deleteColumn as deleteColumnAction } from '@/lib/actions/columns'
 import { sendToVault, sendBatchToVault } from '@/lib/actions/vault'
@@ -12,6 +13,20 @@ export function useBoardHandlers(projectId: string) {
   const [vaultTarget, setVaultTarget] = useState<{ taskId: string; taskName: string } | null>(null)
   const [batchVaultTarget, setBatchVaultTarget] = useState<{ columnId: string; columnName: string; tasks: { id: string; name: string; priority: string }[] } | null>(null)
   const [showArchive, setShowArchive] = useState(false)
+  // Auto AI: cards with a launch in flight. Client-side half of the
+  // idempotency guard — the durable half is the live-session check in
+  // spawnSessionFromCard, which also covers other tabs and devices.
+  const launchingRef = useRef<Set<string>>(new Set())
+
+  const launchMission = useCallback((taskId: string) => {
+    if (launchingRef.current.has(taskId)) return
+    launchingRef.current.add(taskId)
+    toast('Mission armed — launching…')
+    spawnSessionFromCard(projectId, taskId)
+      .then(() => toast('Mission launched — the runner will claim it shortly'))
+      .catch((err) => toast(err instanceof Error ? err.message : 'Launch failed'))
+      .finally(() => { launchingRef.current.delete(taskId) })
+  }, [projectId])
 
   const handleTaskCreate = useCallback((task: {
     id: string
@@ -114,7 +129,8 @@ export function useBoardHandlers(projectId: string) {
 
   const handleTaskMove = useCallback((
     updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[],
-    snapshot?: { id: string; columnId?: string; orderIndex: number }[]
+    snapshot?: { id: string; columnId?: string; orderIndex: number }[],
+    launch?: { autoRunTaskId: string }
   ) => {
     useMutationQueue.getState().enqueue(
       { id: crypto.randomUUID(), type: 'task.move', args: { projectId, updates } },
@@ -130,6 +146,14 @@ export function useBoardHandlers(projectId: string) {
         }
       },
       onSuccess: () => {
+        // Auto AI: the launch waits for the move to be DURABLE. Firing it at
+        // drop time would leave a live agent behind a rolled-back move.
+        if (launch) {
+          launchMission(launch.autoRunTaskId)
+          // No "Moved — Undo" toast here: undo would put the card back while
+          // the mission is already gone, which is not an undo.
+          return
+        }
         if (snapshot && snapshot.length > 0) {
           const snapshotMap = new Map(snapshot.map(s => [s.id, s]))
           const movedAcrossColumns = updates.some(u => u.columnId && u.columnId !== snapshotMap.get(u.id)?.columnId)
@@ -155,7 +179,7 @@ export function useBoardHandlers(projectId: string) {
         }
       },
     })
-  }, [projectId])
+  }, [projectId, launchMission])
 
   const handleColumnCreate = useCallback((col: { id: string; projectId: string; name: string; color: string; orderIndex: number }) => {
     beginDirectWrite()
@@ -254,6 +278,9 @@ export function useBoardHandlers(projectId: string) {
                       orderIndex: t.orderIndex,
                       startDate: t.startDate,
                       endDate: t.endDate,
+                      // Carries the AI mission payload: without it an undone
+                      // delete silently turns mission cards into plain ones.
+                      metadata: t.metadata,
                     }).catch(() => toast('Failed to restore some tasks'))
                   })
                 })

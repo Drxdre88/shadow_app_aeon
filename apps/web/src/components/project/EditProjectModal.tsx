@@ -12,9 +12,8 @@ import { useRouter } from 'next/navigation'
 import { useThemeStore } from '@/stores/themeStore'
 import aeonLogo from '@/assets/aeon.png'
 import { ColorSwatchPicker } from '@/components/board/ColorSwatchPicker'
-import { setHangarBoardSettings } from '@/lib/actions/hangar'
+import { listProjectColumnsForHangar, setHangarBoardSettings } from '@/lib/actions/hangar'
 import { parseHangarConfig, useHangarUiStore } from '@/lib/store/hangarUiStore'
-import { useBoardStore } from '@/lib/store/boardStore'
 import { PlanetPicker } from './PlanetPicker'
 import { AccentColor, colorConfig, hexToAccent } from '@/lib/utils/colors'
 import type { RealmInfo } from './ProjectContextMenu'
@@ -51,7 +50,18 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
   const [activeRealmIds, setActiveRealmIds] = useState<string[]>(projectRealmIds)
   const [togglingRealm, setTogglingRealm] = useState<string | null>(null)
   const [hangar, setHangar] = useState(() => parseHangarConfig(project.settings))
-  const boardColumns = useBoardStore((s) => s.columns).filter((c) => c.projectId === project.id)
+  // Fetched, not read from the board store: the dashboard never hydrates it,
+  // so the picker would be empty exactly where boards are usually configured.
+  const [boardColumns, setBoardColumns] = useState<{ id: string; name: string }[]>([])
+
+  useEffect(() => {
+    if (!isOpen) return
+    let cancelled = false
+    listProjectColumnsForHangar(project.id)
+      .then((cols) => { if (!cancelled) setBoardColumns(cols) })
+      .catch(() => { if (!cancelled) setBoardColumns([]) })
+    return () => { cancelled = true }
+  }, [isOpen, project.id])
 
   useEffect(() => {
     setActiveRealmIds(projectRealmIds)
@@ -285,12 +295,9 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
                       )}
                     >
                       <option value="">None — launch manually only</option>
-                      {boardColumns
-                        .slice()
-                        .sort((a, b) => a.orderIndex - b.orderIndex)
-                        .map((c) => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
+                      {boardColumns.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
                     </select>
                     <p className="text-[10px] text-slate-600 mt-1">
                       Dropping an armed mission card here launches it. Cards must have auto-run switched on individually.

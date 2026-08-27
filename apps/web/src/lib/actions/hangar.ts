@@ -1,20 +1,19 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireEditor } from './helpers'
+import { requireEditor, requireOwnership } from './helpers'
 import {
   hangarCardMetadataSchema,
-  hangarObjectiveSchema,
-  hangarAgentSchema,
-  hangarOutputModeSchema,
+  hangarCardDraftSchema,
   HANGAR_MODEL_RE,
   type HangarCardMetadata,
 } from '@/lib/data/validators'
 import { findTaskById, updateTask } from '@/lib/data/tasks'
-import { createAgentSession } from '@/lib/data/sessions'
+import { createAgentSession, findLiveSessionForTask } from '@/lib/data/sessions'
 import { findHangarRepoBySlug, listHangarRepos } from '@/lib/data/hangar-repos'
 import { findProjectRealmIds } from '@/lib/data/workspaces'
-import { findProjectSettings, updateProject } from '@/lib/data/projects'
+import { mergeProjectSettings } from '@/lib/data/projects'
+import { findColumns } from '@/lib/data/columns'
 import { z } from 'zod'
 
 // AI Hangar (Sprint 1) — turn a board card into a queued agent mission.
@@ -108,6 +107,16 @@ export async function spawnSessionFromCard(projectId: string, taskId: string) {
   }
   const hangar = parsed.data
 
+  // Idempotency gate. A duplicate launch is not cosmetic: every extra session
+  // is another real agent on a real repo, opening its own branch. Client-side
+  // in-flight tracking cannot cover a second tab, device or operator — only
+  // this check can, and every launch path (drop, context menu, editor,
+  // MCP/REST) funnels through here.
+  const live = await findLiveSessionForTask(taskId)
+  if (live) {
+    throw new Error(`This card already has a ${live.status} mission — kill it before launching again`)
+  }
+
   await assertRepoIsRegistered(projectId, hangar)
 
   // Session metadata is untyped jsonb the runner feeds to a CLI — re-check the
@@ -132,9 +141,16 @@ export async function spawnSessionFromCard(projectId: string, taskId: string) {
     },
   })
 
+  // Disarm after launch: an armed card that stays armed re-fires every time
+  // it is dragged back into the launch column. Arming is a per-flight act.
   await updateTask(taskId, projectId, {
     metadata: {
-      hangar: { ...hangar, sessionIds: [...(hangar.sessionIds ?? []), session.id] },
+      hangar: {
+        ...hangar,
+        autoRun: false,
+        sessionIds: [...(hangar.sessionIds ?? []), session.id],
+        lastLaunchedAt: new Date().toISOString(),
+      },
     },
   })
 
@@ -164,30 +180,17 @@ export async function listProjectHangarRepos(projectId: string) {
   return [...bySlug.values()].sort((a, b) => a.slug.localeCompare(b.slug))
 }
 
-// A DRAFT is deliberately laxer than hangarCardMetadataSchema: the editor
-// must be able to save a half-filled mission. Launching still runs the strict
-// schema, so an incomplete card can never spawn an agent.
-const hangarDraftSchema = z.object({
-  objective:   hangarObjectiveSchema,
-  repo:        z.string().trim().max(120),
-  agent:       hangarAgentSchema,
-  model:       z.string().trim().max(80).regex(HANGAR_MODEL_RE, 'Invalid model id').nullable(),
-  instruction: z.string().trim().max(20_000),
-  outputMode:  hangarOutputModeSchema,
-  autoRun:     z.boolean(),
-})
-
 /** Write a card's mission payload (metadata.hangar) without touching the rest. */
 export async function saveCardMission(
   projectId: string,
   taskId: string,
-  draft: z.input<typeof hangarDraftSchema>
+  draft: z.input<typeof hangarCardDraftSchema>
 ) {
   await requireEditor(projectId)
   const task = await findTaskById(taskId, projectId)
   if (!task) throw new Error('Task not found or unauthorized')
 
-  const parsed = hangarDraftSchema.parse(draft)
+  const parsed = hangarCardDraftSchema.parse(draft)
   const existing = ((task.metadata ?? {}) as Record<string, unknown>).hangar
   const preserved = (existing && typeof existing === 'object' && !Array.isArray(existing))
     ? existing as Record<string, unknown>
@@ -202,22 +205,51 @@ export async function saveCardMission(
   return parsed
 }
 
+/**
+ * Columns for the launch-column picker. The dashboard renders the project
+ * editor without ever hydrating the board store, so reading columns from the
+ * client store there yields an empty list.
+ */
+export async function listProjectColumnsForHangar(projectId: string) {
+  await requireEditor(projectId)
+  const columns = await findColumns(projectId)
+  return columns
+    .slice()
+    .sort((a, b) => a.orderIndex - b.orderIndex)
+    .map((c) => ({ id: c.id, name: c.name }))
+}
+
 const hangarSettingsSchema = z.object({
   enabled: z.boolean(),
   triggerColumnId: z.string().uuid().nullable(),
 })
 
-/** Board-level Auto AI config, stored under projects.settings.hangar. */
+/**
+ * Board-level Auto AI config, stored under projects.settings.hangar.
+ *
+ * Ownership, not editor: this switch decides whether dropping a card can put
+ * an autonomous agent on a repo, which is a different order of privilege from
+ * editing cards.
+ */
 export async function setHangarBoardSettings(
   projectId: string,
   input: { enabled: boolean; triggerColumnId: string | null }
 ) {
-  const userId = await requireEditor(projectId)
+  await requireOwnership(projectId)
   const parsed = hangarSettingsSchema.parse(input)
-  const settings = (await findProjectSettings(projectId)) ?? {}
-  await updateProject(projectId, userId, {
-    settings: { ...settings, hangar: parsed },
-  })
+
+  // A trigger column from another board would sit in settings looking armed
+  // while never matching a drop — silently inert config is worse than none.
+  let triggerColumnId = parsed.triggerColumnId
+  if (triggerColumnId) {
+    const columns = await findColumns(projectId)
+    if (!columns.some((c) => c.id === triggerColumnId)) triggerColumnId = null
+  }
+
+  const config = { ...parsed, triggerColumnId }
+  // SQL merge: settings is one shared jsonb column (board theme, sizing, …),
+  // so a read-modify-write here would revert a concurrent save.
+  await mergeProjectSettings(projectId, { hangar: config })
   revalidatePath(`/project/${projectId}`)
-  return parsed
+  return config
 }

@@ -59,6 +59,8 @@ export async function createBoardTask(data: {
   orderIndex: number
   startDate?: string
   endDate?: string
+  /** Free-form card payload (AI Hangar mission under the `hangar` key). */
+  metadata?: Record<string, unknown>
 }) {
   const userId = await requireEditor(data.projectId)
 
@@ -80,6 +82,7 @@ export async function createBoardTask(data: {
     orderIndex: data.orderIndex,
     startDate: data.startDate,
     endDate: data.endDate,
+    metadata: data.metadata,
   })
 
   const task = await _createTask(data.projectId, parsed, data.id)

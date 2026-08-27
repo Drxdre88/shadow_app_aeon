@@ -122,8 +122,10 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
       await persist()
       toast('Mission saved')
       closeMissionEditor()
-    } catch {
-      toast('Could not save mission')
+    } catch (err) {
+      // Surface the real reason — the model and repo fields have deliberately
+      // narrow charsets, and "could not save" hides which one was rejected.
+      toast(err instanceof Error ? err.message : 'Could not save mission')
     } finally {
       setBusy(null)
     }

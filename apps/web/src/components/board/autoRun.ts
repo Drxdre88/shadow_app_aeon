@@ -42,7 +42,11 @@ export function shouldAutoRunOnDrop(config: HangarBoardConfig, candidate: AutoRu
   if (!config.enabled || !config.triggerColumnId) return false
   const { fromColumnId, toColumnId, metadata } = candidate
   if (!toColumnId || toColumnId !== config.triggerColumnId) return false
-  if (fromColumnId === toColumnId) return false
+  // Unknown provenance fails CLOSED. A missing origin means we cannot prove
+  // the card actually crossed into the launch column, and the cost of a wrong
+  // "yes" is a real agent on a real repo — the operator can always launch by
+  // hand, so refusing is the cheap side of the error.
+  if (!fromColumnId || fromColumnId === toColumnId) return false
   if (!isLaunchableMission(metadata)) return false
   return readHangarMission(metadata)?.autoRun === true
 }

@@ -95,6 +95,14 @@ describe('shouldAutoRunOnDrop', () => {
   it('does not fire on an unknown drop target', () => {
     expect(shouldAutoRunOnDrop(ON, { metadata: mission(), fromColumnId: 'a', toColumnId: null })).toBe(false)
   })
+
+  // Unknown provenance used to fail OPEN: null !== triggerColumnId slipped
+  // past the "came from another column" guard and launched a real agent.
+  it('fails CLOSED when the drag origin is unknown', () => {
+    expect(shouldAutoRunOnDrop(ON, { metadata: mission(), fromColumnId: null, toColumnId: TRIGGER })).toBe(false)
+    expect(shouldAutoRunOnDrop(ON, { metadata: mission(), fromColumnId: undefined, toColumnId: TRIGGER })).toBe(false)
+    expect(shouldAutoRunOnDrop(ON, { metadata: mission(), fromColumnId: '', toColumnId: TRIGGER })).toBe(false)
+  })
 })
 
 describe('parseHangarConfig', () => {

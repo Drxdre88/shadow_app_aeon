@@ -19,6 +19,7 @@ import {
   findFavoriteProjectIds as _findFavoriteProjectIds,
   findFavoriteProjects as _findFavoriteProjects,
   findProjectSettings as _findProjectSettings,
+  mergeProjectSettings as _mergeProjectSettings,
 } from '@/lib/data/projects'
 import { createProjectSchema, updateProjectSchema } from '@/lib/data/validators'
 import type { UpdateProjectInput } from '@/lib/data/validators'
@@ -118,8 +119,10 @@ export async function updateProjectSettings(projectId: string, settings: Record<
   // payload from a client-side snapshot, so a whole-object replace would let
   // two editors (or two tabs) saving different keys silently revert each
   // other (e.g. saving sizing reverting a concurrent boardTheme change).
-  const current = await _findProjectSettings(projectId)
-  const project = await _updateProject(projectId, userId, { settings: { ...(current ?? {}), ...settings } })
+  // The merge happens in SQL — a JS read-modify-write has the same race it
+  // is trying to prevent, just with a narrower window.
+  void userId
+  const project = await _mergeProjectSettings(projectId, settings)
   revalidatePath(`/project/${projectId}`)
   return project
 }

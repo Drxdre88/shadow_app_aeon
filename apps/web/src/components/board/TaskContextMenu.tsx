@@ -111,10 +111,14 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
   }
 
   const handleExecuteMission = async () => {
+    // Captured before the menu closes: a realtime delete between render and
+    // click would otherwise throw inside the handler.
+    const missionProjectId = task?.projectId
     onClose()
+    if (!missionProjectId) return
     toast('Launching mission…')
     try {
-      await spawnSessionFromCard(task!.projectId, taskId)
+      await spawnSessionFromCard(missionProjectId, taskId)
       toast('Mission launched — the runner will claim it shortly')
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Launch failed')
