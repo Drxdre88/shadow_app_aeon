@@ -7,6 +7,7 @@ import { useThemeStore, INITIAL_PRIORITIES, type CompletionMode, type GlowSource
 import { useShallow } from 'zustand/shallow'
 import { cn } from '@/lib/utils/cn'
 import { ToggleRow, ThemeSlider } from './shared'
+import { heightPrefToPercent, percentToHeightPref } from '@/components/board/columnSizing'
 
 function CompletionModeSetting() {
   const { completionMode, setCompletionMode } = useThemeStore(useShallow((s) => ({ completionMode: s.completionMode, setCompletionMode: s.setCompletionMode })))
@@ -63,11 +64,19 @@ function BoardLayoutSetting() {
           <ToggleRow label="Expand width with content" value={dynamicColumnWidth} onChange={setDynamicColumnWidth} color={colors.glowColor} />
         </div>
         <div className="space-y-1">
-          <ThemeSlider label="Height" value={columnHeight} onChange={setColumnHeight} min={200} max={1600} color={colors.glowColor} unit="px" />
-          <ToggleRow label="Expand height with content" value={dynamicColumnHeight} onChange={setDynamicColumnHeight} color={colors.glowColor} />
+          <ThemeSlider
+            label="Max height"
+            value={heightPrefToPercent(columnHeight)}
+            onChange={(pct) => setColumnHeight(percentToHeightPref(pct))}
+            min={20}
+            max={100}
+            color={colors.glowColor}
+            unit="%"
+          />
+          <ToggleRow label="Raise height cap with content" value={dynamicColumnHeight} onChange={setDynamicColumnHeight} color={colors.glowColor} />
         </div>
       </div>
-      <p className="text-[10px] text-slate-600">Sliders set the base size. Expand toggles let columns grow past that when they have more tasks.</p>
+      <p className="text-[10px] text-slate-600">Columns hug their cards. Width sets the base size in pixels; max height caps columns as a share of the screen, and the toggles grow each limit when a column has more tasks.</p>
     </div>
   )
 }

@@ -35,7 +35,10 @@ export function SortableColumn({ column, zenHidden, children }: SortableColumnPr
   }
 
   return (
-    <div ref={setNodeRef} style={style} className="flex-shrink-0">
+    // flex flex-col: this wrapper is the flex item that stretches to the
+    // lane's full height; the child droppable uses flex-1 to fill it, so a
+    // drop below a short column's content-fit box still hits that column.
+    <div ref={setNodeRef} style={style} className="flex-shrink-0 flex flex-col">
       {children({ ...attributes, ...listeners })}
     </div>
   )

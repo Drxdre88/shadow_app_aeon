@@ -106,7 +106,12 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
     // chain into page scroll / pull-to-refresh mid-gesture. y-axis only — an
     // all-axis contain would swallow horizontal swipes that should pan the
     // board row underneath.
-    <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-y-contain p-3 space-y-3">
+    // flex-auto (basis:auto), NOT flex-1 (basis:0%): the column box is
+    // height:auto now, and WebKit resolves a percentage basis against an
+    // indefinite container as 0 — collapsing every card list on iOS. A
+    // content basis + min-h-0 sizes the column by its cards and still lets
+    // this scroller shrink and scroll once the viewport cap engages.
+    <div ref={scrollRef} data-col-scroll className="flex-auto min-h-0 overflow-y-auto overscroll-y-contain p-3 space-y-3">
       <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
         {dense ? (
           // No AnimatePresence on dense columns: with many cards its layout

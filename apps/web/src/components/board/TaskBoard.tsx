@@ -4,6 +4,7 @@ import { useCallback, useState, useMemo, useEffect } from 'react'
 import { DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColumn, type BoardTask, type TaskAssigneePill } from '@/lib/store/boardStore'
+import { cn } from '@/lib/utils/cn'
 import { KanbanColumn } from './KanbanColumn'
 import { SortableColumn } from './SortableColumn'
 import { TaskEditModal } from './TaskEditModal'
@@ -316,10 +317,20 @@ export function TaskBoard({
             <div
               ref={pinchContainerRef}
               data-board-columns
-              className={boardLayout === 'grid'
-                ? 'overflow-x-hidden overflow-y-auto sm:overflow-auto sm:max-h-[calc(100dvh-140px)] overscroll-x-contain'
-                : 'overflow-x-auto overflow-y-hidden sm:overflow-auto sm:max-h-[calc(100dvh-140px)] overscroll-x-contain'
-              }
+              // --board-chrome (default 120px) matches the host page's board
+              // wrapper (ProjectContent / demo override); column caps
+              // subtract a further 24px for the scale wrapper's pb-4 +
+              // horizontal scrollbar, so a capped board fits this box — no
+              // phantom scrollbar, no dead band under the columns. The min-h
+              // floor lifts while the filter bar is open: it shares the fixed
+              // wrapper, and floor + bar would push the board's bottom edge
+              // below the fold.
+              className={cn(
+                boardLayout === 'grid'
+                  ? 'overflow-x-hidden overflow-y-auto sm:overflow-auto sm:max-h-[calc(100dvh-var(--board-chrome,120px))] overscroll-x-contain'
+                  : 'overflow-x-auto overflow-y-hidden sm:overflow-auto sm:max-h-[calc(100dvh-var(--board-chrome,120px))] overscroll-x-contain',
+                !showFilters && 'min-h-[calc(100dvh-var(--board-chrome,120px))]'
+              )}
               style={{ touchAction: 'pan-x pan-y' }}
             >
               <div
