@@ -127,7 +127,9 @@ export default function DemoPage() {
         </div>
 
         {activeTab === 'board' && (
-          <div className="h-[calc(100vh-180px)]">
+          // Demo chrome is taller than the app's; tell the board so its
+          // viewport-relative column caps land on this wrapper's bottom edge.
+          <div className="h-[calc(100vh-180px)]" style={{ '--board-chrome': '180px' } as React.CSSProperties}>
             <TaskBoard projectId={DEMO_PROJECT_ID} />
           </div>
         )}

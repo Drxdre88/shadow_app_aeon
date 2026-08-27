@@ -14,6 +14,7 @@ import { COLUMN_ICONS, COLUMN_ICON_MAP } from '@/lib/utils/columnIcons'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
 import { ColumnDeleteModal } from './ColumnDeleteModal'
 import { openZenMode } from './zenFlight'
+import { clampManualColumnHeight, columnHeightScale } from './columnSizing'
 
 interface KanbanColumnProps {
   column: BoardColumn
@@ -139,7 +140,9 @@ export const KanbanColumn = memo(function KanbanColumn({
     ? Math.min(1600, globalColumnHeight + Math.max(0, tasks.length - 3) * 40)
     : globalColumnHeight
   const [columnWidth, setColumnWidth] = useState(dynamicW)
-  const [columnHeight, setColumnHeight] = useState(dynamicH)
+  // Manual drag-resize pins an explicit pixel height on this column for the
+  // session; null means content-fit under the viewport/preference cap.
+  const [manualHeight, setManualHeight] = useState<number | null>(null)
   const colorPickerRef = useRef<HTMLDivElement>(null)
   const config = getColumnColor(column.color)
   const SelectedIcon = column.icon ? COLUMN_ICON_MAP[column.icon] : null
@@ -150,8 +153,11 @@ export const KanbanColumn = memo(function KanbanColumn({
   }, [dynamicW])
 
   useEffect(() => {
-    setColumnHeight(dynamicH)
-  }, [dynamicH])
+    // Changing the global height preference releases per-column manual pins.
+    // Keyed on the settings, not derived dynamicH — a card arriving in the
+    // column must not silently undo a hand-sized pin.
+    setManualHeight(null)
+  }, [globalColumnHeight, dynamicColumnHeight])
 
   const { setNodeRef, isOver } = useDroppable({
     id: column.id,
@@ -229,11 +235,17 @@ export const KanbanColumn = memo(function KanbanColumn({
     e.preventDefault()
     e.stopPropagation()
     const startY = e.clientY
-    const startHeight = columnHeight
+    // Drag works in real pixels of the rendered box (the handle's parent is
+    // the column body), so the first pixel of drag responds — no dead band
+    // against the stored preference scale. offsetHeight, not
+    // getBoundingClientRect: the pinch transform must not skew the ratio
+    // between mouse pixels and the pinned layout height.
+    const colEl = (e.currentTarget as HTMLElement).parentElement
+    const startHeight = colEl?.offsetHeight ?? 0
 
     const onMouseMove = (ev: MouseEvent) => {
       const delta = ev.clientY - startY
-      setColumnHeight(Math.max(200, Math.min(1600, startHeight + delta)))
+      setManualHeight(clampManualColumnHeight(startHeight + delta))
     }
 
     const onMouseUp = () => {
@@ -247,7 +259,7 @@ export const KanbanColumn = memo(function KanbanColumn({
     document.body.style.userSelect = 'none'
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup', onMouseUp)
-  }, [columnHeight])
+  }, [])
 
   const badgeClasses = config.isCustom
     ? 'border backdrop-blur-md'
@@ -257,9 +269,13 @@ export const KanbanColumn = memo(function KanbanColumn({
     : dynamicGlow
 
   return (
-    <div className="relative flex-shrink-0 kanban-col-outer" style={{ '--col-w': `${columnWidth}px` } as React.CSSProperties}>
+    // The droppable is the OUTER lane, not the content-fit inner box: a card
+    // released in the empty space below a short column must still land in
+    // that column instead of falling through to closestCenter and a
+    // neighbouring lane. flex-1 fills SortableColumn's stretched flex-col
+    // wrapper (align-self on a block child would be inert).
+    <div ref={setNodeRef} className="relative flex-1 min-h-0 kanban-col-outer" style={{ '--col-w': `${columnWidth}px` } as React.CSSProperties}>
     <div
-      ref={setNodeRef}
       data-column-id={column.id}
       className={cn(
         'flex flex-col rounded-xl',
@@ -267,7 +283,10 @@ export const KanbanColumn = memo(function KanbanColumn({
         'kanban-col-inner',
         isOver && 'ring-2 ring-white/20'
       )}
-      style={{ '--col-h': `${columnHeight}px` } as React.CSSProperties}
+      style={{
+        '--col-h-scale': String(columnHeightScale(dynamicH)),
+        ...(manualHeight !== null ? { height: `${manualHeight}px` } : {}),
+      } as React.CSSProperties}
     >
       <div
         className={cn('p-4 border-b border-white/10', dragHandleProps && !isRenaming && 'cursor-grab active:cursor-grabbing')}

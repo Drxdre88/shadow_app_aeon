@@ -77,10 +77,16 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
 
     const savedOverflow = columnsEl.style.overflow
     const savedMaxH = columnsEl.style.maxHeight
+    const savedMinH = columnsEl.style.minHeight
     const savedFlexWrap = scaleEl?.style.flexWrap ?? ''
     const savedTransform = scaleEl?.style.transform ?? ''
     const savedMarginRight = scaleEl?.style.marginRight ?? ''
     const savedMarginBottom = scaleEl?.style.marginBottom ?? ''
+    // Exporting mid-pinch: the zoom hook writes an inline height (viewport /
+    // scale) and the boardZoomed flag; both must lift or the capture keeps
+    // the zoomed layout height and pads the PNG with a blank band.
+    const savedHeight = scaleEl?.style.height ?? ''
+    const wasZoomed = scaleEl?.dataset.boardZoomed !== undefined
 
     const blurEls = columnsEl.querySelectorAll<HTMLElement>('*')
     const savedFilters: { el: HTMLElement; bd: string; filter: string }[] = []
@@ -88,11 +94,18 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
     try {
       columnsEl.style.overflow = 'visible'
       columnsEl.style.maxHeight = 'none'
+      // min-h would floor scrollHeight at viewport size and pad the PNG with
+      // empty canvas; the exporting attribute lifts the per-column viewport
+      // caps + inner scrollers (globals.css) so every card makes the frame.
+      columnsEl.style.minHeight = '0'
+      columnsEl.setAttribute('data-board-exporting', '')
       if (scaleEl) {
         scaleEl.style.flexWrap = 'nowrap'
         scaleEl.style.transform = 'none'
         scaleEl.style.marginRight = '0'
         scaleEl.style.marginBottom = '0'
+        scaleEl.style.height = ''
+        delete scaleEl.dataset.boardZoomed
       }
 
       blurEls.forEach((el) => {
@@ -127,11 +140,15 @@ export function ShareModal({ isOpen, projectId, projectName, onClose }: ShareMod
       })
       columnsEl.style.overflow = savedOverflow
       columnsEl.style.maxHeight = savedMaxH
+      columnsEl.style.minHeight = savedMinH
+      columnsEl.removeAttribute('data-board-exporting')
       if (scaleEl) {
         scaleEl.style.flexWrap = savedFlexWrap
         scaleEl.style.transform = savedTransform
         scaleEl.style.marginRight = savedMarginRight
         scaleEl.style.marginBottom = savedMarginBottom
+        scaleEl.style.height = savedHeight
+        if (wasZoomed) scaleEl.dataset.boardZoomed = ''
       }
       setExportingPng(false)
     }
