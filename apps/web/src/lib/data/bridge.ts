@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { boardTasks, ganttTasks, boardColumns, labels, taskLabels, taskDependencies, rows, checklistItems } from '@/lib/db/schema'
 import { eq, and, inArray, sql } from 'drizzle-orm'
+import { touchProject } from './projects'
 
 const DEFAULT_DURATION_DAYS = 2
 
@@ -50,6 +51,14 @@ export function skipToWeekday(date: Date): Date {
   return d
 }
 
+/**
+ * Put one card on the timeline. A card owns at most one bar — `boardTasks`
+ * holds a single `ganttTaskId`, so a second bar for the same card orphans the
+ * first. When a bar already exists the card is re-linked to it instead of a
+ * duplicate being inserted: the two halves of the link can drift apart (a reset
+ * nulls `ganttTaskId` while the bar lives on in its view), and re-pushing after
+ * a drift must repair the link, not fork it.
+ */
 export async function pushTaskToGantt(
   boardTaskId: string,
   projectId: string,
@@ -65,36 +74,50 @@ export async function pushTaskToGantt(
   if (!boardTask) throw new Error('Board task not found')
   if (boardTask.ganttTaskId) throw new Error('Task already on Gantt')
 
+  const [existingBar] = await db
+    .select()
+    .from(ganttTasks)
+    .where(and(eq(ganttTasks.projectId, projectId), eq(ganttTasks.boardTaskId, boardTaskId)))
+
   const duration = computeDuration(boardTask.size, boardTask.priority)
-  const start = computeStartDate(boardTask.startDate, null)
-  const end = boardTask.endDate || computeEndDate(start, duration)
+  const start = existingBar ? existingBar.startDate : computeStartDate(boardTask.startDate, null)
+  const end = existingBar ? existingBar.endDate : (boardTask.endDate || computeEndDate(start, duration))
 
-  const [ganttTask] = await db
-    .insert(ganttTasks)
-    .values({
-      id: ganttTaskClientId,
-      projectId,
-      rowId,
-      boardTaskId,
-      name: boardTask.name,
-      startDate: start,
-      endDate: end,
-      color: boardTask.color,
-      progress: boardTask.status === 'done' ? 100 : 0,
-    })
-    .returning()
+  const ganttTask = await db.transaction(async (tx) => {
+    let bar = existingBar
+    if (!bar) {
+      const [created] = await tx
+        .insert(ganttTasks)
+        .values({
+          id: ganttTaskClientId,
+          projectId,
+          rowId,
+          boardTaskId,
+          name: boardTask.name,
+          startDate: start,
+          endDate: end,
+          color: boardTask.color,
+          progress: boardTask.status === 'done' ? 100 : 0,
+        })
+        .returning()
+      bar = created
+    }
 
-  await db
-    .update(boardTasks)
-    .set({
-      ganttTaskId: ganttTask.id,
-      onTimeline: true,
-      startDate: start,
-      endDate: end,
-      updatedAt: new Date(),
-    })
-    .where(eq(boardTasks.id, boardTaskId))
+    await tx
+      .update(boardTasks)
+      .set({
+        ganttTaskId: bar.id,
+        onTimeline: true,
+        startDate: start,
+        endDate: end,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(boardTasks.id, boardTaskId), eq(boardTasks.projectId, projectId)))
 
+    return bar
+  })
+
+  await touchProject(projectId, { type: 'task:updated' })
   return ganttTask
 }
 
@@ -174,42 +197,51 @@ export async function deleteLinkedGanttTask(boardTaskId: string) {
 
 export type GroupByMode = 'column' | 'label' | 'dependency' | 'priority'
 
+type Executor = Pick<typeof db, 'select' | 'insert' | 'delete'>
+
+/**
+ * Build a view's lanes. The generate-then-prune pair runs in one transaction —
+ * a failure between them used to leave the excluded sections behind as lanes
+ * the user explicitly opted out of.
+ */
 export async function generateRowsForView(
   projectId: string,
   ganttViewId: string,
   groupBy: GroupByMode,
   excludedSections?: string[]
 ): Promise<{ id: string; name: string; color: string; orderIndex: number }[]> {
-  let generated: { id: string; name: string; color: string; orderIndex: number }[]
-  switch (groupBy) {
-    case 'column':
-      generated = await generateRowsByColumn(projectId, ganttViewId)
-      break
-    case 'label':
-      generated = await generateRowsByLabel(projectId, ganttViewId)
-      break
-    case 'priority':
-      generated = await generateRowsByPriority(projectId, ganttViewId)
-      break
-    case 'dependency':
-      generated = await generateRowsByDependencyChain(projectId, ganttViewId)
-      break
-  }
+  return db.transaction(async (tx) => {
+    let generated: { id: string; name: string; color: string; orderIndex: number }[]
+    switch (groupBy) {
+      case 'column':
+        generated = await generateRowsByColumn(tx, projectId, ganttViewId)
+        break
+      case 'label':
+        generated = await generateRowsByLabel(tx, projectId, ganttViewId)
+        break
+      case 'priority':
+        generated = await generateRowsByPriority(tx, projectId, ganttViewId)
+        break
+      case 'dependency':
+        generated = await generateRowsByDependencyChain(tx, projectId, ganttViewId)
+        break
+    }
 
-  if (!excludedSections || excludedSections.length === 0) return generated
+    if (!excludedSections || excludedSections.length === 0) return generated
 
-  const excludedSet = new Set(excludedSections)
-  const excludedRows = generated.filter((r) => excludedSet.has(r.name))
-  if (excludedRows.length > 0) {
-    await db
-      .delete(rows)
-      .where(inArray(rows.id, excludedRows.map((r) => r.id)))
-  }
-  return generated.filter((r) => !excludedSet.has(r.name))
+    const excludedSet = new Set(excludedSections)
+    const excludedRows = generated.filter((r) => excludedSet.has(r.name))
+    if (excludedRows.length > 0) {
+      await tx
+        .delete(rows)
+        .where(inArray(rows.id, excludedRows.map((r) => r.id)))
+    }
+    return generated.filter((r) => !excludedSet.has(r.name))
+  })
 }
 
-async function generateRowsByColumn(projectId: string, ganttViewId: string) {
-  const columns = await db
+async function generateRowsByColumn(tx: Executor, projectId: string, ganttViewId: string) {
+  const columns = await tx
     .select()
     .from(boardColumns)
     .where(eq(boardColumns.projectId, projectId))
@@ -225,12 +257,12 @@ async function generateRowsByColumn(projectId: string, ganttViewId: string) {
 
   if (rowValues.length === 0) return []
 
-  const created = await db.insert(rows).values(rowValues).returning()
+  const created = await tx.insert(rows).values(rowValues).returning()
   return created
 }
 
-async function generateRowsByLabel(projectId: string, ganttViewId: string) {
-  const projectLabels = await db
+async function generateRowsByLabel(tx: Executor, projectId: string, ganttViewId: string) {
+  const projectLabels = await tx
     .select()
     .from(labels)
     .where(eq(labels.projectId, projectId))
@@ -252,11 +284,11 @@ async function generateRowsByLabel(projectId: string, ganttViewId: string) {
     },
   ]
 
-  const created = await db.insert(rows).values(rowValues).returning()
+  const created = await tx.insert(rows).values(rowValues).returning()
   return created
 }
 
-async function generateRowsByPriority(projectId: string, ganttViewId: string) {
+async function generateRowsByPriority(tx: Executor, projectId: string, ganttViewId: string) {
   const priorities = [
     { name: 'Urgent', color: 'red' },
     { name: 'High', color: 'orange' },
@@ -272,18 +304,18 @@ async function generateRowsByPriority(projectId: string, ganttViewId: string) {
     orderIndex: i,
   }))
 
-  const created = await db.insert(rows).values(rowValues).returning()
+  const created = await tx.insert(rows).values(rowValues).returning()
   return created
 }
 
-async function generateRowsByDependencyChain(projectId: string, ganttViewId: string) {
-  const deps = await db
+async function generateRowsByDependencyChain(tx: Executor, projectId: string, ganttViewId: string) {
+  const deps = await tx
     .select()
     .from(taskDependencies)
     .innerJoin(boardTasks, eq(boardTasks.id, taskDependencies.blockerTaskId))
     .where(eq(boardTasks.projectId, projectId))
 
-  const tasks = await db
+  const tasks = await tx
     .select({ id: boardTasks.id, name: boardTasks.name })
     .from(boardTasks)
     .where(eq(boardTasks.projectId, projectId))
@@ -331,12 +363,22 @@ async function generateRowsByDependencyChain(projectId: string, ganttViewId: str
 
   if (rowValues.length === 0) return []
 
-  const created = await db.insert(rows).values(rowValues).returning()
+  const created = await tx.insert(rows).values(rowValues).returning()
   return created
 }
 
 export type TaskOrder = 'column' | 'alphabetical'
 
+/**
+ * Put every unscheduled card on the timeline.
+ *
+ * Idempotent: cards that already own a bar are skipped, so a re-run (a retried
+ * action, a second view built over the same board) inserts nothing rather than
+ * minting a duplicate bar per card and repointing `boardTasks.ganttTaskId` at
+ * it — which left the earlier bars alive but unreachable from the board. Both
+ * halves of the link count as "already scheduled", since a reset can null
+ * `ganttTaskId` while the bar survives.
+ */
 export async function bulkPushAllTasksToGantt(
   projectId: string,
   ganttViewId: string,
@@ -353,7 +395,18 @@ export async function bulkPushAllTasksToGantt(
     .from(boardTasks)
     .where(eq(boardTasks.projectId, projectId))
 
-  const allTasks = allTasksRaw.filter((t) => t.status !== 'done')
+  const existingBars = await db
+    .select({ boardTaskId: ganttTasks.boardTaskId })
+    .from(ganttTasks)
+    .where(eq(ganttTasks.projectId, projectId))
+
+  const alreadyScheduled = new Set(
+    existingBars.map((b) => b.boardTaskId).filter((id): id is string => !!id)
+  )
+
+  const allTasks = allTasksRaw.filter(
+    (t) => t.status !== 'done' && !t.ganttTaskId && !alreadyScheduled.has(t.id)
+  )
   if (allTasks.length === 0) return []
 
   const allColumns = await db.select().from(boardColumns).where(eq(boardColumns.projectId, projectId))
@@ -489,26 +542,31 @@ export async function bulkPushAllTasksToGantt(
 
   if (ganttValues.length === 0) return []
 
-  const created = await db.insert(ganttTasks).values(ganttValues).returning()
+  const created = await db.transaction(async (tx) => {
+    const inserted = await tx.insert(ganttTasks).values(ganttValues).returning()
 
-  const ganttByBoardId = new Map<string, string>()
-  for (const gt of created) {
-    if (gt.boardTaskId) ganttByBoardId.set(gt.boardTaskId, gt.id)
-  }
+    const ganttByBoardId = new Map<string, string>()
+    for (const gt of inserted) {
+      if (gt.boardTaskId) ganttByBoardId.set(gt.boardTaskId, gt.id)
+    }
 
-  const taskIdsToUpdate = [...ganttByBoardId.keys()]
-  if (taskIdsToUpdate.length > 0) {
-    const caseParts = taskIdsToUpdate.map((tid) => sql`WHEN ${tid} THEN ${ganttByBoardId.get(tid)!}::uuid`)
-    await db
-      .update(boardTasks)
-      .set({
-        ganttTaskId: sql`CASE ${boardTasks.id} ${sql.join(caseParts, sql` `)} END`,
-        onTimeline: true,
-        updatedAt: new Date(),
-      })
-      .where(inArray(boardTasks.id, taskIdsToUpdate))
-  }
+    const taskIdsToUpdate = [...ganttByBoardId.keys()]
+    if (taskIdsToUpdate.length > 0) {
+      const caseParts = taskIdsToUpdate.map((tid) => sql`WHEN ${tid} THEN ${ganttByBoardId.get(tid)!}::uuid`)
+      await tx
+        .update(boardTasks)
+        .set({
+          ganttTaskId: sql`CASE ${boardTasks.id} ${sql.join(caseParts, sql` `)} END`,
+          onTimeline: true,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(boardTasks.projectId, projectId), inArray(boardTasks.id, taskIdsToUpdate)))
+    }
 
+    return inserted
+  })
+
+  await touchProject(projectId, { type: 'task:updated' })
   return created
 }
 
