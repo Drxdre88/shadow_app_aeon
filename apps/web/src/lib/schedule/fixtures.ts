@@ -77,6 +77,7 @@ export function task(id: string, over: Partial<ScheduleTask> = {}): ScheduleTask
     constraintType: 'asap',
     constraintDate: null,
     estimateMinutes: 8 * 60,
+    size: null,
     progress: null,
     ownerResourceId: RESOURCE_SOLO.id,
     startedAt: null,

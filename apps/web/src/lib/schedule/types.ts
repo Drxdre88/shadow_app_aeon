@@ -53,6 +53,8 @@ export interface ScheduleTask {
   constraintDate: Date | null
   /** Null = unestimated. Scheduled at a default span, excluded from capacity (CHR-11). */
   estimateMinutes: number | null
+  /** The card's raw size, in the board's own unit. Input to the estimate conversion. */
+  size: number | null
   /** 0–100, or null. Drives remaining effort for in-progress work (CHR-51). */
   progress: number | null
   ownerResourceId: string | null
@@ -104,6 +106,13 @@ export type WarningKind =
   | 'no-owner'
   | 'constraint-violated'
   | 'unknown-resource'
+  /**
+   * A pinned or completed task overlaps other work on its resource. Actuals and
+   * pins are facts and must not roll (CHR-50), so the solver places them anyway
+   * — but it must never leave the conflict silent, or capacity is under-reported
+   * and the bars stack invisibly on the same lane.
+   */
+  | 'resource-overbooked'
 
 export interface SolveWarning {
   kind: WarningKind
@@ -153,7 +162,7 @@ export interface BoardSizing {
 
 /** Lane C owns the implementation; the solver calls it, never `size` directly (CHR-13). */
 export type EstimateResolver = (
-  task: Pick<ScheduleTask, 'estimateMinutes'> & { size: number | null },
+  task: Pick<ScheduleTask, 'estimateMinutes' | 'size'>,
   sizing: BoardSizing,
   calendar: Pick<WorkCalendar, 'hoursPerDay'>,
 ) => number | null
