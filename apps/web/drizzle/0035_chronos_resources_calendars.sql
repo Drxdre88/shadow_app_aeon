@@ -33,6 +33,12 @@ CREATE TABLE IF NOT EXISTS work_calendars (
   -- turns it back into "9am on someone's Tuesday".
   timezone       text NOT NULL DEFAULT 'Europe/London',
   hours_per_day  numeric(4,2) NOT NULL DEFAULT 8,
+  -- Minutes from local midnight at which the working day opens. 540 = 09:00.
+  -- Every other calendar policy lives in data; without this one the start hour
+  -- would be a constant in the calendar module, which makes "I start at 07:00"
+  -- and night shifts inexpressible on a scheduler whose whole premise is a
+  -- row per person. Default preserves the previous hardcoded behaviour.
+  day_start_minute smallint NOT NULL DEFAULT 540,
   -- Bitmask of working days, bit 0 = Sunday .. bit 6 = Saturday.
   -- 62 = 0b0111110 = Monday through Friday.
   workweek       smallint NOT NULL DEFAULT 62,
@@ -51,6 +57,11 @@ CREATE TABLE IF NOT EXISTS calendar_exceptions (
   day          date NOT NULL,
   is_working   boolean NOT NULL DEFAULT false,
   hours        numeric(4,2),
+  -- Optional override of the calendar's day_start_minute for this one day.
+  -- Without it `hours` is a duration anchored at the normal start, so a
+  -- half-day can only ever be a MORNING half-day — the common "we close early
+  -- on Friday" case (13:00-17:00) has no representation.
+  start_minute smallint,
   created_at   timestamp NOT NULL DEFAULT now(),
   PRIMARY KEY (calendar_id, day)
 );
@@ -86,7 +97,14 @@ CREATE TABLE IF NOT EXISTS resources (
     (kind = 'user'    AND user_id IS NOT NULL AND virtual_member_id IS NULL)
     OR (kind = 'virtual' AND virtual_member_id IS NOT NULL AND user_id IS NULL)
     OR (kind = 'agent'   AND user_id IS NULL AND virtual_member_id IS NULL)
-  )
+  ),
+  -- At least one lane. The solver reads concurrency as a lane count and floors
+  -- it; a value below 1 floors to zero lanes, which made the free-slot search
+  -- index an empty array and emit Invalid Dates. The solver is now defensive
+  -- about it, but the database should never have been able to express it.
+  CONSTRAINT resources_concurrency_min_check CHECK (concurrency >= 1),
+  -- A resource that is available none of the time cannot be scheduled against.
+  CONSTRAINT resources_focus_factor_range_check CHECK (focus_factor > 0 AND focus_factor <= 1)
 );
 
 -- One resource per person per project. Partial so the agent rows, which have
