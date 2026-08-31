@@ -1,21 +1,26 @@
 #!/usr/bin/env node
 // One-off — applies drizzle/0034_chronos_schedule_fields.sql then
 // 0035_chronos_resources_calendars.sql via raw SQL, because the drizzle
-// journal is frozen at 0010 and `db:migrate` would report success having
-// applied nothing. Mirrors apply-one-live-mission-migration.mjs.
+// journal is frozen at 0010 and `db:migrate` would read it, see nothing past
+// 0010, and report success having applied nothing.
 //
-// DRY RUN BY DEFAULT. Nothing executes without --commit. This matters more
+// DRY RUN BY DEFAULT. Nothing executes without --commit. That matters more
 // than usual here: dev and production share one Neon database, so every
 // statement below is a live write against real beta users' data.
 //
-// Both files are additive and re-runnable (ADD COLUMN IF NOT EXISTS /
-// CREATE TABLE IF NOT EXISTS / guarded DO block), so a second run is a no-op.
-// Neither drops, renames or backfills anything.
+// Pool, not the neon() HTTP driver: HTTP sends each statement as its own
+// request with no session, so there would be no transaction at all. A pooled
+// client runs the whole apply inside one BEGIN/COMMIT. Every statement is
+// already IF NOT EXISTS so a partial apply would be recoverable by re-running,
+// but atomicity is free here and worth taking.
 //
-// NEVER run `db:push` on this branch — schema.ts does not declare these
-// objects, so drizzle-kit would compute them as drift and offer to drop them.
+// Both files are additive: nothing is dropped, renamed or backfilled, and a
+// second run is a no-op.
+//
+// NEVER run `db:push` on this branch. schema.ts does not declare these objects
+// yet, so drizzle-kit diffs them as drift and emits DROP statements for them.
 
-import { neon } from '@neondatabase/serverless'
+import { Pool } from '@neondatabase/serverless'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -32,13 +37,27 @@ const commit = process.argv.includes('--commit')
 
 const url = process.env.DATABASE_URL
 if (!url) { console.error('DATABASE_URL not set'); process.exit(1) }
-const sql = neon(url)
+const pool = new Pool({ connectionString: url, connectionTimeoutMillis: 20000 })
+
+const OBJECT_PROBE = `
+  SELECT
+    (SELECT count(*)::int FROM information_schema.columns
+      WHERE table_name = 'board_tasks'
+        AND column_name IN ('estimate_minutes','schedule_mode','constraint_type',
+          'constraint_date','computed_start','computed_end','total_float_min',
+          'is_milestone','owner_resource_id','started_at')) AS board_task_cols,
+    to_regclass('public.work_calendars')::text      AS work_calendars,
+    to_regclass('public.calendar_exceptions')::text AS calendar_exceptions,
+    to_regclass('public.resources')::text           AS resources,
+    (SELECT count(*)::int FROM pg_constraint
+      WHERE conname = 'board_tasks_owner_resource_id_fkey') AS owner_fk
+`
 
 /**
  * Split a file into statements on top-level semicolons only. Tracks dollar
  * quoting so the guarded DO $$ ... $$ block in 0035 stays ONE statement —
- * splitting it on semicolons breaks the dollar-quoted body — and skips
- * semicolons inside line comments and string literals.
+ * splitting it on its internal semicolons would break the dollar-quoted body —
+ * and ignores semicolons inside line comments and string literals.
  */
 function statements(text) {
   const out = []
@@ -71,21 +90,17 @@ function statements(text) {
   return out.filter((s) => s.replace(/--[^\n]*/g, '').trim().length > 0)
 }
 
-// ---- pre-flight: report what already exists, so a re-run is legible --------
-const [pre] = await sql`
-  SELECT
-    (SELECT count(*)::int FROM information_schema.columns
-      WHERE table_name = 'board_tasks'
-        AND column_name IN ('estimate_minutes','schedule_mode','constraint_type',
-          'constraint_date','computed_start','computed_end','total_float_min',
-          'is_milestone','owner_resource_id','started_at')) AS board_task_cols,
-    to_regclass('public.work_calendars')::text     AS work_calendars,
-    to_regclass('public.calendar_exceptions')::text AS calendar_exceptions,
-    to_regclass('public.resources')::text          AS resources
-`
-console.log('pre-flight:')
-console.log(`  board_tasks schedule columns present: ${pre.board_task_cols}/10`)
-console.log(`  work_calendars=${pre.work_calendars ?? 'absent'} calendar_exceptions=${pre.calendar_exceptions ?? 'absent'} resources=${pre.resources ?? 'absent'}`)
+function summarise(row, heading) {
+  console.log(heading)
+  console.log(`  board_tasks schedule columns: ${row.board_task_cols}/10`)
+  console.log(`  work_calendars=${row.work_calendars ?? 'absent'}` +
+    ` calendar_exceptions=${row.calendar_exceptions ?? 'absent'}` +
+    ` resources=${row.resources ?? 'absent'}`)
+  console.log(`  owner_resource_id FK: ${row.owner_fk === 1 ? 'present' : 'absent'}`)
+}
+
+const { rows: [pre] } = await pool.query(OBJECT_PROBE)
+summarise(pre, 'pre-flight:')
 
 const planned = FILES.map((f) => ({ file: f, stmts: statements(readFileSync(join(drizzleDir, f), 'utf8')) }))
 console.log('\nplan:')
@@ -94,46 +109,40 @@ for (const { file, stmts } of planned) console.log(`  ${file}: ${stmts.length} s
 if (!commit) {
   console.log('\nDRY RUN — nothing executed. Re-run with --commit to apply.')
   console.log('Reminder: this database is production. There is no separate prod step.')
+  await pool.end()
   process.exit(0)
 }
 
-// ---- apply ----------------------------------------------------------------
-for (const { file, stmts } of planned) {
-  console.log(`\napplying ${file}`)
-  for (const [n, statement] of stmts.entries()) {
-    const label = statement.replace(/--[^\n]*/g, '').replace(/\s+/g, ' ').trim().slice(0, 78)
-    try {
-      await sql(statement)
+const client = await pool.connect()
+try {
+  await client.query('BEGIN')
+  for (const { file, stmts } of planned) {
+    console.log(`\napplying ${file}`)
+    for (const [n, statement] of stmts.entries()) {
+      const label = statement.replace(/--[^\n]*/g, '').replace(/\s+/g, ' ').trim().slice(0, 78)
+      await client.query(statement)
       console.log(`  OK   [${n + 1}/${stmts.length}] ${label}`)
-    } catch (err) {
-      console.error(`  FAIL [${n + 1}/${stmts.length}] ${label}`)
-      console.error(`       ${err.message}`)
-      process.exit(1)
     }
   }
+  await client.query('COMMIT')
+  console.log('\nCOMMIT')
+} catch (err) {
+  await client.query('ROLLBACK').catch(() => {})
+  console.error('\nFAILED — rolled back. The database is unchanged.')
+  console.error(`  ${err.message}`)
+  client.release()
+  await pool.end()
+  process.exit(1)
+} finally {
+  client.release()
 }
 
-// ---- verify ---------------------------------------------------------------
-const [post] = await sql`
-  SELECT
-    (SELECT count(*)::int FROM information_schema.columns
-      WHERE table_name = 'board_tasks'
-        AND column_name IN ('estimate_minutes','schedule_mode','constraint_type',
-          'constraint_date','computed_start','computed_end','total_float_min',
-          'is_milestone','owner_resource_id','started_at')) AS board_task_cols,
-    to_regclass('public.work_calendars')::text      AS work_calendars,
-    to_regclass('public.calendar_exceptions')::text AS calendar_exceptions,
-    to_regclass('public.resources')::text           AS resources,
-    (SELECT count(*)::int FROM pg_constraint
-      WHERE conname = 'board_tasks_owner_resource_id_fkey') AS owner_fk
-`
-console.log('\nverify:')
-console.log(`  board_tasks schedule columns: ${post.board_task_cols}/10`)
-console.log(`  work_calendars=${post.work_calendars} calendar_exceptions=${post.calendar_exceptions} resources=${post.resources}`)
-console.log(`  owner_resource_id FK: ${post.owner_fk === 1 ? 'present' : 'MISSING'}`)
+const { rows: [post] } = await pool.query(OBJECT_PROBE)
+summarise(post, '\nverify:')
 
 const ok = post.board_task_cols === 10 && post.work_calendars && post.calendar_exceptions
   && post.resources && post.owner_fk === 1
 console.log(ok ? '\nAll objects present.' : '\nSomething is missing — inspect above.')
 console.log('schema.ts still does NOT declare these. Update it only now that the database has them.')
+await pool.end()
 process.exit(ok ? 0 : 1)
