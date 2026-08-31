@@ -23,11 +23,37 @@ import { DEFAULT_DAY_START_MINUTE, type CalendarIndex, type SolveWindow, type Wo
 const MS_PER_MINUTE = 60_000
 const MS_PER_DAY = 86_400_000
 const MINUTES_PER_DAY = 1_440
-const PAD_DAYS_BEFORE = 366
-const PAD_DAYS_AFTER = 366
+/** Bits 0–6 of a workweek mask; anything above them names no weekday. */
+const WEEKDAY_MASK = 0b111_1111
+/** Largest instant a `Date` can hold; past it `new Date` is Invalid. */
+const MAX_TIME_MS = 8_640_000_000_000_000
+/**
+ * Padding either side of the window. Small on purpose: this is eager work paid on a
+ * request path before a single task is placed, and a year either side made a one-week
+ * solve materialise 733 days. A month absorbs the ordinary overrun — a slipped task,
+ * a lag, a `snet` just outside the window — and anything further is built on demand by
+ * `extendForward` / `extendBackward`, which cost the same per day and are already the
+ * documented path for an instant outside the window.
+ */
+const PAD_DAYS_BEFORE = 30
+const PAD_DAYS_AFTER = 30
+/**
+ * Growth is deliberately much coarser than the padding: an extension is amortised
+ * across every later query, and this size keeps `MAX_INDEX_DAYS` reachable inside the
+ * 64-iteration guards in `ensureCovers*`, which is what preserves the out-of-window
+ * clamp horizon unchanged.
+ */
 const GROWTH_CHUNK_DAYS = 366
 /** Hard ceiling on index size; past it queries clamp to the edge instead of growing. */
 const MAX_INDEX_DAYS = 40 * 366
+/**
+ * Cap on the process-wide formatter cache. Keys are IANA zones — one per distinct
+ * calendar zone in a solve, so a realistic team never approaches this — but the map
+ * outlives every request, so it needs a bound. Eviction is insertion-order rather
+ * than true LRU: reordering on read would put a `delete`/`set` in `zonedParts`, the
+ * hottest path in this module, to protect against a case that should never fire.
+ */
+const MAX_CACHED_FORMATTERS = 32
 
 interface CivilDate {
   year: number
@@ -75,17 +101,46 @@ function makeFormatter(timeZone: string): Intl.DateTimeFormat {
   })
 }
 
-function formatterFor(timeZone: string): Intl.DateTimeFormat {
-  const cached = formatterCache.get(timeZone)
-  if (cached) return cached
-  let formatter: Intl.DateTimeFormat
+/**
+ * The zone every boundary in this index is resolved in: the calendar's own zone when
+ * the runtime accepts it, else UTC.
+ *
+ * Resolved once per index, before anything is cached, for two reasons. `timezone` is
+ * `text` with no IANA validation on any of the three write surfaces, so an unknown
+ * zone reaches this module; caching a UTC formatter under that unknown key both grew
+ * the cache by one entry per junk string and made the cache key a lie. And the index
+ * publishes `timezone` to renderers, which pass it straight back to `Intl` — handing
+ * out a zone that makes every consumer throw is not a totality guarantee.
+ */
+function resolveTimeZone(timeZone: unknown): string {
+  if (typeof timeZone !== 'string' || timeZone.length === 0) return 'UTC'
+  if (formatterCache.has(timeZone)) return timeZone
   try {
-    formatter = makeFormatter(timeZone)
+    cacheFormatter(timeZone, makeFormatter(timeZone))
+    return timeZone
   } catch {
-    formatter = makeFormatter('UTC')
+    return 'UTC'
+  }
+}
+
+function cacheFormatter(timeZone: string, formatter: Intl.DateTimeFormat): Intl.DateTimeFormat {
+  if (formatterCache.size >= MAX_CACHED_FORMATTERS && !formatterCache.has(timeZone)) {
+    const oldest = formatterCache.keys().next()
+    if (!oldest.done) formatterCache.delete(oldest.value)
   }
   formatterCache.set(timeZone, formatter)
   return formatter
+}
+
+/** Only ever called with a zone `resolveTimeZone` has accepted; the catch is belt and braces. */
+function formatterFor(timeZone: string): Intl.DateTimeFormat {
+  const cached = formatterCache.get(timeZone)
+  if (cached) return cached
+  try {
+    return cacheFormatter(timeZone, makeFormatter(timeZone))
+  } catch {
+    return cacheFormatter('UTC', makeFormatter('UTC'))
+  }
 }
 
 function zonedParts(timeZone: string, instant: number): ZonedParts {
@@ -177,15 +232,87 @@ function clampStartMinute(minutes: unknown, fallback: number): number {
   return Math.min(Math.max(Math.floor(minutes), 0), MINUTES_PER_DAY - 1)
 }
 
+function clampInstantMs(ms: number, fallback: number): number {
+  if (!Number.isFinite(ms)) return fallback
+  return Math.min(Math.max(ms, -MAX_TIME_MS), MAX_TIME_MS)
+}
+
+/**
+ * The axis a calendar that can never produce a single working minute degrades to:
+ * continuous real time, epoch-anchored, identical to the fallback the solver already
+ * uses when a calendar is missing entirely.
+ *
+ * A prefix index of nothing but zeroes has no working-time axis to search — every
+ * day's span is empty, so "the first day containing minute N" is unanswerable and the
+ * search runs off the end of the index, which is how a calendar with hoursPerDay 0
+ * placed a September 2026 project in 2065. Continuous time is the fallback that keeps
+ * the plan readable: durations stay real, order and dependencies survive, and the
+ * dates land next to `now` where a human can see that work is being scheduled through
+ * nights and weekends and go fix the calendar. Clamping to a single instant instead
+ * would collapse every bar to zero length at one point, destroy the ordering, and
+ * make `addDuration` a constant — which the solver's forward progress depends on not
+ * being. `hoursPerDay` reports 24 because that is the axis actually in use.
+ */
+function continuousCalendarIndex(
+  calendarId: string,
+  timezone: string,
+  dayStartMinute: number,
+  anchor: number,
+): CalendarIndex {
+  const instantAt = (ms: number) => new Date(clampInstantMs(ms, anchor))
+  return {
+    calendarId,
+    timezone,
+    hoursPerDay: 24,
+    dayStartMinute,
+    toWorkMinutes(instant: Date): number {
+      const ms = toEpochMs(instant, NaN)
+      if (!Number.isFinite(ms)) return 0
+      return ms / MS_PER_MINUTE
+    },
+    fromWorkMinutes(workMinutes: number): Date {
+      if (!Number.isFinite(workMinutes)) return new Date(anchor)
+      return instantAt(workMinutes * MS_PER_MINUTE)
+    },
+    addDuration(start: Date, minutes: number): Date {
+      const ms = toEpochMs(start, NaN)
+      if (!Number.isFinite(ms)) return new Date(anchor)
+      return instantAt(ms + (Number.isFinite(minutes) ? minutes : 0) * MS_PER_MINUTE)
+    },
+    workingMinutesBetween(a: Date, b: Date): number {
+      const aMs = toEpochMs(a, NaN)
+      const bMs = toEpochMs(b, NaN)
+      if (!Number.isFinite(aMs) || !Number.isFinite(bMs)) return 0
+      return (bMs - aMs) / MS_PER_MINUTE
+    },
+    snapToNextWorkingInstant(instant: Date): Date {
+      const ms = toEpochMs(instant, NaN)
+      if (!Number.isFinite(ms)) return new Date(anchor)
+      return instantAt(ms)
+    },
+    isWorkingInstant(instant: Date): boolean {
+      return Number.isFinite(toEpochMs(instant, NaN))
+    },
+    toDisplayEnd(instant: Date): Date {
+      const ms = toEpochMs(instant, NaN)
+      if (!Number.isFinite(ms)) return new Date(anchor)
+      return instantAt(ms)
+    },
+  }
+}
+
 /**
  * Builds the working-time prefix index for one calendar over one solve window.
  * The window is padded a year either side; an instant beyond the padding grows the
  * index on demand in chunks up to `MAX_INDEX_DAYS`, past which every method clamps
  * to the nearest edge rather than throwing. No method throws for any input.
+ *
+ * A calendar with no working time at all degrades to `continuousCalendarIndex`
+ * instead — there is no working-time axis to index.
  */
 export function buildCalendarIndex(calendar: WorkCalendar, window: SolveWindow): CalendarIndex {
-  const timezone =
-    typeof calendar?.timezone === 'string' && calendar.timezone.length > 0 ? calendar.timezone : 'UTC'
+  const calendarId = typeof calendar?.id === 'string' ? calendar.id : ''
+  const timezone = resolveTimeZone(calendar?.timezone)
   const hoursPerDay =
     Number.isFinite(calendar?.hoursPerDay) && calendar.hoursPerDay > 0 ? calendar.hoursPerDay : 0
   const defaultMinutes = clampDayMinutes(hoursPerDay * 60)
@@ -213,6 +340,23 @@ export function buildCalendarIndex(calendar: WorkCalendar, window: SolveWindow):
   const rawEnd = toEpochMs(window?.end, rawStart)
   const windowStart = Math.min(rawStart, rawEnd)
   const windowEnd = Math.max(rawStart, rawEnd)
+
+  /**
+   * Genuinely empty, not merely sparse: this asks the calendar DEFINITION whether any
+   * day anywhere can carry working time, so a calendar that only works one week of the
+   * window, or only on days its exceptions open, still takes the indexed path.
+   */
+  const weeklyWorkingDays = defaultMinutes > 0 ? workweek & WEEKDAY_MASK : 0
+  let hasWorkingException = false
+  for (const override of exceptions.values()) {
+    if (override.workingMinutes > 0) {
+      hasWorkingException = true
+      break
+    }
+  }
+  if (weeklyWorkingDays === 0 && !hasWorkingException) {
+    return continuousCalendarIndex(calendarId, timezone, dayStartMinute, windowStart)
+  }
 
   const firstCivil = addCivilDays(civilFromInstant(timezone, windowStart), -PAD_DAYS_BEFORE)
   const lastCivil = addCivilDays(civilFromInstant(timezone, windowEnd), PAD_DAYS_AFTER)
@@ -397,7 +541,7 @@ export function buildCalendarIndex(calendar: WorkCalendar, window: SolveWindow):
   const fallbackInstant = () => days[0].workStartUtc
 
   return {
-    calendarId: typeof calendar?.id === 'string' ? calendar.id : '',
+    calendarId,
     timezone,
     hoursPerDay,
     dayStartMinute,

@@ -488,9 +488,9 @@ describe('totality — no method throws, every result is well formed', () => {
       },
       { start: new Date('2026-09-07T00:00:00.000Z'), end: new Date('2026-09-01T00:00:00.000Z') },
     )
-    expect(degenerate.timezone).toBe('Not/AZone')
+    expect(degenerate.timezone).toBe('UTC')
     expect(() => degenerate.toWorkMinutes(at('2026-09-07T08:00:00.000Z'))).not.toThrow()
-    expect(degenerate.isWorkingInstant(at('2026-09-07T08:00:00.000Z'))).toBe(false)
+    expect(degenerate.isWorkingInstant(at('2026-09-07T08:00:00.000Z'))).toBe(true)
     expect(() => degenerate.addDuration(at('2026-09-07T08:00:00.000Z'), 480)).not.toThrow()
   })
 
@@ -910,5 +910,255 @@ describe('toDisplayEnd — the right edge a bar is actually drawn to', () => {
     )
     const nothing = at('2026-09-07T08:00:00.000Z')
     expect(degenerate.toDisplayEnd(nothing).getTime()).toBe(nothing.getTime())
+  })
+})
+
+/**
+ * A calendar that can never produce a working minute has no working-time axis to
+ * search: every day's span is empty, so the prefix search ran off the end of the
+ * index and put a September 2026 project in 2065. The index degrades to continuous
+ * real time instead — the same fallback the solver uses for a missing calendar.
+ */
+describe('a calendar with no working time at all falls back to continuous time', () => {
+  const EMPTY_WINDOW: SolveWindow = {
+    start: at('2026-09-01T00:00:00.000Z'),
+    end: at('2026-12-31T00:00:00.000Z'),
+  }
+  const now = at('2026-09-01T09:00:00.000Z')
+
+  const emptyCalendars: Array<[string, WorkCalendar]> = [
+    ['a day of zero hours', { ...LONDON_MON_FRI, id: 'cal-no-hours', hoursPerDay: 0 }],
+    ['a week with no working day', { ...LONDON_MON_FRI, id: 'cal-no-days', workweek: 0 }],
+    ['a workweek mask naming no weekday', { ...LONDON_MON_FRI, id: 'cal-mask', workweek: 128 }],
+    [
+      'every day excepted away',
+      {
+        ...LONDON_MON_FRI,
+        id: 'cal-all-off',
+        workweek: 0,
+        exceptions: [{ day: '2026-09-07', isWorking: false }],
+      },
+    ],
+  ]
+
+  for (const [label, calendar] of emptyCalendars) {
+    describe(label, () => {
+      const index = buildCalendarIndex(calendar, EMPTY_WINDOW)
+
+      it('places work next to now instead of decades away', () => {
+        const start = index.snapToNextWorkingInstant(now)
+        const first = index.addDuration(start, MINUTES_PER_WORK_DAY)
+        const second = index.addDuration(first, MINUTES_PER_WORK_DAY)
+        expect(start.toISOString()).toBe('2026-09-01T09:00:00.000Z')
+        expect(first.toISOString()).toBe('2026-09-01T17:00:00.000Z')
+        expect(second.toISOString()).toBe('2026-09-02T01:00:00.000Z')
+        expect(second.getUTCFullYear()).toBe(2026)
+      })
+
+      it('preserves duration, ordering and the round-trip', () => {
+        const start = index.snapToNextWorkingInstant(now)
+        const end = index.addDuration(start, 195)
+        expect(index.workingMinutesBetween(start, end)).toBeCloseTo(195, 6)
+        expect(index.addDuration(start, 60).getTime()).toBeLessThan(
+          index.addDuration(start, 61).getTime(),
+        )
+        expect(index.fromWorkMinutes(index.toWorkMinutes(end)).getTime()).toBe(end.getTime())
+      })
+
+      it('reports the axis it is actually running on, and keeps the calendar identity', () => {
+        expect(index.calendarId).toBe(calendar.id)
+        expect(index.timezone).toBe('Europe/London')
+        expect(index.hoursPerDay).toBe(24)
+        expect(index.dayStartMinute).toBe(DEFAULT_DAY_START_MINUTE)
+      })
+
+      it('treats every instant as working, so nothing is ever pushed forward', () => {
+        const sundayNight = at('2026-09-06T03:00:00.000Z')
+        expect(index.isWorkingInstant(sundayNight)).toBe(true)
+        expect(index.snapToNextWorkingInstant(sundayNight).getTime()).toBe(sundayNight.getTime())
+        expect(index.isWorkingInstant(new Date('not a date'))).toBe(false)
+      })
+
+      it('draws the right edge where the span really ends', () => {
+        const start = index.snapToNextWorkingInstant(now)
+        const end = index.addDuration(start, MINUTES_PER_WORK_DAY)
+        expect(index.toDisplayEnd(end).getTime()).toBe(end.getTime())
+      })
+
+      it('stays total — no throw, no Invalid Date, for any input', () => {
+        const farFuture = at('2400-01-01T00:00:00.000Z')
+        const farPast = at('1900-01-01T00:00:00.000Z')
+        const invalid = new Date('not a date')
+        expect(Number.isFinite(index.toWorkMinutes(farFuture))).toBe(true)
+        expect(Number.isFinite(index.toWorkMinutes(farPast))).toBe(true)
+        expect(index.toWorkMinutes(invalid)).toBe(0)
+        expect(index.workingMinutesBetween(invalid, farFuture)).toBe(0)
+        expect(Number.isFinite(index.fromWorkMinutes(50_000_000).getTime())).toBe(true)
+        expect(Number.isFinite(index.fromWorkMinutes(-50_000_000).getTime())).toBe(true)
+        expect(Number.isFinite(index.fromWorkMinutes(Number.NaN).getTime())).toBe(true)
+        expect(Number.isFinite(index.fromWorkMinutes(Number.MAX_VALUE).getTime())).toBe(true)
+        expect(Number.isFinite(index.addDuration(farFuture, Number.MAX_VALUE).getTime())).toBe(true)
+        expect(Number.isFinite(index.addDuration(invalid, 480).getTime())).toBe(true)
+        expect(Number.isFinite(index.addDuration(now, Number.NaN).getTime())).toBe(true)
+        expect(Number.isFinite(index.snapToNextWorkingInstant(invalid).getTime())).toBe(true)
+        expect(Number.isFinite(index.toDisplayEnd(invalid).getTime())).toBe(true)
+      })
+    })
+  }
+})
+
+describe('a sparsely working calendar is indexed, never mistaken for an empty one', () => {
+  const WINDOW_2026: SolveWindow = {
+    start: at('2026-09-01T00:00:00.000Z'),
+    end: at('2026-12-31T00:00:00.000Z'),
+  }
+
+  it('keeps the working axis when only part of the window has no working time', () => {
+    const septemberOff = buildCalendarIndex(
+      {
+        ...LONDON_MON_FRI,
+        id: 'cal-september-off',
+        exceptions: Array.from({ length: 30 }, (_, i) => ({
+          day: `2026-09-${String(i + 1).padStart(2, '0')}`,
+          isWorking: false,
+        })),
+      },
+      WINDOW_2026,
+    )
+    expect(septemberOff.hoursPerDay).toBe(8)
+    expect(septemberOff.isWorkingInstant(at('2026-09-10T10:00:00.000Z'))).toBe(false)
+    const resumed = septemberOff.snapToNextWorkingInstant(at('2026-09-10T10:00:00.000Z'))
+    expect(localOf(septemberOff, resumed)).toEqual({ day: '2026-10-01', time: '09:00' })
+    expect(
+      septemberOff.workingMinutesBetween(resumed, septemberOff.addDuration(resumed, 120)),
+    ).toBeCloseTo(120, 6)
+  })
+
+  it('indexes a calendar whose only working time comes from an exception', () => {
+    const exceptionOnly = buildCalendarIndex(
+      {
+        ...LONDON_MON_FRI,
+        id: 'cal-exception-only',
+        hoursPerDay: 0,
+        workweek: 0,
+        exceptions: [{ day: '2026-09-16', isWorking: true, hours: 4 }],
+      },
+      WINDOW_2026,
+    )
+    expect(exceptionOnly.hoursPerDay).toBe(0)
+    expect(exceptionOnly.isWorkingInstant(at('2026-09-15T10:00:00.000Z'))).toBe(false)
+    const open = exceptionOnly.snapToNextWorkingInstant(at('2026-09-15T10:00:00.000Z'))
+    expect(localOf(exceptionOnly, open)).toEqual({ day: '2026-09-16', time: '09:00' })
+    expect(localOf(exceptionOnly, exceptionOnly.addDuration(open, 120))).toEqual({
+      day: '2026-09-16',
+      time: '11:00',
+    })
+    const beyondCapacity = exceptionOnly.addDuration(open, 10_000)
+    expect(Number.isFinite(beyondCapacity.getTime())).toBe(true)
+    expect(beyondCapacity.getTime()).toBeGreaterThan(open.getTime())
+  })
+
+  it('treats a one-weekday workweek as sparse, not empty', () => {
+    const wednesdays = buildCalendarIndex(
+      { ...LONDON_MON_FRI, id: 'cal-wednesdays', workweek: 1 << 3 },
+      WINDOW_2026,
+    )
+    expect(wednesdays.hoursPerDay).toBe(8)
+    const first = wednesdays.snapToNextWorkingInstant(at('2026-09-01T10:00:00.000Z'))
+    expect(localOf(wednesdays, first)).toEqual({ day: '2026-09-02', time: '09:00' })
+    expect(localOf(wednesdays, wednesdays.addDuration(first, MINUTES_PER_WORK_DAY))).toEqual({
+      day: '2026-09-09',
+      time: '09:00',
+    })
+  })
+})
+
+describe('the calendar zone is validated once, and the formatter cache stays bounded', () => {
+  it('falls back to UTC for a zone the runtime does not know, and reports the zone it used', () => {
+    const bogus = buildCalendarIndex(
+      { ...LONDON_MON_FRI, id: 'cal-bogus-zone', timezone: 'Not/AZone' },
+      WINDOW,
+    )
+    expect(bogus.timezone).toBe('UTC')
+    const monday = bogus.snapToNextWorkingInstant(at('2026-09-07T00:00:00.000Z'))
+    expect(monday.toISOString()).toBe('2026-09-07T09:00:00.000Z')
+    expect(localParts('UTC', monday)).toEqual({ day: '2026-09-07', time: '09:00' })
+  })
+
+  it('publishes a zone a renderer can pass straight back to Intl', () => {
+    for (const timezone of ['Europe/London', 'America/Denver', 'Not/AZone', '', 'UTC/UTC']) {
+      const index = buildCalendarIndex({ ...LONDON_MON_FRI, id: `cal-${timezone}`, timezone }, WINDOW)
+      expect(() => new Intl.DateTimeFormat('en-US', { timeZone: index.timezone })).not.toThrow()
+    }
+  })
+
+  it('keeps every boundary correct after more distinct zones than the cache can hold', () => {
+    const zones = Intl.supportedValuesOf('timeZone').slice(0, 48)
+    expect(zones.length).toBeGreaterThan(32)
+    for (const zone of zones) {
+      const index = buildCalendarIndex({ ...LONDON_MON_FRI, id: `cal-${zone}`, timezone: zone }, WINDOW)
+      expect(index.timezone).toBe(zone)
+      expect(localOf(index, index.snapToNextWorkingInstant(at('2026-09-07T00:00:00.000Z'))).time).toBe(
+        '09:00',
+      )
+    }
+    const londonAgain = buildCalendarIndex(LONDON_MON_FRI, WINDOW)
+    expect(
+      londonAgain.snapToNextWorkingInstant(at('2026-09-07T00:00:00.000Z')).toISOString(),
+    ).toBe('2026-09-07T08:00:00.000Z')
+  })
+})
+
+/**
+ * The window is padded by a month, not a year: everything further out is built on
+ * demand. That is a cost change only — a narrow window must answer exactly what a
+ * window wide enough to contain the instant answers.
+ */
+describe('an index built lazily answers exactly as an eagerly built one', () => {
+  const narrow = buildCalendarIndex(LONDON_MON_FRI, {
+    start: at('2026-09-01T00:00:00.000Z'),
+    end: at('2026-09-08T00:00:00.000Z'),
+  })
+  const wide = buildCalendarIndex(LONDON_MON_FRI, {
+    start: at('2025-01-01T00:00:00.000Z'),
+    end: at('2028-12-31T00:00:00.000Z'),
+  })
+
+  const probes = [
+    '2025-03-11T10:00:00.000Z',
+    '2026-03-29T02:30:00.000Z',
+    '2027-06-01T10:00:00.000Z',
+    '2028-02-29T10:00:00.000Z',
+  ]
+
+  it('agrees on working instants, snapping and durations far outside the padding', () => {
+    for (const iso of probes) {
+      const instant = at(iso)
+      expect(narrow.isWorkingInstant(instant)).toBe(wide.isWorkingInstant(instant))
+      expect(narrow.snapToNextWorkingInstant(instant).toISOString()).toBe(
+        wide.snapToNextWorkingInstant(instant).toISOString(),
+      )
+      expect(narrow.addDuration(instant, 3 * MINUTES_PER_WORK_DAY).toISOString()).toBe(
+        wide.addDuration(instant, 3 * MINUTES_PER_WORK_DAY).toISOString(),
+      )
+      expect(narrow.toDisplayEnd(instant).toISOString()).toBe(wide.toDisplayEnd(instant).toISOString())
+    }
+  })
+
+  it('agrees on working length between two instants either side of the padding', () => {
+    const from = at('2026-08-03T08:00:00.000Z')
+    const to = at('2027-02-01T09:00:00.000Z')
+    expect(narrow.workingMinutesBetween(from, to)).toBeCloseTo(wide.workingMinutesBetween(from, to), 6)
+    expect(narrow.workingMinutesBetween(from, to)).toBeGreaterThan(0)
+  })
+
+  it('still clamps rather than throwing beyond the growth ceiling', () => {
+    const farFuture = at('2400-01-01T00:00:00.000Z')
+    const farPast = at('1900-01-01T00:00:00.000Z')
+    expect(Number.isFinite(narrow.toWorkMinutes(farFuture))).toBe(true)
+    expect(Number.isFinite(narrow.toWorkMinutes(farPast))).toBe(true)
+    expect(Number.isFinite(narrow.addDuration(farPast, 480).getTime())).toBe(true)
+    expect(Number.isFinite(narrow.fromWorkMinutes(50_000_000).getTime())).toBe(true)
+    expect(Number.isFinite(narrow.fromWorkMinutes(-50_000_000).getTime())).toBe(true)
   })
 })
