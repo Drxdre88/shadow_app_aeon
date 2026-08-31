@@ -155,6 +155,7 @@ export function createFakeDb(seed: Record<string, Row[]> = {}) {
     chain.leftJoin = self
     chain.orderBy = self
     chain.limit = self
+    chain.for = self
     chain.onConflictDoNothing = self
     chain.then = (resolve: (v: T) => unknown, reject?: (e: unknown) => unknown) => {
       try {
@@ -183,6 +184,9 @@ export function createFakeDb(seed: Record<string, Row[]> = {}) {
       chain.leftJoin = () => chain
       chain.orderBy = () => chain
       chain.limit = () => chain
+      // Row locks are a no-op here — the fake is single-threaded. `.for()` is
+      // accepted so a locking read still renders and evaluates its predicate.
+      chain.for = () => chain
       chain.where = (cond: unknown) => { where = render(cond); return chain }
       chain.then = (resolve: (v: Row[]) => unknown, reject?: (e: unknown) => unknown) => {
         try {
