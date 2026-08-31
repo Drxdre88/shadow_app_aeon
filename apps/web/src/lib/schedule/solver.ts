@@ -96,12 +96,16 @@ function continuousIndex(calendarId: string): CalendarIndex {
     calendarId,
     timezone: 'UTC',
     hoursPerDay: 24,
+    // A continuous axis opens at local midnight and has no non-working gap, so
+    // the chaining end and the display end are the same instant.
+    dayStartMinute: 0,
     toWorkMinutes: (instant) => instant.getTime() / MINUTE_MS,
     fromWorkMinutes: (workMinutes) => new Date(Math.round(workMinutes * MINUTE_MS)),
     addDuration: (start, minutes) => new Date(start.getTime() + minutes * MINUTE_MS),
     workingMinutesBetween: (a, b) => (b.getTime() - a.getTime()) / MINUTE_MS,
     snapToNextWorkingInstant: (instant) => instant,
     isWorkingInstant: () => true,
+    toDisplayEnd: (instant) => instant,
   }
 }
 

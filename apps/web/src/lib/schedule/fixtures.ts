@@ -4,6 +4,7 @@
  * Add new fixtures; never edit an existing one's shape.
  */
 import {
+  DEFAULT_DAY_START_MINUTE,
   WORKWEEK_MON_FRI,
   type ScheduleTask,
   type ScheduleResource,
@@ -15,6 +16,7 @@ export const LONDON_MON_FRI: WorkCalendar = {
   id: 'cal-london',
   timezone: 'Europe/London',
   hoursPerDay: 8,
+  dayStartMinute: DEFAULT_DAY_START_MINUTE,
   workweek: WORKWEEK_MON_FRI,
   exceptions: [],
 }
@@ -34,8 +36,42 @@ export const DENVER_MON_FRI: WorkCalendar = {
   id: 'cal-denver',
   timezone: 'America/Denver',
   hoursPerDay: 8,
+  dayStartMinute: DEFAULT_DAY_START_MINUTE,
   workweek: WORKWEEK_MON_FRI,
   exceptions: [],
+}
+
+/** Opens at 07:00 local — proves the day-open is data, not a module constant. */
+export const LONDON_EARLY_START: WorkCalendar = {
+  ...LONDON_MON_FRI,
+  id: 'cal-london-early',
+  dayStartMinute: 7 * 60,
+}
+
+/** 22:00 local, seven days a week — the working day deliberately crosses local midnight. */
+export const LONDON_NIGHT_SHIFT: WorkCalendar = {
+  ...LONDON_MON_FRI,
+  id: 'cal-london-night',
+  dayStartMinute: 22 * 60,
+  workweek: 127,
+}
+
+/** The same night shift a continent west, so DST lands on a different date. */
+export const DENVER_NIGHT_SHIFT: WorkCalendar = {
+  ...DENVER_MON_FRI,
+  id: 'cal-denver-night',
+  dayStartMinute: 22 * 60,
+  workweek: 127,
+}
+
+/**
+ * We close the morning and work 13:00–17:00 on the Friday. Inexpressible before
+ * `CalendarException.startMinute`: `hours` alone can only shorten from the open.
+ */
+export const LONDON_AFTERNOON_HALF_DAY: WorkCalendar = {
+  ...LONDON_MON_FRI,
+  id: 'cal-london-pm-half',
+  exceptions: [{ day: '2026-09-04', isWorking: true, hours: 4, startMinute: 13 * 60 }],
 }
 
 export const RESOURCE_SOLO: ScheduleResource = {

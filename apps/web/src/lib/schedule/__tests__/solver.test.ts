@@ -75,11 +75,24 @@ function isWorking(instant: Date): boolean {
   return dayOfWeek(dayIndexOf(ms)) < 5 && raw >= DAY_START_MIN && raw < DAY_END_MIN
 }
 
+/** Last working instant at or before `instant` — the stub's mirror of the real rule. */
+function displayEnd(instant: Date): Date {
+  const ms = instant.getTime()
+  const raw = minuteOfDay(ms)
+  let day = dayIndexOf(ms)
+  const onWeekday = dayOfWeek(day) < 5
+  if (onWeekday && raw > DAY_START_MIN && raw <= DAY_END_MIN) return instant
+  if (!(onWeekday && raw > DAY_END_MIN)) day -= 1
+  while (dayOfWeek(day) >= 5) day -= 1
+  return new Date(ANCHOR + day * DAY_MS + DAY_END_MIN * MIN_MS)
+}
+
 function stubIndex(calendar: WorkCalendar): CalendarIndex {
   return {
     calendarId: calendar.id,
     timezone: 'UTC',
     hoursPerDay: 8,
+    dayStartMinute: DAY_START_MIN,
     toWorkMinutes: workMinutes,
     fromWorkMinutes: instantAt,
     addDuration: (start, minutes) => instantAt(workMinutes(start) + minutes),
@@ -87,6 +100,7 @@ function stubIndex(calendar: WorkCalendar): CalendarIndex {
     snapToNextWorkingInstant: (instant) =>
       isWorking(instant) ? instant : instantAt(workMinutes(instant)),
     isWorkingInstant: isWorking,
+    toDisplayEnd: displayEnd,
   }
 }
 
