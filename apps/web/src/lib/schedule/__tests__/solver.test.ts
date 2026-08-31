@@ -27,6 +27,7 @@ import {
   RESOURCE_HALF_TIME,
   RESOURCE_SOLO,
   STALE_TODO,
+  dep,
   task,
 } from '../fixtures'
 
@@ -423,9 +424,10 @@ describe('solver rules', () => {
   it('schedules only the remaining effort of an in-progress task', () => {
     const result = run(IN_PROGRESS_HALF)
     const placement = at(result, 'a')
-    expect(iso(placement.computedStart)).toBe('2026-09-03T08:00:00.000Z')
+    // Started the previous Thursday, but the half that is left is future work.
+    expect(iso(placement.computedStart)).toBe(iso(NOW))
     expect(IDX.workingMinutesBetween(placement.computedStart, placement.computedEnd)).toBe(1200)
-    expect(iso(placement.computedEnd)).toBe('2026-09-07T12:00:00.000Z')
+    expect(iso(placement.computedEnd)).toBe('2026-09-09T12:00:00.000Z')
   })
 
   it('keeps a done task on its historical span', () => {
@@ -731,4 +733,149 @@ describe('immovable pins and actuals', () => {
       expect(overbookings(reordered)).toEqual(overbookings(straight))
     },
   )
+})
+
+/**
+ * Status gates two separate things: whether `progress` is allowed to shrink a span
+ * at all (CHR-51 — it speaks only for in-progress work), and whether the sweep may
+ * book time that has already gone by (CHR-49).
+ */
+describe('status gating', () => {
+  const STARTED_LONG_AGO = new Date('2026-08-03T08:00:00.000Z')
+
+  function inFlight(id: string, over: Partial<ScheduleTask> = {}): ScheduleTask {
+    return task(id, {
+      status: 'in-progress',
+      progress: 50,
+      estimateMinutes: 480,
+      startedAt: STARTED_LONG_AGO,
+      ...over,
+    })
+  }
+
+  it('plans the remaining effort of an in-progress task forward from now', () => {
+    const result = run({ tasks: [inFlight('a')], dependencies: [] })
+    const placement = at(result, 'a')
+    expect(iso(placement.computedStart)).toBe(iso(NOW))
+    expect(iso(placement.computedEnd)).toBe('2026-09-07T12:00:00.000Z')
+  })
+
+  it('books the in-progress reservation on the span it actually occupies', () => {
+    const result = run({
+      tasks: [inFlight('a', { orderIndex: 0 }), task('b', { orderIndex: 1 })],
+      dependencies: [],
+    })
+    expect(iso(at(result, 'a').computedStart)).toBe(iso(NOW))
+    expect(iso(at(result, 'b').computedStart)).toBe('2026-09-07T12:00:00.000Z')
+  })
+
+  it('carries in-flight work into its successor instead of collapsing it to now', () => {
+    const result = run({
+      tasks: [
+        inFlight('a', { orderIndex: 0 }),
+        task('b', { orderIndex: 1, ownerResourceId: RESOURCE_AGENT.id }),
+      ],
+      dependencies: [dep('a', 'b')],
+    })
+    expect(iso(at(result, 'b').computedStart)).toBe('2026-09-07T12:00:00.000Z')
+  })
+
+  it('keeps an in-progress start that is still ahead of now', () => {
+    const startedAt = new Date('2026-09-09T08:00:00.000Z')
+    const result = run({ tasks: [inFlight('a', { startedAt })], dependencies: [] })
+    expect(iso(at(result, 'a').computedStart)).toBe(iso(startedAt))
+  })
+
+  it('gives a todo its full estimate however far its checklist has run', () => {
+    const result = run({
+      tasks: [task('t', { progress: 90, estimateMinutes: 480 })],
+      dependencies: [],
+    })
+    const placement = at(result, 't')
+    expect(IDX.workingMinutesBetween(placement.computedStart, placement.computedEnd)).toBe(480)
+  })
+
+  it('shrinks that same span only once the task is in progress', () => {
+    const result = run({ tasks: [inFlight('t', { progress: 90 })], dependencies: [] })
+    const placement = at(result, 't')
+    expect(IDX.workingMinutesBetween(placement.computedStart, placement.computedEnd)).toBe(48)
+  })
+
+  it('does not let progress shorten a manual pin that has not started', () => {
+    const result = run({
+      tasks: [
+        task('p', { scheduleMode: 'manual', startedAt: NOW, progress: 90, estimateMinutes: 480 }),
+      ],
+      dependencies: [],
+    })
+    expect(iso(at(result, 'p').computedEnd)).toBe('2026-09-08T08:00:00.000Z')
+  })
+})
+
+/**
+ * The solver is pure by contract (CHR-3), and a result that aliases its own input
+ * is not: one renderer day-bucketing with `p.computedStart.setHours(0, 0, 0, 0)`
+ * would reach back through the reference and rewrite `now` — and with it every
+ * other placement that landed on the same instant.
+ */
+describe('result isolation', () => {
+  const mixedArb: fc.Arbitrary<Scenario> = fc
+    .array(fixedSpecArb, { minLength: 1, maxLength: 8 })
+    .map((specs) => ({ tasks: buildMixed(specs, false), dependencies: [] }))
+
+  function inputDates(scenario: Scenario): Set<Date> {
+    const seen = new Set<Date>([NOW])
+    for (const source of scenario.tasks) {
+      for (const value of [source.startedAt, source.completedAt, source.constraintDate]) {
+        if (value) seen.add(value)
+      }
+    }
+    return seen
+  }
+
+  function resultDates(result: SolveResult): Date[] {
+    const out: Date[] = []
+    for (const placement of result.placements) {
+      out.push(placement.computedStart, placement.computedEnd)
+    }
+    if (result.projectEnd) out.push(result.projectEnd)
+    return out
+  }
+
+  test.prop([fc.oneof(dagArb, mixedArb)])(
+    'never hands back a Date the caller passed in',
+    (scenario) => {
+      const result = run(scenario)
+      const inputs = inputDates(scenario)
+      for (const value of resultDates(result)) {
+        expect(inputs.has(value)).toBe(false)
+        expect(Number.isFinite(value.getTime())).toBe(true)
+      }
+    },
+  )
+
+  it('copies the anchor and the constraint rather than returning them', () => {
+    const constraintDate = new Date('2026-09-09T08:00:00.000Z')
+    const result = run({
+      tasks: [
+        task('m', { isMilestone: true, orderIndex: 0 }),
+        task('s', { constraintType: 'snet', constraintDate, orderIndex: 1 }),
+      ],
+      dependencies: [],
+    })
+    expect(at(result, 'm').computedStart).not.toBe(NOW)
+    expect(iso(at(result, 'm').computedStart)).toBe(iso(NOW))
+    expect(at(result, 's').computedStart).not.toBe(constraintDate)
+    expect(iso(at(result, 's').computedStart)).toBe(iso(constraintDate))
+  })
+
+  it('survives a caller mutating a returned Date in place', () => {
+    const result = run(CHAIN_OF_THREE)
+    const shape = (from: SolveResult['placements']) =>
+      from.slice(1).map((p) => [iso(p.computedStart), iso(p.computedEnd)])
+    const before = shape(result.placements)
+    at(result, 'a').computedStart.setUTCHours(0, 0, 0, 0)
+    expect(iso(NOW)).toBe('2026-09-07T08:00:00.000Z')
+    expect(shape(result.placements)).toEqual(before)
+  })
 })

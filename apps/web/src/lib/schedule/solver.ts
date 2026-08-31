@@ -90,6 +90,17 @@ function isImmovable(task: ScheduleTask): boolean {
   return task.status === 'done' || task.scheduleMode === 'manual'
 }
 
+/**
+ * Share of the estimate still to be worked. `progress` is remaining effort for
+ * IN-PROGRESS work only (CHR-51) — it is checklist-derived, so a backlog card with
+ * nine of ten spec boxes ticked must still be scheduled at its full estimate.
+ */
+function remainingFraction(task: ScheduleTask): number {
+  if (task.status === 'done') return 0
+  if (task.status !== 'in-progress') return 1
+  return 1 - clamp(task.progress ?? 0, 0, 100) / 100
+}
+
 /** Fallback axis when a calendar is missing or lane C's builder throws: continuous time. */
 function continuousIndex(calendarId: string): CalendarIndex {
   return {
@@ -264,14 +275,14 @@ export function solve(input: SolveInput, buildIndex: BuildIndex): SolveResult {
     const baseMinutes = unestimated
       ? UNESTIMATED_DEFAULT_MINUTES
       : Math.max(0, task.estimateMinutes as number)
-    const remainingFraction = 1 - clamp(task.progress ?? 0, 0, 100) / 100
+    const remaining = remainingFraction(task)
     const built: TaskShape = {
       resource,
       index: indexFor(resource ? resource.calendarId : null),
       unestimated,
       durationMin: task.isMilestone
         ? 0
-        : Math.max(0, Math.round((baseMinutes * remainingFraction) / focusFactor)),
+        : Math.max(0, Math.round((baseMinutes * remaining) / focusFactor)),
       // Unestimated work still renders but never consumes a lane (CHR-11).
       countsForCapacity: !!resource && !(unestimated && task.status !== 'done'),
       lanes: resource && resource.concurrency >= 1 ? Math.floor(resource.concurrency) : 1,
@@ -392,8 +403,18 @@ export function solve(input: SolveInput, buildIndex: BuildIndex): SolveResult {
         })
       }
     } else {
+      /*
+       * Nothing the sweep places may start in the past (CHR-49) — not a stale todo,
+       * and not the remaining effort of work already under way. Its historical start
+       * is a fact, but the future is where the rest of it gets done, where its lane
+       * has to be booked, and where its successors have to be pushed to. A
+       * `startedAt` still ahead of `now` is the only one that moves this later. Every
+       * step below only ever pushes `earliest` forward, so this floor holds.
+       */
       let earliest =
-        task.status === 'in-progress' && isUsableDate(task.startedAt) ? task.startedAt : now
+        task.status === 'in-progress' && isUsableDate(task.startedAt)
+          ? later(task.startedAt, now)
+          : now
       for (const edge of liveIn(task.id)) {
         const upstream = placed.get(edge.blockerTaskId)
         if (!upstream) continue
@@ -402,8 +423,6 @@ export function solve(input: SolveInput, buildIndex: BuildIndex): SolveResult {
       if (task.constraintType === 'snet' && isUsableDate(task.constraintDate)) {
         earliest = later(earliest, task.constraintDate)
       }
-      // A todo can never be placed in the past (CHR-49).
-      if (task.status === 'todo') earliest = later(earliest, now)
 
       const snapped = index.snapToNextWorkingInstant(earliest)
       start = isUsableDate(snapped) ? later(earliest, snapped) : earliest
@@ -488,6 +507,14 @@ export function solve(input: SolveInput, buildIndex: BuildIndex): SolveResult {
     totalFloat.set(topo[i].id, Number.isFinite(slack) ? Math.max(0, Math.round(slack)) : 0)
   }
 
+  /*
+   * Every Date leaves by value. Internally the passes hand references around —
+   * `later` returns one of its arguments, so `input.now`, a `startedAt` and a
+   * `constraintDate` all reach this point unchanged. Handing those out would let a
+   * renderer day-bucketing in place (`p.computedStart.setHours(0, 0, 0, 0)`) rewrite
+   * the caller's own anchor and every placement sharing that instant, from one call
+   * site. Warnings carry no Dates, so this and `projectEnd` are the whole boundary.
+   */
   const placements: Placement[] = []
   for (const task of ordered) {
     const info = placed.get(task.id)
@@ -495,8 +522,8 @@ export function solve(input: SolveInput, buildIndex: BuildIndex): SolveResult {
     const float = totalFloat.get(task.id) ?? 0
     placements.push({
       taskId: task.id,
-      computedStart: info.start,
-      computedEnd: info.end,
+      computedStart: new Date(info.start.getTime()),
+      computedEnd: new Date(info.end.getTime()),
       totalFloatMin: float,
       isCritical: float === 0,
       ownerResourceId: info.ownerResourceId,
@@ -504,7 +531,11 @@ export function solve(input: SolveInput, buildIndex: BuildIndex): SolveResult {
     })
   }
 
-  return { placements, projectEnd, warnings }
+  return {
+    placements,
+    projectEnd: projectEnd ? new Date(projectEnd.getTime()) : null,
+    warnings,
+  }
 }
 
 /** Known-task edges only, deduped (widest lag wins) and ordered for determinism (CHR-4). */
