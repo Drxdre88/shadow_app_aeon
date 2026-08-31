@@ -57,7 +57,13 @@ export async function verifyRowsOwnership(rowIds: string[], projectId: string) {
  * on its own — but nothing clears `onTimeline`, which left cards flagged as
  * scheduled with no bar behind them (the board shows the timeline pip, the
  * "push to Gantt" action stays hidden, and the next reset wipes their dates).
- * Both halves are matched, since either can be the stale one after a drift.
+ *
+ * A card can hold bars in several views, so "this card was linked to a doomed
+ * bar" is NOT the same as "this card is leaving the timeline". Matching on the
+ * card alone unlinked cards from live bars in views that were not being
+ * deleted — the orphan class this function exists to prevent, reintroduced from
+ * the other side. Cards that keep a bar elsewhere are re-pointed at it and stay
+ * flagged; only cards left with nothing are cleared.
  *
  * MUST be called BEFORE the bars are deleted — afterwards the FK has already
  * nulled `ganttTaskId` and the boardTaskId link is gone with the row.
@@ -74,12 +80,41 @@ export async function clearTimelineLinksForGanttTasks(
     .from(ganttTasks)
     .where(and(eq(ganttTasks.projectId, projectId), inArray(ganttTasks.id, ganttTaskIds)))
 
-  const boardTaskIds = linked
-    .map((l) => l.boardTaskId)
-    .filter((id): id is string => !!id)
+  const boardTaskIds = [...new Set(
+    linked.map((l) => l.boardTaskId).filter((id): id is string => !!id)
+  )]
 
-  const match = boardTaskIds.length > 0
-    ? or(inArray(boardTasks.id, boardTaskIds), inArray(boardTasks.ganttTaskId, ganttTaskIds))
+  const doomed = new Set(ganttTaskIds)
+  const remainingBars = boardTaskIds.length > 0
+    ? await tx
+        .select({ id: ganttTasks.id, boardTaskId: ganttTasks.boardTaskId })
+        .from(ganttTasks)
+        .where(and(
+          eq(ganttTasks.projectId, projectId),
+          inArray(ganttTasks.boardTaskId, boardTaskIds)
+        ))
+    : []
+
+  const survivorByCard = new Map<string, string>()
+  for (const bar of remainingBars) {
+    if (!bar.boardTaskId || doomed.has(bar.id)) continue
+    if (!survivorByCard.has(bar.boardTaskId)) survivorByCard.set(bar.boardTaskId, bar.id)
+  }
+
+  for (const [boardTaskId, ganttTaskId] of survivorByCard) {
+    await tx
+      .update(boardTasks)
+      .set({ ganttTaskId, onTimeline: true, updatedAt: new Date() })
+      .where(and(
+        eq(boardTasks.id, boardTaskId),
+        eq(boardTasks.projectId, projectId),
+        or(inArray(boardTasks.ganttTaskId, ganttTaskIds), isNull(boardTasks.ganttTaskId))
+      ))
+  }
+
+  const strandedIds = boardTaskIds.filter((id) => !survivorByCard.has(id))
+  const match = strandedIds.length > 0
+    ? or(inArray(boardTasks.id, strandedIds), inArray(boardTasks.ganttTaskId, ganttTaskIds))
     : inArray(boardTasks.ganttTaskId, ganttTaskIds)
 
   await tx

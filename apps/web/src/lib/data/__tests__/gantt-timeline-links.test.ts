@@ -282,6 +282,60 @@ describe('deleteGanttView', () => {
     expect(card.startDate).toBe(HAND_TYPED_START)
   })
 
+  // A card in two views has two bars but only one `ganttTaskId`. Deleting one
+  // view used to match cards by id, so it unlinked the card from the bar still
+  // drawn in the surviving view — an orphan, from the other direction.
+  it('re-points a card at its surviving bar in another view', async () => {
+    const otherView = '44444444-4444-4444-8444-444444444444'
+    const otherRow = '55555555-5555-4555-8555-555555555555'
+    const otherBar = '66666666-6666-4666-8666-666666666666'
+    const h = use({
+      board_tasks: [makeCard({ onTimeline: true, ganttTaskId: BAR_ID })],
+      gantt_tasks: [makeBar(), makeBar({ id: otherBar, rowId: otherRow })],
+      rows: [
+        { id: ROW_ID, projectId: PROJECT_ID, ganttViewId: VIEW_ID, name: 'Lane', orderIndex: 0 },
+        { id: otherRow, projectId: PROJECT_ID, ganttViewId: otherView, name: 'Other lane', orderIndex: 0 },
+      ],
+      gantt_views: [
+        { id: VIEW_ID, projectId: PROJECT_ID, name: 'Timeline', groupBy: 'column', filters: {} },
+        { id: otherView, projectId: PROJECT_ID, name: 'Other', groupBy: 'column', filters: {} },
+      ],
+    })
+
+    await deleteGanttView(VIEW_ID, PROJECT_ID)
+
+    expect(h.rows('gantt_tasks').map((b) => b.id)).toEqual([otherBar])
+    const card = h.rows('board_tasks')[0]
+    expect(card.onTimeline).toBe(true)
+    expect(card.ganttTaskId).toBe(otherBar)
+  })
+
+  it('still clears the card once its last view goes', async () => {
+    const otherView = '44444444-4444-4444-8444-444444444444'
+    const otherRow = '55555555-5555-4555-8555-555555555555'
+    const otherBar = '66666666-6666-4666-8666-666666666666'
+    const h = use({
+      board_tasks: [makeCard({ onTimeline: true, ganttTaskId: BAR_ID })],
+      gantt_tasks: [makeBar(), makeBar({ id: otherBar, rowId: otherRow })],
+      rows: [
+        { id: ROW_ID, projectId: PROJECT_ID, ganttViewId: VIEW_ID, name: 'Lane', orderIndex: 0 },
+        { id: otherRow, projectId: PROJECT_ID, ganttViewId: otherView, name: 'Other lane', orderIndex: 0 },
+      ],
+      gantt_views: [
+        { id: VIEW_ID, projectId: PROJECT_ID, name: 'Timeline', groupBy: 'column', filters: {} },
+        { id: otherView, projectId: PROJECT_ID, name: 'Other', groupBy: 'column', filters: {} },
+      ],
+    })
+
+    await deleteGanttView(VIEW_ID, PROJECT_ID)
+    await deleteGanttView(otherView, PROJECT_ID)
+
+    expect(h.rows('gantt_tasks')).toHaveLength(0)
+    const card = h.rows('board_tasks')[0]
+    expect(card.onTimeline).toBe(false)
+    expect(card.ganttTaskId).toBeNull()
+  })
+
   it('leaves bars from another view alone', async () => {
     const otherView = '44444444-4444-4444-8444-444444444444'
     const otherRow = '55555555-5555-4555-8555-555555555555'
