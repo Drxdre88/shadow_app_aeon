@@ -16,14 +16,21 @@
 -- separate columns is what lets a schedule be recomputed without ever
 -- overwriting what the user asked for.
 --
--- NOTE ON TYPES: these timestamps are timestamptz, while every pre-existing
--- timestamp column in this database (including start_date / end_date) is
--- timestamp WITHOUT time zone. That is intentional for solver output — a
--- computed instant is absolute, and a work calendar carries its own IANA zone
--- — but it means the follow-up schema.ts must declare them as
--- timestamp('computed_start', { withTimezone: true, mode: 'date' }), and any
--- SQL that compares computed_* against start_date / end_date must cast
--- explicitly rather than lean on the session TimeZone.
+-- NOTE ON TYPES: these are plain `timestamp` (no time zone), matching every
+-- other timestamp column in this database. An earlier draft used timestamp
+-- on the theory that naive columns cause the west-of-UTC day-early bug. They
+-- do not — that bug is caused by computing calendar boundaries in the SERVER's
+-- zone, and it is fixed in lib/schedule/calendar.ts, which resolves every
+-- boundary in the calendar's own IANA zone via Intl. The column type is
+-- orthogonal so long as every writer stores a UTC instant, which the solver
+-- does.
+--
+-- Mixing the two types actively hurt here: started_at is read as a PAIR with
+-- the pre-existing completed_at (a done task occupies [started_at,
+-- completed_at]). One zone-aware and one naive means the two halves of that
+-- span resolve through different rules. Same for computed_* against the
+-- existing start_date / end_date, which 0034 declares as solver inputs.
+-- One convention, consistently applied, beats a half-migrated table.
 
 -- Planned effort in minutes. NULL = not estimated: the solver still places the
 -- task, at a default span, but excludes it from capacity and reports it in the
@@ -44,13 +51,13 @@ ALTER TABLE "board_tasks"
 -- vocabulary later without a type change.
 ALTER TABLE "board_tasks"
   ADD COLUMN IF NOT EXISTS "constraint_type" varchar(24) NOT NULL DEFAULT 'asap';
-ALTER TABLE "board_tasks" ADD COLUMN IF NOT EXISTS "constraint_date" timestamptz;
+ALTER TABLE "board_tasks" ADD COLUMN IF NOT EXISTS "constraint_date" timestamp;
 
 -- Solver output. NULL = this task has never been scheduled, which is the
 -- state every existing row starts in — no backfill, so the chart keeps
 -- falling back to start_date / end_date until a schedule is computed.
-ALTER TABLE "board_tasks" ADD COLUMN IF NOT EXISTS "computed_start" timestamptz;
-ALTER TABLE "board_tasks" ADD COLUMN IF NOT EXISTS "computed_end" timestamptz;
+ALTER TABLE "board_tasks" ADD COLUMN IF NOT EXISTS "computed_start" timestamp;
+ALTER TABLE "board_tasks" ADD COLUMN IF NOT EXISTS "computed_end" timestamp;
 
 -- Slack in minutes against the project finish. 0 = on the critical path.
 ALTER TABLE "board_tasks" ADD COLUMN IF NOT EXISTS "total_float_min" integer;
@@ -65,7 +72,7 @@ ALTER TABLE "board_tasks"
 ALTER TABLE "board_tasks" ADD COLUMN IF NOT EXISTS "owner_resource_id" uuid;
 
 -- Actuals: when work really began, as opposed to when it was planned to.
-ALTER TABLE "board_tasks" ADD COLUMN IF NOT EXISTS "started_at" timestamptz;
+ALTER TABLE "board_tasks" ADD COLUMN IF NOT EXISTS "started_at" timestamp;
 
 -- The timeline read: one project's scheduled tasks in start order. Partial so
 -- the index only carries rows the solver has actually placed, which today is
