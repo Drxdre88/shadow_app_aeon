@@ -223,6 +223,63 @@ const dagArb: fc.Arbitrary<Scenario> = fc
     return { tasks, dependencies }
   })
 
+interface MixedSpec {
+  mode: 'auto' | 'manual' | 'done'
+  startDays: number
+  lengthMin: number
+  ownerIdx: number
+  orderIndex: number
+  priority: number
+  columnOrder: number
+  altColumnOrder: number
+}
+
+/** Auto work mixed with pins and actuals, carrying two competing board positions. */
+const fixedSpecArb: fc.Arbitrary<MixedSpec> = fc.record({
+  mode: fc.constantFrom<MixedSpec['mode']>('auto', 'manual', 'done'),
+  startDays: fc.integer({ min: -5, max: 5 }),
+  lengthMin: fc.integer({ min: 0, max: 1200 }),
+  ownerIdx: fc.integer({ min: 0, max: 2 }),
+  orderIndex: fc.integer({ min: 0, max: 3 }),
+  priority: fc.integer({ min: 0, max: 2 }),
+  columnOrder: fc.integer({ min: 0, max: 4 }),
+  altColumnOrder: fc.integer({ min: 0, max: 4 }),
+})
+
+function buildMixed(specs: MixedSpec[], useAlt: boolean): ScheduleTask[] {
+  return specs.map((spec, i) => {
+    const startedAt = new Date(NOW.getTime() + spec.startDays * DAY_MS)
+    const base: Partial<ScheduleTask> = {
+      ownerResourceId: RESOURCES[spec.ownerIdx % RESOURCES.length].id,
+      estimateMinutes: spec.lengthMin,
+      columnOrder: useAlt ? spec.altColumnOrder : spec.columnOrder,
+      orderIndex: spec.orderIndex,
+      priority: spec.priority,
+    }
+    if (spec.mode === 'done') {
+      return task(`t${i}`, {
+        ...base,
+        status: 'done',
+        progress: 100,
+        startedAt,
+        completedAt: new Date(startedAt.getTime() + spec.lengthMin * MIN_MS),
+      })
+    }
+    if (spec.mode === 'manual') {
+      return task(`t${i}`, { ...base, scheduleMode: 'manual', startedAt })
+    }
+    return task(`t${i}`, base)
+  })
+}
+
+/** Overbooking reports compared as a set — only the sweep's warning order is positional. */
+function overbookings(result: SolveResult): string[] {
+  return result.warnings
+    .filter((w) => w.kind === 'resource-overbooked')
+    .map((w) => w.taskIds.join('|'))
+    .sort()
+}
+
 describe('stub calendar index', () => {
   it('models Mon-Fri 08:00-16:00 UTC', () => {
     expect(isWorking(NOW)).toBe(true)
@@ -477,4 +534,187 @@ describe('solver rules', () => {
     expect(iso(at(result, 'b').computedStart)).toBe('2026-09-08T08:00:00.000Z')
     expect(iso(at(result, 'c').computedStart)).toBe('2026-09-09T08:00:00.000Z')
   })
+})
+
+/**
+ * Pins and actuals are placed before the sweep, so they defend their slots against
+ * work the sweep would otherwise have put there first. Board position must never
+ * decide whether that defence happens.
+ */
+describe('immovable pins and actuals', () => {
+  /** Friday 08:00 through Monday 12:00 on the stub axis: 720 working minutes. */
+  const PIN_START = new Date('2026-09-04T08:00:00.000Z')
+  const PIN_END = new Date('2026-09-07T12:00:00.000Z')
+
+  function probe(kind: 'manual' | 'done', pinFirst: boolean): SolveResult {
+    const pin =
+      kind === 'manual'
+        ? task('pin', {
+            scheduleMode: 'manual',
+            startedAt: PIN_START,
+            estimateMinutes: 720,
+            columnOrder: pinFirst ? 0 : 1,
+          })
+        : task('pin', {
+            status: 'done',
+            progress: 100,
+            startedAt: PIN_START,
+            completedAt: PIN_END,
+            columnOrder: pinFirst ? 0 : 1,
+          })
+    const auto = task('auto', { estimateMinutes: 480, columnOrder: pinFirst ? 1 : 0 })
+    return run({ tasks: [pin, auto], dependencies: [] })
+  }
+
+  function spans(result: SolveResult): Record<string, unknown> {
+    const out: Record<string, unknown> = {}
+    for (const placement of [...result.placements].sort((a, b) =>
+      a.taskId < b.taskId ? -1 : a.taskId > b.taskId ? 1 : 0,
+    )) {
+      out[placement.taskId] = {
+        start: iso(placement.computedStart),
+        end: iso(placement.computedEnd),
+        lane: placement.laneIndex,
+      }
+    }
+    return out
+  }
+
+  const CASES: [string, 'manual' | 'done', boolean][] = [
+    ['manual-first', 'manual', true],
+    ['manual-second', 'manual', false],
+    ['done-first', 'done', true],
+    ['done-second', 'done', false],
+  ]
+
+  it('places a pin identically whichever side of the sweep it falls on', () => {
+    const expected = {
+      auto: { start: '2026-09-07T12:00:00.000Z', end: '2026-09-08T12:00:00.000Z', lane: 0 },
+      pin: { start: '2026-09-04T08:00:00.000Z', end: '2026-09-07T12:00:00.000Z', lane: 0 },
+    }
+    for (const [label, kind, pinFirst] of CASES) {
+      const result = probe(kind, pinFirst)
+      expect(spans(result), label).toEqual(expected)
+      expect(result.warnings, label).toEqual([])
+    }
+  })
+
+  it('never lets a pin and the sweep share one lane', () => {
+    for (const [, kind, pinFirst] of CASES) {
+      const result = probe(kind, pinFirst)
+      const pin = at(result, 'pin')
+      const auto = at(result, 'auto')
+      expect(pin.laneIndex).toBe(auto.laneIndex)
+      expect(auto.computedStart.getTime()).toBeGreaterThanOrEqual(pin.computedEnd.getTime())
+    }
+  })
+
+  it('keeps two genuinely overlapping actuals on their own dates and flags the overbooking', () => {
+    const first = task('d1', {
+      status: 'done',
+      progress: 100,
+      startedAt: new Date('2026-09-01T08:00:00.000Z'),
+      completedAt: new Date('2026-09-03T08:00:00.000Z'),
+      columnOrder: 0,
+    })
+    const second = task('d2', {
+      status: 'done',
+      progress: 100,
+      startedAt: new Date('2026-09-02T08:00:00.000Z'),
+      completedAt: new Date('2026-09-04T08:00:00.000Z'),
+      columnOrder: 1,
+    })
+    const result = run({ tasks: [first, second], dependencies: [] })
+    expect(iso(at(result, 'd1').computedStart)).toBe('2026-09-01T08:00:00.000Z')
+    expect(iso(at(result, 'd1').computedEnd)).toBe('2026-09-03T08:00:00.000Z')
+    expect(iso(at(result, 'd2').computedStart)).toBe('2026-09-02T08:00:00.000Z')
+    expect(iso(at(result, 'd2').computedEnd)).toBe('2026-09-04T08:00:00.000Z')
+    expect(at(result, 'd1').laneIndex).toBe(0)
+    expect(at(result, 'd2').laneIndex).toBe(1)
+    const overbooked = result.warnings.filter((w) => w.kind === 'resource-overbooked')
+    expect(overbooked).toHaveLength(1)
+    expect(overbooked[0].taskIds).toEqual(['d2', 'd1'])
+  })
+
+  it('reports the same overbooking whichever way round the two actuals are ordered', () => {
+    const build = (flipped: boolean) => [
+      task('d1', {
+        status: 'done',
+        progress: 100,
+        startedAt: new Date('2026-09-01T08:00:00.000Z'),
+        completedAt: new Date('2026-09-03T08:00:00.000Z'),
+        columnOrder: flipped ? 1 : 0,
+      }),
+      task('d2', {
+        status: 'done',
+        progress: 100,
+        startedAt: new Date('2026-09-02T08:00:00.000Z'),
+        completedAt: new Date('2026-09-04T08:00:00.000Z'),
+        columnOrder: flipped ? 0 : 1,
+      }),
+    ]
+    const straight = run({ tasks: build(false), dependencies: [] })
+    const flipped = run({ tasks: build(true), dependencies: [] })
+    expect(spans(flipped)).toEqual(spans(straight))
+    expect(flipped.warnings.filter((w) => w.kind === 'resource-overbooked')).toEqual(
+      straight.warnings.filter((w) => w.kind === 'resource-overbooked'),
+    )
+  })
+
+  it('gives a fourth overlapping pin on a concurrency-3 resource its own overflow lane', () => {
+    const startedAt = new Date('2026-09-01T08:00:00.000Z')
+    const completedAt = new Date('2026-09-03T08:00:00.000Z')
+    const tasks = ['a1', 'a2', 'a3', 'a4'].map((id, i) =>
+      task(id, {
+        status: 'done',
+        progress: 100,
+        ownerResourceId: RESOURCE_AGENT.id,
+        startedAt,
+        completedAt,
+        columnOrder: i,
+      }),
+    )
+    const result = run({ tasks, dependencies: [] })
+    const lanes = tasks.map((t) => at(result, t.id).laneIndex)
+    expect([...lanes].sort((a, b) => a - b)).toEqual([0, 1, 2, 3])
+    expect(new Set(lanes).size).toBe(4)
+    for (const t of tasks) {
+      expect(iso(at(result, t.id).computedStart)).toBe(iso(startedAt))
+      expect(iso(at(result, t.id).computedEnd)).toBe(iso(completedAt))
+    }
+    const overbooked = result.warnings.filter((w) => w.kind === 'resource-overbooked')
+    expect(overbooked).toHaveLength(1)
+    expect(overbooked[0].taskIds).toEqual(['a4', 'a1', 'a2', 'a3'])
+  })
+
+  it('leaves an unestimated pin out of capacity entirely', () => {
+    const result = run({
+      tasks: [
+        task('p', { scheduleMode: 'manual', startedAt: NOW, estimateMinutes: null }),
+        task('q', { estimateMinutes: 480 }),
+      ],
+      dependencies: [],
+    })
+    expect(iso(at(result, 'q').computedStart)).toBe(iso(NOW))
+    expect(result.warnings.filter((w) => w.kind === 'resource-overbooked')).toEqual([])
+  })
+
+  test.prop([fc.array(fixedSpecArb, { minLength: 1, maxLength: 8 })])(
+    'reordering columnOrder never moves a done or manual placement',
+    (specs) => {
+      const straight = run({ tasks: buildMixed(specs, false), dependencies: [] })
+      const reordered = run({ tasks: buildMixed(specs, true), dependencies: [] })
+      const immovableIds = specs
+        .map((spec, i) => (spec.mode === 'auto' ? null : `t${i}`))
+        .filter((id): id is string => id !== null)
+      for (const id of immovableIds) {
+        const before = at(straight, id)
+        const after = at(reordered, id)
+        expect(iso(after.computedStart)).toBe(iso(before.computedStart))
+        expect(iso(after.computedEnd)).toBe(iso(before.computedEnd))
+        expect(after.laneIndex).toBe(before.laneIndex)
+      }
+      expect(overbookings(reordered)).toEqual(overbookings(straight))
+    },
+  )
 })
