@@ -26,6 +26,7 @@ const MINUTE_MS = 60_000
 type BuildIndex = (calendar: WorkCalendar) => CalendarIndex
 
 interface Reservation {
+  taskId: string
   start: number
   end: number
   lane: number
@@ -47,6 +48,24 @@ interface PlacedTask {
   ownerResourceId: string | null
 }
 
+/** Everything about a task that depends only on the task itself, never on its neighbours. */
+interface TaskShape {
+  resource: ScheduleResource | null
+  index: CalendarIndex
+  unestimated: boolean
+  durationMin: number
+  countsForCapacity: boolean
+  lanes: number
+}
+
+/** A done or manual task: placed before the sweep so it defends its own slot (CHR-50). */
+interface FixedSpan {
+  start: Date
+  end: Date
+  laneIndex: number
+  conflictTaskIds: string[]
+}
+
 function compareTasks(a: ScheduleTask, b: ScheduleTask): number {
   if (a.columnOrder !== b.columnOrder) return a.columnOrder - b.columnOrder
   if (a.orderIndex !== b.orderIndex) return a.orderIndex - b.orderIndex
@@ -65,6 +84,10 @@ function isUsableDate(value: Date | null | undefined): value is Date {
 
 function later(a: Date, b: Date): Date {
   return b.getTime() > a.getTime() ? b : a
+}
+
+function isImmovable(task: ScheduleTask): boolean {
+  return task.status === 'done' || task.scheduleMode === 'manual'
 }
 
 /** Fallback axis when a calendar is missing or lane C's builder throws: continuous time. */
@@ -94,12 +117,27 @@ function shift(index: CalendarIndex, instant: Date, minutes: number): Date {
   return isUsableDate(moved) ? moved : instant
 }
 
-function firstFreeLane(overlapping: Reservation[], concurrency: number): number {
+/** Lowest lane inside the resource's own count that nothing overlapping holds, else null. */
+function firstFreeLane(overlapping: Reservation[], concurrency: number): number | null {
   const taken = new Set(overlapping.map((r) => r.lane))
   for (let lane = 0; lane < concurrency; lane++) {
     if (!taken.has(lane)) return lane
   }
-  return 0
+  return null
+}
+
+/**
+ * A lane the interval can actually hold. Past the resource's count it keeps walking
+ * outwards rather than stacking invisibly on lane 0 — an overflow lane is the visible
+ * form of an overbooking the solver is not allowed to resolve by moving anything.
+ */
+function assignLane(overlapping: Reservation[], concurrency: number): number {
+  const free = firstFreeLane(overlapping, concurrency)
+  if (free !== null) return free
+  const taken = new Set(overlapping.map((r) => r.lane))
+  let lane = Math.max(1, Math.floor(concurrency))
+  while (taken.has(lane)) lane++
+  return lane
 }
 
 function overlaps(reservations: Reservation[], startMs: number, endMs: number): Reservation[] {
@@ -125,16 +163,46 @@ function findSlot(
     const endMs = isUsableDate(end) ? end.getTime() : startMs
     const busy = overlaps(reservations, startMs, endMs)
     if (busy.length < concurrency) {
-      return { start: candidate, lane: firstFreeLane(busy, concurrency) }
+      return { start: candidate, lane: assignLane(busy, concurrency) }
     }
     const ends = busy.map((r) => r.end).sort((a, b) => a - b)
     const freeingEnd = ends[Math.max(0, busy.length - concurrency)]
-    if (!Number.isFinite(freeingEnd)) return { start: candidate, lane: 0 }
+    if (!Number.isFinite(freeingEnd)) {
+      return { start: candidate, lane: assignLane(busy, concurrency) }
+    }
     const advanced = new Date(Math.max(freeingEnd, startMs + 1))
     const snapped = index.snapToNextWorkingInstant(advanced)
     candidate = isUsableDate(snapped) && snapped.getTime() > startMs ? snapped : advanced
   }
-  return { start: candidate, lane: 0 }
+  const settled = index.addDuration(candidate, durationMin)
+  const settledMs = isUsableDate(settled) ? settled.getTime() : candidate.getTime()
+  return {
+    start: candidate,
+    lane: assignLane(overlaps(reservations, candidate.getTime(), settledMs), concurrency),
+  }
+}
+
+/** The span a done or manual task occupies. Data-derived only, never a neighbour's end. */
+function immovableSpan(task: ScheduleTask, shape: TaskShape, now: Date): { start: Date; end: Date } {
+  if (task.status === 'done') {
+    // Actuals are facts and never roll (CHR-50).
+    const actualStart = isUsableDate(task.startedAt)
+      ? task.startedAt
+      : isUsableDate(task.completedAt)
+        ? task.completedAt
+        : now
+    const actualEnd = isUsableDate(task.completedAt) ? task.completedAt : actualStart
+    return { start: actualStart, end: later(actualStart, actualEnd) }
+  }
+  const pinned = isUsableDate(task.startedAt)
+    ? task.startedAt
+    : isUsableDate(task.constraintDate)
+      ? task.constraintDate
+      : now
+  const pinnedEnd = isUsableDate(task.completedAt)
+    ? task.completedAt
+    : shape.index.addDuration(pinned, shape.durationMin)
+  return { start: pinned, end: later(pinned, isUsableDate(pinnedEnd) ? pinnedEnd : pinned) }
 }
 
 export function solve(input: SolveInput, buildIndex: BuildIndex): SolveResult {
@@ -181,6 +249,33 @@ export function solve(input: SolveInput, buildIndex: BuildIndex): SolveResult {
     if (!resourceById.has(resource.id)) resourceById.set(resource.id, resource)
   }
 
+  const shapeCache = new Map<string, TaskShape>()
+  const shapeOf = (task: ScheduleTask): TaskShape => {
+    const cached = shapeCache.get(task.id)
+    if (cached) return cached
+    const ownerId = task.ownerResourceId
+    const resource = ownerId ? resourceById.get(ownerId) ?? null : null
+    const focusFactor = resource && resource.focusFactor > 0 ? resource.focusFactor : 1
+    const unestimated = task.estimateMinutes === null || !Number.isFinite(task.estimateMinutes)
+    const baseMinutes = unestimated
+      ? UNESTIMATED_DEFAULT_MINUTES
+      : Math.max(0, task.estimateMinutes as number)
+    const remainingFraction = 1 - clamp(task.progress ?? 0, 0, 100) / 100
+    const built: TaskShape = {
+      resource,
+      index: indexFor(resource ? resource.calendarId : null),
+      unestimated,
+      durationMin: task.isMilestone
+        ? 0
+        : Math.max(0, Math.round((baseMinutes * remainingFraction) / focusFactor)),
+      // Unestimated work still renders but never consumes a lane (CHR-11).
+      countsForCapacity: !!resource && !(unestimated && task.status !== 'done'),
+      lanes: resource && resource.concurrency >= 1 ? Math.floor(resource.concurrency) : 1,
+    }
+    shapeCache.set(task.id, built)
+    return built
+  }
+
   const edges = collectEdges(input.dependencies, taskById, rank)
   const successors = new Map<string, Edge[]>()
   const predecessors = new Map<string, Edge[]>()
@@ -200,11 +295,57 @@ export function solve(input: SolveInput, buildIndex: BuildIndex): SolveResult {
   const topo = topologicalOrder(ordered, liveOut, liveIn, rank)
 
   const reservations = new Map<string, Reservation[]>()
+  const slotsFor = (resourceId: string): Reservation[] => {
+    const existing = reservations.get(resourceId)
+    if (existing) return existing
+    const created: Reservation[] = []
+    reservations.set(resourceId, created)
+    return created
+  }
   const placed = new Map<string, PlacedTask>()
 
+  /*
+   * Pre-pass. Pins and actuals book their lanes before any auto work is placed, so
+   * the sweep flows around them instead of over them. The order here is the spans'
+   * own (start, end, id) and never board position, which is what makes a done or
+   * manual placement identical under every columnOrder permutation.
+   */
+  const fixed = new Map<string, FixedSpan>()
+  const immovables = ordered
+    .filter(isImmovable)
+    .map((task) => ({ task, span: immovableSpan(task, shapeOf(task), now) }))
+    .sort((a, b) => {
+      const byStart = a.span.start.getTime() - b.span.start.getTime()
+      if (byStart !== 0) return byStart
+      const byEnd = a.span.end.getTime() - b.span.end.getTime()
+      if (byEnd !== 0) return byEnd
+      return a.task.id < b.task.id ? -1 : a.task.id > b.task.id ? 1 : 0
+    })
+  for (const { task, span } of immovables) {
+    const shape = shapeOf(task)
+    const startMs = span.start.getTime()
+    const endMs = span.end.getTime()
+    let laneIndex = 0
+    let conflictTaskIds: string[] = []
+    if (shape.countsForCapacity && shape.resource && endMs > startMs) {
+      const slots = slotsFor(shape.resource.id)
+      const busy = overlaps(slots, startMs, endMs)
+      const free = firstFreeLane(busy, shape.lanes)
+      if (free === null) {
+        laneIndex = assignLane(busy, shape.lanes)
+        conflictTaskIds = busy.map((r) => r.taskId)
+      } else {
+        laneIndex = free
+      }
+      slots.push({ taskId: task.id, start: startMs, end: endMs, lane: laneIndex })
+    }
+    fixed.set(task.id, { start: span.start, end: span.end, laneIndex, conflictTaskIds })
+  }
+
   for (const task of topo) {
+    const shape = shapeOf(task)
     const ownerId = task.ownerResourceId
-    const resource = ownerId ? resourceById.get(ownerId) ?? null : null
+    const resource = shape.resource
     if (!ownerId) {
       warnings.push({
         kind: 'no-owner',
@@ -219,10 +360,8 @@ export function solve(input: SolveInput, buildIndex: BuildIndex): SolveResult {
       })
     }
 
-    const index = indexFor(resource ? resource.calendarId : null)
-    const focusFactor = resource && resource.focusFactor > 0 ? resource.focusFactor : 1
-    const unestimated = task.estimateMinutes === null || !Number.isFinite(task.estimateMinutes)
-    if (unestimated && task.status !== 'done') {
+    const index = shape.index
+    if (shape.unestimated && task.status !== 'done') {
       warnings.push({
         kind: 'unestimated',
         taskIds: [task.id],
@@ -230,54 +369,24 @@ export function solve(input: SolveInput, buildIndex: BuildIndex): SolveResult {
       })
     }
 
-    const baseMinutes = unestimated
-      ? UNESTIMATED_DEFAULT_MINUTES
-      : Math.max(0, task.estimateMinutes as number)
-    const remainingFraction = 1 - clamp(task.progress ?? 0, 0, 100) / 100
-    const durationMin = task.isMilestone
-      ? 0
-      : Math.max(0, Math.round((baseMinutes * remainingFraction) / focusFactor))
-
-    // Unestimated work still renders but never consumes a lane (CHR-11).
-    const countsForCapacity = !!resource && !(unestimated && task.status !== 'done')
-    const lanes = resource && resource.concurrency >= 1 ? Math.floor(resource.concurrency) : 1
-    let slots: Reservation[] = []
-    if (countsForCapacity && resource) {
-      const existing = reservations.get(resource.id)
-      if (existing) {
-        slots = existing
-      } else {
-        reservations.set(resource.id, slots)
-      }
-    }
+    const durationMin = shape.durationMin
+    const pin = fixed.get(task.id)
 
     let start: Date
     let end: Date
     let laneIndex = 0
 
-    if (task.status === 'done') {
-      // Actuals are facts and never roll (CHR-50).
-      const actualStart = isUsableDate(task.startedAt)
-        ? task.startedAt
-        : isUsableDate(task.completedAt)
-          ? task.completedAt
-          : now
-      const actualEnd = isUsableDate(task.completedAt) ? task.completedAt : actualStart
-      start = actualStart
-      end = later(actualStart, actualEnd)
-      laneIndex = firstFreeLane(overlaps(slots, start.getTime(), end.getTime()), lanes)
-    } else if (task.scheduleMode === 'manual') {
-      const pinned = isUsableDate(task.startedAt)
-        ? task.startedAt
-        : isUsableDate(task.constraintDate)
-          ? task.constraintDate
-          : now
-      const pinnedEnd = isUsableDate(task.completedAt)
-        ? task.completedAt
-        : index.addDuration(pinned, durationMin)
-      start = pinned
-      end = later(pinned, isUsableDate(pinnedEnd) ? pinnedEnd : pinned)
-      laneIndex = firstFreeLane(overlaps(slots, start.getTime(), end.getTime()), lanes)
+    if (pin) {
+      start = pin.start
+      end = pin.end
+      laneIndex = pin.laneIndex
+      if (pin.conflictTaskIds.length > 0 && resource) {
+        warnings.push({
+          kind: 'resource-overbooked',
+          taskIds: [task.id, ...pin.conflictTaskIds],
+          message: `Task ${task.id} is fixed onto ${resource.id} with no free lane and overlaps ${pin.conflictTaskIds.join(', ')}; kept on its own dates and shown on overflow lane ${laneIndex}.`,
+        })
+      }
     } else {
       let earliest =
         task.status === 'in-progress' && isUsableDate(task.startedAt) ? task.startedAt : now
@@ -295,13 +404,22 @@ export function solve(input: SolveInput, buildIndex: BuildIndex): SolveResult {
       const snapped = index.snapToNextWorkingInstant(earliest)
       start = isUsableDate(snapped) ? later(earliest, snapped) : earliest
 
-      if (countsForCapacity && resource && durationMin > 0) {
-        const slot = findSlot(index, slots, lanes, start, durationMin)
+      if (shape.countsForCapacity && resource && durationMin > 0) {
+        const slot = findSlot(index, slotsFor(resource.id), shape.lanes, start, durationMin)
         start = slot.start
         laneIndex = slot.lane
       }
       const computedEnd = index.addDuration(start, durationMin)
       end = later(start, isUsableDate(computedEnd) ? computedEnd : start)
+
+      if (shape.countsForCapacity && resource && end.getTime() > start.getTime()) {
+        slotsFor(resource.id).push({
+          taskId: task.id,
+          start: start.getTime(),
+          end: end.getTime(),
+          lane: laneIndex,
+        })
+      }
     }
 
     if (
@@ -325,10 +443,6 @@ export function solve(input: SolveInput, buildIndex: BuildIndex): SolveResult {
         taskIds: [task.id],
         message: `Task ${task.id} starts before its start-no-earlier-than date.`,
       })
-    }
-
-    if (countsForCapacity && resource && end.getTime() > start.getTime()) {
-      slots.push({ start: start.getTime(), end: end.getTime(), lane: laneIndex })
     }
 
     placed.set(task.id, {
