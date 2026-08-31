@@ -6,9 +6,23 @@
  */
 import { describe, expect, it } from 'vitest'
 import fc from 'fast-check'
-import { buildCalendarIndex, DEFAULT_WORK_DAY_START_HOUR } from '../calendar'
-import { DENVER_MON_FRI, LONDON_MON_FRI, LONDON_WITH_HOLIDAY } from '../fixtures'
-import { WORKWEEK_MON_FRI, type CalendarIndex, type SolveWindow, type WorkCalendar } from '../types'
+import { buildCalendarIndex } from '../calendar'
+import {
+  DENVER_MON_FRI,
+  DENVER_NIGHT_SHIFT,
+  LONDON_AFTERNOON_HALF_DAY,
+  LONDON_EARLY_START,
+  LONDON_MON_FRI,
+  LONDON_NIGHT_SHIFT,
+  LONDON_WITH_HOLIDAY,
+} from '../fixtures'
+import {
+  DEFAULT_DAY_START_MINUTE,
+  WORKWEEK_MON_FRI,
+  type CalendarIndex,
+  type SolveWindow,
+  type WorkCalendar,
+} from '../types'
 
 const WINDOW: SolveWindow = {
   start: new Date('2026-08-01T00:00:00.000Z'),
@@ -68,7 +82,7 @@ describe('buildCalendarIndex — contract surface', () => {
   })
 
   it('opens the working day at the documented local hour, not at local midnight', () => {
-    const expected = `${String(DEFAULT_WORK_DAY_START_HOUR).padStart(2, '0')}:00`
+    const expected = `${String(Math.floor(london.dayStartMinute / 60)).padStart(2, '0')}:00`
     for (const index of [london, denver]) {
       const dayOpen = index.snapToNextWorkingInstant(at('2026-09-06T12:00:00.000Z'))
       expect(localOf(index, dayOpen)).toEqual({ day: '2026-09-07', time: expected })
@@ -464,7 +478,14 @@ describe('totality — no method throws, every result is well formed', () => {
 
   it('survives a degenerate calendar without throwing', () => {
     const degenerate = buildCalendarIndex(
-      { id: '', timezone: 'Not/AZone', hoursPerDay: 0, workweek: 0, exceptions: [] },
+      {
+        id: '',
+        timezone: 'Not/AZone',
+        hoursPerDay: 0,
+        dayStartMinute: DEFAULT_DAY_START_MINUTE,
+        workweek: 0,
+        exceptions: [],
+      },
       { start: new Date('2026-09-07T00:00:00.000Z'), end: new Date('2026-09-01T00:00:00.000Z') },
     )
     expect(degenerate.timezone).toBe('Not/AZone')
@@ -489,5 +510,405 @@ describe('totality — no method throws, every result is well formed', () => {
     expect(
       santiago.workingMinutesBetween(monday, santiago.addDuration(monday, MINUTES_PER_WORK_DAY)),
     ).toBe(MINUTES_PER_WORK_DAY)
+  })
+})
+
+describe('the working day opens where the data says, not where a constant says', () => {
+  const early = buildCalendarIndex(LONDON_EARLY_START, WINDOW)
+
+  it('surfaces the day-open on the index so renderers never import a constant', () => {
+    expect(london.dayStartMinute).toBe(DEFAULT_DAY_START_MINUTE)
+    expect(denver.dayStartMinute).toBe(DEFAULT_DAY_START_MINUTE)
+    expect(early.dayStartMinute).toBe(7 * 60)
+  })
+
+  it('falls back to 09:00 when the field is missing or nonsense, changing nothing', () => {
+    const cases = [undefined, Number.NaN, Number.POSITIVE_INFINITY, '540']
+    for (const value of cases) {
+      const index = buildCalendarIndex(
+        { ...LONDON_MON_FRI, id: `cal-bad-${String(value)}`, dayStartMinute: value as number },
+        WINDOW,
+      )
+      expect(index.dayStartMinute).toBe(DEFAULT_DAY_START_MINUTE)
+      expect(index.snapToNextWorkingInstant(at('2026-09-07T00:00:00.000Z')).toISOString()).toBe(
+        '2026-09-07T08:00:00.000Z',
+      )
+    }
+  })
+
+  it('clamps an out-of-range day-open into its own local day', () => {
+    const negative = buildCalendarIndex({ ...LONDON_MON_FRI, id: 'cal-neg', dayStartMinute: -60 }, WINDOW)
+    const overflow = buildCalendarIndex({ ...LONDON_MON_FRI, id: 'cal-over', dayStartMinute: 5_000 }, WINDOW)
+    expect(negative.dayStartMinute).toBe(0)
+    expect(overflow.dayStartMinute).toBe(1_439)
+    const sunday = at('2026-09-06T12:00:00.000Z')
+    expect(localOf(negative, negative.snapToNextWorkingInstant(sunday))).toEqual({
+      day: '2026-09-07',
+      time: '00:00',
+    })
+    expect(localOf(overflow, overflow.snapToNextWorkingInstant(sunday))).toEqual({
+      day: '2026-09-07',
+      time: '23:59',
+    })
+  })
+
+  it('opens a 07:00 calendar at 07:00 local and closes it eight hours later', () => {
+    const open = early.snapToNextWorkingInstant(at('2026-09-07T00:00:00.000Z'))
+    expect(localOf(early, open)).toEqual({ day: '2026-09-07', time: '07:00' })
+    expect(open.toISOString()).toBe('2026-09-07T06:00:00.000Z')
+    expect(early.isWorkingInstant(at('2026-09-07T13:59:00.000Z'))).toBe(true)
+    expect(early.isWorkingInstant(at('2026-09-07T14:00:00.000Z'))).toBe(false)
+    expect(early.isWorkingInstant(at('2026-09-07T05:59:00.000Z'))).toBe(false)
+    expect(london.isWorkingInstant(at('2026-09-07T06:30:00.000Z'))).toBe(false)
+  })
+
+  it('agrees with itself downstream — durations, snapping and the display end', () => {
+    const open = early.snapToNextWorkingInstant(at('2026-09-07T00:00:00.000Z'))
+    expect(localOf(early, early.addDuration(open, MINUTES_PER_WORK_DAY))).toEqual({
+      day: '2026-09-08',
+      time: '07:00',
+    })
+    expect(localOf(early, early.addDuration(open, 3 * MINUTES_PER_WORK_DAY))).toEqual({
+      day: '2026-09-10',
+      time: '07:00',
+    })
+    expect(
+      early.workingMinutesBetween(at('2026-09-07T00:00:00.000Z'), at('2026-09-08T00:00:00.000Z')),
+    ).toBe(MINUTES_PER_WORK_DAY)
+    expect(localOf(early, early.toDisplayEnd(early.addDuration(open, MINUTES_PER_WORK_DAY)))).toEqual({
+      day: '2026-09-07',
+      time: '15:00',
+    })
+  })
+
+  it('early start — the round-trip still holds in both directions', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: -20_000, max: 60_000 }), (workMinutes) => {
+        expect(early.toWorkMinutes(early.fromWorkMinutes(workMinutes))).toBe(workMinutes)
+      }),
+      { numRuns: 300 },
+    )
+    fc.assert(
+      fc.property(
+        fc
+          .integer({ min: Date.UTC(2026, 7, 1), max: Date.UTC(2026, 11, 1) })
+          .map((ms) => ms - (ms % 60_000)),
+        (ms) => {
+          const instant = new Date(ms)
+          fc.pre(early.isWorkingInstant(instant))
+          expect(early.fromWorkMinutes(early.toWorkMinutes(instant)).getTime()).toBe(ms)
+        },
+      ),
+      { numRuns: 300 },
+    )
+  })
+
+  it('keeps DST honest at 07:00 — a working week is still five working days', () => {
+    const monday = early.snapToNextWorkingInstant(at('2026-10-26T00:00:00.000Z'))
+    expect(localOf(early, monday)).toEqual({ day: '2026-10-26', time: '07:00' })
+    const nextMonday = early.snapToNextWorkingInstant(at('2026-11-02T00:00:00.000Z'))
+    expect(early.workingMinutesBetween(monday, nextMonday)).toBe(5 * MINUTES_PER_WORK_DAY)
+
+    const beforeShift = early.snapToNextWorkingInstant(at('2026-10-23T00:00:00.000Z'))
+    expect(beforeShift.toISOString()).toBe('2026-10-23T06:00:00.000Z')
+    expect(monday.toISOString()).toBe('2026-10-26T07:00:00.000Z')
+  })
+})
+
+describe('a late start makes the working day cross local midnight', () => {
+  const londonNight = buildCalendarIndex(LONDON_NIGHT_SHIFT, WINDOW)
+  const denverNight = buildCalendarIndex(DENVER_NIGHT_SHIFT, WINDOW)
+
+  it('runs 22:00 to 06:00 and owns the small hours of the following civil day', () => {
+    const open = londonNight.snapToNextWorkingInstant(at('2026-09-07T12:00:00.000Z'))
+    expect(open.toISOString()).toBe('2026-09-07T21:00:00.000Z')
+    expect(localOf(londonNight, open)).toEqual({ day: '2026-09-07', time: '22:00' })
+    expect(londonNight.isWorkingInstant(at('2026-09-08T02:00:00.000Z'))).toBe(true)
+    expect(londonNight.isWorkingInstant(at('2026-09-08T04:59:00.000Z'))).toBe(true)
+    expect(londonNight.isWorkingInstant(at('2026-09-08T05:00:00.000Z'))).toBe(false)
+    expect(londonNight.isWorkingInstant(at('2026-09-08T12:00:00.000Z'))).toBe(false)
+    expect(localOf(londonNight, londonNight.toDisplayEnd(at('2026-09-08T12:00:00.000Z')))).toEqual({
+      day: '2026-09-08',
+      time: '06:00',
+    })
+  })
+
+  it('Europe/London — the shift spanning the autumn fall-back still works eight hours', () => {
+    const opens = [
+      '2026-10-23T21:00:00.000Z',
+      '2026-10-24T21:00:00.000Z',
+      '2026-10-25T22:00:00.000Z',
+      '2026-10-26T22:00:00.000Z',
+    ]
+    const closeTimes = ['06:00', '05:00', '06:00', '06:00']
+    opens.forEach((iso, i) => {
+      const open = at(iso)
+      expect(localOf(londonNight, open).time).toBe('22:00')
+      expect(londonNight.isWorkingInstant(open)).toBe(true)
+      const next = londonNight.addDuration(open, MINUTES_PER_WORK_DAY)
+      if (i + 1 < opens.length) expect(next.toISOString()).toBe(opens[i + 1])
+      expect(londonNight.workingMinutesBetween(open, next)).toBe(MINUTES_PER_WORK_DAY)
+      const close = londonNight.toDisplayEnd(next)
+      expect(close.getTime() - open.getTime()).toBe(8 * 60 * 60_000)
+      expect(localOf(londonNight, close).time).toBe(closeTimes[i])
+    })
+  })
+
+  it('Europe/London — and the shift spanning the spring forward, in the other direction', () => {
+    const open = at('2026-03-28T22:00:00.000Z')
+    expect(localOf(londonNight, open)).toEqual({ day: '2026-03-28', time: '22:00' })
+    const next = londonNight.addDuration(open, MINUTES_PER_WORK_DAY)
+    expect(next.toISOString()).toBe('2026-03-29T21:00:00.000Z')
+    expect(localOf(londonNight, next)).toEqual({ day: '2026-03-29', time: '22:00' })
+    const close = londonNight.toDisplayEnd(next)
+    expect(close.toISOString()).toBe('2026-03-29T06:00:00.000Z')
+    expect(localOf(londonNight, close)).toEqual({ day: '2026-03-29', time: '07:00' })
+    expect(londonNight.workingMinutesBetween(open, next)).toBe(MINUTES_PER_WORK_DAY)
+  })
+
+  it('America/Denver — the same shift, shifting on its own date a week later', () => {
+    const opens = [
+      '2026-10-31T04:00:00.000Z',
+      '2026-11-01T04:00:00.000Z',
+      '2026-11-02T05:00:00.000Z',
+      '2026-11-03T05:00:00.000Z',
+    ]
+    const closeTimes = ['06:00', '05:00', '06:00', '06:00']
+    opens.forEach((iso, i) => {
+      const open = at(iso)
+      expect(localOf(denverNight, open).time).toBe('22:00')
+      expect(denverNight.isWorkingInstant(open)).toBe(true)
+      const next = denverNight.addDuration(open, MINUTES_PER_WORK_DAY)
+      if (i + 1 < opens.length) expect(next.toISOString()).toBe(opens[i + 1])
+      expect(denverNight.workingMinutesBetween(open, next)).toBe(MINUTES_PER_WORK_DAY)
+      const close = denverNight.toDisplayEnd(next)
+      expect(close.getTime() - open.getTime()).toBe(8 * 60 * 60_000)
+      expect(localOf(denverNight, close).time).toBe(closeTimes[i])
+    })
+    expect(localOf(londonNight, at('2026-11-01T04:00:00.000Z')).time).not.toBe('22:00')
+  })
+
+  it('late start — round-trips and monotonicity survive the midnight crossing', () => {
+    for (const index of [londonNight, denverNight]) {
+      fc.assert(
+        fc.property(fc.integer({ min: -20_000, max: 60_000 }), (workMinutes) => {
+          expect(index.toWorkMinutes(index.fromWorkMinutes(workMinutes))).toBe(workMinutes)
+        }),
+        { numRuns: 250 },
+      )
+      fc.assert(
+        fc.property(
+          fc.integer({ min: Date.UTC(2026, 9, 1), max: Date.UTC(2026, 10, 30) }),
+          fc.integer({ min: 0, max: 20 * 24 * 60 * 60_000 }),
+          (ms, delta) => {
+            expect(index.toWorkMinutes(new Date(ms + delta))).toBeGreaterThanOrEqual(
+              index.toWorkMinutes(new Date(ms)),
+            )
+          },
+        ),
+        { numRuns: 250 },
+      )
+    }
+  })
+})
+
+describe('an exception can move the day-open, which is what makes an afternoon half-day', () => {
+  const afternoon = buildCalendarIndex(LONDON_AFTERNOON_HALF_DAY, WINDOW)
+
+  it('works 13:00-17:00 on the excepted Friday and not a minute of its morning', () => {
+    expect(afternoon.isWorkingInstant(at('2026-09-04T08:00:00.000Z'))).toBe(false)
+    expect(afternoon.isWorkingInstant(at('2026-09-04T11:59:00.000Z'))).toBe(false)
+    expect(afternoon.isWorkingInstant(at('2026-09-04T12:00:00.000Z'))).toBe(true)
+    expect(afternoon.isWorkingInstant(at('2026-09-04T15:59:00.000Z'))).toBe(true)
+    expect(afternoon.isWorkingInstant(at('2026-09-04T16:00:00.000Z'))).toBe(false)
+    expect(london.isWorkingInstant(at('2026-09-04T08:00:00.000Z'))).toBe(true)
+    expect(london.isWorkingInstant(at('2026-09-04T15:59:00.000Z'))).toBe(true)
+  })
+
+  it('contributes exactly four hours, in the afternoon rather than the morning', () => {
+    expect(
+      afternoon.workingMinutesBetween(at('2026-09-03T23:30:00.000Z'), at('2026-09-04T23:30:00.000Z')),
+    ).toBe(4 * 60)
+    const open = afternoon.snapToNextWorkingInstant(at('2026-09-04T06:00:00.000Z'))
+    expect(localOf(afternoon, open)).toEqual({ day: '2026-09-04', time: '13:00' })
+    expect(open.toISOString()).toBe('2026-09-04T12:00:00.000Z')
+    expect(localOf(afternoon, afternoon.addDuration(open, 120))).toEqual({
+      day: '2026-09-04',
+      time: '15:00',
+    })
+  })
+
+  it('rolls the overflow to Monday and draws Friday closing at 17:00', () => {
+    const thursday = at('2026-09-03T08:00:00.000Z')
+    const afterThursday = afternoon.addDuration(thursday, MINUTES_PER_WORK_DAY)
+    expect(afterThursday.toISOString()).toBe('2026-09-04T12:00:00.000Z')
+    expect(localOf(afternoon, afternoon.toDisplayEnd(afterThursday))).toEqual({
+      day: '2026-09-03',
+      time: '17:00',
+    })
+
+    const afterFriday = afternoon.addDuration(thursday, MINUTES_PER_WORK_DAY + 4 * 60)
+    expect(localOf(afternoon, afterFriday)).toEqual({ day: '2026-09-07', time: '09:00' })
+    expect(localOf(afternoon, afternoon.toDisplayEnd(afterFriday))).toEqual({
+      day: '2026-09-04',
+      time: '17:00',
+    })
+  })
+
+  it('leaves the morning half-day case exactly as it was', () => {
+    expect(holiday.isWorkingInstant(at('2026-08-28T08:00:00.000Z'))).toBe(true)
+    expect(holiday.isWorkingInstant(at('2026-08-28T12:00:00.000Z'))).toBe(false)
+  })
+
+  it('ignores a start override on a non-working exception', () => {
+    const index = buildCalendarIndex(
+      {
+        ...LONDON_MON_FRI,
+        id: 'cal-off-with-start',
+        exceptions: [{ day: '2026-09-04', isWorking: false, startMinute: 13 * 60 }],
+      },
+      WINDOW,
+    )
+    expect(
+      index.workingMinutesBetween(at('2026-09-03T23:30:00.000Z'), at('2026-09-04T23:30:00.000Z')),
+    ).toBe(0)
+    expect(index.isWorkingInstant(at('2026-09-04T14:00:00.000Z'))).toBe(false)
+  })
+
+  it('clamps a nonsense start override back onto the calendar default', () => {
+    const index = buildCalendarIndex(
+      {
+        ...LONDON_MON_FRI,
+        id: 'cal-bad-start',
+        exceptions: [{ day: '2026-09-04', isWorking: true, hours: 4, startMinute: Number.NaN }],
+      },
+      WINDOW,
+    )
+    expect(localOf(index, index.snapToNextWorkingInstant(at('2026-09-04T06:00:00.000Z')))).toEqual({
+      day: '2026-09-04',
+      time: '09:00',
+    })
+  })
+})
+
+describe('toDisplayEnd — the right edge a bar is actually drawn to', () => {
+  const indexes = [london, denver, holiday, saturday]
+
+  it('pulls a full day back from tomorrow morning to tonight, the case that motivated it', () => {
+    const start = at('2026-09-07T08:00:00.000Z')
+    const chained = london.addDuration(start, MINUTES_PER_WORK_DAY)
+    expect(localOf(london, chained)).toEqual({ day: '2026-09-08', time: '09:00' })
+    const drawn = london.toDisplayEnd(chained)
+    expect(localOf(london, drawn)).toEqual({ day: '2026-09-07', time: '17:00' })
+    expect(drawn.toISOString()).toBe('2026-09-07T16:00:00.000Z')
+  })
+
+  it('is the identity mid-day, and idempotent on a day close', () => {
+    const midday = london.addDuration(at('2026-09-07T08:00:00.000Z'), 240)
+    expect(london.toDisplayEnd(midday).getTime()).toBe(midday.getTime())
+
+    const close = london.toDisplayEnd(at('2026-09-08T08:00:00.000Z'))
+    expect(london.toDisplayEnd(close).getTime()).toBe(close.getTime())
+    expect(london.toDisplayEnd(london.toDisplayEnd(close)).getTime()).toBe(close.getTime())
+  })
+
+  it('steps back over a weekend, a holiday and a half-day to the last minute actually worked', () => {
+    expect(london.toDisplayEnd(at('2026-09-05T12:00:00.000Z')).toISOString()).toBe(
+      '2026-09-04T16:00:00.000Z',
+    )
+    expect(localOf(holiday, holiday.toDisplayEnd(at('2026-09-01T08:00:00.000Z')))).toEqual({
+      day: '2026-08-28',
+      time: '13:00',
+    })
+    expect(localOf(saturday, saturday.toDisplayEnd(at('2026-09-07T08:00:00.000Z')))).toEqual({
+      day: '2026-09-05',
+      time: '17:00',
+    })
+  })
+
+  it('sits at the same point on the working axis as the end it came from', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: Date.UTC(2026, 7, 1), max: Date.UTC(2026, 11, 1) }),
+        fc.integer({ min: 0, max: 20 * MINUTES_PER_WORK_DAY }),
+        (ms, minutes) => {
+          for (const index of indexes) {
+            const end = index.addDuration(new Date(ms), minutes)
+            const drawn = index.toDisplayEnd(end)
+            expect(drawn.getTime()).toBeLessThanOrEqual(end.getTime())
+            expect(index.workingMinutesBetween(drawn, end)).toBe(0)
+          }
+        },
+      ),
+      { numRuns: 250 },
+    )
+  })
+
+  it('never lands before the start of the span it closes, for any non-zero duration', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: Date.UTC(2026, 7, 1), max: Date.UTC(2026, 11, 1) }),
+        fc.integer({ min: 1, max: 20 * MINUTES_PER_WORK_DAY }),
+        (ms, minutes) => {
+          for (const index of indexes) {
+            const start = index.snapToNextWorkingInstant(new Date(ms))
+            const drawn = index.toDisplayEnd(index.addDuration(start, minutes))
+            expect(drawn.getTime()).toBeGreaterThanOrEqual(start.getTime())
+          }
+        },
+      ),
+      { numRuns: 250 },
+    )
+  })
+
+  it('resolves a zero-length span to the previous close, which is why the view clamps', () => {
+    const start = london.snapToNextWorkingInstant(at('2026-09-07T00:00:00.000Z'))
+    const end = london.addDuration(start, 0)
+    expect(end.getTime()).toBe(start.getTime())
+    expect(london.toDisplayEnd(end).toISOString()).toBe('2026-09-04T16:00:00.000Z')
+    const drawnEnd = Math.max(start.getTime(), london.toDisplayEnd(end).getTime())
+    expect(drawnEnd).toBe(start.getTime())
+  })
+
+  it('the documented renderer formula never inverts a bar', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: Date.UTC(2026, 7, 1), max: Date.UTC(2026, 11, 1) }),
+        fc.integer({ min: 0, max: 20 * MINUTES_PER_WORK_DAY }),
+        (ms, minutes) => {
+          for (const index of indexes) {
+            const start = index.snapToNextWorkingInstant(new Date(ms))
+            const end = index.addDuration(start, minutes)
+            const drawn = Math.max(start.getTime(), index.toDisplayEnd(end).getTime())
+            expect(drawn).toBeGreaterThanOrEqual(start.getTime())
+          }
+        },
+      ),
+      { numRuns: 250 },
+    )
+  })
+
+  it('absorbs invalid, degenerate and out-of-window instants like every other method', () => {
+    expect(Number.isFinite(london.toDisplayEnd(new Date('not a date')).getTime())).toBe(true)
+    for (const index of indexes) {
+      expect(() => index.toDisplayEnd(at('2400-01-01T00:00:00.000Z'))).not.toThrow()
+      expect(() => index.toDisplayEnd(at('1900-01-01T00:00:00.000Z'))).not.toThrow()
+      expect(Number.isFinite(index.toDisplayEnd(at('2400-01-01T00:00:00.000Z')).getTime())).toBe(true)
+      expect(Number.isFinite(index.toDisplayEnd(at('1900-01-01T00:00:00.000Z')).getTime())).toBe(true)
+    }
+
+    const degenerate = buildCalendarIndex(
+      {
+        id: '',
+        timezone: 'Not/AZone',
+        hoursPerDay: 0,
+        dayStartMinute: DEFAULT_DAY_START_MINUTE,
+        workweek: 0,
+        exceptions: [],
+      },
+      { start: new Date('2026-09-01T00:00:00.000Z'), end: new Date('2026-09-30T00:00:00.000Z') },
+    )
+    const nothing = at('2026-09-07T08:00:00.000Z')
+    expect(degenerate.toDisplayEnd(nothing).getTime()).toBe(nothing.getTime())
   })
 })

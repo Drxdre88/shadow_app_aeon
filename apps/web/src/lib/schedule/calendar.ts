@@ -3,19 +3,22 @@
  * exactly once into a prefix table of working minutes; every query afterwards is a
  * binary search, never calendar arithmetic in a loop.
  *
- * Two rules this file exists to enforce:
+ * Three rules this file exists to enforce:
  *   1. Every boundary — midnight, weekday, holiday match — is resolved in the
  *      calendar's own IANA zone via `Intl`, never the server's zone (Vercel is UTC)
  *      and never the browser's.
  *   2. Durations preserve working length, not wall-clock length, across a DST shift:
  *      a day is `workingMinutes` of real elapsed time from its local work-day start.
+ *   3. When the working day opens is DATA (`WorkCalendar.dayStartMinute`, overridable
+ *      per day by `CalendarException.startMinute`), never a constant in this module.
+ *
+ * Intervals are half-open, `[start, end)`. `addDuration` returns the instant a
+ * successor may begin — after a full day that is the next morning's open. The right
+ * edge a view should draw is `toDisplayEnd` of that instant.
  *
  * No clock is read here (CHR-3) — `Date` only ever appears with an explicit argument.
  */
-import type { CalendarIndex, SolveWindow, WorkCalendar } from './types'
-
-/** The calendar model carries no start-of-day field; a working day opens here, local. */
-export const DEFAULT_WORK_DAY_START_HOUR = 9
+import { DEFAULT_DAY_START_MINUTE, type CalendarIndex, type SolveWindow, type WorkCalendar } from './types'
 
 const MS_PER_MINUTE = 60_000
 const MS_PER_DAY = 86_400_000
@@ -49,6 +52,12 @@ interface DayEntry {
   workEndUtc: number
   /** Working minutes elapsed before this day. */
   cumulative: number
+}
+
+/** A day whose shape an exception overrides — both how long it is and when it opens. */
+interface DayOverride {
+  workingMinutes: number
+  startMinute: number
 }
 
 const formatterCache = new Map<string, Intl.DateTimeFormat>()
@@ -162,6 +171,12 @@ function clampDayMinutes(minutes: number): number {
   return Math.min(minutes, MINUTES_PER_DAY)
 }
 
+/** A day-open offset must land inside its own local day; anything else is not a time. */
+function clampStartMinute(minutes: unknown, fallback: number): number {
+  if (typeof minutes !== 'number' || !Number.isFinite(minutes)) return fallback
+  return Math.min(Math.max(Math.floor(minutes), 0), MINUTES_PER_DAY - 1)
+}
+
 /**
  * Builds the working-time prefix index for one calendar over one solve window.
  * The window is padded a year either side; an instant beyond the padding grows the
@@ -175,21 +190,23 @@ export function buildCalendarIndex(calendar: WorkCalendar, window: SolveWindow):
     Number.isFinite(calendar?.hoursPerDay) && calendar.hoursPerDay > 0 ? calendar.hoursPerDay : 0
   const defaultMinutes = clampDayMinutes(hoursPerDay * 60)
   const workweek = Number.isInteger(calendar?.workweek) ? calendar.workweek : 0
+  const dayStartMinute = clampStartMinute(calendar?.dayStartMinute, DEFAULT_DAY_START_MINUTE)
 
-  const exceptions = new Map<string, number>()
+  const exceptions = new Map<string, DayOverride>()
   for (const exception of calendar?.exceptions ?? []) {
     if (!exception || typeof exception.day !== 'string') continue
     if (!exception.isWorking) {
-      exceptions.set(exception.day, 0)
+      exceptions.set(exception.day, { workingMinutes: 0, startMinute: dayStartMinute })
       continue
     }
     const hours = exception.hours
-    exceptions.set(
-      exception.day,
-      hours === null || hours === undefined || !Number.isFinite(hours)
-        ? defaultMinutes
-        : clampDayMinutes(hours * 60),
-    )
+    exceptions.set(exception.day, {
+      workingMinutes:
+        hours === null || hours === undefined || !Number.isFinite(hours)
+          ? defaultMinutes
+          : clampDayMinutes(hours * 60),
+      startMinute: clampStartMinute(exception.startMinute, dayStartMinute),
+    })
   }
 
   const rawStart = toEpochMs(window?.start, 0)
@@ -211,8 +228,18 @@ export function buildCalendarIndex(calendar: WorkCalendar, window: SolveWindow):
     const weekday = civilWeekday(date)
     const override = exceptions.get(key)
     const workingMinutes =
-      override !== undefined ? override : ((workweek >> weekday) & 1) === 1 ? defaultMinutes : 0
-    const workStartUtc = zonedTimeToUtc(timezone, date, DEFAULT_WORK_DAY_START_HOUR, 0)
+      override !== undefined
+        ? override.workingMinutes
+        : ((workweek >> weekday) & 1) === 1
+          ? defaultMinutes
+          : 0
+    const startMinute = override !== undefined ? override.startMinute : dayStartMinute
+    const workStartUtc = zonedTimeToUtc(
+      timezone,
+      date,
+      Math.floor(startMinute / 60),
+      startMinute % 60,
+    )
     return {
       day: key,
       weekday,
@@ -349,12 +376,31 @@ export function buildCalendarIndex(calendar: WorkCalendar, window: SolveWindow):
     return entry.workingMinutes > 0 && ms >= entry.workStartUtc && ms < entry.workEndUtc
   }
 
+  /**
+   * The last working instant at or before `ms`. Mid-span this is `ms` itself; on a
+   * day's open it is the previous day's close, which is what turns `addDuration`'s
+   * chaining end back into a right edge a bar can be drawn to.
+   */
+  function displayEndOf(ms: number): number {
+    ensureCoversInstant(ms)
+    let index = dayIndexForInstant(ms)
+    if (index > 0 && ms < days[index - 1].workEndUtc) index -= 1
+    const entry = days[index]
+    if (entry.workingMinutes > 0 && ms > entry.workStartUtc && ms <= entry.workEndUtc) return ms
+    for (let i = index; i >= 0; i -= 1) {
+      const day = days[i]
+      if (day.workingMinutes > 0 && day.workEndUtc <= ms) return day.workEndUtc
+    }
+    return ms
+  }
+
   const fallbackInstant = () => days[0].workStartUtc
 
   return {
     calendarId: typeof calendar?.id === 'string' ? calendar.id : '',
     timezone,
     hoursPerDay,
+    dayStartMinute,
     toWorkMinutes(instant: Date): number {
       const ms = toEpochMs(instant, NaN)
       if (!Number.isFinite(ms)) return 0
@@ -385,6 +431,11 @@ export function buildCalendarIndex(calendar: WorkCalendar, window: SolveWindow):
       const ms = toEpochMs(instant, NaN)
       if (!Number.isFinite(ms)) return false
       return isWorking(ms)
+    },
+    toDisplayEnd(instant: Date): Date {
+      const ms = toEpochMs(instant, NaN)
+      if (!Number.isFinite(ms)) return new Date(fallbackInstant())
+      return new Date(displayEndOf(ms))
     },
   }
 }
