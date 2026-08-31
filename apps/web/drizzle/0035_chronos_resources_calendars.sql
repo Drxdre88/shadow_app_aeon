@@ -43,7 +43,20 @@ CREATE TABLE IF NOT EXISTS work_calendars (
   -- 62 = 0b0111110 = Monday through Friday.
   workweek       smallint NOT NULL DEFAULT 62,
   created_at     timestamp NOT NULL DEFAULT now(),
-  updated_at     timestamp NOT NULL DEFAULT now()
+  updated_at     timestamp NOT NULL DEFAULT now(),
+  -- A calendar with no working time has no working-time axis: every day in the
+  -- index is zero minutes long, so "the day containing working minute N" has no
+  -- answer and the search walked off the end of the index — hours_per_day 0 put
+  -- a September 2026 project in 2065. calendar.ts now degrades such a calendar to
+  -- continuous time rather than producing a date decades away, but the database
+  -- should never have been able to express it. Both checks are written into the
+  -- CREATE TABLE rather than added by ALTER because this migration has not been
+  -- applied anywhere yet, so changing the table definition is still free.
+  CONSTRAINT work_calendars_hours_per_day_range_check CHECK (hours_per_day > 0 AND hours_per_day <= 24),
+  -- At least one working weekday. Unticking every day is the other way to reach
+  -- the same empty calendar; a "vacation" calendar has to be modelled as
+  -- calendar_exceptions, not as a week that never opens.
+  CONSTRAINT work_calendars_workweek_min_check CHECK (workweek > 0)
 );
 
 CREATE INDEX IF NOT EXISTS work_calendars_project_idx
@@ -131,7 +144,11 @@ DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
+    -- conname is unique per relation, not globally, so the relation must be
+    -- part of the test: a same-named constraint on another table would make
+    -- this guard skip creating the one we actually need.
     WHERE conname = 'board_tasks_owner_resource_id_fkey'
+      AND conrelid = 'board_tasks'::regclass
   ) THEN
     ALTER TABLE board_tasks
       ADD CONSTRAINT board_tasks_owner_resource_id_fkey
