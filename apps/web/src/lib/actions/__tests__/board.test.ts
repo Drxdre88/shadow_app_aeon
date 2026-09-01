@@ -140,6 +140,19 @@ const makeTask = (overrides = {}) => ({
   archivedAt: null as Date | null,
   createdAt: new Date(),
   updatedAt: new Date(),
+  // Chronos scheduling fields (migrations 0034/0035). Defaults here mirror the
+  // column defaults, so a task built by this fixture is the same "never
+  // scheduled" shape every existing row starts in.
+  estimateMinutes: null as number | null,
+  scheduleMode: 'auto',
+  constraintType: 'asap',
+  constraintDate: null as Date | null,
+  computedStart: null as Date | null,
+  computedEnd: null as Date | null,
+  totalFloatMin: null as number | null,
+  isMilestone: false,
+  ownerResourceId: null as string | null,
+  startedAt: null as Date | null,
   ...overrides,
 })
 
