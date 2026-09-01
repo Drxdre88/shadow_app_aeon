@@ -133,3 +133,35 @@ export function loadCopilotTranscript(sessionId, storePath = resolveCopilotStore
     db.close()
   }
 }
+
+function hasDurableConversation(records) {
+  if (!Array.isArray(records)) return false
+  const hasUser = records.some((record) => (
+    record?.type === 'user'
+    && typeof record.message?.content === 'string'
+    && record.message.content.trim()
+  ))
+  const hasAssistant = records.some((record) => (
+    record?.type === 'assistant'
+    && typeof record.message?.content === 'string'
+    && record.message.content.trim()
+  ))
+  return Boolean(hasUser && hasAssistant)
+}
+
+export async function loadCopilotTranscriptWhenReady(
+  sessionId,
+  storePath = resolveCopilotStorePath(),
+  { maxRetries = 8, delayMs = 250 } = {},
+) {
+  const boundedRetries = Number.isInteger(maxRetries) ? Math.min(Math.max(maxRetries, 0), 20) : 8
+  const boundedDelay = Number.isFinite(delayMs) ? Math.min(Math.max(delayMs, 0), 1_000) : 250
+  let records = loadCopilotTranscript(sessionId, storePath)
+
+  for (let retry = 0; retry < boundedRetries && !hasDurableConversation(records); retry++) {
+    await new Promise((resolve) => setTimeout(resolve, boundedDelay))
+    records = loadCopilotTranscript(sessionId, storePath)
+  }
+
+  return records
+}

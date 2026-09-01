@@ -868,17 +868,11 @@ async function runFromHook() {
   const payload = readStdin()
   let transcriptRecords = null
   if (payload.client === 'copilot') {
-    const requestedDelay = parseInt(process.env.BRAIN_CAPTURE_DELAY_MS ?? '0', 10)
-    const delayMs = Number.isFinite(requestedDelay) ? Math.min(Math.max(requestedDelay, 0), 5_000) : 0
-    if (delayMs > 0) await sleep(delayMs)
-    const { loadCopilotTranscript } = await import('./copilot-session-transcript.mjs')
-    // Copilot persists its final turn after SessionEnd returns. Take the latest
-    // of three bounded snapshots so normal SQLite commit jitter cannot truncate
-    // the memory, while keeping the detached worker short-lived.
-    for (let attempt = 0; attempt < 3; attempt++) {
-      transcriptRecords = loadCopilotTranscript(payload.session_id)
-      if (attempt < 2) await sleep(400)
-    }
+    const { loadCopilotTranscriptWhenReady } = await import('./copilot-session-transcript.mjs')
+    // Copilot emits SessionEnd before its final SQLite turn is durable. Re-read
+    // for at most two seconds and proceed as soon as both sides of the final
+    // conversation exist, before the shared substance gate sees the transcript.
+    transcriptRecords = await loadCopilotTranscriptWhenReady(payload.session_id)
   }
   log('payload event:', payload.hook_event_name, 'reason:', payload.reason)
   const { id } = await processSession({

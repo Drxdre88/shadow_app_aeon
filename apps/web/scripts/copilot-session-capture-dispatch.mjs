@@ -27,7 +27,6 @@ try {
     detached: true,
     stdio: 'ignore',
     windowsHide: true,
-    env: { ...process.env, BRAIN_CAPTURE_DELAY_MS: '1000' },
   })
   child.on('error', () => {})
   child.unref()

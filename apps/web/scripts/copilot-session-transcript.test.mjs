@@ -9,6 +9,7 @@ import {
   hasCopilotCaptureReceipt,
   listCopilotBackfillSessions,
   loadCopilotTranscript,
+  loadCopilotTranscriptWhenReady,
   recordCopilotCaptureReceipt,
 } from './copilot-session-transcript.mjs'
 import { normalizeTranscript } from './session-transcript.mjs'
@@ -95,6 +96,59 @@ test('loads and normalizes a Copilot session from SQLite', () => {
 
 test('returns null when the Copilot session is absent', () => {
   assert.equal(loadCopilotTranscript('missing', join(tmpdir(), 'missing-copilot-store.db')), null)
+})
+
+test('retries until the Copilot user and assistant turn is durable', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aeon-copilot-race-'))
+  const storePath = join(dir, 'session-store.db')
+  const db = new DatabaseSync(storePath)
+  db.exec(`
+    CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT, created_at TEXT);
+    CREATE TABLE turns (
+      id INTEGER PRIMARY KEY,
+      session_id TEXT,
+      turn_index INTEGER,
+      user_message TEXT,
+      assistant_response TEXT,
+      timestamp TEXT
+    );
+    CREATE TABLE session_files (
+      id INTEGER PRIMARY KEY,
+      session_id TEXT,
+      file_path TEXT,
+      first_seen_at TEXT
+    );
+  `)
+  db.prepare('INSERT INTO sessions VALUES (?, ?, ?)').run(
+    'delayed-session', 'C:/repo', '2026-09-01T08:00:00.000Z',
+  )
+  db.close()
+
+  const commit = setTimeout(() => {
+    const writer = new DatabaseSync(storePath)
+    writer.prepare('INSERT INTO turns VALUES (?, ?, ?, ?, ?, ?)').run(
+      1, 'delayed-session', 0, 'Durable user turn', 'Durable assistant turn',
+      '2026-09-01T08:00:01.000Z',
+    )
+    writer.close()
+  }, 30)
+
+  try {
+    const records = await loadCopilotTranscriptWhenReady(
+      'delayed-session', storePath, { maxRetries: 8, delayMs: 20 },
+    )
+    assert.deepEqual(records.map((record) => record.type), ['session_meta', 'user', 'assistant'])
+  } finally {
+    clearTimeout(commit)
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('bounds Copilot transcript retries when the final turn never arrives', { timeout: 1_000 }, async () => {
+  const records = await loadCopilotTranscriptWhenReady(
+    'missing', join(tmpdir(), 'missing-copilot-store.db'), { maxRetries: 2, delayMs: 5 },
+  )
+  assert.equal(records, null)
 })
 
 test('records successful Copilot captures in a validated receipt path', () => {
