@@ -33,6 +33,7 @@ import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir, tmpdir } from 'node:os'
 import { normalizeTranscript } from './session-transcript.mjs'
+import { truncate, deriveAiTitle } from './session-title.mjs'
 import { enqueueCapture, startCaptureDrain } from './session-capture-queue.mjs'
 
 // ─── helpers ────────────────────────────────────────────────────────────
@@ -321,18 +322,6 @@ function isAutomatedSession(messages) {
   return AUTOMATION_SENTINELS.some((s) => first.includes(s))
 }
 
-// A 1-6 word headline derived deterministically from the first prompt, so a
-// capture never lands with a NULL ai_title. The async summariser still upgrades
-// the prose for sessions that lack an Executive Summary; this is the floor.
-function deriveAiTitle(firstPrompt) {
-  if (!firstPrompt) return ''
-  let s = firstPrompt.replace(/\s+/g, ' ').trim()
-  s = s.replace(/^\/[\w-]+\s*/, '')          // drop a leading slash-command token
-  s = s.replace(/^(can you|could you|please|let'?s|i want to|i need to|help me)\s+/i, '')
-  const words = s.split(' ').filter(Boolean).slice(0, 8).join(' ')
-  return truncate(words, 120)
-}
-
 function sessionDurationMin(messages) {
   // Scan for the first and last valid timestamp — early/late messages
   // sometimes lack one.
@@ -380,12 +369,6 @@ function parseExecBullets(execSummaryText) {
 }
 
 // ─── memory payload assembly ────────────────────────────────────────────
-
-function truncate(s, n) {
-  if (!s) return ''
-  if (s.length <= n) return s
-  return s.slice(0, n).trimEnd() + '…'
-}
 
 function buildPayload({ payload, messages, client, repo, branch, remote, commits, filesTouched, signals, duration, projectInfo }) {
   const firstPrompt = extractFirstUserMessage(messages) || '(no user prompt)'
