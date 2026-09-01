@@ -13,6 +13,8 @@ export type MemoryListItem = ListResult[number] & { snippet?: string }
 const SOURCE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   manual: Hand,
   claude: Bot,
+  codex:  Bot,
+  copilot: Bot,
   voice:  Mic,
   hook:   FileDown,
   import: Globe,

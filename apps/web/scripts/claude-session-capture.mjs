@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // ─────────────────────────────────────────────────────────────────────────
-// Aeon Brain — Claude SessionEnd capture hook.
+// Aeon Brain — coding-agent SessionEnd capture hook.
 //
 // Reads the hook payload from stdin (JSON: { session_id, transcript_path,
 // cwd, hook_event_name, reason }), parses the transcript JSONL, and POSTs
 // a structured summary to /api/v1/memories as type=session_summary,
-// source=claude.
+// source matching the originating coding agent.
 //
 // Cross-platform: pure Node 18+ (built-in fetch, no extra deps).
 // Fail-safe: ALWAYS exits 0 so a failure here can never block your session.
@@ -32,6 +32,7 @@ import { execFileSync } from 'node:child_process'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir, tmpdir } from 'node:os'
+import { normalizeTranscript } from './session-transcript.mjs'
 
 // ─── helpers ────────────────────────────────────────────────────────────
 
@@ -164,9 +165,11 @@ function gitCmd(cwd, args) {
 }
 
 function readStdin() {
-  // Synchronous stdin read — small payload, fine for a hook.
   try {
-    const buf = readFileSync(0, 'utf8')
+    const payloadArgIndex = process.argv.indexOf('--hook-payload-base64')
+    const buf = payloadArgIndex >= 0 && process.argv[payloadArgIndex + 1]
+      ? Buffer.from(process.argv[payloadArgIndex + 1], 'base64').toString('utf8')
+      : readFileSync(0, 'utf8')
     return JSON.parse(buf)
   } catch (err) {
     bail(`stdin parse failed: ${err.message}`)
@@ -259,6 +262,11 @@ function extractFilesTouched(messages) {
       if (c?.type !== 'tool_use') continue
       const name = c.name
       const input = c.input || {}
+      if (Array.isArray(input.file_paths)) {
+        for (const filePath of input.file_paths) {
+          if (typeof filePath === 'string' && filePath) files.add(filePath)
+        }
+      }
       // Edit, Write, NotebookEdit, MultiEdit all carry a file_path
       if ((name === 'Edit' || name === 'Write' || name === 'MultiEdit' || name === 'NotebookEdit') && typeof input.file_path === 'string') {
         files.add(input.file_path)
@@ -378,7 +386,7 @@ function truncate(s, n) {
   return s.slice(0, n).trimEnd() + '…'
 }
 
-function buildPayload({ payload, messages, repo, branch, remote, commits, filesTouched, signals, duration, projectInfo }) {
+function buildPayload({ payload, messages, client, repo, branch, remote, commits, filesTouched, signals, duration, projectInfo }) {
   const firstPrompt = extractFirstUserMessage(messages) || '(no user prompt)'
   const lastAssistant = extractLastAssistantText(messages) || ''
 
@@ -447,7 +455,7 @@ function buildPayload({ payload, messages, repo, branch, remote, commits, filesT
     ...(aiTitle ? { aiTitle } : {}),
     ...execSummaryField,
     type: 'session_summary',
-    source: 'claude',
+    source: client,
     realmId: projectInfo?.realmId ?? DEFAULT_REALM_ID,
     projectId: projectInfo?.id ?? null,
     taskId: null,
@@ -456,6 +464,7 @@ function buildPayload({ payload, messages, repo, branch, remote, commits, filesT
       branch: branch || null,
       remote: remote || null,
       sessionId: payload.session_id || null,
+      client,
       cwd: payload.cwd || null,
       hookEvent: payload.hook_event_name || null,
       endReason: payload.reason || null,
@@ -472,6 +481,7 @@ function buildPayload({ payload, messages, repo, branch, remote, commits, filesT
     },
     tags: [
       'session',
+      client,
       ...(repo ? [repo] : []),
       ...(branch && branch !== 'main' && branch !== 'master' ? [`branch:${branch}`] : []),
     ],
@@ -487,7 +497,7 @@ function buildPayload({ payload, messages, repo, branch, remote, commits, filesT
 // On any failure (binary missing, timeout, malformed JSON) we silently fall
 // back to the un-enriched payload — the hook is never allowed to block.
 
-const CLEANUP_PROMPT = `You are summarising a Claude Code session for a personal memory layer.
+const CLEANUP_PROMPT = `You are summarising a coding-agent session for a personal memory layer.
 
 Output a JSON object with EXACTLY two keys:
 - "aiTitle": a 1-6 word title capturing the main subject (string).
@@ -568,18 +578,32 @@ function enrichWithAiCleanup(payload) {
 async function postMemory(payload) {
   const url = `${BASE_URL}/api/v1/memories`
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 8000)
+  const timeout = setTimeout(() => controller.abort(), 12000)
   try {
-    const res = await fetch(url, {
+    const request = (body) => fetch(url, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         'authorization': `Bearer ${API_KEY}`,
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
       signal: controller.signal,
     })
-    const text = await res.text()
+    let res = await request(payload)
+    let text = await res.text()
+    if (!res.ok && res.status === 400 && (payload.source === 'codex' || payload.source === 'copilot')) {
+      const fallbackPayload = {
+        ...payload,
+        source: 'hook',
+        sourceMetadata: {
+          ...payload.sourceMetadata,
+          originalSource: payload.source,
+        },
+      }
+      log(`source=${payload.source} unsupported by server; retrying as source=hook`)
+      res = await request(fallbackPayload)
+      text = await res.text()
+    }
     if (!res.ok) {
       warn(`POST failed ${res.status}: ${text.slice(0, 500)}`)
       return { id: null, status: res.status }
@@ -604,17 +628,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // Process a single session transcript end-to-end: parse, quality-gate,
 // build payload, post. Returns memory id on success, null on skip/fail.
-async function processSession({ transcriptPath, sessionId, cwd, hookEvent, reason }) {
-  const messages = parseTranscript(transcriptPath)
-  if (!messages || messages.length === 0) {
-    log(`skip ${basename(transcriptPath)}: no transcript or empty`)
+async function processSession({ transcriptPath, transcriptRecords, sessionId, cwd, hookEvent, reason }) {
+  const sessionLabel = transcriptPath ? basename(transcriptPath) : `${sessionId || 'unknown'} (Copilot)`
+  const records = transcriptRecords || parseTranscript(transcriptPath)
+  if (!records || records.length === 0) {
+    log(`skip ${sessionLabel}: no transcript or empty`)
     return { id: null, status: null }
   }
+  const { client, messages } = normalizeTranscript(records)
 
   // Drop sessions our own hooks spawned (summariser / AI-cleanup children) so
   // the brain never fills with "memories about summarising memories".
   if (isAutomatedSession(messages)) {
-    log(`skip ${basename(transcriptPath)}: automated hook-child session`)
+    log(`skip ${sessionLabel}: automated hook-child session`)
     return { id: null, status: null }
   }
 
@@ -632,7 +658,7 @@ async function processSession({ transcriptPath, sessionId, cwd, hookEvent, reaso
     signals.toolUses >= MIN_TOOL_USES ||
     (signals.userTurns >= MIN_USER_TURNS && signals.userTextChars >= 240)
   if (!substantive) {
-    log(`skip ${basename(transcriptPath)}: below substance gate (turns=${signals.userTurns}, tools=${signals.toolUses}, files=${filesTouched.length}, chars=${signals.userTextChars})`)
+    log(`skip ${sessionLabel}: below substance gate (turns=${signals.userTurns}, tools=${signals.toolUses}, files=${filesTouched.length}, chars=${signals.userTextChars})`)
     return { id: null, status: null }
   }
 
@@ -674,6 +700,7 @@ async function processSession({ transcriptPath, sessionId, cwd, hookEvent, reaso
       reason,
     },
     messages,
+    client,
     repo,
     branch,
     remote,
@@ -688,7 +715,7 @@ async function processSession({ transcriptPath, sessionId, cwd, hookEvent, reaso
   const memoryPayload = enrichWithAiCleanup(rawPayload)
 
   if (DRY_RUN) {
-    console.error(`[brain-capture] DRY RUN ${basename(transcriptPath)} — payload follows:`)
+    console.error(`[brain-capture] DRY RUN ${sessionLabel} — payload follows:`)
     console.error(JSON.stringify(memoryPayload, null, 2))
     return { id: null, status: null }
   }
@@ -834,9 +861,24 @@ async function runFromHook() {
   // this env var. Such children must never capture themselves as a memory.
   if (process.env.AEON_HOOK_CHILD === '1') bail('hook-child session — skip capture')
   const payload = readStdin()
+  let transcriptRecords = null
+  if (payload.client === 'copilot') {
+    const requestedDelay = parseInt(process.env.BRAIN_CAPTURE_DELAY_MS ?? '0', 10)
+    const delayMs = Number.isFinite(requestedDelay) ? Math.min(Math.max(requestedDelay, 0), 5_000) : 0
+    if (delayMs > 0) await sleep(delayMs)
+    const { loadCopilotTranscript } = await import('./copilot-session-transcript.mjs')
+    // Copilot persists its final turn after SessionEnd returns. Take the latest
+    // of three bounded snapshots so normal SQLite commit jitter cannot truncate
+    // the memory, while keeping the detached worker short-lived.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      transcriptRecords = loadCopilotTranscript(payload.session_id)
+      if (attempt < 2) await sleep(400)
+    }
+  }
   log('payload event:', payload.hook_event_name, 'reason:', payload.reason)
   const { id } = await processSession({
     transcriptPath: payload.transcript_path,
+    transcriptRecords,
     sessionId: payload.session_id,
     cwd: payload.cwd,
     hookEvent: payload.hook_event_name,

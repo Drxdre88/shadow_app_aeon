@@ -93,7 +93,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       execSummary: z.array(z.string().min(1).max(500)).max(15).optional().describe('5–10 cleaned bullet points. Front-of-house in the UI side panel'),
       type: memoryTypeEnum.default('note').optional(),
       source: z.enum([
-        'manual', 'claude', 'voice', 'hook', 'import',
+        'manual', 'claude', 'codex', 'copilot', 'voice', 'hook', 'import',
         // Kairos Phase 1 (A1) additions:
         'cron', 'system', 'webhook',
       ]).default('claude').optional(),

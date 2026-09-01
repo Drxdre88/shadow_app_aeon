@@ -4,11 +4,12 @@ import { useState } from 'react'
 import { Terminal, Bot, Cpu, Check, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 
-type Provider = 'claude' | 'codex' | 'local'
+type Provider = 'claude' | 'codex' | 'copilot' | 'local'
 
 const PROVIDERS: { id: Provider; label: string; icon: typeof Terminal; status: 'live' | 'soon' }[] = [
   { id: 'claude', label: 'Claude Code', icon: Terminal, status: 'live' },
-  { id: 'codex', label: 'Codex', icon: Bot, status: 'soon' },
+  { id: 'codex', label: 'Codex', icon: Bot, status: 'live' },
+  { id: 'copilot', label: 'Copilot CLI', icon: Bot, status: 'live' },
   { id: 'local', label: 'Local AI', icon: Cpu, status: 'soon' },
 ]
 
@@ -45,8 +46,74 @@ export function KairosSetupContent() {
       </div>
 
       {provider === 'claude' && <ClaudeCodeSetup />}
-      {provider === 'codex' && <ComingSoon name="Codex" />}
+      {provider === 'codex' && <CodingAgentSetup provider="codex" />}
+      {provider === 'copilot' && <CodingAgentSetup provider="copilot" />}
       {provider === 'local' && <ComingSoon name="Local AI" />}
+    </div>
+  )
+}
+
+function CodingAgentSetup({ provider }: { provider: 'codex' | 'copilot' }) {
+  const isCodex = provider === 'codex'
+  const label = isCodex ? 'Codex' : 'Copilot CLI'
+  const configPath = isCodex ? '~/.codex/config.toml' : '~/.copilot/hooks/aeon-session-capture.json'
+  const script = isCodex ? 'codex-session-capture-dispatch.mjs' : 'copilot-session-capture-dispatch.mjs'
+  const config = isCodex
+    ? `[[hooks.SessionEnd]]
+matcher = "^other$"
+
+[[hooks.SessionEnd.hooks]]
+type = "command"
+command = 'node "C:/Users/you/path/to/shadow_app_aeon/apps/web/scripts/${script}"'
+timeout = 3
+statusMessage = "Saving session to Aeon"`
+    : `{
+  "version": 1,
+  "hooks": {
+    "sessionEnd": [
+      {
+        "type": "command",
+        "bash": "node '/path/to/shadow_app_aeon/apps/web/scripts/${script}'",
+        "powershell": "$payload = $input | Out-String; $payload | & 'C:/Program Files/nodejs/node.exe' 'C:/Users/you/path/to/shadow_app_aeon/apps/web/scripts/${script}'",
+        "timeoutSec": 5
+      }
+    ]
+  }
+}`
+
+  return (
+    <div className="flex flex-col gap-7 text-white/85">
+      <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-4">
+        <div className="text-[10px] uppercase tracking-[0.22em] text-white/40 mb-2">What this does</div>
+        <p className="text-[13px] leading-relaxed text-white/75">
+          Every completed {label} session is read from its local session store, distilled into one
+          structured Kairos memory, and labelled with the originating client.
+        </p>
+      </div>
+      <Step number={1} title="Prerequisites">
+        <Table
+          rows={[
+            ['Node', isCodex ? '≥ 18' : '≥ 22.13 for the unflagged built-in SQLite reader'],
+            ['Aeon API key', 'Set as AEON_API_KEY in apps/web/.env.local'],
+            ['Aeon reachable', 'Set AEON_BASE_URL when not using localhost:3000'],
+          ]}
+        />
+      </Step>
+      <Step number={2} title="Register the SessionEnd hook">
+        <P>
+          Add this to <Code>{configPath}</Code>, replace the repository path, then restart {label}.
+          {isCodex
+            ? ' The dispatcher returns immediately while capture finishes in the background.'
+            : ' The dispatcher returns immediately, then waits briefly for Copilot to commit its final SQLite turn before reading it in the background.'}
+        </P>
+        <CodeBlock lang={isCodex ? 'toml' : 'json'} value={config} />
+      </Step>
+      <Step number={3} title="Verify it works">
+        <P>
+          Finish a substantive session, then filter the Brain by <Code>{provider}</Code>. The saved
+          memory includes the session id, repo, branch, files, commits, and end reason.
+        </P>
+      </Step>
     </div>
   )
 }

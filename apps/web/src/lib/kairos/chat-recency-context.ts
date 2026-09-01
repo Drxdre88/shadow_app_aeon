@@ -84,7 +84,10 @@ export async function fetchRecentActivityContext(
       boardTasksCompleted,
       boardTasksCreated,
     ] = await Promise.all([
-      listRecentMemories(userId, [eq(memories.type, 'session_summary'), eq(memories.source, 'claude')], window, CATEGORY_FETCH_LIMIT),
+      listRecentMemories(userId, [
+        eq(memories.type, 'session_summary'),
+        sql`(${memories.source} in ('claude', 'codex', 'copilot') or (${memories.source} = 'hook' and ${memories.sourceMetadata}->>'client' in ('codex', 'copilot')))`,
+      ], window, CATEGORY_FETCH_LIMIT),
       listRecentMemories(userId, [eq(memories.type, 'reflection'), eq(memories.streamClass, 'reflection')], window, CATEGORY_FETCH_LIMIT),
       listRecentMemories(userId, [eq(memories.type, 'inbound'), sql`${memories.sourceMetadata}->>'introspection' = 'true'`], window, CATEGORY_FETCH_LIMIT),
       listRecentMemories(userId, [eq(memories.type, 'advisory'), sql`${memories.sourceMetadata} ? 'kairosAsk'`], window, CATEGORY_FETCH_LIMIT),

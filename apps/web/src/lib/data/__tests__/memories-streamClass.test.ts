@@ -95,6 +95,27 @@ describe('createMemory — streamClass override', () => {
   })
 })
 
+describe('createMemory — coding-agent session idempotency', () => {
+  it.each([
+    ['codex', { sessionId: 'codex-session-1', client: 'codex' }],
+    ['copilot', { sessionId: 'copilot-session-1', client: 'copilot' }],
+    ['hook', { sessionId: 'copilot-session-1', client: 'copilot', originalSource: 'copilot' }],
+  ] as const)('returns an existing %s session instead of inserting a duplicate', async (source, sourceMetadata) => {
+    const existing = { id: 'existing-memory' }
+    selectQueue.push([existing])
+
+    const result = await createMemory(USER, {
+      ...baseInput,
+      type: 'session_summary',
+      source,
+      sourceMetadata,
+    })
+
+    expect(result).toBe(existing)
+    expect(lastInsertValues.value).toBeNull()
+  })
+})
+
 describe('captureMemory — streamClass override', () => {
   it('forwards streamClass through to the underlying createMemory insert', async () => {
     // No externalId → no dedup lookup. Skip the sessionId path (source != claude).

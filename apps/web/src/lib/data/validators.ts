@@ -357,7 +357,7 @@ export const memoryTypeSchema   = z.enum([
 ])
 // Kairos Phase 1 (A1) — added sources: 'cron' (briefer/snapshot jobs),
 // 'system' (board mutations, project lifecycle), 'webhook' (channel adapters).
-export const memorySourceSchema = z.enum(['manual', 'claude', 'voice', 'hook', 'import', 'cron', 'system', 'webhook'])
+export const memorySourceSchema = z.enum(['manual', 'claude', 'codex', 'copilot', 'voice', 'hook', 'import', 'cron', 'system', 'webhook'])
 // 'resolves' — incident lifecycle: a memory carrying this link closes its
 // target's valid window (invalidAt stamped by createMemory, lib/data/memories.ts).
 export const memoryEdgeTypeSchema   = z.enum(['relates', 'supports', 'contradicts', 'supersedes', 'refers_to', 'blocks_thinking', 'resolves'])
