@@ -461,6 +461,12 @@ function buildPayload({ payload, messages, client, repo, branch, remote, commits
     projectId: projectInfo?.id ?? null,
     taskId: null,
     sourceMetadata: {
+      // Idempotency key. createMemory dedupes on (source, externalId) against
+      // live rows, but nothing ever set it, so every re-capture of one session
+      // minted another memory — a SessionEnd and a later backfill of the same
+      // session produced two, and the observed Copilot rows show three.
+      // Scoped with the client because externalId is only unique per agent.
+      ...(payload.session_id ? { externalId: `${client}:${payload.session_id}` } : {}),
       repo: repo || null,
       branch: branch || null,
       remote: remote || null,
