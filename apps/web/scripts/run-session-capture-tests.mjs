@@ -11,6 +11,7 @@ const tests = [
   join(scriptDir, 'codex-session-transcript.test.mjs'),
   join(scriptDir, 'session-capture-dispatch.test.mjs'),
   join(scriptDir, 'session-capture-queue.test.mjs'),
+  join(scriptDir, 'verify-schema-drift.test.mjs'),
 ]
 if (supportsUnflaggedSqlite) tests.push(join(scriptDir, 'copilot-session-transcript.test.mjs'))
 else console.warn('Skipping Copilot SQLite tests: Node 22.13+ is required')
