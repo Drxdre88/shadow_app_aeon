@@ -1,8 +1,10 @@
 import { db } from '@/lib/db'
 import { ganttViews, rows, ganttTasks, boardTasks } from '@/lib/db/schema'
-import { eq, and, asc, isNull, inArray } from 'drizzle-orm'
+import { eq, and, asc, isNull, isNotNull, inArray, or } from 'drizzle-orm'
 import type { CreateGanttViewInput, UpdateGanttViewInput } from './validators'
 import { computeDuration, computeEndDate, skipToWeekday } from './bridge'
+import { clearTimelineLinksForGanttTasks } from './gantt'
+import { touchProject } from './projects'
 
 export async function findGanttViews(projectId: string) {
   return db
@@ -37,6 +39,7 @@ export async function createGanttView(
     })
     .returning()
 
+  await touchProject(projectId, { type: 'task:updated' })
   return view
 }
 
@@ -56,15 +59,46 @@ export async function updateGanttView(
     .where(and(eq(ganttViews.id, viewId), eq(ganttViews.projectId, projectId)))
     .returning()
 
+  if (view) await touchProject(projectId, { type: 'task:updated' })
   return view || null
 }
 
+/**
+ * Delete a view. `rows.ganttViewId` cascades, which would leave this view's
+ * bars behind with a null rowId — invisible, but still holding `onTimeline`
+ * and `ganttTaskId` on their cards. So the bars go with the view and the
+ * cards' timeline links are cleared. Card dates are user data and stay.
+ */
 export async function deleteGanttView(viewId: string, projectId: string) {
-  const [deleted] = await db
-    .delete(ganttViews)
-    .where(and(eq(ganttViews.id, viewId), eq(ganttViews.projectId, projectId)))
-    .returning({ id: ganttViews.id })
+  const deleted = await db.transaction(async (tx) => {
+    const viewRows = await tx
+      .select({ id: rows.id })
+      .from(rows)
+      .where(and(eq(rows.projectId, projectId), eq(rows.ganttViewId, viewId)))
 
+    const rowIds = viewRows.map((r) => r.id)
+    if (rowIds.length > 0) {
+      const viewGanttTasks = await tx
+        .select({ id: ganttTasks.id })
+        .from(ganttTasks)
+        .where(and(eq(ganttTasks.projectId, projectId), inArray(ganttTasks.rowId, rowIds)))
+
+      const ganttTaskIds = viewGanttTasks.map((g) => g.id)
+      if (ganttTaskIds.length > 0) {
+        await clearTimelineLinksForGanttTasks(tx, projectId, ganttTaskIds)
+        await tx.delete(ganttTasks).where(inArray(ganttTasks.id, ganttTaskIds))
+      }
+    }
+
+    const [row] = await tx
+      .delete(ganttViews)
+      .where(and(eq(ganttViews.id, viewId), eq(ganttViews.projectId, projectId)))
+      .returning({ id: ganttViews.id })
+
+    return row
+  })
+
+  if (deleted) await touchProject(projectId, { type: 'task:updated' })
   return !!deleted
 }
 
@@ -165,27 +199,58 @@ export async function reflowGanttViewRows(projectId: string, viewId: string) {
           .where(eq(boardTasks.id, u.id))
       }
     })
+    await touchProject(projectId, { type: 'task:updated' })
   }
 }
 
+/**
+ * Tear down the project's orphaned timeline state.
+ *
+ * The date wipe is SCOPED to cards that are actually on a timeline. A card that
+ * was never pushed still carries whatever `startDate`/`endDate` a user typed by
+ * hand on the board, and the unscoped wipe this replaces destroyed those dates
+ * for the whole project.
+ *
+ * Either half of the link qualifies, because the two can drift: deleting a bar
+ * nulls `ganttTaskId` via the FK while `onTimeline` stays true. The scope is
+ * resolved BEFORE the orphan-bar delete, since that delete nulls `ganttTaskId`
+ * on the way through.
+ */
 export async function resetGanttProjectData(projectId: string) {
-  await db.delete(rows).where(
-    and(eq(rows.projectId, projectId), isNull(rows.ganttViewId))
-  )
+  const cleared = await db.transaction(async (tx) => {
+    const scoped = await tx
+      .select({ id: boardTasks.id })
+      .from(boardTasks)
+      .where(and(
+        eq(boardTasks.projectId, projectId),
+        or(eq(boardTasks.onTimeline, true), isNotNull(boardTasks.ganttTaskId))
+      ))
 
-  const orphanGantt = await db
-    .select({ id: ganttTasks.id })
-    .from(ganttTasks)
-    .where(and(eq(ganttTasks.projectId, projectId), isNull(ganttTasks.rowId)))
-
-  if (orphanGantt.length > 0) {
-    await db.delete(ganttTasks).where(
-      inArray(ganttTasks.id, orphanGantt.map((g) => g.id))
+    await tx.delete(rows).where(
+      and(eq(rows.projectId, projectId), isNull(rows.ganttViewId))
     )
-  }
 
-  await db
-    .update(boardTasks)
-    .set({ onTimeline: false, ganttTaskId: null, startDate: null, endDate: null, updatedAt: new Date() })
-    .where(eq(boardTasks.projectId, projectId))
+    const orphanGantt = await tx
+      .select({ id: ganttTasks.id })
+      .from(ganttTasks)
+      .where(and(eq(ganttTasks.projectId, projectId), isNull(ganttTasks.rowId)))
+
+    if (orphanGantt.length > 0) {
+      await tx.delete(ganttTasks).where(
+        inArray(ganttTasks.id, orphanGantt.map((g) => g.id))
+      )
+    }
+
+    const ids = scoped.map((t) => t.id)
+    if (ids.length > 0) {
+      await tx
+        .update(boardTasks)
+        .set({ onTimeline: false, ganttTaskId: null, startDate: null, endDate: null, updatedAt: new Date() })
+        .where(and(eq(boardTasks.projectId, projectId), inArray(boardTasks.id, ids)))
+    }
+
+    return ids.length
+  })
+
+  if (cleared > 0) await touchProject(projectId, { type: 'task:updated' })
 }

@@ -141,8 +141,11 @@ export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' 
       return
     }
     const ganttTaskId = crypto.randomUUID()
-    const { updateTask: updateBoardTaskStore } = useBoardStore.getState()
-    updateBoardTaskStore(boardTaskId, { onTimeline: true, ganttTaskId })
+    const { tasks, updateTask: updateBoardTaskStore } = useBoardStore.getState()
+    const previous = tasks.find((t) => t.id === boardTaskId)
+    const previousOnTimeline = previous?.onTimeline ?? false
+    const previousGanttTaskId = previous?.ganttTaskId ?? null
+    updateBoardTaskStore(boardTaskId, { onTimeline: true, ganttTaskId: previousGanttTaskId ?? ganttTaskId })
 
     pushToGantt({
       boardTaskId,
@@ -151,8 +154,9 @@ export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' 
       ganttTaskId,
     }).then((ganttTask) => {
       if (ganttTask) {
-        const { addTask } = useGanttStore.getState()
-        addTask({
+        const { tasks: ganttTasks, addTask, updateTask } = useGanttStore.getState()
+        updateBoardTaskStore(boardTaskId, { onTimeline: true, ganttTaskId: previousGanttTaskId ?? ganttTask.id })
+        const bar = {
           id: ganttTask.id,
           projectId: ganttTask.projectId,
           rowId: ganttTask.rowId || '',
@@ -163,11 +167,13 @@ export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' 
           progress: ganttTask.progress,
           dependencies: [],
           boardTaskId: boardTaskId,
-        })
+        }
+        if (ganttTasks.some((t) => t.id === bar.id)) updateTask(bar.id, bar)
+        else addTask(bar)
       }
     }).catch((err) => {
       console.error('Failed to push to gantt:', err)
-      updateBoardTaskStore(boardTaskId, { onTimeline: false, ganttTaskId: null })
+      updateBoardTaskStore(boardTaskId, { onTimeline: previousOnTimeline, ganttTaskId: previousGanttTaskId })
     })
   }, [projectId, setActiveTab])
 
