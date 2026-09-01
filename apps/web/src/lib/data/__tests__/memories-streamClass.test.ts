@@ -39,6 +39,8 @@ vi.mock('@/lib/db', () => {
       // tx.update is never actually invoked, but tx must still expose it.
       transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
+          execute: vi.fn(async () => undefined),
+          select: vi.fn(() => makeSelectChain(selectQueue.shift() ?? [])),
           insert: vi.fn(() => makeInsertChain()),
           update: vi.fn(() => ({ set: () => ({ where: () => Promise.resolve(undefined) }) })),
         }
@@ -109,6 +111,21 @@ describe('createMemory — coding-agent session idempotency', () => {
       type: 'session_summary',
       source,
       sourceMetadata,
+    })
+
+    expect(result).toBe(existing)
+    expect(lastInsertValues.value).toBeNull()
+  })
+
+  it('rechecks after the transaction lock before inserting', async () => {
+    const existing = { id: 'concurrent-memory' }
+    selectQueue.push([], [existing])
+
+    const result = await createMemory(USER, {
+      ...baseInput,
+      type: 'session_summary',
+      source: 'hook',
+      sourceMetadata: { sessionId: 'same-session', client: 'codex' },
     })
 
     expect(result).toBe(existing)

@@ -29,8 +29,10 @@ client** below.
 - Node 18+ for Claude/Codex; Node 22.13+ for Copilot's unflagged built-in SQLite reader.
 - An absolute path to this repository in every hook command.
 
-Capture always exits harmlessly: a missing key, unavailable server, malformed event, or
-low-substance session must never prevent an agent from closing.
+Capture always exits harmlessly after durably queueing the event. A machine-wide drain lock
+serializes transcript parsing and delivery, so closing several terminals together does not spawn
+several memory-heavy capture workers. Transient network, rate-limit, and server failures retry;
+exhausted jobs and diagnostics remain under `~/.aeon/session-capture`.
 
 ## Install a supported client
 
@@ -52,8 +54,8 @@ timeout = 3
 statusMessage = "Saving session to Aeon"
 ```
 
-Codex supplies its JSONL transcript path. The dispatcher returns quickly and the detached worker
-normalises the transcript before calling the shared capture pipeline.
+Codex supplies its JSONL transcript path. The dispatcher durably queues it and returns quickly;
+the shared drain normalises and sends queued sessions one at a time.
 
 ### Copilot CLI
 
@@ -87,9 +89,8 @@ receipts. A receipt is written only after Aeon returns a memory id.
 
 ### Claude Code
 
-Register `apps/web/scripts/claude-session-capture.mjs` as a `SessionEnd` command hook in
-`~/.claude/settings.json`. Claude supplies the canonical payload and transcript path directly, so
-no client dispatcher is required:
+Register `apps/web/scripts/claude-session-capture-dispatch.mjs` as a `SessionEnd` command hook in
+`~/.claude/settings.json`. Claude supplies the canonical payload and transcript path directly:
 
 ```jsonc
 {
@@ -100,8 +101,8 @@ no client dispatcher is required:
         "hooks": [
           {
             "type": "command",
-            "command": "node \"C:/path/to/shadow_app_aeon/apps/web/scripts/claude-session-capture.mjs\"",
-            "timeout": 15000
+            "command": "node \"C:/path/to/shadow_app_aeon/apps/web/scripts/claude-session-capture-dispatch.mjs\"",
+            "timeout": 3000
           }
         ]
       }
@@ -110,8 +111,10 @@ no client dispatcher is required:
 }
 ```
 
-For crash and force-quit recovery, register the same script with `--backfill` on Claude's
-`SessionStart` `startup` and `resume` matchers. Existing saved sessions are skipped.
+For crash and force-quit recovery, register `claude-session-capture.mjs --backfill` on Claude's
+`SessionStart` `startup` and `resume` matchers. It queues candidates into the same serialized
+drain. Existing saved sessions with success receipts are skipped locally, and the server also
+serializes identical session writes.
 
 ## Verify the installation
 
@@ -121,8 +124,8 @@ For crash and force-quit recovery, register the same script with `--backfill` on
    `SessionEnd` for actual termination.
 3. Search Aeon for the marker and inspect the new `session_summary`.
 4. Confirm `sourceMetadata.client`, `sessionId`, `repo`, `branch`, `hookEvent`, and `endReason`.
-5. Re-fire the same session payload and confirm the client + session idempotency rule prevents a
-   duplicate.
+5. Re-fire the same session payload concurrently and confirm the local receipt plus the server's
+   transaction lock prevent a duplicate.
 
 If the deployed Aeon version predates a new first-class source, capture retries once as
 `source='hook'` while preserving `sourceMetadata.client` and `originalSource`. That is a deployment
@@ -148,9 +151,8 @@ new capture system.
    activity, digest counts, MCP descriptions, and the setup UI.
 3. **Normalise the transcript.** Produce the shared message shape: user/assistant messages plus
    `tool_use` entries with timestamps and `cwd`. Strip harness-only injected context.
-4. **Write a thin dispatcher.** Reuse `session-capture-dispatch.mjs`; bound input size, accept the
-   provider's documented payload variants, pass the canonical hook payload, detach only when the
-   provider allows it, and always exit 0.
+4. **Write a thin dispatcher.** Reuse `session-capture-queue.mjs`; bound input size, accept the
+   provider's documented payload variants, durably queue the canonical payload, and always exit 0.
 5. **Reuse the shared pipeline.** `claude-session-capture.mjs` owns substance gating, git context,
    files/commits, memory payload construction, compatibility fallback, and the POST.
 6. **Pin the contract with tests.** Cover valid and malformed hook payloads, transcript mapping,

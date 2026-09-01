@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { encodeHookPayload, normalizeCopilotHook } from './session-capture-dispatch.mjs'
+import { normalizeCopilotHook } from './session-capture-dispatch.mjs'
+import { enqueueAndDrain } from './session-capture-queue.mjs'
 
 try {
   const raw = readFileSync(0, 'utf8')
@@ -21,15 +22,7 @@ try {
     process.exit(0)
   }
 
-  const captureScript = join(scriptDir, 'claude-session-capture.mjs')
-  const encodedPayload = encodeHookPayload(payload)
-  const child = spawn(process.execPath, [captureScript, '--hook-payload-base64', encodedPayload], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  })
-  child.on('error', () => {})
-  child.unref()
+  enqueueAndDrain(payload)
 } catch {
   process.exit(0)
 }

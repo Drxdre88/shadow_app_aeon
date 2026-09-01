@@ -853,6 +853,9 @@ export async function createMemory(userId: string, input: CreateMemoryParams) {
       ? declaredClient
       : undefined
   const sessionId = sessionClient ? sourceMetadata?.sessionId : undefined
+  const captureKey = typeof sessionId === 'string' && sessionId.length > 0 && sessionClient
+    ? `${sessionClient}:${sessionId}`
+    : null
   if (typeof sessionId === 'string' && sessionId.length > 0 && sessionClient) {
     const [existing] = await db
       .select()
@@ -916,6 +919,19 @@ export async function createMemory(userId: string, input: CreateMemoryParams) {
   // never routes through createMemory and never writes 'resolves' links, so
   // there is no double-stamp risk).
   const row = await db.transaction(async (tx) => {
+    if (captureKey && sessionClient && typeof sessionId === 'string') {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext(${captureKey}))`)
+      const [existing] = await tx
+        .select()
+        .from(memories)
+        .where(and(
+          eq(memories.userId, userId),
+          sql`${memories.sourceMetadata}->>'sessionId' = ${sessionId}`,
+          sql`case when ${memories.source} = 'hook' then ${memories.sourceMetadata}->>'client' else ${memories.source} end = ${sessionClient}`,
+        ))
+        .limit(1)
+      if (existing) return existing
+    }
     const [inserted] = await tx
       .insert(memories)
       .values({

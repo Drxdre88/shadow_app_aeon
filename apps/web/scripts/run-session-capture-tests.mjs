@@ -8,6 +8,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url))
 const tests = [
   join(scriptDir, 'session-transcript.test.mjs'),
   join(scriptDir, 'session-capture-dispatch.test.mjs'),
+  join(scriptDir, 'session-capture-queue.test.mjs'),
 ]
 if (supportsUnflaggedSqlite) tests.push(join(scriptDir, 'copilot-session-transcript.test.mjs'))
 else console.warn('Skipping Copilot SQLite tests: Node 22.13+ is required')

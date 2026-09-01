@@ -1,20 +1,15 @@
-import { spawnSync } from 'node:child_process'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import {
-  hasCopilotCaptureReceipt,
   listCopilotBackfillSessions,
 } from './copilot-session-transcript.mjs'
+import { enqueueCapture, hasCaptureReceipt, startCaptureDrain } from './session-capture-queue.mjs'
 
 const currentSessionId = process.argv[2]
 if (typeof currentSessionId !== 'string') process.exit(0)
 
-const scriptDir = dirname(fileURLToPath(import.meta.url))
-const captureScript = join(scriptDir, 'claude-session-capture.mjs')
 let attempted = 0
 
 for (const session of listCopilotBackfillSessions(currentSessionId)) {
-  if (hasCopilotCaptureReceipt(session.id)) continue
+  if (hasCaptureReceipt('copilot', session.id)) continue
 
   const payload = {
     client: 'copilot',
@@ -23,13 +18,9 @@ for (const session of listCopilotBackfillSessions(currentSessionId)) {
     hook_event_name: 'SessionStartBackfill',
     reason: 'backfill',
   }
-  const encodedPayload = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64')
-  spawnSync(process.execPath, [captureScript, '--hook-payload-base64', encodedPayload], {
-    stdio: 'ignore',
-    windowsHide: true,
-    timeout: 30_000,
-  })
+  enqueueCapture(payload)
 
   attempted++
   if (attempted >= 5) break
 }
+if (attempted > 0) startCaptureDrain()

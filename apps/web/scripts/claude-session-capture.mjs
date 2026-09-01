@@ -33,6 +33,7 @@ import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir, tmpdir } from 'node:os'
 import { normalizeTranscript } from './session-transcript.mjs'
+import { enqueueCapture, startCaptureDrain } from './session-capture-queue.mjs'
 
 // ─── helpers ────────────────────────────────────────────────────────────
 
@@ -577,49 +578,61 @@ function enrichWithAiCleanup(payload) {
 // when the server is under pressure instead of barrelling through the batch.
 async function postMemory(payload) {
   const url = `${BASE_URL}/api/v1/memories`
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 12000)
-  try {
-    const request = (body) => fetch(url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'authorization': `Bearer ${API_KEY}`,
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    })
-    let res = await request(payload)
-    let text = await res.text()
-    if (!res.ok && res.status === 400 && (payload.source === 'codex' || payload.source === 'copilot')) {
-      const fallbackPayload = {
-        ...payload,
-        source: 'hook',
-        sourceMetadata: {
-          ...payload.sourceMetadata,
-          originalSource: payload.source,
-        },
-      }
-      log(`source=${payload.source} unsupported by server; retrying as source=hook`)
-      res = await request(fallbackPayload)
-      text = await res.text()
-    }
-    if (!res.ok) {
-      warn(`POST failed ${res.status}: ${text.slice(0, 500)}`)
-      return { id: null, status: res.status }
-    }
+  let requestPayload = payload
+  let fallbackUsed = false
+  let lastStatus = 0
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 12000)
     try {
-      const parsed = JSON.parse(text)
-      return { id: parsed?.data?.id ?? null, status: res.status }
-    } catch {
-      return { id: null, status: res.status }
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'authorization': `Bearer ${API_KEY}`,
+        },
+        body: JSON.stringify(requestPayload),
+        signal: controller.signal,
+      })
+      const text = await res.text()
+      lastStatus = res.status
+      if (!res.ok && res.status === 400 && !fallbackUsed && (payload.source === 'codex' || payload.source === 'copilot')) {
+        fallbackUsed = true
+        requestPayload = {
+          ...payload,
+          source: 'hook',
+          sourceMetadata: { ...payload.sourceMetadata, originalSource: payload.source },
+        }
+        log(`source=${payload.source} unsupported by server; retrying as source=hook`)
+        attempt--
+        continue
+      }
+      if (res.ok) {
+        try {
+          const parsed = JSON.parse(text)
+          return { id: parsed?.data?.id ?? null, status: res.status }
+        } catch {
+          return { id: null, status: res.status }
+        }
+      }
+      const transient = res.status === 429 || res.status >= 500
+      if (!transient || attempt === 3) {
+        warn(`POST failed ${res.status}: ${text.slice(0, 500)}`)
+        return { id: null, status: res.status }
+      }
+      const retryAfter = Number(res.headers.get('retry-after'))
+      await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 500 * 2 ** attempt)
+    } catch (err) {
+      if (attempt === 3) {
+        warn(`POST error: ${err.message}`)
+        return { id: null, status: 0 }
+      }
+      await sleep(500 * 2 ** attempt)
+    } finally {
+      clearTimeout(timeout)
     }
-  } catch (err) {
-    warn(`POST error: ${err.message}`)
-    return { id: null, status: 0 }
-  } finally {
-    clearTimeout(timeout)
   }
+  return { id: null, status: lastStatus }
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -628,12 +641,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // Process a single session transcript end-to-end: parse, quality-gate,
 // build payload, post. Returns memory id on success, null on skip/fail.
-async function processSession({ transcriptPath, transcriptRecords, sessionId, cwd, hookEvent, reason }) {
+async function processSession({ transcriptPath, transcriptRecords, sessionId, cwd, hookEvent, reason, retryOnEmpty = false }) {
   const sessionLabel = transcriptPath ? basename(transcriptPath) : `${sessionId || 'unknown'} (Copilot)`
   const records = transcriptRecords || parseTranscript(transcriptPath)
   if (!records || records.length === 0) {
     log(`skip ${sessionLabel}: no transcript or empty`)
-    return { id: null, status: null }
+    return { id: null, status: null, retry: retryOnEmpty }
   }
   const { client, messages } = normalizeTranscript(records)
 
@@ -721,9 +734,9 @@ async function processSession({ transcriptPath, transcriptRecords, sessionId, cw
   }
 
   const result = await postMemory(memoryPayload)
-  if (result.id && client === 'copilot') {
-    const { recordCopilotCaptureReceipt } = await import('./copilot-session-transcript.mjs')
-    recordCopilotCaptureReceipt(sessionId, result.id)
+  if (result.id) {
+    const { recordCaptureReceipt } = await import('./session-capture-queue.mjs')
+    recordCaptureReceipt(client, sessionId, result.id)
   }
   return result
 }
@@ -798,51 +811,21 @@ async function runBackfill(hoursWindow) {
     const candidates = findCandidateTranscripts(hoursWindow)
     log(`backfill: ${candidates.length} candidate transcript(s) in last ${hoursWindow}h`)
 
-    let created = 0
-    let skipped = 0
-    let failed = 0
-    // Server-side dedupe by sessionId (createMemory is idempotent for
-    // source=claude) means we just iterate and post. If a session is already
-    // captured, the brain returns the existing row instead of inserting.
+    let queued = 0
     const MAX = parseInt(process.env.BRAIN_BACKFILL_MAX ?? '50', 10)
 
-    // Gentle pacing + adaptive backoff. A 50-session batch fired back-to-back
-    // at the server's response rate looks like a request storm and, when the
-    // server is degraded, amplifies the load (every post 500s, we just keep
-    // going). Pace healthy posts apart, exponentially back off on 429/5xx, and
-    // abort the batch entirely after a few consecutive server errors.
-    const BASE_DELAY_MS = parseInt(process.env.BRAIN_BACKFILL_DELAY_MS ?? '150', 10)
-    const MAX_CONSECUTIVE_ERRORS = 3
-    let consecutiveServerErrors = 0
-
     for (const c of candidates.slice(0, MAX)) {
-      const { id, status } = await processSession({
-        transcriptPath: c.path,
-        sessionId: c.sessionId,
+      if (enqueueCapture({
+        client: 'claude',
+        transcript_path: c.path,
+        session_id: c.sessionId,
         cwd: null,
-        hookEvent: 'SessionEndBackfill',
+        hook_event_name: 'SessionEndBackfill',
         reason: 'backfill',
-      })
-      if (id) created++
-      else if (status === null) skipped++  // not attempted (empty/below-gate/dry-run)
-      else failed++
-
-      // status: 0 = network/timeout, 429 = rate limited, >=500 = server error.
-      const underPressure = status === 0 || status === 429 || (status != null && status >= 500)
-      if (underPressure) {
-        consecutiveServerErrors++
-        if (consecutiveServerErrors >= MAX_CONSECUTIVE_ERRORS) {
-          warn(`backfill: ${consecutiveServerErrors} consecutive server errors — aborting batch to avoid amplifying load`)
-          break
-        }
-        // Exponential backoff: 1s, 2s, 4s …
-        await sleep(1000 * 2 ** (consecutiveServerErrors - 1))
-      } else {
-        consecutiveServerErrors = 0
-        if (BASE_DELAY_MS > 0) await sleep(BASE_DELAY_MS)
-      }
+      })) queued++
     }
-    log(`backfill: created/upserted=${created} skipped=${skipped} failed=${failed}`)
+    if (queued > 0) startCaptureDrain()
+    log(`backfill: queued=${queued}`)
   } finally {
     releaseBackfillLock()
   }
@@ -852,9 +835,10 @@ async function runBackfill(hoursWindow) {
 
 function parseArgs() {
   const args = process.argv.slice(2)
-  const out = { backfill: false, hours: parseInt(process.env.BRAIN_BACKFILL_HOURS ?? '48', 10) }
+  const out = { backfill: false, queueWorker: false, hours: parseInt(process.env.BRAIN_BACKFILL_HOURS ?? '48', 10) }
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--backfill') out.backfill = true
+    else if (args[i] === '--queue-worker') out.queueWorker = true
     else if (args[i] === '--hours' && args[i + 1]) { out.hours = parseInt(args[++i], 10) || out.hours }
   }
   return out
@@ -875,15 +859,17 @@ async function runFromHook() {
     transcriptRecords = await loadCopilotTranscriptWhenReady(payload.session_id)
   }
   log('payload event:', payload.hook_event_name, 'reason:', payload.reason)
-  const { id } = await processSession({
+  const result = await processSession({
     transcriptPath: payload.transcript_path,
     transcriptRecords,
     sessionId: payload.session_id,
     cwd: payload.cwd,
     hookEvent: payload.hook_event_name,
     reason: payload.reason,
+    retryOnEmpty: payload.client === 'copilot',
   })
-  if (id) log(`memory created/upserted: ${id}`)
+  if (result.id) log(`memory created/upserted: ${result.id}`)
+  return result
 }
 
 async function main() {
@@ -891,12 +877,12 @@ async function main() {
   if (args.backfill) {
     await runBackfill(args.hours)
   } else {
-    await runFromHook()
+    const result = await runFromHook()
+    if (args.queueWorker && !result?.id) process.exitCode = result?.retry || result?.status !== null ? 2 : 3
   }
 }
 
 main().catch((err) => {
   warn(`unhandled: ${err.message}`)
-  // Always exit 0 — never block the user's session.
-  process.exit(0)
+  process.exitCode = process.argv.includes('--queue-worker') ? 2 : 0
 })

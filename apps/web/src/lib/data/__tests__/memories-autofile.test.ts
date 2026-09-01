@@ -40,6 +40,17 @@ vi.mock('@/lib/db', () => ({
     // is never actually invoked, but the tx object must still expose it.
     transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
       const tx = {
+        execute: vi.fn(async () => undefined),
+        select: vi.fn(() => {
+          const rows = selectQueue.shift() ?? []
+          const chain: Record<string, unknown> = {}
+          const pass = () => chain
+          chain.from = pass
+          chain.where = pass
+          chain.limit = pass
+          chain.then = (resolve: (v: unknown[]) => unknown) => resolve(rows)
+          return chain
+        }),
         insert: vi.fn(() => makeInsertChain()),
         update: vi.fn(() => ({ set: () => ({ where: () => Promise.resolve(undefined) }) })),
       }

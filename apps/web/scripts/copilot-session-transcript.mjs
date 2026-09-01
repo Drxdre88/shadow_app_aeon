@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { captureReceiptPath, hasCaptureReceipt, recordCaptureReceipt } from './session-capture-queue.mjs'
 
 export function resolveCopilotStorePath() {
   const copilotHome = process.env.COPILOT_HOME || join(homedir(), '.copilot')
@@ -13,31 +14,15 @@ function validSessionId(sessionId) {
 }
 
 export function copilotCaptureReceiptPath(sessionId) {
-  if (!validSessionId(sessionId)) return null
-  const copilotHome = process.env.COPILOT_HOME || join(homedir(), '.copilot')
-  return join(copilotHome, 'aeon-capture-receipts', sessionId)
+  return captureReceiptPath('copilot', sessionId)
 }
 
 export function hasCopilotCaptureReceipt(sessionId) {
-  const receiptPath = copilotCaptureReceiptPath(sessionId)
-  if (!receiptPath) return false
-  try {
-    return statSync(receiptPath).size > 0
-  } catch {
-    return false
-  }
+  return hasCaptureReceipt('copilot', sessionId)
 }
 
 export function recordCopilotCaptureReceipt(sessionId, memoryId) {
-  const receiptPath = copilotCaptureReceiptPath(sessionId)
-  if (!receiptPath || typeof memoryId !== 'string' || !memoryId) return false
-  try {
-    mkdirSync(dirname(receiptPath), { recursive: true })
-    writeFileSync(receiptPath, memoryId, 'utf8')
-    return true
-  } catch {
-    return false
-  }
+  return recordCaptureReceipt('copilot', sessionId, memoryId)
 }
 
 export function listCopilotBackfillSessions(currentSessionId, limit = 100, storePath = resolveCopilotStorePath()) {
@@ -163,5 +148,5 @@ export async function loadCopilotTranscriptWhenReady(
     records = loadCopilotTranscript(sessionId, storePath)
   }
 
-  return records
+  return hasDurableConversation(records) ? records : null
 }
