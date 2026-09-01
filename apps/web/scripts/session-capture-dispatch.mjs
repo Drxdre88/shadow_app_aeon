@@ -15,6 +15,30 @@ export function normalizeCodexHook(raw) {
   return payload && typeof payload.transcript_path === 'string' ? payload : null
 }
 
+/**
+ * A Codex SessionStart payload — the trigger for backfill.
+ *
+ * Deliberately the inverse of normalizeCodexHook: a payload carrying
+ * transcript_path is an END payload and is rejected here, so the two never
+ * both claim the same hook fire. Codex does not name its start event the way
+ * Copilot does, so absence of a transcript is the discriminator.
+ *
+ * session_id may legitimately be null; the backfill treats that as "exclude
+ * nothing", which receipts make safe.
+ */
+export function normalizeCodexStartHook(raw) {
+  const payload = parseHookPayload(raw)
+  if (!payload || typeof payload.transcript_path === 'string') return null
+
+  const sessionId = payload.session_id ?? payload.sessionId
+  return {
+    client: 'codex',
+    session_id: typeof sessionId === 'string' ? sessionId : null,
+    cwd: typeof payload.cwd === 'string' ? payload.cwd : null,
+    hook_event_name: 'SessionStart',
+  }
+}
+
 export function normalizeCopilotHook(raw) {
   const input = parseHookPayload(raw)
   if (!input) return null
