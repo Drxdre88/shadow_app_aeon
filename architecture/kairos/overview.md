@@ -52,9 +52,9 @@ make it hybrid-searchable. See [memory-and-capture.md](memory-and-capture.md).
 
 **Capture (ingress).** Information arrives many ways: fire-and-forget **auto-capture** of
 board/project events; the nightly **project-snapshot** cron; **quick capture** + the generic
-`POST /api/v1/memories/capture` endpoint; the **Claude session-capture hook**
-(`apps/web/scripts/claude-session-capture.mjs`) that distils each finished Claude Code session
-into a `session_summary`; **reflections** (`kairos_reflect`, the operator's first-class
+`POST /api/v1/memories/capture` endpoint; the **coding-agent session-capture hooks**
+that distil finished Claude Code, Codex, and Copilot CLI sessions into source-labelled
+`session_summary` memories; **reflections** (`kairos_reflect`, the operator's first-class
 high-weight signal); the **guided-introspection** propose-not-commit loop that stages
 Kairos's own thoughts as `inbound` proposals; and **chat distillation** (PR #89) — the nightly
 pass that turns the day's chat conversations (Telegram included) into operator reflections.

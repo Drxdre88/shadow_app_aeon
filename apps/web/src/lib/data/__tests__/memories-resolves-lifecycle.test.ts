@@ -62,6 +62,8 @@ vi.mock('@/lib/db', () => {
       // assertions don't need to distinguish tx-scoped calls from top-level ones.
       transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
+          execute: vi.fn(async () => undefined),
+          select: vi.fn(() => makeSelectChain(selectQueue.shift() ?? [])),
           insert: vi.fn(() => makeInsertChain()),
           update: vi.fn(() => makeUpdateChain(txUpdateReturning)),
         }

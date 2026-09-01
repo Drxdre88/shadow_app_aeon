@@ -17,6 +17,8 @@ type AutoCapture = Awaited<ReturnType<typeof getTodaysAutoCaptures>>[number]
 
 const SOURCE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   claude:  Bot,
+  codex:   Bot,
+  copilot: Bot,
   cron:    Calendar,
   system:  Server,
   webhook: Webhook,

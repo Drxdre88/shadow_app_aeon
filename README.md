@@ -210,6 +210,12 @@ Mutation
 
 For full architecture details — feature inventory, completion status, known gaps — see [`ARCHITECTURE.md`](./ARCHITECTURE.md). For strategic direction and roadmap, see [`VISION.md`](./VISION.md).
 
+### Operator and integration guides
+
+- [Coding-agent session capture](docs/kairos/05-session-capture.md) — install Claude Code, Codex CLI, or Copilot CLI hooks; verify capture; add a future client safely.
+- [Working with the Kairos brain](docs/kairos/25-working-with-the-kairos-brain.md) — practical day-to-day memory workflow.
+- [MCP tools](docs/kairos/02-mcp-tools.md) — connect an AI client to Aeon's project and memory surfaces.
+
 ---
 
 ## Local Development

@@ -840,23 +840,30 @@ async function stampResolvedTargets(
 }
 
 export async function createMemory(userId: string, input: CreateMemoryParams) {
-  // Idempotency for Claude-captured sessions: a given sessionId is a stable
-  // identity, so re-posting (from a SessionStart backfill, re-invoked hook,
-  // or manual recovery) should never duplicate. Other sources stay strict.
-  const sessionId =
-    input.source === 'claude' &&
-    typeof input.sourceMetadata === 'object' &&
-    input.sourceMetadata !== null
-      ? (input.sourceMetadata as Record<string, unknown>).sessionId
+  // Idempotency for agent-captured sessions: a given sessionId is a stable
+  // identity, so re-posting from a re-invoked hook or manual recovery should
+  // never duplicate. Other sources stay strict.
+  const sourceMetadata = typeof input.sourceMetadata === 'object' && input.sourceMetadata !== null
+    ? input.sourceMetadata as Record<string, unknown>
+    : null
+  const declaredClient = sourceMetadata?.client
+  const sessionClient = input.source === 'claude' || input.source === 'codex' || input.source === 'copilot'
+    ? input.source
+    : input.source === 'hook' && (declaredClient === 'codex' || declaredClient === 'copilot')
+      ? declaredClient
       : undefined
-  if (typeof sessionId === 'string' && sessionId.length > 0) {
+  const sessionId = sessionClient ? sourceMetadata?.sessionId : undefined
+  const captureKey = typeof sessionId === 'string' && sessionId.length > 0 && sessionClient
+    ? `${sessionClient}:${sessionId}`
+    : null
+  if (typeof sessionId === 'string' && sessionId.length > 0 && sessionClient) {
     const [existing] = await db
       .select()
       .from(memories)
       .where(and(
         eq(memories.userId, userId),
-        eq(memories.source, 'claude'),
         sql`${memories.sourceMetadata}->>'sessionId' = ${sessionId}`,
+        sql`case when ${memories.source} = 'hook' then ${memories.sourceMetadata}->>'client' else ${memories.source} end = ${sessionClient}`,
       ))
       .limit(1)
     if (existing) return existing
@@ -912,6 +919,19 @@ export async function createMemory(userId: string, input: CreateMemoryParams) {
   // never routes through createMemory and never writes 'resolves' links, so
   // there is no double-stamp risk).
   const row = await db.transaction(async (tx) => {
+    if (captureKey && sessionClient && typeof sessionId === 'string') {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext(${captureKey}))`)
+      const [existing] = await tx
+        .select()
+        .from(memories)
+        .where(and(
+          eq(memories.userId, userId),
+          sql`${memories.sourceMetadata}->>'sessionId' = ${sessionId}`,
+          sql`case when ${memories.source} = 'hook' then ${memories.sourceMetadata}->>'client' else ${memories.source} end = ${sessionClient}`,
+        ))
+        .limit(1)
+      if (existing) return existing
+    }
     const [inserted] = await tx
       .insert(memories)
       .values({
@@ -1174,7 +1194,7 @@ export async function listAutoCapturedToday(userId: string, limit = 30) {
       eq(memories.userId, userId),
       isNull(memories.archivedAt),
       sql`${memories.createdAt} >= ${startOfDay}`,
-      inArray(memories.source, ['claude', 'cron', 'system', 'webhook', 'hook']),
+      inArray(memories.source, ['claude', 'codex', 'copilot', 'cron', 'system', 'webhook', 'hook']),
     ))
     .orderBy(desc(memories.createdAt))
     .limit(Math.min(Math.max(limit, 1), 100))
