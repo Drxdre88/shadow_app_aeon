@@ -4,6 +4,7 @@ import {
   MAX_HOOK_PAYLOAD_BYTES,
   encodeHookPayload,
   normalizeCodexHook,
+  normalizeCodexStartHook,
   normalizeCopilotHook,
 } from './session-capture-dispatch.mjs'
 
@@ -67,4 +68,32 @@ test('base64 encoding round-trips normalized payloads', () => {
   const payload = { client: 'copilot', session_id: 'one', cwd: 'C:/repo' }
   const decoded = Buffer.from(encodeHookPayload(payload), 'base64').toString('utf8')
   assert.deepEqual(JSON.parse(decoded), payload)
+})
+
+test('normalizes a Codex SessionStart payload, and never claims an end payload', () => {
+  assert.deepEqual(normalizeCodexStartHook(JSON.stringify({ session_id: 'abc', cwd: 'C:\repo' })), {
+    client: 'codex',
+    session_id: 'abc',
+    cwd: 'C:\repo',
+    hook_event_name: 'SessionStart',
+  })
+
+  // camelCase variant
+  assert.equal(normalizeCodexStartHook(JSON.stringify({ sessionId: 'abc' })).session_id, 'abc')
+
+  // A session id we cannot read is tolerated — receipts keep backfill safe.
+  assert.deepEqual(normalizeCodexStartHook(JSON.stringify({ cwd: 'C:\repo' })), {
+    client: 'codex',
+    session_id: null,
+    cwd: 'C:\repo',
+    hook_event_name: 'SessionStart',
+  })
+
+  // The two normalizers must never both accept the same fire.
+  const endPayload = JSON.stringify({ session_id: 'abc', transcript_path: '/x.jsonl' })
+  assert.notEqual(normalizeCodexHook(endPayload), null)
+  assert.equal(normalizeCodexStartHook(endPayload), null)
+
+  assert.equal(normalizeCodexStartHook('not-json'), null)
+  assert.equal(normalizeCodexStartHook(''), null)
 })

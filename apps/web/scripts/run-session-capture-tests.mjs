@@ -7,6 +7,7 @@ const supportsUnflaggedSqlite = major > 22 || (major === 22 && minor >= 13)
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const tests = [
   join(scriptDir, 'session-transcript.test.mjs'),
+  join(scriptDir, 'codex-session-transcript.test.mjs'),
   join(scriptDir, 'session-capture-dispatch.test.mjs'),
   join(scriptDir, 'session-capture-queue.test.mjs'),
 ]
