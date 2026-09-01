@@ -8,7 +8,20 @@ try {
   const raw = readFileSync(0, 'utf8')
   const payload = normalizeCopilotHook(raw)
   if (!payload) process.exit(0)
-  const captureScript = join(dirname(fileURLToPath(import.meta.url)), 'claude-session-capture.mjs')
+  const scriptDir = dirname(fileURLToPath(import.meta.url))
+  if (payload.hook_event_name === 'SessionStart') {
+    const backfillScript = join(scriptDir, 'copilot-session-capture-backfill.mjs')
+    const child = spawn(process.execPath, [backfillScript, payload.session_id], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    child.on('error', () => {})
+    child.unref()
+    process.exit(0)
+  }
+
+  const captureScript = join(scriptDir, 'claude-session-capture.mjs')
   const encodedPayload = encodeHookPayload(payload)
   const child = spawn(process.execPath, [captureScript, '--hook-payload-base64', encodedPayload], {
     detached: true,

@@ -720,7 +720,12 @@ async function processSession({ transcriptPath, transcriptRecords, sessionId, cw
     return { id: null, status: null }
   }
 
-  return postMemory(memoryPayload)
+  const result = await postMemory(memoryPayload)
+  if (result.id && client === 'copilot') {
+    const { recordCopilotCaptureReceipt } = await import('./copilot-session-transcript.mjs')
+    recordCopilotCaptureReceipt(sessionId, result.id)
+  }
+  return result
 }
 
 // ─── backfill mode ──────────────────────────────────────────────────────

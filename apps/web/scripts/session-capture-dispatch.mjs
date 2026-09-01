@@ -21,15 +21,14 @@ export function normalizeCopilotHook(raw) {
 
   const sessionId = input.sessionId ?? input.session_id
   if (typeof sessionId !== 'string') return null
-  const isSessionStart = input.hook_event_name === 'SessionStart' ||
+  const isSessionStart = input.hook_event_name === 'SessionStart' || input.hook_event_name === 'sessionStart' ||
     input.source === 'startup' || input.source === 'resume' || input.source === 'new'
-  if (isSessionStart) return null
 
   return {
     client: 'copilot',
     session_id: sessionId,
     cwd: typeof input.cwd === 'string' ? input.cwd : null,
-    hook_event_name: input.hook_event_name ?? 'SessionEnd',
+    hook_event_name: isSessionStart ? 'SessionStart' : 'SessionEnd',
     reason: typeof input.reason === 'string' ? input.reason : null,
   }
 }

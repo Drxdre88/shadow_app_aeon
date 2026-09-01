@@ -90,3 +90,4 @@ See `04-phase-roadmap.md` for the detailed slice.
 - `02-mcp-tools.md` — 4 tool signatures + REST mirror
 - `03-markdown-format.md` — the canonical `.md` round-trip format
 - `04-phase-roadmap.md` — Phase 1 → Phase 6 plan with effort estimates
+- `05-session-capture.md` — install coding-agent hooks and add future clients

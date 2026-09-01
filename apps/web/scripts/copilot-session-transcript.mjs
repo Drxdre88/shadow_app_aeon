@@ -1,6 +1,6 @@
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
 export function resolveCopilotStorePath() {
@@ -10,6 +10,58 @@ export function resolveCopilotStorePath() {
 
 function validSessionId(sessionId) {
   return typeof sessionId === 'string' && /^[A-Za-z0-9-]{1,128}$/.test(sessionId)
+}
+
+export function copilotCaptureReceiptPath(sessionId) {
+  if (!validSessionId(sessionId)) return null
+  const copilotHome = process.env.COPILOT_HOME || join(homedir(), '.copilot')
+  return join(copilotHome, 'aeon-capture-receipts', sessionId)
+}
+
+export function hasCopilotCaptureReceipt(sessionId) {
+  const receiptPath = copilotCaptureReceiptPath(sessionId)
+  if (!receiptPath) return false
+  try {
+    return statSync(receiptPath).size > 0
+  } catch {
+    return false
+  }
+}
+
+export function recordCopilotCaptureReceipt(sessionId, memoryId) {
+  const receiptPath = copilotCaptureReceiptPath(sessionId)
+  if (!receiptPath || typeof memoryId !== 'string' || !memoryId) return false
+  try {
+    mkdirSync(dirname(receiptPath), { recursive: true })
+    writeFileSync(receiptPath, memoryId, 'utf8')
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function listCopilotBackfillSessions(currentSessionId, limit = 100, storePath = resolveCopilotStorePath()) {
+  if (!validSessionId(currentSessionId) || !existsSync(storePath)) return []
+  const boundedLimit = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 100) : 100
+  const db = new DatabaseSync(storePath, { readOnly: true })
+  try {
+    const sessions = db.prepare(`
+      SELECT s.id, s.cwd
+      FROM sessions s
+      WHERE s.id <> ?
+        AND EXISTS (
+          SELECT 1
+          FROM turns t
+          WHERE t.session_id = s.id
+            AND trim(coalesce(t.assistant_response, '')) <> ''
+        )
+      ORDER BY s.updated_at DESC
+      LIMIT ?
+    `).all(currentSessionId, boundedLimit)
+    return sessions.map((session) => ({ id: session.id, cwd: session.cwd }))
+  } finally {
+    db.close()
+  }
 }
 
 export function loadCopilotTranscript(sessionId, storePath = resolveCopilotStorePath()) {

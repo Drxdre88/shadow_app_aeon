@@ -1,8 +1,10 @@
 # Clean Session Capture (P1)
 
+> Historical implementation detail. For the current Claude, Codex, and Copilot installation and extension guide, see [05-session-capture.md](05-session-capture.md).
+
 **Status:** shipped 2026-06-06
 **Scope:** `apps/web/scripts/claude-session-capture.mjs`
-**Supersedes the title/summary behaviour described in:** doc 05 §5 (the rest of doc 05 — install, hook registration, env, troubleshooting — still stands).
+**Relationship:** historical detail for the Claude title and summary quality pass; doc 05 is now the canonical multi-client guide.
 
 The capture hook fires at `SessionEnd` and POSTs a `session_summary` memory for every Claude Code session you finish, across every repo. P1 is a quality pass on **what** it stores: the raw transcript is now sanitised before it touches the brain, noise-only openers are dropped, and the human-readable `summary` + `execSummary` are pulled from the assistant's own **## Executive Summary** instead of from the first prompt.
 

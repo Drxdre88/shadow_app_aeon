@@ -56,7 +56,7 @@ export function KairosSetupContent() {
 function CodingAgentSetup({ provider }: { provider: 'codex' | 'copilot' }) {
   const isCodex = provider === 'codex'
   const label = isCodex ? 'Codex' : 'Copilot CLI'
-  const configPath = isCodex ? '~/.codex/config.toml' : '~/.copilot/hooks/aeon-session-capture.json'
+  const configPath = isCodex ? '~/.codex/config.toml' : '~/.copilot/config.json'
   const script = isCodex ? 'codex-session-capture-dispatch.mjs' : 'copilot-session-capture-dispatch.mjs'
   const config = isCodex
     ? `[[hooks.SessionEnd]]
@@ -68,8 +68,14 @@ command = 'node "C:/Users/you/path/to/shadow_app_aeon/apps/web/scripts/${script}
 timeout = 3
 statusMessage = "Saving session to Aeon"`
     : `{
-  "version": 1,
   "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "powershell": "$payload = $input | Out-String; $payload | & 'C:/Program Files/nodejs/node.exe' 'C:/Users/you/path/to/shadow_app_aeon/apps/web/scripts/${script}'",
+        "timeoutSec": 5
+      }
+    ],
     "sessionEnd": [
       {
         "type": "command",
@@ -99,12 +105,12 @@ statusMessage = "Saving session to Aeon"`
           ]}
         />
       </Step>
-      <Step number={2} title="Register the SessionEnd hook">
+      <Step number={2} title={isCodex ? 'Register the SessionEnd hook' : 'Register the lifecycle hooks'}>
         <P>
           Add this to <Code>{configPath}</Code>, replace the repository path, then restart {label}.
           {isCodex
             ? ' The dispatcher returns immediately while capture finishes in the background.'
-            : ' The dispatcher returns immediately, then waits briefly for Copilot to commit its final SQLite turn before reading it in the background.'}
+            : ' The end hook captures normally; the start hook recovers recent completed sessions that missed their end capture.'}
         </P>
         <CodeBlock lang={isCodex ? 'toml' : 'json'} value={config} />
       </Step>

@@ -40,11 +40,25 @@ test('normalizes both Copilot SessionEnd payload shapes', () => {
   })
 })
 
-test('suppresses Copilot SessionStart and malformed payloads', () => {
+test('normalizes Copilot SessionStart and malformed payloads', () => {
   for (const source of ['startup', 'resume', 'new']) {
-    assert.equal(normalizeCopilotHook(JSON.stringify({ sessionId: 'one', source })), null)
+    assert.deepEqual(normalizeCopilotHook(JSON.stringify({ sessionId: 'one', source })), {
+      client: 'copilot',
+      session_id: 'one',
+      cwd: null,
+      hook_event_name: 'SessionStart',
+      reason: null,
+    })
   }
-  assert.equal(normalizeCopilotHook(JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'one' })), null)
+  for (const eventName of ['SessionStart', 'sessionStart']) {
+    assert.deepEqual(normalizeCopilotHook(JSON.stringify({ hook_event_name: eventName, session_id: 'one' })), {
+      client: 'copilot',
+      session_id: 'one',
+      cwd: null,
+      hook_event_name: 'SessionStart',
+      reason: null,
+    })
+  }
   assert.equal(normalizeCopilotHook(JSON.stringify({ reason: 'complete' })), null)
   assert.equal(normalizeCopilotHook('not-json'), null)
 })

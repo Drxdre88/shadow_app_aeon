@@ -1,64 +1,95 @@
-# Aeon Brain — Phase 2: Claude Session Capture
+# Coding-agent session capture
 
-**Status:** drafted 2026-05-13
-**Depends on:** Phase 1 substrate (the `memories` table + `/api/v1/memories` endpoint)
+**Status:** Claude Code, Codex CLI, and Copilot CLI supported
+**Audience:** operators installing capture and developers adding another agent client
+**Architecture:** [memory-and-capture.md](../../architecture/kairos/memory-and-capture.md)
 
-The brain only becomes useful when it fills itself. Phase 2 installs a single global hook that captures every Claude Code session you finish — across every repo — into your brain.
+Aeon turns a completed coding-agent session into one `session_summary` memory. The checked-in
+code is reusable by every Aeon installation; hook registration and credentials are deliberately
+per-user because transcripts and API keys live on the operator's machine.
 
----
+## What is shared and what is personal
 
-## What it does
+| Scope | Lives where | Purpose |
+|---|---|---|
+| Aeon capability | `apps/web/scripts/` + memory API | parsing, quality gate, metadata, deduplication, source fallback |
+| Product setup UI | Kairos setup panel | copyable hook snippets for supported clients |
+| Personal installation | `~/.claude`, `~/.codex`, or `~/.copilot` | invokes the checked-in dispatcher on lifecycle events |
+| Personal secrets | environment or `apps/web/.env.local` | `AEON_API_KEY`; optional `AEON_BASE_URL` |
 
-When a Claude session ends, the hook:
-
-1. Reads the session transcript JSONL Claude maintains
-2. Runs a quality gate (skip "what's 2+2" sessions)
-3. Extracts the git context (repo, branch, remote)
-4. Collects files touched (from `Edit`/`Write`/`MultiEdit`/`NotebookEdit` tool calls)
-5. Collects commits made during the session window
-6. POSTs a structured `session_summary` memory to `/api/v1/memories`
-
-Everything is fire-and-forget with an 8-second timeout. The hook **always exits 0** — a brain capture failure can never block your session ending.
-
----
+The hook path points into an Aeon checkout. Moving or deleting that checkout breaks capture until
+the path is updated. A future packaged installer should remove this coupling; see **Adding another
+client** below.
 
 ## Prerequisites
 
-| | |
-|---|---|
-| Node | ≥ 18 (uses built-in `fetch`) |
-| Aeon `.env.local` | The script auto-loads `apps/web/.env.local` — `AEON_API_KEY` must be set there (it is by default for any aeon dev setup) |
-| Aeon reachable | Either dev server running on `localhost:3000`, or override `AEON_BASE_URL` |
-| Migration applied | The `memories` table exists in your DB (see `01-schema.md`) |
+- An Aeon API key from **Help → MCP → API Keys**.
+- `AEON_API_KEY` available to the capture process, or present in `apps/web/.env.local`.
+- `AEON_BASE_URL` when Aeon is not at `http://localhost:3000`.
+- Node 18+ for Claude/Codex; Node 22.13+ for Copilot's unflagged built-in SQLite reader.
+- An absolute path to this repository in every hook command.
 
----
+Capture always exits harmlessly: a missing key, unavailable server, malformed event, or
+low-substance session must never prevent an agent from closing.
 
-## 1. Env (probably already done)
+## Install a supported client
 
-The hook reads `apps/web/.env.local` **automatically** — relative to the script's own path. You don't need to export anything in your shell profile.
+The Kairos setup panel contains the current copyable snippets. The examples below show their
+shape; replace the repository path and restart the client after editing its configuration.
 
-The script looks for these keys in `.env.local`:
+### Codex CLI
 
-| Key | Required | Default |
-|---|---|---|
-| `AEON_API_KEY` | yes | — |
-| `AEON_BASE_URL` | no | `http://localhost:3000` |
-| `BRAIN_DEFAULT_REALM_ID` | no | `null` (memory floats free) |
+Add to `~/.codex/config.toml`, then trust the hook interactively with `/hooks`:
 
-If you want to override at hook-fire time (e.g., point at prod), you can still set them as real shell env vars — shell env wins over `.env.local`.
+```toml
+[[hooks.SessionEnd]]
+matcher = "^other$"
 
-Optional debug flags (one-off via shell):
-
-```bash
-BRAIN_DEBUG=1    # verbose stderr from the hook
-BRAIN_DRY_RUN=1  # print payload, skip the POST
+[[hooks.SessionEnd.hooks]]
+type = "command"
+command = 'node "C:/path/to/shadow_app_aeon/apps/web/scripts/codex-session-capture-dispatch.mjs"'
+timeout = 3
+statusMessage = "Saving session to Aeon"
 ```
 
----
+Codex supplies its JSONL transcript path. The dispatcher returns quickly and the detached worker
+normalises the transcript before calling the shared capture pipeline.
 
-## 2. Register the hook in `~/.claude/settings.json`
+### Copilot CLI
 
-Add a `SessionEnd` entry pointing at the script. Use the **absolute path** to the script in this repo.
+Add the lifecycle hooks to `~/.copilot/config.json`:
+
+```json
+{
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "powershell": "$payload = $input | Out-String; $payload | & 'C:/Program Files/nodejs/node.exe' 'C:/path/to/shadow_app_aeon/apps/web/scripts/copilot-session-capture-dispatch.mjs'",
+        "timeoutSec": 5
+      }
+    ],
+    "sessionEnd": [
+      {
+        "type": "command",
+        "bash": "node '/path/to/shadow_app_aeon/apps/web/scripts/copilot-session-capture-dispatch.mjs'",
+        "powershell": "$payload = $input | Out-String; $payload | & 'C:/Program Files/nodejs/node.exe' 'C:/path/to/shadow_app_aeon/apps/web/scripts/copilot-session-capture-dispatch.mjs'",
+        "timeoutSec": 5
+      }
+    ]
+  }
+}
+```
+
+PowerShell must explicitly forward hook stdin. `sessionEnd` performs the normal delayed capture;
+`sessionStart` asynchronously retries up to five recent completed sessions without success
+receipts. A receipt is written only after Aeon returns a memory id.
+
+### Claude Code
+
+Register `apps/web/scripts/claude-session-capture.mjs` as a `SessionEnd` command hook in
+`~/.claude/settings.json`. Claude supplies the canonical payload and transcript path directly, so
+no client dispatcher is required:
 
 ```jsonc
 {
@@ -69,7 +100,7 @@ Add a `SessionEnd` entry pointing at the script. Use the **absolute path** to th
         "hooks": [
           {
             "type": "command",
-            "command": "node \"C:/Users/anselikhov/data_science/dev_26/shadow_app_aeon/apps/web/scripts/claude-session-capture.mjs\"",
+            "command": "node \"C:/path/to/shadow_app_aeon/apps/web/scripts/claude-session-capture.mjs\"",
             "timeout": 15000
           }
         ]
@@ -79,121 +110,80 @@ Add a `SessionEnd` entry pointing at the script. Use the **absolute path** to th
 }
 ```
 
-**POSIX path equivalent:**
+For crash and force-quit recovery, register the same script with `--backfill` on Claude's
+`SessionStart` `startup` and `resume` matchers. Existing saved sessions are skipped.
 
-```jsonc
-{
-  "type": "command",
-  "command": "node /home/you/projects/shadow_app_aeon/apps/web/scripts/claude-session-capture.mjs",
-  "timeout": 15000
-}
+## Verify the installation
+
+1. Start a disposable session in the target client with a unique marker and enough substance to
+   pass the quality gate: a real answer, multiple turns, tool use, or an Executive Summary.
+2. End the session normally; switching chats is not sufficient when the client reserves
+   `SessionEnd` for actual termination.
+3. Search Aeon for the marker and inspect the new `session_summary`.
+4. Confirm `sourceMetadata.client`, `sessionId`, `repo`, `branch`, `hookEvent`, and `endReason`.
+5. Re-fire the same session payload and confirm the client + session idempotency rule prevents a
+   duplicate.
+
+If the deployed Aeon version predates a new first-class source, capture retries once as
+`source='hook'` while preserving `sourceMetadata.client` and `originalSource`. That is a deployment
+compatibility path, not a failed capture.
+
+Run parser checks with:
+
+```powershell
+node apps/web/scripts/run-session-capture-tests.mjs
 ```
 
-> **Why `SessionEnd` not `Stop`?** `Stop` fires after every agent turn — too noisy. `SessionEnd` fires once when the session terminates (`/exit`, terminal close, etc.) and captures the whole arc.
+For diagnosis set `BRAIN_DEBUG=1`. Use `BRAIN_DRY_RUN=1` to print the outgoing memory without
+writing it.
 
-If you already have a `SessionEnd` block in your settings, append this hook entry to the existing `hooks` array — multiple hooks can run on the same event.
+## Adding another client
 
----
+Most work is already shared. A new client needs a lifecycle adapter and transcript reader, not a
+new capture system.
 
-## 3. Test it (no risk to real brain)
+1. **Probe the real client first.** Record its installed version, hook event names, stdin payload,
+   transcript location/schema, exit timeout, and when the final turn becomes durable.
+2. **Choose a stable client id.** Add it to memory-source validation, source filters/labels, recent
+   activity, digest counts, MCP descriptions, and the setup UI.
+3. **Normalise the transcript.** Produce the shared message shape: user/assistant messages plus
+   `tool_use` entries with timestamps and `cwd`. Strip harness-only injected context.
+4. **Write a thin dispatcher.** Reuse `session-capture-dispatch.mjs`; bound input size, accept the
+   provider's documented payload variants, pass the canonical hook payload, detach only when the
+   provider allows it, and always exit 0.
+5. **Reuse the shared pipeline.** `claude-session-capture.mjs` owns substance gating, git context,
+   files/commits, memory payload construction, compatibility fallback, and the POST.
+6. **Pin the contract with tests.** Cover valid and malformed hook payloads, transcript mapping,
+   harness-noise removal, file extraction, source validation, and client + session idempotency.
+7. **Prove the lifecycle, not just the parser.** Close a real disposable session and query the
+   resulting Aeon memory. Include its id in the PR evidence.
 
-The script supports a dry-run mode that skips the POST and prints the payload it *would* send.
+### When the third new client arrives
 
-```bash
-# Build a minimal fake hook payload pointing at any real transcript
-TRANSCRIPT=$(ls ~/.claude/projects/*/sessions/*.jsonl 2>/dev/null | head -1)
+At that point, extract the existing adapters into a registry such as
+`session-adapters/<client>.mjs`, each exporting:
 
-echo "{
-  \"session_id\": \"test-$(date +%s)\",
-  \"transcript_path\": \"$TRANSCRIPT\",
-  \"cwd\": \"$(pwd)\",
-  \"hook_event_name\": \"SessionEnd\",
-  \"reason\": \"prompt_input_exit\"
-}" | BRAIN_DRY_RUN=1 BRAIN_DEBUG=1 node apps/web/scripts/claude-session-capture.mjs
+```text
+client · normalizeHook(raw) · loadTranscript(sessionId) · persistencePolicy
 ```
 
-You should see the full memory payload printed to stderr, with title, body, sourceMetadata, and tags filled in.
+Add an installer command such as
+`node apps/web/scripts/install-session-capture-hook.mjs --client <id>`, which resolves the checkout,
+writes the user-local hook config, validates it, and runs a dry smoke test. Two clients did not
+justify that framework; the third one will.
 
-To do a **real** test (writes to your live brain):
+## Why the first multi-client integration was slow
 
-```bash
-# Drop BRAIN_DRY_RUN; start the dev server first or point at prod.
-echo "..." | BRAIN_DEBUG=1 node apps/web/scripts/claude-session-capture.mjs
-```
+Live proof uncovered four provider-boundary issues beyond the ordinary code changes:
 
-Then verify in Aeon:
+- Copilot sends lifecycle JSON on stdin; invoking Node without forwarding stdin silently drops it.
+- Copilot emits `sessionEnd` before the final SQLite turn is committed.
+- Codex transcripts include injected plugin, instruction, and environment messages that must not
+  become the memory title.
+- The live Aeon deployment initially rejected the new sources, requiring a provenance-preserving
+  compatibility fallback until deployment.
 
-```bash
-curl -s "$AEON_BASE_URL/api/v1/memories?type=session_summary&limit=5" \
-  -H "Authorization: Bearer $AEON_API_KEY" | jq '.data[] | {title, createdAt}'
-```
-
----
-
-## 4. Tuning the quality gate
-
-The hook skips sessions where `userTurns < 3` AND `toolUses < 2`. This filters out short Q&As that aren't worth remembering. Override via env:
-
-```bash
-export BRAIN_MIN_USER_TURNS=3   # default
-export BRAIN_MIN_TOOL_USES=2    # default
-```
-
-Set both to `0` to capture every session including drive-by chats.
-
----
-
-## 5. What gets stored
-
-Each memory created by the hook:
-
-| Field | Value |
-|---|---|
-| `title` | `<repo>: <first 60 chars of first user prompt>` |
-| `bodyMd` | Markdown with sections: Session stats, First user prompt, Files touched, Commits, Final assistant excerpt |
-| `summary` | First user prompt, truncated to 240 chars |
-| `type` | `session_summary` |
-| `source` | `claude` |
-| `realmId` | `BRAIN_DEFAULT_REALM_ID` if set, else null |
-| `sourceMetadata` | `{ repo, branch, remote, sessionId, cwd, hookEvent, endReason, filesTouched[], commits[], stats: { userTurns, toolUses, durationMin, messageCount } }` |
-| `tags` | `['session', '<repo>', 'branch:<non-default-branch>']` |
-
----
-
-## 6. Querying the captured brain
-
-Once the hook has been firing for a few days, the brain becomes useful via MCP:
-
-```
-search_memories({ query: "RAG bifurcation", type: "session_summary" })
-search_memories({ query: "auth refactor", realmId: "<AEON Dev>" })
-get_memory_with_neighbours({ memoryId: "<id>", hops: 2 })
-```
-
-In Phase 4, the dedicated `prepare_context()` MCP tool will turn this into a single "what do I know about X?" call ready for any Claude conversation.
-
----
-
-## 7. Troubleshooting
-
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| `AEON_API_KEY not set` in stderr | env var not exported in the shell Claude runs in | Set in your *shell profile*, not just a one-off `export` |
-| `POST failed 401` | API key wrong or revoked | Re-issue via UI or check `.env.local` |
-| `POST failed 400 Realm not accessible` | `BRAIN_DEFAULT_REALM_ID` points at a realm you don't own | Use one of your realm UUIDs |
-| `POST error: fetch failed` | Dev server not running and `AEON_BASE_URL` still localhost | Start the server OR point at prod |
-| No memory shows up but no errors | Quality gate filtered it | Lower thresholds or set both to 0 |
-| Hook runs but takes forever | Slow Neon connection on first POST | First-request cold start; subsequent fire in <500ms |
-
-Run with `BRAIN_DEBUG=1` to see the full decision trace.
-
----
-
-## 8. Phase 2.5 wishlist (not in this drop)
-
-- **Claude-summarised body.** Currently the body is mechanically assembled from the transcript. A future variant calls `claude --print "summarise in 5 bullets"` against the transcript for a denser, narrative body. Costs a fast model call per session; opt-in via `BRAIN_USE_CLAUDE_SUMMARY=1`.
-- **Realm auto-detection.** Read a `.aeonrc` file from the repo root specifying `realmId` so each repo lands in the right realm automatically. Falls back to `BRAIN_DEFAULT_REALM_ID`.
-- **Tag inference.** Detect technologies (`typescript`, `python`, `react`) from `filesTouched` extensions and add as tags.
-- **Skip on private-repo opt-out.** A `.aeonrc` with `"capture": false` disables capture for that repo entirely.
-
-All three are 30-minute follow-ups once Phase 2 is proven valuable.
+The delivery also propagated sources through validation, deduplication, filters, digest/context
+counts, UI labels, setup guidance, tests, live captures, review, build, deployment preview, and CI.
+Future clients should be substantially faster because these contracts and failure modes are now
+explicit.
