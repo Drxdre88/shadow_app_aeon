@@ -9,6 +9,9 @@ CLAUDE.md
 .mcp.json
 claude_code_migration_guide.md
 
+# Codex CLI (per-machine agent config, same reason as .claude/)
+.codex/
+
 # Build outputs
 .next/
 out/
