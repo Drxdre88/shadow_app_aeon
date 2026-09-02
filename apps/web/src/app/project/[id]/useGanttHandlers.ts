@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { createGanttTask, updateGanttTask, deleteGanttTask, updateRow as updateRowAction } from '@/lib/actions/gantt'
-import { createGanttView as createGanttViewAction, updateGanttView as updateGanttViewAction, deleteGanttView as deleteGanttViewAction, resetGanttData, reflowGanttView } from '@/lib/actions/ganttViews'
+import { createGanttView as createGanttViewAction, updateGanttView as updateGanttViewAction, deleteGanttView as deleteGanttViewAction, resetGanttData, reflowGanttView, restoreTimelineSnapshot } from '@/lib/actions/ganttViews'
 import { pushToGantt } from '@/lib/actions/bridge'
 import { updateBoardTask } from '@/lib/actions/board'
 import { useGanttStore } from '@/lib/store/ganttStore'
@@ -123,7 +123,6 @@ export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' 
     beginDirectWrite()
     resetGanttData(projectId)
       .then((serverSnapshot) => {
-        useBoardStore.setState({ isDirty: false })
         setGanttResetOpen(false)
         triggerReload()
         const snapshot = serverSnapshot.length > 0 ? serverSnapshot : clientSnapshot
@@ -137,11 +136,11 @@ export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' 
           duration: 10000,
           onUndo: () => {
             applySnapshot(frozen)
-            Promise.all(frozen.map((t) =>
-              updateBoardTask(t.id, projectId, { onTimeline: t.onTimeline, startDate: t.startDate, endDate: t.endDate })
-            ))
+            beginDirectWrite()
+            restoreTimelineSnapshot(projectId, frozen)
               .then(() => triggerReload())
               .catch(() => toast('Failed to restore timeline dates', { force: true }))
+              .finally(() => endDirectWrite())
           },
         })
       })

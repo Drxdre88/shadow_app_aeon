@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { ganttViews, rows, ganttTasks, boardTasks } from '@/lib/db/schema'
-import { eq, and, asc, isNull, isNotNull, inArray, or } from 'drizzle-orm'
+import { eq, and, asc, isNull, isNotNull, inArray, or, sql } from 'drizzle-orm'
 import type { CreateGanttViewInput, UpdateGanttViewInput } from './validators'
 import { computeDuration, computeEndDate, skipToWeekday } from './bridge'
 import { clearTimelineLinksForGanttTasks } from './gantt'
@@ -271,4 +271,41 @@ export async function resetGanttProjectData(projectId: string): Promise<Timeline
 
   if (snapshot.length > 0) await touchProject(projectId, { type: 'task:updated' })
   return snapshot
+}
+
+export const RESTORE_CHUNK = 500
+
+/**
+ * Undo of resetGanttProjectData: puts the snapshot's dates and timeline flag
+ * back on every card in one transaction — one UPDATE per chunk from a VALUES
+ * list, one touchProject — instead of one round trip per card. Dates travel as
+ * the snapshot's UTC ISO text with an explicit cast, because the columns are
+ * naive timestamps and a Date parameter would be serialised in the server's
+ * zone. Cards that no longer belong to the project are left alone.
+ */
+export async function restoreTimelineSnapshot(projectId: string, entries: readonly TimelineResetSnapshotEntry[]): Promise<number> {
+  if (entries.length === 0) return 0
+  const updatedAt = new Date().toISOString()
+  await db.transaction(async (tx) => {
+    for (let i = 0; i < entries.length; i += RESTORE_CHUNK) {
+      const chunk = entries.slice(i, i + RESTORE_CHUNK)
+      const values = sql.join(
+        chunk.map(
+          (e) => sql`(${e.id}::uuid, ${e.onTimeline}::boolean, ${e.startDate}::timestamp, ${e.endDate}::timestamp)`,
+        ),
+        sql`, `,
+      )
+      await tx.execute(sql`
+        update board_tasks as t
+        set on_timeline = v.on_timeline,
+            start_date = v.start_date,
+            end_date = v.end_date,
+            updated_at = ${updatedAt}::timestamp
+        from (values ${values}) as v(id, on_timeline, start_date, end_date)
+        where t.id = v.id and t.project_id = ${projectId}
+      `)
+    }
+  })
+  await touchProject(projectId, { type: 'task:updated' })
+  return entries.length
 }

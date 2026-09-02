@@ -1,23 +1,32 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('@/lib/actions/helpers', () => ({
-  requireMember: vi.fn(),
+  requireAuth: vi.fn(),
+}))
+
+vi.mock('@/lib/data/projects', () => ({
+  verifyProjectAccess: vi.fn(),
 }))
 
 vi.mock('@/lib/data/schedule', () => ({
   ensureDefaultCalendar: vi.fn(),
   ensureResourcesForPeople: vi.fn(),
   findCalendars: vi.fn(),
+  findDefaultCalendar: vi.fn(),
+  findResources: vi.fn(),
   findScheduleInputs: vi.fn(),
   findSchedulePeople: vi.fn(),
   persistPlacements: vi.fn(),
 }))
 
-import { requireMember } from '@/lib/actions/helpers'
+import { requireAuth } from '@/lib/actions/helpers'
+import { verifyProjectAccess } from '@/lib/data/projects'
 import {
   ensureDefaultCalendar,
   ensureResourcesForPeople,
   findCalendars,
+  findDefaultCalendar,
+  findResources,
   findScheduleInputs,
   findSchedulePeople,
   persistPlacements,
@@ -44,6 +53,8 @@ const T = (day: number) => new Date(Date.UTC(2026, 8, day, 9, 0, 0))
 const CAL = { id: 'cal-default', timezone: 'UTC', hoursPerDay: '8.00', dayStartMinute: 540, workweek: 62 }
 const ALICE = { id: 'r-alice', kind: 'user', userId: 'u-alice', virtualMemberId: null, parentResourceId: null, calendarId: null, label: 'Alice', concurrency: 1, focusFactor: '1.00', orderIndex: 0 }
 const BOB = { id: 'r-bob', kind: 'virtual', userId: null, virtualMemberId: 'v-bob', parentResourceId: null, calendarId: null, label: 'Bob', concurrency: 1, focusFactor: '1.00', orderIndex: 1 }
+const CAROL_LEFT = { id: 'r-carol', kind: 'user', userId: 'u-carol', virtualMemberId: null, parentResourceId: null, calendarId: null, label: 'Carol', concurrency: 1, focusFactor: '1.00', orderIndex: 2 }
+const access = (role: string) => ({ project: { id: PROJECT_ID } as never, role })
 
 function card(id: string, over: Partial<ScheduleTaskRow> = {}): ScheduleTaskRow {
   return {
@@ -102,8 +113,11 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(NOW)
-  vi.mocked(requireMember).mockResolvedValue('u-alice')
+  vi.mocked(requireAuth).mockResolvedValue('u-alice')
+  vi.mocked(verifyProjectAccess).mockResolvedValue(access('editor') as never)
   vi.mocked(ensureDefaultCalendar).mockResolvedValue(CAL)
+  vi.mocked(findDefaultCalendar).mockResolvedValue(CAL)
+  vi.mocked(findResources).mockResolvedValue([ALICE, BOB])
   vi.mocked(findSchedulePeople).mockResolvedValue([
     { kind: 'user', userId: 'u-alice', label: 'Alice' },
     { kind: 'virtual', virtualMemberId: 'v-bob', label: 'Bob' },
@@ -120,16 +134,20 @@ afterEach(() => {
 
 describe('solveProject', () => {
   it('gates on membership before touching anything', async () => {
-    vi.mocked(requireMember).mockRejectedValueOnce(new Error('Project not found or unauthorized'))
+    vi.mocked(verifyProjectAccess).mockResolvedValueOnce(null)
     await expect(solveProject(PROJECT_ID)).rejects.toThrow('unauthorized')
+    vi.mocked(requireAuth).mockRejectedValueOnce(new Error('Unauthorized'))
+    await expect(solveProject(PROJECT_ID)).rejects.toThrow('Unauthorized')
     expect(ensureDefaultCalendar).not.toHaveBeenCalled()
+    expect(findDefaultCalendar).not.toHaveBeenCalled()
+    expect(findSchedulePeople).not.toHaveBeenCalled()
     expect(persistPlacements).not.toHaveBeenCalled()
   })
 
   it('derives lanes from the project people, solves from now and persists every placement once', async () => {
     const schedule = await solveProject(PROJECT_ID)
 
-    expect(requireMember).toHaveBeenCalledWith(PROJECT_ID)
+    expect(verifyProjectAccess).toHaveBeenCalledWith(PROJECT_ID, 'u-alice')
     expect(ensureResourcesForPeople).toHaveBeenCalledWith(PROJECT_ID, [
       { kind: 'user', userId: 'u-alice', label: 'Alice' },
       { kind: 'virtual', virtualMemberId: 'v-bob', label: 'Bob' },
@@ -174,5 +192,57 @@ describe('solveProject', () => {
     const schedule = await solveProject(PROJECT_ID)
     expect(schedule.calendars.map((c) => c.id)).toEqual(['cal-default'])
     expect(schedule.projectEnd).toEqual(T(11))
+  })
+
+  it('a viewer gets the same plan solved in memory and writes nothing', async () => {
+    vi.mocked(verifyProjectAccess).mockResolvedValue(access('viewer') as never)
+    vi.mocked(findResources).mockResolvedValue([ALICE])
+
+    const schedule = await solveProject(PROJECT_ID)
+
+    expect(ensureDefaultCalendar).not.toHaveBeenCalled()
+    expect(ensureResourcesForPeople).not.toHaveBeenCalled()
+    expect(persistPlacements).not.toHaveBeenCalled()
+    expect(findDefaultCalendar).toHaveBeenCalledWith(PROJECT_ID)
+    expect(findResources).toHaveBeenCalledWith(PROJECT_ID)
+
+    expect(schedule.lanes.map((l) => [l.id, l.userId, l.virtualMemberId, l.label])).toEqual([
+      ['r-alice', 'u-alice', null, 'Alice'],
+      ['unsaved:v-bob', null, 'v-bob', 'Bob'],
+    ])
+    const byId = new Map(schedule.placements.map((p) => [p.taskId, p]))
+    expect(byId.get('C')).toMatchObject({ computedStart: T(8), computedEnd: T(9), ownerResourceId: 'unsaved:v-bob' })
+    expect(byId.get('D')).toMatchObject({ computedStart: T(10), computedEnd: T(11), ownerResourceId: 'unsaved:v-bob' })
+    expect(schedule.projectEnd).toEqual(T(11))
+    expect(schedule.warnings).toEqual([])
+  })
+
+  it('a viewer of a project with no calendar yet solves on an unsaved default', async () => {
+    vi.mocked(verifyProjectAccess).mockResolvedValue(access('viewer') as never)
+    vi.mocked(findDefaultCalendar).mockResolvedValue(null)
+    vi.mocked(findCalendars).mockResolvedValue({ calendars: [], exceptions: [] })
+
+    const schedule = await solveProject(PROJECT_ID)
+
+    expect(schedule.defaultCalendarId).toBe('unsaved:default')
+    expect(schedule.calendars).toEqual([
+      { id: 'unsaved:default', timezone: 'UTC', hoursPerDay: 8, dayStartMinute: 540, workweek: 62, exceptions: [] },
+    ])
+    expect(schedule.projectEnd).toEqual(T(11))
+    expect(ensureDefaultCalendar).not.toHaveBeenCalled()
+  })
+
+  it('someone who left the project keeps their row but loses their lane, and cards pinned to them fall through', async () => {
+    vi.mocked(ensureResourcesForPeople).mockResolvedValue([ALICE, BOB, CAROL_LEFT])
+    const inputs = fixtureInputs()
+    inputs.tasks[0] = card('A', { orderIndex: 0, ownerResourceId: 'r-carol' })
+    vi.mocked(findScheduleInputs).mockResolvedValue(inputs)
+
+    const schedule = await solveProject(PROJECT_ID)
+
+    expect(schedule.lanes.map((l) => l.id)).toEqual(['r-alice', 'r-bob'])
+    const a = schedule.placements.find((p) => p.taskId === 'A')
+    expect(a).toMatchObject({ computedStart: T(7), computedEnd: T(8), ownerResourceId: 'r-alice' })
+    expect(schedule.warnings).toEqual([])
   })
 })

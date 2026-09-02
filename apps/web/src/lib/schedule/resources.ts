@@ -104,6 +104,43 @@ export function planMissingResources(
   return out
 }
 
+/**
+ * The rows that still stand for someone on the project. A row whose person has
+ * left is kept in the table so an old `owner_resource_id` still resolves, but it
+ * gets no lane and no identity mapping; agent rows carry no person and pass
+ * through untouched.
+ */
+export function activeResources(rows: readonly ResourceRow[], people: readonly SchedulePerson[]): ResourceRow[] {
+  const users = new Set<string>()
+  const virtuals = new Set<string>()
+  for (const person of people) {
+    if (person.kind === 'user') users.add(person.userId)
+    else virtuals.add(person.virtualMemberId)
+  }
+  return rows.filter((r) => {
+    if (r.kind === 'agent') return true
+    if (r.userId) return users.has(r.userId)
+    if (r.virtualMemberId) return virtuals.has(r.virtualMemberId)
+    return false
+  })
+}
+
+/** In-memory stand-ins for the rows a read-only solve would have created. */
+export function unsavedResourceRows(plans: readonly NewResourceRow[]): ResourceRow[] {
+  return plans.map((p) => ({
+    id: `unsaved:${p.userId ?? p.virtualMemberId}`,
+    kind: p.kind,
+    userId: p.userId,
+    virtualMemberId: p.virtualMemberId,
+    parentResourceId: null,
+    calendarId: null,
+    label: p.label,
+    concurrency: 1,
+    focusFactor: 1,
+    orderIndex: p.orderIndex,
+  }))
+}
+
 export function toScheduleResource(row: ResourceRow): ScheduleResource {
   const kind = row.kind === 'virtual' || row.kind === 'agent' ? row.kind : 'user'
   const concurrency = Number.isFinite(row.concurrency) && row.concurrency >= 1 ? Math.floor(row.concurrency) : 1

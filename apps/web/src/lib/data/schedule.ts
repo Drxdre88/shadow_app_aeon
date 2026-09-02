@@ -105,21 +105,34 @@ export async function findCalendars(projectId: string): Promise<{ calendars: Wor
   return { calendars, exceptions }
 }
 
+async function findOldestCalendar(conn: Pick<typeof db, 'select'>, projectId: string): Promise<WorkCalendarRow | undefined> {
+  const [row] = await conn
+    .select(calendarColumns)
+    .from(workCalendars)
+    .where(eq(workCalendars.projectId, projectId))
+    .orderBy(asc(workCalendars.createdAt))
+    .limit(1)
+  return row
+}
+
+/** The project's oldest calendar, or none: the read-only half of ensureDefaultCalendar. */
+export async function findDefaultCalendar(projectId: string): Promise<WorkCalendarRow | null> {
+  return (await findOldestCalendar(db, projectId)) ?? null
+}
+
 /**
  * The project's oldest calendar, creating the default Mon–Fri 09:00–17:00 UTC
- * one when there is none. The project row is locked for the check-then-insert
- * so two first solves cannot each create one.
+ * one when there is none. The common case is a plain read; only a project with
+ * no calendar yet enters the transaction, where the project row is locked and
+ * the check repeated so two first solves cannot each create one.
  */
 export async function ensureDefaultCalendar(projectId: string): Promise<WorkCalendarRow> {
+  const existing = await findOldestCalendar(db, projectId)
+  if (existing) return existing
   return db.transaction(async (tx) => {
     await tx.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId)).for('update')
-    const [existing] = await tx
-      .select(calendarColumns)
-      .from(workCalendars)
-      .where(eq(workCalendars.projectId, projectId))
-      .orderBy(asc(workCalendars.createdAt))
-      .limit(1)
-    if (existing) return existing
+    const locked = await findOldestCalendar(tx, projectId)
+    if (locked) return locked
     const [created] = await tx
       .insert(workCalendars)
       .values({
@@ -197,7 +210,11 @@ export async function findScheduleInputs(projectId: string): Promise<ScheduleInp
   return { settings, tasks, columns, assignments: [...real, ...virtual], dependencies }
 }
 
-const PERSIST_CHUNK = 500
+export const PERSIST_CHUNK = 500
+
+function compareTaskId(a: Placement, b: Placement): number {
+  return a.taskId < b.taskId ? -1 : a.taskId > b.taskId ? 1 : 0
+}
 
 /**
  * Writes the solver's output back as the persisted cache (CHR-52): one UPDATE
@@ -206,12 +223,27 @@ const PERSIST_CHUNK = 500
  * the columns are naive timestamps and a Date parameter would be serialised in
  * the server's zone. Deliberately no touchProject: this is a read-side cache,
  * not a user edit, and bumping boardVersion would make every open board reload.
+ *
+ * Two solves of one project serialise on a transaction-scoped advisory lock,
+ * and rows are written in taskId order, so concurrent writers cannot deadlock
+ * on row locks taken in different orders. Cards that fell out of the solve
+ * (archived, or otherwise absent) have their cache cleared in the same
+ * transaction, so unarchiving never resurrects a stale span.
  */
 export async function persistPlacements(projectId: string, placements: readonly Placement[]): Promise<number> {
-  if (placements.length === 0) return 0
+  const ordered = [...placements].sort(compareTaskId)
   await db.transaction(async (tx) => {
-    for (let i = 0; i < placements.length; i += PERSIST_CHUNK) {
-      const chunk = placements.slice(i, i + PERSIST_CHUNK)
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${projectId}))`)
+    const placedIds = sql.join(ordered.map((p) => sql`${p.taskId}::uuid`), sql`, `)
+    await tx.execute(sql`
+      update board_tasks
+      set computed_start = null, computed_end = null, total_float_min = null
+      where project_id = ${projectId}
+        and computed_start is not null
+        and id <> all(array[${placedIds}]::uuid[])
+    `)
+    for (let i = 0; i < ordered.length; i += PERSIST_CHUNK) {
+      const chunk = ordered.slice(i, i + PERSIST_CHUNK)
       const values = sql.join(
         chunk.map(
           (p) =>
@@ -229,5 +261,5 @@ export async function persistPlacements(projectId: string, placements: readonly 
       `)
     }
   })
-  return placements.length
+  return ordered.length
 }

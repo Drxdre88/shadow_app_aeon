@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 
 // The Gantt "Reset" button blanks the dates of every on-timeline card in the
 // project. On a live board that is dozens of cards gone to one misclick, so
@@ -140,5 +140,67 @@ describe('GanttResetModal', () => {
     openModal()
     expect(screen.queryByTestId('reset-affected-count')).toBeNull()
     expect(screen.getByText(/no cards are on the timeline/i)).toBeTruthy()
+  })
+
+  it('disarms again when a reset fails and the dialog stays open', () => {
+    const onConfirm = vi.fn()
+    const onClose = vi.fn()
+    const { rerender } = render(<GanttResetModal isOpen onConfirm={onConfirm} onClose={onClose} />)
+    fireEvent.change(input(), { target: { value: 'RESET' } })
+    expect(confirmButton()).toHaveProperty('disabled', false)
+
+    rerender(<GanttResetModal isOpen isLoading onConfirm={onConfirm} onClose={onClose} />)
+    rerender(<GanttResetModal isOpen isLoading={false} onConfirm={onConfirm} onClose={onClose} />)
+
+    expect(input().value).toBe('')
+    expect(confirmButton()).toHaveProperty('disabled', true)
+    fireEvent.keyDown(window, { key: 'Enter' })
+    expect(onConfirm).not.toHaveBeenCalled()
+  })
+
+  it('cycles Tab and Shift+Tab inside the dialog', () => {
+    openModal()
+    const close = screen.getByRole('button', { name: 'Close' })
+    const cancel = screen.getByRole('button', { name: 'Cancel' })
+
+    cancel.focus()
+    fireEvent.keyDown(window, { key: 'Tab' })
+    expect(document.activeElement).toBe(close)
+
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(cancel)
+
+    input().focus()
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(input())
+
+    input().blur()
+    expect(document.activeElement).toBe(document.body)
+    fireEvent.keyDown(window, { key: 'Tab' })
+    expect(document.activeElement).toBe(close)
+  })
+
+  it('the armed reset button joins the cycle as the last stop', () => {
+    openModal()
+    fireEvent.change(input(), { target: { value: 'RESET' } })
+    confirmButton().focus()
+    fireEvent.keyDown(window, { key: 'Tab' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }))
+  })
+
+  it('returns focus to the button that opened it once it has animated out', async () => {
+    const opener = document.createElement('button')
+    opener.textContent = 'Reset'
+    document.body.appendChild(opener)
+    opener.focus()
+
+    const { rerender } = render(<GanttResetModal isOpen onConfirm={() => {}} onClose={() => {}} />)
+    await waitFor(() => expect(document.activeElement).toBe(input()))
+
+    rerender(<GanttResetModal isOpen={false} onConfirm={() => {}} onClose={() => {}} />)
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
   })
 })

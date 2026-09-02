@@ -32,6 +32,15 @@ const NO_COLUMN_ORDER = Number.MAX_SAFE_INTEGER
 const DAY_MS = 86_400_000
 /** Minimum forward reach of the solve window; the index grows past it on demand. */
 const WINDOW_AHEAD_DAYS = 60
+/**
+ * How far back one typed or actual date may drag the window. Older dates clamp
+ * here: the calendar index caps at MAX_INDEX_DAYS from its first day and stops
+ * growing once it hits the cap, so an unbounded reach into the past could build
+ * an index that never contains `now` and clamps every placement to a stale edge.
+ */
+const MAX_LOOKBACK_DAYS = 2 * 365
+/** Mirrors calendar.ts MAX_INDEX_DAYS minus its padding either side, so the padded span never hits the cap. */
+const MAX_WINDOW_DAYS = 40 * 366 - 2 * 30
 
 /** The columns of a `board_tasks` row the schedule reads. Structural, so no db import. */
 export interface ScheduleTaskRow {
@@ -117,13 +126,23 @@ export function priorityRank(priority: string): number {
   return PRIORITY_RANK[priority] ?? PRIORITY_RANK.medium
 }
 
+function isKnownResource(ctx: AdapterContext, resourceId: string): boolean {
+  if (ctx.hoursPerDayByResourceId.has(resourceId)) return true
+  for (const id of ctx.resourceIdByUserId.values()) if (id === resourceId) return true
+  for (const id of ctx.resourceIdByVirtualMemberId.values()) if (id === resourceId) return true
+  return false
+}
+
 /**
- * The lane a card consumes: an explicit `ownerResourceId` wins; otherwise the
- * earliest assignment (real or virtual) that maps onto a resource. A card whose
- * assignees have no resource yet is unowned and the solver warns (`no-owner`).
+ * The lane a card consumes: an explicit `ownerResourceId` wins when it names a
+ * resource of this project; otherwise the earliest assignment (real or virtual)
+ * that maps onto a resource. A pin left behind by a cross-project transfer or a
+ * person who left falls through to the assignees instead of silently losing its
+ * lane. A card whose assignees have no resource yet is unowned and the solver
+ * warns (`no-owner`).
  */
 export function resolveOwnerResourceId(row: Pick<ScheduleTaskRow, 'id' | 'ownerResourceId'>, ctx: AdapterContext): string | null {
-  if (row.ownerResourceId) return row.ownerResourceId
+  if (row.ownerResourceId && isKnownResource(ctx, row.ownerResourceId)) return row.ownerResourceId
   const assignments = [...(ctx.assignments.get(row.id) ?? [])].sort(
     (a, b) => a.assignedAt.getTime() - b.assignedAt.getTime() || compareIdentity(a, b),
   )
@@ -202,18 +221,24 @@ export function groupAssignments(rows: readonly AssignmentRow[]): Map<string, As
 /**
  * The span the calendar index must cover, derived from the data alone (CHR-54):
  * back to the earliest actual or typed date so pins in the past still resolve,
- * and forward past the latest one. The index grows on demand beyond it.
+ * and forward past the latest one. The index grows on demand beyond it. Bounded
+ * so that `now` is always inside: the backward reach floors at MAX_LOOKBACK_DAYS
+ * and the whole span at MAX_WINDOW_DAYS, so one far-past or far-future typo
+ * cannot push the index past its cap with `now` outside it.
  */
 export function solveWindowFor(tasks: readonly ScheduleTask[], now: Date): SolveWindow {
-  let start = now.getTime()
-  let end = now.getTime() + WINDOW_AHEAD_DAYS * DAY_MS
+  const nowMs = now.getTime()
+  const floor = nowMs - MAX_LOOKBACK_DAYS * DAY_MS
+  let start = nowMs
+  let end = nowMs + WINDOW_AHEAD_DAYS * DAY_MS
   for (const t of tasks) {
     for (const d of [t.startedAt, t.completedAt, t.plannedStart, t.plannedEnd, t.constraintDate]) {
       if (!isUsableDate(d)) continue
       const ms = d.getTime()
-      if (ms < start) start = ms
+      if (ms < start) start = Math.max(ms, floor)
       if (ms + WINDOW_AHEAD_DAYS * DAY_MS > end) end = ms + WINDOW_AHEAD_DAYS * DAY_MS
     }
   }
+  end = Math.min(end, start + MAX_WINDOW_DAYS * DAY_MS)
   return { start: new Date(start), end: new Date(end) }
 }

@@ -6,13 +6,16 @@ import { renderHook, act, cleanup, waitFor } from '@testing-library/react'
 // A timeline reset wipes the dates on every on-timeline card of the project.
 // The store must drop them immediately, put them back if the server refuses,
 // and — on success — leave an undo entry that restores the SERVER's snapshot
-// (which can include cards this client never saw on the timeline).
+// (which can include cards this client never saw on the timeline) through ONE
+// batched action, not one round trip per card.
 
 const resetGanttData = vi.fn()
+const restoreTimelineSnapshot = vi.fn()
 const updateBoardTask = vi.fn()
 
 vi.mock('@/lib/actions/ganttViews', () => ({
   resetGanttData: (...a: unknown[]) => resetGanttData(...a),
+  restoreTimelineSnapshot: (...a: unknown[]) => restoreTimelineSnapshot(...a),
   createGanttView: vi.fn(),
   updateGanttView: vi.fn(),
   deleteGanttView: vi.fn(),
@@ -31,7 +34,7 @@ vi.mock('@/lib/actions/board', () => ({
 
 import { useGanttHandlers } from '../useGanttHandlers'
 import { ToastContainer } from '@/components/ui/Toast'
-import { useBoardStore, type BoardTask } from '@/lib/store/boardStore'
+import { useBoardStore, isDirtyOrGracePeriod, type BoardTask } from '@/lib/store/boardStore'
 import { useGanttStore } from '@/lib/store/ganttStore'
 import { useUndoStore } from '@/lib/store/undoStore'
 
@@ -85,6 +88,7 @@ beforeEach(() => {
   useUndoStore.setState({ stack: [] })
   useGanttStore.getState().setViews([{ id: 'v1', projectId: PROJECT_ID, name: 'View', groupBy: 'column', filters: {} } as never])
   updateBoardTask.mockResolvedValue({})
+  restoreTimelineSnapshot.mockResolvedValue(4)
 })
 
 afterEach(() => {
@@ -142,7 +146,7 @@ describe('handleGanttReset — optimistic reset', () => {
 })
 
 describe('handleGanttReset — undo', () => {
-  it('registers one undo entry that restores the server snapshot through the update action', async () => {
+  it('registers one undo entry that restores the server snapshot through one batched action', async () => {
     const serverSnapshot = [
       { id: 'a', startDate: A_START, endDate: A_END, onTimeline: true },
       { id: 'b', startDate: B_START, endDate: null, onTimeline: true },
@@ -168,15 +172,26 @@ describe('handleGanttReset — undo', () => {
     expect(findTask('b')).toMatchObject({ onTimeline: true, startDate: B_START, endDate: undefined })
     expect(findTask('c')).toMatchObject({ onTimeline: false, startDate: undefined })
 
-    expect(updateBoardTask).toHaveBeenCalledTimes(4)
-    for (const t of serverSnapshot) {
-      expect(updateBoardTask).toHaveBeenCalledWith(t.id, PROJECT_ID, {
-        onTimeline: t.onTimeline,
-        startDate: t.startDate,
-        endDate: t.endDate,
-      })
-    }
+    expect(restoreTimelineSnapshot).toHaveBeenCalledTimes(1)
+    expect(restoreTimelineSnapshot).toHaveBeenCalledWith(PROJECT_ID, serverSnapshot)
+    expect(updateBoardTask).not.toHaveBeenCalled()
     await waitFor(() => expect(triggerReload).toHaveBeenCalledTimes(1))
+  })
+
+  it('holds the direct-write guard for the whole restore so a poll cannot clobber the half-restored store', async () => {
+    resetGanttData.mockResolvedValue([{ id: 'a', startDate: A_START, endDate: A_END, onTimeline: true }])
+    let resolve!: (v: unknown) => void
+    restoreTimelineSnapshot.mockImplementation(() => new Promise((r) => { resolve = r }))
+    const { hook } = setup()
+    await act(async () => { hook.result.current.handleGanttReset() })
+    useBoardStore.setState({ isDirty: false, lastMutatedAt: 0 })
+
+    act(() => { useUndoStore.getState().stack[0].undo() })
+    useBoardStore.setState({ isDirty: false, lastMutatedAt: 0 })
+    expect(isDirtyOrGracePeriod()).toBe(true)
+
+    await act(async () => { resolve(1) })
+    expect(isDirtyOrGracePeriod()).toBe(false)
   })
 
   it('registers no undo when nothing was on the timeline', async () => {
@@ -187,6 +202,6 @@ describe('handleGanttReset — undo', () => {
     await act(async () => { hook.result.current.handleGanttReset() })
 
     expect(useUndoStore.getState().stack).toHaveLength(0)
-    expect(updateBoardTask).not.toHaveBeenCalled()
+    expect(restoreTimelineSnapshot).not.toHaveBeenCalled()
   })
 })

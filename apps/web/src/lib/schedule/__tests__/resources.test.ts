@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { test, fc } from '@fast-check/vitest'
 import {
+  activeResources,
   DEFAULT_CALENDAR,
   hoursPerDayByResource,
   indexResourcesByPerson,
@@ -8,6 +9,7 @@ import {
   resourceLabel,
   toScheduleResource,
   toWorkCalendar,
+  unsavedResourceRows,
   type NewResourceRow,
   type ResourceRow,
   type SchedulePerson,
@@ -118,6 +120,56 @@ describe('planMissingResources', () => {
       for (const i of indexes) expect(i).toBeGreaterThan(maxExisting)
     },
   )
+})
+
+describe('activeResources', () => {
+  const rows = [
+    resourceRow({ id: 'a', userId: 'u1' }),
+    resourceRow({ id: 'b', userId: 'u-left' }),
+    resourceRow({ id: 'c', kind: 'virtual', userId: null, virtualMemberId: 'v1' }),
+    resourceRow({ id: 'd', kind: 'virtual', userId: null, virtualMemberId: 'v-left' }),
+    resourceRow({ id: 'e', kind: 'agent', userId: null, virtualMemberId: null }),
+  ]
+  const people: SchedulePerson[] = [
+    { kind: 'user', userId: 'u1', label: 'Alice' },
+    { kind: 'virtual', virtualMemberId: 'v1', label: 'Bob' },
+  ]
+
+  it('keeps only rows whose person is still on the project, and every agent row', () => {
+    expect(activeResources(rows, people).map((r) => r.id)).toEqual(['a', 'c', 'e'])
+  })
+
+  it('an empty roster leaves only agents', () => {
+    expect(activeResources(rows, []).map((r) => r.id)).toEqual(['e'])
+  })
+
+  test.prop([fc.array(arbPerson, { maxLength: 15 }), fc.array(arbPerson, { maxLength: 15 })], { numRuns: 60 })(
+    'the active set is exactly the rows planned for the current roster',
+    (roster, before) => {
+      const rowsBefore = planMissingResources(PROJECT, before, []).map(inserted)
+      const rowsNow = [...rowsBefore, ...planMissingResources(PROJECT, roster, rowsBefore).map((p, i) => inserted(p, 100 + i))]
+      const active = activeResources(rowsNow, roster)
+      const rosterKeys = new Set(roster.map((p) => (p.kind === 'user' ? p.userId : p.virtualMemberId)))
+      expect(new Set(active.map((r) => r.userId ?? r.virtualMemberId))).toEqual(rosterKeys)
+      expect(activeResources(active, roster)).toEqual(active)
+    },
+  )
+})
+
+describe('unsavedResourceRows', () => {
+  it('turns a plan into resolvable rows with a stable synthetic id and engine defaults', () => {
+    const plan = planMissingResources(PROJECT, [
+      { kind: 'user', userId: 'u1', label: 'Alice' },
+      { kind: 'virtual', virtualMemberId: 'v1', label: null },
+    ], [])
+    const rows = unsavedResourceRows(plan)
+    expect(rows.map((r) => [r.id, r.kind, r.userId, r.virtualMemberId, r.label, r.orderIndex])).toEqual([
+      ['unsaved:u1', 'user', 'u1', null, 'Alice', 0],
+      ['unsaved:v1', 'virtual', null, 'v1', null, 1],
+    ])
+    for (const r of rows) expect(toScheduleResource(r)).toMatchObject({ concurrency: 1, focusFactor: 1, calendarId: null })
+    expect(indexResourcesByPerson(rows).byUserId.get('u1')).toBe('unsaved:u1')
+  })
 })
 
 describe('row mapping', () => {

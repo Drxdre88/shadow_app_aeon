@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
 import { requireOwnership, requireEditor } from './helpers'
 import {
   findGanttViews as _findGanttViews,
@@ -9,6 +10,7 @@ import {
   deleteGanttView as _deleteGanttView,
   reflowGanttViewRows as _reflowGanttViewRows,
   resetGanttProjectData as _resetGanttProjectData,
+  restoreTimelineSnapshot as _restoreTimelineSnapshot,
   type TimelineResetSnapshotEntry,
 } from '@/lib/data/ganttViews'
 import {
@@ -107,4 +109,29 @@ export async function resetGanttData(projectId: string): Promise<TimelineResetSn
   const snapshot = await _resetGanttProjectData(projectId)
   revalidatePath(`/project/${projectId}`)
   return snapshot
+}
+
+const isoOrNull = z
+  .string()
+  .nullable()
+  .refine((v) => v === null || !isNaN(new Date(v).getTime()), { message: 'Invalid ISO 8601 date string' })
+
+const timelineSnapshotSchema = z
+  .array(
+    z.object({
+      id: z.string().uuid(),
+      startDate: isoOrNull,
+      endDate: isoOrNull,
+      onTimeline: z.boolean(),
+    }),
+  )
+  .max(5000)
+
+/** Undo for resetGanttData: one batched write for the whole snapshot. */
+export async function restoreTimelineSnapshot(projectId: string, entries: TimelineResetSnapshotEntry[]): Promise<number> {
+  await requireEditor(projectId)
+  const parsed = timelineSnapshotSchema.parse(entries)
+  const restored = await _restoreTimelineSnapshot(projectId, parsed)
+  revalidatePath(`/project/${projectId}`)
+  return restored
 }

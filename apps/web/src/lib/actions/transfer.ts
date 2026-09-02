@@ -117,6 +117,7 @@ export async function moveTaskToProject(
       status: 'todo',
       onTimeline: false,
       ganttTaskId: null,
+      ownerResourceId: null,
       updatedAt: new Date(),
     })
     .where(and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, sourceProjectId)))
@@ -229,6 +230,7 @@ export async function moveColumnToProject(
         projectId: targetProjectId,
         onTimeline: false,
         ganttTaskId: null,
+        ownerResourceId: null,
         updatedAt: new Date(),
       })
       .where(and(eq(boardTasks.columnId, columnId), eq(boardTasks.projectId, sourceProjectId)))

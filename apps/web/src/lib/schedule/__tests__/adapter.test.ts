@@ -15,6 +15,9 @@ import {
   type ScheduleTaskRow,
 } from '../adapter'
 import { UNESTIMATED_DEFAULT_MINUTES } from '../types'
+import { solve } from '../solver'
+import { buildCalendarIndex } from '../calendar'
+import { LONDON_MON_FRI, RESOURCE_SOLO, task as engineTask } from '../fixtures'
 
 const DAY_MS = 86_400_000
 const NOW = new Date('2026-09-07T09:00:00.000Z')
@@ -155,6 +158,17 @@ describe('owner derivation', () => {
     ])
     expect(resolveOwnerResourceId(row(), ctx({ assignments }))).toBe('r-u1')
   })
+
+  it('a pin to a resource this project does not know falls through to the assignees', () => {
+    const assignments = groupAssignments([assigned('t1', { userId: 'u2' }, 0)])
+    expect(resolveOwnerResourceId(row({ ownerResourceId: 'r-other-project' }), ctx({ assignments }))).toBe('r-u2')
+    expect(resolveOwnerResourceId(row({ ownerResourceId: 'r-other-project' }), ctx())).toBeNull()
+  })
+
+  it('a pin to a person-less resource (agent) still wins when it is in the hours map', () => {
+    const hoursPerDayByResourceId = new Map([['r-agent', 24]])
+    expect(resolveOwnerResourceId(row({ ownerResourceId: 'r-agent' }), ctx({ hoursPerDayByResourceId }))).toBe('r-agent')
+  })
 })
 
 describe('dependencies and window', () => {
@@ -190,6 +204,54 @@ describe('dependencies and window', () => {
       const ms = NOW.getTime() + offset * DAY_MS
       expect(window.start.getTime()).toBeLessThanOrEqual(ms)
       expect(window.end.getTime()).toBeGreaterThanOrEqual(ms + 60 * DAY_MS)
+    }
+  })
+})
+
+describe('window bounds', () => {
+  const MAX_LOOKBACK_MS = 2 * 365 * DAY_MS
+  const MAX_WINDOW_MS = (40 * 366 - 60) * DAY_MS
+
+  it('floors the backward reach at two years and keeps now inside the span', () => {
+    const ancient = toScheduleTask(row({ startDate: new Date('1970-01-01T00:00:00.000Z') }), ctx())
+    const window = solveWindowFor([ancient], NOW)
+    expect(window.start.getTime()).toBe(NOW.getTime() - MAX_LOOKBACK_MS)
+    expect(window.end.getTime()).toBe(NOW.getTime() + 60 * DAY_MS)
+  })
+
+  it('caps the whole span below the index ceiling so a far-future date cannot push now out', () => {
+    const distant = toScheduleTask(row({ endDate: new Date('2999-12-31T00:00:00.000Z') }), ctx())
+    const window = solveWindowFor([distant], NOW)
+    expect(window.start.getTime()).toBe(NOW.getTime())
+    expect(window.end.getTime()).toBe(NOW.getTime() + MAX_WINDOW_MS)
+  })
+
+  test.prop([fc.array(fc.date({ noInvalidDate: true }), { maxLength: 8 })], { numRuns: 100 })(
+    'for any dates at all, now sits strictly inside the window and the span stays under the cap',
+    (dates) => {
+      const tasks = dates.map((d, i) => toScheduleTask(row({ id: `t${i}`, startDate: i % 2 === 0 ? d : null, endDate: i % 2 === 1 ? d : null }), ctx()))
+      const window = solveWindowFor(tasks, NOW)
+      expect(window.start.getTime()).toBeLessThanOrEqual(NOW.getTime())
+      expect(window.start.getTime()).toBeGreaterThanOrEqual(NOW.getTime() - MAX_LOOKBACK_MS)
+      expect(window.end.getTime()).toBeGreaterThan(NOW.getTime())
+      expect(window.end.getTime() - window.start.getTime()).toBeLessThanOrEqual(MAX_WINDOW_MS)
+    },
+  )
+
+  it('regression: one card dated 1970 no longer clamps every placement to a decade-old index edge', () => {
+    const tasks = [
+      engineTask('ancient', { plannedStart: new Date('1970-01-01T00:00:00.000Z') }),
+      engineTask('fresh'),
+    ]
+    const window = solveWindowFor(tasks, NOW)
+    const result = solve(
+      { tasks, dependencies: [], resources: [RESOURCE_SOLO], calendars: [LONDON_MON_FRI], now: NOW, defaultCalendarId: LONDON_MON_FRI.id },
+      (calendar) => buildCalendarIndex(calendar, window),
+    )
+    expect(result.placements).toHaveLength(2)
+    for (const p of result.placements) {
+      expect(p.computedStart.getTime()).toBeGreaterThanOrEqual(NOW.getTime())
+      expect(p.computedEnd.getTime()).toBeGreaterThan(p.computedStart.getTime())
     }
   })
 })
@@ -236,7 +298,7 @@ describe('adapter totality', () => {
     expect(t.progress).toBe(r.progress)
     expect(t.orderIndex).toBe(r.orderIndex)
     expect(t.isMilestone).toBe(r.isMilestone)
-    expect(t.ownerResourceId).toBe(r.ownerResourceId)
+    expect(t.ownerResourceId).toBe(r.ownerResourceId === 'r-u1' ? 'r-u1' : null)
     if (t.estimateMinutes !== null) {
       expect(Number.isInteger(t.estimateMinutes)).toBe(true)
       expect(t.estimateMinutes).toBeGreaterThan(0)
