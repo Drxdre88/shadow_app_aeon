@@ -7,7 +7,7 @@ import { motion } from 'framer-motion'
 import { Calendar, MoreHorizontal, Check, X, Clock, Trash2, Bot, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { hexToRgba, resolveAccentHex } from '@/lib/utils/colors'
-import { getInitials } from '@/lib/utils/initials'
+import { getInitials, getInitialsFromEmail } from '@/lib/utils/initials'
 import { resolvePriority } from '@/lib/utils/priorities'
 import { labelHex, readableTextColor } from './labelTile'
 import { progressBarStyle } from './progressColor'
@@ -339,7 +339,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
           {assignees && assignees.length > 0 && (
             <div className="flex items-center -space-x-1.5 mb-1.5">
               {assignees.slice(0, 4).map((a) => (
-                <AssigneeDot key={a.userId} name={a.name} image={a.image} kind={a.kind} color={a.color} />
+                <AssigneeDot key={a.userId} name={a.name} email={a.email} initials={a.initials} image={a.image} kind={a.kind} color={a.color} />
               ))}
               {assignees.length > 4 && (
                 <span className="w-5 h-5 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-[8px] text-white/60">
@@ -518,12 +518,15 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   )
 })
 
-function AssigneeDot({ name, image, kind, color }: { name: string | null; image: string | null; kind?: 'virtual'; color?: string | null }) {
+function AssigneeDot({ name, email, initials: stored, image, kind, color }: { name: string | null; email?: string | null; initials?: string | null; image: string | null; kind?: 'virtual'; color?: string | null }) {
   if (image) {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={image} alt="" className="w-5 h-5 rounded-full object-cover border border-white/15" title={name ?? undefined} />
   }
-  const initials = getInitials(name)
+  // Stored initials win — a virtual member named "MG" chose those two letters,
+  // and recomputing from the name would render "M". Then the name, then the
+  // email, and only then the '?' that means "we know nothing about this person".
+  const initials = (stored ?? '').trim() || getInitials(name, '') || getInitialsFromEmail(email) || '?'
   // Virtual members: colored initials avatar with a dashed ring — subtly
   // distinct from real accounts in the pile.
   if (kind === 'virtual') {

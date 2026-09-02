@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getInitials } from '../initials'
+import { getInitials, getInitialsFromEmail } from '../initials'
 
 describe('getInitials', () => {
   it('takes the first letter of the first two words, uppercased', () => {
@@ -44,5 +44,30 @@ describe('getInitials', () => {
 
   it('leaves non-latin scripts alone rather than mangling them', () => {
     expect(getInitials('Мария Иванова')).toBe('МИ')
+  })
+})
+
+describe('getInitialsFromEmail', () => {
+  it('treats separators in the local part as word boundaries', () => {
+    expect(getInitialsFromEmail('john.smith@example.com')).toBe('JS')
+    expect(getInitialsFromEmail('ada_lovelace@example.com')).toBe('AL')
+    expect(getInitialsFromEmail('jean-luc@example.com')).toBe('JL')
+    expect(getInitialsFromEmail('a+b@example.com')).toBe('AB')
+  })
+
+  it('falls back to one letter when the local part is a single run', () => {
+    expect(getInitialsFromEmail('marcelpie0@gmail.com')).toBe('M')
+  })
+
+  it('returns empty rather than a placeholder, so callers keep their own chain', () => {
+    expect(getInitialsFromEmail(null)).toBe('')
+    expect(getInitialsFromEmail(undefined)).toBe('')
+    expect(getInitialsFromEmail('')).toBe('')
+    expect(getInitialsFromEmail('@nolocal.com')).toBe('')
+    expect(getInitialsFromEmail('...@example.com')).toBe('')
+  })
+
+  it('ignores the domain entirely', () => {
+    expect(getInitialsFromEmail('sam@big.corp.example.com')).toBe('S')
   })
 })

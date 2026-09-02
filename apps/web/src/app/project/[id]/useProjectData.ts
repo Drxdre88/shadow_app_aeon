@@ -13,10 +13,10 @@ import { useCanvasStore } from '@/lib/store/canvasStore'
 const POLL_INTERVAL = 30_000
 const PUSHER_DEBOUNCE_MS = 300
 
-type AssigneeLite = { userId: string; name: string | null; image: string | null }
+type AssigneeLite = { userId: string; name: string | null; email?: string | null; image: string | null }
 type VirtualAssigneeLite = { virtualMemberId: string; name: string; initials: string; color: string }
 type VirtualMemberRaw = { id: string; name: string; initials: string; color: string }
-type AssigneePill = AssigneeLite & { kind?: 'virtual'; color?: string | null }
+type AssigneePill = AssigneeLite & { initials?: string | null; kind?: 'virtual'; color?: string | null }
 
 // Real + virtual assignees merge into one pill list per task — virtual pills
 // reuse the userId slot for their member id (uuids never collide) and carry
@@ -28,14 +28,14 @@ function toAssigneePills(
   const out: Record<string, AssigneePill[]> = {}
   if (raw) {
     for (const [taskId, list] of Object.entries(raw)) {
-      out[taskId] = list.map((a) => ({ userId: a.userId, name: a.name, image: a.image }))
+      out[taskId] = list.map((a) => ({ userId: a.userId, name: a.name, email: a.email ?? null, image: a.image }))
     }
   }
   if (rawVirtual) {
     for (const [taskId, list] of Object.entries(rawVirtual)) {
       const target = out[taskId] ?? (out[taskId] = [])
       for (const v of list) {
-        target.push({ userId: v.virtualMemberId, name: v.name, image: null, kind: 'virtual', color: v.color })
+        target.push({ userId: v.virtualMemberId, name: v.name, initials: v.initials, image: null, kind: 'virtual', color: v.color })
       }
     }
   }
