@@ -14,6 +14,7 @@ import { TaskComments } from './TaskComments'
 import { useChecklistHandlers } from './useChecklistHandlers'
 import { TaskDateSection } from './TaskDateSection'
 import { TaskLabelsSection } from './TaskLabelsSection'
+import { TaskMembersSection } from './TaskMembersSection'
 import { useBoardSizing, sizingTooltip, sizingUnitLabel } from './sizing'
 import { TaskProgressRow } from './TaskProgressRow'
 import { BoardSizingModal } from './BoardSizingModal'
@@ -322,6 +323,10 @@ export function TaskEditContent({
             onLabelDelete={onLabelDelete}
             onLabelToggle={onLabelToggle}
           />
+        )}
+
+        {editingTaskId && (
+          <TaskMembersSection taskId={editingTaskId} projectId={projectId} />
         )}
 
         <div className="pt-4 border-t border-white/10">

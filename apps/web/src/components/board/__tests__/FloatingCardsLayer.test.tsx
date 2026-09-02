@@ -23,6 +23,19 @@ vi.mock('@/lib/actions/board', () => ({
   deleteBoardTask: vi.fn(),
   reorderBoardTasks: vi.fn(),
 }))
+vi.mock('@/lib/actions/assignees', () => ({
+  assignTaskAction: vi.fn(),
+  unassignTaskAction: vi.fn(),
+  assignVirtualTaskAction: vi.fn(),
+  unassignVirtualTaskAction: vi.fn(),
+}))
+vi.mock('@/lib/actions/member-profiles', () => ({ setMemberProfileAction: vi.fn() }))
+vi.mock('@/lib/actions/virtual-members', () => ({
+  getAssignablePeople: vi.fn().mockResolvedValue({ members: [], virtualMembers: [] }),
+  createVirtualMemberAction: vi.fn(),
+  updateVirtualMemberAction: vi.fn(),
+  deleteVirtualMemberAction: vi.fn(),
+}))
 
 import { FloatingCardsLayer } from '../FloatingCardsLayer'
 import { useBoardStore, type BoardTask } from '@/lib/store/boardStore'
