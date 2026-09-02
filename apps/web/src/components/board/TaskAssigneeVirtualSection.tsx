@@ -355,7 +355,7 @@ function VirtualEditRow({
   )
 }
 
-function ColorDots({ value, onChange }: { value: string; onChange: (c: string) => void }) {
+export function ColorDots({ value, onChange }: { value: string; onChange: (c: string) => void }) {
   return (
     <div className="flex items-center gap-1.5">
       {ACCENT_COLORS.map((c) => (

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Ruler } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { parseSizing, useBoardSizingStore } from './sizing'
+import { parseSizing, parseAvatarPrefs, useBoardSizingStore, useAvatarPrefsStore } from './sizing'
 import { BoardSizingModal } from './BoardSizingModal'
 
 interface BoardSizingButtonProps {
@@ -25,6 +25,9 @@ export function BoardSizingButton({ projectId, settings }: BoardSizingButtonProp
     if (hydratedRef.current === key) return
     hydratedRef.current = key
     setSizing(parseSizing(settings))
+    // Same settings blob, same mount — avatar prefs would otherwise need a
+    // second component whose only job is to read one boolean.
+    useAvatarPrefsStore.getState().setAvatarPrefs(parseAvatarPrefs(settings))
   }, [settings, setSizing])
 
   return (

@@ -795,6 +795,21 @@ export const updateVirtualMemberSchema = z.object({
 export type CreateVirtualMemberInput = z.infer<typeof createVirtualMemberSchema>
 export type UpdateVirtualMemberInput = z.infer<typeof updateVirtualMemberSchema>
 
+// Per-realm display overrides for real members. Every field is tri-state:
+// absent = leave alone, null = clear the override, a value = set it. The data
+// layer deletes the row once the last override is cleared, so `null` is a real
+// instruction here and must survive validation rather than being stripped.
+export const updateMemberProfileSchema = z.object({
+  initials:    z.string().trim().min(1).max(4).nullable().optional(),
+  color:       z.string().trim().min(1).max(20).nullable().optional(),
+  displayName: z.string().trim().min(1).max(120).nullable().optional(),
+}).refine(
+  (v) => v.initials !== undefined || v.color !== undefined || v.displayName !== undefined,
+  { message: 'Nothing to update' },
+)
+
+export type UpdateMemberProfileInput = z.infer<typeof updateMemberProfileSchema>
+
 export type HangarObjective        = z.infer<typeof hangarObjectiveSchema>
 export type HangarAgent            = z.infer<typeof hangarAgentSchema>
 export type HangarOutputMode       = z.infer<typeof hangarOutputModeSchema>

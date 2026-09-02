@@ -21,6 +21,10 @@ vi.mock('@/lib/actions/assignees', () => ({
   unassignVirtualTaskAction: vi.fn().mockResolvedValue(null),
 }))
 
+vi.mock('@/lib/actions/member-profiles', () => ({
+  setMemberProfileAction: vi.fn().mockResolvedValue(null),
+}))
+
 vi.mock('@/lib/actions/virtual-members', () => ({
   getAssignablePeople: vi.fn(),
   createVirtualMemberAction: vi.fn(),

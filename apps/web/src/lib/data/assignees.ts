@@ -2,20 +2,40 @@ import { db } from '@/lib/db'
 import { taskAssignees, users, boardTasks } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { touchProject } from './projects'
+import { findMemberProfilesForProject, type MemberProfileRow } from './member-profiles'
 
 // Aeon side quest — task assignees data layer.
 
 export type AssigneeRow = {
   userId: string
+  /** The realm's display name for them when one is set, else their account name. */
   name: string | null
   email: string
   image: string | null
+  /** Realm override, or null to derive as before. */
+  initials: string | null
+  /** Realm override, or null for the hue derived from the seed. */
+  color: string | null
   assignedAt: Date
   assignedBy: string | null
 }
 
+/** Overlay one realm override onto a row. A member without one is untouched. */
+function withProfile<T extends { userId: string; name: string | null }>(
+  row: T,
+  profiles: Map<string, MemberProfileRow>,
+): T & { initials: string | null; color: string | null } {
+  const p = profiles.get(row.userId)
+  return {
+    ...row,
+    name: p?.displayName ?? row.name,
+    initials: p?.initials ?? null,
+    color: p?.color ?? null,
+  }
+}
+
 export async function getTaskAssignees(taskId: string): Promise<AssigneeRow[]> {
-  return db
+  const rows = await db
     .select({
       userId: taskAssignees.userId,
       name: users.name,
@@ -27,6 +47,11 @@ export async function getTaskAssignees(taskId: string): Promise<AssigneeRow[]> {
     .from(taskAssignees)
     .innerJoin(users, eq(users.id, taskAssignees.userId))
     .where(eq(taskAssignees.taskId, taskId))
+
+  if (rows.length === 0) return []
+  const projectId = await projectIdForTask(taskId)
+  const profiles = projectId ? await findMemberProfilesForProject(projectId) : new Map()
+  return rows.map((r) => withProfile(r, profiles))
 }
 
 // Bulk fetch for a project — the board store hydrates assignees per card
@@ -49,17 +74,21 @@ export async function getAssigneesForProject(projectId: string): Promise<Record<
     .innerJoin(users, eq(users.id, taskAssignees.userId))
     .where(eq(boardTasks.projectId, projectId))
 
+  // One extra query for the whole board rather than a join per row — the realm
+  // is a property of the project, not of any individual assignment.
+  const profiles = await findMemberProfilesForProject(projectId)
+
   const out: Record<string, AssigneeRow[]> = {}
   for (const r of rows) {
     const list = out[r.taskId] ?? (out[r.taskId] = [])
-    list.push({
+    list.push(withProfile({
       userId: r.userId,
       name: r.name,
       email: r.email,
       image: r.image,
       assignedAt: r.assignedAt,
       assignedBy: r.assignedBy,
-    })
+    }, profiles))
   }
   return out
 }

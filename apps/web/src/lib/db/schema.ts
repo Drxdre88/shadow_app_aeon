@@ -713,6 +713,46 @@ export const virtualMembers = pgTable('virtual_members', {
   realmIdx: index('virtual_members_realm_idx').on(t.realmId, t.createdAt),
 }))
 
+// Per-realm display overrides for REAL members: the initials, colour and name
+// an avatar renders when the realm's owner has chosen them rather than letting
+// them be derived.
+//
+// Deliberately NOT columns on `users` — name and image are global identity,
+// owned by the person and populated by their OAuth provider, so one realm's
+// owner must never be able to rewrite how someone appears in another realm.
+// Scoping to (realm_id, user_id) mirrors virtualMembers for the same reason.
+//
+// Every override column is nullable and means "no override, derive as before",
+// so a member without a row renders exactly as they did before this table
+// existed. A row with all three null is meaningless — the CHECK forbids it and
+// the action deletes the row when the last override is cleared, which keeps
+// "has an override" answerable by the row existing.
+export const memberProfiles = pgTable('member_profiles', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  realmId: uuid('realm_id').notNull().references(() => workspaceGroups.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  initials: varchar('initials', { length: 4 }),
+  color: varchar('color', { length: 20 }),
+  displayName: varchar('display_name', { length: 120 }),
+  createdById: uuid('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  realmUserKey: uniqueIndex('member_profiles_realm_user_key').on(t.realmId, t.userId),
+  notEmpty: check(
+    'member_profiles_not_empty_check',
+    sql`(initials IS NOT NULL) OR (color IS NOT NULL) OR (display_name IS NOT NULL)`,
+  ),
+  initialsLength: check(
+    'member_profiles_initials_length_check',
+    sql`(initials IS NULL) OR ((char_length((initials)::text) >= 1) AND (char_length((initials)::text) <= 4))`,
+  ),
+  displayNameLength: check(
+    'member_profiles_display_name_length_check',
+    sql`(display_name IS NULL) OR (char_length(btrim((display_name)::text)) > 0)`,
+  ),
+}))
+
 // Parallel assignment table to task_assignees — keeps every existing
 // real-member query (users innerJoin) untouched and type-safe instead of
 // widening task_assignees with a nullable userId + CHECK.
@@ -902,4 +942,5 @@ export type SessionEvent = typeof sessionEvents.$inferSelect
 export type HangarRepo = typeof hangarRepos.$inferSelect
 export type TaskAssignee = typeof taskAssignees.$inferSelect
 export type VirtualMember = typeof virtualMembers.$inferSelect
+export type MemberProfile = typeof memberProfiles.$inferSelect
 export type TaskVirtualAssignee = typeof taskVirtualAssignees.$inferSelect

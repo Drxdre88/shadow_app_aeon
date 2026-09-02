@@ -39,6 +39,10 @@ vi.mock('@/lib/actions/transfer', () => ({
   copyTaskToProject: vi.fn(),
   moveTaskToProject: vi.fn(),
 }))
+vi.mock('@/lib/actions/member-profiles', () => ({
+  setMemberProfileAction: vi.fn().mockResolvedValue(null),
+}))
+
 vi.mock('@/lib/actions/virtual-members', () => ({
   getAssignablePeople: vi.fn().mockResolvedValue({ members: [], virtualMembers: [] }),
   listVirtualMembersForProject: vi.fn().mockResolvedValue([]),
