@@ -67,6 +67,14 @@ export interface ScheduleTask {
   scheduleMode: ScheduleMode
   constraintType: ConstraintType
   constraintDate: Date | null
+  /**
+   * The dates a human typed on the card (`board_tasks.start_date` / `end_date`).
+   * Inputs, never outputs: a `manual` pin occupies exactly this span, so two pinned
+   * cards on one resource no longer both collapse onto `now` and overbook it.
+   * Ignored for `auto` work, which the sweep places from `now` (CHR-49).
+   */
+  plannedStart: Date | null
+  plannedEnd: Date | null
   /** Null = unestimated. Scheduled at a default span, excluded from capacity (CHR-11). */
   estimateMinutes: number | null
   /** The card's raw size, in the board's own unit. Input to the estimate conversion. */
@@ -114,6 +122,13 @@ export interface Placement {
    * draws to `CalendarIndex.toDisplayEnd(computedEnd)`.
    */
   computedEnd: Date
+  /**
+   * When work really began, echoed from `ScheduleTask.startedAt` (CHR-50). Kept
+   * apart from `computedStart`, which for in-progress work is where the REMAINING
+   * effort is booked — never earlier than `now` (CHR-49). A renderer draws the
+   * actual from here and the plan from `computedStart`.
+   */
+  actualStart: Date | null
   /** Minutes of slack. 0 = on the critical path. */
   totalFloatMin: number
   isCritical: boolean
