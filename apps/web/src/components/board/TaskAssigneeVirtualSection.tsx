@@ -11,6 +11,7 @@ import { useBoardStore, type TaskAssigneePill, type VirtualMemberLite } from '@/
 import { invalidateAssignablePeople } from '@/lib/store/membersCache'
 import { colorConfig, ACCENT_COLORS } from '@/lib/utils/colors'
 import { VirtualAvatar } from '@/components/ui/MemberAvatar'
+import { getInitials } from '@/lib/utils/initials'
 import { toast } from '@/components/ui/Toast'
 import { AssignCheck } from './AssignCheck'
 
@@ -23,18 +24,29 @@ import { AssignCheck } from './AssignCheck'
  * assignment the user made in the meantime (the exact rule
  * lib/store/assigneeMutations.ts documents for the toggle path).
  */
-function patchVirtualPills(memberId: string, patch: { name?: string; color?: string }): void {
+function patchVirtualPills(memberId: string, patch: { name?: string; color?: string; initials?: string }): void {
   const { assigneesByTask, setAssigneesByTask } = useBoardStore.getState()
   const next = { ...assigneesByTask }
   let changed = false
   for (const [tid, list] of Object.entries(assigneesByTask)) {
     if (!list.some((p) => p.userId === memberId)) continue
     next[tid] = list.map((p) =>
-      p.userId === memberId ? { ...p, name: patch.name ?? p.name, color: patch.color ?? p.color } : p,
+      p.userId === memberId
+        ? { ...p, name: patch.name ?? p.name, color: patch.color ?? p.color, initials: patch.initials ?? p.initials }
+        : p,
     )
     changed = true
   }
   if (changed) setAssigneesByTask(next)
+}
+
+/**
+ * Client-side mirror of `deriveInitials` in lib/data/virtual-members.ts, used
+ * only to show what clearing the field will fall back to. The server stays
+ * authoritative — it re-derives on its own when `initials` is absent.
+ */
+function deriveDisplayInitials(name: string): string {
+  return getInitials(name, '?')
 }
 
 /** Drops one virtual member's pills everywhere, returning what was removed. */
@@ -120,11 +132,11 @@ export function VirtualMemberSection({
 
   // Rename/recolor is optimistic: the store updates instantly, the server
   // write happens in the background and reverts on hard failure.
-  const update = useCallback((id: string, updates: { name?: string; color?: string }) => {
+  const update = useCallback((id: string, updates: { name?: string; color?: string; initials?: string }) => {
     const { virtualMembers, setVirtualMembers } = useBoardStore.getState()
     const before = virtualMembers.find((v) => v.id === id)
     setVirtualMembers(virtualMembers.map((v) => v.id === id ? { ...v, ...updates } : v))
-    // Pills carry name/color — keep them in sync.
+    // Pills carry name/color/initials — keep them in sync.
     patchVirtualPills(id, updates)
     invalidateAssignablePeople(projectId)
     updateVirtualMemberAction(projectId, id, updates).catch((err) => {
@@ -133,9 +145,9 @@ export function VirtualMemberSection({
       if (before) {
         const store = useBoardStore.getState()
         store.setVirtualMembers(
-          store.virtualMembers.map((v) => v.id === id ? { ...v, name: before.name, color: before.color } : v),
+          store.virtualMembers.map((v) => v.id === id ? { ...v, name: before.name, color: before.color, initials: before.initials } : v),
         )
-        patchVirtualPills(id, { name: before.name, color: before.color })
+        patchVirtualPills(id, { name: before.name, color: before.color, initials: before.initials })
       }
       toast(err instanceof Error ? err.message : 'Could not update virtual member — reverted', { force: true })
     })
@@ -274,18 +286,23 @@ function VirtualEditRow({
   onCancel,
 }: {
   member: VirtualMemberLite
-  onSave: (updates: { name?: string; color?: string }) => void
+  onSave: (updates: { name?: string; color?: string; initials?: string }) => void
   onCancel: () => void
 }) {
   const [name, setName] = useState(member.name)
   const [color, setColor] = useState(member.color)
+  const [initials, setInitials] = useState(member.initials)
 
   const commit = () => {
     const trimmed = name.trim()
     if (!trimmed) return onCancel()
-    const updates: { name?: string; color?: string } = {}
+    // Empty initials means "back to derived" rather than a write the column
+    // (NOT NULL, varchar(4)) would reject.
+    const nextInitials = initials.trim().slice(0, 4) || deriveDisplayInitials(trimmed)
+    const updates: { name?: string; color?: string; initials?: string } = {}
     if (trimmed !== member.name) updates.name = trimmed
     if (color !== member.color) updates.color = color
+    if (nextInitials !== member.initials) updates.initials = nextInitials
     if (Object.keys(updates).length === 0) return onCancel()
     onSave(updates)
   }
@@ -304,6 +321,26 @@ function VirtualEditRow({
         className="w-full px-3 py-1.5 text-[12px] rounded-md bg-white/[0.03] border border-white/[0.06] focus:border-white/20 outline-none text-white/85"
       />
       <div className="flex items-center gap-2">
+        <VirtualAvatar
+          name={name || member.name}
+          initials={initials.trim().slice(0, 4) || deriveDisplayInitials(name.trim() || member.name)}
+          color={color}
+          size="sm"
+        />
+        <input
+          type="text"
+          value={initials}
+          maxLength={4}
+          onChange={(e) => setInitials(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit()
+            if (e.key === 'Escape') { e.stopPropagation(); onCancel() }
+          }}
+          placeholder="AR"
+          aria-label="Initials"
+          title="Initials shown on cards — up to 4 characters. Leave empty to derive from the name."
+          className="w-14 px-2 py-1.5 text-[12px] text-center uppercase rounded-md bg-white/[0.03] border border-white/[0.06] focus:border-white/20 outline-none text-white/85"
+        />
         <ColorDots value={color} onChange={setColor} />
         <div className="flex-1" />
         <button onClick={onCancel} className="px-2 py-1 rounded-md text-[11px] text-white/45 hover:text-white/80 transition-colors">Cancel</button>
