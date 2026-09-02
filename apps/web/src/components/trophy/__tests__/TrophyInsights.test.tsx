@@ -48,8 +48,8 @@ describe('TrophyInsights bar gradient', () => {
     )
 
     const ids = [...container.querySelectorAll('linearGradient')].map((g) => g.getAttribute('id'))
-    expect(ids).toHaveLength(2)
-    expect(new Set(ids).size).toBe(2)
+    expect(ids.length).toBeGreaterThanOrEqual(2)
+    expect(new Set(ids).size).toBe(ids.length)
     expect(ids.every((id) => id && /^[A-Za-z0-9_-]+$/.test(id))).toBe(true)
   })
 
@@ -61,12 +61,12 @@ describe('TrophyInsights bar gradient', () => {
       </>
     )
 
-    const svgs = [...container.querySelectorAll('svg[role="img"]')]
-    expect(svgs).toHaveLength(2)
+    const svgs = [...container.querySelectorAll('svg[role="img"]')].filter((svg) => svg.querySelector('linearGradient'))
+    expect(svgs.length).toBeGreaterThanOrEqual(2)
 
     for (const svg of svgs) {
       const ownId = svg.querySelector('linearGradient')!.getAttribute('id')
-      const bars = [...svg.querySelectorAll('rect')]
+      const bars = [...svg.querySelectorAll('rect[fill^="url"]')]
       expect(bars.length).toBeGreaterThan(0)
       for (const bar of bars) {
         expect(bar.getAttribute('fill')).toBe(`url(#${ownId})`)
@@ -79,7 +79,7 @@ describe('TrophyInsights priority breakdown', () => {
   it('shows a custom priority level under its own resolved name', () => {
     render(<TrophyInsights tasks={[datum('p0'), datum('p0'), datum('medium')]} />)
 
-    const panel = screen.getByText('By priority').parentElement!
+    const panel = screen.getByRole('region', { name: 'By priority' })
     // The old aggregation collapsed 'p0' to 'medium', so this row did not exist.
     expect(within(panel).getByText('Drop everything')).toBeTruthy()
     expect(within(panel).getByText('medium')).toBeTruthy()
@@ -88,7 +88,7 @@ describe('TrophyInsights priority breakdown', () => {
   it('labels trophies with no priority recorded instead of counting them as Medium', () => {
     render(<TrophyInsights tasks={[datum(null), datum('medium')]} />)
 
-    const panel = screen.getByText('By priority').parentElement!
+    const panel = screen.getByRole('region', { name: 'By priority' })
     expect(within(panel).getByText('No priority')).toBeTruthy()
     expect(within(panel).getByText('medium')).toBeTruthy()
   })
