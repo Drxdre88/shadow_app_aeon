@@ -1,7 +1,8 @@
 'use client'
 
-import { memo } from 'react'
-import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { memo, useMemo } from 'react'
+import { SortableContext } from '@dnd-kit/sortable'
+import { useBoardZoom, verticalStrategyForZoom } from './boardZoom'
 import { AnimatePresence } from 'framer-motion'
 import { SortableTaskCard } from './SortableTaskCard'
 import { QuickAddTask } from './QuickAddTask'
@@ -37,6 +38,12 @@ interface VirtualizedTaskListProps {
   overId?: string | null
   activeTaskId?: string | null
   scrollRef?: React.Ref<HTMLDivElement>
+  /**
+   * The list sits inside the board's pinch-scaled wrapper: sortable
+   * displacements must be expressed in its layout px (boardZoom.ts). Zen's
+   * list lives in an unscaled portal and leaves this off.
+   */
+  zoomAware?: boolean
   onTaskEdit?: (taskId: string) => void
   onDependencyClick?: (taskId: string) => void
   onTaskUpdate?: (taskId: string, updates: Record<string, unknown>) => void
@@ -73,6 +80,7 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
   overId,
   activeTaskId,
   scrollRef,
+  zoomAware = false,
   onTaskEdit,
   onDependencyClick,
   onTaskUpdate,
@@ -83,6 +91,8 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
   onTaskCreate,
 }: VirtualizedTaskListProps) {
   const dense = tasks.length >= DENSE_THRESHOLD
+  const boardZoom = useBoardZoom()
+  const strategy = useMemo(() => verticalStrategyForZoom(zoomAware ? boardZoom : 1), [zoomAware, boardZoom])
 
   const renderCard = (task: TaskItem) => (
     <SortableTaskCard
@@ -112,7 +122,7 @@ export const VirtualizedTaskList = memo(function VirtualizedTaskList({
     // content basis + min-h-0 sizes the column by its cards and still lets
     // this scroller shrink and scroll once the viewport cap engages.
     <div ref={scrollRef} data-col-scroll className="flex-auto min-h-0 overflow-y-auto overscroll-y-contain p-3 space-y-3">
-      <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
+      <SortableContext items={taskIds} strategy={strategy}>
         {dense ? (
           // No AnimatePresence on dense columns: with many cards its layout
           // bookkeeping is the expensive part, and content-visibility already

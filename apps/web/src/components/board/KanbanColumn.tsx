@@ -15,6 +15,8 @@ import { ColorSwatchPicker } from './ColorSwatchPicker'
 import { ColumnDeleteModal } from './ColumnDeleteModal'
 import { openZenMode } from './zenFlight'
 import { clampManualColumnHeight, columnHeightScale } from './columnSizing'
+import { useMovingTaskId } from '@/lib/store/boardStore'
+import { useHoldToMoveActions } from './useHoldToMove'
 
 interface KanbanColumnProps {
   column: BoardColumn
@@ -144,6 +146,9 @@ export const KanbanColumn = memo(function KanbanColumn({
   // session; null means content-fit under the viewport/preference cap.
   const [manualHeight, setManualHeight] = useState<number | null>(null)
   const colorPickerRef = useRef<HTMLDivElement>(null)
+  // Hold-to-move: a tap on this column's empty space appends the lifted card.
+  const movingTaskId = useMovingTaskId()
+  const holdToMove = useHoldToMoveActions()
   const config = getColumnColor(column.color)
   const SelectedIcon = column.icon ? COLUMN_ICON_MAP[column.icon] : null
   const mult = globalGlow / 75
@@ -261,6 +266,15 @@ export const KanbanColumn = memo(function KanbanColumn({
     document.addEventListener('mouseup', onMouseUp)
   }, [])
 
+  // Only the column's own surface counts: a tap on a card is handled by the
+  // card (before/after), and controls keep their own meaning.
+  const handleColumnClick = useCallback((e: React.MouseEvent) => {
+    if (!movingTaskId || !holdToMove) return
+    const target = e.target as Element | null
+    if (target?.closest('[data-task-id], button, input, textarea, select, a, form')) return
+    holdToMove.place({ columnId: column.id, kind: 'end' })
+  }, [movingTaskId, holdToMove, column.id])
+
   const badgeClasses = config.isCustom
     ? 'border backdrop-blur-md'
     : cn('border backdrop-blur-md', config.bg, config.border, config.text, globalGlow > 0 && config.glow)
@@ -281,8 +295,10 @@ export const KanbanColumn = memo(function KanbanColumn({
         'flex flex-col rounded-xl',
         'glass transition-all duration-200',
         'kanban-col-inner',
-        isOver && 'ring-2 ring-white/20'
+        isOver && 'ring-2 ring-white/20',
+        movingTaskId && 'ring-1 ring-white/15 cursor-copy'
       )}
+      onClick={handleColumnClick}
       style={{
         '--col-h-scale': String(columnHeightScale(dynamicH)),
         ...(manualHeight !== null ? { height: `${manualHeight}px` } : {}),
@@ -453,6 +469,7 @@ export const KanbanColumn = memo(function KanbanColumn({
         onSendToVault={onSendToVault}
         onArchiveTask={onArchiveTask}
         onTaskCreate={onTaskCreate}
+        zoomAware
       />
 
       <div

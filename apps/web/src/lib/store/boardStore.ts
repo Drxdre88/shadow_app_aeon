@@ -148,6 +148,10 @@ interface BoardState {
   bumpCommentsSignal: () => void
 
   selectTask: (id: string | null) => void
+  // Hold-to-move: the card lifted by a long press, waiting for a placement
+  // tap. Client-only (never persisted) — see useHoldToMove.ts.
+  movingTaskId: string | null
+  setMovingTaskId: (id: string | null) => void
   convertToTimeline: (taskId: string, startDate: string, endDate: string) => void
   markClean: () => void
   setSaveStatus: (status: SaveStatus) => void
@@ -281,6 +285,8 @@ export const useBoardStore = create<BoardState>()(
       clearCrossedTasks: () => set({ crossedTaskIds: {} }),
 
       selectTask: (id) => set({ selectedTaskId: id }),
+      movingTaskId: null,
+      setMovingTaskId: (id) => set({ movingTaskId: id }),
       convertToTimeline: (taskId, startDate, endDate) => set((s) => ({
         tasks: s.tasks.map((t) =>
           t.id === taskId
@@ -340,6 +346,7 @@ export const useTasks = () => useBoardStore((s) => s.tasks)
 export const useLabels = () => useBoardStore((s) => s.labels)
 export const useDependencies = () => useBoardStore((s) => s.dependencies)
 export const useSelectedTaskId = () => useBoardStore((s) => s.selectedTaskId)
+export const useMovingTaskId = () => useBoardStore((s) => s.movingTaskId)
 export const useShowDates = () => useBoardStore((s) => s.showDates)
 export const useChecklistSummaries = () => useBoardStore((s) => s.checklistSummaries)
 export const useIsDirty = () => useBoardStore((s) => s.isDirty)

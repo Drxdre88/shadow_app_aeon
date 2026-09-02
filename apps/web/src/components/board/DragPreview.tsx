@@ -5,7 +5,11 @@ import { resolveColor } from '@/lib/utils/colors'
 import { GlowCard } from '@/components/ui/GlowCard'
 import type { DragEffect } from '@/stores/themeStore'
 
-export function DragPreview({ task, effect, globalGlow }: { task: { color: string; name: string }; effect: DragEffect; globalGlow: number }) {
+// `zoom` is the board's pinch scale: the overlay lives OUTSIDE the scaled
+// wrapper (dnd-kit overlays inside transformed ancestors drift), so the
+// preview scales itself to match the bird's-eye cards it hovers over. The
+// top-left origin keeps the preview anchored where dnd-kit positions it.
+export function DragPreview({ task, effect, globalGlow, zoom = 1 }: { task: { color: string; name: string }; effect: DragEffect; globalGlow: number; zoom?: number }) {
   const colors = resolveColor(task.color || 'purple')
   const mult = globalGlow / 75
 
@@ -27,7 +31,7 @@ export function DragPreview({ task, effect, globalGlow }: { task: { color: strin
     },
   }
 
-  return (
+  const preview = (
     <motion.div
       initial={{ opacity: 0, scale: 0.8, rotate: -5 }}
       animate={{ opacity: 1, scale: 1, rotate: 0 }}
@@ -39,4 +43,6 @@ export function DragPreview({ task, effect, globalGlow }: { task: { color: strin
       </GlowCard>
     </motion.div>
   )
+  if (zoom === 1) return preview
+  return <div style={{ transform: `scale(${zoom})`, transformOrigin: '0 0' }}>{preview}</div>
 }

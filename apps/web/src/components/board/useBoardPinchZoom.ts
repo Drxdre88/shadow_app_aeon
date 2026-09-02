@@ -10,6 +10,7 @@ import {
   touchDistance,
   touchMidpoint,
 } from './pinchZoom'
+import { publishBoardZoom } from './boardZoom'
 
 interface PinchGesture {
   /** identifiers of the two fingers that opened the pinch */
@@ -27,6 +28,16 @@ interface PinchGesture {
 interface BoardMetrics {
   baseWidth: number
   containerHeight: number
+}
+
+interface UseBoardPinchZoomOptions {
+  /**
+   * While this reports true a new pinch is refused (single-finger events are
+   * never ours anyway). The board passes "a card is being dragged": a stray
+   * second finger during a cross-column drag must not rescale the canvas
+   * under the lifted card.
+   */
+  isLocked?: () => boolean
 }
 
 function findTouch(list: TouchList, identifier: number): Touch | null {
@@ -56,13 +67,24 @@ function findTouch(list: TouchList, identifier: number): Touch | null {
  *   `user-scalable=no` in-browser (accessibility override).
  * - No animations are attached to the gesture, so the reduce-motion master
  *   toggle needs no special-casing here.
+ * - The wrapper's layout box is re-fitted whenever its unscaled size or the
+ *   container's height changes while zoomed (ResizeObserver). The negative
+ *   margins are computed from a measured base width; anything that changes
+ *   that width mid-zoom — a card leaving a dynamically-sized column during a
+ *   drag, a column added, a rotation — would otherwise leave a stale margin,
+ *   i.e. dead scroll range next to the shrunken canvas that dnd-kit's
+ *   auto-scroll then happily scrolls into.
+ * - The settled scale is published (boardZoom.ts) at gesture end and written
+ *   per frame to `data-board-zoom` so dnd-kit measuring can read it.
  */
-export function useBoardPinchZoom() {
+export function useBoardPinchZoom(options: UseBoardPinchZoomOptions = {}) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
   const scaleRef = useRef(MAX_BOARD_SCALE)
   const gestureRef = useRef<PinchGesture | null>(null)
   const metricsRef = useRef<BoardMetrics>({ baseWidth: 0, containerHeight: 0 })
+  const isLockedRef = useRef(options.isLocked)
+  useEffect(() => { isLockedRef.current = options.isLocked }, [options.isLocked])
 
   useEffect(() => {
     const container = containerRef.current
@@ -91,6 +113,7 @@ export function useBoardPinchZoom() {
         content.style.marginBottom = ''
         content.style.height = ''
         delete content.dataset.boardZoomed
+        delete content.dataset.boardZoom
       } else {
         // Lay the wrapper out at viewport-height / scale so the transform lands
         // it exactly on the container's bottom edge. Without this the columns
@@ -104,6 +127,7 @@ export function useBoardPinchZoom() {
         const layoutHeight = fills ? containerHeight / scale : content.offsetHeight
         if (fills) content.style.height = `${layoutHeight}px`
         content.dataset.boardZoomed = ''
+        content.dataset.boardZoom = String(scale)
         content.style.transform = `scale(${scale})`
         content.style.transformOrigin = '0 0'
         const comp = layoutCompensation(scale, baseWidth || content.offsetWidth, layoutHeight)
@@ -122,12 +146,19 @@ export function useBoardPinchZoom() {
       if (event.touches.length < 2) return
       const content = contentRef.current
       if (!content) return
+      // A third finger joining an active pinch is swallowed, not promoted: the
+      // gesture keeps tracking the two fingers that opened it.
+      if (gestureRef.current) {
+        event.preventDefault()
+        return
+      }
+      // Locked (a card is lifted): leave the touches alone. The container's
+      // touch-action already forbids native pinch, and dnd-kit keeps
+      // tracking the finger it started with.
+      if (isLockedRef.current?.()) return
       // Stop the browser from starting a native pinch-zoom or scroll with
       // these fingers — the board owns multi-finger gestures.
       event.preventDefault()
-      // A third finger joining an active pinch is swallowed, not promoted: the
-      // gesture keeps tracking the two fingers that opened it.
-      if (gestureRef.current) return
       // Re-measure per gesture: a column added or the device rotated since the
       // last pinch would otherwise size the board against a stale layout.
       // Safe while already zoomed — neither metric is affected by our own
@@ -170,6 +201,24 @@ export function useBoardPinchZoom() {
         applyScale(MAX_BOARD_SCALE, null)
       }
       gestureRef.current = null
+      publishBoardZoom(scaleRef.current)
+    }
+
+    // Re-fit the zoomed wrapper to whatever the layout is NOW. Idempotent: the
+    // writes are a pure function of (scale, metrics), so a refit that changes
+    // nothing writes the same values and the observer goes quiet.
+    const refit = () => {
+      if (scaleRef.current >= MAX_BOARD_SCALE) return
+      const content = contentRef.current
+      if (!content) return
+      const prev = metricsRef.current
+      measure()
+      const next = metricsRef.current
+      // 1px tolerance on height: clientHeight is integer while the fitted
+      // layout height is fractional, so a content-driven container can jitter
+      // by a rounding pixel — never worth a re-layout, and it must not loop.
+      if (prev.baseWidth === next.baseWidth && Math.abs(prev.containerHeight - next.containerHeight) <= 1) return
+      applyScale(scaleRef.current, null)
     }
 
     // A rotate or window resize while zoomed leaves the board sized against the
@@ -178,6 +227,14 @@ export function useBoardPinchZoom() {
       if (scaleRef.current >= MAX_BOARD_SCALE) return
       measure()
       applyScale(scaleRef.current, null)
+    }
+
+    // Border-box sizes ignore transforms, so the observer reports the wrapper's
+    // TRUE unscaled width — exactly the input the margin compensation needs.
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(refit) : null
+    if (observer) {
+      observer.observe(container)
+      if (contentRef.current) observer.observe(contentRef.current)
     }
 
     // iOS Safari in-browser ignores user-scalable=no; its proprietary gesture
@@ -194,6 +251,8 @@ export function useBoardPinchZoom() {
     window.addEventListener('resize', onResize)
 
     return () => {
+      observer?.disconnect()
+      publishBoardZoom(MAX_BOARD_SCALE)
       window.removeEventListener('resize', onResize)
       container.removeEventListener('touchstart', onTouchStart)
       container.removeEventListener('touchmove', onTouchMove)

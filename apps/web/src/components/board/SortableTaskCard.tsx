@@ -13,8 +13,9 @@ import { resolvePriority } from '@/lib/utils/priorities'
 import { labelHex, readableTextColor } from './labelTile'
 import { progressBarStyle } from './progressColor'
 import { GlowCard } from '@/components/ui/GlowCard'
-import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees } from '@/lib/store/boardStore'
+import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees, useMovingTaskId } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
+import { useCardHoldGesture, useHoldToMoveActions, halfFromPoint } from './useHoldToMove'
 import { DependencyIndicator } from './DependencyIndicator'
 import { TaskContextMenu } from './TaskContextMenu'
 import { TaskSizeBadge } from './TaskSizeBadge'
@@ -72,6 +73,11 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const updateTask = useBoardStore((s) => s.updateTask)
   const crossedTaskIds = useBoardStore((s) => s.crossedTaskIds)
   const { glowIntensity: globalGlow, glowSource, priorities, smoothUiRenders } = useThemeStore()
+  // Hold-to-move: is any card lifted, and is it this one.
+  const movingTaskId = useMovingTaskId()
+  const isMoving = movingTaskId === task.id
+  const holdToMove = useHoldToMoveActions()
+  const { holdHandlers, consumeHoldClick } = useCardHoldGesture(task.id)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [editName, setEditName] = useState(task.name)
@@ -142,6 +148,19 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
 
   const handleCardClick = (e: React.MouseEvent) => {
     if (isEditing) return
+    // The release of a completed hold is not an open.
+    if (consumeHoldClick()) return
+    // Move mode: this tap PLACES (or cancels on the lifted card itself) and
+    // never opens. Hover, shortcuts and the rest of the card stay live.
+    if (movingTaskId && holdToMove) {
+      if (isMoving) { holdToMove.cancel(); return }
+      const columnId = useBoardStore.getState().tasks.find((t) => t.id === task.id)?.columnId
+      const rect = cardElRef.current?.getBoundingClientRect()
+      if (columnId && rect) {
+        holdToMove.place({ columnId, kind: 'card', taskId: task.id, half: halfFromPoint(e.clientY, rect) })
+      }
+      return
+    }
     // Instant mode: open on first click, skip the double-click disambiguation wait.
     if (!smoothUiRenders) { onEdit?.(task.id); return }
     if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null; return }
@@ -174,12 +193,16 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
+    // A touch long-press means "lift the card" (TouchSensor / hold-to-move),
+    // never the context menu: Android fires contextmenu for it, iOS doesn't.
+    if ((e.nativeEvent as PointerEvent).pointerType === 'touch') return
     setContextMenu({ x: e.clientX, y: e.clientY })
   }
 
   return (
-    <div ref={(el) => { setNodeRef(el); (cardElRef as React.MutableRefObject<HTMLDivElement | null>).current = el }} style={style} className="relative" data-task-id={task.id}>
+    <div ref={(el) => { setNodeRef(el); (cardElRef as React.MutableRefObject<HTMLDivElement | null>).current = el }} style={style} className="relative" data-task-id={task.id} data-moving={isMoving ? '' : undefined}>
       <CardPeekPreview taskId={task.id} triggerRef={cardElRef} />
+      {isMoving && <MovingRing color={resolvedGlowColor} pulse={smoothUiRenders} />}
       {showDropIndicator && globalGlow > 0 && (
         <motion.div
           initial={{ opacity: 0, scaleX: 0 }}
@@ -195,6 +218,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
       <motion.div
         {...attributes}
         {...listeners}
+        {...holdHandlers}
         onClick={handleCardClick}
         onContextMenu={handleContextMenu}
         // touch-action: manipulation (NOT none): a finger landing on a card
@@ -205,7 +229,8 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
         style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
         className={cn(
           'cursor-grab active:cursor-grabbing',
-          isDragging && 'opacity-30 scale-95'
+          isDragging && 'opacity-30 scale-95',
+          movingTaskId && !isMoving && 'cursor-copy'
         )}
         initial={animateOnMount ? { opacity: 0, y: 10 } : false}
         animate={{ opacity: isDragging ? 0.3 : 1, y: 0, scale: isDragging ? 0.95 : 1 }}
@@ -518,6 +543,27 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
     </div>
   )
 })
+
+// The lifted card's halo. Pulses with framer-motion when Smooth UI Renders is
+// on; when it's off every animation is killed (data-reduce-motion), so the
+// ring is rendered as a plain static highlight instead of a frozen keyframe.
+function MovingRing({ color, pulse }: { color: string; pulse: boolean }) {
+  const hex = resolveAccentHex(color)
+  const ring = `0 0 0 2px ${hexToRgba(hex, 0.9)}, 0 0 18px 4px ${hexToRgba(hex, 0.45)}`
+  const ringWide = `0 0 0 3px ${hexToRgba(hex, 0.6)}, 0 0 34px 10px ${hexToRgba(hex, 0.3)}`
+  if (!pulse) {
+    return <div aria-hidden className="absolute -inset-0.5 rounded-xl pointer-events-none z-10" style={{ boxShadow: ring }} />
+  }
+  return (
+    <motion.div
+      aria-hidden
+      className="absolute -inset-0.5 rounded-xl pointer-events-none z-10"
+      initial={{ boxShadow: ring, opacity: 0.6 }}
+      animate={{ boxShadow: [ring, ringWide, ring], opacity: [0.7, 1, 0.7] }}
+      transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+    />
+  )
+}
 
 function AssigneeDot({ name, email, initials: stored, image, kind, color, preferInitials }: { name: string | null; email?: string | null; initials?: string | null; image: string | null; kind?: 'virtual'; color?: string | null; preferInitials?: boolean }) {
   // A profile picture wins by default. When the board prefers initials it must

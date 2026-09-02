@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState, useMemo, useEffect } from 'react'
+import { useCallback, useState, useMemo, useEffect, useRef } from 'react'
 import { DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColumn, type BoardTask, type TaskAssigneePill } from '@/lib/store/boardStore'
@@ -25,6 +25,9 @@ import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { useBoardDnD } from './useBoardDnD'
 import { useBoardOverlays, type BoardTaskData } from './useBoardOverlays'
 import { useBoardPinchZoom } from './useBoardPinchZoom'
+import { boardMeasuring, useBoardZoom } from './boardZoom'
+import { HoldToMoveContext, useHoldToMoveMode } from './useHoldToMove'
+import { HoldToMoveBanner } from './HoldToMoveBanner'
 import { boardCollisionDetection } from './boardCollision'
 import { useBoardKeyboardShortcuts } from './useBoardKeyboardShortcuts'
 import { useBoardHover } from './useBoardHover'
@@ -153,7 +156,13 @@ export function TaskBoard({
   const columnIds = sortedColumns.map((c) => c.id)
 
   const { boardRef, hoveredTaskId } = useBoardHover()
-  const { containerRef: pinchContainerRef, contentRef: pinchContentRef } = useBoardPinchZoom()
+  // The pinch is refused while a card is lifted (a stray second finger during
+  // a cross-column drag would rescale the canvas under the drag), and the
+  // settled zoom sizes the drag preview to the bird's-eye cards.
+  const dragActiveRef = useRef(false)
+  const isPinchLocked = useCallback(() => dragActiveRef.current, [])
+  const { containerRef: pinchContainerRef, contentRef: pinchContentRef } = useBoardPinchZoom({ isLocked: isPinchLocked })
+  const boardZoom = useBoardZoom()
 
   const { connectSourceId, cursorPos, handleConnectClick, cancelConnect } = useConnectMode({
     connectMode,
@@ -163,13 +172,16 @@ export function TaskBoard({
 
   // Auto AI launches ride on the move mutation (see useBoardHandlers): the
   // agent is spawned only once the card's move is durable.
-  const { sensors, activeItem, overId, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel } = useBoardDnD({
+  const { sensors, activeItem, overId, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel, placeMovingTask } = useBoardDnD({
     projectTasks,
     sortedColumns,
     onTaskMove,
     onTaskDelete,
     onColumnReorder,
   })
+  useEffect(() => { dragActiveRef.current = activeItem !== null }, [activeItem])
+
+  const holdToMove = useHoldToMoveMode({ place: placeMovingTask })
 
   const {
     editingTask,
@@ -295,9 +307,14 @@ export function TaskBoard({
           onFiltersChange={setFilters}
         />
 
+        <HoldToMoveContext.Provider value={holdToMove}>
         <DndContext
           sensors={sensors}
           collisionDetection={boardCollisionDetection}
+          // Zoom-correct rect measuring (boardZoom.ts): dnd-kit strips a
+          // node's own translate in unscaled px, which skews displaced
+          // cards' droppable rects under the pinch scale.
+          measuring={boardMeasuring}
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
@@ -382,12 +399,15 @@ export function TaskBoard({
           </SortableContext>
 
           <DragOverlay dropAnimation={smoothUiRenders ? { duration: 300, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' } : { duration: 0 }}>
-            {activeItem?.type === 'task' && <DragPreview task={activeItem.data as BoardTaskData} effect={dragEffect} globalGlow={globalGlow} />}
+            {activeItem?.type === 'task' && <DragPreview task={activeItem.data as BoardTaskData} effect={dragEffect} globalGlow={globalGlow} zoom={boardZoom} />}
           </DragOverlay>
 
           <TrashDropZone isActive={isTaskDrag} />
         </DndContext>
+        </HoldToMoveContext.Provider>
       </div>
+
+      <HoldToMoveBanner onCancel={holdToMove.cancel} />
 
       <TaskEditModal
         isOpen={isModalOpen}
