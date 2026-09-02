@@ -65,6 +65,12 @@ export interface TaskAssigneePill {
   userId: string
   name: string | null
   image: string | null
+  /** Real members only. The avatar's last resort before '?' — magic-link
+   *  signups never get a name, so without this half the pile renders '?'. */
+  email?: string | null
+  /** Virtual members only: the initials chosen at creation, rendered verbatim.
+   *  Recomputing from `name` turns a member literally called "MG" into "M". */
+  initials?: string | null
   kind?: 'virtual'
   color?: string | null
 }

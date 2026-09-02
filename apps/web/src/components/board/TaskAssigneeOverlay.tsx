@@ -112,7 +112,7 @@ export function TaskAssigneeOverlay({ projectId, taskId, onClose }: Props) {
     const isAssigned = currentAssignees(taskId).some((a) => a.userId === member.userId)
     void toggleAssigneeOptimistic({
       taskId,
-      pill: { userId: member.userId, name: member.name, image: member.image },
+      pill: { userId: member.userId, name: member.name, email: member.email, image: member.image },
       assign: !isAssigned,
       run: () => isAssigned
         ? unassignTaskAction(projectId, taskId, member.userId)
@@ -125,7 +125,7 @@ export function TaskAssigneeOverlay({ projectId, taskId, onClose }: Props) {
     const isAssigned = currentAssignees(taskId).some((a) => a.userId === member.id)
     void toggleAssigneeOptimistic({
       taskId,
-      pill: { userId: member.id, name: member.name, image: null, kind: 'virtual', color: member.color },
+      pill: { userId: member.id, name: member.name, initials: member.initials, image: null, kind: 'virtual', color: member.color },
       assign: !isAssigned,
       run: () => isAssigned
         ? unassignVirtualTaskAction(projectId, taskId, member.id)

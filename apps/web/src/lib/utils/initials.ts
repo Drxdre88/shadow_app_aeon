@@ -21,3 +21,18 @@ export function getInitials(name: string | null | undefined, fallback = '?'): st
     .toUpperCase()
   return initials || ([...seed][0]?.toUpperCase() ?? fallback)
 }
+
+/**
+ * Initials for someone we only have an email address for.
+ *
+ * A magic-link signup never carries a name — only OAuth providers hand one over
+ * — so name-only initials leave those people rendering as '?'. The local part is
+ * the one other thing we know, and its separators are word boundaries:
+ * `john.smith` -> JS, `marcelpie0` -> M. Returns '' (not the '?' fallback) so a
+ * caller can keep walking its own chain.
+ */
+export function getInitialsFromEmail(email: string | null | undefined): string {
+  const local = (email ?? '').split('@')[0]
+  if (!local) return ''
+  return getInitials(local.split(/[._\-+]+/).filter(Boolean).join(' '), '')
+}
