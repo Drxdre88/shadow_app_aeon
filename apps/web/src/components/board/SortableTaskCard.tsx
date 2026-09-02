@@ -270,6 +270,18 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
                 </h4>
               )}
             </div>
+            {assignees && assignees.length > 0 && (
+              <div className="flex items-center -space-x-1.5 flex-shrink-0 ml-1 self-start pt-0.5">
+                {assignees.slice(0, 4).map((a) => (
+                  <AssigneeDot key={a.userId} name={a.name} email={a.email} initials={a.initials} image={a.image} kind={a.kind} color={a.color} />
+                ))}
+                {assignees.length > 4 && (
+                  <span className="w-5 h-5 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-[8px] text-white/60">
+                    +{assignees.length - 4}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
               <button
                 data-task-edit
@@ -332,19 +344,6 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
               })}
               {taskLabels.length > 4 && (
                 <span className="text-[9px] text-slate-500">+{taskLabels.length - 4}</span>
-              )}
-            </div>
-          )}
-
-          {assignees && assignees.length > 0 && (
-            <div className="flex items-center -space-x-1.5 mb-1.5">
-              {assignees.slice(0, 4).map((a) => (
-                <AssigneeDot key={a.userId} name={a.name} email={a.email} initials={a.initials} image={a.image} kind={a.kind} color={a.color} />
-              ))}
-              {assignees.length > 4 && (
-                <span className="w-5 h-5 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-[8px] text-white/60">
-                  +{assignees.length - 4}
-                </span>
               )}
             </div>
           )}
