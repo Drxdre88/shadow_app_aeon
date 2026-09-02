@@ -40,6 +40,7 @@ vi.mock('@/lib/actions/transfer', () => ({
   moveTaskToProject: vi.fn(),
 }))
 vi.mock('@/lib/actions/boardBulk', () => ({ moveAllTasksToColumnAction: vi.fn() }))
+vi.mock('@/lib/actions/fuse', () => ({ fuseBoardTasks: vi.fn(), unfuseBoardTasks: vi.fn() }))
 vi.mock('@/lib/actions/member-profiles', () => ({
   setMemberProfileAction: vi.fn().mockResolvedValue(null),
 }))

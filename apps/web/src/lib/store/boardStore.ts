@@ -152,6 +152,10 @@ interface BoardState {
   // tap. Client-only (never persisted) — see useHoldToMove.ts.
   movingTaskId: string | null
   setMovingTaskId: (id: string | null) => void
+  // Card fusion: the card a dragged card has dwelt on long enough to fuse
+  // into. Client-only — see components/board/fuseZone.ts.
+  fuseTargetId: string | null
+  setFuseTargetId: (id: string | null) => void
   convertToTimeline: (taskId: string, startDate: string, endDate: string) => void
   markClean: () => void
   setSaveStatus: (status: SaveStatus) => void
@@ -287,6 +291,8 @@ export const useBoardStore = create<BoardState>()(
       selectTask: (id) => set({ selectedTaskId: id }),
       movingTaskId: null,
       setMovingTaskId: (id) => set({ movingTaskId: id }),
+      fuseTargetId: null,
+      setFuseTargetId: (id) => set({ fuseTargetId: id }),
       convertToTimeline: (taskId, startDate, endDate) => set((s) => ({
         tasks: s.tasks.map((t) =>
           t.id === taskId
@@ -347,6 +353,7 @@ export const useLabels = () => useBoardStore((s) => s.labels)
 export const useDependencies = () => useBoardStore((s) => s.dependencies)
 export const useSelectedTaskId = () => useBoardStore((s) => s.selectedTaskId)
 export const useMovingTaskId = () => useBoardStore((s) => s.movingTaskId)
+export const useFuseTargetId = () => useBoardStore((s) => s.fuseTargetId)
 export const useShowDates = () => useBoardStore((s) => s.showDates)
 export const useChecklistSummaries = () => useBoardStore((s) => s.checklistSummaries)
 export const useIsDirty = () => useBoardStore((s) => s.isDirty)

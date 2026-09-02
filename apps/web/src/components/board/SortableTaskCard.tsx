@@ -4,7 +4,7 @@ import { useState, useRef, useMemo, memo } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { motion } from 'framer-motion'
-import { Calendar, MoreHorizontal, Check, X, Clock, Trash2, Bot, Zap } from 'lucide-react'
+import { Calendar, MoreHorizontal, Check, X, Clock, Trash2, Bot, Zap, Merge } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { hexToRgba, resolveAccentHex } from '@/lib/utils/colors'
 import { getInitials, getInitialsFromEmail } from '@/lib/utils/initials'
@@ -13,7 +13,7 @@ import { resolvePriority } from '@/lib/utils/priorities'
 import { labelHex, readableTextColor } from './labelTile'
 import { progressBarStyle } from './progressColor'
 import { GlowCard } from '@/components/ui/GlowCard'
-import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees, useMovingTaskId } from '@/lib/store/boardStore'
+import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees, useMovingTaskId, useFuseTargetId } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { useCardHoldGesture, useHoldToMoveActions, halfFromPoint } from './useHoldToMove'
 import { DependencyIndicator } from './DependencyIndicator'
@@ -77,6 +77,8 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const movingTaskId = useMovingTaskId()
   const isMoving = movingTaskId === task.id
   const holdToMove = useHoldToMoveActions()
+  // Card fusion: the dragged card has dwelt on this one long enough to fuse.
+  const isFuseTarget = useFuseTargetId() === task.id
   const { holdHandlers, consumeHoldClick } = useCardHoldGesture(task.id)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
@@ -203,6 +205,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
     <div ref={(el) => { setNodeRef(el); (cardElRef as React.MutableRefObject<HTMLDivElement | null>).current = el }} style={style} className="relative" data-task-id={task.id} data-moving={isMoving ? '' : undefined}>
       <CardPeekPreview taskId={task.id} triggerRef={cardElRef} />
       {isMoving && <MovingRing color={resolvedGlowColor} pulse={smoothUiRenders} />}
+      {isFuseTarget && <FuseBadge color={resolvedGlowColor} pulse={smoothUiRenders} />}
       {showDropIndicator && globalGlow > 0 && (
         <motion.div
           initial={{ opacity: 0, scaleX: 0 }}
@@ -562,6 +565,45 @@ function MovingRing({ color, pulse }: { color: string; pulse: boolean }) {
       animate={{ boxShadow: [ring, ringWide, ring], opacity: [0.7, 1, 0.7] }}
       transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
     />
+  )
+}
+
+// The fusion cue on the card about to absorb the dragged one. Lives inside the
+// card's wrapper, so under pinch-zoom it scales with the card. Pulses only
+// when Smooth UI Renders is on — off, every animation is killed, so a static
+// badge is drawn instead of a frozen keyframe.
+function FuseBadge({ color, pulse }: { color: string; pulse: boolean }) {
+  const hex = resolveAccentHex(color)
+  const ring = `0 0 0 2px ${hexToRgba(hex, 0.9)}, 0 0 16px 4px ${hexToRgba(hex, 0.45)}`
+  const ringWide = `0 0 0 3px ${hexToRgba(hex, 0.7)}, 0 0 30px 10px ${hexToRgba(hex, 0.35)}`
+  const icon = (
+    <span
+      className="flex items-center justify-center w-11 h-11 rounded-full text-white border border-white/40 bg-slate-900/85 backdrop-blur"
+      style={{ boxShadow: ring }}
+    >
+      <Merge className="w-5 h-5" />
+    </span>
+  )
+  const wrapper = 'absolute inset-0 flex items-center justify-center pointer-events-none z-20'
+  if (!pulse) {
+    return <div aria-hidden data-fuse-badge className={wrapper}>{icon}</div>
+  }
+  return (
+    <div aria-hidden data-fuse-badge className={wrapper}>
+      <motion.div
+        initial={{ scale: 0.6, opacity: 0 }}
+        animate={{ scale: [1, 1.12, 1], opacity: 1, filter: ['drop-shadow(0 0 0px transparent)', `drop-shadow(0 0 10px ${hexToRgba(hex, 0.6)})`, 'drop-shadow(0 0 0px transparent)'] }}
+        transition={{ scale: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' }, filter: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' }, opacity: { duration: 0.15 } }}
+      >
+        {icon}
+      </motion.div>
+      <motion.div
+        className="absolute inset-0 rounded-xl"
+        initial={{ boxShadow: ring, opacity: 0.5 }}
+        animate={{ boxShadow: [ring, ringWide, ring], opacity: [0.5, 0.9, 0.5] }}
+        transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+      />
+    </div>
   )
 }
 

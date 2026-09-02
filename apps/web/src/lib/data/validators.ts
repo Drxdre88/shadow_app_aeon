@@ -906,3 +906,100 @@ export type UpdateWorkCalendarInput = z.infer<typeof updateWorkCalendarSchema>
 export type CalendarExceptionInput  = z.infer<typeof calendarExceptionSchema>
 export type CreateResourceInput     = z.infer<typeof createResourceSchema>
 export type UpdateResourceInput     = z.infer<typeof updateResourceSchema>
+
+// ---- Card fusion ---------------------------------------------------------
+
+const fusePriority = z.enum(['low', 'medium', 'high', 'urgent'])
+const isoOrNull = z.string().nullable()
+const dependencyEdgeSchema = z.object({
+  blockerTaskId: z.string().uuid(),
+  blockedTaskId: z.string().uuid(),
+})
+
+export const fuseTasksSchema = z.object({
+  projectId: z.string().uuid(),
+  /** The card dropped on — survives, renamed. */
+  survivorId: z.string().uuid(),
+  /** The dragged card — absorbed and removed. */
+  sourceId: z.string().uuid(),
+  name: z.string().trim().min(1).max(255),
+}).refine((v) => v.survivorId !== v.sourceId, { message: 'A card cannot be fused into itself' })
+
+// Everything unfuseTasks needs to put the board back: the survivor's prior
+// scalars, the absorbed card's full row + relations, and the ids of every
+// row the fusion re-pointed or added. Built by fuseTasks, held client-side
+// by the undo toast, validated again when it comes back.
+export const fuseSnapshotSchema = z.object({
+  projectId: z.string().uuid(),
+  survivorId: z.string().uuid(),
+  sourceId: z.string().uuid(),
+  survivorBefore: z.object({
+    name: z.string().max(255),
+    description: z.string().nullable(),
+    priority: fusePriority,
+    startDate: isoOrNull,
+    endDate: isoOrNull,
+    onTimeline: z.boolean(),
+    size: z.number().nullable(),
+    estimateMinutes: z.number().int().nullable(),
+  }),
+  source: z.object({
+    id: z.string().uuid(),
+    columnId: z.string().uuid().nullable(),
+    ganttTaskId: z.string().uuid().nullable(),
+    name: z.string().max(255),
+    description: z.string().nullable(),
+    status: z.string().max(20),
+    priority: z.string().max(20),
+    color: z.string().max(20),
+    startDate: isoOrNull,
+    endDate: isoOrNull,
+    onTimeline: z.boolean(),
+    size: z.number().nullable(),
+    progress: z.number().int().nullable(),
+    orderIndex: z.number().int(),
+    metadata: z.record(z.string(), z.unknown()),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    completedAt: isoOrNull,
+    estimateMinutes: z.number().int().nullable(),
+    scheduleMode: z.string().max(10),
+    constraintType: z.string().max(24),
+    constraintDate: isoOrNull,
+    computedStart: isoOrNull,
+    computedEnd: isoOrNull,
+    totalFloatMin: z.number().int().nullable(),
+    isMilestone: z.boolean(),
+    ownerResourceId: z.string().uuid().nullable(),
+    startedAt: isoOrNull,
+  }),
+  sourceLabelIds: z.array(z.string().uuid()),
+  sourceAssignees: z.array(z.object({ userId: z.string().uuid(), assignedBy: z.string().uuid().nullable(), assignedAt: z.string() })),
+  sourceVirtualAssignees: z.array(z.object({ virtualMemberId: z.string().uuid(), assignedBy: z.string().uuid().nullable(), assignedAt: z.string() })),
+  addedLabelIds: z.array(z.string().uuid()),
+  addedAssigneeIds: z.array(z.string().uuid()),
+  addedVirtualAssigneeIds: z.array(z.string().uuid()),
+  /** Pre-fusion placement of every checklist item on either card. */
+  checklist: z.array(z.object({ id: z.string().uuid(), taskId: z.string().uuid(), orderIndex: z.number().int() })),
+  sourceEdges: z.array(dependencyEdgeSchema),
+  insertedEdges: z.array(dependencyEdgeSchema),
+  commentIds: z.array(z.string().uuid()),
+  sessionIds: z.array(z.string().uuid()),
+  memoryIds: z.array(z.string().uuid()),
+  ganttRows: z.array(z.object({
+    id: z.string().uuid(),
+    rowId: z.string().uuid().nullable(),
+    name: z.string().max(255),
+    description: z.string().nullable(),
+    startDate: z.string(),
+    endDate: z.string(),
+    color: z.string().max(20),
+    progress: z.number().int(),
+    metadata: z.record(z.string(), z.unknown()),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+  })),
+})
+
+export type FuseTasksInput = z.infer<typeof fuseTasksSchema>
+export type FuseSnapshot = z.infer<typeof fuseSnapshotSchema>

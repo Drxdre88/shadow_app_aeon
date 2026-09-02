@@ -3,7 +3,7 @@
 import { useCallback, useState, useMemo, useEffect, useRef } from 'react'
 import { DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
-import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColumn, type BoardTask, type TaskAssigneePill } from '@/lib/store/boardStore'
+import { useBoardStore, useColumns, useTasks, useSelectedTaskId, useFuseTargetId, type BoardColumn, type BoardTask, type TaskAssigneePill } from '@/lib/store/boardStore'
 import { cn } from '@/lib/utils/cn'
 import { MissionEditorModal } from './MissionEditorModal'
 import { KanbanColumn } from './KanbanColumn'
@@ -28,6 +28,8 @@ import { useBoardPinchZoom } from './useBoardPinchZoom'
 import { boardMeasuring, useBoardZoom } from './boardZoom'
 import { HoldToMoveContext, useHoldToMoveMode } from './useHoldToMove'
 import { HoldToMoveBanner } from './HoldToMoveBanner'
+import { FuseCardsModal } from './FuseCardsModal'
+import { useFuseCards } from './useFuseCards'
 import { boardCollisionDetection } from './boardCollision'
 import { useBoardKeyboardShortcuts } from './useBoardKeyboardShortcuts'
 import { useBoardHover } from './useBoardHover'
@@ -170,14 +172,20 @@ export function TaskBoard({
     onConnectModeChange,
   })
 
+  // Card fusion: a drop on a card's dwelt-on middle third asks before it
+  // merges; nothing moves until the modal confirms.
+  const fuseCards = useFuseCards(projectId)
+  const fuseTargetId = useFuseTargetId()
+
   // Auto AI launches ride on the move mutation (see useBoardHandlers): the
   // agent is spawned only once the card's move is durable.
-  const { sensors, activeItem, overId, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel, placeMovingTask } = useBoardDnD({
+  const { sensors, activeItem, overId, handleDragStart, handleDragMove, handleDragOver, handleDragEnd, handleDragCancel, placeMovingTask } = useBoardDnD({
     projectTasks,
     sortedColumns,
     onTaskMove,
     onTaskDelete,
     onColumnReorder,
+    onFuseRequest: fuseCards.requestFuse,
   })
   useEffect(() => { dragActiveRef.current = activeItem !== null }, [activeItem])
 
@@ -316,6 +324,7 @@ export function TaskBoard({
           // cards' droppable rects under the pinch scale.
           measuring={boardMeasuring}
           onDragStart={handleDragStart}
+          onDragMove={handleDragMove}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
@@ -399,7 +408,7 @@ export function TaskBoard({
           </SortableContext>
 
           <DragOverlay dropAnimation={smoothUiRenders ? { duration: 300, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' } : { duration: 0 }}>
-            {activeItem?.type === 'task' && <DragPreview task={activeItem.data as BoardTaskData} effect={dragEffect} globalGlow={globalGlow} zoom={boardZoom} />}
+            {activeItem?.type === 'task' && <DragPreview task={activeItem.data as BoardTaskData} effect={dragEffect} globalGlow={globalGlow} zoom={boardZoom} hint={fuseTargetId ? 'Fuse' : null} />}
           </DragOverlay>
 
           <TrashDropZone isActive={isTaskDrag} />
@@ -408,6 +417,15 @@ export function TaskBoard({
       </div>
 
       <HoldToMoveBanner onCancel={holdToMove.cancel} />
+
+      <FuseCardsModal
+        isOpen={fuseCards.request !== null}
+        source={fuseCards.request ? projectTasks.find((t) => t.id === fuseCards.request?.sourceId) ?? null : null}
+        target={fuseCards.request ? projectTasks.find((t) => t.id === fuseCards.request?.targetId) ?? null : null}
+        isLoading={fuseCards.isFusing}
+        onConfirm={fuseCards.confirmFuse}
+        onClose={fuseCards.cancelFuse}
+      />
 
       <TaskEditModal
         isOpen={isModalOpen}
