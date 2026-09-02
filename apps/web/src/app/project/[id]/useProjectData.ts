@@ -13,7 +13,7 @@ import { useCanvasStore } from '@/lib/store/canvasStore'
 const POLL_INTERVAL = 30_000
 const PUSHER_DEBOUNCE_MS = 300
 
-type AssigneeLite = { userId: string; name: string | null; email?: string | null; image: string | null }
+type AssigneeLite = { userId: string; name: string | null; email?: string | null; image: string | null; initials?: string | null; color?: string | null }
 type VirtualAssigneeLite = { virtualMemberId: string; name: string; initials: string; color: string }
 type VirtualMemberRaw = { id: string; name: string; initials: string; color: string }
 type AssigneePill = AssigneeLite & { initials?: string | null; kind?: 'virtual'; color?: string | null }
@@ -28,7 +28,16 @@ function toAssigneePills(
   const out: Record<string, AssigneePill[]> = {}
   if (raw) {
     for (const [taskId, list] of Object.entries(raw)) {
-      out[taskId] = list.map((a) => ({ userId: a.userId, name: a.name, email: a.email ?? null, image: a.image }))
+      out[taskId] = list.map((a) => ({
+        userId: a.userId,
+        name: a.name,
+        email: a.email ?? null,
+        // Realm overrides — null means "derive", so an un-styled member is
+        // byte-identical to what this mapper produced before overrides existed.
+        initials: a.initials ?? null,
+        color: a.color ?? null,
+        image: a.image,
+      }))
     }
   }
   if (rawVirtual) {

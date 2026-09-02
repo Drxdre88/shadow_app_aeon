@@ -1,4 +1,5 @@
 import { randomBytes } from 'crypto'
+import { findMemberProfilesForProject } from './member-profiles'
 import { db } from '@/lib/db'
 import { projectMembers, projectInvites, users, projectGroups, groupMembers, projects } from '@/lib/db/schema'
 import { eq, and, isNull, gte, sql } from 'drizzle-orm'
@@ -69,7 +70,24 @@ export async function findAssignableMembers(projectId: string) {
   for (const m of realm) byId.set(m.userId, m)
   for (const m of direct) byId.set(m.userId, m)
   for (const m of owners) byId.set(m.userId, m)
-  return [...byId.values()]
+
+  // Overlay the realm's display overrides. `initials` and `color` are surfaced
+  // as their own fields rather than folded into `name`, because the People
+  // panel has to show what is overridden separately from what is derived —
+  // otherwise clearing an override is indistinguishable from setting it to the
+  // value it already had.
+  const profiles = await findMemberProfilesForProject(projectId)
+  return [...byId.values()].map((m) => {
+    const p = profiles.get(m.userId)
+    return {
+      ...m,
+      name: p?.displayName ?? m.name,
+      /** The account's own name, so the panel can show what an override replaces. */
+      accountName: m.name,
+      initials: p?.initials ?? null,
+      color: p?.color ?? null,
+    }
+  })
 }
 
 export async function addMember(projectId: string, userId: string, role: string, invitedBy?: string) {

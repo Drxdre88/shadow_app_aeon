@@ -85,3 +85,39 @@ export const useBoardSizingStore = create<BoardSizingState>()((set) => ({
 }))
 
 export const useBoardSizing = () => useBoardSizingStore((s) => s.sizing)
+
+// ── Avatar display preference ───────────────────────────────────────────────
+// Board-level, stored in project settings beside sizing, because it is a
+// property of how THIS board reads rather than of the person viewing it: a
+// team that curates initials wants everyone to see the same avatars.
+
+export interface AvatarPrefs {
+  /**
+   * Show initials even for members who have a profile picture.
+   *
+   * Off by default so nothing changes for boards that never touch it. On, it
+   * is what makes a curated override visible at all — an OAuth avatar
+   * otherwise wins before the initials code is ever reached.
+   */
+  preferInitials: boolean
+}
+
+export const DEFAULT_AVATAR_PREFS: AvatarPrefs = { preferInitials: false }
+
+export function parseAvatarPrefs(settings: Record<string, unknown> | null | undefined): AvatarPrefs {
+  const raw = settings?.avatars as Record<string, unknown> | undefined
+  if (!raw || typeof raw !== 'object') return DEFAULT_AVATAR_PREFS
+  return { preferInitials: raw.preferInitials === true }
+}
+
+interface AvatarPrefsState {
+  avatarPrefs: AvatarPrefs
+  setAvatarPrefs: (prefs: AvatarPrefs) => void
+}
+
+export const useAvatarPrefsStore = create<AvatarPrefsState>()((set) => ({
+  avatarPrefs: DEFAULT_AVATAR_PREFS,
+  setAvatarPrefs: (avatarPrefs) => set({ avatarPrefs }),
+}))
+
+export const useAvatarPrefs = () => useAvatarPrefsStore((s) => s.avatarPrefs)

@@ -15,6 +15,9 @@ import {
   MIN_SIZING_VALUE,
   MAX_SIZING_VALUE,
   type BoardSizing,
+  parseAvatarPrefs,
+  useAvatarPrefsStore,
+  type AvatarPrefs,
 } from './sizing'
 
 interface BoardSizingModalProps {
@@ -43,6 +46,9 @@ function SizingForm({ projectId, onClose }: { projectId: string; onClose: () => 
   const sizing = useBoardSizingStore((s) => s.sizing)
   const setSizing = useBoardSizingStore((s) => s.setSizing)
   const [draft, setDraft] = useState<BoardSizing>(sizing)
+  const avatarPrefs = useAvatarPrefsStore((s) => s.avatarPrefs)
+  const setAvatarPrefs = useAvatarPrefsStore((s) => s.setAvatarPrefs)
+  const [avatarDraft, setAvatarDraft] = useState<AvatarPrefs>(avatarPrefs)
   const [saving, setSaving] = useState(false)
 
   const updateLabel = (index: number, patch: { key?: string; value?: number }) => {
@@ -62,13 +68,18 @@ function SizingForm({ projectId, onClose }: { projectId: string; onClose: () => 
     }
     const next: BoardSizing = { ...draft, labels }
     const previous = sizing
+    const previousAvatars = avatarPrefs
     setSizing(next)
+    setAvatarPrefs(avatarDraft)
     setSaving(true)
     try {
-      await updateProjectSettings(projectId, { sizing: next })
+      // One write, two keys — updateProjectSettings shallow-merges, so sending
+      // them separately would race and the loser would be silently reverted.
+      await updateProjectSettings(projectId, { sizing: next, avatars: avatarDraft })
       onClose()
     } catch {
       setSizing(previous)
+      setAvatarPrefs(previousAvatars)
       toast('Could not save sizing')
     } finally {
       setSaving(false)
@@ -109,6 +120,21 @@ function SizingForm({ projectId, onClose }: { projectId: string; onClose: () => 
             checked={draft.enabled}
             onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
             className="w-4 h-4 accent-[var(--primary)]"
+          />
+        </label>
+
+        <label className="flex items-start justify-between gap-3 text-sm text-slate-300">
+          <span className="flex-1">
+            Show initials instead of photos
+            <span className="block text-xs text-slate-500 mt-0.5">
+              Custom initials stay hidden behind a member&rsquo;s profile picture until this is on.
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={avatarDraft.preferInitials}
+            onChange={(e) => setAvatarDraft({ ...avatarDraft, preferInitials: e.target.checked })}
+            className="w-4 h-4 mt-0.5 accent-[var(--primary)]"
           />
         </label>
 

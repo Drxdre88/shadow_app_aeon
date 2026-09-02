@@ -8,6 +8,7 @@ import { Calendar, MoreHorizontal, Check, X, Clock, Trash2, Bot, Zap } from 'luc
 import { cn } from '@/lib/utils/cn'
 import { hexToRgba, resolveAccentHex } from '@/lib/utils/colors'
 import { getInitials, getInitialsFromEmail } from '@/lib/utils/initials'
+import { useAvatarPrefs } from './sizing'
 import { resolvePriority } from '@/lib/utils/priorities'
 import { labelHex, readableTextColor } from './labelTile'
 import { progressBarStyle } from './progressColor'
@@ -65,6 +66,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const clSummary = useBoardStore((s) => s.checklistSummaries[task.id])
   const clPreview = useBoardStore((s) => s.checklistPreviews[task.id])
   const assignees = useTaskAssignees(task.id)
+  const avatarPrefs = useAvatarPrefs()
   const showDates = useShowDates()
   const checklistMode = useChecklistViewMode()
   const updateTask = useBoardStore((s) => s.updateTask)
@@ -273,7 +275,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
             {assignees && assignees.length > 0 && (
               <div className="flex items-center -space-x-1.5 flex-shrink-0 ml-1 self-start pt-0.5">
                 {assignees.slice(0, 4).map((a) => (
-                  <AssigneeDot key={a.userId} name={a.name} email={a.email} initials={a.initials} image={a.image} kind={a.kind} color={a.color} />
+                  <AssigneeDot key={a.userId} name={a.name} email={a.email} initials={a.initials} image={a.image} kind={a.kind} color={a.color} preferInitials={avatarPrefs.preferInitials} />
                 ))}
                 {assignees.length > 4 && (
                   <span className="w-5 h-5 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-[8px] text-white/60">
@@ -517,8 +519,11 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   )
 })
 
-function AssigneeDot({ name, email, initials: stored, image, kind, color }: { name: string | null; email?: string | null; initials?: string | null; image: string | null; kind?: 'virtual'; color?: string | null }) {
-  if (image) {
+function AssigneeDot({ name, email, initials: stored, image, kind, color, preferInitials }: { name: string | null; email?: string | null; initials?: string | null; image: string | null; kind?: 'virtual'; color?: string | null; preferInitials?: boolean }) {
+  // A profile picture wins by default. When the board prefers initials it must
+  // not — otherwise a curated override is invisible on exactly the accounts
+  // most likely to have one, which is the whole reason the override exists.
+  if (image && !preferInitials) {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={image} alt="" className="w-5 h-5 rounded-full object-cover border border-white/15" title={name ?? undefined} />
   }
@@ -540,10 +545,13 @@ function AssigneeDot({ name, email, initials: stored, image, kind, color }: { na
       </span>
     )
   }
+  // A real member with a colour override gets the same treatment as a virtual
+  // one minus the dashed ring, which stays the "no account" marker.
+  const hex = color ? resolveAccentHex(color) : null
   return (
     <span
       className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-medium border border-white/15 text-white/80"
-      style={{ background: 'rgba(255,255,255,0.08)' }}
+      style={{ background: hex ? `linear-gradient(135deg, ${hex}cc, ${hex}66)` : 'rgba(255,255,255,0.08)' }}
       title={name ?? undefined}
     >
       {initials || '?'}
