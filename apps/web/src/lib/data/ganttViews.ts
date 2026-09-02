@@ -216,10 +216,22 @@ export async function reflowGanttViewRows(projectId: string, viewId: string) {
  * resolved BEFORE the orphan-bar delete, since that delete nulls `ganttTaskId`
  * on the way through.
  */
-export async function resetGanttProjectData(projectId: string) {
-  const cleared = await db.transaction(async (tx) => {
+export interface TimelineResetSnapshotEntry {
+  id: string
+  startDate: string | null
+  endDate: string | null
+  onTimeline: boolean
+}
+
+export async function resetGanttProjectData(projectId: string): Promise<TimelineResetSnapshotEntry[]> {
+  const snapshot = await db.transaction(async (tx) => {
     const scoped = await tx
-      .select({ id: boardTasks.id })
+      .select({
+        id: boardTasks.id,
+        startDate: boardTasks.startDate,
+        endDate: boardTasks.endDate,
+        onTimeline: boardTasks.onTimeline,
+      })
       .from(boardTasks)
       .where(and(
         eq(boardTasks.projectId, projectId),
@@ -249,8 +261,14 @@ export async function resetGanttProjectData(projectId: string) {
         .where(and(eq(boardTasks.projectId, projectId), inArray(boardTasks.id, ids)))
     }
 
-    return ids.length
+    return scoped.map((t) => ({
+      id: t.id,
+      startDate: t.startDate ? t.startDate.toISOString() : null,
+      endDate: t.endDate ? t.endDate.toISOString() : null,
+      onTimeline: t.onTimeline,
+    }))
   })
 
-  if (cleared > 0) await touchProject(projectId, { type: 'task:updated' })
+  if (snapshot.length > 0) await touchProject(projectId, { type: 'task:updated' })
+  return snapshot
 }

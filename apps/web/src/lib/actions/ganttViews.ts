@@ -9,6 +9,7 @@ import {
   deleteGanttView as _deleteGanttView,
   reflowGanttViewRows as _reflowGanttViewRows,
   resetGanttProjectData as _resetGanttProjectData,
+  type TimelineResetSnapshotEntry,
 } from '@/lib/data/ganttViews'
 import {
   generateRowsForView,
@@ -101,8 +102,9 @@ export async function reflowGanttView(projectId: string, viewId: string) {
   revalidatePath(`/project/${projectId}`)
 }
 
-export async function resetGanttData(projectId: string) {
+export async function resetGanttData(projectId: string): Promise<TimelineResetSnapshotEntry[]> {
   await requireEditor(projectId)
-  await _resetGanttProjectData(projectId)
+  const snapshot = await _resetGanttProjectData(projectId)
   revalidatePath(`/project/${projectId}`)
+  return snapshot
 }
