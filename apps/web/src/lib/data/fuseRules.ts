@@ -133,19 +133,19 @@ export function mergeChecklistOrder(
   const byIndex = (a: ChecklistOrderItem, b: ChecklistOrderItem) => a.orderIndex - b.orderIndex
   const survivor = [...survivorItems].sort(byIndex)
   const source = [...sourceItems].sort(byIndex)
-  const survivorGroups = new Set(survivor.map((i) => i.groupName))
+  const lastOfGroup = new Map<string, ChecklistOrderItem>()
+  for (const item of survivor) lastOfGroup.set(item.groupName, item)
 
   const merged: ChecklistOrderItem[] = []
   for (const item of survivor) {
     merged.push(item)
-    const isLastOfGroup = !survivor.some((s) => s.groupName === item.groupName && s.orderIndex > item.orderIndex)
-    if (!isLastOfGroup) continue
+    if (lastOfGroup.get(item.groupName) !== item) continue
     for (const extra of source) {
       if (extra.groupName === item.groupName) merged.push(extra)
     }
   }
   for (const extra of source) {
-    if (!survivorGroups.has(extra.groupName)) merged.push(extra)
+    if (!lastOfGroup.has(extra.groupName)) merged.push(extra)
   }
   return merged.map((item, orderIndex) => ({ id: item.id, orderIndex, groupName: item.groupName }))
 }

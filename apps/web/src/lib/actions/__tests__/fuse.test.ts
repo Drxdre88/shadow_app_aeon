@@ -91,9 +91,20 @@ describe('unfuseBoardTasks', () => {
   it('requires an editor, restores through the data layer and logs the restore', async () => {
     await unfuseBoardTasks(PROJECT, snapshot)
     expect(requireEditor).toHaveBeenCalledWith(PROJECT)
-    expect(_unfuseTasks).toHaveBeenCalledWith(expect.objectContaining({ sourceId: SOURCE, survivorId: SURVIVOR }))
+    expect(_unfuseTasks).toHaveBeenCalledWith(expect.objectContaining({ sourceId: SOURCE, survivorId: SURVIVOR }), 'user-1')
     expect(emitActivity).toHaveBeenCalledWith(PROJECT, 'task', SOURCE, 'restored', 'X', { unfusedFrom: SURVIVOR }, 'user-1')
     expect(revalidatePath).toHaveBeenCalledWith(`/project/${PROJECT}`)
+  })
+
+  it('refuses an oversized snapshot before the guard runs', async () => {
+    const uuidAt = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`
+    const tooManyComments = Array.from({ length: 501 }, (_, i) => uuidAt(i))
+    const tooManyLabels = Array.from({ length: 51 }, (_, i) => uuidAt(i))
+    await expect(unfuseBoardTasks(PROJECT, { ...snapshot, commentIds: tooManyComments })).rejects.toThrow()
+    await expect(unfuseBoardTasks(PROJECT, { ...snapshot, sourceLabelIds: tooManyLabels })).rejects.toThrow()
+    await expect(unfuseBoardTasks(PROJECT, { ...snapshot, commentIds: tooManyComments.slice(0, 500) })).resolves.toBeUndefined()
+    expect(_unfuseTasks).toHaveBeenCalledTimes(1)
+    expect(requireEditor).toHaveBeenCalledTimes(1)
   })
 
   it('refuses a snapshot from another project and a malformed snapshot', async () => {

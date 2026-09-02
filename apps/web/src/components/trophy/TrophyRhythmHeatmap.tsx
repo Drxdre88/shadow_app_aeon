@@ -31,10 +31,13 @@ export const TrophyRhythmHeatmap = memo(function TrophyRhythmHeatmap({ tasks }: 
   const { cells, max, total, peak } = heat
 
   const peakText = peak ? `${WEEKDAY_LABELS[peak.day]} ${formatHour(peak.hour)}` : null
+  // Trophies can exist without a single parseable date: total > 0, peak null.
   const summary =
     total === 0
       ? 'No completions recorded yet.'
-      : `When trophies land, by weekday and hour: ${formatCount(total)} trophies, busiest ${peakText} with ${peak!.count}.`
+      : peak
+        ? `When trophies land, by weekday and hour: ${formatCount(total)} trophies, busiest ${peakText} with ${peak.count}.`
+        : `${formatCount(total)} trophies, none with a usable completion date.`
 
   const emptyFill = hexAlpha(colors.text, colors.isDark ? 0.06 : 0.05)
   const fillFor = (count: number) => (count === 0 ? emptyFill : hexAlpha(gold, 0.22 + 0.73 * (count / max)))
@@ -50,6 +53,8 @@ export const TrophyRhythmHeatmap = memo(function TrophyRhythmHeatmap({ tasks }: 
     <ChartCard title="When trophies land" meta={meta} summary={summary} tooltip={tooltip} frameRef={frameRef}>
       {total === 0 ? (
         <ChartEmpty>Your finishing rhythm shows up here once the first trophies land.</ChartEmpty>
+      ) : !peak ? (
+        <ChartEmpty>These trophies carry no usable completion dates, so there is no rhythm to draw yet.</ChartEmpty>
       ) : (
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full block" role="img" aria-label={summary}>
           {HOUR_TICKS.map((h) => (

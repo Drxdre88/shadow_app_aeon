@@ -190,6 +190,9 @@ export function TaskBoard({
   useEffect(() => { dragActiveRef.current = activeItem !== null }, [activeItem])
 
   const holdToMove = useHoldToMoveMode({ place: placeMovingTask })
+  // Neutral cards take their move-mode cursor from this attribute (globals.css)
+  // instead of each subscribing to the lifted id.
+  const isMovingMode = useBoardStore((s) => s.movingTaskId !== null)
 
   const {
     editingTask,
@@ -346,6 +349,7 @@ export function TaskBoard({
             <div
               ref={pinchContainerRef}
               data-board-columns
+              data-moving-mode={isMovingMode ? '' : undefined}
               // --board-chrome (default 120px) matches the host page's board
               // wrapper (ProjectContent / demo override); column caps
               // subtract a further 24px for the scale wrapper's pb-4 +
@@ -420,8 +424,8 @@ export function TaskBoard({
 
       <FuseCardsModal
         isOpen={fuseCards.request !== null}
-        source={fuseCards.request ? projectTasks.find((t) => t.id === fuseCards.request?.sourceId) ?? null : null}
-        target={fuseCards.request ? projectTasks.find((t) => t.id === fuseCards.request?.targetId) ?? null : null}
+        source={fuseCards.request?.source ?? null}
+        target={fuseCards.request?.target ?? null}
         isLoading={fuseCards.isFusing}
         onConfirm={fuseCards.confirmFuse}
         onClose={fuseCards.cancelFuse}

@@ -7,6 +7,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 const selectResults: unknown[][] = []
 const writes: { kind: 'update' | 'insert' | 'delete'; table: unknown; payload?: unknown }[] = []
+const executes: SQL[] = []
 let transactionCalls = 0
 
 vi.mock('@/lib/db', () => {
@@ -47,6 +48,7 @@ vi.mock('@/lib/db', () => {
     update: vi.fn((table: unknown) => makeUpdateChain(table)),
     insert: vi.fn((table: unknown) => makeInsertChain(table)),
     delete: vi.fn((table: unknown) => makeDeleteChain(table)),
+    execute: vi.fn((q: SQL) => { executes.push(q); return Promise.resolve([]) }),
   }
   return {
     db: {
@@ -58,7 +60,10 @@ vi.mock('@/lib/db', () => {
 
 vi.mock('../projects', () => ({ touchProject: vi.fn() }))
 
-import { fuseTasks } from '../fuse'
+import { PgDialect } from 'drizzle-orm/pg-core'
+import type { SQL } from 'drizzle-orm'
+import { fuseTasks, assertFusable } from '../fuse'
+import { FUSE_SNAPSHOT_LIMITS } from '../validators'
 import { touchProject } from '../projects'
 import {
   boardTasks,
@@ -135,10 +140,12 @@ function queueReads(over: Partial<Record<'tasks' | 'labels' | 'assignees' | 'vir
 
 const writesTo = (table: unknown, kind?: 'update' | 'insert' | 'delete') =>
   writes.filter((w) => w.table === table && (!kind || w.kind === kind))
+const toQuery = (q: SQL) => new PgDialect().sqlToQuery(q)
 
 beforeEach(() => {
   selectResults.length = 0
   writes.length = 0
+  executes.length = 0
   transactionCalls = 0
   vi.clearAllMocks()
 })
@@ -222,11 +229,13 @@ describe('fuseTasks', () => {
 
     const result = await fuseTasks(PROJECT, SURVIVOR, SOURCE, 'Fused')
 
-    const checklistUpdates = writesTo(checklistItems, 'update').map((w) => w.payload)
-    expect(checklistUpdates).toEqual([
-      { taskId: SURVIVOR, orderIndex: 1 },
-      { taskId: SURVIVOR, orderIndex: 2 },
-    ])
+    // Both moved items travel in ONE set-based UPDATE ... FROM (VALUES ...),
+    // pair-scoped, never one statement per row.
+    expect(writesTo(checklistItems, 'update')).toHaveLength(0)
+    expect(executes).toHaveLength(1)
+    const checklistQuery = toQuery(executes[0])
+    expect(checklistQuery.sql).toMatch(/update checklist_items as c[\s\S]*from \(values/)
+    expect(checklistQuery.params).toEqual([SURVIVOR, 'x1', 1, 'x2', 2, SURVIVOR, SOURCE])
     expect(writesTo(taskDependencies, 'insert')[0].payload).toEqual([{ blockerTaskId: SURVIVOR, blockedTaskId: OTHER }])
     expect(writesTo(taskComments, 'update')[0].payload).toEqual({ taskId: SURVIVOR })
     expect(writesTo(agentSessions, 'update')[0].payload).toEqual({ taskId: SURVIVOR })
@@ -241,6 +250,40 @@ describe('fuseTasks', () => {
     expect(result.snapshot.commentIds).toEqual(['c1'])
     expect(result.snapshot.sessionIds).toEqual(['sess1'])
     expect(result.snapshot.memoryIds).toEqual(['m1'])
+  })
+
+  it('re-points a long checklist in a single statement', async () => {
+    queueReads({
+      checklist: Array.from({ length: 300 }, (_, i) => ({ id: `x${i}`, taskId: SOURCE, groupName: 'Checklist', orderIndex: i })),
+    })
+
+    await fuseTasks(PROJECT, SURVIVOR, SOURCE, 'Fused')
+
+    expect(executes).toHaveLength(1)
+    expect(writesTo(checklistItems)).toHaveLength(0)
+    expect(toQuery(executes[0]).params).toHaveLength(1 + 300 * 2 + 2)
+  })
+
+  it('refuses a card whose undo snapshot would exceed a cap, before writing anything', async () => {
+    queueReads({
+      checklist: Array.from({ length: FUSE_SNAPSHOT_LIMITS.childRows + 1 }, (_, i) => ({ id: `x${i}`, taskId: SOURCE, groupName: 'Checklist', orderIndex: i })),
+    })
+    await expect(fuseTasks(PROJECT, SURVIVOR, SOURCE, 'Fused')).rejects.toThrow('Card too large to fuse safely')
+    expect(writes).toHaveLength(0)
+    expect(executes).toHaveLength(0)
+    expect(touchProject).not.toHaveBeenCalled()
+  })
+
+  it('assertFusable mirrors every fuseSnapshotSchema cap', () => {
+    const ok = { labels: 0, assignees: 0, virtualAssignees: 0, checklist: 0, edges: 0, comments: 0, sessions: 0, memories: 0, ganttRows: 0 }
+    const L = FUSE_SNAPSHOT_LIMITS
+    expect(() => assertFusable({ ...ok, labels: L.labels, assignees: L.assignees, virtualAssignees: L.assignees, checklist: L.childRows, edges: L.childRows, comments: L.childRows, sessions: L.childRows, memories: L.childRows, ganttRows: L.ganttRows })).not.toThrow()
+    for (const over of [
+      { labels: L.labels + 1 }, { assignees: L.assignees + 1 }, { virtualAssignees: L.assignees + 1 }, { checklist: L.childRows + 1 },
+      { edges: L.childRows + 1 }, { comments: L.childRows + 1 }, { sessions: L.childRows + 1 }, { memories: L.childRows + 1 }, { ganttRows: L.ganttRows + 1 },
+    ]) {
+      expect(() => assertFusable({ ...ok, ...over })).toThrow('Card too large to fuse safely')
+    }
   })
 
   it('refuses when either card is missing from the project, writing nothing', async () => {

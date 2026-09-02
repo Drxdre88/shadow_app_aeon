@@ -11,10 +11,10 @@ import {
   memories,
   ganttTasks,
 } from '@/lib/db/schema'
-import { eq, and, or, inArray, isNull } from 'drizzle-orm'
+import { eq, and, or, inArray, isNull, sql } from 'drizzle-orm'
 import { touchProject } from './projects'
 import { mergeTaskFields, unionIds, mergeChecklistOrder, repointDependencies } from './fuseRules'
-import type { FuseSnapshot } from './validators'
+import { FUSE_SNAPSHOT_LIMITS, type FuseSnapshot } from './validators'
 
 // Card fusion: the dragged card (source) is absorbed into the card it was
 // dropped on (survivor). ONE transaction — the survivor's merged scalars,
@@ -37,6 +37,36 @@ export interface FuseResult {
 }
 
 const iso = (d: Date | null | undefined): string | null => (d ? d.toISOString() : null)
+
+const touches = (e: { blockerTaskId: string; blockedTaskId: string }, id: string) => e.blockerTaskId === id || e.blockedTaskId === id
+
+interface SourceCounts {
+  labels: number
+  assignees: number
+  virtualAssignees: number
+  checklist: number
+  edges: number
+  comments: number
+  sessions: number
+  memories: number
+  ganttRows: number
+}
+
+/** A fusion whose snapshot would blow a fuseSnapshotSchema cap could never be undone — refuse it instead. */
+export function assertFusable(counts: SourceCounts): void {
+  const L = FUSE_SNAPSHOT_LIMITS
+  const tooLarge =
+    counts.labels > L.labels ||
+    counts.assignees > L.assignees ||
+    counts.virtualAssignees > L.assignees ||
+    counts.checklist > L.childRows ||
+    counts.edges > L.childRows ||
+    counts.comments > L.childRows ||
+    counts.sessions > L.childRows ||
+    counts.memories > L.childRows ||
+    counts.ganttRows > L.ganttRows
+  if (tooLarge) throw new Error('Card too large to fuse safely')
+}
 
 function serializeSourceRow(row: BoardTaskRow): FuseSnapshot['source'] {
   return {
@@ -100,6 +130,20 @@ export async function fuseTasks(projectId: string, survivorId: string, sourceId:
     const memoryRows = await tx.select({ id: memories.id }).from(memories).where(eq(memories.taskId, sourceId))
     const ganttRows = await tx.select().from(ganttTasks).where(eq(ganttTasks.boardTaskId, sourceId))
 
+    const sourceEdges = edgeRows.filter((e) => touches(e, sourceId))
+    const survivorEdges = edgeRows.filter((e) => touches(e, survivorId))
+    assertFusable({
+      labels: labelRows.filter((r) => r.taskId === sourceId).length,
+      assignees: assigneeRows.filter((r) => r.taskId === sourceId).length,
+      virtualAssignees: virtualRows.filter((r) => r.taskId === sourceId).length,
+      checklist: checklistRows.length,
+      edges: sourceEdges.length,
+      comments: commentRows.length,
+      sessions: sessionRows.length,
+      memories: memoryRows.length,
+      ganttRows: ganttRows.length,
+    })
+
     const patch = mergeTaskFields(survivor, source, name)
     const [updated] = await tx
       .update(boardTasks)
@@ -138,15 +182,20 @@ export async function fuseTasks(projectId: string, survivorId: string, sourceId:
     const survivorItems = checklistRows.filter((r) => r.taskId === survivorId)
     const sourceItems = checklistRows.filter((r) => r.taskId === sourceId)
     const current = new Map(checklistRows.map((r) => [r.id, r]))
-    for (const item of mergeChecklistOrder(survivorItems, sourceItems)) {
+    const moved = mergeChecklistOrder(survivorItems, sourceItems).filter((item) => {
       const was = current.get(item.id)
-      if (was && was.taskId === survivorId && was.orderIndex === item.orderIndex) continue
-      await tx.update(checklistItems).set({ taskId: survivorId, orderIndex: item.orderIndex }).where(eq(checklistItems.id, item.id))
+      return !(was && was.taskId === survivorId && was.orderIndex === item.orderIndex)
+    })
+    if (moved.length > 0) {
+      const values = sql.join(moved.map((item) => sql`(${item.id}::uuid, ${item.orderIndex}::integer)`), sql`, `)
+      await tx.execute(sql`
+        update checklist_items as c
+        set task_id = ${survivorId}::uuid, order_index = v.order_index
+        from (values ${values}) as v(id, order_index)
+        where c.id = v.id and c.task_id in (${survivorId}::uuid, ${sourceId}::uuid)
+      `)
     }
 
-    const touches = (e: { blockerTaskId: string; blockedTaskId: string }, id: string) => e.blockerTaskId === id || e.blockedTaskId === id
-    const sourceEdges = edgeRows.filter((e) => touches(e, sourceId))
-    const survivorEdges = edgeRows.filter((e) => touches(e, survivorId))
     const insertedEdges = repointDependencies(sourceEdges, survivorEdges, sourceId, survivorId)
     if (insertedEdges.length > 0) {
       await tx.insert(taskDependencies).values(insertedEdges).onConflictDoNothing()

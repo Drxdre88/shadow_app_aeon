@@ -7,10 +7,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 const selectResults: unknown[][] = []
 const setCalls: Record<string, unknown>[] = []
+const executes: SQL[] = []
+const order: ('execute' | 'select' | 'update')[] = []
 let transactionCalls = 0
 
 vi.mock('@/lib/db', () => {
   function makeSelectChain() {
+    order.push('select')
     const rows = selectResults.shift() ?? []
     const chain: Record<string, unknown> = {}
     const pass = () => chain
@@ -21,6 +24,7 @@ vi.mock('@/lib/db', () => {
     return chain
   }
   function makeUpdateChain() {
+    order.push('update')
     const chain: Record<string, unknown> = {}
     chain.set = (patch: Record<string, unknown>) => { setCalls.push(patch); return chain }
     chain.where = () => Promise.resolve([])
@@ -29,6 +33,7 @@ vi.mock('@/lib/db', () => {
   const tx = {
     select: vi.fn(() => makeSelectChain()),
     update: vi.fn(() => makeUpdateChain()),
+    execute: vi.fn((q: SQL) => { order.push('execute'); executes.push(q); return Promise.resolve([]) }),
   }
   return {
     db: {
@@ -40,12 +45,16 @@ vi.mock('@/lib/db', () => {
 
 vi.mock('../projects', () => ({ touchProject: vi.fn() }))
 
+import { PgDialect } from 'drizzle-orm/pg-core'
+import type { SQL } from 'drizzle-orm'
 import { moveAllTasksToColumn } from '../boardBulk'
 import { touchProject } from '../projects'
 
 beforeEach(() => {
   selectResults.length = 0
   setCalls.length = 0
+  executes.length = 0
+  order.length = 0
   transactionCalls = 0
   vi.clearAllMocks()
 })
@@ -77,6 +86,18 @@ describe('moveAllTasksToColumn', () => {
     ])
     expect(touchProject).toHaveBeenCalledTimes(1)
     expect(touchProject).toHaveBeenCalledWith('p1', { type: 'task:moved' })
+  })
+
+  it('takes a transaction-scoped advisory lock on the target column before reading anything', async () => {
+    selectResults.push([{ id: 't1', name: 'One', orderIndex: 0 }], [{ max: 2 }])
+
+    await moveAllTasksToColumn('p1', 'from', 'to')
+
+    expect(order[0]).toBe('execute')
+    expect(order.filter((o) => o === 'execute')).toHaveLength(1)
+    const lock = new PgDialect().sqlToQuery(executes[0])
+    expect(lock.sql).toMatch(/select pg_advisory_xact_lock\(hashtext\(\$1\)\)/)
+    expect(lock.params).toEqual(['to'])
   })
 
   it('starts at 0 when the target column is empty', async () => {

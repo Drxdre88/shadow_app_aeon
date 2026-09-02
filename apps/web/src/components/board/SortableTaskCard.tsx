@@ -13,7 +13,7 @@ import { resolvePriority } from '@/lib/utils/priorities'
 import { labelHex, readableTextColor } from './labelTile'
 import { progressBarStyle } from './progressColor'
 import { GlowCard } from '@/components/ui/GlowCard'
-import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees, useMovingTaskId, useFuseTargetId } from '@/lib/store/boardStore'
+import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees, useFuseTargetId } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { useCardHoldGesture, useHoldToMoveActions, halfFromPoint } from './useHoldToMove'
 import { DependencyIndicator } from './DependencyIndicator'
@@ -73,10 +73,15 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const updateTask = useBoardStore((s) => s.updateTask)
   const crossedTaskIds = useBoardStore((s) => s.crossedTaskIds)
   const { glowIntensity: globalGlow, glowSource, priorities, smoothUiRenders } = useThemeStore()
-  // Hold-to-move: is any card lifted, and is it this one.
-  const movingTaskId = useMovingTaskId()
-  const isMoving = movingTaskId === task.id
+  // Hold-to-move: only the lifted card subscribes to the id, so arming or
+  // cancelling a hold re-renders one card, not the board. Neutral cards get
+  // their "drop here" cursor from CSS via the columns wrapper's
+  // data-moving-mode, and a click reads the id from the store at click time.
+  const isMoving = useBoardStore((s) => s.movingTaskId === task.id)
   const holdToMove = useHoldToMoveActions()
+  // Firefox delivers contextmenu as a MouseEvent with no pointerType, so the
+  // last pointerdown's type is what tells a touch long-press from a right click.
+  const lastPointerTypeRef = useRef<string | undefined>(undefined)
   // Card fusion: the dragged card has dwelt on this one long enough to fuse.
   const isFuseTarget = useFuseTargetId() === task.id
   const { holdHandlers, consumeHoldClick } = useCardHoldGesture(task.id)
@@ -154,6 +159,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
     if (consumeHoldClick()) return
     // Move mode: this tap PLACES (or cancels on the lifted card itself) and
     // never opens. Hover, shortcuts and the rest of the card stay live.
+    const movingTaskId = useBoardStore.getState().movingTaskId
     if (movingTaskId && holdToMove) {
       if (isMoving) { holdToMove.cancel(); return }
       const columnId = useBoardStore.getState().tasks.find((t) => t.id === task.id)?.columnId
@@ -197,7 +203,8 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
     e.stopPropagation()
     // A touch long-press means "lift the card" (TouchSensor / hold-to-move),
     // never the context menu: Android fires contextmenu for it, iOS doesn't.
-    if ((e.nativeEvent as PointerEvent).pointerType === 'touch') return
+    const pointerType = (e.nativeEvent as Partial<PointerEvent>).pointerType ?? lastPointerTypeRef.current
+    if (pointerType === 'touch') return
     setContextMenu({ x: e.clientX, y: e.clientY })
   }
 
@@ -222,6 +229,8 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
         {...attributes}
         {...listeners}
         {...holdHandlers}
+        data-card-surface
+        onPointerDownCapture={(e) => { lastPointerTypeRef.current = e.pointerType }}
         onClick={handleCardClick}
         onContextMenu={handleContextMenu}
         // touch-action: manipulation (NOT none): a finger landing on a card
@@ -232,8 +241,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
         style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
         className={cn(
           'cursor-grab active:cursor-grabbing',
-          isDragging && 'opacity-30 scale-95',
-          movingTaskId && !isMoving && 'cursor-copy'
+          isDragging && 'opacity-30 scale-95'
         )}
         initial={animateOnMount ? { opacity: 0, y: 10 } : false}
         animate={{ opacity: isDragging ? 0.3 : 1, y: 0, scale: isDragging ? 0.95 : 1 }}

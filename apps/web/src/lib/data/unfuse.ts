@@ -13,21 +13,65 @@ import {
   memories,
   ganttTasks,
   rows,
+  virtualMembers,
+  projectGroups,
 } from '@/lib/db/schema'
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, or, inArray, sql } from 'drizzle-orm'
 import { touchProject } from './projects'
+import { findAssignableMembers } from './members'
 import type { FuseSnapshot } from './validators'
 
 // The undo of fuseTasks, from the snapshot it returned. ONE transaction.
-// Anything the snapshot points at that has since vanished (a deleted
-// column, label, gantt row, the other end of a dependency) is skipped or
-// nulled rather than failing the whole restore — an undo that lands 95% is
-// worth more than one that refuses.
+//
+// Trust model. The snapshot sits on the client between the fusion and the
+// undo, so every id inside it is attacker-controlled by any editor of the
+// project. We do not sign it; we verify it on replay, and that is complete
+// because every statement below is scoped to projectId or to the
+// survivor/source pair. Two kinds of bad input, two responses:
+//   * structural inconsistency — an id outside the pair, source.id that is
+//     not sourceId, an edge touching neither card, a gantt row that already
+//     exists. fuseTasks can never produce these, so the snapshot is REJECTED
+//     before anything is written.
+//   * drift — a column, label, gantt row, member or dependency endpoint that
+//     has vanished or left the project since the fusion. That is legitimate,
+//     so the element is SKIPPED or nulled: an undo that lands 95% is worth
+//     more than one that refuses.
+// An HMAC would only prove fuseTasks produced the snapshot; it would not
+// catch drift, and the scoping is needed regardless — so verification on
+// replay is the single mechanism, and it has to stay complete: a new
+// snapshot field must arrive here with its own scope check. Attribution is
+// never taken from the snapshot either: restored assignments are credited to
+// the actor performing the undo.
 
 const date = (s: string | null): Date | null => (s ? new Date(s) : null)
 
-export async function unfuseTasks(snapshot: FuseSnapshot): Promise<void> {
+type Edge = { blockerTaskId: string; blockedTaskId: string }
+const touches = (e: Edge, ids: readonly string[]) => ids.includes(e.blockerTaskId) || ids.includes(e.blockedTaskId)
+const selfRef = (e: Edge) => e.blockerTaskId === e.blockedTaskId
+
+function assertConsistent(snapshot: FuseSnapshot): void {
+  const { survivorId, sourceId, source } = snapshot
+  const pair = [survivorId, sourceId]
+  if (survivorId === sourceId) throw new Error('Snapshot is inconsistent: survivor and source are the same card')
+  if (source.id !== sourceId) throw new Error('Snapshot is inconsistent: source row does not match sourceId')
+  if (snapshot.checklist.some((c) => !pair.includes(c.taskId))) {
+    throw new Error('Snapshot is inconsistent: checklist item points outside the fused pair')
+  }
+  if (snapshot.insertedEdges.some((e) => !touches(e, pair) || selfRef(e))) {
+    throw new Error('Snapshot is inconsistent: dependency does not touch the fused pair')
+  }
+  if (snapshot.sourceEdges.some((e) => !touches(e, [sourceId]) || selfRef(e))) {
+    throw new Error('Snapshot is inconsistent: source dependency does not touch the absorbed card')
+  }
+}
+
+export async function unfuseTasks(snapshot: FuseSnapshot, actorId: string): Promise<void> {
+  assertConsistent(snapshot)
   const { projectId, survivorId, sourceId, source } = snapshot
+
+  const memberIds = snapshot.sourceAssignees.length > 0
+    ? new Set((await findAssignableMembers(projectId)).map((m) => m.userId))
+    : new Set<string>()
 
   await db.transaction(async (tx) => {
     const [survivor] = await tx
@@ -45,7 +89,7 @@ export async function unfuseTasks(snapshot: FuseSnapshot): Promise<void> {
     const columnId = columnRows.length > 0 ? source.columnId : null
 
     await tx.insert(boardTasks).values({
-      id: source.id,
+      id: sourceId,
       projectId,
       columnId,
       ganttTaskId: null,
@@ -76,10 +120,29 @@ export async function unfuseTasks(snapshot: FuseSnapshot): Promise<void> {
       startedAt: date(source.startedAt),
     })
 
+    if (columnId) {
+      await tx.execute(sql`
+        update board_tasks as t
+        set order_index = v.rn - 1
+        from (
+          select id, row_number() over (order by order_index, created_at, id) as rn
+          from board_tasks
+          where project_id = ${projectId} and column_id = ${columnId}
+        ) as v
+        where t.id = v.id and t.order_index <> v.rn - 1
+      `)
+    }
+
     if (snapshot.ganttRows.length > 0) {
+      const ganttIds = snapshot.ganttRows.map((g) => g.id)
+      const taken = await tx.select({ id: ganttTasks.id }).from(ganttTasks).where(inArray(ganttTasks.id, ganttIds))
+      if (taken.length > 0) throw new Error('Snapshot is inconsistent: a timeline row of the absorbed card already exists')
       const rowIds = snapshot.ganttRows.map((g) => g.rowId).filter((id): id is string => !!id)
       const liveRows = rowIds.length > 0
-        ? new Set((await tx.select({ id: rows.id }).from(rows).where(inArray(rows.id, rowIds))).map((r) => r.id))
+        ? new Set((await tx
+            .select({ id: rows.id })
+            .from(rows)
+            .where(and(eq(rows.projectId, projectId), inArray(rows.id, rowIds)))).map((r) => r.id))
         : new Set<string>()
       await tx.insert(ganttTasks).values(snapshot.ganttRows.map((g) => ({
         id: g.id,
@@ -95,9 +158,12 @@ export async function unfuseTasks(snapshot: FuseSnapshot): Promise<void> {
         metadata: g.metadata,
         createdAt: new Date(g.createdAt),
         updatedAt: new Date(g.updatedAt),
-      }))).onConflictDoNothing()
-      if (source.ganttTaskId && snapshot.ganttRows.some((g) => g.id === source.ganttTaskId)) {
-        await tx.update(boardTasks).set({ ganttTaskId: source.ganttTaskId }).where(eq(boardTasks.id, sourceId))
+      })))
+      if (source.ganttTaskId && ganttIds.includes(source.ganttTaskId)) {
+        await tx
+          .update(boardTasks)
+          .set({ ganttTaskId: source.ganttTaskId })
+          .where(and(eq(boardTasks.id, sourceId), eq(boardTasks.projectId, projectId)))
       }
     }
 
@@ -136,38 +202,55 @@ export async function unfuseTasks(snapshot: FuseSnapshot): Promise<void> {
         await tx.insert(taskLabels).values(live.map((l) => ({ taskId: sourceId, labelId: l.id }))).onConflictDoNothing()
       }
     }
-    if (snapshot.sourceAssignees.length > 0) {
+    const restorableAssignees = snapshot.sourceAssignees.filter((a) => memberIds.has(a.userId))
+    if (restorableAssignees.length > 0) {
       await tx
         .insert(taskAssignees)
-        .values(snapshot.sourceAssignees.map((a) => ({ taskId: sourceId, userId: a.userId, assignedBy: a.assignedBy, assignedAt: new Date(a.assignedAt) })))
+        .values(restorableAssignees.map((a) => ({ taskId: sourceId, userId: a.userId, assignedBy: actorId, assignedAt: new Date(a.assignedAt) })))
         .onConflictDoNothing()
     }
     if (snapshot.sourceVirtualAssignees.length > 0) {
-      await tx
-        .insert(taskVirtualAssignees)
-        .values(snapshot.sourceVirtualAssignees.map((a) => ({ taskId: sourceId, virtualMemberId: a.virtualMemberId, assignedBy: a.assignedBy, assignedAt: new Date(a.assignedAt) })))
-        .onConflictDoNothing()
+      const assignable = new Set((await tx
+        .select({ id: virtualMembers.id })
+        .from(virtualMembers)
+        .innerJoin(projectGroups, and(eq(projectGroups.groupId, virtualMembers.realmId), eq(projectGroups.projectId, projectId)))
+        .where(inArray(virtualMembers.id, snapshot.sourceVirtualAssignees.map((a) => a.virtualMemberId)))).map((r) => r.id))
+      const restorable = snapshot.sourceVirtualAssignees.filter((a) => assignable.has(a.virtualMemberId))
+      if (restorable.length > 0) {
+        await tx
+          .insert(taskVirtualAssignees)
+          .values(restorable.map((a) => ({ taskId: sourceId, virtualMemberId: a.virtualMemberId, assignedBy: actorId, assignedAt: new Date(a.assignedAt) })))
+          .onConflictDoNothing()
+      }
     }
 
-    for (const item of snapshot.checklist) {
-      await tx
-        .update(checklistItems)
-        .set({ taskId: item.taskId, orderIndex: item.orderIndex })
-        .where(and(eq(checklistItems.id, item.id), inArray(checklistItems.taskId, [survivorId, sourceId])))
+    if (snapshot.checklist.length > 0) {
+      const values = sql.join(
+        snapshot.checklist.map((c) => sql`(${c.id}::uuid, ${c.taskId}::uuid, ${c.orderIndex}::integer)`),
+        sql`, `,
+      )
+      await tx.execute(sql`
+        update checklist_items as c
+        set task_id = v.task_id, order_index = v.order_index
+        from (values ${values}) as v(id, task_id, order_index)
+        where c.id = v.id and c.task_id in (${survivorId}::uuid, ${sourceId}::uuid)
+      `)
     }
 
-    for (const edge of snapshot.insertedEdges) {
-      await tx
-        .delete(taskDependencies)
-        .where(and(eq(taskDependencies.blockerTaskId, edge.blockerTaskId), eq(taskDependencies.blockedTaskId, edge.blockedTaskId)))
-    }
-    if (snapshot.sourceEdges.length > 0) {
-      const endpoints = [...new Set(snapshot.sourceEdges.flatMap((e) => [e.blockerTaskId, e.blockedTaskId]))]
+    const endpoints = [...new Set([...snapshot.insertedEdges, ...snapshot.sourceEdges].flatMap((e) => [e.blockerTaskId, e.blockedTaskId]))]
+    if (endpoints.length > 0) {
       const live = new Set((await tx
         .select({ id: boardTasks.id })
         .from(boardTasks)
         .where(and(eq(boardTasks.projectId, projectId), inArray(boardTasks.id, endpoints)))).map((r) => r.id))
-      const restorable = snapshot.sourceEdges.filter((e) => live.has(e.blockerTaskId) && live.has(e.blockedTaskId))
+      const bothLive = (e: Edge) => live.has(e.blockerTaskId) && live.has(e.blockedTaskId)
+      const removable = snapshot.insertedEdges.filter(bothLive)
+      if (removable.length > 0) {
+        await tx
+          .delete(taskDependencies)
+          .where(or(...removable.map((e) => and(eq(taskDependencies.blockerTaskId, e.blockerTaskId), eq(taskDependencies.blockedTaskId, e.blockedTaskId)))))
+      }
+      const restorable = snapshot.sourceEdges.filter(bothLive)
       if (restorable.length > 0) {
         await tx.insert(taskDependencies).values(restorable).onConflictDoNothing()
       }

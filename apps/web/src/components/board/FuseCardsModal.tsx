@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createPortal } from 'react-dom'
+import { useHasMounted } from '@/lib/utils/useHasMounted'
 import { Merge, X, Loader2, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useThemeStore, useSmoothUiRenders } from '@/stores/themeStore'
@@ -28,14 +29,25 @@ export function isValidFusedName(value: string) {
   return trimmed.length > 0 && trimmed.length <= MAX_FUSED_NAME
 }
 
+// AnimatePresence sits ABOVE the open check so the dialog's exit plays: a
+// child that simply stops being rendered is what it animates out.
 export function FuseCardsModal({ isOpen, source, target, ...props }: FuseCardsModalProps) {
-  if (!isOpen || !source || !target) return null
-  return <FuseCardsDialog key={`${source.id}->${target.id}`} source={source} target={target} {...props} />
+  const mounted = useHasMounted()
+  if (!mounted) return null
+  return createPortal(
+    <AnimatePresence>
+      {isOpen && source && target && (
+        <FuseCardsDialog key={`${source.id}->${target.id}`} source={source} target={target} {...props} />
+      )}
+    </AnimatePresence>,
+    document.body
+  )
 }
 
 function FuseCardsDialog({ source, target, isLoading = false, onConfirm, onClose }: Omit<FuseCardsModalProps, 'isOpen' | 'source' | 'target'> & { source: BoardTask; target: BoardTask }) {
   const [name, setName] = useState(target.name)
   const inputRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   const glowIntensity = useThemeStore((s) => s.glowIntensity)
   const smoothUiRenders = useSmoothUiRenders()
   const reduceMotion = !smoothUiRenders
@@ -52,13 +64,23 @@ function FuseCardsDialog({ source, target, isLoading = false, onConfirm, onClose
     return () => clearTimeout(timer)
   }, [reduceMotion])
 
+  // Capture phase + stopPropagation: while this dialog is up, Escape is its
+  // alone (the board's shortcuts and hold-to-move listen on window too), and
+  // Enter confirms only when the keyboard focus is actually inside it.
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isLoading) onClose()
-      if (e.key === 'Enter' && armed) onConfirm(name.trim())
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        if (!isLoading) onClose()
+        return
+      }
+      if (e.key === 'Enter' && armed && dialogRef.current?.contains(document.activeElement)) {
+        e.stopPropagation()
+        onConfirm(name.trim())
+      }
     }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
+    window.addEventListener('keydown', handleKey, true)
+    return () => window.removeEventListener('keydown', handleKey, true)
   }, [isLoading, armed, name, onConfirm, onClose])
 
   const cancel = () => { if (!isLoading) onClose() }
@@ -68,8 +90,7 @@ function FuseCardsDialog({ source, target, isLoading = false, onConfirm, onClose
   const priority = maxPriority(target.priority, source.priority)
   const sourceHasDescription = !!source.description?.trim()
 
-  return createPortal(
-    <AnimatePresence>
+  return (
       <motion.div
         initial={reduceMotion ? false : { opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -80,6 +101,7 @@ function FuseCardsDialog({ source, target, isLoading = false, onConfirm, onClose
       >
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
         <motion.div
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby="fuse-cards-title"
@@ -172,8 +194,6 @@ function FuseCardsDialog({ source, target, isLoading = false, onConfirm, onClose
           </div>
         </motion.div>
       </motion.div>
-    </AnimatePresence>,
-    document.body
   )
 }
 

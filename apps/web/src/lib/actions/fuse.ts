@@ -36,7 +36,7 @@ export async function unfuseBoardTasks(projectId: string, snapshot: FuseSnapshot
   const parsed = fuseSnapshotSchema.parse(snapshot)
   if (parsed.projectId !== projectId) throw new Error('Snapshot belongs to another project')
   const userId = await requireEditor(projectId)
-  await _unfuseTasks(parsed)
+  await _unfuseTasks(parsed, userId)
 
   emitActivity(projectId, 'task', parsed.sourceId, 'restored', parsed.source.name, { unfusedFrom: parsed.survivorId }, userId).catch(() => {})
   revalidatePath(`/project/${projectId}`)

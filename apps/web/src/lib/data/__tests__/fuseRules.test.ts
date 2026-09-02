@@ -88,6 +88,15 @@ describe('mergeChecklistOrder', () => {
     expect(merged.find((m) => m.id === 'x1')?.groupName).toBe('QA')
   })
 
+  it('an orderIndex tie on the survivor appends each source item exactly once', () => {
+    const survivor = [item('s1', 'Checklist', 0), item('s2', 'Checklist', 0), item('s3', 'QA', 0), item('s4', 'QA', 0)]
+    const source = [item('x1', 'Checklist', 0), item('x2', 'QA', 1)]
+    const merged = mergeChecklistOrder(survivor, source)
+    expect(merged.map((m) => m.id)).toEqual(['s1', 's2', 'x1', 's3', 's4', 'x2'])
+    expect(merged.map((m) => m.orderIndex)).toEqual([0, 1, 2, 3, 4, 5])
+    expect(new Set(merged.map((m) => m.id)).size).toBe(merged.length)
+  })
+
   it('an empty survivor checklist takes the source\'s in order', () => {
     const source = [item('x2', 'B', 5), item('x1', 'A', 1)]
     expect(mergeChecklistOrder([], source).map((m) => m.id)).toEqual(['x1', 'x2'])

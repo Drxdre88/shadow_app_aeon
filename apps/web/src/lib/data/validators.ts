@@ -929,6 +929,12 @@ export const fuseTasksSchema = z.object({
 // scalars, the absorbed card's full row + relations, and the ids of every
 // row the fusion re-pointed or added. Built by fuseTasks, held client-side
 // by the undo toast, validated again when it comes back.
+// Array caps: the undo replays every element inside one transaction on a
+// pooled connection, so a client-held snapshot must not be able to grow a
+// statement without bound. fuseTasks refuses up front when a card would
+// exceed them, so a fusion that lands is always undoable.
+export const FUSE_SNAPSHOT_LIMITS = { labels: 50, assignees: 100, childRows: 500, ganttRows: 50 } as const
+
 export const fuseSnapshotSchema = z.object({
   projectId: z.string().uuid(),
   survivorId: z.string().uuid(),
@@ -973,19 +979,19 @@ export const fuseSnapshotSchema = z.object({
     ownerResourceId: z.string().uuid().nullable(),
     startedAt: isoOrNull,
   }),
-  sourceLabelIds: z.array(z.string().uuid()),
-  sourceAssignees: z.array(z.object({ userId: z.string().uuid(), assignedBy: z.string().uuid().nullable(), assignedAt: z.string() })),
-  sourceVirtualAssignees: z.array(z.object({ virtualMemberId: z.string().uuid(), assignedBy: z.string().uuid().nullable(), assignedAt: z.string() })),
-  addedLabelIds: z.array(z.string().uuid()),
-  addedAssigneeIds: z.array(z.string().uuid()),
-  addedVirtualAssigneeIds: z.array(z.string().uuid()),
+  sourceLabelIds: z.array(z.string().uuid()).max(FUSE_SNAPSHOT_LIMITS.labels),
+  sourceAssignees: z.array(z.object({ userId: z.string().uuid(), assignedBy: z.string().uuid().nullable(), assignedAt: z.string() })).max(FUSE_SNAPSHOT_LIMITS.assignees),
+  sourceVirtualAssignees: z.array(z.object({ virtualMemberId: z.string().uuid(), assignedBy: z.string().uuid().nullable(), assignedAt: z.string() })).max(FUSE_SNAPSHOT_LIMITS.assignees),
+  addedLabelIds: z.array(z.string().uuid()).max(FUSE_SNAPSHOT_LIMITS.labels),
+  addedAssigneeIds: z.array(z.string().uuid()).max(FUSE_SNAPSHOT_LIMITS.assignees),
+  addedVirtualAssigneeIds: z.array(z.string().uuid()).max(FUSE_SNAPSHOT_LIMITS.assignees),
   /** Pre-fusion placement of every checklist item on either card. */
-  checklist: z.array(z.object({ id: z.string().uuid(), taskId: z.string().uuid(), orderIndex: z.number().int() })),
-  sourceEdges: z.array(dependencyEdgeSchema),
-  insertedEdges: z.array(dependencyEdgeSchema),
-  commentIds: z.array(z.string().uuid()),
-  sessionIds: z.array(z.string().uuid()),
-  memoryIds: z.array(z.string().uuid()),
+  checklist: z.array(z.object({ id: z.string().uuid(), taskId: z.string().uuid(), orderIndex: z.number().int() })).max(FUSE_SNAPSHOT_LIMITS.childRows),
+  sourceEdges: z.array(dependencyEdgeSchema).max(FUSE_SNAPSHOT_LIMITS.childRows),
+  insertedEdges: z.array(dependencyEdgeSchema).max(FUSE_SNAPSHOT_LIMITS.childRows),
+  commentIds: z.array(z.string().uuid()).max(FUSE_SNAPSHOT_LIMITS.childRows),
+  sessionIds: z.array(z.string().uuid()).max(FUSE_SNAPSHOT_LIMITS.childRows),
+  memoryIds: z.array(z.string().uuid()).max(FUSE_SNAPSHOT_LIMITS.childRows),
   ganttRows: z.array(z.object({
     id: z.string().uuid(),
     rowId: z.string().uuid().nullable(),
@@ -998,7 +1004,7 @@ export const fuseSnapshotSchema = z.object({
     metadata: z.record(z.string(), z.unknown()),
     createdAt: z.string(),
     updatedAt: z.string(),
-  })),
+  })).max(FUSE_SNAPSHOT_LIMITS.ganttRows),
 })
 
 export type FuseTasksInput = z.infer<typeof fuseTasksSchema>

@@ -176,10 +176,28 @@ describe('placementIndex / halfFromPoint', () => {
 describe('useHoldToMoveMode (board lifecycle)', () => {
   beforeEach(() => {
     useBoardStore.setState({ movingTaskId: null, tasks: [{ id: TASK, projectId: 'p', columnId: 'c', name: 'x', status: 'todo', priority: 'medium', color: 'purple', labels: [], onTimeline: false, orderIndex: 0 }] as never[] })
-    document.body.innerHTML = '<div data-board-columns><div id="inside"></div></div><div id="outside"></div>'
+    document.body.innerHTML = '<div data-board-columns><div id="inside"></div></div><div id="outside"></div><div role="dialog" id="dialog"><input id="field" /></div>'
   })
   afterEach(() => {
     document.body.innerHTML = ''
+  })
+
+  it('an Escape born inside a dialog or a text field is left to that surface and does not cancel', () => {
+    renderHook(() => useHoldToMoveMode({ place: vi.fn() }))
+    act(() => { useBoardStore.getState().setMovingTaskId(TASK) })
+
+    const dialog = document.getElementById('dialog')!
+    const dialogHandler = vi.fn()
+    dialog.addEventListener('keydown', dialogHandler)
+    act(() => { document.getElementById('field')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })) })
+    dialog.removeEventListener('keydown', dialogHandler)
+
+    expect(dialogHandler).toHaveBeenCalledTimes(1)
+    expect(dialogHandler.mock.calls[0][0].defaultPrevented).toBe(false)
+    expect(useBoardStore.getState().movingTaskId).toBe(TASK)
+
+    act(() => { document.getElementById('inside')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })) })
+    expect(useBoardStore.getState().movingTaskId).toBeNull()
   })
 
   it('Escape cancels and stops the key from reaching the board shortcuts', () => {

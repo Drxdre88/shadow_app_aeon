@@ -8,9 +8,11 @@ export type MovedTask = { id: string; name: string; orderIndex: number }
 
 /**
  * Moves every live task in `fromColumnId` to the END of `toColumnId`,
- * preserving their relative order. The target's current max index is read
- * inside the same transaction as the writes so a concurrent create in the
- * target cannot hand two cards the same slot.
+ * preserving their relative order. The target column is advisory-locked for
+ * the whole transaction before anything is read, so a concurrent bulk move
+ * or create into the same column waits and then sees these indexes — a bare
+ * read of the max inside the transaction would not stop two writers from
+ * handing out the same slots.
  */
 export async function moveAllTasksToColumn(
   projectId: string,
@@ -18,6 +20,7 @@ export async function moveAllTasksToColumn(
   toColumnId: string,
 ): Promise<MovedTask[]> {
   const moved = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${toColumnId}))`)
     const source = await tx
       .select({ id: boardTasks.id, name: boardTasks.name, orderIndex: boardTasks.orderIndex })
       .from(boardTasks)

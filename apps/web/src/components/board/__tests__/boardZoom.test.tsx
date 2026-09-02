@@ -46,6 +46,7 @@ describe('readBoardScaleFor', () => {
 
 describe('measureUnderBoardZoom', () => {
   it('strips the node own sortable translate in viewport px under the wrapper scale', () => {
+    act(() => publishBoardZoom(0.5))
     document.body.innerHTML = '<div data-board-scale data-board-zoom="0.5"><div id="card"></div></div>'
     const card = document.getElementById('card')!
     vi.spyOn(card, 'getBoundingClientRect').mockReturnValue({ top: 250, left: 20, width: 80, height: 40, right: 100, bottom: 290 } as DOMRect)
@@ -56,7 +57,21 @@ describe('measureUnderBoardZoom', () => {
     expect(measureUnderBoardZoom(card)).toEqual({ top: 200, left: 20, width: 80, height: 40, right: 100, bottom: 240 })
   })
 
+  it('at the normal zoom returns the bounding rect without reading computed styles', () => {
+    document.body.innerHTML = '<div data-board-scale data-board-zoom="1"><div id="card"></div></div>'
+    const card = document.getElementById('card')!
+    const rect = { top: 250, left: 20, width: 80, height: 40, right: 100, bottom: 290 } as DOMRect
+    vi.spyOn(card, 'getBoundingClientRect').mockReturnValue(rect)
+    const styles = vi.spyOn(window, 'getComputedStyle')
+    const closest = vi.spyOn(card, 'closest')
+
+    expect(measureUnderBoardZoom(card)).toBe(rect)
+    expect(styles).not.toHaveBeenCalled()
+    expect(closest).not.toHaveBeenCalled()
+  })
+
   it('is a plain bounding rect for an untransformed node', () => {
+    act(() => publishBoardZoom(0.5))
     document.body.innerHTML = '<div data-board-scale data-board-zoom="0.5"><div id="col"></div></div>'
     const col = document.getElementById('col')!
     vi.spyOn(col, 'getBoundingClientRect').mockReturnValue({ top: 10, left: 20, width: 100, height: 400, right: 120, bottom: 410 } as DOMRect)

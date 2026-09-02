@@ -65,6 +65,7 @@ export function isHoldRelease(event: { delta: { x: number; y: number }; activato
 }
 
 const INTERACTIVE_SELECTOR = 'button, input, textarea, select, a, [role="button"]'
+const ESCAPE_OWNER_SELECTOR = '[role="dialog"], input, textarea, select, [contenteditable="true"]'
 
 interface PendingHold {
   x: number
@@ -177,12 +178,14 @@ export function useHoldToMoveMode({ place }: { place: (target: PlacementTarget) 
 
   useEffect(() => {
     if (!movingTaskId) return
-    // Capture + stopImmediatePropagation: Escape ends move mode and nothing
-    // else (the board's shortcut handler would otherwise also deselect).
+    // Capture + stopPropagation: Escape ends move mode and nothing else (the
+    // board's shortcut handler would otherwise also deselect). An Escape born
+    // inside a dialog or a text field belongs to that surface, not to us.
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
+      if ((e.target as Element | null)?.closest?.(ESCAPE_OWNER_SELECTOR)) return
       e.preventDefault()
-      e.stopImmediatePropagation()
+      e.stopPropagation()
       cancel()
     }
     // A tap anywhere off the board surface cancels. Bubble-phase on document

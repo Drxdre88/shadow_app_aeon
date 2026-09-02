@@ -91,4 +91,15 @@ describe('TrophyRhythmHeatmap', () => {
     render(<TrophyRhythmHeatmap tasks={[]} />)
     expect(screen.getByText(/finishing rhythm shows up here/)).toBeTruthy()
   })
+
+  it('survives trophies whose dates cannot be parsed instead of taking the room down', () => {
+    const undated: TrophyDatum[] = [
+      { completedAt: 'not a date', archivedAt: 'still not a date', priority: 'low', daysTaken: null, labelSnapshot: [] },
+      { completedAt: null, archivedAt: 'nope', priority: 'low', daysTaken: null, labelSnapshot: [] },
+    ]
+    const { container } = render(<TrophyRhythmHeatmap tasks={undated} />)
+    expect(screen.getByText(/no usable completion dates/)).toBeTruthy()
+    expect(container.querySelector('svg[role="img"]')).toBeNull()
+    expect(container.querySelector('.sr-only')!.textContent).toMatch(/2 trophies, none with a usable completion date/)
+  })
 })

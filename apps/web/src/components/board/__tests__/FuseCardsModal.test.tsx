@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { FuseCardsModal, isValidFusedName, MAX_FUSED_NAME } from '../FuseCardsModal'
 import { useBoardStore, type BoardTask } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
@@ -74,19 +74,30 @@ describe('FuseCardsModal', () => {
     expect(onConfirm).not.toHaveBeenCalled()
   })
 
-  it('confirms with the trimmed title, by click and by Enter', () => {
+  it('confirms with the trimmed title, by click and by Enter — but only with focus inside the dialog', () => {
     const { onConfirm } = open()
     fireEvent.change(input(), { target: { value: '  Fused title  ' } })
     fireEvent.click(confirmButton())
     expect(onConfirm).toHaveBeenCalledWith('Fused title')
+
+    input().blur()
+    document.body.focus()
     fireEvent.keyDown(window, { key: 'Enter' })
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+
+    input().focus()
+    fireEvent.keyDown(input(), { key: 'Enter' })
     expect(onConfirm).toHaveBeenCalledTimes(2)
   })
 
-  it('Escape and the backdrop cancel; neither works while loading', () => {
+  it('Escape and the backdrop cancel; neither works while loading; Escape never reaches other listeners', () => {
     const { onClose } = open()
+    const other = vi.fn()
+    window.addEventListener('keydown', other)
     fireEvent.keyDown(window, { key: 'Escape' })
+    window.removeEventListener('keydown', other)
     expect(onClose).toHaveBeenCalledTimes(1)
+    expect(other).not.toHaveBeenCalled()
     cleanup()
 
     const loading = open({ isLoading: true })
@@ -100,5 +111,15 @@ describe('FuseCardsModal', () => {
     const { container } = render(<FuseCardsModal isOpen source={source} target={null} onConfirm={vi.fn()} onClose={vi.fn()} />)
     expect(container.innerHTML).toBe('')
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('keeps AnimatePresence mounted across open and close so the exit can play', async () => {
+    const { rerender } = render(<FuseCardsModal isOpen source={source} target={target} onConfirm={vi.fn()} onClose={vi.fn()} />)
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    rerender(<FuseCardsModal isOpen={false} source={source} target={target} onConfirm={vi.fn()} onClose={vi.fn()} />)
+    // The dialog lingers for its exit frame instead of vanishing synchronously.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    rerender(<FuseCardsModal isOpen source={source} target={target} onConfirm={vi.fn()} onClose={vi.fn()} />)
+    expect(screen.getByRole('dialog')).toBeTruthy()
   })
 })
