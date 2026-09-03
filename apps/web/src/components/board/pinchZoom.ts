@@ -17,6 +17,39 @@ export interface TouchPoint {
   clientY: number
 }
 
+/**
+ * How long after a finger lands on a card a second finger can still be read as
+ * the other half of a pinch. The two fingers of a deliberate pinch land within
+ * ~100ms of each other; a long-press drag hold (250ms) plus a late bracing
+ * thumb does not.
+ */
+export const PINCH_PAIR_WINDOW_MS = 120
+
+/** A finger currently down on the board, as the pinch gate sees it. */
+export interface RestingTouch {
+  /** The finger landed inside a card rather than on bare board. */
+  onCard: boolean
+  /** `Date.now()` when it landed. */
+  startedAt: number
+}
+
+/**
+ * Whether a finger landing now may OPEN a pinch.
+ *
+ * Refused outright while a card is lifted, and refused when some finger has
+ * already been resting on a card for longer than the pairing window — that
+ * finger is a drag, or a hold about to become one, and the newcomer is a
+ * bracing thumb. Two fingers that land together are always a pinch, even over
+ * a dense board where one of them necessarily starts on a card.
+ */
+export function canStartPinch(dragActive: boolean, resting: Iterable<RestingTouch>, now: number): boolean {
+  if (dragActive) return false
+  for (const touch of resting) {
+    if (touch.onCard && now - touch.startedAt > PINCH_PAIR_WINDOW_MS) return false
+  }
+  return true
+}
+
 export function clampScale(scale: number): number {
   if (!Number.isFinite(scale)) return MAX_BOARD_SCALE
   return Math.min(MAX_BOARD_SCALE, Math.max(MIN_BOARD_SCALE, scale))

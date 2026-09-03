@@ -9,6 +9,8 @@ import {
   nextScale,
   scrollForFocalPoint,
   layoutCompensation,
+  canStartPinch,
+  PINCH_PAIR_WINDOW_MS,
 } from '../pinchZoom'
 
 describe('clampScale', () => {
@@ -135,5 +137,35 @@ describe('layoutCompensation', () => {
     const s = 0.35
     const { marginRight } = layoutCompensation(s, base, 0)
     expect(base + marginRight).toBeCloseTo(base * s, 8)
+  })
+})
+
+describe('canStartPinch', () => {
+  const NOW = 10_000
+  const bare = (age: number) => ({ onCard: false, startedAt: NOW - age })
+  const onCard = (age: number) => ({ onCard: true, startedAt: NOW - age })
+
+  it('lets two near-simultaneous fingers pinch, even with one on a card', () => {
+    expect(canStartPinch(false, [onCard(0), bare(0)], NOW)).toBe(true)
+    expect(canStartPinch(false, [onCard(50), onCard(0)], NOW)).toBe(true)
+    expect(canStartPinch(false, [onCard(PINCH_PAIR_WINDOW_MS), bare(0)], NOW)).toBe(true)
+  })
+
+  it('refuses once a finger has been holding a card past the pairing window', () => {
+    expect(canStartPinch(false, [onCard(PINCH_PAIR_WINDOW_MS + 1), bare(0)], NOW)).toBe(false)
+    expect(canStartPinch(false, [onCard(300), bare(0)], NOW)).toBe(false)
+  })
+
+  it('ignores the age of fingers that are not on a card — an idle finger on bare board is fine', () => {
+    expect(canStartPinch(false, [bare(5000), bare(0)], NOW)).toBe(true)
+  })
+
+  it('refuses outright while a card is lifted, however the fingers landed', () => {
+    expect(canStartPinch(true, [], NOW)).toBe(false)
+    expect(canStartPinch(true, [bare(0), bare(0)], NOW)).toBe(false)
+  })
+
+  it('allows a pinch when nothing is being tracked', () => {
+    expect(canStartPinch(false, [], NOW)).toBe(true)
   })
 })

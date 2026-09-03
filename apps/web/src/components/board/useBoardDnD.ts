@@ -78,6 +78,11 @@ export function useBoardDnD({
   const pendingMoveRef = useRef<{ id: string; columnId: string; orderIndex: number; name: string } | null>(null)
   const dragSnapshotRef = useRef<MoveSnapshot | null>(null)
   const pointerYRef = useRef<number | null>(null)
+  // "A card is lifted", readable synchronously. The board's pinch gate is a
+  // raw touchstart listener, so it needs the answer the instant a second
+  // finger lands — an effect derived from `activeItem` only commits a render
+  // later, and every touch that arrives in that gap opens a bogus pinch.
+  const dragActiveRef = useRef(false)
 
   // The live pointer beats activator+delta: auto-scrolling a column inflates
   // the delta while the card rects move the other way, which would bias the
@@ -125,6 +130,7 @@ export function useBoardDnD({
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event
     const dragType = active.data.current?.type
+    dragActiveRef.current = true
     pointerYRef.current = null
     fuse.clear()
     // A real drag supersedes a pending hold-to-move placement.
@@ -253,6 +259,7 @@ export function useBoardDnD({
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
     const activeType = active.data.current?.type
+    dragActiveRef.current = false
 
     const pendingMove = pendingMoveRef.current
     const snapshot = dragSnapshotRef.current
@@ -325,6 +332,7 @@ export function useBoardDnD({
   }, [sortedColumns, removeTask, reorderColumns, resolveDropIndex, commitMove, restoreSnapshot, fuse, trackFuse, onTaskMove, onTaskDelete, onColumnReorder, onFuseRequest])
 
   const handleDragCancel = useCallback(() => {
+    dragActiveRef.current = false
     if (pendingMoveRef.current) restoreSnapshot(dragSnapshotRef.current)
     pendingMoveRef.current = null
     dragSnapshotRef.current = null
@@ -350,6 +358,7 @@ export function useBoardDnD({
   return {
     sensors,
     activeItem,
+    dragActiveRef,
     overId,
     handleDragStart,
     handleDragMove,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState, useMemo, useEffect, useRef } from 'react'
+import { useCallback, useState, useMemo, useEffect } from 'react'
 import { DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
 import { useBoardStore, useColumns, useTasks, useSelectedTaskId, useFuseTargetId, type BoardColumn, type BoardTask, type TaskAssigneePill } from '@/lib/store/boardStore'
@@ -158,13 +158,6 @@ export function TaskBoard({
   const columnIds = sortedColumns.map((c) => c.id)
 
   const { boardRef, hoveredTaskId } = useBoardHover()
-  // The pinch is refused while a card is lifted (a stray second finger during
-  // a cross-column drag would rescale the canvas under the drag), and the
-  // settled zoom sizes the drag preview to the bird's-eye cards.
-  const dragActiveRef = useRef(false)
-  const isPinchLocked = useCallback(() => dragActiveRef.current, [])
-  const { containerRef: pinchContainerRef, contentRef: pinchContentRef } = useBoardPinchZoom({ isLocked: isPinchLocked })
-  const boardZoom = useBoardZoom()
 
   const { connectSourceId, cursorPos, handleConnectClick, cancelConnect } = useConnectMode({
     connectMode,
@@ -179,7 +172,7 @@ export function TaskBoard({
 
   // Auto AI launches ride on the move mutation (see useBoardHandlers): the
   // agent is spawned only once the card's move is durable.
-  const { sensors, activeItem, overId, handleDragStart, handleDragMove, handleDragOver, handleDragEnd, handleDragCancel, placeMovingTask } = useBoardDnD({
+  const { sensors, activeItem, dragActiveRef, overId, handleDragStart, handleDragMove, handleDragOver, handleDragEnd, handleDragCancel, placeMovingTask } = useBoardDnD({
     projectTasks,
     sortedColumns,
     onTaskMove,
@@ -187,7 +180,15 @@ export function TaskBoard({
     onColumnReorder,
     onFuseRequest: fuseCards.requestFuse,
   })
-  useEffect(() => { dragActiveRef.current = activeItem !== null }, [activeItem])
+
+  // The pinch is refused while a card is lifted — a stray second finger during
+  // a cross-column drag would rescale the canvas under the drag. The lock is
+  // the dnd hook's ref, written inside handleDragStart, not a rendered flag:
+  // the bracing finger lands long before React could commit one. The settled
+  // zoom sizes the drag preview to the bird's-eye cards.
+  const isPinchLocked = useCallback(() => dragActiveRef.current, [dragActiveRef])
+  const { containerRef: pinchContainerRef, contentRef: pinchContentRef } = useBoardPinchZoom({ isLocked: isPinchLocked })
+  const boardZoom = useBoardZoom()
 
   const holdToMove = useHoldToMoveMode({ place: placeMovingTask })
   // Neutral cards take their move-mode cursor from this attribute (globals.css)
