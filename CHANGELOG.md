@@ -20,6 +20,28 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - `DOCS` — `ARCHITECTURE.md`, `VISION.md`, `CLAUDE.md`
 - `UI` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.24.0] — 2026-09-03
+
+> Areas touched: `BOARD` `GANTT` `UI` `INFRA`
+> Theme: the board learns to be touched. Hold-to-move, card fusion, whole-column moves and a members row landed for desktop this morning; this build makes every one of them reachable with a finger, and gives the phone a way to prove which build it is running (this pill).
+
+### Added — Touch-reachable card and column menus · `BOARD` · `UI`
+- A **⋯** button on every card and column header on touch devices opens the same menu right-click opens on desktop: Move to…, Priority, Colour, Select, Delete, AI actions; Rename, Colour, Icon, **Move all N cards to…**, transfers, Archive. iOS never fires the right-click event for a long-press and Android hands it to drag first, so menus were unreachable on phones until now.
+- Menus clamp to the viewport on both axes and close on an outside tap or Escape.
+
+### Added — Hold-to-move, card fusion, column bulk move, members row · `BOARD`
+- Hold a card about half a second (desktop) or long-press, hold still and lift (touch) to arm move mode; tap the destination — top half inserts above, bottom half below, empty space appends. Esc cancels, Ctrl+Z reverts.
+- Drag a card onto the middle of another and hold still to **fuse** them: labels, people, dates, size, checklist groups, dependencies, comments and history merge into one card. Undo restores both.
+- Column menu → Move all cards to another column, in order, with Undo. Members row in the card editor uses the same picker as the M key.
+
+### Fixed — Phone drag and zoom · `BOARD` · `INFRA`
+- Dragging a card between columns while pinch-zoomed out no longer collapses the board to half the screen. A second finger arriving mid-drag was being read as a pinch and stole the drag; pinch now refuses to start while a drag is pending or active, while a deliberate two-finger pinch still works over a crowded board.
+- Zen mode: hover a card and press L / G / V / M and the popup acts on that card, anchored to it, instead of the last card hovered on the board.
+- Checklist: dragging an item into another group shows a glowing insertion line and drops exactly there; the drag preview follows the finger instead of drifting to the side.
+
+### Changed — Timeline reset asks first · `GANTT`
+- Reset shows how many cards leave the timeline and lose dates, stays disabled until you type RESET, and offers Undo.
+
 ## [0.23.0] — 2026-07-24
 
 > Areas touched: `KAIROS` `INFRA` `DATA`
