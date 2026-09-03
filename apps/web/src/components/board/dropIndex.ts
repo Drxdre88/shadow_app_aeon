@@ -97,3 +97,35 @@ export function readCardRects(columnId: string, excludeTaskId?: string): CardRec
   }
   return rects
 }
+
+// While a drag is live the sortable strategy displaces cards with an inline
+// translate. The SLOT rect is the layout box without that displacement —
+// stable under the pointer even as the card itself slides out of the way.
+// The translate is in the card's own px; scale it by rendered/layout height
+// so a pinch-zoomed board (which scales the columns) still measures in
+// viewport px.
+export function inlineTranslateY(el: Element): number {
+  const style = (el as HTMLElement).style
+  const m = /translate3d\(\s*-?[\d.]+px,\s*(-?[\d.]+)px/.exec(style?.transform ?? '')
+  if (!m) return 0
+  const layoutHeight = (el as HTMLElement).offsetHeight
+  const rendered = el.getBoundingClientRect().height
+  const scale = layoutHeight > 0 && rendered > 0 ? rendered / layoutHeight : 1
+  return Number(m[1]) * scale
+}
+
+export function readCardSlotRects(columnId: string, excludeTaskId?: string): CardRect[] | null {
+  if (typeof document === 'undefined') return null
+  const column = document.querySelector(`[data-column-id="${CSS.escape(columnId)}"]`)
+  if (!column) return null
+  const rects: CardRect[] = []
+  for (const el of column.querySelectorAll('[data-task-id]')) {
+    const id = el.getAttribute('data-task-id')
+    if (!id || id === excludeTaskId) continue
+    const box = el.getBoundingClientRect()
+    if (box.height === 0) continue
+    rects.push({ id, top: box.top - inlineTranslateY(el), height: box.height })
+  }
+  return rects
+}
+

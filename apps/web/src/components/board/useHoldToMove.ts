@@ -97,7 +97,12 @@ export function useCardHoldGesture(taskId: string, enabled = true) {
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     if (!enabled || e.pointerType === 'touch' || e.button !== 0) return
-    if ((e.target as Element | null)?.closest(INTERACTIVE_SELECTOR)) return
+    // dnd-kit gives the card surface itself role="button", so only a control
+    // INSIDE the surface (a real button, link, field) blocks the hold — the
+    // surface is exactly where a hold starts. Matching the surface here is
+    // what made every desktop hold a no-op.
+    const control = (e.target as Element | null)?.closest(INTERACTIVE_SELECTOR)
+    if (control && control !== e.currentTarget) return
     clearPending()
     armedRef.current = false
     pendingRef.current = {

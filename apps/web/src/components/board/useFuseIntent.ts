@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useBoardStore } from '@/lib/store/boardStore'
-import { readCardRects } from './dropIndex'
+import { readCardSlotRects } from './dropIndex'
 import {
   IDLE_FUSE_INTENT,
   dropZoneFromY,
@@ -13,15 +13,17 @@ import {
 } from './fuseZone'
 
 /**
- * The card VISUALLY under the pointer in a column — its on-screen rect,
- * sortable displacement included, exactly what resolveDropIndex measures for
- * the reorder. Fusion targets what the eye sees, not dnd-kit's `over` (which
- * is the layout slot and sits one card off while neighbours are displaced).
- * Viewport px on both sides, so pinch-zoom needs no correction. The dragged
- * card itself is skipped. null = nothing under the pointer.
+ * The card whose SLOT is under the pointer in a column. The sortable
+ * strategy slides the hovered card out of the way the instant dnd-kit
+ * reports it as `over`, so the card visually under the pointer becomes the
+ * empty gap and a fuse dwell could never complete. The slot (layout box
+ * minus the inline displacement) stays put, so dwelling on a card's middle
+ * third is possible; the held card is then pinned in its slot by
+ * SortableTaskCard (fuseHoldId) so the eye agrees. Viewport px on both
+ * sides. The dragged card itself is skipped. null = nothing under the pointer.
  */
 export function findCardAtY(columnId: string, excludeTaskId: string, pointerY: number): (ZoneRect & { id: string }) | null {
-  const rects = readCardRects(columnId, excludeTaskId)
+  const rects = readCardSlotRects(columnId, excludeTaskId)
   if (!rects) return null
   for (const rect of rects) {
     if (pointerY >= rect.top && pointerY < rect.top + rect.height) return rect
@@ -48,8 +50,10 @@ export function useFuseIntent() {
 
   const publish = useCallback((intent: FuseIntent) => {
     const armedId = intent.armed ? intent.targetId : null
-    const { fuseTargetId, setFuseTargetId } = useBoardStore.getState()
+    const { fuseTargetId, setFuseTargetId, fuseHoldId, setFuseHoldId } = useBoardStore.getState()
     if (fuseTargetId !== armedId) setFuseTargetId(armedId)
+    // Pending OR armed: the card the pointer is dwelling on stays in its slot.
+    if (fuseHoldId !== intent.targetId) setFuseHoldId(intent.targetId)
   }, [])
 
   const stopTimer = useCallback(() => {
@@ -99,7 +103,9 @@ export function useFuseIntent() {
 
   useEffect(() => () => {
     stopTimer()
-    useBoardStore.getState().setFuseTargetId(null)
+    const s = useBoardStore.getState()
+    s.setFuseTargetId(null)
+    s.setFuseHoldId(null)
   }, [stopTimer])
 
   return useMemo(() => ({ observe, clear, armedTargetId }), [observe, clear, armedTargetId])

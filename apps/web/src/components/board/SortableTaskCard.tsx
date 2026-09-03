@@ -13,7 +13,7 @@ import { resolvePriority } from '@/lib/utils/priorities'
 import { labelHex, readableTextColor } from './labelTile'
 import { progressBarStyle } from './progressColor'
 import { GlowCard } from '@/components/ui/GlowCard'
-import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees, useFuseTargetId } from '@/lib/store/boardStore'
+import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees, useFuseTargetId, useFuseHoldId } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { useCardHoldGesture, useHoldToMoveActions, halfFromPoint } from './useHoldToMove'
 import { DependencyIndicator } from './DependencyIndicator'
@@ -85,6 +85,9 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const lastPointerTypeRef = useRef<string | undefined>(undefined)
   // Card fusion: the dragged card has dwelt on this one long enough to fuse.
   const isFuseTarget = useFuseTargetId() === task.id
+  // While a dragged card dwells on this one's middle band, this card must not
+  // slide out of the way — the pointer has to be able to stay on it.
+  const isFuseHold = useFuseHoldId() === task.id
   const { holdHandlers, consumeHoldClick } = useCardHoldGesture(task.id)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
@@ -149,7 +152,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   })
 
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: isFuseHold ? undefined : CSS.Transform.toString(transform),
     transition,
   }
 
