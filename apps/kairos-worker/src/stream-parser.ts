@@ -43,16 +43,67 @@ export interface StreamParser {
 const TEXT_CAP = 4000
 const INPUT_CAP = 2000
 const RESULT_CAP = 600
+// A lone CR is not a line separator, so a CLI drawing a progress spinner with
+// \r never completes a line and the partial-line buffer grows for the whole
+// mission (60KB observed). Past this the buffer is handed back as raw text and
+// reset: memory bounded, nothing dropped.
+const TAIL_CAP = 1_000_000
+// tool_use_id → name entries only clear on the matching tool_result, so a
+// mission whose results never arrive (killed subagent, truncated stream) would
+// grow the map for its lifetime.
+const TOOL_NAME_CAP = 500
 // Postgres jsonb refuses \u0000 escapes, and the events route stores payloads
 // as jsonb — one NUL in a Bash result would 500 the whole batch away.
 // eslint-disable-next-line no-control-regex
 const JSONB_UNSAFE = /\u0000/g
+// jsonb refuses an unpaired surrogate escape too. Model-authored JSON carries
+// them through JSON.parse intact, so they have to be replaced, not just cut.
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g
+
+function jsonbSafeString(text: string): string {
+  return text.replace(JSONB_UNSAFE, '').replace(LONE_SURROGATE, '\uFFFD')
+}
+
+// ── secret redaction ─────────────────────────────────────────────────────
+//
+// Tool inputs and results are posted verbatim, so one `gh auth token` or `env`
+// inside a mission would print a live credential onto the timeline — and dev
+// shares one database with prod. Every runner env value long enough to be a
+// credential and sitting under a credential-shaped key is masked on the way out.
+
+const SECRET_KEY = /TOKEN|KEY|SECRET|PASSWORD/i
+const MIN_SECRET_LENGTH = 20
+
+let redactions: Array<{ value: string; label: string }> = []
+
+// Exported so a test can install a fake env; the runner builds the list once at
+// module load and never rebuilds it.
+export function refreshRedactions(env: Record<string, string | undefined> = process.env): void {
+  const found: Array<{ value: string; label: string }> = []
+  for (const [key, value] of Object.entries(env)) {
+    if (typeof value !== 'string' || value.length < MIN_SECRET_LENGTH) continue
+    if (!SECRET_KEY.test(key)) continue
+    found.push({ value, label: key })
+  }
+  // Longest first: a value containing a shorter one must be masked whole.
+  redactions = found.sort((a, b) => b.value.length - a.value.length)
+}
+
+refreshRedactions()
+
+function redact(text: string): string {
+  let out = text
+  for (const { value, label } of redactions) {
+    if (out.includes(value)) out = out.split(value).join(`[redacted:${label}]`)
+  }
+  return out
+}
 
 // Raw text posted outside the parser (legacy batching, stderr, engines with
 // no streamParser) needs the same jsonb safety: NUL stripped, and no chunk
 // boundary splitting a surrogate pair.
 export function jsonbSafeChunks(text: string, limit: number): string[] {
-  const clean = text.replace(JSONB_UNSAFE, '')
+  const clean = redact(text).replace(JSONB_UNSAFE, '')
   const chunks: string[] = []
   let i = 0
   while (i < clean.length) {
@@ -65,8 +116,26 @@ export function jsonbSafeChunks(text: string, limit: number): string[] {
   return chunks
 }
 
+// Deep jsonb guard for a whole parsed structure. The terminal result envelope
+// is the one payload written to jsonb without passing through cap(): a NUL
+// inside the model's fenced JSON survives JSON.parse and Postgres rejects the
+// write as a non-retriable 400, leaving the mission with no result on the card.
+const SANITIZE_MAX_DEPTH = 12
+
+export function sanitizeJsonbDeep(value: unknown, depth = 0): unknown {
+  if (typeof value === 'string') return jsonbSafeString(value)
+  if (value === null || typeof value !== 'object') return value
+  if (depth >= SANITIZE_MAX_DEPTH) return '[depth capped]'
+  if (Array.isArray(value)) return value.map((item) => sanitizeJsonbDeep(item, depth + 1))
+  const out: Record<string, unknown> = {}
+  for (const [key, item] of Object.entries(value)) {
+    out[jsonbSafeString(key)] = sanitizeJsonbDeep(item, depth + 1)
+  }
+  return out
+}
+
 function cap(text: string, limit: number): string {
-  let out = text.replace(JSONB_UNSAFE, '')
+  let out = jsonbSafeString(redact(text))
   if (out.length > limit) {
     out = out.slice(0, limit)
     // A cut can land between the halves of a surrogate pair; a lone high half
@@ -132,8 +201,13 @@ interface ClaudeCtx {
   toolNames: Map<string, string>
   // Every assistant line repeats its API request's usage snapshot; emit one
   // usage event per request (last snapshot wins) instead of one per line.
-  pendingUsageKey: string | null
-  pendingUsage: Record<string, unknown> | null
+  // Keyed by request_id because parallel subagents interleave (A, B, A) — a
+  // single pending slot only dedupes consecutive runs and double-counts the
+  // rest.
+  pendingUsage: Map<string, Record<string, unknown>>
+  // Requests already emitted: a trailing line for one of them must not queue a
+  // second event.
+  flushedUsage: Set<string>
   stats: MissionStats
 }
 
@@ -148,28 +222,38 @@ function usagePayload(usage: Usage, requestId: string, parentToolUseId: unknown)
   }
 }
 
+// Drains every pending request in first-seen order.
 function flushPendingUsage(ctx: ClaudeCtx): TypedEvent[] {
-  if (!ctx.pendingUsage) return []
-  const event: TypedEvent = { kind: 'usage', payload: ctx.pendingUsage }
-  ctx.pendingUsage = null
-  ctx.pendingUsageKey = null
-  return [event]
+  if (ctx.pendingUsage.size === 0) return []
+  const events: TypedEvent[] = []
+  for (const [requestId, payload] of ctx.pendingUsage) {
+    events.push({ kind: 'usage', payload })
+    ctx.flushedUsage.add(requestId)
+  }
+  ctx.pendingUsage.clear()
+  return events
 }
 
-function trackUsage(ctx: ClaudeCtx, line: ClaudeLine): TypedEvent[] {
+function trackUsage(ctx: ClaudeCtx, line: ClaudeLine): void {
   const usage = line.message?.usage
   const requestId = typeof line.request_id === 'string' ? line.request_id : null
-  if (!usage || !requestId) return []
-  const flushed = ctx.pendingUsageKey !== null && ctx.pendingUsageKey !== requestId
-    ? flushPendingUsage(ctx)
-    : []
-  ctx.pendingUsageKey = requestId
-  ctx.pendingUsage = usagePayload(usage, requestId, line.parent_tool_use_id)
-  return flushed
+  if (!usage || !requestId) return
+  if (ctx.flushedUsage.has(requestId)) return
+  ctx.pendingUsage.set(requestId, usagePayload(usage, requestId, line.parent_tool_use_id))
+}
+
+function rememberTool(ctx: ClaudeCtx, toolUseId: string, name: string): void {
+  ctx.toolNames.set(toolUseId, name)
+  while (ctx.toolNames.size > TOOL_NAME_CAP) {
+    const oldest = ctx.toolNames.keys().next()
+    if (oldest.done) break
+    ctx.toolNames.delete(oldest.value)
+  }
 }
 
 function mapAssistantLine(ctx: ClaudeCtx, line: ClaudeLine): TypedEvent[] {
-  const events = trackUsage(ctx, line)
+  trackUsage(ctx, line)
+  const events: TypedEvent[] = []
   const parent = typeof line.parent_tool_use_id === 'string'
     ? { parentToolUseId: line.parent_tool_use_id }
     : {}
@@ -188,7 +272,7 @@ function mapAssistantLine(ctx: ClaudeCtx, line: ClaudeLine): TypedEvent[] {
       // The server's toolName column caps at 80; a long MCP tool name must
       // not 400 the events beside it.
       const name = b.name.slice(0, 80)
-      if (toolUseId) ctx.toolNames.set(toolUseId, name)
+      if (toolUseId) rememberTool(ctx, toolUseId, name)
       ctx.stats.toolCalls++
       events.push({
         kind: 'tool_use',
@@ -300,8 +384,8 @@ function mapClaudeLine(ctx: ClaudeCtx, rawLine: string): TypedEvent[] | null {
 export function createClaudeStreamParser(): StreamParser {
   const ctx: ClaudeCtx = {
     toolNames: new Map(),
-    pendingUsageKey: null,
-    pendingUsage: null,
+    pendingUsage: new Map(),
+    flushedUsage: new Set(),
     stats: { toolCalls: 0 },
   }
   let tail = ''
@@ -318,6 +402,11 @@ export function createClaudeStreamParser(): StreamParser {
         const mapped = mapClaudeLine(ctx, line)
         if (mapped === null) raw += `${line}\n`
         else events.push(...mapped)
+      }
+      // A separator that never arrives must not become a memory leak.
+      if (tail.length > TAIL_CAP) {
+        raw += `${tail}\n`
+        tail = ''
       }
       return { events, raw }
     },

@@ -51,6 +51,21 @@ describe('buildArgs', () => {
     }
   })
 
+  it('drops an env knob whose value would reach argv as a flag or with a space', () => {
+    process.env.KAIROS_CLAUDE_EFFORT = '--dangerously-skip-permissions'
+    process.env.KAIROS_CLAUDE_FALLBACK_MODEL = 'sonnet --verbose'
+    try {
+      const args = argsFor('claude')
+      expect(args).not.toContain('--effort')
+      expect(args).not.toContain('--fallback-model')
+      expect(args).not.toContain('--dangerously-skip-permissions')
+      expect(args).not.toContain('sonnet --verbose')
+    } finally {
+      delete process.env.KAIROS_CLAUDE_EFFORT
+      delete process.env.KAIROS_CLAUDE_FALLBACK_MODEL
+    }
+  })
+
   it('runs copilot unattended with json output', () => {
     const args = argsFor('copilot', 'claude-sonnet-5')
     expect(args).toContain('--allow-all-tools')

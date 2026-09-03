@@ -38,6 +38,22 @@ function modelArgs(flag: string, model: string | null | undefined, fallback: str
   return chosen ? [flag, chosen] : []
 }
 
+// The same charset the poller holds DB-sourced argv to, kept local so this
+// module never depends on the poll loop. The first character must be
+// alphanumeric: a knob of '--dangerously-skip-permissions' would otherwise
+// reach the CLI as an option rather than as a value.
+const SAFE_ARG = /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/
+
+// An operator-set knob is trusted but not unvalidated — a stray quote or space
+// in the runner env would land in argv, so the knob is dropped instead.
+function safeKnob(name: string): string | null {
+  const value = process.env[name]
+  if (!value) return null
+  if (SAFE_ARG.test(value)) return value
+  console.warn(`[worker/engines] ${name} contains unsupported characters — knob ignored`)
+  return null
+}
+
 const claude: EngineAdapter = {
   id: 'claude',
   bin: process.env.KAIROS_CLAUDE_BIN ?? 'claude',
@@ -51,8 +67,8 @@ const claude: EngineAdapter = {
       // Operator-set knobs from runner env (trusted, same trust level as
       // defaultModel). Read at spawn time so env edits apply without restart
       // of the module — only of the runner process.
-      ...modelArgs('--effort', process.env.KAIROS_CLAUDE_EFFORT ?? null, null),
-      ...modelArgs('--fallback-model', process.env.KAIROS_CLAUDE_FALLBACK_MODEL ?? null, null),
+      ...modelArgs('--effort', safeKnob('KAIROS_CLAUDE_EFFORT'), null),
+      ...modelArgs('--fallback-model', safeKnob('KAIROS_CLAUDE_FALLBACK_MODEL'), null),
     ]
   },
   envelopeSource: 'stdout',

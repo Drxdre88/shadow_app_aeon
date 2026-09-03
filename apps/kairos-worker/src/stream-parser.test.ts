@@ -1,8 +1,14 @@
 // Fixtures mirror a live capture of `claude -p --output-format stream-json
 // --verbose` (CLI v2.1.x, 2026-08-21) — the contract this parser is built on.
 
-import { describe, expect, it } from 'vitest'
-import { createClaudeStreamParser, jsonbSafeChunks, type TypedEvent } from './stream-parser.js'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  createClaudeStreamParser,
+  jsonbSafeChunks,
+  refreshRedactions,
+  sanitizeJsonbDeep,
+  type TypedEvent,
+} from './stream-parser.js'
 
 const INIT_LINE = JSON.stringify({
   type: 'system', subtype: 'init', cwd: 'C:\\repo', session_id: 's1',
@@ -81,6 +87,61 @@ describe('jsonbSafeChunks', () => {
   })
 })
 
+describe('sanitizeJsonbDeep', () => {
+  it('strips NUL and replaces lone surrogates at every depth', () => {
+    const nul = String.fromCharCode(0)
+    const lone = String.fromCharCode(0xd800)
+    const clean = sanitizeJsonbDeep({
+      a: `x${nul}y`,
+      b: [{ c: `t${lone}` }],
+      n: 3,
+      z: null,
+    })
+    const serialized = JSON.stringify(clean)
+    expect(clean).toMatchObject({ a: 'xy', n: 3, z: null })
+    expect(serialized).not.toContain('\\u0000')
+    expect(serialized).not.toContain('\\ud800')
+  })
+
+  it('caps runaway nesting instead of recursing without bound', () => {
+    let deep: Record<string, unknown> = { leaf: 'ok' }
+    for (let i = 0; i < 40; i++) deep = { nest: deep }
+    expect(JSON.stringify(sanitizeJsonbDeep(deep))).toContain('[depth capped]')
+  })
+})
+
+describe('secret redaction', () => {
+  afterEach(() => refreshRedactions())
+
+  it('masks a runner env secret before it reaches an event payload', () => {
+    const secret = 'ghp_fake_live_token_0123456789'
+    refreshRedactions({ FAKE_GH_TOKEN: secret, KAIROS_CLAUDE_BIN: 'claude-on-a-long-path' })
+
+    const { events } = feedAll([
+      assistantLine({ type: 'text', text: `the token is ${secret} ok` }),
+      JSON.stringify({
+        type: 'user',
+        message: { content: [{ type: 'tool_result', tool_use_id: 'tz', content: `env dump ${secret}` }] },
+      }),
+    ])
+
+    expect(events.find((e) => e.kind === 'message')!.payload.text)
+      .toBe('the token is [redacted:FAKE_GH_TOKEN] ok')
+    const result = events.find((e) => e.kind === 'tool_result')!.payload.content as string
+    expect(result).toContain('[redacted:FAKE_GH_TOKEN]')
+    expect(result).not.toContain(secret)
+    // The raw/stderr path shares the guard.
+    expect(jsonbSafeChunks(`raw ${secret}`, 200)[0]).toBe('raw [redacted:FAKE_GH_TOKEN]')
+  })
+
+  it('ignores short values and keys that are not credential-shaped', () => {
+    const home = 'a-very-long-home-directory-path'
+    refreshRedactions({ SHORT_TOKEN: 'abc', HOME: home })
+    const { events } = feedAll([assistantLine({ type: 'text', text: `abc ${home}` })])
+    expect(events.find((e) => e.kind === 'message')!.payload.text).toBe(`abc ${home}`)
+  })
+})
+
 describe('claude stream parser', () => {
   it('maps an init line to a system event with the config snapshot', () => {
     const { events } = feedAll([INIT_LINE])
@@ -127,6 +188,38 @@ describe('claude stream parser', () => {
     const usage = events.filter((e) => e.kind === 'usage')
     expect(usage).toHaveLength(2)
     expect(usage.map((u) => u.payload.requestId)).toEqual(['req_1', 'req_2'])
+  })
+
+  // Parallel subagents interleave their lines, so a single pending slot only
+  // deduped consecutive runs and counted A twice.
+  it('counts usage once per request_id when requests interleave (A, B, A)', () => {
+    const { events } = feedAll([
+      assistantLine({ type: 'text', text: 'a1' }, 'req_A'),
+      assistantLine({ type: 'text', text: 'b1' }, 'req_B'),
+      assistantLine({ type: 'text', text: 'a2' }, 'req_A'),
+    ])
+    const usage = events.filter((e) => e.kind === 'usage')
+    expect(usage).toHaveLength(2)
+    expect(usage.map((u) => u.payload.requestId)).toEqual(['req_A', 'req_B'])
+  })
+
+  it('never re-emits usage for a request already flushed at the result line', () => {
+    const { events } = feedAll([
+      assistantLine({ type: 'text', text: 'a' }, 'req_1'),
+      RESULT_LINE,
+      assistantLine({ type: 'text', text: 'trailing' }, 'req_1'),
+    ])
+    expect(events.filter((e) => e.kind === 'usage')).toHaveLength(1)
+  })
+
+  it('flushes the partial-line buffer as raw text once it outgrows the cap', () => {
+    const parser = createClaudeStreamParser()
+    // A lone CR is not a separator, so spinner output never completes a line.
+    let raw = ''
+    for (let i = 0; i < 12; i++) raw += parser.feed(`${'p'.repeat(100_000)}\r`).raw
+    expect(raw.length).toBeGreaterThan(1_000_000)
+    // The buffer was reset, so the next feed does not carry the megabyte again.
+    expect(parser.feed('tick\r').raw).toBe('')
   })
 
   it('drops thinking_tokens / hook_started / rate_limit noise without raw fallback', () => {

@@ -3,6 +3,8 @@
 // enum is routinely improvised, so extraction and canonicalization live here —
 // away from the poll loop and unit-testable on their own.
 
+import { sanitizeJsonbDeep } from './stream-parser.js'
+
 export const CANONICAL_STATUSES = new Set(['completed', 'needs_input', 'failed'])
 
 // Engines that can't discover the objective skills (no junctions yet) improvise
@@ -16,14 +18,21 @@ export const STATUS_ALIASES: Record<string, string | undefined> = Object.assign(
   failure: 'failed', error: 'failed',
 })
 
+// The envelope is model-authored JSON written straight to a jsonb column, and
+// the only payload on the mission path that never passes through the parser's
+// cap(). A \u0000 survives JSON.parse as a real NUL, Postgres refuses it with a
+// non-retriable 400, and the mission ends with no result on the card — so every
+// string is deep-sanitised here, before any caller sees it.
 export function normalizeEnvelope(
   envelope: Record<string, unknown> | null,
 ): Record<string, unknown> | null {
-  if (!envelope || typeof envelope.status !== 'string') return envelope
-  const key = envelope.status.toLowerCase().trim()
+  if (!envelope) return envelope
+  const safe = sanitizeJsonbDeep(envelope) as Record<string, unknown>
+  if (typeof safe.status !== 'string') return safe
+  const key = safe.status.toLowerCase().trim()
   const canonical = STATUS_ALIASES[key] ?? key
-  if (!CANONICAL_STATUSES.has(canonical)) return envelope
-  return canonical === envelope.status ? envelope : { ...envelope, status: canonical }
+  if (!CANONICAL_STATUSES.has(canonical)) return safe
+  return canonical === safe.status ? safe : { ...safe, status: canonical }
 }
 
 // wasKilled wins over everything; an envelope Aeon refused is a failure however

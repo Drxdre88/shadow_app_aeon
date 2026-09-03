@@ -111,12 +111,23 @@ interface BatchAck {
 // each chunk gets one bounded retry — a lost mid-stream chunk degrades the
 // timeline, it does not corrupt it (seq gaps are tolerated by the reader), so
 // we never block subsequent flushes behind a struggling one.
+//
+// The first chunk that cannot land abandons the whole flush: 25 chunks each
+// retrying with a 3s sleep would spend over a minute hammering an API that is
+// already rate-limiting us, and every one of those chunks is doomed anyway.
+// One warning carries the dropped count.
 export async function postEventsBatch(
   ctx: CallbackContext,
   events: BatchEvent[],
 ): Promise<void> {
+  let dropped = 0
+  let dropStatus = 0
   for (let i = 0; i < events.length; i += BATCH_CHUNK) {
     const chunk = events.slice(i, i + BATCH_CHUNK)
+    if (dropped) {
+      dropped += chunk.length
+      continue
+    }
     const attempt = (): Promise<AeonResponse<BatchAck>> =>
       aeonFetch<BatchAck>(ctx.callbackBaseUrl, ctx.callbackToken, `/api/v1/sessions/${ctx.sessionId}/events`, {
         method: 'POST',
@@ -128,7 +139,8 @@ export async function postEventsBatch(
       res = await attempt()
     }
     if (!res.ok) {
-      console.warn(`[worker/callback] event batch dropped (${res.status}, ${chunk.length} events)`)
+      dropped += chunk.length
+      dropStatus = res.status
       continue
     }
     // Fewer rows than sent means schema rejects or seq collisions (a hook post
@@ -141,6 +153,9 @@ export async function postEventsBatch(
         `${res.data?.rejected ? `, ${res.data.rejected} rejected` : ''})`
       )
     }
+  }
+  if (dropped) {
+    console.warn(`[worker/callback] event flush abandoned (${dropStatus}, ${dropped} events dropped)`)
   }
 }
 
