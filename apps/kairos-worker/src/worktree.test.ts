@@ -3,7 +3,7 @@
 // junction-survival tests are the regression lock for the warden round-1
 // criticals — `git worktree remove` traverses junctions and empties their
 // targets, so destruction must never let a recursive delete meet a link.
-import { mkdtempSync, mkdirSync, existsSync, readFileSync, rmdirSync, rmSync, writeFileSync, lstatSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, existsSync, readFileSync, rmdirSync, rmSync, unlinkSync, writeFileSync, lstatSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -240,8 +240,12 @@ describe('worktree lifecycle', () => {
     const res = await createWorktree(entry, 'aeon/mutator')
     expect(res.ok).toBe(true)
     if (!res.ok) return
-    // simulate `npm ci`: junction replaced by a real directory
-    rmdirSync(join(res.path, 'node_modules'))
+    // simulate `npm ci`: junction replaced by a real directory. The seeded
+    // link is a junction on Windows (removed with rmdir) but a plain symlink
+    // elsewhere (rmdir → ENOTDIR; it needs unlink) — CI runs on Linux.
+    const seededLink = join(res.path, 'node_modules')
+    if (process.platform === 'win32') rmdirSync(seededLink)
+    else unlinkSync(seededLink)
     mkdirSync(join(res.path, 'node_modules'))
     writeFileSync(join(res.path, 'node_modules', 'own.js'), 'y\n')
 
