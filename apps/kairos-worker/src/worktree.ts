@@ -19,11 +19,14 @@
 // runner's heartbeats, and worktree admin ops are serialized per repo.
 
 import {
+  appendFileSync,
   cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
+  realpathSync,
   renameSync,
   rmdirSync,
   rmSync,
@@ -32,7 +35,7 @@ import {
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { createHash } from 'node:crypto'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path'
 import { execFile, spawnSync } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { RepoEntry } from './registry.js'
@@ -54,7 +57,10 @@ export function git(cwd: string, args: string[]): GitResult {
 
 // Timeout is mandatory: a fetch/push wedged on a credential prompt or dead
 // TCP connection would otherwise own the repo lock forever and silently
-// poison every later mission on that repo.
+// poison every later mission on that repo. Exported because the repo lock's
+// own timeout has to be derived from it, not guessed.
+export const GIT_TIMEOUT_MS = 120_000
+
 export async function gitAsync(cwd: string, args: string[]): Promise<GitResult> {
   try {
     const { stdout, stderr } = await execFileAsync('git', args, {
@@ -62,7 +68,7 @@ export async function gitAsync(cwd: string, args: string[]): Promise<GitResult> 
       encoding: 'utf8',
       windowsHide: true,
       maxBuffer: 16 * 1024 * 1024,
-      timeout: 120_000,
+      timeout: GIT_TIMEOUT_MS,
       killSignal: 'SIGKILL',
     })
     return { ok: true, stdout: stdout ?? '', stderr: stderr ?? '' }
@@ -80,7 +86,17 @@ export async function gitAsync(cwd: string, args: string[]): Promise<GitResult> 
 // share a chain, and a raced timeout guarantees a wedged op can never own the
 // chain forever.
 const repoLocks = new Map<string, Promise<unknown>>()
-const LOCK_TIMEOUT_MS = 300_000
+
+// The timebox exists to stop a WEDGED op owning the chain forever — it must
+// never fire on a slow-but-live one, because rejecting does not cancel the git
+// child: the chain would advance while `worktree add` is still running and the
+// next op's `worktree prune` would unregister it (warden round 3). So the
+// budget has to clear the longest locked body. createLocked is that body:
+// rev-parse + add(remote) + add(local fallback), the same three again on the
+// stale-entry retry, two prunes and the HEAD read = 9 sequential git calls,
+// each capped at GIT_TIMEOUT_MS, plus slack for the local fs work between them.
+const MAX_LOCKED_GIT_CALLS = 9
+export const LOCK_TIMEOUT_MS = MAX_LOCKED_GIT_CALLS * GIT_TIMEOUT_MS + 60_000
 
 function lockKey(repoPath: string): string {
   const resolved = resolve(repoPath)
@@ -113,13 +129,36 @@ export function worktreeRoot(): string {
   return process.env.KAIROS_WORKTREE_ROOT ?? join(homedir(), '.aeon', 'worktrees')
 }
 
+// Mission branches live in one namespace and nothing else is ever checked out
+// into a mission worktree: a card-supplied branch naming an operator branch
+// (say feat/flight-deck) would otherwise be `worktree add`-ed, committed onto
+// by the agent and PUSHED by teardown. The namespace is also what makes
+// reusing a pre-existing local branch safe on a re-run.
+export const MISSION_BRANCH_PREFIX = 'aeon/'
+
+export function isMissionBranch(branch: string | null | undefined): boolean {
+  if (!branch || !branch.startsWith(MISSION_BRANCH_PREFIX)) return false
+  const rest = branch.slice(MISSION_BRANCH_PREFIX.length)
+  return rest.length > 0 && !rest.startsWith('/') && !rest.split(/[\\/]/).includes('..')
+}
+
+// The registry slug lands in a filesystem path, so it is flattened the same
+// way as the branch: separators cannot survive, the result never leads with a
+// dot or a dash, and anything left without a single alphanumeric falls back to
+// a digest. A key of '..' or 'a/../..' would otherwise place the mission tree
+// outside the worktree root.
+export function slugDir(slug: string): string {
+  const flat = slug.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[.-]+/, '')
+  return /[A-Za-z0-9]/.test(flat) ? flat : `slug-${createHash('sha1').update(slug).digest('hex').slice(0, 8)}`
+}
+
 // aeon/1d28f417 → aeon-1d28f417-<6-char digest>: one directory level per
 // worktree, valid as a Windows path component, and the digest keeps distinct
 // branches that sanitize identically (aeon/x vs aeon-x) from colliding.
 export function worktreeDirFor(entry: RepoEntry, branch: string): string {
   const digest = createHash('sha1').update(branch).digest('hex').slice(0, 6)
   const flat = branch.replace(/[^A-Za-z0-9._-]+/g, '-')
-  return join(worktreeRoot(), entry.slug, `${flat}-${digest}`)
+  return join(worktreeRoot(), slugDir(entry.slug), `${flat}-${digest}`)
 }
 
 export type WorktreeResult =
@@ -127,6 +166,17 @@ export type WorktreeResult =
   | { ok: false; error: string }
 
 export async function createWorktree(entry: RepoEntry, branch: string): Promise<WorktreeResult> {
+  // Before anything touches git: a branch outside the mission namespace is
+  // refused outright, so an operator branch can never be checked out into a
+  // mission worktree, committed onto, or pushed by teardown.
+  if (!isMissionBranch(branch)) {
+    return {
+      ok: false,
+      error: `branch "${branch}" is outside the ${MISSION_BRANCH_PREFIX} mission namespace — mission refused; `
+        + `leave the branch blank to get the generated ${MISSION_BRANCH_PREFIX}<card> name`,
+    }
+  }
+
   // Fetch is best-effort and only touches remote refs — outside the lock so a
   // slow network does not serialize sibling mission starts on this repo.
   const fetched = await gitAsync(entry.path, ['fetch', 'origin'])
@@ -136,6 +186,13 @@ export async function createWorktree(entry: RepoEntry, branch: string): Promise<
 }
 
 async function createLocked(entry: RepoEntry, branch: string): Promise<WorktreeResult> {
+  // Re-checked inside the lock: createLocked is the only thing that hands a
+  // branch to `worktree add`, so the invariant is asserted where it is used
+  // and not only at the entry point.
+  if (!isMissionBranch(branch)) {
+    return { ok: false, error: `branch "${branch}" is outside the ${MISSION_BRANCH_PREFIX} mission namespace — mission refused` }
+  }
+
   const path = worktreeDirFor(entry, branch)
 
   // Ownership verification (Archon): an existing directory is never adopted or
@@ -152,8 +209,9 @@ async function createLocked(entry: RepoEntry, branch: string): Promise<WorktreeR
   mkdirSync(dirname(path), { recursive: true })
 
   const addOnce = async (): Promise<GitResult> => {
-    // A re-run reuses the existing mission branch; a first run branches from
-    // the remote default, falling back to the local one on fetch-less hosts.
+    // A re-run reuses the existing mission branch — only ever an aeon/ one,
+    // guaranteed by the namespace check above; a first run branches from the
+    // remote default, falling back to the local one on fetch-less hosts.
     if ((await gitAsync(entry.path, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])).ok) {
       return gitAsync(entry.path, ['worktree', 'add', path, branch])
     }
@@ -216,9 +274,39 @@ function seedIgnored(entry: RepoEntry, path: string): void {
       if (!existsSync(from) || existsSync(to)) continue
       mkdirSync(dirname(to), { recursive: true })
       cpSync(from, to)
+      ensureIgnored(path, rel)
     } catch (err) {
       console.warn(`[worker/worktree] copy ${rel} failed: ${err instanceof Error ? err.message : String(err)}`)
     }
+  }
+}
+
+// A copied env file is a live credential sitting in a tree the agent may
+// `git add -A`, and teardown PUSHES a productive branch — so the copy is only
+// safe if git ignores it. When the repo's own rules don't, the rule goes into
+// info/exclude, which git resolves through the COMMON gitdir: verified on git
+// 2.52 that a linked worktree's own `worktrees/<name>/info/exclude` is not
+// read at all, so there is no worktree-scoped alternative. The write is
+// therefore idempotent, logged, and only ever names the operator's own
+// already-untracked env path — it can never mask their tracked work.
+function ensureIgnored(worktreePath: string, rel: string): void {
+  const posix = rel.replace(/\\/g, '/')
+  if (git(worktreePath, ['check-ignore', '-q', posix]).ok) return
+
+  const located = git(worktreePath, ['rev-parse', '--git-path', 'info/exclude'])
+  if (!located.ok) {
+    console.error(`[worker/worktree] ${posix} is NOT git-ignored and info/exclude could not be located: ${located.stderr.trim()}`)
+    return
+  }
+  const file = resolve(worktreePath, located.stdout.trim())
+  try {
+    mkdirSync(dirname(file), { recursive: true })
+    const existing = existsSync(file) ? readFileSync(file, 'utf8') : ''
+    if (existing.split(/\r?\n/).some((line) => line.trim() === `/${posix}`)) return
+    appendFileSync(file, `${existing && !existing.endsWith('\n') ? '\n' : ''}/${posix}\n`, 'utf8')
+    console.warn(`[worker/worktree] ${posix} was not git-ignored — added it to ${file} so a mission commit cannot publish it`)
+  } catch (err) {
+    console.error(`[worker/worktree] could not exclude ${posix} in ${file}: ${err instanceof Error ? err.message : String(err)}`)
   }
 }
 
@@ -241,29 +329,68 @@ function dropLink(at: string): boolean {
 // recursive readdirSync DESCENDS through junctions (warden round 2, proven):
 // links are recorded and never entered, so the scan cannot wander into the
 // live checkout, cannot loop on a self-referential junction, and never walks
-// a large linked tree on the event loop. An unreadable directory is logged,
-// not silently treated as link-free — this is a safety scan.
-export function findLinks(root: string): string[] {
-  const out: string[] = []
+// a large linked tree on the event loop.
+//
+// ok:false is the load-bearing part (warden round 3): a directory that could
+// not be read, or one whose realpath resolves outside the tree, means the scan
+// does NOT know that subtree is link-free — and an unscanned subtree must
+// never look the same as a clean one to a recursive delete.
+export interface LinkScan {
+  ok: boolean
+  links: string[]
+  unscanned: string[]
+}
+
+export function findLinks(root: string): LinkScan {
+  const links: string[] = []
+  const unscanned: string[] = []
+
+  let bound: string
+  try {
+    bound = realpathSync(root)
+  } catch (err) {
+    console.error(`[worker/worktree] link scan could not resolve ${root}: ${err instanceof Error ? err.message : String(err)}`)
+    return { ok: false, links, unscanned: [root] }
+  }
+
+  const inside = (dir: string): boolean => {
+    try {
+      const real = realpathSync(dir)
+      return real === bound || real.startsWith(bound + sep)
+    } catch {
+      return false
+    }
+  }
+
   const walk = (dir: string): void => {
     let entries
     try {
       entries = readdirSync(dir, { withFileTypes: true })
     } catch (err) {
-      console.warn(`[worker/worktree] link scan could not read ${dir}: ${err instanceof Error ? err.message : String(err)}`)
+      console.error(`[worker/worktree] link scan could not read ${dir}: ${err instanceof Error ? err.message : String(err)}`)
+      unscanned.push(dir)
       return
     }
     for (const d of entries) {
       const p = join(dir, d.name)
       if (d.isSymbolicLink()) {
-        out.push(p) // record, NEVER descend
+        links.push(p) // record, NEVER descend
         continue
       }
-      if (d.isDirectory()) walk(p)
+      if (!d.isDirectory()) continue
+      // Not flagged a symlink yet resolving elsewhere (a mount point, a
+      // directory hardlink): unknown territory, never descended into.
+      if (!inside(p)) {
+        console.error(`[worker/worktree] link scan refuses to descend ${p} — it resolves outside ${bound}`)
+        unscanned.push(p)
+        continue
+      }
+      walk(p)
     }
   }
+
   walk(root)
-  return out
+  return { ok: unscanned.length === 0, links, unscanned }
 }
 
 export interface DestroyResult { removed: boolean; depsMutated: boolean; path: string }
@@ -291,13 +418,18 @@ async function destroyLocked(entry: RepoEntry, branch: string): Promise<DestroyR
     }
 
     // 2. Anything the mission linked up on its own.
-    for (const link of findLinks(path)) dropLink(link)
+    for (const link of findLinks(path).links) dropLink(link)
 
     // 3. Verify link-free, else refuse: no recursive delete — git's or ours —
-    //    may run over a tree that still holds a reparse point.
+    //    may run over a tree that still holds a reparse point, nor over one the
+    //    scan could not read end to end. The tree is left for a manual sweep.
     const leftover = findLinks(path)
-    if (leftover.length > 0) {
-      console.error(`[worker/worktree] ${path} still holds a link (${leftover[0]}) — refusing recursive delete, manual sweep needed`)
+    if (!leftover.ok) {
+      console.error(`[worker/worktree] ${path} could not be fully scanned (${leftover.unscanned[0]}) — refusing recursive delete, manual sweep needed`)
+      return { removed: false, depsMutated, path }
+    }
+    if (leftover.links.length > 0) {
+      console.error(`[worker/worktree] ${path} still holds a link (${leftover.links[0]}) — refusing recursive delete, manual sweep needed`)
       return { removed: false, depsMutated, path }
     }
 

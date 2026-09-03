@@ -173,3 +173,50 @@ describe('reposFilePath', () => {
     expect(reposFilePath().replace(/\\/g, '/')).toMatch(/kairos-worker\/repos\.local\.yaml$/)
   })
 })
+
+describe('slug safety', () => {
+  it('never resolves a slug through the prototype chain', () => {
+    withRegistry('repos.local.yaml', [
+      'repos:',
+      '  aeon:',
+      '    path: C:/code/aeon',
+      '',
+    ].join('\n'))
+
+    // a bare repos[slug] would hand back Object.prototype members as a repo
+    for (const slug of ['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf']) {
+      expect(resolveRepo(slug)).toBeNull()
+    }
+    expect(resolveRepo('aeon')?.path).toBe('C:/code/aeon')
+  })
+
+  it('drops a registry key that is not a plain path component', () => {
+    withRegistry('repos.local.json', JSON.stringify({
+      repos: {
+        '..': { path: 'C:/code/up' },
+        '.hidden': { path: 'C:/code/hidden' },
+        '-flag': { path: 'C:/code/flag' },
+        '__proto__': { path: 'C:/code/proto' },
+        good: { path: 'C:/code/good' },
+      },
+    }))
+
+    expect(Object.keys(loadRepos())).toEqual(['good'])
+    expect(resolveRepo('..')).toBeNull()
+    expect(resolveRepo('__proto__')).toBeNull()
+    expect(resolveRepo('good')?.path).toBe('C:/code/good')
+  })
+
+  it('accepts the slug shapes the operator actually uses', () => {
+    withRegistry('repos.local.json', JSON.stringify({
+      repos: {
+        aeon: { path: 'C:/a' },
+        shadow_app_aeon: { path: 'C:/b' },
+        'kal-el': { path: 'C:/c' },
+        'repo.v2': { path: 'C:/d' },
+      },
+    }))
+
+    expect(Object.keys(loadRepos()).sort()).toEqual(['aeon', 'kal-el', 'repo.v2', 'shadow_app_aeon'])
+  })
+})

@@ -33,13 +33,16 @@ import { createSeq, killSession, releaseSession, runEngine } from './spawner.js'
 import {
   createWorktree,
   deleteBranchIfEmpty,
+  isMissionBranch,
+  MISSION_BRANCH_PREFIX,
   missionCommits,
   pushBranch,
   removeWorktree,
   worktreeDirFor,
 } from './worktree.js'
-import { exec } from 'node:child_process'
+import { exec, type ChildProcess } from 'node:child_process'
 import { promisify } from 'node:util'
+import { jsonbSafeChunks, sanitizeJsonbDeep } from './stream-parser.js'
 import type { MissionStats, StreamParser } from './stream-parser.js'
 
 const execAsync = promisify(exec)
@@ -86,6 +89,44 @@ const SAFE_ARG = /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/
 export function unsafeArg(label: string, value: string | null | undefined): string | null {
   if (!value) return null
   return SAFE_ARG.test(value) ? null : `${label} contains unsupported characters — mission refused`
+}
+
+// The charset check above says nothing about WHICH branch: a card supplying
+// `feat/flight-deck` passes it, and the mission would then be `worktree
+// add`-ed onto the operator's own branch, committed to by the agent and PUSHED
+// by teardown. Only the mission namespace is dispatchable.
+export function outsideMissionNamespace(branch: string): string | null {
+  if (isMissionBranch(branch)) return null
+  return `branch "${branch}" is outside the ${MISSION_BRANCH_PREFIX} mission namespace — mission refused `
+    + `so a mission can never commit to or push an operator branch; `
+    + `leave the branch field blank to get the generated ${MISSION_BRANCH_PREFIX}<card> name`
+}
+
+// killSession only SIGTERMs / taskkills the tree — it does not wait. The child
+// holds open handles INSIDE the mission worktree and teardown deletes that
+// tree, so on Windows the delete fails while the process is still alive.
+// Bounded: a wedged child must not hold the mission slot open forever, and
+// teardown already surfaces a failed removal as a warning on the card.
+const CHILD_EXIT_GRACE_MS = 10_000
+
+export function waitForExit(child: ChildProcess | null, timeoutMs = CHILD_EXIT_GRACE_MS): Promise<boolean> {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true)
+  return new Promise<boolean>((done) => {
+    let finished = false
+    const onClose = (): void => finish(true)
+    const finish = (exited: boolean): void => {
+      if (finished) return
+      finished = true
+      clearTimeout(timer)
+      child.off('close', onClose)
+      done(exited)
+    }
+    const timer = setTimeout(() => {
+      console.warn(`[worker/poll] child pid ${child.pid ?? '?'} did not exit within ${timeoutMs}ms — proceeding with teardown`)
+      finish(false)
+    }, timeoutMs)
+    child.once('close', onClose)
+  })
 }
 
 let workerId = ''
@@ -163,6 +204,12 @@ async function launch(session: ClaimedSession): Promise<void> {
   let mission: { entry: RepoEntry; branch: string; startSha: string } | null = null
   let brief: string | null = null
   let childRunning = false
+  // Hoisted so abort() can reach them: an abort that leaves the heartbeat
+  // beating keeps polling Aeon for a mission that is already over, and one
+  // that deletes the worktree while the child still holds handles inside it
+  // leaves debris that blocks the next run of the card.
+  let child: ChildProcess | null = null
+  let stopHeartbeat: () => void = () => {}
   // Shared with the child's terminal handlers: whoever sets it first owns the
   // terminal sequence, so abort and a racing 'error'/'close' cannot both run.
   let settled = false
@@ -179,11 +226,15 @@ async function launch(session: ClaimedSession): Promise<void> {
     if (settled) return // a terminal handler already owns the sequence
     settled = true
     console.error(`[worker/poll] ${session.id} ${message}`)
+    stopHeartbeat()
+    if (childRunning) killSession(session.id)
     try {
-      if (childRunning) killSession(session.id)
       await postEvent(ctx, { seq: nextSeq(), kind: 'error', payload: { message } })
       await patchSession(ctx, { status: 'failed', endedAt: new Date().toISOString() })
       if (brief) rmSync(brief, { force: true })
+      // The kill above is fire-and-forget — teardown's recursive delete only
+      // runs once the child has actually let go of the worktree.
+      if (childRunning) await waitForExit(child)
       if (mission) await teardownWorktree(mission.entry, mission.branch, mission.startSha)
     } catch (cleanupErr) {
       console.error(`[worker/poll] ${session.id} abort cleanup failed`, cleanupErr)
@@ -204,9 +255,10 @@ async function launch(session: ClaimedSession): Promise<void> {
       return await abort(`repo "${entry.slug}" path does not exist on this host: ${entry.path}`)
     }
 
-    const branch = session.branch?.trim() || `aeon/${(session.taskId ?? session.id).slice(0, 8)}`
+    const branch = session.branch?.trim() || `${MISSION_BRANCH_PREFIX}${(session.taskId ?? session.id).slice(0, 8)}`
     const meta = hangarMeta(session)
     const rejected = unsafeArg('branch', branch)
+      ?? outsideMissionNamespace(branch)
       ?? unsafeArg('model', meta.model)
       ?? unsafeArg('session id', session.id)
     if (rejected) return await abort(rejected)
@@ -264,8 +316,9 @@ async function launch(session: ClaimedSession): Promise<void> {
     // the 'error' listener exists would turn it into an uncaught exception
     // that kills the whole runner and orphans every in-flight mission.
     childRunning = true
+    child = handle.child
 
-    const stopHeartbeat = startHeartbeat(session.id, () => {
+    stopHeartbeat = startHeartbeat(session.id, () => {
       killSession(session.id)
     })
 
@@ -358,6 +411,19 @@ interface FinalizeArgs {
 // report). Single aggregation point — stats land here once (envelope +
 // session PATCH) and nowhere else, so a second write site can never
 // double-count.
+// Same untrusted-parser rule as the stream path in spawner.ts: stats() runs on
+// state the parser built from engine output, and a throw here would cost the
+// mission both its result envelope and its worktree teardown.
+export function safeStats(parser: StreamParser | null): MissionStats | null {
+  if (!parser) return null
+  try {
+    return parser.stats()
+  } catch (err) {
+    console.error('[worker/poll] stream parser stats() threw — reporting the mission without telemetry', err)
+    return null
+  }
+}
+
 export function missionStats(stats: MissionStats | null): Record<string, number | string> | null {
   if (!stats) return null
   const out: Record<string, number | string> = {}
@@ -380,6 +446,19 @@ export function missionStats(stats: MissionStats | null): Record<string, number 
   out.toolCalls = stats.toolCalls
   if (stats.model) out.model = stats.model
   return Object.keys(out).length > 0 ? out : null
+}
+
+// A blind stdout.slice(-2000) is the one thing that can lose the result
+// envelope — the write a mission cannot afford to lose. A NUL byte, or a slice
+// that opens on the low half of a surrogate pair, makes Postgres reject the
+// whole jsonb payload as a non-retriable 400. Chunking the FULL stdout runs
+// the same redaction + NUL strip the telemetry path uses and never splits a
+// pair at a chunk edge; the deep sanitizer then replaces any surrogate that
+// was already lone in the engine's own output.
+export function rawTail(stdout: string, limit = 2000): string {
+  const chunks = jsonbSafeChunks(stdout, limit)
+  const tail = chunks.slice(-2).join('').slice(-limit)
+  return sanitizeJsonbDeep(tail) as string
 }
 
 // POST /events answers a kind:'result' post with whether the envelope actually
@@ -415,7 +494,7 @@ async function finalizeInner(args: FinalizeArgs): Promise<void> {
   await postEvent(ctx, { seq: nextSeq(), kind: 'stop', payload: { exitCode: code, signal } })
 
   const envelope = normalizeEnvelope(readEnvelope(engine, stdout, outFile))
-  const stats = missionStats(parser?.stats() ?? null)
+  const stats = missionStats(safeStats(parser))
 
   // The result event and the final status are the two writes that must land:
   // losing either leaves a finished mission showing as 'running' on the board.
@@ -423,7 +502,7 @@ async function finalizeInner(args: FinalizeArgs): Promise<void> {
     status: 'failed',
     outcome: 'blocked',
     summary: 'engine exited without a result envelope',
-    raw_tail: stdout.slice(-2000),
+    raw_tail: rawTail(stdout),
   }
   const result = stats ? { ...base, stats } : base
   const reported = envelope && typeof envelope.status === 'string' ? envelope.status : null

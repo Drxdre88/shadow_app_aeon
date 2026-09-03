@@ -226,12 +226,36 @@ export function runEngine(opts: RunEngineOptions): RunHandle {
   // never the process.
   const MIN_BATCH_INTERVAL_MS = 1500
   const PENDING_HARD_CAP = 1000
+  // The raw buffer drains on a paced flush, so a stalled network (or a burst
+  // faster than the pacing floor) is the one thing that can let it grow for
+  // the whole mission. Past this it is handed to the batch queue immediately,
+  // which is itself capped and paced.
+  const RAW_HARD_CAP = 1_000_000
 
   let pending = ''
   let pendingEvents: TypedEvent[] = []
   let flushTimer: NodeJS.Timeout | null = null
   let lastBatchFlushAt = 0
 
+  // The parser reads UNTRUSTED engine output. A throw inside it used to be an
+  // uncaught exception on the stdout 'data' handler, which kills the runner
+  // process and orphans every concurrent mission — so it degrades to the raw
+  // text path instead. Logged at most PARSER_FAIL_LOG_LIMIT times: a parser
+  // that throws on one line usually throws on all of them.
+  const PARSER_FAIL_LOG_LIMIT = 3
+  let parserFailures = 0
+  const parserThrew = (stage: string, err: unknown): void => {
+    parserFailures++
+    if (parserFailures <= PARSER_FAIL_LOG_LIMIT) {
+      console.error(
+        `[worker/spawn] ${opts.sessionId} stream parser ${stage} threw (#${parserFailures}) — falling back to raw output`,
+        err,
+      )
+    }
+  }
+
+  // Unbatched push mode (/spawn) only: one immediate post per chunk. Every
+  // batched path goes through queueRaw instead.
   const emit = (text: string): void => {
     for (const chunk of jsonbSafeChunks(text, EVENT_LIMIT)) {
       void postEvent(opts.ctx, {
@@ -242,29 +266,48 @@ export function runEngine(opts: RunEngineOptions): RunHandle {
     }
   }
 
+  // Raw text becomes ordinary 'message' events — the exact shape emit() posted
+  // — so degraded output rides the same batched, paced write path as typed
+  // telemetry. Posting it directly cost one write per EVENT_LIMIT chars, so
+  // 100KB of fallback output spent ~13 of the 60 writes/min budget in one
+  // burst: precisely when the terminal result post still has to get through.
+  const queueRaw = (text: string): void => {
+    for (const chunk of jsonbSafeChunks(text, EVENT_LIMIT)) {
+      pendingEvents.push({ kind: 'message', payload: { stream: 'stdout', text: chunk } })
+    }
+  }
+
+  const appendRaw = (text: string): void => {
+    pending += text
+    if (pending.length < RAW_HARD_CAP) return
+    const overflow = pending
+    pending = ''
+    queueRaw(overflow)
+  }
+
   const flush = (): void => {
     if (flushTimer) {
       clearTimeout(flushTimer)
       flushTimer = null
     }
-    if (pendingEvents.length > 0) {
-      // seqs are assigned at flush so typed events interleave correctly with
-      // the raw/stderr/terminal posts sharing the same counter.
-      // postEventsBatch chunks to the server's batch limit internally.
-      const batch = pendingEvents.map((e) => ({
-        seq: nextSeq(),
-        kind: e.kind,
-        toolName: e.toolName ?? null,
-        payload: e.payload,
-      }))
-      pendingEvents = []
-      lastBatchFlushAt = Date.now()
-      void postEventsBatch(opts.ctx, batch)
+    if (pending) {
+      const text = pending
+      pending = ''
+      queueRaw(text)
     }
-    if (!pending) return
-    const text = pending
-    pending = ''
-    emit(text)
+    if (pendingEvents.length === 0) return
+    // seqs are assigned at flush so typed events interleave correctly with the
+    // stderr/terminal posts sharing the same counter.
+    // postEventsBatch chunks to the server's batch limit internally.
+    const batch = pendingEvents.map((e) => ({
+      seq: nextSeq(),
+      kind: e.kind,
+      toolName: e.toolName ?? null,
+      payload: e.payload,
+    }))
+    pendingEvents = []
+    lastBatchFlushAt = Date.now()
+    void postEventsBatch(opts.ctx, batch)
   }
 
   const scheduleFlush = (): void => {
@@ -286,9 +329,16 @@ export function runEngine(opts: RunEngineOptions): RunHandle {
   // usage) before the final flush.
   const finalFlush = (): void => {
     if (opts.parser) {
-      const out = opts.parser.flush()
-      pendingEvents.push(...out.events)
-      if (out.raw) pending += out.raw
+      try {
+        const out = opts.parser.flush()
+        pendingEvents.push(...out.events)
+        if (out.raw) appendRaw(out.raw)
+      } catch (err) {
+        // Whatever the parser still buffered is lost with it — the flush
+        // below still posts everything already queued, and the terminal
+        // envelope is read from the captured stdout, not from the parser.
+        parserThrew('flush', err)
+      }
     }
     flush()
   }
@@ -300,16 +350,21 @@ export function runEngine(opts: RunEngineOptions): RunHandle {
       if (buffer.length > CAPTURE_LIMIT) buffer = buffer.slice(-CAPTURE_LIMIT)
     }
     if (opts.parser) {
-      const out = opts.parser.feed(text)
-      pendingEvents.push(...out.events)
-      if (out.raw) pending += out.raw
+      try {
+        const out = opts.parser.feed(text)
+        pendingEvents.push(...out.events)
+        if (out.raw) appendRaw(out.raw)
+      } catch (err) {
+        parserThrew('feed', err)
+        appendRaw(text)
+      }
       return scheduleFlush()
     }
     if (!opts.batchStdout) {
       emit(text.slice(0, EVENT_LIMIT))
       return
     }
-    pending += text
+    appendRaw(text)
     scheduleFlush()
   })
 
