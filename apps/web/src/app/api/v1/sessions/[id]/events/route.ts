@@ -2,8 +2,8 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
-import { recordSessionEventSchema, recordSessionEventBatchSchema, hangarResultEnvelopeSchema, sessionEventsTailSchema } from '@/lib/data/validators'
-import { findAgentSessionById, listSessionEvents, recordSessionEvent, recordSessionEvents, getNextEventSeq, recordSessionResult } from '@/lib/data/sessions'
+import { recordSessionEventSchema, recordSessionEventBatchSchema, hangarResultEnvelopeSchema, sessionEventsTailSchema, type RecordSessionEventInput } from '@/lib/data/validators'
+import { findAgentSessionById, listSessionEvents, recordSessionEvent, recordSessionEventWithAutoSeq, recordSessionEvents, getNextEventSeq, recordSessionResult } from '@/lib/data/sessions'
 
 // A non-uuid path param would raise Postgres 22P02 and surface as a 500.
 const sessionIdSchema = z.string().uuid()
@@ -53,7 +53,7 @@ export const POST = withRateLimit(
       const batch = recordSessionEventBatchSchema.safeParse(rawBody)
       if (!batch.success) return jsonError(batch.error.issues[0].message, 400)
 
-      const valid: Array<typeof recordSessionEventSchema['_output']> = []
+      const valid: RecordSessionEventInput[] = []
       const rejections: string[] = []
       for (const candidate of batch.data.events) {
         const parsed = recordSessionEventSchema.safeParse(candidate)
@@ -71,16 +71,19 @@ export const POST = withRateLimit(
       }, 201)
     }
 
-    // Allow seq to be omitted — server assigns the next slot.
+    // Allow seq to be omitted — server assigns the next slot. That read is a
+    // non-atomic MAX+1, so the auto-assigned path retries on collision instead
+    // of reporting the caller's event as an already-recorded replay.
     const raw = rawBody
-    if (raw.seq === undefined || raw.seq === null) {
-      raw.seq = await getNextEventSeq(id)
-    }
+    const autoSeq = raw.seq === undefined || raw.seq === null
+    if (autoSeq) raw.seq = await getNextEventSeq(id)
 
     const parsed = recordSessionEventSchema.safeParse(raw)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
-    const row = await recordSessionEvent(id, parsed.data)
+    const row = autoSeq
+      ? await recordSessionEventWithAutoSeq(id, parsed.data)
+      : await recordSessionEvent(id, parsed.data)
     // Conflict on (session_id, seq) returns null — treat as already-recorded.
     const accepted = row !== null
 

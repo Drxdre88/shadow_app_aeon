@@ -104,6 +104,41 @@ describe('Sessions MCP <-> REST parity', () => {
     it.each([...sharedValidators, ...restOnlyValidators])('REST surface uses validator: %s', (v) => {
       expect(restSrcConcat, `REST routes missing ${v}`).toMatch(new RegExp(`\\b${v}\\b`))
     })
+
+    // Event-tail params are shared too, but the two surfaces need different
+    // input TYPES: REST parses query strings, MCP publishes a JSON Schema and
+    // passes native numbers/booleans. So they use two schemas — declared side
+    // by side off one set of bounds constants in validators/hangar.ts. Neither
+    // surface may hand-roll bounds again: MCP once allowed limit<=1000 against
+    // REST's 500, and a boolean tail against REST's strict 'true'|'false'.
+    const tailSurfaces = [
+      { surface: 'MCP', validator: 'sessionEventsTailArgsSchema' },
+      { surface: 'REST', validator: 'sessionEventsTailSchema' },
+    ]
+
+    it.each(tailSurfaces)('$surface tails events through $validator', ({ surface, validator }) => {
+      const src = surface === 'MCP' ? mcpSrc : restSrcConcat
+      expect(src, `${surface} missing ${validator}`).toMatch(new RegExp(`\\b${validator}\\b`))
+    })
+
+    it('list_session_events does not hand-roll its own tail bounds', () => {
+      const block = mcpSrc.split(/server\.tool\(/).slice(1)
+        .find((b) => b.match(/['"]([a-z_]+)['"]/)?.[1] === 'list_session_events')
+      expect(block, 'list_session_events tool not found').toBeDefined()
+      for (const param of ['afterSeq', 'limit', 'tail']) {
+        expect(block!, `list_session_events re-declares ${param} instead of using the shared schema`)
+          .not.toMatch(new RegExp(`${param}:\\s*z\\.`))
+      }
+    })
+
+    it('both tail schemas are built from the same bounds constants', () => {
+      const validatorSrc = readSource(path.join(WEB_ROOT, 'src/lib/data/validators/hangar.ts'))
+      for (const constant of ['TAIL_AFTER_SEQ_MIN', 'TAIL_LIMIT_MIN', 'TAIL_LIMIT_MAX']) {
+        const uses = validatorSrc.match(new RegExp(`\\b${constant}\\b`, 'g')) ?? []
+        expect(uses.length, `${constant} must be declared once and used by both tail schemas`)
+          .toBeGreaterThanOrEqual(3)
+      }
+    })
   })
 
   describe('data-function parity — MCP and REST call the same underlying functions', () => {

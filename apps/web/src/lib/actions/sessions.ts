@@ -6,6 +6,8 @@ import {
   updateSessionStatusSchema,
   recordSessionEventSchema,
   listSessionsSchema,
+  sessionEventsTailArgsSchema,
+  type SessionEventsTailArgs,
   type SpawnSessionInput,
   type UpdateSessionStatusInput,
   type RecordSessionEventInput,
@@ -98,11 +100,15 @@ export async function getNextEventSeqAction(id: string) {
   return getNextEventSeq(id)
 }
 
-export async function listSessionEventsAction(id: string, opts: { limit?: number; afterSeq?: number; tail?: boolean } = {}) {
+// opts is caller-supplied and a server action is directly invocable, so the
+// tail params go through the same bounded schema the MCP tool uses — an
+// unbounded limit would otherwise reach .limit() and pull a whole transcript.
+export async function listSessionEventsAction(id: string, opts: SessionEventsTailArgs = {}) {
   const userId = await requireAuth()
   const session = await findAgentSessionById(id, userId)
   if (!session) throw new Error('Session not found or unauthorized')
-  return _listSessionEvents(id, opts)
+  const parsed = sessionEventsTailArgsSchema.parse(opts)
+  return _listSessionEvents(id, parsed)
 }
 
 export async function killSessionAction(id: string) {

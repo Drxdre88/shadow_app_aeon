@@ -8,6 +8,7 @@ import {
   hangarResultEnvelopeSchema,
   createHangarRepoSchema,
   sessionEventsTailSchema,
+  sessionEventsTailArgsSchema,
   recordSessionEventSchema,
   recordSessionEventBatchSchema,
 } from '../validators'
@@ -281,6 +282,21 @@ describe('recordSessionEventBatchSchema', () => {
     expect(recordSessionEventBatchSchema.safeParse({ events: oversize }).success).toBe(false)
   })
 
+  it('rejects a batch whose aggregate size blows past the ceiling', () => {
+    // 100 events x 32K each passes every per-event bound and still lands a
+    // 3.2MB INSERT; only the aggregate bound catches it.
+    const fat = (seq: number) => ({ seq, kind: 'message', payload: { text: 'x'.repeat(30_000) } })
+    const oversize = Array.from({ length: 100 }, (_, i) => fat(i))
+    for (const e of oversize) expect(recordSessionEventSchema.safeParse(e).success).toBe(true)
+    const parsed = recordSessionEventBatchSchema.safeParse({ events: oversize })
+    expect(parsed.success).toBe(false)
+    expect(parsed.error?.issues[0].message).toMatch(/batch too large/)
+  })
+
+  it('accepts a batch that stays under the aggregate ceiling', () => {
+    const events = Array.from({ length: 10 }, (_, i) => ({ seq: i, kind: 'message', payload: { text: 'x'.repeat(1000) } }))
+    expect(recordSessionEventBatchSchema.safeParse({ events }).success).toBe(true)
+  })
   it('passes a malformed member through for the route to reject individually', () => {
     expect(recordSessionEventBatchSchema.safeParse({ events: [event(1), { seq: 2, kind: 'nope' }] }).success).toBe(true)
     expect(recordSessionEventSchema.safeParse({ seq: 2, kind: 'nope' }).success).toBe(false)
@@ -302,7 +318,39 @@ describe('hangarResultEnvelopeSchema — mission stats', () => {
     expect(hangarResultEnvelopeSchema.safeParse(ENVELOPE).success).toBe(true)
   })
 
+  it('rejects negative token counts, cost and durations', () => {
+    for (const stats of [{ totalCostUsd: -0.01 }, { inputTokens: -1 }, { outputTokens: -1 }, { cacheReadTokens: -1 }, { cacheCreationTokens: -1 }, { thinkingTokens: -1 }, { numTurns: -1 }, { toolCalls: -1 }, { durationMs: -1 }, { durationApiMs: -1 }]) {
+      expect(hangarResultEnvelopeSchema.safeParse({ ...ENVELOPE, stats }).success, JSON.stringify(stats)).toBe(false)
+    }
+    expect(hangarResultEnvelopeSchema.safeParse({ ...ENVELOPE, stats: { totalCostUsd: 0, inputTokens: 0 } }).success).toBe(true)
+  })
   it('rejects a non-finite cost', () => {
     expect(hangarResultEnvelopeSchema.safeParse({ ...ENVELOPE, stats: { totalCostUsd: Infinity } }).success).toBe(false)
+  })
+})
+
+// The MCP tool schema and the server actions pass native numbers/booleans, so
+// they get a sibling schema — same bounds, no coercion. The two must never
+// drift: MCP once advertised limit<=1000 against REST's 500.
+describe('sessionEventsTailArgsSchema', () => {
+  it('accepts native types and leaves an omitted limit to the data layer', () => {
+    expect(sessionEventsTailArgsSchema.parse({})).toEqual({})
+    expect(sessionEventsTailArgsSchema.parse({ afterSeq: 12, limit: 50, tail: true }))
+      .toEqual({ afterSeq: 12, limit: 50, tail: true })
+  })
+
+  it('enforces the same bounds as the REST tail schema', () => {
+    expect(sessionEventsTailArgsSchema.safeParse({ limit: 500 }).success).toBe(true)
+    expect(sessionEventsTailArgsSchema.safeParse({ limit: 501 }).success).toBe(false)
+    expect(sessionEventsTailArgsSchema.safeParse({ limit: 1000 }).success).toBe(false)
+    expect(sessionEventsTailArgsSchema.safeParse({ limit: 0 }).success).toBe(false)
+    expect(sessionEventsTailArgsSchema.safeParse({ afterSeq: -1 }).success).toBe(true)
+    expect(sessionEventsTailArgsSchema.safeParse({ afterSeq: -2 }).success).toBe(false)
+    expect(sessionEventsTailArgsSchema.safeParse({ limit: 10.5 }).success).toBe(false)
+  })
+
+  it('takes a real boolean, not the query-string spelling', () => {
+    expect(sessionEventsTailArgsSchema.safeParse({ tail: 'true' }).success).toBe(false)
+    expect(sessionEventsTailArgsSchema.parse({ tail: false }).tail).toBe(false)
   })
 })

@@ -60,6 +60,10 @@ export const updateSessionStatusSchema = z.object({
 // carries up to 20 recommended tasks and gets its own ceiling.
 const EVENT_PAYLOAD_MAX_CHARS = 32_000
 const RESULT_PAYLOAD_MAX_CHARS = 512_000
+// Per-event bounds don't bound a batch: 100 events x 32K = 3.2M chars in one
+// request body, all of it headed into a single INSERT. The aggregate ceiling
+// is the request-level guardrail.
+const BATCH_MAX_CHARS = 512_000
 
 export const recordSessionEventSchema = z.object({
   seq:      z.number().int().min(0),
@@ -88,6 +92,20 @@ export const recordSessionEventSchema = z.object({
 // is unretriable and would silently eat telemetry).
 export const recordSessionEventBatchSchema = z.object({
   events: z.array(z.unknown()).min(1).max(100),
+}).superRefine((batch, ctx) => {
+  let size: number
+  try {
+    size = JSON.stringify(batch.events).length
+  } catch {
+    size = BATCH_MAX_CHARS + 1
+  }
+  if (size > BATCH_MAX_CHARS) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['events'],
+      message: `batch too large (${size} > ${BATCH_MAX_CHARS} chars) — flush fewer events per request`,
+    })
+  }
 })
 
 export const listSessionsSchema = z.object({
