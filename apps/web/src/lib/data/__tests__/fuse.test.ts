@@ -2,20 +2,22 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 // fuseTasks: one transaction that merges the survivor, re-points every child
 // row of the source, deletes the source, and hands back a snapshot the undo
-// can replay. The db is a recording mock: selects are answered from a queue
-// in the order fuseTasks issues them, every write is captured by table.
+// can replay. The db is a recording mock: selects are answered per table from
+// a queue in the order fuseTasks issues them, every write is captured by
+// table, raw statements (the lock, the checklist re-point) are captured whole.
 
-const selectResults: unknown[][] = []
+const reads = new Map<unknown, unknown[][]>()
 const writes: { kind: 'update' | 'insert' | 'delete'; table: unknown; payload?: unknown }[] = []
 const executes: SQL[] = []
 let transactionCalls = 0
+let deleteRowCount = 1
 
 vi.mock('@/lib/db', () => {
   function makeSelectChain() {
-    const rows = selectResults.shift() ?? []
+    let rows: unknown[] = []
     const chain: Record<string, unknown> = {}
     const pass = () => chain
-    chain.from = pass
+    chain.from = (table: unknown) => { rows = reads.get(table)?.shift() ?? []; return chain }
     chain.where = pass
     chain.orderBy = pass
     chain.then = (resolve: (v: unknown[]) => unknown) => resolve(rows)
@@ -40,7 +42,7 @@ vi.mock('@/lib/db', () => {
   function makeDeleteChain(table: unknown) {
     const chain: Record<string, unknown> = {}
     chain.where = () => { writes.push({ kind: 'delete', table }); return chain }
-    chain.then = (resolve: (v: unknown[]) => unknown) => resolve([])
+    chain.then = (resolve: (v: unknown) => unknown) => resolve({ rowCount: deleteRowCount })
     return chain
   }
   const tx = {
@@ -122,42 +124,44 @@ function taskRow(id: string, over: Record<string, unknown> = {}) {
   }
 }
 
-/** Queue the ten selects fuseTasks issues, in order. */
-function queueReads(over: Partial<Record<'tasks' | 'labels' | 'assignees' | 'virtual' | 'checklist' | 'edges' | 'comments' | 'sessions' | 'memories' | 'gantt', unknown[]>> = {}) {
-  selectResults.push(
-    over.tasks ?? [taskRow(SURVIVOR), taskRow(SOURCE)],
-    over.labels ?? [],
-    over.assignees ?? [],
-    over.virtual ?? [],
-    over.checklist ?? [],
-    over.edges ?? [],
-    over.comments ?? [],
-    over.sessions ?? [],
-    over.memories ?? [],
-    over.gantt ?? [],
-  )
+const read = (table: unknown, result: unknown[]) => {
+  const queue = reads.get(table) ?? []
+  queue.push(result)
+  reads.set(table, queue)
 }
+/** The pair read every fusion starts with; a table left unqueued answers with no rows. */
+const queueCards = (rows: unknown[] = [taskRow(SURVIVOR), taskRow(SOURCE)]) => read(boardTasks, rows)
+const sourceChecklist = (count: number, groupName = 'Checklist') =>
+  Array.from({ length: count }, (_, i) => ({ id: `x${i}`, taskId: SOURCE, groupName, orderIndex: i }))
 
 const writesTo = (table: unknown, kind?: 'update' | 'insert' | 'delete') =>
   writes.filter((w) => w.table === table && (!kind || w.kind === kind))
 const toQuery = (q: SQL) => new PgDialect().sqlToQuery(q)
 
 beforeEach(() => {
-  selectResults.length = 0
+  reads.clear()
   writes.length = 0
   executes.length = 0
   transactionCalls = 0
+  deleteRowCount = 1
   vi.clearAllMocks()
 })
 
 describe('fuseTasks', () => {
+  it('takes the advisory lock on the source before reading anything', async () => {
+    queueCards()
+    await fuseTasks(PROJECT, SURVIVOR, SOURCE, 'Fused')
+    const lock = toQuery(executes[0])
+    expect(lock.sql).toBe('select pg_advisory_xact_lock(hashtext($1))')
+    expect(lock.params).toEqual([SOURCE])
+    expect(transactionCalls).toBe(1)
+  })
+
   it('merges the survivor\'s scalars, deletes the source, broadcasts once — all in one transaction', async () => {
-    queueReads({
-      tasks: [
-        taskRow(SURVIVOR, { priority: 'low', description: 'keep', startDate: new Date('2026-09-10'), endDate: new Date('2026-09-12'), size: 2 }),
-        taskRow(SOURCE, { priority: 'urgent', description: 'more', startDate: new Date('2026-09-01'), endDate: null, size: 3, onTimeline: true }),
-      ],
-    })
+    queueCards([
+      taskRow(SURVIVOR, { priority: 'low', description: 'keep', startDate: new Date('2026-09-10'), endDate: new Date('2026-09-12'), size: 2 }),
+      taskRow(SOURCE, { priority: 'urgent', description: 'more', startDate: new Date('2026-09-01'), endDate: null, size: 3, onTimeline: true }),
+    ])
 
     const result = await fuseTasks(PROJECT, SURVIVOR, SOURCE, '  Fused card ')
 
@@ -183,20 +187,17 @@ describe('fuseTasks', () => {
   })
 
   it('unions labels and assignees onto the survivor and records what was added', async () => {
-    queueReads({
-      labels: [
-        { taskId: SURVIVOR, labelId: LABEL_A },
-        { taskId: SOURCE, labelId: LABEL_A },
-        { taskId: SOURCE, labelId: LABEL_B },
-      ],
-      assignees: [
-        { taskId: SOURCE, userId: OTHER, assignedBy: null, assignedAt: now },
-      ],
-      virtual: [
-        { taskId: SURVIVOR, virtualMemberId: LABEL_B, assignedBy: null, assignedAt: now },
-        { taskId: SOURCE, virtualMemberId: LABEL_B, assignedBy: null, assignedAt: now },
-      ],
-    })
+    queueCards()
+    read(taskLabels, [
+      { taskId: SURVIVOR, labelId: LABEL_A },
+      { taskId: SOURCE, labelId: LABEL_A },
+      { taskId: SOURCE, labelId: LABEL_B },
+    ])
+    read(taskAssignees, [{ taskId: SOURCE, userId: OTHER, assignedBy: null, assignedAt: now }])
+    read(taskVirtualAssignees, [
+      { taskId: SURVIVOR, virtualMemberId: LABEL_B, assignedBy: null, assignedAt: now },
+      { taskId: SOURCE, virtualMemberId: LABEL_B, assignedBy: null, assignedAt: now },
+    ])
 
     const result = await fuseTasks(PROJECT, SURVIVOR, SOURCE, 'Fused')
 
@@ -212,36 +213,35 @@ describe('fuseTasks', () => {
   })
 
   it('moves the source\'s checklist after the survivor\'s, group by group, and re-points dependencies minus self-refs', async () => {
-    queueReads({
-      checklist: [
-        { id: 's1', taskId: SURVIVOR, groupName: 'Checklist', orderIndex: 0 },
-        { id: 'x1', taskId: SOURCE, groupName: 'Checklist', orderIndex: 0 },
-        { id: 'x2', taskId: SOURCE, groupName: 'QA', orderIndex: 1 },
-      ],
-      edges: [
-        { blockerTaskId: SOURCE, blockedTaskId: OTHER },
-        { blockerTaskId: SURVIVOR, blockedTaskId: SOURCE },
-      ],
-      comments: [{ id: 'c1' }],
-      sessions: [{ id: 'sess1' }],
-      memories: [{ id: 'm1' }],
-    })
+    queueCards()
+    read(checklistItems, [
+      { id: 's1', taskId: SURVIVOR, groupName: 'Checklist', orderIndex: 0 },
+      { id: 'x1', taskId: SOURCE, groupName: 'Checklist', orderIndex: 0 },
+      { id: 'x2', taskId: SOURCE, groupName: 'QA', orderIndex: 1 },
+    ])
+    read(taskDependencies, [
+      { blockerTaskId: SOURCE, blockedTaskId: OTHER },
+      { blockerTaskId: SURVIVOR, blockedTaskId: SOURCE },
+    ])
+    read(taskComments, [{ id: 'c1' }])
+    read(agentSessions, [{ id: 'sess1' }])
+    read(memories, [{ id: 'm1' }])
 
     const result = await fuseTasks(PROJECT, SURVIVOR, SOURCE, 'Fused')
 
     // Both moved items travel in ONE set-based UPDATE ... FROM (VALUES ...),
-    // pair-scoped, never one statement per row.
+    // pair-scoped, never one statement per row. executes[0] is the lock.
     expect(writesTo(checklistItems, 'update')).toHaveLength(0)
-    expect(executes).toHaveLength(1)
-    const checklistQuery = toQuery(executes[0])
+    expect(executes).toHaveLength(2)
+    const checklistQuery = toQuery(executes[1])
     expect(checklistQuery.sql).toMatch(/update checklist_items as c[\s\S]*from \(values/)
     expect(checklistQuery.params).toEqual([SURVIVOR, 'x1', 1, 'x2', 2, SURVIVOR, SOURCE])
     expect(writesTo(taskDependencies, 'insert')[0].payload).toEqual([{ blockerTaskId: SURVIVOR, blockedTaskId: OTHER }])
     expect(writesTo(taskComments, 'update')[0].payload).toEqual({ taskId: SURVIVOR })
     expect(writesTo(agentSessions, 'update')[0].payload).toEqual({ taskId: SURVIVOR })
     expect(writesTo(memories, 'update')[0].payload).toEqual({ taskId: SURVIVOR })
+    // Only the absorbed card's items are snapshotted; the survivor's are renumbered on undo.
     expect(result.snapshot.checklist).toEqual([
-      { id: 's1', taskId: SURVIVOR, orderIndex: 0 },
       { id: 'x1', taskId: SOURCE, orderIndex: 0 },
       { id: 'x2', taskId: SOURCE, orderIndex: 1 },
     ])
@@ -253,28 +253,38 @@ describe('fuseTasks', () => {
   })
 
   it('re-points a long checklist in a single statement', async () => {
-    queueReads({
-      checklist: Array.from({ length: 300 }, (_, i) => ({ id: `x${i}`, taskId: SOURCE, groupName: 'Checklist', orderIndex: i })),
-    })
+    queueCards()
+    read(checklistItems, sourceChecklist(300))
 
     await fuseTasks(PROJECT, SURVIVOR, SOURCE, 'Fused')
 
-    expect(executes).toHaveLength(1)
+    expect(executes).toHaveLength(2)
     expect(writesTo(checklistItems)).toHaveLength(0)
-    expect(toQuery(executes[0]).params).toHaveLength(1 + 300 * 2 + 2)
+    expect(toQuery(executes[1]).params).toHaveLength(1 + 300 * 2 + 2)
   })
 
   it('refuses a card whose undo snapshot would exceed a cap, before writing anything', async () => {
-    queueReads({
-      checklist: Array.from({ length: FUSE_SNAPSHOT_LIMITS.childRows + 1 }, (_, i) => ({ id: `x${i}`, taskId: SOURCE, groupName: 'Checklist', orderIndex: i })),
-    })
+    queueCards()
+    read(checklistItems, sourceChecklist(FUSE_SNAPSHOT_LIMITS.childRows + 1))
     await expect(fuseTasks(PROJECT, SURVIVOR, SOURCE, 'Fused')).rejects.toThrow('Card too large to fuse safely')
     expect(writes).toHaveLength(0)
-    expect(executes).toHaveLength(0)
+    expect(executes).toHaveLength(1)
     expect(touchProject).not.toHaveBeenCalled()
   })
 
-  it('assertFusable mirrors every fuseSnapshotSchema cap', () => {
+  it('caps only the absorbed card: a one-item card fuses into a survivor far past the limit', async () => {
+    const survivorItems = Array.from({ length: 600 }, (_, i) => ({ id: `s${i}`, taskId: SURVIVOR, groupName: 'Checklist', orderIndex: i }))
+    queueCards()
+    read(checklistItems, [...survivorItems, { id: 'x0', taskId: SOURCE, groupName: 'Checklist', orderIndex: 0 }])
+
+    const result = await fuseTasks(PROJECT, SURVIVOR, SOURCE, 'Fused')
+
+    expect(result.snapshot.checklist).toEqual([{ id: 'x0', taskId: SOURCE, orderIndex: 0 }])
+    expect(toQuery(executes[1]).params).toEqual([SURVIVOR, 'x0', 600, SURVIVOR, SOURCE])
+    expect(writesTo(boardTasks, 'delete')).toHaveLength(1)
+  })
+
+  it('assertFusable mirrors every fuseSnapshotSchema cap and reports the counts on the error', () => {
     const ok = { labels: 0, assignees: 0, virtualAssignees: 0, checklist: 0, edges: 0, comments: 0, sessions: 0, memories: 0, ganttRows: 0 }
     const L = FUSE_SNAPSHOT_LIMITS
     expect(() => assertFusable({ ...ok, labels: L.labels, assignees: L.assignees, virtualAssignees: L.assignees, checklist: L.childRows, edges: L.childRows, comments: L.childRows, sessions: L.childRows, memories: L.childRows, ganttRows: L.ganttRows })).not.toThrow()
@@ -284,12 +294,23 @@ describe('fuseTasks', () => {
     ]) {
       expect(() => assertFusable({ ...ok, ...over })).toThrow('Card too large to fuse safely')
     }
+    const counts = { ...ok, checklist: L.childRows + 1 }
+    let thrown: unknown
+    try { assertFusable(counts) } catch (e) { thrown = e }
+    expect(thrown).toMatchObject({ counts, limits: L })
   })
 
   it('refuses when either card is missing from the project, writing nothing', async () => {
-    queueReads({ tasks: [taskRow(SURVIVOR)] })
+    queueCards([taskRow(SURVIVOR)])
     await expect(fuseTasks(PROJECT, SURVIVOR, SOURCE, 'Fused')).rejects.toThrow('Card not found')
     expect(writes).toHaveLength(0)
+    expect(touchProject).not.toHaveBeenCalled()
+  })
+
+  it('fails the transaction when the source delete touches no row', async () => {
+    deleteRowCount = 0
+    queueCards()
+    await expect(fuseTasks(PROJECT, SURVIVOR, SOURCE, 'Fused')).rejects.toThrow('changed underneath')
     expect(touchProject).not.toHaveBeenCalled()
   })
 

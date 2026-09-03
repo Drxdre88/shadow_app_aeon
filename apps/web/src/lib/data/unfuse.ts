@@ -74,6 +74,9 @@ export async function unfuseTasks(snapshot: FuseSnapshot, actorId: string): Prom
     : new Set<string>()
 
   await db.transaction(async (tx) => {
+    // Same key as fuseTasks: a double undo queues behind the first and then
+    // meets the friendly "already restored" guard instead of a PK violation.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${sourceId}))`)
     const [survivor] = await tx
       .select({ id: boardTasks.id })
       .from(boardTasks)
@@ -127,9 +130,9 @@ export async function unfuseTasks(snapshot: FuseSnapshot, actorId: string): Prom
         from (
           select id, row_number() over (order by order_index, created_at, id) as rn
           from board_tasks
-          where project_id = ${projectId} and column_id = ${columnId}
+          where project_id = ${projectId} and column_id = ${columnId} and archived_at is null
         ) as v
-        where t.id = v.id and t.order_index <> v.rn - 1
+        where t.id = v.id and t.archived_at is null and t.order_index <> v.rn - 1
       `)
     }
 
@@ -234,6 +237,18 @@ export async function unfuseTasks(snapshot: FuseSnapshot, actorId: string): Prom
         set task_id = v.task_id, order_index = v.order_index
         from (values ${values}) as v(id, task_id, order_index)
         where c.id = v.id and c.task_id in (${survivorId}::uuid, ${sourceId}::uuid)
+      `)
+      // The survivor's own items kept their relative order through the fusion,
+      // so closing the gaps the absorbed items leave restores their placement.
+      await tx.execute(sql`
+        update checklist_items as c
+        set order_index = v.rn - 1
+        from (
+          select id, row_number() over (order by order_index, id) as rn
+          from checklist_items
+          where task_id = ${survivorId}::uuid
+        ) as v
+        where c.id = v.id and c.order_index <> v.rn - 1
       `)
     }
 

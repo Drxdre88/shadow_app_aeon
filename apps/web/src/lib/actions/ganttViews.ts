@@ -1,7 +1,6 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { z } from 'zod'
 import { requireOwnership, requireEditor } from './helpers'
 import {
   findGanttViews as _findGanttViews,
@@ -19,7 +18,13 @@ import {
   type GroupByMode,
   type TaskOrder,
 } from '@/lib/data/bridge'
-import { createGanttViewSchema, updateGanttViewSchema, taskOrderSchema, groupByModeSchema } from '@/lib/data/validators'
+import {
+  createGanttViewSchema,
+  updateGanttViewSchema,
+  taskOrderSchema,
+  groupByModeSchema,
+  timelineSnapshotSchema,
+} from '@/lib/data/validators'
 
 export async function getGanttViews(projectId: string) {
   await requireOwnership(projectId)
@@ -111,26 +116,10 @@ export async function resetGanttData(projectId: string): Promise<TimelineResetSn
   return snapshot
 }
 
-const isoOrNull = z
-  .string()
-  .nullable()
-  .refine((v) => v === null || !isNaN(new Date(v).getTime()), { message: 'Invalid ISO 8601 date string' })
-
-const timelineSnapshotSchema = z
-  .array(
-    z.object({
-      id: z.string().uuid(),
-      startDate: isoOrNull,
-      endDate: isoOrNull,
-      onTimeline: z.boolean(),
-    }),
-  )
-  .max(5000)
-
 /** Undo for resetGanttData: one batched write for the whole snapshot. */
 export async function restoreTimelineSnapshot(projectId: string, entries: TimelineResetSnapshotEntry[]): Promise<number> {
-  await requireEditor(projectId)
   const parsed = timelineSnapshotSchema.parse(entries)
+  await requireEditor(projectId)
   const restored = await _restoreTimelineSnapshot(projectId, parsed)
   revalidatePath(`/project/${projectId}`)
   return restored

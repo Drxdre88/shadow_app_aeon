@@ -144,6 +144,16 @@ beforeEach(() => {
 })
 
 describe('unfuseTasks', () => {
+  it('takes the same advisory lock as the fusion, keyed on the source, before reading anything', async () => {
+    queueCards()
+    await restore(makeSnapshot())
+    expect(transactionCalls).toBe(1)
+    expect(executes).toHaveLength(1)
+    const lock = toQuery(executes[0])
+    expect(lock.sql).toBe('select pg_advisory_xact_lock(hashtext($1))')
+    expect(lock.params).toEqual([SOURCE])
+  })
+
   it('re-inserts the source, rolls the survivor back and re-points every child row in one transaction', async () => {
     queueCards()
     read(boardTasks, [{ id: SURVIVOR }, { id: SOURCE }, { id: OTHER }])
@@ -166,10 +176,14 @@ describe('unfuseTasks', () => {
     expect(writesTo(boardTasks, 'insert')[0].payload).toMatchObject({ id: SOURCE, projectId: PROJECT, name: 'Absorbed', ganttTaskId: null })
     expect(writesTo(boardTasks, 'update')[0].payload).toMatchObject({ name: 'Survivor before', priority: 'low' })
 
-    expect(executes).toHaveLength(1)
-    const checklist = toQuery(executes[0])
+    // executes: the lock, the checklist re-point, the survivor renumber.
+    expect(executes).toHaveLength(3)
+    const checklist = toQuery(executes[1])
     expect(checklist.sql).toMatch(/update checklist_items as c[\s\S]*from \(values[\s\S]*c\.task_id in/)
     expect(checklist.params).toEqual(['c1', SURVIVOR, 0, 'c2', SOURCE, 0, SURVIVOR, SOURCE])
+    const renumber = toQuery(executes[2])
+    expect(renumber.sql).toMatch(/update checklist_items as c[\s\S]*row_number\(\) over \(order by order_index, id\)[\s\S]*where task_id = \$1::uuid[\s\S]*c\.order_index <> v\.rn - 1/)
+    expect(renumber.params).toEqual([SURVIVOR])
 
     expect(writesTo(taskDependencies, 'delete')).toHaveLength(1)
     // The edge whose other end (STRANGER) is not a live card of the project is dropped.
@@ -229,9 +243,11 @@ describe('unfuseTasks', () => {
     read(boardColumns, [{ id: COL }])
     await restore(withColumn())
     expect(writesTo(boardTasks, 'insert')[0].payload).toMatchObject({ columnId: COL })
-    expect(executes).toHaveLength(1)
-    const renumber = toQuery(executes[0])
-    expect(renumber.sql).toMatch(/update board_tasks as t[\s\S]*row_number\(\) over \(order by order_index, created_at, id\)[\s\S]*where t\.id = v\.id and t\.order_index <> v\.rn - 1/)
+    expect(executes).toHaveLength(2)
+    const renumber = toQuery(executes[1])
+    expect(renumber.sql).toMatch(/update board_tasks as t[\s\S]*row_number\(\) over \(order by order_index, created_at, id\)[\s\S]*where t\.id = v\.id and t\.archived_at is null and t\.order_index <> v\.rn - 1/)
+    // Archived cards keep their old index and never take a slot from the live ones.
+    expect(renumber.sql).toMatch(/where project_id = \$1 and column_id = \$2 and archived_at is null/)
     expect(renumber.params).toEqual([PROJECT, COL])
 
     executes.length = 0
@@ -240,7 +256,7 @@ describe('unfuseTasks', () => {
     read(boardColumns, [])
     await restore(withColumn())
     expect(writesTo(boardTasks, 'insert')[0].payload).toMatchObject({ columnId: null })
-    expect(executes).toHaveLength(0)
+    expect(executes).toHaveLength(1)
   })
 
   it('restores only assignees who are still project members and virtual members still in a realm of the project', async () => {
@@ -304,8 +320,8 @@ describe('unfuseTasks', () => {
       sessionIds: others,
       memoryIds: others,
     }))
-    expect(executes).toHaveLength(1)
-    expect(toQuery(executes[0]).params).toHaveLength(300 * 3 + 2)
+    expect(executes).toHaveLength(3)
+    expect(toQuery(executes[1]).params).toHaveLength(300 * 3 + 2)
     expect(writesTo(checklistItems)).toHaveLength(0)
     expect(writesTo(taskDependencies, 'delete')).toHaveLength(1)
     expect(writesTo(taskDependencies, 'insert')).toHaveLength(1)
@@ -324,5 +340,14 @@ describe('unfuseTasks', () => {
     await expect(restore(makeSnapshot())).rejects.toThrow('already been restored')
     expect(writes).toHaveLength(0)
     expect(touchProject).not.toHaveBeenCalled()
+  })
+
+  it('a second undo of the same fusion meets the friendly guard after the lock, never the PK', async () => {
+    read(boardTasks, [{ id: SURVIVOR }])
+    read(boardTasks, [{ id: SOURCE }])
+    await expect(restore(makeSnapshot())).rejects.toThrow('The absorbed card has already been restored')
+    expect(executes).toHaveLength(1)
+    expect(toQuery(executes[0]).sql).toBe('select pg_advisory_xact_lock(hashtext($1))')
+    expect(writesTo(boardTasks, 'insert')).toHaveLength(0)
   })
 })

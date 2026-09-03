@@ -13,7 +13,7 @@ import {
 } from '@/lib/db/schema'
 import { eq, and, or, inArray, isNull, sql } from 'drizzle-orm'
 import { touchProject } from './projects'
-import { mergeTaskFields, unionIds, mergeChecklistOrder, repointDependencies } from './fuseRules'
+import { mergeTaskFields, unionIds, mergeChecklistOrder, repointDependencies } from '@/lib/utils/fuseRules'
 import { FUSE_SNAPSHOT_LIMITS, type FuseSnapshot } from './validators'
 
 // Card fusion: the dragged card (source) is absorbed into the card it was
@@ -52,20 +52,25 @@ interface SourceCounts {
   ganttRows: number
 }
 
-/** A fusion whose snapshot would blow a fuseSnapshotSchema cap could never be undone — refuse it instead. */
+/**
+ * A fusion whose snapshot would blow a fuseSnapshotSchema cap could never be
+ * undone — refuse it instead. Only the SOURCE's rows count: the survivor's
+ * checklist is renumbered on undo, not snapshotted, so a small card can fuse
+ * into a large one. The offending counts ride on the error for the caller.
+ */
 export function assertFusable(counts: SourceCounts): void {
-  const L = FUSE_SNAPSHOT_LIMITS
+  const limits = FUSE_SNAPSHOT_LIMITS
   const tooLarge =
-    counts.labels > L.labels ||
-    counts.assignees > L.assignees ||
-    counts.virtualAssignees > L.assignees ||
-    counts.checklist > L.childRows ||
-    counts.edges > L.childRows ||
-    counts.comments > L.childRows ||
-    counts.sessions > L.childRows ||
-    counts.memories > L.childRows ||
-    counts.ganttRows > L.ganttRows
-  if (tooLarge) throw new Error('Card too large to fuse safely')
+    counts.labels > limits.labels ||
+    counts.assignees > limits.assignees ||
+    counts.virtualAssignees > limits.assignees ||
+    counts.checklist > limits.childRows ||
+    counts.edges > limits.childRows ||
+    counts.comments > limits.childRows ||
+    counts.sessions > limits.childRows ||
+    counts.memories > limits.childRows ||
+    counts.ganttRows > limits.ganttRows
+  if (tooLarge) throw Object.assign(new Error('Card too large to fuse safely'), { counts, limits })
 }
 
 function serializeSourceRow(row: BoardTaskRow): FuseSnapshot['source'] {
@@ -105,6 +110,9 @@ export async function fuseTasks(projectId: string, survivorId: string, sourceId:
   if (survivorId === sourceId) throw new Error('A card cannot be fused into itself')
 
   const result = await db.transaction(async (tx) => {
+    // Two fusions of the same source serialise here, so the second re-reads
+    // the pair after the first has committed and finds the source gone.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${sourceId}))`)
     const pair = [survivorId, sourceId]
     const rows = await tx
       .select()
@@ -132,11 +140,13 @@ export async function fuseTasks(projectId: string, survivorId: string, sourceId:
 
     const sourceEdges = edgeRows.filter((e) => touches(e, sourceId))
     const survivorEdges = edgeRows.filter((e) => touches(e, survivorId))
+    const survivorItems = checklistRows.filter((r) => r.taskId === survivorId)
+    const sourceItems = checklistRows.filter((r) => r.taskId === sourceId)
     assertFusable({
       labels: labelRows.filter((r) => r.taskId === sourceId).length,
       assignees: assigneeRows.filter((r) => r.taskId === sourceId).length,
       virtualAssignees: virtualRows.filter((r) => r.taskId === sourceId).length,
-      checklist: checklistRows.length,
+      checklist: sourceItems.length,
       edges: sourceEdges.length,
       comments: commentRows.length,
       sessions: sessionRows.length,
@@ -150,6 +160,7 @@ export async function fuseTasks(projectId: string, survivorId: string, sourceId:
       .set({ ...patch, updatedAt: new Date() })
       .where(and(eq(boardTasks.id, survivorId), eq(boardTasks.projectId, projectId)))
       .returning()
+    if (!updated) throw new Error('Card not found')
 
     const survivorLabelIds = labelRows.filter((r) => r.taskId === survivorId).map((r) => r.labelId)
     const sourceLabelIds = labelRows.filter((r) => r.taskId === sourceId).map((r) => r.labelId)
@@ -179,8 +190,6 @@ export async function fuseTasks(projectId: string, survivorId: string, sourceId:
         .onConflictDoNothing()
     }
 
-    const survivorItems = checklistRows.filter((r) => r.taskId === survivorId)
-    const sourceItems = checklistRows.filter((r) => r.taskId === sourceId)
     const current = new Map(checklistRows.map((r) => [r.id, r]))
     const moved = mergeChecklistOrder(survivorItems, sourceItems).filter((item) => {
       const was = current.get(item.id)
@@ -211,7 +220,8 @@ export async function fuseTasks(projectId: string, survivorId: string, sourceId:
       await tx.update(memories).set({ taskId: survivorId }).where(eq(memories.taskId, sourceId))
     }
 
-    await tx.delete(boardTasks).where(and(eq(boardTasks.id, sourceId), eq(boardTasks.projectId, projectId)))
+    const deleted = await tx.delete(boardTasks).where(and(eq(boardTasks.id, sourceId), eq(boardTasks.projectId, projectId)))
+    if (deleted.rowCount !== 1) throw new Error('The absorbed card changed underneath the fusion; nothing was merged')
 
     const snapshot: FuseSnapshot = {
       projectId,
@@ -234,7 +244,7 @@ export async function fuseTasks(projectId: string, survivorId: string, sourceId:
       addedLabelIds,
       addedAssigneeIds: addedAssignees.map((r) => r.userId),
       addedVirtualAssigneeIds: addedVirtual.map((r) => r.virtualMemberId),
-      checklist: checklistRows.map((r) => ({ id: r.id, taskId: r.taskId, orderIndex: r.orderIndex })),
+      checklist: sourceItems.map((r) => ({ id: r.id, taskId: r.taskId, orderIndex: r.orderIndex })),
       sourceEdges,
       insertedEdges,
       commentIds: commentRows.map((r) => r.id),

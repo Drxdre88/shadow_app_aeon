@@ -31,9 +31,17 @@ vi.mock('@/lib/db', () => {
     chain.returning = () => Promise.resolve([{ id: 'task' }])
     return chain
   }
+  function selectChain() {
+    const chain: Record<string, unknown> = {}
+    chain.from = () => chain
+    chain.where = () => chain
+    chain.then = (resolve: (v: unknown[]) => unknown) => resolve([{ max: 4 }])
+    return chain
+  }
   const tx = {
     update: vi.fn(() => updateChain()),
     insert: vi.fn(() => insertChain()),
+    select: vi.fn(() => selectChain()),
   }
   return {
     db: {
@@ -47,7 +55,7 @@ vi.mock('../projects', () => ({
   touchProject: vi.fn(),
 }))
 
-import { createTask, reorderTasks, updateTask } from '../tasks'
+import { createTask, createTasksBatch, reorderTasks, updateTask } from '../tasks'
 
 const PROJECT_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 const TASK_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -106,5 +114,22 @@ describe('createTask', () => {
     expect(insertValues).toHaveLength(2)
     expect(insertValues[0].startedAt).toBeInstanceOf(Date)
     expect(insertValues[1].startedAt).toBeNull()
+  })
+})
+
+describe('createTasksBatch', () => {
+  it('stamps the actual start on the in-progress row of a batch and leaves the todo row null', async () => {
+    await createTasksBatch(PROJECT_ID, [
+      { name: 'started', status: 'in-progress' },
+      { name: 'waiting', status: 'todo' },
+      { name: 'unspecified' },
+    ])
+    expect(insertValues).toHaveLength(1)
+    const rows = insertValues[0] as unknown as Record<string, unknown>[]
+    expect(rows).toHaveLength(3)
+    expect(rows[0].startedAt).toBeInstanceOf(Date)
+    expect(rows[1].startedAt).toBeNull()
+    expect(rows[2].startedAt).toBeNull()
+    expect(rows.map((r) => r.orderIndex)).toEqual([5, 6, 7])
   })
 })

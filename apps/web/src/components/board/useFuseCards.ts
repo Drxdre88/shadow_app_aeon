@@ -35,10 +35,19 @@ export function useFuseCards(projectId: string) {
 
   // Either card leaving the store while the modal is up (deleted or archived
   // by a peer) ends the request; while a fusion is in flight the source is
-  // gone on purpose, so the check waits.
-  const pairAlive = useBoardStore((s) =>
-    !request || (s.tasks.some((t) => t.id === request.sourceId) && s.tasks.some((t) => t.id === request.targetId)),
-  )
+  // gone on purpose, so the check waits. Subscribed to the tasks array only
+  // while a request is open, and scanned once per change of it — not on
+  // every store update.
+  const tasks = useBoardStore((s) => (request ? s.tasks : null))
+  const pairAlive = useMemo(() => {
+    if (!request || !tasks) return true
+    let found = 0
+    for (const t of tasks) {
+      if (t.id === request.sourceId || t.id === request.targetId) found++
+      if (found === 2) return true
+    }
+    return false
+  }, [request, tasks])
   useEffect(() => {
     if (request && !isFusing && !pairAlive) setRequest(null)
   }, [request, isFusing, pairAlive])

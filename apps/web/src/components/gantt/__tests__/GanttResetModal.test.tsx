@@ -201,16 +201,20 @@ describe('GanttResetModal', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
-  it('ignores Enter and Escape while animating out', async () => {
+  it('ignores keys and lets clicks through the overlay while animating out', async () => {
     const onConfirm = vi.fn()
     const onClose = vi.fn()
     const { rerender } = render(<GanttResetModal isOpen onConfirm={onConfirm} onClose={onClose} />)
     fireEvent.change(input(), { target: { value: 'RESET' } })
+    const overlay = screen.getByRole('dialog').parentElement!
+    expect(overlay.style.pointerEvents).toBe('')
 
     rerender(<GanttResetModal isOpen={false} onConfirm={onConfirm} onClose={onClose} />)
     expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(overlay.style.pointerEvents).toBe('none')
     fireEvent.keyDown(window, { key: 'Enter' })
     fireEvent.keyDown(window, { key: 'Escape' })
+    fireEvent.keyDown(window, { key: 'Tab' })
     expect(onConfirm).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())

@@ -13,7 +13,7 @@ vi.mock('@/lib/data/projects', () => ({
   getMemberRole: vi.fn(),
 }))
 
-import { requireAuth, requireOwnership, requireEditor } from '../helpers'
+import { requireAuth, requireOwnership, requireEditor, requireMember, requireMemberAccess } from '../helpers'
 import { auth } from '@/lib/auth'
 import { verifyProjectAccess } from '@/lib/data/projects'
 
@@ -99,6 +99,39 @@ describe('requireOwnership', () => {
     await expect(requireOwnership(PROJECT_ID)).rejects.toThrow(
       'Project not found or unauthorized'
     )
+  })
+})
+
+describe('requireMemberAccess', () => {
+  it('returns the caller and their role from a single access check', async () => {
+    mockAuth.mockResolvedValue(makeSession() as never)
+    mockVerifyProjectAccess.mockResolvedValue(makeAccess('viewer', 'other-user') as never)
+
+    await expect(requireMemberAccess(PROJECT_ID)).resolves.toEqual({ userId: SESSION_USER_ID, role: 'viewer' })
+    expect(mockVerifyProjectAccess).toHaveBeenCalledTimes(1)
+    expect(mockVerifyProjectAccess).toHaveBeenCalledWith(PROJECT_ID, SESSION_USER_ID)
+  })
+
+  it('throws Unauthorized before touching the project when not authenticated', async () => {
+    mockAuth.mockResolvedValue(null as never)
+    await expect(requireMemberAccess(PROJECT_ID)).rejects.toThrow('Unauthorized')
+    expect(mockVerifyProjectAccess).not.toHaveBeenCalled()
+  })
+
+  it('throws when the project is missing or the caller has no access', async () => {
+    mockAuth.mockResolvedValue(makeSession() as never)
+    mockVerifyProjectAccess.mockResolvedValue(null as never)
+    await expect(requireMemberAccess(PROJECT_ID)).rejects.toThrow('Project not found or unauthorized')
+  })
+
+  it('requireMember delegates to it with one access check and the same answer', async () => {
+    mockAuth.mockResolvedValue(makeSession() as never)
+    mockVerifyProjectAccess.mockResolvedValue(makeAccess('viewer', 'other-user') as never)
+    await expect(requireMember(PROJECT_ID)).resolves.toBe(SESSION_USER_ID)
+    expect(mockVerifyProjectAccess).toHaveBeenCalledTimes(1)
+
+    mockVerifyProjectAccess.mockResolvedValue(null as never)
+    await expect(requireMember(PROJECT_ID)).rejects.toThrow('Project not found or unauthorized')
   })
 })
 

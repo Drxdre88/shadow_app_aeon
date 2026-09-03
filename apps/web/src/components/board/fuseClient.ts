@@ -1,10 +1,10 @@
 import { useBoardStore, type BoardTask, type ChecklistPreviewItem, type ChecklistSummary, type TaskAssigneePill } from '@/lib/store/boardStore'
-import { mergeTaskFields, unionIds, repointDependencies } from '@/lib/data/fuseRules'
+import { mergeTaskFields, unionIds, repointDependencies } from '@/lib/utils/fuseRules'
 
 // Client half of card fusion: the optimistic merge the board shows the
 // instant the operator confirms, and the slice of store state needed to put
 // it back (a failed action, or the toast's Undo). The rules are the shared
-// ones in lib/data/fuseRules, so the preview matches what the server lands.
+// ones in lib/utils/fuseRules, so the preview matches what the server lands.
 
 type StoreState = ReturnType<typeof useBoardStore.getState>
 type Dependency = StoreState['dependencies'][number]

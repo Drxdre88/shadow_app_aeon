@@ -106,6 +106,24 @@ describe('manual pins honour the typed span', () => {
     expect(p.computedEnd.getTime()).toBe(completedAt.getTime())
   })
 
+  it('two manual cards with identical typed spans on one lane keep their dates and raise resource-overbooked', () => {
+    const plannedStart = workingMorning(2)
+    const plannedEnd = new Date(plannedStart.getTime() + 4 * HOUR_MS)
+    const result = run([
+      task('m0', { scheduleMode: 'manual', plannedStart, plannedEnd, orderIndex: 0 }),
+      task('m1', { scheduleMode: 'manual', plannedStart, plannedEnd, orderIndex: 1 }),
+    ])
+    for (const id of ['m0', 'm1']) {
+      const p = placementOf(result, id)
+      expect(p.computedStart.getTime()).toBe(plannedStart.getTime())
+      expect(p.computedEnd.getTime()).toBe(plannedEnd.getTime())
+    }
+    const overbooked = result.warnings.filter((w) => w.kind === 'resource-overbooked')
+    expect(overbooked).toHaveLength(1)
+    expect([...overbooked[0].taskIds].sort()).toEqual(['m0', 'm1'])
+    expect(placementOf(result, 'm0').laneIndex).not.toBe(placementOf(result, 'm1').laneIndex)
+  })
+
   test.prop(
     [fc.uniqueArray(fc.integer({ min: 0, max: 40 }), { minLength: 1, maxLength: 8 })],
     { numRuns: 60 },

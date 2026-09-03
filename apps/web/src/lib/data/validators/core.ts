@@ -1,0 +1,309 @@
+import { z } from 'zod'
+import { isoDate, optionalIsoDate } from './dates'
+
+export const createProjectSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  description: z.string().trim().max(5000).optional(),
+  startDate: isoDate,
+  endDate: isoDate,
+  timeScale: z.enum(['day', 'week', 'month']).default('week'),
+})
+
+export const setFavoriteSchema = z.object({ favorite: z.boolean() })
+
+export const updateProjectSchema = z.object({
+  name: z.string().trim().min(1).max(255).optional(),
+  description: z.string().trim().max(5000).nullable().optional(),
+  startDate: isoDate.optional(),
+  endDate: isoDate.optional(),
+  timeScale: z.enum(['day', 'week', 'month']).optional(),
+  planetImage: z.string().max(255).nullable().optional(),
+  settings: z.record(z.string(), z.unknown()).optional(),
+  dominionId: z.string().uuid().nullable().optional(),
+})
+
+export const createTaskSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  description: z.string().trim().max(10000).optional(),
+  columnId: z.string().uuid().optional(),
+  status: z.enum(['todo', 'in-progress', 'done']).default('todo'),
+  priority: z.enum(['low', 'medium', 'high', 'urgent']).default('medium'),
+  color: z.string().trim().max(20).default('purple'),
+  onTimeline: z.boolean().default(false),
+  size: z.number().min(0.5).max(20).multipleOf(0.5).nullable().optional(),
+  // null = no progress tracked
+  progress: z.number().int().min(0).max(100).nullable().optional(),
+  orderIndex: z.number().int().optional(),
+  startDate: optionalIsoDate,
+  endDate: optionalIsoDate,
+  // Free-form card payload (AI Hangar mission lives under the `hangar` key).
+  metadata: z.record(z.string(), z.unknown()).optional()
+    .describe('Free-form card payload. An AI Hangar mission lives under the "hangar" key.'),
+})
+
+export const updateTaskSchema = z.object({
+  name: z.string().trim().min(1).max(255).optional(),
+  description: z.string().trim().max(10000).nullable().optional(),
+  columnId: z.string().uuid().optional(),
+  status: z.enum(['todo', 'in-progress', 'done']).optional(),
+  priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+  color: z.string().trim().max(20).optional(),
+  onTimeline: z.boolean().optional(),
+  size: z.number().min(0.5).max(20).multipleOf(0.5).nullable().optional(),
+  // null clears tracking; 0-100 otherwise
+  progress: z.number().int().min(0).max(100).nullable().optional(),
+  orderIndex: z.number().int().optional(),
+  startDate: optionalIsoDate,
+  endDate: optionalIsoDate,
+  // Shallow-merged into the existing metadata, top-level keys only.
+  metadata: z.record(z.string(), z.unknown()).optional()
+    .describe('Shallow-merged into the existing metadata, top-level keys only. An AI Hangar mission lives under the "hangar" key.'),
+})
+
+export const createColumnSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  color: z.string().trim().max(20).default('purple'),
+  icon: z.string().trim().max(50).optional(),
+  orderIndex: z.number().int().optional(),
+})
+
+export const updateColumnSchema = z.object({
+  name: z.string().trim().min(1).max(255).optional(),
+  color: z.string().trim().max(20).optional(),
+  icon: z.string().trim().max(50).nullable().optional(),
+  orderIndex: z.number().int().optional(),
+})
+
+export const createGanttTaskSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  description: z.string().trim().max(10000).optional(),
+  rowId: z.string().uuid(),
+  startDate: isoDate,
+  endDate: isoDate,
+  color: z.string().trim().max(20).default('purple'),
+  progress: z.number().int().min(0).max(100).default(0),
+  boardTaskId: z.string().uuid().optional(),
+})
+
+export const updateGanttTaskSchema = z.object({
+  name: z.string().trim().min(1).max(255).optional(),
+  description: z.string().trim().max(10000).nullable().optional(),
+  rowId: z.string().uuid().optional(),
+  startDate: isoDate.optional(),
+  endDate: isoDate.optional(),
+  color: z.string().trim().max(20).optional(),
+  progress: z.number().int().min(0).max(100).optional(),
+  boardTaskId: z.string().uuid().nullable().optional(),
+})
+
+const ganttViewFiltersSchema = z.object({
+  excludedSections: z.array(z.string()).optional(),
+  taskOrder: z.enum(['column', 'alphabetical']).optional(),
+  allowWeekends: z.boolean().optional(),
+  allowMultipleRows: z.boolean().optional(),
+  allowOverlap: z.boolean().optional(),
+}).default({})
+
+export const createGanttViewSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  groupBy: z.enum(['column', 'label', 'dependency', 'priority']).default('column'),
+  filters: ganttViewFiltersSchema,
+})
+
+export const updateGanttViewSchema = z.object({
+  name: z.string().trim().min(1).max(255).optional(),
+  groupBy: z.enum(['column', 'label', 'dependency', 'priority']).optional(),
+  filters: z.object({
+    excludedSections: z.array(z.string()).optional(),
+    taskOrder: z.enum(['column', 'alphabetical']).optional(),
+    allowWeekends: z.boolean().optional(),
+    allowMultipleRows: z.boolean().optional(),
+    allowOverlap: z.boolean().optional(),
+  }).optional(),
+})
+
+export const createLabelSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  color: z.string().trim().max(20).default('purple'),
+})
+
+export const updateLabelSchema = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  color: z.string().trim().max(20).optional(),
+})
+
+export const createChecklistItemSchema = z.object({
+  // Client-supplied id makes offline-queue replays idempotent (duplicate key
+  // instead of a second row) and keeps optimistic local ids valid server-side.
+  id: z.string().uuid().optional(),
+  title: z.string().trim().min(1).max(2000),
+  groupName: z.string().trim().max(255).optional(),
+  orderIndex: z.number().int().optional(),
+})
+
+export const checklistItemStateSchema = z.enum(['unchecked', 'checked', 'crossed'])
+
+export const updateChecklistItemSchema = z.object({
+  title: z.string().trim().min(1).max(2000).optional(),
+  state: checklistItemStateSchema.optional(),
+  status: z.string().trim().nullable().optional(),
+})
+
+export const createRowSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  color: z.string().trim().max(20).default('purple'),
+  orderIndex: z.number().int().optional(),
+})
+
+export const updateRowSchema = z.object({
+  name: z.string().trim().min(1).max(255).optional(),
+  color: z.string().trim().max(20).optional(),
+  orderIndex: z.number().int().optional(),
+})
+
+export const reorderRowsSchema = z.object({
+  updates: z.array(z.object({
+    id: z.string().uuid(),
+    orderIndex: z.number().int().min(0),
+  })).min(1),
+})
+
+export const reorderTaskEntrySchema = z.object({
+  id: z.string().uuid(),
+  orderIndex: z.number().int(),
+  status: z.enum(['todo', 'in-progress', 'done']).optional(),
+  columnId: z.string().uuid().optional(),
+  name: z.string().optional(),
+})
+
+export const taskOrderSchema = z.enum(['column', 'alphabetical'])
+export const groupByModeSchema = z.enum(['column', 'label', 'dependency', 'priority'])
+
+export type CreateProjectInput = z.infer<typeof createProjectSchema>
+export type UpdateProjectInput = z.infer<typeof updateProjectSchema>
+export type CreateTaskInput = z.infer<typeof createTaskSchema>
+export type UpdateTaskInput = z.infer<typeof updateTaskSchema>
+export type CreateGanttTaskInput = z.infer<typeof createGanttTaskSchema>
+export type UpdateGanttTaskInput = z.infer<typeof updateGanttTaskSchema>
+export type CreateGanttViewInput = z.infer<typeof createGanttViewSchema>
+export type UpdateGanttViewInput = z.infer<typeof updateGanttViewSchema>
+export const createCommentSchema = z.object({
+  content: z.string().trim().min(1).max(10000),
+})
+
+export const updateCommentSchema = z.object({
+  content: z.string().trim().min(1).max(10000),
+})
+
+export const dependencyPairSchema = z.object({
+  blockerTaskId: z.string().uuid(),
+  blockedTaskId: z.string().uuid(),
+}).refine((data) => data.blockerTaskId !== data.blockedTaskId, {
+  message: 'A task cannot depend on itself',
+})
+
+export const createCanvasNodeSchema = z.object({
+  type: z.string().trim().max(50).default('idea'),
+  positionX: z.number().int(),
+  positionY: z.number().int(),
+  name: z.string().trim().min(1).max(255),
+  description: z.string().trim().max(10000).optional(),
+  color: z.string().trim().max(20).default('purple'),
+})
+
+export const updateCanvasNodeSchema = z.object({
+  type: z.string().trim().max(50).optional(),
+  positionX: z.number().int().optional(),
+  positionY: z.number().int().optional(),
+  name: z.string().trim().min(1).max(255).optional(),
+  description: z.string().trim().max(10000).nullable().optional(),
+  color: z.string().trim().max(20).optional(),
+})
+
+export const createCanvasEdgeSchema = z.object({
+  sourceNodeId: z.string().uuid(),
+  targetNodeId: z.string().uuid(),
+  label: z.string().trim().max(255).optional(),
+  animated: z.boolean().optional(),
+})
+
+export const createRealmSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  color: z.string().trim().max(20).default('purple'),
+  icon: z.string().trim().max(50).optional(),
+})
+
+export const updateRealmSchema = z.object({
+  name: z.string().trim().min(1).max(255).optional(),
+  color: z.string().trim().max(20).optional(),
+  icon: z.string().trim().max(50).nullable().optional(),
+})
+
+export const inviteMemberSchema = z.object({
+  email: z.string().email(),
+  role: z.enum(['editor', 'viewer']).default('editor'),
+})
+
+export const updateRoleSchema = z.object({
+  role: z.enum(['editor', 'viewer']),
+})
+
+export const addProjectSchema = z.object({
+  projectId: z.string().uuid(),
+})
+
+export const sendToVaultSchema = z.object({
+  taskId: z.string().uuid(),
+  daysTaken: z.number().int().min(0).max(9999).nullable(),
+})
+
+export const batchVaultSchema = z.object({
+  entries: z.array(z.object({
+    taskId: z.string().uuid(),
+    daysTaken: z.number().int().min(0).max(9999).nullable(),
+    taskName: z.string().optional(),
+  })).min(1).max(100),
+})
+
+const customPrioritySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  color: z.string(),
+})
+
+export const preferencesSchema = z.object({
+  currentTheme: z.string().optional(),
+  glowIntensity: z.number().min(0).max(100).optional(),
+  glassOpacity: z.number().min(0).max(100).optional(),
+  ambientBlobs: z.boolean().optional(),
+  fontFamily: z.enum(['system', 'inter', 'jetbrains', 'space-grotesk', 'fira-code']).optional(),
+  dragEffect: z.enum(['glow', 'ghost', 'lightning']).optional(),
+  cursorEffect: z.string().optional(),
+  cursorColor: z.string().optional(),
+  columnWidth: z.number().min(250).max(1200).optional(),
+  columnHeight: z.number().min(200).max(1600).optional(),
+  dynamicColumnWidth: z.boolean().optional(),
+  dynamicColumnHeight: z.boolean().optional(),
+  zenEnterSeconds: z.number().min(1).max(6).optional(),
+  zenExitSeconds: z.number().min(1).max(4).optional(),
+  smokeVolume: z.number().min(0).max(100).optional(),
+  depLineWidth: z.number().min(0.3).max(3).optional(),
+  depLineGlow: z.number().min(0).max(100).optional(),
+  depLineStyle: z.enum(['solid', 'dashed', 'dotted']).optional(),
+  depCanvasBlur: z.number().min(0).max(40).optional(),
+  boardLayout: z.enum(['scroll', 'grid']).optional(),
+  projectColors: z.record(z.string(), z.string()).optional(),
+  depViewMode: z.enum(['canvas', 'arrows']).optional(),
+  shortcuts: z.record(z.string(), z.string()).optional(),
+  priorities: z.array(customPrioritySchema).optional(),
+}).passthrough()
+
+export type PreferencesInput = z.infer<typeof preferencesSchema>
+
+export type CreateLabelInput = z.infer<typeof createLabelSchema>
+export type CreateColumnInput = z.infer<typeof createColumnSchema>
+export type UpdateColumnInput = z.infer<typeof updateColumnSchema>
+export type CreateRowInput = z.infer<typeof createRowSchema>
+export type UpdateRowInput = z.infer<typeof updateRowSchema>
+export type CreateCanvasNodeInput = z.infer<typeof createCanvasNodeSchema>
+export type UpdateCanvasNodeInput = z.infer<typeof updateCanvasNodeSchema>

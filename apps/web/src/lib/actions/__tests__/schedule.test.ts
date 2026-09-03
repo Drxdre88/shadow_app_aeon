@@ -1,11 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('@/lib/actions/helpers', () => ({
-  requireAuth: vi.fn(),
-}))
-
-vi.mock('@/lib/data/projects', () => ({
-  verifyProjectAccess: vi.fn(),
+  requireMemberAccess: vi.fn(),
 }))
 
 vi.mock('@/lib/data/schedule', () => ({
@@ -19,8 +15,7 @@ vi.mock('@/lib/data/schedule', () => ({
   persistPlacements: vi.fn(),
 }))
 
-import { requireAuth } from '@/lib/actions/helpers'
-import { verifyProjectAccess } from '@/lib/data/projects'
+import { requireMemberAccess } from '@/lib/actions/helpers'
 import {
   ensureDefaultCalendar,
   ensureResourcesForPeople,
@@ -54,7 +49,7 @@ const CAL = { id: 'cal-default', timezone: 'UTC', hoursPerDay: '8.00', dayStartM
 const ALICE = { id: 'r-alice', kind: 'user', userId: 'u-alice', virtualMemberId: null, parentResourceId: null, calendarId: null, label: 'Alice', concurrency: 1, focusFactor: '1.00', orderIndex: 0 }
 const BOB = { id: 'r-bob', kind: 'virtual', userId: null, virtualMemberId: 'v-bob', parentResourceId: null, calendarId: null, label: 'Bob', concurrency: 1, focusFactor: '1.00', orderIndex: 1 }
 const CAROL_LEFT = { id: 'r-carol', kind: 'user', userId: 'u-carol', virtualMemberId: null, parentResourceId: null, calendarId: null, label: 'Carol', concurrency: 1, focusFactor: '1.00', orderIndex: 2 }
-const access = (role: string) => ({ project: { id: PROJECT_ID } as never, role })
+const access = (role: 'editor' | 'viewer') => ({ userId: 'u-alice', role })
 
 function card(id: string, over: Partial<ScheduleTaskRow> = {}): ScheduleTaskRow {
   return {
@@ -113,8 +108,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(NOW)
-  vi.mocked(requireAuth).mockResolvedValue('u-alice')
-  vi.mocked(verifyProjectAccess).mockResolvedValue(access('editor') as never)
+  vi.mocked(requireMemberAccess).mockResolvedValue(access('editor'))
   vi.mocked(ensureDefaultCalendar).mockResolvedValue(CAL)
   vi.mocked(findDefaultCalendar).mockResolvedValue(CAL)
   vi.mocked(findResources).mockResolvedValue([ALICE, BOB])
@@ -134,9 +128,9 @@ afterEach(() => {
 
 describe('solveProject', () => {
   it('gates on membership before touching anything', async () => {
-    vi.mocked(verifyProjectAccess).mockResolvedValueOnce(null)
+    vi.mocked(requireMemberAccess).mockRejectedValueOnce(new Error('Project not found or unauthorized'))
     await expect(solveProject(PROJECT_ID)).rejects.toThrow('unauthorized')
-    vi.mocked(requireAuth).mockRejectedValueOnce(new Error('Unauthorized'))
+    vi.mocked(requireMemberAccess).mockRejectedValueOnce(new Error('Unauthorized'))
     await expect(solveProject(PROJECT_ID)).rejects.toThrow('Unauthorized')
     expect(ensureDefaultCalendar).not.toHaveBeenCalled()
     expect(findDefaultCalendar).not.toHaveBeenCalled()
@@ -147,7 +141,8 @@ describe('solveProject', () => {
   it('derives lanes from the project people, solves from now and persists every placement once', async () => {
     const schedule = await solveProject(PROJECT_ID)
 
-    expect(verifyProjectAccess).toHaveBeenCalledWith(PROJECT_ID, 'u-alice')
+    expect(requireMemberAccess).toHaveBeenCalledTimes(1)
+    expect(requireMemberAccess).toHaveBeenCalledWith(PROJECT_ID)
     expect(ensureResourcesForPeople).toHaveBeenCalledWith(PROJECT_ID, [
       { kind: 'user', userId: 'u-alice', label: 'Alice' },
       { kind: 'virtual', virtualMemberId: 'v-bob', label: 'Bob' },
@@ -195,7 +190,7 @@ describe('solveProject', () => {
   })
 
   it('a viewer gets the same plan solved in memory and writes nothing', async () => {
-    vi.mocked(verifyProjectAccess).mockResolvedValue(access('viewer') as never)
+    vi.mocked(requireMemberAccess).mockResolvedValue(access('viewer'))
     vi.mocked(findResources).mockResolvedValue([ALICE])
 
     const schedule = await solveProject(PROJECT_ID)
@@ -218,7 +213,7 @@ describe('solveProject', () => {
   })
 
   it('a viewer of a project with no calendar yet solves on an unsaved default', async () => {
-    vi.mocked(verifyProjectAccess).mockResolvedValue(access('viewer') as never)
+    vi.mocked(requireMemberAccess).mockResolvedValue(access('viewer'))
     vi.mocked(findDefaultCalendar).mockResolvedValue(null)
     vi.mocked(findCalendars).mockResolvedValue({ calendars: [], exceptions: [] })
 

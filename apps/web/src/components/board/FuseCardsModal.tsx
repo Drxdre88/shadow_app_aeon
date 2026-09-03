@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils/cn'
 import { useThemeStore, useSmoothUiRenders } from '@/stores/themeStore'
 import { useBoardStore, type BoardTask } from '@/lib/store/boardStore'
 import { resolveAccentHex } from '@/lib/utils/colors'
-import { maxPriority, unionIds } from '@/lib/data/fuseRules'
+import { maxPriority, unionIds } from '@/lib/utils/fuseRules'
 
 export const MAX_FUSED_NAME = 255
 

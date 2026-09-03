@@ -147,12 +147,16 @@ describe('persistPlacements', () => {
     expect(rendered(3).params[0]).toBe(placement(PERSIST_CHUNK).taskId)
   })
 
-  it('with nothing placed it still locks and clears the whole project cache', async () => {
+  it('with nothing placed it still locks and clears the whole project cache, emitting no placement update', async () => {
     await expect(persistPlacements(PROJECT_ID, [])).resolves.toBe(0)
+    expect(state.transactions).toBe(1)
     expect(state.executed).toHaveLength(2)
+    expect(rendered(0).sql).toBe('select pg_advisory_xact_lock(hashtext($1))')
     const clear = rendered(1)
+    expect(clear.sql).toMatch(/set computed_start = null, computed_end = null, total_float_min = null/)
     expect(clear.sql).toMatch(/id <> all\(array\[\]::uuid\[\]\)/)
     expect(clear.params).toEqual([PROJECT_ID])
+    expect(clear.sql).not.toMatch(/from \(values/)
   })
 })
 

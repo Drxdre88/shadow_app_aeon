@@ -281,11 +281,13 @@ export const RESTORE_CHUNK = 500
  * list, one touchProject — instead of one round trip per card. Dates travel as
  * the snapshot's UTC ISO text with an explicit cast, because the columns are
  * naive timestamps and a Date parameter would be serialised in the server's
- * zone. Cards that no longer belong to the project are left alone.
+ * zone. Cards that no longer belong to the project are left alone, so the
+ * count returned is the rows the database actually wrote, not the entries sent.
  */
 export async function restoreTimelineSnapshot(projectId: string, entries: readonly TimelineResetSnapshotEntry[]): Promise<number> {
   if (entries.length === 0) return 0
   const updatedAt = new Date().toISOString()
+  let restored = 0
   await db.transaction(async (tx) => {
     for (let i = 0; i < entries.length; i += RESTORE_CHUNK) {
       const chunk = entries.slice(i, i + RESTORE_CHUNK)
@@ -295,7 +297,7 @@ export async function restoreTimelineSnapshot(projectId: string, entries: readon
         ),
         sql`, `,
       )
-      await tx.execute(sql`
+      const result = await tx.execute(sql`
         update board_tasks as t
         set on_timeline = v.on_timeline,
             start_date = v.start_date,
@@ -304,8 +306,9 @@ export async function restoreTimelineSnapshot(projectId: string, entries: readon
         from (values ${values}) as v(id, on_timeline, start_date, end_date)
         where t.id = v.id and t.project_id = ${projectId}
       `)
+      restored += result.rowCount ?? 0
     }
   })
   await touchProject(projectId, { type: 'task:updated' })
-  return entries.length
+  return restored
 }

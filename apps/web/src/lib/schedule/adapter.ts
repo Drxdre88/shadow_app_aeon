@@ -7,7 +7,7 @@
  *
  * Sizing reconciliation. The board's sizing config (`components/board/sizing.ts`)
  * is `{ enabled, unit, labels }` and has no hours-per-point; the engine's
- * `BoardSizing` is `{ unit, hoursPerPoint }`. The bridge:
+ * `SizingModel` is `{ unit, hoursPerPoint }`. The bridge:
  *   - unit 'days'   → a size is days, converted through the owner's calendar
  *                     `hoursPerDay` by `resolveEstimateMinutes` (hoursPerPoint unused)
  *   - unit 'points' → a size is story points at `settings.sizing.hoursPerPoint`
@@ -15,8 +15,9 @@
  *                     working day per point)
  */
 import { resolveEstimateMinutes } from './estimate'
+import { isUsableDate } from './solver'
 import type {
-  BoardSizing,
+  SizingModel,
   ConstraintType,
   ScheduleDependency,
   ScheduleMode,
@@ -76,7 +77,7 @@ export interface DependencyRow {
 }
 
 export interface AdapterContext {
-  sizing: BoardSizing
+  sizing: SizingModel
   /** columnId → column orderIndex. */
   columnOrder: ReadonlyMap<string, number>
   /** taskId → who is on the card, any order; the earliest assignment is the owner. */
@@ -90,16 +91,12 @@ export interface AdapterContext {
 
 const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 }
 
-function isUsableDate(value: Date | null | undefined): value is Date {
-  return value instanceof Date && Number.isFinite(value.getTime())
-}
-
 function positiveOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
 }
 
 /** Reads the board's sizing block off `projects.settings`; mirrors `parseSizing` for the unit. */
-export function sizingFromSettings(settings: Record<string, unknown> | null | undefined): BoardSizing {
+export function sizingFromSettings(settings: Record<string, unknown> | null | undefined): SizingModel {
   const raw = settings?.sizing as Record<string, unknown> | undefined
   const unit = raw && typeof raw === 'object' && raw.unit === 'points' ? 'points' : 'days'
   return {
@@ -126,11 +123,20 @@ export function priorityRank(priority: string): number {
   return PRIORITY_RANK[priority] ?? PRIORITY_RANK.medium
 }
 
+/** Every resource id a context knows, built once per context so a board full of stale pins stays O(pins). */
+const knownResourceIds = new WeakMap<AdapterContext, ReadonlySet<string>>()
+
 function isKnownResource(ctx: AdapterContext, resourceId: string): boolean {
-  if (ctx.hoursPerDayByResourceId.has(resourceId)) return true
-  for (const id of ctx.resourceIdByUserId.values()) if (id === resourceId) return true
-  for (const id of ctx.resourceIdByVirtualMemberId.values()) if (id === resourceId) return true
-  return false
+  let ids = knownResourceIds.get(ctx)
+  if (!ids) {
+    ids = new Set([
+      ...ctx.hoursPerDayByResourceId.keys(),
+      ...ctx.resourceIdByUserId.values(),
+      ...ctx.resourceIdByVirtualMemberId.values(),
+    ])
+    knownResourceIds.set(ctx, ids)
+  }
+  return ids.has(resourceId)
 }
 
 /**

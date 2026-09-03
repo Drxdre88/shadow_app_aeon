@@ -10,9 +10,9 @@ export type MovedTask = { id: string; name: string; orderIndex: number }
  * Moves every live task in `fromColumnId` to the END of `toColumnId`,
  * preserving their relative order. The target column is advisory-locked for
  * the whole transaction before anything is read, so a concurrent bulk move
- * or create into the same column waits and then sees these indexes — a bare
- * read of the max inside the transaction would not stop two writers from
- * handing out the same slots.
+ * into the same column waits and then sees these indexes — a bare read of
+ * the max inside the transaction would not stop two bulk movers from handing
+ * out the same slots. Single-card creates do not take the lock.
  */
 export async function moveAllTasksToColumn(
   projectId: string,

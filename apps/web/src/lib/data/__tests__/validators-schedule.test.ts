@@ -3,6 +3,8 @@ import {
   calendarExceptionSchema,
   createResourceSchema,
   createWorkCalendarSchema,
+  timelineSnapshotSchema,
+  TIMELINE_SNAPSHOT_MAX,
   updateResourceSchema,
   updateWorkCalendarSchema,
 } from '../validators'
@@ -66,5 +68,35 @@ describe('resource schema', () => {
     expect(createResourceSchema.safeParse({ kind: 'agent', focusFactor: 0 }).success).toBe(false)
     expect(createResourceSchema.safeParse({ kind: 'agent', focusFactor: 1.5 }).success).toBe(false)
     expect(updateResourceSchema.safeParse({ concurrency: 2, focusFactor: 0.5 }).success).toBe(true)
+  })
+})
+
+describe('timeline snapshot schema', () => {
+  const entry = (over: Record<string, unknown> = {}) => ({ id: UUID_A, startDate: null, endDate: null, onTimeline: true, ...over })
+
+  it('normalises every parseable date to UTC ISO text, keeping an offset and a bare year', () => {
+    const [parsed] = timelineSnapshotSchema.parse([entry({ startDate: '2026-09-01T10:00:00+05:00', endDate: '2026' })])
+    expect(parsed.startDate).toBe('2026-09-01T05:00:00.000Z')
+    expect(parsed.endDate).toBe('2026-01-01T00:00:00.000Z')
+    expect(parsed.onTimeline).toBe(true)
+  })
+
+  it('keeps null as null and passes an already-normalised instant through unchanged', () => {
+    const [parsed] = timelineSnapshotSchema.parse([entry({ endDate: '2026-09-03T00:00:00.000Z' })])
+    expect(parsed.startDate).toBeNull()
+    expect(parsed.endDate).toBe('2026-09-03T00:00:00.000Z')
+  })
+
+  it.each(['not a date', '2026-13-45', '', 'Tomorrow'])('rejects the unparseable date %j instead of letting it reach a ::timestamp cast', (bad) => {
+    expect(timelineSnapshotSchema.safeParse([entry({ startDate: bad })]).success).toBe(false)
+    expect(timelineSnapshotSchema.safeParse([entry({ endDate: bad })]).success).toBe(false)
+  })
+
+  it('rejects a non-uuid id, a non-boolean flag and a batch past the cap', () => {
+    expect(timelineSnapshotSchema.safeParse([entry({ id: 'task-1' })]).success).toBe(false)
+    expect(timelineSnapshotSchema.safeParse([entry({ onTimeline: 'yes' })]).success).toBe(false)
+    const tooMany = Array.from({ length: TIMELINE_SNAPSHOT_MAX + 1 }, () => entry())
+    expect(timelineSnapshotSchema.safeParse(tooMany).success).toBe(false)
+    expect(timelineSnapshotSchema.safeParse(tooMany.slice(1)).success).toBe(true)
   })
 })

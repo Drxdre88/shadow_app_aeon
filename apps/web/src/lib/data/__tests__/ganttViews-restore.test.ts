@@ -7,12 +7,13 @@ import { SQL } from 'drizzle-orm'
 // dialect, every value a bind parameter, dates as ISO text with a ::timestamp
 // cast, chunked at RESTORE_CHUNK, one touchProject for the whole batch.
 
-const state = vi.hoisted(() => ({ executed: [] as unknown[], transactions: 0 }))
+const state = vi.hoisted(() => ({ executed: [] as unknown[], transactions: 0, rowCounts: [] as number[] }))
 
 vi.mock('@/lib/db', () => {
   const tx = {
     execute: vi.fn(async (q: unknown) => {
       state.executed.push(q)
+      return { rowCount: state.rowCounts.shift() ?? 0 }
     }),
   }
   return {
@@ -45,6 +46,7 @@ function rendered(index: number) {
 beforeEach(() => {
   vi.clearAllMocks()
   state.executed.length = 0
+  state.rowCounts.length = 0
   state.transactions = 0
 })
 
@@ -54,6 +56,7 @@ describe('restoreTimelineSnapshot', () => {
       { id: B, startDate: '2026-09-01T00:00:00.000Z', endDate: '2026-09-03T00:00:00.000Z', onTimeline: true },
       { id: A, startDate: null, endDate: null, onTimeline: false },
     ]
+    state.rowCounts.push(2)
     await expect(restoreTimelineSnapshot(PROJECT_ID, entries)).resolves.toBe(2)
     expect(state.transactions).toBe(1)
     expect(state.executed).toHaveLength(1)
@@ -83,10 +86,21 @@ describe('restoreTimelineSnapshot', () => {
       endDate: null,
       onTimeline: true,
     }))
+    state.rowCounts.push(RESTORE_CHUNK, 1)
     await expect(restoreTimelineSnapshot(PROJECT_ID, entries)).resolves.toBe(RESTORE_CHUNK + 1)
     expect(state.executed).toHaveLength(2)
     expect(rendered(0).params).toHaveLength(RESTORE_CHUNK * 4 + 2)
     expect(rendered(1).params).toHaveLength(1 * 4 + 2)
+    expect(touchProject).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports the rows the database wrote, not the entries sent, when some cards left the project', async () => {
+    const entries: TimelineResetSnapshotEntry[] = [
+      { id: A, startDate: null, endDate: null, onTimeline: true },
+      { id: B, startDate: null, endDate: null, onTimeline: true },
+    ]
+    state.rowCounts.push(1)
+    await expect(restoreTimelineSnapshot(PROJECT_ID, entries)).resolves.toBe(1)
     expect(touchProject).toHaveBeenCalledTimes(1)
   })
 

@@ -216,7 +216,7 @@ export interface SolveWindow {
   end: Date
 }
 
-export interface BoardSizing {
+export interface SizingModel {
   unit: 'days' | 'points'
   hoursPerPoint: number
 }
@@ -224,7 +224,7 @@ export interface BoardSizing {
 /** Lane C owns the implementation; the solver calls it, never `size` directly (CHR-13). */
 export type EstimateResolver = (
   task: Pick<ScheduleTask, 'estimateMinutes' | 'size'>,
-  sizing: BoardSizing,
+  sizing: SizingModel,
   calendar: Pick<WorkCalendar, 'hoursPerDay'>,
 ) => number | null
 

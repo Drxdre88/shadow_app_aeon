@@ -78,7 +78,7 @@ function clamp(value: number, min: number, max: number): number {
   return value < min ? min : value > max ? max : value
 }
 
-function isUsableDate(value: Date | null | undefined): value is Date {
+export function isUsableDate(value: Date | null | undefined): value is Date {
   return value instanceof Date && Number.isFinite(value.getTime())
 }
 

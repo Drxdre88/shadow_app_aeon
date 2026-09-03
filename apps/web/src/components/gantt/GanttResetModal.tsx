@@ -60,7 +60,8 @@ function GanttResetDialog({ isLoading = false, onConfirm, onClose }: Omit<GanttR
   const tasks = useBoardStore((s) => s.tasks)
   const { affected, dated } = countTimelineResetImpact(tasks)
   // False while animating out: a dialog that is already closing must not
-  // still confirm on Enter or trap Tab.
+  // still confirm on Enter, trap Tab, or swallow the clicks meant for the
+  // board underneath its fading overlay.
   const isPresent = useIsPresent()
   const armed = isResetConfirmation(typed) && !isLoading && isPresent
 
@@ -109,6 +110,7 @@ function GanttResetDialog({ isLoading = false, onConfirm, onClose }: Omit<GanttR
       exit={{ opacity: 0 }}
       transition={{ duration: reduceMotion ? 0 : 0.2 }}
       className="fixed inset-0 z-[200] flex items-center justify-center"
+      style={isPresent ? undefined : { pointerEvents: 'none' }}
       onClick={cancel}
     >
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />

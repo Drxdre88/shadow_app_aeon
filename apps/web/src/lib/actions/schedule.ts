@@ -1,7 +1,6 @@
 'use server'
 
-import { requireAuth } from './helpers'
-import { verifyProjectAccess } from '@/lib/data/projects'
+import { requireMemberAccess } from './helpers'
 import {
   ensureDefaultCalendar,
   ensureResourcesForPeople,
@@ -81,10 +80,8 @@ async function readOnlyResources(projectId: string, people: SchedulePerson[]): P
  * a viewer gets the same plan solved in memory over unsaved stand-ins.
  */
 export async function solveProject(projectId: string): Promise<ProjectSchedule> {
-  const userId = await requireAuth()
-  const access = await verifyProjectAccess(projectId, userId)
-  if (!access) throw new Error('Project not found or unauthorized')
-  const canWrite = access.role !== 'viewer'
+  const { role } = await requireMemberAccess(projectId)
+  const canWrite = role !== 'viewer'
   const now = new Date()
 
   const defaultCalendar = canWrite
