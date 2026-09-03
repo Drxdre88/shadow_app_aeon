@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   trophyDate,
   bucketByPeriod,
@@ -33,6 +33,26 @@ describe('trophyDate', () => {
   it('falls back to archivedAt when completion is missing', () => {
     const d = trophyDate({ completedAt: null, archivedAt: '2026-08-20T00:00:00' })
     expect(d.getDate()).toBe(20)
+  })
+
+  it('falls back to archivedAt when completedAt is malformed, with a dev warning', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const d = trophyDate({ completedAt: 'not-a-date', archivedAt: '2026-08-20T00:00:00' })
+    expect(d.getDate()).toBe(20)
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+  })
+
+  it('a row with no parsable date at all is skipped explicitly by every aggregator', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const bad: TrophyDatum = { completedAt: 'garbage', archivedAt: 'also garbage' }
+    const good = t('2026-08-25T09:00:00')
+
+    expect(bucketByPeriod([bad, good], 'month', 1, NOW).map((b) => b.count)).toEqual([1])
+    expect(computeStreak([bad, good], 'day', NOW)).toEqual({ current: 1, best: 1 })
+    expect(monthComparison([bad, good], NOW)).toEqual({ thisMonth: 1, lastMonth: 0, deltaPct: null })
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
   })
 })
 

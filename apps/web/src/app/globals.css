@@ -304,3 +304,9 @@ html[data-reduce-motion='true'] *::after {
 [data-zen-cards] > :first-child::-webkit-scrollbar {
   display: none;
 }
+
+/* Hold-to-move: while a card is lifted every other card is a drop target.
+   Driven from the columns wrapper so neutral cards never re-render for it. */
+[data-moving-mode] [data-task-id]:not([data-moving]) [data-card-surface] {
+  cursor: copy;
+}

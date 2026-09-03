@@ -4,7 +4,7 @@ import { useState, useRef, useMemo, memo } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { motion } from 'framer-motion'
-import { Calendar, MoreHorizontal, Check, X, Clock, Trash2, Bot, Zap } from 'lucide-react'
+import { Calendar, MoreHorizontal, Check, X, Clock, Trash2, Bot, Zap, Merge } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { hexToRgba, resolveAccentHex } from '@/lib/utils/colors'
 import { getInitials, getInitialsFromEmail } from '@/lib/utils/initials'
@@ -13,8 +13,9 @@ import { resolvePriority } from '@/lib/utils/priorities'
 import { labelHex, readableTextColor } from './labelTile'
 import { progressBarStyle } from './progressColor'
 import { GlowCard } from '@/components/ui/GlowCard'
-import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees } from '@/lib/store/boardStore'
+import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees, useFuseTargetId } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
+import { useCardHoldGesture, useHoldToMoveActions, halfFromPoint } from './useHoldToMove'
 import { DependencyIndicator } from './DependencyIndicator'
 import { TaskContextMenu } from './TaskContextMenu'
 import { TaskSizeBadge } from './TaskSizeBadge'
@@ -72,6 +73,18 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const updateTask = useBoardStore((s) => s.updateTask)
   const crossedTaskIds = useBoardStore((s) => s.crossedTaskIds)
   const { glowIntensity: globalGlow, glowSource, priorities, smoothUiRenders } = useThemeStore()
+  // Hold-to-move: only the lifted card subscribes to the id, so arming or
+  // cancelling a hold re-renders one card, not the board. Neutral cards get
+  // their "drop here" cursor from CSS via the columns wrapper's
+  // data-moving-mode, and a click reads the id from the store at click time.
+  const isMoving = useBoardStore((s) => s.movingTaskId === task.id)
+  const holdToMove = useHoldToMoveActions()
+  // Firefox delivers contextmenu as a MouseEvent with no pointerType, so the
+  // last pointerdown's type is what tells a touch long-press from a right click.
+  const lastPointerTypeRef = useRef<string | undefined>(undefined)
+  // Card fusion: the dragged card has dwelt on this one long enough to fuse.
+  const isFuseTarget = useFuseTargetId() === task.id
+  const { holdHandlers, consumeHoldClick } = useCardHoldGesture(task.id)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [editName, setEditName] = useState(task.name)
@@ -142,6 +155,20 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
 
   const handleCardClick = (e: React.MouseEvent) => {
     if (isEditing) return
+    // The release of a completed hold is not an open.
+    if (consumeHoldClick()) return
+    // Move mode: this tap PLACES (or cancels on the lifted card itself) and
+    // never opens. Hover, shortcuts and the rest of the card stay live.
+    const movingTaskId = useBoardStore.getState().movingTaskId
+    if (movingTaskId && holdToMove) {
+      if (isMoving) { holdToMove.cancel(); return }
+      const columnId = useBoardStore.getState().tasks.find((t) => t.id === task.id)?.columnId
+      const rect = cardElRef.current?.getBoundingClientRect()
+      if (columnId && rect) {
+        holdToMove.place({ columnId, kind: 'card', taskId: task.id, half: halfFromPoint(e.clientY, rect) })
+      }
+      return
+    }
     // Instant mode: open on first click, skip the double-click disambiguation wait.
     if (!smoothUiRenders) { onEdit?.(task.id); return }
     if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null; return }
@@ -174,12 +201,18 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
+    // A touch long-press means "lift the card" (TouchSensor / hold-to-move),
+    // never the context menu: Android fires contextmenu for it, iOS doesn't.
+    const pointerType = (e.nativeEvent as Partial<PointerEvent>).pointerType ?? lastPointerTypeRef.current
+    if (pointerType === 'touch') return
     setContextMenu({ x: e.clientX, y: e.clientY })
   }
 
   return (
-    <div ref={(el) => { setNodeRef(el); (cardElRef as React.MutableRefObject<HTMLDivElement | null>).current = el }} style={style} className="relative" data-task-id={task.id}>
+    <div ref={(el) => { setNodeRef(el); (cardElRef as React.MutableRefObject<HTMLDivElement | null>).current = el }} style={style} className="relative" data-task-id={task.id} data-moving={isMoving ? '' : undefined}>
       <CardPeekPreview taskId={task.id} triggerRef={cardElRef} />
+      {isMoving && <MovingRing color={resolvedGlowColor} pulse={smoothUiRenders} />}
+      {isFuseTarget && <FuseBadge color={resolvedGlowColor} pulse={smoothUiRenders} />}
       {showDropIndicator && globalGlow > 0 && (
         <motion.div
           initial={{ opacity: 0, scaleX: 0 }}
@@ -195,6 +228,9 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
       <motion.div
         {...attributes}
         {...listeners}
+        {...holdHandlers}
+        data-card-surface
+        onPointerDownCapture={(e) => { lastPointerTypeRef.current = e.pointerType }}
         onClick={handleCardClick}
         onContextMenu={handleContextMenu}
         // touch-action: manipulation (NOT none): a finger landing on a card
@@ -518,6 +554,66 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
     </div>
   )
 })
+
+// The lifted card's halo. Pulses with framer-motion when Smooth UI Renders is
+// on; when it's off every animation is killed (data-reduce-motion), so the
+// ring is rendered as a plain static highlight instead of a frozen keyframe.
+function MovingRing({ color, pulse }: { color: string; pulse: boolean }) {
+  const hex = resolveAccentHex(color)
+  const ring = `0 0 0 2px ${hexToRgba(hex, 0.9)}, 0 0 18px 4px ${hexToRgba(hex, 0.45)}`
+  const ringWide = `0 0 0 3px ${hexToRgba(hex, 0.6)}, 0 0 34px 10px ${hexToRgba(hex, 0.3)}`
+  if (!pulse) {
+    return <div aria-hidden className="absolute -inset-0.5 rounded-xl pointer-events-none z-10" style={{ boxShadow: ring }} />
+  }
+  return (
+    <motion.div
+      aria-hidden
+      className="absolute -inset-0.5 rounded-xl pointer-events-none z-10"
+      initial={{ boxShadow: ring, opacity: 0.6 }}
+      animate={{ boxShadow: [ring, ringWide, ring], opacity: [0.7, 1, 0.7] }}
+      transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+    />
+  )
+}
+
+// The fusion cue on the card about to absorb the dragged one. Lives inside the
+// card's wrapper, so under pinch-zoom it scales with the card. Pulses only
+// when Smooth UI Renders is on — off, every animation is killed, so a static
+// badge is drawn instead of a frozen keyframe.
+function FuseBadge({ color, pulse }: { color: string; pulse: boolean }) {
+  const hex = resolveAccentHex(color)
+  const ring = `0 0 0 2px ${hexToRgba(hex, 0.9)}, 0 0 16px 4px ${hexToRgba(hex, 0.45)}`
+  const ringWide = `0 0 0 3px ${hexToRgba(hex, 0.7)}, 0 0 30px 10px ${hexToRgba(hex, 0.35)}`
+  const icon = (
+    <span
+      className="flex items-center justify-center w-11 h-11 rounded-full text-white border border-white/40 bg-slate-900/85 backdrop-blur"
+      style={{ boxShadow: ring }}
+    >
+      <Merge className="w-5 h-5" />
+    </span>
+  )
+  const wrapper = 'absolute inset-0 flex items-center justify-center pointer-events-none z-20'
+  if (!pulse) {
+    return <div aria-hidden data-fuse-badge className={wrapper}>{icon}</div>
+  }
+  return (
+    <div aria-hidden data-fuse-badge className={wrapper}>
+      <motion.div
+        initial={{ scale: 0.6, opacity: 0 }}
+        animate={{ scale: [1, 1.12, 1], opacity: 1, filter: ['drop-shadow(0 0 0px transparent)', `drop-shadow(0 0 10px ${hexToRgba(hex, 0.6)})`, 'drop-shadow(0 0 0px transparent)'] }}
+        transition={{ scale: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' }, filter: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' }, opacity: { duration: 0.15 } }}
+      >
+        {icon}
+      </motion.div>
+      <motion.div
+        className="absolute inset-0 rounded-xl"
+        initial={{ boxShadow: ring, opacity: 0.5 }}
+        animate={{ boxShadow: [ring, ringWide, ring], opacity: [0.5, 0.9, 0.5] }}
+        transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+      />
+    </div>
+  )
+}
 
 function AssigneeDot({ name, email, initials: stored, image, kind, color, preferInitials }: { name: string | null; email?: string | null; initials?: string | null; image: string | null; kind?: 'virtual'; color?: string | null; preferInitials?: boolean }) {
   // A profile picture wins by default. When the board prefers initials it must

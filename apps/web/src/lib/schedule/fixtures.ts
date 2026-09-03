@@ -112,6 +112,8 @@ export function task(id: string, over: Partial<ScheduleTask> = {}): ScheduleTask
     scheduleMode: 'auto',
     constraintType: 'asap',
     constraintDate: null,
+    plannedStart: null,
+    plannedEnd: null,
     estimateMinutes: 8 * 60,
     size: null,
     progress: null,

@@ -3,18 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  Trophy,
-  SlidersHorizontal,
-  History,
-  Clock,
-  Tag,
-  Flag,
-  LayoutGrid,
-  Table2,
-  X,
-  ChevronDown,
-} from 'lucide-react'
+import { Trophy, X } from 'lucide-react'
 import { useThemeStore } from '@/stores/themeStore'
 import { getActivityFeed } from '@/lib/actions/activity'
 import { getVaultTasks, getVaultStatsSA, restoreVaultTask } from '@/lib/actions/vault'
@@ -25,6 +14,8 @@ import { TrophyInsights } from './TrophyInsights'
 import { TrophyTable } from './TrophyTable'
 import { TrophyTimeline } from './TrophyTimeline'
 import { TrophySection } from './TrophySection'
+import { TrophyControls, type DisplayMode, type SortMode } from './TrophyControls'
+import { useChartMotion } from './trophy-chart-kit'
 import {
   groupByTimeline,
   groupByPriority,
@@ -35,6 +26,7 @@ import {
 import {
   comparePriority,
   computeStreak,
+  countSince,
   monthComparison,
   priorityRankMap,
   sumSize,
@@ -44,30 +36,40 @@ import {
 import { GOLD, goldText, hexAlpha } from './trophy-theme'
 import { resolvePriority } from '@/lib/utils/priorities'
 import { TrophyDetailModal } from './TrophyDetailModal'
-import { cn } from '@/lib/utils/cn'
 import type { ActivityEvent, TaskVault } from '@/lib/db/schema'
-
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 interface TrophyRoomProps {
   projectId: string
 }
-
-type DisplayMode = 'gallery' | 'table'
-type SortMode = 'newest' | 'oldest' | 'priority' | 'name'
 // Priority filter values are the user's configured priority ids (plus 'all') —
 // custom levels are filterable just like the factory four.
 
 const TIMELINE_PAGE_SIZE = 30
 
-const GROUP_MODES: { mode: ViewMode; icon: typeof Clock; label: string }[] = [
-  { mode: 'timeline', icon: Clock, label: 'Timeline' },
-  { mode: 'priority', icon: Flag, label: 'Priority' },
-  { mode: 'label', icon: Tag, label: 'Label' },
-]
+const lastVisitKey = (projectId: string) => `aeon:trophy:last-visit:${projectId}`
+
+function readLastVisit(projectId: string): Date | null {
+  try {
+    const raw = localStorage.getItem(lastVisitKey(projectId))
+    if (!raw) return null
+    const d = new Date(raw)
+    return Number.isNaN(d.getTime()) ? null : d
+  } catch {
+    return null
+  }
+}
+
+function writeLastVisit(projectId: string) {
+  try {
+    localStorage.setItem(lastVisitKey(projectId), new Date().toISOString())
+  } catch {
+    /* storage unavailable — the chip simply stays hidden */
+  }
+}
 
 export function TrophyRoom({ projectId }: TrophyRoomProps) {
   const { colors, glowIntensity, priorities } = useThemeStore()
+  const animate = useChartMotion()
   const mult = glowIntensity / 75
   const gold = goldText(colors.isDark)
 
@@ -75,6 +77,7 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('timeline')
   const [dateGranularity, setDateGranularity] = useState<DateGranularity>('month')
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [insightsOpen, setInsightsOpen] = useState(true)
   const [sortMode, setSortMode] = useState<SortMode>('newest')
   const [priorityFilter, setPriorityFilter] = useState<string>('all')
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -90,6 +93,11 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
     thisWeek: number
   } | null>(null)
   const [isLoadingVault, setIsLoadingVault] = useState(true)
+  const [sinceLastVisit, setSinceLastVisit] = useState<number | null>(null)
+  // Read once per mount, before the load effect can rewrite the key: under
+  // StrictMode's doubled effects the second run would otherwise read the
+  // timestamp the first run just wrote and count zero.
+  const [lastVisit] = useState(() => readLastVisit(projectId))
   const [selectedTrophy, setSelectedTrophy] = useState<TaskVault | null>(null)
 
   const handleRestore = useCallback(async (vaultId: string) => {
@@ -127,8 +135,10 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
     ]).then(([tasks, stats]) => {
       setVaultTasks(tasks)
       setVaultStats(stats)
+      setSinceLastVisit(lastVisit ? countSince(tasks, lastVisit) : null)
+      writeLastVisit(projectId)
     }).catch((err) => console.error('Failed to load vault:', err)).finally(() => setIsLoadingVault(false))
-  }, [projectId])
+  }, [projectId, lastVisit])
 
   const loadInitialTimeline = useCallback(async () => {
     setIsLoadingTimeline(true)
@@ -204,22 +214,9 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
     return groupByLabel(filteredAndSorted)
   }, [filteredAndSorted, viewMode, dateGranularity, priorityOrder])
 
-  const hasActiveFilters = sortMode !== 'newest' || priorityFilter !== 'all'
-
-  const segmentStyle = (active: boolean): React.CSSProperties =>
-    active
-      ? { background: hexAlpha(GOLD.base, 0.16), color: gold }
-      : { color: colors.textDim }
-
-  const pillStyle = (active: boolean): React.CSSProperties => ({
-    background: active ? hexAlpha(GOLD.base, 0.12) : colors.surface,
-    borderColor: active ? hexAlpha(GOLD.base, 0.4) : colors.border,
-    color: active ? gold : colors.textMuted,
-  })
-
   return (
     <div className="h-full overflow-y-auto">
-      <div className="flex flex-col gap-4 p-4 pb-8 max-w-[1440px] mx-auto">
+      <div className="flex flex-col gap-3 p-3 sm:p-4 pb-8 max-w-[1440px] mx-auto">
         <TrophyHero
           total={vaultStats?.total ?? 0}
           thisWeek={vaultStats?.thisWeek ?? 0}
@@ -227,146 +224,41 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
           weekStreak={weekStreak}
           months={months}
           effortBanked={effortBanked}
+          sinceLastVisit={sinceLastVisit}
         />
 
-        {!isLoadingVault && vaultTasks.length > 0 && <TrophyInsights tasks={vaultTasks} />}
+        <TrophyControls
+          displayMode={displayMode}
+          onDisplayMode={setDisplayMode}
+          viewMode={viewMode}
+          onViewMode={setViewMode}
+          dateGranularity={dateGranularity}
+          onDateGranularity={setDateGranularity}
+          sortMode={sortMode}
+          onSortMode={setSortMode}
+          priorityFilter={priorityFilter}
+          onPriorityFilter={setPriorityFilter}
+          filtersOpen={filtersOpen}
+          onToggleFilters={() => setFiltersOpen((p) => !p)}
+          insightsOpen={insightsOpen}
+          onToggleInsights={() => setInsightsOpen((p) => !p)}
+          drawerOpen={drawerOpen}
+          onToggleDrawer={() => setDrawerOpen((p) => !p)}
+          shown={filteredAndSorted.length}
+          total={vaultStats?.total ?? 0}
+        />
 
-        {/* Controls */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div
-            className="flex items-center rounded-lg p-0.5"
-            style={{ background: colors.surface, border: `1px solid ${colors.border}` }}
-          >
-            {([
-              { mode: 'gallery' as DisplayMode, icon: LayoutGrid, label: 'Gallery' },
-              { mode: 'table' as DisplayMode, icon: Table2, label: 'Table' },
-            ]).map(({ mode, icon: Icon, label }) => (
-              <button
-                key={mode}
-                onClick={() => setDisplayMode(mode)}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors duration-200"
-                style={segmentStyle(displayMode === mode)}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {displayMode === 'gallery' && (
-            <>
-              <div
-                className="flex items-center rounded-lg p-0.5"
-                style={{ background: colors.surface, border: `1px solid ${colors.border}` }}
-              >
-                {GROUP_MODES.map(({ mode, icon: Icon, label }) => (
-                  <button
-                    key={mode}
-                    onClick={() => setViewMode(mode)}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors duration-200"
-                    style={segmentStyle(viewMode === mode)}
-                  >
-                    <Icon className="w-3.5 h-3.5" />
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              {viewMode === 'timeline' && (
-                <div
-                  className="flex items-center rounded-lg p-0.5"
-                  style={{ background: colors.surface, border: `1px solid ${colors.border}` }}
-                >
-                  {(['day', 'week', 'month'] as DateGranularity[]).map((g) => (
-                    <button
-                      key={g}
-                      onClick={() => setDateGranularity(g)}
-                      className="px-2.5 py-1 rounded-md text-xs font-medium transition-colors duration-200"
-                      style={segmentStyle(dateGranularity === g)}
-                    >
-                      {cap(g)}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <button
-                onClick={() => setFiltersOpen((p) => !p)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors duration-200"
-                style={pillStyle(hasActiveFilters || filtersOpen)}
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                Filters
-                {hasActiveFilters && <div className="w-1.5 h-1.5 rounded-full" style={{ background: gold }} />}
-                <ChevronDown className={cn('w-3 h-3 transition-transform', filtersOpen && 'rotate-180')} />
-              </button>
-            </>
-          )}
-
-          <div className="flex-1" />
-
-          <button
-            onClick={() => setDrawerOpen((prev) => !prev)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors duration-200"
-            style={pillStyle(drawerOpen)}
-          >
-            <History className="w-3.5 h-3.5" />
-            Activity
-          </button>
-
-          <span className="text-[10px] tabular-nums" style={{ color: colors.textDim }}>
-            {filteredAndSorted.length}/{vaultStats?.total ?? 0}
-          </span>
-        </div>
-
-        <AnimatePresence>
-          {filtersOpen && displayMode === 'gallery' && (
+        <AnimatePresence initial={false}>
+          {insightsOpen && !isLoadingVault && vaultTasks.length > 0 && (
             <motion.div
+              key="insights"
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="overflow-hidden -mt-1"
+              transition={{ duration: animate ? 0.2 : 0, ease: 'easeInOut' }}
+              className="overflow-hidden"
             >
-              <div
-                className="flex items-center gap-3 px-3 py-2 rounded-lg border flex-wrap"
-                style={{ background: colors.surface, borderColor: colors.border }}
-              >
-                <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: colors.textDim }}>Sort</span>
-                {(['newest', 'oldest', 'priority', 'name'] as SortMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => setSortMode(mode)}
-                    className="px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors duration-200"
-                    style={segmentStyle(sortMode === mode)}
-                  >
-                    {cap(mode)}
-                  </button>
-                ))}
-
-                <div className="w-px h-4" style={{ background: colors.border }} />
-
-                <span className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: colors.textDim }}>Priority</span>
-                {['all', ...[...priorities].reverse().map((pr) => pr.id)].map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setPriorityFilter(p)}
-                    className="px-2.5 py-0.5 rounded-md text-xs font-medium transition-colors duration-200"
-                    style={
-                      priorityFilter === p
-                        ? p === 'all'
-                          ? segmentStyle(true)
-                          : {
-                              background: hexAlpha(resolvePriority(priorities, p).color, 0.14),
-                              color: resolvePriority(priorities, p).color,
-                            }
-                        : { color: colors.textDim }
-                    }
-                  >
-                    {p === 'all' ? 'All' : resolvePriority(priorities, p).name}
-                  </button>
-                ))}
-              </div>
+              <TrophyInsights tasks={vaultTasks} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -379,7 +271,7 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
             ))}
           </div>
         ) : filteredAndSorted.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-24" style={{ color: colors.textDim }}>
+          <div className="flex flex-col items-center justify-center gap-3 py-16" style={{ color: colors.textDim }}>
             <div
               className="w-16 h-16 rounded-2xl flex items-center justify-center"
               style={{
@@ -396,7 +288,11 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
         ) : displayMode === 'table' ? (
           <TrophyTable tasks={filteredAndSorted} onRestore={handleRestore} onSelect={setSelectedTrophy} />
         ) : viewMode === 'priority' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          // Columns are `items-start` and each stack is its own grid: TrophyCard
+          // is `h-full`, and a percentage height only resolves sanely against a
+          // grid row of its own. Stacked in a block inside a stretched cell, every
+          // card resolved to the whole stack's height and the layout ran away.
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
             {sections.map((section) => {
               // The "no priority recorded" bucket is not a real level — it keeps
               // its own neutral heading instead of being resolved to a colour.
@@ -404,7 +300,7 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
               const resolved = isNone ? null : resolvePriority(priorities, section.key)
               const headingColor = resolved ? resolved.color : colors.textDim
               return (
-                <div key={section.key} className="flex flex-col min-h-0">
+                <section key={section.key} aria-label={resolved ? resolved.name : section.label} className="min-w-0">
                   <div
                     className="flex items-center gap-2 px-2 py-1.5 mb-2 border-b"
                     style={{ borderColor: hexAlpha(headingColor, 0.35) }}
@@ -414,12 +310,12 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
                     </span>
                     <span className="text-xs tabular-nums" style={{ color: colors.textDim }}>{section.tasks.length}</span>
                   </div>
-                  <div className="space-y-2 px-1">
+                  <div className="grid grid-cols-1 gap-2 px-1 content-start">
                     {section.tasks.map((vt) => (
                       <TrophyCard key={vt.id} vaultTask={vt} onRestore={handleRestore} onClick={setSelectedTrophy} />
                     ))}
                   </div>
-                </div>
+                </section>
               )
             })}
           </div>
@@ -463,8 +359,10 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
               <div className="flex items-center justify-between p-4" style={{ borderBottom: `1px solid ${colors.border}` }}>
                 <span className="text-sm font-semibold" style={{ color: colors.text }}>Activity Timeline</span>
                 <button
+                  type="button"
+                  aria-label="Close activity"
                   onClick={() => setDrawerOpen(false)}
-                  className="p-1 rounded-lg transition-colors hover:bg-white/[0.06]"
+                  className="p-1 rounded-lg transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/60"
                   style={{ color: colors.textMuted }}
                 >
                   <X className="w-4 h-4" />

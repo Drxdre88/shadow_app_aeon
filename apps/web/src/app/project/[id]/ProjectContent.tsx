@@ -17,6 +17,7 @@ import { activeFilterCount, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { cn } from '@/lib/utils/cn'
 import { GanttViewSelector } from '@/components/gantt/GanttViewSelector'
+import { GanttResetModal } from '@/components/gantt/GanttResetModal'
 import { TaskEditModal } from '@/components/board/TaskEditModal'
 import { VaultDaysModal } from '@/components/board/VaultDaysModal'
 import { BatchVaultModal } from '@/components/board/BatchVaultModal'
@@ -207,12 +208,18 @@ export default function ProjectContent({ project, user, initialBoardData, initia
                   <span className="hidden sm:inline">Reflow</span>
                 </button>
                 <button
-                  onClick={gantt.handleGanttReset}
+                  onClick={gantt.openGanttReset}
                   className="flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium text-red-400 hover:bg-red-500/10 border border-red-500/20 hover:border-red-500/30 transition-all"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Reset</span>
                 </button>
+                <GanttResetModal
+                  isOpen={gantt.ganttResetOpen}
+                  isLoading={gantt.isGanttResetting}
+                  onConfirm={gantt.handleGanttReset}
+                  onClose={gantt.closeGanttReset}
+                />
               </>
             )}
             <button

@@ -78,7 +78,7 @@ function clamp(value: number, min: number, max: number): number {
   return value < min ? min : value > max ? max : value
 }
 
-function isUsableDate(value: Date | null | undefined): value is Date {
+export function isUsableDate(value: Date | null | undefined): value is Date {
   return value instanceof Date && Number.isFinite(value.getTime())
 }
 
@@ -209,14 +209,26 @@ function immovableSpan(task: ScheduleTask, shape: TaskShape, now: Date): { start
     const actualEnd = isUsableDate(task.completedAt) ? task.completedAt : actualStart
     return { start: actualStart, end: later(actualStart, actualEnd) }
   }
+  /*
+   * A manual pin sits where the human put it: the actual start if work began,
+   * else the typed start, else a constraint date, and only then `now`. The end
+   * likewise honours the typed end before falling back to the estimate — a pin is
+   * a span the user drew, not a duration the solver derives.
+   */
   const pinned = isUsableDate(task.startedAt)
     ? task.startedAt
-    : isUsableDate(task.constraintDate)
-      ? task.constraintDate
-      : now
+    : isUsableDate(task.plannedStart)
+      ? task.plannedStart
+      : isUsableDate(task.constraintDate)
+        ? task.constraintDate
+        : now
+  const typedEnd =
+    isUsableDate(task.plannedEnd) && task.plannedEnd.getTime() > pinned.getTime()
+      ? task.plannedEnd
+      : null
   const pinnedEnd = isUsableDate(task.completedAt)
     ? task.completedAt
-    : shape.index.addDuration(pinned, shape.durationMin)
+    : typedEnd ?? shape.index.addDuration(pinned, shape.durationMin)
   return { start: pinned, end: later(pinned, isUsableDate(pinnedEnd) ? pinnedEnd : pinned) }
 }
 
@@ -524,6 +536,7 @@ export function solve(input: SolveInput, buildIndex: BuildIndex): SolveResult {
       taskId: task.id,
       computedStart: new Date(info.start.getTime()),
       computedEnd: new Date(info.end.getTime()),
+      actualStart: isUsableDate(task.startedAt) ? new Date(task.startedAt.getTime()) : null,
       totalFloatMin: float,
       isCritical: float === 0,
       ownerResourceId: info.ownerResourceId,

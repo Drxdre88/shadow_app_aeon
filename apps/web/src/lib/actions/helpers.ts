@@ -22,15 +22,27 @@ export async function safeAuth(): Promise<{ ok: true; userId: string } | { ok: f
   }
 }
 
+type ProjectRole = NonNullable<Awaited<ReturnType<typeof verifyProjectAccess>>>['role']
+
+/**
+ * The one access check every project guard is built on: authenticates, proves
+ * the caller can see the project, and hands back the role for guards that
+ * branch on it (a viewer solving in memory, an editor persisting).
+ */
+export async function requireMemberAccess(projectId: string): Promise<{ userId: string; role: ProjectRole }> {
+  const userId = await requireAuth()
+  const access = await verifyProjectAccess(projectId, userId)
+  if (!access) throw new Error('Project not found or unauthorized')
+  return { userId, role: access.role }
+}
+
 /**
  * NOTE: despite the name this only proves ACCESS, not ownership — it is the
  * historical alias of requireMember and several callers depend on that. For a
  * real owner-only gate use requireOwner below.
  */
 export async function requireOwnership(projectId: string) {
-  const userId = await requireAuth()
-  const access = await verifyProjectAccess(projectId, userId)
-  if (!access) throw new Error('Project not found or unauthorized')
+  const { userId } = await requireMemberAccess(projectId)
   return userId
 }
 
@@ -40,25 +52,19 @@ export async function requireOwnership(projectId: string) {
  * editing content — e.g. whether dropping a card may start an agent.
  */
 export async function requireOwner(projectId: string) {
-  const userId = await requireAuth()
-  const access = await verifyProjectAccess(projectId, userId)
-  if (!access) throw new Error('Project not found or unauthorized')
-  if (access.role !== 'owner') throw new Error('Only the project owner can change this')
+  const { userId, role } = await requireMemberAccess(projectId)
+  if (role !== 'owner') throw new Error('Only the project owner can change this')
   return userId
 }
 
 export async function requireMember(projectId: string) {
-  const userId = await requireAuth()
-  const access = await verifyProjectAccess(projectId, userId)
-  if (!access) throw new Error('Project not found or unauthorized')
+  const { userId } = await requireMemberAccess(projectId)
   return userId
 }
 
 export async function requireEditor(projectId: string) {
-  const userId = await requireAuth()
-  const access = await verifyProjectAccess(projectId, userId)
-  if (!access) throw new Error('Project not found or unauthorized')
-  if (access.role === 'viewer') throw new Error('Viewers cannot modify this project')
+  const { userId, role } = await requireMemberAccess(projectId)
+  if (role === 'viewer') throw new Error('Viewers cannot modify this project')
   return userId
 }
 

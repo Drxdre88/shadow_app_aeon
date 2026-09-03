@@ -7,10 +7,10 @@ import { describe, expect, it } from 'vitest'
 import fc from 'fast-check'
 import { resolveEstimateMinutes } from '../estimate'
 import { LONDON_MON_FRI } from '../fixtures'
-import type { BoardSizing } from '../types'
+import type { SizingModel } from '../types'
 
-const DAYS_BOARD: BoardSizing = { unit: 'days', hoursPerPoint: 6 }
-const POINTS_BOARD: BoardSizing = { unit: 'points', hoursPerPoint: 6 }
+const DAYS_BOARD: SizingModel = { unit: 'days', hoursPerPoint: 6 }
+const POINTS_BOARD: SizingModel = { unit: 'points', hoursPerPoint: 6 }
 const CALENDAR = { hoursPerDay: LONDON_MON_FRI.hoursPerDay }
 
 const sized = (size: number | null, estimateMinutes: number | null = null) => ({

@@ -83,3 +83,71 @@ export function layoutCompensation(
     marginBottom: Math.min(0, -(1 - s) * baseHeight) || 0,
   }
 }
+
+// ---------------------------------------------------------------------------
+// Drag-and-drop under a scaled board.
+//
+// dnd-kit has no notion of a scaled ANCESTOR: it measures every rect with
+// getBoundingClientRect (viewport px, already scaled) but treats an element's
+// own `transform: translate()` as unscaled px when it strips it back out, and
+// the sortable strategies hand back displacements computed from those scaled
+// rects that the browser then scales AGAIN inside the wrapper. Both mistakes
+// are corrected with the pure helpers below (wired in boardZoom.ts).
+// ---------------------------------------------------------------------------
+
+export interface RectLike {
+  top: number
+  left: number
+  width: number
+  height: number
+}
+
+/**
+ * The translate part of a computed `transform` (`matrix(...)` /
+ * `matrix3d(...)` as browsers serialize it), in the element's own layout px.
+ * `none` / anything else → null.
+ */
+export function parseOwnTranslate(transform: string | null | undefined): { x: number; y: number } | null {
+  if (!transform) return null
+  if (transform.startsWith('matrix3d(')) {
+    const m = transform.slice(9, -1).split(',').map((v) => parseFloat(v))
+    if (m.length < 14 || !Number.isFinite(m[12]) || !Number.isFinite(m[13])) return null
+    return { x: m[12], y: m[13] }
+  }
+  if (transform.startsWith('matrix(')) {
+    const m = transform.slice(7, -1).split(',').map((v) => parseFloat(v))
+    if (m.length < 6 || !Number.isFinite(m[4]) || !Number.isFinite(m[5])) return null
+    return { x: m[4], y: m[5] }
+  }
+  return null
+}
+
+/**
+ * A viewport rect with the element's OWN translation removed, honouring the
+ * ancestor scale: a translate of `t` layout px moves the box `t * scale`
+ * viewport px, so that is what must be subtracted. Width/height are already
+ * correct — a translation never resizes.
+ */
+export function rectWithoutOwnTranslate<R extends RectLike>(
+  rect: R,
+  translate: { x: number; y: number } | null,
+  scale: number,
+): { top: number; left: number; width: number; height: number; right: number; bottom: number } {
+  const s = scale > 0 && Number.isFinite(scale) ? scale : 1
+  const dx = translate ? translate.x * s : 0
+  const dy = translate ? translate.y * s : 0
+  const left = rect.left - dx
+  const top = rect.top - dy
+  return { top, left, width: rect.width, height: rect.height, right: left + rect.width, bottom: top + rect.height }
+}
+
+/**
+ * Converts a displacement computed in viewport px (what a sortable strategy
+ * derives from scaled rects) into the layout px the element must be
+ * translated by INSIDE the scaled wrapper to move that far on screen.
+ */
+export function scaleDisplacement<T extends { x: number; y: number }>(transform: T, scale: number): T {
+  const s = scale > 0 && Number.isFinite(scale) ? scale : 1
+  if (s === 1) return transform
+  return { ...transform, x: transform.x / s, y: transform.y / s }
+}

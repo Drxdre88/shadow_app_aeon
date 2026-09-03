@@ -47,6 +47,7 @@ vi.mock('@/lib/actions/transfer', () => ({
   copyColumnToProject: vi.fn(),
   moveColumnToProject: vi.fn(),
 }))
+vi.mock('@/lib/actions/boardBulk', () => ({ moveAllTasksToColumnAction: vi.fn() }))
 vi.mock('@/lib/actions/hangar', () => ({
   spawnSessionFromCard: vi.fn(),
   saveCardMission: vi.fn(),

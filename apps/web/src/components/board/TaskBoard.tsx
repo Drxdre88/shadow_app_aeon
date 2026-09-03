@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useState, useMemo, useEffect } from 'react'
+import { useCallback, useState, useMemo, useEffect, useRef } from 'react'
 import { DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
-import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColumn, type BoardTask, type TaskAssigneePill } from '@/lib/store/boardStore'
+import { useBoardStore, useColumns, useTasks, useSelectedTaskId, useFuseTargetId, type BoardColumn, type BoardTask, type TaskAssigneePill } from '@/lib/store/boardStore'
 import { cn } from '@/lib/utils/cn'
 import { MissionEditorModal } from './MissionEditorModal'
 import { KanbanColumn } from './KanbanColumn'
@@ -25,6 +25,11 @@ import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { useBoardDnD } from './useBoardDnD'
 import { useBoardOverlays, type BoardTaskData } from './useBoardOverlays'
 import { useBoardPinchZoom } from './useBoardPinchZoom'
+import { boardMeasuring, useBoardZoom } from './boardZoom'
+import { HoldToMoveContext, useHoldToMoveMode } from './useHoldToMove'
+import { HoldToMoveBanner } from './HoldToMoveBanner'
+import { FuseCardsModal } from './FuseCardsModal'
+import { useFuseCards } from './useFuseCards'
 import { boardCollisionDetection } from './boardCollision'
 import { useBoardKeyboardShortcuts } from './useBoardKeyboardShortcuts'
 import { useBoardHover } from './useBoardHover'
@@ -153,7 +158,13 @@ export function TaskBoard({
   const columnIds = sortedColumns.map((c) => c.id)
 
   const { boardRef, hoveredTaskId } = useBoardHover()
-  const { containerRef: pinchContainerRef, contentRef: pinchContentRef } = useBoardPinchZoom()
+  // The pinch is refused while a card is lifted (a stray second finger during
+  // a cross-column drag would rescale the canvas under the drag), and the
+  // settled zoom sizes the drag preview to the bird's-eye cards.
+  const dragActiveRef = useRef(false)
+  const isPinchLocked = useCallback(() => dragActiveRef.current, [])
+  const { containerRef: pinchContainerRef, contentRef: pinchContentRef } = useBoardPinchZoom({ isLocked: isPinchLocked })
+  const boardZoom = useBoardZoom()
 
   const { connectSourceId, cursorPos, handleConnectClick, cancelConnect } = useConnectMode({
     connectMode,
@@ -161,15 +172,27 @@ export function TaskBoard({
     onConnectModeChange,
   })
 
+  // Card fusion: a drop on a card's dwelt-on middle third asks before it
+  // merges; nothing moves until the modal confirms.
+  const fuseCards = useFuseCards(projectId)
+  const fuseTargetId = useFuseTargetId()
+
   // Auto AI launches ride on the move mutation (see useBoardHandlers): the
   // agent is spawned only once the card's move is durable.
-  const { sensors, activeItem, overId, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel } = useBoardDnD({
+  const { sensors, activeItem, overId, handleDragStart, handleDragMove, handleDragOver, handleDragEnd, handleDragCancel, placeMovingTask } = useBoardDnD({
     projectTasks,
     sortedColumns,
     onTaskMove,
     onTaskDelete,
     onColumnReorder,
+    onFuseRequest: fuseCards.requestFuse,
   })
+  useEffect(() => { dragActiveRef.current = activeItem !== null }, [activeItem])
+
+  const holdToMove = useHoldToMoveMode({ place: placeMovingTask })
+  // Neutral cards take their move-mode cursor from this attribute (globals.css)
+  // instead of each subscribing to the lifted id.
+  const isMovingMode = useBoardStore((s) => s.movingTaskId !== null)
 
   const {
     editingTask,
@@ -295,10 +318,16 @@ export function TaskBoard({
           onFiltersChange={setFilters}
         />
 
+        <HoldToMoveContext.Provider value={holdToMove}>
         <DndContext
           sensors={sensors}
           collisionDetection={boardCollisionDetection}
+          // Zoom-correct rect measuring (boardZoom.ts): dnd-kit strips a
+          // node's own translate in unscaled px, which skews displaced
+          // cards' droppable rects under the pinch scale.
+          measuring={boardMeasuring}
           onDragStart={handleDragStart}
+          onDragMove={handleDragMove}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
@@ -320,6 +349,7 @@ export function TaskBoard({
             <div
               ref={pinchContainerRef}
               data-board-columns
+              data-moving-mode={isMovingMode ? '' : undefined}
               // --board-chrome (default 120px) matches the host page's board
               // wrapper (ProjectContent / demo override); column caps
               // subtract a further 24px for the scale wrapper's pb-4 +
@@ -382,12 +412,24 @@ export function TaskBoard({
           </SortableContext>
 
           <DragOverlay dropAnimation={smoothUiRenders ? { duration: 300, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' } : { duration: 0 }}>
-            {activeItem?.type === 'task' && <DragPreview task={activeItem.data as BoardTaskData} effect={dragEffect} globalGlow={globalGlow} />}
+            {activeItem?.type === 'task' && <DragPreview task={activeItem.data as BoardTaskData} effect={dragEffect} globalGlow={globalGlow} zoom={boardZoom} hint={fuseTargetId ? 'Fuse' : null} />}
           </DragOverlay>
 
           <TrashDropZone isActive={isTaskDrag} />
         </DndContext>
+        </HoldToMoveContext.Provider>
       </div>
+
+      <HoldToMoveBanner onCancel={holdToMove.cancel} />
+
+      <FuseCardsModal
+        isOpen={fuseCards.request !== null}
+        source={fuseCards.request?.source ?? null}
+        target={fuseCards.request?.target ?? null}
+        isLoading={fuseCards.isFusing}
+        onConfirm={fuseCards.confirmFuse}
+        onClose={fuseCards.cancelFuse}
+      />
 
       <TaskEditModal
         isOpen={isModalOpen}

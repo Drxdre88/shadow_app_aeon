@@ -61,6 +61,7 @@ export async function createTask(
     startDate: data.startDate ? new Date(data.startDate) : null,
     endDate: data.endDate ? new Date(data.endDate) : null,
     metadata: data.metadata ?? {},
+    startedAt: data.status === 'in-progress' ? new Date() : null,
   }
 
   if (data.orderIndex !== undefined) {
@@ -90,6 +91,13 @@ export async function createTask(
 
   await touchProject(projectId, { type: 'task:created' })
   return task
+}
+
+// Actuals pin and never roll (CHR-50): the first move into in-progress records
+// when work began, a repeat keeps the original, and leaving in-progress clears
+// nothing. UTC ISO with an explicit cast so the naive column stores the instant.
+function startedAtIfUnset() {
+  return sql`coalesce(${boardTasks.startedAt}, ${new Date().toISOString()}::timestamp)`
 }
 
 export async function updateTask(
@@ -122,10 +130,11 @@ export async function updateTask(
   const metadataSet = data.metadata !== undefined
     ? { metadata: sql`coalesce(${boardTasks.metadata}, '{}'::jsonb) || ${JSON.stringify(data.metadata)}::jsonb` }
     : {}
+  const startedAtSet = data.status === 'in-progress' ? { startedAt: startedAtIfUnset() } : {}
 
   const [task] = await db
     .update(boardTasks)
-    .set({ ...updates, ...metadataSet })
+    .set({ ...updates, ...metadataSet, ...startedAtSet })
     .where(and(eq(boardTasks.id, taskId), eq(boardTasks.projectId, projectId)))
     .returning()
 
@@ -194,6 +203,7 @@ export async function createTasksBatch(
       endDate: t.endDate ? new Date(t.endDate) : null,
       onTimeline: false,
       orderIndex: nextIndex++,
+      startedAt: t.status === 'in-progress' ? new Date() : null,
     }))
 
     return tx.insert(boardTasks).values(values).returning()
@@ -269,9 +279,10 @@ export async function reorderTasks(
         }
       }
       if (columnId !== undefined) values.columnId = columnId
+      const startedAtSet = status === 'in-progress' ? { startedAt: startedAtIfUnset() } : {}
       await tx
         .update(boardTasks)
-        .set(values)
+        .set({ ...values, ...startedAtSet })
         .where(and(eq(boardTasks.id, id), eq(boardTasks.projectId, projectId)))
     }
   })
