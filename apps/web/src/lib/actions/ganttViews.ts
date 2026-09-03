@@ -9,6 +9,8 @@ import {
   deleteGanttView as _deleteGanttView,
   reflowGanttViewRows as _reflowGanttViewRows,
   resetGanttProjectData as _resetGanttProjectData,
+  restoreTimelineSnapshot as _restoreTimelineSnapshot,
+  type TimelineResetSnapshotEntry,
 } from '@/lib/data/ganttViews'
 import {
   generateRowsForView,
@@ -16,7 +18,13 @@ import {
   type GroupByMode,
   type TaskOrder,
 } from '@/lib/data/bridge'
-import { createGanttViewSchema, updateGanttViewSchema, taskOrderSchema, groupByModeSchema } from '@/lib/data/validators'
+import {
+  createGanttViewSchema,
+  updateGanttViewSchema,
+  taskOrderSchema,
+  groupByModeSchema,
+  timelineSnapshotSchema,
+} from '@/lib/data/validators'
 
 export async function getGanttViews(projectId: string) {
   await requireOwnership(projectId)
@@ -101,8 +109,18 @@ export async function reflowGanttView(projectId: string, viewId: string) {
   revalidatePath(`/project/${projectId}`)
 }
 
-export async function resetGanttData(projectId: string) {
+export async function resetGanttData(projectId: string): Promise<TimelineResetSnapshotEntry[]> {
   await requireEditor(projectId)
-  await _resetGanttProjectData(projectId)
+  const snapshot = await _resetGanttProjectData(projectId)
   revalidatePath(`/project/${projectId}`)
+  return snapshot
+}
+
+/** Undo for resetGanttData: one batched write for the whole snapshot. */
+export async function restoreTimelineSnapshot(projectId: string, entries: TimelineResetSnapshotEntry[]): Promise<number> {
+  const parsed = timelineSnapshotSchema.parse(entries)
+  await requireEditor(projectId)
+  const restored = await _restoreTimelineSnapshot(projectId, parsed)
+  revalidatePath(`/project/${projectId}`)
+  return restored
 }

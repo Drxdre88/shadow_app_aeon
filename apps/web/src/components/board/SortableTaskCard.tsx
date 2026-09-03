@@ -1,23 +1,28 @@
 'use client'
 
-import { useState, useRef, memo } from 'react'
+import { useState, useRef, useMemo, memo } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { motion } from 'framer-motion'
-import { Calendar, MoreHorizontal, Check, X, Clock, Trash2 } from 'lucide-react'
+import { Calendar, MoreHorizontal, Check, X, Clock, Trash2, Bot, Zap, Merge } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { hexToRgba } from '@/lib/utils/colors'
+import { hexToRgba, resolveAccentHex } from '@/lib/utils/colors'
+import { getInitials, getInitialsFromEmail } from '@/lib/utils/initials'
+import { useAvatarPrefs } from './sizing'
+import { resolvePriority } from '@/lib/utils/priorities'
 import { labelHex, readableTextColor } from './labelTile'
 import { progressBarStyle } from './progressColor'
 import { GlowCard } from '@/components/ui/GlowCard'
-import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees } from '@/lib/store/boardStore'
+import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees, useFuseTargetId } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
+import { useCardHoldGesture, useHoldToMoveActions, halfFromPoint } from './useHoldToMove'
 import { DependencyIndicator } from './DependencyIndicator'
 import { TaskContextMenu } from './TaskContextMenu'
 import { TaskSizeBadge } from './TaskSizeBadge'
 import { StaleIndicator } from './StaleIndicator'
 import { CardPeekPreview } from './CardPeekPreview'
 import { getTriState, cycleTaskCompletion, type TriState } from './triState'
+import { readHangarMission } from './autoRun'
 
 interface SortableTaskCardProps {
   task: {
@@ -34,6 +39,7 @@ interface SortableTaskCardProps {
     size?: number | null
     progress?: number | null
     updatedAt?: string
+    metadata?: Record<string, unknown>
   }
   onEdit?: (taskId: string) => void
   onDependencyClick?: (taskId: string) => void
@@ -45,13 +51,6 @@ interface SortableTaskCardProps {
   onSendToVault?: (taskId: string) => void
   onArchiveTask?: (taskId: string) => void
   animateOnMount?: boolean
-}
-
-const priorityColors = {
-  low: 'bg-slate-500/20 text-slate-400',
-  medium: 'bg-blue-500/20 text-blue-400',
-  high: 'bg-orange-500/20 text-orange-400',
-  urgent: 'bg-red-500/20 text-red-400',
 }
 
 const priorityGlows = {
@@ -68,14 +67,37 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const clSummary = useBoardStore((s) => s.checklistSummaries[task.id])
   const clPreview = useBoardStore((s) => s.checklistPreviews[task.id])
   const assignees = useTaskAssignees(task.id)
+  const avatarPrefs = useAvatarPrefs()
   const showDates = useShowDates()
   const checklistMode = useChecklistViewMode()
   const updateTask = useBoardStore((s) => s.updateTask)
   const crossedTaskIds = useBoardStore((s) => s.crossedTaskIds)
   const { glowIntensity: globalGlow, glowSource, priorities, smoothUiRenders } = useThemeStore()
+  // Hold-to-move: only the lifted card subscribes to the id, so arming or
+  // cancelling a hold re-renders one card, not the board. Neutral cards get
+  // their "drop here" cursor from CSS via the columns wrapper's
+  // data-moving-mode, and a click reads the id from the store at click time.
+  const isMoving = useBoardStore((s) => s.movingTaskId === task.id)
+  const holdToMove = useHoldToMoveActions()
+  // Firefox delivers contextmenu as a MouseEvent with no pointerType, so the
+  // last pointerdown's type is what tells a touch long-press from a right click.
+  const lastPointerTypeRef = useRef<string | undefined>(undefined)
+  // Card fusion: the dragged card has dwelt on this one long enough to fuse.
+  const isFuseTarget = useFuseTargetId() === task.id
+  const { holdHandlers, consumeHoldClick } = useCardHoldGesture(task.id)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [editName, setEditName] = useState(task.name)
+  // Auto AI cards wear their mission on the board face.
+  const mission = useMemo(() => {
+    const hangar = readHangarMission(task.metadata)
+    if (!hangar) return null
+    return {
+      repo: typeof hangar.repo === 'string' ? hangar.repo : '',
+      objective: typeof hangar.objective === 'string' ? hangar.objective : 'mission',
+      armed: hangar.autoRun === true,
+    }
+  }, [task.metadata])
   const editRef = useRef<HTMLInputElement>(null)
   const cardElRef = useRef<HTMLDivElement>(null)
   const isSelected = selectedTaskId === task.id
@@ -106,11 +128,8 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   }
 
   const getPriorityInfo = (priority: string) => {
-    const custom = priorities.find((p) => p.id === priority)
-    if (custom) return { label: custom.name, style: { backgroundColor: `${custom.color}33`, color: custom.color } }
-    const defaultMatch = priorityColors[priority as keyof typeof priorityColors]
-    if (defaultMatch) return { label: priority, className: defaultMatch }
-    return { label: priority, className: priorityColors.medium }
+    const resolved = resolvePriority(priorities, priority)
+    return { label: resolved.name, style: { backgroundColor: `${resolved.color}33`, color: resolved.color } }
   }
 
   const {
@@ -136,6 +155,20 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
 
   const handleCardClick = (e: React.MouseEvent) => {
     if (isEditing) return
+    // The release of a completed hold is not an open.
+    if (consumeHoldClick()) return
+    // Move mode: this tap PLACES (or cancels on the lifted card itself) and
+    // never opens. Hover, shortcuts and the rest of the card stay live.
+    const movingTaskId = useBoardStore.getState().movingTaskId
+    if (movingTaskId && holdToMove) {
+      if (isMoving) { holdToMove.cancel(); return }
+      const columnId = useBoardStore.getState().tasks.find((t) => t.id === task.id)?.columnId
+      const rect = cardElRef.current?.getBoundingClientRect()
+      if (columnId && rect) {
+        holdToMove.place({ columnId, kind: 'card', taskId: task.id, half: halfFromPoint(e.clientY, rect) })
+      }
+      return
+    }
     // Instant mode: open on first click, skip the double-click disambiguation wait.
     if (!smoothUiRenders) { onEdit?.(task.id); return }
     if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null; return }
@@ -168,12 +201,18 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
+    // A touch long-press means "lift the card" (TouchSensor / hold-to-move),
+    // never the context menu: Android fires contextmenu for it, iOS doesn't.
+    const pointerType = (e.nativeEvent as Partial<PointerEvent>).pointerType ?? lastPointerTypeRef.current
+    if (pointerType === 'touch') return
     setContextMenu({ x: e.clientX, y: e.clientY })
   }
 
   return (
-    <div ref={(el) => { setNodeRef(el); (cardElRef as React.MutableRefObject<HTMLDivElement | null>).current = el }} style={style} className="relative" data-task-id={task.id}>
+    <div ref={(el) => { setNodeRef(el); (cardElRef as React.MutableRefObject<HTMLDivElement | null>).current = el }} style={style} className="relative" data-task-id={task.id} data-moving={isMoving ? '' : undefined}>
       <CardPeekPreview taskId={task.id} triggerRef={cardElRef} />
+      {isMoving && <MovingRing color={resolvedGlowColor} pulse={smoothUiRenders} />}
+      {isFuseTarget && <FuseBadge color={resolvedGlowColor} pulse={smoothUiRenders} />}
       {showDropIndicator && globalGlow > 0 && (
         <motion.div
           initial={{ opacity: 0, scaleX: 0 }}
@@ -189,9 +228,17 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
       <motion.div
         {...attributes}
         {...listeners}
+        {...holdHandlers}
+        data-card-surface
+        onPointerDownCapture={(e) => { lastPointerTypeRef.current = e.pointerType }}
         onClick={handleCardClick}
         onContextMenu={handleContextMenu}
-        style={{ touchAction: 'none' }}
+        // touch-action: manipulation (NOT none): a finger landing on a card
+        // must still be able to scroll the column / pan the board. The delayed
+        // TouchSensor takes over only after a 250ms hold; 'manipulation' just
+        // strips double-tap zoom so taps stay snappy. user-select/touch-callout
+        // are off so the long-press shows a drag, not iOS text selection.
+        style={{ touchAction: 'manipulation', WebkitTouchCallout: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
         className={cn(
           'cursor-grab active:cursor-grabbing',
           isDragging && 'opacity-30 scale-95'
@@ -261,6 +308,18 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
                 </h4>
               )}
             </div>
+            {assignees && assignees.length > 0 && (
+              <div className="flex items-center -space-x-1.5 flex-shrink-0 ml-1 self-start pt-0.5">
+                {assignees.slice(0, 4).map((a) => (
+                  <AssigneeDot key={a.userId} name={a.name} email={a.email} initials={a.initials} image={a.image} kind={a.kind} color={a.color} preferInitials={avatarPrefs.preferInitials} />
+                ))}
+                {assignees.length > 4 && (
+                  <span className="w-5 h-5 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-[8px] text-white/60">
+                    +{assignees.length - 4}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
               <button
                 data-task-edit
@@ -280,6 +339,27 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
               </button>
             </div>
           </div>
+
+          {mission && (
+            <div className="flex flex-wrap items-center gap-1 mb-2">
+              <span
+                title={`AI mission — ${mission.objective} in ${mission.repo}${mission.armed ? ' (auto-run armed)' : ''}`}
+                className="inline-flex items-center gap-1 px-1.5 rounded text-[9px] font-semibold leading-[15px] border"
+                style={{
+                  backgroundColor: 'color-mix(in srgb, var(--primary) 18%, transparent)',
+                  borderColor: 'color-mix(in srgb, var(--primary) 45%, transparent)',
+                  color: 'var(--primary)',
+                }}
+              >
+                <Bot className="w-2.5 h-2.5" />
+                {mission.repo || 'mission'}
+                {mission.armed && <Zap className="w-2.5 h-2.5" />}
+              </span>
+              <span className="px-1.5 rounded text-[9px] font-medium leading-[15px] border border-white/10 bg-white/5 text-slate-400">
+                {mission.objective}
+              </span>
+            </div>
+          )}
 
           {taskLabels.length > 0 && (
             <div className="flex flex-wrap items-center gap-1 mb-2">
@@ -302,19 +382,6 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
               })}
               {taskLabels.length > 4 && (
                 <span className="text-[9px] text-slate-500">+{taskLabels.length - 4}</span>
-              )}
-            </div>
-          )}
-
-          {assignees && assignees.length > 0 && (
-            <div className="flex items-center -space-x-1.5 mb-1.5">
-              {assignees.slice(0, 4).map((a) => (
-                <AssigneeDot key={a.userId} name={a.name} image={a.image} />
-              ))}
-              {assignees.length > 4 && (
-                <span className="w-5 h-5 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-[8px] text-white/60">
-                  +{assignees.length - 4}
-                </span>
               )}
             </div>
           )}
@@ -396,7 +463,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
                 const pi = getPriorityInfo(task.priority)
                 return (
                   <span
-                    className={cn('px-2 py-0.5 rounded-md text-xs font-medium', pi.className)}
+                    className="px-2 py-0.5 rounded-md text-xs font-medium"
                     style={pi.style}
                   >
                     {pi.label}
@@ -488,16 +555,99 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   )
 })
 
-function AssigneeDot({ name, image }: { name: string | null; image: string | null }) {
-  if (image) {
+// The lifted card's halo. Pulses with framer-motion when Smooth UI Renders is
+// on; when it's off every animation is killed (data-reduce-motion), so the
+// ring is rendered as a plain static highlight instead of a frozen keyframe.
+function MovingRing({ color, pulse }: { color: string; pulse: boolean }) {
+  const hex = resolveAccentHex(color)
+  const ring = `0 0 0 2px ${hexToRgba(hex, 0.9)}, 0 0 18px 4px ${hexToRgba(hex, 0.45)}`
+  const ringWide = `0 0 0 3px ${hexToRgba(hex, 0.6)}, 0 0 34px 10px ${hexToRgba(hex, 0.3)}`
+  if (!pulse) {
+    return <div aria-hidden className="absolute -inset-0.5 rounded-xl pointer-events-none z-10" style={{ boxShadow: ring }} />
+  }
+  return (
+    <motion.div
+      aria-hidden
+      className="absolute -inset-0.5 rounded-xl pointer-events-none z-10"
+      initial={{ boxShadow: ring, opacity: 0.6 }}
+      animate={{ boxShadow: [ring, ringWide, ring], opacity: [0.7, 1, 0.7] }}
+      transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+    />
+  )
+}
+
+// The fusion cue on the card about to absorb the dragged one. Lives inside the
+// card's wrapper, so under pinch-zoom it scales with the card. Pulses only
+// when Smooth UI Renders is on — off, every animation is killed, so a static
+// badge is drawn instead of a frozen keyframe.
+function FuseBadge({ color, pulse }: { color: string; pulse: boolean }) {
+  const hex = resolveAccentHex(color)
+  const ring = `0 0 0 2px ${hexToRgba(hex, 0.9)}, 0 0 16px 4px ${hexToRgba(hex, 0.45)}`
+  const ringWide = `0 0 0 3px ${hexToRgba(hex, 0.7)}, 0 0 30px 10px ${hexToRgba(hex, 0.35)}`
+  const icon = (
+    <span
+      className="flex items-center justify-center w-11 h-11 rounded-full text-white border border-white/40 bg-slate-900/85 backdrop-blur"
+      style={{ boxShadow: ring }}
+    >
+      <Merge className="w-5 h-5" />
+    </span>
+  )
+  const wrapper = 'absolute inset-0 flex items-center justify-center pointer-events-none z-20'
+  if (!pulse) {
+    return <div aria-hidden data-fuse-badge className={wrapper}>{icon}</div>
+  }
+  return (
+    <div aria-hidden data-fuse-badge className={wrapper}>
+      <motion.div
+        initial={{ scale: 0.6, opacity: 0 }}
+        animate={{ scale: [1, 1.12, 1], opacity: 1, filter: ['drop-shadow(0 0 0px transparent)', `drop-shadow(0 0 10px ${hexToRgba(hex, 0.6)})`, 'drop-shadow(0 0 0px transparent)'] }}
+        transition={{ scale: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' }, filter: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' }, opacity: { duration: 0.15 } }}
+      >
+        {icon}
+      </motion.div>
+      <motion.div
+        className="absolute inset-0 rounded-xl"
+        initial={{ boxShadow: ring, opacity: 0.5 }}
+        animate={{ boxShadow: [ring, ringWide, ring], opacity: [0.5, 0.9, 0.5] }}
+        transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+      />
+    </div>
+  )
+}
+
+function AssigneeDot({ name, email, initials: stored, image, kind, color, preferInitials }: { name: string | null; email?: string | null; initials?: string | null; image: string | null; kind?: 'virtual'; color?: string | null; preferInitials?: boolean }) {
+  // A profile picture wins by default. When the board prefers initials it must
+  // not — otherwise a curated override is invisible on exactly the accounts
+  // most likely to have one, which is the whole reason the override exists.
+  if (image && !preferInitials) {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={image} alt="" className="w-5 h-5 rounded-full object-cover border border-white/15" title={name ?? undefined} />
   }
-  const initials = (name ?? '?').trim().split(/\s+/).map((s) => s[0]).slice(0, 2).join('').toUpperCase()
+  // Stored initials win — a virtual member named "MG" chose those two letters,
+  // and recomputing from the name would render "M". Then the name, then the
+  // email, and only then the '?' that means "we know nothing about this person".
+  const initials = (stored ?? '').trim() || getInitials(name, '') || getInitialsFromEmail(email) || '?'
+  // Virtual members: colored initials avatar with a dashed ring — subtly
+  // distinct from real accounts in the pile.
+  if (kind === 'virtual') {
+    const hex = resolveAccentHex(color)
+    return (
+      <span
+        className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-semibold border border-dashed border-white/45 text-white"
+        style={{ background: `linear-gradient(135deg, ${hex}cc, ${hex}66)` }}
+        title={name ? `${name} (virtual)` : undefined}
+      >
+        {initials || '?'}
+      </span>
+    )
+  }
+  // A real member with a colour override gets the same treatment as a virtual
+  // one minus the dashed ring, which stays the "no account" marker.
+  const hex = color ? resolveAccentHex(color) : null
   return (
     <span
       className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-medium border border-white/15 text-white/80"
-      style={{ background: 'rgba(255,255,255,0.08)' }}
+      style={{ background: hex ? `linear-gradient(135deg, ${hex}cc, ${hex}66)` : 'rgba(255,255,255,0.08)' }}
       title={name ?? undefined}
     >
       {initials || '?'}

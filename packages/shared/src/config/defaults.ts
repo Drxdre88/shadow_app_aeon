@@ -51,6 +51,8 @@ export const DEFAULT_PREFERENCES = {
   columnHeight: 1100,
   dynamicColumnWidth: false,
   dynamicColumnHeight: false,
+  zenEnterSeconds: 3,
+  zenExitSeconds: 2,
   smokeVolume: 75,
   depLineWidth: 1,
   depLineGlow: 60,

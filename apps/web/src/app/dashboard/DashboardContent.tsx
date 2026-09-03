@@ -18,6 +18,7 @@ import { useViewPreference, type ProjectViewMode } from '@/components/project/us
 import { AppSidebar } from '@/components/sidebar/AppSidebar'
 import { TopBar } from '@/components/layout/TopBar'
 import { useSidebarStore } from '@/stores/sidebarStore'
+import { useFavoritesStore } from '@/stores/favoritesStore'
 import { RealmSection } from '@/components/workspace/RealmSection'
 import { ProjectViewSwitcher } from '@/components/project/ProjectViewSwitcher'
 import { SpaceView } from '@/components/project/SpaceView'
@@ -162,12 +163,19 @@ export default function DashboardContent({ user, projects: initialProjects, init
       else next.delete(projectId)
       return next
     })
+    // Keep the sidebar Favorites group in sync without a refetch.
+    const project = workspaces.flatMap((w) => w.projects).find((p) => p.id === projectId)
+      || sharedProjects.find((p) => p.id === projectId)
+    const syncSidebar = (value: boolean) =>
+      useFavoritesStore.getState().applyToggle(projectId, value, project ? { name: project.name } : undefined)
+    syncSidebar(nextValue)
     try {
       await toggleProjectFavorite(projectId, nextValue)
     } catch {
+      syncSidebar(!nextValue)
       loadWorkspaces()
     }
-  }, [favoriteIds, loadWorkspaces])
+  }, [favoriteIds, workspaces, sharedProjects, loadWorkspaces])
 
   useEffect(() => {
     if (workspaceInitRef.current) return

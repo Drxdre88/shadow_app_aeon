@@ -2,15 +2,19 @@
 
 import { useState, useCallback } from 'react'
 import { createGanttTask, updateGanttTask, deleteGanttTask, updateRow as updateRowAction } from '@/lib/actions/gantt'
-import { createGanttView as createGanttViewAction, updateGanttView as updateGanttViewAction, deleteGanttView as deleteGanttViewAction, resetGanttData, reflowGanttView } from '@/lib/actions/ganttViews'
+import { createGanttView as createGanttViewAction, updateGanttView as updateGanttViewAction, deleteGanttView as deleteGanttViewAction, resetGanttData, reflowGanttView, restoreTimelineSnapshot } from '@/lib/actions/ganttViews'
 import { pushToGantt } from '@/lib/actions/bridge'
 import { updateBoardTask } from '@/lib/actions/board'
 import { useGanttStore } from '@/lib/store/ganttStore'
-import { useBoardStore } from '@/lib/store/boardStore'
+import { useBoardStore, beginDirectWrite, endDirectWrite } from '@/lib/store/boardStore'
+import { toast } from '@/components/ui/Toast'
+import type { TimelineResetSnapshotEntry } from '@/lib/data/ganttViews'
 
 export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' | 'gantt' | 'canvas' | 'trophy') => void, triggerReload: () => void) {
   const [ganttEditTaskId, setGanttEditTaskId] = useState<string | null>(null)
   const [ganttFormData, setGanttFormData] = useState<{ name: string; description: string; color: string; priority: 'low' | 'medium' | 'high' | 'urgent'; size: number | null }>({ name: '', description: '', color: 'purple', priority: 'medium', size: null })
+  const [ganttResetOpen, setGanttResetOpen] = useState(false)
+  const [isGanttResetting, setIsGanttResetting] = useState(false)
 
   const handleGanttTaskCreate = useCallback((task: {
     id: string
@@ -90,16 +94,70 @@ export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' 
     }).catch((err) => console.error('Failed to reflow gantt:', err))
   }, [projectId, triggerReload])
 
+  const openGanttReset = useCallback(() => setGanttResetOpen(true), [])
+  const closeGanttReset = useCallback(() => { if (!isGanttResetting) setGanttResetOpen(false) }, [isGanttResetting])
+
   const handleGanttReset = useCallback(() => {
+    if (isGanttResetting) return
     const { setViews, setActiveViewId, setRows: setGanttRows, setTasks: resetGanttTasks } = useGanttStore.getState()
+    const { tasks, updateTask: updateBoardTaskStore } = useBoardStore.getState()
+    const clientSnapshot: TimelineResetSnapshotEntry[] = tasks
+      .filter((t) => t.onTimeline || !!t.ganttTaskId)
+      .map((t) => ({ id: t.id, startDate: t.startDate ?? null, endDate: t.endDate ?? null, onTimeline: t.onTimeline }))
+
+    const applySnapshot = (snapshot: TimelineResetSnapshotEntry[]) => {
+      for (const t of snapshot) {
+        updateBoardTaskStore(t.id, { onTimeline: t.onTimeline, startDate: t.startDate ?? undefined, endDate: t.endDate ?? undefined })
+      }
+    }
+
+    setIsGanttResetting(true)
+    for (const t of clientSnapshot) {
+      updateBoardTaskStore(t.id, { onTimeline: false, ganttTaskId: null, startDate: undefined, endDate: undefined })
+    }
     setViews([])
     setActiveViewId(null)
     setGanttRows([])
     resetGanttTasks([])
-    resetGanttData(projectId).then(() => {
-      triggerReload()
-    }).catch((err) => console.error('Failed to reset gantt:', err))
-  }, [projectId, triggerReload])
+
+    beginDirectWrite()
+    resetGanttData(projectId)
+      .then((serverSnapshot) => {
+        setGanttResetOpen(false)
+        triggerReload()
+        const snapshot = serverSnapshot.length > 0 ? serverSnapshot : clientSnapshot
+        if (snapshot.length === 0) {
+          toast('Timeline reset', { force: true })
+          return
+        }
+        const frozen = snapshot.map((t) => ({ ...t }))
+        toast(`Timeline reset — ${frozen.length} card${frozen.length === 1 ? '' : 's'} taken off`, {
+          force: true,
+          duration: 10000,
+          onUndo: () => {
+            applySnapshot(frozen)
+            beginDirectWrite()
+            restoreTimelineSnapshot(projectId, frozen)
+              .then(() => triggerReload())
+              .catch(() => {
+                triggerReload()
+                toast('Failed to restore timeline dates', { force: true })
+              })
+              .finally(() => endDirectWrite())
+          },
+        })
+      })
+      .catch((err) => {
+        console.error('Failed to reset gantt:', err)
+        applySnapshot(clientSnapshot)
+        triggerReload()
+        toast('Could not reset the timeline — dates restored', { force: true })
+      })
+      .finally(() => {
+        endDirectWrite()
+        setIsGanttResetting(false)
+      })
+  }, [projectId, triggerReload, isGanttResetting])
 
   const handleGanttTaskClick = useCallback((boardTaskId: string) => {
     const task = useBoardStore.getState().tasks.find((t) => t.id === boardTaskId)
@@ -141,8 +199,11 @@ export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' 
       return
     }
     const ganttTaskId = crypto.randomUUID()
-    const { updateTask: updateBoardTaskStore } = useBoardStore.getState()
-    updateBoardTaskStore(boardTaskId, { onTimeline: true, ganttTaskId })
+    const { tasks, updateTask: updateBoardTaskStore } = useBoardStore.getState()
+    const previous = tasks.find((t) => t.id === boardTaskId)
+    const previousOnTimeline = previous?.onTimeline ?? false
+    const previousGanttTaskId = previous?.ganttTaskId ?? null
+    updateBoardTaskStore(boardTaskId, { onTimeline: true, ganttTaskId: previousGanttTaskId ?? ganttTaskId })
 
     pushToGantt({
       boardTaskId,
@@ -151,8 +212,9 @@ export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' 
       ganttTaskId,
     }).then((ganttTask) => {
       if (ganttTask) {
-        const { addTask } = useGanttStore.getState()
-        addTask({
+        const { tasks: ganttTasks, addTask, updateTask } = useGanttStore.getState()
+        updateBoardTaskStore(boardTaskId, { onTimeline: true, ganttTaskId: previousGanttTaskId ?? ganttTask.id })
+        const bar = {
           id: ganttTask.id,
           projectId: ganttTask.projectId,
           rowId: ganttTask.rowId || '',
@@ -163,11 +225,13 @@ export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' 
           progress: ganttTask.progress,
           dependencies: [],
           boardTaskId: boardTaskId,
-        })
+        }
+        if (ganttTasks.some((t) => t.id === bar.id)) updateTask(bar.id, bar)
+        else addTask(bar)
       }
     }).catch((err) => {
       console.error('Failed to push to gantt:', err)
-      updateBoardTaskStore(boardTaskId, { onTimeline: false, ganttTaskId: null })
+      updateBoardTaskStore(boardTaskId, { onTimeline: previousOnTimeline, ganttTaskId: previousGanttTaskId })
     })
   }, [projectId, setActiveTab])
 
@@ -188,6 +252,10 @@ export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' 
     handleGanttViewDelete,
     handleGanttReflow,
     handleGanttReset,
+    ganttResetOpen,
+    isGanttResetting,
+    openGanttReset,
+    closeGanttReset,
     handleGanttTaskClick,
     handleGanttEditSubmit,
     handlePushToGantt,

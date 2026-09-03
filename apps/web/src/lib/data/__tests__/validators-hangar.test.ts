@@ -4,6 +4,7 @@ import {
   hangarAgentSchema,
   agentSessionEngineSchema,
   hangarCardMetadataSchema,
+  hangarCardDraftSchema,
   hangarResultEnvelopeSchema,
   createHangarRepoSchema,
   sessionEventsTailSchema,
@@ -77,6 +78,75 @@ describe('hangarCardMetadataSchema', () => {
       subagents: [],
       sessionIds: [],
     })
+  })
+
+  // Drop-to-launch consent: a mission is only allowed to fire on a column
+  // move if the operator armed THIS card. Default-on would mean every
+  // mission card launches the moment it is dragged into the wrong column.
+  it('auto-run defaults to OFF', () => {
+    expect(hangarCardMetadataSchema.parse(MISSION).autoRun).toBe(false)
+  })
+
+  it('auto-run only accepts a real boolean', () => {
+    expect(hangarCardMetadataSchema.parse({ ...MISSION, autoRun: true }).autoRun).toBe(true)
+    expect(hangarCardMetadataSchema.safeParse({ ...MISSION, autoRun: 'yes' }).success).toBe(false)
+    expect(hangarCardMetadataSchema.safeParse({ ...MISSION, autoRun: 1 }).success).toBe(false)
+  })
+
+  // The repo slug reaches the runner's argv and a host path lookup, so it
+  // gets the same treatment as the model id.
+  it.each(['aeon', 'arq', 'shadow-data', 'org/repo', 'repo.v2'])(
+    'accepts a real repo slug: %s',
+    (repo) => {
+      expect(hangarCardMetadataSchema.safeParse({ ...MISSION, repo }).success).toBe(true)
+    }
+  )
+
+  it.each(['-rf', '--force', '../sibling', 'repo; rm -rf /', 'repo name', '$(whoami)', ''])(
+    'rejects a dangerous repo slug: %s',
+    (repo) => {
+      expect(hangarCardMetadataSchema.safeParse({ ...MISSION, repo }).success).toBe(false)
+    }
+  )
+
+  it('rejects a forged, non-uuid session id', () => {
+    expect(hangarCardMetadataSchema.safeParse({ ...MISSION, sessionIds: ['forged-id'] }).success).toBe(false)
+  })
+})
+
+// The editor's write path. Everything a client sends to saveCardMission goes
+// through here, so this is where forged system fields have to die.
+describe('hangarCardDraftSchema', () => {
+  const DRAFT = {
+    objective: 'implement',
+    repo: 'arq',
+    agent: 'copilot',
+    model: null,
+    instruction: 'add a hello print',
+    outputMode: 'auto',
+    autoRun: false,
+  }
+
+  it('accepts a half-filled draft the strict schema would reject', () => {
+    expect(hangarCardDraftSchema.safeParse({ ...DRAFT, repo: '', instruction: '' }).success).toBe(true)
+    expect(hangarCardMetadataSchema.safeParse({ ...DRAFT, repo: '', instruction: '' }).success).toBe(false)
+  })
+
+  it('strips system-written fields so a client cannot forge launch history', () => {
+    const parsed = hangarCardDraftSchema.parse({
+      ...DRAFT,
+      sessionIds: ['00000000-0000-4000-8000-000000000000'],
+      lastResult: { status: 'completed' },
+      lastLaunchedAt: '1999-01-01T00:00:00.000Z',
+    }) as Record<string, unknown>
+    expect(parsed.sessionIds).toBeUndefined()
+    expect(parsed.lastResult).toBeUndefined()
+    expect(parsed.lastLaunchedAt).toBeUndefined()
+  })
+
+  it('still refuses a flag-shaped repo or model in a draft', () => {
+    expect(hangarCardDraftSchema.safeParse({ ...DRAFT, repo: '--force' }).success).toBe(false)
+    expect(hangarCardDraftSchema.safeParse({ ...DRAFT, model: '--dangerously-skip-permissions' }).success).toBe(false)
   })
 
   it('accepts a 1-character instruction and rejects an empty one', () => {

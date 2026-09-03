@@ -13,6 +13,7 @@ import { StatsButton } from '@/components/ui/StatsModal'
 import { BetaFeaturesButton } from '@/components/ui/BetaFeaturesModal'
 import { KairosSidebarSection } from '@/components/sidebar/KairosSidebarSection'
 import { SidebarCreateActions } from '@/components/sidebar/SidebarCreateActions'
+import { SidebarFavorites } from '@/components/sidebar/SidebarFavorites'
 import { getSiblingProjects } from '@/lib/actions/projects'
 import {
   LayoutGrid,
@@ -133,6 +134,8 @@ export function ProjectSidebar({ projectId, user, activeTab, onTabChange, onSign
             )
           })}
         </div>
+
+        <SidebarFavorites collapsed={collapsed} className="mt-3" />
 
         {!collapsed && siblings.realmName && siblings.projects.length > 0 && (
           <>

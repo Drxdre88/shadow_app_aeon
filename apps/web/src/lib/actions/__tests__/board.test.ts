@@ -43,6 +43,11 @@ vi.mock('@/lib/data/assignees', () => ({
   getAssigneesForProject: vi.fn(),
 }))
 
+vi.mock('@/lib/data/virtual-members', () => ({
+  getVirtualAssigneesForProject: vi.fn(),
+  findVirtualMembersForProject: vi.fn(),
+}))
+
 vi.mock('@/lib/data/bridge', () => ({
   syncBoardStatusToGantt: vi.fn(),
   deleteLinkedGanttTask: vi.fn(),
@@ -89,6 +94,10 @@ import { syncBoardStatusToGantt, deleteLinkedGanttTask } from '@/lib/data/bridge
 import { emitActivity } from '@/lib/data/activity'
 import { checkStorageLimit } from '@/lib/data/storage'
 import { getAssigneesForProject as _getAssigneesForProject } from '@/lib/data/assignees'
+import {
+  getVirtualAssigneesForProject as _getVirtualAssigneesForProject,
+  findVirtualMembersForProject as _findVirtualMembersForProject,
+} from '@/lib/data/virtual-members'
 
 import {
   loadBoardData,
@@ -131,6 +140,19 @@ const makeTask = (overrides = {}) => ({
   archivedAt: null as Date | null,
   createdAt: new Date(),
   updatedAt: new Date(),
+  // Chronos scheduling fields (migrations 0034/0035). Defaults here mirror the
+  // column defaults, so a task built by this fixture is the same "never
+  // scheduled" shape every existing row starts in.
+  estimateMinutes: null as number | null,
+  scheduleMode: 'auto',
+  constraintType: 'asap',
+  constraintDate: null as Date | null,
+  computedStart: null as Date | null,
+  computedEnd: null as Date | null,
+  totalFloatMin: null as number | null,
+  isMilestone: false,
+  ownerResourceId: null as string | null,
+  startedAt: null as Date | null,
   ...overrides,
 })
 
@@ -197,6 +219,8 @@ beforeEach(() => {
   vi.mocked(_findDependencies).mockResolvedValue([])
   vi.mocked(_findChecklistSummariesAndPreviews).mockResolvedValue({ summaries: {}, previews: {} })
   vi.mocked(_getAssigneesForProject).mockResolvedValue({})
+  vi.mocked(_getVirtualAssigneesForProject).mockResolvedValue({})
+  vi.mocked(_findVirtualMembersForProject).mockResolvedValue([])
 })
 
 describe('loadBoardData', () => {
@@ -228,7 +252,7 @@ describe('loadBoardData', () => {
 
     const result = await loadBoardData(PROJECT_ID)
 
-    expect(result).toEqual({ tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees: {} })
+    expect(result).toEqual({ tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees: {}, virtualAssignees: {}, virtualMembers: [] })
   })
 
   it('throws when requireOwnership rejects', async () => {

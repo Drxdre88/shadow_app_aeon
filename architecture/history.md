@@ -5,6 +5,18 @@
 Reverse-chronological. The most recent work is at the top; the pre-2026-06-06 trail is preserved
 verbatim below.
 
+### 2026-08-26 — Night-swarm PM wave: focus surfaces, virtual members, trophy rebuild (PR #107)
+
+Owner directive: four live board bugs plus five UX asks, delivered by a parallel swarm in one night, then reviewed hard. 16 commits on `feat/night-swarm-2608`.
+
+1. **Bugs** — checklist **group order** no longer reshuffles when an empty group precedes a filled one (order is remembered, not derived from items; `checklist/groupOrder.ts`); **custom priority appearance** now renders inside the card editor via one `resolvePriority` accessor, with every duplicated factory palette deleted; **contained pinch-zoom** replaces the browser zoom that escaped the app canvas, and the zoomed board is laid out at container-height ÷ scale so it fills the screen instead of leaving void below (owner-reported); **touch scroll/drag** fixed — cards had `touch-action: none`, so the browser ignored every pan starting on a card.
+2. **Focus surfaces** — **pinnable floating card windows** (`pinnedCardsStore`, no backdrop so the board stays live, fold-to-dock, side by side) and **column Zen mode** (FLIP flight out of the board, blurred backdrop, finger-friendly scroller, reorder routed through the board's own `dropIndex.ts`).
+3. **Virtual team members** — realm-scoped accountless people, assignable and filterable, on new tables `virtual_members` + `task_virtual_assignees` (migration **0032**, applied by script; journal stays frozen), with REST routes + mirrored MCP tools and a parity test. Assignment itself became optimistic (`assigneeMutations.ts` with a per-pill FIFO lane) and the assignable list is now prefetched and cached.
+4. **Sidebar favorites** + **trophy room rebuild** (gold identity, inline-SVG charts, sortable table, priority-aware aggregation; `TrophyStats.tsx` deleted).
+5. **Correctness pass** — five reviewers (butcher/warden/judge/stalker + cross-model Codex) over a branch that was already green on 2828 tests, typecheck, lint and a live deploy. They found **two separate data-loss paths** (a pinned window flushing its mount-time snapshot; unpin reseeding the modal from a stale render closure), a whole-map assignee rollback clobbering concurrent work, a checklist rollback that could delete a row still in Postgres, a trophy crash on custom priority ids, and a REST surface that never ran. All fixed; suite now **3040 tests**.
+6. **`api/v1/realms/**` was dead** — Next 16 hands route handlers a `params` **Promise** and these read it synchronously, so ids were `undefined` and every call answered 403. Five of the seven routes date from 2026-04-02 and had never worked; the new virtual-member routes inherited the pattern by copying them. All seven now `await`. **Any new v1 route must use `params: Promise<{…}>` + `await`.**
+7. **CI gained a production-build gate** — lint, typecheck and the full suite all passed a malformed Tailwind `color-mix()` shadow that broke the deploy; only `next build` catches that class.
+
 ### 2026-07-24 (evening) — Live Mind wave: continuous awareness + incident lifecycle + quality retier
 
 Operator directive: Kairos's JARVIS gap is his eyes (nightly-batch mind, day-behind chat), and quality now beats cost. One branch, swarm-built (3 recon prowlers → 2 parallel executioners + main-agent retier → 5-horsemen review incl. Codex → consolidated fix pass):

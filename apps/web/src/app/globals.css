@@ -63,16 +63,59 @@ input[type='number'] {
 .kanban-col-outer {
   width: 85vw;
 }
+/* Trello model: a column hugs its cards and stops at the screen edge instead
+   of being a fixed-height crate. The cap is viewport-relative (dvh), so
+   browser zoom-out grows it in CSS pixels and reveals MORE of each column
+   rather than shrinking the board into a corner of the canvas.
+   --board-chrome (default 120px = ProjectContent's h-[calc(100dvh-120px)]
+   wrapper; the demo page overrides it) is the chrome above the board
+   surface; the extra 24px = the scale wrapper's 16px pb-4 + the 8px
+   horizontal scrollbar, so a capped column + padding fits the container's
+   client box without spawning a phantom vertical scrollbar. */
 .kanban-col-inner {
-  height: 60vh;
+  height: auto;
+  max-height: max(220px, calc(100dvh - var(--board-chrome, 120px) - 24px));
 }
 @media (min-width: 640px) {
   .kanban-col-outer {
     width: var(--col-w, 320px);
   }
   .kanban-col-inner {
-    height: var(--col-h, 300px);
+    /* The Sizing height preference acts as a proportional cap: --col-h-scale
+       (0.2-1, sanitized in columnSizing.ts) shortens columns as a share of
+       the available height, so they never detach from the viewport under
+       browser zoom. */
+    max-height: max(220px, calc((100dvh - var(--board-chrome, 120px) - 24px) * min(var(--col-h-scale, 1), 1)));
   }
+}
+
+/* Pinched out to a bird's-eye view: the wrapper is laid out at
+   viewport-height / scale (see useBoardPinchZoom), so columns stretch to fill
+   it and land exactly on the screen edges once scaled. The zoomed wrapper is
+   TALLER than the viewport in CSS pixels, so the dvh cap must lift here or it
+   would clip the stretch and re-open the void below. !important so a
+   manually drag-resized column (inline height) stretches like the rest. */
+[data-board-zoomed] .kanban-col-outer,
+[data-board-zoomed] .kanban-col-inner {
+  height: 100% !important;
+  max-height: none !important;
+}
+
+/* PNG export (ShareModal) flattens the board to its full content size; lift
+   the viewport caps and inner scrollers so off-screen cards make the frame. */
+[data-board-exporting] .kanban-col-inner {
+  height: auto !important;
+  max-height: none !important;
+}
+[data-board-exporting] [data-col-scroll] {
+  overflow: visible !important;
+}
+/* Dense columns virtualize cards with inline content-visibility; skipped
+   subtrees rasterize as blank slots in the html-to-image clone, so force
+   them rendered for the capture. */
+[data-board-exporting] [data-col-scroll] > * {
+  content-visibility: visible !important;
+  contain-intrinsic-size: auto !important;
 }
 
 @layer components {
@@ -228,4 +271,42 @@ html[data-reduce-motion='true'] *::after {
   animation-delay: 0ms !important;
   animation-iteration-count: 1 !important;
   scroll-behavior: auto !important;
+}
+
+/* Zen mode: cards settle into the focused column with a short stagger after
+   the flight lands. Targets the card list's direct children (cards or their
+   dense-mode wrappers + the quick-add row) so both list modes stagger the
+   same. Gated on [data-zen-enter], which the layer drops once the entry
+   beat is over — DOM reorders (drag & drop) restart CSS animations, so the
+   rule must not stay live. Killed to instant by the reduce-motion rule. */
+@keyframes zen-card-settle {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* --zen-settle-base is set by the layer to ~45% of the configurable entry
+   flight, so cards begin settling mid-expansion however slow the flight is. */
+[data-zen-cards][data-zen-enter] > :first-child > * {
+  animation: zen-card-settle 0.6s cubic-bezier(0.22, 1, 0.36, 1) calc(var(--zen-settle-base, 0.34s) + 0.34s) backwards;
+}
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(1) { animation-delay: calc(var(--zen-settle-base, 0.34s) + 0.06s); }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(2) { animation-delay: calc(var(--zen-settle-base, 0.34s) + 0.1s); }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(3) { animation-delay: calc(var(--zen-settle-base, 0.34s) + 0.14s); }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(4) { animation-delay: calc(var(--zen-settle-base, 0.34s) + 0.18s); }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(5) { animation-delay: calc(var(--zen-settle-base, 0.34s) + 0.22s); }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(6) { animation-delay: calc(var(--zen-settle-base, 0.34s) + 0.26s); }
+[data-zen-cards][data-zen-enter] > :first-child > :nth-child(7) { animation-delay: calc(var(--zen-settle-base, 0.34s) + 0.3s); }
+
+/* The custom Zen scroller replaces the native scrollbar on the focused list. */
+[data-zen-cards] > :first-child {
+  scrollbar-width: none;
+}
+[data-zen-cards] > :first-child::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hold-to-move: while a card is lifted every other card is a drop target.
+   Driven from the columns wrapper so neutral cards never re-render for it. */
+[data-moving-mode] [data-task-id]:not([data-moving]) [data-card-surface] {
+  cursor: copy;
 }

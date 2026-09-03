@@ -39,6 +39,8 @@ vi.mock('@/lib/db', () => {
       // tx.update is never actually invoked, but tx must still expose it.
       transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
+          execute: vi.fn(async () => undefined),
+          select: vi.fn(() => makeSelectChain(selectQueue.shift() ?? [])),
           insert: vi.fn(() => makeInsertChain()),
           update: vi.fn(() => ({ set: () => ({ where: () => Promise.resolve(undefined) }) })),
         }
@@ -92,6 +94,42 @@ describe('createMemory — streamClass override', () => {
     await createMemory(USER, baseInput)
     expect(lastInsertValues.value).toBeTruthy()
     expect(lastInsertValues.value).not.toHaveProperty('streamClass')
+  })
+})
+
+describe('createMemory — coding-agent session idempotency', () => {
+  it.each([
+    ['codex', { sessionId: 'codex-session-1', client: 'codex' }],
+    ['copilot', { sessionId: 'copilot-session-1', client: 'copilot' }],
+    ['hook', { sessionId: 'copilot-session-1', client: 'copilot', originalSource: 'copilot' }],
+  ] as const)('returns an existing %s session instead of inserting a duplicate', async (source, sourceMetadata) => {
+    const existing = { id: 'existing-memory' }
+    selectQueue.push([existing])
+
+    const result = await createMemory(USER, {
+      ...baseInput,
+      type: 'session_summary',
+      source,
+      sourceMetadata,
+    })
+
+    expect(result).toBe(existing)
+    expect(lastInsertValues.value).toBeNull()
+  })
+
+  it('rechecks after the transaction lock before inserting', async () => {
+    const existing = { id: 'concurrent-memory' }
+    selectQueue.push([], [existing])
+
+    const result = await createMemory(USER, {
+      ...baseInput,
+      type: 'session_summary',
+      source: 'hook',
+      sourceMetadata: { sessionId: 'same-session', client: 'codex' },
+    })
+
+    expect(result).toBe(existing)
+    expect(lastInsertValues.value).toBeNull()
   })
 })
 

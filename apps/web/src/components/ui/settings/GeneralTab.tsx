@@ -7,6 +7,7 @@ import { useThemeStore, INITIAL_PRIORITIES, type CompletionMode, type GlowSource
 import { useShallow } from 'zustand/shallow'
 import { cn } from '@/lib/utils/cn'
 import { ToggleRow, ThemeSlider } from './shared'
+import { heightPrefToPercent, percentToHeightPref } from '@/components/board/columnSizing'
 
 function CompletionModeSetting() {
   const { completionMode, setCompletionMode } = useThemeStore(useShallow((s) => ({ completionMode: s.completionMode, setCompletionMode: s.setCompletionMode })))
@@ -42,7 +43,7 @@ function CompletionModeSetting() {
 }
 
 function BoardLayoutSetting() {
-  const { columnWidth, setColumnWidth, columnHeight, setColumnHeight, dynamicColumnWidth, setDynamicColumnWidth, dynamicColumnHeight, setDynamicColumnHeight, colors } = useThemeStore(useShallow((s) => ({
+  const { columnWidth, setColumnWidth, columnHeight, setColumnHeight, dynamicColumnWidth, setDynamicColumnWidth, dynamicColumnHeight, setDynamicColumnHeight, zenEnterSeconds, setZenEnterSeconds, zenExitSeconds, setZenExitSeconds, colors } = useThemeStore(useShallow((s) => ({
     columnWidth: s.columnWidth,
     setColumnWidth: s.setColumnWidth,
     columnHeight: s.columnHeight,
@@ -51,6 +52,10 @@ function BoardLayoutSetting() {
     setDynamicColumnWidth: s.setDynamicColumnWidth,
     dynamicColumnHeight: s.dynamicColumnHeight,
     setDynamicColumnHeight: s.setDynamicColumnHeight,
+    zenEnterSeconds: s.zenEnterSeconds,
+    setZenEnterSeconds: s.setZenEnterSeconds,
+    zenExitSeconds: s.zenExitSeconds,
+    setZenExitSeconds: s.setZenExitSeconds,
     colors: s.colors,
   })))
 
@@ -63,11 +68,26 @@ function BoardLayoutSetting() {
           <ToggleRow label="Expand width with content" value={dynamicColumnWidth} onChange={setDynamicColumnWidth} color={colors.glowColor} />
         </div>
         <div className="space-y-1">
-          <ThemeSlider label="Height" value={columnHeight} onChange={setColumnHeight} min={200} max={1600} color={colors.glowColor} unit="px" />
-          <ToggleRow label="Expand height with content" value={dynamicColumnHeight} onChange={setDynamicColumnHeight} color={colors.glowColor} />
+          <ThemeSlider
+            label="Max height"
+            value={heightPrefToPercent(columnHeight)}
+            onChange={(pct) => setColumnHeight(percentToHeightPref(pct))}
+            min={20}
+            max={100}
+            color={colors.glowColor}
+            unit="%"
+          />
+          <ToggleRow label="Raise height cap with content" value={dynamicColumnHeight} onChange={setDynamicColumnHeight} color={colors.glowColor} />
         </div>
       </div>
-      <p className="text-[10px] text-slate-600">Sliders set the base size. Expand toggles let columns grow past that when they have more tasks.</p>
+      <p className="text-[10px] text-slate-600">Columns hug their cards. Width sets the base size in pixels; max height caps columns as a share of the screen, and the toggles grow each limit when a column has more tasks.</p>
+
+      <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider pt-2">Zen Mode</h4>
+      <div className="space-y-3 max-w-[300px]">
+        <ThemeSlider label="Entry flight" value={zenEnterSeconds} onChange={setZenEnterSeconds} min={1} max={6} color={colors.glowColor} unit="s" />
+        <ThemeSlider label="Exit flight" value={zenExitSeconds} onChange={setZenExitSeconds} min={1} max={4} color={colors.glowColor} unit="s" />
+      </div>
+      <p className="text-[10px] text-slate-600">How long the column takes to expand into focus and to shrink back when you click away.</p>
     </div>
   )
 }

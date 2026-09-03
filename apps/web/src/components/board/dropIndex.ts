@@ -43,6 +43,44 @@ export function reorderWithInsertion(orderedIds: string[], movedId: string, inde
   return [...without.slice(0, clamped), movedId, ...without.slice(clamped)]
 }
 
+export interface MoveUpdate {
+  id: string
+  orderIndex: number
+  status?: string
+  columnId?: string
+  name?: string
+}
+
+// Turns a column's final id order into the minimal set of persisted rows: the
+// moved card always carries its destination column (and name/status the write
+// path needs), every other card only appears if its index actually shifted.
+// `currentOrder` is the column's pre-move truth — the FULL order, including
+// cards a filter is hiding, so hidden rows keep contiguous indices.
+export function buildMoveUpdates(
+  finalIds: string[],
+  currentOrder: Array<{ id: string; orderIndex: number }>,
+  moved: { id: string; columnId: string; name?: string; status?: string },
+): MoveUpdate[] {
+  const byId = new Map(currentOrder.map((t) => [t.id, t]))
+  const updates: MoveUpdate[] = []
+  finalIds.forEach((id, orderIndex) => {
+    if (id === moved.id) {
+      updates.push({
+        id,
+        orderIndex,
+        columnId: moved.columnId,
+        name: moved.name,
+        ...(moved.status ? { status: moved.status } : {}),
+      })
+      return
+    }
+    const sibling = byId.get(id)
+    if (!sibling || sibling.orderIndex === orderIndex) return
+    updates.push({ id, orderIndex })
+  })
+  return updates
+}
+
 // null = the column's DOM element wasn't found (collapsed/unmounted) — the
 // caller must fall back rather than treat it as an empty column.
 export function readCardRects(columnId: string, excludeTaskId?: string): CardRect[] | null {

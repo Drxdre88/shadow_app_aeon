@@ -95,7 +95,10 @@ export async function gatherDigestCounts(userId: string, window: DigestWindow): 
     boardTasksCreated,
     synthesisRollup,
   ] = await Promise.all([
-    countMemories(userId, [eq(memories.type, 'session_summary'), eq(memories.source, 'claude')], window),
+    countMemories(userId, [
+      eq(memories.type, 'session_summary'),
+      sql`(${memories.source} in ('claude', 'codex', 'copilot') or (${memories.source} = 'hook' and ${memories.sourceMetadata}->>'client' in ('codex', 'copilot')))`,
+    ], window),
     countMemories(userId, [eq(memories.type, 'inbound'), sql`${memories.sourceMetadata}->>'introspection' = 'true'`], window),
     countMemories(userId, [eq(memories.type, 'reflection'), eq(memories.streamClass, 'reflection')], window),
     countMemories(userId, [eq(memories.type, 'advisory'), sql`${memories.sourceMetadata} ? 'kairosAsk'`], window),

@@ -5,16 +5,20 @@ import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { hexToRgba } from '@/lib/utils/colors'
+import { sortLabelsByName } from '@/lib/utils/labels'
 import { labelHex, readableTextColor } from './labelTile'
 import { LabelPicker } from './LabelPicker'
 
 interface TaskLabelsSectionProps {
   taskId: string
   projectId: string
+  onLabelCreate?: (label: { id: string; projectId: string; name: string; color: string }) => void | boolean | Promise<void | boolean>
+  onLabelUpdate?: (labelId: string, updates: { name?: string; color?: string }) => void
+  onLabelDelete?: (labelId: string) => void
   onLabelToggle?: (taskId: string, labelId: string, action: 'add' | 'remove') => void
 }
 
-export function TaskLabelsSection({ taskId, projectId, onLabelToggle }: TaskLabelsSectionProps) {
+export function TaskLabelsSection({ taskId, projectId, onLabelCreate, onLabelUpdate, onLabelDelete, onLabelToggle }: TaskLabelsSectionProps) {
   const labels = useBoardStore((s) => s.labels)
   const tasks = useBoardStore((s) => s.tasks)
   const updateTask = useBoardStore((s) => s.updateTask)
@@ -22,7 +26,7 @@ export function TaskLabelsSection({ taskId, projectId, onLabelToggle }: TaskLabe
 
   const task = tasks.find((t) => t.id === taskId)
   const taskLabels = task?.labels ?? []
-  const projectLabels = labels.filter((l) => l.projectId === projectId)
+  const projectLabels = sortLabelsByName(labels.filter((l) => l.projectId === projectId))
 
   // Multi-select row: every board label is a tile, assigned ones read as solid.
   const handleToggle = (labelId: string) => {
@@ -85,6 +89,9 @@ export function TaskLabelsSection({ taskId, projectId, onLabelToggle }: TaskLabe
         projectId={projectId}
         isOpen={labelPickerOpen}
         onClose={() => setLabelPickerOpen(false)}
+        onLabelCreate={onLabelCreate}
+        onLabelUpdate={onLabelUpdate}
+        onLabelDelete={onLabelDelete}
         onLabelToggle={onLabelToggle}
       />
     </div>

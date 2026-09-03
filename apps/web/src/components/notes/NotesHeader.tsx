@@ -11,7 +11,7 @@ export type FilterState = {
   pinnedOnly: boolean
 }
 
-const SOURCES = ['manual', 'claude', 'voice', 'hook', 'import'] as const
+const SOURCES = ['manual', 'claude', 'codex', 'copilot', 'voice', 'hook', 'import'] as const
 const TYPES = ['note', 'decision', 'idea', 'observation', 'session_summary', 'reflection'] as const
 
 type Props = {

@@ -15,7 +15,7 @@ export const GET = withRateLimit(
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
 
-    const { realmId } = (ctx as { params: { realmId: string } }).params
+    const { realmId } = await (ctx as { params: Promise<{ realmId: string }> }).params
     const realms = await findGroupsForUser(result.id)
     const realm = realms.find((r) => r.id === realmId)
     if (!realm) return jsonError('Realm not found', 404)
@@ -30,7 +30,7 @@ export const PUT = withRateLimit(
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
 
-    const { realmId } = (ctx as { params: { realmId: string } }).params
+    const { realmId } = await (ctx as { params: Promise<{ realmId: string }> }).params
 
     const role = await getGroupRole(realmId, result.id)
     if (role !== 'owner') return jsonError('Only owner can perform this action', 403)
@@ -56,7 +56,7 @@ export const DELETE = withRateLimit(
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
 
-    const { realmId } = (ctx as { params: { realmId: string } }).params
+    const { realmId } = await (ctx as { params: Promise<{ realmId: string }> }).params
 
     const role = await getGroupRole(realmId, result.id)
     if (role !== 'owner') return jsonError('Only owner can perform this action', 403)

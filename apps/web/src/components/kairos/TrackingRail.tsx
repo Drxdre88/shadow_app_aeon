@@ -181,6 +181,8 @@ function RowButton({ children, onClick }: { children: React.ReactNode; onClick: 
 function sourceIcon(source: string): string {
   switch (source) {
     case 'claude': return '🤖'
+    case 'codex':  return '🧠'
+    case 'copilot': return '✈️'
     case 'voice':  return '🎙️'
     case 'manual': return '⌨️'
     default:       return '·'

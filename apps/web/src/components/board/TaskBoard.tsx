@@ -1,20 +1,18 @@
 'use client'
 
-import { useCallback, useState, useMemo, useRef, useEffect } from 'react'
+import { useCallback, useState, useMemo, useEffect, useRef } from 'react'
 import { DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
-import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColumn, type BoardTask } from '@/lib/store/boardStore'
+import { useBoardStore, useColumns, useTasks, useSelectedTaskId, useFuseTargetId, type BoardColumn, type BoardTask, type TaskAssigneePill } from '@/lib/store/boardStore'
+import { cn } from '@/lib/utils/cn'
+import { MissionEditorModal } from './MissionEditorModal'
 import { KanbanColumn } from './KanbanColumn'
 import { SortableColumn } from './SortableColumn'
 import { TaskEditModal } from './TaskEditModal'
-import { TaskAssigneeOverlay } from './TaskAssigneeOverlay'
+import { FloatingCardsLayer } from './FloatingCardsLayer'
+import { ZenModeLayer } from './ZenModeLayer'
 import { BoardFilterBar } from './BoardFilterBar'
-import { DependencyGlowTree } from './DependencyGlowTree'
-import { LabelPicker } from './LabelPicker'
-import { TaskColorPicker } from './TaskColorPicker'
-import { TaskPriorityPicker } from './TaskPriorityPicker'
-import { TaskProgressPopover } from './TaskProgressPopover'
-import { TaskSizePopover } from './TaskSizePopover'
+import { BoardOverlays } from './BoardOverlays'
 import { TrashDropZone } from './TrashDropZone'
 import { DragPreview } from './DragPreview'
 import { ConnectModeBanner } from './ConnectModeBanner'
@@ -25,34 +23,27 @@ import { useThemeStore } from '@/stores/themeStore'
 import { applyBoardFilters, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { useBoardDnD } from './useBoardDnD'
+import { useBoardOverlays, type BoardTaskData } from './useBoardOverlays'
+import { useBoardPinchZoom } from './useBoardPinchZoom'
+import { boardMeasuring, useBoardZoom } from './boardZoom'
+import { HoldToMoveContext, useHoldToMoveMode } from './useHoldToMove'
+import { HoldToMoveBanner } from './HoldToMoveBanner'
+import { FuseCardsModal } from './FuseCardsModal'
+import { useFuseCards } from './useFuseCards'
 import { boardCollisionDetection } from './boardCollision'
 import { useBoardKeyboardShortcuts } from './useBoardKeyboardShortcuts'
 import { useBoardHover } from './useBoardHover'
 import { cycleTaskCompletion } from './triState'
 import { useConnectMode } from './useConnectMode'
 import { duplicateBoardTask } from '@/lib/actions/board'
+import { prefetchAssignablePeople } from '@/lib/store/membersCache'
 import { toast } from '@/components/ui/Toast'
 
 const EMPTY_TASKS: BoardTask[] = []
 
-interface BoardTaskData {
-  id: string
-  projectId: string
-  name: string
-  description?: string
-  columnId?: string
-  status: string
-  priority: string
-  color: string
-  labels: string[]
-  onTimeline: boolean
-  orderIndex: number
-  startDate?: string
-  endDate?: string
-  size?: number | null
-  progress?: number | null
-  ganttTaskId?: string | null
-}
+// Stable empty map so the assignee selector returns a referentially-identical
+// value while no assignee filter is active (see filteredTasks below).
+const EMPTY_ASSIGNEES: Record<string, TaskAssigneePill[]> = {}
 
 interface TaskBoardProps {
   projectId: string
@@ -69,7 +60,7 @@ interface TaskBoardProps {
   onColumnUpdate?: (columnId: string, updates: Partial<BoardColumn>) => void
   onColumnReorder?: (updates: { id: string; orderIndex: number }[]) => void
   onColumnDelete?: (columnId: string) => void
-  onLabelCreate?: (label: { id: string; projectId: string; name: string; color: string }) => void
+  onLabelCreate?: (label: { id: string; projectId: string; name: string; color: string }) => void | boolean | Promise<void | boolean>
   onLabelUpdate?: (labelId: string, updates: { name?: string; color?: string }) => void
   onLabelDelete?: (labelId: string) => void
   onLabelToggle?: (taskId: string, labelId: string, action: 'add' | 'remove') => void
@@ -116,36 +107,14 @@ export function TaskBoard({
   const columns = useColumns()
   const tasks = useTasks()
   const selectedTaskId = useSelectedTaskId()
-  const addTask = useBoardStore((s) => s.addTask)
-  const updateTask = useBoardStore((s) => s.updateTask)
   const selectTask = useBoardStore((s) => s.selectTask)
   const addColumn = useBoardStore((s) => s.addColumn)
   const updateColumn = useBoardStore((s) => s.updateColumn)
   const removeColumn = useBoardStore((s) => s.removeColumn)
   const { colors: themeColors, glowIntensity: globalGlow, dragEffect, shortcuts, boardLayout, smoothUiRenders } = useThemeStore()
 
-  const [editingTask, setEditingTask] = useState<string | null>(null)
-  const [newTaskColumnId, setNewTaskColumnId] = useState<string | null>(null)
   const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null)
   const [internalFilters, setInternalFilters] = useState<BoardFilters>(DEFAULT_FILTERS)
-  const [dependencyTreeTaskId, setDependencyTreeTaskId] = useState<string | null>(null)
-  const [labelPickerTaskId, setLabelPickerTaskId] = useState<string | null>(null)
-  const [colorPickerTaskId, setColorPickerTaskId] = useState<string | null>(null)
-  const [priorityPickerTaskId, setPriorityPickerTaskId] = useState<string | null>(null)
-  const [assigneeTaskId, setAssigneeTaskId] = useState<string | null>(null)
-  const [progressTaskId, setProgressTaskId] = useState<string | null>(null)
-  const [sizeTaskId, setSizeTaskId] = useState<string | null>(null)
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    color: 'purple' as string,
-    priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
-    size: null as number | null,
-  })
-
-  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const formDataRef = useRef(formData)
-  formDataRef.current = formData
 
   const showFilters = showFiltersFromParent ?? false
   const filters = filtersFromParent ?? internalFilters
@@ -156,8 +125,24 @@ export function TaskBoard({
     [columns, projectId]
   )
 
+  // Warm the assignable-people cache so the assignee overlay opens instantly.
+  useEffect(() => {
+    prefetchAssignablePeople(projectId)
+  }, [projectId])
+
+  // Subscribe to assignee data only while an assignee filter is active —
+  // otherwise every optimistic assignment would re-render the whole board.
+  const assigneeFilterActive = (filters.assignees?.size ?? 0) > 0
+  const assigneesByTask = useBoardStore((s) => (assigneeFilterActive ? s.assigneesByTask : EMPTY_ASSIGNEES))
   const projectTasks = useMemo(() => tasks.filter((t) => t.projectId === projectId), [tasks, projectId])
-  const filteredTasks = useMemo(() => applyBoardFilters(projectTasks, filters), [projectTasks, filters])
+  const filteredTasks = useMemo(() => {
+    // Assignee data lives outside the task rows — enrich only when the
+    // assignee filter is active so the common path allocates nothing extra.
+    const source = filters.assignees?.size
+      ? projectTasks.map((t) => ({ ...t, assigneeIds: (assigneesByTask[t.id] ?? []).map((a) => a.userId) }))
+      : projectTasks
+    return applyBoardFilters(source, filters)
+  }, [projectTasks, filters, assigneesByTask])
   const tasksByColumn = useMemo(() => {
     const map = new Map<string, typeof filteredTasks>()
     for (const task of filteredTasks) {
@@ -173,6 +158,13 @@ export function TaskBoard({
   const columnIds = sortedColumns.map((c) => c.id)
 
   const { boardRef, hoveredTaskId } = useBoardHover()
+  // The pinch is refused while a card is lifted (a stray second finger during
+  // a cross-column drag would rescale the canvas under the drag), and the
+  // settled zoom sizes the drag preview to the bird's-eye cards.
+  const dragActiveRef = useRef(false)
+  const isPinchLocked = useCallback(() => dragActiveRef.current, [])
+  const { containerRef: pinchContainerRef, contentRef: pinchContentRef } = useBoardPinchZoom({ isLocked: isPinchLocked })
+  const boardZoom = useBoardZoom()
 
   const { connectSourceId, cursorPos, handleConnectClick, cancelConnect } = useConnectMode({
     connectMode,
@@ -180,35 +172,46 @@ export function TaskBoard({
     onConnectModeChange,
   })
 
-  const { sensors, activeItem, overId, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel } = useBoardDnD({
+  // Card fusion: a drop on a card's dwelt-on middle third asks before it
+  // merges; nothing moves until the modal confirms.
+  const fuseCards = useFuseCards(projectId)
+  const fuseTargetId = useFuseTargetId()
+
+  // Auto AI launches ride on the move mutation (see useBoardHandlers): the
+  // agent is spawned only once the card's move is durable.
+  const { sensors, activeItem, overId, handleDragStart, handleDragMove, handleDragOver, handleDragEnd, handleDragCancel, placeMovingTask } = useBoardDnD({
     projectTasks,
     sortedColumns,
     onTaskMove,
     onTaskDelete,
     onColumnReorder,
+    onFuseRequest: fuseCards.requestFuse,
   })
+  useEffect(() => { dragActiveRef.current = activeItem !== null }, [activeItem])
 
-  const handleAddTask = useCallback((columnId: string) => {
-    setFormData({ name: '', description: '', color: 'purple', priority: 'medium', size: null })
-    setNewTaskColumnId(columnId)
-    setEditingTask(null)
-  }, [])
+  const holdToMove = useHoldToMoveMode({ place: placeMovingTask })
+  // Neutral cards take their move-mode cursor from this attribute (globals.css)
+  // instead of each subscribing to the lifted id.
+  const isMovingMode = useBoardStore((s) => s.movingTaskId !== null)
 
-  const handleTaskEdit = useCallback((taskId: string) => {
-    selectTask(taskId)
-    const task = tasks.find((t) => t.id === taskId)
-    if (task) {
-      setFormData({
-        name: task.name,
-        description: task.description || '',
-        color: task.color,
-        priority: task.priority,
-        size: task.size ?? null,
-      })
-      setEditingTask(taskId)
-      setNewTaskColumnId(null)
-    }
-  }, [tasks, selectTask])
+  const {
+    editingTask,
+    newTaskColumnId,
+    formData,
+    isModalOpen,
+    hasOpenOverlay,
+    zenColumnId,
+    zenColumn,
+    overlayState,
+    handleAddTask,
+    handleTaskEdit,
+    handleFormChange,
+    handleSubmit,
+    closeModal,
+    flushAutosave,
+    handlePinCard,
+    handleUnpinCard,
+  } = useBoardOverlays({ projectId, projectTasks, sortedColumns, onTaskCreate, onTaskUpdate })
 
   const handleTaskClick = useCallback((taskId: string) => {
     handleConnectClick(taskId, handleTaskEdit)
@@ -247,26 +250,24 @@ export function TaskBoard({
     })
   }, [copiedTaskId, projectId])
 
-  const hasOpenOverlay = !!editingTask || !!newTaskColumnId || !!labelPickerTaskId || !!colorPickerTaskId || !!priorityPickerTaskId || !!dependencyTreeTaskId || !!assigneeTaskId || !!progressTaskId || !!sizeTaskId
-
   useBoardKeyboardShortcuts({
     hoveredTaskId,
     selectedTaskId,
     shortcuts,
     sortedColumns,
     hasOpenOverlay,
-    onOpenLabel: setLabelPickerTaskId,
-    onOpenColorPicker: setColorPickerTaskId,
-    onOpenPriorityPicker: setPriorityPickerTaskId,
+    onOpenLabel: overlayState.setLabelPickerTaskId,
+    onOpenColorPicker: overlayState.setColorPickerTaskId,
+    onOpenPriorityPicker: overlayState.setPriorityPickerTaskId,
     onEditCard: handleTaskEdit,
     onToggleDone: (taskId) => cycleTaskCompletion(taskId, onTaskUpdate),
     onAddTask: handleAddTask,
     onCopyCard: handleCopyCard,
     onPasteCard: handlePasteCard,
     onSelectTask: selectTask,
-    onOpenAssignee: (taskId) => setAssigneeTaskId((prev) => (prev === taskId ? null : taskId)),
-    onOpenProgress: (taskId) => setProgressTaskId((prev) => (prev === taskId ? null : taskId)),
-    onOpenSize: (taskId) => setSizeTaskId((prev) => (prev === taskId ? null : taskId)),
+    onOpenAssignee: (taskId) => overlayState.setAssigneeTaskId((prev) => (prev === taskId ? null : taskId)),
+    onOpenProgress: (taskId) => overlayState.setProgressTaskId((prev) => (prev === taskId ? null : taskId)),
+    onOpenSize: (taskId) => overlayState.setSizeTaskId((prev) => (prev === taskId ? null : taskId)),
     onTaskMove,
   })
 
@@ -304,83 +305,6 @@ export function TaskBoard({
     onColumnCreate?.({ id: newCol.id, projectId, name: newCol.name, color: newCol.color, orderIndex: newCol.orderIndex })
   }, [projectId, sortedColumns, addColumn, onColumnCreate])
 
-  const persistEdit = useCallback((data: typeof formData, taskId: string) => {
-    const name = data.name.trim()
-    if (!name) return
-    const updates = {
-      name,
-      description: data.description.trim() || undefined,
-      color: data.color,
-      priority: data.priority,
-      size: data.size,
-    }
-    updateTask(taskId, updates)
-    onTaskUpdate?.(taskId, updates, { silent: true })
-  }, [updateTask, onTaskUpdate])
-
-  const flushAutosave = useCallback(() => {
-    if (autosaveTimer.current) { clearTimeout(autosaveTimer.current); autosaveTimer.current = null }
-    if (editingTask) persistEdit(formDataRef.current, editingTask)
-  }, [editingTask, persistEdit])
-
-  // Autosave title/description (Linear/Trello-style): debounce while typing and
-  // flush on blur / close / unmount, so edits aren't lost when the modal is
-  // dismissed without pressing the button.
-  const handleFormChange = useCallback((data: typeof formData) => {
-    setFormData(data)
-    if (!editingTask) return
-    if (autosaveTimer.current) clearTimeout(autosaveTimer.current)
-    const taskId = editingTask
-    autosaveTimer.current = setTimeout(() => {
-      autosaveTimer.current = null
-      persistEdit(data, taskId)
-    }, 700)
-  }, [editingTask, persistEdit])
-
-  useEffect(() => () => { if (autosaveTimer.current) clearTimeout(autosaveTimer.current) }, [])
-
-  const handleSubmit = useCallback(() => {
-    if (editingTask) {
-      // Edits already autosaved; the button just flushes any pending write
-      // and closes.
-      flushAutosave()
-      setEditingTask(null)
-      return
-    }
-    if (!formData.name.trim()) return
-
-    if (newTaskColumnId) {
-      const maxOrder = Math.max(0, ...projectTasks.filter((t) => t.columnId === newTaskColumnId).map((t) => t.orderIndex))
-      const newTask = {
-        id: generateId(),
-        projectId,
-        name: formData.name.trim(),
-        description: formData.description.trim() || undefined,
-        columnId: newTaskColumnId,
-        status: 'todo',
-        priority: formData.priority,
-        color: formData.color,
-        labels: [],
-        onTimeline: false,
-        size: formData.size,
-        orderIndex: maxOrder + 1,
-      }
-      addTask(newTask)
-      onTaskCreate?.(newTask)
-      setNewTaskColumnId(null)
-      requestAnimationFrame(() => {
-        document.querySelector(`[data-task-id="${CSS.escape(newTask.id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-      })
-    }
-  }, [formData, editingTask, newTaskColumnId, projectTasks, projectId, addTask, onTaskCreate, flushAutosave])
-
-  const closeModal = useCallback(() => {
-    flushAutosave()
-    setEditingTask(null)
-    setNewTaskColumnId(null)
-  }, [flushAutosave])
-
-  const isModalOpen = editingTask !== null || newTaskColumnId !== null
   const isTaskDrag = activeItem?.type === 'task'
 
   return (
@@ -394,25 +318,66 @@ export function TaskBoard({
           onFiltersChange={setFilters}
         />
 
+        <HoldToMoveContext.Provider value={holdToMove}>
         <DndContext
           sensors={sensors}
           collisionDetection={boardCollisionDetection}
+          // Zoom-correct rect measuring (boardZoom.ts): dnd-kit strips a
+          // node's own translate in unscaled px, which skews displaced
+          // cards' droppable rects under the pinch scale.
+          measuring={boardMeasuring}
           onDragStart={handleDragStart}
+          onDragMove={handleDragMove}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
         >
           <SortableContext items={columnIds} strategy={rectSortingStrategy}>
+            {/*
+              Two-layer board surface:
+              - outer div = the scroll container. `touch-action: pan-x pan-y`
+                allows one-finger panning but forbids NATIVE pinch-zoom for any
+                touch starting on the board (touch-action of ancestors
+                constrains descendants), so pinch never escapes the app canvas.
+                useBoardPinchZoom then implements the contained bird's-eye
+                pinch on this element. overscroll-x-contain stops horizontal
+                edge-swipes from triggering browser back/forward navigation.
+              - inner div = the scaled columns wrapper the pinch transform is
+                applied to. DragOverlay stays OUTSIDE it: dnd-kit overlays
+                inside transformed ancestors drift (clauderic/dnd-kit#464).
+            */}
             <div
+              ref={pinchContainerRef}
               data-board-columns
-              className={boardLayout === 'grid'
-                ? 'flex flex-wrap gap-3 sm:gap-4 pb-4 overflow-x-hidden overflow-y-auto sm:overflow-auto content-start sm:max-h-[calc(100dvh-140px)]'
-                : 'flex flex-nowrap gap-3 sm:gap-4 pb-4 overflow-x-auto overflow-y-hidden sm:overflow-auto sm:max-h-[calc(100dvh-140px)]'
-              }
-              style={activeItem ? { willChange: 'transform' } : undefined}
+              data-moving-mode={isMovingMode ? '' : undefined}
+              // --board-chrome (default 120px) matches the host page's board
+              // wrapper (ProjectContent / demo override); column caps
+              // subtract a further 24px for the scale wrapper's pb-4 +
+              // horizontal scrollbar, so a capped board fits this box — no
+              // phantom scrollbar, no dead band under the columns. The min-h
+              // floor lifts while the filter bar is open: it shares the fixed
+              // wrapper, and floor + bar would push the board's bottom edge
+              // below the fold.
+              className={cn(
+                boardLayout === 'grid'
+                  ? 'overflow-x-hidden overflow-y-auto sm:overflow-auto sm:max-h-[calc(100dvh-var(--board-chrome,120px))] overscroll-x-contain'
+                  : 'overflow-x-auto overflow-y-hidden sm:overflow-auto sm:max-h-[calc(100dvh-var(--board-chrome,120px))] overscroll-x-contain',
+                !showFilters && 'min-h-[calc(100dvh-var(--board-chrome,120px))]'
+              )}
+              style={{ touchAction: 'pan-x pan-y' }}
             >
+              <div
+                ref={pinchContentRef}
+                data-board-scale
+                data-board-layout={boardLayout}
+                className={boardLayout === 'grid'
+                  ? 'flex flex-wrap gap-3 sm:gap-4 pb-4 content-start'
+                  : 'flex flex-nowrap gap-3 sm:gap-4 pb-4 w-max min-w-full'
+                }
+                style={activeItem ? { willChange: 'transform' } : undefined}
+              >
               {sortedColumns.map((column) => (
-                <SortableColumn key={column.id} column={column}>
+                <SortableColumn key={column.id} column={column} zenHidden={zenColumnId === column.id}>
                   {(dragHandleProps) => (
                     <KanbanColumn
                       column={column}
@@ -434,24 +399,37 @@ export function TaskBoard({
                       onArchiveColumn={onArchiveColumn}
                       overId={overId}
                       activeTaskId={activeItem?.type === 'task' ? (activeItem.data as BoardTaskData).id : null}
-                      onDependencyClick={setDependencyTreeTaskId}
+                      onDependencyClick={overlayState.setDependencyTreeTaskId}
                       dragHandleProps={dragHandleProps}
                     />
                   )}
                 </SortableColumn>
               ))}
 
-              <AddColumnButton onClick={handleAddColumn} />
+                <AddColumnButton onClick={handleAddColumn} />
+              </div>
             </div>
           </SortableContext>
 
           <DragOverlay dropAnimation={smoothUiRenders ? { duration: 300, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' } : { duration: 0 }}>
-            {activeItem?.type === 'task' && <DragPreview task={activeItem.data as BoardTaskData} effect={dragEffect} globalGlow={globalGlow} />}
+            {activeItem?.type === 'task' && <DragPreview task={activeItem.data as BoardTaskData} effect={dragEffect} globalGlow={globalGlow} zoom={boardZoom} hint={fuseTargetId ? 'Fuse' : null} />}
           </DragOverlay>
 
           <TrashDropZone isActive={isTaskDrag} />
         </DndContext>
+        </HoldToMoveContext.Provider>
       </div>
+
+      <HoldToMoveBanner onCancel={holdToMove.cancel} />
+
+      <FuseCardsModal
+        isOpen={fuseCards.request !== null}
+        source={fuseCards.request?.source ?? null}
+        target={fuseCards.request?.target ?? null}
+        isLoading={fuseCards.isFusing}
+        onConfirm={fuseCards.confirmFuse}
+        onClose={fuseCards.cancelFuse}
+      />
 
       <TaskEditModal
         isOpen={isModalOpen}
@@ -465,85 +443,64 @@ export function TaskBoard({
         onBlurPersist={flushAutosave}
         onAddDependency={onAddDependency}
         onRemoveDependency={onRemoveDependency}
+        onLabelCreate={onLabelCreate}
+        onLabelUpdate={onLabelUpdate}
+        onLabelDelete={onLabelDelete}
         onLabelToggle={onLabelToggle}
         onPushToGantt={onPushToGantt}
         onDateChange={(taskId, dates) => onTaskUpdate?.(taskId, dates as Record<string, unknown>)}
         onStatusChange={(taskId, status) => onTaskUpdate?.(taskId, { status })}
         onProgressChange={(taskId, progress) => onTaskUpdate?.(taskId, { progress }, { silent: true })}
         onTaskDelete={onTaskDelete}
+        onPin={handlePinCard}
       />
 
-      <TaskAssigneeOverlay
-        projectId={projectId}
-        taskId={assigneeTaskId}
-        onClose={() => setAssigneeTaskId(null)}
-      />
+      <MissionEditorModal projectId={projectId} />
 
-      {progressTaskId && (
-        <TaskProgressPopover
-          taskId={progressTaskId}
-          onClose={() => setProgressTaskId(null)}
-          onTaskUpdate={onTaskUpdate}
-        />
-      )}
-
-      {sizeTaskId && (
-        <TaskSizePopover
-          taskId={sizeTaskId}
-          onClose={() => setSizeTaskId(null)}
-          onTaskUpdate={onTaskUpdate}
-        />
-      )}
-
-      {dependencyTreeTaskId && (
-        <DependencyGlowTree
-          taskId={dependencyTreeTaskId}
-          onClose={() => setDependencyTreeTaskId(null)}
-          onTaskEdit={(id) => { setDependencyTreeTaskId(null); handleTaskEdit(id) }}
-          onTaskUpdate={onTaskUpdate}
-        />
-      )}
-
-      {showAllDeps && (
-        <DependencyGlowTree
-          taskId={null}
-          showAll
-          onClose={() => onShowAllDepsChange?.(false)}
-          onTaskEdit={(id) => { onShowAllDepsChange?.(false); handleTaskEdit(id) }}
-          onTaskUpdate={onTaskUpdate}
-        />
-      )}
-
-      {labelPickerTaskId && (
-        <LabelPicker
-          taskId={labelPickerTaskId}
+      {zenColumn && (
+        <ZenModeLayer
+          column={zenColumn}
           projectId={projectId}
-          isOpen={!!labelPickerTaskId}
-          onClose={() => setLabelPickerTaskId(null)}
-          onLabelCreate={onLabelCreate}
-          onLabelUpdate={onLabelUpdate}
-          onLabelDelete={onLabelDelete}
-          onLabelToggle={onLabelToggle}
+          tasks={tasksByColumn.get(zenColumn.id) ?? EMPTY_TASKS}
+          escapeDisabled={hasOpenOverlay}
+          onTaskEdit={handleTaskClick}
+          onTaskCreate={onTaskCreate}
+          onTaskUpdate={onTaskUpdate}
+          onTaskDelete={onTaskDelete}
+          onPushToGantt={onPushToGantt}
+          onSendToVault={onSendToVault}
+          onArchiveTask={onArchiveTask}
+          onDependencyClick={overlayState.setDependencyTreeTaskId}
+          onTaskMove={onTaskMove}
         />
       )}
 
-      {colorPickerTaskId && (
-        <TaskColorPicker
-          taskId={colorPickerTaskId}
-          isOpen={!!colorPickerTaskId}
-          onClose={() => setColorPickerTaskId(null)}
-          onTaskUpdate={onTaskUpdate}
-        />
-      )}
+      <FloatingCardsLayer
+        projectId={projectId}
+        onUnpin={handleUnpinCard}
+        onTaskUpdate={onTaskUpdate}
+        onTaskDelete={onTaskDelete}
+        onAddDependency={onAddDependency}
+        onRemoveDependency={onRemoveDependency}
+        onLabelCreate={onLabelCreate}
+        onLabelUpdate={onLabelUpdate}
+        onLabelDelete={onLabelDelete}
+        onLabelToggle={onLabelToggle}
+        onPushToGantt={onPushToGantt}
+      />
 
-      {priorityPickerTaskId && (
-        <TaskPriorityPicker
-          taskId={priorityPickerTaskId}
-          isOpen={!!priorityPickerTaskId}
-          onClose={() => setPriorityPickerTaskId(null)}
-          onTaskUpdate={onTaskUpdate}
-        />
-      )}
+      <BoardOverlays
+        projectId={projectId}
+        state={overlayState}
+        showAllDeps={showAllDeps}
+        onShowAllDepsChange={onShowAllDepsChange}
+        onTaskEdit={handleTaskEdit}
+        onTaskUpdate={onTaskUpdate}
+        onLabelCreate={onLabelCreate}
+        onLabelUpdate={onLabelUpdate}
+        onLabelDelete={onLabelDelete}
+        onLabelToggle={onLabelToggle}
+      />
 
       <ConnectModeBanner
         connectMode={connectMode ?? false}

@@ -10,7 +10,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { SortableChecklistItem } from './SortableChecklistItem'
+import { SortableChecklistItem, DropLine } from './SortableChecklistItem'
 import type { ChecklistItem, CheckState, ChecklistStatus } from './types'
 
 interface SortableGroupSectionProps {
@@ -25,6 +25,10 @@ interface SortableGroupSectionProps {
   addingInGroup: boolean
   newItemTitle: string
   titleMax: number
+  /** Item being dragged anywhere in the checklist (excluded from slot math). */
+  activeDragItemId?: string | null
+  /** Drop slot inside THIS group (0..items-without-active), or null. */
+  dropIndex?: number | null
   onToggleCollapse: () => void
   onEditGroupStart: () => void
   onEditGroupChange: (v: string) => void
@@ -50,6 +54,7 @@ interface SortableGroupSectionProps {
 export function SortableGroupSection({
   groupName, items, isCollapsed, isEditing, editingGroupValue, confirmingDelete,
   editingItemId, editingItemTitle, addingInGroup, newItemTitle, titleMax,
+  activeDragItemId, dropIndex,
   onToggleCollapse, onEditGroupStart, onEditGroupChange, onEditGroupCommit, onEditGroupCancel,
   onDeleteStart, onDeleteConfirm, onDeleteCancel,
   onItemToggle, onItemRemove, onItemStatusChange,
@@ -73,13 +78,24 @@ export function SortableGroupSection({
     transition,
   }
 
+  // The slot counts rows without the dragged one; the line sits above the row
+  // now at that slot, or below the last row when the slot is past the end.
+  const slotRows = items.filter((i) => i.id !== activeDragItemId)
+  const hasSlot = dropIndex !== null && dropIndex !== undefined
+  const indicatorFor = (id: string): 'before' | 'after' | null => {
+    if (!hasSlot) return null
+    if (slotRows[dropIndex]?.id === id) return 'before'
+    if (dropIndex >= slotRows.length && slotRows[slotRows.length - 1]?.id === id) return 'after'
+    return null
+  }
+
   const checkedCount = items.filter((i) => i.state === 'checked').length
   const crossedCount = items.filter((i) => i.state === 'crossed').length
   const total = items.length
   const progress = total > 0 ? (checkedCount / total) * 100 : 0
 
   return (
-    <div ref={setNodeRef} style={style} className={cn('space-y-2', isDragging && 'opacity-50 z-50 relative')}>
+    <div ref={setNodeRef} style={style} data-checklist-group={groupName} className={cn('space-y-2', isDragging && 'opacity-50 z-50 relative')}>
       <div className="flex items-center justify-between group/header">
         {isEditing ? (
           <form
@@ -182,10 +198,12 @@ export function SortableGroupSection({
       {!isCollapsed && (
         <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
           <div className="space-y-1 min-h-[8px]">
+            {hasSlot && slotRows.length === 0 && <DropLine data-drop-indicator="empty" />}
             {items.map((item) => (
               <SortableChecklistItem
                 key={item.id}
                 item={item}
+                dropIndicator={indicatorFor(item.id)}
                 editingItemId={editingItemId}
                 editingItemTitle={editingItemTitle}
                 onToggle={onItemToggle}
@@ -200,6 +218,8 @@ export function SortableGroupSection({
           </div>
         </SortableContext>
       )}
+
+      {isCollapsed && hasSlot && <DropLine data-drop-indicator="collapsed" />}
 
       {!isCollapsed && addingInGroup && (
         <form

@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { boardTasks, ganttTasks, boardColumns, labels, taskLabels, taskDependencies, rows, checklistItems } from '@/lib/db/schema'
-import { eq, and, inArray, sql } from 'drizzle-orm'
+import { eq, ne, and, asc, inArray, sql } from 'drizzle-orm'
+import { touchProject } from './projects'
 
 const DEFAULT_DURATION_DAYS = 2
 
@@ -50,6 +51,26 @@ export function skipToWeekday(date: Date): Date {
   return d
 }
 
+/**
+ * Put one card on ONE view's timeline.
+ *
+ * A view is a re-grouping of the same board, so the same card legitimately
+ * appears in several of them and the invariant is one bar per (card, view) —
+ * not one bar per card. Every bar lookup here is therefore scoped to the target
+ * view's lanes: a bar in another view is not this view's bar, and returning it
+ * used to hand the client a bar belonging to a row it does not render, while
+ * overwriting the card's dates with that other view's schedule.
+ *
+ * `boardTasks.ganttTaskId` is a single column and cannot hold N bars, so it is
+ * claimed by whichever bar got there first and only re-pointed while null;
+ * `onTimeline` means "on at least one timeline". The per-view truth is
+ * `gantt_tasks.rowId`. Claiming while null is also the drift repair: a reset
+ * nulls `ganttTaskId` while the bar lives on in its view, and re-pushing then
+ * must re-link, not fork.
+ *
+ * The lookups run inside the transaction behind a row lock on the card, so two
+ * concurrent pushes serialise instead of both seeing "no bar" and inserting.
+ */
 export async function pushTaskToGantt(
   boardTaskId: string,
   projectId: string,
@@ -57,44 +78,78 @@ export async function pushTaskToGantt(
   rowId: string,
   ganttTaskClientId: string
 ) {
-  const [boardTask] = await db
-    .select()
-    .from(boardTasks)
-    .where(and(eq(boardTasks.id, boardTaskId), eq(boardTasks.projectId, projectId)))
+  const ganttTask = await db.transaction(async (tx) => {
+    const [boardTask] = await tx
+      .select()
+      .from(boardTasks)
+      .where(and(eq(boardTasks.id, boardTaskId), eq(boardTasks.projectId, projectId)))
+      .for('update')
 
-  if (!boardTask) throw new Error('Board task not found')
-  if (boardTask.ganttTaskId) throw new Error('Task already on Gantt')
+    if (!boardTask) throw new Error('Board task not found')
 
-  const duration = computeDuration(boardTask.size, boardTask.priority)
-  const start = computeStartDate(boardTask.startDate, null)
-  const end = boardTask.endDate || computeEndDate(start, duration)
+    const viewRows = await tx
+      .select({ id: rows.id })
+      .from(rows)
+      .where(and(eq(rows.projectId, projectId), eq(rows.ganttViewId, ganttViewId)))
 
-  const [ganttTask] = await db
-    .insert(ganttTasks)
-    .values({
-      id: ganttTaskClientId,
-      projectId,
-      rowId,
-      boardTaskId,
-      name: boardTask.name,
-      startDate: start,
-      endDate: end,
-      color: boardTask.color,
-      progress: boardTask.status === 'done' ? 100 : 0,
-    })
-    .returning()
+    const viewRowIds = viewRows.map((r) => r.id)
+    if (!viewRowIds.includes(rowId)) throw new Error('Row does not belong to this Gantt view')
 
-  await db
-    .update(boardTasks)
-    .set({
-      ganttTaskId: ganttTask.id,
-      onTimeline: true,
-      startDate: start,
-      endDate: end,
-      updatedAt: new Date(),
-    })
-    .where(eq(boardTasks.id, boardTaskId))
+    const [existingBar] = await tx
+      .select()
+      .from(ganttTasks)
+      .where(and(
+        eq(ganttTasks.projectId, projectId),
+        eq(ganttTasks.boardTaskId, boardTaskId),
+        inArray(ganttTasks.rowId, viewRowIds)
+      ))
+      .orderBy(asc(ganttTasks.createdAt), asc(ganttTasks.id))
 
+    const duration = computeDuration(boardTask.size, boardTask.priority)
+    const start = existingBar ? existingBar.startDate : computeStartDate(boardTask.startDate, null)
+    const end = existingBar ? existingBar.endDate : (boardTask.endDate || computeEndDate(start, duration))
+
+    let bar = existingBar
+    if (!bar) {
+      const [created] = await tx
+        .insert(ganttTasks)
+        .values({
+          id: ganttTaskClientId,
+          projectId,
+          rowId,
+          boardTaskId,
+          name: boardTask.name,
+          startDate: start,
+          endDate: end,
+          color: boardTask.color,
+          progress: boardTask.status === 'done' ? 100 : 0,
+        })
+        .returning()
+      bar = created
+    } else if (bar.rowId !== rowId) {
+      const [moved] = await tx
+        .update(ganttTasks)
+        .set({ rowId, updatedAt: new Date() })
+        .where(and(eq(ganttTasks.id, bar.id), eq(ganttTasks.projectId, projectId)))
+        .returning()
+      if (moved) bar = moved
+    }
+
+    await tx
+      .update(boardTasks)
+      .set({
+        ...(boardTask.ganttTaskId ? {} : { ganttTaskId: bar.id }),
+        onTimeline: true,
+        startDate: start,
+        endDate: end,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(boardTasks.id, boardTaskId), eq(boardTasks.projectId, projectId)))
+
+    return bar
+  })
+
+  await touchProject(projectId, { type: 'task:updated' })
   return ganttTask
 }
 
@@ -174,42 +229,51 @@ export async function deleteLinkedGanttTask(boardTaskId: string) {
 
 export type GroupByMode = 'column' | 'label' | 'dependency' | 'priority'
 
+type Executor = Pick<typeof db, 'select' | 'insert' | 'delete'>
+
+/**
+ * Build a view's lanes. The generate-then-prune pair runs in one transaction —
+ * a failure between them used to leave the excluded sections behind as lanes
+ * the user explicitly opted out of.
+ */
 export async function generateRowsForView(
   projectId: string,
   ganttViewId: string,
   groupBy: GroupByMode,
   excludedSections?: string[]
 ): Promise<{ id: string; name: string; color: string; orderIndex: number }[]> {
-  let generated: { id: string; name: string; color: string; orderIndex: number }[]
-  switch (groupBy) {
-    case 'column':
-      generated = await generateRowsByColumn(projectId, ganttViewId)
-      break
-    case 'label':
-      generated = await generateRowsByLabel(projectId, ganttViewId)
-      break
-    case 'priority':
-      generated = await generateRowsByPriority(projectId, ganttViewId)
-      break
-    case 'dependency':
-      generated = await generateRowsByDependencyChain(projectId, ganttViewId)
-      break
-  }
+  return db.transaction(async (tx) => {
+    let generated: { id: string; name: string; color: string; orderIndex: number }[]
+    switch (groupBy) {
+      case 'column':
+        generated = await generateRowsByColumn(tx, projectId, ganttViewId)
+        break
+      case 'label':
+        generated = await generateRowsByLabel(tx, projectId, ganttViewId)
+        break
+      case 'priority':
+        generated = await generateRowsByPriority(tx, projectId, ganttViewId)
+        break
+      case 'dependency':
+        generated = await generateRowsByDependencyChain(tx, projectId, ganttViewId)
+        break
+    }
 
-  if (!excludedSections || excludedSections.length === 0) return generated
+    if (!excludedSections || excludedSections.length === 0) return generated
 
-  const excludedSet = new Set(excludedSections)
-  const excludedRows = generated.filter((r) => excludedSet.has(r.name))
-  if (excludedRows.length > 0) {
-    await db
-      .delete(rows)
-      .where(inArray(rows.id, excludedRows.map((r) => r.id)))
-  }
-  return generated.filter((r) => !excludedSet.has(r.name))
+    const excludedSet = new Set(excludedSections)
+    const excludedRows = generated.filter((r) => excludedSet.has(r.name))
+    if (excludedRows.length > 0) {
+      await tx
+        .delete(rows)
+        .where(inArray(rows.id, excludedRows.map((r) => r.id)))
+    }
+    return generated.filter((r) => !excludedSet.has(r.name))
+  })
 }
 
-async function generateRowsByColumn(projectId: string, ganttViewId: string) {
-  const columns = await db
+async function generateRowsByColumn(tx: Executor, projectId: string, ganttViewId: string) {
+  const columns = await tx
     .select()
     .from(boardColumns)
     .where(eq(boardColumns.projectId, projectId))
@@ -225,12 +289,12 @@ async function generateRowsByColumn(projectId: string, ganttViewId: string) {
 
   if (rowValues.length === 0) return []
 
-  const created = await db.insert(rows).values(rowValues).returning()
+  const created = await tx.insert(rows).values(rowValues).returning()
   return created
 }
 
-async function generateRowsByLabel(projectId: string, ganttViewId: string) {
-  const projectLabels = await db
+async function generateRowsByLabel(tx: Executor, projectId: string, ganttViewId: string) {
+  const projectLabels = await tx
     .select()
     .from(labels)
     .where(eq(labels.projectId, projectId))
@@ -252,11 +316,11 @@ async function generateRowsByLabel(projectId: string, ganttViewId: string) {
     },
   ]
 
-  const created = await db.insert(rows).values(rowValues).returning()
+  const created = await tx.insert(rows).values(rowValues).returning()
   return created
 }
 
-async function generateRowsByPriority(projectId: string, ganttViewId: string) {
+async function generateRowsByPriority(tx: Executor, projectId: string, ganttViewId: string) {
   const priorities = [
     { name: 'Urgent', color: 'red' },
     { name: 'High', color: 'orange' },
@@ -272,18 +336,18 @@ async function generateRowsByPriority(projectId: string, ganttViewId: string) {
     orderIndex: i,
   }))
 
-  const created = await db.insert(rows).values(rowValues).returning()
+  const created = await tx.insert(rows).values(rowValues).returning()
   return created
 }
 
-async function generateRowsByDependencyChain(projectId: string, ganttViewId: string) {
-  const deps = await db
+async function generateRowsByDependencyChain(tx: Executor, projectId: string, ganttViewId: string) {
+  const deps = await tx
     .select()
     .from(taskDependencies)
     .innerJoin(boardTasks, eq(boardTasks.id, taskDependencies.blockerTaskId))
     .where(eq(boardTasks.projectId, projectId))
 
-  const tasks = await db
+  const tasks = await tx
     .select({ id: boardTasks.id, name: boardTasks.name })
     .from(boardTasks)
     .where(eq(boardTasks.projectId, projectId))
@@ -331,12 +395,29 @@ async function generateRowsByDependencyChain(projectId: string, ganttViewId: str
 
   if (rowValues.length === 0) return []
 
-  const created = await db.insert(rows).values(rowValues).returning()
+  const created = await tx.insert(rows).values(rowValues).returning()
   return created
 }
 
 export type TaskOrder = 'column' | 'alphabetical'
 
+/**
+ * Populate ONE view: every card without a bar in this view gets one.
+ *
+ * Idempotent per view — a re-run over the same view inserts nothing rather than
+ * minting a duplicate bar per card. "Already scheduled" is judged from the bars
+ * sitting in THIS view's lanes, never from the card's `ganttTaskId`: that
+ * pointer is view-agnostic, so treating it as proof of scheduling made every
+ * view after the first come up empty, and no amount of re-pushing could fill it
+ * while the first view's bars survived.
+ *
+ * `ganttTaskId` is claimed only for cards that have none, so a card already on
+ * another view keeps its original pointer instead of orphaning that bar from
+ * the board; `onTimeline` is set for all of them.
+ *
+ * Cards are read and locked inside the transaction: the old read-then-insert
+ * let two concurrent pushes both see "no bar" and both insert.
+ */
 export async function bulkPushAllTasksToGantt(
   projectId: string,
   ganttViewId: string,
@@ -348,167 +429,204 @@ export async function bulkPushAllTasksToGantt(
 ) {
   if (viewRows.length === 0) return []
 
-  const allTasksRaw = await db
-    .select()
-    .from(boardTasks)
-    .where(eq(boardTasks.projectId, projectId))
+  const created = await db.transaction(async (tx) => {
+    const allTasksRaw = await tx
+      .select()
+      .from(boardTasks)
+      .where(and(eq(boardTasks.projectId, projectId), ne(boardTasks.status, 'done')))
+      .orderBy(asc(boardTasks.id))
+      .for('update')
 
-  const allTasks = allTasksRaw.filter((t) => t.status !== 'done')
-  if (allTasks.length === 0) return []
+    const viewLanes = await tx
+      .select({ id: rows.id })
+      .from(rows)
+      .where(and(eq(rows.projectId, projectId), eq(rows.ganttViewId, ganttViewId)))
 
-  const allColumns = await db.select().from(boardColumns).where(eq(boardColumns.projectId, projectId))
+    const laneIds = [...new Set([...viewLanes.map((r) => r.id), ...viewRows.map((r) => r.id)])]
 
-  const allTaskLabels = groupBy === 'label'
-    ? await db.select().from(taskLabels).where(
-        inArray(taskLabels.taskId, allTasks.map((t) => t.id))
-      )
-    : []
+    const existingBars = await tx
+      .select({ boardTaskId: ganttTasks.boardTaskId })
+      .from(ganttTasks)
+      .where(and(eq(ganttTasks.projectId, projectId), inArray(ganttTasks.rowId, laneIds)))
 
-  const allLabels = groupBy === 'label'
-    ? await db.select().from(labels).where(eq(labels.projectId, projectId))
-    : []
+    const alreadyInThisView = new Set(
+      existingBars.map((b) => b.boardTaskId).filter((id): id is string => !!id)
+    )
 
-  const taskLabelMap = new Map<string, string>()
-  for (const tl of allTaskLabels) {
-    if (!taskLabelMap.has(tl.taskId)) {
-      const label = allLabels.find((l) => l.id === tl.labelId)
-      if (label) taskLabelMap.set(tl.taskId, label.name)
-    }
-  }
+    const allTasks = allTasksRaw.filter((t) => !alreadyInThisView.has(t.id))
+    if (allTasks.length === 0) return []
 
-  const columnNameMap = new Map<string, string>()
-  const columnOrderMap = new Map<string, number>()
-  for (const col of allColumns) {
-    columnNameMap.set(col.id, col.name)
-    columnOrderMap.set(col.id, col.orderIndex)
-  }
+    const allColumns = await tx.select().from(boardColumns).where(eq(boardColumns.projectId, projectId))
 
-  function resolveRow(task: typeof allTasks[0]): string | null {
-    switch (groupBy) {
-      case 'column': {
-        const colName = task.columnId ? columnNameMap.get(task.columnId) : null
-        const match = colName ? viewRows.find((r) => r.name === colName) : null
-        return match?.id ?? null
+    const allTaskLabels = groupBy === 'label'
+      ? await tx.select().from(taskLabels).where(
+          inArray(taskLabels.taskId, allTasks.map((t) => t.id))
+        )
+      : []
+
+    const allLabels = groupBy === 'label'
+      ? await tx.select().from(labels).where(eq(labels.projectId, projectId))
+      : []
+
+    const taskLabelMap = new Map<string, string>()
+    for (const tl of allTaskLabels) {
+      if (!taskLabelMap.has(tl.taskId)) {
+        const label = allLabels.find((l) => l.id === tl.labelId)
+        if (label) taskLabelMap.set(tl.taskId, label.name)
       }
-      case 'label': {
-        const labelName = taskLabelMap.get(task.id)
-        if (!labelName) {
-          const untagged = viewRows.find((r) => r.name === 'Untagged')
-          return untagged?.id ?? null
+    }
+
+    const columnNameMap = new Map<string, string>()
+    const columnOrderMap = new Map<string, number>()
+    for (const col of allColumns) {
+      columnNameMap.set(col.id, col.name)
+      columnOrderMap.set(col.id, col.orderIndex)
+    }
+
+    function resolveRow(task: typeof allTasks[0]): string | null {
+      switch (groupBy) {
+        case 'column': {
+          const colName = task.columnId ? columnNameMap.get(task.columnId) : null
+          const match = colName ? viewRows.find((r) => r.name === colName) : null
+          return match?.id ?? null
         }
-        const match = viewRows.find((r) => r.name === labelName)
-        return match?.id ?? null
+        case 'label': {
+          const labelName = taskLabelMap.get(task.id)
+          if (!labelName) {
+            const untagged = viewRows.find((r) => r.name === 'Untagged')
+            return untagged?.id ?? null
+          }
+          const match = viewRows.find((r) => r.name === labelName)
+          return match?.id ?? null
+        }
+        case 'priority': {
+          const name = PRIORITY_NAME_MAP[task.priority] ?? 'Medium'
+          const match = viewRows.find((r) => r.name === name)
+          return match?.id ?? null
+        }
+        case 'dependency':
+          return viewRows[0]?.id ?? null
       }
-      case 'priority': {
-        const name = PRIORITY_NAME_MAP[task.priority] ?? 'Medium'
-        const match = viewRows.find((r) => r.name === name)
-        return match?.id ?? null
-      }
-      case 'dependency':
-        return viewRows[0]?.id ?? null
     }
-  }
 
-  const rowGroups = new Map<string, typeof allTasks>()
-  for (const task of allTasks) {
-    const rowId = resolveRow(task)
-    if (!rowId) continue
-    const group = rowGroups.get(rowId) || []
-    group.push(task)
-    rowGroups.set(rowId, group)
-  }
-
-  for (const [, group] of rowGroups) {
-    if (taskOrder === 'alphabetical') {
-      group.sort((a, b) => a.name.localeCompare(b.name))
-    } else {
-      group.sort((a, b) => {
-        const colA = a.columnId ? (columnOrderMap.get(a.columnId) ?? -1) : -1
-        const colB = b.columnId ? (columnOrderMap.get(b.columnId) ?? -1) : -1
-        if (colA !== colB) return colB - colA
-        return a.orderIndex - b.orderIndex
-      })
+    const rowGroups = new Map<string, typeof allTasks>()
+    for (const task of allTasks) {
+      const rowId = resolveRow(task)
+      if (!rowId) continue
+      const group = rowGroups.get(rowId) || []
+      group.push(task)
+      rowGroups.set(rowId, group)
     }
-  }
 
-  const skipWk = !allowWeekends
-  let today = new Date()
-  today.setHours(0, 0, 0, 0)
-  if (skipWk) today = skipToWeekday(today)
-
-  const ganttValues: {
-    projectId: string
-    rowId: string
-    boardTaskId: string
-    name: string
-    startDate: Date
-    endDate: Date
-    color: string
-    progress: number
-  }[] = []
-
-  for (const [rowId, group] of rowGroups) {
-    if (allowOverlap) {
-      for (const task of group) {
-        const duration = computeDuration(task.size, task.priority)
-        let start = computeStartDate(task.startDate, null)
-        if (skipWk) start = skipToWeekday(start)
-        const end = task.endDate || computeEndDate(start, duration, skipWk)
-        ganttValues.push({
-          projectId,
-          rowId,
-          boardTaskId: task.id,
-          name: task.name,
-          startDate: start,
-          endDate: end,
-          color: task.color,
-          progress: task.status === 'done' ? 100 : 0,
+    for (const [, group] of rowGroups) {
+      if (taskOrder === 'alphabetical') {
+        group.sort((a, b) => a.name.localeCompare(b.name))
+      } else {
+        group.sort((a, b) => {
+          const colA = a.columnId ? (columnOrderMap.get(a.columnId) ?? -1) : -1
+          const colB = b.columnId ? (columnOrderMap.get(b.columnId) ?? -1) : -1
+          if (colA !== colB) return colB - colA
+          return a.orderIndex - b.orderIndex
         })
       }
-    } else {
-      let cursor = new Date(today)
-      for (const task of group) {
-        const duration = computeDuration(task.size, task.priority)
-        if (skipWk) cursor = skipToWeekday(cursor)
-        const start = new Date(cursor)
-        const end = computeEndDate(start, duration, skipWk)
-        ganttValues.push({
-          projectId,
-          rowId,
-          boardTaskId: task.id,
-          name: task.name,
-          startDate: start,
-          endDate: end,
-          color: task.color,
-          progress: task.status === 'done' ? 100 : 0,
-        })
-        cursor = end
+    }
+
+    const skipWk = !allowWeekends
+    let today = new Date()
+    today.setHours(0, 0, 0, 0)
+    if (skipWk) today = skipToWeekday(today)
+
+    const ganttValues: {
+      projectId: string
+      rowId: string
+      boardTaskId: string
+      name: string
+      startDate: Date
+      endDate: Date
+      color: string
+      progress: number
+    }[] = []
+
+    for (const [rowId, group] of rowGroups) {
+      if (allowOverlap) {
+        for (const task of group) {
+          const duration = computeDuration(task.size, task.priority)
+          let start = computeStartDate(task.startDate, null)
+          if (skipWk) start = skipToWeekday(start)
+          const end = task.endDate || computeEndDate(start, duration, skipWk)
+          ganttValues.push({
+            projectId,
+            rowId,
+            boardTaskId: task.id,
+            name: task.name,
+            startDate: start,
+            endDate: end,
+            color: task.color,
+            progress: task.status === 'done' ? 100 : 0,
+          })
+        }
+      } else {
+        let cursor = new Date(today)
+        for (const task of group) {
+          const duration = computeDuration(task.size, task.priority)
+          if (skipWk) cursor = skipToWeekday(cursor)
+          const start = new Date(cursor)
+          const end = computeEndDate(start, duration, skipWk)
+          ganttValues.push({
+            projectId,
+            rowId,
+            boardTaskId: task.id,
+            name: task.name,
+            startDate: start,
+            endDate: end,
+            color: task.color,
+            progress: task.status === 'done' ? 100 : 0,
+          })
+          cursor = end
+        }
       }
     }
-  }
 
-  if (ganttValues.length === 0) return []
+    if (ganttValues.length === 0) return []
 
-  const created = await db.insert(ganttTasks).values(ganttValues).returning()
+    const inserted = await tx.insert(ganttTasks).values(ganttValues).returning()
 
-  const ganttByBoardId = new Map<string, string>()
-  for (const gt of created) {
-    if (gt.boardTaskId) ganttByBoardId.set(gt.boardTaskId, gt.id)
-  }
+    const ganttByBoardId = new Map<string, string>()
+    for (const gt of inserted) {
+      if (gt.boardTaskId) ganttByBoardId.set(gt.boardTaskId, gt.id)
+    }
 
-  const taskIdsToUpdate = [...ganttByBoardId.keys()]
-  if (taskIdsToUpdate.length > 0) {
-    const caseParts = taskIdsToUpdate.map((tid) => sql`WHEN ${tid} THEN ${ganttByBoardId.get(tid)!}::uuid`)
-    await db
-      .update(boardTasks)
-      .set({
-        ganttTaskId: sql`CASE ${boardTasks.id} ${sql.join(caseParts, sql` `)} END`,
-        onTimeline: true,
-        updatedAt: new Date(),
-      })
-      .where(inArray(boardTasks.id, taskIdsToUpdate))
-  }
+    const unlinkedIds: string[] = []
+    const linkedIds: string[] = []
+    for (const task of allTasks) {
+      if (!ganttByBoardId.has(task.id)) continue
+      if (task.ganttTaskId) linkedIds.push(task.id)
+      else unlinkedIds.push(task.id)
+    }
 
+    if (unlinkedIds.length > 0) {
+      const caseParts = unlinkedIds.map((tid) => sql`WHEN ${tid} THEN ${ganttByBoardId.get(tid)!}::uuid`)
+      await tx
+        .update(boardTasks)
+        .set({
+          ganttTaskId: sql`CASE ${boardTasks.id} ${sql.join(caseParts, sql` `)} END`,
+          onTimeline: true,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(boardTasks.projectId, projectId), inArray(boardTasks.id, unlinkedIds)))
+    }
+
+    if (linkedIds.length > 0) {
+      await tx
+        .update(boardTasks)
+        .set({ onTimeline: true, updatedAt: new Date() })
+        .where(and(eq(boardTasks.projectId, projectId), inArray(boardTasks.id, linkedIds)))
+    }
+
+    return inserted
+  })
+
+  if (created.length > 0) await touchProject(projectId, { type: 'task:updated' })
   return created
 }
 

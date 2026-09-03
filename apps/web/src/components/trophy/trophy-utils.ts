@@ -8,6 +8,7 @@ import {
   isThisMonth,
 } from 'date-fns'
 import type { TaskVault } from '@/lib/db/schema'
+import { NO_PRIORITY_KEY, NO_PRIORITY_LABEL } from './trophy-stats'
 
 export type ViewMode = 'timeline' | 'priority' | 'label'
 export type DateGranularity = 'day' | 'week' | 'month'
@@ -18,13 +19,8 @@ export interface GroupedSection {
   tasks: TaskVault[]
 }
 
+/** Factory levels, highest first — only a fallback when no configured order is supplied. */
 const PRIORITY_ORDER = ['urgent', 'high', 'medium', 'low'] as const
-const PRIORITY_LABELS: Record<string, string> = {
-  urgent: 'Urgent',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-}
 
 function getTimelineBucket(
   date: Date,
@@ -68,19 +64,34 @@ export function groupByTimeline(
   return Array.from(map.entries()).map(([key, { label, tasks }]) => ({ key, label, tasks }))
 }
 
-export function groupByPriority(tasks: TaskVault[]): GroupedSection[] {
+/**
+ * Groups by RAW priority id. `order` is the user's configured id list, highest
+ * level first; those buckets always render (empty included), and any id outside
+ * it — a custom level, or a level since removed — gets its own bucket appended
+ * rather than being force-fitted into a factory one. (The previous version
+ * indexed a map pre-seeded with only the four factory ids and dereferenced the
+ * miss, so a single custom-priority trophy threw.) Names and colors are the
+ * caller's job — resolve through `@/lib/utils/priorities`.
+ */
+export function groupByPriority(
+  tasks: TaskVault[],
+  order: readonly string[] = PRIORITY_ORDER
+): GroupedSection[] {
   const map = new Map<string, TaskVault[]>()
-  for (const p of PRIORITY_ORDER) map.set(p, [])
+  for (const p of order) map.set(p, [])
 
   for (const task of tasks) {
-    const p = task.priority ?? 'medium'
-    map.get(p)!.push(task)
+    const raw = typeof task.priority === 'string' ? task.priority.trim() : ''
+    const key = raw.length > 0 ? raw : NO_PRIORITY_KEY
+    const bucket = map.get(key)
+    if (bucket) bucket.push(task)
+    else map.set(key, [task])
   }
 
-  return PRIORITY_ORDER.map((p) => ({
-    key: p,
-    label: PRIORITY_LABELS[p],
-    tasks: map.get(p) ?? [],
+  return [...map.entries()].map(([key, tasks]) => ({
+    key,
+    label: key === NO_PRIORITY_KEY ? NO_PRIORITY_LABEL : key,
+    tasks,
   }))
 }
 

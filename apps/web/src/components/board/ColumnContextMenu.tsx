@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Palette, Trash2, Copy, Pencil, Sparkles, X, Archive, Package, FolderInput, Folder, MoveRight, ArrowRight, Loader2 } from 'lucide-react'
+import { Palette, Trash2, Copy, Pencil, Sparkles, X, Archive, Package, FolderInput, Folder, MoveRight, ArrowRight, ArrowRightLeft, Loader2, Focus } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
@@ -12,19 +12,21 @@ import { COLUMN_ICONS } from '@/lib/utils/columnIcons'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
 import { ContextMenuButton } from './ContextMenuButton'
 import { listProjectsForTransfer, copyColumnToProject, moveColumnToProject } from '@/lib/actions/transfer'
+import { useMoveAllCards } from './useMoveAllCards'
 
 interface ColumnContextMenuProps {
   columnId: string
   position: { x: number; y: number }
   onClose: () => void
   onRename: () => void
+  onZenMode?: () => void
   onColumnDelete?: (columnId: string) => void
   onVaultCompleted?: (columnId: string) => void
   onArchiveAll?: (columnId: string) => void
 }
 
-export function ColumnContextMenu({ columnId, position, onClose, onRename, onColumnDelete, onVaultCompleted, onArchiveAll }: ColumnContextMenuProps) {
-  const [submenu, setSubmenu] = useState<'color' | 'icon' | 'transfer' | null>(null)
+export function ColumnContextMenu({ columnId, position, onClose, onRename, onZenMode, onColumnDelete, onVaultCompleted, onArchiveAll }: ColumnContextMenuProps) {
+  const [submenu, setSubmenu] = useState<'color' | 'icon' | 'transfer' | 'moveAll' | null>(null)
   const [transferProjects, setTransferProjects] = useState<{ id: string; name: string; realm: string; columns: { id: string; name: string; color: string }[] }[]>([])
   const [transferLoading, setTransferLoading] = useState(false)
   const [transferMode, setTransferMode] = useState<'copy' | 'move'>('copy')
@@ -33,11 +35,13 @@ export function ColumnContextMenu({ columnId, position, onClose, onRename, onCol
   const { columns, updateColumn, removeColumn } = useBoardStore(
     useShallow((s) => ({ columns: s.columns, updateColumn: s.updateColumn, removeColumn: s.removeColumn }))
   )
+  const columnTaskCount = useBoardStore((s) => s.tasks.filter((t) => t.columnId === columnId).length)
   const colors = useThemeStore((s) => s.colors)
   const glowIntensity = useThemeStore((s) => s.glowIntensity)
   const mult = glowIntensity / 75
 
   const column = columns.find((c) => c.id === columnId)
+  const { moveAll } = useMoveAllCards(column?.projectId ?? '')
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
@@ -95,6 +99,14 @@ export function ColumnContextMenu({ columnId, position, onClose, onRename, onCol
     onClose()
   }
 
+  const siblingColumns = columns
+    .filter((c) => c.projectId === column.projectId && c.id !== columnId)
+    .sort((a, b) => a.orderIndex - b.orderIndex)
+
+  const moveAllLabel = columnTaskCount === 0
+    ? 'Move all cards to...'
+    : `Move all ${columnTaskCount} card${columnTaskCount === 1 ? '' : 's'} to...`
+
   return createPortal(
     <AnimatePresence>
       <motion.div
@@ -128,6 +140,18 @@ export function ColumnContextMenu({ columnId, position, onClose, onRename, onCol
             boxShadow: `0 0 ${8 * mult}px ${colors.glowColor}`,
           }}
         />
+        {onZenMode && (
+          <ContextMenuButton
+            icon={Focus}
+            label="Zen Mode"
+            onClick={() => {
+              onZenMode()
+              onClose()
+            }}
+            glowColor={colors.glowColor}
+          />
+        )}
+
         <ContextMenuButton
           icon={Pencil}
           label="Rename"
@@ -202,6 +226,41 @@ export function ColumnContextMenu({ columnId, position, onClose, onRename, onCol
           <Copy className="w-4 h-4" />
           Copy ID
         </button>
+
+        {columnTaskCount === 0 || siblingColumns.length === 0 ? (
+          <button
+            disabled
+            title={columnTaskCount === 0 ? 'This column has no cards' : 'No other column to move to'}
+            className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-slate-600 cursor-not-allowed"
+          >
+            <ArrowRightLeft className="w-4 h-4" />
+            {moveAllLabel}
+          </button>
+        ) : (
+          <ContextMenuButton
+            icon={ArrowRightLeft}
+            label={moveAllLabel}
+            hasSubmenu
+            isActive={submenu === 'moveAll'}
+            onClick={() => setSubmenu(submenu === 'moveAll' ? null : 'moveAll')}
+            glowColor={colors.glowColor}
+          />
+        )}
+        {submenu === 'moveAll' && (
+          <div className="pl-2 border-l border-white/10 ml-3 space-y-0.5 py-1" role="menu" aria-label="Move all cards to">
+            {siblingColumns.map((col) => (
+              <button
+                key={col.id}
+                role="menuitem"
+                onClick={() => { void moveAll(columnId, col); onClose() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/10 hover:text-white rounded-md transition-colors"
+              >
+                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: col.color }} />
+                {col.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         <ContextMenuButton
           icon={FolderInput}

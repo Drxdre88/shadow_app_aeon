@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import {
@@ -12,6 +13,8 @@ import {
   useSensors,
   DragOverlay,
   DragEndEvent,
+  DragMoveEvent,
+  DragOverEvent,
   DragStartEvent,
 } from '@dnd-kit/core'
 import {
@@ -22,7 +25,9 @@ import {
 import { GripVertical } from 'lucide-react'
 import { SortableGroupSection } from './SortableGroupSection'
 import { TriStateCheckbox } from './TriStateCheckbox'
-import { arrangeItemDrag } from './reorder'
+import { arrangeItemAt, arrangeItemDrag } from './reorder'
+import { placementForDrag, samePlacement, type DropPlacement } from './dropPlacement'
+import { mergeGroupOrder, extendGroupOrderMemory } from './groupOrder'
 import type { ChecklistItem, CheckState, ChecklistStatus } from './types'
 
 interface TaskChecklistProps {
@@ -31,7 +36,7 @@ interface TaskChecklistProps {
   autoFocusAdd?: boolean
   // Returns false when the add was not accepted (still hydrating) — the typed
   // text must then stay in the input rather than being silently discarded.
-  onItemAdd?: (title: string, groupName: string) => boolean | void
+  onItemAdd?: (title: string, groupName: string, orderedGroups?: string[]) => boolean | void
   onItemToggle?: (itemId: string, newState: CheckState) => void
   onItemRemove?: (itemId: string) => void
   onItemStatusChange?: (itemId: string, status: ChecklistStatus) => void
@@ -72,13 +77,21 @@ export function TaskChecklist({
   const [confirmDeleteGroup, setConfirmDeleteGroup] = useState<string | null>(null)
   const [pendingGroups, setPendingGroups] = useState<string[]>([])
   const [activeDragItemId, setActiveDragItemId] = useState<string | null>(null)
+  // Live drop slot for the dragged item: drives the insertion line and is
+  // the drop's truth (see placementForDrag).
+  const [placement, setPlacement] = useState<DropPlacement | null>(null)
   // Same-frame double-click guard for handleAddGroup. Without this, two
   // clicks fired before React re-renders both see the same displayGroups,
   // compute the same name (e.g. "Checklist 2") and duplicate React keys on render.
   const addingGroupRef = useRef(false)
 
+  // Order memory: the order groups were first displayed this mount, updated by
+  // explicit user edits (drag, rename, delete). Display order is memory-first
+  // so a group gaining or losing items never changes its slot — deriving order
+  // from items alone made empty groups jump when their first item committed.
+  const [groupOrder, setGroupOrder] = useState<string[]>([])
   const groups = Array.from(new Set(items.map((i) => i.groupName)))
-  const mergedGroups = [...groups, ...pendingGroups.filter((pg) => !groups.includes(pg))]
+  const mergedGroups = mergeGroupOrder(groupOrder, groups, pendingGroups)
 
   const autoFocusedRef = useRef(false)
   useEffect(() => {
@@ -128,7 +141,7 @@ export function TaskChecklist({
     e.preventDefault()
     const trimmed = newItemTitle.trim()
     if (!trimmed || trimmed.length > TITLE_MAX) return
-    if (onItemAdd?.(trimmed, groupName) === false) return
+    if (onItemAdd?.(trimmed, groupName, displayGroups) === false) return
     setPendingGroups((prev) => prev.filter((pg) => pg !== groupName))
     setNewItemTitleSynced('')
     setAddingInGroupSynced(groupName)
@@ -138,7 +151,7 @@ export function TaskChecklist({
     const groupName = addingInGroupRef.current
     const trimmed = newItemTitleRef.current.trim()
     if (!groupName || !trimmed || trimmed.length > TITLE_MAX) return
-    if (onItemAddRef.current?.(trimmed, groupName) === false) return
+    if (onItemAddRef.current?.(trimmed, groupName, displayGroupsRef.current) === false) return
     setPendingGroups((prev) => prev.filter((pg) => pg !== groupName))
     setNewItemTitleSynced('')
     setAddingInGroupSynced(null)
@@ -188,6 +201,12 @@ export function TaskChecklist({
     groupCommittedRef.current = true
     const trimmed = editingGroupValueRef.current.trim()
     if (trimmed && trimmed !== currentName) {
+      // Rename in place in the order memory (dedupe keeps the earliest slot
+      // when renaming merges into an existing group).
+      setGroupOrder((prev) => {
+        const mapped = prev.map((g) => (g === currentName ? trimmed : g))
+        return mapped.filter((g, idx) => mapped.indexOf(g) === idx)
+      })
       setPendingGroups((prev) => {
         if (prev.includes(currentName)) {
           return prev.map((pg) => pg === currentName ? trimmed : pg)
@@ -205,14 +224,29 @@ export function TaskChecklist({
 
   const displayGroups = mergedGroups.length === 0 ? ['Checklist'] : mergedGroups
 
+  // Memorize the rendered order (append-only; guard keeps the same reference
+  // when nothing new appeared, so this cannot loop). The ref mirrors the last
+  // painted order for ref-based commit paths (blur/unmount commits).
+  const displayGroupsRef = useRef<string[]>(displayGroups)
+  useEffect(() => {
+    displayGroupsRef.current = displayGroups
+    setGroupOrder((prev) => extendGroupOrderMemory(prev, mergedGroups))
+  })
+
   const handleDragStart = (event: DragStartEvent) => {
     if (event.active.data.current?.type === 'item') {
       setActiveDragItemId(String(event.active.id))
     }
   }
 
+  const handleDragMove = (event: DragMoveEvent | DragOverEvent) => {
+    const next = placementForDrag(items, displayGroups, event)
+    setPlacement((prev) => (samePlacement(prev, next) ? prev : next))
+  }
+
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveDragItemId(null)
+    setPlacement(null)
     const { active, over } = event
     if (!over) return
     const activeType = active.data.current?.type
@@ -225,24 +259,33 @@ export function TaskChecklist({
       const oldIndex = displayGroups.findIndex((g) => g === active.id)
       const newIndex = displayGroups.findIndex((g) => g === overGroup)
       if (oldIndex === -1 || newIndex === -1) return
-      onGroupReorder?.(arrayMove(displayGroups, oldIndex, newIndex))
+      const newOrder = arrayMove(displayGroups, oldIndex, newIndex)
+      // Rewrite the order memory so the drag sticks even for empty groups
+      // (which have no items to encode the new order in).
+      setGroupOrder((prev) => [...newOrder, ...prev.filter((g) => !newOrder.includes(g))])
+      onGroupReorder?.(newOrder)
       return
     }
 
-    const arrangement = arrangeItemDrag(items, displayGroups, String(active.id), String(over.id))
+    const drop = placementForDrag(items, displayGroups, event) ?? placement
+    const arrangement = drop
+      ? arrangeItemAt(items, displayGroups, String(active.id), drop.groupName, drop.index)
+      : arrangeItemDrag(items, displayGroups, String(active.id), String(over.id))
     if (arrangement) onItemReorder?.(arrangement)
   }
 
   const activeDragItem = activeDragItemId ? items.find((i) => i.id === activeDragItemId) : null
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-checklist-root>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
         onDragStart={handleDragStart}
+        onDragMove={handleDragMove}
+        onDragOver={handleDragMove}
         onDragEnd={handleDragEnd}
-        onDragCancel={() => setActiveDragItemId(null)}
+        onDragCancel={() => { setActiveDragItemId(null); setPlacement(null) }}
       >
         <SortableContext items={displayGroups} strategy={verticalListSortingStrategy}>
           {displayGroups.map((groupName) => (
@@ -259,13 +302,15 @@ export function TaskChecklist({
               addingInGroup={addingInGroup === groupName}
               newItemTitle={newItemTitle}
               titleMax={TITLE_MAX}
+              activeDragItemId={activeDragItemId}
+              dropIndex={placement?.groupName === groupName ? placement.index : null}
               onToggleCollapse={() => toggleGroup(groupName)}
               onEditGroupStart={() => { groupCommittedRef.current = false; setEditingGroupName(groupName); editingGroupNameRef.current = groupName; setEditingGroupValue(groupName); editingGroupValueRef.current = groupName }}
               onEditGroupChange={(v: string) => { setEditingGroupValue(v); editingGroupValueRef.current = v }}
               onEditGroupCommit={commitGroupRename}
               onEditGroupCancel={() => { groupCommittedRef.current = false; setEditingGroupName(null); editingGroupNameRef.current = null; setEditingGroupValue(''); editingGroupValueRef.current = '' }}
               onDeleteStart={() => setConfirmDeleteGroup(groupName)}
-              onDeleteConfirm={() => { onGroupDelete?.(groupName); setConfirmDeleteGroup(null); setPendingGroups((prev) => prev.filter((pg) => pg !== groupName)); if (addingInGroupRef.current === groupName) setAddingInGroupSynced(null) }}
+              onDeleteConfirm={() => { onGroupDelete?.(groupName); setConfirmDeleteGroup(null); setPendingGroups((prev) => prev.filter((pg) => pg !== groupName)); setGroupOrder((prev) => prev.filter((g) => g !== groupName)); if (addingInGroupRef.current === groupName) setAddingInGroupSynced(null) }}
               onDeleteCancel={() => setConfirmDeleteGroup(null)}
               onItemToggle={(id, state) => onItemToggle?.(id, state)}
               onItemRemove={(id) => onItemRemove?.(id)}
@@ -283,9 +328,14 @@ export function TaskChecklist({
           ))}
         </SortableContext>
 
+        {/* Portaled to the body: the card editor (modal, floating window,
+            Zen surface) sits inside backdrop-filter/transform ancestors, which
+            turn the overlay's fixed positioning into modal-relative coordinates
+            and strand the preview off to the side. */}
+        {typeof document !== 'undefined' && createPortal(
         <DragOverlay dropAnimation={null}>
           {activeDragItem ? (
-            <div className="flex items-center gap-2 p-2.5 rounded-lg border bg-slate-800/95 border-white/15 shadow-lg shadow-black/50 backdrop-blur-sm">
+            <div data-checklist-drag-overlay className="flex items-center gap-2 p-2.5 rounded-lg border bg-slate-800/95 border-white/15 shadow-lg shadow-black/50 backdrop-blur-sm">
               <GripVertical className="w-3 h-3 text-slate-500 flex-shrink-0" />
               <TriStateCheckbox state={activeDragItem.state} onClick={() => {}} />
               <span className={cn(
@@ -298,7 +348,9 @@ export function TaskChecklist({
               </span>
             </div>
           ) : null}
-        </DragOverlay>
+        </DragOverlay>,
+        document.body,
+        )}
       </DndContext>
 
       <button

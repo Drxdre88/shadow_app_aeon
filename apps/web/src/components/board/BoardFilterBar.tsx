@@ -1,33 +1,21 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, X, CalendarDays } from 'lucide-react'
+import { Search, X, CalendarDays, Users } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { colorConfig, AccentColor } from '@/lib/utils/colors'
+import { colorConfig, AccentColor, hexToRgba, resolveAccentHex } from '@/lib/utils/colors'
+import { getInitials } from '@/lib/utils/initials'
 import { useBoardStore } from '@/lib/store/boardStore'
+import { useThemeStore } from '@/stores/themeStore'
+import { sortLabelsByName } from '@/lib/utils/labels'
+import { priorityActiveStyle } from '@/lib/utils/priorities'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
 
 interface BoardFilterBarProps {
   isOpen: boolean
   filters: BoardFilters
   onFiltersChange: (filters: BoardFilters) => void
-}
-
-const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
-
-const priorityColors: Record<string, string> = {
-  low: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
-  medium: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  high: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  urgent: 'bg-red-500/20 text-red-400 border-red-500/30',
-}
-
-const priorityActiveColors: Record<string, string> = {
-  low: 'bg-slate-500/40 text-slate-300 border-slate-400/50 shadow-[0_0_10px_rgba(148,163,184,0.3)]',
-  medium: 'bg-blue-500/40 text-blue-300 border-blue-400/50 shadow-[0_0_10px_rgba(59,130,246,0.3)]',
-  high: 'bg-orange-500/40 text-orange-300 border-orange-400/50 shadow-[0_0_10px_rgba(249,115,22,0.3)]',
-  urgent: 'bg-red-500/40 text-red-300 border-red-400/50 shadow-[0_0_10px_rgba(239,68,68,0.3)]',
 }
 
 const DATE_OPTIONS = [
@@ -37,8 +25,37 @@ const DATE_OPTIONS = [
   { value: 'overdue', label: 'Overdue' },
 ] as const
 
+type FilterPerson = { id: string; name: string; virtual: boolean; color: string | null }
+
 export function BoardFilterBar({ isOpen, filters, onFiltersChange }: BoardFilterBarProps) {
-  const labels = useBoardStore((s) => s.labels)
+  const labels = sortLabelsByName(useBoardStore((s) => s.labels))
+  const priorities = useThemeStore((s) => s.priorities)
+  const virtualMembers = useBoardStore((s) => s.virtualMembers)
+  const assigneesByTask = useBoardStore((s) => s.assigneesByTask)
+
+  // People you can filter by: every virtual member of the realm, plus every
+  // real user currently assigned somewhere on this board (no extra fetch).
+  const people = useMemo<FilterPerson[]>(() => {
+    const byId = new Map<string, FilterPerson>()
+    for (const list of Object.values(assigneesByTask)) {
+      for (const pill of list) {
+        if (pill.kind === 'virtual') continue
+        if (!byId.has(pill.userId)) {
+          byId.set(pill.userId, { id: pill.userId, name: pill.name ?? 'Unknown', virtual: false, color: null })
+        }
+      }
+    }
+    const real = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name))
+    const virtual = virtualMembers.map((v) => ({ id: v.id, name: v.name, virtual: true, color: v.color as string | null }))
+    return [...real, ...virtual]
+  }, [assigneesByTask, virtualMembers])
+
+  const toggleAssignee = useCallback((id: string) => {
+    const next = new Set(filters.assignees ?? [])
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    onFiltersChange({ ...filters, assignees: next })
+  }, [filters, onFiltersChange])
 
   const togglePriority = useCallback((priority: string) => {
     const next = new Set(filters.priorities)
@@ -59,6 +76,7 @@ export function BoardFilterBar({ isOpen, filters, onFiltersChange }: BoardFilter
       search: '',
       priorities: new Set(),
       labels: new Set(),
+      assignees: new Set(),
       dateFilter: 'all',
     })
   }, [onFiltersChange])
@@ -101,19 +119,25 @@ export function BoardFilterBar({ isOpen, filters, onFiltersChange }: BoardFilter
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-2">Priority</label>
               <div className="flex gap-2">
-                {PRIORITIES.map((priority) => {
-                  const isActive = filters.priorities.has(priority)
+                {priorities.map((p) => {
+                  const isActive = filters.priorities.has(p.id)
                   return (
                     <button
-                      key={priority}
-                      onClick={() => togglePriority(priority)}
+                      key={p.id}
+                      onClick={() => togglePriority(p.id)}
                       className={cn(
                         'px-3 py-1.5 rounded-lg text-xs font-medium capitalize',
-                        'border transition-all duration-200',
-                        isActive ? priorityActiveColors[priority] : priorityColors[priority]
+                        'border transition-all duration-200'
                       )}
+                      style={isActive
+                        ? priorityActiveStyle(p.color)
+                        : {
+                            backgroundColor: hexToRgba(p.color, 0.12),
+                            borderColor: hexToRgba(p.color, 0.3),
+                            color: hexToRgba(p.color, 0.85),
+                          }}
                     >
-                      {priority}
+                      {p.name}
                     </button>
                   )
                 })}
@@ -140,6 +164,49 @@ export function BoardFilterBar({ isOpen, filters, onFiltersChange }: BoardFilter
                         )}
                       >
                         {label.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {people.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-2">
+                  <Users className="w-3 h-3 inline mr-1" />
+                  Assignees
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {people.map((p) => {
+                    const isActive = filters.assignees?.has(p.id) ?? false
+                    const hex = p.virtual
+                      ? resolveAccentHex(p.color)
+                      : null
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() => toggleAssignee(p.id)}
+                        className={cn(
+                          'inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium',
+                          'border transition-all duration-200',
+                          isActive
+                            ? 'bg-white/15 border-white/30 text-white ring-1 ring-white/20'
+                            : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'w-3.5 h-3.5 rounded-full inline-flex items-center justify-center text-[7px] font-semibold text-white',
+                            p.virtual ? 'border border-dashed border-white/50' : 'border border-white/20'
+                          )}
+                          style={hex
+                            ? { background: `linear-gradient(135deg, ${hex}cc, ${hex}66)` }
+                            : { background: 'rgba(255,255,255,0.12)' }}
+                        >
+                          {getInitials(p.name)}
+                        </span>
+                        {p.name}
                       </button>
                     )
                   })}

@@ -17,6 +17,7 @@ import { activeFilterCount, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { cn } from '@/lib/utils/cn'
 import { GanttViewSelector } from '@/components/gantt/GanttViewSelector'
+import { GanttResetModal } from '@/components/gantt/GanttResetModal'
 import { TaskEditModal } from '@/components/board/TaskEditModal'
 import { VaultDaysModal } from '@/components/board/VaultDaysModal'
 import { BatchVaultModal } from '@/components/board/BatchVaultModal'
@@ -32,6 +33,7 @@ import { useDependencyHandlers } from './useDependencyHandlers'
 import { useGanttHandlers } from './useGanttHandlers'
 import { useCanvasHandlers } from './useCanvasHandlers'
 import { useBoardTheme } from './useBoardTheme'
+import { useHangarBoardConfig } from './useHangarBoardConfig'
 
 const CanvasView = dynamic(() => import('@/components/canvas/CanvasView'), { ssr: false })
 const GanttChart = dynamic(() => import('@/components/gantt/GanttChart').then(m => ({ default: m.GanttChart })), { ssr: false })
@@ -64,6 +66,7 @@ export default function ProjectContent({ project, user, initialBoardData, initia
 
   const { isLoading, loadError, triggerReload } = useProjectData(project.id, activeTab, initialBoardData)
   useBoardTheme(project.id, (project.settings ?? {}) as Record<string, unknown>)
+  useHangarBoardConfig(project.id, project.settings)
 
   const board = useBoardHandlers(project.id)
   const { handleLabelCreate, handleLabelUpdate, handleLabelDelete, handleLabelToggle } = useLabelHandlers(project.id)
@@ -100,7 +103,7 @@ export default function ProjectContent({ project, user, initialBoardData, initia
               glowColor={projectGlow}
             />
             <SaveStatusPill />
-            <FavoriteStar projectId={project.id} initialFavorite={initialFavorite} />
+            <FavoriteStar projectId={project.id} initialFavorite={initialFavorite} projectName={project.name} />
           </div>
 
           <button
@@ -205,12 +208,18 @@ export default function ProjectContent({ project, user, initialBoardData, initia
                   <span className="hidden sm:inline">Reflow</span>
                 </button>
                 <button
-                  onClick={gantt.handleGanttReset}
+                  onClick={gantt.openGanttReset}
                   className="flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg text-sm font-medium text-red-400 hover:bg-red-500/10 border border-red-500/20 hover:border-red-500/30 transition-all"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">Reset</span>
                 </button>
+                <GanttResetModal
+                  isOpen={gantt.ganttResetOpen}
+                  isLoading={gantt.isGanttResetting}
+                  onConfirm={gantt.handleGanttReset}
+                  onClose={gantt.closeGanttReset}
+                />
               </>
             )}
             <button
@@ -343,6 +352,9 @@ export default function ProjectContent({ project, user, initialBoardData, initia
                     onFormChange={gantt.setGanttFormData}
                     onSubmit={gantt.handleGanttEditSubmit}
                     onClose={() => gantt.setGanttEditTaskId(null)}
+                    onLabelCreate={handleLabelCreate}
+                    onLabelUpdate={handleLabelUpdate}
+                    onLabelDelete={handleLabelDelete}
                     onLabelToggle={handleLabelToggle}
                     onDateChange={(taskId, dates) => board.handleTaskUpdate(taskId, dates as Record<string, unknown>)}
                     onProgressChange={(taskId, progress) => board.handleTaskUpdate(taskId, { progress }, { silent: true })}

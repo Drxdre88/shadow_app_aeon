@@ -18,9 +18,9 @@ export function KairosGuideContent() {
 
       <Section title="Four ways memories arrive">
         <Path
-          label="Automatic — Claude session capture"
-          when="When a Claude Code session ends."
-          how="A hook reads the whole transcript, grabs the git context (repo, branch, files, commits), optionally asks Claude to write a clean title and 5–10 bullet summary, then posts one memory."
+          label="Automatic — coding-agent session capture"
+          when="When a Claude Code, Codex, or Copilot CLI session ends."
+          how="A hook reads the transcript, grabs the git context (repo, branch, files, commits), optionally asks Claude to write a clean title and 5–10 bullet summary, then posts one memory."
         />
         <Path
           label="Automatic — session backfill"
@@ -175,9 +175,9 @@ export function KairosGuideContent() {
         </P>
         <ul className="flex flex-col gap-2 text-[12.5px] text-white/70 leading-relaxed pl-4">
           <Bullet>
-            <strong>Session captures:</strong> the hook calls <Mono>claude --print</Mono> with the
-            transcript and slots the returned <Mono>aiTitle</Mono> + <Mono>execSummary</Mono> into
-            the payload.
+            <strong>Session captures:</strong> each hook derives a stable title and extracts an{' '}
+            <Mono>execSummary</Mono> from the agent&apos;s final response. Optional AI cleanup can
+            upgrade both fields before the payload is posted.
           </Bullet>
           <Bullet>
             <strong>Manual captures:</strong> whichever agent is composing the message writes the
@@ -203,7 +203,7 @@ export function KairosGuideContent() {
             ['decision', 'Something resolved: we chose X because Y'],
             ['idea', 'Speculative, not yet committed'],
             ['observation', 'A neutral fact about the world or system'],
-            ['session_summary', 'Auto-captured Claude session'],
+            ['session_summary', 'Auto-captured coding-agent session'],
             ['reflection', 'EOD or retrospective'],
           ]}
         />
@@ -213,6 +213,8 @@ export function KairosGuideContent() {
           items={[
             ['manual', 'You typed it'],
             ['claude', 'Captured via session hook or chat'],
+            ['codex', 'Captured from a Codex session'],
+            ['copilot', 'Captured from a Copilot CLI session'],
             ['voice', 'Speech-to-text dictation'],
             ['hook', 'Some other automated import'],
             ['import', 'Bulk loaded'],
@@ -247,7 +249,7 @@ export function KairosGuideContent() {
       </Section>
 
       <Section title="Querying the brain">
-        <P>From any Claude session with the Aeon MCP attached, four read tools cover the basics:</P>
+        <P>From any coding-agent session with the Aeon MCP attached, four read tools cover the basics:</P>
         <ul className="flex flex-col gap-2 text-[12.5px] text-white/70 leading-relaxed pl-4">
           <Bullet><Mono>search_memories</Mono> — BM25 full-text over title, summary, body. Filter by type, source, realm, project, tags.</Bullet>
           <Bullet><Mono>get_memory_with_neighbours</Mono> — pull a memory plus its typed edges, 1–2 hops out.</Bullet>

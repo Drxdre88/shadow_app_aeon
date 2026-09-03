@@ -8,7 +8,7 @@ import { getActivityFeed } from '@/lib/actions/activity'
 import { getVaultTasks, getVaultStatsSA, restoreVaultTask } from '@/lib/actions/vault'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { TrophyCard } from './TrophyCard'
-import { TrophyStats } from './TrophyStats'
+import { TrophyStats } from './TrophyStats.archived'
 import { TrophyTimeline } from './TrophyTimeline'
 import { TrophySection } from './TrophySection'
 import {

@@ -9,7 +9,7 @@ export const PUT = withRateLimit(
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
 
-    const { realmId, userId } = (ctx as { params: { realmId: string; userId: string } }).params
+    const { realmId, userId } = await (ctx as { params: Promise<{ realmId: string; userId: string }> }).params
 
     const role = await getGroupRole(realmId, result.id)
     if (role !== 'owner') return jsonError('Only owner can perform this action', 403)
@@ -35,7 +35,7 @@ export const DELETE = withRateLimit(
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
 
-    const { realmId, userId } = (ctx as { params: { realmId: string; userId: string } }).params
+    const { realmId, userId } = await (ctx as { params: Promise<{ realmId: string; userId: string }> }).params
 
     const role = await getGroupRole(realmId, result.id)
     if (role !== 'owner') return jsonError('Only owner can perform this action', 403)

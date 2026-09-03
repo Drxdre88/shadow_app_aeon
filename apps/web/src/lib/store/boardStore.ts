@@ -30,6 +30,8 @@ export interface BoardTask {
   progress?: number | null
   updatedAt?: string
   orderIndex: number
+  /** Free-form card payload; an AI Hangar mission lives under the `hangar` key. */
+  metadata?: Record<string, unknown>
 }
 
 interface Label {
@@ -56,10 +58,30 @@ export interface ChecklistPreviewItem {
   groupName: string
 }
 
+// One avatar pill on a card. `userId` is the generic id: a real user's id, or
+// a virtual member's id when kind === 'virtual' (uuids never collide across
+// the two tables). Virtual pills carry a color for their initials avatar.
 export interface TaskAssigneePill {
   userId: string
   name: string | null
   image: string | null
+  /** Real members only. The avatar's last resort before '?' — magic-link
+   *  signups never get a name, so without this half the pile renders '?'. */
+  email?: string | null
+  /** Virtual members only: the initials chosen at creation, rendered verbatim.
+   *  Recomputing from `name` turns a member literally called "MG" into "M". */
+  initials?: string | null
+  kind?: 'virtual'
+  color?: string | null
+}
+
+// Realm-scoped virtual member visible on this board (hydrated with the board
+// payload so the overlay + filter bar never fetch them separately).
+export interface VirtualMemberLite {
+  id: string
+  name: string
+  initials: string
+  color: string
 }
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'retrying' | 'error' | 'offline'
@@ -109,6 +131,9 @@ interface BoardState {
   setAssigneesByTask: (m: Record<string, TaskAssigneePill[]>) => void
   setTaskAssignees: (taskId: string, list: TaskAssigneePill[]) => void
 
+  virtualMembers: VirtualMemberLite[]
+  setVirtualMembers: (list: VirtualMemberLite[]) => void
+
   showDates: boolean
   toggleShowDates: () => void
 
@@ -123,6 +148,14 @@ interface BoardState {
   bumpCommentsSignal: () => void
 
   selectTask: (id: string | null) => void
+  // Hold-to-move: the card lifted by a long press, waiting for a placement
+  // tap. Client-only (never persisted) — see useHoldToMove.ts.
+  movingTaskId: string | null
+  setMovingTaskId: (id: string | null) => void
+  // Card fusion: the card a dragged card has dwelt on long enough to fuse
+  // into. Client-only — see components/board/fuseZone.ts.
+  fuseTargetId: string | null
+  setFuseTargetId: (id: string | null) => void
   convertToTimeline: (taskId: string, startDate: string, endDate: string) => void
   markClean: () => void
   setSaveStatus: (status: SaveStatus) => void
@@ -223,6 +256,8 @@ export const useBoardStore = create<BoardState>()(
       setChecklistPreviews: (checklistPreviews) => set({ checklistPreviews }),
       setAssigneesByTask: (assigneesByTask) => set({ assigneesByTask }),
       setTaskAssignees: (taskId, list) => set((s) => ({ assigneesByTask: { ...s.assigneesByTask, [taskId]: list } })),
+      virtualMembers: [],
+      setVirtualMembers: (virtualMembers) => set({ virtualMembers }),
       toggleChecklistPreview: () => set((s) => {
         const cycle = { off: 'preview', preview: 'full', full: 'off' } as const
         return { checklistViewMode: cycle[s.checklistViewMode] }
@@ -254,6 +289,10 @@ export const useBoardStore = create<BoardState>()(
       clearCrossedTasks: () => set({ crossedTaskIds: {} }),
 
       selectTask: (id) => set({ selectedTaskId: id }),
+      movingTaskId: null,
+      setMovingTaskId: (id) => set({ movingTaskId: id }),
+      fuseTargetId: null,
+      setFuseTargetId: (id) => set({ fuseTargetId: id }),
       convertToTimeline: (taskId, startDate, endDate) => set((s) => ({
         tasks: s.tasks.map((t) =>
           t.id === taskId
@@ -313,9 +352,12 @@ export const useTasks = () => useBoardStore((s) => s.tasks)
 export const useLabels = () => useBoardStore((s) => s.labels)
 export const useDependencies = () => useBoardStore((s) => s.dependencies)
 export const useSelectedTaskId = () => useBoardStore((s) => s.selectedTaskId)
+export const useMovingTaskId = () => useBoardStore((s) => s.movingTaskId)
+export const useFuseTargetId = () => useBoardStore((s) => s.fuseTargetId)
 export const useShowDates = () => useBoardStore((s) => s.showDates)
 export const useChecklistSummaries = () => useBoardStore((s) => s.checklistSummaries)
 export const useIsDirty = () => useBoardStore((s) => s.isDirty)
 export const useChecklistViewMode = () => useBoardStore((s) => s.checklistViewMode)
 export const useTaskAssignees = (taskId: string) => useBoardStore((s) => s.assigneesByTask[taskId])
+export const useVirtualMembers = () => useBoardStore((s) => s.virtualMembers)
 export const useCommentsSignal = () => useBoardStore((s) => s.commentsSignal)

@@ -36,7 +36,7 @@ describe('TaskChecklist ghost input', () => {
     fireEvent.change(input, { target: { value: 'Buy milk' } })
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(onItemAdd).toHaveBeenCalledTimes(1)
-    expect(onItemAdd).toHaveBeenCalledWith('Buy milk', 'Checklist')
+    expect(onItemAdd).toHaveBeenCalledWith('Buy milk', 'Checklist', ['Checklist'])
   })
 
   it('chains: Enter re-opens an empty ghost input for the next item', () => {
@@ -49,7 +49,7 @@ describe('TaskChecklist ghost input', () => {
     fireEvent.change(next, { target: { value: 'Second' } })
     fireEvent.keyDown(next, { key: 'Enter' })
     expect(onItemAdd).toHaveBeenCalledTimes(2)
-    expect(onItemAdd).toHaveBeenLastCalledWith('Second', 'Checklist')
+    expect(onItemAdd).toHaveBeenLastCalledWith('Second', 'Checklist', ['Checklist'])
   })
 
   it('creates nothing on Enter with empty or whitespace-only text', () => {
@@ -87,7 +87,7 @@ describe('TaskChecklist ghost input', () => {
     fireEvent.change(input, { target: { value: 'draft' } })
     fireEvent.blur(input)
     expect(onItemAdd).toHaveBeenCalledTimes(1)
-    expect(onItemAdd).toHaveBeenCalledWith('draft', 'Checklist')
+    expect(onItemAdd).toHaveBeenCalledWith('draft', 'Checklist', ['Checklist'])
     expect(screen.queryByPlaceholderText('New item…')).toBeNull()
   })
 
@@ -110,7 +110,7 @@ describe('TaskChecklist ghost input', () => {
     fireEvent.change(input, { target: { value: 'Real first item' } })
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(onItemAdd).toHaveBeenCalledTimes(1)
-    expect(onItemAdd).toHaveBeenCalledWith('Real first item', 'Checklist 2')
+    expect(onItemAdd).toHaveBeenCalledWith('Real first item', 'Checklist 2', ['Checklist', 'Checklist 2'])
   })
 })
 
@@ -130,7 +130,7 @@ describe('TaskChecklist unmount commit', () => {
     fireEvent.change(input, { target: { value: 'saved on close' } })
     unmount()
     expect(onItemAdd).toHaveBeenCalledTimes(1)
-    expect(onItemAdd).toHaveBeenCalledWith('saved on close', 'Checklist')
+    expect(onItemAdd).toHaveBeenCalledWith('saved on close', 'Checklist', ['Checklist'])
   })
 
   it('does not commit on unmount after Escape cancelled the input', () => {

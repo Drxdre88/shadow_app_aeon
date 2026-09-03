@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, integer, boolean, jsonb, primaryKey, real, numeric, uniqueIndex, index, vector, type AnyPgColumn } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, text, timestamp, integer, smallint, boolean, jsonb, primaryKey, real, numeric, date, check, uniqueIndex, index, vector, type AnyPgColumn } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 // Type-only: the engine union has a single definition, in the validators.
 import type { AgentSessionEngine } from '../data/validators'
@@ -207,7 +207,32 @@ export const boardTasks = pgTable('board_tasks', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
   completedAt: timestamp('completed_at', { mode: 'date' }),
   archivedAt: timestamp('archived_at', { mode: 'date' }),
-})
+  // CHRONOS scheduling (migration 0034). startDate / endDate above keep their
+  // meaning — the dates a human typed — and become solver inputs; computedStart
+  // / computedEnd are the solver's output and are what the chart draws.
+  // null = not estimated: placed at a default span, excluded from capacity.
+  estimateMinutes: integer('estimate_minutes'),
+  // 'auto' | 'manual'
+  scheduleMode: varchar('schedule_mode', { length: 10 }).default('auto').notNull(),
+  // 'asap' | 'snet' | 'fnlt' — matches ConstraintType in lib/schedule/types.ts.
+  constraintType: varchar('constraint_type', { length: 24 }).default('asap').notNull(),
+  constraintDate: timestamp('constraint_date', { mode: 'date' }),
+  // null = never scheduled; the chart falls back to startDate / endDate.
+  computedStart: timestamp('computed_start', { mode: 'date' }),
+  computedEnd: timestamp('computed_end', { mode: 'date' }),
+  // Slack in minutes against the project finish. 0 = on the critical path.
+  totalFloatMin: integer('total_float_min'),
+  isMilestone: boolean('is_milestone').default(false).notNull(),
+  ownerResourceId: uuid('owner_resource_id').references((): AnyPgColumn => resources.id, { onDelete: 'set null' }),
+  startedAt: timestamp('started_at', { mode: 'date' }),
+}, (t) => ({
+  projectComputedStartIdx: index('board_tasks_project_computed_start_idx')
+    .on(t.projectId, t.computedStart)
+    .where(sql`computed_start IS NOT NULL`),
+  ownerResourceIdx: index('board_tasks_owner_resource_idx')
+    .on(t.ownerResourceId)
+    .where(sql`owner_resource_id IS NOT NULL`),
+}))
 
 export const labels = pgTable('labels', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -643,6 +668,14 @@ export const agentSessions = pgTable('agent_sessions', {
   dominionIdx: index('agent_sessions_dominion_idx').on(t.dominionId, t.spawnedAt),
   liveIdx: index('agent_sessions_live_idx').on(t.userId, t.spawnedAt),
   taskIdx: index('agent_sessions_task_idx').on(t.taskId),
+  // At most ONE live mission per card, enforced by the DB so every spawn
+  // surface (server action, REST, MCP) is covered — an application-level
+  // check-then-insert is a race, and each duplicate is a real agent on a
+  // real repo. Terminal sessions are unconstrained, so a finished card can
+  // be relaunched. Migration 0033.
+  oneLivePerTaskIdx: uniqueIndex('agent_sessions_one_live_per_task_idx')
+    .on(t.taskId)
+    .where(sql`task_id IS NOT NULL AND status IN ('queued', 'running')`),
   // Partial — backs the runner's pull-mode claim query only.
   claimIdx: index('agent_sessions_claim_idx')
     .on(t.userId, t.spawnedAt)
@@ -660,6 +693,78 @@ export const taskAssignees = pgTable('task_assignees', {
   pk: primaryKey({ columns: [t.taskId, t.userId] }),
   userIdx: index('task_assignees_user_idx').on(t.userId, t.assignedAt),
   taskIdx: index('task_assignees_task_idx').on(t.taskId),
+}))
+
+// Virtual team members — people who don't use Aeon (no account, no access)
+// but whom the owner wants on the board: a colleague you won't invite, a
+// contractor, a client. Realm-scoped so they are assignable across every
+// project in the realm, exactly like real realm members.
+export const virtualMembers = pgTable('virtual_members', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  realmId: uuid('realm_id').notNull().references(() => workspaceGroups.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 120 }).notNull(),
+  // Derived from name at creation but stored so a rename doesn't silently
+  // change the avatar everyone recognises.
+  initials: varchar('initials', { length: 4 }).notNull(),
+  color: varchar('color', { length: 20 }).default('purple').notNull(),
+  createdById: uuid('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  realmIdx: index('virtual_members_realm_idx').on(t.realmId, t.createdAt),
+}))
+
+// Per-realm display overrides for REAL members: the initials, colour and name
+// an avatar renders when the realm's owner has chosen them rather than letting
+// them be derived.
+//
+// Deliberately NOT columns on `users` — name and image are global identity,
+// owned by the person and populated by their OAuth provider, so one realm's
+// owner must never be able to rewrite how someone appears in another realm.
+// Scoping to (realm_id, user_id) mirrors virtualMembers for the same reason.
+//
+// Every override column is nullable and means "no override, derive as before",
+// so a member without a row renders exactly as they did before this table
+// existed. A row with all three null is meaningless — the CHECK forbids it and
+// the action deletes the row when the last override is cleared, which keeps
+// "has an override" answerable by the row existing.
+export const memberProfiles = pgTable('member_profiles', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  realmId: uuid('realm_id').notNull().references(() => workspaceGroups.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  initials: varchar('initials', { length: 4 }),
+  color: varchar('color', { length: 20 }),
+  displayName: varchar('display_name', { length: 120 }),
+  createdById: uuid('created_by_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  realmUserKey: uniqueIndex('member_profiles_realm_user_key').on(t.realmId, t.userId),
+  notEmpty: check(
+    'member_profiles_not_empty_check',
+    sql`(initials IS NOT NULL) OR (color IS NOT NULL) OR (display_name IS NOT NULL)`,
+  ),
+  initialsLength: check(
+    'member_profiles_initials_length_check',
+    sql`(initials IS NULL) OR ((char_length((initials)::text) >= 1) AND (char_length((initials)::text) <= 4))`,
+  ),
+  displayNameLength: check(
+    'member_profiles_display_name_length_check',
+    sql`(display_name IS NULL) OR (char_length(btrim((display_name)::text)) > 0)`,
+  ),
+}))
+
+// Parallel assignment table to task_assignees — keeps every existing
+// real-member query (users innerJoin) untouched and type-safe instead of
+// widening task_assignees with a nullable userId + CHECK.
+export const taskVirtualAssignees = pgTable('task_virtual_assignees', {
+  taskId: uuid('task_id').notNull().references(() => boardTasks.id, { onDelete: 'cascade' }),
+  virtualMemberId: uuid('virtual_member_id').notNull().references(() => virtualMembers.id, { onDelete: 'cascade' }),
+  assignedBy: uuid('assigned_by').references(() => users.id, { onDelete: 'set null' }),
+  assignedAt: timestamp('assigned_at').defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.taskId, t.virtualMemberId] }),
+  memberIdx: index('task_virtual_assignees_member_idx').on(t.virtualMemberId, t.assignedAt),
+  taskIdx: index('task_virtual_assignees_task_idx').on(t.taskId),
 }))
 
 // Per-session timeline. Emitted by the worker host (status transitions) and
@@ -707,6 +812,96 @@ export const hangarRepos = pgTable('hangar_repos', {
   realmActiveIdx: index('hangar_repos_realm_active_idx').on(t.realmId, t.active),
 }))
 
+// CHRONOS working time (migration 0035). A work_calendar says what a normal
+// week looks like, a calendar_exception overrides one specific day, and a
+// resource is the thing that does the work. Calendars are separate from
+// resources so a team can share one working week without duplicating it.
+//
+// The CHECK expressions below are written in the shape Postgres itself stores
+// them (pg_get_constraintdef, outer parens stripped) rather than the readable
+// shape the migration used — drizzle-kit compares that string verbatim, so the
+// normalised form is what makes a push a no-op instead of a drop-and-recreate.
+export const workCalendars = pgTable('work_calendars', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 120 }).notNull(),
+  // IANA zone — turns an absolute instant back into "9am on someone's Tuesday".
+  timezone: text('timezone').default('Europe/London').notNull(),
+  hoursPerDay: numeric('hours_per_day', { precision: 4, scale: 2 }).default('8').notNull(),
+  // Minutes from local midnight at which the working day opens. 540 = 09:00.
+  dayStartMinute: smallint('day_start_minute').default(540).notNull(),
+  // Bitmask of working days, bit 0 = Sunday .. bit 6 = Saturday. 62 = Mon-Fri.
+  workweek: smallint('workweek').default(62).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  projectIdx: index('work_calendars_project_idx').on(t.projectId, t.createdAt),
+  hoursPerDayRange: check(
+    'work_calendars_hours_per_day_range_check',
+    sql`(hours_per_day > (0)::numeric) AND (hours_per_day <= (24)::numeric)`,
+  ),
+  workweekMin: check('work_calendars_workweek_min_check', sql`workweek > 0`),
+}))
+
+// isWorking false is a holiday; true with hours set is a working weekend or a
+// short day. hours null on a working exception means the calendar's normal day.
+export const calendarExceptions = pgTable('calendar_exceptions', {
+  calendarId: uuid('calendar_id').notNull().references(() => workCalendars.id, { onDelete: 'cascade' }),
+  day: date('day', { mode: 'string' }).notNull(),
+  isWorking: boolean('is_working').default(false).notNull(),
+  hours: numeric('hours', { precision: 4, scale: 2 }),
+  // Optional override of the calendar's dayStartMinute for this one day, so an
+  // afternoon half-day (13:00-17:00) is expressible and not just a morning one.
+  startMinute: smallint('start_minute'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  // Named explicitly: 0035 declared the primary key inline and unnamed, so the
+  // live constraint carries Postgres' own default name, not drizzle's.
+  pk: primaryKey({ name: 'calendar_exceptions_pkey', columns: [t.calendarId, t.day] }),
+}))
+
+// Three kinds share one table so the solver has a single capacity list to level
+// against; parentResourceId lets resources roll up into teams.
+export const resources = pgTable('resources', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  projectId: uuid('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  // 'user' | 'virtual' | 'agent'
+  kind: varchar('kind', { length: 12 }).notNull(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  virtualMemberId: uuid('virtual_member_id').references(() => virtualMembers.id, { onDelete: 'cascade' }),
+  // SET NULL so dissolving a team does not delete its people.
+  parentResourceId: uuid('parent_resource_id').references((): AnyPgColumn => resources.id, { onDelete: 'set null' }),
+  // SET NULL rather than CASCADE: losing a calendar must not delete a person.
+  calendarId: uuid('calendar_id').references(() => workCalendars.id, { onDelete: 'set null' }),
+  // Cached label; the authoritative name lives on users / virtual_members.
+  label: varchar('label', { length: 120 }),
+  concurrency: integer('concurrency').default(1).notNull(),
+  // Fraction of a working day actually available for project work.
+  focusFactor: numeric('focus_factor', { precision: 3, scale: 2 }).default('1.0').notNull(),
+  orderIndex: integer('order_index').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  // Partial so agent rows, which have both identity columns null, are not
+  // forced into a single row per project.
+  projectUserIdx: uniqueIndex('resources_project_user_idx')
+    .on(t.projectId, t.userId)
+    .where(sql`user_id IS NOT NULL`),
+  projectVirtualMemberIdx: uniqueIndex('resources_project_virtual_member_idx')
+    .on(t.projectId, t.virtualMemberId)
+    .where(sql`virtual_member_id IS NOT NULL`),
+  projectOrderIdx: index('resources_project_order_idx').on(t.projectId, t.orderIndex),
+  kindIdentity: check(
+    'resources_kind_identity_check',
+    sql`(((kind)::text = 'user'::text) AND (user_id IS NOT NULL) AND (virtual_member_id IS NULL)) OR (((kind)::text = 'virtual'::text) AND (virtual_member_id IS NOT NULL) AND (user_id IS NULL)) OR (((kind)::text = 'agent'::text) AND (user_id IS NULL) AND (virtual_member_id IS NULL))`,
+  ),
+  concurrencyMin: check('resources_concurrency_min_check', sql`concurrency >= 1`),
+  focusFactorRange: check(
+    'resources_focus_factor_range_check',
+    sql`(focus_factor > (0)::numeric) AND (focus_factor <= (1)::numeric)`,
+  ),
+}))
+
 export type User = typeof users.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type GanttView = typeof ganttViews.$inferSelect
@@ -746,3 +941,6 @@ export type AgentSession = typeof agentSessions.$inferSelect
 export type SessionEvent = typeof sessionEvents.$inferSelect
 export type HangarRepo = typeof hangarRepos.$inferSelect
 export type TaskAssignee = typeof taskAssignees.$inferSelect
+export type VirtualMember = typeof virtualMembers.$inferSelect
+export type MemberProfile = typeof memberProfiles.$inferSelect
+export type TaskVirtualAssignee = typeof taskVirtualAssignees.$inferSelect

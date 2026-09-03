@@ -20,6 +20,29 @@ interface SortableChecklistItemProps {
   onEditCommit: () => void
   onEditCancel: () => void
   onEditTitleChange: (value: string) => void
+  /** Insertion line for a drag in progress: above or below this row. */
+  dropIndicator?: 'before' | 'after' | null
+}
+
+/** The glowing insertion line, in the board card's idiom. Static (no
+ *  keyframe) so it reads the same with Smooth UI Renders off. */
+export function DropLine({ edge, ...rest }: { edge?: 'before' | 'after' } & React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      {...rest}
+      aria-hidden
+      className={cn(
+        'pointer-events-none h-0.5 rounded-full z-10',
+        edge ? 'absolute left-0 right-0' : 'relative w-full',
+        edge === 'before' && '-top-[3px]',
+        edge === 'after' && '-bottom-[3px]',
+      )}
+      style={{
+        background: 'linear-gradient(90deg, transparent, var(--primary), transparent)',
+        boxShadow: '0 0 8px 1px var(--primary)',
+      }}
+    />
+  )
 }
 
 export function SortableChecklistItem({
@@ -33,6 +56,7 @@ export function SortableChecklistItem({
   onEditCommit,
   onEditCancel,
   onEditTitleChange,
+  dropIndicator = null,
 }: SortableChecklistItemProps) {
   const {
     attributes,
@@ -52,14 +76,16 @@ export function SortableChecklistItem({
     <div
       ref={setNodeRef}
       style={style}
+      data-checklist-item-id={item.id}
       className={cn(
-        'group p-2.5 rounded-lg border transition-colors duration-200',
+        'group relative p-2.5 rounded-lg border transition-colors duration-200',
         'bg-white/[0.03] border-white/[0.06]',
         item.state === 'checked' && 'border-emerald-500/10',
         item.state === 'crossed' && 'border-red-500/10',
-        isDragging && 'opacity-50 scale-[1.02] shadow-lg shadow-black/40 z-50 relative'
+        isDragging && 'opacity-50 scale-[1.02] shadow-lg shadow-black/40 z-50'
       )}
     >
+      {dropIndicator && <DropLine edge={dropIndicator} data-drop-indicator={dropIndicator} />}
       <div className="flex items-center gap-2">
         <button
           {...attributes}

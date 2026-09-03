@@ -10,6 +10,12 @@ import {
   assignUserToTask as _assignUserToTask,
   unassignUserFromTask as _unassignUserFromTask,
 } from '@/lib/data/assignees'
+import {
+  assignVirtualMemberToTask as _assignVirtualMemberToTask,
+  unassignVirtualMemberFromTask as _unassignVirtualMemberFromTask,
+  isVirtualMemberAssignable as _isVirtualMemberAssignable,
+  findVirtualMemberById as _findVirtualMemberById,
+} from '@/lib/data/virtual-members'
 import { findTaskById as _findTaskById } from '@/lib/data/tasks'
 import { emitActivity } from '@/lib/data/activity'
 import { captureBoardEvent } from '@/lib/kairos/auto-capture'
@@ -46,7 +52,7 @@ export async function assignTaskAction(projectId: string, taskId: string, userId
     throw new Error('User is not a member of this project')
   }
 
-  const row = await _assignUserToTask(taskId, userId, actorId)
+  const row = await _assignUserToTask(taskId, userId, actorId, projectId)
   if (row) {
     const assignedMember = members.find((m) => m.userId === userId)
     const displayName = assignedMember?.name ?? assignedMember?.email ?? null
@@ -73,6 +79,63 @@ export async function assignTaskAction(projectId: string, taskId: string, userId
   return row
 }
 
+export async function assignVirtualTaskAction(projectId: string, taskId: string, virtualMemberId: string) {
+  const actorId = await requireEditor(projectId)
+  idSchema.parse(taskId)
+  idSchema.parse(virtualMemberId)
+
+  // Same cross-project guard as assignTaskAction.
+  const task = await _findTaskById(taskId, projectId)
+  if (!task) throw new Error('Task not found or unauthorized')
+
+  // Guard: only virtual members of a realm this project belongs to.
+  if (!await _isVirtualMemberAssignable(virtualMemberId, projectId)) {
+    throw new Error('Virtual member is not available on this project')
+  }
+
+  const row = await _assignVirtualMemberToTask(taskId, virtualMemberId, actorId, projectId)
+  if (row) {
+    const member = await _findVirtualMemberById(virtualMemberId)
+    emitActivity(
+      projectId,
+      'task',
+      taskId,
+      'assigned',
+      task?.name ?? undefined,
+      { assigneeId: virtualMemberId, assigneeName: member?.name ?? null, virtual: true },
+      actorId,
+    ).catch(() => {})
+  }
+
+  revalidatePath(`/project/${projectId}`)
+  return row
+}
+
+export async function unassignVirtualTaskAction(projectId: string, taskId: string, virtualMemberId: string) {
+  const actorId = await requireEditor(projectId)
+  idSchema.parse(taskId)
+  idSchema.parse(virtualMemberId)
+
+  const task = await _findTaskById(taskId, projectId)
+  if (!task) throw new Error('Task not found or unauthorized')
+
+  const ok = await _unassignVirtualMemberFromTask(taskId, virtualMemberId, projectId)
+  if (ok) {
+    emitActivity(
+      projectId,
+      'task',
+      taskId,
+      'unassigned',
+      task?.name ?? undefined,
+      { unassignedId: virtualMemberId, virtual: true },
+      actorId,
+    ).catch(() => {})
+  }
+
+  revalidatePath(`/project/${projectId}`)
+  return ok
+}
+
 export async function unassignTaskAction(projectId: string, taskId: string, userId: string) {
   const actorId = await requireEditor(projectId)
   idSchema.parse(taskId)
@@ -82,7 +145,7 @@ export async function unassignTaskAction(projectId: string, taskId: string, user
   const task = await _findTaskById(taskId, projectId)
   if (!task) throw new Error('Task not found or unauthorized')
 
-  const ok = await _unassignUserFromTask(taskId, userId)
+  const ok = await _unassignUserFromTask(taskId, userId, projectId)
   if (ok) {
     emitActivity(
       projectId,

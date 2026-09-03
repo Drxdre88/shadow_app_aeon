@@ -53,6 +53,28 @@ Last verified: 2026-06-28 (git HEAD `056d8f2`).
 | Low | Visor send-race against thread switch | OPEN |
 | Low | `MIN_QUERY_CHARS` retrieval cutoff untested | OPEN |
 
+### New gaps (2026-08-26, night-swarm wave — verified against the diff)
+
+| Severity | Issue | Details |
+|---|---|---|
+| Medium | `TrophyRoom.tsx` at the size cap | 434 → **497** lines in the trophy rebuild; the orchestrator itself has no test (its children `TrophyInsights`/`TrophyTable` do) |
+| Medium | `SortableTaskCard.tsx` further past the cap | 506 → **517**. Already over on main, but this wave added to it rather than leaving it alone — next file to split |
+| Low | Board overlay/Zen wiring untested | `useBoardOverlays.ts`, `useBoardSensors.ts`, `BoardOverlays.tsx`, `AssignCheck.tsx`, `TaskEditContent.tsx`, `TaskAssigneeVirtualSection.tsx`, `zenModeStore.ts`, `TrophyHero.tsx`, `trophy-theme.ts` shipped with no test file — the sibling modules in the same features *are* covered, so these are the honest gap |
+| Low | Pinned card windows don't survive a reload | `pinnedCardsStore.ts` is explicitly in-memory ("nothing here persists or syncs"). A user who arranges several pinned cards and refreshes loses the layout — plausibly not what they expect. Same for Zen focus state |
+| Low | Virtual members scoped to a project's *first* realm | `findRealmIdsForProject` takes the oldest realm membership; a project spanning several realms only gets members from one. Documented simplification, same class as existing single-project scoping debt |
+| Low | Trophy stats computed over a 200-row window | Charts/streaks reflect the most recent 200 vaulted tasks while totals come from server aggregates — a SQL month-bucket query is the cheap fix if a vault outgrows it |
+
+### Closed by the 2026-08-26 wave
+
+| Was | Now |
+|---|---|
+| `TaskBoard.tsx` over the 500-line standard | **556 → 455** — overlay/card-editor cluster extracted to `useBoardOverlays.ts` + `BoardOverlays.tsx` |
+| `TaskAssigneeOverlay.tsx` growing into eight components | **637 → 263** — virtual section, `MemberAvatar`, `AssignCheck` extracted |
+| `api/v1/realms/**` returning 403 unconditionally (undetected since 2026-04-02) | All 7 param-reading route files now `await` their params Promise (`daeb93d`) |
+| No production-build gate in CI | `npm run build` added to the Quality Gate — lint + typecheck + 2828 tests had all passed a CSS bug that broke the deploy |
+| Test count | now **3,040** (from 2,695); still no E2E |
+| TODO/FIXME/HACK debt | **zero** across `apps/web/src` (verified by two independent searches) |
+
 ### Closed since 2026-06-28 (verified 2026-07-17)
 
 | Was | Closed by |
