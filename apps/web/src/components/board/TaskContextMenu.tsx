@@ -60,19 +60,28 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
+    const handleTouch = (e: TouchEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        onClose()
+      }
+    }
     document.addEventListener('mousedown', handleClick)
+    document.addEventListener('touchstart', handleTouch, { passive: true })
     document.addEventListener('keydown', handleKey)
     return () => {
       document.removeEventListener('mousedown', handleClick)
+      document.removeEventListener('touchstart', handleTouch)
       document.removeEventListener('keydown', handleKey)
     }
   }, [onClose])
 
   if (!mounted || !task) return null
 
+  // Clamped on both axes: on a phone the viewport is narrower than the menu's
+  // own width, and a short landscape one is shorter than its height.
   const menuStyle = {
-    left: Math.min(position.x, window.innerWidth - 220),
-    top: Math.min(position.y, window.innerHeight - 500),
+    left: Math.max(8, Math.min(position.x, window.innerWidth - 268)),
+    top: Math.max(8, Math.min(position.y, window.innerHeight - 500)),
   }
 
   const handleMoveTo = (columnId: string) => {
