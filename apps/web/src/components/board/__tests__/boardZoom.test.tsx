@@ -57,16 +57,15 @@ describe('measureUnderBoardZoom', () => {
     expect(measureUnderBoardZoom(card)).toEqual({ top: 200, left: 20, width: 80, height: 40, right: 100, bottom: 240 })
   })
 
-  it('at the normal zoom returns the bounding rect without reading computed styles', () => {
+  it('at the normal zoom still strips the own translate (stock dnd-kit) but skips the wrapper lookup', () => {
     document.body.innerHTML = '<div data-board-scale data-board-zoom="1"><div id="card"></div></div>'
     const card = document.getElementById('card')!
-    const rect = { top: 250, left: 20, width: 80, height: 40, right: 100, bottom: 290 } as DOMRect
-    vi.spyOn(card, 'getBoundingClientRect').mockReturnValue(rect)
-    const styles = vi.spyOn(window, 'getComputedStyle')
+    vi.spyOn(card, 'getBoundingClientRect').mockReturnValue({ top: 250, left: 20, width: 80, height: 40, right: 100, bottom: 290 } as DOMRect)
+    const styles = vi.spyOn(window, 'getComputedStyle').mockReturnValue({ transform: 'matrix(1, 0, 0, 1, 0, 100)' } as CSSStyleDeclaration)
     const closest = vi.spyOn(card, 'closest')
 
-    expect(measureUnderBoardZoom(card)).toBe(rect)
-    expect(styles).not.toHaveBeenCalled()
+    expect(measureUnderBoardZoom(card)).toEqual({ top: 150, left: 20, width: 80, height: 40, right: 100, bottom: 190 })
+    expect(styles).toHaveBeenCalledTimes(1)
     expect(closest).not.toHaveBeenCalled()
   })
 

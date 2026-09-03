@@ -188,6 +188,34 @@ describe('GanttResetModal', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }))
   })
 
+  it('keeps one dialog instance across loading flips so the exit runs exactly once', async () => {
+    const onClose = vi.fn()
+    const { rerender } = render(<GanttResetModal isOpen onConfirm={() => {}} onClose={onClose} />)
+    const dialog = screen.getByRole('dialog')
+    rerender(<GanttResetModal isOpen isLoading onConfirm={() => {}} onClose={onClose} />)
+    rerender(<GanttResetModal isOpen isLoading={false} onConfirm={() => {}} onClose={onClose} />)
+    expect(screen.getByRole('dialog')).toBe(dialog)
+
+    rerender(<GanttResetModal isOpen={false} onConfirm={() => {}} onClose={onClose} />)
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('ignores Enter and Escape while animating out', async () => {
+    const onConfirm = vi.fn()
+    const onClose = vi.fn()
+    const { rerender } = render(<GanttResetModal isOpen onConfirm={onConfirm} onClose={onClose} />)
+    fireEvent.change(input(), { target: { value: 'RESET' } })
+
+    rerender(<GanttResetModal isOpen={false} onConfirm={onConfirm} onClose={onClose} />)
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    fireEvent.keyDown(window, { key: 'Enter' })
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onConfirm).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
   it('returns focus to the button that opened it once it has animated out', async () => {
     const opener = document.createElement('button')
     opener.textContent = 'Reset'

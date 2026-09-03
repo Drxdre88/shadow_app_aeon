@@ -9,13 +9,10 @@ import { useBoardStore } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { useShallow } from 'zustand/shallow'
 import { COLUMN_ICONS } from '@/lib/utils/columnIcons'
-import { planMoveAllToColumn, maxOrderIndex } from '@/lib/utils/bulkMovePlan'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
 import { ContextMenuButton } from './ContextMenuButton'
 import { listProjectsForTransfer, copyColumnToProject, moveColumnToProject } from '@/lib/actions/transfer'
-import { moveAllTasksToColumnAction } from '@/lib/actions/boardBulk'
-import { reorderBoardTasks } from '@/lib/actions/board'
-import { toast } from '@/components/ui/Toast'
+import { useMoveAllCards } from './useMoveAllCards'
 
 interface ColumnContextMenuProps {
   columnId: string
@@ -44,6 +41,7 @@ export function ColumnContextMenu({ columnId, position, onClose, onRename, onZen
   const mult = glowIntensity / 75
 
   const column = columns.find((c) => c.id === columnId)
+  const { moveAll } = useMoveAllCards(column?.projectId ?? '')
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
@@ -108,40 +106,6 @@ export function ColumnContextMenu({ columnId, position, onClose, onRename, onZen
   const moveAllLabel = columnTaskCount === 0
     ? 'Move all cards to...'
     : `Move all ${columnTaskCount} card${columnTaskCount === 1 ? '' : 's'} to...`
-
-  // Optimistic: every card lands at the end of the target instantly; the
-  // server computes the same slots inside a transaction. A failed write puts
-  // each card back where it was; a successful one offers a batch Undo.
-  const handleMoveAll = async (target: { id: string; name: string }) => {
-    const store = useBoardStore.getState()
-    const moving = store.tasks.filter((t) => t.columnId === columnId)
-    if (moving.length === 0) return
-    const previous = moving.map((t) => ({ id: t.id, columnId: t.columnId!, orderIndex: t.orderIndex }))
-    const plan = planMoveAllToColumn(moving, maxOrderIndex(store.tasks.filter((t) => t.columnId === target.id)))
-    const restore = () => {
-      const { moveTask } = useBoardStore.getState()
-      previous.forEach((p) => moveTask(p.id, p.columnId, p.orderIndex))
-    }
-    plan.forEach((p) => store.moveTask(p.id, target.id, p.orderIndex))
-    onClose()
-    const projectId = column.projectId
-    const count = moving.length
-    try {
-      await moveAllTasksToColumnAction(projectId, columnId, target.id)
-      useBoardStore.getState().markClean()
-      toast(`Moved ${count} card${count === 1 ? '' : 's'} to ${target.name}`, {
-        onUndo: () => {
-          restore()
-          reorderBoardTasks(projectId, previous.map((p) => ({ id: p.id, orderIndex: p.orderIndex, columnId: p.columnId })))
-            .then(() => useBoardStore.getState().markClean())
-            .catch((err) => toast(err instanceof Error ? err.message : 'Could not undo the move', { force: true }))
-        },
-      })
-    } catch (err) {
-      restore()
-      toast(err instanceof Error ? err.message : 'Could not move cards — reverted', { force: true })
-    }
-  }
 
   return createPortal(
     <AnimatePresence>
@@ -288,7 +252,7 @@ export function ColumnContextMenu({ columnId, position, onClose, onRename, onZen
               <button
                 key={col.id}
                 role="menuitem"
-                onClick={() => { void handleMoveAll(col) }}
+                onClick={() => { void moveAll(columnId, col); onClose() }}
                 className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/10 hover:text-white rounded-md transition-colors"
               >
                 <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: col.color }} />

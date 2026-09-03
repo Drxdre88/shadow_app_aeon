@@ -143,3 +143,63 @@ describe('TrophyRoom priority grouping', () => {
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Trophies over time' })).toBeNull())
   })
 })
+
+const NAMES = TASKS.map((t) => t.name)
+const shownNames = () => screen.getAllByText((text) => NAMES.includes(text)).map((el) => el.textContent)
+
+function openFilters() {
+  fireEvent.click(screen.getByRole('button', { name: /Filters/ }))
+}
+
+describe('TrophyRoom sort and filter', () => {
+  it('sorting by Oldest reorders the cards oldest-first', async () => {
+    await renderRoom()
+    fireEvent.click(groupButton('Label'))
+    expect(shownNames()).toEqual(['Alpha', 'Charlie', 'Bravo', 'Delta', 'Echo', 'Foxtrot'])
+
+    openFilters()
+    fireEvent.click(screen.getByRole('button', { name: 'Oldest' }))
+    expect(shownNames()).toEqual(['Foxtrot', 'Echo', 'Delta', 'Bravo', 'Charlie', 'Alpha'])
+  })
+
+  it('a priority filter drops the shown/total counter and hides the other cards', async () => {
+    await renderRoom()
+    expect(screen.getByText('6/6')).toBeTruthy()
+
+    openFilters()
+    fireEvent.click(screen.getByRole('button', { name: 'urgent' }))
+
+    expect(screen.getByText('2/6')).toBeTruthy()
+    expect(shownNames().sort()).toEqual(['Bravo', 'Delta'])
+    expect(screen.queryByText('Alpha')).toBeNull()
+  })
+})
+
+describe('TrophyRoom since-last-visit chip', () => {
+  const KEY = 'aeon:trophy:last-visit:project-1'
+
+  it('an old visit shows the delta chip and the key is rewritten to now', async () => {
+    const before = Date.now()
+    localStorage.setItem(KEY, '2026-01-01T00:00:00.000Z')
+    await renderRoom()
+
+    expect(await screen.findByText('+6 since last visit')).toBeTruthy()
+    const rewritten = localStorage.getItem(KEY)!
+    expect(new Date(rewritten).getTime()).toBeGreaterThanOrEqual(before - 1000)
+  })
+
+  it('an empty stored value shows no chip and still stamps the visit', async () => {
+    localStorage.setItem(KEY, '')
+    await renderRoom()
+    await waitFor(() => expect(Number.isNaN(new Date(localStorage.getItem(KEY)!).getTime())).toBe(false))
+    expect(screen.queryByText(/since last visit/)).toBeNull()
+  })
+
+  it('a garbage stored value shows no chip, does not throw, and is overwritten', async () => {
+    localStorage.setItem(KEY, 'not-a-date')
+    await renderRoom()
+    await waitFor(() => expect(localStorage.getItem(KEY)).not.toBe('not-a-date'))
+    expect(Number.isNaN(new Date(localStorage.getItem(KEY)!).getTime())).toBe(false)
+    expect(screen.queryByText(/since last visit/)).toBeNull()
+  })
+})

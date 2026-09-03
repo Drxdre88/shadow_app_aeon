@@ -94,6 +94,10 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
   } | null>(null)
   const [isLoadingVault, setIsLoadingVault] = useState(true)
   const [sinceLastVisit, setSinceLastVisit] = useState<number | null>(null)
+  // Read once per mount, before the load effect can rewrite the key: under
+  // StrictMode's doubled effects the second run would otherwise read the
+  // timestamp the first run just wrote and count zero.
+  const [lastVisit] = useState(() => readLastVisit(projectId))
   const [selectedTrophy, setSelectedTrophy] = useState<TaskVault | null>(null)
 
   const handleRestore = useCallback(async (vaultId: string) => {
@@ -131,11 +135,10 @@ export function TrophyRoom({ projectId }: TrophyRoomProps) {
     ]).then(([tasks, stats]) => {
       setVaultTasks(tasks)
       setVaultStats(stats)
-      const lastVisit = readLastVisit(projectId)
       setSinceLastVisit(lastVisit ? countSince(tasks, lastVisit) : null)
       writeLastVisit(projectId)
     }).catch((err) => console.error('Failed to load vault:', err)).finally(() => setIsLoadingVault(false))
-  }, [projectId])
+  }, [projectId, lastVisit])
 
   const loadInitialTimeline = useCallback(async () => {
     setIsLoadingTimeline(true)

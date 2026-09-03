@@ -139,7 +139,10 @@ export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' 
             beginDirectWrite()
             restoreTimelineSnapshot(projectId, frozen)
               .then(() => triggerReload())
-              .catch(() => toast('Failed to restore timeline dates', { force: true }))
+              .catch(() => {
+                triggerReload()
+                toast('Failed to restore timeline dates', { force: true })
+              })
               .finally(() => endDirectWrite())
           },
         })

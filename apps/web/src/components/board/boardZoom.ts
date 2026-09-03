@@ -50,19 +50,20 @@ export function readBoardScaleFor(element: Element): number {
 }
 
 /**
- * dnd-kit's transform-agnostic measure, corrected for a scaled ancestor: the
- * node's own translate (a sortable displacement) is subtracted in viewport
- * px, not layout px, so the droppable rects of displaced cards stay true and
- * `over` stops flickering between neighbours while zoomed out. At the normal
- * zoom the plain rect is returned without touching computed styles: this
- * runs for every droppable on every measuring pass, and a pinch never
- * overlaps a drag, so the settled zoom is exact for the whole drag.
+ * dnd-kit's transform-agnostic measure (getTransformAgnosticClientRect: the
+ * bounding rect minus the node's own computed translate), corrected for a
+ * scaled ancestor: a sortable displacement of `t` layout px moves the box
+ * `t * scale` viewport px, so that is what gets subtracted, and the droppable
+ * rects of displaced cards stay true while zoomed out. The translate is
+ * always stripped — at the normal zoom too, exactly as stock dnd-kit does —
+ * otherwise `over` flickers between neighbours; only the wrapper-scale lookup
+ * is skipped there. A pinch never overlaps a drag, so the settled zoom is
+ * exact for the whole drag.
  */
 export function measureUnderBoardZoom(node: HTMLElement) {
   const rect = node.getBoundingClientRect()
-  if (getBoardZoom() === MAX_BOARD_SCALE) return rect
-  const scale = readBoardScaleFor(node)
   const translate = parseOwnTranslate(getComputedStyle(node).transform)
+  const scale = getBoardZoom() === MAX_BOARD_SCALE ? MAX_BOARD_SCALE : readBoardScaleFor(node)
   return rectWithoutOwnTranslate(rect, translate, scale)
 }
 

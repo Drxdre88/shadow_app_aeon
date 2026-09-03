@@ -25,17 +25,17 @@ const COLUMNS = [
 ]
 
 const CARD_HEIGHT = 120
-const CARD_TOP: Record<string, number> = { a: 0, b: 200, c: 400 }
+const CARD_TOP: Record<string, number> = { a: 0, b: 200, c: 400, x: 600 }
 
-function task(id: string, orderIndex: number) {
-  return { id, projectId: PROJECT, name: `card ${id}`, columnId: DOING, status: 'todo', priority: 'medium' as const, color: 'purple', labels: [], onTimeline: false, orderIndex, metadata: {} }
+function task(id: string, orderIndex: number, projectId = PROJECT) {
+  return { id, projectId, name: `card ${id}`, columnId: DOING, status: 'todo', priority: 'medium' as const, color: 'purple', labels: [], onTimeline: false, orderIndex, metadata: {} }
 }
 
-function mountColumnDom() {
+function mountColumnDom(ids: string[]) {
   document.body.innerHTML = ''
   const column = document.createElement('div')
   column.setAttribute('data-column-id', DOING)
-  for (const id of ['a', 'b', 'c']) {
+  for (const id of ids) {
     const card = document.createElement('div')
     card.setAttribute('data-task-id', id)
     card.getBoundingClientRect = () => ({ top: CARD_TOP[id], height: CARD_HEIGHT, left: 0, width: 200, right: 200, bottom: CARD_TOP[id] + CARD_HEIGHT, x: 0, y: CARD_TOP[id], toJSON: () => ({}) }) as DOMRect
@@ -44,11 +44,11 @@ function mountColumnDom() {
   document.body.appendChild(column)
 }
 
-function setup() {
-  const tasks = [task('a', 0), task('b', 1), task('c', 2)]
+function setup(extra: ReturnType<typeof task>[] = []) {
+  const tasks = [task('a', 0), task('b', 1), task('c', 2), ...extra]
   useBoardStore.setState({ tasks: tasks as never[], columns: COLUMNS as never[], movingTaskId: null, fuseTargetId: null })
   useHangarUiStore.setState({ projectId: null, config: { enabled: false, triggerColumnId: null }, missionEditorTaskId: null } as never)
-  mountColumnDom()
+  mountColumnDom(tasks.map((t) => t.id))
   const onTaskMove = vi.fn()
   const onFuseRequest = vi.fn()
   const hook = renderHook(() =>
@@ -193,6 +193,18 @@ describe('useBoardDnD — card fusion drop', () => {
     act(() => { hook.result.current.handleDragCancel() })
     expect(useBoardStore.getState().fuseTargetId).toBeNull()
     expect(onFuseRequest).not.toHaveBeenCalled()
+  })
+
+  it('never arms on a card from another project, so the drop reorders', () => {
+    const { hook, onTaskMove, onFuseRequest } = setup([task('x', 3, 'proj-2')])
+    start(hook, 'a')
+    moveOver(hook, 'a', 'x', middleOf('x'))
+    act(() => { vi.advanceTimersByTime(FUSE_DWELL_MS * 2) })
+    expect(useBoardStore.getState().fuseTargetId).toBeNull()
+
+    drop(hook, 'a', 'x', middleOf('x'))
+    expect(onFuseRequest).not.toHaveBeenCalled()
+    expect(onTaskMove).toHaveBeenCalledTimes(1)
   })
 
   it('never arms on the dragged card itself', () => {

@@ -25,9 +25,37 @@ export interface TrophyDatum {
   columnName?: string | null
 }
 
-/** Effective celebration date: completion wins, archive date is the fallback. */
+function warnMalformedDate(field: 'completedAt' | 'archivedAt', t: TrophyDatum) {
+  if (process.env.NODE_ENV !== 'production') {
+    console.warn(`[trophy] malformed ${field} on a vault row`, { completedAt: t.completedAt, archivedAt: t.archivedAt })
+  }
+}
+
+/**
+ * Effective celebration date: completion wins, archive date is the fallback —
+ * also when the recorded completion does not parse (warned in dev).
+ */
 export function trophyDate(t: TrophyDatum): Date {
-  return t.completedAt ? new Date(t.completedAt) : new Date(t.archivedAt)
+  if (t.completedAt) {
+    const completed = new Date(t.completedAt)
+    if (!Number.isNaN(completed.getTime())) return completed
+    warnMalformedDate('completedAt', t)
+  }
+  return new Date(t.archivedAt)
+}
+
+/**
+ * {@link trophyDate}, or null when neither timestamp parses. Every aggregator
+ * skips such a row explicitly (warned in dev) instead of letting an Invalid
+ * Date poison a bucket key or vanish without trace.
+ */
+export function validTrophyDate(t: TrophyDatum): Date | null {
+  const d = trophyDate(t)
+  if (Number.isNaN(d.getTime())) {
+    warnMalformedDate('archivedAt', t)
+    return null
+  }
+  return d
 }
 
 // ---------------------------------------------------------------------------
@@ -72,7 +100,9 @@ export function bucketByPeriod(
   }
 
   for (const t of tasks) {
-    const key = periodStart(trophyDate(t)).toISOString()
+    const d = validTrophyDate(t)
+    if (!d) continue
+    const key = periodStart(d).toISOString()
     const i = index.get(key)
     if (i !== undefined) buckets[i].count++
   }
@@ -106,7 +136,10 @@ export function computeStreak(
     periodStart(granularity === 'day' ? addDays(d, 1) : addWeeks(d, 1))
 
   const hits = new Set<number>()
-  for (const t of tasks) hits.add(periodStart(trophyDate(t)).getTime())
+  for (const t of tasks) {
+    const d = validTrophyDate(t)
+    if (d) hits.add(periodStart(d).getTime())
+  }
   if (hits.size === 0) return { current: 0, best: 0 }
 
   const sorted = [...hits].sort((a, b) => a - b)
@@ -155,7 +188,9 @@ export function monthComparison(tasks: TrophyDatum[], now: Date = new Date()): M
   let thisMonth = 0
   let lastMonth = 0
   for (const t of tasks) {
-    const s = startOfMonth(trophyDate(t)).getTime()
+    const d = validTrophyDate(t)
+    if (!d) continue
+    const s = startOfMonth(d).getTime()
     if (s === thisStart) thisMonth++
     else if (s === lastStart) lastMonth++
   }
@@ -395,8 +430,8 @@ export function completionHeatmap(tasks: TrophyDatum[]): RhythmHeatmap {
   let max = 0
   let peak: RhythmHeatmap['peak'] = null
   for (const t of tasks) {
-    const d = trophyDate(t)
-    if (Number.isNaN(d.getTime())) continue
+    const d = validTrophyDate(t)
+    if (!d) continue
     const day = (d.getDay() + 6) % 7
     const hour = d.getHours()
     const n = ++cells[day][hour]
@@ -413,7 +448,10 @@ export function countSince(tasks: TrophyDatum[], since: Date | null): number {
   if (!since) return 0
   const cutoff = since.getTime()
   let n = 0
-  for (const t of tasks) if (trophyDate(t).getTime() > cutoff) n++
+  for (const t of tasks) {
+    const d = validTrophyDate(t)
+    if (d && d.getTime() > cutoff) n++
+  }
   return n
 }
 

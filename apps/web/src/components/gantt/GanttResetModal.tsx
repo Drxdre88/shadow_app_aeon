@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useIsPresent } from 'framer-motion'
 import { createPortal } from 'react-dom'
 import { RefreshCw, X, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
@@ -34,6 +34,9 @@ interface GanttResetModalProps {
 /**
  * AnimatePresence sits above the open/closed branch so the dialog stays mounted
  * through its exit animation instead of vanishing with the thing it animates.
+ * The constant key keeps one dialog instance across re-renders (isLoading
+ * flips must not remount it), so the exit runs once and the opener-focus
+ * cleanup fires only when that exit has finished.
  */
 export function GanttResetModal({ isOpen, ...props }: GanttResetModalProps) {
   return <AnimatePresence>{isOpen ? <GanttResetDialog key="gantt-reset" {...props} /> : null}</AnimatePresence>
@@ -56,7 +59,10 @@ function GanttResetDialog({ isLoading = false, onConfirm, onClose }: Omit<GanttR
   const mult = glowIntensity / 75
   const tasks = useBoardStore((s) => s.tasks)
   const { affected, dated } = countTimelineResetImpact(tasks)
-  const armed = isResetConfirmation(typed) && !isLoading
+  // False while animating out: a dialog that is already closing must not
+  // still confirm on Enter or trap Tab.
+  const isPresent = useIsPresent()
+  const armed = isResetConfirmation(typed) && !isLoading && isPresent
 
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -84,13 +90,14 @@ function GanttResetDialog({ isLoading = false, onConfirm, onClose }: Omit<GanttR
       }
     }
     const handleKey = (e: KeyboardEvent) => {
+      if (!isPresent) return
       if (e.key === 'Escape' && !isLoading) onClose()
       if (e.key === 'Enter' && armed) onConfirm()
       if (e.key === 'Tab') cycleFocus(e)
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [isLoading, armed, onConfirm, onClose])
+  }, [isPresent, isLoading, armed, onConfirm, onClose])
 
   const cancel = () => { if (!isLoading) onClose() }
   const plural = (n: number) => (n === 1 ? 'card' : 'cards')

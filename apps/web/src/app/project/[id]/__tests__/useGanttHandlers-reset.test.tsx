@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import type { ReactNode } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, act, cleanup, waitFor } from '@testing-library/react'
+import { renderHook, act, cleanup, waitFor, screen } from '@testing-library/react'
 
 // A timeline reset wipes the dates on every on-timeline card of the project.
 // The store must drop them immediately, put them back if the server refuses,
@@ -192,6 +192,19 @@ describe('handleGanttReset — undo', () => {
 
     await act(async () => { resolve(1) })
     expect(isDirtyOrGracePeriod()).toBe(false)
+  })
+
+  it('a refused restore reloads from the server so the store does not keep the optimistic dates', async () => {
+    resetGanttData.mockResolvedValue([{ id: 'a', startDate: A_START, endDate: A_END, onTimeline: true }])
+    restoreTimelineSnapshot.mockRejectedValue(new Error('nope'))
+    const { hook, triggerReload } = setup()
+    await act(async () => { hook.result.current.handleGanttReset() })
+    triggerReload.mockClear()
+
+    await act(async () => { useUndoStore.getState().stack[0].undo() })
+
+    await waitFor(() => expect(triggerReload).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('Failed to restore timeline dates')).toBeTruthy()
   })
 
   it('registers no undo when nothing was on the timeline', async () => {
