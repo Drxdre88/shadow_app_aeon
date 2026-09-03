@@ -2,7 +2,7 @@
   "name": "@aeon/kairos-worker",
   "version": "0.0.1",
   "private": true,
-  "description": "Kairos spawn worker — long-running Node service that shells Claude Code / Codex CLIs on behalf of the operator and streams events back to Aeon.",
+  "description": "Kairos spawn worker \u00e2\u20ac\u201d long-running Node service that shells Claude Code / Codex CLIs on behalf of the operator and streams events back to Aeon.",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -19,5 +19,8 @@
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.9"
+  },
+  "engines": {
+    "node": ">=20.12"
   }
 }

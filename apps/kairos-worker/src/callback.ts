@@ -89,6 +89,76 @@ export async function postEvent<T = unknown>(
   })
 }
 
+export interface BatchEvent {
+  seq: number
+  kind: string
+  toolName?: string | null
+  payload?: unknown
+}
+
+// The server accepts at most 100 events per batch; staying well under keeps
+// the two sides from ever disagreeing after a limit change on either end.
+const BATCH_CHUNK = 40
+
+interface BatchAck {
+  accepted?: number
+  received?: number
+  rejected?: number
+}
+
+// Typed telemetry flush: many events, few writes against the 60/min budget.
+// Oversized flushes are chunked and sent sequentially (preserves seq order);
+// each chunk gets one bounded retry — a lost mid-stream chunk degrades the
+// timeline, it does not corrupt it (seq gaps are tolerated by the reader), so
+// we never block subsequent flushes behind a struggling one.
+//
+// The first chunk that cannot land abandons the whole flush: 25 chunks each
+// retrying with a 3s sleep would spend over a minute hammering an API that is
+// already rate-limiting us, and every one of those chunks is doomed anyway.
+// One warning carries the dropped count.
+export async function postEventsBatch(
+  ctx: CallbackContext,
+  events: BatchEvent[],
+): Promise<void> {
+  let dropped = 0
+  let dropStatus = 0
+  for (let i = 0; i < events.length; i += BATCH_CHUNK) {
+    const chunk = events.slice(i, i + BATCH_CHUNK)
+    if (dropped) {
+      dropped += chunk.length
+      continue
+    }
+    const attempt = (): Promise<AeonResponse<BatchAck>> =>
+      aeonFetch<BatchAck>(ctx.callbackBaseUrl, ctx.callbackToken, `/api/v1/sessions/${ctx.sessionId}/events`, {
+        method: 'POST',
+        body: { events: chunk },
+      })
+    let res = await attempt()
+    if (!res.ok && retriable(res.status)) {
+      await sleep(3_000)
+      res = await attempt()
+    }
+    if (!res.ok) {
+      dropped += chunk.length
+      dropStatus = res.status
+      continue
+    }
+    // Fewer rows than sent means schema rejects or seq collisions (a hook post
+    // can consume a slot the runner's counter reuses) — surface it, silence
+    // here is undiagnosable missing timeline rows.
+    const accepted = res.data?.accepted
+    if (typeof accepted === 'number' && accepted < chunk.length) {
+      console.warn(
+        `[worker/callback] event batch partially landed (${accepted}/${chunk.length}` +
+        `${res.data?.rejected ? `, ${res.data.rejected} rejected` : ''})`
+      )
+    }
+  }
+  if (dropped) {
+    console.warn(`[worker/callback] event flush abandoned (${dropStatus}, ${dropped} events dropped)`)
+  }
+}
+
 export async function patchSession(
   ctx: CallbackContext,
   patch: Record<string, unknown>,

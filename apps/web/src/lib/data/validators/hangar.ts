@@ -87,13 +87,38 @@ export const heartbeatSessionSchema = z.object({
   workerId: z.string().trim().min(1).max(120),
 })
 
+// One bounds definition for the event-tail params, shared by both surfaces.
+// The schemas below differ only in how they get to a number/boolean — REST
+// reads query strings, MCP and the server actions pass native JSON — so the
+// bounds live here and nowhere else. Hand-rolling them on a surface is how MCP
+// drifted to limit<=1000 with a boolean tail while REST enforced 500.
+const TAIL_AFTER_SEQ_MIN = -1
+const TAIL_LIMIT_MIN = 1
+const TAIL_LIMIT_MAX = 500
+const TAIL_LIMIT_DEFAULT = 500
+
 // Event-tail params (REST ?afterSeq=&limit=). Coerced because they arrive as
 // query strings — un-coerced, `?limit=abc` reaches the driver as NaN (raw DB
 // error → 500) and an unbounded limit lets one request pull a whole
 // transcript. afterSeq allows -1 ("everything") to match list_session_events.
 export const sessionEventsTailSchema = z.object({
-  afterSeq: z.coerce.number().int().min(-1).optional(),
-  limit:    z.coerce.number().int().min(1).max(500).default(500),
+  afterSeq: z.coerce.number().int().min(TAIL_AFTER_SEQ_MIN).optional(),
+  limit:    z.coerce.number().int().min(TAIL_LIMIT_MIN).max(TAIL_LIMIT_MAX).default(TAIL_LIMIT_DEFAULT),
+  // Read the LAST n events instead of the first (still ascending in the
+  // response). NOT z.coerce.boolean — that turns the string "false" into true.
+  tail:     z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+})
+
+// Same params, native JSON types — for callers that already hold numbers and
+// booleans: the MCP tool schema (its shape is published as JSON Schema, so a
+// string-coerced sibling would advertise the wrong types to a client) and the
+// server actions, which are directly invocable and must not pass an unbounded
+// limit to the data layer. Every field is optional; the data layer applies its
+// own default so an omitted limit stays "the data layer's page size".
+export const sessionEventsTailArgsSchema = z.object({
+  afterSeq: z.number().int().min(TAIL_AFTER_SEQ_MIN).optional(),
+  limit:    z.number().int().min(TAIL_LIMIT_MIN).max(TAIL_LIMIT_MAX).optional(),
+  tail:     z.boolean().optional(),
 })
 
 // Engine-agnostic terminal envelope — the runner extracts it from stdout and
@@ -115,6 +140,25 @@ export const hangarResultEnvelopeSchema = z.object({
     objective:   hangarObjectiveSchema,
     instruction: z.string().trim().max(10_000),
   })).max(20).optional(),
+  // Flight Deck mission stats, aggregated runner-side from the engine stream
+  // (single aggregation point in poller.finalize). Omit-when-zero convention:
+  // absent field = engine reported nothing, never "zero spend".
+  // Every number here is a count, a duration or a spend — none can be
+  // negative. Without the floor a mis-parsed engine stream can post -1 as
+  // "unknown" and the Flight Deck totals it into the mission's cost.
+  stats: z.object({
+    totalCostUsd:        z.number().finite().min(0).optional(),
+    inputTokens:         z.number().int().min(0).optional(),
+    outputTokens:        z.number().int().min(0).optional(),
+    cacheReadTokens:     z.number().int().min(0).optional(),
+    cacheCreationTokens: z.number().int().min(0).optional(),
+    thinkingTokens:      z.number().int().min(0).optional(),
+    numTurns:            z.number().int().min(0).optional(),
+    durationMs:          z.number().finite().min(0).optional(),
+    durationApiMs:       z.number().finite().min(0).optional(),
+    toolCalls:           z.number().int().min(0).optional(),
+    model:               z.string().trim().max(120).optional(),
+  }).optional(),
 })
 
 export const createHangarRepoSchema = z.object({
@@ -142,6 +186,7 @@ export type HangarOutputMode       = z.infer<typeof hangarOutputModeSchema>
 export type HangarCardMetadata     = z.infer<typeof hangarCardMetadataSchema>
 export type ClaimSessionInput      = z.infer<typeof claimSessionSchema>
 export type HeartbeatSessionInput  = z.infer<typeof heartbeatSessionSchema>
+export type SessionEventsTailArgs  = z.infer<typeof sessionEventsTailArgsSchema>
 export type HangarResultEnvelope   = z.infer<typeof hangarResultEnvelopeSchema>
 export type CreateHangarRepoInput  = z.infer<typeof createHangarRepoSchema>
 export type UpdateHangarRepoInput  = z.infer<typeof updateHangarRepoSchema>

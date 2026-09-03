@@ -304,6 +304,44 @@ export async function attachSessionMemory(id: string, userId: string, memoryId: 
   return row ?? null
 }
 
+// Postgres refuses NUL inside jsonb/text and rejects unpaired surrogates when
+// it validates the UTF-8 of a jsonb literal. Event payloads are engine stdout
+// — arbitrary bytes a runner scraped — so a single bad char in one of 40
+// batched events would abort the whole INSERT and drop all 40. The valid
+// surrogate PAIR alternative must come first so real astral chars survive.
+const NEEDS_SCRUB_RE = /[\u0000\uD800-\uDFFF]/
+const SCRUB_RE = /\u0000|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g
+
+/** Strip NUL and replace unpaired surrogates so Postgres accepts the text. */
+export function scrubPgText(value: string): string {
+  if (!NEEDS_SCRUB_RE.test(value)) return value
+  return value.replace(SCRUB_RE, (m) => (m.length === 2 ? m : m === '\u0000' ? '' : '\uFFFD'))
+}
+
+/** scrubPgText applied to every string and object key in a jsonb value. */
+export function scrubJsonb<T>(value: T): T {
+  if (typeof value === 'string') return scrubPgText(value) as T
+  if (Array.isArray(value)) return value.map((v) => scrubJsonb(v)) as T
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[scrubPgText(k)] = scrubJsonb(v)
+    }
+    return out as T
+  }
+  return value
+}
+
+function toEventRow(sessionId: string, input: RecordSessionEventInput) {
+  return {
+    sessionId,
+    seq: input.seq,
+    kind: input.kind,
+    toolName: input.toolName ? scrubPgText(input.toolName) : null,
+    payload: scrubJsonb(input.payload ?? {}),
+  }
+}
+
 // Worker / hook posting an event. seq is monotonic per session; the UNIQUE
 // index on (session_id, seq) makes double-posts safe — we swallow conflicts.
 export async function recordSessionEvent(
@@ -312,25 +350,66 @@ export async function recordSessionEvent(
 ) {
   const [row] = await db
     .insert(sessionEvents)
-    .values({
-      sessionId,
-      seq: input.seq,
-      kind: input.kind,
-      toolName: input.toolName ?? null,
-      payload: input.payload ?? {},
-    })
+    .values(toEventRow(sessionId, input))
     .onConflictDoNothing({ target: [sessionEvents.sessionId, sessionEvents.seq] })
     .returning()
   return row ?? null
 }
 
+// Auto-assigned seq comes from a MAX+1 read, so two concurrent posts can pick
+// the same slot — and there onConflictDoNothing means "your event is gone",
+// not "already recorded" (nothing was replayed, the hook never had a seq).
+// Re-read and retry a bounded number of times before giving up. Explicit-seq
+// posts keep the plain idempotent path.
+export async function recordSessionEventWithAutoSeq(
+  sessionId: string,
+  input: RecordSessionEventInput,
+  attempts = 3,
+) {
+  let seq = input.seq
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const row = await recordSessionEvent(sessionId, { ...input, seq })
+    if (row) return row
+    seq = await getNextEventSeq(sessionId)
+  }
+  return null
+}
+
+// Flight Deck batch ingest — one INSERT for a runner's 2s flush of typed
+// events. Same idempotency contract as the single-event path: the UNIQUE
+// (session_id, seq) index swallows replayed rows.
+export async function recordSessionEvents(
+  sessionId: string,
+  inputs: RecordSessionEventInput[],
+) {
+  if (inputs.length === 0) return []
+  return db
+    .insert(sessionEvents)
+    .values(inputs.map((input) => toEventRow(sessionId, input)))
+    .onConflictDoNothing({ target: [sessionEvents.sessionId, sessionEvents.seq] })
+    .returning()
+}
+
+// tail=true reads the LAST n events (still returned in ascending seq order) —
+// the correct seed for a transcript viewer opening a finished mission, where
+// walking forward from seq 0 shows the beginning and can never reach the
+// result card within one page budget.
 export async function listSessionEvents(
   sessionId: string,
-  opts: { limit?: number; afterSeq?: number } = {},
+  opts: { limit?: number; afterSeq?: number; tail?: boolean } = {},
 ) {
   const where = [eq(sessionEvents.sessionId, sessionId)]
   if (opts.afterSeq !== undefined) {
     where.push(sql`${sessionEvents.seq} > ${opts.afterSeq}`)
+  }
+  if (opts.tail) {
+    const rows = await db
+      .select()
+      .from(sessionEvents)
+      .where(and(...where))
+      .orderBy(desc(sessionEvents.seq))
+      .limit(opts.limit ?? 500)
+    return rows.reverse()
   }
   return db
     .select()
@@ -340,6 +419,10 @@ export async function listSessionEvents(
     .limit(opts.limit ?? 500)
 }
 
+// MAX+1 is not atomic — two callers can read the same value. The UNIQUE index
+// catches that and recordSessionEventWithAutoSeq retries, which is where the
+// resolution belongs: a plain sequence would also hand out numbers to sessions
+// whose runner already assigned its own seq.
 export async function getNextEventSeq(sessionId: string): Promise<number> {
   const [row] = await db
     .select({ maxSeq: sql<number | null>`MAX(${sessionEvents.seq})` })

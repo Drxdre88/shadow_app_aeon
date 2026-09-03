@@ -46,7 +46,8 @@ KAIROS_MODE=poll npm run start --workspace=apps/kairos-worker
 | `KAIROS_AEON_API_KEY` | poll | — | `aeon_k1_` key used as Bearer for claim/events/heartbeat. Poll mode is disabled without it. |
 | `AEON_API_KEY` | poll | — | Legacy fallback for the above, warned about at startup. **In the web app this same name is the server master key** (admin scope, rate-limit bypass) — a shared `.env` would silently promote the runner to admin, so prefer `KAIROS_AEON_API_KEY`. |
 | `KAIROS_POLL_INTERVAL_MS` | poll | `15000` | Delay between claim attempts (recursive timeout, never overlapping) |
-| `KAIROS_MAX_CONCURRENT` | poll | `1` | Live poll-mode sessions allowed. Keep at 1 — two missions would share one checkout. |
+| `KAIROS_MAX_CONCURRENT` | poll | `1` | Live poll-mode sessions allowed. Missions run in disposable worktrees, so 4-5 is safe. |
+| `KAIROS_WORKTREE_ROOT` | poll | `~/.aeon/worktrees` | Where mission worktrees are created. Junction-seeded deps are shared with the live checkout — missions must not install dependencies. |
 | `KAIROS_HEARTBEAT_MS` | poll | `30000` | Heartbeat + cooperative-kill check interval |
 | `KAIROS_REPOS_FILE` | poll | `apps/kairos-worker/repos.local.yaml` | Host-local slug → path registry |
 | `KAIROS_CLAUDE_BIN` | both | `claude` | Override the `claude` executable |

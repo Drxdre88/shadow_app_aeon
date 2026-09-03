@@ -1,11 +1,13 @@
 // AI Hangar pull dispatch. Instead of Aeon pushing /spawn at the worker, the
-// worker polls Aeon, claims a queued session, prepares the repo branch, shells
-// the engine, streams the transcript back and posts the terminal result
-// envelope. NAT-friendly: nothing has to reach this host.
+// worker polls Aeon, claims a queued session, creates a disposable mission
+// worktree, shells the engine inside it, streams the transcript back and posts
+// the terminal result envelope. NAT-friendly: nothing has to reach this host.
+// The operator's live checkout is never branch-switched — missions and manual
+// work coexist, and N worktrees give N conflict-free paths (path-exclusive
+// concurrency, Archon lane 3).
 //
 // Push mode is untouched — a poll-mode session never goes through /spawn.
 
-import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -28,10 +30,33 @@ import {
 import { engineIds, getEngine, outFileFor, type EngineAdapter } from './engines.js'
 import { getWorkerId, reposFilePath, resolveRepo, type RepoEntry } from './registry.js'
 import { createSeq, killSession, releaseSession, runEngine } from './spawner.js'
+import {
+  createWorktree,
+  deleteBranchIfEmpty,
+  isMissionBranch,
+  MISSION_BRANCH_PREFIX,
+  missionCommits,
+  pushBranch,
+  removeWorktree,
+  worktreeDirFor,
+} from './worktree.js'
+import { exec, type ChildProcess } from 'node:child_process'
+import { promisify } from 'node:util'
+import { jsonbSafeChunks, sanitizeJsonbDeep } from './stream-parser.js'
+import type { MissionStats, StreamParser } from './stream-parser.js'
 
-const POLL_INTERVAL_MS = Number(process.env.KAIROS_POLL_INTERVAL_MS ?? '15000')
-const HEARTBEAT_MS = Number(process.env.KAIROS_HEARTBEAT_MS ?? '30000')
-const MAX_CONCURRENT = Number(process.env.KAIROS_MAX_CONCURRENT ?? '1')
+const execAsync = promisify(exec)
+
+// A malformed value ("two", "") must degrade to the default, never to NaN —
+// `activeCount < NaN` is false and the runner would silently claim nothing.
+function envInt(name: string, fallback: number, min: number): number {
+  const n = Math.trunc(Number(process.env[name]))
+  return Number.isFinite(n) && n >= min ? n : fallback
+}
+
+const POLL_INTERVAL_MS = envInt('KAIROS_POLL_INTERVAL_MS', 15000, 1000)
+const HEARTBEAT_MS = envInt('KAIROS_HEARTBEAT_MS', 30000, 1000)
+const MAX_CONCURRENT = envInt('KAIROS_MAX_CONCURRENT', 1, 1)
 
 export interface ClaimedSession {
   id: string
@@ -66,6 +91,44 @@ export function unsafeArg(label: string, value: string | null | undefined): stri
   return SAFE_ARG.test(value) ? null : `${label} contains unsupported characters — mission refused`
 }
 
+// The charset check above says nothing about WHICH branch: a card supplying
+// `feat/flight-deck` passes it, and the mission would then be `worktree
+// add`-ed onto the operator's own branch, committed to by the agent and PUSHED
+// by teardown. Only the mission namespace is dispatchable.
+export function outsideMissionNamespace(branch: string): string | null {
+  if (isMissionBranch(branch)) return null
+  return `branch "${branch}" is outside the ${MISSION_BRANCH_PREFIX} mission namespace — mission refused `
+    + `so a mission can never commit to or push an operator branch; `
+    + `leave the branch field blank to get the generated ${MISSION_BRANCH_PREFIX}<card> name`
+}
+
+// killSession only SIGTERMs / taskkills the tree — it does not wait. The child
+// holds open handles INSIDE the mission worktree and teardown deletes that
+// tree, so on Windows the delete fails while the process is still alive.
+// Bounded: a wedged child must not hold the mission slot open forever, and
+// teardown already surfaces a failed removal as a warning on the card.
+const CHILD_EXIT_GRACE_MS = 10_000
+
+export function waitForExit(child: ChildProcess | null, timeoutMs = CHILD_EXIT_GRACE_MS): Promise<boolean> {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true)
+  return new Promise<boolean>((done) => {
+    let finished = false
+    const onClose = (): void => finish(true)
+    const finish = (exited: boolean): void => {
+      if (finished) return
+      finished = true
+      clearTimeout(timer)
+      child.off('close', onClose)
+      done(exited)
+    }
+    const timer = setTimeout(() => {
+      console.warn(`[worker/poll] child pid ${child.pid ?? '?'} did not exit within ${timeoutMs}ms — proceeding with teardown`)
+      finish(false)
+    }, timeoutMs)
+    child.once('close', onClose)
+  })
+}
+
 let workerId = ''
 let activeCount = 0
 let lastPollAt: string | null = null
@@ -88,9 +151,15 @@ export function startPoller(): void {
 }
 
 // Recursive setTimeout, never setInterval: a slow claim must not stack ticks.
+// Claims drain to capacity in one tick so five queued cards start together
+// instead of one per poll interval — bounded per tick so a queue of
+// fast-failing sessions cannot burn the write budget in one synchronous burst.
 async function tick(): Promise<void> {
   try {
-    if (activeCount < MAX_CONCURRENT) await claimOnce()
+    for (let i = 0; i < MAX_CONCURRENT && activeCount < MAX_CONCURRENT; i++) {
+      const claimed = await claimOnce()
+      if (!claimed) break
+    }
   } catch (err) {
     console.error('[worker/poll] tick failed', err)
   } finally {
@@ -98,7 +167,7 @@ async function tick(): Promise<void> {
   }
 }
 
-async function claimOnce(): Promise<void> {
+async function claimOnce(): Promise<boolean> {
   lastPollAt = new Date().toISOString()
 
   const res = await aeonFetch<{ session: ClaimedSession | null }>(
@@ -109,25 +178,41 @@ async function claimOnce(): Promise<void> {
   )
   if (!res.ok) {
     if (res.status) console.error(`[worker/poll] claim rejected (${res.status})`)
-    return
+    return false
   }
 
   const session = res.data?.session ?? null
-  if (!session) return
+  if (!session) return false
 
   activeCount++
   console.log(`[worker/poll] claimed ${session.id} engine=${session.engine} repo=${session.repo}`)
-  await launch(session)
+  // Not awaited: launch can legitimately take minutes (worktree add on a big
+  // repo, envSetupCmd), and awaiting it here would freeze claiming for every
+  // other repo. activeCount is already up, so capacity stays correct; launch
+  // handles its own failures and release() is its every exit path.
+  void launch(session).catch((err) => console.error(`[worker/poll] launch escaped for ${session.id}`, err))
+  return true
 }
 
 async function launch(session: ClaimedSession): Promise<void> {
   const ctx = pollContext(session.id)
   const nextSeq = createSeq(1)
 
-  // Set once the repo is on a mission branch / the brief is on disk, so an
-  // abort still leaves the checkout as it found it.
-  let checkout: RepoEntry | null = null
+  // Set once the mission worktree exists / the brief is on disk / the child is
+  // running, so an abort tears down everything it created and nothing it
+  // didn't — including killing a child that already started.
+  let mission: { entry: RepoEntry; branch: string; startSha: string } | null = null
   let brief: string | null = null
+  let childRunning = false
+  // Hoisted so abort() can reach them: an abort that leaves the heartbeat
+  // beating keeps polling Aeon for a mission that is already over, and one
+  // that deletes the worktree while the child still holds handles inside it
+  // leaves debris that blocks the next run of the card.
+  let child: ChildProcess | null = null
+  let stopHeartbeat: () => void = () => {}
+  // Shared with the child's terminal handlers: whoever sets it first owns the
+  // terminal sequence, so abort and a racing 'error'/'close' cannot both run.
+  let settled = false
 
   let released = false
   const release = (): void => {
@@ -138,12 +223,24 @@ async function launch(session: ClaimedSession): Promise<void> {
   }
 
   const abort = async (message: string): Promise<void> => {
+    if (settled) return // a terminal handler already owns the sequence
+    settled = true
     console.error(`[worker/poll] ${session.id} ${message}`)
-    await postEvent(ctx, { seq: nextSeq(), kind: 'error', payload: { message } })
-    await patchSession(ctx, { status: 'failed', endedAt: new Date().toISOString() })
-    if (brief) rmSync(brief, { force: true })
-    if (checkout) restoreBranch(checkout)
-    release()
+    stopHeartbeat()
+    if (childRunning) killSession(session.id)
+    try {
+      await postEvent(ctx, { seq: nextSeq(), kind: 'error', payload: { message } })
+      await patchSession(ctx, { status: 'failed', endedAt: new Date().toISOString() })
+      if (brief) rmSync(brief, { force: true })
+      // The kill above is fire-and-forget — teardown's recursive delete only
+      // runs once the child has actually let go of the worktree.
+      if (childRunning) await waitForExit(child)
+      if (mission) await teardownWorktree(mission.entry, mission.branch, mission.startSha)
+    } catch (cleanupErr) {
+      console.error(`[worker/poll] ${session.id} abort cleanup failed`, cleanupErr)
+    } finally {
+      release()
+    }
   }
 
   try {
@@ -158,16 +255,26 @@ async function launch(session: ClaimedSession): Promise<void> {
       return await abort(`repo "${entry.slug}" path does not exist on this host: ${entry.path}`)
     }
 
-    const branch = session.branch?.trim() || `aeon/${(session.taskId ?? session.id).slice(0, 8)}`
+    const branch = session.branch?.trim() || `${MISSION_BRANCH_PREFIX}${(session.taskId ?? session.id).slice(0, 8)}`
     const meta = hangarMeta(session)
     const rejected = unsafeArg('branch', branch)
+      ?? outsideMissionNamespace(branch)
       ?? unsafeArg('model', meta.model)
       ?? unsafeArg('session id', session.id)
     if (rejected) return await abort(rejected)
 
-    const prepared = prepareBranch(entry, branch)
-    if (!prepared.ok) return await abort(prepared.error)
-    checkout = entry
+    const tree = await createWorktree(entry, branch)
+    if (!tree.ok) return await abort(tree.error)
+    mission = { entry, branch, startSha: tree.startSha }
+    const workPath = tree.path
+
+    if (entry.envSetupCmd) {
+      try {
+        await execAsync(entry.envSetupCmd, { cwd: workPath, windowsHide: true, timeout: 600_000 })
+      } catch (err) {
+        return await abort(`envSetupCmd failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
 
     const text = session.prompt?.trim() || buildDispatchPrompt(session, entry, branch, meta)
     // The brief goes to a file and argv carries a one-line pointer: a cmd.exe
@@ -181,17 +288,20 @@ async function launch(session: ClaimedSession): Promise<void> {
     const outFile = engine.envelopeSource === 'file' ? outFileFor(session.id) : null
     if (outFile) rmSync(outFile, { force: true })
 
-    const args = engine.buildArgs(prompt, { model: meta.model ?? null, cwd: entry.path, outFile })
-    console.log(`[worker/poll] ${session.id} → ${engine.bin} in ${entry.path} on ${branch}`)
+    const args = engine.buildArgs(prompt, { model: meta.model ?? null, cwd: workPath, outFile })
+    console.log(`[worker/poll] ${session.id} → ${engine.bin} in ${workPath} on ${branch}`)
+
+    const parser = engine.streamParser?.() ?? null
 
     const handle = runEngine({
       sessionId: session.id,
       ctx,
       bin: engine.bin,
       args,
-      cwd: entry.path,
+      cwd: workPath,
       capture: true,
       batchStdout: true,
+      parser: parser ?? undefined,
       nextSeq,
       extraEnv: {
         KAIROS_SESSION_ID: session.id,
@@ -201,26 +311,36 @@ async function launch(session: ClaimedSession): Promise<void> {
       },
     })
 
-    await patchSession(ctx, {
-      status: 'running',
-      workerHost: hostname(),
-      workerPid: handle.child.pid ?? null,
-      startedAt: new Date().toISOString(),
-    })
+    // Everything between spawn and handler attachment stays SYNCHRONOUS: a
+    // spawn failure is delivered on the next tick, so the first `await` before
+    // the 'error' listener exists would turn it into an uncaught exception
+    // that kills the whole runner and orphans every in-flight mission.
+    childRunning = true
+    child = handle.child
 
-    const stopHeartbeat = startHeartbeat(session.id, () => {
+    stopHeartbeat = startHeartbeat(session.id, () => {
       killSession(session.id)
     })
 
+    // One terminal owner only: a failed spawn emits 'error' AND 'close', and
+    // an abort can race both — the shared synchronous `settled` flag admits
+    // exactly one terminal sequence.
     handle.child.on('error', (err) => {
-      if (released) return
+      if (settled) return
+      settled = true
+      childRunning = false
       stopHeartbeat()
       void (async () => {
-        await postEvent(ctx, { seq: nextSeq(), kind: 'error', payload: { message: err.message } })
-        await patchSession(ctx, { status: 'failed', endedAt: new Date().toISOString() })
-        rmSync(briefFile, { force: true })
-        restoreBranch(entry)
-        release()
+        try {
+          await postEvent(ctx, { seq: nextSeq(), kind: 'error', payload: { message: err.message } })
+          await patchSession(ctx, { status: 'failed', endedAt: new Date().toISOString() })
+          rmSync(briefFile, { force: true })
+          await teardownWorktree(entry, branch, tree.startSha)
+        } catch (cleanupErr) {
+          console.error(`[worker/poll] ${session.id} error-path cleanup failed`, cleanupErr)
+        } finally {
+          release()
+        }
       })()
     })
 
@@ -228,21 +348,41 @@ async function launch(session: ClaimedSession): Promise<void> {
     // envelope sitting in the last stdout chunk would be missing and a
     // successful mission would be reported as failed.
     handle.child.on('close', (code, signal) => {
-      if (released) return
+      if (settled) return
+      settled = true
+      childRunning = false
       stopHeartbeat()
       void finalize({
         ctx,
         nextSeq,
         engine,
         entry,
+        branch,
+        startSha: tree.startSha,
         outFile,
         briefFile,
         code,
         signal,
         killed: handle.killed(),
         stdout: handle.captured(),
+        parser,
         release,
+      }).catch((err) => {
+        // finalize is written not to throw, but a slot leak is the one
+        // failure this runner must never have — belt and braces.
+        console.error(`[worker/poll] ${session.id} finalize escaped`, err)
+        release()
       })
+    })
+
+    // First await only now that both terminal handlers exist. If this PATCH
+    // throws, abort() kills the child and the settled flag keeps the close
+    // handler from double-finalizing.
+    await patchSession(ctx, {
+      status: 'running',
+      workerHost: hostname(),
+      workerPid: handle.child.pid ?? null,
+      startedAt: new Date().toISOString(),
     })
   } catch (err) {
     await abort(`launch failed: ${err instanceof Error ? err.message : String(err)}`)
@@ -254,13 +394,71 @@ interface FinalizeArgs {
   nextSeq: () => number
   engine: EngineAdapter
   entry: RepoEntry
+  branch: string
+  startSha: string
   outFile: string | null
   briefFile: string
   code: number | null
   signal: NodeJS.Signals | null
   killed: boolean
   stdout: string
+  parser: StreamParser | null
   release: () => void
+}
+
+// Absent field = "the engine reported nothing". Counters keep genuine zeros;
+// only cost is omit-when-zero (a $0 report is indistinguishable from no
+// report). Single aggregation point — stats land here once (envelope +
+// session PATCH) and nowhere else, so a second write site can never
+// double-count.
+// Same untrusted-parser rule as the stream path in spawner.ts: stats() runs on
+// state the parser built from engine output, and a throw here would cost the
+// mission both its result envelope and its worktree teardown.
+export function safeStats(parser: StreamParser | null): MissionStats | null {
+  if (!parser) return null
+  try {
+    return parser.stats()
+  } catch (err) {
+    console.error('[worker/poll] stream parser stats() threw — reporting the mission without telemetry', err)
+    return null
+  }
+}
+
+export function missionStats(stats: MissionStats | null): Record<string, number | string> | null {
+  if (!stats) return null
+  const out: Record<string, number | string> = {}
+  const counters: Array<[key: keyof MissionStats & string, value: number | undefined]> = [
+    ['inputTokens', stats.inputTokens],
+    ['outputTokens', stats.outputTokens],
+    ['cacheReadTokens', stats.cacheReadTokens],
+    ['cacheCreationTokens', stats.cacheCreationTokens],
+    ['thinkingTokens', stats.thinkingTokens],
+    ['numTurns', stats.numTurns],
+    ['durationMs', stats.durationMs],
+    ['durationApiMs', stats.durationApiMs],
+  ]
+  for (const [key, value] of counters) {
+    if (value !== undefined && Number.isFinite(value)) out[key] = value
+  }
+  if (stats.totalCostUsd !== undefined && Number.isFinite(stats.totalCostUsd) && stats.totalCostUsd !== 0) {
+    out.totalCostUsd = stats.totalCostUsd
+  }
+  out.toolCalls = stats.toolCalls
+  if (stats.model) out.model = stats.model
+  return Object.keys(out).length > 0 ? out : null
+}
+
+// A blind stdout.slice(-2000) is the one thing that can lose the result
+// envelope — the write a mission cannot afford to lose. A NUL byte, or a slice
+// that opens on the low half of a surrogate pair, makes Postgres reject the
+// whole jsonb payload as a non-retriable 400. Chunking the FULL stdout runs
+// the same redaction + NUL strip the telemetry path uses and never splits a
+// pair at a chunk edge; the deep sanitizer then replaces any surrogate that
+// was already lone in the engine's own output.
+export function rawTail(stdout: string, limit = 2000): string {
+  const chunks = jsonbSafeChunks(stdout, limit)
+  const tail = chunks.slice(-2).join('').slice(-limit)
+  return sanitizeJsonbDeep(tail) as string
 }
 
 // POST /events answers a kind:'result' post with whether the envelope actually
@@ -278,22 +476,35 @@ function envelopeRejection(data: unknown): string | null {
 }
 
 async function finalize(args: FinalizeArgs): Promise<void> {
-  const { ctx, nextSeq, engine, entry, outFile, briefFile, code, signal, killed, stdout, release } = args
+  const { ctx, nextSeq, engine, entry, branch, startSha, outFile, briefFile, code, signal, killed, stdout, parser, release } = args
+  try {
+    await finalizeInner(args)
+  } finally {
+    // The slot must free on EVERY path — an unreleased slot is a permanent
+    // capacity leak the log would never explain.
+    release()
+  }
+}
+
+async function finalizeInner(args: FinalizeArgs): Promise<void> {
+  const { ctx, nextSeq, engine, entry, branch, startSha, outFile, briefFile, code, signal, killed, stdout, parser } = args
   const endedAt = new Date().toISOString()
   const wasKilled = killed || signal === 'SIGTERM'
 
   await postEvent(ctx, { seq: nextSeq(), kind: 'stop', payload: { exitCode: code, signal } })
 
   const envelope = normalizeEnvelope(readEnvelope(engine, stdout, outFile))
+  const stats = missionStats(safeStats(parser))
 
   // The result event and the final status are the two writes that must land:
   // losing either leaves a finished mission showing as 'running' on the board.
-  const result = envelope ?? {
+  const base = envelope ?? {
     status: 'failed',
     outcome: 'blocked',
     summary: 'engine exited without a result envelope',
-    raw_tail: stdout.slice(-2000),
+    raw_tail: rawTail(stdout),
   }
+  const result = stats ? { ...base, stats } : base
   const reported = envelope && typeof envelope.status === 'string' ? envelope.status : null
 
   const seq = nextSeq()
@@ -311,12 +522,98 @@ async function finalize(args: FinalizeArgs): Promise<void> {
   }
 
   const status = decideFinalStatus(reported, wasKilled, rejection !== null)
-  await withRetry('final status', () => patchSession(ctx, { status, exitCode: code, endedAt }))
+  const costUsd = typeof stats?.totalCostUsd === 'number' ? stats.totalCostUsd : undefined
+  await withRetry('final status', () => patchSession(ctx, {
+    status,
+    exitCode: code,
+    endedAt,
+    ...(costUsd !== undefined ? { costUsd } : {}),
+  }))
 
   if (outFile) rmSync(outFile, { force: true })
   rmSync(briefFile, { force: true })
-  restoreBranch(entry)
-  release()
+
+  // Publish-or-vanish teardown: a productive branch is pushed before its
+  // worktree goes, so the work survives the disposable checkout; an empty one
+  // leaves no litter. The events make the outcome visible on the card.
+  const shipped = await teardownWorktree(entry, branch, startSha)
+  if (shipped.ahead > 0) {
+    const message = shipped.pushed
+      ? `branch ${branch} pushed to origin (${shipped.ahead} commit${shipped.ahead === 1 ? '' : 's'})`
+      : `branch ${branch} has ${shipped.ahead} commit(s) but push failed: ${shipped.error ?? 'unknown'} — it survives locally`
+    await postEvent(ctx, { seq: nextSeq(), kind: 'system', payload: { subtype: 'branch', message } })
+  }
+  if (shipped.depsMutated) {
+    await postEvent(ctx, {
+      seq: nextSeq(),
+      kind: 'system',
+      payload: {
+        subtype: 'warning',
+        message: 'mission replaced a shared dependency dir (junction gone) — dependencies are shared with the live checkout and must not be installed in-mission',
+      },
+    })
+  }
+  if (!shipped.removed) {
+    // The destroy safety valve refused (a link survived) or deletion failed —
+    // without this event the next run of the card dies at the "already
+    // exists" refusal with no context anywhere the operator looks.
+    await postEvent(ctx, {
+      seq: nextSeq(),
+      kind: 'system',
+      payload: { subtype: 'warning', message: `mission worktree could not be removed — manual sweep needed: ${shipped.path}` },
+    })
+  }
+}
+
+// Push-if-productive: count only the commits THIS mission added (from the tip
+// captured at worktree creation), push when there is work, always remove the
+// worktree, and drop the branch only when it holds nothing anywhere. Never
+// pushes or deletes the repo default branch.
+interface TeardownReport {
+  pushed: boolean
+  ahead: number
+  error: string | null
+  depsMutated: boolean
+  removed: boolean
+  path: string
+}
+
+// NEVER throws: the repo-lock timebox rejects on a wedged git op, and every
+// caller (finalize, abort, the 'error' handler) treats teardown as the last
+// step before release() — a throw here would either kill the runner as an
+// unhandled rejection or silently leak an activeCount slot. Failure routes
+// through removed:false, which finalize surfaces as a warning on the card.
+async function teardownWorktree(
+  entry: RepoEntry,
+  branch: string,
+  startSha: string | null,
+): Promise<TeardownReport> {
+  try {
+    const ahead = branch === entry.defaultBranch ? 0 : await missionCommits(entry, branch, startSha)
+    let pushed = false
+    let error: string | null = null
+    if (ahead > 0) {
+      const res = await pushBranch(entry, branch)
+      pushed = res.ok
+      if (!res.ok) {
+        error = res.stderr.trim()
+        console.warn(`[worker/poll] push ${branch} failed: ${error}`)
+      }
+    }
+    const destroyed = await removeWorktree(entry, branch)
+    if (ahead === 0) await deleteBranchIfEmpty(entry, branch)
+    return { pushed, ahead, error, depsMutated: destroyed.depsMutated, removed: destroyed.removed, path: destroyed.path }
+  } catch (err) {
+    console.error(`[worker/poll] teardown failed for ${branch}`, err)
+    return {
+      pushed: false,
+      ahead: 0,
+      error: err instanceof Error ? err.message : String(err),
+      depsMutated: false,
+      removed: false,
+      path: worktreeDirFor(entry, branch),
+    }
+  }
 }
 
 // ── heartbeat ────────────────────────────────────────────────────────────
@@ -365,59 +662,6 @@ function readStatus(data: unknown): string | null {
   return typeof status === 'string' ? status : null
 }
 
-// ── git ──────────────────────────────────────────────────────────────────
-
-function git(cwd: string, args: string[]): { ok: boolean; stdout: string; stderr: string } {
-  const res = spawnSync('git', args, { cwd, encoding: 'utf8', windowsHide: true })
-  return {
-    ok: res.status === 0,
-    stdout: res.stdout ?? '',
-    stderr: (res.stderr ?? '') || (res.error ? res.error.message : ''),
-  }
-}
-
-function prepareBranch(entry: RepoEntry, branch: string): { ok: true } | { ok: false; error: string } {
-  // The runner works in the operator's live checkout, so uncommitted work would
-  // be carried onto the mission branch and mixed with the agent's edits. Refuse
-  // before touching anything rather than claim the damage.
-  // TODO(sprint-2): run missions in a `git worktree` so a dirty tree is
-  // irrelevant instead of fatal.
-  const dirty = git(entry.path, ['status', '--porcelain'])
-  if (!dirty.ok) return { ok: false, error: `git status failed in ${entry.slug}: ${dirty.stderr.trim()}` }
-  if (dirty.stdout.trim()) {
-    return {
-      ok: false,
-      error: `repo "${entry.slug}" has uncommitted changes; mission refused — commit or stash them, then re-run`,
-    }
-  }
-
-  // Fetch is best-effort: a flaky network must not sink the mission.
-  const fetched = git(entry.path, ['fetch', 'origin'])
-  if (!fetched.ok) console.warn(`[worker/poll] git fetch origin failed in ${entry.slug}: ${fetched.stderr.trim()}`)
-
-  if (git(entry.path, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).ok) {
-    const reuse = git(entry.path, ['checkout', branch])
-    return reuse.ok ? { ok: true } : { ok: false, error: `git checkout ${branch} failed: ${reuse.stderr.trim()}` }
-  }
-
-  const fromRemote = git(entry.path, ['checkout', '-b', branch, `origin/${entry.defaultBranch}`])
-  if (fromRemote.ok) return { ok: true }
-  const fromLocal = git(entry.path, ['checkout', '-b', branch, entry.defaultBranch])
-  if (fromLocal.ok) return { ok: true }
-
-  return {
-    ok: false,
-    error: `git checkout -b ${branch} failed: ${fromRemote.stderr.trim() || fromLocal.stderr.trim()}`,
-  }
-}
-
-// Leaves the checkout on its default branch. The aeon/* branch is never
-// deleted — it holds the mission's work.
-function restoreBranch(entry: RepoEntry): void {
-  const res = git(entry.path, ['checkout', entry.defaultBranch])
-  if (!res.ok) console.warn(`[worker/poll] could not restore ${entry.slug} to ${entry.defaultBranch}: ${res.stderr.trim()}`)
-}
-
 // ── prompt + envelope ────────────────────────────────────────────────────
 
 function briefFileFor(sessionId: string): string {
@@ -458,6 +702,7 @@ function buildDispatchPrompt(
     meta.subagents?.length ? `Preferred subagents: ${meta.subagents.join(', ')}.` : null,
     `Output mode: ${meta.outputMode ?? 'auto'} — derive the deliverable from the objective.`,
     'Read the repo instructions (CLAUDE.md / AGENTS.md) before acting.',
+    'Do NOT install, update or remove dependencies (node_modules is shared with the live checkout via a junction).',
     '',
     'Finish by ending your final message with a fenced json result envelope:',
     '```json',

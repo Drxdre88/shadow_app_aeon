@@ -64,8 +64,7 @@ vi.mock('../projects', () => ({
 }))
 vi.mock('../tasks', () => ({ updateTask: vi.fn(async () => ({ id: 'task', columnId: null })) }))
 
-import { claimNextSession, recordSessionResult } from '../sessions'
-import { sessionEventsTailSchema } from '../validators'
+import { claimNextSession, recordSessionResult, scrubPgText, scrubJsonb } from '../sessions'
 import { updateTask } from '../tasks'
 import { findProjectSettings, touchProject } from '../projects'
 import { findColumns } from '../columns'
@@ -311,26 +310,42 @@ describe('recordSessionResult', () => {
   })
 })
 
-describe('sessionEventsTailSchema', () => {
-  it('coerces the query strings a URL actually carries', () => {
-    expect(sessionEventsTailSchema.parse({ afterSeq: '12', limit: '50' })).toEqual({ afterSeq: 12, limit: 50 })
+// Event payloads are engine stdout — arbitrary bytes. Postgres refuses NUL and
+// unpaired surrogates inside jsonb, and a single bad char used to abort the
+// whole batch INSERT, dropping every event beside it.
+
+describe('scrubPgText', () => {
+  it('leaves clean text untouched, including astral characters', () => {
+    expect(scrubPgText('plain ascii')).toBe('plain ascii')
+    expect(scrubPgText('emoji \u{1F680} and \u00E9')).toBe('emoji \u{1F680} and \u00E9')
   })
 
-  it('defaults limit and leaves afterSeq absent when the tail params are omitted', () => {
-    expect(sessionEventsTailSchema.parse({})).toEqual({ limit: 500 })
+  it('removes NUL anywhere in the string', () => {
+    expect(scrubPgText('a\u0000b')).toBe('ab')
+    expect(scrubPgText('\u0000\u0000')).toBe('')
+    expect(scrubPgText('trail\u0000')).toBe('trail')
   })
 
-  it('rejects garbage instead of passing NaN to the driver', () => {
-    expect(sessionEventsTailSchema.safeParse({ limit: 'abc' }).success).toBe(false)
-    expect(sessionEventsTailSchema.safeParse({ afterSeq: 'abc' }).success).toBe(false)
-    expect(sessionEventsTailSchema.safeParse({ limit: '10.5' }).success).toBe(false)
+  it('replaces an unpaired surrogate but keeps a valid pair intact', () => {
+    expect(scrubPgText('lone \uD800 high')).toBe('lone \uFFFD high')
+    expect(scrubPgText('lone \uDC00 low')).toBe('lone \uFFFD low')
+    expect(scrubPgText('\uD83D\uDE80')).toBe('\uD83D\uDE80')
+    expect(scrubPgText('\uD83D\uDE80\uD800')).toBe('\uD83D\uDE80\uFFFD')
+  })
+})
+
+describe('scrubJsonb', () => {
+  it('scrubs strings, object keys and array members recursively', () => {
+    expect(scrubJsonb({
+      ['bad\u0000key']: 'bad\u0000value',
+      nested: { list: ['ok', 'x\u0000y', { deep: 'lone \uD800' }] },
+    })).toEqual({
+      badkey: 'badvalue',
+      nested: { list: ['ok', 'xy', { deep: 'lone \uFFFD' }] },
+    })
   })
 
-  it('bounds limit to 1..500 and afterSeq to >= -1', () => {
-    expect(sessionEventsTailSchema.safeParse({ limit: '500' }).success).toBe(true)
-    expect(sessionEventsTailSchema.safeParse({ limit: '501' }).success).toBe(false)
-    expect(sessionEventsTailSchema.safeParse({ limit: '0' }).success).toBe(false)
-    expect(sessionEventsTailSchema.safeParse({ afterSeq: '-1' }).success).toBe(true)
-    expect(sessionEventsTailSchema.safeParse({ afterSeq: '-2' }).success).toBe(false)
+  it('passes non-string scalars through unchanged', () => {
+    expect(scrubJsonb({ n: 1, b: true, z: null, arr: [] })).toEqual({ n: 1, b: true, z: null, arr: [] })
   })
 })

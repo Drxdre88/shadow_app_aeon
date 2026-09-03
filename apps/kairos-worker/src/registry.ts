@@ -25,6 +25,26 @@ export interface RepoEntry {
   path: string
   defaultBranch: string
   envSetupCmd: string | null
+  // Git-ignored content seeded into mission worktrees: `link` dirs become
+  // junctions (node_modules), `copy` files are copied (.env.local). Comma-
+  // separated in the yaml — the narrow parser only does scalars.
+  link: string[]
+  copy: string[]
+}
+
+// The slug is a registry KEY that becomes both an object property and a
+// filesystem path component. '__proto__' would poison the lookup object and
+// '..' would climb out of the worktree root, so an unsafe key never becomes a
+// RepoEntry in the first place.
+const SAFE_SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+
+export function safeSlug(slug: string): boolean {
+  return SAFE_SLUG.test(slug)
+}
+
+function csv(value: string | null | undefined): string[] {
+  if (!value) return []
+  return value.split(',').map((s) => s.trim()).filter(Boolean)
 }
 
 const WORKER_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -98,11 +118,17 @@ export function loadRepos(): Record<string, RepoEntry> {
   for (const [slug, entry] of Object.entries(raw)) {
     const path = entry?.path
     if (!path) continue
+    if (!safeSlug(slug)) {
+      console.warn(`[worker/registry] ignoring repo "${slug}" — a slug must be a plain path component ([A-Za-z0-9._-], no leading dot)`)
+      continue
+    }
     out[slug] = {
       slug,
       path,
       defaultBranch: entry.defaultBranch ?? 'main',
       envSetupCmd: entry.envSetupCmd ?? null,
+      link: csv(entry.link),
+      copy: csv(entry.copy),
     }
   }
   return out
@@ -112,7 +138,9 @@ export function loadRepos(): Record<string, RepoEntry> {
 export function resolveRepo(slug: string | null | undefined): RepoEntry | null {
   if (!slug) return null
   const repos = loadRepos()
-  return repos[slug] ?? null
+  // hasOwn, not a bare index: '__proto__' / 'constructor' would otherwise
+  // resolve to an inherited value and be handed on as a RepoEntry.
+  return Object.hasOwn(repos, slug) ? repos[slug] : null
 }
 
 // Stable across restarts so a reclaimed session can be traced to its host.

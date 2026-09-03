@@ -25,14 +25,14 @@ describe('normalizeEnvelope', () => {
     expect(normalizeEnvelope({ status: 'FAILURE' })).toEqual({ status: 'failed' })
   })
 
-  it('returns the same object when the status is already canonical', () => {
+  it('returns an equal object when the status is already canonical', () => {
     const envelope = { status: 'needs_input', questions: ['which repo?'] }
-    expect(normalizeEnvelope(envelope)).toBe(envelope)
+    expect(normalizeEnvelope(envelope)).toEqual(envelope)
   })
 
   it('passes unknown statuses through untouched so Aeon can reject them', () => {
     const envelope = { status: 'partially_done' }
-    expect(normalizeEnvelope(envelope)).toBe(envelope)
+    expect(normalizeEnvelope(envelope)).toEqual(envelope)
     expect(normalizeEnvelope({ status: 'completed|needs_input|failed' }))
       .toEqual({ status: 'completed|needs_input|failed' })
   })
@@ -52,6 +52,30 @@ describe('normalizeEnvelope', () => {
   it('keeps the rest of the envelope intact while rewriting the status', () => {
     expect(normalizeEnvelope({ status: 'done', summary: 'x', artifacts: ['a'] }))
       .toEqual({ status: 'completed', summary: 'x', artifacts: ['a'] })
+  })
+
+  it('deep-sanitises NUL bytes and lone surrogates so the jsonb write is accepted', () => {
+    const nul = String.fromCharCode(0)
+    const normalized = normalizeEnvelope({
+      status: 'complete',
+      summary: `ok${nul}done`,
+      artifacts: [`a${nul}b`, { note: 'tail\uD800' }],
+      [`k${nul}ey`]: 'v',
+    })
+    expect(normalized).toEqual({
+      status: 'completed',
+      summary: 'okdone',
+      artifacts: ['ab', { note: 'tail\uFFFD' }],
+      key: 'v',
+    })
+    expect(JSON.stringify(normalized)).not.toContain('\\u0000')
+  })
+
+  it('sanitises even when the status is missing or unknown', () => {
+    const nul = String.fromCharCode(0)
+    expect(normalizeEnvelope({ outcome: `blo${nul}cked` })).toEqual({ outcome: 'blocked' })
+    expect(normalizeEnvelope({ status: 'partially_done', note: `a${nul}b` }))
+      .toEqual({ status: 'partially_done', note: 'ab' })
   })
 })
 

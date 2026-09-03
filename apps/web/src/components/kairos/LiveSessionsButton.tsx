@@ -3,30 +3,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Bot, X, Square, Clock } from 'lucide-react'
-import {
-  listSessionsAction,
-  killSessionAction,
-  listSessionEventsAction,
-} from '@/lib/actions/sessions'
-import type { AgentSession, SessionEvent } from '@/lib/db/schema'
+import { Bot, X, Square, Clock, RadioTower } from 'lucide-react'
+import { listSessionsAction, killSessionAction } from '@/lib/actions/sessions'
+import type { AgentSession } from '@/lib/db/schema'
+import { FlightDeckDrawer, relativeTime } from './flightdeck/FlightDeckDrawer'
+import { TowerOverlay } from './flightdeck/TowerOverlay'
 
 // ─────────────────────────────────────────────────────────────────────────
-// Kairos Phase 3 (D18) — Live sessions surface.
-//
-// Sidebar button shows a pulsing dot + count of live (queued/running)
-// sessions Kairos has dispatched. Clicking opens a popover listing each
-// session with engine + goal + relative time + kill button. Clicking a
-// session opens a transcript panel that polls events every 2 seconds.
+// Live sessions surface. Sidebar button shows a pulsing dot + count of live
+// (queued/running) sessions. The popover lists them; a session opens the
+// Flight Deck transcript drawer, and the Tower button opens mission control
+// over every session across machines.
 // ─────────────────────────────────────────────────────────────────────────
 
 const POLL_INTERVAL_MS = 4000
-const EVENT_POLL_INTERVAL_MS = 2000
+// With nothing live and the popover closed there is nothing to watch —
+// back off so an idle tab is not a 4s authenticated query for its lifetime.
+const IDLE_POLL_INTERVAL_MS = 15_000
 
 export function LiveSessionsButton() {
   const [sessions, setSessions] = useState<AgentSession[]>([])
   const [open, setOpen] = useState(false)
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const [towerOpen, setTowerOpen] = useState(false)
+  const [activeSession, setActiveSession] = useState<AgentSession | null>(null)
   const [mounted, setMounted] = useState(false)
   const [anchor, setAnchor] = useState<{ top: number; left: number; width: number; height: number } | null>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -44,11 +43,19 @@ export function LiveSessionsButton() {
 
   useEffect(() => { load() }, [load])
 
-  // Background poll for live count, even when popover is closed.
+  // Background poll for the live count, even when the popover is closed:
+  // fast while something is live or the list is open, slow when idle, never
+  // from a hidden tab, and caught up the moment the tab is visible again.
+  const hasLive = sessions.length > 0
   useEffect(() => {
-    const t = setInterval(load, POLL_INTERVAL_MS)
-    return () => clearInterval(t)
-  }, [load])
+    const tick = () => { if (!document.hidden) void load() }
+    const t = setInterval(tick, open || hasLive ? POLL_INTERVAL_MS : IDLE_POLL_INTERVAL_MS)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', tick)
+    }
+  }, [load, open, hasLive])
 
   const measureAnchor = useCallback(() => {
     const el = buttonRef.current
@@ -70,9 +77,11 @@ export function LiveSessionsButton() {
 
   const liveCount = sessions.length
 
-  const activeSession = useMemo(
-    () => sessions.find((s) => s.id === activeSessionId) ?? null,
-    [sessions, activeSessionId],
+  // Keep the drawer's session row fresh while it is open (status flips,
+  // cost lands) without re-opening it.
+  const activeSessionLive = useMemo(
+    () => (activeSession ? sessions.find((s) => s.id === activeSession.id) ?? activeSession : null),
+    [sessions, activeSession],
   )
 
   return (
@@ -132,12 +141,22 @@ export function LiveSessionsButton() {
                       <span className="text-[10px] text-white/30">{liveCount} running</span>
                     )}
                   </div>
-                  <button
-                    onClick={() => setOpen(false)}
-                    className="p-1 rounded-md text-white/35 hover:text-white/85 hover:bg-white/[0.06]"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => { setTowerOpen(true); setOpen(false) }}
+                      title="Open Tower — all missions"
+                      className="p-1 rounded-md text-white/35 hover:text-white/85 hover:bg-white/[0.06] inline-flex items-center gap-1"
+                    >
+                      <RadioTower className="w-3.5 h-3.5" />
+                      <span className="text-[9px] uppercase tracking-[0.16em]">Tower</span>
+                    </button>
+                    <button
+                      onClick={() => setOpen(false)}
+                      className="p-1 rounded-md text-white/35 hover:text-white/85 hover:bg-white/[0.06]"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </header>
 
                 <div className="flex-1 overflow-y-auto">
@@ -151,7 +170,7 @@ export function LiveSessionsButton() {
                         <SessionRow
                           key={s.id}
                           session={s}
-                          onOpen={() => { setActiveSessionId(s.id); setOpen(false) }}
+                          onOpen={() => { setActiveSession(s); setOpen(false) }}
                           onKilled={load}
                         />
                       ))}
@@ -165,9 +184,15 @@ export function LiveSessionsButton() {
         document.body,
       )}
 
-      <SessionTranscriptDrawer
-        session={activeSession}
-        onClose={() => setActiveSessionId(null)}
+      <TowerOverlay
+        open={towerOpen}
+        onClose={() => setTowerOpen(false)}
+        onOpenSession={(s) => { setActiveSession(s); setTowerOpen(false) }}
+      />
+
+      <FlightDeckDrawer
+        session={activeSessionLive}
+        onClose={() => setActiveSession(null)}
         onKilled={load}
       />
     </>
@@ -189,7 +214,13 @@ function SessionRow({
   }
 
   return (
-    <li className="group px-4 py-3 border-b border-white/[0.04] hover:bg-white/[0.02] cursor-pointer" onClick={onOpen}>
+    <li
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
+      className="group px-4 py-3 border-b border-white/[0.04] hover:bg-white/[0.02] cursor-pointer focus:outline-none focus-visible:bg-white/[0.04]"
+    >
       <div className="flex items-center gap-2 mb-1.5">
         <span
           className="text-[9px] px-1.5 py-0.5 rounded-md uppercase tracking-[0.16em] font-medium"
@@ -223,134 +254,4 @@ function SessionRow({
       </div>
     </li>
   )
-}
-
-function SessionTranscriptDrawer({
-  session, onClose, onKilled,
-}: {
-  session: AgentSession | null
-  onClose: () => void
-  onKilled: () => void
-}) {
-  const [events, setEvents] = useState<SessionEvent[]>([])
-  const [loading, setLoading] = useState(false)
-
-  const sessionId = session?.id ?? null
-
-  const pollEvents = useCallback(async () => {
-    if (!sessionId) return
-    try {
-      const lastSeq = events.length > 0 ? events[events.length - 1].seq : undefined
-      const next = await listSessionEventsAction(sessionId, { afterSeq: lastSeq, limit: 200 })
-      if (next.length > 0) setEvents((prev) => [...prev, ...(next as SessionEvent[])])
-    } catch {
-      // ignore
-    }
-  }, [sessionId, events])
-
-  // Reset events when switching sessions.
-  useEffect(() => {
-    setEvents([])
-    if (!sessionId) return
-    setLoading(true)
-    void (async () => {
-      try {
-        const initial = await listSessionEventsAction(sessionId, { limit: 200 })
-        setEvents(initial as SessionEvent[])
-      } finally {
-        setLoading(false)
-      }
-    })()
-  }, [sessionId])
-
-  useEffect(() => {
-    if (!sessionId) return
-    const t = setInterval(pollEvents, EVENT_POLL_INTERVAL_MS)
-    return () => clearInterval(t)
-  }, [sessionId, pollEvents])
-
-  return (
-    <AnimatePresence>
-      {session && (
-        <motion.aside
-          initial={{ x: '100%' }}
-          animate={{ x: 0 }}
-          exit={{ x: '100%' }}
-          transition={{ type: 'tween', duration: 0.22 }}
-          className="fixed top-0 right-0 h-screen w-[480px] z-[200] bg-[rgba(8,6,18,0.97)] backdrop-blur-xl border-l border-white/[0.08] shadow-2xl flex flex-col"
-        >
-          <header className="px-4 py-3 border-b border-white/[0.06] flex items-center gap-2">
-            <Bot className="w-4 h-4" style={{ color: 'var(--primary)' }} />
-            <div className="flex-1 min-w-0">
-              <div className="text-[12px] uppercase tracking-[0.22em] text-white/65">
-                {session.engine} · {session.status}
-              </div>
-              <div className="text-[13px] text-white/85 truncate">{session.goal}</div>
-            </div>
-            <button
-              onClick={async () => { try { await killSessionAction(session.id) } catch {} ; onKilled() }}
-              className="text-[10px] px-2 py-1 rounded-md bg-white/[0.04] hover:bg-rose-500/15 text-white/65 hover:text-rose-200 inline-flex items-center gap-1"
-            >
-              <Square className="w-2.5 h-2.5" /> Kill
-            </button>
-            <button onClick={onClose} className="p-1 rounded-md text-white/35 hover:text-white/85">
-              <X className="w-4 h-4" />
-            </button>
-          </header>
-
-          <div className="flex-1 overflow-y-auto p-4 font-mono text-[11px] text-white/75 space-y-1.5">
-            {loading && events.length === 0 ? (
-              <div className="text-white/40">Loading transcript…</div>
-            ) : events.length === 0 ? (
-              <div className="text-white/40">Waiting for events…</div>
-            ) : (
-              events.map((e) => (
-                <EventLine key={e.id} event={e} />
-              ))
-            )}
-          </div>
-        </motion.aside>
-      )}
-    </AnimatePresence>
-  )
-}
-
-function EventLine({ event }: { event: SessionEvent }) {
-  const colour =
-    event.kind === 'error' ? 'text-rose-300/85'
-    : event.kind === 'stop' ? 'text-emerald-300/85'
-    : event.kind === 'tool_use' || event.kind === 'tool_result' ? 'text-sky-300/80'
-    : 'text-white/65'
-
-  const detail = useMemo(() => extractEventDetail(event), [event])
-
-  return (
-    <div className={`leading-snug whitespace-pre-wrap break-words ${colour}`}>
-      <span className="text-white/30 mr-2">#{event.seq}</span>
-      <span className="text-white/40 mr-2">{event.kind}{event.toolName ? `:${event.toolName}` : ''}</span>
-      <span>{detail}</span>
-    </div>
-  )
-}
-
-function extractEventDetail(event: SessionEvent): string {
-  const p = event.payload as Record<string, unknown> | null
-  if (!p) return ''
-  if (typeof p.text === 'string') return (p.text as string).slice(0, 400)
-  if (typeof p.message === 'string') return (p.message as string).slice(0, 400)
-  try {
-    return JSON.stringify(p).slice(0, 400)
-  } catch {
-    return ''
-  }
-}
-
-function relativeTime(d: Date): string {
-  const diff = Date.now() - d.getTime()
-  const min = Math.round(diff / 60_000)
-  if (min < 1) return 'just now'
-  if (min < 60) return `${min}m ago`
-  const hr = Math.round(min / 60)
-  if (hr < 24) return `${hr}h ago`
-  return d.toLocaleDateString()
 }

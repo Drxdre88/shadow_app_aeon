@@ -11,6 +11,7 @@
 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createClaudeStreamParser, type StreamParser } from './stream-parser.js'
 
 export type EngineId = 'claude' | 'copilot' | 'codex'
 
@@ -27,11 +28,30 @@ export interface EngineAdapter {
   // Where the fenced-json envelope is recovered from once the CLI exits.
   envelopeSource: 'stdout' | 'file'
   defaultModel: string | null
+  // Typed telemetry: parses the CLI's stream output into tool_use / thinking /
+  // usage events. Engines without one fall back to raw text batching.
+  streamParser?: () => StreamParser
 }
 
 function modelArgs(flag: string, model: string | null | undefined, fallback: string | null): string[] {
   const chosen = model ?? fallback
   return chosen ? [flag, chosen] : []
+}
+
+// The same charset the poller holds DB-sourced argv to, kept local so this
+// module never depends on the poll loop. The first character must be
+// alphanumeric: a knob of '--dangerously-skip-permissions' would otherwise
+// reach the CLI as an option rather than as a value.
+const SAFE_ARG = /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/
+
+// An operator-set knob is trusted but not unvalidated — a stray quote or space
+// in the runner env would land in argv, so the knob is dropped instead.
+function safeKnob(name: string): string | null {
+  const value = process.env[name]
+  if (!value) return null
+  if (SAFE_ARG.test(value)) return value
+  console.warn(`[worker/engines] ${name} contains unsupported characters — knob ignored`)
+  return null
 }
 
 const claude: EngineAdapter = {
@@ -44,10 +64,16 @@ const claude: EngineAdapter = {
       '--verbose',
       '--permission-mode', 'acceptEdits',
       ...modelArgs('--model', opts.model, this.defaultModel),
+      // Operator-set knobs from runner env (trusted, same trust level as
+      // defaultModel). Read at spawn time so env edits apply without restart
+      // of the module — only of the runner process.
+      ...modelArgs('--effort', safeKnob('KAIROS_CLAUDE_EFFORT'), null),
+      ...modelArgs('--fallback-model', safeKnob('KAIROS_CLAUDE_FALLBACK_MODEL'), null),
     ]
   },
   envelopeSource: 'stdout',
   defaultModel: process.env.KAIROS_CLAUDE_DEFAULT_MODEL ?? null,
+  streamParser: createClaudeStreamParser,
 }
 
 const copilot: EngineAdapter = {

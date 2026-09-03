@@ -28,6 +28,11 @@ jobs:
       # (apps/web/src/middleware.test.ts) that guards the sign-in path.
       - run: npm run -w apps/web test
 
+      # The Hangar runner (stream parser, worktree lifecycle, engine adapters)
+      # has its own suite; it shipped without a CI gate until 2026-09-03.
+      - run: npm run -w apps/kairos-worker typecheck
+      - run: npm run -w apps/kairos-worker test
+
       # A production build is the only gate that catches build-time-only
       # failures: lint, typecheck and tests all passed the malformed
       # color-mix() shadow that broke the 2026-08-26 deploy. Placeholder env

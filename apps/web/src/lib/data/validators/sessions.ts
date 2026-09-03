@@ -22,6 +22,10 @@ export const sessionEventKindSchema = z.enum([
   'error',
   // AI Hangar — terminal envelope the runner posts when a mission ends.
   'result',
+  // Flight Deck typed telemetry, parsed runner-side from the engine stream.
+  'thinking',
+  'usage',
+  'system',
 ])
 
 export const spawnSessionSchema = z.object({
@@ -49,11 +53,59 @@ export const updateSessionStatusSchema = z.object({
   costUsd:    z.number().nullable().optional(),
 })
 
+// Payload size bound, measured in serialized UTF-16 chars (bytes can run up
+// to ~3x for multi-byte content — the bound is a guardrail, not an exact
+// wire size). The runner caps its texts at ~4KB, so 32K chars is generous
+// headroom for typed telemetry; the terminal result envelope legitimately
+// carries up to 20 recommended tasks and gets its own ceiling.
+const EVENT_PAYLOAD_MAX_CHARS = 32_000
+const RESULT_PAYLOAD_MAX_CHARS = 512_000
+// Per-event bounds don't bound a batch: 100 events x 32K = 3.2M chars in one
+// request body, all of it headed into a single INSERT. The aggregate ceiling
+// is the request-level guardrail.
+const BATCH_MAX_CHARS = 512_000
+
 export const recordSessionEventSchema = z.object({
   seq:      z.number().int().min(0),
   kind:     sessionEventKindSchema,
   toolName: z.string().trim().max(80).nullable().optional(),
   payload:  z.record(z.string(), z.unknown()).optional(),
+}).superRefine((event, ctx) => {
+  if (!event.payload) return
+  const limit = event.kind === 'result' ? RESULT_PAYLOAD_MAX_CHARS : EVENT_PAYLOAD_MAX_CHARS
+  let size: number
+  try {
+    size = JSON.stringify(event.payload).length
+  } catch {
+    size = limit + 1
+  }
+  if (size > limit) {
+    ctx.addIssue({ code: 'custom', path: ['payload'], message: `payload too large (${size} > ${limit} chars)` })
+  }
+})
+
+// Flight Deck: the runner coalesces typed events into ~2s batches so a chatty
+// mission stays inside the 60 writes/min budget. Every event carries its own
+// runner-assigned seq — the batch is a transport envelope, not a unit of
+// order. Members are validated INDIVIDUALLY at the route so one malformed
+// event drops itself, never the 39 valid events beside it (a batch-level 400
+// is unretriable and would silently eat telemetry).
+export const recordSessionEventBatchSchema = z.object({
+  events: z.array(z.unknown()).min(1).max(100),
+}).superRefine((batch, ctx) => {
+  let size: number
+  try {
+    size = JSON.stringify(batch.events).length
+  } catch {
+    size = BATCH_MAX_CHARS + 1
+  }
+  if (size > BATCH_MAX_CHARS) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['events'],
+      message: `batch too large (${size} > ${BATCH_MAX_CHARS} chars) — flush fewer events per request`,
+    })
+  }
 })
 
 export const listSessionsSchema = z.object({
@@ -72,4 +124,5 @@ export type SessionEventKind      = z.infer<typeof sessionEventKindSchema>
 export type SpawnSessionInput     = z.infer<typeof spawnSessionSchema>
 export type UpdateSessionStatusInput = z.infer<typeof updateSessionStatusSchema>
 export type RecordSessionEventInput  = z.infer<typeof recordSessionEventSchema>
+export type RecordSessionEventBatchInput = z.infer<typeof recordSessionEventBatchSchema>
 export type ListSessionsInput     = z.infer<typeof listSessionsSchema>

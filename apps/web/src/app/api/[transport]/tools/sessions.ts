@@ -5,6 +5,7 @@ import {
   agentSessionStatusSchema,
   agentSessionEngineSchema,
   claimSessionSchema,
+  sessionEventsTailArgsSchema,
 } from '@/lib/data/validators'
 import {
   createAgentSession,
@@ -113,18 +114,22 @@ export const registerSessionTools: RegisterFn = (server) => {
 
   server.tool(
     'list_session_events',
-    'List events for an agent session, optionally after a given seq for incremental tailing.',
+    'List events for an agent session, optionally after a given seq for incremental tailing. tail=true returns the LAST n events (ascending) — the right seed for reading a finished transcript.',
+    // Tail params come from the shared bounds in validators/hangar.ts — this
+    // tool must never hand-roll them (it used to allow limit<=1000 against
+    // REST's 500, and a boolean tail against REST's strict string enum).
     {
       sessionId: z.string().uuid(),
-      afterSeq:  z.number().int().min(-1).optional(),
-      limit:     z.number().int().min(1).max(1000).optional(),
+      ...sessionEventsTailArgsSchema.shape,
     },
     { title: 'List Session Events', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-    async ({ sessionId, afterSeq, limit }, extra) => {
+    async ({ sessionId, ...args }, extra) => {
       const uid = getUserId(extra)
+      const parsed = sessionEventsTailArgsSchema.safeParse(args)
+      if (!parsed.success) return fail(parsed.error.issues[0].message)
       const session = await findAgentSessionById(sessionId, uid)
       if (!session) return notFound('Session')
-      const events = await listSessionEvents(sessionId, { afterSeq, limit })
+      const events = await listSessionEvents(sessionId, parsed.data)
       return ok(events)
     }
   )
