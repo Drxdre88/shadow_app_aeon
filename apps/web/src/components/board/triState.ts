@@ -1,5 +1,6 @@
 import { useBoardStore } from '@/lib/store/boardStore'
 import { triggerCelebration } from '@/components/celebrations'
+import { findCardElement } from './popoverAnchor'
 
 export type TriState = 'unchecked' | 'checked' | 'crossed'
 
@@ -38,7 +39,7 @@ export function cycleTaskCompletion(
   s.updateTask(taskId, { status: newStatus })
   onPersist?.(taskId, { status: newStatus })
   if (newStatus === 'done') {
-    const rect = document.querySelector(`[data-task-id="${CSS.escape(taskId)}"]`)?.getBoundingClientRect()
+    const rect = findCardElement(taskId)?.getBoundingClientRect()
     if (rect) triggerCelebration(rect.left + rect.width / 2, rect.top + rect.height / 2)
   }
 }
