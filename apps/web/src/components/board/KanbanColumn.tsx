@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react'
 import { useDroppable } from '@dnd-kit/core'
-import { Plus, Check, X, Palette, Trash2, Focus } from 'lucide-react'
+import { Plus, Check, X, Palette, Trash2, Focus, MoreVertical } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { VirtualizedTaskList } from './VirtualizedTaskList'
 import { ColumnContextMenu } from './ColumnContextMenu'
@@ -17,6 +17,7 @@ import { openZenMode } from './zenFlight'
 import { clampManualColumnHeight, columnHeightScale } from './columnSizing'
 import { useMovingTaskId } from '@/lib/store/boardStore'
 import { useHoldToMoveActions } from './useHoldToMove'
+import { useCoarsePointer } from '@/hooks/useCoarsePointer'
 
 interface KanbanColumnProps {
   column: BoardColumn
@@ -149,6 +150,10 @@ export const KanbanColumn = memo(function KanbanColumn({
   // Hold-to-move: a tap on this column's empty space appends the lifted card.
   const movingTaskId = useMovingTaskId()
   const holdToMove = useHoldToMoveActions()
+  // Touch never fires contextmenu on a column header (and where it does, the
+  // long-press has already been claimed as a column drag), so the menu needs a
+  // button that is simply always there.
+  const coarsePointer = useCoarsePointer()
   const config = getColumnColor(column.color)
   const SelectedIcon = column.icon ? COLUMN_ICON_MAP[column.icon] : null
   const mult = globalGlow / 75
@@ -275,6 +280,13 @@ export const KanbanColumn = memo(function KanbanColumn({
     holdToMove.place({ columnId: column.id, kind: 'end' })
   }, [movingTaskId, holdToMove, column.id])
 
+  const handleHeaderMenu = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const rect = e.currentTarget.getBoundingClientRect()
+    setContextMenu((open) => (open ? null : { x: rect.left, y: rect.bottom + 4 }))
+  }, [])
+
   const badgeClasses = config.isCustom
     ? 'border backdrop-blur-md'
     : cn('border backdrop-blur-md', config.bg, config.border, config.text, globalGlow > 0 && config.glow)
@@ -393,6 +405,23 @@ export const KanbanColumn = memo(function KanbanColumn({
               title="Delete column"
             >
               <Trash2 className="w-3.5 h-3.5 text-slate-400 hover:text-red-400" />
+            </button>
+            <button
+              data-column-menu
+              onClick={handleHeaderMenu}
+              onPointerDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              style={{ touchAction: 'manipulation' }}
+              className={cn(
+                'p-1.5 rounded-lg hover:bg-white/10 transition-colors',
+                coarsePointer ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+              )}
+              title="Column menu"
+              aria-label="Column menu"
+            >
+              <MoreVertical className="w-4 h-4 text-slate-400" />
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onAddTask?.() }}

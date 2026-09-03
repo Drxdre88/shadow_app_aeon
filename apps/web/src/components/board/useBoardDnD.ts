@@ -8,6 +8,7 @@ import { useHangarUiStore } from '@/lib/store/hangarUiStore'
 import { shouldAutoRunOnDrop } from './autoRun'
 import { isHoldRelease, placementIndex, type PlacementTarget } from './useHoldToMove'
 import { findCardAtY, useFuseIntent } from './useFuseIntent'
+import { dropZoneFromY } from './fuseZone'
 
 /** Auto AI: the move that should launch a mission ONCE it is persisted. */
 export interface MoveLaunchIntent {
@@ -78,6 +79,11 @@ export function useBoardDnD({
   const pendingMoveRef = useRef<{ id: string; columnId: string; orderIndex: number; name: string } | null>(null)
   const dragSnapshotRef = useRef<MoveSnapshot | null>(null)
   const pointerYRef = useRef<number | null>(null)
+  // "A card is lifted", readable synchronously. The board's pinch gate is a
+  // raw touchstart listener, so it needs the answer the instant a second
+  // finger lands — an effect derived from `activeItem` only commits a render
+  // later, and every touch that arrives in that gap opens a bogus pinch.
+  const dragActiveRef = useRef(false)
 
   // The live pointer beats activator+delta: auto-scrolling a column inflates
   // the delta while the card rects move the other way, which would bias the
@@ -125,8 +131,10 @@ export function useBoardDnD({
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const { active } = event
     const dragType = active.data.current?.type
+    dragActiveRef.current = true
     pointerYRef.current = null
     fuse.clear()
+    deferredOverRef.current = null
     // A real drag supersedes a pending hold-to-move placement.
     useBoardStore.getState().setMovingTaskId(null)
 
@@ -142,9 +150,40 @@ export function useBoardDnD({
     }
   }, [projectTasks, sortedColumns, fuse])
 
+  // Cross-column: the preview insertion (moveTask) re-lays the target column
+  // and pushes the hovered card below the pointer, which would defeat a fuse
+  // dwell exactly like the same-column displacement. While the pointer sits
+  // in the hovered card's fuse band the insertion is deferred; the moment it
+  // leaves the band the deferred preview lands.
+  const deferredOverRef = useRef<string | null>(null)
+
+  const previewInsert = useCallback((activeTask: BoardTask, overTask: BoardTask) => {
+    moveTask(activeTask.id, overTask.columnId!, overTask.orderIndex)
+    pendingMoveRef.current = { id: activeTask.id, columnId: overTask.columnId!, orderIndex: overTask.orderIndex, name: activeTask.name }
+  }, [moveTask])
+
+  const inFuseBand = useCallback((activeId: string, overTask: BoardTask, event: DragMoveEvent): boolean => {
+    if (!onFuseRequest) return false
+    const pointerY = pointerYRef.current ?? pointerYFromEvent(event)
+    if (pointerY === null) return false
+    const slot = findCardAtY(overTask.columnId!, activeId, pointerY)
+    return !!slot && slot.id === overTask.id && dropZoneFromY(pointerY, slot) === 'fuse'
+  }, [onFuseRequest])
+
   const handleDragMove = useCallback((event: DragMoveEvent) => {
     trackFuse(event)
-  }, [trackFuse])
+    const deferred = deferredOverRef.current
+    if (!deferred) return
+    const { active, over } = event
+    if (!over || over.id !== deferred) { deferredOverRef.current = null; return }
+    const tasks = useBoardStore.getState().tasks
+    const activeTask = tasks.find((t) => t.id === active.id)
+    const overTask = tasks.find((t) => t.id === deferred)
+    if (!activeTask || !overTask || activeTask.columnId === overTask.columnId) { deferredOverRef.current = null; return }
+    if (inFuseBand(activeTask.id, overTask, event)) return
+    deferredOverRef.current = null
+    previewInsert(activeTask, overTask)
+  }, [trackFuse, inFuseBand, previewInsert])
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
     const { active, over } = event
@@ -168,14 +207,18 @@ export function useBoardDnD({
     const overColumnId = over.data.current?.columnId || (sortedColumns.find((c) => c.id === currentOverId)?.id)
 
     if (overTask && activeTask.columnId !== overTask.columnId) {
-      moveTask(activeId, overTask.columnId!, overTask.orderIndex)
-      pendingMoveRef.current = { id: activeId, columnId: overTask.columnId!, orderIndex: overTask.orderIndex, name: activeTask.name }
+      if (inFuseBand(activeId, overTask, event)) {
+        deferredOverRef.current = overTask.id
+        return
+      }
+      deferredOverRef.current = null
+      previewInsert(activeTask, overTask)
     } else if (overColumnId && activeTask.columnId !== overColumnId) {
       const tasksInColumn = projectTasks.filter((t) => t.columnId === overColumnId)
       moveTask(activeId, overColumnId, tasksInColumn.length)
       pendingMoveRef.current = { id: activeId, columnId: overColumnId, orderIndex: tasksInColumn.length, name: activeTask.name }
     }
-  }, [projectTasks, sortedColumns, moveTask, trackFuse])
+  }, [projectTasks, sortedColumns, moveTask, trackFuse, inFuseBand, previewInsert])
 
   // Drop placement is always derived from the pointer against the target
   // column's live card rects, so releasing between two cards — or anywhere in
@@ -253,6 +296,7 @@ export function useBoardDnD({
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
     const activeType = active.data.current?.type
+    dragActiveRef.current = false
 
     const pendingMove = pendingMoveRef.current
     const snapshot = dragSnapshotRef.current
@@ -325,6 +369,7 @@ export function useBoardDnD({
   }, [sortedColumns, removeTask, reorderColumns, resolveDropIndex, commitMove, restoreSnapshot, fuse, trackFuse, onTaskMove, onTaskDelete, onColumnReorder, onFuseRequest])
 
   const handleDragCancel = useCallback(() => {
+    dragActiveRef.current = false
     if (pendingMoveRef.current) restoreSnapshot(dragSnapshotRef.current)
     pendingMoveRef.current = null
     dragSnapshotRef.current = null
@@ -350,6 +395,7 @@ export function useBoardDnD({
   return {
     sensors,
     activeItem,
+    dragActiveRef,
     overId,
     handleDragStart,
     handleDragMove,

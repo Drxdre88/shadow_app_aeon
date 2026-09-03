@@ -4,7 +4,7 @@ import { useState, useRef, useMemo, memo } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { motion } from 'framer-motion'
-import { Calendar, MoreHorizontal, Check, X, Clock, Trash2, Bot, Zap, Merge } from 'lucide-react'
+import { Calendar, MoreHorizontal, MoreVertical, Check, X, Clock, Trash2, Bot, Zap, Merge } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { hexToRgba, resolveAccentHex } from '@/lib/utils/colors'
 import { getInitials, getInitialsFromEmail } from '@/lib/utils/initials'
@@ -13,7 +13,7 @@ import { resolvePriority } from '@/lib/utils/priorities'
 import { labelHex, readableTextColor } from './labelTile'
 import { progressBarStyle } from './progressColor'
 import { GlowCard } from '@/components/ui/GlowCard'
-import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees, useFuseTargetId } from '@/lib/store/boardStore'
+import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees, useFuseTargetId, useFuseHoldId } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { useCardHoldGesture, useHoldToMoveActions, halfFromPoint } from './useHoldToMove'
 import { DependencyIndicator } from './DependencyIndicator'
@@ -23,6 +23,7 @@ import { StaleIndicator } from './StaleIndicator'
 import { CardPeekPreview } from './CardPeekPreview'
 import { getTriState, cycleTaskCompletion, type TriState } from './triState'
 import { readHangarMission } from './autoRun'
+import { useCoarsePointer } from '@/hooks/useCoarsePointer'
 
 interface SortableTaskCardProps {
   task: {
@@ -84,6 +85,9 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const lastPointerTypeRef = useRef<string | undefined>(undefined)
   // Card fusion: the dragged card has dwelt on this one long enough to fuse.
   const isFuseTarget = useFuseTargetId() === task.id
+  // While a dragged card dwells on this one's middle band, this card must not
+  // slide out of the way — the pointer has to be able to stay on it.
+  const isFuseHold = useFuseHoldId() === task.id
   const { holdHandlers, consumeHoldClick } = useCardHoldGesture(task.id)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
@@ -100,6 +104,9 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   }, [task.metadata])
   const editRef = useRef<HTMLInputElement>(null)
   const cardElRef = useRef<HTMLDivElement>(null)
+  // A finger never hovers and never fires contextmenu, so the card's menu needs
+  // a permanent button of its own on touch-first devices.
+  const coarsePointer = useCoarsePointer()
   const isSelected = selectedTaskId === task.id
   const mult = globalGlow / 75
 
@@ -145,7 +152,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   })
 
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: isFuseHold ? undefined : CSS.Transform.toString(transform),
     transition,
   }
 
@@ -207,6 +214,20 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
     if (pointerType === 'touch') return
     setContextMenu({ x: e.clientX, y: e.clientY })
   }
+
+  // The touch route into the same menu: anchored under the button instead of
+  // at a pointer that has no coordinates worth reusing.
+  const handleMenuButton = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null }
+    const rect = e.currentTarget.getBoundingClientRect()
+    setContextMenu((open) => (open ? null : { x: rect.left, y: rect.bottom + 4 }))
+  }
+
+  // dnd-kit's sensors and the hold gesture both live on the card surface above
+  // this button: without this the first touch on it lifts the card.
+  const swallowGesture = (e: React.SyntheticEvent) => { e.stopPropagation() }
 
   return (
     <div ref={(el) => { setNodeRef(el); (cardElRef as React.MutableRefObject<HTMLDivElement | null>).current = el }} style={style} className="relative" data-task-id={task.id} data-moving={isMoving ? '' : undefined}>
@@ -320,22 +341,41 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
                 )}
               </div>
             )}
-            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              <div className={cn('flex items-center gap-0.5', coarsePointer ? 'hidden' : 'opacity-0 group-hover:opacity-100')}>
+                <button
+                  data-task-edit
+                  onClick={(e) => { e.stopPropagation(); onEdit?.(task.id) }}
+                  className="p-1 rounded-md hover:bg-white/10 transition-colors"
+                >
+                  <MoreHorizontal className="w-4 h-4 text-slate-400" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onTaskDelete?.(task.id)
+                  }}
+                  className="p-1 rounded-md hover:bg-red-500/15 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-slate-400 hover:text-red-400" />
+                </button>
+              </div>
               <button
-                data-task-edit
-                onClick={(e) => { e.stopPropagation(); onEdit?.(task.id) }}
-                className="p-1 rounded-md hover:bg-white/10 transition-colors"
+                data-task-menu
+                aria-label="Card menu"
+                title="Card menu"
+                onClick={handleMenuButton}
+                onPointerDown={swallowGesture}
+                onTouchStart={swallowGesture}
+                onMouseDown={swallowGesture}
+                onDoubleClick={swallowGesture}
+                style={{ touchAction: 'manipulation' }}
+                className={cn(
+                  'p-1 rounded-md hover:bg-white/10 transition-colors',
+                  coarsePointer ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                )}
               >
-                <MoreHorizontal className="w-4 h-4 text-slate-400" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onTaskDelete?.(task.id)
-                }}
-                className="p-1 rounded-md hover:bg-red-500/15 transition-colors"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-slate-400 hover:text-red-400" />
+                <MoreVertical className="w-4 h-4 text-slate-400" />
               </button>
             </div>
           </div>

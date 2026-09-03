@@ -4,11 +4,13 @@ import { useEffect, useRef } from 'react'
 import {
   MAX_BOARD_SCALE,
   SNAP_TO_NORMAL_THRESHOLD,
+  canStartPinch,
   layoutCompensation,
   nextScale,
   scrollForFocalPoint,
   touchDistance,
   touchMidpoint,
+  type RestingTouch,
 } from './pinchZoom'
 import { publishBoardZoom } from './boardZoom'
 
@@ -35,10 +37,14 @@ interface UseBoardPinchZoomOptions {
    * While this reports true a new pinch is refused (single-finger events are
    * never ours anyway). The board passes "a card is being dragged": a stray
    * second finger during a cross-column drag must not rescale the canvas
-   * under the lifted card.
+   * under the lifted card. Must be read from a ref written synchronously at
+   * drag start — a rendered flag commits far too late to gate a touchstart.
    */
   isLocked?: () => boolean
 }
+
+/** Cards carry this attribute wherever they are rendered (SortableTaskCard). */
+const TASK_CARD_SELECTOR = '[data-task-id]'
 
 function findTouch(list: TouchList, identifier: number): Touch | null {
   for (let i = 0; i < list.length; i++) {
@@ -62,6 +68,11 @@ function findTouch(list: TouchList, identifier: number): Touch | null {
  *   compensation) on refs — no React state per move, so a 100-card board stays
  *   at gesture framerate. Transform-only scaling; the single margin write per
  *   frame is what keeps the scroll range honest.
+ * - A pinch may only OPEN when no card is lifted AND no finger has been
+ *   resting on a card past the pairing window (pinchZoom.ts). Touch drags
+ *   activate on a 250ms hold, so without the second clause a bracing thumb
+ *   landing during the hold would open a pinch, steal the drag's own touch
+ *   with preventDefault and shrink the board under the card.
  * - Safari's proprietary `gesturestart`/`gesturechange` page zoom is
  *   preventDefault-ed on the container because iOS Safari ignores
  *   `user-scalable=no` in-browser (accessibility override).
@@ -142,6 +153,38 @@ export function useBoardPinchZoom(options: UseBoardPinchZoomOptions = {}) {
       }
     }
 
+    // Which fingers are down, where they landed and since when. Tracked in the
+    // CAPTURE phase and registered before the gesture listeners, so the record
+    // is already current when a second finger reaches the gate below — and so
+    // a card's own handler cannot hide a touch from us by stopping
+    // propagation. Never preventDefault-ed: this listener only observes.
+    const resting = new Map<number, RestingTouch>()
+
+    const onTouchStartCapture = (event: TouchEvent) => {
+      const target = event.target
+      const onCard = target instanceof Element && target.closest(TASK_CARD_SELECTOR) !== null
+      const now = Date.now()
+      // Fingers already tracked keep their original timestamp — their age is
+      // the whole point.
+      for (let i = 0; i < event.touches.length; i++) {
+        const id = event.touches[i].identifier
+        if (!resting.has(id)) resting.set(id, { onCard, startedAt: now })
+      }
+    }
+
+    // Derived from what is still down rather than from changedTouches: a lost
+    // touchend (gesture stolen mid-flight) would otherwise strand an entry and
+    // refuse every later pinch.
+    const onTouchEndCapture = (event: TouchEvent) => {
+      if (event.touches.length === 0) {
+        resting.clear()
+        return
+      }
+      for (const id of resting.keys()) {
+        if (!findTouch(event.touches, id)) resting.delete(id)
+      }
+    }
+
     const onTouchStart = (event: TouchEvent) => {
       if (event.touches.length < 2) return
       const content = contentRef.current
@@ -152,10 +195,12 @@ export function useBoardPinchZoom(options: UseBoardPinchZoomOptions = {}) {
         event.preventDefault()
         return
       }
-      // Locked (a card is lifted): leave the touches alone. The container's
-      // touch-action already forbids native pinch, and dnd-kit keeps
-      // tracking the finger it started with.
-      if (isLockedRef.current?.()) return
+      // Not a pinch: a card is lifted, or a finger has been holding a card for
+      // longer than two fingers of one gesture ever land apart. Leave the
+      // touches alone — no preventDefault, so dnd-kit keeps tracking the
+      // finger it started with (or is still counting its hold on). The
+      // container's touch-action already forbids native pinch.
+      if (!canStartPinch(isLockedRef.current?.() ?? false, resting.values(), Date.now())) return
       // Stop the browser from starting a native pinch-zoom or scroll with
       // these fingers — the board owns multi-finger gestures.
       event.preventDefault()
@@ -242,6 +287,9 @@ export function useBoardPinchZoom(options: UseBoardPinchZoomOptions = {}) {
     // begin on the board.
     const onGesture = (event: Event) => event.preventDefault()
 
+    container.addEventListener('touchstart', onTouchStartCapture, { passive: true, capture: true })
+    container.addEventListener('touchend', onTouchEndCapture, { passive: true, capture: true })
+    container.addEventListener('touchcancel', onTouchEndCapture, { passive: true, capture: true })
     container.addEventListener('touchstart', onTouchStart, { passive: false })
     container.addEventListener('touchmove', onTouchMove, { passive: false })
     container.addEventListener('touchend', onTouchEnd)
@@ -254,6 +302,9 @@ export function useBoardPinchZoom(options: UseBoardPinchZoomOptions = {}) {
       observer?.disconnect()
       publishBoardZoom(MAX_BOARD_SCALE)
       window.removeEventListener('resize', onResize)
+      container.removeEventListener('touchstart', onTouchStartCapture, { capture: true })
+      container.removeEventListener('touchend', onTouchEndCapture, { capture: true })
+      container.removeEventListener('touchcancel', onTouchEndCapture, { capture: true })
       container.removeEventListener('touchstart', onTouchStart)
       container.removeEventListener('touchmove', onTouchMove)
       container.removeEventListener('touchend', onTouchEnd)
