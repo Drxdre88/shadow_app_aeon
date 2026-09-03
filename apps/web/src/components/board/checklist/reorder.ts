@@ -67,3 +67,33 @@ export function arrangeItemDrag(
   const regrouped = displayGroups.flatMap((g) => without.filter((i) => i.groupName === g))
   return regrouped.map((i) => ({ id: i.id, groupName: i.groupName }))
 }
+
+/**
+ * Arrangement after dropping `activeId` into `targetGroup` at `index`, where
+ * `index` counts the group's items without the dragged one (0 = first,
+ * siblings.length = last). Null when nothing would change.
+ */
+export function arrangeItemAt(
+  items: ChecklistItem[],
+  displayGroups: string[],
+  activeId: string,
+  targetGroup: string,
+  index: number,
+): { id: string; groupName: string }[] | null {
+  const active = items.find((i) => i.id === activeId)
+  if (!active || !displayGroups.includes(targetGroup)) return null
+  const before = visualItems(items, displayGroups)
+  const without = before.filter((i) => i.id !== activeId)
+  const siblings = without.filter((i) => i.groupName === targetGroup)
+  const clamped = Math.min(Math.max(index, 0), siblings.length)
+  const moved = { ...active, groupName: targetGroup }
+  if (clamped < siblings.length) without.splice(without.indexOf(siblings[clamped]), 0, moved)
+  else if (siblings.length > 0) without.splice(without.indexOf(siblings[siblings.length - 1]) + 1, 0, moved)
+  else without.push(moved)
+  // Re-group by on-screen order so blocks stay contiguous and an empty target
+  // group keeps its slot.
+  const regrouped = displayGroups.flatMap((g) => without.filter((i) => i.groupName === g))
+  const unchanged = regrouped.every((i, k) => i.id === before[k].id && i.groupName === before[k].groupName)
+  if (unchanged) return null
+  return regrouped.map((i) => ({ id: i.id, groupName: i.groupName }))
+}
