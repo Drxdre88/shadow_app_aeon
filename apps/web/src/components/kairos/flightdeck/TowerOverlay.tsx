@@ -44,6 +44,14 @@ export function TowerOverlay({
     return () => clearInterval(t)
   }, [open, load])
 
+  // The overlay is a modal: Escape closes it like the backdrop click does.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
   const counts = useMemo(() => {
     const c = new Map<string, number>()
     for (const s of sessions) c.set(s.status, (c.get(s.status) ?? 0) + 1)
@@ -73,6 +81,9 @@ export function TowerOverlay({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.98 }}
             transition={{ duration: 0.18 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Tower — all missions"
             className="fixed inset-4 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-[900px] md:inset-y-8 z-[191] rounded-2xl bg-[rgba(8,6,18,0.97)] backdrop-blur-xl border border-white/[0.08] shadow-2xl flex flex-col overflow-hidden"
           >
             <header className="px-5 py-4 border-b border-white/[0.06] flex items-center gap-3">
@@ -97,7 +108,7 @@ export function TowerOverlay({
                   )
                 })}
               </div>
-              <button onClick={onClose} className="ml-auto p-1 rounded-md text-white/35 hover:text-white/85">
+              <button onClick={onClose} autoFocus aria-label="Close Tower" className="ml-auto p-1 rounded-md text-white/35 hover:text-white/85">
                 <X className="w-4 h-4" />
               </button>
             </header>
@@ -142,8 +153,11 @@ function TowerRow({
 
   return (
     <li
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
-      className="group px-5 py-3 border-b border-white/[0.04] hover:bg-white/[0.02] cursor-pointer"
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
+      className="group px-5 py-3 border-b border-white/[0.04] hover:bg-white/[0.02] cursor-pointer focus:outline-none focus-visible:bg-white/[0.04]"
     >
       <div className="flex items-center gap-2.5">
         <StatusDot status={session.status} />

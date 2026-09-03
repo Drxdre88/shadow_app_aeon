@@ -59,6 +59,27 @@ export interface Timeline {
   terminal: boolean
 }
 
+export interface BuildTimelineOptions {
+  /** The caller already knows the mission is over (session row status is
+   *  terminal) even if no stop/result event ever landed — a killed or
+   *  timed-out process must not leave tools spinning forever. */
+  forceTerminal?: boolean
+}
+
+export function emptyTotals(): LiveTotals {
+  return { requests: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }
+}
+
+/** Fold one usage event into running totals (mutates and returns `totals`). */
+export function addUsage(totals: LiveTotals, payload: Record<string, unknown>): LiveTotals {
+  totals.requests++
+  totals.inputTokens += numOrNull(payload.inputTokens) ?? 0
+  totals.outputTokens += numOrNull(payload.outputTokens) ?? 0
+  totals.cacheReadTokens += numOrNull(payload.cacheReadTokens) ?? 0
+  totals.cacheCreationTokens += numOrNull(payload.cacheCreationTokens) ?? 0
+  return totals
+}
+
 export function classifyTool(name: string): ToolClass {
   if (name.startsWith('mcp__')) return 'mcp'
   switch (name) {
@@ -85,12 +106,14 @@ function readStats(value: unknown): MissionStats | null {
   return value as MissionStats
 }
 
-export function buildTimeline(events: SessionEvent[]): Timeline {
+export function buildTimeline(events: SessionEvent[], options: BuildTimelineOptions = {}): Timeline {
   const items: TimelineItem[] = []
   const toolsById = new Map<string, ToolItem>()
-  const totals: LiveTotals = { requests: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }
+  // Totals here cover the events GIVEN — a caller that retains only a window
+  // of a long mission must accumulate with addUsage as events arrive instead.
+  const totals = emptyTotals()
   let stats: MissionStats | null = null
-  let terminal = false
+  let terminal = options.forceTerminal === true
 
   // A parented event nests under its spawning Task call when we know it;
   // an orphaned parent id degrades to top-level rather than dropping the event.
@@ -154,14 +177,9 @@ export function buildTimeline(events: SessionEvent[]): Timeline {
         else items.push({ type: 'raw', seq: event.seq, text })
         break
       }
-      case 'usage': {
-        totals.requests++
-        totals.inputTokens += numOrNull(p.inputTokens) ?? 0
-        totals.outputTokens += numOrNull(p.outputTokens) ?? 0
-        totals.cacheReadTokens += numOrNull(p.cacheReadTokens) ?? 0
-        totals.cacheCreationTokens += numOrNull(p.cacheCreationTokens) ?? 0
+      case 'usage':
+        addUsage(totals, p)
         break
-      }
       case 'error': {
         const message = str(p.message) || str(p.text)
         if (message) items.push({ type: 'error', seq: event.seq, message })

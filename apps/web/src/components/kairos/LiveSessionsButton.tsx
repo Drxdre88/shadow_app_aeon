@@ -17,6 +17,9 @@ import { TowerOverlay } from './flightdeck/TowerOverlay'
 // ─────────────────────────────────────────────────────────────────────────
 
 const POLL_INTERVAL_MS = 4000
+// With nothing live and the popover closed there is nothing to watch —
+// back off so an idle tab is not a 4s authenticated query for its lifetime.
+const IDLE_POLL_INTERVAL_MS = 15_000
 
 export function LiveSessionsButton() {
   const [sessions, setSessions] = useState<AgentSession[]>([])
@@ -40,11 +43,19 @@ export function LiveSessionsButton() {
 
   useEffect(() => { load() }, [load])
 
-  // Background poll for live count, even when popover is closed.
+  // Background poll for the live count, even when the popover is closed:
+  // fast while something is live or the list is open, slow when idle, never
+  // from a hidden tab, and caught up the moment the tab is visible again.
+  const hasLive = sessions.length > 0
   useEffect(() => {
-    const t = setInterval(load, POLL_INTERVAL_MS)
-    return () => clearInterval(t)
-  }, [load])
+    const tick = () => { if (!document.hidden) void load() }
+    const t = setInterval(tick, open || hasLive ? POLL_INTERVAL_MS : IDLE_POLL_INTERVAL_MS)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', tick)
+    }
+  }, [load, open, hasLive])
 
   const measureAnchor = useCallback(() => {
     const el = buttonRef.current
@@ -203,7 +214,13 @@ function SessionRow({
   }
 
   return (
-    <li className="group px-4 py-3 border-b border-white/[0.04] hover:bg-white/[0.02] cursor-pointer" onClick={onOpen}>
+    <li
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
+      className="group px-4 py-3 border-b border-white/[0.04] hover:bg-white/[0.02] cursor-pointer focus:outline-none focus-visible:bg-white/[0.04]"
+    >
       <div className="flex items-center gap-2 mb-1.5">
         <span
           className="text-[9px] px-1.5 py-0.5 rounded-md uppercase tracking-[0.16em] font-medium"
