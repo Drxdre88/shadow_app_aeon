@@ -29,13 +29,6 @@ export interface FuseProgress {
   total: number
 }
 
-/**
- * Every source is its own server round trip (one transaction each, undone
- * one at a time), so the batch is capped rather than left to run for as
- * long as the selection is large.
- */
-export const MAX_FUSE_SOURCES = 20
-
 const errorMessage = (err: unknown, fallback: string) => (err instanceof Error ? err.message : fallback)
 
 /**
@@ -62,10 +55,8 @@ export function useFuseCards(projectId: string) {
       if (source && source.projectId === target.projectId) sources.push(source)
     }
     if (sources.length === 0) return
-    if (sources.length > MAX_FUSE_SOURCES) {
-      toast(`Fuse at most ${MAX_FUSE_SOURCES + 1} cards at a time — ${sources.length + 1} are selected`, { force: true })
-      return
-    }
+    // No cap by owner decision (0409): any number of cards fuses, one server
+    // round trip each, with "Fusing k of N…" on the modal button meanwhile.
     setRequest({ targetId, sourceIds: sources.map((s) => s.id), target, sources })
   }, [])
 

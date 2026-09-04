@@ -14,7 +14,7 @@ import { useBoardStore, type BoardTask } from '@/lib/store/boardStore'
 import { useUndoStore } from '@/lib/store/undoStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { ToastContainer } from '@/components/ui/Toast'
-import { useFuseCards, MAX_FUSE_SOURCES } from '../useFuseCards'
+import { useFuseCards } from '../useFuseCards'
 import type { FuseSnapshot } from '@/lib/data/validators'
 
 const task = (id: string, extra: Partial<BoardTask> = {}): BoardTask => ({
@@ -108,16 +108,26 @@ describe('useFuseCards', () => {
     expect(useBoardStore.getState().isDirty).toBe(false)
   })
 
-  it('refuses a batch above the cap with a toast, and takes one exactly at the cap', () => {
-    render(<ToastContainer />)
-    const many = Array.from({ length: MAX_FUSE_SOURCES + 1 }, (_, i) => task(`m${i}`))
+  it('takes any number of cards — no cap (owner decision) — and reports progress per step', async () => {
+    const many = Array.from({ length: 40 }, (_, i) => task(`m${i}`))
     useBoardStore.setState({ tasks: [task('s'), ...many] })
+    let inFlight = 0
+    let overlapped = false
+    vi.mocked(fuseBoardTasks).mockImplementation(async () => {
+      if (inFlight++ > 0) overlapped = true
+      await flush()
+      inFlight--
+      return { survivor: survivorRow as never, labelIds: [], snapshot }
+    })
     const { result } = renderHook(() => useFuseCards('p1'))
     act(() => result.current.requestFuse('s', many.map((t) => t.id)))
-    expect(result.current.request).toBeNull()
-    expect(screen.getByText(new RegExp(`at most ${MAX_FUSE_SOURCES + 1} cards`))).toBeTruthy()
-    act(() => result.current.requestFuse('s', many.slice(0, MAX_FUSE_SOURCES).map((t) => t.id)))
-    expect(result.current.request?.sourceIds).toHaveLength(MAX_FUSE_SOURCES)
+    expect(result.current.request?.sourceIds).toHaveLength(40)
+    await act(async () => { await result.current.confirmFuse('Fused') })
+    expect(fuseBoardTasks).toHaveBeenCalledTimes(40)
+    expect(overlapped).toBe(false)
+    expect(ids()).toEqual(['s'])
+    expect(result.current.progress).toBeNull()
+    expect(result.current.isFusing).toBe(false)
   })
 
   it('a failed undo midway through a chain puts back exactly the fusions the server still holds', async () => {
