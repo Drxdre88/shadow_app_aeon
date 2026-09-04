@@ -45,22 +45,35 @@ export function nextSelection(
 }
 
 /**
- * The cards a fusion INTO `target` would absorb: every selected card (the
- * keyboard's single selection counts too) that is still on the board, in
- * the same project, and is not the target itself. Selection order.
+ * The cards a fusion INTO `target` would absorb: every multi-selected card
+ * that is still on the board, in the same project, and is not the target
+ * itself, in selection order. ONLY the explicit multi-selection counts —
+ * the keyboard's single `selectedTaskId` is set by merely opening a card,
+ * and a destructive action must never be armed by incidental state.
  */
 export function fuseSources(
   target: Pick<BoardTask, 'id' | 'projectId'>,
   selectedIds: readonly string[],
-  primaryId: string | null,
   tasks: readonly BoardTask[],
 ): BoardTask[] {
-  const ids = primaryId && !selectedIds.includes(primaryId) ? [...selectedIds, primaryId] : [...selectedIds]
   const out: BoardTask[] = []
-  for (const id of ids) {
+  for (const id of selectedIds) {
     if (id === target.id) continue
     const task = tasks.find((t) => t.id === id)
     if (task && task.projectId === target.projectId) out.push(task)
   }
   return out
+}
+
+/**
+ * Click-away: an unmodified primary-button press outside every card, menu
+ * and dialog drops the multi-selection, so "Fuse N cards" never stays armed
+ * after the operator has moved on. Menus and dialogs live in portals, hence
+ * the explicit markers.
+ */
+export function pointerDownClearsSelection(e: { button: number; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; target: EventTarget | null }): boolean {
+  if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey) return false
+  const target = e.target as Element | null
+  if (!target || typeof target.closest !== 'function') return true
+  return !target.closest('[data-task-id], [data-board-menu], [role="dialog"]')
 }

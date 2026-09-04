@@ -57,9 +57,9 @@ describe('TaskContextMenu — Fuse N cards into this one', () => {
     expect(screen.queryByTestId('fuse-cards')).toBeNull()
   })
 
-  it('counts the other selected cards on this board — multi-select plus the keyboard selection — and requests the fusion', async () => {
+  it('counts the other multi-selected cards on this board and requests the fusion', async () => {
     const requestFuse = vi.fn()
-    useBoardStore.setState({ selectedTaskIds: ['a', 't', 'far', 'ghost'], selectedTaskId: 'b' })
+    useBoardStore.setState({ selectedTaskIds: ['a', 't', 'far', 'ghost', 'b'] })
     const { onClose } = renderMenu(requestFuse)
 
     const button = await screen.findByTestId('fuse-cards')
@@ -69,6 +69,13 @@ describe('TaskContextMenu — Fuse N cards into this one', () => {
     fireEvent.click(button)
     expect(requestFuse).toHaveBeenCalledWith('t', ['a', 'b'])
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('never counts the keyboard single selection — opening a card sets it, and that must not arm a fuse', async () => {
+    useBoardStore.setState({ selectedTaskIds: [], selectedTaskId: 'a' })
+    renderMenu(vi.fn())
+    expect(await screen.findByText('Select')).toBeTruthy()
+    expect(screen.queryByTestId('fuse-cards')).toBeNull()
   })
 
   it('is absent outside a board (no fusion lifecycle to hand the request to)', async () => {

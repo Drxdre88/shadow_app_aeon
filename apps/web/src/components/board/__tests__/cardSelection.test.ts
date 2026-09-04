@@ -1,5 +1,6 @@
+/** @vitest-environment jsdom */
 import { describe, it, expect } from 'vitest'
-import { fuseSources, nextSelection, selectModifiersFromEvent } from '../cardSelection'
+import { fuseSources, nextSelection, pointerDownClearsSelection, selectModifiersFromEvent } from '../cardSelection'
 import type { BoardTask } from '@/lib/store/boardStore'
 
 // Multi-select rules behind Ctrl/Cmd-click, Shift-click and the "Fuse N
@@ -59,12 +60,41 @@ describe('fuseSources', () => {
   const tasks = [task('t'), task('a'), task('b'), task('far', 'p2')]
 
   it('returns the selected cards that are on the board and in the same project, minus the target', () => {
-    expect(fuseSources(task('t'), ['a', 't', 'ghost', 'far', 'b'], null, tasks).map((t) => t.id)).toEqual(['a', 'b'])
+    expect(fuseSources(task('t'), ['a', 't', 'ghost', 'far', 'b'], tasks).map((t) => t.id)).toEqual(['a', 'b'])
+    expect(fuseSources(task('t'), [], tasks)).toEqual([])
+    expect(fuseSources(task('t'), ['t'], tasks)).toEqual([])
+  })
+})
+
+describe('pointerDownClearsSelection', () => {
+  const el = (attrs: Record<string, string>, parent?: HTMLElement) => {
+    const node = document.createElement('div')
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v)
+    ;(parent ?? document.body).appendChild(node)
+    return node
+  }
+  const press = (target: EventTarget | null, extra: Partial<{ button: number; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }> = {}) =>
+    pointerDownClearsSelection({ button: 0, ctrlKey: false, metaKey: false, shiftKey: false, target, ...extra })
+
+  it('clears on a plain primary press on empty space, never on a modified or secondary press', () => {
+    const space = el({ 'data-board-columns': '' })
+    expect(press(space)).toBe(true)
+    expect(press(space, { ctrlKey: true })).toBe(false)
+    expect(press(space, { metaKey: true })).toBe(false)
+    expect(press(space, { shiftKey: true })).toBe(false)
+    expect(press(space, { button: 2 })).toBe(false)
   })
 
-  it('counts the keyboard single selection too, once', () => {
-    expect(fuseSources(task('t'), ['a'], 'b', tasks).map((t) => t.id)).toEqual(['a', 'b'])
-    expect(fuseSources(task('t'), ['a'], 'a', tasks).map((t) => t.id)).toEqual(['a'])
-    expect(fuseSources(task('t'), [], 't', tasks)).toEqual([])
+  it('keeps the selection when the press lands on a card, a board menu or a dialog (portals included)', () => {
+    const card = el({ 'data-task-id': 'a' })
+    const inCard = el({}, card)
+    const menu = el({ 'data-board-menu': '' })
+    const inMenu = el({}, menu)
+    const dialog = el({ role: 'dialog' })
+    const inDialog = el({}, dialog)
+    expect(press(inCard)).toBe(false)
+    expect(press(inMenu)).toBe(false)
+    expect(press(inDialog)).toBe(false)
+    expect(press(null)).toBe(true)
   })
 })

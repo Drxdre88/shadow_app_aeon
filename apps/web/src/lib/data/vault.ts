@@ -222,29 +222,34 @@ export async function restoreFromVault(vaultId: string, projectId: string) {
 
   if (!vaultEntry) return null
 
-  const [maxResult] = await db
-    .select({ max: sql<number>`coalesce(max(${boardTasks.orderIndex}), -1)` })
-    .from(boardTasks)
-    .where(eq(boardTasks.projectId, projectId))
-
-  // A card with no column is invisible on the board (0409: a restored card
-  // sat in the table with column_id NULL and the owner reported it lost).
-  // The restore resets status to todo, so the board's first column is where
-  // it belongs — never the vault's column_name, which is the Done column it
-  // was completed in.
-  const [firstColumn] = await db
-    .select({ id: boardColumns.id })
-    .from(boardColumns)
-    .where(eq(boardColumns.projectId, projectId))
-    .orderBy(asc(boardColumns.orderIndex))
-    .limit(1)
-
   const restoredTask = await db.transaction(async (tx) => {
+    // A card with no column is invisible on the board (0409: a restored card
+    // sat in the table with column_id NULL and the owner reported it lost).
+    // The restore resets status to todo, so the board's first column is
+    // where it belongs — never the vault's column_name, which is the Done
+    // column it was completed in. Read inside the transaction, and the
+    // order index scoped to THAT column, so the card appends to the
+    // column's own 0..n-1 numbering.
+    const [firstColumn] = await tx
+      .select({ id: boardColumns.id })
+      .from(boardColumns)
+      .where(eq(boardColumns.projectId, projectId))
+      .orderBy(asc(boardColumns.orderIndex))
+      .limit(1)
+    const columnId = firstColumn?.id ?? null
+
+    const [maxResult] = await tx
+      .select({ max: sql<number>`coalesce(max(${boardTasks.orderIndex}), -1)` })
+      .from(boardTasks)
+      .where(columnId
+        ? and(eq(boardTasks.projectId, projectId), eq(boardTasks.columnId, columnId))
+        : eq(boardTasks.projectId, projectId))
+
     const [task] = await tx
       .insert(boardTasks)
       .values({
         projectId,
-        columnId: firstColumn?.id ?? null,
+        columnId,
         name: vaultEntry.name,
         description: vaultEntry.description,
         priority: vaultEntry.priority,

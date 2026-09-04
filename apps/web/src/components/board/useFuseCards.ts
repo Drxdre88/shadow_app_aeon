@@ -23,6 +23,19 @@ interface FuseStep {
   result: FuseResult
 }
 
+export interface FuseProgress {
+  /** Sources absorbed so far. */
+  done: number
+  total: number
+}
+
+/**
+ * Every source is its own server round trip (one transaction each, undone
+ * one at a time), so the batch is capped rather than left to run for as
+ * long as the selection is large.
+ */
+export const MAX_FUSE_SOURCES = 20
+
 const errorMessage = (err: unknown, fallback: string) => (err instanceof Error ? err.message : fallback)
 
 /**
@@ -36,6 +49,7 @@ const errorMessage = (err: unknown, fallback: string) => (err instanceof Error ?
 export function useFuseCards(projectId: string) {
   const [request, setRequest] = useState<FuseRequest | null>(null)
   const [isFusing, setIsFusing] = useState(false)
+  const [progress, setProgress] = useState<FuseProgress | null>(null)
 
   const requestFuse = useCallback<RequestFuse>((targetId, sourceIds) => {
     const tasks = useBoardStore.getState().tasks
@@ -48,6 +62,10 @@ export function useFuseCards(projectId: string) {
       if (source && source.projectId === target.projectId) sources.push(source)
     }
     if (sources.length === 0) return
+    if (sources.length > MAX_FUSE_SOURCES) {
+      toast(`Fuse at most ${MAX_FUSE_SOURCES + 1} cards at a time — ${sources.length + 1} are selected`, { force: true })
+      return
+    }
     setRequest({ targetId, sourceIds: sources.map((s) => s.id), target, sources })
   }, [])
 
@@ -114,6 +132,7 @@ export function useFuseCards(projectId: string) {
     beginDirectWrite()
     try {
       for (const sourceId of request.sourceIds) {
+        setProgress({ done: steps.length, total })
         const slice = captureFuseSlice(useBoardStore.getState(), sourceId, request.targetId)
         if (!slice) { vanished = true; break }
         applyFuseOptimistic(slice, name)
@@ -130,6 +149,7 @@ export function useFuseCards(projectId: string) {
     } finally {
       useBoardStore.setState({ isDirty: false })
       endDirectWrite()
+      setProgress(null)
       setIsFusing(false)
     }
 
@@ -148,17 +168,19 @@ export function useFuseCards(projectId: string) {
     store.clearTaskSelection()
     if (store.selectedTaskId && request.sourceIds.includes(store.selectedTaskId)) store.selectTask(null)
 
+    // Counts are always of SELECTED (absorbed) cards, matching the menu's
+    // "Fuse N cards" minus the survivor.
     const survivorName = steps[steps.length - 1].result.survivor.name
     const onUndo = () => undoSteps(steps)
     if (failure || vanished) {
       const why = vanished ? 'a card was no longer on the board' : errorMessage(failure, 'the rest failed')
-      toast(`Fused ${steps.length} of ${total} cards into "${survivorName}" — ${why}`, { force: true, onUndo })
+      toast(`Fused ${steps.length} of ${total} selected cards into "${survivorName}" — ${why}`, { force: true, onUndo })
     } else if (steps.length === 1) {
       toast(`Fused "${steps[0].slice.sourceTask.name}" into "${survivorName}"`, { onUndo })
     } else {
-      toast(`Fused ${steps.length + 1} cards into "${survivorName}"`, { onUndo })
+      toast(`Fused ${steps.length} selected cards into "${survivorName}"`, { onUndo })
     }
   }, [request, isFusing, projectId, undoSteps])
 
-  return useMemo(() => ({ request, isFusing, requestFuse, cancelFuse, confirmFuse }), [request, isFusing, requestFuse, cancelFuse, confirmFuse])
+  return useMemo(() => ({ request, isFusing, progress, requestFuse, cancelFuse, confirmFuse }), [request, isFusing, progress, requestFuse, cancelFuse, confirmFuse])
 }

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, renderHook, act, cleanup, fireEvent } from '@testing-library/react'
+import { render, renderHook, act, cleanup, fireEvent, screen } from '@testing-library/react'
 
 // The board-level fusion lifecycle: a request remembers the two cards it was
 // raised for, confirming merges optimistically and lands the server row, and
@@ -14,7 +14,7 @@ import { useBoardStore, type BoardTask } from '@/lib/store/boardStore'
 import { useUndoStore } from '@/lib/store/undoStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { ToastContainer } from '@/components/ui/Toast'
-import { useFuseCards } from '../useFuseCards'
+import { useFuseCards, MAX_FUSE_SOURCES } from '../useFuseCards'
 import type { FuseSnapshot } from '@/lib/data/validators'
 
 const task = (id: string, extra: Partial<BoardTask> = {}): BoardTask => ({
@@ -96,7 +96,7 @@ describe('useFuseCards', () => {
     expect(survivor()?.name).toBe('Fused')
     expect(useBoardStore.getState().selectedTaskIds).toEqual([])
     expect(useBoardStore.getState().selectedTaskId).toBeNull()
-    expect(useUndoStore.getState().stack[0].description).toBe('Fused 3 cards into "Fused"')
+    expect(useUndoStore.getState().stack[0].description).toBe('Fused 2 selected cards into "Fused"')
 
     await act(async () => {
       useUndoStore.getState().pop()!.undo()
@@ -105,6 +105,41 @@ describe('useFuseCards', () => {
     expect(vi.mocked(unfuseBoardTasks).mock.calls.map((c) => c[1])).toEqual([snapO, snapX])
     expect(ids().sort()).toEqual(['o', 's', 'x'])
     expect(survivor()?.name).toBe('s')
+    expect(useBoardStore.getState().isDirty).toBe(false)
+  })
+
+  it('refuses a batch above the cap with a toast, and takes one exactly at the cap', () => {
+    render(<ToastContainer />)
+    const many = Array.from({ length: MAX_FUSE_SOURCES + 1 }, (_, i) => task(`m${i}`))
+    useBoardStore.setState({ tasks: [task('s'), ...many] })
+    const { result } = renderHook(() => useFuseCards('p1'))
+    act(() => result.current.requestFuse('s', many.map((t) => t.id)))
+    expect(result.current.request).toBeNull()
+    expect(screen.getByText(new RegExp(`at most ${MAX_FUSE_SOURCES + 1} cards`))).toBeTruthy()
+    act(() => result.current.requestFuse('s', many.slice(0, MAX_FUSE_SOURCES).map((t) => t.id)))
+    expect(result.current.request?.sourceIds).toHaveLength(MAX_FUSE_SOURCES)
+  })
+
+  it('a failed undo midway through a chain puts back exactly the fusions the server still holds', async () => {
+    render(<ToastContainer />)
+    const snapX = { ...snapshot, sourceId: 'x' } as FuseSnapshot
+    const snapO = { ...snapshot, sourceId: 'o' } as FuseSnapshot
+    vi.mocked(fuseBoardTasks).mockImplementation(async ({ sourceId }) => ({ survivor: survivorRow as never, labelIds: [], snapshot: sourceId === 'x' ? snapX : snapO }))
+    // Undo order is o then x: o's unfuse lands, x's is refused.
+    vi.mocked(unfuseBoardTasks).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('x is gone'))
+    const { result } = renderHook(() => useFuseCards('p1'))
+    act(() => result.current.requestFuse('s', ['x', 'o']))
+    await act(async () => { await result.current.confirmFuse('Fused') })
+    expect(ids()).toEqual(['s'])
+
+    await act(async () => {
+      useUndoStore.getState().pop()!.undo()
+      await flush()
+    })
+    expect(vi.mocked(unfuseBoardTasks).mock.calls.map((c) => c[1])).toEqual([snapO, snapX])
+    // o is back on the board; x stays absorbed and the survivor keeps the fused title.
+    expect(ids().sort()).toEqual(['o', 's'])
+    expect(survivor()?.name).toBe('Fused')
     expect(useBoardStore.getState().isDirty).toBe(false)
   })
 
@@ -122,7 +157,7 @@ describe('useFuseCards', () => {
     expect(result.current.request).toBeNull()
     const stack = useUndoStore.getState().stack
     expect(stack).toHaveLength(1)
-    expect(stack[0].description).toContain('Fused 1 of 2 cards')
+    expect(stack[0].description).toContain('Fused 1 of 2 selected cards')
     expect(stack[0].description).toContain('boom')
 
     await act(async () => {

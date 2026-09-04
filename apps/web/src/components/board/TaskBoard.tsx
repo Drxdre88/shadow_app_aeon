@@ -31,6 +31,7 @@ import { HoldToMoveBanner } from './HoldToMoveBanner'
 import { FuseCardsModal } from './FuseCardsModal'
 import { useFuseCards } from './useFuseCards'
 import { FuseRequestContext } from './fuseRequestContext'
+import { pointerDownClearsSelection } from './cardSelection'
 import { boardCollisionDetection } from './boardCollision'
 import { useBoardKeyboardShortcuts } from './useBoardKeyboardShortcuts'
 import { useBoardHover } from './useBoardHover'
@@ -170,6 +171,19 @@ export function TaskBoard({
   // one" asks before it merges; nothing moves until the modal confirms. The
   // menu reaches this lifecycle through FuseRequestContext (below).
   const fuseCards = useFuseCards(projectId)
+
+  // Click-away for the multi-selection (cardSelection.ts). Listened for only
+  // while something is selected, in the capture phase so a press that a card
+  // or menu swallows is still seen.
+  const hasSelection = useBoardStore((s) => s.selectedTaskIds.length > 0)
+  useEffect(() => {
+    if (!hasSelection) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (pointerDownClearsSelection(e)) useBoardStore.getState().clearTaskSelection()
+    }
+    document.addEventListener('pointerdown', onPointerDown, true)
+    return () => document.removeEventListener('pointerdown', onPointerDown, true)
+  }, [hasSelection])
 
   // Auto AI launches ride on the move mutation (see useBoardHandlers): the
   // agent is spawned only once the card's move is durable.
@@ -427,6 +441,7 @@ export function TaskBoard({
         sources={fuseCards.request?.sources ?? EMPTY_TASKS}
         target={fuseCards.request?.target ?? null}
         isLoading={fuseCards.isFusing}
+        progress={fuseCards.progress}
         onConfirm={fuseCards.confirmFuse}
         onClose={fuseCards.cancelFuse}
       />
