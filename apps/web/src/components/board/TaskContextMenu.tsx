@@ -42,7 +42,6 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
   const updateTask = useBoardStore((s) => s.updateTask)
   const removeTask = useBoardStore((s) => s.removeTask)
   const selectedTaskIds = useBoardStore((s) => s.selectedTaskIds)
-  const primarySelectedId = useBoardStore((s) => s.selectedTaskId)
   const requestFuse = useFuseRequest()
   const { priorities, colors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
@@ -52,8 +51,8 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
   const aiEnabled = useHangarUiStore((s) => s.config.enabled)
   const openMissionEditor = useHangarUiStore((s) => s.openMissionEditor)
   const isAiCard = Boolean((task?.metadata as { hangar?: unknown } | undefined)?.hangar)
-  // Card fusion: every OTHER selected card fuses into this one.
-  const fuseFrom = task && requestFuse ? fuseSources(task, selectedTaskIds, primarySelectedId, tasks) : []
+  // Card fusion: every OTHER multi-selected card fuses into this one.
+  const fuseFrom = task && requestFuse ? fuseSources(task, selectedTaskIds, tasks) : []
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
@@ -145,6 +144,7 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
     <AnimatePresence>
       <motion.div
         ref={menuRef}
+        data-board-menu
         initial={{ opacity: 0, scale: 0.92, y: 8 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.92, y: 8 }}
