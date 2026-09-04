@@ -19,7 +19,7 @@ const DEMO_PROJECT_ID = 'demo-project'
 export default function DemoPage() {
   const [activeTab, setActiveTab] = useState<'gantt' | 'board'>('board')
   const { setTasks: setGanttTasks, setRows, timeScale } = useGanttStore()
-  const { setTasks: setBoardTasks, setLabels } = useBoardStore()
+  const { setTasks: setBoardTasks, setLabels, setColumns } = useBoardStore()
 
   useEffect(() => {
     const today = new Date()
@@ -44,16 +44,26 @@ export default function DemoPage() {
       { id: 'label-3', projectId: DEMO_PROJECT_ID, name: 'Bug', color: 'pink' },
     ])
 
-    setBoardTasks([
-      { id: 'bt-1', projectId: DEMO_PROJECT_ID, name: 'Setup project structure', status: 'done', priority: 'high', color: 'purple', labels: ['label-1'], onTimeline: true, orderIndex: 0 },
-      { id: 'bt-2', projectId: DEMO_PROJECT_ID, name: 'Create GlowCard component', status: 'done', priority: 'medium', color: 'cyan', labels: ['label-1'], onTimeline: false, orderIndex: 1 },
-      { id: 'bt-3', projectId: DEMO_PROJECT_ID, name: 'Implement drag-and-drop', status: 'doing', priority: 'high', color: 'purple', labels: ['label-1'], onTimeline: false, orderIndex: 0 },
-      { id: 'bt-4', projectId: DEMO_PROJECT_ID, name: 'Add theme switching', status: 'doing', priority: 'medium', color: 'green', labels: [], onTimeline: false, orderIndex: 1 },
-      { id: 'bt-5', projectId: DEMO_PROJECT_ID, name: 'Write API routes', status: 'todo', priority: 'high', color: 'blue', labels: ['label-2'], onTimeline: false, orderIndex: 0 },
-      { id: 'bt-6', projectId: DEMO_PROJECT_ID, name: 'Database migrations', status: 'todo', priority: 'medium', color: 'blue', labels: ['label-2'], onTimeline: false, orderIndex: 1 },
-      { id: 'bt-7', projectId: DEMO_PROJECT_ID, name: 'Fix date parsing bug', status: 'review', priority: 'urgent', color: 'pink', labels: ['label-3'], onTimeline: false, orderIndex: 0 },
+    // The board renders columns, and cards only inside them — without these
+    // the demo board was an empty "Add Column".
+    setColumns([
+      { id: 'col-todo', projectId: DEMO_PROJECT_ID, name: 'Backlog', color: 'blue', icon: null, orderIndex: 0 },
+      { id: 'col-doing', projectId: DEMO_PROJECT_ID, name: 'In Progress', color: 'purple', icon: null, orderIndex: 1 },
+      { id: 'col-review', projectId: DEMO_PROJECT_ID, name: 'Review', color: 'pink', icon: null, orderIndex: 2 },
+      { id: 'col-done', projectId: DEMO_PROJECT_ID, name: 'Done', color: 'green', icon: null, orderIndex: 3 },
     ])
-  }, [setGanttTasks, setRows, setBoardTasks, setLabels])
+
+    setBoardTasks([
+      { id: 'bt-1', projectId: DEMO_PROJECT_ID, columnId: 'col-done', name: 'Setup project structure', status: 'done', priority: 'high', color: 'purple', labels: ['label-1'], onTimeline: true, orderIndex: 0 },
+      { id: 'bt-2', projectId: DEMO_PROJECT_ID, columnId: 'col-done', name: 'Create GlowCard component', status: 'done', priority: 'medium', color: 'cyan', labels: ['label-1'], onTimeline: false, orderIndex: 1 },
+      { id: 'bt-3', projectId: DEMO_PROJECT_ID, columnId: 'col-doing', name: 'Implement drag-and-drop', status: 'doing', priority: 'high', color: 'purple', labels: ['label-1'], onTimeline: false, orderIndex: 0 },
+      { id: 'bt-4', projectId: DEMO_PROJECT_ID, columnId: 'col-doing', name: 'Add theme switching', status: 'doing', priority: 'medium', color: 'green', labels: [], onTimeline: false, orderIndex: 1 },
+      { id: 'bt-5', projectId: DEMO_PROJECT_ID, columnId: 'col-todo', name: 'Write API routes', status: 'todo', priority: 'high', color: 'blue', labels: ['label-2'], onTimeline: false, orderIndex: 0 },
+      { id: 'bt-6', projectId: DEMO_PROJECT_ID, columnId: 'col-todo', name: 'Database migrations', status: 'todo', priority: 'medium', color: 'blue', labels: ['label-2'], onTimeline: false, orderIndex: 1 },
+      { id: 'bt-8', projectId: DEMO_PROJECT_ID, columnId: 'col-todo', name: 'Design settings screen', status: 'todo', priority: 'low', color: 'cyan', labels: ['label-1'], onTimeline: false, orderIndex: 2 },
+      { id: 'bt-7', projectId: DEMO_PROJECT_ID, columnId: 'col-review', name: 'Fix date parsing bug', status: 'review', priority: 'urgent', color: 'pink', labels: ['label-3'], onTimeline: false, orderIndex: 0 },
+    ])
+  }, [setGanttTasks, setRows, setBoardTasks, setLabels, setColumns])
 
   const today = new Date()
   const startDate = new Date(today.getFullYear(), today.getMonth(), 1)
