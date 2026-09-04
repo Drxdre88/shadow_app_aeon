@@ -236,6 +236,7 @@ describe('useFuseCards', () => {
     expect(useBoardStore.getState().isDirty).toBe(false)
     expect(result.current.request).toBeNull()
     expect(result.current.isFusing).toBe(false)
+    expect(result.current.effect).toBeNull()
     expect(useUndoStore.getState().stack).toHaveLength(0)
     expect(screen.getByText('boom')).toBeTruthy()
   })

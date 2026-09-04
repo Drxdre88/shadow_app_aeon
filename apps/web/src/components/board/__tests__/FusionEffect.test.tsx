@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, cleanup, act } from '@testing-library/react'
-import { FusionEffect } from '../FusionEffect'
+import { FusionEffect, burstSize } from '../FusionEffect'
 import { arrivalTime, totalDuration } from '../fusionEffectTiming'
 import { useThemeStore } from '@/stores/themeStore'
 import type { FusionPlay } from '../fusionMeasure'
@@ -62,9 +62,9 @@ describe('FusionEffect', () => {
     expect(document.querySelector('[data-fusion-effect]')).toBeNull()
   })
 
-  it('flies one ghost per source from its own card into the survivor, then reports done once', () => {
+  it('flies one ghost per source from its own card into the survivor, holds while the server is still landing steps, then reports done once', () => {
     const onDone = vi.fn()
-    render(<FusionEffect play={play} progress={{ done: 0, total: 2 }} onDone={onDone} />)
+    const { rerender } = render(<FusionEffect play={play} progress={{ done: 0, total: 2 }} onDone={onDone} />)
     const overlay = document.querySelector('[data-fusion-effect]') as HTMLElement
     expect(overlay).toBeTruthy()
     expect(overlay.className).toContain('pointer-events-none')
@@ -86,10 +86,57 @@ describe('FusionEffect', () => {
     expect(ghosts().every((g) => g.style.visibility === 'hidden')).toBe(true)
     expect(onDone).not.toHaveBeenCalled()
 
+    // The choreography is over but a chain is still landing: the scene holds
+    // (halo breathing, pill up) instead of going dark before the toast.
     act(() => flushFrames(totalDuration(2)))
+    expect(onDone).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-fusion-progress]')).toBeTruthy()
+
+    rerender(<FusionEffect play={play} progress={null} onDone={onDone} />)
+    act(() => flushFrames(40))
     expect(onDone).toHaveBeenCalledTimes(1)
     expect(onDone).toHaveBeenCalledWith(42)
     expect(frameCallbacks).toHaveLength(0)
+  })
+
+  it('finishes on schedule when there is no chain to wait for', () => {
+    const onDone = vi.fn()
+    render(<FusionEffect play={play} onDone={onDone} />)
+    act(() => flushFrames(totalDuration(2) - 40))
+    expect(onDone).not.toHaveBeenCalled()
+    act(() => flushFrames(80))
+    expect(onDone).toHaveBeenCalledTimes(1)
+  })
+
+  it('aims at where the survivor IS each frame, not where it was at confirm', () => {
+    if (typeof CSS === 'undefined') (globalThis as { CSS?: unknown }).CSS = { escape: (v: string) => v }
+    const survivorEl = document.createElement('div')
+    survivorEl.setAttribute('data-task-id', 's')
+    let top = 300
+    survivorEl.getBoundingClientRect = () => ({ left: 600, top, width: 220, height: 120, x: 600, y: top, right: 820, bottom: top + 120, toJSON: () => ({}) })
+    document.body.appendChild(survivorEl)
+    try {
+      render(<FusionEffect play={play} onDone={vi.fn()} />)
+      act(() => flushFrames(100))
+      const halo = document.querySelector('[data-fusion-halo]') as HTMLElement
+      expect(halo.style.top).toBe('300px')
+      // The column reflowed under the play: the survivor moved up a card.
+      top = 180
+      act(() => flushFrames(100))
+      expect(halo.style.top).toBe('180px')
+      act(() => flushFrames(totalDuration(2)))
+      // Every ghost ended inside the moved survivor, hidden.
+      expect(ghosts().every((g) => g.style.visibility === 'hidden')).toBe(true)
+    } finally {
+      survivorEl.remove()
+    }
+  })
+
+  it('shrinks each burst as the swarm grows so the particle pool stays bounded', () => {
+    expect(burstSize(1)).toBe(42)
+    expect(burstSize(4)).toBe(21)
+    expect(burstSize(100)).toBe(8)
+    expect(burstSize(0)).toBe(42)
   })
 
   it('a new play with a new key restarts the scene', () => {

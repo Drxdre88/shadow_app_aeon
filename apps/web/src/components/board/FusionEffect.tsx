@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { useSmoothUiRenders, useThemeStore } from '@/stores/themeStore'
 import { hexToRgba, resolveAccentHex } from '@/lib/utils/colors'
 import { useHasMounted } from '@/lib/utils/useHasMounted'
-import type { FusionPlay } from './fusionMeasure'
+import { measureCard, type FusionPlay } from './fusionMeasure'
 import {
   IMPACT_MS,
   SETTLE_MS,
@@ -63,31 +63,55 @@ export function FusionEffect({ play, progress = null, onDone }: FusionEffectProp
 
 const TRAIL_LENGTH = 10
 const BURST_PARTICLES = 42
+/** Particle pool ceiling — a 50-card fusion must not become 2000 live arcs a frame. */
+const MAX_PARTICLES = 1200
+
+/** Particles per burst shrink with the swarm so the total stays bounded. */
+export function burstSize(count: number): number {
+  return Math.max(8, Math.round(BURST_PARTICLES / Math.sqrt(Math.max(1, count))))
+}
 
 function FusionScene({ play, progress, onDone }: { play: FusionPlay; progress: FusionEffectProps['progress']; onDone: (key: number) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const ghostRefs = useRef<(HTMLDivElement | null)[]>([])
   const haloRef = useRef<HTMLDivElement>(null)
+  const pillRef = useRef<HTMLDivElement>(null)
   const glowIntensity = useThemeStore((s) => s.glowIntensity)
   const mult = glowIntensity / 75
   const count = play.sources.length
   const survivorHex = resolveAccentHex(play.survivor.color)
+  // Read by the loop through refs so a glow-slider nudge or a progress tick
+  // never restarts the choreography.
+  const multRef = useRef(mult)
+  multRef.current = mult
+  const progressRef = useRef(progress)
+  progressRef.current = progress
+  const onDoneRef = useRef(onDone)
+  onDoneRef.current = onDone
 
   useEffect(() => {
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d') ?? null
-    const width = window.innerWidth
-    const height = window.innerHeight
-    if (canvas && ctx) {
-      const dpr = Math.min(2, window.devicePixelRatio || 1)
-      canvas.width = width * dpr
-      canvas.height = height * dpr
-      ctx.scale(dpr, dpr)
+    let width = 0
+    let height = 0
+    // Sized on the first frame and again whenever the viewport changes (a
+    // phone's URL bar collapsing mid-play is routine); assigning the backing
+    // store resets the transform, so the scale is re-applied each time.
+    const fit = () => {
+      width = window.innerWidth
+      height = window.innerHeight
+      if (canvas && ctx) {
+        const dpr = Math.min(2, window.devicePixelRatio || 1)
+        canvas.width = width * dpr
+        canvas.height = height * dpr
+        ctx.scale(dpr, dpr)
+      }
     }
+    fit()
 
-    const target = center(play.survivor.rect)
     const total = totalDuration(count)
     const lastArrival = arrivalTime(count - 1, count)
+    const perBurst = burstSize(count)
     const colors = play.sources.map((s) => resolveAccentHex(s.color))
     const trails: Point[][] = play.sources.map(() => [])
     const arrived: boolean[] = play.sources.map(() => false)
@@ -101,7 +125,8 @@ function FusionScene({ play, progress, onDone }: { play: FusionPlay; progress: F
     // No canvas shadowBlur anywhere: it is rasterised per stroke and turns a
     // 200-particle burst into a stall on software renderers. Glow is faked
     // with a wide faint pass under a thin bright one — same look, one blit.
-    const draw = (t: number) => {
+    const draw = (t: number, target: Point) => {
+      const mult = multRef.current
       if (!ctx) return
       ctx.clearRect(0, 0, width, height)
       ctx.lineCap = 'round'
@@ -157,9 +182,16 @@ function FusionScene({ play, progress, onDone }: { play: FusionPlay; progress: F
       const t = now - start
       const dt = Math.min(48, now - last)
       last = now
+      if (window.innerWidth !== width || window.innerHeight !== height) fit()
+
+      // The survivor MOVES while the play runs: the optimistic merge removes
+      // the sources and the column reflows around it, and the board may
+      // scroll. Every frame aims at where it is now, not where it was.
+      const survivorRect = measureCard(play.survivor.id) ?? play.survivor.rect
+      const target = center(survivorRect)
 
       play.sources.forEach((source, i) => {
-        const f = ghostFrame(source.rect, play.survivor.rect, i, count, t)
+        const f = ghostFrame(source.rect, survivorRect, i, count, t)
         const el = ghostRefs.current[i]
         if (el) {
           el.style.transform = `translate(${f.center.x - source.rect.width / 2}px, ${f.center.y - source.rect.height / 2}px) rotate(${f.rotate}deg) scale(${f.scale})`
@@ -174,16 +206,26 @@ function FusionScene({ play, progress, onDone }: { play: FusionPlay; progress: F
         if (f.arrived && !arrived[i]) {
           arrived[i] = true
           trails[i] = []
-          particles = particles.concat(spawnBurst(target, colors[i], BURST_PARTICLES))
+          particles = particles.concat(spawnBurst(target, colors[i], perBurst))
+          if (particles.length > MAX_PARTICLES) particles = particles.slice(-MAX_PARTICLES)
           shocks.push({ at: t, color: colors[i] })
         }
       })
       particles = stepParticles(particles, dt)
-      draw(t)
+      draw(t, target)
 
       const halo = haloRef.current
       if (halo) {
-        if (t >= lastArrival) {
+        halo.style.left = `${survivorRect.x}px`
+        halo.style.top = `${survivorRect.y}px`
+        halo.style.width = `${survivorRect.width}px`
+        halo.style.height = `${survivorRect.height}px`
+        if (t >= total) {
+          // Holding for the server: a slow breath until the last step lands.
+          const breath = 0.5 + 0.5 * Math.sin((t - total) / 320)
+          halo.style.opacity = String(0.15 + 0.35 * breath)
+          halo.style.transform = 'scale(1)'
+        } else if (t >= lastArrival) {
           const settle = clamp01((t - lastArrival) / (IMPACT_MS + SETTLE_MS))
           const pulse = Math.sin(settle * Math.PI)
           halo.style.opacity = String(0.2 + 0.8 * pulse)
@@ -193,17 +235,25 @@ function FusionScene({ play, progress, onDone }: { play: FusionPlay; progress: F
           halo.style.opacity = String(0.15 + (0.45 * landed) / count)
         }
       }
+      const pill = pillRef.current
+      if (pill) {
+        pill.style.left = `${survivorRect.x + survivorRect.width / 2}px`
+        pill.style.top = `${survivorRect.y - 6}px`
+      }
 
-      if (t >= total) {
+      // Done when the choreography has played out AND the server has landed
+      // every step — a long chain keeps the halo and the "k of N" pill up
+      // rather than going dark for seconds before the toast.
+      if (t >= total && !progressRef.current) {
         finished = true
-        onDone(play.key)
+        onDoneRef.current(play.key)
         return
       }
       handle = raf(frame)
     }
     handle = raf(frame)
     return () => { if (!finished) caf(handle) }
-  }, [play, count, mult, onDone])
+  }, [play, count])
 
   const survivorRect = play.survivor.rect
 
@@ -217,7 +267,7 @@ function FusionScene({ play, progress, onDone }: { play: FusionPlay; progress: F
             key={source.id}
             ref={(el) => { ghostRefs.current[i] = el }}
             data-fusion-ghost
-            className="absolute left-0 top-0 rounded-xl border bg-slate-900/90 backdrop-blur px-3 py-2 will-change-transform overflow-hidden"
+            className="absolute left-0 top-0 rounded-xl border bg-slate-900/95 px-3 py-2 will-change-transform overflow-hidden"
             style={{
               width: source.rect.width,
               height: source.rect.height,
@@ -246,8 +296,9 @@ function FusionScene({ play, progress, onDone }: { play: FusionPlay; progress: F
       />
       {progress && progress.total > 1 && (
         <div
+          ref={pillRef}
           data-fusion-progress
-          className="absolute -translate-x-1/2 -translate-y-full px-2 py-0.5 rounded-full text-[10px] font-semibold text-white border border-white/25 bg-slate-900/90 backdrop-blur"
+          className="absolute -translate-x-1/2 -translate-y-full px-2 py-0.5 rounded-full text-[10px] font-semibold text-white border border-white/25 bg-slate-900/95"
           style={{ left: survivorRect.x + survivorRect.width / 2, top: survivorRect.y - 6, boxShadow: `0 0 ${12 * mult}px ${hexToRgba(survivorHex, 0.6)}` }}
         >
           Fusing {Math.min(progress.done + 1, progress.total)} of {progress.total}…

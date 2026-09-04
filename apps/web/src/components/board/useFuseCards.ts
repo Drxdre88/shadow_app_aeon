@@ -157,6 +157,8 @@ export function useFuseCards(projectId: string) {
     }
 
     if (steps.length === 0) {
+      // Nothing fused: the board is back as it was, so the show stops too.
+      setEffect(null)
       toast(vanished ? 'One of the cards is no longer on the board' : errorMessage(failure, 'Could not fuse the cards — reverted'), { force: true })
       return
     }
