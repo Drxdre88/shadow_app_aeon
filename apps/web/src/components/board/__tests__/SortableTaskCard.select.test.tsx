@@ -128,6 +128,34 @@ describe('SortableTaskCard — multi-select', () => {
     expect(useBoardStore.getState().selectedTaskId).toBeNull()
   })
 
+  it('Deselect on one card never drops a keyboard selection pointing at another', () => {
+    useBoardStore.setState({ selectedTaskIds: ['t1'], selectedTaskId: 't3' })
+    const { surface } = renderCards(['t1'])
+    fireEvent.contextMenu(surface('t1'), { clientX: 5, clientY: 5 })
+    fireEvent.click(screen.getByTestId('menu-select'))
+    expect(selection()).toEqual([])
+    expect(useBoardStore.getState().selectedTaskId).toBe('t3')
+  })
+
+  it('a modified click on one card cancels a pending single-click open on another', () => {
+    vi.useFakeTimers()
+    try {
+      useThemeStore.setState({ smoothUiRenders: true })
+      const { onEdit, surface } = renderCards(['t1', 't3'])
+      fireEvent.click(surface('t1'))
+      fireEvent.click(surface('t3'), { ctrlKey: true })
+      vi.advanceTimersByTime(400)
+      expect(onEdit).not.toHaveBeenCalled()
+      expect(selection()).toEqual(['t3'])
+      // The cancelled card's next plain click is a fresh first click, not the second half of a double-click.
+      fireEvent.click(surface('t1'))
+      vi.advanceTimersByTime(400)
+      expect(onEdit).toHaveBeenCalledWith('t1')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('a card selected only through multi-select still wears the selected ring', () => {
     useBoardStore.setState({ selectedTaskIds: ['t1'] })
     const { surface } = renderCards(['t1'])

@@ -55,6 +55,15 @@ interface SortableTaskCardProps {
   animateOnMount?: boolean
 }
 
+// Every card's pending single-click open (the 250ms double-click wait), so a
+// modified click on ANY card cancels them all: plain-click A then Ctrl-click
+// B within the wait must not open A mid-selection.
+const pendingOpens = new Set<ReturnType<typeof setTimeout>>()
+function cancelPendingOpens() {
+  for (const timer of pendingOpens) clearTimeout(timer)
+  pendingOpens.clear()
+}
+
 const priorityGlows = {
   low: 'none' as const,
   medium: 'sm' as const,
@@ -170,7 +179,8 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
     // card — the selection feeds the menu's "Fuse N cards into this one".
     const mods = selectModifiersFromEvent(e)
     if (mods) {
-      if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null }
+      cancelPendingOpens()
+      clickTimerRef.current = null
       const { tasks, selectedTaskIds, setSelectedTaskIds } = useBoardStore.getState()
       const columnId = tasks.find((t) => t.id === task.id)?.columnId
       const columnOrder = tasks
@@ -194,13 +204,28 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
     }
     // Instant mode: open on first click, skip the double-click disambiguation wait.
     if (!smoothUiRenders) { onEdit?.(task.id); return }
-    if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null; return }
-    clickTimerRef.current = setTimeout(() => { clickTimerRef.current = null; onEdit?.(task.id) }, 250)
+    // A pending timer that a modified click elsewhere already cancelled is
+    // not a first click to pair with — only a live one counts as the first
+    // half of a double-click.
+    const pending = clickTimerRef.current
+    if (pending !== null && pendingOpens.has(pending)) {
+      clearTimeout(pending)
+      pendingOpens.delete(pending)
+      clickTimerRef.current = null
+      return
+    }
+    const timer = setTimeout(() => { pendingOpens.delete(timer); clickTimerRef.current = null; onEdit?.(task.id) }, 250)
+    pendingOpens.add(timer)
+    clickTimerRef.current = timer
+  }
+
+  const cancelOwnPendingOpen = () => {
+    if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); pendingOpens.delete(clickTimerRef.current); clickTimerRef.current = null }
   }
 
   const handleInlineEdit = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null }
+    cancelOwnPendingOpen()
     setEditName(task.name)
     setIsEditing(true)
     setTimeout(() => editRef.current?.select(), 0)
@@ -236,7 +261,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const handleMenuButton = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault()
     e.stopPropagation()
-    if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null }
+    cancelOwnPendingOpen()
     const rect = e.currentTarget.getBoundingClientRect()
     setContextMenu((open) => (open ? null : { x: rect.left, y: rect.bottom + 4 }))
   }
@@ -604,8 +629,13 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
           onArchiveTask={onArchiveTask}
           // The menu's Select is the touch route into multi-select: it adds
           // this card to the selection (and makes it the keyboard's card);
-          // Deselect removes it from both.
-          onSelectTask={(id) => { selectTask(id); setTaskSelected(task.id, id !== null) }}
+          // Deselect removes it from both — but never drops a keyboard
+          // selection that points at another card.
+          onSelectTask={(id) => {
+            if (id !== null) selectTask(id)
+            else if (selectedTaskId === task.id) selectTask(null)
+            setTaskSelected(task.id, id !== null)
+          }}
           isSelected={isSelected}
         />
       )}
