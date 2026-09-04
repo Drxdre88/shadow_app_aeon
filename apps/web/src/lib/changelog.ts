@@ -29,6 +29,18 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.26.1] — 2026-09-04
+
+> Areas touched: \`BOARD\` \`UI\`
+> Theme: the phone stops sliding.
+
+### Fixed — Dragging a card right no longer scrolls the whole page off-screen · \`BOARD\`
+- On a phone, dragging a card towards the right edge could scroll the entire page sideways: the board slid to the left half of the screen, empty space opened on the right and a second scrollbar appeared. The page was a few pixels wider than the screen (the toolbar overflowed it) and the drag auto-scroller happily scrolled the window into that gap. Dragging left never showed it because the page was already at zero.
+- Three guards now: the page can never scroll sideways, the toolbar scrolls inside itself on narrow screens, and a drag only ever auto-scrolls the board and its columns, never the window.
+
+### Changed — Slim "Add column" on touch · \`UI\`
+- On touch devices the full-width "Add Column" placeholder is now a slim rail with a +, so the last real column is reachable in one drag.
+
 ## [0.26.0] — 2026-09-04
 
 > Areas touched: \`BOARD\` \`UI\`

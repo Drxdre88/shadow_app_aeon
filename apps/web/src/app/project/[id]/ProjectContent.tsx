@@ -84,7 +84,10 @@ export default function ProjectContent({ project, user, initialBoardData, initia
         onSignOut={() => signOut({ callbackUrl: '/' })}
       />
 
-      <div className="flex-1 min-w-0 transition-all duration-300" style={{ marginLeft: collapsed ? 60 : 260 }}>
+      {/* overflow-x-clip (not hidden: clip keeps the sticky header sticky):
+          nothing in the page may widen the document, or a drag towards the
+          right edge scrolls the whole page sideways on a phone. */}
+      <div className="flex-1 min-w-0 overflow-x-clip transition-all duration-300" style={{ marginLeft: collapsed ? 60 : 260 }}>
       <GlassStage
         blobConfig={{
           blobs: [
@@ -95,8 +98,8 @@ export default function ProjectContent({ project, user, initialBoardData, initia
       />
 
       <header className="sticky top-0 z-40 bg-[#0a0a0c]/95 backdrop-blur-xl border-b border-white/[0.06]">
-        <div className="px-2 sm:px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="px-2 sm:px-6 py-3 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 shrink-0">
             <ProjectSwitcher
               currentProjectId={project.id}
               projectName={project.name}
@@ -117,7 +120,13 @@ export default function ProjectContent({ project, user, initialBoardData, initia
             <span>Search or Cmd+K...</span>
           </button>
 
-          <div className="flex items-center gap-2">
+          {/* The tool row scrolls INSIDE itself on a narrow screen instead of
+              widening the page — the extra width was what a drag-right could
+              scroll the window into. */}
+          <div
+            className="flex items-center gap-2 min-w-0 overflow-x-auto [&::-webkit-scrollbar]:hidden"
+            style={{ scrollbarWidth: 'none' }}
+          >
             {activeTab === 'board' && (
               <>
                 <button
