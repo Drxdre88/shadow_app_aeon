@@ -20,8 +20,6 @@ interface FuseCardsModalProps {
   /** The card whose menu asked — survives, renamed. */
   target: BoardTask | null
   isLoading?: boolean
-  /** While fusing several cards: how many sources have landed so far. */
-  progress?: { done: number; total: number } | null
   onConfirm: (name: string) => void
   onClose: () => void
 }
@@ -46,7 +44,7 @@ export function FuseCardsModal({ isOpen, sources, target, ...props }: FuseCardsM
   )
 }
 
-function FuseCardsDialog({ sources, target, isLoading = false, progress = null, onConfirm, onClose }: Omit<FuseCardsModalProps, 'isOpen' | 'sources' | 'target'> & { sources: BoardTask[]; target: BoardTask }) {
+function FuseCardsDialog({ sources, target, isLoading = false, onConfirm, onClose }: Omit<FuseCardsModalProps, 'isOpen' | 'sources' | 'target'> & { sources: BoardTask[]; target: BoardTask }) {
   const [name, setName] = useState(target.name)
   const inputRef = useRef<HTMLInputElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -192,9 +190,7 @@ function FuseCardsDialog({ sources, target, isLoading = false, progress = null, 
               }}
             >
               {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Merge className="w-3.5 h-3.5" />}
-              {isLoading
-                ? (progress && progress.total > 1 ? `Fusing ${Math.min(progress.done + 1, progress.total)} of ${progress.total}…` : 'Fusing…')
-                : `Fuse ${sources.length + 1} cards`}
+              {isLoading ? 'Fusing…' : `Fuse ${sources.length + 1} cards`}
             </button>
           </div>
         </motion.div>

@@ -224,7 +224,8 @@ describe('useFuseCards', () => {
     expect(useBoardStore.getState().isDirty).toBe(false)
   })
 
-  it('a failed fusion reverts the board and keeps the request so the operator can retry or cancel', async () => {
+  it('a failed fusion reverts the board, closes the request and says so — nothing to undo', async () => {
+    render(<ToastContainer />)
     vi.mocked(fuseBoardTasks).mockRejectedValue(new Error('boom'))
     const { result } = renderHook(() => useFuseCards('p1'))
     act(() => result.current.requestFuse('s', ['x']))
@@ -233,8 +234,41 @@ describe('useFuseCards', () => {
     expect(ids()).toEqual(['s', 'o', 'x'])
     expect(survivor()?.name).toBe('s')
     expect(useBoardStore.getState().isDirty).toBe(false)
-    expect(result.current.request).not.toBeNull()
+    expect(result.current.request).toBeNull()
     expect(result.current.isFusing).toBe(false)
+    expect(result.current.effect).toBeNull()
     expect(useUndoStore.getState().stack).toHaveLength(0)
+    expect(screen.getByText('boom')).toBeTruthy()
+  })
+
+  it('confirming closes the modal at once and hands the effect the cards as they stood; done clears only its own play', async () => {
+    if (typeof CSS === 'undefined') (globalThis as { CSS?: unknown }).CSS = { escape: (v: string) => v }
+    const rect = (x: number) => () => ({ left: x, top: 10, width: 200, height: 100, x, y: 10, right: x + 200, bottom: 110, toJSON: () => ({}) })
+    for (const [id, x] of [['s', 500], ['x', 20]] as const) {
+      const el = document.createElement('div')
+      el.setAttribute('data-task-id', id)
+      el.getBoundingClientRect = rect(x)
+      document.body.appendChild(el)
+    }
+    let release: () => void = () => {}
+    vi.mocked(fuseBoardTasks).mockImplementation(() => new Promise((resolve) => { release = () => resolve({ survivor: survivorRow as never, labelIds: [], snapshot }) }))
+    const { result } = renderHook(() => useFuseCards('p1'))
+    act(() => result.current.requestFuse('s', ['x']))
+
+    let pending: Promise<void>
+    act(() => { pending = result.current.confirmFuse('Fused') })
+    expect(result.current.request).toBeNull()
+    expect(result.current.isFusing).toBe(true)
+    expect(result.current.effect).toMatchObject({ survivor: { id: 's', rect: { x: 500 } }, sources: [{ id: 'x', rect: { x: 20 } }] })
+    const key = result.current.effect!.key
+
+    act(() => result.current.clearEffect(key + 1))
+    expect(result.current.effect).not.toBeNull()
+    act(() => result.current.clearEffect(key))
+    expect(result.current.effect).toBeNull()
+
+    await act(async () => { release(); await pending })
+    expect(result.current.isFusing).toBe(false)
+    document.body.innerHTML = ''
   })
 })

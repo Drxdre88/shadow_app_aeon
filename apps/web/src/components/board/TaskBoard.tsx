@@ -29,6 +29,7 @@ import { boardMeasuring, useBoardZoom } from './boardZoom'
 import { HoldToMoveContext, useHoldToMoveMode } from './useHoldToMove'
 import { HoldToMoveBanner } from './HoldToMoveBanner'
 import { FuseCardsModal } from './FuseCardsModal'
+import { FusionEffect } from './FusionEffect'
 import { useFuseCards } from './useFuseCards'
 import { FuseRequestContext } from './fuseRequestContext'
 import { pointerDownClearsSelection } from './cardSelection'
@@ -441,10 +442,10 @@ export function TaskBoard({
         sources={fuseCards.request?.sources ?? EMPTY_TASKS}
         target={fuseCards.request?.target ?? null}
         isLoading={fuseCards.isFusing}
-        progress={fuseCards.progress}
         onConfirm={fuseCards.confirmFuse}
         onClose={fuseCards.cancelFuse}
       />
+      <FusionEffect play={fuseCards.effect} progress={fuseCards.progress} onDone={fuseCards.clearEffect} />
 
       <TaskEditModal
         isOpen={isModalOpen}

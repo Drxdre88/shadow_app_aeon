@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useBoardStore, beginDirectWrite, endDirectWrite, type BoardTask } from '@/lib/store/boardStore'
 import { fuseBoardTasks, unfuseBoardTasks } from '@/lib/actions/fuse'
 import type { FuseResult } from '@/lib/data/fuse'
 import { toast } from '@/components/ui/Toast'
 import { applyFuseOptimistic, applyFuseResult, captureFuseSlice, restoreFuseSlice, type FuseStoreSlice } from './fuseClient'
 import type { RequestFuse } from './fuseRequestContext'
+import { measureFusionPlay, type FusionPlay } from './fusionMeasure'
 
 export interface FuseRequest {
   /** The card the others fuse INTO — survives, renamed. */
@@ -42,7 +43,16 @@ const errorMessage = (err: unknown, fallback: string) => (err instanceof Error ?
 export function useFuseCards(projectId: string) {
   const [request, setRequest] = useState<FuseRequest | null>(null)
   const [isFusing, setIsFusing] = useState(false)
+  // Synchronous twin of isFusing: two confirms in one tick both see the
+  // state as false, the ref refuses the second.
+  const fusingRef = useRef(false)
   const [progress, setProgress] = useState<FuseProgress | null>(null)
+  // The fusion as the board shows it (FusionEffect): measured the instant the
+  // operator confirms, before the optimistic merge takes the sources away.
+  const [effect, setEffect] = useState<FusionPlay | null>(null)
+  const clearEffect = useCallback((key: number) => {
+    setEffect((current) => (current && current.key === key ? null : current))
+  }, [])
 
   const requestFuse = useCallback<RequestFuse>((targetId, sourceIds) => {
     const tasks = useBoardStore.getState().tasks
@@ -113,22 +123,28 @@ export function useFuseCards(projectId: string) {
   }, [projectId])
 
   const confirmFuse = useCallback(async (name: string) => {
-    if (!request || isFusing) return
-    const total = request.sourceIds.length
+    if (!request || isFusing || fusingRef.current) return
+    fusingRef.current = true
+    const req = request
+    const total = req.sourceIds.length
     const steps: FuseStep[] = []
     let failure: unknown = null
     let vanished = false
 
+    // The modal closes now: the fusion plays out on the board itself while
+    // the server catches up, and the toast reports the outcome.
+    setEffect(measureFusionPlay(req.target, req.sources))
+    setRequest(null)
     setIsFusing(true)
     beginDirectWrite()
     try {
-      for (const sourceId of request.sourceIds) {
+      for (const sourceId of req.sourceIds) {
         setProgress({ done: steps.length, total })
-        const slice = captureFuseSlice(useBoardStore.getState(), sourceId, request.targetId)
+        const slice = captureFuseSlice(useBoardStore.getState(), sourceId, req.targetId)
         if (!slice) { vanished = true; break }
         applyFuseOptimistic(slice, name)
         try {
-          const result = await fuseBoardTasks({ projectId, survivorId: request.targetId, sourceId, name })
+          const result = await fuseBoardTasks({ projectId, survivorId: req.targetId, sourceId, name })
           applyFuseResult(result.survivor, result.labelIds)
           steps.push({ slice, result })
         } catch (err) {
@@ -141,23 +157,20 @@ export function useFuseCards(projectId: string) {
       useBoardStore.setState({ isDirty: false })
       endDirectWrite()
       setProgress(null)
+      fusingRef.current = false
       setIsFusing(false)
     }
 
     if (steps.length === 0) {
-      if (vanished) {
-        setRequest(null)
-        toast('One of the cards is no longer on the board', { force: true })
-      } else {
-        toast(errorMessage(failure, 'Could not fuse the cards — reverted'), { force: true })
-      }
+      // Nothing fused: the board is back as it was, so the show stops too.
+      setEffect(null)
+      toast(vanished ? 'One of the cards is no longer on the board' : errorMessage(failure, 'Could not fuse the cards — reverted'), { force: true })
       return
     }
 
-    setRequest(null)
     const store = useBoardStore.getState()
     store.clearTaskSelection()
-    if (store.selectedTaskId && request.sourceIds.includes(store.selectedTaskId)) store.selectTask(null)
+    if (store.selectedTaskId && req.sourceIds.includes(store.selectedTaskId)) store.selectTask(null)
 
     // Counts are always of SELECTED (absorbed) cards, matching the menu's
     // "Fuse N cards" minus the survivor.
@@ -173,5 +186,8 @@ export function useFuseCards(projectId: string) {
     }
   }, [request, isFusing, projectId, undoSteps])
 
-  return useMemo(() => ({ request, isFusing, progress, requestFuse, cancelFuse, confirmFuse }), [request, isFusing, progress, requestFuse, cancelFuse, confirmFuse])
+  return useMemo(
+    () => ({ request, isFusing, progress, effect, clearEffect, requestFuse, cancelFuse, confirmFuse }),
+    [request, isFusing, progress, effect, clearEffect, requestFuse, cancelFuse, confirmFuse],
+  )
 }
