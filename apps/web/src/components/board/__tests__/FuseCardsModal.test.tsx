@@ -35,12 +35,12 @@ afterEach(() => {
 })
 
 const input = () => screen.getByLabelText(/new title/i) as HTMLInputElement
-const confirmButton = () => screen.getByRole('button', { name: /fuse cards|fusing/i })
+const confirmButton = () => screen.getByRole('button', { name: /fuse \d+ cards|fusing/i })
 
 function open(props: Partial<React.ComponentProps<typeof FuseCardsModal>> = {}) {
   const onConfirm = vi.fn()
   const onClose = vi.fn()
-  render(<FuseCardsModal isOpen source={source} target={target} onConfirm={onConfirm} onClose={onClose} {...props} />)
+  render(<FuseCardsModal isOpen sources={[source]} target={target} onConfirm={onConfirm} onClose={onClose} {...props} />)
   return { onConfirm, onClose }
 }
 
@@ -63,7 +63,24 @@ describe('FuseCardsModal', () => {
     expect(summary).toContain('2 labels')
     expect(summary).toContain('3 checklist items')
     expect(summary).toContain('urgent')
-    expect(summary).toContain('description is appended')
+    expect(summary).toContain('descriptions are appended')
+    expect(summary).toContain('The absorbed card is removed')
+    expect(confirmButton().textContent).toMatch(/fuse 2 cards/i)
+  })
+
+  it('lists several absorbed cards and sums their labels and checklists', () => {
+    const second = task('Second card', { priority: 'high', labels: ['l3'] })
+    useBoardStore.setState({ checklistSummaries: { [source.id]: { checked: 1, crossed: 0, total: 3 }, [second.id]: { checked: 0, crossed: 0, total: 2 } } })
+    open({ sources: [source, second] })
+    expect(screen.getByText('2 absorbed')).toBeTruthy()
+    expect(screen.getByText('Absorbed card')).toBeTruthy()
+    expect(screen.getByText('Second card')).toBeTruthy()
+    const summary = screen.getByTestId('fuse-summary').textContent ?? ''
+    expect(summary).toContain('3 labels')
+    expect(summary).toContain('5 checklist items')
+    expect(summary).toContain('urgent')
+    expect(summary).toContain('The 2 absorbed cards are removed')
+    expect(confirmButton().textContent).toMatch(/fuse 3 cards/i)
   })
 
   it('disarms the confirm button on an empty title', () => {
@@ -107,19 +124,22 @@ describe('FuseCardsModal', () => {
     expect(confirmButton().textContent).toMatch(/fusing/i)
   })
 
-  it('renders nothing without both cards', () => {
-    const { container } = render(<FuseCardsModal isOpen source={source} target={null} onConfirm={vi.fn()} onClose={vi.fn()} />)
+  it('renders nothing without a target or without any source', () => {
+    const { container } = render(<FuseCardsModal isOpen sources={[source]} target={null} onConfirm={vi.fn()} onClose={vi.fn()} />)
     expect(container.innerHTML).toBe('')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    cleanup()
+    render(<FuseCardsModal isOpen sources={[]} target={target} onConfirm={vi.fn()} onClose={vi.fn()} />)
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('keeps AnimatePresence mounted across open and close so the exit can play', async () => {
-    const { rerender } = render(<FuseCardsModal isOpen source={source} target={target} onConfirm={vi.fn()} onClose={vi.fn()} />)
+    const { rerender } = render(<FuseCardsModal isOpen sources={[source]} target={target} onConfirm={vi.fn()} onClose={vi.fn()} />)
     expect(screen.getByRole('dialog')).toBeTruthy()
-    rerender(<FuseCardsModal isOpen={false} source={source} target={target} onConfirm={vi.fn()} onClose={vi.fn()} />)
+    rerender(<FuseCardsModal isOpen={false} sources={[source]} target={target} onConfirm={vi.fn()} onClose={vi.fn()} />)
     // The dialog lingers for its exit frame instead of vanishing synchronously.
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    rerender(<FuseCardsModal isOpen source={source} target={target} onConfirm={vi.fn()} onClose={vi.fn()} />)
+    rerender(<FuseCardsModal isOpen sources={[source]} target={target} onConfirm={vi.fn()} onClose={vi.fn()} />)
     expect(screen.getByRole('dialog')).toBeTruthy()
   })
 })

@@ -152,13 +152,14 @@ interface BoardState {
   // tap. Client-only (never persisted) — see useHoldToMove.ts.
   movingTaskId: string | null
   setMovingTaskId: (id: string | null) => void
-  // Card fusion: the card a dragged card has dwelt on long enough to fuse
-  // into. Client-only — see components/board/fuseZone.ts.
-  fuseTargetId: string | null
-  setFuseTargetId: (id: string | null) => void
-  /** Card a drag is dwelling on (fusion pending or armed): pinned in its slot. */
-  fuseHoldId: string | null
-  setFuseHoldId: (id: string | null) => void
+  // Multi-select: the cards a bulk action (the menu's "Fuse N cards into
+  // this one") operates on. Ctrl/Cmd-click toggles, Shift-click ranges, the
+  // card menu's Select adds — see components/board/cardSelection.ts. In
+  // selection order. Client-only, never persisted.
+  selectedTaskIds: string[]
+  setSelectedTaskIds: (ids: string[]) => void
+  setTaskSelected: (id: string, selected: boolean) => void
+  clearTaskSelection: () => void
   convertToTimeline: (taskId: string, startDate: string, endDate: string) => void
   markClean: () => void
   setSaveStatus: (status: SaveStatus) => void
@@ -294,10 +295,14 @@ export const useBoardStore = create<BoardState>()(
       selectTask: (id) => set({ selectedTaskId: id }),
       movingTaskId: null,
       setMovingTaskId: (id) => set({ movingTaskId: id }),
-      fuseTargetId: null,
-      setFuseTargetId: (id) => set({ fuseTargetId: id }),
-      fuseHoldId: null,
-      setFuseHoldId: (id) => set({ fuseHoldId: id }),
+      selectedTaskIds: [],
+      setSelectedTaskIds: (ids) => set({ selectedTaskIds: ids }),
+      setTaskSelected: (id, selected) => set((s) => {
+        const has = s.selectedTaskIds.includes(id)
+        if (has === selected) return {}
+        return { selectedTaskIds: selected ? [...s.selectedTaskIds, id] : s.selectedTaskIds.filter((x) => x !== id) }
+      }),
+      clearTaskSelection: () => set({ selectedTaskIds: [] }),
       convertToTimeline: (taskId, startDate, endDate) => set((s) => ({
         tasks: s.tasks.map((t) =>
           t.id === taskId
@@ -358,8 +363,8 @@ export const useLabels = () => useBoardStore((s) => s.labels)
 export const useDependencies = () => useBoardStore((s) => s.dependencies)
 export const useSelectedTaskId = () => useBoardStore((s) => s.selectedTaskId)
 export const useMovingTaskId = () => useBoardStore((s) => s.movingTaskId)
-export const useFuseTargetId = () => useBoardStore((s) => s.fuseTargetId)
-export const useFuseHoldId = () => useBoardStore((s) => s.fuseHoldId)
+export const useSelectedTaskIds = () => useBoardStore((s) => s.selectedTaskIds)
+export const useIsTaskSelected = (taskId: string) => useBoardStore((s) => s.selectedTaskIds.includes(taskId))
 export const useShowDates = () => useBoardStore((s) => s.showDates)
 export const useChecklistSummaries = () => useBoardStore((s) => s.checklistSummaries)
 export const useIsDirty = () => useBoardStore((s) => s.isDirty)

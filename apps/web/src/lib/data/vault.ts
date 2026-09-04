@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { taskVault, boardTasks, labels, taskLabels, checklistItems, boardColumns } from '@/lib/db/schema'
-import { eq, and, desc, sql, inArray } from 'drizzle-orm'
+import { eq, and, asc, desc, sql, inArray } from 'drizzle-orm'
 import { touchProject } from './projects'
 
 export async function findVaultTasks(projectId: string, limit = 200, offset = 0) {
@@ -227,11 +227,24 @@ export async function restoreFromVault(vaultId: string, projectId: string) {
     .from(boardTasks)
     .where(eq(boardTasks.projectId, projectId))
 
+  // A card with no column is invisible on the board (0409: a restored card
+  // sat in the table with column_id NULL and the owner reported it lost).
+  // The restore resets status to todo, so the board's first column is where
+  // it belongs — never the vault's column_name, which is the Done column it
+  // was completed in.
+  const [firstColumn] = await db
+    .select({ id: boardColumns.id })
+    .from(boardColumns)
+    .where(eq(boardColumns.projectId, projectId))
+    .orderBy(asc(boardColumns.orderIndex))
+    .limit(1)
+
   const restoredTask = await db.transaction(async (tx) => {
     const [task] = await tx
       .insert(boardTasks)
       .values({
         projectId,
+        columnId: firstColumn?.id ?? null,
         name: vaultEntry.name,
         description: vaultEntry.description,
         priority: vaultEntry.priority,

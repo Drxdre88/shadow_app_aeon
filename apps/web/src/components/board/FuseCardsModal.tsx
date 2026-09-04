@@ -15,9 +15,9 @@ export const MAX_FUSED_NAME = 255
 
 interface FuseCardsModalProps {
   isOpen: boolean
-  /** The dragged card — absorbed and removed. */
-  source: BoardTask | null
-  /** The card dropped on — survives, renamed. */
+  /** The selected cards — absorbed and removed, in selection order. */
+  sources: BoardTask[]
+  /** The card whose menu asked — survives, renamed. */
   target: BoardTask | null
   isLoading?: boolean
   onConfirm: (name: string) => void
@@ -31,20 +31,20 @@ export function isValidFusedName(value: string) {
 
 // AnimatePresence sits ABOVE the open check so the dialog's exit plays: a
 // child that simply stops being rendered is what it animates out.
-export function FuseCardsModal({ isOpen, source, target, ...props }: FuseCardsModalProps) {
+export function FuseCardsModal({ isOpen, sources, target, ...props }: FuseCardsModalProps) {
   const mounted = useHasMounted()
   if (!mounted) return null
   return createPortal(
     <AnimatePresence>
-      {isOpen && source && target && (
-        <FuseCardsDialog key={`${source.id}->${target.id}`} source={source} target={target} {...props} />
+      {isOpen && sources.length > 0 && target && (
+        <FuseCardsDialog key={`${sources.map((s) => s.id).join('+')}->${target.id}`} sources={sources} target={target} {...props} />
       )}
     </AnimatePresence>,
     document.body
   )
 }
 
-function FuseCardsDialog({ source, target, isLoading = false, onConfirm, onClose }: Omit<FuseCardsModalProps, 'isOpen' | 'source' | 'target'> & { source: BoardTask; target: BoardTask }) {
+function FuseCardsDialog({ sources, target, isLoading = false, onConfirm, onClose }: Omit<FuseCardsModalProps, 'isOpen' | 'sources' | 'target'> & { sources: BoardTask[]; target: BoardTask }) {
   const [name, setName] = useState(target.name)
   const inputRef = useRef<HTMLInputElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -85,10 +85,11 @@ function FuseCardsDialog({ source, target, isLoading = false, onConfirm, onClose
 
   const cancel = () => { if (!isLoading) onClose() }
 
-  const labelCount = unionIds(target.labels, source.labels).length
-  const checklistCount = (checklistSummaries[source.id]?.total ?? 0)
-  const priority = maxPriority(target.priority, source.priority)
-  const sourceHasDescription = !!source.description?.trim()
+  const labelCount = sources.reduce((ids, s) => unionIds(ids, s.labels), target.labels as string[]).length
+  const checklistCount = sources.reduce((n, s) => n + (checklistSummaries[s.id]?.total ?? 0), 0)
+  const priority = sources.reduce((p, s) => maxPriority(p, s.priority), target.priority as string)
+  const sourceHasDescription = sources.some((s) => !!s.description?.trim())
+  const absorbedNoun = sources.length === 1 ? 'The absorbed card is' : `The ${sources.length} absorbed cards are`
 
   return (
       <motion.div
@@ -133,7 +134,7 @@ function FuseCardsDialog({ source, target, isLoading = false, onConfirm, onClose
           </div>
 
           <div className="flex items-center gap-2 mb-4 text-xs">
-            <CardChip task={source} label="Absorbed" />
+            <AbsorbedChip sources={sources} />
             <ArrowRight className="w-4 h-4 text-slate-500 flex-shrink-0" />
             <CardChip task={target} label="Survives" />
           </div>
@@ -163,8 +164,8 @@ function FuseCardsDialog({ source, target, isLoading = false, onConfirm, onClose
             <li>Labels, assignees, dependencies and comments are combined ({labelCount} label{labelCount === 1 ? '' : 's'}).</li>
             <li>{checklistCount > 0 ? `${checklistCount} checklist item${checklistCount === 1 ? '' : 's'} move over.` : 'No checklist items to move.'}</li>
             <li>Priority becomes <span className="text-slate-200 capitalize">{priority}</span>; dates widen to cover both.</li>
-            {sourceHasDescription && <li>The absorbed card&apos;s description is appended below the survivor&apos;s.</li>}
-            <li>The absorbed card is removed. Undo from the toast right after.</li>
+            {sourceHasDescription && <li>Absorbed descriptions are appended below the survivor&apos;s.</li>}
+            <li>{absorbedNoun} removed. Undo from the toast right after.</li>
           </ul>
 
           <div className="flex gap-2">
@@ -189,11 +190,31 @@ function FuseCardsDialog({ source, target, isLoading = false, onConfirm, onClose
               }}
             >
               {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Merge className="w-3.5 h-3.5" />}
-              {isLoading ? 'Fusing…' : 'Fuse cards'}
+              {isLoading ? 'Fusing…' : `Fuse ${sources.length + 1} cards`}
             </button>
           </div>
         </motion.div>
       </motion.div>
+  )
+}
+
+// One absorbed card gets the same chip as the survivor; several are listed,
+// three by name and the rest counted, all of them in the tooltip.
+function AbsorbedChip({ sources }: { sources: BoardTask[] }) {
+  if (sources.length === 1) return <CardChip task={sources[0]} label="Absorbed" />
+  return (
+    <div className="flex-1 min-w-0 rounded-lg border border-white/10 bg-slate-800/40 px-2.5 py-2" title={sources.map((s) => s.name).join('\n')}>
+      <div className="text-[9px] uppercase tracking-wider text-slate-500 mb-0.5">{sources.length} absorbed</div>
+      <ul className="space-y-0.5">
+        {sources.slice(0, 3).map((s) => (
+          <li key={s.id} className="flex items-center gap-1.5 min-w-0">
+            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: resolveAccentHex(s.color) }} />
+            <span className="truncate text-slate-200">{s.name}</span>
+          </li>
+        ))}
+        {sources.length > 3 && <li className="text-slate-500">+{sources.length - 3} more</li>}
+      </ul>
+    </div>
   )
 }
 

@@ -3,9 +3,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Palette, Flag, Trash2, MoveRight, Copy, Calendar, Archive, Package, ArrowRight, FolderInput, Folder, Loader2, MousePointerClick, Rocket, Bot } from 'lucide-react'
+import { Palette, Flag, Trash2, MoveRight, Copy, Calendar, Archive, Package, ArrowRight, FolderInput, Folder, Loader2, MousePointerClick, Rocket, Bot, Merge } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore, useTasks, useColumns } from '@/lib/store/boardStore'
+import { fuseSources } from './cardSelection'
+import { useFuseRequest } from './fuseRequestContext'
 import { AccentColor, ACCENT_COLORS, PALETTE_COLORS, colorConfig, getRecentColors, addRecentColor } from '@/lib/utils/colors'
 import { useThemeStore } from '@/stores/themeStore'
 import { useHangarUiStore } from '@/lib/store/hangarUiStore'
@@ -39,6 +41,9 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
   const columns = useColumns()
   const updateTask = useBoardStore((s) => s.updateTask)
   const removeTask = useBoardStore((s) => s.removeTask)
+  const selectedTaskIds = useBoardStore((s) => s.selectedTaskIds)
+  const primarySelectedId = useBoardStore((s) => s.selectedTaskId)
+  const requestFuse = useFuseRequest()
   const { priorities, colors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
 
@@ -47,6 +52,8 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
   const aiEnabled = useHangarUiStore((s) => s.config.enabled)
   const openMissionEditor = useHangarUiStore((s) => s.openMissionEditor)
   const isAiCard = Boolean((task?.metadata as { hangar?: unknown } | undefined)?.hangar)
+  // Card fusion: every OTHER selected card fuses into this one.
+  const fuseFrom = task && requestFuse ? fuseSources(task, selectedTaskIds, primarySelectedId, tasks) : []
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
@@ -183,6 +190,21 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
           {isSelected ? 'Deselect' : 'Select'}
           <span className="ml-auto text-[10px] text-slate-500">S</span>
         </button>
+
+        {fuseFrom.length > 0 && (
+          <button
+            data-testid="fuse-cards"
+            onClick={() => {
+              requestFuse?.(taskId, fuseFrom.map((t) => t.id))
+              onClose()
+            }}
+            title={`Absorbs: ${fuseFrom.map((t) => t.name).join(', ')}`}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors text-[var(--primary)] hover:bg-white/10 font-medium"
+          >
+            <Merge className="w-4 h-4" />
+            Fuse {fuseFrom.length + 1} cards into this one
+          </button>
+        )}
 
         {isAiCard && (
           <>
