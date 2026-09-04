@@ -20,6 +20,22 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - `DOCS` — `ARCHITECTURE.md`, `VISION.md`, `CLAUDE.md`
 - `UI` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.26.0] — 2026-09-04
+
+> Areas touched: `BOARD` `UI`
+> Theme: fusion you can see. Confirm a fusion and the board performs it: the absorbed cards lift, fly in on arcs and detonate into the survivor.
+
+### Added — The fusion effect · `BOARD` · `UI`
+- On confirm the modal closes and every absorbed card becomes a glowing ghost that flies along its own arc into the survivor, leaving a light trail. Each arrival fires a shockwave and a burst of that card's colour; after the last one the survivor breathes once and settles. Big fusions fan in as a swarm, staggered but never longer than about two seconds.
+- While a chain of fusions lands on the server, a small "Fusing k of N…" pill sits above the survivor.
+- With Smooth UI Renders off there is no animation at all — the board simply shows the fused result, as everywhere else in Aeon.
+
+### Changed — Fusion polish from review · `BOARD`
+- Only cards you explicitly selected count as fuse sources. Opening a card no longer makes it eligible.
+- No limit on how many cards fuse at once.
+- Clicking empty board space clears the selection; Ctrl/Cmd, Shift and right-click presses, cards, menus and dialogs leave it alone.
+- Restored vault cards append to the first column's own numbering, decided inside the same transaction.
+
 ## [0.25.0] — 2026-09-04
 
 > Areas touched: `BOARD` `DATA`
