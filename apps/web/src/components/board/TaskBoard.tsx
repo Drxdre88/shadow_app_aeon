@@ -3,7 +3,7 @@
 import { useCallback, useState, useMemo, useEffect } from 'react'
 import { DndContext, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable'
-import { useBoardStore, useColumns, useTasks, useSelectedTaskId, useFuseTargetId, type BoardColumn, type BoardTask, type TaskAssigneePill } from '@/lib/store/boardStore'
+import { useBoardStore, useColumns, useTasks, useSelectedTaskId, type BoardColumn, type BoardTask, type TaskAssigneePill } from '@/lib/store/boardStore'
 import { cn } from '@/lib/utils/cn'
 import { MissionEditorModal } from './MissionEditorModal'
 import { KanbanColumn } from './KanbanColumn'
@@ -30,6 +30,7 @@ import { HoldToMoveContext, useHoldToMoveMode } from './useHoldToMove'
 import { HoldToMoveBanner } from './HoldToMoveBanner'
 import { FuseCardsModal } from './FuseCardsModal'
 import { useFuseCards } from './useFuseCards'
+import { FuseRequestContext } from './fuseRequestContext'
 import { boardCollisionDetection } from './boardCollision'
 import { useBoardKeyboardShortcuts } from './useBoardKeyboardShortcuts'
 import { useBoardHover } from './useBoardHover'
@@ -165,20 +166,19 @@ export function TaskBoard({
     onConnectModeChange,
   })
 
-  // Card fusion: a drop on a card's dwelt-on middle third asks before it
-  // merges; nothing moves until the modal confirms.
+  // Card fusion: select cards, right-click one → "Fuse N cards into this
+  // one" asks before it merges; nothing moves until the modal confirms. The
+  // menu reaches this lifecycle through FuseRequestContext (below).
   const fuseCards = useFuseCards(projectId)
-  const fuseTargetId = useFuseTargetId()
 
   // Auto AI launches ride on the move mutation (see useBoardHandlers): the
   // agent is spawned only once the card's move is durable.
-  const { sensors, activeItem, dragActiveRef, overId, handleDragStart, handleDragMove, handleDragOver, handleDragEnd, handleDragCancel, placeMovingTask } = useBoardDnD({
+  const { sensors, activeItem, dragActiveRef, overId, handleDragStart, handleDragOver, handleDragEnd, handleDragCancel, placeMovingTask } = useBoardDnD({
     projectTasks,
     sortedColumns,
     onTaskMove,
     onTaskDelete,
     onColumnReorder,
-    onFuseRequest: fuseCards.requestFuse,
   })
 
   // The pinch is refused while a card is lifted — a stray second finger during
@@ -309,7 +309,7 @@ export function TaskBoard({
   const isTaskDrag = activeItem?.type === 'task'
 
   return (
-    <>
+    <FuseRequestContext.Provider value={fuseCards.requestFuse}>
       <BoardGlowBackground glowColor={themeColors.glowColor} globalGlow={globalGlow} />
 
       <div ref={boardRef} data-board-export className="relative">
@@ -328,7 +328,6 @@ export function TaskBoard({
           // cards' droppable rects under the pinch scale.
           measuring={boardMeasuring}
           onDragStart={handleDragStart}
-          onDragMove={handleDragMove}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
@@ -413,7 +412,7 @@ export function TaskBoard({
           </SortableContext>
 
           <DragOverlay dropAnimation={smoothUiRenders ? { duration: 300, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' } : { duration: 0 }}>
-            {activeItem?.type === 'task' && <DragPreview task={activeItem.data as BoardTaskData} effect={dragEffect} globalGlow={globalGlow} zoom={boardZoom} hint={fuseTargetId ? 'Fuse' : null} />}
+            {activeItem?.type === 'task' && <DragPreview task={activeItem.data as BoardTaskData} effect={dragEffect} globalGlow={globalGlow} zoom={boardZoom} />}
           </DragOverlay>
 
           <TrashDropZone isActive={isTaskDrag} />
@@ -425,7 +424,7 @@ export function TaskBoard({
 
       <FuseCardsModal
         isOpen={fuseCards.request !== null}
-        source={fuseCards.request?.source ?? null}
+        sources={fuseCards.request?.sources ?? EMPTY_TASKS}
         target={fuseCards.request?.target ?? null}
         isLoading={fuseCards.isFusing}
         onConfirm={fuseCards.confirmFuse}
@@ -509,6 +508,6 @@ export function TaskBoard({
         cursorPos={cursorPos}
         onCancel={cancelConnect}
       />
-    </>
+    </FuseRequestContext.Provider>
   )
 }

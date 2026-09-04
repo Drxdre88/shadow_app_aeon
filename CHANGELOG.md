@@ -20,6 +20,20 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - `DOCS` — `ARCHITECTURE.md`, `VISION.md`, `CLAUDE.md`
 - `UI` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.25.0] — 2026-09-04
+
+> Areas touched: `BOARD` `DATA`
+> Theme: fusion, second try. The drag-and-hold gesture never had a middle zone you could hold in — the sortable strategy slides the hovered card away the instant you are over it — so it is gone. Fusion is now an explicit choice: pick the cards, right-click the one that should survive.
+
+### Changed — Card fusion is select-then-fuse, not drag-and-dwell · `BOARD`
+- **Ctrl-click** (Cmd on a Mac) toggles a card in the selection, **Shift-click** selects the run from the last-selected card in that column. Selected cards wear the same ring the S key gives. **Esc** clears the selection.
+- Right-click any card while others are selected → **Fuse N cards into this one**. The card you right-clicked survives and is renamed; the selected ones are absorbed in selection order — labels, people, dates, size, checklists, dependencies, comments and history merge as before. One Undo (toast or Ctrl+Z) puts every card back.
+- On a phone: card **⋯** → Select on each card, then **⋯** → Fuse on the survivor.
+- The drag-onto-a-card dwell, its badge and the pinned-slot hit test are removed. Drag-and-drop is exactly what it was before fusion existed: top half places above, bottom half below.
+
+### Fixed — Restoring a card from the Vault made it vanish · `DATA`
+- A restored card was written with no column, so the board could never show it while the Vault no longer listed it. Restored cards now land in the board's first column with status todo. The one card lost this way has been reattached by hand.
+
 ## [0.24.0] — 2026-09-03
 
 > Areas touched: `BOARD` `GANTT` `UI` `INFRA`

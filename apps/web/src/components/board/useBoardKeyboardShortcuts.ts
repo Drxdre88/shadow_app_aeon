@@ -79,9 +79,11 @@ export function useBoardKeyboardShortcuts({
 
       if (key === 'escape') {
         if (hasOpenOverlay) return
-        if (selectedTaskId) {
+        const multiSelected = useBoardStore.getState().selectedTaskIds.length > 0
+        if (selectedTaskId || multiSelected) {
           e.preventDefault()
           onSelectTask(null)
+          if (multiSelected) useBoardStore.getState().clearTaskSelection()
           return
         }
       }

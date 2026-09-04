@@ -64,24 +64,80 @@ afterEach(() => {
 describe('useFuseCards', () => {
   it('a request carries the two cards as they were, and ends when either leaves the store', () => {
     const { result } = renderHook(() => useFuseCards('p1'))
-    act(() => result.current.requestFuse('x', 's'))
-    expect(result.current.request).toMatchObject({ sourceId: 'x', targetId: 's', source: { id: 'x', description: 'extra' }, target: { id: 's' } })
+    act(() => result.current.requestFuse('s', ['x']))
+    expect(result.current.request).toMatchObject({ sourceIds: ['x'], targetId: 's', sources: [{ id: 'x', description: 'extra' }], target: { id: 's' } })
 
     act(() => { useBoardStore.getState().removeTask('x') })
     expect(result.current.request).toBeNull()
   })
 
-  it('ignores a request for a card that is not in the store, or for a card onto itself', () => {
+  it('ignores cards that are not in the store, the target itself, and duplicates', () => {
     const { result } = renderHook(() => useFuseCards('p1'))
-    act(() => result.current.requestFuse('ghost', 's'))
-    act(() => result.current.requestFuse('s', 's'))
+    act(() => result.current.requestFuse('s', ['ghost']))
+    act(() => result.current.requestFuse('s', ['s']))
+    act(() => result.current.requestFuse('ghost', ['x']))
     expect(result.current.request).toBeNull()
+    act(() => result.current.requestFuse('s', ['x', 's', 'x', 'ghost', 'o']))
+    expect(result.current.request?.sourceIds).toEqual(['x', 'o'])
+  })
+
+  it('fuses several selected cards into the target one at a time, and Undo unwinds them last-first', async () => {
+    render(<ToastContainer />)
+    const snapX = { ...snapshot, sourceId: 'x' } as FuseSnapshot
+    const snapO = { ...snapshot, sourceId: 'o' } as FuseSnapshot
+    vi.mocked(fuseBoardTasks).mockImplementation(async ({ sourceId }) => ({ survivor: survivorRow as never, labelIds: [], snapshot: sourceId === 'x' ? snapX : snapO }))
+    useBoardStore.setState({ selectedTaskIds: ['x', 'o'], selectedTaskId: 'x' })
+    const { result } = renderHook(() => useFuseCards('p1'))
+    act(() => result.current.requestFuse('s', ['x', 'o']))
+    await act(async () => { await result.current.confirmFuse('Fused') })
+
+    expect(vi.mocked(fuseBoardTasks).mock.calls.map((c) => c[0].sourceId)).toEqual(['x', 'o'])
+    expect(ids()).toEqual(['s'])
+    expect(survivor()?.name).toBe('Fused')
+    expect(useBoardStore.getState().selectedTaskIds).toEqual([])
+    expect(useBoardStore.getState().selectedTaskId).toBeNull()
+    expect(useUndoStore.getState().stack[0].description).toBe('Fused 3 cards into "Fused"')
+
+    await act(async () => {
+      useUndoStore.getState().pop()!.undo()
+      await flush()
+    })
+    expect(vi.mocked(unfuseBoardTasks).mock.calls.map((c) => c[1])).toEqual([snapO, snapX])
+    expect(ids().sort()).toEqual(['o', 's', 'x'])
+    expect(survivor()?.name).toBe('s')
+    expect(useBoardStore.getState().isDirty).toBe(false)
+  })
+
+  it('a failure midway keeps what landed, says how many, and its Undo unwinds only those', async () => {
+    render(<ToastContainer />)
+    vi.mocked(fuseBoardTasks)
+      .mockResolvedValueOnce({ survivor: survivorRow as never, labelIds: [], snapshot })
+      .mockRejectedValueOnce(new Error('boom'))
+    const { result } = renderHook(() => useFuseCards('p1'))
+    act(() => result.current.requestFuse('s', ['x', 'o']))
+    await act(async () => { await result.current.confirmFuse('Fused') })
+
+    expect(ids().sort()).toEqual(['o', 's'])
+    expect(survivor()?.name).toBe('Fused')
+    expect(result.current.request).toBeNull()
+    const stack = useUndoStore.getState().stack
+    expect(stack).toHaveLength(1)
+    expect(stack[0].description).toContain('Fused 1 of 2 cards')
+    expect(stack[0].description).toContain('boom')
+
+    await act(async () => {
+      stack[0].undo()
+      await flush()
+    })
+    expect(unfuseBoardTasks).toHaveBeenCalledTimes(1)
+    expect(ids().sort()).toEqual(['o', 's', 'x'])
+    expect(survivor()?.name).toBe('s')
   })
 
   it('confirming fuses optimistically, lands the server row, registers an undo, and Ctrl+Z replays it', async () => {
     render(<ToastContainer />)
     const { result } = renderHook(() => useFuseCards('p1'))
-    act(() => result.current.requestFuse('x', 's'))
+    act(() => result.current.requestFuse('s', ['x']))
     await act(async () => { await result.current.confirmFuse('Fused') })
 
     expect(fuseBoardTasks).toHaveBeenCalledWith({ projectId: 'p1', survivorId: 's', sourceId: 'x', name: 'Fused' })
@@ -110,7 +166,7 @@ describe('useFuseCards', () => {
     render(<ToastContainer />)
     vi.mocked(unfuseBoardTasks).mockRejectedValue(new Error('The fused card no longer exists'))
     const { result } = renderHook(() => useFuseCards('p1'))
-    act(() => result.current.requestFuse('x', 's'))
+    act(() => result.current.requestFuse('s', ['x']))
     await act(async () => { await result.current.confirmFuse('Fused') })
 
     await act(async () => {
@@ -126,7 +182,7 @@ describe('useFuseCards', () => {
   it('a failed fusion reverts the board and keeps the request so the operator can retry or cancel', async () => {
     vi.mocked(fuseBoardTasks).mockRejectedValue(new Error('boom'))
     const { result } = renderHook(() => useFuseCards('p1'))
-    act(() => result.current.requestFuse('x', 's'))
+    act(() => result.current.requestFuse('s', ['x']))
     await act(async () => { await result.current.confirmFuse('Fused') })
 
     expect(ids()).toEqual(['s', 'o', 'x'])

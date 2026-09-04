@@ -4,7 +4,7 @@ import { useState, useRef, useMemo, memo } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { motion } from 'framer-motion'
-import { Calendar, MoreHorizontal, MoreVertical, Check, X, Clock, Trash2, Bot, Zap, Merge } from 'lucide-react'
+import { Calendar, MoreHorizontal, MoreVertical, Check, X, Clock, Trash2, Bot, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { hexToRgba, resolveAccentHex } from '@/lib/utils/colors'
 import { getInitials, getInitialsFromEmail } from '@/lib/utils/initials'
@@ -13,9 +13,10 @@ import { resolvePriority } from '@/lib/utils/priorities'
 import { labelHex, readableTextColor } from './labelTile'
 import { progressBarStyle } from './progressColor'
 import { GlowCard } from '@/components/ui/GlowCard'
-import { useBoardStore, useSelectedTaskId, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees, useFuseTargetId, useFuseHoldId } from '@/lib/store/boardStore'
+import { useBoardStore, useSelectedTaskId, useIsTaskSelected, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { useCardHoldGesture, useHoldToMoveActions, halfFromPoint } from './useHoldToMove'
+import { nextSelection, selectModifiersFromEvent } from './cardSelection'
 import { DependencyIndicator } from './DependencyIndicator'
 import { TaskContextMenu } from './TaskContextMenu'
 import { TaskSizeBadge } from './TaskSizeBadge'
@@ -64,6 +65,11 @@ const priorityGlows = {
 export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, onDependencyClick, columnGlowColor, showDropIndicator = false, onTaskUpdate, onTaskDelete, onPushToGantt, onSendToVault, onArchiveTask, animateOnMount = true }: SortableTaskCardProps) {
   const selectedTaskId = useSelectedTaskId()
   const selectTask = useBoardStore((s) => s.selectTask)
+  // Multi-select (Ctrl/Cmd-click, Shift-click, the menu's Select): only this
+  // card's own membership is subscribed to, so a selection change re-renders
+  // the cards that changed, not the board.
+  const isMultiSelected = useIsTaskSelected(task.id)
+  const setTaskSelected = useBoardStore((s) => s.setTaskSelected)
   const labels = useLabels()
   const clSummary = useBoardStore((s) => s.checklistSummaries[task.id])
   const clPreview = useBoardStore((s) => s.checklistPreviews[task.id])
@@ -83,11 +89,6 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   // Firefox delivers contextmenu as a MouseEvent with no pointerType, so the
   // last pointerdown's type is what tells a touch long-press from a right click.
   const lastPointerTypeRef = useRef<string | undefined>(undefined)
-  // Card fusion: the dragged card has dwelt on this one long enough to fuse.
-  const isFuseTarget = useFuseTargetId() === task.id
-  // While a dragged card dwells on this one's middle band, this card must not
-  // slide out of the way — the pointer has to be able to stay on it.
-  const isFuseHold = useFuseHoldId() === task.id
   const { holdHandlers, consumeHoldClick } = useCardHoldGesture(task.id)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [isEditing, setIsEditing] = useState(false)
@@ -107,7 +108,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   // A finger never hovers and never fires contextmenu, so the card's menu needs
   // a permanent button of its own on touch-first devices.
   const coarsePointer = useCoarsePointer()
-  const isSelected = selectedTaskId === task.id
+  const isSelected = selectedTaskId === task.id || isMultiSelected
   const mult = globalGlow / 75
 
   const resolvedGlowColor = (() => {
@@ -152,7 +153,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   })
 
   const style = {
-    transform: isFuseHold ? undefined : CSS.Transform.toString(transform),
+    transform: CSS.Transform.toString(transform),
     transition,
   }
 
@@ -164,6 +165,21 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
     if (isEditing) return
     // The release of a completed hold is not an open.
     if (consumeHoldClick()) return
+    // Ctrl/Cmd-click toggles this card in the selection, Shift-click selects
+    // the run from the last-selected card in this column. Neither opens the
+    // card — the selection feeds the menu's "Fuse N cards into this one".
+    const mods = selectModifiersFromEvent(e)
+    if (mods) {
+      if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null }
+      const { tasks, selectedTaskIds, setSelectedTaskIds } = useBoardStore.getState()
+      const columnId = tasks.find((t) => t.id === task.id)?.columnId
+      const columnOrder = tasks
+        .filter((t) => t.columnId === columnId)
+        .sort((a, b) => a.orderIndex - b.orderIndex)
+        .map((t) => t.id)
+      setSelectedTaskIds(nextSelection(selectedTaskIds, task.id, mods, columnOrder))
+      return
+    }
     // Move mode: this tap PLACES (or cancels on the lifted card itself) and
     // never opens. Hover, shortcuts and the rest of the card stay live.
     const movingTaskId = useBoardStore.getState().movingTaskId
@@ -233,7 +249,6 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
     <div ref={(el) => { setNodeRef(el); (cardElRef as React.MutableRefObject<HTMLDivElement | null>).current = el }} style={style} className="relative" data-task-id={task.id} data-moving={isMoving ? '' : undefined}>
       <CardPeekPreview taskId={task.id} triggerRef={cardElRef} />
       {isMoving && <MovingRing color={resolvedGlowColor} pulse={smoothUiRenders} />}
-      {isFuseTarget && <FuseBadge color={resolvedGlowColor} pulse={smoothUiRenders} />}
       {showDropIndicator && globalGlow > 0 && (
         <motion.div
           initial={{ opacity: 0, scaleX: 0 }}
@@ -587,7 +602,10 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
           onPushToGantt={onPushToGantt}
           onSendToVault={onSendToVault}
           onArchiveTask={onArchiveTask}
-          onSelectTask={(id) => selectTask(id)}
+          // The menu's Select is the touch route into multi-select: it adds
+          // this card to the selection (and makes it the keyboard's card);
+          // Deselect removes it from both.
+          onSelectTask={(id) => { selectTask(id); setTaskSelected(task.id, id !== null) }}
           isSelected={isSelected}
         />
       )}
@@ -613,45 +631,6 @@ function MovingRing({ color, pulse }: { color: string; pulse: boolean }) {
       animate={{ boxShadow: [ring, ringWide, ring], opacity: [0.7, 1, 0.7] }}
       transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
     />
-  )
-}
-
-// The fusion cue on the card about to absorb the dragged one. Lives inside the
-// card's wrapper, so under pinch-zoom it scales with the card. Pulses only
-// when Smooth UI Renders is on — off, every animation is killed, so a static
-// badge is drawn instead of a frozen keyframe.
-function FuseBadge({ color, pulse }: { color: string; pulse: boolean }) {
-  const hex = resolveAccentHex(color)
-  const ring = `0 0 0 2px ${hexToRgba(hex, 0.9)}, 0 0 16px 4px ${hexToRgba(hex, 0.45)}`
-  const ringWide = `0 0 0 3px ${hexToRgba(hex, 0.7)}, 0 0 30px 10px ${hexToRgba(hex, 0.35)}`
-  const icon = (
-    <span
-      className="flex items-center justify-center w-11 h-11 rounded-full text-white border border-white/40 bg-slate-900/85 backdrop-blur"
-      style={{ boxShadow: ring }}
-    >
-      <Merge className="w-5 h-5" />
-    </span>
-  )
-  const wrapper = 'absolute inset-0 flex items-center justify-center pointer-events-none z-20'
-  if (!pulse) {
-    return <div aria-hidden data-fuse-badge className={wrapper}>{icon}</div>
-  }
-  return (
-    <div aria-hidden data-fuse-badge className={wrapper}>
-      <motion.div
-        initial={{ scale: 0.6, opacity: 0 }}
-        animate={{ scale: [1, 1.12, 1], opacity: 1, filter: ['drop-shadow(0 0 0px transparent)', `drop-shadow(0 0 10px ${hexToRgba(hex, 0.6)})`, 'drop-shadow(0 0 0px transparent)'] }}
-        transition={{ scale: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' }, filter: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' }, opacity: { duration: 0.15 } }}
-      >
-        {icon}
-      </motion.div>
-      <motion.div
-        className="absolute inset-0 rounded-xl"
-        initial={{ boxShadow: ring, opacity: 0.5 }}
-        animate={{ boxShadow: [ring, ringWide, ring], opacity: [0.5, 0.9, 0.5] }}
-        transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
-      />
-    </div>
   )
 }
 
