@@ -20,8 +20,10 @@ export interface FusionPlay {
   sources: FusionGhost[]
 }
 
-// jsdom has no CSS.escape — see the 0309 handover.
-const escapeId = (id: string) => (typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(id) : id)
+// jsdom has no CSS.escape — see the 0309 handover. The fallback still keeps
+// the id from breaking out of the attribute selector.
+const escapeId = (id: string) =>
+  typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(id) : id.replace(/["\\\]]/g, '')
 
 export function measureCard(id: string): Rect | null {
   if (typeof document === 'undefined') return null

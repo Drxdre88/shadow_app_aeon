@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { measureCard, measureFusionPlay } from '../fusionMeasure'
 import type { BoardTask } from '@/lib/store/boardStore'
 
@@ -20,10 +20,15 @@ function mountCard(id: string, rect: { x: number; y: number; width: number; heig
   document.body.appendChild(el)
 }
 
-beforeEach(() => {
-  if (typeof CSS === 'undefined') (globalThis as { CSS?: unknown }).CSS = { escape: (s: string) => s }
-})
 afterEach(() => { document.body.innerHTML = '' })
+
+describe('escaping without CSS.escape (jsdom)', () => {
+  it('keeps a hostile id inside the attribute selector instead of throwing or matching everything', () => {
+    mountCard('a', { x: 10, y: 20, width: 200, height: 100 })
+    expect(() => measureCard('x"] , [data-task-id="a')).not.toThrow()
+    expect(measureCard('x"] , [data-task-id="a')).toBeNull()
+  })
+})
 
 describe('measureCard', () => {
   it('reads the viewport rect of a rendered card and refuses a collapsed or missing one', () => {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useBoardStore, beginDirectWrite, endDirectWrite, type BoardTask } from '@/lib/store/boardStore'
 import { fuseBoardTasks, unfuseBoardTasks } from '@/lib/actions/fuse'
 import type { FuseResult } from '@/lib/data/fuse'
@@ -43,6 +43,9 @@ const errorMessage = (err: unknown, fallback: string) => (err instanceof Error ?
 export function useFuseCards(projectId: string) {
   const [request, setRequest] = useState<FuseRequest | null>(null)
   const [isFusing, setIsFusing] = useState(false)
+  // Synchronous twin of isFusing: two confirms in one tick both see the
+  // state as false, the ref refuses the second.
+  const fusingRef = useRef(false)
   const [progress, setProgress] = useState<FuseProgress | null>(null)
   // The fusion as the board shows it (FusionEffect): measured the instant the
   // operator confirms, before the optimistic merge takes the sources away.
@@ -120,7 +123,8 @@ export function useFuseCards(projectId: string) {
   }, [projectId])
 
   const confirmFuse = useCallback(async (name: string) => {
-    if (!request || isFusing) return
+    if (!request || isFusing || fusingRef.current) return
+    fusingRef.current = true
     const req = request
     const total = req.sourceIds.length
     const steps: FuseStep[] = []
@@ -153,6 +157,7 @@ export function useFuseCards(projectId: string) {
       useBoardStore.setState({ isDirty: false })
       endDirectWrite()
       setProgress(null)
+      fusingRef.current = false
       setIsFusing(false)
     }
 

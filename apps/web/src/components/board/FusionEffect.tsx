@@ -180,7 +180,9 @@ function FusionScene({ play, progress, onDone }: { play: FusionPlay; progress: F
     const frame = (now: number) => {
       if (start === null) { start = now; last = now }
       const t = now - start
-      const dt = Math.min(48, now - last)
+      // Clamped both ways: a long stall must not teleport particles, and the
+      // timer fallback feeds Date.now(), which can step backwards.
+      const dt = Math.max(0, Math.min(48, now - last))
       last = now
       if (window.innerWidth !== width || window.innerHeight !== height) fit()
 
@@ -232,7 +234,7 @@ function FusionScene({ play, progress, onDone }: { play: FusionPlay; progress: F
           halo.style.transform = `scale(${1 + 0.05 * pulse})`
         } else {
           const landed = arrived.filter(Boolean).length
-          halo.style.opacity = String(0.15 + (0.45 * landed) / count)
+          halo.style.opacity = String(count > 0 ? 0.15 + (0.45 * landed) / count : 0.15)
         }
       }
       const pill = pillRef.current
@@ -258,7 +260,9 @@ function FusionScene({ play, progress, onDone }: { play: FusionPlay; progress: F
   const survivorRect = play.survivor.rect
 
   return (
-    <div aria-hidden data-fusion-effect className="fixed inset-0 z-[150] pointer-events-none overflow-hidden">
+    // z-[90]: above the board, below the toast (z-100) that carries Undo —
+    // particles must never paint over it — and below menus/dialogs (z-200).
+    <div aria-hidden data-fusion-effect className="fixed inset-0 z-[90] pointer-events-none overflow-hidden">
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
       {play.sources.map((source, i) => {
         const hex = resolveAccentHex(source.color)

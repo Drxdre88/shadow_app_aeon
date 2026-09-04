@@ -132,6 +132,39 @@ describe('FusionEffect', () => {
     }
   })
 
+  it('cancels its frame loop when unmounted mid-play', () => {
+    const cancel = vi.fn()
+    vi.stubGlobal('cancelAnimationFrame', cancel)
+    const onDone = vi.fn()
+    const { unmount } = render(<FusionEffect play={play} onDone={onDone} />)
+    act(() => flushFrames(300))
+    unmount()
+    expect(cancel).toHaveBeenCalledTimes(1)
+    expect(onDone).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-fusion-effect]')).toBeNull()
+  })
+
+  it('draws trails, shockwaves and particles on the canvas and clears it every frame', () => {
+    const calls: Record<string, number> = {}
+    const count = (name: string) => () => { calls[name] = (calls[name] ?? 0) + 1 }
+    const ctx = {
+      scale: count('scale'), clearRect: count('clearRect'), beginPath: count('beginPath'), moveTo: count('moveTo'), lineTo: count('lineTo'),
+      stroke: count('stroke'), arc: count('arc'), fill: count('fill'),
+      createRadialGradient: () => ({ addColorStop: () => {} }),
+      lineCap: '', lineJoin: '', strokeStyle: '', fillStyle: '', lineWidth: 0,
+    }
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as unknown as CanvasRenderingContext2D)
+    render(<FusionEffect play={play} onDone={vi.fn()} />)
+    act(() => flushFrames(200))
+    const framesSoFar = calls.clearRect
+    expect(framesSoFar).toBeGreaterThan(5)
+    expect(calls.lineTo).toBeGreaterThan(0) // trails behind the flying ghosts
+    expect(calls.arc ?? 0).toBe(0) // nothing has landed yet: no shockwave, no particles
+    act(() => flushFrames(arrivalTime(1, 2)))
+    expect(calls.arc).toBeGreaterThan(20) // bursts + shockwaves after the arrivals
+    expect(calls.clearRect).toBeGreaterThan(framesSoFar)
+  })
+
   it('shrinks each burst as the swarm grows so the particle pool stays bounded', () => {
     expect(burstSize(1)).toBe(42)
     expect(burstSize(4)).toBe(21)
