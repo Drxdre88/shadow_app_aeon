@@ -227,11 +227,16 @@ export async function updateGroupMemberRole(groupId: string, userId: string, rol
     .where(and(eq(groupMembers.groupId, groupId), eq(groupMembers.userId, userId)))
 }
 
-export async function updateWorkspaceGroup(groupId: string, data: { name?: string; icon?: string | null; color?: string }) {
+export async function updateWorkspaceGroup(groupId: string, data: { name?: string; icon?: string | null; color?: string; settings?: Record<string, unknown> }) {
   const values: Record<string, unknown> = { updatedAt: new Date() }
   if (data.name !== undefined) values.name = data.name
   if (data.icon !== undefined) values.icon = data.icon
   if (data.color !== undefined) values.color = data.color
+  // Shallow-merge in SQL, same reasoning as project settings: two owners (or
+  // two tabs) saving different keys must not silently revert each other.
+  if (data.settings !== undefined) {
+    values.settings = sql`coalesce(${workspaceGroups.settings}, '{}'::jsonb) || ${JSON.stringify(data.settings)}::jsonb`
+  }
 
   const [updated] = await db.update(workspaceGroups)
     .set(values)

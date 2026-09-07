@@ -4,8 +4,9 @@ import { useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Search, X, CalendarDays, Users } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { colorConfig, AccentColor, hexToRgba, resolveAccentHex } from '@/lib/utils/colors'
+import { colorConfig, AccentColor, hexToRgba } from '@/lib/utils/colors'
 import { getInitials } from '@/lib/utils/initials'
+import { avatarBackground, memberAvatarStyle } from '@/lib/utils/avatarStyle'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { sortLabelsByName } from '@/lib/utils/labels'
@@ -25,7 +26,15 @@ const DATE_OPTIONS = [
   { value: 'overdue', label: 'Overdue' },
 ] as const
 
-type FilterPerson = { id: string; name: string; virtual: boolean; color: string | null }
+type FilterPerson = {
+  id: string
+  name: string
+  virtual: boolean
+  color: string | null
+  initials: string | null
+  textColor: string | null
+  shape: string | null
+}
 
 export function BoardFilterBar({ isOpen, filters, onFiltersChange }: BoardFilterBarProps) {
   const labels = sortLabelsByName(useBoardStore((s) => s.labels))
@@ -41,12 +50,22 @@ export function BoardFilterBar({ isOpen, filters, onFiltersChange }: BoardFilter
       for (const pill of list) {
         if (pill.kind === 'virtual') continue
         if (!byId.has(pill.userId)) {
-          byId.set(pill.userId, { id: pill.userId, name: pill.name ?? 'Unknown', virtual: false, color: null })
+          byId.set(pill.userId, {
+            id: pill.userId,
+            name: pill.name ?? 'Unknown',
+            virtual: false,
+            color: pill.color ?? null,
+            initials: pill.initials ?? null,
+            textColor: pill.textColor ?? null,
+            shape: pill.shape ?? null,
+          })
         }
       }
     }
     const real = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name))
-    const virtual = virtualMembers.map((v) => ({ id: v.id, name: v.name, virtual: true, color: v.color as string | null }))
+    const virtual = virtualMembers.map((v) => ({
+      id: v.id, name: v.name, virtual: true, color: v.color as string | null, initials: v.initials, textColor: null, shape: null,
+    }))
     return [...real, ...virtual]
   }, [assigneesByTask, virtualMembers])
 
@@ -180,9 +199,9 @@ export function BoardFilterBar({ isOpen, filters, onFiltersChange }: BoardFilter
                 <div className="flex flex-wrap gap-2">
                   {people.map((p) => {
                     const isActive = filters.assignees?.has(p.id) ?? false
-                    const hex = p.virtual
-                      ? resolveAccentHex(p.color)
-                      : null
+                    const av = p.virtual
+                      ? { className: 'rounded-full', style: { background: avatarBackground(p.color ?? 'purple', p.name) } }
+                      : memberAvatarStyle({ seed: p.name, color: p.color, textColor: p.textColor, shape: p.shape }, { dim: true })
                     return (
                       <button
                         key={p.id}
@@ -197,14 +216,13 @@ export function BoardFilterBar({ isOpen, filters, onFiltersChange }: BoardFilter
                       >
                         <span
                           className={cn(
-                            'w-3.5 h-3.5 rounded-full inline-flex items-center justify-center text-[7px] font-semibold text-white',
+                            'w-3.5 h-3.5 inline-flex items-center justify-center text-[7px] font-semibold text-white',
+                            av.className,
                             p.virtual ? 'border border-dashed border-white/50' : 'border border-white/20'
                           )}
-                          style={hex
-                            ? { background: `linear-gradient(135deg, ${hex}cc, ${hex}66)` }
-                            : { background: 'rgba(255,255,255,0.12)' }}
+                          style={av.style}
                         >
-                          {getInitials(p.name)}
+                          {(p.initials ?? '').trim() || getInitials(p.name)}
                         </span>
                         {p.name}
                       </button>

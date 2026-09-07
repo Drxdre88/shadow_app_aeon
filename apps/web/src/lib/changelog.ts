@@ -29,6 +29,23 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.27.0] — 2026-09-07
+
+> Areas touched: \`BOARD\` \`REALM\` \`DATA\`
+> Theme: people look the way your organisation says they look. Custom initials no longer hide behind a profile photo, every colour is on the table, and a realm can switch the whole team to initials at once.
+
+### Fixed — Custom initials actually show · \`BOARD\`
+- Setting initials for someone who has a profile picture used to change nothing: the photo (often just a single-letter Google avatar) always won. Any styling you set — initials, fill, text colour or shape — now replaces the photo on every board in the realm. People you have not styled keep their photo.
+- The edit pencil in the member picker is always visible. It used to appear only on hover, which made it unreachable on a phone.
+
+### Added — Full palette and shapes for member avatars · \`BOARD\` \`DATA\`
+- Fill colour: the preset dots plus a free colour picker for any hex.
+- Text colour: pick any colour for the initials, or leave it white.
+- Shape: circle, rounded square or square.
+- All of it is per realm — the same person can look different in different realms, and nothing touches their account.
+
+### Added — Realm-wide "initials instead of photos" · \`REALM\`
+- Realm settings → Members has an owner-only switch that shows initials for everyone on every board in the realm. The per-board setting in Sizing still exists and either one being on is enough.
 ## [0.26.1] — 2026-09-04
 
 > Areas touched: \`BOARD\` \`UI\`

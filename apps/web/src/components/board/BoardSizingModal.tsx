@@ -49,6 +49,7 @@ function SizingForm({ projectId, onClose }: { projectId: string; onClose: () => 
   const avatarPrefs = useAvatarPrefsStore((s) => s.avatarPrefs)
   const setAvatarPrefs = useAvatarPrefsStore((s) => s.setAvatarPrefs)
   const [avatarDraft, setAvatarDraft] = useState<AvatarPrefs>(avatarPrefs)
+  const realmForcesInitials = useAvatarPrefsStore((s) => s.realmPreferInitials)
   const [saving, setSaving] = useState(false)
 
   const updateLabel = (index: number, patch: { key?: string; value?: number }) => {
@@ -127,7 +128,9 @@ function SizingForm({ projectId, onClose }: { projectId: string; onClose: () => 
           <span className="flex-1">
             Show initials instead of photos
             <span className="block text-xs text-slate-500 mt-0.5">
-              Custom initials stay hidden behind a member&rsquo;s profile picture until this is on.
+              {realmForcesInitials
+                ? 'Already on for the whole realm by its owner, so this board setting adds nothing.'
+                : 'Members with custom styling already show it. This also swaps photos for initials for everyone else on this board.'}
             </span>
           </span>
           <input

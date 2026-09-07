@@ -11,6 +11,7 @@ import {
   removeGroupMember,
   updateMemberRole,
   updateGroup,
+  getRealmAvatarPrefs,
   deleteGroup,
   addProjectToGroup,
   removeProjectFromGroup,
@@ -62,6 +63,7 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, groupColor,
   const [deleting, setDeleting] = useState(false)
   const [resendingInviteId, setResendingInviteId] = useState<string | null>(null)
   const [cancellingInviteId, setCancellingInviteId] = useState<string | null>(null)
+  const [preferInitials, setPreferInitials] = useState(false)
 
   useEffect(() => {
     if (!isOpen) return
@@ -71,8 +73,11 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, groupColor,
       getGroupMembers(groupId),
       getGroupProjects(groupId),
       isOwner ? getPendingRealmInvites(groupId) : Promise.resolve([]),
+      getRealmAvatarPrefs(groupId),
     ])
-      .then(([membersResult, projectsResult, invitesResult]) => {
+      .then(([membersResult, projectsResult, invitesResult, avatarsResult]) => {
+        if (avatarsResult.status === 'fulfilled') setPreferInitials(avatarsResult.value.preferInitials)
+        else setError((prev) => prev ? `${prev}; failed to load avatar policy` : 'Failed to load avatar policy')
         if (membersResult.status === 'fulfilled') setMembers(membersResult.value as GroupMemberRow[])
         else setError('Failed to load members')
         if (projectsResult.status === 'fulfilled') setGroupProjects(projectsResult.value as GroupProjectRow[])
@@ -188,6 +193,17 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, groupColor,
       onUpdated?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update color')
+    }
+  }
+
+  const handlePreferInitialsChange = async (on: boolean) => {
+    const previous = preferInitials
+    setPreferInitials(on)
+    try {
+      await updateGroup(groupId, { settings: { avatars: { preferInitials: on } } })
+    } catch (err) {
+      setPreferInitials(previous)
+      setError(err instanceof Error ? err.message : 'Failed to update avatar policy')
     }
   }
 
@@ -357,6 +373,8 @@ export function WorkspaceSettingsModal({ isOpen, groupId, groupName, groupColor,
                 onMemberRoleChange={handleMemberRoleChange}
                 onColorChange={handleColorChange}
                 onIconChange={handleIconChange}
+                preferInitials={preferInitials}
+                onPreferInitialsChange={isOwner && !isPersonal ? handlePreferInitialsChange : undefined}
                 onResendInvite={handleResendInvite}
                 onCancelInvite={handleCancelInvite}
               />

@@ -84,7 +84,7 @@ export function TaskMembersSection({ taskId, projectId }: { taskId: string; proj
                   />
                 ) : (
                   <MemberAvatar
-                    member={{ name: a.name, email: a.email ?? '', image: a.image, initials: a.initials, color: a.color }}
+                    member={{ name: a.name, email: a.email ?? '', image: a.image, initials: a.initials, color: a.color, textColor: a.textColor, shape: a.shape }}
                     preferInitials={avatarPrefs.preferInitials}
                   />
                 )}

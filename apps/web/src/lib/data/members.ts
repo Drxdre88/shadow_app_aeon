@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto'
-import { findMemberProfilesForProject } from './member-profiles'
+import { findMemberProfilesForProject, styleOf } from './member-profiles'
 import { db } from '@/lib/db'
 import { projectMembers, projectInvites, users, projectGroups, groupMembers, projects } from '@/lib/db/schema'
 import { eq, and, isNull, gte, sql } from 'drizzle-orm'
@@ -84,8 +84,7 @@ export async function findAssignableMembers(projectId: string) {
       name: p?.displayName ?? m.name,
       /** The account's own name, so the panel can show what an override replaces. */
       accountName: m.name,
-      initials: p?.initials ?? null,
-      color: p?.color ?? null,
+      ...styleOf(p),
     }
   })
 }

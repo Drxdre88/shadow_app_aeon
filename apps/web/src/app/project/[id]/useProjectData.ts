@@ -9,11 +9,13 @@ import { getCanvasNodes, getCanvasEdges } from '@/lib/actions/canvas'
 import { useBoardStore, isDirtyOrGracePeriod } from '@/lib/store/boardStore'
 import { useGanttStore } from '@/lib/store/ganttStore'
 import { useCanvasStore } from '@/lib/store/canvasStore'
+import { useAvatarPrefsStore } from '@/components/board/sizing'
 
 const POLL_INTERVAL = 30_000
 const PUSHER_DEBOUNCE_MS = 300
 
-type AssigneeLite = { userId: string; name: string | null; email?: string | null; image: string | null; initials?: string | null; color?: string | null }
+type AssigneeLite = { userId: string; name: string | null; email?: string | null; image: string | null; initials?: string | null; color?: string | null; textColor?: string | null; shape?: string | null }
+type RealmAvatars = { preferInitials: boolean }
 type VirtualAssigneeLite = { virtualMemberId: string; name: string; initials: string; color: string }
 type VirtualMemberRaw = { id: string; name: string; initials: string; color: string }
 type AssigneePill = AssigneeLite & { initials?: string | null; kind?: 'virtual'; color?: string | null }
@@ -36,6 +38,8 @@ function toAssigneePills(
         // byte-identical to what this mapper produced before overrides existed.
         initials: a.initials ?? null,
         color: a.color ?? null,
+        textColor: a.textColor ?? null,
+        shape: a.shape ?? null,
         image: a.image,
       }))
     }
@@ -82,8 +86,11 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
     const currentFetchId = ++fetchIdRef.current
 
     loadBoardData(projectId)
-      .then(({ tasks: dbTasks, columns: dbColumns, labels: dbLabels, taskLabels: dbTaskLabels, dependencies: dbDependencies, checklistSummaries: dbChecklistSummaries, checklistPreviews: dbChecklistPreviews, assignees: dbAssignees, virtualAssignees: dbVirtualAssignees, virtualMembers: dbVirtualMembers }) => {
+      .then(({ tasks: dbTasks, columns: dbColumns, labels: dbLabels, taskLabels: dbTaskLabels, dependencies: dbDependencies, checklistSummaries: dbChecklistSummaries, checklistPreviews: dbChecklistPreviews, assignees: dbAssignees, virtualAssignees: dbVirtualAssignees, virtualMembers: dbVirtualMembers, realmAvatars }) => {
         if (currentFetchId !== fetchIdRef.current) return
+        // Realm policy is not board state, so it lands even when the board is
+        // dirty — nothing the user is typing can conflict with it.
+        useAvatarPrefsStore.getState().setRealmPreferInitials(realmAvatars?.preferInitials === true)
         if (!isInitialLoad.current && isDirtyOrGracePeriod()) return
 
         const taskLabelMap = new Map<string, string[]>()
@@ -170,6 +177,9 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
 
     isInitialLoad.current = true
     knownVersionRef.current = null
+    // Module-global, so a previous realm's policy must not linger while this
+    // project (possibly in another realm) loads.
+    useAvatarPrefsStore.getState().setRealmPreferInitials(false)
 
     if (!hasCachedProject && !initialDataRef.current) {
       setIsLoading(true)
@@ -180,8 +190,9 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
     setRows([])
 
     if (initialDataRef.current) {
-      const data = initialDataRef.current as { tasks: Array<Record<string, unknown>>; columns: Array<Record<string, unknown>>; labels: Array<Record<string, unknown>>; taskLabels: Array<{ taskId: string; labelId: string }>; dependencies: Array<Record<string, unknown>>; checklistSummaries: Record<string, never>; checklistPreviews: Record<string, never[]>; assignees?: Record<string, AssigneeLite[]>; virtualAssignees?: Record<string, VirtualAssigneeLite[]>; virtualMembers?: VirtualMemberRaw[] }
+      const data = initialDataRef.current as { tasks: Array<Record<string, unknown>>; columns: Array<Record<string, unknown>>; labels: Array<Record<string, unknown>>; taskLabels: Array<{ taskId: string; labelId: string }>; dependencies: Array<Record<string, unknown>>; checklistSummaries: Record<string, never>; checklistPreviews: Record<string, never[]>; assignees?: Record<string, AssigneeLite[]>; virtualAssignees?: Record<string, VirtualAssigneeLite[]>; virtualMembers?: VirtualMemberRaw[]; realmAvatars?: RealmAvatars }
       initialDataRef.current = undefined
+      useAvatarPrefsStore.getState().setRealmPreferInitials(data.realmAvatars?.preferInitials === true)
 
       const taskLabelMap = new Map<string, string[]>()
       data.taskLabels.forEach((tl) => {

@@ -3,4 +3,4 @@
 // package.json's "version" is still at the scaffold default (0.1.0) and is
 // intentionally not used here.
 
-export const APP_VERSION = '0.26.1'
+export const APP_VERSION = '0.27.0'

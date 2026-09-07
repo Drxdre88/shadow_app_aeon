@@ -43,6 +43,10 @@ vi.mock('@/lib/data/assignees', () => ({
   getAssigneesForProject: vi.fn(),
 }))
 
+vi.mock('@/lib/data/member-profiles', () => ({
+  findRealmAvatarPrefs: vi.fn().mockResolvedValue({ preferInitials: false }),
+}))
+
 vi.mock('@/lib/data/virtual-members', () => ({
   getVirtualAssigneesForProject: vi.fn(),
   findVirtualMembersForProject: vi.fn(),
@@ -252,7 +256,7 @@ describe('loadBoardData', () => {
 
     const result = await loadBoardData(PROJECT_ID)
 
-    expect(result).toEqual({ tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees: {}, virtualAssignees: {}, virtualMembers: [] })
+    expect(result).toEqual({ tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees: {}, virtualAssignees: {}, virtualMembers: [], realmAvatars: { preferInitials: false } })
   })
 
   it('throws when requireOwnership rejects', async () => {

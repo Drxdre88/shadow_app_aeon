@@ -12,6 +12,7 @@ import { getVirtualAssigneesForProject, findVirtualMembersForProject } from '@/l
 import { findFavoriteProjectIds } from '@/lib/data/projects'
 import ProjectContent from './ProjectContent'
 import { AccessDenied } from './AccessDenied'
+import { findRealmAvatarPrefs } from '@/lib/data/member-profiles'
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const session = await auth()
@@ -36,7 +37,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     return <AccessDenied projectName={exists?.name} />
   }
 
-  const [tasks, columns, labels, taskLabels, dependencies, checklistData, assignees, virtualAssignees, virtualMembers, favoriteIds] = await Promise.all([
+  const [tasks, columns, labels, taskLabels, dependencies, checklistData, assignees, virtualAssignees, virtualMembers, favoriteIds, realmAvatars] = await Promise.all([
     findTasks(id, undefined, 2000),
     findColumns(id),
     findLabels(id),
@@ -47,6 +48,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     getVirtualAssigneesForProject(id),
     findVirtualMembersForProject(id),
     findFavoriteProjectIds(session.user.id),
+    findRealmAvatarPrefs(id),
   ])
   const { summaries: checklistSummaries, previews: checklistPreviews } = checklistData
 
@@ -60,7 +62,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         email: session.user.email,
         image: session.user.image,
       }}
-      initialBoardData={{ tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees, virtualAssignees, virtualMembers }}
+      initialBoardData={{ tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees, virtualAssignees, virtualMembers, realmAvatars }}
       initialFavorite={favoriteIds.has(id)}
     />
   )

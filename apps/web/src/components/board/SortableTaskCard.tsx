@@ -8,6 +8,7 @@ import { Calendar, MoreHorizontal, MoreVertical, Check, X, Clock, Trash2, Bot, Z
 import { cn } from '@/lib/utils/cn'
 import { hexToRgba, resolveAccentHex } from '@/lib/utils/colors'
 import { getInitials, getInitialsFromEmail } from '@/lib/utils/initials'
+import { hasAvatarOverride, memberAvatarStyle } from '@/lib/utils/avatarStyle'
 import { useAvatarPrefs } from './sizing'
 import { resolvePriority } from '@/lib/utils/priorities'
 import { labelHex, readableTextColor } from './labelTile'
@@ -372,7 +373,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
             {assignees && assignees.length > 0 && (
               <div className="flex items-center -space-x-1.5 flex-shrink-0 ml-1 self-start pt-0.5">
                 {assignees.slice(0, 4).map((a) => (
-                  <AssigneeDot key={a.userId} name={a.name} email={a.email} initials={a.initials} image={a.image} kind={a.kind} color={a.color} preferInitials={avatarPrefs.preferInitials} />
+                  <AssigneeDot key={a.userId} name={a.name} email={a.email} initials={a.initials} image={a.image} kind={a.kind} color={a.color} textColor={a.textColor} shape={a.shape} preferInitials={avatarPrefs.preferInitials} />
                 ))}
                 {assignees.length > 4 && (
                   <span className="w-5 h-5 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-[8px] text-white/60">
@@ -664,11 +665,13 @@ function MovingRing({ color, pulse }: { color: string; pulse: boolean }) {
   )
 }
 
-function AssigneeDot({ name, email, initials: stored, image, kind, color, preferInitials }: { name: string | null; email?: string | null; initials?: string | null; image: string | null; kind?: 'virtual'; color?: string | null; preferInitials?: boolean }) {
-  // A profile picture wins by default. When the board prefers initials it must
-  // not — otherwise a curated override is invisible on exactly the accounts
-  // most likely to have one, which is the whole reason the override exists.
-  if (image && !preferInitials) {
+function AssigneeDot({ name, email, initials: stored, image, kind, color, textColor, shape, preferInitials }: { name: string | null; email?: string | null; initials?: string | null; image: string | null; kind?: 'virtual'; color?: string | null; textColor?: string | null; shape?: string | null; preferInitials?: boolean }) {
+  // A profile picture wins only for an UNSTYLED member. Styling (initials,
+  // fill, text colour, shape) replaces it — a curated override hidden behind
+  // an OAuth avatar looked like the feature did nothing. `preferInitials`
+  // (board or realm policy) hides photos for everyone.
+  const styled = kind !== 'virtual' && hasAvatarOverride({ initials: stored, color, textColor, shape })
+  if (image && !preferInitials && !styled) {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={image} alt="" className="w-5 h-5 rounded-full object-cover border border-white/15" title={name ?? undefined} />
   }
@@ -690,13 +693,13 @@ function AssigneeDot({ name, email, initials: stored, image, kind, color, prefer
       </span>
     )
   }
-  // A real member with a colour override gets the same treatment as a virtual
-  // one minus the dashed ring, which stays the "no account" marker.
-  const hex = color ? resolveAccentHex(color) : null
+  // A real member: the realm's styling, or the flat translucent dot they
+  // always had. No dashed ring — that stays the "no account" marker.
+  const av = memberAvatarStyle({ seed: name ?? email ?? '', color, textColor, shape }, { dim: true })
   return (
     <span
-      className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-medium border border-white/15 text-white/80"
-      style={{ background: hex ? `linear-gradient(135deg, ${hex}cc, ${hex}66)` : 'rgba(255,255,255,0.08)' }}
+      className={`w-5 h-5 flex items-center justify-center text-[8px] font-medium border border-white/15 ${styled ? 'text-white' : 'text-white/80'} ${av.className}`}
+      style={av.style}
       title={name ?? undefined}
     >
       {initials || '?'}

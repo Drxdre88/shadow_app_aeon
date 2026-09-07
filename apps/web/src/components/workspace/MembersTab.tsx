@@ -45,6 +45,9 @@ interface MembersTabProps {
   onMemberRoleChange: (userId: string, newRole: string) => void
   onColorChange: (color: string) => void
   onIconChange: (icon: string) => void
+  /** Realm-wide "initials instead of photos". Absent = not this caller's to change. */
+  preferInitials?: boolean
+  onPreferInitialsChange?: (on: boolean) => void
   onResendInvite?: (inviteId: string) => void
   onCancelInvite?: (inviteId: string) => void
 }
@@ -69,6 +72,8 @@ export function MembersTab({
   onMemberRoleChange,
   onColorChange,
   onIconChange,
+  preferInitials,
+  onPreferInitialsChange,
   onResendInvite,
   onCancelInvite,
 }: MembersTabProps) {
@@ -78,6 +83,23 @@ export function MembersTab({
         <div className="space-y-3 pb-3 border-b border-white/10">
           <RealmColorPicker selected={color} onSelect={onColorChange} />
           <RealmIconPicker selected={icon} onSelect={onIconChange} />
+          {onPreferInitialsChange && (
+            <label className="flex items-start justify-between gap-3 text-xs text-slate-300 pt-1">
+              <span className="flex-1">
+                Show initials instead of photos
+                <span className="block text-[11px] text-slate-500 mt-0.5">
+                  For everyone, on every board in this realm. Set a person&rsquo;s own initials, colours and shape from any card&rsquo;s member picker.
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={preferInitials === true}
+                onChange={(e) => onPreferInitialsChange(e.target.checked)}
+                aria-label="Show initials instead of photos for the whole realm"
+                className="w-4 h-4 mt-0.5 accent-[var(--primary)]"
+              />
+            </label>
+          )}
         </div>
       )}
 
