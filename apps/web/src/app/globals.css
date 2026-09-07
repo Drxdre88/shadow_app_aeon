@@ -310,3 +310,12 @@ html[data-reduce-motion='true'] *::after {
 [data-moving-mode] [data-task-id]:not([data-moving]) [data-card-surface] {
   cursor: copy;
 }
+
+/* The document never scrolls sideways. Anything wider than the viewport is
+   clipped (clip, not hidden: clip cannot be scrolled programmatically either,
+   which is what dnd-kit's auto-scroller would otherwise do on a phone when a
+   drag nears the right edge), and sticky headers keep working. */
+html,
+body {
+  overflow-x: clip;
+}

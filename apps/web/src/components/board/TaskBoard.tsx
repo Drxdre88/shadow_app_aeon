@@ -34,6 +34,7 @@ import { useFuseCards } from './useFuseCards'
 import { FuseRequestContext } from './fuseRequestContext'
 import { pointerDownClearsSelection } from './cardSelection'
 import { boardCollisionDetection } from './boardCollision'
+import { boardAutoScroll } from './boardAutoScroll'
 import { useBoardKeyboardShortcuts } from './useBoardKeyboardShortcuts'
 import { useBoardHover } from './useBoardHover'
 import { cycleTaskCompletion } from './triState'
@@ -342,6 +343,9 @@ export function TaskBoard({
           // node's own translate in unscaled px, which skews displaced
           // cards' droppable rects under the pinch scale.
           measuring={boardMeasuring}
+          // Never the window (boardAutoScroll.ts): a drag towards the right
+          // edge was scrolling the whole page sideways on phones.
+          autoScroll={boardAutoScroll}
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
