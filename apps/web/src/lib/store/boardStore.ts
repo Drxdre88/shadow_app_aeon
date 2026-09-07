@@ -73,6 +73,9 @@ export interface TaskAssigneePill {
   initials?: string | null
   kind?: 'virtual'
   color?: string | null
+  /** Real members only: realm styling overrides, null = derive (white text, circle). */
+  textColor?: string | null
+  shape?: string | null
 }
 
 // Realm-scoped virtual member visible on this board (hydrated with the board

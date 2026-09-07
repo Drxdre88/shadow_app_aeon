@@ -23,6 +23,8 @@ import { AssignCheck } from './AssignCheck'
 import { VirtualMemberSection, ColorDots } from './TaskAssigneeVirtualSection'
 import { setMemberProfileAction } from '@/lib/actions/member-profiles'
 import { getInitials, getInitialsFromEmail } from '@/lib/utils/initials'
+import { hasAvatarOverride } from '@/lib/utils/avatarStyle'
+import { resolveAccentHex } from '@/lib/utils/colors'
 import { useAvatarPrefs } from './sizing'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -52,6 +54,17 @@ type Member = {
   /** Realm overrides — null means "derive", exactly as before this existed. */
   initials?: string | null
   color?: string | null
+  textColor?: string | null
+  shape?: string | null
+}
+
+/** Tri-state patch: absent = leave alone, null = clear, value = set. */
+type ProfilePatch = {
+  initials?: string | null
+  color?: string | null
+  displayName?: string | null
+  textColor?: string | null
+  shape?: string | null
 }
 
 interface Props {
@@ -123,7 +136,7 @@ export function TaskAssigneeOverlay({ projectId, taskId, onClose }: Props) {
     const isAssigned = currentAssignees(taskId).some((a) => a.userId === member.userId)
     void toggleAssigneeOptimistic({
       taskId,
-      pill: { userId: member.userId, name: member.name, email: member.email, initials: member.initials, color: member.color, image: member.image },
+      pill: { userId: member.userId, name: member.name, email: member.email, initials: member.initials, color: member.color, textColor: member.textColor, shape: member.shape, image: member.image },
       assign: !isAssigned,
       run: () => isAssigned
         ? unassignTaskAction(projectId, taskId, member.userId)
@@ -147,11 +160,11 @@ export function TaskAssigneeOverlay({ projectId, taskId, onClose }: Props) {
   // Restyling is optimistic like every other write here: the row and every
   // pill for that person update instantly, and a failed write puts back exactly
   // what was there rather than a reload's worth of unrelated state.
-  const saveProfile = useCallback((userId: string, updates: { initials?: string | null; color?: string | null; displayName?: string | null }) => {
+  const saveProfile = useCallback((userId: string, updates: ProfilePatch) => {
     const before = members.find((m) => m.userId === userId)
     if (!before) return
 
-    const applyLocal = (patch: { name?: string | null; initials?: string | null; color?: string | null }) => {
+    const applyLocal = (patch: { name?: string | null; initials?: string | null; color?: string | null; textColor?: string | null; shape?: string | null }) => {
       setMembers((prev) => prev.map((m) => m.userId === userId ? { ...m, ...patch } : m))
       const { assigneesByTask, setAssigneesByTask } = useBoardStore.getState()
       const next = { ...assigneesByTask }
@@ -172,11 +185,19 @@ export function TaskAssigneeOverlay({ projectId, taskId, onClose }: Props) {
         : (updates.displayName ?? before.accountName ?? null),
       initials: updates.initials === undefined ? before.initials : updates.initials,
       color: updates.color === undefined ? before.color : updates.color,
+      textColor: updates.textColor === undefined ? before.textColor : updates.textColor,
+      shape: updates.shape === undefined ? before.shape : updates.shape,
     })
     invalidateAssignablePeople(projectId)
 
     setMemberProfileAction(projectId, userId, updates).catch((err) => {
-      applyLocal({ name: before.name, initials: before.initials ?? null, color: before.color ?? null })
+      applyLocal({
+        name: before.name,
+        initials: before.initials ?? null,
+        color: before.color ?? null,
+        textColor: before.textColor ?? null,
+        shape: before.shape ?? null,
+      })
       toast(err instanceof Error ? err.message : 'Could not save — reverted', { force: true })
     })
   }, [members, projectId])
@@ -273,9 +294,9 @@ export function TaskAssigneeOverlay({ projectId, taskId, onClose }: Props) {
                           </button>
                           <button
                             onClick={() => setEditingMemberId(m.userId)}
-                            title="Set initials, colour and display name"
+                            title="Set initials, colours, shape and display name"
                             aria-label={`Edit how ${m.name ?? m.email} appears`}
-                            className="px-3 py-2 text-white/35 hover:text-white/85 opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="px-3 py-2 text-white/40 hover:text-white/90 group-hover:text-white/70 transition-colors"
                           >
                             <Pencil className="w-3 h-3" />
                           </button>
@@ -356,14 +377,18 @@ function MemberEditRow({
     image: string | null
     initials?: string | null
     color?: string | null
+    textColor?: string | null
+    shape?: string | null
   }
   preferInitials?: boolean
-  onSave: (updates: { initials?: string | null; color?: string | null; displayName?: string | null }) => void
+  onSave: (updates: ProfilePatch) => void
   onCancel: () => void
 }) {
   const accountName = member.accountName ?? member.name
   const [initials, setInitials] = useState(member.initials ?? '')
   const [color, setColor] = useState(member.color ?? '')
+  const [textColor, setTextColor] = useState(member.textColor ?? '')
+  const [shape, setShape] = useState(member.shape ?? '')
   const [displayName, setDisplayName] = useState(
     member.name && member.name !== accountName ? member.name : '',
   )
@@ -372,13 +397,20 @@ function MemberEditRow({
   const derivedInitials =
     getInitials(displayName.trim() || derivedName, '') || getInitialsFromEmail(member.email) || '?'
 
+  const draft = {
+    initials: initials.trim().slice(0, 4) || null,
+    color: color || null,
+    textColor: textColor || null,
+    shape: shape || null,
+  }
+
   const commit = () => {
-    const nextInitials = initials.trim().slice(0, 4) || null
-    const nextColor = color || null
     const nextName = displayName.trim() || null
-    const updates: { initials?: string | null; color?: string | null; displayName?: string | null } = {}
-    if (nextInitials !== (member.initials ?? null)) updates.initials = nextInitials
-    if (nextColor !== (member.color ?? null)) updates.color = nextColor
+    const updates: ProfilePatch = {}
+    if (draft.initials !== (member.initials ?? null)) updates.initials = draft.initials
+    if (draft.color !== (member.color ?? null)) updates.color = draft.color
+    if (draft.textColor !== (member.textColor ?? null)) updates.textColor = draft.textColor
+    if (draft.shape !== (member.shape ?? null)) updates.shape = draft.shape
     if (nextName !== (member.name && member.name !== accountName ? member.name : null)) {
       updates.displayName = nextName
     }
@@ -392,16 +424,10 @@ function MemberEditRow({
   }
 
   return (
-    <div className="px-4 py-2.5 space-y-2 bg-white/[0.02]">
+    <div className="px-4 py-2.5 space-y-2.5 bg-white/[0.02]">
       <div className="flex items-center gap-2">
         <MemberAvatar
-          member={{
-            name: displayName.trim() || accountName,
-            email: member.email,
-            image: member.image,
-            initials: initials.trim().slice(0, 4) || null,
-            color: color || null,
-          }}
+          member={{ name: displayName.trim() || accountName, email: member.email, image: member.image, ...draft }}
           preferInitials={preferInitials}
         />
         <input
@@ -427,8 +453,25 @@ function MemberEditRow({
           className="flex-1 min-w-0 px-3 py-1.5 text-[12px] rounded-md bg-white/[0.03] border border-white/[0.06] focus:border-white/20 outline-none text-white/85 placeholder:text-white/25"
         />
       </div>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <StyleField label="Fill">
+          <ColorDots value={color} onChange={(c) => setColor(c === color ? '' : c)} />
+          <HexSwatch value={color} fallback="#7c3aed" onChange={setColor} label="Any fill colour" />
+          {color && <ClearButton onClick={() => setColor('')} label="Clear fill colour" />}
+        </StyleField>
+        <StyleField label="Text">
+          <HexSwatch value={textColor} fallback="#ffffff" onChange={setTextColor} label="Initials colour" />
+          {textColor
+            ? <ClearButton onClick={() => setTextColor('')} label="Clear text colour" />
+            : <span className="text-[10px] text-white/30">white</span>}
+        </StyleField>
+        <StyleField label="Shape">
+          <ShapePicker value={shape} onChange={setShape} />
+        </StyleField>
+      </div>
+
       <div className="flex items-center gap-2">
-        <ColorDots value={color} onChange={(c) => setColor(c === color ? '' : c)} />
         <div className="flex-1" />
         <button onClick={onCancel} className="px-2 py-1 rounded-md text-[11px] text-white/45 hover:text-white/80 transition-colors">Cancel</button>
         <button
@@ -438,12 +481,82 @@ function MemberEditRow({
           Save
         </button>
       </div>
-      {!preferInitials && member.image && (
+      {!preferInitials && member.image && !hasAvatarOverride(draft) && (
         <p className="text-[10px] text-white/35 leading-snug">
-          This person has a profile picture, so their card avatar still shows the photo.
-          Turn on <span className="text-white/55">Show initials instead of photos</span> in board sizing to see these.
+          This person has a profile picture. Anything you set here replaces it on this realm&rsquo;s boards;
+          leave everything empty to keep the photo.
         </p>
       )}
+    </div>
+  )
+}
+
+function StyleField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[9px] uppercase tracking-[0.14em] text-white/30 w-8">{label}</span>
+      {children}
+    </div>
+  )
+}
+
+/**
+ * The native colour input, dressed as one more dot. Its value must be a
+ * #rrggbb, so an accent name is resolved to its hex for display, and picking
+ * writes the raw hex back — which is what the validator accepts.
+ */
+function HexSwatch({ value, fallback, onChange, label }: { value: string; fallback: string; onChange: (hex: string) => void; label: string }) {
+  const hex = resolveAccentHex(value || null, fallback)
+  return (
+    <span className="relative inline-flex w-4 h-4" title={label}>
+      <input
+        type="color"
+        value={hex}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={label}
+        className="absolute inset-0 w-4 h-4 opacity-0 cursor-pointer"
+      />
+      <span
+        className={`w-4 h-4 rounded-full border pointer-events-none ${value ? 'border-white/80 scale-110' : 'border-dashed border-white/40'}`}
+        style={{ background: value ? hex : 'conic-gradient(#f87171, #fbbf24, #34d399, #60a5fa, #a78bfa, #f87171)' }}
+      />
+    </span>
+  )
+}
+
+function ClearButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button onClick={onClick} aria-label={label} title={label} className="text-white/35 hover:text-white/80 transition-colors">
+      <X className="w-3 h-3" />
+    </button>
+  )
+}
+
+const SHAPE_OPTIONS: { value: '' | 'rounded' | 'square'; label: string; cls: string }[] = [
+  { value: '', label: 'Circle', cls: 'rounded-full' },
+  { value: 'rounded', label: 'Rounded', cls: 'rounded-[28%]' },
+  { value: 'square', label: 'Square', cls: 'rounded-none' },
+]
+
+function ShapePicker({ value, onChange }: { value: string; onChange: (shape: string) => void }) {
+  return (
+    <div className="flex items-center gap-1.5" role="radiogroup" aria-label="Avatar shape">
+      {SHAPE_OPTIONS.map((o) => {
+        // '' and 'circle' are the same choice: the picker stores '' (derive)
+        // but a row written elsewhere may hold the literal.
+        const active = (value || 'circle') === (o.value || 'circle')
+        return (
+          <button
+            key={o.label}
+            role="radio"
+            aria-checked={active}
+            aria-label={o.label}
+            title={o.label}
+            onClick={() => onChange(o.value)}
+            className={`w-4 h-4 border transition-transform ${o.cls} ${active ? 'bg-white/70 border-white/90 scale-110' : 'bg-white/15 border-white/30 hover:scale-105'}`}
+          />
+        )
+      })}
     </div>
   )
 }

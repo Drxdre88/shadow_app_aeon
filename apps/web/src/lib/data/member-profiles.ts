@@ -1,8 +1,9 @@
 import { db } from '@/lib/db'
-import { memberProfiles, projectGroups } from '@/lib/db/schema'
+import { memberProfiles, projectGroups, workspaceGroups } from '@/lib/db/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { touchProject } from './projects'
 import type { UpdateMemberProfileInput } from './validators'
+import { parseRealmAvatarPrefs, type RealmAvatarPrefs } from '@/lib/utils/avatarPrefs'
 
 // Per-realm display overrides for REAL members — the initials, colour and name
 // their avatar renders. Mirrors lib/data/virtual-members.ts, which is
@@ -14,7 +15,40 @@ export type MemberProfileRow = {
   initials: string | null
   color: string | null
   displayName: string | null
+  textColor: string | null
+  shape: string | null
 }
+
+/** The four styling overrides, as every avatar consumer sees them. */
+export type MemberStyle = {
+  initials: string | null
+  color: string | null
+  textColor: string | null
+  shape: string | null
+}
+
+export const NO_STYLE: MemberStyle = { initials: null, color: null, textColor: null, shape: null }
+
+export function styleOf(p: MemberProfileRow | undefined): MemberStyle {
+  if (!p) return NO_STYLE
+  return { initials: p.initials, color: p.color, textColor: p.textColor, shape: p.shape }
+}
+
+/** Realm-wide avatar policy — see `lib/utils/avatarPrefs.ts` for the shape. */
+export async function findRealmAvatarPrefs(projectId: string): Promise<RealmAvatarPrefs> {
+  const realmId = await findPrimaryRealmId(projectId)
+  if (!realmId) return { preferInitials: false }
+  return findRealmAvatarPrefsForGroup(realmId)
+}
+
+export async function findRealmAvatarPrefsForGroup(realmId: string): Promise<RealmAvatarPrefs> {
+  const [row] = await db
+    .select({ settings: workspaceGroups.settings })
+    .from(workspaceGroups)
+    .where(eq(workspaceGroups.id, realmId))
+  return parseRealmAvatarPrefs(row?.settings)
+}
+
 
 /**
  * The realm a project writes its people into.
@@ -52,6 +86,8 @@ export async function findMemberProfilesForRealm(
       initials: memberProfiles.initials,
       color: memberProfiles.color,
       displayName: memberProfiles.displayName,
+      textColor: memberProfiles.textColor,
+      shape: memberProfiles.shape,
     })
     .from(memberProfiles)
     .where(eq(memberProfiles.realmId, realmId))
@@ -82,6 +118,8 @@ export async function upsertMemberProfile(
         initials: memberProfiles.initials,
         color: memberProfiles.color,
         displayName: memberProfiles.displayName,
+        textColor: memberProfiles.textColor,
+        shape: memberProfiles.shape,
       })
       .from(memberProfiles)
       .where(and(eq(memberProfiles.realmId, realmId), eq(memberProfiles.userId, userId)))
@@ -90,9 +128,11 @@ export async function upsertMemberProfile(
       initials: patch.initials === undefined ? (existing?.initials ?? null) : patch.initials,
       color: patch.color === undefined ? (existing?.color ?? null) : patch.color,
       displayName: patch.displayName === undefined ? (existing?.displayName ?? null) : patch.displayName,
+      textColor: patch.textColor === undefined ? (existing?.textColor ?? null) : patch.textColor,
+      shape: patch.shape === undefined ? (existing?.shape ?? null) : patch.shape,
     }
 
-    const empty = merged.initials === null && merged.color === null && merged.displayName === null
+    const empty = Object.values(merged).every((v) => v === null)
 
     if (empty) {
       if (existing) {

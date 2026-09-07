@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { parseAvatarPrefs, DEFAULT_AVATAR_PREFS } from '../sizing'
+import { parseAvatarPrefs, DEFAULT_AVATAR_PREFS, effectiveAvatarPrefs } from '../sizing'
+import { parseRealmAvatarPrefs } from '@/lib/utils/avatarPrefs'
 import { updateMemberProfileSchema } from '@/lib/data/validators'
 
 describe('parseAvatarPrefs', () => {
@@ -51,5 +52,46 @@ describe('updateMemberProfileSchema', () => {
   it('trims, so a stray space cannot smuggle past the length cap', () => {
     expect(updateMemberProfileSchema.parse({ initials: '  AR  ' }).initials).toBe('AR')
     expect(updateMemberProfileSchema.parse({ displayName: ' Ada Lovelace ' }).displayName).toBe('Ada Lovelace')
+  })
+})
+
+describe('updateMemberProfileSchema — styling wave 2', () => {
+  it('accepts a raw hex or a preset name for fill and text, nothing else', () => {
+    expect(updateMemberProfileSchema.parse({ color: '#1A2b3C' }).color).toBe('#1A2b3C')
+    expect(updateMemberProfileSchema.parse({ textColor: 'blue' }).textColor).toBe('blue')
+    expect(() => updateMemberProfileSchema.parse({ color: 'red; background: url(x)' })).toThrow()
+    expect(() => updateMemberProfileSchema.parse({ textColor: '#fff' })).toThrow()
+    expect(() => updateMemberProfileSchema.parse({ color: 'rgb(1,2,3)' })).toThrow()
+    expect(() => updateMemberProfileSchema.parse({ color: 'mauve' })).toThrow()
+  })
+
+  it('shape is a closed vocabulary, and null clears it', () => {
+    expect(updateMemberProfileSchema.parse({ shape: 'square' }).shape).toBe('square')
+    expect(updateMemberProfileSchema.parse({ shape: null }).shape).toBeNull()
+    expect(() => updateMemberProfileSchema.parse({ shape: 'hexagon' })).toThrow()
+  })
+
+  it('a shape-only or text-only patch is a real update', () => {
+    expect(() => updateMemberProfileSchema.parse({ shape: 'rounded' })).not.toThrow()
+    expect(() => updateMemberProfileSchema.parse({ textColor: null })).not.toThrow()
+  })
+})
+
+describe('effectiveAvatarPrefs', () => {
+  it('the realm policy ORs with the project pref — either one hides photos', () => {
+    expect(effectiveAvatarPrefs({ avatarPrefs: { preferInitials: false }, realmPreferInitials: false })).toEqual({ preferInitials: false })
+    expect(effectiveAvatarPrefs({ avatarPrefs: { preferInitials: true }, realmPreferInitials: false })).toEqual({ preferInitials: true })
+    expect(effectiveAvatarPrefs({ avatarPrefs: { preferInitials: false }, realmPreferInitials: true })).toEqual({ preferInitials: true })
+  })
+})
+
+describe('parseRealmAvatarPrefs', () => {
+  it('reads workspace_groups.settings.avatars.preferInitials and only an exact true', () => {
+    expect(parseRealmAvatarPrefs(undefined)).toEqual({ preferInitials: false })
+    expect(parseRealmAvatarPrefs({})).toEqual({ preferInitials: false })
+    expect(parseRealmAvatarPrefs({ avatars: { preferInitials: true } })).toEqual({ preferInitials: true })
+    expect(parseRealmAvatarPrefs({ avatars: { preferInitials: 'yes' } })).toEqual({ preferInitials: false })
+    expect(parseRealmAvatarPrefs({ avatars: [] })).toEqual({ preferInitials: false })
+    expect(parseRealmAvatarPrefs({ consolidated: true })).toEqual({ preferInitials: false })
   })
 })

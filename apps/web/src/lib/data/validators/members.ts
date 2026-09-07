@@ -21,12 +21,23 @@ export type UpdateVirtualMemberInput = z.infer<typeof updateVirtualMemberSchema>
 // absent = leave alone, null = clear the override, a value = set it. The data
 // layer deletes the row once the last override is cleared, so `null` is a real
 // instruction here and must survive validation rather than being stripped.
+//
+// Colours are an accent name (`purple`) or a raw `#rrggbb` — anything else is
+// rejected here rather than rendered as a broken CSS value on every board.
+export const avatarColorSchema = z.string().trim().max(20)
+  .regex(/^(#[0-9a-fA-F]{6}|purple|blue|cyan|green|pink|orange|red)$/, 'Use a preset name or #rrggbb')
+export const AVATAR_SHAPES = ['circle', 'rounded', 'square'] as const
+export const avatarShapeSchema = z.enum(AVATAR_SHAPES)
+
 export const updateMemberProfileSchema = z.object({
   initials:    z.string().trim().min(1).max(4).nullable().optional(),
-  color:       z.string().trim().min(1).max(20).nullable().optional(),
+  color:       avatarColorSchema.nullable().optional(),
   displayName: z.string().trim().min(1).max(120).nullable().optional(),
+  textColor:   avatarColorSchema.nullable().optional(),
+  shape:       avatarShapeSchema.nullable().optional(),
 }).refine(
-  (v) => v.initials !== undefined || v.color !== undefined || v.displayName !== undefined,
+  (v) => v.initials !== undefined || v.color !== undefined || v.displayName !== undefined
+    || v.textColor !== undefined || v.shape !== undefined,
   { message: 'Nothing to update' },
 )
 

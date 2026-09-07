@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { create } from 'zustand'
 
 export type SizingUnit = 'days' | 'points'
@@ -111,13 +112,29 @@ export function parseAvatarPrefs(settings: Record<string, unknown> | null | unde
 }
 
 interface AvatarPrefsState {
+  /** This project's own preference, as edited in board sizing. */
   avatarPrefs: AvatarPrefs
+  /** The realm-wide policy, set by the realm owner. Applies to every board in it. */
+  realmPreferInitials: boolean
   setAvatarPrefs: (prefs: AvatarPrefs) => void
+  setRealmPreferInitials: (on: boolean) => void
 }
 
 export const useAvatarPrefsStore = create<AvatarPrefsState>()((set) => ({
   avatarPrefs: DEFAULT_AVATAR_PREFS,
+  realmPreferInitials: false,
   setAvatarPrefs: (avatarPrefs) => set({ avatarPrefs }),
+  setRealmPreferInitials: (realmPreferInitials) => set({ realmPreferInitials }),
 }))
 
-export const useAvatarPrefs = () => useAvatarPrefsStore((s) => s.avatarPrefs)
+export function effectiveAvatarPrefs(
+  s: Pick<AvatarPrefsState, 'avatarPrefs' | 'realmPreferInitials'>,
+): AvatarPrefs {
+  return { preferInitials: s.avatarPrefs.preferInitials || s.realmPreferInitials }
+}
+
+/** What avatars actually do on this board: the project pref OR the realm policy. */
+export const useAvatarPrefs = (): AvatarPrefs => {
+  const preferInitials = useAvatarPrefsStore((s) => s.avatarPrefs.preferInitials || s.realmPreferInitials)
+  return useMemo(() => ({ preferInitials }), [preferInitials])
+}

@@ -25,11 +25,12 @@ import { findDependencies as _findDependencies } from '@/lib/data/dependencies'
 import { findChecklistSummariesAndPreviews as _findChecklistSummariesAndPreviews, findChecklistItems as _findChecklistItems, createChecklistItemsBatch as _createChecklistItemsBatch } from '@/lib/data/checklist'
 import { getAssigneesForProject as _getAssigneesForProject } from '@/lib/data/assignees'
 import { getVirtualAssigneesForProject as _getVirtualAssigneesForProject, findVirtualMembersForProject as _findVirtualMembersForProject } from '@/lib/data/virtual-members'
+import { findRealmAvatarPrefs as _findRealmAvatarPrefs } from '@/lib/data/member-profiles'
 
 export async function loadBoardData(projectId: string) {
   await requireOwnership(projectId)
   await _createDefaultColumns(projectId)
-  const [tasks, columns, labels, taskLabels, dependencies, { summaries: checklistSummaries, previews: checklistPreviews }, assignees, virtualAssignees, virtualMembers] = await Promise.all([
+  const [tasks, columns, labels, taskLabels, dependencies, { summaries: checklistSummaries, previews: checklistPreviews }, assignees, virtualAssignees, virtualMembers, realmAvatars] = await Promise.all([
     _findTasks(projectId, undefined, 2000),
     _findColumns(projectId),
     _findLabels(projectId),
@@ -39,8 +40,9 @@ export async function loadBoardData(projectId: string) {
     _getAssigneesForProject(projectId),
     _getVirtualAssigneesForProject(projectId),
     _findVirtualMembersForProject(projectId),
+    _findRealmAvatarPrefs(projectId),
   ])
-  return { tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees, virtualAssignees, virtualMembers }
+  return { tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees, virtualAssignees, virtualMembers, realmAvatars }
 }
 
 export async function createBoardTask(data: {

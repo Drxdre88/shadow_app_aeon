@@ -1,5 +1,6 @@
 'use server'
 
+import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import {
   createWorkspaceGroup as _create,
@@ -29,6 +30,7 @@ import {
 import { db } from '@/lib/db'
 import { projectGroups } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
+import { touchRealmProjects, findRealmAvatarPrefsForGroup } from '@/lib/data/member-profiles'
 
 const ASSIGNABLE_ROLES = ['editor', 'viewer'] as const
 type AssignableRole = typeof ASSIGNABLE_ROLES[number]
@@ -119,9 +121,32 @@ export async function updateMemberRole(groupId: string, userId: string, role: st
   return _updateRole(groupId, userId, validRole)
 }
 
-export async function updateGroup(groupId: string, data: { name?: string; icon?: string | null; color?: string }) {
+// The only realm settings a client may write. Strict so an owner cannot grow
+// the jsonb (re-read on every board load in the realm) with arbitrary keys.
+const realmSettingsPatchSchema = z.object({
+  avatars: z.object({ preferInitials: z.boolean() }).strict(),
+}).strict()
+
+export async function updateGroup(groupId: string, data: { name?: string; icon?: string | null; color?: string; settings?: unknown }) {
   await requireGroupOwner(groupId)
-  return _update(groupId, data)
+  const settings = data.settings === undefined ? undefined : realmSettingsPatchSchema.parse(data.settings)
+  const updated = await _update(groupId, { name: data.name, icon: data.icon, color: data.color, settings })
+  // The avatar policy renders on every board in the realm, so bump them all —
+  // an open board picks the change up on its next version poll. The policy is
+  // already persisted by now; a failed bump must not read as a failed save.
+  if (settings) {
+    try {
+      await touchRealmProjects(groupId, { type: 'task:updated' })
+    } catch (err) {
+      console.error('[updateGroup] realm bump failed after settings write', err)
+    }
+  }
+  return updated
+}
+
+export async function getRealmAvatarPrefs(groupId: string) {
+  await requireGroupMember(groupId)
+  return findRealmAvatarPrefsForGroup(groupId)
 }
 
 export async function deleteGroup(groupId: string) {

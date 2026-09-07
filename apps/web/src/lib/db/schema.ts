@@ -732,8 +732,13 @@ export const memberProfiles = pgTable('member_profiles', {
   realmId: uuid('realm_id').notNull().references(() => workspaceGroups.id, { onDelete: 'cascade' }),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   initials: varchar('initials', { length: 4 }),
+  /** Fill: an accent name or a raw #rrggbb. Null = the hue derived from the seed. */
   color: varchar('color', { length: 20 }),
   displayName: varchar('display_name', { length: 120 }),
+  /** Initials colour, accent name or #rrggbb. Null = white. */
+  textColor: varchar('text_color', { length: 20 }),
+  /** 'circle' | 'rounded' | 'square'. Null = circle. Migration 0037. */
+  shape: varchar('shape', { length: 12 }),
   createdById: uuid('created_by_id').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -741,7 +746,11 @@ export const memberProfiles = pgTable('member_profiles', {
   realmUserKey: uniqueIndex('member_profiles_realm_user_key').on(t.realmId, t.userId),
   notEmpty: check(
     'member_profiles_not_empty_check',
-    sql`(initials IS NOT NULL) OR (color IS NOT NULL) OR (display_name IS NOT NULL)`,
+    sql`(initials IS NOT NULL) OR (color IS NOT NULL) OR (display_name IS NOT NULL) OR (text_color IS NOT NULL) OR (shape IS NOT NULL)`,
+  ),
+  shapeVocabulary: check(
+    'member_profiles_shape_check',
+    sql`(shape IS NULL) OR ((shape)::text = ANY (ARRAY['circle'::text, 'rounded'::text, 'square'::text]))`,
   ),
   initialsLength: check(
     'member_profiles_initials_length_check',

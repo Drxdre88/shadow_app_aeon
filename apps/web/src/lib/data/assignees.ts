@@ -2,7 +2,7 @@ import { db } from '@/lib/db'
 import { taskAssignees, users, boardTasks } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { touchProject } from './projects'
-import { findMemberProfilesForProject, type MemberProfileRow } from './member-profiles'
+import { findMemberProfilesForProject, styleOf, type MemberProfileRow } from './member-profiles'
 
 // Aeon side quest — task assignees data layer.
 
@@ -16,6 +16,10 @@ export type AssigneeRow = {
   initials: string | null
   /** Realm override, or null for the hue derived from the seed. */
   color: string | null
+  /** Realm override for the initials colour, or null for white. */
+  textColor: string | null
+  /** Realm override: 'circle' | 'rounded' | 'square', or null for circle. */
+  shape: string | null
   assignedAt: Date
   assignedBy: string | null
 }
@@ -24,13 +28,12 @@ export type AssigneeRow = {
 function withProfile<T extends { userId: string; name: string | null }>(
   row: T,
   profiles: Map<string, MemberProfileRow>,
-): T & { initials: string | null; color: string | null } {
+): T & { initials: string | null; color: string | null; textColor: string | null; shape: string | null } {
   const p = profiles.get(row.userId)
   return {
     ...row,
     name: p?.displayName ?? row.name,
-    initials: p?.initials ?? null,
-    color: p?.color ?? null,
+    ...styleOf(p),
   }
 }
 
