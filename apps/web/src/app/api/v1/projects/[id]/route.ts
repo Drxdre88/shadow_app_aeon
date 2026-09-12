@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { z } from 'zod'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
 import { findProjectById, updateProject, deleteProject } from '@/lib/data/projects'
@@ -6,11 +7,18 @@ import { updateProjectSchema } from '@/lib/data/validators'
 
 type Params = { params: Promise<{ id: string }> }
 
+// A path segment is not a uuid until something checks it: Postgres answers a
+// malformed uuid literal with a 22P02 cast error, which surfaces as a 500 for
+// what is only a bad URL. An id that cannot be a uuid cannot name a project
+// the caller may see, so it gets the same 404 as any other miss.
+const projectIdSchema = z.string().uuid()
+
 export const GET = withRateLimit(
   apiHandler(async (request: NextRequest, ctx: unknown) => {
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
     const { id } = await (ctx as Params).params
+    if (!projectIdSchema.safeParse(id).success) return jsonError('Project not found', 404)
 
     const project = await findProjectById(id, result.id)
     if (!project) return jsonError('Project not found', 404)
@@ -24,6 +32,7 @@ export const PUT = withRateLimit(
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
     const { id } = await (ctx as Params).params
+    if (!projectIdSchema.safeParse(id).success) return jsonError('Project not found', 404)
 
     const existing = await findProjectById(id, result.id)
     if (!existing) return jsonError('Project not found', 404)
@@ -49,6 +58,7 @@ export const DELETE = withRateLimit(
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
     const { id } = await (ctx as Params).params
+    if (!projectIdSchema.safeParse(id).success) return jsonError('Project not found', 404)
 
     const existing = await findProjectById(id, result.id)
     if (!existing) return jsonError('Project not found', 404)
