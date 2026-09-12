@@ -54,13 +54,16 @@ KAIROS_MODE=poll npm run start --workspace=apps/kairos-worker
 | `KAIROS_CODEX_BIN` | both | `codex` | Override the `codex` executable |
 | `KAIROS_COPILOT_BIN` | both | `copilot` | Override the `copilot` executable |
 | `KAIROS_CLAUDE_DEFAULT_MODEL` | poll | — | Model when the card names none |
-| `KAIROS_COPILOT_DEFAULT_MODEL` | poll | `claude-sonnet-5` | Model when the card names none (probed valid 2026-08-20; Copilot offers no Opus tier) |
+| `KAIROS_COPILOT_DEFAULT_MODEL` | poll | `claude-sonnet-5` | Model when the card names none; explicit card model takes precedence |
 | `KAIROS_CODEX_DEFAULT_MODEL` | poll | — | Model when the card names none |
 
-> Copilot model slugs probed 2026-08-20 on this host: `claude-sonnet-5` ✓,
-> `claude-sonnet-4.6` ✓, `claude-sonnet-4.5` ✓, `claude-haiku-4.5` ✓, `gpt-5.4` ✓,
-> `gpt-5.3-codex` ✓; every `*opus*` spelling rejected. Re-probe with
-> `copilot -p "Reply: OK" --model <slug> --allow-all-tools --no-ask-user` (invalid slugs error free of charge).
+Copilot's authenticated model catalog on 2026-09-10 includes `claude-sonnet-5`,
+`claude-opus-5` and `gpt-5.6-sol`/`terra`/`luna`. Availability depends on the
+runner account. From the repository root, run
+`node aeon_os/workflows/probe-copilot-models.mjs` to query the installed CLI's
+`models.list` without generating a response or creating a mission. The production
+verification harness checks the configured model against this list before queuing
+jobs. See [model configuration evidence](../../aeon_os/workflows/models-1009.md).
 
 ## Poll mode (AI Hangar)
 
