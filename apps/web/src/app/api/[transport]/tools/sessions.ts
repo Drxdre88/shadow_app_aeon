@@ -6,6 +6,7 @@ import {
   agentSessionEngineSchema,
   claimSessionSchema,
   sessionEventsTailArgsSchema,
+  sessionHangarMetadataIssue,
 } from '@/lib/data/validators'
 import {
   createAgentSession,
@@ -14,6 +15,8 @@ import {
   updateAgentSessionStatus,
   listSessionEvents,
   claimNextSession,
+  findLiveSessionForTask,
+  LiveMissionExistsError,
 } from '@/lib/data/sessions'
 import { dispatchSpawn } from '@/lib/kairos/spawn'
 import type { RegisterFn } from './types'
@@ -46,7 +49,24 @@ export const registerSessionTools: RegisterFn = (server) => {
       const parsed = spawnSessionSchema.safeParse(args)
       if (!parsed.success) return fail(parsed.error.issues[0].message)
 
-      const session = await createAgentSession(uid, parsed.data)
+      // Mirrors POST /api/v1/sessions: metadata is free-form, metadata.hangar
+      // is not — an unknown objective would only surface once a runner had
+      // already put an agent on a repo.
+      const hangarIssue = sessionHangarMetadataIssue(parsed.data.metadata)
+      if (hangarIssue) return fail(hangarIssue)
+
+      let session
+      try {
+        session = await createAgentSession(uid, parsed.data)
+      } catch (err) {
+        // Same duplicate-launch contract as REST's 409: the partial unique
+        // index settles the race, and the loser gets a message it can act on.
+        if (!(err instanceof LiveMissionExistsError)) throw err
+        const existing = parsed.data.taskId ? await findLiveSessionForTask(parsed.data.taskId) : null
+        const existingId = existing?.userId === uid ? existing.id : null
+        return fail(existingId ? `${err.message} (live session ${existingId})` : err.message)
+      }
+
       const callbackBaseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.AEON_BASE_URL || ''
       const callbackToken = process.env.AEON_API_KEY || ''
       const dispatch = await dispatchSpawn({

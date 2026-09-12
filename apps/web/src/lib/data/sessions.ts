@@ -34,6 +34,31 @@ export class LiveMissionExistsError extends Error {
 }
 
 const ONE_LIVE_PER_TASK_IDX = 'agent_sessions_one_live_per_task_idx'
+// Postgres unique_violation. The driver surfaces the offending index either as
+// a `constraint` field or only inside the message, and a pooled/serverless
+// driver can nest the original under `cause` — reading just err.message would
+// let a duplicate launch surface as an opaque 500 the way it did in the
+// 11 September production acceptance run (check 10).
+const UNIQUE_VIOLATION = '23505'
+const MAX_CAUSE_DEPTH = 5
+
+function isOneLivePerTaskViolation(err: unknown): boolean {
+  let cursor = err
+  for (let depth = 0; cursor && depth < MAX_CAUSE_DEPTH; depth++) {
+    const candidate = cursor as { code?: unknown; constraint?: unknown; message?: unknown; cause?: unknown }
+    const message = typeof candidate.message === 'string' ? candidate.message : ''
+    // Only a coded unique_violation may match on text: drizzle >= 0.38 quotes the
+    // failed query's params (goal, prompt, metadata) in the outer message, so a
+    // bare substring check would let a prompt naming the index turn any insert
+    // failure into a false 409. The cause walk still reaches the coded error.
+    if (candidate.code === UNIQUE_VIOLATION) {
+      if (candidate.constraint === ONE_LIVE_PER_TASK_IDX) return true
+      if (message.includes(ONE_LIVE_PER_TASK_IDX)) return true
+    }
+    cursor = candidate.cause
+  }
+  return false
+}
 
 export async function createAgentSession(userId: string, input: SpawnSessionInput) {
   try {
@@ -59,8 +84,7 @@ export async function createAgentSession(userId: string, input: SpawnSessionInpu
     // The partial unique index (migration 0033) is the authoritative
     // one-live-mission-per-card guard: it closes the check-then-insert race
     // AND covers the REST/MCP spawn surfaces, which never ran that check.
-    const message = err instanceof Error ? err.message : String(err)
-    if (message.includes(ONE_LIVE_PER_TASK_IDX)) throw new LiveMissionExistsError()
+    if (isOneLivePerTaskViolation(err)) throw new LiveMissionExistsError()
     throw err
   }
 }

@@ -11,6 +11,7 @@ import {
   sessionEventsTailArgsSchema,
   recordSessionEventSchema,
   recordSessionEventBatchSchema,
+  sessionHangarMetadataIssue,
 } from '../validators'
 
 // The Hangar card metadata is operator-supplied and ends up on a runner's CLI
@@ -352,5 +353,56 @@ describe('sessionEventsTailArgsSchema', () => {
   it('takes a real boolean, not the query-string spelling', () => {
     expect(sessionEventsTailArgsSchema.safeParse({ tail: 'true' }).success).toBe(false)
     expect(sessionEventsTailArgsSchema.parse({ tail: false }).tail).toBe(false)
+  })
+})
+
+
+// A session's metadata is free-form jsonb, but its `hangar` slice steers a
+// real agent on a real repo. Production acceptance (11 September, check 7)
+// spawned a session with objective 'launch_the_moon' and got a 201 back.
+describe('sessionHangarMetadataIssue', () => {
+  it('passes metadata that carries no hangar slice at all', () => {
+    expect(sessionHangarMetadataIssue(undefined)).toBeNull()
+    expect(sessionHangarMetadataIssue({})).toBeNull()
+    expect(sessionHangarMetadataIssue({ notes: 'free-form is still free-form' })).toBeNull()
+    expect(sessionHangarMetadataIssue({ hangar: null })).toBeNull()
+  })
+
+  it('passes a valid objective, alone or with the fields a card launch writes', () => {
+    expect(sessionHangarMetadataIssue({ hangar: { objective: 'analysis' } })).toBeNull()
+    expect(sessionHangarMetadataIssue({
+      hangar: {
+        objective: 'recon',
+        model: 'claude-sonnet-5',
+        subagents: [],
+        outputMode: 'auto',
+        repo: 'aeon',
+      },
+    })).toBeNull()
+  })
+
+  it('keeps unknown keys legal inside the hangar slice', () => {
+    expect(sessionHangarMetadataIssue({
+      hangar: { objective: 'plan', somethingTheRunnerAdded: true },
+    })).toBeNull()
+  })
+
+  it('names the offending field when the objective is not a Hangar objective', () => {
+    const issue = sessionHangarMetadataIssue({ hangar: { objective: 'launch_the_moon' } })
+    expect(issue).toContain('metadata.hangar.objective')
+  })
+
+  it('rejects a hangar slice with no objective at all', () => {
+    expect(sessionHangarMetadataIssue({ hangar: { repo: 'aeon' } })).toContain('metadata.hangar.objective')
+    expect(sessionHangarMetadataIssue({ hangar: 'recon' })).toBe('metadata.hangar must be an object')
+  })
+
+  it('holds the same argv-safety line the card schema holds', () => {
+    expect(sessionHangarMetadataIssue({
+      hangar: { objective: 'recon', model: '--dangerously-skip-permissions' },
+    })).toContain('metadata.hangar.model')
+    expect(sessionHangarMetadataIssue({
+      hangar: { objective: 'recon', repo: '../../etc' },
+    })).toContain('metadata.hangar.repo')
   })
 })
