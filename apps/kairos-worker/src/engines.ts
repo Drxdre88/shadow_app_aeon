@@ -11,7 +11,7 @@
 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createClaudeStreamParser, type StreamParser } from './stream-parser.js'
+import { createClaudeStreamParser, createCopilotStreamParser, type StreamParser } from './stream-parser.js'
 
 export type EngineId = 'claude' | 'copilot' | 'codex'
 
@@ -90,6 +90,10 @@ const copilot: EngineAdapter = {
   },
   envelopeSource: 'stdout',
   defaultModel: process.env.KAIROS_COPILOT_DEFAULT_MODEL ?? 'claude-sonnet-5',
+  // Stats only, transcript untouched. Without it a copilot mission's result
+  // envelope carries no stats.model, and every attempt reads back as an
+  // unknown observed model even though the event stream named it.
+  streamParser: createCopilotStreamParser,
 }
 
 const codex: EngineAdapter = {

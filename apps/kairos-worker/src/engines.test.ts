@@ -97,4 +97,20 @@ describe('buildArgs', () => {
     expect(getEngine('copilot')?.envelopeSource).toBe('stdout')
     expect(getEngine('codex')?.envelopeSource).toBe('file')
   })
+
+  // Ten production missions ran on copilot and every attempt was recorded with
+  // an unknown observed model: the adapter had no parser, so nothing read the
+  // identity the CLI printed in its own event stream.
+  it('gives copilot a parser that captures the model the CLI reports', () => {
+    const parser = getEngine('copilot')?.streamParser?.()
+    expect(parser, 'copilot adapter has no streamParser').toBeDefined()
+
+    const line = JSON.stringify({
+      type: 'session.start',
+      data: { sessionId: 's1', copilotVersion: '1.0.83', selectedModel: 'claude-sonnet-5' },
+    })
+    parser!.feed(`${line}\n`)
+
+    expect(parser!.stats().model).toBe('claude-sonnet-5')
+  })
 })
