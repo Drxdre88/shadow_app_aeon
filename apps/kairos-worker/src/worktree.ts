@@ -399,54 +399,51 @@ export async function removeWorktree(entry: RepoEntry, branch: string): Promise<
   return withRepoLock(entry.path, () => destroyLocked(entry, branch))
 }
 
+// Windows refuses to delete OR rename a directory that is any live process's
+// current directory (measured 2026-09-11 on node 24: rmSync → EPERM,
+// renameSync → EBUSY at the root / EPERM nested, and BOTH succeed the moment
+// that process exits). A mission's agent CLI runs with cwd = the worktree, so
+// any straggler it spawned — a language server, a watcher, an rg/git child
+// that outlived its parent — holds the whole tree hostage while it lingers.
+// Rename does not dodge a cwd lock, so no single pass can be correct here:
+// only waiting can. Hence a bounded retry, and it re-runs the WHOLE safe
+// sequence (drop links → rescan → refuse unless provably link-free → delete)
+// rather than just the delete, so a tree that gained a reparse point between
+// attempts still can never meet a recursive delete.
+const CLEANUP_BACKOFF_MS = [250, 500, 1000, 2000, 4000, 8000]
+
+// Upper bound on how long teardown will wait for a locker to go away before it
+// gives up and reports the tree as still present. Exported so the regression
+// test asserts termination against the real budget instead of a magic number.
+export const CLEANUP_BUDGET_MS = CLEANUP_BACKOFF_MS.reduce((a, b) => a + b, 0)
+
+const sleep = (ms: number): Promise<void> => new Promise((done) => { setTimeout(done, ms) })
+
+interface SweepPass { refused: boolean; depsMutated: boolean; error: string | null }
+
 async function destroyLocked(entry: RepoEntry, branch: string): Promise<DestroyResult> {
   const path = worktreeDirFor(entry, branch)
   let depsMutated = false
 
   sweepTrash(dirname(path))
 
-  if (existsSync(path)) {
-    // 1. Seeded junctions by hand. A configured link that is no longer a link
-    //    means the mission replaced the shared dependency dir — loud flag.
-    for (const rel of entry.link) {
-      if (!safeRel(rel)) continue
-      const at = join(path, rel)
-      try {
-        if (existsSync(at) && !lstatSync(at).isSymbolicLink()) depsMutated = true
-      } catch { /* unreadable — the scan below decides */ }
-      dropLink(at)
+  for (let attempt = 0; existsSync(path); attempt++) {
+    const pass = sweepOnce(entry, path)
+    if (pass.depsMutated) depsMutated = true
+    // A refusal is a deterministic safety verdict, not a transient lock:
+    // retrying cannot turn an unreadable or still-linked tree into one this
+    // code is allowed to recursively delete, and waiting would only delay the
+    // manual-sweep signal. It is reported once and left alone.
+    if (pass.refused) break
+    if (!existsSync(path)) break
+    if (attempt >= CLEANUP_BACKOFF_MS.length) {
+      console.error(
+        `[worker/worktree] ${path} survived ${attempt + 1} cleanup attempts (last: ${pass.error ?? 'unknown'}) — `
+        + 'something still holds it (a process whose cwd is inside it, or a mapped file); manual sweep needed',
+      )
+      break
     }
-
-    // 2. Anything the mission linked up on its own.
-    for (const link of findLinks(path).links) dropLink(link)
-
-    // 3. Verify link-free, else refuse: no recursive delete — git's or ours —
-    //    may run over a tree that still holds a reparse point, nor over one the
-    //    scan could not read end to end. The tree is left for a manual sweep.
-    const leftover = findLinks(path)
-    if (!leftover.ok) {
-      console.error(`[worker/worktree] ${path} could not be fully scanned (${leftover.unscanned[0]}) — refusing recursive delete, manual sweep needed`)
-      return { removed: false, depsMutated, path }
-    }
-    if (leftover.links.length > 0) {
-      console.error(`[worker/worktree] ${path} still holds a link (${leftover.links[0]}) — refusing recursive delete, manual sweep needed`)
-      return { removed: false, depsMutated, path }
-    }
-
-    // 4. Our own delete — NEVER `git worktree remove`, which traverses
-    //    junctions (proven on git 2.52 Windows). Rename-then-delete frees the
-    //    mission path even when Windows still holds a handle somewhere inside.
-    try {
-      rmSync(path, { recursive: true, force: true, maxRetries: 3, retryDelay: 500 })
-    } catch {
-      const trash = `${path}.trash-${Date.now()}`
-      try {
-        renameSync(path, trash)
-        rmSync(trash, { recursive: true, force: true, maxRetries: 3, retryDelay: 500 })
-      } catch (err) {
-        console.warn(`[worker/worktree] could not fully remove ${path} (trash: ${trash}): ${err instanceof Error ? err.message : String(err)}`)
-      }
-    }
+    await sleep(CLEANUP_BACKOFF_MS[attempt])
   }
 
   // Expiry window instead of bare prune: a second runner process (or a
@@ -455,6 +452,78 @@ async function destroyLocked(entry: RepoEntry, branch: string): Promise<DestroyR
   // deterministically by createLocked's stale-entry retry.
   await gitAsync(entry.path, ['worktree', 'prune', '--expire=10.minutes.ago'])
   return { removed: !existsSync(path), depsMutated, path }
+}
+
+// One full pass of the safe teardown. Every step re-runs on every attempt —
+// the link scan is what licenses the recursive delete, so it can never be
+// hoisted out of the retry and reused against a tree that has since changed.
+function sweepOnce(entry: RepoEntry, path: string): SweepPass {
+  let depsMutated = false
+
+  // 1. Seeded junctions by hand. A configured link that is no longer a link
+  //    means the mission replaced the shared dependency dir — loud flag.
+  for (const rel of entry.link) {
+    if (!safeRel(rel)) continue
+    const at = join(path, rel)
+    try {
+      if (existsSync(at) && !lstatSync(at).isSymbolicLink()) depsMutated = true
+    } catch { /* unreadable — the scan below decides */ }
+    dropLink(at)
+  }
+
+  // 2. Anything the mission linked up on its own.
+  for (const link of findLinks(path).links) dropLink(link)
+
+  // 3. Verify link-free, else refuse: no recursive delete — git's or ours —
+  //    may run over a tree that still holds a reparse point, nor over one the
+  //    scan could not read end to end. The tree is left for a manual sweep.
+  const leftover = findLinks(path)
+  if (!leftover.ok) {
+    console.error(`[worker/worktree] ${path} could not be fully scanned (${leftover.unscanned[0]}) — refusing recursive delete, manual sweep needed`)
+    return { refused: true, depsMutated, error: `unscannable: ${leftover.unscanned[0]}` }
+  }
+  if (leftover.links.length > 0) {
+    console.error(`[worker/worktree] ${path} still holds a link (${leftover.links[0]}) — refusing recursive delete, manual sweep needed`)
+    return { refused: true, depsMutated, error: `link: ${leftover.links[0]}` }
+  }
+
+  // 4. Our own delete — NEVER `git worktree remove`, which traverses
+  //    junctions (proven on git 2.52 Windows). Rename-then-delete still earns
+  //    its place for the other locker class: a handle on a file INSIDE the
+  //    tree (an AV scanner, a mapped image) blocks the delete but not the
+  //    rename, so the mission path is freed immediately and the leftover is
+  //    swept later. It is a fallback, not the cure for a cwd lock.
+  try {
+    rmSync(path, { recursive: true, force: true, maxRetries: 1, retryDelay: 100 })
+    return { refused: false, depsMutated, error: null }
+  } catch (rmErr) {
+    const trash = freeTrashPath(path)
+    try {
+      renameSync(path, trash)
+    } catch {
+      return { refused: false, depsMutated, error: errText(rmErr) }
+    }
+    try {
+      rmSync(trash, { recursive: true, force: true, maxRetries: 1, retryDelay: 100 })
+    } catch (trashErr) {
+      console.warn(`[worker/worktree] freed ${path} by renaming to ${trash}, but could not delete it yet: ${errText(trashErr)}`)
+    }
+    return { refused: false, depsMutated, error: null }
+  }
+}
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+// Must stay `<path>.trash-<13+ digits>` for sweepTrash to recognise AND
+// age-parse it: a collision is resolved by bumping the millisecond stamp, not
+// by appending a suffix that would make the timestamp unparseable and strand
+// the directory forever.
+function freeTrashPath(path: string): string {
+  let stamp = Date.now()
+  while (existsSync(`${path}.trash-${stamp}`)) stamp++
+  return `${path}.trash-${stamp}`
 }
 
 // .trash-* dirs are rename-then-delete leftovers: provably link-free by
