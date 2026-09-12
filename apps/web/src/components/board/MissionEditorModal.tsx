@@ -9,6 +9,8 @@ import { toast } from '@/components/ui/Toast'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { useHangarUiStore } from '@/lib/store/hangarUiStore'
 import { listProjectHangarRepos, saveCardMission, spawnSessionFromCard } from '@/lib/actions/hangar'
+import { getHangarModels, HANGAR_MODELS_CHECKED_AT } from '@/lib/hangar-models'
+import { HANGAR_MODEL_RE } from '@/lib/data/validators/hangar'
 
 const OBJECTIVES = [
   { id: 'implement', label: 'Implement' },
@@ -19,6 +21,7 @@ const OBJECTIVES = [
 ] as const
 
 const ENGINES = ['copilot', 'claude', 'codex'] as const
+const CUSTOM_MODEL = '__custom__'
 
 interface RepoOption {
   slug: string
@@ -31,17 +34,21 @@ interface HangarDraft {
   repo: string
   agent: string
   model: string
+  customModel: boolean
   instruction: string
   autoRun: boolean
 }
 
 function draftFromMetadata(metadata: Record<string, unknown> | undefined): HangarDraft {
   const h = (metadata?.hangar ?? {}) as Record<string, unknown>
+  const agent = typeof h.agent === 'string' && (ENGINES as readonly string[]).includes(h.agent) ? h.agent : 'copilot'
+  const model = typeof h.model === 'string' ? h.model : ''
   return {
     objective: typeof h.objective === 'string' ? h.objective : 'implement',
     repo: typeof h.repo === 'string' ? h.repo : '',
-    agent: typeof h.agent === 'string' ? h.agent : 'copilot',
-    model: typeof h.model === 'string' ? h.model : '',
+    agent,
+    model,
+    customModel: model.length > 0 && !getHangarModels(agent).some((option) => option.id === model),
     instruction: typeof h.instruction === 'string' ? h.instruction : '',
     // Owner directive: auto-run always re-defaults to OFF for fresh missions.
     autoRun: h.autoRun === true,
@@ -63,6 +70,7 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
 
   const [draft, setDraft] = useState<HangarDraft | null>(null)
   const [repos, setRepos] = useState<RepoOption[] | null>(null)
+  const [repoLoadError, setRepoLoadError] = useState(false)
   const [busy, setBusy] = useState<'save' | 'launch' | null>(null)
 
   useEffect(() => {
@@ -77,11 +85,13 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
   }, [missionEditorTaskId])
 
   useEffect(() => {
+    setRepos(null)
+    setRepoLoadError(false)
     if (!missionEditorTaskId) return
     let cancelled = false
     listProjectHangarRepos(projectId)
       .then((r) => { if (!cancelled) setRepos(r) })
-      .catch(() => { if (!cancelled) setRepos([]) })
+      .catch(() => { if (!cancelled) setRepoLoadError(true) })
     return () => { cancelled = true }
   }, [missionEditorTaskId, projectId])
 
@@ -89,12 +99,45 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
     () => repos?.find((r) => r.slug === draft?.repo) ?? null,
     [repos, draft?.repo]
   )
+  // Permissive until a registry repo resolves: the server skips the engine
+  // gate for realms with no Hangar registry, and a transient fetch failure
+  // must not lock an existing mission out of editing.
   const engineAllowed = (engine: string) =>
-    !selectedRepo || selectedRepo.allowedEngines.length === 0 || selectedRepo.allowedEngines.includes(engine)
+    selectedRepo === null
+    || selectedRepo.allowedEngines.length === 0
+    || selectedRepo.allowedEngines.includes(engine)
+
+  const selectEngine = (engine: string) => {
+    if (!draft || !engineAllowed(engine)) return
+    if (engine === draft.agent) return
+    const modelAvailable = !draft.customModel
+      && getHangarModels(engine).some((option) => option.id === draft.model)
+    setDraft({
+      ...draft,
+      agent: engine,
+      model: modelAvailable ? draft.model : '',
+      customModel: false,
+    })
+  }
 
   if (!missionEditorTaskId || !task || !draft) return null
 
-  const canSave = draft.repo.trim().length > 0 && draft.instruction.trim().length > 0 && busy === null
+  const customModelId = draft.model.trim()
+  // Mirrors hangarCardDraftSchema so the server's "Invalid model id" never
+  // surfaces as an opaque production error.
+  const customModelValid = customModelId.length > 0
+    && customModelId.length <= 80
+    && HANGAR_MODEL_RE.test(customModelId)
+  const canSave = draft.repo.trim().length > 0
+    && draft.instruction.trim().length > 0
+    && engineAllowed(draft.agent)
+    && (!draft.customModel || customModelValid)
+    && busy === null
+  // Launch spawns a runner session, so it waits for the registry to answer;
+  // Save only writes card metadata and stays available regardless.
+  const canLaunch = canSave && repos !== null
+
+  const modelOptions = getHangarModels(draft.agent)
 
   const persist = async () => {
     const existing = (task.metadata?.hangar ?? {}) as Record<string, unknown>
@@ -132,7 +175,7 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
   }
 
   const handleLaunch = async () => {
-    if (!canSave) return
+    if (!canLaunch) return
     setBusy('launch')
     try {
       await persist()
@@ -207,6 +250,9 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
                 {repos !== null && repos.length === 0 && (
                   <p className="text-[10px] text-amber-400/80 mt-1">No repos in this realm&apos;s Hangar registry.</p>
                 )}
+                {repoLoadError && (
+                  <p className="text-[10px] text-red-400/80 mt-1">Could not load Hangar repositories. Reopen the mission to retry.</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs text-[var(--text-muted)] mb-1.5">Objective</label>
@@ -231,7 +277,7 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
                       key={engine}
                       type="button"
                       disabled={!engineAllowed(engine)}
-                      onClick={() => setDraft({ ...draft, agent: engine })}
+                      onClick={() => selectEngine(engine)}
                       className={cn(
                         'flex-1 px-2 py-1.5 rounded-lg text-xs font-medium border transition-all capitalize',
                         draft.agent === engine
@@ -247,14 +293,40 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
               </div>
               <div>
                 <label className="block text-xs text-[var(--text-muted)] mb-1.5">Model</label>
-                <input
-                  type="text"
-                  value={draft.model}
-                  onChange={(e) => setDraft({ ...draft, model: e.target.value })}
-                  placeholder="engine default"
-                  className={inputClass}
-                  autoComplete="off"
-                />
+                <select
+                  aria-label="Model"
+                  value={draft.customModel ? CUSTOM_MODEL : draft.model}
+                  onChange={(e) => {
+                    const customModel = e.target.value === CUSTOM_MODEL
+                    setDraft({ ...draft, model: customModel ? '' : e.target.value, customModel })
+                  }}
+                  className={cn(inputClass, '[color-scheme:dark]')}
+                >
+                  <option value="">Runner default</option>
+                  {modelOptions.map((option) => (
+                    <option key={option.id} value={option.id}>{option.label}</option>
+                  ))}
+                  <option value={CUSTOM_MODEL}>Custom model ID</option>
+                </select>
+                {draft.customModel && (
+                  <input
+                    aria-label="Custom model ID"
+                    type="text"
+                    value={draft.model}
+                    onChange={(e) => setDraft({ ...draft, model: e.target.value })}
+                    placeholder="Enter model ID"
+                    className={cn(inputClass, 'mt-2')}
+                    autoComplete="off"
+                  />
+                )}
+                {draft.customModel && customModelId.length > 0 && !customModelValid && (
+                  <p className="text-[10px] text-red-400/80 mt-1">
+                    Model IDs use letters, digits, dots, colons, dashes and underscores (max 80), and start with a letter or digit.
+                  </p>
+                )}
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Runs the agent. Availability depends on the runner account. Catalog checked {HANGAR_MODELS_CHECKED_AT}.
+                </p>
               </div>
             </div>
 
@@ -316,7 +388,7 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
             </button>
             <button
               onClick={handleLaunch}
-              disabled={!canSave}
+              disabled={!canLaunch}
               className={cn(
                 'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-all',
                 'disabled:opacity-50 disabled:cursor-not-allowed'
