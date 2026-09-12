@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "runId": "2026-09-10T16-18-20-247Z-510469",
+  "createdAt": "2026-09-10T16:18:29.408Z",
+  "sourceBranch": "feat/member-avatar-styling",
+  "baseSha": "3b7b3f3014dac15deeccfde9d65b7773e99bba75",
+  "originPath": "aeon_os\\workflows\\.runtime\\runs\\2026-09-10T16-18-20-247Z-510469\\origin.git",
+  "clonePath": "aeon_os\\workflows\\.runtime\\runs\\2026-09-10T16-18-20-247Z-510469\\source",
+  "registryPath": "aeon_os\\workflows\\.runtime\\runs\\2026-09-10T16-18-20-247Z-510469\\repos.json",
+  "projectId": "e4b0af95-d3ad-46ba-8275-1ecc28911683",
+  "columns": {
+    "Queued": "ef137ae9-0c5a-44c0-ba3d-ff6d27857526",
+    "Flight": "d823c15b-449a-4582-91ed-b594836339ed",
+    "Landing": "d60aa047-dadc-4930-b4ed-55d6d354cfaf",
+    "Tower": "38cb0738-8ace-417f-8fa1-0b3c8c0ff3af"
+  },
+  "attempts": [],
+  "worker": null,
+  "status": "prepared"
+}

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "runId": "2026-09-11T12-03-14-544Z-7b32f2",
+  "createdAt": "2026-09-11T12:03:23.030Z",
+  "sourceBranch": "feat/member-avatar-styling",
+  "baseSha": "3b7b3f3014dac15deeccfde9d65b7773e99bba75",
+  "originPath": "C:\\Users\\anselikhov\\data_science\\dev_26\\shadow_app_aeon\\aeon_os\\workflows\\.runtime\\runs\\2026-09-11T12-03-14-544Z-7b32f2\\origin.git",
+  "clonePath": "C:\\Users\\anselikhov\\data_science\\dev_26\\shadow_app_aeon\\aeon_os\\workflows\\.runtime\\runs\\2026-09-11T12-03-14-544Z-7b32f2\\source",
+  "registryPath": "C:\\Users\\anselikhov\\data_science\\dev_26\\shadow_app_aeon\\aeon_os\\workflows\\.runtime\\runs\\2026-09-11T12-03-14-544Z-7b32f2\\repos.json",
+  "projectId": "e4b0af95-d3ad-46ba-8275-1ecc28911683",
+  "columns": {
+    "Queued": "ef137ae9-0c5a-44c0-ba3d-ff6d27857526",
+    "Flight": "d823c15b-449a-4582-91ed-b594836339ed",
+    "Landing": "d60aa047-dadc-4930-b4ed-55d6d354cfaf",
+    "Tower": "38cb0738-8ace-417f-8fa1-0b3c8c0ff3af"
+  },
+  "attempts": [
+    {
+      "index": 1,
+      "topic": "session claim ownership",
+      "marker": "AEON_OS_E2E_2026-09-11T12-03-14-544Z-7b32f2_01",
+      "report": "aeon_os/workflows/reports/2026-09-11T12-03-14-544Z-7b32f2-01.md",
+      "model": "claude-sonnet-5",
+      "taskId": "325d9430-b5af-4615-902a-c2f5550567a5",
+      "sessionId": "0773fe07-1f5f-40d2-8657-9f4c115b1dd9",
+      "branch": "aeon/325d9430",
+      "createdAt": "2026-09-11T12:03:36.346Z",
+      "result": "FAIL",
+      "lastStatus": "succeeded",
+      "workerId": "002LND2094-8d5a29",
+      "workerHost": "002LND2094",
+      "workerPid": 14768,
+      "error": "terminal status arrived, but branch publication/physical worktree cleanup did not settle within 60 seconds",
+      "failedAt": "2026-09-11T12:06:06.255Z"
+    }
+  ],
+  "worker": null,
+  "status": "failed",
+  "workerBootstrap": "C:\\Users\\anselikhov\\data_science\\dev_26\\shadow_app_aeon\\aeon_os\\workflows\\.runtime\\runs\\2026-09-11T12-03-14-544Z-7b32f2\\one-claim-worker.mjs",
+  "archivedAt": "2026-09-11T12:10:18.276Z"
+}
