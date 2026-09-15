@@ -1,0 +1,113 @@
+{
+  "runId": "ui-2026-09-10T16-25-09-159Z",
+  "startedAt": "2026-09-10T16:25:09.160Z",
+  "scope": "Local component, handler and server-action contracts; external boundaries mocked. Not authenticated browser E2E.",
+  "tests": [
+    "src/components/board/__tests__/MissionEditorModal.test.tsx",
+    "src/components/board/__tests__/useBoardHandlers-launch.test.tsx",
+    "src/lib/actions/__tests__/hangar-launch.test.ts",
+    "src/components/board/__tests__/autoRun.test.ts",
+    "src/components/board/__tests__/useBoardDnD-autoRun.test.tsx"
+  ],
+  "testHashes": {
+    "src/components/board/__tests__/MissionEditorModal.test.tsx": "bd69c7e8bd64043519e4cec93114e0c188386d8059e4221f7c0f002f3f8d344f",
+    "src/components/board/__tests__/useBoardHandlers-launch.test.tsx": "6db103b776159d51a7a56e1a8f6606196209820524edb89049f5e0b2c5910253",
+    "src/lib/actions/__tests__/hangar-launch.test.ts": "39dd6f37abcbf976734d137283fb79e506cf184fb5e4c3dd5b698784a65f73fd",
+    "src/components/board/__tests__/autoRun.test.ts": "07dfc71496883f54153fe0c9177d6d04c21abe92f88a95a7acfed424d081eb04",
+    "src/components/board/__tests__/useBoardDnD-autoRun.test.tsx": "8ed01d3b89dcd6d5fdc71eb7053ea35726b250de439288d49dcc8b070f5f5c89"
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "startedAt": "2026-09-10T16:25:09.163Z",
+      "endedAt": "2026-09-10T16:25:17.673Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 46,
+      "testsFailed": 0
+    },
+    {
+      "round": 2,
+      "startedAt": "2026-09-10T16:25:17.674Z",
+      "endedAt": "2026-09-10T16:25:24.744Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 46,
+      "testsFailed": 0
+    },
+    {
+      "round": 3,
+      "startedAt": "2026-09-10T16:25:24.744Z",
+      "endedAt": "2026-09-10T16:25:33.451Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 46,
+      "testsFailed": 0
+    },
+    {
+      "round": 4,
+      "startedAt": "2026-09-10T16:25:33.451Z",
+      "endedAt": "2026-09-10T16:25:41.902Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 46,
+      "testsFailed": 0
+    },
+    {
+      "round": 5,
+      "startedAt": "2026-09-10T16:25:41.903Z",
+      "endedAt": "2026-09-10T16:25:49.539Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 46,
+      "testsFailed": 0
+    },
+    {
+      "round": 6,
+      "startedAt": "2026-09-10T16:25:49.540Z",
+      "endedAt": "2026-09-10T16:25:56.975Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 46,
+      "testsFailed": 0
+    },
+    {
+      "round": 7,
+      "startedAt": "2026-09-10T16:25:56.975Z",
+      "endedAt": "2026-09-10T16:26:04.632Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 46,
+      "testsFailed": 0
+    },
+    {
+      "round": 8,
+      "startedAt": "2026-09-10T16:26:04.633Z",
+      "endedAt": "2026-09-10T16:26:13.042Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 46,
+      "testsFailed": 0
+    },
+    {
+      "round": 9,
+      "startedAt": "2026-09-10T16:26:13.042Z",
+      "endedAt": "2026-09-10T16:26:20.808Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 46,
+      "testsFailed": 0
+    },
+    {
+      "round": 10,
+      "startedAt": "2026-09-10T16:26:20.808Z",
+      "endedAt": "2026-09-10T16:26:27.499Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 46,
+      "testsFailed": 0
+    }
+  ],
+  "status": "PASS",
+  "endedAt": "2026-09-10T16:26:27.499Z"
+}

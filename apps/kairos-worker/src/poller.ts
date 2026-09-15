@@ -438,7 +438,10 @@ export function missionStats(stats: MissionStats | null): Record<string, number 
     ['durationApiMs', stats.durationApiMs],
   ]
   for (const [key, value] of counters) {
-    if (value !== undefined && Number.isFinite(value)) out[key] = value
+    // hangarResultEnvelopeSchema requires int().min(0); a stray fraction or
+    // negative from an engine would reject the whole envelope and file a
+    // completed mission as failed.
+    if (value !== undefined && Number.isFinite(value)) out[key] = Math.max(0, Math.trunc(value))
   }
   if (stats.totalCostUsd !== undefined && Number.isFinite(stats.totalCostUsd) && stats.totalCostUsd !== 0) {
     out.totalCostUsd = stats.totalCostUsd

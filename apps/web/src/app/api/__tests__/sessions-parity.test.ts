@@ -121,6 +121,21 @@ describe('Sessions MCP <-> REST parity', () => {
       expect(src, `${surface} missing ${validator}`).toMatch(new RegExp(`\\b${validator}\\b`))
     })
 
+    // Spawn is the one write both surfaces expose, and it carries two guards
+    // production acceptance found missing on 11 September: metadata.hangar
+    // validation (an unknown objective was accepted at 201) and a clear
+    // duplicate-launch rejection (three concurrent losers returned 500). A
+    // guard on one surface only is the same defect, half-fixed.
+    const spawnGuards = ['sessionHangarMetadataIssue', 'LiveMissionExistsError']
+
+    it.each(spawnGuards)('MCP spawn applies shared guard: %s', (guard) => {
+      expect(mcpSrc, `MCP sessions.ts missing ${guard}`).toMatch(new RegExp(`\\b${guard}\\b`))
+    })
+
+    it.each(spawnGuards)('REST spawn applies shared guard: %s', (guard) => {
+      expect(restSrcConcat, `REST routes missing ${guard}`).toMatch(new RegExp(`\\b${guard}\\b`))
+    })
+
     it('list_session_events does not hand-roll its own tail bounds', () => {
       const block = mcpSrc.split(/server\.tool\(/).slice(1)
         .find((b) => b.match(/['"]([a-z_]+)['"]/)?.[1] === 'list_session_events')

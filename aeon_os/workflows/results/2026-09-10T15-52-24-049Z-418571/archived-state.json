@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "runId": "2026-09-10T15-52-24-049Z-418571",
+  "createdAt": "2026-09-10T15:52:42.810Z",
+  "sourceBranch": "feat/member-avatar-styling",
+  "baseSha": "3b7b3f3014dac15deeccfde9d65b7773e99bba75",
+  "originPath": "C:\\Users\\anselikhov\\data_science\\dev_26\\shadow_app_aeon\\aeon_os\\workflows\\.runtime\\runs\\2026-09-10T15-52-24-049Z-418571\\origin.git",
+  "clonePath": "C:\\Users\\anselikhov\\data_science\\dev_26\\shadow_app_aeon\\aeon_os\\workflows\\.runtime\\runs\\2026-09-10T15-52-24-049Z-418571\\source",
+  "registryPath": "C:\\Users\\anselikhov\\data_science\\dev_26\\shadow_app_aeon\\aeon_os\\workflows\\.runtime\\runs\\2026-09-10T15-52-24-049Z-418571\\repos.json",
+  "projectId": "e4b0af95-d3ad-46ba-8275-1ecc28911683",
+  "columns": {
+    "Queued": "ef137ae9-0c5a-44c0-ba3d-ff6d27857526",
+    "Flight": "d823c15b-449a-4582-91ed-b594836339ed",
+    "Landing": "d60aa047-dadc-4930-b4ed-55d6d354cfaf",
+    "Tower": "38cb0738-8ace-417f-8fa1-0b3c8c0ff3af"
+  },
+  "attempts": [
+    {
+      "index": 1,
+      "topic": "session claim ownership",
+      "marker": "AEON_OS_E2E_2026-09-10T15-52-24-049Z-418571_01",
+      "report": "aeon_os/workflows/reports/2026-09-10T15-52-24-049Z-418571-01.md",
+      "model": "claude-sonnet-5.6",
+      "taskId": "3bd8dc3f-d4a8-4a00-87c5-2b21cbc0f89b",
+      "sessionId": "5c78a299-b7e4-482d-8c97-29983bdf4323",
+      "branch": "aeon/3bd8dc3f",
+      "createdAt": "2026-09-10T15:55:05.405Z",
+      "result": "FAIL",
+      "lastStatus": "failed",
+      "workerId": "002LND2094-236993",
+      "workerHost": null,
+      "workerPid": null,
+      "error": "session ended failed",
+      "failedAt": "2026-09-10T15:55:24.125Z"
+    }
+  ],
+  "worker": null,
+  "status": "failed",
+  "archivedAt": "2026-09-10T16:03:19.072Z"
+}

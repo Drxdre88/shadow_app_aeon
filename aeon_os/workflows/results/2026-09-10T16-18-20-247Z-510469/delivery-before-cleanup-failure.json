@@ -1,0 +1,65 @@
+{
+  "checkedAt": "2026-09-10T16:22:15.335Z",
+  "result": "FAIL_CLEANUP",
+  "session": {
+    "id": "d6713992-c413-4a8f-89bc-39b42bec2435",
+    "status": "succeeded",
+    "exitCode": 0,
+    "model": "claude-sonnet-5"
+  },
+  "card": {
+    "id": "7f1d368b-4ef4-4aa3-8f89-bb1f1a556c67",
+    "columnId": "d60aa047-dadc-4930-b4ed-55d6d354cfaf",
+    "lastResult": {
+      "tests": {
+        "status": "not_run",
+        "summary": "Repository research only; no tests requested or run."
+      },
+      "branch": "aeon/7f1d368b",
+      "commit": "e7de02f96c9f40cdde346c969cdec745e983b758",
+      "status": "completed",
+      "outcome": "investigation_complete",
+      "summary": "AEON_OS_E2E_2026-09-10T16-18-20-247Z-510469_01: Recon of session claim ownership in apps/web/src/lib/data/sessions.ts and its claim tests, committed as a single durable report with 6 path:line-cited findings and 1 clearly labeled inference.",
+      "artifacts": [
+        "aeon_os/workflows/reports/2026-09-10T16-18-20-247Z-510469-01.md"
+      ],
+      "questions": [],
+      "recommended_tasks": []
+    }
+  },
+  "expectedLanding": "d60aa047-dadc-4930-b4ed-55d6d354cfaf",
+  "resultEvents": [
+    {
+      "id": "fd6aea66-9c29-4372-b446-22492f6382ce",
+      "sessionId": "d6713992-c413-4a8f-89bc-39b42bec2435",
+      "seq": 56,
+      "kind": "result",
+      "toolName": null,
+      "payload": {
+        "tests": {
+          "status": "not_run",
+          "summary": "Repository research only; no tests requested or run."
+        },
+        "branch": "aeon/7f1d368b",
+        "commit": "e7de02f96c9f40cdde346c969cdec745e983b758",
+        "status": "completed",
+        "outcome": "investigation_complete",
+        "summary": "AEON_OS_E2E_2026-09-10T16-18-20-247Z-510469_01: Recon of session claim ownership in apps/web/src/lib/data/sessions.ts and its claim tests, committed as a single durable report with 6 path:line-cited findings and 1 clearly labeled inference.",
+        "artifacts": [
+          "aeon_os/workflows/reports/2026-09-10T16-18-20-247Z-510469-01.md"
+        ],
+        "questions": [],
+        "recommended_tasks": []
+      },
+      "createdAt": "2026-09-10T16:20:13.599Z"
+    }
+  ],
+  "branch": "aeon/7f1d368b",
+  "commit": "e7de02f96c9f40cdde346c969cdec745e983b758",
+  "changedPaths": [
+    "aeon_os/workflows/reports/2026-09-10T16-18-20-247Z-510469-01.md"
+  ],
+  "report": "aeon_os/workflows/reports/2026-09-10T16-18-20-247Z-510469-01.md",
+  "sha256": "a3100d963f0f14733f4e42ba82e322362dd0759208a17ee755af7236802b9177",
+  "workerRecorded": null
+}

@@ -1,0 +1,18 @@
+{
+  "index": 2,
+  "topic": "result envelope parsing",
+  "marker": "AEON_OS_E2E_2026-09-10T16-37-07-347Z-4eb7a5_02",
+  "report": "aeon_os/workflows/reports/2026-09-10T16-37-07-347Z-4eb7a5-02.md",
+  "model": "claude-sonnet-5",
+  "taskId": "121c5001-1e54-4741-957f-4311fbe61c38",
+  "sessionId": "f215b5aa-1b60-471f-a25e-5a774ecbd781",
+  "branch": "aeon/121c5001",
+  "createdAt": "2026-09-10T16:39:03.813Z",
+  "result": "FAIL",
+  "lastStatus": "succeeded",
+  "workerId": "002LND2094-1b731c",
+  "workerHost": "002LND2094",
+  "workerPid": 42208,
+  "error": "terminal status arrived, but branch publication/physical worktree cleanup did not settle within 60 seconds",
+  "failedAt": "2026-09-10T16:41:43.350Z"
+}

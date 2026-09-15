@@ -1,0 +1,18 @@
+{
+  "index": 1,
+  "topic": "session claim ownership",
+  "marker": "AEON_OS_E2E_2026-09-10T15-52-24-049Z-418571_01",
+  "report": "aeon_os/workflows/reports/2026-09-10T15-52-24-049Z-418571-01.md",
+  "model": "claude-sonnet-5.6",
+  "taskId": "3bd8dc3f-d4a8-4a00-87c5-2b21cbc0f89b",
+  "sessionId": "5c78a299-b7e4-482d-8c97-29983bdf4323",
+  "branch": "aeon/3bd8dc3f",
+  "createdAt": "2026-09-10T15:55:05.405Z",
+  "result": "FAIL",
+  "lastStatus": "failed",
+  "workerId": "002LND2094-236993",
+  "workerHost": null,
+  "workerPid": null,
+  "error": "session ended failed",
+  "failedAt": "2026-09-10T15:55:24.125Z"
+}

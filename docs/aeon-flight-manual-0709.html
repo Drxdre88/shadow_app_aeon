@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Aeon Flight School | From cold start to Astra</title>
+  <style>
+    :root { --bg:#0a101a; --panel:#111c2b; --line:#29384a; --ink:#eef4fb; --muted:#a9b8cc; --cyan:#72e5df; --purple:#b9a0ff; --amber:#ffd28a; --red:#ff9baf; --green:#9ce6b5; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; scroll-padding-top:90px; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif; }
+    body::before { content:""; position:absolute; inset:0 0 auto; height:750px; background:radial-gradient(ellipse at 90% 0, #49347740, transparent 60%),radial-gradient(ellipse at 0 35%, #16646b35, transparent 60%); pointer-events:none; }
+    a { color:var(--cyan); text-underline-offset:4px; }
+    button,select,input,textarea { font:inherit; }
+    button,select { cursor:pointer; }
+    button,a,select,input,textarea,summary { outline-offset:5px; }
+    :focus-visible { outline:2px solid var(--cyan); }
+    button { border:1px solid var(--line); border-radius:9px; padding:8px 14px; color:var(--ink); background:#192638; }
+    button:hover { border-color:var(--cyan); }
+    button.primary { background:var(--cyan); color:#092322; font-weight:750; border-color:var(--cyan); }
+    .wrap { position:relative; max-width:1160px; padding:0 28px; margin:auto; }
+    header { border-bottom:1px solid var(--line); }
+    .mast { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:22px 0; font-size:12px; letter-spacing:.13em; text-transform:uppercase; }
+    .brand { font-weight:800; letter-spacing:.22em; }
+    .brand span { color:var(--cyan); }
+    .hero { padding:72px 0 46px; }
+    .eyebrow { font:700 12px/1.5 ui-monospace,Consolas,monospace; letter-spacing:.14em; text-transform:uppercase; color:var(--cyan); }
+    h1 { font-size:clamp(42px,6.8vw,78px); line-height:1.07; letter-spacing:-.05em; margin:20px 0 22px; max-width:900px; }
+    h1 em { color:var(--cyan); font-style:normal; }
+    h2 { font-size:clamp(26px,4vw,36px); line-height:1.2; letter-spacing:-.03em; margin:10px 0 18px; }
+    h3 { font-size:20px; line-height:1.35; margin:0 0 10px; }
+    p { margin:0 0 16px; }
+    .lead { font-size:20px; max-width:790px; color:var(--muted); }
+    .muted,small { color:var(--muted); }
+    .chips,.actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+    .chip { display:inline-block; font-size:12px; font-weight:700; line-height:1.4; padding:6px 10px; border:1px solid var(--line); border-radius:99px; background:#111c2b; }
+    .good { color:var(--green); }
+    .warn { color:var(--amber); }
+    .later { color:var(--purple); }
+    nav { position:sticky; top:0; z-index:5; background:#0a101af2; backdrop-filter:blur(12px); border-block:1px solid var(--line); }
+    nav .wrap { display:flex; gap:22px; overflow:auto; padding-block:14px; }
+    nav a { white-space:nowrap; font-size:13px; font-weight:700; text-decoration:none; color:var(--muted); }
+    nav a:hover { color:var(--cyan); }
+    section { padding:46px 0; border-bottom:1px solid var(--line); }
+    .grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+    .two { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .panel { background:linear-gradient(145deg,#152234,#101a29); border:1px solid var(--line); border-radius:16px; padding:25px; min-width:0; }
+    .panel .icon { font-size:26px; display:block; margin-bottom:13px; }
+    .panel p:last-child { margin-bottom:0; }
+    .note { padding:18px 21px; border:1px solid #635033; border-left:4px solid var(--amber); border-radius:10px; background:#33291c55; margin:20px 0; }
+    .note.info { border-color:#275d67; border-left-color:var(--cyan); background:#10313855; }
+    .note p:last-child { margin-bottom:0; }
+    .flow { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:10px; margin:24px 0; }
+    .flow > div { border:1px solid var(--line); padding:18px; background:var(--panel); border-radius:12px; }
+    .flow b { display:block; color:var(--cyan); margin-bottom:5px; }
+    .flow small { display:block; font-size:12px; }
+    .steps { counter-reset:step; list-style:none; padding:0; }
+    .steps > li { counter-increment:step; display:grid; grid-template-columns:46px 1fr; gap:14px; margin:0 0 22px; }
+    .steps > li::before { content:counter(step,decimal-leading-zero); font:700 15px/42px ui-monospace,monospace; color:var(--cyan); text-align:center; width:42px; height:42px; background:#183139; border-radius:12px; }
+    .steps p { margin:4px 0 0; color:var(--muted); }
+    .table-scroll { overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; margin:20px 0; font-size:14px; }
+    th,td { text-align:left; padding:14px 13px; border-bottom:1px solid var(--line); vertical-align:top; }
+    th { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; background:#111c2b; }
+    code { font:13px/1.6 ui-monospace,Consolas,monospace; background:#1a2839; padding:2px 5px; border-radius:4px; overflow-wrap:anywhere; }
+    pre { background:#070d15; border:1px solid var(--line); border-radius:10px; padding:18px; white-space:pre-wrap; overflow-wrap:anywhere; }
+    pre code { background:none; padding:0; color:#c9edea; }
+    .code-head { display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:12px; color:var(--muted); }
+    .code-head button { font-size:12px; padding:4px 10px; }
+    details { border-top:1px solid var(--line); padding:15px 0 0; margin-top:18px; }
+    summary { cursor:pointer; font-weight:700; color:var(--cyan); }
+    details[open] summary { margin-bottom:14px; }
+    .test-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin-top:22px; }
+    .test { border:1px solid var(--line); border-radius:16px; padding:24px; background:var(--panel); min-width:0; }
+    .test[data-result="passed"] { border-color:#548967; }
+    .test[data-result="failed"] { border-color:#ad596c; }
+    .test[data-result="blocked"] { border-color:#7b659f; }
+    .test-top { display:flex; justify-content:space-between; gap:10px; margin-bottom:18px; align-items:center; }
+    .test-id { color:var(--muted); font:700 12px ui-monospace,monospace; letter-spacing:.08em; }
+    .test ol { padding-left:22px; }
+    .test li { margin:9px 0; }
+    .expect { border-left:3px solid var(--green); padding-left:14px; font-size:14px; margin:18px 0; }
+    .expect strong { display:block; color:var(--green); }
+    .test label { font-size:12px; color:var(--muted); font-weight:700; display:block; margin-top:16px; }
+    select,input,textarea { width:100%; margin-top:6px; border:1px solid #3a4b61; border-radius:8px; background:#0b1421; color:var(--ink); padding:9px 11px; }
+    textarea { resize:vertical; min-height:76px; font-size:13px; }
+    .log { padding:22px; background:#122431; border:1px solid #315267; border-radius:14px; margin:22px 0; }
+    .log-top { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; }
+    progress { width:100%; height:10px; accent-color:var(--cyan); display:block; margin:16px 0 9px; }
+    .tiny { font-size:12px; }
+    footer { padding:35px 0 55px; color:var(--muted); font-size:12px; }
+    #notice { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); z-index:10; border:1px solid var(--cyan); border-radius:12px; background:#152638; padding:12px 20px; max-width:min(90vw,650px); box-shadow:0 10px 40px #0008; }
+    [hidden] { display:none !important; }
+    .skip { position:absolute; left:20px; top:-100px; z-index:20; background:var(--bg); padding:12px; }
+    .skip:focus { top:10px; }
+    @media (max-width:800px) { .grid,.test-grid { grid-template-columns:1fr; } .flow { grid-template-columns:1fr 1fr; } .flow > div:last-child { grid-column:1/-1; } .hero { padding-top:40px; } .wrap { padding-inline:19px; } .mast { flex-wrap:wrap; } nav .wrap { gap:18px; } }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+    @media print { :root { --ink:#142030; --muted:#405269; --line:#ccc; --cyan:#00676d; --green:#27613b; --amber:#805000; --purple:#594381; } body { background:#fff; font-size:11px; } body::before,nav,button,#notice,.skip { display:none; } .wrap { max-width:none; padding:0; } .hero,section { padding:20px 0; } h1 { font-size:36px; } .panel,.test,.flow > div,.note,.log,pre,th,code { background:#fff; color:var(--ink); } pre code { color:var(--ink); } .test,.panel { break-inside:avoid; } .grid,.test-grid { grid-template-columns:1fr; } select,textarea { background:white; color:#142030; } a { color:#00676d; } }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to flight manual</a>
+  <header><div class="wrap mast"><div class="brand">AEON <span>/ FLIGHT SCHOOL</span></div><div>Operator edition &middot; 07 September 2026</div></div></header>
+  <div class="wrap hero">
+    <div class="eyebrow">Mission 00 / Nothing running on your box</div>
+    <h1>Open Aeon.<br>Give <em>Astra</em> the clipboard.</h1>
+    <p class="lead">A hands-on flight manual for turning a card into a real agent mission. First we prove the runway. Then we build the secretary who runs it.</p>
+    <div class="chips"><span class="chip good">&#9679; Existing card runner</span><span class="chip later">&#9679; Astra secretary: proposed</span><span class="chip warn">&#9679; You authorize every first flight</span></div>
+    <div class="note info"><strong>This page is a manual, not a remote control.</strong> It does not connect to Aeon, run commands, launch agents or change settings. Copy buttons only copy text. Results below are your own observations, not automated certifications. No external scripts, fonts or analytics.</div>
+  </div>
+  <nav aria-label="Flight manual sections"><div class="wrap"><a href="#idea">The secretary</a><a href="#now">What works now</a><a href="#plan">Build order</a><a href="#cold-start">Cold start</a><a href="#flight-tests">Flight tests</a><a href="#outputs">Outputs</a><a href="#evidence">Evidence</a></div></nav>
+  <main id="main" class="wrap">
+    <section id="idea">
+      <div class="eyebrow">01 / Brains are replaceable. The notebook is not.</div>
+      <h2>Permanent job. Replaceable secretary.</h2>
+      <p>Astra reads the job, chooses a sensible approach and hands out assignments. Aeon holds the durable record. A small ordinary program handles waiting, process startup and supervision. <strong>Astra does not have to think continuously while nothing is happening.</strong></p>
+      <div class="flow" aria-label="Proposed workflow">
+        <div><b>1. You authorize</b><small>Save a draft, choose scope, then approve a launch or bounded plan.</small></div>
+        <div><b>2. Astra decides</b><small>Read the card; propose direct, planned or parallel work; save the decision.</small></div>
+        <div><b>3. Runner starts</b><small>Claim queued work and start Copilot in the registered repository.</small></div>
+        <div><b>4. Agents deliver</b><small>Do one bounded mission. Return evidence and a structured result.</small></div>
+        <div><b>5. You review</b><small>Review the output. Approve the next phase or finish the workstream.</small></div>
+      </div>
+      <div class="grid">
+        <div class="panel"><span class="icon" aria-hidden="true">&#129504;</span><h3>Astra gets the clipboard</h3><p>Recommended model for the top-level mission leader and future secretary: <code>gpt-6-astra</code>. Your requested approach takes precedence. This is a role choice, not a claim that Astra has beaten every model in a benchmark.</p></div>
+        <div class="panel"><span class="icon" aria-hidden="true">&#128736;</span><h3>Workers get the tools</h3><p>Keep the existing Sol implementation/research workers and configured specialist reviewers. Selecting Astra for the parent does not require changing every subagent to Astra.</p></div>
+        <div class="panel"><span class="icon" aria-hidden="true">&#128218;</span><h3>Aeon keeps the notebook</h3><p>Card revision, approved scope, routing decision, attempts, questions and deliverables survive the secretary process. A replacement reads that record, rather than guessing from an old conversation.</p></div>
+      </div>
+      <div class="note"><strong>Today versus the target:</strong> today, you launch a card and the runner starts its chosen model directly. There is no automatic secretary-before-dispatch step. A saved conversation, <code>/keep-alive</code> or <code>/every</code> is not crash recovery. The target adds supervised, bounded secretary turns and reconciliation around the existing queue.</div>
+    </section>
+    <section id="now">
+      <div class="eyebrow">02 / No imaginary machinery</div>
+      <h2>What can happen right now?</h2>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Capability</th><th>Actual boundary</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Only hosted Aeon is open</strong></td><td>Draft cards, configure a mission, queue it, inspect previous results. Opening Aeon does not start a program on your PC. With no eligible runner anywhere, a launched card waits.</td></tr>
+          <tr><td><strong>Aeon + local runner</strong></td><td>The runner polls out to hosted Aeon, starts Copilot and posts the result. A local Next.js server and a manually opened Copilot chat are not required.</td></tr>
+          <tr><td><strong>Existing repositories</strong></td><td>Host mappings exist for Aeon and ARQ. A new project/repository needs both Aeon's logical registry entry and a real local checkout/path. Registering a URL does not clone or scaffold it automatically.</td></tr>
+          <tr><td><strong>This Copilot conversation</strong></td><td>Can inspect the setup, edit code/configuration when authorized, prepare cards, call Aeon tools, launch specialist subagents, start/monitor processes and help run the exercises. It is not already an installed always-on service.</td></tr>
+          <tr><td><strong>Astra selection</strong></td><td>This conversation is now on Astra. In a card, explicitly set engine <code>copilot</code> and model <code>gpt-6-astra</code>. That does not yet create a cross-card secretary.</td></tr>
+          <tr><td><strong>Automatic routing / next-phase dispatch</strong></td><td class="later">To build. The current UI has no routing or subagent-count selector. For now, write your preferred approach into Instruction.</td></tr>
+          <tr><td><strong>Reboot-safe automation</strong></td><td class="later">To build and exercise. No verified autonomous recovery of claimed work. A dead runner's running mission needs human reconciliation, not a blind retry.</td></tr>
+        </tbody>
+      </table></div>
+      <p class="muted">Updated 10 September: this host's Copilot default is <code>claude-sonnet-5</code>, verified against its authenticated model catalog. The previous <code>claude-sonnet-5.6</code> override was invalid and has been corrected. GPT-5.6 Sol is also available. Astra is currently absent from this Copilot account's model list; use the Codex engine with verified Astra access for the Astra-specific instructions below.</p>
+    </section>
+    <section id="plan">
+      <div class="eyebrow">03 / Recommended implementation order</div>
+      <h2>Six steps. No orchestration cathedral.</h2>
+      <ol class="steps">
+        <li><div><strong>Pin Astra and prove one supervised flight.</strong><p>Use Copilot + Astra explicitly, concurrency one, known repo, manual launch. Pass the no-file handshake before relying on any automatic routing. Owner: runner configuration and operator.</p></div></li>
+        <li><div><strong>Make delivery trustworthy before useful work.</strong><p>Preserve full reports before disposable checkout cleanup. Make commit/push permissions explicit; add result rules per objective. Map review to Landing Zone, questions to Live, and Done to your approval. Owner: result handling, storage and lifecycle.</p></div></li>
+        <li><div><strong>Add a small, visible execution policy.</strong><p>Separate objective from route: auto, direct, specialist, plan-then-execute, swarm, execution-only. Record your preference, selected route, reason, model roles, worker cap and time budget. Execution-only needs an approved current plan. Owner: shared validators and mission editor.</p></div></li>
+        <li><div><strong>Build Astra's replaceable secretary turn.</strong><p>On authorized work, read the latest card/plan/results, classify once, persist the decision and enqueue only approved scope. On completion, summarize or propose the next phase. Persist attempts and decisions outside the model. Owner: orchestration service.</p></div></li>
+        <li><div><strong>Make restarts safe, then make startup automatic.</strong><p>Add restart reconciliation, dispatch identifiers, bounded retries and stale-worker visibility. Never rerun an ambiguous attempt until its process and side effects are resolved. Host one supervised worker on Windows Task Scheduler or a service; test restart with only disposable missions.</p></div></li>
+        <li><div><strong>Expand gradually, with one integration owner.</strong><p>Start with two independent missions, then increase only after results, limits and cleanup work. Keep one coarse workstream card; phases/checklists and session records hold the breakdown. No automatic explosion of micro-cards, no self-merge.</p></div></li>
+      </ol>
+      <div class="table-scroll"><table><thead><tr><th>Your approach</th><th>What the secretary should do</th></tr></thead><tbody>
+        <tr><td>Direct</td><td>One understood chain, one agent. Do not add a planning committee.</td></tr>
+        <tr><td>Specialist</td><td>One domain expert for localized specialist work.</td></tr>
+        <tr><td>Plan then execute</td><td>Resolve uncertainty and coupling first. Stop at planning unless execution was also authorized.</td></tr>
+        <tr><td>Swarm</td><td>Parallelize independent lanes with disjoint ownership. Start with at most three workers inside a mission; integrate once.</td></tr>
+        <tr><td>Execution only</td><td>Follow the approved plan, do not silently redesign it. Surface a blocker if the plan no longer fits.</td></tr>
+      </tbody></table></div>
+      <p class="tiny muted">Those routes are proposals, not currently accepted card fields. Start with simple policy and real observations; do not use arbitrary file counts as safety gates. Mission concurrency and subagent concurrency are different limits.</p>
+    </section>
+    <section id="cold-start">
+      <div class="eyebrow">04 / Cold-start checklist</div>
+      <h2>You have Aeon open. Nothing else.</h2>
+      <p>Assumption: you are using hosted Aeon, not <code>localhost:3000</code>. The app can stay in your browser. We will open <strong>one runner terminal</strong> and <strong>one PowerShell window for checks</strong>. Copilot is started by the runner when needed.</p>
+      <div class="note"><strong>Before starting anything:</strong> inspect all queued coding sessions for the runner's account, across all projects. The worker claims the oldest eligible card sessions; it is not restricted to your visible board. Cancel only your own unwanted test missions. Do not start it with an unknown backlog, and do not assume a guaranteed 15-second cancellation window.</div>
+      <ol class="steps">
+        <li><div><strong>Check tools and Copilot sign-in.</strong><p>Open PowerShell. These commands do not start a mission. The CLI must be installed and signed in on this Windows account. If needed, open <code>copilot</code>, use <code>/login</code>, then <code>/exit</code>. Also confirm your Git origin access for the target repo.</p>
+          <div class="code-head"><span>PowerShell / inspect only</span><button data-copy="tools">Copy</button></div>
+          <pre><code id="tools">$repo = Join-Path $HOME 'data_science\dev_26\shadow_app_aeon'
+Set-Location $repo
+node --version
+npm --version
+git --version
+copilot --version
+Test-Path '.\node_modules'
+Test-Path '.\apps\kairos-worker\runner.env.bat'
+Test-Path '.\apps\kairos-worker\repos.local.yaml'</code></pre>
+          <p class="tiny">If the launcher reports missing dependencies, restore the repository's existing dependencies before continuing. Do not run package installs inside a mission: its dependency folders may be shared with your live checkout.</p>
+        </div></li>
+        <li><div><strong>Check the two local configuration files.</strong><p><code>runner.env.bat</code> needs the hosted Aeon address and an Aeon API key belonging to the user who launches the card. Keep the key only in that local ignored file; never paste it into a card, transcript or this page. <code>repos.local.yaml</code> maps the chosen slug to an existing local Git checkout. Confirm its base branch and avoid dependency-changing setup commands for these tests.</p>
+          <details><summary>First-time setup, only if a file is missing</summary><p>In <code>apps\kairos-worker</code>, copy <code>runner.env.example.bat</code> to <code>runner.env.bat</code> and <code>repos.local.yaml.example</code> to <code>repos.local.yaml</code>. Fill in the real values locally. Never overwrite an existing configuration with the example.</p></details>
+        </div></li>
+        <li><div><strong>Make the pilot explicit and small.</strong><p>Before a real test, edit only these non-secret entries in <code>runner.env.bat</code>, preserving everything else. A card's explicit model overrides the runner default. The global model for your ordinary Copilot chats stays unchanged.</p>
+          <div class="code-head"><span>Lines in runner.env.bat / not PowerShell commands</span><button data-copy="pilot-config">Copy</button></div>
+          <pre><code id="pilot-config">set KAIROS_COPILOT_DEFAULT_MODEL=gpt-6-astra
+set KAIROS_MAX_CONCURRENT=1</code></pre>
+          <p class="tiny">These are proposed manual edits; this HTML has not applied them. Keep this first pilot local to a trusted host/network. The worker still exposes a push endpoint even in poll mode; do not publish its HTTP port or expose an unauthenticated endpoint. Least-privilege hosting is a gate before unattended operation.</p>
+        </div></li>
+        <li><div><strong>Start the existing launcher and leave it open.</strong><p>Only after inspecting the queue. This loads the local configuration and starts poll mode. You do not need <code>npm run dev</code> for the hosted app.</p>
+          <div class="code-head"><span>PowerShell / starts the runner and can execute queued missions</span><button data-copy="start-runner">Copy</button></div>
+          <pre><code id="start-runner">Set-Location (Join-Path $HOME 'data_science\dev_26\shadow_app_aeon')
+&amp; '.\apps\kairos-worker\start-hangar-runner.bat'</code></pre>
+        </div></li>
+        <li><div><strong>Check the launcher URL, not a guessed port.</strong><p>The normal launcher defaults to <strong>8790</strong>; starting the Node service directly defaults to 8787. Follow the health URL printed in the runner window if overridden. In another PowerShell window:</p>
+          <div class="code-head"><span>PowerShell / read-only health probe</span><button data-copy="health">Copy</button></div>
+          <pre><code id="health">Invoke-RestMethod 'http://localhost:8790/health' |
+  ConvertTo-Json -Depth 5</code></pre>
+          <p>Look for <code>ok: true</code>, <code>mode: poll</code>, a worker ID and a recent <code>lastPollAt</code>. <strong>A recent poll timestamp proves an attempt, not successful authentication.</strong> Check the runner log for 401/403/429 or network errors; the first claimed mission is the end-to-end proof.</p>
+        </div></li>
+        <li><div><strong>Prepare one disposable test card in Aeon.</strong><p>Use a clearly labelled test card on an authorized board in a realm with the repo registered. Keep this out of ordinary production work. For AI Mission Control, test sessions belong to the Hangar workstream rather than becoming a new backlog of micro-cards.</p><p>Open board settings and enable Auto AI if needed to reveal the AI-card UI. Use the AI option when adding a card, or its context-menu mission editor. Choose <strong>Recon / aeon / copilot / gpt-6-astra</strong>. Keep <strong>Auto-run on drop OFF</strong>. Save is not launch. Start with T01 below.</p></div></li>
+      </ol>
+      <div class="note info"><strong>Shutdown rule:</strong> finish or cancel your test missions through Aeon, wait for the runner to release the child processes and complete cleanup, then stop the idle runner with Ctrl+C. Do not treat closing a terminal as a reliable mission-cancel protocol. The launcher's clean-kill comment is not a substitute for that check.</div>
+    </section>
+    <section id="flight-tests">
+      <div class="eyebrow">05 / Pilot logbook</div>
+      <h2>Earn your wings, one small flight at a time.</h2>
+      <p>Green labels mean the existing path can be exercised, <strong>not</strong> that you have run the test. Amber means deliberate side effects. Purple means a future acceptance test that should remain blocked until its prerequisites are built.</p>
+      <div class="log">
+        <div class="log-top"><strong id="progress-text">0 of 10 tests passed</strong><div class="actions"><button id="export" class="primary">Export logbook</button><button id="print">Print / PDF</button><button id="reset">Reset my results</button></div></div>
+        <progress id="progress" max="10" value="0" aria-label="Manually recorded passed tests"></progress>
+        <div id="counts" class="tiny muted">Not run: 10</div>
+        <p id="storage-status" class="tiny muted">Results are self-reported and saved only in this browser when local storage is available. Export before moving the file or changing browsers. Do not enter secrets or confidential output.</p>
+      </div>
+      <noscript><div class="note">JavaScript is off. The whole manual and prompts remain readable; copy text manually. The logbook, export and copy buttons need JavaScript.</div></noscript>
+      <div class="test-grid">
+        <article class="test" data-test="T01" data-title="Save is not launch">
+          <div class="test-top"><span class="test-id">T01 / PARKED</span><span class="chip good">Try now / no worker needed</span></div>
+          <h3>Save is not launch</h3>
+          <p>The simplest safety promise: half-writing an idea must not hire an agent.</p>
+          <ol><li>Create a test mission with the T04 handshake instruction.</li><li>Set Astra explicitly; keep Auto-run on drop off.</li><li>Click <strong>Save</strong>, not Save &amp; Launch.</li><li>Reload Aeon and inspect the card and session history.</li></ol>
+          <div class="expect"><strong>Pass looks like</strong>The draft is preserved. No new queued or running mission exists for this save.</div>
+        </article>
+        <article class="test" data-test="T02" data-title="Queue without a runner">
+          <div class="test-top"><span class="test-id">T02 / HOLDING PATTERN</span><span class="chip good">Try now / worker OFF</span></div>
+          <h3>The card can wait for the box</h3>
+          <ol><li>Confirm no eligible runner for this account is running on any host.</li><li>Launch the saved handshake card once using <strong>Execute mission</strong> or <strong>Save &amp; Launch</strong>.</li><li>Close and reopen the Aeon tab.</li><li>Attempt Execute again while that mission is queued.</li></ol>
+          <div class="expect"><strong>Pass looks like</strong>Exactly one queued session survives the reload. The duplicate launch is refused; no second agent is created. Nothing executes while all workers are off.</div>
+          <p class="tiny muted">Queueing writes real Aeon state. An unexpected claim means another worker is active: pause and identify it before proceeding.</p>
+        </article>
+        <article class="test" data-test="T03" data-title="Cancel before takeoff">
+          <div class="test-top"><span class="test-id">T03 / ABORT</span><span class="chip good">Try now / worker OFF</span></div>
+          <h3>Cancel before takeoff</h3>
+          <ol><li>With the T02 mission still queued, open its session in the live-session surface.</li><li>Use that session's kill/cancel control. If not exposed in your view, use the existing Aeon kill-session tool for that exact test session.</li><li>Confirm status <code>killed</code> before starting a worker.</li></ol>
+          <div class="expect"><strong>Pass looks like</strong>The cancelled session stays terminal and is never claimed when the runner starts. No file changes or commits are produced by it.</div>
+          <p class="tiny muted">There is no guaranteed grace period if a runner is already polling. Never test this with a valuable live mission.</p>
+        </article>
+        <article class="test" data-test="T04" data-title="Astra handshake">
+          <div class="test-top"><span class="test-id">T04 / FIRST FLIGHT</span><span class="chip good">Pilot / worker ON</span></div>
+          <h3>Astra says hello through a card</h3>
+          <ol><li>Complete cold-start setup. Start only one worker; no unrelated queued work.</li><li>Use the saved handshake card after its cancelled attempt, or a fresh disposable one. Model <code>gpt-6-astra</code>, engine <code>copilot</code>, objective <code>recon</code>.</li><li>Launch manually. Watch queued, claimed/running, then result.</li><li>Inspect the full result, not just a green session badge.</li></ol>
+          <div class="expect"><strong>Pass looks like</strong>A valid envelope with <code>AEON-ASTRA-HANDSHAKE-01</code> reaches Aeon. No code, report file or commit is created. Runner logs/process arguments confirm the requested Astra model; provider-reported identity is recorded if exposed, otherwise marked unknown.</div>
+          <details open><summary>Copy the handshake instruction</summary>
+            <p class="tiny muted">Intentional transport-only exception to the normal Recon report requirement. This proves dispatch and result delivery, not full report persistence or the future secretary.</p>
+            <div class="code-head"><span>Instruction field</span><button data-copy="handshake">Copy</button></div>
+            <pre><code id="handshake">Transport canary only, not a full recon deliverable.
+For this one test, override the usual recon requirement to write a report file.
+Do not edit or create files, commit, install packages, change external systems, or spawn subagents.
+Do not invoke board-tracking writes. Read-only instruction loading is allowed.
+Return the following result envelope as the final fenced json block.
+Do not claim actual model identity from the prompt alone.
+{
+  "status": "completed",
+  "outcome": "investigation_complete",
+  "summary": "AEON-ASTRA-HANDSHAKE-01. This is a transport-only response. No report artifact is expected and no code changes are authorized.",
+  "branch": null,
+  "commit": null,
+  "artifacts": [],
+  "tests": { "status": "not_run", "summary": "Transport canary; no code tests requested." },
+  "questions": [],
+  "recommended_tasks": []
+}</code></pre>
+          </details>
+        </article>
+        <article class="test" data-test="T05" data-title="Human question handoff">
+          <div class="test-top"><span class="test-id">T05 / RADIO CHECK</span><span class="chip good">Pilot / worker ON</span></div>
+          <h3>The agent knows when to stop</h3>
+          <ol><li>After T04 completes, run a separate no-file canary with the instruction below.</li><li>Open the returned result and read the question.</li><li>Do not rely on the session's <code>succeeded</code> badge: that can mean the process ended cleanly while the mission still needs you.</li></ol>
+          <div class="expect"><strong>Pass looks like</strong><code>status: needs_input</code>, one precise question, no file changes and no follow-on agent. The human blocker is visible in the result. Automatic Live/blocker mapping is a separate future gate.</div>
+          <details><summary>Copy the radio-check instruction</summary><div class="code-head"><span>Instruction field</span><button data-copy="question">Copy</button></div>
+            <pre><code id="question">This is a human-handoff transport canary. Do not write files, run shell commands, mutate Aeon or spawn subagents.
+Do not ask interactively; return needs_input through the final fenced json envelope.
+Use outcome "blocked", summary "AEON-HANDOFF-01: waiting for operator scope.", branch null, commit null, artifacts [], tests {"status":"not_run"}, recommended_tasks [].
+Set questions to ["For the next disposable canary, should the scope be README only?"].
+Stop. Do not treat this question as authorization to start the next mission.</code></pre>
+          </details>
+        </article>
+        <article class="test" data-test="T06" data-title="One-shot drop launch">
+          <div class="test-top"><span class="test-id">T06 / LAUNCH RAIL</span><span class="chip warn">Controlled / real dispatch</span></div>
+          <h3>Armed means one flight</h3>
+          <ol><li>After manual flights work, set a launch column on an authorized test board.</li><li>Move an unarmed handshake card into it: no session should launch.</li><li>Move out, explicitly arm Auto-run on drop, then drag into the launch column.</li><li>After completion, move out and back without rearming. Reload before checking.</li></ol>
+          <div class="expect"><strong>Pass looks like</strong>One session launches for the armed drop; the card is disarmed afterwards. Unarmed drops do nothing. Saving or reordering never counts as blanket consent.</div>
+          <p class="tiny muted">Use only the handshake payload. Board Auto AI settings plus the card's arming switch are both relevant; do not experiment on another person's card.</p>
+        </article>
+        <article class="test" data-test="T07" data-title="Durable report delivery">
+          <div class="test-top"><span class="test-id">T07 / CARGO DELIVERY</span><span class="chip later">Blocked / output retention</span></div>
+          <h3>A report outlives its worker</h3>
+          <p>Full Recon, Analysis and Plan missions need this before they are dependable.</p>
+          <ol><li>First add durable artifact capture and a retrieval surface before checkout deletion.</li><li>Run a tiny real report mission with a unique phrase in the body.</li><li>Wait for cleanup, stop the idle worker, and retrieve the full report from Aeon.</li><li>Compare the retrieved content with the completed artifact.</li></ol>
+          <div class="expect"><strong>Future pass looks like</strong>The whole report remains readable, not just its filename or summary. Mission success is withheld if promised deliverables cannot be retrieved.</div>
+          <p class="tiny warn">Current cleanup can discard uncommitted reports. Do not mark this passed because an artifact path appears in JSON.</p>
+        </article>
+        <article class="test" data-test="T08" data-title="Astra routing and replacement">
+          <div class="test-top"><span class="test-id">T08 / CHANGE OF SHIFT</span><span class="chip later">Blocked / secretary not built</span></div>
+          <h3>A new Astra picks up the clipboard</h3>
+          <ol><li>First implement durable route decisions and approved dispatch records.</li><li>Give it three cases: one small fix, one unclear design, two independent research lanes.</li><li>Confirm direct, plan-first and swarm decisions with visible reasons; also test your explicit execution-only preference.</li><li>End the secretary turn after saving its decision. Start a fresh one.</li></ol>
+          <div class="expect"><strong>Future pass looks like</strong>The new secretary reconstructs scope, approvals and progress from Aeon. It neither loses the decision nor dispatches a duplicate. No unrelated card is promoted or executed.</div>
+          <p class="tiny muted">Restart the secretary at a safe checkpoint first. Hard-crash recovery of active workers needs separate isolation, ownership/fencing and reconciliation tests; it does not work merely because a heartbeat exists.</p>
+        </article>
+        <article class="test" data-test="T09" data-title="Controlled coding mission">
+          <div class="test-top"><span class="test-id">T09 / FIRST REAL PAYLOAD</span><span class="chip warn">Gated / code and push</span></div>
+          <h3>A tiny fix, with an honest receipt</h3>
+          <ol><li>Use a registered disposable repo with an existing focused test and a harmless known defect.</li><li>Explicitly authorize that change, its mission commit and the runner's branch push. Otherwise wait for a no-push mode.</li><li>Launch Bug fix with Astra and the approved scope. Inspect the reported verification and branch teardown event.</li><li>Review the diff against the registered base; confirm the operator's active branch was not switched.</li></ol>
+          <div class="expect"><strong>Pass looks like</strong>Only the intended defect changes. Required checks pass. The result identifies a retrievable commit; a failed push is visible rather than called shipped. Nothing merges into main.</div>
+          <p class="tiny warn">The runner currently pushes new mission commits during cleanup, even if the model itself was told not to push. Agent instructions alone do not disable that behavior. Shared dependency junctions are not a security sandbox.</p>
+        </article>
+        <article class="test" data-test="T10" data-title="Two independent flights and idle restart">
+          <div class="test-top"><span class="test-id">T10 / SMALL FLEET</span><span class="chip warn">After single-flight gates</span></div>
+          <h3>Two flights. Still one notebook.</h3>
+          <ol><li>After T01-T06 pass, make sure the queue is clear and all test missions are terminal.</li><li>Stop the idle runner, set concurrency to two, and restart it.</li><li>Launch two distinct no-file handshake cards with different markers. Observe whether their running intervals overlap.</li><li>Confirm two distinct sessions/results and no change to your active checkout.</li><li>Finish/cancel both, then restart the idle runner. No finished work should be re-dispatched.</li></ol>
+          <div class="expect"><strong>Pass looks like</strong>Both markers land on the correct cards, observed overlap supports concurrency, and restarting an idle worker does not duplicate work. If sessions finish too quickly to overlap, record concurrency as unproven, not failed or passed by assumption.</div>
+          <p class="tiny muted">This is not an active-process crash test and does not prove automatic startup after reboot. Those remain acceptance gates for the supervised secretary service.</p>
+        </article>
+      </div>
+    </section>
+    <section id="outputs">
+      <div class="eyebrow">06 / The receipt matters as much as the flight</div>
+      <h2>What should land on your card?</h2>
+      <div class="table-scroll"><table><thead><tr><th>Objective</th><th>Agreed deliverable</th><th>Current caution</th></tr></thead><tbody>
+        <tr><td>Bug fix</td><td>Root-cause fix, reproduction evidence, commit and honest checks.</td><td>Runner can push the branch. Permission and actual delivery must be explicit.</td></tr>
+        <tr><td>Implement</td><td>Requested feature, mission commit, verification and limitations.</td><td>Success must mean usable output, not only that the process exited.</td></tr>
+        <tr><td>Recon</td><td>Evidence-backed report; verified versus inferred findings.</td><td>Full report retention is not yet safe to assume.</td></tr>
+        <tr><td>Analysis</td><td>One recommendation, trade-offs, supporting evidence and risks.</td><td>A path plus a short summary is not delivery of the whole analysis.</td></tr>
+        <tr><td>Plan</td><td>Executable plan, dependencies and suggested next missions.</td><td>Suggestions are not authorization and do not currently auto-launch.</td></tr>
+      </tbody></table></div>
+      <p>The final fenced JSON block already carries status, outcome, summary, branch, commit, artifact paths, checks, questions and suggested tasks. Keep this engine-independent. Add a version, card revision, attempt ID, routing reason, requested/observed model, persisted artifact references and approval state as the secretary is built.</p>
+      <div class="note"><strong>Do not confuse three kinds of success:</strong> the process ended; the mission met its objective; you approved the deliverable. Today <code>needs_input</code> can still produce a <code>succeeded</code> session. Objective-specific rules are stronger in the skill instructions than in the current server envelope validator. These are implementation gates, not things a green badge proves.</div>
+      <div class="grid two">
+        <div class="panel"><h3>Mission Control's intended flow</h3><p>Cryo &rarr; Depot &rarr; Live &rarr; Landing Zone &rarr; Done. Blocked work stays Live with a visible question. Only your approval means Done.</p></div>
+        <div class="panel"><h3>What the handler does today</h3><p>Automatic result-column movement only runs for a dedicated <code>boardMode=hangar</code> board and searches for <code>Landing</code> or <code>Tower</code>. Normal Auto AI boards still get result metadata, but need lifecycle mapping before automatic Mission Control movement is dependable.</p></div>
+      </div>
+    </section>
+    <section id="evidence">
+      <div class="eyebrow">07 / Ground control notes</div>
+      <h2>Grounded in the current implementation.</h2>
+      <p class="muted">Read-only inspection on 07 September 2026. Both default runner ports were unreachable at the time of this manual's preparation; that is not a claim about every other host. No worker was started, no mission was launched, no model defaults were edited and no production data was changed to create this file.</p>
+      <details><summary>Source map and external references</summary>
+        <div class="table-scroll"><table><thead><tr><th>Evidence</th><th>Where to look</th></tr></thead><tbody>
+          <tr><td>Launcher port, environment loading and setup</td><td><code>apps\kairos-worker\start-hangar-runner.bat</code></td></tr>
+          <tr><td>Copilot arguments and default-model fallback</td><td><code>apps\kairos-worker\src\engines.ts</code></td></tr>
+          <tr><td>Claim loop, results, automatic push and cleanup</td><td><code>apps\kairos-worker\src\poller.ts</code></td></tr>
+          <tr><td>Disposable checkouts and shared dependencies</td><td><code>apps\kairos-worker\src\worktree.ts</code></td></tr>
+          <tr><td>Health fields and HTTP listener</td><td><code>apps\kairos-worker\src\index.ts</code></td></tr>
+          <tr><td>Manual launch, model pin and disarm</td><td><code>apps\web\src\lib\actions\hangar.ts</code></td></tr>
+          <tr><td>Queue claim, result status and column mapping</td><td><code>apps\web\src\lib\data\sessions.ts</code></td></tr>
+          <tr><td>Current metadata and result schema</td><td><code>apps\web\src\lib\data\validators\hangar.ts</code></td></tr>
+          <tr><td>Current mission-editor fields</td><td><code>apps\web\src\components\board\MissionEditorModal.tsx</code></td></tr>
+        </tbody></table></div>
+        <p><a href="https://docs.github.com/en/copilot/how-tos/copilot-cli/automate-copilot-cli/schedule-prompts" target="_blank" rel="noopener noreferrer">GitHub: schedules only run while their CLI session is open; external schedulers for unattended work</a></p>
+        <p><a href="https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-programmatic-reference" target="_blank" rel="noopener noreferrer">GitHub: programmatic runs, model selection and permission controls</a></p>
+        <p><a href="https://docs.github.com/en/copilot/how-tos/copilot-cli/cli-best-practices" target="_blank" rel="noopener noreferrer">GitHub: focused sessions, delegation and explicit limits</a></p>
+      </details>
+      <p class="tiny">Earlier dispatch POCs demonstrate the core path, not this exact cold-start setup or a permanent Astra secretary. An Astra-requested subagent canary is not a card-runner canary. Record requested model versus actual provider-reported identity separately.</p>
+    </section>
+  </main>
+  <footer class="wrap"><strong>AEON FLIGHT SCHOOL</strong> &middot; The first milestone is deliberately boring: one card, one Astra response, no unintended effects.<br>Standalone manual. No installation required. Open this file directly in your browser.</footer>
+  <div id="notice" role="status" aria-live="polite" hidden></div>
+  <script>
+    (() => {
+      'use strict';
+      const key = 'aeon-flight-school-20260907-v1';
+      const statuses = ['not_run', 'passed', 'failed', 'blocked'];
+      const labels = ['Not run', 'Passed (observed)', 'Failed (observed)', 'Blocked / not ready'];
+      const cards = [...document.querySelectorAll('[data-test]')];
+      const notice = document.getElementById('notice');
+      const storageStatus = document.getElementById('storage-status');
+      let noticeTimer;
+      let saved = {};
+      const notify = (message) => {
+        notice.textContent = message;
+        notice.hidden = false;
+        clearTimeout(noticeTimer);
+        noticeTimer = setTimeout(() => { notice.hidden = true; }, 6000);
+      };
+      try {
+        const parsed = JSON.parse(localStorage.getItem(key) || '{}');
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          throw new Error('Invalid logbook format');
+        }
+        saved = parsed;
+      } catch {
+        storageStatus.textContent = 'Saved logbook unavailable or unreadable. This page still works; export your observations before closing it. Never enter secrets.';
+      }
+      for (const card of cards) {
+        const id = card.dataset.test;
+        const value = Object.hasOwn(saved, id) && saved[id] && typeof saved[id] === 'object' ? saved[id] : {};
+        const statusLabel = document.createElement('label');
+        statusLabel.textContent = 'Your observed result';
+        statusLabel.htmlFor = `${id}-status`;
+        const select = document.createElement('select');
+        select.id = statusLabel.htmlFor;
+        statuses.forEach((status, index) => {
+          const option = document.createElement('option');
+          option.value = status;
+          option.textContent = labels[index];
+          select.append(option);
+        });
+        select.value = statuses.includes(value.status) ? value.status : 'not_run';
+        const noteLabel = document.createElement('label');
+        noteLabel.textContent = 'Evidence / blocker (no secrets)';
+        noteLabel.htmlFor = `${id}-notes`;
+        const notes = document.createElement('textarea');
+        notes.id = noteLabel.htmlFor;
+        notes.maxLength = 4000;
+        notes.placeholder = 'Session ID, marker, observed status, or why this is blocked...';
+        notes.value = typeof value.notes === 'string' ? value.notes.slice(0, 4000) : '';
+        card.append(statusLabel, select, noteLabel, notes);
+      }
+      const collect = () => Object.fromEntries(cards.map((card) => [
+        card.dataset.test,
+        { status: card.querySelector('select').value, notes: card.querySelector('textarea').value }
+      ]));
+      const update = (persist = true) => {
+        const results = collect();
+        const counts = Object.fromEntries(statuses.map((status) => [status, 0]));
+        cards.forEach((card) => {
+          const status = results[card.dataset.test].status;
+          card.dataset.result = status;
+          counts[status]++;
+        });
+        document.getElementById('progress').max = cards.length;
+        document.getElementById('progress').value = counts.passed;
+        document.getElementById('progress-text').textContent = `${counts.passed} of ${cards.length} tests passed`;
+        document.getElementById('counts').textContent = `Not run: ${counts.not_run} / Passed: ${counts.passed} / Failed: ${counts.failed} / Blocked: ${counts.blocked}. Manually recorded, not automatically verified.`;
+        if (persist) {
+          try { localStorage.setItem(key, JSON.stringify(results)); }
+          catch { storageStatus.textContent = 'Browser storage is unavailable. Changes exist only on this page until you export them. Never enter secrets.'; }
+        }
+      };
+      cards.forEach((card) => {
+        card.querySelector('select').addEventListener('change', () => update());
+        card.querySelector('textarea').addEventListener('input', () => update());
+      });
+      document.querySelectorAll('[data-copy]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const source = document.getElementById(button.dataset.copy);
+          try {
+            if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+            await navigator.clipboard.writeText(source.textContent);
+            notify('Copied. Nothing has been executed.');
+          } catch {
+            const range = document.createRange();
+            range.selectNodeContents(source);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            notify('Clipboard access unavailable. Text selected: press Ctrl+C to copy.');
+          }
+        });
+      });
+      document.getElementById('export').addEventListener('click', () => {
+        const data = {
+          manual: 'Aeon Flight School 2026-09-07',
+          exportedAt: new Date().toISOString(),
+          evidenceType: 'operator_self_report',
+          tests: cards.map((card) => ({ id: card.dataset.test, title: card.dataset.title, ...collect()[card.dataset.test] }))
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = 'aeon-flight-logbook.json';
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        notify('Logbook export requested. This is your manual record, not an automated test report.');
+      });
+      document.getElementById('reset').addEventListener('click', () => {
+        if (!window.confirm('Clear the results and notes recorded in this manual? Aeon cards and sessions will not change.')) return;
+        cards.forEach((card) => {
+          card.querySelector('select').value = 'not_run';
+          card.querySelector('textarea').value = '';
+        });
+        update();
+        notify('Manual logbook reset. No Aeon state changed.');
+      });
+      document.getElementById('print').addEventListener('click', () => window.print());
+      const expandForPrint = () => document.querySelectorAll('details').forEach((detail) => {
+        detail.dataset.wasOpen = String(detail.open);
+        detail.open = true;
+      });
+      window.addEventListener('beforeprint', expandForPrint);
+      window.addEventListener('afterprint', () => document.querySelectorAll('details').forEach((detail) => {
+        if (detail.dataset.wasOpen !== undefined) {
+          detail.open = detail.dataset.wasOpen === 'true';
+          delete detail.dataset.wasOpen;
+        }
+      }));
+      update(false);
+    })();
+  </script>
+</body>
+</html>

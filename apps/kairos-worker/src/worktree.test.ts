@@ -6,9 +6,12 @@
 import { mkdtempSync, mkdirSync, existsSync, readFileSync, rmdirSync, rmSync, unlinkSync, writeFileSync, lstatSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { RepoEntry } from './registry.js'
 import {
+  CLEANUP_BUDGET_MS,
   createWorktree,
   deleteBranchIfEmpty,
   findLinks,
@@ -59,7 +62,7 @@ beforeAll(() => {
 
 afterAll(() => {
   delete process.env.KAIROS_WORKTREE_ROOT
-  rmSync(base, { recursive: true, force: true })
+  rmSync(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
 })
 
 describe('worktreeDirFor', () => {
@@ -359,6 +362,86 @@ describe('worktree lifecycle', () => {
 
     rmSync(path, { force: true })
   })
+
+  // Regression lock for the production failure of 2026-09-10, where a mission
+  // delivered its report but left its checkout on disk (Windows EBUSY) and the
+  // batch stopped. Measured cause: Windows refuses to delete OR rename a
+  // directory that is a live process's current directory, and the agent CLI
+  // runs with cwd = the worktree — so anything it spawned that outlives it
+  // pins the tree until it exits. Only waiting clears it.
+  //
+  // On POSIX a cwd does not pin a directory at all, so there the delete simply
+  // succeeds on the first pass; the assertions below still hold, the test just
+  // stops being a lock test. It is a Windows regression lock by construction.
+  it('waits out a process holding the tree and still tears it down', async () => {
+    const res = await createWorktree(entry, 'aeon/pinned')
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+
+    const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], {
+      cwd: res.path,
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    await once(holder, 'spawn')
+    const release = setTimeout(() => holder.kill(), 900)
+
+    try {
+      const destroyed = await removeWorktree(entry, 'aeon/pinned')
+      expect(destroyed.removed).toBe(true)
+      expect(existsSync(res.path)).toBe(false)
+      // the junction target behind the seeded link is untouched by the retries
+      expect(existsSync(join(entry.path, 'node_modules', 'dep.js'))).toBe(true)
+    } finally {
+      clearTimeout(release)
+      holder.kill()
+    }
+    await deleteBranchIfEmpty(entry, 'aeon/pinned')
+  }, 30_000)
+
+  it('gives up inside its budget and never lies about what it removed', async () => {
+    // The other half of the contract: the retry is BOUNDED, and whatever it
+    // reports matches the disk. An unbounded retry would wedge teardown while
+    // holding the repo lock; a teardown that claimed success while the
+    // checkout survived is exactly what stranded the 10 September batch.
+    //
+    // Whether Windows actually refuses for the whole budget depends on which
+    // handle the OS hands out for a cwd lock, so that is deliberately NOT
+    // asserted — it made this test flaky under load. The retry loop itself is
+    // covered by the released-handle test above and by the single-pass
+    // negative control.
+    const res = await createWorktree(entry, 'aeon/pinned-forever')
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+
+    const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 120000)'], {
+      cwd: res.path,
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    await once(holder, 'spawn')
+
+    const startedAt = Date.now()
+    let destroyed
+    try {
+      destroyed = await removeWorktree(entry, 'aeon/pinned-forever')
+    } finally {
+      holder.kill()
+      await once(holder, 'exit')
+    }
+    const elapsed = Date.now() - startedAt
+
+    expect(elapsed).toBeLessThan(CLEANUP_BUDGET_MS + 15_000)
+    expect(destroyed.removed).toBe(!existsSync(res.path))
+    // If the lock did hold, it must have spent the whole budget before saying so.
+    if (!destroyed.removed) expect(elapsed).toBeGreaterThanOrEqual(CLEANUP_BUDGET_MS)
+
+    // The locker is gone now, so teardown settles for real either way.
+    const retry = await removeWorktree(entry, 'aeon/pinned-forever')
+    expect(retry.removed).toBe(true)
+    expect(existsSync(res.path)).toBe(false)
+    await deleteBranchIfEmpty(entry, 'aeon/pinned-forever')
+  }, 60_000)
 })
 
 describe('findLinks', () => {

@@ -1,0 +1,48 @@
+[
+  {
+    "id": "26939edd-4823-4b13-a79f-cecd6e3e660e",
+    "sessionId": "ecc7154b-4c17-44af-bf84-f7b513901842",
+    "seq": 97,
+    "kind": "stop",
+    "toolName": null,
+    "payload": {
+      "signal": null,
+      "exitCode": 0
+    },
+    "createdAt": "2026-09-10T16:32:19.379Z"
+  },
+  {
+    "id": "87269010-e583-4f91-b01c-4d4039aa063a",
+    "sessionId": "ecc7154b-4c17-44af-bf84-f7b513901842",
+    "seq": 98,
+    "kind": "result",
+    "toolName": null,
+    "payload": {
+      "tests": {
+        "status": "not_run",
+        "summary": "Repository research only; no tests requested or run."
+      },
+      "branch": "aeon/084ea9f9",
+      "commit": "9a0009e483007f54bbc06c6b2c98f8bd4ff2758d",
+      "status": "completed",
+      "outcome": "investigation_complete",
+      "artifacts": [
+        "aeon_os/workflows/reports/2026-09-10T16-29-31-771Z-238d57-01.md"
+      ],
+      "questions": [],
+      "recommended_tasks": []
+    },
+    "createdAt": "2026-09-10T16:32:19.804Z"
+  },
+  {
+    "id": "a57e3b75-0ab2-46fe-8e98-f29df317e217",
+    "sessionId": "ecc7154b-4c17-44af-bf84-f7b513901842",
+    "seq": 99,
+    "kind": "error",
+    "toolName": null,
+    "payload": {
+      "message": "result envelope rejected by Aeon: Invalid input: expected string, received undefined"
+    },
+    "createdAt": "2026-09-10T16:32:20.313Z"
+  }
+]

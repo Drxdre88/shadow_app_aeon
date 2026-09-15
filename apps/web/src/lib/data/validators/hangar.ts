@@ -77,6 +77,47 @@ export const hangarCardDraftSchema = z.object({
   autoRun:     z.boolean(),
 })
 
+/**
+ * The Hangar slice of a SESSION's metadata (agent_sessions.metadata.hangar).
+ *
+ * Session metadata is deliberately free-form jsonb, but the `hangar` key is
+ * not free-form: the runner reads `objective` to pick the objective skill and
+ * `model` to build engine argv, so a spawn carrying `objective:'launch_the_moon'`
+ * is accepted at 201 and only discovered as garbage when a real agent is
+ * already on a real repo. Every field is optional EXCEPT objective — a card
+ * launch writes objective/model/subagents/outputMode/repo, an external caller
+ * may send objective alone. Unknown keys stay legal; this schema is only ever
+ * used to VALIDATE, never to rewrite the stored metadata.
+ */
+export const sessionHangarMetadataSchema = z.object({
+  objective:  hangarObjectiveSchema,
+  agent:      hangarAgentSchema.optional(),
+  model:      z.string().trim().max(80).regex(HANGAR_MODEL_RE, 'Invalid model id').nullable().optional(),
+  repo:       z.string().trim().min(1).max(120).refine(isSafeRepoSlug, 'Invalid repo slug').optional(),
+  outputMode: hangarOutputModeSchema.optional(),
+  subagents:  z.array(z.string().trim().min(1).max(60)).max(20).optional(),
+})
+
+/**
+ * Shared spawn guard for both write surfaces (REST POST /api/v1/sessions and
+ * the MCP spawn_session tool). Returns a caller-facing message when
+ * metadata.hangar is present but malformed, or null when there is nothing to
+ * check — an absent `hangar` key keeps session metadata free-form.
+ */
+export function sessionHangarMetadataIssue(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null
+  const hangar = (metadata as Record<string, unknown>).hangar
+  if (hangar === undefined || hangar === null) return null
+  if (typeof hangar !== 'object' || Array.isArray(hangar)) {
+    return 'metadata.hangar must be an object'
+  }
+  const parsed = sessionHangarMetadataSchema.safeParse(hangar)
+  if (parsed.success) return null
+  const issue = parsed.error.issues[0]
+  const path = issue.path.length ? `metadata.hangar.${issue.path.join('.')}` : 'metadata.hangar'
+  return `${path}: ${issue.message}`
+}
+
 // Runner polls with its own id; engines narrows the claim to what it can spawn.
 export const claimSessionSchema = z.object({
   workerId: z.string().trim().min(1).max(120),
@@ -184,6 +225,7 @@ export type HangarObjective        = z.infer<typeof hangarObjectiveSchema>
 export type HangarAgent            = z.infer<typeof hangarAgentSchema>
 export type HangarOutputMode       = z.infer<typeof hangarOutputModeSchema>
 export type HangarCardMetadata     = z.infer<typeof hangarCardMetadataSchema>
+export type SessionHangarMetadata  = z.infer<typeof sessionHangarMetadataSchema>
 export type ClaimSessionInput      = z.infer<typeof claimSessionSchema>
 export type HeartbeatSessionInput  = z.infer<typeof heartbeatSessionSchema>
 export type SessionEventsTailArgs  = z.infer<typeof sessionEventsTailArgsSchema>

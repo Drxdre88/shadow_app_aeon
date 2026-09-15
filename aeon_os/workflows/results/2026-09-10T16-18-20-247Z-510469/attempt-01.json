@@ -1,0 +1,18 @@
+{
+  "index": 1,
+  "topic": "session claim ownership",
+  "marker": "AEON_OS_E2E_2026-09-10T16-18-20-247Z-510469_01",
+  "report": "aeon_os/workflows/reports/2026-09-10T16-18-20-247Z-510469-01.md",
+  "model": "claude-sonnet-5",
+  "taskId": "7f1d368b-4ef4-4aa3-8f89-bb1f1a556c67",
+  "sessionId": "d6713992-c413-4a8f-89bc-39b42bec2435",
+  "branch": "aeon/7f1d368b",
+  "createdAt": "2026-09-10T16:19:05.678Z",
+  "result": "FAIL",
+  "lastStatus": "succeeded",
+  "workerId": "002LND2094-52edbf",
+  "workerHost": "002LND2094",
+  "workerPid": 45396,
+  "error": "terminal status arrived, but branch publication/worktree removal did not settle within 60 seconds",
+  "failedAt": "2026-09-10T16:21:43.798Z"
+}

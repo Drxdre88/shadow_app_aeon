@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
+import { jsonResponse } from '@/lib/api/response'
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
-import { spawnSessionSchema, listSessionsSchema } from '@/lib/data/validators'
-import { createAgentSession, listAgentSessions, findAgentSessionById, updateAgentSessionStatus, recordSessionEvent } from '@/lib/data/sessions'
+import { spawnSessionSchema, listSessionsSchema, sessionHangarMetadataIssue } from '@/lib/data/validators'
+import { createAgentSession, listAgentSessions, findAgentSessionById, updateAgentSessionStatus, recordSessionEvent, findLiveSessionForTask, LiveMissionExistsError } from '@/lib/data/sessions'
 import { dispatchSpawn } from '@/lib/kairos/spawn'
 
 // Kairos Phase 3 (D16) — REST surface for agent_sessions.
@@ -25,7 +26,27 @@ export const POST = withRateLimit(
     const parsed = spawnSessionSchema.safeParse(body)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
-    const session = await createAgentSession(auth.id, parsed.data)
+    // Session metadata stays free-form, but its `hangar` slice steers a real
+    // agent on a real repo — an unknown objective must fail here, not after
+    // the runner has already claimed the mission.
+    const hangarIssue = sessionHangarMetadataIssue(parsed.data.metadata)
+    if (hangarIssue) return jsonError(hangarIssue, 400)
+
+    let session
+    try {
+      session = await createAgentSession(auth.id, parsed.data)
+    } catch (err) {
+      // The partial unique index is the launch guard (no pre-check SELECT —
+      // that is the race it exists to close). Losing the insert is a duplicate
+      // launch, which is a 409 the caller can act on, not a 500.
+      if (!(err instanceof LiveMissionExistsError)) throw err
+      const existing = parsed.data.taskId ? await findLiveSessionForTask(parsed.data.taskId) : null
+      const existingId = existing?.userId === auth.id ? existing.id : null
+      return jsonResponse(
+        { error: err.message, ...(existingId ? { sessionId: existingId } : {}) },
+        { status: 409 },
+      )
+    }
 
     const callbackBaseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.AEON_BASE_URL || ''
     const callbackToken = process.env.AEON_API_KEY || ''

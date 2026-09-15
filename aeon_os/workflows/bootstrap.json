@@ -1,0 +1,12 @@
+{
+  "projectId": "e4b0af95-d3ad-46ba-8275-1ecc28911683",
+  "name": "Aeon OS production verification 1009",
+  "baseUrl": "https://aeon.shadow-lab.ai",
+  "createdAt": "2026-09-10T15:49:38.587Z",
+  "review": {
+    "engine": "copilot",
+    "model": "gpt-5.6-sol",
+    "maxAiCredits": 30,
+    "timeoutMs": 900000
+  }
+}

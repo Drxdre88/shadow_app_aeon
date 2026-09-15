@@ -381,6 +381,126 @@ function mapClaudeLine(ctx: ClaudeCtx, rawLine: string): TypedEvent[] | null {
   }
 }
 
+// ── copilot JSONL ────────────────────────────────────────────────────────
+//
+// `copilot -p --output-format json` emits JSONL — one event object per line,
+// shaped `{type, data, id, timestamp, parentId}` (CLI --help, v1.0.83:
+// "'json' (JSONL, one JSON object per line)"; envelope confirmed against a
+// real Hangar mission's event stream).
+//
+// This parser deliberately captures STATS ONLY and hands every line straight
+// back as raw text, so the mission transcript on the board is byte-for-byte
+// what it was before — the gap it closes is the terminal result envelope
+// carrying `stats.model`, which is why ten production missions were recorded
+// with `observedModel: "unknown"` while the identity sat unparsed in the
+// stream. A typed copilot timeline (tool_use / thinking / message events, as
+// the claude parser builds) is a separate piece of work.
+//
+// Copilot reports spend in nano-AIU and premium requests, never in dollars, so
+// totalCostUsd stays absent rather than invented — absent means "the engine
+// reported nothing", which is exactly the case here.
+
+interface CopilotLine {
+  type?: unknown
+  data?: Record<string, unknown>
+}
+
+// session.shutdown reports each bucket as `{ tokenCount }`.
+function copilotTokenCount(details: unknown, key: string): number | undefined {
+  if (!details || typeof details !== 'object') return undefined
+  const entry = (details as Record<string, unknown>)[key]
+  if (!entry || typeof entry !== 'object') return undefined
+  return num((entry as { tokenCount?: unknown }).tokenCount)
+}
+
+function rememberModel(stats: MissionStats, value: unknown): void {
+  // First authoritative event wins: session.start carries the model the
+  // provider actually resolved (an unavailable --model fails before it).
+  if (stats.model) return
+  if (typeof value !== 'string' || !value.trim()) return
+  stats.model = value.trim().slice(0, 120)
+}
+
+function readCopilotLine(stats: MissionStats, rawLine: string): void {
+  const trimmed = rawLine.trim()
+  if (!trimmed.startsWith('{')) return
+  const line = tryParse(trimmed) as CopilotLine | null
+  if (!line || typeof line.type !== 'string') return
+  const data = (line.data ?? {}) as Record<string, unknown>
+
+  switch (line.type) {
+    case 'session.start':
+      rememberModel(stats, data.selectedModel)
+      return
+    case 'tool.execution_start':
+      stats.toolCalls++
+      rememberModel(stats, data.model)
+      return
+    case 'assistant.turn_start':
+      stats.numTurns = (stats.numTurns ?? 0) + 1
+      return
+    case 'session.shutdown': {
+      const details = data.tokenDetails
+      stats.inputTokens = copilotTokenCount(details, 'input') ?? stats.inputTokens
+      stats.outputTokens = copilotTokenCount(details, 'output') ?? stats.outputTokens
+      stats.cacheReadTokens = copilotTokenCount(details, 'cache_read') ?? stats.cacheReadTokens
+      stats.cacheCreationTokens = copilotTokenCount(details, 'cache_write') ?? stats.cacheCreationTokens
+      stats.durationApiMs = num(data.totalApiDurationMs) ?? stats.durationApiMs
+
+      const metrics = data.modelMetrics
+      if (metrics && typeof metrics === 'object') {
+        let reasoning: number | undefined
+        for (const [modelId, entry] of Object.entries(metrics as Record<string, unknown>)) {
+          rememberModel(stats, modelId)
+          const usage = (entry as { usage?: Record<string, unknown> })?.usage
+          const tokens = num(usage?.reasoningTokens)
+          if (tokens !== undefined) reasoning = (reasoning ?? 0) + tokens
+        }
+        if (reasoning !== undefined) stats.thinkingTokens = reasoning
+      }
+      return
+    }
+    default:
+      return
+  }
+}
+
+export function createCopilotStreamParser(): StreamParser {
+  const stats: MissionStats = { toolCalls: 0 }
+  let tail = ''
+
+  const drain = (text: string): { events: TypedEvent[]; raw: string } => {
+    let raw = ''
+    tail += text
+    const lines = tail.split(/\r?\n/)
+    tail = lines.pop() ?? ''
+    for (const line of lines) {
+      if (!line.trim()) continue
+      readCopilotLine(stats, line)
+      raw += `${line}\n`
+    }
+    if (tail.length > TAIL_CAP) {
+      raw += `${tail}\n`
+      tail = ''
+    }
+    return { events: [], raw }
+  }
+
+  return {
+    feed: (chunk: string) => drain(chunk),
+    flush() {
+      let raw = ''
+      if (tail.trim()) {
+        readCopilotLine(stats, tail)
+        raw = tail
+      }
+      tail = ''
+      return { events: [], raw }
+    },
+    stats: () => stats,
+  }
+}
+
 export function createClaudeStreamParser(): StreamParser {
   const ctx: ClaudeCtx = {
     toolNames: new Map(),

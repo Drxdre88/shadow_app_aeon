@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { spawn } from 'node:child_process'
-import { outsideMissionNamespace, rawTail, safeStats, unsafeArg, waitForExit } from './poller.js'
+import { missionStats, outsideMissionNamespace, rawTail, safeStats, unsafeArg, waitForExit } from './poller.js'
 
 describe('unsafeArg', () => {
   it('accepts the shapes the poller actually builds', () => {
@@ -150,5 +150,20 @@ describe('safeStats', () => {
       stats: () => ({ toolCalls: 7, inputTokens: 12 }),
     }
     expect(safeStats(parser)).toEqual({ toolCalls: 7, inputTokens: 12 })
+  })
+})
+
+describe('missionStats', () => {
+  // stats.model is the field the mission record reads back as the observed
+  // model — dropping it here is how ten delivered missions came to be filed
+  // as "observed model unknown" while the engine had named it all along.
+  it('carries the observed model onto the result envelope', () => {
+    expect(missionStats({ toolCalls: 2, model: 'claude-sonnet-5' }))
+      .toEqual({ toolCalls: 2, model: 'claude-sonnet-5' })
+  })
+
+  it('says nothing about a model the engine never named', () => {
+    expect(missionStats({ toolCalls: 0 })).toEqual({ toolCalls: 0 })
+    expect(missionStats(null)).toBeNull()
   })
 })

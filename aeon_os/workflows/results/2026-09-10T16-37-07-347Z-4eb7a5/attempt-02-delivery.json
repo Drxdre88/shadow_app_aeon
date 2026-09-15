@@ -1,0 +1,61 @@
+{
+  "result": "FAIL_CLEANUP",
+  "checkedAt": "2026-09-10T16:42:39.725Z",
+  "sessionId": "f215b5aa-1b60-471f-a25e-5a774ecbd781",
+  "sessionStatus": "succeeded",
+  "exitCode": 0,
+  "card": {
+    "id": "121c5001-1e54-4741-957f-4311fbe61c38",
+    "columnId": "d60aa047-dadc-4930-b4ed-55d6d354cfaf",
+    "lastResult": {
+      "tests": {
+        "status": "not_run",
+        "summary": "Repository research only; no tests requested or run."
+      },
+      "branch": "aeon/121c5001",
+      "commit": "72e585848e455573511b37890dbb66c1a1c784fc",
+      "status": "completed",
+      "outcome": "investigation_complete",
+      "summary": "AEON_OS_E2E_2026-09-10T16-37-07-347Z-4eb7a5_02: completed bounded repository research and committed the report.",
+      "artifacts": [
+        "aeon_os/workflows/reports/2026-09-10T16-37-07-347Z-4eb7a5-02.md"
+      ],
+      "questions": [],
+      "recommended_tasks": []
+    }
+  },
+  "branch": "aeon/121c5001",
+  "commit": "72e585848e455573511b37890dbb66c1a1c784fc",
+  "artifact": "aeon_os/workflows/reports/2026-09-10T16-37-07-347Z-4eb7a5-02.md",
+  "artifactSha256": "77dfc2598d9991879275e5a4c1e939a349542e653a01e8b8a96dcdd13fef473c",
+  "changedPaths": [
+    "aeon_os/workflows/reports/2026-09-10T16-37-07-347Z-4eb7a5-02.md"
+  ],
+  "resultEvents": [
+    {
+      "id": "9c909c5b-b306-4e3f-b2d0-daeac642cee9",
+      "sessionId": "f215b5aa-1b60-471f-a25e-5a774ecbd781",
+      "seq": 67,
+      "kind": "result",
+      "toolName": null,
+      "payload": {
+        "tests": {
+          "status": "not_run",
+          "summary": "Repository research only; no tests requested or run."
+        },
+        "branch": "aeon/121c5001",
+        "commit": "72e585848e455573511b37890dbb66c1a1c784fc",
+        "status": "completed",
+        "outcome": "investigation_complete",
+        "summary": "AEON_OS_E2E_2026-09-10T16-37-07-347Z-4eb7a5_02: completed bounded repository research and committed the report.",
+        "artifacts": [
+          "aeon_os/workflows/reports/2026-09-10T16-37-07-347Z-4eb7a5-02.md"
+        ],
+        "questions": [],
+        "recommended_tasks": []
+      },
+      "createdAt": "2026-09-10T16:40:15.029Z"
+    }
+  ],
+  "workerRecorded": null
+}

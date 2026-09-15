@@ -1,0 +1,106 @@
+{
+  "runId": "ui-2026-09-10T15-51-25-177Z",
+  "startedAt": "2026-09-10T15:51:25.180Z",
+  "scope": "Local component, handler and server-action contracts; external boundaries mocked. Not authenticated browser E2E.",
+  "tests": [
+    "src/components/board/__tests__/MissionEditorModal.test.tsx",
+    "src/components/board/__tests__/useBoardHandlers-launch.test.tsx",
+    "src/lib/actions/__tests__/hangar-launch.test.ts",
+    "src/components/board/__tests__/autoRun.test.ts",
+    "src/components/board/__tests__/useBoardDnD-autoRun.test.tsx"
+  ],
+  "rounds": [
+    {
+      "round": 1,
+      "startedAt": "2026-09-10T15:51:25.181Z",
+      "endedAt": "2026-09-10T15:51:33.406Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 39,
+      "testsFailed": 0
+    },
+    {
+      "round": 2,
+      "startedAt": "2026-09-10T15:51:33.414Z",
+      "endedAt": "2026-09-10T15:51:41.676Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 39,
+      "testsFailed": 0
+    },
+    {
+      "round": 3,
+      "startedAt": "2026-09-10T15:51:41.678Z",
+      "endedAt": "2026-09-10T15:51:49.148Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 39,
+      "testsFailed": 0
+    },
+    {
+      "round": 4,
+      "startedAt": "2026-09-10T15:51:49.149Z",
+      "endedAt": "2026-09-10T15:51:56.412Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 39,
+      "testsFailed": 0
+    },
+    {
+      "round": 5,
+      "startedAt": "2026-09-10T15:51:56.413Z",
+      "endedAt": "2026-09-10T15:52:03.612Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 39,
+      "testsFailed": 0
+    },
+    {
+      "round": 6,
+      "startedAt": "2026-09-10T15:52:03.613Z",
+      "endedAt": "2026-09-10T15:52:10.702Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 39,
+      "testsFailed": 0
+    },
+    {
+      "round": 7,
+      "startedAt": "2026-09-10T15:52:10.703Z",
+      "endedAt": "2026-09-10T15:52:19.616Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 39,
+      "testsFailed": 0
+    },
+    {
+      "round": 8,
+      "startedAt": "2026-09-10T15:52:19.617Z",
+      "endedAt": "2026-09-10T15:52:28.741Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 39,
+      "testsFailed": 0
+    },
+    {
+      "round": 9,
+      "startedAt": "2026-09-10T15:52:28.742Z",
+      "endedAt": "2026-09-10T15:52:37.193Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 39,
+      "testsFailed": 0
+    },
+    {
+      "round": 10,
+      "startedAt": "2026-09-10T15:52:37.194Z",
+      "endedAt": "2026-09-10T15:52:46.558Z",
+      "exitCode": 0,
+      "status": "PASS",
+      "testsPassed": 39,
+      "testsFailed": 0
+    }
+  ],
+  "status": "PASS",
+  "endedAt": "2026-09-10T15:52:46.559Z"
+}

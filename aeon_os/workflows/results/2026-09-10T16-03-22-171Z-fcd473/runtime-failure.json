@@ -1,0 +1,54 @@
+{
+  "checkedAt": "2026-09-10T16:06:26.555Z",
+  "session": {
+    "id": "413a3717-b35a-46dc-b987-d4cf13f4578f",
+    "status": "failed",
+    "exitCode": 1,
+    "claimedBy": "002LND2094-819592",
+    "workerPid": 56312,
+    "startedAt": "2026-09-10T16:04:41.026Z",
+    "endedAt": "2026-09-10T16:04:53.885Z"
+  },
+  "errorEvents": [
+    {
+      "id": "9e3f3fbb-5b7d-4320-ae72-fffe16562efd",
+      "sessionId": "413a3717-b35a-46dc-b987-d4cf13f4578f",
+      "seq": 1,
+      "kind": "error",
+      "toolName": null,
+      "payload": {
+        "text": "Error: Model \"claude-sonnet-5.6\" from --model flag is not available.\n",
+        "stream": "stderr"
+      },
+      "createdAt": "2026-09-10T16:04:52.930Z"
+    }
+  ],
+  "resultEvents": [
+    {
+      "id": "fc6d8799-eea7-42e6-8fb0-ad7164a28e66",
+      "sessionId": "413a3717-b35a-46dc-b987-d4cf13f4578f",
+      "seq": 4,
+      "kind": "result",
+      "toolName": null,
+      "payload": {
+        "status": "failed",
+        "outcome": "blocked",
+        "summary": "engine exited without a result envelope",
+        "raw_tail": "{\"type\":\"session.mcp_server_status_changed\",\"data\":{\"serverName\":\"playwright\",\"status\":\"pending\"},\"ephemeral\":true,\"id\":\"73637580-e2c9-467b-87c5-1eec0c528aa8\",\"timestamp\":\"2026-09-10T16:04:50.775Z\",\"parentId\":\"aef083ae-ece7-4206-bbd4-3304439316c6\"}\n{\"type\":\"session.mcp_server_status_changed\",\"data\":{\"serverName\":\"playwright\",\"status\":\"connected\"},\"ephemeral\":true,\"id\":\"d4bbb707-663b-44ce-a600-c9853a4a6b36\",\"timestamp\":\"2026-09-10T16:04:51.337Z\",\"parentId\":\"aef083ae-ece7-4206-bbd4-3304439316c6\"}\n{\"type\":\"session.mcp_server_status_changed\",\"data\":{\"serverName\":\"github-mcp-server\",\"status\":\"pending\"},\"ephemeral\":true,\"id\":\"2f34ba5f-c7ed-4969-a54b-3eed2df6e3b1\",\"timestamp\":\"2026-09-10T16:04:51.457Z\",\"parentId\":\"aef083ae-ece7-4206-bbd4-3304439316c6\"}\n{\"type\":\"session.mcp_server_status_changed\",\"data\":{\"serverName\":\"github-mcp-server\",\"status\":\"connected\"},\"ephemeral\":true,\"id\":\"ec919bda-c6de-4f1f-957d-29d45b169e0d\",\"timestamp\":\"2026-09-10T16:04:51.821Z\",\"parentId\":\"aef083ae-ece7-4206-bbd4-3304439316c6\"}\n"
+      },
+      "createdAt": "2026-09-10T16:04:54.625Z"
+    }
+  ],
+  "card": {
+    "id": "9c1202a5-b5a4-4ae2-a202-641c80c4a3f1",
+    "columnId": "ef137ae9-0c5a-44c0-ba3d-ff6d27857526",
+    "lastResult": {
+      "status": "failed",
+      "outcome": "blocked",
+      "summary": "engine exited without a result envelope"
+    }
+  },
+  "workerRecorded": null,
+  "expectedFailureColumn": "unchanged",
+  "cardFailureResultPersisted": true
+}

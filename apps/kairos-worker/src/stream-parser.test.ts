@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   createClaudeStreamParser,
+  createCopilotStreamParser,
   jsonbSafeChunks,
   refreshRedactions,
   sanitizeJsonbDeep,
@@ -311,5 +312,112 @@ describe('claude stream parser', () => {
     const result = events.find((e) => e.kind === 'tool_result')
     expect(tool!.toolName!.length).toBe(80)
     expect(result!.toolName).toBe(tool!.toolName)
+  })
+})
+
+// Fixtures mirror a real Hangar mission's copilot event stream (CLI v1.0.83,
+// captured 2026-09-10): `--output-format json` is JSONL, one event object per
+// line, shaped { type, data, id, timestamp, parentId }.
+const copilotLine = (type: string, data: Record<string, unknown>) =>
+  JSON.stringify({ type, data, id: 'e1', timestamp: '2026-09-10T16:37:39.102Z', parentId: null })
+
+const COPILOT_START = copilotLine('session.start', {
+  sessionId: 's1', copilotVersion: '1.0.83', selectedModel: 'claude-sonnet-5',
+  reasoningEffort: 'high', contextTier: 'long_context',
+})
+const COPILOT_TOOL = copilotLine('tool.execution_start', {
+  toolCallId: 'toolu_1', toolName: 'view', turnId: '0', model: 'claude-sonnet-5',
+})
+const COPILOT_TURN = copilotLine('assistant.turn_start', { turnId: '0', interactionId: 'i1' })
+const COPILOT_SHUTDOWN = copilotLine('session.shutdown', {
+  shutdownType: 'routine',
+  totalPremiumRequests: 1,
+  tokenDetails: {
+    input: { tokenCount: 751 }, cache_read: { tokenCount: 371961 },
+    cache_write: { tokenCount: 54666 }, output: { tokenCount: 3481 },
+  },
+  totalApiDurationMs: 42521,
+  modelMetrics: {
+    'claude-sonnet-5': { usage: { inputTokens: 427378, outputTokens: 3481, reasoningTokens: 398 } },
+  },
+})
+
+const feedLines = (parser: ReturnType<typeof createCopilotStreamParser>, ...lines: string[]) =>
+  parser.feed(lines.map((line) => `${line}\n`).join(''))
+
+describe('copilot stream parser', () => {
+  it('reports the model the provider ran, from the first event that names it', () => {
+    const parser = createCopilotStreamParser()
+    feedLines(parser, COPILOT_START, COPILOT_TOOL)
+    parser.flush()
+
+    expect(parser.stats().model).toBe('claude-sonnet-5')
+  })
+
+  it('still finds the model when the stream opens mid-mission', () => {
+    const parser = createCopilotStreamParser()
+    feedLines(parser, COPILOT_TOOL)
+
+    expect(parser.stats().model).toBe('claude-sonnet-5')
+  })
+
+  it('recovers the model from the shutdown metrics alone', () => {
+    const parser = createCopilotStreamParser()
+    feedLines(parser, COPILOT_SHUTDOWN)
+
+    expect(parser.stats().model).toBe('claude-sonnet-5')
+  })
+
+  it('leaves the model unset when no event ever carried one', () => {
+    const parser = createCopilotStreamParser()
+    feedLines(parser, COPILOT_TURN, 'not json at all')
+    parser.flush()
+
+    expect(parser.stats().model).toBeUndefined()
+  })
+
+  it('counts tool calls and turns, and reads the shutdown token report', () => {
+    const parser = createCopilotStreamParser()
+    feedLines(parser, COPILOT_START, COPILOT_TURN, COPILOT_TOOL, COPILOT_TOOL, COPILOT_SHUTDOWN)
+    parser.flush()
+
+    expect(parser.stats()).toMatchObject({
+      model: 'claude-sonnet-5',
+      toolCalls: 2,
+      numTurns: 1,
+      inputTokens: 751,
+      outputTokens: 3481,
+      cacheReadTokens: 371961,
+      cacheCreationTokens: 54666,
+      thinkingTokens: 398,
+      durationApiMs: 42521,
+    })
+  })
+
+  it('invents no dollar cost — copilot bills in credits, not USD', () => {
+    const parser = createCopilotStreamParser()
+    feedLines(parser, COPILOT_START, COPILOT_SHUTDOWN)
+
+    expect(parser.stats().totalCostUsd).toBeUndefined()
+  })
+
+  it('hands every line back as raw (CRLF normalised to LF, blank lines dropped), never a typed event', () => {
+    const parser = createCopilotStreamParser()
+    const first = parser.feed(`${COPILOT_START}\n${COPILOT_TOOL.slice(0, 20)}`)
+    const second = parser.feed(`${COPILOT_TOOL.slice(20)}\nplain stderr-ish text\n`)
+    const end = parser.flush()
+
+    expect(first.events).toEqual([])
+    expect(`${first.raw}${second.raw}${end.raw}`)
+      .toBe(`${COPILOT_START}\n${COPILOT_TOOL}\nplain stderr-ish text\n`)
+  })
+
+  it('reads a partial trailing line at flush', () => {
+    const parser = createCopilotStreamParser()
+    parser.feed(`${COPILOT_START}\n${COPILOT_SHUTDOWN}`)
+    const end = parser.flush()
+
+    expect(end.raw).toBe(COPILOT_SHUTDOWN)
+    expect(parser.stats().durationApiMs).toBe(42521)
   })
 })
