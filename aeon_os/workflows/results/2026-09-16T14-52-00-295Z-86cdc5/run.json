@@ -1,0 +1,92 @@
+{
+  "runId": "2026-09-16T14-52-00-295Z-86cdc5",
+  "status": "failed",
+  "createdAt": "2026-09-16T14:52:13.133Z",
+  "updatedAt": "2026-09-16T14:56:10.689Z",
+  "sourceBranch": "main",
+  "baseSha": "1d8beea0b102631244dcf0ecab3e6b2f55166980",
+  "projectId": "e4b0af95-d3ad-46ba-8275-1ecc28911683",
+  "requestedEngine": "copilot",
+  "requestedModel": "claude-sonnet-5",
+  "mechanical": "failed",
+  "review": {
+    "total": 2,
+    "reviewed": 0,
+    "counts": {
+      "PASS": 0,
+      "PASS_WITH_CORRECTIONS": 0,
+      "FAIL": 0
+    },
+    "unreviewed": [
+      {
+        "attempt": 1,
+        "reason": "no stored review verdict"
+      },
+      {
+        "attempt": 2,
+        "reason": "no stored review verdict"
+      }
+    ],
+    "attempts": [
+      {
+        "attempt": 1,
+        "mechanical": "PASS",
+        "verdict": null,
+        "reviewer": null,
+        "reviewerModel": null,
+        "error": null
+      },
+      {
+        "attempt": 2,
+        "mechanical": "FAIL",
+        "verdict": null,
+        "reviewer": null,
+        "reviewerModel": null,
+        "error": null
+      }
+    ],
+    "updatedAt": "2026-09-16T14:56:10.688Z",
+    "outcome": "mechanical_failed",
+    "status": "failed",
+    "blockedBy": "attempt 2 is FAIL"
+  },
+  "attempts": [
+    {
+      "index": 1,
+      "topic": "session claim ownership",
+      "marker": "AEON_OS_E2E_2026-09-16T14-52-00-295Z-86cdc5_01",
+      "report": "aeon_os/workflows/reports/2026-09-16T14-52-00-295Z-86cdc5-01.md",
+      "model": "claude-sonnet-5",
+      "taskId": "3324e1bf-f616-422c-bca0-a01dd8988715",
+      "sessionId": "2f7c17ce-9f67-4642-9dee-ff334e576498",
+      "branch": "aeon/3324e1bf",
+      "createdAt": "2026-09-16T14:52:32.202Z",
+      "result": "PASS",
+      "lastStatus": "succeeded",
+      "workerId": "002LND2094-58fcd8",
+      "workerHost": "002LND2094",
+      "workerPid": 45536,
+      "commit": "d73ba1d3bb0e7afbf098bd126db8e8fa97efa175",
+      "completedAt": "2026-09-16T14:54:30.878Z"
+    },
+    {
+      "index": 2,
+      "topic": "result envelope parsing",
+      "marker": "AEON_OS_E2E_2026-09-16T14-52-00-295Z-86cdc5_02",
+      "report": "aeon_os/workflows/reports/2026-09-16T14-52-00-295Z-86cdc5-02.md",
+      "model": "claude-sonnet-5",
+      "taskId": "8a26d9ce-a19e-4df6-9576-2a516a38b520",
+      "sessionId": "395968cf-a43a-4f3a-bed4-1d6116d8ee8b",
+      "branch": "aeon/8a26d9ce",
+      "createdAt": "2026-09-16T14:54:33.163Z",
+      "result": "FAIL",
+      "lastStatus": "succeeded",
+      "workerId": "002LND2094-58fcd8",
+      "workerHost": "002LND2094",
+      "workerPid": 57596,
+      "error": "citation line is outside the prepared source: apps/kairos-worker/src/envelope.test.ts:189 (178 lines)",
+      "failedAt": "2026-09-16T14:56:10.686Z"
+    }
+  ],
+  "uiLaunchWrapperExercised": false
+}

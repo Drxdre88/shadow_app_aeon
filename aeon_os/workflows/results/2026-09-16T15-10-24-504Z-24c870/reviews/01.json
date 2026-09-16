@@ -1,0 +1,96 @@
+{
+  "attempt": 1,
+  "runId": "2026-09-16T15-10-24-504Z-24c870",
+  "verdict": "FAIL",
+  "findings": [
+    {
+      "claim": "`claimNextSession` locks a candidate and flips it to `running` inside the same `db.transaction`.",
+      "cited": "apps/web/src/lib/data/sessions.ts:174 and apps/web/src/lib/data/sessions.ts:191",
+      "actual": "Line 174 is only the function declaration, and line 191 shows the row lock. The displayed lines do not show `db.transaction` or the update that changes the status to `running`; transaction behavior appears only in a nearby comment.",
+      "severity": "major"
+    },
+    {
+      "claim": "The test `'claims a queued, card-linked session for the calling user only'` is at line 88 and asserts the task predicate and user-bound parameters.",
+      "cited": "apps/web/src/lib/data/__tests__/sessions-claim.test.ts:88",
+      "actual": "Line 88 is `status: 'completed' as const` inside the `ENVELOPE` fixture. Neither the named test nor either claimed assertion appears in the resolved context.",
+      "severity": "major"
+    },
+    {
+      "claim": "Because the terminal-status check is in the UPDATE predicate, two racing result posts cannot both succeed.",
+      "cited": "apps/web/src/lib/data/sessions.ts:286",
+      "actual": "The lines show an atomic UPDATE predicate excluding terminal statuses and a zero-row guard, which supports the reasoning, but the concurrency guarantee is an inference from SQL behavior rather than a directly observed result. The report labels the whole finding VERIFIED rather than distinguishing this inference.",
+      "severity": "minor"
+    },
+    {
+      "claim": "The test at line 200 simulates a winner and loser and verifies card updates and `touchProject` remain at one after both attempts.",
+      "cited": "apps/web/src/lib/data/__tests__/sessions-claim.test.ts:200",
+      "actual": "Line 200 asserts the terminal-status UPDATE parameters; the named race test starts at line 203. Other bundled context shows the winner-side assertions and the beginning of the loser setup, but not the claimed post-loser call-count assertions.",
+      "severity": "major"
+    },
+    {
+      "claim": "There are four `expect(updateTask).not.toHaveBeenCalled()` assertions at lines 173, 187, 234, and 245.",
+      "cited": "apps/web/src/lib/data/__tests__/sessions-claim.test.ts:173, :187, :234, and :245",
+      "actual": "Only line 173 is resolved and shows such an assertion. The shorthand citations for lines 187, 234, and 245 have no resolved source lines in the bundle, so the claimed count of four is not verifiable.",
+      "severity": "major"
+    },
+    {
+      "claim": "`sessions.ts` never imports or calls `updateTask`, and `recordSessionResult` instead writes directly through `tx.update(boardTasks)`.",
+      "cited": "apps/web/src/lib/data/sessions.ts:315",
+      "actual": "Line 315 is only a comment saying an event is the same as one `updateTask` would have emitted. It does not show the direct `tx.update(boardTasks)` write and cannot establish the negative whole-file claim that no import or call exists.",
+      "severity": "major"
+    },
+    {
+      "claim": "The `cardUpdates()` helper is defined at lines 82-84 and supplies the real regression coverage for card writes.",
+      "cited": "apps/web/src/lib/data/__tests__/sessions-claim.test.ts:82-84",
+      "actual": "Lines 82-84 define `WORKER` and instantiate `PgDialect`; they do not define `cardUpdates()`. Line 213 shows one use of `cardUpdates()`, but the helper definition and the separately mentioned line 219 are not supplied.",
+      "severity": "major"
+    },
+    {
+      "claim": "`UNIQUE_VIOLATION` is defined at line 41.",
+      "cited": "apps/web/src/lib/data/sessions.ts:41",
+      "actual": "Line 41 is a comment. The constant is defined on line 42 in the displayed context.",
+      "severity": "minor"
+    },
+    {
+      "claim": "`createAgentSession` is identified at line 70.",
+      "cited": "apps/web/src/lib/data/sessions.ts:70",
+      "actual": "Line 70 is the `goal: input.goal` field of an insert value object; the function declaration is not shown. Line 87 does establish that the surrounding function invokes the violation helper, but the declaration citation has drifted.",
+      "severity": "minor"
+    },
+    {
+      "claim": "Throwing `LiveMissionExistsError` means REST/MCP spawn callers receive a typed 409-style error rather than an opaque 500.",
+      "cited": "apps/web/src/lib/data/sessions.ts:87 and apps/web/src/lib/data/sessions.ts:29-33",
+      "actual": "The lines establish that a matching database error is converted to a named `LiveMissionExistsError`. They do not show REST or MCP handlers mapping that error to an HTTP 409 or otherwise prove caller-visible behavior; that consequence is an unlabeled inference.",
+      "severity": "major"
+    }
+  ],
+  "summary": "A paying user could not fully trust this report under the stated evidence rules. Several core implementation observations are supported, including the claim filters, row lock, terminal-status UPDATE guard, bounded cause walk, and typed error conversion. However, multiple test citations point to unrelated fixtures or assertions, three claimed assertion locations have no resolved evidence, whole-file absence and direct-write claims are unsupported by the supplied lines, and the asserted REST/MCP 409 behavior is not demonstrated. These are substantive evidence failures rather than merely cosmetic line drift.",
+  "reviewer": {
+    "engine": "copilot",
+    "model": "gpt-5.6-sol",
+    "missionModel": "claude-sonnet-5",
+    "allowSameModel": false,
+    "sameModelAsMission": false,
+    "promptDelivery": "stdin",
+    "startedAt": "2026-09-16T15:13:36.221Z",
+    "finishedAt": "2026-09-16T15:14:28.005Z",
+    "observedModel": "gpt-5.6-sol",
+    "exitCode": 0,
+    "timedOut": false
+  },
+  "bundle": {
+    "path": "reviews/01.bundle.md",
+    "sha256": "2b7e8269fcfac1f610781cbc008d4df11fca8cdc826cef9fec6ed524dfa16ca7",
+    "revision": "1d8beea0b102631244dcf0ecab3e6b2f55166980",
+    "citations": {
+      "total": 21,
+      "distinct": 21,
+      "resolvable": 21,
+      "unresolvable": 0,
+      "outOfRange": 0
+    }
+  },
+  "raw": "reviews/01.raw.txt",
+  "schemaNotes": [],
+  "recordedAt": "2026-09-16T15:14:28.006Z"
+}

@@ -108,7 +108,60 @@ function splitLines(text) {
   return lines
 }
 
-function extractCitations(reportText) {
+// Shorthand continuations after a full citation: "file.ts:173, :187, :234" or
+// "file.ts:213 and :219". Sticky so it only ever matches right where the full
+// citation ended. 1609 live finding: the first real reviewer failed a report for
+// three "unresolvable" lines that were written exactly this way and were correct.
+const CONTINUATION_PATTERN = /(?:,\s*(?:and\s+)?|\s+and\s+)`?:(\d+)(?:-(\d+))?`?/y
+// Guard for the continuation: if the rest of the clause names a path-like
+// token ("a/b.ts:10 and :20 of c/d.ts differ"), the shorthand cannot be
+// trusted to belong to the last full citation, so it is dropped rather than
+// resolved against the wrong file (warden 1609, finding 3).
+// The clause ends at punctuation or a bracket (not at a dot, which file names
+// contain). The path search runs on the untruncated remainder so a token is
+// never cut short, and only a match that starts inside the clause counts. A
+// path that is itself a full citation (followed by :line) is unambiguous and
+// does not count.
+const CLAUSE_END = /[,;:\n()]/
+// Either a slash-bearing path or a bare file name with a letters-first
+// extension of two or more characters ("review.mjs", not "e.g." or "v1.2").
+const PATH_LIKE = /(?<![A-Za-z0-9_.\[\]{}+\\/-])(?:[A-Za-z0-9_.\[\]{}+-]+(?:[\\/][A-Za-z0-9_.()\[\]{}+-]+)+|[A-Za-z0-9_-]+\.[A-Za-z][A-Za-z0-9]+)(?![A-Za-z0-9_.()\[\]{}+\\/-]|:\d)/
+
+function clauseNamesAnotherPath(rest) {
+  // Only a match starting inside the 80-character clause window counts, so the
+  // search is bounded to a slice long enough for any path that starts there;
+  // scanning the whole remainder per continuation was quadratic.
+  const head = rest.slice(0, 1024)
+  const end = head.search(CLAUSE_END)
+  const window = Math.min(end === -1 ? head.length : end, 80)
+  const found = PATH_LIKE.exec(head)
+  return found !== null && found.index < window
+}
+
+// The mechanical validator's floor: every full `path:line` token, deduplicated.
+// A token with no directory is only a (rejected) citation when it ends in a
+// file extension that starts with a letter — "sessions.ts:150" is a bare
+// filename and throws, while "15:10", "3.5:1" and "v1.2:30" are prose and are
+// ignored rather than aborting a paid attempt (horsemen 1609).
+export function explicitCitationTokens(reportText) {
+  const tokens = [...new Set(String(reportText ?? '').match(/[A-Za-z0-9_.@\/\[\]-]+:\d+/g) ?? [])]
+  return tokens.filter((token) => {
+    const path = token.slice(0, token.lastIndexOf(':'))
+    if (path.includes('/')) return true
+    if (/\.[A-Za-z][A-Za-z0-9]*$/.test(path)) throw new Error(`invalid citation path ${token}`)
+    return false
+  })
+}
+
+// The floor itself: at least three distinct full citations, or the attempt fails.
+export const CITATION_FLOOR = 3
+export function assertCitationFloor(reportText) {
+  const explicit = explicitCitationTokens(reportText)
+  if (explicit.length < CITATION_FLOOR) throw new Error(`report contains only ${explicit.length} distinct source:line citations`)
+  return explicit
+}
+
+export function extractCitations(reportText) {
   const occurrences = []
   for (const match of reportText.matchAll(CITATION_PATTERN)) {
     const startLine = Number(match[2])
@@ -116,6 +169,14 @@ function extractCitations(reportText) {
     const citationPath = match[1].replace(/\\/g, '/')
     const display = `${citationPath}:${startLine}${match[3] === undefined ? '' : `-${endLine}`}`
     occurrences.push({ display, path: citationPath, startLine, endLine })
+    CONTINUATION_PATTERN.lastIndex = match.index + match[0].length
+    let more
+    while ((more = CONTINUATION_PATTERN.exec(reportText)) !== null) {
+      if (clauseNamesAnotherPath(reportText.slice(more.index + more[0].length))) break
+      const moreStart = Number(more[1])
+      const moreEnd = more[2] === undefined ? moreStart : Number(more[2])
+      occurrences.push({ display: `${citationPath}:${moreStart}${more[2] === undefined ? '' : `-${moreEnd}`}`, path: citationPath, startLine: moreStart, endLine: moreEnd })
+    }
   }
   const distinct = []
   const seen = new Set()

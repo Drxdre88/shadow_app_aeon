@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
 import { listCopilotModels } from './probe-copilot-models.mjs'
 import { archiveDecision, evaluateReviewGate, importVerdict, loadVerdicts, reviewConfig, reviewsDir, runReview } from './review.mjs'
+import { assertCitationFloor, extractCitations } from './review-bundle.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..', '..')
@@ -376,7 +377,7 @@ async function waitForTerminal(cfg, state, attempt) {
   while (Date.now() < deadline) {
     const session = await api(cfg, `/api/v1/sessions/${attempt.sessionId}`)
     attempt.lastStatus = session.status; attempt.workerId = session.claimedBy ?? null; attempt.workerHost = session.workerHost ?? null; attempt.workerPid = session.workerPid ?? null; save(state)
-    console.log(`[${now()}] ${String(attempt.index).padStart(2, '0')}/10 session=${attempt.sessionId} status=${session.status}`)
+    console.log(`[${now()}] ${String(attempt.index).padStart(2, '0')}/${String(state.batchTarget ?? state.attempts.length).padStart(2, '0')} session=${attempt.sessionId} status=${session.status}`)
     if (TERMINAL.has(session.status)) return session
     await sleep(15_000)
   }
@@ -431,8 +432,13 @@ function verifyGit(state, attempt, sha) {
   if (changed.length !== 1 || changed[0] !== attempt.report) throw new Error(`mission changed disallowed paths: ${changed.join(', ') || '(none)'}`)
   const content = runRaw('git', ['--git-dir', state.originPath, 'show', `${sha}:${attempt.report}`])
   if (!content.includes(attempt.marker)) throw new Error('report is missing its unique marker')
-  const citations = [...new Set(content.match(/[A-Za-z0-9_.\/\[\]-]+:\d+/g) ?? [])]
-  if (citations.length < 3) throw new Error(`report contains only ${citations.length} distinct source:line citations`)
+  // Same shape the reviewer bundle resolves, so a shorthand continuation
+  // ("file.ts:173, :187") is validated here too and never reaches the reviewer
+  // unresolved.
+  // The floor counts only full path:line citations, exactly as before; the
+  // shorthand expansions are validated but never let a thin report clear it.
+  const explicit = assertCitationFloor(content)
+  const citations = [...new Set([...explicit, ...extractCitations(content).distinct.map((c) => `${c.path}:${c.startLine}`)])]
   for (const citation of citations) {
     const split = citation.lastIndexOf(':')
     const path = citation.slice(0, split)
@@ -507,6 +513,7 @@ async function runBatch(count) {
   persist(state, 'models.json', { checkedAt: now(), configuredModel: cfg.model, models })
   await assertNoLiveCardSessions(cfg)
   const deadline = Date.now() + 90 * 60_000
+  state.batchTarget = count; save(state)
   try {
     for (let index = state.attempts.length; index < count; index++) {
       if (Date.now() >= deadline) throw new Error('batch exceeded 90 minutes')
