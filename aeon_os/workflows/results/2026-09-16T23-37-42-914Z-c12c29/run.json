@@ -1,0 +1,56 @@
+{
+  "runId": "2026-09-16T23-37-42-914Z-c12c29",
+  "status": "failed",
+  "createdAt": "2026-09-16T23:37:54.582Z",
+  "updatedAt": "2026-09-16T23:41:09.424Z",
+  "sourceBranch": "chore/aeon-os-ci-gate-first-pass",
+  "baseSha": "9da76a8c6a9f9a5c1c3b67a38f605dc445a8748b",
+  "projectId": "e4b0af95-d3ad-46ba-8275-1ecc28911683",
+  "requestedEngine": "copilot",
+  "requestedModel": "claude-sonnet-5",
+  "mechanical": "partial_pass",
+  "review": {
+    "total": 1,
+    "reviewed": 1,
+    "counts": {
+      "PASS": 0,
+      "PASS_WITH_CORRECTIONS": 0,
+      "FAIL": 1
+    },
+    "unreviewed": [],
+    "attempts": [
+      {
+        "attempt": 1,
+        "mechanical": "PASS",
+        "verdict": "FAIL",
+        "reviewer": "copilot",
+        "reviewerModel": "gpt-5.6-sol",
+        "error": null
+      }
+    ],
+    "updatedAt": "2026-09-16T23:41:09.423Z",
+    "outcome": "review_failed",
+    "status": "failed"
+  },
+  "attempts": [
+    {
+      "index": 1,
+      "topic": "session claim ownership",
+      "marker": "AEON_OS_E2E_2026-09-16T23-37-42-914Z-c12c29_01",
+      "report": "aeon_os/workflows/reports/2026-09-16T23-37-42-914Z-c12c29-01.md",
+      "model": "claude-sonnet-5",
+      "taskId": "079782c8-dc66-46dd-9979-420f05124205",
+      "sessionId": "d374621a-4556-420a-b214-06c6ea556a27",
+      "branch": "aeon/079782c8",
+      "createdAt": "2026-09-16T23:38:01.889Z",
+      "result": "PASS",
+      "lastStatus": "succeeded",
+      "workerId": "002LND2094-3e5d6d",
+      "workerHost": "002LND2094",
+      "workerPid": 648,
+      "commit": "440ab0736baba56db4ac84a351081e52436d45a8",
+      "completedAt": "2026-09-16T23:40:33.909Z"
+    }
+  ],
+  "uiLaunchWrapperExercised": false
+}

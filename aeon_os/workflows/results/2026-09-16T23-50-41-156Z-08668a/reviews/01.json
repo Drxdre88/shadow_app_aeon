@@ -1,0 +1,159 @@
+{
+  "attempt": 1,
+  "runId": "2026-09-16T23-50-41-156Z-08668a",
+  "marker": "AEON_OS_E2E_2026-09-16T23-50-41-156Z-08668a_01",
+  "receipt": "20af658b-0240-4751-a7fe-36c148b98ea5",
+  "verdict": "PASS_WITH_CORRECTIONS",
+  "findings": [
+    {
+      "claim": "A runner can only be handed a row whose userId matches the authenticated caller it polled as.",
+      "cited": "apps/web/src/lib/data/sessions.ts:184",
+      "actual": "Line 184 proves only that the selected row's userId equals the userId argument supplied to claimNextSession. The cited evidence does not establish that this argument came from an authenticated caller.",
+      "severity": "minor"
+    },
+    {
+      "claim": "The persistent owner (userId) and transient holder (claimedBy) are written atomically with the status flip.",
+      "cited": "apps/web/src/lib/data/sessions.ts:199, apps/web/src/lib/data/sessions.ts:200, apps/web/src/lib/data/sessions.ts:201",
+      "actual": "The update writes status, claimedBy, claimedAt, lastHeartbeatAt, startedAt, and updatedAt. It does not write userId; userId is only used earlier as a selection predicate. The transaction atomically validates the existing user ownership and writes the worker claim, but does not atomically write both ownership dimensions.",
+      "severity": "minor"
+    },
+    {
+      "claim": "The focused tests assert the claim predicate at the compiled-SQL level, including the worker stamp and the no-work path.",
+      "cited": "apps/web/src/lib/data/__tests__/sessions-claim.test.ts:157, apps/web/src/lib/data/__tests__/sessions-claim.test.ts:163, apps/web/src/lib/data/__tests__/sessions-claim.test.ts:164",
+      "actual": "The predicate assertions inspect compiled SQL, but the worker stamp is checked through a captured update-set object and the no-work path through the resolved result and capture count. The detailed body describes this correctly, but the finding heading overstates the compiled-SQL coverage.",
+      "severity": "minor"
+    },
+    {
+      "claim": "The terminal-result guard is not based on a prior read, and the guarded return occurs before any card write.",
+      "cited": "apps/web/src/lib/data/sessions.ts:284, apps/web/src/lib/data/sessions.ts:285, apps/web/src/lib/data/sessions.ts:286, apps/web/src/lib/data/sessions.ts:288, apps/web/src/lib/data/sessions.ts:289",
+      "actual": "These lines do prove that terminal-status exclusion is in the UPDATE WHERE clause and that an empty RETURNING result exits immediately. They do not show whether an earlier read occurred or where any card write occurs; line 289 even references an already available session value. Those absence/order assertions are therefore not fully established by the supplied evidence.",
+      "severity": "minor"
+    }
+  ],
+  "summary": "A paying user could rely on the report's core technical account: all six findings are substantially supported, and the key predicates, transactional claim update, heartbeat guard, tests, terminal-status guard, and nested unique-violation handling are described accurately. However, several sentences extend beyond the resolved evidence or use imprecise wording—most notably authentication provenance, suggesting userId is written during claiming, characterizing all relevant tests as compiled-SQL assertions, and asserting the absence/order of uncited reads and card writes—so the report needs minor corrections rather than an unqualified pass.",
+  "reviewer": {
+    "engine": "copilot",
+    "model": "gpt-5.6-sol",
+    "missionModel": "claude-opus-5",
+    "allowSameModel": false,
+    "sameModelAsMission": false,
+    "promptDelivery": "stdin",
+    "startedAt": "2026-09-16T23:53:41.800Z",
+    "finishedAt": "2026-09-16T23:54:18.824Z",
+    "observedModel": "gpt-5.6-sol",
+    "usage": {
+      "totalPremiumRequestCost": 1,
+      "totalUserRequests": 1,
+      "totalNanoAiu": 17326880000,
+      "tokenDetails": {
+        "input": {
+          "tokenCount": 29094
+        },
+        "cache_read": {
+          "tokenCount": 5632
+        },
+        "cache_write": {
+          "tokenCount": 0
+        },
+        "output": {
+          "tokenCount": 2732
+        }
+      },
+      "totalApiDurationMs": 31554,
+      "sessionStartTime": "2026-09-16T23:53:43.338Z",
+      "codeChanges": {
+        "linesAdded": 0,
+        "linesRemoved": 0,
+        "filesModifiedCount": 0,
+        "filesModified": []
+      },
+      "modelMetrics": {
+        "gpt-5.6-sol": {
+          "requests": {
+            "count": 1,
+            "cost": 1
+          },
+          "usage": {
+            "inputTokens": 34726,
+            "outputTokens": 2732,
+            "cacheReadTokens": 5632,
+            "cacheWriteTokens": 0,
+            "reasoningTokens": 2070
+          },
+          "cacheExpiresAt": "2026-09-17T00:23:45.850Z",
+          "totalNanoAiu": 17326880000,
+          "tokenDetails": {
+            "input": {
+              "tokenCount": 29094
+            },
+            "cache_read": {
+              "tokenCount": 5632
+            },
+            "cache_write": {
+              "tokenCount": 0
+            },
+            "output": {
+              "tokenCount": 2732
+            }
+          }
+        }
+      },
+      "agentMetrics": {
+        "main": {
+          "totalApiDurationMs": 31554,
+          "totalNanoAiu": 17326880000,
+          "modelMetrics": {
+            "gpt-5.6-sol": {
+              "requests": {
+                "count": 1,
+                "cost": 1
+              },
+              "usage": {
+                "inputTokens": 34726,
+                "outputTokens": 2732,
+                "cacheReadTokens": 5632,
+                "cacheWriteTokens": 0,
+                "reasoningTokens": 2070
+              },
+              "totalNanoAiu": 17326880000,
+              "tokenDetails": {
+                "input": {
+                  "tokenCount": 29094
+                },
+                "cache_read": {
+                  "tokenCount": 5632
+                },
+                "cache_write": {
+                  "tokenCount": 0
+                },
+                "output": {
+                  "tokenCount": 2732
+                }
+              }
+            }
+          }
+        }
+      },
+      "currentModel": "gpt-5.6-sol",
+      "lastCallInputTokens": 34726,
+      "lastCallOutputTokens": 2732
+    },
+    "exitCode": 0,
+    "timedOut": false
+  },
+  "bundle": {
+    "path": "reviews/01.bundle.md",
+    "sha256": "1474d0ba334a25cd337e96a5c71ddc0a4f7f758d4c6555ae8c356d715f7b0481",
+    "revision": "9da76a8c6a9f9a5c1c3b67a38f605dc445a8748b",
+    "citations": {
+      "total": 61,
+      "distinct": 61,
+      "resolvable": 61,
+      "unresolvable": 0,
+      "outOfRange": 0
+    }
+  },
+  "raw": "reviews/01.raw.txt",
+  "schemaNotes": [],
+  "recordedAt": "2026-09-16T23:54:18.827Z"
+}

@@ -118,6 +118,7 @@ function runRecord(state, cfg, extra = {}) {
     projectId: state.projectId,
     requestedEngine: 'copilot',
     requestedModel: cfg?.model ?? state.attempts.at(-1)?.model ?? null,
+    missionCredits: state.missionCredits ?? null,
     mechanical: state.mechanical ?? null,
     review: state.review ?? null,
     attempts: state.attempts,
@@ -278,7 +279,7 @@ function missionPrompt(state, index, taskId) {
   const report = `aeon_os/workflows/reports/${state.runId}-${String(index + 1).padStart(2, '0')}.md`
   const branch = `aeon/${taskId.slice(0, 8)}`
   const envelope = JSON.stringify({ status: 'completed', outcome: 'investigation_complete', summary: `${marker}: completed bounded repository research and committed the report.`, branch, commit: 'REPLACE_WITH_FULL_40_CHARACTER_HEAD_SHA', artifacts: [report], tests: { status: 'not_run', summary: 'Repository research only; no tests requested or run.' }, questions: [], recommended_tasks: [] }, null, 2)
-  return { marker, report, text: `Controlled Aeon OS repository research mission. Unique marker: ${marker}\n\nResearch only this bounded subsystem: ${topic}. Primary scope: ${scope}. Produce exactly one durable report at ${report}. The report must contain the unique marker and at least three concrete, independently useful findings, each citing an existing repository source as path:line. Write EVERY citation as a full repository-root-relative path, for example apps/web/src/lib/data/sessions.ts:150 — never a bare filename such as sessions.ts:150, and never abbreviate on repeat mentions of a file you already cited in full. Distinguish observed code from inference.\n\nRepository research only. Do not change source code or any file except ${report}. Do not install dependencies, run tests, call external services, send messages, use Aeon MCP or change any board, invoke subagents, or invent an agent/person identity. You are explicitly authorized to create and commit ONLY that report on the already-created mission branch. Before committing, inspect git status and the staged diff and abort if any other path is staged or changed. Use one Conventional Commit with no coauthor or AI attribution. Do not run git push; the runner publishes to the isolated local origin.\n\nYour final response must end with exactly one fenced JSON result envelope. Use status completed only if the report is committed. Replace the commit placeholder below with the full 40-character HEAD SHA; preserve every other field and ensure summary is present.\n\n\`\`\`json\n${envelope}\n\`\`\`` }
+  return { marker, report, text: `Controlled Aeon OS repository research mission. Unique marker: ${marker}\n\nResearch only this bounded subsystem: ${topic}. Primary scope: ${scope}. Produce exactly one durable report at ${report}. The report must contain the unique marker and at least three concrete, independently useful findings, each citing an existing repository source as path:line. Write EVERY citation as a full repository-root-relative path, for example apps/web/src/lib/data/sessions.ts:150 — never a bare filename such as sessions.ts:150, and never abbreviate on repeat mentions of a file you already cited in full. Every line number must point at the exact statement, declaration or assertion your finding describes — not a comment above it, a test title, or a nearby line. Never cite from memory or by counting: take every line number from a numbered listing of the file (for example grep -n, or sed -n with line numbers) and, immediately before writing the report, re-run that numbered listing for each cited file and confirm every path:line points at the exact text you quote; a predicate on the line after the one you cite is a wrong citation. State what the cited lines do; never assert what code elsewhere does not do (no "not in a prior read", "never called", "no test covers"). An independent reviewer will open every citation at this exact revision and fail the report on a single wrong line. The reviewer sees ONLY the cited lines, so a finding must be fully evidenced by the lines it cites: cite every line that carries the mechanism you describe (a loop AND the assignment inside it, an import AND the call). Label each finding Observed (the cited lines show it) or Inference (a conclusion you drew from them), never claim that nothing was inferred, and do not present a security, concurrency or coverage guarantee as observed when the lines only show a predicate. Do not build a numbered finding on the absence of something (never tested, never called, never imported): a search result cannot be verified from cited lines and will fail review; mention such absences only under a separate heading "Unverified observations" without a finding number. Distinguish observed code from inference.\n\nRepository research only. Do not change source code or any file except ${report}. Do not install dependencies, run tests, call external services, send messages, use Aeon MCP or change any board, invoke subagents, or invent an agent/person identity. You are explicitly authorized to create and commit ONLY that report on the already-created mission branch. Before committing, inspect git status and the staged diff and abort if any other path is staged or changed. Use one Conventional Commit with no coauthor or AI attribution. Do not run git push; the runner publishes to the isolated local origin.\n\nYour final response must end with exactly one fenced JSON result envelope. Use status completed only if the report is committed. Replace the commit placeholder below with the full 40-character HEAD SHA; preserve every other field and ensure summary is present.\n\n\`\`\`json\n${envelope}\n\`\`\`` }
 }
 
 function createBudgetWrapper(state) {
@@ -291,8 +292,26 @@ function createBudgetWrapper(state) {
   // the third exhausted its budget with the report already written and only
   // the commit outstanding, so the work was destroyed by teardown (only
   // committed work is published). 60 restores headroom without uncapping.
-  writeFileSync(wrapper, `@echo off\r\nset "KAIROS_AEON_API_KEY="\r\nset "AEON_API_KEY="\r\nset "KAIROS_CALLBACK_TOKEN="\r\nset "KAIROS_WORKER_SECRET="\r\nset "AEON_MCP_TOKEN="\r\n"${target}" --disable-mcp-server aeon --disable-mcp-server playwright --disable-builtin-mcps --max-ai-credits 60 %*\r\n`)
+  // 1709: the cap is per model class — claude-opus-5 spent 66.93 credits on
+  // the same recon mission (15 premium requests) and was cut off mid-report,
+  // so a heavier mission model needs AEON_OS_MISSION_CREDITS raised for the
+  // run. The value is recorded in the run state so the receipt shows it.
+  const credits = missionCredits()
+  state.missionCredits = credits
+  writeFileSync(wrapper, `@echo off\r\nset "KAIROS_AEON_API_KEY="\r\nset "AEON_API_KEY="\r\nset "KAIROS_CALLBACK_TOKEN="\r\nset "KAIROS_WORKER_SECRET="\r\nset "AEON_MCP_TOKEN="\r\n"${target}" --disable-mcp-server aeon --disable-mcp-server playwright --disable-builtin-mcps --max-ai-credits ${credits} %*\r\n`)
   return wrapper
+}
+
+const DEFAULT_MISSION_CREDITS = 60
+const MAX_MISSION_CREDITS = 300
+
+function missionCredits() {
+  const raw = process.env.AEON_OS_MISSION_CREDITS
+  if (raw === undefined || raw === '') return DEFAULT_MISSION_CREDITS
+  if (!/^\d{1,3}$/.test(raw)) throw new Error(`AEON_OS_MISSION_CREDITS must be an integer between 30 and ${MAX_MISSION_CREDITS}`)
+  const value = Number(raw)
+  if (value < 30 || value > MAX_MISSION_CREDITS) throw new Error(`AEON_OS_MISSION_CREDITS must be an integer between 30 and ${MAX_MISSION_CREDITS}`)
+  return value
 }
 
 function createOneClaimBootstrap(cfg, state, attempt) {
