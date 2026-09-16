@@ -40,7 +40,7 @@ The single anchor for what Kairos is *for*. Picture a line: **JARVIS** (perfect 
 
 | Direction | Evidence | Confidence |
 |---|---|---|
-| Kairos as thinking partner (memory → synthesis → chat → loops) | Phase 1A/B/C-C1+C2 shipped; nightly synthesis live; chat Visor anchored per Dominion; 1688 tests | Shipped (Phase 1A–1C-C2) / In flight (C3–C5, D1–D3) |
+| Kairos as thinking partner (memory → synthesis → chat → loops) | Phases 1A–1C shipped; nightly pipeline (cron fleet 14); whole-brain chat (per-Dominion anchor retired 17/07); Live Mind 0.10; Evening Digest + Telegram + brain-tick | Shipped through 0.10 / Phase 2 (active agent) partially live via the Hangar |
 | BYOK AI integration (3 providers, AES-256-GCM, admin-gated) | Anthropic + OpenAI + Google via Vercel AI SDK; full REST + UI; tier-routed per user | Shipped |
 | Realm-based multi-tenancy | Full CRUD, invites, scoped visibility, REST + MCP parity | Shipped |
 | MCP-first AI integration | 95 tools across 15 categories, Bearer auth, dogfooded daily | Shipped |
@@ -123,7 +123,7 @@ A mission is only "done" when an independent model has read the report against t
 
 ### Bet 5: Kairos as a thinking partner — the centre of Aeon
 
-- **What:** A multi-layer personal cognition system. **Substrate** (every memory classified by stream class) → **synthesis** (per-Dominion archetypes + living cortex doc, regenerated nightly) → **chat surface** (Visor anchored per Dominion, replies grounded in retrieved memories with cite-back chips) → **loops** (Phase 1D evening + morning) → **active agent** (Phase 2, gated) → **identity layer** (Phase 3, speculative).
+- **What:** A multi-layer personal cognition system. **Substrate** (every memory classified by stream class) → **synthesis** (per-Dominion archetypes + living cortex doc, regenerated nightly) → **chat surface** (whole-brain Visor — the per-Dominion anchor was retired 17/07/2026; replies grounded in retrieved memories with cite-back chips) → **loops** (Phase 1D evening + morning) → **active agent** (Phase 2, gated) → **identity layer** (Phase 3, speculative).
 - **Why:** The cortex *stores*; nothing yet *thinks*. The brain needs organising intelligence on top of the substrate. The arc is to grow Kairos from a memory store into a partner that holds context, surfaces what matters, and reasons with explicit citations. The owner declared on 01/06/2026: "Kairos is now Phase 2 of Aeon" — no longer a side experiment, the centre of product investment.
 - **Risk:** Solo-user-driven UX may not generalise. Hard taste calls now (Dominion grouping, killing Realm for memories, killing the secondary sidebar, reflection-as-first-class signal) bake in assumptions. BYOK cost is real (~$0.50–2.00/day for nightly synthesis across 8 Dominions). Morning-loop noise floor is unknown until real cortex data accumulates.
 - **Status:** Phase 1A (memory shape) + 1B (synthesis layer + reflections) + 1C-C1 (chat surface) + 1C-C2 (memory grounding) all shipped. First end-to-end nightly synthesis run lands tonight (02/06 → 03/06). C3 (`chat_with_kairos` MCP tool), C4 (two-way capture buttons), C5 (cosmic view enhancements) remain — ~6 hr. Phase 1D (loops) starts ~7 days after C ships, once cortex has accumulated.
@@ -237,7 +237,7 @@ A research pass on "a board edit must never silently vanish when Neon is waking 
 
 ---
 
-## 9. PHASE MAP
+## 10. PHASE MAP
 
 ### PM-side
 
