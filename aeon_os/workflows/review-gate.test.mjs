@@ -606,10 +606,10 @@ test('a reviewer that exits without reading stdin settles cleanly with its exit 
 // forever. The exit itself must settle it after the 10s grace.
 test('a reviewer whose grandchild keeps stdout open still settles on exit within the grace period', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'aeon-review-grandchild-'))
+  let grandchild = null
   try {
     const script = join(dir, 'leave-a-child.js')
     writeFileSync(script, "const { spawn } = require('node:child_process'); const c = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 25000)'], { detached: true, stdio: ['ignore', 'inherit', 'inherit'], windowsHide: true, cwd: require('node:os').tmpdir() }); c.unref(); process.stdout.write(JSON.stringify({ pid: c.pid })); process.exit(0)")
-    let grandchild = null
     const started = Date.now()
     const out = await dispatchCopilotReview({ binary: process.execPath, model: 'm', stdinText: 'prompt', cwd: dir, maxAiCredits: 30, timeoutMs: 60_000, buildArgs: () => [script], usageFile: join(dir, 'usage.json') })
     const elapsed = Date.now() - started
