@@ -608,14 +608,21 @@ test('a reviewer whose grandchild keeps stdout open still settles on exit within
   const dir = mkdtempSync(join(tmpdir(), 'aeon-review-grandchild-'))
   try {
     const script = join(dir, 'leave-a-child.js')
-    writeFileSync(script, "const { spawn } = require('node:child_process'); spawn(process.execPath, ['-e', 'setTimeout(() => {}, 25000)'], { detached: true, stdio: ['ignore', 'inherit', 'inherit'], windowsHide: true, cwd: require('node:os').tmpdir() }).unref(); process.stdout.write('{}'); process.exit(0)")
+    writeFileSync(script, "const { spawn } = require('node:child_process'); const c = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 25000)'], { detached: true, stdio: ['ignore', 'inherit', 'inherit'], windowsHide: true, cwd: require('node:os').tmpdir() }); c.unref(); process.stdout.write(JSON.stringify({ pid: c.pid })); process.exit(0)")
+    let grandchild = null
     const started = Date.now()
     const out = await dispatchCopilotReview({ binary: process.execPath, model: 'm', stdinText: 'prompt', cwd: dir, maxAiCredits: 30, timeoutMs: 60_000, buildArgs: () => [script], usageFile: join(dir, 'usage.json') })
     const elapsed = Date.now() - started
+    grandchild = JSON.parse(out.stdout).pid
     assert.equal(out.status, 0)
     assert.equal(out.timedOut, false)
     assert.ok(elapsed < 20_000, `settled in ${elapsed}ms, i.e. on exit + grace, not on the grandchild's close`)
-  } finally { rmSync(dir, { recursive: true, force: true }) }
+  } finally {
+    // The grandchild would otherwise outlive the test by 25s and, on some
+    // machines, pin the scratch directory (stalker 1609 re-verification).
+    killTree(grandchild)
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 })
+  }
 })
 
 // run.mjs's citation floor, tested through the pure function it now calls.
