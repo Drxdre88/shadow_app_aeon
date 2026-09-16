@@ -5,6 +5,12 @@
 Reverse-chronological. The most recent work is at the top; the pre-2026-06-06 trail is preserved
 verbatim below.
 
+### 2026-09-16 — Aeon OS review gate fired for real · v0.28.0 (PR #127 + `fix/aeon-os-review-gate`)
+Independent-review PASS gate (`aeon_os/workflows/review.mjs`) merged 15/09 and exercised live 16/09: three production runs, two harness defects found and fixed (Copilot CLI ignores piped stdin when `-p` is present → whole prompt on stdin; reviewer provenance read from the real `--usage-output-file` shape), a bundle gap closed (shorthand `:N` citation continuations), a random **receipt token** as proof of receipt, marker-consistency check at gate evaluation, first legitimate verdict a FAIL with 10 findings (three confirmed citation drift by hand). Browser **Save & Launch** exercised for the first time (Playwright, receipt in `results/ui-2026-09-16-browser/`). PR #127 also: REST 404 on malformed ids, 400 on bad objectives, 409 naming the live session on duplicate launch; mission editor **model picker**; missions record the observed model; Windows worktree teardown retry. New doc **`architecture/hangar.md`**. Gate suite 56 tests. Horsemen (4 reviewers, cross-model) PASS_WITH_NOTES → all findings folded in.
+
+### 2026-09-04 → 09-07 — Board waves v0.24–v0.27 (PRs #122–#126)
+Card fusion v2 + the fusion effect (ghosts fly into the survivor), hold-to-move, phone drag-right scroll fix + slim Add Column on touch, member avatar styling (palette / text colour / shape / realm-wide initials — styling beats the photo; migrations 0036/0037). Chronos P0 reset guard + P1.5 engine (0034/0035) built but unwired. Flight Deck telemetry + parallel mission worktrees (PR #120, 03/09).
+
 ### 2026-08-26 — Night-swarm PM wave: focus surfaces, virtual members, trophy rebuild (PR #107)
 
 Owner directive: four live board bugs plus five UX asks, delivered by a parallel swarm in one night, then reviewed hard. 16 commits on `feat/night-swarm-2608`.

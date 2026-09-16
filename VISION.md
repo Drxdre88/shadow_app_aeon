@@ -1,6 +1,6 @@
 # VISION.md
 
-Last updated: 23/06/2026 (Kairos Phase 1A + 1B + 1C-C1 + 1C-C2 shipped; nightly synthesis pipeline wired; chat Visor with memory grounding live. "Never-asleep" reliability Tiers 0–1 shipped; Tiers 3–5 + snappiness batch parked — see §9)
+Last updated: 16/09/2026 (v0.28.0 — the AI Hangar is live end to end and **Aeon OS** proves it on production behind an independent-review gate that fired for real today; Kairos 0.10 "Live Mind" + Evening Digest + Telegram two-way shipped in July; board waves 0.24–0.27. Prior refresh 23/06/2026.)
 
 For technical architecture, file paths, and feature inventory see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
@@ -12,7 +12,11 @@ Aeon is a **web-first project management platform** with a stunning visual ident
 
 **Kairos is now Phase 2 of Aeon, not a side experiment.** What started in May as a personal memory layer has graduated, in eight weeks, into a multi-layer thinking partner: substrate (every memory classified into one of six stream classes), synthesis (3–7 archetypes per Dominion + one living cortex document, regenerated nightly), reflections (`kairos_reflect` MCP tool — the operator's first-class signal that outweighs activity-derived drift), and a slide-out chat Visor that grounds every reply in retrieved memories with cite-back chips. The full nightly cron pipeline — snapshot 23:00 → archetypes 02:30 → cortex 03:00 → briefer 07:00 — went live tonight.
 
-**Mobile strategy (03/04/2026):** Capacitor WebView wrapper over the existing Next.js app (preserves 100% of web UI). Tauri desktop parked post-beta; PWA enabled as the free desktop win.
+**The AI Hangar is the third arc (20/08 → 16/09/2026).** A board card can now be an autonomous CLI-agent mission: pick objective, repo, engine and model on the card, Save & Launch, and a runner flies it in a disposable worktree while the Flight Deck streams telemetry back. **Aeon OS** is the discipline around it — a production-verification harness (`aeon_os/`) that runs real missions against the live API and refuses to call a batch "passed" until a *different* model has read every report against the real source lines and returned PASS. It fired for real on 16/09: the first legitimate verdict was a FAIL with ten findings, three of them confirmed citation drift by hand. That is the point — the gate exists to catch exactly that.
+
+**Kairos 0.10 (July):** Live Mind — continuous chat awareness, agentic tools on by default, `micro-consolidate` six times a day, the Evening Digest at 18:00 UTC, Telegram two-way, speaks-first brain-tick. Aether UI retired; the galaxy is the only spatial view. Quality-over-cost is a standing directive: all cognition runs heavy-tier.
+
+**Mobile strategy (03/04/2026, reversed 27/06/2026):** originally a Capacitor WebView wrapper; now a native **Expo / React Native** companion (chat first, boards later) at the login slice. Tauri desktop parked post-beta; PWA is the free desktop win.
 
 ---
 
@@ -40,7 +44,10 @@ The single anchor for what Kairos is *for*. Picture a line: **JARVIS** (perfect 
 | BYOK AI integration (3 providers, AES-256-GCM, admin-gated) | Anthropic + OpenAI + Google via Vercel AI SDK; full REST + UI; tier-routed per user | Shipped |
 | Realm-based multi-tenancy | Full CRUD, invites, scoped visibility, REST + MCP parity | Shipped |
 | MCP-first AI integration | 95 tools across 15 categories, Bearer auth, dogfooded daily | Shipped |
-| Capacitor mobile app | WebView wrapper preserves full web UI; mobile-auth backend reusable | Configured (build pipeline pending) |
+| Native mobile companion (Expo / RN) | Replaces the Capacitor plan; Google login slice scaffolded over the REST bearer sessions | In flight (login slice) |
+| AI Hangar — cards fly as agent missions | Mission editor + model picker, drop-to-launch, Flight Deck, kairos-worker runner, worktree parallelism, REST/MCP session surfaces; browser Save & Launch verified 16/09 | Shipped (Sprints 1–3) |
+| Aeon OS — production proof + independent review gate | 15/15 production acceptance; review gate fired live 16/09 (3 runs, first legitimate FAIL); receipts committed and immutable | Shipped; chasing the first genuine PASS |
+| Kairos speaks first (digest, Telegram, brain-tick) | Evening Digest daily, Telegram two-way, 3×/day cloud brain-tick, Live Mind 0.10 | Shipped |
 | Master / Rift Board (cross-board view) | Rift in Analysis (high priority); Master in Raw Ideas | Speculative |
 | Agent-as-member (AI in realms) | 1 raw idea card; `actorType` extension on `activityEvents` already in schema | Speculative |
 | Real-time sync (Pusher) | Live, all mutations broadcast, 30s polling fallback | Shipped |
@@ -53,6 +60,13 @@ The single anchor for what Kairos is *for*. Picture a line: **JARVIS** (perfect 
 
 | Date | Milestone | Impact |
 |---|---|---|
+| 16/09/2026 | Aeon OS review gate fired for real + v0.28.0 | Three live runs; two harness faults fixed the same day (Copilot CLI ignores piped stdin when `-p` is present; reviewer provenance never read); receipt token as proof of receipt; first legitimate FAIL (10 findings). REST 404/400/409 hardening, model picker, observed model recorded. Browser Save & Launch exercised for the first time |
+| 15/09/2026 | Independent-review PASS gate (PR #127) | Mechanical validation alone only reaches `review_pending`; a batch passes only when every attempt has a stored PASS from a different model. Terminal receipts immutable |
+| 03/09/2026 | Flight Deck + parallel mission worktrees (PR #120) | Typed mission telemetry drawer; disposable worktree per mission; concurrency 4 |
+| 04–07/09/2026 | Board waves v0.24–v0.27 | Card fusion v2 + the fusion effect, hold-to-move, phone drag fix, member avatar styling (styling beats the photo), Chronos engine built (unwired) |
+| 20–27/08/2026 | AI Hangar Sprint 1 + night swarm (PRs #104–#109) | POC missions flew live (claude + copilot); floating card windows, Zen mode, virtual members, trophy rebuild; `api/v1/realms/**` had 403'd since April — fixed |
+| 24/07/2026 | Kairos 0.9 → 0.10 (PRs #95–#100) | Synthesis reliability heal, Evening Digest, Live Mind, quality-over-cost retier |
+| 17/07/2026 | Whole-brain chat + Telegram two-way + speaks-first (PRs #71–#89) | Dominion picker dropped; Aether-grounded chat; brain-tick routine; Aether UI retired |
 | 02/06/2026 | Kairos Phase 1C-C2 — memory-grounded chat replies + citation chips + "Reading" line + horsemen fix-pack | Every chat reply pulls Dominion cortex + archetypes + top-5 substrate; inline `[[uuid]]` tokens rendered as chips bearing memory titles; hallucinated ids surface as muted `?` (server-side intersection guard). KairosVisor split 512 → 220 lines across 5 files; mapping + payload modules extracted to be unit-testable. Tests 1622 → 1688 (+66) |
 | 02/06/2026 | Kairos Phase 1C-C1 — slide-out chat Visor anchored per Dominion | Right-edge slide-out panel on `/kairos`, `/notes`, `/settings/ai`. Single active thread per Visor open; persists in `agent_sessions` + `session_events` (no schema change); row-lock on parent agent_sessions serialises message seq; orphan-message recovery handles edited retry bodies |
 | 02/06/2026 | Kairos Phase 1B B1+B2+B3 — archetype generator + Dominion cortex regen + `kairos_reflect` MCP tool | Nightly pipeline: snapshot 23:00 → archetypes 02:30 → cortex 03:00 → briefer 07:00. One living cortex document per Dominion used as chat system-prompt prefix. Owner reflections locked to `streamClass='reflection'` via dedicated MCP tool, weighted higher than activity-derived signals in synthesis, never archived by compaction |
@@ -76,7 +90,10 @@ The single anchor for what Kairos is *for*. Picture a line: **JARVIS** (perfect 
 
 ## 4. STRATEGIC BETS
 
-### Bet 1: Mobile via Capacitor (WebView wrapper)
+### Bet 0: Aeon OS — the product proves itself, or it doesn't ship
+A mission is only "done" when an independent model has read the report against the real source lines and said PASS; receipts are committed and never repaired. The harness spans the existing apps — it is not another orchestration product. Risk: reviewer cost per attempt and the reviewer's own blind spots; mitigation: receipts, cross-model review, and the gate failing closed on every harness fault.
+
+### Bet 1: Mobile via Capacitor (WebView wrapper) — *reversed 27/06/2026 in favour of a native Expo companion; kept for the record*
 
 - **What:** Capacitor wraps the existing Next.js web app in a native shell for iOS/Android, preserving 100% of the web UI.
 - **Why:** Aeon's primary differentiator is its visual design (151 themes, effects, animations). React Native would require a full UI rewrite (3–6 months) to reach 50–70% fidelity. Capacitor ships the same UI in weeks.
@@ -144,6 +161,11 @@ The single anchor for what Kairos is *for*. Picture a line: **JARVIS** (perfect 
 
 | When | From | To | Why |
 |---|---|---|---|
+| 16/09/2026 | Acceptance = plumbing works (10/10 mechanically green) | Acceptance = an independent model PASSes every report; a harness-caused FAIL stays a FAIL and a new run is prepared | On 11/09 a mechanically perfect batch got zero clean passes from three reviewers. Plumbing is not quality |
+| 20/08/2026 | AI Hangar as a separate orchestration product | Aeon OS spans the existing apps; the board *is* the launch surface | One card, one mission, one receipt — no new app to keep alive |
+| 24/07/2026 | Cost-tiered Kairos cognition (~$0.50–2/day framing in Bet 5) | Quality over cost: all cognition heavy-tier, standing directive | Twelve nights of truncated synthesis traced to token caps; cheap tiers were the false economy |
+| 17/07/2026 | Chat Visor anchored per Dominion; Aether as a UI | Whole-brain chat, Aether grounding behind the scenes, galaxy the only spatial view | The anchor was friction; the Aether view was a demo, not a tool |
+| 27/06/2026 | Capacitor WebView mobile (Bet 1) | Native Expo / React Native companion, chat first | The web board is not the mobile product; chat and capture are |
 | 02/06/2026 | C1 planned as thread list + multi-thread UX with optional Dominion routing | C1 narrowed: single active thread per Visor open, required Dominion anchor, no retrieval (pushed to C2) | Scope discipline. Real archetypes only exist after the first nightly cron, so C2 design benefits from actual archetype output before locking retrieval shape |
 | 02/06/2026 | Cite-grounded reasoning = evolution-plan principle, not yet implemented | Cite-grounded reasoning is the C2 chat contract — inline `[[uuid]]` markers post-processed as hover chips with server-side hallucination guard | Principle 3 of the evolution plan ("every Kairos claim links back to substrate. No floating assertions") becomes a C2 implementation spec |
 | 01/06/2026 | Phase 1A A3: prune ~200 empty-shell board-import memories as noise | Live board awareness via `inspectDominion` — keep all memories, deprecate the bulk-import script, Briefer reads board state live | Owner overruled the prune: "every card is signal." Architectural consequence: Briefer no longer consumes static imported memories; queries board live on every run |
@@ -162,6 +184,10 @@ The single anchor for what Kairos is *for*. Picture a line: **JARVIS** (perfect 
 
 | Question | Impact | Notes |
 |---|---|---|
+| **When does the first genuine PASS come, and what does it cost?** | High | Every real recon report so far drifted on test-file line numbers. Tighten the mission prompt's citation rules, or accept that catching drift is the gate's job? Undecided (`aeon_os/HANDOVER_1609.md`) |
+| **Objective-completion contract** | High | `implement` / `bug_fix` can report `completed` with no branch, commit or artifact. The envelope validator needs a cross-field rule before autonomous dispatch is trusted |
+| **Worktree isolation policy for delegated work** | Medium | The runner uses disposable worktrees; the operator's delegation convention uses one checkout. Resolve before autonomous dispatch (`aeon_os/summary.md`) |
+| **Which realm owns a mission?** | Medium | Hangar repos are realm-scoped, so a realm-less project cannot launch from the browser while REST accepts any slug |
 | **Phase 1D morning-loop calibration: what is the right noise floor?** | High | Evolution plan: "A morning ping that fires every day will get muted in a week." D2 picks 0–1 question per Dominion per day above an urgency × confidence threshold. The threshold is unknown until real cortex data accumulates. First synthesis cycle was tonight (02/06 → 03/06) |
 | **Phase 2 autonomy gates: what does the owner explicitly gate?** | High | Evolution plan: "Kairos can suggest. Kairos cannot spawn / commit / send without explicit gates." The gate mechanism (confirmation UI, per-action policy, per-Dominion override) is unspecified. Needs design before Phase 2 starts |
 | **Identity layer (Phase 3): does configurable personality precede multi-user Kairos?** | Medium | Phase 3 names "board of directors" multi-agent council + configurable Kairos persona. If second-user Kairos shares the owner's persona it may be fine for one beta user but wrong at scale. Decision deferred but should be named before Phase 2 ships |
@@ -220,13 +246,17 @@ A research pass on "a board edit must never silently vanish when Neon is waking 
 | 1 | Close the Gaps | COMPLETE | Middleware fix, Gantt wired to DB, labels end-to-end, checklist, loading states |
 | 1.5 | Hardening | COMPLETE | Realm invites, REST parity, lint cleanup, file splits, SSR, perf |
 | 2A | Mobile Auth Backend | COMPLETE | mobile-auth.ts, mobileSessions + mobileLoginTokens |
-| 2B | PWA + Capacitor | IN PROGRESS | PWA shipped; Capacitor configured, build pipeline pending |
-| 2C | Native Plugins | QUEUED | @capacitor/push-notifications, haptics, biometrics |
-| 2D | Mobile Polish | QUEUED | Responsive CSS audit, touch sizing, effect auto-disable, store submission |
+| 2B | PWA + native companion | IN PROGRESS | PWA shipped; Capacitor superseded by the Expo / RN companion (login slice) |
+| 2C | Native Plugins | QUEUED | push notifications, haptics, biometrics — now on the Expo side |
+| 2D | Mobile Polish | QUEUED | Chat-first companion; boards later |
 | 2.5 | Web Polish | PARALLEL | Incremental UX fixes alongside mobile |
 | 3 | Performance | COMPLETE | Virtual scrolling, optimistic UI, Pusher real-time |
-| 4 | Cross-board intelligence | SPECULATIVE | Master Board, Rift Board (in Analysis), Urgency lens, Agent Dispatch |
+| 4 | Cross-board intelligence | SPECULATIVE | Master Board, Rift Board (in Analysis), Urgency lens — no commits since June |
 | 5 | Collaboration | NOT STARTED | Chat, notifications, agent-as-member |
+| **H1–H3** | AI Hangar Sprints 1–3 | COMPLETE | Missions on cards, runner, worktrees, Flight Deck, model picker, drop-to-launch, output sinks partial |
+| **OS-1** | Aeon OS acceptance + review gate | COMPLETE / LIVE | 15/15 production acceptance; gate fired 16/09; receipts immutable |
+| **OS-2** | Objective-completion contract + membership guard + uuid guards | NEXT | See §7 |
+| **OS-3** | Bounded coordination, research evidence, scheduled domain work, morning digest | PLANNED | Sequenced after delivery is dependable (`aeon_os/summary.md`) |
 
 ### Kairos
 

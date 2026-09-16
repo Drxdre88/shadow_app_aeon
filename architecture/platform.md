@@ -39,7 +39,7 @@ NextAuth session cookie is the fallback when no bearer is present (`auth.ts:50-5
 | `realms` | `realms`, `[realmId]` + members/projects, **`[realmId]/virtual-members`**(+`[virtualMemberId]`) |
 | `memories` | `memories`(+search,capture,context,needs-summary), `[id]`(+export,neighbours,accept,links) |
 | `ai` | `ai/credentials`(+`[id]`,test), `ai/preferences` — **admin-gated** |
-| `sessions` | `sessions`, `[id]`(+events,kill) |
+| `sessions` | `sessions` (spawn: 201 / **400** malformed `metadata.hangar` / **409** naming the live session), `claim`, `[id]` (**404** on a non-uuid id, + heartbeat, events, kill) — Hangar surface, see [hangar.md](hangar.md). `projects/[id]` has the same uuid guard; ~45 other `[id]` routes do not yet |
 | `recipes` | `recipes`, `recipes/run`, `recipes/traces` — REST mirror of `run_recipe`, sharing `runRecipeArgs` + `dispatch.runRecipe` so MCP/REST never drift |
 | `projects/[id]/favorite` | PUT toggle for per-user project favorites (PR #80; mirrors MCP `set_project_favorite`) |
 | `kairos/speak` | `POST /api/v1/kairos/speak` — **Kairos-initiated delivery** (Will-inbox `notify` memory + best-effort Telegram fan-out). Auth `Bearer ${CRON_SECRET}` (cron idiom, not user bearer). Server-side interrupt throttle: 4h min gap + 3/24h cap → 429; `force:true` bypass audit-logged and ceilinged at 10/24h. **Deliberately OUTSIDE MCP/REST parity** — internal delivery channel, no MCP mirror. |
@@ -151,13 +151,18 @@ Three-tier BYOK routing (cheap / standard / heavy) over user-supplied keys, all 
 | `@react-three/fiber` / `three` / drei | Kairos + Aether WebGL | Active |
 | `@dnd-kit/*` | Board DnD | Active |
 | `@tanstack/react-virtual` | Virtual scroll | Active |
-| `kairos-worker` subprocess | Long-running CLI engine for spawn | Active |
+| `kairos-worker` runner | Pull-mode Hangar runner: claims queued sessions, worktree per mission, shells claude/copilot/codex, streams telemetry, posts the result envelope; CI typecheck+test since 2026-09-03 | Active — [hangar.md](hangar.md) |
 | Capacitor | Legacy mobile shell (superseded by the Expo app for the chat slice) | Configured |
 | Tauri | Desktop wrapper | Scaffold (parked) |
 
 The app-owned **embedding layer** (Voyage primary / OpenAI fallback, single server key, `lib/kairos/embeddings.ts`) is distinct from per-user BYOK chat keys. When neither embedding key is set, retrieval degrades to pure FTS.
 
 ---
+
+## 6.5 Versioning + CI gates
+
+- App version is `APP_VERSION` in `apps/web/src/lib/version.ts` (now **0.28.0**), surfaced in the Changelog modal; `apps/web/src/lib/changelog.ts` is a manual mirror of `/CHANGELOG.md` — bump all three together. `package.json` versions are scaffold defaults and unused.
+- CI (`.github/workflows/ci.yml`): lint + typecheck + Vitest + **production build** for the web app, plus kairos-worker typecheck + tests; `auth-smoke` runs on every deployment (the 2026-06-08 outage guard).
 
 ## 7. DB / cold-start reliability + cron schedule
 

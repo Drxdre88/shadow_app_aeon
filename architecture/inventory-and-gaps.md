@@ -9,6 +9,7 @@ Per-domain inventories live in the subsystem docs (this avoids drift):
 - **Kairos brain** (substrate, capture, synthesis, chat, asks, dialogue, lieutenants) → [kairos/overview.md](kairos/overview.md) + siblings.
 - **Platform** (REST, MCP, OAuth, mobile auth, AI engine, crons) → [platform.md](platform.md).
 - **Mobile app** → [mobile.md](mobile.md).
+- **AI Hangar + Aeon OS harness** (missions, runner, review gate, receipts) → [hangar.md](hangar.md).
 
 Top-line status: the PM app is feature-complete + hardened; Kairos is a multi-layer brain
 (substrate → synthesis → Aether self-model → chat/ask/dialogue → **speaks-first autonomy**)
@@ -17,7 +18,7 @@ app is at the login slice (Google auth scaffolded, awaiting operator client IDs)
 
 ## Known Gaps & Technical Debt
 
-Last verified: 2026-06-28 (git HEAD `056d8f2`).
+Last verified: 2026-09-16 (branch `fix/aeon-os-review-gate`). Hangar-specific gaps live in [hangar.md](hangar.md) §6 — the top three: ~45 `[id]` REST routes without a uuid guard, no membership check on spawn `taskId`, and the missing objective-completion contract. TODO/FIXME/HACK in `apps/web/src`: **0** (one false positive, a fixture constant named `STALE_TODO`).
 
 | Severity | Issue | Status / Details |
 |---|---|---|
@@ -26,10 +27,10 @@ Last verified: 2026-06-28 (git HEAD `056d8f2`).
 | — | Keep-warm cron pinning Neon 24/7 | **REMOVED** (`5c759e1`) — cold-start now absorbed by the durable mutation queue + retry ladder + Neon sub-second resume |
 | Medium | Dominion REST API missing | OPEN — 16 MCP tools, no `/api/v1/dominions/` |
 | Medium | `broadcastMemoryEvent` is a no-op stub | OPEN — memory mutations don't push via Pusher |
-| Medium | Orphan running sessions on worker restart | OPEN — no heartbeat / reconcile cron |
+| Medium | Orphan running sessions on worker restart | OPEN — heartbeat exists (`/sessions/[id]/heartbeat`, 30s) but no reconcile cron marks a silent runner's sessions dead |
 | Medium | Engine router has no CRUD surface | OPEN — `enginePolicies` editable via no MCP/REST |
 | Medium | Cost budget tripwires absent | OPEN — `costUsd` recorded; no cap / rollup / kill switch |
-| Medium | Sessions parity test missing | OPEN — REST + MCP shapes match, no lock |
+| Medium | Sessions parity test missing | PARTIALLY CLOSED — spawn contract (400/409) + id guard tests exist (`api/v1/sessions/__tests__/`), no full REST↔MCP parity lock |
 | Medium | Archetype + cortex cron concurrency (TOCTOU) | OPEN — advisory-lock fix queued; cron roster has grown (larger surface) |
 | Medium | `memories.ts` past 500-line standard | LIKELY OPEN — split into core/capture/graph/context pending |
 | Medium | Chat assistant Markdown rendered as text | OPEN |

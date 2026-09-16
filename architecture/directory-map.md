@@ -33,13 +33,14 @@ apps/
       api/auth/ export/ planets/ stats/ sync/  -- NextAuth, export, misc surfaces
     src/components/
       board/                       -- kanban, task edit, DnD, filters, virtual scroll, assignee overlay + pile,
-                                      FavoriteStar, checklist/ (ghost-input new-item flow, reorder.ts), triState.ts
+                                      FavoriteStar, checklist/ (ghost-input new-item flow, reorder.ts), triState.ts,
+                                      fusion (FuseCardsModal, FusionEffect), hold-to-move, MissionEditorModal, TaskMembersSection
       canvas/                      -- whiteboard (ReactFlow)
       gantt/                       -- Gantt chart
       hyperspace/                  -- Daily Briefing card + EOD + Capture FAB + QuickCapture
       kairos/                      -- galaxy (Kairos3D only — 2D removed), KairosInbox (Will bell/panel),
                                       AdvisoryFeed, Visor + chat stream, thread list,
-                                      Dominion create/edit, MemorySidePanel; scene/
+                                      Dominion create/edit, MemorySidePanel; scene/; flightdeck/ (FlightDeckDrawer, TowerOverlay)
       notes/ sidebar/ trophy/      -- notes bento, AppSidebar, trophy/vault archive
       velocity/ ui/                -- analytics charts; settings/help/command-palette/toast
       layout/ project/ workspace/  -- layout chrome, project chrome, workspace dashboard parts
@@ -57,20 +58,26 @@ apps/
                                       chat-distill(-prompt), telegram, cron-trace
       oauth/                       -- pkce (S256), origin helper
       db/                          -- schema.ts + index.ts (Neon Pool)
-      store/                       -- Zustand: boardStore, canvasStore, ganttStore, undoStore,
-                                      mutationDispatch, mutationQueue, persistMutation
+      store/                       -- Zustand: boardStore, canvasStore, ganttStore, undoStore, hangarUiStore,
+                                      pinnedCardsStore, zenModeStore, mutationDispatch, mutationQueue, persistMutation
+      schedule/ flightdeck/ hangar-models.ts -- Chronos solver (unwired), Flight Deck timeline, engine model catalogue
       api/ auth.ts realtime/ pusher.ts email.ts changelog.ts version.ts
     src/stores/                    -- Zustand: themeStore, sidebarStore, kairosStore,
                                       kairosVisorStore, kairosPrefsStore
     src/assets/ config/ types/ middleware.ts
-    drizzle/                       -- migrations 0000 -> 0026
+    drizzle/                       -- migrations 0000 -> 0037 (hand-written past 0010; see data-layer.md)
+    scripts/                     -- apply-*-migration.mjs, verify-schema-drift.mjs, session-capture-* pipeline, smoke-auth.mjs
   mobile/                          -- Expo / React Native companion app (NEW 2026-06-27)
     App.tsx index.ts app.json      -- Expo SDK 53, RN 0.79, React 19; v1 = Kairos chat
     babel.config.js metro.config.js tsconfig.json
     src/                           -- api.ts (apiFetch + bearer), auth.ts (Google sign-in), config.ts
     (see mobile.md)
   desktop/                         -- Tauri desktop shell (scaffold, parked): package.json + src-tauri/
-  kairos-worker/                   -- standalone Node HTTP server: index.ts, spawner.ts, callback.ts
+  kairos-worker/                   -- Hangar runner (Node): src/{index,poller,engines,worktree,envelope,stream-parser}.ts;
+                                      runner.env.bat (ignored creds), start-hangar-runner.bat — see hangar.md
+aeon_os/                           -- Aeon OS: production-verification harness + docs (summary, test_readiness, HANDOVER_*)
+  workflows/                       -- run.mjs, review.mjs, review-bundle.mjs, prod-acceptance.mjs, verify-ui.mjs,
+                                      review-gate.test.mjs, bootstrap.json; results/ = committed receipts; .runtime/ = ignored
 packages/
   shared/src/
     config/themes/                 -- 17 theme category files + index (151 presets)
@@ -80,4 +87,4 @@ packages/
     index.ts                       -- package barrel
 ```
 
-**Root files:** `CLAUDE.md`, `ARCHITECTURE.md` (router), `VISION.md`, `README.md`, `CHANGELOG.md`, `SETUP.md`. Detailed design notes + handovers live in `docs/` (esp. `docs/kairos/` — 29 numbered design/handover docs; `29-brain-tick.md` is executed by the scheduled cloud routine). `vercel.json` carries the cron schedule.
+**Root files:** `CLAUDE.md`, `ARCHITECTURE.md` (router), `VISION.md`, `README.md`, `CHANGELOG.md` (mirrored into `apps/web/src/lib/changelog.ts`), `SETUP.md`, `start.bat`. Detailed design notes + handovers live in `docs/` (esp. `docs/kairos/` — 29 numbered design/handover docs; `29-brain-tick.md` is executed by the scheduled cloud routine). `vercel.json` carries the cron schedule.

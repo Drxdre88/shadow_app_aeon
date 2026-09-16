@@ -53,6 +53,22 @@ Page-level zoom is disabled app-wide; the board owns the gesture instead, so zoo
 - `useBoardPinchZoom.ts` + `pinchZoom.ts` — non-passive touch events (pointer events would be killed by `pointercancel` mid-scroll); all per-frame work is imperative ref writes, so a 100-card board holds gesture framerate. While zoomed, the wrapper is laid out at **container height ÷ scale** so the transform lands exactly on the container's bottom edge — without that the columns keep their own height, shrink toward the origin and leave the screen empty below (owner-reported). Grid layout keeps its natural wrapped height. Metrics re-measure per gesture and on resize. Safari's proprietary `gesturestart`/`gesturechange` is prevented because iOS Safari ignores `user-scalable=no`.
 - Touch scroll vs drag: cards use `touch-action: manipulation` (**not** `none`, which made the browser ignore every pan starting on a card), `MouseSensor` for mouse (PointerSensor would also claim touch), and `TouchSensor` at `delay 250 / tolerance 8` — swipe scrolls, hold lifts.
 
+### Card fusion v2 + the fusion effect (PRs #122–#124, v0.26.0)
+- Multi-select (`cardSelection.ts`, `boardStore.selectedTaskIds` — client-only, never persisted; keyboard selection never arms a fuse) → "Fuse N cards into this one" in the context menu → `FuseCardsModal.tsx` / `useFuseCards.ts` / `fuseClient.ts` / `fuseRequestContext.ts`; rules in `lib/utils/fuseRules.ts`; server side `lib/actions/fuse.ts`, `lib/data/fuse.ts` + `lib/data/unfuse.ts` (vault restore lands in a column, column-scoped). Batch cap + click-away.
+- The effect: ghosts fly into the survivor and burst on impact — `FusionEffect.tsx`, `fusionEffectTiming.ts`, `fusionMeasure.ts`. Dead when the user runs with **Smooth UI Renders off**.
+
+### Hold-to-move + touch guards (v0.26.1)
+- `useHoldToMove.ts`, `HoldToMoveBanner.tsx`, `boardStore.movingTaskId`; `hooks/useCoarsePointer.ts`, `boardAutoScroll.ts`, `boardZoom.ts`. Phone drag-right no longer scrolls the page sideways (page can never scroll horizontally, toolbar scrolls inside itself, auto-scroll only ever moves the board/columns). Slim "Add column" rail on touch.
+
+### Member avatar styling (PR #126, v0.27.0)
+- Per-realm overrides on real members (`memberProfiles`, 0036/0037): initials, fill colour (preset or any hex), text colour, shape (circle / rounded / square); realm-wide "initials instead of photos" switch in Realm settings. **Styling beats the photo** — `lib/utils/avatarStyle.ts` (`hasAvatarOverride`, `avatarShapeClass`) is the single render source of truth; `lib/utils/avatarPrefs.ts`, `lib/actions/member-profiles.ts` (`requireEditor` + assignable-members check), `lib/data/member-profiles.ts`, `TaskMembersSection.tsx`.
+
+### AI missions on cards (Hangar)
+- Card menu "Make AI card" / "Edit AI mission" / "Execute mission" when the project's Auto AI is on; `MissionEditorModal.tsx` with the per-engine model picker; queued sessions appear in the Flight Deck. Full detail in [hangar.md](hangar.md).
+
+### Chronos scheduler (P0 + P1.5, engine built, unwired)
+- `lib/schedule/{solver,calendar,resources,estimate,adapter,types,fixtures}.ts` + `lib/actions/schedule.ts`; `solveProject` has **no caller** until the Gantt draws from it. Gantt Reset now confirms (`components/gantt/GanttResetModal.tsx`). Bulk moves: `lib/actions/boardBulk.ts`, `lib/data/boardBulk.ts`, `lib/utils/bulkMovePlan.ts`.
+
 ### Filtering, shortcuts, palette, performance
 - Filter bar (text + priority + label + **assignee, real + virtual** + column + date), customizable keyboard shortcuts, Cmd+K command palette, TanStack Virtual at a 15+ card threshold, project nav prefetched on hover.
 
@@ -116,6 +132,13 @@ Create/edit/delete/realm-assign (`components/project/`); Space/Tree/Grid views; 
 | Sizing / stale / peek | Complete | `TaskSizeBadge.tsx`, `StaleIndicator.tsx`, `CardPeekPreview.tsx` |
 | Assignees (overlay, M-hotkey, owner+realm) | Complete | `TaskAssigneeOverlay.tsx`, `lib/data/members.ts:27` |
 | **Avatar pile on cards** | Complete | `SortableTaskCard.tsx:337,494`, `boardStore.assigneesByTask` |
+| **Card fusion v2 + effect** | Complete (v0.26.0) | `FuseCardsModal.tsx`, `useFuseCards.ts`, `FusionEffect.tsx`, `cardSelection.ts`, `lib/data/fuse.ts` / `unfuse.ts`, `lib/utils/fuseRules.ts` |
+| **Hold-to-move + touch drag guards** | Complete (v0.26.1) | `useHoldToMove.ts`, `HoldToMoveBanner.tsx`, `boardAutoScroll.ts`, `boardZoom.ts`, `hooks/useCoarsePointer.ts` |
+| **Member avatar styling (palette, text, shape, realm-wide initials)** | Complete (v0.27.0) | `lib/utils/avatarStyle.ts`, `lib/actions/member-profiles.ts`, `TaskMembersSection.tsx`, migrations 0036/0037 |
+| **AI mission editor + model picker + Save & Launch** | Complete (v0.28.0) | `MissionEditorModal.tsx`, `lib/hangar-models.ts`, `lib/store/hangarUiStore.ts` — see [hangar.md](hangar.md) |
+| **Flight Deck (mission telemetry drawer + Tower)** | Complete (PR #120) | `components/kairos/flightdeck/FlightDeckDrawer.tsx`, `TowerOverlay.tsx`, `lib/flightdeck/timeline.ts` |
+| **Trophy charts** | Complete | `components/trophy/TrophyCompletionChart.tsx`, `TrophyCycleTimeChart.tsx`, `TrophyRhythmHeatmap.tsx`, `trophy-chart-kit.tsx` |
+| **Chronos scheduling engine** | Built, unwired | `lib/schedule/*`, `lib/actions/schedule.ts`, migrations 0034/0035; `GanttResetModal.tsx` |
 | Filtering / shortcuts / palette / virtual scroll | Complete | `BoardFilterBar.tsx`, `VirtualizedTaskList.tsx`, `ui/CommandPalette.tsx` |
 | **Never-asleep durable save queue** | Complete | `lib/store/mutationQueue.ts`, `persistMutation.ts`, `SaveStatusPill.tsx` |
 | Gantt + saved views | Complete | `components/gantt/`, `lib/data/gantt.ts` |
@@ -133,7 +156,8 @@ Create/edit/delete/realm-assign (`components/project/`); Space/Tree/Grid views; 
 
 | Store | Manages | File | Persistence |
 |---|---|---|---|
-| `useBoardStore` | columns, tasks, labels, deps, checklists, **assigneesByTask**, **virtualMembers**, selection, filters, **saveStatus/isDirty** | `lib/store/boardStore.ts` | `zustand/persist` |
+| `useBoardStore` | columns, tasks (incl. `metadata`, member `email/initials/textColor/shape`), labels, deps, checklists, **assigneesByTask**, **virtualMembers**, **selectedTaskIds** (multi-select, client-only), **movingTaskId** (hold-to-move, client-only), filters, **saveStatus/isDirty** | `lib/store/boardStore.ts` | `zustand/persist` |
+| `useHangarUiStore` | project Auto AI config (`enabled`, `triggerColumnId`) hydrated from `projects.settings.hangar`; open mission editor | `lib/store/hangarUiStore.ts` | in-memory |
 | `useMutationQueue` | durable FIFO mutation queue | `lib/store/mutationQueue.ts` | `zustand/persist` (localStorage; records only) |
 | **`usePinnedCardsStore`** | floating card windows — position, width, folded, z-stack | `lib/store/pinnedCardsStore.ts` | in-memory |
 | **`useZenModeStore`** | Zen-focused column id + entry source rect | `lib/store/zenModeStore.ts` | in-memory |
