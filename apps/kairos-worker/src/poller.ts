@@ -470,6 +470,15 @@ export function rawTail(stdout: string, limit = 2000): string {
 interface ResultAck {
   resultProcessed?: boolean
   resultError?: string
+  // Objective-completion contract: Aeon downgraded a `completed` claim with
+  // no branch/commit/artifacts to needs_input and says why.
+  resultDowngraded?: string
+}
+
+function envelopeDowngrade(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null
+  const ack = data as ResultAck
+  return typeof ack.resultDowngraded === 'string' ? ack.resultDowngraded : null
 }
 
 function envelopeRejection(data: unknown): string | null {
@@ -513,6 +522,9 @@ async function finalizeInner(args: FinalizeArgs): Promise<void> {
   const seq = nextSeq()
   const ack = await withRetry<ResultAck>('result event', () =>
     postEvent<ResultAck>(ctx, { seq, kind: 'result', payload: result }))
+
+  const downgrade = envelopeDowngrade(ack.data)
+  if (downgrade) console.warn(`[worker/poll] Aeon downgraded the result to needs_input: ${downgrade}`)
 
   const rejection = envelopeRejection(ack.data)
   if (rejection) {
