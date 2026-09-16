@@ -20,6 +20,28 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - `DOCS` — `ARCHITECTURE.md`, `VISION.md`, `CLAUDE.md`
 - `UI` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.28.0] — 2026-09-16
+
+> Areas touched: `API` `UI` `INFRA` `DOCS`
+> Theme: the AI Hangar earns its trust. A mission's report is now judged by a second, independent model before a run can pass, the API stops answering bad input with 500s, and you can pick the exact model a mission flies on.
+
+### Added — Independent review gate for AI missions · `INFRA` `DOCS`
+- A mission batch no longer passes on plumbing alone. Every report is handed, with each of its citations resolved to the real source line at the pinned revision, to a reviewer that is a different model from the one that wrote it. The run passes only when every attempt carries a stored verdict of exactly PASS; a "pass with corrections" or a FAIL ends the run failed and the receipt is kept.
+- The gate was fired for real on 16 September. The first live runs exposed three harness faults, all fixed: the reviewer was being handed an empty message (the Copilot CLI ignores piped input whenever a prompt flag is also present, so the whole prompt now travels on stdin), the reviewer's model identity was never being read from the usage file, and abbreviated line references such as "file.ts:173, :187" were dropped before the reviewer saw them.
+- The reviewer must now echo the report's unique marker, whose value is never in the instruction, so a reviewer that received nothing cannot produce a verdict that counts. Receipts are immutable: a verdict caused by a harness fault stays on record as a FAIL and a new run is prepared instead.
+- The first legitimate verdict was a FAIL with ten findings, three of them confirmed by hand as line-number drift in the mission's citations. That is the gate doing its job.
+
+### Added — Pick the model a mission flies on · `UI`
+- The mission editor has a model picker: a per-engine catalogue plus a free-text custom id. Missions record the model that actually ran instead of "unknown".
+
+### Fixed — The API says what went wrong · `API`
+- A malformed project or session id returns 404 instead of a 500.
+- A nonsense mission objective is refused with a 400 instead of being accepted.
+- Launching a mission on a card that already has a live one returns a 409 that names the running session, instead of a 500. Four concurrent launches produce one session and three clear refusals. REST and MCP agree.
+
+### Fixed — Worker cleanup on Windows · `INFRA`
+- Worker teardown no longer dies when a straggler process still pins a mission worktree; the whole safe sequence is retried a bounded number of times.
+
 ## [0.27.0] — 2026-09-07
 
 > Areas touched: `BOARD` `REALM` `DATA`
