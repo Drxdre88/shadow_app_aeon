@@ -435,14 +435,15 @@ function verifyGit(state, attempt, sha) {
   // Same shape the reviewer bundle resolves, so a shorthand continuation
   // ("file.ts:173, :187") is validated here too and never reaches the reviewer
   // unresolved.
-  // A token with no directory is only a (rejected) citation when it looks like
-  // a file name; "15:10" or "3.5:1" is prose, not a citation, and must not
-  // abort the attempt (warden 1609, finding 5).
-  const tokens = [...new Set(content.match(/[A-Za-z0-9_.\/\[\]-]+:\d+/g) ?? [])]
+  // A token with no directory is only a (rejected) citation when it ends in a
+  // file extension that starts with a letter: "sessions.ts:150" is a bare
+  // filename and fails, while "15:10", "3.5:1" and "v1.2:30" are prose and are
+  // ignored rather than aborting a paid attempt (horsemen 1609).
+  const tokens = [...new Set(content.match(/[A-Za-z0-9_.@\/\[\]-]+:\d+/g) ?? [])]
   const explicit = tokens.filter((token) => {
     const path = token.slice(0, token.lastIndexOf(':'))
     if (path.includes('/')) return true
-    if (/\.[A-Za-z0-9]+$/.test(path)) throw new Error(`invalid citation path ${token}`)
+    if (/\.[A-Za-z][A-Za-z0-9]*$/.test(path)) throw new Error(`invalid citation path ${token}`)
     return false
   })
   // The floor counts only full path:line citations, exactly as before; the

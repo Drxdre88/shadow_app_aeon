@@ -16,16 +16,16 @@ import { fileURLToPath } from 'node:url'
 
 import {
   ARCHIVABLE_STATUSES,
-  MAX_BUNDLE_CHARS,
+  MAX_PROMPT_CHARS,
   PASS_COMPATIBLE_SEVERITIES,
   archiveDecision,
   buildReviewPrompt,
   evaluateReviewGate,
   importVerdict,
-  bundleFits,
+  promptFits,
   killTree,
   loadVerdicts,
-  markerEchoError,
+  receiptEchoError,
   modelProvenanceError,
   dispatchCopilotReview,
   observedModelFromUsage,
@@ -436,27 +436,54 @@ test('shorthand line continuations after a citation resolve against the same fil
   // Warden 1609 finding 3: a clause that goes on to name another file makes
   // the shorthand ambiguous, so it is dropped rather than misattributed.
   assert.deepEqual(extractCitations('counts in a/b.ts:10 and :20 of c/d.ts differ').distinct.map(c => c.display), ['a/b.ts:10'])
+  assert.deepEqual(extractCitations('x/run.mjs:10, :20 in review.mjs').distinct.map(c => c.display), ['x/run.mjs:10'], 'a bare file name in the clause is ambiguous too')
+  assert.deepEqual(extractCitations('x/run.mjs:10, :20 e.g. the loop').distinct.map(c => c.display), ['x/run.mjs:10', 'x/run.mjs:20'], 'abbreviations are not file names')
+  assert.deepEqual(extractCitations('x/run.mjs:10, :20 since v1.2 shipped').distinct.map(c => c.display), ['x/run.mjs:10', 'x/run.mjs:20'], 'version numbers are not file names')
   assert.deepEqual(extractCitations('see a/b.ts:10, :20 (compare c/d.ts).').distinct.map(c => c.display), ['a/b.ts:10', 'a/b.ts:20'], 'a path after the clause boundary does not cancel the continuation')
   assert.deepEqual(extractCitations('`a/b.ts:65 and :68`) and `a/b.ts:213 and :219`').distinct.map(c => c.display), ['a/b.ts:65', 'a/b.ts:68', 'a/b.ts:213', 'a/b.ts:219'], 'the live report forms still resolve')
 })
 
-// WARDEN 1609: a reviewer that never received the bundle can still exit 0 with
-// schema-valid JSON. It must echo the report marker, whose value is never in
-// the instruction, and an empty prompt is refused before any spawn.
-test('a verdict that does not echo the bundle marker is not a review', () => {
+// HORSEMEN 1609: a reviewer that never received the bundle can still exit 0
+// with schema-valid JSON. It must echo a random per-dispatch receipt that lives
+// only at the tail of the piped bundle. The report marker was rejected as the
+// token because it is AEON_OS_E2E_<runId>_NN and reconstructible from the
+// instruction header, which therefore no longer names the run id at all.
+test('a verdict that does not echo the receipt token is not a review', () => {
   const marker = 'AEON_OS_E2E_2026-09-16T15-10-24-504Z-24c870_01'
-  assert.equal(markerEchoError({ verdict: 'FAIL', marker }, marker), null)
-  assert.equal(markerEchoError({ verdict: 'FAIL', marker: ` ${marker}\n` }, marker), null, 'surrounding whitespace is tolerated')
-  assert.match(markerEchoError({ verdict: 'FAIL' }, marker), /did not echo/)
-  assert.match(markerEchoError({ verdict: 'PASS', marker: '' }, marker), /did not echo/)
-  assert.match(markerEchoError({ verdict: 'PASS', marker: 'AEON_OS_E2E_other_01' }, marker), /not attributable to this bundle/)
-  assert.equal(markerEchoError({ verdict: 'PASS' }, null), null, 'attempts without a marker (imports, legacy) are not gated on it')
-  const prompt = buildReviewPrompt({ runId: 'r', attempt: 1, bundleText: `${marker}\nbody`, revision: 'abc' })
-  const instruction = prompt.slice(0, prompt.indexOf('===== REVIEW BUNDLE'))
-  assert.ok(!instruction.includes(marker), 'the instruction must never contain the marker value')
-  assert.match(instruction, /begins with AEON_OS_E2E_/)
-  assert.doesNotThrow(() => validateVerdictPayload({ verdict: 'PASS', findings: [], summary: 's', marker }))
-  assert.deepEqual(validateVerdictPayload({ verdict: 'PASS', findings: [], summary: 's', marker }).schemaNotes, [], 'marker is a known key, not a schema note')
+  const built = buildReviewPrompt({ runId: '2026-09-16T15-10-24-504Z-24c870', attempt: 1, bundleText: `${marker}\nbody`, revision: 'abc' })
+  assert.match(built.receipt, /^[0-9a-f-]{36}$/, 'a fresh uuid per dispatch')
+  assert.notEqual(built.receipt, buildReviewPrompt({ runId: 'r', attempt: 1, bundleText: 'b' }).receipt)
+  const instruction = built.text.slice(0, built.text.indexOf('===== REVIEW BUNDLE'))
+  assert.ok(!instruction.includes(built.receipt), 'the instruction must never contain the receipt')
+  assert.ok(!instruction.includes(marker), 'the instruction must never contain the marker')
+  assert.ok(!instruction.includes('2026-09-16T15-10-24-504Z-24c870'), 'the instruction must not name the run id, which is a marker component')
+  assert.ok(!instruction.includes('AEON_OS_E2E'), 'the instruction must not name the marker prefix')
+  const tail = built.text.slice(built.text.lastIndexOf('Receipt:'))
+  assert.match(tail, new RegExp(`^Receipt: ${built.receipt}\\r?\\n===== END OF REVIEW BUNDLE =====`), 'the receipt sits at the very end of the bundle')
+  assert.equal(receiptEchoError({ verdict: 'FAIL', receipt: built.receipt }, built.receipt), null)
+  assert.equal(receiptEchoError({ verdict: 'FAIL', receipt: ` ${built.receipt}\n` }, built.receipt), null, 'surrounding whitespace is tolerated')
+  assert.match(receiptEchoError({ verdict: 'FAIL' }, built.receipt), /did not echo/)
+  assert.match(receiptEchoError({ verdict: 'PASS', receipt: '' }, built.receipt), /did not echo/)
+  assert.match(receiptEchoError({ verdict: 'PASS', receipt: marker }, built.receipt), /not attributable to this bundle/, 'echoing the guessable marker is not a receipt')
+  assert.match(receiptEchoError({ verdict: 'PASS', receipt: 'anything' }, null), /no receipt token was issued/, 'an unknown expected receipt fails closed')
+  assert.deepEqual(validateVerdictPayload({ verdict: 'PASS', findings: [], summary: 's', receipt: built.receipt, marker }).schemaNotes, [], 'receipt and marker are known keys, not schema notes')
+})
+
+// JUDGE 1609: the stored record is self-verifying — a verdict filed under an
+// attempt whose marker it does not name reviews nothing.
+test('a stored verdict naming another attempt marker counts as unreviewed', () => {
+  const reviewer = { engine: 'copilot', model: 'gpt-5.6-sol', missionModel: 'claude-sonnet-5', allowSameModel: false, sameModelAsMission: false, startedAt: 'a', finishedAt: 'b' }
+  const record = { attempt: 1, runId: 'r', marker: 'AEON_OS_E2E_r_02', verdict: 'PASS', findings: [], summary: 's', reviewer }
+  const attempts = [{ index: 1, result: 'PASS', marker: 'AEON_OS_E2E_r_01', model: 'claude-sonnet-5' }]
+  const gate = evaluateReviewGate({ attempts, verdicts: new Map([[1, { attempt: 1, ok: true, record }]]), fullBatch: 1 })
+  assert.equal(gate.counts.PASS, 0)
+  assert.equal(gate.unreviewed.length, 1)
+  assert.match(gate.unreviewed[0].reason, /names marker AEON_OS_E2E_r_02/)
+  assert.notEqual(gate.status, 'passed')
+  const matching = evaluateReviewGate({ attempts, verdicts: new Map([[1, { attempt: 1, ok: true, record: { ...record, marker: 'AEON_OS_E2E_r_01' } }]]), fullBatch: 1 })
+  assert.equal(matching.counts.PASS, 1)
+  const legacy = evaluateReviewGate({ attempts, verdicts: new Map([[1, { attempt: 1, ok: true, record: { ...record, marker: undefined } }]]), fullBatch: 1 })
+  assert.equal(legacy.counts.PASS, 1, 'records without a marker (imports, pre-gate) are not gated on it')
 })
 
 // The one thing that broke live: the prompt must arrive on stdin, whole. A
@@ -551,18 +578,18 @@ test('killTree reaps a whole process tree', async () => {
 // The whole prompt is piped to stdin (1609: a real 31,754-character bundle blew
 // the old 24,000-character argv ceiling before any reviewer ran), so the only
 // remaining limit is the reviewer's context, and above it the run stays unreviewed.
-test('the whole prompt travels on stdin and an oversized bundle is refused', () => {
-  const small = buildReviewPrompt({ runId: 'r', attempt: 1, bundleText: 'BUNDLE BODY', revision: 'abc1234' })
-  assert.ok(bundleFits(small))
+test('the whole prompt travels on stdin and an oversized prompt is refused', () => {
+  const small = buildReviewPrompt({ runId: 'r', attempt: 1, bundleText: 'BUNDLE BODY', revision: 'abc1234' }).text
+  assert.ok(promptFits(small))
   assert.match(small, /BUNDLE BODY/)
-  assert.match(small, /===== REVIEW BUNDLE — run r, attempt 01 =====/)
+  assert.match(small, /===== REVIEW BUNDLE — attempt 01 =====/)
   assert.match(small, /===== END OF REVIEW BUNDLE =====/)
-  const real = buildReviewPrompt({ runId: 'r', attempt: 1, bundleText: 'x'.repeat(31_754) })
-  assert.ok(bundleFits(real), 'the 1609 pilot bundle size must be deliverable')
-  const huge = buildReviewPrompt({ runId: 'r', attempt: 1, bundleText: 'x'.repeat(MAX_BUNDLE_CHARS) })
-  assert.ok(!bundleFits(huge))
-  assert.ok(bundleFits('x'.repeat(MAX_BUNDLE_CHARS)), 'exactly the ceiling is deliverable')
-  assert.ok(!bundleFits('x'.repeat(MAX_BUNDLE_CHARS + 1)), 'one over the ceiling is refused')
+  const real = buildReviewPrompt({ runId: 'r', attempt: 1, bundleText: 'x'.repeat(31_754) }).text
+  assert.ok(promptFits(real), 'the 1609 pilot bundle size must be deliverable')
+  const huge = buildReviewPrompt({ runId: 'r', attempt: 1, bundleText: 'x'.repeat(MAX_PROMPT_CHARS) }).text
+  assert.ok(!promptFits(huge))
+  assert.ok(promptFits('x'.repeat(MAX_PROMPT_CHARS)), 'exactly the ceiling is deliverable')
+  assert.ok(!promptFits('x'.repeat(MAX_PROMPT_CHARS + 1)), 'one over the ceiling is refused')
   // The prompt builder has no file mode at all, so no reviewer can be given a
   // reason to read from disk.
   assert.ok(!small.includes('current working directory'))
@@ -581,7 +608,7 @@ test('the reviewer command line never carries -p, because piped input is ignored
 })
 
 test('the reviewer prompt states the rules that the mechanical gate cannot check', () => {
-  const prompt = buildReviewPrompt({ runId: 'r', attempt: 3, bundleText: 'BUNDLE BODY', revision: 'abc1234' })
+  const prompt = buildReviewPrompt({ runId: 'r', attempt: 3, bundleText: 'BUNDLE BODY', revision: 'abc1234' }).text
   assert.match(prompt, /INDEPENDENT reviewer/)
   assert.match(prompt, /Pinned revision under review: abc1234/)
   assert.match(prompt, /contradicts is a FAIL/)

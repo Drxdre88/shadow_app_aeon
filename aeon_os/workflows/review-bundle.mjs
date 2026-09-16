@@ -123,12 +123,18 @@ const CONTINUATION_PATTERN = /(?:,\s*(?:and\s+)?|\s+and\s+)`?:(\d+)(?:-(\d+))?`?
 // path that is itself a full citation (followed by :line) is unambiguous and
 // does not count.
 const CLAUSE_END = /[,;:\n()]/
-const PATH_LIKE = /(?<![A-Za-z0-9_.\[\]{}+\\/-])[A-Za-z0-9_.\[\]{}+-]+(?:[\\/][A-Za-z0-9_.()\[\]{}+-]+)+(?![A-Za-z0-9_.()\[\]{}+\\/-]|:\d)/
+// Either a slash-bearing path or a bare file name with a letters-first
+// extension of two or more characters ("review.mjs", not "e.g." or "v1.2").
+const PATH_LIKE = /(?<![A-Za-z0-9_.\[\]{}+\\/-])(?:[A-Za-z0-9_.\[\]{}+-]+(?:[\\/][A-Za-z0-9_.()\[\]{}+-]+)+|[A-Za-z0-9_-]+\.[A-Za-z][A-Za-z0-9]+)(?![A-Za-z0-9_.()\[\]{}+\\/-]|:\d)/
 
 function clauseNamesAnotherPath(rest) {
-  const end = rest.search(CLAUSE_END)
-  const window = Math.min(end === -1 ? rest.length : end, 80)
-  const found = PATH_LIKE.exec(rest)
+  // Only a match starting inside the 80-character clause window counts, so the
+  // search is bounded to a slice long enough for any path that starts there;
+  // scanning the whole remainder per continuation was quadratic.
+  const head = rest.slice(0, 1024)
+  const end = head.search(CLAUSE_END)
+  const window = Math.min(end === -1 ? head.length : end, 80)
+  const found = PATH_LIKE.exec(head)
   return found !== null && found.index < window
 }
 

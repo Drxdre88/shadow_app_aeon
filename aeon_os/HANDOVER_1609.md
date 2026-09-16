@@ -54,8 +54,10 @@ Check 14 still reports the design risk: every objective can `completed` with no 
 ## 1609 afternoon — the gate FIRED for real (three runs, two harness defects fixed, verdict legit)
 
 **State at close:** `aeon_os/workflows/` has UNCOMMITTED fixes (review.mjs, review-bundle.mjs, run.mjs, tests, README)
-plus three new evidence folders under `results/`. Gate suite **55/55**. Warden pass DONE (6 findings + 3 nits, all
-closed in the tree, see below). Nothing committed, nothing pushed.
+plus three new evidence folders under `results/`. Gate suite **56/56**. Warden pass DONE (6 findings + 3 nits) AND full horsemen
+(butcher PASS, judge + warden PASS_WITH_NOTES, stalker — see the PR) with every finding folded in: receipt token,
+usage scanned + kept outside the sandbox, exit-grace against a pipe-holding grandchild, numeric prose (`3.5:1`) no
+longer aborts, bounded continuation guard that also spots bare file names, `@` accepted in the floor regex.
 
 | Run | What happened | Receipt |
 |---|---|---|
@@ -70,11 +72,13 @@ closed in the tree, see below). Nothing committed, nothing pushed.
 - `run.mjs`: progress label shows `NN/<batchTarget>` instead of a hardcoded `/10`.
 
 ### Warden round (all closed in the tree)
-- **Proof of receipt (medium):** the verdict JSON now requires `"marker"` = the report's unique marker copied from the
-  bundle; the instruction names only the prefix `AEON_OS_E2E_`, so an unread/empty prompt can never yield a storable
-  verdict (`markerEchoError`, checked before the record is written; imports/legacy attempts without a marker exempt).
+- **Proof of receipt (medium, then hardened by horsemen):** the verdict JSON must echo `"receipt"` — a random uuid per
+  dispatch placed ONLY on the last line of the piped bundle (`receiptEchoError`). The marker was tried first and rejected
+  by the warden: it is `AEON_OS_E2E_<runId>_NN` and the run id sat in the instruction header, so it was reconstructible;
+  the header now names only the attempt. Stored records also carry the marker and a record filed under an attempt with a
+  different marker counts as unreviewed at gate evaluation. A bundle whose report was suppressed is refused before dispatch.
   `dispatchCopilotReview` refuses an empty/non-string `stdinText` before spawning.
-- **Ceiling tied to a measurement (medium):** `MAX_BUNDLE_CHARS = 110_000`, just under a 118,754-char stdin probe that
+- **Ceiling tied to a measurement (medium):** `MAX_PROMPT_CHARS = 110_000` (renamed from MAX_BUNDLE_CHARS by the judge), just under a 118,754-char stdin probe that
   was fully inlined (lastCallInputTokens 38,159) and answered. Raise only after a bigger probe.
 - **Continuation misattribution (low-med):** a shorthand `:N` is dropped when the rest of its clause names another
   path-like token that is not itself a citation (`clauseNamesAnotherPath`); live forms `x:65 and :68` still resolve.

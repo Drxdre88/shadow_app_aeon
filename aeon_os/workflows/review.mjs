@@ -16,7 +16,7 @@
 // verdicts alone. Anything it cannot parse counts as NOT reviewed — never as a
 // pass.
 
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -44,7 +44,7 @@ export const PASS_COMPATIBLE_SEVERITIES = new Set(['minor', 'info', 'information
 // and the token near its end was answered. Raise it only after a bigger prompt
 // has been proven the same way. Above it the run stays unreviewed and goes to
 // a human or another agent via --import.
-export const MAX_BUNDLE_CHARS = 110_000
+export const MAX_PROMPT_CHARS = 110_000
 // Statuses a run may be archived from by `prepare --new`. review_pending and
 // partial_pass are normal end states of the gate, so leaving them out would
 // force a hand-edited state.json to abandon a run.
@@ -56,9 +56,9 @@ export function archiveDecision(status) {
   return { allowed: ARCHIVABLE_STATUSES.includes(status), abandoned: status === 'review_pending' }
 }
 
-/** Whether a reviewer prompt (instruction + bundle) can be piped whole to stdin. */
-export function bundleFits(promptText) {
-  return typeof promptText === 'string' && promptText.length <= MAX_BUNDLE_CHARS
+/** Whether the whole reviewer prompt (instruction + bundle) can be piped to stdin. */
+export function promptFits(promptText) {
+  return typeof promptText === 'string' && promptText.length <= MAX_PROMPT_CHARS
 }
 
 /**
@@ -102,7 +102,7 @@ function requireString(value, label, { allowEmpty = false } = {}) {
   return value
 }
 
-const PAYLOAD_KEYS = new Set(['verdict', 'findings', 'summary', 'marker'])
+const PAYLOAD_KEYS = new Set(['verdict', 'findings', 'summary', 'receipt', 'marker'])
 const FINDING_KEYS = new Set(['claim', 'cited', 'actual', 'severity'])
 
 // Strict about meaning, tolerant of noise: unknown keys are kept and reported
@@ -230,7 +230,12 @@ export function evaluateReviewGate({ attempts, verdicts, fullBatch = 10 }) {
   const unreviewed = []
   const perAttempt = []
   for (const attempt of list) {
-    const entry = map.get(attempt.index)
+    let entry = map.get(attempt.index)
+    // A stored record that names a different report marker than the attempt
+    // it is filed under was written for something else; it reviews nothing here.
+    if (entry?.ok && typeof entry.record.marker === 'string' && typeof attempt.marker === 'string' && entry.record.marker !== attempt.marker) {
+      entry = { ...entry, ok: false, error: `stored verdict names marker ${entry.record.marker} but attempt ${attempt.index} carries ${attempt.marker}` }
+    }
     const verdict = entry?.ok ? entry.record.verdict : null
     if (verdict) counts[verdict] += 1
     else unreviewed.push({ attempt: attempt.index, reason: entry ? entry.error : 'no stored review verdict' })
@@ -277,38 +282,43 @@ const RULES = [
 
 const OUTPUT_CONTRACT = `Output a SINGLE JSON object and nothing else. No prose before or after it, no markdown, no code fence.
 
-{"marker":"the report's unique marker string, copied verbatim from the bundle (it begins with MARKER_PREFIX)","verdict":"PASS"|"PASS_WITH_CORRECTIONS"|"FAIL","findings":[{"claim":"the report's claim, quoted or closely paraphrased","cited":"the citation exactly as the report wrote it","actual":"what the resolved source lines actually show","severity":"blocking"|"major"|"minor"|"info"}],"summary":"one paragraph: would a paying user be able to trust this report?"}
+{"receipt":"the token on the line beginning 'Receipt:' at the end of the bundle, copied verbatim","verdict":"PASS"|"PASS_WITH_CORRECTIONS"|"FAIL","findings":[{"claim":"the report's claim, quoted or closely paraphrased","cited":"the citation exactly as the report wrote it","actual":"what the resolved source lines actually show","severity":"blocking"|"major"|"minor"|"info"}],"summary":"one paragraph: would a paying user be able to trust this report?"}
 
-"marker" proves you received the bundle: copy it exactly as it appears there. "findings" must contain at least one entry whenever the verdict is not PASS, and must list every problem you found rather than only the first. A PASS may not carry a blocking or major finding.`
+"receipt" proves you received the whole bundle: copy the token exactly as it appears there. "findings" must contain at least one entry whenever the verdict is not PASS, and must list every problem you found rather than only the first. A PASS may not carry a blocking or major finding.`
 
-// Proof of receipt. The marker's VALUE is never in the instruction, only its
-// prefix, so a reviewer can only echo it by having read the bundle. 1609: the
-// first live reviewer judged an empty message (Copilot drops piped input when
-// -p is present) and its schema-valid FAIL was stored as a real verdict.
-export const DEFAULT_MARKER_PREFIX = 'AEON_OS_E2E_'
-
-export function markerEchoError(payload, expectedMarker) {
-  if (typeof expectedMarker !== 'string' || !expectedMarker) return null
-  const echoed = payload?.marker
-  if (typeof echoed !== 'string' || echoed.trim() === '') return 'reviewer did not echo the report marker; it cannot be shown to have received the bundle'
-  if (echoed.trim() !== expectedMarker) return `reviewer echoed marker ${JSON.stringify(echoed.trim())} but the bundle carries ${JSON.stringify(expectedMarker)}; the verdict is not attributable to this bundle`
+// Proof of receipt. A fresh random token is generated per dispatch and placed
+// ONLY at the tail of the piped bundle, never in the instruction, so a reviewer
+// can only echo it by having read the bundle to its end. 1609: the first live
+// reviewer judged an empty message (Copilot drops piped input when -p is
+// present) and its schema-valid FAIL was stored as a real verdict. The report
+// marker was tried first and rejected by review: it is AEON_OS_E2E_<runId>_NN
+// and the run id sat in the instruction header, so it could be reconstructed.
+export function receiptEchoError(payload, expectedReceipt) {
+  // Fail closed: a dispatch without a receipt to check is a harness bug, not a pass.
+  if (typeof expectedReceipt !== 'string' || !expectedReceipt) return 'no receipt token was issued for this dispatch; the verdict cannot be tied to the bundle'
+  const echoed = payload?.receipt
+  if (typeof echoed !== 'string' || echoed.trim() === '') return 'reviewer did not echo the receipt token; it cannot be shown to have received the bundle'
+  if (echoed.trim() !== expectedReceipt) return `reviewer echoed receipt ${JSON.stringify(echoed.trim())} but the bundle carried a different token; the verdict is not attributable to this bundle`
   return null
 }
 
-// One text, piped whole to the reviewer's stdin (never -p, see MAX_BUNDLE_CHARS).
-export function buildReviewPrompt({ runId, attempt, bundleText, revision = null, markerPrefix = DEFAULT_MARKER_PREFIX }) {
+// One text, piped whole to the reviewer's stdin (never -p, see MAX_PROMPT_CHARS).
+// The header names the attempt but not the run id: nothing in the instruction
+// may let a reviewer reconstruct what only the bundle carries.
+export function buildReviewPrompt({ runId, attempt, bundleText, revision = null, receipt = randomUUID() }) {
   const header = [
     'You are an INDEPENDENT reviewer. A different AI model wrote the research report you are about to judge, and your job is to decide whether a paying user could trust it.',
     revision ? `Pinned revision under review: ${revision}` : null,
-    `Run ${runId}, attempt ${pad(attempt)}.`,
+    `Attempt ${pad(attempt)}.`,
     '',
     'Rules of evidence:',
     ...RULES.map((rule, index) => `${index + 1}. ${rule}`),
     '',
-    OUTPUT_CONTRACT.replace('MARKER_PREFIX', markerPrefix),
+    OUTPUT_CONTRACT,
     '',
   ].filter(line => line !== null).join('\n')
-  return `${header}===== REVIEW BUNDLE — run ${runId}, attempt ${pad(attempt)} =====\n${bundleText}\n===== END OF REVIEW BUNDLE =====\n\nRespond with the JSON object only.\n`
+  const text = `${header}===== REVIEW BUNDLE — attempt ${pad(attempt)} =====\n${bundleText}\nReceipt: ${receipt}\n===== END OF REVIEW BUNDLE =====\n\nRespond with the JSON object only.\n`
+  return { text, receipt, runId }
 }
 
 // -------------------------------------------------------------- dispatch ---
@@ -454,6 +464,10 @@ export function dispatchCopilotReview({ binary, model, stdinText, cwd, maxAiCred
     }
     child.once('error', (err) => { spawnError = errorMessage(err); finish(null, null) })
     child.once('close', (status, signal) => finish(status, signal))
+    // 'close' waits for every stdio pipe to reach EOF. A grandchild that
+    // inherited stdout and outlived the CLI would hold it open forever, so the
+    // exit itself settles the dispatch after a short drain grace.
+    child.once('exit', (status, signal) => { setTimeout(() => finish(status, signal), 10_000).unref() })
   })
 }
 
@@ -548,9 +562,19 @@ export async function runReview({ runId, runDir, attempts, config, allowSameMode
       continue
     }
     assertNoSecret(secrets, `review bundle for attempt ${index}`, bundle.text)
+    // A report that the credential rule blanked, or that lost its marker, has
+    // nothing for a reviewer to judge; refuse before paying for a dispatch.
+    if (typeof attempt.marker === 'string' && attempt.marker && !bundle.text.includes(attempt.marker)) {
+      const stamp = now()
+      const error = `reviewer package for attempt ${index} does not contain the report marker ${attempt.marker}; the report text was suppressed or replaced, so there is nothing to review by dispatch (use "review --import" after an out-of-band review)`
+      writeError(runDir, index, { attempt: index, runId, error, raw: null, reviewer: { engine: config.engine, model: config.model, missionModel: attempt.model ?? null, startedAt: stamp, finishedAt: stamp }, recordedAt: stamp })
+      failures.push({ attempt: index, error })
+      log(`  attempt ${pad(index)}: NOT REVIEWED — ${error}`)
+      continue
+    }
     mkdirSync(reviewsDir(runDir), { recursive: true })
     writeFileSync(join(reviewsDir(runDir), `${pad(index)}.bundle.md`), bundle.text)
-    const prompt = buildReviewPrompt({ runId, attempt: index, bundleText: bundle.text, revision: bundle.revision })
+    const { text: prompt, receipt } = buildReviewPrompt({ runId, attempt: index, bundleText: bundle.text, revision: bundle.revision })
     const reviewerBase = {
       engine: config.engine,
       model: config.model,
@@ -564,9 +588,9 @@ export async function runReview({ runId, runDir, attempts, config, allowSameMode
     }
     // Fail closed rather than truncate. A bundle the reviewer cannot hold in
     // context is not reviewed by it at all; the operator routes it through --import.
-    if (!bundleFits(prompt)) {
+    if (!promptFits(prompt)) {
       const stamp = now()
-      const error = `reviewer package for attempt ${index} is ${prompt.length} characters, above the ${MAX_BUNDLE_CHARS} stdin limit; review it out of band and ingest the verdict with "review --import"`
+      const error = `reviewer prompt for attempt ${index} is ${prompt.length} characters, above the ${MAX_PROMPT_CHARS} stdin limit; review it out of band and ingest the verdict with "review --import"`
       writeError(runDir, index, { attempt: index, runId, error, raw: null, reviewer: { ...reviewerBase, startedAt: stamp, finishedAt: stamp }, recordedAt: stamp })
       failures.push({ attempt: index, error })
       log(`  attempt ${pad(index)}: NOT REVIEWED — ${error}`)
@@ -576,6 +600,9 @@ export async function runReview({ runId, runDir, attempts, config, allowSameMode
     // access to the cwd subtree, so a scratch under the OS temp root is what
     // keeps the reviewer away from runner.env.bat, .env.local and the repo.
     const scratchDir = mkdtempSync(join(tmpdir(), `aeon-review-${pad(index)}-`))
+    // The usage file is provenance evidence, so it lives in a sibling directory
+    // the reviewer's cwd-scoped file access cannot reach.
+    const usageDir = mkdtempSync(join(tmpdir(), `aeon-review-usage-${pad(index)}-`))
     let dispatch
     try {
       dispatch = await dispatchCopilotReview({
@@ -585,15 +612,18 @@ export async function runReview({ runId, runDir, attempts, config, allowSameMode
         cwd: scratchDir,
         maxAiCredits: config.maxAiCredits,
         timeoutMs: config.timeoutMs,
-        usageFile: join(scratchDir, 'usage.json'),
+        usageFile: join(usageDir, 'usage.json'),
       })
     } finally {
-      try { rmSync(scratchDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) } catch (err) {
-        log(`  attempt ${pad(index)}: reviewer scratch ${scratchDir} could not be removed: ${errorMessage(err)}`)
+      for (const dir of [scratchDir, usageDir]) {
+        try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) } catch (err) {
+          log(`  attempt ${pad(index)}: reviewer scratch ${dir} could not be removed: ${errorMessage(err)}`)
+        }
       }
     }
     const rawText = `${dispatch.stdout}${dispatch.stderr ? `\n----- stderr -----\n${dispatch.stderr}` : ''}`
     assertNoSecret(secrets, `reviewer output for attempt ${index}`, rawText)
+    if (dispatch.usage) assertNoSecret(secrets, `reviewer usage for attempt ${index}`, dispatch.usage)
     const rawPath = writeRaw(runDir, index, rawText)
     const reviewer = {
       ...reviewerBase,
@@ -644,7 +674,7 @@ export async function runReview({ runId, runDir, attempts, config, allowSameMode
       log(`  attempt ${pad(index)}: NOT REVIEWED — ${error}`)
       continue
     }
-    const echoError = markerEchoError(parsed.value, attempt.marker)
+    const echoError = receiptEchoError(parsed.value, receipt)
     if (echoError) {
       writeError(runDir, index, { attempt: index, runId, error: echoError, raw: rawPath, reviewer, recordedAt: now() })
       failures.push({ attempt: index, error: echoError })
@@ -655,6 +685,7 @@ export async function runReview({ runId, runDir, attempts, config, allowSameMode
       attempt: index,
       runId,
       marker: attempt.marker ?? null,
+      receipt,
       verdict: payload.verdict,
       findings: payload.findings,
       summary: payload.summary,
