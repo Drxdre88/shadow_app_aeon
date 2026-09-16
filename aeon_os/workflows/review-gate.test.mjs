@@ -37,7 +37,7 @@ import {
   validateVerdictPayload,
   validateVerdictRecord,
 } from './review.mjs'
-import { extractCitations } from './review-bundle.mjs'
+import { CITATION_FLOOR, assertCitationFloor, explicitCitationTokens, extractCitations } from './review-bundle.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REVIEWER = { engine: 'copilot', model: 'gpt-5.6-sol', startedAt: '2026-09-12T10:00:00.000Z', finishedAt: '2026-09-12T10:02:00.000Z' }
@@ -516,6 +516,102 @@ test('an empty reviewer prompt is refused before anything is spawned', async () 
     assert.equal(out.status, null)
     assert.equal(out.observedModel, null)
   }
+})
+
+// STALKER 1609: the gate's decisions must be exercised where they decide
+// something — which file gets written — not only in the pure helpers.
+const FAKE_MODELS = [{ id: 'gpt-5.6-sol' }, { id: 'claude-sonnet-5' }]
+const GATE_CONFIG = { engine: 'copilot', model: 'gpt-5.6-sol', maxAiCredits: 30, timeoutMs: 5000 }
+const GATE_ATTEMPTS = [{ index: 1, result: 'PASS', marker: 'AEON_OS_E2E_x_01', model: 'claude-sonnet-5' }]
+const fakeBundle = () => ({ text: 'AEON_OS_E2E_x_01\nreport body\n> 12 | const a = 1', revision: 'abc1234', citations: { total: 1, distinct: 1, resolvable: 1, unresolvable: 0, outOfRange: 0 } })
+const receiptOf = (stdinText) => /Receipt: ([0-9a-f-]{36})/.exec(stdinText)?.[1] ?? null
+const fakeDispatch = (verdictFor) => async ({ stdinText }) => ({
+  startedAt: 'a', finishedAt: 'b', stdout: JSON.stringify(verdictFor(receiptOf(stdinText))), stderr: '', status: 0, signal: null, spawnError: null, timedOut: false,
+  usage: { currentModel: 'gpt-5.6-sol', modelMetrics: { 'gpt-5.6-sol': {} } }, observedModel: 'gpt-5.6-sol', argv: ['--model', 'gpt-5.6-sol'],
+})
+const gateRun = (dir, dispatchReviewer) => runReview({ runId: 'x', runDir: dir, attempts: GATE_ATTEMPTS, config: GATE_CONFIG, log: () => {}, resolveBinary: () => 'fake', listModels: async () => FAKE_MODELS, buildBundle: fakeBundle, dispatchReviewer })
+
+test('a schema-valid verdict with the wrong receipt is filed as an error sidecar, never as a verdict', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aeon-gate-wrong-receipt-'))
+  try {
+    const outcome = await gateRun(dir, fakeDispatch(() => ({ receipt: 'AEON_OS_E2E_x_01', verdict: 'PASS', findings: [], summary: 'looks fine' })))
+    assert.equal(outcome.failures.length, 1)
+    assert.ok(!existsSync(join(dir, 'reviews', '01.json')), 'no verdict file may exist')
+    const sidecar = JSON.parse(readFileSync(join(dir, 'reviews', '01.error.json'), 'utf8'))
+    assert.match(sidecar.error, /not attributable to this bundle/)
+    const gate = evaluateReviewGate({ attempts: GATE_ATTEMPTS, verdicts: loadVerdicts(dir), fullBatch: 1 })
+    assert.equal(gate.counts.PASS, 0)
+    assert.equal(gate.status, 'review_pending')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('a verdict that echoes the receipt from the bundle tail is stored with its marker and receipt', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aeon-gate-right-receipt-'))
+  try {
+    const outcome = await gateRun(dir, fakeDispatch((receipt) => ({ receipt, verdict: 'FAIL', findings: [{ claim: 'c', cited: 'a/b.ts:12', actual: 'x', severity: 'major' }], summary: 's' })))
+    assert.equal(outcome.failures.length, 0)
+    const record = JSON.parse(readFileSync(join(dir, 'reviews', '01.json'), 'utf8'))
+    assert.equal(record.verdict, 'FAIL')
+    assert.equal(record.marker, 'AEON_OS_E2E_x_01')
+    assert.match(record.receipt, /^[0-9a-f-]{36}$/)
+    assert.equal(record.reviewer.observedModel, 'gpt-5.6-sol')
+    assert.equal(record.reviewer.promptDelivery, 'stdin')
+    assert.ok(record.reviewer.usage, 'raw usage is persisted with the record')
+    assert.ok(!existsSync(join(dir, 'reviews', '01.error.json')) || JSON.parse(readFileSync(join(dir, 'reviews', '01.error.json'), 'utf8')).error === null)
+    const gate = evaluateReviewGate({ attempts: GATE_ATTEMPTS, verdicts: loadVerdicts(dir), fullBatch: 1 })
+    assert.equal(gate.counts.FAIL, 1)
+    assert.equal(gate.status, 'failed')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('a bundle without the report marker is refused before any dispatch is paid for', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aeon-gate-no-marker-'))
+  try {
+    let dispatched = 0
+    const outcome = await runReview({ runId: 'x', runDir: dir, attempts: GATE_ATTEMPTS, config: GATE_CONFIG, log: () => {}, resolveBinary: () => 'fake', listModels: async () => FAKE_MODELS, buildBundle: () => ({ text: '[report suppressed]', revision: 'abc', citations: {} }), dispatchReviewer: async () => { dispatched += 1; throw new Error('must not dispatch') } })
+    assert.equal(dispatched, 0)
+    assert.equal(outcome.failures.length, 1)
+    assert.match(JSON.parse(readFileSync(join(dir, 'reviews', '01.error.json'), 'utf8')).error, /does not contain the report marker/)
+    assert.ok(!existsSync(join(dir, 'reviews', '01.json')))
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+// The 1609 live defect, locked on the PRODUCTION argument builder: the empty
+// prompt path returns the argv it would have used without spawning anything.
+test('the production dispatch never passes -p, so piped input is never ignored', async () => {
+  const out = await dispatchCopilotReview({ binary: process.execPath, model: 'gpt-5.6-sol', stdinText: '', cwd: tmpdir(), maxAiCredits: 30, timeoutMs: 1000, usageFile: join(tmpdir(), 'never.json') })
+  assert.match(out.spawnError, /prompt is empty/)
+  assert.ok(Array.isArray(out.argv) && out.argv.length > 5, 'the default builder produced the real argv')
+  assert.ok(!out.argv.includes('-p') && !out.argv.includes('--prompt') && !out.argv.includes('-i'))
+  assert.deepEqual(out.argv.slice(0, 2), ['--model', 'gpt-5.6-sol'])
+  assert.ok(out.argv.includes('--deny-tool=shell'))
+})
+
+// A reviewer that exits before reading its stdin must not take the harness
+// down with an unhandled EPIPE, whatever the size of the prompt.
+test('a reviewer that exits without reading stdin settles cleanly with its exit code', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aeon-review-epipe-'))
+  try {
+    const script = join(dir, 'quit.js')
+    writeFileSync(script, 'process.exit(3)')
+    const out = await dispatchCopilotReview({ binary: process.execPath, model: 'm', stdinText: 'y'.repeat(2_000_000), cwd: dir, maxAiCredits: 30, timeoutMs: 20_000, usageFile: join(dir, 'usage.json'), buildArgs: () => [script] })
+    assert.equal(out.spawnError, null)
+    assert.equal(out.status, 3)
+    assert.equal(out.timedOut, false)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
+// run.mjs's citation floor, tested through the pure function it now calls.
+test('the citation floor counts full path:line tokens, ignores prose, and rejects bare filenames', () => {
+  assert.deepEqual(explicitCitationTokens('see a/b.ts:1, a/b.ts:1, c/d.ts:2 and @scope/pkg/x.ts:3 at 15:10 UTC, ratio 3.5:1, Node 20.5:1, v1.2:30'), ['a/b.ts:1', 'c/d.ts:2', '@scope/pkg/x.ts:3'])
+  assert.throws(() => explicitCitationTokens('a/b.ts:1 and sessions.ts:150'), /invalid citation path sessions.ts:150/)
+  assert.throws(() => explicitCitationTokens('package.json:5'), /invalid citation path package.json:5/)
+  assert.deepEqual(explicitCitationTokens(''), [])
+  assert.deepEqual(explicitCitationTokens('Makefile:12'), [], 'an extensionless bare token is neither a citation nor an abort')
+  assert.equal(CITATION_FLOOR, 3)
+  assert.throws(() => assertCitationFloor('a/b.ts:1, :2, :3 and c/d.ts:4'), /only 2 distinct source:line citations/, 'shorthand continuations never lift a thin report over the floor')
+  assert.throws(() => assertCitationFloor('a/b.ts:1 c/d.ts:2 at 15:10'), /only 2 distinct/)
+  assert.deepEqual(assertCitationFloor('a/b.ts:1 c/d.ts:2 e/f.ts:3'), ['a/b.ts:1', 'c/d.ts:2', 'e/f.ts:3'])
 })
 
 // WARDEN 3: the reviewer gets no shell, no writes, no network, no temp grant.

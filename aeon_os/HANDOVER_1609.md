@@ -55,7 +55,7 @@ Check 14 still reports the design risk: every objective can `completed` with no 
 
 **State at close:** `aeon_os/workflows/` has UNCOMMITTED fixes (review.mjs, review-bundle.mjs, run.mjs, tests, README)
 plus three new evidence folders under `results/`. Gate suite **56/56**. Warden pass DONE (6 findings + 3 nits) AND full horsemen
-(butcher PASS, judge + warden PASS_WITH_NOTES, stalker — see the PR) with every finding folded in: receipt token,
+(butcher PASS, judge + warden PASS_WITH_NOTES, stalker FAIL → six end-to-end gate tests added via seams on runReview/dispatch, floor moved into `assertCitationFloor`; suite 62/62) with every finding folded in: receipt token,
 usage scanned + kept outside the sandbox, exit-grace against a pipe-holding grandchild, numeric prose (`3.5:1`) no
 longer aborts, bounded continuation guard that also spots bare file names, `@` accepted in the floor regex.
 

@@ -414,8 +414,11 @@ export function dispatchCopilotReview({ binary, model, stdinText, cwd, maxAiCred
     const startedAt = now()
     // An empty prompt would dispatch a reviewer that judges nothing and still
     // exits 0 with schema-valid JSON. Refuse before spawning.
+    // argv is computed first and returned on every path so a test can lock the
+    // PRODUCTION argument builder (no -p) without spawning the real CLI.
+    const argv = buildArgs({ model, maxAiCredits, usageFile })
     if (typeof stdinText !== 'string' || stdinText.trim() === '') {
-      done({ startedAt, finishedAt: now(), stdout: '', stderr: '', status: null, signal: null, spawnError: 'reviewer prompt is empty; nothing was dispatched', timedOut: false, usage: null, observedModel: null })
+      done({ startedAt, finishedAt: now(), stdout: '', stderr: '', status: null, signal: null, spawnError: 'reviewer prompt is empty; nothing was dispatched', timedOut: false, usage: null, observedModel: null, argv })
       return
     }
     const limit = 64 * 1024 * 1024
@@ -424,7 +427,7 @@ export function dispatchCopilotReview({ binary, model, stdinText, cwd, maxAiCred
     let spawnError = null
     let timedOut = false
     let settled = false
-    const child = spawn(binary, buildArgs({ model, maxAiCredits, usageFile }), {
+    const child = spawn(binary, argv, {
       cwd,
       env: reviewerEnv(),
       windowsHide: true,
@@ -460,6 +463,7 @@ export function dispatchCopilotReview({ binary, model, stdinText, cwd, maxAiCred
         timedOut,
         usage,
         observedModel: observedModelFromUsage(usage),
+        argv,
       })
     }
     child.once('error', (err) => { spawnError = errorMessage(err); finish(null, null) })
@@ -526,7 +530,10 @@ export function bundleForAttempt(runId, attempt) {
  * differ from the model that produced the report, because a model grading its
  * own homework is not a second opinion.
  */
-export async function runReview({ runId, runDir, attempts, config, allowSameModel = false, only = null, secrets = [], log = console.log }) {
+// The last four parameters are seams for the gate tests (stalker 1609): they
+// let the write-or-sidecar decision be exercised end to end without the real
+// Copilot CLI. Production never passes them.
+export async function runReview({ runId, runDir, attempts, config, allowSameModel = false, only = null, secrets = [], log = console.log, resolveBinary = copilotExecutable, listModels = listCopilotModels, buildBundle = bundleForAttempt, dispatchReviewer = dispatchCopilotReview }) {
   if (only !== null && !attempts.some(attempt => attempt.index === only)) throw new Error(`attempt ${only} does not exist in run ${runId}`)
   const existing = loadVerdicts(runDir)
   const targets = attempts.filter(attempt => (only === null || attempt.index === only) && !existing.get(attempt.index)?.ok)
@@ -538,8 +545,8 @@ export async function runReview({ runId, runDir, attempts, config, allowSameMode
   if (sameModel.length && !allowSameModel) {
     throw new Error(`reviewer model ${config.model} is the mission model for attempt(s) ${sameModel.map(a => a.index).join(', ')}; an independent review needs a different model (pass --allow-same-model to override, which is recorded in the verdict)`)
   }
-  const binary = copilotExecutable()
-  const models = await listCopilotModels(binary)
+  const binary = resolveBinary()
+  const models = await listModels(binary)
   if (!models.some(model => model.id === config.model)) {
     throw new Error(`reviewer model ${config.model} is not available to this Copilot account; run probe-copilot-models.mjs to list valid IDs`)
   }
@@ -552,7 +559,7 @@ export async function runReview({ runId, runDir, attempts, config, allowSameMode
     // attempt; it is recorded as unreviewed and the sweep continues.
     let bundle
     try {
-      bundle = bundleForAttempt(runId, index)
+      bundle = buildBundle(runId, index)
     } catch (err) {
       const stamp = now()
       const error = `reviewer package could not be built: ${errorMessage(err)}`
@@ -605,7 +612,7 @@ export async function runReview({ runId, runDir, attempts, config, allowSameMode
     const usageDir = mkdtempSync(join(tmpdir(), `aeon-review-usage-${pad(index)}-`))
     let dispatch
     try {
-      dispatch = await dispatchCopilotReview({
+      dispatch = await dispatchReviewer({
         binary,
         model: config.model,
         stdinText: prompt,

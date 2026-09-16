@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
 import { listCopilotModels } from './probe-copilot-models.mjs'
 import { archiveDecision, evaluateReviewGate, importVerdict, loadVerdicts, reviewConfig, reviewsDir, runReview } from './review.mjs'
-import { extractCitations } from './review-bundle.mjs'
+import { assertCitationFloor, extractCitations } from './review-bundle.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..', '..')
@@ -435,20 +435,9 @@ function verifyGit(state, attempt, sha) {
   // Same shape the reviewer bundle resolves, so a shorthand continuation
   // ("file.ts:173, :187") is validated here too and never reaches the reviewer
   // unresolved.
-  // A token with no directory is only a (rejected) citation when it ends in a
-  // file extension that starts with a letter: "sessions.ts:150" is a bare
-  // filename and fails, while "15:10", "3.5:1" and "v1.2:30" are prose and are
-  // ignored rather than aborting a paid attempt (horsemen 1609).
-  const tokens = [...new Set(content.match(/[A-Za-z0-9_.@\/\[\]-]+:\d+/g) ?? [])]
-  const explicit = tokens.filter((token) => {
-    const path = token.slice(0, token.lastIndexOf(':'))
-    if (path.includes('/')) return true
-    if (/\.[A-Za-z][A-Za-z0-9]*$/.test(path)) throw new Error(`invalid citation path ${token}`)
-    return false
-  })
   // The floor counts only full path:line citations, exactly as before; the
   // shorthand expansions are validated but never let a thin report clear it.
-  if (explicit.length < 3) throw new Error(`report contains only ${explicit.length} distinct source:line citations`)
+  const explicit = assertCitationFloor(content)
   const citations = [...new Set([...explicit, ...extractCitations(content).distinct.map((c) => `${c.path}:${c.startLine}`)])]
   for (const citation of citations) {
     const split = citation.lastIndexOf(':')

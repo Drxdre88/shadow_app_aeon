@@ -138,6 +138,29 @@ function clauseNamesAnotherPath(rest) {
   return found !== null && found.index < window
 }
 
+// The mechanical validator's floor: every full `path:line` token, deduplicated.
+// A token with no directory is only a (rejected) citation when it ends in a
+// file extension that starts with a letter — "sessions.ts:150" is a bare
+// filename and throws, while "15:10", "3.5:1" and "v1.2:30" are prose and are
+// ignored rather than aborting a paid attempt (horsemen 1609).
+export function explicitCitationTokens(reportText) {
+  const tokens = [...new Set(String(reportText ?? '').match(/[A-Za-z0-9_.@\/\[\]-]+:\d+/g) ?? [])]
+  return tokens.filter((token) => {
+    const path = token.slice(0, token.lastIndexOf(':'))
+    if (path.includes('/')) return true
+    if (/\.[A-Za-z][A-Za-z0-9]*$/.test(path)) throw new Error(`invalid citation path ${token}`)
+    return false
+  })
+}
+
+// The floor itself: at least three distinct full citations, or the attempt fails.
+export const CITATION_FLOOR = 3
+export function assertCitationFloor(reportText) {
+  const explicit = explicitCitationTokens(reportText)
+  if (explicit.length < CITATION_FLOOR) throw new Error(`report contains only ${explicit.length} distinct source:line citations`)
+  return explicit
+}
+
 export function extractCitations(reportText) {
   const occurrences = []
   for (const match of reportText.matchAll(CITATION_PATTERN)) {
