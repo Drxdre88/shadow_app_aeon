@@ -601,6 +601,23 @@ test('a reviewer that exits without reading stdin settles cleanly with its exit 
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
 
+// WARDEN 1609 finding 4: 'close' waits for every stdio pipe to reach EOF, so
+// a detached grandchild that inherited stdout would hold the dispatch open
+// forever. The exit itself must settle it after the 10s grace.
+test('a reviewer whose grandchild keeps stdout open still settles on exit within the grace period', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aeon-review-grandchild-'))
+  try {
+    const script = join(dir, 'leave-a-child.js')
+    writeFileSync(script, "const { spawn } = require('node:child_process'); spawn(process.execPath, ['-e', 'setTimeout(() => {}, 25000)'], { detached: true, stdio: ['ignore', 'inherit', 'inherit'], windowsHide: true, cwd: require('node:os').tmpdir() }).unref(); process.stdout.write('{}'); process.exit(0)")
+    const started = Date.now()
+    const out = await dispatchCopilotReview({ binary: process.execPath, model: 'm', stdinText: 'prompt', cwd: dir, maxAiCredits: 30, timeoutMs: 60_000, buildArgs: () => [script], usageFile: join(dir, 'usage.json') })
+    const elapsed = Date.now() - started
+    assert.equal(out.status, 0)
+    assert.equal(out.timedOut, false)
+    assert.ok(elapsed < 20_000, `settled in ${elapsed}ms, i.e. on exit + grace, not on the grandchild's close`)
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
+
 // run.mjs's citation floor, tested through the pure function it now calls.
 test('the citation floor counts full path:line tokens, ignores prose, and rejects bare filenames', () => {
   assert.deepEqual(explicitCitationTokens('see a/b.ts:1, a/b.ts:1, c/d.ts:2 and @scope/pkg/x.ts:3 at 15:10 UTC, ratio 3.5:1, Node 20.5:1, v1.2:30'), ['a/b.ts:1', 'c/d.ts:2', '@scope/pkg/x.ts:3'])
