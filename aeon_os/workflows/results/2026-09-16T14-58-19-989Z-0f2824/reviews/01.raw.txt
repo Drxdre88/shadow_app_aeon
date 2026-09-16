@@ -1,0 +1,2 @@
+{"verdict":"FAIL","findings":[{"claim":"No research report or numbered claims were included between the specified review-bundle delimiters.","cited":"No citations provided.","actual":"The supplied message contains review instructions but neither the opening/closing review-bundle delimiters nor any report and resolved source lines to verify.","severity":"blocking"}],"summary":"A paying user could not trust or accept this review because the required report and citation evidence are absent, making verification impossible under the stated rules."}
+

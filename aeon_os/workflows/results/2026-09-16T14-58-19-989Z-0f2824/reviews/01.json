@@ -1,0 +1,42 @@
+{
+  "attempt": 1,
+  "runId": "2026-09-16T14-58-19-989Z-0f2824",
+  "verdict": "FAIL",
+  "findings": [
+    {
+      "claim": "No research report or numbered claims were included between the specified review-bundle delimiters.",
+      "cited": "No citations provided.",
+      "actual": "The supplied message contains review instructions but neither the opening/closing review-bundle delimiters nor any report and resolved source lines to verify.",
+      "severity": "blocking"
+    }
+  ],
+  "summary": "A paying user could not trust or accept this review because the required report and citation evidence are absent, making verification impossible under the stated rules.",
+  "reviewer": {
+    "engine": "copilot",
+    "model": "gpt-5.6-sol",
+    "missionModel": "claude-sonnet-5",
+    "allowSameModel": false,
+    "sameModelAsMission": false,
+    "promptDelivery": "stdin",
+    "startedAt": "2026-09-16T15:05:21.310Z",
+    "finishedAt": "2026-09-16T15:05:32.801Z",
+    "observedModel": "gpt-5.6-sol",
+    "exitCode": 0,
+    "timedOut": false
+  },
+  "bundle": {
+    "path": "reviews/01.bundle.md",
+    "sha256": "098541f37885fcc2c05eae70b9a3c4b238546710f51084867e99d91a50f056ab",
+    "revision": "1d8beea0b102631244dcf0ecab3e6b2f55166980",
+    "citations": {
+      "total": 23,
+      "distinct": 23,
+      "resolvable": 23,
+      "unresolvable": 0,
+      "outOfRange": 0
+    }
+  },
+  "raw": "reviews/01.raw.txt",
+  "schemaNotes": [],
+  "recordedAt": "2026-09-16T15:05:32.803Z"
+}

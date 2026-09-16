@@ -31,12 +31,20 @@ export const VERDICTS = ['PASS', 'PASS_WITH_CORRECTIONS', 'FAIL']
 // that a self-contradictory PASS must never count. Anything not recognised as
 // cosmetic therefore contradicts a PASS.
 export const PASS_COMPATIBLE_SEVERITIES = new Set(['minor', 'info', 'informational', 'nit', 'none', 'n/a', 'na'])
-// Windows CreateProcess caps a command line at 32767 characters including the
-// executable path and every other argument. A bundle that will not fit inline
-// is refused rather than reviewed under a weaker sandbox: handing it over as a
-// file would mean granting the reviewer a file-reading tool it otherwise never
-// needs. Oversized bundles go to a human or another agent via --import.
-export const MAX_INLINE_PROMPT = 24_000
+// The WHOLE prompt (instruction + bundle) is piped to the reviewer's stdin and
+// -p is never passed: the Copilot CLI docs state that piped input is ignored
+// when -p/--prompt is also given, and the first live gate run (2026-09-16)
+// proved it — the reviewer returned a FAIL saying no bundle was present.
+// stdin-only delivery was then verified on CLI 1.0.85: a 37k-character prompt
+// piped with no -p was fully inlined (input tokens rose by ~8k) and answered
+// correctly. Piping sidesteps the 32767-character Windows command-line cap
+// without granting a file-reading tool. The ceiling is the largest delivery
+// actually measured, not a guess at the model's context: a 118,754-character
+// prompt piped the same day was fully inlined (lastCallInputTokens 38,159)
+// and the token near its end was answered. Raise it only after a bigger prompt
+// has been proven the same way. Above it the run stays unreviewed and goes to
+// a human or another agent via --import.
+export const MAX_BUNDLE_CHARS = 110_000
 // Statuses a run may be archived from by `prepare --new`. review_pending and
 // partial_pass are normal end states of the gate, so leaving them out would
 // force a hand-edited state.json to abandon a run.
@@ -48,9 +56,9 @@ export function archiveDecision(status) {
   return { allowed: ARCHIVABLE_STATUSES.includes(status), abandoned: status === 'review_pending' }
 }
 
-/** Whether a reviewer package can be delivered in argv rather than needing a file tool. */
-export function inlineFits(prompt) {
-  return typeof prompt === 'string' && prompt.length <= MAX_INLINE_PROMPT
+/** Whether a reviewer prompt (instruction + bundle) can be piped whole to stdin. */
+export function bundleFits(promptText) {
+  return typeof promptText === 'string' && promptText.length <= MAX_BUNDLE_CHARS
 }
 
 /**
@@ -94,7 +102,7 @@ function requireString(value, label, { allowEmpty = false } = {}) {
   return value
 }
 
-const PAYLOAD_KEYS = new Set(['verdict', 'findings', 'summary'])
+const PAYLOAD_KEYS = new Set(['verdict', 'findings', 'summary', 'marker'])
 const FINDING_KEYS = new Set(['claim', 'cited', 'actual', 'severity'])
 
 // Strict about meaning, tolerant of noise: unknown keys are kept and reported
@@ -269,11 +277,26 @@ const RULES = [
 
 const OUTPUT_CONTRACT = `Output a SINGLE JSON object and nothing else. No prose before or after it, no markdown, no code fence.
 
-{"verdict":"PASS"|"PASS_WITH_CORRECTIONS"|"FAIL","findings":[{"claim":"the report's claim, quoted or closely paraphrased","cited":"the citation exactly as the report wrote it","actual":"what the resolved source lines actually show","severity":"blocking"|"major"|"minor"|"info"}],"summary":"one paragraph: would a paying user be able to trust this report?"}
+{"marker":"the report's unique marker string, copied verbatim from the bundle (it begins with MARKER_PREFIX)","verdict":"PASS"|"PASS_WITH_CORRECTIONS"|"FAIL","findings":[{"claim":"the report's claim, quoted or closely paraphrased","cited":"the citation exactly as the report wrote it","actual":"what the resolved source lines actually show","severity":"blocking"|"major"|"minor"|"info"}],"summary":"one paragraph: would a paying user be able to trust this report?"}
 
-"findings" must contain at least one entry whenever the verdict is not PASS, and must list every problem you found rather than only the first. A PASS may not carry a blocking or major finding.`
+"marker" proves you received the bundle: copy it exactly as it appears there. "findings" must contain at least one entry whenever the verdict is not PASS, and must list every problem you found rather than only the first. A PASS may not carry a blocking or major finding.`
 
-export function buildReviewPrompt({ runId, attempt, bundleText, revision = null }) {
+// Proof of receipt. The marker's VALUE is never in the instruction, only its
+// prefix, so a reviewer can only echo it by having read the bundle. 1609: the
+// first live reviewer judged an empty message (Copilot drops piped input when
+// -p is present) and its schema-valid FAIL was stored as a real verdict.
+export const DEFAULT_MARKER_PREFIX = 'AEON_OS_E2E_'
+
+export function markerEchoError(payload, expectedMarker) {
+  if (typeof expectedMarker !== 'string' || !expectedMarker) return null
+  const echoed = payload?.marker
+  if (typeof echoed !== 'string' || echoed.trim() === '') return 'reviewer did not echo the report marker; it cannot be shown to have received the bundle'
+  if (echoed.trim() !== expectedMarker) return `reviewer echoed marker ${JSON.stringify(echoed.trim())} but the bundle carries ${JSON.stringify(expectedMarker)}; the verdict is not attributable to this bundle`
+  return null
+}
+
+// One text, piped whole to the reviewer's stdin (never -p, see MAX_BUNDLE_CHARS).
+export function buildReviewPrompt({ runId, attempt, bundleText, revision = null, markerPrefix = DEFAULT_MARKER_PREFIX }) {
   const header = [
     'You are an INDEPENDENT reviewer. A different AI model wrote the research report you are about to judge, and your job is to decide whether a paying user could trust it.',
     revision ? `Pinned revision under review: ${revision}` : null,
@@ -282,7 +305,7 @@ export function buildReviewPrompt({ runId, attempt, bundleText, revision = null 
     'Rules of evidence:',
     ...RULES.map((rule, index) => `${index + 1}. ${rule}`),
     '',
-    OUTPUT_CONTRACT,
+    OUTPUT_CONTRACT.replace('MARKER_PREFIX', markerPrefix),
     '',
   ].filter(line => line !== null).join('\n')
   return `${header}===== REVIEW BUNDLE — run ${runId}, attempt ${pad(attempt)} =====\n${bundleText}\n===== END OF REVIEW BUNDLE =====\n\nRespond with the JSON object only.\n`
@@ -320,9 +343,10 @@ function reviewerEnv() {
 // The deny list is ordered url, write, shell on purpose. If this build appends
 // repeated --deny-tool values, all three are denied; if it replaces them, the
 // last one wins and that must be the dangerous one.
-export function reviewerArgs({ prompt, model, maxAiCredits, usageFile }) {
+// No -p: the prompt arrives on stdin, and Copilot ignores piped input whenever
+// -p is present. Passing both would silently review nothing.
+export function reviewerArgs({ model, maxAiCredits, usageFile }) {
   return [
-    '-p', prompt,
     '--model', model,
     '--allow-all-tools',
     '--deny-tool=url',
@@ -360,24 +384,50 @@ export function killTree(pid) {
   try { process.kill(-pid, 'SIGKILL') } catch { try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ } }
 }
 
-export function dispatchCopilotReview({ binary, model, prompt, cwd, maxAiCredits, timeoutMs, usageFile }) {
+// Shape verified against a real --usage-output-file from Copilot CLI 1.0.85
+// (probed 2026-09-16): the answering model is `currentModel`, and every model
+// that served a request in the session is a key of `modelMetrics`. If more than
+// one model served the session, the verdict cannot be attributed to a single
+// model and the joined list will fail the provenance check by design.
+export function observedModelFromUsage(usage) {
+  if (!usage || typeof usage !== 'object') return null
+  const served = usage.modelMetrics && typeof usage.modelMetrics === 'object' ? Object.keys(usage.modelMetrics) : []
+  if (served.length > 1) return served.sort().join('+')
+  if (typeof usage.currentModel === 'string' && usage.currentModel) return usage.currentModel
+  return served[0] ?? null
+}
+
+// `buildArgs` is a seam for the stdin-delivery test only; production always
+// passes the default.
+export function dispatchCopilotReview({ binary, model, stdinText, cwd, maxAiCredits, timeoutMs, usageFile, buildArgs = reviewerArgs }) {
   return new Promise((done) => {
     const startedAt = now()
+    // An empty prompt would dispatch a reviewer that judges nothing and still
+    // exits 0 with schema-valid JSON. Refuse before spawning.
+    if (typeof stdinText !== 'string' || stdinText.trim() === '') {
+      done({ startedAt, finishedAt: now(), stdout: '', stderr: '', status: null, signal: null, spawnError: 'reviewer prompt is empty; nothing was dispatched', timedOut: false, usage: null, observedModel: null })
+      return
+    }
     const limit = 64 * 1024 * 1024
     let stdout = ''
     let stderr = ''
     let spawnError = null
     let timedOut = false
     let settled = false
-    const child = spawn(binary, reviewerArgs({ prompt, model, maxAiCredits, usageFile }), {
+    const child = spawn(binary, buildArgs({ model, maxAiCredits, usageFile }), {
       cwd,
       env: reviewerEnv(),
       windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       // A process group elsewhere lets process.kill(-pid) reach the children;
       // on Windows taskkill /T does that job and detaching only hides the shim.
       detached: process.platform !== 'win32',
     })
+    // The whole prompt goes down stdin and the pipe is closed so the CLI knows
+    // the input is complete. A reviewer that exits early (bad flag, auth
+    // failure) closes its end first; that EPIPE is telemetry, not a crash.
+    child.stdin?.on('error', () => { /* child closed the pipe early; the exit code tells the story */ })
+    child.stdin?.end(stdinText)
     child.stdout?.setEncoding('utf8')
     child.stderr?.setEncoding('utf8')
     child.stdout?.on('data', (chunk) => { if (stdout.length < limit) stdout += chunk })
@@ -399,7 +449,7 @@ export function dispatchCopilotReview({ binary, model, prompt, cwd, maxAiCredits
         spawnError,
         timedOut,
         usage,
-        observedModel: usage?.model ?? usage?.models?.[0]?.model ?? null,
+        observedModel: observedModelFromUsage(usage),
       })
     }
     child.once('error', (err) => { spawnError = errorMessage(err); finish(null, null) })
@@ -510,14 +560,13 @@ export async function runReview({ runId, runDir, attempts, config, allowSameMode
       // verdict must carry that admission with it.
       allowSameModel: allowSameModel === true,
       sameModelAsMission: attempt.model === config.model,
-      promptDelivery: 'inline',
+      promptDelivery: 'stdin',
     }
-    // Fail closed rather than weaken the sandbox. Handing an oversized bundle
-    // over as a file would mean granting the reviewer a file-reading tool it
-    // otherwise never needs, so the operator routes it through --import.
-    if (!inlineFits(prompt)) {
+    // Fail closed rather than truncate. A bundle the reviewer cannot hold in
+    // context is not reviewed by it at all; the operator routes it through --import.
+    if (!bundleFits(prompt)) {
       const stamp = now()
-      const error = `reviewer package for attempt ${index} is ${prompt.length} characters, above the ${MAX_INLINE_PROMPT} inline limit; review it out of band and ingest the verdict with "review --import"`
+      const error = `reviewer package for attempt ${index} is ${prompt.length} characters, above the ${MAX_BUNDLE_CHARS} stdin limit; review it out of band and ingest the verdict with "review --import"`
       writeError(runDir, index, { attempt: index, runId, error, raw: null, reviewer: { ...reviewerBase, startedAt: stamp, finishedAt: stamp }, recordedAt: stamp })
       failures.push({ attempt: index, error })
       log(`  attempt ${pad(index)}: NOT REVIEWED — ${error}`)
@@ -532,7 +581,7 @@ export async function runReview({ runId, runDir, attempts, config, allowSameMode
       dispatch = await dispatchCopilotReview({
         binary,
         model: config.model,
-        prompt,
+        stdinText: prompt,
         cwd: scratchDir,
         maxAiCredits: config.maxAiCredits,
         timeoutMs: config.timeoutMs,
@@ -551,6 +600,9 @@ export async function runReview({ runId, runDir, attempts, config, allowSameMode
       startedAt: dispatch.startedAt,
       finishedAt: dispatch.finishedAt,
       observedModel: dispatch.observedModel,
+      // The raw usage file is deleted with the scratch directory; keep it so a
+      // provenance failure can be diagnosed from the record alone.
+      usage: dispatch.usage ?? null,
       exitCode: dispatch.status,
       timedOut: dispatch.timedOut,
     }
@@ -592,9 +644,17 @@ export async function runReview({ runId, runDir, attempts, config, allowSameMode
       log(`  attempt ${pad(index)}: NOT REVIEWED — ${error}`)
       continue
     }
+    const echoError = markerEchoError(parsed.value, attempt.marker)
+    if (echoError) {
+      writeError(runDir, index, { attempt: index, runId, error: echoError, raw: rawPath, reviewer, recordedAt: now() })
+      failures.push({ attempt: index, error: echoError })
+      log(`  attempt ${pad(index)}: NOT REVIEWED — ${echoError}`)
+      continue
+    }
     const record = {
       attempt: index,
       runId,
+      marker: attempt.marker ?? null,
       verdict: payload.verdict,
       findings: payload.findings,
       summary: payload.summary,

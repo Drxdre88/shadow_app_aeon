@@ -1,0 +1,18 @@
+{
+  "index": 2,
+  "topic": "result envelope parsing",
+  "marker": "AEON_OS_E2E_2026-09-16T14-52-00-295Z-86cdc5_02",
+  "report": "aeon_os/workflows/reports/2026-09-16T14-52-00-295Z-86cdc5-02.md",
+  "model": "claude-sonnet-5",
+  "taskId": "8a26d9ce-a19e-4df6-9576-2a516a38b520",
+  "sessionId": "395968cf-a43a-4f3a-bed4-1d6116d8ee8b",
+  "branch": "aeon/8a26d9ce",
+  "createdAt": "2026-09-16T14:54:33.163Z",
+  "result": "FAIL",
+  "lastStatus": "succeeded",
+  "workerId": "002LND2094-58fcd8",
+  "workerHost": "002LND2094",
+  "workerPid": 57596,
+  "error": "citation line is outside the prepared source: apps/kairos-worker/src/envelope.test.ts:189 (178 lines)",
+  "failedAt": "2026-09-16T14:56:10.686Z"
+}

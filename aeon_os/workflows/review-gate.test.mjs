@@ -16,16 +16,19 @@ import { fileURLToPath } from 'node:url'
 
 import {
   ARCHIVABLE_STATUSES,
-  MAX_INLINE_PROMPT,
+  MAX_BUNDLE_CHARS,
   PASS_COMPATIBLE_SEVERITIES,
   archiveDecision,
   buildReviewPrompt,
   evaluateReviewGate,
   importVerdict,
-  inlineFits,
+  bundleFits,
   killTree,
   loadVerdicts,
+  markerEchoError,
   modelProvenanceError,
+  dispatchCopilotReview,
+  observedModelFromUsage,
   parseVerdictText,
   reviewConfig,
   reviewerArgs,
@@ -34,6 +37,7 @@ import {
   validateVerdictPayload,
   validateVerdictRecord,
 } from './review.mjs'
+import { extractCitations } from './review-bundle.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REVIEWER = { engine: 'copilot', model: 'gpt-5.6-sol', startedAt: '2026-09-12T10:00:00.000Z', finishedAt: '2026-09-12T10:02:00.000Z' }
@@ -397,9 +401,99 @@ test('an import with matching identity fields is accepted and stamped', () => {
 
 // ------------------------------------------------------- reviewer sandboxing --
 
+// Real --usage-output-file shape from Copilot CLI 1.0.85 (probed 2026-09-16).
+test('the reviewer model is read from currentModel / modelMetrics of the usage file', () => {
+  const real = { totalPremiumRequestCost: 1, modelMetrics: { 'gpt-5.6-sol': { requests: { count: 1, cost: 1 } } }, currentModel: 'gpt-5.6-sol' }
+  assert.equal(observedModelFromUsage(real), 'gpt-5.6-sol')
+  assert.equal(observedModelFromUsage({ modelMetrics: { 'gpt-5.6-sol': {} } }), 'gpt-5.6-sol', 'modelMetrics alone still attributes')
+  assert.equal(observedModelFromUsage({ currentModel: 'gpt-5.6-sol' }), 'gpt-5.6-sol')
+  assert.equal(observedModelFromUsage({ model: 'gpt-5.6-sol' }), null, 'the pre-1609 guessed key is not the shape')
+  assert.equal(observedModelFromUsage(null), null)
+  assert.equal(observedModelFromUsage({}), null)
+  const mixed = observedModelFromUsage({ currentModel: 'gpt-5.6-sol', modelMetrics: { 'gpt-5.6-sol': {}, 'claude-sonnet-5': {} } })
+  assert.equal(mixed, 'claude-sonnet-5+gpt-5.6-sol', 'two serving models cannot be attributed to one reviewer')
+  assert.ok(modelProvenanceError({ observedModel: mixed, configuredModel: 'gpt-5.6-sol', missionModel: 'claude-sonnet-5' }), 'a mixed session fails provenance')
+})
+
+// 1609 live finding: the first real reviewer marked three correct assertions
+// unverifiable because the report cited them as shorthand continuations
+// ("file.ts:173, :187, :234, and :245") that the bundle never resolved.
+test('shorthand line continuations after a citation resolve against the same file', () => {
+  const text = 'see `a/b/test.ts:173, :187, :234, and :245` and a/b/src.ts:213 and :219; also a/b/x.ts:10-12, :30-31 then c/d.ts:5.'
+  const { total, distinct } = extractCitations(text)
+  assert.deepEqual(distinct.map(c => c.display), [
+    'a/b/test.ts:173', 'a/b/test.ts:187', 'a/b/test.ts:234', 'a/b/test.ts:245',
+    'a/b/src.ts:213', 'a/b/src.ts:219',
+    'a/b/x.ts:10-12', 'a/b/x.ts:30-31',
+    'c/d.ts:5',
+  ])
+  assert.equal(total, 9)
+  assert.ok(distinct.every(c => Number.isInteger(c.startLine) && c.endLine >= c.startLine))
+  // A bare ":12" with no preceding citation is not a citation of anything.
+  assert.equal(extractCitations('ratio :12 and :13').total, 0)
+  // A continuation never crosses into a different full citation.
+  assert.deepEqual(extractCitations('a/b.ts:1, c/d.ts:2').distinct.map(c => c.display), ['a/b.ts:1', 'c/d.ts:2'])
+  // Warden 1609 finding 3: a clause that goes on to name another file makes
+  // the shorthand ambiguous, so it is dropped rather than misattributed.
+  assert.deepEqual(extractCitations('counts in a/b.ts:10 and :20 of c/d.ts differ').distinct.map(c => c.display), ['a/b.ts:10'])
+  assert.deepEqual(extractCitations('see a/b.ts:10, :20 (compare c/d.ts).').distinct.map(c => c.display), ['a/b.ts:10', 'a/b.ts:20'], 'a path after the clause boundary does not cancel the continuation')
+  assert.deepEqual(extractCitations('`a/b.ts:65 and :68`) and `a/b.ts:213 and :219`').distinct.map(c => c.display), ['a/b.ts:65', 'a/b.ts:68', 'a/b.ts:213', 'a/b.ts:219'], 'the live report forms still resolve')
+})
+
+// WARDEN 1609: a reviewer that never received the bundle can still exit 0 with
+// schema-valid JSON. It must echo the report marker, whose value is never in
+// the instruction, and an empty prompt is refused before any spawn.
+test('a verdict that does not echo the bundle marker is not a review', () => {
+  const marker = 'AEON_OS_E2E_2026-09-16T15-10-24-504Z-24c870_01'
+  assert.equal(markerEchoError({ verdict: 'FAIL', marker }, marker), null)
+  assert.equal(markerEchoError({ verdict: 'FAIL', marker: ` ${marker}\n` }, marker), null, 'surrounding whitespace is tolerated')
+  assert.match(markerEchoError({ verdict: 'FAIL' }, marker), /did not echo/)
+  assert.match(markerEchoError({ verdict: 'PASS', marker: '' }, marker), /did not echo/)
+  assert.match(markerEchoError({ verdict: 'PASS', marker: 'AEON_OS_E2E_other_01' }, marker), /not attributable to this bundle/)
+  assert.equal(markerEchoError({ verdict: 'PASS' }, null), null, 'attempts without a marker (imports, legacy) are not gated on it')
+  const prompt = buildReviewPrompt({ runId: 'r', attempt: 1, bundleText: `${marker}\nbody`, revision: 'abc' })
+  const instruction = prompt.slice(0, prompt.indexOf('===== REVIEW BUNDLE'))
+  assert.ok(!instruction.includes(marker), 'the instruction must never contain the marker value')
+  assert.match(instruction, /begins with AEON_OS_E2E_/)
+  assert.doesNotThrow(() => validateVerdictPayload({ verdict: 'PASS', findings: [], summary: 's', marker }))
+  assert.deepEqual(validateVerdictPayload({ verdict: 'PASS', findings: [], summary: 's', marker }).schemaNotes, [], 'marker is a known key, not a schema note')
+})
+
+// The one thing that broke live: the prompt must arrive on stdin, whole. A
+// fake reviewer (node -e) reads its stdin and reports the byte count and the
+// last line, so delivery is locked without touching the real CLI.
+test('the whole prompt reaches the reviewer on stdin, argv carries no prompt', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aeon-review-stdin-'))
+  try {
+    const script = join(dir, 'fake.js')
+    writeFileSync(script, "let n=0,last='';process.stdin.on('data',c=>{n+=c.length;last=c.toString().split('\\n').filter(Boolean).at(-1)});process.stdin.on('end',()=>{process.stdout.write(JSON.stringify({bytes:n,last,argvHasPrompt:process.argv.includes('-p')}))})")
+    // Node refuses to spawn a .cmd shim without a shell, so the fake reviewer is
+    // node itself; the production argument builder is asserted separately.
+    const stdinText = `${'y'.repeat(40_000)}\nLAST-LINE-MARKER\n`
+    const out = await dispatchCopilotReview({ binary: process.execPath, model: 'm', stdinText, cwd: dir, maxAiCredits: 30, timeoutMs: 20_000, usageFile: join(dir, 'usage.json'), buildArgs: () => [script] })
+    assert.equal(out.spawnError, null)
+    assert.equal(out.status, 0)
+    const echoed = JSON.parse(out.stdout)
+    assert.equal(echoed.bytes, Buffer.byteLength(stdinText), 'every byte of the prompt must reach the reviewer')
+    assert.equal(echoed.last, 'LAST-LINE-MARKER', 'the tail of the prompt must arrive intact')
+    assert.equal(echoed.argvHasPrompt, false)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('an empty reviewer prompt is refused before anything is spawned', async () => {
+  for (const stdinText of ['', '   ', undefined, null, 42]) {
+    const out = await dispatchCopilotReview({ binary: process.execPath, model: 'm', stdinText, cwd: tmpdir(), maxAiCredits: 30, timeoutMs: 1000, usageFile: join(tmpdir(), 'never-written.json') })
+    assert.match(out.spawnError, /prompt is empty/)
+    assert.equal(out.status, null)
+    assert.equal(out.observedModel, null)
+  }
+})
+
 // WARDEN 3: the reviewer gets no shell, no writes, no network, no temp grant.
 test('the reviewer command line denies the tools that could reach the repository', () => {
-  const args = reviewerArgs({ prompt: 'p', model: 'gpt-5.6-sol', maxAiCredits: 30, usageFile: 'u.json' })
+  const args = reviewerArgs({ model: 'gpt-5.6-sol', maxAiCredits: 30, usageFile: 'u.json' })
   assert.ok(args.includes('--deny-tool=shell'), 'shell must be denied: path verification does not constrain it')
   assert.ok(args.includes('--deny-tool=write'))
   assert.ok(args.includes('--deny-tool=url'))
@@ -454,15 +548,36 @@ test('killTree reaps a whole process tree', async () => {
 })
 
 // WARDEN 3: an oversized bundle is refused rather than reviewed with a file tool.
-test('a bundle that will not fit inline is refused, not handed over as a file', () => {
+// The whole prompt is piped to stdin (1609: a real 31,754-character bundle blew
+// the old 24,000-character argv ceiling before any reviewer ran), so the only
+// remaining limit is the reviewer's context, and above it the run stays unreviewed.
+test('the whole prompt travels on stdin and an oversized bundle is refused', () => {
   const small = buildReviewPrompt({ runId: 'r', attempt: 1, bundleText: 'BUNDLE BODY', revision: 'abc1234' })
-  assert.ok(inlineFits(small))
-  const huge = buildReviewPrompt({ runId: 'r', attempt: 1, bundleText: 'x'.repeat(MAX_INLINE_PROMPT) })
-  assert.ok(!inlineFits(huge))
+  assert.ok(bundleFits(small))
+  assert.match(small, /BUNDLE BODY/)
+  assert.match(small, /===== REVIEW BUNDLE — run r, attempt 01 =====/)
+  assert.match(small, /===== END OF REVIEW BUNDLE =====/)
+  const real = buildReviewPrompt({ runId: 'r', attempt: 1, bundleText: 'x'.repeat(31_754) })
+  assert.ok(bundleFits(real), 'the 1609 pilot bundle size must be deliverable')
+  const huge = buildReviewPrompt({ runId: 'r', attempt: 1, bundleText: 'x'.repeat(MAX_BUNDLE_CHARS) })
+  assert.ok(!bundleFits(huge))
+  assert.ok(bundleFits('x'.repeat(MAX_BUNDLE_CHARS)), 'exactly the ceiling is deliverable')
+  assert.ok(!bundleFits('x'.repeat(MAX_BUNDLE_CHARS + 1)), 'one over the ceiling is refused')
   // The prompt builder has no file mode at all, so no reviewer can be given a
   // reason to read from disk.
   assert.ok(!small.includes('current working directory'))
-  assert.match(small, /BUNDLE BODY/)
+})
+
+// 1609 live finding: Copilot ignores piped input whenever -p is present, so the
+// first real reviewer run judged an empty message and returned a FAIL that said
+// so. The prompt must reach the CLI on stdin alone.
+test('the reviewer command line never carries -p, because piped input is ignored alongside it', () => {
+  const args = reviewerArgs({ model: 'gpt-5.6-sol', maxAiCredits: 30, usageFile: 'u.json' })
+  assert.ok(!args.includes('-p'))
+  assert.ok(!args.includes('--prompt'))
+  assert.ok(!args.includes('-i'))
+  assert.ok(!args.includes('--interactive'))
+  assert.deepEqual(args.slice(0, 2), ['--model', 'gpt-5.6-sol'])
 })
 
 test('the reviewer prompt states the rules that the mechanical gate cannot check', () => {

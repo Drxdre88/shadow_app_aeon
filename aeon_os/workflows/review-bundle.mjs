@@ -108,7 +108,31 @@ function splitLines(text) {
   return lines
 }
 
-function extractCitations(reportText) {
+// Shorthand continuations after a full citation: "file.ts:173, :187, :234" or
+// "file.ts:213 and :219". Sticky so it only ever matches right where the full
+// citation ended. 1609 live finding: the first real reviewer failed a report for
+// three "unresolvable" lines that were written exactly this way and were correct.
+const CONTINUATION_PATTERN = /(?:,\s*(?:and\s+)?|\s+and\s+)`?:(\d+)(?:-(\d+))?`?/y
+// Guard for the continuation: if the rest of the clause names a path-like
+// token ("a/b.ts:10 and :20 of c/d.ts differ"), the shorthand cannot be
+// trusted to belong to the last full citation, so it is dropped rather than
+// resolved against the wrong file (warden 1609, finding 3).
+// The clause ends at punctuation or a bracket (not at a dot, which file names
+// contain). The path search runs on the untruncated remainder so a token is
+// never cut short, and only a match that starts inside the clause counts. A
+// path that is itself a full citation (followed by :line) is unambiguous and
+// does not count.
+const CLAUSE_END = /[,;:\n()]/
+const PATH_LIKE = /(?<![A-Za-z0-9_.\[\]{}+\\/-])[A-Za-z0-9_.\[\]{}+-]+(?:[\\/][A-Za-z0-9_.()\[\]{}+-]+)+(?![A-Za-z0-9_.()\[\]{}+\\/-]|:\d)/
+
+function clauseNamesAnotherPath(rest) {
+  const end = rest.search(CLAUSE_END)
+  const window = Math.min(end === -1 ? rest.length : end, 80)
+  const found = PATH_LIKE.exec(rest)
+  return found !== null && found.index < window
+}
+
+export function extractCitations(reportText) {
   const occurrences = []
   for (const match of reportText.matchAll(CITATION_PATTERN)) {
     const startLine = Number(match[2])
@@ -116,6 +140,14 @@ function extractCitations(reportText) {
     const citationPath = match[1].replace(/\\/g, '/')
     const display = `${citationPath}:${startLine}${match[3] === undefined ? '' : `-${endLine}`}`
     occurrences.push({ display, path: citationPath, startLine, endLine })
+    CONTINUATION_PATTERN.lastIndex = match.index + match[0].length
+    let more
+    while ((more = CONTINUATION_PATTERN.exec(reportText)) !== null) {
+      if (clauseNamesAnotherPath(reportText.slice(more.index + more[0].length))) break
+      const moreStart = Number(more[1])
+      const moreEnd = more[2] === undefined ? moreStart : Number(more[2])
+      occurrences.push({ display: `${citationPath}:${moreStart}${more[2] === undefined ? '' : `-${moreEnd}`}`, path: citationPath, startLine: moreStart, endLine: moreEnd })
+    }
   }
   const distinct = []
   const seen = new Set()
