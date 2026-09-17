@@ -33,6 +33,14 @@ jobs:
       - run: npm run -w apps/kairos-worker typecheck
       - run: npm run -w apps/kairos-worker test
 
+      # The Aeon OS review-gate harness (aeon_os/workflows/) proves the PASS
+      # gate on synthetic verdicts without dispatching a reviewer. A commit with
+      # a red gate test passed CI on 2026-09-16 because the suite was never
+      # wired here.
+      # The suite spawns real subprocesses; the per-test timeout keeps a hung
+      # child from holding the job to the 6-hour runner limit.
+      - run: node --test --test-timeout=120000 aeon_os/workflows/review-gate.test.mjs
+
       # A production build is the only gate that catches build-time-only
       # failures: lint, typecheck and tests all passed the malformed
       # color-mix() shadow that broke the 2026-08-26 deploy. Placeholder env

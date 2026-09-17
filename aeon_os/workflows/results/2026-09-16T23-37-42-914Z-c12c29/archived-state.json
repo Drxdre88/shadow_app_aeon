@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "runId": "2026-09-16T23-37-42-914Z-c12c29",
+  "createdAt": "2026-09-16T23:37:54.582Z",
+  "sourceBranch": "chore/aeon-os-ci-gate-first-pass",
+  "baseSha": "9da76a8c6a9f9a5c1c3b67a38f605dc445a8748b",
+  "originPath": "C:\\Users\\anselikhov\\data_science\\dev_26\\shadow_app_aeon\\aeon_os\\workflows\\.runtime\\runs\\2026-09-16T23-37-42-914Z-c12c29\\origin.git",
+  "clonePath": "C:\\Users\\anselikhov\\data_science\\dev_26\\shadow_app_aeon\\aeon_os\\workflows\\.runtime\\runs\\2026-09-16T23-37-42-914Z-c12c29\\source",
+  "registryPath": "C:\\Users\\anselikhov\\data_science\\dev_26\\shadow_app_aeon\\aeon_os\\workflows\\.runtime\\runs\\2026-09-16T23-37-42-914Z-c12c29\\repos.json",
+  "projectId": "e4b0af95-d3ad-46ba-8275-1ecc28911683",
+  "columns": {
+    "Queued": "ef137ae9-0c5a-44c0-ba3d-ff6d27857526",
+    "Flight": "d823c15b-449a-4582-91ed-b594836339ed",
+    "Landing": "d60aa047-dadc-4930-b4ed-55d6d354cfaf",
+    "Tower": "38cb0738-8ace-417f-8fa1-0b3c8c0ff3af"
+  },
+  "attempts": [
+    {
+      "index": 1,
+      "topic": "session claim ownership",
+      "marker": "AEON_OS_E2E_2026-09-16T23-37-42-914Z-c12c29_01",
+      "report": "aeon_os/workflows/reports/2026-09-16T23-37-42-914Z-c12c29-01.md",
+      "model": "claude-sonnet-5",
+      "taskId": "079782c8-dc66-46dd-9979-420f05124205",
+      "sessionId": "d374621a-4556-420a-b214-06c6ea556a27",
+      "branch": "aeon/079782c8",
+      "createdAt": "2026-09-16T23:38:01.889Z",
+      "result": "PASS",
+      "lastStatus": "succeeded",
+      "workerId": "002LND2094-3e5d6d",
+      "workerHost": "002LND2094",
+      "workerPid": 648,
+      "commit": "440ab0736baba56db4ac84a351081e52436d45a8",
+      "completedAt": "2026-09-16T23:40:33.909Z"
+    }
+  ],
+  "worker": null,
+  "status": "failed",
+  "batchTarget": 1,
+  "workerBootstrap": "C:\\Users\\anselikhov\\data_science\\dev_26\\shadow_app_aeon\\aeon_os\\workflows\\.runtime\\runs\\2026-09-16T23-37-42-914Z-c12c29\\one-claim-worker.mjs",
+  "mechanical": "partial_pass",
+  "review": {
+    "total": 1,
+    "reviewed": 1,
+    "counts": {
+      "PASS": 0,
+      "PASS_WITH_CORRECTIONS": 0,
+      "FAIL": 1
+    },
+    "unreviewed": [],
+    "attempts": [
+      {
+        "attempt": 1,
+        "mechanical": "PASS",
+        "verdict": "FAIL",
+        "reviewer": "copilot",
+        "reviewerModel": "gpt-5.6-sol",
+        "error": null
+      }
+    ],
+    "updatedAt": "2026-09-16T23:41:09.423Z",
+    "outcome": "review_failed",
+    "status": "failed"
+  },
+  "failureKind": "review",
+  "archivedAt": "2026-09-16T23:43:15.541Z",
+  "abandoned": false
+}

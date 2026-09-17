@@ -221,6 +221,54 @@ export const createHangarRepoSchema = z.object({
 
 export const updateHangarRepoSchema = createHangarRepoSchema.omit({ realmId: true }).partial()
 
+// Objective-completion contract. The envelope schema alone lets every
+// objective report `completed` with nothing delivered (Aeon OS acceptance
+// check 14). For the two objectives whose deliverable is code, `completed`
+// means a published branch and commit — or, failing that, named artifacts.
+// A claim without either is not refused (a refused envelope strands the card
+// in Flight with no result at all); it is downgraded to `needs_input` so the
+// mission lands in Tower with the missing deliverables spelled out as the
+// question a human has to answer. The downgrade is recorded in the ack so the
+// runner can log it and the card's lastResult carries the evidence.
+//
+// This is a claim check, not proof of delivery: nothing here verifies that the
+// branch or commit exists. The runner stamps the mission branch and HEAD into
+// the envelope when the worktree is ahead of its base (poller.finalize), so a
+// mission that committed real work is never downgraded for leaving the
+// skeleton's nulls in place.
+//
+// Placed after the repo schemas on purpose: prod-acceptance.mjs locates the
+// envelope schema by the `})` that precedes createHangarRepoSchema.
+const DELIVERABLE_OBJECTIVES = new Set<string>(['implement', 'bug_fix'])
+
+export function enforceObjectiveDeliverables(
+  objective: string | null | undefined,
+  envelope: HangarResultEnvelope,
+): { envelope: HangarResultEnvelope; downgraded: string | null } {
+  if (!objective || !DELIVERABLE_OBJECTIVES.has(objective)) return { envelope, downgraded: null }
+  if (envelope.status !== 'completed') return { envelope, downgraded: null }
+
+  const hasCommit = Boolean(envelope.branch) && Boolean(envelope.commit)
+  const hasArtifacts = (envelope.artifacts?.length ?? 0) > 0
+  if (hasCommit || hasArtifacts) return { envelope, downgraded: null }
+
+  const missing = [
+    !envelope.branch ? 'branch' : null,
+    !envelope.commit ? 'commit' : null,
+    'artifacts',
+  ].filter((v): v is string => v !== null)
+  const reason = `objective ${objective} reported completed without deliverables (missing ${missing.join(', ')})`
+  const question = `Mission claimed completed but published no ${missing.join('/')}. Confirm what was delivered, or relaunch.`
+  return {
+    envelope: {
+      ...envelope,
+      status: 'needs_input',
+      questions: [question, ...(envelope.questions ?? [])].slice(0, 20),
+    },
+    downgraded: reason,
+  }
+}
+
 export type HangarObjective        = z.infer<typeof hangarObjectiveSchema>
 export type HangarAgent            = z.infer<typeof hangarAgentSchema>
 export type HangarOutputMode       = z.infer<typeof hangarOutputModeSchema>

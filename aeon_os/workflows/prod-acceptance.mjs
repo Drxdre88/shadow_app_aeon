@@ -105,7 +105,24 @@ function inspectHangarContract() {
     optional,
     summaryAllowsEmpty: /summary:\s+z\.string\(\)\.trim\(\)\.max\(8000\)/.test(block),
     hasObjectiveSpecificResultRules: /\.superRefine\(|\.refine\(/.test(block),
+    // 1709: the objective-completion contract is a function applied at the
+    // result ingress, not a refinement inside the schema block. Detect it by
+    // its definition here and its application in the events route.
+    ingressContract: inspectIngressContract(source),
   }
+}
+
+const EVENTS_ROUTE = join(ROOT, 'apps', 'web', 'src', 'app', 'api', 'v1', 'sessions', '[id]', 'events', 'route.ts')
+
+function inspectIngressContract(validatorSource) {
+  const defined = /export function enforceObjectiveDeliverables\(/.test(validatorSource)
+  const objectives = [...(/DELIVERABLE_OBJECTIVES = new Set<string>\(\[([^\]]*)\]\)/.exec(validatorSource)?.[1] ?? '').matchAll(/'([^']+)'/g)].map((m) => m[1])
+  let applied = false
+  try {
+    const route = readFileSync(EVENTS_ROUTE, 'utf8')
+    applied = /enforceObjectiveDeliverables\(objective, envelope\.data\)/.test(route) && /recordSessionResult\(id, enforced\.envelope\)/.test(route)
+  } catch { applied = false }
+  return { defined, applied, objectives }
 }
 
 function nowToken() {
@@ -719,11 +736,19 @@ async function main() {
         }
       })
 
-      await runCheck(14, 'Report mandatory/optional result fields and objectives that permit completed with no deliverables', async () => {
-        const noDeliverables = hangarContract.objectives
-        const finding = `MANDATORY: ${hangarContract.mandatory.join(', ')}. OPTIONAL: ${hangarContract.optional.join(', ')}. BUSINESS RISK: ALL objectives (${noDeliverables.join(', ')}) can report completed with no branch, no commit, and no artifacts${hangarContract.summaryAllowsEmpty ? '; summary is structurally required but may be empty' : ''}.`
+      await runCheck(14, 'Report mandatory/optional result fields and which objectives may complete with no deliverables', async () => {
+        const contract = hangarContract.ingressContract
+        const enforced = contract.defined && contract.applied
+        const guarded = enforced ? contract.objectives : []
+        const unguarded = hangarContract.objectives.filter((objective) => !guarded.includes(objective))
+        const finding = enforced
+          ? `MANDATORY: ${hangarContract.mandatory.join(', ')}. OPTIONAL: ${hangarContract.optional.join(', ')}. CONTRACT: ${guarded.join(', ')} completed without branch+commit or artifacts is downgraded to needs_input at the result ingress (enforceObjectiveDeliverables); ${unguarded.join(', ')} may complete report-only${hangarContract.summaryAllowsEmpty ? '; summary is structurally required but may be empty' : ''}.`
+          : `MANDATORY: ${hangarContract.mandatory.join(', ')}. OPTIONAL: ${hangarContract.optional.join(', ')}. BUSINESS RISK: ALL objectives (${hangarContract.objectives.join(', ')}) can report completed with no branch, no commit, and no artifacts${hangarContract.summaryAllowsEmpty ? '; summary is structurally required but may be empty' : ''}.`
         return {
-          ok: !hangarContract.hasObjectiveSpecificResultRules && noDeliverables.length === 5,
+          // The contract must exist, be applied at the ingress, and guard
+          // exactly the code-delivering objectives; the schema itself stays
+          // refinement-free so the field report above remains accurate.
+          ok: enforced && guarded.includes('implement') && guarded.includes('bug_fix') && !hangarContract.hasObjectiveSpecificResultRules && hangarContract.objectives.length === 5,
           observed: finding,
           evidence: [{ status: 'LOCAL_SOURCE', durationMs: 0, bodyExcerpt: finding }],
         }

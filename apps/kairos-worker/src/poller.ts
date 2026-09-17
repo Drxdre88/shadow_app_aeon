@@ -25,7 +25,9 @@ import {
   decideFinalStatus,
   extractEnvelope,
   normalizeEnvelope,
+  stampDelivery,
   tryParse,
+  type MissionDelivery,
 } from './envelope.js'
 import { engineIds, getEngine, outFileFor, type EngineAdapter } from './engines.js'
 import { getWorkerId, reposFilePath, resolveRepo, type RepoEntry } from './registry.js'
@@ -33,6 +35,7 @@ import { createSeq, killSession, releaseSession, runEngine } from './spawner.js'
 import {
   createWorktree,
   deleteBranchIfEmpty,
+  gitAsync,
   isMissionBranch,
   MISSION_BRANCH_PREFIX,
   missionCommits,
@@ -470,6 +473,15 @@ export function rawTail(stdout: string, limit = 2000): string {
 interface ResultAck {
   resultProcessed?: boolean
   resultError?: string
+  // Objective-completion contract: Aeon downgraded a `completed` claim with
+  // no branch/commit/artifacts to needs_input and says why.
+  resultDowngraded?: string
+}
+
+function envelopeDowngrade(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null
+  const ack = data as ResultAck
+  return typeof ack.resultDowngraded === 'string' ? ack.resultDowngraded : null
 }
 
 function envelopeRejection(data: unknown): string | null {
@@ -496,7 +508,15 @@ async function finalizeInner(args: FinalizeArgs): Promise<void> {
 
   await postEvent(ctx, { seq: nextSeq(), kind: 'stop', payload: { exitCode: code, signal } })
 
-  const envelope = normalizeEnvelope(readEnvelope(engine, stdout, outFile))
+  // The result is posted before teardown pushes the branch, so Aeon cannot
+  // see the delivered work at ingress time; the runner stamps it into the
+  // envelope (branch + HEAD, only when the branch is ahead, never overwriting
+  // what the agent reported) or the objective-completion contract would park
+  // a real implement mission in Tower.
+  const envelope = stampDelivery(
+    normalizeEnvelope(readEnvelope(engine, stdout, outFile)),
+    await missionDelivery(entry, branch, startSha),
+  )
   const stats = missionStats(safeStats(parser))
 
   // The result event and the final status are the two writes that must land:
@@ -513,6 +533,9 @@ async function finalizeInner(args: FinalizeArgs): Promise<void> {
   const seq = nextSeq()
   const ack = await withRetry<ResultAck>('result event', () =>
     postEvent<ResultAck>(ctx, { seq, kind: 'result', payload: result }))
+
+  const downgrade = envelopeDowngrade(ack.data)
+  if (downgrade) console.warn(`[worker/poll] Aeon downgraded the result to needs_input: ${downgrade}`)
 
   const rejection = envelopeRejection(ack.data)
   if (rejection) {
@@ -713,6 +736,22 @@ function buildDispatchPrompt(
     '```',
   ]
   return lines.filter((line): line is string => line !== null).join('\n')
+}
+
+// Same ahead computation teardownWorktree uses, run before the result post.
+// A failure to read the tip is reported as "nothing delivered": the agent's
+// own values still stand, and teardown will publish whatever is there.
+async function missionDelivery(entry: RepoEntry, branch: string, startSha: string | null): Promise<MissionDelivery> {
+  try {
+    const ahead = branch === entry.defaultBranch ? 0 : await missionCommits(entry, branch, startSha)
+    if (ahead <= 0) return { branch, headSha: null, ahead: 0 }
+    const head = await gitAsync(entry.path, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])
+    const sha = head.ok ? head.stdout.trim() : ''
+    return { branch, headSha: /^[0-9a-f]{40}$/.test(sha) ? sha : null, ahead }
+  } catch (err) {
+    console.warn(`[worker/poll] could not read mission delivery for ${branch}:`, err)
+    return { branch, headSha: null, ahead: 0 }
+  }
 }
 
 function readEnvelope(

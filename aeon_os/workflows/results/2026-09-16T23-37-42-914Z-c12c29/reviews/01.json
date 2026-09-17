@@ -1,0 +1,165 @@
+{
+  "attempt": 1,
+  "runId": "2026-09-16T23-37-42-914Z-c12c29",
+  "marker": "AEON_OS_E2E_2026-09-16T23-37-42-914Z-c12c29_01",
+  "receipt": "24e24412-05dc-4819-8b47-8a664b935d5f",
+  "verdict": "FAIL",
+  "findings": [
+    {
+      "claim": "`apps/web/src/lib/data/sessions.ts:183` binds the WHERE clause to `eq(agentSessions.userId, userId)`.",
+      "cited": "`apps/web/src/lib/data/sessions.ts:183`",
+      "actual": "Line 183 only opens `.where(and(`; the user-ID predicate is on line 184.",
+      "severity": "minor"
+    },
+    {
+      "claim": "`apps/web/src/lib/data/sessions.ts:184` adds `eq(agentSessions.status, 'queued')`.",
+      "cited": "`apps/web/src/lib/data/sessions.ts:184`",
+      "actual": "Line 184 contains `eq(agentSessions.userId, userId)`; the status predicate is on line 185, which was not cited.",
+      "severity": "minor"
+    },
+    {
+      "claim": "The terminal-status replay guard is in the UPDATE WHERE clause and not in a preceding read.",
+      "cited": "`apps/web/src/lib/data/sessions.ts:284`, `apps/web/src/lib/data/sessions.ts:285`, `apps/web/src/lib/data/sessions.ts:286`, `apps/web/src/lib/data/sessions.ts:289`",
+      "actual": "The excerpts prove that the UPDATE has an ID and nonterminal-status predicate and that a missing returned row triggers the guarded result. They do not show the preceding portion of the function, so they cannot establish the negative claim that no preceding read implements a guard.",
+      "severity": "major"
+    },
+    {
+      "claim": "At most one concurrent caller proceeds to the card-write branch.",
+      "cited": "`apps/web/src/lib/data/sessions.ts:284`, `apps/web/src/lib/data/sessions.ts:285`, `apps/web/src/lib/data/sessions.ts:286`, `apps/web/src/lib/data/sessions.ts:289`",
+      "actual": "The cited lines show a conditional UPDATE and zero-result return, but no card-write branch. The report correctly labels the concurrency statement as an inference and acknowledges reliance on external PostgreSQL/Drizzle semantics, yet the supplied source lines do not evidence the claimed downstream branch.",
+      "severity": "minor"
+    },
+    {
+      "claim": "No `it(...)` block in the focused claim-test file exercises `isOneLivePerTaskViolation` or `createAgentSession` directly.",
+      "cited": "`apps/web/src/lib/data/__tests__/sessions-claim.test.ts`",
+      "actual": "No line citation or resolved search evidence is supplied for this negative, file-wide observation. Labeling it unverified does not provide evidence for the claim.",
+      "severity": "major"
+    }
+  ],
+  "summary": "A paying user could not fully trust this report under the stated evidence rules. Its main positive code observations are largely plausible and the third finding is well supported, but finding 1 contains two line-level citation drifts, finding 2 makes negative and downstream claims that the displayed excerpts cannot establish, and the unverified test-coverage observation has no resolved evidence at all.",
+  "reviewer": {
+    "engine": "copilot",
+    "model": "gpt-5.6-sol",
+    "missionModel": "claude-sonnet-5",
+    "allowSameModel": false,
+    "sameModelAsMission": false,
+    "promptDelivery": "stdin",
+    "startedAt": "2026-09-16T23:40:37.421Z",
+    "finishedAt": "2026-09-16T23:41:09.415Z",
+    "observedModel": "gpt-5.6-sol",
+    "usage": {
+      "totalPremiumRequestCost": 1,
+      "totalUserRequests": 1,
+      "totalNanoAiu": 10721280000,
+      "tokenDetails": {
+        "input": {
+          "tokenCount": 15435
+        },
+        "cache_read": {
+          "tokenCount": 5632
+        },
+        "cache_write": {
+          "tokenCount": 0
+        },
+        "output": {
+          "tokenCount": 2161
+        }
+      },
+      "totalApiDurationMs": 25650,
+      "sessionStartTime": "2026-09-16T23:40:39.169Z",
+      "codeChanges": {
+        "linesAdded": 0,
+        "linesRemoved": 0,
+        "filesModifiedCount": 0,
+        "filesModified": []
+      },
+      "modelMetrics": {
+        "gpt-5.6-sol": {
+          "requests": {
+            "count": 1,
+            "cost": 1
+          },
+          "usage": {
+            "inputTokens": 21067,
+            "outputTokens": 2161,
+            "cacheReadTokens": 5632,
+            "cacheWriteTokens": 0,
+            "reasoningTokens": 1552
+          },
+          "cacheExpiresAt": "2026-09-17T00:10:41.257Z",
+          "totalNanoAiu": 10721280000,
+          "tokenDetails": {
+            "input": {
+              "tokenCount": 15435
+            },
+            "cache_read": {
+              "tokenCount": 5632
+            },
+            "cache_write": {
+              "tokenCount": 0
+            },
+            "output": {
+              "tokenCount": 2161
+            }
+          }
+        }
+      },
+      "agentMetrics": {
+        "main": {
+          "totalApiDurationMs": 25650,
+          "totalNanoAiu": 10721280000,
+          "modelMetrics": {
+            "gpt-5.6-sol": {
+              "requests": {
+                "count": 1,
+                "cost": 1
+              },
+              "usage": {
+                "inputTokens": 21067,
+                "outputTokens": 2161,
+                "cacheReadTokens": 5632,
+                "cacheWriteTokens": 0,
+                "reasoningTokens": 1552
+              },
+              "totalNanoAiu": 10721280000,
+              "tokenDetails": {
+                "input": {
+                  "tokenCount": 15435
+                },
+                "cache_read": {
+                  "tokenCount": 5632
+                },
+                "cache_write": {
+                  "tokenCount": 0
+                },
+                "output": {
+                  "tokenCount": 2161
+                }
+              }
+            }
+          }
+        }
+      },
+      "currentModel": "gpt-5.6-sol",
+      "lastCallInputTokens": 21067,
+      "lastCallOutputTokens": 2161
+    },
+    "exitCode": 0,
+    "timedOut": false
+  },
+  "bundle": {
+    "path": "reviews/01.bundle.md",
+    "sha256": "84cca8a8016d6d9910a57692066871d1ffa6e2d792c0e1a7975c7fd088a79f09",
+    "revision": "9da76a8c6a9f9a5c1c3b67a38f605dc445a8748b",
+    "citations": {
+      "total": 14,
+      "distinct": 14,
+      "resolvable": 14,
+      "unresolvable": 0,
+      "outOfRange": 0
+    }
+  },
+  "raw": "reviews/01.raw.txt",
+  "schemaNotes": [],
+  "recordedAt": "2026-09-16T23:41:09.418Z"
+}

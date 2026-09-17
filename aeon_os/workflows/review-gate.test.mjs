@@ -733,6 +733,10 @@ test('the reviewer prompt states the rules that the mechanical gate cannot check
   assert.match(prompt, /Pinned revision under review: abc1234/)
   assert.match(prompt, /contradicts is a FAIL/)
   assert.match(prompt, /Citation drift is at least PASS_WITH_CORRECTIONS/)
+  // 1709: a labelled inference or an "Unverified observations" section is
+  // honest, not an uncited claim — the second live run failed on exactly that.
+  assert.match(prompt, /"Unverified observations", is not presented as observation/)
+  assert.match(prompt, /numbered finding is held to the full standard/)
   assert.match(prompt, /SINGLE JSON object and nothing else/)
 })
 

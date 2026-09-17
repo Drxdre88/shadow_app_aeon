@@ -4,6 +4,7 @@ import {
   decideFinalStatus,
   extractEnvelope,
   normalizeEnvelope,
+  stampDelivery,
   STATUS_ALIASES,
 } from './envelope.js'
 
@@ -173,5 +174,42 @@ describe('decideFinalStatus', () => {
   it('never shows green when Aeon refused the envelope', () => {
     expect(decideFinalStatus('completed', false, true)).toBe('failed')
     expect(decideFinalStatus('needs_input', false, true)).toBe('failed')
+  })
+})
+
+// The runner, not the agent, knows whether the worktree holds commits. Without
+// this stamp an implement mission that committed real code but left the
+// skeleton's nulls in place would be downgraded to needs_input by Aeon's
+// objective-completion contract.
+describe('stampDelivery', () => {
+  const SHA = 'a'.repeat(40)
+  const DELIVERED = { branch: 'aeon/abc12345', headSha: SHA, ahead: 2 }
+  const SKELETON = { status: 'completed', outcome: 'implemented', summary: 'done', branch: null, commit: null, artifacts: [] }
+
+  it('fills the nulled skeleton with the mission branch and HEAD when the branch is ahead', () => {
+    expect(stampDelivery(SKELETON, DELIVERED)).toEqual({ ...SKELETON, branch: 'aeon/abc12345', commit: SHA })
+  })
+
+  it('leaves an envelope alone when nothing was committed', () => {
+    expect(stampDelivery(SKELETON, { ...DELIVERED, ahead: 0 })).toBe(SKELETON)
+  })
+
+  it('never overwrites what the agent reported', () => {
+    const reported = { ...SKELETON, branch: 'aeon/abc12345', commit: 'b'.repeat(40) }
+    expect(stampDelivery(reported, DELIVERED)).toBe(reported)
+  })
+
+  it('fills only the missing half', () => {
+    expect(stampDelivery({ ...SKELETON, branch: 'aeon/abc12345' }, DELIVERED)).toEqual({ ...SKELETON, branch: 'aeon/abc12345', commit: SHA })
+    expect(stampDelivery({ ...SKELETON, commit: SHA }, DELIVERED)).toEqual({ ...SKELETON, branch: 'aeon/abc12345', commit: SHA })
+    expect(stampDelivery({ ...SKELETON, branch: '  ' }, DELIVERED)?.branch).toBe('aeon/abc12345')
+  })
+
+  it('does not invent a commit when HEAD could not be read', () => {
+    expect(stampDelivery(SKELETON, { ...DELIVERED, headSha: null })).toEqual({ ...SKELETON, branch: 'aeon/abc12345' })
+  })
+
+  it('passes a missing envelope through', () => {
+    expect(stampDelivery(null, DELIVERED)).toBeNull()
   })
 })

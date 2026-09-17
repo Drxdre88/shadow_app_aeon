@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
-import { recordSessionEventSchema, recordSessionEventBatchSchema, hangarResultEnvelopeSchema, sessionEventsTailSchema, type RecordSessionEventInput } from '@/lib/data/validators'
+import { recordSessionEventSchema, recordSessionEventBatchSchema, hangarResultEnvelopeSchema, sessionEventsTailSchema, enforceObjectiveDeliverables, type RecordSessionEventInput } from '@/lib/data/validators'
 import { findAgentSessionById, listSessionEvents, recordSessionEvent, recordSessionEventWithAutoSeq, recordSessionEvents, getNextEventSeq, recordSessionResult } from '@/lib/data/sessions'
 
 // A non-uuid path param would raise Postgres 22P02 and surface as a 500.
@@ -100,10 +100,33 @@ export const POST = withRateLimit(
 
       if (!session.taskId) return jsonData({ event: row, accepted, resultProcessed: false }, 201)
 
+      // Objective-completion contract: implement/bug_fix cannot settle as
+      // completed with nothing delivered — see enforceObjectiveDeliverables.
+      const hangarMeta = (session.metadata as { hangar?: { objective?: unknown } } | null)?.hangar
+      const objective = typeof hangarMeta?.objective === 'string' ? hangarMeta.objective : null
+      const enforced = enforceObjectiveDeliverables(objective, envelope.data)
+
+      // A downgrade leaves a durable trace next to the raw result event: the
+      // event row keeps the agent's original claim, the card gets the
+      // rewritten envelope, and this system event says why they differ.
+      if (enforced.downgraded) {
+        const trace = recordSessionEventSchema.safeParse({
+          seq: await getNextEventSeq(id),
+          kind: 'system',
+          payload: { subtype: 'downgrade', message: `result downgraded to needs_input: ${enforced.downgraded}` },
+        })
+        if (trace.success) await recordSessionEventWithAutoSeq(id, trace.data)
+      }
+
       // Terminal guard inside recordSessionResult refuses replays against an
       // already-settled session — report that honestly instead of a blind true.
-      const applied = await recordSessionResult(id, envelope.data)
-      return jsonData({ event: row, accepted, resultProcessed: Boolean(applied?.task) }, 201)
+      const applied = await recordSessionResult(id, enforced.envelope)
+      return jsonData({
+        event: row,
+        accepted,
+        resultProcessed: Boolean(applied?.task),
+        ...(enforced.downgraded ? { resultDowngraded: enforced.downgraded } : {}),
+      }, 201)
     }
 
     return jsonData({ event: row, accepted }, row ? 201 : 200)

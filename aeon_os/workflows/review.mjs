@@ -276,6 +276,7 @@ const RULES = [
   'A claim that the cited code contradicts is a FAIL. A claim whose citation does not resolve, or which cites nothing at all, is a FAIL.',
   'Citation drift is at least PASS_WITH_CORRECTIONS: the cited line is off by a few lines, or it points at a function declaration, an import, a comment or a test title instead of the code that evidences the claim.',
   'Inference presented as observation, and findings that are vague, obvious or not independently useful, are at least PASS_WITH_CORRECTIONS.',
+  'A statement the report itself labels as Inference, or places under a heading "Unverified observations", is not presented as observation: judge it only for honest labelling and for contradiction with the resolved lines, and do not fail the report for the absence of a citation there. Everything the report presents as observed or as a numbered finding is held to the full standard.',
   'PASS means every claim is accurate AND every citation points at the evidence for it. If you are not certain, do not award PASS.',
   'Judge only what is in this message. Do not modify anything, and do not go looking for other files.',
 ]

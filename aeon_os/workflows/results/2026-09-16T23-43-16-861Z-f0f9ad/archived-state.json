@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "runId": "2026-09-16T23-43-16-861Z-f0f9ad",
+  "createdAt": "2026-09-16T23:43:27.578Z",
+  "sourceBranch": "chore/aeon-os-ci-gate-first-pass",
+  "baseSha": "9da76a8c6a9f9a5c1c3b67a38f605dc445a8748b",
+  "originPath": "C:\\Users\\anselikhov\\data_science\\dev_26\\shadow_app_aeon\\aeon_os\\workflows\\.runtime\\runs\\2026-09-16T23-43-16-861Z-f0f9ad\\origin.git",
+  "clonePath": "C:\\Users\\anselikhov\\data_science\\dev_26\\shadow_app_aeon\\aeon_os\\workflows\\.runtime\\runs\\2026-09-16T23-43-16-861Z-f0f9ad\\source",
+  "registryPath": "C:\\Users\\anselikhov\\data_science\\dev_26\\shadow_app_aeon\\aeon_os\\workflows\\.runtime\\runs\\2026-09-16T23-43-16-861Z-f0f9ad\\repos.json",
+  "projectId": "e4b0af95-d3ad-46ba-8275-1ecc28911683",
+  "columns": {
+    "Queued": "ef137ae9-0c5a-44c0-ba3d-ff6d27857526",
+    "Flight": "d823c15b-449a-4582-91ed-b594836339ed",
+    "Landing": "d60aa047-dadc-4930-b4ed-55d6d354cfaf",
+    "Tower": "38cb0738-8ace-417f-8fa1-0b3c8c0ff3af"
+  },
+  "attempts": [
+    {
+      "index": 1,
+      "topic": "session claim ownership",
+      "marker": "AEON_OS_E2E_2026-09-16T23-43-16-861Z-f0f9ad_01",
+      "report": "aeon_os/workflows/reports/2026-09-16T23-43-16-861Z-f0f9ad-01.md",
+      "model": "claude-sonnet-5",
+      "taskId": "c50e10dd-6e5b-4c30-9c7b-22e9b0efc160",
+      "sessionId": "aa07bc0f-9038-4af3-91c9-bf2f0b519d93",
+      "branch": "aeon/c50e10dd",
+      "createdAt": "2026-09-16T23:43:35.524Z",
+      "result": "FAIL",
+      "lastStatus": "succeeded",
+      "workerId": "002LND2094-6965fe",
+      "workerHost": "002LND2094",
+      "workerPid": 38976,
+      "error": "invalid citation path sessions.ts:286",
+      "failedAt": "2026-09-16T23:45:58.677Z"
+    }
+  ],
+  "worker": null,
+  "status": "failed",
+  "batchTarget": 1,
+  "workerBootstrap": "C:\\Users\\anselikhov\\data_science\\dev_26\\shadow_app_aeon\\aeon_os\\workflows\\.runtime\\runs\\2026-09-16T23-43-16-861Z-f0f9ad\\one-claim-worker.mjs",
+  "review": {
+    "total": 1,
+    "reviewed": 0,
+    "counts": {
+      "PASS": 0,
+      "PASS_WITH_CORRECTIONS": 0,
+      "FAIL": 0
+    },
+    "unreviewed": [
+      {
+        "attempt": 1,
+        "reason": "no stored review verdict"
+      }
+    ],
+    "attempts": [
+      {
+        "attempt": 1,
+        "mechanical": "FAIL",
+        "verdict": null,
+        "reviewer": null,
+        "reviewerModel": null,
+        "error": null
+      }
+    ],
+    "updatedAt": "2026-09-16T23:45:58.678Z",
+    "outcome": "mechanical_failed",
+    "status": "failed",
+    "blockedBy": "attempt 1 is FAIL"
+  },
+  "mechanical": "failed",
+  "failureKind": "mechanical",
+  "archivedAt": "2026-09-16T23:46:41.053Z",
+  "abandoned": false
+}

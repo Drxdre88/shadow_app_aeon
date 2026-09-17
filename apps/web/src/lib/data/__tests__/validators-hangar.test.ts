@@ -12,6 +12,7 @@ import {
   recordSessionEventSchema,
   recordSessionEventBatchSchema,
   sessionHangarMetadataIssue,
+  enforceObjectiveDeliverables,
 } from '../validators'
 
 // The Hangar card metadata is operator-supplied and ends up on a runner's CLI
@@ -214,6 +215,65 @@ describe('hangarResultEnvelopeSchema', () => {
       ...ENVELOPE,
       tests: { status: 'passed', summary: '42 passed' },
     }).success).toBe(true)
+  })
+})
+
+// Objective-completion contract (Aeon OS acceptance check 14): implement and
+// bug_fix cannot settle as completed with nothing delivered.
+describe('enforceObjectiveDeliverables', () => {
+  const COMPLETED = hangarResultEnvelopeSchema.parse({ status: 'completed', outcome: 'implemented', summary: 'Done.' })
+
+  it('downgrades a bare completed claim to needs_input for implement and bug_fix', () => {
+    for (const objective of ['implement', 'bug_fix']) {
+      const { envelope, downgraded } = enforceObjectiveDeliverables(objective, COMPLETED)
+      expect(envelope.status).toBe('needs_input')
+      expect(downgraded).toContain(objective)
+      expect(downgraded).toContain('branch, commit, artifacts')
+      expect(envelope.questions?.[0]).toMatch(/claimed completed/)
+      expect(envelope.outcome).toBe('implemented')
+    }
+  })
+
+  it('keeps completed when a branch and commit were published', () => {
+    const { envelope, downgraded } = enforceObjectiveDeliverables('implement', { ...COMPLETED, branch: 'aeon/abc', commit: 'a'.repeat(40) })
+    expect(envelope.status).toBe('completed')
+    expect(downgraded).toBeNull()
+  })
+
+  it('keeps completed when artifacts name the deliverable', () => {
+    const { envelope, downgraded } = enforceObjectiveDeliverables('bug_fix', { ...COMPLETED, artifacts: ['docs/fix.md'] })
+    expect(envelope.status).toBe('completed')
+    expect(downgraded).toBeNull()
+  })
+
+  it('names only what is missing when a branch exists but no commit', () => {
+    const { envelope, downgraded } = enforceObjectiveDeliverables('implement', { ...COMPLETED, branch: 'aeon/abc' })
+    expect(envelope.status).toBe('needs_input')
+    expect(downgraded).toContain('missing commit, artifacts')
+    expect(downgraded).not.toContain('branch,')
+  })
+
+  it('prepends its question and keeps the mission questions within the cap', () => {
+    const questions = Array.from({ length: 20 }, (_, i) => `q${i}`)
+    const { envelope } = enforceObjectiveDeliverables('implement', { ...COMPLETED, questions })
+    expect(envelope.questions).toHaveLength(20)
+    expect(envelope.questions?.[1]).toBe('q0')
+  })
+
+  it('leaves needs_input and failed claims alone', () => {
+    for (const status of ['needs_input', 'failed'] as const) {
+      const { envelope, downgraded } = enforceObjectiveDeliverables('implement', { ...COMPLETED, status })
+      expect(envelope.status).toBe(status)
+      expect(downgraded).toBeNull()
+    }
+  })
+
+  it('leaves report-only objectives and free-form sessions alone', () => {
+    for (const objective of ['recon', 'analysis', 'plan', null, undefined]) {
+      const { envelope, downgraded } = enforceObjectiveDeliverables(objective, COMPLETED)
+      expect(envelope).toBe(COMPLETED)
+      expect(downgraded).toBeNull()
+    }
   })
 })
 
