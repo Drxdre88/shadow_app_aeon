@@ -106,6 +106,18 @@ export const POST = withRateLimit(
       const objective = typeof hangarMeta?.objective === 'string' ? hangarMeta.objective : null
       const enforced = enforceObjectiveDeliverables(objective, envelope.data)
 
+      // A downgrade leaves a durable trace next to the raw result event: the
+      // event row keeps the agent's original claim, the card gets the
+      // rewritten envelope, and this system event says why they differ.
+      if (enforced.downgraded) {
+        const trace = recordSessionEventSchema.safeParse({
+          seq: await getNextEventSeq(id),
+          kind: 'system',
+          payload: { subtype: 'downgrade', message: `result downgraded to needs_input: ${enforced.downgraded}` },
+        })
+        if (trace.success) await recordSessionEventWithAutoSeq(id, trace.data)
+      }
+
       // Terminal guard inside recordSessionResult refuses replays against an
       // already-settled session — report that honestly instead of a blind true.
       const applied = await recordSessionResult(id, enforced.envelope)

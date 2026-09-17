@@ -202,6 +202,25 @@ export const hangarResultEnvelopeSchema = z.object({
   }).optional(),
 })
 
+export const createHangarRepoSchema = z.object({
+  realmId:        z.string().uuid(),
+  slug:           z.string().trim().min(1).max(120),
+  name:           z.string().trim().min(1).max(255),
+  gitUrl:         z.string().trim().min(1).max(500),
+  ghSlug:         z.string().trim().max(200).nullable().optional(),
+  defaultBranch:  z.string().trim().max(120).optional(),
+  branchPrefix:   z.string().trim().max(60).optional(),
+  allowedEngines: z.array(hangarAgentSchema).optional(),
+  runCmd:         z.string().trim().max(500).nullable().optional(),
+  envSetupCmd:    z.string().trim().max(500).nullable().optional(),
+  appUrl:         z.string().trim().max(500).nullable().optional(),
+  notes:          z.string().trim().max(4000).nullable().optional(),
+  active:         z.boolean().optional(),
+  metadata:       z.record(z.string(), z.unknown()).optional(),
+})
+
+export const updateHangarRepoSchema = createHangarRepoSchema.omit({ realmId: true }).partial()
+
 // Objective-completion contract. The envelope schema alone lets every
 // objective report `completed` with nothing delivered (Aeon OS acceptance
 // check 14). For the two objectives whose deliverable is code, `completed`
@@ -211,6 +230,15 @@ export const hangarResultEnvelopeSchema = z.object({
 // mission lands in Tower with the missing deliverables spelled out as the
 // question a human has to answer. The downgrade is recorded in the ack so the
 // runner can log it and the card's lastResult carries the evidence.
+//
+// This is a claim check, not proof of delivery: nothing here verifies that the
+// branch or commit exists. The runner stamps the mission branch and HEAD into
+// the envelope when the worktree is ahead of its base (poller.finalize), so a
+// mission that committed real work is never downgraded for leaving the
+// skeleton's nulls in place.
+//
+// Placed after the repo schemas on purpose: prod-acceptance.mjs locates the
+// envelope schema by the `})` that precedes createHangarRepoSchema.
 const DELIVERABLE_OBJECTIVES = new Set<string>(['implement', 'bug_fix'])
 
 export function enforceObjectiveDeliverables(
@@ -240,25 +268,6 @@ export function enforceObjectiveDeliverables(
     downgraded: reason,
   }
 }
-
-export const createHangarRepoSchema = z.object({
-  realmId:        z.string().uuid(),
-  slug:           z.string().trim().min(1).max(120),
-  name:           z.string().trim().min(1).max(255),
-  gitUrl:         z.string().trim().min(1).max(500),
-  ghSlug:         z.string().trim().max(200).nullable().optional(),
-  defaultBranch:  z.string().trim().max(120).optional(),
-  branchPrefix:   z.string().trim().max(60).optional(),
-  allowedEngines: z.array(hangarAgentSchema).optional(),
-  runCmd:         z.string().trim().max(500).nullable().optional(),
-  envSetupCmd:    z.string().trim().max(500).nullable().optional(),
-  appUrl:         z.string().trim().max(500).nullable().optional(),
-  notes:          z.string().trim().max(4000).nullable().optional(),
-  active:         z.boolean().optional(),
-  metadata:       z.record(z.string(), z.unknown()).optional(),
-})
-
-export const updateHangarRepoSchema = createHangarRepoSchema.omit({ realmId: true }).partial()
 
 export type HangarObjective        = z.infer<typeof hangarObjectiveSchema>
 export type HangarAgent            = z.infer<typeof hangarAgentSchema>

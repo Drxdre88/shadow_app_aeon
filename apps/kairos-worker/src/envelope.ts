@@ -35,6 +35,29 @@ export function normalizeEnvelope(
   return canonical === safe.status ? safe : { ...safe, status: canonical }
 }
 
+// Objective-completion contract (Aeon, validators/hangar.ts): implement and
+// bug_fix must publish a branch and commit to settle as completed. The mission
+// brief hands the agent a skeleton with branch/commit nulled and the runner —
+// not the agent — knows what the worktree actually holds, so when the branch
+// is ahead of its base the runner stamps the branch and HEAD into the envelope
+// before posting. Agent-supplied values are never overwritten; an empty branch
+// stays as the agent reported it.
+export interface MissionDelivery { branch: string; headSha: string | null; ahead: number }
+
+export function stampDelivery(
+  envelope: Record<string, unknown> | null,
+  delivery: MissionDelivery,
+): Record<string, unknown> | null {
+  if (!envelope || delivery.ahead <= 0) return envelope
+  const hasBranch = typeof envelope.branch === 'string' && envelope.branch.trim() !== ''
+  const hasCommit = typeof envelope.commit === 'string' && envelope.commit.trim() !== ''
+  if (hasBranch && hasCommit) return envelope
+  const stamped = { ...envelope }
+  if (!hasBranch) stamped.branch = delivery.branch
+  if (!hasCommit && delivery.headSha) stamped.commit = delivery.headSha
+  return stamped
+}
+
 // wasKilled wins over everything; an envelope Aeon refused is a failure however
 // green it claims to be, because the board has no result to show for it.
 export function decideFinalStatus(
