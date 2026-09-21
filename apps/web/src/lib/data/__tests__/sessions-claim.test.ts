@@ -64,7 +64,7 @@ vi.mock('../projects', () => ({
 }))
 vi.mock('../tasks', () => ({ updateTask: vi.fn(async () => ({ id: 'task', columnId: null })) }))
 
-import { claimNextSession, recordSessionResult, scrubPgText, scrubJsonb } from '../sessions'
+import { claimNextSession, recordSessionResult, scrubPgText, scrubJsonb, findMissionSessionStatus } from '../sessions'
 import { updateTask } from '../tasks'
 import { findProjectSettings, touchProject } from '../projects'
 import { findColumns } from '../columns'
@@ -83,6 +83,15 @@ const WORKER = 'runner-01'
 
 const dialect = new PgDialect()
 const compile = (value: unknown) => dialect.sqlToQuery(value as SQL)
+
+it('scopes shared mission status to the exact session, project and card without an owner filter', async () => {
+  await findMissionSessionStatus(SESSION_ID, PROJECT_ID, TASK_ID)
+  const query = compile(captures[0].where)
+  expect(query.params).toEqual([SESSION_ID, PROJECT_ID, TASK_ID])
+  expect(query.sql).toContain('project_id')
+  expect(query.sql).toContain('task_id')
+  expect(query.sql).not.toContain('user_id')
+})
 
 const ENVELOPE = {
   status: 'completed' as const,
@@ -294,6 +303,35 @@ describe('recordSessionResult', () => {
     await recordSessionResult(SESSION_ID, ENVELOPE)
 
     expect(cardUpdates()[0].set).toMatchObject({ columnId: 'col-landing' })
+  })
+
+  it.each([
+    ['completed', 'Landing'],
+    ['needs_input', 'Tower'],
+  ] as const)('routes %s missions on boards enabled through the UI to %s', async (status, column) => {
+    selectQueue.push([{ id: SESSION_ID, status: 'running', taskId: TASK_ID }])
+    selectQueue.push([{ id: TASK_ID, projectId: PROJECT_ID, metadata: {} }])
+    updateQueue.push([{ id: SESSION_ID, status: 'succeeded' }])
+    updateQueue.push([{ id: TASK_ID, projectId: PROJECT_ID }])
+    vi.mocked(findProjectSettings).mockResolvedValueOnce({ hangar: { enabled: true } })
+    vi.mocked(findColumns).mockResolvedValueOnce([{ id: 'destination', name: column }] as never)
+
+    await recordSessionResult(SESSION_ID, { ...ENVELOPE, status })
+
+    expect(cardUpdates()[0].set).toMatchObject({ columnId: 'destination' })
+  })
+
+  it.each([false, 'true', null])('does not route missions for a disabled or malformed Hangar setting: %s', async (enabled) => {
+    selectQueue.push([{ id: SESSION_ID, status: 'running', taskId: TASK_ID }])
+    selectQueue.push([{ id: TASK_ID, projectId: PROJECT_ID, metadata: {} }])
+    updateQueue.push([{ id: SESSION_ID, status: 'succeeded' }])
+    updateQueue.push([{ id: TASK_ID, projectId: PROJECT_ID }])
+    vi.mocked(findProjectSettings).mockResolvedValueOnce({ hangar: { enabled } })
+
+    await recordSessionResult(SESSION_ID, ENVELOPE)
+
+    expect(findColumns).not.toHaveBeenCalled()
+    expect(cardUpdates()[0].set).not.toHaveProperty('columnId')
   })
 
   it('leaves a failed mission where it was launched', async () => {

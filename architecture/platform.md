@@ -151,7 +151,7 @@ Three-tier BYOK routing (cheap / standard / heavy) over user-supplied keys, all 
 | `@react-three/fiber` / `three` / drei | Kairos + Aether WebGL | Active |
 | `@dnd-kit/*` | Board DnD | Active |
 | `@tanstack/react-virtual` | Virtual scroll | Active |
-| `kairos-worker` runner | Pull-mode Hangar runner: claims queued sessions, worktree per mission, shells claude/copilot/codex, streams telemetry, posts the result envelope; CI typecheck+test since 2026-09-03 | Active — [hangar.md](hangar.md) |
+| `kairos-worker` runner | Pull-mode Hangar runner: claims queued sessions, worktree per mission, shells claude/copilot/codex, streams telemetry, posts the result envelope; CI typecheck+test since 2026-09-03 | Implemented; operator-hosted, runtime availability external — [hangar.md](hangar.md) |
 | Capacitor | Legacy mobile shell (superseded by the Expo app for the chat slice) | Configured |
 | Tauri | Desktop wrapper | Scaffold (parked) |
 
@@ -161,7 +161,7 @@ The app-owned **embedding layer** (Voyage primary / OpenAI fallback, single serv
 
 ## 6.5 Versioning + CI gates
 
-- App version is `APP_VERSION` in `apps/web/src/lib/version.ts` (now **0.28.0**), surfaced in the Changelog modal; `apps/web/src/lib/changelog.ts` is a manual mirror of `/CHANGELOG.md` — bump all three together. `package.json` versions are scaffold defaults and unused.
+- App version is `APP_VERSION` in `apps/web/src/lib/version.ts` (**0.29.0**, release candidate in PR #130), surfaced in the Changelog modal; `apps/web/src/lib/changelog.ts` mirrors `/CHANGELOG.md` — bump all three together. `package.json` versions remain scaffold defaults and are not the displayed product version.
 - CI (`.github/workflows/ci.yml`): lint + typecheck + Vitest + **production build** for the web app, plus kairos-worker typecheck + tests; `auth-smoke` runs on every deployment (the 2026-06-08 outage guard).
 
 ## 7. DB / cold-start reliability + cron schedule

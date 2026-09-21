@@ -1,7 +1,23 @@
-# Beacon: PR #128 LIVE — gate suite in CI, objective-completion contract, five live gate runs (best: PASS_WITH_CORRECTIONS, 4 minor)
+# Beacon: PR #128 + PR #129 LIVE — gate suite in CI, objective-completion contract, five live gate runs (best: PASS_WITH_CORRECTIONS, 4 minor)
 
-**Date:** 2026-09-17  **Repo:** shadow_app_aeon  **Branch:** `chore/aeon-os-ci-gate-first-pass` → main (PR pending at time of writing; see PR body for review record).
+**Date:** 2026-09-17  **Repo:** shadow_app_aeon  **Branch:** main at `c6c34ae` (PR #129 merged by owner 06:13Z; #128 at `9da76a8` the night before).
 **Read next:** `aeon_os/HANDOVER_1609.md` (how the gate works and the 1609 live-fire detail), `aeon_os/workflows/README.md` (gate section), this file (what happened on 1709 and what to do).
+
+## CLOSE 1709 — state for the next session
+| Fact | Evidence |
+|---|---|
+| Nothing uncommitted, no local branches, main == origin/main | `git status` clean at `c6c34ae` |
+| PR #129 CI green on both pushes (Quality Gate 4m29s), warden record in the PR comment | https://github.com/Drxdre88/shadow_app_aeon/pull/129 |
+| Production acceptance after the #129 merge | `prod-acceptance.mjs` exit 0, **15/15** (06:1x Z) |
+| Post-merge Auth Smoke on the `c6c34ae` deployment | **success** (fired after the Vercel build completed, ~06:20Z) — rollout of #129 fully verified |
+| Board | AEON: Hangar Sprint 3 in **Live**; 1709 items checked under 3D + Review; "chase first genuine PASS" left unchecked with status "5 runs; best PWC 4 minor" |
+| Memory | `project_session_handover_1709.md` written; index updated |
+
+**What the next session actually does, in order:**
+1. Nothing to verify: #128 and #129 are both fully rolled out (auth smoke + acceptance green). Start with 2.
+2. Ask the owner the one open question: keep exact-PASS strictness (my recommendation) or let a minor-only PASS_WITH_CORRECTIONS settle a run. Do not change the gate without that answer.
+3. If the owner wants the trophy: one Opus-5 run (`KAIROS_COPILOT_DEFAULT_MODEL=claude-opus-5 AEON_OS_MISSION_CREDITS=200`, ~15 premium requests) after adding one precision sentence to `missionPrompt` — "claim only what the cited line literally shows; no 'authenticated', 'atomically', 'before any' unless that line shows it". Then `prepare --new` → `run --count=1` → `review`.
+4. Otherwise the next real work is Sprint 3C (output sinks: research reports → vault repo + RAG mirror; draft PR with the envelope summary as body) on the same card — the objective-completion contract now makes "completed" mean something, which 3C builds on.
 
 ## Rollout of PR #128 (merged by owner 2026-09-16 23:13Z, `9da76a8`)
 | Check | Result |

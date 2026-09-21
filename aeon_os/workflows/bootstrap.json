@@ -6,6 +6,8 @@
   "review": {
     "engine": "copilot",
     "model": "gpt-5.6-sol",
+    "effort": "high",
+    "context": "long_context",
     "maxAiCredits": 30,
     "timeoutMs": 900000
   }

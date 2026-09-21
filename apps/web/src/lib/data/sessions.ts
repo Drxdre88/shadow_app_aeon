@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { agentSessions, sessionEvents, boardTasks } from '@/lib/db/schema'
+import { agentSessions, sessionEvents, boardTasks, type AgentSession } from '@/lib/db/schema'
 import { eq, and, asc, desc, gte, inArray, notInArray, isNotNull, sql } from 'drizzle-orm'
 import type {
   SpawnSessionInput,
@@ -110,6 +110,16 @@ export async function findAgentSessionById(id: string, userId: string) {
     .select()
     .from(agentSessions)
     .where(and(eq(agentSessions.id, id), eq(agentSessions.userId, userId)))
+    .limit(1)
+  return row ?? null
+}
+
+/** Project membership must be checked by the caller; exposes only card status. */
+export async function findMissionSessionStatus(id: string, projectId: string, taskId: string): Promise<Pick<AgentSession, 'id' | 'projectId' | 'taskId' | 'status'> | null> {
+  const [row] = await db
+    .select({ id: agentSessions.id, projectId: agentSessions.projectId, taskId: agentSessions.taskId, status: agentSessions.status })
+    .from(agentSessions)
+    .where(and(eq(agentSessions.id, id), eq(agentSessions.projectId, projectId), eq(agentSessions.taskId, taskId)))
     .limit(1)
   return row ?? null
 }
@@ -236,7 +246,10 @@ async function resolveResultColumn(
   if (!target) return null
 
   const settings = await findProjectSettings(projectId)
-  if (settings?.boardMode !== 'hangar') return null
+  const hangar = settings?.hangar
+  const enabled = hangar !== null && typeof hangar === 'object'
+    && !Array.isArray(hangar) && 'enabled' in hangar && hangar.enabled === true
+  if (settings?.boardMode !== 'hangar' && !enabled) return null
 
   const columns = await findColumns(projectId)
   const match = columns.find((c) => c.name.trim().toLowerCase() === target.toLowerCase())

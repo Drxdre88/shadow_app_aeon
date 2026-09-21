@@ -10,7 +10,9 @@ import { useBoardStore } from '@/lib/store/boardStore'
 import { useHangarUiStore } from '@/lib/store/hangarUiStore'
 import { listProjectHangarRepos, saveCardMission, spawnSessionFromCard } from '@/lib/actions/hangar'
 import { getHangarModels, HANGAR_MODELS_CHECKED_AT } from '@/lib/hangar-models'
-import { HANGAR_MODEL_RE } from '@/lib/data/validators/hangar'
+import { HANGAR_MODEL_RE, hangarCardDraftSchema } from '@/lib/data/validators/hangar'
+import { MissionResultSection } from './MissionResultSection'
+import { withConfirmedMissionLaunch } from './autoRun'
 
 const OBJECTIVES = [
   { id: 'implement', label: 'Implement' },
@@ -128,14 +130,18 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
   const customModelValid = customModelId.length > 0
     && customModelId.length <= 80
     && HANGAR_MODEL_RE.test(customModelId)
-  const canSave = draft.repo.trim().length > 0
-    && draft.instruction.trim().length > 0
+  const canSave = hangarCardDraftSchema.safeParse({
+    ...draft,
+    model: customModelId || null,
+    outputMode: 'auto',
+  }).success
     && engineAllowed(draft.agent)
     && (!draft.customModel || customModelValid)
     && busy === null
   // Launch spawns a runner session, so it waits for the registry to answer;
   // Save only writes card metadata and stays available regardless.
   const canLaunch = canSave && repos !== null
+    && draft.repo.trim().length > 0 && draft.instruction.trim().length > 0
 
   const modelOptions = getHangarModels(draft.agent)
 
@@ -152,9 +158,11 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
       outputMode: 'auto',
       autoRun: draft.autoRun,
     })
-    useBoardStore.getState().updateTask(task.id, {
-      metadata: { ...task.metadata, hangar: { ...existing, ...saved } },
-    })
+    useBoardStore.setState((state) => ({
+      tasks: state.tasks.map((candidate) => candidate.id === task.id
+        ? { ...candidate, metadata: { ...candidate.metadata, hangar: { ...existing, ...saved } } }
+        : candidate),
+    }))
     return saved
   }
 
@@ -179,7 +187,10 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
     setBusy('launch')
     try {
       await persist()
-      await spawnSessionFromCard(projectId, task.id)
+      const session = await spawnSessionFromCard(projectId, task.id)
+      useBoardStore.setState((state) => ({
+        tasks: withConfirmedMissionLaunch(state.tasks, task.id, session.id, new Date().toISOString()),
+      }))
       toast('Mission launched — the runner will claim it shortly')
       closeMissionEditor()
     } catch (err) {
@@ -215,18 +226,18 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
           onKeyDown={(e) => { if (e.key === 'Escape') closeMissionEditor() }}
           className={cn(
             'w-full max-w-lg p-5 rounded-2xl relative',
-            'bg-gradient-to-b from-white/[0.08] to-black/40',
-            'backdrop-blur-xl border border-white/[0.08]',
+            'bg-slate-950 border border-white/[0.08]',
             'max-h-[90vh] overflow-y-auto'
           )}
         >
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2 min-w-0">
               <Bot className="w-5 h-5 text-[var(--primary)] flex-shrink-0" />
-              <h2 className="text-base font-semibold text-white truncate">AI Mission — {task.name}</h2>
+              <h2 className="text-base font-semibold text-white truncate">Agent mission — {task.name}</h2>
             </div>
             <button
               onClick={closeMissionEditor}
+              aria-label="Close Agent mission editor"
               className="p-2 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors flex-shrink-0"
             >
               <X className="w-4 h-4" />
@@ -238,6 +249,7 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
               <div>
                 <label className="block text-xs text-[var(--text-muted)] mb-1.5">Repository</label>
                 <select
+                  aria-label="Repository"
                   value={draft.repo}
                   onChange={(e) => setDraft({ ...draft, repo: e.target.value })}
                   className={cn(inputClass, '[color-scheme:dark]')}
@@ -257,6 +269,7 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
               <div>
                 <label className="block text-xs text-[var(--text-muted)] mb-1.5">Objective</label>
                 <select
+                  aria-label="Objective"
                   value={draft.objective}
                   onChange={(e) => setDraft({ ...draft, objective: e.target.value })}
                   className={cn(inputClass, '[color-scheme:dark]')}
@@ -270,7 +283,7 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-[var(--text-muted)] mb-1.5">Engine</label>
+                <label className="block text-xs text-[var(--text-muted)] mb-1.5">Agent runner</label>
                 <div className="flex gap-1.5">
                   {ENGINES.map((engine) => (
                     <button
@@ -333,6 +346,7 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
             <div>
               <label className="block text-xs text-[var(--text-muted)] mb-1.5">Instruction</label>
               <textarea
+                aria-label="Instruction"
                 value={draft.instruction}
                 onChange={(e) => setDraft({ ...draft, instruction: e.target.value })}
                 placeholder="What should the agent do? Paths are relative to the repo root."
@@ -348,8 +362,8 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
               aria-pressed={draft.autoRun}
             >
               <span className="text-left">
-                <span className="block text-sm text-white">Auto-run on drop</span>
-                <span className="block text-[10px] text-slate-500">Launches when dragged into the board&apos;s launch column. Default off — launching stays a conscious act.</span>
+                <span className="block text-sm text-white">Launch mode · Auto-run on drop</span>
+                <span className="block text-[10px] text-slate-500">When armed, dragging this mission into the launch column starts a run. A launch disarms it again.</span>
               </span>
               <span
                 className={cn(
@@ -365,6 +379,8 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
                 />
               </span>
             </button>
+
+            <MissionResultSection result={(task.metadata?.hangar as Record<string, unknown> | undefined)?.lastResult} />
           </div>
 
           <div className="flex gap-2 mt-5 justify-end">
@@ -384,7 +400,7 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
               )}
             >
               {busy === 'save' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              Save
+              Save draft
             </button>
             <button
               onClick={handleLaunch}

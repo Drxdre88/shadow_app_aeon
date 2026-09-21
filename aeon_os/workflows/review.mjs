@@ -49,7 +49,12 @@ export const MAX_PROMPT_CHARS = 110_000
 // partial_pass are normal end states of the gate, so leaving them out would
 // force a hand-edited state.json to abandon a run.
 export const ARCHIVABLE_STATUSES = ['failed', 'passed', 'partial_pass', 'review_pending']
-const DEFAULT_REVIEW = { engine: 'copilot', model: 'gpt-5.6-sol', maxAiCredits: 30, timeoutMs: 900_000 }
+// Owner directive 1709: the reviewer runs GPT-5.6 Sol at high effort on the
+// 1M-context tier. Both are passed on argv because the CLI does not restore
+// contextTier from settings.json at startup (github/copilot-cli#3557).
+const DEFAULT_REVIEW = { engine: 'copilot', model: 'gpt-5.6-sol', effort: 'high', context: 'long_context', maxAiCredits: 30, timeoutMs: 900_000 }
+const REVIEW_EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+const REVIEW_CONTEXTS = new Set(['default', 'long_context'])
 
 /** `prepare --new` policy: may this run be archived, and was its review left unfinished? */
 export function archiveDecision(status) {
@@ -89,6 +94,8 @@ export function reviewConfig(bootstrap) {
   const cfg = { ...DEFAULT_REVIEW, ...block }
   if (cfg.engine !== 'copilot') throw new Error(`review.engine ${JSON.stringify(cfg.engine)} is not supported; only 'copilot' is implemented`)
   if (typeof cfg.model !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(cfg.model)) throw new Error('review.model in bootstrap.json is missing or unsafe')
+  if (!REVIEW_EFFORTS.has(cfg.effort)) throw new Error(`review.effort must be one of ${[...REVIEW_EFFORTS].join(', ')}`)
+  if (!REVIEW_CONTEXTS.has(cfg.context)) throw new Error(`review.context must be one of ${[...REVIEW_CONTEXTS].join(', ')}`)
   if (!Number.isInteger(cfg.maxAiCredits) || cfg.maxAiCredits < 1 || cfg.maxAiCredits > 200) throw new Error('review.maxAiCredits must be an integer from 1 to 200')
   if (!Number.isInteger(cfg.timeoutMs) || cfg.timeoutMs < 60_000 || cfg.timeoutMs > 3_600_000) throw new Error('review.timeoutMs must be an integer between 60000 and 3600000')
   return cfg
@@ -356,9 +363,11 @@ function reviewerEnv() {
 // last one wins and that must be the dangerous one.
 // No -p: the prompt arrives on stdin, and Copilot ignores piped input whenever
 // -p is present. Passing both would silently review nothing.
-export function reviewerArgs({ model, maxAiCredits, usageFile }) {
+export function reviewerArgs({ model, effort, context, maxAiCredits, usageFile }) {
   return [
     '--model', model,
+    ...(effort ? ['--reasoning-effort', effort] : []),
+    ...(context ? ['--context', context] : []),
     '--allow-all-tools',
     '--deny-tool=url',
     '--deny-tool=write',
@@ -410,14 +419,14 @@ export function observedModelFromUsage(usage) {
 
 // `buildArgs` is a seam for the stdin-delivery test only; production always
 // passes the default.
-export function dispatchCopilotReview({ binary, model, stdinText, cwd, maxAiCredits, timeoutMs, usageFile, buildArgs = reviewerArgs }) {
+export function dispatchCopilotReview({ binary, model, effort, context, stdinText, cwd, maxAiCredits, timeoutMs, usageFile, buildArgs = reviewerArgs }) {
   return new Promise((done) => {
     const startedAt = now()
     // An empty prompt would dispatch a reviewer that judges nothing and still
     // exits 0 with schema-valid JSON. Refuse before spawning.
     // argv is computed first and returned on every path so a test can lock the
     // PRODUCTION argument builder (no -p) without spawning the real CLI.
-    const argv = buildArgs({ model, maxAiCredits, usageFile })
+    const argv = buildArgs({ model, effort, context, maxAiCredits, usageFile })
     if (typeof stdinText !== 'string' || stdinText.trim() === '') {
       done({ startedAt, finishedAt: now(), stdout: '', stderr: '', status: null, signal: null, spawnError: 'reviewer prompt is empty; nothing was dispatched', timedOut: false, usage: null, observedModel: null, argv })
       return
@@ -586,6 +595,8 @@ export async function runReview({ runId, runDir, attempts, config, allowSameMode
     const reviewerBase = {
       engine: config.engine,
       model: config.model,
+      effort: config.effort,
+      context: config.context,
       missionModel: attempt.model ?? null,
       // Recorded, not inferred: a reviewer that shares the mission's model only
       // gets here because the operator passed --allow-same-model, and the
@@ -616,6 +627,8 @@ export async function runReview({ runId, runDir, attempts, config, allowSameMode
       dispatch = await dispatchReviewer({
         binary,
         model: config.model,
+        effort: config.effort,
+        context: config.context,
         stdinText: prompt,
         cwd: scratchDir,
         maxAiCredits: config.maxAiCredits,

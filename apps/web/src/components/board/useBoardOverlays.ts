@@ -19,6 +19,7 @@ export interface BoardTaskData {
   labels: string[]
   onTimeline: boolean
   orderIndex: number
+  metadata?: Record<string, unknown>
   startDate?: string
   endDate?: string
   size?: number | null

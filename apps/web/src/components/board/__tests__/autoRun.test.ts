@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isLaunchableMission, readHangarMission, shouldAutoRunOnDrop } from '../autoRun'
+import { isLaunchableMission, readHangarMission, readMissionCard, readMissionResult, shouldAutoRunOnDrop, withConfirmedMissionLaunch, withRecordedMissionLaunch } from '../autoRun'
 import { parseHangarConfig } from '@/lib/store/hangarUiStore'
 
 const TRIGGER = 'col-launch'
@@ -41,6 +41,62 @@ describe('isLaunchableMission', () => {
     expect(isLaunchableMission(mission({ instruction: '' }))).toBe(false)
     expect(isLaunchableMission(mission({ objective: '' }))).toBe(false)
     expect(isLaunchableMission({ hangar: {} })).toBe(false)
+  })
+})
+
+describe('mission card view parsing', () => {
+  it('keeps Agent mission fields separate from ordinary labels', () => {
+    const parsed = readMissionCard(mission({ model: 'gpt-5.6-sol', sessionIds: ['session-1'] }))
+    expect(parsed).toMatchObject({
+      repo: 'arq',
+      objective: 'implement',
+      agent: 'copilot',
+      model: 'gpt-5.6-sol',
+      sessionIds: ['session-1'],
+    })
+  })
+
+  it('tolerates malformed legacy result fields without inventing a status', () => {
+    const parsed = readMissionResult({
+      status: 'success',
+      summary: 42,
+      questions: ['Which branch?', null, 10],
+      artifacts: 'report.md',
+      tests: { status: 'green', summary: 'fine' },
+      recommended_tasks: [{ title: 'Follow up', objective: 4 }, null],
+    })
+    expect(parsed).toEqual(expect.objectContaining({
+      status: null,
+      summary: null,
+      questions: ['Which branch?'],
+      artifacts: [],
+      tests: null,
+      recommendedTasks: [{ title: 'Follow up', objective: null, instruction: null }],
+    }))
+  })
+
+  it('records a launch once while preserving the mission and unrelated metadata', () => {
+    const launchedAt = '2026-09-21T08:30:00.000Z'
+    const first = withRecordedMissionLaunch({ ...mission({ autoRun: true, sessionIds: ['older'] }), note: 'keep' }, 'current', launchedAt)
+    const second = withRecordedMissionLaunch(first, 'current', launchedAt)
+    expect(second.note).toBe('keep')
+    expect(second.hangar).toEqual(expect.objectContaining({
+      repo: 'arq',
+      autoRun: false,
+      lastLaunchedAt: launchedAt,
+      sessionIds: ['older', 'current'],
+    }))
+  })
+
+  it('patches only the confirmed task row', () => {
+    const tasks = [
+      { id: 'mission', metadata: mission({ sessionIds: [] }) },
+      { id: 'other', metadata: { note: 'untouched' } },
+    ]
+    const updated = withConfirmedMissionLaunch(tasks, 'mission', 'session-1', '2026-09-21T08:30:00.000Z')
+    expect(updated[0]).not.toBe(tasks[0])
+    expect(updated[1]).toBe(tasks[1])
+    expect(readMissionCard(updated[0].metadata)?.sessionIds).toEqual(['session-1'])
   })
 })
 

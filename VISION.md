@@ -1,6 +1,6 @@
 # VISION.md
 
-Last updated: 16/09/2026 (v0.28.0 — the AI Hangar is live end to end and **Aeon OS** proves it on production behind an independent-review gate that fired for real today; Kairos 0.10 "Live Mind" + Evening Digest + Telegram two-way shipped in July; board waves 0.24–0.27. Prior refresh 23/06/2026.)
+Last updated: 21/09/2026 (v0.29.0 release candidate, PR #130 — bespoke mission cards, repository management and runner tier forwarding. Production evidence includes the 16–17 September checks and 21 September supervised Swarm research; durable output delivery and runner recovery remain incomplete.)
 
 For technical architecture, file paths, and feature inventory see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
@@ -45,8 +45,8 @@ The single anchor for what Kairos is *for*. Picture a line: **JARVIS** (perfect 
 | Realm-based multi-tenancy | Full CRUD, invites, scoped visibility, REST + MCP parity | Shipped |
 | MCP-first AI integration | 95 tools across 15 categories, Bearer auth, dogfooded daily | Shipped |
 | Native mobile companion (Expo / RN) | Replaces the Capacitor plan; Google login slice scaffolded over the REST bearer sessions | In flight (login slice) |
-| AI Hangar — cards fly as agent missions | Mission editor + model picker, drop-to-launch, Flight Deck, kairos-worker runner, worktree parallelism, REST/MCP session surfaces; browser Save & Launch verified 16/09 | Shipped (Sprints 1–3) |
-| Aeon OS — production proof + independent review gate | 15/15 production acceptance; review gate fired live 16/09 (3 runs, first legitimate FAIL); receipts committed and immutable | Shipped; chasing the first genuine PASS |
+| AI Hangar — cards fly as agent missions | Core transport, mission editor, worktrees and telemetry shipped. Dedicated mission face/results and repository manager implemented for v0.29.0 on 21/09; saved drafts and explicit launches remain separate | Partial: output delivery, draft PRs and recovery remain open |
+| Aeon OS — production proof + independent review gate | 17/09 handover records 15/15 acceptance; best recorded automated-harness review is PASS_WITH_CORRECTIONS (four minor findings), which the strict gate refuses | Gate shipped; first exact PASS still open |
 | Kairos speaks first (digest, Telegram, brain-tick) | Evening Digest daily, Telegram two-way, 3×/day cloud brain-tick, Live Mind 0.10 | Shipped |
 | Master / Rift Board (cross-board view) | Rift in Analysis (high priority); Master in Raw Ideas | Speculative |
 | Agent-as-member (AI in realms) | 1 raw idea card; `actorType` extension on `activityEvents` already in schema | Speculative |
@@ -91,7 +91,7 @@ The single anchor for what Kairos is *for*. Picture a line: **JARVIS** (perfect 
 ## 4. STRATEGIC BETS
 
 ### Bet 0: Aeon OS — the product proves itself, or it doesn't ship
-A mission is only "done" when an independent model has read the report against the real source lines and said PASS; receipts are committed and never repaired. The harness spans the existing apps — it is not another orchestration product. Risk: reviewer cost per attempt and the reviewer's own blind spots; mitigation: receipts, cross-model review, and the gate failing closed on every harness fault.
+An **Aeon OS verification run** passes only when an independent model has read the report against the real source lines and said PASS; receipts are committed and never repaired. Ordinary Hangar cards settle from their result envelope without this independent-review gate. The harness spans the existing apps — it is not another orchestration product. Risk: reviewer cost per attempt and the reviewer's own blind spots; mitigation: receipts, cross-model review, and the gate failing closed on every harness fault.
 
 ### Bet 1: Mobile via Capacitor (WebView wrapper) — *reversed 27/06/2026 in favour of a native Expo companion; kept for the record*
 
@@ -184,8 +184,9 @@ A mission is only "done" when an independent model has read the report against t
 
 | Question | Impact | Notes |
 |---|---|---|
-| **When does the first genuine PASS come, and what does it cost?** | High | Every real recon report so far drifted on test-file line numbers. Tighten the mission prompt's citation rules, or accept that catching drift is the gate's job? Undecided (`aeon_os/HANDOVER_1609.md`) |
-| **Objective-completion contract** | High | `implement` / `bug_fix` can report `completed` with no branch, commit or artifact. The envelope validator needs a cross-field rule before autonomous dispatch is trusted |
+| **When does the first genuine PASS come, and what does it cost?** | High | Citation rules were tightened; best recorded automated-harness result is PASS_WITH_CORRECTIONS, four minor wording findings. Exact PASS remains required (`aeon_os/HANDOVER_1709.md`). The 21 September supervisor-completed Swarm report received a separate saved-evidence audit PASS, not an autonomous harness PASS |
+| **Durable artifact and publication delivery** | High | Empty coding completion claims are now downgraded (PR #129), but named artifact paths do not preserve files and local commit evidence precedes publication. Vault/RAG delivery and automatic draft PRs remain open |
+| **Runner availability and recovery** | High | The runner operates while its host process is alive. No checked-in supervisor/autostart or stale-session reconciliation establishes always-on operation |
 | **Worktree isolation policy for delegated work** | Medium | The runner uses disposable worktrees; the operator's delegation convention uses one checkout. Resolve before autonomous dispatch (`aeon_os/summary.md`) |
 | **Which realm owns a mission?** | Medium | Hangar repos are realm-scoped, so a realm-less project cannot launch from the browser while REST accepts any slug |
 | **Phase 1D morning-loop calibration: what is the right noise floor?** | High | Evolution plan: "A morning ping that fires every day will get muted in a week." D2 picks 0–1 question per Dominion per day above an urgency × confidence threshold. The threshold is unknown until real cortex data accumulates. First synthesis cycle was tonight (02/06 → 03/06) |
@@ -253,9 +254,9 @@ A research pass on "a board edit must never silently vanish when Neon is waking 
 | 3 | Performance | COMPLETE | Virtual scrolling, optimistic UI, Pusher real-time |
 | 4 | Cross-board intelligence | SPECULATIVE | Master Board, Rift Board (in Analysis), Urgency lens — no commits since June |
 | 5 | Collaboration | NOT STARTED | Chat, notifications, agent-as-member |
-| **H1–H3** | AI Hangar Sprints 1–3 | COMPLETE | Missions on cards, runner, worktrees, Flight Deck, model picker, drop-to-launch, output sinks partial |
+| **H1–H3** | AI Hangar Sprints 1–3 | PARTIAL | Core mission transport shipped; first-class card/results and repository management implemented for v0.29.0 (PR #130). Output sinks, automatic PRs and recovery remain open |
 | **OS-1** | Aeon OS acceptance + review gate | COMPLETE / LIVE | 15/15 production acceptance; gate fired 16/09; receipts immutable |
-| **OS-2** | Objective-completion contract + membership guard + uuid guards | NEXT | See §7 |
+| **OS-2** | Objective-completion contract + membership guard + uuid guards | PARTIAL | Completion claim guard shipped in PR #129. Membership/shared UUID follow-through remains open; not part of the 21/09 UI/runner scope |
 | **OS-3** | Bounded coordination, research evidence, scheduled domain work, morning digest | PLANNED | Sequenced after delivery is dependable (`aeon_os/summary.md`) |
 
 ### Kairos

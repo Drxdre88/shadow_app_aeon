@@ -15,6 +15,7 @@ import { ContextMenuButton } from './ContextMenuButton'
 import { listProjectsForTransfer, copyTaskToProject, moveTaskToProject } from '@/lib/actions/transfer'
 import { spawnSessionFromCard } from '@/lib/actions/hangar'
 import { toast } from '@/components/ui/Toast'
+import { isLaunchableMission, readHangarMission, withConfirmedMissionLaunch } from './autoRun'
 
 interface TaskContextMenuProps {
   taskId: string
@@ -50,7 +51,8 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
   const projectColumns = columns.filter((c) => c.projectId === task?.projectId)
   const aiEnabled = useHangarUiStore((s) => s.config.enabled)
   const openMissionEditor = useHangarUiStore((s) => s.openMissionEditor)
-  const isAiCard = Boolean((task?.metadata as { hangar?: unknown } | undefined)?.hangar)
+  const isAgentMission = Boolean(readHangarMission(task?.metadata))
+  const missionLaunchable = isLaunchableMission(task?.metadata)
   // Card fusion: every OTHER multi-selected card fuses into this one.
   const fuseFrom = task && requestFuse ? fuseSources(task, selectedTaskIds, tasks) : []
 
@@ -133,7 +135,10 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
     if (!missionProjectId) return
     toast('Launching mission…')
     try {
-      await spawnSessionFromCard(missionProjectId, taskId)
+      const session = await spawnSessionFromCard(missionProjectId, taskId)
+      useBoardStore.setState((state) => ({
+        tasks: withConfirmedMissionLaunch(state.tasks, taskId, session.id, new Date().toISOString()),
+      }))
       toast('Mission launched — the runner will claim it shortly')
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Launch failed')
@@ -206,31 +211,36 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
           </button>
         )}
 
-        {isAiCard && (
+        {isAgentMission && (
           <>
-            <button
-              onClick={handleExecuteMission}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors text-[var(--primary)] hover:bg-white/10 font-medium"
-            >
-              <Rocket className="w-4 h-4" />
-              Execute mission
-            </button>
+            {missionLaunchable && (
+              <button
+                onClick={handleExecuteMission}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors text-[var(--primary)] hover:bg-white/10 font-medium"
+              >
+                <Rocket className="w-4 h-4" />
+                Launch Agent mission
+              </button>
+            )}
             <button
               onClick={() => { openMissionEditor(taskId); onClose() }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors text-slate-300 hover:bg-white/10 hover:text-white"
+              className={cn(
+                'w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-white/10',
+                missionLaunchable ? 'text-slate-300 hover:text-white' : 'text-amber-300 font-medium'
+              )}
             >
               <Bot className="w-4 h-4" />
-              Edit AI mission
+              {missionLaunchable ? 'Configure / launch Agent mission' : 'Complete Agent mission setup'}
             </button>
           </>
         )}
-        {!isAiCard && aiEnabled && (
+        {!isAgentMission && aiEnabled && (
           <button
             onClick={() => { openMissionEditor(taskId); onClose() }}
             className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors text-slate-300 hover:bg-white/10 hover:text-white"
           >
             <Bot className="w-4 h-4" />
-            Make AI card
+            Convert to Agent mission
           </button>
         )}
 

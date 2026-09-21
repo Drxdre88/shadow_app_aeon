@@ -56,10 +56,15 @@ KAIROS_MODE=poll npm run start --workspace=apps/kairos-worker
 | `KAIROS_CLAUDE_DEFAULT_MODEL` | poll | — | Model when the card names none |
 | `KAIROS_COPILOT_DEFAULT_MODEL` | poll | `claude-sonnet-5` | Model when the card names none; explicit card model takes precedence |
 | `KAIROS_CODEX_DEFAULT_MODEL` | poll | — | Model when the card names none |
+| `KAIROS_COPILOT_EFFORT` | poll | CLI default | Optional validated `--reasoning-effort` |
+| `KAIROS_COPILOT_CONTEXT` | poll | CLI default | `default` or `long_context`, passed on argv |
+| `KAIROS_CLAUDE_EFFORT` | poll | CLI default | Optional `--effort` |
+| `KAIROS_CLAUDE_FALLBACK_MODEL` | poll | none | Optional explicit Claude `--fallback-model` |
 
-Copilot's authenticated model catalog on 2026-09-10 includes `claude-sonnet-5`,
-`claude-opus-5` and `gpt-5.6-sol`/`terra`/`luna`. Availability depends on the
-runner account. From the repository root, run
+Copilot's authenticated model catalog on 2026-09-21 offered `claude-sonnet-5`,
+`gpt-5.6-terra` and `gpt-5.6-luna`, but neither configured `claude-opus-5` nor
+reviewer `gpt-5.6-sol`. The persistent model choices were not silently changed.
+Availability depends on the runner account and must be checked at launch. From the repository root, run
 `node aeon_os/workflows/probe-copilot-models.mjs` to query the installed CLI's
 `models.list` without generating a response or creating a mission. The production
 verification harness checks the configured model against this list before queuing

@@ -29,6 +29,31 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.29.0] — 2026-09-21
+
+> Areas touched: \`BOARD\` \`UI\` \`INFRA\` \`DOCS\`
+> Theme: agent missions have their own card experience. Repository, objective, instructions and results are visible as mission fields, with a dedicated place to manage repositories.
+
+### Added — Mission cards and results · \`BOARD\` \`UI\`
+- Agent missions have a distinct card face with labelled repository, objective and agent. Opening a mission shows its configuration, instruction and recorded result before ordinary task organization.
+- Recorded results show summaries, tests, artifact paths, branch/commit details, questions needing input and recommended follow-up work. Current execution status is kept separate from previous results.
+- Save draft preserves an incomplete mission without execution; Save & Launch requires complete setup. Auto-run remains opt-in per flight, and final Done stays with the operator.
+- Configuration and launch are reachable directly from the open card. Long instructions can be expanded without crowding out the mission controls.
+
+### Added — Hangar repositories · \`UI\`
+- The board toolbar opens a repository directory grouped by realm, with registration, editing and retirement controls under the existing realm permissions.
+- Repository registration remains separate from configuring its local path on a runner; adding an entry does not claim that a host is ready to execute it.
+
+### Fixed — Mission completion and runner configuration · \`BOARD\` \`INFRA\`
+- Boards enabled through the UI now use the existing Landing/Tower result routing, alongside boards with the older Hangar-mode setting. Ordinary boards keep their existing behavior.
+- New missions retain their type when configuration is cancelled. Launch confirmation preserves board refresh, and project members can see runs launched by another member.
+- Repository registration rejects slugs that the mission contract cannot use.
+- Copilot mission and reviewer effort/context settings are passed explicitly and validated. Receipts record the mission tier; the local owner configuration remains separate from the adapter's model fallback.
+- The Windows runner launcher resolves its environment file from its own location and returns correctly through npm. The research harness budget accommodates the configured heavier mission tier.
+
+### Changed — Accurate readiness documentation · \`DOCS\`
+- Architecture and roadmap distinguish shipped mission transport, this release's UI/runner changes, dated production acceptance, and the remaining output-delivery and runner-recovery work.
+
 ## [0.28.0] — 2026-09-16
 
 > Areas touched: \`API\` \`UI\` \`INFRA\` \`DOCS\`

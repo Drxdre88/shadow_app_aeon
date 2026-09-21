@@ -38,6 +38,7 @@ import {
   validateVerdictRecord,
 } from './review.mjs'
 import { CITATION_FLOOR, assertCitationFloor, explicitCitationTokens, extractCitations } from './review-bundle.mjs'
+import { createBudgetWrapper, missionCredits, parseEnv, runRecord, workerEnvironment } from './run.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REVIEWER = { engine: 'copilot', model: 'gpt-5.6-sol', startedAt: '2026-09-12T10:00:00.000Z', finishedAt: '2026-09-12T10:02:00.000Z' }
@@ -725,6 +726,192 @@ test('the reviewer command line never carries -p, because piped input is ignored
   assert.ok(!args.includes('-i'))
   assert.ok(!args.includes('--interactive'))
   assert.deepEqual(args.slice(0, 2), ['--model', 'gpt-5.6-sol'])
+})
+
+// 1709 owner directive: the reviewer's effort and context tier travel on argv,
+// because the CLI does not restore contextTier from settings.json at startup.
+test('the reviewer command line carries the configured effort and context tier', () => {
+  const args = reviewerArgs({ model: 'gpt-5.6-sol', effort: 'high', context: 'long_context', maxAiCredits: 30, usageFile: 'u.json' })
+  assert.equal(args[args.indexOf('--reasoning-effort') + 1], 'high')
+  assert.equal(args[args.indexOf('--context') + 1], 'long_context')
+  const bare = reviewerArgs({ model: 'gpt-5.6-sol', maxAiCredits: 30, usageFile: 'u.json' })
+  assert.ok(!bare.includes('--reasoning-effort'))
+  assert.ok(!bare.includes('--context'))
+})
+
+test('the shipped reviewer defaults are high effort on the long-context tier', () => {
+  const cfg = reviewConfig({ review: { engine: 'copilot', model: 'gpt-5.6-sol', maxAiCredits: 30, timeoutMs: 900000 } })
+  assert.equal(cfg.effort, 'high')
+  assert.equal(cfg.context, 'long_context')
+  assert.throws(() => reviewConfig({ review: { effort: 'ultra' } }), /review\.effort/)
+  assert.throws(() => reviewConfig({ review: { context: '--allow-all-paths' } }), /review\.context/)
+})
+
+// ------------------------------------------------------- runner controls --
+
+test('the production runner accepts absent or valid effort and context settings', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aeon-runner-config-'))
+  const envFile = join(dir, 'runner.env.bat')
+  try {
+    writeFileSync(envFile, '@echo off\r\nset AEON_BASE_URL=https://aeon.example\r\nset KAIROS_AEON_API_KEY=fixture-key\r\nset KAIROS_COPILOT_DEFAULT_MODEL=claude-opus-5\r\n')
+    assert.deepEqual(parseEnv({ envFile, environment: {} }), {
+      baseUrl: 'https://aeon.example',
+      apiKey: 'fixture-key',
+      model: 'claude-opus-5',
+      effort: '',
+      context: '',
+    })
+
+    writeFileSync(envFile, `${readFileSync(envFile, 'utf8')}set KAIROS_COPILOT_EFFORT=xhigh\r\nset KAIROS_COPILOT_CONTEXT=long_context\r\n`)
+    const configured = parseEnv({ envFile, environment: {} })
+    assert.equal(configured.effort, 'xhigh')
+    assert.equal(configured.context, 'long_context')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('the production runner rejects invalid or injectable effort and context settings', () => {
+  const base = {
+    AEON_BASE_URL: 'https://aeon.example',
+    KAIROS_AEON_API_KEY: 'fixture-key',
+    KAIROS_COPILOT_DEFAULT_MODEL: 'claude-opus-5',
+  }
+  assert.throws(() => parseEnv({ envFile: '', environment: { ...base, KAIROS_COPILOT_EFFORT: 'ultra' } }), /KAIROS_COPILOT_EFFORT/)
+  assert.throws(() => parseEnv({ envFile: '', environment: { ...base, KAIROS_COPILOT_CONTEXT: 'long-context' } }), /KAIROS_COPILOT_CONTEXT/)
+  assert.throws(() => parseEnv({ envFile: '', environment: { ...base, KAIROS_COPILOT_EFFORT: 'xhigh --yolo' } }), /KAIROS_COPILOT_EFFORT/)
+  assert.throws(() => parseEnv({ envFile: '', environment: { ...base, KAIROS_COPILOT_CONTEXT: 'long_context&whoami' } }), /KAIROS_COPILOT_CONTEXT/)
+})
+
+test('the production mission budget defaults to 800, accepts 1000 and rejects overflow or injection', () => {
+  assert.equal(missionCredits({}), 800)
+  assert.equal(missionCredits({ AEON_OS_MISSION_CREDITS: '1000' }), 1000)
+  assert.throws(() => missionCredits({ AEON_OS_MISSION_CREDITS: '1001' }), /between 30 and 1000/)
+  assert.throws(() => missionCredits({ AEON_OS_MISSION_CREDITS: '800&whoami' }), /between 30 and 1000/)
+})
+
+test('the production worker forwards the exact mission tier and records it without launching', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aeon-worker-env-'))
+  try {
+    const state = { registryPath: join(dir, 'repos.local.yaml') }
+    const cfg = { baseUrl: 'https://aeon.example', apiKey: 'fixture-key', model: 'claude-opus-5', effort: 'xhigh', context: 'long_context' }
+    const wrapper = createBudgetWrapper(state, cfg, {
+      environment: { AEON_OS_MISSION_CREDITS: '1000' },
+      target: 'C:\\fixture\\copilot.cmd',
+    })
+    assert.deepEqual({ credits: state.missionCredits, effort: state.missionEffort, context: state.missionContext }, {
+      credits: 1000,
+      effort: 'xhigh',
+      context: 'long_context',
+    })
+    assert.match(readFileSync(wrapper, 'utf8'), /--max-ai-credits 1000 %\*/)
+
+    const env = workerEnvironment(cfg, state, { secret: 'fixture-secret', wrapper, environment: { INHERITED: 'kept', KAIROS_COPILOT_EFFORT: 'stale' } })
+    assert.deepEqual({
+      inherited: env.INHERITED,
+      baseUrl: env.AEON_BASE_URL,
+      apiKey: env.KAIROS_AEON_API_KEY,
+      mode: env.KAIROS_MODE,
+      registry: env.KAIROS_REPOS_FILE,
+      worktrees: env.KAIROS_WORKTREE_ROOT,
+      concurrency: env.KAIROS_MAX_CONCURRENT,
+      port: env.KAIROS_WORKER_PORT,
+      secret: env.KAIROS_WORKER_SECRET,
+      poll: env.KAIROS_POLL_INTERVAL_MS,
+      heartbeat: env.KAIROS_HEARTBEAT_MS,
+      model: env.KAIROS_COPILOT_DEFAULT_MODEL,
+      effort: env.KAIROS_COPILOT_EFFORT,
+      context: env.KAIROS_COPILOT_CONTEXT,
+      binary: env.KAIROS_COPILOT_BIN,
+      systemCa: env.NODE_USE_SYSTEM_CA,
+      tlsVerify: env.NODE_TLS_REJECT_UNAUTHORIZED,
+    }, {
+      inherited: 'kept',
+      baseUrl: 'https://aeon.example',
+      apiKey: 'fixture-key',
+      mode: 'poll',
+      registry: state.registryPath,
+      worktrees: join(dir, 'worktrees'),
+      concurrency: '1',
+      port: '8799',
+      secret: 'fixture-secret',
+      poll: '15000',
+      heartbeat: '30000',
+      model: 'claude-opus-5',
+      effort: 'xhigh',
+      context: 'long_context',
+      binary: wrapper,
+      systemCa: '1',
+      tlsVerify: '1',
+    })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('the persisted run receipt carries mission credits, effort and context', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aeon-run-receipt-'))
+  const receiptPath = join(dir, 'run.json')
+  try {
+    const state = {
+      runId: 'fixture-run',
+      status: 'review_pending',
+      createdAt: '2026-09-21T08:00:00.000Z',
+      sourceBranch: 'fixture',
+      baseSha: 'a'.repeat(40),
+      projectId: 'fixture-project',
+      missionCredits: 800,
+      missionEffort: 'xhigh',
+      missionContext: 'long_context',
+      attempts: [],
+    }
+    writeFileSync(receiptPath, `${JSON.stringify(runRecord(state, { model: 'claude-opus-5' }), null, 2)}\n`)
+    const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'))
+    assert.deepEqual({
+      credits: receipt.missionCredits,
+      effort: receipt.missionEffort,
+      context: receipt.missionContext,
+    }, {
+      credits: 800,
+      effort: 'xhigh',
+      context: 'long_context',
+    })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('the Windows launcher loads its colocated env and returns with current-directory lookup disabled', { skip: process.platform !== 'win32' }, () => {
+  const root = mkdtempSync(join(tmpdir(), 'aeon-runner-launcher-'))
+  try {
+    const runnerDir = join(root, 'apps', 'kairos-worker')
+    const binDir = join(root, 'bin')
+    const elsewhere = join(root, 'elsewhere')
+    mkdirSync(join(root, 'node_modules'), { recursive: true })
+    mkdirSync(runnerDir, { recursive: true })
+    mkdirSync(binDir)
+    mkdirSync(elsewhere)
+    cpSync(join(HERE, '..', '..', 'apps', 'kairos-worker', 'start-hangar-runner.bat'), join(runnerDir, 'start-hangar-runner.bat'))
+    writeFileSync(join(runnerDir, 'runner.env.bat'), '@echo off\r\nset KAIROS_AEON_API_KEY=fixture-key\r\nset AEON_BASE_URL=https://aeon.example\r\nset KAIROS_MODE=fixture-poll\r\nset KAIROS_WORKER_PORT=9876\r\n')
+    writeFileSync(join(binDir, 'npm.cmd'), '@echo off\r\necho [stub-npm] args=%* key=%KAIROS_AEON_API_KEY% base=%AEON_BASE_URL%\r\nexit /b 0\r\n')
+
+    const environment = { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' }
+    const pathKey = Object.keys(environment).find((key) => key.toLowerCase() === 'path') ?? 'Path'
+    environment[pathKey] = binDir
+    const result = spawnSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/c', join(runnerDir, 'start-hangar-runner.bat')], {
+      cwd: elsewhere,
+      env: environment,
+      input: '\r\n',
+      encoding: 'utf8',
+      timeout: 10_000,
+    })
+    assert.equal(result.status, 0, result.stderr || result.stdout)
+    assert.match(result.stdout, /mode=fixture-poll\s+aeon=https:\/\/aeon\.example\s+port=9876/)
+    assert.match(result.stdout, /\[stub-npm\] args=run start key=fixture-key base=https:\/\/aeon\.example/)
+    assert.match(result.stdout, /Press any key to continue/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('the reviewer prompt states the rules that the mechanical gate cannot check', () => {

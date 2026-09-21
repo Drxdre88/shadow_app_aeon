@@ -18,6 +18,7 @@ vi.mock('@/lib/actions/comments', () => ({
   removeComment: vi.fn(),
 }))
 vi.mock('@/lib/actions/projects', () => ({ updateProjectSettings: vi.fn() }))
+vi.mock('@/lib/actions/sessions', () => ({ getMissionSessionStatusAction: vi.fn() }))
 vi.mock('@/lib/actions/board', () => ({
   createBoardTask: vi.fn(),
   updateBoardTask: vi.fn(),

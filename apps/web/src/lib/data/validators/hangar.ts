@@ -204,7 +204,7 @@ export const hangarResultEnvelopeSchema = z.object({
 
 export const createHangarRepoSchema = z.object({
   realmId:        z.string().uuid(),
-  slug:           z.string().trim().min(1).max(120),
+  slug:           z.string().trim().min(1).max(120).refine(isSafeRepoSlug, 'Invalid repo slug'),
   name:           z.string().trim().min(1).max(255),
   gitUrl:         z.string().trim().min(1).max(500),
   ghSlug:         z.string().trim().max(200).nullable().optional(),
