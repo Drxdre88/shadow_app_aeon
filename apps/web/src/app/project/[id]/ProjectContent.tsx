@@ -8,6 +8,7 @@ import { signOut } from 'next-auth/react'
 import { GlassStage } from '@/components/ui/GlassStage'
 import { TimeScaleSelector } from '@/components/gantt/TimeScaleSelector'
 import { TaskBoard } from '@/components/board/TaskBoard'
+import { HangarRepositories } from '@/components/board/HangarRepositories'
 import { ProjectSwitcher } from '@/components/board/ProjectSwitcher'
 import { useThemeStore } from '@/stores/themeStore'
 import { SaveStatusPill } from '@/components/board/SaveStatusPill'
@@ -186,6 +187,7 @@ export default function ProjectContent({ project, user, initialBoardData, initia
                   projectId={project.id}
                   settings={(project.settings ?? {}) as Record<string, unknown>}
                 />
+                <HangarRepositories key={project.id} projectId={project.id} />
                 <button
                   onClick={() => setBoardLayout(boardLayout === 'scroll' ? 'grid' : 'scroll')}
                   className={cn(

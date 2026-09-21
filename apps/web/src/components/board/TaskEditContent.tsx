@@ -19,6 +19,9 @@ import { useBoardSizing, sizingTooltip, sizingUnitLabel } from './sizing'
 import { TaskProgressRow } from './TaskProgressRow'
 import { BoardSizingModal } from './BoardSizingModal'
 import { triggerCelebration } from '@/components/celebrations'
+import { useHangarUiStore } from '@/lib/store/hangarUiStore'
+import { readHangarMission } from './autoRun'
+import { MissionDetailsSection } from './MissionDetailsSection'
 
 export interface TaskEditFormData {
   name: string
@@ -94,6 +97,7 @@ export function TaskEditContent({
   const updateTask = useBoardStore((s) => s.updateTask)
   const priorities = useThemeStore((s) => s.priorities)
   const sizing = useBoardSizing()
+  const openMissionEditor = useHangarUiStore((s) => s.openMissionEditor)
   const [colorPickerOpen, setColorPickerOpen] = useState(false)
 
   const {
@@ -110,6 +114,7 @@ export function TaskEditContent({
   } = useChecklistHandlers(editingTaskId, projectId)
 
   const currentTask = editingTaskId ? tasks.find((t) => t.id === editingTaskId) : null
+  const isAgentMission = Boolean(readHangarMission(currentTask?.metadata))
   const isDone = currentTask?.status === 'done'
   const handleToggleDone = (e: React.MouseEvent) => {
     if (!editingTaskId) return
@@ -163,8 +168,17 @@ export function TaskEditContent({
           {headerActions}
         </div>
 
+        {editingTaskId && currentTask && isAgentMission && (
+          <MissionDetailsSection
+            taskId={editingTaskId}
+            projectId={projectId}
+            metadata={currentTask.metadata}
+            onConfigure={() => openMissionEditor(editingTaskId)}
+          />
+        )}
+
         <div>
-          <label className="block text-sm text-slate-400 mb-1.5">Description</label>
+          <label className="block text-sm text-slate-400 mb-1.5">{isAgentMission ? 'Card notes' : 'Description'}</label>
           <textarea
             value={formData.description}
             onChange={(e) => {

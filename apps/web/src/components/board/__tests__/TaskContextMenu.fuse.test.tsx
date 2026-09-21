@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 
 // "Fuse N cards into this one" on the card menu: appears only when OTHER
 // cards are selected (multi-select or the keyboard's single selection),
@@ -18,6 +18,7 @@ vi.mock('@/lib/actions/hangar', () => ({ spawnSessionFromCard: vi.fn() }))
 import { TaskContextMenu } from '../TaskContextMenu'
 import { FuseRequestContext } from '../fuseRequestContext'
 import { useBoardStore, type BoardTask } from '@/lib/store/boardStore'
+import { spawnSessionFromCard } from '@/lib/actions/hangar'
 
 const task = (id: string, projectId = 'p1'): BoardTask => ({
   id, projectId, name: `card ${id}`, columnId: 'col', status: 'todo', priority: 'medium', color: 'purple', labels: [], onTimeline: false, orderIndex: 0,
@@ -31,17 +32,49 @@ function renderMenu(requestFuse: ((targetId: string, sourceIds: string[]) => voi
 }
 
 beforeEach(() => {
+  vi.mocked(spawnSessionFromCard).mockResolvedValue({ id: 'session-new' } as never)
   useBoardStore.setState({
     tasks: [task('t'), task('a'), task('b'), task('far', 'p2')],
     columns: [],
     selectedTaskIds: [],
     selectedTaskId: null,
+    isDirty: false,
+    lastMutatedAt: 123,
   })
 })
 
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+})
+
+describe('TaskContextMenu — Agent mission', () => {
+  it('offers setup instead of launch for an incomplete mission', async () => {
+    useBoardStore.setState({ tasks: [{ ...task('t'), metadata: { hangar: {} } }] })
+    renderMenu(null)
+    expect(await screen.findByText('Complete Agent mission setup')).toBeTruthy()
+    expect(screen.queryByText('Launch Agent mission')).toBeNull()
+  })
+
+  it('launches a complete mission and reconciles metadata without clearing existing dirty state', async () => {
+    useBoardStore.setState({
+      tasks: [{
+        ...task('t'),
+        metadata: { hangar: { objective: 'recon', repo: 'aeon', agent: 'copilot', instruction: 'Inspect the repo', autoRun: true, sessionIds: ['older'] } },
+      }],
+      isDirty: true,
+      lastMutatedAt: 456,
+    })
+    renderMenu(null)
+    fireEvent.click(await screen.findByText('Launch Agent mission'))
+
+    await waitFor(() => expect(spawnSessionFromCard).toHaveBeenCalledWith('p1', 't'))
+    await waitFor(() => expect((useBoardStore.getState().tasks[0].metadata?.hangar as Record<string, unknown>).sessionIds).toEqual(['older', 'session-new']))
+    const state = useBoardStore.getState()
+    expect((state.tasks[0].metadata?.hangar as Record<string, unknown>).autoRun).toBe(false)
+    expect(state.isDirty).toBe(true)
+    expect(state.lastMutatedAt).toBe(456)
+  })
 })
 
 describe('TaskContextMenu — Fuse N cards into this one', () => {

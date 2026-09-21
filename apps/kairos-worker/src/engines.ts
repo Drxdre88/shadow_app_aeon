@@ -4,7 +4,8 @@
 //
 // Flags verified against the CLIs installed on the runner host (2026-08-20):
 //   claude  v2.1.237  — stream-json in --print mode HARD-REQUIRES --verbose
-//   copilot v1.0.70   — -p/--allow-all-tools/--no-ask-user/--output-format/--model
+//   copilot v1.0.86   — -p/--allow-all-tools/--no-ask-user/--output-format/--model
+//                       /--reasoning-effort/--context (2026-09-21)
 //   codex   0.144.1   — exec --json -o <file> -s <mode> -C <dir> -m <model>
 //
 // Push mode does NOT use this module: its argv stays in spawner.ts untouched.
@@ -43,6 +44,8 @@ function modelArgs(flag: string, model: string | null | undefined, fallback: str
 // alphanumeric: a knob of '--dangerously-skip-permissions' would otherwise
 // reach the CLI as an option rather than as a value.
 const SAFE_ARG = /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/
+const COPILOT_EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+const COPILOT_CONTEXTS = new Set(['default', 'long_context'])
 
 // An operator-set knob is trusted but not unvalidated — a stray quote or space
 // in the runner env would land in argv, so the knob is dropped instead.
@@ -51,6 +54,13 @@ function safeKnob(name: string): string | null {
   if (!value) return null
   if (SAFE_ARG.test(value)) return value
   console.warn(`[worker/engines] ${name} contains unsupported characters — knob ignored`)
+  return null
+}
+
+function safeChoice(name: string, allowed: Set<string>): string | null {
+  const value = safeKnob(name)
+  if (value === null || allowed.has(value)) return value
+  console.warn(`[worker/engines] ${name} is not a supported value — knob ignored`)
   return null
 }
 
@@ -86,6 +96,12 @@ const copilot: EngineAdapter = {
       '--no-ask-user',
       '--output-format', 'json',
       ...modelArgs('--model', opts.model, this.defaultModel),
+      // Owner directive 1709: a mission runs at the operator's own tier
+      // (Opus 5 · xhigh · 1M context). Passed on argv rather than left to
+      // ~/.copilot/settings.json — the CLI does not restore contextTier at
+      // startup (github/copilot-cli#3557) and -p mode never re-selects it.
+      ...modelArgs('--reasoning-effort', safeChoice('KAIROS_COPILOT_EFFORT', COPILOT_EFFORTS), null),
+      ...modelArgs('--context', safeChoice('KAIROS_COPILOT_CONTEXT', COPILOT_CONTEXTS), null),
     ]
   },
   envelopeSource: 'stdout',

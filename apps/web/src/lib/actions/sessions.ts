@@ -1,6 +1,7 @@
 'use server'
 
-import { requireAuth } from './helpers'
+import { requireAuth, requireMemberAccess } from './helpers'
+import { z } from 'zod'
 import {
   spawnSessionSchema,
   updateSessionStatusSchema,
@@ -16,6 +17,7 @@ import {
 import {
   createAgentSession,
   findAgentSessionById,
+  findMissionSessionStatus,
   listAgentSessions,
   updateAgentSessionStatus,
   recordSessionEvent as _recordSessionEvent,
@@ -68,6 +70,20 @@ export async function getSessionAction(id: string) {
   const userId = await requireAuth()
   const row = await findAgentSessionById(id, userId)
   if (!row) throw new Error('Session not found or unauthorized')
+  return row
+}
+
+const missionStatusSchema = z.object({
+  sessionId: z.string().uuid(),
+  projectId: z.string().uuid(),
+  taskId: z.string().uuid(),
+})
+
+export async function getMissionSessionStatusAction(input: z.input<typeof missionStatusSchema>) {
+  const { sessionId, projectId, taskId } = missionStatusSchema.parse(input)
+  await requireMemberAccess(projectId)
+  const row = await findMissionSessionStatus(sessionId, projectId, taskId)
+  if (!row) throw new Error('Mission session not found')
   return row
 }
 

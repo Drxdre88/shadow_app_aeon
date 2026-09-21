@@ -30,6 +30,7 @@ interface QuickAddTaskProps {
     labels: string[]
     onTimeline: boolean
     orderIndex: number
+    metadata?: Record<string, unknown>
   }) => void
 }
 
@@ -74,6 +75,19 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
       labels: selectedLabels,
       onTimeline: false,
       orderIndex: maxOrder + 1,
+      ...(asAiMission ? {
+        metadata: {
+          hangar: {
+            objective: 'implement',
+            repo: '',
+            agent: 'copilot',
+            model: null,
+            instruction: '',
+            outputMode: 'auto',
+            autoRun: false,
+          },
+        },
+      } : {}),
     }
 
     addTask(newTask)
@@ -216,7 +230,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
               type="button"
               disabled={!taskName.trim()}
               onClick={() => createCard(true)}
-              title="Add as AI mission card"
+              title="Add as Agent mission"
               className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium',
                 'border transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed'
@@ -228,7 +242,7 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
               }}
             >
               <Bot className="w-3.5 h-3.5" />
-              AI
+              Agent mission
             </button>
           )}
 

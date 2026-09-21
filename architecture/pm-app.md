@@ -64,7 +64,9 @@ Page-level zoom is disabled app-wide; the board owns the gesture instead, so zoo
 - Per-realm overrides on real members (`memberProfiles`, 0036/0037): initials, fill colour (preset or any hex), text colour, shape (circle / rounded / square); realm-wide "initials instead of photos" switch in Realm settings. **Styling beats the photo** — `lib/utils/avatarStyle.ts` (`hasAvatarOverride`, `avatarShapeClass`) is the single render source of truth; `lib/utils/avatarPrefs.ts`, `lib/actions/member-profiles.ts` (`requireEditor` + assignable-members check), `lib/data/member-profiles.ts`, `TaskMembersSection.tsx`.
 
 ### AI missions on cards (Hangar)
-- Card menu "Make AI card" / "Edit AI mission" / "Execute mission" when the project's Auto AI is on; `MissionEditorModal.tsx` with the per-engine model picker; queued sessions appear in the Flight Deck. Full detail in [hangar.md](hangar.md).
+- Quick Add **Agent mission** and **Convert to Agent mission** create the `metadata.hangar` type when Auto AI is enabled. Existing missions retain their dedicated face, fields and **Configure / launch Agent mission** controls even if Auto AI is disabled; ordinary cards keep their usual UI. Repository and objective are mission fields, not labels.
+- **Save draft** persists incomplete configuration without execution. **Save & Launch** queues a complete mission; **Launch Agent mission** runs an already configured card. Auto-run is separately opted into per flight, defaults off and disarms after launch. Priorities/checklists are task context, not an autonomous queue planner.
+- Completed results route to Landing; needs-input to Tower; failed results keep their column. Automation does not mark a task Done. The operator reviews the result and decides Done. Full detail in [hangar.md](hangar.md).
 
 ### Chronos scheduler (P0 + P1.5, engine built, unwired)
 - `lib/schedule/{solver,calendar,resources,estimate,adapter,types,fixtures}.ts` + `lib/actions/schedule.ts`; `solveProject` has **no caller** until the Gantt draws from it. Gantt Reset now confirms (`components/gantt/GanttResetModal.tsx`). Bulk moves: `lib/actions/boardBulk.ts`, `lib/data/boardBulk.ts`, `lib/utils/bulkMovePlan.ts`.
@@ -135,7 +137,9 @@ Create/edit/delete/realm-assign (`components/project/`); Space/Tree/Grid views; 
 | **Card fusion v2 + effect** | Complete (v0.26.0) | `FuseCardsModal.tsx`, `useFuseCards.ts`, `FusionEffect.tsx`, `cardSelection.ts`, `lib/data/fuse.ts` / `unfuse.ts`, `lib/utils/fuseRules.ts` |
 | **Hold-to-move + touch drag guards** | Complete (v0.26.1) | `useHoldToMove.ts`, `HoldToMoveBanner.tsx`, `boardAutoScroll.ts`, `boardZoom.ts`, `hooks/useCoarsePointer.ts` |
 | **Member avatar styling (palette, text, shape, realm-wide initials)** | Complete (v0.27.0) | `lib/utils/avatarStyle.ts`, `lib/actions/member-profiles.ts`, `TaskMembersSection.tsx`, migrations 0036/0037 |
-| **AI mission editor + model picker + Save & Launch** | Complete (v0.28.0) | `MissionEditorModal.tsx`, `lib/hangar-models.ts`, `lib/store/hangarUiStore.ts` — see [hangar.md](hangar.md) |
+| **AI mission editor + draft save + explicit launch + opt-in auto-run** | Implemented (v0.29.0 release candidate) | `MissionEditorModal.tsx`, `lib/hangar-models.ts`, `lib/store/hangarUiStore.ts` — see [hangar.md](hangar.md) |
+| **Dedicated mission cards + results** | Implemented (v0.29.0 release candidate) | `MissionCardFace.tsx`, `MissionDetailsSection.tsx`, `MissionResultSection.tsx`; separate mission fields from task labels, show recorded output and current run status |
+| **Hangar repository manager** | Implemented (v0.29.0 release candidate) | `HangarRepositories.tsx`, `HangarRepositoryForm.tsx`, `lib/actions/hangar-repositories.ts`; board toolbar, realm-scoped add/edit/retire; host paths remain runner-side |
 | **Flight Deck (mission telemetry drawer + Tower)** | Complete (PR #120) | `components/kairos/flightdeck/FlightDeckDrawer.tsx`, `TowerOverlay.tsx`, `lib/flightdeck/timeline.ts` |
 | **Trophy charts** | Complete | `components/trophy/TrophyCompletionChart.tsx`, `TrophyCycleTimeChart.tsx`, `TrophyRhythmHeatmap.tsx`, `trophy-chart-kit.tsx` |
 | **Chronos scheduling engine** | Built, unwired | `lib/schedule/*`, `lib/actions/schedule.ts`, migrations 0034/0035; `GanttResetModal.tsx` |

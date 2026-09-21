@@ -72,6 +72,51 @@ describe('buildArgs', () => {
     expect(args).toContain('--no-ask-user')
     expect(pairAt(args, '--output-format')).toBe('json')
     expect(pairAt(args, '--model')).toBe('claude-sonnet-5')
+    expect(args).not.toContain('--reasoning-effort')
+    expect(args).not.toContain('--context')
+  })
+
+  it('passes reasoning effort and context tier to copilot only when the env knobs are set', () => {
+    process.env.KAIROS_COPILOT_EFFORT = 'xhigh'
+    process.env.KAIROS_COPILOT_CONTEXT = 'long_context'
+    try {
+      const args = argsFor('copilot', 'claude-opus-5')
+      expect(pairAt(args, '--reasoning-effort')).toBe('xhigh')
+      expect(pairAt(args, '--context')).toBe('long_context')
+    } finally {
+      delete process.env.KAIROS_COPILOT_EFFORT
+      delete process.env.KAIROS_COPILOT_CONTEXT
+    }
+  })
+
+  it('drops a copilot knob that would reach argv as a flag', () => {
+    process.env.KAIROS_COPILOT_EFFORT = '--allow-all-paths'
+    process.env.KAIROS_COPILOT_CONTEXT = 'long_context --yolo'
+    try {
+      const args = argsFor('copilot', 'claude-opus-5')
+      expect(args).not.toContain('--reasoning-effort')
+      expect(args).not.toContain('--context')
+      expect(args).not.toContain('--allow-all-paths')
+      expect(args).not.toContain('--yolo')
+    } finally {
+      delete process.env.KAIROS_COPILOT_EFFORT
+      delete process.env.KAIROS_COPILOT_CONTEXT
+    }
+  })
+
+  it('drops safe-looking copilot values outside the supported enums', () => {
+    process.env.KAIROS_COPILOT_EFFORT = 'ultra'
+    process.env.KAIROS_COPILOT_CONTEXT = 'long-context'
+    try {
+      const args = argsFor('copilot', 'claude-opus-5')
+      expect(args).not.toContain('--reasoning-effort')
+      expect(args).not.toContain('--context')
+      expect(args).not.toContain('ultra')
+      expect(args).not.toContain('long-context')
+    } finally {
+      delete process.env.KAIROS_COPILOT_EFFORT
+      delete process.env.KAIROS_COPILOT_CONTEXT
+    }
   })
 
   it('sends codex its result to a file with -o', () => {

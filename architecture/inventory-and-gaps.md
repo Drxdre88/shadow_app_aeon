@@ -18,7 +18,7 @@ app is at the login slice (Google auth scaffolded, awaiting operator client IDs)
 
 ## Known Gaps & Technical Debt
 
-Last verified: 2026-09-16 (branch `fix/aeon-os-review-gate`). Hangar-specific gaps live in [hangar.md](hangar.md) §6 — the top three: ~45 `[id]` REST routes without a uuid guard, no membership check on spawn `taskId`, and the missing objective-completion contract. TODO/FIXME/HACK in `apps/web/src`: **0** (one false positive, a fixture constant named `STALE_TODO`).
+Hangar inventory refreshed: 2026-09-21. The completion claim guard shipped in PR #129; durable artifact/publication delivery, draft PRs and runner recovery remain open. Mission-card/result UI and repository management are implemented for the v0.29.0 release candidate (PR #130). See [hangar.md](hangar.md) §6. The previously recorded REST UUID/membership gaps remain outside this wave; this refresh is not a new general safety audit. Other inventory entries below retain their original verification dates.
 
 | Severity | Issue | Status / Details |
 |---|---|---|

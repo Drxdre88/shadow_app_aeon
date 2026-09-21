@@ -38,23 +38,29 @@ function help() {
   console.log(`Aeon OS production workflow proof\n\nUsage:\n  node aeon_os/workflows/run.mjs preflight\n  node aeon_os/workflows/run.mjs prepare\n  node aeon_os/workflows/run.mjs prepare --new\n  node aeon_os/workflows/run.mjs run --count=1\n  node aeon_os/workflows/run.mjs run --count=10\n  node aeon_os/workflows/run.mjs review [--attempt=N] [--allow-same-model]\n  node aeon_os/workflows/run.mjs review --import <verdict.json> --attempt=N [--force]\n  node aeon_os/workflows/run.mjs status\n  node aeon_os/workflows/run.mjs stop\n\nMechanical validation alone only reaches review_pending. A run reaches\npassed only once every attempt carries an independent review verdict of\nexactly PASS; any PASS_WITH_CORRECTIONS or FAIL ends the run failed.\n\nThe default invocation is read-only and prints this help.`)
 }
 
-function parseEnv() {
-  const allowed = new Set(['AEON_BASE_URL', 'KAIROS_AEON_API_KEY', 'KAIROS_COPILOT_DEFAULT_MODEL'])
+export function parseEnv({ envFile = ENV_FILE, environment = process.env } = {}) {
+  const allowed = new Set(['AEON_BASE_URL', 'KAIROS_AEON_API_KEY', 'KAIROS_COPILOT_DEFAULT_MODEL', 'KAIROS_COPILOT_EFFORT', 'KAIROS_COPILOT_CONTEXT'])
   const parsed = {}
-  if (existsSync(ENV_FILE)) {
-    for (const line of readFileSync(ENV_FILE, 'utf8').split(/\r?\n/)) {
+  if (existsSync(envFile)) {
+    for (const line of readFileSync(envFile, 'utf8').split(/\r?\n/)) {
       const match = /^\s*set\s+([A-Za-z_][A-Za-z0-9_]*)=(.*)\s*$/i.exec(line)
       if (match && allowed.has(match[1].toUpperCase())) parsed[match[1].toUpperCase()] = match[2].trim()
     }
   }
   const cfg = {
-    baseUrl: (process.env.AEON_BASE_URL || parsed.AEON_BASE_URL || '').replace(/\/$/, ''),
-    apiKey: process.env.KAIROS_AEON_API_KEY || parsed.KAIROS_AEON_API_KEY || '',
-    model: process.env.KAIROS_COPILOT_DEFAULT_MODEL || parsed.KAIROS_COPILOT_DEFAULT_MODEL || '',
+    baseUrl: (environment.AEON_BASE_URL || parsed.AEON_BASE_URL || '').replace(/\/$/, ''),
+    apiKey: environment.KAIROS_AEON_API_KEY || parsed.KAIROS_AEON_API_KEY || '',
+    model: environment.KAIROS_COPILOT_DEFAULT_MODEL || parsed.KAIROS_COPILOT_DEFAULT_MODEL || '',
+    // Mission tier (owner directive 1709: Opus 5 · xhigh · long_context).
+    // Optional: absent knobs leave the CLI at its own defaults.
+    effort: environment.KAIROS_COPILOT_EFFORT || parsed.KAIROS_COPILOT_EFFORT || '',
+    context: environment.KAIROS_COPILOT_CONTEXT || parsed.KAIROS_COPILOT_CONTEXT || '',
   }
   if (!cfg.baseUrl || !/^https:\/\//i.test(cfg.baseUrl)) throw new Error('AEON_BASE_URL must be an https URL')
   if (!cfg.apiKey) throw new Error('KAIROS_AEON_API_KEY is missing')
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(cfg.model)) throw new Error('KAIROS_COPILOT_DEFAULT_MODEL is missing or unsafe')
+  if (cfg.effort && !/^(none|minimal|low|medium|high|xhigh|max)$/.test(cfg.effort)) throw new Error('KAIROS_COPILOT_EFFORT must be none, minimal, low, medium, high, xhigh or max')
+  if (cfg.context && !/^(default|long_context)$/.test(cfg.context)) throw new Error('KAIROS_COPILOT_CONTEXT must be default or long_context')
   return cfg
 }
 
@@ -107,7 +113,7 @@ function legacyGate(state) {
   return state.review === undefined && !existsSync(reviewsDir(resultDir(state)))
 }
 
-function runRecord(state, cfg, extra = {}) {
+export function runRecord(state, cfg, extra = {}) {
   return {
     runId: state.runId,
     status: state.status,
@@ -119,6 +125,8 @@ function runRecord(state, cfg, extra = {}) {
     requestedEngine: 'copilot',
     requestedModel: cfg?.model ?? state.attempts.at(-1)?.model ?? null,
     missionCredits: state.missionCredits ?? null,
+    missionEffort: state.missionEffort ?? null,
+    missionContext: state.missionContext ?? null,
     mechanical: state.mechanical ?? null,
     review: state.review ?? null,
     attempts: state.attempts,
@@ -282,33 +290,29 @@ function missionPrompt(state, index, taskId) {
   return { marker, report, text: `Controlled Aeon OS repository research mission. Unique marker: ${marker}\n\nResearch only this bounded subsystem: ${topic}. Primary scope: ${scope}. Produce exactly one durable report at ${report}. The report must contain the unique marker and at least three concrete, independently useful findings, each citing an existing repository source as path:line. Write EVERY citation as a full repository-root-relative path, for example apps/web/src/lib/data/sessions.ts:150 — never a bare filename such as sessions.ts:150, and never abbreviate on repeat mentions of a file you already cited in full. Every line number must point at the exact statement, declaration or assertion your finding describes — not a comment above it, a test title, or a nearby line. Never cite from memory or by counting: take every line number from a numbered listing of the file (for example grep -n, or sed -n with line numbers) and, immediately before writing the report, re-run that numbered listing for each cited file and confirm every path:line points at the exact text you quote; a predicate on the line after the one you cite is a wrong citation. State what the cited lines do; never assert what code elsewhere does not do (no "not in a prior read", "never called", "no test covers"). An independent reviewer will open every citation at this exact revision and fail the report on a single wrong line. The reviewer sees ONLY the cited lines, so a finding must be fully evidenced by the lines it cites: cite every line that carries the mechanism you describe (a loop AND the assignment inside it, an import AND the call). Label each finding Observed (the cited lines show it) or Inference (a conclusion you drew from them), never claim that nothing was inferred, and do not present a security, concurrency or coverage guarantee as observed when the lines only show a predicate. Do not build a numbered finding on the absence of something (never tested, never called, never imported): a search result cannot be verified from cited lines and will fail review; mention such absences only under a separate heading "Unverified observations" without a finding number. Distinguish observed code from inference.\n\nRepository research only. Do not change source code or any file except ${report}. Do not install dependencies, run tests, call external services, send messages, use Aeon MCP or change any board, invoke subagents, or invent an agent/person identity. You are explicitly authorized to create and commit ONLY that report on the already-created mission branch. Before committing, inspect git status and the staged diff and abort if any other path is staged or changed. Use one Conventional Commit with no coauthor or AI attribution. Do not run git push; the runner publishes to the isolated local origin.\n\nYour final response must end with exactly one fenced JSON result envelope. Use status completed only if the report is committed. Replace the commit placeholder below with the full 40-character HEAD SHA; preserve every other field and ensure summary is present.\n\n\`\`\`json\n${envelope}\n\`\`\`` }
 }
 
-function createBudgetWrapper(state) {
-  const target = executable('copilot')
+export function createBudgetWrapper(state, cfg, { environment = process.env, target = executable('copilot') } = {}) {
   const wrapper = join(dirname(state.registryPath), 'copilot-budget.cmd')
   if (/\r|\n|"/.test(target)) throw new Error('unsafe Copilot executable path')
-  // The cap stays — it is the cost containment for a batch of real paid
-  // missions — but 30 was under the observed requirement. Measured
-  // 2026-09-11 across three production missions: two committed inside 30,
-  // the third exhausted its budget with the report already written and only
-  // the commit outstanding, so the work was destroyed by teardown (only
-  // committed work is published). 60 restores headroom without uncapping.
-  // 1709: the cap is per model class — claude-opus-5 spent 66.93 credits on
-  // the same recon mission (15 premium requests) and was cut off mid-report,
-  // so a heavier mission model needs AEON_OS_MISSION_CREDITS raised for the
-  // run. The value is recorded in the run state so the receipt shows it.
-  const credits = missionCredits()
+  // 1809 rung-1 live fire measured the owner tier at
+  // ~697 AI credits for a 72-turn recon (usage checkpoint totalNanoAiu), so
+  // the default cap is 800 and the ceiling 1000. Credits are the CLI's AIU
+  // budget unit; the seat is billed per user prompt (15 premium requests for
+  // that whole mission), so the cap protects runaway sessions, not the bill.
+  const credits = missionCredits(environment)
   state.missionCredits = credits
+  state.missionEffort = cfg.effort || null
+  state.missionContext = cfg.context || null
   writeFileSync(wrapper, `@echo off\r\nset "KAIROS_AEON_API_KEY="\r\nset "AEON_API_KEY="\r\nset "KAIROS_CALLBACK_TOKEN="\r\nset "KAIROS_WORKER_SECRET="\r\nset "AEON_MCP_TOKEN="\r\n"${target}" --disable-mcp-server aeon --disable-mcp-server playwright --disable-builtin-mcps --max-ai-credits ${credits} %*\r\n`)
   return wrapper
 }
 
-const DEFAULT_MISSION_CREDITS = 60
-const MAX_MISSION_CREDITS = 300
+const DEFAULT_MISSION_CREDITS = 800
+const MAX_MISSION_CREDITS = 1000
 
-function missionCredits() {
-  const raw = process.env.AEON_OS_MISSION_CREDITS
+export function missionCredits(environment = process.env) {
+  const raw = environment.AEON_OS_MISSION_CREDITS
   if (raw === undefined || raw === '') return DEFAULT_MISSION_CREDITS
-  if (!/^\d{1,3}$/.test(raw)) throw new Error(`AEON_OS_MISSION_CREDITS must be an integer between 30 and ${MAX_MISSION_CREDITS}`)
+  if (!/^\d{1,4}$/.test(raw)) throw new Error(`AEON_OS_MISSION_CREDITS must be an integer between 30 and ${MAX_MISSION_CREDITS}`)
   const value = Number(raw)
   if (value < 30 || value > MAX_MISSION_CREDITS) throw new Error(`AEON_OS_MISSION_CREDITS must be an integer between 30 and ${MAX_MISSION_CREDITS}`)
   return value
@@ -326,10 +330,10 @@ function createOneClaimBootstrap(cfg, state, attempt) {
 async function startWorker(cfg, state, attempt) {
   if (!(await portAvailable(PORT))) throw new Error(`port ${PORT} is already in use`)
   const secret = randomBytes(24).toString('hex')
-  const wrapper = createBudgetWrapper(state)
+  const wrapper = createBudgetWrapper(state, cfg)
   const bootstrap = createOneClaimBootstrap(cfg, state, attempt)
   const logFile = join(dirname(state.registryPath), 'worker.log')
-  const env = { ...process.env, AEON_BASE_URL: cfg.baseUrl, KAIROS_AEON_API_KEY: cfg.apiKey, KAIROS_MODE: 'poll', KAIROS_REPOS_FILE: state.registryPath, KAIROS_WORKTREE_ROOT: join(dirname(state.registryPath), 'worktrees'), KAIROS_MAX_CONCURRENT: '1', KAIROS_WORKER_PORT: String(PORT), KAIROS_WORKER_SECRET: secret, KAIROS_POLL_INTERVAL_MS: '15000', KAIROS_HEARTBEAT_MS: '30000', KAIROS_COPILOT_DEFAULT_MODEL: cfg.model, KAIROS_COPILOT_BIN: wrapper, NODE_USE_SYSTEM_CA: '1', NODE_TLS_REJECT_UNAUTHORIZED: '1' }
+  const env = workerEnvironment(cfg, state, { secret, wrapper })
   const child = spawn(process.execPath, ['--use-system-ca', '--import', 'tsx', bootstrap], { cwd: ROOT, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
   for (const stream of [child.stdout, child.stderr]) stream?.on('data', (chunk) => appendFileSync(logFile, chunk))
   state.worker = { pid: child.pid, startedAt: now(), port: PORT }; save(state)
@@ -351,6 +355,10 @@ async function startWorker(cfg, state, attempt) {
     state.worker = null; save(state)
     throw err
   }
+}
+
+export function workerEnvironment(cfg, state, { secret, wrapper, environment = process.env }) {
+  return { ...environment, AEON_BASE_URL: cfg.baseUrl, KAIROS_AEON_API_KEY: cfg.apiKey, KAIROS_MODE: 'poll', KAIROS_REPOS_FILE: state.registryPath, KAIROS_WORKTREE_ROOT: join(dirname(state.registryPath), 'worktrees'), KAIROS_MAX_CONCURRENT: '1', KAIROS_WORKER_PORT: String(PORT), KAIROS_WORKER_SECRET: secret, KAIROS_POLL_INTERVAL_MS: '15000', KAIROS_HEARTBEAT_MS: '30000', KAIROS_COPILOT_DEFAULT_MODEL: cfg.model, KAIROS_COPILOT_EFFORT: cfg.effort, KAIROS_COPILOT_CONTEXT: cfg.context, KAIROS_COPILOT_BIN: wrapper, NODE_USE_SYSTEM_CA: '1', NODE_TLS_REJECT_UNAUTHORIZED: '1' }
 }
 
 async function workerHealth() {
@@ -735,4 +743,6 @@ async function main() {
   throw new Error('unknown command or invalid arguments')
 }
 
-main().catch((err) => { console.error(`FAIL: ${err instanceof Error ? err.message : String(err)}`); process.exitCode = 1 })
+if (resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url)) {
+  main().catch((err) => { console.error(`FAIL: ${err instanceof Error ? err.message : String(err)}`); process.exitCode = 1 })
+}

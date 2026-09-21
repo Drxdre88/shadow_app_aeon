@@ -55,13 +55,13 @@ function setTask(hangar: Record<string, unknown> = validMission) {
 async function openEditor(hangar: Record<string, unknown> = validMission, waitForRepos = true) {
   setTask(hangar)
   render(<MissionEditorModal projectId={PROJECT} />)
-  await waitFor(() => expect(screen.getByText(/AI Mission — Research the repository/)).toBeTruthy())
+  await waitFor(() => expect(screen.getByText(/Agent mission — Research the repository/)).toBeTruthy())
   if (waitForRepos) {
     await waitFor(() => expect(screen.getByRole('option', { name: 'Aeon (aeon)' })).toBeTruthy())
   }
 }
 
-const saveButton = () => screen.getByRole('button', { name: /^Save$/ }) as HTMLButtonElement
+const saveButton = () => screen.getByRole('button', { name: /^Save draft$/ }) as HTMLButtonElement
 const launchButton = () => screen.getByRole('button', { name: /Save & Launch/ }) as HTMLButtonElement
 const modelSelect = () => screen.getByRole('combobox', { name: 'Model' }) as HTMLSelectElement
 
@@ -72,7 +72,7 @@ beforeEach(() => {
   vi.mocked(saveCardMission).mockResolvedValue(validMission as never)
   vi.mocked(spawnSessionFromCard).mockResolvedValue({ id: 'session-1' } as never)
   useHangarUiStore.setState({ projectId: PROJECT, missionEditorTaskId: null })
-  useBoardStore.setState({ tasks: [] })
+  useBoardStore.setState({ tasks: [], isDirty: false, lastMutatedAt: 123 })
 })
 
 afterEach(() => {
@@ -110,22 +110,42 @@ describe('MissionEditorModal launch contract', () => {
     await waitFor(() => expect(spawnSessionFromCard).toHaveBeenCalledOnce())
     expect(spawnSessionFromCard).toHaveBeenCalledWith(PROJECT, TASK)
     await waitFor(() => expect(useHangarUiStore.getState().missionEditorTaskId).toBeNull())
+    const hangar = useBoardStore.getState().tasks[0].metadata?.hangar as Record<string, unknown>
+    expect(hangar.sessionIds).toEqual(['session-1'])
+    expect(hangar.autoRun).toBe(false)
+    expect(useBoardStore.getState().isDirty).toBe(false)
+    expect(useBoardStore.getState().lastMutatedAt).toBe(123)
   })
 
-  it('keeps Save and Save & Launch disabled until repo and instruction are valid', async () => {
+  it('allows saving a draft while launch requires repo and instruction', async () => {
     await openEditor({ objective: 'recon', agent: 'copilot', repo: '', instruction: '' })
-    expect(saveButton().disabled).toBe(true)
+    expect(saveButton().disabled).toBe(false)
     expect(launchButton().disabled).toBe(true)
 
-    const repository = screen.getByText('Repository').parentElement!.querySelector('select')!
-    const instruction = screen.getByText('Instruction').parentElement!.querySelector('textarea')!
+    const repository = screen.getByRole('combobox', { name: 'Repository' })
+    const instruction = screen.getByRole('textbox', { name: 'Instruction' })
     fireEvent.change(repository, { target: { value: 'aeon' } })
     fireEvent.change(instruction, { target: { value: '   ' } })
-    expect(saveButton().disabled).toBe(true)
+    expect(saveButton().disabled).toBe(false)
+    expect(launchButton().disabled).toBe(true)
 
     fireEvent.change(instruction, { target: { value: 'Inspect the launch flow' } })
     expect(saveButton().disabled).toBe(false)
     expect(launchButton().disabled).toBe(false)
+  })
+
+  it('persists an incomplete draft without spawning a session', async () => {
+    const incomplete = { ...validMission, repo: '', instruction: 'Research scope to be decided' }
+    vi.mocked(saveCardMission).mockResolvedValue(incomplete as never)
+    await openEditor(incomplete)
+    expect(launchButton().disabled).toBe(true)
+    fireEvent.click(saveButton())
+    await waitFor(() => expect(useHangarUiStore.getState().missionEditorTaskId).toBeNull())
+    expect(saveCardMission).toHaveBeenCalledWith(PROJECT, TASK, expect.objectContaining({
+      repo: '', instruction: incomplete.instruction, autoRun: false,
+    }))
+    expect(spawnSessionFromCard).not.toHaveBeenCalled()
+    expect(useBoardStore.getState().tasks[0].metadata?.hangar).toEqual(expect.objectContaining(incomplete))
   })
 
   it('disables engines excluded by the selected repository', async () => {

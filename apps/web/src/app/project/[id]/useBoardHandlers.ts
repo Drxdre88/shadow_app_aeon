@@ -44,6 +44,7 @@ export function useBoardHandlers(projectId: string) {
     size?: number | null
     progress?: number | null
     orderIndex: number
+    metadata?: Record<string, unknown>
     startDate?: string
     endDate?: string
   }) => {

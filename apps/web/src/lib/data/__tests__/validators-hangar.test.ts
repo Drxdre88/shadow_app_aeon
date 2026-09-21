@@ -188,6 +188,21 @@ describe('engine enum is a single source of truth', () => {
   })
 })
 
+describe('createHangarRepoSchema', () => {
+  it('uses the same shell-inert, traversal-free slug contract as mission cards', () => {
+    const repo = {
+      realmId: '5b32f8b1-7aec-4bc5-a7f7-bffb3d32ee45',
+      slug: 'shadow-app/aeon',
+      name: 'Aeon',
+      gitUrl: 'https://github.com/example/aeon.git',
+    }
+
+    expect(createHangarRepoSchema.safeParse(repo).success).toBe(true)
+    expect(createHangarRepoSchema.safeParse({ ...repo, slug: 'my repo' }).success).toBe(false)
+    expect(createHangarRepoSchema.safeParse({ ...repo, slug: 'safe/../escape' }).success).toBe(false)
+  })
+})
+
 describe('hangarResultEnvelopeSchema', () => {
   const ENVELOPE = { status: 'completed', outcome: 'implemented', summary: 'Done.' }
 

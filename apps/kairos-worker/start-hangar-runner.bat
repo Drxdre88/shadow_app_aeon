@@ -25,8 +25,11 @@ if not exist "..\..\node_modules" (
   exit /b 1
 )
 
-if exist runner.env.bat (
-  call runner.env.bat
+REM Path-explicit on purpose: with NoDefaultCurrentDirectoryInExePath set (corp
+REM policy on the work runner) cmd will not resolve a bare "runner.env.bat" from
+REM the current directory and the launcher dies with "not recognized".
+if exist "%~dp0runner.env.bat" (
+  call "%~dp0runner.env.bat"
 ) else (
   echo [runner] runner.env.bat not found — copy runner.env.example.bat and set the key.
   pause
@@ -52,5 +55,5 @@ echo [runner] mode=%KAIROS_MODE%  aeon=%AEON_BASE_URL%  port=%KAIROS_WORKER_PORT
 echo [runner] health: http://localhost:%KAIROS_WORKER_PORT%/health
 echo [runner] Ctrl+C stops the runner. Missions in flight are killed cleanly.
 
-npm run start
+call npm run start
 pause

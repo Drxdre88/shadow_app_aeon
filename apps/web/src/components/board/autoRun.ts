@@ -15,10 +15,121 @@ export interface AutoRunCandidate {
   toColumnId: string | null | undefined
 }
 
+export type MissionResultStatus = 'completed' | 'needs_input' | 'failed'
+
+export interface MissionResultView {
+  status: MissionResultStatus | null
+  outcome: string | null
+  summary: string | null
+  branch: string | null
+  commit: string | null
+  artifacts: string[]
+  tests: { status: 'passed' | 'failed' | 'not_run'; summary: string | null } | null
+  questions: string[]
+  recommendedTasks: Array<{ title: string; objective: string | null; instruction: string | null }>
+}
+
+export interface MissionCardView {
+  objective: string | null
+  repo: string | null
+  agent: string | null
+  model: string | null
+  instruction: string | null
+  autoRun: boolean
+  sessionIds: string[]
+  lastResult: MissionResultView | null
+}
+
+const stringValue = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+
+const stringList = (value: unknown): string[] =>
+  Array.isArray(value) ? value.map(stringValue).filter((item): item is string => item !== null) : []
+
 export function readHangarMission(metadata: Record<string, unknown> | undefined): Record<string, unknown> | null {
   const hangar = metadata?.hangar
   if (!hangar || typeof hangar !== 'object' || Array.isArray(hangar)) return null
   return hangar as Record<string, unknown>
+}
+
+export function readMissionResult(value: unknown): MissionResultView | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const result = value as Record<string, unknown>
+  const status = result.status === 'completed' || result.status === 'needs_input' || result.status === 'failed'
+    ? result.status
+    : null
+  const testsValue = result.tests
+  let tests: MissionResultView['tests'] = null
+  if (testsValue && typeof testsValue === 'object' && !Array.isArray(testsValue)) {
+    const raw = testsValue as Record<string, unknown>
+    if (raw.status === 'passed' || raw.status === 'failed' || raw.status === 'not_run') {
+      tests = { status: raw.status, summary: stringValue(raw.summary) }
+    }
+  }
+  const recommendedTasks = Array.isArray(result.recommended_tasks)
+    ? result.recommended_tasks.flatMap((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return []
+        const raw = item as Record<string, unknown>
+        const title = stringValue(raw.title)
+        return title ? [{ title, objective: stringValue(raw.objective), instruction: stringValue(raw.instruction) }] : []
+      })
+    : []
+
+  return {
+    status,
+    outcome: stringValue(result.outcome),
+    summary: stringValue(result.summary),
+    branch: stringValue(result.branch),
+    commit: stringValue(result.commit),
+    artifacts: stringList(result.artifacts),
+    tests,
+    questions: stringList(result.questions),
+    recommendedTasks,
+  }
+}
+
+export function readMissionCard(metadata: Record<string, unknown> | undefined): MissionCardView | null {
+  const hangar = readHangarMission(metadata)
+  if (!hangar) return null
+  return {
+    objective: stringValue(hangar.objective),
+    repo: stringValue(hangar.repo),
+    agent: stringValue(hangar.agent),
+    model: stringValue(hangar.model),
+    instruction: stringValue(hangar.instruction),
+    autoRun: hangar.autoRun === true,
+    sessionIds: stringList(hangar.sessionIds),
+    lastResult: readMissionResult(hangar.lastResult),
+  }
+}
+
+export function withRecordedMissionLaunch(
+  metadata: Record<string, unknown> | undefined,
+  sessionId: string,
+  launchedAt: string,
+): Record<string, unknown> {
+  const mission = readHangarMission(metadata) ?? {}
+  const sessionIds = stringList(mission.sessionIds)
+  return {
+    ...metadata,
+    hangar: {
+      ...mission,
+      autoRun: false,
+      lastLaunchedAt: launchedAt,
+      sessionIds: sessionIds.includes(sessionId) ? sessionIds : [...sessionIds, sessionId],
+    },
+  }
+}
+
+export function withConfirmedMissionLaunch<T extends { id: string; metadata?: Record<string, unknown> }>(
+  tasks: T[],
+  taskId: string,
+  sessionId: string,
+  launchedAt: string,
+): T[] {
+  return tasks.map((task) => task.id === taskId
+    ? { ...task, metadata: withRecordedMissionLaunch(task.metadata, sessionId, launchedAt) }
+    : task)
 }
 
 /** True when a card carries a complete, launchable mission payload. */
