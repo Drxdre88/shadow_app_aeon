@@ -22,6 +22,7 @@ interface UseBoardKeyboardShortcutsProps {
   shortcuts: Shortcuts | null | undefined
   sortedColumns: BoardColumn[]
   hasOpenOverlay: boolean
+  canPasteCard?: boolean
   onOpenLabel: (taskId: string) => void
   onOpenColorPicker: (taskId: string) => void
   onOpenPriorityPicker: (taskId: string) => void
@@ -43,6 +44,7 @@ export function useBoardKeyboardShortcuts({
   shortcuts,
   sortedColumns,
   hasOpenOverlay,
+  canPasteCard = false,
   onOpenLabel,
   onOpenColorPicker,
   onOpenPriorityPicker,
@@ -59,23 +61,32 @@ export function useBoardKeyboardShortcuts({
 }: UseBoardKeyboardShortcutsProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
+      if (e.defaultPrevented || e.isComposing) return
+      const target = e.target instanceof Element ? e.target : null
+      if (target?.closest('input, textarea, select, [contenteditable], [role="textbox"]')) return
+      if (hasOpenOverlay || target?.closest('[role="dialog"], dialog, [aria-modal="true"]') || document.querySelector('[aria-modal="true"]')) return
       const key = e.key.toLowerCase()
-
       const targetTaskId = hoveredTaskId ?? selectedTaskId
+      const boardContext = !!target?.closest('[data-board-export]') || (e.target === document.body && !!targetTaskId)
+      const clipboardModifier = (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey
 
-      if ((e.ctrlKey || e.metaKey) && key === 'c' && targetTaskId) {
-        e.preventDefault()
-        onCopyCard?.(targetTaskId)
+      if (clipboardModifier && key === 'c') {
+        if (boardContext && targetTaskId && onCopyCard && !window.getSelection()?.toString()) {
+          e.preventDefault()
+          onCopyCard(targetTaskId)
+        }
         return
       }
 
-      if ((e.ctrlKey || e.metaKey) && key === 'v') {
-        e.preventDefault()
-        onPasteCard?.()
+      if (clipboardModifier && key === 'v') {
+        if (boardContext && canPasteCard && sortedColumns.length > 0 && onPasteCard) {
+          e.preventDefault()
+          onPasteCard()
+        }
         return
       }
+
+      if (e.ctrlKey || e.metaKey || e.altKey) return
 
       if (key === 'escape') {
         if (hasOpenOverlay) return
@@ -173,7 +184,7 @@ export function useBoardKeyboardShortcuts({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [selectedTaskId, hoveredTaskId, shortcuts, sortedColumns, hasOpenOverlay, onOpenLabel, onOpenColorPicker, onOpenPriorityPicker, onEditCard, onToggleDone, onAddTask, onCopyCard, onPasteCard, onSelectTask, onOpenAssignee, onOpenProgress, onOpenSize, onTaskMove])
+  }, [selectedTaskId, hoveredTaskId, shortcuts, sortedColumns, hasOpenOverlay, canPasteCard, onOpenLabel, onOpenColorPicker, onOpenPriorityPicker, onEditCard, onToggleDone, onAddTask, onCopyCard, onPasteCard, onSelectTask, onOpenAssignee, onOpenProgress, onOpenSize, onTaskMove])
 }
 
 function handleArrowMove(

@@ -20,6 +20,7 @@ import { useCardHoldGesture, useHoldToMoveActions, halfFromPoint } from './useHo
 import { nextSelection, selectModifiersFromEvent } from './cardSelection'
 import { DependencyIndicator } from './DependencyIndicator'
 import { TaskContextMenu } from './TaskContextMenu'
+import { ExtractCardContentsModal } from './ExtractCardContentsModal'
 import { TaskSizeBadge } from './TaskSizeBadge'
 import { StaleIndicator } from './StaleIndicator'
 import { CardPeekPreview } from './CardPeekPreview'
@@ -101,6 +102,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const lastPointerTypeRef = useRef<string | undefined>(undefined)
   const { holdHandlers, consumeHoldClick } = useCardHoldGesture(task.id)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [extractOpen, setExtractOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editName, setEditName] = useState(task.name)
   const editRef = useRef<HTMLInputElement>(null)
@@ -608,9 +610,14 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
             else if (selectedTaskId === task.id) selectTask(null)
             setTaskSelected(task.id, id !== null)
           }}
+          onExtractContents={() => setExtractOpen(true)}
           isSelected={isSelected}
         />
       )}
+      {extractOpen && <ExtractCardContentsModal taskId={task.id} onClose={() => {
+        setExtractOpen(false)
+        requestAnimationFrame(() => cardElRef.current?.querySelector<HTMLButtonElement>('[data-task-menu]')?.focus())
+      }} />}
     </div>
   )
 })
