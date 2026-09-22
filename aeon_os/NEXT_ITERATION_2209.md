@@ -201,6 +201,6 @@ Current source baseline is `888c298` on the active branch; its tree matches the 
 - [Worktree preparation and cleanup](https://github.com/Drxdre88/shadow_app_aeon/blob/888c298/apps/kairos-worker/src/worktree.ts#L180)
 - [Engine process environment](https://github.com/Drxdre88/shadow_app_aeon/blob/888c298/apps/kairos-worker/src/spawner.ts#L195)
 - [Completion shape guard](https://github.com/Drxdre88/shadow_app_aeon/blob/888c298/apps/web/src/lib/data/validators/hangar.ts#L225)
-- [Dated supervised Swarm evidence](PRODUCTION_SWARM_2109.md), [release handover](HANDOVER_2209.md), [earlier operating guide](AGENT_OS_GUIDE_2209.html).
+- [Dated supervised Swarm evidence](PRODUCTION_SWARM_2109.md), [release receipt](https://github.com/Drxdre88/shadow_app_aeon/pull/130#issuecomment-5763110845), [earlier operating guide](AGENT_OS_GUIDE_2209.html).
 
 **Status:** multi-phase source/web audit and next-iteration plan complete. Agent OS implementation and adoption remain intentionally pending. Start with Phase A contracts and a designed repository-to-result journey, not a production mission.
