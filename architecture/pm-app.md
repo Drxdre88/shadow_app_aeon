@@ -22,6 +22,11 @@ metadata, and an always-on durable save pipeline.
 - Inline quick-add (`QuickAddTask.tsx`) + full modal edit (`TaskEditModal.tsx`) + per-card menu (`TaskContextMenu.tsx`); card title/description **autosave**.
 - **Checklist** (tri-state, grouped, sortable; atomic ordering via `db.transaction()`), **Labels** (per-project), **Dependencies** (blocker/blocked + overlay + glow tree), **Comments** (threaded), **Sizing/stale/peek**, **Dates**.
 
+### Card extraction and native copying (local, 22 September)
+- **Extract contents** in the shared right-click/ellipsis menu opens `ExtractCardContentsModal.tsx`: title, description, complete checklist groups/items with completion state, labels and configured priority name. `lib/utils/card-contents.ts` produces escaped rich HTML and plain text; the copy control falls back to plain text or manual selection.
+- Board clipboard shortcuts preserve native selected-text/editor/dialog copying and do not let modified keys trigger bare-letter commands. Internal card paste requires a valid source in the active project; a modeless pinned card does not disable shortcuts elsewhere on the board.
+- Local implementation and fixture/regression evidence only; deployment and owner confirmation of production copying remain pending.
+
 ### Instant assign + virtual team members (commit `7733956`)
 Assignment is optimistic end to end — the pill lands synchronously and the write happens behind it.
 - `lib/store/assigneeMutations.ts` — plain functions over `boardStore.assigneesByTask` (not a store). Serializes the network write per `(taskId, memberId)` through a promise lane + generation counter, so a fast assign→unassign cannot settle backwards on the server; reverts **only its own pill**, never a whole-map snapshot (that would clobber concurrent toggles).

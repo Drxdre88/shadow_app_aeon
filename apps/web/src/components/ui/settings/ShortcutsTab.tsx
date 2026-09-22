@@ -25,7 +25,7 @@ const DASHBOARD_SHORTCUTS = [
 ]
 
 const BOARD_FIXED_SHORTCUTS = [
-  { keys: 'Ctrl+C / V', label: 'Copy / Paste card' },
+  { keys: 'Ctrl/Cmd+C / V', label: 'Copy hovered or selected card / paste copied card on the board' },
   { keys: 'Arrows', label: 'Move selected card (L/R columns, U/D reorder)' },
   { keys: 'Double-click', label: 'Inline edit card title' },
 ]

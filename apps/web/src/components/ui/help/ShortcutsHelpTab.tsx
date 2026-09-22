@@ -15,8 +15,8 @@ const BOARD_CUSTOMIZABLE = [
 
 const BOARD_FIXED = [
   { key: 'Arrows', action: 'Move selected card (L/R: columns, U/D: reorder)' },
-  { key: 'Ctrl+C', action: 'Copy card' },
-  { key: 'Ctrl+V', action: 'Paste card' },
+  { key: 'Ctrl/Cmd+C', action: 'Copy hovered or selected card when no text is selected' },
+  { key: 'Ctrl/Cmd+V', action: 'Paste a copied card on the board' },
   { key: 'Double-click', action: 'Inline edit card title' },
 ]
 

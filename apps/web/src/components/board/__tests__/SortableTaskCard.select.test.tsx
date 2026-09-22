@@ -25,6 +25,7 @@ vi.mock('../useHoldToMove', () => ({
 }))
 
 vi.mock('../CardPeekPreview', () => ({ CardPeekPreview: () => null }))
+vi.mock('../ExtractCardContentsModal', () => ({ ExtractCardContentsModal: () => null }))
 
 vi.mock('../TaskContextMenu', () => ({
   TaskContextMenu: ({ taskId, onSelectTask, isSelected }: { taskId: string; onSelectTask?: (id: string | null) => void; isSelected?: boolean }) => (

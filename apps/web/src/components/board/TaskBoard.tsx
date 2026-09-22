@@ -239,11 +239,15 @@ export function TaskBoard({
     toast('Card copied')
   }, [])
 
+  const canPasteCard = !!copiedTaskId && projectTasks.some(
+    task => task.id === copiedTaskId && !!task.columnId && sortedColumns.some(column => column.id === task.columnId)
+  )
+
   const handlePasteCard = useCallback(() => {
     if (!copiedTaskId) return
     const { tasks: storeTasks, addTask: storeAddTask, checklistSummaries, setChecklistSummaries } = useBoardStore.getState()
     const source = storeTasks.find(t => t.id === copiedTaskId)
-    if (!source) return
+    if (!source || source.projectId !== projectId || !sortedColumns.some(column => column.id === source.columnId)) return
 
     const newId = generateId()
     const columnTasks = storeTasks.filter(t => t.columnId === source.columnId)
@@ -265,7 +269,7 @@ export function TaskBoard({
       useBoardStore.getState().removeTask(newId)
       toast('Failed to duplicate card')
     })
-  }, [copiedTaskId, projectId])
+  }, [copiedTaskId, projectId, sortedColumns])
 
   useBoardKeyboardShortcuts({
     hoveredTaskId,
@@ -273,6 +277,7 @@ export function TaskBoard({
     shortcuts,
     sortedColumns,
     hasOpenOverlay,
+    canPasteCard,
     onOpenLabel: overlayState.setLabelPickerTaskId,
     onOpenColorPicker: overlayState.setColorPickerTaskId,
     onOpenPriorityPicker: overlayState.setPriorityPickerTaskId,

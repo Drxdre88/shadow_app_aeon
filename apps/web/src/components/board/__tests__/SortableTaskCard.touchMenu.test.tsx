@@ -39,6 +39,7 @@ vi.mock('../useHoldToMove', () => ({
 }))
 
 vi.mock('../CardPeekPreview', () => ({ CardPeekPreview: () => null }))
+vi.mock('../ExtractCardContentsModal', () => ({ ExtractCardContentsModal: () => null }))
 
 vi.mock('../TaskContextMenu', () => ({
   TaskContextMenu: ({ taskId, position }: { taskId: string; position: { x: number; y: number } }) => (

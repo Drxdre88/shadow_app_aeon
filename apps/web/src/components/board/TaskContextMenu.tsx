@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Palette, Flag, Trash2, MoveRight, Copy, Calendar, Archive, Package, ArrowRight, FolderInput, Folder, Loader2, MousePointerClick, Rocket, Bot, Merge } from 'lucide-react'
+import { Palette, Flag, Trash2, MoveRight, Copy, Calendar, Archive, Package, ArrowRight, FolderInput, Folder, Loader2, MousePointerClick, Rocket, Bot, Merge, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore, useTasks, useColumns } from '@/lib/store/boardStore'
 import { fuseSources } from './cardSelection'
@@ -27,10 +27,11 @@ interface TaskContextMenuProps {
   onSendToVault?: (taskId: string) => void
   onArchiveTask?: (taskId: string) => void
   onSelectTask?: (taskId: string | null) => void
+  onExtractContents?: () => void
   isSelected?: boolean
 }
 
-export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTaskDelete, onPushToGantt, onSendToVault, onArchiveTask, onSelectTask, isSelected }: TaskContextMenuProps) {
+export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTaskDelete, onPushToGantt, onSendToVault, onArchiveTask, onSelectTask, onExtractContents, isSelected }: TaskContextMenuProps) {
   const [submenu, setSubmenu] = useState<'move' | 'priority' | 'color' | 'transfer' | null>(null)
   const [mounted, setMounted] = useState(false)
   const [transferProjects, setTransferProjects] = useState<{ id: string; name: string; realm: string; columns: { id: string; name: string; color: string }[] }[]>([])
@@ -494,6 +495,14 @@ export function TaskContextMenu({ taskId, position, onClose, onTaskUpdate, onTas
             </div>
           )
         })()}
+
+        <button
+          onClick={() => { onExtractContents?.(); onClose() }}
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-white/10 hover:text-white transition-colors"
+        >
+          <FileText className="w-4 h-4" />
+          Extract contents
+        </button>
 
         <button
           onClick={handleCopyId}
