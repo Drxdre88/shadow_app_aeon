@@ -8,6 +8,7 @@ import { X, BarChart3, FolderOpen, CheckSquare, ListChecks, Sparkles, Calendar, 
 import { useThemeStore } from '@/stores/themeStore'
 import { cn } from '@/lib/utils/cn'
 import { Tooltip } from './Tooltip'
+import { STORAGE_LIMITS as LIMITS } from '@/lib/data/storage-limits'
 
 interface Stats {
   projects: number
@@ -19,7 +20,6 @@ interface Stats {
   memberSince: string | null
 }
 
-const LIMITS = { tasks: 500, canvasNodes: 200, ganttTasks: 200 }
 
 function LimitBar({ label, current, limit, color }: { label: string; current: number; limit: number; color: string }) {
   const pct = Math.min((current / limit) * 100, 100)

@@ -1,12 +1,9 @@
 import { db } from '@/lib/db'
-import { projects, boardTasks, canvasNodes, ganttTasks } from '@/lib/db/schema'
+import { projects, boardTasks, canvasNodes, ganttTasks, users } from '@/lib/db/schema'
 import { eq, count, inArray } from 'drizzle-orm'
+import { STORAGE_LIMITS } from './storage-limits'
 
-export const STORAGE_LIMITS = {
-  tasks: 500,
-  canvasNodes: 200,
-  ganttTasks: 200,
-} as const
+export { STORAGE_LIMITS }
 
 export const SOFT_CAP_THRESHOLD = 0.8
 
@@ -24,7 +21,13 @@ export async function checkStorageLimit(
   userId: string,
   entityType: EntityType,
 ): Promise<{ allowed: boolean; current: number; limit: number; remaining: number }> {
-  const projectIds = await getUserProjectIds(userId)
+  const [projectIds, [user]] = await Promise.all([
+    getUserProjectIds(userId),
+    db.select({ role: users.role }).from(users).where(eq(users.id, userId)),
+  ])
+  if (user?.role === 'admin') {
+    return { allowed: true, current: 0, limit: Infinity, remaining: Infinity }
+  }
   if (projectIds.length === 0) {
     const limit = STORAGE_LIMITS[entityType]
     return { allowed: true, current: 0, limit, remaining: limit }
