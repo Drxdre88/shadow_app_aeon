@@ -1,0 +1,149 @@
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/data/memory-ops', () => ({ insertMemoryOps: vi.fn() }))
+vi.mock('@/lib/data/memory-engine', () => ({}))
+vi.mock('@/lib/db', () => ({ db: {} }))
+
+import { BufferedChangeLog } from '../change-log'
+import { MemoryEngine } from '../memory-engine'
+import { buildNightSteps } from '../registry'
+import { WeighStep } from '../steps/weigh'
+import type { ChangeLog, EngineRunContext, MemoryOpInput, Step } from '../types'
+import { NOW } from './fixtures'
+
+const op = (memoryId: string): MemoryOpInput => ({ memoryId, step: 'weigh', op: 'score', reason: 'r' })
+
+describe('BufferedChangeLog', () => {
+  it('buffers records and flushes them once in chunks, then empties', async () => {
+    const writer = vi.fn(async (_u: string, _r: string | null, ops: readonly MemoryOpInput[]) => ops.length)
+    const log = new BufferedChangeLog('user-1', 'run-1', writer)
+    for (let i = 0; i < 1203; i++) log.record(op(`m${i}`))
+    expect(log.pending()).toHaveLength(1203)
+    expect(await log.flush()).toBe(1203)
+    expect(writer).toHaveBeenCalledTimes(3)
+    expect(writer.mock.calls[0][0]).toBe('user-1')
+    expect(writer.mock.calls[0][1]).toBe('run-1')
+    expect(log.pending()).toHaveLength(0)
+    expect(await log.flush()).toBe(0)
+  })
+
+  it('keeps unwritten ops when the writer throws', async () => {
+    const writer = vi.fn().mockRejectedValue(new Error('db down'))
+    const log = new BufferedChangeLog('user-1', 'run-1', writer)
+    log.record(op('a'))
+    await expect(log.flush()).rejects.toThrow('db down')
+    expect(log.pending()).toHaveLength(1)
+  })
+})
+
+function fakeLog(): ChangeLog & { flush: ReturnType<typeof vi.fn> } {
+  const buf: MemoryOpInput[] = []
+  return {
+    runId: 'run-1',
+    record: (o) => { buf.push(o) },
+    pending: () => buf,
+    flush: vi.fn(async () => buf.splice(0).length),
+  }
+}
+
+function step(name: string, impl: (ctx: EngineRunContext) => Promise<void> = async () => {}): Step {
+  return {
+    name,
+    run: async (ctx) => {
+      await impl(ctx)
+      return { step: name, examined: 1, changed: 0 }
+    },
+  }
+}
+
+describe('MemoryEngine', () => {
+  it('runs steps in order with one shared context and flushes after each step', async () => {
+    const log = fakeLog()
+    const seen: string[] = []
+    const engine = new MemoryEngine({
+      steps: [
+        step('a', async (ctx) => { seen.push(`a:${ctx.runId}`); ctx.changes.record(op('x')) }),
+        step('b', async (ctx) => { seen.push(`b:${ctx.now.toISOString()}`) }),
+      ],
+      changes: (_userId, runId) => ({ ...log, runId }),
+      clock: () => NOW,
+      newRunId: () => 'run-42',
+    })
+    const result = await engine.runNight('user-1')
+    expect(seen).toEqual(['a:run-42', `b:${NOW.toISOString()}`])
+    expect(result).toMatchObject({ runId: 'run-42', userId: 'user-1', dryRun: false, opsWritten: 1, failedSteps: [] })
+    expect(result.steps.map((s) => s.step)).toEqual(['a', 'b'])
+    expect(log.flush).toHaveBeenCalledTimes(2)
+  })
+
+  it("persists a step's ops before the next step starts (timeout safety)", async () => {
+    const writer = vi.fn(async (_u: string, _r: string | null, ops: readonly MemoryOpInput[]) => ops.length)
+    const engine = new MemoryEngine({
+      steps: [
+        step('a', async (ctx) => { ctx.changes.record(op('x')) }),
+        step('b', async () => {
+          // The cron dying here must not lose step a's trail.
+          expect(writer).toHaveBeenCalledTimes(1)
+          expect(writer.mock.calls[0][2]).toEqual([op('x')])
+        }),
+      ],
+      changes: (userId, runId) => new BufferedChangeLog(userId, runId, writer),
+      clock: () => NOW,
+    })
+    const result = await engine.runNight('user-1')
+    expect(result.failedSteps).toEqual([])
+    expect(result.opsWritten).toBe(1)
+  })
+
+  it('isolates a failing step, flushes what it recorded, and still runs the rest', async () => {
+    const log = fakeLog()
+    const engine = new MemoryEngine({
+      steps: [step('a', async (ctx) => { ctx.changes.record(op('x')); throw new Error('boom') }), step('b')],
+      changes: () => log,
+      clock: () => NOW,
+    })
+    const result = await engine.runNight('user-1')
+    expect(result.failedSteps).toEqual([{ step: 'a', error: 'boom' }])
+    expect(result.steps.map((s) => s.step)).toEqual(['b'])
+    expect(log.flush).toHaveBeenCalledTimes(2)
+  })
+
+  it('never flushes on a dry run', async () => {
+    const log = fakeLog()
+    const engine = new MemoryEngine({
+      steps: [step('a', async (ctx) => { expect(ctx.dryRun).toBe(true) }), step('b')],
+      changes: () => log,
+    })
+    const result = await engine.runNight('user-1', { dryRun: true })
+    expect(log.flush).not.toHaveBeenCalled()
+    expect(result.opsWritten).toBe(0)
+    expect(result.dryRun).toBe(true)
+  })
+
+  it('records a failed flush per step, keeps running later steps, and retries the buffer', async () => {
+    const writer = vi.fn(async (_u: string, _r: string | null, ops: readonly MemoryOpInput[]) => ops.length)
+    writer.mockRejectedValueOnce(new Error('insert failed'))
+    const ran: string[] = []
+    const engine = new MemoryEngine({
+      steps: [
+        step('a', async (ctx) => { ran.push('a'); ctx.changes.record(op('x')) }),
+        step('b', async (ctx) => { ran.push('b'); ctx.changes.record(op('y')) }),
+      ],
+      changes: (userId, runId) => new BufferedChangeLog(userId, runId, writer),
+    })
+    const result = await engine.runNight('user-1')
+    expect(ran).toEqual(['a', 'b'])
+    expect(result.failedSteps).toEqual([{ step: 'changelog:a', error: 'insert failed' }])
+    // a's op stayed buffered and landed with b's on the next flush.
+    expect(result.opsWritten).toBe(2)
+    expect(writer.mock.calls[1][2]).toEqual([op('x'), op('y')])
+  })
+})
+
+describe('buildNightSteps', () => {
+  it('currently returns the weigh step', () => {
+    const steps = buildNightSteps()
+    expect(steps.map((s) => s.name)).toEqual(['merge', 'weigh', 'backup', 'concepts'])
+    expect(steps[1]).toBeInstanceOf(WeighStep)
+  })
+})

@@ -18,6 +18,9 @@ export const STREAM_CLASSES = [
   // Below reflection/idea in trust; feeds the nightly cortex/aether generators'
   // "Today so far" grounding section, not the briefer substrate.
   'delta',
+  // Memory engine Concept tier (docs/kairos/32 §2.4) — a distilled cluster of
+  // member memories linked via refers_to. Up-weighted in retrieval.
+  'concept',
 ] as const
 
 export type StreamClass = (typeof STREAM_CLASSES)[number]

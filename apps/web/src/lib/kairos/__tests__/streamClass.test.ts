@@ -15,6 +15,7 @@ describe('STREAM_CLASSES', () => {
       'snapshot',
       'aether',
       'delta',
+      'concept',
     ])
   })
 })

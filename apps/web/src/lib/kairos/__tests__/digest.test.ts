@@ -68,6 +68,12 @@ vi.mock('../cron-trace', () => ({
   writeCronSuccessTrace: vi.fn(),
 }))
 
+vi.mock('@/lib/data/memory-candidates', () => ({
+  listPromotedBeliefsBetween: vi.fn(),
+}))
+
+import { listPromotedBeliefsBetween } from '@/lib/data/memory-candidates'
+import { buildBeliefsBlock } from '../digest-prompt'
 import { db } from '@/lib/db'
 import { countTasksCompletedBetween, countTasksCreatedBetween } from '@/lib/data/board-signals'
 import { listKairosAsksAnsweredBetween } from '@/lib/data/ask'
@@ -93,6 +99,7 @@ beforeEach(() => {
   vi.mocked(countTasksCreatedBetween).mockResolvedValue(0)
   vi.mocked(listKairosAsksAnsweredBetween).mockResolvedValue([])
   vi.mocked(listTraceHistory).mockResolvedValue([])
+  vi.mocked(listPromotedBeliefsBetween).mockResolvedValue([])
   vi.mocked(deliverKairosSpeak).mockResolvedValue({
     status: 200,
     body: { id: 'x', delivered: { inbox: true, telegram: false } },
@@ -507,5 +514,88 @@ describe('digest runaway-output guard', () => {
 
     expect(trace?.rawExcerpt).toBe(text)
     expect((trace?.error as Error).message).toContain('rejected by guard')
+  })
+})
+
+describe('"What I now believe" block (memory-engine promotions)', () => {
+  const MODEL_TEXT = 'A quiet, tidy day.'
+
+  function mockModelOk() {
+    vi.mocked(getProviderForTask).mockResolvedValue({
+      decision: { providerId: 'byok', modelId: null, tier: 'standard', source: 'default' },
+      provider: { ask: vi.fn().mockResolvedValue({ text: MODEL_TEXT, modelId: 'm', finishReason: 'stop' }) },
+    } as never)
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-24T18:00:00.000Z'))
+    selectQueue.push([{ n: 0 }])
+    queueCounts([0, 0, 0, 0])
+  })
+
+  it('buildBeliefsBlock numbers at most three titles, flattens whitespace, clips long ones', () => {
+    const block = buildBeliefsBlock([
+      { title: 'Operator prefers\nsmall PRs' },
+      { title: 'x'.repeat(200) },
+      { title: 'Third' },
+      { title: 'Fourth is dropped' },
+    ])
+    const lines = block.split('\n')
+    expect(lines[0]).toBe('What I now believe:')
+    expect(lines[1]).toBe('1. Operator prefers small PRs')
+    expect(lines[2].length).toBeLessThanOrEqual(3 + 90)
+    expect(lines[2].endsWith('…')).toBe(true)
+    expect(lines[3]).toBe('3. Third')
+    expect(block).not.toContain('Fourth')
+    expect(lines.at(-1)).toBe('To undo one, ask Claude to revert it (revert_memory_op).')
+    expect(block).not.toMatch(/veto/i)
+    expect(buildBeliefsBlock([])).toBe('')
+  })
+
+  it('appends the block after the model narrative, queried over the digest window', async () => {
+    mockModelOk()
+    vi.mocked(listPromotedBeliefsBetween).mockResolvedValue([
+      { opId: 'op-1', memoryId: 'm-1', title: 'Operator prefers small PRs' },
+      { opId: 'op-2', memoryId: 'm-2', title: 'Friday deploys slip' },
+    ])
+
+    const result = await runEveningDigestForUser(USER)
+
+    expect(result.status).toBe('sent')
+    expect(listPromotedBeliefsBetween).toHaveBeenCalledWith(
+      USER, new Date('2026-07-23T18:00:00.000Z'), new Date('2026-07-24T18:00:00.000Z'), 3,
+    )
+    expect(vi.mocked(deliverKairosSpeak).mock.calls[0][1].message).toBe([
+      MODEL_TEXT,
+      '',
+      'What I now believe:',
+      '1. Operator prefers small PRs',
+      '2. Friday deploys slip',
+      'To undo one, ask Claude to revert it (revert_memory_op).',
+    ].join('\n'))
+  })
+
+  it('appends to the deterministic fallback too (no model dependency)', async () => {
+    vi.mocked(getProviderForTask).mockRejectedValue(new AiCredentialMissingError('anthropic'))
+    vi.mocked(listPromotedBeliefsBetween).mockResolvedValue([{ opId: 'op-1', memoryId: 'm-1', title: 'A belief' }])
+
+    const result = await runEveningDigestForUser(USER)
+
+    expect(result.status).toBe('sent_fallback')
+    const sent = vi.mocked(deliverKairosSpeak).mock.calls[0][1].message
+    expect(sent).toContain('quiet day')
+    expect(sent.endsWith('1. A belief\nTo undo one, ask Claude to revert it (revert_memory_op).')).toBe(true)
+  })
+
+  it('still sends the unchanged digest, untraced, when the promotions query fails', async () => {
+    mockModelOk()
+    vi.mocked(listPromotedBeliefsBetween).mockRejectedValue(new Error('relation "memory_ops" does not exist'))
+
+    const result = await runEveningDigestForUser(USER)
+
+    expect(result.status).toBe('sent')
+    expect(vi.mocked(deliverKairosSpeak).mock.calls[0][1].message).toBe(MODEL_TEXT)
+    expect(writeCronFailureTrace).not.toHaveBeenCalled()
   })
 })

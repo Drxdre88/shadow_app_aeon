@@ -27,6 +27,10 @@ vi.mock('@/lib/kairos/ask', () => ({
   answerKairosAsk: vi.fn(),
 }))
 
+vi.mock('@/lib/data/memory-reactions', () => ({
+  reactUsed: vi.fn(async () => undefined),
+}))
+
 vi.mock('@/lib/kairos/chat-retrieval', () => ({
   extractCitationIds: vi.fn(() => []),
   intersectWithRetrieved: vi.fn(() => []),
@@ -64,7 +68,8 @@ import { findProjects } from '@/lib/data/projects'
 import type { AIProvider } from '@/lib/ai/provider'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { answerKairosAsk } from '@/lib/kairos/ask'
-import { retrieveForChatGlobal } from '@/lib/kairos/chat-retrieval'
+import { reactUsed } from '@/lib/data/memory-reactions'
+import { intersectWithRetrieved, retrieveForChatGlobal } from '@/lib/kairos/chat-retrieval'
 import {
   matchProjectsInMessage,
   fetchLiveBoardContext,
@@ -260,6 +265,44 @@ describe('ask-aware assistant turns', () => {
     expect(getKairosAskSourceSnippets).not.toHaveBeenCalled()
     expect(answerKairosAsk).not.toHaveBeenCalled()
     expect(providerAsk).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('memory-engine use reinforcement (cited memories)', () => {
+  it('reinforces only the retrieved ids actually cited in the persisted reply', async () => {
+    vi.mocked(getPendingKairosAsk).mockResolvedValue(null)
+    vi.mocked(intersectWithRetrieved).mockReturnValueOnce([SOURCE_ID])
+    providerAsk.mockResolvedValueOnce(aiResponse(`Per [[${SOURCE_ID}]] the release is stalled.`))
+
+    const result = await runAssistantTurn(USER_ID, THREAD_ID, null, 'What is open?', 1)
+
+    expect(result.ok).toBe(true)
+    expect(reactUsed).toHaveBeenCalledTimes(1)
+    expect(reactUsed).toHaveBeenCalledWith(USER_ID, [SOURCE_ID], expect.any(String))
+    // Reinforcement runs only after the assistant message was persisted.
+    expect(vi.mocked(appendChatMessage).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(reactUsed).mock.invocationCallOrder[0])
+  })
+
+  it('no citations → no reinforcement', async () => {
+    vi.mocked(getPendingKairosAsk).mockResolvedValue(null)
+    providerAsk.mockResolvedValueOnce(aiResponse('Nothing cited.'))
+
+    await runAssistantTurn(USER_ID, THREAD_ID, null, 'What is open?', 1)
+
+    expect(reactUsed).not.toHaveBeenCalled()
+  })
+
+  it('does not reinforce when the assistant message fails to persist', async () => {
+    vi.mocked(getPendingKairosAsk).mockResolvedValue(null)
+    vi.mocked(intersectWithRetrieved).mockReturnValueOnce([SOURCE_ID])
+    vi.mocked(appendChatMessage).mockResolvedValueOnce({ ok: false } as never)
+    providerAsk.mockResolvedValueOnce(aiResponse(`Per [[${SOURCE_ID}]].`))
+
+    const result = await runAssistantTurn(USER_ID, THREAD_ID, null, 'What is open?', 1)
+
+    expect(result).toEqual({ ok: false, reason: 'thread_not_found' })
+    expect(reactUsed).not.toHaveBeenCalled()
   })
 })
 

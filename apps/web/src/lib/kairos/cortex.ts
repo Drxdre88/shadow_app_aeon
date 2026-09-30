@@ -58,7 +58,8 @@ export {
 const MAX_REFLECTIONS = 30
 const MAX_ARCHETYPES = 12
 
-async function alreadyRanToday(userId: string, dominionId: string): Promise<boolean> {
+// Exported for the thinking-queue cortex handler (lib/kairos/thinking/handlers/cortex.ts).
+export async function alreadyRanToday(userId: string, dominionId: string): Promise<boolean> {
   const [row] = await db
     .select({ n: sql<number>`COUNT(*)::int` })
     .from(memories)
@@ -249,12 +250,15 @@ interface PersistResult {
   archivedPrior: number
 }
 
-async function persistCortex(
+// Exported for the thinking-queue cortex handler. `extraMetadata` carries
+// queue provenance (thinkingJobId, answeredBy); the cron passes nothing.
+export async function persistCortex(
   userId: string,
   ctx: CortexContext,
   payload: CortexOutput,
   runId: string,
   today: string,
+  extraMetadata: Record<string, unknown> = {},
 ): Promise<PersistResult> {
   const now = new Date()
   const body = renderCortexMarkdown(ctx, payload, today)
@@ -288,6 +292,7 @@ async function persistCortex(
         streamClass: 'cortex',
         source: 'cron',
         sourceMetadata: {
+          ...extraMetadata,
           runId,
           runDate: today,
           dominionId: ctx.dominionId,

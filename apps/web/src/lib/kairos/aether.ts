@@ -33,7 +33,8 @@ import type { AetherPayload } from './aether-types'
 const MAX_REFLECTIONS = 40
 const MAX_ARCHETYPES_PER_DOMINION = 3
 
-async function alreadyRanToday(userId: string): Promise<boolean> {
+// Exported for the thinking-queue aether handler (lib/kairos/thinking/handlers/aether.ts).
+export async function alreadyRanToday(userId: string): Promise<boolean> {
   const [row] = await db
     .select({ n: sql<number>`COUNT(*)::int` })
     .from(memories)
@@ -259,6 +260,9 @@ export async function persistAether(
   runId: string,
   today: string,
   source: 'cron' | 'claude' = 'cron',
+  // Provenance from the thinking queue (thinkingJobId, answeredBy); the cron
+  // and commit_aether pass nothing, so their rows are unchanged.
+  extraMetadata: Record<string, unknown> = {},
 ): Promise<{ aetherMemoryId: string | null; archivedPrior: number }> {
   const now = new Date()
   const body = renderAetherMarkdown(payload, today)
@@ -288,6 +292,7 @@ export async function persistAether(
         streamClass: 'aether',
         source,
         sourceMetadata: {
+          ...extraMetadata,
           runId,
           runDate: today,
           aether: payload,

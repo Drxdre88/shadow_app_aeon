@@ -25,11 +25,11 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories } from '@/lib/db/schema'
 import { inspectDominion } from '@/lib/data/dominions'
-import { recencyMultiplier, validAsOfNow } from '@/lib/data/memories'
+import { validAsOfNow } from '@/lib/data/memories'
 import { dominionTag } from './dominionTags'
 import { embeddingsEnabled, embedOne, toVectorLiteral } from './embeddings'
-import { rrfFuse, RRF_K } from './rrf'
-import { confidenceBoost } from './confidence'
+import { rrfFuse } from './rrf'
+import { rankRows } from './ranking'
 import { rerankScored, type RerankScored } from './rerank'
 import { isStreamClass, type StreamClass } from './streamClass'
 import type {
@@ -44,14 +44,17 @@ const SUBSTRATE_TOP_K = 5
 // fusion buried; bounded so the extra Voyage latency/cost stays small.
 const RERANK_POOL = 12
 const SUBSTRATE_WINDOW_DAYS = 90
-const SUBSTRATE_STREAMS = ['reflection', 'idea', 'agentic'] as const
+// 'concept' (memory engine, docs/kairos/32 §2.4): distilled clusters, up-weighted
+// by their higher stream trust / standing rather than a special case here.
+const SUBSTRATE_STREAMS = ['reflection', 'idea', 'agentic', 'concept'] as const
 const TRACES_LIMIT = 10
 const ARCHETYPES_LIMIT = 10
 const DEFAULT_MEMORY_LIMIT = 25
 
-// Recency uses the shared `recencyMultiplier` (lib/data/memories.ts) — the same
-// true 14-day half-life + 0.3 weight as prepareContext's composite score, so
-// the two ranking stacks share one curve. A same-day, weak-lexical-match
+// Ranking uses the shared ranker (./ranking) — relevance × standingFactor, the
+// same formula as prepareContext's composite score. Unscored rows (standing
+// NULL) fall back to confidence × the shared 14-day recency curve, so the two
+// ranking stacks share one curve. A same-day, weak-lexical-match
 // reflection must be able to outrank a 60-day-old, strong-lexical-match one
 // (the 15:37→16:50 miss).
 
@@ -226,31 +229,21 @@ type SubstrateRow = {
   updatedAt: Date          // reinforcement signal for confidence decay
   confidence: number | null // stored trust prior; absent → neutral (no effect)
   pinned: boolean          // ranking-exempt from decay (mirrors prepareContext)
+  standing: number | null  // memory-engine standing; NULL → P0 confidence × recency
 }
 
 type FtsSubstrateRow = SubstrateRow & { rank: number }
 
+const isReflectionRow = (r: { streamClass: string }) => (r.streamClass === 'reflection' ? 1 : 0)
+
 // Shared FTS-leg ranking: raw ts_rank_cd is a pure lexical-overlap score with
-// no time signal, so re-weight it by confidence + recency the same way the
-// hybrid RRF path does, then keep reflections pinned ahead of ties. Used both
-// for the FTS-only branch (no embeddings configured) and the hybrid branch's
-// no-embedding-result fallback, so those two paths never diverge in ranking.
+// no time signal, so weight it by standing (or confidence + recency when
+// unscored) the same way the hybrid RRF path does, then keep reflections
+// pinned ahead of ties. Used both for the FTS-only branch (no embeddings
+// configured) and the hybrid branch's no-embedding-result fallback, so those
+// two paths never diverge in ranking.
 function rankByRecencyAndConfidence(rows: FtsSubstrateRow[]): FtsSubstrateRow[] {
-  return rows
-    .map((r) => {
-      const isReflection = r.streamClass === 'reflection'
-      const base = Number(r.rank) || 0
-      const score = base
-        * confidenceBoost({ confidence: r.confidence, updatedAt: r.updatedAt, pinned: r.pinned })
-        * recencyMultiplier(r.createdAt)
-      return { row: r, isReflection, score }
-    })
-    .sort((a, b) =>
-      a.isReflection !== b.isReflection
-        ? Number(b.isReflection) - Number(a.isReflection)
-        : b.score - a.score,
-    )
-    .map((w) => w.row)
+  return rankRows(rows, (r) => Number(r.rank) || 0, { tier: isReflectionRow })
 }
 
 async function fetchSubstrate(
@@ -283,6 +276,7 @@ async function fetchSubstrate(
       updatedAt: memories.updatedAt,
       confidence: memories.confidence,
       pinned: memories.pinned,
+      standing: memories.standing,
       rank,
     })
     .from(memories)
@@ -293,7 +287,7 @@ async function fetchSubstrate(
       isNull(memories.archivedAt),
       validAsOfNow,
       sql`"memories"."fts" @@ ${tsQuery}`,
-      sql`${memories.createdAt} >= ${sinceTs}`,
+      inSubstrateWindow(sinceTs),
     ))
     // Reflections outweigh other classes for the top-k slots.
     .orderBy(
@@ -331,6 +325,7 @@ async function fetchSubstrate(
           updatedAt: memories.updatedAt,
           confidence: memories.confidence,
           pinned: memories.pinned,
+          standing: memories.standing,
         })
         .from(memories)
         .where(and(
@@ -340,7 +335,7 @@ async function fetchSubstrate(
           isNull(memories.archivedAt),
           validAsOfNow,
           sql`${memories.embedding} IS NOT NULL`,
-          sql`${memories.createdAt} >= ${sinceTs}`,
+          inSubstrateWindow(sinceTs),
         ))
         .orderBy(distance)
         .limit(topK * 3)
@@ -356,36 +351,21 @@ async function fetchSubstrate(
       { ids: vecRows.map((r) => r.id), weight: 1 },
     ])
 
-    // Reflections-first boost AFTER fusion: a reflection should still outrank a
+    // Reflections-first AFTER fusion: a reflection still outranks a
     // non-reflection at a comparable fused score, mirroring the FTS-only order.
-    const ranked = [...fused.entries()]
-      .map(([id, score]) => {
-        const rowItem = byId.get(id)
-        const isReflection = rowItem?.streamClass === 'reflection'
-        // Confidence decay and recency both weight the fused score before the
-        // reflection nudge; each is a neutral ×1 when its signal is absent
-        // (no prior / no createdAt), so behaviour is unchanged for rows that
-        // predate those columns.
-        const weighted = score
-          * confidenceBoost({ confidence: rowItem?.confidence ?? null, updatedAt: rowItem?.updatedAt, pinned: rowItem?.pinned })
-          * recencyMultiplier(rowItem?.createdAt)
-        return { id, isReflection, score: weighted + (isReflection ? REFLECTION_BONUS : 0) }
-      })
-      .sort((a, b) =>
-        a.isReflection !== b.isReflection
-          ? Number(b.isReflection) - Number(a.isReflection)
-          : b.score - a.score,
-      )
-
-    // Rerank pool: take a wider slice of the fused, confidence/recency-weighted
-    // order (reflections/confidence/recency already shaped WHICH rows qualify),
-    // then let the cross-encoder's relevance, blended with the same recency +
-    // confidence multipliers, pick the final top-k. Floor at RERANK_POOL so a wider topK (e.g. the search_brain
-    // chat tool) still gets a proper rerank pool, not just topK candidates.
-    const poolRows = ranked
-      .slice(0, Math.max(RERANK_POOL, topK))
-      .map((e) => byId.get(e.id))
+    // Within each tier the fused score is weighted by standingFactor (P0
+    // confidence × recency while the row is unscored).
+    const fusedRows = [...fused.keys()]
+      .map((id) => byId.get(id))
       .filter((r): r is SubstrateRow => r != null)
+    const ranked = rankRows(fusedRows, (r) => fused.get(r.id) ?? 0, { tier: isReflectionRow })
+
+    // Rerank pool: take a wider slice of the fused, standing-weighted order
+    // (reflections/standing already shaped WHICH rows qualify), then let the
+    // cross-encoder's relevance, blended with the same standingFactor, pick the
+    // final top-k. Floor at RERANK_POOL so a wider topK (e.g. the search_brain
+    // chat tool) still gets a proper rerank pool, not just topK candidates.
+    const poolRows = ranked.slice(0, Math.max(RERANK_POOL, topK))
 
     // Precision pass. Scores the WHOLE pool (no top_k) so every candidate has a
     // relevance score to blend. No-op (null) without a Voyage key or on API
@@ -410,30 +390,21 @@ async function fetchSubstrate(
   }
 }
 
-// Blend the cross-encoder's relevance with the same recency and confidence
-// multipliers the fused pool was built with, so rerank sharpens relevance
-// WITHOUT discarding the time signal (the 07-24 recency miss: relevance-only
-// ordering let a stale strong match beat today's reflection). Reflections win
-// exact ties; remaining ties keep Voyage's relevance order (stable sort).
+// Blend the cross-encoder's relevance with the same standingFactor the fused
+// pool was built with, so rerank sharpens relevance WITHOUT discarding the
+// time/trust signal (the 07-24 recency miss: relevance-only ordering let a
+// stale strong match beat today's reflection). Reflections win exact ties;
+// remaining ties keep Voyage's relevance order (stable sort).
 function blendRerank(scored: RerankScored<SubstrateRow>[]): SubstrateRow[] {
-  return scored
-    .map(({ item, relevance }) => ({
-      row: item,
-      isReflection: item.streamClass === 'reflection',
-      score: relevance
-        * recencyMultiplier(item.createdAt)
-        * confidenceBoost({ confidence: item.confidence, updatedAt: item.updatedAt, pinned: item.pinned }),
-    }))
-    .sort((a, b) =>
-      b.score !== a.score
-        ? b.score - a.score
-        : Number(b.isReflection) - Number(a.isReflection),
-    )
-    .map((s) => s.row)
+  const relevance = new Map(scored.map((s) => [s.item, s.relevance]))
+  return rankRows(scored.map((s) => s.item), (r) => relevance.get(r) ?? 0, { tieBreak: isReflectionRow })
 }
 
-// Small post-fusion nudge keeping reflections ahead of ties in the same band.
-const REFLECTION_BONUS = 1 / (RRF_K + 1)
+// Concepts are durable distillations (120d freshness half-life), so they stay
+// retrievable past the 90-day substrate window that bounds raw stream rows.
+function inSubstrateWindow(sinceTs: ReturnType<typeof sql>) {
+  return sql`(${memories.createdAt} >= ${sinceTs} OR ${memories.streamClass} = 'concept')`
+}
 
 async function fetchTraces(userId: string, dominionId: string | null): Promise<RetrievedMemory[]> {
   const rows = await db

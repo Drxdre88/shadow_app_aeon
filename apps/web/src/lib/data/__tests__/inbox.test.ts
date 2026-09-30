@@ -13,7 +13,12 @@ vi.mock('@/lib/data/memories', () => ({
   markKairosSpeaksReplied: vi.fn(),
 }))
 
+vi.mock('@/lib/data/memory-reactions', () => ({
+  reactOutcome: vi.fn(async () => undefined),
+}))
+
 import { getPendingKairosAsk, type KairosAskRow } from '@/lib/data/ask'
+import { reactOutcome } from '@/lib/data/memory-reactions'
 import {
   acceptProposal,
   archiveMemory,
@@ -61,6 +66,7 @@ function listedMemory(id: string, sourceMetadata: Record<string, unknown>): List
     tags: [],
     pinned: false,
     confidence: 0.6,
+    standing: null,
   }
 }
 
@@ -155,6 +161,22 @@ describe('dismissInboxMemory', () => {
     expect(markKairosSpeaksReplied).not.toHaveBeenCalled()
   })
 
+  it('records Outcome negative (feedback) when a proposal is dismissed', async () => {
+    vi.mocked(findMemoryById).mockResolvedValue(foundMemory({ sourceMetadata: { introspection: true, status: 'pending' } }))
+    vi.mocked(archiveMemory).mockResolvedValue(foundMemory({ archivedAt: new Date() }))
+
+    await dismissInboxMemory(USER_ID, 'mem-1')
+    expect(reactOutcome).toHaveBeenCalledWith(USER_ID, 'mem-1', 'negative', expect.any(String))
+  })
+
+  it('dismissing a Kairos speak records no outcome (unchanged speak path)', async () => {
+    vi.mocked(findMemoryById).mockResolvedValue(foundMemory())
+    vi.mocked(archiveMemory).mockResolvedValue(foundMemory({ archivedAt: new Date() }))
+
+    await dismissInboxMemory(USER_ID, 'mem-1')
+    expect(reactOutcome).not.toHaveBeenCalled()
+  })
+
   it('still dismisses when the reply marker fails', async () => {
     vi.mocked(findMemoryById).mockResolvedValue(foundMemory())
     vi.mocked(archiveMemory).mockResolvedValue(foundMemory({ archivedAt: new Date() }))
@@ -171,6 +193,7 @@ describe('dismissInboxMemory', () => {
     const result = await dismissInboxMemory(USER_ID, 'mem-1')
     expect(result).toEqual({ ok: false, reason: 'already_resolved' })
     expect(archiveMemory).not.toHaveBeenCalled()
+    expect(reactOutcome).not.toHaveBeenCalled()
   })
 
   it('rejects non-inbound or missing memories as not_found', async () => {

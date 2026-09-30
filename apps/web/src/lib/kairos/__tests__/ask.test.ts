@@ -25,9 +25,13 @@ vi.mock('@/lib/data/projects', () => ({
 vi.mock('@/lib/data/vault', () => ({
   updateVaultDescription: vi.fn(),
 }))
+vi.mock('@/lib/data/memory-reactions', () => ({
+  reactUsed: vi.fn(async () => undefined),
+}))
 
 import { getPendingKairosAsk, markKairosAskAnswered, type KairosAskRow } from '@/lib/data/ask'
 import { captureReflection, markKairosSpeaksReplied } from '@/lib/data/memories'
+import { reactUsed } from '@/lib/data/memory-reactions'
 import { appendTaskDescription, findTaskById } from '@/lib/data/tasks'
 import { verifyProjectAccess } from '@/lib/data/projects'
 import { updateVaultDescription } from '@/lib/data/vault'
@@ -395,6 +399,32 @@ describe('answerKairosAsk clears the Kairos reply gate', () => {
 
     await expect(answerKairosAsk(USER, ASK_ID, 'An answer')).resolves.toEqual({ error: 'not_found' })
     expect(markKairosSpeaksReplied).not.toHaveBeenCalled()
+    expect(reactUsed).not.toHaveBeenCalled()
+  })
+
+  it('reinforces the memories the answered ask was built from (Usage + feedback)', async () => {
+    vi.mocked(getPendingKairosAsk).mockResolvedValue({
+      ...pendingAsk,
+      kairosAsk: { ...pendingAsk.kairosAsk, sourceMemoryIds: [MEM_A, MEM_B] },
+    })
+
+    await expect(answerKairosAsk(USER, ASK_ID, 'An answer')).resolves.toEqual({ reflectionId: 'reflection-1' })
+    expect(reactUsed).toHaveBeenCalledWith(USER, [MEM_A, MEM_B], expect.any(String))
+    // P0 behaviour intact.
+    expect(markKairosSpeaksReplied).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips reinforcement when the ask cites nothing or the claim race is lost', async () => {
+    await answerKairosAsk(USER, ASK_ID, 'An answer')
+    expect(reactUsed).not.toHaveBeenCalled()
+
+    vi.mocked(getPendingKairosAsk).mockResolvedValue({
+      ...pendingAsk,
+      kairosAsk: { ...pendingAsk.kairosAsk, sourceMemoryIds: [MEM_A] },
+    })
+    vi.mocked(markKairosAskAnswered).mockResolvedValue(false as never)
+    await expect(answerKairosAsk(USER, ASK_ID, 'An answer')).resolves.toEqual({ error: 'not_found' })
+    expect(reactUsed).not.toHaveBeenCalled()
   })
 })
 

@@ -24,6 +24,8 @@ import {
   registerDialogueTools,
   registerHangarTools,
   registerVirtualMemberTools,
+  registerMemoryOpsTools,
+  registerThinkingTools,
 } from './tools'
 
 async function verifyToken(_req: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
@@ -64,6 +66,8 @@ const mcpHandler = createMcpHandler(
     registerDialogueTools(server)
     registerHangarTools(server)
     registerVirtualMemberTools(server)
+    registerMemoryOpsTools(server)
+    registerThinkingTools(server)
   },
   { capabilities: {} },
   {
@@ -77,5 +81,9 @@ const handler = withMcpAuth(
   verifyToken,
   { required: true }
 )
+
+// The Max-plan thinking routine claims jobs through MCP; a Sunday claim plans
+// concept clusters, so give the shared MCP function the same ceiling as crons.
+export const maxDuration = 300
 
 export { handler as GET, handler as POST, handler as DELETE }

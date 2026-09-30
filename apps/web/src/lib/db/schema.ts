@@ -536,6 +536,13 @@ export const memories = pgTable('memories', {
   tags: jsonb('tags').default([]).notNull(),
   pinned: boolean('pinned').default(false).notNull(),
   archivedAt: timestamp('archived_at', { mode: 'date' }),
+  // Memory engine (docs/kairos/32, migration 0039). standing = engine-computed
+  // trust × value (0..1); NULL until first scored → readers fall back to
+  // confidence × recency. lastUsedAt/useCount = reinforcement from use.
+  standing: real('standing'),
+  standingAt: timestamp('standing_at', { mode: 'date' }),
+  lastUsedAt: timestamp('last_used_at', { mode: 'date' }),
+  useCount: integer('use_count').default(0).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => ({
@@ -546,6 +553,7 @@ export const memories = pgTable('memories', {
   typeIdx: index('memories_type_idx').on(t.userId, t.type),
   dominionIdx: index('memories_dominion_idx').on(t.dominionId),
   streamClassIdx: index('memories_stream_class_idx').on(t.userId, t.streamClass),
+  standingIdx: index('memories_standing_idx').on(t.userId, t.standing),
 }))
 
 // Kairos Dominion — user-scoped top-level grouping that sits above Project
@@ -571,6 +579,55 @@ export const dominions = pgTable('dominions', {
 }, (t) => ({
   userIdx: index('dominions_user_idx').on(t.userId, t.sortOrder),
   archivedIdx: index('dominions_archived_idx').on(t.userId, t.archivedAt),
+}))
+
+// Memory engine change log (docs/kairos/32 §2, migration 0039). Append-only:
+// every engine or operator-reaction change with its before/after snapshot and
+// reason. Reverting stamps reverted_at and writes a 'revert' op. memory_id is
+// a soft pointer (no FK) so the trail survives hard deletes.
+export const memoryOps = pgTable('memory_ops', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  runId: uuid('run_id'),
+  memoryId: uuid('memory_id'),
+  step: varchar('step', { length: 30 }).notNull(),
+  op: varchar('op', { length: 30 }).notNull(),
+  before: jsonb('before'),
+  after: jsonb('after'),
+  reason: text('reason').notNull(),
+  revertedAt: timestamp('reverted_at', { mode: 'date' }),
+  revertedByOpId: uuid('reverted_by_op_id'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  userIdx: index('memory_ops_user_idx').on(t.userId, t.createdAt),
+  memoryIdx: index('memory_ops_memory_idx').on(t.memoryId),
+  runIdx: index('memory_ops_run_idx').on(t.runId),
+}))
+
+// Thinking queue (docs/kairos/32 §3, migration 0039). A cron posts jobs, a
+// Claude Max routine claims + submits via MCP, the server validates and
+// persists through the kind's handler; expired jobs fall back to the paid key.
+export const thinkingJobs = pgTable('thinking_jobs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  kind: varchar('kind', { length: 40 }).notNull(),
+  dominionId: uuid('dominion_id').references(() => dominions.id, { onDelete: 'set null' }),
+  externalKey: varchar('external_key', { length: 200 }).notNull(),
+  status: varchar('status', { length: 20 }).default('queued').notNull(),
+  input: jsonb('input').default({}).notNull(),
+  output: jsonb('output'),
+  claimedBy: varchar('claimed_by', { length: 20 }),
+  claimToken: uuid('claim_token'),
+  claimedAt: timestamp('claimed_at', { mode: 'date' }),
+  deadlineAt: timestamp('deadline_at', { mode: 'date' }).notNull(),
+  completedAt: timestamp('completed_at', { mode: 'date' }),
+  attempts: integer('attempts').default(0).notNull(),
+  error: text('error'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  userKeyIdx: uniqueIndex('thinking_jobs_user_key_idx').on(t.userId, t.externalKey),
+  statusIdx: index('thinking_jobs_status_idx').on(t.userId, t.status, t.deadlineAt),
 }))
 
 // Kairos Phase 1 (B10) — Engine Router policy table. Each row maps a

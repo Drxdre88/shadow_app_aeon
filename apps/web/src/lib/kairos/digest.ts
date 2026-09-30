@@ -10,7 +10,8 @@ import { SYNTHESIS_HEALTH_RECIPE } from './synthesis-health'
 import { deliverKairosSpeak } from './speak'
 import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 import { todayIso } from './_prompt-utils'
-import { DIGEST_SYSTEM_PROMPT, buildDigestUserPrompt } from './digest-prompt'
+import { DIGEST_SYSTEM_PROMPT, MAX_DIGEST_BELIEFS, buildBeliefsBlock, buildDigestUserPrompt } from './digest-prompt'
+import { listPromotedBeliefsBetween, type PromotedBelief } from '@/lib/data/memory-candidates'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Evening Digest — one guaranteed-daily message: what Kairos saw
@@ -195,6 +196,18 @@ function buildMinimalDigest(date: string): string {
   ].join('\n')
 }
 
+// Memory-engine promotions in the window, oldest first (≤3). Best-effort and
+// deliberately untraced: an empty block is the correct output when the engine
+// hasn't run (or memory_ops isn't migrated yet), and must never cost the
+// operator the digest itself.
+export async function gatherPromotedBeliefs(userId: string, window: DigestWindow): Promise<PromotedBelief[]> {
+  try {
+    return await listPromotedBeliefsBetween(userId, window.start, window.end, MAX_DIGEST_BELIEFS)
+  } catch {
+    return []
+  }
+}
+
 // Idempotency stays keyed on the UTC calendar day (independent of the rolling
 // count window) so the digest sends once per day. dayStart is passed in rather
 // than DATE_TRUNC('day', NOW()) so it is independent of the DB session timezone.
@@ -235,8 +248,9 @@ export async function runEveningDigestForUser(userId: string): Promise<EveningDi
     // minimal message below rather than letting the outer catch skip the
     // whole night.
     let counts: DigestCounts | null = null
+    const window = digestWindow(new Date())
     try {
-      counts = await gatherDigestCounts(userId, digestWindow(new Date()))
+      counts = await gatherDigestCounts(userId, window)
     } catch (err) {
       await writeCronFailureTrace(userId, { cronName: 'digest', reason: 'gather_failed', error: err })
     }
@@ -286,6 +300,11 @@ export async function runEveningDigestForUser(userId: string): Promise<EveningDi
         }
       }
     }
+
+    // Deterministic "What I now believe" block, appended after the narrative
+    // guard so the P0 runaway/length guards still judge only model text.
+    const beliefsBlock = buildBeliefsBlock(await gatherPromotedBeliefs(userId, window))
+    if (beliefsBlock) message = `${message}\n\n${beliefsBlock}`
 
     // force:true only bypasses the awaitingReply gate, not the forced-speak
     // ceiling in speak.ts — a 429 here means real delivery failure, not a

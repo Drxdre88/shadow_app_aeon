@@ -53,3 +53,22 @@ export function buildDigestUserPrompt(counts: DigestCounts, date: string): strin
   ]
   return lines.join('\n')
 }
+
+// "What I now believe" — the memory engine's promotions from the digest window
+// (docs/kairos/32 §2.3), appended verbatim AFTER the narrative (model or
+// fallback) so it never depends on, or trips, the model-output guard. Undo is
+// via Claude's revert_memory_op tool (there is no Telegram reply consumer).
+export const MAX_DIGEST_BELIEFS = 3
+export const BELIEFS_UNDO_HINT = 'To undo one, ask Claude to revert it (revert_memory_op).'
+const MAX_BELIEF_TITLE_CHARS = 90
+
+export function buildBeliefsBlock(beliefs: ReadonlyArray<{ title: string }>): string {
+  const shown = beliefs.slice(0, MAX_DIGEST_BELIEFS)
+  if (shown.length === 0) return ''
+  const lines = shown.map((b, i) => {
+    const title = b.title.replace(/\s+/g, ' ').trim()
+    const clipped = title.length > MAX_BELIEF_TITLE_CHARS ? `${title.slice(0, MAX_BELIEF_TITLE_CHARS - 1)}…` : title
+    return `${i + 1}. ${clipped}`
+  })
+  return ['What I now believe:', ...lines, BELIEFS_UNDO_HINT].join('\n')
+}
