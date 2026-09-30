@@ -7,7 +7,8 @@ import {
   memories,
   boardTasks,
 } from '@/lib/db/schema'
-import { eq, and, asc, desc, isNull, ne, sql } from 'drizzle-orm'
+import { eq, and, asc, desc, isNull, ne, notInArray, sql } from 'drizzle-orm'
+import { META_STREAM_CLASSES } from '@/lib/kairos/streamClass'
 import type {
   CreateDominionInput,
   UpdateDominionInput,
@@ -276,6 +277,10 @@ export async function inspectDominion(
         isNull(memories.archivedAt),
         ne(memories.streamClass, 'archetype'),
         ne(memories.streamClass, 'cortex'),
+        // Machine meta-rows (cron traces, delta folds, board snapshots —
+        // live cards come via the board join below) are bookkeeping, not
+        // briefing substrate; a daily trace per cron would crowd the cap.
+        notInArray(memories.streamClass, [...META_STREAM_CLASSES]),
       ))
       .orderBy(desc(memories.createdAt))
       .limit(memoryLimit),

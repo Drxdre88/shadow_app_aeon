@@ -12,7 +12,8 @@ import { findTaskById, updateTask, recordMissionLaunch } from '@/lib/data/tasks'
 import { createAgentSession, findLiveSessionForTask } from '@/lib/data/sessions'
 import { findHangarRepoBySlug, listHangarRepos } from '@/lib/data/hangar-repos'
 import { findProjectRealmIds } from '@/lib/data/workspaces'
-import { mergeProjectSettings } from '@/lib/data/projects'
+import { mergeProjectSettings, verifyProjectAccess } from '@/lib/data/projects'
+import { findDominionById } from '@/lib/data/dominions'
 import { findColumns } from '@/lib/data/columns'
 import { z } from 'zod'
 
@@ -95,6 +96,28 @@ async function assertRepoIsRegistered(projectId: string, hangar: HangarCardMetad
 }
 
 /**
+ * The Dominion a mission files under: the card's project Dominion, but only
+ * when the launching user owns it — Dominions are per-user, and a realm
+ * editor launching on someone else's board must not tag their session into
+ * the owner's Dominion. Best-effort: a lookup failure never blocks a launch.
+ */
+async function resolveLaunchDominion(projectId: string, userId: string): Promise<string | null> {
+  try {
+    const access = await verifyProjectAccess(projectId, userId)
+    const dominionId = access?.project.dominionId ?? null
+    if (!dominionId) return null
+    const dominion = await findDominionById(dominionId, userId)
+    return dominion ? dominion.id : null
+  } catch (err) {
+    console.error('[hangar] dominion lookup failed; launching unfiled', {
+      projectId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return null
+  }
+}
+
+/**
  * @param origin 'manual' = the operator explicitly hit Execute / Save &
  * Launch. 'auto-drop' = a column move fired it, which is only legitimate
  * while the card is armed IN THE DATABASE — the client's copy of `autoRun`
@@ -139,6 +162,8 @@ export async function spawnSessionFromCard(
   // model charset here rather than trusting the card round-trip.
   const model = hangar.model && HANGAR_MODEL_RE.test(hangar.model) ? hangar.model : null
 
+  const dominionId = await resolveLaunchDominion(projectId, userId)
+
   const session = await createAgentSession(userId, {
     engine: hangar.agent,
     repo: hangar.repo,
@@ -146,6 +171,7 @@ export async function spawnSessionFromCard(
     prompt: buildDispatchPrompt(taskId, task.name, hangar),
     projectId,
     taskId,
+    ...(dominionId ? { dominionId } : {}),
     metadata: {
       hangar: {
         objective: hangar.objective,

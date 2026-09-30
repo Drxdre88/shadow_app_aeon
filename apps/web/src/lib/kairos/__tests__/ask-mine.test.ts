@@ -15,6 +15,10 @@ vi.mock('@/lib/data/board-signals', () => ({
   listRecentlyCreatedTasks: vi.fn(),
 }))
 
+vi.mock('@/lib/data/board-feed', () => ({
+  listBoardDayPages: vi.fn(),
+}))
+
 vi.mock('@/lib/data/dominions', () => ({
   findDominionsByUser: vi.fn(),
 }))
@@ -50,9 +54,11 @@ import {
   listStaleTasks,
 } from '@/lib/data/board-signals'
 import { findDominionsByUser } from '@/lib/data/dominions'
+import { listBoardDayPages } from '@/lib/data/board-feed'
 import { fetchAetherInputs } from '@/lib/kairos/aether'
 import { getConversationState } from '@/lib/kairos/engagement'
 import {
+  buildCardNotesQuestion,
   parseAskMineResponse,
   runAskMineForUser,
   selectAskMineCandidate,
@@ -202,6 +208,7 @@ beforeEach(() => {
   vi.mocked(listRecentlyCompletedTasks).mockResolvedValue([])
   vi.mocked(listRecentlyCreatedTasks).mockResolvedValue([])
   vi.mocked(createKairosAskMemory).mockResolvedValue('ask-new')
+  vi.mocked(listBoardDayPages).mockResolvedValue([])
   vi.mocked(getProviderForTask).mockResolvedValue(routedProvider(
     vi.fn().mockResolvedValue(providerResponse(
       [candidate()],
@@ -328,6 +335,126 @@ describe('ask mining', () => {
     expect(result.status).toBe('dry_run')
     expect(result).toMatchObject({ modelInput: { cacheSystem: true, maxOutputTokens: 4000 } })
     expect(getProviderForTask).not.toHaveBeenCalled()
+    expect(createKairosAskMemory).not.toHaveBeenCalled()
+  })
+})
+
+describe('thin-card nudge (card_notes)', () => {
+  const PAGE = {
+    id: 'page-1',
+    projectId: 'project-as',
+    dominionId: DOMINION_ID,
+    sourceMetadata: {
+      kind: 'board_day',
+      date: '2026-07-18',
+      thinCards: [
+        { taskId: 'task-a', title: 'Deploy' },
+        { vaultId: 'vault-b', title: 'Fix login?' },
+        { title: 'no ref' },
+        { taskId: 'task-c', title: 'Tidy inbox' },
+        { taskId: 'task-d', title: 'Fourth' },
+      ],
+    },
+  }
+
+  function silenceSignals() {
+    vi.mocked(fetchAetherInputs).mockResolvedValue({
+      cortexSnapshots: [],
+      topReflections: [],
+      archetypes: [],
+      prior: null,
+      todaySoFar: null,
+    } as unknown as Awaited<ReturnType<typeof fetchAetherInputs>>)
+    vi.mocked(listStaleTasks).mockResolvedValue([])
+  }
+
+  it('builds a numbered one-question nudge', () => {
+    const question = buildCardNotesQuestion(['Deploy', 'Fix login?', 'Tidy inbox'])
+    expect(question).toContain('**3 cards closed with no notes**')
+    expect(question).toContain('1. Deploy\n2. Fix login\n3. Tidy inbox')
+    expect((question.match(/\?/g) ?? []).length).toBe(1)
+    expect(buildCardNotesQuestion(['Deploy'])).toContain('One line on what it was')
+  })
+
+  it('asks for notes on up to three thin cards from yesterday\'s board page when there are no signals', async () => {
+    silenceSignals()
+    vi.mocked(listBoardDayPages).mockResolvedValue([PAGE])
+
+    const result = await runAskMineForUser(USER_ID, { date: DATE, now: NOW })
+
+    expect(listBoardDayPages).toHaveBeenCalledWith(USER_ID, '2026-07-18')
+    expect(result).toMatchObject({ status: 'created', kind: 'card_notes', cardCount: 3, askId: 'ask-new' })
+    expect(getProviderForTask).not.toHaveBeenCalled()
+    expect(createKairosAskMemory).toHaveBeenCalledWith(USER_ID, expect.objectContaining({
+      dominionId: DOMINION_ID,
+      externalId: `ask-mine:${DATE}:card-notes`,
+      expiresAt: '2026-07-22T04:30:00.000Z',
+      sourceMemoryIds: ['page-1', 'task-a', 'task-c'],
+      askMine: expect.objectContaining({ date: DATE, kind: 'card_notes' }),
+      cardNotes: {
+        date: '2026-07-18',
+        boardDayMemoryIds: ['page-1'],
+        cards: [
+          { taskId: 'task-a', projectId: 'project-as', title: 'Deploy' },
+          { vaultId: 'vault-b', projectId: 'project-as', title: 'Fix login?' },
+          { taskId: 'task-c', projectId: 'project-as', title: 'Tidy inbox' },
+        ],
+      },
+    }))
+  })
+
+  it('also falls back when the model yields no eligible candidate', async () => {
+    vi.mocked(listBoardDayPages).mockResolvedValue([PAGE])
+    vi.mocked(getProviderForTask).mockResolvedValue(routedProvider(
+      vi.fn().mockResolvedValue(providerResponse([], [])),
+    ))
+
+    const result = await runAskMineForUser(USER_ID, { date: DATE, now: NOW })
+
+    expect(result).toMatchObject({ status: 'created', kind: 'card_notes' })
+  })
+
+  it('never pre-empts a normal mined question', async () => {
+    vi.mocked(listBoardDayPages).mockResolvedValue([PAGE])
+
+    const result = await runAskMineForUser(USER_ID, { date: DATE, now: NOW })
+
+    expect(result).toMatchObject({ status: 'created', candidate: expect.anything() })
+    expect(listBoardDayPages).not.toHaveBeenCalled()
+  })
+
+  it('stays silent when yesterday had no thin cards', async () => {
+    silenceSignals()
+    vi.mocked(listBoardDayPages).mockResolvedValue([{ ...PAGE, sourceMetadata: { kind: 'board_day', thinCards: [] } }])
+
+    const result = await runAskMineForUser(USER_ID, { date: DATE, now: NOW })
+
+    expect(result).toMatchObject({ status: 'skipped', reason: 'no_signals' })
+    expect(createKairosAskMemory).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['pending ask', () => vi.mocked(getPendingKairosAsk).mockResolvedValue(recentAsk({ kairosAsk: { ...recentAsk().kairosAsk, status: 'pending' } })), 'pending'],
+    ['awaiting reply', () => vi.mocked(getConversationState).mockResolvedValue({ lastOutbound: null, replied: false, awaitingReply: true, replyRate7d: 0 }), 'awaiting_reply'],
+    ['already asked today', () => vi.mocked(listRecentKairosAsks).mockResolvedValue([recentAsk({ askMine: { date: DATE, kind: 'card_notes', sourceMemoryIds: [], leverage: 0.5 } })]), 'already_ran'],
+  ])('respects the %s gate', async (_label, arrange, reason) => {
+    silenceSignals()
+    vi.mocked(listBoardDayPages).mockResolvedValue([PAGE])
+    arrange()
+
+    const result = await runAskMineForUser(USER_ID, { date: DATE, now: NOW })
+
+    expect(result).toMatchObject({ status: 'skipped', reason })
+    expect(createKairosAskMemory).not.toHaveBeenCalled()
+  })
+
+  it('never writes the nudge in dry-run mode', async () => {
+    silenceSignals()
+    vi.mocked(listBoardDayPages).mockResolvedValue([PAGE])
+
+    const result = await runAskMineForUser(USER_ID, { date: DATE, now: NOW, dryRun: true })
+
+    expect(result).toMatchObject({ status: 'skipped', reason: 'no_signals' })
     expect(createKairosAskMemory).not.toHaveBeenCalled()
   })
 })

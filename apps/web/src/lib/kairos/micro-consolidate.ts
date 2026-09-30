@@ -13,21 +13,22 @@ import {
   type MicroConsolidateNewMemory,
 } from './micro-consolidate-prompt'
 import { todayIso } from './_prompt-utils'
-import { writeCronFailureTrace } from './cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos — Micro-consolidation (intraday delta folding).
 //
-// Runs 6x/day, off-peak of the nightly synthesis chain (vercel.json:
-// "15 6,9,12,15,18,21 * * *"). Per active Dominion: if enough new substrate
+// Runs several times a day, off-peak of the nightly synthesis chain (schedule
+// lives in vercel.json). Per active Dominion: if enough new substrate
 // has landed since the last fold, write ONE compact streamClass='delta'
 // memory — "what changed since the last cortex reading" — that the nightly
 // cortex/aether generators read back as their "Today so far" grounding
 // section (see cortex-prompt.ts / aether-prompt.ts).
 //
 // Window anchor: GREATEST(last live delta's createdAt, today's live cortex's
-// createdAt, start of today UTC) — the window resets every morning when the
-// cortex regenerates and never accumulates across days.
+// createdAt); with neither, now − FIRST_RUN_LOOKBACK_MS. There is deliberately
+// NO UTC-midnight floor — it used to drop everything between the last evening
+// run and 00:00 from every delta.
 //
 // Threshold: skip Dominions with fewer than MIN_NEW_MEMORIES new rows since
 // the anchor (mirrors the hasSignal guard in archetypes.ts/cortex.ts) — a
@@ -43,6 +44,11 @@ import { writeCronFailureTrace } from './cron-trace'
 
 const MIN_NEW_MEMORIES = 3
 const MAX_NEW_MEMORY_ROWS = 30
+// Lookback when neither a prior delta nor today's cortex anchors the window
+// (first-ever run / cortex hasn't fired). Longest gap between scheduled runs is
+// the overnight one (~7h), so 18h covers it with room while stopping a
+// brand-new Dominion from folding its whole history into one delta.
+const FIRST_RUN_LOOKBACK_MS = 18 * 60 * 60 * 1000
 
 function hourBucket(now: Date): string {
   return now.toISOString().slice(0, 13) // "2026-07-24T15"
@@ -85,15 +91,16 @@ async function todaysCortexCreatedAt(userId: string, dominionId: string, dayStar
   return row?.createdAt ?? null
 }
 
-async function computeWindowStart(userId: string, dominionId: string): Promise<Date> {
-  const dayStart = dayStartUtc()
+async function computeWindowStart(userId: string, dominionId: string, now: Date = new Date()): Promise<Date> {
   const lastDelta = await lastDeltaCreatedAt(userId, dominionId)
-  const cortexToday = await todaysCortexCreatedAt(userId, dominionId, dayStart)
+  const cortexToday = await todaysCortexCreatedAt(userId, dominionId, dayStartUtc())
 
-  let since = dayStart
-  if (lastDelta && lastDelta > since) since = lastDelta
-  if (cortexToday && cortexToday > since) since = cortexToday
-  return since
+  // No UTC-midnight floor: activity after the last evening run must roll into
+  // the next run's delta instead of falling into a gap at 00:00.
+  let since: Date | null = null
+  if (lastDelta) since = lastDelta
+  if (cortexToday && (!since || cortexToday > since)) since = cortexToday
+  return since ?? new Date(now.getTime() - FIRST_RUN_LOOKBACK_MS)
 }
 
 // Excludes 'trace' (cron bookkeeping) and 'delta' (this generator's own prior
@@ -168,9 +175,11 @@ export async function runMicroConsolidateForDominion(
   }
 
   const now = new Date()
+  // Board counts scoped to THIS Dominion's own projects — not the user-wide
+  // (incl. shared-project) totals every Dominion's delta used to repeat.
   const [tasksCompleted, tasksCreated] = await Promise.all([
-    countTasksCompletedBetween(userId, since, now),
-    countTasksCreatedBetween(userId, since, now),
+    countTasksCompletedBetween(userId, since, now, { dominionId }),
+    countTasksCreatedBetween(userId, since, now, { dominionId }),
   ])
 
   const ctx: MicroConsolidateContext = {
@@ -246,7 +255,16 @@ export async function runMicroConsolidateForUser(userId: string): Promise<MicroC
   const results: MicroConsolidateRunResult[] = []
   for (const dom of active) {
     try {
-      results.push(await runMicroConsolidateForDominion(userId, dom.id))
+      const result = await runMicroConsolidateForDominion(userId, dom.id)
+      results.push(result)
+      // Liveness for the health scorecard; 'error' already wrote a failure trace.
+      if (result.status !== 'error') {
+        await writeCronSuccessTrace(userId, {
+          cronName: 'micro-consolidate',
+          dominionId: dom.id,
+          ...(result.status === 'skipped' ? { outcome: 'skipped' as const, skipReason: result.reason } : {}),
+        })
+      }
     } catch (err) {
       await writeCronFailureTrace(userId, {
         cronName: 'micro-consolidate',

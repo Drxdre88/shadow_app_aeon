@@ -11,11 +11,12 @@ vi.mock('@/lib/kairos/embeddings', () => ({
 
 vi.mock('@/lib/kairos/cron-trace', () => ({
   writeCronFailureTrace: vi.fn(),
+  writeCronSuccessTrace: vi.fn(),
 }))
 
 import { backfillEmbeddings } from '@/lib/data/memories'
 import { embeddingsEnabled } from '@/lib/kairos/embeddings'
-import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 import { GET } from '../route'
 
 const OPERATOR = 'operator-user-1'
@@ -52,6 +53,17 @@ describe('cron/embed-backfill route', () => {
     expect(backfillEmbeddings).not.toHaveBeenCalled()
   })
 
+  it('writes a skipped success trace when embeddings are disabled', async () => {
+    process.env.KAIROS_OPERATOR_USER_ID = OPERATOR
+    vi.mocked(embeddingsEnabled).mockReturnValue(false)
+    await GET(request())
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(OPERATOR, {
+      cronName: 'embed-backfill',
+      outcome: 'skipped',
+      skipReason: 'embeddings_disabled',
+    })
+  })
+
   it('traces an uncaught exception to KAIROS_OPERATOR_USER_ID and still 500s', async () => {
     process.env.KAIROS_OPERATOR_USER_ID = OPERATOR
     vi.mocked(backfillEmbeddings).mockRejectedValue(new Error('provider timeout'))
@@ -61,6 +73,7 @@ describe('cron/embed-backfill route', () => {
 
     expect(response.status).toBe(500)
     expect(body.error).toBe('provider timeout')
+    expect(writeCronSuccessTrace).not.toHaveBeenCalled()
     expect(writeCronFailureTrace).toHaveBeenCalledWith(OPERATOR, expect.objectContaining({
       cronName: 'embed-backfill',
       reason: 'uncaught_exception',
@@ -85,5 +98,14 @@ describe('cron/embed-backfill route', () => {
     expect(response.status).toBe(200)
     expect(body).toMatchObject({ embedded: 12, remaining: 0, model: 'voyage-3' })
     expect(writeCronFailureTrace).not.toHaveBeenCalled()
+  })
+
+  it('writes an ok success trace to KAIROS_OPERATOR_USER_ID on success', async () => {
+    process.env.KAIROS_OPERATOR_USER_ID = OPERATOR
+    vi.mocked(backfillEmbeddings).mockResolvedValue({ embedded: 12, remaining: 0 } as never)
+
+    await GET(request())
+
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(OPERATOR, { cronName: 'embed-backfill' })
   })
 })

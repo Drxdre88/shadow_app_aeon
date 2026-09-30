@@ -143,6 +143,35 @@ export async function updateTask(
 }
 
 /**
+ * Append a line to a card's description inside the UPDATE (no read-modify-write),
+ * so a concurrent editor save can't be clobbered by a stale description.
+ * Refuses (returns null) when the result would exceed maxLength.
+ */
+export async function appendTaskDescription(
+  taskId: string,
+  projectId: string,
+  note: string,
+  maxLength: number,
+) {
+  const appended = sql`case
+    when coalesce(btrim(${boardTasks.description}), '') = '' then ${note}
+    else rtrim(${boardTasks.description}) || ${'\n\n' + note}
+  end`
+  const [task] = await db
+    .update(boardTasks)
+    .set({ description: appended, updatedAt: new Date() })
+    .where(and(
+      eq(boardTasks.id, taskId),
+      eq(boardTasks.projectId, projectId),
+      sql`char_length(${appended}) <= ${maxLength}`,
+    ))
+    .returning()
+  if (!task) return null
+  await touchProject(projectId, { type: 'task:updated' })
+  return task
+}
+
+/**
  * Record a launch on a card's mission WITHOUT a read-modify-write.
  *
  * `metadata || patch` is a TOP-LEVEL merge, so writing the whole `hangar`

@@ -1,9 +1,10 @@
-import { NextRequest } from 'next/server'
+import { NextRequest, after } from 'next/server'
 import { z } from 'zod'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
 import { recordSessionEventSchema, recordSessionEventBatchSchema, hangarResultEnvelopeSchema, sessionEventsTailSchema, enforceObjectiveDeliverables, type RecordSessionEventInput } from '@/lib/data/validators'
 import { findAgentSessionById, listSessionEvents, recordSessionEvent, recordSessionEventWithAutoSeq, recordSessionEvents, getNextEventSeq, recordSessionResult } from '@/lib/data/sessions'
+import { captureMissionMemory } from '@/lib/kairos/mission-memory'
 
 // A non-uuid path param would raise Postgres 22P02 and surface as a 500.
 const sessionIdSchema = z.string().uuid()
@@ -121,6 +122,19 @@ export const POST = withRateLimit(
       // Terminal guard inside recordSessionResult refuses replays against an
       // already-settled session — report that honestly instead of a blind true.
       const applied = await recordSessionResult(id, enforced.envelope)
+
+      // Mission → memory, after the response: capture embeds + files the row,
+      // which must not eat into the runner's POST timeout. Best-effort and
+      // idempotent (externalId hangar:{id}); see lib/kairos/mission-memory.
+      if (applied) {
+        const capture = () => captureMissionMemory(auth.id, session, enforced.envelope)
+        try {
+          after(capture)
+        } catch {
+          void capture()
+        }
+      }
+
       return jsonData({
         event: row,
         accepted,

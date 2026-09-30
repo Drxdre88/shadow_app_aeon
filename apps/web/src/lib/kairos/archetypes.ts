@@ -1,6 +1,7 @@
-import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, isNull, ne, notInArray, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
+import { META_STREAM_CLASSES } from './streamClass'
 import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
 import { validAsOfNow } from '@/lib/data/memories'
 import { getProviderForTask } from '@/lib/ai/route-task'
@@ -11,13 +12,14 @@ import {
   buildArchetypePrompt,
   buildArchetypeUserPrompt,
   extractJsonBlock,
+  groundArchetypeCitations,
   RECENT_WINDOW_DAYS,
   type ArchetypeContext,
   type ArchetypeOutput,
   type SubstrateRow,
 } from './archetypes-prompt'
 import { todayIso, parseWithRepair, ParseRepairError } from './_prompt-utils'
-import { writeCronFailureTrace } from './cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 
 // Re-export for callers (cron route + tests) that only import this module.
 export {
@@ -97,6 +99,9 @@ async function fetchSubstrate(userId: string, dominionId: string) {
       ne(memories.streamClass, 'reflection'),
       ne(memories.streamClass, 'archetype'),
       ne(memories.streamClass, 'cortex'),
+      // Machine meta-rows (cron traces, delta folds, board snapshots) are
+      // bookkeeping — they'd otherwise fill the newest-80 pool.
+      notInArray(memories.streamClass, [...META_STREAM_CLASSES]),
       sql`${memories.createdAt} > NOW() - (${RECENT_WINDOW_DAYS}::int * INTERVAL '1 day')`,
     )).orderBy(desc(memories.createdAt)).limit(MAX_RECENT),
 
@@ -105,6 +110,7 @@ async function fetchSubstrate(userId: string, dominionId: string) {
       eq(memories.pinned, true),
       ne(memories.streamClass, 'archetype'),
       ne(memories.streamClass, 'cortex'),
+      notInArray(memories.streamClass, [...META_STREAM_CLASSES]),
     )).orderBy(desc(memories.createdAt)).limit(MAX_PINNED),
 
     db.select(cols).from(memories).where(and(
@@ -235,6 +241,7 @@ export async function runArchetypeSynthesisForDominion(
   if (dom.archivedAt) return { dominionId, dominionName: dom.name, status: 'skipped', reason: 'archived' }
 
   if (await alreadyRanToday(userId, dominionId)) {
+    await writeCronSuccessTrace(userId, { cronName: 'archetype-synthesis', dominionId, outcome: 'skipped', skipReason: 'already ran today' })
     return { dominionId, dominionName: dom.name, status: 'existing', reason: 'already ran today' }
   }
 
@@ -280,12 +287,13 @@ export async function runArchetypeSynthesisForDominion(
     return { dominionId, dominionName: dom.name, status: 'error', reason: 'empty model response' }
   }
 
+  const fedIds = [ctx.recent, ctx.pinned, ctx.reflections, ctx.existing].flat().map((m) => m.id)
   let parsed: ArchetypeOutput
   try {
     parsed = await parseWithRepair({
       provider,
       rawText,
-      parse: (text) => archetypeOutSchema.parse(extractJsonBlock(text)),
+      parse: (text) => groundArchetypeCitations(archetypeOutSchema.parse(extractJsonBlock(text)), fedIds),
       generatorLabel: 'archetype',
       maxTokens: 8000,
     })
@@ -308,6 +316,8 @@ export async function runArchetypeSynthesisForDominion(
 
   if (inserted === 0) {
     await writeCronFailureTrace(userId, { cronName: 'archetype-synthesis', dominionId, reason: 'persist_failed' })
+  } else {
+    await writeCronSuccessTrace(userId, { cronName: 'archetype-synthesis', dominionId })
   }
 
   return {

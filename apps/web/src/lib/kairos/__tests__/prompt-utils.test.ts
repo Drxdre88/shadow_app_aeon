@@ -67,4 +67,17 @@ describe('parseWithRepair — repair call enrichment', () => {
       parseWithRepair({ provider: { ask }, rawText: BROKEN, parse, generatorLabel: 'introspection', system: 'S' }),
     ).rejects.toThrow(ParseRepairError)
   })
+
+  it('carries the ORIGINAL parse error when the repair call itself throws', async () => {
+    const ask = vi.fn().mockRejectedValue(new Error('transport-boom'))
+    const parse = vi.fn(() => { throw new Error('first parse fails') })
+
+    const err = await parseWithRepair({ provider: { ask }, rawText: BROKEN, parse, generatorLabel: 'aether' })
+      .catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(ParseRepairError)
+    expect((err as ParseRepairError).originalError).toBeInstanceOf(Error)
+    expect(((err as ParseRepairError).originalError as Error).message).toBe('first parse fails')
+    expect((err as ParseRepairError).rawExcerpt).toBe(BROKEN)
+  })
 })

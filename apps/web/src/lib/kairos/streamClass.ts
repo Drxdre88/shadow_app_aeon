@@ -22,6 +22,12 @@ export const STREAM_CLASSES = [
 
 export type StreamClass = (typeof STREAM_CLASSES)[number]
 
+// Machine meta-rows: cron success/failure traces, intraday delta folds, and
+// ephemeral board snapshots. They are bookkeeping, not signal — synthesis
+// readers (archetype pool, briefer bundle, chat LAST-24H, galaxy) exclude them
+// so a daily trace row per cron can't crowd real activity out of a capped pool.
+export const META_STREAM_CLASSES = ['trace', 'delta', 'snapshot'] as const satisfies readonly StreamClass[]
+
 export function isStreamClass(value: unknown): value is StreamClass {
   return typeof value === 'string' && (STREAM_CLASSES as readonly string[]).includes(value)
 }

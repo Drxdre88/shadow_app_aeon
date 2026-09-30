@@ -10,6 +10,7 @@ vi.mock('@/lib/data/memories', () => ({
   findMemoryById: vi.fn(),
   archiveMemory: vi.fn(),
   acceptProposal: vi.fn(),
+  markKairosSpeaksReplied: vi.fn(),
 }))
 
 import { getPendingKairosAsk, type KairosAskRow } from '@/lib/data/ask'
@@ -19,6 +20,7 @@ import {
   findMemoryById,
   listMemories,
   listTodaysAdvisories,
+  markKairosSpeaksReplied,
 } from '@/lib/data/memories'
 import { acceptInboxProposal, dismissInboxMemory, getKairosInbox } from '../inbox'
 
@@ -135,6 +137,32 @@ describe('dismissInboxMemory', () => {
     const result = await dismissInboxMemory(USER_ID, 'mem-1')
     expect(result).toEqual({ ok: true, id: 'mem-1' })
     expect(archiveMemory).toHaveBeenCalledWith('mem-1', USER_ID)
+  })
+
+  it('marks pending Kairos speaks replied when a speak is dismissed (clears the reply gate)', async () => {
+    vi.mocked(findMemoryById).mockResolvedValue(foundMemory())
+    vi.mocked(archiveMemory).mockResolvedValue(foundMemory({ archivedAt: new Date() }))
+
+    await dismissInboxMemory(USER_ID, 'mem-1')
+    expect(markKairosSpeaksReplied).toHaveBeenCalledWith(USER_ID, expect.any(Date))
+  })
+
+  it('does not mark speaks when dismissing a non-speak proposal', async () => {
+    vi.mocked(findMemoryById).mockResolvedValue(foundMemory({ sourceMetadata: { introspection: true, status: 'pending' } }))
+    vi.mocked(archiveMemory).mockResolvedValue(foundMemory({ archivedAt: new Date() }))
+
+    await expect(dismissInboxMemory(USER_ID, 'mem-1')).resolves.toEqual({ ok: true, id: 'mem-1' })
+    expect(markKairosSpeaksReplied).not.toHaveBeenCalled()
+  })
+
+  it('still dismisses when the reply marker fails', async () => {
+    vi.mocked(findMemoryById).mockResolvedValue(foundMemory())
+    vi.mocked(archiveMemory).mockResolvedValue(foundMemory({ archivedAt: new Date() }))
+    vi.mocked(markKairosSpeaksReplied).mockRejectedValue(new Error('db down'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(dismissInboxMemory(USER_ID, 'mem-1')).resolves.toEqual({ ok: true, id: 'mem-1' })
+    errorSpy.mockRestore()
   })
 
   it('is idempotent: an already-archived memory reports already_resolved', async () => {

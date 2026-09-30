@@ -46,6 +46,14 @@ function successRow(id: string, recipe: string, at: string): Row {
   }
 }
 
+function outcomeRow(id: string, cronName: string, at: string, outcome: 'ok' | 'skipped' = 'ok'): Row {
+  return {
+    id, title: `${cronName} ${outcome}`, summary: null, dominionId: null,
+    sourceMetadata: { cronName, outcome, externalId: `cron-${outcome}:${cronName}:all:${at.slice(0, 10)}` },
+    createdAt: new Date(at),
+  }
+}
+
 function rollupRow(alertedStages: string[]): Row {
   return {
     id: 'prev-rollup', title: 'Synthesis health', summary: null, dominionId: null,
@@ -99,11 +107,93 @@ describe('computeSynthesisHealth — bucketing (T-B2)', () => {
     expect(result.byStage).toEqual({
       'cortex-regen': { '2026-07-21': 'failed', '2026-07-22': 'failed' },
       'archetype-synthesis': { '2026-07-22': 'failed' },
-      'BRIEF': { '2026-07-21': 'ok', '2026-07-22': 'ok' },
+      // Dispatcher's recipe:'BRIEF' run traces resolve to the briefer cron's stage.
+      'briefer': { '2026-07-21': 'ok', '2026-07-22': 'ok' },
       'contradiction-scan': { '2026-07-21': 'failed', '2026-07-22': 'failed' },
     })
     expect(result.alertedStages).toEqual(['contradiction-scan', 'cortex-regen'])
     expect(result.newlyAlertedStages).toEqual(['contradiction-scan', 'cortex-regen'])
+  })
+
+  it('turns a stage ok from a success (outcome) row, including an expected skip', async () => {
+    mockHistory([], [
+      outcomeRow('s1', 'cortex-regen', '2026-07-21T03:00:00.000Z'),
+      outcomeRow('s2', 'micro-consolidate', '2026-07-22T06:15:00.000Z', 'skipped'),
+    ])
+
+    const result = await computeSynthesisHealth(USER)
+
+    expect(result.byStage).toEqual({
+      'cortex-regen': { '2026-07-21': 'ok' },
+      'micro-consolidate': { '2026-07-22': 'ok' },
+    })
+  })
+
+  it('a failure row beats an ok row for the same stage-night, regardless of order', async () => {
+    mockHistory([], [
+      outcomeRow('s1', 'cortex-regen', '2026-07-22T03:10:00.000Z'),
+      failureRow('f1', 'cortex-regen', '2026-07-22T03:00:00.000Z'),
+      failureRow('f2', 'aether-regen', '2026-07-22T04:00:00.000Z'),
+      outcomeRow('s2', 'aether-regen', '2026-07-22T04:10:00.000Z'),
+    ])
+
+    const result = await computeSynthesisHealth(USER)
+
+    expect(result.byStage).toEqual({
+      'cortex-regen': { '2026-07-22': 'failed' },
+      'aether-regen': { '2026-07-22': 'failed' },
+    })
+  })
+
+  it('collapses the three BRIEF keys (recipe BRIEF, cronName recipe:BRIEF, cronName briefer) into one stage', async () => {
+    mockHistory([], [
+      // Night 1: dispatcher success trace + briefer route liveness → ok.
+      successRow('b1', 'BRIEF', '2026-07-21T07:00:00.000Z'),
+      outcomeRow('b2', 'briefer', '2026-07-21T07:01:00.000Z'),
+      // Night 2: dispatcher recipe failure + route failure → failed.
+      failureRow('b3', 'recipe:BRIEF', '2026-07-22T07:00:00.000Z'),
+      failureRow('b4', 'briefer', '2026-07-22T07:01:00.000Z'),
+    ])
+
+    const result = await computeSynthesisHealth(USER)
+
+    expect(result.byStage).toEqual({
+      briefer: { '2026-07-21': 'ok', '2026-07-22': 'failed' },
+    })
+  })
+
+  it('alerts a 2-strike across mixed BRIEF keys (recipe failure one night, route failure the next)', async () => {
+    mockHistory([], [
+      failureRow('b1', 'recipe:BRIEF', '2026-07-21T07:00:00.000Z'),
+      failureRow('b2', 'briefer', '2026-07-22T07:00:00.000Z'),
+    ])
+
+    const result = await computeSynthesisHealth(USER)
+
+    expect(result.alertedStages).toEqual(['briefer'])
+  })
+
+  it('ignores cronName rows that are neither a failure nor an ok/skipped outcome (no signal)', async () => {
+    mockHistory([], [{
+      id: 'x', title: 'odd', summary: null, dominionId: null,
+      sourceMetadata: { cronName: 'cortex-regen' },
+      createdAt: new Date('2026-07-22T03:00:00.000Z'),
+    }])
+
+    const result = await computeSynthesisHealth(USER)
+
+    expect(result.byStage).toEqual({})
+  })
+
+  it('reads history with a 48h since-window and a generous cap (not the 100-row default clamp)', async () => {
+    mockHistory([], [])
+
+    await computeSynthesisHealth(USER)
+
+    expect(listTraceHistory).toHaveBeenCalledWith(USER, {
+      since: new Date('2026-07-20T08:00:00.000Z'),
+      limit: 2000,
+    })
   })
 
   it('excludes rows older than the 48h window entirely', async () => {

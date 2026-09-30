@@ -25,14 +25,16 @@ const clampedString = (max: number) =>
   z.string().trim().min(1).transform((s) => (s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s))
 
 // Citations arrive messy on bad nights: shortened to an 8-char prefix, wrapped
-// in brackets, a bare string, or the array omitted entirely (2026-07-24 Shadow
-// Apps trace: all 5 proposals lost the field, and .uuid()/.min(1) turned that
-// into a whole-night kill). Grounding is enforced by filterGroundedProposals
-// against the actual fed substrate — the schema only needs shape.
-const citationsSchema = z.preprocess(
-  (v) => (typeof v === 'string' ? [v] : Array.isArray(v) ? v : []),
-  z.array(z.string()).transform((a) => a.slice(0, 8)),
+// in brackets, a bare string, nulls, or the array omitted entirely (2026-07-24
+// Shadow Apps trace: all 5 proposals lost the field, and .uuid()/.min(1) turned
+// that into a whole-night kill). Grounding is enforced against the actual fed
+// substrate (makeFedIdResolver) — the schema only needs shape.
+export const fedIdListSchema = (max: number) => z.preprocess(
+  (v) => (typeof v === 'string' ? [v] : Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []),
+  z.array(z.string()).transform((a) => a.slice(0, max)),
 )
+
+const citationsSchema = fedIdListSchema(8)
 
 const proposalSchema = z.object({
   // reflection = candidate belief/priority · tension = contradiction/drift ·
@@ -136,30 +138,41 @@ export function extractJsonBlock(text: string): unknown {
   return _extractJsonBlock(text, 'introspection')
 }
 
-// Models cite ids as "[3b11ff33]" or a bare prefix despite the full-id rule.
-// Strip decoration and lowercase so an honest-but-messy citation still gets a
-// chance to resolve against the substrate.
+// Models cite ids as "[3b11ff33]", "mem:<uuid>" or a bare prefix despite the
+// full-id rule. Strip decoration and lowercase so an honest-but-messy citation
+// still gets a chance to resolve against the substrate.
 function normaliseCitationId(raw: string): string {
-  return raw.trim().replace(/^[[`'"]+|[\]`'"]+$/g, '').trim().toLowerCase()
+  return raw.trim().replace(/^[[`'"]+|[\]`'"]+$/g, '').trim().replace(/^mem:/i, '').toLowerCase()
+}
+
+// Shared id grounding for every generator that copies ids from its prompt:
+// an id resolves by exact (case-insensitive) match, or by a UNIQUE prefix of
+// ≥8 chars (models shorten uuids to their first block). Anything else —
+// null, invented, ambiguous — resolves to null and is dropped by the caller.
+// Always returns the canonical fed id, never the model's spelling.
+export function makeFedIdResolver(validIds: Iterable<string>): (raw: unknown) => string | null {
+  const byLower = new Map<string, string>()
+  for (const id of validIds) byLower.set(id.toLowerCase(), id)
+  const lowered = [...byLower.keys()]
+  return (raw) => {
+    if (typeof raw !== 'string') return null
+    const c = normaliseCitationId(raw)
+    const exact = byLower.get(c)
+    if (exact) return exact
+    if (/^[0-9a-f][0-9a-f-]{7,}$/.test(c)) {
+      const matches = lowered.filter((id) => id.startsWith(c))
+      if (matches.length === 1) return byLower.get(matches[0]) ?? null
+    }
+    return null
+  }
 }
 
 // Anti-drift filter: keep only citations that resolve to memories we actually
 // fed the model, and drop any proposal left with zero valid citations. This is
 // what guarantees every surfaced proposal is grounded in real substrate.
-// A citation resolves by exact id, or by a UNIQUE prefix of ≥8 chars (models
-// shorten uuids to their first block; a unique prefix is still real evidence).
 // An unresolvable citation costs that one proposal, never the whole run.
 export function filterGroundedProposals(out: IntrospectionOutput, validIds: Set<string>): Proposal[] {
-  const ids = [...validIds]
-  const resolve = (raw: string): string | null => {
-    const c = normaliseCitationId(raw)
-    if (validIds.has(c)) return c
-    if (/^[0-9a-f][0-9a-f-]{7,}$/.test(c)) {
-      const matches = ids.filter((id) => id.startsWith(c))
-      if (matches.length === 1) return matches[0]
-    }
-    return null
-  }
+  const resolve = makeFedIdResolver(validIds)
   return out.proposals
     .map((p) => {
       const citations = [...new Set(p.citations.map(resolve).filter((id): id is string => id !== null))]

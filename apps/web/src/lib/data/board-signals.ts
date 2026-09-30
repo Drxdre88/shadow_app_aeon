@@ -98,14 +98,32 @@ export async function listRecentlyCompletedTasks({
 // for multi-member projects. createdCount deliberately does NOT exclude
 // status='done' — a task created and finished the same day must still
 // count as created.
-export async function countTasksCompletedBetween(userId: string, start: Date, end: Date): Promise<number> {
+//
+// `opts.dominionId` narrows the count to projects the user OWNS that are filed
+// under that Dominion (projects.dominionId). Without it the scope is every
+// accessible project, including ones shared with the user — right for the
+// user-wide digest, wrong for a per-Dominion delta.
+type CountScopeOpts = { dominionId?: string }
+
+function countScope(userId: string, opts: CountScopeOpts) {
+  return opts.dominionId
+    ? and(eq(projects.userId, userId), eq(projects.dominionId, opts.dominionId))
+    : accessibleTo(userId)
+}
+
+export async function countTasksCompletedBetween(
+  userId: string,
+  start: Date,
+  end: Date,
+  opts: CountScopeOpts = {},
+): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`COUNT(DISTINCT ${boardTasks.id})::int` })
     .from(boardTasks)
     .innerJoin(projects, eq(projects.id, boardTasks.projectId))
     .leftJoin(projectMembers, eq(projectMembers.projectId, projects.id))
     .where(and(
-      accessibleTo(userId),
+      countScope(userId, opts),
       isNull(boardTasks.archivedAt),
       isNotNull(boardTasks.completedAt),
       gte(boardTasks.completedAt, start),
@@ -114,14 +132,19 @@ export async function countTasksCompletedBetween(userId: string, start: Date, en
   return row?.n ?? 0
 }
 
-export async function countTasksCreatedBetween(userId: string, start: Date, end: Date): Promise<number> {
+export async function countTasksCreatedBetween(
+  userId: string,
+  start: Date,
+  end: Date,
+  opts: CountScopeOpts = {},
+): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`COUNT(DISTINCT ${boardTasks.id})::int` })
     .from(boardTasks)
     .innerJoin(projects, eq(projects.id, boardTasks.projectId))
     .leftJoin(projectMembers, eq(projectMembers.projectId, projects.id))
     .where(and(
-      accessibleTo(userId),
+      countScope(userId, opts),
       isNull(boardTasks.archivedAt),
       gte(boardTasks.createdAt, start),
       lt(boardTasks.createdAt, end),

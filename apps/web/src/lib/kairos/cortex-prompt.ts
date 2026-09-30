@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { neutraliseFences, extractJsonBlock as _extractJsonBlock } from './_prompt-utils'
+import { makeFedIdResolver } from './introspection-prompt'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (B2) — pure helpers for the Dominion Cortex generator.
@@ -24,6 +25,8 @@ const activeThreadSchema = z.object({
   lastAdvance: z.string().trim().min(1).max(200),
 })
 
+// STORED contract (sourceMetadata.cortex, prior-snapshot parse). The model
+// never writes this directly — see cortexGenSchema.
 export const cortexOutSchema = z.object({
   // 1–2 sentences. The "what this Dominion looks like right now" headline.
   visionAnchor: z.string().trim().min(20).max(800),
@@ -35,6 +38,29 @@ export const cortexOutSchema = z.object({
 })
 
 export type CortexOutput = z.infer<typeof cortexOutSchema>
+
+// Model-facing schema: a thread's `id` is a COPIED archetype reference, so it
+// is shape-only here (null / shortened / invented ids no longer kill the run —
+// 2026-09-17 activeThreads[3].id null). groundCortexOutput resolves it against
+// the archetypes actually fed to the prompt and drops anything unknown.
+export const cortexGenSchema = cortexOutSchema.extend({
+  activeThreads: z.array(activeThreadSchema.extend({
+    id: z.string().trim().max(128).nullish(),
+  })).max(8).default([]),
+})
+
+export type CortexGenOutput = z.infer<typeof cortexGenSchema>
+
+export function groundCortexOutput(gen: CortexGenOutput, archetypeIds: Iterable<string>): CortexOutput {
+  const resolve = makeFedIdResolver(archetypeIds)
+  return {
+    ...gen,
+    activeThreads: gen.activeThreads.map(({ id, ...thread }) => {
+      const archetypeId = resolve(id)
+      return archetypeId ? { ...thread, id: archetypeId } : thread
+    }),
+  }
+}
 
 export interface ReflectionRow {
   id: string
@@ -68,10 +94,12 @@ export interface CortexContext {
   reflections: ReflectionRow[]
   archetypes: ArchetypeRow[]
   prior: PriorCortexRow | null
-  // Micro-consolidation grounding (C) — the latest intraday delta fold for
-  // this Dominion, or a lightweight new-memory count line. Optional so
-  // existing fixtures/tests that predate this field still compile.
+  // Micro-consolidation grounding (C) — the intraday delta folds for the day
+  // being consolidated (the previous UTC day at the 03:00Z run), or a
+  // lightweight new-memory count line. Optional so older fixtures compile.
   todaySoFar?: string | null
+  // UTC day the todaySoFar text covers; drives the section heading.
+  todaySoFarDay?: string | null
 }
 
 function renderReflection(r: ReflectionRow): string {
@@ -118,7 +146,7 @@ export const CORTEX_SYSTEM_PROMPT = [
   '- Field rules:',
   '  - `visionAnchor`: 1–2 sentence headline. Restate the vision in your own words, anchored to the operator\'s current reality. Honest about scope drift if present.',
   '  - `currentState`: 2–6 bullets. What this Dominion *is* right now (rolled up from archetypes + reflections).',
-  '  - `activeThreads`: 0–6 in-progress items, each with `title`, `pulse` (high/steady/low), `lastAdvance` (one sentence). Reference archetypes by `id` when applicable.',
+  '  - `activeThreads`: 0–6 in-progress items, each with `title`, `pulse` (high/steady/low), `lastAdvance` (one sentence). When a thread maps to one of the archetypes shown, set `id` to that archetype\'s exact [id]; otherwise omit `id`. Never invent an id.',
   '  - `driftSignals`: 0–6 bullets — things stalled, ignored, or diverging from the vision. Each ≤280 chars.',
   '  - `openQuestions`: 0–6 bullets — gaps the substrate makes you wonder about. Questions, not assertions.',
   '  - `recentShifts`: 0–4 bullets — how today\'s reading differs from the prior cortex snapshot. If first regen, leave empty.',
@@ -128,7 +156,7 @@ export const CORTEX_SYSTEM_PROMPT = [
   '{',
   '  "visionAnchor": "...",',
   '  "currentState": ["..."],',
-  '  "activeThreads": [{ "id": "uuid?", "title": "...", "pulse": "high|steady|low", "lastAdvance": "..." }],',
+  '  "activeThreads": [{ "id": "archetype id (optional)", "title": "...", "pulse": "high|steady|low", "lastAdvance": "..." }],',
   '  "driftSignals": ["..."],',
   '  "openQuestions": ["..."],',
   '  "recentShifts": ["..."]',
@@ -156,7 +184,13 @@ export function buildCortexUserPrompt(ctx: CortexContext, today: string): string
     ctx.boardTasks.length === 0
       ? '(none open)'
       : ctx.boardTasks.map((t) => `- [${t.priority}/${t.status}] (${t.projectName}) ${t.name}`).join('\n'),
-    ...(ctx.todaySoFar ? ['', '## Today so far', neutraliseFences(ctx.todaySoFar)] : []),
+    ...(ctx.todaySoFar
+      ? [
+        '',
+        ctx.todaySoFarDay ? `## The day being consolidated (${ctx.todaySoFarDay})` : '## Today so far',
+        neutraliseFences(ctx.todaySoFar),
+      ]
+      : []),
     '',
     '## Owner reflections (highest weight, chronological — most recent first)',
     ctx.reflections.length === 0

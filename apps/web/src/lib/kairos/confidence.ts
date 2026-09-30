@@ -2,7 +2,7 @@
 // Confidence decay — non-destructive, read-time trust weighting.
 //
 // A memory's `confidence` is a coarse trust prior stamped at write time from
-// its stream class (see CONFIDENCE_BY_STREAM in lib/data/memories.ts). Left
+// its stream class (see CONFIDENCE_BY_STREAM below). Left
 // static, an 8-month-old assumption ranks identically to a belief reaffirmed
 // yesterday. Decay fixes that WITHOUT mutating the stored prior or dropping the
 // row: we fade confidence toward a floor as a function of time since the belief
@@ -21,6 +21,34 @@
 // off `updatedAt` makes it a genuinely distinct signal — a belief re-captured or
 // re-endorsed recently stays trusted even if first written long ago.
 // ─────────────────────────────────────────────────────────────────────────
+
+// Provenance: a coarse trust prior derived from the stream a memory came from.
+// Operator reflections are near-ground-truth; agent/execution output is lower.
+// Stamped at write time (createMemory in lib/data/memories.ts); weights
+// retrieval/synthesis and gates whether a proposal can ever auto-promote
+// (autonomy L2+). Tunable, not load-bearing yet.
+export const CONFIDENCE_BY_STREAM: Record<string, number> = {
+  reflection: 0.9,
+  cortex: 0.7,
+  // Aether — daily cross-Dominion synthesis; same trust tier as a cortex doc.
+  aether: 0.7,
+  idea: 0.6,
+  archetype: 0.6,
+  advisory: 0.5,
+  agentic: 0.45,
+  // Micro-consolidation fold — agentic-level trust (Kairos's own compacted
+  // read of the interval, not an operator signal), sitting just below agentic
+  // since it's a rollup of a rollup rather than a fresh thought.
+  delta: 0.4,
+  execution: 0.35,
+  trace: 0.3,
+  // Ephemeral machine board status (TTL-archived) — lowest trust tier.
+  snapshot: 0.25,
+}
+
+export function confidenceForStreamClass(streamClass: string): number {
+  return CONFIDENCE_BY_STREAM[streamClass] ?? CONFIDENCE_NEUTRAL
+}
 
 // Belief staleness is slow — months, not the days of retrieval recency. A belief
 // untouched for one half-life has its decayable confidence weight halved.

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { buildArchetypePrompt, extractJsonBlock, archetypeOutSchema } from '../archetypes-prompt'
+import { buildArchetypePrompt, extractJsonBlock, archetypeOutSchema, groundArchetypeCitations } from '../archetypes-prompt'
 
 // Minimal context fixture — pure-function tests only. The DB-touching
 // paths (gatherArchetypeContext, persistArchetypes, runArchetypeSynthesisForUser)
@@ -12,6 +12,7 @@ import { buildArchetypePrompt, extractJsonBlock, archetypeOutSchema } from '../a
 
 const selectQueue: unknown[][] = []
 let txInsertedRows: Array<{ id: string }> = []
+let txInsertedValues: Array<Record<string, unknown>> | null = null
 
 vi.mock('@/lib/db', () => {
   function makeChain(rows: unknown[]) {
@@ -30,7 +31,12 @@ vi.mock('@/lib/db', () => {
       transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
           update: () => ({ set: () => ({ where: () => ({ returning: () => Promise.resolve([]) }) }) }),
-          insert: () => ({ values: () => ({ returning: () => Promise.resolve(txInsertedRows) }) }),
+          insert: () => ({
+            values: (v: Array<Record<string, unknown>>) => {
+              txInsertedValues = v
+              return { returning: () => Promise.resolve(txInsertedRows) }
+            },
+          }),
         }
         return fn(tx)
       }),
@@ -220,10 +226,13 @@ describe('archetypeOutSchema', () => {
     expect(() => archetypeOutSchema.parse({ archetypes: eleven })).toThrow()
   })
 
-  it('rejects citedMemoryIds that are not UUIDs', () => {
-    expect(() =>
-      archetypeOutSchema.parse({ archetypes: [{ ...validRow, citedMemoryIds: ['not-a-uuid'] }] }),
-    ).toThrow()
+  it('accepts messy citedMemoryIds at the schema; grounding keeps only fed ids, canonicalised', () => {
+    const FED = '11111111-1111-4111-8111-111111111111'
+    const parsed = archetypeOutSchema.parse({
+      archetypes: [{ ...validRow, citedMemoryIds: ['not-a-uuid', null, `[mem:${FED.toUpperCase()}]`, '99999999-9999-4999-8999-999999999999'] }],
+    })
+    const grounded = groundArchetypeCitations(parsed, [FED])
+    expect(grounded.archetypes[0].citedMemoryIds).toEqual([FED])
   })
 
   it('rejects bodies shorter than 100 chars', () => {
@@ -328,8 +337,11 @@ describe('runArchetypeSynthesisForDominion — failure trace (C1)', { timeout: 2
 
     expect(result.status).toBe('created')
     expect(ask).toHaveBeenCalledTimes(2)
-    const traceCalls = vi.mocked(captureMemory).mock.calls.filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
-    expect(traceCalls).toHaveLength(0)
+    const traceMeta = vi.mocked(captureMemory).mock.calls
+      .filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
+      .map((c) => (c[1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata)
+    expect(traceMeta.filter((m) => m.reason !== undefined)).toHaveLength(0)
+    expect(traceMeta).toContainEqual(expect.objectContaining({ cronName: 'archetype-synthesis', outcome: 'ok' }))
   })
 
   it('writes exactly one failure trace when both parse attempts fail (T-A2)', async () => {
@@ -374,8 +386,11 @@ describe('runArchetypeSynthesisForDominion — failure trace (C1)', { timeout: 2
 
     expect(result.status).toBe('created')
     expect(ask).toHaveBeenCalledTimes(2)
-    const traceCalls = vi.mocked(captureMemory).mock.calls.filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
-    expect(traceCalls).toHaveLength(0)
+    const traceMeta = vi.mocked(captureMemory).mock.calls
+      .filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
+      .map((c) => (c[1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata)
+    expect(traceMeta.filter((m) => m.reason !== undefined)).toHaveLength(0)
+    expect(traceMeta).toContainEqual(expect.objectContaining({ cronName: 'archetype-synthesis', outcome: 'ok' }))
   })
 
   it('records finishReason on the trace when the model truncates (T-A4)', async () => {
@@ -436,5 +451,39 @@ describe('runArchetypeSynthesisForDominion — failure trace (C1)', { timeout: 2
     const sm = (traceCalls[0][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata
     expect(sm.cronName).toBe('archetype-synthesis')
     expect(sm.reason).toBe('empty_response')
+  })
+
+  it('persists archetypes whose citations drifted, storing only real fed UUIDs', async () => {
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    queueDominionAndContext()
+    await mockInspectDominion()
+    txInsertedValues = null
+
+    const REFLECTION_ID = '22222222-2222-4222-8222-222222222222'
+    const row = { ...validArchetypeRow, citedMemoryIds: ['22222222', 'm1', null, '99999999-9999-4999-8999-999999999999'] }
+    const ask = vi.fn().mockResolvedValue({ text: JSON.stringify({ archetypes: [row], shifts: [] }) })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask } } as never)
+    txInsertedRows = [{ id: 'archetype-mem-3' }]
+
+    const { runArchetypeSynthesisForDominion } = await import('../archetypes')
+    const result = await runArchetypeSynthesisForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.status).toBe('created')
+    expect(ask).toHaveBeenCalledTimes(1)
+    const meta = txInsertedValues![0].sourceMetadata as { citedMemoryIds: string[] }
+    expect(meta.citedMemoryIds).toEqual([REFLECTION_ID])
+  })
+
+  it('writes a skipped liveness trace when already ran today', async () => {
+    const { captureMemory } = await import('@/lib/data/memories')
+    selectQueue.push([{ id: DOMINION_ID, name: 'AEON', archivedAt: null }])
+    selectQueue.push([{ n: 1 }]) // alreadyRanToday
+
+    const { runArchetypeSynthesisForDominion } = await import('../archetypes')
+    const result = await runArchetypeSynthesisForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.status).toBe('existing')
+    const sm = (vi.mocked(captureMemory).mock.calls[0][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata
+    expect(sm).toMatchObject({ cronName: 'archetype-synthesis', outcome: 'skipped' })
   })
 })

@@ -1,4 +1,37 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+
+vi.mock('@/lib/db', () => ({ db: {} }))
+vi.mock('@/lib/data/aether', () => ({ getLatestAether: vi.fn() }))
+vi.mock('@/lib/data/ask', () => ({
+  getPriorAethers: vi.fn(),
+  getReflectionsSince: vi.fn(),
+  getPendingKairosAsk: vi.fn(),
+  getNewestKairosAsk: vi.fn(),
+  createKairosAskMemory: vi.fn(),
+  markKairosAskAnswered: vi.fn(),
+  archiveOrphanAnswerMemory: vi.fn(),
+}))
+vi.mock('@/lib/data/memories', () => ({
+  captureReflection: vi.fn(),
+  markKairosSpeaksReplied: vi.fn(),
+}))
+vi.mock('@/lib/data/tasks', () => ({
+  findTaskById: vi.fn(),
+  appendTaskDescription: vi.fn(),
+}))
+vi.mock('@/lib/data/projects', () => ({
+  verifyProjectAccess: vi.fn(),
+}))
+vi.mock('@/lib/data/vault', () => ({
+  updateVaultDescription: vi.fn(),
+}))
+
+import { getPendingKairosAsk, markKairosAskAnswered, type KairosAskRow } from '@/lib/data/ask'
+import { captureReflection, markKairosSpeaksReplied } from '@/lib/data/memories'
+import { appendTaskDescription, findTaskById } from '@/lib/data/tasks'
+import { verifyProjectAccess } from '@/lib/data/projects'
+import { updateVaultDescription } from '@/lib/data/vault'
+import { answerKairosAsk, appendCardNote, parseCardNotesAnswer, writeBackCardNotes } from '../ask'
 import { selectKairosQuestion, type SelectInput } from '../ask-select'
 import type { AetherPayload } from '../aether-types'
 
@@ -312,5 +345,227 @@ describe('selectKairosQuestion', () => {
     const unique = new Set(ids)
     expect(unique.size).toBe(ids.length)
     expect(unique.has(MEM_B)).toBe(true)
+  })
+})
+
+// ─── answerKairosAsk — reply gate ───────────────────────────────────────
+
+describe('answerKairosAsk clears the Kairos reply gate', () => {
+  const USER = 'user-1'
+  const ASK_ID = 'ask-1'
+  const pendingAsk: KairosAskRow = {
+    id: ASK_ID,
+    title: 'What should change?',
+    summary: 'What should change?',
+    dominionId: DOM_ID,
+    createdAt: new Date('2026-07-13T08:00:00Z'),
+    kairosAsk: {
+      status: 'pending',
+      aetherMemoryId: 'aether-1',
+      sourceThoughtId: null,
+      sourceMemoryIds: [],
+      dominionId: DOM_ID,
+      askedAt: '2026-07-13T08:00:00.000Z',
+    },
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(getPendingKairosAsk).mockResolvedValue(pendingAsk)
+    vi.mocked(captureReflection).mockResolvedValue({ ok: true, memory: { id: 'reflection-1' } } as never)
+    vi.mocked(markKairosAskAnswered).mockResolvedValue(true as never)
+    vi.mocked(markKairosSpeaksReplied).mockResolvedValue(1)
+  })
+
+  it('marks pending speaks replied after a successful answer', async () => {
+    await expect(answerKairosAsk(USER, ASK_ID, 'An answer')).resolves.toEqual({ reflectionId: 'reflection-1' })
+    expect(markKairosSpeaksReplied).toHaveBeenCalledWith(USER, expect.any(Date))
+  })
+
+  it('never fails the answer when the marker throws', async () => {
+    vi.mocked(markKairosSpeaksReplied).mockRejectedValue(new Error('db down'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(answerKairosAsk(USER, ASK_ID, 'An answer')).resolves.toEqual({ reflectionId: 'reflection-1' })
+    errorSpy.mockRestore()
+  })
+
+  it('does not mark when the ask is stale', async () => {
+    vi.mocked(getPendingKairosAsk).mockResolvedValue(null)
+
+    await expect(answerKairosAsk(USER, ASK_ID, 'An answer')).resolves.toEqual({ error: 'not_found' })
+    expect(markKairosSpeaksReplied).not.toHaveBeenCalled()
+  })
+})
+
+// ─── card_notes answers → write-back ────────────────────────────────────
+
+describe('card_notes answers', () => {
+  const USER = 'user-1'
+  const ASK_ID = 'ask-cards'
+  const CARDS = [
+    { taskId: 'task-a', projectId: 'proj-1', title: 'Deploy' },
+    { vaultId: 'vault-b', projectId: 'proj-1', title: 'Fix login' },
+    { taskId: 'task-c', projectId: 'proj-1', title: 'Tidy inbox' },
+  ]
+
+  function cardAsk(cards = CARDS): KairosAskRow {
+    return {
+      id: ASK_ID,
+      title: 'cards?',
+      summary: null,
+      dominionId: DOM_ID,
+      createdAt: new Date('2026-09-30T04:30:00Z'),
+      kairosAsk: {
+        status: 'pending',
+        aetherMemoryId: '',
+        sourceThoughtId: null,
+        sourceMemoryIds: [],
+        dominionId: DOM_ID,
+        askedAt: '2026-09-30T04:30:00.000Z',
+      },
+      askMine: { date: '2026-09-30', kind: 'card_notes', sourceMemoryIds: [], leverage: 0.5 },
+      cardNotes: { date: '2026-09-29', boardDayMemoryIds: ['page-1'], cards },
+    }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-30T09:00:00Z'))
+    vi.mocked(getPendingKairosAsk).mockResolvedValue(cardAsk())
+    vi.mocked(captureReflection).mockResolvedValue({ ok: true, memory: { id: 'reflection-1' } } as never)
+    vi.mocked(markKairosAskAnswered).mockResolvedValue(true as never)
+    vi.mocked(markKairosSpeaksReplied).mockResolvedValue(1)
+    vi.mocked(verifyProjectAccess).mockResolvedValue({ project: {}, role: 'owner' } as never)
+    vi.mocked(findTaskById).mockImplementation(async (taskId) => ({ id: taskId, description: taskId === 'task-c' ? 'Existing notes' : null }) as never)
+    vi.mocked(appendTaskDescription).mockResolvedValue({} as never)
+    vi.mocked(updateVaultDescription).mockImplementation(async (_vaultId, _projectId, compose) => {
+      return compose('Vaulted notes') === null ? 'rejected' : 'written'
+    })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('parses numbered lines in any of the common shapes, with continuations', () => {
+    const notes = parseCardNotesAnswer('3) cleared the backlog\n1. prod deploy for the feed\n  after the hotfix\n2 - token refresh bug', CARDS)
+    expect(notes.map((n) => [n.card.title, n.line])).toEqual([
+      ['Deploy', 'prod deploy for the feed after the hotfix'],
+      ['Fix login', 'token refresh bug'],
+      ['Tidy inbox', 'cleared the backlog'],
+    ])
+  })
+
+  it('maps plain bullets in order only when their count matches', () => {
+    expect(parseCardNotesAnswer('- a\n- b\n- c', CARDS).map((n) => n.line)).toEqual(['a', 'b', 'c'])
+    expect(parseCardNotesAnswer('- a\n- b', CARDS)).toEqual([])
+  })
+
+  it('gives the whole answer to a single card', () => {
+    const notes = parseCardNotesAnswer('It was the\nprod deploy.', [CARDS[0]!])
+    expect(notes).toEqual([{ card: CARDS[0], line: 'It was the prod deploy.' }])
+  })
+
+  it('clips a long single-card answer so a whole chat turn never lands on the card', () => {
+    const [note] = parseCardNotesAnswer('x '.repeat(600), [CARDS[0]!])
+    expect(note!.line.length).toBeLessThanOrEqual(500)
+    expect(note!.line.endsWith('…')).toBe(true)
+  })
+
+  it('appends a dated Kairos note to the description', () => {
+    const at = new Date('2026-09-30T09:00:00Z')
+    expect(appendCardNote(null, 'x', at)).toBe('Notes (via Kairos, 30/09): x')
+    expect(appendCardNote('Old\n', 'x', at)).toBe('Old\n\nNotes (via Kairos, 30/09): x')
+  })
+
+  it('writes three numbered lines back: live cards via atomic append, vaulted card via the vault', async () => {
+    const result = await answerKairosAsk(USER, ASK_ID, '1. prod deploy\n2. token bug\n3. inbox zero')
+
+    expect(result).toEqual({ reflectionId: 'reflection-1' })
+    expect(captureReflection).toHaveBeenCalledWith(USER, expect.objectContaining({
+      sourceMetadata: expect.objectContaining({
+        kind: 'card_notes_answer',
+        taskIds: ['task-a', 'task-c'],
+        vaultIds: ['vault-b'],
+        cardNotes: [
+          { taskId: 'task-a', title: 'Deploy', line: 'prod deploy' },
+          { vaultId: 'vault-b', title: 'Fix login', line: 'token bug' },
+          { taskId: 'task-c', title: 'Tidy inbox', line: 'inbox zero' },
+        ],
+      }),
+    }))
+    expect(appendTaskDescription).toHaveBeenCalledTimes(2)
+    expect(appendTaskDescription).toHaveBeenCalledWith('task-a', 'proj-1', 'Notes (via Kairos, 30/09): prod deploy', 10_000)
+    expect(appendTaskDescription).toHaveBeenCalledWith('task-c', 'proj-1', 'Notes (via Kairos, 30/09): inbox zero', 10_000)
+    expect(updateVaultDescription).toHaveBeenCalledTimes(1)
+    expect(updateVaultDescription).toHaveBeenCalledWith('vault-b', 'proj-1', expect.any(Function))
+    const compose = vi.mocked(updateVaultDescription).mock.calls[0]![2]
+    expect(compose(null)).toBe('Notes (via Kairos, 30/09): token bug')
+    expect(compose('Old desc')).toBe('Old desc\n\nNotes (via Kairos, 30/09): token bug')
+  })
+
+  it('reports vaulted outcomes: written, gone, over-length, and viewer-skipped', async () => {
+    const at = new Date('2026-09-30T09:00:00Z')
+    const vaulted = { card: CARDS[1]!, line: 'token bug' }
+
+    await expect(writeBackCardNotes('user-1', [vaulted], at)).resolves.toEqual([
+      { vaultId: 'vault-b', status: 'written' },
+    ])
+
+    vi.mocked(updateVaultDescription).mockResolvedValueOnce('not_found')
+    await expect(writeBackCardNotes('user-1', [vaulted], at)).resolves.toEqual([
+      { vaultId: 'vault-b', status: 'memory_only', reason: 'card_gone' },
+    ])
+
+    vi.mocked(updateVaultDescription).mockImplementationOnce(async (_v, _p, compose) =>
+      compose('x'.repeat(10_000)) === null ? 'rejected' : 'written')
+    await expect(writeBackCardNotes('user-1', [vaulted], at)).resolves.toEqual([
+      { vaultId: 'vault-b', status: 'skipped', reason: 'description_too_long' },
+    ])
+
+    vi.mocked(updateVaultDescription).mockClear()
+    vi.mocked(verifyProjectAccess).mockResolvedValueOnce({ project: {}, role: 'viewer' } as never)
+    await expect(writeBackCardNotes('user-1', [vaulted], at)).resolves.toEqual([
+      { vaultId: 'vault-b', status: 'skipped', reason: 'no_edit_access' },
+    ])
+    expect(updateVaultDescription).not.toHaveBeenCalled()
+  })
+
+  it('writes the whole answer onto a single card', async () => {
+    vi.mocked(getPendingKairosAsk).mockResolvedValue(cardAsk([CARDS[0]!]))
+
+    await answerKairosAsk(USER, ASK_ID, 'The feed deploy to prod.')
+
+    expect(appendTaskDescription).toHaveBeenCalledWith('task-a', 'proj-1', 'Notes (via Kairos, 30/09): The feed deploy to prod.', 10_000)
+  })
+
+  it('keeps an unparseable answer only as memory', async () => {
+    const result = await answerKairosAsk(USER, ASK_ID, 'they were all just chores really')
+
+    expect(result).toEqual({ reflectionId: 'reflection-1' })
+    expect(captureReflection).toHaveBeenCalledWith(USER, expect.objectContaining({
+      bodyMd: 'they were all just chores really',
+      sourceMetadata: expect.objectContaining({ taskIds: ['task-a', 'task-c'], cardNotes: [] }),
+    }))
+    expect(appendTaskDescription).not.toHaveBeenCalled()
+  })
+
+  it('never fails the answer when write-back throws, and skips viewers', async () => {
+    vi.mocked(appendTaskDescription).mockRejectedValue(new Error('db down'))
+    vi.mocked(verifyProjectAccess).mockResolvedValueOnce({ project: {}, role: 'viewer' } as never)
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(answerKairosAsk(USER, ASK_ID, '1. a\n3. c')).resolves.toEqual({ reflectionId: 'reflection-1' })
+    expect(appendTaskDescription).toHaveBeenCalledTimes(1) // task-a skipped (viewer), task-c attempted
+    errorSpy.mockRestore()
+  })
+
+  it('does not write back when the claim race is lost', async () => {
+    vi.mocked(markKairosAskAnswered).mockResolvedValue(false as never)
+
+    await expect(answerKairosAsk(USER, ASK_ID, '1. a')).resolves.toEqual({ error: 'not_found' })
+    expect(appendTaskDescription).not.toHaveBeenCalled()
   })
 })

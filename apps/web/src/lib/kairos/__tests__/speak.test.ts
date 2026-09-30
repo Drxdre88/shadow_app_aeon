@@ -22,7 +22,7 @@ vi.mock('@/lib/kairos/telegram', () => ({
 import { getConversationState } from '@/lib/kairos/engagement'
 import { captureMemory, listRecentKairosSpeaks } from '@/lib/data/memories'
 import { sendKairosSpeak } from '@/lib/kairos/telegram'
-import { deliverKairosSpeak } from '../speak'
+import { capSpeakMessage, deliverKairosSpeak, SPEAK_MESSAGE_MAX_CHARS } from '../speak'
 
 const OPERATOR = 'operator-1'
 
@@ -126,5 +126,71 @@ describe('deliverKairosSpeak — throttle (unchanged behavior)', () => {
 
     expect(outcome.status).toBe(429)
     expect(captureMemory).not.toHaveBeenCalled()
+  })
+})
+
+describe('deliverKairosSpeak — cadence backoff without a question outstanding', () => {
+  it('backs off to one-per-72h after three unanswered notifies even when lastOutbound is null', async () => {
+    const hoursAgo = (hours: number) => new Date(Date.now() - hours * 60 * 60 * 1000)
+    // Notify-only history: the reply gate tracks questions only, so lastOutbound is null.
+    vi.mocked(getConversationState).mockResolvedValue(idleState({ lastOutbound: null, replyRate7d: 0 }) as never)
+    vi.mocked(listRecentKairosSpeaks)
+      .mockResolvedValueOnce([
+        { id: 'n1', title: 'a', createdAt: hoursAgo(30) },
+        { id: 'n2', title: 'b', createdAt: hoursAgo(80) },
+        { id: 'n3', title: 'c', createdAt: hoursAgo(120) },
+      ] as never)
+      .mockResolvedValueOnce([{ id: 'n1', title: 'a', createdAt: hoursAgo(30) }] as never)
+
+    const outcome = await deliverKairosSpeak(OPERATOR, {
+      title: 't', message: 'm', kind: 'notify', urgency: 'normal',
+      force: false, opsAlert: false, digest: false,
+    })
+
+    expect(outcome.status).toBe(429)
+    expect(listRecentKairosSpeaks).toHaveBeenNthCalledWith(1, OPERATOR, { hours: 168, limit: 3 })
+    expect(listRecentKairosSpeaks).toHaveBeenNthCalledWith(2, OPERATOR, { hours: 72, limit: 10 })
+    expect(captureMemory).not.toHaveBeenCalled()
+  })
+})
+
+describe('deliverKairosSpeak — message length cap (A1 defence)', () => {
+  it('passes messages at or under the cap through unchanged', async () => {
+    const message = 'x'.repeat(SPEAK_MESSAGE_MAX_CHARS)
+    await deliverKairosSpeak(OPERATOR, {
+      title: 't', message, kind: 'notify', urgency: 'normal',
+      force: false, opsAlert: false, digest: false,
+    })
+
+    const [, input] = vi.mocked(captureMemory).mock.calls[0]
+    expect(input.bodyMd).toBe(message)
+    expect(vi.mocked(sendKairosSpeak).mock.calls[0][0].message).toBe(message)
+  })
+
+  it('truncates an oversized message at a word boundary with an ellipsis before storing and sending', async () => {
+    const message = 'word '.repeat(2000) // 10,000 chars
+    const outcome = await deliverKairosSpeak(OPERATOR, {
+      title: 't', message, kind: 'notify', urgency: 'normal',
+      force: false, opsAlert: false, digest: true,
+    })
+
+    expect(outcome.status).toBe(200)
+    const [, input] = vi.mocked(captureMemory).mock.calls[0]
+    const stored = input.bodyMd as string
+    expect(stored.length).toBeLessThanOrEqual(SPEAK_MESSAGE_MAX_CHARS)
+    expect(stored.endsWith('word…')).toBe(true)
+    expect(vi.mocked(sendKairosSpeak).mock.calls[0][0].message).toBe(stored)
+  })
+})
+
+describe('capSpeakMessage', () => {
+  it('hard-cuts when no boundary exists in the tail of the budget', () => {
+    const capped = capSpeakMessage('a'.repeat(50), 20)
+    expect(capped).toBe(`${'a'.repeat(19)}…`)
+  })
+
+  it('prefers a paragraph/line boundary near the cut', () => {
+    const capped = capSpeakMessage(`${'a'.repeat(16)}\n${'b'.repeat(40)}`, 20)
+    expect(capped).toBe(`${'a'.repeat(16)}…`)
   })
 })

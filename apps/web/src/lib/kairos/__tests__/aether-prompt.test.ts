@@ -3,6 +3,11 @@ import {
   buildAetherPrompt,
   extractJsonBlock,
   aetherOutSchema,
+  aetherGenSchema,
+  aetherFedMemoryIds,
+  groundAetherPayload,
+  previousUtcDay,
+  AETHER_SYSTEM_PROMPT,
   renderAetherMarkdown,
   type AetherContext,
 } from '../aether-prompt'
@@ -90,26 +95,112 @@ describe('buildAetherPrompt', () => {
   })
 })
 
-describe('buildAetherPrompt — "Today so far" grounding (C)', () => {
-  it('renders the section when todaySoFar is present', () => {
-    const prompt = buildAetherPrompt(makeCtx({ todaySoFar: '5 new memories captured today across all Dominions.' }))
-    expect(prompt).toContain('## Today so far')
-    expect(prompt).toContain('5 new memories captured today across all Dominions.')
+describe('buildAetherPrompt — day-being-consolidated grounding', () => {
+  it('renders the section labelled with the PREVIOUS UTC day', () => {
+    const prompt = buildAetherPrompt(makeCtx({ todaySoFar: '5 new memories captured on 2026-07-07 across all Dominions.' }))
+    expect(prompt).toContain('## Day being consolidated (2026-07-07)')
+    expect(prompt).toContain('5 new memories captured on 2026-07-07 across all Dominions.')
+    expect(prompt).not.toContain('## Today so far')
   })
 
   it('omits the section when todaySoFar is absent', () => {
     const prompt = buildAetherPrompt(makeCtx({ todaySoFar: null }))
-    expect(prompt).not.toContain('## Today so far')
+    expect(prompt).not.toContain('## Day being consolidated')
   })
 
   it('omits the section when todaySoFar is not set at all (back-compat fixture)', () => {
     const prompt = buildAetherPrompt(makeCtx())
-    expect(prompt).not.toContain('## Today so far')
+    expect(prompt).not.toContain('## Day being consolidated')
   })
 
-  it('keeps the system prompt byte-identical regardless of todaySoFar (cache rule)', async () => {
-    const { AETHER_SYSTEM_PROMPT } = await import('../aether-prompt')
-    expect(AETHER_SYSTEM_PROMPT).not.toContain('Today so far')
+  it('keeps the system prompt byte-identical regardless of todaySoFar (cache rule)', () => {
+    expect(AETHER_SYSTEM_PROMPT).not.toContain('Day being consolidated')
+  })
+
+  it('previousUtcDay crosses month and year boundaries', () => {
+    expect(previousUtcDay('2026-03-01')).toBe('2026-02-28')
+    expect(previousUtcDay('2027-01-01')).toBe('2026-12-31')
+  })
+})
+
+describe('AETHER_SYSTEM_PROMPT — id contract (A2)', () => {
+  it('asks for short thought labels and forbids invented UUIDs', () => {
+    expect(AETHER_SYSTEM_PROMPT).toContain('Never invent UUIDs')
+    expect(AETHER_SYSTEM_PROMPT).toContain('"id": "t1"')
+    expect(AETHER_SYSTEM_PROMPT).not.toMatch(/UUID v4/)
+  })
+})
+
+describe('aetherGenSchema + groundAetherPayload', () => {
+  const MEM_A = '22222222-2222-4222-8222-222222222222'
+  const MEM_B = '44444444-4444-4444-8444-444444444444'
+  const genThought = (id: string, sourceMemoryIds: string[]) => ({
+    id,
+    title: 'Focus',
+    insight: 'A sufficiently long insight paragraph for schema validation purposes here.',
+    salience: 0.5,
+    kind: 'connection',
+    sourceMemoryIds,
+    ageDays: 1,
+  })
+  const gen = (thoughts: unknown[], tensions: unknown[] = []) => aetherGenSchema.parse({
+    generatedAt: '2026-07-08T00:00:00.000Z',
+    coreNarrative: 'A grounded narrative spanning at least twenty characters.',
+    thoughts,
+    tensions,
+  })
+  const minted = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`
+
+  it('accepts short labels and non-RFC ids that aetherOutSchema rejects', () => {
+    const payload = {
+      generatedAt: 'x',
+      coreNarrative: 'A grounded narrative spanning twenty chars.',
+      thoughts: [genThought('12345678-1234-1234-0234-123456789abc', [MEM_A])],
+    }
+    expect(aetherGenSchema.safeParse(payload).success).toBe(true)
+    expect(aetherOutSchema.safeParse(payload).success).toBe(false)
+  })
+
+  it('mints UUIDs, remaps tensions, drops dangling/self tensions, and satisfies aetherOutSchema', () => {
+    let n = 0
+    const out = groundAetherPayload(gen(
+      [genThought('t1', [MEM_A]), genThought('t2', [MEM_B])],
+      [
+        { aId: 't1', bId: 't2', note: 'kept' },
+        { aId: 't1', bId: 'ghost', note: 'dangling' },
+        { aId: 't2', bId: 't2', note: 'self' },
+      ],
+    ), new Set([MEM_A, MEM_B]), () => minted(++n))
+
+    expect(out.thoughts.map((t) => t.id)).toEqual([minted(1), minted(2)])
+    expect(out.tensions).toEqual([{ aId: minted(1), bId: minted(2), note: 'kept' }])
+    expect(aetherOutSchema.safeParse(out).success).toBe(true)
+  })
+
+  it('grounds citations against the fed set and drops thoughts left uncited (and their tensions)', () => {
+    const out = groundAetherPayload(gen(
+      [genThought('t1', [MEM_A, MEM_B, MEM_A]), genThought('t2', [MEM_B])],
+      [{ aId: 't1', bId: 't2', note: 'orphaned' }],
+    ), new Set([MEM_A]))
+
+    expect(out.thoughts).toHaveLength(1)
+    expect(out.thoughts[0].sourceMemoryIds).toEqual([MEM_A])
+    expect(out.tensions).toEqual([])
+  })
+
+  it('without a fed set (MCP commit), keeps only well-formed UUID citations', () => {
+    const out = groundAetherPayload(gen([genThought('t1', [MEM_A, 'r1']), genThought('t2', ['r2'])]))
+    expect(out.thoughts).toHaveLength(1)
+    expect(out.thoughts[0].sourceMemoryIds).toEqual([MEM_A])
+  })
+
+  it('aetherFedMemoryIds collects cortex, reflection, and archetype ids', () => {
+    const ids = aetherFedMemoryIds({
+      cortexSnapshots: [{ id: 'c1' } as never],
+      topReflections: [{ id: 'r1' } as never],
+      archetypes: [{ id: 'a1' } as never],
+    })
+    expect([...ids].sort()).toEqual(['a1', 'c1', 'r1'])
   })
 })
 

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { neutraliseFences, extractJsonBlock as _extractJsonBlock } from './_prompt-utils'
 import type { AetherPayload, AetherThought, AetherTension } from './aether-types'
@@ -24,6 +25,7 @@ const aetherTensionSchema = z.object({
   note: z.string().trim().min(1).max(280),
 })
 
+// STORED contract — every id a real UUID (consumers key on thought ids).
 export const aetherOutSchema = z.object({
   generatedAt: z.string().min(1),
   coreNarrative: z.string().trim().min(20).max(2000),
@@ -31,6 +33,63 @@ export const aetherOutSchema = z.object({
   tensions: z.array(aetherTensionSchema).max(10).default([]),
   shifts: z.array(z.string().trim().min(1).max(280)).max(8).default([]),
 })
+
+// What the MODEL emits: thought ids / tension ends are short labels (t1, t2)
+// and citations are loose strings — the server mints UUIDs and grounds
+// citations in groundAetherPayload. Model-invented UUIDs fail zod 4's strict
+// RFC 9562 check (the 2026-09-28 parse_failed outage).
+const shortLabel = z.string().trim().min(1).max(64)
+
+export const aetherGenSchema = aetherOutSchema.extend({
+  thoughts: z.array(aetherThoughtSchema.extend({
+    id: shortLabel,
+    sourceMemoryIds: z.array(shortLabel).min(1),
+  })).min(1).max(20),
+  tensions: z.array(aetherTensionSchema.extend({ aId: shortLabel, bId: shortLabel })).max(10).default([]),
+})
+
+export type AetherGenPayload = z.infer<typeof aetherGenSchema>
+
+const isUuid = (s: string) => z.string().uuid().safeParse(s).success
+
+// Server-side grounding: keep only citations in `validIds` (the memory ids fed
+// into the prompt) — or, with no fed set (MCP commit), any well-formed UUID —
+// drop thoughts left uncited, mint a real UUID per surviving thought, and remap
+// tensions, dropping ones whose ends are missing or identical.
+export function groundAetherPayload(
+  gen: AetherGenPayload,
+  validIds?: ReadonlySet<string>,
+  mintId: () => string = randomUUID,
+): AetherPayload {
+  const keep = validIds ? (id: string) => validIds.has(id) : isUuid
+  const idMap = new Map<string, string>()
+  const thoughts: AetherThought[] = []
+  for (const t of gen.thoughts) {
+    const sourceMemoryIds = [...new Set(t.sourceMemoryIds)].filter(keep)
+    if (sourceMemoryIds.length === 0) continue
+    const id = mintId()
+    if (!idMap.has(t.id)) idMap.set(t.id, id)
+    thoughts.push({ ...t, id, sourceMemoryIds })
+  }
+  const tensions: AetherTension[] = []
+  for (const tn of gen.tensions) {
+    const aId = idMap.get(tn.aId)
+    const bId = idMap.get(tn.bId)
+    if (!aId || !bId || aId === bId) continue
+    tensions.push({ aId, bId, note: tn.note })
+  }
+  return { generatedAt: gen.generatedAt, coreNarrative: gen.coreNarrative, thoughts, tensions, shifts: gen.shifts }
+}
+
+// Every memory id the aether prompt shows the model — the only ids a cron
+// thought may cite.
+export function aetherFedMemoryIds(ctx: Pick<AetherContext, 'cortexSnapshots' | 'topReflections' | 'archetypes'>): Set<string> {
+  return new Set([
+    ...ctx.cortexSnapshots.map((c) => c.id),
+    ...ctx.topReflections.map((r) => r.id),
+    ...ctx.archetypes.map((a) => a.id),
+  ])
+}
 
 export interface CortexSnapshotRow {
   id: string
@@ -74,15 +133,23 @@ export interface AetherContext {
   topReflections: GlobalReflectionRow[]
   archetypes: GlobalArchetypeRow[]
   prior: PriorAetherRow | null
-  // Micro-consolidation grounding (C) — latest cross-Dominion intraday delta
-  // fold, or a lightweight new-memory count line. Optional so existing
-  // fixtures/tests that predate this field still compile.
+  // Grounding for the day being consolidated — the PREVIOUS UTC day's
+  // cross-Dominion micro-consolidation deltas (aether runs ~03:15Z, when the
+  // new day is still empty), or a new-memory count line. Field name kept for
+  // fixture compatibility; optional so older fixtures still compile.
   todaySoFar?: string | null
+}
+
+// YYYY-MM-DD of the UTC day before `isoDay` (YYYY-MM-DD).
+export function previousUtcDay(isoDay: string): string {
+  const d = new Date(`${isoDay}T00:00:00.000Z`)
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
 }
 
 function renderCortexSnapshot(c: CortexSnapshotRow): string {
   const lines: string[] = [
-    `### Dominion: ${neutraliseFences(c.dominionName)} (id:${c.dominionId})`,
+    `### Dominion: ${neutraliseFences(c.dominionName)} (id:${c.dominionId}) [${c.id}]`,
   ]
   if (c.visionAnchor) lines.push(`vision_anchor: ${neutraliseFences(c.visionAnchor).slice(0, 300)}`)
   if (c.currentState.length) {
@@ -138,13 +205,13 @@ export const AETHER_SYSTEM_PROMPT = [
   '',
   'Output requirements:',
   '- Return ONLY a JSON object inside a single ```json fenced block. No prose before or after.',
-  '- Assign a fresh UUID v4 to every thought id.',
-  '- Anti-drift rule: every thought MUST have at least one real memory id in sourceMemoryIds drawn from the ids shown above. Thoughts with no real grounding MUST be omitted.',
+  '- Give every thought a short `id` label unique within this response (t1, t2, …). Never invent UUIDs — the server assigns real ids.',
+  '- Anti-drift rule: every thought MUST have at least one real memory id in sourceMemoryIds, copied verbatim from the [bracketed] memory ids shown in the input. Thoughts with no real grounding MUST be omitted.',
   '- Field rules:',
   '  - `generatedAt`: current UTC ISO 8601 timestamp.',
   '  - `coreNarrative`: 2–4 sentences. Who is this operator? What are they building across all their work? What is the overarching movement or arc? Honest, grounded, no flattery.',
   '  - `thoughts`: 5–15 items. Mix of kinds. Each:',
-  '    - `id`: UUID v4 (fresh, unique)',
+  '    - `id`: short label unique within this response (e.g. "t1") — never a UUID',
   '    - `title`: 1–3 words — a short tag, never a sentence (e.g. "Velocity Drift", "BYOK Gate")',
   '    - `insight`: one paragraph, ≤800 chars',
   '    - `dominionId`: UUID of the source Dominion, or null for cross-cutting',
@@ -152,9 +219,9 @@ export const AETHER_SYSTEM_PROMPT = [
   '    - `dominionColor`: color token (e.g. "purple") from the Dominion, or null',
   '    - `salience`: 0..1 — how central / load-bearing is this right now',
   '    - `kind`: conclusion | tension | connection | question | eureka',
-  '    - `sourceMemoryIds`: array of real memory UUIDs from the substrate above (min 1)',
+  '    - `sourceMemoryIds`: array of real memory ids copied verbatim from the substrate (min 1)',
   '    - `ageDays`: integer, how many days old is the core source material',
-  '  - `tensions`: 0–6 cross-Dominion or intra-Dominion tension pairs, each with `aId`, `bId` (thought ids), `note` (≤280 chars)',
+  '  - `tensions`: 0–6 cross-Dominion or intra-Dominion tension pairs, each with `aId`, `bId` (two DIFFERENT thought id labels from this response, e.g. "t1", "t3"), `note` (≤280 chars)',
   '  - `shifts`: 0–6 bullets — how this synthesis differs from the prior Aether. If first run, leave empty.',
   '',
   'Schema:',
@@ -163,7 +230,7 @@ export const AETHER_SYSTEM_PROMPT = [
   '  "generatedAt": "2024-01-01T00:00:00.000Z",',
   '  "coreNarrative": "...",',
   '  "thoughts": [{',
-  '    "id": "uuid-v4",',
+  '    "id": "t1",',
   '    "title": "...",',
   '    "insight": "...",',
   '    "dominionId": "uuid-or-null",',
@@ -171,10 +238,10 @@ export const AETHER_SYSTEM_PROMPT = [
   '    "dominionColor": "...",',
   '    "salience": 0.8,',
   '    "kind": "eureka",',
-  '    "sourceMemoryIds": ["uuid"],',
+  '    "sourceMemoryIds": ["memory-uuid-from-input"],',
   '    "ageDays": 2',
   '  }],',
-  '  "tensions": [{ "aId": "uuid", "bId": "uuid", "note": "..." }],',
+  '  "tensions": [{ "aId": "t1", "bId": "t2", "note": "..." }],',
   '  "shifts": ["..."]',
   '}',
   '```',
@@ -199,7 +266,9 @@ export function buildAetherUserPrompt(ctx: AetherContext): string {
     ctx.archetypes.length === 0
       ? '(none)'
       : ctx.archetypes.map(renderArchetypeLine).join('\n'),
-    ...(ctx.todaySoFar ? ['', '## Today so far', neutraliseFences(ctx.todaySoFar)] : []),
+    ...(ctx.todaySoFar
+      ? ['', `## Day being consolidated (${previousUtcDay(ctx.today)}) — micro-consolidation deltas`, neutraliseFences(ctx.todaySoFar)]
+      : []),
     '',
     '## Prior Aether (detect shifts — what has changed since the last synthesis)',
     renderPriorAether(ctx.prior),

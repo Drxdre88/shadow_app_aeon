@@ -1,15 +1,19 @@
-import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import { withRetry } from '@/lib/ai/retry'
 import { validAsOfNow } from '@/lib/data/memories'
-import { writeCronFailureTrace } from './cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 import {
   AETHER_SYSTEM_PROMPT,
   buildAetherUserPrompt,
   aetherOutSchema,
+  aetherGenSchema,
+  aetherFedMemoryIds,
+  groundAetherPayload,
+  previousUtcDay,
   extractJsonBlock,
   renderAetherMarkdown,
   type AetherContext,
@@ -18,12 +22,13 @@ import {
   type GlobalArchetypeRow,
   type PriorAetherRow,
 } from './aether-prompt'
-import { todayIso } from './_prompt-utils'
+import { todayIso, parseWithRepair, ParseRepairError } from './_prompt-utils'
 import type { AetherPayload } from './aether-types'
 
 // Kairos Aether (B3) — global self-model synthesiser.
 // Idempotent: skips if a live aether row already exists for today (UTC).
-// Anti-drift: thoughts without sourceMemoryIds are stripped before persist.
+// Anti-drift: citations are grounded against the fed memory ids and thought
+// ids are server-minted (groundAetherPayload) before persist.
 
 const MAX_REFLECTIONS = 40
 const MAX_ARCHETYPES_PER_DOMINION = 3
@@ -41,13 +46,20 @@ async function alreadyRanToday(userId: string): Promise<boolean> {
   return (row?.n ?? 0) > 0
 }
 
-// "Today so far" grounding (C) — the latest micro-consolidation delta across
-// ANY active Dominion today, else a lightweight global new-memory count.
-// Best-effort: a null return just omits the prompt section.
-async function fetchTodaySoFarGlobal(userId: string): Promise<string | null> {
-  const dayStart = new Date(`${todayIso()}T00:00:00.000Z`)
+const MAX_DAY_DELTAS = 8
+const MAX_DAY_DELTA_CHARS = 4000
 
-  const [deltaRow] = await db
+// Grounding for the day being consolidated. Aether runs ~03:15Z, so the NEW
+// UTC day is empty — read the PREVIOUS UTC day's micro-consolidation deltas
+// across all Dominions (chronological), else a new-memory count for that day.
+// Best-effort: a null return just omits the prompt section.
+async function fetchConsolidatedDayGlobal(userId: string): Promise<string | null> {
+  const today = todayIso()
+  const dayEnd = new Date(`${today}T00:00:00.000Z`)
+  const prevDay = previousUtcDay(today)
+  const dayStart = new Date(`${prevDay}T00:00:00.000Z`)
+
+  const deltaRows = await db
     .select({ bodyMd: memories.bodyMd })
     .from(memories)
     .where(and(
@@ -55,10 +67,13 @@ async function fetchTodaySoFarGlobal(userId: string): Promise<string | null> {
       eq(memories.streamClass, 'delta'),
       isNull(memories.archivedAt),
       gte(memories.createdAt, dayStart),
+      lt(memories.createdAt, dayEnd),
     ))
     .orderBy(desc(memories.createdAt))
-    .limit(1)
-  if (deltaRow) return deltaRow.bodyMd
+    .limit(MAX_DAY_DELTAS)
+  if (deltaRows.length > 0) {
+    return deltaRows.map((r) => r.bodyMd).reverse().join('\n\n---\n\n').slice(0, MAX_DAY_DELTA_CHARS)
+  }
 
   const [countRow] = await db
     .select({ n: sql<number>`COUNT(*)::int` })
@@ -68,9 +83,10 @@ async function fetchTodaySoFarGlobal(userId: string): Promise<string | null> {
       isNull(memories.archivedAt),
       sql`${memories.streamClass} NOT IN ('trace', 'delta')`,
       gte(memories.createdAt, dayStart),
+      lt(memories.createdAt, dayEnd),
     ))
   const n = countRow?.n ?? 0
-  return n > 0 ? `${n} new ${n === 1 ? 'memory' : 'memories'} captured today across all Dominions.` : null
+  return n > 0 ? `${n} new ${n === 1 ? 'memory' : 'memories'} captured on ${prevDay} across all Dominions.` : null
 }
 
 export async function fetchAetherInputs(userId: string): Promise<{
@@ -232,7 +248,7 @@ export async function fetchAetherInputs(userId: string): Promise<{
 
   // Sequential (not folded into the Promise.all above) — keeps db.select()
   // call order deterministic for the failure-trace test suite's FIFO mock queue.
-  const todaySoFar = await fetchTodaySoFarGlobal(userId)
+  const todaySoFar = await fetchConsolidatedDayGlobal(userId)
 
   return { cortexSnapshots, topReflections, archetypes, prior, todaySoFar }
 }
@@ -295,6 +311,7 @@ export async function persistAether(
 // far more reliably satisfied by the heavy model than by the standard tier.
 export async function runAetherForUser(userId: string): Promise<{ generated: boolean; reason: string }> {
   if (await alreadyRanToday(userId)) {
+    await writeCronSuccessTrace(userId, { cronName: 'aether-regen', outcome: 'skipped', skipReason: 'already_ran' })
     return { generated: false, reason: 'already_ran' }
   }
 
@@ -313,6 +330,7 @@ export async function runAetherForUser(userId: string): Promise<{ generated: boo
   const ctx: AetherContext = { userId, today, ...inputs }
 
   let rawText: string
+  let finishReason: string | undefined
   let provider: Awaited<ReturnType<typeof getProviderForTask>>['provider']
   try {
     ;({ provider } = await getProviderForTask(userId, { taskType: 'aether' }))
@@ -323,6 +341,7 @@ export async function runAetherForUser(userId: string): Promise<{ generated: boo
       maxTokens: 10000,
     }))
     rawText = response.text.trim()
+    finishReason = response.finishReason
   } catch (err) {
     if (err instanceof AiCredentialMissingError || err instanceof AiCredentialDecryptError) {
       return { generated: false, reason: 'no_credential' }
@@ -331,39 +350,38 @@ export async function runAetherForUser(userId: string): Promise<{ generated: boo
   }
 
   if (!rawText) {
-    await writeCronFailureTrace(userId, { cronName: 'aether-regen', reason: 'empty_response' })
+    await writeCronFailureTrace(userId, { cronName: 'aether-regen', reason: 'empty_response', finishReason })
     return { generated: false, reason: 'empty_response' }
   }
 
-  const parseAndGround = (text: string): AetherPayload => {
-    const raw = aetherOutSchema.parse(extractJsonBlock(text))
-    // Anti-drift leash: strip any thought the schema let through with zero
-    // sourceMemoryIds (schema requires min 1, but be defensive).
-    return {
-      ...raw,
-      thoughts: raw.thoughts.filter((t) => t.sourceMemoryIds.length > 0),
-    } as AetherPayload
-  }
-
+  const validIds = aetherFedMemoryIds(inputs)
   let parsed: AetherPayload
   try {
-    parsed = parseAndGround(rawText)
-  } catch (firstErr) {
-    // ONE JSON-repair round-trip: re-prompt the same provider with the raw
-    // output + the validation error and ask it to fix the JSON. If the
-    // repair also fails, give up rather than looping indefinitely.
-    try {
-      const repairResponse = await provider.ask({ prompt: buildRepairPrompt(rawText, firstErr), maxTokens: 10000 })
-      parsed = parseAndGround(repairResponse.text.trim())
-    } catch (repairErr) {
-      // The repair round-trip also failed. Preserve firstErr — the original
-      // schema/parse failure is the real diagnostic; repairErr may be a
-      // transient transport error that would otherwise mask why Aether failed.
-      const firstMessage = firstErr instanceof Error ? firstErr.message : String(firstErr)
-      const repairMessage = repairErr instanceof Error ? repairErr.message : String(repairErr)
-      await writeCronFailureTrace(userId, { cronName: 'aether-regen', reason: 'parse_failed', error: firstErr })
-      return { generated: false, reason: `parse_failed: ${firstMessage} (repair also failed: ${repairMessage})` }
+    parsed = await parseWithRepair({
+      provider,
+      rawText,
+      parse: (text) => groundAetherPayload(aetherGenSchema.parse(extractJsonBlock(text)), validIds),
+      generatorLabel: 'aether',
+      maxTokens: 10000,
+      system: AETHER_SYSTEM_PROMPT,
+      repairContext: [
+        'Thought `id` and tension `aId`/`bId` are short labels unique within the response (t1, t2, …) — never UUIDs.',
+        'Every sourceMemoryIds entry MUST be one of these memory ids, copied verbatim:',
+        ...[...validIds].map((id) => `- ${id}`),
+      ].join('\n'),
+    })
+  } catch (err) {
+    if (err instanceof ParseRepairError) {
+      await writeCronFailureTrace(userId, {
+        cronName: 'aether-regen',
+        reason: 'parse_failed',
+        error: err.originalError ?? err,
+        finishReason,
+        rawExcerpt: err.rawExcerpt,
+      })
+      return { generated: false, reason: err.message }
     }
+    throw err
   }
 
   if (parsed.thoughts.length === 0) {
@@ -376,23 +394,9 @@ export async function runAetherForUser(userId: string): Promise<{ generated: boo
 
   if (!aetherMemoryId) {
     await writeCronFailureTrace(userId, { cronName: 'aether-regen', reason: 'persist_failed' })
+    return { generated: false, reason: 'persist_failed' }
   }
 
-  return aetherMemoryId
-    ? { generated: true, reason: 'ok' }
-    : { generated: false, reason: 'persist_failed' }
-}
-
-function buildRepairPrompt(rawText: string, err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err)
-  return [
-    'The previous response failed JSON validation. Fix it and return ONLY the',
-    'corrected JSON in a single ```json fenced block — no prose before or after.',
-    '',
-    '## Validation error',
-    message,
-    '',
-    '## Previous response',
-    rawText,
-  ].join('\n')
+  await writeCronSuccessTrace(userId, { cronName: 'aether-regen' })
+  return { generated: true, reason: 'ok' }
 }

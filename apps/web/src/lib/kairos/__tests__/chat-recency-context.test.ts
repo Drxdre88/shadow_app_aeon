@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { and } from 'drizzle-orm'
+import { PgDialect } from 'drizzle-orm/pg-core'
 
 vi.mock('@/lib/data/memories', () => ({
   listRecentMemories: vi.fn(),
@@ -170,5 +172,51 @@ describe('renderRecentActivitySection', () => {
   it('uses the dynamic window label when hours differ from the default', () => {
     const out = renderRecentActivitySection(context({ windowHours: 6 }))
     expect(out).toContain('## LAST 6H (deterministic — fresher than retrieval)')
+  })
+
+  it('keeps reflections, other categories and board activity visible when sessions flood the window', () => {
+    const at = new Date('2026-07-24T09:15:00Z')
+    const sessions = Array.from({ length: 10 }, (_, i) => ({
+      title: `Session ${i} ${'y'.repeat(100)}`, createdAt: at, streamClass: 'agentic',
+    }))
+    const out = renderRecentActivitySection(context({
+      sessionSummaries: { label: 'Coding sessions', count: 40, items: sessions },
+      reflections: { label: 'Reflections', count: 1, items: [{ title: 'Velocity is the constraint', createdAt: at, streamClass: 'reflection' }] },
+      asks: { label: 'Asks dispatched', count: 1, items: [{ title: 'Ask Codex to fix CI', createdAt: at, streamClass: 'advisory' }] },
+      boardTasksCompleted: 5,
+      boardTasksCreated: 2,
+    }))
+
+    expect(out.length).toBeLessThanOrEqual(800)
+    expect(out.endsWith('END RECENT ACTIVITY')).toBe(true)
+    expect(out).not.toContain('\n…\n') // allocation fits; safety-net truncation not needed
+    expect(out).toContain('### Reflections (1)')
+    expect(out).toContain('- Velocity is the constraint')
+    expect(out).toContain('### Coding sessions (40)')
+    expect(out).toContain('- Session 0')
+    expect(out).toContain('### Asks dispatched (1)')
+    expect(out).toContain('- Ask Codex to fix CI')
+    expect(out).toContain('5 task(s) completed, 2 task(s) created')
+  })
+})
+
+describe('fetchRecentActivityContext — meta-row exclusion', () => {
+  it('filters trace/delta/snapshot rows out of every memory category query', async () => {
+    const dialect = new PgDialect()
+    vi.mocked(listRecentMemories).mockResolvedValue([])
+    vi.mocked(countTasksCompletedBetween).mockResolvedValue(0)
+    vi.mocked(countTasksCreatedBetween).mockResolvedValue(0)
+
+    await fetchRecentActivityContext(USER_ID)
+
+    const calls = vi.mocked(listRecentMemories).mock.calls
+    expect(calls).toHaveLength(4)
+    const [sessions, reflections, introspection, asks] = calls.map(([, extra]) => dialect.sqlToQuery(and(...extra)!))
+    for (const q of [sessions, introspection, asks]) {
+      expect(q.sql).toMatch(/"stream_class" not in/)
+      expect(q.params).toEqual(expect.arrayContaining(['trace', 'delta', 'snapshot']))
+    }
+    // Reflections are already pinned to streamClass='reflection'.
+    expect(reflections.params).toContain('reflection')
   })
 })

@@ -22,8 +22,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { resolve, dirname } from 'node:path'
 
-// ── Pure metric functions (duplicated here so harness is self-contained;
-//    the canonical source lives in src/lib/kairos/eval-metrics.ts for tests) ──
+// ── Pure metric functions (self-contained; this harness is their only home) ──
 
 function recallAtK(retrievedIds, relevantIds, k) {
   if (relevantIds.length === 0) return null // can't score, not 0

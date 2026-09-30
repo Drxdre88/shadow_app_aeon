@@ -5,7 +5,7 @@ import { userAiCredentials, dominions } from '@/lib/db/schema'
 import { and, eq, isNull, inArray } from 'drizzle-orm'
 import { findDominionsByUser } from '@/lib/data/dominions'
 import { runRecipe } from '@/lib/kairos/dispatch'
-import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -114,6 +114,14 @@ export async function GET(req: NextRequest) {
     try {
       const results = await briefUser(userId)
       userResults.push({ userId, results })
+      // Liveness for the health scorecard (stage 'briefer' — the dispatcher's
+      // recipe:BRIEF / BRIEF rows resolve to the same stage). A no-BYOK or
+      // all-skipped run is an expected no-op, not silence.
+      const briefed = results.some((r) => r.status === 'created' || r.status === 'existing')
+      await writeCronSuccessTrace(userId, {
+        cronName: 'briefer',
+        ...(briefed ? {} : { outcome: 'skipped' as const, skipReason: results[0]?.reason ?? 'no active dominions' }),
+      })
     } catch (err) {
       await writeCronFailureTrace(userId, { cronName: 'briefer', reason: 'uncaught_exception', error: err })
       userResults.push({ userId, results: [], error: err instanceof Error ? err.message : String(err) })

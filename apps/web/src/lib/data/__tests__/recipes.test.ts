@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const lastWhereArg: { value: unknown } = { value: null }
+const lastLimitArg: { value: unknown } = { value: null }
 const selectQueue: unknown[][] = []
 
 vi.mock('@/lib/db', () => {
@@ -10,7 +11,7 @@ vi.mock('@/lib/db', () => {
     chain.from = pass
     chain.where = (arg: unknown) => { lastWhereArg.value = arg; return chain }
     chain.orderBy = pass
-    chain.limit = pass
+    chain.limit = (n: unknown) => { lastLimitArg.value = n; return chain }
     chain.then = (resolve: (v: unknown[]) => unknown) => resolve(rows)
     return chain
   }
@@ -19,6 +20,8 @@ vi.mock('@/lib/db', () => {
   }
 })
 
+import { PgDialect } from 'drizzle-orm/pg-core'
+import type { SQL } from 'drizzle-orm'
 import { listTraceHistory } from '../recipes'
 
 const USER = 'user-1'
@@ -28,7 +31,13 @@ beforeEach(() => {
   vi.clearAllMocks()
   selectQueue.length = 0
   lastWhereArg.value = null
+  lastLimitArg.value = null
 })
+
+function renderedWhere(): { sql: string; params: unknown[] } {
+  const query = new PgDialect().sqlToQuery(lastWhereArg.value as SQL)
+  return { sql: query.sql.toLowerCase(), params: query.params }
+}
 
 function fakeRow(id: string, recipe: string) {
   return {
@@ -56,6 +65,23 @@ describe('listTraceHistory', () => {
     await listTraceHistory(USER, { limit: 999 })
     // No throw; clamping is internal. Smoke test only.
     expect(true).toBe(true)
+  })
+
+  it('keeps the 100-row clamp for unbounded reads', async () => {
+    selectQueue.push([])
+    await listTraceHistory(USER, { limit: 2000 })
+    expect(lastLimitArg.value).toBe(100)
+    expect(renderedWhere().sql).not.toContain('"created_at" >=')
+  })
+
+  it('filters by createdAt >= since and allows up to 2000 rows for a time-bounded read', async () => {
+    const since = new Date('2026-07-20T08:00:00.000Z')
+    selectQueue.push([])
+    await listTraceHistory(USER, { since, limit: 5000 })
+    expect(lastLimitArg.value).toBe(2000)
+    const where = renderedWhere()
+    expect(where.sql).toContain('"created_at" >=')
+    expect(where.params).toContain(since.toISOString())
   })
 
   it('uses default limit when not provided', async () => {

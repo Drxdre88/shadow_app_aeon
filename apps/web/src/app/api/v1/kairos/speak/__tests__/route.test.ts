@@ -271,8 +271,10 @@ describe('POST /api/v1/kairos/speak', () => {
     const res = await POST(makeReq({ title: 't', message: 'm' }, 'Bearer cron-secret'))
 
     expect(res.status).toBe(429)
-    expect(listRecentKairosSpeaks).toHaveBeenCalledTimes(1)
-    expect(listRecentKairosSpeaks).toHaveBeenCalledWith(OPERATOR, { hours: 24, limit: 10 })
+    // Zero reply rate triggers the 7-day lookup; fewer than 3 sends keeps the middle cadence.
+    expect(listRecentKairosSpeaks).toHaveBeenCalledTimes(2)
+    expect(listRecentKairosSpeaks).toHaveBeenNthCalledWith(1, OPERATOR, { hours: 168, limit: 3 })
+    expect(listRecentKairosSpeaks).toHaveBeenLastCalledWith(OPERATOR, { hours: 24, limit: 10 })
   })
 
   it('force bypasses the gap and daily cap', async () => {

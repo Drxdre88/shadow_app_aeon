@@ -10,6 +10,8 @@ import type { SQL } from 'drizzle-orm'
 const setCalls: Record<string, unknown>[] = []
 const whereArgs: SQL[] = []
 const returningQueue: unknown[][] = []
+// runProjectSnapshotsForUser reads: projects list, then per project counts + recent events.
+const selectQueue: Array<unknown[] | Error> = []
 
 vi.mock('@/lib/db', () => {
   function makeUpdateChain() {
@@ -25,7 +27,23 @@ vi.mock('@/lib/db', () => {
     chain.returning = () => Promise.resolve(returningQueue.shift() ?? [])
     return chain
   }
-  return { db: { update: vi.fn(() => makeUpdateChain()) } }
+  function makeSelectChain(rows: unknown[] | Error) {
+    const chain: Record<string, unknown> = {}
+    const pass = () => chain
+    chain.from = pass
+    chain.where = pass
+    chain.orderBy = pass
+    chain.limit = pass
+    chain.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
+      rows instanceof Error ? reject(rows) : resolve(rows)
+    return chain
+  }
+  return {
+    db: {
+      update: vi.fn(() => makeUpdateChain()),
+      select: vi.fn(() => makeSelectChain(selectQueue.shift() ?? [])),
+    },
+  }
 })
 
 vi.mock('@/lib/data/memories', () => ({
@@ -34,9 +52,16 @@ vi.mock('@/lib/data/memories', () => ({
 
 vi.mock('../cron-trace', () => ({
   writeCronFailureTrace: vi.fn(),
+  writeCronSuccessTrace: vi.fn(),
 }))
 
-import { reconcileDerivedMemories } from '../project-snapshot'
+vi.mock('../board-feed', () => ({
+  runBoardFeedForProject: vi.fn(),
+}))
+
+import { reconcileDerivedMemories, runProjectSnapshotsForUser } from '../project-snapshot'
+import { writeCronFailureTrace, writeCronSuccessTrace } from '../cron-trace'
+import { runBoardFeedForProject } from '../board-feed'
 
 const dialect = new PgDialect()
 function renderedWhere(index: number): { sql: string; params: unknown[] } {
@@ -51,6 +76,74 @@ beforeEach(() => {
   setCalls.length = 0
   whereArgs.length = 0
   returningQueue.length = 0
+  selectQueue.length = 0
+})
+
+describe('runProjectSnapshotsForUser — liveness trace', () => {
+  const USER = 'user-1'
+  const project = (id: string) => ({ id, name: `Project ${id}`, dominionId: 'dom-1' })
+
+  it('writes one ok success trace after a clean run (dormant projects still count as a run)', async () => {
+    selectQueue.push([project('p1')], [{ open: 0, doneToday: 0, blocked: 0 }], [])
+
+    const results = await runProjectSnapshotsForUser(USER)
+
+    expect(results).toEqual([expect.objectContaining({ projectId: 'p1', status: 'skipped', reason: 'dormant' })])
+    expect(writeCronSuccessTrace).toHaveBeenCalledOnce()
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER, { cronName: 'project-snapshot' })
+  })
+
+  it('writes a skipped success trace when the user has no projects', async () => {
+    selectQueue.push([])
+
+    await runProjectSnapshotsForUser(USER)
+
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER, {
+      cronName: 'project-snapshot',
+      outcome: 'skipped',
+      skipReason: 'no projects',
+    })
+  })
+
+  it('writes the failure trace and no success trace when a project throws', async () => {
+    selectQueue.push([project('p1')], new Error('db exploded'))
+
+    await runProjectSnapshotsForUser(USER)
+
+    expect(writeCronFailureTrace).toHaveBeenCalledWith(USER, expect.objectContaining({
+      cronName: 'project-snapshot',
+      reason: 'uncaught_exception',
+    }))
+    expect(writeCronSuccessTrace).not.toHaveBeenCalled()
+  })
+
+  it('runs the board feed only for projects with settings.kairosFeed, even when the snapshot is dormant', async () => {
+    vi.mocked(runBoardFeedForProject).mockResolvedValue({ mode: 'daily', status: 'created', externalId: 'board-day:p1:x' })
+    selectQueue.push(
+      [{ ...project('p1'), settings: { kairosFeed: 'daily' } }, { ...project('p2'), settings: {} }],
+      [{ open: 0, doneToday: 0, blocked: 0 }], [],
+      [{ open: 0, doneToday: 0, blocked: 0 }], [],
+    )
+
+    const results = await runProjectSnapshotsForUser(USER)
+
+    expect(runBoardFeedForProject).toHaveBeenCalledOnce()
+    expect(runBoardFeedForProject).toHaveBeenCalledWith(USER, expect.objectContaining({ id: 'p1' }), 'daily', expect.any(Date))
+    expect(results[0]).toMatchObject({ status: 'skipped', reason: 'dormant', feed: { status: 'created' } })
+    expect(results[1]!.feed).toBeUndefined()
+    expect(writeCronSuccessTrace).toHaveBeenCalledOnce()
+  })
+
+  it('traces a board-feed failure without losing the snapshot result', async () => {
+    vi.mocked(runBoardFeedForProject).mockRejectedValue(new Error('feed exploded'))
+    selectQueue.push([{ ...project('p1'), settings: { kairosFeed: 'weekly' } }], [{ open: 0, doneToday: 0, blocked: 0 }], [])
+
+    const results = await runProjectSnapshotsForUser(USER)
+
+    expect(results[0]).toMatchObject({ reason: 'dormant', feed: { mode: 'weekly', status: 'skipped', reason: 'feed exploded' } })
+    expect(writeCronFailureTrace).toHaveBeenCalledWith(USER, expect.objectContaining({ reason: 'board_feed_failed' }))
+    expect(writeCronSuccessTrace).not.toHaveBeenCalled()
+  })
 })
 
 describe('reconcileDerivedMemories', () => {

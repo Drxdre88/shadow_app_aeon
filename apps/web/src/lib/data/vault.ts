@@ -271,3 +271,34 @@ export async function restoreFromVault(vaultId: string, projectId: string) {
   await touchProject(projectId, { type: 'task:created' })
   return restoredTask
 }
+
+export type VaultDescriptionUpdate = 'written' | 'not_found' | 'rejected'
+
+/**
+ * Rewrite a vaulted card's description under a row lock, scoped to its
+ * project like every other vault query (callers verify edit access first).
+ * `compose` receives the current text and returns the new one — or null to
+ * leave it untouched ('rejected', e.g. over a length cap) — so formatting
+ * stays with the caller while the read-modify-write stays atomic.
+ */
+export async function updateVaultDescription(
+  vaultId: string,
+  projectId: string,
+  compose: (existing: string | null) => string | null,
+): Promise<VaultDescriptionUpdate> {
+  const scope = and(eq(taskVault.id, vaultId), eq(taskVault.projectId, projectId))
+  const outcome = await db.transaction(async (tx): Promise<VaultDescriptionUpdate> => {
+    const [row] = await tx
+      .select({ description: taskVault.description })
+      .from(taskVault)
+      .where(scope)
+      .for('update')
+    if (!row) return 'not_found'
+    const next = compose(row.description)
+    if (next === null) return 'rejected'
+    await tx.update(taskVault).set({ description: next }).where(scope)
+    return 'written'
+  })
+  if (outcome === 'written') await touchProject(projectId)
+  return outcome
+}

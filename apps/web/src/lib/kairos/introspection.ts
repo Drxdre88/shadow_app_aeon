@@ -14,7 +14,7 @@ import {
   type IntrospectionMemoryRow,
 } from './introspection-prompt'
 import { todayIso, parseWithRepair, ParseRepairError } from './_prompt-utils'
-import { writeCronFailureTrace } from './cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos — Guided Introspection runner (propose-not-commit).
@@ -113,6 +113,7 @@ export async function runIntrospectionForDominion(
   if (dom.archivedAt) return { dominionId, dominionName: dom.name, status: 'skipped', reason: 'archived' }
 
   if (await alreadyRanToday(userId, dominionId)) {
+    await writeCronSuccessTrace(userId, { cronName: 'introspection', dominionId, outcome: 'skipped', skipReason: 'already ran today' })
     return { dominionId, dominionName: dom.name, status: 'existing', reason: 'already ran today' }
   }
 
@@ -220,6 +221,7 @@ export async function runIntrospectionForDominion(
   }))
 
   await db.insert(memories).values(rows)
+  await writeCronSuccessTrace(userId, { cronName: 'introspection', dominionId })
 
   return { dominionId, dominionName: dom.name, status: 'created', proposalsCreated: rows.length }
 }

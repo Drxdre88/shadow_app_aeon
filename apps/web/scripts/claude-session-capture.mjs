@@ -35,6 +35,19 @@ import { homedir, tmpdir } from 'node:os'
 import { normalizeTranscript } from './session-transcript.mjs'
 import { truncate, deriveAiTitle } from './session-title.mjs'
 import { enqueueCapture, startCaptureDrain } from './session-capture-queue.mjs'
+import {
+  buildSessionRecord,
+  clampTags,
+  composeTitle,
+  extractTelemetry,
+  firstExecBullet,
+  isUuid,
+  mergeCommits,
+  objectiveFromPointer,
+  parseResultEnvelope,
+  resolveRepoIdentity,
+  sessionTimes,
+} from './session-record.mjs'
 
 // ─── helpers ────────────────────────────────────────────────────────────
 
@@ -78,6 +91,7 @@ function bail(reason) {
 }
 
 // ─── repo → Aeon project resolution ─────────────────────────────────────
+// (Repo slug derivation lives in session-record.mjs resolveRepoIdentity.)
 // Convention agreed with the user (May 2026):
 //   shadow_app_X            → "X APP"            (uppercase last word)
 //   <name>_dash             → "<NAME UPPERCASE> APP"
@@ -103,14 +117,6 @@ function repoToProjectName(slug) {
       .join(' ')
   }
   return null
-}
-
-// Derive the repo slug from cwd by walking up to the dev_26 root.
-function repoSlugFromCwd(cwd) {
-  if (!cwd) return null
-  const norm = normalizeCwd(cwd).replace(/\\/g, '/')
-  const m = norm.match(/\/dev_26\/([^/]+)/)
-  return m ? m[1] : basename(norm) || null
 }
 
 const projectCache = new Map() // projectName → { id, realmId, realmName } | null
@@ -358,7 +364,9 @@ function parseExecBullets(execSummaryText) {
   const bullets = []
   for (const raw of execSummaryText.split('\n')) {
     const line = raw.trim()
-    if (!/^[-*]/.test(line)) continue
+    // A real bullet is "- x" / "* x". A bare "**Key points:**" label line also
+    // starts with "*" and used to leak in as the bullet "*Key points:**".
+    if (!/^[-*]\s+/.test(line)) continue
     // Strip the bullet marker and any leading bold label like **Key points:**
     let text = line.replace(/^[-*]\s*/, '').replace(/^\*\*[^*]+\*\*\s*/, '').trim()
     if (!text) continue
@@ -370,13 +378,16 @@ function parseExecBullets(execSummaryText) {
 
 // ─── memory payload assembly ────────────────────────────────────────────
 
-function buildPayload({ payload, messages, client, repo, branch, remote, commits, filesTouched, signals, duration, projectInfo }) {
+function buildPayload({ payload, messages, client, repo, branch, remote, commits, filesTouched, signals, duration, projectInfo, identity = {}, telemetry = {}, dispatch = null, gitCommits = [] }) {
   const firstPrompt = extractFirstUserMessage(messages) || '(no user prompt)'
   const lastAssistant = extractLastAssistantText(messages) || ''
+  const realPrompt = firstPrompt === '(no user prompt)' ? '' : firstPrompt
+  const envelope = parseResultEnvelope(lastAssistant)
+  const cardName = typeof dispatch?.cardName === 'string' ? dispatch.cardName : undefined
+  const transcriptTitle = telemetry.customTitle || telemetry.aiTitle || undefined
 
-  // Subject line — use first ~60 chars of first prompt, single-line.
-  const subject = truncate(firstPrompt.replace(/\s+/g, ' '), 60)
-  const title = repo ? `${repo}: ${subject}` : subject
+  // `${repo}: ${cardName || aiTitle || first ~60 chars of first prompt}`.
+  const title = composeTitle({ repo, cardName, aiTitle: transcriptTitle, firstPrompt }, truncate)
 
   // Body sections
   const sections = []
@@ -420,17 +431,63 @@ function buildPayload({ payload, messages, client, repo, branch, remote, commits
   const bodyMd = sections.join('\n')
 
   const execText = extractExecutiveSummary(lastAssistant)
-  const summary = execText
-    ? truncate(execText.replace(/\s+/g, ' '), 240)
-    : truncate(firstPrompt.replace(/\s+/g, ' '), 240)
-
   const bullets = parseExecBullets(execText)
   const execSummaryField = bullets.length > 0 ? { execSummary: bullets } : {}
 
-  // Deterministic floor for the card headline so nothing lands with a NULL
-  // ai_title. enrichWithAiCleanup (if enabled) and the async summariser both
-  // override this with better prose.
-  const aiTitle = deriveAiTitle(firstPrompt === '(no user prompt)' ? '' : firstPrompt)
+  // Synthesis reads title + summary, so the summary leads with the most
+  // outcome-bearing line available: first Executive Summary bullet, then a
+  // Hangar result envelope, then the whole exec block, then the prompt.
+  const envelopeSummary = typeof envelope?.summary === 'string' && envelope.summary.trim()
+    ? envelope.summary
+    : typeof envelope?.outcome === 'string' ? envelope.outcome : ''
+  const summarySource = firstExecBullet(bullets) || envelopeSummary || execText || firstPrompt
+  const summary = truncate(summarySource.replace(/\s+/g, ' ').trim(), 240)
+
+  // Headline floor so nothing lands with a NULL ai_title: card name, then the
+  // client's own session title, then a deterministic cut of the first prompt.
+  // enrichWithAiCleanup (if enabled) and the async summariser override it.
+  const aiTitle = truncate((cardName || transcriptTitle || '').replace(/\s+/g, ' ').trim(), 120) ||
+    deriveAiTitle(realPrompt)
+
+  const taskId = typeof dispatch?.taskId === 'string' ? dispatch.taskId : undefined
+  const { startedAt, endedAt } = sessionTimes(messages)
+  const envelopeTests = envelope?.tests && ['passed', 'failed', 'not_run'].includes(envelope.tests.status)
+    ? { status: envelope.tests.status, ...(typeof envelope.tests.summary === 'string' ? { summary: envelope.tests.summary.slice(0, 500) } : {}) }
+    : undefined
+  const session = buildSessionRecord({
+    client,
+    sessionId: payload.session_id,
+    hangarSessionId: typeof dispatch?.hangarSessionId === 'string' ? dispatch.hangarSessionId : undefined,
+    taskId,
+    projectId: projectInfo?.id,
+    repo,
+    registrySlug: identity.registrySlug,
+    worktree: identity.worktree,
+    startedAt,
+    // validAt on the server keys off endedAt; the hook fire time is the floor.
+    endedAt: endedAt || (typeof dispatch?.at === 'string' ? dispatch.at : undefined),
+    durationMin: duration,
+    firstPrompt: realPrompt,
+    objective: (typeof dispatch?.objective === 'string' ? dispatch.objective : undefined) || objectiveFromPointer(realPrompt),
+    cardName,
+    status: envelope?.status,
+    outcome: typeof envelope?.outcome === 'string' ? envelope.outcome.slice(0, 1000) : undefined,
+    questions: Array.isArray(envelope?.questions) ? envelope.questions.filter((q) => typeof q === 'string').slice(0, 20) : undefined,
+    branch: branch && branch !== 'HEAD' ? branch : undefined,
+    commits: mergeCommits(gitCommits, telemetry.commits),
+    prs: telemetry.prs,
+    tests: telemetry.tests || envelopeTests,
+    model: telemetry.model,
+    inputTokens: telemetry.inputTokens,
+    outputTokens: telemetry.outputTokens,
+    cacheReadTokens: telemetry.cacheReadTokens,
+    costUsd: telemetry.costUsd,
+    linesAdded: telemetry.linesAdded,
+    linesRemoved: telemetry.linesRemoved,
+    toolCalls: telemetry.toolCalls,
+    errorCount: telemetry.errorCount,
+    files: filesTouched,
+  })
 
   return {
     title: truncate(title, 240),
@@ -442,7 +499,9 @@ function buildPayload({ payload, messages, client, repo, branch, remote, commits
     source: client,
     realmId: projectInfo?.realmId ?? DEFAULT_REALM_ID,
     projectId: projectInfo?.id ?? null,
-    taskId: null,
+    // The column only takes a uuid (FK to board_tasks); the raw value always
+    // survives in sourceMetadata.session.taskId.
+    taskId: isUuid(taskId) ? taskId : null,
     sourceMetadata: {
       // Idempotency key. createMemory dedupes on (source, externalId) against
       // live rows, but nothing ever set it, so every re-capture of one session
@@ -468,13 +527,16 @@ function buildPayload({ payload, messages, client, repo, branch, remote, commits
         durationMin: duration,
         messageCount: messages.length,
       },
+      ...(session ? { session } : {}),
     },
-    tags: [
+    // Each tag is capped at 50 by the API; one long `branch:` tag used to 400
+    // (and dead-letter) the whole capture.
+    tags: clampTags([
       'session',
       client,
       ...(repo ? [repo] : []),
-      ...(branch && branch !== 'main' && branch !== 'master' ? [`branch:${branch}`] : []),
-    ],
+      ...(branch && branch !== 'main' && branch !== 'master' && branch !== 'HEAD' ? [`branch:${branch}`] : []),
+    ]),
   }
 }
 
@@ -569,6 +631,7 @@ async function postMemory(payload) {
   const url = `${BASE_URL}/api/v1/memories`
   let requestPayload = payload
   let fallbackUsed = false
+  let taskIdDropped = false
   let lastStatus = 0
   for (let attempt = 0; attempt < 4; attempt++) {
     const controller = new AbortController()
@@ -585,10 +648,20 @@ async function postMemory(payload) {
       })
       const text = await res.text()
       lastStatus = res.status
+      // A task id the server cannot link (not a uuid it accepts, or a card that
+      // was since deleted → FK failure) must not cost the session: drop the
+      // column link once and retry. sourceMetadata.session.taskId keeps it.
+      if (!res.ok && (res.status === 400 || res.status >= 500) && requestPayload.taskId && !taskIdDropped) {
+        taskIdDropped = true
+        requestPayload = { ...requestPayload, taskId: null }
+        log(`POST ${res.status} with taskId; retrying without the task link`)
+        attempt--
+        continue
+      }
       if (!res.ok && res.status === 400 && !fallbackUsed && (payload.source === 'codex' || payload.source === 'copilot')) {
         fallbackUsed = true
         requestPayload = {
-          ...payload,
+          ...requestPayload,
           source: 'hook',
           sourceMetadata: { ...payload.sourceMetadata, originalSource: payload.source },
         }
@@ -630,7 +703,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // Process a single session transcript end-to-end: parse, quality-gate,
 // build payload, post. Returns memory id on success, null on skip/fail.
-async function processSession({ transcriptPath, transcriptRecords, sessionId, cwd, hookEvent, reason, retryOnEmpty = false }) {
+async function processSession({ transcriptPath, transcriptRecords, sessionId, cwd, hookEvent, reason, dispatch = null, retryOnEmpty = false }) {
   const sessionLabel = transcriptPath ? basename(transcriptPath) : `${sessionId || 'unknown'} (Copilot)`
   const records = transcriptRecords || parseTranscript(transcriptPath)
   if (!records || records.length === 0) {
@@ -671,26 +744,49 @@ async function processSession({ transcriptPath, transcriptRecords, sessionId, cw
     messages.find((m) => typeof m.cwd === 'string' && m.cwd.length > 0)?.cwd ||
     process.cwd()
 
-  const branch = gitCmd(resolvedCwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
-  const remote = gitCmd(resolvedCwd, ['remote', 'get-url', 'origin'])
-  // Repo slug strategy: prefer the dev_26 folder name (stable across forks /
-  // remotes), fall back to git-remote basename, then cwd basename.
+  // Git facts captured by the dispatcher at SessionEnd win: a Hangar mission
+  // worktree is already torn down by the time this detached drain runs, and
+  // the shared tree's HEAD is not this session's. Jobs queued before the
+  // dispatcher recorded them (no `dispatch`) fall back to drain-time git.
+  const dispatchGit = dispatch && typeof dispatch === 'object' && dispatch.git && typeof dispatch.git === 'object'
+    ? dispatch.git
+    : null
+  const telemetry = extractTelemetry(records, client)
+  const branch =
+    telemetry.branch ||
+    (typeof dispatchGit?.branch === 'string' ? dispatchGit.branch : null) ||
+    gitCmd(resolvedCwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
+  const remote = (typeof dispatchGit?.remote === 'string' ? dispatchGit.remote : null) ||
+    gitCmd(resolvedCwd, ['remote', 'get-url', 'origin'])
+  const toplevel = (typeof dispatchGit?.toplevel === 'string' ? dispatchGit.toplevel : null) ||
+    gitCmd(resolvedCwd, ['rev-parse', '--show-toplevel'])
+  // Repo slug strategy: canonical dev_26 folder (worktrees mapped through the
+  // Hangar registry), then git-remote basename when inside a real repo.
+  const identity = resolveRepoIdentity(normalizeCwd(resolvedCwd), { toplevel, remote })
   const repoSlug =
-    repoSlugFromCwd(resolvedCwd) ||
-    (remote ? basename(remote).replace(/\.git$/, '') : null) ||
-    (branch ? basename(resolvedCwd) : null)
+    identity.repo ||
+    (toplevel && remote && !identity.worktree ? basename(remote).replace(/\.git$/, '') : null)
   const repo = repoSlug
 
   // Resolve the matching Aeon project (and its realm) for this repo.
   const projectName = repoToProjectName(repoSlug)
   const projectInfo = projectName ? await resolveProject(projectName) : null
 
-  const since = (() => {
-    const first = messages[0]?.timestamp
-    return first ? `--since=${first}` : '--since=24.hours.ago'
-  })()
-  const commitsRaw = gitCmd(resolvedCwd, ['log', '--pretty=%h %s', since, '-n', '20'])
-  const commits = commitsRaw ? commitsRaw.split('\n').filter(Boolean) : []
+  let gitCommits
+  if (Array.isArray(dispatchGit?.commits)) {
+    gitCommits = dispatchGit.commits.filter((c) => c && typeof c.sha === 'string')
+  } else {
+    const since = (() => {
+      const first = messages[0]?.timestamp
+      return first ? `--since=${first}` : '--since=24.hours.ago'
+    })()
+    const commitsRaw = gitCmd(resolvedCwd, ['log', '--pretty=%h %s', since, '-n', '20'])
+    gitCommits = (commitsRaw ? commitsRaw.split('\n').filter(Boolean) : []).map((line) => {
+      const i = line.indexOf(' ')
+      return i > 0 ? { sha: line.slice(0, i), subject: line.slice(i + 1) } : { sha: line }
+    })
+  }
+  const commits = gitCommits.map((c) => `${c.sha.slice(0, 7)} ${c.subject || ''}`.trim())
 
   const duration = sessionDurationMin(messages)
 
@@ -711,6 +807,10 @@ async function processSession({ transcriptPath, transcriptRecords, sessionId, cw
     signals,
     duration,
     projectInfo,
+    identity,
+    telemetry,
+    dispatch,
+    gitCommits,
   })
 
   // Optional AI cleanup pass — adds aiTitle + execSummary when BRAIN_AI_CLEANUP=1.
@@ -855,6 +955,7 @@ async function runFromHook() {
     cwd: payload.cwd,
     hookEvent: payload.hook_event_name,
     reason: payload.reason,
+    dispatch: payload.dispatch && typeof payload.dispatch === 'object' ? payload.dispatch : null,
     retryOnEmpty: payload.client === 'copilot',
   })
   if (result.id) log(`memory created/upserted: ${result.id}`)

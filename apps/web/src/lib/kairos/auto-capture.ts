@@ -1,5 +1,9 @@
 import { captureMemory } from '@/lib/data/memories'
+import { findTaskById } from '@/lib/data/tasks'
+import { findProjectSettings } from '@/lib/data/projects'
+import { listChecklistForTasks } from '@/lib/data/board-feed'
 import type { MemoryType } from '@/lib/data/validators'
+import { parseKairosFeed, trimText } from './board-feed-render'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (A3 / A4) — auto-capture helpers.
@@ -31,10 +35,19 @@ export interface BoardEventInput {
 }
 
 export async function captureBoardEvent(input: BoardEventInput) {
+  // Feed boards get one daily/weekly page (lib/kairos/board-feed.ts) that
+  // already covers moves and edits — per-event snapshot rows there are noise.
+  if (input.action === 'moved' || input.action === 'updated') {
+    const feed = await loadFeedMode(input.projectId)
+    if (feed) return
+  }
+
   const name = input.taskName?.trim() || '(untitled task)'
   const type: MemoryType = input.action === 'completed' ? 'achievement' : 'snapshot'
 
   const lines: string[] = [`Task **${name}** ${input.action}.`]
+  const card = input.action === 'completed' ? await loadCardDetail(input.taskId, input.projectId) : null
+  if (card) lines.push(...renderCardDetail(card))
   if (input.metadata && Object.keys(input.metadata).length > 0) {
     lines.push('')
     for (const [k, v] of Object.entries(input.metadata)) {
@@ -53,9 +66,66 @@ export async function captureBoardEvent(input: BoardEventInput) {
       kind: 'board_event',
       action: input.action,
       taskId: input.taskId,
+      ...(card ? {
+        hasNotes: card.description.length > 0,
+        checklist: { done: card.done, total: card.total },
+      } : {}),
       ...input.metadata,
     },
   })
+}
+
+// ─── enrichment helpers (reads only; failures degrade to the bare event) ──
+
+const DESCRIPTION_MAX = 400
+const CHECKLIST_ITEMS_MAX = 8
+
+interface CardDetail {
+  description: string
+  done: number
+  total: number
+  items: Array<{ title: string; done: boolean }>
+}
+
+async function loadFeedMode(projectId: string) {
+  try {
+    return parseKairosFeed(await findProjectSettings(projectId))
+  } catch {
+    return null
+  }
+}
+
+async function loadCardDetail(taskId: string, projectId: string): Promise<CardDetail | null> {
+  try {
+    const [task, checklist] = await Promise.all([
+      findTaskById(taskId, projectId),
+      listChecklistForTasks([taskId]),
+    ])
+    if (!task) return null
+    const items = checklist.map((item) => ({ title: item.title, done: item.completed || item.state === 'checked' }))
+    return {
+      description: trimText(task.description, DESCRIPTION_MAX),
+      done: items.filter((item) => item.done).length,
+      total: items.length,
+      items,
+    }
+  } catch {
+    return null
+  }
+}
+
+function renderCardDetail(card: CardDetail): string[] {
+  const lines: string[] = []
+  if (card.description) lines.push('', `Notes: ${card.description}`)
+  if (card.total > 0) {
+    lines.push('', `Checklist ${card.done}/${card.total}:`)
+    for (const item of card.items.slice(0, CHECKLIST_ITEMS_MAX)) {
+      lines.push(`- [${item.done ? 'x' : ' '}] ${trimText(item.title, 160)}`)
+    }
+    if (card.items.length > CHECKLIST_ITEMS_MAX) lines.push(`- …${card.items.length - CHECKLIST_ITEMS_MAX} more`)
+  }
+  if (!card.description && card.total === 0) lines.push('', '_Title only — no notes or checklist._')
+  return lines
 }
 
 export interface ProjectEventInput {

@@ -5,12 +5,17 @@ import { fileURLToPath } from 'node:url'
 import { normalizeCodexHook, normalizeCodexStartHook } from './session-capture-dispatch.mjs'
 import { enqueueAndDrain } from './session-capture-queue.mjs'
 
+// Loaded dynamically so a broken enrichment module can never cost the capture.
+const withDispatchContext = await import('./session-record.mjs')
+  .then((m) => m.withDispatchContext)
+  .catch(() => (payload) => payload)
+
 try {
   const raw = readFileSync(0, 'utf8')
 
   const endPayload = normalizeCodexHook(raw)
   if (endPayload) {
-    enqueueAndDrain({ ...endPayload, client: 'codex' })
+    enqueueAndDrain(withDispatchContext({ ...endPayload, client: 'codex' }))
     process.exit(0)
   }
 

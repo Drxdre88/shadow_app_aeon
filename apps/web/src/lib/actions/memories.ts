@@ -12,13 +12,11 @@ import {
   addLinkSchema,
   getNeighboursSchema,
   getBeliefTrailSchema,
-  prepareContextSchema,
   type CreateMemoryInput,
   type UpdateMemoryInput,
   type SearchMemoriesInput,
   type AddLinkInput,
   type GetNeighboursInput,
-  type PrepareContextInput,
 } from '@/lib/data/validators'
 import {
   findMemoryById as _findMemoryById,
@@ -31,7 +29,6 @@ import {
   addLink as _addLink,
   removeLink as _removeLink,
   deleteMemory as _deleteMemory,
-  prepareContext as _prepareContext,
   targetMemoryExists,
   getGraphForUser as _getGraphForUser,
   listTodaysAdvisories as _listTodaysAdvisories,
@@ -194,17 +191,6 @@ export async function getBrainGraph(opts: { realmId?: string; includeArchived?: 
     await verifyAnchors(userId, { realmId: opts.realmId })
   }
   return _getGraphForUser(userId, opts)
-}
-
-// Brain Phase 4 — context retrieval. Single auth-guarded call returning a
-// budget-packed markdown bundle. If realmId supplied, verifies user is a member.
-export async function prepareContextForUser(input: PrepareContextInput) {
-  const userId = await requireAuth()
-  const parsed = prepareContextSchema.parse(input)
-  if (parsed.realmId) {
-    await verifyAnchors(userId, { realmId: parsed.realmId })
-  }
-  return _prepareContext(userId, parsed)
 }
 
 // Kairos Phase 1.5 — fetch today's Briefer advisories for the dashboard.

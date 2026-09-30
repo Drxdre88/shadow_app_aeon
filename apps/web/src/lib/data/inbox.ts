@@ -5,6 +5,7 @@ import {
   findMemoryById,
   listMemories,
   listTodaysAdvisories,
+  markKairosSpeaksReplied,
 } from '@/lib/data/memories'
 
 export type KairosInboxUrgency = 'low' | 'normal' | 'high'
@@ -80,6 +81,16 @@ export async function dismissInboxMemory(userId: string, memoryId: string): Prom
 
   const archived = await archiveMemory(memoryId, userId)
   if (!archived) return { ok: false, reason: 'not_found' }
+  // Dismissing a Kairos speak is an operator response: close pending speaks so
+  // the reply gate clears (archiving alone leaves status 'pending'). Idempotent
+  // with the Telegram path's own marker call; best-effort, never fails dismiss.
+  if (metadata.kairosSpeak === true) {
+    try {
+      await markKairosSpeaksReplied(userId, new Date())
+    } catch (err) {
+      console.error('[kairos-inbox] failed to mark speaks replied', err)
+    }
+  }
   return { ok: true, id: archived.id }
 }
 

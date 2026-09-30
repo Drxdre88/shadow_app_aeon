@@ -5,23 +5,34 @@ import { deliverKairosSpeak } from './speak'
 // ─────────────────────────────────────────────────────────────────────────
 // Synthesis reliability (docs/kairos/31) — Part B: the health scorecard.
 //
-// Every standard-tier generator (cortex, archetypes, introspection,
-// contradiction) and every other nightly cron writes a streamClass:'trace'
-// memory ONLY on failure (writeCronFailureTrace, sourceMetadata.cronName) —
-// success is silent. The one exception is the recipe dispatcher
-// (lib/kairos/dispatch.ts), which writes a trace on every run, tagged
-// sourceMetadata.recipe (currently just 'BRIEF'). Both conventions coexist
-// and are bucketed together here; normalising them is out of scope (phase 2).
+// Crons write streamClass:'trace' memories keyed by sourceMetadata.cronName:
+//   - writeCronFailureTrace on a real failure — carries `reason`;
+//   - writeCronSuccessTrace on a completed run — carries `outcome`
+//     ('ok' | 'skipped', skipped = expected no-op that still proves the cron
+//     fired) and deliberately NO `reason`; one row per cron/Dominion/UTC day.
+// The recipe dispatcher (lib/kairos/dispatch.ts) additionally writes a trace
+// per created run tagged sourceMetadata.recipe (no cronName, no outcome) —
+// treated as an 'ok' row. Its failure path uses cronName `recipe:<NAME>`.
 //
-// Because most stages are trace-on-failure-only, the absence of a row for a
-// stage on a given UTC night is genuinely ambiguous — it could mean a clean
-// run, or that the cron never fired at all. Liveness/heartbeat detection
-// that would resolve that ambiguity is explicitly deferred to phase 2; this
-// module reports "no signal", never "ok", for a night with no trace row.
+// Stage keys are normalised so one cron = one stage: `recipe:<NAME>` and
+// recipe `<NAME>` collapse to the recipe name, and RECIPE_STAGE_ALIASES maps
+// a recipe to the cron that drives it (BRIEF → 'briefer', so the briefer
+// route's own failure/success rows land on the same stage).
+//
+// Per stage per UTC night: 'failed' if any failure row, else 'ok' if any
+// success row. A stage with no row on a night is "no signal" (absent from
+// byStage) — never inferred 'ok'. A cron that has not yet adopted success
+// traces therefore still shows only its failures.
 // ─────────────────────────────────────────────────────────────────────────
 
 const WINDOW_HOURS = 48
+// Generous: ~15 crons × Dominions × 2 nights of success + failure rows.
+const HISTORY_CAP = 2000
 export const SYNTHESIS_HEALTH_RECIPE = 'SYNTHESIS_HEALTH'
+
+const RECIPE_STAGE_ALIASES: Record<string, string> = {
+  BRIEF: 'briefer',
+}
 
 type StageStatus = 'ok' | 'failed'
 
@@ -42,20 +53,29 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
 }
 
-// The two coexisting conventions: cronName (writeCronFailureTrace) takes
-// priority since it's the one every generator's failure path uses; recipe
-// (dispatch.ts success traces) is the fallback.
+function recipeStage(recipe: string): string {
+  return RECIPE_STAGE_ALIASES[recipe] ?? recipe
+}
+
+// cronName takes priority (every cron's failure/success trace uses it);
+// recipe (dispatch.ts run traces) is the fallback. Both normalise to one key.
 function stageKeyOf(metadata: Record<string, unknown> | null): string | null {
   if (!metadata) return null
   const cronName = metadata.cronName
-  if (typeof cronName === 'string' && cronName) return cronName
+  if (typeof cronName === 'string' && cronName) {
+    return cronName.startsWith('recipe:') ? recipeStage(cronName.slice('recipe:'.length)) : cronName
+  }
   const recipe = metadata.recipe
-  if (typeof recipe === 'string' && recipe) return recipe
+  if (typeof recipe === 'string' && recipe) return recipeStage(recipe)
   return null
 }
 
-function isFailureRow(metadata: Record<string, unknown> | null): boolean {
-  return Boolean(metadata && typeof metadata.reason === 'string' && metadata.reason)
+function rowStatus(metadata: Record<string, unknown>): StageStatus | null {
+  if (typeof metadata.reason === 'string' && metadata.reason) return 'failed'
+  if (metadata.outcome === 'ok' || metadata.outcome === 'skipped') return 'ok'
+  // Legacy dispatcher run trace: recipe-tagged, no cronName → a created run.
+  if (typeof metadata.cronName !== 'string' && typeof metadata.recipe === 'string') return 'ok'
+  return null
 }
 
 function extractAlertedStages(metadata: unknown): string[] {
@@ -94,7 +114,7 @@ export async function computeSynthesisHealth(userId: string): Promise<SynthesisH
 
   const [previous, history] = await Promise.all([
     listTraceHistory(userId, { recipe: SYNTHESIS_HEALTH_RECIPE, limit: 1 }),
-    listTraceHistory(userId, { limit: 200 }),
+    listTraceHistory(userId, { since: new Date(cutoff), limit: HISTORY_CAP }),
   ])
 
   const prevAlertedStages = new Set(extractAlertedStages(previous[0]?.sourceMetadata))
@@ -105,16 +125,15 @@ export async function computeSynthesisHealth(userId: string): Promise<SynthesisH
     const metadata = asRecord(row.sourceMetadata)
     const stageKey = stageKeyOf(metadata)
     // Skip the rollup's own output — it must not become a "stage" of itself.
-    if (!stageKey || stageKey === SYNTHESIS_HEALTH_RECIPE) continue
+    if (!metadata || !stageKey || stageKey === SYNTHESIS_HEALTH_RECIPE) continue
+    const status = rowStatus(metadata)
+    if (!status) continue
 
     const night = utcDate(row.createdAt)
     const stageNights = byStage[stageKey] ?? (byStage[stageKey] = {})
     // A failure row for a stage-night always wins over an 'ok' seen the same
-    // night (e.g. a recipe that both retried-and-succeeded and separately
-    // threw once for another user's Dominion).
-    if (stageNights[night] !== 'failed') {
-      stageNights[night] = isFailureRow(metadata) ? 'failed' : 'ok'
-    }
+    // night (e.g. one Dominion failed while another succeeded).
+    if (stageNights[night] !== 'failed') stageNights[night] = status
   }
 
   const failingStages: string[] = []

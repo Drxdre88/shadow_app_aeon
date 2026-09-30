@@ -86,6 +86,8 @@ test('loads and normalizes a Copilot session from SQLite', () => {
     assert.equal(result.messages[0].message.content, 'Wire the hook')
     assert.equal(result.messages[1].message.content, '## Executive Summary\n\nCapture is wired.')
     assert.equal(result.messages[2].message.content[0].input.file_path, 'src/capture.ts')
+    // Older stores lack assistant_usage_events: branch still flows, usage is simply absent.
+    assert.deepEqual(records[0].payload, { client: 'copilot', cwd: 'C:/repo', branch: 'feat/capture' })
     assert.deepEqual(listCopilotBackfillSessions('current-session', 5, storePath), [
       { id: 'session-1', cwd: 'C:/repo' },
     ])
@@ -96,6 +98,38 @@ test('loads and normalizes a Copilot session from SQLite', () => {
 
 test('returns null when the Copilot session is absent', () => {
   assert.equal(loadCopilotTranscript('missing', join(tmpdir(), 'missing-copilot-store.db')), null)
+})
+
+test('adds model and token totals from assistant_usage_events to session_meta', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'aeon-copilot-usage-'))
+  const storePath = join(dir, 'session-store.db')
+  const db = new DatabaseSync(storePath)
+  try {
+    db.exec(`
+      CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT, created_at TEXT);
+      CREATE TABLE turns (id INTEGER PRIMARY KEY, session_id TEXT, turn_index INTEGER, user_message TEXT, assistant_response TEXT, timestamp TEXT);
+      CREATE TABLE session_files (id INTEGER PRIMARY KEY, session_id TEXT, file_path TEXT, first_seen_at TEXT);
+      CREATE TABLE assistant_usage_events (id INTEGER PRIMARY KEY, session_id TEXT, model TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER);
+    `)
+    db.prepare('INSERT INTO sessions VALUES (?, ?, ?)').run('usage-session', 'C:/repo', '2026-09-01 08:00:00')
+    const usage = db.prepare('INSERT INTO assistant_usage_events (session_id, model, input_tokens, output_tokens, cache_read_tokens) VALUES (?, ?, ?, ?, ?)')
+    usage.run('usage-session', 'model-a', 100, 10, 80)
+    usage.run('usage-session', 'model-a', 200, 20, 150)
+    usage.run('usage-session', 'model-b', 50, 5, null)
+    usage.run('other-session', 'model-c', 999, 999, 999)
+  } finally {
+    db.close()
+  }
+  try {
+    const records = loadCopilotTranscript('usage-session', storePath)
+    assert.deepEqual(records[0].payload, {
+      client: 'copilot',
+      cwd: 'C:/repo',
+      usage: { model: 'model-a', inputTokens: 350, outputTokens: 35, cacheReadTokens: 230 },
+    })
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 
 test('retries until the Copilot user and assistant turn is durable', async () => {

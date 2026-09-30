@@ -49,6 +49,34 @@ export function listCopilotBackfillSessions(currentSessionId, limit = 100, store
   }
 }
 
+// Model + token totals from assistant_usage_events. Older stores have no such
+// table — telemetry is optional, so any failure yields null, never an error.
+export function readCopilotUsage(db, sessionId) {
+  try {
+    const rows = db.prepare(`
+      SELECT model,
+             count(*) AS calls,
+             sum(coalesce(input_tokens, 0)) AS input_tokens,
+             sum(coalesce(output_tokens, 0)) AS output_tokens,
+             sum(coalesce(cache_read_tokens, 0)) AS cache_read_tokens
+      FROM assistant_usage_events
+      WHERE session_id = ?
+      GROUP BY model
+      ORDER BY calls DESC
+    `).all(sessionId)
+    if (!rows.length) return null
+    const sum = (key) => rows.reduce((total, row) => total + Number(row[key] || 0), 0)
+    return {
+      model: rows[0].model,
+      inputTokens: sum('input_tokens'),
+      outputTokens: sum('output_tokens'),
+      cacheReadTokens: sum('cache_read_tokens'),
+    }
+  } catch {
+    return null
+  }
+}
+
 export function loadCopilotTranscript(sessionId, storePath = resolveCopilotStorePath()) {
   if (!validSessionId(sessionId)) return null
   if (!existsSync(storePath)) return null
@@ -56,11 +84,12 @@ export function loadCopilotTranscript(sessionId, storePath = resolveCopilotStore
   const db = new DatabaseSync(storePath, { readOnly: true })
   try {
     const session = db.prepare(`
-      SELECT cwd, created_at
+      SELECT *
       FROM sessions
       WHERE id = ?
     `).get(sessionId)
     if (!session) return null
+    const usage = readCopilotUsage(db, sessionId)
 
     const turns = db.prepare(`
       SELECT turn_index, user_message, assistant_response, timestamp
@@ -112,6 +141,8 @@ export function loadCopilotTranscript(sessionId, storePath = resolveCopilotStore
       payload: {
         client: 'copilot',
         cwd: session.cwd,
+        ...(typeof session.branch === 'string' && session.branch ? { branch: session.branch } : {}),
+        ...(usage ? { usage } : {}),
       },
     }, ...messages]
   } finally {

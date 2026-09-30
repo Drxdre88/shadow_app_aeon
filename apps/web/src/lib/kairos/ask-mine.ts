@@ -7,6 +7,8 @@ import {
   listRecentKairosAsks,
   type KairosAskRow,
 } from '@/lib/data/ask'
+import { listBoardDayPages } from '@/lib/data/board-feed'
+import { buildCardNotesQuestion, thinCardsFromPage, type ThinCard } from './board-feed-render'
 import {
   listRecentlyCompletedTasks,
   listRecentlyCreatedTasks,
@@ -42,6 +44,7 @@ export interface AskMineOptions {
 
 export type AskMineRunResult =
   | { status: 'created'; date: string; askId: string; candidate: AskMineCandidate; expiresAt: string }
+  | { status: 'created'; date: string; askId: string; kind: 'card_notes'; cardCount: number; expiresAt: string }
   | { status: 'dry_run'; date: string; modelInput: ModelInput; signalCount: number }
   | {
       status: 'skipped'
@@ -228,6 +231,63 @@ async function gatherSignalBundle(
   return { bundle, validSourceIds, validDominionIds }
 }
 
+// ─── thin-card nudge (fallback when nothing better is worth asking) ───────
+
+const CARD_NOTES_MAX = 3
+const CARD_NOTES_LEVERAGE = 0.5
+
+async function tryCardNotesAsk(
+  userId: string,
+  date: string,
+  now: Date,
+): Promise<AskMineRunResult | null> {
+  try {
+    const pageDate = previousDate(date, 1)
+    const pages = await listBoardDayPages(userId, pageDate)
+    const cards: ThinCard[] = []
+    const pageIds: string[] = []
+    const dominionIds = new Set<string | null>()
+    for (const page of pages) {
+      const thin = thinCardsFromPage(page).slice(0, CARD_NOTES_MAX - cards.length)
+      if (thin.length === 0) continue
+      cards.push(...thin)
+      pageIds.push(page.id)
+      dominionIds.add(page.dominionId)
+      if (cards.length >= CARD_NOTES_MAX) break
+    }
+    if (cards.length === 0) return null
+
+    const sourceMemoryIds = [...pageIds, ...cards.flatMap((card) => (card.taskId ? [card.taskId] : []))]
+    const dominionId = dominionIds.size === 1 ? [...dominionIds][0] ?? null : null
+    const expiresAt = new Date(now.getTime() + ASK_EXPIRY_MS).toISOString()
+    const askId = await createKairosAskMemory(userId, {
+      question: buildCardNotesQuestion(cards.map((card) => card.title)),
+      dominionId,
+      aetherMemoryId: '',
+      sourceThoughtId: null,
+      sourceMemoryIds,
+      askedAt: now.toISOString(),
+      expiresAt,
+      externalId: `ask-mine:${date}:card-notes`,
+      askMine: {
+        date,
+        kind: 'card_notes',
+        sourceMemoryIds,
+        leverage: CARD_NOTES_LEVERAGE,
+        rationale: `${cards.length} card(s) finished on ${pageDate} with a title only — a line each turns them into evidence and gets written back onto the card.`,
+      },
+      cardNotes: { date: pageDate, boardDayMemoryIds: pageIds, cards },
+    })
+    return { status: 'created', date, askId, kind: 'card_notes', cardCount: cards.length, expiresAt }
+  } catch (error) {
+    console.error('[ask-mine] card-notes nudge failed; falling back to skip', {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return null
+  }
+}
+
 export async function runAskMineForUser(
   userId: string,
   options: AskMineOptions = {},
@@ -254,7 +314,13 @@ export async function runAskMineForUser(
     now,
     recentAsks,
   )
-  if (validSourceIds.size === 0) return { status: 'skipped', date, reason: 'no_signals' }
+  if (validSourceIds.size === 0) {
+    if (!options.dryRun) {
+      const nudge = await tryCardNotesAsk(userId, date, now)
+      if (nudge) return nudge
+    }
+    return { status: 'skipped', date, reason: 'no_signals' }
+  }
   const modelInput: ModelInput = {
     system: ASK_MINE_SYSTEM_PROMPT,
     prompt: buildAskMineUserPrompt(bundle),
@@ -276,7 +342,9 @@ export async function runAskMineForUser(
       && candidate.sourceMemoryIds.every((id) => validSourceIds.has(id))
     ))
     const candidate = selectAskMineCandidate(groundedCandidates, recentAsks, date)
-    if (!candidate) return { status: 'skipped', date, reason: 'no_candidate' }
+    if (!candidate) {
+      return (await tryCardNotesAsk(userId, date, now)) ?? { status: 'skipped', date, reason: 'no_candidate' }
+    }
 
     const askedAt = now.toISOString()
     const expiresAt = new Date(now.getTime() + ASK_EXPIRY_MS).toISOString()
@@ -312,3 +380,4 @@ export async function runAskMineForUser(
 }
 
 export { parseAskMineResponse }
+export { buildCardNotesQuestion }

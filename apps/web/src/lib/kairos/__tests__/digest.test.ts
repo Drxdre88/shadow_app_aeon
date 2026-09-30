@@ -65,6 +65,7 @@ vi.mock('../speak', () => ({
 
 vi.mock('../cron-trace', () => ({
   writeCronFailureTrace: vi.fn(),
+  writeCronSuccessTrace: vi.fn(),
 }))
 
 import { db } from '@/lib/db'
@@ -73,9 +74,9 @@ import { listKairosAsksAnsweredBetween } from '@/lib/data/ask'
 import { listTraceHistory } from '@/lib/data/recipes'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { deliverKairosSpeak } from '../speak'
-import { writeCronFailureTrace } from '../cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from '../cron-trace'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
-import { gatherDigestCounts, buildDeterministicDigest, runEveningDigestForUser, type DigestCounts } from '../digest'
+import { gatherDigestCounts, buildDeterministicDigest, runEveningDigestForUser, digestWindow, type DigestCounts } from '../digest'
 
 const USER = 'user-1'
 const WINDOW = { start: new Date('2026-07-24T00:00:00.000Z'), end: new Date('2026-07-25T00:00:00.000Z') }
@@ -271,6 +272,7 @@ describe('runEveningDigestForUser', () => {
       digest: true,
     }))
     expect(writeCronFailureTrace).not.toHaveBeenCalled()
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER, { cronName: 'digest' })
   })
 
   it('sends the deterministic fallback with NO trace on a missing BYOK credential', async () => {
@@ -343,6 +345,9 @@ describe('runEveningDigestForUser', () => {
     expect(result.reason).toBe('already ran today')
     expect(getProviderForTask).not.toHaveBeenCalled()
     expect(deliverKairosSpeak).not.toHaveBeenCalled()
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER, {
+      cronName: 'digest', outcome: 'skipped', skipReason: 'already ran today',
+    })
   })
 
   it('still sends a minimal digest and traces gather_failed when gatherDigestCounts throws (F3 — never total silence)', async () => {
@@ -398,6 +403,7 @@ describe('runEveningDigestForUser', () => {
       cronName: 'digest',
       reason: 'delivery_blocked',
     }))
+    expect(writeCronSuccessTrace).not.toHaveBeenCalled()
   })
 
   it('passes a stable per-day externalId to deliverKairosSpeak so concurrent runs dedupe (F2)', async () => {
@@ -413,5 +419,93 @@ describe('runEveningDigestForUser', () => {
     expect(deliverKairosSpeak).toHaveBeenCalledWith(USER, expect.objectContaining({
       externalId: 'kairos-digest:2026-07-24',
     }))
+  })
+})
+
+describe('digest window (rolling 24h ending at run time)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-24T18:00:00.000Z'))
+  })
+
+  it('digestWindow spans the previous 18:00Z slot to now', () => {
+    const now = new Date('2026-07-24T18:00:00.000Z')
+    expect(digestWindow(now)).toEqual({ start: new Date('2026-07-23T18:00:00.000Z'), end: now })
+  })
+
+  it('counts yesterday evening activity (18:00-24:00Z) that a calendar-day window dropped', async () => {
+    selectQueue.push([{ n: 0 }])
+    queueCounts([0, 0, 0, 0])
+    vi.mocked(getProviderForTask).mockRejectedValue(new AiCredentialMissingError('anthropic'))
+
+    await runEveningDigestForUser(USER)
+
+    // First gte is the alreadyRanToday UTC-day bound; the rest are the count window.
+    const gteValues = boundCalls.filter((c) => c.fn === 'gte').map((c) => (c.value as Date).toISOString())
+    const ltValues = boundCalls.filter((c) => c.fn === 'lt').map((c) => (c.value as Date).toISOString())
+    expect(gteValues[0]).toBe('2026-07-24T00:00:00.000Z')
+    expect(gteValues.slice(1).every((v) => v === '2026-07-23T18:00:00.000Z')).toBe(true)
+    expect(ltValues.every((v) => v === '2026-07-24T18:00:00.000Z')).toBe(true)
+    expect(countTasksCompletedBetween).toHaveBeenCalledWith(
+      USER, new Date('2026-07-23T18:00:00.000Z'), new Date('2026-07-24T18:00:00.000Z'),
+    )
+  })
+})
+
+describe('digest runaway-output guard', () => {
+  function mockModel(response: { text: string; finishReason?: string }) {
+    vi.mocked(getProviderForTask).mockResolvedValue({
+      decision: { providerId: 'byok', modelId: null, tier: 'standard', source: 'default' },
+      provider: { ask: vi.fn().mockResolvedValue({ modelId: 'm', ...response }) },
+    } as never)
+  }
+
+  async function runExpectingFallback() {
+    selectQueue.push([{ n: 0 }])
+    queueCounts([0, 0, 0, 0])
+    const result = await runEveningDigestForUser(USER)
+    expect(result.status).toBe('sent_fallback')
+    const sent = vi.mocked(deliverKairosSpeak).mock.calls[0][1].message
+    expect(sent).toContain('quiet day')
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER, { cronName: 'digest' })
+    return vi.mocked(writeCronFailureTrace).mock.calls[0]?.[1]
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-24T18:00:00.000Z'))
+  })
+
+  it('falls back and traces finishReason + rawExcerpt when the model hit the length cap', async () => {
+    const runaway = 'A quiet day. Powered by Claude Exporter. ' + 'wp-config '.repeat(200) + 'Before we go de'
+    mockModel({ text: runaway, finishReason: 'length' })
+
+    const trace = await runExpectingFallback()
+
+    expect(trace).toMatchObject({ cronName: 'digest', reason: 'model_call_failed', finishReason: 'length' })
+    expect(trace?.rawExcerpt).toBe(runaway.slice(0, 500))
+    expect((trace?.error as Error).message).toContain('finishReason=length')
+  })
+
+  it('rejects a cleanly-stopped but overlong narrative (>1200 chars)', async () => {
+    mockModel({ text: 'I noticed a lot. '.repeat(80), finishReason: 'stop' })
+
+    const trace = await runExpectingFallback()
+
+    expect(trace).toMatchObject({ reason: 'model_call_failed', finishReason: 'stop' })
+    expect((trace?.error as Error).message).toContain('rejected by guard')
+  })
+
+  it.each([
+    ['a URL', 'A quiet day. See https://example.com/wp-admin for more.'],
+    ['a markdown heading', 'Headline\n## Installing WordPress\nStep one.'],
+    ['an export footer', 'A quiet day.\nPowered by Claude Exporter'],
+  ])('rejects non-digest content containing %s', async (_label, text) => {
+    mockModel({ text, finishReason: 'stop' })
+
+    const trace = await runExpectingFallback()
+
+    expect(trace?.rawExcerpt).toBe(text)
+    expect((trace?.error as Error).message).toContain('rejected by guard')
   })
 })

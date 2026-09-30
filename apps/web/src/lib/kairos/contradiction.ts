@@ -16,7 +16,7 @@ import {
   type ContradictionProbe,
 } from './contradiction-prompt'
 import { todayIso, parseWithRepair, ParseRepairError } from './_prompt-utils'
-import { writeCronFailureTrace } from './cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos — Contradiction detection runner (propose-not-commit).
@@ -35,6 +35,9 @@ import { writeCronFailureTrace } from './cron-trace'
 const PROBE_WINDOW_DAYS = 7
 const PROBE_LIMIT = 25
 const PROPOSAL_TYPE = 'inbound'
+// Same heavy-tier output budget as cortex/archetypes/introspection — a tight
+// cap is what truncated every other generator (finishReason=length) until raised.
+const MAX_OUTPUT_TOKENS = 8000
 
 async function alreadyRanToday(userId: string, dominionId: string): Promise<boolean> {
   const [row] = await db
@@ -118,6 +121,7 @@ export async function runContradictionScanForDominion(
   if (dom.archivedAt) return { dominionId, dominionName: dom.name, status: 'skipped', reason: 'archived' }
 
   if (await alreadyRanToday(userId, dominionId)) {
+    await writeCronSuccessTrace(userId, { cronName: 'contradiction-scan', dominionId, outcome: 'skipped', skipReason: 'already ran today' })
     return { dominionId, dominionName: dom.name, status: 'existing', reason: 'already ran today' }
   }
 
@@ -131,6 +135,7 @@ export async function runContradictionScanForDominion(
   // In-run guard alongside the DB check — two probes in the same batch can
   // resolve to the same underlying conflict from opposite directions.
   const queuedPairs = new Set<string>()
+  let probeFailures = 0
 
   for (const probe of probes) {
     const candidates = await findSimilarBeliefs(probe.id, userId, { dominionId })
@@ -145,7 +150,7 @@ export async function runContradictionScanForDominion(
         system: CONTRADICTION_SYSTEM_PROMPT,
         prompt: buildContradictionUserPrompt(probe, candidates as ContradictionCandidate[]),
         cacheSystem: true,
-        maxTokens: 1200,
+        maxTokens: MAX_OUTPUT_TOKENS,
       }))
       rawText = response.text.trim()
       finishReason = response.finishReason
@@ -160,11 +165,13 @@ export async function runContradictionScanForDominion(
       // transient path): trace it and move to the next probe so one bad probe
       // can't abort the whole Dominion scan.
       await writeCronFailureTrace(userId, { cronName: 'contradiction-scan', dominionId, reason: 'judge_failed', error: err })
+      probeFailures++
       continue
     }
 
     if (!rawText) {
       await writeCronFailureTrace(userId, { cronName: 'contradiction-scan', dominionId, reason: 'empty_response', finishReason })
+      probeFailures++
       continue
     }
 
@@ -176,7 +183,12 @@ export async function runContradictionScanForDominion(
         rawText,
         parse: (text) => filterGroundedFindings(contradictionOutSchema.parse(extractJsonBlock(text)), validIds),
         generatorLabel: 'contradiction',
-        maxTokens: 1200,
+        maxTokens: MAX_OUTPUT_TOKENS,
+        system: CONTRADICTION_SYSTEM_PROMPT,
+        repairContext: [
+          'Valid candidate ids — every candidateId MUST be one of these, copied in full:',
+          ...candidates.map((c) => `- ${c.id}`),
+        ].join('\n'),
       })
     } catch (err) {
       if (err instanceof ParseRepairError) {
@@ -188,6 +200,7 @@ export async function runContradictionScanForDominion(
           finishReason,
           rawExcerpt: err.rawExcerpt,
         })
+        probeFailures++
         continue
       }
       throw err
@@ -243,10 +256,14 @@ export async function runContradictionScanForDominion(
   }
 
   if (rows.length === 0) {
+    // A clean scan is a successful night; one where every judged probe failed
+    // already left failure traces and must not also look healthy.
+    if (probeFailures === 0) await writeCronSuccessTrace(userId, { cronName: 'contradiction-scan', dominionId })
     return { dominionId, dominionName: dom.name, status: 'created', proposalsCreated: 0, reason: 'no contradictions found' }
   }
 
   await db.insert(memories).values(rows)
+  await writeCronSuccessTrace(userId, { cronName: 'contradiction-scan', dominionId })
 
   return { dominionId, dominionName: dom.name, status: 'created', proposalsCreated: rows.length }
 }

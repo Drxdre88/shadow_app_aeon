@@ -11,6 +11,7 @@ const tests = [
   join(scriptDir, 'codex-session-transcript.test.mjs'),
   join(scriptDir, 'session-capture-dispatch.test.mjs'),
   join(scriptDir, 'session-capture-queue.test.mjs'),
+  join(scriptDir, 'session-record.test.mjs'),
   join(scriptDir, 'verify-schema-drift.test.mjs'),
 ]
 if (supportsUnflaggedSqlite) tests.push(join(scriptDir, 'copilot-session-transcript.test.mjs'))

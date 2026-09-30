@@ -33,6 +33,18 @@ export const maxDuration = 300
 const TELEGRAM_THREAD_TITLE = 'Telegram · Kairos'
 const CALLBACK_RE = /^(dismiss|accept):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
 const CITATION_RE = /\s*\[\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\]\]/gi
+// A chat reply is capped at 2000 output tokens, so more than two Telegram
+// messages means something ran away — send the head and point at Aeon.
+const MAX_TELEGRAM_REPLY_CHUNKS = 2
+const TELEGRAM_OVERFLOW_NOTE = '(cut short — the full reply is in Aeon)'
+
+function telegramReplyChunks(reply: string): string[] {
+  const chunks = splitTelegramMessage(reply, TELEGRAM_HTML_SPLIT_LIMIT)
+  if (chunks.length <= MAX_TELEGRAM_REPLY_CHUNKS) return chunks
+  const head = chunks.slice(0, MAX_TELEGRAM_REPLY_CHUNKS)
+  head[head.length - 1] = `${head[head.length - 1]}\n\n${TELEGRAM_OVERFLOW_NOTE}`
+  return head
+}
 
 // Best-effort redelivery dedup for text messages (Telegram is at-least-once
 // delivery; a slow chat turn can outlast Telegram's own retry window and
@@ -189,7 +201,7 @@ async function handleTextMessage(
     // Split the raw markdown (tags must not straddle chunks), render each
     // chunk to Telegram HTML, and fall back to plain text if Telegram
     // rejects the formatting — delivery beats styling.
-    for (const chunk of splitTelegramMessage(reply, TELEGRAM_HTML_SPLIT_LIMIT)) {
+    for (const chunk of telegramReplyChunks(reply)) {
       try {
         await sendMessage(chatId!, renderTelegramHtml(chunk), { parseMode: 'HTML' })
       } catch {
