@@ -1,0 +1,14 @@
+{
+  "title": "Kairos: coming alive",
+  "eyebrow": "Kairos · next phase · 30 Sep 2026",
+  "lede": "What works, what doesn't, how he talks to you, how your board and your voice become his mind, the engine that makes him learn, and running it all on your Claude Max plan.",
+  "crumb": "research / kairos_2909 / vision",
+  "tabs": [
+    {"id": "overview", "label": "Where we're going", "file": "overview.md"},
+    {"id": "day", "label": "A day with Kairos", "file": "day.md"},
+    {"id": "feeding", "label": "How you feed him", "file": "feeding.md"},
+    {"id": "engine", "label": "The memory engine", "file": "engine.md"},
+    {"id": "max", "label": "On your Max plan", "file": "max.md"},
+    {"id": "road", "label": "The road", "file": "road.md"}
+  ]
+}

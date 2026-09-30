@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kairos Reassessment 2909</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  color-scheme:dark;
+  --page:#06080a; --card:#0b0e12; --panel:#10141a; --zebra:#0d1015; --hair:#1c232b; --hair2:#2a333d;
+  --text:#d7dde3; --muted:#8b949e; --faint:#5c666f;
+  --primary:#f5b942; --glow:#ffd06a; --second:#13b88f; --neg:#ff2442; --warn:#ffa845;
+  --cool:#5fe9ff; --carry:#e879f9;
+  --hud-font:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  --display:"Barlow Condensed","Arial Narrow",sans-serif;
+  --body:"Source Sans 3","Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    color-scheme:light;
+    --page:#f5f6f8; --card:#ffffff; --panel:#e2e6ec; --zebra:#f1f3f6; --hair:rgba(15,23,42,.12); --hair2:rgba(15,23,42,.25);
+    --text:#0f172a; --muted:#475569; --faint:#64748b;
+    --primary:#b45309; --glow:#d97706; --second:#0e7490; --neg:#b91c1c; --warn:#c2410c;
+    --cool:#0891b2; --carry:#a21caf;
+  }
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --page:#f5f6f8; --card:#ffffff; --panel:#e2e6ec; --zebra:#f1f3f6; --hair:rgba(15,23,42,.12); --hair2:rgba(15,23,42,.25);
+  --text:#0f172a; --muted:#475569; --faint:#64748b;
+  --primary:#b45309; --glow:#d97706; --second:#0e7490; --neg:#b91c1c; --warn:#c2410c;
+  --cool:#0891b2; --carry:#a21caf;
+}
+*{box-sizing:border-box}
+html{background:var(--page)}
+body{margin:0;background:var(--page);color:var(--text);font-family:var(--body);font-size:15.5px;line-height:1.5;padding-inline:16px;padding-block:0}
+.card{max-width:1080px;margin:28px auto 60px;background:var(--card);border:1px solid var(--hair)}
+.band{background:var(--panel);border-bottom:1px solid var(--hair);padding:18px 32px;display:flex;justify-content:space-between;align-items:baseline;gap:20px;flex-wrap:wrap}
+.wordmark{font-family:var(--hud-font);font-weight:500;letter-spacing:.18em;color:var(--primary);font-size:14px}
+.wordmark b{color:var(--glow);font-weight:500}
+.eyebrow{font-family:var(--hud-font);font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--second)}
+.head{padding:34px 32px 8px}
+h1{font-family:var(--display);font-size:52px;font-weight:700;line-height:1;margin:6px 0 0;letter-spacing:-.01em;text-wrap:balance}
+.lede{font-size:18px;color:var(--muted);max-width:70ch;margin:14px 0 0}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);margin:26px 32px 0;background:var(--panel);border:1px solid var(--hair)}
+.tiles>div{padding:16px 18px;border-right:1px solid var(--hair)} .tiles>div:last-child{border-right:0}
+.tiles .v{font-family:var(--display);font-size:40px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.tiles .l{font-size:13.5px;color:var(--muted);margin-top:6px}
+.pos{color:var(--primary)} .neg{color:var(--neg)} .warn{color:var(--warn)} .cool{color:var(--cool)}
+.body{padding:8px 32px 30px}
+.verdict{margin:26px 0 0;padding:18px 20px;border:1px solid var(--hair2);border-left:4px solid var(--primary);background:var(--panel)}
+.verdict .k{font-family:var(--hud-font);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--primary);margin-bottom:8px}
+.verdict p.big{font-family:var(--display);font-size:24px;line-height:1.15;margin:0 0 10px;max-width:none}
+h2{font-family:var(--display);font-size:28px;font-weight:600;margin:46px 0 0;padding-top:14px;border-top:1px solid var(--hair2);line-height:1.05}
+h2::before{content:attr(data-eyebrow);display:block;font-family:var(--hud-font);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--second);margin-bottom:6px}
+h3{font-family:var(--display);font-size:20px;font-weight:600;margin:26px 0 0}
+p{max-width:74ch;margin:12px 0}
+ul,ol{max-width:80ch;padding-left:22px} li{margin:5px 0}
+code{font-family:var(--hud-font);font-size:.92em;color:var(--text);background:var(--panel);padding:1px 5px;border-radius:2px}
+a{color:var(--cool)} a:hover{color:var(--glow)}
+strong{color:var(--text)}
+hr{border:0;border-top:1px solid var(--hair);margin:26px 0}
+blockquote{margin:16px 0;padding:4px 0 4px 16px;border-left:3px solid var(--warn);color:var(--text);max-width:80ch}
+blockquote.red{border-color:var(--neg)} blockquote.green{border-color:var(--primary)} blockquote.blue{border-color:var(--cool)}
+.tw{overflow-x:auto;border:1px solid var(--hair);margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th{font-family:var(--hud-font);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:500;text-align:left;padding:9px 11px;border-bottom:1px solid var(--hair2);background:var(--panel);white-space:nowrap}
+td{padding:8px 11px;border-bottom:1px solid var(--hair);vertical-align:top;font-family:var(--body);font-size:13.5px;overflow-wrap:anywhere}
+td.m{font-family:var(--hud-font);font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.n{text-align:right;font-family:var(--hud-font);font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+tbody tr:nth-child(even) td{background:var(--zebra)}
+.cap{font-size:12.5px;color:var(--muted);margin:-8px 0 0}
+.pill{display:inline-block;font-family:var(--hud-font);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border:1px solid var(--hair2);border-radius:2px;white-space:nowrap}
+.pill.keep{color:var(--primary);border-color:var(--primary)} .pill.fix{color:var(--warn);border-color:var(--warn)} .pill.merge{color:var(--cool);border-color:var(--cool)} .pill.del{color:var(--neg);border-color:var(--neg)} .pill.build{color:var(--carry);border-color:var(--carry)}
+details{margin:18px 0;border:1px solid var(--hair);background:var(--panel)}
+summary{cursor:pointer;padding:10px 14px;font-family:var(--hud-font);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+details>div{padding:4px 16px 14px}
+.foot{padding:16px 32px;border-top:1px solid var(--hair);font-family:var(--hud-font);font-size:11.5px;color:var(--faint);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+:focus-visible{outline:2px solid var(--cool);outline-offset:2px}
+@media (max-width:760px){.tiles{grid-template-columns:1fr 1fr}h1{font-size:38px}.head,.body,.band,.foot{padding-left:16px;padding-right:16px}.tiles{margin-left:16px;margin-right:16px}.verdict p.big{font-size:20px}}
+@media (max-width:420px){.tiles{grid-template-columns:1fr}}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="band"><span class="wordmark">[ <b>KAIROS</b> ] REASSESSMENT</span><span class="eyebrow">2909 · 5 read-only lanes · shared prod DB · nothing changed</span></div>
+
+  <div class="head">
+    <h1>Kairos: Close the Loops</h1>
+    <p class="lede">Kairos has a working brain and no metabolism. Every organ is wired, but not one loop that would let him change his own mind ever closes. The way forward is not to cut organs. It is to close five loops, merge the old-Kairos and new-Kairos duplicates, delete the stubs, fix four live bugs, and give him eyes on the work that actually lands.</p>
+  </div>
+
+  <div class="tiles">
+    <div><div class="v neg">3,881</div><div class="l">thoughts Kairos proposed. Accepted: 0. Dismissed: 0. Ever.</div></div>
+    <div><div class="v warn">2</div><div class="l">questions he ever asked you. Blocked since July by his own notify gate.</div></div>
+    <div><div class="v cool">4</div><div class="l">live defects root-caused to file and line. All small fixes.</div></div>
+    <div><div class="v pos">0</div><div class="l">lines of code for Ring 2, the "will" the June blueprint promised.</div></div>
+  </div>
+
+  <div class="body">
+    <div class="verdict">
+      <div class="k">Verdict</div>
+      <p class="big">Keep the whole cognition pyramid. Fix the four bugs, wire the input side properly, then build the five modules as governed loops, not as personalities.</p>
+      <ul>
+        <li><strong>What this means:</strong> the archetypes → cortex → Aether stack, the intraday pulse, the intent layer and the proposal engine all stay. The Live Mind work stays untouched.</li>
+        <li>The waste is duplication (two ranking stacks, two ask producers, two repair paths, three brief displays) and unclosed loops, not the organs themselves.</li>
+        <li>The weakest part is the input: session capture is the highest-volume writer and the least structured. Missions never write to Kairos at all.</li>
+      </ul>
+      <p><strong>Decisions you own before the swarm launches:</strong> ① go on Phase 0 now · ② memory promotions veto-only (Kairos promotes under rules, you can revert) · ③ will you tap approve/veto on Telegram for his initiatives · ④ spec home (docs/kairos/32 or memory only).</p>
+    </div>
+
+    <h2 data-eyebrow="§ 01">Why the Telegram feed went wrong</h2>
+    <p><strong>All four failures are code defects with two-line to one-file fixes, not model mysteries.</strong> The WordPress manual on 27/09 was the model failing to stop talking and Kairos forwarding it unchecked.</p>
+    <div class="tw"><table>
+      <thead><tr><th>Defect</th><th>Cause</th><th>Fix</th><th>Size</th></tr></thead>
+      <tbody>
+        <tr><td>Digest shipped a WordPress manual</td><td>Model never emitted end-of-turn, free-ran into memorised text until the 1,500-token cap. The digest ignores the finish reason the provider already returns and forwards raw text with no length or format guard.</td><td>Reject when finish reason is not "stop", or text over 1,200 chars, or contains headings/links. Existing counts-only fallback takes over. Same guard for the Telegram chat reply path.</td><td class="m">2 lines</td></tr>
+        <tr><td>Aether failed 28/09 (invalid ids)</td><td>Prompt asks the model to invent UUIDs; the validator is strict; hand-typed ids drift. Aether uses an old private repair copy with no system prompt and no valid-id list.</td><td>Model writes short labels; server mints real ids after parsing and remaps tensions. Stored format unchanged, so every reader is safe. Cortex needs the same.</td><td class="m">1 file</td></tr>
+        <tr><td>No questions since July</td><td>Any tick message, even a plain notify, arms a 48-hour "waiting for reply" gate. Ticks fire every two days. You read but do not reply, so the 04:30 question slot is free about once a week. Confirmed by a production dry run today.</td><td>Only question-type messages arm the gate. One predicate. Web-inbox answers should also clear it.</td><td class="m">1 predicate</td></tr>
+        <tr><td>Health says "one tracked stage"</td><td>Only the morning brief writes a success trace; every other stage traces failures only. The brief itself uses three different stage names, so a failing brief never shows red.</td><td>One outcome row per cron run under one key. Also makes never-fired crons and silent skips visible.</td><td class="m">1 helper, 12 call sites</td></tr>
+      </tbody>
+    </table></div>
+    <p class="cap">Table: the four live defects. File and line evidence in research/kairos_2909/01.</p>
+
+    <h2 data-eyebrow="§ 02">What the database says</h2>
+    <p><strong>Kairos is a write-mostly system: the nightly stack produces about 2,300 artefacts a month that only the next stage of the same stack reads.</strong> The surfaces you actually use are the Telegram digest and the tick, both read-only.</p>
+    <div class="tw"><table>
+      <thead><tr><th>Signal</th><th class="n">Value</th><th>Read</th></tr></thead>
+      <tbody>
+        <tr><td>Introspection + contradiction proposals, all time</td><td class="n">3,881</td><td>All pending. Zero accepted or dismissed. The mesh thinks; nobody, not even Kairos, thinks it through.</td></tr>
+        <tr><td>Your reflections, all time (Sept)</td><td class="n">43 (5)</td><td>The highest-weight signal barely exists.</td></tr>
+        <tr><td>Questions asked / dialogues held, ever</td><td class="n">2 / 6</td><td>The proactive layer never fired.</td></tr>
+        <tr><td>Your chat turns in September</td><td class="n">7</td><td>Chat is not where you meet him.</td></tr>
+        <tr><td>Memories loaded into the galaxy</td><td class="n">7,853</td><td>No type filter, no cap, one full planet per node with its own shaders and a DOM label. That is the crash.</td></tr>
+        <tr><td>Session captures in September</td><td class="n">476</td><td>All filed under the wrong class since June. Card link always empty. 20 missions filed under the worktree folder name.</td></tr>
+        <tr><td>Hangar missions that wrote to Kairos</td><td class="n">0</td><td>The bridge was designed but never called.</td></tr>
+        <tr><td>Incident-resolution links ever created</td><td class="n">0</td><td>The lifecycle feature has no writer.</td></tr>
+      </tbody>
+    </table></div>
+    <p class="cap">Table: read-only counts against the shared production database, 29 Sept 2026.</p>
+
+    <h2 data-eyebrow="§ 03">Organ by organ</h2>
+    <p><strong>Judged by wiring and loop closure, not by whether you click it, the pyramid is healthy and the loops are broken.</strong></p>
+    <div class="tw"><table>
+      <thead><tr><th>Element</th><th>Wired in</th><th>Loop closes</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td>Archetypes → cortex → Aether</td><td>Yes</td><td>Yes, internally</td><td><span class="pill keep">keep</span> fix id minting and the pool that fills in one busy day</td></tr>
+        <tr><td>Micro-consolidate (intraday deltas)</td><td>Yes</td><td>Yes</td><td><span class="pill keep">keep</span> fix its day windows</td></tr>
+        <tr><td>Proposals (introspection, contradiction)</td><td>Yes</td><td>No, never re-enter</td><td><span class="pill fix">rewire</span> become the candidate tier</td></tr>
+        <tr><td>Asks (two producers)</td><td>Yes</td><td>No, gate</td><td><span class="pill fix">fix + merge</span></td></tr>
+        <tr><td>Morning brief</td><td>Reads only the raw bundle, ignores the pyramid it claims to read</td><td>Misconnected</td><td><span class="pill fix">rewire</span></td></tr>
+        <tr><td>Dominion vision, mission, objectives</td><td>Seed the prompts</td><td>Yes</td><td><span class="pill keep">keep</span> intent layer</td></tr>
+        <tr><td>Incident lifecycle, Dominion soft tags, Sentinel</td><td>Built, no writer or schedule</td><td>Never fired</td><td><span class="pill fix">wire</span></td></tr>
+        <tr><td>Agent OS ↔ Kairos</td><td>Missions read nothing, write nothing</td><td>None</td><td><span class="pill build">build the bridge</span></td></tr>
+        <tr><td>Two ranking stacks, two repair paths, two ask producers, three brief displays, stream class vs type, two repo registries</td><td>Old Kairos and new Kairos side by side</td><td>Confuse readers</td><td><span class="pill merge">merge each pair</span></td></tr>
+        <tr><td>Compaction cron (no-op since June), dead metrics modules, dead branches</td><td>Not wired</td><td>n/a</td><td><span class="pill del">delete</span></td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 data-eyebrow="§ 04">The June blueprint vs what got built</h2>
+    <p><strong>The original design was three rings. Ring 0 got built and hardened, Ring 1 is half done, Ring 2 has zero code.</strong> Your five modules are Ring 1 completion plus the start of Ring 2. The July rewrite of the vision quietly reversed the June plan; that is the "old Kairos meshed with new Kairos" feeling.</p>
+    <div class="tw"><table>
+      <thead><tr><th>Module</th><th>Where the blueprint had it</th><th>Built</th></tr></thead>
+      <tbody>
+        <tr><td>Memory evolution</td><td>Concept tier, constellations, Hebbian weighting, consolidation daemon, archetype refinement</td><td class="m">primitives only</td></tr>
+        <tr><td>Philosophical</td><td>Aether as self-model, persona prompt, belief tracking, cite-grounded reasoning</td><td class="m">Aether as a daily summary</td></tr>
+        <tr><td>Creativity</td><td>Council of personas that disagree, decision graph in the galaxy, eureka thoughts</td><td class="m">eurekas as unread proposals</td></tr>
+        <tr><td>Motivational</td><td>Initiative engine: file, approve, execute; dark-lab repo; deep-think jobs</td><td class="m">nothing</td></tr>
+        <tr><td>Strategic</td><td>Thinking chains, morning loop, predict and decide recipes, Oracle</td><td class="m">brief that ignores the brain</td></tr>
+      </tbody>
+    </table></div>
+    <p class="cap">Table: of five planned recipes one exists; of four lieutenants one file exists, unscheduled; the dark-lab repo was never created.</p>
+
+    <h2 data-eyebrow="§ 05">The five modules, grounded in current evidence</h2>
+    <p><strong>None of the five should be a persona or a free-form drive. Each is a governed loop with a verifier and a veto.</strong> Sources were verified on 29 Sept 2026 across three research lanes; the full claim tables are in research/kairos_2909/04.</p>
+    <div class="tw"><table>
+      <thead><tr><th>Module</th><th>What works</th><th>Lands on</th><th>Skip</th></tr></thead>
+      <tbody>
+        <tr><td>Memory evolution</td><td>Write gate over the ten nearest memories. Candidate tier promoted only on independent evidence across several days, where Kairos's own outputs count as one vote. Consolidation writes a new generation, diff-guarded, one-click revert. Cited reflections with helpful/harmful counters. Confidence from source, never from wording.</td><td>Bi-temporal columns and supersession already exist. Today's proposals become the candidate tier. Incident lifecycle gets its writer.</td><td>RL-trained managers, a graph database, Bayesian belief math, benchmark chasing</td></tr>
+        <tr><td>Philosophical</td><td>A governed belief ledger with source type, provenance, confidence and domain. A reasons-based constitution, versioned. A falsification check against retrieved records. A nightly drift probe set. Chat never writes beliefs directly (saved user claims raise downstream failure from 45% to 72%).</td><td>Aether becomes the worldview tier of the ledger. Your reflections are the top source type. Dominion vision seeds the constitution.</td><td>Introspective self-reports as truth (about 20% reliable), activation-level tricks</td></tr>
+        <tr><td>Creativity</td><td>Nightly idea tournament: generate across forced directions, ordinary personas, critique against evidence, pairwise judge separate from the generator, evolve the top few, keep one to three. Novelty gate against his own archive. Scores anchored to your uptake.</td><td>Replaces the 40-a-day raw dump. Contradiction scan becomes the critic. Inbox gets survivors only.</td><td>AI-Scientist-style autonomy, long debates, LLM novelty ratings as truth, famous personas</td></tr>
+        <tr><td>Motivational</td><td>Archive-driven goal proposer: every goal has a status, a machine-checkable verifier and an outcome. Novelty gate, learning-progress ranking. Commitment ledger checked by cron, because agents execute only half of their own stated commitments when left to prompt.</td><td>The initiative engine from the June blueprint. Hangar missions are the verifier and the hands. Telegram approve/veto (callback wired, button never sent).</td><td>Free-form self-goaling, self-modification of his own code without a benchmark and a human gate</td></tr>
+        <tr><td>Strategic</td><td>Weekly structured review over fixed inputs producing proposals, not actions. Thinking chains as a deterministic urgency pre-pass. One daily message.</td><td>Brief rewired to read the brain. Digest and brief merge. Sentinel scheduled as the cross-Dominion tension organ.</td><td>Tree-search planning, CEO or board agents, world models: no evidence they beat review</td></tr>
+      </tbody>
+    </table></div>
+    <blockquote class="green">Governance across all five: autonomy level per action class, veto-not-approve for memory, approve-before-act for cards in other people's projects, budget and turn caps, kill switch, and never a self-continuity goal.</blockquote>
+
+    <h2 data-eyebrow="§ 06">The plan</h2>
+    <p><strong>Phase 0 comes first because every module reads the substrate, and the substrate's input is the weakest part.</strong> Every hook leaves the class unset, mission captures carry an identical title and no card link, the summariser's output is read by nothing, cortex reads the wrong day, the digest is blind from 18:00 to midnight, and reranking discards recency.</p>
+    <div class="tw"><table>
+      <thead><tr><th>Phase</th><th>Scope</th><th class="n">Size</th></tr></thead>
+      <tbody>
+        <tr><td class="m">P0 Eyes &amp; Heal</td><td>Structured session record from all clients; class rule at one choke point; mission result becomes a memory; recency alignment; the four defects; one outcome row per cron; galaxy filtered and instanced.</td><td class="n">2 sessions</td></tr>
+        <tr><td class="m">P1 Memory evolution</td><td>Candidate tier, write gate, generation-swap consolidation, Concept tier.</td><td class="n">2</td></tr>
+        <tr><td class="m">P2 Philosophical + Strategic</td><td>Belief ledger, constitution, drift probes. Brief reads the brain, weekly review, one daily message.</td><td class="n">2</td></tr>
+        <tr><td class="m">P3 Creativity</td><td>Tournament replaces raw introspection.</td><td class="n">1–2</td></tr>
+        <tr><td class="m">P4 Motivational</td><td>Initiative engine, commitment ledger, Telegram approve/veto, Hangar as hands.</td><td class="n">2</td></tr>
+        <tr><td class="m">P5 Ring 2 proper</td><td>Dark-lab repo, deep-think jobs, self-authored recipes. Gated on P4's track record.</td><td class="n">later</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 data-eyebrow="§ 07">Tomorrow's swarm: Phase 0 in eight lanes</h2>
+    <p><strong>Disjoint file ownership, one branch, warden after each wave.</strong> Lanes A to D are the bug wave and can start immediately. Lanes E to H are the eyes wave. Branch: <code>feat/kairos-eyes-and-heal</code>.</p>
+    <div class="tw"><table>
+      <thead><tr><th>Lane</th><th>Owns</th><th>Delivers</th><th>Proof</th></tr></thead>
+      <tbody>
+        <tr><td class="m">A · digest guard</td><td><code>lib/kairos/digest.ts</code>, <code>chat-turn.ts</code>, <code>telegram/webhook</code></td><td>Finish-reason and length guards on both Telegram paths; failure trace carries raw excerpt</td><td>digest tests + a forced long response falls back to counts</td></tr>
+        <tr><td class="m">B · synthesis ids</td><td><code>aether.ts</code>, <code>aether-prompt.ts</code>, <code>cortex.ts</code>, <code>cortex-prompt.ts</code></td><td>Server-minted ids, shared repair with valid-id list, finish reason on traces</td><td>aether and cortex tests; tonight's 03:15 run green</td></tr>
+        <tr><td class="m">C · ask gate</td><td><code>engagement.ts</code>, <code>ask.ts</code>, <code>kairos-inbox.ts</code> + their tests</td><td>Only questions arm the wait; web answers and dismisses clear it; ask-mine skips write a trace</td><td>prod dry run returns no_signals or created</td></tr>
+        <tr><td class="m">D · health traces</td><td><code>cron-trace.ts</code>, <code>synthesis-health.ts</code>, <code>dispatch.ts</code>, every cron runner's final return</td><td>One outcome row per run, one stage key, history cap raised</td><td>tomorrow's 08:00 rollup shows all stages</td></tr>
+        <tr><td class="m">E · session record</td><td><code>apps/web/scripts/*session-capture*</code>, dispatchers, worktree slug</td><td>Structured record with task, session, branch, commits, PRs, tests, cost; env ids propagated; worktree slug fixed</td><td>a mission capture lands with a card link and a real title</td></tr>
+        <tr><td class="m">F · mission bridge</td><td><code>api/v1/sessions/[id]/events/route.ts</code>, <code>lib/data/sessions.ts</code></td><td>Result envelope becomes a memory and links the session</td><td>one live mission produces one memory</td></tr>
+        <tr><td class="m">G · class + recency</td><td><code>lib/data/memories.ts</code> (createMemory), <code>micro-consolidate.ts</code>, digest windows, <code>retrieve.ts</code> rerank</td><td>defaultStreamClass choke point; day windows fixed; digest 18-to-18; rerank keeps recency</td><td>new captures land as agentic; eval-retrieval run</td></tr>
+        <tr><td class="m">H · galaxy</td><td><code>components/kairos/Kairos3D.tsx</code>, <code>scene/*</code>, graph query type filter</td><td>Signal-type filter and instanced orbs</td><td>3,000 nodes without context loss in a real browser</td></tr>
+      </tbody>
+    </table></div>
+    <p class="cap">Table: lanes A–D touch no shared files; lane G owns createMemory, so E and F write through it rather than into it.</p>
+
+    <details>
+      <summary>How this was built</summary>
+      <div>
+        <p>Five read-only lanes on 29 Sept 2026: a bug hunt on the four failures, a git archaeology of the Kairos layer since May, a module inventory with 30-day MCP usage, an Agent OS fit assessment, and a capture-and-recency audit. Three web research lanes verified the memory, creativity and motivation literature against current sources. Runtime counts came from SELECT-only queries against the shared production database. The brain-tick routine lives outside the repo, so its schedule is inferred from its output rows. Nothing was edited or deployed.</p>
+        <p>Evidence files: <code>aeon_os/HANDOVER_2909.md</code> · <code>research/kairos_2909/01_live_bugs_and_archaeology.md</code> · <code>02_inventory_runtime_and_agentos_fit.md</code> · <code>03_capture_and_recency.md</code> · <code>04_sota_five_modules.md</code>. Board card: "Kairos: close the loops" on AI Mission Control, Depot.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="foot"><span>shadow_app_aeon · main @ 6cc909f · Kairos 0.10.0</span><span>evidence pulled 2026-09-29 · read-only</span></div>
+</div>
+</body>
+</html>

@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en" data-theme="stone">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kairos: coming alive</title>
+<script>(function () {
+  var KEY = "srl-theme";
+  var THEMES = ["stone", "wood", "neon", "papyrus"];
+  var root = document.documentElement;
+
+  function read() {
+    try { return localStorage.getItem(KEY); } catch (e) { return null; }
+  }
+  function write(v) {
+    try { localStorage.setItem(KEY, v); } catch (e) { }
+  }
+  function apply(v) {
+    if (THEMES.indexOf(v) < 0) v = root.getAttribute("data-theme") || "stone";
+    root.setAttribute("data-theme", v);
+    var buttons = document.querySelectorAll(".srl-theme-select button[data-theme-choice]");
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].setAttribute("aria-pressed", String(buttons[i].getAttribute("data-theme-choice") === v));
+    }
+    document.dispatchEvent(new CustomEvent("srl-theme", { detail: v }));
+  }
+
+  apply(read());
+  document.addEventListener("DOMContentLoaded", function () {
+    apply(root.getAttribute("data-theme"));
+    document.addEventListener("click", function (ev) {
+      var b = ev.target.closest && ev.target.closest("[data-theme-choice]");
+      if (!b) return;
+      var v = b.getAttribute("data-theme-choice");
+      write(v);
+      apply(v);
+    });
+  });
+})();
+</script>
+<style>/* Shadow Research Lab theme: stone (dark), wood (dark), neon (dark, high contrast), papyrus (light).
+   Set on <html data-theme="stone|wood|neon|papyrus">; theme.js persists the choice as localStorage "srl-theme".
+   Tokens are the only contract: --bg --surface --surface-raised --ink --muted --rule --accent --bull --bear
+   --topbar --on-sign. Tables and figures stay flat; texture lives on the top bar only. Fully offline. */
+
+:root,
+:root[data-theme="stone"] {
+  color-scheme: dark;
+  --bg: #151619;
+  --surface: #222326;
+  --surface-raised: #2d2f32;
+  --ink: #eee7d8;
+  --muted: #b7ab96;
+  --rule: #54514d;
+  --accent: #ddbb75;
+  --bull: #80d1a6;
+  --bear: #f29191;
+  --topbar: #292b2c;
+  --on-sign: #151619;
+  --topbar-texture:
+    radial-gradient(120% 140% at 12% -20%, rgba(200, 210, 220, .10), transparent 55%),
+    radial-gradient(90% 120% at 88% 120%, rgba(160, 170, 180, .07), transparent 60%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, .025) 0 1px, transparent 1px 7px),
+    linear-gradient(180deg, #303235, #242628);
+  --topbar-edge: inset 0 1px 0 rgba(255, 255, 255, .06), inset 0 -2px 0 rgba(0, 0, 0, .45);
+}
+
+:root[data-theme="wood"] {
+  color-scheme: dark;
+  --bg: #16110e;
+  --surface: #261b15;
+  --surface-raised: #33251c;
+  --ink: #f1e6d6;
+  --muted: #bea994;
+  --rule: #624835;
+  --accent: #e4b978;
+  --bull: #83d6ad;
+  --bear: #f59391;
+  --topbar: #332419;
+  --on-sign: #16110e;
+  --topbar-texture:
+    repeating-linear-gradient(92deg, rgba(0, 0, 0, .16) 0 1px, transparent 1px 13px, rgba(255, 220, 170, .035) 13px 14px, transparent 14px 29px),
+    repeating-linear-gradient(88deg, rgba(0, 0, 0, .10) 0 2px, transparent 2px 47px),
+    linear-gradient(180deg, #3d2b1e, #2a1d14);
+  --topbar-edge: inset 0 1px 0 rgba(255, 210, 150, .10), inset 0 -2px 0 rgba(0, 0, 0, .5);
+}
+
+:root[data-theme="neon"] {
+  color-scheme: dark;
+  --bg: #07060d;
+  --surface: #110f1f;
+  --surface-raised: #1a1730;
+  --ink: #e9f7ff;
+  --muted: #9aa6d8;
+  --rule: #3b2f6b;
+  --accent: #34f0ff;
+  --bull: #5cff9d;
+  --bear: #ff4fa3;
+  --topbar: #0d0b1a;
+  --on-sign: #07060d;
+  --topbar-texture:
+    linear-gradient(90deg, rgba(52, 240, 255, .10) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(0deg, rgba(255, 79, 163, .08) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(180deg, #16112b, #0b0916);
+  --topbar-edge: inset 0 -1px 0 rgba(52, 240, 255, .55), 0 0 18px rgba(52, 240, 255, .18);
+}
+:root[data-theme="neon"] .srl-page h1,
+:root[data-theme="neon"] .srl-page h2 { text-shadow: 0 0 6px rgba(52, 240, 255, .55), 0 0 18px rgba(255, 79, 163, .25); }
+:root[data-theme="neon"] .srl-page a,
+:root[data-theme="neon"] .srl-wordmark { text-shadow: 0 0 8px rgba(52, 240, 255, .45); }
+
+:root[data-theme="papyrus"] {
+  color-scheme: light;
+  --bg: #f4ecd8;
+  --surface: #eee3ca;
+  --surface-raised: #e5d3af;
+  --ink: #302517;
+  --muted: #67533b;
+  --rule: #ac9471;
+  --accent: #715121;
+  --bull: #226345;
+  --bear: #a13739;
+  --topbar: #e5d3af;
+  --on-sign: #fbf6ea;
+  --topbar-texture:
+    radial-gradient(140% 160% at 20% -30%, rgba(255, 250, 235, .55), transparent 60%),
+    radial-gradient(100% 120% at 90% 130%, rgba(140, 105, 55, .12), transparent 60%),
+    linear-gradient(180deg, #eadbbc, #e0cda6);
+  --topbar-edge: inset 0 -1px 0 rgba(113, 81, 33, .35);
+}
+
+:root {
+  --font-display: "Old English Text MT", "UnifrakturCook", "UnifrakturMaguntia", "Palatino Linotype", Palatino, serif;
+  --font-heading: "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font-body: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-num: Consolas, "Cascadia Mono", "Courier New", monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 var(--font-body);
+}
+
+.srl-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  background: var(--topbar-texture), var(--topbar);
+  box-shadow: var(--topbar-edge);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-ui);
+}
+.srl-wordmark {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  line-height: 1;
+  color: var(--accent);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .35);
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+.srl-crumb { color: var(--muted); font-size: .85rem; letter-spacing: .06em; text-transform: uppercase; }
+.srl-spacer { flex: 1; }
+.srl-theme-select { display: inline-flex; gap: 4px; }
+.srl-theme-select button {
+  font: 500 .8rem var(--font-ui);
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.srl-theme-select button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+.srl-page { max-width: 880px; margin: 0 auto; padding: 28px 20px 56px; }
+.srl-page h1, .srl-page h2, .srl-page h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.2; }
+.srl-page h1 { font-size: 2.1rem; margin: 0 0 6px; }
+.srl-page h2 { font-size: 1.35rem; margin: 30px 0 8px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.srl-page h3 { font-size: 1.1rem; margin: 20px 0 6px; }
+.srl-page a { color: var(--accent); }
+.srl-page code { font-family: var(--font-num); font-size: .9em; background: var(--surface); padding: 1px 4px; border-radius: 3px; }
+.srl-page pre { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; overflow-x: auto; }
+.srl-page pre code { background: none; padding: 0; }
+.srl-page blockquote { margin: 12px 0; padding: 4px 14px; border-left: 3px solid var(--accent); color: var(--muted); }
+.srl-lede { color: var(--muted); font-size: 1.05rem; }
+.srl-eyebrow { font: 600 .78rem var(--font-ui); color: var(--muted); letter-spacing: .12em; text-transform: uppercase; }
+
+.srl-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 18px 0; }
+.srl-tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; }
+.srl-tile .v { font: 600 1.5rem var(--font-num); }
+.srl-tile .l { color: var(--muted); font-size: .85rem; }
+
+.srl-table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; margin: 12px 0; }
+.srl-page table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.srl-page th, .srl-page td { padding: 7px 10px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+.srl-page th { font: 600 .8rem var(--font-ui); color: var(--muted); letter-spacing: .03em; }
+.srl-page tr:last-child td { border-bottom: 0; }
+
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.bull, .pos { color: var(--bull); }
+.bear, .neg { color: var(--bear); }
+.warn { color: var(--accent); }
+.muted { color: var(--muted); }
+
+.srl-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 18px 0 0; border-bottom: 1px solid var(--rule); }
+.srl-tabs button {
+  font: 500 .88rem var(--font-ui);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.srl-tabs button[aria-selected="true"] { color: var(--ink); background: var(--surface); border-color: var(--rule); }
+.srl-tabpanel[hidden] { display: none; }
+
+.srl-footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid var(--rule); color: var(--muted); font-size: .85rem; }
+
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .srl-theme-select button, .srl-tabs button { transition: background .15s, color .15s; } }
+</style>
+</head>
+<body>
+<header class="srl-topbar"><span class="srl-wordmark">Shadow Research Lab</span><span class="srl-crumb">research / kairos_2909 / vision</span><span class="srl-spacer"></span><nav class="srl-theme-select" aria-label="Theme"><button type="button" data-theme-choice="stone" aria-pressed="false">Stone</button><button type="button" data-theme-choice="wood" aria-pressed="false">Wood</button><button type="button" data-theme-choice="neon" aria-pressed="false">Neon</button><button type="button" data-theme-choice="papyrus" aria-pressed="false">Papyrus</button></nav></header>
+<main class="srl-page">
+<p class="srl-eyebrow">Kairos · next phase · 30 Sep 2026</p>
+<h1>Kairos: coming alive</h1>
+<p class="srl-lede">What works, what doesn&#x27;t, how he talks to you, how your board and your voice become his mind, the engine that makes him learn, and running it all on your Claude Max plan.</p>
+<div class="srl-tabs" role="tablist" aria-label="Report sections">
+<button type="button" role="tab" id="tab-overview" aria-controls="panel-overview" aria-selected="true" tabindex="0">Where we&#x27;re going</button>
+<button type="button" role="tab" id="tab-day" aria-controls="panel-day" aria-selected="false" tabindex="-1">A day with Kairos</button>
+<button type="button" role="tab" id="tab-feeding" aria-controls="panel-feeding" aria-selected="false" tabindex="-1">How you feed him</button>
+<button type="button" role="tab" id="tab-engine" aria-controls="panel-engine" aria-selected="false" tabindex="-1">The memory engine</button>
+<button type="button" role="tab" id="tab-max" aria-controls="panel-max" aria-selected="false" tabindex="-1">On your Max plan</button>
+<button type="button" role="tab" id="tab-road" aria-controls="panel-road" aria-selected="false" tabindex="-1">The road</button>
+</div>
+<section class="srl-tabpanel" role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" tabindex="0"><h1>Where Kairos is going</h1>
+<blockquote><p><strong>In one line:</strong> today Kairos writes a lot and learns very little. The next phase makes him learn from what you do and say, stay quiet unless it matters, and come to you only when he needs something only you know.</p></blockquote>
+<h2>What is working (we keep all of it)</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Part</th><th>What it does today</th><th>Status</th></tr></thead><tbody><tr><td>Session capture</td><td>Every Claude, Codex and Copilot session becomes a memory (470 in September)</td><td>✅ runs, but thin</td></tr><tr><td>Night thinking</td><td>Each night: patterns per area, then a picture per area, then one picture of everything (Aether)</td><td>✅ runs, fails some nights</td></tr><tr><td>Morning brief</td><td>Lands every morning</td><td>✅ runs, but ignores the night thinking</td></tr><tr><td>Telegram</td><td>Delivers messages, takes your text replies</td><td>✅</td></tr><tr><td>Chat</td><td>Answers from memory, on the web and Telegram</td><td>✅</td></tr><tr><td>Claude connector</td><td>Claude (phone or desktop) can read and write the brain</td><td>✅ works, barely used</td></tr><tr><td>Dialogue</td><td>Kairos asks, you talk it through, the talk becomes lasting notes</td><td>✅ works, used 6 times ever</td></tr></tbody></table></div>
+<h2>What is not working</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Problem</th><th>In plain words</th><th>Status</th></tr></thead><tbody><tr><td>Nothing comes back round</td><td>3,881 ideas generated, <strong>zero</strong> ever used. They pile up unseen</td><td>🔴</td></tr><tr><td>He stopped asking you things</td><td>Every routine ping blocks questions for 48 hours. Only 2 questions asked since June</td><td>🔴 bug, fix known</td></tr><tr><td>Evening message went strange</td><td>The model rambled to its limit and sent a WordPress manual. Nothing checked the output before sending</td><td>🔴 bug, fix known</td></tr><tr><td>Night thinking breaks</td><td>The model is asked to invent ID codes and sometimes gets them wrong, so the whole night&#x27;s work is thrown away</td><td>🔴 bug, fix known</td></tr><tr><td>Health check is half-blind</td><td>It only sees one of eleven night jobs</td><td>🔴 bug, fix known</td></tr><tr><td>Agent missions leave no trace</td><td>Hangar missions finish and Kairos never hears about them</td><td>🔴</td></tr><tr><td>Everything weighs the same</td><td>All sessions are filed as &quot;idea&quot;, so a finished release counts the same as a passing thought</td><td>🔴</td></tr><tr><td>Your voice is drowned out</td><td>43 notes from you in four months, against ~470 machine notes a month</td><td>🟡 the big one</td></tr><tr><td>Your board is read as titles only</td><td>You run your day on AS Sprint, but he only sees &quot;completed · title&quot;. 315 of the 320 finished cards have no notes</td><td>🔴</td></tr><tr><td>Galaxy crashes</td><td>It tries to draw all 7,853 memories at once</td><td>🔴</td></tr></tbody></table></div>
+<h2>The real diagnosis</h2>
+<p>Kairos is mostly fed by machines. Your own words are meant to be the heaviest signal in the brain, but there are very few of them. So today he mirrors what your agents did, not what you think, want or believe.</p>
+<p>That was fine while we were filling the store. It is not fine now that you want him to come alive.</p>
+<h2>Where we are heading</h2>
+<p><strong>A chief of staff who:</strong></p>
+<ol>
+<li>Remembers everything you and your agents do, with the details that matter (what was built, did tests pass, was it shipped, what did it cost).</li>
+<li>Thinks every night, keeps only the ideas that hold up over several days, and drops the rest.</li>
+<li>Knows what you believe and why, notices when the evidence disagrees, and asks you.</li>
+<li>Sends one good message a day, not a stream of pings.</li>
+<li>Later, suggests work he can check himself, and with your yes or no, sends agents to do it.</li>
+</ol>
+<h2>The deal</h2>
+<ul>
+<li><strong>He does:</strong> the capturing, sorting, overnight thinking, remembering and checking.</li>
+<li><strong>You do:</strong> keep your sprint board going with a line of notes per card, and on thin board days give about 5 minutes of voice. Plus a tap or a short answer when he asks.</li>
+<li><strong>Rule that never bends:</strong> your words outrank his guesses. He can never turn his own guess into a belief without evidence from somewhere else, and you can undo anything he learns.</li>
+</ul></section>
+<section class="srl-tabpanel" role="tabpanel" id="panel-day" aria-labelledby="tab-day" tabindex="0" hidden><h1>A day with Kairos</h1>
+<p>Times are UK time (summer). They move one hour earlier when the clocks go back.</p>
+<h2>When he speaks</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Kind of message</th><th>When</th><th>How often</th><th>What it asks of you</th></tr></thead><tbody><tr><td><strong>Daily message</strong></td><td>08:00</td><td>Once a day</td><td>Read it (2 min). Reply only if something is wrong</td></tr><tr><td><strong>A question</strong></td><td>Early morning, after the night&#x27;s thinking</td><td>At most one open at a time, a few a week</td><td>A short answer, voice or text</td></tr><tr><td><strong>&quot;I now believe X&quot; notice</strong></td><td>Inside the daily message</td><td>A few a week (from phase 1)</td><td>Nothing, unless you disagree. Then one tap to undo</td></tr><tr><td><strong>Approve or veto</strong></td><td>When he proposes work</td><td>A handful a week (from phase 4)</td><td>One tap on Telegram</td></tr><tr><td><strong>Alert</strong></td><td>Only when something is broken</td><td>Rare</td><td>Read</td></tr></tbody></table></div>
+<p><strong>Default is silence.</strong> If nothing clears the bar, he says nothing.</p>
+<p>Today you get a morning brief plus an evening message plus pings. From phase 2 the brief and evening message merge into one daily message, so you get less noise and more of what matters.</p>
+<h2>When he really needs you</h2>
+<p>He comes to you only for things he cannot work out alone:</p>
+<ol>
+<li><strong>Two of your stated beliefs clash</strong>, or new evidence contradicts one of them.</li>
+<li><strong>An idea has survived several nights</strong> of testing and now needs a human yes or no.</li>
+<li><strong>A goal cannot be checked by a machine</strong>, for example &quot;did the traders actually use this?&quot;.</li>
+<li><strong>A new direction shows up with no reason attached.</strong> Your agents have started a lot of work in an area you never said you cared about.</li>
+<li><strong>He is about to learn something only from machine evidence.</strong> You get a window to veto it.</li>
+<li><strong>Cards you finished are a title only</strong>, and he cannot tell what they meant. He asks about at most three a day, inside the daily message.</li>
+</ol>
+<p>He will <strong>not</strong> come to you for things he can find in the code, the board or his own memory.</p>
+<h2>Your side of the day (about 10 minutes)</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>When</th><th>What</th><th>Channel</th><th>Time</th></tr></thead><tbody><tr><td>Morning</td><td>Read the daily message, answer the question if there is one</td><td>Telegram</td><td>2-3 min</td></tr><tr><td>As you work</td><td>Keep AS Sprint going, and give each card a line of notes (dictate it)</td><td>Aeon board</td><td>10 sec a card</td></tr><tr><td>Whenever a thought lands</td><td>&quot;Kairos, note this: ...&quot;</td><td>Claude app voice, or Telegram</td><td>30 sec</td></tr><tr><td>End of your work day</td><td><strong>Only if the board was thin:</strong> a quick voice reflection on what moved, what bothered you, what you now believe. On a good board day, skip it</td><td>Claude app voice</td><td>0-5 min</td></tr><tr><td>When nudged</td><td>One line each for up to three title-only cards</td><td>Telegram or voice</td><td>1 min</td></tr><tr><td>Once a week</td><td>Weekly review: goals, promises he made, beliefs that changed</td><td>Claude dialogue</td><td>15 min</td></tr></tbody></table></div>
+<h2>The timetable behind the scenes</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Time</th><th>What happens</th></tr></thead><tbody><tr><td>07:15 to 22:15, every 3 hours</td><td>Pulse: notes what is new since the last pulse</td></tr><tr><td>00:00</td><td>Board snapshot of the day</td></tr><tr><td>03:00</td><td>Your chats (web and Telegram) are turned into lasting notes</td></tr><tr><td>03:30</td><td>Patterns found for each area</td></tr><tr><td>04:00</td><td>Picture of each area (cortex)</td></tr><tr><td>04:15</td><td>Picture of everything (Aether)</td></tr><tr><td>05:30</td><td>Decides whether there is a question worth asking you</td></tr><tr><td>06:00</td><td>Looks for contradictions</td></tr><tr><td>06:15 and 17:15</td><td>Checks whether anything is worth a ping</td></tr><tr><td>07:30</td><td>Idea generation (from phase 3 this becomes a nightly idea contest)</td></tr><tr><td>08:00</td><td>Morning brief</td></tr><tr><td>19:00</td><td>Evening message (merged into the morning one in phase 2)</td></tr></tbody></table></div>
+<p>Known gaps that phase 0 fixes:</p>
+<ul>
+<li>Work done after about 22:15 is never picked up.</li>
+<li>The night pictures look at the wrong day.</li>
+<li>The evening message misses everything after 19:00.</li>
+</ul>
+<p>From phase 1, the thinking steps in this timetable run as routines on your Claude Max plan. The times stay the same.</p></section>
+<section class="srl-tabpanel" role="tabpanel" id="panel-feeding" aria-labelledby="tab-feeding" tabindex="0" hidden><h1>How your words become his mind</h1>
+<h2>The ways in</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Channel</th><th>Best for</th><th>Weight</th><th>Status</th></tr></thead><tbody><tr><td><strong>Claude app, voice</strong> (phone or desktop, Aeon connector on)</td><td>Thinking out loud. Say &quot;reflect this into Kairos&quot; and Claude files it as a reflection in the right area</td><td>⭐⭐⭐ highest</td><td>✅ works today</td></tr><tr><td><strong>Claude dialogue</strong></td><td>Kairos opens with his question, you talk it through, and at the end the talk becomes a handful of lasting notes</td><td>⭐⭐⭐ highest</td><td>✅ works today, we keep it</td></tr><tr><td><strong>Telegram text reply</strong></td><td>Answering his question, quick corrections</td><td>⭐⭐ becomes notes overnight</td><td>✅ works today</td></tr><tr><td><strong>Telegram voice note</strong></td><td>Talking on the go</td><td>—</td><td>🔴 ignored today (text only). Could be added in phase 0</td></tr><tr><td><strong>Aeon web chat</strong></td><td>Longer back-and-forth at the desk</td><td>⭐⭐ becomes notes overnight</td><td>✅</td></tr><tr><td><strong>Your coding sessions</strong></td><td>Automatic: what you and your agents built</td><td>⭐</td><td>✅ captured but thin. Phase 0 makes them rich</td></tr><tr><td><strong>Hangar missions</strong></td><td>Automatic: what the agents shipped</td><td>⭐</td><td>🔴 leaves nothing today. Phase 0</td></tr><tr><td><strong>Your sprint board</strong> (AS Sprint and its vault)</td><td>Automatic: what you planned, did and finished, in your own words</td><td>⭐⭐⭐ when the card has notes</td><td>🔴 today he only sees &quot;completed · title&quot;. Phase 0 makes it the main feed (below)</td></tr></tbody></table></div>
+<h2>Your board is the main feed</h2>
+<p>You already run your day on the AS Sprint board. That is the richest signal you produce, so Kairos should read it properly instead of needing a separate voice note.</p>
+<div class="srl-table-wrap"><table><thead><tr><th>Today</th><th>After phase 0</th></tr></thead><tbody><tr><td>A card you finish becomes &quot;completed · title&quot;, with no notes, no checklist and no reason</td><td>Finished and vaulted cards are read <strong>in full</strong>: title, notes, checklist, labels, days taken</td></tr><tr><td>688 &quot;moved / completed&quot; memories from AS Sprint in 30 days, most of them noise</td><td><strong>One page per board per day</strong>: &quot;what you planned, did and finished on AS Sprint&quot;</td></tr><tr><td>214 of the 320 vaulted cards are a title only, so what they meant exists only in your head</td><td><strong>Title-only cards get a nudge</strong>: &quot;3 cards closed today with no notes: X, Y, Z. One line each?&quot;</td></tr><tr><td>Your answer lives nowhere useful</td><td>Your answer is <strong>written back onto the card</strong> and into his memory. The board gets richer too</td></tr></tbody></table></div>
+<p><strong>The rule:</strong> on a good board day (cards created, explained and finished) you do not need a voice note. The board speaks for you. On a thin board day he asks at most once, for at most three cards.</p>
+<p><strong>Adding notes by voice, today, no build needed:</strong></p>
+<ul>
+<li><strong>Phone keyboard dictation</strong> in the Aeon card editor: tap the mic on your keyboard and speak the notes.</li>
+<li><strong>Claude app voice</strong> with the Aeon connector: &quot;on AS Sprint, add to the card &#x27;X&#x27;: ...&quot; (test once, as voice and custom tools had a reported issue).</li>
+<li><strong>Reply to the nudge</strong> on Telegram, and he files it onto the card.</li>
+</ul>
+<p><strong>How cards are weighed:</strong> a finished card with your notes is strong evidence of what you did and why. A title-only card is weak until explained, because he cannot tell what it meant. Cards you create but have not started are what you <strong>intend</strong>, and he uses them to spot drift between plan and reality.</p>
+<h2>How it gets digested</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Step</th><th>When</th><th>What happens</th><th>Changes coming</th></tr></thead><tbody><tr><td>1. Arrives</td><td>Instantly</td><td>Stored and sorted by <strong>who said it</strong>: you, your tools, or his own guesses</td><td>Phase 0: proper sorting. Today everything lands as &quot;idea&quot;</td></tr><tr><td>2. Noticed</td><td>Same day, every 3 hours</td><td>The pulse writes a short &quot;what changed&quot; note per area</td><td>Phase 0: no more lost late-evening gap</td></tr><tr><td>3. Chats kept</td><td>03:00</td><td>Web and Telegram chats are turned into lasting notes</td><td>—</td></tr><tr><td>4. Understood</td><td>03:30 to 04:15</td><td>Patterns per area, then a picture per area, then one picture of everything</td><td>Phase 0: stops failing, looks at the right day</td></tr><tr><td>5. Wondered about</td><td>06:00 to 07:30</td><td>Contradictions and new ideas</td><td>Phase 1: they become <strong>&quot;maybe&quot; beliefs</strong> that must earn their place</td></tr><tr><td>6. Earned</td><td>Over several days</td><td>A &quot;maybe&quot; becomes a belief only if <strong>separate evidence on different days</strong> backs it. His own echoes count once</td><td>Phase 1</td></tr><tr><td>7. Told</td><td>08:00</td><td>Daily message: what happened, what he thinks, what changed in his beliefs</td><td>Phase 2: one message that actually uses the night&#x27;s thinking</td></tr><tr><td>8. Closed</td><td>When you react</td><td>Your answer, tap or veto strengthens, changes or removes the belief</td><td>Phase 1 to 4</td></tr></tbody></table></div>
+<p>Step 8 is the one that is missing today. Nothing you do comes back round, so nothing he generates ever gets better.</p>
+<h2>The weight rules</h2>
+<ol>
+<li><strong>Your deliberate words</strong> (reflections, dialogue notes) are beliefs straight away. They carry the most weight.</li>
+<li><strong>Your chat</strong> is turned into notes and goes into the &quot;maybe&quot; pile, not straight into beliefs. Offhand chat should not rewrite his worldview.</li>
+<li><strong>Tool evidence</strong> (tests passed, PR merged, card done) is trusted facts about what happened.</li>
+<li><strong>His own guesses</strong> never become beliefs without outside support.</li>
+<li><strong>Confidence comes from the source, not the tone.</strong> A confident sentence from the model counts for nothing on its own.</li>
+<li><strong>Nothing is deleted.</strong> Old beliefs are marked replaced, and you can undo any change.</li>
+</ol>
+<h2>What makes a good voice note</h2>
+<ul>
+<li><strong>Say the area</strong>: &quot;for Hive&quot;, &quot;for Swarm&quot;, &quot;for Aeon&quot;.</li>
+<li><strong>Say the belief and why</strong>: &quot;I think the order pad matters more than the backtests right now, because the desk needs it daily&quot;.</li>
+<li><strong>Say what would change your mind</strong>: this is what lets him check you later instead of just agreeing.</li>
+<li><strong>Corrections are gold</strong>: &quot;stop flagging X&quot;, &quot;that&#x27;s parked&quot;, &quot;wrong, the reason is Y&quot;.</li>
+<li><strong>Say how you feel about it</strong>: &quot;this is dragging&quot;, &quot;I&#x27;m excited about this&quot;. That is signal too.</li>
+</ul>
+<p>Three minutes of this a day outweighs a month of machine session notes. A well-kept board day is worth the same, and you are doing that work anyway.</p></section>
+<section class="srl-tabpanel" role="tabpanel" id="panel-engine" aria-labelledby="tab-engine" tabindex="0" hidden><h1>The memory engine</h1>
+<blockquote><p><strong>The point:</strong> good thinking does not come from dumping notes into a database. It comes from a loop that runs every day: <strong>weigh, age, back up, challenge, merge, learn from your reaction.</strong> This tab is that loop.</p></blockquote>
+<h2>Two numbers on every memory</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Number</th><th>Meaning</th><th>When it changes</th><th>Who reads it</th></tr></thead><tbody><tr><td><strong>Standing</strong></td><td>How much he trusts and values this memory overall</td><td>Every night, and straight away when you react</td><td>Chat, daily message, search, galaxy, night thinking</td></tr><tr><td><strong>Relevance</strong></td><td>How well it fits the question being asked right now</td><td>At the moment of asking</td><td>Chat and search only</td></tr></tbody></table></div>
+<p>What he pulls up = <strong>relevance × standing</strong>. Today there is no standing at all: fresh and loud beats true and important. We also have two ranking systems that disagree, and the final step ignores how old things are. The engine replaces both with one.</p>
+<h2>What goes into standing</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Ingredient</th><th>In plain words</th><th>Example</th></tr></thead><tbody><tr><td><strong>Who said it</strong></td><td>You beat your tools, your tools beat his guesses</td><td>Your reflection 1.0 · test result 0.8 · your chat 0.6 · his own idea 0.3</td></tr><tr><td><strong>How fresh</strong></td><td>Everything fades, at different speeds</td><td>Session notes fade in weeks, ideas in a month, beliefs in months, your reflections in a year</td></tr><tr><td><strong>Used again</strong></td><td>Being used or confirmed refreshes it</td><td>Cited in an answer you liked, so the fading resets</td></tr><tr><td><strong>Backed up</strong></td><td>Separate evidence, on different days</td><td>Three sessions on three days agree: strong. He repeats himself three times: counts once</td></tr><tr><td><strong>Outcome</strong></td><td>What happened when it was acted on</td><td>Card shipped, idea you acted on: up. Vetoed or ignored: down</td></tr><tr><td><strong>Challenged</strong></td><td>Open contradictions pull it down until settled</td><td>&quot;Hive is the priority&quot; vs a week spent on Swarm</td></tr><tr><td><strong>New</strong></td><td>Does it add anything he did not already know</td><td>Near-copies of existing memories add nothing</td></tr></tbody></table></div>
+<p>Each ingredient is a small separate part. You can tune, test or swap one without touching the others.</p>
+<h2>The loop, and when each step runs</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Step</th><th>What it does</th><th>When</th><th>Thinking needed?</th></tr></thead><tbody><tr><td><strong>1. Gate</strong></td><td>New note: add it, update an old one, or ignore it as a repeat</td><td>On arrival</td><td>Light</td></tr><tr><td><strong>2. Weigh</strong></td><td>Recompute standing for anything touched</td><td>Every 3 hours, and nightly for everything</td><td>No, maths only</td></tr><tr><td><strong>3. Age</strong></td><td>Apply fading. Nothing is deleted, old things just sink</td><td>Nightly</td><td>No</td></tr><tr><td><strong>4. Back up</strong></td><td>Count independent support. &quot;Maybe&quot; beliefs that earned it are promoted, the rest decay</td><td>Nightly</td><td>No</td></tr><tr><td><strong>5. Challenge</strong></td><td>The critic asks &quot;what would prove this wrong?&quot; and checks it against the records</td><td>Nightly</td><td>Yes, deep reasoning</td></tr><tr><td><strong>6. Merge</strong></td><td>Fold repeats into one clearer concept. Keep the old version so it can be undone</td><td>Nightly</td><td>Yes</td></tr><tr><td><strong>7. Contest</strong></td><td>New ideas compete. Only 1 to 3 survive (phase 3)</td><td>Nightly</td><td>Yes</td></tr><tr><td><strong>8. Learn from you</strong></td><td>Your answer, tap, veto or silence changes standing and trust at once</td><td>When you react</td><td>No</td></tr><tr><td><strong>9. Check himself</strong></td><td>Did last month&#x27;s promotions hold up? Adjust how much each source is trusted</td><td>Weekly</td><td>Yes</td></tr></tbody></table></div>
+<p>Every change is written down with its reason. That is what makes &quot;undo&quot; and &quot;why do you believe this?&quot; possible.</p>
+<h2>How it is built</h2>
+<ul>
+<li><strong>A class-based engine made of small parts.</strong> One conductor runs the loop. Each step is its own class with one job, and plugs in. The standing score is built the same way from the ingredient parts.</li>
+<li><strong>The maths runs inside the app.</strong> Weigh, age, back up and learn-from-you are plain arithmetic: fast, free, fully testable, and they run even if every model is down.</li>
+<li><strong>The thinking steps plug in.</strong> Challenge, merge, contest and check-himself go through one &quot;reasoner&quot; socket. The app prepares the work, a model thinks, and the app checks and saves the answer. The app, not the model, creates every record ID, which removes the whole class of bug that broke the night thinking.</li>
+<li><strong>The same socket takes two brains.</strong> One is the paid API, as today. The other is Claude on your Max plan (next tab). The engine does not care which one answered.</li>
+</ul>
+<pre><code>const engine = new MemoryEngine({
+  steps: [new Gate(), new Weigh(standing), new Age(), new BackUp(), new Challenge(reasoner), new Merge(reasoner), new Contest(reasoner)],
+  standing: new Standing([new SourceTrust(), new Freshness(), new Support(), new Outcome(), new Challenged(), new Novelty()]),
+  reasoner, // ApiReasoner today, ClaudeMaxReasoner on your subscription
+  changes: new ChangeLog(), // every change + reason, powers undo
+})
+await engine.runNight(userId)</code></pre>
+<h2>TypeScript or Python?</h2>
+<p><strong>TypeScript, all the way.</strong> There is no Python in Aeon today, and this engine does not need any.</p>
+<div class="srl-table-wrap"><table><thead><tr><th></th><th>TypeScript</th><th>Python</th></tr></thead><tbody><tr><td>Runs where the data is</td><td>✅ same app, same database, same deploy</td><td>❌ a second server to host and keep alive</td></tr><tr><td>Shares the record shapes and checks</td><td>✅ one definition</td><td>❌ copied, and the copies drift</td></tr><tr><td>Tests</td><td>✅ existing suite, including random property tests for the maths</td><td>❌ a second test setup</td></tr><tr><td>Heavy maths or machine learning</td><td>🟡 not needed: the scores are simple and the database handles the vectors</td><td>✅ only worth it if we later train our own ranking model</td></tr></tbody></table></div>
+<p>If we ever want to train a ranking model on your reactions, that is an offline study in the research lab. It still would not justify a Python service here.</p></section>
+<section class="srl-tabpanel" role="tabpanel" id="panel-max" aria-labelledby="tab-max" tabindex="0" hidden><h1>Running Kairos on your Claude Max plan</h1>
+<blockquote><p><strong>The idea:</strong> once your coding moves to the work Enterprise seat, your personal Max plan is free. Kairos&#x27;s thinking moves there. Aeon keeps the memory, the maths and the delivery. Claude does the reasoning on your plan, on a schedule. The paid key stays only as a safety net.</p></blockquote>
+<h2>What Claude offers today (checked 30 Sep 2026)</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Feature</th><th>What it is</th><th>Fits Kairos?</th></tr></thead><tbody><tr><td><strong>Routines</strong> (Claude Code, cloud)</td><td>A saved prompt that runs on Anthropic&#x27;s servers on a schedule, or when poked by a web call. Can read and write Aeon through your Aeon connector. Your laptop can be off</td><td>✅ <strong>the engine room</strong>. The morning ping already runs this way</td></tr><tr><td><strong>Scheduled tasks</strong> (Claude app, formerly Cowork)</td><td>Same idea inside the main Claude app. From <strong>6 Oct</strong> every new task on Pro and Max runs in the cloud with your connectors, even with your devices off. The &quot;only on your computer&quot; option goes away</td><td>🟡 <strong>backup runner</strong>. No web trigger and no custom times, so routines stay primary. Good for tasks you start from your phone</td></tr><tr><td><strong>Workflows</strong> (Claude Code)</td><td>One task fans out to many parallel helpers</td><td>🟡 could run the per-area thinking in parallel inside the night routine. Try it in phase 1</td></tr><tr><td><strong>Channels</strong> (Telegram plugin for Claude Code)</td><td>Telegram messages go into a Claude Code session that must stay running on a computer</td><td>🔴 needs an always-on machine. Not our route</td></tr><tr><td><strong>Voice mode</strong> (Claude app)</td><td>Talk to Claude, and it can use connected tools</td><td>🟡 should reach the Aeon connector. One report says custom tools fail in voice, so test it once</td></tr></tbody></table></div>
+<p><strong>Limits:</strong> a routine can run at most hourly on a schedule, or up to 30 times an hour when poked. Everything counts against your normal Max allowance, the same as chatting. How long a single run may last is not published, so we keep each run short.</p>
+<h2>The one rule that shapes the design</h2>
+<p>Anthropic allows your Max plan to be used <strong>through Claude&#x27;s own apps</strong> (chat, Claude Code, routines). It does <strong>not</strong> allow Aeon&#x27;s server to call Claude using your plan&#x27;s login in place of a paid key.</p>
+<p>So <strong>Claude comes to the brain for work.</strong> The brain never calls Claude on your plan.</p>
+<h2>How it works: the thinking queue</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Step</th><th>Who</th><th>What</th></tr></thead><tbody><tr><td>1. Jobs are posted</td><td>Aeon (cron, no model)</td><td>Each night Aeon posts thinking jobs: &quot;patterns for Hive&quot;, &quot;picture of everything&quot;, &quot;challenge these 12 beliefs&quot;, &quot;write the daily message&quot;</td></tr><tr><td>2. Claude picks them up</td><td>Routine on your Max plan</td><td>Claims the next job through the Aeon connector, gets a ready-made pack of evidence plus instructions, and thinks</td></tr><tr><td>3. Answer handed back</td><td>Routine</td><td>Submits the answer through the connector</td></tr><tr><td>4. Checked and saved</td><td>Aeon</td><td>Checks the shape, creates the record IDs, writes it, and records the change and the reason</td></tr><tr><td>5. Safety net</td><td>Aeon</td><td>Any job not done by its deadline is run by Aeon itself on the paid key. If that also fails, a simple no-model version runs. You never get silence or junk</td></tr></tbody></table></div>
+<p>This is the plug-in &quot;reasoner&quot; from the engine tab. The same job can be answered by Claude on Max or by the paid key, and Aeon checks both the same way. The Aether picture and dialogue already work like this today: Aeon prepares the pack, Claude thinks, then submits the result back. We generalise it.</p>
+<h2>What runs where</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Job</th><th>Today</th><th>After the move</th></tr></thead><tbody><tr><td>Night thinking: patterns, area pictures, picture of everything</td><td>Paid key, Aeon cron</td><td>✅ Max routine &quot;night shift&quot;, ~03:00</td></tr><tr><td>Challenge, merge, idea contest, question for you</td><td>Paid key</td><td>✅ Max routine &quot;dawn shift&quot;, ~05:30</td></tr><tr><td>Daily message</td><td>Paid key</td><td>✅ Max routine, ~07:30, delivered at 08:00</td></tr><tr><td>Pulse every 3 hours</td><td>Paid key</td><td>✅ Max routine, hourly-capable</td></tr><tr><td>Morning and evening ping check</td><td>Max routine already</td><td>✅ unchanged</td></tr><tr><td>Weekly review and self-check</td><td>Not built</td><td>✅ Max routine, weekly</td></tr><tr><td>Weigh, age, back up, learn from you, snapshots, dedup, health</td><td>No model</td><td>Aeon, as before (maths only)</td></tr><tr><td>Search embeddings</td><td>Voyage</td><td>Aeon, as before (not a Claude service)</td></tr><tr><td>Telegram chat replies</td><td>Paid key</td><td>🟡 see below</td></tr><tr><td>Voice</td><td>Claude app</td><td>✅ your personal Claude app with the Aeon connector</td></tr></tbody></table></div>
+<h2>Telegram chat on Max: the honest trade-off</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Option</th><th>How</th><th>Good</th><th>Bad</th></tr></thead><tbody><tr><td><strong>A. Keep on paid key</strong></td><td>As today</td><td>Instant replies. Pennies a month (7 chats in September)</td><td>Not on Max</td></tr><tr><td><strong>B. Poke a routine</strong></td><td>Telegram message arrives at Aeon, which pokes a &quot;chat&quot; routine; Claude reads the thread, thinks, replies through Aeon</td><td>On Max, with full brain access and deeper thinking</td><td>Every message starts a cloud session, so a reply could take seconds to minutes (unmeasured)</td></tr><tr><td>C. Channels plugin</td><td>Always-on Claude Code on a computer</td><td>On Max</td><td>Needs a machine left running</td></tr></tbody></table></div>
+<p><strong>Recommendation: B for chat, A as the automatic fallback.</strong> Aeon replies &quot;thinking…&quot; straight away, pokes the routine, and falls back to the paid key if no reply lands in time. We measure the real delay in phase 1 before switching.</p>
+<h2>What does not change</h2>
+<ul>
+<li><strong>Your coding sessions are still captured.</strong> The capture hooks live on your machine, not in your Claude login.</li>
+<li><strong>Aeon stays the single home of the memory.</strong> Claude never keeps its own copy.</li>
+<li><strong>The paid key stays configured</strong> as the fallback. Idle, it costs almost nothing.</li>
+<li><strong>Quality stays top tier.</strong> Routines run on the best model your plan offers.</li>
+</ul></section>
+<section class="srl-tabpanel" role="tabpanel" id="panel-road" aria-labelledby="tab-road" tabindex="0" hidden><h1>The road</h1>
+<h2>Phases, and what changes for you</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Phase</th><th>In plain words</th><th>What you notice</th><th>Size</th></tr></thead><tbody><tr><td><strong>0. Eyes and Heal</strong></td><td>Fix the four live bugs. Let him see what agents actually did: which card, branch, PRs, tests and cost. <strong>Read your sprint board in full, as one page a day, and nudge you about title-only cards.</strong> Sort memories by who said them. Stop the galaxy crashing</td><td>Questions start arriving again. No more strange evening messages. The brief knows what you and your agents finished yesterday, in your words</td><td>2-3 sessions</td></tr><tr><td><strong>1. Memory engine and Max night shift</strong></td><td>The engine from the engine tab: standing score, fading, backing up, challenge, merge, and undo. &quot;Maybe&quot; beliefs must earn their place. The thinking queue goes live, and the night and dawn thinking moves to a routine on your Max plan, with the paid key as fallback. We measure how fast a routine can reply to chat</td><td>&quot;I now believe X&quot; notices you can veto. Far less clutter. Your paid-key bill drops</td><td>2-3 sessions</td></tr><tr><td><strong>2. Beliefs and strategy</strong></td><td>A written set of your values and principles that he reasons from. He checks every night that he has not drifted. One daily message, written on Max. A weekly review routine. Telegram chat moves to Max, with the paid key as fallback</td><td>One message a day that uses the night&#x27;s thinking. A 15-minute weekly review</td><td>2 sessions</td></tr><tr><td><strong>3. Creativity</strong></td><td>A nightly idea contest: many ideas, each checked against evidence, the best compared head to head. Only 1 to 3 survive</td><td>Fewer, better ideas, each with the reason it survived</td><td>1-2 sessions</td></tr><tr><td><strong>4. Drive</strong></td><td>He proposes goals he can check himself, keeps a list of his promises that a timer checks, and asks your yes or no. Hangar agents do the work</td><td>Approve or veto buttons on Telegram. Cards appear with a reason and a way to check them</td><td>2 sessions</td></tr><tr><td><strong>5. Later</strong></td><td>His own lab, long thinking jobs, writing his own routines</td><td>Only after phase 4 has a clean track record</td><td>later</td></tr></tbody></table></div>
+<h2>Safety rails (all phases)</h2>
+<ul>
+<li>He <strong>never</strong> gets a goal to keep himself running.</li>
+<li>A spending and step limit on every job, and an off switch.</li>
+<li>He asks before touching cards in other people&#x27;s projects.</li>
+<li>New powers are unlocked one kind of action at a time, and only after a clean track record.</li>
+</ul>
+<h2>What you can start today (before any code lands)</h2>
+<ol>
+<li><strong>Give each AS Sprint card a line of notes</strong> as you create or finish it. Dictate it with the phone keyboard mic. It is the cheapest high-value habit.</li>
+<li><strong>Voice reflections through the Claude app</strong> on thin board days. They already go in at the highest weight. Nothing needs building.</li>
+<li><strong>Seed each area with 3 to 5 beliefs.</strong> What you are sure of, what you are betting on, and what is parked.</li>
+<li><strong>Refresh your 7 objectives.</strong> They were last touched on 8 September, and the nightly thinking reads them every night.</li>
+<li><strong>Answer his question when one arrives.</strong> The block that stops them goes in phase 0.</li>
+</ol>
+<h2>Why this order</h2>
+<ul>
+<li><strong>Phase 0 comes first</strong> because learning from bad input only makes him confidently wrong. He needs to see properly and stop breaking.</li>
+<li><strong>Memory before beliefs</strong>, because beliefs are built from memories that have earned their place.</li>
+<li><strong>Creativity before drive</strong>, because he should only act on ideas that have already survived testing.</li>
+<li><strong>Your voice runs through all of it.</strong> Each phase only helps as much as what you tell him.</li>
+</ul></section>
+<footer class="srl-footer">Generated 2026-09-30 10:15 UTC · Markdown is the source of truth; regenerate, don't edit.</footer>
+</main>
+<script>
+(function () {
+  const tabs = Array.from(document.querySelectorAll('.srl-tabs [role="tab"]'));
+  function activate(tab, focus) {
+    tabs.forEach(function (item) {
+      const selected = item === tab;
+      item.setAttribute('aria-selected', String(selected));
+      item.tabIndex = selected ? 0 : -1;
+      document.getElementById(item.getAttribute('aria-controls')).hidden = !selected;
+    });
+    if (focus) tab.focus();
+  }
+  function restore() {
+    let hash = location.hash.slice(1);
+    try { hash = decodeURIComponent(hash); } catch (e) {}
+    const target = tabs.find(function (tab) { return tab.id === hash; });
+    if (target) activate(target, false);
+  }
+  tabs.forEach(function (tab, index) {
+    tab.addEventListener('click', function () {
+      activate(tab, false);
+      if (location.hash !== '#' + tab.id) location.hash = tab.id;
+    });
+    tab.addEventListener('keydown', function (event) {
+      let next;
+      if (event.key === 'ArrowRight') next = tabs[(index + 1) % tabs.length];
+      if (event.key === 'ArrowLeft') next = tabs[(index + tabs.length - 1) % tabs.length];
+      if (event.key === 'Home') next = tabs[0];
+      if (event.key === 'End') next = tabs[tabs.length - 1];
+      if (!next) return;
+      event.preventDefault();
+      activate(next, true);
+      if (location.hash !== '#' + next.id) location.hash = next.id;
+    });
+  });
+  window.addEventListener('hashchange', restore);
+  restore();
+})();
+</script>
+</body>
+</html>
