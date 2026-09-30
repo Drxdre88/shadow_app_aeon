@@ -87,12 +87,15 @@ describe('contradictionOutSchema', () => {
     ).toThrow()
   })
 
-  it('rejects a non-uuid candidateId', () => {
-    expect(() =>
-      contradictionOutSchema.parse({
-        findings: [{ candidateId: 'not-a-uuid', contradicts: true, winner: 'probe', confidence: 0.5, rationale: 'r' }],
-      }),
-    ).toThrow()
+  it('accepts a non-uuid or null candidateId at the schema (grounding drops it later)', () => {
+    const out = contradictionOutSchema.parse({
+      findings: [
+        { candidateId: 'not-a-uuid', contradicts: true, winner: 'probe', confidence: 0.5, rationale: 'r' },
+        { candidateId: null, contradicts: true, winner: 'probe', confidence: 0.5, rationale: 'r' },
+      ],
+    })
+    expect(out.findings).toHaveLength(2)
+    expect(filterGroundedFindings(out, new Set([ID_B]))).toHaveLength(0)
   })
 })
 
@@ -111,6 +114,16 @@ describe('filterGroundedFindings', () => {
       findings: [{ candidateId: ID_HALLUCINATED, contradicts: true, winner: 'probe', confidence: 0.6, rationale: 'r' }],
     }
     expect(filterGroundedFindings(out, validIds)).toHaveLength(0)
+  })
+
+  it('rewrites a bracketed / upper-case / unique-prefix id to the canonical fed id', () => {
+    const out: ContradictionOutput = {
+      findings: [
+        { candidateId: `[${ID_B.toUpperCase()}]`, contradicts: true, winner: 'probe', confidence: 0.6, rationale: 'r' },
+        { candidateId: '22222222', contradicts: false, winner: 'probe', confidence: 0.1, rationale: 'r' },
+      ],
+    }
+    expect(filterGroundedFindings(out, validIds).map((f) => f.candidateId)).toEqual([ID_B, ID_B])
   })
 })
 

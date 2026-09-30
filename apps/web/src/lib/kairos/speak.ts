@@ -25,7 +25,8 @@ export const speakSchema = z.object({
   opsAlert: z.boolean().default(false),
   // Evening Digest (docs/kairos/29 note) — a guaranteed-daily register, not
   // a conversational turn. Same exclusion treatment as opsAlert: it must
-  // never consume the gap/cap cadence budget or set awaitingReply.
+  // never consume the gap/cap cadence budget. (Only kind:'question' arms
+  // awaitingReply — see getConversationState.)
   digest: z.boolean().default(false),
   // Atomic idempotency key (F2, horsemen review) — forwarded into
   // captureMemory's own (source, externalId) dedup so two concurrent callers
@@ -49,8 +50,29 @@ export type SpeakOutcome =
 // automation that sets it anyway.
 const FORCE_CEILING = 10
 
+// Defence in depth (research/kairos_2909 A1): internal callers bypass
+// speakSchema, so a runaway model output could otherwise be stored and
+// chunked to Telegram whole. Truncate rather than reject so no caller breaks.
+export const SPEAK_MESSAGE_MAX_CHARS = 4000
+const TRUNCATION_MARK = '…'
+
+export function capSpeakMessage(message: string, max: number = SPEAK_MESSAGE_MAX_CHARS): string {
+  if (message.length <= max) return message
+  const hardCut = message.slice(0, max - TRUNCATION_MARK.length)
+  // Prefer a paragraph, line or word boundary in the last quarter of the budget.
+  const floor = Math.floor(hardCut.length * 0.75)
+  const boundary = Math.max(
+    hardCut.lastIndexOf('\n\n'),
+    hardCut.lastIndexOf('\n'),
+    hardCut.lastIndexOf(' '),
+  )
+  const cut = boundary >= floor ? hardCut.slice(0, boundary) : hardCut
+  return `${cut.trimEnd()}${TRUNCATION_MARK}`
+}
+
 export async function deliverKairosSpeak(operatorUserId: string, input: SpeakInput): Promise<SpeakOutcome> {
-  const { title, message, kind, urgency, force, opsAlert, digest, externalId } = input
+  const { title, kind, urgency, force, opsAlert, digest, externalId } = input
+  const message = capSpeakMessage(input.message)
 
   const state = await getConversationState(operatorUserId)
   if (state.awaitingReply && !force && urgency !== 'high') {
@@ -70,10 +92,13 @@ export async function deliverKairosSpeak(operatorUserId: string, input: SpeakInp
   let cap = 2
   let cadenceWindowHours = 24
 
+  // replyRate7d is 0 both for "no recent sends" and "all recent sends unanswered";
+  // the 7-day lookup disambiguates. Deliberately not keyed on lastOutbound, which
+  // only tracks questions (the reply gate) and would hide an unanswered notify run.
   if (!force && state.replyRate7d >= 0.5) {
     gapHours = 4
     cap = 3
-  } else if (!force && state.replyRate7d === 0 && state.lastOutbound) {
+  } else if (!force && state.replyRate7d === 0) {
     const recent7d = await listRecentKairosSpeaks(operatorUserId, { hours: 168, limit: 3 })
     if (recent7d.length >= 3) {
       gapHours = 24

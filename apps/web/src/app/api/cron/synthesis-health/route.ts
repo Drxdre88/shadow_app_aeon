@@ -15,7 +15,7 @@ import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 // Health stamps one rollup memory per UTC day via externalId, so a retry
 // (or a manual re-curl) is a no-op rather than a duplicate.
 //
-// Auth + per-user iteration mirror apps/web/src/app/api/cron/memory-compaction.
+// Auth + per-user iteration mirror the other Kairos cron routes.
 // ─────────────────────────────────────────────────────────────────────────
 
 export const maxDuration = 300

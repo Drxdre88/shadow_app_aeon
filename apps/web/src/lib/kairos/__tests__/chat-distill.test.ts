@@ -23,6 +23,7 @@ vi.mock('@/lib/ai/router', () => ({
 
 vi.mock('../cron-trace', () => ({
   writeCronFailureTrace: vi.fn(),
+  writeCronSuccessTrace: vi.fn(),
 }))
 
 import { listKairosAsksAnsweredBetween } from '@/lib/data/ask'
@@ -30,7 +31,7 @@ import { listChatThreadsWithMessagesOn } from '@/lib/data/kairos-chat'
 import { captureMemory } from '@/lib/data/memories'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialDecryptError, AiCredentialMissingError } from '@/lib/ai/router'
-import { writeCronFailureTrace } from '../cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from '../cron-trace'
 import { parseChatDistillResponse, runChatDistillForUser } from '../chat-distill'
 import { buildChatDistillUserPrompt } from '../chat-distill-prompt'
 
@@ -274,6 +275,40 @@ describe('chat distillation', () => {
     await runChatDistillForUser(USER_ID, { date: DATE })
 
     expect(writeCronFailureTrace).not.toHaveBeenCalled()
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER_ID, {
+      cronName: 'chat-distill',
+      outcome: 'skipped',
+      skipReason: 'no durable signal',
+    })
+  })
+
+  it('writes an ok liveness trace after a clean run', async () => {
+    await runChatDistillForUser(USER_ID, { date: DATE })
+
+    expect(writeCronSuccessTrace).toHaveBeenCalledOnce()
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER_ID, { cronName: 'chat-distill' })
+  })
+
+  it('writes a skipped liveness trace on a day with no threads', async () => {
+    ;(listChatThreadsWithMessagesOn as ReturnType<typeof vi.fn>).mockResolvedValue([])
+
+    await runChatDistillForUser(USER_ID, { date: DATE })
+
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER_ID, {
+      cronName: 'chat-distill',
+      outcome: 'skipped',
+      skipReason: 'no threads',
+    })
+  })
+
+  it('writes no liveness trace when a thread failed or on a dry run', async () => {
+    ;(getProviderForTask as ReturnType<typeof vi.fn>).mockResolvedValue({
+      provider: { ask: vi.fn().mockRejectedValue(new Error('provider timeout')) },
+    })
+    await runChatDistillForUser(USER_ID, { date: DATE })
+    await runChatDistillForUser(USER_ID, { date: DATE, dryRun: true })
+
+    expect(writeCronSuccessTrace).not.toHaveBeenCalled()
   })
 
   it('rejects an invalid date format', async () => {

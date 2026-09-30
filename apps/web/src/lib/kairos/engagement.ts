@@ -43,11 +43,12 @@ export async function getConversationState(userId: string) {
   const now = new Date()
   const sevenDaysAgo = new Date(now.getTime() - REPLY_RATE_DAYS * 24 * 60 * 60 * 1000)
 
-  // Ops alerts and the Evening Digest are system registers, not conversational
-  // turns — excluding them here (as well as from listRecentKairosSpeaks) fixes
-  // a pre-existing bug where an ops alert set awaitingReply and silently
-  // blocked the tick channel for up to 48h waiting on a reply nobody was ever
-  // going to send to a health-check message.
+  // Only a question expects an answer, so only a question may arm the reply
+  // gate. Notifies, ops alerts and the Evening Digest (all kind:'notify') are
+  // one-way registers: letting them arm awaitingReply blocked the tick and
+  // ask-mine for 48h after every routine notify (research/kairos_2909 A3).
+  // The kind predicate subsumes the old opsAlert/digest exclusions here; the
+  // cadence query below keeps them because it counts every conversational send.
   const [lastOutboundRow] = await db
     .select({
       id: memories.id,
@@ -61,8 +62,7 @@ export async function getConversationState(userId: string) {
       eq(memories.type, 'inbound'),
       eq(memories.source, 'system'),
       sql`${memories.sourceMetadata}->>'kairosSpeak' = 'true'`,
-      sql`(${memories.sourceMetadata}->>'opsAlert') IS DISTINCT FROM 'true'`,
-      sql`(${memories.sourceMetadata}->>'digest') IS DISTINCT FROM 'true'`,
+      sql`${memories.sourceMetadata}->>'kind' = 'question'`,
     ))
     .orderBy(desc(memories.createdAt))
     .limit(1)

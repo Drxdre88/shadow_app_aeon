@@ -8,7 +8,7 @@ import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos — Micro-consolidation cron. Runs 6x/day, off-peak of the nightly
-// synthesis chain (see vercel.json: "15 6,9,12,15,18,21 * * *"). Per eligible
+// synthesis chain (see vercel.json: "15 6,9,12,15,18,21,23 * * *"). Per eligible
 // user (has a non-archived Dominion AND an active BYOK credential), folds
 // new substrate into a compact 'delta' memory per Dominion when there's
 // enough of it — cheap, mechanical, idempotent per hour-bucket.

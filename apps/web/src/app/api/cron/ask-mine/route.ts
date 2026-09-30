@@ -1,7 +1,7 @@
 import { jsonResponse } from '@/lib/api/response'
 import { listChatDistillEligibleUserIds } from '@/lib/data/kairos-chat'
 import { runAskMineForUser, type AskMineRunResult } from '@/lib/kairos/ask-mine'
-import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 import type { NextRequest } from 'next/server'
 
 export const maxDuration = 300
@@ -29,7 +29,17 @@ export async function GET(req: NextRequest) {
       continue
     }
     try {
-      users.push({ userId, result: await runAskMineForUser(userId, { dryRun }) })
+      const result = await runAskMineForUser(userId, { dryRun })
+      users.push({ userId, result })
+      // Liveness: a skip (awaiting_reply, pending, …) must be visible to
+      // health/digest, not just console. Idempotent per user per UTC day.
+      if (!dryRun) {
+        await writeCronSuccessTrace(userId, {
+          cronName: 'ask-mine',
+          outcome: result.status === 'created' ? 'ok' : 'skipped',
+          ...(result.status === 'skipped' ? { skipReason: result.reason } : {}),
+        })
+      }
     } catch (error) {
       try {
         await writeCronFailureTrace(userId, {

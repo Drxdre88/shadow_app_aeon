@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
 import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
@@ -9,8 +9,10 @@ import {
   CORTEX_SYSTEM_PROMPT,
   buildCortexPrompt,
   buildCortexUserPrompt,
+  cortexGenSchema,
   cortexOutSchema,
   extractJsonBlock,
+  groundCortexOutput,
   renderCortexMarkdown,
   type ArchetypeRow,
   type CortexContext,
@@ -19,7 +21,7 @@ import {
   type ReflectionRow,
 } from './cortex-prompt'
 import { todayIso, parseWithRepair, ParseRepairError } from './_prompt-utils'
-import { writeCronFailureTrace } from './cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 
 export {
   buildCortexPrompt,
@@ -70,14 +72,23 @@ async function alreadyRanToday(userId: string, dominionId: string): Promise<bool
   return (row?.n ?? 0) > 0
 }
 
-// "Today so far" grounding (C) — the latest micro-consolidation delta for
-// this Dominion if one landed today, else a lightweight new-memory count
-// since the start of the UTC day. Best-effort: a null return just omits the
-// prompt section (buildCortexUserPrompt renders nothing when absent).
-async function fetchTodaySoFar(userId: string, dominionId: string): Promise<string | null> {
-  const dayStart = new Date(`${todayIso()}T00:00:00.000Z`)
+// "Today so far" grounding (C) — the day being consolidated. Cortex runs at
+// 03:00Z, so "today" has barely started; the day it is actually folding is
+// the PREVIOUS UTC day. Read that day's micro-consolidation deltas (chronological),
+// else a lightweight new-memory count for the same window. Best-effort: a null
+// return just omits the prompt section.
+const MAX_DAY_DELTAS = 6
 
-  const [deltaRow] = await db
+export function previousUtcDay(today: string): string {
+  return new Date(Date.parse(`${today}T00:00:00.000Z`) - 86_400_000).toISOString().slice(0, 10)
+}
+
+async function fetchTodaySoFar(userId: string, dominionId: string, day: string): Promise<string | null> {
+  const dayStart = new Date(`${day}T00:00:00.000Z`)
+  const dayEnd = new Date(dayStart.getTime() + 86_400_000)
+  const inDay = and(gte(memories.createdAt, dayStart), lt(memories.createdAt, dayEnd))
+
+  const deltaRows = await db
     .select({ bodyMd: memories.bodyMd })
     .from(memories)
     .where(and(
@@ -85,11 +96,11 @@ async function fetchTodaySoFar(userId: string, dominionId: string): Promise<stri
       eq(memories.dominionId, dominionId),
       eq(memories.streamClass, 'delta'),
       isNull(memories.archivedAt),
-      gte(memories.createdAt, dayStart),
+      inDay,
     ))
     .orderBy(desc(memories.createdAt))
-    .limit(1)
-  if (deltaRow) return deltaRow.bodyMd
+    .limit(MAX_DAY_DELTAS)
+  if (deltaRows.length > 0) return deltaRows.map((r) => r.bodyMd).reverse().join('\n\n---\n\n')
 
   const [countRow] = await db
     .select({ n: sql<number>`COUNT(*)::int` })
@@ -99,10 +110,10 @@ async function fetchTodaySoFar(userId: string, dominionId: string): Promise<stri
       eq(memories.dominionId, dominionId),
       isNull(memories.archivedAt),
       sql`${memories.streamClass} NOT IN ('trace', 'delta')`,
-      gte(memories.createdAt, dayStart),
+      inDay,
     ))
   const n = countRow?.n ?? 0
-  return n > 0 ? `${n} new ${n === 1 ? 'memory' : 'memories'} captured today (since this morning's reading).` : null
+  return n > 0 ? `${n} new ${n === 1 ? 'memory' : 'memories'} captured on ${day}.` : null
 }
 
 async function fetchCortexInputs(
@@ -208,7 +219,8 @@ export async function gatherCortexContext(
   // Sequential (not Promise.all) — keeps db.select() call order deterministic
   // for the failure-trace test suite's FIFO mock queue below.
   const inputs = await fetchCortexInputs(userId, dominionId)
-  const todaySoFar = await fetchTodaySoFar(userId, dominionId)
+  const todaySoFarDay = previousUtcDay(todayIso())
+  const todaySoFar = await fetchTodaySoFar(userId, dominionId, todaySoFarDay)
 
   return {
     dominionId,
@@ -228,6 +240,7 @@ export async function gatherCortexContext(
     })),
     ...inputs,
     todaySoFar,
+    todaySoFarDay: todaySoFar ? todaySoFarDay : null,
   }
 }
 
@@ -314,6 +327,7 @@ export async function runCortexRegenForDominion(
   if (dom.archivedAt) return { dominionId, dominionName: dom.name, status: 'skipped', reason: 'archived' }
 
   if (await alreadyRanToday(userId, dominionId)) {
+    await writeCronSuccessTrace(userId, { cronName: 'cortex-regen', dominionId, outcome: 'skipped', skipReason: 'already ran today' })
     return { dominionId, dominionName: dom.name, status: 'existing', reason: 'already ran today' }
   }
 
@@ -378,13 +392,19 @@ export async function runCortexRegenForDominion(
   }
 
   let parsed: CortexOutput
+  const archetypeIds = ctx.archetypes.map((a) => a.id)
   try {
     parsed = await parseWithRepair({
       provider,
       rawText,
-      parse: (text) => cortexOutSchema.parse(extractJsonBlock(text)),
+      parse: (text) => groundCortexOutput(cortexGenSchema.parse(extractJsonBlock(text)), archetypeIds),
       generatorLabel: 'cortex',
       maxTokens: 8000,
+      system: CORTEX_SYSTEM_PROMPT,
+      repairContext: [
+        'Valid archetype ids for activeThreads[].id — copy one in full or omit the field:',
+        ...(archetypeIds.length ? archetypeIds.map((id) => `- ${id}`) : ['(none — omit every id)']),
+      ].join('\n'),
     })
   } catch (err) {
     if (err instanceof ParseRepairError) {
@@ -405,6 +425,8 @@ export async function runCortexRegenForDominion(
 
   if (!cortexMemoryId) {
     await writeCronFailureTrace(userId, { cronName: 'cortex-regen', dominionId, reason: 'persist_failed' })
+  } else {
+    await writeCronSuccessTrace(userId, { cronName: 'cortex-regen', dominionId })
   }
 
   return {

@@ -8,13 +8,13 @@ import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import { SYNTHESIS_HEALTH_RECIPE } from './synthesis-health'
 import { deliverKairosSpeak } from './speak'
-import { writeCronFailureTrace } from './cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 import { todayIso } from './_prompt-utils'
 import { DIGEST_SYSTEM_PROMPT, buildDigestUserPrompt } from './digest-prompt'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Evening Digest — one guaranteed-daily message: what Kairos saw
-// today, what he formulated. Unlike the brain-tick (silence-by-default,
+// in the last 24h, what he formulated. Unlike the brain-tick (silence-by-default,
 // docs/kairos/29), this is a fixed daily register — it always sends,
 // falling back to a deterministic (zero-model) narrative if the provider
 // call fails, or to a minimal trace-log pointer if even gathering the
@@ -26,6 +26,10 @@ import { DIGEST_SYSTEM_PROMPT, buildDigestUserPrompt } from './digest-prompt'
 // ─────────────────────────────────────────────────────────────────────────
 
 const DAY_MS = 24 * 60 * 60 * 1000
+const MAX_DIGEST_CHARS = 1200
+// Non-digest content signals: markdown headings, links, export footers — the
+// 27/09 runaway (model free-ran into a memorised WordPress manual) had all three.
+const JUNK_OUTPUT_RE = /^#{1,6}\s|https?:\/\/|Powered by/im
 
 export interface DigestWindow {
   start: Date
@@ -36,6 +40,13 @@ export interface SynthesisSnapshot {
   green: number
   failed: number
   failedStages: string[]
+}
+
+// Rolling 24h ending at run time. The cron fires at 18:00Z, so a UTC
+// calendar-day window silently dropped 18:00-24:00Z activity every night;
+// this window starts at the previous run slot instead.
+export function digestWindow(now: Date): DigestWindow {
+  return { start: new Date(now.getTime() - DAY_MS), end: now }
 }
 
 export interface DigestCounts {
@@ -108,7 +119,7 @@ export async function gatherDigestCounts(userId: string, window: DigestWindow): 
     listTraceHistory(userId, { recipe: SYNTHESIS_HEALTH_RECIPE, limit: 1 }),
   ])
 
-  // Only trust the rollup if it materialised for TODAY's window — an absent
+  // Only trust the rollup if it materialised inside this digest's window — an absent
   // or stale (yesterday-or-older) rollup must fall through to "no signal",
   // never masquerade as tonight's health.
   const rollup = synthesisRollup[0]
@@ -155,8 +166,8 @@ export function buildDeterministicDigest(counts: DigestCounts, date: string): st
     `Evening digest · ${date}`,
     '',
     activity.length > 0
-      ? `Today I saw ${joinNatural(activity)}.`
-      : 'A quiet day — nothing landed on my side today.',
+      ? `In the last 24h I saw ${joinNatural(activity)}.`
+      : 'A quiet day — nothing landed on my side in the last 24h.',
   ]
 
   if (counts.asksDispatched > 0) {
@@ -180,13 +191,13 @@ function buildMinimalDigest(date: string): string {
   return [
     `Evening digest · ${date}`,
     '',
-    "I couldn't tally today's activity, but I'm here. Details are in my trace log.",
+    "I couldn't tally the last 24h of activity, but I'm here. Details are in my trace log.",
   ].join('\n')
 }
 
-// dayStart is passed in (rather than DATE_TRUNC('day', NOW()) in SQL) so the
-// day boundary is the same explicit UTC instant the rest of the module uses,
-// independent of the DB session's timezone.
+// Idempotency stays keyed on the UTC calendar day (independent of the rolling
+// count window) so the digest sends once per day. dayStart is passed in rather
+// than DATE_TRUNC('day', NOW()) so it is independent of the DB session timezone.
 async function alreadyRanToday(userId: string, dayStart: Date): Promise<boolean> {
   const [row] = await db
     .select({ n: sql<number>`COUNT(*)::int` })
@@ -213,10 +224,10 @@ export interface EveningDigestResult {
 export async function runEveningDigestForUser(userId: string): Promise<EveningDigestResult> {
   try {
     const date = todayIso()
-    const start = new Date(`${date}T00:00:00.000Z`)
-    const end = new Date(start.getTime() + DAY_MS)
+    const dayStart = new Date(`${date}T00:00:00.000Z`)
 
-    if (await alreadyRanToday(userId, start)) {
+    if (await alreadyRanToday(userId, dayStart)) {
+      await writeCronSuccessTrace(userId, { cronName: 'digest', outcome: 'skipped', skipReason: 'already ran today' })
       return { status: 'skipped', reason: 'already ran today' }
     }
 
@@ -225,7 +236,7 @@ export async function runEveningDigestForUser(userId: string): Promise<EveningDi
     // whole night.
     let counts: DigestCounts | null = null
     try {
-      counts = await gatherDigestCounts(userId, { start, end })
+      counts = await gatherDigestCounts(userId, digestWindow(new Date()))
     } catch (err) {
       await writeCronFailureTrace(userId, { cronName: 'digest', reason: 'gather_failed', error: err })
     }
@@ -237,6 +248,8 @@ export async function runEveningDigestForUser(userId: string): Promise<EveningDi
       message = buildMinimalDigest(date)
       sentFallback = true
     } else {
+      let finishReason: string | undefined
+      let rawText: string | undefined
       try {
         const { provider } = await getProviderForTask(userId, { taskType: 'digest' })
         const response = await provider.ask({
@@ -245,8 +258,14 @@ export async function runEveningDigestForUser(userId: string): Promise<EveningDi
           cacheSystem: true,
           maxTokens: 1500,
         })
+        finishReason = response.finishReason
         const text = response.text.trim()
+        rawText = text
         if (!text) throw new Error('digest: empty response from provider')
+        if (finishReason !== 'stop') throw new Error(`digest: finishReason=${finishReason}`)
+        if (text.length > MAX_DIGEST_CHARS || JUNK_OUTPUT_RE.test(text)) {
+          throw new Error('digest: output rejected by guard')
+        }
         message = text
       } catch (err) {
         message = buildDeterministicDigest(counts, date)
@@ -257,7 +276,13 @@ export async function runEveningDigestForUser(userId: string): Promise<EveningDi
         // matching writeCronFailureTrace's "expected skip, not a failure" contract.
         const benign = err instanceof AiCredentialMissingError || err instanceof AiCredentialDecryptError
         if (!benign) {
-          await writeCronFailureTrace(userId, { cronName: 'digest', reason: 'model_call_failed', error: err })
+          await writeCronFailureTrace(userId, {
+            cronName: 'digest',
+            reason: 'model_call_failed',
+            error: err,
+            ...(finishReason !== undefined ? { finishReason } : {}),
+            ...(rawText ? { rawExcerpt: rawText.slice(0, 500) } : {}),
+          })
         }
       }
     }
@@ -286,6 +311,7 @@ export async function runEveningDigestForUser(userId: string): Promise<EveningDi
       return { status: 'blocked', date }
     }
 
+    await writeCronSuccessTrace(userId, { cronName: 'digest' })
     return { status: sentFallback ? 'sent_fallback' : 'sent', date }
   } catch (err) {
     await writeCronFailureTrace(userId, { cronName: 'digest', reason: 'uncaught_exception', error: err })

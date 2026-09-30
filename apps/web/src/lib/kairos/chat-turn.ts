@@ -193,6 +193,34 @@ async function classifyAskResolution(
   }
 }
 
+export const CHAT_CUT_SHORT_MARKER = '(cut short)'
+export const CHAT_CUT_SHORT_FALLBACK =
+  'I got cut off before I could finish a coherent reply. Ask again, or narrow the question.'
+const MIN_SALVAGEABLE_CHARS = 80
+const SENTENCE_END_RE = /[.!?\u2026]["')\]*_]*(?=\s|$)/g
+
+// Longest prefix (≤ maxChars) ending on a paragraph break or sentence end, with
+// any unterminated code fence closed. Null when nothing coherent survives.
+export function trimToCompleteBoundary(text: string, maxChars = text.length): string | null {
+  const window = text.slice(0, maxChars)
+  let cut = window.lastIndexOf('\n\n')
+  for (const m of window.matchAll(SENTENCE_END_RE)) cut = Math.max(cut, m.index + m[0].length)
+  if (cut < MIN_SALVAGEABLE_CHARS) return null
+  const trimmed = window.slice(0, cut).trimEnd()
+  const fences = trimmed.match(/```/g)?.length ?? 0
+  return fences % 2 === 1 ? `${trimmed}\n\`\`\`` : trimmed
+}
+
+// A non-'stop' finish (usually 'length': the output cap hit mid-thought) means
+// the tail is unfinished and possibly runaway text (27/09 digest incident).
+// Keep the coherent prefix and say it was cut short; if none, admit it plainly.
+// Undefined finishReason (deadline fallback, providers that omit it) passes.
+export function guardChatReply(text: string, finishReason: string | undefined): string {
+  if (finishReason === undefined || finishReason === 'stop') return text
+  const trimmed = trimToCompleteBoundary(text)
+  return trimmed ? `${trimmed}\n\n${CHAT_CUT_SHORT_MARKER}` : CHAT_CUT_SHORT_FALLBACK
+}
+
 export type KairosChatTurnResult =
   | { ok: true; threadId: string; userSeq: number; assistantSeq: number; assistantContent: string; model: string | null }
   // `threadId` is present on AI-failure cases (no_credential/ai_empty/ai_failed):
@@ -235,8 +263,16 @@ async function callAssistant(
           messages: systemMessages,
           maxOutputTokens: 2000,
         })
-    const text = response.text.trim()
-    if (!text) return { error: 'empty' }
+    const raw = response.text.trim()
+    if (!raw) return { error: 'empty' }
+    const text = guardChatReply(raw, response.finishReason)
+    if (text !== raw) {
+      console.warn('[kairos-chat] reply did not finish cleanly, trimmed', {
+        finishReason: response.finishReason,
+        rawChars: raw.length,
+        keptChars: text.length,
+      })
+    }
     const askResolution = pendingAsk
       ? await classifyAskResolution(provider, pendingAsk, userBody)
       : undefined
@@ -389,11 +425,19 @@ export async function runAssistantTurn(
   if (!asstAppend.ok) return { ok: false, reason: 'thread_not_found' }
 
   if (pendingAskContext && reply.askResolution?.answersPending) {
-    const answer = reply.askResolution.distilledAnswer ?? userBody
+    const pending = pendingAskContext.pending
+    // A card_notes answer is parsed line-by-line onto the asked cards
+    // ("1. …", "2. …"); the classifier's distilled prose would flatten those
+    // numbers and silently drop the write-back. Hand over the operator's raw
+    // text for that kind; every other ask keeps the distilled answer.
+    const isCardNotesAsk = pending.askMine?.kind === 'card_notes' || !!pending.cardNotes
+    const answer = isCardNotesAsk
+      ? userBody
+      : reply.askResolution.distilledAnswer ?? userBody
     try {
       const resolution = await answerKairosAsk(
         userId,
-        pendingAskContext.pending.id,
+        pending.id,
         answer,
       )
       if ('error' in resolution && resolution.error === 'dominion_not_found') {

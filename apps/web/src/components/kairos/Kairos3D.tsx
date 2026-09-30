@@ -3,15 +3,18 @@
 import { useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
-import * as THREE from 'three'
 import R3fForceGraph from 'r3f-forcegraph'
 import type { GraphNode, GraphEdge } from '@/lib/data/memories'
-import { edgeColor, isAutoEdge, nodeHue, type ColorMode } from './nodeColor'
+import { edgeColor, type ColorMode } from './nodeColor'
 import { effectiveConfidence } from '@/lib/kairos/confidence'
 import { SUN_DIR } from './scene/params'
 import { Backdrop } from './scene/Backdrop'
 import { PostFX } from './scene/PostFX'
-import { PlanetCloud, type SceneNode } from './scene/PlanetCloud'
+import type { SceneNode } from './scene/PlanetCloud'
+import { buildGalaxyBuffers } from './galaxy/buffers'
+import { GalaxyEdges } from './galaxy/GalaxyEdges'
+import { GalaxyOrbs } from './galaxy/GalaxyOrbs'
+import { GalaxyLabels } from './galaxy/GalaxyLabels'
 import { useKairosStore } from '@/stores/kairosStore'
 import { SKYBOX_BY_ID, type SkyboxId } from '@/components/skybox/skyboxes'
 
@@ -34,8 +37,11 @@ export function Kairos3D({ nodes, edges, selectedId, onSelect, colorMode = 'domi
   // Scene data is intentionally NOT keyed on colorMode — that would rebuild
   // the node array on every toggle and force-graph would restart the
   // simulation, jumping all planets back to seed positions. Colour is derived
-  // per-frame from `colorMode` in PlanetCloud instead.
+  // per-instance from `colorMode` in GalaxyOrbs instead.
   const sceneData = useMemo(() => buildSceneData(nodes, edges), [nodes, edges])
+  // Instance / edge buffers are built once per data load; per-frame work only
+  // rewrites positions into them. Draw objects stay constant w.r.t. node count.
+  const buffers = useMemo(() => buildGalaxyBuffers(sceneData.nodes, sceneData.links), [sceneData])
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const labelMode = useKairosStore((s) => s.labelMode)
 
@@ -64,16 +70,18 @@ export function Kairos3D({ nodes, edges, selectedId, onSelect, colorMode = 'domi
 
       <Backdrop url={SKYBOX_BY_ID[skybox].url} />
 
-      <EdgeGraph data={sceneData} />
-      <PlanetCloud
+      <ForceLayout data={sceneData} />
+      <GalaxyEdges nodes={sceneData.nodes} buffers={buffers} />
+      <GalaxyOrbs
         nodes={sceneData.nodes}
+        buffers={buffers}
+        colorMode={colorMode}
         selectedId={selectedId}
         hoveredId={hoveredId}
-        colorMode={colorMode}
-        labelMode={labelMode}
         onSelect={onSelect}
         onHover={setHoveredId}
       />
+      <GalaxyLabels nodes={sceneData.nodes} selectedId={selectedId} hoveredId={hoveredId} labelMode={labelMode} />
 
       <OrbitControls
         enablePan={false}
@@ -98,50 +106,23 @@ export function Kairos3D({ nodes, edges, selectedId, onSelect, colorMode = 'domi
   )
 }
 
-// Force-graph is responsible only for edges + the force simulation that writes
-// x/y/z back into our node objects. nodeThreeObject returns an empty Object3D
-// so the graph doesn't render its own spheres — PlanetCloud renders the visual
-// planets in JSX and reads the simulated positions each frame.
-function EdgeGraph({ data }: { data: { nodes: SceneNode[]; links: SceneLink[] } }) {
+// Force-graph now runs ONLY the d3 force simulation that writes x/y/z back
+// into our node objects. Node and link visibility are off, so it creates zero
+// THREE objects (previously: one Object3D per node, one cylinder/tube mesh per
+// edge and one sphere mesh per directional particle — tens of thousands of
+// draw calls at full load). Rendering lives in galaxy/: instanced orbs,
+// batched fat-line edges per style (tension still curved at 0.35, supersedes
+// 1.4, auto 1.0, semantic 2.8) and one instanced particle batch.
+function ForceLayout({ data }: { data: { nodes: SceneNode[]; links: SceneLink[] } }) {
   const fgRef = useRef<{ tickFrame: () => void } | undefined>(undefined)
   useFrame(() => fgRef.current?.tickFrame())
 
   return (
     <R3fForceGraph
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={fgRef as any}
       graphData={data}
-      nodeRelSize={4}
-      nodeThreeObject={() => new THREE.Object3D()}
-      nodeThreeObjectExtend={false}
-      linkColor={(raw: unknown) => (raw as SceneLink)._color}
-      linkOpacity={0.85}
-      linkWidth={(raw: unknown) => {
-        const t = (raw as SceneLink).type
-        // Tension-arc: a taut, prominent line between two conflicting beliefs.
-        if (t === 'tension') return 2.4
-        // Ghost-thread: a thin whisper of lineage — thinner than a live
-        // semantic edge (2.8), a touch above the faint auto-links (1.0).
-        if (t === 'supersedes') return 1.4
-        return isAutoEdge(t) ? 1.0 : 2.8
-      }}
-      // Tension-arc bows the line between two conflicting beliefs into a
-      // visible arc — a straight red line reads as any other edge; a curved one
-      // reads as strain. Everything else stays straight.
-      linkCurvature={(raw: unknown) => ((raw as SceneLink).type === 'tension' ? 0.35 : 0)}
-      linkDirectionalParticles={(raw: unknown) => {
-        const t = (raw as SceneLink).type
-        if (t === 'supports') return 4
-        if (t === 'relates' || t === 'refers_to') return 2
-        // Ghost-thread: particles drift old→new, the belief flowing forward
-        // in time toward the version that replaced it.
-        if (t === 'supersedes') return 3
-        if (t === 'auto-repo') return 2
-        if (t === 'auto-day') return 1
-        return 0
-      }}
-      linkDirectionalParticleSpeed={0.006}
-      linkDirectionalParticleWidth={1.7}
+      nodeVisibility={false}
+      linkVisibility={false}
       d3AlphaDecay={0.025}
       d3VelocityDecay={0.45}
       warmupTicks={150}

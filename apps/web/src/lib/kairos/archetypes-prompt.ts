@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { neutraliseFences, extractJsonBlock as _extractJsonBlock } from './_prompt-utils'
+import { fedIdListSchema, makeFedIdResolver } from './introspection-prompt'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (B1) — pure helpers for the Archetype Generator.
@@ -21,12 +22,26 @@ export const archetypeOutSchema = z.object({
     // we'd rather error and let tomorrow's run produce real content.
     body: z.string().trim().min(100).max(2000),
     themes: z.array(z.string().trim().min(1).max(40)).max(8).default([]),
-    citedMemoryIds: z.array(z.string().uuid()).max(20).default([]),
+    // Shape-only: ids are resolved against the fed substrate by
+    // groundArchetypeCitations, so one drifted id no longer kills the night.
+    citedMemoryIds: fedIdListSchema(20).default([]),
   })).min(1).max(10),
   shifts: z.array(z.string().trim().min(1).max(200)).max(5).default([]),
 })
 
 export type ArchetypeOutput = z.infer<typeof archetypeOutSchema>
+
+// Rewrite each archetype's citations to canonical fed ids, dropping unknowns.
+export function groundArchetypeCitations(out: ArchetypeOutput, validIds: Iterable<string>): ArchetypeOutput {
+  const resolve = makeFedIdResolver(validIds)
+  return {
+    ...out,
+    archetypes: out.archetypes.map((a) => ({
+      ...a,
+      citedMemoryIds: [...new Set(a.citedMemoryIds.map(resolve).filter((id): id is string => id !== null))],
+    })),
+  }
+}
 
 export interface SubstrateRow {
   id: string

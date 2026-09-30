@@ -6,8 +6,9 @@
 // does — it jointly scores the pair — so a rerank over the fused top-N is the
 // single highest precision-per-effort win once recall is wide (and slice-1
 // global recall made it wide). This runs AFTER fusion + confidence weighting,
-// so those signals still decide WHICH rows reach the pool; rerank only sharpens
-// the final order by true query↔document relevance.
+// so those signals still decide WHICH rows reach the pool; the caller
+// (retrieve.ts) then blends the relevance score with the same recency and
+// confidence multipliers so rerank cannot silently discard the time signal.
 //
 // Same server-managed VOYAGE_API_KEY as embeddings (app-owned index, NOT the
 // per-user BYOK chat keys). No key → no-op: callers keep their prior order, so
@@ -46,6 +47,25 @@ export async function rerank<T>(
   toText: (item: T) => string,
   opts: { topK?: number } = {},
 ): Promise<T[] | null> {
+  const scored = await rerankScored(query, items, toText, opts)
+  return scored ? scored.map((s) => s.item) : null
+}
+
+export interface RerankScored<T> {
+  item: T
+  relevance: number
+}
+
+// Same contract as `rerank`, but keeps Voyage's relevance_score per item so a
+// caller can blend it with its own signals (recency / confidence) instead of
+// letting pure relevance decide the final order. Sorted by descending
+// relevance; null on no key / empty input / API error.
+export async function rerankScored<T>(
+  query: string,
+  items: T[],
+  toText: (item: T) => string,
+  opts: { topK?: number } = {},
+): Promise<RerankScored<T>[] | null> {
   const key = resolveRerankKey()
   if (!key || items.length === 0 || query.trim().length === 0) return null
 
@@ -75,8 +95,8 @@ export async function rerank<T>(
     return json.data
       .slice()
       .sort((a, b) => b.relevance_score - a.relevance_score)
-      .map((d) => items[d.index])
-      .filter((it): it is T => it != null)
+      .map((d) => ({ item: items[d.index], relevance: Number(d.relevance_score) || 0 }))
+      .filter((s): s is RerankScored<T> => s.item != null)
   } catch (err) {
     console.warn(
       '[rerank] voyage rerank failed, keeping prior order:',

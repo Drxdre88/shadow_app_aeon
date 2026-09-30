@@ -23,10 +23,17 @@ export type KairosAskMeta = {
 
 export type KairosAskMineMeta = {
   date: string
-  kind: 'decision' | 'calibration' | 'doctrine' | 'retrospective' | 'revival' | 'premortem' | 'values'
+  kind: 'decision' | 'calibration' | 'doctrine' | 'retrospective' | 'revival' | 'premortem' | 'values' | 'card_notes'
   sourceMemoryIds: string[]
   leverage: number
   rationale?: string
+}
+
+/** Thin-card nudge payload: which cards the numbered answer lines belong to. */
+export type KairosCardNotesMeta = {
+  date: string
+  boardDayMemoryIds: string[]
+  cards: Array<{ taskId?: string; vaultId?: string; projectId: string | null; title: string }>
 }
 
 export type KairosAskSourceSnippet = {
@@ -43,6 +50,7 @@ export type KairosAskRow = {
   createdAt: Date
   kairosAsk: KairosAskMeta
   askMine?: KairosAskMineMeta
+  cardNotes?: KairosCardNotesMeta
   expiresAt?: Date | null
 }
 
@@ -80,6 +88,7 @@ function parseAskRow(
     createdAt: row.createdAt,
     kairosAsk,
     askMine: metadata.askMine as KairosAskMineMeta | undefined,
+    ...(metadata.cardNotes ? { cardNotes: metadata.cardNotes as KairosCardNotesMeta } : {}),
     expiresAt,
   }
 }
@@ -345,6 +354,7 @@ export async function createKairosAskMemory(
     askedAt: string
     expiresAt?: string
     askMine?: KairosAskMineMeta
+    cardNotes?: KairosCardNotesMeta
     externalId?: string
   },
 ): Promise<string> {
@@ -386,6 +396,7 @@ export async function createKairosAskMemory(
         kairosAsk,
         kairosAskStatus: 'pending',
         ...(opts.askMine ? { askMine: opts.askMine } : {}),
+        ...(opts.cardNotes ? { cardNotes: opts.cardNotes } : {}),
         ...(opts.expiresAt ? { expiresAt: opts.expiresAt } : {}),
         ...(opts.externalId ? { externalId: opts.externalId } : {}),
       },

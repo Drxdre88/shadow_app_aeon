@@ -1,7 +1,6 @@
 import { fetchAetherInputs, persistAether } from '@/lib/kairos/aether'
-import { aetherOutSchema } from '@/lib/kairos/aether-prompt'
+import { aetherGenSchema, groundAetherPayload, type AetherGenPayload } from '@/lib/kairos/aether-prompt'
 import { todayIso } from '@/lib/kairos/_prompt-utils'
-import type { AetherPayload } from '@/lib/kairos/aether-types'
 import type { RegisterFn } from './types'
 import { getUserId, ok, fail } from './types'
 
@@ -47,26 +46,19 @@ export const registerSynthesisTools: RegisterFn = (server) => {
   server.tool(
     'commit_aether',
     'Persist a synthesised Aether — the single living self-model across all Dominions. YOU (Claude Code) supply the structured payload built from prepare_aether_context; the server only stores it (no LLM, no BYOK), forcing type/streamClass=\'aether\' and archiving the prior Aether. Every thought MUST cite real sourceMemoryIds (anti-drift) — ungrounded thoughts are dropped. Call prepare_aether_context first.',
-    { payload: aetherOutSchema.describe('The synthesised AetherPayload: coreNarrative (global self-model prose), thoughts[] (each grounded in ≥1 real memory id), tensions[] (cross-Dominion), shifts[] (what changed vs the prior Aether).') },
+    { payload: aetherGenSchema.describe('The synthesised AetherPayload: coreNarrative (global self-model prose), thoughts[] (each grounded in ≥1 real memory id; `id` may be a short label like "t1" — the server mints the stored UUID), tensions[] (cross-Dominion; aId/bId reference thought ids from this payload), shifts[] (what changed vs the prior Aether).') },
     { title: 'Commit Aether', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
-      const payload = args.payload as AetherPayload
-      const grounded = payload.thoughts.filter((t) => t.sourceMemoryIds.length > 0)
-      if (grounded.length === 0) {
-        return fail('commit_aether: no grounded thoughts — every thought needs at least one real sourceMemoryId.')
+      const payload = groundAetherPayload(args.payload as AetherGenPayload)
+      if (payload.thoughts.length === 0) {
+        return fail('commit_aether: no grounded thoughts — every thought needs at least one real sourceMemoryId (memory UUID).')
       }
       const today = todayIso()
       const runId = `aether:claude_code:${uid}:${today}`
-      const { aetherMemoryId, archivedPrior } = await persistAether(
-        uid,
-        { ...payload, thoughts: grounded },
-        runId,
-        today,
-        'claude',
-      )
+      const { aetherMemoryId, archivedPrior } = await persistAether(uid, payload, runId, today, 'claude')
       if (!aetherMemoryId) return fail('commit_aether: persist failed.')
-      return ok({ aetherMemoryId, archivedPrior, thoughtsCommitted: grounded.length, today })
+      return ok({ aetherMemoryId, archivedPrior, thoughtsCommitted: payload.thoughts.length, today })
     },
   )
 }

@@ -8,11 +8,12 @@
 // block, sanitized titles, "data not instructions" framing, non-fatal on
 // error (returns null, never throws).
 
-import { eq, sql } from 'drizzle-orm'
+import { eq, notInArray, sql } from 'drizzle-orm'
 import { memories } from '@/lib/db/schema'
 import { listRecentMemories, type RecentMemoryRow } from '@/lib/data/memories'
 import { countTasksCompletedBetween, countTasksCreatedBetween } from '@/lib/data/board-signals'
 import { neutraliseFences } from './_prompt-utils'
+import { META_STREAM_CLASSES } from './streamClass'
 
 const DEFAULT_WINDOW_HOURS = 24
 const MIN_WINDOW_HOURS = 1
@@ -76,6 +77,10 @@ export async function fetchRecentActivityContext(
     const since = new Date(end.getTime() - hours * HOUR_MS)
     const window = { start: since, end }
 
+    // Machine meta-rows (cron traces, delta folds, board snapshots) never
+    // count as recent activity — every cron now writes a daily trace row.
+    const signalOnly = notInArray(memories.streamClass, [...META_STREAM_CLASSES])
+
     const [
       sessionRows,
       reflectionRows,
@@ -87,10 +92,11 @@ export async function fetchRecentActivityContext(
       listRecentMemories(userId, [
         eq(memories.type, 'session_summary'),
         sql`(${memories.source} in ('claude', 'codex', 'copilot') or (${memories.source} = 'hook' and ${memories.sourceMetadata}->>'client' in ('codex', 'copilot')))`,
+        signalOnly,
       ], window, CATEGORY_FETCH_LIMIT),
       listRecentMemories(userId, [eq(memories.type, 'reflection'), eq(memories.streamClass, 'reflection')], window, CATEGORY_FETCH_LIMIT),
-      listRecentMemories(userId, [eq(memories.type, 'inbound'), sql`${memories.sourceMetadata}->>'introspection' = 'true'`], window, CATEGORY_FETCH_LIMIT),
-      listRecentMemories(userId, [eq(memories.type, 'advisory'), sql`${memories.sourceMetadata} ? 'kairosAsk'`], window, CATEGORY_FETCH_LIMIT),
+      listRecentMemories(userId, [eq(memories.type, 'inbound'), sql`${memories.sourceMetadata}->>'introspection' = 'true'`, signalOnly], window, CATEGORY_FETCH_LIMIT),
+      listRecentMemories(userId, [eq(memories.type, 'advisory'), sql`${memories.sourceMetadata} ? 'kairosAsk'`, signalOnly], window, CATEGORY_FETCH_LIMIT),
       countTasksCompletedBetween(userId, since, end),
       countTasksCreatedBetween(userId, since, end),
     ])
@@ -133,7 +139,7 @@ function formatItem(item: RecentActivityItem): string {
   return `- ${sanitizeTitle(item.title)} _(${item.streamClass})_ — ${time} UTC`
 }
 
-export function renderRecentActivitySection(ctx: RecentActivityContext): string {
+function buildSection(ctx: RecentActivityContext, categories: RecentActivityCategory[], picked: string[][]): string {
   const lines: string[] = [
     `## LAST ${ctx.windowHours}H (deterministic — fresher than retrieval)`,
     '',
@@ -142,12 +148,11 @@ export function renderRecentActivitySection(ctx: RecentActivityContext): string 
     'BEGIN RECENT ACTIVITY',
   ]
 
-  for (const category of [ctx.sessionSummaries, ctx.reflections, ctx.introspectionProposals, ctx.asks]) {
-    if (category.count === 0) continue
+  categories.forEach((category, i) => {
     lines.push(`### ${category.label} (${category.count})`)
-    for (const item of category.items) lines.push(formatItem(item))
+    lines.push(...picked[i])
     lines.push('')
-  }
+  })
 
   if (ctx.boardTasksCompleted > 0 || ctx.boardTasksCreated > 0) {
     lines.push('### Board activity')
@@ -156,8 +161,36 @@ export function renderRecentActivitySection(ctx: RecentActivityContext): string 
   }
 
   lines.push('END RECENT ACTIVITY')
-  const out = lines.join('\n').trimEnd()
+  return lines.join('\n').trimEnd()
+}
 
+// Fair allocation within the char cap: every non-empty category heading (with
+// its count) and the board line are always rendered; item lines are then
+// dealt round-robin across categories so a burst of coding sessions can no
+// longer truncate reflections and board activity off the end.
+export function renderRecentActivitySection(ctx: RecentActivityContext): string {
+  const categories = [ctx.reflections, ctx.sessionSummaries, ctx.introspectionProposals, ctx.asks]
+    .filter((c) => c.count > 0)
+  const picked: string[][] = categories.map(() => [])
+
+  let budget = MAX_SECTION_CHARS - buildSection(ctx, categories, picked).length
+  const blocked = new Set<number>()
+  for (let round = 0; round < TOP_TITLES_PER_CATEGORY && blocked.size < categories.length; round++) {
+    categories.forEach((category, i) => {
+      if (blocked.has(i)) return
+      const item = category.items[round]
+      if (!item) { blocked.add(i); return }
+      const line = formatItem(item)
+      // +1 for the joining newline the extra line adds.
+      if (line.length + 1 > budget) { blocked.add(i); return }
+      picked[i].push(line)
+      budget -= line.length + 1
+    })
+  }
+
+  const out = buildSection(ctx, categories, picked)
+  // Safety net only — the allocation above keeps us under the cap unless the
+  // fixed scaffold alone overflows it.
   return out.length > MAX_SECTION_CHARS
     ? `${out.slice(0, MAX_SECTION_CHARS).trimEnd()}\n…\nEND RECENT ACTIVITY`
     : out

@@ -3,7 +3,9 @@ import { projects, boardTasks, activityEvents, memories } from '@/lib/db/schema'
 import { and, eq, isNull, gte, lt, desc, sql } from 'drizzle-orm'
 import { captureMemory } from '@/lib/data/memories'
 import { SNAPSHOT_TTL_DAYS, ADVISORY_TTL_DAYS, cutoffDate } from './lifecycle'
-import { writeCronFailureTrace } from './cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
+import { runBoardFeedForProject, type BoardFeedResult } from './board-feed'
+import { parseKairosFeed } from './board-feed-render'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (A5) — nightly project snapshot.
@@ -29,6 +31,8 @@ export interface ProjectSnapshotResult {
   projectName: string
   status: 'created' | 'existing' | 'skipped'
   reason?: string
+  /** Board feed page outcome — only for projects with settings.kairosFeed set. */
+  feed?: BoardFeedResult
 }
 
 async function snapshotProject(
@@ -118,32 +122,64 @@ export async function runProjectSnapshotsForUser(userId: string): Promise<Projec
       id: projects.id,
       name: projects.name,
       dominionId: projects.dominionId,
+      settings: projects.settings,
     })
     .from(projects)
     .where(eq(projects.userId, userId))
 
-  if (userProjects.length === 0) return []
+  if (userProjects.length === 0) {
+    await writeCronSuccessTrace(userId, { cronName: 'project-snapshot', outcome: 'skipped', skipReason: 'no projects' })
+    return []
+  }
 
   const bounds = todayBoundsUtc()
   const results: ProjectSnapshotResult[] = []
+  let failed = false
+  const now = new Date()
   for (const p of userProjects) {
+    let result: ProjectSnapshotResult
     try {
-      results.push(await snapshotProject(userId, p, bounds))
+      result = await snapshotProject(userId, p, bounds)
     } catch (err) {
+      failed = true
       await writeCronFailureTrace(userId, {
         cronName: 'project-snapshot',
         dominionId: p.dominionId,
         reason: 'uncaught_exception',
         error: err,
       })
-      results.push({
+      result = {
         projectId: p.id,
         projectName: p.name,
         status: 'skipped',
         reason: err instanceof Error ? err.message : String(err),
-      })
+      }
     }
+    // Board feed runs independently of the snapshot outcome (a dormant or
+    // failed snapshot must not cost the operator his board page).
+    const feedMode = parseKairosFeed(p.settings)
+    if (feedMode) {
+      try {
+        result.feed = await runBoardFeedForProject(userId, p, feedMode, now)
+      } catch (err) {
+        failed = true
+        await writeCronFailureTrace(userId, {
+          cronName: 'project-snapshot',
+          dominionId: p.dominionId,
+          reason: 'board_feed_failed',
+          error: err,
+        })
+        result.feed = {
+          mode: feedMode,
+          status: 'skipped',
+          reason: err instanceof Error ? err.message : String(err),
+        }
+      }
+    }
+    results.push(result)
   }
+  // Liveness for the health scorecard; per-project failures already traced.
+  if (!failed) await writeCronSuccessTrace(userId, { cronName: 'project-snapshot' })
   return results
 }
 

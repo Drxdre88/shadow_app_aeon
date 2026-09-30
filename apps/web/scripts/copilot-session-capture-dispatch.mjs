@@ -5,6 +5,11 @@ import { fileURLToPath } from 'node:url'
 import { normalizeCopilotHook } from './session-capture-dispatch.mjs'
 import { enqueueAndDrain } from './session-capture-queue.mjs'
 
+// Loaded dynamically so a broken enrichment module can never cost the capture.
+const withDispatchContext = await import('./session-record.mjs')
+  .then((m) => m.withDispatchContext)
+  .catch(() => (payload) => payload)
+
 try {
   const raw = readFileSync(0, 'utf8')
   const payload = normalizeCopilotHook(raw)
@@ -22,7 +27,7 @@ try {
     process.exit(0)
   }
 
-  enqueueAndDrain(payload)
+  enqueueAndDrain(withDispatchContext(payload))
 } catch {
   process.exit(0)
 }

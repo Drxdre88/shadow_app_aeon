@@ -48,8 +48,11 @@ and answers `429 throttled`, which is a normal silent outcome, not an error.
 ## Phase 1.5: Conversation state (initiative engine, doc 30)
 
 The speak route now enforces a no-stacking governor server-side: if Kairos's last
-outbound message is still awaiting the operator's reply (< 48h old, no reply seen), any
-speak attempt answers `429 { error: 'awaiting_reply' }`. The tick stays stateless — do
+outbound **question** (`kind: 'question'`) is still awaiting the operator's reply (< 48h old,
+no reply seen), any speak attempt answers `429 { error: 'awaiting_reply' }`. Routine
+`notify` speaks, ops alerts and digests never arm this gate (fixed 30/09 — before that
+every notify blocked asks for 48h). A reply on Telegram, a kairos-chat turn, answering
+an ask in the web inbox, or dismissing a Kairos message all clear it. The tick stays stateless — do
 NOT try to read conversation state yourself; just treat that 429 as a normal silent
 outcome and report `tick — silent: awaiting operator reply`. The route also adapts the
 gap/cap throttle to the operator's 7-day reply rate — active repliers get a faster

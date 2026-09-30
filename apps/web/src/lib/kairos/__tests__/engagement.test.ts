@@ -42,9 +42,9 @@ function hoursAgo(hours: number) {
   return new Date(NOW.getTime() - hours * 60 * 60 * 1000)
 }
 
-function outbound(hours: number, status = 'pending', repliedAfterHours?: number) {
+function outbound(hours: number, status = 'pending', repliedAfterHours?: number, kind = 'question') {
   const createdAt = hoursAgo(hours)
-  const sourceMetadata: Record<string, unknown> = { kairosSpeak: true, status }
+  const sourceMetadata: Record<string, unknown> = { kairosSpeak: true, status, kind }
   if (repliedAfterHours !== undefined) {
     sourceMetadata.repliedAt = new Date(
       createdAt.getTime() + repliedAfterHours * 60 * 60 * 1000,
@@ -151,18 +151,49 @@ describe('getConversationState', () => {
     expect(state.replyRate7d).toBe(0.5)
   })
 
-  it('excludes both opsAlert:true and digest:true rows from lastOutbound/recentOutbounds at the query level', async () => {
+  it('gates only on questions: the lastOutbound query filters kind=question, the cadence query does not', async () => {
     selectQueue.push([])
     selectQueue.push([])
 
     await getConversationState(USER)
 
     const predicates = sqlCalls.map((strings) => Array.from(strings).join(' '))
+    const kindQuestion = predicates.filter((text) => text.includes("->>'kind' = 'question'"))
     const opsAlertExclusions = predicates.filter((text) => text.includes("->>'opsAlert'") && text.includes('IS DISTINCT FROM'))
     const digestExclusions = predicates.filter((text) => text.includes("->>'digest'") && text.includes('IS DISTINCT FROM'))
 
-    // Both queries (lastOutboundRow + recentOutbounds) must carry both exclusions.
-    expect(opsAlertExclusions.length).toBe(2)
-    expect(digestExclusions.length).toBe(2)
+    // Gate query carries the kind predicate (which subsumes opsAlert/digest);
+    // the cadence query keeps its opsAlert/digest exclusions and no kind filter.
+    expect(kindQuestion.length).toBe(1)
+    expect(opsAlertExclusions.length).toBe(1)
+    expect(digestExclusions.length).toBe(1)
+  })
+
+  it('does not arm the gate on notify-only history while still counting it for cadence', async () => {
+    // The gate query filters to kind=question at the DB, so notify-only history
+    // yields no lastOutbound row; the cadence query still returns the notifies.
+    const notifies = [outbound(2, 'pending', undefined, 'notify'), outbound(10, 'pending', undefined, 'notify')]
+    selectQueue.push([])
+    selectQueue.push(notifies)
+    selectQueue.push([])
+
+    const state = await getConversationState(USER)
+
+    expect(state.lastOutbound).toBeNull()
+    expect(state.awaitingReply).toBe(false)
+    expect(state.replyRate7d).toBe(0)
+  })
+
+  it('arms the gate on an unanswered recent question behind newer notifies', async () => {
+    const question = outbound(20)
+    selectQueue.push([question])
+    selectQueue.push([outbound(2, 'pending', undefined, 'notify'), question])
+    selectQueue.push([])
+    selectQueue.push([])
+
+    const state = await getConversationState(USER)
+
+    expect(state.lastOutbound?.id).toBe(question.id)
+    expect(state.awaitingReply).toBe(true)
   })
 })

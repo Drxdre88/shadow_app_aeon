@@ -10,8 +10,12 @@ import {
   markKairosAskAnswered,
   archiveOrphanAnswerMemory,
   type KairosAskRow,
+  type KairosCardNotesMeta,
 } from '@/lib/data/ask'
-import { captureReflection } from '@/lib/data/memories'
+import { captureReflection, markKairosSpeaksReplied } from '@/lib/data/memories'
+import { appendTaskDescription, findTaskById } from '@/lib/data/tasks'
+import { updateVaultDescription } from '@/lib/data/vault'
+import { verifyProjectAccess } from '@/lib/data/projects'
 import { selectKairosQuestion } from './ask-select'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -131,6 +135,7 @@ async function writeUntetheredAnswer(
   userId: string,
   answerText: string,
   questionMemoryId: string,
+  extraMetadata: Record<string, unknown> = {},
 ): Promise<string> {
   const title = answerText.split('\n')[0]?.slice(0, 80).trim() || 'Kairos Ask response'
   const [row] = await db
@@ -144,12 +149,134 @@ async function writeUntetheredAnswer(
       type: 'reflection',
       streamClass: 'reflection',
       source: 'manual',
-      sourceMetadata: { kairosReflect: true, kairosAskResponseTo: questionMemoryId },
+      sourceMetadata: { kairosReflect: true, kairosAskResponseTo: questionMemoryId, ...extraMetadata },
       tags: ['kairos-ask-answer'],
       pinned: false,
     })
     .returning({ id: memories.id })
   return row!.id
+}
+
+// ─── card_notes answers → notes written back onto the cards ──────────────
+
+type NoteCard = KairosCardNotesMeta['cards'][number]
+export type CardNote = { card: NoteCard; line: string }
+
+const NUMBERED_LINE = /^\s*\(?(\d{1,2})\s*[.):\-–—]\s*(.*)$/
+const BULLET_LINE = /^\s*[-*•]\s+(.+)$/
+const DESCRIPTION_MAX = 10_000
+const NOTE_LINE_MAX = 500
+
+function clipNote(line: string): string {
+  const flat = line.replace(/\s+/g, ' ').trim()
+  return flat.length <= NOTE_LINE_MAX ? flat : `${flat.slice(0, NOTE_LINE_MAX - 1).trimEnd()}…`
+}
+
+/**
+ * Map an operator's reply onto the asked cards. One card → the whole answer.
+ * Several → numbered lines ("1.", "1)", "1 -") by number, or plain bullets in
+ * order when their count matches. Anything else → [] (memory only).
+ */
+export function parseCardNotesAnswer(answerText: string, cards: NoteCard[]): CardNote[] {
+  const answer = answerText.trim()
+  if (!answer || cards.length === 0) return []
+  if (cards.length === 1) return [{ card: cards[0]!, line: clipNote(answer) }]
+
+  const byNumber = new Map<number, string[]>()
+  let current: number | null = null
+  for (const rawLine of answer.split('\n')) {
+    const line = rawLine.trim()
+    if (!line) continue
+    const numbered = NUMBERED_LINE.exec(line)
+    const index = numbered ? Number(numbered[1]) : NaN
+    if (numbered && index >= 1 && index <= cards.length) {
+      current = index
+      byNumber.set(index, [...(byNumber.get(index) ?? []), numbered[2]!.trim()].filter(Boolean))
+    } else if (current !== null) {
+      byNumber.get(current)!.push(line)
+    }
+  }
+  if (byNumber.size > 0) {
+    return [...byNumber.entries()]
+      .sort(([left], [right]) => left - right)
+      .flatMap(([index, parts]) => {
+        const line = clipNote(parts.join(' '))
+        return line ? [{ card: cards[index - 1]!, line }] : []
+      })
+  }
+
+  const bullets = answer.split('\n').flatMap((line) => {
+    const match = BULLET_LINE.exec(line.trim())
+    return match ? [match[1]!.trim()] : []
+  })
+  if (bullets.length === cards.length) {
+    return bullets.map((line, index) => ({ card: cards[index]!, line: clipNote(line) }))
+  }
+  return []
+}
+
+function ddmm(date: Date): string {
+  return `${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+export function appendCardNote(existing: string | null, line: string, at: Date): string {
+  const note = `Notes (via Kairos, ${ddmm(at)}): ${line}`
+  const base = (existing ?? '').trimEnd()
+  return base ? `${base}\n\n${note}` : note
+}
+
+/**
+ * Best-effort write-back: each note lands on its card's description via the
+ * data layer — live cards through appendTaskDescription (atomic append, bumps boardVersion +
+ * publishes), vaulted cards through updateVaultDescription. Both need edit
+ * access to the card's project. Never throws.
+ */
+export async function writeBackCardNotes(
+  userId: string,
+  notes: CardNote[],
+  at: Date = new Date(),
+): Promise<Array<{ taskId?: string; vaultId?: string; status: 'written' | 'memory_only' | 'skipped'; reason?: string }>> {
+  const outcomes: Array<{ taskId?: string; vaultId?: string; status: 'written' | 'memory_only' | 'skipped'; reason?: string }> = []
+  for (const { card, line } of notes) {
+    const ref = card.taskId ? { taskId: card.taskId } : { vaultId: card.vaultId }
+    if (!card.projectId || (!card.taskId && !card.vaultId)) {
+      outcomes.push({ ...ref, status: 'memory_only', reason: 'no_project' })
+      continue
+    }
+    try {
+      const access = await verifyProjectAccess(card.projectId, userId)
+      if (!access || access.role === 'viewer') {
+        outcomes.push({ ...ref, status: 'skipped', reason: 'no_edit_access' })
+        continue
+      }
+      if (!card.taskId) {
+        const result = await updateVaultDescription(card.vaultId!, card.projectId, (existing) => {
+          const description = appendCardNote(existing, line, at)
+          return description.length > DESCRIPTION_MAX ? null : description
+        })
+        if (result === 'written') outcomes.push({ ...ref, status: 'written' })
+        else if (result === 'not_found') outcomes.push({ ...ref, status: 'memory_only', reason: 'card_gone' })
+        else outcomes.push({ ...ref, status: 'skipped', reason: 'description_too_long' })
+        continue
+      }
+      const task = await findTaskById(card.taskId, card.projectId)
+      if (!task) {
+        outcomes.push({ ...ref, status: 'memory_only', reason: 'card_gone' })
+        continue
+      }
+      const note = appendCardNote(null, line, at)
+      const written = await appendTaskDescription(card.taskId, card.projectId, note, DESCRIPTION_MAX)
+      if (!written) {
+        outcomes.push({ ...ref, status: 'skipped', reason: 'description_too_long' })
+        continue
+      }
+      outcomes.push({ ...ref, status: 'written' })
+    } catch (err) {
+      console.error('[kairos-ask] card note write-back failed', { ...ref, err })
+      outcomes.push({ ...ref, status: 'skipped', reason: 'error' })
+    }
+  }
+  return outcomes
 }
 
 export async function answerKairosAsk(
@@ -165,10 +292,26 @@ export async function answerKairosAsk(
 
   const dominionId = dominionIdOverride ?? pending.kairosAsk.dominionId
 
+  const cardNotesMeta = pending.cardNotes
+  const cardNotes = cardNotesMeta ? parseCardNotesAnswer(answerText, cardNotesMeta.cards) : []
+  const extraMetadata: Record<string, unknown> = cardNotesMeta
+    ? {
+        kind: 'card_notes_answer',
+        taskIds: cardNotesMeta.cards.flatMap((card) => (card.taskId ? [card.taskId] : [])),
+        vaultIds: cardNotesMeta.cards.flatMap((card) => (card.vaultId ? [card.vaultId] : [])),
+        cardNotes: cardNotes.map(({ card, line }) => ({
+          ...(card.taskId ? { taskId: card.taskId } : {}),
+          ...(card.vaultId ? { vaultId: card.vaultId } : {}),
+          title: card.title,
+          line,
+        })),
+      }
+    : {}
+
   let answerMemoryId: string
 
   if (!dominionId) {
-    answerMemoryId = await writeUntetheredAnswer(userId, answerText, questionMemoryId)
+    answerMemoryId = await writeUntetheredAnswer(userId, answerText, questionMemoryId, extraMetadata)
   } else {
     const result = await captureReflection(userId, {
       dominionId,
@@ -177,7 +320,7 @@ export async function answerKairosAsk(
       summary: null,
       tags: ['kairos-ask-answer'],
       source: 'manual',
-      sourceMetadata: { kairosReflect: true, kairosAskResponseTo: questionMemoryId },
+      sourceMetadata: { kairosReflect: true, kairosAskResponseTo: questionMemoryId, ...extraMetadata },
     })
 
     if (!result.ok) {
@@ -191,6 +334,23 @@ export async function answerKairosAsk(
     // A concurrent turn answered first — drop our duplicate answer memory.
     await archiveOrphanAnswerMemory(userId, answerMemoryId)
     return { error: 'not_found' }
+  }
+  // An answer from any surface (web inbox, MCP, chat) is an operator reply:
+  // close pending speaks so the reply gate doesn't wait out 48h. Best-effort —
+  // the answer is already persisted and must not fail on the marker.
+  try {
+    await markKairosSpeaksReplied(userId, new Date())
+  } catch (err) {
+    console.error('[kairos-ask] failed to mark speaks replied', err)
+  }
+  // Thin-card nudge: file each line onto its card. Best-effort — the answer
+  // memory above already holds every line, so write-back never fails it.
+  if (cardNotes.length > 0) {
+    try {
+      await writeBackCardNotes(userId, cardNotes, new Date())
+    } catch (err) {
+      console.error('[kairos-ask] card notes write-back failed', err)
+    }
   }
   return { reflectionId: answerMemoryId }
 }

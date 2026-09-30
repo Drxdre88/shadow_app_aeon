@@ -208,6 +208,49 @@ describe('ask-aware assistant turns', () => {
     expect(providerAsk.mock.calls[1][0]).not.toHaveProperty('temperature')
   })
 
+  it('passes the raw reply (numbered lines intact) for a card_notes ask', async () => {
+    const rawReply = '1. prod deploy for the feed\n2. token refresh bug\n3. inbox zero'
+    vi.mocked(getPendingKairosAsk).mockResolvedValueOnce({
+      ...pendingAsk,
+      title: 'Three cards finished with a title only — one line each, numbered?',
+      askMine: { date: '2026-09-30', kind: 'card_notes', sourceMemoryIds: [], leverage: 0.5 },
+      cardNotes: {
+        date: '2026-09-29',
+        boardDayMemoryIds: ['page-1'],
+        cards: [
+          { taskId: 'task-a', projectId: 'proj-1', title: 'Deploy' },
+          { vaultId: 'vault-b', projectId: 'proj-1', title: 'Fix login' },
+          { taskId: 'task-c', projectId: 'proj-1', title: 'Tidy inbox' },
+        ],
+      },
+    })
+    providerAsk
+      .mockResolvedValueOnce(aiResponse('Noted — filed onto the cards.'))
+      .mockResolvedValueOnce(aiResponse(JSON.stringify({
+        answersPending: true,
+        distilledAnswer: 'I deployed the feed, fixed a token bug and cleared my inbox.',
+      })))
+
+    await runAssistantTurn(USER_ID, THREAD_ID, null, rawReply, 1)
+
+    expect(answerKairosAsk).toHaveBeenCalledTimes(1)
+    expect(answerKairosAsk).toHaveBeenCalledWith(USER_ID, ASK_ID, rawReply)
+  })
+
+  it('does not resolve a card_notes ask the classifier says was not answered', async () => {
+    vi.mocked(getPendingKairosAsk).mockResolvedValueOnce({
+      ...pendingAsk,
+      askMine: { date: '2026-09-30', kind: 'card_notes', sourceMemoryIds: [], leverage: 0.5 },
+    })
+    providerAsk
+      .mockResolvedValueOnce(aiResponse('Sure — what do you want to know?'))
+      .mockResolvedValueOnce(aiResponse(JSON.stringify({ answersPending: false })))
+
+    await runAssistantTurn(USER_ID, THREAD_ID, null, 'what boards do I have?', 1)
+
+    expect(answerKairosAsk).not.toHaveBeenCalled()
+  })
+
   it('does not classify or resolve when there is no pending ask', async () => {
     vi.mocked(getPendingKairosAsk).mockResolvedValue(null)
     providerAsk.mockResolvedValueOnce(aiResponse('Nothing is waiting on you.'))

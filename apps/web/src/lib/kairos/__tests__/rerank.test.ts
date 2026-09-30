@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { rerank, rerankEnabled } from '../rerank'
+import { rerank, rerankEnabled, rerankScored } from '../rerank'
 
 // Voyage rerank — cross-encoder precision pass. Best-effort: no key or API
 // error must return null so the caller keeps its prior order (never drops it).
@@ -87,5 +87,42 @@ describe('rerank', () => {
     expect(await rerank('query', [], (i: { text: string }) => i.text)).toBeNull()
     expect(await rerank('   ', items, (i) => i.text)).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('rerankScored', () => {
+  beforeEach(() => {
+    vi.stubEnv('VOYAGE_API_KEY', 'test-key')
+  })
+
+  it('keeps each item\'s relevance score so callers can blend it, sorted descending', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      mockRerankResponse([
+        { index: 1, relevance_score: 0.1 },
+        { index: 2, relevance_score: 0.9 },
+        { index: 0, relevance_score: 0.5 },
+      ]),
+    ))
+
+    const out = await rerankScored('query', items, (i) => i.text)
+
+    expect(out?.map((s) => [s.item.id, s.relevance])).toEqual([['c', 0.9], ['a', 0.5], ['b', 0.1]])
+  })
+
+  it('omits top_k when not requested (scores the whole pool)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockRerankResponse([{ index: 0, relevance_score: 0.9 }]))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await rerankScored('query', items, (i) => i.text)
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty('top_k')
+  })
+
+  it('returns null on API error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'boom' } as unknown as Response),
+    )
+    expect(await rerankScored('query', items, (i) => i.text)).toBeNull()
   })
 })

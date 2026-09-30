@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { neutraliseFences, extractJsonBlock as _extractJsonBlock } from './_prompt-utils'
+import { makeFedIdResolver } from './introspection-prompt'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos — Contradiction detection (propose-not-commit).
@@ -37,8 +38,10 @@ export interface ContradictionCandidate {
 }
 
 const findingSchema = z.object({
-  // Must reference a candidate [id] fed to the model. Never invent an id.
-  candidateId: z.string().uuid(),
+  // Must reference a candidate [id] fed to the model. Shape-only here: a
+  // drifted or null id costs that one finding (filterGroundedFindings resolves
+  // it against the fed candidates), never the whole probe.
+  candidateId: z.string().trim().max(128).nullish(),
   contradicts: z.boolean(),
   // Which side is currently authoritative when contradicts=true. Default
   // policy (more recent / higher confidence wins) is applied by the caller
@@ -50,6 +53,7 @@ const findingSchema = z.object({
 })
 
 export type ContradictionFinding = z.infer<typeof findingSchema>
+export type GroundedContradictionFinding = ContradictionFinding & { candidateId: string }
 
 export const contradictionOutSchema = z.object({
   findings: z.array(findingSchema).default([]),
@@ -127,11 +131,16 @@ export function extractJsonBlock(text: string): unknown {
   return _extractJsonBlock(text, 'contradiction')
 }
 
-// Anti-drift filter: keep only findings whose candidateId references a real
-// retrieved candidate — mirrors introspection's filterGroundedProposals.
+// Anti-drift filter: keep only findings whose candidateId resolves to a real
+// retrieved candidate, rewritten to the canonical fed id (shares introspection's
+// exact / unique-prefix resolver).
 export function filterGroundedFindings(
   out: ContradictionOutput,
   validIds: Set<string>,
-): ContradictionFinding[] {
-  return out.findings.filter((f) => validIds.has(f.candidateId))
+): GroundedContradictionFinding[] {
+  const resolve = makeFedIdResolver(validIds)
+  return out.findings.flatMap((f) => {
+    const candidateId = resolve(f.candidateId)
+    return candidateId ? [{ ...f, candidateId }] : []
+  })
 }

@@ -11,14 +11,13 @@ import type { MemoryWriteSpec, RecipeContext, RecipeOutput, Surface } from './re
 // Single entry point for running any registered recipe. Handles:
 //   1. Lookup (throws RecipeNotFoundError on miss — never silent).
 //   2. Retrieval (one canonical retrieveContext call, used by both surfaces).
-//   3. Surface routing: flat() for BYOK / cron, expanded() for Claude Code.
-//      Falls back to flat() when a recipe does not implement expanded.
+//   3. Execution: flat() on every surface (BYOK, cron, Claude Code).
 //   4. Capture: primary write first. If captureMemory short-circuits on
 //      externalId idempotency (returns created:false), no trace is written —
 //      the existing primary already has its trace from the first run.
 //   5. Extras + trace write. Trace is streamClass:'trace' tied to the
-//      primary's memoryId via sourceMetadata.primaryMemoryId for downstream
-//      meta-cognition (Oracle / Cartographer scan via get_trace_history).
+//      primary's memoryId via sourceMetadata.primaryMemoryId, readable via
+//      get_trace_history.
 //
 // Doc 20 §2.1.
 // ─────────────────────────────────────────────────────────────────────────
@@ -60,13 +59,15 @@ export async function runRecipe(name: string, opts: RunRecipeArgs): Promise<RunR
     retrieval,
   }
 
-  const fn = opts.surface === 'claude_code' && recipe.expanded ? recipe.expanded : recipe.flat
-  const mode = fn === recipe.expanded ? 'expanded' : 'flat'
+  // Every surface runs flat(): no recipe implements expanded(), so the old
+  // claude_code → expanded routing was a dead branch. `surface` stays on the
+  // args for callers/traces; `mode` stays in the trace body for shape stability.
+  const mode = 'flat'
 
   const startedAt = Date.now()
   let output: RecipeOutput
   try {
-    output = await fn(ctx)
+    output = await recipe.flat(ctx)
   } catch (err) {
     // Credential-missing/undecryptable are the universal benign-skip path
     // (every cron treats them as "no BYOK credential" / "key undecryptable",

@@ -2,7 +2,7 @@ import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { backfillEmbeddings } from '@/lib/data/memories'
 import { embeddingsEnabled, activeEmbeddingModel } from '@/lib/kairos/embeddings'
-import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Brain Phase 4 (P2) — embedding backfill.
@@ -12,7 +12,7 @@ import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 // up to `limit` rows and reports how many remain, so it can be looped until
 // `remaining` reaches 0. Safe no-op when no embedding provider is configured.
 //
-// Auth + cron pattern mirrors apps/web/src/app/api/cron/memory-compaction.
+// Auth + cron pattern mirrors the other Kairos cron routes.
 // Run manually:  curl -H "authorization: Bearer $CRON_SECRET" \
 //                  ".../api/cron/embed-backfill?limit=200"
 // ─────────────────────────────────────────────────────────────────────────
@@ -30,6 +30,10 @@ export async function GET(req: NextRequest) {
     return jsonResponse({ error: 'unauthorized' }, { status: 401 })
   }
   if (!embeddingsEnabled()) {
+    const operatorUserId = process.env.KAIROS_OPERATOR_USER_ID
+    if (operatorUserId) {
+      await writeCronSuccessTrace(operatorUserId, { cronName: 'embed-backfill', outcome: 'skipped', skipReason: 'embeddings_disabled' })
+    }
     return jsonResponse(
       { error: 'embeddings_disabled', note: 'Set VOYAGE_API_KEY or OPENAI_API_KEY to enable.' },
       { status: 200 },
@@ -40,6 +44,8 @@ export async function GET(req: NextRequest) {
   const startedAt = new Date().toISOString()
   try {
     const result = await backfillEmbeddings({ limit })
+    const operatorUserId = process.env.KAIROS_OPERATOR_USER_ID
+    if (operatorUserId) await writeCronSuccessTrace(operatorUserId, { cronName: 'embed-backfill' })
     return jsonResponse({
       startedAt,
       finishedAt: new Date().toISOString(),

@@ -78,12 +78,16 @@ export function buildRepairPrompt(rawText: string, err: unknown, generatorLabel 
 export class ParseRepairError extends Error {
   readonly kind: 'syntax' | 'schema'
   readonly rawExcerpt: string
+  // The ORIGINAL parse/schema failure — the real diagnostic, untainted by a
+  // repair-call transport error.
+  readonly originalError?: unknown
 
-  constructor(message: string, kind: 'syntax' | 'schema', rawExcerpt: string) {
+  constructor(message: string, kind: 'syntax' | 'schema', rawExcerpt: string, originalError?: unknown) {
     super(message)
     this.name = 'ParseRepairError'
     this.kind = kind
     this.rawExcerpt = rawExcerpt
+    this.originalError = originalError
   }
 }
 
@@ -135,6 +139,7 @@ export async function parseWithRepair<T>(input: ParseWithRepairInput<T>): Promis
         `parse_failed: ${firstMessage} (repair also failed: ${repairMessage})`,
         classifyParseError(firstErr),
         rawText.slice(0, 500),
+        firstErr,
       )
     }
   }

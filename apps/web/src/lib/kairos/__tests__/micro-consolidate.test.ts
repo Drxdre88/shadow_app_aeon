@@ -378,6 +378,58 @@ describe('runMicroConsolidateForDominion', { timeout: 20000 }, () => {
     expect(result.status).toBe('skipped')
     expect(result.reason).toBe('archived')
   })
+
+  async function runWithAnchors(lastDelta: Date | null, cortex: Date | null) {
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { countTasksCompletedBetween, countTasksCreatedBetween } = await import('@/lib/data/board-signals')
+    queueDominionLookup()
+    selectQueue.push(lastDelta ? [{ createdAt: lastDelta }] : [])
+    selectQueue.push(cortex ? [{ createdAt: cortex }] : [])
+    selectQueue.push([
+      { title: 'a', type: 'note', streamClass: 'idea' },
+      { title: 'b', type: 'note', streamClass: 'idea' },
+      { title: 'c', type: 'note', streamClass: 'idea' },
+    ])
+    selectQueue.push([{ total: 3 }])
+    vi.mocked(countTasksCompletedBetween).mockResolvedValue(0)
+    vi.mocked(countTasksCreatedBetween).mockResolvedValue(0)
+    const ask = vi.fn().mockResolvedValue({ text: 'window' })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask }, decision: {} } as never)
+    vi.mocked(captureMemory).mockResolvedValue({ memory: { id: 'delta-mem-1' }, created: true } as never)
+    const { runMicroConsolidateForDominion } = await import('../micro-consolidate')
+    await runMicroConsolidateForDominion(USER_ID, DOMINION_ID)
+    const call = vi.mocked(captureMemory).mock.calls[0][1] as { sourceMetadata: Record<string, unknown> }
+    return call.sourceMetadata.since
+  }
+
+  it('no UTC-midnight floor: the morning run folds activity since last night\'s delta', async () => {
+    // Before: since was clamped to 2026-07-25T00:00Z, dropping 21:15→24:00.
+    vi.setSystemTime(new Date('2026-07-25T02:15:00.000Z'))
+    const lastDeltaAt = new Date('2026-07-24T21:15:00.000Z')
+    expect(await runWithAnchors(lastDeltaAt, null)).toBe(lastDeltaAt.toISOString())
+  })
+
+  it('with no prior delta and no cortex today, looks back 18h (not to UTC midnight)', async () => {
+    // system time 2026-07-24T15:22Z → 18h back crosses into yesterday.
+    expect(await runWithAnchors(null, null)).toBe('2026-07-23T21:22:00.000Z')
+  })
+
+  it('with no prior delta but today\'s cortex, anchors on the cortex', async () => {
+    const cortexAt = new Date('2026-07-24T03:05:00.000Z')
+    expect(await runWithAnchors(null, cortexAt)).toBe(cortexAt.toISOString())
+  })
+
+  it('scopes board counts to this Dominion (not user-wide)', async () => {
+    const { countTasksCompletedBetween, countTasksCreatedBetween } = await import('@/lib/data/board-signals')
+    await runWithAnchors(null, null)
+    expect(countTasksCompletedBetween).toHaveBeenCalledWith(
+      USER_ID, expect.any(Date), expect.any(Date), { dominionId: DOMINION_ID },
+    )
+    expect(countTasksCreatedBetween).toHaveBeenCalledWith(
+      USER_ID, expect.any(Date), expect.any(Date), { dominionId: DOMINION_ID },
+    )
+  })
 })
 
 describe('runMicroConsolidateForUser — per-Dominion failure isolation', { timeout: 20000 }, () => {
@@ -389,7 +441,7 @@ describe('runMicroConsolidateForUser — per-Dominion failure isolation', { time
     selectQueue.length = 0
   })
 
-  it('continues to the next Dominion after one throws, and traces the failure', async () => {
+  it('continues to the next Dominion after one throws, traces the failure, and writes liveness for the survivor', async () => {
     const { findDominionsByUser } = await import('@/lib/data/dominions')
     const { captureMemory } = await import('@/lib/data/memories')
     vi.mocked(findDominionsByUser).mockResolvedValue([
@@ -439,9 +491,20 @@ describe('runMicroConsolidateForUser — per-Dominion failure isolation', { time
     const traceCalls = vi.mocked(captureMemory).mock.calls.filter(
       (c) => (c[1] as { streamClass?: string }).streamClass === 'trace',
     )
-    expect(traceCalls).toHaveLength(1)
-    const sm = (traceCalls[0][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata
-    expect(sm.cronName).toBe('micro-consolidate')
-    expect(sm.reason).toBe('uncaught_exception')
+    const metas = traceCalls.map((c) => (c[1] as { sourceMetadata: Record<string, unknown>; dominionId: string | null }))
+    expect(metas).toHaveLength(2)
+    const failure = metas.find((m) => m.sourceMetadata.reason)!
+    expect(failure.dominionId).toBe(DOM_A)
+    expect(failure.sourceMetadata).toMatchObject({ cronName: 'micro-consolidate', reason: 'uncaught_exception' })
+    // Dominion B's below-threshold no-op proves the cron ran — a skipped
+    // liveness row with a per-day externalId (idempotent across 6 runs/day).
+    const liveness = metas.find((m) => !m.sourceMetadata.reason)!
+    expect(liveness.dominionId).toBe(DOM_B)
+    expect(liveness.sourceMetadata).toMatchObject({
+      cronName: 'micro-consolidate',
+      outcome: 'skipped',
+      skipReason: 'below threshold',
+    })
+    expect(liveness.sourceMetadata.externalId).toMatch(new RegExp(`^cron-skipped:micro-consolidate:${DOM_B}:\\d{4}-\\d{2}-\\d{2}$`))
   })
 })

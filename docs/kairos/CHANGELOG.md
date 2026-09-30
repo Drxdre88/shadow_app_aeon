@@ -4,6 +4,20 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–31).
 
+## [0.11.0] — 2026-09-30 · "Eyes & Heal"
+
+> The 29/09 reassessment found the mesh generates but never metabolises: nothing Kairos produced came back round, questions had been silently blocked since July, and the operator's own board reached him as bare titles. This era fixes the four live defects and gives him eyes on what actually happened. Plan + evidence: `aeon_os/HANDOVER_2909.md`, `research/kairos_2909/`.
+
+- **He can ask again** — only a real question now waits for a reply; routine notes, alerts and digests no longer block asks for 48h. Answering or dismissing in the web inbox counts as a reply.
+- **No more runaway messages** — digest output that didn't finish cleanly, runs long, or looks like pasted web content falls back to the plain summary; cut-off chat replies end cleanly. Digest covers a rolling 24h.
+- **Night thinking stops breaking** — the model never mints stored IDs any more (Aether, cortex, contradiction, archetypes, introspection); the server mints and validates against what it fed; one shared repair path. Cortex and Aether read the day actually being consolidated.
+- **Honest health** — every cron writes a daily ok/skipped row, so "ran clean" is distinguishable from "never ran"; the brief is one stage, not three.
+- **Eyes on the work** — sessions from all three coding tools carry one session record (card, branch, commits, PRs, tests, model, tokens, cost); mission worktrees file under the real repo; finished Hangar missions become one memory linked to the card; memories get a class and trust by source at one choke point.
+- **The sprint board is the main feed** — boards opted in via `settings.kairosFeed` get one "board day" page (finished cards with notes and checklists, started, created, title-only), or a weekly milestone page; completed-card memories carry notes; title-only cards trigger a one-line-each nudge whose answer is written back onto the cards (live and vaulted).
+- **Recency that holds** — rerank no longer ignores age; a true 14-day half-life shared by both ranking paths; intraday deltas carry over past midnight (new 23:15 UTC pulse); per-Dominion board counts.
+- **Galaxy stops crashing** — loads the ~1,500 most important memories and renders them in a fixed handful of GPU objects.
+- **Dead weight removed** — compaction cron stub, initiative/eval metrics, unused recipe registry, dead retrieval helpers.
+
 ## [0.10.0] — 2026-07-24 · "The Live Mind"
 
 > Same-day follow-through on the operator's verdict: "his brain isn't continuously updating — he's not really with it." The JARVIS gap was his eyes, not his mind. This era gives Kairos continuous awareness — and moves his entire cognition to the top model tier under the standing quality-over-cost directive.

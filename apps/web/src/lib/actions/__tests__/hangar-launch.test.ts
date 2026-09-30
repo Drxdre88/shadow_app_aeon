@@ -22,7 +22,8 @@ vi.mock('@/lib/data/hangar-repos', () => ({
 }))
 
 vi.mock('@/lib/data/workspaces', () => ({ findProjectRealmIds: vi.fn() }))
-vi.mock('@/lib/data/projects', () => ({ mergeProjectSettings: vi.fn() }))
+vi.mock('@/lib/data/projects', () => ({ mergeProjectSettings: vi.fn(), verifyProjectAccess: vi.fn() }))
+vi.mock('@/lib/data/dominions', () => ({ findDominionById: vi.fn() }))
 vi.mock('@/lib/data/columns', () => ({ findColumns: vi.fn() }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
@@ -32,12 +33,15 @@ import { findTaskById, recordMissionLaunch } from '@/lib/data/tasks'
 import { createAgentSession, findLiveSessionForTask } from '@/lib/data/sessions'
 import { findHangarRepoBySlug, listHangarRepos } from '@/lib/data/hangar-repos'
 import { findProjectRealmIds } from '@/lib/data/workspaces'
+import { verifyProjectAccess } from '@/lib/data/projects'
+import { findDominionById } from '@/lib/data/dominions'
 import { spawnSessionFromCard } from '../hangar'
 
 const PROJECT = '11111111-1111-4111-8111-111111111111'
 const TASK = '22222222-2222-4222-8222-222222222222'
 const REALM = '33333333-3333-4333-8333-333333333333'
 const SESSION = '44444444-4444-4444-8444-444444444444'
+const DOMINION = '55555555-5555-4555-8555-555555555555'
 
 const storedMission = {
   objective: 'recon',
@@ -68,6 +72,46 @@ beforeEach(() => {
   vi.mocked(listHangarRepos).mockResolvedValue([])
   vi.mocked(createAgentSession).mockResolvedValue({ id: SESSION, status: 'queued' } as never)
   vi.mocked(recordMissionLaunch).mockResolvedValue(storedTask({ ...storedMission, autoRun: false }) as never)
+  vi.mocked(verifyProjectAccess).mockResolvedValue({ project: { dominionId: null }, role: 'owner' } as never)
+  vi.mocked(findDominionById).mockResolvedValue(null as never)
+})
+
+describe('spawnSessionFromCard dominion filing', () => {
+  it('files the session under the project Dominion the launcher owns', async () => {
+    vi.mocked(verifyProjectAccess).mockResolvedValue({ project: { dominionId: DOMINION }, role: 'owner' } as never)
+    vi.mocked(findDominionById).mockResolvedValue({ id: DOMINION } as never)
+
+    await spawnSessionFromCard(PROJECT, TASK)
+
+    expect(verifyProjectAccess).toHaveBeenCalledWith(PROJECT, 'user-1')
+    expect(findDominionById).toHaveBeenCalledWith(DOMINION, 'user-1')
+    expect(vi.mocked(createAgentSession).mock.calls[0][1]).toMatchObject({ dominionId: DOMINION })
+  })
+
+  it('leaves the session unfiled when the project has no Dominion', async () => {
+    await spawnSessionFromCard(PROJECT, TASK)
+
+    expect(findDominionById).not.toHaveBeenCalled()
+    expect(vi.mocked(createAgentSession).mock.calls[0][1]).not.toHaveProperty('dominionId')
+  })
+
+  it("does not file into another user's Dominion (realm editor launch)", async () => {
+    vi.mocked(verifyProjectAccess).mockResolvedValue({ project: { dominionId: DOMINION }, role: 'editor' } as never)
+    vi.mocked(findDominionById).mockResolvedValue(null as never)
+
+    await spawnSessionFromCard(PROJECT, TASK)
+
+    expect(vi.mocked(createAgentSession).mock.calls[0][1]).not.toHaveProperty('dominionId')
+  })
+
+  it('still launches, unfiled, when the Dominion lookup throws', async () => {
+    vi.mocked(verifyProjectAccess).mockRejectedValue(new Error('db blip'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(spawnSessionFromCard(PROJECT, TASK)).resolves.toMatchObject({ id: SESSION })
+    expect(vi.mocked(createAgentSession).mock.calls[0][1]).not.toHaveProperty('dominionId')
+    errorSpy.mockRestore()
+  })
 })
 
 describe('spawnSessionFromCard', () => {

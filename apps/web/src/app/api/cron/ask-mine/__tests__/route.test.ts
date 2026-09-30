@@ -12,11 +12,12 @@ vi.mock('@/lib/kairos/ask-mine', () => ({
 
 vi.mock('@/lib/kairos/cron-trace', () => ({
   writeCronFailureTrace: vi.fn(),
+  writeCronSuccessTrace: vi.fn(),
 }))
 
 import { listChatDistillEligibleUserIds } from '@/lib/data/kairos-chat'
 import { runAskMineForUser } from '@/lib/kairos/ask-mine'
-import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 import { GET } from '../route'
 
 function request(path = '/api/cron/ask-mine', authorization?: string) {
@@ -90,6 +91,49 @@ describe('cron/ask-mine route', () => {
 
     expect(body).toMatchObject({ ran: 1, asksCreated: 0, dryRun: true })
     expect(runAskMineForUser).toHaveBeenCalledWith('user-1', { dryRun: true })
+    expect(writeCronSuccessTrace).not.toHaveBeenCalled()
+    expect(writeCronFailureTrace).not.toHaveBeenCalled()
+  })
+
+  it('writes an ok outcome trace for a created ask and a skipped trace with the reason', async () => {
+    vi.mocked(listChatDistillEligibleUserIds).mockResolvedValue(['user-1', 'user-2'])
+    vi.mocked(runAskMineForUser)
+      .mockResolvedValueOnce({
+        status: 'created',
+        date: '2026-07-19',
+        askId: 'ask-1',
+        expiresAt: '2026-07-22T04:30:00.000Z',
+        candidate: {
+          question: 'Should Atlas ship this week?',
+          kind: 'decision',
+          dominionId: null,
+          sourceMemoryIds: ['memory-1'],
+          leverage: 0.9,
+          rationale: 'It gates two workstreams.',
+        },
+      })
+      .mockResolvedValueOnce({ status: 'skipped', date: '2026-07-19', reason: 'awaiting_reply' })
+
+    const response = await GET(request())
+
+    expect(response.status).toBe(200)
+    expect(writeCronSuccessTrace).toHaveBeenCalledTimes(2)
+    expect(writeCronSuccessTrace).toHaveBeenNthCalledWith(1, 'user-1', { cronName: 'ask-mine', outcome: 'ok' })
+    expect(writeCronSuccessTrace).toHaveBeenNthCalledWith(2, 'user-2', {
+      cronName: 'ask-mine',
+      outcome: 'skipped',
+      skipReason: 'awaiting_reply',
+    })
+  })
+
+  it('writes no outcome trace for a user whose run threw', async () => {
+    vi.mocked(listChatDistillEligibleUserIds).mockResolvedValue(['user-1'])
+    vi.mocked(runAskMineForUser).mockRejectedValue(new Error('boom'))
+
+    await GET(request())
+
+    expect(writeCronSuccessTrace).not.toHaveBeenCalled()
+    expect(writeCronFailureTrace).toHaveBeenCalledOnce()
   })
 
   it('reports users skipped after the 240-second deadline guard', async () => {

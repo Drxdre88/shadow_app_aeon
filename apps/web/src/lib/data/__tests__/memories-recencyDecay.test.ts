@@ -27,7 +27,7 @@ describe('recencyDecay', () => {
     const past = new Date(NOW - 14 * 86_400_000) // one half-life ago
     const value = recencyDecay(past, NOW)
     expect(value).toBeLessThan(1)
-    expect(value).toBeCloseTo(Math.exp(-1), 5)
+    expect(value).toBeCloseTo(0.5, 5)
   })
 
   it('approaches 0 for a very old createdAt', () => {

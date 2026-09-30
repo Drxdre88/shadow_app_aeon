@@ -267,3 +267,24 @@ describe('countTasksCreatedBetween', () => {
     await expect(countTasksCreatedBetween(USER_ID, start, end)).resolves.toBe(0)
   })
 })
+
+describe('count* with opts.dominionId (per-Dominion delta scope)', () => {
+  const start = new Date('2026-07-24T00:00:00.000Z')
+  const end = new Date('2026-07-25T00:00:00.000Z')
+  const DOMINION_ID = '40000000-0000-4000-8000-000000000001'
+
+  it.each([
+    ['countTasksCompletedBetween', countTasksCompletedBetween],
+    ['countTasksCreatedBetween', countTasksCreatedBetween],
+  ] as const)('%s scopes to owned projects filed under the Dominion — no shared-project membership leg', async (_name, fn) => {
+    selectQueue.push([{ n: 2 }])
+
+    await expect(fn(USER_ID, start, end, { dominionId: DOMINION_ID })).resolves.toBe(2)
+
+    const where = compile(lastQuery().where)
+    expect(where.sql).toContain('"projects"."user_id" = $1 and "projects"."dominion_id" = $2')
+    expect(where.params.slice(0, 2)).toEqual([USER_ID, DOMINION_ID])
+    expect(where.sql).not.toContain('"project_members"."user_id"')
+    expect(where.sql).toContain('"board_tasks"."archived_at" is null')
+  })
+})

@@ -102,35 +102,23 @@ describe('runRecipe', () => {
     expect(captureMemory).toHaveBeenCalledTimes(1)
   })
 
-  it('routes claude_code surface to expanded() when present', async () => {
-    const expandedImpl: (ctx: RecipeContext) => Promise<RecipeOutput> = async (ctx) => ({
-      primary: {
-        type: 'advisory',
-        streamClass: 'advisory',
-        source: 'manual',
-        title: 'expanded',
-        bodyMd: 'x',
-        dominionId: ctx.dominionId,
-        sourceMetadata: { externalId: 'ex:1' },
-      },
-      traceMeta: {},
-    })
-    const expanded = vi.fn(expandedImpl)
+  it('runs flat() on the claude_code surface even when a recipe declares expanded()', async () => {
+    const expanded = vi.fn<(ctx: RecipeContext) => Promise<RecipeOutput>>()
     const recipe: Recipe = { ...fakeRecipe(), expanded }
     ;(getRecipe as ReturnType<typeof vi.fn>).mockReturnValue(recipe)
     ;(captureMemory as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ memory: { id: 'p', title: 'expanded' }, created: true })
+      .mockResolvedValueOnce({ memory: { id: 'p', title: 't' }, created: true })
       .mockResolvedValueOnce({ memory: { id: 't', title: 'trace' }, created: true })
 
     await runRecipe('TEST', { userId: USER_ID, dominionId: DOMINION_ID, surface: 'claude_code' })
 
-    expect(expanded).toHaveBeenCalledTimes(1)
-    expect(recipe.flat).not.toHaveBeenCalled()
+    expect(expanded).not.toHaveBeenCalled()
+    expect(recipe.flat).toHaveBeenCalledTimes(1)
     const traceInput = (captureMemory as ReturnType<typeof vi.fn>).mock.calls[1][1] as Record<string, unknown>
-    expect((traceInput.sourceMetadata as Record<string, unknown>).mode).toBe('expanded')
+    expect((traceInput.sourceMetadata as Record<string, unknown>).mode).toBe('flat')
   })
 
-  it('falls back to flat() for claude_code when expanded missing', async () => {
+  it('runs flat() for claude_code when expanded is missing', async () => {
     const recipe = fakeRecipe()
     expect(recipe.expanded).toBeUndefined()
     ;(getRecipe as ReturnType<typeof vi.fn>).mockReturnValue(recipe)

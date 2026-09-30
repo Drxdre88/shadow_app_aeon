@@ -25,12 +25,12 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories } from '@/lib/db/schema'
 import { inspectDominion } from '@/lib/data/dominions'
-import { recencyDecay, validAsOfNow } from '@/lib/data/memories'
+import { recencyMultiplier, validAsOfNow } from '@/lib/data/memories'
 import { dominionTag } from './dominionTags'
 import { embeddingsEnabled, embedOne, toVectorLiteral } from './embeddings'
 import { rrfFuse, RRF_K } from './rrf'
 import { confidenceBoost } from './confidence'
-import { rerank } from './rerank'
+import { rerankScored, type RerankScored } from './rerank'
 import { isStreamClass, type StreamClass } from './streamClass'
 import type {
   RetrievalResult,
@@ -49,16 +49,11 @@ const TRACES_LIMIT = 10
 const ARCHETYPES_LIMIT = 10
 const DEFAULT_MEMORY_LIMIT = 25
 
-// Same 14-day half-life + 0.3 weight as prepareContext's composite score
-// (lib/data/memories.ts) — a same-day, weak-lexical-match reflection must be
-// able to outrank a 60-day-old, strong-lexical-match one. Chat substrate had
-// NO recency term before this: RRF fusion + confidenceBoost alone let a stale
-// high-overlap memory bury today's signal (the 15:37→16:50 miss).
-const RECENCY_WEIGHT = 0.3
-function recencyMultiplier(createdAt: Date | null | undefined, now = Date.now()): number {
-  if (!createdAt) return 1
-  return 1 + recencyDecay(createdAt, now) * RECENCY_WEIGHT
-}
+// Recency uses the shared `recencyMultiplier` (lib/data/memories.ts) — the same
+// true 14-day half-life + 0.3 weight as prepareContext's composite score, so
+// the two ranking stacks share one curve. A same-day, weak-lexical-match
+// reflection must be able to outrank a 60-day-old, strong-lexical-match one
+// (the 15:37→16:50 miss).
 
 // FTS queries shorter than this fall back to substrate=[]. websearch_to_tsquery
 // drops stop words but won't rank "hi" / "ok" usefully.
@@ -384,32 +379,57 @@ async function fetchSubstrate(
 
     // Rerank pool: take a wider slice of the fused, confidence/recency-weighted
     // order (reflections/confidence/recency already shaped WHICH rows qualify),
-    // then let the cross-encoder pick the final top-k by true query↔document
-    // relevance. Floor at RERANK_POOL so a wider topK (e.g. the search_brain
+    // then let the cross-encoder's relevance, blended with the same recency +
+    // confidence multipliers, pick the final top-k. Floor at RERANK_POOL so a wider topK (e.g. the search_brain
     // chat tool) still gets a proper rerank pool, not just topK candidates.
     const poolRows = ranked
       .slice(0, Math.max(RERANK_POOL, topK))
       .map((e) => byId.get(e.id))
       .filter((r): r is SubstrateRow => r != null)
 
-    // Precision pass. No-op (null) without a Voyage key or on API error, in
-    // which case we keep the confidence/recency-weighted RRF order — identical
-    // to the pre-rerank behaviour once sliced to topK.
-    const reranked = await rerank(
+    // Precision pass. Scores the WHOLE pool (no top_k) so every candidate has a
+    // relevance score to blend. No-op (null) without a Voyage key or on API
+    // error, in which case we keep the confidence/recency-weighted RRF order —
+    // identical to the pre-rerank behaviour once sliced to topK.
+    const reranked = await rerankScored(
       query,
       poolRows,
       (r) => `${r.title}\n${r.bodyMd ?? ''}`,
-      { topK },
     )
 
-    return (reranked ?? poolRows).slice(0, topK).map(rowToMemory)
+    const finalRows = reranked ? blendRerank(reranked) : poolRows
+    return finalRows.slice(0, topK).map(rowToMemory)
   } catch (err) {
     console.warn(
       '[fetchSubstrate] semantic search failed, FTS-only:',
       err instanceof Error ? err.message : err,
     )
-    return ftsRows.slice(0, SUBSTRATE_TOP_K).map(rowToMemory)
+    // Same recency/confidence weighting as the FTS-only branch — never hand
+    // back raw lexical order on the error path.
+    return rankByRecencyAndConfidence(ftsRows).slice(0, topK).map(rowToMemory)
   }
+}
+
+// Blend the cross-encoder's relevance with the same recency and confidence
+// multipliers the fused pool was built with, so rerank sharpens relevance
+// WITHOUT discarding the time signal (the 07-24 recency miss: relevance-only
+// ordering let a stale strong match beat today's reflection). Reflections win
+// exact ties; remaining ties keep Voyage's relevance order (stable sort).
+function blendRerank(scored: RerankScored<SubstrateRow>[]): SubstrateRow[] {
+  return scored
+    .map(({ item, relevance }) => ({
+      row: item,
+      isReflection: item.streamClass === 'reflection',
+      score: relevance
+        * recencyMultiplier(item.createdAt)
+        * confidenceBoost({ confidence: item.confidence, updatedAt: item.updatedAt, pinned: item.pinned }),
+    }))
+    .sort((a, b) =>
+      b.score !== a.score
+        ? b.score - a.score
+        : Number(b.isReflection) - Number(a.isReflection),
+    )
+    .map((s) => s.row)
 }
 
 // Small post-fusion nudge keeping reflections ahead of ties in the same band.

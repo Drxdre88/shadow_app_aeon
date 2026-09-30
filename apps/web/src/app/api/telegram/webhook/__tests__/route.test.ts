@@ -307,6 +307,23 @@ describe('telegram webhook — chat with Kairos', () => {
       expect(call.body.text.length).toBeLessThanOrEqual(4096)
     }
   })
+
+  it('caps a runaway reply at two Telegram messages and points at Aeon for the rest', async () => {
+    vi.mocked(sendChatMessage).mockResolvedValue({
+      ok: true,
+      threadId: THREAD_ID,
+      userSeq: 1,
+      assistantSeq: 2,
+      assistantContent: Array.from({ length: 200 }, (_, i) => `line ${i} ${'x'.repeat(90)}`).join('\n'),
+      model: null,
+    })
+
+    await POST(makeReq(textUpdate('long one'), 'hook-secret'))
+    const calls = telegramCalls(fetchMock)
+    expect(calls).toHaveLength(2)
+    expect(calls[1].body.text).toContain('cut short — the full reply is in Aeon')
+    for (const call of calls) expect(call.body.text.length).toBeLessThanOrEqual(4096)
+  })
 })
 
 describe('telegram webhook — redelivery dedup (best-effort, warm-instance only)', () => {

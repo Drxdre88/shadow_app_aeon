@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { memories, dominions, dominionRepos, projects } from '@/lib/db/schema'
-import { eq, and, desc, sql, inArray, isNull, gte, lt, type SQL } from 'drizzle-orm'
+import { eq, and, desc, sql, inArray, isNull, gte, lt, ne, notInArray, type SQL } from 'drizzle-orm'
 import type {
   CreateMemoryInput,
   UpdateMemoryInput,
@@ -27,7 +27,9 @@ import {
   type DedupCandidate,
 } from '@/lib/kairos/dedup'
 import { rrfFuse } from '@/lib/kairos/rrf'
-import { confidenceBoost } from '@/lib/kairos/confidence'
+import { confidenceBoost, confidenceForStreamClass } from '@/lib/kairos/confidence'
+import { defaultStreamClass, deriveValidAt } from '@/lib/kairos/stream-class-default'
+import { META_STREAM_CLASSES } from '@/lib/kairos/streamClass'
 import { dominionTag } from '@/lib/kairos/dominionTags'
 import { autoFileEligible, autoFileMinSim, autoFileText, cosineSimilarity } from '@/lib/kairos/autofile'
 
@@ -36,7 +38,9 @@ import { autoFileEligible, autoFileMinSim, autoFileText, cosineSimilarity } from
 // stream class. The dispatcher (lib/kairos/dispatch.ts) needs to write
 // 'advisory' primaries and 'trace' bookkeeping rows, so the function signature
 // is widened with this internal-only field. captureMemory forwards it through.
-type CreateMemoryParams = CreateMemoryInput & { streamClass?: StreamClass }
+// validAt is likewise internal: when the work happened (defaults to a recent
+// sourceMetadata.session.endedAt, else the DB's write-time default).
+type CreateMemoryParams = CreateMemoryInput & { streamClass?: StreamClass; validAt?: Date }
 
 // ─────────────────────────────────────────────────────────────────────────
 // Brain Phase 1 — pure DB queries for the user-scoped memory substrate.
@@ -49,28 +53,8 @@ type CreateMemoryParams = CreateMemoryInput & { streamClass?: StreamClass }
 // Spec: docs/brain/02-mcp-tools.md
 // ─────────────────────────────────────────────────────────────────────────
 
-// Provenance: a coarse trust prior derived from the stream a memory came from.
-// Operator reflections are near-ground-truth; agent/execution output is lower.
-// Stamped at write time; weights retrieval/synthesis and gates whether a
-// proposal can ever auto-promote (autonomy L2+). Tunable, not load-bearing yet.
-const CONFIDENCE_BY_STREAM: Record<string, number> = {
-  reflection: 0.9,
-  cortex: 0.7,
-  idea: 0.6,
-  archetype: 0.6,
-  advisory: 0.5,
-  agentic: 0.45,
-  // Micro-consolidation fold — agentic-level trust (Kairos's own compacted
-  // read of the interval, not an operator signal), sitting just below agentic
-  // since it's a rollup of a rollup rather than a fresh thought.
-  delta: 0.4,
-  execution: 0.35,
-  trace: 0.3,
-}
-
-function confidenceForStreamClass(streamClass: string): number {
-  return CONFIDENCE_BY_STREAM[streamClass] ?? 0.5
-}
+// Provenance trust prior per stream class: CONFIDENCE_BY_STREAM /
+// confidenceForStreamClass in lib/kairos/confidence.ts.
 
 // When an introspection proposal is accepted, what does it become? Endorsing a
 // proposal makes it operator-weighted (streamClass 'reflection'); a 'question'
@@ -121,12 +105,16 @@ type ListOpts = {
   taskId?: string
   pinnedOnly?: boolean
   includeArchived?: boolean
+  includeMeta?: boolean
 }
 
 export async function listMemories(userId: string, opts: ListOpts = {}) {
   const conditions = [eq(memories.userId, userId)]
   if (!opts.includeArchived) {
     conditions.push(sql`${memories.archivedAt} IS NULL`)
+  }
+  if (!opts.includeMeta) {
+    conditions.push(ne(memories.streamClass, 'trace'))
   }
   if (opts.type) {
     const types = Array.isArray(opts.type) ? opts.type : [opts.type]
@@ -212,7 +200,12 @@ export async function listMemoriesNeedingSummary(userId: string, opts: NeedsSumm
     .offset(opts.offset ?? 0)
 }
 
-type GraphOpts = { realmId?: string; includeArchived?: boolean }
+// Galaxy load cap. The unfiltered load (~7.9k rows incl. traces/deltas/
+// snapshots) crashed the view; signal rows ranked by importance are enough.
+export const GALAXY_DEFAULT_LIMIT = 1500
+const GALAXY_MAX_LIMIT = 5000
+
+type GraphOpts = { realmId?: string; includeArchived?: boolean; limit?: number }
 
 export type GraphNode = {
   id: string
@@ -255,7 +248,14 @@ export async function getGraphForUser(
   const conditions = [eq(memories.userId, userId)]
   if (!opts.includeArchived) conditions.push(sql`${memories.archivedAt} IS NULL`)
   if (opts.realmId) conditions.push(eq(memories.realmId, opts.realmId))
-
+  // Signal only: machine meta-rows (trace/delta/snapshot streams, raw
+  // session_event rows) are bookkeeping, not beliefs. Expired rows drop out,
+  // EXCEPT superseded beliefs — they stay as ghosts so the lineage thread to
+  // their successor still renders.
+  conditions.push(notInArray(memories.streamClass, [...META_STREAM_CLASSES]))
+  conditions.push(ne(memories.type, 'session_event'))
+  conditions.push(sql`(${memories.invalidAt} IS NULL OR ${memories.invalidAt} > NOW() OR ${memories.supersededById} IS NOT NULL)`)
+  const limit = Math.min(Math.max(Math.trunc(opts.limit ?? GALAXY_DEFAULT_LIMIT), 1), GALAXY_MAX_LIMIT)
   const rows = await db
     .select({
       id: memories.id,
@@ -280,7 +280,15 @@ export async function getGraphForUser(
     })
     .from(memories)
     .where(and(...conditions))
-    .orderBy(desc(memories.pinned), desc(memories.createdAt))
+    // Importance order so the cap keeps what matters: pinned, then operator
+    // reflections, then trust prior, then recency.
+    .orderBy(
+      desc(memories.pinned),
+      sql`(${memories.streamClass} = 'reflection') DESC`,
+      sql`${memories.confidence} DESC NULLS LAST`,
+      desc(memories.createdAt),
+    )
+    .limit(limit)
 
   // Bulk-load dominion data — 3 parallel queries, zero N+1.
   const uniqueProjectIds = [...new Set(rows.map((r) => r.projectId).filter((id): id is string => id != null))]
@@ -876,15 +884,15 @@ export async function createMemory(userId: string, input: CreateMemoryParams) {
       })
     : null
 
-  // WP3 — derived-state invalidation tier. Bulk board-card imports must never
-  // silently land in the reflection/idea/agentic substrate pool: when the
-  // caller doesn't explicitly pick a streamClass, an 'import' source defaults
-  // to 'execution' (machine-derived, outside SUBSTRATE_STREAMS in
-  // lib/kairos/retrieve.ts) instead of the DB's 'idea' default. Real incident
-  // 2026-07-20: 21 frozen card-facts from a stale board backfill poisoned
-  // Telegram chat because they defaulted to 'idea'.
+  // Capture choke point: an explicit caller streamClass always wins; otherwise
+  // defaultStreamClass derives one from (source, type, sourceMetadata) —
+  // sessions → agentic, reflections → reflection, snapshots → snapshot,
+  // system achievements/observations and cron/import → execution (WP3: bulk
+  // imports must never land in the idea substrate — incident 2026-07-20).
+  // undefined → DB default 'idea'. See lib/kairos/stream-class-default.ts.
   const effectiveStreamClass: StreamClass | undefined =
-    input.streamClass ?? (input.source === 'import' ? 'execution' : undefined)
+    input.streamClass ?? defaultStreamClass(input.source, input.type, sourceMetadata)
+  const effectiveValidAt: Date | undefined = input.validAt ?? deriveValidAt(sourceMetadata)
 
   // Slice 2 — content fallback when structural resolution failed. Best-effort:
   // any embed/classify failure captures the memory unfiled rather than losing
@@ -962,10 +970,12 @@ export async function createMemory(userId: string, input: CreateMemoryParams) {
         confidence: confidenceForStreamClass(effectiveStreamClass ?? 'idea'),
         ...(contentEmbedding ? { embedding: contentEmbedding, embeddingModel: activeEmbeddingModel() } : {}),
         // Drizzle skips undefined keys → DB default ('idea') applies when
-        // neither the caller nor the import-source guard above set a
-        // streamClass. Internal callers (dispatcher) set it explicitly for
-        // advisory / trace writes.
+        // neither the caller nor defaultStreamClass set a streamClass.
+        // Internal callers (dispatcher) set it explicitly for advisory /
+        // trace writes.
         ...(effectiveStreamClass ? { streamClass: effectiveStreamClass } : {}),
+        // Same pattern: absent → DB default (write time). createdAt untouched.
+        ...(effectiveValidAt ? { validAt: effectiveValidAt } : {}),
       })
       .returning()
 
@@ -1044,6 +1054,7 @@ export interface CaptureMemoryInput extends Omit<CreateMemoryInput, 'sourceMetad
   sourceMetadata?: Record<string, unknown>
   // Internal-only: forwarded to createMemory. See CreateMemoryParams above.
   streamClass?: StreamClass
+  validAt?: Date
 }
 
 export interface CaptureMemoryResult {
@@ -1195,6 +1206,7 @@ export async function listAutoCapturedToday(userId: string, limit = 30) {
       isNull(memories.archivedAt),
       sql`${memories.createdAt} >= ${startOfDay}`,
       inArray(memories.source, ['claude', 'codex', 'copilot', 'cron', 'system', 'webhook', 'hook']),
+      notInArray(memories.streamClass, [...META_STREAM_CLASSES]),
     ))
     .orderBy(desc(memories.createdAt))
     .limit(Math.min(Math.max(limit, 1), 100))
@@ -1297,6 +1309,9 @@ export async function listRecentKairosSpeaks(
 // An operator response closes every earlier pending interrupt, not just the
 // item they happened to answer from. Keeping this as one user-scoped update
 // makes Telegram retries harmless and prevents stale speaks from stacking.
+// Deliberately wider than the reply gate (kind:'question' only, see
+// getConversationState): stamping notifies too keeps their reply-rate credit
+// for the cadence governor, which still counts every conversational send.
 export async function markKairosSpeaksReplied(userId: string, before: Date): Promise<number> {
   const now = new Date()
   const updated = await db
@@ -1619,7 +1634,11 @@ export async function backfillEmbeddings(
   const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500)
 
   const staleFilter = sql`(${memories.embedding} IS NULL OR ${memories.embeddingModel} IS DISTINCT FROM ${model})`
-  const conditions = [sql`${memories.archivedAt} IS NULL`, staleFilter]
+  const conditions = [
+    sql`${memories.archivedAt} IS NULL`,
+    staleFilter,
+    notInArray(memories.streamClass, [...META_STREAM_CLASSES]),
+  ]
   if (opts.userId) conditions.push(eq(memories.userId, opts.userId))
 
   const rows = await db
@@ -1822,9 +1841,9 @@ export async function findSimilarBeliefs(
 //   1. BM25 FTS search for candidates (top-K = maxSources)
 //   2. Pinned fetch (always or per includePinned flag), user-scoped, realm-scoped
 //   3. 1-hop graph walk from top-10 hits (in parallel) for typed neighbours
-//   4. Composite score = baseScore × (1 + recencyDecay × 0.3)
+//   4. Composite score = baseScore × recencyMultiplier × confidenceBoost
 //        - baseScore: pinned=2.0, hit=rank, neighbour=parentRank*0.5 + edgeBonus
-//        - recency: exp(-daysOld / 14) — 14-day half-life
+//        - recencyMultiplier: 1 + 0.3·exp(-ln2·daysOld / 14) — true 14-day half-life
 //   5. Sort, fetch full bodies for top items
 //   6. Pack into Pinned (≤30% budget, full body) → Most relevant (≤70% budget,
 //      full body) → Related (rest, summary only) until budget exhausted
@@ -1847,16 +1866,28 @@ function estimateTokens(s: string): number {
   return Math.ceil(s.length / 4)
 }
 
-// Exported so other retrieval paths (chat substrate ranking in
-// lib/kairos/retrieve.ts) can share the same 14-day half-life instead of
-// duplicating the curve. `now` is injectable for deterministic tests.
+// Shared recency curve for BOTH ranking stacks (prepareContext below and chat
+// substrate ranking in lib/kairos/retrieve.ts) so they cannot drift apart
+// again. A true half-life: the decay term is exactly 0.5 at 14 days (the old
+// exp(-d/14) was mislabelled — its real half-life was ≈9.7d). `now` is
+// injectable for deterministic tests.
+export const RECENCY_HALF_LIFE_DAYS = 14
+export const RECENCY_WEIGHT = 0.3
+
 export function recencyDecay(createdAt: Date, now: number = Date.now()): number {
   // Clamp at 0: a future-dated createdAt (clock skew, bad backfill, a stray
   // test fixture) must not push daysOld negative and exceed the intended
-  // ceiling — exp(-daysOld/14) grows past 1 for negative input, which would
+  // ceiling — the exponential grows past 1 for negative input, which would
   // let a future-dated row out-rank a legitimately fresh one.
   const daysOld = Math.max(0, (now - new Date(createdAt).getTime()) / 86_400_000)
-  return Math.exp(-daysOld / 14)
+  return Math.exp((-Math.LN2 * daysOld) / RECENCY_HALF_LIFE_DAYS)
+}
+
+// Composite-score multiplier: 1.3 for a brand-new row, 1.15 at one half-life,
+// → 1 for old rows. Neutral ×1 when createdAt is absent.
+export function recencyMultiplier(createdAt: Date | null | undefined, now: number = Date.now()): number {
+  if (!createdAt) return 1
+  return 1 + recencyDecay(createdAt, now) * RECENCY_WEIGHT
 }
 
 // Windowed row lookup shared by anything that needs "what landed in the last
@@ -2059,12 +2090,11 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
   }
 
   for (const c of candidates) {
-    const recency = recencyDecay(c.createdAt)
     // Confidence decay: dim stale, low-trust beliefs; boost fresh, high-trust
     // ones. Neutral (×1) for pinned, neighbours, and rows without a stored prior.
     const confidence = confidenceBoost({ confidence: c.confidence, updatedAt: c.updatedAt, pinned: c.pinned })
     ;(c as Candidate & { compositeScore: number }).compositeScore =
-      c.baseScore * (1 + recency * 0.3) * confidence
+      c.baseScore * recencyMultiplier(c.createdAt) * confidence
   }
   const scored = candidates as Array<Candidate & { compositeScore: number }>
   scored.sort((a, b) => b.compositeScore - a.compositeScore)

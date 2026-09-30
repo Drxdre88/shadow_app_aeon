@@ -15,7 +15,7 @@ export const registerRecipeTools: RegisterFn = (server) => {
   server.tool(
     'get_trace_history',
     'Return recent recipe-run traces (streamClass="trace") for the calling user. Optionally scope to a single Dominion or a specific recipe name. ' +
-      'Lieutenants (Oracle, Cartographer) and the operator use this to inspect what BRIEF / WEAVE / etc. produced over the last N runs without scanning the full memory stream.',
+      'Use this to inspect what BRIEF produced over the last N runs without scanning the full memory stream.',
     {
       dominionId: z.string().uuid().optional().describe('Scope to a single Dominion'),
       recipe: z.string().min(1).max(64).optional().describe('Filter to runs of one named recipe (matches sourceMetadata.recipe)'),
@@ -33,7 +33,7 @@ export const registerRecipeTools: RegisterFn = (server) => {
 
   server.tool(
     'run_recipe',
-    'Execute a named recipe for one Dominion. Runs through the dispatcher (canonical retrieval → flat/expanded → primary memory + trace). ' +
+    'Execute a named recipe for one Dominion. Runs through the dispatcher (canonical retrieval → recipe → primary memory + trace). ' +
       'Returns { status: "created"|"existing", memoryId, traceId }. Idempotent on the recipe\'s primary externalId — re-firing returns "existing".',
     {
       name: z.string().min(1).max(64).describe('Recipe name (e.g. "BRIEF")'),

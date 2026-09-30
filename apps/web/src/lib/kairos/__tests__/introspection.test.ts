@@ -120,8 +120,11 @@ describe('runIntrospectionForDominion — failure trace + parse repair', { timeo
     expect(result.proposalsCreated).toBe(1)
     expect(ask).toHaveBeenCalledTimes(2)
     expect(insertedRows).toHaveLength(1)
-    const traceCalls = vi.mocked(captureMemory).mock.calls.filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
-    expect(traceCalls).toHaveLength(0)
+    const traceMeta = vi.mocked(captureMemory).mock.calls
+      .filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
+      .map((c) => (c[1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata)
+    expect(traceMeta.filter((m) => m.reason !== undefined)).toHaveLength(0)
+    expect(traceMeta).toContainEqual(expect.objectContaining({ cronName: 'introspection', outcome: 'ok' }))
   })
 
   it('writes exactly one failure trace when both parse attempts fail (T-A2)', async () => {
@@ -167,8 +170,11 @@ describe('runIntrospectionForDominion — failure trace + parse repair', { timeo
 
     expect(result.status).toBe('created')
     expect(ask).toHaveBeenCalledTimes(2)
-    const traceCalls = vi.mocked(captureMemory).mock.calls.filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
-    expect(traceCalls).toHaveLength(0)
+    const traceMeta = vi.mocked(captureMemory).mock.calls
+      .filter((c) => (c[1] as { streamClass?: string }).streamClass === 'trace')
+      .map((c) => (c[1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata)
+    expect(traceMeta.filter((m) => m.reason !== undefined)).toHaveLength(0)
+    expect(traceMeta).toContainEqual(expect.objectContaining({ cronName: 'introspection', outcome: 'ok' }))
   })
 
   it('records finishReason on the trace when the model truncates (T-A4)', async () => {
@@ -189,5 +195,36 @@ describe('runIntrospectionForDominion — failure trace + parse repair', { timeo
     const sm = (traceCalls[0][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata
     expect(sm.finishReason).toBe('length')
     expect(typeof sm.rawExcerpt).toBe('string')
+  })
+
+  it('stages a proposal whose citations drifted (null, label, shortened), storing only the real UUID', async () => {
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    queueDominionAndContext()
+    await mockInspectDominionWithSubstrate()
+    const messy = JSON.stringify({
+      proposals: [{ kind: 'connection', title: 'Link', body: 'b', citations: [null, 'm1', '[22222222]'], confidence: 0.4 }],
+    })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask: vi.fn().mockResolvedValue({ text: messy }) } } as never)
+
+    const { runIntrospectionForDominion } = await import('../introspection')
+    const result = await runIntrospectionForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.proposalsCreated).toBe(1)
+    const row = insertedRows![0] as { sourceMetadata: { citations: string[] }; links: Array<{ target: string }> }
+    expect(row.sourceMetadata.citations).toEqual([MEMORY_ID])
+    expect(row.links.map((l) => l.target)).toEqual([MEMORY_ID])
+  })
+
+  it('writes a skipped liveness trace when already ran today', async () => {
+    const { captureMemory } = await import('@/lib/data/memories')
+    selectQueue.push([{ id: DOMINION_ID, name: 'AEON', archivedAt: null }])
+    selectQueue.push([{ n: 1 }]) // alreadyRanToday
+
+    const { runIntrospectionForDominion } = await import('../introspection')
+    const result = await runIntrospectionForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.status).toBe('existing')
+    const sm = (vi.mocked(captureMemory).mock.calls[0][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata
+    expect(sm).toMatchObject({ cronName: 'introspection', outcome: 'skipped' })
   })
 })

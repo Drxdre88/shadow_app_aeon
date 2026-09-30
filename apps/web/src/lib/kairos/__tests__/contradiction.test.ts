@@ -43,6 +43,7 @@ vi.mock('@/lib/ai/route-task', () => ({
 
 vi.mock('../cron-trace', () => ({
   writeCronFailureTrace: vi.fn(),
+  writeCronSuccessTrace: vi.fn(),
 }))
 
 const USER_ID = 'user-1'
@@ -219,6 +220,89 @@ describe('runContradictionScanForDominion', { timeout: 20000 }, () => {
     expect(ask).toHaveBeenCalledTimes(2)
     const repairPrompt = ask.mock.calls[1][0].prompt as string
     expect(repairPrompt).toContain('not json at all')
+    expect(repairPrompt).toContain(CANDIDATE_ID)
+    expect(ask.mock.calls[1][0].system).toBeTruthy()
     expect(writeCronFailureTrace).not.toHaveBeenCalled()
+  })
+
+  it('uses the heavy-tier 8000-token cap on both judge and repair calls', async () => {
+    const { findSimilarBeliefs } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+
+    queueDominionAndProbes()
+    vi.mocked(findSimilarBeliefs).mockResolvedValueOnce([candidateRow] as never)
+    const ask = vi.fn().mockResolvedValue({ text: 'not json at all' })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask } } as never)
+
+    const { runContradictionScanForDominion } = await import('../contradiction')
+    await runContradictionScanForDominion(USER_ID, DOMINION_ID)
+
+    expect(ask).toHaveBeenCalledTimes(2)
+    expect(ask.mock.calls.map((c) => c[0].maxTokens)).toEqual([8000, 8000])
+  })
+
+  it('canonicalises a drifted candidateId, drops unknown/null ids, and writes an ok trace', async () => {
+    const { findSimilarBeliefs } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    const { writeCronFailureTrace, writeCronSuccessTrace } = await import('../cron-trace')
+
+    queueDominionAndProbes()
+    selectQueue.push([{ n: 0 }]) // hasPendingProposalFor
+    vi.mocked(findSimilarBeliefs).mockResolvedValueOnce([candidateRow] as never)
+    const base = { contradicts: true, winner: 'candidate', confidence: 0.7, rationale: 'cadence changed' }
+    vi.mocked(getProviderForTask).mockResolvedValue({
+      provider: {
+        ask: vi.fn().mockResolvedValue({
+          text: JSON.stringify({
+            findings: [
+              { ...base, candidateId: null },
+              { ...base, candidateId: '99999999-9999-4999-8999-999999999999' },
+              { ...base, candidateId: `[${CANDIDATE_ID.toUpperCase()}]` },
+            ],
+          }),
+        }),
+      },
+    } as never)
+
+    const { runContradictionScanForDominion } = await import('../contradiction')
+    const result = await runContradictionScanForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.proposalsCreated).toBe(1)
+    const row = insertedRows![0] as { sourceMetadata: Record<string, unknown> }
+    expect(row.sourceMetadata).toMatchObject({ winnerId: CANDIDATE_ID, loserId: PROBE_ID })
+    expect(writeCronFailureTrace).not.toHaveBeenCalled()
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER_ID, { cronName: 'contradiction-scan', dominionId: DOMINION_ID })
+  })
+
+  it('writes an ok trace for a clean scan, none when every probe failed, skipped when already ran', async () => {
+    const { findSimilarBeliefs } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    const { writeCronSuccessTrace } = await import('../cron-trace')
+    const { runContradictionScanForDominion } = await import('../contradiction')
+
+    queueDominionAndProbes()
+    vi.mocked(findSimilarBeliefs).mockResolvedValueOnce([candidateRow] as never)
+    vi.mocked(getProviderForTask).mockResolvedValue({
+      provider: { ask: vi.fn().mockResolvedValue({ text: '{"findings":[]}' }) },
+    } as never)
+    await runContradictionScanForDominion(USER_ID, DOMINION_ID)
+    expect(writeCronSuccessTrace).toHaveBeenCalledTimes(1)
+
+    vi.mocked(writeCronSuccessTrace).mockClear()
+    queueDominionAndProbes()
+    vi.mocked(findSimilarBeliefs).mockResolvedValueOnce([candidateRow] as never)
+    vi.mocked(getProviderForTask).mockResolvedValue({
+      provider: { ask: vi.fn().mockResolvedValue({ text: 'not json at all' }) },
+    } as never)
+    await runContradictionScanForDominion(USER_ID, DOMINION_ID)
+    expect(writeCronSuccessTrace).not.toHaveBeenCalled()
+
+    selectQueue.push([{ id: DOMINION_ID, name: 'AEON', archivedAt: null }])
+    selectQueue.push([{ n: 1 }]) // alreadyRanToday
+    const existing = await runContradictionScanForDominion(USER_ID, DOMINION_ID)
+    expect(existing.status).toBe('existing')
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER_ID, expect.objectContaining({
+      cronName: 'contradiction-scan', outcome: 'skipped',
+    }))
   })
 })

@@ -62,6 +62,7 @@ vi.mock('@/lib/kairos/dispatch', () => ({
 
 vi.mock('@/lib/kairos/cron-trace', () => ({
   writeCronFailureTrace: vi.fn(),
+  writeCronSuccessTrace: vi.fn(),
 }))
 
 vi.mock('@/lib/ai/router', () => ({
@@ -83,6 +84,7 @@ import { GET } from '../route'
 import { findDominionsByUser } from '@/lib/data/dominions'
 import { runRecipe } from '@/lib/kairos/dispatch'
 import { AiCredentialMissingError } from '@/lib/ai/router'
+import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 
 const USER = 'user-1'
 const DOM_A = { id: 'dom-a', name: 'Alpha', archivedAt: null }
@@ -132,6 +134,8 @@ describe('cron/briefer route', () => {
       { dominionId: 'dom-b', dominionName: 'Beta', status: 'existing', memoryId: 'm2' },
     ])
     expect(body.users[0].error).toBeUndefined()
+    expect(writeCronSuccessTrace).toHaveBeenCalledOnce()
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER, { cronName: 'briefer' })
   })
 
   it('maps AiCredentialMissingError per Dominion to skipped + reason "no BYOK credential"', async () => {
@@ -147,6 +151,11 @@ describe('cron/briefer route', () => {
       { dominionId: 'dom-a', dominionName: 'Alpha', status: 'skipped', reason: 'no BYOK credential' },
     ])
     expect(body.advisoriesCreated).toBe(0)
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER, {
+      cronName: 'briefer',
+      outcome: 'skipped',
+      skipReason: 'no BYOK credential',
+    })
   })
 
   it('maps "BRIEF: no Dominion bundle" → skipped reason "not found"', async () => {
@@ -185,6 +194,8 @@ describe('cron/briefer route', () => {
     expect(body.users).toHaveLength(1)
     expect(body.users[0].results).toEqual([])
     expect(body.users[0].error).toContain('db connection lost')
+    expect(writeCronFailureTrace).toHaveBeenCalledWith(USER, expect.objectContaining({ cronName: 'briefer' }))
+    expect(writeCronSuccessTrace).not.toHaveBeenCalled()
   })
 
   it('rejects with 401 when CRON_SECRET is set and header missing', async () => {

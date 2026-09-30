@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { agentSessions, sessionEvents, boardTasks, type AgentSession } from '@/lib/db/schema'
+import { agentSessions, sessionEvents, boardTasks, projects, type AgentSession } from '@/lib/db/schema'
 import { eq, and, asc, desc, gte, inArray, notInArray, isNotNull, sql } from 'drizzle-orm'
 import type {
   SpawnSessionInput,
@@ -330,6 +330,48 @@ export async function recordSessionResult(
   if (result.task && task) await touchProject(task.projectId, { type: 'task:updated' })
 
   return { session: result.session, task: result.task }
+}
+
+// Mission → memory: the card a Hangar mission ran against and the Dominion its
+// project is filed under (null when the project is unfiled).
+export async function findMissionCardContext(taskId: string) {
+  const [row] = await db
+    .select({
+      taskId: boardTasks.id,
+      name: boardTasks.name,
+      projectId: boardTasks.projectId,
+      dominionId: projects.dominionId,
+    })
+    .from(boardTasks)
+    .innerJoin(projects, eq(projects.id, boardTasks.projectId))
+    .where(eq(boardTasks.id, taskId))
+    .limit(1)
+  return row ?? null
+}
+
+export interface FlightDeckCounts {
+  errors: number
+  warnings: number
+  downgrades: number
+}
+
+// Flight Deck signal counts for one session: error events, runner/engine
+// warnings (system warning + hook_failed) and objective-contract downgrades.
+export async function countFlightDeckSignals(sessionId: string): Promise<FlightDeckCounts> {
+  const subtype = sql`${sessionEvents.payload}->>'subtype'`
+  const [row] = await db
+    .select({
+      errors: sql<number>`count(*) filter (where ${sessionEvents.kind} = 'error')::int`,
+      warnings: sql<number>`count(*) filter (where ${sessionEvents.kind} = 'system' and ${subtype} in ('warning', 'hook_failed'))::int`,
+      downgrades: sql<number>`count(*) filter (where ${sessionEvents.kind} = 'system' and ${subtype} = 'downgrade')::int`,
+    })
+    .from(sessionEvents)
+    .where(eq(sessionEvents.sessionId, sessionId))
+  return {
+    errors: Number(row?.errors ?? 0),
+    warnings: Number(row?.warnings ?? 0),
+    downgrades: Number(row?.downgrades ?? 0),
+  }
 }
 
 export async function attachSessionMemory(id: string, userId: string, memoryId: string) {

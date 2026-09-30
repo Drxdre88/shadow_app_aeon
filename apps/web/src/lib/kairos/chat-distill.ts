@@ -8,7 +8,7 @@ import {
   buildChatDistillUserPrompt,
   parseChatDistillResponse,
 } from './chat-distill-prompt'
-import { writeCronFailureTrace } from './cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 
 const DAY_MS = 86_400_000
 const MAX_MESSAGES_PER_THREAD = 80
@@ -162,6 +162,16 @@ export async function runChatDistillForUser(
         })
       }
     }
+  }
+
+  // Liveness for the health scorecard (cron path only — a dry run proves
+  // nothing). Thread errors already wrote a failure trace, which wins.
+  if (!dryRun && !results.some((result) => result.status === 'error')) {
+    const worked = results.some((result) => result.status === 'created' || result.status === 'existing')
+    await writeCronSuccessTrace(userId, {
+      cronName: 'chat-distill',
+      ...(worked ? {} : { outcome: 'skipped' as const, skipReason: threads.length === 0 ? 'no threads' : 'no durable signal' }),
+    })
   }
 
   return {

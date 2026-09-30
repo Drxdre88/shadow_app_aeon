@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { memories } from '@/lib/db/schema'
-import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 3B — recipe trace history.
@@ -14,13 +14,22 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 // Recipe name filter probes `sourceMetadata->>'recipe'` — recipes always
 // write the canonical name, but the schema doesn't enforce it, so callers
 // shouldn't expect 100% recall for older traces.
+//
+// `since` bounds the scan by time (internal callers only — not on the
+// MCP/REST validator). A time-bounded read may ask for up to
+// SINCE_LIMIT_MAX rows (the health scorecard reads ~15 crons × Dominions of
+// success/failure rows per night); unbounded reads keep the 100-row cap.
 // ─────────────────────────────────────────────────────────────────────────
 
 export interface ListTraceHistoryInput {
   dominionId?: string
   recipe?: string
   limit?: number
+  since?: Date
 }
+
+const DEFAULT_LIMIT_MAX = 100
+const SINCE_LIMIT_MAX = 2000
 
 export interface TraceHistoryRow {
   id: string
@@ -35,7 +44,8 @@ export async function listTraceHistory(
   userId: string,
   input: ListTraceHistoryInput = {},
 ): Promise<TraceHistoryRow[]> {
-  const limit = Math.min(Math.max(input.limit ?? 25, 1), 100)
+  const maxLimit = input.since ? SINCE_LIMIT_MAX : DEFAULT_LIMIT_MAX
+  const limit = Math.min(Math.max(input.limit ?? 25, 1), maxLimit)
 
   const conditions = [
     eq(memories.userId, userId),
@@ -46,6 +56,7 @@ export async function listTraceHistory(
   if (input.recipe) {
     conditions.push(sql`${memories.sourceMetadata}->>'recipe' = ${input.recipe}`)
   }
+  if (input.since) conditions.push(gte(memories.createdAt, input.since))
 
   const rows = await db
     .select({

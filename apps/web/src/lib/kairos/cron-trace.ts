@@ -59,3 +59,43 @@ export async function writeCronFailureTrace(userId: string, input: CronFailureTr
     console.error(`[kairos:cron-trace] failed to write failure trace for ${cronName}:`, traceErr)
   }
 }
+
+// Liveness for the health scorecard: one row per cron (per Dominion) per UTC
+// day, idempotent via externalId, so an 'ok' night is distinguishable from a
+// cron that never fired. Deliberately carries NO `reason` field — the health
+// scorecard treats any row with `reason` as a failure. `skipped` marks an
+// expected no-op (awaiting reply, nothing to do) that still proves the cron ran.
+export interface CronOutcomeTraceInput {
+  cronName: string
+  dominionId?: string | null
+  outcome?: 'ok' | 'skipped'
+  skipReason?: string
+  durationMs?: number
+  now?: Date
+}
+
+export async function writeCronSuccessTrace(userId: string, input: CronOutcomeTraceInput): Promise<void> {
+  const { cronName, dominionId = null, outcome = 'ok', skipReason, durationMs, now = new Date() } = input
+  const day = now.toISOString().slice(0, 10)
+  const body: Record<string, unknown> = {
+    cronName,
+    outcome,
+    externalId: `cron-${outcome}:${cronName}:${dominionId ?? 'all'}:${day}`,
+  }
+  if (skipReason !== undefined) body.skipReason = skipReason
+  if (durationMs !== undefined) body.durationMs = durationMs
+
+  try {
+    await captureMemory(userId, {
+      type: 'session_event',
+      streamClass: 'trace',
+      source: 'system',
+      title: `${cronName} ${outcome}${skipReason ? ` · ${skipReason}` : ''}`,
+      bodyMd: JSON.stringify(body, null, 2),
+      dominionId,
+      sourceMetadata: body,
+    })
+  } catch (traceErr) {
+    console.error(`[kairos:cron-trace] failed to write ${outcome} trace for ${cronName}:`, traceErr)
+  }
+}

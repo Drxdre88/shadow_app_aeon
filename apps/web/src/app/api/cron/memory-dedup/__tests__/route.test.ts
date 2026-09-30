@@ -10,11 +10,12 @@ vi.mock('@/lib/kairos/embeddings', () => ({
 
 vi.mock('@/lib/kairos/cron-trace', () => ({
   writeCronFailureTrace: vi.fn(),
+  writeCronSuccessTrace: vi.fn(),
 }))
 
 import { dedupMemories } from '@/lib/data/memories'
 import { embeddingsEnabled } from '@/lib/kairos/embeddings'
-import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 import { GET } from '../route'
 
 const OPERATOR = 'operator-user-1'
@@ -84,5 +85,27 @@ describe('cron/memory-dedup route', () => {
     expect(response.status).toBe(200)
     expect(body).toMatchObject({ superseded: 3, clusters: 1 })
     expect(writeCronFailureTrace).not.toHaveBeenCalled()
+  })
+
+  it('writes an ok success trace on a real run but not on a dry run', async () => {
+    process.env.KAIROS_OPERATOR_USER_ID = OPERATOR
+    vi.mocked(dedupMemories).mockResolvedValue({ superseded: 0, clusters: 0 } as never)
+
+    await GET(request('/api/cron/memory-dedup?dryRun=1'))
+    expect(writeCronSuccessTrace).not.toHaveBeenCalled()
+
+    await GET(request())
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(OPERATOR, { cronName: 'memory-dedup' })
+  })
+
+  it('writes a skipped success trace when embeddings are disabled', async () => {
+    process.env.KAIROS_OPERATOR_USER_ID = OPERATOR
+    vi.mocked(embeddingsEnabled).mockReturnValue(false)
+    await GET(request())
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(OPERATOR, {
+      cronName: 'memory-dedup',
+      outcome: 'skipped',
+      skipReason: 'embeddings_disabled',
+    })
   })
 })
