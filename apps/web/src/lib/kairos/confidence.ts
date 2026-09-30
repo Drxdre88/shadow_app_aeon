@@ -29,6 +29,8 @@
 // (autonomy L2+). Tunable, not load-bearing yet.
 export const CONFIDENCE_BY_STREAM: Record<string, number> = {
   reflection: 0.9,
+  // Concept — distilled from several corroborating members; above a single idea.
+  concept: 0.75,
   cortex: 0.7,
   // Aether — daily cross-Dominion synthesis; same trust tier as a cortex doc.
   aether: 0.7,

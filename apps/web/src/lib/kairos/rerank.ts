@@ -7,8 +7,9 @@
 // single highest precision-per-effort win once recall is wide (and slice-1
 // global recall made it wide). This runs AFTER fusion + confidence weighting,
 // so those signals still decide WHICH rows reach the pool; the caller
-// (retrieve.ts) then blends the relevance score with the same recency and
-// confidence multipliers so rerank cannot silently discard the time signal.
+// (retrieve.ts) then blends the relevance score with the shared standingFactor
+// (lib/kairos/ranking.ts: memory-engine standing, or confidence × recency while
+// unscored) so rerank cannot silently discard the time/trust signal.
 //
 // Same server-managed VOYAGE_API_KEY as embeddings (app-owned index, NOT the
 // per-user BYOK chat keys). No key → no-op: callers keep their prior order, so

@@ -7,6 +7,7 @@ import {
   listTodaysAdvisories,
   markKairosSpeaksReplied,
 } from '@/lib/data/memories'
+import { reactOutcome } from '@/lib/data/memory-reactions'
 
 export type KairosInboxUrgency = 'low' | 'normal' | 'high'
 
@@ -90,6 +91,10 @@ export async function dismissInboxMemory(userId: string, memoryId: string): Prom
     } catch (err) {
       console.error('[kairos-inbox] failed to mark speaks replied', err)
     }
+  } else {
+    // Dismissing a proposal is an operator veto: Outcome negative + a
+    // 'feedback' op (docs/kairos/32 §2). Best-effort, never fails dismiss.
+    await reactOutcome(userId, memoryId, 'negative', 'proposal dismissed')
   }
   return { ok: true, id: archived.id }
 }

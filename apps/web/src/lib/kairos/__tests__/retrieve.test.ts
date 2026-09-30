@@ -1,16 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { PgDialect } from 'drizzle-orm/pg-core'
+import type { SQL } from 'drizzle-orm'
 
 // Queue of arrays returned by successive db.select() chains, in the order
 // retrieveContext fires them: cortex, archetypes, substrate, traces. Bundle
 // goes through inspectDominion, not db.select.
 const selectQueue: unknown[][] = []
+const whereArgs: unknown[] = []
 
 vi.mock('@/lib/db', () => {
   function makeChain(rows: unknown[]) {
     const chain: Record<string, unknown> = {}
     const pass = () => chain
     chain.from = pass
-    chain.where = pass
+    chain.where = (w: unknown) => {
+      whereArgs.push(w)
+      return chain
+    }
     chain.orderBy = pass
     chain.innerJoin = pass
     chain.leftJoin = pass
@@ -69,6 +75,7 @@ function fakeBundle() {
 beforeEach(() => {
   vi.clearAllMocks()
   selectQueue.length = 0
+  whereArgs.length = 0
 })
 
 describe('retrieveContext', () => {
@@ -254,5 +261,54 @@ describe('fetchSubstrate recency weighting (FTS-only path — no embeddings key 
 
     expect(r.substrate[0].id).toBe(TODAY_ID)
     expect(r.substrate.map((s) => s.id)).toContain(STALE_ID)
+  })
+})
+
+describe('fetchSubstrate — memory engine (concepts + standing, FTS-only path)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('queries the concept stream and exempts concepts from the 90-day window', async () => {
+    vi.stubEnv('VOYAGE_API_KEY', '')
+    vi.stubEnv('OPENAI_API_KEY', '')
+    selectQueue.push([]) // aether
+    selectQueue.push([]) // archetypes
+    selectQueue.push([]) // substrate
+    selectQueue.push([]) // traces
+
+    await retrieveGlobalContext({ userId: USER_ID, query: 'launch plan status' })
+
+    const dialect = new PgDialect()
+    const substrateWhere = whereArgs
+      .map((w) => dialect.sqlToQuery(w as SQL))
+      .find((q) => q.sql.includes('"fts" @@'))
+    expect(substrateWhere).toBeDefined()
+    expect(substrateWhere!.params).toEqual(expect.arrayContaining(['reflection', 'idea', 'agentic', 'concept']))
+    expect(substrateWhere!.sql).toContain(`OR "memories"."stream_class" = 'concept'`)
+  })
+
+  it('a scored row ranks by 0.5 + standing; unscored rows keep the P0 recency order', async () => {
+    vi.stubEnv('VOYAGE_API_KEY', '')
+    vi.stubEnv('OPENAI_API_KEY', '')
+    const now = new Date()
+    const base = { bodyMd: 'b', streamClass: 'idea', confidence: null, pinned: false, rank: 0.1 }
+    const FRESH = 'a1111111-1111-4111-8111-111111111111'
+    const OLD_TRUSTED = 'a2222222-2222-4222-8222-222222222222'
+    const OLD = 'a3333333-3333-4333-8333-333333333333'
+    const old = new Date(now.getTime() - 60 * 86_400_000)
+    selectQueue.push([]) // aether
+    selectQueue.push([]) // archetypes
+    selectQueue.push([
+      { ...base, id: OLD, title: 'old', createdAt: old, updatedAt: old, standing: null },
+      { ...base, id: FRESH, title: 'fresh', createdAt: now, updatedAt: now, standing: null },
+      { ...base, id: OLD_TRUSTED, title: 'old trusted', createdAt: old, updatedAt: old, standing: 0.95 },
+    ])
+    selectQueue.push([]) // traces
+
+    const r = await retrieveGlobalContext({ userId: USER_ID, query: 'launch plan status' })
+
+    // 0.1 × 1.45 > 0.1 × ~1.3 (fresh, P0) > 0.1 × ~1.015 (60d, P0).
+    expect(r.substrate.map((s) => s.id)).toEqual([OLD_TRUSTED, FRESH, OLD])
   })
 })

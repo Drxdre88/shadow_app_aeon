@@ -27,7 +27,9 @@ import {
   type DedupCandidate,
 } from '@/lib/kairos/dedup'
 import { rrfFuse } from '@/lib/kairos/rrf'
-import { confidenceBoost, confidenceForStreamClass } from '@/lib/kairos/confidence'
+import { confidenceForStreamClass } from '@/lib/kairos/confidence'
+import { rankScore } from '@/lib/kairos/ranking'
+import { reactOutcome, reactUsed } from './memory-reactions'
 import { defaultStreamClass, deriveValidAt } from '@/lib/kairos/stream-class-default'
 import { META_STREAM_CLASSES } from '@/lib/kairos/streamClass'
 import { dominionTag } from '@/lib/kairos/dominionTags'
@@ -85,6 +87,9 @@ const SLIM_COLUMNS = {
   // decay in retrieval scoring; intentionally surfaced to search consumers (the
   // caller's own non-sensitive prior) — MCP/REST stay in parity via this shared set.
   confidence: memories.confidence,
+  // Memory-engine standing (docs/kairos/32 §1). Feeds the shared ranker
+  // (lib/kairos/ranking.ts); NULL = unscored → P0 confidence × recency.
+  standing: memories.standing,
 } as const
 
 export async function findMemoryById(memoryId: string, userId: string) {
@@ -1485,7 +1490,7 @@ export async function acceptProposal(
     // invert the window (invalid before valid) and could future-date invalid_at
     // past NOW(), letting a retired belief slip through the validAsOfNow gate.
     // `now` is a truthful lower bound and keeps invalid_at <= NOW() invariant.
-    return db.transaction(async (tx) => {
+    const resolved: AcceptProposalResult | null = await db.transaction(async (tx) => {
       const superseded = await tx
         .update(memories)
         .set({ supersededAt: now, supersededById: winnerId, invalidAt: now, updatedAt: now })
@@ -1511,6 +1516,8 @@ export async function acceptProposal(
       // report the no-op honestly rather than claiming a supersede happened.
       return superseded.length ? { ok: true, memory: updated } : { ok: false, reason: 'loser_already_superseded' }
     })
+    if (resolved?.ok) await reinforceAcceptedProposal(userId, memoryId)
+    return resolved
   }
 
   const kind = typeof meta.kind === 'string' ? meta.kind : 'reflection'
@@ -1551,7 +1558,17 @@ export async function acceptProposal(
       .where(and(eq(memories.userId, userId), inArray(memories.id, supersedeIds)))
   }
 
+  if (updated) await reinforceAcceptedProposal(userId, memoryId)
   return updated ? { ok: true, memory: updated } : null
+}
+
+// Operator reaction (docs/kairos/32 §2): accepting a proposal is Usage + Outcome
+// positive on it, each logged as a 'feedback' op. Runs after the accept wrote
+// its own sourceMetadata, so the atomic outcome merge lands on top. Best-effort
+// — reactions never fail the accept.
+async function reinforceAcceptedProposal(userId: string, memoryId: string): Promise<void> {
+  await reactOutcome(userId, memoryId, 'positive', 'proposal accepted')
+  await reactUsed(userId, [memoryId], 'proposal accepted')
 }
 
 export async function deleteMemory(memoryId: string, userId: string) {
@@ -1841,8 +1858,10 @@ export async function findSimilarBeliefs(
 //   1. BM25 FTS search for candidates (top-K = maxSources)
 //   2. Pinned fetch (always or per includePinned flag), user-scoped, realm-scoped
 //   3. 1-hop graph walk from top-10 hits (in parallel) for typed neighbours
-//   4. Composite score = baseScore × recencyMultiplier × confidenceBoost
+//   4. Composite score = baseScore × standingFactor (lib/kairos/ranking.ts)
 //        - baseScore: pinned=2.0, hit=rank, neighbour=parentRank*0.5 + edgeBonus
+//        - standingFactor: 0.5 + standing once the memory engine scored the row;
+//          unscored → confidenceBoost × recencyMultiplier (P0, unchanged)
 //        - recencyMultiplier: 1 + 0.3·exp(-ln2·daysOld / 14) — true 14-day half-life
 //   5. Sort, fetch full bodies for top items
 //   6. Pack into Pinned (≤30% budget, full body) → Most relevant (≤70% budget,
@@ -1936,6 +1955,7 @@ type Candidate = {
   createdAt: Date
   updatedAt?: Date | null   // reinforcement signal for confidence decay
   confidence?: number | null // stored trust prior; absent → neutral (no effect)
+  standing?: number | null   // memory-engine standing; absent → P0 fallback
   pinned: boolean
   baseScore: number
   origin: 'pinned' | 'hit' | 'neighbour'
@@ -2047,6 +2067,7 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
       confidence: p.confidence,
+      standing: p.standing,
       pinned: true,
       baseScore: 2.0,
       origin: 'pinned',
@@ -2064,6 +2085,7 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
       createdAt: h.createdAt,
       updatedAt: h.updatedAt,
       confidence: h.confidence,
+      standing: h.standing,
       pinned: !!h.pinned,
       baseScore: h.rank,
       origin: 'hit',
@@ -2089,12 +2111,12 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
     })
   }
 
+  const rankNow = Date.now()
   for (const c of candidates) {
-    // Confidence decay: dim stale, low-trust beliefs; boost fresh, high-trust
-    // ones. Neutral (×1) for pinned, neighbours, and rows without a stored prior.
-    const confidence = confidenceBoost({ confidence: c.confidence, updatedAt: c.updatedAt, pinned: c.pinned })
-    ;(c as Candidate & { compositeScore: number }).compositeScore =
-      c.baseScore * recencyMultiplier(c.createdAt) * confidence
+    // Shared ranker: standing once scored; otherwise P0 confidence decay ×
+    // recency (neutral confidence for pinned, neighbours, and rows without a
+    // stored prior).
+    ;(c as Candidate & { compositeScore: number }).compositeScore = rankScore(c.baseScore, c, rankNow)
   }
   const scored = candidates as Array<Candidate & { compositeScore: number }>
   scored.sort((a, b) => b.compositeScore - a.compositeScore)

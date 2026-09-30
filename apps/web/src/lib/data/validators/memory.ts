@@ -29,6 +29,8 @@ export const memoryTypeSchema   = z.enum([
   'dominion_cortex',
   // Aether — daily cross-Dominion synthesis (one per UTC day).
   'aether',
+  // Memory engine (docs/kairos/32) — distilled cluster of member memories.
+  'concept',
 ])
 // Kairos Phase 1 (A1) — added sources: 'cron' (briefer/snapshot jobs),
 // 'system' (board mutations, project lifecycle), 'webhook' (channel adapters).

@@ -51,7 +51,7 @@ const TODAY_ID = 'a1111111-1111-4111-8111-111111111111'
 const STALE_ID = 'a2222222-2222-4222-8222-222222222222'
 const REFL_ID = 'a3333333-3333-4333-8333-333333333333'
 
-function sub(id: string, streamClass: string, createdAt: Date, rank = 0.1) {
+function sub(id: string, streamClass: string, createdAt: Date, rank = 0.1, standing: number | null = null) {
   return {
     id,
     title: id,
@@ -61,6 +61,7 @@ function sub(id: string, streamClass: string, createdAt: Date, rank = 0.1) {
     updatedAt: createdAt,
     confidence: null,
     pinned: false,
+    standing,
     rank,
   }
 }
@@ -145,6 +146,46 @@ describe('fetchSubstrate — rerank blended with recency + confidence', () => {
     const out = await searchSubstrateForChat('user-1', 'launch plan status')
 
     expect(out.map((m) => m.id)).toEqual([TODAY_ID, STALE_ID])
+  })
+})
+
+describe('fetchSubstrate — memory-engine standing (relevance × standingFactor)', () => {
+  it('a scored high-standing stale row beats a fresh low-standing one at equal relevance', async () => {
+    const trusted = sub(STALE_ID, 'idea', sixtyDaysAgo, 0.1, 0.9)
+    const weak = sub(TODAY_ID, 'idea', now, 0.1, 0.1)
+    ftsQueue.push([weak, trusted])
+    vecQueue.push([weak, trusted])
+    vi.mocked(rerankScored).mockImplementation(async (_q, items) =>
+      (items as typeof weak[]).map((item) => ({ item, relevance: 0.6 })) as never)
+
+    const out = await searchSubstrateForChat('user-1', 'launch plan status')
+
+    // P0 (recency) would put TODAY first; standing 0.9 vs 0.1 decides now.
+    expect(out.map((m) => m.id)).toEqual([STALE_ID, TODAY_ID])
+  })
+
+  it('standing also shapes the no-Voyage pool order', async () => {
+    const trusted = sub(STALE_ID, 'idea', sixtyDaysAgo, 0.1, 0.9)
+    const weak = sub(TODAY_ID, 'idea', now, 0.1, 0.1)
+    ftsQueue.push([weak, trusted])
+    vecQueue.push([weak, trusted])
+    vi.mocked(rerankScored).mockResolvedValue(null)
+
+    const out = await searchSubstrateForChat('user-1', 'launch plan status')
+
+    expect(out.map((m) => m.id)).toEqual([STALE_ID, TODAY_ID])
+  })
+
+  it('concept rows are retrievable and keep their streamClass', async () => {
+    const CONCEPT_ID = 'a4444444-4444-4444-8444-444444444444'
+    const concept = sub(CONCEPT_ID, 'concept', sixtyDaysAgo, 0.1, 0.75)
+    ftsQueue.push([concept])
+    vecQueue.push([concept])
+    vi.mocked(rerankScored).mockResolvedValue(null)
+
+    const out = await searchSubstrateForChat('user-1', 'launch plan status')
+
+    expect(out).toEqual([expect.objectContaining({ id: CONCEPT_ID, streamClass: 'concept' })])
   })
 })
 

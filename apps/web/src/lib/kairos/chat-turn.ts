@@ -40,6 +40,7 @@ import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import type { AIProvider } from '@/lib/ai/provider'
 import { answerKairosAsk } from '@/lib/kairos/ask'
+import { reactUsed } from '@/lib/data/memory-reactions'
 import { extractJsonBlock, neutraliseFences } from '@/lib/kairos/_prompt-utils'
 
 // Whole-brain chat turn engine, extracted from the chat server actions so
@@ -423,6 +424,11 @@ export async function runAssistantTurn(
     ...(retrievalMeta ? { retrieval: retrievalMeta } : {}),
   })
   if (!asstAppend.ok) return { ok: false, reason: 'thread_not_found' }
+
+  // Memory engine reaction (docs/kairos/32 §2): memories actually cited in the
+  // persisted reply (hallucinated ids already stripped) → Usage + 'feedback'
+  // op. reactUsed swallows its own errors, so this never fails the turn.
+  if (citedIds.length > 0) await reactUsed(userId, citedIds, 'cited in kairos chat reply')
 
   if (pendingAskContext && reply.askResolution?.answersPending) {
     const pending = pendingAskContext.pending

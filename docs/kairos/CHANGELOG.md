@@ -4,6 +4,18 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–31).
 
+## [0.12.0] — 2026-09-30 · "The Memory Engine"
+
+> Memories stop being a pile. Every night Kairos weighs, ages, backs up, merges and groups what he knows, learns from how you react, and keeps a full undo trail. His thinking can now be done by Claude on your Max plan, with the paid key as a safety net. Spec: `docs/kairos/32-memory-engine.md`, routine playbook `33-thinking-routine.md`.
+
+- **Standing** — every memory gets a nightly trust-and-value score from composable parts: who said it, how fresh it is (per-class fading), how often it's used, independent backing, outcome of your reactions, open challenges. Search and chat rank by relevance × standing; unscored memories rank exactly as before.
+- **"Maybe" beliefs earn their place** — Kairos's own proposals become beliefs only when separate evidence on two different days backs them; unsupported ones fade after three weeks. The evening message lists new beliefs with a veto hint.
+- **Repeats fold together** — near-identical new memories merge into the older copy, reinforcing it.
+- **Undo everything** — every engine change is logged with its reason; `list_memory_ops` / `revert_memory_op` (MCP + REST) undo any change, and a vetoed change is not redone.
+- **Your reactions teach him** — accepting, dismissing, answering an ask and chat citations feed back into standing.
+- **Concepts** — weekly, closely related memories in each Dominion are distilled into one cited concept (spec 26); clusters dominated by your reflections become proposals instead.
+- **Thinking queue** — cortex, Aether and concepts can be claimed and answered by a scheduled Claude Max routine through the Aeon connector (`claim_thinking_job` / `submit_thinking_job`); the server validates and persists, and the existing paid-key crons still run if the routine doesn't.
+
 ## [0.11.0] — 2026-09-30 · "Eyes & Heal"
 
 > The 29/09 reassessment found the mesh generates but never metabolises: nothing Kairos produced came back round, questions had been silently blocked since July, and the operator's own board reached him as bare titles. This era fixes the four live defects and gives him eyes on what actually happened. Plan + evidence: `aeon_os/HANDOVER_2909.md`, `research/kairos_2909/`.

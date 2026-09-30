@@ -42,7 +42,13 @@ vi.mock('@/lib/db', () => {
   }
 })
 
+vi.mock('../memory-reactions', () => ({
+  reactOutcome: vi.fn(async () => undefined),
+  reactUsed: vi.fn(async () => undefined),
+}))
+
 import { acceptProposal } from '../memories'
+import { reactOutcome, reactUsed } from '../memory-reactions'
 
 const USER = 'user-1'
 const PROPOSAL_ID = 'proposal-1'
@@ -102,6 +108,8 @@ describe('acceptProposal — contradiction branch', () => {
     // Second update archives + resolves the notice row.
     expect(setCalls[1]).toMatchObject({ archivedAt: expect.any(Date) })
     expect((setCalls[1].sourceMetadata as Record<string, unknown>).status).toBe('resolved')
+    // Accepting the notice is an operator reaction on the proposal row.
+    expect(reactOutcome).toHaveBeenCalledWith(USER, PROPOSAL_ID, 'positive', expect.any(String))
   })
 
   it("closes the loser's valid window at acceptance time (never backdated to the winner)", async () => {
@@ -135,6 +143,8 @@ describe('acceptProposal — contradiction branch', () => {
     expect(result).toEqual({ ok: false, reason: 'loser_already_superseded' })
     // Notice is still closed out as stale rather than left dangling.
     expect((setCalls[1].sourceMetadata as Record<string, unknown>).status).toBe('stale')
+    // A stale no-op is not an accept: no reaction recorded.
+    expect(reactOutcome).not.toHaveBeenCalled()
   })
 
   it('rejects when the winner memory no longer exists', async () => {
@@ -185,6 +195,25 @@ describe('acceptProposal — introspection branch (unchanged)', () => {
     // Only one update call — the introspection branch never touches a second row
     // unless `supersedes` is passed.
     expect(setCalls).toHaveLength(1)
+    // Operator reaction: accept → Outcome positive + Usage on the proposal.
+    expect(reactOutcome).toHaveBeenCalledWith(USER, PROPOSAL_ID, 'positive', expect.any(String))
+    expect(reactUsed).toHaveBeenCalledWith(USER, [PROPOSAL_ID], expect.any(String))
+  })
+
+  it('records no reaction when the proposal update matched nothing', async () => {
+    selectQueue.push([{
+      id: PROPOSAL_ID,
+      userId: USER,
+      type: 'inbound',
+      links: [],
+      sourceMetadata: { introspection: true, kind: 'reflection', status: 'pending' },
+    }])
+    updateQueue.push([]) // row vanished between read and write
+
+    const result = await acceptProposal(PROPOSAL_ID, USER, { pin: false })
+    expect(result).toBeNull()
+    expect(reactOutcome).not.toHaveBeenCalled()
+    expect(reactUsed).not.toHaveBeenCalled()
   })
 
   it('closes the valid window of beliefs the promoted memory supersedes', async () => {

@@ -13,6 +13,7 @@ import {
   type KairosCardNotesMeta,
 } from '@/lib/data/ask'
 import { captureReflection, markKairosSpeaksReplied } from '@/lib/data/memories'
+import { reactUsed } from '@/lib/data/memory-reactions'
 import { appendTaskDescription, findTaskById } from '@/lib/data/tasks'
 import { updateVaultDescription } from '@/lib/data/vault'
 import { verifyProjectAccess } from '@/lib/data/projects'
@@ -352,5 +353,10 @@ export async function answerKairosAsk(
       console.error('[kairos-ask] card notes write-back failed', err)
     }
   }
+  // Memory engine reaction (docs/kairos/32 §2): the memories this ask was
+  // built from were used by an answered ask → Usage + 'feedback' op.
+  // Best-effort (reactUsed never throws); non-uuid source ids are skipped.
+  const sourceIds = pending.kairosAsk.sourceMemoryIds ?? []
+  if (sourceIds.length > 0) await reactUsed(userId, sourceIds, 'kairos ask answered')
   return { reflectionId: answerMemoryId }
 }

@@ -7,6 +7,14 @@
       "schedule": "0 23 * * *"
     },
     {
+      "path": "/api/cron/memory-engine",
+      "schedule": "30 1 * * *"
+    },
+    {
+      "path": "/api/cron/thinking-sweep",
+      "schedule": "50 * * * *"
+    },
+    {
       "path": "/api/cron/chat-distill",
       "schedule": "0 2 * * *"
     },
