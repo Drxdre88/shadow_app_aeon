@@ -44,7 +44,9 @@ describe('resolveEstimateMinutes — the board unit decides', () => {
         fc.integer({ min: 1, max: 100 }),
         fc.double({ min: 0.5, max: 24, noNaN: true }),
         (size, hoursPerPoint) => {
-          fc.pre(Math.abs(hoursPerPoint - CALENDAR.hoursPerDay) > 1e-9)
+          // Compare at minute resolution: a rate a hair off hoursPerDay (e.g.
+          // 7.9917h × 1) still rounds to the same minutes as the days board.
+          fc.pre(Math.round(size * hoursPerPoint * 60) !== Math.round(size * CALENDAR.hoursPerDay * 60))
           const points = resolveEstimateMinutes(
             sized(size),
             { unit: 'points', hoursPerPoint },
