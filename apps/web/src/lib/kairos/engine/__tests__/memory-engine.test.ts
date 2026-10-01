@@ -161,7 +161,7 @@ describe('MemoryEngine', () => {
 describe('buildNightSteps', () => {
   it('runs the own-mind mirror right after BackUp, then the belief re-check', () => {
     const steps = buildNightSteps()
-    expect(steps.map((s) => s.name)).toEqual(['merge', 'weigh', 'backup', 'own_mind', 'recheck', 'concepts'])
+    expect(steps.map((s) => s.name)).toEqual(['merge', 'weigh', 'own_mind', 'recheck', 'backup', 'concepts'])
     expect(steps[1]).toBeInstanceOf(WeighStep)
   })
 })

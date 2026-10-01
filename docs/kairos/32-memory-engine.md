@@ -117,7 +117,9 @@ rows are embedded only by the 04:00 UTC backfill, after the 01:30 engine run.
 **BackUp** additionally needs `anchoredSupports ≥ 1`: at least one independent support of operator or activity
 origin (stored in `engine.support.anchoredSupports`). AI-written material alone can't confirm Kairos's guesses.
 
-**Recheck** (new step after OwnMind). Up to 200 held beliefs a night whose provenance memory was deleted,
+**Recheck** (new step; night order is Merge → Weigh → OwnMind → Recheck → BackUp → Concepts, so the cheap belief
+steps run before BackUp, which can exhaust the time budget while a proposal backlog drains; a promotion is mirrored
+the night after). Up to 200 held beliefs a night whose provenance memory was deleted,
 archived, invalidated, or superseded with no live survivor are flagged `belief.recheck = { since, lostSources }`
 and their confidence × 0.7 (floor 0.1), op `recheck` (revertable; the revert records
 `engine.vetoes.recheck.lostSources`). A Merge supersession is not a loss: provenance is remapped to the survivor
