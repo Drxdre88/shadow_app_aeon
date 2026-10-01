@@ -4,6 +4,17 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–34).
 
+## [0.14.0] — 2026-10-01 · "Ground and Protect"
+
+> Kairos starts to behave like it has a conscience: he reads his principles before he answers, knows where every memory came from, stops trusting his own echoes, and re-thinks a belief when what it rested on is corrected. Research: `research/kairos_0110/00_verdict.md`; specs `32` §5, `34` §8.
+
+- **Reads his principles before answering** — the constitution and top held beliefs go into chat, the daily message, the weekly review and every Dominion's morning brief, with one rule: if a reply would conflict with a principle, say so. The morning brief also reads the Dominion's cortex and the Aether summary now.
+- **Knows where things came from** — every new memory is labelled operator / activity / agent / Kairos / external at write time, by how it arrived; senders can't set it. Kairos's own summaries take the lowest trust of what they summarised.
+- **Stops trusting his own echoes** — belief confidence is capped by evidence (your words 0.95, agents and board 0.8, Kairos's own inferences 0.6); AI summaries of your chats count as your view only once your own words confirm them; his guesses need at least one piece of backing from you or your board before they become his beliefs.
+- **Re-thinks when a source is corrected** — a nightly re-check flags beliefs that lost support, lowers their confidence, and asks the next belief pass to reaffirm, replace or retire them. Every change can be undone.
+- **Honesty self-checks** — every night, besides the drift check: does he give the same advice whichever way you lean, admit what he can't know, prefer newer corrections, contradict himself, or hold beliefs built on outside content? Failures appear in the daily message. Measurement only.
+- **Fixed** — merged duplicates no longer ground chat; beliefs and the constitution no longer drop out of search after 90 days or fade like 30-day notes; the nightly merge no longer misses memories embedded late.
+
 ## [0.13.0] — 2026-10-01 · "Beliefs and Strategy"
 
 > Kairos starts reasoning from what the operator believes, keeps a second mind of his own beside it, and talks once a day. Spec: `docs/kairos/34-beliefs-and-strategy.md`; routine playbook `33-thinking-routine.md`.
