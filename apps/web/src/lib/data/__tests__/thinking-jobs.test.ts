@@ -63,7 +63,7 @@ describe('claimNextJob', () => {
     const where = render(calls['update.where'][0])
     const text = where.sql.replace(/\s+/g, ' ')
     expect(text).toContain('"thinking_jobs"."status" = $')
-    expect(text).toMatch(/"id" = \(SELECT id FROM thinking_jobs WHERE user_id = \$\d+ AND status = 'queued' AND deadline_at > now\(\) ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED\)/)
+    expect(text).toMatch(/"id" = \(SELECT id FROM thinking_jobs WHERE user_id = \$\d+ AND status = 'queued' AND deadline_at > now\(\) AND kind NOT IN \(\$\d+\) ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED\)/)
     expect(where.params).toContain(USER)
     expect(where.params).toContain('queued')
 
@@ -79,7 +79,21 @@ describe('claimNextJob', () => {
     await claimNextJob(USER, ['cortex', 'aether'])
     const where = render(calls['update.where'][0])
     expect(where.sql).toMatch(/AND kind IN \(\$\d+, \$\d+\) ORDER BY/)
+    expect(where.sql).not.toContain('NOT IN')
     expect(where.params).toEqual(expect.arrayContaining(['cortex', 'aether']))
+  })
+
+  it('without kinds never claims a chat job; chat is claimable only when asked for explicitly', async () => {
+    await claimNextJob(USER)
+    const any = render(calls['update.where'][0])
+    expect(any.sql).toMatch(/AND kind NOT IN \(\$\d+\) ORDER BY/)
+    expect(any.params).toContain('chat')
+
+    await claimNextJob(USER, ['chat'])
+    const chat = render(calls['update.where'][1])
+    expect(chat.sql).toMatch(/AND kind IN \(\$\d+\) ORDER BY/)
+    expect(chat.sql).not.toContain('NOT IN')
+    expect(chat.params).toContain('chat')
   })
 
   it('returns null when nothing was claimable', async () => {
@@ -139,6 +153,8 @@ describe('completeJob / failJob / expireOverdue / recordFallback', () => {
     await recordFallback(USER, JOB, { ok: false, reason: 'deferred to cron' })
     expect(calls['update.set'][1]).toMatchObject({ error: 'fallback: deferred to cron' })
     expect(calls['update.set'][1]).not.toHaveProperty('status')
+    await recordFallback(USER, JOB, { ok: true, memoryIds: ['m2'], output: { draft: 'd', memoryIds: ['spoof'] } })
+    expect(calls['update.set'][2]).toMatchObject({ status: 'fallback', output: { draft: 'd', memoryIds: ['m2'] } })
   })
 
   it('releaseForFallback moves only the live claim to expired with the reason (no completion)', async () => {

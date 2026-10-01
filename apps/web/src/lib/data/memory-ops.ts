@@ -48,12 +48,13 @@ export async function insertMemoryOps(
 
 export async function listMemoryOps(
   userId: string,
-  opts: { memoryId?: string; runId?: string; ops?: string[]; includeReverted?: boolean; limit?: number } = {},
+  opts: { memoryId?: string; runId?: string; ops?: string[]; steps?: string[]; includeReverted?: boolean; limit?: number } = {},
 ): Promise<MemoryOpRow[]> {
   const conditions = [eq(memoryOps.userId, userId)]
   if (opts.memoryId) conditions.push(eq(memoryOps.memoryId, opts.memoryId))
   if (opts.runId) conditions.push(eq(memoryOps.runId, opts.runId))
   if (opts.ops?.length) conditions.push(inArray(memoryOps.op, opts.ops))
+  if (opts.steps?.length) conditions.push(inArray(memoryOps.step, opts.steps))
   if (!opts.includeReverted) conditions.push(isNull(memoryOps.revertedAt))
   return db
     .select()

@@ -8,7 +8,8 @@ import type { EngineRunResult } from '@/lib/kairos/engine/types'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 
 // Memory engine nightly run (docs/kairos/32 §2), 01:30 UTC. Per user with an
-// active Dominion: MemoryEngine.runNight over the registry's steps. No model
+// active Dominion: MemoryEngine.runNight over the registry's steps (incl. the
+// own-mind mirror of BackUp's promotions). No model
 // calls: Sunday's Concepts step only plans + enqueues thinking jobs (the
 // thinking-sweep cron owns their API fallback). Every live change writes its
 // memory_ops row in the same transaction as the change itself, and the run

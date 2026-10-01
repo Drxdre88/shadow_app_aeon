@@ -110,16 +110,18 @@ export function KairosGuideContent() {
         </P>
       </Section>
 
-      <Section title="The Evening Digest">
+      <Section title="The Daily Message">
         <P>
-          One guaranteed message every evening, around 18:00 UTC, to the Will inbox and Telegram:
-          what Kairos saw today — sessions captured, memories and proposals formed — and what ran
-          green or failed in last night&apos;s synthesis.
+          One guaranteed message every morning at 08:00 UK time, to the Will inbox and Telegram:
+          today&apos;s briefs, what the overnight thinking concluded, what you finished on your board
+          yesterday, any change in what Kairos believes, a drift warning if there is one, and at
+          most one question.
         </P>
         <P>
           It&apos;s expected daily by design, a different register from the rare interrupt bar above.
-          If the model call behind it fails, Kairos still sends a minimal counts-only version, so
-          the evening message never silently skips.
+          If the model call behind it fails, Kairos still sends a plain version built from the same
+          facts, so the morning message never silently skips. To undo something Kairos newly
+          believes, just tell him &ldquo;undo &lt;title&gt;&rdquo;.
         </P>
       </Section>
 

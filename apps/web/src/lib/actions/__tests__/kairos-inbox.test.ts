@@ -6,6 +6,9 @@ vi.mock('@/lib/actions/helpers', () => ({
 
 vi.mock('@/lib/data/inbox', () => ({
   getKairosInbox: vi.fn(),
+}))
+
+vi.mock('@/lib/kairos/proposal-accept', () => ({
   acceptInboxProposal: vi.fn(),
   dismissInboxMemory: vi.fn(),
 }))
@@ -15,8 +18,9 @@ vi.mock('@/lib/kairos/ask', () => ({
 }))
 
 import { requireAuth } from '@/lib/actions/helpers'
-import { acceptInboxProposal, dismissInboxMemory, getKairosInbox } from '@/lib/data/inbox'
+import { getKairosInbox } from '@/lib/data/inbox'
 import { answerKairosAsk } from '@/lib/kairos/ask'
+import { acceptInboxProposal, dismissInboxMemory } from '@/lib/kairos/proposal-accept'
 import {
   acceptKairosInboxProposal,
   answerKairosInboxAsk,

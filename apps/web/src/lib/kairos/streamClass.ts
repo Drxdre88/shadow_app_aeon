@@ -21,6 +21,9 @@ export const STREAM_CLASSES = [
   // Memory engine Concept tier (docs/kairos/32 §2.4) — a distilled cluster of
   // member memories linked via refers_to. Up-weighted in retrieval.
   'concept',
+  // P2 (docs/kairos/34) — belief ledger (aligned + own minds) and the constitution.
+  'belief',
+  'constitution',
 ] as const
 
 export type StreamClass = (typeof STREAM_CLASSES)[number]

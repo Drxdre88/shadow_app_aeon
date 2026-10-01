@@ -18,11 +18,15 @@ import {
   getNeighbours as _getNeighbours,
   getBeliefTrail as _getBeliefTrail,
   prepareContext as _prepareContext,
-  acceptProposal as _acceptProposal,
   targetMemoryExists,
   listMemoriesNeedingSummary as _listMemoriesNeedingSummary,
 } from '@/lib/data/memories'
+import { acceptKairosProposal } from '@/lib/kairos/proposal-accept'
 import { verifyProjectAccess } from '@/lib/data/projects'
+import {
+  isConstitutionAmendmentProposal,
+  OPERATOR_ONLY_AMENDMENT_ERROR,
+} from '@/lib/kairos/constitution/amendment'
 import { db } from '@/lib/db'
 import { boardTasks, groupMembers } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
@@ -47,6 +51,8 @@ const MEMORY_TYPES = [
   'archetype', 'dominion_cortex',
   // Aether — daily cross-Dominion synthesis.
   'aether',
+  // Memory engine concepts (doc 32) + P2 beliefs and constitution (doc 34).
+  'concept', 'belief', 'constitution',
 ] as const
 const memoryTypeEnum = z.enum(MEMORY_TYPES)
 
@@ -401,7 +407,13 @@ export const registerMemoryTools: RegisterFn = (server) => {
       const parsed = acceptProposalSchema.safeParse(rest)
       if (!parsed.success) return fail(parsed.error.issues[0].message)
 
-      const res = await _acceptProposal(memoryId, uid, parsed.data)
+      // MCP callers are agents (bearer/OAuth), never the operator's session —
+      // a constitution amendment needs the operator (docs/kairos/34 §2).
+      if (isConstitutionAmendmentProposal(await findMemoryById(memoryId, uid))) {
+        return fail(OPERATOR_ONLY_AMENDMENT_ERROR)
+      }
+
+      const res = await acceptKairosProposal(memoryId, uid, parsed.data)
       if (!res) return notFound('Memory')
       if (!res.ok) return fail('Memory is not a pending proposal')
       return ok({

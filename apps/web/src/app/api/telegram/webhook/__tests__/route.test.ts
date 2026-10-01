@@ -1,27 +1,49 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/lib/data/inbox', () => ({
+const afterTasks: Array<() => Promise<unknown>> = []
+vi.mock('next/server', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('next/server')>()),
+  after: (task: () => Promise<unknown>) => { afterTasks.push(task) },
+}))
+
+vi.mock('@/lib/kairos/proposal-accept', () => ({
   acceptInboxProposal: vi.fn(),
   dismissInboxMemory: vi.fn(),
 }))
 
 vi.mock('@/lib/data/kairos-chat', () => ({
+  appendChatMessage: vi.fn(),
   createChatThread: vi.fn(),
   findOpenChatThreadByTitle: vi.fn(),
+  getChatThread: vi.fn(),
 }))
 
 vi.mock('@/lib/data/memories', () => ({
   markKairosSpeaksReplied: vi.fn(),
 }))
 
+vi.mock('@/lib/data/thinking-jobs', () => ({
+  failJob: vi.fn(),
+  findJobById: vi.fn(),
+  listJobs: vi.fn(),
+  upsertJob: vi.fn(),
+}))
+
 vi.mock('@/lib/kairos/chat-turn', () => ({
+  buildAssistantTurn: vi.fn(),
+  isTurnAnswered: vi.fn(async () => false),
+  persistAssistantReplyOnce: vi.fn(),
+  resolvePendingAskForTurn: vi.fn(),
+  runAssistantTurnOnce: vi.fn(),
   sendChatMessage: vi.fn(),
 }))
 
-import { acceptInboxProposal, dismissInboxMemory } from '@/lib/data/inbox'
-import { createChatThread, findOpenChatThreadByTitle } from '@/lib/data/kairos-chat'
+import { acceptInboxProposal, dismissInboxMemory } from '@/lib/kairos/proposal-accept'
+import { appendChatMessage, createChatThread, findOpenChatThreadByTitle, getChatThread } from '@/lib/data/kairos-chat'
 import { markKairosSpeaksReplied } from '@/lib/data/memories'
-import { sendChatMessage } from '@/lib/kairos/chat-turn'
+import { failJob, findJobById, listJobs, upsertJob } from '@/lib/data/thinking-jobs'
+import { buildAssistantTurn, runAssistantTurnOnce, sendChatMessage } from '@/lib/kairos/chat-turn'
+import type { ThinkingJobRow } from '@/lib/kairos/engine/types'
 import { POST } from '../route'
 
 const OPERATOR_USER = 'operator-user-1'
@@ -71,6 +93,7 @@ let fetchMock: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
   vi.clearAllMocks()
+  afterTasks.length = 0
   process.env.TELEGRAM_WEBHOOK_SECRET = 'hook-secret'
   process.env.TELEGRAM_OPERATOR_CHAT_ID = OPERATOR_CHAT
   process.env.KAIROS_OPERATOR_USER_ID = OPERATOR_USER
@@ -361,5 +384,299 @@ describe('telegram webhook — redelivery dedup (best-effort, warm-instance only
     await POST(makeReq(textUpdate('no id two'), 'hook-secret'))
 
     expect(sendChatMessage).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('telegram webhook — chat routine flag off (default)', () => {
+  it('answers on the paid path and never touches the job queue or the routine', async () => {
+    vi.mocked(sendChatMessage).mockResolvedValue({
+      ok: true, threadId: THREAD_ID, userSeq: 1, assistantSeq: 2, assistantContent: 'Hi.', model: null,
+    })
+    process.env.ROUTINE_CHAT_ID = 'trig_x'
+    process.env.ROUTINE_CHAT_TOKEN = 'routine-token'
+    try {
+      await POST(makeReq(textUpdate('hello'), 'hook-secret'))
+    } finally {
+      delete process.env.ROUTINE_CHAT_ID
+      delete process.env.ROUTINE_CHAT_TOKEN
+    }
+    expect(sendChatMessage).toHaveBeenCalledTimes(1)
+    expect(upsertJob).not.toHaveBeenCalled()
+    expect(listJobs).not.toHaveBeenCalled()
+    expect(afterTasks).toHaveLength(0)
+    expect(telegramCalls(fetchMock).map((c) => c.method)).toEqual(['sendMessage'])
+  })
+})
+
+describe('telegram webhook — chat routine (KAIROS_TELEGRAM_ROUTINE=1)', () => {
+  const USER_MSG_ID = 'msg-1'
+  const JOB_ID = 'job-1'
+  const ROUTINE_ENV = {
+    KAIROS_TELEGRAM_ROUTINE: '1',
+    ROUTINE_CHAT_ID: 'trig_chat',
+    ROUTINE_CHAT_TOKEN: 'routine-token',
+    KAIROS_CHAT_ROUTINE_TIMEOUT_MS: '40',
+    KAIROS_CHAT_ROUTINE_POLL_MS: '5',
+  }
+
+  function thread(messages: Array<{ id: string; seq: number; role: 'user' | 'assistant'; content: string }>) {
+    return {
+      thread: {
+        id: THREAD_ID, dominionId: null, dominionName: null, title: 'Telegram · Kairos',
+        status: 'running', createdAt: new Date(), lastMessageAt: null, messageCount: messages.length,
+      },
+      messages: messages.map((m) => ({
+        ...m, threadId: THREAD_ID, citations: [], retrieval: null, model: null, createdAt: new Date(),
+      })),
+    }
+  }
+
+  let lastJob: ThinkingJobRow
+  function job(status: ThinkingJobRow['status'], error: string | null = null): ThinkingJobRow {
+    return { ...lastJob, status, error }
+  }
+
+  function fireCalls() {
+    return fetchMock.mock.calls.filter(([url]) => String(url).startsWith('https://api.anthropic.com/'))
+  }
+
+  async function drainAfter() {
+    while (afterTasks.length) await afterTasks.shift()!()
+  }
+
+  beforeEach(() => {
+    Object.assign(process.env, ROUTINE_ENV)
+    vi.mocked(getChatThread)
+      .mockResolvedValueOnce(thread([]))
+      .mockResolvedValue(thread([{ id: USER_MSG_ID, seq: 1, role: 'user', content: 'status of hydra?' }]))
+    vi.mocked(appendChatMessage).mockResolvedValue({ ok: true, messageId: USER_MSG_ID, seq: 1 })
+    vi.mocked(listJobs).mockResolvedValue([])
+    vi.mocked(buildAssistantTurn).mockResolvedValue({
+      ok: true,
+      turn: {
+        system: 'You are Kairos.',
+        messages: [
+          { role: 'system', content: 'You are Kairos.' },
+          { role: 'user', content: 'status of hydra?' },
+        ],
+        citationsContext: { retrieved: null },
+        pendingAsk: null,
+      },
+    })
+    vi.mocked(upsertJob).mockImplementation(async (userId, spec) => {
+      lastJob = {
+        id: JOB_ID, userId, kind: spec.kind, dominionId: null, externalKey: spec.externalKey,
+        status: 'queued', input: spec.input, output: null, claimedBy: null, claimToken: null,
+        claimedAt: null, deadlineAt: new Date(Date.now() + spec.deadlineMinutes * 60_000),
+        completedAt: null, attempts: 0, error: null, createdAt: new Date(), updatedAt: new Date(),
+      }
+      return lastJob
+    })
+    vi.mocked(runAssistantTurnOnce).mockResolvedValue({
+      ok: true, threadId: THREAD_ID, userSeq: 1, assistantSeq: 2, assistantContent: 'Paid answer.', model: 'paid',
+    })
+    fetchMock.mockImplementation(async (url: string) => (String(url).startsWith('https://api.anthropic.com/')
+      ? { ok: true, status: 200, text: async () => JSON.stringify({ type: 'routine_fire' }) }
+      : { ok: true, status: 200, json: async () => ({ ok: true, result: { message_id: 1 } }) }))
+  })
+
+  afterEach(() => {
+    for (const k of Object.keys(ROUTINE_ENV)) delete process.env[k]
+  })
+
+  it('persists the turn, queues a chat job and returns before the routine answers', async () => {
+    const res = await POST(makeReq(textUpdate('status of hydra?'), 'hook-secret'))
+
+    expect(res.status).toBe(200)
+    expect(sendChatMessage).not.toHaveBeenCalled()
+    expect(appendChatMessage).toHaveBeenCalledWith(OPERATOR_USER, THREAD_ID, { role: 'user', content: 'status of hydra?' })
+    expect(upsertJob).toHaveBeenCalledWith(OPERATOR_USER, expect.objectContaining({
+      kind: 'chat',
+      externalKey: `chat:${THREAD_ID}:${USER_MSG_ID}`,
+      deadlineMinutes: (40 + 30_000) / 60_000,
+    }))
+    expect(lastJob.input.prompt).toContain('status of hydra?')
+    expect(lastJob.input.context).toMatchObject({ threadId: THREAD_ID, userSeq: 1, chatId: Number(OPERATOR_CHAT) })
+    expect(telegramCalls(fetchMock)[0].method).toBe('sendChatAction')
+    // Fire + watchdog are deferred to after().
+    expect(fireCalls()).toHaveLength(0)
+    expect(afterTasks).toHaveLength(1)
+  })
+
+  it('fires the routine, then answers on the paid key once the timeout passes', async () => {
+    vi.mocked(findJobById).mockImplementation(async () => job('queued'))
+    vi.mocked(failJob).mockImplementation(async (_u, _id, _token, error) => job('failed', error))
+
+    await POST(makeReq(textUpdate('status of hydra?'), 'hook-secret'))
+    await drainAfter()
+
+    const [fireUrl, fireInit] = fireCalls()[0]
+    expect(fireUrl).toBe('https://api.anthropic.com/v1/claude_code/routines/trig_chat/fire')
+    expect(fireInit.headers).toMatchObject({
+      Authorization: 'Bearer routine-token',
+      'anthropic-beta': 'experimental-cc-routine-2026-04-01',
+      'anthropic-version': '2023-06-01',
+    })
+    expect(JSON.parse(fireInit.body)).toEqual({ text: 'claim chat jobs' })
+
+    expect(failJob).toHaveBeenCalledTimes(1)
+    expect(failJob).toHaveBeenCalledWith(OPERATOR_USER, JOB_ID, null, expect.stringContaining('chat-watchdog:'))
+    expect(runAssistantTurnOnce).toHaveBeenCalledTimes(1)
+    expect(runAssistantTurnOnce).toHaveBeenCalledWith(OPERATOR_USER, THREAD_ID, null, 'status of hydra?', 1, { surface: 'telegram' })
+    const replies = telegramCalls(fetchMock).filter((c) => c.method === 'sendMessage')
+    expect(replies).toHaveLength(1)
+    expect(replies[0].body.text).toBe('Paid answer.')
+  })
+
+  it('does not fall back when the routine answers before the timeout', async () => {
+    vi.mocked(findJobById)
+      .mockImplementationOnce(async () => job('queued'))
+      .mockImplementation(async () => job('done'))
+
+    await POST(makeReq(textUpdate('status of hydra?'), 'hook-secret'))
+    await drainAfter()
+
+    expect(fireCalls()).toHaveLength(1)
+    expect(failJob).not.toHaveBeenCalled()
+    expect(runAssistantTurnOnce).not.toHaveBeenCalled()
+  })
+
+  it('exactly once: a routine that wins the race at the timeout keeps the turn', async () => {
+    let routineDone = false
+    vi.mocked(findJobById).mockImplementation(async () => job(routineDone ? 'done' : 'queued'))
+    // The routine completes between the watchdog's read and its takeover.
+    vi.mocked(failJob).mockImplementation(async () => {
+      routineDone = true
+      return null
+    })
+
+    await POST(makeReq(textUpdate('status of hydra?'), 'hook-secret'))
+    await drainAfter()
+
+    expect(failJob).toHaveBeenCalledTimes(1)
+    expect(runAssistantTurnOnce).not.toHaveBeenCalled()
+  })
+
+  it('a failed fire answers on the paid key immediately', async () => {
+    fetchMock.mockImplementation(async (url: string) => (String(url).startsWith('https://api.anthropic.com/')
+      ? { ok: false, status: 401, text: async () => 'bad token' }
+      : { ok: true, status: 200, json: async () => ({ ok: true, result: { message_id: 1 } }) }))
+    vi.mocked(failJob).mockImplementation(async (_u, _id, _token, error) => job('failed', error))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    await POST(makeReq(textUpdate('status of hydra?'), 'hook-secret'))
+    await drainAfter()
+    consoleError.mockRestore()
+
+    expect(findJobById).not.toHaveBeenCalled()
+    expect(failJob).toHaveBeenCalledWith(OPERATOR_USER, JOB_ID, null, expect.stringContaining('fire failed (401)'))
+    expect(runAssistantTurnOnce).toHaveBeenCalledTimes(1)
+  })
+
+  it('a redelivered in-flight turn is not persisted, queued or answered again', async () => {
+    vi.mocked(getChatThread).mockReset()
+      .mockResolvedValue(thread([{ id: USER_MSG_ID, seq: 1, role: 'user', content: 'status of hydra?' }]))
+    vi.mocked(listJobs).mockImplementation(async (_u, filter) => (filter?.status === 'queued'
+      ? [{ externalKey: `chat:${THREAD_ID}:${USER_MSG_ID}` } as ThinkingJobRow]
+      : []))
+
+    await POST(makeReq(textUpdate('status of hydra?'), 'hook-secret'))
+
+    expect(appendChatMessage).not.toHaveBeenCalled()
+    expect(upsertJob).not.toHaveBeenCalled()
+    expect(sendChatMessage).not.toHaveBeenCalled()
+    expect(afterTasks).toHaveLength(0)
+  })
+
+  it('an identical resend while the watchdog paid fallback is in flight starts no second paid turn', async () => {
+    let created = false
+    let current: ThinkingJobRow | null = null
+    vi.mocked(upsertJob).mockImplementationOnce(async (userId, spec) => {
+      lastJob = {
+        id: JOB_ID, userId, kind: spec.kind, dominionId: null, externalKey: spec.externalKey,
+        status: 'queued', input: spec.input, output: null, claimedBy: null, claimToken: null,
+        claimedAt: null, deadlineAt: new Date(Date.now() + spec.deadlineMinutes * 60_000),
+        completedAt: null, attempts: 0, error: null, createdAt: new Date(), updatedAt: new Date(),
+      }
+      created = true
+      current = lastJob
+      return lastJob
+    })
+    vi.mocked(findJobById).mockImplementation(async () => current)
+    vi.mocked(failJob).mockImplementation(async (_u, _id, _token, error) => {
+      current = job('failed', error)
+      return current
+    })
+    vi.mocked(listJobs).mockImplementation(async (_u, filter) => {
+      if (!created || !current) return []
+      if (filter?.status) return current.status === filter.status ? [current] : []
+      return filter?.since && current.createdAt >= filter.since ? [current] : []
+    })
+    let releasePaid!: () => void
+    const paidThinking = new Promise<void>((resolve) => { releasePaid = resolve })
+    vi.mocked(runAssistantTurnOnce).mockImplementation(async () => {
+      await paidThinking
+      return { ok: true, threadId: THREAD_ID, userSeq: 1, assistantSeq: 2, assistantContent: 'Paid answer.', model: 'paid' }
+    })
+
+    await POST(makeReq(textUpdate('status of hydra?', Number(OPERATOR_CHAT), 9001), 'hook-secret'))
+    const watchdog = drainAfter()
+    await vi.waitFor(() => expect(runAssistantTurnOnce).toHaveBeenCalledTimes(1))
+    expect(current!.status).toBe('failed')
+    expect(current!.error).toMatch(/^chat-watchdog:/)
+
+    // Telegram resends the same text (new update id) while the paid model thinks.
+    await POST(makeReq(textUpdate('status of hydra?', Number(OPERATOR_CHAT), 9002), 'hook-secret'))
+    releasePaid()
+    await watchdog
+
+    expect(sendChatMessage).not.toHaveBeenCalled()
+    expect(runAssistantTurnOnce).toHaveBeenCalledTimes(1)
+    expect(upsertJob).toHaveBeenCalledTimes(1)
+    expect(appendChatMessage).toHaveBeenCalledTimes(1)
+    const replies = telegramCalls(fetchMock).filter((c) => c.method === 'sendMessage')
+    expect(replies.map((r) => r.body.text)).toEqual(['Paid answer.'])
+  })
+
+  it('an identical resend after the job settled outside the window retries on the paid path', async () => {
+    vi.mocked(getChatThread).mockReset()
+      .mockResolvedValue(thread([{ id: USER_MSG_ID, seq: 1, role: 'user', content: 'status of hydra?' }]))
+    // The job failed long ago; the recent-jobs lookup (bounded by the window) no longer sees it.
+    vi.mocked(listJobs).mockResolvedValue([])
+    vi.mocked(sendChatMessage).mockResolvedValue({
+      ok: true, threadId: THREAD_ID, userSeq: 1, assistantSeq: 2, assistantContent: 'Retried.', model: null,
+    })
+
+    await POST(makeReq(textUpdate('status of hydra?'), 'hook-secret'))
+
+    expect(vi.mocked(listJobs).mock.calls.some(([, f]) => f?.since instanceof Date)).toBe(true)
+    expect(sendChatMessage).toHaveBeenCalledTimes(1)
+    expect(upsertJob).not.toHaveBeenCalled()
+  })
+
+  it('a newer message supersedes the open chat job on the thread', async () => {
+    vi.mocked(listJobs).mockImplementation(async (_u, filter) => (filter?.status === 'claimed'
+      ? [{ id: 'job-old', externalKey: `chat:${THREAD_ID}:msg-0` } as ThinkingJobRow]
+      : []))
+    vi.mocked(failJob).mockResolvedValue({} as ThinkingJobRow)
+
+    await POST(makeReq(textUpdate('status of hydra?'), 'hook-secret'))
+
+    expect(failJob).toHaveBeenCalledWith(OPERATOR_USER, 'job-old', null, expect.stringMatching(/^superseded:/))
+    expect(upsertJob).toHaveBeenCalledTimes(1)
+  })
+
+  it('stays on the paid path when the routine is not configured', async () => {
+    delete process.env.ROUTINE_CHAT_TOKEN
+    vi.mocked(sendChatMessage).mockResolvedValue({
+      ok: true, threadId: THREAD_ID, userSeq: 1, assistantSeq: 2, assistantContent: 'Hi.', model: null,
+    })
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    await POST(makeReq(textUpdate('hello'), 'hook-secret'))
+    consoleWarn.mockRestore()
+
+    expect(sendChatMessage).toHaveBeenCalledTimes(1)
+    expect(upsertJob).not.toHaveBeenCalled()
   })
 })

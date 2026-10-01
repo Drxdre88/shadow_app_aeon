@@ -140,7 +140,17 @@ export interface EngineRunResult {
 
 // ── Thinking queue ────────────────────────────────────────────────────────
 
-export type ThinkingJobKind = 'aether' | 'cortex' | 'concept'
+export type ThinkingJobKind =
+  | 'aether'
+  | 'cortex'
+  | 'concept'
+  // P2 (docs/kairos/34)
+  | 'belief_extract'
+  | 'drift_probe'
+  | 'mind_compare'
+  | 'weekly_review'
+  | 'daily_message'
+  | 'chat'
 
 export type ThinkingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'expired' | 'fallback'
 
@@ -185,7 +195,8 @@ export interface ThinkingJobRow {
 }
 
 export type ApplyOutcome =
-  | { ok: true; memoryIds: string[] }
+  // `output` is merged into the completed job's output (e.g. a draft the cron delivers later).
+  | { ok: true; memoryIds: string[]; output?: Record<string, unknown> }
   | { ok: false; reason: string }
 
 export interface ThinkingJobHandler {

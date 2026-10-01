@@ -25,9 +25,9 @@ import { getUserId, ok, fail } from './types'
 export const registerThinkingTools: RegisterFn = (server) => {
   server.tool(
     'claim_thinking_job',
-    'Claim the next queued Kairos thinking job (cortex / aether / concept). Due jobs are planned on claim, in prerequisite order. Returns { job: { id, kind, claimToken, deadlineAt, system, prompt, validMemoryIds, instructions } } or { job: null } when nothing is due. Follow `system` + `prompt` exactly, answer with the JSON only, then call submit_thinking_job. Never write memories for a job yourself.',
+    'Claim the next queued Kairos thinking job. Kinds: cortex, aether, concept, belief_extract, drift_probe, mind_compare, weekly_review, daily_message, chat. Due jobs are planned on claim, in prerequisite order. Without `kinds`, any kind except chat is returned; chat jobs are claimed only with kinds ["chat"]. Returns { job: { id, kind, claimToken, deadlineAt, system, prompt, validMemoryIds, instructions } } or { job: null } when nothing is due. Follow `system` + `prompt` exactly and answer as `instructions` say — the JSON only for every kind except chat, which is answered in plain text — then call submit_thinking_job. Never write memories for a job yourself.',
     {
-      kinds: z.array(thinkingJobKindSchema).min(1).max(3).optional().describe('Only claim these kinds (default: any)'),
+      kinds: z.array(thinkingJobKindSchema).min(1).max(9).optional().describe('Only claim these kinds (default: any)'),
     },
     { title: 'Claim Thinking Job', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {

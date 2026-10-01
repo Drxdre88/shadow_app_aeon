@@ -2,7 +2,22 @@
 
 Kairos — the AI second brain inside Aeon — is versioned here as its own product, separate from the app-level `CHANGELOG.md`. Versions track **capability eras**, not release trains: each one names what Kairos *became able to do*. Entries 0.1–0.8 were reconstructed retrospectively on 2026-07-24 from the full commit/PR/spec history; from 0.9.0 onward this file is maintained per drop.
 
-Era specs of record live beside this file in `docs/kairos/` (numbered 00–31).
+Era specs of record live beside this file in `docs/kairos/` (numbered 00–34).
+
+## [0.13.0] — 2026-10-01 · "Beliefs and Strategy"
+
+> Kairos starts reasoning from what the operator believes, keeps a second mind of his own beside it, and talks once a day. Spec: `docs/kairos/34-beliefs-and-strategy.md`; routine playbook `33-thinking-routine.md`.
+
+- **Two minds** — an *aligned* mind distilled nightly from the operator's own words (reflections, dialogue, answered asks, board pages) and an *own* mind that grows from the engine's evidence-backed promotions; every Monday they are compared (agree / diverge / only-one-side).
+- **Constitution** — a reasons-based set of principles, drafted from Dominion vision/mission/objectives and top reflections, changed only by proposals the operator accepts in the inbox or on Telegram (agents and API keys are refused). Old versions are kept.
+- **Drift check** — every night Kairos answers 24 fixed questions from his constitution and beliefs and compares them with a pinned baseline; drift surfaces in the daily message.
+- **One daily message at 08:00 UK** — replaces the evening digest: today's briefs, overnight thinking, yesterday's board, belief changes, drift, at most one question. Guarded, sent once, inbox fallback if Telegram fails.
+- **Weekly review** — Monday: plan vs actual over the week's board, goals and beliefs; up to five suggested actions in the inbox and one summary.
+- **Telegram on the Max plan (flag off)** — a Telegram message can wake a Claude "chat" routine; the paid key answers if it's slow; exactly one reply per message.
+- **Learns from you faster** — reactions rescore immediately; answered questions count for, expired ones against; say "undo <title>" in chat to reverse something Kairos learned (server-checked confirmation).
+- **Thinking jobs always run** — the hourly sweep now plans due jobs, so morning and Monday work happens even without a routine; a new optional morning routine lets the Max plan do it.
+- **Fixed** — first engine night lost its undo records at the 300 s limit (now written with each change; 349 restored); scoring now catches exact 0.05 moves.
+- Horsemen review (4 reviewers + 4 independent verifiers): 4 high findings confirmed and fixed.
 
 ## [0.12.0] — 2026-09-30 · "The Memory Engine"
 

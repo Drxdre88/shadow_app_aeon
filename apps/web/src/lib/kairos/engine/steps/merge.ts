@@ -30,9 +30,12 @@ export const MERGE_EXCLUDED_TYPES = [
   // delivery/answer lifecycle; superseding them would hide live threads.
   'inbound',
   'advisory',
+  // P2 (doc 34): beliefs and the constitution are never machine-merged.
+  'belief',
+  'constitution',
 ] as const
 
-export const MERGE_EXCLUDED_STREAMS = ['reflection', 'concept', 'cortex', 'aether', 'archetype'] as const
+export const MERGE_EXCLUDED_STREAMS = ['reflection', 'concept', 'cortex', 'aether', 'archetype', 'belief', 'constitution'] as const
 
 export class MergeStep implements Step {
   readonly name = 'merge'

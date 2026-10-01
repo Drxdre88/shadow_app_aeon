@@ -3,10 +3,13 @@ import { AiCredentialDecryptError, AiCredentialMissingError } from '@/lib/ai/rou
 import {
   createKairosAskMemory,
   getPendingKairosAsk,
+  listExpiredPendingKairosAskIds,
   listKairosReflectionStaleness,
   listRecentKairosAsks,
+  markKairosAskExpired,
   type KairosAskRow,
 } from '@/lib/data/ask'
+import { reactOutcome } from '@/lib/kairos/reactions'
 import { listBoardDayPages } from '@/lib/data/board-feed'
 import { buildCardNotesQuestion, thinCardsFromPage, type ThinCard } from './board-feed-render'
 import {
@@ -381,3 +384,33 @@ export async function runAskMineForUser(
 
 export { parseAskMineResponse }
 export { buildCardNotesQuestion }
+
+// ─── expiry sweep (docs/kairos/34 §6) ─────────────────────────────────────
+
+export interface ExpiredAskSweepResult {
+  examined: number
+  expired: number
+}
+
+/**
+ * Persist every pending ask past its expiresAt as 'expired' and log an
+ * Outcome negative on it — an unanswered question is a miss. Idempotent: the
+ * status write is guarded on still-pending, and only the winning write
+ * reacts, so a re-run (or an answer racing the sweep) never double-counts.
+ *
+ * Accepted non-atomicity: the status write and the Outcome reaction are two
+ * transactions. reactOutcome is best-effort (logs + swallows), so a failed
+ * reaction leaves the ask 'expired' without its negative outcome — the sweep
+ * never re-reacts (the guarded claim is already won). One missed −1 on a
+ * single question is cheaper than coupling the sweep to the reaction path.
+ */
+export async function sweepExpiredKairosAsks(userId: string, now: Date = new Date()): Promise<ExpiredAskSweepResult> {
+  const ids = await listExpiredPendingKairosAskIds(userId, now)
+  let expired = 0
+  for (const id of ids) {
+    if (!(await markKairosAskExpired(userId, id, now))) continue
+    expired += 1
+    await reactOutcome(userId, id, 'negative', 'kairos ask expired unanswered')
+  }
+  return { examined: ids.length, expired }
+}

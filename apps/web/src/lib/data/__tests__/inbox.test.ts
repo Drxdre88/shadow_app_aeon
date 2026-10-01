@@ -7,30 +7,13 @@ vi.mock('@/lib/data/ask', () => ({
 vi.mock('@/lib/data/memories', () => ({
   listMemories: vi.fn(),
   listTodaysAdvisories: vi.fn(),
-  findMemoryById: vi.fn(),
-  archiveMemory: vi.fn(),
-  acceptProposal: vi.fn(),
-  markKairosSpeaksReplied: vi.fn(),
-}))
-
-vi.mock('@/lib/data/memory-reactions', () => ({
-  reactOutcome: vi.fn(async () => undefined),
 }))
 
 import { getPendingKairosAsk, type KairosAskRow } from '@/lib/data/ask'
-import { reactOutcome } from '@/lib/data/memory-reactions'
-import {
-  acceptProposal,
-  archiveMemory,
-  findMemoryById,
-  listMemories,
-  listTodaysAdvisories,
-  markKairosSpeaksReplied,
-} from '@/lib/data/memories'
-import { acceptInboxProposal, dismissInboxMemory, getKairosInbox } from '../inbox'
+import { listMemories, listTodaysAdvisories } from '@/lib/data/memories'
+import { getKairosInbox } from '../inbox'
 
 type ListedMemory = Awaited<ReturnType<typeof listMemories>>[number]
-type FoundMemory = Awaited<ReturnType<typeof findMemoryById>>
 
 const USER_ID = 'user-1'
 
@@ -68,16 +51,6 @@ function listedMemory(id: string, sourceMetadata: Record<string, unknown>): List
     confidence: 0.6,
     standing: null,
   }
-}
-
-function foundMemory(overrides: Partial<Record<string, unknown>> = {}): FoundMemory {
-  return {
-    id: 'mem-1',
-    type: 'inbound',
-    archivedAt: null,
-    sourceMetadata: { kairosSpeak: true, status: 'pending' },
-    ...overrides,
-  } as unknown as FoundMemory
 }
 
 beforeEach(() => {
@@ -132,94 +105,5 @@ describe('getKairosInbox', () => {
 
   it('returns an empty inbox when no source has pending work', async () => {
     await expect(getKairosInbox(USER_ID)).resolves.toEqual({ items: [] })
-  })
-})
-
-describe('dismissInboxMemory', () => {
-  it('archives a pending inbound memory', async () => {
-    vi.mocked(findMemoryById).mockResolvedValue(foundMemory())
-    vi.mocked(archiveMemory).mockResolvedValue(foundMemory({ archivedAt: new Date() }))
-
-    const result = await dismissInboxMemory(USER_ID, 'mem-1')
-    expect(result).toEqual({ ok: true, id: 'mem-1' })
-    expect(archiveMemory).toHaveBeenCalledWith('mem-1', USER_ID)
-  })
-
-  it('marks pending Kairos speaks replied when a speak is dismissed (clears the reply gate)', async () => {
-    vi.mocked(findMemoryById).mockResolvedValue(foundMemory())
-    vi.mocked(archiveMemory).mockResolvedValue(foundMemory({ archivedAt: new Date() }))
-
-    await dismissInboxMemory(USER_ID, 'mem-1')
-    expect(markKairosSpeaksReplied).toHaveBeenCalledWith(USER_ID, expect.any(Date))
-  })
-
-  it('does not mark speaks when dismissing a non-speak proposal', async () => {
-    vi.mocked(findMemoryById).mockResolvedValue(foundMemory({ sourceMetadata: { introspection: true, status: 'pending' } }))
-    vi.mocked(archiveMemory).mockResolvedValue(foundMemory({ archivedAt: new Date() }))
-
-    await expect(dismissInboxMemory(USER_ID, 'mem-1')).resolves.toEqual({ ok: true, id: 'mem-1' })
-    expect(markKairosSpeaksReplied).not.toHaveBeenCalled()
-  })
-
-  it('records Outcome negative (feedback) when a proposal is dismissed', async () => {
-    vi.mocked(findMemoryById).mockResolvedValue(foundMemory({ sourceMetadata: { introspection: true, status: 'pending' } }))
-    vi.mocked(archiveMemory).mockResolvedValue(foundMemory({ archivedAt: new Date() }))
-
-    await dismissInboxMemory(USER_ID, 'mem-1')
-    expect(reactOutcome).toHaveBeenCalledWith(USER_ID, 'mem-1', 'negative', expect.any(String))
-  })
-
-  it('dismissing a Kairos speak records no outcome (unchanged speak path)', async () => {
-    vi.mocked(findMemoryById).mockResolvedValue(foundMemory())
-    vi.mocked(archiveMemory).mockResolvedValue(foundMemory({ archivedAt: new Date() }))
-
-    await dismissInboxMemory(USER_ID, 'mem-1')
-    expect(reactOutcome).not.toHaveBeenCalled()
-  })
-
-  it('still dismisses when the reply marker fails', async () => {
-    vi.mocked(findMemoryById).mockResolvedValue(foundMemory())
-    vi.mocked(archiveMemory).mockResolvedValue(foundMemory({ archivedAt: new Date() }))
-    vi.mocked(markKairosSpeaksReplied).mockRejectedValue(new Error('db down'))
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-    await expect(dismissInboxMemory(USER_ID, 'mem-1')).resolves.toEqual({ ok: true, id: 'mem-1' })
-    errorSpy.mockRestore()
-  })
-
-  it('is idempotent: an already-archived memory reports already_resolved', async () => {
-    vi.mocked(findMemoryById).mockResolvedValue(foundMemory({ archivedAt: new Date() }))
-
-    const result = await dismissInboxMemory(USER_ID, 'mem-1')
-    expect(result).toEqual({ ok: false, reason: 'already_resolved' })
-    expect(archiveMemory).not.toHaveBeenCalled()
-    expect(reactOutcome).not.toHaveBeenCalled()
-  })
-
-  it('rejects non-inbound or missing memories as not_found', async () => {
-    vi.mocked(findMemoryById).mockResolvedValue(null as unknown as FoundMemory)
-    await expect(dismissInboxMemory(USER_ID, 'mem-x')).resolves.toEqual({ ok: false, reason: 'not_found' })
-
-    vi.mocked(findMemoryById).mockResolvedValue(foundMemory({ type: 'note' }))
-    await expect(dismissInboxMemory(USER_ID, 'mem-1')).resolves.toEqual({ ok: false, reason: 'not_found' })
-  })
-})
-
-describe('acceptInboxProposal', () => {
-  it('promotes via acceptProposal', async () => {
-    vi.mocked(acceptProposal).mockResolvedValue({ ok: true, memory: foundMemory() as never })
-    const result = await acceptInboxProposal(USER_ID, 'mem-1')
-    expect(result).toEqual({ ok: true, id: 'mem-1' })
-    expect(acceptProposal).toHaveBeenCalledWith('mem-1', USER_ID, { pin: false })
-  })
-
-  it('maps a non-pending proposal to already_resolved', async () => {
-    vi.mocked(acceptProposal).mockResolvedValue({ ok: false, reason: 'not_a_proposal' })
-    await expect(acceptInboxProposal(USER_ID, 'mem-1')).resolves.toEqual({ ok: false, reason: 'already_resolved' })
-  })
-
-  it('maps a missing memory to not_found', async () => {
-    vi.mocked(acceptProposal).mockResolvedValue(null)
-    await expect(acceptInboxProposal(USER_ID, 'mem-1')).resolves.toEqual({ ok: false, reason: 'not_found' })
   })
 })

@@ -4,11 +4,14 @@ import { z } from 'zod'
 // (app/api/[transport]/tools/thinking.ts) and the REST routes under
 // /api/v1/kairos/thinking-jobs so both surfaces accept the same shapes.
 
-export const thinkingJobKindSchema = z.enum(['aether', 'cortex', 'concept'])
+export const thinkingJobKindSchema = z.enum([
+  'aether', 'cortex', 'concept',
+  'belief_extract', 'drift_probe', 'mind_compare', 'weekly_review', 'daily_message', 'chat',
+])
 export const thinkingJobStatusSchema = z.enum(['queued', 'claimed', 'done', 'failed', 'expired', 'fallback'])
 
 export const claimThinkingJobSchema = z.object({
-  kinds: z.array(thinkingJobKindSchema).min(1).max(3).optional(),
+  kinds: z.array(thinkingJobKindSchema).min(1).max(9).optional(),
 })
 
 export const submitThinkingJobSchema = z.object({

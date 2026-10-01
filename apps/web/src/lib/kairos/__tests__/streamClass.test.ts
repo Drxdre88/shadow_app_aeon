@@ -16,6 +16,8 @@ describe('STREAM_CLASSES', () => {
       'aether',
       'delta',
       'concept',
+      'belief',
+      'constitution',
     ])
   })
 })

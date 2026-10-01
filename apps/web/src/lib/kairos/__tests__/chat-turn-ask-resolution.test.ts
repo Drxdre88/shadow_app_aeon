@@ -27,7 +27,7 @@ vi.mock('@/lib/kairos/ask', () => ({
   answerKairosAsk: vi.fn(),
 }))
 
-vi.mock('@/lib/data/memory-reactions', () => ({
+vi.mock('@/lib/kairos/reactions', () => ({
   reactUsed: vi.fn(async () => undefined),
 }))
 
@@ -68,7 +68,7 @@ import { findProjects } from '@/lib/data/projects'
 import type { AIProvider } from '@/lib/ai/provider'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { answerKairosAsk } from '@/lib/kairos/ask'
-import { reactUsed } from '@/lib/data/memory-reactions'
+import { reactUsed } from '@/lib/kairos/reactions'
 import { intersectWithRetrieved, retrieveForChatGlobal } from '@/lib/kairos/chat-retrieval'
 import {
   matchProjectsInMessage,
@@ -343,7 +343,7 @@ describe('agentic tools flag (default ON — 2026-07-24 live-mind flip)', () => 
     expect(providerAsk).toHaveBeenCalledTimes(2)
     const firstRequest = providerAsk.mock.calls[0]![0]!
     expect(Object.keys(firstRequest.tools ?? {}).sort()).toEqual([
-      'board_state', 'list_boards', 'recent_activity', 'search_brain', 'synthesis_status',
+      'board_state', 'list_boards', 'recent_activity', 'search_brain', 'synthesis_status', 'undo_kairos_change',
     ])
     expect(findProjects).toHaveBeenCalledWith(USER_ID, expect.any(Number))
     expect(appendChatMessage).toHaveBeenCalledWith(

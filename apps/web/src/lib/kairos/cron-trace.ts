@@ -72,12 +72,15 @@ export interface CronOutcomeTraceInput {
   skipReason?: string
   durationMs?: number
   now?: Date
+  // Extra counters merged into the trace body (e.g. { asksExpired: 2 }).
+  details?: Record<string, unknown>
 }
 
 export async function writeCronSuccessTrace(userId: string, input: CronOutcomeTraceInput): Promise<void> {
-  const { cronName, dominionId = null, outcome = 'ok', skipReason, durationMs, now = new Date() } = input
+  const { cronName, dominionId = null, outcome = 'ok', skipReason, durationMs, now = new Date(), details } = input
   const day = now.toISOString().slice(0, 10)
   const body: Record<string, unknown> = {
+    ...(details ?? {}),
     cronName,
     outcome,
     externalId: `cron-${outcome}:${cronName}:${dominionId ?? 'all'}:${day}`,

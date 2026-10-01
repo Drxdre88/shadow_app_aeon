@@ -2,8 +2,9 @@
 
 import { z } from 'zod'
 import { requireAuth } from '@/lib/actions/helpers'
-import { acceptInboxProposal, dismissInboxMemory, getKairosInbox } from '@/lib/data/inbox'
+import { getKairosInbox } from '@/lib/data/inbox'
 import { answerKairosAsk } from '@/lib/kairos/ask'
+import { acceptInboxProposal, dismissInboxMemory } from '@/lib/kairos/proposal-accept'
 
 const memoryIdSchema = z.string().uuid()
 const answerSchema = z.string().trim().min(1).max(10_000)

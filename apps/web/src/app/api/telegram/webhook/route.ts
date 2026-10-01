@@ -1,16 +1,34 @@
 import { jsonResponse } from '@/lib/api/response'
-import { NextRequest } from 'next/server'
-import { acceptInboxProposal, dismissInboxMemory } from '@/lib/data/inbox'
-import { createChatThread, findOpenChatThreadByTitle } from '@/lib/data/kairos-chat'
+import { NextRequest, after } from 'next/server'
+import { acceptInboxProposal, dismissInboxMemory } from '@/lib/kairos/proposal-accept'
+import {
+  appendChatMessage,
+  createChatThread,
+  findOpenChatThreadByTitle,
+  getChatThread,
+} from '@/lib/data/kairos-chat'
 import { markKairosSpeaksReplied } from '@/lib/data/memories'
-import { sendChatMessage } from '@/lib/kairos/chat-turn'
+import { upsertJob } from '@/lib/data/thinking-jobs'
+import { buildAssistantTurn, sendChatMessage } from '@/lib/kairos/chat-turn'
+import {
+  chatJobKey,
+  chatJobOwnsMessage,
+  chatRoutineConfig,
+  chatRoutineTimeoutMs,
+  fireChatRoutine,
+  runChatWatchdog,
+  supersedeOpenChatJobs,
+  takeOverChatJob,
+  telegramRoutineEnabled,
+} from '@/lib/kairos/chat-routine'
+import { buildChatJobSpec, chatHandler } from '@/lib/kairos/thinking/handlers/chat'
 import {
   answerCallbackQuery,
   editMessageText,
-  renderTelegramHtml,
+  sendChatAction,
   sendMessage,
-  splitTelegramMessage,
-  TELEGRAM_HTML_SPLIT_LIMIT,
+  sendTelegramChatReply,
+  telegramChatFailureText,
 } from '@/lib/kairos/telegram'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -28,23 +46,12 @@ import {
 // handler failures still return 200 so Telegram doesn't redeliver forever.
 // ─────────────────────────────────────────────────────────────────────────
 
+// Mirrored by CHAT_JOB_OWNERSHIP_WINDOW_MS and the chat routine timeout clamp
+// (lib/kairos/chat-routine.ts) — change them together.
 export const maxDuration = 300
 
 const TELEGRAM_THREAD_TITLE = 'Telegram · Kairos'
 const CALLBACK_RE = /^(dismiss|accept):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
-const CITATION_RE = /\s*\[\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\]\]/gi
-// A chat reply is capped at 2000 output tokens, so more than two Telegram
-// messages means something ran away — send the head and point at Aeon.
-const MAX_TELEGRAM_REPLY_CHUNKS = 2
-const TELEGRAM_OVERFLOW_NOTE = '(cut short — the full reply is in Aeon)'
-
-function telegramReplyChunks(reply: string): string[] {
-  const chunks = splitTelegramMessage(reply, TELEGRAM_HTML_SPLIT_LIMIT)
-  if (chunks.length <= MAX_TELEGRAM_REPLY_CHUNKS) return chunks
-  const head = chunks.slice(0, MAX_TELEGRAM_REPLY_CHUNKS)
-  head[head.length - 1] = `${head[head.length - 1]}\n\n${TELEGRAM_OVERFLOW_NOTE}`
-  return head
-}
 
 // Best-effort redelivery dedup for text messages (Telegram is at-least-once
 // delivery; a slow chat turn can outlast Telegram's own retry window and
@@ -193,32 +200,106 @@ async function handleTextMessage(
     threadId = created.threadId
   }
 
+  if (telegramRoutineEnabled()) {
+    if (chatRoutineConfig()) {
+      await handleTextViaRoutine(chatId!, operatorUserId, threadId, body)
+      return
+    }
+    console.warn('[telegram-webhook] KAIROS_TELEGRAM_ROUTINE is on but ROUTINE_CHAT_ID / ROUTINE_CHAT_TOKEN are unset — answering on the paid key')
+  }
+
   const result = await sendChatMessage(operatorUserId, threadId, body, { surface: 'telegram' })
 
   if (result.ok) {
-    // Citation markers are UI chips in Aeon; plain noise in Telegram.
-    const reply = result.assistantContent.replace(CITATION_RE, '')
-    // Split the raw markdown (tags must not straddle chunks), render each
-    // chunk to Telegram HTML, and fall back to plain text if Telegram
-    // rejects the formatting — delivery beats styling.
-    for (const chunk of telegramReplyChunks(reply)) {
-      try {
-        await sendMessage(chatId!, renderTelegramHtml(chunk), { parseMode: 'HTML' })
-      } catch {
-        await sendMessage(chatId!, chunk)
+    await sendTelegramChatReply(chatId!, result.assistantContent)
+    return
+  }
+
+  await sendMessage(chatId!, telegramChatFailureText(result.reason))
+}
+
+// Chat on the Max plan (docs/kairos/34 §5): persist the turn, queue a `chat`
+// thinking job, return; after() fires the "Kairos chat" routine and watches
+// the job, answering on the paid key if the routine is not done in time (or
+// never fired). Exactly one reply per turn — see lib/kairos/chat-routine.ts.
+async function handleTextViaRoutine(
+  chatId: number | string,
+  userId: string,
+  threadId: string,
+  body: string,
+) {
+  const loaded = await getChatThread(userId, threadId)
+  if (!loaded) {
+    await sendMessage(chatId, 'Could not open the Telegram thread in Aeon.')
+    return
+  }
+
+  const last = loaded.messages[loaded.messages.length - 1]
+  if (last && last.role === 'user' && last.content === body) {
+    // Same text again on an unanswered turn: a cross-instance redelivery of a
+    // turn already in flight — its job answers it, including while the
+    // watchdog's paid fallback is still running after a takeover — or the
+    // operator retrying a turn whose reply failed; that retry goes through
+    // the paid path exactly as before the routine existed.
+    if (await chatJobOwnsMessage(userId, threadId, last.id)) return
+    const retried = await sendChatMessage(userId, threadId, body, { surface: 'telegram' })
+    if (retried.ok) await sendTelegramChatReply(chatId, retried.assistantContent)
+    else await sendMessage(chatId, telegramChatFailureText(retried.reason))
+    return
+  }
+
+  // Persist BEFORE anything can fail — input is never lost.
+  const appended = await appendChatMessage(userId, threadId, { role: 'user', content: body })
+  if (!appended.ok) {
+    await sendMessage(chatId, telegramChatFailureText('thread_not_found'))
+    return
+  }
+  await sendChatAction(chatId).catch(() => undefined)
+
+  const key = chatJobKey(threadId, appended.messageId)
+  await supersedeOpenChatJobs(userId, threadId, key).catch((err) =>
+    console.error('[telegram-webhook] superseding open chat jobs failed', err))
+
+  const built = await buildAssistantTurn(userId, threadId, {
+    dominionId: loaded.thread.dominionId,
+    userBody: body,
+    userSeq: appended.seq,
+    surface: 'telegram',
+  })
+  if (!built.ok) {
+    await sendMessage(chatId, telegramChatFailureText(built.reason))
+    return
+  }
+
+  const timeoutMs = chatRoutineTimeoutMs()
+  const job = await upsertJob(userId, buildChatJobSpec(built.turn, {
+    threadId,
+    userSeq: appended.seq,
+    userMessageId: appended.messageId,
+    chatId,
+    dominionId: loaded.thread.dominionId,
+    userBody: body,
+  }, timeoutMs))
+  // Unique key already taken: another delivery owns this turn.
+  if (!job) return
+
+  after(async () => {
+    try {
+      const fired = await fireChatRoutine()
+      const outcome = fired.ok
+        ? await runChatWatchdog(userId, job.id, chatHandler.fallback, {
+            timeoutMs,
+            onPoll: () => sendChatAction(chatId),
+          })
+        : await takeOverChatJob(userId, job.id, fired.error, chatHandler.fallback)
+      if (!fired.ok) console.error('[telegram-webhook] chat routine fire failed — paid fallback', fired.error)
+      if (outcome.outcome === 'fallback_failed') {
+        console.error('[telegram-webhook] chat fallback failed', { jobId: job.id, reason: outcome.reason })
+      } else {
+        console.info('[telegram-webhook] chat turn settled', { jobId: job.id, outcome: outcome.outcome })
       }
+    } catch (err) {
+      console.error('[telegram-webhook] chat routine watchdog failed', err)
     }
-    return
-  }
-
-  if (result.reason === 'no_credential') {
-    await sendMessage(
-      chatId!,
-      'Kairos brain is offline — no AI provider key is configured in Aeon. ' +
-      'Your message is saved; add a key in Settings → AI to wake him up.',
-    )
-    return
-  }
-
-  await sendMessage(chatId!, `Kairos could not reply (${result.reason}). Your message is saved in the thread.`)
+  })
 }

@@ -28,7 +28,11 @@
 // retrieval/synthesis and gates whether a proposal can ever auto-promote
 // (autonomy L2+). Tunable, not load-bearing yet.
 export const CONFIDENCE_BY_STREAM: Record<string, number> = {
+  // The operator's principles — the highest-trust document in the brain.
+  constitution: 0.95,
   reflection: 0.9,
+  // A held belief (aligned or own mind); provenance-weighted by the engine.
+  belief: 0.8,
   // Concept — distilled from several corroborating members; above a single idea.
   concept: 0.75,
   cortex: 0.7,

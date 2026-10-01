@@ -148,7 +148,7 @@ describe('Memory MCP <-> REST parity', () => {
       'getBeliefTrail',
       'prepareContext',
       'listMemoriesNeedingSummary',
-      'acceptProposal',
+      'acceptKairosProposal',
     ]
 
     it.each(sharedFns)('MCP imports and uses: %s', (fn) => {
@@ -183,6 +183,29 @@ describe('Memory MCP <-> REST parity', () => {
         const src = readSource(path.join(REST_ROOT, r))
         expect(src, `${r} missing isApiUser narrow`)
           .toMatch(/isApiUser\(result\)/)
+      }
+    })
+  })
+
+  // docs/kairos/34 §2: agent surfaces may not accept a constitution amendment
+  // — only the operator (Aeon inbox session / Telegram) can. Both surfaces
+  // refuse it with the same shared guard + message before acceptProposal.
+  describe('constitution amendments are operator-only on both surfaces', () => {
+    const acceptBlock = mcpSrc.split(/server\.tool\(/).find((b) => /^\s*['"]accept_proposal['"]/.test(b)) ?? ''
+    const restAccept = readSource(path.join(REST_ROOT, '[id]/accept/route.ts'))
+
+    it.each([
+      ['MCP accept_proposal', acceptBlock],
+      ['REST POST [id]/accept', restAccept],
+    ])('%s refuses kind constitution_amendment before accepting', (_label, src) => {
+      expect(src).toMatch(/isConstitutionAmendmentProposal\(/)
+      expect(src).toMatch(/OPERATOR_ONLY_AMENDMENT_ERROR/)
+      expect(src.indexOf('isConstitutionAmendmentProposal(')).toBeLessThan(src.search(/acceptKairosProposal\(/))
+    })
+
+    it('both import the guard from the constitution amendment module', () => {
+      for (const src of [mcpSrc, restAccept]) {
+        expect(src).toMatch(/import \{[^}]*\bisConstitutionAmendmentProposal\b[^}]*\} from '@\/lib\/kairos\/constitution\/amendment'/)
       }
     })
   })

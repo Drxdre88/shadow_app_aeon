@@ -1,20 +1,27 @@
-// Agentic READ-ONLY tools for the Kairos chat turn (WP2, default ON —
+// Agentic tools for the Kairos chat turn (WP2, default ON —
 // KAIROS_CHAT_AGENTIC_TOOLS is a kill switch: set to '0'/'false' to opt back
 // out to the plain no-tools call). Each tool is a userId-bound closure over the
-// existing data layer — the model can look things up mid-turn but can never
-// mutate. The loop is caller-owned: the provider only forwards tool
-// definitions (see AIToolSpec in lib/ai/provider.ts) and hands requested
-// calls back, so round caps and result serialization live here.
+// existing data layer. Every tool is READ-ONLY except ONE: undo_kairos_change
+// (docs/kairos/34 §6), the operator's veto over a promote/decay/merge — it
+// only acts on an explicit operator request and with confirm:true plus the
+// server-minted confirmToken from a confirm:false lookup, and it
+// logs its revert like the MCP revert_memory_op. The loop is caller-owned:
+// the provider only forwards tool definitions (see AIToolSpec in
+// lib/ai/provider.ts) and hands requested calls back, so round caps and
+// result serialization live here.
 //
 // Tool exchanges are re-serialized into plain-text messages between rounds
 // (AIMessage carries strings only). This sidesteps provider-specific
 // tool_use/tool_result pairing protocols at a small fidelity cost — fine for
 // a max-4-round lookup loop.
 
+import { createHmac, timingSafeEqual } from 'crypto'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { memories } from '@/lib/db/schema'
 import { listRecentMemories } from '@/lib/data/memories'
+import { listMemoryOps } from '@/lib/data/memory-ops'
+import { loadMemoryTitles } from '@/lib/data/memory-rescore'
 import { findProjects } from '@/lib/data/projects'
 import { listAgentSessions } from '@/lib/data/sessions'
 import { listTraceHistory } from '@/lib/data/recipes'
@@ -73,6 +80,132 @@ export const recentActivityInputSchema = z.object({
 })
 
 export const synthesisStatusInputSchema = z.object({})
+
+export const undoKairosChangeInputSchema = z.object({
+  title: z.string().trim().min(2).max(300),
+  confirm: z.boolean(),
+  confirmToken: z.string().trim().max(300).optional(),
+})
+
+const UNDO_OPS = ['promote', 'decay', 'merge']
+// Only the nightly engine's own ops are undoable here: BackUpStep ('backup')
+// logs promote/decay, MergeStep ('merge') logs merge. Own-mind mirror ops
+// (step 'beliefs', before null) and constitution ops (step 'constitution')
+// share the op names but are not chat-vetoable.
+const UNDO_STEPS = ['backup', 'merge']
+const UNDO_SCAN_LIMIT = 100
+const UNDO_MAX_CANDIDATES = 3
+const UNDO_MIN_SCORE = 0.6
+// Non-exact matches must share at least this many tokens with the title, so
+// one common word ("work") can never select a change on its own.
+const UNDO_MIN_SHARED_TOKENS = 2
+const UNDO_TOKEN_TTL_MS = 10 * 60 * 1000
+
+function undoTokenSecret(): string | null {
+  return process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || null
+}
+
+function undoTokenMac(secret: string, userId: string, opId: string, expiresAt: number): string {
+  return createHmac('sha256', secret).update(`undo_kairos_change:${userId}:${opId}:${expiresAt}`).digest('hex')
+}
+
+// Confirmation token minted by the confirm:false lookup: binds the operator's
+// confirmation to exactly one op for this user, valid for 10 minutes.
+export function mintUndoConfirmToken(userId: string, opId: string, now: number = Date.now()): string | null {
+  const secret = undoTokenSecret()
+  if (!secret) return null
+  const expiresAt = now + UNDO_TOKEN_TTL_MS
+  return `${opId}.${expiresAt}.${undoTokenMac(secret, userId, opId, expiresAt)}`
+}
+
+// Returns the opId the token authorises, or null when forged/expired/foreign.
+export function verifyUndoConfirmToken(userId: string, token: string, now: number = Date.now()): string | null {
+  const secret = undoTokenSecret()
+  if (!secret) return null
+  const parts = token.split('.')
+  if (parts.length !== 3) return null
+  const [opId, exp, mac] = parts as [string, string, string]
+  const expiresAt = Number(exp)
+  if (!opId || !Number.isSafeInteger(expiresAt) || expiresAt < now) return null
+  const expected = Buffer.from(undoTokenMac(secret, userId, opId, expiresAt), 'hex')
+  const given = Buffer.from(mac, 'hex')
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null
+  return opId
+}
+
+export interface UndoCandidate {
+  opId: string
+  op: string
+  memoryId: string
+  title: string
+  createdAt: Date
+  reason: string
+}
+
+function undoTokens(text: string): string[] {
+  return [...new Set(text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((t) => t.length > 1))]
+}
+
+// 1 = exact title; 0.9 = one contains the other; else the share of the
+// query's tokens present in the title. Anything but an exact title needs
+// ≥ UNDO_MIN_SHARED_TOKENS shared tokens, else 0.
+function undoMatchScore(query: string, title: string): number {
+  const q = query.trim().toLowerCase()
+  const t = title.trim().toLowerCase()
+  if (!q || !t) return 0
+  if (q === t) return 1
+  const qTokens = undoTokens(q)
+  if (qTokens.length === 0) return 0
+  const tTokens = new Set(undoTokens(t))
+  const shared = qTokens.filter((tok) => tTokens.has(tok)).length
+  if (shared < UNDO_MIN_SHARED_TOKENS) return 0
+  if (t.includes(q) || q.includes(t)) return 0.9
+  return shared / qTokens.length
+}
+
+/**
+ * Pick the op to undo for an operator's title. `candidates` are newest first;
+ * only the newest op per memory counts. One clear best → match; ties at the
+ * best score → ambiguous (≤ 3 listed); nothing above the floor → none.
+ */
+export function matchUndoCandidate(
+  query: string,
+  candidates: readonly UndoCandidate[],
+): { kind: 'match'; candidate: UndoCandidate } | { kind: 'ambiguous'; candidates: UndoCandidate[] } | { kind: 'none' } {
+  const seen = new Set<string>()
+  const scored: Array<{ c: UndoCandidate; score: number }> = []
+  for (const c of candidates) {
+    if (seen.has(c.memoryId)) continue
+    seen.add(c.memoryId)
+    const score = undoMatchScore(query, c.title)
+    if (score >= UNDO_MIN_SCORE) scored.push({ c, score })
+  }
+  if (scored.length === 0) return { kind: 'none' }
+  const best = Math.max(...scored.map((s) => s.score))
+  const top = scored.filter((s) => s.score === best)
+  if (top.length === 1) return { kind: 'match', candidate: top[0]!.c }
+  return { kind: 'ambiguous', candidates: top.slice(0, UNDO_MAX_CANDIDATES).map((s) => s.c) }
+}
+
+async function listUndoCandidates(userId: string): Promise<UndoCandidate[]> {
+  const ops = await listMemoryOps(userId, { ops: UNDO_OPS, steps: UNDO_STEPS, limit: UNDO_SCAN_LIMIT })
+  // before == null means nothing to restore (revert refuses it) — never offer it.
+  const withMemory = ops.filter((o): o is typeof o & { memoryId: string } =>
+    typeof o.memoryId === 'string' && UNDO_STEPS.includes(o.step) && o.before != null)
+  const titles = await loadMemoryTitles(userId, withMemory.map((o) => o.memoryId))
+  return withMemory.flatMap((o) => {
+    const title = titles.get(o.memoryId)
+    return title
+      ? [{ opId: o.id, op: o.op, memoryId: o.memoryId, title, createdAt: o.createdAt, reason: o.reason }]
+      : []
+  })
+}
+
+const OP_VERB: Record<string, string> = { promote: 'promoted', decay: 'decayed', merge: 'merged' }
+
+function describeUndo(c: UndoCandidate) {
+  return { title: c.title, change: OP_VERB[c.op] ?? c.op, at: c.createdAt, why: c.reason }
+}
 
 // Method-shorthand `execute` keeps assignment bivariant, so per-tool
 // executors typed to their own schema output fit the unknown-typed record.
@@ -163,6 +296,68 @@ export function buildChatTools(userId: string): Record<string, ChatTool> {
           rollup: latest ? { createdAt: latest.createdAt, sourceMetadata: latest.sourceMetadata } : null,
           cortexDocToday: cortexToday.length > 0,
           aetherDocToday: aetherToday.length > 0,
+        })
+      },
+    },
+    // The ONE mutating tool. Two-step, server-enforced: confirm:false looks
+    // up the match and mints a 10-minute confirmToken bound to that exact op
+    // and user; only confirm:true WITH that token reverts it (the operator's
+    // veto), and it reverts the token's op — never a fresh title match.
+    // Tool results don't persist across chat turns, so once the operator
+    // confirms, the model re-runs confirm:false then confirm:true in that turn.
+    undo_kairos_change: {
+      description:
+        'Undo (veto) something Kairos learned: reverts the most recent promotion ("I now believe X"), decay or merge whose memory title matches. Use ONLY when the operator explicitly asks to undo/veto/forget something Kairos learned — never on your own initiative. First call with confirm:false and show the operator the match; it returns a confirmToken. Only after the operator confirms that exact change, call with confirm:true and the confirmToken from a confirm:false lookup (re-run the lookup in that turn if you no longer have it). If several changes match, ask which one.',
+      inputSchema: undoKairosChangeInputSchema,
+      execute: async (input: z.infer<typeof undoKairosChangeInputSchema>) => {
+        if (input.confirm) {
+          const token = input.confirmToken
+          if (!token) {
+            return JSON.stringify({ status: 'refused', reason: 'confirm_token_required', message: 'Call with confirm:false first, show the operator the match, and pass its confirmToken once they confirm. Nothing was undone.' })
+          }
+          const opId = verifyUndoConfirmToken(userId, token)
+          if (!opId) {
+            return JSON.stringify({ status: 'refused', reason: 'invalid_or_expired_token', message: 'That confirmation is invalid or expired — look the change up again with confirm:false. Nothing was undone.' })
+          }
+          const target = (await listUndoCandidates(userId)).find((c) => c.opId === opId)
+          if (!target) {
+            return JSON.stringify({ status: 'not_found', message: 'That change is no longer undoable (already undone or superseded). Nothing was undone.' })
+          }
+          // Lazy: the revert module pulls the engine's write path, which the
+          // read-only tools (and their importers) never need at load time.
+          const { revertMemoryOp } = await import('@/lib/kairos/engine/revert')
+          const res = await revertMemoryOp(userId, target.opId, { reason: 'operator veto (chat)' })
+          if (!res.ok) {
+            return JSON.stringify({ status: 'failed', reason: res.reason, match: describeUndo(target) })
+          }
+          return JSON.stringify({
+            status: 'undone',
+            message: `Undone: "${target.title}" is no longer ${OP_VERB[target.op] ?? target.op}, and Kairos won't redo it on its own.`,
+            match: describeUndo(target),
+          })
+        }
+
+        const found = matchUndoCandidate(input.title, await listUndoCandidates(userId))
+        if (found.kind === 'none') {
+          return JSON.stringify({ status: 'not_found', message: `No recent Kairos change matches "${input.title}". Nothing was undone.` })
+        }
+        if (found.kind === 'ambiguous') {
+          return JSON.stringify({
+            status: 'ambiguous',
+            message: 'Several recent changes match — ask the operator which one. Nothing was undone.',
+            candidates: found.candidates.map(describeUndo),
+          })
+        }
+        const match = found.candidate
+        const confirmToken = mintUndoConfirmToken(userId, match.opId)
+        if (!confirmToken) {
+          return JSON.stringify({ status: 'unavailable', message: 'Undo is unavailable (server confirmation secret missing). Nothing was undone.', match: describeUndo(match) })
+        }
+        return JSON.stringify({
+          status: 'confirm_needed',
+          message: `Found it. Ask the operator to confirm undoing this ${match.op}; only after they confirm, call again with confirm:true and this confirmToken (valid 10 minutes). Nothing was undone yet.`,
+          match: describeUndo(match),
+          confirmToken,
         })
       },
     },

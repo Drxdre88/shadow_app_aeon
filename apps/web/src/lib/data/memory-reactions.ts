@@ -9,7 +9,8 @@ import type { MemoryOpInput, OutcomeSummary } from '@/lib/kairos/engine/types'
 // positive; dismiss → Outcome negative. Every reaction is logged as a
 // 'feedback' memory_op in the same transaction as its write. Writes are
 // atomic SQL UPDATEs (no read-modify-write) and never bump updatedAt — that
-// column drives confidence decay.
+// column drives confidence decay. Pure DB writes: the best-effort wrappers and
+// the immediate rescore (docs/kairos/34 §6) live in lib/kairos/reactions.ts.
 
 export type OutcomeKind = 'positive' | 'negative'
 
@@ -83,72 +84,63 @@ export async function recordMemoryUse(
     .returning({ id: memories.id, useCount: memories.useCount })
 }
 
-// ── Best-effort reactions: log + swallow, never fail the caller's action. ──
-// Each reaction's memory write and its 'feedback' op commit in ONE
-// transaction: a failed op insert rolls the counter back, so a reaction never
-// lands without its (revertable) trail.
+// ── Reaction writes (each with its 'feedback' op, in ONE transaction) ──
+// A failed op insert rolls the counter back, so a reaction never lands
+// without its (revertable) trail. These THROW on failure; the best-effort
+// wrapper (log + swallow) and the follow-up rescore live in
+// lib/kairos/reactions.ts — business orchestration stays out of lib/data.
 
-export async function reactOutcome(
+// Outcome +1 on one memory, logged as a feedback op. Returns false (no
+// transaction for a non-uuid id) when no row was touched.
+export async function writeOutcomeReaction(
   userId: string,
   memoryId: string,
   kind: OutcomeKind,
   reason: string,
-): Promise<void> {
-  try {
-    if (!UUID_RE.test(memoryId)) return
-    await db.transaction(async (tx) => {
-      const totals = await recordOutcome(userId, memoryId, kind, tx)
-      if (!totals) return
-      const before = {
-        outcome: {
-          positive: totals.positive - (kind === 'positive' ? 1 : 0),
-          negative: totals.negative - (kind === 'negative' ? 1 : 0),
-        },
-      }
-      await insertMemoryOps(userId, null, [{
-        memoryId,
-        step: REACTION_STEP,
-        op: 'feedback',
-        before,
-        after: { outcome: totals },
-        reason,
-      }], tx)
-    })
-  } catch (err) {
-    console.warn('[memory-reactions] outcome reaction failed', {
+): Promise<boolean> {
+  if (!UUID_RE.test(memoryId)) return false
+  return db.transaction(async (tx) => {
+    const totals = await recordOutcome(userId, memoryId, kind, tx)
+    if (!totals) return false
+    const before = {
+      outcome: {
+        positive: totals.positive - (kind === 'positive' ? 1 : 0),
+        negative: totals.negative - (kind === 'negative' ? 1 : 0),
+      },
+    }
+    await insertMemoryOps(userId, null, [{
       memoryId,
-      kind,
-      error: err instanceof Error ? err.message : String(err),
-    })
-  }
+      step: REACTION_STEP,
+      op: 'feedback',
+      before,
+      after: { outcome: totals },
+      reason,
+    }], tx)
+    return true
+  })
 }
 
-export async function reactUsed(
+// Usage +1 on each uuid id, one feedback op per touched row. Returns the ids
+// actually touched (no transaction at all when no id is a uuid).
+export async function writeUseReaction(
   userId: string,
   ids: readonly string[],
   reason: string,
   at: Date = new Date(),
-): Promise<void> {
-  try {
-    // No uuid ids (ask/aether source ids are free-form) → no transaction at all.
-    if (!ids.some((id) => UUID_RE.test(id))) return
-    await db.transaction(async (tx) => {
-      const touched = await recordMemoryUse(userId, ids, at, tx)
-      if (touched.length === 0) return
-      const ops: MemoryOpInput[] = touched.map((t) => ({
-        memoryId: t.id,
-        step: REACTION_STEP,
-        op: 'feedback',
-        before: { useCount: t.useCount - 1 },
-        after: { useCount: t.useCount, lastUsedAt: at.toISOString() },
-        reason,
-      }))
-      await insertMemoryOps(userId, null, ops, tx)
-    })
-  } catch (err) {
-    console.warn('[memory-reactions] use reaction failed', {
-      count: ids.length,
-      error: err instanceof Error ? err.message : String(err),
-    })
-  }
+): Promise<string[]> {
+  if (!ids.some((id) => UUID_RE.test(id))) return []
+  return db.transaction(async (tx) => {
+    const touched = await recordMemoryUse(userId, ids, at, tx)
+    if (touched.length === 0) return []
+    const ops: MemoryOpInput[] = touched.map((t) => ({
+      memoryId: t.id,
+      step: REACTION_STEP,
+      op: 'feedback',
+      before: { useCount: t.useCount - 1 },
+      after: { useCount: t.useCount, lastUsedAt: at.toISOString() },
+      reason,
+    }))
+    await insertMemoryOps(userId, null, ops, tx)
+    return touched.map((t) => t.id)
+  })
 }

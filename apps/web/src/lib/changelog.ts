@@ -29,6 +29,32 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.30.0] — 2026-10-01
+
+> Areas touched: \`KAIROS\` \`MCP\` \`API\` \`DATA\` \`INFRA\` \`DOCS\`
+> Theme: Kairos stops being a pile of notes. He sees what you and your agents actually did, learns which memories to trust, keeps his own mind beside yours, and talks to you once a day. Full detail: \`docs/kairos/CHANGELOG.md\` 0.11–0.13.
+
+### Fixed — Live Kairos defects · \`KAIROS\`
+- Kairos's questions reach you again: routine notes no longer block questions for two days.
+- The evening message can no longer forward runaway model text; the nightly synthesis no longer fails on model-invented ids.
+- The health check sees every nightly job, and the first memory-engine night's missing undo records were restored.
+
+### Added — Eyes on real work · \`KAIROS\` \`DATA\`
+- Coding sessions and AI Hangar missions are captured with card, branch, commits, PRs, tests and cost.
+- Boards with the Kairos feed setting get a daily (or weekly) page of finished, started and created cards; Kairos asks for one line each on title-only cards and writes your answer back onto them.
+
+### Added — Memory engine · \`KAIROS\` \`DATA\` \`MCP\` \`API\`
+- Every memory gets a nightly trust score; search ranks by relevance × trust. Kairos's own ideas become beliefs only on independent evidence across days, and fade otherwise. Repeats merge; related memories become weekly concepts.
+- Every change is logged and can be undone (\`list_memory_ops\` / \`revert_memory_op\`, or "undo <title>" in chat).
+
+### Added — Beliefs, constitution and one daily message · \`KAIROS\` \`MCP\` \`API\`
+- Two minds: one aligned with your words, one Kairos's own; compared every Monday.
+- A reasons-based constitution changed only by proposals you accept; a nightly drift check against it.
+- One message at 08:00 UK time replaces the evening digest; a Monday weekly review with up to five suggested actions.
+
+### Added — Thinking on the Max plan · \`KAIROS\` \`MCP\` \`API\`
+- Kairos's thinking can be claimed and answered by scheduled Claude routines through the Aeon connector (\`claim_thinking_job\` / \`submit_thinking_job\`); the paid key and an hourly sweep keep everything running if no routine shows up. Telegram replies via a routine are built but switched off until latency is measured.
+
 ## [0.29.0] — 2026-09-21
 
 > Areas touched: \`BOARD\` \`UI\` \`INFRA\` \`DOCS\`
