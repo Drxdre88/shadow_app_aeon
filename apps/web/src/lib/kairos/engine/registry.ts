@@ -18,16 +18,19 @@ async function enqueueThinkingJobs(userId: string, specs: readonly ThinkingJobSp
 }
 
 // Night order (docs/kairos/32 §2): fold repeats first so Weigh scores the
-// survivors, promote/decay candidates on fresh standing, mirror the promotions
-// into the own mind, re-check beliefs whose support went away (after OwnMind
-// so tonight's mirrors and retirements are settled), then weekly concepts.
+// survivors; then the cheap belief steps — mirror promotions into the own mind
+// and re-check beliefs whose support went away — BEFORE BackUp, which is the
+// slow step (one transaction + support query per candidate) and can exhaust the
+// run's time budget while a proposal backlog drains. A promotion BackUp makes
+// tonight is mirrored the next night (OwnMind looks back 14 days). Weekly
+// concepts last.
 export function buildNightSteps(): Step[] {
   return [
     new MergeStep(),
     new WeighStep(new Standing(defaultScorers())),
-    new BackUpStep(),
     new OwnMindStep(),
     new RecheckStep(),
+    new BackUpStep(),
     new ConceptStep({ enqueue: enqueueThinkingJobs }),
   ]
 }
