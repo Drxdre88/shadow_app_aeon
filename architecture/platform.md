@@ -113,7 +113,7 @@ Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via
 | **ask** | 3 | `run_kairos_ask`, `get_pending_kairos_ask`, `answer_kairos_ask` — proactive one-question loop |
 | **dialogue** | 5 | `open_dialogue`, `prepare_dialogue_context`, `append_dialogue_turn`, `get_dialogue`, `commit_dialogue` |
 | **memory-ops** | 2 | `list_memory_ops`, `revert_memory_op` — memory-engine undo ledger |
-| **thinking** | 3 | `claim_thinking_job`, `submit_thinking_job`, `list_thinking_jobs` — the Claude Max routine's queue surface. 11 kinds (`kinds` is `.max(11)`), incl. **idea_generate** / **idea_judge** (0.15); submitting `idea_generate` plans `idea_judge` the same night |
+| **thinking** | 3 | `claim_thinking_job`, `submit_thinking_job`, `list_thinking_jobs` — the Claude Max routine's queue surface. 18 kinds (`kinds` max = enum size), incl. **idea_generate** / **idea_judge** (0.15) and the seven former paid-key cron kinds (0.16); submitting `idea_generate` plans `idea_judge` the same night |
 | **beliefs** | 2 | `list_beliefs` (each belief carries `sourceType` + `recheck`, 0.14), `get_mind_comparison` |
 | **constitution** | 2 | `get_constitution`, `propose_constitution_amendment` (acceptance is operator-only) |
 
@@ -166,7 +166,7 @@ The app-owned **embedding layer** (Voyage primary / OpenAI fallback, single serv
 
 ## 6.5 Versioning + CI gates
 
-- App version is `APP_VERSION` in `apps/web/src/lib/version.ts` (**0.32.0**; Kairos `KAIROS_VERSION` **0.15.0** in `lib/kairos/version.ts`, PR #139), surfaced in the Changelog modal; `apps/web/src/lib/changelog.ts` mirrors `/CHANGELOG.md` — bump all three together. `package.json` versions remain scaffold defaults and are not the displayed product version.
+- App version is `APP_VERSION` in `apps/web/src/lib/version.ts` (**0.33.0**; Kairos `KAIROS_VERSION` **0.16.0** in `lib/kairos/version.ts`, PR #141), surfaced in the Changelog modal; `apps/web/src/lib/changelog.ts` mirrors `/CHANGELOG.md` — bump all three together. `package.json` versions remain scaffold defaults and are not the displayed product version.
 - CI (`.github/workflows/ci.yml`): lint + typecheck + Vitest + **production build** for the web app, plus kairos-worker typecheck + tests; `auth-smoke` runs on every deployment (the 2026-06-08 outage guard).
 
 ## 7. DB / cold-start reliability + cron schedule
@@ -186,7 +186,7 @@ Cron schedule (`apps/web/vercel.json`, all `Bearer ${CRON_SECRET}`):
 | 02:30 | `archetype-synthesis` | 3–7 archetypes / Dominion |
 | 03:00 | `cortex-regen` | living cortex / Dominion (fallback for `cortex` job) |
 | 03:15 | `aether-regen` | global Aether self-model (fallback for `aether` job) |
-| 04:00 | `embed-backfill` | drain missing/stale embeddings |
+| 03:25 | `embed-backfill` | drain missing/stale embeddings (moved from 04:00 in 0.16) |
 | 04:30 | `ask-mine` | Kairos Asks + `card_notes` nudges |
 | Mon 04:20 | `constitution-seed` | seed / maintain the live constitution |
 | **05:00** | **`contradiction-scan`** | **belief-contradiction sweep (`contradiction` task policy)** |

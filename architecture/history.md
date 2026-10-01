@@ -5,6 +5,14 @@
 Reverse-chronological. The most recent work is at the top; the pre-2026-06-06 trail is preserved
 verbatim below.
 
+### 2026-10-01 (night) — Kairos 0.16 "All on Max" (PR #141) · app v0.33.0
+- **New thinking kinds:** the seven remaining paid-key crons become thinking kinds: `chat_distill`, `archetype`, `ask_mine`, `contradiction` (one batched job per Dominion), `brief`, `introspection` and `micro_consolidate`. There are now 18 kinds.
+- **Crons become fallbacks:** each kind is planned in a window that closes 2 min before its old cron. The cron is now only the fallback, guarded by `isJobDone` (`lib/data/thinking-jobs.ts`).
+- **One write path per lib:** `prepareRecipeContext` / `persistRecipeOutput`, `persistArchetypes`, `persistChatDistillReflections`, `stageContradictionProposals`, `persistIntrospectionProposals`, `persistMicroConsolidateDelta`, `prepareAskMine` / `finishAskMine`.
+- **Answer format and timing:** `brief` and `micro_consolidate` take markdown answers (`TEXT_ANSWER_KINDS`). The daily message waits for every brief job, or 06:25Z. Tidy-up windows anchor on `sourceMetadata.until`.
+- **Schedule:** `embed-backfill` moves 04:00 → 03:25 UTC. No migration.
+- **Routines:** six, all Opus 5.5: dusk 01:40, thinking 02:40, ideas 03:35, dawn 04:00, morning 05:40, tidy at :05 past 09/12/15/18/21/23 UTC. The paid key is left only for fallbacks and Telegram chat.
+
 ### 2026-10-01 (evening) — Kairos 0.14 Ground & Protect (#137, #138) · 0.15 Creativity (#139) · Max routines live
 - **0.14 Ground & Protect (PR #137, hotfix #138):**
   - **Origin at write:** `sourceMetadata.origin` (`lib/kairos/origin.ts`), stamped by the trusted surface and capped by `source`. Agent edits and classifier-distilled ask answers lower it.

@@ -209,22 +209,29 @@ released to the sweep's paid key. Cron kinds fail over to their own cron.
 (`SWEEP_PLAN_SKIP_KINDS` `:80`), expires overdue jobs, and runs ≤2 paid fallbacks per invocation in
 a 200s budget (`KAIROS_SWEEP_MAX_FALLBACKS` / `_BUDGET_MS`).
 
-**Max-plan routines (claude.ai, operator-created; not inspectable from the repo).** All three new
-ones are on `claude-opus-5-5`, use only the Aeon connector, and allow only Read/Glob/Grep tools.
-Prompts are in docs/kairos/33.
+**Max-plan routines (claude.ai; not inspectable from the repo).** Since 0.16 ("All on Max", PR #141)
+every Kairos model call is a thinking job first: 18 kinds — the 11 above plus `chat_distill`,
+`archetype`, `ask_mine`, `contradiction`, `brief`, `introspection`, `micro_consolidate`. Each former
+paid-key cron plans its kind in a window closing 2 min before the cron, and the cron is now only the
+**fallback**: `isJobDone(userId, externalKey)` (`lib/data/thinking-jobs.ts`) skips any unit a routine
+answered. `brief` and `micro_consolidate` take markdown answers (`TEXT_ANSWER_KINDS`); the daily
+message waits until every brief job is answered or 06:25Z. Six routines, all `claude-opus-5-5`
+(no reasoning-effort setting exists for routines), Aeon connector only, Read/Glob/Grep, UTC crons
+(prompts and caps in docs/kairos/33):
 
-| Routine | Trigger id | Cron (UTC) | Claims |
-|---|---|---|---|
-| Kairos thinking | `trig_01JX3JhyWYuJiNBh7tFtE4rv` | `40 2 * * *` | nightly kinds (aether…daily_message, never chat); usually done before ideas open |
-| Kairos ideas | `trig_01MvjYWyfTMVS3fRd4dJrVzR` | `35 3 * * *` | `idea_generate` → `idea_judge` in one run |
-| Kairos morning | `trig_01AxMddrzJMkgrk6Cd3WiWH3` | `30 6 * * *` | daily_message, drift_probe, mind_compare, weekly_review, belief_extract |
-| kairos-brain-tick (older, Sonnet) | — | `0 6,11,17 * * *` | speaks first via `/api/v1/kairos/speak` ([chat.md](chat.md)) |
+| Routine | Cron (UTC) | Claims |
+|---|---|---|
+| Kairos dusk | `40 1 * * *` | `chat_distill`, `archetype` |
+| Kairos thinking (`trig_01JX3JhyWYuJiNBh7tFtE4rv`) | `40 2 * * *` | cortex, concept, aether, belief_extract, drift_probe, mind_compare, weekly_review |
+| Kairos ideas (`trig_01MvjYWyfTMVS3fRd4dJrVzR`) | `35 3 * * *` | `idea_generate` → `idea_judge`, `ask_mine` |
+| Kairos dawn | `0 4 * * *` | `contradiction` (one batched job per Dominion), `introspection` |
+| Kairos morning (`trig_01AxMddrzJMkgrk6Cd3WiWH3`) | `40 5 * * *` | `brief`, the 06:15 `micro_consolidate`, `daily_message` (+ Monday kinds) |
+| Kairos tidy | `5 9,12,15,18,21,23 * * *` | `micro_consolidate` |
+| kairos-brain-tick (older, Sonnet) | `0 6,11,17 * * *` | speaks first via `/api/v1/kairos/speak` ([chat.md](chat.md)) |
 
-The first manual **Kairos ideas** run (18:14Z, 01/10) completed both stages on the routine. The
-*Kairos chat* routine stays API-trigger only behind `KAIROS_TELEGRAM_ROUTINE=1`. **Crons that still
-call the paid BYOK key directly:** briefer, introspection, contradiction-scan, archetype-synthesis,
-chat-distill, ask-mine, micro-consolidate. cortex-regen, aether-regen, daily-message and the sweep
-use the paid key only as a fallback.
+The paid BYOK key now runs only as a fallback (a cron or the hourly sweep covering a job no routine
+answered) and for Telegram chat replies (*Kairos chat* routine not created; `KAIROS_TELEGRAM_ROUTINE`
+off). The first manual *Kairos ideas* run (18:14Z, 01/10) completed both stages on the routine.
 
 ## Recipes + dispatcher
 
@@ -246,7 +253,7 @@ is the sole registered recipe; the briefer cron, `runBriefingNow` and MCP `run_r
 | 02:30 daily | `archetype-synthesis` | 3–7 archetypes / Dominion |
 | 03:00 daily | `cortex-regen` | fallback for the `cortex` job |
 | 03:15 daily | `aether-regen` | fallback for the `aether` job |
-| 04:00 daily | `embed-backfill` | drain missing/stale embeddings |
+| 03:25 daily | `embed-backfill` | drain missing/stale embeddings (moved from 04:00 in 0.16, before the contradiction window) |
 | 04:30 daily | `ask-mine` | Kairos Asks + `card_notes` nudges |
 | Mon 04:20 | `constitution-seed` | seed / maintain the live constitution |
 | 05:00 daily | `contradiction-scan` | auto-contradiction detection |

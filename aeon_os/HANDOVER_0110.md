@@ -1,15 +1,18 @@
-# Handover 0110 — Kairos Phases 0–3 complete → Phase 4 (Motivational)
+# Handover 0110 — Kairos Phases 0–3 + All on Max complete → Phase 4 (Motivational)
 
-**Date:** 2026-10-01 (evening) · **Repo:** shadow_app_aeon · **main = prod @ `9477bb1`** · **Kairos 0.15.0 / app v0.32.0**
+**Date:** 2026-10-01 (night) · **Repo:** shadow_app_aeon · **Kairos 0.16.0 / app v0.33.0** once PR #141 is merged (before that: prod `9477bb1` = 0.15.0 / v0.32.0)
 **Board:** AI Mission Control → "Kairos: close the loops — Eyes, Heal, five modules" (Landing Zone; P0–P3 ticked, P4/P5 open).
 **Read first:** this file → `aeon_os/HANDOVER_2909.md` (the original reassessment and five-module plan) → `research/kairos_0110/00_verdict.md` (the living-memory research verdict).
-**Also expect:** a separate handover from the owner's Claude Code session that moves the remaining paid-key crons onto the Max routines (see §3).
+**Status at handoff — merge order:**
+1. **PR #141** "All on Max" (Kairos 0.16, built in the owner's Claude Code session; CI green, Warden-reviewed). On the owner's "merge", that session merges it, updates the routines to the six-routine schedule in doc 33 and test-fires each one.
+2. **This docs PR** (handover + architecture/vision for 0.16): merge right after #141.
+3. **The next session** first runs §4's "after #141" checks, then starts Phase 4 (§6).
 
 ---
 
 ## 0. In one paragraph
 
-Before 30/09, Kairos produced a lot but never learned: he was half-blind to real work, several nightly jobs were broken, and every memory counted the same. In two days he gained four things. He now has **eyes**: he sees coding sessions, agent missions and sprint boards. He has a **memory that evolves**: memories earn trust, fade, merge and get promoted, and every change can be undone. He has **beliefs and a conscience**: two minds, a constitution only the owner can change, drift and honesty checks, and he knows where each memory came from so he doesn't trust his own echoes. And he has **creativity**: a nightly idea contest that keeps 1–3 ideas, each with the reason it survived. Most of his thinking now runs on the owner's Claude Max plan. Phase 4 gives him **initiative**: goals of his own, commitments he keeps, owner approval, and missions as his hands.
+Before 30/09, Kairos produced a lot but never learned: he was half-blind to real work, several nightly jobs were broken, and every memory counted the same. In two days he gained four things. He now has **eyes**: he sees coding sessions, agent missions and sprint boards. He has a **memory that evolves**: memories earn trust, fade, merge and get promoted, and every change can be undone. He has **beliefs and a conscience**: two minds, a constitution only the owner can change, drift and honesty checks, and he knows where each memory came from so he doesn't trust his own echoes. And he has **creativity**: a nightly idea contest that keeps 1–3 ideas, each with the reason it survived. Since 0.16, **all** of his thinking runs on the owner's Claude Max plan through six routines; the paid key is only a fallback. Phase 4 gives him **initiative**: goals of his own, commitments he keeps, owner approval, and missions as his hands.
 
 ## 1. What shipped, phase by phase
 
@@ -20,51 +23,47 @@ Before 30/09, Kairos produced a lot but never learned: he was half-blind to real
 | **P2 Beliefs & strategy** | #136 | 0.13 | Two minds: one aligned with the owner, one Kairos's own, compared every Monday. A constitution only the owner can change. Nightly drift probes. ONE 08:00 UK message. A Monday weekly review. Telegram-on-Max built but switched off. Undo from chat. | Auth smoke ✅; daily message composes |
 | **P2.5 Ground & protect** | #137 + #138 | 0.14 | Every memory is stamped with where it came from (operator / activity / agent / Kairos / external). Belief confidence is capped by that. AI chat summaries count as the owner's view only once the owner confirms them. Beliefs are re-checked when a source is corrected. The constitution and beliefs are fed into chat, the brief, the daily message and the weekly review. Nightly honesty checks. Fixes: superseded rows no longer leak into chat; beliefs no longer fall out after 90 days; Merge no longer misses late rows. #138 runs the belief steps before BackUp. | First honesty check passed: flattery 4/4, abstention 3/3, outdated 2/2, laundering 0. First belief pass wrote 12 aligned beliefs under the caps. Engine dry run completes all 6 steps |
 | **P3 Creativity** | #139 | 0.15 | Nightly idea contest. **Generate:** 4–6 directions, 8–16 grounded ideas. **Repeat filter:** against the idea archive, the inbox and beliefs. **Sceptical judge:** checks evidence, asks "already known?", pairwise matches asked in both orders. **Elo** keeps ≤3 survivors. They lead the inbox, appear as the "Idea of the day" in the 08:00 message, and feed the weekly review (ideas, lessons, diversity, belief diff). Accept/dismiss teaches the generator. The old raw dump has a kill switch. | First contest 18:14Z 01/10, **on the Max routine**: 13 candidates → 2 survivors ("Budget agent concurrency by host memory", "Feed git commits into the triad as ground truth"); `idea-tournament` trace ok |
+| **All on Max** | #141 (Claude Code session) | 0.16 | The seven crons that still called the paid key become Max thinking jobs: chat summaries, archetypes, the question of the day, contradictions, morning briefs, the old idea dump, tidy-ups. Each cron is kept only as a fallback and skips anything a routine already did. Six Opus routines. Embed-backfill moves to 03:25. Two timing bugs fixed before ship (e.g. the daily message covering only one area's brief). | 5,139 tests; Warden: 1 high fixed. **To verify after merge:** `claimedBy: routine` on every kind, fallback crons skipping |
 
-**Release hygiene:** each PR bumped `lib/kairos/version.ts`, `lib/version.ts`, `docs/kairos/CHANGELOG.md`, `CHANGELOG.md` and the in-app `lib/changelog.ts`. Prod deploy = `9477bb1`. The post-deploy auth smoke passed after every merge. Specs are `docs/kairos/32` (engine) · `33` (routines) · `34` (beliefs) · `35` (creativity). `ARCHITECTURE.md` + `architecture/kairos/*` + `VISION.md` were refreshed on 01/10 for 0.14–0.15.
+**Release hygiene:** each PR bumped `lib/kairos/version.ts`, `lib/version.ts`, `docs/kairos/CHANGELOG.md`, `CHANGELOG.md` and the in-app `lib/changelog.ts`. Prod deploy = `9477bb1` (0.15); #141 brings 0.16 / v0.33.0. The post-deploy auth smoke passed after every merge. Specs are `docs/kairos/32` (engine) · `33` (routines) · `34` (beliefs) · `35` (creativity). `ARCHITECTURE.md` + `architecture/kairos/*` + `VISION.md` were refreshed on 01/10 for 0.14–0.16.
 
-## 2. How each night runs now (UTC)
+## 2. How each night runs after #141 (UTC)
 
-| Time | What | Runs on |
-|---|---|---|
-| 01:30 | Memory engine: Merge → Weigh → OwnMind → Recheck → BackUp → Concepts (Sun) | server, deterministic |
-| 02:00–03:15 | chat-distill, archetypes, cortex-regen, aether-regen crons | paid key (cortex/aether only if the routine missed) |
-| **02:40** | **Kairos thinking** routine: cortex, aether, concepts, beliefs, drift, reviews | **Max plan** |
-| **03:35** | **Kairos ideas** routine: idea_generate → idea_judge | **Max plan** |
-| 05:00 / 06:15 / 06:30 | contradiction-scan / briefer / introspection (old idea dump, still ON) | paid key |
-| **06:30** | **Kairos morning** routine: daily-message draft, Monday review and compare | **Max plan** |
-| 06:45 | synthesis-health rollup (alerts after 2 bad nights) | server |
-| 07:00 BST / 08:00 GMT | daily message delivered (Telegram + inbox) | routine draft, else paid key |
-| hourly :50 | thinking-sweep: plans due jobs, paid fallback for jobs a routine missed (≤2 per run) | paid key |
+Every model call is a thinking job first. The routine answers it on the Max plan. If no routine answered, the old cron, or the hourly sweep, covers it on the paid key.
 
-Routines live on the owner's claude.ai account and were created 01/10. All run `claude-opus-5-5` with the Aeon connector only and tools Read/Glob/Grep.
+| Time (UTC) | Routine (Max plan) | Claims | Fallback (paid key) |
+|---|---|---|---|
+| 01:30 | — | memory engine: Merge → Weigh → OwnMind → Recheck → BackUp → Concepts (Sun); server, no model | — |
+| **01:40** | **Kairos dusk** | `chat_distill`, `archetype` | chat-distill 02:00, archetype-synthesis 02:30 |
+| **02:40** | **Kairos thinking** | cortex, concept, aether, belief_extract, drift_probe, mind_compare, weekly_review | cortex 03:00, aether 03:15, sweep |
+| 03:25 | — | embed-backfill (Voyage, not Claude) | — |
+| **03:35** | **Kairos ideas** | `idea_generate` → `idea_judge`, `ask_mine` | sweep; ask-mine 04:30 |
+| **04:00** | **Kairos dawn** | `contradiction` (one per Dominion), `introspection` | contradiction-scan 05:00, introspection 06:30 |
+| **05:40** | **Kairos morning** | `brief`, the 06:15 `micro_consolidate`, `daily_message` (+ Monday kinds) | briefer 06:15, daily-message cron |
+| 06:45 | — | synthesis-health rollup (alerts after 2 bad nights) | — |
+| 07:00 BST / 08:00 GMT | — | daily message delivered (Telegram + inbox) | — |
+| **:05 at 09/12/15/18/21/23** | **Kairos tidy** | `micro_consolidate` | micro-consolidate at :15 |
+| 06/11/17 | kairos-brain-tick (older, Sonnet) | speaks first | — |
+| hourly :50 | — | thinking-sweep: plans due jobs, runs paid fallback for missed sweep kinds (≤2/run) | — |
 
-| Routine | id |
-|---|---|
-| Kairos thinking | `trig_01JX3JhyWYuJiNBh7tFtE4rv` |
-| Kairos ideas | `trig_01MvjYWyfTMVS3fRd4dJrVzR` |
-| Kairos morning | `trig_01AxMddrzJMkgrk6Cd3WiWH3` |
-| (older) kairos-brain-tick | `trig_01EGSDU9WVPJP1sC7h1Cv3vU` (Sonnet, 06/11/17 UTC) |
+All routines live on the owner's claude.ai account.
+- **Setup:** `claude-opus-5-5`, the Aeon connector only, tools Read/Glob/Grep. Prompts and caps are in `docs/kairos/33-thinking-routine.md`.
+- **No effort setting:** routines have no reasoning-effort option, so they use Claude Code's default.
+- **IDs:** `Kairos thinking` `trig_01JX3JhyWYuJiNBh7tFtE4rv` · `Kairos ideas` `trig_01MvjYWyfTMVS3fRd4dJrVzR` · `Kairos morning` `trig_01AxMddrzJMkgrk6Cd3WiWH3` · `kairos-brain-tick` `trig_01EGSDU9WVPJP1sC7h1Cv3vU`. Dusk, dawn and tidy are created by the Claude Code session after #141; read their ids from claude.ai/code/routines.
 
-## 3. Still on the paid key → owner's Claude Code migration (separate handover)
+## 3. What is still on the paid key (after #141)
 
-These crons call the paid key directly and are not on the thinking queue yet:
-- `briefer`
-- `introspection` (to be retired anyway)
-- `contradiction-scan`
-- `archetype-synthesis`
-- `chat-distill`
-- `ask-mine`
-- `micro-consolidate`
-
-Plus Telegram chat on Max: the routine is not created, `KAIROS_TELEGRAM_ROUTINE` is off, and it needs an API-trigger token from claude.ai. The owner is doing this migration in a Claude Code session and will hand over separately. **P4 must not fight it:** add new thinking kinds through the queue pattern, don't add new direct paid-key crons.
+- **Fallbacks only:** a cron or the hourly sweep covering a job no routine answered.
+- **Telegram chat replies:** the *Kairos chat* routine is not created and `KAIROS_TELEGRAM_ROUTINE` is off. It needs an API-trigger token from claude.ai (doc 33 §Chat routine).
+- **Rule for Phase 4:** any new model work must be a **thinking kind** (queue + handler + fallback), never a new direct paid-key cron. **Add every new kind to the right routine's `kinds` list on claude.ai**: a routine only claims the kinds named in its prompt, so a new kind would otherwise always run on the paid fallback.
 
 ## 4. Watch list (next ~2 weeks)
 
 | When | What to confirm | How |
 |---|---|---|
 | 02/10 01:30Z | First live engine night with P2.5: all 6 steps run, recheck/normalise counts sane, BackUp drains 400 (backlog done ~06/10) | `get_trace_history({recipe:'memory-engine'})`, `list_memory_ops` |
-| 02/10 02:40–06:30Z | The three routines ran: `claimedBy: routine` on jobs | `list_thinking_jobs` |
+| right after #141 merges | Claude Code session: routines updated to the six-routine schedule and each test-fired; auth smoke green | claude.ai/code/routines; `gh run list --workflow "Auth Smoke"` |
+| 02/10 01:40–06:15Z | Every kind shows `claimedBy: routine`; the fallback crons log "answered on Max" skips; the daily message waits for all briefs | `list_thinking_jobs`, `get_trace_history` |
 | 02/10 08:00 UK | First real daily message, with "Idea of the day" and a self-check line only on failures | inbox `kairos-daily:2026-10-02`, Telegram |
 | Mon 05/10 | First constitution draft (inbox proposal, owner accepts); mind compare + weekly review with belief diff and ideas section | inbox |
 | nightly | `idea-tournament` trace ok; survivors 0–3; diversity alarm off | traces; synthesis-health `missingStages` |
@@ -74,7 +73,8 @@ Plus Telegram chat on Max: the routine is not created, `KAIROS_TELEGRAM_ROUTINE`
 
 - Up to **3** idea survivors a night; **one global** contest, not per Dominion; survivors never skip the inbox or become beliefs directly.
 - AI summaries of the owner's chats count as the owner's view only once the owner's own words confirm them.
-- Quality over cost: heavy/Opus tier for all cognition. Max plan first, paid key as backup.
+- Quality over cost: heavy/Opus tier for all cognition. Max plan first, paid key as backup. All six routines run Opus 5.5 (routines have no reasoning-effort setting).
+- The cron migration ("All on Max") was done in a parallel Claude Code session (PR #141); Copilot did P2.5, P3 and this handover.
 - No direct pushes to main: feature branch → PR → CI → squash-merge → auth smoke.
 
 ## 6. Phase 4 — Motivational (next session)
@@ -142,6 +142,7 @@ Plus Telegram chat on Max: the routine is not created, `KAIROS_TELEGRAM_ROUTINE`
 - **Ideas:** if both the routine and the paid judge fail, that night's candidates aren't archived (they stay only in the job output). The idea Dominion is the majority of the cited evidence; null on a tie.
 - **Origin:** rows from before 0.14 are inferred (`manual`/`voice` → operator), so some old agent notes count as the owner's.
 - **Routines** share the Aeon connector auth with the brain tick. There's no dedicated key per routine, which doc 33 recommends.
+- **0.16 follow-ups** (from the #141 Warden review): the low findings on contradiction re-planning cost and runId parity; whether `constitution-seed` (Mon 04:20) stays a direct paid call.
 - **Undo confirm token:** it proves a lookup happened, not that a human said yes.
 - **Local branch `feat/card-attachments`** (migration 0038 not applied) must rebase onto main before merging.
 
