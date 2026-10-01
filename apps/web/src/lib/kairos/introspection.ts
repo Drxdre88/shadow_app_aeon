@@ -35,6 +35,30 @@ import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 const RECENT_MEMORY_LIMIT = 30
 const PROPOSAL_TYPE = 'inbound'
 
+// P3 Creativity (docs/kairos/35 §Retirement): the nightly idea tournament
+// replaces this raw dump. KAIROS_RAW_INTROSPECTION unset or '1' keeps it
+// running; '0' / 'off' / 'false' retires it. Switch off once the tournament
+// has 2 clean weeks of 'idea-tournament' traces. Everything this runner writes
+// is an idea-type proposal (reflection / tension / connection / question), so
+// nothing else needs to stay on; contradiction proposals come from the
+// separate contradiction-scan cron, which this flag does not touch.
+export const RAW_INTROSPECTION_OFF_REASON = 'raw_introspection_off' as const
+
+export function isRawIntrospectionEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  const raw = env.KAIROS_RAW_INTROSPECTION?.trim().toLowerCase()
+  return !(raw === '0' || raw === 'off' || raw === 'false')
+}
+
+// Liveness while retired: one skipped success trace per user per UTC day, so
+// synthesis-health keeps seeing the stage as ok rather than failing or silent.
+export async function recordRawIntrospectionSkipped(userId: string): Promise<void> {
+  await writeCronSuccessTrace(userId, {
+    cronName: 'introspection',
+    outcome: 'skipped',
+    skipReason: RAW_INTROSPECTION_OFF_REASON,
+  })
+}
+
 async function alreadyRanToday(userId: string, dominionId: string): Promise<boolean> {
   const [row] = await db
     .select({ n: sql<number>`COUNT(*)::int` })
@@ -44,6 +68,9 @@ async function alreadyRanToday(userId: string, dominionId: string): Promise<bool
       eq(memories.dominionId, dominionId),
       eq(memories.type, PROPOSAL_TYPE),
       sql`${memories.sourceMetadata}->>'introspection' = 'true'`,
+      // Idea-tournament survivors are introspection-flagged inbound rows too;
+      // they must not count as tonight's raw run (docs/kairos/35 §9 overlap).
+      sql`COALESCE(${memories.sourceMetadata}->>'kind', '') <> 'idea'`,
       sql`${memories.createdAt} >= DATE_TRUNC('day', NOW())`,
     ))
   return (row?.n ?? 0) > 0

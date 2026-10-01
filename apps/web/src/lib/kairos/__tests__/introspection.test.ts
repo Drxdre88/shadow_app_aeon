@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // failure-trace + parse-repair suites (docs/kairos/31, Part A).
 
 const selectQueue: unknown[][] = []
+const whereArgs: unknown[] = []
 let insertedRows: unknown[] | null = null
 
 vi.mock('@/lib/db', () => {
@@ -11,7 +12,10 @@ vi.mock('@/lib/db', () => {
     const chain: Record<string, unknown> = {}
     const pass = () => chain
     chain.from = pass
-    chain.where = pass
+    chain.where = (cond: unknown) => {
+      whereArgs.push(cond)
+      return chain
+    }
     chain.orderBy = pass
     chain.limit = pass
     chain.then = (resolve: (v: unknown[]) => unknown) => resolve(rows)
@@ -229,6 +233,19 @@ describe('runIntrospectionForDominion — failure trace + parse repair', { timeo
     expect(sm).toMatchObject({ cronName: 'introspection', outcome: 'skipped' })
   })
 
+  it("doesn't count idea-tournament survivors as today's raw run (P3 overlap)", async () => {
+    const { PgDialect } = await import('drizzle-orm/pg-core')
+    whereArgs.length = 0
+    selectQueue.push([{ id: DOMINION_ID, name: 'AEON', archivedAt: null }])
+    selectQueue.push([{ n: 1 }]) // alreadyRanToday
+    const { runIntrospectionForDominion } = await import('../introspection')
+    await runIntrospectionForDominion(USER_ID, DOMINION_ID)
+    const rendered = whereArgs
+      .map((w) => { try { return new PgDialect().sqlToQuery(w as never).sql } catch { return '' } })
+      .find((s) => s.includes("'introspection'"))
+    expect(rendered).toContain("<> 'idea'")
+  })
+
   it.each([
     [['operator', 'activity'], 'kairos'],
     [['operator', 'external'], 'external'],
@@ -247,5 +264,37 @@ describe('runIntrospectionForDominion — failure trace + parse repair', { timeo
     expect(findMemoryOriginKinds).toHaveBeenCalledWith(USER_ID, [MEMORY_ID])
     const row = insertedRows![0] as { sourceMetadata: Record<string, unknown> }
     expect(row.sourceMetadata.origin).toEqual({ kind: expected, via: 'cron:introspection' })
+  })
+})
+
+describe('raw introspection retirement flag (docs/kairos/35)', () => {
+  it.each([
+    [undefined, true],
+    ['1', true],
+    ['', true],
+    ['0', false],
+    ['off', false],
+    [' OFF ', false],
+    ['false', false],
+  ] as const)('KAIROS_RAW_INTROSPECTION=%j → enabled %s', async (value, expected) => {
+    const { isRawIntrospectionEnabled } = await import('../introspection')
+    expect(isRawIntrospectionEnabled({ KAIROS_RAW_INTROSPECTION: value })).toBe(expected)
+  })
+
+  it('records a skipped success trace (no reason) that synthesis-health counts as ok', async () => {
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { recordRawIntrospectionSkipped } = await import('../introspection')
+
+    await recordRawIntrospectionSkipped(USER_ID)
+
+    expect(captureMemory).toHaveBeenCalledTimes(1)
+    const input = vi.mocked(captureMemory).mock.calls[0][1] as { streamClass: string; sourceMetadata: Record<string, unknown> }
+    expect(input.streamClass).toBe('trace')
+    expect(input.sourceMetadata).toMatchObject({
+      cronName: 'introspection',
+      outcome: 'skipped',
+      skipReason: 'raw_introspection_off',
+    })
+    expect(input.sourceMetadata.reason).toBeUndefined()
   })
 })

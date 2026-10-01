@@ -18,7 +18,8 @@ export function renderWeeklyReviewMarkdown(review: GroundedWeeklyReview, isoWeek
   if (review.actions.length === 0) lines.push('- (none grounded)')
   review.actions.forEach((a, i) => {
     const dom = a.dominionName ? ` · ${a.dominionName}` : ''
-    lines.push(`${i + 1}. **${a.title}**${dom} — ${a.why} (evidence: ${a.evidenceIds.join(', ')})`)
+    const idea = a.ideaQuality ? ' · idea quality' : ''
+    lines.push(`${i + 1}. **${a.title}**${dom}${idea} — ${a.why} (evidence: ${a.evidenceIds.join(', ')})`)
   })
   return lines.join('\n')
 }
@@ -27,7 +28,7 @@ export function renderReviewActionBody(action: GroundedReviewAction, isoWeek: st
   return [
     action.why,
     '',
-    `From the ${isoWeek} weekly review${action.dominionName ? ` · ${action.dominionName}` : ''}.`,
+    `From the ${isoWeek} weekly review${action.dominionName ? ` · ${action.dominionName}` : ''}${action.ideaQuality ? ' · about idea quality (lessons from accepted vs dismissed ideas)' : ''}.`,
     `Evidence: ${action.evidenceIds.join(', ')}`,
   ].join('\n')
 }

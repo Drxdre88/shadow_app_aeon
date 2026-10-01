@@ -245,7 +245,7 @@ describe('ThinkingQueue.sweep', () => {
     vi.mocked(listPendingFallbacks).mockResolvedValue([job({ id: 'b', kind: 'concept', status: 'expired' })])
     const res = await new ThinkingQueue([cortex, concept]).sweep(USER, NOW, createSweepBudget({ maxFallbacks: 2, budgetMs: 1000 }))
     expect(expireOverdue).toHaveBeenCalledWith(NOW, USER)
-    expect(listPendingFallbacks).toHaveBeenCalledWith(USER, ['concept', 'belief_extract', 'drift_probe', 'mind_compare', 'weekly_review'])
+    expect(listPendingFallbacks).toHaveBeenCalledWith(USER, ['concept', 'belief_extract', 'drift_probe', 'mind_compare', 'weekly_review', 'idea_generate', 'idea_judge'])
     expect(res).toEqual({
       expired: 2,
       deferred: 0,

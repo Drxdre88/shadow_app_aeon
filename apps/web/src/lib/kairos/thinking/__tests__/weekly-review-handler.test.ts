@@ -29,6 +29,9 @@ vi.mock('@/lib/data/dominions', () => ({}))
 vi.mock('@/lib/data/memory-candidates', () => ({}))
 vi.mock('@/lib/data/memory-ops', () => ({}))
 vi.mock('@/lib/data/recipes', () => ({}))
+vi.mock('@/lib/data/belief-diff', () => ({}))
+vi.mock('@/lib/data/ideas', () => ({}))
+vi.mock('@/lib/kairos/ideas/diversity', () => ({}))
 vi.mock('@/lib/kairos/weekly-review/inputs', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/kairos/weekly-review/inputs')>()),
   gatherWeeklyReviewInputs: m.gatherWeeklyReviewInputs,

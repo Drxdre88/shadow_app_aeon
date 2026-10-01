@@ -149,3 +149,34 @@ describe('beliefs block (shared with the digest)', () => {
     expect(buildBeliefsBlock([])).toBe('')
   })
 })
+
+describe('idea of the day (docs/kairos/35)', () => {
+  const idea = { title: 'Batch the Telegram digests', claim: 'Send one weekly digest instead of three', survivedBecause: 'it beat 5 rivals and cites two complaints', othersWaiting: 2 }
+
+  it('puts the idea, why it survived and the waiting count in the compose prompt', () => {
+    const prompt = buildDailyMessageUserPrompt(inputs({ idea, ideaDiversityAlarm: true }))
+    expect(prompt).toContain('IDEA OF THE DAY')
+    expect(prompt).toContain('Idea: Batch the Telegram digests — Send one weekly digest instead of three')
+    expect(prompt).toContain('Survived because: it beat 5 rivals and cites two complaints')
+    expect(prompt).toContain('Other surviving ideas waiting in the inbox: 2')
+    expect(prompt).toContain('Ideas are getting samey this week')
+  })
+
+  it('renders one fallback line, plus the samey warning when the alarm is up', () => {
+    const text = buildDeterministicDailyMessage(inputs({ idea, ideaDiversityAlarm: true }))
+    expect(text).toContain('Idea of the day: Batch the Telegram digests — survived because it beat 5 rivals and cites two complaints (2 more in your inbox).')
+    expect(text).toContain('Ideas are getting samey this week.')
+    expect(rejectMessageText(text)).toBeNull()
+  })
+
+  it('omits the waiting count and the warning when there is nothing to say', () => {
+    const text = buildDeterministicDailyMessage(inputs({ idea: { ...idea, othersWaiting: 0, survivedBecause: null }, ideaDiversityAlarm: false }))
+    expect(text).toContain('Idea of the day: Batch the Telegram digests.')
+    expect(text).not.toMatch(/more in your inbox|samey/)
+  })
+
+  it('stays silent without an idea or alarm (older inputs without the fields)', () => {
+    expect(buildDailyMessageUserPrompt(inputs())).not.toContain('IDEA OF THE DAY')
+    expect(buildDeterministicDailyMessage(inputs())).not.toContain('Idea of the day')
+  })
+})

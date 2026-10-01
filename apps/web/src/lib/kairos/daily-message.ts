@@ -14,11 +14,22 @@ import {
   buildBeliefsBlock,
   buildDailyMessageUserPrompt,
   buildDeterministicDailyMessage,
+  ideaOfTheDayLines,
   londonDate,
   parseDailyMessageDraft,
   rejectMessageText,
   type DailyMessageInputs,
 } from './daily-message-prompt'
+
+// Loose check that a draft already names the idea: its title, or the first
+// few words of it, case-insensitively.
+export function draftMentions(draft: string, title: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim()
+  const t = norm(title)
+  if (!t) return true
+  const d = norm(draft)
+  return d.includes(t) || d.includes(t.split(' ').slice(0, 5).join(' '))
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Daily Message (docs/kairos/34 §3) — the one guaranteed push of the
@@ -126,6 +137,14 @@ export async function composeDailyMessage(userId: string, now: Date): Promise<Co
     if (draft && rejectMessageText(draft) === null) {
       message = draft
       source = 'routine'
+      // The routine draft was written from inputs gathered at plan time; on a
+      // paid-fallback night the idea tournament can finish after that. Add
+      // the idea deterministically when the draft doesn't already carry it.
+      const idea = inputs.idea
+      if (idea && !draftMentions(draft, idea.title)) {
+        const withIdea = `${draft}\n\n${ideaOfTheDayLines({ idea, ideaDiversityAlarm: null }).join('\n')}`
+        if (rejectMessageText(withIdea) === null) message = withIdea
+      }
     }
   } catch (err) {
     console.warn('[kairos:daily-message] routine draft lookup failed:', err instanceof Error ? err.message : err)

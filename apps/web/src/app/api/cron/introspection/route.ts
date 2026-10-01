@@ -3,7 +3,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { userAiCredentials, dominions } from '@/lib/db/schema'
 import { and, isNull, inArray } from 'drizzle-orm'
-import { runIntrospectionForUser } from '@/lib/kairos/introspection'
+import {
+  runIntrospectionForUser,
+  isRawIntrospectionEnabled,
+  recordRawIntrospectionSkipped,
+  RAW_INTROSPECTION_OFF_REASON,
+} from '@/lib/kairos/introspection'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -15,6 +20,10 @@ import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 // dismiss (archive). Idempotent per UTC day. Auth + iteration mirror
 // app/api/cron/archetype-synthesis. Suggested schedule: daily ~06:30 UTC,
 // before the 07:00 Briefer so the morning brief can surface fresh proposals.
+//
+// P3: being retired in favour of the nightly idea tournament (docs/kairos/35).
+// KAIROS_RAW_INTROSPECTION='0'/'off' skips generation and writes only a
+// skipped liveness trace per eligible user (synthesis-health stays green).
 // ─────────────────────────────────────────────────────────────────────────
 
 // 800s (Pro/fluid ceiling): a failure night doubles model calls per Dominion
@@ -44,6 +53,13 @@ export async function GET(req: NextRequest) {
     .where(and(isNull(userAiCredentials.revokedAt), inArray(userAiCredentials.userId, userIds)))
 
   const eligibleIds = credentialed.map((r) => r.userId)
+
+  // Retired behind KAIROS_RAW_INTROSPECTION (docs/kairos/35): no model calls,
+  // no proposals — just a skipped liveness trace per eligible user.
+  if (!isRawIntrospectionEnabled()) {
+    for (const userId of eligibleIds) await recordRawIntrospectionSkipped(userId)
+    return jsonResponse({ ran: 0, skipped: RAW_INTROSPECTION_OFF_REASON, eligible: eligibleIds.length, users: [] })
+  }
 
   const userResults: Array<{
     userId: string

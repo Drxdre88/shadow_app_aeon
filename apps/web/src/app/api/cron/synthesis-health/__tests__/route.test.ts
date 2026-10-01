@@ -74,11 +74,11 @@ describe('cron/synthesis-health route', () => {
     vi.mocked(computeSynthesisHealth)
       .mockResolvedValueOnce({
         date: '2026-07-22', byStage: {}, alertedStages: ['cortex-regen'],
-        newlyAlertedStages: ['cortex-regen'], memoryId: 'm1', created: true,
+        newlyAlertedStages: ['cortex-regen'], missingStages: {}, memoryId: 'm1', created: true,
       })
       .mockResolvedValueOnce({
         date: '2026-07-22', byStage: {}, alertedStages: [],
-        newlyAlertedStages: [], memoryId: 'm2', created: true,
+        newlyAlertedStages: [], missingStages: {}, memoryId: 'm2', created: true,
       })
 
     const res = await GET(request())
@@ -97,7 +97,7 @@ describe('cron/synthesis-health route', () => {
       .mockRejectedValueOnce(new Error('db unavailable'))
       .mockResolvedValueOnce({
         date: '2026-07-22', byStage: {}, alertedStages: [],
-        newlyAlertedStages: [], memoryId: 'm2', created: true,
+        newlyAlertedStages: [], missingStages: {}, memoryId: 'm2', created: true,
       })
 
     const res = await GET(request())
@@ -116,7 +116,7 @@ describe('cron/synthesis-health route', () => {
     distinctQueue.push([{ userId: 'user-1' }])
     vi.mocked(computeSynthesisHealth).mockResolvedValue({
       date: '2026-07-22', byStage: {}, alertedStages: [],
-      newlyAlertedStages: [], memoryId: 'm1', created: false,
+      newlyAlertedStages: [], missingStages: {}, memoryId: 'm1', created: false,
     })
 
     const res = await GET(request())

@@ -138,6 +138,9 @@ export interface AetherDigest { title: string; insight: string; dominionName: st
 export interface BoardDayDigest { finished: number; finishedTitles: string[]; thinCards: number }
 export interface BeliefChange { mind: 'aligned' | 'own' | 'other'; claim: string }
 export interface DriftDigest { alert: boolean; summary: string | null; measured?: boolean; conscience?: string | null }
+// The overnight tournament's top survivor (docs/kairos/35) + how many other
+// survivors from the same window are waiting in the inbox.
+export interface IdeaOfTheDay { title: string; claim: string; survivedBecause: string | null; othersWaiting: number }
 
 // Every input is optional: null = unavailable (not found, or its read failed —
 // the name is then listed in `failed`). An input failure never costs the message.
@@ -153,6 +156,10 @@ export interface DailyMessageInputs {
   pendingAsk: string | null
   synthesis: SynthesisSnapshot | null
   mindCompare: string | null
+  // Optional so older fixtures stay valid; null/absent = no idea to share.
+  idea?: IdeaOfTheDay | null
+  // true = this week's surviving ideas are collapsing onto each other.
+  ideaDiversityAlarm?: boolean | null
   failed: string[]
 }
 
@@ -179,12 +186,42 @@ export const DAILY_MESSAGE_SYSTEM_PROMPT = [
   '- Synthesis health: one short line only if a stage is failing; silence when healthy or unknown.',
   '- First person, texting register ("I noticed…", "yesterday you…") — not a report.',
   '- Do NOT list the promoted beliefs — the delivery layer appends them deterministically.',
+  '- An IDEA OF THE DAY, when present, gets one short line in the thinking part: the idea and why it survived;',
+  '  mention other waiting ideas only as a count, and the samey-ideas warning only if given. It is a proposal, not a fact.',
   '- A Conscience block, when present, holds standing principles and beliefs: check the message against it, but it is',
   '  not news — never report its contents as something that changed.',
 ].join('\n')
 
 function section(title: string, lines: string[]): string[] {
   return lines.length === 0 ? [] : ['', `── ${title} ──`, '', ...lines]
+}
+
+export const IDEAS_SAMEY_LINE = 'Ideas are getting samey this week'
+
+function ideaPromptLines(inputs: DailyMessageInputs): string[] {
+  const lines: string[] = []
+  const idea = inputs.idea
+  if (idea) {
+    lines.push(`Idea: ${idea.title}${idea.claim && idea.claim !== idea.title ? ` — ${idea.claim}` : ''}`)
+    if (idea.survivedBecause) lines.push(`Survived because: ${idea.survivedBecause}`)
+    if (idea.othersWaiting > 0) lines.push(`Other surviving ideas waiting in the inbox: ${idea.othersWaiting}`)
+  }
+  if (inputs.ideaDiversityAlarm) lines.push(`${IDEAS_SAMEY_LINE} (low diversity among the week's surviving ideas) — say so in one line.`)
+  return lines
+}
+
+// One deterministic line (plus the optional samey warning) for the fallback.
+export function ideaOfTheDayLines(inputs: Pick<DailyMessageInputs, 'idea' | 'ideaDiversityAlarm'>): string[] {
+  const lines: string[] = []
+  const idea = inputs.idea
+  if (idea) {
+    const head = safeLine(idea.title || idea.claim, 90)
+    const because = idea.survivedBecause ? ` — survived because ${safeLine(idea.survivedBecause, 140)}` : ''
+    const more = idea.othersWaiting > 0 ? ` (${idea.othersWaiting} more in your inbox)` : ''
+    lines.push(`Idea of the day: ${head}${because}${more}.`)
+  }
+  if (inputs.ideaDiversityAlarm) lines.push(`${IDEAS_SAMEY_LINE}.`)
+  return lines
 }
 
 export function buildDailyMessageUserPrompt(inputs: DailyMessageInputs, conscience?: string): string {
@@ -216,6 +253,8 @@ export function buildDailyMessageUserPrompt(inputs: DailyMessageInputs, conscien
   }
   out.push(...section('BELIEF CHANGES (LAST 24H)', beliefLines))
   if (inputs.isMonday && inputs.mindCompare) out.push(...section('WEEKLY MIND COMPARISON (aligned vs own)', [inputs.mindCompare]))
+  const ideaLines = ideaPromptLines(inputs)
+  out.push(...section('IDEA OF THE DAY (overnight tournament survivor — a proposal in the inbox)', ideaLines))
   if (inputs.synthesis && inputs.synthesis.failed > 0) {
     out.push(...section('OVERNIGHT SYNTHESIS HEALTH', [
       `${inputs.synthesis.failed} stage(s) failing: ${inputs.synthesis.failedStages.join(', ')}.`,
@@ -280,6 +319,7 @@ export function buildDeterministicDailyMessage(inputs: DailyMessageInputs): stri
   if (inputs.drift?.alert) thinking.push(`Drift alert: ${safeLine(inputs.drift.summary ?? 'my answers have drifted from the constitution baseline', 160)}.`)
   if (inputs.drift?.conscience) thinking.push(`${safeLine(inputs.drift.conscience, 160)}.`)
   if (inputs.isMonday && inputs.mindCompare) thinking.push(`Minds this week: ${safeLine(inputs.mindCompare, 180)}`)
+  thinking.push(...ideaOfTheDayLines(inputs))
   if (thinking.length > 0) blocks.push(['**Thinking**', ...thinking].join('\n'))
   if (inputs.synthesis && inputs.synthesis.failed > 0) {
     blocks.push(`Overnight synthesis: ${plural(inputs.synthesis.failed, 'stage')} not healthy (${inputs.synthesis.failedStages.join(', ')}).`)

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Bell, Check, ChevronDown, Inbox, MessageCircleQuestion, Sparkles, X } from 'lucide-react'
+import { Bell, Check, ChevronDown, Inbox, Lightbulb, MessageCircleQuestion, Sparkles, X } from 'lucide-react'
 import {
   acceptKairosInboxProposal,
   answerKairosInboxAsk,
@@ -16,6 +16,40 @@ type InboxData = Awaited<ReturnType<typeof listKairosInbox>>
 type InboxItem = InboxData['items'][number]
 
 const BRIEF_DISMISS_KEY = 'kairos-inbox-brief-dismissed'
+
+// An idea-tournament survivor (docs/kairos/35) carries its card fields on the
+// proposal item as `idea`. Read defensively: absent or malformed → a plain proposal.
+export interface InboxIdeaCard {
+  claim: string
+  why: string | null
+  nextStep: string | null
+  survivedBecause: string | null
+}
+
+function text(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+export function readInboxIdea(value: unknown): InboxIdeaCard | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const v = value as Record<string, unknown>
+  const claim = text(v.claim)
+  if (!claim) return null
+  return { claim, why: text(v.why), nextStep: text(v.nextStep), survivedBecause: text(v.survivedBecause) }
+}
+
+function IdeaDetails({ idea }: { idea: InboxIdeaCard }) {
+  return (
+    <div className="mt-1.5 flex flex-col gap-1.5 text-[11px] leading-relaxed">
+      <p className="text-white/70">{idea.claim}</p>
+      {idea.why && <p className="text-white/45"><span className="text-white/30">Why · </span><span>{idea.why}</span></p>}
+      {idea.nextStep && <p className="text-white/45"><span className="text-white/30">Next step · </span><span>{idea.nextStep}</span></p>}
+      {idea.survivedBecause && (
+        <p className="text-amber-100/60 italic">Survived because {idea.survivedBecause}</p>
+      )}
+    </div>
+  )
+}
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10)
@@ -320,10 +354,20 @@ export function KairosInbox() {
                           <ul className="flex flex-col gap-2">
                             {proposals.map((proposal) => {
                               const working = workingId === proposal.id
+                              const idea = 'idea' in proposal ? readInboxIdea(proposal.idea) : null
                               return (
                                 <li key={proposal.id} className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-4">
-                                  <h3 className="text-[12px] font-medium text-white/85">{proposal.title}</h3>
-                                  {proposal.summary && proposal.summary !== proposal.title && (
+                                  <div className="flex items-start justify-between gap-2">
+                                    <h3 className="text-[12px] font-medium text-white/85">{proposal.title}</h3>
+                                    {idea && (
+                                      <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-[0.14em] bg-amber-400/10 text-amber-200/80 border border-amber-300/20">
+                                        <Lightbulb className="w-2.5 h-2.5" aria-hidden="true" /> Idea
+                                      </span>
+                                    )}
+                                  </div>
+                                  {idea ? (
+                                    <IdeaDetails idea={idea} />
+                                  ) : proposal.summary && proposal.summary !== proposal.title && (
                                     <p className="mt-1.5 text-[11px] leading-relaxed text-white/45">{proposal.summary}</p>
                                   )}
                                   <div className="mt-3 flex items-center gap-2">

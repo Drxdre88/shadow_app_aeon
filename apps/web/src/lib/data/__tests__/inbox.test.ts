@@ -106,4 +106,35 @@ describe('getKairosInbox', () => {
   it('returns an empty inbox when no source has pending work', async () => {
     await expect(getKairosInbox(USER_ID)).resolves.toEqual({ items: [] })
   })
+
+  it('carries idea details and puts tournament survivors ahead of other proposals', async () => {
+    vi.mocked(listMemories).mockResolvedValue([
+      listedMemory('prop-raw', { introspection: true, status: 'pending' }),
+      listedMemory('notify-1', { kairosSpeak: true, status: 'pending' }),
+      listedMemory('idea-1', {
+        introspection: true,
+        status: 'pending',
+        kind: 'idea',
+        idea: { claim: 'Cut the DE PPA scope', why: 'It blocks go-live', nextStep: 'Ask the desk', survivedBecause: 'Backed by 3 board pages' },
+      }),
+    ])
+
+    const { items } = await getKairosInbox(USER_ID)
+    expect(items.map((i) => i.id)).toEqual(['idea-1', 'prop-raw', 'notify-1'])
+    expect(items[0]).toMatchObject({
+      kind: 'proposal',
+      idea: { claim: 'Cut the DE PPA scope', why: 'It blocks go-live', nextStep: 'Ask the desk', survivedBecause: 'Backed by 3 board pages' },
+    })
+    expect(items[1]).not.toHaveProperty('idea')
+  })
+
+  it('appends ideas after notifies when no other proposal is pending', async () => {
+    vi.mocked(listMemories).mockResolvedValue([
+      listedMemory('notify-1', { kairosSpeak: true, status: 'pending' }),
+      listedMemory('idea-1', { status: 'pending', kind: 'idea', idea: { claim: 'x', why: 'y', nextStep: 'z' } }),
+    ])
+    const { items } = await getKairosInbox(USER_ID)
+    expect(items.map((i) => i.id)).toEqual(['notify-1', 'idea-1'])
+    expect(items[1]).toMatchObject({ idea: { survivedBecause: null } })
+  })
 })
