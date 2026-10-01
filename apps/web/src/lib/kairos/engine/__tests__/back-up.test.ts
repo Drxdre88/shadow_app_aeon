@@ -54,6 +54,11 @@ function support(id: string, at: string, overrides: Partial<SupportRow> = {}): S
   return { id, source: 'claude', createdAt: new Date(at), sourceMetadata: {}, links: [], similarity: 0.85, ...overrides }
 }
 
+// Live runs: ops travel with the write (4th arg) so they share its transaction.
+function liveOps(): MemoryOpInput[] {
+  return vi.mocked(updatePendingProposal).mock.calls.flatMap((c) => [...(c[3]?.ops ?? [])])
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(updatePendingProposal).mockResolvedValue(true)
@@ -115,23 +120,28 @@ describe('BackUpStep', () => {
     const result = await new BackUpStep().run(ctx)
 
     expect(findProposalSupports).toHaveBeenCalledWith(USER, PROPOSAL, candidate().createdAt, expect.closeTo(0.2, 6))
-    expect(result).toMatchObject({ step: 'backup', examined: 1, changed: 1 })
-    expect(ctx.ops).toEqual([expect.objectContaining({
-      memoryId: PROPOSAL,
-      op: 'promote',
-      before: { status: 'pending', streamClass: 'agentic', confidence: 0.45 },
-      after: { status: 'promoted', streamClass: 'idea', confidence: 0.6 },
-    })])
+    expect(result).toMatchObject({ step: 'backup', examined: 1, changed: 1, opsWritten: 1 })
+    // Live: nothing buffered — the op rides in the write's own transaction.
+    expect(ctx.ops).toEqual([])
     expect(updatePendingProposal).toHaveBeenCalledWith(USER, PROPOSAL, {
       sourceMetadata: expect.objectContaining({
         status: 'promoted',
         promotedAt: NOW.toISOString(),
-        engine: { support: { independentSupports: 2, distinctDays: 2 } },
+        engine: { support: { independentSupports: 2, distinctDays: 2 }, promotedAt: NOW.toISOString() },
         citations: ['c1'],
       }),
       streamClass: 'idea',
       confidence: 0.6,
       updatedAt: NOW,
+    }, {
+      runId: 'run-1',
+      ops: [expect.objectContaining({
+        memoryId: PROPOSAL,
+        step: 'backup',
+        op: 'promote',
+        before: { status: 'pending', streamClass: 'agentic', confidence: 0.45 },
+        after: { status: 'promoted', streamClass: 'idea', confidence: 0.6 },
+      })],
     })
   })
 
@@ -167,15 +177,49 @@ describe('BackUpStep', () => {
 
     await new BackUpStep().run(ctx)
 
-    expect(ctx.ops).toEqual([expect.objectContaining({
+    expect(liveOps()).toEqual([expect.objectContaining({
       op: 'decay',
       before: { status: 'pending', archivedAt: null },
       after: { status: 'decayed', archivedAt: NOW.toISOString() },
     })])
     expect(updatePendingProposal).toHaveBeenCalledWith(USER, PROPOSAL, expect.objectContaining({
-      sourceMetadata: expect.objectContaining({ status: 'decayed' }),
+      sourceMetadata: expect.objectContaining({
+        status: 'decayed',
+        engine: expect.objectContaining({ decayedAt: NOW.toISOString() }),
+      }),
       archivedAt: NOW,
-    }))
+    }), expect.objectContaining({ runId: 'run-1' }))
+  })
+
+  it('reports a write whose op insert failed (rolled back) and keeps going', async () => {
+    vi.mocked(listPendingProposalCandidates).mockResolvedValue([
+      candidate({ id: 'bad', createdAt: new Date('2026-09-01T00:00:00Z') }),
+      candidate({ id: 'good', createdAt: new Date('2026-09-02T00:00:00Z') }),
+    ])
+    vi.mocked(updatePendingProposal)
+      .mockRejectedValueOnce(new Error('memory_ops insert failed'))
+      .mockResolvedValueOnce(true)
+
+    const result = await new BackUpStep().run(makeCtx())
+
+    expect(result).toMatchObject({ examined: 2, changed: 1, opsWritten: 1, errors: ['bad: memory_ops insert failed'] })
+    expect(result.notes).toContain('failed=1')
+  })
+
+  it('stops before the next candidate once the deadline has passed', async () => {
+    vi.mocked(listPendingProposalCandidates).mockResolvedValue([
+      candidate({ id: 'a', createdAt: new Date('2026-09-01T00:00:00Z') }),
+      candidate({ id: 'b', createdAt: new Date('2026-09-02T00:00:00Z') }),
+    ])
+    let deadline = Date.now() + 60_000
+    vi.mocked(updatePendingProposal).mockImplementation(async () => { deadline = 0; return true })
+    const ctx = { ...makeCtx(), get deadline() { return deadline } }
+
+    const result = await new BackUpStep().run(ctx)
+
+    expect(updatePendingProposal).toHaveBeenCalledTimes(1)
+    expect(result).toMatchObject({ examined: 1, changed: 1, outOfTime: true })
+    expect(result.notes).toContain('out of time after 1/2')
   })
 
   it('never searches supports for a candidate without an embedding (still ages it)', async () => {
@@ -183,7 +227,7 @@ describe('BackUpStep', () => {
     const ctx = makeCtx()
     await new BackUpStep().run(ctx)
     expect(findProposalSupports).not.toHaveBeenCalled()
-    expect(ctx.ops.map((o) => o.op)).toEqual(['decay'])
+    expect(liveOps().map((o) => o.op)).toEqual(['decay'])
   })
 
   it('dryRun records the ops but writes nothing', async () => {
@@ -234,7 +278,7 @@ describe('BackUpStep', () => {
     await new BackUpStep().run(ctx)
 
     // The vetoed-decay one still has enough support, so it may promote.
-    expect(ctx.ops.map((o) => [o.memoryId, o.op])).toEqual([['old', 'promote']])
+    expect(liveOps().map((o) => [o.memoryId, o.op])).toEqual([['old', 'promote']])
   })
 
   it('honours every slot of the per-op vetoes map (a decay veto does not erase a promote veto)', async () => {
@@ -255,6 +299,7 @@ describe('BackUpStep', () => {
 
     await new BackUpStep().run(ctx)
 
+    expect(liveOps()).toEqual([])
     expect(ctx.ops).toEqual([])
   })
 })

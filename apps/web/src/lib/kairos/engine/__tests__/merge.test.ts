@@ -56,9 +56,10 @@ describe('MergeStep', () => {
     const result = await new MergeStep().run(ctx)
 
     expect(findOlderDuplicate).toHaveBeenCalledWith(USER, expect.objectContaining({ id: 'new-1' }), expect.objectContaining({ maxDistance: expect.closeTo(0.05, 6) }))
-    expect(applyMerge).toHaveBeenCalledWith(USER, 'new-1', 'old-1', NOW)
-    expect(result).toMatchObject({ examined: 1, changed: 1 })
-    expect(ctx.ops).toEqual([{
+    expect(result).toMatchObject({ examined: 1, changed: 1, opsWritten: 1 })
+    // Live: no buffering — the op is handed to applyMerge's own transaction.
+    expect(ctx.ops).toEqual([])
+    expect(applyMerge).toHaveBeenCalledWith(USER, 'new-1', 'old-1', NOW, { runId: 'run-1', ops: [{
       memoryId: 'new-1',
       step: 'merge',
       op: 'merge',
@@ -71,7 +72,15 @@ describe('MergeStep', () => {
         older: { id: 'old-1', useCount: 3, lastUsedAt: NOW.toISOString() },
       },
       reason: expect.stringContaining('old-1'),
-    }])
+    }] })
+  })
+
+  it('reports a merge whose op insert failed (rolled back) and continues', async () => {
+    vi.mocked(listMergeCandidates).mockResolvedValue([row('new-1'), row('new-2')])
+    vi.mocked(findOlderDuplicate).mockResolvedValue({ id: 'old-1', useCount: 0, lastUsedAt: null, similarity: 0.99 })
+    vi.mocked(applyMerge).mockRejectedValueOnce(new Error('memory_ops insert failed')).mockResolvedValueOnce(true)
+    const result = await new MergeStep().run(makeCtx())
+    expect(result).toMatchObject({ examined: 2, changed: 1, opsWritten: 1, errors: ['new-1: memory_ops insert failed'] })
   })
 
   it('leaves rows without a near-duplicate alone', async () => {

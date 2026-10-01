@@ -15,7 +15,7 @@ function makeData(touched: EngineMemory[], stalest: EngineMemory[] = []) {
     listScoredRetiredMemories: vi.fn(async () => [] as Array<{ id: string; standing: number }>),
     zeroRetiredStanding: vi.fn(async () => 0),
     countOpenChallenges: vi.fn(async () => new Map<string, number>()),
-    updateStandings: vi.fn(async (_u: string, updates: ReadonlyArray<unknown>) => updates.length),
+    updateStandings: vi.fn(async (_u: string, updates: ReadonlyArray<unknown>, _at?: Date, _log?: unknown) => updates.length),
   } satisfies WeighData
 }
 
@@ -26,6 +26,12 @@ function context(dryRun = false): EngineRunContext & { ops: MemoryOpInput[] } {
 }
 
 const standing = new Standing(defaultScorers())
+
+// Live runs hand the score ops to updateStandings (same transaction).
+function writtenOps(data: ReturnType<typeof makeData>): MemoryOpInput[] {
+  const log = data.updateStandings.mock.calls[0]?.[3] as { runId: string; ops: MemoryOpInput[] } | undefined
+  return log?.ops ?? []
+}
 
 describe('WeighStep', () => {
   let ctx: ReturnType<typeof context>
@@ -53,9 +59,13 @@ describe('WeighStep', () => {
       makeMemory({ id: 'new', standing: null }),
     ])
     const result = await new WeighStep(standing, { data }).run(ctx)
-    expect(ctx.ops).toHaveLength(1)
-    expect(ctx.ops[0]).toMatchObject({ memoryId: 'moved', step: 'weigh', op: 'score', before: { standing: 0.3 }, after: { standing: 0.6 } })
-    expect(ctx.ops[0].reason).toContain('base 0.6')
+    const ops = writtenOps(data)
+    expect(ctx.ops).toEqual([])
+    expect(data.updateStandings.mock.calls[0][3]).toMatchObject({ runId: 'run-1' })
+    expect(result.opsWritten).toBe(1)
+    expect(ops).toHaveLength(1)
+    expect(ops[0]).toMatchObject({ memoryId: 'moved', step: 'weigh', op: 'score', before: { standing: 0.3 }, after: { standing: 0.6 } })
+    expect(ops[0].reason).toContain('base 0.6')
     expect(result.changed).toBe(2)
     const written = data.updateStandings.mock.calls[0][1] as Array<{ id: string; standing: number }>
     expect(written.map((w) => w.id)).toEqual(['same', 'moved', 'new'])
@@ -67,17 +77,32 @@ describe('WeighStep', () => {
     await new WeighStep(standing, { data }).run(ctx)
     const written = data.updateStandings.mock.calls[0][1] as Array<{ standing: number }>
     expect(written[0].standing).toBeCloseTo(0.48)
-    expect(ctx.ops[0]).toMatchObject({ memoryId: 'loser', after: { standing: 0.48 } })
+    expect(writtenOps(data)[0]).toMatchObject({ memoryId: 'loser', after: { standing: 0.48 } })
   })
 
-  it('logs and zeroes scored retired rows', async () => {
+  it('zeroes scored retired rows with their ops in the standings transaction', async () => {
     const data = makeData([])
     data.listScoredRetiredMemories.mockResolvedValue([{ id: 'gone', standing: 0.7 }, { id: 'tiny', standing: 0.01 }])
     data.zeroRetiredStanding.mockResolvedValue(4)
     const result = await new WeighStep(standing, { data }).run(ctx)
-    expect(ctx.ops).toEqual([expect.objectContaining({ memoryId: 'gone', before: { standing: 0.7 }, after: { standing: 0 } })])
+    expect(data.updateStandings.mock.calls[0][1]).toEqual([{ id: 'gone', standing: 0 }, { id: 'tiny', standing: 0 }])
+    expect(writtenOps(data)).toEqual([expect.objectContaining({ memoryId: 'gone', before: { standing: 0.7 }, after: { standing: 0 } })])
     expect(data.zeroRetiredStanding).toHaveBeenCalledWith('user-1', NOW, NOW)
-    expect(result.notes).toContain('retired zeroed 4')
+    expect(result.notes).toContain('retired zeroed 6')
+  })
+
+  it('a failed standings/op transaction fails the step (nothing half-written to report)', async () => {
+    const data = makeData([makeMemory({ id: 'moved', standing: 0.1 })])
+    data.updateStandings.mockRejectedValue(new Error('memory_ops insert failed'))
+    await expect(new WeighStep(standing, { data }).run(ctx)).rejects.toThrow('memory_ops insert failed')
+    expect(data.zeroRetiredStanding).not.toHaveBeenCalled()
+  })
+
+  it('does nothing once the deadline has passed', async () => {
+    const data = makeData([makeMemory({ id: 'a' })])
+    const result = await new WeighStep(standing, { data }).run({ ...ctx, deadline: 0 })
+    expect(result).toMatchObject({ skipped: 'out of time', outOfTime: true })
+    expect(data.loadTouchedEngineMemories).not.toHaveBeenCalled()
   })
 
   it('computes but writes nothing on a dry run', async () => {

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import type { ChangeLog, EngineRunResult, Step, StepResult } from './types'
+import { errorMessage, outOfTime } from './deadline'
+import type { ChangeLog, EngineRunContext, EngineRunResult, Step, StepResult } from './types'
 
 export type ChangeLogFactory = (userId: string, runId: string) => ChangeLog
 
@@ -8,10 +9,6 @@ export interface MemoryEngineOptions {
   changes: ChangeLogFactory
   clock?: () => Date
   newRunId?: () => string
-}
-
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }
 
 export class MemoryEngine {
@@ -27,33 +24,62 @@ export class MemoryEngine {
     this.newRunId = opts.newRunId ?? randomUUID
   }
 
-  async runNight(userId: string, opts: { dryRun?: boolean } = {}): Promise<EngineRunResult> {
+  // `deadline` (epoch ms): steps stop starting new mutations past it and the
+  // remaining steps are skipped, so the caller can still write its trace.
+  async runNight(userId: string, opts: { dryRun?: boolean; deadline?: number } = {}): Promise<EngineRunResult> {
     const dryRun = opts.dryRun ?? false
     const runId = this.newRunId()
     const changes = this.changes(userId, runId)
-    const ctx = { userId, runId, now: this.clock(), dryRun, changes }
+    const ctx: EngineRunContext = { userId, runId, now: this.clock(), dryRun, changes, deadline: opts.deadline }
     const steps: StepResult[] = []
     const failedSteps: EngineRunResult['failedSteps'] = []
 
     let opsWritten = 0
+    let stoppedEarly = false
     for (const step of this.steps) {
+      if (outOfTime(ctx)) {
+        stoppedEarly = true
+        steps.push({ step: step.name, examined: 0, changed: 0, skipped: 'out of time', outOfTime: true })
+        continue
+      }
       try {
-        steps.push(await step.run(ctx))
+        const result = await step.run(ctx)
+        steps.push(result)
+        opsWritten += result.opsWritten ?? 0
+        if (result.outOfTime) stoppedEarly = true
+        if (result.errors?.length) {
+          const shown = result.errors.slice(0, 3).join('; ')
+          const more = result.errors.length > 3 ? ` (+${result.errors.length - 3} more)` : ''
+          failedSteps.push({ step: step.name, error: `${result.errors.length} change(s) rolled back: ${shown}${more}` })
+        }
       } catch (err) {
+        // Live steps write each change with its op in one transaction, so a
+        // throw here never strands a write without its memory_ops row.
         failedSteps.push({ step: step.name, error: errorMessage(err) })
       }
-      // Flush after every step (even a failed one: its writes before the throw
-      // landed), so a function timeout mid-run never strands already-applied
-      // writes without their memory_ops trail. A failed flush keeps the ops
-      // buffered for the next step's flush and never stops later steps.
       if (dryRun) continue
+      // Live steps must never buffer: the buffer is the dry-run report. Any op
+      // recorded on a live run was written outside its mutation's transaction
+      // — persist it as a last resort and flag the step.
+      const stray = changes.pending().length
+      if (stray === 0) continue
       try {
         opsWritten += await changes.flush()
+        failedSteps.push({ step: `changelog:${step.name}`, error: `${stray} op(s) recorded outside their write transaction` })
       } catch (err) {
         failedSteps.push({ step: `changelog:${step.name}`, error: errorMessage(err) })
       }
     }
 
-    return { runId, userId, dryRun, steps, opsWritten, failedSteps }
+    return {
+      runId,
+      userId,
+      dryRun,
+      steps,
+      opsWritten,
+      ...(dryRun ? { opsPlanned: changes.pending().length } : {}),
+      ...(stoppedEarly ? { outOfTime: true } : {}),
+      failedSteps,
+    }
   }
 }

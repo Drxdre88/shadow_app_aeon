@@ -27,12 +27,19 @@ vi.mock('@/lib/db', () => {
       return chain()
     }
   }
+  const tx = {
+    insert: root('tx.insert'),
+    execute: vi.fn(async () => executeResults.shift() ?? { rowCount: 0 }),
+  }
   return {
     db: {
       select: root('select'),
       selectDistinct: root('selectDistinct'),
       update: root('update'),
+      insert: root('insert'),
       execute: vi.fn(async () => executeResults.shift() ?? { rowCount: 0 }),
+      transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+      __tx: tx,
     },
   }
 })
@@ -48,11 +55,15 @@ import {
 
 const AT = new Date('2026-10-01T01:30:00.000Z')
 
+const tx = (db as unknown as { __tx: { execute: ReturnType<typeof vi.fn> } }).__tx
+
 beforeEach(() => {
   results.length = 0
   calls.length = 0
   executeResults.length = 0
   vi.mocked(db.execute).mockClear()
+  vi.mocked(db.transaction).mockClear()
+  tx.execute.mockClear()
 })
 
 describe('updateStandings', () => {
@@ -66,6 +77,34 @@ describe('updateStandings', () => {
     const updates = Array.from({ length: 1001 }, (_, i) => ({ id: `id-${i}`, standing: 0.5 }))
     expect(await updateStandings('user-1', updates, AT)).toBe(1001)
     expect(db.execute).toHaveBeenCalledTimes(3)
+    expect(db.transaction).not.toHaveBeenCalled()
+  })
+
+  it('with score ops, writes every batch AND the ops inside one transaction', async () => {
+    executeResults.push({ rowCount: 500 }, { rowCount: 2 })
+    results.push([{ id: 'op-1' }])
+    const updates = Array.from({ length: 502 }, (_, i) => ({ id: `id-${i}`, standing: 0.5 }))
+    const ops = [{ memoryId: 'id-0', step: 'weigh', op: 'score' as const, before: { standing: 0.1 }, after: { standing: 0.5 }, reason: 'r' }]
+
+    expect(await updateStandings('user-1', updates, AT, { runId: 'run-1', ops })).toBe(502)
+
+    expect(db.transaction).toHaveBeenCalledOnce()
+    expect(tx.execute).toHaveBeenCalledTimes(2)
+    expect(db.execute).not.toHaveBeenCalled()
+    const insert = calls.find((c) => c.method === 'tx.insert')
+    expect(insert).toBeDefined()
+    expect(calls.find((c) => c.method === 'values')?.args[0]).toEqual([expect.objectContaining({
+      userId: 'user-1', runId: 'run-1', memoryId: 'id-0', step: 'weigh', op: 'score',
+    })])
+  })
+
+  it('propagates an op insert failure out of the transaction (so it rolls the standings back)', async () => {
+    const failingTx = { execute: vi.fn(async () => ({ rowCount: 1 })), insert: () => { throw new Error('memory_ops insert failed') } }
+    vi.mocked(db.transaction).mockImplementationOnce(async (fn) => fn(failingTx as never))
+    const ops = [{ memoryId: 'id-0', step: 'weigh', op: 'score' as const, reason: 'r' }]
+    await expect(updateStandings('user-1', [{ id: 'id-0', standing: 0.5 }], AT, { runId: 'run-1', ops }))
+      .rejects.toThrow('memory_ops insert failed')
+    expect(failingTx.execute).toHaveBeenCalledOnce()
   })
 })
 

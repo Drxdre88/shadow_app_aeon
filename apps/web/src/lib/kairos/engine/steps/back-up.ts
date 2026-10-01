@@ -6,6 +6,8 @@ import {
   type ProposalCandidateRow,
   type SupportRow,
 } from '@/lib/data/memory-candidates'
+import type { OpLog } from '@/lib/data/memory-ops'
+import { errorMessage, outOfTime } from '../deadline'
 import type { EngineRunContext, MemoryOpInput, Step, StepResult, SupportSummary } from '../types'
 
 // BackUp — the candidate tier (docs/kairos/32 §2.3). Kairos's own pending
@@ -86,13 +88,22 @@ function sameSupport(a: unknown, b: SupportSummary): boolean {
   return r.independentSupports === b.independentSupports && r.distinctDays === b.distinctDays
 }
 
-// dryRun: log only. Live: write first and log only what actually landed (the
-// pending guard can lose to an operator accept/dismiss mid-run).
-async function commit(ctx: EngineRunContext, op: MemoryOpInput, write: () => Promise<boolean>): Promise<boolean> {
-  if (!ctx.dryRun && !(await write())) return false
-  ctx.changes.record(op)
-  return true
+// dryRun: report only. Live: the write and its op share one transaction, and
+// only a write that actually landed logs (the pending guard can lose to an
+// operator accept/dismiss mid-run). A failed op insert throws, rolling back.
+async function commit(
+  ctx: EngineRunContext,
+  op: MemoryOpInput,
+  write: (log: OpLog) => Promise<boolean>,
+): Promise<boolean> {
+  if (ctx.dryRun) {
+    ctx.changes.record(op)
+    return true
+  }
+  return write({ runId: ctx.runId, ops: [op] })
 }
+
+type CandidateOutcome = 'promote' | 'decay' | 'support' | 'none'
 
 // A reverted promote/decay/merge leaves engine.vetoes[op] (docs/kairos/32 §4a);
 // the legacy single-slot engine.veto = { op } is still honoured.
@@ -111,24 +122,41 @@ export class BackUpStep implements Step {
     let changed = 0
     let promoted = 0
     let decayed = 0
+    let examined = 0
+    let stopped = false
+    const errors: string[] = []
     for (const c of candidates) {
-      const outcome = await this.weighCandidate(ctx, c)
+      if (outOfTime(ctx)) {
+        stopped = true
+        break
+      }
+      examined++
+      let outcome: CandidateOutcome
+      try {
+        outcome = await this.weighCandidate(ctx, c)
+      } catch (err) {
+        errors.push(`${c.id}: ${errorMessage(err)}`)
+        continue
+      }
       if (outcome === 'promote') promoted++
       if (outcome === 'decay') decayed++
       if (outcome !== 'none') changed++
     }
+    const notes = [`promoted=${promoted}`, `decayed=${decayed}`]
+    if (errors.length) notes.push(`failed=${errors.length}`)
+    if (stopped) notes.push(`out of time after ${examined}/${candidates.length}`)
     return {
       step: this.name,
-      examined: candidates.length,
+      examined,
       changed,
-      notes: [`promoted=${promoted}`, `decayed=${decayed}`],
+      notes,
+      ...(ctx.dryRun ? {} : { opsWritten: promoted + decayed }),
+      ...(errors.length ? { errors } : {}),
+      ...(stopped ? { outOfTime: true } : {}),
     }
   }
 
-  private async weighCandidate(
-    ctx: EngineRunContext,
-    c: ProposalCandidateRow,
-  ): Promise<'promote' | 'decay' | 'support' | 'none'> {
+  private async weighCandidate(ctx: EngineRunContext, c: ProposalCandidateRow): Promise<CandidateOutcome> {
     const supports = c.hasEmbedding
       ? await findProposalSupports(ctx.userId, c.id, c.createdAt, 1 - SUPPORT_MIN_COSINE)
       : []
@@ -148,12 +176,12 @@ export class BackUpStep implements Step {
         before: { status: 'pending', streamClass: c.streamClass, confidence: c.confidence },
         after: { status: 'promoted', streamClass: 'idea', confidence },
         reason: `I now believe "${c.title}" — ${support.independentSupports} independent supports on ${support.distinctDays} days`,
-      }, () => updatePendingProposal(ctx.userId, c.id, {
-        sourceMetadata: { ...meta, status: 'promoted', promotedAt: nowIso, engine },
+      }, (log) => updatePendingProposal(ctx.userId, c.id, {
+        sourceMetadata: { ...meta, status: 'promoted', promotedAt: nowIso, engine: { ...engine, promotedAt: nowIso } },
         streamClass: 'idea',
         confidence,
         updatedAt: ctx.now,
-      }))
+      }, log))
       return done ? 'promote' : 'none'
     }
 
@@ -166,14 +194,15 @@ export class BackUpStep implements Step {
         before: { status: 'pending', archivedAt: null },
         after: { status: 'decayed', archivedAt: nowIso },
         reason: `no independent backing after ${Math.floor(ageDays)} days (${support.independentSupports} supports, ${support.distinctDays} days)`,
-      }, () => updatePendingProposal(ctx.userId, c.id, {
-        sourceMetadata: { ...meta, status: 'decayed', engine },
+      }, (log) => updatePendingProposal(ctx.userId, c.id, {
+        sourceMetadata: { ...meta, status: 'decayed', engine: { ...engine, decayedAt: nowIso } },
         archivedAt: ctx.now,
         updatedAt: ctx.now,
-      }))
+      }, log))
       return done ? 'decay' : 'none'
     }
 
+    // Support progress is bookkeeping, not a status change — no op.
     if (sameSupport(asRecord(meta.engine).support, support)) return 'none'
     if (!ctx.dryRun) await updatePendingProposal(ctx.userId, c.id, { sourceMetadata: { ...meta, engine } })
     return 'support'

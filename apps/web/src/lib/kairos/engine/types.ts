@@ -84,6 +84,10 @@ export interface MemoryOpInput {
   reason: string
 }
 
+// Dry-run report of the ops a run WOULD write. Live steps never record here:
+// they write each op in the same transaction as the mutation it describes
+// (docs/kairos/32 §2), so a killed function can never strand a write without
+// its trail.
 export interface ChangeLog {
   readonly runId: string
   record(op: MemoryOpInput): void
@@ -97,6 +101,9 @@ export interface EngineRunContext {
   now: Date
   dryRun: boolean
   changes: ChangeLog
+  // Wall-clock budget (epoch ms). Past it, steps start no new mutations so the
+  // cron can still write its trace before the platform kills the function.
+  deadline?: number
 }
 
 export interface StepResult {
@@ -105,6 +112,12 @@ export interface StepResult {
   changed: number
   skipped?: string
   notes?: string[]
+  // Live runs: memory_ops rows written (each inside its mutation's transaction).
+  opsWritten?: number
+  // Per-mutation failures; each one was rolled back together with its op.
+  errors?: string[]
+  // The step stopped early because the run's deadline passed.
+  outOfTime?: boolean
 }
 
 export interface Step {
@@ -118,6 +131,10 @@ export interface EngineRunResult {
   dryRun: boolean
   steps: StepResult[]
   opsWritten: number
+  // Dry runs: ops the run would have written.
+  opsPlanned?: number
+  // Some step was cut short (or skipped) by the deadline.
+  outOfTime?: boolean
   failedSteps: Array<{ step: string; error: string }>
 }
 

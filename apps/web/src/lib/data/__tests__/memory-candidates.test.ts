@@ -79,6 +79,63 @@ describe('updatePendingProposal', () => {
     expect(await updatePendingProposal(USER, 'p', { sourceMetadata: { status: 'promoted' } })).toBe(true)
     expect(await updatePendingProposal(USER, 'p', { sourceMetadata: { status: 'promoted' } })).toBe(false)
   })
+
+  const decayOp = {
+    memoryId: 'p',
+    step: 'backup',
+    op: 'decay' as const,
+    before: { status: 'pending', archivedAt: null },
+    after: { status: 'decayed', archivedAt: NOW.toISOString() },
+    reason: 'no backing',
+  }
+
+  it('with an op log, inserts the op in the SAME transaction as the update', async () => {
+    returningQueue.push([{ id: 'p' }], [{ id: 'op-1' }])
+    expect(await updatePendingProposal(USER, 'p', { sourceMetadata: { status: 'decayed' }, archivedAt: NOW }, { runId: 'run-1', ops: [decayOp] })).toBe(true)
+    expect(db.transaction).toHaveBeenCalledOnce()
+    expect(calls.map((c) => [c.kind, c.table === memories ? 'memories' : c.table === memoryOps ? 'memory_ops' : '?'])).toEqual([
+      ['update', 'memories'],
+      ['insert', 'memory_ops'],
+    ])
+    expect(calls[1].values).toEqual([expect.objectContaining({
+      userId: USER, runId: 'run-1', memoryId: 'p', step: 'backup', op: 'decay', before: decayOp.before, after: decayOp.after,
+    })])
+  })
+
+  it('logs nothing when the pending guard rejected the write', async () => {
+    returningQueue.push([])
+    expect(await updatePendingProposal(USER, 'p', { sourceMetadata: {} }, { runId: 'run-1', ops: [decayOp] })).toBe(false)
+    expect(calls.filter((c) => c.table === memoryOps)).toEqual([])
+  })
+
+  it('a failed op insert rejects the transaction (rolling the update back)', async () => {
+    vi.mocked(db.transaction).mockImplementationOnce(async (fn) => {
+      const tx = makeTx()
+      tx.insert = () => { throw new Error('memory_ops insert failed') }
+      return fn(tx as never)
+    })
+    returningQueue.push([{ id: 'p' }])
+    await expect(updatePendingProposal(USER, 'p', { sourceMetadata: {} }, { runId: 'run-1', ops: [decayOp] }))
+      .rejects.toThrow('memory_ops insert failed')
+  })
+})
+
+describe('applyMerge with an op log', () => {
+  it('writes the merge op inside the merge transaction, after both row updates', async () => {
+    returningQueue.push([{ id: 'new-1' }], [{ id: 'op-1' }])
+    const op = { memoryId: 'new-1', step: 'merge', op: 'merge' as const, before: {}, after: {}, reason: 'repeat' }
+    expect(await applyMerge(USER, 'new-1', 'old-1', NOW, { runId: 'run-1', ops: [op] })).toBe(true)
+    expect(db.transaction).toHaveBeenCalledOnce()
+    expect(calls.map((c) => c.kind)).toEqual(['update', 'update', 'insert'])
+    expect(calls[2].table).toBe(memoryOps)
+  })
+
+  it('logs nothing when the newer row was already superseded', async () => {
+    returningQueue.push([])
+    const op = { memoryId: 'new-1', step: 'merge', op: 'merge' as const, reason: 'repeat' }
+    expect(await applyMerge(USER, 'new-1', 'old-1', NOW, { runId: 'run-1', ops: [op] })).toBe(false)
+    expect(calls.some((c) => c.kind === 'insert')).toBe(false)
+  })
 })
 
 describe('applyMemoryOpRevert', () => {

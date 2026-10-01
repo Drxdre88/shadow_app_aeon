@@ -2,8 +2,10 @@ import {
   applyMerge,
   findOlderDuplicate,
   listMergeCandidates,
+  type MergeCandidateRow,
 } from '@/lib/data/memory-candidates'
-import type { EngineRunContext, Step, StepResult } from '../types'
+import { errorMessage, outOfTime } from '../deadline'
+import type { EngineRunContext, MemoryOpInput, Step, StepResult } from '../types'
 import { isVetoed } from './back-up'
 
 // Gate/Merge (docs/kairos/32 §2.1). A new row that is a near-verbatim repeat
@@ -48,35 +50,66 @@ export class MergeStep implements Step {
     // Rows folded away this run can't be merge targets (matters in dryRun,
     // where nothing is written and the DB still shows them live).
     const mergedAway: string[] = []
+    const errors: string[] = []
     let changed = 0
+    let examined = 0
+    let stopped = false
     for (const row of rows) {
+      if (outOfTime(ctx)) {
+        stopped = true
+        break
+      }
+      examined++
       if (isVetoed(row.sourceMetadata, 'merge')) continue
-      const older = await findOlderDuplicate(ctx.userId, row, {
-        maxDistance: 1 - MERGE_MIN_COSINE,
-        excludeTypes: MERGE_EXCLUDED_TYPES,
-        excludeIds: [...mergedAway],
-      })
-      if (!older) continue
-      if (!ctx.dryRun && !(await applyMerge(ctx.userId, row.id, older.id, ctx.now))) continue
-
-      mergedAway.push(row.id)
-      changed++
-      const nowIso = ctx.now.toISOString()
-      ctx.changes.record({
-        memoryId: row.id,
-        step: this.name,
-        op: 'merge',
-        before: {
-          newer: { id: row.id, supersededAt: null, supersededById: null },
-          older: { id: older.id, useCount: older.useCount, lastUsedAt: older.lastUsedAt?.toISOString() ?? null },
-        },
-        after: {
-          newer: { id: row.id, supersededAt: nowIso, supersededById: older.id },
-          older: { id: older.id, useCount: older.useCount + 1, lastUsedAt: nowIso },
-        },
-        reason: `repeat of older ${older.id} (cosine ${older.similarity.toFixed(3)} ≥ ${MERGE_MIN_COSINE})`,
-      })
+      try {
+        if (await this.mergeRow(ctx, row, mergedAway)) changed++
+      } catch (err) {
+        errors.push(`${row.id}: ${errorMessage(err)}`)
+      }
     }
-    return { step: this.name, examined: rows.length, changed }
+    const notes: string[] = []
+    if (errors.length) notes.push(`failed=${errors.length}`)
+    if (stopped) notes.push(`out of time after ${examined}/${rows.length}`)
+    return {
+      step: this.name,
+      examined,
+      changed,
+      ...(notes.length ? { notes } : {}),
+      ...(ctx.dryRun ? {} : { opsWritten: changed }),
+      ...(errors.length ? { errors } : {}),
+      ...(stopped ? { outOfTime: true } : {}),
+    }
+  }
+
+  // Live: the merge and its op commit in one transaction (a failed op insert
+  // rolls the merge back and throws). Dry run: report the op only.
+  private async mergeRow(ctx: EngineRunContext, row: MergeCandidateRow, mergedAway: string[]): Promise<boolean> {
+    const older = await findOlderDuplicate(ctx.userId, row, {
+      maxDistance: 1 - MERGE_MIN_COSINE,
+      excludeTypes: MERGE_EXCLUDED_TYPES,
+      excludeIds: [...mergedAway],
+    })
+    if (!older) return false
+
+    const nowIso = ctx.now.toISOString()
+    const op: MemoryOpInput = {
+      memoryId: row.id,
+      step: this.name,
+      op: 'merge',
+      before: {
+        newer: { id: row.id, supersededAt: null, supersededById: null },
+        older: { id: older.id, useCount: older.useCount, lastUsedAt: older.lastUsedAt?.toISOString() ?? null },
+      },
+      after: {
+        newer: { id: row.id, supersededAt: nowIso, supersededById: older.id },
+        older: { id: older.id, useCount: older.useCount + 1, lastUsedAt: nowIso },
+      },
+      reason: `repeat of older ${older.id} (cosine ${older.similarity.toFixed(3)} ≥ ${MERGE_MIN_COSINE})`,
+    }
+    if (ctx.dryRun) ctx.changes.record(op)
+    else if (!(await applyMerge(ctx.userId, row.id, older.id, ctx.now, { runId: ctx.runId, ops: [op] }))) return false
+
+    mergedAway.push(row.id)
+    return true
   }
 }

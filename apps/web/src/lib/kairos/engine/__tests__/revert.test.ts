@@ -66,7 +66,7 @@ describe('revertMemoryOp', () => {
   it('restores a promotion to a pending agentic guess and leaves a veto marker', async () => {
     vi.mocked(findMemoryOp).mockResolvedValue(promoteOp)
     vi.mocked(findRevertableMemories).mockResolvedValue([mem('prop-1', {
-      sourceMetadata: { introspection: true, status: 'promoted', promotedAt: PROMOTED_AT, engine: { support: { independentSupports: 2, distinctDays: 2 } } },
+      sourceMetadata: { introspection: true, status: 'promoted', promotedAt: PROMOTED_AT, engine: { support: { independentSupports: 2, distinctDays: 2 }, promotedAt: PROMOTED_AT } },
     })])
 
     const res = await revertMemoryOp(USER, OP_ID, { reason: 'operator veto', now: NOW })
@@ -114,7 +114,9 @@ describe('revertMemoryOp', () => {
       after: { status: 'decayed', archivedAt: PROMOTED_AT },
     }))
     vi.mocked(findRevertableMemories).mockResolvedValue([mem('prop-1', {
-      archivedAt: new Date(PROMOTED_AT), sourceMetadata: { status: 'decayed' },
+      archivedAt: new Date(PROMOTED_AT),
+      // engine.decayedAt is the decay's own stamp: it leaves with the revert.
+      sourceMetadata: { status: 'decayed', engine: { decayedAt: PROMOTED_AT } },
     })])
 
     await revertMemoryOp(USER, OP_ID, { now: NOW })

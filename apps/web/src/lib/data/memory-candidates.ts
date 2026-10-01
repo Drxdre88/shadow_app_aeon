@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { memories, memoryOps } from '@/lib/db/schema'
 import { META_STREAM_CLASSES } from '@/lib/kairos/streamClass'
 import type { MemoryOpInput } from '@/lib/kairos/engine/types'
+import { insertMemoryOps, type DbExecutor, type OpLog } from './memory-ops'
 import { outcomeAdjustSql } from './memory-reactions'
 import { validAsOfNow } from './memories'
 
@@ -124,19 +125,34 @@ export interface ProposalPatch {
 }
 
 // Guarded on the proposal still being pending: an operator accept/dismiss that
-// landed mid-run wins. Returns false when the guard rejected the write.
-export async function updatePendingProposal(userId: string, proposalId: string, patch: ProposalPatch): Promise<boolean> {
-  const updated = await db
-    .update(memories)
-    .set(patch)
-    .where(and(
-      eq(memories.id, proposalId),
-      eq(memories.userId, userId),
-      sql`${memories.sourceMetadata}->>'status' = 'pending'`,
-      isNull(memories.archivedAt),
-    ))
-    .returning({ id: memories.id })
-  return updated.length > 0
+// landed mid-run wins. Returns false when the guard rejected the write. With
+// `log`, the ops are inserted in the same transaction as the update — a failed
+// op insert rolls the update back (throws), and a rejected guard logs nothing.
+export async function updatePendingProposal(
+  userId: string,
+  proposalId: string,
+  patch: ProposalPatch,
+  log?: OpLog,
+): Promise<boolean> {
+  const write = async (tx: DbExecutor) => {
+    const updated = await tx
+      .update(memories)
+      .set(patch)
+      .where(and(
+        eq(memories.id, proposalId),
+        eq(memories.userId, userId),
+        sql`${memories.sourceMetadata}->>'status' = 'pending'`,
+        isNull(memories.archivedAt),
+      ))
+      .returning({ id: memories.id })
+    return updated.length > 0
+  }
+  if (!log) return write(db)
+  return db.transaction(async (tx) => {
+    if (!(await write(tx))) return false
+    await insertMemoryOps(userId, log.runId, log.ops, tx)
+    return true
+  })
 }
 
 // ── Merge: near-duplicate new rows ──────────────────────────────────────────
@@ -216,7 +232,9 @@ export async function findOlderDuplicate(
 
 // Newer → superseded by older (valid time untouched: a repeat, not a
 // correction); older reinforced. Atomic, and only when the newer is still live.
-export async function applyMerge(userId: string, newerId: string, olderId: string, now: Date): Promise<boolean> {
+// With `log`, its ops are inserted in the same transaction (a failed op insert
+// rolls the merge back).
+export async function applyMerge(userId: string, newerId: string, olderId: string, now: Date, log?: OpLog): Promise<boolean> {
   return db.transaction(async (tx) => {
     const superseded = await tx
       .update(memories)
@@ -228,6 +246,7 @@ export async function applyMerge(userId: string, newerId: string, olderId: strin
       .update(memories)
       .set({ useCount: sql`${memories.useCount} + 1`, lastUsedAt: now })
       .where(and(eq(memories.id, olderId), eq(memories.userId, userId)))
+    if (log) await insertMemoryOps(userId, log.runId, log.ops, tx)
     return true
   })
 }

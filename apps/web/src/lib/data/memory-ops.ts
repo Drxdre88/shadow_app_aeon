@@ -12,25 +12,38 @@ export type MemoryOpRow = typeof memoryOps.$inferSelect
 // transaction as the memory write they describe.
 export type DbExecutor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0]
 
+// The ops a write must log atomically with itself: data-layer writers that
+// take an OpLog insert it in the SAME transaction, so a failed op insert rolls
+// the write back and a killed function never leaves a write without its op.
+export interface OpLog {
+  runId: string | null
+  ops: readonly MemoryOpInput[]
+}
+
+const INSERT_CHUNK = 500
+
 export async function insertMemoryOps(
   userId: string,
   runId: string | null,
   ops: readonly MemoryOpInput[],
   tx: DbExecutor = db,
 ): Promise<number> {
-  if (ops.length === 0) return 0
-  const rows = ops.map((op) => ({
-    userId,
-    runId,
-    memoryId: op.memoryId,
-    step: op.step,
-    op: op.op,
-    before: op.before ?? null,
-    after: op.after ?? null,
-    reason: op.reason,
-  }))
-  const inserted = await tx.insert(memoryOps).values(rows).returning({ id: memoryOps.id })
-  return inserted.length
+  let written = 0
+  for (let i = 0; i < ops.length; i += INSERT_CHUNK) {
+    const rows = ops.slice(i, i + INSERT_CHUNK).map((op) => ({
+      userId,
+      runId,
+      memoryId: op.memoryId,
+      step: op.step,
+      op: op.op,
+      before: op.before ?? null,
+      after: op.after ?? null,
+      reason: op.reason,
+    }))
+    const inserted = await tx.insert(memoryOps).values(rows).returning({ id: memoryOps.id })
+    written += inserted.length
+  }
+  return written
 }
 
 export async function listMemoryOps(
