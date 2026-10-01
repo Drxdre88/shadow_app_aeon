@@ -20,6 +20,7 @@ apps/
         realms/ sessions/          -- realm CRUD, agent-session lifecycle
         recipes/                   -- recipe REST (route, run, traces)
         kairos/speak/              -- Kairos-initiated delivery (Will inbox + Telegram, CRON_SECRET auth)
+        kairos/{memory-ops,thinking-jobs,beliefs,constitution}/ -- engine undo, thinking queue, beliefs, constitution
         auth/mobile/               -- mobile auth (google, verify, route)
         me/                        -- current-user endpoint
       api/[transport]/             -- MCP server (Bearer API key OR OAuth aeon_at_ token); ~127 annotated tools
@@ -39,7 +40,7 @@ apps/
       canvas/                      -- whiteboard (ReactFlow)
       gantt/                       -- Gantt chart
       hyperspace/                  -- Daily Briefing card + EOD + Capture FAB + QuickCapture
-      kairos/                      -- galaxy (Kairos3D only — 2D removed), KairosInbox (Will bell/panel),
+      kairos/                      -- galaxy (Kairos3D only — 2D removed), KairosInbox (Will bell/panel + idea cards),
                                       AdvisoryFeed, Visor + chat stream, thread list,
                                       Dominion create/edit, MemorySidePanel; scene/; flightdeck/ (FlightDeckDrawer, TowerOverlay)
       notes/ sidebar/ trophy/      -- notes bento, AppSidebar, trophy/vault archive
@@ -56,7 +57,9 @@ apps/
                                       chat-prompt/retrieval/turn, embeddings, introspection, streamClass,
                                       dedup, lifecycle, dominionTags, recipes/,
                                       confidence, rerank, rrf, autofile, contradiction(-prompt),
-                                      chat-distill(-prompt), telegram, cron-trace
+                                      chat-distill(-prompt), telegram, cron-trace, origin, conscience-context,
+                                      engine/ (night steps incl. recheck), thinking/ (queue + handlers incl. idea-*),
+                                      beliefs/, concepts/, constitution/ (incl. conscience-probes), weekly-review/, ideas/
       oauth/                       -- pkce (S256), origin helper
       db/                          -- schema.ts + index.ts (Neon Pool)
       store/                       -- Zustand: boardStore, canvasStore, ganttStore, undoStore, hangarUiStore,
@@ -88,4 +91,4 @@ packages/
     index.ts                       -- package barrel
 ```
 
-**Root files:** `CLAUDE.md`, `ARCHITECTURE.md` (router), `VISION.md`, `README.md`, `CHANGELOG.md` (mirrored into `apps/web/src/lib/changelog.ts`), `SETUP.md`, `start.bat`. Detailed design notes + handovers live in `docs/` (esp. `docs/kairos/` — 29 numbered design/handover docs; `29-brain-tick.md` is executed by the scheduled cloud routine). `vercel.json` carries the cron schedule.
+**Root files:** `CLAUDE.md`, `ARCHITECTURE.md` (router), `VISION.md`, `README.md`, `CHANGELOG.md` (mirrored into `apps/web/src/lib/changelog.ts`), `SETUP.md`, `start.bat`. Detailed design notes + handovers live in `docs/` (esp. `docs/kairos/` — 36 numbered design/handover docs (through `35-creativity.md`); `29-brain-tick.md` is executed by the scheduled cloud routine). `vercel.json` carries the cron schedule.

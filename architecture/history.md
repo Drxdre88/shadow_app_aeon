@@ -5,7 +5,25 @@
 Reverse-chronological. The most recent work is at the top; the pre-2026-06-06 trail is preserved
 verbatim below.
 
-### 2026-10-01 — Kairos 0.11–0.13: Eyes & Heal (#133) · Memory Engine (#134) · undo hotfix (#135) · Beliefs & Strategy (PR open)
+### 2026-10-01 (evening) — Kairos 0.14 Ground & Protect (#137, #138) · 0.15 Creativity (#139) · Max routines live
+- **0.14 Ground & Protect (PR #137, hotfix #138):**
+  - **Origin at write:** `sourceMetadata.origin` (`lib/kairos/origin.ts`), stamped by the trusted surface and capped by `source`. Agent edits and classifier-distilled ask answers lower it.
+  - **Trust and promotion:** SourceTrust weighs reflections by origin. BackUp needs ≥1 operator or activity support (`anchoredSupports`).
+  - **Belief caps and re-check:** belief `sourceType` and confidence are computed from provenance origins (caps 0.95 / 0.8 / 0.6). New engine step `recheck` (flag / remap / normalise / retire; ops `recheck` and `retire`). `belief_extract` can retire flagged beliefs.
+  - **Conscience block** (`lib/kairos/conscience-context.ts`) goes into chat, the daily message, the weekly review and BRIEF. The briefer now reads cortex plus an Aether digest.
+  - **Nightly conscience checks:** a `drift_probe:<day>:conscience` job.
+  - **Retrieval fixes:** retrieval and `prepareContext` drop superseded and invalid rows; belief and constitution are exempt from the 90-day window; new half-lives; Merge window 96 h / 400.
+  - **#138:** night order is now Merge → Weigh → OwnMind → Recheck → BackUp → Concepts.
+- **0.15 Creativity (PR #139):**
+  - **New thinking kinds** `idea_generate` and `idea_judge` (11 kinds total).
+  - **Pipeline:** `lib/kairos/ideas/*` and `lib/data/ideas.ts` (archive, novelty gate, outcomes, diversity) plus `idea-inputs.ts`. Survivors are inbound `kind:'idea'` proposals; the others are archived `idea_candidate` trace rows.
+  - **Surfaces:** inbox idea cards, daily "Idea of the day", and a weekly-review ideas section, lessons and belief diff (`lib/data/belief-diff.ts`).
+  - **Retiring the raw dump:** `KAIROS_RAW_INTROSPECTION` flag. synthesis-health gains an `idea-tournament` stage.
+  - **Limits:** thinking-job submit `maxDuration` 300. MCP `claim_thinking_job` takes up to 11 kinds.
+- **Max-plan routines created** on claude.ai: Kairos thinking 02:40Z, ideas 03:35Z, morning 06:30Z; all Opus with the Aeon connector only. The first contest ran on the routine.
+- **No schema change in 0.14–0.15**; 17 crons and the MCP tool count are unchanged.
+
+### 2026-10-01 — Kairos 0.11–0.13: Eyes & Heal (#133) · Memory Engine (#134) · undo hotfix (#135) · Beliefs & Strategy (#136)
 - **0.11 Eyes & Heal (PR #133, 30/09)** — asks unblocked (only real questions await a reply); server-minted ids for every synthesis stage + one repair path; per-cron daily ok/skipped health rows; capture choke point (`stream-class-default.ts`) + session record v1 (`sourceMetadata.session`) for all three coding clients; Hangar mission memory; board feed (`settings.kairosFeed` → `board_day`/`board_week`) + `card_notes` nudge written back to cards; shared 14-day recency; `micro-consolidate` gains a 23:15 pulse; `memory-compaction` stub removed.
 - **0.12 Memory Engine (PR #134, 30/09)** — migration `0039_kairos_memory_engine` (`standing`, `standing_at`, `last_used_at`, `use_count`; `memory_ops`; `thinking_jobs`); nightly `memory-engine` cron 01:30 (Merge → Weigh → BackUp → OwnMind → Concepts); shared ranker relevance × standing; undo via `list_memory_ops`/`revert_memory_op`; reactions rescore immediately; thinking queue claimed by Claude Max routines with paid-key fallback.
 - **Hotfix (PR #135, 01/10)** — first engine night lost undo records at the 300s limit; `memory_ops` now written in each change's transaction; `scripts/backfill-memory-ops-1001.mjs` restored 349.

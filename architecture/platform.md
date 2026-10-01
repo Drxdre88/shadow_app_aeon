@@ -37,13 +37,13 @@ NextAuth session cookie is the fallback when no bearer is present (`auth.ts:50-5
 | `projects/[id]/…` | `columns`(+reorder), `rows`(+reorder), `gantt`(+`[taskId]`,batch), `gantt-views`, `labels`, `dependencies`(+batch,remove), `canvas` |
 | `projects/[id]/tasks/…` | `tasks`(+batch), `[taskId]` + detail/checklist/comments/labels |
 | `realms` | `realms`, `[realmId]` + members/projects, **`[realmId]/virtual-members`**(+`[virtualMemberId]`) |
-| `memories` | `memories`(+search,capture,context,needs-summary), `[id]`(+export,neighbours,accept,links) |
+| `memories` | `memories`(+search,capture,context,needs-summary), `[id]`(+export,neighbours,accept,links). Writes stamp `sourceMetadata.origin` (0.14): `[id]/accept` passes `{kind:'agent',via:'rest'}` for bearer callers, `{kind:'operator',via:'rest-session'}` for a web session |
 | `ai` | `ai/credentials`(+`[id]`,test), `ai/preferences` — **admin-gated** |
 | `sessions` | `sessions` (spawn: 201 / **400** malformed `metadata.hangar` / **409** naming the live session), `claim`, `[id]` (**404** on a non-uuid id, + heartbeat, events, kill) — Hangar surface, see [hangar.md](hangar.md). `projects/[id]` has the same uuid guard; ~45 other `[id]` routes do not yet |
 | `recipes` | `recipes`, `recipes/run`, `recipes/traces` — REST mirror of `run_recipe`, sharing `runRecipeArgs` + `dispatch.runRecipe` so MCP/REST never drift |
 | `projects/[id]/favorite` | PUT toggle for per-user project favorites (PR #80; mirrors MCP `set_project_favorite`) |
 | `kairos/speak` | `POST /api/v1/kairos/speak` — **Kairos-initiated delivery** (Will-inbox `notify` memory + best-effort Telegram fan-out). Auth `Bearer ${CRON_SECRET}` (cron idiom, not user bearer). Server-side interrupt throttle: 4h min gap + 3/24h cap → 429; `force:true` bypass audit-logged and ceilinged at 10/24h. **Deliberately OUTSIDE MCP/REST parity** — internal delivery channel, no MCP mirror. |
-| `kairos/*` (0.11–0.13) | `memory-ops`, `memory-ops/[id]/revert`, `thinking-jobs`, `thinking-jobs/claim`, `thinking-jobs/[id]/submit`, `beliefs`, `beliefs/compare`, `constitution`, `constitution/amendments` — REST mirrors of the memory-ops / thinking / beliefs / constitution MCP tools |
+| `kairos/*` (0.11–0.15) | `memory-ops`, `memory-ops/[id]/revert`, `thinking-jobs`, `thinking-jobs/claim`, `thinking-jobs/[id]/submit` (`maxDuration = 300` since 0.15), `beliefs`, `beliefs/compare`, `constitution`, `constitution/amendments` — REST mirrors of the memory-ops / thinking / beliefs / constitution MCP tools |
 
 > ⚠️ **Route params are a Promise in Next 16 — always `await` them.** A handler that reads `(ctx as {params:{…}}).params` synchronously gets `undefined` for every segment, so an id-scoped guard like `getGroupRole(undefined, userId)` matches nothing and the route answers **403 for every caller**. It fails closed, compiles cleanly, and no test or typecheck catches it. Five routes under `api/v1/realms/` were written that way on 2026-04-02 and had never worked; found and fixed 2026-08-26 (`daeb93d`), all 7 param-reading route files now `await`. Use `type Params = { params: Promise<{ … }> }` + `const { x } = await (ctx as Params).params` — the pattern every other v1 family already uses.
 
@@ -102,7 +102,7 @@ Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via
 | analytics | 1 | get_velocity_stats |
 | bulk | 1 | setup_board |
 | realms | 14 | CRUD + members + invites + projects |
-| memories | 9 | create, update, search, link, prepare_context, get_with_neighbours, list_needs_summary, **accept_proposal**, **get_belief_trail** (bi-temporal chain walk, PR #72) |
+| memories | 9 | create, update, search, link, prepare_context, get_with_neighbours, list_needs_summary, **accept_proposal**, **get_belief_trail** (bi-temporal chain walk, PR #72). create/update/accept (and `kairos_reflect`) stamp origin `{kind:'agent',via:'mcp'}` (0.14) |
 | dominions | 15 | CRUD + vision/objectives + repo mapping + project assignment (MCP-only) |
 | sessions | 6 | spawn, list, get, list_events, kill, claim |
 | **virtual-members** | 4 | list / create / update / delete — accountless realm-scoped assignees; shares `createVirtualMemberSchema`/`updateVirtualMemberSchema` with the REST side, locked by `api/__tests__/virtual-members-parity.test.ts` |
@@ -113,8 +113,8 @@ Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via
 | **ask** | 3 | `run_kairos_ask`, `get_pending_kairos_ask`, `answer_kairos_ask` — proactive one-question loop |
 | **dialogue** | 5 | `open_dialogue`, `prepare_dialogue_context`, `append_dialogue_turn`, `get_dialogue`, `commit_dialogue` |
 | **memory-ops** | 2 | `list_memory_ops`, `revert_memory_op` — memory-engine undo ledger |
-| **thinking** | 3 | `claim_thinking_job`, `submit_thinking_job`, `list_thinking_jobs` — the Claude Max routine's queue surface |
-| **beliefs** | 2 | `list_beliefs`, `get_mind_comparison` |
+| **thinking** | 3 | `claim_thinking_job`, `submit_thinking_job`, `list_thinking_jobs` — the Claude Max routine's queue surface. 11 kinds (`kinds` is `.max(11)`), incl. **idea_generate** / **idea_judge** (0.15); submitting `idea_generate` plans `idea_judge` the same night |
+| **beliefs** | 2 | `list_beliefs` (each belief carries `sourceType` + `recheck`, 0.14), `get_mind_comparison` |
 | **constitution** | 2 | `get_constitution`, `propose_constitution_amendment` (acceptance is operator-only) |
 
 **Parity locks:** `gantt-parity.test.ts` (Gantt MCP↔REST), `memories-parity.test.ts` (memory tools vs REST), `virtual-members-parity.test.ts`, `sessions-parity.test.ts`, `memory-ops-parity.test.ts`, `thinking-parity.test.ts`, `beliefs-parity.test.ts`, `constitution-parity.test.ts` (all in `app/api/__tests__/`). **Constitution amendments are operator-only:** MCP `accept_proposal` and bearer REST `POST /api/v1/memories/[id]/accept` refuse them (403); the operator-session path (Will inbox / Telegram) goes through `lib/kairos/proposal-accept.ts` `acceptKairosProposal`. **Intentional surface gaps:** dominions, synthesis/ask/dialogue, and reflections are MCP-only; AI credentials/preferences are REST-only; canvas is REST-only.
@@ -166,7 +166,7 @@ The app-owned **embedding layer** (Voyage primary / OpenAI fallback, single serv
 
 ## 6.5 Versioning + CI gates
 
-- App version is `APP_VERSION` in `apps/web/src/lib/version.ts` (**0.29.0**, release candidate in PR #130), surfaced in the Changelog modal; `apps/web/src/lib/changelog.ts` mirrors `/CHANGELOG.md` — bump all three together. `package.json` versions remain scaffold defaults and are not the displayed product version.
+- App version is `APP_VERSION` in `apps/web/src/lib/version.ts` (**0.32.0**; Kairos `KAIROS_VERSION` **0.15.0** in `lib/kairos/version.ts`, PR #139), surfaced in the Changelog modal; `apps/web/src/lib/changelog.ts` mirrors `/CHANGELOG.md` — bump all three together. `package.json` versions remain scaffold defaults and are not the displayed product version.
 - CI (`.github/workflows/ci.yml`): lint + typecheck + Vitest + **production build** for the web app, plus kairos-worker typecheck + tests; `auth-smoke` runs on every deployment (the 2026-06-08 outage guard).
 
 ## 7. DB / cold-start reliability + cron schedule
@@ -180,8 +180,8 @@ Cron schedule (`apps/web/vercel.json`, all `Bearer ${CRON_SECRET}`):
 | UTC | Cron | Purpose |
 |---|---|---|
 | 23:00 | `project-snapshot` | per-project snapshot + board feed + ephemeral lifecycle compost |
-| 01:30 | `memory-engine` | Merge → Weigh → BackUp → OwnMind → Concepts (230s budget, `?dryRun=1`) |
-| hourly :50 | `thinking-sweep` | plan / expire / paid-fallback thinking jobs |
+| 01:30 | `memory-engine` | Merge → Weigh → OwnMind → **Recheck** → BackUp → Concepts (230s budget, `?dryRun=1`; belief steps before the slow BackUp since #138) |
+| hourly :50 | `thinking-sweep` | plan / expire / paid-fallback thinking jobs (incl. the nightly **idea tournament**, 0.15) |
 | **02:00** | **`chat-distill`** | **distil yesterday's kairos-chat threads (incl. Telegram) into reflections — runs BEFORE archetypes so they feed the same night's chain (PR #89)** |
 | 02:30 | `archetype-synthesis` | 3–7 archetypes / Dominion |
 | 03:00 | `cortex-regen` | living cortex / Dominion (fallback for `cortex` job) |
@@ -191,8 +191,8 @@ Cron schedule (`apps/web/vercel.json`, all `Bearer ${CRON_SECRET}`):
 | Mon 04:20 | `constitution-seed` | seed / maintain the live constitution |
 | **05:00** | **`contradiction-scan`** | **belief-contradiction sweep (`contradiction` task policy)** |
 | Sun 05:00 | `memory-dedup` | weekly near-duplicate supersession |
-| 06:15 | `briefer` | one advisory / Dominion |
-| 06:30 | `introspection` | staged `inbound` proposals / Dominion |
+| 06:15 | `briefer` | one advisory / Dominion (prompt carries the conscience block, 0.14) |
+| 06:30 | `introspection` | staged `inbound` proposals / Dominion; being retired for the idea tournament — `KAIROS_RAW_INTROSPECTION=0` turns it off |
 | 06:45 | `synthesis-health` | nightly trace rollup + 2-strike ops alert |
 | 07:00 + 08:00 | `daily-message` | guaranteed 08:00 Europe/London speak (London-hour gate) |
 | :15 at 6,9,12,15,18,21,23 | `micro-consolidate` | intraday per-Dominion `delta` fold |

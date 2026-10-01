@@ -85,7 +85,7 @@ Each survivor carries `survivedBecause` — one line shown in the inbox and the 
 ```ts
 { type: 'inbound', streamClass: 'agentic', source: 'cron',
   sourceMetadata: { introspection: true, kind: 'idea' /* IDEA_PROPOSAL_KIND */, status: 'pending',
-    origin: { kind: 'kairos', via: 'thinking:idea_judge' }, citations: string[], idea: IdeaMeta },
+    origin: { kind: 'kairos', via: 'cron:idea-tournament' }, citations: string[], idea: IdeaMeta },
   links: [{ type: 'refers_to', target, target_kind: 'memory' }] /* evidence */ }
 ```
 

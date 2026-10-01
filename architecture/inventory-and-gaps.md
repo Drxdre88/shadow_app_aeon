@@ -15,13 +15,28 @@ Top-line status: the PM app is feature-complete + hardened; Kairos is a multi-la
 (substrate → synthesis → Aether self-model → chat/ask/dialogue → **speaks-first autonomy**), now
 with a nightly **memory engine** (undoable `memory_ops`), a **thinking queue** answered by Claude Max
 routines with paid-key fallback, **two-mind beliefs**, an operator-governed **constitution** + drift
-probes, and the guaranteed 08:00 London **daily message** — running a **17-cron** Vercel fleet plus
+probes, the guaranteed 08:00 London **daily message**, write-time **origin** labels + nightly **belief re-check** + a **conscience** block in chat/brief prompts (0.14), and a nightly **idea tournament** feeding idea cards to the inbox (0.15) — running a **17-cron** Vercel fleet plus
 cloud routines (brain-tick, Kairos thinking/morning/chat); the mobile
 app is at the login slice (Google auth scaffolded, awaiting operator client IDs).
 
 ## Known Gaps & Technical Debt
 
 Hangar inventory refreshed: 2026-09-21. The completion claim guard shipped in PR #129; durable artifact/publication delivery, draft PRs and runner recovery remain open. Mission-card/result UI and repository management are implemented for the v0.29.0 release candidate (PR #130). See [hangar.md](hangar.md) §6. The previously recorded REST UUID/membership gaps remain outside this wave; this refresh is not a new general safety audit. Other inventory entries below retain their original verification dates.
+
+### New gaps (2026-10-01, Kairos 0.14–0.15)
+
+| Severity | Issue | Details |
+|---|---|---|
+| Medium | Direct paid-key crons bypass the thinking queue | briefer, archetype-synthesis, introspection, contradiction-scan, chat-distill, ask-mine, micro-consolidate and constitution-seed still call the paid key directly (owner migrating them via Claude Code) |
+| Medium | Bearer claim/submit trust | any user-scoped bearer can claim and submit that user's thinking jobs; output is persisted after id grounding only |
+| Medium | `update_memory` can archive the constitution | `archivedAt` is not barred for `type='constitution'` rows while amendments are operator-only |
+| Low | Idea archive skipped when the judge never succeeds | candidates stay only in the generate job output if both routine and paid judge fail |
+| Low | Belief-ledger ops write `before: null` | create/mirror ops cannot be reverted to a prior state |
+| Low | Legacy dedup writes no `memory_ops` | weekly `memory-dedup` supersedes without undo records |
+| Low | Duplicate paid calls | `constitution/seed.ts`, `thinking/handlers/concept.ts` own paid calls instead of `paid-fallback.ts` |
+| Low | Origin of older rows is inferred | rows before 0.14 carry no `sourceMetadata.origin` |
+| Low | Telegram chat routine off | `KAIROS_TELEGRAM_ROUTINE` unset, no chat routine created |
+| Low | One TODO | `lib/kairos/chat-turn-reply.ts` DB access outside `lib/data` |
 
 ### New gaps (2026-10-01, Kairos 0.11–0.13)
 
