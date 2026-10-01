@@ -449,3 +449,51 @@ export async function archiveOrphanAnswerMemory(userId: string, memoryId: string
     .set({ archivedAt: new Date(), updatedAt: new Date() })
     .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
 }
+
+// Expiry as stored at creation (top-level, mirrored inside kairosAsk).
+const storedExpirySql = sql`NULLIF(COALESCE(${memories.sourceMetadata}->>'expiresAt', ${memories.sourceMetadata}->'kairosAsk'->>'expiresAt'), '')::timestamptz`
+
+/** Ids of asks still persisted as pending whose stored expiresAt has passed. */
+export async function listExpiredPendingKairosAskIds(userId: string, now: Date, limit = 50): Promise<string[]> {
+  const rows = await db
+    .select({ id: memories.id })
+    .from(memories)
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.type, 'advisory'),
+      isNull(memories.archivedAt),
+      sql`${memories.sourceMetadata}->>'kairosAskStatus' = 'pending'`,
+      sql`${storedExpirySql} <= ${now.toISOString()}::timestamptz`,
+    ))
+    .orderBy(memories.createdAt)
+    .limit(limit)
+  return rows.map((r) => r.id)
+}
+
+/**
+ * Persist an expired ask: kairosAskStatus + kairosAsk.status = 'expired'.
+ * Guarded on still-pending AND past expiry, so exactly one caller wins (an
+ * answer that lands first keeps 'answered'; a re-run is a no-op). Does not
+ * archive or bump updatedAt — the ask stays a scored memory carrying its
+ * negative outcome.
+ */
+export async function markKairosAskExpired(userId: string, askId: string, now: Date): Promise<boolean> {
+  const patch = JSON.stringify({ status: 'expired', expiredAt: now.toISOString() })
+  const claimed = await db
+    .update(memories)
+    .set({
+      sourceMetadata: sql`jsonb_set(
+        jsonb_set(coalesce(${memories.sourceMetadata}, '{}'::jsonb), '{kairosAskStatus}', '"expired"'),
+        '{kairosAsk}',
+        coalesce(${memories.sourceMetadata}->'kairosAsk', '{}'::jsonb) || ${patch}::jsonb
+      )`,
+    })
+    .where(and(
+      eq(memories.id, askId),
+      eq(memories.userId, userId),
+      sql`${memories.sourceMetadata}->>'kairosAskStatus' = 'pending'`,
+      sql`${storedExpirySql} <= ${now.toISOString()}::timestamptz`,
+    ))
+    .returning({ id: memories.id })
+  return claimed.length > 0
+}

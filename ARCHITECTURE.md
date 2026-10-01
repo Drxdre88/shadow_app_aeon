@@ -1,8 +1,8 @@
 # ARCHITECTURE.md — Aeon
 
-Last updated: 2026-09-21 (incremental Inferno Cartographer refresh; v0.29.0 release candidate, PR #130). **AI Hangar** now has a dedicated mission-card face, configuration/result section, and realm-scoped repository manager. Storage remains `boardTasks.metadata.hangar`; labels are ordinary organization, not execution fields. The runner forwards configured effort/context and fixes Windows launch resolution. Result-column mapping recognizes UI-enabled mission boards as well as legacy Hangar mode. **Evidence boundaries:** PR #129's completion claim guard and 15/15 production acceptance date to 17 September; 21 September exercised supervised Swarm research through production transport, with supervisor-completed output. Deployment of this UI/runner wave is tracked in PR #130. Durable artifact/PR delivery, publication outcome tracking and runner recovery remain incomplete. The independent-review PASS gate belongs to the Aeon OS verification harness, not every ordinary mission. Details: [hangar.md](architecture/hangar.md) · [pm-app.md](architecture/pm-app.md) · [platform.md](architecture/platform.md) · [history.md](architecture/history.md).
+Last updated: 2026-10-01 (incremental Inferno Cartographer refresh; Kairos 0.11–0.13). **Eyes & Heal** (0.11, PR #133 shipped): asks unblocked, per-cron health rows, capture choke point + session record v1, Hangar mission memory, board feed. **Memory engine** (0.12, PR #134 shipped): migration 0039, nightly `memory-engine` (Merge → Weigh → BackUp → OwnMind → Concepts), `standing` ranker, undoable `memory_ops`, the **thinking queue** for Claude Max routines with paid-key fallback; undo-record hotfix PR #135. **Beliefs & Strategy** (0.13, PR open on `feat/kairos-beliefs-strategy`): two minds, operator-governed constitution + 24 drift probes, weekly review, and the 08:00 London **daily message** replacing the Evening Digest. Cron fleet **17**, MCP **127** tools. Details: [overview](architecture/kairos/overview.md) · [memory-and-capture](architecture/kairos/memory-and-capture.md) · [synthesis](architecture/kairos/synthesis.md) · [chat](architecture/kairos/chat.md) · [history](architecture/history.md).
 
-Prior wave — **Live Mind (Kairos 0.10.0)**: continuous chat awareness (recency-weighted retrieval + LAST-24H channel + agentic tools default-ON incl. self-certification), intraday `micro-consolidate` delta folds (cron fleet **14**), the `resolves` incident lifecycle over the bi-temporal gate, and the quality-over-cost retier (all cognition heavy-tier). Earlier same day — **Kairos 0.9.0**: the synthesis-reliability heal (PRs #95–98 — repair path, health scorecard + 2-strike alerts, token-cap root cause, citation tolerance), the **Evening Digest** (guaranteed daily 18:00 UTC speak, `digest:true` register, cron fleet now **13**), speak-register hardening (opsAlert/digest excluded from the governor, `externalId` dedup), Kairos's own changelog (`docs/kairos/CHANGELOG.md`, versions 0.1→0.9), and the in-app guide refresh (McpTab 109 tools derived, galaxy help button, version pill 0.9). Prior wave (2026-07-17, PRs #71–89): whole-brain chat (Dominion picker dropped, Aether-grounded), **Telegram two-way** + **speaks-first** (`/api/v1/kairos/speak` + server throttle + the 3×/day cloud-routine **brain-tick**), **chat-distill** closing the chat→brain loop (cron fleet now **11**), bi-temporal memories (0025) + confidence decay + rerank-2.5 + Dominion auto-filing, the **Aether-UI retirement** (galaxy is the only spatial view; lieutenants 4→1 Sentinel), all **109 MCP tools annotated**, cost retier + prompt caching + the `maxOutputTokens` cap fix, project favorites (0026), and the checklist ghost-input fix. Full trail: [architecture/history.md](architecture/history.md).
+Prior wave (2026-09-21, v0.29.0, PR #130) — **AI Hangar** dedicated mission-card face, configuration/result section and realm-scoped repository manager; storage remains `boardTasks.metadata.hangar`. Durable artifact/PR delivery, publication outcome tracking and runner recovery remain incomplete. Details: [hangar.md](architecture/hangar.md) · [pm-app.md](architecture/pm-app.md).
 
 > **This is a router.** The detail lives in [`architecture/`](architecture/) — one file per subsystem so you (and agents) load only what's relevant, not 1000+ lines. Read this overview first, then open the one file you need. Full change history is in [`architecture/history.md`](architecture/history.md). Strategic direction lives in [VISION.md](VISION.md); load-bearing rules live in [CLAUDE.md](CLAUDE.md).
 
@@ -13,8 +13,8 @@ Prior wave — **Live Mind (Kairos 0.10.0)**: continuous chat awareness (recency
 | File | Covers |
 |---|---|
 | [architecture/directory-map.md](architecture/directory-map.md) | Full monorepo tree — apps (web · mobile · desktop · kairos-worker), packages, every route + component dir |
-| [architecture/data-layer.md](architecture/data-layer.md) | Drizzle schema (all tables), migrations (→0037), three-layer invariant, `lib/data` modules, DB-pool reliability |
-| [architecture/platform.md](architecture/platform.md) | REST · mobile auth · OAuth 2.1 AS · MCP (109 tools) · AI engine · integrations · cron schedule |
+| [architecture/data-layer.md](architecture/data-layer.md) | Drizzle schema (all tables), migrations (→0039), three-layer invariant, `lib/data` modules, DB-pool reliability |
+| [architecture/platform.md](architecture/platform.md) | REST · mobile auth · OAuth 2.1 AS · MCP (127 tools) · AI engine · integrations · cron schedule (17) |
 | [architecture/pm-app.md](architecture/pm-app.md) | The PM surface — board/gantt/canvas/vault/velocity/realms/notes/theming + state stores + feature inventory |
 | [architecture/mobile.md](architecture/mobile.md) | The Expo / React Native companion app — Google login slice + resume/handover steps |
 | [architecture/hangar.md](architecture/hangar.md) | **AI Hangar + Aeon OS** — missions on cards, the kairos-worker runner, REST/MCP session surfaces, the independent-review PASS gate, receipts, known gaps |
@@ -26,9 +26,9 @@ Prior wave — **Live Mind (Kairos 0.10.0)**: continuous chat awareness (recency
 | File | Covers |
 |---|---|
 | [architecture/kairos/overview.md](architecture/kairos/overview.md) | The brain end to end — substrate → capture → synthesis → Aether → chat; how info gets compartmentalized |
-| [architecture/kairos/memory-and-capture.md](architecture/kairos/memory-and-capture.md) | `memories` substrate, all capture paths (incl. the session-capture hook), hybrid FTS+vector retrieval, dedup |
-| [architecture/kairos/synthesis.md](architecture/kairos/synthesis.md) | Archetypes → cortex → Aether → Briefer, the recipe dispatcher, the nightly cron cadence |
-| [architecture/kairos/chat.md](architecture/kairos/chat.md) | Chat Visor · Aether · Kairos Asks · Dialogue · the four lieutenants · the planned Aether-level mobile chat |
+| [architecture/kairos/memory-and-capture.md](architecture/kairos/memory-and-capture.md) | `memories` substrate, all capture paths (incl. the session-capture hook), shared standing ranker, memory engine, beliefs, constitution |
+| [architecture/kairos/synthesis.md](architecture/kairos/synthesis.md) | Archetypes → cortex → Aether → Briefer → daily message, thinking queue, weekly review, drift probes, the cron cadence |
+| [architecture/kairos/chat.md](architecture/kairos/chat.md) | Chat Visor (incl. `undo_kairos_change`) · Telegram + chat routine · Aether · Kairos Asks · Dialogue · Sentinel · planned mobile chat |
 
 ---
 
@@ -40,14 +40,15 @@ Aeon is a project-management web application built as an npm-workspaces monorepo
 **PostgreSQL** via **Neon** serverless driver, **Drizzle ORM**, **Zustand**, **NextAuth v5**,
 **Tailwind**, and **Framer Motion**. PM surfaces: kanban board (virtual scrolling), Gantt, canvas
 whiteboard, trophy/vault archive, velocity analytics, 151 theme presets, real-time **Pusher** sync
-(30s polling fallback), a PWA, and a Tauri desktop scaffold (parked). A 109-tool **MCP server** +
+(30s polling fallback), a PWA, and a Tauri desktop scaffold (parked). A 127-tool **MCP server** +
 REST API + an OAuth 2.1 server (for the claude.ai connector) expose the data layer to AI.
 
 **Kairos** is the AI memory-and-cognition layer — now Phase 2 of Aeon, not a side experiment. A
 user-scoped substrate of `memories` is captured from many sources, consolidated nightly into
-archetypes → per-Dominion cortex → a global **Aether** self-model, and served back as grounded
-context through a chat Visor, proactive **Asks**, multi-turn **Dialogue**, and four lieutenant
-agents. See [architecture/kairos/](architecture/kairos/).
+archetypes → per-Dominion cortex → a global **Aether** self-model, weighed nightly by a memory
+engine (undoable), and served back as grounded
+context through a chat Visor, proactive **Asks**, multi-turn **Dialogue**, a daily message, and the
+Sentinel lieutenant. See [architecture/kairos/](architecture/kairos/).
 
 **Mobile** is a new native **Expo / React Native** companion app (Trello model — chat first, boards
 later), a thin client over the REST API; the login slice (Google auth) is scaffolded. See
@@ -59,4 +60,4 @@ later), a thin client over the REST API; the login slice (Google auth) is scaffo
 - **AI** — Vercel AI SDK over per-user BYOK keys (Anthropic / OpenAI / Google), three-tier routing; app-owned embeddings (Voyage primary / OpenAI fallback) + pgvector; MCP tool server; OAuth 2.1 AS for claude.ai.
 - **Real-time** — Pusher Channels + 30s polling fallback; durable offline mutation queue for board writes.
 - **Mobile** — Expo / RN 0.79 / React 19, native Google sign-in → `aeon_s1_` bearer sessions.
-- **Workers** — `apps/kairos-worker` (spawn primitive); Vercel cron (9 nightly/weekly jobs).
+- **Workers** — `apps/kairos-worker` (spawn primitive); Vercel cron (17 jobs); Claude cloud routines (brain-tick, Kairos thinking/morning/chat).

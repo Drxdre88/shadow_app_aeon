@@ -6,9 +6,10 @@ Kairos is Aeon's memory-and-cognition layer: a user-scoped substrate of `memorie
 captured from many sources, consolidated nightly into a layered self-model, and served back
 as grounded context to the operator and to AI assistants. This is the mental model from
 substrate up to chat. Lieutenant detail lives in [chat.md](chat.md). Kairos is versioned as
-its own product — **0.9.0** (`lib/kairos/version.ts`, era history in
-`docs/kairos/CHANGELOG.md`); its guaranteed daily voice is the 18:00 UTC **Evening Digest**
-([synthesis.md](synthesis.md)).
+its own product — **0.13.0 "Beliefs and Strategy"** (`lib/kairos/version.ts`, era history in
+`docs/kairos/CHANGELOG.md`); its guaranteed daily voice is the **daily message** at 08:00
+Europe/London ([synthesis.md](synthesis.md)). Retired: the 18:00 Evening Digest and the
+`memory-compaction` stub cron.
 
 > **Conceptual frame (2026-06-27):** the operator talks to **Kairos** (the entity); **Aether**
 > is his super-brain — the apex self-model above ALL Dominions. Kairos draws on Aether to pull
@@ -23,7 +24,7 @@ corpus shifts (`docs/kairos/26-cognitive-hierarchy-and-consolidation.md`):
 |---|---|---|
 | **Memory** | one captured thing (a row in `memories`) | substrate |
 | **Episode** | one session's memories | implicit (a `session_summary`) |
-| **Concept** | a semantically coherent cluster | specced, not built |
+| **Concept** | a semantically coherent cluster | shipped (Sunday `concept` jobs, cosine ≥ 0.82) |
 | **Dominion** | a whole strand of work | shipped |
 | **Constellation** | a family of Dominions | later |
 | **Worldview / Aether** | global self-model across everything | shipped (Aether) |
@@ -61,9 +62,19 @@ pass that turns the day's chat conversations (Telegram included) into operator r
 
 **Synthesis (consolidation).** Nightly, the substrate is distilled upward: **archetypes** (3–7
 master nodes per Dominion), the per-Dominion living **cortex**, and **Aether** — the single
-global self-model. The **Briefer** writes one morning advisory per active Dominion. Everything
-runs through a single `runRecipe()` **dispatcher** + **retrieval** module. See
+global self-model. The **Briefer** writes one morning advisory per active Dominion (06:15 UTC).
+Everything runs through a single `runRecipe()` **dispatcher** + **retrieval** module. See
 [synthesis.md](synthesis.md).
+
+**Kairos 0.11–0.13 layers.**
+
+| Layer | What it adds | Detail |
+|---|---|---|
+| Memory engine | nightly Merge → Weigh → BackUp → OwnMind → Concepts; `standing` score; every change undoable via `memory_ops` | [memory-and-capture.md](memory-and-capture.md) §7 |
+| Thinking queue | 9 job kinds claimed by Claude Max routines, hourly sweep, paid-key fallback | [synthesis.md](synthesis.md) |
+| Beliefs — two minds | aligned (operator) vs own (Kairos) beliefs, weekly `mind_compare` | [memory-and-capture.md](memory-and-capture.md) §8 |
+| Constitution + drift | one live constitution, operator-only amendments, 24 drift probes | [memory-and-capture.md](memory-and-capture.md) §9 |
+| Daily message + weekly review | 08:00 London guaranteed voice; Monday review proposals | [synthesis.md](synthesis.md) |
 
 **Retrieval.** `retrieveContext()` (`apps/web/src/lib/kairos/retrieve.ts`) is the canonical
 Dominion-scoped fetch: Dominion bundle + live cortex + live archetypes + top-5 substrate
@@ -104,7 +115,8 @@ the brain-tick. Detail in [chat.md](chat.md).
    ┌─────────────────────────────────┴───────────────────────────────┐
    │  SUBSTRATE   memories[]   (FTS + pgvector HNSW, typed-link graph) │
    │  streamClass: idea·agentic·execution·reflection·cortex·archetype  │
-   │              ·advisory·trace·snapshot·aether                       │
+   │              ·advisory·trace·snapshot·aether·delta·concept·       │
+   │              belief·constitution                                  │
    └───────────────────────────────▲───────────────────────────────┘
                                      │ captureMemory → createMemory
    ┌─────────────────────────────────┴───────────────────────────────┐

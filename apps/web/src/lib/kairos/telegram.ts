@@ -232,6 +232,51 @@ export async function answerCallbackQuery(callbackQueryId: string, text?: string
   })
 }
 
+// "typing…" in the chat header for ~5 s (Bot API sendChatAction).
+export async function sendChatAction(chatId: string | number, action: 'typing' = 'typing'): Promise<void> {
+  await callTelegram('sendChatAction', { chat_id: chatId, action })
+}
+
+const CHAT_CITATION_RE = /\s*\[\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\]\]/gi
+// A chat reply is capped at 2000 output tokens, so more than two Telegram
+// messages means something ran away — send the head and point at Aeon.
+export const MAX_TELEGRAM_REPLY_CHUNKS = 2
+export const TELEGRAM_OVERFLOW_NOTE = '(cut short — the full reply is in Aeon)'
+
+export function telegramReplyChunks(reply: string): string[] {
+  const chunks = splitTelegramMessage(reply, TELEGRAM_HTML_SPLIT_LIMIT)
+  if (chunks.length <= MAX_TELEGRAM_REPLY_CHUNKS) return chunks
+  const head = chunks.slice(0, MAX_TELEGRAM_REPLY_CHUNKS)
+  head[head.length - 1] = `${head[head.length - 1]}\n\n${TELEGRAM_OVERFLOW_NOTE}`
+  return head
+}
+
+// What the operator sees when a chat turn produced no reply. The turn itself
+// is always persisted before the model runs.
+export function telegramChatFailureText(reason: string): string {
+  if (reason === 'no_credential') {
+    return 'Kairos brain is offline — no AI provider key is configured in Aeon. ' +
+      'Your message is saved; add a key in Settings → AI to wake him up.'
+  }
+  return `Kairos could not reply (${reason}). Your message is saved in the thread.`
+}
+
+// Deliver a Kairos chat reply: citation markers are UI chips in Aeon and
+// plain noise in Telegram, so they are stripped. The raw markdown is split
+// first (tags must not straddle chunks), each chunk rendered to Telegram
+// HTML, with a plain-text resend if Telegram rejects the formatting —
+// delivery beats styling. Shared by the webhook and the chat routine job.
+export async function sendTelegramChatReply(chatId: string | number, content: string): Promise<void> {
+  const reply = content.replace(CHAT_CITATION_RE, '')
+  for (const chunk of telegramReplyChunks(reply)) {
+    try {
+      await sendMessage(chatId, renderTelegramHtml(chunk), { parseMode: 'HTML' })
+    } catch {
+      await sendMessage(chatId, chunk)
+    }
+  }
+}
+
 export async function editMessageText(
   chatId: string | number,
   messageId: number,

@@ -46,7 +46,9 @@ const RERANK_POOL = 12
 const SUBSTRATE_WINDOW_DAYS = 90
 // 'concept' (memory engine, docs/kairos/32 §2.4): distilled clusters, up-weighted
 // by their higher stream trust / standing rather than a special case here.
-const SUBSTRATE_STREAMS = ['reflection', 'idea', 'agentic', 'concept'] as const
+// 'belief' / 'constitution' (docs/kairos/34 §1): held beliefs + the operator's
+// principles; retired ones carry invalidAt and drop out via validAsOfNow.
+const SUBSTRATE_STREAMS = ['reflection', 'idea', 'agentic', 'concept', 'belief', 'constitution'] as const
 const TRACES_LIMIT = 10
 const ARCHETYPES_LIMIT = 10
 const DEFAULT_MEMORY_LIMIT = 25

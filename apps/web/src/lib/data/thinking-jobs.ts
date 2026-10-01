@@ -46,6 +46,11 @@ export async function upsertJob(userId: string, spec: ThinkingJobSpec, now: Date
 // with SKIP LOCKED so concurrent claimers never receive the same job, and the
 // outer UPDATE re-checks status after the lock. One statement, so it works on
 // the HTTP (poolQueryViaFetch) path without a transaction.
+// Without a kinds filter, 'chat' jobs are excluded: a chat reply is plain
+// text for the Telegram routine, so it is only claimable by asking for it
+// explicitly (kinds including 'chat') — never by a nightly/morning drain.
+export const EXPLICIT_ONLY_KINDS: readonly ThinkingJobKind[] = ['chat']
+
 export async function claimNextJob(
   userId: string,
   kinds?: readonly ThinkingJobKind[],
@@ -53,7 +58,7 @@ export async function claimNextJob(
 ): Promise<ThinkingJobRow | null> {
   const kindFilter = kinds && kinds.length > 0
     ? sql` AND kind IN (${sql.join(kinds.map((k) => sql`${k}`), sql`, `)})`
-    : sql``
+    : sql` AND kind NOT IN (${sql.join(EXPLICIT_ONLY_KINDS.map((k) => sql`${k}`), sql`, `)})`
   const [row] = await db
     .update(thinkingJobs)
     .set({
@@ -156,8 +161,10 @@ export async function recordFallback(
   outcome: ApplyOutcome,
   now: Date = new Date(),
 ): Promise<ThinkingJobRow | null> {
+  // Same merge as a routine completion: handler output (e.g. a draft) first,
+  // memoryIds last so a handler can never shadow them.
   const set = outcome.ok
-    ? { status: 'fallback', output: { memoryIds: outcome.memoryIds }, completedAt: now, updatedAt: now }
+    ? { status: 'fallback', output: { ...(outcome.output ?? {}), memoryIds: outcome.memoryIds }, completedAt: now, updatedAt: now }
     : { error: `${FALLBACK_ERROR_PREFIX} ${outcome.reason}`.slice(0, 2000), updatedAt: now }
   const [row] = await db
     .update(thinkingJobs)

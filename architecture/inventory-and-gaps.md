@@ -12,13 +12,28 @@ Per-domain inventories live in the subsystem docs (this avoids drift):
 - **AI Hangar + Aeon OS harness** (missions, runner, review gate, receipts) → [hangar.md](hangar.md).
 
 Top-line status: the PM app is feature-complete + hardened; Kairos is a multi-layer brain
-(substrate → synthesis → Aether self-model → chat/ask/dialogue → **speaks-first autonomy**)
-running an **11-cron** nightly pipeline plus a 3×/day cloud-routine brain-tick; the mobile
+(substrate → synthesis → Aether self-model → chat/ask/dialogue → **speaks-first autonomy**), now
+with a nightly **memory engine** (undoable `memory_ops`), a **thinking queue** answered by Claude Max
+routines with paid-key fallback, **two-mind beliefs**, an operator-governed **constitution** + drift
+probes, and the guaranteed 08:00 London **daily message** — running a **17-cron** Vercel fleet plus
+cloud routines (brain-tick, Kairos thinking/morning/chat); the mobile
 app is at the login slice (Google auth scaffolded, awaiting operator client IDs).
 
 ## Known Gaps & Technical Debt
 
 Hangar inventory refreshed: 2026-09-21. The completion claim guard shipped in PR #129; durable artifact/publication delivery, draft PRs and runner recovery remain open. Mission-card/result UI and repository management are implemented for the v0.29.0 release candidate (PR #130). See [hangar.md](hangar.md) §6. The previously recorded REST UUID/membership gaps remain outside this wave; this refresh is not a new general safety audit. Other inventory entries below retain their original verification dates.
+
+### New gaps (2026-10-01, Kairos 0.11–0.13)
+
+| Severity | Issue | Details |
+|---|---|---|
+| Medium | Thinking routines not yet created | The Kairos thinking / morning / chat routines are owner-created on claude.ai; until then every thinking job runs on the paid-key fallback |
+| Medium | Telegram chat routine flag off | `KAIROS_TELEGRAM_ROUTINE` stays off until `apps/web/scripts/routine-latency.mjs` measures real latency (30 runs/h/routine limit) |
+| Low | `drift_probe` deadline vs morning routine | The 2h deadline usually expires before the optional 06:30Z morning routine, so the hourly sweep's paid fallback normally answers it |
+| Low | Layering: `lib/kairos` reaches into `db` | `chat-turn-reply.ts` / `chat-turn-assistant.ts` import `db` directly instead of going through `lib/data` (TODO) |
+| Low | Old proposal backlog draining | BackUp processes ≤400 pending proposals/night with a 21-day TTL, so the historic backlog takes several nights to clear |
+
+### Standing inventory
 
 | Severity | Issue | Status / Details |
 |---|---|---|
@@ -30,7 +45,7 @@ Hangar inventory refreshed: 2026-09-21. The completion claim guard shipped in PR
 | Medium | Orphan running sessions on worker restart | OPEN — heartbeat exists (`/sessions/[id]/heartbeat`, 30s) but no reconcile cron marks a silent runner's sessions dead |
 | Medium | Engine router has no CRUD surface | OPEN — `enginePolicies` editable via no MCP/REST |
 | Medium | Cost budget tripwires absent | OPEN — `costUsd` recorded; no cap / rollup / kill switch |
-| Medium | Sessions parity test missing | PARTIALLY CLOSED — spawn contract (400/409) + id guard tests exist (`api/v1/sessions/__tests__/`), no full REST↔MCP parity lock |
+| Medium | Sessions parity test missing | **CLOSED** (2026-10-01) — `app/api/__tests__/sessions-parity.test.ts` locks REST↔MCP sessions |
 | Medium | Archetype + cortex cron concurrency (TOCTOU) | OPEN — advisory-lock fix queued; cron roster has grown (larger surface) |
 | Medium | `memories.ts` past 500-line standard | LIKELY OPEN — split into core/capture/graph/context pending |
 | Medium | Chat assistant Markdown rendered as text | OPEN |

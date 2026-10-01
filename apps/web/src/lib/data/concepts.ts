@@ -11,8 +11,8 @@ import type { EngineLink, MemoryOpInput } from '@/lib/kairos/engine/types'
 // Rows that must never become concept members: syntheses of other rows (they
 // would make a concept about concepts / cortex docs), and pending proposals
 // (Kairos's own unconfirmed guesses).
-export const CONCEPT_EXCLUDED_TYPES = ['concept', 'dominion_cortex', 'aether', 'archetype', 'inbound'] as const
-export const CONCEPT_EXCLUDED_STREAMS = [...META_STREAM_CLASSES, 'concept', 'cortex', 'aether', 'archetype'] as const
+export const CONCEPT_EXCLUDED_TYPES = ['concept', 'dominion_cortex', 'aether', 'archetype', 'inbound', 'belief', 'constitution'] as const
+export const CONCEPT_EXCLUDED_STREAMS = [...META_STREAM_CLASSES, 'concept', 'cortex', 'aether', 'archetype', 'belief', 'constitution'] as const
 export const CONCEPT_CANDIDATE_CAP = 600
 
 export interface ConceptCandidateRow {

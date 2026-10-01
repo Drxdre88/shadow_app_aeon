@@ -1,0 +1,283 @@
+import { extractJsonBlock } from './_prompt-utils'
+
+// ─────────────────────────────────────────────────────────────────────────
+// Kairos Daily Message (docs/kairos/34 §3) — the pure half: London-time
+// helpers, the shared model-output guard + "What I now believe" block (also
+// used by the retiring evening digest), the compose prompt (identical for the
+// paid key and the Max routine's thinking job) and the deterministic fallback.
+// No DB, no network.
+// ─────────────────────────────────────────────────────────────────────────
+
+// ── London time ──────────────────────────────────────────────────────────
+
+const LONDON_TZ = 'Europe/London'
+const londonFormat = new Intl.DateTimeFormat('en-GB', {
+  timeZone: LONDON_TZ,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  weekday: 'short',
+  hourCycle: 'h23',
+})
+
+interface LondonParts { date: string; hour: number; minute: number; weekday: string }
+
+function londonParts(now: Date): LondonParts {
+  const parts: Record<string, string> = {}
+  for (const p of londonFormat.formatToParts(now)) parts[p.type] = p.value
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    hour: Number(parts.hour) % 24,
+    minute: Number(parts.minute),
+    weekday: parts.weekday,
+  }
+}
+
+export function londonDate(now: Date): string {
+  return londonParts(now).date
+}
+
+export function isLondonHour(now: Date, hour: number): boolean {
+  return londonParts(now).hour === hour
+}
+
+export function isLondonMonday(now: Date): boolean {
+  return londonParts(now).weekday === 'Mon'
+}
+
+export const DAILY_MESSAGE_HOUR = 8
+
+// The instant London reads `hour`:00 on `date` (London is UTC+0 or UTC+1, and
+// clocks change at 01:00Z, so one of the two candidates always matches).
+export function londonInstant(date: string, hour: number = DAILY_MESSAGE_HOUR): Date {
+  for (const offsetHours of [0, 1]) {
+    const candidate = new Date(`${date}T00:00:00.000Z`)
+    candidate.setUTCHours(hour - offsetHours, 0, 0, 0)
+    const p = londonParts(candidate)
+    if (p.date === date && p.hour === hour && p.minute === 0) return candidate
+  }
+  throw new Error(`londonInstant: no ${hour}:00 London on ${date}`)
+}
+
+// The previous calendar date (board-day pages are dated by the 23:00Z
+// project-snapshot run, i.e. the day before the morning they are read).
+export function previousDate(date: string): string {
+  const d = new Date(`${date}T12:00:00.000Z`)
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
+
+// ── Shared guard (digest + daily message) ────────────────────────────────
+
+export const MAX_MESSAGE_CHARS = 1200
+// Non-message content signals: markdown headings, links, export footers — the
+// 27/09 digest runaway (model free-ran into a memorised WordPress manual) had all three.
+export const JUNK_OUTPUT_RE = /^#{1,6}\s|https?:\/\/|Powered by/im
+
+// null = acceptable; otherwise the rejection reason.
+export function rejectMessageText(text: string, maxChars: number = MAX_MESSAGE_CHARS): string | null {
+  if (!text.trim()) return 'empty'
+  if (text.length > maxChars) return `too_long (${text.length} > ${maxChars})`
+  if (JUNK_OUTPUT_RE.test(text)) return 'junk_content (heading, URL or footer)'
+  return null
+}
+
+// ── Shared "What I now believe" block ────────────────────────────────────
+
+// The memory engine's promotions (docs/kairos/32 §2.3), appended verbatim AFTER
+// the narrative (model or fallback) so it never depends on, or trips, the
+// model-output guard. Undo is via Claude's revert_memory_op tool (there is no
+// Telegram reply consumer).
+export const MAX_DIGEST_BELIEFS = 3
+export const BELIEFS_UNDO_HINT = 'To undo one, just tell me “undo <title>”.'
+const MAX_BELIEF_TITLE_CHARS = 90
+
+function clip(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
+}
+
+export function buildBeliefsBlock(beliefs: ReadonlyArray<{ title: string }>): string {
+  const shown = beliefs.slice(0, MAX_DIGEST_BELIEFS)
+  if (shown.length === 0) return ''
+  const lines = shown.map((b, i) => `${i + 1}. ${clip(b.title, MAX_BELIEF_TITLE_CHARS)}`)
+  return ['What I now believe:', ...lines, BELIEFS_UNDO_HINT].join('\n')
+}
+
+// ── Shared synthesis-health summary ──────────────────────────────────────
+
+export interface SynthesisSnapshot {
+  green: number
+  failed: number
+  failedStages: string[]
+}
+
+// Reduces a synthesis-health rollup's byStage map (stage -> {night: status}) to
+// "as of its most recent tracked night" per stage. Empty byStage = no signal
+// (null), never "0 stages, all healthy".
+export function summariseSynthesis(byStage: Record<string, Record<string, 'ok' | 'failed'>>): SynthesisSnapshot | null {
+  if (Object.keys(byStage).length === 0) return null
+  let green = 0
+  const failedStages: string[] = []
+  for (const [stage, nights] of Object.entries(byStage)) {
+    const latestNight = Object.keys(nights).sort().at(-1)
+    if (!latestNight) continue
+    if (nights[latestNight] === 'ok') green++
+    else failedStages.push(stage)
+  }
+  failedStages.sort()
+  return { green, failed: failedStages.length, failedStages }
+}
+
+// ── Inputs ───────────────────────────────────────────────────────────────
+
+export interface BriefDigest { dominion: string; lines: string[] }
+export interface AetherDigest { title: string; insight: string; dominionName: string | null }
+export interface BoardDayDigest { finished: number; finishedTitles: string[]; thinCards: number }
+export interface BeliefChange { mind: 'aligned' | 'own' | 'other'; claim: string }
+export interface DriftDigest { alert: boolean; summary: string | null }
+
+// Every input is optional: null = unavailable (not found, or its read failed —
+// the name is then listed in `failed`). An input failure never costs the message.
+export interface DailyMessageInputs {
+  date: string
+  isMonday: boolean
+  briefs: BriefDigest[] | null
+  aether: AetherDigest[] | null
+  boardDay: BoardDayDigest | null
+  promotions: Array<{ title: string }> | null
+  newBeliefs: BeliefChange[] | null
+  drift: DriftDigest | null
+  pendingAsk: string | null
+  synthesis: SynthesisSnapshot | null
+  mindCompare: string | null
+  failed: string[]
+}
+
+// ── Compose prompt ───────────────────────────────────────────────────────
+
+export const DAILY_MESSAGE_SYSTEM_PROMPT = [
+  "You are Kairos, texting the operator the one message they get from you each morning on Telegram (08:00 UK).",
+  'It replaces the morning briefs and the evening digest: what matters today, what moved yesterday, what changed in your thinking.',
+  '',
+  '── OUTPUT ──',
+  '',
+  'Reply with ONLY a JSON object: {"message": "<the text>"} (one ```json fenced block is fine). No commentary.',
+  '',
+  'The message: plain text with light markdown, ≤1000 characters. Short bold section labels are allowed',
+  '(e.g. **Today**, **Yesterday**, **Thinking**) — at most 4 of them. Never use # headings, links, URLs, tables,',
+  'or a title/greeting line (the delivery layer adds its own header). Short flat lines; at most 2 emoji.',
+  '',
+  '── RULES ──',
+  '',
+  '- Use ONLY the facts supplied in the prompt. Never invent numbers, cards, beliefs, or events.',
+  '- Lead with what matters today (the briefs), then yesterday on the board, then your thinking',
+  '  (Aether, belief changes, drift). Skip any section with nothing in it — do not say "nothing to report".',
+  '- If a drift alert is present, say so plainly in one line. If a question is pending, end with it, verbatim.',
+  '- Synthesis health: one short line only if a stage is failing; silence when healthy or unknown.',
+  '- First person, texting register ("I noticed…", "yesterday you…") — not a report.',
+  '- Do NOT list the promoted beliefs — the delivery layer appends them deterministically.',
+].join('\n')
+
+function section(title: string, lines: string[]): string[] {
+  return lines.length === 0 ? [] : ['', `── ${title} ──`, '', ...lines]
+}
+
+export function buildDailyMessageUserPrompt(inputs: DailyMessageInputs): string {
+  const out: string[] = [`Date (London): ${inputs.date}${inputs.isMonday ? ' (Monday)' : ''}.`]
+  out.push(...section("TODAY'S BRIEFS (per Dominion)", (inputs.briefs ?? []).flatMap((b) => [
+    `[${b.dominion}]`,
+    ...b.lines.map((l) => `  ${l}`),
+  ])))
+  out.push(...section('AETHER — TOP THOUGHTS', (inputs.aether ?? []).map((t) =>
+    `- ${t.title}${t.dominionName ? ` (${t.dominionName})` : ''}: ${t.insight}`)))
+  if (inputs.boardDay) {
+    const b = inputs.boardDay
+    out.push(...section('YESTERDAY ON THE BOARD', [
+      `Cards finished: ${b.finished}${b.finishedTitles.length ? ` — e.g. ${b.finishedTitles.join('; ')}` : ''}`,
+      `Finished cards with title only (no notes/checklist): ${b.thinCards}`,
+    ]))
+  }
+  const beliefLines: string[] = []
+  if (inputs.promotions && inputs.promotions.length > 0) {
+    beliefLines.push(`Memories promoted to beliefs in the last 24h: ${inputs.promotions.length} (appended separately — don't list them).`)
+  }
+  for (const b of inputs.newBeliefs ?? []) beliefLines.push(`New ${b.mind === 'other' ? '' : `${b.mind}-mind `}belief: ${b.claim}`)
+  if (inputs.drift) {
+    beliefLines.push(inputs.drift.alert
+      ? `DRIFT ALERT: ${inputs.drift.summary ?? 'answers have drifted from the constitution baseline.'}`
+      : `Drift: within baseline${inputs.drift.summary ? ` (${inputs.drift.summary})` : ''}.`)
+  }
+  out.push(...section('BELIEF CHANGES (LAST 24H)', beliefLines))
+  if (inputs.isMonday && inputs.mindCompare) out.push(...section('WEEKLY MIND COMPARISON (aligned vs own)', [inputs.mindCompare]))
+  if (inputs.synthesis && inputs.synthesis.failed > 0) {
+    out.push(...section('OVERNIGHT SYNTHESIS HEALTH', [
+      `${inputs.synthesis.failed} stage(s) failing: ${inputs.synthesis.failedStages.join(', ')}.`,
+    ]))
+  }
+  if (inputs.pendingAsk) out.push(...section('PENDING QUESTION (ask it verbatim, last)', [inputs.pendingAsk]))
+  return out.join('\n')
+}
+
+// Parses a model / routine answer: {"message": string}, then the guard.
+export type DraftParse = { ok: true; message: string } | { ok: false; reason: string }
+
+export function parseDailyMessageDraft(text: string): DraftParse {
+  let parsed: unknown
+  try {
+    parsed = extractJsonBlock(text, 'daily-message')
+  } catch (err) {
+    return { ok: false, reason: `parse_failed: ${err instanceof Error ? err.message.slice(0, 200) : String(err)}` }
+  }
+  const message = (parsed as { message?: unknown } | null)?.message
+  if (typeof message !== 'string') return { ok: false, reason: 'parse_failed: no string "message" field' }
+  const trimmed = message.trim()
+  const rejected = rejectMessageText(trimmed)
+  return rejected ? { ok: false, reason: `guard_rejected: ${rejected}` } : { ok: true, message: trimmed }
+}
+
+// ── Deterministic fallback ───────────────────────────────────────────────
+
+const URL_RE = /https?:\/\/\S+/gi
+
+function safeLine(text: string, max: number): string {
+  return clip(text.replace(URL_RE, '').replace(/^#{1,6}\s*/, ''), max)
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`
+}
+
+// Zero-model message composed from whatever inputs arrived, so a provider
+// outage (or a guard rejection) costs only the narrative polish. Its
+// narrative never carries headings or URLs and stays under MAX_MESSAGE_CHARS.
+export function buildDeterministicDailyMessage(inputs: DailyMessageInputs): string {
+  const blocks: string[] = []
+  const briefs = (inputs.briefs ?? []).filter((b) => b.lines.length > 0)
+  if (briefs.length > 0) {
+    blocks.push(['**Today**', ...briefs.slice(0, 4).map((b) => `${safeLine(b.dominion, 40)}: ${safeLine(b.lines[0], 140)}`)].join('\n'))
+  }
+  if (inputs.boardDay && inputs.boardDay.finished > 0) {
+    const b = inputs.boardDay
+    const titles = b.finishedTitles.length ? ` — ${b.finishedTitles.map((t) => safeLine(t, 50)).join('; ')}` : ''
+    const thin = b.thinCards > 0 ? `\n${plural(b.thinCards, 'finished card')} with no notes yet.` : ''
+    blocks.push(`**Yesterday**\n${plural(b.finished, 'card')} finished${titles}.${thin}`)
+  }
+  const thinking: string[] = []
+  const topThought = inputs.aether?.[0]
+  if (topThought) thinking.push(`On my mind: ${safeLine(topThought.title, 60)} — ${safeLine(topThought.insight, 160)}`)
+  const newBeliefs = inputs.newBeliefs ?? []
+  if (newBeliefs.length > 0) thinking.push(`${plural(newBeliefs.length, 'new belief')} formed since yesterday.`)
+  if (inputs.drift?.alert) thinking.push(`Drift alert: ${safeLine(inputs.drift.summary ?? 'my answers have drifted from the constitution baseline', 160)}.`)
+  if (inputs.isMonday && inputs.mindCompare) thinking.push(`Minds this week: ${safeLine(inputs.mindCompare, 180)}`)
+  if (thinking.length > 0) blocks.push(['**Thinking**', ...thinking].join('\n'))
+  if (inputs.synthesis && inputs.synthesis.failed > 0) {
+    blocks.push(`Overnight synthesis: ${plural(inputs.synthesis.failed, 'stage')} not healthy (${inputs.synthesis.failedStages.join(', ')}).`)
+  }
+  if (inputs.pendingAsk) blocks.push(`One question for you: ${safeLine(inputs.pendingAsk, 200)}`)
+  if (blocks.length === 0) blocks.push("A quiet start — nothing new landed overnight. I'm here if you need me.")
+  const text = blocks.join('\n\n')
+  return text.length > MAX_MESSAGE_CHARS ? `${text.slice(0, MAX_MESSAGE_CHARS - 1)}…` : text
+}

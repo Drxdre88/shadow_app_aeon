@@ -31,7 +31,7 @@ import {
   releaseForFallback,
   upsertJob,
 } from '@/lib/data/thinking-jobs'
-import { ThinkingQueue, createSweepBudget, submitErrorStatus } from '../queue'
+import { SWEEP_PLAN_SKIP_KINDS, ThinkingQueue, createSweepBudget, submitErrorStatus } from '../queue'
 
 const USER = 'user-1'
 const JOB = '22222222-2222-4222-8222-222222222222'
@@ -108,6 +108,14 @@ describe('ThinkingQueue.planDue / claim — lazy planning in prerequisite order'
     const res = await q.planDue(USER, NOW)
     expect(res.errors).toEqual([{ kind: 'cortex', error: 'db down' }])
     expect(res.planned.map((r) => r.kind)).toEqual(['aether'])
+  })
+
+  it('planDue skips the given kinds (the sweep never plans concept/chat)', async () => {
+    const log: string[] = []
+    const q = new ThinkingQueue([handler('concept', log), handler('weekly_review', log), handler('chat', log), handler('daily_message', log)])
+    const res = await q.planDue(USER, NOW, { skipKinds: SWEEP_PLAN_SKIP_KINDS })
+    expect(log).toEqual(['plan:weekly_review', 'plan:daily_message'])
+    expect(res.planned.map((r) => r.kind)).toEqual(['weekly_review', 'daily_message'])
   })
 
   it('claim plans first, then claims (with the kinds filter)', async () => {
@@ -237,7 +245,7 @@ describe('ThinkingQueue.sweep', () => {
     vi.mocked(listPendingFallbacks).mockResolvedValue([job({ id: 'b', kind: 'concept', status: 'expired' })])
     const res = await new ThinkingQueue([cortex, concept]).sweep(USER, NOW, createSweepBudget({ maxFallbacks: 2, budgetMs: 1000 }))
     expect(expireOverdue).toHaveBeenCalledWith(NOW, USER)
-    expect(listPendingFallbacks).toHaveBeenCalledWith(USER, ['concept'])
+    expect(listPendingFallbacks).toHaveBeenCalledWith(USER, ['concept', 'belief_extract', 'drift_probe', 'mind_compare', 'weekly_review'])
     expect(res).toEqual({
       expired: 2,
       deferred: 0,

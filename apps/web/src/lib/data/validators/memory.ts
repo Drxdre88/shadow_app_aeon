@@ -31,6 +31,10 @@ export const memoryTypeSchema   = z.enum([
   'aether',
   // Memory engine (docs/kairos/32) — distilled cluster of member memories.
   'concept',
+  // P2 (docs/kairos/34) — one claim in the aligned or own mind.
+  'belief',
+  // P2 (docs/kairos/34) — the operator's reasons-based principles, one live version.
+  'constitution',
 ])
 // Kairos Phase 1 (A1) — added sources: 'cron' (briefer/snapshot jobs),
 // 'system' (board mutations, project lifecycle), 'webhook' (channel adapters).

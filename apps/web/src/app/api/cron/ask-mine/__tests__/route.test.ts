@@ -8,6 +8,7 @@ vi.mock('@/lib/data/kairos-chat', () => ({
 
 vi.mock('@/lib/kairos/ask-mine', () => ({
   runAskMineForUser: vi.fn(),
+  sweepExpiredKairosAsks: vi.fn(async () => ({ examined: 0, expired: 0 })),
 }))
 
 vi.mock('@/lib/kairos/cron-trace', () => ({
@@ -16,7 +17,7 @@ vi.mock('@/lib/kairos/cron-trace', () => ({
 }))
 
 import { listChatDistillEligibleUserIds } from '@/lib/data/kairos-chat'
-import { runAskMineForUser } from '@/lib/kairos/ask-mine'
+import { runAskMineForUser, sweepExpiredKairosAsks } from '@/lib/kairos/ask-mine'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 import { GET } from '../route'
 
@@ -118,12 +119,12 @@ describe('cron/ask-mine route', () => {
 
     expect(response.status).toBe(200)
     expect(writeCronSuccessTrace).toHaveBeenCalledTimes(2)
-    expect(writeCronSuccessTrace).toHaveBeenNthCalledWith(1, 'user-1', { cronName: 'ask-mine', outcome: 'ok' })
-    expect(writeCronSuccessTrace).toHaveBeenNthCalledWith(2, 'user-2', {
+    expect(writeCronSuccessTrace).toHaveBeenNthCalledWith(1, 'user-1', expect.objectContaining({ cronName: 'ask-mine', outcome: 'ok' }))
+    expect(writeCronSuccessTrace).toHaveBeenNthCalledWith(2, 'user-2', expect.objectContaining({
       cronName: 'ask-mine',
       outcome: 'skipped',
       skipReason: 'awaiting_reply',
-    })
+    }))
   })
 
   it('writes no outcome trace for a user whose run threw', async () => {
@@ -134,6 +135,41 @@ describe('cron/ask-mine route', () => {
 
     expect(writeCronSuccessTrace).not.toHaveBeenCalled()
     expect(writeCronFailureTrace).toHaveBeenCalledOnce()
+  })
+
+  it('sweeps expired asks before each live run and reports the counts', async () => {
+    vi.mocked(listChatDistillEligibleUserIds).mockResolvedValue(['user-1', 'user-2'])
+    vi.mocked(sweepExpiredKairosAsks)
+      .mockResolvedValueOnce({ examined: 2, expired: 2 })
+      .mockRejectedValueOnce(new Error('sweep down'))
+    vi.mocked(runAskMineForUser).mockResolvedValue({ status: 'skipped', date: '2026-07-19', reason: 'no_signals' })
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const body = await (await GET(request())).json()
+    errorSpy.mockRestore()
+
+    expect(body).toMatchObject({ ran: 2, asksExpired: 2 })
+    expect(body.users[0]).toMatchObject({ userId: 'user-1', expiredAsks: 2 })
+    expect(body.users[1]).not.toHaveProperty('expiredAsks')
+    // A failed sweep never blocks that user's ask-mine run.
+    expect(runAskMineForUser).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(sweepExpiredKairosAsks).mock.invocationCallOrder[0]!)
+      .toBeLessThan(vi.mocked(runAskMineForUser).mock.invocationCallOrder[0]!)
+  })
+
+  it('does not sweep on a dry run', async () => {
+    vi.mocked(listChatDistillEligibleUserIds).mockResolvedValue(['user-1'])
+    vi.mocked(runAskMineForUser).mockResolvedValue({
+      status: 'dry_run',
+      date: '2026-07-19',
+      signalCount: 1,
+      modelInput: { system: 's', prompt: 'p', cacheSystem: true, maxOutputTokens: 4000 },
+    })
+
+    const body = await (await GET(request('/api/cron/ask-mine?dryRun=1'))).json()
+
+    expect(sweepExpiredKairosAsks).not.toHaveBeenCalled()
+    expect(body).toMatchObject({ asksExpired: 0, dryRun: true })
   })
 
   it('reports users skipped after the 240-second deadline guard', async () => {

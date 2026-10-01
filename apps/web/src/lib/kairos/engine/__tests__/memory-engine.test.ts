@@ -159,9 +159,9 @@ describe('MemoryEngine', () => {
 })
 
 describe('buildNightSteps', () => {
-  it('currently returns the weigh step', () => {
+  it('runs the own-mind mirror right after BackUp', () => {
     const steps = buildNightSteps()
-    expect(steps.map((s) => s.name)).toEqual(['merge', 'weigh', 'backup', 'concepts'])
+    expect(steps.map((s) => s.name)).toEqual(['merge', 'weigh', 'backup', 'own_mind', 'concepts'])
     expect(steps[1]).toBeInstanceOf(WeighStep)
   })
 })

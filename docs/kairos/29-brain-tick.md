@@ -143,16 +143,33 @@ tick — ERROR: speak route 401 after retry — check CRON_SECRET in the routine
 - Never speak when the MCP read failed — silence over hallucination, always.
 - Never editorialise the board or move cards from a tick.
 
-## Evening Digest — a separate, guaranteed-daily register
+## Daily Message — a separate, guaranteed-daily register
 
-`/api/cron/digest` (18:00 UTC) is NOT a tick and does not follow this playbook. It is a
-fixed daily message — "what I saw today, what I formulated" — that always sends, falling
-back to a deterministic (zero-model) narrative on provider failure so the operator never
-gets total silence. Because it is guaranteed rather than interrupt-gated, the tick's
-silence-by-default rule and the governor's `awaiting_reply`/cadence rules (Phase 1.5 above)
-do not apply to it: digest sends are tagged `sourceMetadata.digest:true` and excluded from
-`listRecentKairosSpeaks` and `getConversationState`, so a digest never counts against the
-speak-route throttle and never sets `awaitingReply` — it is never a blocking outbound.
+`/api/cron/daily-message` (08:00 Europe/London; scheduled at 07:00Z and 08:00Z, only the
+slot that is 08:00 London runs) is NOT a tick and does not follow this playbook
+(docs/kairos/34 §3). It replaced the 18:00Z evening digest: one morning message — today's
+briefs per Dominion, yesterday on the board, the top Aether thoughts, belief changes and
+any drift alert, at most one pending question, a failing-synthesis line, and on Mondays
+the mind comparison. The morning briefs still write their advisories (sidebar/inbox) but
+never reach Telegram themselves; this is the only guaranteed daily push.
+
+- **Draft source:** the Max routine's `daily_message` thinking job if it is `done` for
+  today (planned once today's briefs exist, deadline 07:55 London) → else the paid
+  heavy-tier key → else a deterministic (zero-model) message composed from the inputs.
+  Every input is optional — one failing read never costs the message.
+- **Guard:** model and routine drafts are rejected on `#` headings, URLs, export footers,
+  >1200 chars or a non-`stop` finish, falling back to the deterministic message. The
+  deterministic "What I now believe" block (engine promotions, undo via `revert_memory_op`)
+  is appended after the guard.
+- **Once per London date:** externalId `kairos-daily:<londonDate>`; `?force=1` runs outside
+  the hour, `?dryRun=1` returns the composed message without delivering (both need
+  `CRON_SECRET`).
+
+Because it is guaranteed rather than interrupt-gated, the tick's silence-by-default rule
+and the governor's `awaiting_reply`/cadence rules (Phase 1.5 above) do not apply to it:
+it is sent with `digest:true`, so it is tagged `sourceMetadata.digest:true` and excluded
+from `listRecentKairosSpeaks` and `getConversationState` — it never counts against the
+speak-route throttle and never sets `awaitingReply`, so it is never a blocking outbound.
 
 ## Routine setup (the scheduled driver)
 

@@ -27,28 +27,50 @@ import { getThinkingHandlers } from './registry'
 // text; the server validates, grounds, mints ids and persists through the
 // kind's handler. The server never calls Claude with plan credentials.
 //
-// Planning is LAZY: every claim first runs each handler's plan() (idempotent
-// via unique(user_id, external_key)), in prerequisite order, so one routine
-// run drains the night in order — cortex once today's archetypes exist, then
-// aether once the cortex work is settled.
+// Planning runs each handler's plan() (idempotent via unique(user_id,
+// external_key)), in prerequisite order, from TWO places:
+//   - every non-chat claim, so one routine run drains the night in order —
+//     cortex once today's archetypes exist, then aether once the cortex work
+//     is settled;
+//   - the hourly thinking-sweep (SWEEP_PLAN_SKIP_KINDS excluded), so kinds
+//     whose window opens after the nightly routine has finished (weekly
+//     review, mind compare, daily message, a late drift probe) are still
+//     created on schedule — then claimed by a routine or, past their
+//     deadline, run by the sweep's paid-key fallback.
 // ─────────────────────────────────────────────────────────────────────────
 
 // Prerequisite order: a later kind may depend on jobs an earlier kind just
 // planned in the same pass (aether waits on open cortex jobs).
-const PLAN_ORDER: ThinkingJobKind[] = ['cortex', 'concept', 'aether']
+const PLAN_ORDER: ThinkingJobKind[] = [
+  'cortex', 'concept', 'aether',
+  'belief_extract', 'drift_probe', 'mind_compare', 'weekly_review', 'daily_message', 'chat',
+]
 
 // Kinds whose handler.fallback does real work (a paid heavy-tier model call),
 // run by the hourly sweep. Every other kind's fallback is its own cron, so the
 // sweep only expires it. A late or rejected routine answer for one of these
 // kinds releases the job to the sweep instead of failing it.
-export const SWEEP_FALLBACK_KINDS: readonly ThinkingJobKind[] = ['concept']
+export const SWEEP_FALLBACK_KINDS: readonly ThinkingJobKind[] = [
+  'concept', 'belief_extract', 'drift_probe', 'mind_compare', 'weekly_review',
+]
 
 // Who covers a job the routine did not complete — used in error texts.
 const FALLBACK_OWNER: Record<ThinkingJobKind, string> = {
   cortex: 'the 03:00 UTC cortex-regen cron',
   aether: 'the 03:15 UTC aether-regen cron',
   concept: 'the hourly thinking-sweep API fallback',
+  belief_extract: 'the hourly thinking-sweep API fallback',
+  drift_probe: 'the hourly thinking-sweep API fallback',
+  mind_compare: 'the hourly thinking-sweep API fallback',
+  weekly_review: 'the hourly thinking-sweep API fallback',
+  daily_message: 'the 08:00 Europe/London daily-message cron',
+  chat: 'the Telegram watchdog paid-key reply',
 }
+
+// Kinds the hourly sweep never plans: concept clustering is heavy and is
+// enqueued by the nightly engine (and claims); chat jobs come only from the
+// Telegram webhook.
+export const SWEEP_PLAN_SKIP_KINDS: readonly ThinkingJobKind[] = ['concept', 'chat']
 
 export function sweepOwnsFallback(kind: ThinkingJobKind): boolean {
   return SWEEP_FALLBACK_KINDS.includes(kind)
@@ -97,6 +119,12 @@ export const THINKING_JOB_INSTRUCTIONS = [
   'Submit the raw answer text with submit_thinking_job { jobId, claimToken, text } before `deadlineAt`. Submissions are parsed strictly — there is no repair round-trip.',
 ].join('\n')
 
+export const CHAT_JOB_INSTRUCTIONS = [
+  'Treat `system` as your system prompt and `prompt` as the conversation so far, and write Kairos\'s next Telegram reply exactly as that system prompt demands.',
+  'Reply with the plain message text only — no JSON, no tool calls, no memory writes.',
+  'Submit it with submit_thinking_job { jobId, claimToken, text } before `deadlineAt`.',
+].join('\n')
+
 export type SubmitErrorCode = 'not_found' | 'not_claimed' | 'bad_token' | 'deadline_passed' | 'apply_failed'
 
 export type SubmitResult =
@@ -136,9 +164,14 @@ export class ThinkingQueue {
   // Concept planning clusters up to 600 embeddings per Dominion, so on claim
   // it runs at most once per user per ISO week: once any concept job with
   // this week's key exists (nightly engine or an earlier claim), skip it.
-  async planDue(userId: string, now: Date = new Date()): Promise<PlanResult> {
+  async planDue(
+    userId: string,
+    now: Date = new Date(),
+    opts: { skipKinds?: readonly ThinkingJobKind[] } = {},
+  ): Promise<PlanResult> {
     const result: PlanResult = { planned: [], errors: [] }
     for (const handler of this.handlers) {
+      if (opts.skipKinds?.includes(handler.kind)) continue
       try {
         if (handler.kind === 'concept') {
           if (!isConceptDay(now)) continue
@@ -158,7 +191,11 @@ export class ThinkingQueue {
   }
 
   async claim(userId: string, kinds?: readonly ThinkingJobKind[], now: Date = new Date()): Promise<ThinkingJobRow | null> {
-    await this.planDue(userId, now)
+    // Chat jobs are created by the Telegram webhook, never planned — a
+    // chat-only claim must not pay for planning the nightly kinds. Without
+    // `kinds`, claimNextJob never returns a chat job (explicit-only kind).
+    const chatOnly = kinds !== undefined && kinds.length > 0 && kinds.every((k) => k === 'chat')
+    if (!chatOnly) await this.planDue(userId, now)
     return claimNextJob(userId, kinds)
   }
 
@@ -200,6 +237,7 @@ export class ThinkingQueue {
       return { ok: false, code: 'apply_failed', error, ...base }
     }
     await completeJob(userId, jobId, claimToken, {
+      ...(outcome.output ?? {}),
       memoryIds: outcome.memoryIds,
       answeredBy: 'routine',
       chars: text.length,
@@ -217,7 +255,7 @@ export class ThinkingQueue {
 
   // Expire overdue queued/claimed jobs. Cron-fallback kinds (aether/cortex)
   // get their declining fallback recorded (cheap, no model) and stay
-  // 'expired'. Sweep-fallback kinds (concept) are run from the pending list —
+  // 'expired'. SWEEP_FALLBACK_KINDS are run from the pending list —
   // this sweep's expiries plus earlier releases/deferrals — bounded by the
   // per-invocation budget; the rest wait for the next hourly sweep.
   async sweep(userId: string, now: Date = new Date(), budget: SweepBudget = createSweepBudget()): Promise<SweepResult> {
@@ -293,7 +331,7 @@ export async function claimThinkingJob(
       system: job.input.system,
       prompt: job.input.prompt,
       validMemoryIds: job.input.validMemoryIds ?? [],
-      instructions: THINKING_JOB_INSTRUCTIONS,
+      instructions: job.kind === 'chat' ? CHAT_JOB_INSTRUCTIONS : THINKING_JOB_INSTRUCTIONS,
     },
   }
 }

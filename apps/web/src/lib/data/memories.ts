@@ -29,7 +29,6 @@ import {
 import { rrfFuse } from '@/lib/kairos/rrf'
 import { confidenceForStreamClass } from '@/lib/kairos/confidence'
 import { rankScore } from '@/lib/kairos/ranking'
-import { reactOutcome, reactUsed } from './memory-reactions'
 import { defaultStreamClass, deriveValidAt } from '@/lib/kairos/stream-class-default'
 import { META_STREAM_CLASSES } from '@/lib/kairos/streamClass'
 import { dominionTag } from '@/lib/kairos/dominionTags'
@@ -1439,7 +1438,7 @@ export async function archiveMemory(memoryId: string, userId: string) {
 
 export type AcceptProposalResult =
   | { ok: true; memory: typeof memories.$inferSelect }
-  | { ok: false; reason: 'not_a_proposal' | 'invalid_pair' | 'winner_not_found' | 'loser_already_superseded' }
+  | { ok: false; reason: 'not_a_proposal' | 'invalid_pair' | 'winner_not_found' | 'loser_already_superseded' | 'stale_amendment' }
 
 // Guided introspection — promote a staged proposal (a type='inbound' memory
 // Kairos proposed, carrying its citation links) into a committed, operator-
@@ -1455,6 +1454,11 @@ export type AcceptProposalResult =
 // type. Instead it supersedes the LOSING belief (winnerId/loserId were
 // resolved at scan time, see lib/kairos/contradiction.ts) and archives the
 // notice as resolved. The introspection branch below is unchanged.
+//
+// Pure DB writes only. Callers go through lib/kairos/proposal-accept.ts
+// (acceptKairosProposal), which dispatches constitution amendments to their
+// own versioned-write path and applies the operator reactions (Usage +
+// Outcome positive, then rescore) after a successful accept.
 export async function acceptProposal(
   memoryId: string,
   userId: string,
@@ -1467,6 +1471,12 @@ export async function acceptProposal(
   if (proposal.type !== 'inbound' || (meta.introspection !== true && meta.contradictionCheck !== true)) {
     return { ok: false, reason: 'not_a_proposal' }
   }
+
+  // P2 (doc 34): a constitution amendment is never promoted here — accepting
+  // one writes a new constitution version (lib/kairos/proposal-accept.ts →
+  // applyAcceptedConstitutionAmendment). Refuse rather than run the generic
+  // promote on it.
+  if (meta.kind === 'constitution_amendment') return { ok: false, reason: 'not_a_proposal' }
 
   if (meta.contradictionCheck === true) {
     const winnerId = typeof meta.winnerId === 'string' ? meta.winnerId : null
@@ -1516,7 +1526,6 @@ export async function acceptProposal(
       // report the no-op honestly rather than claiming a supersede happened.
       return superseded.length ? { ok: true, memory: updated } : { ok: false, reason: 'loser_already_superseded' }
     })
-    if (resolved?.ok) await reinforceAcceptedProposal(userId, memoryId)
     return resolved
   }
 
@@ -1558,17 +1567,7 @@ export async function acceptProposal(
       .where(and(eq(memories.userId, userId), inArray(memories.id, supersedeIds)))
   }
 
-  if (updated) await reinforceAcceptedProposal(userId, memoryId)
   return updated ? { ok: true, memory: updated } : null
-}
-
-// Operator reaction (docs/kairos/32 §2): accepting a proposal is Usage + Outcome
-// positive on it, each logged as a 'feedback' op. Runs after the accept wrote
-// its own sourceMetadata, so the atomic outcome merge lands on top. Best-effort
-// — reactions never fail the accept.
-async function reinforceAcceptedProposal(userId: string, memoryId: string): Promise<void> {
-  await reactOutcome(userId, memoryId, 'positive', 'proposal accepted')
-  await reactUsed(userId, [memoryId], 'proposal accepted')
 }
 
 export async function deleteMemory(memoryId: string, userId: string) {

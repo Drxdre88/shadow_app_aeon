@@ -4,7 +4,8 @@ import type { SQL } from 'drizzle-orm'
 
 // Operator reactions (docs/kairos/32 §2): outcome is merged atomically in SQL
 // (no read-modify-write), use reinforcement bumps lastUsedAt/useCount, each is
-// logged as a 'feedback' op, and the best-effort wrappers never throw.
+// logged as a 'feedback' op in the same transaction as its write. Pure DB:
+// these throw; the best-effort wrappers + rescore are lib/kairos/reactions.
 
 const setCalls: Record<string, unknown>[] = []
 const returningQueue: unknown[][] = []
@@ -44,7 +45,7 @@ vi.mock('@/lib/data/memory-ops', () => ({
 
 import { db } from '@/lib/db'
 import { insertMemoryOps } from '@/lib/data/memory-ops'
-import { reactOutcome, reactUsed, recordMemoryUse, recordOutcome } from '../memory-reactions'
+import { recordMemoryUse, recordOutcome, writeOutcomeReaction, writeUseReaction } from '../memory-reactions'
 
 const USER = 'user-1'
 const MEM = 'a1111111-1111-4111-8111-111111111111'
@@ -120,11 +121,11 @@ describe('recordMemoryUse', () => {
   })
 })
 
-describe('reactOutcome / reactUsed (best-effort + feedback ops)', () => {
+describe('writeOutcomeReaction / writeUseReaction (write + feedback op, one transaction)', () => {
   it('logs a feedback op with before/after outcome totals', async () => {
     returningQueue.push([{ outcome: { positive: 1, negative: 2 } }])
 
-    await reactOutcome(USER, MEM, 'negative', 'proposal dismissed')
+    await expect(writeOutcomeReaction(USER, MEM, 'negative', 'proposal dismissed')).resolves.toBe(true)
 
     expect(insertMemoryOps).toHaveBeenCalledWith(USER, null, [{
       memoryId: MEM,
@@ -140,29 +141,25 @@ describe('reactOutcome / reactUsed (best-effort + feedback ops)', () => {
   it('writes the reaction and its op in one transaction, and a failed op insert fails that transaction', async () => {
     returningQueue.push([{ id: MEM, useCount: 1 }])
     vi.mocked(insertMemoryOps).mockRejectedValueOnce(new Error('memory_ops insert failed'))
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-    await expect(reactUsed(USER, [MEM], 'cited')).resolves.toBeUndefined()
+    await expect(writeUseReaction(USER, [MEM], 'cited')).rejects.toThrow('memory_ops insert failed')
 
     expect(db.transaction).toHaveBeenCalledTimes(1)
-    const txResult = vi.mocked(db.transaction).mock.results[0].value as Promise<unknown>
-    await expect(txResult).rejects.toThrow('memory_ops insert failed')
     // Both writes went through the transaction handle, not the pool.
     expect(vi.mocked(insertMemoryOps).mock.calls[0][3]).toBe(txHandles[0])
-    expect(warn).toHaveBeenCalledTimes(1)
-    warn.mockRestore()
   })
 
   it('opens no transaction when no id is a uuid', async () => {
-    await reactUsed(USER, ['thought-7'], 'cited')
-    await reactOutcome(USER, 'nope', 'positive', 'accepted')
+    await expect(writeUseReaction(USER, ['thought-7'], 'cited')).resolves.toEqual([])
+    await expect(writeOutcomeReaction(USER, 'nope', 'positive', 'accepted')).resolves.toBe(false)
     expect(db.transaction).not.toHaveBeenCalled()
   })
 
-  it('logs one feedback op per memory actually touched', async () => {
+  it('logs one feedback op per memory actually touched and returns the touched ids', async () => {
     returningQueue.push([{ id: MEM, useCount: 1 }, { id: MEM2, useCount: 5 }])
 
-    await reactUsed(USER, [MEM, MEM2], 'cited', new Date('2026-09-30T12:00:00Z'))
+    await expect(writeUseReaction(USER, [MEM, MEM2, 'thought-7'], 'cited', new Date('2026-09-30T12:00:00Z')))
+      .resolves.toEqual([MEM, MEM2])
 
     const ops = vi.mocked(insertMemoryOps).mock.calls[0][2]
     expect(ops.map((o) => [o.memoryId, o.op, o.before, o.after])).toEqual([
@@ -173,18 +170,15 @@ describe('reactOutcome / reactUsed (best-effort + feedback ops)', () => {
 
   it('writes no op when nothing was touched', async () => {
     returningQueue.push([])
-    await reactUsed(USER, [MEM], 'cited')
-    await reactOutcome(USER, 'nope', 'positive', 'accepted')
+    await expect(writeUseReaction(USER, [MEM], 'cited')).resolves.toEqual([])
+    returningQueue.push([])
+    await expect(writeOutcomeReaction(USER, MEM, 'positive', 'accepted')).resolves.toBe(false)
     expect(insertMemoryOps).not.toHaveBeenCalled()
   })
 
-  it('swallows DB errors (e.g. migration 0039 not applied) instead of failing the caller', async () => {
+  it('propagates DB errors to the caller (the kairos wrapper decides to swallow)', async () => {
     updateError = new Error('column "use_count" does not exist')
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-    await expect(reactUsed(USER, [MEM], 'cited')).resolves.toBeUndefined()
-    await expect(reactOutcome(USER, MEM, 'positive', 'accepted')).resolves.toBeUndefined()
-    expect(warn).toHaveBeenCalledTimes(2)
-    warn.mockRestore()
+    await expect(writeUseReaction(USER, [MEM], 'cited')).rejects.toThrow('use_count')
+    await expect(writeOutcomeReaction(USER, MEM, 'positive', 'accepted')).rejects.toThrow('use_count')
   })
 })

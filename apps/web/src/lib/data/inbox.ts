@@ -1,13 +1,5 @@
 import { getPendingKairosAsk } from '@/lib/data/ask'
-import {
-  acceptProposal,
-  archiveMemory,
-  findMemoryById,
-  listMemories,
-  listTodaysAdvisories,
-  markKairosSpeaksReplied,
-} from '@/lib/data/memories'
-import { reactOutcome } from '@/lib/data/memory-reactions'
+import { listMemories, listTodaysAdvisories } from '@/lib/data/memories'
 
 export type KairosInboxUrgency = 'low' | 'normal' | 'high'
 
@@ -65,43 +57,8 @@ export async function getKairosInbox(userId: string): Promise<{ items: KairosInb
   return { items }
 }
 
-// Shared triage — both the inbox server actions and the Telegram webhook
-// resolve items through these, so the two surfaces can never drift.
+// Shared triage result — dismiss/accept live in lib/kairos/proposal-accept.ts
+// (they apply reactions + constitution dispatch, which is not data-layer work).
 export type InboxResolution =
   | { ok: true; id: string }
   | { ok: false; reason: 'not_found' | 'already_resolved' }
-
-export async function dismissInboxMemory(userId: string, memoryId: string): Promise<InboxResolution> {
-  const memory = await findMemoryById(memoryId, userId)
-  if (!memory || memory.type !== 'inbound') return { ok: false, reason: 'not_found' }
-
-  const metadata = (memory.sourceMetadata ?? {}) as Record<string, unknown>
-  // Idempotent: Telegram delivers duplicate updates; a second dismiss must
-  // report "already handled" instead of erroring.
-  if (memory.archivedAt || metadata.status !== 'pending') return { ok: false, reason: 'already_resolved' }
-
-  const archived = await archiveMemory(memoryId, userId)
-  if (!archived) return { ok: false, reason: 'not_found' }
-  // Dismissing a Kairos speak is an operator response: close pending speaks so
-  // the reply gate clears (archiving alone leaves status 'pending'). Idempotent
-  // with the Telegram path's own marker call; best-effort, never fails dismiss.
-  if (metadata.kairosSpeak === true) {
-    try {
-      await markKairosSpeaksReplied(userId, new Date())
-    } catch (err) {
-      console.error('[kairos-inbox] failed to mark speaks replied', err)
-    }
-  } else {
-    // Dismissing a proposal is an operator veto: Outcome negative + a
-    // 'feedback' op (docs/kairos/32 §2). Best-effort, never fails dismiss.
-    await reactOutcome(userId, memoryId, 'negative', 'proposal dismissed')
-  }
-  return { ok: true, id: archived.id }
-}
-
-export async function acceptInboxProposal(userId: string, memoryId: string): Promise<InboxResolution> {
-  const result = await acceptProposal(memoryId, userId, { pin: false })
-  if (!result) return { ok: false, reason: 'not_found' }
-  if (!result.ok) return { ok: false, reason: 'already_resolved' }
-  return { ok: true, id: result.memory.id }
-}

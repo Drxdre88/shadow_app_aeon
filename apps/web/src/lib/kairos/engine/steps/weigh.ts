@@ -71,7 +71,8 @@ export class WeighStep implements Step {
         firstScored++
         continue
       }
-      if (Math.abs(after - memory.standing) < this.minDelta) continue
+      // Round the delta so a float artefact (0.0499…) can't hide a 0.05 move.
+      if (Math.round(Math.abs(after - memory.standing) * 1e4) / 1e4 < this.minDelta) continue
       ops.push({
         memoryId: memory.id,
         step: this.name,
