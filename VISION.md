@@ -1,6 +1,6 @@
 # VISION.md
 
-Last updated: 01/10/2026 (Kairos 0.11–0.13 — Eyes & Heal #133 and Memory Engine #134 shipped 30/09, engine undo-record hotfix #135 on 01/10; Phase 2 "Beliefs and Strategy" PR open. Prior: v0.29.0 release candidate, PR #130 — bespoke mission cards, repository management and runner tier forwarding; durable output delivery and runner recovery remain incomplete.)
+Last updated: 01/10/2026 evening (Kairos 0.11–0.15 shipped in two days: Eyes & Heal #133, Memory Engine #134/#135, Beliefs & Strategy #136, Ground & Protect #137/#138, Creativity #139; three Claude Max routines created and proven. Next: Phase 4 Motivational. Prior: v0.29.0 release candidate, PR #130 — bespoke mission cards, repository management and runner tier forwarding; durable output delivery and runner recovery remain incomplete.)
 
 For technical architecture, file paths, and feature inventory see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
@@ -17,6 +17,8 @@ Aeon is a **web-first project management platform** with a stunning visual ident
 **Kairos 0.10 (July):** Live Mind — continuous chat awareness, agentic tools on by default, `micro-consolidate` six times a day, the Evening Digest at 18:00 UTC, Telegram two-way, speaks-first brain-tick. Aether UI retired; the galaxy is the only spatial view. Quality-over-cost is a standing directive: all cognition runs heavy-tier.
 
 **Kairos 0.11–0.13 (30/09 → 01/10):** Eyes & Heal (asks unblocked, honest health, session records from every coding tool, board feed), the Memory Engine (nightly standing score, merge/back-up, full undo trail, a thinking queue answered by Claude Max routines with the paid key as safety net), then Beliefs and Strategy — two minds (the operator's and Kairos's own), an operator-governed constitution with nightly drift probes, a Monday weekly review, and one **daily message at 08:00 UK** replacing the 18:00 Evening Digest. Briefer now 06:15 UTC; Vercel cron fleet 17; MCP 127 tools / 25 categories.
+
+**Kairos 0.14–0.15 (01/10):** Checked against 2024–2026 research on evolving memory and machine conscience (`research/kairos_0110`), then **Ground and Protect**: every memory carries where it came from (operator / activity / agent / Kairos / external), belief confidence is capped by that, beliefs are re-checked when a source is corrected, the constitution and beliefs are read before chat / brief / daily message / review answer, and nightly honesty checks (flattery, abstention, outdated facts, contradictions, laundering) run beside the drift probe. Then **Creativity**: a nightly idea contest (generate in several directions → repeat filter → sceptical judge with both-order pairwise matches → Elo) keeps 1–3 ideas with the reason they survived, replacing the ~40 unread raw proposals a night. The same evening the three **Claude Max routines** (thinking 02:40Z, ideas 03:35Z, morning 06:30Z) went live — the first contest ran entirely on the Max plan. Seven older crons still call the paid key directly (owner migrating them in Claude Code).
 
 **Mobile strategy (03/04/2026, reversed 27/06/2026):** originally a Capacitor WebView wrapper; now a native **Expo / React Native** companion (chat first, boards later) at the login slice. Tauri desktop parked post-beta; PWA is the free desktop win.
 
@@ -62,7 +64,9 @@ The single anchor for what Kairos is *for*. Picture a line: **JARVIS** (perfect 
 
 | Date | Milestone | Impact |
 |---|---|---|
-| 01/10/2026 | Engine undo-record hotfix (#135) + Kairos 0.13 "Beliefs and Strategy" (PR open) | Undo records now written with each change (349 restored). Two minds, constitution + drift probes, weekly review, daily message 08:00 UK replaces the evening digest |
+| 01/10/2026 | Kairos 0.15 "Creativity" (#139) + Max routines live | Nightly idea contest (≤3 survivors with reasons, archive + repeat filter, outcomes teach the generator); Idea of the day; weekly review gains ideas, lessons, diversity and a belief diff. Thinking / ideas / morning routines created on the Max plan; first contest ran there (13 → 2) |
+| 01/10/2026 | Kairos 0.14 "Ground and Protect" (#137, #138) | Origin labels + trust caps, belief re-check cascade, conscience block in every answer surface, nightly honesty checks (first run passed all), retrieval/fading fixes; belief steps run before BackUp |
+| 01/10/2026 | Engine undo-record hotfix (#135) + Kairos 0.13 "Beliefs and Strategy" (#136) | Undo records now written with each change (349 restored). Two minds, constitution + drift probes, weekly review, daily message 08:00 UK replaces the evening digest |
 | 30/09/2026 | Kairos 0.11 Eyes & Heal (#133) + 0.12 Memory Engine (#134) | Asks unblocked, honest health, session records + board feed; nightly standing score, merge/back-up with full undo, thinking queue for Claude Max routines |
 | 16/09/2026 | Aeon OS review gate fired for real + v0.28.0 | Three live runs; two harness faults fixed the same day (Copilot CLI ignores piped stdin when `-p` is present; reviewer provenance never read); receipt token as proof of receipt; first legitimate FAIL (10 findings). REST 404/400/409 hardening, model picker, observed model recorded. Browser Save & Launch exercised for the first time |
 | 15/09/2026 | Independent-review PASS gate (PR #127) | Mechanical validation alone only reaches `review_pending`; a batch passes only when every attempt has a stored PASS from a different model. Terminal receipts immutable |
@@ -283,6 +287,12 @@ A research pass on "a board edit must never silently vanish when Neon is waking 
 | **1C-C4** | Two-way capture buttons | QUEUED | "Save as memory" + "promote to card" + "send as reflection" in the Visor |
 | **1C-C5** | Cosmic view enhancements | QUEUED | Tier filter chips, stream chips, archetype orbs, reflection beacons, Dominion cortex orb |
 | **1D** | Loops + thinking chains | SUPERSEDED | Evening loop → daily message (08:00 UK) + weekly review; morning question → Kairos Asks + `ask-mine`; thinking-chain runner → the thinking queue (0.12–0.13) |
+| **5M-P0** | Eyes & Heal | COMPLETE (0.11) | Live defects fixed; session + mission capture; sprint-board feed |
+| **5M-P1** | Memory evolution | COMPLETE (0.12) | Standing score, fading, merge, evidence-backed promotion, concepts, full undo, thinking queue |
+| **5M-P2** | Philosophical + strategic | COMPLETE (0.13–0.14) | Two minds, constitution, drift + honesty checks, daily message, weekly review, origin/trust, belief re-check, conscience at answer time |
+| **5M-P3** | Creativity | COMPLETE (0.15) | Nightly idea contest; raw introspection on a kill switch for 2 weeks |
+| **5M-P4** | Motivational | NEXT | Initiative stream with goal archive + verifiers, cron-checked commitment ledger, Telegram approve/veto, Hangar missions as hands (`aeon_os/HANDOVER_0110.md` §6) |
+| **5M-P5** | Ring 2 | GATED | Dark lab, deep-think jobs, self-authored recipes — only after a P4 track record |
 | **2** | Active agent | SPECULATIVE | Autonomous archetype refinement, cross-Dominion synthesis, workflow triggers (gated per action), calibrated proactive messaging, phone capture. Gate: owner trusts Phase 1 |
 | **3** | Identity layer | SPECULATIVE | Configurable persona, multi-agent council ("board of directors"), council deliberation, identity per Dominion |
 
