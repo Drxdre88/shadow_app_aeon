@@ -22,14 +22,15 @@ apps/
         kairos/speak/              -- Kairos-initiated delivery (Will inbox + Telegram, CRON_SECRET auth)
         auth/mobile/               -- mobile auth (google, verify, route)
         me/                        -- current-user endpoint
-      api/[transport]/             -- MCP server (Bearer API key OR OAuth aeon_at_ token); 109 annotated tools
+      api/[transport]/             -- MCP server (Bearer API key OR OAuth aeon_at_ token); ~127 annotated tools
       api/telegram/webhook/        -- Telegram bot webhook (secret-token auth, single-operator gate)
       api/oauth/                   -- OAuth 2.1 AS (register, authorize, token)
       api/well-known/              -- OAuth discovery fallback (real discovery is in middleware.ts)
-      api/cron/                    -- 11 crons (CRON_SECRET): briefer, project-snapshot,
+      api/cron/                    -- 17 crons (CRON_SECRET): briefer, project-snapshot,
                                       archetype-synthesis, cortex-regen, aether-regen, embed-backfill,
-                                      introspection, memory-dedup, memory-compaction,
-                                      chat-distill, contradiction-scan
+                                      introspection, memory-dedup, memory-engine, thinking-sweep,
+                                      chat-distill, contradiction-scan, micro-consolidate, ask-mine,
+                                      synthesis-health, daily-message, constitution-seed
       api/auth/ export/ planets/ stats/ sync/  -- NextAuth, export, misc surfaces
     src/components/
       board/                       -- kanban, task edit, DnD, filters, virtual scroll, assignee overlay + pile,
@@ -65,7 +66,7 @@ apps/
     src/stores/                    -- Zustand: themeStore, sidebarStore, kairosStore,
                                       kairosVisorStore, kairosPrefsStore
     src/assets/ config/ types/ middleware.ts
-    drizzle/                       -- migrations 0000 -> 0037 (hand-written past 0010; see data-layer.md)
+    drizzle/                       -- migrations 0000 -> 0039 (hand-written past 0010; no 0038 on main; see data-layer.md)
     scripts/                     -- apply-*-migration.mjs, verify-schema-drift.mjs, session-capture-* pipeline, smoke-auth.mjs
   mobile/                          -- Expo / React Native companion app (NEW 2026-06-27)
     App.tsx index.ts app.json      -- Expo SDK 53, RN 0.79, React 19; v1 = Kairos chat

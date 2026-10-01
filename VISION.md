@@ -1,6 +1,6 @@
 # VISION.md
 
-Last updated: 21/09/2026 (v0.29.0 release candidate, PR #130 — bespoke mission cards, repository management and runner tier forwarding. Production evidence includes the 16–17 September checks and 21 September supervised Swarm research; durable output delivery and runner recovery remain incomplete.)
+Last updated: 01/10/2026 (Kairos 0.11–0.13 — Eyes & Heal #133 and Memory Engine #134 shipped 30/09, engine undo-record hotfix #135 on 01/10; Phase 2 "Beliefs and Strategy" PR open. Prior: v0.29.0 release candidate, PR #130 — bespoke mission cards, repository management and runner tier forwarding; durable output delivery and runner recovery remain incomplete.)
 
 For technical architecture, file paths, and feature inventory see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
@@ -10,11 +10,13 @@ For technical architecture, file paths, and feature inventory see [ARCHITECTURE.
 
 Aeon is a **web-first project management platform** with a stunning visual identity (151 themes, particle effects, Framer Motion animations, @dnd-kit kanban, ReactFlow canvas). The PM side (Phases 1–3) is feature-complete and hardened (real-time Pusher sync, virtual scrolling, optimistic UI, lint clean, server-side loading, BYOK AI integration).
 
-**Kairos is now Phase 2 of Aeon, not a side experiment.** What started in May as a personal memory layer has graduated, in eight weeks, into a multi-layer thinking partner: substrate (every memory classified into one of six stream classes), synthesis (3–7 archetypes per Dominion + one living cortex document, regenerated nightly), reflections (`kairos_reflect` MCP tool — the operator's first-class signal that outweighs activity-derived drift), and a slide-out chat Visor that grounds every reply in retrieved memories with cite-back chips. The full nightly cron pipeline — snapshot 23:00 → archetypes 02:30 → cortex 03:00 → briefer 07:00 — went live tonight.
+**Kairos is now Phase 2 of Aeon, not a side experiment.** What started in May as a personal memory layer has graduated, in eight weeks, into a multi-layer thinking partner: substrate (every memory classified into one of six stream classes — fourteen as of 0.13), synthesis (3–7 archetypes per Dominion + one living cortex document, regenerated nightly), reflections (`kairos_reflect` MCP tool — the operator's first-class signal that outweighs activity-derived drift), and a slide-out chat Visor that grounds every reply in retrieved memories with cite-back chips. The full nightly cron pipeline — snapshot 23:00 → archetypes 02:30 → cortex 03:00 → briefer 07:00 — went live tonight.
 
 **The AI Hangar is the third arc (20/08 → 16/09/2026).** A board card can now be an autonomous CLI-agent mission: pick objective, repo, engine and model on the card, Save & Launch, and a runner flies it in a disposable worktree while the Flight Deck streams telemetry back. **Aeon OS** is the discipline around it — a production-verification harness (`aeon_os/`) that runs real missions against the live API and refuses to call a batch "passed" until a *different* model has read every report against the real source lines and returned PASS. It fired for real on 16/09: the first legitimate verdict was a FAIL with ten findings, three of them confirmed citation drift by hand. That is the point — the gate exists to catch exactly that.
 
 **Kairos 0.10 (July):** Live Mind — continuous chat awareness, agentic tools on by default, `micro-consolidate` six times a day, the Evening Digest at 18:00 UTC, Telegram two-way, speaks-first brain-tick. Aether UI retired; the galaxy is the only spatial view. Quality-over-cost is a standing directive: all cognition runs heavy-tier.
+
+**Kairos 0.11–0.13 (30/09 → 01/10):** Eyes & Heal (asks unblocked, honest health, session records from every coding tool, board feed), the Memory Engine (nightly standing score, merge/back-up, full undo trail, a thinking queue answered by Claude Max routines with the paid key as safety net), then Beliefs and Strategy — two minds (the operator's and Kairos's own), an operator-governed constitution with nightly drift probes, a Monday weekly review, and one **daily message at 08:00 UK** replacing the 18:00 Evening Digest. Briefer now 06:15 UTC; Vercel cron fleet 17; MCP 127 tools / 25 categories.
 
 **Mobile strategy (03/04/2026, reversed 27/06/2026):** originally a Capacitor WebView wrapper; now a native **Expo / React Native** companion (chat first, boards later) at the login slice. Tauri desktop parked post-beta; PWA is the free desktop win.
 
@@ -40,14 +42,14 @@ The single anchor for what Kairos is *for*. Picture a line: **JARVIS** (perfect 
 
 | Direction | Evidence | Confidence |
 |---|---|---|
-| Kairos as thinking partner (memory → synthesis → chat → loops) | Phases 1A–1C shipped; nightly pipeline (cron fleet 14); whole-brain chat (per-Dominion anchor retired 17/07); Live Mind 0.10; Evening Digest + Telegram + brain-tick | Shipped through 0.10 / Phase 2 (active agent) partially live via the Hangar |
+| Kairos as thinking partner (memory → synthesis → chat → loops) | Phases 1A–1C shipped; nightly pipeline (cron fleet 17); whole-brain chat (per-Dominion anchor retired 17/07); Live Mind 0.10; memory engine + thinking queue 0.12; beliefs + constitution 0.13 (PR open) | Shipped through 0.12 / 0.13 in review / Phase 2 (active agent) partially live via the Hangar |
 | BYOK AI integration (3 providers, AES-256-GCM, admin-gated) | Anthropic + OpenAI + Google via Vercel AI SDK; full REST + UI; tier-routed per user | Shipped |
 | Realm-based multi-tenancy | Full CRUD, invites, scoped visibility, REST + MCP parity | Shipped |
-| MCP-first AI integration | 95 tools across 15 categories, Bearer auth, dogfooded daily | Shipped |
+| MCP-first AI integration | 127 tools across 25 categories, Bearer auth, dogfooded daily | Shipped |
 | Native mobile companion (Expo / RN) | Replaces the Capacitor plan; Google login slice scaffolded over the REST bearer sessions | In flight (login slice) |
 | AI Hangar — cards fly as agent missions | Core transport, mission editor, worktrees and telemetry shipped. Dedicated mission face/results and repository manager implemented for v0.29.0 on 21/09; saved drafts and explicit launches remain separate | Partial: output delivery, draft PRs and recovery remain open |
 | Aeon OS — production proof + independent review gate | 17/09 handover records 15/15 acceptance; best recorded automated-harness review is PASS_WITH_CORRECTIONS (four minor findings), which the strict gate refuses | Gate shipped; first exact PASS still open |
-| Kairos speaks first (digest, Telegram, brain-tick) | Evening Digest daily, Telegram two-way, 3×/day cloud brain-tick, Live Mind 0.10 | Shipped |
+| Kairos speaks first (daily message, Telegram, brain-tick) | Daily message 08:00 UK (replaced the 18:00 Evening Digest), Monday weekly review, Telegram two-way, 3×/day cloud brain-tick | Shipped (daily message + weekly review in the 0.13 PR) |
 | Master / Rift Board (cross-board view) | Rift in Analysis (high priority); Master in Raw Ideas | Speculative |
 | Agent-as-member (AI in realms) | 1 raw idea card; `actorType` extension on `activityEvents` already in schema | Speculative |
 | Real-time sync (Pusher) | Live, all mutations broadcast, 30s polling fallback | Shipped |
@@ -60,6 +62,8 @@ The single anchor for what Kairos is *for*. Picture a line: **JARVIS** (perfect 
 
 | Date | Milestone | Impact |
 |---|---|---|
+| 01/10/2026 | Engine undo-record hotfix (#135) + Kairos 0.13 "Beliefs and Strategy" (PR open) | Undo records now written with each change (349 restored). Two minds, constitution + drift probes, weekly review, daily message 08:00 UK replaces the evening digest |
+| 30/09/2026 | Kairos 0.11 Eyes & Heal (#133) + 0.12 Memory Engine (#134) | Asks unblocked, honest health, session records + board feed; nightly standing score, merge/back-up with full undo, thinking queue for Claude Max routines |
 | 16/09/2026 | Aeon OS review gate fired for real + v0.28.0 | Three live runs; two harness faults fixed the same day (Copilot CLI ignores piped stdin when `-p` is present; reviewer provenance never read); receipt token as proof of receipt; first legitimate FAIL (10 findings). REST 404/400/409 hardening, model picker, observed model recorded. Browser Save & Launch exercised for the first time |
 | 15/09/2026 | Independent-review PASS gate (PR #127) | Mechanical validation alone only reaches `review_pending`; a batch passes only when every attempt has a stored PASS from a different model. Terminal receipts immutable |
 | 03/09/2026 | Flight Deck + parallel mission worktrees (PR #120) | Typed mission telemetry drawer; disposable worktree per mission; concurrency 4 |
@@ -195,7 +199,7 @@ An **Aeon OS verification run** passes only when an independent model has read t
 | **Cross-user cron snapshot leak: scope of contamination?** | Medium | 5 memories from other beta users in owner's table via `project-snapshot`. Not bleeding into synthesis (Dominion-scoped) but the root cause in `auto-capture.ts` is unaudited. Compounds as more beta users add data |
 | **Mobile-responsive CSS gaps** | High | Capacitor wraps the web app as-is. Which pages/components break on small screens? Touch targets, modals, DnD, sidebar — needs a responsive audit before Capacitor ships |
 | **WebView performance on effects** | High | 151 themes with particle effects, aurora, snowfall — may not run smoothly in mobile WebView. May need auto-disable heavy effects on mobile or detect low-end devices |
-| **Sessions parity lock: when does drift risk block?** | Low | REST + MCP session shapes match but no parity test exists. Spawn lifecycle is growing (C3 adds `chat_with_kairos`, Phase 2 adds more hooks). `sessions-parity.test.ts` should land before Phase 2 |
+| **Sessions parity lock: when does drift risk block?** | Resolved 01/10 | `sessions-parity.test.ts` now locks the REST + MCP session shapes |
 | **Should Master / Rift Board block on virtual scrolling?** | Medium | Cross-board view without virtualisation could be unusable at scale. Virtual scrolling is shipped on the kanban; Rift would need its own |
 | **Push notifications architecture** | Medium | Capacitor has the plugin. FCM/APNs backend doesn't exist. Plan early or bolt on later? |
 | **rawTranscript field?** | Low | Storing the unpolished voice/session transcript next to `bodyMd` so original phrasing stays searchable. No schema change made yet — one nullable text column, no risk |
@@ -271,14 +275,14 @@ A research pass on "a board edit must never silently vanish when Neon is waking 
 | K-5 | Onboarding modal | COMPLETE | Setup + Guide modal under sidebar pill |
 | K-6 | Dominion REST API | NOT STARTED | Mirror 16 MCP tools to `/api/v1/dominions/` |
 | K-7 | BYOK + extension AI | COMPLETE | Vercel AI SDK, AES-256-GCM keys, 3 providers, `/settings/ai`, Briefer cron |
-| **1A** | Memory shape | COMPLETE | `streamClass` column + cascade backfill (326/378); 8 Dominions partitioned (370/378); Briefer reads live board; quality-gates doc; compaction stub |
+| **1A** | Memory shape | COMPLETE | `streamClass` column + cascade backfill (326/378); 8 Dominions partitioned (370/378); Briefer reads live board; quality-gates doc; compaction stub (removed 30/09/2026) |
 | **1B** | Synthesis layer | COMPLETE | Archetype generator (B1), Dominion cortex regen (B2), `kairos_reflect` MCP tool (B3). Reflection weighting (B4) implicit in B1+B2 prompts |
 | **1C-C1** | Chat shell | COMPLETE | Slide-out Visor anchored per Dominion; persists in `agent_sessions` + `session_events`; row-lock seq serialisation; orphan-retry recovery (now handles edited bodies) |
 | **1C-C2** | Memory-grounded responses | COMPLETE | Cortex + archetypes + top-5 substrate retrieved per turn; inline `[[uuid]]` citation chips with server-side hallucination guard; "Reading" line above each reply |
 | **1C-C3** | `chat_with_kairos` MCP tool | QUEUED | Second front door to the same chat threads from any Claude session |
 | **1C-C4** | Two-way capture buttons | QUEUED | "Save as memory" + "promote to card" + "send as reflection" in the Visor |
 | **1C-C5** | Cosmic view enhancements | QUEUED | Tier filter chips, stream chips, archetype orbs, reflection beacons, Dominion cortex orb |
-| **1D** | Loops + thinking chains | BLOCKED | Evening (extend cron, partially done by B2) + Morning (0–1 calibrated question per Dominion) + thinking-chain runner. Gated on ~7 days of accumulated cortex data |
+| **1D** | Loops + thinking chains | SUPERSEDED | Evening loop → daily message (08:00 UK) + weekly review; morning question → Kairos Asks + `ask-mine`; thinking-chain runner → the thinking queue (0.12–0.13) |
 | **2** | Active agent | SPECULATIVE | Autonomous archetype refinement, cross-Dominion synthesis, workflow triggers (gated per action), calibrated proactive messaging, phone capture. Gate: owner trusts Phase 1 |
 | **3** | Identity layer | SPECULATIVE | Configurable persona, multi-agent council ("board of directors"), council deliberation, identity per Dominion |
 

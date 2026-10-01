@@ -7,7 +7,7 @@ Aeon exposes four programmatic front doors over the same three-layer data core (
 1. **REST API** (`/api/v1/*`) — session- or bearer-authenticated; the surface the web app, scripts, and the mobile app call.
 2. **Mobile auth** (`/api/v1/auth/mobile/*`) — issues 90-day bearer sessions for the mobile app.
 3. **OAuth 2.1 authorization server** (`/api/oauth/*` + `/.well-known/*`) — lets claude.ai's OAuth-only remote MCP connector reach the MCP server.
-4. **MCP tool server** (`/api/[transport]/`) — **118 tools across 21 categories** for AI agents.
+4. **MCP tool server** (`/api/[transport]/`) — **127 tools across 25 categories** for AI agents.
 
 ---
 
@@ -43,6 +43,7 @@ NextAuth session cookie is the fallback when no bearer is present (`auth.ts:50-5
 | `recipes` | `recipes`, `recipes/run`, `recipes/traces` — REST mirror of `run_recipe`, sharing `runRecipeArgs` + `dispatch.runRecipe` so MCP/REST never drift |
 | `projects/[id]/favorite` | PUT toggle for per-user project favorites (PR #80; mirrors MCP `set_project_favorite`) |
 | `kairos/speak` | `POST /api/v1/kairos/speak` — **Kairos-initiated delivery** (Will-inbox `notify` memory + best-effort Telegram fan-out). Auth `Bearer ${CRON_SECRET}` (cron idiom, not user bearer). Server-side interrupt throttle: 4h min gap + 3/24h cap → 429; `force:true` bypass audit-logged and ceilinged at 10/24h. **Deliberately OUTSIDE MCP/REST parity** — internal delivery channel, no MCP mirror. |
+| `kairos/*` (0.11–0.13) | `memory-ops`, `memory-ops/[id]/revert`, `thinking-jobs`, `thinking-jobs/claim`, `thinking-jobs/[id]/submit`, `beliefs`, `beliefs/compare`, `constitution`, `constitution/amendments` — REST mirrors of the memory-ops / thinking / beliefs / constitution MCP tools |
 
 > ⚠️ **Route params are a Promise in Next 16 — always `await` them.** A handler that reads `(ctx as {params:{…}}).params` synchronously gets `undefined` for every segment, so an id-scoped guard like `getGroupRole(undefined, userId)` matches nothing and the route answers **403 for every caller**. It fails closed, compiles cleanly, and no test or typecheck catches it. Five routes under `api/v1/realms/` were written that way on 2026-04-02 and had never worked; found and fixed 2026-08-26 (`daeb93d`), all 7 param-reading route files now `await`. Use `type Params = { params: Promise<{ … }> }` + `const { x } = await (ctx as Params).params` — the pattern every other v1 family already uses.
 
@@ -86,7 +87,7 @@ Tokens: `aeon_at_` access (30d) + `aeon_rt_` refresh (1y, rotated), SHA-256-hash
 
 ## 4. MCP tools (`/api/[transport]/`)
 
-Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via `verifyToken` → `authenticateRequest`. **118 tools across 21 categories** (`tools/index.ts`, `route.ts:44-62`). **As of PR #83 every tool carries MCP annotation hints** (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint:false`) — full coverage, enabling client-side defer-loading and safe-tool filtering:
+Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via `verifyToken` → `authenticateRequest`. **127 tools across 25 categories** (`tools/index.ts`, `route.ts:44-62`). **As of PR #83 every tool carries MCP annotation hints** (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint:false`) — full coverage, enabling client-side defer-loading and safe-tool filtering:
 
 | Category | Count | Notes |
 |---|---|---|
@@ -111,8 +112,12 @@ Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via
 | **synthesis** | 2 | `prepare_aether_context`, `commit_aether` — Aether (global self-model) via the Claude-Code cognition path (no BYOK) |
 | **ask** | 3 | `run_kairos_ask`, `get_pending_kairos_ask`, `answer_kairos_ask` — proactive one-question loop |
 | **dialogue** | 5 | `open_dialogue`, `prepare_dialogue_context`, `append_dialogue_turn`, `get_dialogue`, `commit_dialogue` |
+| **memory-ops** | 2 | `list_memory_ops`, `revert_memory_op` — memory-engine undo ledger |
+| **thinking** | 3 | `claim_thinking_job`, `submit_thinking_job`, `list_thinking_jobs` — the Claude Max routine's queue surface |
+| **beliefs** | 2 | `list_beliefs`, `get_mind_comparison` |
+| **constitution** | 2 | `get_constitution`, `propose_constitution_amendment` (acceptance is operator-only) |
 
-**Parity locks:** `gantt-parity.test.ts` (Gantt MCP↔REST), `memories-parity.test.ts` (8 memory tools vs REST). Sessions have matching shapes but **no parity test** (drift risk). **Intentional surface gaps:** dominions, synthesis/ask/dialogue, and reflections are MCP-only; AI credentials/preferences are REST-only; canvas is REST-only.
+**Parity locks:** `gantt-parity.test.ts` (Gantt MCP↔REST), `memories-parity.test.ts` (memory tools vs REST), `virtual-members-parity.test.ts`, `sessions-parity.test.ts`, `memory-ops-parity.test.ts`, `thinking-parity.test.ts`, `beliefs-parity.test.ts`, `constitution-parity.test.ts` (all in `app/api/__tests__/`). **Constitution amendments are operator-only:** MCP `accept_proposal` and bearer REST `POST /api/v1/memories/[id]/accept` refuse them (403); the operator-session path (Will inbox / Telegram) goes through `lib/kairos/proposal-accept.ts` `acceptKairosProposal`. **Intentional surface gaps:** dominions, synthesis/ask/dialogue, and reflections are MCP-only; AI credentials/preferences are REST-only; canvas is REST-only.
 
 ---
 
@@ -144,7 +149,7 @@ Three-tier BYOK routing (cheap / standard / heavy) over user-supplied keys, all 
 | **Voyage AI (`voyage-3.5`, 1024-dim)** | App-owned memory embeddings (primary) | Active |
 | **OpenAI `text-embedding-3-small`** | Embedding fallback (truncated to 1024-dim) | Active (fallback) |
 | pgvector | 1024-dim memory vector column + HNSW | Active |
-| MCP Protocol | AI tool server | Active (118 tools) |
+| MCP Protocol | AI tool server | Active (127 tools) |
 | claude.ai remote connector | OAuth 2.1 MCP client → `/api/mcp` | Active (DCR + PKCE) |
 | Pusher Channels | Real-time (30s polling fallback) | Active |
 | ReactFlow (`@xyflow/react`) | Canvas | Active |
@@ -174,18 +179,24 @@ Cron schedule (`apps/web/vercel.json`, all `Bearer ${CRON_SECRET}`):
 
 | UTC | Cron | Purpose |
 |---|---|---|
-| 23:00 | `project-snapshot` | per-project snapshot + ephemeral lifecycle compost |
+| 23:00 | `project-snapshot` | per-project snapshot + board feed + ephemeral lifecycle compost |
+| 01:30 | `memory-engine` | Merge → Weigh → BackUp → OwnMind → Concepts (230s budget, `?dryRun=1`) |
+| hourly :50 | `thinking-sweep` | plan / expire / paid-fallback thinking jobs |
 | **02:00** | **`chat-distill`** | **distil yesterday's kairos-chat threads (incl. Telegram) into reflections — runs BEFORE archetypes so they feed the same night's chain (PR #89)** |
 | 02:30 | `archetype-synthesis` | 3–7 archetypes / Dominion |
-| 03:00 | `cortex-regen` | living cortex / Dominion |
-| 03:15 | `aether-regen` | global Aether self-model |
+| 03:00 | `cortex-regen` | living cortex / Dominion (fallback for `cortex` job) |
+| 03:15 | `aether-regen` | global Aether self-model (fallback for `aether` job) |
 | 04:00 | `embed-backfill` | drain missing/stale embeddings |
-| **05:00** | **`contradiction-scan`** | **belief-contradiction sweep (standard tier, `contradiction` task policy)** |
-| 06:30 | `introspection` | staged `inbound` proposals / Dominion |
-| 07:00 | `briefer` | one advisory / Dominion |
-| Sun 03:00 | `memory-compaction` | weekly substrate count/report (stub) |
+| 04:30 | `ask-mine` | Kairos Asks + `card_notes` nudges |
+| Mon 04:20 | `constitution-seed` | seed / maintain the live constitution |
+| **05:00** | **`contradiction-scan`** | **belief-contradiction sweep (`contradiction` task policy)** |
 | Sun 05:00 | `memory-dedup` | weekly near-duplicate supersession |
+| 06:15 | `briefer` | one advisory / Dominion |
+| 06:30 | `introspection` | staged `inbound` proposals / Dominion |
+| 06:45 | `synthesis-health` | nightly trace rollup + 2-strike ops alert |
+| 07:00 + 08:00 | `daily-message` | guaranteed 08:00 Europe/London speak (London-hour gate) |
+| :15 at 6,9,12,15,18,21,23 | `micro-consolidate` | intraday per-Dominion `delta` fold |
 
-**11 crons total.** The Kairos **brain-tick** is deliberately NOT a Vercel cron — it runs as a Claude cloud routine 3×/day executing `docs/kairos/29-brain-tick.md`, POSTing to `/api/v1/kairos/speak` when a signal clears the interrupt bar.
+**17 crons total** (`memory-compaction` and the 18:00 `digest` removed). The Kairos **brain-tick** and the **thinking routines** (Kairos thinking / morning / chat) are deliberately NOT Vercel crons — they run as Claude cloud routines; the brain-tick executes `docs/kairos/29-brain-tick.md`, POSTing to `/api/v1/kairos/speak` when a signal clears the interrupt bar.
 
 See [kairos/synthesis.md](kairos/synthesis.md) for what each synthesis cron produces.

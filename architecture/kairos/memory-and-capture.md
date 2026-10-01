@@ -10,11 +10,12 @@ filter and never returns rows the user does not own.
 
 Schema in `apps/web/src/lib/db/schema.ts`; migrations `0015_kairos_summaries`,
 `0021_memory_stream_class`, `0023_memory_embeddings`, `0024_memory_provenance`,
-**`0025_memory_valid_time`** (bi-temporal).
+**`0025_memory_valid_time`** (bi-temporal), **`0039_kairos_memory_engine`** (standing + ops + jobs).
 
 - **Display + body:** `title`, `aiTitle` (1–6 word headline), `summary`, `execSummary` (jsonb bullets), `bodyMd`.
-- **`type`** (`memoryTypeSchema`, `validators.ts:319`): note, decision, idea, observation, session_summary, reflection, snapshot, inbound, advisory, achievement, session_event, fact, contact, external_event, archetype, dominion_cortex, aether.
-- **`streamClass`** (`streamClass.ts`): idea, agentic, execution, reflection, cortex, archetype, advisory, trace, snapshot, aether. `createMemorySchema` deliberately does NOT expose `streamClass` — only internal callers set it; public writes default to `idea`. `type` and `streamClass` are orthogonal.
+- **`type`** (`memoryTypeSchema`, `lib/data/validators/memory.ts`): note, decision, idea, observation, session_summary, reflection, snapshot, inbound, advisory, achievement, session_event, fact, contact, external_event, archetype, dominion_cortex, aether, **concept, belief, constitution**.
+- **`streamClass`** (`lib/kairos/streamClass.ts`, 14): idea, agentic, execution, reflection, cortex, archetype, advisory, trace, snapshot, aether, **delta, concept, belief, constitution**. `META_STREAM_CLASSES = trace | delta | snapshot` are excluded by every synthesis/engine/chat reader. `createMemorySchema` deliberately does NOT expose `streamClass` — only internal callers set it; public writes default via the capture choke point (§3). `type` and `streamClass` are orthogonal.
+- **Memory-engine columns (0039):** `standing` (0–1), `standing_at`, `last_used_at`, `use_count` (+ `memories_standing_idx`); sibling tables `memory_ops` (undo ledger) and `thinking_jobs` (queue) — see [synthesis.md](synthesis.md) §Thinking queue.
 - **Embedding / confidence / provenance:** `embedding vector(1024)` + `embedding_model` (HNSW `vector_cosine_ops`); `confidence` (trust prior from the stream via `CONFIDENCE_BY_STREAM`, `memories.ts:52`); `source` (`manual`/`system`/`cron`/`claude`/`codex`/`copilot`/`webhook`/`voice`) + `sourceMetadata` jsonb (carries `externalId`, `sessionId`, `client`, `repo`, `runId`, `citations`, `kairosSpeak` for speaks-first deliveries, `chatDistill` provenance, `kairosAutoFiled.similarity`, …); typed-edge `links` jsonb; `pinned`, `archivedAt`, `supersededAt`/`supersededById`. FTS via a raw-SQL generated `fts tsvector` + GIN.
 - **Bi-temporal validity (0025, PR #72):** `validAt` (NOT NULL, defaultNow) / `invalidAt` (nullable) = when the claim was true **in the world**; `supersededAt` = when we **learned** it changed. Read path: `getBeliefTrail()` (`memories.ts:744`) walks the supersession chain both directions and returns nodes with `validFrom`/`invalidFrom`; backs MCP `get_belief_trail` + `GET /api/v1/memories/[id]/trail`. `getGraphForUser` projects `invalidAt` so the galaxy is bi-temporal-aware.
 - **Read-time confidence decay (PR #73, `lib/kairos/confidence.ts`):** `HALF_LIFE=90d`, `FLOOR=0.5`, `WEIGHT=0.6`, decays off `updatedAt` (deliberately distinct from the 14-day retrieval recency signal); pinned rows exempt. The same function drives galaxy brightness, so search and the galaxy always agree.
@@ -42,6 +43,14 @@ Below-threshold / any failure → unfiled; capture never breaks.
 All inbound writes funnel through `captureMemory()` (`memories.ts:963`) — normalises
 `channel`→`source='webhook'` and enforces **externalId idempotency**. `createMemory()`
 (`memories.ts:800`) also enforces **client + sessionId idempotency** across Claude, Codex, Copilot, and compatibility-fallback captures.
+
+**Capture choke point:** `lib/kairos/stream-class-default.ts` → `defaultStreamClass(source, type, sourceMetadata)` picks the stream when the caller gives none (explicit always wins), and `validAt` is taken from `sourceMetadata.session.endedAt` when it is within 7 days. **Session record v1** lives at `sourceMetadata.session` (`lib/kairos/session-record.ts`, mirrored by `apps/web/scripts/session-record.mjs`; required `v`, `client`, `sessionId`).
+
+| Path | File | What it writes |
+|---|---|---|
+| Mission memory | `lib/kairos/mission-memory.ts` | Hangar mission result → ONE `session_summary` (`externalId hangar:{sessionId}`) |
+| Board feed | `lib/kairos/board-feed{,-render}.ts` | inside the 23:00Z `project-snapshot` cron, for projects with `settings.kairosFeed` = `daily`/`weekly`: `board_day`/`board_week` digests (`type='achievement'`, `streamClass='agentic'`) |
+| `card_notes` nudge | `ask-mine` cron (04:30Z) | asks for missing card context; answers are appended to the card (or vault) description; asks expire after 72h |
 
 - **Auto-capture (board / project)** — `lib/kairos/auto-capture.ts`: `captureBoardEvent` (snapshot/achievement), `captureProjectEvent`. Fire-and-forget, `source='system'`.
 - **Project-snapshot cron** — `lib/kairos/project-snapshot.ts`: `runProjectSnapshotsForUser` (one `streamClass='snapshot'` memory per active project per day), plus `runEphemeralLifecycleForUser` — the nightly "compost" pass that archives snapshots past `SNAPSHOT_TTL_DAYS=7` / advisories past `ADVISORY_TTL_DAYS=14` (`lifecycle.ts`), stamping `archivedAt` (never deletes). Cron: `project-snapshot`, 23:00 UTC.
@@ -72,6 +81,10 @@ summariser call site (and via the **Acolyte** lieutenant, see [chat.md](chat.md)
 **Voyage `rerank-2.5` cross-encoder** (`lib/kairos/rerank.ts`; no key / any error → null, caller
 keeps prior order) → top-5.
 
+**Shared ranker (`lib/kairos/ranking.ts`):** every retrieval path orders by `rankScore = relevance ×
+standingFactor`, where `standingFactor = 0.5 + standing` for engine-scored rows (0.5–1.5) and
+falls back to `confidenceBoost × recencyMultiplier` for unscored rows.
+
 - **`retrieveContext()`** (`retrieve.ts`) — canonical Dominion-scoped fetch for recipes. Returns `{ bundle, cortex, archetypes, substrate, traces }`. Substrate over reflection/idea/agentic, 90-day window. FTS via `websearch_to_tsquery` + `ts_rank_cd`; when `embeddingsEnabled()` adds the vector leg (`hnsw.ef_search=100`, `ORDER BY embedding <=> $vec`). Best-effort: any vector error falls back to pure FTS.
 - **`retrieveGlobalContext()`** (`retrieve.ts:106`) — **whole-brain retrieval** (PR #75): `dominionId=null` collapses scope predicates to TRUE, the latest Aether doc stands in for per-Dominion cortex. Same confidence+rerank pipeline. Powers the unanchored chat (see [chat.md](chat.md)).
 - **`prepareContext()`** (`memories.ts:1754`) — generic budget-packed bundle (FTS + optional vector fused by `fuseHybrid`, + pinned + 1-hop graph walk + recency-decayed scoring). Backs `prepare_context` MCP + `GET /api/v1/memories/context`. **MCP `search_memories` is a separate path — no rerank there.**
@@ -90,12 +103,55 @@ pinned > highest-confidence > newest, losers are **superseded** (never deleted).
 machine-generated types auto-merge (`AUTO_DEDUP_TYPES=['session_event']`); operator-authored
 types go through the propose-not-commit gate. Cron: `memory-dedup`, Sunday 05:00 UTC.
 
+## 7. Memory engine (0039, PR #134)
+
+Cron `memory-engine`, **01:30 UTC**; 230s budget, always writes a trace; `?dryRun=1` previews.
+Steps run in registry order (`lib/kairos/engine/registry.ts`, `engine/steps/*`):
+
+| Step | Does |
+|---|---|
+| Merge | folds a near-verbatim repeat (cosine ≥ 0.95, same stream class) into the OLDER live row as reinforcement (`useCount+1`) |
+| Weigh | recomputes `standing = clamp01(base × Π scorer factors)`; scorers `source-trust`, `freshness`, `usage`, `support`, `outcome`, `challenged` (`engine/scorers/*`) |
+| BackUp | Kairos's pending introspection proposals: ≥2 supports on ≥2 UTC days → promoted to `idea`; no backing in 21 days → decays (archived); ≤400 candidates/night |
+| OwnMind | mirrors engine promotions into Kairos's own beliefs (`beliefs/mirror.ts`); retires mirrors of reverted promotions |
+| Concepts | Sundays only — enqueues `concept` thinking jobs, writes nothing itself |
+
+Every live change writes its `memory_ops` row **in the same transaction** (`engine/change-log.ts`);
+any op is revertible via MCP `revert_memory_op`, REST `POST /api/v1/kairos/memory-ops/[id]/revert`,
+or chat `undo_kairos_change` (`engine/revert.ts`). A reverted promote/decay/merge leaves a per-op
+veto slot (`sourceMetadata.engine.vetoes[op]`) so the next night does not redo it. **Reactions** (`lib/kairos/reactions.ts` → `lib/data/memory-reactions.ts`) trigger an
+immediate rescore (`lib/kairos/rescore.ts`, applied only when |Δ| ≥ 0.05).
+
+## 8. Belief ledger — two minds
+
+Beliefs are `type/streamClass='belief'` rows in `memories` (no dedicated table).
+
+| Mind | Source |
+|---|---|
+| Aligned (operator's) | `belief_extract` thinking job distils stated beliefs from the substrate |
+| Own (Kairos's) | `OwnMindStep` (`beliefs/mirror.ts`) mirrors engine promotions |
+
+Weekly `mind_compare` pairs same-topic beliefs at cosine ≥ 0.82 (`beliefs/compare.ts`) and records
+agreements/divergences; read via MCP `list_beliefs` / `get_mind_comparison`.
+
+## 9. Constitution
+
+`lib/kairos/constitution/*`: exactly ONE live `constitution` version; a new version supersedes the
+old. Seeded by `constitution-seed` (Mon 04:20 UTC). Amendments arrive as proposals
+(`propose_constitution_amendment`); **only the operator accepts** — in the Will inbox or Telegram
+(`lib/kairos/proposal-accept.ts`). MCP `accept_proposal` and bearer REST accept refuse amendments
+(403). Drift probes (`constitution/probes.ts`, `drift.ts`) — see [synthesis.md](synthesis.md).
+
 ## Key files
 
 - `apps/web/src/lib/db/schema.ts` — `memories` + Dominion tables
 - `apps/web/src/lib/data/memories.ts` — capture / create / reflection / accept-proposal / search / backfill / dedup / prepareContext
 - `apps/web/src/lib/data/{validators,dominions}.ts`
 - `apps/web/src/lib/kairos/{streamClass,dominionTags,lifecycle,dedup,embeddings,retrieve,auto-capture,project-snapshot,introspection,confidence,rerank,rrf,autofile,contradiction,chat-distill,cron-trace}.ts` — `cron-trace` failure input gained `finishReason` + bounded `rawExcerpt` (docs/kairos/31, A6)
+- `apps/web/src/lib/kairos/{stream-class-default,session-record,mission-memory,board-feed,board-feed-render,ranking,reactions,rescore,proposal-accept}.ts`
+- `apps/web/src/lib/kairos/{engine,beliefs,constitution,concepts}/` — memory engine, two minds, constitution + drift, concept clustering
+- `apps/web/src/lib/data/{memory-engine,memory-ops,memory-candidates,memory-reactions,memory-rescore,beliefs,concepts,constitution,constitution-drift,mind-compare}.ts`
+- `apps/web/scripts/session-record.mjs` — hook-side mirror of session record v1
 - `apps/web/scripts/claude-session-capture.mjs` — shared session-capture pipeline
 - `apps/web/scripts/{claude,codex,copilot}-session-capture-dispatch.mjs` — short-lived durable-queue lifecycle dispatchers
 - `apps/web/scripts/session-capture-{queue,drain}.mjs` — receipts, spool, global drain lock, retry diagnostics
