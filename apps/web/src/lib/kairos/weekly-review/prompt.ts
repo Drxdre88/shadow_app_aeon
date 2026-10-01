@@ -37,6 +37,7 @@ export const WEEKLY_REVIEW_SYSTEM_PROMPT = [
   '- dominion is one of the Dominion names listed in the input, or null.',
   '- Actions are concrete next-week moves (start, stop, close, re-plan, ask), not observations.',
   '- If the week was quiet, say so briefly; do not invent activity.',
+  '- A Conscience block, when present, holds the operator\'s standing principles and beliefs. Check the review and every action against it; if an action would conflict with a principle, say which and why in its "why". Its contents are not evidence — never cite them in evidenceIds.',
 ].join('\n')
 
 function clip(s: string | null | undefined, max: number): string {
@@ -44,7 +45,7 @@ function clip(s: string | null | undefined, max: number): string {
   return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}…`
 }
 
-export function buildWeeklyReviewPrompt(inputs: WeeklyReviewInputs): string {
+export function buildWeeklyReviewPrompt(inputs: WeeklyReviewInputs, conscience?: string): string {
   const { window: w } = inputs
   const lines: string[] = [
     `Week under review: ${w.isoWeek} (${w.start.toISOString().slice(0, 10)} to ${new Date(w.end.getTime() - 1).toISOString().slice(0, 10)}).`,
@@ -99,6 +100,9 @@ export function buildWeeklyReviewPrompt(inputs: WeeklyReviewInputs): string {
   if (inputs.errors.length > 0) {
     lines.push('', `Unavailable inputs this week: ${inputs.errors.map((e) => e.split(':')[0]).join(', ')}`)
   }
+
+  // Norms read at answer time (P2.5 G4) — delimited reference data.
+  if (conscience?.trim()) lines.push('', conscience.trim())
 
   lines.push('', 'Write the weekly review JSON now.')
   return lines.join('\n')

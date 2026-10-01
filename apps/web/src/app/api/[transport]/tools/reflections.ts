@@ -50,7 +50,7 @@ export const registerReflectionTools: RegisterFn = (server) => {
         summary: args.summary ?? null,
         tags: args.tags,
         source: 'claude',
-      })
+      }, { origin: { kind: 'agent', via: 'mcp' } })
       if (!result.ok) {
         if (result.reason === 'dominion_not_found') return notFound('Dominion')
         return fail(`kairos_reflect: ${result.reason}`)

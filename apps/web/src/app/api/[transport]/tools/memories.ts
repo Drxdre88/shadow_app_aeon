@@ -122,7 +122,8 @@ export const registerMemoryTools: RegisterFn = (server) => {
       const anchorErr = await verifyAnchors(uid, parsed.data)
       if (anchorErr) return fail(anchorErr)
 
-      const memory = await _createMemory(uid, parsed.data)
+      // Every MCP write is an AI client acting for the owner (P2.5 origin).
+      const memory = await _createMemory(uid, parsed.data, { origin: { kind: 'agent', via: 'mcp' } })
       return ok({
         id: memory.id,
         title: memory.title,
@@ -163,7 +164,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       const anchorErr = await verifyAnchors(uid, parsed.data)
       if (anchorErr) return fail(anchorErr)
 
-      const memory = await _updateMemory(memoryId, uid, parsed.data)
+      const memory = await _updateMemory(memoryId, uid, parsed.data, { origin: { kind: 'agent', via: 'mcp' } })
       if (!memory) return notFound('Memory')
       return ok({
         id: memory.id,
@@ -413,7 +414,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
         return fail(OPERATOR_ONLY_AMENDMENT_ERROR)
       }
 
-      const res = await acceptKairosProposal(memoryId, uid, parsed.data)
+      const res = await acceptKairosProposal(memoryId, uid, parsed.data, { origin: { kind: 'agent', via: 'mcp' } })
       if (!res) return notFound('Memory')
       if (!res.ok) return fail('Memory is not a pending proposal')
       return ok({

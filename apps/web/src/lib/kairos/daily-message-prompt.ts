@@ -137,7 +137,7 @@ export interface BriefDigest { dominion: string; lines: string[] }
 export interface AetherDigest { title: string; insight: string; dominionName: string | null }
 export interface BoardDayDigest { finished: number; finishedTitles: string[]; thinCards: number }
 export interface BeliefChange { mind: 'aligned' | 'own' | 'other'; claim: string }
-export interface DriftDigest { alert: boolean; summary: string | null }
+export interface DriftDigest { alert: boolean; summary: string | null; measured?: boolean; conscience?: string | null }
 
 // Every input is optional: null = unavailable (not found, or its read failed —
 // the name is then listed in `failed`). An input failure never costs the message.
@@ -179,13 +179,15 @@ export const DAILY_MESSAGE_SYSTEM_PROMPT = [
   '- Synthesis health: one short line only if a stage is failing; silence when healthy or unknown.',
   '- First person, texting register ("I noticed…", "yesterday you…") — not a report.',
   '- Do NOT list the promoted beliefs — the delivery layer appends them deterministically.',
+  '- A Conscience block, when present, holds standing principles and beliefs: check the message against it, but it is',
+  '  not news — never report its contents as something that changed.',
 ].join('\n')
 
 function section(title: string, lines: string[]): string[] {
   return lines.length === 0 ? [] : ['', `── ${title} ──`, '', ...lines]
 }
 
-export function buildDailyMessageUserPrompt(inputs: DailyMessageInputs): string {
+export function buildDailyMessageUserPrompt(inputs: DailyMessageInputs, conscience?: string): string {
   const out: string[] = [`Date (London): ${inputs.date}${inputs.isMonday ? ' (Monday)' : ''}.`]
   out.push(...section("TODAY'S BRIEFS (per Dominion)", (inputs.briefs ?? []).flatMap((b) => [
     `[${b.dominion}]`,
@@ -206,9 +208,11 @@ export function buildDailyMessageUserPrompt(inputs: DailyMessageInputs): string 
   }
   for (const b of inputs.newBeliefs ?? []) beliefLines.push(`New ${b.mind === 'other' ? '' : `${b.mind}-mind `}belief: ${b.claim}`)
   if (inputs.drift) {
-    beliefLines.push(inputs.drift.alert
+    // measured:false → only conscience checks are fresh; no drift reading to report.
+    if (inputs.drift.measured !== false) beliefLines.push(inputs.drift.alert
       ? `DRIFT ALERT: ${inputs.drift.summary ?? 'answers have drifted from the constitution baseline.'}`
       : `Drift: within baseline${inputs.drift.summary ? ` (${inputs.drift.summary})` : ''}.`)
+    if (inputs.drift.conscience) beliefLines.push(`Self-check failures (say plainly, one line): ${inputs.drift.conscience}.`)
   }
   out.push(...section('BELIEF CHANGES (LAST 24H)', beliefLines))
   if (inputs.isMonday && inputs.mindCompare) out.push(...section('WEEKLY MIND COMPARISON (aligned vs own)', [inputs.mindCompare]))
@@ -218,6 +222,9 @@ export function buildDailyMessageUserPrompt(inputs: DailyMessageInputs): string 
     ]))
   }
   if (inputs.pendingAsk) out.push(...section('PENDING QUESTION (ask it verbatim, last)', [inputs.pendingAsk]))
+  // Norms read at answer time (P2.5 G4) — delimited reference data, last, so
+  // the facts above and the system prompt's output contract stay primary.
+  if (conscience?.trim()) out.push('', conscience.trim())
   return out.join('\n')
 }
 
@@ -271,6 +278,7 @@ export function buildDeterministicDailyMessage(inputs: DailyMessageInputs): stri
   const newBeliefs = inputs.newBeliefs ?? []
   if (newBeliefs.length > 0) thinking.push(`${plural(newBeliefs.length, 'new belief')} formed since yesterday.`)
   if (inputs.drift?.alert) thinking.push(`Drift alert: ${safeLine(inputs.drift.summary ?? 'my answers have drifted from the constitution baseline', 160)}.`)
+  if (inputs.drift?.conscience) thinking.push(`${safeLine(inputs.drift.conscience, 160)}.`)
   if (inputs.isMonday && inputs.mindCompare) thinking.push(`Minds this week: ${safeLine(inputs.mindCompare, 180)}`)
   if (thinking.length > 0) blocks.push(['**Thinking**', ...thinking].join('\n'))
   if (inputs.synthesis && inputs.synthesis.failed > 0) {

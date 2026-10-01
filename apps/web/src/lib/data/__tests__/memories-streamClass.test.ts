@@ -54,7 +54,7 @@ vi.mock('../dominions', () => ({
   resolveDominionForMemory: vi.fn(async () => null),
 }))
 
-import { createMemory, captureMemory } from '../memories'
+import { createMemory, captureMemory, captureReflection, resolveWriteOrigin } from '../memories'
 
 const USER = 'user-1'
 const DOMINION = 'b0000000-0000-4000-8000-000000000002'
@@ -239,5 +239,71 @@ describe('captureMemory — streamClass override', () => {
     selectQueue.push([])
     await captureMemory(USER, { ...baseInput, type: 'note', source: 'manual' })
     expect(lastInsertValues.value).not.toHaveProperty('streamClass')
+  })
+})
+
+// P2.5 (G6) — origin is fixed at write by the trusted surface, never the client.
+describe('origin at write', () => {
+  const originOf = () => (lastInsertValues.value?.sourceMetadata as Record<string, unknown>).origin
+
+  it('infers the origin when no trusted origin is passed, overwriting a client label', async () => {
+    await createMemory(USER, { ...baseInput, type: 'note', source: 'manual', sourceMetadata: { origin: { kind: 'external' } } })
+    expect(originOf()).toEqual({ kind: 'operator' })
+
+    await createMemory(USER, { ...baseInput, type: 'note', source: 'cron', sourceMetadata: { kind: 'board_day' } })
+    expect(originOf()).toEqual({ kind: 'activity' })
+
+    await createMemory(USER, { ...baseInput, type: 'note', source: 'webhook' })
+    expect(originOf()).toEqual({ kind: 'external' })
+  })
+
+  it('stamps the trusted origin and never lets the client raise it', async () => {
+    await createMemory(USER, {
+      ...baseInput,
+      type: 'reflection',
+      source: 'manual',
+      sourceMetadata: { origin: { kind: 'operator', via: 'ui' }, kind: 'board_day' },
+    }, { origin: { kind: 'agent', via: 'mcp' } })
+    expect(originOf()).toEqual({ kind: 'agent', via: 'mcp' })
+    expect(lastInsertValues.value?.sourceMetadata).toMatchObject({ kind: 'board_day' })
+  })
+
+  it('caps a trusted origin by the source: ingested, agent and machine sources stay low', () => {
+    expect(resolveWriteOrigin('import', {}, { kind: 'operator', via: 'ui' })).toEqual({ kind: 'external', via: 'ui' })
+    expect(resolveWriteOrigin('claude', {}, { kind: 'operator', via: 'rest-session' })).toEqual({ kind: 'agent', via: 'rest-session' })
+    expect(resolveWriteOrigin('cron', {}, { kind: 'agent', via: 'mcp' })).toEqual({ kind: 'kairos', via: 'mcp' })
+    // sourceMetadata.kind is client-settable, so it never lifts a bearer write to activity.
+    expect(resolveWriteOrigin('manual', { kind: 'board_day' }, { kind: 'agent', via: 'rest' })).toEqual({ kind: 'agent', via: 'rest' })
+    expect(resolveWriteOrigin('manual', {}, { kind: 'operator', via: 'telegram' })).toEqual({ kind: 'operator', via: 'telegram' })
+  })
+
+  it('preserves the rest of sourceMetadata alongside the origin', async () => {
+    await createMemory(USER, { ...baseInput, type: 'note', source: 'voice', sourceMetadata: { externalId: 'x' } }, { origin: { kind: 'operator', via: 'ui' } })
+    expect(lastInsertValues.value?.sourceMetadata).toEqual({ externalId: 'x', origin: { kind: 'operator', via: 'ui' } })
+  })
+
+  it('captureMemory forwards the trusted origin; a channel capture is external', async () => {
+    await captureMemory(USER, { ...baseInput, type: 'note', source: 'manual' }, { origin: { kind: 'agent', via: 'rest' } })
+    expect(originOf()).toEqual({ kind: 'agent', via: 'rest' })
+
+    await captureMemory(USER, { ...baseInput, type: 'note', source: 'manual', channel: 'slack' }, { origin: { kind: 'operator', via: 'rest-session' } })
+    expect(lastInsertValues.value).toHaveProperty('source', 'webhook')
+    expect(originOf()).toEqual({ kind: 'external', via: 'rest-session' })
+  })
+
+  it('captureReflection stamps the trusted origin; unlabelled falls back to inference', async () => {
+    selectQueue.push([{ id: DOMINION, name: 'AEON' }])
+    await captureReflection(USER, {
+      dominionId: DOMINION,
+      bodyMd: 'We lean GBM.',
+      source: 'claude',
+      sourceMetadata: { origin: { kind: 'operator' } },
+    }, { origin: { kind: 'agent', via: 'mcp' } })
+    expect(lastInsertValues.value).toMatchObject({ type: 'reflection', streamClass: 'reflection' })
+    expect(originOf()).toEqual({ kind: 'agent', via: 'mcp' })
+
+    selectQueue.push([{ id: DOMINION, name: 'AEON' }])
+    await captureReflection(USER, { dominionId: DOMINION, bodyMd: 'Mobile is parked.' })
+    expect(originOf()).toEqual({ kind: 'operator' })
   })
 })

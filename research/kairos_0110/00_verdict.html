@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en" data-theme="stone">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kairos memory vs the living-memory research</title>
+<script>(function () {
+  var KEY = "srl-theme";
+  var THEMES = ["stone", "wood", "neon", "papyrus"];
+  var root = document.documentElement;
+
+  function read() {
+    try { return localStorage.getItem(KEY); } catch (e) { return null; }
+  }
+  function write(v) {
+    try { localStorage.setItem(KEY, v); } catch (e) { }
+  }
+  function apply(v) {
+    if (THEMES.indexOf(v) < 0) v = root.getAttribute("data-theme") || "stone";
+    root.setAttribute("data-theme", v);
+    var buttons = document.querySelectorAll(".srl-theme-select button[data-theme-choice]");
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].setAttribute("aria-pressed", String(buttons[i].getAttribute("data-theme-choice") === v));
+    }
+    document.dispatchEvent(new CustomEvent("srl-theme", { detail: v }));
+  }
+
+  apply(read());
+  document.addEventListener("DOMContentLoaded", function () {
+    apply(root.getAttribute("data-theme"));
+    document.addEventListener("click", function (ev) {
+      var b = ev.target.closest && ev.target.closest("[data-theme-choice]");
+      if (!b) return;
+      var v = b.getAttribute("data-theme-choice");
+      write(v);
+      apply(v);
+    });
+  });
+})();
+</script>
+<style>/* Shadow Research Lab theme: stone (dark), wood (dark), neon (dark, high contrast), papyrus (light).
+   Set on <html data-theme="stone|wood|neon|papyrus">; theme.js persists the choice as localStorage "srl-theme".
+   Tokens are the only contract: --bg --surface --surface-raised --ink --muted --rule --accent --bull --bear
+   --topbar --on-sign. Tables and figures stay flat; texture lives on the top bar only. Fully offline. */
+
+:root,
+:root[data-theme="stone"] {
+  color-scheme: dark;
+  --bg: #151619;
+  --surface: #222326;
+  --surface-raised: #2d2f32;
+  --ink: #eee7d8;
+  --muted: #b7ab96;
+  --rule: #54514d;
+  --accent: #ddbb75;
+  --bull: #80d1a6;
+  --bear: #f29191;
+  --topbar: #292b2c;
+  --on-sign: #151619;
+  --topbar-texture:
+    radial-gradient(120% 140% at 12% -20%, rgba(200, 210, 220, .10), transparent 55%),
+    radial-gradient(90% 120% at 88% 120%, rgba(160, 170, 180, .07), transparent 60%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, .025) 0 1px, transparent 1px 7px),
+    linear-gradient(180deg, #303235, #242628);
+  --topbar-edge: inset 0 1px 0 rgba(255, 255, 255, .06), inset 0 -2px 0 rgba(0, 0, 0, .45);
+}
+
+:root[data-theme="wood"] {
+  color-scheme: dark;
+  --bg: #16110e;
+  --surface: #261b15;
+  --surface-raised: #33251c;
+  --ink: #f1e6d6;
+  --muted: #bea994;
+  --rule: #624835;
+  --accent: #e4b978;
+  --bull: #83d6ad;
+  --bear: #f59391;
+  --topbar: #332419;
+  --on-sign: #16110e;
+  --topbar-texture:
+    repeating-linear-gradient(92deg, rgba(0, 0, 0, .16) 0 1px, transparent 1px 13px, rgba(255, 220, 170, .035) 13px 14px, transparent 14px 29px),
+    repeating-linear-gradient(88deg, rgba(0, 0, 0, .10) 0 2px, transparent 2px 47px),
+    linear-gradient(180deg, #3d2b1e, #2a1d14);
+  --topbar-edge: inset 0 1px 0 rgba(255, 210, 150, .10), inset 0 -2px 0 rgba(0, 0, 0, .5);
+}
+
+:root[data-theme="neon"] {
+  color-scheme: dark;
+  --bg: #07060d;
+  --surface: #110f1f;
+  --surface-raised: #1a1730;
+  --ink: #e9f7ff;
+  --muted: #9aa6d8;
+  --rule: #3b2f6b;
+  --accent: #34f0ff;
+  --bull: #5cff9d;
+  --bear: #ff4fa3;
+  --topbar: #0d0b1a;
+  --on-sign: #07060d;
+  --topbar-texture:
+    linear-gradient(90deg, rgba(52, 240, 255, .10) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(0deg, rgba(255, 79, 163, .08) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(180deg, #16112b, #0b0916);
+  --topbar-edge: inset 0 -1px 0 rgba(52, 240, 255, .55), 0 0 18px rgba(52, 240, 255, .18);
+}
+:root[data-theme="neon"] .srl-page h1,
+:root[data-theme="neon"] .srl-page h2 { text-shadow: 0 0 6px rgba(52, 240, 255, .55), 0 0 18px rgba(255, 79, 163, .25); }
+:root[data-theme="neon"] .srl-page a,
+:root[data-theme="neon"] .srl-wordmark { text-shadow: 0 0 8px rgba(52, 240, 255, .45); }
+
+:root[data-theme="papyrus"] {
+  color-scheme: light;
+  --bg: #f4ecd8;
+  --surface: #eee3ca;
+  --surface-raised: #e5d3af;
+  --ink: #302517;
+  --muted: #67533b;
+  --rule: #ac9471;
+  --accent: #715121;
+  --bull: #226345;
+  --bear: #a13739;
+  --topbar: #e5d3af;
+  --on-sign: #fbf6ea;
+  --topbar-texture:
+    radial-gradient(140% 160% at 20% -30%, rgba(255, 250, 235, .55), transparent 60%),
+    radial-gradient(100% 120% at 90% 130%, rgba(140, 105, 55, .12), transparent 60%),
+    linear-gradient(180deg, #eadbbc, #e0cda6);
+  --topbar-edge: inset 0 -1px 0 rgba(113, 81, 33, .35);
+}
+
+:root {
+  --font-display: "Old English Text MT", "UnifrakturCook", "UnifrakturMaguntia", "Palatino Linotype", Palatino, serif;
+  --font-heading: "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font-body: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-num: Consolas, "Cascadia Mono", "Courier New", monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 var(--font-body);
+}
+
+.srl-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  background: var(--topbar-texture), var(--topbar);
+  box-shadow: var(--topbar-edge);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-ui);
+}
+.srl-wordmark {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  line-height: 1;
+  color: var(--accent);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .35);
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+.srl-crumb { color: var(--muted); font-size: .85rem; letter-spacing: .06em; text-transform: uppercase; }
+.srl-spacer { flex: 1; }
+.srl-theme-select { display: inline-flex; gap: 4px; }
+.srl-theme-select button {
+  font: 500 .8rem var(--font-ui);
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.srl-theme-select button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+.srl-page { max-width: 880px; margin: 0 auto; padding: 28px 20px 56px; }
+.srl-page h1, .srl-page h2, .srl-page h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.2; }
+.srl-page h1 { font-size: 2.1rem; margin: 0 0 6px; }
+.srl-page h2 { font-size: 1.35rem; margin: 30px 0 8px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.srl-page h3 { font-size: 1.1rem; margin: 20px 0 6px; }
+.srl-page a { color: var(--accent); }
+.srl-page code { font-family: var(--font-num); font-size: .9em; background: var(--surface); padding: 1px 4px; border-radius: 3px; }
+.srl-page pre { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; overflow-x: auto; }
+.srl-page pre code { background: none; padding: 0; }
+.srl-page blockquote { margin: 12px 0; padding: 4px 14px; border-left: 3px solid var(--accent); color: var(--muted); }
+.srl-lede { color: var(--muted); font-size: 1.05rem; }
+.srl-eyebrow { font: 600 .78rem var(--font-ui); color: var(--muted); letter-spacing: .12em; text-transform: uppercase; }
+
+.srl-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 18px 0; }
+.srl-tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; }
+.srl-tile .v { font: 600 1.5rem var(--font-num); }
+.srl-tile .l { color: var(--muted); font-size: .85rem; }
+
+.srl-table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; margin: 12px 0; }
+.srl-page table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.srl-page th, .srl-page td { padding: 7px 10px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+.srl-page th { font: 600 .8rem var(--font-ui); color: var(--muted); letter-spacing: .03em; }
+.srl-page tr:last-child td { border-bottom: 0; }
+
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.bull, .pos { color: var(--bull); }
+.bear, .neg { color: var(--bear); }
+.warn { color: var(--accent); }
+.muted { color: var(--muted); }
+
+.srl-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 18px 0 0; border-bottom: 1px solid var(--rule); }
+.srl-tabs button {
+  font: 500 .88rem var(--font-ui);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.srl-tabs button[aria-selected="true"] { color: var(--ink); background: var(--surface); border-color: var(--rule); }
+.srl-tabpanel[hidden] { display: none; }
+
+.srl-footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid var(--rule); color: var(--muted); font-size: .85rem; }
+
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .srl-theme-select button, .srl-tabs button { transition: background .15s, color .15s; } }
+</style>
+</head>
+<body>
+<header class="srl-topbar"><span class="srl-wordmark">Shadow Research Lab</span><span class="srl-crumb">research / kairos_0110</span><span class="srl-spacer"></span><nav class="srl-theme-select" aria-label="Theme"><button type="button" data-theme-choice="stone" aria-pressed="false">Stone</button><button type="button" data-theme-choice="wood" aria-pressed="false">Wood</button><button type="button" data-theme-choice="neon" aria-pressed="false">Neon</button><button type="button" data-theme-choice="papyrus" aria-pressed="false">Papyrus</button></nav></header>
+<main class="srl-page">
+<p class="srl-eyebrow">Kairos · research · 01/10</p>
+<h1>Kairos memory vs the living-memory research</h1>
+<p class="srl-lede">Phase 1 and 2 checked against 2024–2026 work on evolving memory and machine conscience, and what to fix before Phase 3.</p>
+<div class="srl-tiles"><div class="srl-tile"><div class="v pos">10</div><div class="l">ideas we match or lead on</div></div><div class="srl-tile"><div class="v warn">9</div><div class="l">gaps to close before Phase 3</div></div><div class="srl-tile"><div class="v pos">5</div><div class="l">parallel lanes in Phase 2.5</div></div></div>
+<article>
+<p><strong>Scope:</strong> what Phase 1 (memory engine, #134/#135) and Phase 2 (beliefs &amp; strategy, #136) actually built, checked against 2024–2026 research, and what to change before Phase 3 (idea contest). <strong>Inputs:</strong> four lanes run on 01/10. Lanes C and D are saved in this folder; lanes A and B are summarised here, with their key sources listed at the end.</p>
+<ul>
+<li>lane A: evolving agent memory systems</li>
+<li>lane B: brain-inspired mechanisms with measured results</li>
+<li>lane C: machine conscience and self-models</li>
+<li>lane D: the code as built, cited to file and line</li>
+</ul>
+<p>The two most serious code claims (outdated rows leaking into chat retrieval; the constitution only read by the drift check) were re-checked by hand.</p>
+<h2>Answer first</h2>
+<p>The design we chose is the one the research supports. Nightly &quot;sleep&quot; consolidation, memories that fade unless used, promotion only on evidence from separate sources, undo on every change, two belief sets and a rulebook only the owner can change: these match the strongest 2025–26 evidence, and on oversight we are <strong>ahead</strong> of ChatGPT and Claude. Neither offers &quot;what I changed my mind about and why&quot;, nor an owner-only rulebook.</p>
+<p>As built, though, the &quot;conscience&quot; is mostly <strong>not connected</strong>:</p>
+<ul>
+<li>The rulebook (constitution) is read by one thing only, the nightly drift check. Chat, the morning briefs, the daily message and the thinking jobs never see it.</li>
+<li>Kairos can&#x27;t tell <strong>your words</strong> from <strong>its own echoes</strong>. Anything filed as a &quot;reflection&quot; counts as you, including AI-written chat summaries and anything an API client sends. Belief confidence is whatever number the model makes up. When a source is corrected, the beliefs built on it are never revisited.</li>
+<li>Some memory plumbing is broken: merged duplicates still show up in chat; beliefs and the rulebook drop out of chat search after 90 days; the rulebook fades like a 30-day note; and nightly duplicate-folding probably misses rows that wait longer than 36 h for embedding.</li>
+</ul>
+<p><strong>Recommendation:</strong> run a short <strong>Phase 2.5, &quot;Ground and protect&quot;</strong> (one session, five parallel lanes) before Phase 3. Phase 3 makes Kairos produce far more of its own ideas and promote the winners into its own belief set. Without source labels and an echo cap, the contest would amplify Kairos&#x27;s own echoes. The research names this the main failure of self-evolving memory: &quot;experience-following&quot;, models favouring their own output, and &quot;laundering&quot; untrusted content through the agent&#x27;s own summaries.</p>
+<h2>1. Where Kairos already matches or leads the research</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Research idea (evidence)</th><th>Kairos today</th><th>Verdict</th></tr></thead><tbody><tr><td>Offline &quot;sleep-time&quot; consolidation: Letta, LightMem up to +29% accuracy, Anthropic Dreams</td><td>Nightly memory engine (Merge, Weigh, BackUp, OwnMind, weekly Concepts)</td><td>✅ match</td></tr><tr><td>Never delete, mark as replaced (Zep/Graphiti bi-temporal)</td><td>supersededAt / invalidAt / validAt on every memory</td><td>✅ match</td></tr><tr><td>Promotion needs independent evidence, not echoes (GovMem: false promotions 0.60 → 0.04)</td><td>BackUp: ≥2 supports on ≥2 distinct days; same session = one vote; own citations excluded</td><td>✅ match, but see gap G7</td></tr><tr><td>Every change reversible (Dreams &quot;veto not approve&quot;, Letta git memory)</td><td>memory_ops ledger written in the same transaction, revert via MCP/REST/chat</td><td>✅ ahead of products</td></tr><tr><td>Feedback-weighted retrieval (Cognee &quot;memify&quot;, ReasoningBank)</td><td>Reactions change standing; ranker = relevance × standing</td><td>✅ match</td></tr><tr><td>Keyword + vector hybrid (beats most memory products on MemoryAgentBench: BM25 41.5 vs Mem0 21.1)</td><td>Chat substrate fuses full-text and vector results (rank fusion, RRF)</td><td>✅ match (plain <code>search_memories</code> is still keyword-only)</td></tr><tr><td>Concept / summary layers (RAPTOR +20%, MemTree, H-MEM)</td><td>One concept level, weekly, LLM-named</td><td>🟡 partial: one level, no split/merge, no prompt reads it</td></tr><tr><td>Written values, read at answer time (Deliberative Alignment)</td><td>Constitution exists; the owner alone accepts changes</td><td>🟡 written but never read at answer time</td></tr><tr><td>Human oversight of an evolving self (Claude/ChatGPT memory pages, TalkTuner)</td><td>Owner-only constitution, undo, inbox proposals, weekly review</td><td>✅ ahead; no &quot;belief diff&quot; view yet</td></tr><tr><td>Stability probes (drift)</td><td>24 fixed probes vs pinned baseline, nightly</td><td>🟡 catches change only, not sycophancy, contradictions or overconfidence</td></tr></tbody></table></div>
+<h2>2. What the research says a living memory + conscience needs</h2>
+<p>Across all three research lanes, the evidence-backed picture is mechanical, not mystical. &quot;Conscience&quot; is not a feeling. It is a loop:</p>
+<ol>
+<li><strong>Written values</strong>, consulted <em>before</em> acting.</li>
+<li><strong>A monitor</strong> that checks what the agent actually did against them.</li>
+<li><strong>A memory of mistakes</strong>: cases and lessons, consulted before similar actions.</li>
+<li><strong>Belief revision that knows dependencies</strong>: when a support is withdrawn, dependents get re-checked.</li>
+<li><strong>Source labels that can&#x27;t be laundered</strong>: where something came from is fixed at write time, and derived content inherits the <em>lowest</em> trust of its inputs.</li>
+<li><strong>Tests beyond stability</strong>: sycophancy (agreeing with whichever side you take), contradictions, saying &quot;I don&#x27;t know&quot;, planted injections, planted outdated facts.</li>
+</ol>
+<p>&quot;Living&quot; memory, in turn, means:</p>
+<ol start="7">
+<li>Memories that <strong>link</strong> and <strong>strengthen together</strong> when used together (HippoRAG: up to +20% on multi-hop questions; removing the spreading step costs HeLa-Mem 2.55 F1).</li>
+<li>Keeping <strong>what was surprising</strong> rather than everything (Nemori: +13 to +25% vs distilling everything).</li>
+<li><strong>Refreshing old notes</strong> when new related ones arrive, as reversible new versions (A-MEM; REALM reconsolidation: +2 points).</li>
+<li><strong>Knowing which version is current</strong> at answer time. MemoryAgentBench: <em>every</em> memory product fails &quot;an overwritten fact reached by a two-step question&quot;.</li>
+</ol>
+<p>No paper shows the whole conscience loop working end to end. Each part has moderate-to-strong evidence. Nothing supports simulated guilt, a &quot;global workspace&quot;, a narrative self as a source of truth, or anything that needs model weights.</p>
+<h2>3. Gaps found (code-verified) and what to do</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>#</th><th>Gap</th><th>Why it matters (evidence)</th><th>Size</th><th>When</th></tr></thead><tbody><tr><td>G1</td><td><strong>Merged duplicates still retrieved in chat.</strong> Substrate filters <code>invalidAt</code> but not <code>supersededAt</code>; Merge sets only <code>supersededAt</code> (<code>retrieve.ts:283-292</code>, <code>memory-candidates.ts:242</code>)</td><td>Kairos answers from rows it already folded away; P3 critique will cite them as evidence</td><td>small</td><td><strong>2.5</strong></td></tr><tr><td>G2</td><td><strong>Beliefs and the constitution drop out of chat search after 90 days.</strong> Only <code>concept</code> is exempt (<code>retrieve.ts:408</code>). Belief, constitution, advisory and trace have <strong>no half-life class</strong>, so they default to 30 d (<code>freshness.ts:5-18</code>)</td><td>The values and beliefs &quot;forget&quot; themselves</td><td>small</td><td><strong>2.5</strong></td></tr><tr><td>G3</td><td><strong>Merge window starvation.</strong> Merge sees rows ≤36 h old <em>with</em> embeddings; backfill embeds 200/day, and 15 direct-insert paths never embed at write</td><td>Duplicates pile up unseen. Needs a prod check of embedding lag</td><td>small</td><td><strong>2.5</strong></td></tr><tr><td>G4</td><td><strong>The constitution is never consulted.</strong> It is read only by the drift probe</td><td>A conscience nobody reads. Reading the rules before answering is the best-evidenced form (Deliberative Alignment)</td><td>small–med</td><td><strong>2.5</strong></td></tr><tr><td>G5</td><td><strong>Briefs don&#x27;t read beliefs / constitution / aether</strong> (open P2 card item; <code>brief.ts:20-51</code> uses the bundle only, substrate empty because no query)</td><td>Per-Dominion briefs ignore everything P1/P2 learned</td><td>small</td><td><strong>2.5</strong></td></tr><tr><td>G6</td><td><strong>No source label fixed at write; &quot;reflection&quot; means &quot;the owner said it&quot; whatever wrote it.</strong> Any MCP/API client, chat-distill (an LLM summary) and dialogue turns all become operator-grade input to the aligned mind</td><td>The 2026 laundering paper: existing defences reach up to 68% attack success via the agent&#x27;s own summaries; binding origin at write time takes it to 0%</td><td>medium</td><td><strong>2.5</strong></td></tr><tr><td>G7</td><td><strong>Echo cap missing.</strong> Belief confidence = the LLM&#x27;s own number, uncapped; <code>sourceType:&#x27;tool&#x27;</code> is never written. BackUp counts agent session summaries as independent; the own mind is fed by Kairos&#x27;s own introspection</td><td>Model judges favour their own output; experience-following compounds errors. <strong>P3 multiplies Kairos-authored content</strong></td><td>small</td><td><strong>2.5</strong></td></tr><tr><td>G8</td><td><strong>No re-check when a source is corrected.</strong> Belief provenance is stored but never read back; contradiction-scan ignores beliefs</td><td>Belief-R: ~30 models fail to revise properly; RippleEdits: related facts aren&#x27;t updated. Truth maintenance is the classic fix</td><td>medium</td><td><strong>2.5</strong> (flag + re-queue only)</td></tr><tr><td>G9</td><td><strong>Probes only test stability.</strong> No sycophancy pairs, abstention, contradiction, canary-injection or planted-outdated-fact probes</td><td>ELEPHANT: models side with the user in 48% of moral conflicts; AbstentionBench: knowing when not to answer is &quot;unsolved&quot;</td><td>small</td><td><strong>2.5</strong></td></tr><tr><td>G10</td><td>Looking a memory up doesn&#x27;t count as use; no links strengthen between memories recalled together</td><td>Hebbian links + spreading recall have measured gains; need history before they help</td><td>medium</td><td>later (P3.5/P4)</td></tr><tr><td>G11</td><td>No lessons memory: dismissals and undos aren&#x27;t kept as cases tied to a clause</td><td>ReasoningBank 46.5 → 49.7 with distilled failures (raw failures <em>hurt</em>); A-MemGuard lessons</td><td>medium</td><td><strong>P3</strong> (idea outcomes are the first source)</td></tr><tr><td>G12</td><td>No &quot;keep only the surprising&quot; step</td><td>Nemori +13–25</td><td>medium</td><td><strong>P3</strong> (fold into the novelty gate)</td></tr><tr><td>G13</td><td>No &quot;what changed and why&quot; belief diff</td><td>Nobody ships it; it would be a strength</td><td>small</td><td><strong>P3</strong> lane C (weekly review)</td></tr><tr><td>G14</td><td>Reminders of future intentions aren&#x27;t tracked</td><td>PM-Bench: the best agent gets 65% F1. Use a deterministic table + hourly cron</td><td>medium</td><td>P4 (commitment ledger already planned)</td></tr><tr><td>G15</td><td>Old plans are never turned into past events; no &quot;which version is current&quot; step at answer time</td><td>ChatGPT does the first; conflict assembly: +10.8 single-hop</td><td>medium</td><td>later</td></tr><tr><td>G16</td><td>Concept tier: one level, never split or merged, unused by prompts</td><td>RAPTOR / MemTree</td><td>medium</td><td>later</td></tr></tbody></table></div>
+<p>Smaller notes (go into the debt card, not 2.5):</p>
+<ul>
+<li>Reverting a <code>score</code> op is overwritten the next night.</li>
+<li>The legacy weekly dedup writes no undo record.</li>
+<li><code>update_memory</code> can archive the live constitution.</li>
+<li>Bearer clients can submit <code>belief_extract</code> answers.</li>
+<li>Duplicated paid-key calls in seed.ts and concept.ts.</li>
+<li>Two old recency curves are still live.</li>
+</ul>
+<h2>4. Recommended Phase 2.5, &quot;Ground and protect&quot; (one session, five disjoint lanes)</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Lane</th><th>Does</th><th>Closes</th></tr></thead><tbody><tr><td><strong>A: Retrieval &amp; fading fixes</strong></td><td>filter <code>supersededAt</code> in the substrate; exempt belief/constitution from the 90-day window; add half-lives (constitution none, belief 365, advisory/trace short); widen Merge to &quot;embedded in the last 36 h&quot;, and embed at write on the direct-insert paths that feed retrieval</td><td>G1 G2 G3</td></tr><tr><td><strong>B: Source labels &amp; echo cap</strong></td><td>an <code>origin</code> fixed at write (operator / operator-via-client / kairos-derived / external / tool); derived rows inherit the lowest trust of their inputs; aligned mind reads operator origin only (chat-distill counts as derived and needs a confirming owner signal); belief confidence capped by source type; BackUp needs ≥1 non-Kairos origin</td><td>G6 G7</td></tr><tr><td><strong>C: Use the conscience</strong></td><td>constitution + top held beliefs injected (short, cached) into chat, the daily message, the per-Dominion brief (closes the open P2 item) and the thinking prompts; &quot;check against principles&quot; line in each</td><td>G4 G5</td></tr><tr><td><strong>D: Re-check cascade</strong></td><td>when a memory is superseded, invalidated or reverted, mark beliefs whose provenance includes it <code>needs_recheck</code> (confidence lowered) and queue them for the next <code>belief_extract</code>. No solver</td><td>G8</td></tr><tr><td><strong>E: Conscience probes</strong></td><td>extend the probe set: both-sides dilemma pairs, sampled belief-pair contradictions, &quot;should say unknown&quot; questions, one canary injection, one planted outdated fact; report in the daily message drift line</td><td>G9</td></tr></tbody></table></div>
+<p><strong>Order and risk:</strong> all five are additive. Lane B needs one <code>sourceMetadata</code> field, no schema change (verify against the shared-Neon trap list). The parent owns the shared files (<code>freshness.ts</code>, <code>retrieve.ts</code> constants, the probe registry). Checks: LIGHT tier plus one dry run each of the memory engine and the daily message.</p>
+<h2>5. Changes to the Phase 3 plan that follow from this</h2>
+<ul>
+<li>The novelty gate also keeps only <strong>the surprising</strong> (Nemori-style &quot;did existing memory already predict this?&quot;) (G12).</li>
+<li>Survivors carry <code>origin: kairos-derived</code>, so the echo cap applies. They need evidence from outside Kairos before BackUp can move them into its own mind.</li>
+<li>Idea outcomes (acted on, dismissed, already knew) become the first <strong>lessons</strong> memory (G11). Weekly review gets the <strong>belief diff</strong> (G13).</li>
+<li>The critique step retrieves only current rows (after G1) and cites origins.</li>
+</ul>
+<h2>6. Explicitly skip</h2>
+<ul>
+<li>Anything needing model weights or activations: Titans, Hope, SEAL, MemOS cache memory, persona vectors.</li>
+<li>A graph database (Mem0g, Cognee, GraphRAG): small or negative gains in independent tests.</li>
+<li>Multi-agent memory managers (MIRIX).</li>
+<li>Simulated guilt or emotion.</li>
+<li>A &quot;global workspace&quot; or narrative self as truth.</li>
+<li>A formal belief-revision solver.</li>
+<li>Whole-store LLM rewrites (context collapse).</li>
+<li>Letting Kairos accept its own amendments, or scoring it against its own monitor (teaches hiding).</li>
+</ul>
+<h2>7. Open checks (prod, read-only)</h2>
+<ul>
+<li>Embedding lag: rows from the last 2 days still unembedded (decides G3&#x27;s fix).</li>
+<li>How many superseded-but-not-invalid rows sit in the substrate classes (sizes G1).</li>
+<li>Prod env flags and whether the claude.ai routines exist (all thinking is on the paid fallback until then).</li>
+</ul>
+<h2>Key sources (full tables in lanes A–C)</h2>
+<ul>
+<li>MemoryAgentBench (arXiv 2507.05257 v4, Jun 2026)</li>
+<li>A-MEM (2502.12110)</li>
+<li>Nemori (2508.03341 v4)</li>
+<li>REALM reconsolidation (2609.16053)</li>
+<li>HippoRAG 2 (2502.14802)</li>
+<li>HeLa-Mem (2604.16839)</li>
+<li>ReasoningBank (2509.25140)</li>
+<li>Evo-Memory (2511.20857)</li>
+<li>Conflict assembly (2606.01435)</li>
+<li>Memory survey (2512.13564)</li>
+<li>Laundering / origin binding (2606.24322)</li>
+<li>MemPoison (2607.14651)</li>
+<li>A-MemGuard (2510.02373)</li>
+<li>Belief-R (2406.19764)</li>
+<li>RippleEdits (2307.12976)</li>
+<li>Deliberative Alignment (2412.16339)</li>
+<li>Monitor obfuscation (2503.11926)</li>
+<li>ELEPHANT (2505.13995)</li>
+<li>AbstentionBench (2506.09038)</li>
+<li>Experience-following (2505.16067)</li>
+<li>Self-preference (2404.13076)</li>
+<li>PM-Bench (2607.12385)</li>
+<li>Claude Dreams docs (platform.claude.com/docs/en/managed-agents/dreams)</li>
+</ul>
+</article>
+<footer class="srl-footer">Generated 2026-10-01 09:17 UTC · Markdown is the source of truth; regenerate, don't edit.</footer>
+</main>
+</body>
+</html>

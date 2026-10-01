@@ -1,4 +1,5 @@
 import { CONFIDENCE_BY_STREAM } from '@/lib/kairos/confidence'
+import { originKindOf, type OriginKind } from '@/lib/kairos/origin'
 import {
   findProposalSupports,
   listPendingProposalCandidates,
@@ -12,7 +13,8 @@ import type { EngineRunContext, MemoryOpInput, Step, StepResult, SupportSummary 
 
 // BackUp — the candidate tier (docs/kairos/32 §2.3). Kairos's own pending
 // introspection proposals are guesses until the operator's world backs them
-// up: ≥ 2 independent supports on ≥ 2 distinct UTC days promote a proposal to
+// up: ≥ 2 independent supports on ≥ 2 distinct UTC days, at least one of them
+// anchored in the operator's own words or activity (P2.5), promote a proposal to
 // an 'idea' ("I now believe X", vetoable by reverting the op); one that finds
 // no backing within 21 days decays (archived). Contradiction notices are
 // verdicts for the operator and are never candidates.
@@ -20,6 +22,9 @@ import type { EngineRunContext, MemoryOpInput, Step, StepResult, SupportSummary 
 export const SUPPORT_MIN_COSINE = 0.8
 export const PROMOTE_MIN_SUPPORTS = 2
 export const PROMOTE_MIN_DAYS = 2
+// P2.5 (G7): at least one support must be the operator's own words or their
+// recorded activity — AI-written material alone can't back Kairos up.
+export const PROMOTE_MIN_ANCHORED = 1
 export const CANDIDATE_TTL_DAYS = 21
 export const BACKUP_CANDIDATE_CAP = 400
 
@@ -55,37 +60,51 @@ function isSelfWritten(row: SupportRow): boolean {
 
 const utcDay = (d: Date) => d.toISOString().slice(0, 10)
 
+const ANCHOR_ORIGINS: ReadonlySet<OriginKind> = new Set(['operator', 'activity'])
+const isAnchored = (row: SupportRow) => ANCHOR_ORIGINS.has(originKindOf(row))
+
 // Independence (§2.3): drop Kairos's own writes, rows citing the proposal, and
-// collapse one session's rows to a single support dated by its earliest row.
+// collapse one session to a single support dated by its earliest row.
+// P2.5 (G7): a support is anchored when its origin is the operator or their
+// recorded activity; a collapsed session is anchored if any of its rows is.
 export function summariseSupport(proposalId: string, rows: readonly SupportRow[]): SupportSummary {
-  const bySession = new Map<string, Date>()
+  const bySession = new Map<string, { at: Date; anchored: boolean }>()
   const days = new Set<string>()
   let independent = 0
+  let anchored = 0
   for (const row of rows) {
     if (row.id === proposalId || isSelfWritten(row) || citesProposal(row, proposalId)) continue
+    const rowAnchored = isAnchored(row)
     const key = sessionKey(row.sourceMetadata)
     if (key === null) {
       independent++
+      if (rowAnchored) anchored++
       days.add(utcDay(row.createdAt))
       continue
     }
     const seen = bySession.get(key)
-    if (!seen || row.createdAt < seen) bySession.set(key, row.createdAt)
+    if (!seen) bySession.set(key, { at: row.createdAt, anchored: rowAnchored })
+    else bySession.set(key, { at: row.createdAt < seen.at ? row.createdAt : seen.at, anchored: seen.anchored || rowAnchored })
   }
-  for (const at of bySession.values()) {
+  for (const s of bySession.values()) {
     independent++
-    days.add(utcDay(at))
+    if (s.anchored) anchored++
+    days.add(utcDay(s.at))
   }
-  return { independentSupports: independent, distinctDays: days.size }
+  return { independentSupports: independent, distinctDays: days.size, anchoredSupports: anchored }
 }
 
 export function shouldPromote(s: SupportSummary): boolean {
-  return s.independentSupports >= PROMOTE_MIN_SUPPORTS && s.distinctDays >= PROMOTE_MIN_DAYS
+  return s.independentSupports >= PROMOTE_MIN_SUPPORTS
+    && s.distinctDays >= PROMOTE_MIN_DAYS
+    && (s.anchoredSupports ?? 0) >= PROMOTE_MIN_ANCHORED
 }
 
 function sameSupport(a: unknown, b: SupportSummary): boolean {
   const r = asRecord(a)
-  return r.independentSupports === b.independentSupports && r.distinctDays === b.distinctDays
+  return r.independentSupports === b.independentSupports
+    && r.distinctDays === b.distinctDays
+    && r.anchoredSupports === b.anchoredSupports
 }
 
 // dryRun: report only. Live: the write and its op share one transaction, and

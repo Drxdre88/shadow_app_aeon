@@ -1,6 +1,7 @@
 import type { MemoryType, MemorySource } from '@/lib/data/validators'
 import type { inspectDominion } from '@/lib/data/dominions'
 import type { StreamClass } from '../streamClass'
+import type { AetherPayload } from '../aether-types'
 
 export type Surface = 'byok' | 'claude_code'
 
@@ -36,6 +37,16 @@ export interface RecipeContext {
   dominionId: string
   args: Record<string, unknown>
   retrieval: RetrievalResult
+  // Extra grounding the dispatcher loads only for recipes that declare
+  // 'aether' / 'belief' / 'constitution' in `reads` (P2.5 G5).
+  grounding?: RecipeGrounding
+}
+
+export interface RecipeGrounding {
+  // Latest global Aether self-model, or null (none yet / read failed).
+  aether: AetherPayload | null
+  // Pre-rendered conscience block filtered to the Dominion; '' when empty.
+  conscience: string
 }
 
 export interface MemoryWriteSpec {

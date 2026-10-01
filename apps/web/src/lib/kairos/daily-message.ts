@@ -8,6 +8,7 @@ import type { ThinkingJobKind, ThinkingJobRow } from '@/lib/kairos/engine/types'
 import { deliverKairosSpeak, type SpeakInput, type SpeakOutcome } from './speak'
 import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 import { gatherDailyMessageInputs } from './daily-message-inputs'
+import { loadConscienceBlock } from './conscience-context'
 import {
   DAILY_MESSAGE_SYSTEM_PROMPT,
   buildBeliefsBlock,
@@ -82,9 +83,12 @@ async function composeWithModel(userId: string, inputs: DailyMessageInputs): Pro
   let rawText: string | undefined
   try {
     const { provider } = await getProviderForTask(userId, { taskType: 'digest' })
+    // Same conscience block as the routine draft (handlers/daily-message.ts);
+    // never throws — '' on a fetch failure.
+    const conscience = await loadConscienceBlock(userId)
     const response = await provider.ask({
       system: DAILY_MESSAGE_SYSTEM_PROMPT,
-      prompt: buildDailyMessageUserPrompt(inputs),
+      prompt: buildDailyMessageUserPrompt(inputs, conscience),
       cacheSystem: true,
       maxTokens: 1500,
     })

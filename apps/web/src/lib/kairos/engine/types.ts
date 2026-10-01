@@ -33,6 +33,10 @@ export interface EngineMemory {
 export interface SupportSummary {
   independentSupports: number
   distinctDays: number
+  // P2.5: supports whose origin is the operator or their recorded activity
+  // (lib/kairos/origin.ts). Promotion needs at least one, so Kairos can't be
+  // backed up only by AI-written material. Absent on pre-P2.5 summaries.
+  anchoredSupports?: number
 }
 
 export interface OutcomeSummary {
@@ -74,6 +78,10 @@ export type MemoryOpKind =
   | 'concept_update'
   | 'feedback'
   | 'revert'
+  // P2.5 belief re-check cascade: a belief lost support and awaits re-examination.
+  | 'recheck'
+  // P2.5: a belief retired after re-examination.
+  | 'retire'
 
 export interface MemoryOpInput {
   memoryId: string | null

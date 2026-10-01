@@ -20,6 +20,19 @@ export const BELIEF_STATUSES = ['held', 'retired'] as const
 export type BeliefMind = (typeof BELIEF_MINDS)[number]
 export type BeliefStatus = (typeof BELIEF_STATUSES)[number]
 
+// How a provenance memory stopped supporting a belief (P2.5 re-check cascade,
+// engine step 'recheck'). A Merge supersession is NOT a loss — it is remapped.
+export const LOST_SOURCE_STATES = ['missing', 'archived', 'invalidated', 'superseded'] as const
+export type LostSourceState = (typeof LOST_SOURCE_STATES)[number]
+
+export const beliefRecheckSchema = z.object({
+  // ISO instant the belief was first flagged.
+  since: z.string().min(1),
+  lostSources: z.array(z.object({ id: z.string().min(1), state: z.enum(LOST_SOURCE_STATES) })).min(1),
+})
+
+export type BeliefRecheck = z.infer<typeof beliefRecheckSchema>
+
 export const beliefV1Schema = z.object({
   v: z.literal(1),
   mind: z.enum(BELIEF_MINDS),
@@ -33,6 +46,12 @@ export const beliefV1Schema = z.object({
   status: z.enum(BELIEF_STATUSES),
   confidence: z.number().min(0).max(1),
   supersedes: z.string().optional(),
+  // P2.5: set while part of the provenance is gone; cleared by a reaffirm.
+  // Absent on rows written before P2.5.
+  recheck: beliefRecheckSchema.optional(),
+  // P2.5: ISO instant the recheck step last brought sourceType / confidence in
+  // line with the provenance origins (legacy beliefs). Absent otherwise.
+  normalisedAt: z.string().optional(),
 }).strict()
 
 export type BeliefV1 = z.infer<typeof beliefV1Schema>
@@ -41,6 +60,12 @@ export function readBelief(sourceMetadata: unknown): BeliefV1 | null {
   if (!sourceMetadata || typeof sourceMetadata !== 'object') return null
   const parsed = beliefV1Schema.safeParse((sourceMetadata as Record<string, unknown>).belief)
   return parsed.success ? parsed.data : null
+}
+
+// Provenance still standing: everything not recorded as lost.
+export function remainingProvenance(b: Pick<BeliefV1, 'provenance' | 'recheck'>): string[] {
+  const lost = new Set((b.recheck?.lostSources ?? []).map((s) => s.id))
+  return b.provenance.filter((id) => !lost.has(id))
 }
 
 export interface DominionRef {

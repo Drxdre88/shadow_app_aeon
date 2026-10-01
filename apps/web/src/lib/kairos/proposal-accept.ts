@@ -4,6 +4,7 @@ import {
   findMemoryById,
   markKairosSpeaksReplied,
   type AcceptProposalResult,
+  type MemoryWriteOptions,
 } from '@/lib/data/memories'
 import type { InboxResolution } from '@/lib/data/inbox'
 import type { AcceptProposalInput } from '@/lib/data/validators/memory'
@@ -26,6 +27,7 @@ export async function acceptKairosProposal(
   memoryId: string,
   userId: string,
   input: AcceptProposalInput,
+  opts: MemoryWriteOptions = {},
 ): Promise<AcceptProposalResult | null> {
   const proposal = await findMemoryById(memoryId, userId)
   if (!proposal) return null
@@ -41,7 +43,9 @@ export async function acceptKairosProposal(
     return row ? { ok: true, memory: row } : null
   }
 
-  const result = await acceptProposal(memoryId, userId, input)
+  // opts.origin: bearer surfaces (MCP, REST API key) pass agent so an
+  // AI-client accept is not recorded as the operator's endorsement.
+  const result = await acceptProposal(memoryId, userId, input, opts)
   if (result?.ok) {
     await reactOutcome(userId, memoryId, 'positive', 'proposal accepted')
     await reactUsed(userId, [memoryId], 'proposal accepted')

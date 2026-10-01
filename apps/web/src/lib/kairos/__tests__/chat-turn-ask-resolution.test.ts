@@ -205,6 +205,9 @@ describe('ask-aware assistant turns', () => {
       USER_ID,
       ASK_ID,
       'I will revive mobile only after the web beta exits.',
+      undefined,
+      // P2.5: the classifier's distillation is Kairos's paraphrase, not the operator's words.
+      { kind: 'kairos', via: 'ask-distilled' },
     )
     expect(providerAsk).toHaveBeenCalledTimes(3)
     expect(providerAsk.mock.calls[0][0]).toMatchObject({ maxOutputTokens: 2000 })
@@ -239,7 +242,18 @@ describe('ask-aware assistant turns', () => {
     await runAssistantTurn(USER_ID, THREAD_ID, null, rawReply, 1)
 
     expect(answerKairosAsk).toHaveBeenCalledTimes(1)
-    expect(answerKairosAsk).toHaveBeenCalledWith(USER_ID, ASK_ID, rawReply)
+    expect(answerKairosAsk).toHaveBeenCalledWith(USER_ID, ASK_ID, rawReply, undefined, { kind: 'operator', via: 'ask' })
+  })
+
+  it('stamps the raw operator reply as operator when the classifier gives no distillation', async () => {
+    vi.mocked(getPendingKairosAsk).mockResolvedValueOnce(pendingAsk)
+    providerAsk
+      .mockResolvedValueOnce(aiResponse('Got it.'))
+      .mockResolvedValueOnce(aiResponse(JSON.stringify({ answersPending: true })))
+
+    await runAssistantTurn(USER_ID, THREAD_ID, null, 'Only after web beta exits.', 1)
+
+    expect(answerKairosAsk).toHaveBeenCalledWith(USER_ID, ASK_ID, 'Only after web beta exits.', undefined, { kind: 'operator', via: 'ask' })
   })
 
   it('does not resolve a card_notes ask the classifier says was not answered', async () => {

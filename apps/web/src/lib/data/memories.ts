@@ -33,6 +33,43 @@ import { defaultStreamClass, deriveValidAt } from '@/lib/kairos/stream-class-def
 import { META_STREAM_CLASSES } from '@/lib/kairos/streamClass'
 import { dominionTag } from '@/lib/kairos/dominionTags'
 import { autoFileEligible, autoFileMinSim, autoFileText, cosineSimilarity } from '@/lib/kairos/autofile'
+import { ORIGIN_TRUST, inferOriginKind, originKindOf, type Origin, type OriginKind } from '@/lib/kairos/origin'
+
+// P2.5 (G6) — origin is decided by the TRUSTED write surface (server action,
+// REST auth mode, MCP, cron), passed here as an option, never via the zod input
+// schemas, so a client can't choose it. Any client-supplied
+// sourceMetadata.origin is always overwritten.
+export interface MemoryWriteOptions {
+  origin?: Origin
+}
+
+// Without a trusted origin, infer from (source, sourceMetadata). With one, the
+// source still caps it: a surface can't lift ingested (import/webhook), agent
+// (claude/codex/copilot/hook) or Kairos (cron/system) content above what its
+// source implies. The cap reads source only — sourceMetadata.kind is
+// client-settable (a bearer client could claim 'board_day').
+export function resolveWriteOrigin(
+  source: string,
+  sourceMetadata: unknown,
+  trusted?: Origin,
+): Origin {
+  if (!trusted) return { kind: inferOriginKind(source, sourceMetadata) }
+  const ceiling = inferOriginKind(source)
+  const kind = ORIGIN_TRUST[ceiling] < ORIGIN_TRUST[trusted.kind] ? ceiling : trusted.kind
+  return trusted.via ? { kind, via: trusted.via } : { kind }
+}
+
+// Origins of a set of memories (labelled, else inferred), for writers that
+// derive a row from them (introspection's input pool). User-scoped; unknown
+// ids are skipped.
+export async function findMemoryOriginKinds(userId: string, memoryIds: readonly string[]): Promise<OriginKind[]> {
+  if (memoryIds.length === 0) return []
+  const rows = await db
+    .select({ source: memories.source, sourceMetadata: memories.sourceMetadata })
+    .from(memories)
+    .where(and(eq(memories.userId, userId), inArray(memories.id, [...memoryIds])))
+  return rows.map((r) => originKindOf(r))
+}
 
 // Internal extension: the public zod schema (createMemorySchema) intentionally
 // does NOT expose streamClass — public callers (MCP/REST) must not pick a
@@ -110,6 +147,8 @@ type ListOpts = {
   pinnedOnly?: boolean
   includeArchived?: boolean
   includeMeta?: boolean
+  // Drop superseded / invalidated rows (generation consumers).
+  liveOnly?: boolean
 }
 
 export async function listMemories(userId: string, opts: ListOpts = {}) {
@@ -128,6 +167,7 @@ export async function listMemories(userId: string, opts: ListOpts = {}) {
   if (opts.projectId) conditions.push(eq(memories.projectId, opts.projectId))
   if (opts.taskId)    conditions.push(eq(memories.taskId, opts.taskId))
   if (opts.pinnedOnly) conditions.push(eq(memories.pinned, true))
+  if (opts.liveOnly) conditions.push(isNull(memories.supersededAt), validAsOfNow)
 
   return db
     .select(SLIM_COLUMNS)
@@ -614,11 +654,16 @@ type NeighbourRow = {
 export async function getNeighbours(
   memoryId: string,
   userId: string,
-  opts: { hops?: 1 | 2; includeReverse?: boolean; limit?: number } = {}
+  opts: { hops?: 1 | 2; includeReverse?: boolean; limit?: number; liveOnly?: boolean } = {}
 ) {
   const hops = opts.hops ?? 1
   const includeReverse = opts.includeReverse ?? true
   const limit = opts.limit ?? 20
+  // Generation consumers (prepareContext) must not ground on rows that were
+  // merged away or invalidated; browse surfaces keep showing history.
+  const live = (alias: 'm' | 'm2') => opts.liveOnly
+    ? sql.raw(`AND ${alias}.superseded_at IS NULL AND (${alias}.invalid_at IS NULL OR ${alias}.invalid_at > NOW())`)
+    : sql``
 
   // Outgoing walk: recursive CTE following links[].target where target_kind='memory'.
   const outgoingResult = await db.execute(sql`
@@ -645,6 +690,7 @@ export async function getNeighbours(
       WHERE w.hop < ${hops}
         AND (l->>'target_kind') = 'memory'
         AND m2.archived_at IS NULL
+        ${live('m2')}
     )
     SELECT DISTINCT ON (n.id)
       n.id, n.hop AS distance, n.edge_type, n.edge_note,
@@ -683,6 +729,7 @@ export async function getNeighbours(
         AND (l->>'target')::uuid = ${memoryId}
         AND (l->>'target_kind') = 'memory'
         AND m.archived_at IS NULL
+        ${live('m')}
       LIMIT ${limit}
     `)
 
@@ -851,7 +898,7 @@ async function stampResolvedTargets(
     ))
 }
 
-export async function createMemory(userId: string, input: CreateMemoryParams) {
+export async function createMemory(userId: string, input: CreateMemoryParams, opts: MemoryWriteOptions = {}) {
   // Idempotency for agent-captured sessions: a given sessionId is a stable
   // identity, so re-posting from a re-invoked hook or manual recovery should
   // never duplicate. Other sources stay strict.
@@ -919,6 +966,7 @@ export async function createMemory(userId: string, input: CreateMemoryParams) {
   }
 
   const tags = input.tags ?? []
+  const origin = resolveWriteOrigin(input.source, sourceMetadata, opts.origin)
 
   // Insert + incident-lifecycle stamp run atomically: a 'resolves' link
   // closes its target's valid window (stampResolvedTargets), and a stamp
@@ -957,9 +1005,12 @@ export async function createMemory(userId: string, input: CreateMemoryParams) {
         source: input.source,
         // Auto-file provenance rides in sourceMetadata so threshold tuning has
         // an audit trail (which memories were filed at what similarity).
-        sourceMetadata: autoFiled
-          ? { ...(input.sourceMetadata ?? {}), kairosAutoFiled: { similarity: autoFiled.similarity } }
-          : input.sourceMetadata ?? {},
+        // origin last: it overwrites any client-supplied label.
+        sourceMetadata: {
+          ...(input.sourceMetadata ?? {}),
+          ...(autoFiled ? { kairosAutoFiled: { similarity: autoFiled.similarity } } : {}),
+          origin,
+        },
         realmId: input.realmId ?? null,
         projectId: input.projectId ?? null,
         taskId: input.taskId ?? null,
@@ -1066,7 +1117,11 @@ export interface CaptureMemoryResult {
   created: boolean
 }
 
-export async function captureMemory(userId: string, input: CaptureMemoryInput): Promise<CaptureMemoryResult> {
+export async function captureMemory(
+  userId: string,
+  input: CaptureMemoryInput,
+  opts: MemoryWriteOptions = {},
+): Promise<CaptureMemoryResult> {
   const metadata: Record<string, unknown> = { ...(input.sourceMetadata ?? {}) }
   let source = input.source
 
@@ -1098,7 +1153,7 @@ export async function captureMemory(userId: string, input: CaptureMemoryInput): 
     ...input,
     source,
     sourceMetadata: metadata,
-  })
+  }, opts)
   return { memory, created: true }
 }
 
@@ -1132,6 +1187,7 @@ export type CaptureReflectionResult =
 export async function captureReflection(
   userId: string,
   input: CaptureReflectionInput,
+  opts: MemoryWriteOptions = {},
 ): Promise<CaptureReflectionResult> {
   // Verify ownership inline rather than calling findDominionById to avoid
   // an extra round-trip + a circular-ish import (this module is sibling to
@@ -1154,6 +1210,10 @@ export async function captureReflection(
   const stripped = firstLine.replace(/^([#>*\-`]+\s*)+/, '').trim()
   const fallbackTitle = stripped.slice(0, 80) || 'Reflection'
   const title = (input.title?.trim() || fallbackTitle).slice(0, 255)
+  const source = input.source ?? 'manual'
+  // streamClass 'reflection' says what the row IS; origin says whose words
+  // they are. Trust (SourceTrust, belief caps) reads the origin.
+  const origin = resolveWriteOrigin(source, input.sourceMetadata, opts.origin)
 
   const [memory] = await db
     .insert(memories)
@@ -1166,12 +1226,13 @@ export async function captureReflection(
       type: 'reflection',
       streamClass: 'reflection',
       confidence: confidenceForStreamClass('reflection'),
-      source: input.source ?? 'manual',
+      source,
       sourceMetadata: {
         ...(input.sourceMetadata ?? {}),
         // Stamp the canonical channel so future audit queries can
         // distinguish kairos_reflect captures from generic note creates.
         kairosReflect: true,
+        origin,
       },
       tags: input.tags?.slice(0, 50) ?? [],
       // Reflections are not auto-pinned — `streamClass='reflection'`
@@ -1340,7 +1401,16 @@ export async function markKairosSpeaksReplied(userId: string, before: Date): Pro
   return updated.length
 }
 
-export async function updateMemory(memoryId: string, userId: string, patch: UpdateMemoryInput) {
+// P2.5 — fields whose text the belief extractor reads as "what this row says".
+// Changing any of them re-attributes the row (see updateMemory).
+const ORIGIN_CONTENT_FIELDS = ['title', 'bodyMd', 'summary', 'type'] as const
+
+export async function updateMemory(
+  memoryId: string,
+  userId: string,
+  patch: UpdateMemoryInput,
+  opts: MemoryWriteOptions = {},
+) {
   const update: Record<string, unknown> = { updatedAt: new Date() }
   if (patch.title !== undefined)      update.title = patch.title
   if (patch.aiTitle !== undefined)    update.aiTitle = patch.aiTitle
@@ -1363,12 +1433,52 @@ export async function updateMemory(memoryId: string, userId: string, patch: Upda
     update.embeddingModel = null
   }
 
-  const [row] = await db
-    .update(memories)
-    .set(update)
-    .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
-    .returning()
-  return row ?? null
+  const touchesContent = ORIGIN_CONTENT_FIELDS.some((f) => patch[f] !== undefined)
+  if (!touchesContent) {
+    const [row] = await db
+      .update(memories)
+      .set(update)
+      .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
+      .returning()
+    return row ?? null
+  }
+
+  // P2.5: an edit that changes the content re-attributes the row to the
+  // LOWER-trust of its current origin and the writer's, so an agent's words
+  // can't keep riding an operator label into belief extraction. The previous
+  // label is kept as priorOrigin (same pattern as acceptProposal). Read +
+  // write share a row lock so a concurrent edit can't slip between them.
+  return db.transaction(async (tx) => {
+    const [current] = await tx
+      .select()
+      .from(memories)
+      .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
+      .for('update')
+      .limit(1)
+    if (!current) return null
+
+    const changed = ORIGIN_CONTENT_FIELDS.some((f) => patch[f] !== undefined && patch[f] !== current[f])
+    if (changed) {
+      const meta = (current.sourceMetadata ?? {}) as Record<string, unknown>
+      const currentKind = originKindOf(current)
+      // No trusted writer origin → assume an agent (never lifts, may lower).
+      const writer: Origin = opts.origin ?? { kind: 'agent', via: 'update' }
+      const kind = ORIGIN_TRUST[writer.kind] < ORIGIN_TRUST[currentKind] ? writer.kind : currentKind
+      const priorOrigin = meta.origin ?? { kind: currentKind }
+      update.sourceMetadata = {
+        ...meta,
+        priorOrigin,
+        origin: writer.via ? { kind, via: writer.via } : { kind },
+      }
+    }
+
+    const [row] = await tx
+      .update(memories)
+      .set(update)
+      .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
+      .returning()
+    return row ?? null
+  })
 }
 
 export async function addLink(memoryId: string, userId: string, input: AddLinkInput) {
@@ -1463,6 +1573,7 @@ export async function acceptProposal(
   memoryId: string,
   userId: string,
   input: AcceptProposalInput,
+  opts: MemoryWriteOptions = {},
 ): Promise<AcceptProposalResult | null> {
   const proposal = await findMemoryById(memoryId, userId)
   if (!proposal) return null
@@ -1542,6 +1653,11 @@ export async function acceptProposal(
     target_kind: 'memory',
   }))
 
+  // P2.5: the operator endorsed it, so the committed row is the operator's
+  // ('accept'). Kairos's original label is kept as priorOrigin for audit.
+  const acceptOrigin: Origin = opts.origin ?? { kind: 'operator', via: 'accept' }
+  const priorOrigin = meta.origin
+
   const [updated] = await db
     .update(memories)
     .set({
@@ -1550,7 +1666,14 @@ export async function acceptProposal(
       confidence: confidenceForStreamClass(committedStream),
       pinned: input.pin ?? false,
       links: [...existingLinks, ...supersedeLinks],
-      sourceMetadata: { ...meta, status: 'accepted', acceptedAt: now.toISOString(), promotedFrom: 'inbound' },
+      sourceMetadata: {
+        ...meta,
+        status: 'accepted',
+        acceptedAt: now.toISOString(),
+        promotedFrom: 'inbound',
+        ...(priorOrigin !== undefined ? { priorOrigin } : {}),
+        origin: acceptOrigin,
+      },
       updatedAt: now,
     })
     .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
@@ -2021,6 +2144,7 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
   const pinned = input.includePinned
     ? await listMemories(userId, {
         pinnedOnly: true,
+        liveOnly: true,
         realmId,
         limit: 20,
       })
@@ -2034,7 +2158,7 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
   if (input.hops >= 1 && seedIds.length > 0) {
     const walks = await Promise.all(
       seedIds.map(async (sid) => {
-        const rows = await getNeighbours(sid, userId, { hops: 1, includeReverse: true, limit: 5 })
+        const rows = await getNeighbours(sid, userId, { hops: 1, includeReverse: true, limit: 5, liveOnly: true })
         return rows.map((r) => ({
           id: r.id,
           title: r.title,

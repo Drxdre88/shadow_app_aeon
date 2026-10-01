@@ -3,6 +3,7 @@ import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from 
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
 import { findMemoryById, updateMemory as _updateMemory, deleteMemory as _deleteMemory } from '@/lib/data/memories'
 import { updateMemorySchema } from '@/lib/data/validators'
+import type { Origin } from '@/lib/kairos/origin'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -35,7 +36,11 @@ export const PATCH = withRateLimit(
     const parsed = updateMemorySchema.safeParse(body)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
-    const memory = await _updateMemory(id, result.id, parsed.data)
+    // P2.5 origin by auth mode (cookie only when no Bearer header is sent).
+    const origin: Origin = request.headers.get('authorization')?.startsWith('Bearer ')
+      ? { kind: 'agent', via: 'rest' }
+      : { kind: 'operator', via: 'rest-session' }
+    const memory = await _updateMemory(id, result.id, parsed.data, { origin })
     if (!memory) return jsonError('Memory not found', 404)
     return jsonData(memory)
   }),

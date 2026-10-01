@@ -105,14 +105,17 @@ export async function applyAskResolution(
   // numbers and silently drop the write-back. Hand over the operator's raw
   // text for that kind; every other ask keeps the distilled answer.
   const isCardNotesAsk = pending.askMine?.kind === 'card_notes' || !!pending.cardNotes
-  const answer = isCardNotesAsk
-    ? userBody
-    : resolution.distilledAnswer ?? userBody
+  const distilledAnswer = isCardNotesAsk ? undefined : resolution.distilledAnswer
+  const answer = distilledAnswer ?? userBody
   try {
+    // P2.5 origin: only the operator's raw turn is their words; the
+    // classifier's distillation is Kairos's paraphrase of them.
     const result = await answerKairosAsk(
       userId,
       pending.id,
       answer,
+      undefined,
+      distilledAnswer !== undefined ? { kind: 'kairos', via: 'ask-distilled' } : { kind: 'operator', via: 'ask' },
     )
     if ('error' in result && result.error === 'dominion_not_found') {
       console.error('[kairos-chat] pending ask answer Dominion was not found', {

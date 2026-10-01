@@ -119,7 +119,7 @@ describe('acceptKairosProposal — other proposals', () => {
     await expect(acceptKairosProposal(PROPOSAL_ID, USER_ID, { pin: true }))
       .resolves.toEqual({ ok: true, memory: promoted })
 
-    expect(acceptProposal).toHaveBeenCalledWith(PROPOSAL_ID, USER_ID, { pin: true })
+    expect(acceptProposal).toHaveBeenCalledWith(PROPOSAL_ID, USER_ID, { pin: true }, {})
     expect(applyAcceptedConstitutionAmendment).not.toHaveBeenCalled()
     expect(reactOutcome).toHaveBeenCalledWith(USER_ID, PROPOSAL_ID, 'positive', expect.any(String))
     expect(reactUsed).toHaveBeenCalledWith(USER_ID, [PROPOSAL_ID], expect.any(String))
@@ -219,7 +219,14 @@ describe('acceptInboxProposal', () => {
     vi.mocked(acceptProposal).mockResolvedValue({ ok: true, memory: foundMemory() as never })
     const result = await acceptInboxProposal(USER_ID, 'mem-1')
     expect(result).toEqual({ ok: true, id: 'mem-1' })
-    expect(acceptProposal).toHaveBeenCalledWith('mem-1', USER_ID, { pin: false })
+    // No origin passed → the data layer records the operator's endorsement.
+    expect(acceptProposal).toHaveBeenCalledWith('mem-1', USER_ID, { pin: false }, {})
+  })
+
+  it('forwards a bearer surface origin so an AI-client accept is not the operator', async () => {
+    vi.mocked(acceptProposal).mockResolvedValue({ ok: true, memory: foundMemory() as never })
+    await acceptKairosProposal('mem-1', USER_ID, { pin: false }, { origin: { kind: 'agent', via: 'mcp' } })
+    expect(acceptProposal).toHaveBeenCalledWith('mem-1', USER_ID, { pin: false }, { origin: { kind: 'agent', via: 'mcp' } })
   })
 
   it('accepts a constitution amendment through the constitution path (Telegram/inbox parity)', async () => {

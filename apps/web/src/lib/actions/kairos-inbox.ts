@@ -20,6 +20,9 @@ export async function answerKairosInboxAsk(questionMemoryId: string, answer: str
     userId,
     memoryIdSchema.parse(questionMemoryId),
     answerSchema.parse(answer),
+    undefined,
+    // The owner answering in their inbox (P2.5 origin).
+    { kind: 'operator', via: 'ask' },
   )
 
   if ('error' in result) {

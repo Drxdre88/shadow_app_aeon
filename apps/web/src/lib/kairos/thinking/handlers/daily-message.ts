@@ -5,6 +5,7 @@ import {
   dailyMessageJobKey,
 } from '@/lib/kairos/daily-message'
 import { gatherDailyMessageInputs, readTodayBriefs } from '@/lib/kairos/daily-message-inputs'
+import { loadConscienceBlock } from '@/lib/kairos/conscience-context'
 import {
   DAILY_MESSAGE_SYSTEM_PROMPT,
   buildDailyMessageUserPrompt,
@@ -49,6 +50,8 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
 
   const inputs = await gatherDailyMessageInputs(userId, now)
   if (!inputs.briefs || inputs.briefs.length === 0) return []
+  // Same block the paid compose sends (daily-message.ts) — '' on failure.
+  const conscience = await loadConscienceBlock(userId)
 
   return [{
     kind: DAILY_MESSAGE_KIND,
@@ -57,7 +60,7 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
     deadlineMinutes,
     input: {
       system: DAILY_MESSAGE_SYSTEM_PROMPT,
-      prompt: buildDailyMessageUserPrompt(inputs),
+      prompt: buildDailyMessageUserPrompt(inputs, conscience),
       maxOutputTokens: 1500,
       context: { date },
     },

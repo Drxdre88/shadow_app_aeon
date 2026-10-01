@@ -14,10 +14,24 @@ import { isVetoed } from './back-up'
 // it is a repeat, not a correction) and the older gets useCount+1 /
 // lastUsedAt=now. Never for reflections, pinned rows, synthesised documents
 // (concept/cortex/aether/archetype) or inbox/ask rows with their own lifecycle.
+//
+// Window: rows CREATED in the last 96h that are embedded by now. Most rows are
+// embedded only by the 04:00 UTC embed-backfill (≤200/day) while Merge runs at
+// 01:30 UTC, so a row written just after 04:00 is first embedded ~45h later —
+// a 36h window never saw it (G3). 96h gives every row at least two nights
+// after its embedding. A row with no duplicate is simply re-checked on later
+// nights: the no-duplicate path is one read-only nearest-neighbour query (no
+// write, no op), so re-examination costs ~4 lookups over the row's lifetime.
+// Candidates are oldest-first (createdAt, id) so the per-night cap always
+// reaches the rows about to leave the window; with ≤ cap/day embedded rows
+// every row is examined at least once. Rows already superseded drop out of
+// the candidate list (liveRow), so a merged row is never re-examined.
 
 export const MERGE_MIN_COSINE = 0.95
-export const MERGE_WINDOW_HOURS = 36
-export const MERGE_CANDIDATE_CAP = 200
+export const MERGE_WINDOW_HOURS = 96
+// ≈2× the embed-backfill's daily cap; ~one indexed lookup per row, well inside
+// the engine's 230s budget, and the per-row outOfTime check still stops early.
+export const MERGE_CANDIDATE_CAP = 400
 
 export const MERGE_EXCLUDED_TYPES = [
   'concept',

@@ -54,6 +54,9 @@ function support(id: string, at: string, overrides: Partial<SupportRow> = {}): S
   return { id, source: 'claude', createdAt: new Date(at), sourceMetadata: {}, links: [], similarity: 0.85, ...overrides }
 }
 
+// An operator-origin support (unlabelled 'manual' row → inferred operator).
+const OPERATOR: Partial<SupportRow> = { source: 'manual' }
+
 // Live runs: ops travel with the write (4th arg) so they share its transaction.
 function liveOps(): MemoryOpInput[] {
   return vi.mocked(updatePendingProposal).mock.calls.flatMap((c) => [...(c[3]?.ops ?? [])])
@@ -71,7 +74,7 @@ describe('summariseSupport — independence rules', () => {
       support('a', '2026-09-26T23:59:00Z'),
       support('b', '2026-09-27T00:01:00Z'),
       support('c', '2026-09-27T10:00:00Z'),
-    ])).toEqual({ independentSupports: 3, distinctDays: 2 })
+    ])).toEqual({ independentSupports: 3, distinctDays: 2, anchoredSupports: 0 })
   })
 
   it("excludes Kairos's own cron/system writes but keeps Hangar missions and board pages", () => {
@@ -81,7 +84,7 @@ describe('summariseSupport — independence rules', () => {
       support('mission', '2026-09-26T10:00:00Z', { source: 'system', sourceMetadata: { kind: 'hangar_mission' } }),
       support('day', '2026-09-27T10:00:00Z', { source: 'cron', sourceMetadata: { kind: 'board_day' } }),
       support('week', '2026-09-28T10:00:00Z', { source: 'cron', sourceMetadata: { kind: 'board_week' } }),
-    ])).toEqual({ independentSupports: 3, distinctDays: 3 })
+    ])).toEqual({ independentSupports: 3, distinctDays: 3, anchoredSupports: 3 })
   })
 
   it('collapses one session to a single support dated by its earliest row', () => {
@@ -90,7 +93,23 @@ describe('summariseSupport — independence rules', () => {
       support('a', '2026-09-27T10:00:00Z', { sourceMetadata: session }),
       support('b', '2026-09-26T10:00:00Z', { sourceMetadata: session }),
       support('c', '2026-09-28T10:00:00Z', { sourceMetadata: session }),
-    ])).toEqual({ independentSupports: 1, distinctDays: 1 })
+    ])).toEqual({ independentSupports: 1, distinctDays: 1, anchoredSupports: 0 })
+  })
+
+  it('counts a collapsed session as anchored when any of its rows is', () => {
+    const session = { session: { sessionId: 's-1' } }
+    expect(summariseSupport(PROPOSAL, [
+      support('a', '2026-09-27T10:00:00Z', { sourceMetadata: session }),
+      support('b', '2026-09-26T10:00:00Z', { sourceMetadata: { ...session, origin: { kind: 'operator', via: 'ui' } } }),
+      support('c', '2026-09-28T10:00:00Z', { sourceMetadata: { session: { sessionId: 's-2' } } }),
+    ])).toEqual({ independentSupports: 2, distinctDays: 2, anchoredSupports: 1 })
+  })
+
+  it('reads the stored origin before inferring: a labelled agent board_day page is not anchored', () => {
+    expect(summariseSupport(PROPOSAL, [
+      support('spoof', '2026-09-26T10:00:00Z', { source: 'manual', sourceMetadata: { kind: 'board_day', origin: { kind: 'agent', via: 'rest' } } }),
+      support('op', '2026-09-27T10:00:00Z', { source: 'claude', sourceMetadata: { origin: { kind: 'operator', via: 'telegram' } } }),
+    ])).toEqual({ independentSupports: 2, distinctDays: 2, anchoredSupports: 1 })
   })
 
   it('excludes rows citing the proposal via links or citations', () => {
@@ -98,7 +117,7 @@ describe('summariseSupport — independence rules', () => {
       support('a', '2026-09-26T10:00:00Z', { links: [{ type: 'refers_to', target: PROPOSAL }] }),
       support('b', '2026-09-27T10:00:00Z', { sourceMetadata: { citations: [PROPOSAL] } }),
       support('c', '2026-09-28T10:00:00Z'),
-    ])).toEqual({ independentSupports: 1, distinctDays: 1 })
+    ])).toEqual({ independentSupports: 1, distinctDays: 1, anchoredSupports: 0 })
   })
 })
 
@@ -112,7 +131,7 @@ describe('BackUpStep', () => {
   it('promotes with ≥2 independent supports on ≥2 UTC days and logs before/after', async () => {
     vi.mocked(listPendingProposalCandidates).mockResolvedValue([candidate()])
     vi.mocked(findProposalSupports).mockResolvedValue([
-      support('a', '2026-09-26T10:00:00Z'),
+      support('a', '2026-09-26T10:00:00Z', OPERATOR),
       support('b', '2026-09-27T10:00:00Z'),
     ])
     const ctx = makeCtx()
@@ -127,7 +146,7 @@ describe('BackUpStep', () => {
       sourceMetadata: expect.objectContaining({
         status: 'promoted',
         promotedAt: NOW.toISOString(),
-        engine: { support: { independentSupports: 2, distinctDays: 2 }, promotedAt: NOW.toISOString() },
+        engine: { support: { independentSupports: 2, distinctDays: 2, anchoredSupports: 1 }, promotedAt: NOW.toISOString() },
         citations: ['c1'],
       }),
       streamClass: 'idea',
@@ -157,13 +176,57 @@ describe('BackUpStep', () => {
 
     expect(ctx.ops).toEqual([])
     expect(updatePendingProposal).toHaveBeenCalledWith(USER, PROPOSAL, {
-      sourceMetadata: expect.objectContaining({ status: 'pending', engine: { support: { independentSupports: 2, distinctDays: 1 } } }),
+      sourceMetadata: expect.objectContaining({ status: 'pending', engine: { support: { independentSupports: 2, distinctDays: 1, anchoredSupports: 0 } } }),
+    })
+  })
+
+  it('does not promote a proposal backed only by agent-session summaries (P2.5 anchor)', async () => {
+    vi.mocked(listPendingProposalCandidates).mockResolvedValue([candidate()])
+    vi.mocked(findProposalSupports).mockResolvedValue([
+      support('a', '2026-09-26T10:00:00Z', { sourceMetadata: { session: { sessionId: 's-1' } } }),
+      support('b', '2026-09-27T10:00:00Z', { source: 'codex', sourceMetadata: { session: { sessionId: 's-2' } } }),
+      support('c', '2026-09-28T10:00:00Z', { source: 'hook', sourceMetadata: { origin: { kind: 'agent', via: 'mcp' } } }),
+    ])
+
+    await new BackUpStep().run(makeCtx())
+
+    expect(liveOps()).toEqual([])
+    expect(updatePendingProposal).toHaveBeenCalledWith(USER, PROPOSAL, {
+      sourceMetadata: expect.objectContaining({
+        status: 'pending',
+        engine: { support: { independentSupports: 3, distinctDays: 3, anchoredSupports: 0 } },
+      }),
+    })
+  })
+
+  it.each([
+    ['a board_day page', { source: 'cron', sourceMetadata: { kind: 'board_day' } }],
+    ['an operator reflection', { source: 'claude', sourceMetadata: { origin: { kind: 'operator', via: 'ui' } } }],
+  ] as const)('promotes once %s anchors the agent supports', async (_label, anchor) => {
+    vi.mocked(listPendingProposalCandidates).mockResolvedValue([candidate()])
+    vi.mocked(findProposalSupports).mockResolvedValue([
+      support('a', '2026-09-26T10:00:00Z', { sourceMetadata: { session: { sessionId: 's-1' } } }),
+      support('b', '2026-09-27T10:00:00Z', anchor),
+    ])
+
+    await new BackUpStep().run(makeCtx())
+
+    expect(liveOps().map((o) => o.op)).toEqual(['promote'])
+  })
+
+  it('refreshes a pre-P2.5 recorded support that lacks anchoredSupports', async () => {
+    vi.mocked(listPendingProposalCandidates).mockResolvedValue([candidate({
+      sourceMetadata: { introspection: true, status: 'pending', engine: { support: { independentSupports: 0, distinctDays: 0 } } },
+    })])
+    await new BackUpStep().run(makeCtx())
+    expect(updatePendingProposal).toHaveBeenCalledWith(USER, PROPOSAL, {
+      sourceMetadata: expect.objectContaining({ engine: { support: { independentSupports: 0, distinctDays: 0, anchoredSupports: 0 } } }),
     })
   })
 
   it('skips the write when the recorded support is unchanged', async () => {
     vi.mocked(listPendingProposalCandidates).mockResolvedValue([candidate({
-      sourceMetadata: { introspection: true, status: 'pending', engine: { support: { independentSupports: 0, distinctDays: 0 } } },
+      sourceMetadata: { introspection: true, status: 'pending', engine: { support: { independentSupports: 0, distinctDays: 0, anchoredSupports: 0 } } },
     })])
     const result = await new BackUpStep().run(makeCtx())
     expect(updatePendingProposal).not.toHaveBeenCalled()
@@ -236,7 +299,7 @@ describe('BackUpStep', () => {
       candidate({ id: 'old', createdAt: new Date('2026-09-01T00:00:00Z'), hasEmbedding: false }),
     ])
     vi.mocked(findProposalSupports).mockResolvedValue([
-      support('a', '2026-09-26T10:00:00Z'),
+      support('a', '2026-09-26T10:00:00Z', OPERATOR),
       support('b', '2026-09-27T10:00:00Z'),
     ])
     const ctx = makeCtx(true)
@@ -251,7 +314,7 @@ describe('BackUpStep', () => {
   it('does not log a promote the pending guard rejected (operator acted mid-run)', async () => {
     vi.mocked(listPendingProposalCandidates).mockResolvedValue([candidate()])
     vi.mocked(findProposalSupports).mockResolvedValue([
-      support('a', '2026-09-26T10:00:00Z'),
+      support('a', '2026-09-26T10:00:00Z', OPERATOR),
       support('b', '2026-09-27T10:00:00Z'),
     ])
     vi.mocked(updatePendingProposal).mockResolvedValue(false)
@@ -270,7 +333,7 @@ describe('BackUpStep', () => {
       candidate({ id: 'old', createdAt: new Date('2026-09-01T00:00:00Z'), sourceMetadata: veto('decay') }),
     ])
     vi.mocked(findProposalSupports).mockResolvedValue([
-      support('a', '2026-09-26T10:00:00Z'),
+      support('a', '2026-09-26T10:00:00Z', OPERATOR),
       support('b', '2026-09-27T10:00:00Z'),
     ])
     const ctx = makeCtx()
@@ -292,7 +355,7 @@ describe('BackUpStep', () => {
       }),
     ])
     vi.mocked(findProposalSupports).mockResolvedValue([
-      support('a', '2026-09-26T10:00:00Z'),
+      support('a', '2026-09-26T10:00:00Z', OPERATOR),
       support('b', '2026-09-27T10:00:00Z'),
     ])
     const ctx = makeCtx()

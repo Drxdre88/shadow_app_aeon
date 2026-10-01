@@ -126,6 +126,14 @@ describe('chat distillation', () => {
     })
   })
 
+  it('writes distilled reflections with a kairos origin, never the operator (P2.5)', async () => {
+    await runChatDistillForUser(USER_ID, { date: DATE })
+
+    const call = (captureMemory as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(call[1]).toMatchObject({ type: 'reflection', source: 'cron' })
+    expect(call[2]).toEqual({ origin: { kind: 'kairos', via: 'cron:chat-distill' } })
+  })
+
   it('stamps reflections when the nearest operator turn resolved an ask that day', async () => {
     vi.mocked(listKairosAsksAnsweredBetween).mockResolvedValue([{
       id: 'ask-1',

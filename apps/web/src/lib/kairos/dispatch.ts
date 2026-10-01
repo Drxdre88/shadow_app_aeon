@@ -1,16 +1,21 @@
 import { captureMemory } from '@/lib/data/memories'
+import { getLatestAether } from '@/lib/data/aether'
 import { retrieveContext } from './retrieve'
 import { getRecipe } from './recipes/registry'
 import { writeCronFailureTrace } from './cron-trace'
+import { loadConscienceBlock, type ConscienceLoader } from './conscience-context'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
-import type { MemoryWriteSpec, RecipeContext, RecipeOutput, Surface } from './recipes/_recipe'
+import type { StreamClass } from './streamClass'
+import type { MemoryWriteSpec, Recipe, RecipeContext, RecipeGrounding, RecipeOutput, Surface } from './recipes/_recipe'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 3C — recipe dispatcher.
 //
 // Single entry point for running any registered recipe. Handles:
 //   1. Lookup (throws RecipeNotFoundError on miss — never silent).
-//   2. Retrieval (one canonical retrieveContext call, used by both surfaces).
+//   2. Retrieval (one canonical retrieveContext call, used by both surfaces),
+//      plus Aether + conscience grounding for recipes whose `reads` declare
+//      'aether' / 'belief' / 'constitution' (P2.5 G5).
 //   3. Execution: flat() on every surface (BYOK, cron, Claude Code).
 //   4. Capture: primary write first. If captureMemory short-circuits on
 //      externalId idempotency (returns created:false), no trace is written —
@@ -34,6 +39,9 @@ export interface RunRecipeArgs {
   dominionId: string
   args?: Record<string, unknown>
   surface: Surface
+  // Per-run conscience memo (createConscienceLoader) for callers that run a
+  // recipe per Dominion; absent → one uncached load.
+  conscience?: ConscienceLoader
 }
 
 export type RunRecipeResult =
@@ -42,21 +50,50 @@ export type RunRecipeResult =
 
 const RETRIEVAL_MEMORY_LIMIT = 25
 
+const GROUNDING_READS: readonly StreamClass[] = ['aether', 'belief', 'constitution']
+
+// Aether + conscience for recipes that declare them in `reads`. Best-effort:
+// a failed read degrades to null / '' and never fails the recipe.
+async function loadGrounding(recipe: Recipe, opts: RunRecipeArgs): Promise<RecipeGrounding | undefined> {
+  if (!recipe.reads.some((r) => GROUNDING_READS.includes(r))) return undefined
+  const wantsAether = recipe.reads.includes('aether')
+  const wantsConscience = recipe.reads.includes('belief') || recipe.reads.includes('constitution')
+  const [aether, conscience] = await Promise.all([
+    wantsAether
+      ? getLatestAether(opts.userId).catch((err) => {
+          console.warn('[kairos:dispatch] aether read failed, proceeding without it', {
+            dominionId: opts.dominionId,
+            error: err instanceof Error ? err.message : String(err),
+          })
+          return null
+        })
+      : Promise.resolve(null),
+    wantsConscience
+      ? (opts.conscience ?? loadConscienceBlock)(opts.userId, { dominionId: opts.dominionId })
+      : Promise.resolve(''),
+  ])
+  return { aether, conscience }
+}
+
 export async function runRecipe(name: string, opts: RunRecipeArgs): Promise<RunRecipeResult> {
   const recipe = getRecipe(name)
   if (!recipe) throw new RecipeNotFoundError(name)
 
-  const retrieval = await retrieveContext({
-    userId: opts.userId,
-    dominionId: opts.dominionId,
-    memoryLimit: RETRIEVAL_MEMORY_LIMIT,
-  })
+  const [retrieval, grounding] = await Promise.all([
+    retrieveContext({
+      userId: opts.userId,
+      dominionId: opts.dominionId,
+      memoryLimit: RETRIEVAL_MEMORY_LIMIT,
+    }),
+    loadGrounding(recipe, opts),
+  ])
 
   const ctx: RecipeContext = {
     userId: opts.userId,
     dominionId: opts.dominionId,
     args: opts.args ?? {},
     retrieval,
+    ...(grounding ? { grounding } : {}),
   }
 
   // Every surface runs flat(): no recipe implements expanded(), so the old

@@ -11,8 +11,10 @@
 //   cortex      : latest live cortex doc for the Dominion (1 row or null).
 //   archetypes  : all live archetypes for the Dominion (≤10, B1 archives
 //                 priors so "live" = today's batch).
-//   substrate   : top-5 FTS hits over reflection/idea/agentic streams,
-//                 last 90d. Empty when no query is provided or the query
+//   substrate   : top-5 hybrid hits over reflection/idea/agentic/concept/
+//                 belief/constitution streams; live (not archived, not
+//                 superseded, valid now); last 90d except concept/belief/
+//                 constitution. Empty when no query is provided or the query
 //                 is too short to FTS reliably.
 //   traces      : recent streamClass='trace' memories — meta-cognition
 //                 over prior recipe runs (Oracle / Cartographer).
@@ -286,8 +288,7 @@ async function fetchSubstrate(
       eq(memories.userId, userId),
       domScope(dominionId),
       inArray(memories.streamClass, [...SUBSTRATE_STREAMS]),
-      isNull(memories.archivedAt),
-      validAsOfNow,
+      ...substrateLive(),
       sql`"memories"."fts" @@ ${tsQuery}`,
       inSubstrateWindow(sinceTs),
     ))
@@ -334,8 +335,7 @@ async function fetchSubstrate(
           eq(memories.userId, userId),
           domScope(dominionId),
           inArray(memories.streamClass, [...SUBSTRATE_STREAMS]),
-          isNull(memories.archivedAt),
-          validAsOfNow,
+          ...substrateLive(),
           sql`${memories.embedding} IS NOT NULL`,
           inSubstrateWindow(sinceTs),
         ))
@@ -402,10 +402,23 @@ function blendRerank(scored: RerankScored<SubstrateRow>[]): SubstrateRow[] {
   return rankRows(scored.map((s) => s.item), (r) => relevance.get(r) ?? 0, { tieBreak: isReflectionRow })
 }
 
-// Concepts are durable distillations (120d freshness half-life), so they stay
-// retrievable past the 90-day substrate window that bounds raw stream rows.
+// Liveness shared by every leg that grounds generation: not archived, not
+// superseded (Merge folds a repeat away with supersededAt alone — no
+// invalidAt — so validAsOfNow does not catch it), and valid now.
+function substrateLive() {
+  return [isNull(memories.archivedAt), isNull(memories.supersededAt), validAsOfNow] as const
+}
+
+// Durable classes stay retrievable past the 90-day window that bounds raw
+// stream rows: concepts are distillations (120d freshness half-life), held
+// beliefs and the constitution are values that must not forget themselves.
+// They are still bounded by substrateLive — a retired belief or a replaced
+// constitution version is superseded / invalid and drops out there.
+const WINDOW_EXEMPT_STREAMS = ['concept', 'belief', 'constitution'] as const
+
 function inSubstrateWindow(sinceTs: ReturnType<typeof sql>) {
-  return sql`(${memories.createdAt} >= ${sinceTs} OR ${memories.streamClass} = 'concept')`
+  const exempt = sql.join(WINDOW_EXEMPT_STREAMS.map((s) => sql`${s}`), sql`, `)
+  return sql`(${memories.createdAt} >= ${sinceTs} OR ${memories.streamClass} IN (${exempt}))`
 }
 
 async function fetchTraces(userId: string, dominionId: string | null): Promise<RetrievedMemory[]> {
@@ -422,10 +435,9 @@ async function fetchTraces(userId: string, dominionId: string | null): Promise<R
       eq(memories.userId, userId),
       domEq(dominionId),
       eq(memories.streamClass, 'trace'),
-      isNull(memories.archivedAt),
       // Resolved-incident traces (invalidAt stamped via a 'resolves' link) must
       // not keep narrating a closed incident to brief/advisory surfaces.
-      validAsOfNow,
+      ...substrateLive(),
     ))
     .orderBy(desc(memories.createdAt))
     .limit(TRACES_LIMIT)

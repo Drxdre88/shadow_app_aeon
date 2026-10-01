@@ -269,7 +269,7 @@ describe('fetchSubstrate — memory engine (concepts + standing, FTS-only path)'
     vi.unstubAllEnvs()
   })
 
-  it('queries the concept stream and exempts concepts from the 90-day window', async () => {
+  it('queries the concept stream and exempts concepts, beliefs and the constitution from the 90-day window', async () => {
     vi.stubEnv('VOYAGE_API_KEY', '')
     vi.stubEnv('OPENAI_API_KEY', '')
     selectQueue.push([]) // aether
@@ -284,8 +284,32 @@ describe('fetchSubstrate — memory engine (concepts + standing, FTS-only path)'
       .map((w) => dialect.sqlToQuery(w as SQL))
       .find((q) => q.sql.includes('"fts" @@'))
     expect(substrateWhere).toBeDefined()
-    expect(substrateWhere!.params).toEqual(expect.arrayContaining(['reflection', 'idea', 'agentic', 'concept']))
-    expect(substrateWhere!.sql).toContain(`OR "memories"."stream_class" = 'concept'`)
+    expect(substrateWhere!.params).toEqual(expect.arrayContaining(['reflection', 'idea', 'agentic', 'concept', 'belief', 'constitution']))
+    expect(substrateWhere!.sql).toMatch(/OR "memories"\."stream_class" IN \(\$\d+, \$\d+, \$\d+\)\)/)
+    const windowParams = substrateWhere!.params.slice(-3)
+    expect(windowParams).toEqual(['concept', 'belief', 'constitution'])
+  })
+
+  it('G1: substrate and traces never ground on a superseded (merged-away) row', async () => {
+    vi.stubEnv('VOYAGE_API_KEY', '')
+    vi.stubEnv('OPENAI_API_KEY', '')
+    selectQueue.push([]) // aether
+    selectQueue.push([]) // archetypes
+    selectQueue.push([]) // substrate
+    selectQueue.push([]) // traces
+
+    await retrieveGlobalContext({ userId: USER_ID, query: 'launch plan status' })
+
+    const dialect = new PgDialect()
+    const rendered = whereArgs.map((w) => dialect.sqlToQuery(w as SQL))
+    const substrateWhere = rendered.find((q) => q.sql.includes('"fts" @@'))
+    const tracesWhere = rendered.find((q) => q.params.includes('trace'))
+    for (const q of [substrateWhere, tracesWhere]) {
+      expect(q).toBeDefined()
+      expect(q!.sql).toContain('"memories"."superseded_at" is null')
+      expect(q!.sql).toContain('"memories"."archived_at" is null')
+      expect(q!.sql).toContain('"memories"."invalid_at"')
+    }
   })
 
   it('a scored row ranks by 0.5 + standing; unscored rows keep the P0 recency order', async () => {

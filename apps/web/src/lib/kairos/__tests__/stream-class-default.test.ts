@@ -4,9 +4,15 @@ import { CONFIDENCE_BY_STREAM, confidenceForStreamClass } from '../confidence'
 import { META_STREAM_CLASSES, STREAM_CLASSES } from '../streamClass'
 
 describe('defaultStreamClass — capture choke point', () => {
-  it('classifies reflections as reflection regardless of source', () => {
+  it('classifies reflections as reflection from any non-ingest source', () => {
     expect(defaultStreamClass('manual', 'reflection')).toBe('reflection')
     expect(defaultStreamClass('cron', 'reflection')).toBe('reflection')
+    expect(defaultStreamClass('claude', 'reflection')).toBe('reflection')
+  })
+
+  it('never puts ingested content in the reflection stream on its type alone (P2.5)', () => {
+    expect(defaultStreamClass('import', 'reflection')).toBe('execution')
+    expect(defaultStreamClass('webhook', 'reflection')).toBeUndefined()
   })
 
   it.each(['claude', 'codex', 'copilot', 'hook'])('classifies a %s session_summary as agentic', (source) => {

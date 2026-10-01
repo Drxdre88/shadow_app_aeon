@@ -9,7 +9,7 @@ import type { SQL } from 'drizzle-orm'
 //   - the daily message's "promoted beliefs" only counts engine promotions
 //     (step 'backup'), never belief-ledger or constitution 'promote' ops.
 
-const captured: { where?: unknown; limit?: number } = {}
+const captured: { where?: unknown; limit?: number; orderBy?: unknown[] } = {}
 let rows: unknown[] = []
 
 vi.mock('@/lib/db', () => {
@@ -17,7 +17,10 @@ vi.mock('@/lib/db', () => {
   const pass = () => chain
   chain.from = pass
   chain.innerJoin = pass
-  chain.orderBy = pass
+  chain.orderBy = (...args: unknown[]) => {
+    captured.orderBy = args
+    return chain
+  }
   chain.where = (w: unknown) => {
     captured.where = w
     return chain
@@ -29,7 +32,7 @@ vi.mock('@/lib/db', () => {
   return { db: { select: vi.fn(() => chain) } }
 })
 
-import { listPendingProposalCandidates, listPromotedBeliefsBetween } from '../memory-candidates'
+import { listMergeCandidates, listPendingProposalCandidates, listPromotedBeliefsBetween } from '../memory-candidates'
 
 const dialect = new PgDialect()
 const render = (s: unknown) => dialect.sqlToQuery(s as SQL)
@@ -37,7 +40,25 @@ const render = (s: unknown) => dialect.sqlToQuery(s as SQL)
 beforeEach(() => {
   captured.where = undefined
   captured.limit = undefined
+  captured.orderBy = undefined
   rows = []
+})
+
+describe('listMergeCandidates', () => {
+  it('reads live, embedded, unpinned rows since the window start, oldest first with an id tiebreak', async () => {
+    const since = new Date('2026-09-27T01:30:00.000Z')
+    await listMergeCandidates('user-1', since, { excludeTypes: ['reflection'], excludeStreams: ['concept'], limit: 400 })
+
+    const where = render(captured.where)
+    expect(where.sql).toContain('"memories"."created_at" >= $')
+    expect(where.params).toContain(since.toISOString())
+    expect(where.sql).toContain('"memories"."embedding" is not null')
+    expect(where.sql).toContain('"memories"."archived_at" is null')
+    expect(where.sql).toContain('"memories"."superseded_at" is null')
+    expect(captured.limit).toBe(400)
+    const order = (captured.orderBy ?? []).map((o) => render(o).sql)
+    expect(order).toEqual(['"memories"."created_at" asc', '"memories"."id" asc'])
+  })
 })
 
 describe('listPendingProposalCandidates', () => {

@@ -168,6 +168,9 @@ export interface MergeCandidateRow {
   sourceMetadata: Record<string, unknown>
 }
 
+// Merge candidates: live, unpinned, embedded rows created since `since`.
+// Oldest first with an id tiebreak so the capped slice is deterministic and
+// always holds the rows about to age out of the window (docs/kairos/32 §2.1).
 export async function listMergeCandidates(
   userId: string,
   since: Date,
@@ -191,7 +194,7 @@ export async function listMergeCandidates(
       notInArray(memories.type, [...opts.excludeTypes]),
       liveRow,
     ))
-    .orderBy(asc(memories.createdAt))
+    .orderBy(asc(memories.createdAt), asc(memories.id))
     .limit(opts.limit)
   return rows.map((r) => ({ ...r, sourceMetadata: (r.sourceMetadata ?? {}) as Record<string, unknown> }))
 }

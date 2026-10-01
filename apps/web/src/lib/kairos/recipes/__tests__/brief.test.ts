@@ -53,7 +53,60 @@ describe('BRIEF recipe', () => {
     expect(BRIEF.name).toBe('BRIEF')
     expect(BRIEF.writes).toEqual(['advisory'])
     expect(BRIEF.reads).toContain('reflection')
+    expect(BRIEF.reads).toEqual(expect.arrayContaining(['cortex', 'aether', 'belief', 'constitution']))
     expect(BRIEF.expanded).toBeUndefined()
+  })
+
+  it('reads the Dominion cortex, a short Aether digest and the conscience block; format unchanged', async () => {
+    const ask = vi.fn(async () => ({ text: 'ok', modelId: 'm' }))
+    ;(getProviderForTask as ReturnType<typeof vi.fn>).mockResolvedValue({ provider: { ask } })
+    const thought = (id: string, dominionId: string | null, salience: number) => ({
+      id, title: `T-${id}`, insight: `insight ${id}`, dominionId, dominionName: dominionId ? 'Test Dominion' : null,
+      dominionColor: null, salience, kind: 'tension' as const, sourceMemoryIds: [], ageDays: 1,
+    })
+    const c: RecipeContext = {
+      ...ctx({
+        bundle: fakeBundle(),
+        cortex: { id: 'cx1', title: 'Cortex today', body: 'Momentum on ```Alpha```', streamClass: 'cortex', createdAt: new Date() },
+      }),
+      grounding: {
+        aether: {
+          generatedAt: '2026-10-01T00:00:00Z',
+          coreNarrative: 'Building while tired.',
+          thoughts: [thought('a', DOMINION_ID, 0.2), thought('b', 'other-dom', 0.99), thought('c', null, 0.9), thought('d', DOMINION_ID, 0.5)],
+          tensions: [{ aId: 'a', bId: 'c', note: 'speed vs rest' }],
+          shifts: [],
+        },
+        conscience: '## Conscience (reference data)\n1. Rest on Sundays',
+      },
+    }
+    const out = await BRIEF.flat(c)
+    const prompt = promptFrom(ask)
+    expect(prompt).toContain('## Dominion cortex')
+    expect(prompt).toContain('Momentum on \'\'\'Alpha\'\'\'') // fences neutralised
+    expect(prompt).toContain('Building while tired.')
+    expect(prompt).toContain('- Tension: T-a ↔ T-c: speed vs rest')
+    // This Dominion's threads first, then cross-cutting; other Dominions excluded.
+    const threads = prompt.split('\n').filter((l) => l.startsWith('- Thread'))
+    expect(threads.map((l) => l.match(/T-(\w)/)?.[1])).toEqual(['d', 'a', 'c'])
+    expect(prompt).toContain('## Conscience (reference data)\n1. Rest on Sundays')
+    // Grounding comes after the live snapshot; system prompt keeps the format.
+    expect(prompt.indexOf('## Open board cards')).toBeLessThan(prompt.indexOf('## Dominion cortex'))
+    const req = (ask.mock.calls as unknown as Array<[{ system: string }]>)[0][0]
+    expect(req.system).toContain('── OUTPUT FORMAT ──')
+    expect(req.system).toContain('No preamble. Start directly with `## State`')
+    expect(out.traceMeta.grounding).toEqual({ cortex: true, aether: true, conscience: true })
+  })
+
+  it('omits grounding sections when the dispatcher supplied none', async () => {
+    const ask = vi.fn(async () => ({ text: 'ok', modelId: 'm' }))
+    ;(getProviderForTask as ReturnType<typeof vi.fn>).mockResolvedValue({ provider: { ask } })
+    const out = await BRIEF.flat(ctx({ bundle: fakeBundle() }))
+    const prompt = promptFrom(ask)
+    expect(prompt).not.toContain('## Dominion cortex')
+    expect(prompt).not.toContain('## Aether')
+    expect(prompt).not.toContain('Conscience')
+    expect(out.traceMeta.grounding).toEqual({ cortex: false, aether: false, conscience: false })
   })
 
   it('throws when retrieval bundle is missing', async () => {

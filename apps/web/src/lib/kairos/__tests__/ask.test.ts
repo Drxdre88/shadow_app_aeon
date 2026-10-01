@@ -535,7 +535,7 @@ describe('card_notes answers', () => {
           { taskId: 'task-c', title: 'Tidy inbox', line: 'inbox zero' },
         ],
       }),
-    }))
+    }), { origin: { kind: 'agent', via: 'ask' } })
     expect(appendTaskDescription).toHaveBeenCalledTimes(2)
     expect(appendTaskDescription).toHaveBeenCalledWith('task-a', 'proj-1', 'Notes (via Kairos, 30/09): prod deploy', 10_000)
     expect(appendTaskDescription).toHaveBeenCalledWith('task-c', 'proj-1', 'Notes (via Kairos, 30/09): inbox zero', 10_000)
@@ -588,8 +588,13 @@ describe('card_notes answers', () => {
     expect(captureReflection).toHaveBeenCalledWith(USER, expect.objectContaining({
       bodyMd: 'they were all just chores really',
       sourceMetadata: expect.objectContaining({ taskIds: ['task-a', 'task-c'], cardNotes: [] }),
-    }))
+    }), expect.anything())
     expect(appendTaskDescription).not.toHaveBeenCalled()
+  })
+
+  it('stamps the answer with the caller\'s origin: operator surfaces pass it, others default to agent (P2.5)', async () => {
+    await answerKairosAsk(USER, ASK_ID, 'An operator answer', undefined, { kind: 'operator', via: 'ask' })
+    expect(vi.mocked(captureReflection).mock.calls.at(-1)?.[2]).toEqual({ origin: { kind: 'operator', via: 'ask' } })
   })
 
   it('never fails the answer when write-back throws, and skips viewers', async () => {

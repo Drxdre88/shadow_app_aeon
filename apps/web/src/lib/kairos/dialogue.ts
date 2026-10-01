@@ -20,6 +20,7 @@ import { retrieveContext } from './retrieve'
 import { dominionTag } from './dominionTags'
 import type { RetrievedMemory } from './recipes/_recipe'
 import type { AetherThought } from './aether-types'
+import type { Origin } from './origin'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Dialogue — orchestration (the "weld").
@@ -207,6 +208,9 @@ export async function commitDialogue(
 
   const { thread } = loaded
   const provenance = { kairosDialogue: { threadId, kairosAskId: thread.seed.kairosAskId } }
+  // P2.5: the distillation is written by the AI client (Claude Code), so these
+  // are agent-origin reflections, never the operator's own words.
+  const origin: Origin = { kind: 'agent', via: 'dialogue' }
   const reflectionIds: string[] = []
 
   for (const r of input.reflections) {
@@ -225,7 +229,7 @@ export async function commitDialogue(
         tags,
         source: 'claude',
         sourceMetadata: provenance,
-      })
+      }, { origin })
       if (!result.ok) return { ok: false, reason: 'dominion_not_found' }
       reflectionIds.push(result.memory.id)
     } else {
@@ -234,7 +238,7 @@ export async function commitDialogue(
         title: r.title ?? null,
         summary: r.summary ?? null,
         tags,
-        sourceMetadata: provenance,
+        sourceMetadata: { ...provenance, origin },
       })
       reflectionIds.push(id)
     }

@@ -189,6 +189,26 @@ describe('acceptProposal — introspection branch (unchanged)', () => {
     expect(setCalls).toHaveLength(1)
   })
 
+  it('stamps the accepted row as operator-origin and keeps Kairos\'s label as priorOrigin (P2.5)', async () => {
+    const proposal = {
+      id: PROPOSAL_ID,
+      userId: USER,
+      type: 'inbound',
+      links: [],
+      sourceMetadata: { introspection: true, kind: 'reflection', status: 'pending', origin: { kind: 'kairos', via: 'cron:introspection' } },
+    }
+    selectQueue.push([proposal])
+    updateQueue.push([{ ...proposal, type: 'reflection' }])
+
+    await acceptProposal(PROPOSAL_ID, USER, { pin: false })
+
+    expect(setCalls[0].sourceMetadata).toMatchObject({
+      status: 'accepted',
+      origin: { kind: 'operator', via: 'accept' },
+      priorOrigin: { kind: 'kairos', via: 'cron:introspection' },
+    })
+  })
+
   it('returns null when the proposal update matched nothing', async () => {
     selectQueue.push([{
       id: PROPOSAL_ID,

@@ -66,6 +66,7 @@ export interface BuildChatPromptInput {
   pendingAsk?: ChatPromptPendingAsk
   boardSection?: string           // pre-rendered live board state (chat-board-context.ts) — deterministic, fresher than retrieval
   recencySection?: string         // pre-rendered last-N-hours activity (chat-recency-context.ts) — deterministic, fresher than retrieval
+  conscienceSection?: string      // pre-rendered constitution + held beliefs (conscience-context.ts) — reference data
 }
 
 export const TELEGRAM_CHAT_PERSONA = [
@@ -147,6 +148,7 @@ export function buildChatSystemPrompt(
   pendingAsk?: ChatPromptPendingAsk,
   boardSection?: string,
   recencySection?: string,
+  conscienceSection?: string,
 ): string {
   const lines: string[] = dominion
     ? [
@@ -202,6 +204,16 @@ export function buildChatSystemPrompt(
     lines.push(renderPendingAsk(pendingAsk))
   }
 
+  // Norms read at answer time (P2.5 G4): delimited reference data, placed
+  // after the grounded context and before the Style rules so it never
+  // displaces them.
+  if (conscienceSection?.trim()) {
+    lines.push('')
+    lines.push('---')
+    lines.push('')
+    lines.push(conscienceSection.trim())
+  }
+
   lines.push('')
   lines.push('---')
   lines.push('')
@@ -222,7 +234,7 @@ export function buildChatSystemPrompt(
 }
 
 export function buildChatMessages(input: BuildChatPromptInput): AIMessage[] {
-  const system = buildChatSystemPrompt(input.dominion, input.retrieval, input.surface, input.pendingAsk, input.boardSection, input.recencySection)
+  const system = buildChatSystemPrompt(input.dominion, input.retrieval, input.surface, input.pendingAsk, input.boardSection, input.recencySection, input.conscienceSection)
   const trimmedHistory = input.history.slice(-MAX_HISTORY_MESSAGES)
 
   const messages: AIMessage[] = [

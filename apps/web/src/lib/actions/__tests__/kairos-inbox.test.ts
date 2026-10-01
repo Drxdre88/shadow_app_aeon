@@ -52,7 +52,7 @@ describe('Kairos inbox actions', () => {
     await expect(answerKairosInboxAsk(ASK_ID, '  The operator answer  ')).resolves.toEqual({
       reflectionId: 'reflection-1',
     })
-    expect(answerKairosAsk).toHaveBeenCalledWith(USER_ID, ASK_ID, 'The operator answer')
+    expect(answerKairosAsk).toHaveBeenCalledWith(USER_ID, ASK_ID, 'The operator answer', undefined, { kind: 'operator', via: 'ask' })
   })
 
   it('rejects an empty Ask answer before calling the orchestrator', async () => {
