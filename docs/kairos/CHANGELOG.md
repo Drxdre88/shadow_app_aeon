@@ -4,6 +4,17 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–35).
 
+## [0.16.0] — 2026-10-01 · "All on Max"
+
+> Every remaining paid-key cron becomes a thinking job a Claude Max routine answers; the cron stays as its fallback and skips any unit the routine already did. Playbook: `docs/kairos/33-thinking-routine.md` (§Dusk, dawn and tidy routines).
+
+- **Seven new thinking kinds** — `chat_distill` (chat summaries), `archetype`, `ask_mine` (the question of the day), `contradiction`, `brief` (morning briefs), `introspection` (the raw idea dump, still behind `KAIROS_RAW_INTROSPECTION`) and `micro_consolidate` (intraday tidy-ups). Each is planned in a window that closes two minutes before its old cron, with exactly the prompt that cron sends.
+- **Cron guard** — before any model call, each of those crons checks for a done job with the same key and skips that unit ("answered on Max"); a failed or expired job is exactly what it still covers.
+- **Markdown answers** — `brief` and `micro_consolidate` are answered in plain markdown (the job's `instructions` say so); every other non-chat kind stays strict JSON.
+- **Batch contradiction scan** — one job per Dominion carries every recent belief and its nearest neighbours; findings are grounded per probe.
+- **Tidy-up windows end where they were read** — a fold records the end of the window it summarised and the next fold starts there, so nothing lands in the gap between planning and writing.
+- **Six routines, all on Opus** — dusk 01:40 (chat summaries, archetypes), thinking 02:40, ideas 03:35 (+ the question of the day), dawn 04:00 (contradictions, idea dump), morning 05:40 (briefs, the 06:15 tidy-up, the daily message), tidy at :05 of 09/12/15/18/21/23 UTC. Embed-backfill moved to 03:25 UTC.
+
 ## [0.15.0] — 2026-10-01 · "Creativity"
 
 > The raw nightly idea dump gives way to a contest. Kairos drafts ideas in several directions, checks them against evidence, throws out repeats, and compares them head to head; only one to three a night reach the inbox, each with the reason it survived. Spec: `docs/kairos/35-creativity.md`; research `research/kairos_2909/04` §B, `research/kairos_0110/00_verdict.md` §5.
