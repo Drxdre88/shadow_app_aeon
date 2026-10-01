@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { dominions, memories } from '@/lib/db/schema'
 import { META_STREAM_CLASSES } from '@/lib/kairos/streamClass'
 import type { EngineLink, EngineMemory } from '@/lib/kairos/engine/types'
+import { insertMemoryOps, type DbExecutor, type OpLog } from './memory-ops'
 
 // Memory engine data access (docs/kairos/32 §2). Pure DB reads/writes — the
 // scoring rules live in lib/kairos/engine. Standing writes never bump updatedAt.
@@ -129,6 +130,9 @@ export async function listScoredRetiredMemories(
   return rows.map((r) => ({ id: r.id, standing: r.standing ?? 0 }))
 }
 
+// Retired rows never scored (standing NULL) get a 0 — no op, like a first
+// score. Scored retired rows are zeroed by the caller through updateStandings
+// so each one's score op lands in the same transaction.
 export async function zeroRetiredStanding(userId: string, now: Date, at: Date): Promise<number> {
   const rows = await db
     .update(memories)
@@ -137,7 +141,7 @@ export async function zeroRetiredStanding(userId: string, now: Date, at: Date): 
       eq(memories.userId, userId),
       notMeta(),
       retired(now),
-      or(isNull(memories.standing), ne(memories.standing, 0)),
+      isNull(memories.standing),
     ))
     .returning({ id: memories.id })
   return rows.length
@@ -162,22 +166,33 @@ export async function countOpenChallenges(userId: string, ids: readonly string[]
   return out
 }
 
+// With `log` (non-empty ops), every batch and the ops insert run in ONE
+// transaction: the standings and their score ops land together or not at all.
 export async function updateStandings(
   userId: string,
   updates: ReadonlyArray<{ id: string; standing: number }>,
   at: Date,
+  log?: OpLog,
 ): Promise<number> {
-  let written = 0
-  for (let i = 0; i < updates.length; i += UPDATE_BATCH) {
-    const batch = updates.slice(i, i + UPDATE_BATCH)
-    const values = sql.join(batch.map((u) => sql`(${u.id}::uuid, ${u.standing}::real)`), sql`, `)
-    const res = await db.execute(sql`
-      UPDATE memories AS m
-      SET standing = v.standing, standing_at = ${at.toISOString()}::timestamp
-      FROM (VALUES ${values}) AS v(id, standing)
-      WHERE m.id = v.id AND m.user_id = ${userId}
-    `)
-    written += res.rowCount ?? 0
+  const write = async (tx: DbExecutor) => {
+    let written = 0
+    for (let i = 0; i < updates.length; i += UPDATE_BATCH) {
+      const batch = updates.slice(i, i + UPDATE_BATCH)
+      const values = sql.join(batch.map((u) => sql`(${u.id}::uuid, ${u.standing}::real)`), sql`, `)
+      const res = await tx.execute(sql`
+        UPDATE memories AS m
+        SET standing = v.standing, standing_at = ${at.toISOString()}::timestamp
+        FROM (VALUES ${values}) AS v(id, standing)
+        WHERE m.id = v.id AND m.user_id = ${userId}
+      `)
+      written += res.rowCount ?? 0
+    }
+    return written
   }
-  return written
+  if (!log || log.ops.length === 0) return write(db)
+  return db.transaction(async (tx) => {
+    const written = await write(tx)
+    await insertMemoryOps(userId, log.runId, log.ops, tx)
+    return written
+  })
 }

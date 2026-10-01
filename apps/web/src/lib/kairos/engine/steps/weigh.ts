@@ -1,6 +1,8 @@
 import * as engineData from '@/lib/data/memory-engine'
+import type { OpLog } from '@/lib/data/memory-ops'
+import { outOfTime } from '../deadline'
 import type { Standing } from '../standing'
-import type { EngineMemory, EngineRunContext, Step, StepResult, StandingBreakdown } from '../types'
+import type { EngineMemory, EngineRunContext, MemoryOpInput, Step, StepResult, StandingBreakdown } from '../types'
 
 export interface WeighData {
   loadTouchedEngineMemories(userId: string, since: Date, now: Date, limit: number): Promise<EngineMemory[]>
@@ -8,7 +10,12 @@ export interface WeighData {
   listScoredRetiredMemories(userId: string, now: Date, limit: number): Promise<Array<{ id: string; standing: number }>>
   zeroRetiredStanding(userId: string, now: Date, at: Date): Promise<number>
   countOpenChallenges(userId: string, ids: readonly string[]): Promise<Map<string, number>>
-  updateStandings(userId: string, updates: ReadonlyArray<{ id: string; standing: number }>, at: Date): Promise<number>
+  updateStandings(
+    userId: string,
+    updates: ReadonlyArray<{ id: string; standing: number }>,
+    at: Date,
+    log?: OpLog,
+  ): Promise<number>
 }
 
 export interface WeighStepOptions {
@@ -44,6 +51,7 @@ export class WeighStep implements Step {
 
   async run(ctx: EngineRunContext): Promise<StepResult> {
     const { userId, now, dryRun, changes } = ctx
+    if (outOfTime(ctx)) return { step: this.name, examined: 0, changed: 0, skipped: 'out of time', outOfTime: true }
     const since = new Date(now.getTime() - this.windowMs)
     const touched = await this.data.loadTouchedEngineMemories(userId, since, now, this.cap)
     const stalest = await this.data.loadStalestEngineMemories(
@@ -53,7 +61,7 @@ export class WeighStep implements Step {
     const challenges = await this.data.countOpenChallenges(userId, rows.map((m) => m.id))
 
     const updates: Array<{ id: string; standing: number }> = []
-    let changed = 0
+    const ops: MemoryOpInput[] = []
     let firstScored = 0
     for (const memory of rows) {
       const breakdown = this.standing.compute(memory, { now, openChallenges: challenges.get(memory.id) ?? 0 })
@@ -64,8 +72,7 @@ export class WeighStep implements Step {
         continue
       }
       if (Math.abs(after - memory.standing) < this.minDelta) continue
-      changed++
-      changes.record({
+      ops.push({
         memoryId: memory.id,
         step: this.name,
         op: 'score',
@@ -75,11 +82,13 @@ export class WeighStep implements Step {
       })
     }
 
+    // Scored retired rows are zeroed with the live updates so their ops share
+    // the same transaction; never-scored retired rows get 0 without an op.
     const retired = await this.data.listScoredRetiredMemories(userId, now, this.cap)
     for (const r of retired) {
+      updates.push({ id: r.id, standing: 0 })
       if (Math.abs(r.standing) < this.minDelta) continue
-      changed++
-      changes.record({
+      ops.push({
         memoryId: r.id,
         step: this.name,
         op: 'score',
@@ -90,17 +99,26 @@ export class WeighStep implements Step {
     }
 
     let zeroed = retired.length
-    if (!dryRun) {
-      await this.data.updateStandings(userId, updates, now)
-      zeroed = await this.data.zeroRetiredStanding(userId, now, now)
+    if (dryRun) {
+      for (const op of ops) changes.record(op)
+    } else {
+      // Standings + score ops in ONE transaction: all land or none do.
+      await this.data.updateStandings(userId, updates, now, { runId: ctx.runId, ops })
+      zeroed += await this.data.zeroRetiredStanding(userId, now, now)
     }
 
     const notes = [
-      `scored ${updates.length} (touched ${touched.length}, rolling ${stalest.length})`,
+      `scored ${updates.length - retired.length} (touched ${touched.length}, rolling ${stalest.length})`,
       `first-scored ${firstScored}`,
       `retired zeroed ${zeroed}`,
     ]
     if (dryRun) notes.push('dry run: nothing written')
-    return { step: this.name, examined: rows.length + retired.length, changed: changed + firstScored, notes }
+    return {
+      step: this.name,
+      examined: rows.length + retired.length,
+      changed: ops.length + firstScored,
+      notes,
+      ...(dryRun ? {} : { opsWritten: ops.length }),
+    }
   }
 }

@@ -137,7 +137,11 @@ function buildPatch(
     // A legacy single `engine.veto` is left as-is (readers still honour it).
     const engine = asRecord(meta.engine) ?? {}
     const vetoes = { ...(asRecord(engine.vetoes) ?? {}), [veto.op]: { opId: veto.opId, at: veto.at } }
-    meta.engine = { ...engine, vetoes }
+    const nextEngine: Snapshot = { ...engine, vetoes }
+    // The undone op's own stamp goes with it; another op's stamp stays.
+    if (veto.op === 'promote') delete nextEngine.promotedAt
+    if (veto.op === 'decay') delete nextEngine.decayedAt
+    meta.engine = nextEngine
     metaChanged = true
   }
   if (metaChanged) set.sourceMetadata = meta

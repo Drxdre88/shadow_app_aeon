@@ -22,11 +22,13 @@ function request(path = '/api/cron/memory-engine', authorization?: string) {
   } as unknown as Parameters<typeof GET>[0]
 }
 
+// Live: a step writes its ops inside each mutation's transaction and reports
+// the count; dry run: it only records into the change log.
 const recordingStep: Step = {
   name: 'weigh',
   run: async (ctx) => {
-    ctx.changes.record({ memoryId: 'm1', step: 'weigh', op: 'score', reason: 'r' })
-    return { step: 'weigh', examined: 1, changed: 1 }
+    if (ctx.dryRun) ctx.changes.record({ memoryId: 'm1', step: 'weigh', op: 'score', reason: 'r' })
+    return { step: 'weigh', examined: 1, changed: 1, ...(ctx.dryRun ? {} : { opsWritten: 1 }) }
   },
 }
 
@@ -37,6 +39,7 @@ const failingStep: Step = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.spyOn(console, 'error').mockImplementation(() => {})
   delete process.env.CRON_SECRET
   ;(process.env as Record<string, string>).NODE_ENV = 'test'
   vi.mocked(listMemoryEngineUserIds).mockResolvedValue(['u1', 'u2'])
@@ -58,12 +61,12 @@ describe('cron/memory-engine route', () => {
     expect(response.status).toBe(200)
   })
 
-  it('runs the engine per user, flushes ops and writes a success trace each', async () => {
+  it('runs the engine per user, counts transactional ops and writes a success trace each', async () => {
     const response = await GET(request())
     const body = await response.json()
     expect(body).toMatchObject({ ran: 2, dryRun: false, opsWritten: 2, failed: 0 })
-    expect(insertMemoryOps).toHaveBeenCalledTimes(2)
-    expect(insertMemoryOps).toHaveBeenCalledWith('u1', expect.any(String), [expect.objectContaining({ memoryId: 'm1' })])
+    // Nothing is left buffered for an after-the-fact flush.
+    expect(insertMemoryOps).not.toHaveBeenCalled()
     expect(writeCronSuccessTrace).toHaveBeenCalledWith('u1', expect.objectContaining({ cronName: 'memory-engine' }))
     expect(writeCronSuccessTrace).toHaveBeenCalledWith('u2', expect.objectContaining({ cronName: 'memory-engine' }))
     expect(writeCronFailureTrace).not.toHaveBeenCalled()
@@ -73,6 +76,7 @@ describe('cron/memory-engine route', () => {
     const response = await GET(request('/api/cron/memory-engine?dryRun=1'))
     const body = await response.json()
     expect(body).toMatchObject({ ran: 2, dryRun: true, opsWritten: 0 })
+    expect(body.users[0].result).toMatchObject({ opsPlanned: 1 })
     expect(body.users[0].result.steps[0]).toMatchObject({ step: 'weigh', changed: 1 })
     expect(insertMemoryOps).not.toHaveBeenCalled()
     expect(writeCronSuccessTrace).not.toHaveBeenCalled()
@@ -102,5 +106,69 @@ describe('cron/memory-engine route', () => {
     expect(body.users[0]).toEqual({ userId: 'u1', error: 'registry broke' })
     expect(writeCronFailureTrace).toHaveBeenCalledWith('u1', expect.objectContaining({ reason: 'uncaught_exception' }))
     expect(writeCronSuccessTrace).toHaveBeenCalledWith('u2', expect.objectContaining({ cronName: 'memory-engine' }))
+  })
+
+  it('writes a failure trace when a change was rolled back because its op insert failed', async () => {
+    vi.mocked(buildNightSteps).mockImplementation(() => [{
+      name: 'backup',
+      run: async () => ({ step: 'backup', examined: 2, changed: 1, opsWritten: 1, errors: ['p1: memory_ops insert failed'] }),
+    }])
+    const body = await (await GET(request())).json()
+    expect(body).toMatchObject({ failed: 2, opsWritten: 2 })
+    expect(writeCronFailureTrace).toHaveBeenCalledWith('u1', expect.objectContaining({
+      cronName: 'memory-engine',
+      reason: 'step_failed',
+      error: 'backup: 1 change(s) rolled back: p1: memory_ops insert failed',
+    }))
+    expect(writeCronSuccessTrace).not.toHaveBeenCalled()
+    expect(console.error).toHaveBeenCalled()
+  })
+
+  it('writes a failure trace when a whole step transaction (e.g. standings + ops) failed', async () => {
+    vi.mocked(buildNightSteps).mockImplementation(() => [{
+      name: 'weigh',
+      run: async () => { throw new Error('memory_ops insert failed') },
+    }])
+    await GET(request())
+    expect(writeCronFailureTrace).toHaveBeenCalledWith('u1', expect.objectContaining({
+      reason: 'step_failed',
+      error: 'weigh: memory_ops insert failed',
+    }))
+  })
+
+  it('stops at its own time budget and still traces every user (2026-10-01 regression)', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(0)
+    vi.mocked(buildNightSteps).mockImplementation(() => [{
+      name: 'backup',
+      run: async (ctx) => {
+        // The step sees a deadline well inside maxDuration (300s)…
+        expect(ctx.deadline).toBeGreaterThan(0)
+        expect(ctx.deadline).toBeLessThanOrEqual(250_000)
+        // …and it is spent by the time this step yields.
+        clock.mockReturnValue(ctx.deadline ?? 0)
+        return { step: 'backup', examined: 349, changed: 349, opsWritten: 349, outOfTime: true, notes: ['out of time after 349/400'] }
+      },
+    }])
+    try {
+      const body = await (await GET(request())).json()
+      expect(body).toMatchObject({ ran: 2, opsWritten: 349, failed: 2 })
+      expect(writeCronFailureTrace).toHaveBeenCalledWith('u1', expect.objectContaining({
+        cronName: 'memory-engine',
+        reason: 'time_budget',
+        error: expect.stringContaining('backup: out of time after 349/400'),
+      }))
+      // The second user never started, but still gets a trace.
+      expect(writeCronFailureTrace).toHaveBeenCalledWith('u2', expect.objectContaining({ reason: 'time_budget' }))
+      expect(writeCronSuccessTrace).not.toHaveBeenCalled()
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  it('logs and returns 500 when the user list cannot be loaded', async () => {
+    vi.mocked(listMemoryEngineUserIds).mockRejectedValue(new Error('db down'))
+    const response = await GET(request())
+    expect(response.status).toBe(500)
+    expect(console.error).toHaveBeenCalled()
   })
 })

@@ -2,13 +2,17 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/data/memory-ops', () => ({ insertMemoryOps: vi.fn() }))
 vi.mock('@/lib/data/memory-engine', () => ({}))
+// buildNightSteps only constructs steps; keep the data layer (and whatever it
+// pulls in at module load) out of this unit test.
+vi.mock('@/lib/data/memory-candidates', () => ({}))
+vi.mock('@/lib/data/memory-reactions', () => ({}))
 vi.mock('@/lib/db', () => ({ db: {} }))
 
 import { BufferedChangeLog } from '../change-log'
 import { MemoryEngine } from '../memory-engine'
 import { buildNightSteps } from '../registry'
 import { WeighStep } from '../steps/weigh'
-import type { ChangeLog, EngineRunContext, MemoryOpInput, Step } from '../types'
+import type { ChangeLog, EngineRunContext, MemoryOpInput, Step, StepResult } from '../types'
 import { NOW } from './fixtures'
 
 const op = (memoryId: string): MemoryOpInput => ({ memoryId, step: 'weigh', op: 'score', reason: 'r' })
@@ -46,24 +50,24 @@ function fakeLog(): ChangeLog & { flush: ReturnType<typeof vi.fn> } {
   }
 }
 
-function step(name: string, impl: (ctx: EngineRunContext) => Promise<void> = async () => {}): Step {
+function step(
+  name: string,
+  impl: (ctx: EngineRunContext) => Promise<Partial<StepResult> | void> = async () => {},
+): Step {
   return {
     name,
-    run: async (ctx) => {
-      await impl(ctx)
-      return { step: name, examined: 1, changed: 0 }
-    },
+    run: async (ctx) => ({ step: name, examined: 1, changed: 0, ...((await impl(ctx)) ?? {}) }),
   }
 }
 
 describe('MemoryEngine', () => {
-  it('runs steps in order with one shared context and flushes after each step', async () => {
+  it('runs steps in order with one shared context and sums the ops each step wrote transactionally', async () => {
     const log = fakeLog()
     const seen: string[] = []
     const engine = new MemoryEngine({
       steps: [
-        step('a', async (ctx) => { seen.push(`a:${ctx.runId}`); ctx.changes.record(op('x')) }),
-        step('b', async (ctx) => { seen.push(`b:${ctx.now.toISOString()}`) }),
+        step('a', async (ctx) => { seen.push(`a:${ctx.runId}`); return { opsWritten: 2 } }),
+        step('b', async (ctx) => { seen.push(`b:${ctx.now.toISOString()}`); return { opsWritten: 1 } }),
       ],
       changes: (_userId, runId) => ({ ...log, runId }),
       clock: () => NOW,
@@ -71,72 +75,86 @@ describe('MemoryEngine', () => {
     })
     const result = await engine.runNight('user-1')
     expect(seen).toEqual(['a:run-42', `b:${NOW.toISOString()}`])
-    expect(result).toMatchObject({ runId: 'run-42', userId: 'user-1', dryRun: false, opsWritten: 1, failedSteps: [] })
+    expect(result).toMatchObject({ runId: 'run-42', userId: 'user-1', dryRun: false, opsWritten: 3, failedSteps: [] })
     expect(result.steps.map((s) => s.step)).toEqual(['a', 'b'])
-    expect(log.flush).toHaveBeenCalledTimes(2)
+    // Live ops never go through the buffer.
+    expect(log.flush).not.toHaveBeenCalled()
   })
 
-  it("persists a step's ops before the next step starts (timeout safety)", async () => {
+  it('flags a live step that buffered ops instead of writing them with its change (and persists them)', async () => {
     const writer = vi.fn(async (_u: string, _r: string | null, ops: readonly MemoryOpInput[]) => ops.length)
     const engine = new MemoryEngine({
-      steps: [
-        step('a', async (ctx) => { ctx.changes.record(op('x')) }),
-        step('b', async () => {
-          // The cron dying here must not lose step a's trail.
-          expect(writer).toHaveBeenCalledTimes(1)
-          expect(writer.mock.calls[0][2]).toEqual([op('x')])
-        }),
-      ],
+      steps: [step('a', async (ctx) => { ctx.changes.record(op('x')) }), step('b')],
       changes: (userId, runId) => new BufferedChangeLog(userId, runId, writer),
       clock: () => NOW,
     })
     const result = await engine.runNight('user-1')
-    expect(result.failedSteps).toEqual([])
+    expect(writer).toHaveBeenCalledTimes(1)
     expect(result.opsWritten).toBe(1)
+    expect(result.failedSteps).toEqual([{ step: 'changelog:a', error: '1 op(s) recorded outside their write transaction' }])
   })
 
-  it('isolates a failing step, flushes what it recorded, and still runs the rest', async () => {
+  it("reports a step's rolled-back changes as a failed step", async () => {
+    const engine = new MemoryEngine({
+      steps: [step('backup', async () => ({ opsWritten: 1, errors: ['p1: memory_ops insert failed'] }))],
+      changes: () => fakeLog(),
+      clock: () => NOW,
+    })
+    const result = await engine.runNight('user-1')
+    expect(result.opsWritten).toBe(1)
+    expect(result.failedSteps).toEqual([{ step: 'backup', error: '1 change(s) rolled back: p1: memory_ops insert failed' }])
+  })
+
+  it('isolates a failing step and still runs the rest', async () => {
     const log = fakeLog()
     const engine = new MemoryEngine({
-      steps: [step('a', async (ctx) => { ctx.changes.record(op('x')); throw new Error('boom') }), step('b')],
+      steps: [step('a', async () => { throw new Error('boom') }), step('b')],
       changes: () => log,
       clock: () => NOW,
     })
     const result = await engine.runNight('user-1')
     expect(result.failedSteps).toEqual([{ step: 'a', error: 'boom' }])
     expect(result.steps.map((s) => s.step)).toEqual(['b'])
-    expect(log.flush).toHaveBeenCalledTimes(2)
+    expect(log.flush).not.toHaveBeenCalled()
   })
 
-  it('never flushes on a dry run', async () => {
+  it('never flushes on a dry run and reports the planned ops', async () => {
     const log = fakeLog()
     const engine = new MemoryEngine({
-      steps: [step('a', async (ctx) => { expect(ctx.dryRun).toBe(true) }), step('b')],
+      steps: [step('a', async (ctx) => { expect(ctx.dryRun).toBe(true); ctx.changes.record(op('x')) }), step('b')],
       changes: () => log,
     })
     const result = await engine.runNight('user-1', { dryRun: true })
     expect(log.flush).not.toHaveBeenCalled()
-    expect(result.opsWritten).toBe(0)
-    expect(result.dryRun).toBe(true)
+    expect(result).toMatchObject({ dryRun: true, opsWritten: 0, opsPlanned: 1 })
   })
 
-  it('records a failed flush per step, keeps running later steps, and retries the buffer', async () => {
-    const writer = vi.fn(async (_u: string, _r: string | null, ops: readonly MemoryOpInput[]) => ops.length)
-    writer.mockRejectedValueOnce(new Error('insert failed'))
+  it('skips the remaining steps once the deadline passes and says so', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(0)
     const ran: string[] = []
     const engine = new MemoryEngine({
       steps: [
-        step('a', async (ctx) => { ran.push('a'); ctx.changes.record(op('x')) }),
-        step('b', async (ctx) => { ran.push('b'); ctx.changes.record(op('y')) }),
+        step('a', async (ctx) => { ran.push('a'); expect(ctx.deadline).toBe(1_000); clock.mockReturnValue(2_000) }),
+        step('b', async () => { ran.push('b') }),
       ],
-      changes: (userId, runId) => new BufferedChangeLog(userId, runId, writer),
+      changes: () => fakeLog(),
     })
-    const result = await engine.runNight('user-1')
-    expect(ran).toEqual(['a', 'b'])
-    expect(result.failedSteps).toEqual([{ step: 'changelog:a', error: 'insert failed' }])
-    // a's op stayed buffered and landed with b's on the next flush.
-    expect(result.opsWritten).toBe(2)
-    expect(writer.mock.calls[1][2]).toEqual([op('x'), op('y')])
+    try {
+      const result = await engine.runNight('user-1', { deadline: 1_000 })
+      expect(ran).toEqual(['a'])
+      expect(result.outOfTime).toBe(true)
+      expect(result.steps[1]).toMatchObject({ step: 'b', skipped: 'out of time', outOfTime: true })
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  it('carries a step-level out-of-time flag to the run result', async () => {
+    const engine = new MemoryEngine({
+      steps: [step('a', async () => ({ outOfTime: true }))],
+      changes: () => fakeLog(),
+    })
+    expect((await engine.runNight('user-1')).outOfTime).toBe(true)
   })
 })
 
