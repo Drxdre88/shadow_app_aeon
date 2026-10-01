@@ -100,15 +100,18 @@ export function buildAskMineUserPrompt(bundle: AskMineSignalBundle): string {
 export function parseAskMineResponse(text: string): AskMineCandidate[] {
   // A malformed top-level response (non-JSON or schema-violating) degrades to
   // "no candidates today" — one bad model reply must not fail the whole run.
-  let raw: unknown
   try {
-    raw = extractJsonBlock(text, 'ask-mine')
+    return parseAskMineResponseStrict(text)
   } catch {
     return []
   }
-  const result = outputSchema.safeParse(raw)
-  if (!result.success) return []
-  const parsed = result.data
+}
+
+// Thinking-queue variant: a non-JSON or schema-violating top level throws
+// (the job is rejected and the cron covers it); an empty candidate list and
+// per-candidate drops are valid outcomes, exactly as in the cron path.
+export function parseAskMineResponseStrict(text: string): AskMineCandidate[] {
+  const parsed = outputSchema.parse(extractJsonBlock(text, 'ask-mine'))
   return parsed.candidates.flatMap((candidate, candidateIndex) => {
     const validated = candidateSchema.safeParse(candidate)
     if (!validated.success) return []

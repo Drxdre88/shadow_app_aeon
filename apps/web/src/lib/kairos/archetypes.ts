@@ -4,6 +4,7 @@ import { memories, dominions } from '@/lib/db/schema'
 import { META_STREAM_CLASSES } from './streamClass'
 import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
 import { validAsOfNow } from '@/lib/data/memories'
+import { isJobDone } from '@/lib/data/thinking-jobs'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import {
@@ -58,7 +59,11 @@ const MAX_PINNED = 30
 const MAX_REFLECTIONS = 30
 const MAX_EXISTING = 10
 
-async function alreadyRanToday(userId: string, dominionId: string): Promise<boolean> {
+// Thinking-queue key for one Dominion's synthesis on one UTC day — the
+// archetype handler plans it, and the cron skips Dominions it marks done.
+export const archetypeJobKey = (dominionId: string, day: string) => `archetype:${dominionId}:${day}`
+
+export async function alreadyRanToday(userId: string, dominionId: string): Promise<boolean> {
   // Filter on isNull(archivedAt) so a previously-failed run (which archived
   // yesterday's archetypes but never wrote new ones) does NOT permanently
   // skip the Dominion. Only live archetypes created today count as "ran".
@@ -156,15 +161,27 @@ export async function gatherArchetypeContext(
   }
 }
 
+// If a Dominion has zero substrate AND zero reflections AND zero vision,
+// there's nothing to synthesise. Skip rather than hallucinate.
+export function hasArchetypeSignal(ctx: ArchetypeContext): boolean {
+  return ctx.recent.length + ctx.pinned.length + ctx.reflections.length > 0
+    || Boolean(ctx.vision) || Boolean(ctx.missionLong)
+}
+
+// Every memory id the prompt feeds — the set citations are grounded against.
+export function archetypeFedIds(ctx: ArchetypeContext): string[] {
+  return [ctx.recent, ctx.pinned, ctx.reflections, ctx.existing].flat().map((m) => m.id)
+}
+
 interface PersistResult {
   inserted: number
   archivedPrior: number
   archetypeMemoryIds: string[]
 }
 
-async function persistArchetypes(
+export async function persistArchetypes(
   userId: string,
-  ctx: ArchetypeContext,
+  dominionId: string,
   parsed: ArchetypeOutput,
   runId: string,
 ): Promise<PersistResult> {
@@ -172,7 +189,7 @@ async function persistArchetypes(
 
   const rows = parsed.archetypes.map((a) => ({
     userId,
-    dominionId: ctx.dominionId,
+    dominionId,
     title: a.title.slice(0, 255),
     bodyMd: a.body,
     summary: a.summary.slice(0, 1000),
@@ -182,7 +199,7 @@ async function persistArchetypes(
     sourceMetadata: {
       runId,
       runDate: runId.split(':').pop() ?? null,
-      dominionId: ctx.dominionId,
+      dominionId,
       citedMemoryIds: a.citedMemoryIds,
       themes: a.themes,
       shifts: parsed.shifts,
@@ -200,7 +217,7 @@ async function persistArchetypes(
       .set({ archivedAt: now })
       .where(and(
         eq(memories.userId, userId),
-        eq(memories.dominionId, ctx.dominionId),
+        eq(memories.dominionId, dominionId),
         eq(memories.streamClass, 'archetype'),
         eq(memories.pinned, false),
         isNull(memories.archivedAt),
@@ -248,16 +265,17 @@ export async function runArchetypeSynthesisForDominion(
   const ctx = await gatherArchetypeContext(userId, dominionId)
   if (!ctx) return { dominionId, dominionName: dom.name, status: 'skipped', reason: 'no context' }
 
-  // If a Dominion has zero substrate AND zero reflections AND zero vision,
-  // there's nothing to synthesise. Skip rather than hallucinate.
-  const hasSignal = ctx.recent.length + ctx.pinned.length + ctx.reflections.length > 0
-    || Boolean(ctx.vision) || Boolean(ctx.missionLong)
-  if (!hasSignal) {
+  if (!hasArchetypeSignal(ctx)) {
     return { dominionId, dominionName: dom.name, status: 'skipped', reason: 'empty substrate' }
   }
 
   const date = todayIso()
   const runId = `archetype:${dominionId}:${date}`
+
+  // The thinking routine already synthesised this Dominion on Max.
+  if (await isJobDone(userId, archetypeJobKey(dominionId, date))) {
+    return { dominionId, dominionName: dom.name, status: 'existing', reason: 'answered on Max' }
+  }
 
   let rawText: string
   let finishReason: string | undefined
@@ -287,7 +305,7 @@ export async function runArchetypeSynthesisForDominion(
     return { dominionId, dominionName: dom.name, status: 'error', reason: 'empty model response' }
   }
 
-  const fedIds = [ctx.recent, ctx.pinned, ctx.reflections, ctx.existing].flat().map((m) => m.id)
+  const fedIds = archetypeFedIds(ctx)
   let parsed: ArchetypeOutput
   try {
     parsed = await parseWithRepair({
@@ -312,7 +330,7 @@ export async function runArchetypeSynthesisForDominion(
     throw err
   }
 
-  const { inserted, archivedPrior, archetypeMemoryIds } = await persistArchetypes(userId, ctx, parsed, runId)
+  const { inserted, archivedPrior, archetypeMemoryIds } = await persistArchetypes(userId, dominionId, parsed, runId)
 
   if (inserted === 0) {
     await writeCronFailureTrace(userId, { cronName: 'archetype-synthesis', dominionId, reason: 'persist_failed' })

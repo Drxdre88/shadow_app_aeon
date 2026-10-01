@@ -23,6 +23,10 @@ vi.mock('@/lib/data/dominions', () => ({
   findDominionsByUser: vi.fn(),
 }))
 
+vi.mock('@/lib/data/thinking-jobs', () => ({
+  isJobDone: vi.fn(),
+}))
+
 vi.mock('@/lib/kairos/engagement', () => ({
   getConversationState: vi.fn(),
 }))
@@ -54,6 +58,7 @@ import {
   listStaleTasks,
 } from '@/lib/data/board-signals'
 import { findDominionsByUser } from '@/lib/data/dominions'
+import { isJobDone } from '@/lib/data/thinking-jobs'
 import { listBoardDayPages } from '@/lib/data/board-feed'
 import { fetchAetherInputs } from '@/lib/kairos/aether'
 import { getConversationState } from '@/lib/kairos/engagement'
@@ -135,6 +140,7 @@ function routedProvider(ask: ReturnType<typeof vi.fn>): Awaited<ReturnType<typeo
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(getPendingKairosAsk).mockResolvedValue(null)
+  vi.mocked(isJobDone).mockResolvedValue(false)
   vi.mocked(getConversationState).mockResolvedValue({
     lastOutbound: null,
     replied: false,
@@ -310,6 +316,18 @@ describe('ask mining', () => {
     expect(getConversationState).not.toHaveBeenCalled()
     expect(fetchAetherInputs).not.toHaveBeenCalled()
     expect(getProviderForTask).not.toHaveBeenCalled()
+  })
+
+  it('skips as already_ran without signals or a model call once the routine answered tonight\'s job', async () => {
+    vi.mocked(isJobDone).mockResolvedValue(true)
+
+    const result = await runAskMineForUser(USER_ID, { date: DATE, now: NOW })
+
+    expect(result).toMatchObject({ status: 'skipped', reason: 'already_ran' })
+    expect(isJobDone).toHaveBeenCalledWith(USER_ID, `ask_mine:${DATE}`)
+    expect(fetchAetherInputs).not.toHaveBeenCalled()
+    expect(getProviderForTask).not.toHaveBeenCalled()
+    expect(createKairosAskMemory).not.toHaveBeenCalled()
   })
 
   it('stamps ask-mine provenance, stable idempotency, and a 72-hour expiry', async () => {

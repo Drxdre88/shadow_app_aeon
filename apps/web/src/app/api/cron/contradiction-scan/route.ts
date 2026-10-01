@@ -17,8 +17,9 @@ import { embeddingsEnabled } from '@/lib/kairos/embeddings'
 // accept (supersedes the loser) or dismiss (archive). Idempotent per UTC day.
 // Auth + per-user iteration mirror app/api/cron/introspection; the
 // embeddings guard mirrors app/api/cron/memory-dedup. Suggested schedule:
-// daily ~05:00 UTC, after the 04:00 embed-backfill so same-day beliefs
-// already have a vector.
+// daily ~05:00 UTC, after the 03:25 embed-backfill so same-day beliefs
+// already have a vector. A Dominion the thinking routine already scanned
+// today (contradiction job done) is skipped before any model call.
 // ─────────────────────────────────────────────────────────────────────────
 
 // 800s (Pro/fluid ceiling): a failure night doubles model calls per Dominion

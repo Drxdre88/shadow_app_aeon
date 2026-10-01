@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
 import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
 import { findMemoryOriginKinds } from '@/lib/data/memories'
+import { isJobDone } from '@/lib/data/thinking-jobs'
 import { derivedOriginKind } from './origin'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
@@ -14,6 +15,7 @@ import {
   filterGroundedProposals,
   type IntrospectionContext,
   type IntrospectionMemoryRow,
+  type Proposal,
 } from './introspection-prompt'
 import { todayIso, parseWithRepair, ParseRepairError } from './_prompt-utils'
 import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
@@ -59,7 +61,11 @@ export async function recordRawIntrospectionSkipped(userId: string): Promise<voi
   })
 }
 
-async function alreadyRanToday(userId: string, dominionId: string): Promise<boolean> {
+// Thinking-queue job key (thinking/handlers/introspection.ts) — one per
+// Dominion per UTC day; a done job means a Max routine answered the night.
+export const introspectionJobKey = (dominionId: string, day: string) => `introspection:${dominionId}:${day}`
+
+export async function alreadyRanToday(userId: string, dominionId: string): Promise<boolean> {
   const [row] = await db
     .select({ n: sql<number>`COUNT(*)::int` })
     .from(memories)
@@ -146,13 +152,19 @@ export async function runIntrospectionForDominion(
     return { dominionId, dominionName: dom.name, status: 'existing', reason: 'already ran today' }
   }
 
+  const date = todayIso()
+  // A Max routine already answered tonight's introspection job and its apply
+  // wrote the night's trace (ok, or all_thoughts_ungrounded) — skip the paid call.
+  if (await isJobDone(userId, introspectionJobKey(dominionId, date))) {
+    return { dominionId, dominionName: dom.name, status: 'existing', reason: 'answered on Max' }
+  }
+
   const ctx = await gatherIntrospectionContext(userId, dominionId)
   if (!ctx) return { dominionId, dominionName: dom.name, status: 'skipped', reason: 'no context' }
   if (ctx.recentMemories.length === 0) {
     return { dominionId, dominionName: dom.name, status: 'skipped', reason: 'no recent substrate' }
   }
 
-  const date = todayIso()
   const runId = `introspection:${dominionId}:${date}`
 
   let rawText: string
@@ -216,16 +228,35 @@ export async function runIntrospectionForDominion(
     throw err
   }
 
+  const ids = await persistIntrospectionProposals(userId, dominionId, proposals, ctx.recentMemories.map((m) => m.id), runId)
+  if (ids.length === 0) {
+    return { dominionId, dominionName: dom.name, status: 'created', proposalsCreated: 0, reason: 'no grounded proposals' }
+  }
+  return { dominionId, dominionName: dom.name, status: 'created', proposalsCreated: ids.length }
+}
+
+// The one write path for a night's grounded proposals — the cron's paid call
+// and a Max routine's answer (thinking/handlers/introspection.ts) both land
+// here. Writes the night's trace: ok, or all_thoughts_ungrounded when nothing
+// survived grounding. Returns the staged memory ids.
+export async function persistIntrospectionProposals(
+  userId: string,
+  dominionId: string,
+  proposals: Proposal[],
+  recentMemoryIds: string[],
+  runId: string,
+  extraMetadata: Record<string, unknown> = {},
+): Promise<string[]> {
   if (proposals.length === 0) {
     await writeCronFailureTrace(userId, { cronName: 'introspection', dominionId, reason: 'all_thoughts_ungrounded' })
-    return { dominionId, dominionName: dom.name, status: 'created', proposalsCreated: 0, reason: 'no grounded proposals' }
+    return []
   }
 
   const now = new Date()
   // P2.5: a proposal is Kairos's own thought over its input pool, so it takes
   // the lowest-trust origin in that pool — external content in → 'external'.
   const origin = {
-    kind: derivedOriginKind(await findMemoryOriginKinds(userId, ctx.recentMemories.map((m) => m.id))),
+    kind: derivedOriginKind(await findMemoryOriginKinds(userId, recentMemoryIds)),
     via: 'cron:introspection',
   }
   const rows = proposals.map((p) => ({
@@ -240,6 +271,7 @@ export async function runIntrospectionForDominion(
     streamClass: 'agentic' as const,
     source: 'cron',
     sourceMetadata: {
+      ...extraMetadata,
       introspection: true,
       kind: p.kind,
       confidence: p.confidence,
@@ -256,10 +288,10 @@ export async function runIntrospectionForDominion(
     createdAt: now,
   }))
 
-  await db.insert(memories).values(rows)
+  const inserted = await db.insert(memories).values(rows).returning({ id: memories.id })
   await writeCronSuccessTrace(userId, { cronName: 'introspection', dominionId })
 
-  return { dominionId, dominionName: dom.name, status: 'created', proposalsCreated: rows.length }
+  return inserted.map((r) => r.id)
 }
 
 export async function runIntrospectionForUser(userId: string): Promise<IntrospectionRunResult[]> {

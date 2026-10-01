@@ -4,10 +4,13 @@ import { db } from '@/lib/db'
 import { userAiCredentials, dominions } from '@/lib/db/schema'
 import { and, eq, isNull, inArray } from 'drizzle-orm'
 import { findDominionsByUser } from '@/lib/data/dominions'
+import { isJobDone } from '@/lib/data/thinking-jobs'
 import { runRecipe } from '@/lib/kairos/dispatch'
 import { createConscienceLoader } from '@/lib/kairos/conscience-context'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
+import { briefJobKey } from '@/lib/kairos/thinking/handlers/brief'
+import { utcDay } from '@/lib/kairos/thinking/deadlines'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 3C — daily Briefer cron endpoint, dispatcher-driven.
@@ -47,8 +50,15 @@ async function briefUser(userId: string): Promise<BrieferResult[]> {
   const out: BrieferResult[] = []
   // One constitution read per user across all their Dominion briefs.
   const conscience = createConscienceLoader()
+  const day = utcDay(new Date())
 
   for (const dom of active) {
+    // A Max routine already answered this Dominion's brief job (thinking
+    // queue); its brief is stored, so skip the paid model call.
+    if (await isJobDone(userId, briefJobKey(dom.id, day))) {
+      out.push({ dominionId: dom.id, dominionName: dom.name, status: 'existing', reason: 'answered on Max' })
+      continue
+    }
     try {
       const run = await runRecipe('BRIEF', {
         userId,

@@ -18,6 +18,7 @@ import {
   listStaleTasks,
 } from '@/lib/data/board-signals'
 import { findDominionsByUser } from '@/lib/data/dominions'
+import { isJobDone } from '@/lib/data/thinking-jobs'
 import { getConversationState } from './engagement'
 import { fetchAetherInputs } from './aether'
 import {
@@ -39,6 +40,11 @@ const TITLE_STOP_WORDS = new Set([
   'why', 'with', 'would', 'you', 'your',
 ])
 
+// Thinking-queue key of a user's ask_mine job for one UTC date.
+export const askMineJobKey = (date: string) => `ask_mine:${date}`
+
+export type AskMineGateReason = 'pending' | 'awaiting_reply' | 'already_ran'
+
 export interface AskMineOptions {
   date?: string
   dryRun?: boolean
@@ -52,10 +58,10 @@ export type AskMineRunResult =
   | {
       status: 'skipped'
       date: string
-      reason: 'pending' | 'awaiting_reply' | 'already_ran' | 'no_signals' | 'no_candidate' | 'no_credential' | 'key_undecryptable'
+      reason: AskMineGateReason | 'no_signals' | 'no_candidate' | 'no_credential' | 'key_undecryptable'
     }
 
-interface ModelInput {
+export interface ModelInput {
   system: string
   prompt: string
   cacheSystem: boolean
@@ -243,7 +249,7 @@ async function tryCardNotesAsk(
   userId: string,
   date: string,
   now: Date,
-): Promise<AskMineRunResult | null> {
+): Promise<Extract<AskMineRunResult, { status: 'created' }> | null> {
   try {
     const pageDate = previousDate(date, 1)
     const pages = await listBoardDayPages(userId, pageDate)
@@ -291,44 +297,144 @@ async function tryCardNotesAsk(
   }
 }
 
-export async function runAskMineForUser(
+// Cheap gates, before any signal read: an open ask, an unanswered outbound
+// message, or an ask already mined for `date` each end the night for this user.
+export async function askMineGate(
   userId: string,
-  options: AskMineOptions = {},
-): Promise<AskMineRunResult> {
-  const now = options.now ?? new Date()
-  const date = resolveDate(options.date, now)
+  date: string,
+  now: Date,
+): Promise<{ skip: AskMineGateReason } | { skip: null; recentAsks: KairosAskRow[] }> {
   const pending = await getPendingKairosAsk(userId)
   if (pending) {
     console.info('[ask-mine] pending ask exists; skipping user', { userId, askId: pending.id })
-    return { status: 'skipped', date, reason: 'pending' }
+    return { skip: 'pending' }
   }
   const conversation = await getConversationState(userId)
   if (conversation.awaitingReply) {
     console.info('[ask-mine] outbound reply outstanding; skipping user', { userId })
-    return { status: 'skipped', date, reason: 'awaiting_reply' }
+    return { skip: 'awaiting_reply' }
   }
   const recentAsks = await listRecentKairosAsks(userId, 14, now)
   if (recentAsks.some((ask) => ask.askMine?.date === date)) {
+    return { skip: 'already_ran' }
+  }
+  return { skip: null, recentAsks }
+}
+
+export interface PreparedAskMine {
+  status: 'ready'
+  date: string
+  recentAsks: KairosAskRow[]
+  bundle: AskMineSignalBundle
+  validSourceIds: Set<string>
+  validDominionIds: Set<string>
+  modelInput: ModelInput
+}
+
+// Shared by the 04:30 cron and the ask_mine thinking job: gates, the signal
+// bundle and the exact model input. A routine that already answered tonight's
+// ask_mine job counts as already_ran, so the cron never calls the model.
+export async function prepareAskMine(
+  userId: string,
+  now: Date,
+  options: { date?: string } = {},
+): Promise<PreparedAskMine | { status: 'skipped'; date: string; reason: AskMineGateReason }> {
+  const date = resolveDate(options.date, now)
+  const gate = await askMineGate(userId, date, now)
+  if (gate.skip) return { status: 'skipped', date, reason: gate.skip }
+  if (await isJobDone(userId, askMineJobKey(date))) {
     return { status: 'skipped', date, reason: 'already_ran' }
   }
   const { bundle, validSourceIds, validDominionIds } = await gatherSignalBundle(
     userId,
     date,
     now,
-    recentAsks,
+    gate.recentAsks,
   )
+  return {
+    status: 'ready',
+    date,
+    recentAsks: gate.recentAsks,
+    bundle,
+    validSourceIds,
+    validDominionIds,
+    modelInput: {
+      system: ASK_MINE_SYSTEM_PROMPT,
+      prompt: buildAskMineUserPrompt(bundle),
+      cacheSystem: true,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
+    },
+  }
+}
+
+export interface FinishAskMineInput {
+  date: string
+  now: Date
+  candidates: AskMineCandidate[]
+  validSourceIds: ReadonlySet<string>
+  validDominionIds: ReadonlySet<string>
+  aetherMemoryId: string | null
+  // Omitted -> re-read, so a routine answer is deduped against asks made
+  // since its job was planned.
+  recentAsks?: KairosAskRow[]
+}
+
+// The one write path for a mined ask (cron and thinking job): ground the
+// parsed candidates, pick one, persist it — or fall back to the thin-card
+// nudge when nothing is eligible.
+export async function finishAskMine(
+  userId: string,
+  input: FinishAskMineInput,
+): Promise<Exclude<AskMineRunResult, { status: 'dry_run' }>> {
+  const { date, now } = input
+  const groundedCandidates = input.candidates.filter((candidate) => (
+    (!candidate.dominionId || input.validDominionIds.has(candidate.dominionId))
+    && candidate.sourceMemoryIds.every((id) => input.validSourceIds.has(id))
+  ))
+  const recentAsks = input.recentAsks ?? await listRecentKairosAsks(userId, 14, now)
+  const candidate = selectAskMineCandidate(groundedCandidates, recentAsks, date)
+  if (!candidate) {
+    return (await tryCardNotesAsk(userId, date, now)) ?? { status: 'skipped', date, reason: 'no_candidate' }
+  }
+
+  const askedAt = now.toISOString()
+  const expiresAt = new Date(now.getTime() + ASK_EXPIRY_MS).toISOString()
+  const askId = await createKairosAskMemory(userId, {
+    question: candidate.question,
+    dominionId: candidate.dominionId ?? null,
+    aetherMemoryId: input.aetherMemoryId ?? '',
+    sourceThoughtId: null,
+    sourceMemoryIds: candidate.sourceMemoryIds,
+    askedAt,
+    expiresAt,
+    externalId: `ask-mine:${date}:1`,
+    askMine: {
+      date,
+      kind: candidate.kind,
+      sourceMemoryIds: candidate.sourceMemoryIds,
+      leverage: candidate.leverage,
+      // Persisted so the chat surface can quote WHY this was asked instead
+      // of reconstructing it from kind/leverage (WP3 reads it when present).
+      rationale: candidate.rationale,
+    },
+  })
+  return { status: 'created', date, askId, candidate, expiresAt }
+}
+
+export async function runAskMineForUser(
+  userId: string,
+  options: AskMineOptions = {},
+): Promise<AskMineRunResult> {
+  const now = options.now ?? new Date()
+  const prepared = await prepareAskMine(userId, now, { date: options.date })
+  if (prepared.status === 'skipped') return prepared
+  const { date, validSourceIds, modelInput } = prepared
   if (validSourceIds.size === 0) {
     if (!options.dryRun) {
       const nudge = await tryCardNotesAsk(userId, date, now)
       if (nudge) return nudge
     }
     return { status: 'skipped', date, reason: 'no_signals' }
-  }
-  const modelInput: ModelInput = {
-    system: ASK_MINE_SYSTEM_PROMPT,
-    prompt: buildAskMineUserPrompt(bundle),
-    cacheSystem: true,
-    maxOutputTokens: MAX_OUTPUT_TOKENS,
   }
   if (options.dryRun) {
     return { status: 'dry_run', date, modelInput, signalCount: validSourceIds.size }
@@ -340,37 +446,15 @@ export async function runAskMineForUser(
       dominionId: null,
     })
     const response = await provider.ask(modelInput)
-    const groundedCandidates = parseAskMineResponse(response.text.trim()).filter((candidate) => (
-      (!candidate.dominionId || validDominionIds.has(candidate.dominionId))
-      && candidate.sourceMemoryIds.every((id) => validSourceIds.has(id))
-    ))
-    const candidate = selectAskMineCandidate(groundedCandidates, recentAsks, date)
-    if (!candidate) {
-      return (await tryCardNotesAsk(userId, date, now)) ?? { status: 'skipped', date, reason: 'no_candidate' }
-    }
-
-    const askedAt = now.toISOString()
-    const expiresAt = new Date(now.getTime() + ASK_EXPIRY_MS).toISOString()
-    const askId = await createKairosAskMemory(userId, {
-      question: candidate.question,
-      dominionId: candidate.dominionId ?? null,
-      aetherMemoryId: bundle.aether.memoryId ?? '',
-      sourceThoughtId: null,
-      sourceMemoryIds: candidate.sourceMemoryIds,
-      askedAt,
-      expiresAt,
-      externalId: `ask-mine:${date}:1`,
-      askMine: {
-        date,
-        kind: candidate.kind,
-        sourceMemoryIds: candidate.sourceMemoryIds,
-        leverage: candidate.leverage,
-        // Persisted so the chat surface can quote WHY this was asked instead
-        // of reconstructing it from kind/leverage (WP3 reads it when present).
-        rationale: candidate.rationale,
-      },
+    return await finishAskMine(userId, {
+      date,
+      now,
+      candidates: parseAskMineResponse(response.text.trim()),
+      validSourceIds,
+      validDominionIds: prepared.validDominionIds,
+      aetherMemoryId: prepared.bundle.aether.memoryId,
+      recentAsks: prepared.recentAsks,
     })
-    return { status: 'created', date, askId, candidate, expiresAt }
   } catch (error) {
     if (error instanceof AiCredentialMissingError) {
       return { status: 'skipped', date, reason: 'no_credential' }

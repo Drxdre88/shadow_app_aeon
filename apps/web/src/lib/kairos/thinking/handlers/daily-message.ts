@@ -19,7 +19,7 @@ import type {
   ThinkingJobRow,
   ThinkingJobSpec,
 } from '@/lib/kairos/engine/types'
-import { minutesUntil } from '../deadlines'
+import { deadlineOn, minutesUntil, utcDayStart } from '../deadlines'
 
 // Daily message on the thinking queue (docs/kairos/34 §3): one job per user
 // per London date, planned once today's briefs exist, with exactly the compose
@@ -30,6 +30,8 @@ import { minutesUntil } from '../deadlines'
 // key, then deterministic); the sweep only marks the job expired.
 
 const DEADLINE_LEAD_MS = 5 * 60_000
+// The 06:15 briefer fills any brief the routine missed; give it 10 minutes.
+export const BRIEFS_SETTLED_UTC = { hour: 6, minute: 25 }
 
 export function dailyMessageDeadline(now: Date): Date {
   return new Date(londonInstant(londonDate(now)).getTime() - DEADLINE_LEAD_MS)
@@ -44,6 +46,11 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
   const jobs = await listJobs(userId, { kind: DAILY_MESSAGE_KIND, since: new Date(now.getTime() - 2 * 86_400_000), limit: 10 })
   if (jobs.some((j) => j.externalKey === key)) return []
   if (await alreadyDelivered(userId, date)) return []
+  // Briefs on the queue land one at a time and the prompt is frozen at
+  // planning: wait until every brief job is answered, or until the 06:15
+  // briefer has filled the gaps — never plan on a partial set.
+  const briefJobs = await listJobs(userId, { kind: 'brief', since: utcDayStart(now), limit: 50 })
+  if (briefJobs.some((j) => j.status !== 'done') && now.getTime() < deadlineOn(now, BRIEFS_SETTLED_UTC).getTime()) return []
   // Cheap prerequisite read first: the hourly sweep plans this kind too, so
   // the full input gather runs only once today's briefs exist.
   if ((await readTodayBriefs(userId, date)).length === 0) return []

@@ -1,12 +1,14 @@
 import { listKairosAsksAnsweredBetween } from '@/lib/data/ask'
-import { listChatThreadsWithMessagesOn } from '@/lib/data/kairos-chat'
+import { listChatThreadsWithMessagesOn, type DailyChatThread } from '@/lib/data/kairos-chat'
 import { captureMemory } from '@/lib/data/memories'
+import { isJobDone } from '@/lib/data/thinking-jobs'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialDecryptError, AiCredentialMissingError } from '@/lib/ai/router'
 import {
   CHAT_DISTILL_SYSTEM_PROMPT,
   buildChatDistillUserPrompt,
   parseChatDistillResponse,
+  type ChatDistillCandidate,
 } from './chat-distill-prompt'
 import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 import { derivedOriginKind, type OriginKind } from './origin'
@@ -16,7 +18,7 @@ const MAX_MESSAGES_PER_THREAD = 80
 // Must comfortably fit 5 max-length reflections (~2500+ tokens of JSON) —
 // the cap genuinely binds since the maxOutputTokens fix, and a truncated
 // reply fails the whole thread's parse instead of degrading.
-const MAX_OUTPUT_TOKENS = 4000
+export const CHAT_DISTILL_MAX_TOKENS = 4000
 
 export interface ChatDistillOptions {
   date?: string
@@ -46,8 +48,12 @@ export interface ChatDistillRunResult {
   threads: ChatDistillThreadResult[]
 }
 
-function resolveDate(date?: string): { date: string; start: Date; end: Date } {
-  const target = date ?? new Date(Date.now() - DAY_MS).toISOString().slice(0, 10)
+// Thinking-queue key for one thread's distill of one UTC date — the
+// chat_distill handler plans it, and the cron skips threads it marks done.
+export const chatDistillJobKey = (threadId: string, date: string) => `chat_distill:${threadId}:${date}`
+
+export function resolveChatDistillDate(date?: string, now: Date = new Date()): { date: string; start: Date; end: Date } {
+  const target = date ?? new Date(now.getTime() - DAY_MS).toISOString().slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(target)) throw new Error('date must be YYYY-MM-DD')
   const start = new Date(`${target}T00:00:00.000Z`)
   if (Number.isNaN(start.getTime()) || start.toISOString().slice(0, 10) !== target) {
@@ -56,12 +62,12 @@ function resolveDate(date?: string): { date: string; start: Date; end: Date } {
   return { date: target, start, end: new Date(start.getTime() + DAY_MS) }
 }
 
-export async function runChatDistillForUser(
+// Threads with messages on the target date, each paired with the ask its
+// nearest operator turn resolved that day (if any).
+export async function gatherChatDistillThreads(
   userId: string,
-  options: ChatDistillOptions = {},
-): Promise<ChatDistillRunResult> {
-  const target = resolveDate(options.date)
-  const dryRun = options.dryRun ?? false
+  target: { start: Date; end: Date },
+): Promise<{ threads: DailyChatThread[]; askIdByThreadId: Map<string, string> }> {
   const [threads, answeredAsks] = await Promise.all([
     listChatThreadsWithMessagesOn(userId, target.start, target.end, MAX_MESSAGES_PER_THREAD),
     listKairosAsksAnsweredBetween(userId, target.start, target.end),
@@ -79,6 +85,64 @@ export async function runChatDistillForUser(
     }
     if (match) askIdByThreadId.set(match.threadId, ask.id)
   }
+  return { threads, askIdByThreadId }
+}
+
+export function chatDistillSkipReason(thread: DailyChatThread): string | null {
+  if (thread.messages.length === 0) return 'no messages'
+  if (!thread.messages.some((message) => message.role === 'user' && message.content.trim())) return 'no operator messages'
+  return null
+}
+
+// P2.5: these are Kairos's distillation of the chat, not the operator's
+// words — derived origin over the thread's turns (operator's own turns
+// and Kairos's replies), which is never better than 'kairos'.
+export function chatDistillOriginKind(thread: DailyChatThread): OriginKind {
+  return derivedOriginKind(thread.messages.map((m): OriginKind => (m.role === 'user' ? 'operator' : 'kairos')))
+}
+
+export interface ChatDistillPersistInput {
+  threadId: string
+  dominionId: string | null
+  date: string
+  messageSeqs: number[]
+  askId?: string
+  originKind: OriginKind
+}
+
+// The one write path for distilled reflections (cron and thinking queue).
+export async function persistChatDistillReflections(
+  userId: string,
+  input: ChatDistillPersistInput,
+  candidates: ChatDistillCandidate[],
+) {
+  const origin = { kind: input.originKind, via: 'cron:chat-distill' }
+  const captures = []
+  for (const [index, candidate] of candidates.entries()) {
+    captures.push(await captureMemory(userId, {
+      type: 'reflection',
+      streamClass: 'reflection',
+      source: 'cron',
+      title: candidate.title,
+      bodyMd: candidate.bodyMd,
+      dominionId: input.dominionId,
+      sourceMetadata: {
+        externalId: `chat-distill:${input.date}:${input.threadId}:${index + 1}`,
+        chatDistill: { threadId: input.threadId, date: input.date, messageSeqs: input.messageSeqs },
+        ...(input.askId ? { askId: input.askId } : {}),
+      },
+    }, { origin }))
+  }
+  return captures
+}
+
+export async function runChatDistillForUser(
+  userId: string,
+  options: ChatDistillOptions = {},
+): Promise<ChatDistillRunResult> {
+  const target = resolveChatDistillDate(options.date)
+  const dryRun = options.dryRun ?? false
+  const { threads, askIdByThreadId } = await gatherChatDistillThreads(userId, target)
   const results: ChatDistillThreadResult[] = []
 
   for (const thread of threads) {
@@ -86,12 +150,14 @@ export async function runChatDistillForUser(
     const base = { threadId: thread.id, title: thread.title, messageSeqs }
 
     try {
-      if (thread.messages.length === 0) {
-        results.push({ ...base, status: 'skipped', reason: 'no messages' })
+      const skipReason = chatDistillSkipReason(thread)
+      if (skipReason) {
+        results.push({ ...base, status: 'skipped', reason: skipReason })
         continue
       }
-      if (!thread.messages.some((message) => message.role === 'user' && message.content.trim())) {
-        results.push({ ...base, status: 'skipped', reason: 'no operator messages' })
+      // The thinking routine already distilled this thread on Max.
+      if (await isJobDone(userId, chatDistillJobKey(thread.id, target.date))) {
+        results.push({ ...base, status: 'existing', reason: 'answered on Max' })
         continue
       }
 
@@ -102,7 +168,7 @@ export async function runChatDistillForUser(
         system: CHAT_DISTILL_SYSTEM_PROMPT,
         prompt,
         cacheSystem: true,
-        maxTokens: MAX_OUTPUT_TOKENS,
+        maxTokens: CHAT_DISTILL_MAX_TOKENS,
       }
       if (dryRun) {
         results.push({ ...base, status: 'dry_run', modelInput })
@@ -120,29 +186,14 @@ export async function runChatDistillForUser(
         continue
       }
 
-      // P2.5: these are Kairos's distillation of the chat, not the operator's
-      // words — derived origin over the thread's turns (operator's own turns
-      // and Kairos's replies), which is never better than 'kairos'.
-      const origin = {
-        kind: derivedOriginKind(thread.messages.map((m): OriginKind => (m.role === 'user' ? 'operator' : 'kairos'))),
-        via: 'cron:chat-distill',
-      }
-      const captures = []
-      for (const [index, candidate] of candidates.entries()) {
-        captures.push(await captureMemory(userId, {
-          type: 'reflection',
-          streamClass: 'reflection',
-          source: 'cron',
-          title: candidate.title,
-          bodyMd: candidate.bodyMd,
-          dominionId: thread.dominionId,
-          sourceMetadata: {
-            externalId: `chat-distill:${target.date}:${thread.id}:${index + 1}`,
-            chatDistill: { threadId: thread.id, date: target.date, messageSeqs },
-            ...(askIdByThreadId.has(thread.id) ? { askId: askIdByThreadId.get(thread.id) } : {}),
-          },
-        }, { origin }))
-      }
+      const captures = await persistChatDistillReflections(userId, {
+        threadId: thread.id,
+        dominionId: thread.dominionId,
+        date: target.date,
+        messageSeqs,
+        askId: askIdByThreadId.get(thread.id),
+        originKind: chatDistillOriginKind(thread),
+      }, candidates)
 
       const reflectionsCreated = captures.filter((capture) => capture.created).length
       results.push({

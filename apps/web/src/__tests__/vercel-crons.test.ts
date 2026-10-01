@@ -56,6 +56,12 @@ describe('vercel.json crons', () => {
     },
   )
 
+  it('embeds new rows before the 03:30 UTC contradiction window opens (the scan is vector-only)', () => {
+    const entries = byPath('/api/cron/embed-backfill')
+    expect(entries).toHaveLength(1)
+    for (const t of fireMinutes(entries[0]!.schedule)) expect(t).toBeLessThan(3 * 60 + 30)
+  })
+
   it('has no duplicate paths', () => {
     const paths = crons.map((c) => c.path)
     expect(new Set(paths).size).toBe(paths.length)

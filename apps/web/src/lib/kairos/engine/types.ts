@@ -162,6 +162,15 @@ export type ThinkingJobKind =
   // P3 Creativity (docs/kairos/35): nightly idea tournament, two stages.
   | 'idea_generate'
   | 'idea_judge'
+  // All-on-Max (docs/kairos/33 §Kinds): the former paid-key crons. Each
+  // cron stays as its kind's fallback and skips work a routine completed.
+  | 'chat_distill'
+  | 'archetype'
+  | 'ask_mine'
+  | 'contradiction'
+  | 'brief'
+  | 'introspection'
+  | 'micro_consolidate'
 
 export type ThinkingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'expired' | 'fallback'
 

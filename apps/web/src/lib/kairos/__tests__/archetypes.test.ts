@@ -60,6 +60,10 @@ vi.mock('@/lib/ai/route-task', () => ({
   getProviderForTask: vi.fn(),
 }))
 
+vi.mock('@/lib/data/thinking-jobs', () => ({
+  isJobDone: vi.fn(async () => false),
+}))
+
 function makeCtx(overrides: Partial<Parameters<typeof buildArchetypePrompt>[0]> = {}) {
   return {
     dominionId: '11111111-1111-1111-1111-111111111111',
@@ -472,6 +476,21 @@ describe('runArchetypeSynthesisForDominion — failure trace (C1)', { timeout: 2
     expect(ask).toHaveBeenCalledTimes(1)
     const meta = txInsertedValues![0].sourceMetadata as { citedMemoryIds: string[] }
     expect(meta.citedMemoryIds).toEqual([REFLECTION_ID])
+  })
+
+  it('skips the model call when the thinking routine already answered on Max', async () => {
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    const { isJobDone } = await import('@/lib/data/thinking-jobs')
+    queueDominionAndContext()
+    await mockInspectDominion()
+    vi.mocked(isJobDone).mockResolvedValueOnce(true)
+
+    const { runArchetypeSynthesisForDominion } = await import('../archetypes')
+    const result = await runArchetypeSynthesisForDominion(USER_ID, DOMINION_ID)
+
+    expect(result).toMatchObject({ status: 'existing', reason: 'answered on Max' })
+    expect(vi.mocked(isJobDone).mock.calls[0][1]).toBe(`archetype:${DOMINION_ID}:${new Date().toISOString().slice(0, 10)}`)
+    expect(getProviderForTask).not.toHaveBeenCalled()
   })
 
   it('writes a skipped liveness trace when already ran today', async () => {

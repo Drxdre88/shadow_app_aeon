@@ -75,10 +75,13 @@ async function loadGrounding(recipe: Recipe, opts: RunRecipeArgs): Promise<Recip
   return { aether, conscience }
 }
 
-export async function runRecipe(name: string, opts: RunRecipeArgs): Promise<RunRecipeResult> {
+function lookupRecipe(name: string): Recipe {
   const recipe = getRecipe(name)
   if (!recipe) throw new RecipeNotFoundError(name)
+  return recipe
+}
 
+async function buildRecipeContext(recipe: Recipe, opts: RunRecipeArgs): Promise<RecipeContext> {
   const [retrieval, grounding] = await Promise.all([
     retrieveContext({
       userId: opts.userId,
@@ -88,18 +91,24 @@ export async function runRecipe(name: string, opts: RunRecipeArgs): Promise<RunR
     loadGrounding(recipe, opts),
   ])
 
-  const ctx: RecipeContext = {
+  return {
     userId: opts.userId,
     dominionId: opts.dominionId,
     args: opts.args ?? {},
     retrieval,
     ...(grounding ? { grounding } : {}),
   }
+}
 
-  // Every surface runs flat(): no recipe implements expanded(), so the old
-  // claude_code → expanded routing was a dead branch. `surface` stays on the
-  // args for callers/traces; `mode` stays in the trace body for shape stability.
-  const mode = 'flat'
+// Steps 1–2 alone: the thinking queue builds a recipe's exact prompt from
+// this context and lets a Max routine answer it (thinking/handlers/brief.ts).
+export async function prepareRecipeContext(name: string, opts: RunRecipeArgs): Promise<RecipeContext> {
+  return buildRecipeContext(lookupRecipe(name), opts)
+}
+
+export async function runRecipe(name: string, opts: RunRecipeArgs): Promise<RunRecipeResult> {
+  const recipe = lookupRecipe(name)
+  const ctx = await buildRecipeContext(recipe, opts)
 
   const startedAt = Date.now()
   let output: RecipeOutput
@@ -122,7 +131,22 @@ export async function runRecipe(name: string, opts: RunRecipeArgs): Promise<RunR
     }
     throw err
   }
-  const durationMs = Date.now() - startedAt
+
+  return persistRecipeOutput(name, opts, output, Date.now() - startedAt)
+}
+
+// Steps 4–5: the one write path for a recipe's output, whoever produced it
+// (flat() on the paid key, or a Max routine's answer via the thinking queue).
+export async function persistRecipeOutput(
+  name: string,
+  opts: Pick<RunRecipeArgs, 'userId' | 'dominionId'>,
+  output: RecipeOutput,
+  durationMs: number,
+): Promise<RunRecipeResult> {
+  // Every surface runs flat(): no recipe implements expanded(), so the old
+  // claude_code → expanded routing was a dead branch. `surface` stays on the
+  // args for callers/traces; `mode` stays in the trace body for shape stability.
+  const mode = 'flat'
 
   // 1. Primary write — externalId idempotency happens inside captureMemory.
   const primaryResult = await captureMemory(opts.userId, toCaptureInput(output.primary))

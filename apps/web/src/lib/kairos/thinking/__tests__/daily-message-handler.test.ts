@@ -104,6 +104,22 @@ describe('daily_message handler — plan', () => {
     expect(m.gatherDailyMessageInputs).toHaveBeenCalledTimes(1)
   })
 
+  it('waits until every brief job is answered, or until the 06:15 briefer has filled the gaps', async () => {
+    const brief = (status: string) => ({ kind: 'brief', externalKey: `brief:d:${status}`, status })
+    m.listJobs.mockImplementation(async (_u: string, f: { kind?: string }) => (
+      f.kind === 'brief' ? [brief('done'), brief('queued')] : []
+    ))
+    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-01T05:50:00Z'))).toEqual([])
+    expect(m.gatherDailyMessageInputs).not.toHaveBeenCalled()
+    // Past 06:25 UTC the briefer has run: plan on what exists.
+    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-01T06:26:00Z'))).toHaveLength(1)
+
+    m.listJobs.mockImplementation(async (_u: string, f: { kind?: string }) => (
+      f.kind === 'brief' ? [brief('done'), brief('done')] : []
+    ))
+    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-01T05:50:00Z'))).toHaveLength(1)
+  })
+
   it('plans nothing when the job exists or today was already delivered', async () => {
     const now = new Date('2026-10-01T06:20:00Z')
     m.listJobs.mockResolvedValue([{ externalKey: 'daily_message:2026-10-01' }])

@@ -7,6 +7,54 @@
 export const CORTEX_DEADLINE_UTC = { hour: 2, minute: 58 }
 export const AETHER_DEADLINE_UTC = { hour: 3, minute: 13 }
 
+// All-on-Max kinds (docs/kairos/33 §Kinds). Each window opens at `notBefore`
+// and closes two minutes before the cron that falls back for it:
+//   01:00–01:58 chat_distill   → 02:00 chat-distill cron
+//   01:36–02:28 archetype      → 02:30 archetype-synthesis (after the 01:30
+//                                memory engine and tonight's chat distill)
+//   03:15–04:28 ask_mine       → 04:30 ask-mine (once aether is settled)
+//   03:30–04:58 contradiction  → 05:00 contradiction-scan (after the 03:25
+//                                embed-backfill)
+//   04:00–06:28 introspection  → 06:30 introspection (served with the
+//                                contradiction scan by the 04:00 routine)
+//   05:30–06:13 brief          → 06:15 briefer
+//   slot−60m–slot−2m micro_consolidate → micro-consolidate at each slot
+export interface UtcWindow {
+  notBefore: { hour: number; minute: number }
+  deadline: { hour: number; minute: number }
+}
+
+export const CHAT_DISTILL_WINDOW_UTC: UtcWindow = { notBefore: { hour: 1, minute: 0 }, deadline: { hour: 1, minute: 58 } }
+export const ARCHETYPE_WINDOW_UTC: UtcWindow = { notBefore: { hour: 1, minute: 36 }, deadline: { hour: 2, minute: 28 } }
+export const ASK_MINE_WINDOW_UTC: UtcWindow = { notBefore: { hour: 3, minute: 15 }, deadline: { hour: 4, minute: 28 } }
+export const CONTRADICTION_WINDOW_UTC: UtcWindow = { notBefore: { hour: 3, minute: 30 }, deadline: { hour: 4, minute: 58 } }
+export const BRIEF_WINDOW_UTC: UtcWindow = { notBefore: { hour: 5, minute: 30 }, deadline: { hour: 6, minute: 13 } }
+export const INTROSPECTION_WINDOW_UTC: UtcWindow = { notBefore: { hour: 4, minute: 0 }, deadline: { hour: 6, minute: 28 } }
+
+// micro-consolidate cron slots (vercel.json "15 6,9,12,15,18,21,23 * * *").
+export const MICRO_CONSOLIDATE_SLOT_HOURS_UTC: readonly number[] = [6, 9, 12, 15, 18, 21, 23]
+export const MICRO_CONSOLIDATE_SLOT_MINUTE = 15
+export const MICRO_CONSOLIDATE_LEAD_MINUTES = 60
+export const CRON_LEAD_MINUTES = 2
+
+// Minutes left in today's window at `now`; <= 0 → closed or not yet open.
+export function minutesLeftInWindow(now: Date, w: UtcWindow): number {
+  if (now.getTime() < deadlineOn(now, w.notBefore).getTime()) return 0
+  return minutesUntil(now, deadlineOn(now, w.deadline))
+}
+
+// The micro-consolidate slot whose window holds `now`, or null:
+// [slot − LEAD, slot − CRON_LEAD). Slot hours never straddle midnight.
+export function currentMicroSlot(now: Date): { slot: Date; deadline: Date } | null {
+  for (const hour of MICRO_CONSOLIDATE_SLOT_HOURS_UTC) {
+    const slot = deadlineOn(now, { hour, minute: MICRO_CONSOLIDATE_SLOT_MINUTE })
+    const opens = slot.getTime() - MICRO_CONSOLIDATE_LEAD_MINUTES * 60_000
+    const deadline = new Date(slot.getTime() - CRON_LEAD_MINUTES * 60_000)
+    if (now.getTime() >= opens && now.getTime() < deadline.getTime()) return { slot, deadline }
+  }
+  return null
+}
+
 export function utcDay(now: Date): string {
   return now.toISOString().slice(0, 10)
 }

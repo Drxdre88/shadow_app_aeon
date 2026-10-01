@@ -24,7 +24,7 @@ vi.mock('../conscience-context', () => ({
   loadConscienceBlock: vi.fn(),
 }))
 
-import { runRecipe, RecipeNotFoundError } from '../dispatch'
+import { persistRecipeOutput, prepareRecipeContext, runRecipe, RecipeNotFoundError } from '../dispatch'
 import { getLatestAether } from '@/lib/data/aether'
 import { loadConscienceBlock } from '../conscience-context'
 import { captureMemory } from '@/lib/data/memories'
@@ -347,5 +347,44 @@ describe('runRecipe', () => {
     expect(parsedBody.durationMs).toBeGreaterThanOrEqual(0)
     // bodyMd content matches sourceMetadata content.
     expect(parsedBody).toEqual(traceInput.sourceMetadata)
+  })
+})
+
+// The thinking queue's brief job builds its prompt from prepareRecipeContext
+// and stores the routine's answer through persistRecipeOutput — the same
+// context and write path runRecipe uses around flat().
+describe('prepareRecipeContext / persistRecipeOutput', () => {
+  it('prepareRecipeContext returns the context flat() would get, without running the recipe', async () => {
+    const recipe = { ...fakeRecipe('G'), reads: ['aether'] as Recipe['reads'] }
+    ;(getRecipe as ReturnType<typeof vi.fn>).mockReturnValue(recipe)
+    const ctx = await prepareRecipeContext('G', { userId: USER_ID, dominionId: DOMINION_ID, surface: 'byok' })
+    expect(ctx).toEqual({
+      userId: USER_ID,
+      dominionId: DOMINION_ID,
+      args: {},
+      retrieval: EMPTY_RETRIEVAL,
+      grounding: { aether: null, conscience: '' },
+    })
+    expect(recipe.flat).not.toHaveBeenCalled()
+    expect(captureMemory).not.toHaveBeenCalled()
+  })
+
+  it('prepareRecipeContext throws RecipeNotFoundError on a miss', async () => {
+    ;(getRecipe as ReturnType<typeof vi.fn>).mockReturnValue(null)
+    await expect(prepareRecipeContext('NOPE', { userId: USER_ID, dominionId: DOMINION_ID, surface: 'byok' }))
+      .rejects.toBeInstanceOf(RecipeNotFoundError)
+  })
+
+  it('persistRecipeOutput writes primary + trace with the given duration and trace meta', async () => {
+    ;(captureMemory as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ memory: { id: 'primary-1', title: 'P' }, created: true })
+      .mockResolvedValueOnce({ memory: { id: 'trace-1', title: 'trace' }, created: true })
+    const output = await fakeRecipe().flat({ userId: USER_ID, dominionId: DOMINION_ID, args: {}, retrieval: EMPTY_RETRIEVAL })
+
+    const result = await persistRecipeOutput('TEST', { userId: USER_ID, dominionId: DOMINION_ID }, output, 42)
+
+    expect(result).toEqual({ status: 'created', memoryId: 'primary-1', traceId: 'trace-1' })
+    const traceMeta = ((captureMemory as ReturnType<typeof vi.fn>).mock.calls[1][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata
+    expect(traceMeta).toMatchObject({ recipe: 'TEST', mode: 'flat', durationMs: 42, primaryMemoryId: 'primary-1', foo: 'bar' })
   })
 })

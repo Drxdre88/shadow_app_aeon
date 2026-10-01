@@ -25,7 +25,7 @@ vi.mock('@/lib/db', () => {
       insert: vi.fn(() => ({
         values: (v: unknown[]) => {
           insertedRows = v
-          return Promise.resolve(v)
+          return { returning: () => Promise.resolve(v.map((_, i) => ({ id: `proposal-${i}` }))) }
         },
       })),
     },
@@ -35,6 +35,10 @@ vi.mock('@/lib/db', () => {
 vi.mock('@/lib/data/memories', () => ({
   findSimilarBeliefs: vi.fn(),
   BELIEF_TYPES: ['reflection', 'fact', 'decision', 'observation', 'note', 'idea'],
+}))
+
+vi.mock('@/lib/data/thinking-jobs', () => ({
+  isJobDone: vi.fn(async () => false),
 }))
 
 vi.mock('@/lib/ai/route-task', () => ({
@@ -304,5 +308,27 @@ describe('runContradictionScanForDominion', { timeout: 20000 }, () => {
     expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER_ID, expect.objectContaining({
       cronName: 'contradiction-scan', outcome: 'skipped',
     }))
+  })
+})
+
+describe('runContradictionScanForDominion — thinking-job guard', { timeout: 20000 }, () => {
+  it('skips the scan (no probes, no model call) once the routine completed today\'s job', async () => {
+    const { isJobDone } = await import('@/lib/data/thinking-jobs')
+    const { findSimilarBeliefs } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    const { writeCronSuccessTrace } = await import('../cron-trace')
+    vi.mocked(isJobDone).mockResolvedValueOnce(true)
+
+    selectQueue.push([{ id: DOMINION_ID, name: 'AEON', archivedAt: null }])
+    selectQueue.push([{ n: 0 }]) // alreadyRanToday — a clean routine scan writes no proposal
+    const { runContradictionScanForDominion } = await import('../contradiction')
+    const result = await runContradictionScanForDominion(USER_ID, DOMINION_ID)
+
+    expect(result.status).toBe('existing')
+    expect(isJobDone).toHaveBeenCalledWith(USER_ID, `contradiction:${DOMINION_ID}:${new Date().toISOString().slice(0, 10)}`)
+    expect(findSimilarBeliefs).not.toHaveBeenCalled()
+    expect(getProviderForTask).not.toHaveBeenCalled()
+    expect(selectQueue).toHaveLength(0)
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER_ID, expect.objectContaining({ outcome: 'skipped' }))
   })
 })
