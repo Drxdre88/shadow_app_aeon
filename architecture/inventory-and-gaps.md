@@ -27,7 +27,7 @@ Hangar inventory refreshed: 2026-09-21. The completion claim guard shipped in PR
 
 | Severity | Issue | Details |
 |---|---|---|
-| Medium | Direct paid-key crons bypass the thinking queue | briefer, archetype-synthesis, introspection, contradiction-scan, chat-distill, ask-mine, micro-consolidate and constitution-seed still call the paid key directly (owner migrating them via Claude Code) |
+| Resolved 0.16 | ~~Direct paid-key crons bypass the thinking queue~~ (PR #141: all are thinking kinds; crons are fallbacks) | briefer, archetype-synthesis, introspection, contradiction-scan, chat-distill, ask-mine, micro-consolidate and constitution-seed still call the paid key directly (owner migrating them via Claude Code) |
 | Medium | Bearer claim/submit trust | any user-scoped bearer can claim and submit that user's thinking jobs; output is persisted after id grounding only |
 | Medium | `update_memory` can archive the constitution | `archivedAt` is not barred for `type='constitution'` rows while amendments are operator-only |
 | Low | Idea archive skipped when the judge never succeeds | candidates stay only in the generate job output if both routine and paid judge fail |

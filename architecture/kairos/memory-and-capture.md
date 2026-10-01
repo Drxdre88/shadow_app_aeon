@@ -119,7 +119,7 @@ otherwise `confidenceBoost × recencyMultiplier`.
 - **`prepareContext()`** (`memories.ts:2110`): a budget-packed bundle (FTS + optional vector via `fuseHybrid`, pinned rows, a 1-hop graph walk). Since 0.14 its pinned leg uses `listMemories({ liveOnly: true })` (`:2147`; filter at `listMemories`, `:154`). Its walk uses `getNeighbours({ liveOnly: true })` (`:2161`; SQL at `getNeighbours`, `:654`), which drops superseded/invalidated neighbours. Browse surfaces keep history (`liveOnly` defaults off). MCP `search_memories` is a separate path with no rerank.
 
 **Embeddings** (`lib/kairos/embeddings.ts`): Voyage `voyage-3.5` @1024 is primary and OpenAI `text-embedding-3-small` (truncated) is the fallback;
-with neither, retrieval is pure FTS. `updateMemory()` nulls the vector on content change. Cron `embed-backfill` runs at 04:00Z
+with neither, retrieval is pure FTS. `updateMemory()` nulls the vector on content change. Cron `embed-backfill` runs at 03:25Z (04:00Z before 0.16)
 (≤200/day), after the 01:30Z engine, which is why Merge looks back 96 h.
 
 ## 6. Dedup

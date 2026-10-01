@@ -87,12 +87,12 @@ that Claude Max routines claim; the paid BYOK key is the fallback. See [synthesi
 | Idea tournament (0.15) | nightly `idea_generate` → `idea_judge`; ≤3 survivors as Kairos-origin inbox proposals; outcomes feed tomorrow's generator; weekly diversity alarm | [synthesis.md](synthesis.md), docs/kairos/35 |
 | Daily message + weekly review | 08:00 London voice with "Idea of the day" and self-check failures; Monday review with ideas, lessons, diversity and a belief diff | [synthesis.md](synthesis.md) |
 
-**Who thinks (01/10).** The Max-plan routines on claude.ai (Opus 5.5, Aeon connector only) are:
-*Kairos thinking* (02:40Z), *Kairos ideas* (03:35Z) and *Kairos morning* (06:30Z), plus the
-older Sonnet *kairos-brain-tick* (06/11/17Z), which speaks first. The paid BYOK key still runs
-briefer, introspection, contradiction-scan, archetype-synthesis, chat-distill, ask-mine and
-micro-consolidate directly, and covers any unanswered thinking job. Details and trigger ids are in
-[synthesis.md](synthesis.md).
+**Who thinks (0.16, "All on Max").** Every Kairos model call is a thinking job answered by six
+Max-plan routines on claude.ai (Opus 5.5, Aeon connector only): *dusk* 01:40Z, *thinking* 02:40Z,
+*ideas* 03:35Z, *dawn* 04:00Z, *morning* 05:40Z and *tidy* (:05 at 09/12/15/18/21/23Z), plus the
+older Sonnet *kairos-brain-tick* (06/11/17Z), which speaks first. The old crons stay only as
+fallbacks and skip any unit a routine answered; the paid BYOK key covers misses and Telegram chat.
+Details in [synthesis.md](synthesis.md).
 
 **Retrieval.** `retrieveContext()` (`lib/kairos/retrieve.ts`) is the canonical Dominion-scoped
 fetch: the Dominion bundle + live cortex + live archetypes + top substrate (FTS+vector RRF →
