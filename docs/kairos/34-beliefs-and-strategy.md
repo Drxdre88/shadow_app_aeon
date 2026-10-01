@@ -74,6 +74,8 @@ Kind `weekly_review`, planned Mondays from 05:00Z (by a claim or the hourly swee
 belief changes, memory_ops summary, mind compare, open asks. Output = ≤5 review actions as proposals
 (`kind:'review_action'`) + one summary delivered via speak (`digest:true`). Fallback via the hourly sweep.
 
+**Belief diff (P3, 0.15).** The weekly review includes the reviewed week's belief changes, read from un-reverted `memory_ops` of steps `beliefs`, `recheck` and `own_mind` (`lib/data/belief-diff.ts`) and classified: created / replaced (`promote`, with `supersedes`), reinforced / flag cleared (`feedback`, `reaffirmed`), retired (`retire`, `decay`), re-check flag raised (`recheck`), legacy normalisation and provenance remap (recheck `feedback`). All are counted; the 15 most significant are shown grouped by domain with the logged reason and are citable. It also shows the week's idea-tournament survivors and outcomes (doc 35).
+
 ## 5. Telegram chat on Max
 
 Flag `KAIROS_TELEGRAM_ROUTINE=1` (default off). Webhook persists the user turn, replies "thinking…", plans a `chat`
