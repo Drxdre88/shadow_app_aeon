@@ -52,14 +52,28 @@ export function digestAether(payload: AetherPayload | null | undefined, dominion
   return { narrative, tensions, thoughts: top }
 }
 
-async function flat(ctx: RecipeContext): Promise<RecipeOutput> {
+export interface BriefGroundingFlags {
+  cortex: boolean
+  aether: boolean
+  conscience: boolean
+}
+
+export interface BriefRequest {
+  system: string
+  prompt: string
+  date: string
+  dominionName: string
+  grounding: BriefGroundingFlags
+}
+
+// The exact system + user prompt for one Dominion's brief — shared by flat()
+// (paid key) and the thinking queue's brief job (Max routine).
+export function buildBriefRequest(ctx: RecipeContext, date: string = todayIso()): BriefRequest {
   const bundle = ctx.retrieval.bundle
   if (!bundle) {
     // The dispatcher catches; cron loop records skipped/errored per Dominion.
     throw new Error(`BRIEF: no Dominion bundle for ${ctx.dominionId}`)
   }
-
-  const date = todayIso()
 
   const briefingCtx: BriefingContext = {
     name: bundle.name,
@@ -88,43 +102,81 @@ async function flat(ctx: RecipeContext): Promise<RecipeOutput> {
     conscience: ctx.grounding?.conscience ?? '',
   }
 
+  return {
+    system: BRIEF_SYSTEM_PROMPT,
+    prompt: buildBriefUserPrompt(briefingCtx, date),
+    date,
+    dominionName: bundle.name,
+    grounding: {
+      cortex: briefingCtx.cortex !== null,
+      aether: briefingCtx.aether !== null,
+      conscience: !!briefingCtx.conscience,
+    },
+  }
+}
+
+export interface BriefOutputInput {
+  text: string
+  date: string
+  dominionName: string
+  dominionId: string
+  model: string
+  grounding: BriefGroundingFlags
+  // Extra trace fields (e.g. the thinking job that answered it).
+  traceMeta?: Record<string, unknown>
+}
+
+// The persisted brief, whoever wrote the text — the externalId is the
+// per-(date × Dominion) idempotency key and briefingDate is what the
+// dashboard and the daily message read today's briefs by.
+export function briefOutput(input: BriefOutputInput): RecipeOutput {
+  return {
+    primary: {
+      type: 'advisory',
+      streamClass: 'advisory',
+      source: 'cron',
+      title: `${input.date} · ${input.dominionName} briefing`,
+      bodyMd: input.text,
+      dominionId: input.dominionId,
+      sourceMetadata: {
+        externalId: `briefer:${input.date}:${input.dominionId}`,
+        briefingDate: input.date,
+        dominionId: input.dominionId,
+      },
+    },
+    traceMeta: {
+      date: input.date,
+      model: input.model,
+      grounding: input.grounding,
+      ...input.traceMeta,
+    },
+  }
+}
+
+async function flat(ctx: RecipeContext): Promise<RecipeOutput> {
+  const req = buildBriefRequest(ctx)
+
   const { provider } = await getProviderForTask(ctx.userId, {
     taskType: 'brief',
     dominionId: ctx.dominionId,
   })
   const response = await provider.ask({
-    system: BRIEF_SYSTEM_PROMPT,
-    prompt: buildBriefUserPrompt(briefingCtx, date),
+    system: req.system,
+    prompt: req.prompt,
     cacheSystem: true,
     maxTokens: 1200,
   })
   const text = response.text.trim()
   if (!text) throw new Error('BRIEF: empty response from provider')
 
-  return {
-    primary: {
-      type: 'advisory',
-      streamClass: 'advisory',
-      source: 'cron',
-      title: `${date} · ${bundle.name} briefing`,
-      bodyMd: text,
-      dominionId: ctx.dominionId,
-      sourceMetadata: {
-        externalId: `briefer:${date}:${ctx.dominionId}`,
-        briefingDate: date,
-        dominionId: ctx.dominionId,
-      },
-    },
-    traceMeta: {
-      date,
-      model: response.modelId,
-      grounding: {
-        cortex: briefingCtx.cortex !== null,
-        aether: briefingCtx.aether !== null,
-        conscience: !!briefingCtx.conscience,
-      },
-    },
-  }
+  return briefOutput({
+    text,
+    date: req.date,
+    dominionName: req.dominionName,
+    dominionId: ctx.dominionId,
+    model: response.modelId,
+    grounding: req.grounding,
+  })
 }
 
 export const BRIEF: Recipe = {

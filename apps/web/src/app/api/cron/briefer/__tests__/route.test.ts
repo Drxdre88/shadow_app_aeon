@@ -59,6 +59,13 @@ vi.mock('@/lib/data/dominions', () => ({
 vi.mock('@/lib/kairos/dispatch', () => ({
   runRecipe: vi.fn(),
 }))
+vi.mock('@/lib/data/thinking-jobs', () => ({
+  isJobDone: vi.fn(async () => false),
+}))
+// The handler module's own deps need the full schema; only its key is used here.
+vi.mock('@/lib/kairos/thinking/handlers/brief', () => ({
+  briefJobKey: (dominionId: string, day: string) => `brief:${dominionId}:${day}`,
+}))
 vi.mock('@/lib/kairos/conscience-context', () => ({
   createConscienceLoader: vi.fn(() => vi.fn(async () => '')),
 }))
@@ -86,6 +93,7 @@ vi.mock('@/lib/ai/router', () => ({
 import { GET } from '../route'
 import { findDominionsByUser } from '@/lib/data/dominions'
 import { runRecipe } from '@/lib/kairos/dispatch'
+import { isJobDone } from '@/lib/data/thinking-jobs'
 import { AiCredentialMissingError } from '@/lib/ai/router'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 
@@ -103,6 +111,7 @@ function makeReq(authHeader?: string) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(isJobDone).mockResolvedValue(false)
   distinctQueueUsersWithDominions.length = 0
   distinctQueueCredentialed.length = 0
   delete process.env.CRON_SECRET
@@ -199,6 +208,39 @@ describe('cron/briefer route', () => {
     expect(body.users[0].error).toContain('db connection lost')
     expect(writeCronFailureTrace).toHaveBeenCalledWith(USER, expect.objectContaining({ cronName: 'briefer' }))
     expect(writeCronSuccessTrace).not.toHaveBeenCalled()
+  })
+
+  it('skips the model call for a Dominion whose brief job was answered on Max', async () => {
+    distinctQueueUsersWithDominions.push([{ userId: USER }])
+    distinctQueueCredentialed.push([{ userId: USER }])
+    ;(findDominionsByUser as ReturnType<typeof vi.fn>).mockResolvedValue([DOM_A, DOM_B])
+    const day = new Date().toISOString().slice(0, 10)
+    vi.mocked(isJobDone).mockImplementation(async (_u, key) => key === `brief:dom-a:${day}`)
+    ;(runRecipe as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ status: 'created', memoryId: 'm2', traceId: 't2' })
+
+    const res = await GET(makeReq())
+    const body = await res.json()
+
+    expect(runRecipe).toHaveBeenCalledOnce()
+    expect(vi.mocked(runRecipe).mock.calls[0][1]).toMatchObject({ dominionId: 'dom-b' })
+    expect(body.users[0].results).toEqual([
+      { dominionId: 'dom-a', dominionName: 'Alpha', status: 'existing', reason: 'answered on Max' },
+      { dominionId: 'dom-b', dominionName: 'Beta', status: 'created', memoryId: 'm2' },
+    ])
+  })
+
+  it('still writes the ok liveness trace when every Dominion was answered on Max', async () => {
+    distinctQueueUsersWithDominions.push([{ userId: USER }])
+    distinctQueueCredentialed.push([{ userId: USER }])
+    ;(findDominionsByUser as ReturnType<typeof vi.fn>).mockResolvedValue([DOM_A])
+    vi.mocked(isJobDone).mockResolvedValue(true)
+
+    const res = await GET(makeReq())
+    const body = await res.json()
+
+    expect(runRecipe).not.toHaveBeenCalled()
+    expect(body.advisoriesCreated).toBe(0)
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER, { cronName: 'briefer' })
   })
 
   it('rejects with 401 when CRON_SECRET is set and header missing', async () => {

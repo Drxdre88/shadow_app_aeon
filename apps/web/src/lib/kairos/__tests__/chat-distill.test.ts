@@ -12,6 +12,10 @@ vi.mock('@/lib/data/memories', () => ({
   captureMemory: vi.fn(),
 }))
 
+vi.mock('@/lib/data/thinking-jobs', () => ({
+  isJobDone: vi.fn(async () => false),
+}))
+
 vi.mock('@/lib/ai/route-task', () => ({
   getProviderForTask: vi.fn(),
 }))
@@ -29,6 +33,7 @@ vi.mock('../cron-trace', () => ({
 import { listKairosAsksAnsweredBetween } from '@/lib/data/ask'
 import { listChatThreadsWithMessagesOn } from '@/lib/data/kairos-chat'
 import { captureMemory } from '@/lib/data/memories'
+import { isJobDone } from '@/lib/data/thinking-jobs'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialDecryptError, AiCredentialMissingError } from '@/lib/ai/router'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '../cron-trace'
@@ -212,6 +217,18 @@ describe('chat distillation', () => {
     expect(result.threads[0].modelInput?.prompt).toContain('I prefer weekly written updates.')
     // Current-gen Claude models 400 on non-default temperature.
     expect(result.threads[0].modelInput).not.toHaveProperty('temperature')
+  })
+
+  it('skips the model call for a thread the thinking routine already answered on Max', async () => {
+    vi.mocked(isJobDone).mockResolvedValueOnce(true)
+
+    const result = await runChatDistillForUser(USER_ID, { date: DATE })
+
+    expect(isJobDone).toHaveBeenCalledWith(USER_ID, `chat_distill:thread-1:${DATE}`)
+    expect(result.threads[0]).toMatchObject({ status: 'existing', reason: 'answered on Max' })
+    expect(getProviderForTask).not.toHaveBeenCalled()
+    expect(captureMemory).not.toHaveBeenCalled()
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER_ID, { cronName: 'chat-distill' })
   })
 
   it('skips threads with no messages', async () => {

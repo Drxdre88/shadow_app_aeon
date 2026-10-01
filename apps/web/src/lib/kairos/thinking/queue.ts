@@ -42,11 +42,16 @@ import { getThinkingHandlers } from './registry'
 // Prerequisite order: a later kind may depend on jobs an earlier kind just
 // planned in the same pass (aether waits on open cortex jobs).
 const PLAN_ORDER: ThinkingJobKind[] = [
+  // Archetypes wait on tonight's chat distill; cortex waits on archetypes.
+  'chat_distill', 'archetype',
   'cortex', 'concept', 'aether',
   'belief_extract', 'drift_probe', 'mind_compare', 'weekly_review',
   // Idea tournament after aether (its tensions feed generation); judge after
   // generate. Both before the daily message, which shows the idea of the day.
   'idea_generate', 'idea_judge',
+  'ask_mine', 'contradiction',
+  // Briefs before the daily message, which plans once today's briefs exist.
+  'brief', 'introspection', 'micro_consolidate',
   'daily_message', 'chat',
 ]
 
@@ -72,12 +77,21 @@ const FALLBACK_OWNER: Record<ThinkingJobKind, string> = {
   chat: 'the Telegram watchdog paid-key reply',
   idea_generate: 'the hourly thinking-sweep API fallback',
   idea_judge: 'the hourly thinking-sweep API fallback',
+  chat_distill: 'the 02:00 UTC chat-distill cron',
+  archetype: 'the 02:30 UTC archetype-synthesis cron',
+  ask_mine: 'the 04:30 UTC ask-mine cron',
+  contradiction: 'the 05:00 UTC contradiction-scan cron',
+  brief: 'the 06:15 UTC briefer cron',
+  introspection: 'the 06:30 UTC introspection cron',
+  micro_consolidate: 'the next micro-consolidate cron slot',
 }
 
 // Kinds the hourly sweep never plans: concept clustering is heavy and is
 // enqueued by the nightly engine (and claims); chat jobs come only from the
-// Telegram webhook.
-export const SWEEP_PLAN_SKIP_KINDS: readonly ThinkingJobKind[] = ['concept', 'chat']
+// Telegram webhook; a micro_consolidate fold is planned only on claim, so its
+// window ends when the routine reads it (a fold planned by the :50 sweep
+// would drop whatever lands between the sweep and the routine's claim).
+export const SWEEP_PLAN_SKIP_KINDS: readonly ThinkingJobKind[] = ['concept', 'chat', 'micro_consolidate']
 
 export function sweepOwnsFallback(kind: ThinkingJobKind): boolean {
   return SWEEP_FALLBACK_KINDS.includes(kind)
@@ -132,6 +146,21 @@ export const CHAT_JOB_INSTRUCTIONS = [
   'Submit it with submit_thinking_job { jobId, claimToken, text } before `deadlineAt`.',
 ].join('\n')
 
+// Kinds whose answer is plain markdown, not JSON (the brief and the delta
+// fold are prose in the paid path too). Chat has its own instructions.
+export const TEXT_ANSWER_KINDS: readonly ThinkingJobKind[] = ['brief', 'micro_consolidate']
+
+export const TEXT_JOB_INSTRUCTIONS = [
+  'Treat `system` as your system prompt and `prompt` as the user message, and write the markdown answer exactly as that system prompt demands.',
+  'Reply with the plain markdown only — no JSON, no code fence around the whole answer, no preamble, no tool calls, no memory writes.',
+  'Submit it with submit_thinking_job { jobId, claimToken, text } before `deadlineAt`.',
+].join('\n')
+
+export function jobInstructions(kind: ThinkingJobKind): string {
+  if (kind === 'chat') return CHAT_JOB_INSTRUCTIONS
+  return TEXT_ANSWER_KINDS.includes(kind) ? TEXT_JOB_INSTRUCTIONS : THINKING_JOB_INSTRUCTIONS
+}
+
 export type SubmitErrorCode = 'not_found' | 'not_claimed' | 'bad_token' | 'deadline_passed' | 'apply_failed'
 
 export type SubmitResult =
@@ -174,11 +203,12 @@ export class ThinkingQueue {
   async planDue(
     userId: string,
     now: Date = new Date(),
-    opts: { skipKinds?: readonly ThinkingJobKind[] } = {},
+    opts: { skipKinds?: readonly ThinkingJobKind[]; onlyKinds?: readonly ThinkingJobKind[] } = {},
   ): Promise<PlanResult> {
     const result: PlanResult = { planned: [], errors: [] }
     for (const handler of this.handlers) {
       if (opts.skipKinds?.includes(handler.kind)) continue
+      if (opts.onlyKinds && !opts.onlyKinds.includes(handler.kind)) continue
       try {
         if (handler.kind === 'concept') {
           if (!isConceptDay(now)) continue
@@ -201,8 +231,11 @@ export class ThinkingQueue {
     // Chat jobs are created by the Telegram webhook, never planned — a
     // chat-only claim must not pay for planning the nightly kinds. Without
     // `kinds`, claimNextJob never returns a chat job (explicit-only kind).
+    // A kinds-filtered claim plans only those kinds: each routine pays only for
+    // its own planning (some plans, like the contradiction probe search, are
+    // heavy) and the hourly sweep still plans everything on schedule.
     const chatOnly = kinds !== undefined && kinds.length > 0 && kinds.every((k) => k === 'chat')
-    if (!chatOnly) await this.planDue(userId, now)
+    if (!chatOnly) await this.planDue(userId, now, kinds && kinds.length > 0 ? { onlyKinds: kinds } : {})
     return claimNextJob(userId, kinds)
   }
 
@@ -338,7 +371,7 @@ export async function claimThinkingJob(
       system: job.input.system,
       prompt: job.input.prompt,
       validMemoryIds: job.input.validMemoryIds ?? [],
-      instructions: job.kind === 'chat' ? CHAT_JOB_INSTRUCTIONS : THINKING_JOB_INSTRUCTIONS,
+      instructions: jobInstructions(job.kind),
     },
   }
 }

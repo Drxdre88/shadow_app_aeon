@@ -61,6 +61,17 @@ export const contradictionOutSchema = z.object({
 
 export type ContradictionOutput = z.infer<typeof contradictionOutSchema>
 
+// Batch answer: `probes` is required (an empty list = a clean scan), so a
+// JSON object of the wrong shape is rejected rather than read as "clean".
+export const contradictionBatchOutSchema = z.object({
+  probes: z.array(z.object({
+    probeId: z.string().trim().max(128).nullish(),
+    findings: z.array(findingSchema).default([]),
+  })),
+})
+
+export type ContradictionBatchOutput = z.infer<typeof contradictionBatchOutSchema>
+
 function renderBelief(m: {
   id: string
   title: string
@@ -75,19 +86,31 @@ function renderBelief(m: {
   return `- [${m.id}] (${date} · ${m.type} · confidence ${conf}) ${neutraliseFences(m.title)}\n  ${body}`
 }
 
+// Judging rules shared by the per-probe (cron) and batch (thinking job)
+// prompts, so both reasoners judge a pair by the same standard.
+const JUDGE_TASK = 'decide whether it and the probe make a CONTRADICTORY claim — including IMPLICIT conflict (e.g. a newer state silently invalidating an older one), not just an explicit factual clash. You are NOT deciding anything final — this is a flagged notice for the operator to review.'
+
+function hardRules(idRule: string): string[] {
+  return [
+    'Hard rules:',
+    '- Only flag genuine contradictions, not mere difference of topic, scope, or nuance.',
+    '- If they contradict, decide which is currently AUTHORITATIVE. Default policy: more recent wins; if confidence differs significantly, higher confidence wins. You may override this default with a rationale if the content clearly warrants it.',
+    idRule,
+    '- Set `confidence` honestly (0–1): your certainty that this IS a contradiction.',
+    '- `rationale`: ≤280 chars, plain English, cite what conflicts.',
+  ]
+}
+
+const FINDING_EXAMPLE = '{ "candidateId": "uuid", "contradicts": true, "winner": "probe", "confidence": 0.8, "rationale": "..." }'
+
 // Static instruction prefix — sent as the (cached) system block. Keep this
 // free of per-run values so the Anthropic prompt-cache prefix stays stable.
 export const CONTRADICTION_SYSTEM_PROMPT = [
   'You are Kairos, checking one belief against its nearest neighbours for contradictions.',
   '',
-  'For EACH candidate below, decide whether it and the probe make a CONTRADICTORY claim — including IMPLICIT conflict (e.g. a newer state silently invalidating an older one), not just an explicit factual clash. You are NOT deciding anything final — this is a flagged notice for the operator to review.',
+  `For EACH candidate below, ${JUDGE_TASK}`,
   '',
-  'Hard rules:',
-  '- Only flag genuine contradictions, not mere difference of topic, scope, or nuance.',
-  '- If they contradict, decide which is currently AUTHORITATIVE. Default policy: more recent wins; if confidence differs significantly, higher confidence wins. You may override this default with a rationale if the content clearly warrants it.',
-  '- `candidateId` MUST be one of the exact [id]s listed below. Never invent an id.',
-  '- Set `confidence` honestly (0–1): your certainty that this IS a contradiction.',
-  '- `rationale`: ≤280 chars, plain English, cite what conflicts.',
+  ...hardRules('- `candidateId` MUST be one of the exact [id]s listed below. Never invent an id.'),
   '',
   'Output requirements:',
   '- Return ONLY a JSON object inside a single ```json fenced block. No prose before or after.',
@@ -97,7 +120,38 @@ export const CONTRADICTION_SYSTEM_PROMPT = [
   '```json',
   '{',
   '  "findings": [',
-  '    { "candidateId": "uuid", "contradicts": true, "winner": "probe", "confidence": 0.8, "rationale": "..." }',
+  `    ${FINDING_EXAMPLE}`,
+  '  ]',
+  '}',
+  '```',
+].join('\n')
+
+// Thinking-queue variant: every probe of one Dominion in a single call
+// (the cron makes one call per probe). Same rules; each finding is grounded
+// against the candidates of ITS probe only.
+export const CONTRADICTION_BATCH_SYSTEM_PROMPT = [
+  'You are Kairos, checking several beliefs (probes), each against its own nearest neighbours, for contradictions.',
+  '',
+  `For EACH probe below, and for EACH candidate listed under that probe, ${JUDGE_TASK}`,
+  'Judge every probe independently: a candidate is compared only with the probe it is listed under.',
+  '',
+  ...hardRules('- `probeId` MUST be the exact [id] of a probe below, and every `candidateId` MUST be one of the exact [id]s listed under THAT probe. Never invent an id.'),
+  '',
+  'Output requirements:',
+  '- Return ONLY a JSON object inside a single ```json fenced block. No prose before or after.',
+  '- One entry per probe with a finding worth flagging; probes with none can be omitted. `{"probes": []}` is a valid answer.',
+  '- Within a probe, one finding per candidate worth flagging. Candidates with no contradiction can be omitted entirely.',
+  '',
+  'Schema:',
+  '```json',
+  '{',
+  '  "probes": [',
+  '    {',
+  '      "probeId": "uuid",',
+  '      "findings": [',
+  `        ${FINDING_EXAMPLE}`,
+  '      ]',
+  '    }',
   '  ]',
   '}',
   '```',
@@ -116,6 +170,21 @@ export function buildContradictionUserPrompt(
     candidates.map(renderBelief).join('\n'),
   ]
   return parts.join('\n')
+}
+
+export interface ContradictionBatchItem {
+  probe: ContradictionProbe
+  candidates: ContradictionCandidate[]
+}
+
+// Batch payload — each probe section is exactly the per-probe user prompt.
+export function buildContradictionBatchUserPrompt(items: ContradictionBatchItem[]): string {
+  return items
+    .map((item, i) => [
+      `### Probe ${i + 1} — probeId ${item.probe.id}`,
+      buildContradictionUserPrompt(item.probe, item.candidates),
+    ].join('\n'))
+    .join('\n\n')
 }
 
 // Combined single-string prompt (system + user). Kept for tests and any
@@ -143,4 +212,27 @@ export function filterGroundedFindings(
     const candidateId = resolve(f.candidateId)
     return candidateId ? [{ ...f, candidateId }] : []
   })
+}
+
+export interface GroundedProbeFindings {
+  probeId: string
+  findings: GroundedContradictionFinding[]
+}
+
+// Batch anti-drift filter: probeId resolves against the fed probes, then each
+// finding's candidateId against THAT probe's candidates only — a finding
+// citing another probe's candidate is dropped. Repeated probe entries merge.
+export function filterGroundedBatchFindings(
+  out: ContradictionBatchOutput,
+  candidateIdsByProbe: Map<string, Set<string>>,
+): GroundedProbeFindings[] {
+  const resolveProbe = makeFedIdResolver(candidateIdsByProbe.keys())
+  const byProbe = new Map<string, GroundedContradictionFinding[]>()
+  for (const entry of out.probes) {
+    const probeId = resolveProbe(entry.probeId)
+    if (!probeId) continue
+    const findings = filterGroundedFindings({ findings: entry.findings }, candidateIdsByProbe.get(probeId) ?? new Set())
+    if (findings.length) byProbe.set(probeId, [...(byProbe.get(probeId) ?? []), ...findings])
+  }
+  return [...byProbe].map(([probeId, findings]) => ({ probeId, findings }))
 }

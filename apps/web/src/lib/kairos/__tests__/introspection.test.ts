@@ -27,7 +27,7 @@ vi.mock('@/lib/db', () => {
       insert: vi.fn(() => ({
         values: (v: unknown[]) => {
           insertedRows = v
-          return Promise.resolve(v)
+          return { returning: () => Promise.resolve(v.map((_, i) => ({ id: `inserted-${i}` }))) }
         },
       })),
     },
@@ -46,6 +46,10 @@ vi.mock('@/lib/data/memories', () => ({
 
 vi.mock('@/lib/ai/route-task', () => ({
   getProviderForTask: vi.fn(),
+}))
+
+vi.mock('@/lib/data/thinking-jobs', () => ({
+  isJobDone: vi.fn(async () => false),
 }))
 
 const USER_ID = 'user-1'
@@ -231,6 +235,24 @@ describe('runIntrospectionForDominion — failure trace + parse repair', { timeo
     expect(result.status).toBe('existing')
     const sm = (vi.mocked(captureMemory).mock.calls[0][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata
     expect(sm).toMatchObject({ cronName: 'introspection', outcome: 'skipped' })
+  })
+
+  it("skips the model call (no extra trace) when a Max routine answered tonight's job", async () => {
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    const { isJobDone } = await import('@/lib/data/thinking-jobs')
+    vi.mocked(isJobDone).mockResolvedValueOnce(true)
+    selectQueue.push([{ id: DOMINION_ID, name: 'AEON', archivedAt: null }])
+    selectQueue.push([{ n: 0 }]) // alreadyRanToday — e.g. every thought ungrounded
+
+    const { runIntrospectionForDominion } = await import('../introspection')
+    const result = await runIntrospectionForDominion(USER_ID, DOMINION_ID)
+
+    expect(result).toMatchObject({ status: 'existing', reason: 'answered on Max' })
+    const today = new Date().toISOString().slice(0, 10)
+    expect(isJobDone).toHaveBeenCalledWith(USER_ID, `introspection:${DOMINION_ID}:${today}`)
+    expect(getProviderForTask).not.toHaveBeenCalled()
+    expect(captureMemory).not.toHaveBeenCalled()
   })
 
   it("doesn't count idea-tournament survivors as today's raw run (P3 overlap)", async () => {

@@ -29,6 +29,17 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.33.0] — 2026-10-01
+
+> Areas touched: \`KAIROS\` \`MCP\` \`API\` \`DOCS\`
+> Theme: nearly all of Kairos's thinking now runs on your Claude Max plan. The paid key only steps in for work a routine missed. Full detail: \`docs/kairos/CHANGELOG.md\` 0.16.
+
+### Changed — Everything thinks on Max · \`KAIROS\` \`MCP\` \`API\`
+- Chat summaries, archetypes, Kairos's daily question, the contradiction scan, the morning briefs, the old idea dump and the tidy-ups through the day are now jobs your Claude routines answer, like the cortex, Aether and idea contest already were.
+- Each old paid-key job still runs at its usual time, but it skips anything a routine already answered, so the paid key is only the backup.
+- The contradiction scan reviews all of a Dominion's recent beliefs in one go instead of one call per belief.
+- The embedding top-up now runs at 03:25 UTC so the contradiction scan sees same-night beliefs.
+
 ## [0.32.0] — 2026-10-01
 
 > Areas touched: \`KAIROS\` \`UI\` \`MCP\` \`API\` \`DOCS\`

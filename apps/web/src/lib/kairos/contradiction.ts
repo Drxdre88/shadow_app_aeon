@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
 import { findDominionsByUser } from '@/lib/data/dominions'
 import { findSimilarBeliefs, BELIEF_TYPES } from '@/lib/data/memories'
+import { isJobDone } from '@/lib/data/thinking-jobs'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import { withRetry } from '@/lib/ai/retry'
@@ -14,6 +15,7 @@ import {
   extractJsonBlock,
   type ContradictionCandidate,
   type ContradictionProbe,
+  type GroundedContradictionFinding,
 } from './contradiction-prompt'
 import { todayIso, parseWithRepair, ParseRepairError } from './_prompt-utils'
 import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
@@ -37,9 +39,12 @@ const PROBE_LIMIT = 25
 const PROPOSAL_TYPE = 'inbound'
 // Same heavy-tier output budget as cortex/archetypes/introspection — a tight
 // cap is what truncated every other generator (finishReason=length) until raised.
-const MAX_OUTPUT_TOKENS = 8000
+export const CONTRADICTION_MAX_OUTPUT_TOKENS = 8000
 
-async function alreadyRanToday(userId: string, dominionId: string): Promise<boolean> {
+// Thinking-queue key of one Dominion's contradiction job for a UTC date.
+export const contradictionJobKey = (dominionId: string, day: string) => `contradiction:${dominionId}:${day}`
+
+export async function alreadyRanToday(userId: string, dominionId: string): Promise<boolean> {
   const [row] = await db
     .select({ n: sql<number>`COUNT(*)::int` })
     .from(memories)
@@ -55,7 +60,7 @@ async function alreadyRanToday(userId: string, dominionId: string): Promise<bool
 
 // Probe set — belief memories touched in the last N days, capped so a single
 // run stays bounded in LLM cost even for a heavily-active Dominion.
-async function fetchProbes(userId: string, dominionId: string): Promise<ContradictionProbe[]> {
+export async function fetchProbes(userId: string, dominionId: string): Promise<ContradictionProbe[]> {
   const since = sql`NOW() - make_interval(days => ${PROBE_WINDOW_DAYS})`
   return db
     .select({
@@ -100,6 +105,91 @@ async function hasPendingProposalFor(userId: string, aId: string, bId: string): 
   return (row?.n ?? 0) > 0
 }
 
+export interface JudgedProbe {
+  probe: { id: string; title: string }
+  candidates: Array<{ id: string; title: string }>
+  findings: GroundedContradictionFinding[]
+}
+
+// The one write path for contradiction notices (cron and thinking job): a
+// winner/loser per finding, unordered-pair dedup (in-run + pending proposals),
+// one insert, and the success trace. `extraMetadata` carries queue provenance
+// (thinkingJobId, answeredBy); the cron passes nothing. Returns the new ids.
+export async function stageContradictionProposals(
+  userId: string,
+  dominionId: string,
+  runId: string,
+  judged: JudgedProbe[],
+  opts: { probeFailures?: number; extraMetadata?: Record<string, unknown> } = {},
+): Promise<string[]> {
+  const rows: (typeof memories.$inferInsert)[] = []
+  // In-run guard alongside the DB check — two probes in the same batch can
+  // resolve to the same underlying conflict from opposite directions.
+  const queuedPairs = new Set<string>()
+
+  for (const { probe, candidates, findings } of judged) {
+    const candidateById = new Map(candidates.map((c) => [c.id, c]))
+    for (const finding of findings) {
+      if (!finding.contradicts) continue
+      const candidate = candidateById.get(finding.candidateId)
+      if (!candidate) continue
+
+      const winnerId = finding.winner === 'probe' ? probe.id : candidate.id
+      const loserId = finding.winner === 'probe' ? candidate.id : probe.id
+      // Unordered key — same pair from either direction dedups to one entry.
+      const pairKey = winnerId < loserId ? `${winnerId}:${loserId}` : `${loserId}:${winnerId}`
+      if (queuedPairs.has(pairKey)) continue
+      if (await hasPendingProposalFor(userId, winnerId, loserId)) continue
+      queuedPairs.add(pairKey)
+
+      rows.push({
+        userId,
+        dominionId,
+        title: `Contradiction: "${probe.title}" vs "${candidate.title}"`.slice(0, 255),
+        bodyMd: finding.rationale,
+        summary: finding.rationale.slice(0, 240),
+        type: PROPOSAL_TYPE,
+        // Agentic stream — Kairos's own flagged notice, weighted below the
+        // operator's reflections until accepted.
+        streamClass: 'agentic',
+        source: 'cron',
+        sourceMetadata: {
+          ...(opts.extraMetadata ?? {}),
+          contradictionCheck: true,
+          kind: 'contradiction',
+          status: 'pending',
+          confidence: finding.confidence,
+          winnerId,
+          loserId,
+          rationale: finding.rationale,
+          citations: [probe.id, candidate.id],
+          runId,
+        },
+        // Provenance: the loser is what this notice would supersede if
+        // accepted; the winner is the belief that stays authoritative.
+        links: [
+          { type: 'contradicts', target: loserId, target_kind: 'memory' },
+          { type: 'refers_to', target: winnerId, target_kind: 'memory' },
+        ],
+        tags: ['proposal', 'contradiction'],
+        pinned: false,
+        createdAt: new Date(),
+      })
+    }
+  }
+
+  if (rows.length === 0) {
+    // A clean scan is a successful night; one where every judged probe failed
+    // already left failure traces and must not also look healthy.
+    if ((opts.probeFailures ?? 0) === 0) await writeCronSuccessTrace(userId, { cronName: 'contradiction-scan', dominionId })
+    return []
+  }
+
+  const inserted = await db.insert(memories).values(rows).returning({ id: memories.id })
+  await writeCronSuccessTrace(userId, { cronName: 'contradiction-scan', dominionId })
+  return inserted.map((r) => r.id)
+}
+
 export interface ContradictionScanResult {
   dominionId: string
   dominionName: string
@@ -124,6 +214,12 @@ export async function runContradictionScanForDominion(
     await writeCronSuccessTrace(userId, { cronName: 'contradiction-scan', dominionId, outcome: 'skipped', skipReason: 'already ran today' })
     return { dominionId, dominionName: dom.name, status: 'existing', reason: 'already ran today' }
   }
+  // The thinking routine already scanned this Dominion today (a clean scan
+  // writes no proposal, so alreadyRanToday alone cannot see it).
+  if (await isJobDone(userId, contradictionJobKey(dominionId, todayIso()))) {
+    await writeCronSuccessTrace(userId, { cronName: 'contradiction-scan', dominionId, outcome: 'skipped', skipReason: 'already ran today' })
+    return { dominionId, dominionName: dom.name, status: 'existing', reason: 'already ran today (thinking job)' }
+  }
 
   const probes = await fetchProbes(userId, dominionId)
   if (probes.length === 0) {
@@ -131,10 +227,7 @@ export async function runContradictionScanForDominion(
   }
 
   const runId = `contradiction:${dominionId}:${todayIso()}`
-  const rows: (typeof memories.$inferInsert)[] = []
-  // In-run guard alongside the DB check — two probes in the same batch can
-  // resolve to the same underlying conflict from opposite directions.
-  const queuedPairs = new Set<string>()
+  const judged: JudgedProbe[] = []
   let probeFailures = 0
 
   for (const probe of probes) {
@@ -150,7 +243,7 @@ export async function runContradictionScanForDominion(
         system: CONTRADICTION_SYSTEM_PROMPT,
         prompt: buildContradictionUserPrompt(probe, candidates as ContradictionCandidate[]),
         cacheSystem: true,
-        maxTokens: MAX_OUTPUT_TOKENS,
+        maxTokens: CONTRADICTION_MAX_OUTPUT_TOKENS,
       }))
       rawText = response.text.trim()
       finishReason = response.finishReason
@@ -183,7 +276,7 @@ export async function runContradictionScanForDominion(
         rawText,
         parse: (text) => filterGroundedFindings(contradictionOutSchema.parse(extractJsonBlock(text)), validIds),
         generatorLabel: 'contradiction',
-        maxTokens: MAX_OUTPUT_TOKENS,
+        maxTokens: CONTRADICTION_MAX_OUTPUT_TOKENS,
         system: CONTRADICTION_SYSTEM_PROMPT,
         repairContext: [
           'Valid candidate ids — every candidateId MUST be one of these, copied in full:',
@@ -206,66 +299,14 @@ export async function runContradictionScanForDominion(
       throw err
     }
 
-    const candidateById = new Map(candidates.map((c) => [c.id, c]))
-    for (const finding of findings) {
-      if (!finding.contradicts) continue
-      const candidate = candidateById.get(finding.candidateId)
-      if (!candidate) continue
-
-      const winnerId = finding.winner === 'probe' ? probe.id : candidate.id
-      const loserId = finding.winner === 'probe' ? candidate.id : probe.id
-      // Unordered key — same pair from either direction dedups to one entry.
-      const pairKey = winnerId < loserId ? `${winnerId}:${loserId}` : `${loserId}:${winnerId}`
-      if (queuedPairs.has(pairKey)) continue
-      if (await hasPendingProposalFor(userId, winnerId, loserId)) continue
-      queuedPairs.add(pairKey)
-
-      rows.push({
-        userId,
-        dominionId,
-        title: `Contradiction: "${probe.title}" vs "${candidate.title}"`.slice(0, 255),
-        bodyMd: finding.rationale,
-        summary: finding.rationale.slice(0, 240),
-        type: PROPOSAL_TYPE,
-        // Agentic stream — Kairos's own flagged notice, weighted below the
-        // operator's reflections until accepted.
-        streamClass: 'agentic',
-        source: 'cron',
-        sourceMetadata: {
-          contradictionCheck: true,
-          kind: 'contradiction',
-          status: 'pending',
-          confidence: finding.confidence,
-          winnerId,
-          loserId,
-          rationale: finding.rationale,
-          citations: [probe.id, candidate.id],
-          runId,
-        },
-        // Provenance: the loser is what this notice would supersede if
-        // accepted; the winner is the belief that stays authoritative.
-        links: [
-          { type: 'contradicts', target: loserId, target_kind: 'memory' },
-          { type: 'refers_to', target: winnerId, target_kind: 'memory' },
-        ],
-        tags: ['proposal', 'contradiction'],
-        pinned: false,
-        createdAt: new Date(),
-      })
-    }
+    judged.push({ probe, candidates, findings })
   }
 
-  if (rows.length === 0) {
-    // A clean scan is a successful night; one where every judged probe failed
-    // already left failure traces and must not also look healthy.
-    if (probeFailures === 0) await writeCronSuccessTrace(userId, { cronName: 'contradiction-scan', dominionId })
+  const ids = await stageContradictionProposals(userId, dominionId, runId, judged, { probeFailures })
+  if (ids.length === 0) {
     return { dominionId, dominionName: dom.name, status: 'created', proposalsCreated: 0, reason: 'no contradictions found' }
   }
-
-  await db.insert(memories).values(rows)
-  await writeCronSuccessTrace(userId, { cronName: 'contradiction-scan', dominionId })
-
-  return { dominionId, dominionName: dom.name, status: 'created', proposalsCreated: rows.length }
+  return { dominionId, dominionName: dom.name, status: 'created', proposalsCreated: ids.length }
 }
 
 export async function runContradictionScanForUser(userId: string): Promise<ContradictionScanResult[]> {

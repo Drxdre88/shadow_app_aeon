@@ -8,7 +8,7 @@ import {
 // Pure-function prompt tests first (no DB), then a DB-mocked describe block
 // mirroring cortex.test.ts / aether.test.ts's chainable-query pattern —
 // db.select() calls fire in this exact order per runMicroConsolidateForDominion:
-// dominion lookup -> lastDeltaCreatedAt -> todaysCortexCreatedAt -> fetchNewMemoriesSince.
+// dominion lookup -> lastDeltaWindowEnd -> todaysCortexCreatedAt -> fetchNewMemoriesSince.
 
 describe('buildMicroConsolidateUserPrompt', () => {
   function makeCtx(overrides: Partial<MicroConsolidateContext> = {}): MicroConsolidateContext {
@@ -101,6 +101,10 @@ vi.mock('@/lib/data/board-signals', () => ({
 
 vi.mock('@/lib/ai/route-task', () => ({
   getProviderForTask: vi.fn(),
+}))
+
+vi.mock('@/lib/data/thinking-jobs', () => ({
+  isJobDone: vi.fn(async () => false),
 }))
 
 const USER_ID = 'user-1'
@@ -420,6 +424,62 @@ describe('runMicroConsolidateForDominion', { timeout: 20000 }, () => {
     expect(await runWithAnchors(null, cortexAt)).toBe(cortexAt.toISOString())
   })
 
+  it('anchors on the last delta\'s stored `until`, not its later createdAt (routine folds land after their window)', async () => {
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { countTasksCompletedBetween, countTasksCreatedBetween } = await import('@/lib/data/board-signals')
+    const until = '2026-07-24T14:20:00.000Z'
+    queueDominionLookup()
+    selectQueue.push([{ createdAt: new Date('2026-07-24T14:45:00.000Z'), until }]) // lastDeltaWindowEnd
+    selectQueue.push([]) // todaysCortexCreatedAt
+    selectQueue.push([
+      { title: 'a', type: 'note', streamClass: 'idea' },
+      { title: 'b', type: 'note', streamClass: 'idea' },
+      { title: 'c', type: 'note', streamClass: 'idea' },
+    ])
+    selectQueue.push([{ total: 3 }])
+    vi.mocked(countTasksCompletedBetween).mockResolvedValue(0)
+    vi.mocked(countTasksCreatedBetween).mockResolvedValue(0)
+    const ask = vi.fn().mockResolvedValue({ text: 'window' })
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask }, decision: {} } as never)
+    vi.mocked(captureMemory).mockResolvedValue({ memory: { id: 'delta-mem-1' }, created: true } as never)
+
+    const { runMicroConsolidateForDominion } = await import('../micro-consolidate')
+    await runMicroConsolidateForDominion(USER_ID, DOMINION_ID)
+
+    const call = vi.mocked(captureMemory).mock.calls[0][1] as { sourceMetadata: Record<string, unknown> }
+    expect(call.sourceMetadata.since).toBe(until)
+    // This fold stores the end of its own window for the next run.
+    expect(call.sourceMetadata.until).toBe('2026-07-24T15:22:00.000Z')
+  })
+
+  it('skips the model call when the routine already answered this slot on Max', async () => {
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    const { captureMemory } = await import('@/lib/data/memories')
+    const { countTasksCompletedBetween, countTasksCreatedBetween } = await import('@/lib/data/board-signals')
+    const { isJobDone } = await import('@/lib/data/thinking-jobs')
+    vi.mocked(isJobDone).mockResolvedValueOnce(true)
+    queueDominionLookup()
+    selectQueue.push([])
+    selectQueue.push([])
+    selectQueue.push([
+      { title: 'a', type: 'note', streamClass: 'idea' },
+      { title: 'b', type: 'note', streamClass: 'idea' },
+      { title: 'c', type: 'note', streamClass: 'idea' },
+    ])
+    selectQueue.push([{ total: 3 }])
+    vi.mocked(countTasksCompletedBetween).mockResolvedValue(0)
+    vi.mocked(countTasksCreatedBetween).mockResolvedValue(0)
+
+    const { runMicroConsolidateForDominion } = await import('../micro-consolidate')
+    const result = await runMicroConsolidateForDominion(USER_ID, DOMINION_ID)
+
+    expect(isJobDone).toHaveBeenCalledWith(USER_ID, `micro_consolidate:${DOMINION_ID}:2026-07-24T15`)
+    expect(result).toEqual({ dominionId: DOMINION_ID, dominionName: 'AEON', status: 'existing', reason: 'answered on Max' })
+    expect(getProviderForTask).not.toHaveBeenCalled()
+    expect(captureMemory).not.toHaveBeenCalled()
+  })
+
   it('scopes board counts to this Dominion (not user-wide)', async () => {
     const { countTasksCompletedBetween, countTasksCreatedBetween } = await import('@/lib/data/board-signals')
     await runWithAnchors(null, null)
@@ -506,5 +566,52 @@ describe('runMicroConsolidateForUser — per-Dominion failure isolation', { time
       skipReason: 'below threshold',
     })
     expect(liveness.sourceMetadata.externalId).toMatch(new RegExp(`^cron-skipped:micro-consolidate:${DOM_B}:\\d{4}-\\d{2}-\\d{2}$`))
+  })
+})
+
+describe('persistMicroConsolidateDelta — shared by the cron and the routine', () => {
+  beforeEach(() => { vi.clearAllMocks() })
+
+  it('writes the slot-bucket delta with its window and the routine provenance', async () => {
+    const { captureMemory } = await import('@/lib/data/memories')
+    vi.mocked(captureMemory).mockResolvedValue({ memory: { id: 'delta-mem-9' }, created: true } as never)
+    const { persistMicroConsolidateDelta } = await import('../micro-consolidate')
+
+    const out = await persistMicroConsolidateDelta(USER_ID, {
+      dominionId: DOMINION_ID,
+      dominionName: 'AEON',
+      bucket: '2026-10-01T09',
+      since: new Date('2026-10-01T06:15:00.000Z'),
+      until: new Date('2026-10-01T08:30:00.000Z'),
+      bodyMd: 'Two ideas landed.',
+      newMemoryCount: 30,
+      newMemoryTotal: 41,
+      tasksCompleted: 2,
+      tasksCreated: 1,
+      provenance: { answeredBy: 'routine', thinkingJobId: 'job-1' },
+    })
+
+    expect(out).toEqual({ memoryId: 'delta-mem-9', created: true })
+    expect(captureMemory).toHaveBeenCalledWith(USER_ID, {
+      title: 'AEON · delta 2026-10-01T09',
+      bodyMd: 'Two ideas landed.',
+      type: 'observation',
+      streamClass: 'delta',
+      source: 'cron',
+      dominionId: DOMINION_ID,
+      sourceMetadata: {
+        externalId: `micro-consolidate:${DOMINION_ID}:2026-10-01T09`,
+        kind: 'micro_consolidate',
+        since: '2026-10-01T06:15:00.000Z',
+        until: '2026-10-01T08:30:00.000Z',
+        newMemoryCount: 30,
+        tasksCompleted: 2,
+        tasksCreated: 1,
+        truncated: true,
+        newMemoryTotal: 41,
+        answeredBy: 'routine',
+        thinkingJobId: 'job-1',
+      },
+    })
   })
 })

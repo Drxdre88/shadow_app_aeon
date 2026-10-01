@@ -237,6 +237,38 @@ export async function hasJobWithKeyLike(userId: string, kind: ThinkingJobKind, p
   return Boolean(row)
 }
 
+// Cron-fallback guard (all-on-Max kinds): a cron skips a unit of work when
+// the routine already completed its job. Only 'done' counts — a failed or
+// expired job is exactly what the cron is there to cover.
+export async function isJobDone(userId: string, externalKey: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: thinkingJobs.id })
+    .from(thinkingJobs)
+    .where(and(
+      eq(thinkingJobs.userId, userId),
+      eq(thinkingJobs.externalKey, externalKey),
+      eq(thinkingJobs.status, 'done'),
+    ))
+    .limit(1)
+  return Boolean(row)
+}
+
+// Any job of `kind` still open (queued/claimed) and before its deadline —
+// used to order kinds within a night (archetype waits on chat_distill).
+export async function hasLiveOpenJob(userId: string, kind: ThinkingJobKind, now: Date = new Date()): Promise<boolean> {
+  const [row] = await db
+    .select({ id: thinkingJobs.id })
+    .from(thinkingJobs)
+    .where(and(
+      eq(thinkingJobs.userId, userId),
+      eq(thinkingJobs.kind, kind),
+      inArray(thinkingJobs.status, OPEN_STATUSES),
+      gte(thinkingJobs.deadlineAt, now),
+    ))
+    .limit(1)
+  return Boolean(row)
+}
+
 export interface ListJobsFilter {
   status?: ThinkingJobStatus
   kind?: ThinkingJobKind

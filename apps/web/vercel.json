@@ -48,7 +48,7 @@
     },
     {
       "path": "/api/cron/embed-backfill",
-      "schedule": "0 4 * * *"
+      "schedule": "25 3 * * *"
     },
     {
       "path": "/api/cron/contradiction-scan",

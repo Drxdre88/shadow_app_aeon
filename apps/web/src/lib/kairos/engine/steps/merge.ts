@@ -16,8 +16,8 @@ import { isVetoed } from './back-up'
 // (concept/cortex/aether/archetype) or inbox/ask rows with their own lifecycle.
 //
 // Window: rows CREATED in the last 96h that are embedded by now. Most rows are
-// embedded only by the 04:00 UTC embed-backfill (≤200/day) while Merge runs at
-// 01:30 UTC, so a row written just after 04:00 is first embedded ~45h later —
+// embedded only by the 03:25 UTC embed-backfill (≤200/day) while Merge runs at
+// 01:30 UTC, so a row written just after 03:25 is first embedded ~46h later —
 // a 36h window never saw it (G3). 96h gives every row at least two nights
 // after its embedding. A row with no duplicate is simply re-checked on later
 // nights: the no-duplicate path is one read-only nearest-neighbour query (no
