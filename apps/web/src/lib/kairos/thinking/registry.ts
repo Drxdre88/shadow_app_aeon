@@ -6,6 +6,8 @@ import { conceptHandler } from './handlers/concept'
 import { cortexHandler } from './handlers/cortex'
 import { dailyMessageHandler } from './handlers/daily-message'
 import { driftProbeHandler } from './handlers/drift-probe'
+import { ideaGenerateHandler } from './handlers/idea-generate'
+import { ideaJudgeHandler } from './handlers/idea-judge'
 import { mindCompareHandler } from './handlers/mind-compare'
 import { weeklyReviewHandler } from './handlers/weekly-review'
 
@@ -20,6 +22,8 @@ export function getThinkingHandlers(): ThinkingJobHandler[] {
     driftProbeHandler,
     mindCompareHandler,
     weeklyReviewHandler,
+    ideaGenerateHandler,
+    ideaJudgeHandler,
     dailyMessageHandler,
     chatHandler,
   ]

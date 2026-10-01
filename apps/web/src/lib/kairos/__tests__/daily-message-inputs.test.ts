@@ -27,6 +27,8 @@ vi.mock('@/lib/data/recipes', () => ({ listTraceHistory: vi.fn() }))
 vi.mock('../constitution/amendment', () => ({ getLatestDriftStatus: vi.fn() }))
 vi.mock('@/lib/data/constitution-drift', () => ({ findLatestConscienceRun: vi.fn() }))
 vi.mock('../synthesis-health', () => ({ SYNTHESIS_HEALTH_RECIPE: 'SYNTHESIS_HEALTH' }))
+vi.mock('@/lib/data/ideas', () => ({ listSurvivorsSince: vi.fn() }))
+vi.mock('../ideas/diversity', () => ({ weeklyIdeaDiversity: vi.fn() }))
 
 import { getLatestAether } from '@/lib/data/aether'
 import { getPendingKairosAsk } from '@/lib/data/ask'
@@ -35,6 +37,8 @@ import { listPromotedBeliefsBetween } from '@/lib/data/memory-candidates'
 import { listTraceHistory } from '@/lib/data/recipes'
 import { findLatestConscienceRun } from '@/lib/data/constitution-drift'
 import { getLatestDriftStatus } from '../constitution/amendment'
+import { listSurvivorsSince } from '@/lib/data/ideas'
+import { weeklyIdeaDiversity } from '../ideas/diversity'
 import { briefDominionName, briefFirstLines, gatherDailyMessageInputs } from '../daily-message-inputs'
 
 const USER = 'user-1'
@@ -51,6 +55,8 @@ beforeEach(() => {
   vi.mocked(listTraceHistory).mockResolvedValue([])
   vi.mocked(getLatestDriftStatus).mockResolvedValue(null)
   vi.mocked(findLatestConscienceRun).mockResolvedValue(null)
+  vi.mocked(listSurvivorsSince).mockResolvedValue([])
+  vi.mocked(weeklyIdeaDiversity).mockResolvedValue({ survivors: 0, meanDistance: null, alarm: false, weekStart: '2026-10-19' })
 })
 
 describe('gatherDailyMessageInputs', () => {
@@ -108,9 +114,12 @@ describe('gatherDailyMessageInputs', () => {
     vi.mocked(getLatestDriftStatus).mockRejectedValue(new Error('x'))
     vi.mocked(getPendingKairosAsk).mockRejectedValue(new Error('x'))
     vi.mocked(listTraceHistory).mockRejectedValue(new Error('x'))
+    vi.mocked(listSurvivorsSince).mockRejectedValue(new Error('x'))
+    vi.mocked(weeklyIdeaDiversity).mockRejectedValue(new Error('x'))
 
     const inputs = await gatherDailyMessageInputs(USER, NOW)
-    expect(inputs.failed).toEqual(['aether', 'boardDay', 'briefs', 'drift', 'mindCompare', 'newBeliefs', 'pendingAsk', 'promotions', 'synthesis'])
+    expect(inputs.failed).toEqual(['aether', 'boardDay', 'briefs', 'drift', 'idea', 'ideaDiversity', 'mindCompare', 'newBeliefs', 'pendingAsk', 'promotions', 'synthesis'])
+    expect(inputs.idea).toBeNull()
     expect(inputs.briefs).toBeNull()
     expect(inputs.promotions).toBeNull()
   })
@@ -193,5 +202,30 @@ describe('brief helpers', () => {
 
   it('drops headings/labels and strips links', () => {
     expect(briefFirstLines('# H\n**State**\nSee https://a.b now\n')).toEqual(['See now'])
+  })
+})
+
+describe('idea of the day input', () => {
+  const survivor = (id: string, over: Record<string, unknown> = {}) => ({
+    id, title: `Idea ${id}`, claim: `Claim ${id}`, survivedBecause: `beat the field ${id}`, elo: 1050,
+    direction: 'ops', tournamentDate: '2026-10-26', status: 'pending', createdAt: new Date('2026-10-26T03:00:00Z'), ...over,
+  })
+
+  it('reads up to 3 survivors from the last 24h: top one shown, the other pending ones counted', async () => {
+    vi.mocked(listSurvivorsSince).mockResolvedValue([survivor('a'), survivor('b'), survivor('c', { status: 'dismissed' })])
+    vi.mocked(weeklyIdeaDiversity).mockResolvedValue({ survivors: 6, meanDistance: 0.1, alarm: true, weekStart: '2026-10-26' })
+    const inputs = await gatherDailyMessageInputs(USER, NOW)
+    expect(listSurvivorsSince).toHaveBeenCalledWith(USER, new Date(NOW.getTime() - 24 * 3600_000), 3)
+    expect(weeklyIdeaDiversity).toHaveBeenCalledWith(USER, NOW)
+    expect(inputs.idea).toEqual({ title: 'Idea a', claim: 'Claim a', survivedBecause: 'beat the field a', othersWaiting: 1 })
+    expect(inputs.ideaDiversityAlarm).toBe(true)
+    expect(inputs.failed).toEqual([])
+  })
+
+  it('is null when no survivor is still pending', async () => {
+    vi.mocked(listSurvivorsSince).mockResolvedValue([survivor('a', { status: 'accepted' })])
+    const inputs = await gatherDailyMessageInputs(USER, NOW)
+    expect(inputs.idea).toBeNull()
+    expect(inputs.ideaDiversityAlarm).toBe(false)
   })
 })

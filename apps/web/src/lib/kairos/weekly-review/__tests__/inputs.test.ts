@@ -11,6 +11,10 @@ const data = vi.hoisted(() => ({
   listTraceHistory: vi.fn(),
   listBeliefs: vi.fn(),
   getLatestMindCompare: vi.fn(),
+  listBeliefDiffOps: vi.fn(),
+  listSurvivorsSince: vi.fn(),
+  listIdeaOutcomes: vi.fn(),
+  weeklyIdeaDiversity: vi.fn(),
 }))
 
 vi.mock('@/lib/data/ask', () => ({ listRecentKairosAsks: data.listRecentKairosAsks }))
@@ -23,8 +27,11 @@ vi.mock('@/lib/data/memory-candidates', () => ({ listPromotedBeliefsBetween: dat
 vi.mock('@/lib/data/memory-ops', () => ({ listMemoryOps: data.listMemoryOps }))
 vi.mock('@/lib/data/memories', () => ({ findMemoryById: data.findMemoryById, listMemories: data.listMemories }))
 vi.mock('@/lib/data/recipes', () => ({ listTraceHistory: data.listTraceHistory }))
+vi.mock('@/lib/data/belief-diff', () => ({ BELIEF_DIFF_ROW_CAP: 500, listBeliefDiffOps: data.listBeliefDiffOps }))
+vi.mock('@/lib/data/ideas', () => ({ listSurvivorsSince: data.listSurvivorsSince, listIdeaOutcomes: data.listIdeaOutcomes }))
+vi.mock('@/lib/kairos/ideas/diversity', () => ({ weeklyIdeaDiversity: data.weeklyIdeaDiversity }))
 
-import { fedMemoryIds, gatherWeeklyReviewInputs, hasReviewSignal, reviewWindow } from '../inputs'
+import { buildBeliefDiff, classifyBeliefOp, fedMemoryIds, gatherWeeklyReviewInputs, hasReviewSignal, reviewWindow } from '../inputs'
 
 const USER = 'user-1'
 // Monday of ISO 2026-W41; the week under review is W40 (Sep 28 – Oct 4).
@@ -85,6 +92,10 @@ beforeEach(() => {
     row('t2', { sourceMetadata: { cronName: 'aether', reason: 'empty_response' } }),
     row('t3', { sourceMetadata: { cronName: 'cortex', outcome: 'ok' } }),
   ])
+  data.listBeliefDiffOps.mockResolvedValue([])
+  data.listSurvivorsSince.mockResolvedValue([])
+  data.listIdeaOutcomes.mockResolvedValue([])
+  data.weeklyIdeaDiversity.mockResolvedValue({ survivors: 0, meanDistance: null, alarm: false, weekStart: '2026-09-28' })
 })
 
 describe('reviewWindow', () => {
@@ -153,5 +164,99 @@ describe('gatherWeeklyReviewInputs', () => {
     expect(inputs.dominions).toEqual([])
     expect(hasReviewSignal(inputs)).toBe(false)
     expect(inputs.errors.length).toBeGreaterThanOrEqual(6)
+  })
+})
+
+describe('ideas and lessons (G11)', () => {
+  const survivor = (id: string, over: Record<string, unknown> = {}) => ({
+    id, title: `Idea ${id}`, claim: `Claim ${id}`, survivedBecause: 'won 3 of 3', elo: 1060, direction: 'ops',
+    tournamentDate: '2026-09-30', status: 'pending', createdAt: IN_WEEK, ...over,
+  })
+
+  it('lists the week\'s survivors with outcomes, the diversity reading and 30-day lessons', async () => {
+    data.listSurvivorsSince.mockResolvedValue([
+      survivor('idea-a'),
+      survivor('idea-b', { status: 'promoted' }),
+      survivor('idea-c', { status: 'dismissed' }),
+      survivor('idea-late', { createdAt: new Date('2026-10-05T03:00:00Z') }),
+    ])
+    data.listIdeaOutcomes.mockResolvedValue([
+      { id: 'idea-a', title: 'Idea idea-a', direction: 'ops', claim: 'Claim idea-a', outcome: 'accepted' },
+      { id: 'idea-old', title: 'Old', direction: 'health', claim: 'Old claim', outcome: 'dismissed' },
+    ])
+    data.weeklyIdeaDiversity.mockResolvedValue({ survivors: 3, meanDistance: 0.11, alarm: true, weekStart: '2026-09-28' })
+
+    const inputs = await gatherWeeklyReviewInputs(USER, MONDAY)
+    const w = reviewWindow(MONDAY)
+    expect(data.listSurvivorsSince).toHaveBeenCalledWith(USER, w.start, 21)
+    expect(data.listIdeaOutcomes).toHaveBeenCalledWith(USER, 30)
+    expect(data.weeklyIdeaDiversity).toHaveBeenCalledWith(USER, new Date(w.end.getTime() - 1))
+    expect(inputs.ideas?.survivors.map((s) => [s.id, s.outcome])).toEqual([
+      ['idea-a', 'accepted'], ['idea-b', 'accepted'], ['idea-c', 'dismissed'],
+    ])
+    expect(inputs.ideas?.diversity).toEqual({ survivors: 3, meanDistance: 0.11, alarm: true })
+    expect(inputs.ideaLessons).toMatchObject({ days: 30, acceptedCount: 1, dismissedCount: 1 })
+    expect(fedMemoryIds(inputs)).toEqual(expect.arrayContaining(['idea-a', 'idea-b', 'idea-c', 'idea-old']))
+    expect(inputs.errors).toEqual([])
+  })
+
+  it('keeps going when the idea reads fail', async () => {
+    data.listSurvivorsSince.mockRejectedValue(new Error('down'))
+    data.listIdeaOutcomes.mockRejectedValue(new Error('down'))
+    const inputs = await gatherWeeklyReviewInputs(USER, MONDAY)
+    expect(inputs.ideas).toBeNull()
+    expect(inputs.ideaLessons).toBeNull()
+    expect(inputs.errors.map((e) => e.split(':')[0])).toEqual(expect.arrayContaining(['ideas', 'idea_outcomes']))
+    expect(inputs.boardPages).toHaveLength(2)
+  })
+})
+
+describe('belief diff (G13)', () => {
+  const op = (over: Record<string, unknown>) => ({
+    opId: 'op', memoryId: 'b-1', step: 'beliefs', op: 'promote', reason: 'r', after: {}, createdAt: IN_WEEK,
+    domain: 'health', mind: 'aligned', claim: 'Sleep matters', ...over,
+  })
+
+  it('classifies every ledger op kind', () => {
+    expect(classifyBeliefOp(op({}))).toBe('created')
+    expect(classifyBeliefOp(op({ after: { supersedes: 'b-0' } }))).toBe('replaced')
+    expect(classifyBeliefOp(op({ op: 'feedback' }))).toBe('reinforced')
+    expect(classifyBeliefOp(op({ op: 'feedback', after: { reaffirmed: true } }))).toBe('cleared')
+    expect(classifyBeliefOp(op({ op: 'retire' }))).toBe('retired')
+    expect(classifyBeliefOp(op({ op: 'decay' }))).toBe('retired')
+    expect(classifyBeliefOp(op({ step: 'recheck', op: 'recheck' }))).toBe('flagged')
+    expect(classifyBeliefOp(op({ step: 'recheck', op: 'retire' }))).toBe('retired')
+    expect(classifyBeliefOp(op({ step: 'recheck', op: 'feedback', after: { normalised: true } }))).toBe('normalised')
+    expect(classifyBeliefOp(op({ step: 'recheck', op: 'feedback', after: { remapped: [] } }))).toBe('remapped')
+    expect(classifyBeliefOp(op({ op: 'score' }))).toBeNull()
+  })
+
+  it('counts everything, shows the 15 most significant grouped by domain', () => {
+    const rows = [
+      ...Array.from({ length: 20 }, (_, i) => op({ memoryId: `n-${i}`, step: 'recheck', op: 'feedback', after: { normalised: true }, domain: 'work' })),
+      op({ memoryId: 'rep', after: { supersedes: 'old' }, domain: 'work', reason: 'new evidence; replaces old' }),
+      op({ memoryId: 'flag', step: 'recheck', op: 'recheck', domain: null }),
+    ]
+    const diff = buildBeliefDiff(rows, false)!
+    expect(diff.total).toBe(22)
+    expect(diff.counts).toEqual({ normalised: 20, replaced: 1, flagged: 1 })
+    expect(diff.changes).toHaveLength(15)
+    expect(diff.changes.map((c) => c.domain)).toEqual(['general', ...Array(14).fill('work')])
+    expect(diff.changes[1]).toMatchObject({ memoryId: 'rep', kind: 'replaced', reason: 'new evidence; replaces old' })
+    expect(buildBeliefDiff([op({ op: 'score' })], false)).toBeNull()
+  })
+
+  it('reads the window, feeds shown belief ids as evidence and counts as signal', async () => {
+    for (const fn of Object.values(data)) fn.mockResolvedValue([])
+    data.findDominionsByUser.mockResolvedValue([])
+    data.getLatestMindCompare.mockResolvedValue(null)
+    data.weeklyIdeaDiversity.mockResolvedValue({ survivors: 0, meanDistance: null, alarm: false, weekStart: '' })
+    data.listBeliefDiffOps.mockResolvedValue([op({ memoryId: 'b-9', op: 'retire' })])
+    const inputs = await gatherWeeklyReviewInputs(USER, MONDAY)
+    const w = reviewWindow(MONDAY)
+    expect(data.listBeliefDiffOps).toHaveBeenCalledWith(USER, w.start, w.end)
+    expect(inputs.beliefDiff?.changes[0]).toMatchObject({ memoryId: 'b-9', kind: 'retired', domain: 'health' })
+    expect(fedMemoryIds(inputs)).toContain('b-9')
+    expect(hasReviewSignal(inputs)).toBe(true)
   })
 })

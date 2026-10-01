@@ -29,6 +29,22 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.32.0] — 2026-10-01
+
+> Areas touched: \`KAIROS\` \`UI\` \`MCP\` \`API\` \`DOCS\`
+> Theme: Kairos stops flooding you with ideas. Each night his ideas compete; only one to three reach your inbox, each with the reason it survived. Full detail: \`docs/kairos/CHANGELOG.md\` 0.15.
+
+### Added — Nightly idea contest · \`KAIROS\` \`MCP\` \`API\`
+- Two new overnight thinking jobs draft ideas in several directions, check them against evidence, drop repeats of anything said before, and compare them head to head. Up to three survivors a night; the Claude routine or the paid key does the work.
+- Accepting or dismissing an idea is remembered, so the next night's ideas learn from it.
+
+### Added — Ideas where you look · \`KAIROS\` \`UI\`
+- Idea cards lead the Kairos inbox with the claim, why it matters, one small next step and why it survived.
+- The 08:00 message has an "Idea of the day"; the Monday review shows the week's ideas, lessons, a diversity warning and what Kairos changed his mind about.
+
+### Changed · \`KAIROS\`
+- The old nightly idea dump can be switched off once the contest has two clean weeks; the health check watches the contest every night.
+
 ## [0.31.0] — 2026-10-01
 
 > Areas touched: \`KAIROS\` \`MCP\` \`API\` \`DOCS\`

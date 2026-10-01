@@ -10,6 +10,10 @@ type Params = { params: Promise<{ id: string }> }
 // server parses strictly, grounds, mints ids and persists via the kind's
 // handler. Mirrors the MCP submit_thinking_job tool (docs/kairos/32 §3).
 
+// An idea_generate apply embeds, novelty-checks and retrieves evidence for up
+// to 16 candidates inside this request (docs/kairos/35) — same budget as claim.
+export const maxDuration = 300
+
 export const POST = withRateLimit(
   apiHandler(async (request: NextRequest, ctx: unknown) => {
     const result = await authenticateRequest(request)

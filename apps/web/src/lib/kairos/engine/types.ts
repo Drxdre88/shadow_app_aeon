@@ -159,6 +159,9 @@ export type ThinkingJobKind =
   | 'weekly_review'
   | 'daily_message'
   | 'chat'
+  // P3 Creativity (docs/kairos/35): nightly idea tournament, two stages.
+  | 'idea_generate'
+  | 'idea_judge'
 
 export type ThinkingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'expired' | 'fallback'
 

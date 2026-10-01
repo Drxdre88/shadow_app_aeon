@@ -228,6 +228,115 @@ describe('computeSynthesisHealth — bucketing (T-B2)', () => {
   })
 })
 
+describe('computeSynthesisHealth — expected nightly stage: idea-tournament (P3)', () => {
+  const ARMED = { since: '2026-07-15', lastSeen: '2026-07-20' }
+
+  function rollupWithExpected(expectedStages: Record<string, unknown>, alertedStages: string[] = []): Row {
+    return { ...rollupRow(alertedStages), sourceMetadata: { recipe: 'SYNTHESIS_HEALTH', byStage: {}, alertedStages, expectedStages } }
+  }
+
+  it('is never flagged missing before the stage has been seen (pre-deploy, users without the feature)', async () => {
+    mockHistory([], [outcomeRow('s1', 'cortex-regen', '2026-07-22T03:00:00.000Z')])
+
+    const result = await computeSynthesisHealth(USER)
+
+    expect(result.byStage['idea-tournament']).toBeUndefined()
+    expect(result.missingStages).toEqual({})
+    expect(captureMemory).toHaveBeenCalledWith(USER, expect.objectContaining({
+      sourceMetadata: expect.objectContaining({ expectedStages: {} }),
+    }))
+  })
+
+  it('counts a 0-survivor night as ok (the tournament writes a success trace) and arms the stage', async () => {
+    mockHistory([], [{
+      id: 't1', title: 'idea-tournament ok', summary: null, dominionId: null,
+      sourceMetadata: { cronName: 'idea-tournament', outcome: 'ok', survivors: 0, candidates: 9, externalId: 'cron-ok:idea-tournament:all:2026-07-22' },
+      createdAt: new Date('2026-07-22T05:10:00.000Z'),
+    }])
+
+    const result = await computeSynthesisHealth(USER)
+
+    expect(result.byStage['idea-tournament']).toEqual({ '2026-07-22': 'ok' })
+    // Armed today → yesterday predates arming and is not judged.
+    expect(result.missingStages).toEqual({})
+    expect(captureMemory).toHaveBeenCalledWith(USER, expect.objectContaining({
+      sourceMetadata: expect.objectContaining({
+        expectedStages: { 'idea-tournament': { since: '2026-07-22', lastSeen: '2026-07-22' } },
+      }),
+    }))
+  })
+
+  it('shows a failed tournament night as failed', async () => {
+    mockHistory([rollupWithExpected({ 'idea-tournament': ARMED })], [
+      outcomeRow('t1', 'idea-tournament', '2026-07-21T05:00:00.000Z'),
+      failureRow('t2', 'idea-tournament', '2026-07-22T05:00:00.000Z'),
+    ])
+
+    const result = await computeSynthesisHealth(USER)
+
+    expect(result.byStage['idea-tournament']).toEqual({ '2026-07-21': 'ok', '2026-07-22': 'failed' })
+    expect(result.missingStages).toEqual({})
+  })
+
+  it('marks an armed stage with no trace on a judged night as failed + missing', async () => {
+    mockHistory([rollupWithExpected({ 'idea-tournament': ARMED })], [
+      outcomeRow('t1', 'idea-tournament', '2026-07-21T05:00:00.000Z'),
+    ])
+
+    const result = await computeSynthesisHealth(USER)
+
+    expect(result.byStage['idea-tournament']).toEqual({ '2026-07-21': 'ok', '2026-07-22': 'failed' })
+    expect(result.missingStages).toEqual({ 'idea-tournament': ['2026-07-22'] })
+    expect(result.alertedStages).toEqual([])
+    expect(captureMemory).toHaveBeenCalledWith(USER, expect.objectContaining({
+      sourceMetadata: expect.objectContaining({
+        expectedStages: { 'idea-tournament': { since: '2026-07-15', lastSeen: '2026-07-21' } },
+      }),
+    }))
+  })
+
+  it('fires the 2-strike alert when the tournament is missing two nights running', async () => {
+    mockHistory([rollupWithExpected({ 'idea-tournament': ARMED })], [])
+
+    const result = await computeSynthesisHealth(USER)
+
+    expect(result.byStage['idea-tournament']).toEqual({ '2026-07-21': 'failed', '2026-07-22': 'failed' })
+    expect(result.missingStages).toEqual({ 'idea-tournament': ['2026-07-21', '2026-07-22'] })
+    expect(result.alertedStages).toEqual(['idea-tournament'])
+    expect(deliverKairosSpeak).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not judge today before the 08:00Z slot (early manual run)', async () => {
+    vi.setSystemTime(new Date('2026-07-22T04:00:00.000Z'))
+    mockHistory([rollupWithExpected({ 'idea-tournament': ARMED })], [
+      outcomeRow('t1', 'idea-tournament', '2026-07-21T05:00:00.000Z'),
+    ])
+
+    const result = await computeSynthesisHealth(USER)
+
+    expect(result.byStage['idea-tournament']).toEqual({ '2026-07-21': 'ok' })
+    expect(result.missingStages).toEqual({})
+  })
+
+  it('disarms a stage not seen for more than 14 days', async () => {
+    mockHistory([rollupWithExpected({ 'idea-tournament': { since: '2026-06-01', lastSeen: '2026-07-01' } })], [])
+
+    const result = await computeSynthesisHealth(USER)
+
+    expect(result.byStage['idea-tournament']).toBeUndefined()
+    expect(result.missingStages).toEqual({})
+    expect(deliverKairosSpeak).not.toHaveBeenCalled()
+  })
+
+  it('ignores a malformed carried expectedStages entry', async () => {
+    mockHistory([rollupWithExpected({ 'idea-tournament': { since: 'yesterday', lastSeen: 42 } })], [])
+
+    const result = await computeSynthesisHealth(USER)
+
+    expect(result.missingStages).toEqual({})
+  })
+})
+
 describe('computeSynthesisHealth — 2-strike alert + alertedStages dedupe (T-B3)', () => {
   it('fires exactly one alert the first time a stage crosses 2 consecutive failing nights', async () => {
     mockHistory([], [

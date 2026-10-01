@@ -7,11 +7,12 @@ import { z } from 'zod'
 export const thinkingJobKindSchema = z.enum([
   'aether', 'cortex', 'concept',
   'belief_extract', 'drift_probe', 'mind_compare', 'weekly_review', 'daily_message', 'chat',
+  'idea_generate', 'idea_judge',
 ])
 export const thinkingJobStatusSchema = z.enum(['queued', 'claimed', 'done', 'failed', 'expired', 'fallback'])
 
 export const claimThinkingJobSchema = z.object({
-  kinds: z.array(thinkingJobKindSchema).min(1).max(9).optional(),
+  kinds: z.array(thinkingJobKindSchema).min(1).max(11).optional(),
 })
 
 export const submitThinkingJobSchema = z.object({

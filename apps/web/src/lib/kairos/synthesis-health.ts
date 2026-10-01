@@ -23,12 +23,29 @@ import { deliverKairosSpeak } from './speak'
 // success row. A stage with no row on a night is "no signal" (absent from
 // byStage) — never inferred 'ok'. A cron that has not yet adopted success
 // traces therefore still shows only its failures.
+//
+// Exception — EXPECTED_NIGHTLY_STAGES (P3, docs/kairos/35): a stage that must
+// leave a trace every night it is live. Once armed (seen for this user within
+// EXPECTED_ARM_DAYS, carried forward in the rollup's `expectedStages`), a
+// judged night with no row is marked 'failed' in byStage and listed in
+// `missingStages`, so a tournament that never ran alarms like one that
+// crashed. A night with 0 survivors still writes a success trace → 'ok'.
 // ─────────────────────────────────────────────────────────────────────────
 
 const WINDOW_HOURS = 48
 // Generous: ~15 crons × Dominions × 2 nights of success + failure rows.
 const HISTORY_CAP = 2000
 export const SYNTHESIS_HEALTH_RECIPE = 'SYNTHESIS_HEALTH'
+
+// Stages expected to trace every night once armed. 'idea-tournament' is the
+// cronName of the trace the tournament writes when a night finishes or fails.
+export const EXPECTED_NIGHTLY_STAGES: readonly string[] = ['idea-tournament']
+// Disarm a stage not seen for this long (user lost the feature / key).
+const EXPECTED_ARM_DAYS = 14
+// Today's night is only judged missing once the rollup's normal slot has
+// arrived (08:00Z cron) — an early manual run must not flag a night in flight.
+const EXPECTED_JUDGE_TODAY_FROM_HOUR_UTC = 8
+const DAY_MS = 24 * 60 * 60 * 1000
 
 const RECIPE_STAGE_ALIASES: Record<string, string> = {
   BRIEF: 'briefer',
@@ -41,8 +58,17 @@ export interface SynthesisHealthResult {
   byStage: Record<string, Record<string, StageStatus>>
   alertedStages: string[]
   newlyAlertedStages: string[]
+  // Expected stages with no trace on a judged night: stage → nights.
+  missingStages: Record<string, string[]>
   memoryId: string
   created: boolean
+}
+
+// Carried forward in the rollup: when an expected stage was first armed and
+// last seen (UTC dates).
+export interface ExpectedStageState {
+  since: string
+  lastSeen: string
 }
 
 function utcDate(d: Date): string {
@@ -82,6 +108,59 @@ function extractAlertedStages(metadata: unknown): string[] {
   const raw = asRecord(metadata)?.alertedStages
   if (!Array.isArray(raw)) return []
   return raw.filter((v): v is string => typeof v === 'string')
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+function extractExpectedStages(metadata: unknown): Record<string, ExpectedStageState> {
+  const raw = asRecord(asRecord(metadata)?.expectedStages)
+  const out: Record<string, ExpectedStageState> = {}
+  if (!raw) return out
+  for (const [stage, value] of Object.entries(raw)) {
+    const rec = asRecord(value)
+    const since = rec?.since
+    const lastSeen = rec?.lastSeen
+    if (typeof since === 'string' && ISO_DATE.test(since) && typeof lastSeen === 'string' && ISO_DATE.test(lastSeen)) {
+      out[stage] = { since, lastSeen }
+    }
+  }
+  return out
+}
+
+function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS)
+}
+
+// Mutates byStage: an armed expected stage with no row on a judged night is
+// marked 'failed'. Returns the new carried state and the missing nights.
+function applyExpectedStages(
+  byStage: Record<string, Record<string, StageStatus>>,
+  previous: Record<string, ExpectedStageState>,
+  now: Date,
+): { expectedStages: Record<string, ExpectedStageState>; missingStages: Record<string, string[]> } {
+  const today = utcDate(now)
+  const yesterday = utcDate(new Date(now.getTime() - DAY_MS))
+  const judged = now.getUTCHours() >= EXPECTED_JUDGE_TODAY_FROM_HOUR_UTC ? [yesterday, today] : [yesterday]
+
+  const expectedStages: Record<string, ExpectedStageState> = {}
+  const missingStages: Record<string, string[]> = {}
+  for (const stage of EXPECTED_NIGHTLY_STAGES) {
+    const seen = Object.keys(byStage[stage] ?? {}).sort()
+    const prev = previous[stage]
+    // A stage unseen for longer than the arm window starts a fresh arming.
+    const prevLive = prev && daysBetween(prev.lastSeen, today) <= EXPECTED_ARM_DAYS ? prev : undefined
+    const lastSeen = [prevLive?.lastSeen, seen.at(-1)].filter((d): d is string => !!d).sort().at(-1)
+    const since = prevLive?.since ?? seen[0]
+    if (!lastSeen || !since) continue
+    expectedStages[stage] = { since, lastSeen }
+
+    for (const night of judged) {
+      if (night < since || byStage[stage]?.[night]) continue
+      ;(byStage[stage] ??= {})[night] = 'failed'
+      ;(missingStages[stage] ??= []).push(night)
+    }
+  }
+  return { expectedStages, missingStages }
 }
 
 async function fireTwoStrikeAlert(stages: string[]): Promise<void> {
@@ -136,6 +215,12 @@ export async function computeSynthesisHealth(userId: string): Promise<SynthesisH
     if (stageNights[night] !== 'failed') stageNights[night] = status
   }
 
+  const { expectedStages, missingStages } = applyExpectedStages(
+    byStage,
+    extractExpectedStages(previous[0]?.sourceMetadata),
+    now,
+  )
+
   const failingStages: string[] = []
   for (const [stageKey, nights] of Object.entries(byStage)) {
     const dates = Object.keys(nights).sort().reverse()
@@ -155,12 +240,14 @@ export async function computeSynthesisHealth(userId: string): Promise<SynthesisH
     streamClass: 'trace',
     source: 'system',
     title: `Synthesis health · ${today}`,
-    bodyMd: JSON.stringify({ byStage, alertedStages: failingStages }, null, 2),
+    bodyMd: JSON.stringify({ byStage, alertedStages: failingStages, missingStages }, null, 2),
     sourceMetadata: {
       externalId: `synthesis-health:${today}`,
       recipe: SYNTHESIS_HEALTH_RECIPE,
       byStage,
       alertedStages: failingStages,
+      missingStages,
+      expectedStages,
     },
   })
 
@@ -169,6 +256,7 @@ export async function computeSynthesisHealth(userId: string): Promise<SynthesisH
     byStage,
     alertedStages: failingStages,
     newlyAlertedStages,
+    missingStages,
     memoryId: memory.id,
     created,
   }

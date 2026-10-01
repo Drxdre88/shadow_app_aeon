@@ -1,10 +1,13 @@
 import { listRecentKairosAsks } from '@/lib/data/ask'
+import { BELIEF_DIFF_ROW_CAP, listBeliefDiffOps, type BeliefDiffOpRow } from '@/lib/data/belief-diff'
 import { getLatestMindCompare, listBeliefs } from '@/lib/data/beliefs'
 import { findDominionsByUser, listDominionObjectives } from '@/lib/data/dominions'
+import { listIdeaOutcomes, listSurvivorsSince } from '@/lib/data/ideas'
 import { listPromotedBeliefsBetween } from '@/lib/data/memory-candidates'
 import { listMemoryOps } from '@/lib/data/memory-ops'
 import { findMemoryById, listMemories } from '@/lib/data/memories'
 import { listTraceHistory } from '@/lib/data/recipes'
+import { weeklyIdeaDiversity } from '@/lib/kairos/ideas/diversity'
 import { isoWeekKey, utcDayStart } from '@/lib/kairos/thinking/deadlines'
 
 // Weekly review inputs (docs/kairos/34 §4): a FIXED set of read-only signals
@@ -18,6 +21,12 @@ const MAX_BELIEFS = 20
 const MAX_PROMOTIONS = 5
 const MAX_ASKS = 8
 const MIND_COMPARE_MAX_AGE_DAYS = 14
+// Idea tournament (docs/kairos/35): ≤3 survivors a night → ≤21 a week.
+const MAX_WEEK_SURVIVORS = 21
+const IDEA_LESSON_DAYS = 30
+const MAX_LESSONS_PER_OUTCOME = 8
+// Belief diff (G13): the most significant changes shown, all counted.
+export const MAX_BELIEF_DIFF_CHANGES = 15
 
 export interface WeeklyReviewWindow {
   isoWeek: string
@@ -87,6 +96,70 @@ export interface HealthFailureInput {
   reasons: string[]
 }
 
+export type IdeaWeekOutcome = 'accepted' | 'dismissed' | 'pending'
+
+export interface IdeaSurvivorInput {
+  id: string
+  title: string
+  claim: string
+  direction: string
+  survivedBecause: string | null
+  elo: number | null
+  tournamentDate: string
+  outcome: IdeaWeekOutcome
+}
+
+export interface IdeasWeekInput {
+  survivors: IdeaSurvivorInput[]
+  diversity: { survivors: number; meanDistance: number | null; alarm: boolean } | null
+}
+
+export interface IdeaLessonInput {
+  id: string
+  title: string
+  direction: string
+  claim: string
+}
+
+// G11 "lessons": idea outcomes over the last IDEA_LESSON_DAYS.
+export interface IdeaLessonsInput {
+  days: number
+  accepted: IdeaLessonInput[]
+  dismissed: IdeaLessonInput[]
+  acceptedCount: number
+  dismissedCount: number
+}
+
+export type BeliefDiffKind =
+  | 'created'
+  | 'replaced'
+  | 'retired'
+  | 'reinforced'
+  | 'flagged'
+  | 'cleared'
+  | 'normalised'
+  | 'remapped'
+
+export interface BeliefDiffChange {
+  memoryId: string | null
+  kind: BeliefDiffKind
+  domain: string
+  mind: string | null
+  claim: string
+  reason: string
+  at: string
+}
+
+// G13 belief diff: every belief-ledger change in the window, counted; the
+// MAX_BELIEF_DIFF_CHANGES most significant shown, grouped by domain.
+export interface BeliefDiffInput {
+  total: number
+  counts: Partial<Record<BeliefDiffKind, number>>
+  changes: BeliefDiffChange[]
+  // The op read hit its row cap: counts are a lower bound.
+  truncated: boolean
+}
+
 export interface WeeklyReviewInputs {
   window: WeeklyReviewWindow
   dominions: Array<{ id: string; name: string }>
@@ -98,6 +171,10 @@ export interface WeeklyReviewInputs {
   asks: AskInput[]
   asksAnswered: number
   health: HealthFailureInput[]
+  // Optional so older fixtures stay valid; null/absent = unavailable or empty.
+  ideas?: IdeasWeekInput | null
+  ideaLessons?: IdeaLessonsInput | null
+  beliefDiff?: BeliefDiffInput | null
   // Sources that failed to load (never fatal).
   errors: string[]
 }
@@ -286,6 +363,130 @@ async function gatherHealth(userId: string, w: WeeklyReviewWindow): Promise<Heal
     .sort((a, b) => b.failures - a.failures || (a.cronName < b.cronName ? -1 : 1))
 }
 
+// ── Ideas (docs/kairos/35, G11) ───────────────────────────────────────────
+
+type IdeaOutcomeRows = Awaited<ReturnType<typeof listIdeaOutcomes>>
+
+function survivorOutcome(id: string, status: string, outcomes: ReadonlyMap<string, 'accepted' | 'dismissed'>): IdeaWeekOutcome {
+  const known = outcomes.get(id)
+  if (known) return known
+  if (status === 'accepted' || status === 'promoted') return 'accepted'
+  return status === 'dismissed' ? 'dismissed' : 'pending'
+}
+
+async function gatherIdeasWeek(
+  userId: string,
+  w: WeeklyReviewWindow,
+  outcomes: IdeaOutcomeRows | null,
+  errors: string[],
+): Promise<IdeasWeekInput | null> {
+  const byId = new Map((outcomes ?? []).map((o) => [o.id, o.outcome]))
+  const [rows, diversity] = await Promise.all([
+    listSurvivorsSince(userId, w.start, MAX_WEEK_SURVIVORS),
+    // The last instant of the reviewed week, so the reading is that week's.
+    safe('idea_diversity', errors, null, async () => {
+      const d = await weeklyIdeaDiversity(userId, new Date(w.end.getTime() - 1))
+      return { survivors: d.survivors, meanDistance: d.meanDistance, alarm: d.alarm }
+    }),
+  ])
+  const survivors = rows
+    .filter((r) => inWindow(r.createdAt, w))
+    .map((r) => ({
+      id: r.id,
+      title: r.title,
+      claim: r.claim,
+      direction: r.direction,
+      survivedBecause: r.survivedBecause,
+      elo: r.elo,
+      tournamentDate: r.tournamentDate,
+      outcome: survivorOutcome(r.id, r.status, byId),
+    }))
+  if (survivors.length === 0 && (!diversity || diversity.survivors === 0)) return null
+  return { survivors, diversity }
+}
+
+function ideaLessonsFrom(outcomes: IdeaOutcomeRows | null): IdeaLessonsInput | null {
+  if (!outcomes || outcomes.length === 0) return null
+  const pick = (o: IdeaOutcomeRows[number]): IdeaLessonInput => ({ id: o.id, title: o.title, direction: o.direction, claim: o.claim })
+  const accepted = outcomes.filter((o) => o.outcome === 'accepted')
+  const dismissed = outcomes.filter((o) => o.outcome === 'dismissed')
+  return {
+    days: IDEA_LESSON_DAYS,
+    accepted: accepted.slice(0, MAX_LESSONS_PER_OUTCOME).map(pick),
+    dismissed: dismissed.slice(0, MAX_LESSONS_PER_OUTCOME).map(pick),
+    acceptedCount: accepted.length,
+    dismissedCount: dismissed.length,
+  }
+}
+
+// ── Belief diff (G13) ─────────────────────────────────────────────────────
+
+// How each belief-ledger op reads in the diff (op kinds: engine/types.ts;
+// writers: lib/data/beliefs.ts, engine/steps/recheck.ts, own-mind mirror).
+// null = not a belief change worth showing.
+export function classifyBeliefOp(row: Pick<BeliefDiffOpRow, 'step' | 'op' | 'after'>): BeliefDiffKind | null {
+  const after = row.after ?? {}
+  if (row.step === 'recheck') {
+    if (row.op === 'recheck') return 'flagged'
+    if (row.op === 'retire') return 'retired'
+    if (row.op === 'feedback') return after.normalised === true ? 'normalised' : 'remapped'
+    return null
+  }
+  if (row.op === 'promote') return typeof after.supersedes === 'string' ? 'replaced' : 'created'
+  if (row.op === 'feedback') return after.reaffirmed === true ? 'cleared' : 'reinforced'
+  if (row.op === 'retire' || row.op === 'decay') return 'retired'
+  return null
+}
+
+// Which changes win the MAX_BELIEF_DIFF_CHANGES slots: a changed mind first,
+// bookkeeping last.
+const DIFF_PRIORITY: Record<BeliefDiffKind, number> = {
+  replaced: 0,
+  retired: 1,
+  flagged: 2,
+  created: 3,
+  cleared: 4,
+  reinforced: 5,
+  normalised: 6,
+  remapped: 7,
+}
+
+export function buildBeliefDiff(rows: readonly BeliefDiffOpRow[], truncated: boolean): BeliefDiffInput | null {
+  const counts: Partial<Record<BeliefDiffKind, number>> = {}
+  const all: Array<BeliefDiffChange & { rank: number; seq: number }> = []
+  rows.forEach((r, seq) => {
+    const kind = classifyBeliefOp(r)
+    if (!kind) return
+    counts[kind] = (counts[kind] ?? 0) + 1
+    all.push({
+      memoryId: r.memoryId,
+      kind,
+      domain: str(r.domain) ?? 'general',
+      mind: str(r.mind) ?? str(r.after?.mind),
+      claim: str(r.claim) ?? '(belief no longer readable)',
+      reason: r.reason,
+      at: r.createdAt.toISOString(),
+      rank: DIFF_PRIORITY[kind],
+      seq,
+    })
+  })
+  if (all.length === 0) return null
+  // rows arrive newest first: within a kind, the newest win.
+  const shown = [...all].sort((a, b) => a.rank - b.rank || a.seq - b.seq).slice(0, MAX_BELIEF_DIFF_CHANGES)
+  shown.sort((a, b) => (a.domain < b.domain ? -1 : a.domain > b.domain ? 1 : a.rank - b.rank || a.seq - b.seq))
+  return {
+    total: all.length,
+    counts,
+    changes: shown.map((c) => ({ memoryId: c.memoryId, kind: c.kind, domain: c.domain, mind: c.mind, claim: c.claim, reason: c.reason, at: c.at })),
+    truncated,
+  }
+}
+
+async function gatherBeliefDiff(userId: string, w: WeeklyReviewWindow): Promise<BeliefDiffInput | null> {
+  const rows = await listBeliefDiffOps(userId, w.start, w.end)
+  return buildBeliefDiff(rows, rows.length >= BELIEF_DIFF_ROW_CAP)
+}
+
 export async function gatherWeeklyReviewInputs(userId: string, now: Date): Promise<WeeklyReviewInputs> {
   const window = reviewWindow(now)
   const errors: string[] = []
@@ -293,7 +494,10 @@ export async function gatherWeeklyReviewInputs(userId: string, now: Date): Promi
   const dominions = await safe('dominions', errors, [], async () =>
     (await findDominionsByUser(userId)).filter((d) => !d.archivedAt).map((d) => ({ id: d.id, name: d.name })))
 
-  const [boardPages, objectives, beliefChanges, memoryOps, mindCompare, asks, health] = await Promise.all([
+  // One outcome read (30 days) serves both the week's survivors and the lessons.
+  const outcomes = safe('idea_outcomes', errors, null, () => listIdeaOutcomes(userId, IDEA_LESSON_DAYS))
+
+  const [boardPages, objectives, beliefChanges, memoryOps, mindCompare, asks, health, ideas, ideaLessons, beliefDiff] = await Promise.all([
     safe('board_pages', errors, [], () => gatherBoardPages(userId, window)),
     safe('objectives', errors, [], () => gatherObjectives(userId, dominions, errors)),
     safe('belief_changes', errors, [], () => gatherBeliefChanges(userId, window)),
@@ -301,6 +505,9 @@ export async function gatherWeeklyReviewInputs(userId: string, now: Date): Promi
     safe('mind_compare', errors, null, () => gatherMindCompare(userId, now)),
     safe('asks', errors, { asks: [], answered: 0 }, () => gatherAsks(userId, window, now)),
     safe('health', errors, [], () => gatherHealth(userId, window)),
+    safe('ideas', errors, null, async () => gatherIdeasWeek(userId, window, await outcomes, errors)),
+    outcomes.then(ideaLessonsFrom),
+    safe('belief_diff', errors, null, () => gatherBeliefDiff(userId, window)),
   ])
 
   return {
@@ -314,6 +521,9 @@ export async function gatherWeeklyReviewInputs(userId: string, now: Date): Promi
     asks: asks.asks,
     asksAnswered: asks.answered,
     health,
+    ideas,
+    ideaLessons,
+    beliefDiff,
     errors,
   }
 }
@@ -327,6 +537,9 @@ export function fedMemoryIds(inputs: WeeklyReviewInputs): string[] {
   for (const p of inputs.memoryOps?.promotions ?? []) ids.add(p.memoryId)
   if (inputs.mindCompare) ids.add(inputs.mindCompare.id)
   for (const a of inputs.asks) ids.add(a.id)
+  for (const s of inputs.ideas?.survivors ?? []) ids.add(s.id)
+  for (const l of [...(inputs.ideaLessons?.accepted ?? []), ...(inputs.ideaLessons?.dismissed ?? [])]) ids.add(l.id)
+  for (const c of inputs.beliefDiff?.changes ?? []) if (c.memoryId) ids.add(c.memoryId)
   return [...ids]
 }
 
@@ -337,6 +550,8 @@ export function hasReviewSignal(inputs: WeeklyReviewInputs): boolean {
     inputs.beliefChanges.length > 0 ||
     inputs.memoryOps !== null ||
     inputs.mindCompare !== null ||
-    inputs.asks.length > 0
+    inputs.asks.length > 0 ||
+    (inputs.ideas?.survivors.length ?? 0) > 0 ||
+    (inputs.beliefDiff?.total ?? 0) > 0
   )
 }

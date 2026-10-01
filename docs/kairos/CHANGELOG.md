@@ -2,7 +2,18 @@
 
 Kairos — the AI second brain inside Aeon — is versioned here as its own product, separate from the app-level `CHANGELOG.md`. Versions track **capability eras**, not release trains: each one names what Kairos *became able to do*. Entries 0.1–0.8 were reconstructed retrospectively on 2026-07-24 from the full commit/PR/spec history; from 0.9.0 onward this file is maintained per drop.
 
-Era specs of record live beside this file in `docs/kairos/` (numbered 00–34).
+Era specs of record live beside this file in `docs/kairos/` (numbered 00–35).
+
+## [0.15.0] — 2026-10-01 · "Creativity"
+
+> The raw nightly idea dump gives way to a contest. Kairos drafts ideas in several directions, checks them against evidence, throws out repeats, and compares them head to head; only one to three a night reach the inbox, each with the reason it survived. Spec: `docs/kairos/35-creativity.md`; research `research/kairos_2909/04` §B, `research/kairos_0110/00_verdict.md` §5.
+
+- **Nightly idea tournament** — two thinking jobs after Aether: *generate* picks 4–6 directions and writes 8–16 grounded candidates from Aether tensions, objectives, the board, both minds' beliefs, concepts and the operator's own reflections; *judge* (a separate sceptical reviewer) checks each against its evidence, asks "already known?", votes on pairwise matches asked in both orders, and may sharpen the top two. Elo picks up to 3 survivors. Runs on the Max routine or the hourly paid fallback.
+- **No repeats** — every candidate is archived with its embedding; a new one too close (≥ 0.88) to a past idea, pending proposal or held belief is dropped, 0.80–0.88 must prove it is meaningfully different.
+- **Survivors stay humble** — they are Kairos-origin inbox proposals, never beliefs; they still need your or your board's backing before they can reach his own mind.
+- **Learns from you** — accepting or dismissing an idea is recorded; the next night's generator sees what you kept and what you threw away.
+- **Where you see it** — idea cards lead the inbox (claim, why, next step, why it survived); the 08:00 message has an "Idea of the day"; the Monday review shows the week's ideas, lessons, a diversity reading ("ideas are getting samey") and a belief diff (what Kairos changed his mind about, and why).
+- **Old dump on a switch** — `KAIROS_RAW_INTROSPECTION=0` retires the raw introspection proposals; it stays on until the tournament has two clean weeks. The health check now expects an `idea-tournament` trace every night.
 
 ## [0.14.0] — 2026-10-01 · "Ground and Protect"
 

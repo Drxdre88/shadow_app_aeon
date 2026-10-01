@@ -43,7 +43,11 @@ import { getThinkingHandlers } from './registry'
 // planned in the same pass (aether waits on open cortex jobs).
 const PLAN_ORDER: ThinkingJobKind[] = [
   'cortex', 'concept', 'aether',
-  'belief_extract', 'drift_probe', 'mind_compare', 'weekly_review', 'daily_message', 'chat',
+  'belief_extract', 'drift_probe', 'mind_compare', 'weekly_review',
+  // Idea tournament after aether (its tensions feed generation); judge after
+  // generate. Both before the daily message, which shows the idea of the day.
+  'idea_generate', 'idea_judge',
+  'daily_message', 'chat',
 ]
 
 // Kinds whose handler.fallback does real work (a paid heavy-tier model call),
@@ -52,6 +56,7 @@ const PLAN_ORDER: ThinkingJobKind[] = [
 // kinds releases the job to the sweep instead of failing it.
 export const SWEEP_FALLBACK_KINDS: readonly ThinkingJobKind[] = [
   'concept', 'belief_extract', 'drift_probe', 'mind_compare', 'weekly_review',
+  'idea_generate', 'idea_judge',
 ]
 
 // Who covers a job the routine did not complete — used in error texts.
@@ -65,6 +70,8 @@ const FALLBACK_OWNER: Record<ThinkingJobKind, string> = {
   weekly_review: 'the hourly thinking-sweep API fallback',
   daily_message: 'the 08:00 Europe/London daily-message cron',
   chat: 'the Telegram watchdog paid-key reply',
+  idea_generate: 'the hourly thinking-sweep API fallback',
+  idea_judge: 'the hourly thinking-sweep API fallback',
 }
 
 // Kinds the hourly sweep never plans: concept clustering is heavy and is

@@ -7,6 +7,8 @@ import { listBoardDayPages } from '@/lib/data/board-feed'
 import { listPromotedBeliefsBetween } from '@/lib/data/memory-candidates'
 import { listTraceHistory } from '@/lib/data/recipes'
 import { findLatestConscienceRun } from '@/lib/data/constitution-drift'
+import { listSurvivorsSince } from '@/lib/data/ideas'
+import { weeklyIdeaDiversity } from './ideas/diversity'
 import { getLatestDriftStatus } from './constitution/amendment'
 import { conscienceFailureLine, readStoredConscience } from './constitution/conscience-probes'
 import { SYNTHESIS_HEALTH_RECIPE } from './synthesis-health'
@@ -22,6 +24,7 @@ import {
   type BriefDigest,
   type DailyMessageInputs,
   type DriftDigest,
+  type IdeaOfTheDay,
   type SynthesisSnapshot,
 } from './daily-message-prompt'
 
@@ -200,6 +203,28 @@ async function readMindCompare(userId: string, now: Date): Promise<string | null
   return text ? clipLine(text) : null
 }
 
+// Idea tournament survivors since the previous message window (docs/kairos/35).
+// One read of up to 3 survivors (highest Elo first); only those still pending
+// in the inbox count: the first is the idea of the day, the rest "waiting".
+const IDEA_PEEK = 3
+
+async function readIdeaOfTheDay(userId: string, since: Date): Promise<IdeaOfTheDay | null> {
+  const rows = (await listSurvivorsSince(userId, since, IDEA_PEEK)).filter((r) => r.status === 'pending')
+  const top = rows[0]
+  if (!top) return null
+  const title = clipLine(top.title || top.claim)
+  return {
+    title,
+    claim: clipLine(top.claim || top.title),
+    survivedBecause: top.survivedBecause?.trim() ? clipLine(top.survivedBecause) : null,
+    othersWaiting: rows.length - 1,
+  }
+}
+
+async function readIdeaDiversityAlarm(userId: string, now: Date): Promise<boolean> {
+  return (await weeklyIdeaDiversity(userId, now)).alarm === true
+}
+
 async function safe<T>(name: string, failed: string[], fn: () => Promise<T>): Promise<T | null> {
   try {
     return await fn()
@@ -215,7 +240,7 @@ export async function gatherDailyMessageInputs(userId: string, now: Date): Promi
   const since = new Date(now.getTime() - DAY_MS)
   const isMonday = isLondonMonday(now)
   const failed: string[] = []
-  const [briefs, aether, boardDay, promotions, newBeliefs, drift, pendingAsk, synthesis, mindCompare] = await Promise.all([
+  const [briefs, aether, boardDay, promotions, newBeliefs, drift, pendingAsk, synthesis, mindCompare, idea, ideaDiversityAlarm] = await Promise.all([
     safe('briefs', failed, () => readTodayBriefs(userId, date)),
     safe('aether', failed, () => readAether(userId)),
     safe('boardDay', failed, () => readBoardDay(userId, date)),
@@ -225,7 +250,9 @@ export async function gatherDailyMessageInputs(userId: string, now: Date): Promi
     safe('pendingAsk', failed, () => readPendingAsk(userId)),
     safe('synthesis', failed, () => readSynthesis(userId, date)),
     isMonday ? safe('mindCompare', failed, () => readMindCompare(userId, now)) : Promise.resolve(null),
+    safe('idea', failed, () => readIdeaOfTheDay(userId, since)),
+    safe('ideaDiversity', failed, () => readIdeaDiversityAlarm(userId, now)),
   ])
   failed.sort()
-  return { date, isMonday, briefs, aether, boardDay, promotions, newBeliefs, drift, pendingAsk, synthesis, mindCompare, failed }
+  return { date, isMonday, briefs, aether, boardDay, promotions, newBeliefs, drift, pendingAsk, synthesis, mindCompare, idea, ideaDiversityAlarm, failed }
 }

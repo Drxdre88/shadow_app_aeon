@@ -168,6 +168,29 @@ describe('runDailyMessageForUser', () => {
     expect(ask).toHaveBeenCalledTimes(1)
   })
 
+  it('adds the idea of the day to a routine draft written before the tournament finished', async () => {
+    selectQueue.push([{ n: 0 }])
+    vi.mocked(gatherDailyMessageInputs).mockResolvedValue({
+      ...INPUTS,
+      idea: { title: 'Cut the PPA scope', claim: 'Cut it', survivedBecause: 'backed by 3 board pages', othersWaiting: 1 },
+    })
+    vi.mocked(listJobs).mockResolvedValue([job()])
+    expect(await runDailyMessageForUser(USER, { now: NOW })).toMatchObject({ source: 'routine' })
+    const sent = vi.mocked(deliverKairosSpeak).mock.calls[0][1].message
+    expect(sent).toContain('**Today** routine draft.\n\nIdea of the day: Cut the PPA scope — survived because backed by 3 board pages (1 more in your inbox).')
+  })
+
+  it('does not repeat the idea when the routine draft already names it', async () => {
+    selectQueue.push([{ n: 0 }])
+    vi.mocked(gatherDailyMessageInputs).mockResolvedValue({
+      ...INPUTS,
+      idea: { title: 'Cut the PPA scope', claim: 'Cut it', survivedBecause: null, othersWaiting: 0 },
+    })
+    vi.mocked(listJobs).mockResolvedValue([job({ output: { draft: '**Today** Idea: cut the PPA scope first.' } })])
+    await runDailyMessageForUser(USER, { now: NOW })
+    expect(vi.mocked(deliverKairosSpeak).mock.calls[0][1].message).not.toContain('Idea of the day')
+  })
+
   it('the paid compose sends the conscience block after the facts, system prompt unchanged', async () => {
     selectQueue.push([{ n: 0 }])
     vi.mocked(loadConscienceBlock).mockResolvedValue('## Conscience (reference data)\n1. Rest on Sundays')

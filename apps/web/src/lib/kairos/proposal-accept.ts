@@ -10,7 +10,9 @@ import type { InboxResolution } from '@/lib/data/inbox'
 import type { AcceptProposalInput } from '@/lib/data/validators/memory'
 import { applyAcceptedConstitutionAmendment } from './constitution/amendment'
 import { CONSTITUTION_PROPOSAL_KIND } from './constitution/schema'
+import { IDEA_PROPOSAL_KIND, type IdeaOutcome } from './ideas/types'
 import { reactOutcome, reactUsed } from './reactions'
+import { recordIdeaOutcome } from '@/lib/data/ideas'
 
 // Proposal triage — the operator gate in propose-not-commit (docs/kairos/32 §2,
 // docs/kairos/34 §2). Business orchestration over the pure lib/data writes:
@@ -22,6 +24,18 @@ import { reactOutcome, reactUsed } from './reactions'
 //     'feedback' op, then an immediate rescore). Reactions are best-effort and
 //     run after the accept committed, so they never fail it.
 // Every accept surface (inbox action, Telegram, MCP, REST) calls this.
+//
+// Idea-tournament survivors (sourceMetadata.kind 'idea', docs/kairos/35) also
+// get their outcome stamped (recordIdeaOutcome) after the reactions, so the
+// weekly review can learn from accepted vs dismissed ideas. Best-effort.
+
+async function groundIdeaOutcome(userId: string, memoryId: string, outcome: IdeaOutcome): Promise<void> {
+  try {
+    await recordIdeaOutcome(userId, memoryId, outcome)
+  } catch (err) {
+    console.error('[kairos-inbox] failed to record idea outcome', err)
+  }
+}
 
 export async function acceptKairosProposal(
   memoryId: string,
@@ -49,6 +63,8 @@ export async function acceptKairosProposal(
   if (result?.ok) {
     await reactOutcome(userId, memoryId, 'positive', 'proposal accepted')
     await reactUsed(userId, [memoryId], 'proposal accepted')
+    // `meta` was read before the accept mutated the row.
+    if (proposal.type === 'inbound' && meta.kind === IDEA_PROPOSAL_KIND) await groundIdeaOutcome(userId, memoryId, 'accepted')
   }
   return result
 }
@@ -80,6 +96,7 @@ export async function dismissInboxMemory(userId: string, memoryId: string): Prom
     // Dismissing a proposal is an operator veto: Outcome negative + a
     // 'feedback' op (docs/kairos/32 §2). Best-effort, never fails dismiss.
     await reactOutcome(userId, memoryId, 'negative', 'proposal dismissed')
+    if (metadata.kind === IDEA_PROPOSAL_KIND) await groundIdeaOutcome(userId, memoryId, 'dismissed')
   }
   return { ok: true, id: archived.id }
 }

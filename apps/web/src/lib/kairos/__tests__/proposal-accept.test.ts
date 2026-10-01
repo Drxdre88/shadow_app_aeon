@@ -21,7 +21,12 @@ vi.mock('../reactions', () => ({
   reactUsed: vi.fn(async () => undefined),
 }))
 
+vi.mock('@/lib/data/ideas', () => ({
+  recordIdeaOutcome: vi.fn(async () => true),
+}))
+
 import { acceptProposal, archiveMemory, findMemoryById, markKairosSpeaksReplied } from '@/lib/data/memories'
+import { recordIdeaOutcome } from '@/lib/data/ideas'
 import { applyAcceptedConstitutionAmendment } from '../constitution/amendment'
 import { reactOutcome, reactUsed } from '../reactions'
 import { acceptInboxProposal, acceptKairosProposal, dismissInboxMemory } from '../proposal-accept'
@@ -247,5 +252,60 @@ describe('acceptInboxProposal', () => {
   it('maps a missing memory to not_found', async () => {
     vi.mocked(acceptProposal).mockResolvedValue(null)
     await expect(acceptInboxProposal(USER_ID, 'mem-1')).resolves.toEqual({ ok: false, reason: 'not_found' })
+  })
+})
+
+describe('idea proposals — outcome grounding (docs/kairos/35)', () => {
+  const ideaProposal = () => foundMemory({
+    id: PROPOSAL_ID,
+    sourceMetadata: { introspection: true, kind: 'idea', status: 'pending', idea: { claim: 'c' } },
+  })
+
+  it('records accepted after the accept and its reactions', async () => {
+    vi.mocked(findMemoryById).mockResolvedValueOnce(ideaProposal())
+    vi.mocked(acceptProposal).mockResolvedValue({ ok: true, memory: foundMemory({ id: PROPOSAL_ID, type: 'belief' }) as never })
+
+    await expect(acceptInboxProposal(USER_ID, PROPOSAL_ID)).resolves.toEqual({ ok: true, id: PROPOSAL_ID })
+    expect(recordIdeaOutcome).toHaveBeenCalledWith(USER_ID, PROPOSAL_ID, 'accepted')
+    expect(vi.mocked(recordIdeaOutcome).mock.invocationCallOrder[0])
+      .toBeGreaterThan(vi.mocked(reactUsed).mock.invocationCallOrder[0])
+  })
+
+  it('records dismissed after the negative reaction', async () => {
+    vi.mocked(findMemoryById).mockResolvedValue(ideaProposal())
+    vi.mocked(archiveMemory).mockResolvedValue(foundMemory({ id: PROPOSAL_ID, archivedAt: new Date() }))
+
+    await expect(dismissInboxMemory(USER_ID, PROPOSAL_ID)).resolves.toEqual({ ok: true, id: PROPOSAL_ID })
+    expect(recordIdeaOutcome).toHaveBeenCalledWith(USER_ID, PROPOSAL_ID, 'dismissed')
+    expect(vi.mocked(recordIdeaOutcome).mock.invocationCallOrder[0])
+      .toBeGreaterThan(vi.mocked(reactOutcome).mock.invocationCallOrder[0])
+  })
+
+  it('never fails the accept or dismiss when recording throws', async () => {
+    vi.mocked(recordIdeaOutcome).mockRejectedValue(new Error('db down'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(findMemoryById).mockResolvedValue(ideaProposal())
+    vi.mocked(acceptProposal).mockResolvedValue({ ok: true, memory: foundMemory({ id: PROPOSAL_ID }) as never })
+    vi.mocked(archiveMemory).mockResolvedValue(foundMemory({ id: PROPOSAL_ID, archivedAt: new Date() }))
+
+    await expect(acceptInboxProposal(USER_ID, PROPOSAL_ID)).resolves.toEqual({ ok: true, id: PROPOSAL_ID })
+    await expect(dismissInboxMemory(USER_ID, PROPOSAL_ID)).resolves.toEqual({ ok: true, id: PROPOSAL_ID })
+    expect(recordIdeaOutcome).toHaveBeenCalledTimes(2)
+    errorSpy.mockRestore()
+    vi.mocked(recordIdeaOutcome).mockResolvedValue(true)
+  })
+
+  it('records nothing for a failed accept or for non-idea proposals', async () => {
+    vi.mocked(findMemoryById).mockResolvedValueOnce(ideaProposal())
+    vi.mocked(acceptProposal).mockResolvedValueOnce({ ok: false, reason: 'not_a_proposal' })
+    await acceptInboxProposal(USER_ID, PROPOSAL_ID)
+
+    vi.mocked(findMemoryById).mockResolvedValue(foundMemory({ sourceMetadata: { introspection: true, kind: 'reflection', status: 'pending' } }))
+    vi.mocked(acceptProposal).mockResolvedValue({ ok: true, memory: foundMemory() as never })
+    vi.mocked(archiveMemory).mockResolvedValue(foundMemory({ archivedAt: new Date() }))
+    await acceptInboxProposal(USER_ID, 'mem-1')
+    await dismissInboxMemory(USER_ID, 'mem-1')
+
+    expect(recordIdeaOutcome).not.toHaveBeenCalled()
   })
 })
