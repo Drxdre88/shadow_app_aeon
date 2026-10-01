@@ -2,6 +2,8 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
 import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
+import { findMemoryOriginKinds } from '@/lib/data/memories'
+import { derivedOriginKind } from './origin'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import {
@@ -193,6 +195,12 @@ export async function runIntrospectionForDominion(
   }
 
   const now = new Date()
+  // P2.5: a proposal is Kairos's own thought over its input pool, so it takes
+  // the lowest-trust origin in that pool — external content in → 'external'.
+  const origin = {
+    kind: derivedOriginKind(await findMemoryOriginKinds(userId, ctx.recentMemories.map((m) => m.id))),
+    via: 'cron:introspection',
+  }
   const rows = proposals.map((p) => ({
     userId,
     dominionId,
@@ -211,6 +219,7 @@ export async function runIntrospectionForDominion(
       citations: p.citations,
       runId,
       status: 'pending',
+      origin,
     },
     // Provenance: every proposal links to the memories it was derived from, so
     // the graph shows the evidence trail and the operator can trace the claim.

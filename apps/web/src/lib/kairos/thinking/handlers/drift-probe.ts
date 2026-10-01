@@ -1,10 +1,29 @@
 import { z } from 'zod'
 import { listBeliefs } from '@/lib/data/beliefs'
-import { findDriftObservation, insertDriftObservation } from '@/lib/data/constitution-drift'
+import {
+  findDriftObservation,
+  insertDriftObservation,
+  listHeldBeliefsForAudit,
+  listProvenanceOrigins,
+  writeDriftRunSection,
+} from '@/lib/data/constitution-drift'
 import { hasJobWithKeyLike } from '@/lib/data/thinking-jobs'
 import { alreadyRanToday as aetherRanToday } from '@/lib/kairos/aether'
 import { activeEmbeddingModel, embedTexts } from '@/lib/kairos/embeddings'
 import { getLiveConstitution } from '@/lib/kairos/constitution/amendment'
+import {
+  CONSCIENCE_MAX_OUTPUT_TOKENS,
+  CONSCIENCE_SYSTEM_PROMPT,
+  auditLaundering,
+  buildConsciencePrompt,
+  conscienceFailureLine,
+  conscienceMarkdown,
+  parseConscienceAnswers,
+  scoreConscience,
+  selectContradictionPairs,
+  type ConscienceAnswers,
+} from '@/lib/kairos/constitution/conscience-probes'
+import type { LiveConstitution } from '@/lib/kairos/constitution/schema'
 import {
   compareToBaseline,
   isPackedVector,
@@ -39,6 +58,13 @@ import { errorReason } from './_errors'
 // version (per embedding model — vectors from different models are not
 // comparable) pins the baseline, every later night stores a drift_run with
 // per-probe cosine vs the baseline and the §2 alert. fallback: paid heavy call.
+//
+// The same plan also queues ONE conscience-checks job per day (P2.5 G9,
+// constitution/conscience-probes.ts) — a separate call, so the drift answers
+// and baseline vectors never see it. It runs without a constitution as long
+// as the user holds beliefs; its result is merged into the day's drift_run as
+// sourceMetadata.conscience. An unparseable answer is recorded as 'unparsed'
+// (no repair round-trip), never a failed job.
 
 export const DRIFT_PROBE_KIND = 'drift_probe' as const
 export const DRIFT_JOB_DEADLINE_MINUTES = 120
@@ -48,6 +74,7 @@ export const DRIFT_BELIEF_LIMIT = 20
 export const driftJobKey = (day: string) => `drift_probe:${day}`
 export const driftRunKey = (day: string) => `drift_run:${day}`
 export const driftBaselineKey = (constitutionId: string, model: string) => `drift_baseline:${constitutionId}:${model}`
+export const conscienceJobKey = (day: string) => `drift_probe:${day}:conscience`
 
 const contextSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -57,31 +84,62 @@ const contextSchema = z.object({
 
 type DriftJobContext = z.infer<typeof contextSchema>
 
+const conscienceContextSchema = z.object({
+  mode: z.literal('conscience'),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  pairs: z.array(z.object({ key: z.string(), a: z.string(), b: z.string(), sim: z.number() })),
+  laundering: z.object({
+    externalInBeliefs: z.number().int().min(0),
+    operatorWithoutOperatorSource: z.number().int().min(0),
+    externalIds: z.array(z.string()),
+    operatorIds: z.array(z.string()),
+  }),
+})
+
+type ConscienceJobContext = z.infer<typeof conscienceContextSchema>
+
 function readContext(job: ThinkingJobRow): DriftJobContext | null {
   const parsed = contextSchema.safeParse(job.input?.context)
   return parsed.success ? parsed.data : null
 }
 
+function readConscienceContext(job: ThinkingJobRow): ConscienceJobContext | null {
+  const parsed = conscienceContextSchema.safeParse(job.input?.context)
+  return parsed.success ? parsed.data : null
+}
+
 export async function planDriftProbe(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
   const day = utcDay(now)
-  const key = driftJobKey(day)
-  if (await hasJobWithKeyLike(userId, DRIFT_PROBE_KIND, key)) return []
+  const [driftPlanned, consciencePlanned] = await Promise.all([
+    hasJobWithKeyLike(userId, DRIFT_PROBE_KIND, driftJobKey(day)),
+    hasJobWithKeyLike(userId, DRIFT_PROBE_KIND, conscienceJobKey(day)),
+  ])
+  if (driftPlanned && consciencePlanned) return []
 
   const live = await getLiveConstitution(userId)
-  if (!live) return []
 
   const afterCutoff = now.getTime() >= deadlineOn(now, DRIFT_NOT_BEFORE_UTC).getTime()
   if (!afterCutoff && !(await aetherRanToday(userId))) return []
 
+  const specs: ThinkingJobSpec[] = []
+  if (!driftPlanned && live) specs.push(await driftSpec(userId, day, live))
+  if (!consciencePlanned) {
+    const spec = await conscienceSpec(userId, day, live)
+    if (spec) specs.push(spec)
+  }
+  return specs
+}
+
+async function driftSpec(userId: string, day: string, live: LiveConstitution): Promise<ThinkingJobSpec> {
   // Held beliefs of either mind, weightiest first.
   const beliefs: DriftBelief[] = (await listBeliefs(userId, { status: 'held', rank: 'standing', limit: DRIFT_BELIEF_LIMIT }))
     .map((b) => ({ mind: b.mind, domain: b.domain, claim: b.claim }))
 
   const context: DriftJobContext = { date: day, constitutionId: live.id, version: live.version }
-  return [{
+  return {
     kind: DRIFT_PROBE_KIND,
     dominionId: null,
-    externalKey: key,
+    externalKey: driftJobKey(day),
     deadlineMinutes: DRIFT_JOB_DEADLINE_MINUTES,
     input: {
       system: DRIFT_PROBE_SYSTEM_PROMPT,
@@ -90,7 +148,33 @@ export async function planDriftProbe(userId: string, now: Date): Promise<Thinkin
       context,
       maxOutputTokens: DRIFT_MAX_OUTPUT_TOKENS,
     },
-  }]
+  }
+}
+
+// Nothing of Kairos to check yet (no constitution, no held belief): skip.
+async function conscienceSpec(userId: string, day: string, live: LiveConstitution | null): Promise<ThinkingJobSpec | null> {
+  const beliefs = await listHeldBeliefsForAudit(userId)
+  if (!live && beliefs.length === 0) return null
+  const pairs = selectContradictionPairs(beliefs)
+  const origins = await listProvenanceOrigins(userId, beliefs.flatMap((b) => b.provenance))
+  const claims = new Map(beliefs.map((b) => [b.id, b.claim]))
+  const context: ConscienceJobContext = { mode: 'conscience', date: day, pairs, laundering: auditLaundering(beliefs, origins) }
+  return {
+    kind: DRIFT_PROBE_KIND,
+    dominionId: null,
+    externalKey: conscienceJobKey(day),
+    deadlineMinutes: DRIFT_JOB_DEADLINE_MINUTES,
+    input: {
+      system: CONSCIENCE_SYSTEM_PROMPT,
+      prompt: buildConsciencePrompt({
+        constitution: live ? { version: live.version, principles: live.principles } : null,
+        pairs: pairs.map((p) => ({ ...p, claimA: claims.get(p.a) ?? '', claimB: claims.get(p.b) ?? '' })),
+      }),
+      validMemoryIds: [],
+      context,
+      maxOutputTokens: CONSCIENCE_MAX_OUTPUT_TOKENS,
+    },
+  }
 }
 
 function answersMarkdown(answers: readonly ProbeAnswer[], sims?: ReadonlyMap<string, number>): string {
@@ -130,7 +214,7 @@ async function persistDrift(
   }
   const runKey = driftRunKey(ctx.date)
   const done = await findDriftObservation(job.userId, 'drift_run', runKey)
-  if (done) return { ok: true, memoryIds: [done.id] }
+  if (done?.sourceMetadata.drift) return { ok: true, memoryIds: [done.id] }
 
   const model = activeEmbeddingModel()
   let vectors: number[][] | null
@@ -172,13 +256,13 @@ async function persistDrift(
   if (!cmp) return { ok: false, reason: 'baseline has no probes in common with tonight\'s answers' }
   const sims = new Map(cmp.perProbe.map((p) => [p.probeId, p.sim]))
   const summary = runSummary(ctx.date, live.version, cmp)
-  const res = await insertDriftObservation(job.userId, {
-    kind: 'drift_run',
+  const res = await writeDriftRunSection(job.userId, {
     externalKey: runKey,
+    section: 'drift',
     title: summary,
     bodyMd: `# ${summary}\n\n${answersMarkdown(answers, sims)}`,
     summary,
-    sourceMetadata: {
+    patch: {
       drift: {
         date: ctx.date,
         version: live.version,
@@ -198,11 +282,34 @@ async function persistDrift(
   return { ok: true, memoryIds: [res.memoryId] }
 }
 
+async function persistConscience(
+  job: ThinkingJobRow,
+  ctx: ConscienceJobContext,
+  answers: ConscienceAnswers | null,
+  answeredBy: ThinkingAnsweredBy,
+): Promise<ApplyOutcome> {
+  const result = scoreConscience(answers, ctx.pairs, ctx.laundering)
+  const line = conscienceFailureLine(result) ?? 'conscience checks: all passed'
+  const res = await writeDriftRunSection(job.userId, {
+    externalKey: driftRunKey(ctx.date),
+    section: 'conscience',
+    title: `Conscience ${ctx.date}`,
+    bodyMd: conscienceMarkdown(ctx.date, result),
+    summary: `Conscience ${ctx.date} · ${line}`,
+    patch: { conscience: { ...result, date: ctx.date, jobId: job.id, answeredBy } },
+  })
+  return { ok: true, memoryIds: [res.memoryId] }
+}
+
+const pairKeys = (ctx: ConscienceJobContext) => ctx.pairs.map((p) => p.key)
+
 export async function applyDriftProbe(
   job: ThinkingJobRow,
   text: string,
   answeredBy: ThinkingAnsweredBy,
 ): Promise<ApplyOutcome> {
+  const conscience = readConscienceContext(job)
+  if (conscience) return persistConscience(job, conscience, parseConscienceAnswers(text, pairKeys(conscience)), answeredBy)
   const ctx = readContext(job)
   if (!ctx) return { ok: false, reason: 'bad_job: invalid drift probe context' }
   let answers: ProbeAnswer[]
@@ -214,7 +321,21 @@ export async function applyDriftProbe(
   return persistDrift(job, ctx, answers, answeredBy)
 }
 
+// One paid call; the parse never throws, so there is no repair round-trip.
+async function fallbackConscience(job: ThinkingJobRow, ctx: ConscienceJobContext): Promise<ApplyOutcome> {
+  const res = await askPaidAndParse(job, {
+    parse: (text) => parseConscienceAnswers(text, pairKeys(ctx)),
+    label: 'conscience checks',
+    maxTokens: job.input.maxOutputTokens ?? CONSCIENCE_MAX_OUTPUT_TOKENS,
+    repairContext: '',
+  })
+  if (!res.ok) return res
+  return persistConscience(job, ctx, res.value, 'api')
+}
+
 export async function fallbackDriftProbe(job: ThinkingJobRow): Promise<ApplyOutcome> {
+  const conscience = readConscienceContext(job)
+  if (conscience) return fallbackConscience(job, conscience)
   const ctx = readContext(job)
   if (!ctx) return { ok: false, reason: 'bad_job: invalid drift probe context' }
   const res = await askPaidAndParse(job, {

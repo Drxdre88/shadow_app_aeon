@@ -16,6 +16,9 @@ import type { StreamClass } from './streamClass'
 
 const AGENT_SESSION_SOURCES: ReadonlySet<string> = new Set(['claude', 'codex', 'copilot', 'hook'])
 const MACHINE_SOURCES: ReadonlySet<string> = new Set(['cron', 'import'])
+// P2.5: ingested third-party content is never the operator's reflection, so
+// type 'reflection' alone doesn't earn the reflection stream (and its prior).
+const EXTERNAL_SOURCES: ReadonlySet<string> = new Set(['import', 'webhook'])
 
 function sessionMeta(sourceMetadata: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
   const session = sourceMetadata?.session
@@ -30,7 +33,7 @@ export function defaultStreamClass(
   type: MemoryType | string,
   sourceMetadata?: Record<string, unknown> | null,
 ): StreamClass | undefined {
-  if (type === 'reflection') return 'reflection'
+  if (type === 'reflection' && !EXTERNAL_SOURCES.has(source)) return 'reflection'
 
   if (type === 'session_summary' && AGENT_SESSION_SOURCES.has(source)) {
     // A Hangar mission's CLI transcript row: the events route already writes

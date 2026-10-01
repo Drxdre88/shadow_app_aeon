@@ -3,6 +3,7 @@ import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from 
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
 import { listMemories as _listMemories, createMemory as _createMemory, getGraphForUser as _getGraphForUser } from '@/lib/data/memories'
 import { createMemorySchema } from '@/lib/data/validators'
+import type { Origin } from '@/lib/kairos/origin'
 
 // Give DB-bound handlers headroom above the 8s pool-acquire timeout so a hung
 // connection surfaces as a caught 503, never a silent function-kill.
@@ -59,7 +60,13 @@ export const POST = withRateLimit(
     const parsed = createMemorySchema.safeParse(body)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
-    const memory = await _createMemory(result.id, parsed.data)
+    // P2.5 origin, fixed by the auth mode (authenticateRequest only reads the
+    // session cookie when no Bearer header is sent): a bearer client is an
+    // agent, a cookie session is the owner.
+    const origin: Origin = request.headers.get('authorization')?.startsWith('Bearer ')
+      ? { kind: 'agent', via: 'rest' }
+      : { kind: 'operator', via: 'rest-session' }
+    const memory = await _createMemory(result.id, parsed.data, { origin })
     return jsonData(memory, 201)
   }),
   API_WRITE_LIMIT

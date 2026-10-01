@@ -84,7 +84,7 @@ describe('POST /api/v1/memories/[id]/accept — constitution amendments', () => 
     findMemoryById.mockResolvedValue(amendment)
     const res = await accept()
     expect(res.status).toBe(200)
-    expect(acceptProposal).toHaveBeenCalledWith(PROPOSAL_ID, 'user-1', expect.any(Object))
+    expect(acceptProposal).toHaveBeenCalledWith(PROPOSAL_ID, 'user-1', expect.any(Object), { origin: { kind: 'operator', via: 'rest-session' } })
   })
 
   it('still lets a Bearer caller accept other proposal kinds', async () => {
@@ -92,6 +92,8 @@ describe('POST /api/v1/memories/[id]/accept — constitution amendments', () => 
     const res = await accept({ authorization: 'Bearer aeon_k1_apikey' })
     expect(res.status).toBe(200)
     expect(acceptProposal).toHaveBeenCalledTimes(1)
+    // A bearer accept is an AI client's, not the operator's endorsement.
+    expect(vi.mocked(acceptProposal).mock.calls[0][3]).toEqual({ origin: { kind: 'agent', via: 'rest' } })
   })
 
   it('falls through to the normal 404 when the memory does not exist', async () => {

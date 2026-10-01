@@ -48,6 +48,8 @@ vi.mock('@/lib/kairos/chat-recency-context', () => ({
   renderRecentActivitySection: vi.fn(),
 }))
 
+vi.mock('@/lib/kairos/conscience-context', () => ({ loadConscienceBlock: vi.fn(async () => '') }))
+
 vi.mock('@/lib/ai/route-task', () => ({ getProviderForTask: vi.fn() }))
 
 vi.mock('@/lib/ai/router', () => ({
@@ -70,6 +72,7 @@ import { getProviderForTask } from '@/lib/ai/route-task'
 import { retrieveForChatGlobal } from '@/lib/kairos/chat-retrieval'
 import { matchProjectsInMessage } from '@/lib/kairos/chat-board-context'
 import { fetchRecentActivityContext } from '@/lib/kairos/chat-recency-context'
+import { loadConscienceBlock } from '@/lib/kairos/conscience-context'
 import type { ThinkingJobRow } from '@/lib/kairos/engine/types'
 import {
   buildAssistantTurn,
@@ -151,6 +154,17 @@ describe('buildAssistantTurn', () => {
       retrievalMeta: { cortex: { id: CORTEX_ID, title: 'Hydra cortex' } },
     })
     expect(JSON.parse(JSON.stringify(turn.citationsContext))).toEqual(turn.citationsContext)
+  })
+
+  it('carries the conscience block in the system prompt (paid and routine paths share it)', async () => {
+    vi.mocked(loadConscienceBlock).mockResolvedValueOnce('## Conscience (reference data)\n1. Rest on Sundays')
+    const built = await buildAssistantTurn(USER_ID, THREAD_ID, {
+      dominionId: null, userBody: 'status of hydra?', userSeq: 1, surface: 'telegram',
+    })
+    if (!built.ok) throw new Error('build failed')
+    expect(loadConscienceBlock).toHaveBeenCalledWith(USER_ID, { dominionId: null })
+    expect(built.turn.system).toContain('1. Rest on Sundays')
+    expect(built.turn.system.indexOf('## Conscience')).toBeLessThan(built.turn.system.indexOf('Style:'))
   })
 })
 

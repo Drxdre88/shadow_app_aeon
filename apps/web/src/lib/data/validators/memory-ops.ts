@@ -14,6 +14,9 @@ export const MEMORY_OP_KINDS = [
   'concept_update',
   'feedback',
   'revert',
+  // P2.5 belief re-check cascade (engine step 'recheck', belief_extract retire).
+  'recheck',
+  'retire',
 ] as const
 
 export const memoryOpKindSchema = z.enum(MEMORY_OP_KINDS)

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { hasJobWithKeyLike } from '@/lib/data/thinking-jobs'
 import { captureMemory } from '@/lib/data/memories'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { loadConscienceBlock } from '@/lib/kairos/conscience-context'
 import { deliverKairosSpeak } from '@/lib/kairos/speak'
 import {
   fedMemoryIds,
@@ -75,6 +76,8 @@ async function planWeeklyReview(userId: string, now: Date): Promise<ThinkingJobS
 
   const inputs = await gatherWeeklyReviewInputs(userId, now)
   if (!hasReviewSignal(inputs)) return []
+  // The paid fallback re-sends job.input.prompt, so both paths get this block.
+  const conscience = await loadConscienceBlock(userId)
 
   const context: WeeklyReviewJobContext = {
     isoWeek,
@@ -90,7 +93,7 @@ async function planWeeklyReview(userId: string, now: Date): Promise<ThinkingJobS
     deadlineMinutes: WEEKLY_REVIEW_DEADLINE_MINUTES,
     input: {
       system: WEEKLY_REVIEW_SYSTEM_PROMPT,
-      prompt: buildWeeklyReviewPrompt(inputs),
+      prompt: buildWeeklyReviewPrompt(inputs, conscience),
       validMemoryIds: fedMemoryIds(inputs),
       context,
       maxOutputTokens: WEEKLY_REVIEW_MAX_OUTPUT_TOKENS,

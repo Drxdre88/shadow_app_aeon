@@ -23,7 +23,11 @@ const DATE_KEYS = ['standingAt', 'archivedAt', 'supersededAt', 'invalidAt', 'las
 const PLAIN_KEYS = ['streamClass', 'confidence', 'standing', 'supersededById'] as const
 // Counters that later activity legitimately moves; never a staleness signal.
 const ACTIVITY_KEYS = new Set(['useCount', 'lastUsedAt'])
-const VETO_OPS = new Set(['promote', 'decay', 'merge'])
+const VETO_OPS = new Set(['promote', 'decay', 'merge', 'recheck', 'retire'])
+// Belief-ledger ops whose before/after carry a partial `belief` snapshot
+// (sourceMetadata.belief keys; null = key absent) plus row dates / links.
+const BELIEF_SNAPSHOT_OPS = new Set(['recheck', 'retire', 'feedback'])
+const BELIEF_DATE_KEYS = ['invalidAt', 'supersededAt'] as const
 const NOT_REVERTABLE = new Set(['revert', 'concept_create'])
 // lib/data/concepts.ts snapshot() fields — a concept_update's before/after.
 const CONCEPT_CONTENT_KEYS = ['title', 'bodyMd', 'summary', 'confidence', 'links', 'tags', 'sourceMetadata'] as const
@@ -96,6 +100,7 @@ function buildPatch(
   opKind: string,
 ): MemoryRestorePatch | 'stale' {
   if (opKind === 'concept_update') return buildConceptPatch(plan, row)
+  if (BELIEF_SNAPSHOT_OPS.has(opKind) && asRecord(plan.before.belief)) return buildBeliefPatch(plan, row, veto)
   if (opKind === 'feedback' && asRecord(plan.before.outcome)) return buildOutcomePatch(plan)
 
   for (const [key, value] of Object.entries(plan.after)) {
@@ -147,6 +152,56 @@ function buildPatch(
   if (metaChanged) set.sourceMetadata = meta
 
   return { memoryId: plan.memoryId, set, ...(decrementUseCount ? { decrementUseCount } : {}) }
+}
+
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`
+  const rec = asRecord(v)
+  if (rec) return `{${Object.keys(rec).sort().map((k) => `${JSON.stringify(k)}:${canonical(rec[k])}`).join(',')}}`
+  return JSON.stringify(v ?? null)
+}
+
+function stringIds(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  return v.flatMap((x) => (typeof x === 'string' ? [x] : typeof asRecord(x)?.id === 'string' ? [asRecord(x)!.id as string] : []))
+}
+
+// recheck / retire / belief feedback: restore the snapshotted belief keys and
+// row dates. Stale when the belief moved on (a later reaffirm, re-flag or
+// retire). A reverted recheck remembers its lost sources and a reverted
+// retire its veto, so the next night does not simply redo them.
+function buildBeliefPatch(plan: RestorePlan, row: RevertableMemoryRow, veto: VetoStamp | null): MemoryRestorePatch | 'stale' {
+  const current = asRecord(row.sourceMetadata.belief)
+  if (!current) return 'stale'
+  for (const [key, value] of Object.entries(asRecord(plan.after.belief) ?? {})) {
+    if (canonical(current[key]) !== canonical(value)) return 'stale'
+  }
+  for (const key of BELIEF_DATE_KEYS) {
+    if (key in plan.after && !same(key, row[key], plan.after[key])) return 'stale'
+  }
+  const belief: Snapshot = { ...current }
+  for (const [key, value] of Object.entries(asRecord(plan.before.belief) ?? {})) {
+    if (value == null) delete belief[key]
+    else belief[key] = value
+  }
+  const meta: Snapshot = { ...row.sourceMetadata, belief }
+  if (veto) {
+    const engine = asRecord(meta.engine) ?? {}
+    const vetoes = asRecord(engine.vetoes) ?? {}
+    const stamp: Snapshot = { opId: veto.opId, at: veto.at }
+    if (veto.op === 'recheck') {
+      stamp.lostSources = [...new Set([...stringIds(asRecord(vetoes.recheck)?.lostSources), ...stringIds(plan.after.lostSources)])]
+    }
+    meta.engine = { ...engine, vetoes: { ...vetoes, [veto.op]: stamp } }
+  }
+  const set: MemoryRestorePatch['set'] = { sourceMetadata: meta }
+  for (const key of BELIEF_DATE_KEYS) {
+    if (!(key in plan.before)) continue
+    const v = plan.before[key]
+    set[key] = v == null ? null : new Date(v as string)
+  }
+  if (Array.isArray(plan.before.links)) set.links = plan.before.links
+  return { memoryId: plan.memoryId, set }
 }
 
 // concept_update: restore the full concept snapshot (concepts.ts snapshot())
@@ -203,7 +258,10 @@ export async function revertMemoryOp(
   const rows = await findRevertableMemories(userId, plans.map((p) => p.memoryId))
   const byId = new Map(rows.map((r) => [r.id, r]))
   const now = opts.now ?? new Date()
-  const veto: VetoStamp | null = VETO_OPS.has(op.op) ? { op: op.op, opId: op.id, at: now.toISOString() } : null
+  // A reverted belief normalisation (recheck step) is vetoed under its own
+  // slot so the next night does not simply redo it.
+  const vetoKind = VETO_OPS.has(op.op) ? op.op : op.op === 'feedback' && asRecord(op.after)?.normalised === true ? 'normalise' : null
+  const veto: VetoStamp | null = vetoKind ? { op: vetoKind, opId: op.id, at: now.toISOString() } : null
 
   const patches: MemoryRestorePatch[] = []
   for (const [i, plan] of plans.entries()) {

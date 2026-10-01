@@ -7,7 +7,7 @@ vi.mock('@/lib/data/memory-candidates', () => ({
 }))
 
 import { applyMerge, findOlderDuplicate, listMergeCandidates, type MergeCandidateRow } from '@/lib/data/memory-candidates'
-import { MergeStep } from '../steps/merge'
+import { MERGE_CANDIDATE_CAP, MERGE_WINDOW_HOURS, MergeStep } from '../steps/merge'
 import type { EngineRunContext, MemoryOpInput } from '../types'
 
 const USER = 'user-1'
@@ -38,14 +38,37 @@ beforeEach(() => {
 })
 
 describe('MergeStep', () => {
-  it('asks for the last 36h, excluding reflections, synthesised docs and inbox/ask rows', async () => {
+  it('asks for the last 96h (oldest first, capped), excluding reflections, synthesised docs and inbox/ask rows', async () => {
     vi.mocked(listMergeCandidates).mockResolvedValue([])
     await new MergeStep().run(makeCtx())
     const [user, since, opts] = vi.mocked(listMergeCandidates).mock.calls[0]
     expect(user).toBe(USER)
-    expect(since).toEqual(new Date('2026-09-29T13:30:00.000Z'))
+    expect(since).toEqual(new Date('2026-09-27T01:30:00.000Z'))
+    expect(opts.limit).toBe(MERGE_CANDIDATE_CAP)
     expect(opts.excludeTypes).toEqual(expect.arrayContaining(['concept', 'cortex', 'dominion_cortex', 'aether', 'archetype', 'reflection']))
     expect(opts.excludeStreams).toContain('reflection')
+  })
+
+  it('G3: a row written after the 04:00 backfill (embedded ~45h later) is still inside the window', () => {
+    // Created 04:05 UTC day 0, embedded by the 04:00 backfill on day 1, first
+    // Merge run after that is 01:30 UTC day 2 ≈ 45.4h after creation.
+    const created = new Date('2026-09-29T04:05:00Z').getTime()
+    const firstRunAfterEmbed = new Date('2026-10-01T01:30:00Z').getTime()
+    const ageHours = (firstRunAfterEmbed - created) / 3_600_000
+    expect(ageHours).toBeGreaterThan(36)
+    // At least one further night still sees it.
+    expect(ageHours + 24).toBeLessThanOrEqual(MERGE_WINDOW_HOURS)
+  })
+
+  it('re-examining a row with no duplicate is one read-only lookup — no write, no op', async () => {
+    const older = row('seen-before', { createdAt: new Date('2026-09-27T12:00:00Z') })
+    vi.mocked(listMergeCandidates).mockResolvedValue([older])
+    const ctx = makeCtx()
+    const result = await new MergeStep().run(ctx)
+    expect(findOlderDuplicate).toHaveBeenCalledTimes(1)
+    expect(applyMerge).not.toHaveBeenCalled()
+    expect(ctx.ops).toEqual([])
+    expect(result).toMatchObject({ examined: 1, changed: 0, opsWritten: 0 })
   })
 
   it('supersedes the newer by the older, reinforces the older, logs both snapshots', async () => {

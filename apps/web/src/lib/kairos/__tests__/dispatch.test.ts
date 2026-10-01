@@ -16,7 +16,17 @@ vi.mock('../recipes/registry', () => ({
   getRecipe: vi.fn(),
 }))
 
+vi.mock('@/lib/data/aether', () => ({
+  getLatestAether: vi.fn(),
+}))
+
+vi.mock('../conscience-context', () => ({
+  loadConscienceBlock: vi.fn(),
+}))
+
 import { runRecipe, RecipeNotFoundError } from '../dispatch'
+import { getLatestAether } from '@/lib/data/aether'
+import { loadConscienceBlock } from '../conscience-context'
 import { captureMemory } from '@/lib/data/memories'
 import { retrieveContext } from '../retrieve'
 import { getRecipe } from '../recipes/registry'
@@ -59,6 +69,66 @@ const EMPTY_RETRIEVAL = {
 beforeEach(() => {
   vi.clearAllMocks()
   ;(retrieveContext as ReturnType<typeof vi.fn>).mockResolvedValue(EMPTY_RETRIEVAL)
+  vi.mocked(getLatestAether).mockResolvedValue(null)
+  vi.mocked(loadConscienceBlock).mockResolvedValue('')
+})
+
+describe('runRecipe grounding (P2.5 G5)', () => {
+  const AETHER = { generatedAt: 'x', coreNarrative: 'n', thoughts: [], tensions: [], shifts: [] }
+
+  function groundedRecipe(reads: Recipe['reads']): Recipe {
+    return { ...fakeRecipe('G'), reads }
+  }
+
+  function created() {
+    ;(captureMemory as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ memory: { id: 'p', title: 't' }, created: true })
+      .mockResolvedValueOnce({ memory: { id: 't', title: 'trace' }, created: true })
+  }
+
+  it('loads no grounding for a recipe that does not declare it', async () => {
+    const recipe = fakeRecipe()
+    ;(getRecipe as ReturnType<typeof vi.fn>).mockReturnValue(recipe)
+    created()
+    await runRecipe('TEST', { userId: USER_ID, dominionId: DOMINION_ID, surface: 'byok' })
+    expect(getLatestAether).not.toHaveBeenCalled()
+    expect(loadConscienceBlock).not.toHaveBeenCalled()
+    expect(vi.mocked(recipe.flat).mock.calls[0][0].grounding).toBeUndefined()
+  })
+
+  it('loads the Aether and the Dominion-filtered conscience block when declared', async () => {
+    const recipe = groundedRecipe(['cortex', 'aether', 'belief', 'constitution'])
+    ;(getRecipe as ReturnType<typeof vi.fn>).mockReturnValue(recipe)
+    vi.mocked(getLatestAether).mockResolvedValue(AETHER)
+    vi.mocked(loadConscienceBlock).mockResolvedValue('## Conscience')
+    created()
+    await runRecipe('G', { userId: USER_ID, dominionId: DOMINION_ID, surface: 'byok' })
+    expect(loadConscienceBlock).toHaveBeenCalledWith(USER_ID, { dominionId: DOMINION_ID })
+    expect(vi.mocked(recipe.flat).mock.calls[0][0].grounding).toEqual({ aether: AETHER, conscience: '## Conscience' })
+  })
+
+  it('uses a caller-supplied per-run conscience loader', async () => {
+    const recipe = groundedRecipe(['constitution'])
+    ;(getRecipe as ReturnType<typeof vi.fn>).mockReturnValue(recipe)
+    const loader = vi.fn(async () => 'memo')
+    created()
+    await runRecipe('G', { userId: USER_ID, dominionId: DOMINION_ID, surface: 'byok', conscience: loader })
+    expect(loader).toHaveBeenCalledWith(USER_ID, { dominionId: DOMINION_ID })
+    expect(loadConscienceBlock).not.toHaveBeenCalled()
+    expect(getLatestAether).not.toHaveBeenCalled()
+    expect(vi.mocked(recipe.flat).mock.calls[0][0].grounding).toEqual({ aether: null, conscience: 'memo' })
+  })
+
+  it('an Aether read failure degrades to null and the recipe still runs', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const recipe = groundedRecipe(['aether'])
+    ;(getRecipe as ReturnType<typeof vi.fn>).mockReturnValue(recipe)
+    vi.mocked(getLatestAether).mockRejectedValue(new Error('db down'))
+    created()
+    const result = await runRecipe('G', { userId: USER_ID, dominionId: DOMINION_ID, surface: 'byok' })
+    expect(result.status).toBe('created')
+    expect(vi.mocked(recipe.flat).mock.calls[0][0].grounding).toEqual({ aether: null, conscience: '' })
+  })
 })
 
 describe('runRecipe', () => {

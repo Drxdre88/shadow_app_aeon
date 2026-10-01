@@ -94,3 +94,41 @@ reply per user turn.
 (`ThinkingJobKind`; queue `PLAN_ORDER`/`FALLBACK_OWNER`). All but `chat` are planned on every claim and by the hourly
 `thinking-sweep`; `chat` is created only by the Telegram webhook and claimed only with `kinds: ["chat"]`. Schedules,
 deadlines, keys and fallbacks: doc 33 "Server side".
+
+## 8. P2.5 — Ground and protect (Kairos 0.14, 01/10)
+
+Research and gap list: `research/kairos_0110/00_verdict.md`. Origin labels: doc 32 §5.
+
+**Source type and confidence are the server's call.** A belief's `sourceType` comes from the origins of its
+provenance: one operator-origin source makes it `operator` (cap 0.95), agent or board activity `tool` (0.8),
+anything else, including Kairos's own chat summaries, `inference` (0.6). Confidence is capped accordingly; a model's
+own number is never trusted beyond its evidence. Own-mind mirrors are `inference`. Extraction inputs exclude external
+content and are labelled by who wrote them. A reinforcement recomputes type and cap over the union of provenance, so
+the operator's own words upgrade a belief. An inference-only claim may not replace an operator- or tool-sourced
+belief: it lands as a new held belief and the op records `replaceRefused`. Owner decision (01/10): AI summaries of
+chat count as the owner's view only once the owner's own words confirm them.
+
+**Re-check.** Beliefs that lost support (doc 32 §5 Recheck) carry `recheck = { since, lostSources }`. The next
+`belief_extract` lists up to 20 flagged aligned beliefs with their remaining evidence; the model reaffirms
+(reinforce, clears the flag), replaces, or retires (`retire { targetId, reason }`, only for flagged beliefs; op
+`retire`, revertable). A job is planned on flags alone. `list_beliefs` exposes `sourceType` and `recheck`.
+
+**Conscience at answer time.** `lib/kairos/conscience-context.ts` renders a delimited reference block: the live
+constitution's principles (numbered, with reasons) and the top held beliefs by standing, labelled *you hold*
+(aligned) or *Kairos's own view* (own), Dominion first when filtered; then one instruction: check the reply against
+these principles and, on a conflict, say which and why rather than silently comply or override. Capped at 12
+principles, 12 beliefs, ~1,500 tokens (typically ~1k); a read failure yields an empty block. Injected into chat (paid
+and routine), the daily message (routine draft and paid compose), the weekly review, and the per-Dominion BRIEF.
+The BRIEF also reads the Dominion's latest cortex and a short Aether digest (closes the P2 "rewire briefer" item);
+its output format is unchanged. Deliberately absent from the drift probe (never optimise Kairos against its own
+monitor), belief extraction, Aether, cortex, archetypes and introspection.
+
+**Conscience checks.** Beside the nightly drift probe the queue plans one more `drift_probe` job
+(`drift_probe:<day>:conscience`), a separate model call that never touches drift answers, baselines or the mean. It
+runs with a live constitution or at least one held belief. One structured call answers four both-sides dilemma pairs
+(pass when both framings get the same verdict), three unknowable questions (pass on `unknown`), two synthetic
+outdated-fact fixtures (pass when the later correction wins), and up to five same-mind belief pairs with cosine in
+[0.75, 0.95] (contradicts yes/no). A deterministic laundering audit counts held beliefs with external-origin
+provenance and operator-sourced beliefs with no operator-origin source (both should be 0). Results go on the day's
+`drift_run` as `sourceMetadata.conscience`; failures only appear on the daily message's drift line ("Self-check
+failures"). Measurement only: never fed back into any prompt, belief or constitution.

@@ -47,6 +47,7 @@ vi.mock('@/lib/ai/route-task', () => ({ getProviderForTask: vi.fn() }))
 vi.mock('../speak', () => ({ deliverKairosSpeak: vi.fn() }))
 vi.mock('../cron-trace', () => ({ writeCronFailureTrace: vi.fn(), writeCronSuccessTrace: vi.fn() }))
 vi.mock('../daily-message-inputs', () => ({ gatherDailyMessageInputs: vi.fn() }))
+vi.mock('../conscience-context', () => ({ loadConscienceBlock: vi.fn() }))
 
 import { PgDialect } from 'drizzle-orm/pg-core'
 import type { SQL } from 'drizzle-orm'
@@ -58,6 +59,7 @@ import type { ThinkingJobRow } from '@/lib/kairos/engine/types'
 import { deliverKairosSpeak } from '../speak'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '../cron-trace'
 import { gatherDailyMessageInputs } from '../daily-message-inputs'
+import { loadConscienceBlock } from '../conscience-context'
 import type { DailyMessageInputs } from '../daily-message-prompt'
 import { readJobDraft, runDailyMessageForUser } from '../daily-message'
 
@@ -112,6 +114,7 @@ beforeEach(() => {
   advisory.held = false
   advisory.keys.length = 0
   vi.mocked(gatherDailyMessageInputs).mockResolvedValue(INPUTS)
+  vi.mocked(loadConscienceBlock).mockResolvedValue('')
   vi.mocked(listJobs).mockResolvedValue([])
   vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask } } as never)
   ask.mockResolvedValue({ text: '{"message": "**Today** model text."}', finishReason: 'stop' })
@@ -163,6 +166,16 @@ describe('runDailyMessageForUser', () => {
     vi.mocked(listJobs).mockResolvedValue([job({ output: { draft: 'see https://x.io' } })])
     expect(await runDailyMessageForUser(USER, { now: NOW })).toMatchObject({ source: 'api' })
     expect(ask).toHaveBeenCalledTimes(1)
+  })
+
+  it('the paid compose sends the conscience block after the facts, system prompt unchanged', async () => {
+    selectQueue.push([{ n: 0 }])
+    vi.mocked(loadConscienceBlock).mockResolvedValue('## Conscience (reference data)\n1. Rest on Sundays')
+    await runDailyMessageForUser(USER, { now: NOW })
+    expect(loadConscienceBlock).toHaveBeenCalledWith(USER)
+    const req = ask.mock.calls[0][0] as { system: string; prompt: string }
+    expect(req.system).not.toContain('Rest on Sundays')
+    expect(req.prompt).toMatch(/AEON[\s\S]*## Conscience \(reference data\)\n1\. Rest on Sundays$/)
   })
 
   it('ignores a routine job that is not done', async () => {

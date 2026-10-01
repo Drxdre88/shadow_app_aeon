@@ -9,6 +9,7 @@ import {
   parseChatDistillResponse,
 } from './chat-distill-prompt'
 import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
+import { derivedOriginKind, type OriginKind } from './origin'
 
 const DAY_MS = 86_400_000
 const MAX_MESSAGES_PER_THREAD = 80
@@ -119,6 +120,13 @@ export async function runChatDistillForUser(
         continue
       }
 
+      // P2.5: these are Kairos's distillation of the chat, not the operator's
+      // words — derived origin over the thread's turns (operator's own turns
+      // and Kairos's replies), which is never better than 'kairos'.
+      const origin = {
+        kind: derivedOriginKind(thread.messages.map((m): OriginKind => (m.role === 'user' ? 'operator' : 'kairos'))),
+        via: 'cron:chat-distill',
+      }
       const captures = []
       for (const [index, candidate] of candidates.entries()) {
         captures.push(await captureMemory(userId, {
@@ -133,7 +141,7 @@ export async function runChatDistillForUser(
             chatDistill: { threadId: thread.id, date: target.date, messageSeqs },
             ...(askIdByThreadId.has(thread.id) ? { askId: askIdByThreadId.get(thread.id) } : {}),
           },
-        }))
+        }, { origin }))
       }
 
       const reflectionsCreated = captures.filter((capture) => capture.created).length

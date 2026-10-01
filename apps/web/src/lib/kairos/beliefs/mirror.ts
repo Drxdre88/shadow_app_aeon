@@ -6,6 +6,7 @@ import {
   type PromotionToMirror,
 } from '@/lib/data/beliefs'
 import { CONFIDENCE_BY_STREAM } from '@/lib/kairos/confidence'
+import { capBeliefConfidence } from '@/lib/kairos/origin'
 import type { MemoryOpInput } from '@/lib/kairos/engine/types'
 import { BELIEF_STEP, GENERAL_DOMAIN, OWN_UNKNOWN_FALSIFIER, beliefRowValues, oneLine, type BeliefV1 } from './types'
 
@@ -40,9 +41,11 @@ function citationsOf(meta: Record<string, unknown>): string[] {
 
 export function ownBeliefFromPromotion(p: PromotionToMirror): BeliefV1 {
   const claim = oneLine(p.aiTitle || p.title || p.summary || 'Untitled promotion').slice(0, CLAIM_MAX)
-  const confidence = typeof p.confidence === 'number' && p.confidence >= 0 && p.confidence <= 1
+  const raw = typeof p.confidence === 'number' && p.confidence >= 0 && p.confidence <= 1
     ? p.confidence
     : CONFIDENCE_BY_STREAM.idea
+  // Kairos's own view is inference: capped like any inference-sourced belief.
+  const confidence = capBeliefConfidence(raw, 'inference')
   return {
     v: 1,
     mind: 'own',

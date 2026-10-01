@@ -37,6 +37,7 @@ vi.mock('@/lib/data/dominions', () => ({
 
 vi.mock('@/lib/data/memories', () => ({
   captureMemory: vi.fn(),
+  findMemoryOriginKinds: vi.fn(async () => ['operator']),
 }))
 
 vi.mock('@/lib/ai/route-task', () => ({
@@ -226,5 +227,25 @@ describe('runIntrospectionForDominion — failure trace + parse repair', { timeo
     expect(result.status).toBe('existing')
     const sm = (vi.mocked(captureMemory).mock.calls[0][1] as { sourceMetadata: Record<string, unknown> }).sourceMetadata
     expect(sm).toMatchObject({ cronName: 'introspection', outcome: 'skipped' })
+  })
+
+  it.each([
+    [['operator', 'activity'], 'kairos'],
+    [['operator', 'external'], 'external'],
+    [['agent'], 'kairos'],
+  ] as const)('stamps proposals with the derived origin of the input pool %j → %s (P2.5)', async (pool, expected) => {
+    const { findMemoryOriginKinds } = await import('@/lib/data/memories')
+    const { getProviderForTask } = await import('@/lib/ai/route-task')
+    vi.mocked(findMemoryOriginKinds).mockResolvedValueOnce([...pool])
+    queueDominionAndContext()
+    await mockInspectDominionWithSubstrate()
+    vi.mocked(getProviderForTask).mockResolvedValue({ provider: { ask: vi.fn().mockResolvedValue({ text: validIntrospectionJson() }) } } as never)
+
+    const { runIntrospectionForDominion } = await import('../introspection')
+    await runIntrospectionForDominion(USER_ID, DOMINION_ID)
+
+    expect(findMemoryOriginKinds).toHaveBeenCalledWith(USER_ID, [MEMORY_ID])
+    const row = insertedRows![0] as { sourceMetadata: Record<string, unknown> }
+    expect(row.sourceMetadata.origin).toEqual({ kind: expected, via: 'cron:introspection' })
   })
 })

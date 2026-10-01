@@ -5,6 +5,7 @@ import { userAiCredentials, dominions } from '@/lib/db/schema'
 import { and, eq, isNull, inArray } from 'drizzle-orm'
 import { findDominionsByUser } from '@/lib/data/dominions'
 import { runRecipe } from '@/lib/kairos/dispatch'
+import { createConscienceLoader } from '@/lib/kairos/conscience-context'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 
@@ -44,6 +45,8 @@ async function briefUser(userId: string): Promise<BrieferResult[]> {
   const doms = await findDominionsByUser(userId)
   const active = doms.filter((d) => !d.archivedAt)
   const out: BrieferResult[] = []
+  // One constitution read per user across all their Dominion briefs.
+  const conscience = createConscienceLoader()
 
   for (const dom of active) {
     try {
@@ -51,6 +54,7 @@ async function briefUser(userId: string): Promise<BrieferResult[]> {
         userId,
         dominionId: dom.id,
         surface: 'byok',
+        conscience,
       })
       out.push({
         dominionId: dom.id,

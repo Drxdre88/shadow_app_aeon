@@ -27,6 +27,7 @@ import {
   renderRecentActivitySection,
 } from '@/lib/kairos/chat-recency-context'
 import { buildChatTools, runChatToolLoop } from '@/lib/kairos/chat-tools'
+import { loadConscienceBlock } from '@/lib/kairos/conscience-context'
 import type { CitationRetrievalShape } from '@/lib/kairos/chat-retrieval-citations'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
@@ -249,9 +250,11 @@ export async function buildAssistantTurn(
   }
 
   const promptRetrieval = retrieval ? toPromptRetrieval(retrieval) : undefined
-  const [boardSection, recencySection] = await Promise.all([
+  const [boardSection, recencySection, conscienceSection] = await Promise.all([
     loadBoardSection(userId, threadId, userBody),
     loadRecencySection(userId),
+    // Constitution + held beliefs (P2.5 G4). Never throws — '' on failure.
+    loadConscienceBlock(userId, { dominionId }),
   ])
 
   const messages = buildChatMessages({
@@ -263,6 +266,7 @@ export async function buildAssistantTurn(
     pendingAsk: pendingAskContext?.prompt,
     boardSection,
     recencySection,
+    conscienceSection: conscienceSection || undefined,
   })
 
   return {

@@ -94,3 +94,39 @@ Migration `drizzle/0039_kairos_memory_engine.sql` (applied by `scripts/apply-mem
 declared in `schema.ts`, checked by `verify-schema-drift.mjs`): `memories.standing`, `standing_at`,
 `last_used_at`, `use_count`; tables `memory_ops`, `thinking_jobs`. Memory type `concept` + stream class
 `concept` are varchar values (no DDL).
+
+## 5. P2.5 — Ground and protect (Kairos 0.14, 01/10)
+
+Research and gap list: `research/kairos_0110/00_verdict.md` (G1–G9).
+
+**Origin, fixed at write.** Every memory written through `createMemory` / `captureMemory` /
+`captureReflection` / `acceptProposal` carries `sourceMetadata.origin = { kind, via }` (`lib/kairos/origin.ts`):
+`operator` (owner session UI, REST with session cookie, Telegram, ask answers, accepts from the inbox/Telegram)
+· `activity` (board day/week pages, Hangar missions) · `agent` (every MCP tool, REST with a bearer key, session
+hooks, dialogue reflections, accepts through MCP/bearer REST) · `kairos` (Kairos syntheses; chat-distill and
+introspection take `derivedOriginKind` of their inputs, so a pool with external content yields `external`) ·
+`external` (webhook capture, imports). Clients can never set it; the row's `source` caps it. Unlabelled
+(pre-0.14) rows are inferred from `source` by `inferOriginKind`.
+
+**Standing.** SourceTrust boosts a reflection only for operator origin (×1.15; activity/agent ×1, kairos ×0.9,
+external ×0.7 on any class). Half-lives: belief 365 d, advisory 14 d, trace 7 d; the constitution never fades.
+
+**Gate/Merge** now looks at rows created in the last 96 h (was 36 h; cap 400/night, oldest first) because most
+rows are embedded only by the 04:00 UTC backfill, after the 01:30 engine run.
+
+**BackUp** additionally needs `anchoredSupports ≥ 1`: at least one independent support of operator or activity
+origin (stored in `engine.support.anchoredSupports`). AI-written material alone can't confirm Kairos's guesses.
+
+**Recheck** (new step after OwnMind). Up to 200 held beliefs a night whose provenance memory was deleted,
+archived, invalidated, or superseded with no live survivor are flagged `belief.recheck = { since, lostSources }`
+and their confidence × 0.7 (floor 0.1), op `recheck` (revertable; the revert records
+`engine.vetoes.recheck.lostSources`). A Merge supersession is not a loss: provenance is remapped to the survivor
+(op `feedback`). An own-mind belief with no provenance left is retired (op `retire`). With budget left after
+the loss check, `recheck` also **normalises legacy beliefs**: when the stored `sourceType` differs from what the
+live provenance origins give, or confidence exceeds that type's cap, it sets the computed type, caps confidence
+(never raises it), stamps `belief.normalisedAt`, and writes one revertable `feedback` op (`after.normalised: true`);
+reverting records `engine.vetoes.normalise`.
+
+**Retrieval.** Chat grounding (`retrieve.ts` FTS, vector and trace legs), `prepareContext` neighbours and its
+pinned leg exclude superseded and invalidated rows. The 90-day substrate window exempts `concept`, `belief` and
+`constitution`.

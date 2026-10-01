@@ -140,7 +140,8 @@ describe('createMemory auto-filing', () => {
 
     expect(insertedValues?.dominionId).toBeNull()
     expect(insertedValues?.tags).toEqual([])
-    expect(insertedValues?.sourceMetadata).toEqual({})
+    // No auto-file audit stamp; only the P2.5 origin label.
+    expect(insertedValues?.sourceMetadata).toEqual({ origin: { kind: 'operator' } })
     expect(insertedValues?.embedding).toEqual(VEC)
   })
 

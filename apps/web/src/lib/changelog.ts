@@ -29,6 +29,24 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.31.0] — 2026-10-01
+
+> Areas touched: \`KAIROS\` \`MCP\` \`API\` \`DOCS\`
+> Theme: Kairos gets a working conscience. He reads his principles before answering, knows where every memory came from, stops trusting his own echoes, and re-thinks beliefs when their sources are corrected. Full detail: \`docs/kairos/CHANGELOG.md\` 0.14.
+
+### Added — Principles at answer time · \`KAIROS\`
+- Chat, the daily message, the weekly review and every Dominion's morning brief now carry your constitution and Kairos's top beliefs, with one rule: if a reply would conflict with a principle, say so. The morning brief also reads the Dominion's cortex and the Aether summary.
+
+### Added — Trust by origin · \`KAIROS\` \`MCP\` \`API\`
+- Every new memory is labelled by how it arrived (you, your board, an AI agent, Kairos, outside feeds); senders can't set it. Belief confidence is capped by that evidence, and Kairos's guesses need backing from you or your board before they become his beliefs.
+- Beliefs that lose a source are flagged, lowered and re-examined; \`list_beliefs\` shows each belief's source type and re-check flag. Every change can be undone.
+
+### Added — Honesty self-checks · \`KAIROS\`
+- A nightly self-check (flattery, admitting what he can't know, newer corrections, self-contradiction, beliefs built on outside content) reports failures in the daily message.
+
+### Fixed · \`KAIROS\`
+- Merged duplicates no longer ground chat; beliefs and the constitution no longer drop out of search after 90 days; the nightly merge no longer misses late-embedded memories.
+
 ## [0.30.0] — 2026-10-01
 
 > Areas touched: \`KAIROS\` \`MCP\` \`API\` \`DATA\` \`INFRA\` \`DOCS\`

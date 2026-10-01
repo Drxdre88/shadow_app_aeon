@@ -40,7 +40,8 @@ export const POST = withRateLimit(
       return jsonError(OPERATOR_ONLY_AMENDMENT_ERROR, 403)
     }
 
-    const res = await acceptKairosProposal(id, result.id, parsed.data)
+    const res = await acceptKairosProposal(id, result.id, parsed.data,
+      isBearer ? { origin: { kind: 'agent', via: 'rest' } } : { origin: { kind: 'operator', via: 'rest-session' } })
     if (!res) return jsonError('Memory not found', 404)
     if (!res.ok) return jsonError('Memory is not a pending proposal', 400)
     return jsonData(res.memory)

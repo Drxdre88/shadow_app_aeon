@@ -25,6 +25,7 @@ vi.mock('@/lib/data/board-feed', () => ({ listBoardDayPages: vi.fn() }))
 vi.mock('@/lib/data/memory-candidates', () => ({ listPromotedBeliefsBetween: vi.fn() }))
 vi.mock('@/lib/data/recipes', () => ({ listTraceHistory: vi.fn() }))
 vi.mock('../constitution/amendment', () => ({ getLatestDriftStatus: vi.fn() }))
+vi.mock('@/lib/data/constitution-drift', () => ({ findLatestConscienceRun: vi.fn() }))
 vi.mock('../synthesis-health', () => ({ SYNTHESIS_HEALTH_RECIPE: 'SYNTHESIS_HEALTH' }))
 
 import { getLatestAether } from '@/lib/data/aether'
@@ -32,6 +33,7 @@ import { getPendingKairosAsk } from '@/lib/data/ask'
 import { listBoardDayPages } from '@/lib/data/board-feed'
 import { listPromotedBeliefsBetween } from '@/lib/data/memory-candidates'
 import { listTraceHistory } from '@/lib/data/recipes'
+import { findLatestConscienceRun } from '@/lib/data/constitution-drift'
 import { getLatestDriftStatus } from '../constitution/amendment'
 import { briefDominionName, briefFirstLines, gatherDailyMessageInputs } from '../daily-message-inputs'
 
@@ -48,6 +50,7 @@ beforeEach(() => {
   vi.mocked(listPromotedBeliefsBetween).mockResolvedValue([])
   vi.mocked(listTraceHistory).mockResolvedValue([])
   vi.mocked(getLatestDriftStatus).mockResolvedValue(null)
+  vi.mocked(findLatestConscienceRun).mockResolvedValue(null)
 })
 
 describe('gatherDailyMessageInputs', () => {
@@ -124,6 +127,62 @@ describe('gatherDailyMessageInputs', () => {
     expect(inputs.drift).toBeNull()
     expect(inputs.mindCompare).toBeNull()
     expect(inputs.isMonday).toBe(false)
+  })
+})
+
+describe('drift input: conscience checks', () => {
+  const conscience = (over: Record<string, unknown> = {}) => ({
+    v: 1, status: 'ok',
+    sycophancy: { pairs: 4, passed: 3, split: ['cut-vs-wait'] },
+    abstention: { asked: 3, passed: 3, answered: [] },
+    outdated: { asked: 2, passed: 2, missed: [] },
+    contradictions: { checked: 5, found: 2, ids: [['a', 'b'], ['c', 'd']], reasons: ['x', 'y'] },
+    laundering: { externalInBeliefs: 0, operatorWithoutOperatorSource: 0, externalIds: [], operatorIds: [] },
+    ...over,
+  })
+  const run = (c: unknown, at = '2026-10-26T04:10:00Z') => ({ id: 'r', createdAt: new Date(at), sourceMetadata: { conscience: c } })
+  const drift = { date: '2026-10-26', version: 2, mean: 0.91, alert: false, flipped: [], measuredAt: new Date('2026-10-26T04:00:00Z') }
+
+  it('adds only the failures beside a measured drift', async () => {
+    vi.mocked(getLatestDriftStatus).mockResolvedValue(drift)
+    vi.mocked(findLatestConscienceRun).mockResolvedValue(run(conscience()))
+    const { drift: d } = await gatherDailyMessageInputs(USER, NOW)
+    expect(d).toMatchObject({ alert: false, measured: true, conscience: 'conscience checks: 1/4 flattery pairs split, 2 contradictions' })
+    expect(d?.summary).toContain('0.91')
+  })
+
+  it('is null when every check passed', async () => {
+    vi.mocked(getLatestDriftStatus).mockResolvedValue(drift)
+    vi.mocked(findLatestConscienceRun).mockResolvedValue(run(conscience({
+      sycophancy: { pairs: 4, passed: 4, split: [] },
+      contradictions: { checked: 0, found: 0, ids: [], reasons: [] },
+    })))
+    expect((await gatherDailyMessageInputs(USER, NOW)).drift).toMatchObject({ measured: true, conscience: null })
+  })
+
+  it('reports conscience failures without a drift measurement (no constitution yet)', async () => {
+    vi.mocked(findLatestConscienceRun).mockResolvedValue(run(conscience({
+      status: 'unparsed', sycophancy: null, abstention: null, outdated: null, contradictions: null,
+      laundering: { externalInBeliefs: 1, operatorWithoutOperatorSource: 2, externalIds: ['e'], operatorIds: ['o1', 'o2'] },
+    })))
+    expect((await gatherDailyMessageInputs(USER, NOW)).drift).toEqual({
+      alert: false,
+      summary: null,
+      measured: false,
+      conscience: 'conscience checks: answer unparsed, 1 belief built on external sources, 2 operator beliefs without an operator source',
+    })
+  })
+
+  it('ignores a stale or unreadable conscience run and survives its read failing', async () => {
+    vi.mocked(findLatestConscienceRun).mockResolvedValue(run(conscience(), '2026-10-20T04:00:00Z'))
+    expect((await gatherDailyMessageInputs(USER, NOW)).drift).toBeNull()
+    vi.mocked(findLatestConscienceRun).mockResolvedValue(run({ v: 2 }))
+    expect((await gatherDailyMessageInputs(USER, NOW)).drift).toBeNull()
+    vi.mocked(getLatestDriftStatus).mockResolvedValue(drift)
+    vi.mocked(findLatestConscienceRun).mockRejectedValue(new Error('down'))
+    const inputs = await gatherDailyMessageInputs(USER, NOW)
+    expect(inputs.drift).toMatchObject({ measured: true, conscience: null })
+    expect(inputs.failed).toEqual([])
   })
 })
 

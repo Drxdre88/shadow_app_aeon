@@ -59,6 +59,9 @@ vi.mock('@/lib/data/dominions', () => ({
 vi.mock('@/lib/kairos/dispatch', () => ({
   runRecipe: vi.fn(),
 }))
+vi.mock('@/lib/kairos/conscience-context', () => ({
+  createConscienceLoader: vi.fn(() => vi.fn(async () => '')),
+}))
 
 vi.mock('@/lib/kairos/cron-trace', () => ({
   writeCronFailureTrace: vi.fn(),

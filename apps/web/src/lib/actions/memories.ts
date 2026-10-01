@@ -107,14 +107,14 @@ export async function createMemory(input: CreateMemoryInput) {
     }
   }
 
-  return _createMemory(userId, parsed)
+  return _createMemory(userId, parsed, { origin: { kind: 'operator', via: 'ui' } })
 }
 
 export async function updateMemory(memoryId: string, patch: UpdateMemoryInput) {
   const userId = await requireAuth()
   const parsed = updateMemorySchema.parse(patch)
   await verifyAnchors(userId, parsed)
-  const row = await _updateMemory(memoryId, userId, parsed)
+  const row = await _updateMemory(memoryId, userId, parsed, { origin: { kind: 'operator', via: 'ui' } })
   if (!row) throw new Error('Memory not found or unauthorized')
   return row
 }

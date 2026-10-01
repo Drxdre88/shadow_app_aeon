@@ -18,6 +18,7 @@ import { appendTaskDescription, findTaskById } from '@/lib/data/tasks'
 import { updateVaultDescription } from '@/lib/data/vault'
 import { verifyProjectAccess } from '@/lib/data/projects'
 import { selectKairosQuestion } from './ask-select'
+import type { Origin } from './origin'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Asks — proactive-question layer above Aether.
@@ -132,11 +133,17 @@ export type AnswerKairosAskResult =
   | { error: 'not_found' }
   | { error: 'dominion_not_found' }
 
+// P2.5 origin of an ask answer. Owner surfaces (inbox action, app/Telegram
+// chat) pass { kind: 'operator', via: 'ask' }; any other caller (the MCP
+// kairos_ask tool) is an agent relaying the answer.
+const ASK_DEFAULT_ORIGIN: Origin = { kind: 'agent', via: 'ask' }
+
 async function writeUntetheredAnswer(
   userId: string,
   answerText: string,
   questionMemoryId: string,
   extraMetadata: Record<string, unknown> = {},
+  origin: Origin = ASK_DEFAULT_ORIGIN,
 ): Promise<string> {
   const title = answerText.split('\n')[0]?.slice(0, 80).trim() || 'Kairos Ask response'
   const [row] = await db
@@ -150,7 +157,7 @@ async function writeUntetheredAnswer(
       type: 'reflection',
       streamClass: 'reflection',
       source: 'manual',
-      sourceMetadata: { kairosReflect: true, kairosAskResponseTo: questionMemoryId, ...extraMetadata },
+      sourceMetadata: { kairosReflect: true, kairosAskResponseTo: questionMemoryId, ...extraMetadata, origin },
       tags: ['kairos-ask-answer'],
       pinned: false,
     })
@@ -285,6 +292,7 @@ export async function answerKairosAsk(
   questionMemoryId: string,
   answerText: string,
   dominionIdOverride?: string,
+  origin: Origin = ASK_DEFAULT_ORIGIN,
 ): Promise<AnswerKairosAskResult> {
   const pending = await getPendingKairosAsk(userId)
   if (!pending || pending.id !== questionMemoryId) {
@@ -312,7 +320,7 @@ export async function answerKairosAsk(
   let answerMemoryId: string
 
   if (!dominionId) {
-    answerMemoryId = await writeUntetheredAnswer(userId, answerText, questionMemoryId, extraMetadata)
+    answerMemoryId = await writeUntetheredAnswer(userId, answerText, questionMemoryId, extraMetadata, origin)
   } else {
     const result = await captureReflection(userId, {
       dominionId,
@@ -322,7 +330,7 @@ export async function answerKairosAsk(
       tags: ['kairos-ask-answer'],
       source: 'manual',
       sourceMetadata: { kairosReflect: true, kairosAskResponseTo: questionMemoryId, ...extraMetadata },
-    })
+    }, { origin })
 
     if (!result.ok) {
       return { error: 'dominion_not_found' }

@@ -9,8 +9,10 @@ const m = vi.hoisted(() => ({
   deliverKairosSpeak: vi.fn(),
   writeCronFailureTrace: vi.fn(),
   gatherWeeklyReviewInputs: vi.fn(),
+  loadConscienceBlock: vi.fn(),
 }))
 
+vi.mock('@/lib/kairos/conscience-context', () => ({ loadConscienceBlock: m.loadConscienceBlock }))
 vi.mock('@/lib/data/thinking-jobs', () => ({ hasJobWithKeyLike: m.hasJobWithKeyLike }))
 vi.mock('@/lib/data/memories', () => ({ captureMemory: m.captureMemory }))
 vi.mock('@/lib/ai/provider', () => ({ getProviderForUser: m.getProviderForUser }))
@@ -101,6 +103,7 @@ beforeEach(() => {
   delivered = new Set()
   m.hasJobWithKeyLike.mockResolvedValue(false)
   m.gatherWeeklyReviewInputs.mockResolvedValue(inputs())
+  m.loadConscienceBlock.mockResolvedValue('')
   m.captureMemory.mockImplementation(async (_u: string, input: { source: string; sourceMetadata: { externalId: string } }) => {
     const key = `${input.source}:${input.sourceMetadata.externalId}`
     const existing = store.get(key)
@@ -142,6 +145,16 @@ describe('weekly review plan gating', () => {
     expect(spec.input.prompt).toContain('Ship P2')
     expect(spec.input.context).toMatchObject({ isoWeek: '2026-W40', dominions: [{ id: DOM, name: 'Swarm' }] })
     expect(m.hasJobWithKeyLike).toHaveBeenCalledWith(USER, 'weekly_review', 'weekly_review:2026-W40')
+  })
+
+  it('carries the conscience block in the job prompt (so the paid fallback gets it too)', async () => {
+    m.loadConscienceBlock.mockResolvedValue('## Conscience (reference data)\n1. Ship small')
+    const spec = await planOne()
+    expect(m.loadConscienceBlock).toHaveBeenCalledWith(USER)
+    const prompt = spec.input.prompt
+    expect(prompt).toContain('## Conscience (reference data)\n1. Ship small')
+    // Reference data sits before the closing instruction, never after it.
+    expect(prompt.indexOf('Conscience')).toBeLessThan(prompt.indexOf('Write the weekly review JSON now.'))
   })
 
   it('plans once per week: an existing job short-circuits before the input gather', async () => {

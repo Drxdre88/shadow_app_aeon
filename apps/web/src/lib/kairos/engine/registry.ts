@@ -5,6 +5,7 @@ import { BackUpStep } from './steps/back-up'
 import { ConceptStep } from './steps/concepts'
 import { MergeStep } from './steps/merge'
 import { OwnMindStep } from './steps/own-mind'
+import { RecheckStep } from './steps/recheck'
 import { WeighStep } from './steps/weigh'
 import type { Step, ThinkingJobSpec } from './types'
 
@@ -18,13 +19,15 @@ async function enqueueThinkingJobs(userId: string, specs: readonly ThinkingJobSp
 
 // Night order (docs/kairos/32 §2): fold repeats first so Weigh scores the
 // survivors, promote/decay candidates on fresh standing, mirror the promotions
-// into the own mind, then weekly concepts.
+// into the own mind, re-check beliefs whose support went away (after OwnMind
+// so tonight's mirrors and retirements are settled), then weekly concepts.
 export function buildNightSteps(): Step[] {
   return [
     new MergeStep(),
     new WeighStep(new Standing(defaultScorers())),
     new BackUpStep(),
     new OwnMindStep(),
+    new RecheckStep(),
     new ConceptStep({ enqueue: enqueueThinkingJobs }),
   ]
 }

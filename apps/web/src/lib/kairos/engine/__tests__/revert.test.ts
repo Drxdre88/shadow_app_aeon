@@ -306,3 +306,92 @@ describe('revertMemoryOp', () => {
     })
   })
 })
+
+describe('revertMemoryOp: belief re-check ops (P2.5)', () => {
+  const RECHECK = { since: '2026-10-01T01:30:00.000Z', lostSources: [{ id: 'm-2', state: 'archived' }] }
+  // jsonb returns keys in its own order; the staleness check must not care.
+  const RECHECK_REORDERED = { lostSources: [{ state: 'archived', id: 'm-2' }], since: '2026-10-01T01:30:00.000Z' }
+  const held = (over: Record<string, unknown> = {}) => ({
+    v: 1, mind: 'aligned', domain: 'general', dominionId: null, claim: 'c', reasons: [], falsifier: 'f',
+    sourceType: 'operator', provenance: ['m-1', 'm-2'], status: 'held', confidence: 0.8, ...over,
+  })
+  const recheckOp = op({
+    op: 'recheck', step: 'recheck', memoryId: 'bel-1',
+    before: { belief: { confidence: 0.8, recheck: null } },
+    after: { belief: { confidence: 0.56, recheck: RECHECK }, lostSources: [{ id: 'm-2', state: 'archived' }] },
+  })
+
+  it('restores confidence, removes the flag and remembers the acknowledged loss', async () => {
+    vi.mocked(findMemoryOp).mockResolvedValue(recheckOp)
+    vi.mocked(findRevertableMemories).mockResolvedValue([mem('bel-1', {
+      sourceMetadata: { kind: 'belief', belief: held({ confidence: 0.56, recheck: RECHECK_REORDERED }) },
+    })])
+    const res = await revertMemoryOp(USER, OP_ID, { now: NOW })
+    expect(res).toMatchObject({ ok: true, restoredMemoryIds: ['bel-1'] })
+    const [patch] = vi.mocked(applyMemoryOpRevert).mock.calls[0][2]
+    const meta = patch.set.sourceMetadata as { belief: Record<string, unknown>; engine: { vetoes: Record<string, unknown> } }
+    expect(meta.belief.confidence).toBe(0.8)
+    expect('recheck' in meta.belief).toBe(false)
+    expect(meta.belief.provenance).toEqual(['m-1', 'm-2'])
+    expect(meta.engine.vetoes.recheck).toEqual({ opId: OP_ID, at: NOW.toISOString(), lostSources: ['m-2'] })
+  })
+
+  it('is stale once the belief moved on (reaffirmed since)', async () => {
+    vi.mocked(findMemoryOp).mockResolvedValue(recheckOp)
+    vi.mocked(findRevertableMemories).mockResolvedValue([mem('bel-1', { sourceMetadata: { belief: held({ confidence: 0.7 }) } })])
+    expect(await revertMemoryOp(USER, OP_ID)).toEqual({ ok: false, reason: 'stale' })
+    expect(applyMemoryOpRevert).not.toHaveBeenCalled()
+  })
+
+  it('reverts a retire: back to held, invalidAt restored, retire vetoed', async () => {
+    vi.mocked(findMemoryOp).mockResolvedValue(op({
+      op: 'retire', step: 'beliefs', memoryId: 'bel-1',
+      before: { invalidAt: null, supersededAt: null, belief: { status: 'held' } },
+      after: { invalidAt: PROMOTED_AT, supersededAt: null, belief: { status: 'retired' }, extractKey: 'k' },
+    }))
+    vi.mocked(findRevertableMemories).mockResolvedValue([mem('bel-1', {
+      invalidAt: new Date(PROMOTED_AT),
+      sourceMetadata: { belief: held({ status: 'retired', recheck: RECHECK }) },
+    })])
+    expect((await revertMemoryOp(USER, OP_ID, { now: NOW })).ok).toBe(true)
+    const [patch] = vi.mocked(applyMemoryOpRevert).mock.calls[0][2]
+    expect(patch.set).toMatchObject({ invalidAt: null, supersededAt: null })
+    const meta = patch.set.sourceMetadata as { belief: Record<string, unknown>; engine: { vetoes: Record<string, unknown> } }
+    expect(meta.belief.status).toBe('held')
+    expect(meta.belief.recheck).toEqual(RECHECK)
+    expect(meta.engine.vetoes.retire).toEqual({ opId: OP_ID, at: NOW.toISOString() })
+  })
+
+  it('reverts a merge remap: provenance and links point back', async () => {
+    const beforeLinks = [{ type: 'refers_to', target: 'm-2', target_kind: 'memory' }]
+    const afterLinks = [{ type: 'refers_to', target: 'm-9', target_kind: 'memory' }]
+    vi.mocked(findMemoryOp).mockResolvedValue(op({
+      op: 'feedback', step: 'recheck', memoryId: 'bel-1',
+      before: { belief: { provenance: ['m-2'] }, links: beforeLinks },
+      after: { belief: { provenance: ['m-9'] }, links: afterLinks, remapped: [{ from: 'm-2', to: 'm-9' }] },
+    }))
+    vi.mocked(findRevertableMemories).mockResolvedValue([mem('bel-1', { links: afterLinks, sourceMetadata: { belief: held({ provenance: ['m-9'] }) } })])
+    expect((await revertMemoryOp(USER, OP_ID)).ok).toBe(true)
+    const [patch] = vi.mocked(applyMemoryOpRevert).mock.calls[0][2]
+    expect(patch.set.links).toEqual(beforeLinks)
+    expect((patch.set.sourceMetadata as { belief: { provenance: string[] } }).belief.provenance).toEqual(['m-2'])
+    expect((patch.set.sourceMetadata as { engine?: unknown }).engine).toBeUndefined()
+  })
+
+  it('reverts a legacy normalisation: sourceType + confidence restored, normalisedAt removed, vetoed', async () => {
+    vi.mocked(findMemoryOp).mockResolvedValue(op({
+      op: 'feedback', step: 'recheck', memoryId: 'bel-1',
+      before: { belief: { sourceType: 'operator', confidence: 0.9, normalisedAt: null } },
+      after: { belief: { sourceType: 'inference', confidence: 0.6, normalisedAt: PROMOTED_AT }, normalised: true },
+    }))
+    vi.mocked(findRevertableMemories).mockResolvedValue([mem('bel-1', {
+      sourceMetadata: { belief: held({ sourceType: 'inference', confidence: 0.6, normalisedAt: PROMOTED_AT }) },
+    })])
+    expect((await revertMemoryOp(USER, OP_ID, { now: NOW })).ok).toBe(true)
+    const [patch] = vi.mocked(applyMemoryOpRevert).mock.calls[0][2]
+    const meta = patch.set.sourceMetadata as { belief: Record<string, unknown>; engine: { vetoes: Record<string, unknown> } }
+    expect(meta.belief).toMatchObject({ sourceType: 'operator', confidence: 0.9 })
+    expect('normalisedAt' in meta.belief).toBe(false)
+    expect(meta.engine.vetoes.normalise).toEqual({ opId: OP_ID, at: NOW.toISOString() })
+  })
+})

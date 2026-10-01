@@ -7,9 +7,11 @@ const m = vi.hoisted(() => ({
   alreadyDelivered: vi.fn(),
   gatherDailyMessageInputs: vi.fn(),
   readTodayBriefs: vi.fn(),
+  loadConscienceBlock: vi.fn(),
 }))
 
 vi.mock('@/lib/data/thinking-jobs', () => ({ listJobs: m.listJobs }))
+vi.mock('@/lib/kairos/conscience-context', () => ({ loadConscienceBlock: m.loadConscienceBlock }))
 vi.mock('@/lib/kairos/daily-message', () => ({
   DAILY_MESSAGE_KIND: 'daily_message',
   dailyMessageJobKey: (date: string) => `daily_message:${date}`,
@@ -54,6 +56,7 @@ beforeEach(() => {
   m.alreadyDelivered.mockResolvedValue(false)
   m.readTodayBriefs.mockResolvedValue([{ dominion: 'AEON', lines: ['Ship it.'] }])
   m.gatherDailyMessageInputs.mockResolvedValue(inputs())
+  m.loadConscienceBlock.mockResolvedValue('')
 })
 
 describe('daily_message handler — plan', () => {
@@ -73,6 +76,15 @@ describe('daily_message handler — plan', () => {
       input: { system: DAILY_MESSAGE_SYSTEM_PROMPT, prompt: buildDailyMessageUserPrompt(inputs()), context: { date: '2026-10-01' } },
     })
     expect(specs[0].deadlineMinutes).toBeCloseTo(35, 5)
+  })
+
+  it('routine prompt carries the same conscience block as the paid compose', async () => {
+    m.loadConscienceBlock.mockResolvedValue('## Conscience (reference data)\nP1')
+    const specs = await dailyMessageHandler.plan(USER, new Date('2026-10-01T06:20:00Z'))
+    expect(m.loadConscienceBlock).toHaveBeenCalledWith(USER)
+    expect(specs[0].input.prompt).toBe(buildDailyMessageUserPrompt(inputs(), '## Conscience (reference data)\nP1'))
+    expect(specs[0].input.prompt).toMatch(/Conscience \(reference data\)\nP1$/)
+    expect(specs[0].input.system).toBe(DAILY_MESSAGE_SYSTEM_PROMPT)
   })
 
   it('plans nothing without today\'s briefs (missing or failed)', async () => {

@@ -6,7 +6,9 @@ import { getPendingKairosAsk } from '@/lib/data/ask'
 import { listBoardDayPages } from '@/lib/data/board-feed'
 import { listPromotedBeliefsBetween } from '@/lib/data/memory-candidates'
 import { listTraceHistory } from '@/lib/data/recipes'
+import { findLatestConscienceRun } from '@/lib/data/constitution-drift'
 import { getLatestDriftStatus } from './constitution/amendment'
+import { conscienceFailureLine, readStoredConscience } from './constitution/conscience-probes'
 import { SYNTHESIS_HEALTH_RECIPE } from './synthesis-health'
 import {
   MAX_DIGEST_BELIEFS,
@@ -136,13 +138,34 @@ async function readNewBeliefs(userId: string, since: Date): Promise<BeliefChange
   })
 }
 
-async function readDrift(userId: string, now: Date): Promise<DriftDigest | null> {
-  const status = await getLatestDriftStatus(userId)
-  if (!status || now.getTime() - status.measuredAt.getTime() > DRIFT_MAX_AGE_MS) return null
-  const flipped = status.flipped.slice(0, 2).map((f) => `"${clipLine(f.question)}"`)
-  const summary = `mean similarity ${status.mean.toFixed(2)} to the v${status.version} baseline` +
+// The drift line plus the latest conscience checks (failures only, docs/kairos/34
+// §2). `measured` is false when only conscience checks are fresh — there is
+// then no drift verdict to report.
+export interface DriftInputs extends DriftDigest {
+  measured: boolean
+  conscience: string | null
+}
+
+async function readConscience(userId: string, now: Date): Promise<string | null> {
+  try {
+    const row = await findLatestConscienceRun(userId)
+    if (!row || now.getTime() - row.createdAt.getTime() > DRIFT_MAX_AGE_MS) return null
+    const stored = readStoredConscience(row.sourceMetadata)
+    return stored ? conscienceFailureLine(stored) : null
+  } catch (err) {
+    console.warn('[kairos:daily-message] conscience read failed:', err instanceof Error ? err.message : err)
+    return null
+  }
+}
+
+async function readDrift(userId: string, now: Date): Promise<DriftInputs | null> {
+  const [status, conscience] = await Promise.all([getLatestDriftStatus(userId), readConscience(userId, now)])
+  const fresh = status && now.getTime() - status.measuredAt.getTime() <= DRIFT_MAX_AGE_MS ? status : null
+  if (!fresh) return conscience ? { alert: false, summary: null, measured: false, conscience } : null
+  const flipped = fresh.flipped.slice(0, 2).map((f) => `"${clipLine(f.question)}"`)
+  const summary = `mean similarity ${fresh.mean.toFixed(2)} to the v${fresh.version} baseline` +
     (flipped.length ? `; shifted most on ${flipped.join(' and ')}` : '')
-  return { alert: status.alert, summary }
+  return { alert: fresh.alert, summary, measured: true, conscience }
 }
 
 async function readPendingAsk(userId: string): Promise<string | null> {

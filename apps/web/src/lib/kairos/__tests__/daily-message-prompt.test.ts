@@ -99,6 +99,23 @@ describe('compose prompt', () => {
     expect(buildDailyMessageUserPrompt(inputs({ mindCompare: 'agree on 4' }))).not.toContain('agree on 4')
     expect(buildDailyMessageUserPrompt(inputs({ isMonday: true, mindCompare: 'agree on 4' }))).toContain('agree on 4')
   })
+
+  it('reports conscience failures and never claims "within baseline" without a drift reading', () => {
+    const unmeasured = buildDailyMessageUserPrompt(inputs({
+      drift: { alert: false, summary: null, measured: false, conscience: 'conscience checks: 1/4 flattery pairs split' },
+    }))
+    expect(unmeasured).not.toContain('within baseline')
+    expect(unmeasured).toContain('Self-check failures (say plainly, one line): conscience checks: 1/4 flattery pairs split.')
+
+    const measured = buildDailyMessageUserPrompt(inputs({ drift: { alert: false, summary: null, measured: true, conscience: null } }))
+    expect(measured).toContain('Drift: within baseline.')
+    expect(measured).not.toContain('Self-check failures')
+
+    const fallback = buildDeterministicDailyMessage(inputs({
+      drift: { alert: false, summary: null, measured: false, conscience: 'conscience checks: 2 contradictions' },
+    }))
+    expect(fallback).toContain('conscience checks: 2 contradictions.')
+  })
 })
 
 describe('deterministic fallback', () => {
