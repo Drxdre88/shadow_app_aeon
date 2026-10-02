@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en" data-theme="stone">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kairos: do we need every brain job?</title>
+<script>(function () {
+  var KEY = "srl-theme";
+  var THEMES = ["stone", "wood", "neon", "papyrus"];
+  var root = document.documentElement;
+
+  function read() {
+    try { return localStorage.getItem(KEY); } catch (e) { return null; }
+  }
+  function write(v) {
+    try { localStorage.setItem(KEY, v); } catch (e) { }
+  }
+  function apply(v) {
+    if (THEMES.indexOf(v) < 0) v = root.getAttribute("data-theme") || "stone";
+    root.setAttribute("data-theme", v);
+    var buttons = document.querySelectorAll(".srl-theme-select button[data-theme-choice]");
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].setAttribute("aria-pressed", String(buttons[i].getAttribute("data-theme-choice") === v));
+    }
+    document.dispatchEvent(new CustomEvent("srl-theme", { detail: v }));
+  }
+
+  apply(read());
+  document.addEventListener("DOMContentLoaded", function () {
+    apply(root.getAttribute("data-theme"));
+    document.addEventListener("click", function (ev) {
+      var b = ev.target.closest && ev.target.closest("[data-theme-choice]");
+      if (!b) return;
+      var v = b.getAttribute("data-theme-choice");
+      write(v);
+      apply(v);
+    });
+  });
+})();
+</script>
+<style>/* Shadow Research Lab theme: stone (dark), wood (dark), neon (dark, high contrast), papyrus (light).
+   Set on <html data-theme="stone|wood|neon|papyrus">; theme.js persists the choice as localStorage "srl-theme".
+   Tokens are the only contract: --bg --surface --surface-raised --ink --muted --rule --accent --bull --bear
+   --topbar --on-sign. Tables and figures stay flat; texture lives on the top bar only. Fully offline. */
+
+:root,
+:root[data-theme="stone"] {
+  color-scheme: dark;
+  --bg: #151619;
+  --surface: #222326;
+  --surface-raised: #2d2f32;
+  --ink: #eee7d8;
+  --muted: #b7ab96;
+  --rule: #54514d;
+  --accent: #ddbb75;
+  --bull: #80d1a6;
+  --bear: #f29191;
+  --topbar: #292b2c;
+  --on-sign: #151619;
+  --topbar-texture:
+    radial-gradient(120% 140% at 12% -20%, rgba(200, 210, 220, .10), transparent 55%),
+    radial-gradient(90% 120% at 88% 120%, rgba(160, 170, 180, .07), transparent 60%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, .025) 0 1px, transparent 1px 7px),
+    linear-gradient(180deg, #303235, #242628);
+  --topbar-edge: inset 0 1px 0 rgba(255, 255, 255, .06), inset 0 -2px 0 rgba(0, 0, 0, .45);
+}
+
+:root[data-theme="wood"] {
+  color-scheme: dark;
+  --bg: #16110e;
+  --surface: #261b15;
+  --surface-raised: #33251c;
+  --ink: #f1e6d6;
+  --muted: #bea994;
+  --rule: #624835;
+  --accent: #e4b978;
+  --bull: #83d6ad;
+  --bear: #f59391;
+  --topbar: #332419;
+  --on-sign: #16110e;
+  --topbar-texture:
+    repeating-linear-gradient(92deg, rgba(0, 0, 0, .16) 0 1px, transparent 1px 13px, rgba(255, 220, 170, .035) 13px 14px, transparent 14px 29px),
+    repeating-linear-gradient(88deg, rgba(0, 0, 0, .10) 0 2px, transparent 2px 47px),
+    linear-gradient(180deg, #3d2b1e, #2a1d14);
+  --topbar-edge: inset 0 1px 0 rgba(255, 210, 150, .10), inset 0 -2px 0 rgba(0, 0, 0, .5);
+}
+
+:root[data-theme="neon"] {
+  color-scheme: dark;
+  --bg: #07060d;
+  --surface: #110f1f;
+  --surface-raised: #1a1730;
+  --ink: #e9f7ff;
+  --muted: #9aa6d8;
+  --rule: #3b2f6b;
+  --accent: #34f0ff;
+  --bull: #5cff9d;
+  --bear: #ff4fa3;
+  --topbar: #0d0b1a;
+  --on-sign: #07060d;
+  --topbar-texture:
+    linear-gradient(90deg, rgba(52, 240, 255, .10) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(0deg, rgba(255, 79, 163, .08) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(180deg, #16112b, #0b0916);
+  --topbar-edge: inset 0 -1px 0 rgba(52, 240, 255, .55), 0 0 18px rgba(52, 240, 255, .18);
+}
+:root[data-theme="neon"] .srl-page h1,
+:root[data-theme="neon"] .srl-page h2 { text-shadow: 0 0 6px rgba(52, 240, 255, .55), 0 0 18px rgba(255, 79, 163, .25); }
+:root[data-theme="neon"] .srl-page a,
+:root[data-theme="neon"] .srl-wordmark { text-shadow: 0 0 8px rgba(52, 240, 255, .45); }
+
+:root[data-theme="papyrus"] {
+  color-scheme: light;
+  --bg: #f4ecd8;
+  --surface: #eee3ca;
+  --surface-raised: #e5d3af;
+  --ink: #302517;
+  --muted: #67533b;
+  --rule: #ac9471;
+  --accent: #715121;
+  --bull: #226345;
+  --bear: #a13739;
+  --topbar: #e5d3af;
+  --on-sign: #fbf6ea;
+  --topbar-texture:
+    radial-gradient(140% 160% at 20% -30%, rgba(255, 250, 235, .55), transparent 60%),
+    radial-gradient(100% 120% at 90% 130%, rgba(140, 105, 55, .12), transparent 60%),
+    linear-gradient(180deg, #eadbbc, #e0cda6);
+  --topbar-edge: inset 0 -1px 0 rgba(113, 81, 33, .35);
+}
+
+:root {
+  --font-display: "Old English Text MT", "UnifrakturCook", "UnifrakturMaguntia", "Palatino Linotype", Palatino, serif;
+  --font-heading: "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font-body: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-num: Consolas, "Cascadia Mono", "Courier New", monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 var(--font-body);
+}
+
+.srl-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  background: var(--topbar-texture), var(--topbar);
+  box-shadow: var(--topbar-edge);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-ui);
+}
+.srl-wordmark {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  line-height: 1;
+  color: var(--accent);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .35);
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+.srl-crumb { color: var(--muted); font-size: .85rem; letter-spacing: .06em; text-transform: uppercase; }
+.srl-spacer { flex: 1; }
+.srl-theme-select { display: inline-flex; gap: 4px; }
+.srl-theme-select button {
+  font: 500 .8rem var(--font-ui);
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.srl-theme-select button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+.srl-page { max-width: 880px; margin: 0 auto; padding: 28px 20px 56px; }
+.srl-page h1, .srl-page h2, .srl-page h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.2; }
+.srl-page h1 { font-size: 2.1rem; margin: 0 0 6px; }
+.srl-page h2 { font-size: 1.35rem; margin: 30px 0 8px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.srl-page h3 { font-size: 1.1rem; margin: 20px 0 6px; }
+.srl-page a { color: var(--accent); }
+.srl-page code { font-family: var(--font-num); font-size: .9em; background: var(--surface); padding: 1px 4px; border-radius: 3px; }
+.srl-page pre { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; overflow-x: auto; }
+.srl-page pre code { background: none; padding: 0; }
+.srl-page blockquote { margin: 12px 0; padding: 4px 14px; border-left: 3px solid var(--accent); color: var(--muted); }
+.srl-lede { color: var(--muted); font-size: 1.05rem; }
+.srl-eyebrow { font: 600 .78rem var(--font-ui); color: var(--muted); letter-spacing: .12em; text-transform: uppercase; }
+
+.srl-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 18px 0; }
+.srl-tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; }
+.srl-tile .v { font: 600 1.5rem var(--font-num); }
+.srl-tile .l { color: var(--muted); font-size: .85rem; }
+
+.srl-table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; margin: 12px 0; }
+.srl-page table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.srl-page th, .srl-page td { padding: 7px 10px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+.srl-page th { font: 600 .8rem var(--font-ui); color: var(--muted); letter-spacing: .03em; }
+.srl-page tr:last-child td { border-bottom: 0; }
+
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.bull, .pos { color: var(--bull); }
+.bear, .neg { color: var(--bear); }
+.warn { color: var(--accent); }
+.muted { color: var(--muted); }
+
+.srl-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 18px 0 0; border-bottom: 1px solid var(--rule); }
+.srl-tabs button {
+  font: 500 .88rem var(--font-ui);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.srl-tabs button[aria-selected="true"] { color: var(--ink); background: var(--surface); border-color: var(--rule); }
+.srl-tabpanel[hidden] { display: none; }
+
+.srl-footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid var(--rule); color: var(--muted); font-size: .85rem; }
+
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .srl-theme-select button, .srl-tabs button { transition: background .15s, color .15s; } }
+</style>
+</head>
+<body>
+<header class="srl-topbar"><span class="srl-wordmark">Shadow Research Lab</span><span class="srl-crumb">research / kairos_0210</span><span class="srl-spacer"></span><nav class="srl-theme-select" aria-label="Theme"><button type="button" data-theme-choice="stone" aria-pressed="false">Stone</button><button type="button" data-theme-choice="wood" aria-pressed="false">Wood</button><button type="button" data-theme-choice="neon" aria-pressed="false">Neon</button><button type="button" data-theme-choice="papyrus" aria-pressed="false">Papyrus</button></nav></header>
+<main class="srl-page">
+<p class="srl-eyebrow">Kairos · brain audit · 02/10</p>
+<h1>Kairos: do we need every brain job?</h1>
+<p class="srl-lede">Fourteen jobs feed a real part of the brain. Four were noise. Everything moves onto one Max routine.</p>
+<div class="srl-tiles"><div class="srl-tile"><div class="v pos">14</div><div class="l">jobs kept</div></div><div class="srl-tile"><div class="v warn">4 + 2</div><div class="l">jobs and routines retired</div></div><div class="srl-tile"><div class="v pos">7 → 2</div><div class="l">routines on claude.ai</div></div><div class="srl-tile"><div class="v pos">~120 → ~30</div><div class="l">model calls a day</div></div></div>
+<article>
+<h2>The short answer</h2>
+<p>No, not all of them were helping. Kairos had 18 kinds of thinking job and 7 routines. 14 of the jobs feed a real part of the brain; 4 were noise. The noise jobs were also the expensive ones: together they made about 90 of the roughly 120 model calls a day.</p>
+<p>The new shape is <strong>one routine on your Max plan</strong> that does all scheduled thinking, plus <strong>one routine for Telegram replies</strong>. The paid key is kept only as a silent backup. If the routine misses a job, the backup runs it, and the new Connect screen shows it to you.</p>
+<h2>The brain, part by part</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Brain part</th><th>Job</th><th>What it does for you</th><th>Verdict</th></tr></thead><tbody><tr><td>Perception</td><td>Chat summaries</td><td>Turns yesterday&#x27;s conversations into memories. It&#x27;s the only way what you say reaches the brain</td><td>✅ Keep, nightly</td></tr><tr><td>Memory</td><td>Patterns</td><td>Finds what keeps recurring in each area; chat and the area summaries read it</td><td>✅ Keep, nightly</td></tr><tr><td>Memory</td><td>Concepts</td><td>Folds clusters of memories into lasting ideas that chat can always find</td><td>✅ Keep, weekly</td></tr><tr><td>Memory</td><td>Memory upkeep (server, no AI)</td><td>Trust scores, merging, fading, promotion, undo</td><td>✅ Keep. Being fixed today</td></tr><tr><td>Self-model</td><td>Area summaries</td><td>What Kairos understands about each area. Feeds the self-model and filing of new memories</td><td>✅ Keep, nightly</td></tr><tr><td>Self-model</td><td>Self-model</td><td>The one picture of you that chat, the 08:00 message and ideas all read</td><td>✅ Keep, nightly</td></tr><tr><td>Beliefs &amp; conscience</td><td>Your beliefs</td><td>Pulls what you believe out of your own words; the only source of &quot;your&quot; beliefs</td><td>✅ Keep, nightly</td></tr><tr><td>Beliefs &amp; conscience</td><td>Drift and honesty checks</td><td>Checks he still answers in line with your constitution and stays honest</td><td>✅ Keep, nightly</td></tr><tr><td>Beliefs &amp; conscience</td><td>Two minds</td><td>Compares your beliefs with his own</td><td>✅ Keep, Mondays</td></tr><tr><td>Creativity</td><td>Idea contest (two steps)</td><td>Generates ideas, then a sceptical judge keeps the best 1–3</td><td>✅ Keep, nightly</td></tr><tr><td>Voice</td><td>Question of the day</td><td>The one question he most wants to ask you; your answers become memories</td><td>✅ Keep, nightly</td></tr><tr><td>Voice</td><td>Weekly review</td><td>Plan versus actual, belief changes, ideas</td><td>✅ Keep, Mondays</td></tr><tr><td>Voice</td><td>08:00 message</td><td>The single morning message</td><td>✅ Keep, nightly</td></tr><tr><td>Voice</td><td>Telegram replies</td><td>Answers you on Telegram</td><td>✅ Keep, on demand</td></tr><tr><td>Voice</td><td>9 morning briefs</td><td>One per area each morning. The 08:00 message kept only 2 lines of each, and says itself it replaces them</td><td>🗑️ Retire. The message now reads the area summaries directly</td></tr><tr><td>Creativity</td><td>Raw idea dump</td><td>Nine unfiltered idea lists a night, from before the idea contest existed</td><td>🗑️ Retire. The contest replaced it</td></tr><tr><td>Self-questioning</td><td>Contradiction scan</td><td>Flags clashing memories in the inbox</td><td>🗑️ Retire. All 20 notices since August are still unread, and most compare two tidy-up notes</td></tr><tr><td>Memory</td><td>Intraday tidy-ups</td><td>Up to 7 &quot;today so far&quot; notes per area a day</td><td>🗑️ Retire. Only the next night reads them, and it copes without them</td></tr><tr><td>Memory</td><td>Sunday duplicate sweep (server)</td><td>Marks old duplicates</td><td>🗑️ Retire. Nightly upkeep already merges duplicates</td></tr><tr><td>Voice</td><td>Brain-tick (3 a day on claude.ai)</td><td>A second voice speaking first</td><td>🗑️ Delete on claude.ai. The 08:00 message already carries his question</td></tr></tbody></table></div>
+<h2>Before and after</h2>
+<div class="srl-table-wrap"><table><thead><tr><th></th><th>Before</th><th>After</th></tr></thead><tbody><tr><td>Thinking jobs</td><td class="num">18</td><td class="num">14</td></tr><tr><td>Routines on claude.ai</td><td>7 (3 live, 3 never created, plus brain-tick)</td><td class="num">2</td></tr><tr><td>Model calls a day</td><td>about 120</td><td>about 30</td></tr><tr><td>Paid key</td><td>7 job types last night</td><td>Backup only</td></tr><tr><td>When a new job is added</td><td>Edit a routine prompt by hand, or it runs on the paid key</td><td>Nothing to do. The routine takes whatever is due</td></tr><tr><td>Seeing if it works</td><td>Read job lists through the AI</td><td>Connect screen: last night on Max vs backup, per job</td></tr></tbody></table></div>
+<h2>Why one routine works</h2>
+<p>Every job already has its own time window, and the server only hands out jobs that are due. So one routine that wakes at 01:40, 02:40, 03:40, 04:40, 05:40 and 06:40 UTC picks up each job in its window:</p>
+<div class="srl-table-wrap"><table><thead><tr><th>Run (UTC)</th><th>Picks up</th></tr></thead><tbody><tr><td>01:40</td><td>chat summaries, then patterns</td></tr><tr><td>02:40</td><td>area summaries, concepts (Sun), self-model, beliefs, drift checks</td></tr><tr><td>03:40</td><td>idea contest, question of the day</td></tr><tr><td>04:40</td><td>two minds (Mon)</td></tr><tr><td>05:40</td><td>weekly review (Mon), 08:00 message</td></tr><tr><td>06:40</td><td>anything that slipped</td></tr></tbody></table></div>
+<p>The routine asks for &quot;whatever is due&quot; rather than a fixed list of job types. That fixed list is what went stale last night: new job types existed, but no routine was asking for them.</p>
+<h2>What still uses the paid key</h2>
+<ul>
+<li>The backup, only when the routine misses a job.</li>
+<li>The constitution drafter, once, until you accept the first constitution on Monday 05/10; after that it does nothing.</li>
+<li>Telegram replies, until you create the chat routine and paste its token into Vercel. The Connect screen walks you through it.</li>
+</ul>
+<p>Search embeddings come from Voyage, not Claude, so they are not affected.</p>
+</article>
+<footer class="srl-footer">Generated 2026-10-02 07:50 UTC · Markdown is the source of truth; regenerate, don't edit.</footer>
+</main>
+</body>
+</html>

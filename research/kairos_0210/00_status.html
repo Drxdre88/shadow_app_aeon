@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en" data-theme="stone">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kairos: where we are and what comes next</title>
+<script>(function () {
+  var KEY = "srl-theme";
+  var THEMES = ["stone", "wood", "neon", "papyrus"];
+  var root = document.documentElement;
+
+  function read() {
+    try { return localStorage.getItem(KEY); } catch (e) { return null; }
+  }
+  function write(v) {
+    try { localStorage.setItem(KEY, v); } catch (e) { }
+  }
+  function apply(v) {
+    if (THEMES.indexOf(v) < 0) v = root.getAttribute("data-theme") || "stone";
+    root.setAttribute("data-theme", v);
+    var buttons = document.querySelectorAll(".srl-theme-select button[data-theme-choice]");
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].setAttribute("aria-pressed", String(buttons[i].getAttribute("data-theme-choice") === v));
+    }
+    document.dispatchEvent(new CustomEvent("srl-theme", { detail: v }));
+  }
+
+  apply(read());
+  document.addEventListener("DOMContentLoaded", function () {
+    apply(root.getAttribute("data-theme"));
+    document.addEventListener("click", function (ev) {
+      var b = ev.target.closest && ev.target.closest("[data-theme-choice]");
+      if (!b) return;
+      var v = b.getAttribute("data-theme-choice");
+      write(v);
+      apply(v);
+    });
+  });
+})();
+</script>
+<style>/* Shadow Research Lab theme: stone (dark), wood (dark), neon (dark, high contrast), papyrus (light).
+   Set on <html data-theme="stone|wood|neon|papyrus">; theme.js persists the choice as localStorage "srl-theme".
+   Tokens are the only contract: --bg --surface --surface-raised --ink --muted --rule --accent --bull --bear
+   --topbar --on-sign. Tables and figures stay flat; texture lives on the top bar only. Fully offline. */
+
+:root,
+:root[data-theme="stone"] {
+  color-scheme: dark;
+  --bg: #151619;
+  --surface: #222326;
+  --surface-raised: #2d2f32;
+  --ink: #eee7d8;
+  --muted: #b7ab96;
+  --rule: #54514d;
+  --accent: #ddbb75;
+  --bull: #80d1a6;
+  --bear: #f29191;
+  --topbar: #292b2c;
+  --on-sign: #151619;
+  --topbar-texture:
+    radial-gradient(120% 140% at 12% -20%, rgba(200, 210, 220, .10), transparent 55%),
+    radial-gradient(90% 120% at 88% 120%, rgba(160, 170, 180, .07), transparent 60%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, .025) 0 1px, transparent 1px 7px),
+    linear-gradient(180deg, #303235, #242628);
+  --topbar-edge: inset 0 1px 0 rgba(255, 255, 255, .06), inset 0 -2px 0 rgba(0, 0, 0, .45);
+}
+
+:root[data-theme="wood"] {
+  color-scheme: dark;
+  --bg: #16110e;
+  --surface: #261b15;
+  --surface-raised: #33251c;
+  --ink: #f1e6d6;
+  --muted: #bea994;
+  --rule: #624835;
+  --accent: #e4b978;
+  --bull: #83d6ad;
+  --bear: #f59391;
+  --topbar: #332419;
+  --on-sign: #16110e;
+  --topbar-texture:
+    repeating-linear-gradient(92deg, rgba(0, 0, 0, .16) 0 1px, transparent 1px 13px, rgba(255, 220, 170, .035) 13px 14px, transparent 14px 29px),
+    repeating-linear-gradient(88deg, rgba(0, 0, 0, .10) 0 2px, transparent 2px 47px),
+    linear-gradient(180deg, #3d2b1e, #2a1d14);
+  --topbar-edge: inset 0 1px 0 rgba(255, 210, 150, .10), inset 0 -2px 0 rgba(0, 0, 0, .5);
+}
+
+:root[data-theme="neon"] {
+  color-scheme: dark;
+  --bg: #07060d;
+  --surface: #110f1f;
+  --surface-raised: #1a1730;
+  --ink: #e9f7ff;
+  --muted: #9aa6d8;
+  --rule: #3b2f6b;
+  --accent: #34f0ff;
+  --bull: #5cff9d;
+  --bear: #ff4fa3;
+  --topbar: #0d0b1a;
+  --on-sign: #07060d;
+  --topbar-texture:
+    linear-gradient(90deg, rgba(52, 240, 255, .10) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(0deg, rgba(255, 79, 163, .08) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(180deg, #16112b, #0b0916);
+  --topbar-edge: inset 0 -1px 0 rgba(52, 240, 255, .55), 0 0 18px rgba(52, 240, 255, .18);
+}
+:root[data-theme="neon"] .srl-page h1,
+:root[data-theme="neon"] .srl-page h2 { text-shadow: 0 0 6px rgba(52, 240, 255, .55), 0 0 18px rgba(255, 79, 163, .25); }
+:root[data-theme="neon"] .srl-page a,
+:root[data-theme="neon"] .srl-wordmark { text-shadow: 0 0 8px rgba(52, 240, 255, .45); }
+
+:root[data-theme="papyrus"] {
+  color-scheme: light;
+  --bg: #f4ecd8;
+  --surface: #eee3ca;
+  --surface-raised: #e5d3af;
+  --ink: #302517;
+  --muted: #67533b;
+  --rule: #ac9471;
+  --accent: #715121;
+  --bull: #226345;
+  --bear: #a13739;
+  --topbar: #e5d3af;
+  --on-sign: #fbf6ea;
+  --topbar-texture:
+    radial-gradient(140% 160% at 20% -30%, rgba(255, 250, 235, .55), transparent 60%),
+    radial-gradient(100% 120% at 90% 130%, rgba(140, 105, 55, .12), transparent 60%),
+    linear-gradient(180deg, #eadbbc, #e0cda6);
+  --topbar-edge: inset 0 -1px 0 rgba(113, 81, 33, .35);
+}
+
+:root {
+  --font-display: "Old English Text MT", "UnifrakturCook", "UnifrakturMaguntia", "Palatino Linotype", Palatino, serif;
+  --font-heading: "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font-body: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-num: Consolas, "Cascadia Mono", "Courier New", monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 var(--font-body);
+}
+
+.srl-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  background: var(--topbar-texture), var(--topbar);
+  box-shadow: var(--topbar-edge);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-ui);
+}
+.srl-wordmark {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  line-height: 1;
+  color: var(--accent);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .35);
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+.srl-crumb { color: var(--muted); font-size: .85rem; letter-spacing: .06em; text-transform: uppercase; }
+.srl-spacer { flex: 1; }
+.srl-theme-select { display: inline-flex; gap: 4px; }
+.srl-theme-select button {
+  font: 500 .8rem var(--font-ui);
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.srl-theme-select button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+.srl-page { max-width: 880px; margin: 0 auto; padding: 28px 20px 56px; }
+.srl-page h1, .srl-page h2, .srl-page h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.2; }
+.srl-page h1 { font-size: 2.1rem; margin: 0 0 6px; }
+.srl-page h2 { font-size: 1.35rem; margin: 30px 0 8px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.srl-page h3 { font-size: 1.1rem; margin: 20px 0 6px; }
+.srl-page a { color: var(--accent); }
+.srl-page code { font-family: var(--font-num); font-size: .9em; background: var(--surface); padding: 1px 4px; border-radius: 3px; }
+.srl-page pre { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; overflow-x: auto; }
+.srl-page pre code { background: none; padding: 0; }
+.srl-page blockquote { margin: 12px 0; padding: 4px 14px; border-left: 3px solid var(--accent); color: var(--muted); }
+.srl-lede { color: var(--muted); font-size: 1.05rem; }
+.srl-eyebrow { font: 600 .78rem var(--font-ui); color: var(--muted); letter-spacing: .12em; text-transform: uppercase; }
+
+.srl-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 18px 0; }
+.srl-tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; }
+.srl-tile .v { font: 600 1.5rem var(--font-num); }
+.srl-tile .l { color: var(--muted); font-size: .85rem; }
+
+.srl-table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; margin: 12px 0; }
+.srl-page table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.srl-page th, .srl-page td { padding: 7px 10px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+.srl-page th { font: 600 .8rem var(--font-ui); color: var(--muted); letter-spacing: .03em; }
+.srl-page tr:last-child td { border-bottom: 0; }
+
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.bull, .pos { color: var(--bull); }
+.bear, .neg { color: var(--bear); }
+.warn { color: var(--accent); }
+.muted { color: var(--muted); }
+
+.srl-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 18px 0 0; border-bottom: 1px solid var(--rule); }
+.srl-tabs button {
+  font: 500 .88rem var(--font-ui);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.srl-tabs button[aria-selected="true"] { color: var(--ink); background: var(--surface); border-color: var(--rule); }
+.srl-tabpanel[hidden] { display: none; }
+
+.srl-footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid var(--rule); color: var(--muted); font-size: .85rem; }
+
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .srl-theme-select button, .srl-tabs button { transition: background .15s, color .15s; } }
+</style>
+</head>
+<body>
+<header class="srl-topbar"><span class="srl-wordmark">Shadow Research Lab</span><span class="srl-crumb">research / kairos_0210</span><span class="srl-spacer"></span><nav class="srl-theme-select" aria-label="Theme"><button type="button" data-theme-choice="stone" aria-pressed="false">Stone</button><button type="button" data-theme-choice="wood" aria-pressed="false">Wood</button><button type="button" data-theme-choice="neon" aria-pressed="false">Neon</button><button type="button" data-theme-choice="papyrus" aria-pressed="false">Papyrus</button></nav></header>
+<main class="srl-page">
+<p class="srl-eyebrow">Kairos · status · 02/10</p>
+<h1>Kairos: where we are and what comes next</h1>
+<p class="srl-lede">Four phases and a strengthening pass done, all thinking moving onto Max. One fix and one switch before Phase 4.</p>
+<div class="srl-tiles"><div class="srl-tile"><div class="v pos">0.16</div><div class="l">current Kairos version</div></div><div class="srl-tile"><div class="v pos">5 of 5</div><div class="l">phases shipped (0 to 3, plus 2.5)</div></div><div class="srl-tile"><div class="v neg">1</div><div class="l">nightly job failed last night</div></div><div class="srl-tile"><div class="v warn">6</div><div class="l">Max routines still to switch</div></div></div>
+<article>
+<h2>The short answer</h2>
+<p>Kairos has finished four phases plus a strengthening pass in two days (30/09 to 01/10). He now sees your real work, keeps a memory that earns and loses trust, holds beliefs under a constitution only you can change, and runs a nightly idea contest. Since last night (0.16) the code sends all his thinking to your Claude Max plan first, with the paid key only as a backup.</p>
+<p>Two things stand between him and Phase 4. Last night his nightly memory upkeep failed on a database timeout. And the Max routines have not been switched to the new schedule yet, so the newest jobs still ran on the paid backup.</p>
+<h2>Where he is</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Phase</th><th>Version</th><th>What he gained</th><th>Status</th></tr></thead><tbody><tr><td>Eyes and heal</td><td class="num">0.11</td><td>Four live bugs fixed. He sees coding sessions, Hangar missions and sprint boards</td><td>✅ Live</td></tr><tr><td>Memory engine</td><td class="num">0.12</td><td>Every memory earns a trust score; repeats merge; his own guesses are promoted only on evidence; every change can be undone</td><td>✅ Live</td></tr><tr><td>Beliefs and strategy</td><td class="num">0.13</td><td>Two minds (yours and his own), a constitution, drift checks, one 08:00 message, a Monday review</td><td>✅ Live</td></tr><tr><td>Ground and protect</td><td class="num">0.14</td><td>He knows where each memory came from, re-checks beliefs when a source changes, and passes nightly honesty checks</td><td>✅ Live</td></tr><tr><td>Creativity</td><td class="num">0.15</td><td>A nightly idea contest that keeps one to three ideas, each with the reason it survived</td><td>✅ Live</td></tr><tr><td>All on Max</td><td class="num">0.16</td><td>Every remaining paid job becomes a Max job first, with the old job kept as a backup</td><td>🟡 Code live, routines not switched</td></tr></tbody></table></div>
+<h2>Last night, the first night on 0.16</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>What</th><th>Ran on</th><th>Result</th></tr></thead><tbody><tr><td>Area summaries (8 of 9), the overall self-model, beliefs</td><td>Max</td><td>✅</td></tr><tr><td>Idea contest and today&#x27;s message</td><td>Max</td><td>✅</td></tr><tr><td>Morning briefs, contradictions, archetypes, his question of the day, the raw idea dump</td><td>Paid backup</td><td>✅ All ran, as expected until the routines are switched</td></tr><tr><td>Nightly memory upkeep</td><td>Server</td><td>🔴 Failed at 02:34 UK time</td></tr></tbody></table></div>
+<p><strong>What failed.</strong> The scoring step hit a database timeout. The backlog pass then ran out of time after 166 of 400 memories, and the weekly concepts step did not run. Nothing was lost; the work is simply undone for one night. This is the first night the new belief re-check steps ran live, so the extra steps likely pushed the run past its time limit.</p>
+<p><strong>Small tidy item.</strong> Nine brief jobs and nine idea-dump jobs still show as &quot;queued&quot; after their deadline. Their backups ran normally, so this is cosmetic.</p>
+<h2>How the night runs once the routines are switched</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>UK time</th><th>Routine</th><th>What it thinks about</th></tr></thead><tbody><tr><td>02:40</td><td>Dusk</td><td>Chat summaries and archetypes</td></tr><tr><td>02:30</td><td>(server, no AI)</td><td>Nightly memory upkeep: merge, score, re-check beliefs, backlog</td></tr><tr><td>03:40</td><td>Thinking</td><td>Area summaries, the overall self-model, beliefs and drift checks</td></tr><tr><td>04:35</td><td>Ideas</td><td>The idea contest and his question of the day</td></tr><tr><td>05:00</td><td>Dawn</td><td>Contradictions and the raw idea dump</td></tr><tr><td>06:40</td><td>Morning</td><td>Briefs and the 08:00 message</td></tr><tr><td>Six times a day</td><td>Tidy</td><td>Short tidy-ups through the day</td></tr></tbody></table></div>
+<p>All six run on Opus 5.5. If a routine misses a job, the old job runs it on the paid key shortly after, so nothing is ever skipped.</p>
+<p><strong>Still on the paid key after the switch:</strong> only the backups, and Telegram chat replies. The Telegram chat routine needs a token from claude.ai before it can move.</p>
+<h2>Next steps, in order</h2>
+<ol>
+<li><strong>Fix the memory upkeep timeout.</strong> It is the foundation Phase 4 builds on, so it comes first.</li>
+<li><strong>Switch the six routines</strong> in Claude Code and test-fire each one. Then check the next morning that every job says &quot;answered by routine&quot;.</li>
+<li><strong>Watch Monday 05/10.</strong> His first constitution draft arrives in your inbox for you to accept, alongside the first full weekly review with ideas and belief changes.</li>
+<li><strong>Start Phase 4: Initiative.</strong> He gets goals of his own, a list of promises he has to keep, approve or veto buttons on Telegram, and Hangar missions as his hands.</li>
+</ol>
+<h2>Phase 4 in plain words</h2>
+<p>The research is clear on one point: an AI that sets its own goals freely just repeats itself. What works is proposing the next goal from a record of past attempts, and only goals whose outcome can be checked. And agents keep only about half to two thirds of their own promises, so a scheduled job, not the model, checks them.</p>
+<div class="srl-table-wrap"><table><thead><tr><th>Track</th><th>What it adds</th></tr></thead><tbody><tr><td>A. Goals of his own</td><td>Each night he proposes a goal from his record of past attempts, scored for novelty and whether he can learn from it</td></tr><tr><td>B. Promise list</td><td>Every &quot;I will do X by T&quot; becomes an entry. A scheduled job checks it and raises it with you when it slips</td></tr><tr><td>C. Approve or veto</td><td>Buttons on Telegram. Your answer teaches him what to propose next</td></tr><tr><td>D. Missions as hands</td><td>An approved investigation can start a Hangar mission; its result is the proof. Anything that changes things stays approve-first, and nothing merges on its own</td></tr></tbody></table></div>
+<p><strong>Rule carried into Phase 4:</strong> any new thinking must be a Max job with a paid backup, and must be added to a routine&#x27;s list, or it will always run on the paid key.</p>
+<h2>Questions for you</h2>
+<ol>
+<li>Shall I fix the memory upkeep timeout now, as today&#x27;s first Kairos job?</li>
+<li>Should he propose one goal a night, or up to three? The handover recommends one to start.</li>
+<li>When he misses a promise, should he ping you on Telegram, or only mention it in the 08:00 message?</li>
+<li>Which kinds of goal may he start without asking you? The recommendation is none at first, then investigations only after a clean record.</li>
+</ol>
+</article>
+<footer class="srl-footer">Generated 2026-10-02 07:06 UTC · Markdown is the source of truth; regenerate, don't edit.</footer>
+</main>
+</body>
+</html>
