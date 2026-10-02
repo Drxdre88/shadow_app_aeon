@@ -3,18 +3,14 @@ import { aetherHandler } from './handlers/aether'
 import { archetypeHandler } from './handlers/archetype'
 import { askMineHandler } from './handlers/ask-mine'
 import { beliefExtractHandler } from './handlers/belief-extract'
-import { briefHandler } from './handlers/brief'
 import { chatDistillHandler } from './handlers/chat-distill'
 import { chatHandler } from './handlers/chat'
 import { conceptHandler } from './handlers/concept'
-import { contradictionHandler } from './handlers/contradiction'
 import { cortexHandler } from './handlers/cortex'
 import { dailyMessageHandler } from './handlers/daily-message'
 import { driftProbeHandler } from './handlers/drift-probe'
 import { ideaGenerateHandler } from './handlers/idea-generate'
 import { ideaJudgeHandler } from './handlers/idea-judge'
-import { introspectionHandler } from './handlers/introspection'
-import { microConsolidateHandler } from './handlers/micro-consolidate'
 import { mindCompareHandler } from './handlers/mind-compare'
 import { weeklyReviewHandler } from './handlers/weekly-review'
 
@@ -34,10 +30,6 @@ export function getThinkingHandlers(): ThinkingJobHandler[] {
     chatDistillHandler,
     archetypeHandler,
     askMineHandler,
-    contradictionHandler,
-    briefHandler,
-    introspectionHandler,
-    microConsolidateHandler,
     dailyMessageHandler,
     chatHandler,
   ]

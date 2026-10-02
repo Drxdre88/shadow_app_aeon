@@ -10,9 +10,7 @@ import { HelpButton } from '@/components/ui/HelpModal'
 import { StatsButton } from '@/components/ui/StatsModal'
 import { BetaFeaturesButton } from '@/components/ui/BetaFeaturesModal'
 import { ChangelogButton } from '@/components/ui/ChangelogModal'
-import { AdvisoryFeed } from '@/components/kairos/AdvisoryFeed'
 import { LiveSessionsButton } from '@/components/kairos/LiveSessionsButton'
-import { DailyBriefingButton } from '@/components/hyperspace/DailyBriefingButton'
 import { EodReflectionButton } from '@/components/hyperspace/EodReflectionButton'
 
 type SidebarUser = { name?: string | null; email?: string | null; image?: string | null; role: string }
@@ -30,8 +28,6 @@ export function SidebarBottom({
       {collapsed ? (
         <div className="flex flex-col items-center justify-center gap-1 px-2 py-2" style={{ color: 'var(--primary)' }}>
           <NotesButton />
-          <DailyBriefingButton />
-          <AdvisoryFeed />
           <EodReflectionButton />
           <LiveSessionsButton />
           <ChangelogButton />
@@ -45,8 +41,6 @@ export function SidebarBottom({
         <div className="px-2 py-2" style={{ color: 'var(--primary)' }}>
           <div className="flex items-center justify-center gap-1">
             <NotesButton />
-            <DailyBriefingButton />
-            <AdvisoryFeed />
             <EodReflectionButton />
             <LiveSessionsButton />
           </div>

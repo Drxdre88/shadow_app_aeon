@@ -31,32 +31,12 @@
       "schedule": "15 3 * * *"
     },
     {
-      "path": "/api/cron/micro-consolidate",
-      "schedule": "15 6,9,12,15,18,21,23 * * *"
-    },
-    {
       "path": "/api/cron/ask-mine",
       "schedule": "30 4 * * *"
     },
     {
-      "path": "/api/cron/briefer",
-      "schedule": "15 6 * * *"
-    },
-    {
-      "path": "/api/cron/introspection",
-      "schedule": "30 6 * * *"
-    },
-    {
       "path": "/api/cron/embed-backfill",
       "schedule": "25 3 * * *"
-    },
-    {
-      "path": "/api/cron/contradiction-scan",
-      "schedule": "0 5 * * *"
-    },
-    {
-      "path": "/api/cron/memory-dedup",
-      "schedule": "0 5 * * 0"
     },
     {
       "path": "/api/cron/synthesis-health",

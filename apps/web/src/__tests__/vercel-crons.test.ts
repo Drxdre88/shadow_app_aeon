@@ -3,9 +3,9 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 // Vercel cron fleet contract (docs/kairos/33-34): the daily message replaced
-// the evening digest; the nightly engine and thinking sweep stay scheduled;
-// the inputs the 07:00 daily message reads (briefer, synthesis health) run
-// before it.
+// the evening digest and the morning briefs; the nightly engine and thinking
+// sweep stay scheduled; synthesis health (an input to the 07:00 daily
+// message) runs before it; the crons retired in Kairos 0.17 stay gone.
 
 interface CronEntry { path: string; schedule: string }
 
@@ -45,7 +45,7 @@ describe('vercel.json crons', () => {
     expect(byPath('/api/cron/thinking-sweep')).toHaveLength(1)
   })
 
-  it.each(['/api/cron/briefer', '/api/cron/synthesis-health'])(
+  it.each(['/api/cron/synthesis-health'])(
     '%s runs before 07:00 UTC (an input to the daily message)',
     (p) => {
       const entries = byPath(p)
@@ -56,11 +56,12 @@ describe('vercel.json crons', () => {
     },
   )
 
-  it('embeds new rows before the 03:30 UTC contradiction window opens (the scan is vector-only)', () => {
-    const entries = byPath('/api/cron/embed-backfill')
-    expect(entries).toHaveLength(1)
-    for (const t of fireMinutes(entries[0]!.schedule)) expect(t).toBeLessThan(3 * 60 + 30)
-  })
+  it.each(['briefer', 'introspection', 'contradiction-scan', 'micro-consolidate', 'memory-dedup'])(
+    'no longer schedules the retired %s cron',
+    (name) => {
+      expect(byPath(`/api/cron/${name}`)).toEqual([])
+    },
+  )
 
   it('has no duplicate paths', () => {
     const paths = crons.map((c) => c.path)

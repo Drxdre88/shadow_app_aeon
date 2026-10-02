@@ -70,7 +70,7 @@ const DATE = '2026-10-01'
 const INPUTS: DailyMessageInputs = {
   date: DATE,
   isMonday: false,
-  briefs: [{ dominion: 'AEON', lines: ['Ship the board fix.'] }],
+  areas: [{ dominion: 'AEON', headline: 'Ship the board fix.' }],
   aether: null,
   boardDay: { finished: 1, finishedTitles: ['Fix login'], thinCards: 0 },
   promotions: [{ title: 'Small batches ship faster' }],

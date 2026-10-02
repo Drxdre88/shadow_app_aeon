@@ -1,0 +1,139 @@
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/lib/db', () => ({ db: {} }))
+
+import { classifyBrainJob, summariseBrainStatus, type BrainJobRow } from '../brain-status'
+import { BRAIN_JOBS } from '@/lib/kairos/routines/catalog'
+
+const NOW = new Date('2026-10-02T08:30:00.000Z')
+const t = (iso: string) => new Date(`2026-${iso}:00.000Z`)
+
+function row(overrides: Partial<BrainJobRow>): BrainJobRow {
+  return {
+    kind: 'cortex',
+    status: 'done',
+    claimedBy: 'routine',
+    claimedAt: t('10-02T01:41'),
+    completedAt: t('10-02T01:43'),
+    deadlineAt: t('10-02T05:00'),
+    error: null,
+    ...overrides,
+  }
+}
+
+describe('classifyBrainJob', () => {
+  it.each<[string, Partial<BrainJobRow>, ReturnType<typeof classifyBrainJob>]>([
+    ['02/10 cortex done by the routine', {}, 'routine'],
+    ['done on the paid key', { claimedBy: 'api' }, 'backup'],
+    ['done deterministically', { claimedBy: 'deterministic' }, 'backup'],
+    ['02/10 drift_probe covered by the sweep fallback', { kind: 'drift_probe', status: 'fallback', claimedBy: 'routine', completedAt: t('10-02T06:00') }, 'backup'],
+    ['02/10 expired with a deferred-to-cron note', { kind: 'daily_message', status: 'expired', claimedBy: null, claimedAt: null, completedAt: null, error: 'fallback: deferred to the 06:15 UTC briefer cron' }, 'backup'],
+    ['failed but a cron named as covering it', { status: 'failed', error: 'rejected; the nightly cron covers it' }, 'backup'],
+    ['chat taken over by the watchdog', { kind: 'chat', status: 'failed', error: 'chat-watchdog: no claim; answered on the paid key' }, 'backup'],
+    ['02/10 cortex failed with no backup note', { status: 'failed', error: 'invalid JSON from routine' }, 'missed'],
+    ['expired by the sweep, fallback not yet run', { status: 'expired', error: 'deadline passed before a routine answered' }, 'missed'],
+    ['expired with no error', { status: 'expired', error: null }, 'missed'],
+    ['queued past its deadline', { status: 'queued', claimedAt: null, completedAt: null, deadlineAt: t('10-02T07:00') }, 'missed'],
+    ['claimed past its deadline', { status: 'claimed', completedAt: null, deadlineAt: t('10-02T07:00') }, 'missed'],
+    ['queued before its deadline', { status: 'queued', claimedAt: null, completedAt: null, deadlineAt: t('10-02T09:00') }, null],
+    ['claimed before its deadline', { status: 'claimed', completedAt: null, deadlineAt: t('10-02T09:00') }, null],
+    ['superseded chat turn is not owed', { kind: 'chat', status: 'failed', error: 'superseded: a newer operator message took over this turn' }, null],
+  ])('%s', (_name, overrides, expected) => {
+    expect(classifyBrainJob(row(overrides), NOW)).toBe(expected)
+  })
+})
+
+describe('summariseBrainStatus', () => {
+  const night: BrainJobRow[] = [
+    row({}),
+    row({ kind: 'cortex', status: 'failed', claimedAt: t('10-02T01:50'), completedAt: t('10-02T01:52'), error: 'invalid JSON from routine' }),
+    row({ kind: 'drift_probe', status: 'fallback', claimedBy: null, claimedAt: null, completedAt: t('10-02T06:00') }),
+    row({ kind: 'daily_message', status: 'expired', claimedBy: null, claimedAt: null, completedAt: null, deadlineAt: t('10-02T06:10'), error: 'fallback: deferred to the 06:15 UTC briefer cron' }),
+    // A kind no longer in the catalog still counts for the night, but is not listed.
+    row({ kind: 'retired_kind', status: 'fallback', claimedBy: null, claimedAt: null, completedAt: t('10-02T06:20') }),
+    // Two nights ago — outside "last night", inside the week.
+    row({ kind: 'aether', claimedAt: t('09-30T02:00'), completedAt: t('09-30T02:05'), deadlineAt: t('09-30T05:00') }),
+    // Older than a week — ignored for the week counts.
+    row({ kind: 'aether', claimedBy: 'api', claimedAt: t('09-20T02:00'), completedAt: t('09-20T02:05'), deadlineAt: t('09-20T05:00') }),
+  ]
+
+  it('lists every BRAIN_JOBS kind in catalog order', () => {
+    const s = summariseBrainStatus(night, NOW)
+    expect(s.kinds.map((k) => k.kind)).toEqual(BRAIN_JOBS.map((j) => j.kind))
+    expect(s.kinds.find((k) => k.kind === 'concept')).toEqual({
+      kind: 'concept',
+      lastAt: null,
+      lastAnsweredBy: null,
+      week: { routine: 0, backup: 0, missed: 0 },
+    })
+  })
+
+  it('counts last night (deadline since 00:00 UTC yesterday) across all kinds', () => {
+    expect(summariseBrainStatus(night, NOW).lastNight).toEqual({ routine: 1, backup: 3, missed: 1 })
+  })
+
+  it('per kind: latest outcome wins and week counts stay within 7 days', () => {
+    const s = summariseBrainStatus(night, NOW)
+    const cortex = s.kinds.find((k) => k.kind === 'cortex')!
+    expect(cortex.week).toEqual({ routine: 1, backup: 0, missed: 1 })
+    expect(cortex.lastAnsweredBy).toBe('missed')
+    expect(cortex.lastAt).toBe('2026-10-02T01:52:00.000Z')
+    const aether = s.kinds.find((k) => k.kind === 'aether')!
+    expect(aether.week).toEqual({ routine: 1, backup: 0, missed: 0 })
+    expect(aether.lastAnsweredBy).toBe('routine')
+  })
+
+  it('backupKinds: catalog kinds answered by backup in the last 24 h, deduped', () => {
+    const rows = [
+      ...night,
+      row({ kind: 'drift_probe', status: 'done', claimedBy: 'api', completedAt: t('10-02T07:00') }),
+      row({ kind: 'archetype', status: 'fallback', completedAt: t('09-30T06:00'), deadlineAt: t('09-30T05:00') }),
+    ]
+    expect(summariseBrainStatus(rows, NOW).backupKinds).toEqual(['drift_probe', 'daily_message'])
+  })
+
+  it('brain routine is live after a routine claim within 26 h, with that claim time', () => {
+    const s = summariseBrainStatus(night, NOW)
+    expect(s.routines.find((r) => r.id === 'brain')).toEqual({
+      id: 'brain', lastClaimAt: '2026-10-02T01:41:00.000Z', state: 'live',
+    })
+  })
+
+  it('brain routine is silent when its last routine answer is older than 26 h', () => {
+    const rows = [
+      row({ claimedAt: t('09-30T01:41'), completedAt: t('09-30T01:43'), deadlineAt: t('09-30T05:00') }),
+      // A routine claim that failed is not an answer.
+      row({ status: 'failed', claimedAt: t('10-02T01:41'), error: 'invalid JSON' }),
+    ]
+    expect(summariseBrainStatus(rows, NOW).routines.find((r) => r.id === 'brain')).toEqual({
+      id: 'brain', lastClaimAt: '2026-09-30T01:41:00.000Z', state: 'silent',
+    })
+  })
+
+  it('brain routine is silent with no history; chat claims do not count for it', () => {
+    const rows = [row({ kind: 'chat', claimedAt: t('10-02T08:00'), completedAt: t('10-02T08:01'), deadlineAt: t('10-02T08:10') })]
+    const brain = summariseBrainStatus(rows, NOW).routines.find((r) => r.id === 'brain')
+    expect(brain).toEqual({ id: 'brain', lastClaimAt: null, state: 'silent' })
+  })
+
+  describe('chat routine', () => {
+    const answered = row({ kind: 'chat', claimedAt: t('10-01T20:00'), completedAt: t('10-01T20:01'), deadlineAt: t('10-01T20:10') })
+    const watchdog = row({ kind: 'chat', status: 'failed', claimedBy: null, claimedAt: null, completedAt: t('10-02T07:00'), deadlineAt: t('10-02T07:05'), error: 'chat-watchdog: no claim; answered on the paid key' })
+    const chat = (rows: BrainJobRow[], flag: boolean) =>
+      summariseBrainStatus(rows, NOW, { chatRoutineFlagOn: flag }).routines.find((r) => r.id === 'chat')
+
+    it('is off when the Telegram routine flag is off, whatever the history', () => {
+      expect(chat([answered], false)).toEqual({ id: 'chat', lastClaimAt: '2026-10-01T20:00:00.000Z', state: 'off' })
+      expect(summariseBrainStatus([answered], NOW).routines.find((r) => r.id === 'chat')?.state).toBe('off')
+    })
+
+    it('is live when the latest turn was answered by the routine', () => {
+      expect(chat([watchdog, row({ ...answered, completedAt: t('10-02T08:00'), deadlineAt: t('10-02T08:10') })], true)?.state).toBe('live')
+    })
+
+    it('is silent when the latest turn fell to the backup, or there is no turn', () => {
+      expect(chat([answered, watchdog], true)).toEqual({ id: 'chat', lastClaimAt: '2026-10-01T20:00:00.000Z', state: 'silent' })
+      expect(chat([], true)).toEqual({ id: 'chat', lastClaimAt: null, state: 'silent' })
+    })
+  })
+})

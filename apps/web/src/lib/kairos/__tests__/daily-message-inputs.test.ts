@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Direct memory reads (briefs, new beliefs, mind compare) go through db.select;
+// Direct memory reads (area headlines, new beliefs, mind compare) go through db.select;
 // each call takes the next queued result (an Error rejects that one read).
 const selectQueue: Array<unknown[] | Error> = []
 
@@ -9,6 +9,7 @@ vi.mock('@/lib/db', () => {
     const chain: Record<string, unknown> = {}
     const pass = () => chain
     chain.from = pass
+    chain.innerJoin = pass
     chain.where = pass
     chain.orderBy = pass
     chain.limit = pass
@@ -39,7 +40,7 @@ import { findLatestConscienceRun } from '@/lib/data/constitution-drift'
 import { getLatestDriftStatus } from '../constitution/amendment'
 import { listSurvivorsSince } from '@/lib/data/ideas'
 import { weeklyIdeaDiversity } from '../ideas/diversity'
-import { briefDominionName, briefFirstLines, gatherDailyMessageInputs } from '../daily-message-inputs'
+import { firstPlainLines, gatherDailyMessageInputs } from '../daily-message-inputs'
 
 const USER = 'user-1'
 const NOW = new Date('2026-10-26T08:00:00.000Z') // Monday, 08:00 London (GMT)
@@ -62,7 +63,12 @@ beforeEach(() => {
 describe('gatherDailyMessageInputs', () => {
   it('reads every input and shapes it for the prompt', async () => {
     selectQueue.push(
-      [{ title: '2026-10-26 · AEON briefing', bodyMd: '## State\n**Movement**\n- Ship [the fix](https://x.io) **today**\nSecond line\nThird' }],
+      [
+        { dominionId: 'd1', dominion: 'AEON', summary: 'Ship [the fix](https://x.io) **today**.' },
+        { dominionId: 'd1', dominion: 'AEON', summary: 'An older pinned cortex.' },
+        { dominionId: 'd2', dominion: 'Shadow Lab', summary: null },
+        { dominionId: 'd3', dominion: 'Swarm', summary: 'Backtests green.' },
+      ],
       [{ title: 'b', sourceMetadata: { belief: { mind: 'own', claim: 'Small batches win' } } }],
       [{ summary: 'Agree on 4, diverge on 1', bodyMd: null }],
     )
@@ -93,7 +99,7 @@ describe('gatherDailyMessageInputs', () => {
     expect(inputs).toMatchObject({
       date: '2026-10-26',
       isMonday: true,
-      briefs: [{ dominion: 'AEON', lines: ['Ship the fix today', 'Second line'] }],
+      areas: [{ dominion: 'AEON', headline: 'Ship the fix today.' }, { dominion: 'Swarm', headline: 'Backtests green.' }],
       boardDay: { finished: 4, finishedTitles: ['A', 'B', 'C'], thinCards: 1 },
       newBeliefs: [{ mind: 'own', claim: 'Small batches win' }],
       drift: { alert: true },
@@ -107,7 +113,7 @@ describe('gatherDailyMessageInputs', () => {
   })
 
   it('tolerates every input failing: nulls plus the failed names, never a throw', async () => {
-    selectQueue.push(new Error('briefs down'), new Error('beliefs down'), new Error('compare down'))
+    selectQueue.push(new Error('areas down'), new Error('beliefs down'), new Error('compare down'))
     vi.mocked(getLatestAether).mockRejectedValue(new Error('x'))
     vi.mocked(listBoardDayPages).mockRejectedValue(new Error('x'))
     vi.mocked(listPromotedBeliefsBetween).mockRejectedValue(new Error('memory_ops missing'))
@@ -118,9 +124,9 @@ describe('gatherDailyMessageInputs', () => {
     vi.mocked(weeklyIdeaDiversity).mockRejectedValue(new Error('x'))
 
     const inputs = await gatherDailyMessageInputs(USER, NOW)
-    expect(inputs.failed).toEqual(['aether', 'boardDay', 'briefs', 'drift', 'idea', 'ideaDiversity', 'mindCompare', 'newBeliefs', 'pendingAsk', 'promotions', 'synthesis'])
+    expect(inputs.failed).toEqual(['aether', 'areas', 'boardDay', 'drift', 'idea', 'ideaDiversity', 'mindCompare', 'newBeliefs', 'pendingAsk', 'promotions', 'synthesis'])
     expect(inputs.idea).toBeNull()
-    expect(inputs.briefs).toBeNull()
+    expect(inputs.areas).toBeNull()
     expect(inputs.promotions).toBeNull()
   })
 
@@ -195,13 +201,9 @@ describe('drift input: conscience checks', () => {
   })
 })
 
-describe('brief helpers', () => {
-  it('extracts the Dominion name from the brief title', () => {
-    expect(briefDominionName('2026-10-01 · Shadow Lab briefing')).toBe('Shadow Lab')
-  })
-
+describe('firstPlainLines', () => {
   it('drops headings/labels and strips links', () => {
-    expect(briefFirstLines('# H\n**State**\nSee https://a.b now\n')).toEqual(['See now'])
+    expect(firstPlainLines('# H\n**State**\nSee https://a.b now\nNext\n', 1)).toEqual(['See now'])
   })
 })
 

@@ -19,7 +19,7 @@ function inputs(over: Partial<DailyMessageInputs> = {}): DailyMessageInputs {
   return {
     date: '2026-10-01',
     isMonday: false,
-    briefs: null,
+    areas: null,
     aether: null,
     boardDay: null,
     promotions: null,
@@ -83,12 +83,13 @@ describe('guard', () => {
 describe('compose prompt', () => {
   it('includes supplied sections and omits empty ones', () => {
     const prompt = buildDailyMessageUserPrompt(inputs({
-      briefs: [{ dominion: 'AEON', lines: ['Ship the board fix.'] }],
+      areas: [{ dominion: 'AEON', headline: 'Ship the board fix.' }],
       drift: { alert: true, summary: 'mean similarity 0.71' },
       pendingAsk: 'What made Tuesday hard?',
       synthesis: { green: 5, failed: 0, failedStages: [] },
     }))
-    expect(prompt).toContain('[AEON]')
+    expect(prompt).toContain('[AEON] Ship the board fix.')
+    expect(prompt).not.toMatch(/brief/i)
     expect(prompt).toContain('DRIFT ALERT: mean similarity 0.71')
     expect(prompt).toContain('What made Tuesday hard?')
     expect(prompt).not.toContain('SYNTHESIS') // healthy → silent
@@ -121,7 +122,7 @@ describe('compose prompt', () => {
 describe('deterministic fallback', () => {
   it('composes from whatever inputs arrived, stripping URLs/headings, within the cap', () => {
     const text = buildDeterministicDailyMessage(inputs({
-      briefs: [{ dominion: 'AEON', lines: ['## State', 'see https://evil.example now'] }],
+      areas: [{ dominion: 'AEON', headline: '## State: see https://evil.example now' }],
       boardDay: { finished: 2, finishedTitles: ['Fix login', 'Ship gantt'], thinCards: 1 },
       aether: [{ title: 'Focus', insight: 'Fewer threads.', dominionName: null }],
       drift: { alert: true, summary: 'mean 0.7' },
@@ -130,6 +131,7 @@ describe('deterministic fallback', () => {
     }))
     expect(JUNK_OUTPUT_RE.test(text)).toBe(false)
     expect(text.length).toBeLessThanOrEqual(MAX_MESSAGE_CHARS)
+    expect(text).toContain('AEON: State: see now')
     expect(text).toContain('2 cards finished — Fix login; Ship gantt.')
     expect(text).toContain('1 finished card with no notes yet.')
     expect(text).toContain('Drift alert: mean 0.7')
@@ -138,7 +140,7 @@ describe('deterministic fallback', () => {
   })
 
   it('never sends an empty message when every input is missing', () => {
-    expect(buildDeterministicDailyMessage(inputs({ failed: ['briefs', 'aether'] }))).toMatch(/quiet start/)
+    expect(buildDeterministicDailyMessage(inputs({ failed: ['areas', 'aether'] }))).toMatch(/quiet start/)
   })
 })
 

@@ -56,7 +56,7 @@ describe('cron/thinking-sweep route', () => {
       order.push(`plan:${userId}`)
       return userId === 'u1'
         ? { planned: [{ kind: 'weekly_review' }, { kind: 'mind_compare' }], errors: [] }
-        : { planned: [], errors: [{ kind: 'daily_message', error: 'briefs read failed' }] }
+        : { planned: [], errors: [{ kind: 'daily_message', error: 'inputs read failed' }] }
     })
     vi.mocked(listUsersNeedingSweep).mockImplementation(async () => { order.push('list-sweep'); return ['u1'] })
     sweep.mockImplementation(async (userId: string) => { order.push(`sweep:${userId}`); return { expired: 0, fallbacks: [], deferred: 0 } })
@@ -69,7 +69,7 @@ describe('cron/thinking-sweep route', () => {
     expect(body.planned).toBe(2)
     expect(body.plans).toEqual([
       { userId: 'u1', planned: 2 },
-      { userId: 'u2', planned: 0, errors: ['daily_message: briefs read failed'] },
+      { userId: 'u2', planned: 0, errors: ['daily_message: inputs read failed'] },
     ])
   })
 

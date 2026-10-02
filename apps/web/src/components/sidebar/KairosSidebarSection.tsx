@@ -4,21 +4,23 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Wrench, BookMarked } from 'lucide-react'
+import { Wrench, BookMarked, BrainCircuit } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { KairosLearnModal, type KairosLearnTab } from '@/components/ui/kairos/KairosLearnModal'
 import { KAIROS_VERSION_SHORT } from '@/lib/kairos/version'
+import { ConnectKairosModal } from '@/components/kairos/brain/ConnectKairosModal'
 
 // Slim Kairos entry that lives between the realm/nav body and the
 // "New Project / New Realm" actions. Renders as:
 //   faint glowing divider
 //   Kairos version pill (links to /kairos)
-//   Setup + Guide child buttons (open KairosLearnModal)
+//   Connect brain (ConnectKairosModal) + Setup + Guide (KairosLearnModal)
 //   faint glowing divider
 export function KairosSidebarSection({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname()
   const active = pathname?.startsWith('/kairos') ?? false
   const [modal, setModal] = useState<KairosLearnTab | null>(null)
+  const [brainOpen, setBrainOpen] = useState(false)
 
   return (
     <div className="shrink-0">
@@ -63,6 +65,12 @@ export function KairosSidebarSection({ collapsed }: { collapsed: boolean }) {
 
       <div className={cn('flex flex-col gap-1 px-2 pb-2.5', collapsed && 'items-center px-1')}>
         <ChildButton
+          icon={<BrainCircuit className="w-3.5 h-3.5" />}
+          label="Connect brain"
+          onClick={() => setBrainOpen(true)}
+          collapsed={collapsed}
+        />
+        <ChildButton
           icon={<Wrench className="w-3.5 h-3.5" />}
           label="Setup"
           onClick={() => setModal('setup')}
@@ -83,6 +91,7 @@ export function KairosSidebarSection({ collapsed }: { collapsed: boolean }) {
         defaultTab={modal ?? 'setup'}
         onClose={() => setModal(null)}
       />
+      <ConnectKairosModal isOpen={brainOpen} onClose={() => setBrainOpen(false)} />
     </div>
   )
 }

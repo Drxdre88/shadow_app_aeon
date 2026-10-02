@@ -15,9 +15,9 @@ import { deliverKairosSpeak } from './speak'
 // treated as an 'ok' row. Its failure path uses cronName `recipe:<NAME>`.
 //
 // Stage keys are normalised so one cron = one stage: `recipe:<NAME>` and
-// recipe `<NAME>` collapse to the recipe name, and RECIPE_STAGE_ALIASES maps
-// a recipe to the cron that drives it (BRIEF → 'briefer', so the briefer
-// route's own failure/success rows land on the same stage).
+// recipe `<NAME>` collapse to the recipe name. (The BRIEF → 'briefer' alias
+// went with the briefer cron in Kairos 0.17; retired crons simply stop
+// writing traces and age out of the 48h window — never "missing".)
 //
 // Per stage per UTC night: 'failed' if any failure row, else 'ok' if any
 // success row. A stage with no row on a night is "no signal" (absent from
@@ -47,10 +47,6 @@ const EXPECTED_ARM_DAYS = 14
 const EXPECTED_JUDGE_TODAY_FROM_HOUR_UTC = 8
 const DAY_MS = 24 * 60 * 60 * 1000
 
-const RECIPE_STAGE_ALIASES: Record<string, string> = {
-  BRIEF: 'briefer',
-}
-
 type StageStatus = 'ok' | 'failed'
 
 export interface SynthesisHealthResult {
@@ -79,20 +75,16 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
 }
 
-function recipeStage(recipe: string): string {
-  return RECIPE_STAGE_ALIASES[recipe] ?? recipe
-}
-
 // cronName takes priority (every cron's failure/success trace uses it);
 // recipe (dispatch.ts run traces) is the fallback. Both normalise to one key.
 function stageKeyOf(metadata: Record<string, unknown> | null): string | null {
   if (!metadata) return null
   const cronName = metadata.cronName
   if (typeof cronName === 'string' && cronName) {
-    return cronName.startsWith('recipe:') ? recipeStage(cronName.slice('recipe:'.length)) : cronName
+    return cronName.startsWith('recipe:') ? cronName.slice('recipe:'.length) : cronName
   }
   const recipe = metadata.recipe
-  if (typeof recipe === 'string' && recipe) return recipeStage(recipe)
+  if (typeof recipe === 'string' && recipe) return recipe
   return null
 }
 

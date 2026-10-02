@@ -4,7 +4,7 @@ import {
   alreadyDelivered,
   dailyMessageJobKey,
 } from '@/lib/kairos/daily-message'
-import { gatherDailyMessageInputs, readTodayBriefs } from '@/lib/kairos/daily-message-inputs'
+import { gatherDailyMessageInputs } from '@/lib/kairos/daily-message-inputs'
 import { loadConscienceBlock } from '@/lib/kairos/conscience-context'
 import {
   DAILY_MESSAGE_SYSTEM_PROMPT,
@@ -22,16 +22,22 @@ import type {
 import { deadlineOn, minutesUntil, utcDayStart } from '../deadlines'
 
 // Daily message on the thinking queue (docs/kairos/34 §3): one job per user
-// per London date, planned once today's briefs exist, with exactly the compose
-// prompt the daily-message cron would send on the paid key. The deadline is
-// 07:55 London (5 min before delivery). apply only guards the draft and
-// returns it as `output.draft` (the queue merges it into the completed job's
-// output) — the 08:00 London cron delivers it. Fallback = that cron (paid
-// key, then deterministic); the sweep only marks the job expired.
+// per London date, with exactly the compose prompt the daily-message cron
+// would send on the paid key. Planned from 05:30 UTC once the night's thinking
+// that feeds it is settled (no live aether / idea / ask job left), or from
+// 06:25 UTC regardless. The deadline is 07:55 London (5 min before delivery).
+// apply only guards the draft and returns it as `output.draft` (the queue
+// merges it into the completed job's output) — the 08:00 London cron delivers
+// it. Fallback = that cron (paid key, then deterministic); the sweep only
+// marks the job expired.
 
 const DEADLINE_LEAD_MS = 5 * 60_000
-// The 06:15 briefer fills any brief the routine missed; give it 10 minutes.
-export const BRIEFS_SETTLED_UTC = { hour: 6, minute: 25 }
+export const DAILY_MESSAGE_OPENS_UTC = { hour: 5, minute: 30 }
+// Past this, plan on whatever exists even if a feeding job is still open.
+export const NIGHT_SETTLED_UTC = { hour: 6, minute: 25 }
+// Jobs whose output the message reads; a live one delays planning.
+const FEEDING_KINDS = new Set(['aether', 'idea_generate', 'idea_judge', 'ask_mine'])
+const OPEN = new Set(['queued', 'claimed'])
 
 export function dailyMessageDeadline(now: Date): Date {
   return new Date(londonInstant(londonDate(now)).getTime() - DEADLINE_LEAD_MS)
@@ -40,23 +46,28 @@ export function dailyMessageDeadline(now: Date): Date {
 async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
   const deadlineMinutes = minutesUntil(now, dailyMessageDeadline(now))
   if (deadlineMinutes <= 0) return []
-
   const date = londonDate(now)
+  // In summer time London's date turns over at 23:00 UTC: never plan
+  // tomorrow's message before tomorrow's UTC night has even started.
+  if (now.toISOString().slice(0, 10) !== date) return []
+  if (now.getTime() < deadlineOn(now, DAILY_MESSAGE_OPENS_UTC).getTime()) return []
+
   const key = dailyMessageJobKey(date)
   const jobs = await listJobs(userId, { kind: DAILY_MESSAGE_KIND, since: new Date(now.getTime() - 2 * 86_400_000), limit: 10 })
   if (jobs.some((j) => j.externalKey === key)) return []
   if (await alreadyDelivered(userId, date)) return []
-  // Briefs on the queue land one at a time and the prompt is frozen at
-  // planning: wait until every brief job is answered, or until the 06:15
-  // briefer has filled the gaps — never plan on a partial set.
-  const briefJobs = await listJobs(userId, { kind: 'brief', since: utcDayStart(now), limit: 50 })
-  if (briefJobs.some((j) => j.status !== 'done') && now.getTime() < deadlineOn(now, BRIEFS_SETTLED_UTC).getTime()) return []
-  // Cheap prerequisite read first: the hourly sweep plans this kind too, so
-  // the full input gather runs only once today's briefs exist.
-  if ((await readTodayBriefs(userId, date)).length === 0) return []
+  // The prompt is frozen at planning: wait for tonight's feeding jobs (a job
+  // past its deadline counts as settled — its cron covers it).
+  if (now.getTime() < deadlineOn(now, NIGHT_SETTLED_UTC).getTime()) {
+    const tonight = await listJobs(userId, { since: utcDayStart(now), limit: 200 })
+    const live = tonight.some((j) => FEEDING_KINDS.has(j.kind) && OPEN.has(j.status) && j.deadlineAt.getTime() > now.getTime())
+    if (live) return []
+  }
 
   const inputs = await gatherDailyMessageInputs(userId, now)
-  if (!inputs.briefs || inputs.briefs.length === 0) return []
+  // Nothing about the areas or the self-model (none yet, or both reads
+  // failed): leave it to the cron, whose deterministic text covers that case.
+  if (!inputs.areas?.length && !inputs.aether?.length) return []
   // Same block the paid compose sends (daily-message.ts) — '' on failure.
   const conscience = await loadConscienceBlock(userId)
 

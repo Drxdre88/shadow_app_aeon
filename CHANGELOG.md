@@ -20,6 +20,28 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - `DOCS` — `ARCHITECTURE.md`, `VISION.md`, `CLAUDE.md`
 - `UI` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.34.0] — 2026-10-02
+
+> Areas touched: `KAIROS` `UI` `MCP` `API`
+> Theme: Simplified brain: one Max routine. Kairos keeps only the thinking that helps; one Claude Max routine answers all of it. Full detail: `docs/kairos/CHANGELOG.md` 0.17.
+
+### Removed — Thinking that did not help · `KAIROS` `MCP` `API`
+- The nine morning briefs. Your 08:00 message already covered them in two lines each; it now reads each area's latest summary instead.
+- The old raw idea dump. The nightly idea contest replaced it.
+- The contradiction scan. None of its notices since August was acted on, and almost all compared Kairos's own tidy-up notes. Old notices no longer show in your inbox.
+- The tidy-ups through the day and the weekly duplicate sweep. Nothing needed them: the nightly summaries count the day's new memories, and the nightly memory engine already folds duplicates.
+
+### Changed — One routine · `KAIROS` `UI`
+- One "Kairos brain" routine runs every hour from 01:40 to 06:40 UTC and does all the scheduled thinking; "Kairos chat" answers Telegram.
+- The 08:00 message is prepared from 05:30 UTC and pinned at the top of your inbox.
+- The sidebar's daily briefing button, its "Run briefing now" (which used your paid key) and the advisory feed are gone.
+
+### Added — Connect Kairos · `KAIROS` `UI`
+- A new window (sidebar → Connect brain, or the brain icon on Kairos) shows whether last night's thinking ran on your Max plan, maps every brain job to the part of the brain it feeds, and gives copy-paste setup for the connector and both routines.
+
+### Fixed — Nightly memory upkeep · `KAIROS`
+- The nightly memory engine no longer times out: it saves in small batches, only saves scores that really moved, and gives each step its own time limit.
+
 ## [0.33.0] — 2026-10-01
 
 > Areas touched: `KAIROS` `MCP` `API` `DOCS`

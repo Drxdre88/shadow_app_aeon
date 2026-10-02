@@ -31,8 +31,6 @@ import {
   deleteMemory as _deleteMemory,
   targetMemoryExists,
   getGraphForUser as _getGraphForUser,
-  listTodaysAdvisories as _listTodaysAdvisories,
-  listRecentAdvisories as _listRecentAdvisories,
   listAutoCapturedToday as _listAutoCapturedToday,
   archiveMemory as _archiveMemory,
 } from '@/lib/data/memories'
@@ -193,21 +191,10 @@ export async function getBrainGraph(opts: { realmId?: string; includeArchived?: 
   return _getGraphForUser(userId, opts)
 }
 
-// Kairos Phase 1.5 — fetch today's Briefer advisories for the dashboard.
-export async function getTodaysBriefings(isoDate?: string) {
-  const userId = await requireAuth()
-  return _listTodaysAdvisories(userId, isoDate)
-}
-
-// Kairos Phase 2 (E22) — recent advisories for the sidebar feed.
+// Kairos Phase 2 (E22) — today's auto-captures for the notes view.
 export async function getTodaysAutoCaptures(opts: { limit?: number } = {}) {
   const userId = await requireAuth()
   return _listAutoCapturedToday(userId, opts.limit ?? 30)
-}
-
-export async function getRecentAdvisories(opts: { days?: number; limit?: number } = {}) {
-  const userId = await requireAuth()
-  return _listRecentAdvisories(userId, opts)
 }
 
 // Kairos Phase 2 (E22) — Acknowledge an advisory (or any memory) by
@@ -217,78 +204,6 @@ export async function archiveMemoryById(memoryId: string) {
   const row = await _archiveMemory(memoryId, userId)
   if (!row) throw new Error('Memory not found or unauthorized')
   return row
-}
-
-// Kairos Phase 3C — manually trigger the BRIEF recipe for the current user.
-// Dashboard "Run briefing now" / "Regenerate today" target. When `force` is
-// true, today's existing advisories per Dominion are archived first so the
-// dispatcher's externalId dedup lets the model produce a fresh row.
-// `force` is a UI-driven affordance — it lives here, NOT in runRecipe.
-export async function runBriefingNow(opts: { force?: boolean } = {}) {
-  const userId = await requireAuth()
-  const { findDominionsByUser } = await import('@/lib/data/dominions')
-  const { runRecipe } = await import('@/lib/kairos/dispatch')
-  const { AiCredentialMissingError, AiCredentialDecryptError } = await import('@/lib/ai/router')
-  const { memories } = await import('@/lib/db/schema')
-  const { sql, isNull, and, eq } = await import('drizzle-orm')
-
-  const doms = await findDominionsByUser(userId)
-  const active = doms.filter((d) => !d.archivedAt)
-  const date = new Date().toISOString().slice(0, 10)
-  const force = opts.force === true
-
-  type Outcome =
-    | { status: 'created' | 'existing'; dominionName: string }
-    | { status: 'skipped'; dominionName: string; reason: string }
-
-  const outcomes: Outcome[] = []
-
-  for (const dom of active) {
-    if (force) {
-      await db
-        .update(memories)
-        .set({ archivedAt: new Date() })
-        .where(and(
-          eq(memories.userId, userId),
-          eq(memories.type, 'advisory'),
-          sql`${memories.sourceMetadata}->>'externalId' = ${`briefer:${date}:${dom.id}`}`,
-          isNull(memories.archivedAt),
-        ))
-    }
-
-    try {
-      const run = await runRecipe('BRIEF', { userId, dominionId: dom.id, surface: 'byok' })
-      outcomes.push({ status: run.status, dominionName: dom.name })
-    } catch (err) {
-      if (err instanceof AiCredentialMissingError) {
-        outcomes.push({ status: 'skipped', dominionName: dom.name, reason: 'no BYOK credential' })
-        continue
-      }
-      if (err instanceof AiCredentialDecryptError) {
-        outcomes.push({ status: 'skipped', dominionName: dom.name, reason: 'key undecryptable — re-enter API key' })
-        continue
-      }
-      const msg = err instanceof Error ? err.message : String(err)
-      if (msg.startsWith('BRIEF: no Dominion bundle')) {
-        outcomes.push({ status: 'skipped', dominionName: dom.name, reason: 'not found' })
-        continue
-      }
-      if (msg.startsWith('BRIEF: empty response')) {
-        outcomes.push({ status: 'skipped', dominionName: dom.name, reason: 'empty response' })
-        continue
-      }
-      throw err
-    }
-  }
-
-  return {
-    ran: outcomes.length,
-    created: outcomes.filter((o) => o.status === 'created').length,
-    existing: outcomes.filter((o) => o.status === 'existing').length,
-    skipped: outcomes
-      .filter((o): o is Extract<Outcome, { status: 'skipped' }> => o.status === 'skipped')
-      .map((o) => ({ dominionName: o.dominionName, reason: o.reason })),
-  }
 }
 
 // Stub for Phase 5 — broadcast memory events to a user-scoped Pusher channel.
