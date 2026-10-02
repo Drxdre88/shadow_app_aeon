@@ -26,6 +26,7 @@ vi.mock('@/lib/data/thinking-jobs', () => ({
   failJob: vi.fn(),
   findJobById: vi.fn(),
   listJobs: vi.fn(),
+  mergeJobOutput: vi.fn(async () => true),
   upsertJob: vi.fn(),
 }))
 
@@ -59,7 +60,7 @@ import { answerNumberedKairosAsks } from '@/lib/kairos/ask'
 import { appendAssistantReplyOnce } from '@/lib/kairos/chat-turn-reply'
 import { appendChatMessage, createChatThread, findOpenChatThreadByTitle, getChatThread } from '@/lib/data/kairos-chat'
 import { markKairosSpeaksReplied } from '@/lib/data/memories'
-import { failJob, findJobById, listJobs, upsertJob } from '@/lib/data/thinking-jobs'
+import { failJob, findJobById, listJobs, mergeJobOutput, upsertJob } from '@/lib/data/thinking-jobs'
 import { buildAssistantTurn, runAssistantTurnOnce, sendChatMessage } from '@/lib/kairos/chat-turn'
 import type { ThinkingJobRow } from '@/lib/kairos/engine/types'
 import { POST } from '../route'
@@ -629,6 +630,10 @@ describe('telegram webhook — chat routine (KAIROS_TELEGRAM_ROUTINE=1, legacy f
     expect(fireCalls()).toHaveLength(1)
     expect(failJob).not.toHaveBeenCalled()
     expect(runAssistantTurnOnce).not.toHaveBeenCalled()
+    expect(mergeJobOutput).toHaveBeenCalledTimes(1)
+    const [, stampedId, patch] = vi.mocked(mergeJobOutput).mock.calls[0]!
+    expect(stampedId).toBe(JOB_ID)
+    expect(patch.timing).toMatchObject({ channel: 'telegram', fireOk: true, outcome: 'answered', fireMs: expect.any(Number) })
   })
 
   it('exactly once: a routine that wins the race at the timeout keeps the turn', async () => {
@@ -658,9 +663,11 @@ describe('telegram webhook — chat routine (KAIROS_TELEGRAM_ROUTINE=1, legacy f
     await drainAfter()
     consoleError.mockRestore()
 
-    expect(findJobById).not.toHaveBeenCalled()
+    // No watchdog polling: the only read is the timing stamp after settle.
+    expect(findJobById).toHaveBeenCalledTimes(1)
     expect(failJob).toHaveBeenCalledWith(OPERATOR_USER, JOB_ID, null, expect.stringContaining('fire failed (401)'))
     expect(runAssistantTurnOnce).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(mergeJobOutput).mock.calls[0]![2].timing).toMatchObject({ channel: 'telegram', fireOk: false, outcome: 'fallback' })
   })
 
   it('a redelivered in-flight turn is not persisted, queued or answered again', async () => {

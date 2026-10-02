@@ -5,6 +5,7 @@ import {
   submitThinkingJobSchema,
   thinkingJobKindSchema,
   thinkingJobStatusSchema,
+  thinkingRoutineSchema,
 } from '@/lib/data/validators/thinking'
 import {
   claimThinkingJob,
@@ -30,13 +31,16 @@ export const registerThinkingTools: RegisterFn = (server) => {
       // Plain strings at the MCP edge: claimThinkingJobSchema drops retired
       // kinds (a pre-0.17 routine keeps working) and rejects unknown ones.
       kinds: z.array(z.string()).max(32).optional().describe(`Only claim these kinds (default: any except chat). One of: ${thinkingJobKindSchema.options.join(', ')}`),
+      routine: thinkingRoutineSchema.optional().describe('The routine claiming ("brain" or "chat"): limits the claim to that routine\'s kinds; a kind outside them is refused with scope_denied'),
     },
     { title: 'Claim Thinking Job', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = claimThinkingJobSchema.safeParse(args)
       if (!parsed.success) return fail(parsed.error.issues[0].message)
-      return ok(await claimThinkingJob(uid, parsed.data))
+      const result = await claimThinkingJob(uid, parsed.data)
+      if ('code' in result) return fail(`claim_thinking_job ${result.code}: ${result.error}`)
+      return ok(result)
     },
   )
 
@@ -47,6 +51,7 @@ export const registerThinkingTools: RegisterFn = (server) => {
       jobId: z.string().uuid().describe('job.id from claim_thinking_job'),
       claimToken: z.string().uuid().describe('job.claimToken from claim_thinking_job'),
       text: z.string().min(1).max(200_000).describe('Your raw answer text — the JSON object only'),
+      routine: thinkingRoutineSchema.optional().describe('The routine submitting — the same value it claimed with'),
     },
     { title: 'Submit Thinking Job', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {

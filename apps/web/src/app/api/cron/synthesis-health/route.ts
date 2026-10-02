@@ -5,6 +5,8 @@ import { dominions } from '@/lib/db/schema'
 import { isNull } from 'drizzle-orm'
 import { computeSynthesisHealth, type SynthesisHealthResult } from '@/lib/kairos/synthesis-health'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { chatRoutineEnabled } from '@/lib/kairos/chat-routine'
+import { writeChatLatencyRollup } from '@/lib/kairos/chat-latency-rollup'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Synthesis reliability (docs/kairos/31, B3) — daily synthesis health rollup.
@@ -39,8 +41,12 @@ export async function GET(req: NextRequest) {
 
   const userIds = usersWithDominions.map((r) => r.userId)
   const users: Array<{ userId: string; result?: SynthesisHealthResult; error?: string }> = []
+  const chatRoutineOn = chatRoutineEnabled()
 
   for (const userId of userIds) {
+    // Yesterday's chat-routine latency first, so today's rollup sees it as
+    // an ok `chat-routine` stage. Best-effort (never throws).
+    if (chatRoutineOn) await writeChatLatencyRollup(userId)
     try {
       users.push({ userId, result: await computeSynthesisHealth(userId) })
     } catch (err) {

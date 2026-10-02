@@ -182,6 +182,11 @@ export type ThinkingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'expi
 
 export type ThinkingAnsweredBy = 'routine' | 'api' | 'deterministic'
 
+// claimed_by while a job is held: a scoped routine claim records which
+// routine ('routine:brain' / 'routine:chat'); completion overwrites it with
+// the plain ThinkingAnsweredBy.
+export type ThinkingClaimedBy = ThinkingAnsweredBy | `routine:${string}`
+
 export interface ThinkingJobInput {
   system: string
   prompt: string
@@ -209,7 +214,7 @@ export interface ThinkingJobRow {
   status: ThinkingJobStatus
   input: ThinkingJobInput
   output: Record<string, unknown> | null
-  claimedBy: ThinkingAnsweredBy | null
+  claimedBy: ThinkingClaimedBy | null
   claimToken: string | null
   claimedAt: Date | null
   deadlineAt: Date
@@ -233,4 +238,8 @@ export interface ThinkingJobHandler {
   apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsweredBy): Promise<ApplyOutcome>
   // Run the job without the routine (paid key, then deterministic if possible).
   fallback(job: ThinkingJobRow): Promise<ApplyOutcome>
+  // Optional: the sweep gave up on this job (fallback failed or was declined).
+  // Settle what the job leaves behind; returns any memory ids written. Runs
+  // at most once per job; a throw is logged, never retried.
+  abandon?(job: ThinkingJobRow, reason: string): Promise<string[]>
 }

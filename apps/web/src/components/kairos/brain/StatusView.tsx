@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { RefreshCw, TriangleAlert, CircleCheck, BrainCircuit, MessageCircle, ArrowRight, KeyRound } from 'lucide-react'
 import { BRAIN_JOBS, ROUTINES } from '@/lib/kairos/routines/catalog'
-import type { AnsweredBy, KairosBrainStatus, KairosPaidBackupStatus } from '@/lib/kairos/routines/status-types'
+import type { AnsweredBy, KairosBrainStatus, KairosChatLatency, KairosPaidBackupStatus } from '@/lib/kairos/routines/status-types'
 import { setPaidBackup } from '@/lib/actions/kairos-brain'
 import { cn } from '@/lib/utils/cn'
 import { ANSWER_TONE, ANSWER_WORD, ROUTINE_STATE, Dot, Panel, Eyebrow, tint } from './brainUi'
@@ -12,6 +12,20 @@ import type { BrainView } from './ConnectKairosModal'
 
 const ORDER: AnsweredBy[] = ['routine', 'backup', 'missed']
 const ROUTINE_ICON = { brain: BrainCircuit, chat: MessageCircle }
+
+function seconds(ms: number): string {
+  return ms < 100_000 ? `${Math.round(ms / 1000)} s` : `${(ms / 60_000).toFixed(1)} min`
+}
+
+// One plain line for the chat row, e.g. "Replies in ~38 s (p95 71 s) · 2 fire failures".
+function chatLatencyLine(l: KairosChatLatency): string {
+  const parts: string[] = []
+  if (l.p50Ms !== null) parts.push(`Replies in ~${seconds(l.p50Ms)}${l.p95Ms !== null ? ` (p95 ${seconds(l.p95Ms)})` : ''}`)
+  else if (l.backupP50Ms !== null) parts.push(`Backup replies in ~${seconds(l.backupP50Ms)}`)
+  else parts.push(`${l.turns} ${l.turns === 1 ? 'reply' : 'replies'} this week`)
+  if (l.fireFailures > 0) parts.push(`${l.fireFailures} fire ${l.fireFailures === 1 ? 'failure' : 'failures'}`)
+  return parts.join(' · ')
+}
 
 interface Props {
   status: KairosBrainStatus
@@ -99,6 +113,9 @@ export function StatusView({ status, refreshing, onRefresh, onNavigate }: Props)
                       ? `Last claimed ${localDateTime(live.lastClaimAt)} · ${relativeTo(live.lastClaimAt, status.generatedAt)}`
                       : def.trigger === 'api' ? 'No Telegram message answered yet' : 'Has never claimed a job'}
                   </div>
+                  {def.id === 'chat' && status.chatLatency && (
+                    <div className="mt-0.5 text-[11.5px] text-white/50">{chatLatencyLine(status.chatLatency)}</div>
+                  )}
                 </div>
               </div>
             )

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/db', () => ({ db: {} }))
 
-import { classifyBrainJob, countPaidBackupCalls, summariseBrainStatus, type BrainJobRow } from '../brain-status'
+import { classifyBrainJob, countPaidBackupCalls, summariseBrainStatus, summariseChatLatency, type BrainJobRow } from '../brain-status'
 import { BRAIN_JOBS } from '@/lib/kairos/routines/catalog'
 
 const NOW = new Date('2026-10-02T08:30:00.000Z')
@@ -24,6 +24,7 @@ function row(overrides: Partial<BrainJobRow>): BrainJobRow {
 describe('classifyBrainJob', () => {
   it.each<[string, Partial<BrainJobRow>, ReturnType<typeof classifyBrainJob>]>([
     ['02/10 cortex done by the routine', {}, 'routine'],
+    ['done by a scoped routine claim', { claimedBy: 'routine:brain' }, 'routine'],
     ['done on the paid key', { claimedBy: 'api' }, 'backup'],
     ['done deterministically', { claimedBy: 'deterministic' }, 'backup'],
     ['02/10 drift_probe covered by the sweep fallback', { kind: 'drift_probe', status: 'fallback', claimedBy: 'routine', completedAt: t('10-02T06:00') }, 'backup'],
@@ -164,5 +165,60 @@ describe('summariseBrainStatus', () => {
       expect(chat([answered, watchdog], true)).toEqual({ id: 'chat', lastClaimAt: '2026-10-01T20:00:00.000Z', state: 'silent' })
       expect(chat([], true)).toEqual({ id: 'chat', lastClaimAt: null, state: 'silent' })
     })
+  })
+})
+
+describe('summariseChatLatency', () => {
+  // A chat turn created at `created` (MM-DDTHH:MM) answered `secs` later.
+  const routineTurn = (created: string, secs: number, over: Partial<BrainJobRow> = {}) => {
+    const at = t(created)
+    return row({
+      kind: 'chat', createdAt: at, claimedAt: new Date(at.getTime() + 2_000),
+      completedAt: new Date(at.getTime() + secs * 1000), deadlineAt: new Date(at.getTime() + 90_000), ...over,
+    })
+  }
+  const backupTurn = (created: string, settleMs: number, timing: Record<string, unknown> = {}) => {
+    const at = t(created)
+    return row({
+      kind: 'chat', status: 'failed', claimedBy: null, claimedAt: null, createdAt: at,
+      completedAt: new Date(at.getTime() + 60_000), deadlineAt: new Date(at.getTime() + 90_000),
+      error: 'chat-watchdog: no claim; answered on the paid key',
+      timing: { fireOk: true, enqueueToSettleMs: settleMs, ...timing },
+    })
+  }
+
+  it('p50/p95/max over routine-answered turns in the last 7 days', () => {
+    const rows = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map((s, i) => routineTurn(`10-01T1${i}:00`, s))
+    const l = summariseChatLatency(rows, NOW)!
+    expect(l).toMatchObject({ turns: 10, routine: 10, backup: 0, missed: 0, p50Ms: 50_000, p95Ms: 100_000, maxMs: 100_000, fireFailures: 0 })
+  })
+
+  it('routine-only percentiles; backup p50 from the stamped settle time; fire failures counted', () => {
+    const rows = [
+      routineTurn('10-01T10:00', 38),
+      routineTurn('10-01T11:00', 71, { claimedBy: 'routine:chat' }),
+      backupTurn('10-01T12:00', 95_000, { fireOk: false }),
+      backupTurn('10-01T13:00', 105_000),
+      // Not chat, ignored.
+      routineTurn('10-01T14:00', 999, { kind: 'cortex' }),
+      // Older than 7 days, ignored.
+      routineTurn('09-20T10:00', 500),
+    ]
+    const l = summariseChatLatency(rows, NOW)!
+    expect(l).toMatchObject({ turns: 4, routine: 2, backup: 2, missed: 0, p50Ms: 38_000, p95Ms: 71_000, backupP50Ms: 95_000, fireFailures: 1 })
+    expect(l.lastTurnMs).toBe(105_000)
+  })
+
+  it('a custom window (one UTC day) bounds the turns', () => {
+    const rows = [routineTurn('09-30T23:59', 20), routineTurn('10-01T00:00', 30), routineTurn('10-02T00:00', 40)]
+    const l = summariseChatLatency(rows, NOW, { from: t('10-01T00:00'), to: new Date(t('10-02T00:00').getTime() - 1) })!
+    expect(l).toMatchObject({ turns: 1, p50Ms: 30_000 })
+  })
+
+  it('no chat turns → null', () => {
+    expect(summariseChatLatency([], NOW)).toBeNull()
+    expect(summariseChatLatency([row({})], NOW)).toBeNull()
+    const superseded = row({ kind: 'chat', status: 'failed', createdAt: t('10-02T07:00'), error: 'superseded: newer' })
+    expect(summariseChatLatency([superseded], NOW)).toBeNull()
   })
 })

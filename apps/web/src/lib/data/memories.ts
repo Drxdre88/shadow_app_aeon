@@ -1619,6 +1619,7 @@ export async function acceptProposal(
           eq(memories.userId, userId),
           eq(memories.id, loserId),
           isNull(memories.supersededAt),
+          ne(memories.type, 'constitution'),
         ))
         .returning({ id: memories.id })
 
@@ -1687,7 +1688,9 @@ export async function acceptProposal(
     await db
       .update(memories)
       .set({ supersededAt: now, supersededById: memoryId, invalidAt: now, updatedAt: now })
-      .where(and(eq(memories.userId, userId), inArray(memories.id, supersedeIds)))
+      // Constitution rows are never superseded through a proposal accept —
+      // only the amendment transaction retires a constitution version.
+      .where(and(eq(memories.userId, userId), inArray(memories.id, supersedeIds), ne(memories.type, 'constitution')))
   }
 
   return updated ? { ok: true, memory: updated } : null

@@ -45,6 +45,26 @@ export interface KairosBrainStatus {
   paidBackup?: KairosPaidBackupStatus
   // Live ✓ signals for the Set up Kairos checklist (optional for old fixtures).
   setup?: KairosSetupSignals
+  // Chat routine reply times over the last 7 days; null/absent = no turns.
+  chatLatency?: KairosChatLatency | null
+}
+
+// Chat turns (web + Telegram) in a window, by who answered.
+export interface KairosChatLatency {
+  turns: number
+  routine: number
+  backup: number
+  missed: number
+  // Routine-answered turns, queued → answered.
+  p50Ms: number | null
+  p95Ms: number | null
+  maxMs: number | null
+  // Backup turns, queued → settled (from the stamped timing).
+  backupP50Ms: number | null
+  // The latest turn's reply time, when known.
+  lastTurnMs: number | null
+  // Turns whose routine fire failed.
+  fireFailures: number
 }
 
 export interface KairosSetupSignals {

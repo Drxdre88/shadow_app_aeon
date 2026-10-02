@@ -11,6 +11,7 @@ import type {
   BrainKindStatus,
   BrainRoutineStatus,
   KairosBrainStatus,
+  KairosChatLatency,
   KairosSetupSignals,
 } from '@/lib/kairos/routines/status-types'
 
@@ -32,6 +33,10 @@ export interface BrainJobRow {
   completedAt: Date | null
   deadlineAt: Date
   error: string | null
+  // Optional so fixtures that predate chat latency still type-check.
+  createdAt?: Date | null
+  // output->'timing' (chat jobs, stamped at settle by recordChatTiming).
+  timing?: unknown
 }
 
 export async function listBrainJobsSince(userId: string, since: Date): Promise<BrainJobRow[]> {
@@ -44,6 +49,8 @@ export async function listBrainJobsSince(userId: string, since: Date): Promise<B
       completedAt: thinkingJobs.completedAt,
       deadlineAt: thinkingJobs.deadlineAt,
       error: thinkingJobs.error,
+      createdAt: thinkingJobs.createdAt,
+      timing: sql<unknown>`${thinkingJobs.output}->'timing'`,
     })
     .from(thinkingJobs)
     .where(and(eq(thinkingJobs.userId, userId), gte(thinkingJobs.deadlineAt, since)))
@@ -69,11 +76,17 @@ export interface ClassifyOptions {
   paidBackupOff?: boolean
 }
 
+// The routine answered: completeJob writes 'routine'; a claim may carry a
+// scope suffix ('routine:brain' / 'routine:chat').
+function isRoutineAnswer(claimedBy: string | null): boolean {
+  return claimedBy?.startsWith('routine') ?? false
+}
+
 // null = not an outcome yet (open, before its deadline) or not owed.
 export function classifyBrainJob(row: BrainJobRow, now: Date, options: ClassifyOptions = {}): AnsweredBy | null {
   switch (row.status) {
     case 'done':
-      return row.claimedBy === 'routine' ? 'routine' : 'backup'
+      return isRoutineAnswer(row.claimedBy) ? 'routine' : 'backup'
     case 'fallback':
       return 'backup'
     case 'failed':
@@ -191,6 +204,85 @@ export function summariseBrainStatus(
   ]
 
   return { lastNight, backupKinds, kinds, routines }
+}
+
+// ── Chat latency (web + Telegram chat routine) ─────────────────────────────
+
+export interface ChatLatencyOptions extends ClassifyOptions {
+  // Window over job creation; default the last 7 days up to `now`.
+  from?: Date
+  to?: Date
+}
+
+function percentile(sorted: readonly number[], p: number): number | null {
+  if (sorted.length === 0) return null
+  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1))]!
+}
+
+function timingOf(row: BrainJobRow): Record<string, unknown> | null {
+  const t = row.timing
+  return t && typeof t === 'object' && !Array.isArray(t) ? (t as Record<string, unknown>) : null
+}
+
+function finiteMs(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
+}
+
+// Routine turns: enqueue → answer (completedAt − createdAt). Backup turns:
+// enqueue → settle from the stamped timing (their completedAt is the
+// takeover, not the answer). Null when neither is known.
+function turnMs(row: BrainJobRow, by: AnsweredBy): number | null {
+  if (by === 'routine') {
+    return row.createdAt && row.completedAt ? Math.max(0, row.completedAt.getTime() - row.createdAt.getTime()) : null
+  }
+  return finiteMs(timingOf(row)?.enqueueToSettleMs)
+}
+
+// Pure: chat turns created in [from, to]. Percentiles cover routine-answered
+// turns only; null when there were no chat turns at all.
+export function summariseChatLatency(
+  rows: readonly BrainJobRow[],
+  now: Date,
+  options: ChatLatencyOptions = {},
+): KairosChatLatency | null {
+  const from = (options.from ?? new Date(now.getTime() - BRAIN_STATUS_WINDOW_MS)).getTime()
+  const to = (options.to ?? now).getTime()
+  const counts = emptyCounts()
+  const routineMs: number[] = []
+  const backupMs: number[] = []
+  let fireFailures = 0
+  let last: { at: number; ms: number | null } | null = null
+
+  for (const row of rows) {
+    if (row.kind !== 'chat') continue
+    const created = (row.createdAt ?? row.deadlineAt).getTime()
+    if (created < from || created > to) continue
+    if (timingOf(row)?.fireOk === false) fireFailures += 1
+    const by = classifyBrainJob(row, now, options)
+    if (!by) continue
+    counts[by] += 1
+    const ms = turnMs(row, by)
+    if (ms !== null && by === 'routine') routineMs.push(ms)
+    if (ms !== null && by === 'backup') backupMs.push(ms)
+    if (!last || created > last.at) last = { at: created, ms }
+  }
+
+  const turns = counts.routine + counts.backup + counts.missed
+  if (turns === 0 && fireFailures === 0) return null
+  routineMs.sort((a, b) => a - b)
+  backupMs.sort((a, b) => a - b)
+  return {
+    turns,
+    routine: counts.routine,
+    backup: counts.backup,
+    missed: counts.missed,
+    p50Ms: percentile(routineMs, 0.5),
+    p95Ms: percentile(routineMs, 0.95),
+    maxMs: routineMs.length > 0 ? routineMs[routineMs.length - 1]! : null,
+    backupP50Ms: percentile(backupMs, 0.5),
+    lastTurnMs: last?.ms ?? null,
+    fireFailures,
+  }
 }
 
 // ── Set up Kairos checklist signals ─────────────────────────────────────────

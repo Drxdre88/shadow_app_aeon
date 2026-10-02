@@ -16,6 +16,7 @@ vi.mock('@/lib/data/thinking-jobs', () => ({
   failJob: vi.fn(),
   findJobById: vi.fn(),
   listJobs: vi.fn(),
+  mergeJobOutput: vi.fn(async () => true),
   upsertJob: vi.fn(),
 }))
 
@@ -37,7 +38,7 @@ vi.mock('@/lib/kairos/paid-backup', () => ({
 }))
 
 import { appendChatMessage, getChatThread } from '@/lib/data/kairos-chat'
-import { failJob, findJobById, listJobs, upsertJob } from '@/lib/data/thinking-jobs'
+import { failJob, findJobById, listJobs, mergeJobOutput, upsertJob } from '@/lib/data/thinking-jobs'
 import { buildAssistantTurn, runAssistantTurnOnce } from '@/lib/kairos/chat-turn'
 import { appendAssistantReplyOnce } from '@/lib/kairos/chat-turn-reply'
 import { isPaidBackupEnabled } from '@/lib/kairos/paid-backup'
@@ -161,6 +162,12 @@ describe('sendWebChatViaRoutine', () => {
     expect(failJob).not.toHaveBeenCalled()
     expect(runAssistantTurnOnce).not.toHaveBeenCalled()
     expect(telegramCalls()).toHaveLength(0)
+    // The settled turn is stamped with its timing.
+    expect(mergeJobOutput).toHaveBeenCalledTimes(1)
+    const [, stampedId, patch] = vi.mocked(mergeJobOutput).mock.calls[0]!
+    expect(stampedId).toBe(JOB_ID)
+    expect(patch.timing).toMatchObject({ channel: 'web', fireOk: true, outcome: 'answered', fireMs: expect.any(Number) })
+    expect((patch.timing as { messageToEnqueueMs?: number }).messageToEnqueueMs).toEqual(expect.any(Number))
   })
 
   it('falls back on the paid key after the timeout, on the app surface, never via Telegram', async () => {
@@ -200,9 +207,11 @@ describe('sendWebChatViaRoutine', () => {
     await drainAfter()
     consoleError.mockRestore()
 
-    expect(findJobById).not.toHaveBeenCalled()
+    // No watchdog polling: the only read is the timing stamp after settle.
+    expect(findJobById).toHaveBeenCalledTimes(1)
     expect(failJob).toHaveBeenCalledWith(USER, JOB_ID, null, expect.stringContaining('fire failed (401)'))
     expect(runAssistantTurnOnce).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(mergeJobOutput).mock.calls[0]![2].timing).toMatchObject({ channel: 'web', fireOk: false, outcome: 'fallback' })
   })
 
   it('a double submit of an in-flight turn is not persisted or queued again', async () => {

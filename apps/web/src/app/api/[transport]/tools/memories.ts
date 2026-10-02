@@ -24,8 +24,11 @@ import {
 import { acceptKairosProposal } from '@/lib/kairos/proposal-accept'
 import { verifyProjectAccess } from '@/lib/data/projects'
 import {
+  constitutionPatchRefusal,
   isConstitutionAmendmentProposal,
+  isConstitutionRow,
   OPERATOR_ONLY_AMENDMENT_ERROR,
+  OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR,
 } from '@/lib/kairos/constitution/amendment'
 import { db } from '@/lib/db'
 import { boardTasks, groupMembers } from '@/lib/db/schema'
@@ -139,7 +142,8 @@ export const registerMemoryTools: RegisterFn = (server) => {
   server.tool(
     'update_memory',
     'Update an existing memory. Most commonly used to backfill or refresh AI-generated fields (aiTitle, execSummary) after re-reading the body. ' +
-      'Also handles re-tagging, re-anchoring (realm/project/task), pinning, and archiving. Pass only the fields you want to change.',
+      'Also handles re-tagging, re-anchoring (realm/project/task), pinning, and archiving. Pass only the fields you want to change. ' +
+      'Constitution rows are owner-only: archiving, retyping, or changing title/bodyMd/summary on one is refused (aiTitle, execSummary, tags and pinned are still allowed).',
     {
       memoryId: z.string().uuid().describe('The memory UUID to update'),
       title: z.string().min(1).max(255).optional(),
@@ -163,6 +167,11 @@ export const registerMemoryTools: RegisterFn = (server) => {
 
       const anchorErr = await verifyAnchors(uid, parsed.data)
       if (anchorErr) return fail(anchorErr)
+
+      // MCP callers are agents: they may not archive, retype or rewrite a
+      // constitution row (owner-only; docs/kairos/34 §2).
+      const constitutionErr = constitutionPatchRefusal(await findMemoryById(memoryId, uid), parsed.data)
+      if (constitutionErr) return fail(constitutionErr)
 
       const memory = await _updateMemory(memoryId, uid, parsed.data, { origin: { kind: 'agent', via: 'mcp' } })
       if (!memory) return notFound('Memory')
@@ -413,6 +422,9 @@ export const registerMemoryTools: RegisterFn = (server) => {
       if (isConstitutionAmendmentProposal(await findMemoryById(memoryId, uid))) {
         return fail(OPERATOR_ONLY_AMENDMENT_ERROR)
       }
+      // Nor may an agent retire a constitution version via `supersedes`.
+      const supersedesRows = await Promise.all((parsed.data.supersedes ?? []).map((id) => findMemoryById(id, uid)))
+      if (supersedesRows.some(isConstitutionRow)) return fail(OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR)
 
       const res = await acceptKairosProposal(memoryId, uid, parsed.data, { origin: { kind: 'agent', via: 'mcp' } })
       if (!res) return notFound('Memory')

@@ -94,6 +94,7 @@ vi.mock('@/lib/kairos/embeddings', async (importOriginal) => {
 import { db } from '@/lib/db'
 import type { IdeaMeta } from '@/lib/kairos/ideas/types'
 import {
+  IDEA_JUDGE_FAILED_REASON,
   IDEA_ORIGIN,
   findNearestIdeaNeighbours,
   inferIdeaOutcome,
@@ -178,6 +179,17 @@ describe('findNearestIdeaNeighbours', () => {
     state.selectQueue.push([{ id: 'dup', distance: 0.3 }], [{ id: 'dup', distance: 0.1 }], [])
     const out = await findNearestIdeaNeighbours(USER, [1, 0])
     expect(out).toEqual([{ id: 'dup', kind: 'idea', similarity: 0.7 }])
+  })
+
+  it('leaves candidates no judge ruled on (judge_failed) out of the archive pool', async () => {
+    await findNearestIdeaNeighbours(USER, [1, 0])
+    const [archive] = calls().filter((c) => c.kind === 'select')
+    const q = render(archive.where)
+    expect(q.sql).toContain(`"memories"."source_metadata"->'idea'->>$`)
+    expect(q.sql).toMatch(/ IS DISTINCT FROM \$\d+/)
+    expect(q.params).toContain('eliminatedReason')
+    expect(q.params).toContain(IDEA_JUDGE_FAILED_REASON)
+    expect(IDEA_JUDGE_FAILED_REASON).toBe('judge_failed')
   })
 })
 

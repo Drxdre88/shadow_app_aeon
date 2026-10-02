@@ -1,4 +1,4 @@
-import { writeTournament } from '@/lib/data/ideas'
+import { IDEA_JUDGE_FAILED_REASON, writeTournament } from '@/lib/data/ideas'
 import { hasJobWithKeyLike, listJobs } from '@/lib/data/thinking-jobs'
 import { unpackVector } from '@/lib/kairos/constitution/drift'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
@@ -30,7 +30,8 @@ import type {
 import { utcDay } from '../deadlines'
 import { askPaidAndParse } from '../paid-fallback'
 import { errorReason } from './_errors'
-import { BENIGN_DECLINES, IDEA_TOURNAMENT_CRON, candidateText, ideaGenerateJobKey } from './idea-generate'
+import { BENIGN_DECLINES, IDEA_TOURNAMENT_CRON, candidateText, ideaGenerateJobKey, repeatMeta } from './idea-generate'
+import { PAID_BACKUP_OFF_NOTE } from '@/lib/ai/paid-backup-off'
 
 // Nightly idea tournament, stage 2 (docs/kairos/35). Normally planned by the
 // idea_generate apply; plan() here is recovery only (today's generate job is
@@ -251,4 +252,40 @@ export const ideaJudgeHandler: ThinkingJobHandler = {
   plan: planIdeaJudge,
   apply: applyIdeaJudge,
   fallback: fallbackIdeaJudge,
+  abandon: abandonIdeaJudge,
+}
+
+// Archive row for a candidate no judge ever ruled on (routine and fallback
+// both failed); a repeat stays a repeat.
+export function unjudgedMeta(c: StoredCandidate, ctx: IdeaJudgeContext, judgeJobId: string): IdeaMeta {
+  const meta = { ...repeatMeta(c, ctx.date, ctx.generateJobId), judgeJobId }
+  if (c.novelty.class === 'repeat') return meta
+  return { ...meta, status: 'eliminated', eliminatedReason: IDEA_JUDGE_FAILED_REASON }
+}
+
+// The sweep gave up on tonight's judge: archive every candidate (no
+// survivors) so the night is on record. writeTournament is idempotent per
+// date, so a late successful write can't duplicate rows. With Paid backup off
+// no fallback ran, so nothing traced the failure yet — trace it here.
+export async function abandonIdeaJudge(job: ThinkingJobRow, reason: string): Promise<string[]> {
+  const ctx = readContext(job)
+  if (!ctx) return []
+  const evidence = new Map(Object.values(ctx.evidence).map((e) => [e.id, e]))
+  const res = await writeTournament(job.userId, {
+    tournamentDate: ctx.date,
+    generateJobId: ctx.generateJobId,
+    judgeJobId: job.id,
+    survivors: [],
+    others: ctx.candidates.map((c) => ({
+      title: c.title,
+      bodyMd: renderIdeaBody({ ...c, survivedBecause: null }, evidence),
+      embedding: c.vector ? unpackVector(c.vector) : null,
+      dominionId: null,
+      meta: unjudgedMeta(c, ctx, job.id),
+    })),
+  })
+  if (res.written && reason === PAID_BACKUP_OFF_NOTE) {
+    await writeCronFailureTrace(job.userId, { cronName: IDEA_TOURNAMENT_CRON, reason: 'judge_unanswered', rawExcerpt: reason })
+  }
+  return [...res.survivorIds, ...res.archivedIds]
 }

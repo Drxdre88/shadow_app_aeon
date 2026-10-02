@@ -20,10 +20,8 @@ import {
   chatRoutineEnabled,
   chatRoutineTimeoutMs,
   CHAT_PAID_BACKUP_OFF_MESSAGE,
-  fireChatRoutine,
-  runChatWatchdog,
+  settleChatJob,
   supersedeOpenChatJobs,
-  takeOverChatJob,
 } from '@/lib/kairos/chat-routine'
 import { isPaidBackupEnabled } from '@/lib/kairos/paid-backup'
 import { buildChatJobSpec, chatHandler } from '@/lib/kairos/thinking/handlers/chat'
@@ -328,23 +326,11 @@ async function handleTextViaRoutine(
   // Unique key already taken: another delivery owns this turn.
   if (!job) return
 
-  after(async () => {
-    try {
-      const fired = await fireChatRoutine()
-      const outcome = fired.ok
-        ? await runChatWatchdog(userId, job.id, chatHandler.fallback, {
-            timeoutMs,
-            onPoll: () => sendChatAction(chatId),
-          })
-        : await takeOverChatJob(userId, job.id, fired.error, chatHandler.fallback)
-      if (!fired.ok) console.error('[telegram-webhook] chat routine fire failed — paid fallback', fired.error)
-      if (outcome.outcome === 'fallback_failed') {
-        console.error('[telegram-webhook] chat fallback failed', { jobId: job.id, reason: outcome.reason })
-      } else {
-        console.info('[telegram-webhook] chat turn settled', { jobId: job.id, outcome: outcome.outcome })
-      }
-    } catch (err) {
-      console.error('[telegram-webhook] chat routine watchdog failed', err)
-    }
-  })
+  after(() => settleChatJob(userId, job.id, {
+    channel: 'telegram',
+    timeoutMs,
+    logTag: 'telegram-webhook',
+    fallback: chatHandler.fallback,
+    onPoll: () => sendChatAction(chatId),
+  }))
 }

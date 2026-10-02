@@ -209,4 +209,47 @@ describe('Memory MCP <-> REST parity', () => {
       }
     })
   })
+
+  // Phase 1 (constitution archive guard): agent surfaces may not archive,
+  // retype, rewrite, delete or supersede a constitution row. Each refuses with
+  // the shared helper + message BEFORE the data-layer mutation.
+  describe('constitution rows are owner-only on agent surfaces', () => {
+    const blockFor = (name: string) =>
+      mcpSrc.split(/server\.tool\(/).find((b) => new RegExp(`^\\s*['"]${name}['"]`).test(b)) ?? ''
+    const updateBlock = blockFor('update_memory')
+    const acceptBlock = blockFor('accept_proposal')
+    const restItem = readSource(path.join(REST_ROOT, '[id]/route.ts'))
+    const restPatch = restItem.slice(restItem.indexOf('export const PATCH'), restItem.indexOf('export const DELETE'))
+    const restDelete = restItem.slice(restItem.indexOf('export const DELETE'))
+    const restAccept = readSource(path.join(REST_ROOT, '[id]/accept/route.ts'))
+
+    it.each([
+      ['MCP update_memory', updateBlock, /constitutionPatchRefusal\(/, /_updateMemory\(/],
+      ['REST PATCH [id]', restPatch, /constitutionPatchRefusal\(/, /_updateMemory\(/],
+      ['REST DELETE [id]', restDelete, /isConstitutionRow\(/, /_deleteMemory\(/],
+    ] as const)('%s checks the constitution guard before mutating', (_label, src, guard, mutation) => {
+      expect(src.search(guard)).toBeGreaterThan(-1)
+      expect(src.search(guard)).toBeLessThan(src.search(mutation))
+    })
+
+    it.each([
+      ['MCP accept_proposal', acceptBlock],
+      ['REST POST [id]/accept', restAccept],
+    ])('%s refuses superseding a constitution row before accepting', (_label, src) => {
+      expect(src).toMatch(/supersedes/)
+      expect(src).toMatch(/OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR/)
+      expect(src.search(/isConstitutionRow\b/)).toBeGreaterThan(-1)
+      expect(src.search(/isConstitutionRow\b/)).toBeLessThan(src.search(/acceptKairosProposal\(/))
+    })
+
+    it('all surfaces import the guard from the constitution amendment module', () => {
+      for (const src of [mcpSrc, restItem, restAccept]) {
+        expect(src).toMatch(/import \{[^}]*\bisConstitutionRow\b[^}]*\} from '@\/lib\/kairos\/constitution\/amendment'/)
+      }
+    })
+
+    it('the update_memory description tells agents constitution rows are owner-only', () => {
+      expect(updateBlock).toMatch(/Constitution rows are owner-only/)
+    })
+  })
 })

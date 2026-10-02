@@ -112,6 +112,52 @@ export function isConstitutionAmendmentProposal(row: { sourceMetadata: unknown }
   return !!meta && typeof meta === 'object' && (meta as Record<string, unknown>).kind === CONSTITUTION_PROPOSAL_KIND
 }
 
+// The constitution rows themselves (live AND superseded versions — history
+// must stay intact) are owner-only too: agent surfaces may not archive them,
+// retype them, rewrite their content, delete them, or supersede them through
+// accept_proposal. Summary backfills (aiTitle / execSummary) and tags / pinned
+// stay allowed. The owner's UI and signed-in session are not gated here.
+export const OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR =
+  'constitution rows can only be archived, retyped, rewritten, deleted or superseded by the operator in Aeon'
+
+export function isConstitutionRow(
+  row: { type?: unknown; streamClass?: unknown } | null | undefined,
+): boolean {
+  return !!row && (row.type === 'constitution' || row.streamClass === 'constitution')
+}
+
+export interface ConstitutionPatch {
+  archivedAt?: string | Date | null
+  type?: string
+  title?: string
+  bodyMd?: string
+  summary?: string | null
+}
+
+type ConstitutionPatchRow = {
+  type?: unknown
+  streamClass?: unknown
+  title?: unknown
+  bodyMd?: unknown
+  summary?: unknown
+}
+
+// Returns the refusal message when an agent-surface patch would remove or
+// rewrite a constitution row; null when the patch is allowed.
+export function constitutionPatchRefusal(
+  row: ConstitutionPatchRow | null | undefined,
+  patch: ConstitutionPatch,
+): string | null {
+  if (!row || !isConstitutionRow(row)) return null
+  const changes = (field: 'type' | 'title' | 'bodyMd' | 'summary') =>
+    patch[field] !== undefined && patch[field] !== row[field]
+  if (patch.archivedAt != null) return OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR
+  if (changes('type') || changes('title') || changes('bodyMd') || changes('summary')) {
+    return OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR
+  }
+  return null
+}
+
 export type ConstitutionAcceptFailure =
   | 'not_found'
   | 'not_a_constitution_amendment'

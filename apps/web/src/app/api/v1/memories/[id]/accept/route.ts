@@ -5,7 +5,9 @@ import { findMemoryById } from '@/lib/data/memories'
 import { acceptKairosProposal } from '@/lib/kairos/proposal-accept'
 import {
   isConstitutionAmendmentProposal,
+  isConstitutionRow,
   OPERATOR_ONLY_AMENDMENT_ERROR,
+  OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR,
 } from '@/lib/kairos/constitution/amendment'
 import { acceptProposalSchema } from '@/lib/data/validators'
 
@@ -38,6 +40,13 @@ export const POST = withRateLimit(
     const isBearer = request.headers.get('authorization')?.startsWith('Bearer ') ?? false
     if (isBearer && isConstitutionAmendmentProposal(await findMemoryById(id, result.id))) {
       return jsonError(OPERATOR_ONLY_AMENDMENT_ERROR, 403)
+    }
+    // Nor may a bearer caller retire a constitution version via `supersedes`.
+    // (A session caller can't either: acceptProposal's supersede UPDATE skips
+    // constitution rows.)
+    if (isBearer && parsed.data.supersedes?.length) {
+      const rows = await Promise.all(parsed.data.supersedes.map((sid) => findMemoryById(sid, result.id)))
+      if (rows.some(isConstitutionRow)) return jsonError(OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR, 403)
     }
 
     const res = await acceptKairosProposal(id, result.id, parsed.data,
