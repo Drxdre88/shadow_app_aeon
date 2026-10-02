@@ -16,7 +16,7 @@ describe('MissionCardFace', () => {
       repo: 'aeon',
       objective: 'recon',
       agent: 'copilot',
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6.1-sol',
       instruction: 'Inspect the mission card experience',
       autoRun: true,
     } }} />)

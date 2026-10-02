@@ -30,6 +30,9 @@ describe('HANGAR_MODEL_RE', () => {
     'claude-sonnet-5',
     'gpt-5.6-sol',
     'claude-opus-5',
+    'claude-opus-5.5',
+    'claude-opus-5-5',
+    'gpt-6.1-sol',
     'anthropic:claude-haiku-4-5-20251001',
     'o3',
   ])('accepts a real model id: %s', (id) => {

@@ -119,7 +119,7 @@ export function TierRoutingPanel({
                   className="w-full px-3 py-2 text-[12px] rounded-lg bg-black/30 border border-white/10 focus:border-white/30 outline-none cursor-pointer text-white/85"
                 >
                   {provider.models.map((m) => (
-                    <option key={m.id} value={m.id} className="bg-[#0a0612]">{m.label} · {m.contextK}k ctx</option>
+                    <option key={m.id} value={m.id} className="bg-[#0a0612]">{m.label}{m.contextK ? ` · ${m.contextK}k ctx` : ''}</option>
                   ))}
                 </select>
               </div>

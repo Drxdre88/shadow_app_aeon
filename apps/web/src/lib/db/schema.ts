@@ -373,11 +373,11 @@ export const userAiCredentials = pgTable('user_ai_credentials', {
 export const userAiPreferences = pgTable('user_ai_preferences', {
   userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
   cheapProviderId: varchar('cheap_provider_id', { length: 32 }).default('anthropic').notNull(),
-  cheapModelId: varchar('cheap_model_id', { length: 64 }).default('claude-haiku-4-5-20251001').notNull(),
+  cheapModelId: varchar('cheap_model_id', { length: 64 }).default('claude-haiku-4-5-20251001').notNull(), // freshness-ignore: column default remapped at read time (LEGACY_REMAP), changing it needs a migration
   standardProviderId: varchar('standard_provider_id', { length: 32 }).default('anthropic').notNull(),
-  standardModelId: varchar('standard_model_id', { length: 64 }).default('claude-sonnet-4-6').notNull(),
+  standardModelId: varchar('standard_model_id', { length: 64 }).default('claude-sonnet-4-6').notNull(), // freshness-ignore: column default remapped at read time (LEGACY_REMAP), changing it needs a migration
   heavyProviderId: varchar('heavy_provider_id', { length: 32 }).default('anthropic').notNull(),
-  heavyModelId: varchar('heavy_model_id', { length: 64 }).default('claude-opus-4-7').notNull(),
+  heavyModelId: varchar('heavy_model_id', { length: 64 }).default('claude-opus-4-7').notNull(), // freshness-ignore: column default remapped at read time (LEGACY_REMAP), changing it needs a migration
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 

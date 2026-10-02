@@ -3,7 +3,8 @@ import { generateText } from 'ai'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
 import { withRateLimit, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
 import { buildModelWithKey } from '@/lib/ai/router'
-import { isValidProvider, getModelDescriptor, DEFAULT_PREFERENCES, type ProviderId } from '@/lib/ai/providers'
+import { effortFor, remapLegacyModel } from '@aeon/shared/ai/models'
+import { isValidProvider, getModelDescriptor, testModelFor, effortProviderOptions, type ProviderId } from '@/lib/ai/providers'
 
 function requireAdmin(result: { id: string; role: string }) {
   return result.role === 'admin' ? null : jsonError('AI features restricted to administrators', 403)
@@ -28,7 +29,8 @@ export const POST = withRateLimit(
       return jsonError('apiKey required (min 8 chars)', 400)
     }
     const providerId = provider as ProviderId
-    const chosenModel = modelId ?? DEFAULT_PREFERENCES.cheap.modelId
+    // Each provider's own cheap model: an OpenAI or Gemini key cannot call Claude.
+    const chosenModel = modelId ? remapLegacyModel(modelId) : testModelFor(providerId)
     if (!getModelDescriptor(providerId, chosenModel)) {
       return jsonError('Unknown model for provider', 400)
     }
@@ -39,7 +41,8 @@ export const POST = withRateLimit(
       const { text, usage } = await generateText({
         model,
         prompt: 'Reply with exactly: ok',
-        maxOutputTokens: 8,
+        maxOutputTokens: 32,
+        providerOptions: effortProviderOptions(providerId, effortFor(chosenModel, 'low')),
       })
       return jsonData({
         ok: true,

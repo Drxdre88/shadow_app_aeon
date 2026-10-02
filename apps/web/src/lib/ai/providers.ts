@@ -1,11 +1,23 @@
+import {
+  CURRENT_MODELS,
+  DEFAULT_ROLE_MODEL,
+  effortFor,
+  remapLegacyModel,
+  type ModelEffort,
+  type ModelEntry,
+  type ModelRole,
+} from '@aeon/shared/ai/models'
+
 export type ProviderId = 'anthropic' | 'openai' | 'google'
 export type AiTier = 'cheap' | 'standard' | 'heavy'
 
 export type ModelDescriptor = {
   id: string
   label: string
-  contextK: number
+  contextK: number | null
   tiers: AiTier[]
+  efforts: ModelEffort[]
+  note: string
 }
 
 export type ProviderDescriptor = {
@@ -16,50 +28,39 @@ export type ProviderDescriptor = {
   models: ModelDescriptor[]
 }
 
-export const PROVIDERS: ProviderDescriptor[] = [
-  {
-    id: 'anthropic',
-    label: 'Anthropic',
-    docsUrl: 'https://console.anthropic.com/settings/keys',
-    keyPrefix: 'sk-ant-',
-    models: [
-      { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', contextK: 200, tiers: ['cheap'] },
-      { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', contextK: 1000, tiers: ['standard'] },
-      { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', contextK: 200, tiers: ['standard'] },
-      { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', contextK: 1000, tiers: ['heavy'] },
-      { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', contextK: 1000, tiers: ['heavy'] },
-    ],
-  },
-  {
-    id: 'openai',
-    label: 'OpenAI',
-    docsUrl: 'https://platform.openai.com/api-keys',
-    keyPrefix: 'sk-',
-    models: [
-      { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', contextK: 1000, tiers: ['cheap'] },
-      { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', contextK: 1000, tiers: ['standard'] },
-      { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', contextK: 1000, tiers: ['heavy'] },
-      { id: 'gpt-5.5-mini', label: 'GPT-5.5 mini', contextK: 256, tiers: ['cheap'] },
-      { id: 'gpt-5.5', label: 'GPT-5.5', contextK: 256, tiers: ['standard'] },
-      { id: 'gpt-5.5-pro', label: 'GPT-5.5 Pro', contextK: 1024, tiers: ['heavy'] },
-    ],
-  },
-  {
-    id: 'google',
-    label: 'Google (Gemini)',
-    docsUrl: 'https://aistudio.google.com/apikey',
-    keyPrefix: 'AIza',
-    models: [
-      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', contextK: 1024, tiers: ['cheap'] },
-      { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', contextK: 2048, tiers: ['standard', 'heavy'] },
-    ],
-  },
+// Which tiers a model suits, from its registry role. Informational for the
+// picker; any listed model may serve any tier.
+const ROLE_TIERS: Record<ModelRole, AiTier[]> = {
+  top: ['heavy'],
+  flagship: ['heavy', 'standard'],
+  balanced: ['standard', 'cheap'],
+  coding: ['standard', 'heavy'],
+  fast: ['cheap'],
+}
+
+const PROVIDER_META: Omit<ProviderDescriptor, 'models'>[] = [
+  { id: 'anthropic', label: 'Anthropic', docsUrl: 'https://console.anthropic.com/settings/keys', keyPrefix: 'sk-ant-' },
+  { id: 'openai', label: 'OpenAI', docsUrl: 'https://platform.openai.com/api-keys', keyPrefix: 'sk-' },
+  { id: 'google', label: 'Google (Gemini)', docsUrl: 'https://aistudio.google.com/apikey', keyPrefix: 'AIza' },
 ]
 
-export const DEFAULT_PREFERENCES = {
-  cheap: { providerId: 'anthropic' as ProviderId, modelId: 'claude-haiku-4-5-20251001' },
-  standard: { providerId: 'anthropic' as ProviderId, modelId: 'claude-sonnet-5' },
-  heavy: { providerId: 'anthropic' as ProviderId, modelId: 'claude-opus-4-8' },
+function toDescriptor(m: ModelEntry): ModelDescriptor {
+  return { id: m.id, label: m.label, contextK: m.contextK, tiers: ROLE_TIERS[m.role], efforts: m.efforts, note: m.note }
+}
+
+// Derived from the shared model registry: current entries only, in registry
+// order, so a provider's first model is its flagship.
+export const PROVIDERS: ProviderDescriptor[] = PROVIDER_META.map((meta) => ({
+  ...meta,
+  models: CURRENT_MODELS.filter((m) => m.provider === meta.id).map(toDescriptor),
+}))
+
+export type TierPreference = { providerId: ProviderId; modelId: string }
+
+export const DEFAULT_PREFERENCES: Record<AiTier, TierPreference> = {
+  cheap: { providerId: DEFAULT_ROLE_MODEL.cheap.provider, modelId: DEFAULT_ROLE_MODEL.cheap.model },
+  standard: { providerId: DEFAULT_ROLE_MODEL.standard.provider, modelId: DEFAULT_ROLE_MODEL.standard.model },
+  heavy: { providerId: DEFAULT_ROLE_MODEL.heavy.provider, modelId: DEFAULT_ROLE_MODEL.heavy.model },
 }
 
 export function getProvider(id: ProviderId): ProviderDescriptor | undefined {
@@ -72,4 +73,76 @@ export function getModelDescriptor(providerId: ProviderId, modelId: string): Mod
 
 export function isValidProvider(id: string): id is ProviderId {
   return PROVIDERS.some((p) => p.id === id)
+}
+
+function providerModelForTier(providerId: ProviderId, tier: AiTier): string | undefined {
+  const models = getProvider(providerId)?.models ?? []
+  return (models.find((m) => m.tiers.includes(tier)) ?? models[0])?.id
+}
+
+/** The model a key test runs on: the cheap-tier default for its provider. */
+export function testModelFor(providerId: ProviderId): string {
+  if (providerId === DEFAULT_PREFERENCES.cheap.providerId) return DEFAULT_PREFERENCES.cheap.modelId
+  return providerModelForTier(providerId, 'cheap') ?? DEFAULT_PREFERENCES.cheap.modelId
+}
+
+/** Effort sent for a tier: the tier default when the model accepts it. */
+export function tierEffort(tier: AiTier, modelId: string): ModelEffort | null {
+  return effortFor(modelId, DEFAULT_ROLE_MODEL[tier].effort)
+}
+
+/**
+ * AI SDK provider options carrying effort, namespaced per vendor. Google and
+ * models without an effort parameter get none.
+ */
+export function effortProviderOptions(
+  providerId: ProviderId | string,
+  effort: ModelEffort | null,
+): Record<string, Record<string, string>> | undefined {
+  if (!effort) return undefined
+  if (providerId === 'anthropic') return { anthropic: { effort } }
+  if (providerId === 'openai') return { openai: { reasoningEffort: effort } }
+  return undefined
+}
+
+/**
+ * Saved preferences may name a retired model (DB column defaults, older saves).
+ * Map them onto the current lineup so nobody calls a retired model and
+ * re-saving the form never fails validation. A model unknown to the registry
+ * and the remap falls back to the same provider's model for that tier, so a
+ * user with only one provider's key is never switched to another provider.
+ */
+export function normalizeTierPreference(tier: AiTier, pref: { providerId: string; modelId: string }): TierPreference {
+  if (!isValidProvider(pref.providerId)) return { ...DEFAULT_PREFERENCES[tier] }
+  const remapped = remapLegacyModel(pref.modelId)
+  if (getModelDescriptor(pref.providerId, remapped)) return { providerId: pref.providerId, modelId: remapped }
+  const fallback = providerModelForTier(pref.providerId, tier)
+  return fallback ? { providerId: pref.providerId, modelId: fallback } : { ...DEFAULT_PREFERENCES[tier] }
+}
+
+export function normalizePreferences(
+  prefs: Record<AiTier, { providerId: string; modelId: string }>,
+): Record<AiTier, TierPreference> {
+  return {
+    cheap: normalizeTierPreference('cheap', prefs.cheap),
+    standard: normalizeTierPreference('standard', prefs.standard),
+    heavy: normalizeTierPreference('heavy', prefs.heavy),
+  }
+}
+
+/**
+ * Write-path counterpart: swap retired ids for their successors and leave
+ * everything else untouched, so validation still rejects a genuinely unknown
+ * model instead of silently replacing it.
+ */
+export function remapPreferenceIds<T>(prefs: T): T {
+  if (!prefs || typeof prefs !== 'object') return prefs
+  const out: Record<string, unknown> = { ...(prefs as Record<string, unknown>) }
+  for (const tier of ['cheap', 'standard', 'heavy'] as const) {
+    const t = out[tier] as { modelId?: unknown } | undefined
+    if (t && typeof t === 'object' && typeof t.modelId === 'string') {
+      out[tier] = { ...t, modelId: remapLegacyModel(t.modelId) }
+    }
+  }
+  return out as T
 }

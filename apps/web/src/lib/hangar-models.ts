@@ -1,45 +1,27 @@
-export const HANGAR_MODELS_CHECKED_AT = '2026-09-10'
+import { DEFAULT_ROLE_MODEL, MODEL_REGISTRY_REVIEWED_AT, engineModels, type HangarEngine } from '@aeon/shared/ai/models'
+
+// Derived from the shared model registry: each engine lists the current models
+// it can run, by that CLI's own id (Copilot uses dotted ids).
+export const HANGAR_MODELS_CHECKED_AT = MODEL_REGISTRY_REVIEWED_AT
 
 interface HangarModelOption {
   id: string
   label: string
 }
 
-const models: Record<string, readonly HangarModelOption[]> = {
-  copilot: [
-    { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
-    { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
-    { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra' },
-    { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
-    { id: 'claude-opus-5', label: 'Claude Opus 5' },
-    { id: 'claude-haiku-4.5', label: 'Claude Haiku 4.5' },
-    { id: 'gpt-5.4', label: 'GPT-5.4' },
-    { id: 'gpt-5.4-mini', label: 'GPT-5.4 mini' },
-    { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex' },
-    { id: 'gpt-5-mini', label: 'GPT-5 mini' },
-    { id: 'mai-code-1.1-flash', label: 'MAI-Code-1.1-Flash' },
-    { id: 'grok-4.5', label: 'Grok 4.5' },
-    { id: 'grok-4.6', label: 'Grok 4.6' },
-    { id: 'kimi-k3', label: 'Kimi K3' },
-    { id: 'kimi-k2.7-code', label: 'Kimi K2.7 Code' },
-    { id: 'auto', label: 'Copilot Auto' },
-  ],
-  claude: [
-    { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
-    { id: 'claude-opus-5', label: 'Claude Opus 5' },
-    { id: 'claude-fable-5-1', label: 'Claude Fable 5.1' },
-    { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-  ],
-  codex: [
-    { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
-    { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra' },
-    { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
-    { id: 'gpt-6-astra', label: 'GPT-6 Astra' },
-    { id: 'gpt-5.5', label: 'GPT-5.5' },
-    { id: 'gpt-5.3-codex-spark', label: 'GPT-5.3 Codex Spark' },
-  ],
-}
+const ENGINES: readonly HangarEngine[] = ['copilot', 'claude', 'codex']
+
+const models: Record<string, readonly HangarModelOption[]> = Object.fromEntries(
+  ENGINES.map((engine) => [engine, engineModels(engine).map(({ id, label }) => ({ id, label }))]),
+)
 
 export function getHangarModels(engine: string): readonly HangarModelOption[] {
   return Object.hasOwn(models, engine) ? models[engine] : []
+}
+
+/** What the runner uses when a card names no model (the worker reads the same registry). */
+export function getHangarDefault(engine: string): { model: string; effort: string } | null {
+  return Object.hasOwn(DEFAULT_ROLE_MODEL.mission, engine)
+    ? DEFAULT_ROLE_MODEL.mission[engine as HangarEngine]
+    : null
 }

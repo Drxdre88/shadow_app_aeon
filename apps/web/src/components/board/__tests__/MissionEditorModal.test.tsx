@@ -158,15 +158,15 @@ describe('MissionEditorModal launch contract', () => {
   it('persists the exact selected model id', async () => {
     await openEditor()
 
-    fireEvent.change(modelSelect(), { target: { value: 'gpt-5.6-sol' } })
+    fireEvent.change(modelSelect(), { target: { value: 'gpt-6.1-sol' } })
     fireEvent.click(saveButton())
 
     await waitFor(() => expect(saveCardMission).toHaveBeenCalledOnce())
-    expect(saveCardMission).toHaveBeenCalledWith(PROJECT, TASK, expect.objectContaining({ model: 'gpt-5.6-sol' }))
+    expect(saveCardMission).toHaveBeenCalledWith(PROJECT, TASK, expect.objectContaining({ model: 'gpt-6.1-sol' }))
   })
 
   it('persists runner default as null', async () => {
-    await openEditor({ ...validMission, model: 'gpt-5.6-sol' })
+    await openEditor({ ...validMission, model: 'gpt-6.1-sol' })
 
     fireEvent.change(modelSelect(), { target: { value: '' } })
     fireEvent.click(saveButton())
@@ -196,11 +196,11 @@ describe('MissionEditorModal launch contract', () => {
     vi.mocked(listProjectHangarRepos).mockResolvedValue([
       { slug: 'aeon', name: 'Aeon', allowedEngines: ['copilot', 'claude', 'codex'] },
     ])
-    await openEditor({ ...validMission, model: 'gpt-5.6-sol' })
+    await openEditor({ ...validMission, model: 'gpt-6-sol' })
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'codex' })).toHaveProperty('disabled', false))
     fireEvent.click(screen.getByRole('button', { name: 'codex' }))
-    expect(modelSelect().value).toBe('gpt-5.6-sol')
+    expect(modelSelect().value).toBe('gpt-6-sol')
 
     fireEvent.click(screen.getByRole('button', { name: 'claude' }))
     expect(modelSelect().value).toBe('')
@@ -230,7 +230,7 @@ describe('MissionEditorModal launch contract', () => {
   })
 
   it('blocks saving when the stored engine is not allowed by the repository', async () => {
-    await openEditor({ ...validMission, agent: 'claude', model: 'claude-sonnet-5' })
+    await openEditor({ ...validMission, agent: 'claude', model: 'claude-sonnet-5-5' })
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'claude' })).toHaveProperty('disabled', true))
     expect(saveButton().disabled).toBe(true)
@@ -272,7 +272,7 @@ describe('MissionEditorModal launch contract', () => {
     expect(screen.getByText(/Model IDs use letters/)).toBeTruthy()
     expect(saveButton().disabled).toBe(true)
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'Custom model ID' }), { target: { value: 'gpt-5.6-sol' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Custom model ID' }), { target: { value: 'gpt-6.1-sol' } })
     expect(screen.queryByText(/Model IDs use letters/)).toBeNull()
     expect(saveButton().disabled).toBe(false)
   })

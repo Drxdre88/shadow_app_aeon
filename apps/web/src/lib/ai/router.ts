@@ -6,7 +6,8 @@ import { db } from '@/lib/db'
 import { userAiCredentials, userAiPreferences } from '@/lib/db/schema'
 import { and, eq, isNull } from 'drizzle-orm'
 import { decryptSecret } from './crypto'
-import { DEFAULT_PREFERENCES, type AiTier, type ProviderId } from './providers'
+import { DEFAULT_PREFERENCES, normalizeTierPreference, tierEffort, type AiTier, type ProviderId } from './providers'
+import type { ModelEffort } from '@aeon/shared/ai/models'
 import { PAID_BACKUP_OFF_ERROR_NAME, PAID_BACKUP_OFF_NOTE } from './paid-backup-off'
 import { isPaidBackupEnabled } from '@/lib/kairos/paid-backup'
 
@@ -53,9 +54,10 @@ type TierResolution = { providerId: ProviderId; modelId: string }
 async function resolveTier(userId: string, tier: AiTier): Promise<TierResolution> {
   const [prefs] = await db.select().from(userAiPreferences).where(eq(userAiPreferences.userId, userId))
   if (!prefs) return DEFAULT_PREFERENCES[tier]
-  if (tier === 'cheap') return { providerId: prefs.cheapProviderId as ProviderId, modelId: prefs.cheapModelId }
-  if (tier === 'standard') return { providerId: prefs.standardProviderId as ProviderId, modelId: prefs.standardModelId }
-  return { providerId: prefs.heavyProviderId as ProviderId, modelId: prefs.heavyModelId }
+  // Saved ids may be retired (column defaults, older saves): remap at read time.
+  if (tier === 'cheap') return normalizeTierPreference(tier, { providerId: prefs.cheapProviderId, modelId: prefs.cheapModelId })
+  if (tier === 'standard') return normalizeTierPreference(tier, { providerId: prefs.standardProviderId, modelId: prefs.standardModelId })
+  return normalizeTierPreference(tier, { providerId: prefs.heavyProviderId, modelId: prefs.heavyModelId })
 }
 
 async function getDecryptedKey(userId: string, providerId: ProviderId): Promise<string> {
@@ -99,14 +101,26 @@ function buildModel(providerId: ProviderId, modelId: string, apiKey: string): La
 // getProviderForUser, which only Kairos calls (the credential test/save paths
 // use buildModelWithKey with the key they were handed, unaffected). With the
 // Kairos "Paid backup" switch off, no key is resolved at all.
-export async function getModelForUser(userId: string, tier: AiTier): Promise<LanguageModel> {
+export interface ResolvedTierModel {
+  model: LanguageModel
+  providerId: ProviderId
+  modelId: string
+  // The tier's effort when the model accepts one (null for e.g. Haiku/Gemini).
+  effort: ModelEffort | null
+}
+
+export async function resolveModelForUser(userId: string, tier: AiTier): Promise<ResolvedTierModel> {
   const [{ providerId, modelId }, paidAllowed] = await Promise.all([
     resolveTier(userId, tier),
     isPaidBackupEnabled(userId),
   ])
   if (!paidAllowed) throw new PaidBackupOffError(providerId)
   const apiKey = await getDecryptedKey(userId, providerId)
-  return buildModel(providerId, modelId, apiKey)
+  return { model: buildModel(providerId, modelId, apiKey), providerId, modelId, effort: tierEffort(tier, modelId) }
+}
+
+export async function getModelForUser(userId: string, tier: AiTier): Promise<LanguageModel> {
+  return (await resolveModelForUser(userId, tier)).model
 }
 
 export async function buildModelWithKey(providerId: ProviderId, modelId: string, apiKey: string): Promise<LanguageModel> {

@@ -1,3 +1,4 @@
+import { DEFAULT_ROLE_MODEL } from '@aeon/shared/ai/models'
 import type { ThinkingJobKind } from '@/lib/kairos/engine/types'
 
 // Single source of truth for the Claude Code routines that do Kairos's
@@ -5,7 +6,8 @@ import type { ThinkingJobKind } from '@/lib/kairos/engine/types'
 // guides and the docs are generated from this file — change a routine here,
 // never by hand on claude.ai alone.
 
-export const KAIROS_ROUTINE_MODEL = 'claude-opus-5-5'
+// From the shared model registry (defaults.routine).
+export const KAIROS_ROUTINE_MODEL = DEFAULT_ROLE_MODEL.routine.model
 
 export type RoutineId = 'brain' | 'chat'
 

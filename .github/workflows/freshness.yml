@@ -1,0 +1,69 @@
+name: Aeon living world
+
+# Weekly freshness check (docs/aeon-living-world.md): model registry age and
+# unregistered model ids, stale help text, architecture-doc lag, version /
+# changelog drift, and dependency drift. Dependencies are REPORT ONLY — this
+# workflow never installs upgrades or opens PRs. It keeps ONE open issue
+# ("Aeon living world — freshness report", label `freshness`) up to date while
+# anything is 🟡/🔴, and closes it once everything is green.
+
+on:
+  schedule:
+    - cron: '30 6 * * 1' # Mondays 06:30 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: freshness
+  cancel-in-progress: false
+
+jobs:
+  freshness:
+    name: Freshness report
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ISSUE_TITLE: 'Aeon living world — freshness report'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the architecture check reads commit dates from git log
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      # Installed only so `npm outdated` can compare installed vs latest.
+      - run: npm ci
+
+      - run: npm run test:freshness
+
+      - name: Run freshness check
+        id: check
+        run: npm run freshness -- --out freshness-report.md
+
+      - name: Open or update the freshness issue
+        if: steps.check.outputs.yellow != '0' || steps.check.outputs.red != '0'
+        run: |
+          gh label create freshness --color FBCA04 --description "Aeon living world freshness report" 2>/dev/null || true
+          { head -c 60000 freshness-report.md; echo; echo "_Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}_"; } > issue-body.md
+          number=$(gh issue list --state open --label freshness --limit 50 --json number,title \
+            --jq "[.[] | select(.title == env.ISSUE_TITLE)][0].number // empty")
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file issue-body.md
+          else
+            gh issue create --title "$ISSUE_TITLE" --label freshness --body-file issue-body.md
+          fi
+
+      - name: Close the freshness issue when all green
+        if: steps.check.outputs.yellow == '0' && steps.check.outputs.red == '0'
+        run: |
+          for number in $(gh issue list --state open --label freshness --limit 50 --json number,title \
+            --jq '.[] | select(.title == env.ISSUE_TITLE) | .number'); do
+            gh issue close "$number" --comment "All green on $(date -u +%F) — closing. (${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          done

@@ -1,0 +1,48 @@
+{
+  "$comment": "Phrases that mean a user-facing guide is stale (retired features, old names, old model ids). Matched case-insensitively. `scan` = user-facing guides and docs; `allow` = places where history is fine. Used by scripts/aeon-freshness.mjs — see docs/aeon-living-world.md.",
+  "terms": [
+    "run_recipe",
+    "Run briefing now",
+    "morning brief",
+    "08:00 message",
+    "Kairos thinking routine",
+    "Kairos dusk",
+    "kairos-brain-tick",
+    "introspection cron",
+    "micro-consolidate",
+    "contradiction-scan",
+    "memory-dedup",
+    "Setup & Guide",
+    "BYOK passes",
+    "claude-opus-4",
+    "claude-sonnet-4",
+    "gpt-5.",
+    "gemini-2.5"
+  ],
+  "scan": [
+    "apps/web/src/components/**/*Guide*",
+    "apps/web/src/components/kairos/brain/**",
+    "apps/web/src/components/ui/help/**",
+    "apps/web/src/app/settings/**",
+    "docs/kairos/25-*.md",
+    "docs/kairos/33-*.md",
+    "docs/kairos/34-*.md",
+    "apps/web/docs/**",
+    "CLAUDE.md",
+    "README*.md",
+    "architecture/**"
+  ],
+  "allow": [
+    "**/CHANGELOG*.md",
+    "apps/web/src/lib/changelog.ts",
+    "architecture/history.md",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/__tests__/**"
+  ],
+  "ignoreLines": [
+    "freshness-ignore",
+    "\\bretired\\b",
+    "~~"
+  ]
+}

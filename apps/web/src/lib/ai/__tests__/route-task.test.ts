@@ -46,9 +46,9 @@ describe('routeTask default policies (quality-over-cost, 2026-07-24)', () => {
 })
 
 describe('tier → model defaults', () => {
-  it('standard tier defaults to Claude Sonnet 5, heavy to Opus 4.8', () => {
-    expect(DEFAULT_PREFERENCES.standard.modelId).toBe('claude-sonnet-5')
-    expect(DEFAULT_PREFERENCES.heavy.modelId).toBe('claude-opus-4-8')
-    expect(DEFAULT_PREFERENCES.cheap.modelId).toBe('claude-haiku-4-5-20251001')
+  it('heavy and standard default to Claude Opus 5.5, cheap to Sonnet 5.5 (owner, 2026-10-02)', () => {
+    expect(DEFAULT_PREFERENCES.heavy).toEqual({ providerId: 'anthropic', modelId: 'claude-opus-5-5' })
+    expect(DEFAULT_PREFERENCES.standard).toEqual({ providerId: 'anthropic', modelId: 'claude-opus-5-5' })
+    expect(DEFAULT_PREFERENCES.cheap).toEqual({ providerId: 'anthropic', modelId: 'claude-sonnet-5-5' })
   })
 })

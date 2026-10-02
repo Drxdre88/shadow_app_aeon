@@ -53,17 +53,25 @@ KAIROS_MODE=poll npm run start --workspace=apps/kairos-worker
 | `KAIROS_CLAUDE_BIN` | both | `claude` | Override the `claude` executable |
 | `KAIROS_CODEX_BIN` | both | `codex` | Override the `codex` executable |
 | `KAIROS_COPILOT_BIN` | both | `copilot` | Override the `copilot` executable |
-| `KAIROS_CLAUDE_DEFAULT_MODEL` | poll | — | Model when the card names none |
-| `KAIROS_COPILOT_DEFAULT_MODEL` | poll | `claude-sonnet-5` | Model when the card names none; explicit card model takes precedence |
-| `KAIROS_CODEX_DEFAULT_MODEL` | poll | — | Model when the card names none |
-| `KAIROS_COPILOT_EFFORT` | poll | CLI default | Optional validated `--reasoning-effort` |
+| `KAIROS_CLAUDE_DEFAULT_MODEL` | poll | registry: `claude-opus-5-5` | Model when the card names none |
+| `KAIROS_COPILOT_DEFAULT_MODEL` | poll | registry: `claude-opus-5.5` | Model when the card names none; explicit card model takes precedence. Always passed — Copilot's own default is an older Sonnet |
+| `KAIROS_CODEX_DEFAULT_MODEL` | poll | registry: `gpt-6.1-sol` | Model when the card names none |
+| `KAIROS_COPILOT_EFFORT` | poll | registry: `high` for known models | Optional validated `--reasoning-effort` override |
 | `KAIROS_COPILOT_CONTEXT` | poll | CLI default | `default` or `long_context`, passed on argv |
-| `KAIROS_CLAUDE_EFFORT` | poll | CLI default | Optional `--effort` |
+| `KAIROS_CLAUDE_EFFORT` | poll | registry: `high` for known models | Optional `--effort` override |
+| `KAIROS_CODEX_EFFORT` | poll | registry: `high` for known models | Optional validated `-c model_reasoning_effort=…` override |
 | `KAIROS_CLAUDE_FALLBACK_MODEL` | poll | none | Optional explicit Claude `--fallback-model` |
 
-Copilot's authenticated model catalog on 2026-09-21 offered `claude-sonnet-5`,
-`gpt-5.6-terra` and `gpt-5.6-luna`, but neither configured `claude-opus-5` nor
-reviewer `gpt-5.6-sol`. The persistent model choices were not silently changed.
+Default models and efforts come from the shared model registry
+(`packages/shared/src/ai/model-registry.json`, `defaults.mission`): Copilot
+`claude-opus-5.5`, Claude Code `claude-opus-5-5`, Codex `gpt-6.1-sol`, all at
+`high` effort. A model the registry does not list (a custom card id) gets no
+effort flag, so the CLI decides. The env knobs above override the registry.
+History: Copilot's authenticated catalog on 2026-09-21 offered `claude-sonnet-5`,
+`gpt-5.6-terra` and `gpt-5.6-luna` but not `claude-opus-5` or `gpt-5.6-sol`. On
+2026-10-02 the same probe listed `claude-opus-5.5`, `claude-sonnet-5.5`,
+`claude-haiku-4.5`, `gpt-6.1-sol`, `gpt-6-sol` and `gpt-6-luna` (so the mission
+and reviewer defaults are available), but not `gpt-6-astra` or `gemini-3.8-flash`.
 Availability depends on the runner account and must be checked at launch. From the repository root, run
 `node aeon_os/workflows/probe-copilot-models.mjs` to query the installed CLI's
 `models.list` without generating a response or creating a mission. The production

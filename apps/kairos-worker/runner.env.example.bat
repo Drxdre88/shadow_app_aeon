@@ -20,13 +20,19 @@ REM Put the worktree root under a folder the Copilot CLI already trusts (trust i
 REM inherited from the parent): an untrusted worktree loads no CLAUDE.md/AGENTS.md
 REM and no repo skills, so the mission runs blind to the repo's own rules.
 REM set KAIROS_WORKTREE_ROOT=D:/aeon-worktrees
-REM Optional explicit Copilot mission tier. The adapter fallback remains
-REM claude-sonnet-5 when a card and this file provide no model. Uncomment all
-REM three lines below for the current owner tier. Effort and context are passed
-REM on argv because the CLI does not restore contextTier from settings.json at
-REM startup.
+REM Optional explicit Copilot mission tier. Without these lines the runner uses
+REM the shared model registry default (claude-opus-5.5 at high effort) and
+REM always passes a model, because Copilot's own default is an older Sonnet.
+REM Effort and context are passed on argv because the CLI does not restore
+REM contextTier from settings.json at startup.
 REM   KAIROS_COPILOT_EFFORT:  none | minimal | low | medium | high | xhigh | max
 REM   KAIROS_COPILOT_CONTEXT: default | long_context
-REM set KAIROS_COPILOT_DEFAULT_MODEL=claude-opus-5
-REM set KAIROS_COPILOT_EFFORT=xhigh
+REM set KAIROS_COPILOT_DEFAULT_MODEL=claude-opus-5.5
+REM set KAIROS_COPILOT_EFFORT=high
 REM set KAIROS_COPILOT_CONTEXT=long_context
+REM Claude Code and Codex defaults also come from the registry
+REM (claude-opus-5-5 / gpt-6.1-sol, high effort). Overrides:
+REM set KAIROS_CLAUDE_DEFAULT_MODEL=claude-opus-5-5
+REM set KAIROS_CLAUDE_EFFORT=high
+REM set KAIROS_CODEX_DEFAULT_MODEL=gpt-6.1-sol
+REM set KAIROS_CODEX_EFFORT=high

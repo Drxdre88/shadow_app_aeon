@@ -8,7 +8,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
 import { listCopilotModels } from './probe-copilot-models.mjs'
-import { archiveDecision, evaluateReviewGate, importVerdict, loadVerdicts, reviewConfig, reviewsDir, runReview } from './review.mjs'
+import { MODEL_REGISTRY, archiveDecision, evaluateReviewGate, importVerdict, loadVerdicts, reviewConfig, reviewsDir, runReview } from './review.mjs'
 import { assertCitationFloor, extractCitations } from './review-bundle.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -47,13 +47,25 @@ export function parseEnv({ envFile = ENV_FILE, environment = process.env } = {})
       if (match && allowed.has(match[1].toUpperCase())) parsed[match[1].toUpperCase()] = match[2].trim()
     }
   }
+  const missionTier = MODEL_REGISTRY.defaults.mission.copilot
+
+// Same rule as apps/kairos-worker/src/models.ts missionEffort: a registry-known
+// model gets the mission effort (or its own default); unknown ids get none.
+function copilotMissionEffort(model) {
+  const entry = MODEL_REGISTRY.models.find((m) => m.status === 'current' && m.engineIds?.copilot === model)
+  if (!entry || !entry.efforts?.length) return ''
+  return entry.efforts.includes(missionTier.effort) ? missionTier.effort : entry.defaultEffort
+}
+  const explicitModel = environment.KAIROS_COPILOT_DEFAULT_MODEL || parsed.KAIROS_COPILOT_DEFAULT_MODEL || ''
   const cfg = {
     baseUrl: (environment.AEON_BASE_URL || parsed.AEON_BASE_URL || '').replace(/\/$/, ''),
     apiKey: environment.KAIROS_AEON_API_KEY || parsed.KAIROS_AEON_API_KEY || '',
-    model: environment.KAIROS_COPILOT_DEFAULT_MODEL || parsed.KAIROS_COPILOT_DEFAULT_MODEL || '',
-    // Mission tier (owner directive 1709: Opus 5 · xhigh · long_context).
-    // Optional: absent knobs leave the CLI at its own defaults.
-    effort: environment.KAIROS_COPILOT_EFFORT || parsed.KAIROS_COPILOT_EFFORT || '',
+    // Mission tier: the env/runner.env.bat model, else the shared model
+    // registry's Copilot mission default (Opus 5.5). Always explicit on argv.
+    model: explicitModel || missionTier.model,
+    // Effort: the env knob, else the same registry rule the worker applies
+    // (so the recorded effort matches what actually ran).
+    effort: environment.KAIROS_COPILOT_EFFORT || parsed.KAIROS_COPILOT_EFFORT || copilotMissionEffort(explicitModel || missionTier.model),
     context: environment.KAIROS_COPILOT_CONTEXT || parsed.KAIROS_COPILOT_CONTEXT || '',
   }
   if (!cfg.baseUrl || !/^https:\/\//i.test(cfg.baseUrl)) throw new Error('AEON_BASE_URL must be an https URL')

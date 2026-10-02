@@ -29,6 +29,20 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.37.0] — 2026-10-02
+
+> Areas touched: \`KAIROS\` \`UI\` \`INFRA\` \`DOCS\`
+> Theme: Current models everywhere, and Aeon notices when it falls behind.
+
+### Changed — Opus 5.5 by default · \`KAIROS\` \`UI\` \`INFRA\`
+- One model list (\`packages/shared/src/ai/model-registry.json\`) now drives AI settings, Kairos, routines, Hangar missions and the review step. Defaults: Claude Opus 5.5 at high effort for deep work, at medium effort for standard work, and Sonnet 5.5 for quick tasks. OpenAI options are GPT-6 Astra / 6.1 Sol / Luna; Google options are Gemini 3.8 Flash / 3.1 Pro. Older Claude, GPT-5 and Gemini 2.5 models are no longer offered, and anyone who saved one moves to its replacement automatically.
+- Effort is now sent to the model (Anthropic and OpenAI), and Hangar missions pass model and effort explicitly.
+
+### Fixed — Key tests · \`UI\`
+- Testing an OpenAI or Gemini key now uses that provider's own model instead of a Claude one.
+
+### Added — Aeon living world · \`DOCS\`
+- \`npm run freshness\` checks model names, help guides, architecture docs, version numbers and package drift (report only). It runs every Monday on GitHub and keeps one tracking issue up to date.
 ## [0.36.0] — 2026-10-02
 
 > Areas touched: \`KAIROS\` \`UI\` \`MCP\` \`API\` \`DOCS\`
