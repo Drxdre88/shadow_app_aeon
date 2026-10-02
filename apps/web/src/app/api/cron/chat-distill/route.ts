@@ -2,6 +2,7 @@ import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { listChatDistillEligibleUserIds } from '@/lib/data/kairos-chat'
 import { runChatDistillForUser, type ChatDistillRunResult } from '@/lib/kairos/chat-distill'
+import { skipCronIfPaidBackupOff } from '@/lib/kairos/paid-backup-cron'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 
 export const maxDuration = 300
@@ -25,9 +26,15 @@ export async function GET(req: NextRequest) {
   const users: Array<{ userId: string; result?: ChatDistillRunResult; error?: string }> = []
   const skippedUserIds: string[] = []
 
+  const paidBackupOff: string[] = []
   for (const userId of userIds) {
     if (Date.now() - startedAt > DEADLINE_MS) {
       skippedUserIds.push(userId)
+      continue
+    }
+    // Paid backup switched off: skip before building any prompt.
+    if (await skipCronIfPaidBackupOff(userId, 'chat-distill')) {
+      paidBackupOff.push(userId)
       continue
     }
     try {
@@ -52,6 +59,7 @@ export async function GET(req: NextRequest) {
 
   return jsonResponse({
     ran: users.length,
+    paidBackupOff,
     skipped: skippedUserIds.length,
     ...(skippedUserIds.length ? { skippedUserIds } : {}),
     reflectionsCreated: users.reduce(

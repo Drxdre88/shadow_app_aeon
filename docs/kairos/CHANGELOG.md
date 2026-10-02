@@ -4,6 +4,14 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–35).
 
+## [0.19.0] — 2026-10-02 · "No paid spend, chat on Max, one setup checklist"
+
+> Kairos can now run with no paid API spend at all, the Kairos web-page chat answers on the Max plan like Telegram, and all setup help collapses into one live "Set up Kairos" checklist.
+
+- **Paid backup switch.** A per-user switch (Kairos setup → Health; MCP `get_kairos_paid_backup` / `set_kairos_paid_backup`; `GET/PUT /api/v1/kairos/paid-backup`). Default on. Off → Kairos never reaches your API key: the single choke point is `getModelForUser` (`PaidBackupOffError`), sweep fallbacks close with "paid backup off", the fallback crons skip, the 06:00 message goes out as plain text, and chat says it couldn't answer on Max. Stored in `user_preferences` (`kairosPaidBackup`); theme saves can't overwrite it.
+- **Chat on Max for the web page.** One "Kairos chat" routine answers both Telegram and the /kairos page (`KAIROS_CHAT_ROUTINE=1`; `KAIROS_TELEGRAM_ROUTINE` still accepted). The page shows "Kairos is thinking…" and polls until the reply lands; the paid key is only a backup and obeys the switch.
+- **Set up Kairos.** One sidebar button opens one checklist: two required steps (connect Aeon to Claude with a one-click pre-filled install link; turn on the Kairos brain routine), each ticked live from what Aeon actually sees, then optional extras (watched boards, voice notes, coding-session capture, chat on Max, Telegram with a Send-test button). Health, Brain map, Watched and How it works are reference tabs. The old Setup & Guide modal is gone.
+- **Docs.** The owner guide (doc 25), Telegram setup, routines (33) and beliefs (34) docs are current; the retired brain-tick skill is removed.
 ## [0.18.0] — 2026-10-02 · "Catch-up mornings, watched boards, voice notes"
 
 > The morning message moves to 06:00 and carries every unanswered question, numbered, so an off week can be caught up. Finished cards on watched boards reach Kairos the same day. Long voice notes from claude.ai arrive word for word and count as the owner's own words once confirmed. The first constitution draft runs on Max.

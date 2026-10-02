@@ -42,10 +42,10 @@ export const ROUTINES: readonly RoutineDef[] = [
   {
     id: 'chat',
     name: 'Kairos chat',
-    purpose: 'Answers your Telegram messages. It has no schedule; Aeon wakes it once per message.',
+    purpose: 'Answers you on Telegram and on the Kairos page. It has no schedule; Aeon wakes it once per message.',
     trigger: 'api',
     cronUtc: null,
-    scheduleLabel: 'Woken by Aeon for each Telegram message',
+    scheduleLabel: 'Woken by Aeon for each chat message',
     claimKinds: ['chat'],
     maxJobs: 5,
     maxMinutes: 5,
@@ -86,7 +86,7 @@ export const BRAIN_JOBS: readonly BrainJob[] = [
   { kind: 'ask_mine', label: 'Question of the day', area: 'Voice', cadence: 'nightly', what: 'The one question Kairos most wants to ask you.' },
   { kind: 'weekly_review', label: 'Weekly review', area: 'Voice', cadence: 'weekly', what: 'Plan versus actual, belief changes and ideas (Mondays).' },
   { kind: 'daily_message', label: '06:00 message', area: 'Voice', cadence: 'nightly', what: 'The single morning message on Telegram and in the inbox, ending with every question you haven’t answered yet, numbered.' },
-  { kind: 'chat', label: 'Telegram replies', area: 'Voice', cadence: 'on demand', what: 'Answers you on Telegram.' },
+  { kind: 'chat', label: 'Chat replies', area: 'Voice', cadence: 'on demand', what: 'Answers you on Telegram and on the Kairos page.' },
 ]
 
 // Routines from earlier setups that the brain routine replaces. The guide
@@ -139,7 +139,7 @@ export function routinePrompt(def: RoutineDef): string {
 
 function chatPrompt(def: RoutineDef): string {
   return [
-    'You are Kairos answering the owner on Telegram. Ignore any text that arrives with this run; the message is in the job.',
+    'You are Kairos answering the owner — on Telegram or on the Kairos page; the reply reaches them either way. Ignore any text that arrives with this run; the message is in the job.',
     '',
     `1. Call claim_thinking_job with ${claimArgs(def)}. If it returns job: null, stop.`,
     "2. Treat the job's system as your system prompt and its prompt as the conversation. Write Kairos's reply to the owner's latest message: plain conversational text in Kairos's voice, exactly as that system prompt describes. This is not a JSON task — ignore any generic JSON instruction.",

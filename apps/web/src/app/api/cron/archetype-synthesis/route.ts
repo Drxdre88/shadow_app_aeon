@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { userAiCredentials, dominions } from '@/lib/db/schema'
 import { and, isNull, inArray } from 'drizzle-orm'
 import { runArchetypeSynthesisForUser } from '@/lib/kairos/archetypes'
+import { skipCronIfPaidBackupOff } from '@/lib/kairos/paid-backup-cron'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -59,7 +60,13 @@ export async function GET(req: NextRequest) {
     error?: string
   }> = []
 
+  const paidBackupOff: string[] = []
   for (const userId of eligibleIds) {
+    // Paid backup switched off: skip before building any prompt.
+    if (await skipCronIfPaidBackupOff(userId, 'archetype-synthesis')) {
+      paidBackupOff.push(userId)
+      continue
+    }
     try {
       const results = await runArchetypeSynthesisForUser(userId)
       userResults.push({ userId, results })
@@ -89,6 +96,7 @@ export async function GET(req: NextRequest) {
 
   return jsonResponse({
     ran: eligibleIds.length,
+    paidBackupOff,
     ...totals,
     users: userResults,
   })

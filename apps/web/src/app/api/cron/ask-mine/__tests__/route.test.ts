@@ -16,9 +16,14 @@ vi.mock('@/lib/kairos/cron-trace', () => ({
   writeCronSuccessTrace: vi.fn(),
 }))
 
+vi.mock('@/lib/kairos/paid-backup-cron', () => ({
+  skipCronIfPaidBackupOff: vi.fn(async () => false),
+}))
+
 import { listChatDistillEligibleUserIds } from '@/lib/data/kairos-chat'
 import { runAskMineForUser, sweepExpiredKairosAsks } from '@/lib/kairos/ask-mine'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
+import { skipCronIfPaidBackupOff } from '@/lib/kairos/paid-backup-cron'
 import { GET } from '../route'
 
 function request(path = '/api/cron/ask-mine', authorization?: string) {
@@ -35,6 +40,19 @@ beforeEach(() => {
 })
 
 describe('cron/ask-mine route', () => {
+  it('paid backup off: still sweeps expired asks but never runs the paid ask', async () => {
+    vi.mocked(listChatDistillEligibleUserIds).mockResolvedValue(['user-1'])
+    vi.mocked(skipCronIfPaidBackupOff).mockResolvedValueOnce(true)
+
+    const response = await GET(request())
+    const body = await response.json()
+
+    expect(skipCronIfPaidBackupOff).toHaveBeenCalledWith('user-1', 'ask-mine')
+    expect(sweepExpiredKairosAsks).toHaveBeenCalledWith('user-1')
+    expect(runAskMineForUser).not.toHaveBeenCalled()
+    expect(body).toMatchObject({ ran: 0, paidBackupOff: ['user-1'] })
+  })
+
   it('requires the configured bearer secret before reading eligible users', async () => {
     process.env.CRON_SECRET = 'cron-secret'
 

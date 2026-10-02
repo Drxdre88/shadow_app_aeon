@@ -47,7 +47,7 @@ export async function upsertJob(userId: string, spec: ThinkingJobSpec, now: Date
 // outer UPDATE re-checks status after the lock. One statement, so it works on
 // the HTTP (poolQueryViaFetch) path without a transaction.
 // Without a kinds filter, 'chat' jobs are excluded: a chat reply is plain
-// text for the Telegram routine, so it is only claimable by asking for it
+// text for the chat routine (web + Telegram), so it is only claimable by asking for it
 // explicitly (kinds including 'chat') — never by a nightly/morning drain.
 export const EXPLICIT_ONLY_KINDS: readonly ThinkingJobKind[] = ['chat']
 

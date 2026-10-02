@@ -1,11 +1,13 @@
 import { getProviderForUser } from '@/lib/ai/provider'
 import { AiCredentialDecryptError, AiCredentialMissingError } from '@/lib/ai/router'
+import { PAID_BACKUP_OFF_NOTE, isPaidBackupOffError } from '@/lib/ai/paid-backup-off'
 import { ParseRepairError, parseWithRepair } from '@/lib/kairos/_prompt-utils'
 import type { ThinkingJobRow } from '@/lib/kairos/engine/types'
 
 // Paid-key fallback shared by thinking-job handlers: one heavy-tier call with
 // the job's own prompt, then parse (with one repair round-trip). A missing or
-// undecryptable BYOK key declines; any other provider error propagates.
+// undecryptable BYOK key, or the user's "Paid backup" switch being off,
+// declines; any other provider error propagates.
 
 export type PaidParse<T> = { ok: true; value: T } | { ok: false; reason: string }
 
@@ -29,6 +31,7 @@ export async function askPaidAndParse<T>(job: ThinkingJobRow, opts: PaidParseOpt
     const res = await provider.ask({ system: job.input.system, prompt: job.input.prompt, cacheSystem: true, maxTokens: opts.maxTokens })
     rawText = res.text.trim()
   } catch (err) {
+    if (isPaidBackupOffError(err)) return { ok: false, reason: PAID_BACKUP_OFF_NOTE }
     if (err instanceof AiCredentialMissingError) return { ok: false, reason: 'no BYOK credential' }
     if (err instanceof AiCredentialDecryptError) return { ok: false, reason: 'key undecryptable' }
     throw err

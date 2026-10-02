@@ -1,6 +1,7 @@
 import { jsonResponse } from '@/lib/api/response'
 import { listChatDistillEligibleUserIds } from '@/lib/data/kairos-chat'
 import { runAskMineForUser, sweepExpiredKairosAsks, type AskMineRunResult } from '@/lib/kairos/ask-mine'
+import { skipCronIfPaidBackupOff } from '@/lib/kairos/paid-backup-cron'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 import type { NextRequest } from 'next/server'
 
@@ -22,6 +23,7 @@ export async function GET(req: NextRequest) {
   const userIds = await listChatDistillEligibleUserIds()
   const users: Array<{ userId: string; result?: AskMineRunResult; expiredAsks?: number; error?: string }> = []
   const skippedUserIds: string[] = []
+  const paidBackupOff: string[] = []
   let asksExpired = 0
 
   for (const userId of userIds) {
@@ -42,6 +44,12 @@ export async function GET(req: NextRequest) {
           error: error instanceof Error ? error.message : String(error),
         })
       }
+    }
+    // Paid backup switched off: skip the paid ask (the expiry sweep above is
+    // free; a dry run builds the prompt without calling the model).
+    if (!dryRun && await skipCronIfPaidBackupOff(userId, 'ask-mine')) {
+      paidBackupOff.push(userId)
+      continue
     }
     try {
       const result = await runAskMineForUser(userId, { dryRun })
@@ -84,6 +92,7 @@ export async function GET(req: NextRequest) {
     ...(skippedUserIds.length ? { skippedUserIds } : {}),
     asksCreated: users.filter((user) => user.result?.status === 'created').length,
     asksExpired,
+    paidBackupOff,
     dryRun,
     users,
   })

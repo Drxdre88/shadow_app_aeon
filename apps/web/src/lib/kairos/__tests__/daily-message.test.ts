@@ -54,7 +54,7 @@ import type { SQL } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { listJobs } from '@/lib/data/thinking-jobs'
 import { getProviderForTask } from '@/lib/ai/route-task'
-import { AiCredentialMissingError } from '@/lib/ai/router'
+import { AiCredentialMissingError, PaidBackupOffError } from '@/lib/ai/router'
 import type { ThinkingJobRow } from '@/lib/kairos/engine/types'
 import { deliverKairosSpeak } from '../speak'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '../cron-trace'
@@ -260,6 +260,15 @@ describe('runDailyMessageForUser', () => {
     selectQueue.push([{ n: 0 }])
     vi.mocked(getProviderForTask).mockRejectedValue(new AiCredentialMissingError('anthropic' as never))
     expect(await runDailyMessageForUser(USER, { now: NOW })).toMatchObject({ status: 'sent_fallback' })
+    expect(writeCronFailureTrace).not.toHaveBeenCalled()
+  })
+
+  it('paid backup off: the 06:00 message falls back to plain text, no failure trace', async () => {
+    selectQueue.push([{ n: 0 }])
+    vi.mocked(getProviderForTask).mockRejectedValue(new PaidBackupOffError('anthropic' as never))
+    const result = await runDailyMessageForUser(USER, { now: NOW })
+    expect(result).toMatchObject({ status: 'sent_fallback', source: 'deterministic' })
+    expect(deliverKairosSpeak).toHaveBeenCalledTimes(1)
     expect(writeCronFailureTrace).not.toHaveBeenCalled()
   })
 

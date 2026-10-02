@@ -8,6 +8,7 @@ import {
 import { isJobDone } from '@/lib/data/thinking-jobs'
 import { getProviderForUser } from '@/lib/ai/provider'
 import { AiCredentialDecryptError, AiCredentialMissingError } from '@/lib/ai/router'
+import { PAID_BACKUP_OFF_NOTE, isPaidBackupOffError } from '@/lib/ai/paid-backup-off'
 import { ParseRepairError, parseWithRepair, todayIso } from '@/lib/kairos/_prompt-utils'
 import { isoWeekKey } from '@/lib/kairos/thinking/deadlines'
 import { buildProposalValues } from './amendment'
@@ -124,6 +125,7 @@ export async function seedConstitutionDraft(userId: string, now: Date = new Date
     })
     rawText = res.text.trim()
   } catch (err) {
+    if (isPaidBackupOffError(err)) return { status: 'skipped', reason: PAID_BACKUP_OFF_NOTE }
     if (err instanceof AiCredentialMissingError) return { status: 'skipped', reason: 'no BYOK credential' }
     if (err instanceof AiCredentialDecryptError) return { status: 'skipped', reason: 'key undecryptable' }
     throw err

@@ -7,9 +7,15 @@ vi.mock('next/headers', () => ({ headers: vi.fn() }))
 vi.mock('../helpers', () => ({ requireAuth: vi.fn() }))
 vi.mock('@/lib/data/brain-status', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/data/brain-status')>()
-  return { ...actual, listBrainJobsSince: vi.fn() }
+  return { ...actual, listBrainJobsSince: vi.fn(), getSetupSignals: vi.fn() }
 })
+vi.mock('@/lib/kairos/telegram', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/kairos/telegram')>()
+  return { ...actual, sendMessage: vi.fn() }
+})
+vi.mock('@/lib/api/rateLimit', () => ({ checkRateLimit: vi.fn() }))
 vi.mock('@/lib/data/projects', () => ({ findOwnProjects: vi.fn() }))
+vi.mock('@/lib/data/kairos-paid-backup', () => ({ getPaidBackupSetting: vi.fn(), setPaidBackupSetting: vi.fn() }))
 vi.mock('@/lib/data/dominions', () => ({
   findDominionsByUser: vi.fn(),
   listReposForUser: vi.fn(),
@@ -18,17 +24,28 @@ vi.mock('@/lib/data/dominions', () => ({
 
 import { auth } from '@/lib/auth'
 import { headers } from 'next/headers'
-import { listBrainJobsSince } from '@/lib/data/brain-status'
+import { getSetupSignals, listBrainJobsSince } from '@/lib/data/brain-status'
+import { sendMessage } from '@/lib/kairos/telegram'
+import { checkRateLimit } from '@/lib/api/rateLimit'
 import { findOwnProjects } from '@/lib/data/projects'
+import { getPaidBackupSetting, setPaidBackupSetting } from '@/lib/data/kairos-paid-backup'
 import { findDominionsByUser, listReposForUser, listRecentCaptureRepos } from '@/lib/data/dominions'
 import { requireAuth } from '../helpers'
-import { getKairosBrainStatus, getKairosWatchedOverview } from '../kairos-brain'
+import { getKairosBrainStatus, getKairosWatchedOverview, getPaidBackup, sendKairosTestMessage, setPaidBackup } from '../kairos-brain'
 
 const ENV_KEYS = [
   'AUTH_URL', 'NEXTAUTH_URL', 'NEXT_PUBLIC_APP_URL',
-  'KAIROS_TELEGRAM_ROUTINE', 'ROUTINE_CHAT_ID', 'ROUTINE_CHAT_TOKEN', 'ROUTINE_CHAT_FIRE_URL',
+  'KAIROS_TELEGRAM_ROUTINE', 'KAIROS_CHAT_ROUTINE', 'KAIROS_OPERATOR_USER_ID', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_OPERATOR_CHAT_ID',
+  'ROUTINE_CHAT_ID', 'ROUTINE_CHAT_TOKEN', 'ROUTINE_CHAT_FIRE_URL',
 ] as const
 const saved: Record<string, string | undefined> = {}
+const SETUP = {
+  connectorUsedAt: '2026-10-01T09:00:00.000Z',
+  sessions: { claude: '2026-10-02T07:00:00.000Z', codex: null, copilot: null },
+  voiceNoteAt: null,
+  watchedBoards: 2,
+  telegramConfigured: true,
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -36,6 +53,10 @@ beforeEach(() => {
   vi.mocked(requireAuth).mockResolvedValue('user-1')
   vi.mocked(auth).mockResolvedValue({ user: { id: 'user-1', role: 'admin' } } as never)
   vi.mocked(listBrainJobsSince).mockResolvedValue([])
+  vi.mocked(getSetupSignals).mockResolvedValue(SETUP)
+  vi.mocked(checkRateLimit).mockReturnValue({ allowed: true, remaining: 2, resetAt: 0 })
+  vi.mocked(sendMessage).mockResolvedValue({ messageId: 1 })
+  vi.mocked(getPaidBackupSetting).mockResolvedValue(true)
   vi.mocked(headers).mockResolvedValue(new Headers({ host: 'preview.example.app' }) as never)
 })
 
@@ -96,6 +117,122 @@ describe('getKairosBrainStatus', () => {
     expect((await getKairosBrainStatus()).isAdmin).toBe(true)
     vi.mocked(auth).mockResolvedValue({ user: { id: 'user-1', role: 'user' } } as never)
     expect((await getKairosBrainStatus()).isAdmin).toBe(false)
+  })
+
+  it('reports the caller\'s paid-backup switch and last-7-day backup count', async () => {
+    const now = Date.now()
+    const at = (msAgo: number) => new Date(now - msAgo)
+    vi.mocked(listBrainJobsSince).mockResolvedValue([
+      { kind: 'concept', status: 'fallback', claimedBy: null, claimedAt: null, completedAt: at(3600_000), deadlineAt: at(7200_000), error: null },
+      { kind: 'cortex', status: 'failed', claimedBy: null, claimedAt: null, completedAt: null, deadlineAt: at(7200_000), error: 'deadline_passed: …; the cortex-regen cron owns this job now' },
+      { kind: 'aether', status: 'done', claimedBy: 'routine', claimedAt: at(7200_000), completedAt: at(7000_000), deadlineAt: at(6000_000), error: null },
+    ])
+    const on = await getKairosBrainStatus()
+    expect(getPaidBackupSetting).toHaveBeenCalledWith('user-1')
+    expect(on.paidBackup).toEqual({ enabled: true, paidCallsLast7d: 2 })
+
+    // Off: a cron-"covered" job was skipped by its cron, so it is missed, not paid.
+    vi.mocked(getPaidBackupSetting).mockResolvedValue(false)
+    const off = await getKairosBrainStatus()
+    expect(off.paidBackup).toEqual({ enabled: false, paidCallsLast7d: 1 })
+    expect(off.lastNight.missed).toBe(on.lastNight.missed + 1)
+  })
+})
+
+describe('setup signals in getKairosBrainStatus', () => {
+  it('passes the caller through and returns the signals as-is', async () => {
+    const s = await getKairosBrainStatus()
+    expect(s.setup).toEqual(SETUP)
+    const [userId, opts] = vi.mocked(getSetupSignals).mock.calls[0]!
+    expect(userId).toBe('user-1')
+    expect(opts?.isOperator).toBe(true) // admin, no operator id configured
+  })
+
+  it('only the configured operator counts as operator', async () => {
+    process.env.KAIROS_OPERATOR_USER_ID = 'user-op'
+    await getKairosBrainStatus()
+    expect(vi.mocked(getSetupSignals).mock.calls[0]![1]?.isOperator).toBe(false)
+    vi.mocked(requireAuth).mockResolvedValue('user-op')
+    vi.mocked(auth).mockResolvedValue({ user: { id: 'user-op', role: 'user' } } as never)
+    await getKairosBrainStatus()
+    expect(vi.mocked(getSetupSignals).mock.calls[1]![1]?.isOperator).toBe(true)
+  })
+})
+
+describe('sendKairosTestMessage', () => {
+  beforeEach(() => {
+    process.env.TELEGRAM_BOT_TOKEN = 'bot-token'
+    process.env.TELEGRAM_OPERATOR_CHAT_ID = '4242'
+  })
+
+  it('rejects when signed out and sends nothing', async () => {
+    vi.mocked(requireAuth).mockRejectedValue(new Error('Unauthorized'))
+    await expect(sendKairosTestMessage()).rejects.toThrow('Unauthorized')
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('sends one plain line to the operator chat — no inbox, no speak', async () => {
+    expect(await sendKairosTestMessage()).toEqual({ ok: true })
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(sendMessage).toHaveBeenCalledWith('4242', 'Kairos test — if you can read this, Telegram is connected ✓')
+    expect(checkRateLimit).toHaveBeenCalledWith('kairos-telegram-test:user-1', expect.any(Object))
+  })
+
+  it('refuses a non-admin when no operator is configured', async () => {
+    vi.mocked(auth).mockResolvedValue({ user: { id: 'user-1', role: 'user' } } as never)
+    const out = await sendKairosTestMessage()
+    expect(out.ok).toBe(false)
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('refuses an admin who is not the configured operator', async () => {
+    process.env.KAIROS_OPERATOR_USER_ID = 'someone-else'
+    expect((await sendKairosTestMessage()).ok).toBe(false)
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('reports a missing bot setup without calling Telegram', async () => {
+    delete process.env.TELEGRAM_OPERATOR_CHAT_ID
+    const out = await sendKairosTestMessage()
+    expect(out).toEqual({ ok: false, error: expect.stringContaining('not set up') })
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('is rate limited', async () => {
+    vi.mocked(checkRateLimit).mockReturnValue({ allowed: false, remaining: 0, resetAt: 0 })
+    expect((await sendKairosTestMessage()).ok).toBe(false)
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('turns a Telegram failure into an error without leaking it', async () => {
+    vi.mocked(sendMessage).mockRejectedValue(new Error('Telegram sendMessage failed (401): Unauthorized bot-token'))
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const out = await sendKairosTestMessage()
+    spy.mockRestore()
+    expect(out.ok).toBe(false)
+    expect(out.error).not.toContain('bot-token')
+  })
+})
+
+describe('paid backup actions', () => {
+  it('require auth and never touch the store when signed out', async () => {
+    vi.mocked(requireAuth).mockRejectedValue(new Error('Unauthorized'))
+    await expect(setPaidBackup(false)).rejects.toThrow('Unauthorized')
+    await expect(getPaidBackup()).rejects.toThrow('Unauthorized')
+    expect(setPaidBackupSetting).not.toHaveBeenCalled()
+    expect(getPaidBackupSetting).not.toHaveBeenCalled()
+  })
+
+  it('write the caller\'s switch and echo it', async () => {
+    vi.mocked(setPaidBackupSetting).mockResolvedValue(false)
+    expect(await setPaidBackup(false)).toEqual({ enabled: false })
+    expect(setPaidBackupSetting).toHaveBeenCalledWith('user-1', false)
+    expect(await getPaidBackup()).toEqual({ enabled: true })
+  })
+
+  it('reject a non-boolean', async () => {
+    await expect(setPaidBackup('no' as never)).rejects.toThrow()
+    expect(setPaidBackupSetting).not.toHaveBeenCalled()
   })
 })
 

@@ -12,9 +12,14 @@ vi.mock('@/lib/kairos/cron-trace', () => ({
   writeCronFailureTrace: vi.fn(),
 }))
 
+vi.mock('@/lib/kairos/paid-backup-cron', () => ({
+  skipCronIfPaidBackupOff: vi.fn(async () => false),
+}))
+
 import { listChatDistillEligibleUserIds } from '@/lib/data/kairos-chat'
 import { runChatDistillForUser } from '@/lib/kairos/chat-distill'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { skipCronIfPaidBackupOff } from '@/lib/kairos/paid-backup-cron'
 import { GET } from '../route'
 
 function request(authorization?: string) {
@@ -55,6 +60,17 @@ describe('cron/chat-distill route', () => {
     expect(response.status).toBe(200)
     expect(body).toMatchObject({ ran: 1, skipped: 0, reflectionsCreated: 2 })
     expect(runChatDistillForUser).toHaveBeenCalledWith('user-1')
+  })
+
+  it('paid backup off: skips the user without distilling', async () => {
+    ;(listChatDistillEligibleUserIds as ReturnType<typeof vi.fn>).mockResolvedValue(['user-1'])
+    vi.mocked(skipCronIfPaidBackupOff).mockResolvedValueOnce(true)
+
+    const body = await (await GET(request())).json()
+
+    expect(skipCronIfPaidBackupOff).toHaveBeenCalledWith('user-1', 'chat-distill')
+    expect(runChatDistillForUser).not.toHaveBeenCalled()
+    expect(body).toMatchObject({ ran: 0, paidBackupOff: ['user-1'] })
   })
 
   it('skips remaining users once the deadline is reached', async () => {

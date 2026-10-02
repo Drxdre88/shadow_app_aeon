@@ -3,7 +3,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { KairosBrainStatus } from '@/lib/kairos/routines/status-types'
 
-vi.mock('@/lib/actions/kairos-brain', () => ({ getKairosBrainStatus: vi.fn(), getKairosWatchedOverview: vi.fn() }))
+vi.mock('@/lib/actions/kairos-brain', () => ({
+  getKairosBrainStatus: vi.fn(),
+  getKairosWatchedOverview: vi.fn(),
+  setPaidBackup: vi.fn(),
+  sendKairosTestMessage: vi.fn(),
+}))
 vi.mock('@/lib/actions/projects', () => ({ setProjectKairosFeed: vi.fn() }))
 vi.mock('@/lib/actions/dominions', () => ({ addDominionRepoAction: vi.fn() }))
 
@@ -29,35 +34,38 @@ function status(overrides: Partial<KairosBrainStatus> = {}): KairosBrainStatus {
   }
 }
 
+const tab = (name: RegExp) => screen.getByRole('tab', { name })
+
 afterEach(() => { cleanup(); vi.mocked(getKairosBrainStatus).mockReset() })
 
 describe('ConnectKairosModal', () => {
-  it('shows last night and names the jobs that fell back to the backup', async () => {
+  it('opens on Setup with exactly five tabs — no separate Connect, Routines, Voice notes or Chat tabs', async () => {
     vi.mocked(getKairosBrainStatus).mockResolvedValue(status())
     render(<ConnectKairosModal isOpen onClose={() => {}} />)
+    expect(await screen.findByText(/required done|Kairos is set up/)).toBeTruthy()
+    const names = screen.getAllByRole('tab').map((t) => t.textContent)
+    expect(names).toEqual(['Setup', 'Health', 'Brain map', 'Watched', 'How it works'])
+    expect(tab(/Setup/).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('Health shows last night and names the jobs that fell back to the backup', async () => {
+    vi.mocked(getKairosBrainStatus).mockResolvedValue(status())
+    render(<ConnectKairosModal isOpen onClose={() => {}} defaultView="health" />)
     expect(await screen.findByText('11 on Max')).toBeTruthy()
     expect(screen.getByText('2 on backup')).toBeTruthy()
     expect(screen.getByText('Area summaries')).toBeTruthy()
     expect(screen.getByText('Question of the day')).toBeTruthy()
-    expect(screen.queryByRole('tab', { name: /Telegram/ })).toBeNull()
   })
 
   it('opens the brain map and shows a 7-day record', async () => {
     vi.mocked(getKairosBrainStatus).mockResolvedValue(status())
     render(<ConnectKairosModal isOpen onClose={() => {}} />)
-    await screen.findByText('11 on Max')
-    fireEvent.click(screen.getByRole('tab', { name: /Brain map/ }))
+    await screen.findByText(/required done|Kairos is set up/)
+    fireEvent.click(tab(/Brain map/))
     expect(await screen.findByText('7/7 on Max')).toBeTruthy()
   })
 
-  it('shows the Telegram view only to admins, with placeholder env lines', async () => {
-    vi.mocked(getKairosBrainStatus).mockResolvedValue(status({ isAdmin: true }))
-    render(<ConnectKairosModal isOpen onClose={() => {}} />)
-    fireEvent.click(await screen.findByRole('tab', { name: /Telegram/ }))
-    expect(await screen.findByText(/ROUTINE_CHAT_TOKEN=sk-ant-oat01-…/)).toBeTruthy()
-  })
-
-  it('opens the Watched and Voice notes views from the switcher', async () => {
+  it('opens Watched from the switcher', async () => {
     vi.mocked(getKairosBrainStatus).mockResolvedValue(status())
     vi.mocked(getKairosWatchedOverview).mockResolvedValue({
       projects: [{ id: 'p-1', name: 'AS Sprint', feed: 'daily', areaName: null }],
@@ -65,19 +73,34 @@ describe('ConnectKairosModal', () => {
       unmappedRepos: [],
     })
     render(<ConnectKairosModal isOpen onClose={() => {}} />)
-    await screen.findByText('11 on Max')
-    fireEvent.click(screen.getByRole('tab', { name: /Watched/ }))
+    await screen.findByText(/required done|Kairos is set up/)
+    fireEvent.click(tab(/Watched/))
     expect(await screen.findByText('AS Sprint')).toBeTruthy()
-    fireEvent.click(screen.getByRole('tab', { name: /Voice notes/ }))
-    await waitFor(() => expect(screen.getByRole('tab', { name: /Voice notes/ }).getAttribute('aria-selected')).toBe('true'))
-    await waitFor(() => expect(screen.queryByText('AS Sprint')).toBeNull())
+  })
+
+  it('How it works is a short reference that links into the brain map', async () => {
+    vi.mocked(getKairosBrainStatus).mockResolvedValue(status())
+    render(<ConnectKairosModal isOpen onClose={() => {}} defaultView="guide" />)
+    expect(await screen.findByText('The 06:00 message')).toBeTruthy()
+    expect(screen.getByText('Paid backup')).toBeTruthy()
+    expect(screen.queryByText(/02:30|BYOK|Will inbox/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /See every job on the brain map/ }))
+    await waitFor(() => expect(tab(/Brain map/).getAttribute('aria-selected')).toBe('true'))
+  })
+
+  it('reports each fresh status to the caller', async () => {
+    const s = status()
+    vi.mocked(getKairosBrainStatus).mockResolvedValue(s)
+    const onStatus = vi.fn()
+    render(<ConnectKairosModal isOpen onClose={() => {}} onStatus={onStatus} />)
+    await waitFor(() => expect(onStatus).toHaveBeenCalledWith(s))
   })
 
   it('shows a retryable error when the status call fails', async () => {
     vi.mocked(getKairosBrainStatus).mockRejectedValueOnce(new Error('boom')).mockResolvedValue(status())
     render(<ConnectKairosModal isOpen onClose={() => {}} />)
     fireEvent.click(await screen.findByText('Try again'))
-    expect(await screen.findByText('11 on Max')).toBeTruthy()
+    expect(await screen.findByText(/required done|Kairos is set up/)).toBeTruthy()
   })
 })
 

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/db', () => ({ db: {} }))
 
-import { classifyBrainJob, summariseBrainStatus, type BrainJobRow } from '../brain-status'
+import { classifyBrainJob, countPaidBackupCalls, summariseBrainStatus, type BrainJobRow } from '../brain-status'
 import { BRAIN_JOBS } from '@/lib/kairos/routines/catalog'
 
 const NOW = new Date('2026-10-02T08:30:00.000Z')
@@ -40,6 +40,35 @@ describe('classifyBrainJob', () => {
     ['superseded chat turn is not owed', { kind: 'chat', status: 'failed', error: 'superseded: a newer operator message took over this turn' }, null],
   ])('%s', (_name, overrides, expected) => {
     expect(classifyBrainJob(row(overrides), NOW)).toBe(expected)
+  })
+
+  it('a sweep fallback declined by the paid-backup switch is missed, not backup', () => {
+    const declined = row({ kind: 'concept', status: 'expired', error: 'fallback: paid backup off' })
+    expect(classifyBrainJob(declined, NOW)).toBe('missed')
+  })
+
+  it('switch off: a cron-"covered" job was skipped (missed), except the free plain-text daily message', () => {
+    const cron = row({ status: 'failed', error: 'deadline_passed: …; the cortex-regen cron owns this job now' })
+    const daily = row({ kind: 'daily_message', status: 'expired', error: 'fallback: deferred to the 06:00 cron' })
+    const paid = row({ kind: 'drift_probe', status: 'fallback', claimedBy: null })
+    expect(classifyBrainJob(cron, NOW, { paidBackupOff: true })).toBe('missed')
+    expect(classifyBrainJob(cron, NOW)).toBe('backup')
+    expect(classifyBrainJob(daily, NOW, { paidBackupOff: true })).toBe('backup')
+    expect(classifyBrainJob(paid, NOW, { paidBackupOff: true })).toBe('backup')
+  })
+})
+
+describe('countPaidBackupCalls', () => {
+  it('counts backup-answered jobs (any kind) in the last 7 days', () => {
+    const rows = [
+      row({ kind: 'drift_probe', status: 'fallback', claimedBy: null }),
+      row({ kind: 'chat', status: 'failed', error: 'chat-watchdog: answered on the paid key' }),
+      row({}), // routine
+      row({ status: 'failed', error: 'invalid JSON from routine' }), // missed
+      row({ kind: 'aether', claimedBy: 'api', deadlineAt: t('09-20T05:00') }), // older than a week
+    ]
+    expect(countPaidBackupCalls(rows, NOW)).toBe(2)
+    expect(countPaidBackupCalls([], NOW)).toBe(0)
   })
 })
 

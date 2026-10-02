@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { userAiCredentials, dominions } from '@/lib/db/schema'
 import { and, isNull, inArray } from 'drizzle-orm'
 import { runCortexRegenForUser } from '@/lib/kairos/cortex'
+import { skipCronIfPaidBackupOff } from '@/lib/kairos/paid-backup-cron'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -66,7 +67,13 @@ export async function GET(req: NextRequest) {
     error?: string
   }> = []
 
+  const paidBackupOff: string[] = []
   for (const userId of eligibleIds) {
+    // Paid backup switched off: skip before building any prompt.
+    if (await skipCronIfPaidBackupOff(userId, 'cortex-regen')) {
+      paidBackupOff.push(userId)
+      continue
+    }
     try {
       const results = await runCortexRegenForUser(userId)
       userResults.push({ userId, results })
@@ -96,6 +103,7 @@ export async function GET(req: NextRequest) {
 
   return jsonResponse({
     ran: eligibleIds.length,
+    paidBackupOff,
     ...totals,
     users: userResults,
   })

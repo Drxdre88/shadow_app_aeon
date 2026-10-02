@@ -19,6 +19,12 @@ vi.mock('@/lib/data/thinking-jobs', () => ({
 // queue under test always gets explicit fake handlers.
 vi.mock('../registry', () => ({ getThinkingHandlers: () => [] }))
 
+vi.mock('@/lib/kairos/paid-backup', () => ({
+  isPaidBackupEnabled: vi.fn(async () => true),
+  PAID_BACKUP_OFF_NOTE: 'paid backup off',
+}))
+
+import { isPaidBackupEnabled } from '@/lib/kairos/paid-backup'
 import {
   claimNextJob,
   completeJob,
@@ -324,6 +330,27 @@ describe('ThinkingQueue.sweep', () => {
     const res = await new ThinkingQueue([concept]).sweep(USER, NOW, createSweepBudget({ maxFallbacks: 10, budgetMs: 200_000, clock: () => t }))
     expect(res.fallbacks.map((f) => f.jobId)).toEqual(['p1', 'p2'])
     expect(res.deferred).toBe(1)
+  })
+
+  it('paid backup off: closes pending fallbacks with a clear note, no model call, no budget spent', async () => {
+    vi.mocked(isPaidBackupEnabled).mockResolvedValueOnce(false)
+    const concept = handler('concept', [], { fallback: vi.fn(async () => ({ ok: true as const, memoryIds: ['c'] })) })
+    vi.mocked(expireOverdue).mockResolvedValue([])
+    vi.mocked(listPendingFallbacks).mockResolvedValue(['p1', 'p2', 'p3'].map((id) => job({ id, kind: 'concept', status: 'expired' })))
+    const budget = createSweepBudget({ maxFallbacks: 1, budgetMs: 60_000 })
+    const res = await new ThinkingQueue([concept]).sweep(USER, NOW, budget)
+    expect(isPaidBackupEnabled).toHaveBeenCalledWith(USER)
+    expect(concept.fallback).not.toHaveBeenCalled()
+    expect(res.deferred).toBe(0)
+    expect(res.fallbacks).toEqual(['p1', 'p2', 'p3'].map((jobId) => ({ jobId, kind: 'concept', ok: false, reason: 'paid backup off' })))
+    expect(recordFallback).toHaveBeenCalledWith(USER, 'p1', { ok: false, reason: 'paid backup off' }, NOW)
+    expect(budget.tryStart()).toBe(true)
+  })
+
+  it('does not read the switch when nothing is pending', async () => {
+    vi.mocked(expireOverdue).mockResolvedValue([])
+    await new ThinkingQueue([handler('concept')]).sweep(USER, NOW)
+    expect(isPaidBackupEnabled).not.toHaveBeenCalled()
   })
 })
 

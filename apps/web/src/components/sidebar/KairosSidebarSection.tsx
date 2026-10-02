@@ -1,27 +1,58 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Wrench, BookMarked, BrainCircuit } from 'lucide-react'
+import { ListChecks } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { KairosLearnModal, type KairosLearnTab } from '@/components/ui/kairos/KairosLearnModal'
 import { KAIROS_VERSION_SHORT } from '@/lib/kairos/version'
+import { getKairosBrainStatus } from '@/lib/actions/kairos-brain'
+import type { KairosBrainStatus } from '@/lib/kairos/routines/status-types'
 import { ConnectKairosModal } from '@/components/kairos/brain/ConnectKairosModal'
+import { requiredMissing } from '@/components/kairos/brain/setupProgress'
 
-// Slim Kairos entry that lives between the realm/nav body and the
-// "New Project / New Realm" actions. Renders as:
-//   faint glowing divider
-//   Kairos version pill (links to /kairos)
-//   Connect brain (ConnectKairosModal) + Setup + Guide (KairosLearnModal)
-//   faint glowing divider
+const CACHE_MS = 10 * 60 * 1000
+let cached: { at: number; missing: number } | null = null
+let inflight: Promise<number | null> | null = null
+
+function loadMissing(): Promise<number | null> {
+  if (cached && Date.now() - cached.at < CACHE_MS) return Promise.resolve(cached.missing)
+  inflight ??= getKairosBrainStatus()
+    .then((s) => {
+      cached = { at: Date.now(), missing: requiredMissing(s) }
+      return cached.missing
+    })
+    .catch(() => null)
+    .finally(() => { inflight = null })
+  return inflight
+}
+
+export function resetKairosSetupBadgeCache() {
+  cached = null
+  inflight = null
+}
+
+// Slim Kairos entry between the realm/nav body and the "New Project / New
+// Realm" actions: the version pill (links to /kairos) and one "Kairos setup"
+// button that opens the modal on its Setup checklist.
 export function KairosSidebarSection({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname()
   const active = pathname?.startsWith('/kairos') ?? false
-  const [modal, setModal] = useState<KairosLearnTab | null>(null)
-  const [brainOpen, setBrainOpen] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [missing, setMissing] = useState<number | null>(cached?.missing ?? null)
 
+  useEffect(() => {
+    let alive = true
+    void loadMissing().then((n) => { if (alive && n !== null) setMissing(n) })
+    return () => { alive = false }
+  }, [])
+
+  const onStatus = useCallback((s: KairosBrainStatus) => {
+    const n = requiredMissing(s)
+    cached = { at: Date.now(), missing: n }
+    setMissing(n)
+  }, [])
   return (
     <div className="shrink-0">
       <GlowDivider />
@@ -65,33 +96,17 @@ export function KairosSidebarSection({ collapsed }: { collapsed: boolean }) {
 
       <div className={cn('flex flex-col gap-1 px-2 pb-2.5', collapsed && 'items-center px-1')}>
         <ChildButton
-          icon={<BrainCircuit className="w-3.5 h-3.5" />}
-          label="Connect brain"
-          onClick={() => setBrainOpen(true)}
+          icon={<ListChecks className="w-3.5 h-3.5" />}
+          label="Kairos setup"
+          onClick={() => setOpen(true)}
           collapsed={collapsed}
-        />
-        <ChildButton
-          icon={<Wrench className="w-3.5 h-3.5" />}
-          label="Setup"
-          onClick={() => setModal('setup')}
-          collapsed={collapsed}
-        />
-        <ChildButton
-          icon={<BookMarked className="w-3.5 h-3.5" />}
-          label="Guide"
-          onClick={() => setModal('guide')}
-          collapsed={collapsed}
+          badge={missing ? missing : null}
         />
       </div>
 
       <GlowDivider />
 
-      <KairosLearnModal
-        isOpen={modal !== null}
-        defaultTab={modal ?? 'setup'}
-        onClose={() => setModal(null)}
-      />
-      <ConnectKairosModal isOpen={brainOpen} onClose={() => setBrainOpen(false)} />
+      <ConnectKairosModal isOpen={open} onClose={() => setOpen(false)} defaultView="setup" onStatus={onStatus} />
     </div>
   )
 }
@@ -109,24 +124,27 @@ function GlowDivider() {
 }
 
 function ChildButton({
-  icon, label, onClick, collapsed,
+  icon, label, onClick, collapsed, badge,
 }: {
   icon: React.ReactNode
   label: string
   onClick: () => void
   collapsed: boolean
+  badge: number | null
 }) {
+  const badgeLabel = badge ? `${badge} required step${badge === 1 ? '' : 's'} left` : null
   return (
     <motion.button
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.97 }}
       onClick={onClick}
       className={cn(
-        'flex items-center gap-2 rounded-lg text-[11px] font-semibold transition-all',
+        'relative flex items-center gap-2 rounded-lg text-[11px] font-semibold transition-all',
         collapsed ? 'w-8 h-8 justify-center px-0 py-0' : 'w-full px-3 py-1.5',
         'text-white/55 hover:text-white bg-white/[0.03] hover:bg-white/[0.08]',
       )}
-      aria-label={label}
+      aria-label={badgeLabel ? `${label} — ${badgeLabel}` : label}
+      title={badgeLabel ?? undefined}
     >
       {icon}
       <AnimatePresence>
@@ -142,6 +160,22 @@ function ChildButton({
           </motion.span>
         )}
       </AnimatePresence>
+      {badge ? (
+        <span
+          aria-hidden
+          className={cn(
+            'flex items-center justify-center rounded-full text-[9.5px] font-semibold tabular-nums',
+            collapsed ? 'absolute -top-1 -right-1 w-3.5 h-3.5' : 'ml-auto min-w-4 h-4 px-1',
+          )}
+          style={{
+            color: 'var(--background)',
+            background: 'var(--primary)',
+            boxShadow: '0 0 8px var(--glow-color)',
+          }}
+        >
+          {badge}
+        </span>
+      ) : null}
     </motion.button>
   )
 }

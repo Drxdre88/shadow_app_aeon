@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { dominions } from '@/lib/db/schema'
 import { isNull } from 'drizzle-orm'
 import { runAetherForUser } from '@/lib/kairos/aether'
+import { skipCronIfPaidBackupOff } from '@/lib/kairos/paid-backup-cron'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 
 // Aether cron — 03:15 UTC daily (after cortex-regen at 03:00). Idempotent.
@@ -36,7 +37,13 @@ export async function GET(req: NextRequest) {
     error?: string
   }> = []
 
+  const paidBackupOff: string[] = []
   for (const { userId } of usersWithDominions) {
+    // Paid backup switched off: skip before building any prompt.
+    if (await skipCronIfPaidBackupOff(userId, 'aether-regen')) {
+      paidBackupOff.push(userId)
+      continue
+    }
     try {
       const result = await runAetherForUser(userId)
       userResults.push({ userId, generated: result.generated, reason: result.reason })
@@ -52,6 +59,7 @@ export async function GET(req: NextRequest) {
 
   return jsonResponse({
     ran: userResults.length,
+    paidBackupOff,
     generated: userResults.filter((r) => r.generated).length,
     users: userResults,
   })

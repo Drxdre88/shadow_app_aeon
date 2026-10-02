@@ -20,7 +20,20 @@ vi.mock('@/lib/kairos/chat-turn', () => ({
   runAssistantTurnOnce: vi.fn(),
 }))
 
+vi.mock('@/lib/kairos/paid-backup', () => ({
+  isPaidBackupEnabled: vi.fn(async () => true),
+  PAID_BACKUP_OFF_NOTE: 'paid backup off',
+}))
+
+vi.mock('@/lib/kairos/chat-turn-reply', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/kairos/chat-turn-reply')>()),
+  appendAssistantReplyOnce: vi.fn(),
+}))
+
 import { findJobById } from '@/lib/data/thinking-jobs'
+import { isPaidBackupEnabled } from '@/lib/kairos/paid-backup'
+import { appendAssistantReplyOnce } from '@/lib/kairos/chat-turn-reply'
+import { CHAT_PAID_BACKUP_OFF_MESSAGE } from '@/lib/kairos/chat-routine'
 import {
   isTurnAnswered,
   persistAssistantReplyOnce,
@@ -83,10 +96,9 @@ const built: BuiltAssistantTurn = {
   pendingAsk: { id: 'ask-1' } as BuiltAssistantTurn['pendingAsk'],
 }
 
-function jobFor(seq: number, status: ThinkingJobRow['status'] = 'claimed', id = 'job-1'): ThinkingJobRow {
-  const spec = buildChatJobSpec(built, {
-    threadId: THREAD, userSeq: seq, userMessageId: `m${seq}`, chatId: CHAT_ID, dominionId: null, userBody: 'status of hydra?',
-  }, 60_000)
+function jobFor(seq: number, status: ThinkingJobRow['status'] = 'claimed', id = 'job-1', channel: 'telegram' | 'web' = 'telegram'): ThinkingJobRow {
+  const base = { threadId: THREAD, userSeq: seq, userMessageId: `m${seq}`, dominionId: null, userBody: 'status of hydra?' }
+  const spec = buildChatJobSpec(built, channel === 'web' ? { ...base, channel: 'web' } : { ...base, chatId: CHAT_ID }, 60_000)
   return {
     id, userId: USER, kind: spec.kind, dominionId: null, externalKey: spec.externalKey, status,
     input: spec.input, output: null, claimedBy: 'routine', claimToken: 'tok', claimedAt: new Date(),
@@ -120,6 +132,11 @@ beforeEach(() => {
     return appendOnce(userSeq, 'Paid answer.')
   })
   vi.mocked(findJobById).mockImplementation(async () => jobFor(1))
+  vi.mocked(isPaidBackupEnabled).mockResolvedValue(true)
+  vi.mocked(appendAssistantReplyOnce).mockImplementation(async (_u, _t, userSeq, payload) => {
+    const out = appendOnce(userSeq, payload.content)
+    return out.ok ? { ok: true, messageId: `a${out.assistantSeq}`, seq: out.assistantSeq } : { ok: false, reason: 'already_answered' }
+  })
 })
 
 describe('chat job spec', () => {
@@ -322,5 +339,87 @@ describe('turnAlreadyAnswered (reply ledger attribution)', () => {
     expect(await turnAlreadyAnswered(USER, THREAD, 4)).toBe(false)
     messages.push({ seq: 5, role: 'assistant', content: 'reply', answersSeq: null })
     expect(await turnAlreadyAnswered(USER, THREAD, 4)).toBe(true)
+  })
+})
+describe('chat channels', () => {
+  it('a legacy Telegram job (no channel in its context) still applies and sends to Telegram', async () => {
+    const legacy = jobFor(1)
+    const { channel: _drop, ...ctx } = legacy.input.context as Record<string, unknown>
+    legacy.input = { ...legacy.input, context: ctx }
+    vi.mocked(findJobById).mockResolvedValue(legacy)
+
+    expect(await chatHandler.apply(legacy, 'Hydra is green.', 'routine')).toEqual({ ok: true, memoryIds: [] })
+    expect(sentTexts()).toEqual(['Hydra is green.'])
+  })
+
+  it('a Telegram job without a chatId is rejected as a bad job', async () => {
+    const broken = jobFor(1)
+    const { chatId: _drop, ...ctx } = broken.input.context as Record<string, unknown>
+    broken.input = { ...broken.input, context: ctx }
+    const out = await chatHandler.apply(broken, 'Hydra is green.', 'routine')
+    expect(out).toMatchObject({ ok: false, reason: expect.stringMatching(/^bad_job/) })
+  })
+
+  it('a web job carries channel web and no chatId', () => {
+    const job = jobFor(1, 'claimed', 'job-1', 'web')
+    expect(job.input.context).toMatchObject({ channel: 'web', threadId: THREAD, userSeq: 1 })
+    expect(job.input.context).not.toHaveProperty('chatId')
+  })
+
+  it('web apply persists the routine reply to the thread and never calls Telegram', async () => {
+    const job = jobFor(1, 'claimed', 'job-1', 'web')
+    vi.mocked(findJobById).mockResolvedValue(job)
+    expect(await chatHandler.apply(job, 'Hydra is green.', 'routine')).toEqual({ ok: true, memoryIds: [] })
+    expect(assistantMessages()).toEqual([expect.objectContaining({ answersSeq: 1, content: 'Hydra is green.' })])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('web fallback answers on the paid path with the app surface and never calls Telegram', async () => {
+    expect(await chatHandler.fallback(jobFor(1, 'failed', 'job-1', 'web'))).toEqual({ ok: true, memoryIds: [] })
+    expect(runAssistantTurnOnce).toHaveBeenCalledWith(USER, THREAD, null, 'status of hydra?', 1, { surface: 'app' })
+    expect(assistantMessages()).toEqual([expect.objectContaining({ content: 'Paid answer.' })])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('a failed web fallback writes the failure note to the thread so the page stops waiting', async () => {
+    vi.mocked(runAssistantTurnOnce).mockResolvedValueOnce({ ok: false, reason: 'no_credential', threadId: THREAD })
+    const out = await chatHandler.fallback(jobFor(1, 'failed', 'job-1', 'web'))
+    expect(out).toMatchObject({ ok: false })
+    expect(assistantMessages()).toEqual([expect.objectContaining({ answersSeq: 1, content: expect.stringContaining('offline') })])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('paid backup switched off', () => {
+  beforeEach(() => {
+    vi.mocked(isPaidBackupEnabled).mockResolvedValue(false)
+  })
+
+  it('Telegram: no paid answer — the operator gets the Max-plan notice', async () => {
+    const out = await chatHandler.fallback(jobFor(1, 'failed'))
+    expect(out).toEqual({ ok: false, reason: 'paid backup off' })
+    expect(isPaidBackupEnabled).toHaveBeenCalledWith(USER)
+    expect(runAssistantTurnOnce).not.toHaveBeenCalled()
+    expect(sentTexts()).toEqual([CHAT_PAID_BACKUP_OFF_MESSAGE])
+    expect(assistantMessages()).toHaveLength(0)
+  })
+
+  it('web: no paid answer — the notice is written to the thread, nothing goes to Telegram', async () => {
+    const out = await chatHandler.fallback(jobFor(1, 'failed', 'job-1', 'web'))
+    expect(out).toEqual({ ok: false, reason: 'paid backup off' })
+    expect(runAssistantTurnOnce).not.toHaveBeenCalled()
+    expect(assistantMessages()).toEqual([expect.objectContaining({ answersSeq: 1, content: CHAT_PAID_BACKUP_OFF_MESSAGE })])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('an already-answered turn needs no notice', async () => {
+    await chatHandler.apply(jobFor(1, 'claimed', 'job-1', 'web'), 'Routine answer.', 'routine')
+    expect(await chatHandler.fallback(jobFor(1, 'failed', 'job-1', 'web'))).toEqual({ ok: true, memoryIds: [] })
+    expect(assistantMessages()).toHaveLength(1)
+  })
+
+  it('the routine still answers normally', async () => {
+    expect(await chatHandler.apply(jobFor(1), 'Routine answer.', 'routine')).toEqual({ ok: true, memoryIds: [] })
+    expect(sentTexts()).toEqual(['Routine answer.'])
   })
 })

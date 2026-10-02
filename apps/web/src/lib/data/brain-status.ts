@@ -1,14 +1,17 @@
-import { and, desc, eq, gte } from 'drizzle-orm'
+import { and, count, desc, eq, gte, isNull, max, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { thinkingJobs } from '@/lib/db/schema'
+import { memories, oauthAccessTokens, projects, thinkingJobs } from '@/lib/db/schema'
 import { FALLBACK_ERROR_PREFIX } from '@/lib/data/thinking-jobs'
+import { PAID_BACKUP_OFF_NOTE } from '@/lib/ai/paid-backup-off'
 import type { ThinkingJobKind } from '@/lib/kairos/engine/types'
 import { BRAIN_JOBS } from '@/lib/kairos/routines/catalog'
+import { telegramConfigured } from '@/lib/kairos/telegram'
 import type {
   AnsweredBy,
   BrainKindStatus,
   BrainRoutineStatus,
   KairosBrainStatus,
+  KairosSetupSignals,
 } from '@/lib/kairos/routines/status-types'
 
 // Brain status — how Kairos's thinking jobs were answered over the last week
@@ -55,9 +58,19 @@ const BACKUP_NOTE = /\bcron\b|\bpaid key\b|^chat-watchdog:/i
 // A chat turn taken over by a newer message: nothing was owed, so it is
 // neither answered nor missed.
 const SUPERSEDED_PREFIX = 'superseded:'
+// Declined because the user switched the paid backup off: nothing covered it.
+const PAID_BACKUP_OFF = new RegExp(`\\b${PAID_BACKUP_OFF_NOTE}\\b`, 'i')
+// The one cron backup that stays free with the paid backup off (plain text).
+const FREE_BACKUP_KINDS = new Set<string>(['daily_message'])
+
+export interface ClassifyOptions {
+  // The user's paid backup is currently off: a failed/expired job "covered by
+  // its cron" was not (the cron skips), except kinds whose backup is free.
+  paidBackupOff?: boolean
+}
 
 // null = not an outcome yet (open, before its deadline) or not owed.
-export function classifyBrainJob(row: BrainJobRow, now: Date): AnsweredBy | null {
+export function classifyBrainJob(row: BrainJobRow, now: Date, options: ClassifyOptions = {}): AnsweredBy | null {
   switch (row.status) {
     case 'done':
       return row.claimedBy === 'routine' ? 'routine' : 'backup'
@@ -67,7 +80,10 @@ export function classifyBrainJob(row: BrainJobRow, now: Date): AnsweredBy | null
     case 'expired': {
       const error = row.error?.trim() ?? ''
       if (error.startsWith(SUPERSEDED_PREFIX)) return null
-      if (error.startsWith(FALLBACK_ERROR_PREFIX) || BACKUP_NOTE.test(error)) return 'backup'
+      if (PAID_BACKUP_OFF.test(error)) return 'missed'
+      if (error.startsWith(FALLBACK_ERROR_PREFIX) || BACKUP_NOTE.test(error)) {
+        return options.paidBackupOff && !FREE_BACKUP_KINDS.has(row.kind) ? 'missed' : 'backup'
+      }
       return 'missed'
     }
     case 'queued':
@@ -90,9 +106,18 @@ function startOfYesterdayUtc(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1))
 }
 
-export interface SummariseOptions {
-  // KAIROS_TELEGRAM_ROUTINE: when off, the chat routine is 'off' regardless of history.
+export interface SummariseOptions extends ClassifyOptions {
+  // KAIROS_CHAT_ROUTINE (alias KAIROS_TELEGRAM_ROUTINE): when off, the chat
+  // routine is 'off' regardless of history.
   chatRoutineFlagOn?: boolean
+}
+
+// Spend proxy for the "Paid backup" switch: jobs (any kind, chat included)
+// answered by the backup over the last 7 days, by the same classification.
+// Over-counts free backups (e.g. a plain-text 06:00 message) — good enough.
+export function countPaidBackupCalls(rows: readonly BrainJobRow[], now: Date, options: ClassifyOptions = {}): number {
+  const weekStart = now.getTime() - BRAIN_STATUS_WINDOW_MS
+  return rows.filter((row) => row.deadlineAt.getTime() >= weekStart && classifyBrainJob(row, now, options) === 'backup').length
 }
 
 export type BrainStatusSummary = Pick<KairosBrainStatus, 'lastNight' | 'backupKinds' | 'kinds' | 'routines'>
@@ -117,7 +142,7 @@ export function summariseBrainStatus(
   let chatLastClaim: Date | null = null
 
   for (const row of rows) {
-    const by = classifyBrainJob(row, now)
+    const by = classifyBrainJob(row, now, options)
     if (!by) continue
     const at = eventTime(row)
     const deadline = row.deadlineAt.getTime()
@@ -154,7 +179,7 @@ export function summariseBrainStatus(
 
   const brainState: BrainRoutineStatus['state'] =
     brainLastClaim && now.getTime() - brainLastClaim.getTime() <= ROUTINE_SILENT_AFTER_MS ? 'live' : 'silent'
-  // Chat is on demand: it is live when the latest Telegram turn was answered
+  // Chat is on demand: it is live when the latest chat turn (web or Telegram) was answered
   // by the routine, silent when the backup or nobody answered it.
   const chatState: BrainRoutineStatus['state'] = !options.chatRoutineFlagOn
     ? 'off'
@@ -166,4 +191,109 @@ export function summariseBrainStatus(
   ]
 
   return { lastNight, backupKinds, kinds, routines }
+}
+
+// ── Set up Kairos checklist signals ─────────────────────────────────────────
+// Four small aggregate selects, each scoped to the user and run in parallel.
+
+// A claude.ai connector counts as working when one of its tokens was used
+// this recently (lastUsedAt is written at most once a minute).
+export const CONNECTOR_USED_WINDOW_MS = 7 * DAY_MS
+// Coding-session captures older than this don't prove the hook still works.
+export const SESSION_CAPTURE_WINDOW_MS = 90 * DAY_MS
+
+const SESSION_TOOLS = ['claude', 'codex', 'copilot'] as const
+type SessionTool = (typeof SESSION_TOOLS)[number]
+
+function iso(value: Date | string | null | undefined): string | null {
+  if (!value) return null
+  const d = value instanceof Date ? value : new Date(value)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
+async function latestConnectorUse(userId: string, since: Date): Promise<Date | null> {
+  const [row] = await db
+    .select({ at: max(oauthAccessTokens.lastUsedAt) })
+    .from(oauthAccessTokens)
+    .where(and(
+      eq(oauthAccessTokens.userId, userId),
+      isNull(oauthAccessTokens.revokedAt),
+      gte(oauthAccessTokens.lastUsedAt, since),
+    ))
+  return row?.at ?? null
+}
+
+// The capture hooks write type=session_summary with source=claude|codex|copilot;
+// an older server rejected codex/copilot, so those retried as source=hook with
+// the tool kept in sourceMetadata.client (same filter as chat-recency-context).
+const sessionTool = sql<string>`case when ${memories.source} = 'hook' then ${memories.sourceMetadata}->>'client' else ${memories.source} end`
+
+async function latestSessionsByTool(userId: string, since: Date): Promise<Array<{ tool: string; at: Date | null }>> {
+  return db
+    .select({ tool: sessionTool, at: max(memories.createdAt) })
+    .from(memories)
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.type, 'session_summary'),
+      gte(memories.createdAt, since),
+      sql`(${memories.source} in ('claude', 'codex', 'copilot') or (${memories.source} = 'hook' and ${memories.sourceMetadata}->>'client' in ('codex', 'copilot')))`,
+    ))
+    .groupBy(sessionTool)
+}
+
+// Voice-note segments are staged as inbound proposals carrying
+// sourceMetadata.voiceNote (lib/data/voice-notes.ts). Archived ones count:
+// the signal is "a voice note was ever staged".
+async function latestVoiceNote(userId: string): Promise<Date | null> {
+  const [row] = await db
+    .select({ at: max(memories.createdAt) })
+    .from(memories)
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.type, 'inbound'),
+      sql`${memories.sourceMetadata}->'voiceNote' IS NOT NULL`,
+    ))
+  return row?.at ?? null
+}
+
+// Boards the user owns with a valid feed mode — same rule as parseKairosFeed.
+async function countWatchedBoards(userId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(projects)
+    .where(and(
+      eq(projects.userId, userId),
+      sql`lower(trim(${projects.settings}->>'kairosFeed')) in ('daily', 'weekly')`,
+    ))
+  return Number(row?.n ?? 0)
+}
+
+export interface SetupSignalOptions {
+  // Telegram is configured once, for the operator; nobody else sees it ✓.
+  isOperator?: boolean
+  now?: Date
+}
+
+export async function getSetupSignals(userId: string, options: SetupSignalOptions = {}): Promise<KairosSetupSignals> {
+  const now = options.now ?? new Date()
+  const [connectorAt, sessionRows, voiceAt, watchedBoards] = await Promise.all([
+    latestConnectorUse(userId, new Date(now.getTime() - CONNECTOR_USED_WINDOW_MS)),
+    latestSessionsByTool(userId, new Date(now.getTime() - SESSION_CAPTURE_WINDOW_MS)),
+    latestVoiceNote(userId),
+    countWatchedBoards(userId),
+  ])
+  const sessions: KairosSetupSignals['sessions'] = { claude: null, codex: null, copilot: null }
+  for (const row of sessionRows) {
+    if (!(SESSION_TOOLS as readonly string[]).includes(row.tool)) continue
+    const at = iso(row.at)
+    const tool = row.tool as SessionTool
+    if (at && (!sessions[tool] || at > sessions[tool]!)) sessions[tool] = at
+  }
+  return {
+    connectorUsedAt: iso(connectorAt),
+    sessions,
+    voiceNoteAt: iso(voiceAt),
+    watchedBoards,
+    telegramConfigured: Boolean(options.isOperator) && telegramConfigured(),
+  }
 }

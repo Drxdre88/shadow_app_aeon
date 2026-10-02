@@ -19,6 +19,7 @@ import type {
 } from '@/lib/kairos/engine/types'
 import { conceptWeekKeyPattern, isConceptDay, isoWeekKey } from './deadlines'
 import { getThinkingHandlers } from './registry'
+import { isPaidBackupEnabled, PAID_BACKUP_OFF_NOTE } from '@/lib/kairos/paid-backup'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Thinking queue (docs/kairos/32 §3, routine playbook docs/kairos/33).
@@ -41,7 +42,7 @@ import { getThinkingHandlers } from './registry'
 
 // Every kind the queue plans, in prerequisite order: a later kind may depend
 // on jobs an earlier kind just planned in the same pass (aether waits on open
-// cortex jobs). Chat is never planned (the Telegram webhook creates it). Must
+// cortex jobs). Chat is never planned (a web or Telegram message creates it). Must
 // match the routine catalog's BRAIN_JOBS (minus chat) — a test enforces it, so
 // a kind cannot be added without a routine to answer it.
 export const PLANNED_THINKING_KINDS: readonly ThinkingJobKind[] = [
@@ -78,8 +79,8 @@ const FALLBACK_OWNER: Partial<Record<ThinkingJobKind, string>> = {
   drift_probe: 'the hourly thinking-sweep API fallback',
   mind_compare: 'the hourly thinking-sweep API fallback',
   weekly_review: 'the hourly thinking-sweep API fallback',
-  daily_message: 'the 08:00 Europe/London daily-message cron',
-  chat: 'the Telegram watchdog paid-key reply',
+  daily_message: 'the 06:00 Europe/London daily-message cron',
+  chat: 'the chat watchdog paid-key reply (web or Telegram)',
   idea_generate: 'the hourly thinking-sweep API fallback',
   idea_judge: 'the hourly thinking-sweep API fallback',
   chat_distill: 'the 02:00 UTC chat-distill cron',
@@ -93,8 +94,8 @@ function fallbackOwner(kind: ThinkingJobKind): string {
 }
 
 // Kinds the hourly sweep never plans: concept clustering is heavy and is
-// enqueued by the nightly engine (and claims); chat jobs come only from the
-// Telegram webhook.
+// enqueued by the nightly engine (and claims); chat jobs come only from a
+// web or Telegram chat message.
 export const SWEEP_PLAN_SKIP_KINDS: readonly ThinkingJobKind[] = ['concept', 'chat']
 
 export function sweepOwnsFallback(kind: ThinkingJobKind): boolean {
@@ -221,7 +222,7 @@ export class ThinkingQueue {
   }
 
   async claim(userId: string, kinds?: readonly ThinkingJobKind[], now: Date = new Date()): Promise<ThinkingJobRow | null> {
-    // Chat jobs are created by the Telegram webhook, never planned — a
+    // Chat jobs are created by web/Telegram chat messages, never planned — a
     // chat-only claim must not pay for planning the nightly kinds. Without
     // `kinds`, claimNextJob never returns a chat job (explicit-only kind).
     // A kinds-filtered claim plans only those kinds: each routine pays only for
@@ -314,9 +315,18 @@ export class ThinkingQueue {
 
     let deferred = 0
     const pending = await listPendingFallbacks(userId, SWEEP_FALLBACK_KINDS)
+    // Paid backup switched off: close each pending fallback with a clear note
+    // instead of running it — no model call, no sweep budget spent.
+    const paidAllowed = pending.length > 0 ? await isPaidBackupEnabled(userId) : true
     for (const job of pending) {
       const handler = this.handlerFor(job.kind)
       if (!handler) continue
+      if (!paidAllowed) {
+        const outcome = { ok: false as const, reason: PAID_BACKUP_OFF_NOTE }
+        await recordFallback(userId, job.id, outcome, now)
+        fallbacks.push({ jobId: job.id, kind: job.kind, ok: false, reason: outcome.reason })
+        continue
+      }
       if (!budget.tryStart()) {
         deferred++
         continue
