@@ -1,7 +1,8 @@
 import { generateText, streamText, tool as sdkTool, type LanguageModel } from 'ai'
 import type { z } from 'zod'
-import type { AiTier, ProviderId } from './providers'
-import { getModelForUser, buildModelWithKey } from './router'
+import { effortFor, type ModelEffort } from '@aeon/shared/ai/models'
+import { effortProviderOptions, type AiTier, type ProviderId } from './providers'
+import { resolveModelForUser, buildModelWithKey } from './router'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 1 (B6) — AIProvider seam.
@@ -114,9 +115,13 @@ function toSdkTools(tools: Record<string, AIToolSpec>) {
   )
 }
 
+// Call-level vendor options (effort today). Namespaced per vendor, so a
+// provider only reads its own key.
+type SdkProviderOptions = Record<string, Record<string, string>>
+
 // Convert AIRequest into Vercel SDK kwargs. Either prompt or messages must
 // be provided; messages take precedence.
-function toSdkArgs(model: LanguageModel, req: AIRequest) {
+function toSdkArgs(model: LanguageModel, req: AIRequest, providerOptions?: SdkProviderOptions) {
   const base = {
     model,
     system: req.system,
@@ -126,6 +131,7 @@ function toSdkArgs(model: LanguageModel, req: AIRequest) {
     temperature: req.temperature,
     stopSequences: req.stopSequences,
     ...(req.tools ? { tools: toSdkTools(req.tools) } : {}),
+    ...(providerOptions ? { providerOptions } : {}),
   }
   if (req.messages) {
     return { ...base, messages: req.messages.map((m) => ({ role: m.role, content: m.content })) }
@@ -152,10 +158,11 @@ export class VercelAIProvider implements AIProvider {
     readonly providerId: ProviderId | string,
     readonly modelId: string,
     private readonly model: LanguageModel,
+    private readonly providerOptions?: SdkProviderOptions,
   ) {}
 
   async ask(req: AIRequest): Promise<AIResponse> {
-    const result = await generateText(toSdkArgs(this.model, req))
+    const result = await generateText(toSdkArgs(this.model, req, this.providerOptions))
     const toolCalls = (result.toolCalls ?? []).map((c) => ({
       toolCallId: c.toolCallId,
       toolName: c.toolName,
@@ -175,7 +182,7 @@ export class VercelAIProvider implements AIProvider {
   }
 
   async *stream(req: AIRequest): AsyncIterable<StreamChunk> {
-    const result = streamText(toSdkArgs(this.model, req))
+    const result = streamText(toSdkArgs(this.model, req, this.providerOptions))
     for await (const part of result.textStream) {
       yield { text: part, providerId: this.providerId, modelId: this.modelId }
     }
@@ -193,26 +200,26 @@ export class VercelAIProvider implements AIProvider {
 }
 
 // Factory: resolve a user's tier preference through the BYOK router and
-// return a ready-to-call AIProvider. The Briefer (E20) calls this with
-// tier='heavy' for daily inference.
+// return a ready-to-call AIProvider carrying the tier's effort. The Briefer
+// (E20) calls this with tier='heavy' for daily inference.
 export async function getProviderForUser(userId: string, tier: AiTier): Promise<AIProvider> {
-  const model = await getModelForUser(userId, tier)
-  // The router resolves the actual providerId + modelId internally; for the
-  // envelope we re-resolve from the user's preferences. Cheap dual-lookup
-  // is acceptable here — getModelForUser already paid the DB round-trip.
+  const { model, providerId, effort } = await resolveModelForUser(userId, tier)
   // For Phase 1 we surface a generic 'byok' marker; B10's policy table
   // overrides this with the chosen provider/model on a per-call basis.
-  return new VercelAIProvider('byok', `tier:${tier}`, model)
+  return new VercelAIProvider('byok', `tier:${tier}`, model, effortProviderOptions(providerId, effort))
 }
 
 // Direct constructor for when caller has already picked provider + key —
 // useful for the credential-test route and for the Engine Router (B10)
-// once it carries its own policy resolution.
+// once it carries its own policy resolution. `effort` is optional; the
+// model's registry default applies when omitted.
 export async function getProviderWithKey(
   providerId: ProviderId,
   modelId: string,
   apiKey: string,
+  effort?: ModelEffort | null,
 ): Promise<AIProvider> {
   const model = await buildModelWithKey(providerId, modelId, apiKey)
-  return new VercelAIProvider(providerId, modelId, model)
+  const chosen = effort === undefined ? effortFor(modelId) : effort
+  return new VercelAIProvider(providerId, modelId, model, effortProviderOptions(providerId, chosen))
 }

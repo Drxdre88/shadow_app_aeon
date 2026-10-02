@@ -9,6 +9,8 @@
     "./types": "./src/types/index.ts",
     "./themes": "./src/config/themes/index.ts",
     "./config": "./src/config/defaults.ts",
-    "./utils/boardFilters": "./src/utils/boardFilters.ts"
+    "./utils/boardFilters": "./src/utils/boardFilters.ts",
+    "./ai/models": "./src/ai/models.ts",
+    "./ai/model-registry.json": "./src/ai/model-registry.json"
   }
 }

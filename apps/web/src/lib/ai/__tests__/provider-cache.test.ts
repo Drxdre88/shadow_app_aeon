@@ -12,7 +12,7 @@ function anthropicResponse() {
       id: 'msg_test',
       type: 'message',
       role: 'assistant',
-      model: 'claude-sonnet-5',
+      model: 'claude-sonnet-5-5',
       content: [{ type: 'text', text: 'ok' }],
       stop_reason: 'end_turn',
       stop_sequence: null,
@@ -38,7 +38,7 @@ describe('Anthropic prompt caching (BYOK path)', () => {
   })
 
   it('cacheSystem places a cache_control breakpoint on the system block', async () => {
-    const provider = await getProviderWithKey('anthropic', 'claude-sonnet-5', 'sk-ant-test')
+    const provider = await getProviderWithKey('anthropic', 'claude-sonnet-5-5', 'sk-ant-test')
     const res = await provider.ask({
       system: 'STATIC INSTRUCTIONS',
       prompt: 'dynamic payload',
@@ -67,7 +67,7 @@ describe('Anthropic prompt caching (BYOK path)', () => {
   })
 
   it('forwards the per-call output cap to the wire (maxOutputTokens rename)', async () => {
-    const provider = await getProviderWithKey('anthropic', 'claude-sonnet-5', 'sk-ant-test')
+    const provider = await getProviderWithKey('anthropic', 'claude-sonnet-5-5', 'sk-ant-test')
     await provider.ask({ prompt: 'dynamic payload', maxTokens: 123 })
 
     expect(bodies).toHaveLength(1)
@@ -77,7 +77,7 @@ describe('Anthropic prompt caching (BYOK path)', () => {
   })
 
   it('without cacheSystem the request carries no cache_control', async () => {
-    const provider = await getProviderWithKey('anthropic', 'claude-sonnet-5', 'sk-ant-test')
+    const provider = await getProviderWithKey('anthropic', 'claude-sonnet-5-5', 'sk-ant-test')
     await provider.ask({ system: 'STATIC INSTRUCTIONS', prompt: 'dynamic payload', maxTokens: 100 })
 
     expect(bodies).toHaveLength(1)
@@ -85,7 +85,7 @@ describe('Anthropic prompt caching (BYOK path)', () => {
   })
 
   it('is a no-op for non-Anthropic BYOK providers', async () => {
-    const provider = await getProviderWithKey('openai', 'gpt-5.5', 'sk-test')
+    const provider = await getProviderWithKey('openai', 'gpt-6.1-sol', 'sk-test')
     // The mocked response is Anthropic-shaped, so the OpenAI provider may
     // fail to parse it — we only care about the outbound request body.
     await provider
@@ -96,5 +96,53 @@ describe('Anthropic prompt caching (BYOK path)', () => {
     for (const body of bodies) {
       expect(JSON.stringify(body)).not.toContain('cache_control')
     }
+  })
+})
+
+// Effort rides call-level providerOptions; these lock the actual wire shape
+// the installed SDK sends, not just the options object we build.
+describe('effort on the wire (BYOK path)', () => {
+  let bodies: Array<Record<string, unknown>>
+
+  beforeEach(() => {
+    bodies = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)))
+      return anthropicResponse()
+    }))
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('sends Anthropic effort as output_config.effort', async () => {
+    const provider = await getProviderWithKey('anthropic', 'claude-opus-5-5', 'sk-ant-test', 'high')
+    await provider.ask({ prompt: 'x', maxTokens: 50 })
+    expect(bodies[0].output_config).toMatchObject({ effort: 'high' })
+  })
+
+  it('defaults to the model registry effort when none is given', async () => {
+    const provider = await getProviderWithKey('anthropic', 'claude-opus-5-5', 'sk-ant-test')
+    await provider.ask({ prompt: 'x', maxTokens: 50 })
+    expect(bodies[0].output_config).toMatchObject({ effort: 'medium' })
+  })
+
+  it('drops temperature for Opus 5.5, which rejects sampling parameters', async () => {
+    const provider = await getProviderWithKey('anthropic', 'claude-opus-5-5', 'sk-ant-test')
+    await provider.ask({ prompt: 'x', maxTokens: 50, temperature: 0.2 })
+    expect(bodies[0]).not.toHaveProperty('temperature')
+  })
+
+  it('sends no effort for Haiku 4.5, which has no effort parameter', async () => {
+    const provider = await getProviderWithKey('anthropic', 'claude-haiku-4-5', 'sk-ant-test')
+    await provider.ask({ prompt: 'x', maxTokens: 50 })
+    expect(JSON.stringify(bodies[0])).not.toContain('effort')
+  })
+
+  it('sends OpenAI effort as reasoning.effort for GPT-6', async () => {
+    const provider = await getProviderWithKey('openai', 'gpt-6.1-sol', 'sk-test', 'high')
+    await provider.ask({ prompt: 'x', maxTokens: 50 }).catch(() => {})
+    expect(bodies[0].reasoning).toMatchObject({ effort: 'high' })
   })
 })

@@ -178,7 +178,7 @@ function AiTab({ onClose }: { onClose: () => void }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full max-w-2xl">
         <Pillar tone="#f59e0b" label="Anthropic" hint="Claude Opus / Sonnet" />
-        <Pillar tone="#10b981" label="OpenAI" hint="GPT-4 / o-series" />
+        <Pillar tone="#10b981" label="OpenAI" hint="GPT-6 Astra / Sol / Luna" />
         <Pillar tone="#3b82f6" label="Gemini" hint="Pro / Flash" />
       </div>
 

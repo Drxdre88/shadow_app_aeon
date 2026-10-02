@@ -2,17 +2,23 @@
 // to shell, which argv turns a dispatch prompt into an unattended run, and
 // where the terminal result envelope can be read from afterwards.
 //
-// Flags verified against the CLIs installed on the runner host (2026-08-20):
+// Flags verified against the CLIs installed on the runner host (2026-08-20,
+// re-probed 2026-10-02: claude 2.1.287 --effort, copilot 1.0.91
+// --reasoning-effort, codex 0.155.1 -c/--config):
 //   claude  v2.1.237  — stream-json in --print mode HARD-REQUIRES --verbose
 //   copilot v1.0.86   — -p/--allow-all-tools/--no-ask-user/--output-format/--model
 //                       /--reasoning-effort/--context (2026-09-21)
 //   codex   0.144.1   — exec --json -o <file> -s <mode> -C <dir> -m <model>
+//
+// Default models and efforts come from the shared model registry (models.ts);
+// env knobs still override them.
 //
 // Push mode does NOT use this module: its argv stays in spawner.ts untouched.
 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createClaudeStreamParser, createCopilotStreamParser, type StreamParser } from './stream-parser.js'
+import { missionDefault, missionEffort } from './models.js'
 
 export type EngineId = 'claude' | 'copilot' | 'codex'
 
@@ -39,12 +45,19 @@ function modelArgs(flag: string, model: string | null | undefined, fallback: str
   return chosen ? [flag, chosen] : []
 }
 
+// Effort for the model this run will actually use: the operator's env knob
+// wins, else the registry's mission effort for a known model, else none.
+function effortFor(engine: EngineId, knob: string | null, model: string | null | undefined, fallback: string | null): string | null {
+  return knob ?? missionEffort(engine, model ?? fallback)
+}
+
 // The same charset the poller holds DB-sourced argv to, kept local so this
 // module never depends on the poll loop. The first character must be
 // alphanumeric: a knob of '--dangerously-skip-permissions' would otherwise
 // reach the CLI as an option rather than as a value.
 const SAFE_ARG = /^[A-Za-z0-9][A-Za-z0-9._:/@-]*$/
 const COPILOT_EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+const CODEX_EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 const COPILOT_CONTEXTS = new Set(['default', 'long_context'])
 
 // An operator-set knob is trusted but not unvalidated — a stray quote or space
@@ -76,13 +89,14 @@ const claude: EngineAdapter = {
       ...modelArgs('--model', opts.model, this.defaultModel),
       // Operator-set knobs from runner env (trusted, same trust level as
       // defaultModel). Read at spawn time so env edits apply without restart
-      // of the module — only of the runner process.
-      ...modelArgs('--effort', safeKnob('KAIROS_CLAUDE_EFFORT'), null),
+      // of the module — only of the runner process. Without the knob the
+      // registry's mission effort applies to known models.
+      ...modelArgs('--effort', effortFor('claude', safeKnob('KAIROS_CLAUDE_EFFORT'), opts.model, this.defaultModel), null),
       ...modelArgs('--fallback-model', safeKnob('KAIROS_CLAUDE_FALLBACK_MODEL'), null),
     ]
   },
   envelopeSource: 'stdout',
-  defaultModel: process.env.KAIROS_CLAUDE_DEFAULT_MODEL ?? null,
+  defaultModel: process.env.KAIROS_CLAUDE_DEFAULT_MODEL ?? missionDefault('claude').model,
   streamParser: createClaudeStreamParser,
 }
 
@@ -96,16 +110,17 @@ const copilot: EngineAdapter = {
       '--no-ask-user',
       '--output-format', 'json',
       ...modelArgs('--model', opts.model, this.defaultModel),
-      // Owner directive 1709: a mission runs at the operator's own tier
-      // (Opus 5 · xhigh · 1M context). Passed on argv rather than left to
-      // ~/.copilot/settings.json — the CLI does not restore contextTier at
-      // startup (github/copilot-cli#3557) and -p mode never re-selects it.
-      ...modelArgs('--reasoning-effort', safeChoice('KAIROS_COPILOT_EFFORT', COPILOT_EFFORTS), null),
+      // A mission runs at the owner's tier (registry mission default: Opus 5.5
+      // · high). Passed on argv rather than left to ~/.copilot/settings.json —
+      // the CLI does not restore contextTier at startup
+      // (github/copilot-cli#3557) and -p mode never re-selects it.
+      ...modelArgs('--reasoning-effort', effortFor('copilot', safeChoice('KAIROS_COPILOT_EFFORT', COPILOT_EFFORTS), opts.model, this.defaultModel), null),
       ...modelArgs('--context', safeChoice('KAIROS_COPILOT_CONTEXT', COPILOT_CONTEXTS), null),
     ]
   },
   envelopeSource: 'stdout',
-  defaultModel: process.env.KAIROS_COPILOT_DEFAULT_MODEL ?? 'claude-sonnet-5',
+  // Always a model: Copilot's own default is an older Sonnet.
+  defaultModel: process.env.KAIROS_COPILOT_DEFAULT_MODEL ?? missionDefault('copilot').model,
   // Stats only, transcript untouched. Without it a copilot mission's result
   // envelope carries no stats.model, and every attempt reads back as an
   // unknown observed model even though the event stream named it.
@@ -123,10 +138,16 @@ const codex: EngineAdapter = {
       '-s', 'workspace-write',
       '-C', opts.cwd,
       ...modelArgs('-m', opts.model, this.defaultModel),
+      // Codex reads effort from config; -c overrides it for this run only.
+      ...configArg('model_reasoning_effort', effortFor('codex', safeChoice('KAIROS_CODEX_EFFORT', CODEX_EFFORTS), opts.model, this.defaultModel)),
     ]
   },
   envelopeSource: 'file',
-  defaultModel: process.env.KAIROS_CODEX_DEFAULT_MODEL ?? null,
+  defaultModel: process.env.KAIROS_CODEX_DEFAULT_MODEL ?? missionDefault('codex').model,
+}
+
+function configArg(key: string, value: string | null): string[] {
+  return value ? ['-c', `${key}=${value}`] : []
 }
 
 const adapters: Record<EngineId, EngineAdapter> = { claude, copilot, codex }

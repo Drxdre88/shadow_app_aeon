@@ -18,31 +18,38 @@ apps/
         memories/                  -- memory REST (route, [id], capture, context, needs-summary, search, accept, [id]/trail)
         ai/ api-keys/ projects/    -- BYOK creds/prefs, key mgmt, repo->project resolve, [id]/favorite
         realms/ sessions/          -- realm CRUD, agent-session lifecycle
-        recipes/                   -- recipe REST (route, run, traces)
+        recipes/traces/            -- trace history (REST mirror of get_trace_history; the run route is retired)
+        projects/[id]/kairos-feed/ -- watched-board setting (PUT; mirrors set_project_kairos_feed)
         kairos/speak/              -- Kairos-initiated delivery (Will inbox + Telegram, CRON_SECRET auth)
         kairos/{memory-ops,thinking-jobs,beliefs,constitution}/ -- engine undo, thinking queue, beliefs, constitution
+        kairos/{asks,voice-notes,paid-backup}/ -- open questions + dismiss, voice-note intake, paid backup switch
         auth/mobile/               -- mobile auth (google, verify, route)
         me/                        -- current-user endpoint
-      api/[transport]/             -- MCP server (Bearer API key OR OAuth aeon_at_ token); ~127 annotated tools
+      api/[transport]/             -- MCP server (Bearer API key OR OAuth aeon_at_ token); 132 annotated tools
       api/telegram/webhook/        -- Telegram bot webhook (secret-token auth, single-operator gate)
       api/oauth/                   -- OAuth 2.1 AS (register, authorize, token)
       api/well-known/              -- OAuth discovery fallback (real discovery is in middleware.ts)
-      api/cron/                    -- 17 crons (CRON_SECRET): briefer, project-snapshot,
-                                      archetype-synthesis, cortex-regen, aether-regen, embed-backfill,
-                                      introspection, memory-dedup, memory-engine, thinking-sweep,
-                                      chat-distill, contradiction-scan, micro-consolidate, ask-mine,
-                                      synthesis-health, daily-message, constitution-seed
-      api/auth/ export/ planets/ stats/ sync/  -- NextAuth, export, misc surfaces
+      api/cron/                    -- 12 crons (CRON_SECRET): project-snapshot, memory-engine, thinking-sweep,
+                                      chat-distill, archetype-synthesis, cortex-regen, aether-regen,
+                                      embed-backfill, synthesis-health, ask-mine, constitution-seed,
+                                      daily-message (most are fallbacks for the Max-plan routine)
+      api/auth/ api/export/        -- NextAuth handlers; snapshot export
+      api/planets/                 -- GET list of the 55 planet image names (public, static)
+      api/stats/                   -- GET the signed-in user's totals (projects, tasks, checklist items, nodes, events, member since) for the Stats modal
+      api/sync/version/[projectId] -- GET a project's boardVersion + updatedAt — polled by useProjectData, the 30s fallback when Pusher is down
     src/components/
       board/                       -- kanban, task edit, DnD, filters, virtual scroll, assignee overlay + pile,
                                       FavoriteStar, checklist/ (ghost-input new-item flow, reorder.ts), triState.ts,
                                       fusion (FuseCardsModal, FusionEffect), hold-to-move, MissionEditorModal, TaskMembersSection
       canvas/                      -- whiteboard (ReactFlow)
       gantt/                       -- Gantt chart
-      hyperspace/                  -- Daily Briefing card + EOD + Capture FAB + QuickCapture
-      kairos/                      -- galaxy (Kairos3D only — 2D removed), KairosInbox (Will bell/panel + idea cards),
-                                      AdvisoryFeed, Visor + chat stream, thread list,
-                                      Dominion create/edit, MemorySidePanel; scene/; flightdeck/ (FlightDeckDrawer, TowerOverlay)
+      hyperspace/                  -- Capture FAB + QuickCapture + EOD reflection
+      kairos/                      -- galaxy (Kairos3D only — 2D removed), KairosInbox (Will bell/panel + idea cards,
+                                      today's message pinned), Visor + chat stream (KairosVisorReplyWatch polls routine replies),
+                                      thread list, Dominion create/edit, MemorySidePanel; scene/; flightdeck/ (FlightDeckDrawer, TowerOverlay)
+      kairos/brain/                -- "Set up Kairos" modal (ConnectKairosModal): tabs Setup (SetupChecklist — required
+                                      steps with live ticks, optional extras), Health (StatusView + paid backup switch),
+                                      Brain map, Watched (boards + repos; voice notes), How it works
       notes/ sidebar/ trophy/      -- notes bento, AppSidebar, trophy/vault archive
       velocity/ ui/                -- analytics charts; settings/help/command-palette/toast
       layout/ project/ workspace/  -- layout chrome, project chrome, workspace dashboard parts
@@ -51,21 +58,26 @@ apps/
     src/lib/
       data/                        -- pure data-layer queries (see data-layer.md for full list)
       actions/                     -- auth-guarded server actions (mutations)
-      ai/                          -- crypto, provider, providers, providers-ui, router, route-task
-      kairos/                      -- briefer, auto-capture, project-snapshot, spawn, dispatch,
-                                      cortex, archetypes, aether, ask, dialogue, retrieve,
-                                      chat-prompt/retrieval/turn, embeddings, introspection, streamClass,
-                                      dedup, lifecycle, dominionTags, recipes/,
-                                      confidence, rerank, rrf, autofile, contradiction(-prompt),
-                                      chat-distill(-prompt), telegram, cron-trace, origin, conscience-context,
-                                      engine/ (night steps incl. recheck), thinking/ (queue + handlers incl. idea-*),
+      ai/                          -- crypto, provider, providers (catalog derived from the shared model registry),
+                                      providers-ui, router (paid backup choke point), route-task
+      kairos/                      -- auto-capture, project-snapshot, spawn, cortex, archetypes, aether,
+                                      ask, ask-mine, ask-numbered, dialogue, retrieve,
+                                      chat-prompt/retrieval/turn, chat-routine, chat-web-routine, embeddings, streamClass,
+                                      dedup, lifecycle, dominionTags, recipes/ (retrieval types only),
+                                      confidence, rerank, rrf, autofile, chat-distill(-prompt), telegram,
+                                      cron-trace, origin, conscience-context, daily-message(-inputs/-prompt),
+                                      voice-note(-confirm), paid-backup(-cron), synthesis-health,
+                                      engine/ (night steps incl. recheck), thinking/ (queue + 15 handlers),
+                                      routines/ (catalog.ts — the two Max routines, prompts, BRAIN_JOBS; setup.ts),
                                       beliefs/, concepts/, constitution/ (incl. conscience-probes), weekly-review/, ideas/
+      realtime/                    -- lib/realtime: publishBoardEvent() sends a "board-update" Pusher event on a project's channel
+                                      (no-op when Pusher isn't configured; clients fall back to 30s polling via api/sync)
       oauth/                       -- pkce (S256), origin helper
       db/                          -- schema.ts + index.ts (Neon Pool)
       store/                       -- Zustand: boardStore, canvasStore, ganttStore, undoStore, hangarUiStore,
                                       pinnedCardsStore, zenModeStore, mutationDispatch, mutationQueue, persistMutation
       schedule/ flightdeck/ hangar-models.ts -- Chronos solver (unwired), Flight Deck timeline, engine model catalogue
-      api/ auth.ts realtime/ pusher.ts email.ts changelog.ts version.ts
+      api/ auth.ts pusher.ts email.ts changelog.ts version.ts
     src/stores/                    -- Zustand: themeStore, sidebarStore, kairosStore,
                                       kairosVisorStore, kairosPrefsStore
     src/assets/ config/ types/ middleware.ts
@@ -77,18 +89,24 @@ apps/
     src/                           -- api.ts (apiFetch + bearer), auth.ts (Google sign-in), config.ts
     (see mobile.md)
   desktop/                         -- Tauri desktop shell (scaffold, parked): package.json + src-tauri/
-  kairos-worker/                   -- Hangar runner (Node): src/{index,poller,engines,worktree,envelope,stream-parser}.ts;
+  kairos-worker/                   -- Hangar runner (Node): src/{index,poller,engines,models,worktree,envelope,stream-parser}.ts
+                                      (models.ts reads the shared model registry);
                                       runner.env.bat (ignored creds), start-hangar-runner.bat — see hangar.md
 aeon_os/                           -- Aeon OS: production-verification harness + docs (summary, test_readiness, HANDOVER_*)
   workflows/                       -- run.mjs, review.mjs, review-bundle.mjs, prod-acceptance.mjs, verify-ui.mjs,
                                       review-gate.test.mjs, bootstrap.json; results/ = committed receipts; .runtime/ = ignored
 packages/
   shared/src/
+    ai/                            -- model-registry.json (every model, defaults + effort, legacyRemap, reviewedAt) +
+                                      models.ts (typed access, imported as @aeon/shared/ai/models) — see platform.md §5
     config/themes/                 -- 17 theme category files + index (151 presets)
     config/defaults.ts             -- default preferences + shortcuts
     types/                         -- board, canvas, gantt, celebrations, index
     utils/                         -- boardFilters (shared with web)
     index.ts                       -- package barrel
+scripts/
+  aeon-freshness.mjs               -- "living world" freshness report (npm run freshness) — see docs/aeon-living-world.md
+  freshness/                       -- lib.mjs (pure rules) + retired-terms.json; tests in scripts/__tests__/
 ```
 
-**Root files:** `CLAUDE.md`, `ARCHITECTURE.md` (router), `VISION.md`, `README.md`, `CHANGELOG.md` (mirrored into `apps/web/src/lib/changelog.ts`), `SETUP.md`, `start.bat`. Detailed design notes + handovers live in `docs/` (esp. `docs/kairos/` — 36 numbered design/handover docs (through `35-creativity.md`); `29-brain-tick.md` is executed by the scheduled cloud routine). `vercel.json` carries the cron schedule.
+**Root files:** `CLAUDE.md`, `ARCHITECTURE.md` (router), `VISION.md`, `README.md`, `CHANGELOG.md` (mirrored into `apps/web/src/lib/changelog.ts`), `SETUP.md`, `start.bat`. Detailed design notes + handovers live in `docs/` (esp. `docs/kairos/` — numbered design/handover docs through `35-creativity.md`; `25-working-with-the-kairos-brain.md` is the owner setup guide and `33-thinking-routine.md` the routine reference; `docs/aeon-living-world.md` explains the freshness check). `apps/web/vercel.json` carries the cron schedule.

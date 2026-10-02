@@ -4,7 +4,8 @@
 
 The substrate is one user-scoped table, `memories`, plus the ingress paths that feed it and the
 hybrid retrieval that reads it back. Every data-layer function takes `userId` as a required
-filter and never returns rows the user does not own. State as of Kairos 0.15 (`origin/main` 9477bb1).
+filter and never returns rows the user does not own. State as of Kairos 0.19 (app v0.36.0); 0.16–0.19
+added no DDL either (watched boards, voice notes and the paid backup switch live in jsonb settings/metadata).
 
 ## 1. The `memories` table
 
@@ -41,7 +42,7 @@ Trust follows the origin, never the wording.
   - Inbox ask answers → `operator/ask` (`lib/actions/kairos-inbox.ts:25`). Chat/Telegram ask answers are `operator/ask`, or `kairos/ask-distilled` when distilled (`chat-turn-reply.ts:118`). The `askKairos` default is `agent/ask` (`ask.ts:139`).
   - Dialogue reflections → `agent/dialogue` (`dialogue.ts:213`)
 - **Source cap:** `resolveWriteOrigin()` (`memories.ts:51`) lowers a trusted origin to `inferOriginKind(source)` when that is less trusted. So a session-cookie webhook capture is still `external`, and the cap reads `source` only, because `sourceMetadata.kind` is client-settable. With no trusted origin, the row is inferred from `(source, sourceMetadata)` (`origin.ts:53`). `manual`/`voice` infer to operator, `cron`/`system` to kairos, `claude`/`codex`/`copilot`/`hook` to agent, `import`/`webhook` to external, and the activity kinds to activity. Pre-0.14 rows are inferred the same way at read time (`originKindOf`).
-- **Derived origin:** `derivedOriginKind()` (`origin.ts:82`) takes the lowest-trust input and is never above `kairos`. It is used by chat-distill over thread roles (`chat-distill.ts:127`) and by introspection over its input pool via `findMemoryOriginKinds` (`introspection.ts:228`). A pool containing external content therefore yields `external`.
+- **Derived origin:** `derivedOriginKind()` (`origin.ts:82`) takes the lowest-trust input and is never above `kairos`. It is used by chat-distill over thread roles (`chat-distill.ts:127`); a pool containing external content therefore yields `external`. (Its other user, raw introspection, was retired in 0.17.)
 - **Edits lower it:** `updateMemory()` (`memories.ts:1408`): a patch that actually changes `title`/`bodyMd`/`summary`/`type` (`ORIGIN_CONTENT_FIELDS`, `:1406`) re-labels the row to the lower-trust of its current origin and the writer's. The writer defaults to `agent/update`. The previous label is kept as `sourceMetadata.priorOrigin`, and the read and write happen under one `FOR UPDATE` lock. `acceptProposal()` (`memories.ts:1572`) stamps `operator/accept` by default (bearer surfaces pass `agent`) and keeps Kairos's label as `priorOrigin`.
 - **Stream default:** `type='reflection'` from `import`/`webhook` no longer earns the reflection stream (`stream-class-default.ts:21,36`).
 
@@ -73,8 +74,14 @@ mirrored by `apps/web/scripts/session-record.mjs`).
 | Path | File | What it writes |
 |---|---|---|
 | Mission memory | `lib/kairos/mission-memory.ts` | Hangar result → ONE `session_summary` (`externalId hangar:{sessionId}`), origin `activity` |
-| Board feed | `lib/kairos/board-feed{,-render}.ts` | 23:00Z `project-snapshot` cron: `board_day`/`board_week` digests (`achievement`/`agentic`), origin `activity` |
-| `card_notes` nudge | `ask-mine` cron (04:30Z) | asks for missing card context; answers append to the card/vault description; asks expire after 72h |
+| Board feed | `lib/kairos/board-feed{,-render}.ts` | 23:00Z `project-snapshot` cron: `board_day`/`board_week` digests (`achievement`/`agentic`) for every watched board (`settings.kairosFeed`), origin `activity`; board-day pages carry a summary line (0.18) |
+| Card done (0.18) | `board-feed.ts` via `captureBoardEvent` (`auto-capture.ts`) | a card finished on a watched board → same-day `board_card_done` `achievement`/`agentic` row (`externalId board-done:{taskId}:{date}`), origin `activity`. Deliberately excluded from belief signals and BackUp support — the nightly `board_day` page stays the one anchored record. Cortex reads the finished titles |
+| Voice note (0.18) | `lib/kairos/voice-note{,-confirm}.ts`, `lib/data/voice-notes.ts` | see **Voice notes** below |
+| `card_notes` nudge | `ask_mine` job (cron fallback 04:30Z) | asks for missing card context; answers append to the card/vault description; asks expire after 72h |
+
+Watched boards are set per project with `setProjectKairosFeed` (merge; owner only) — server action,
+MCP `set_project_kairos_feed`, REST `PUT /api/v1/projects/{id}/kairos-feed` — or from the *Watched*
+tab of *Set up Kairos*.
 
 - **Auto-capture** (`lib/kairos/auto-capture.ts`): `captureBoardEvent` and `captureProjectEvent`. These are fire-and-forget with `source='system'`.
 - **Project-snapshot cron** (`project-snapshot.ts`, 23:00Z): one `snapshot` per active project per day. The compost pass (`lifecycle.ts`) archives snapshots older than 7 days and advisories older than 14 days, and never deletes.
@@ -87,15 +94,24 @@ mirrored by `apps/web/scripts/session-record.mjs`).
   - Deterministic `aiTitle`/`execSummary` are set in the hook. The async summariser (outside this repo) drains the backlog 12 at a time.
   - Contract: [docs/kairos/05-session-capture.md](../../docs/kairos/05-session-capture.md).
 - **Reflections (`kairos_reflect`)**: `captureReflection()` (`memories.ts:1187`) locks `streamClass='reflection'` (confidence 0.9). Origin is the surface's: MCP gives `agent`. The stream says what the row is; the origin says whose words it is.
-- **Chat distillation** (`chat-distill` cron, 02:00Z, `lib/kairos/chat-distill{,-prompt}.ts`):
-  - Distils operator-stated signal from each thread's prior-day turns into `reflection`/`cron` rows, capped at 5 per thread per day, with `externalId chat-distill:{date}:{threadId}:{n}`.
+- **Chat distillation** (`chat_distill` job; `chat-distill` cron 02:00Z as fallback; `lib/kairos/chat-distill{,-prompt}.ts`):
+  - Distils operator-stated signal from each thread's prior-day turns (web and Telegram) into `reflection`/`cron` rows, capped at 5 per thread per day, with `externalId chat-distill:{date}:{threadId}:{n}`.
   - Origin is `derivedOriginKind` of the turn roles (`cron:chat-distill`).
   - A per-thread failure writes a cron-failure trace.
+- **Voice notes (0.18)** — the owner's long dictation from the Claude app:
+  1. The connector calls MCP `kairos_voice_note` (or REST `POST /api/v1/kairos/voice-notes`). The
+     transcript is split into verbatim parts of ~1,200–1,800 chars (`splitTranscript`), each staged
+     as a **pending reflection proposal** (agent origin) with `sourceMetadata.voiceNote {noteId, part, of}` (10-minute
+     idempotency window). Agent origin: until confirmed it is not the owner's word.
+  2. The owner confirms the whole note with one tap in Aeon (`confirmVoiceNote`, owner-session
+     surfaces only, never the connector). Every pending part goes through `acceptKairosProposal`
+     with origin `operator/accept`, so it becomes an **operator reflection**.
+  3. Belief extraction reads up to 2,000 chars of confirmed parts.
 - **Kairos speaks** (`/api/v1/kairos/speak`): `inbound`/`system` rows with `kairosSpeak:true`. `listRecentKairosSpeaks()` (`memories.ts:1350`) backs the interrupt throttle.
-- **Guided introspection (propose-not-commit)** (`lib/kairos/introspection.ts`, cron 06:30Z, gated by `KAIROS_RAW_INTROSPECTION`, doc 35 §9):
-  - Writes STAGED `inbound`/`agentic` proposals with `refers_to` links. Origin is derived from the input pool (`cron:introspection`).
-  - The operator commits via `acceptProposal()` (`memories.ts:1572`); dismissal archives.
-  - Idea-tournament survivors (§10) use the same inbox lane.
+- **Staged proposals (propose-not-commit):** Kairos writes STAGED `inbound`/`agentic` proposals with
+  `refers_to` links; the operator commits via `acceptProposal()` (`memories.ts:1572`) and dismissal
+  archives. Today the idea-tournament survivors (§10) and voice-note parts use this lane; guided
+  introspection, its first user, was retired in 0.17.
 
 ## 4. The summary backlog + summariser
 
@@ -126,7 +142,8 @@ with neither, retrieval is pure FTS. `updateMemory()` nulls the vector on conten
 
 `dedupMemories()` (`memories.ts:1832`) runs a pgvector self-join at cosine `0.97`, clusters with union-find, and keeps
 pinned > highest-confidence > newest. Losers are **superseded**, never deleted. Only `session_event` auto-merges.
-Cron `memory-dedup` runs Sundays at 05:00Z.
+The weekly dedup cron was retired in 0.17: the engine's nightly **Merge** step (§7) already folds
+near-duplicates, with undo records. `dedupMemories()` remains as a library function.
 
 ## 7. Memory engine (0039; 0.14 order)
 
@@ -205,7 +222,7 @@ on `(user, idea_tournament:<date>)`, and a double submit returns the existing id
 - `apps/web/src/lib/data/memories.ts` — capture / create / update (origin) / reflection / accept-proposal / search / dedup / prepareContext
 - `apps/web/src/lib/kairos/origin.ts` — origin kinds, trust, inference, derived origin, belief source-type caps
 - `apps/web/src/lib/data/{validators,dominions}.ts`
-- `apps/web/src/lib/kairos/{streamClass,stream-class-default,session-record,dominionTags,lifecycle,dedup,embeddings,retrieve,auto-capture,project-snapshot,introspection,confidence,rerank,rrf,autofile,ranking,reactions,rescore,proposal-accept,chat-distill,cron-trace,mission-memory,board-feed}.ts`
+- `apps/web/src/lib/kairos/{streamClass,stream-class-default,session-record,dominionTags,lifecycle,dedup,embeddings,retrieve,auto-capture,project-snapshot,voice-note,voice-note-confirm,confidence,rerank,rrf,autofile,ranking,reactions,rescore,proposal-accept,chat-distill,cron-trace,mission-memory,board-feed}.ts`
 - `apps/web/src/lib/kairos/{engine,beliefs,constitution,concepts,ideas}/` — memory engine (incl. `steps/recheck.ts`), two minds, constitution, concepts, idea tournament
 - `apps/web/src/lib/data/{memory-engine,memory-ops,memory-candidates,memory-reactions,memory-rescore,beliefs,belief-inputs,belief-recheck,belief-diff,concepts,constitution,constitution-drift,mind-compare,ideas,idea-inputs}.ts`
 - `apps/web/scripts/{claude-session-capture,session-record,session-capture-queue,session-capture-drain,copilot-session-capture-backfill,session-transcript,copilot-session-transcript}.mjs` + `{claude,codex,copilot}-session-capture-dispatch.mjs` — session-capture pipeline

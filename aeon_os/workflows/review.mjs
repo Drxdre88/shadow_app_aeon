@@ -49,10 +49,14 @@ export const MAX_PROMPT_CHARS = 110_000
 // partial_pass are normal end states of the gate, so leaving them out would
 // force a hand-edited state.json to abandon a run.
 export const ARCHIVABLE_STATUSES = ['failed', 'passed', 'partial_pass', 'review_pending']
-// Owner directive 1709: the reviewer runs GPT-5.6 Sol at high effort on the
-// 1M-context tier. Both are passed on argv because the CLI does not restore
-// contextTier from settings.json at startup (github/copilot-cli#3557).
-const DEFAULT_REVIEW = { engine: 'copilot', model: 'gpt-5.6-sol', effort: 'high', context: 'long_context', maxAiCredits: 30, timeoutMs: 900_000 }
+// The reviewer model comes from the shared model registry (defaults.reviewer:
+// GPT-6.1 Sol at high effort — a different vendor from the Opus mission model,
+// keeping the review cross-model) on the 1M-context tier. Both are passed on
+// argv because the CLI does not restore contextTier from settings.json at
+// startup (github/copilot-cli#3557). bootstrap.json may still override.
+export const MODEL_REGISTRY = JSON.parse(readFileSync(new URL('../../packages/shared/src/ai/model-registry.json', import.meta.url), 'utf8'))
+const REGISTRY_REVIEWER = MODEL_REGISTRY.defaults.reviewer
+const DEFAULT_REVIEW = { engine: REGISTRY_REVIEWER.engine, model: REGISTRY_REVIEWER.model, effort: REGISTRY_REVIEWER.effort, context: 'long_context', maxAiCredits: 30, timeoutMs: 900_000 }
 const REVIEW_EFFORTS = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 const REVIEW_CONTEXTS = new Set(['default', 'long_context'])
 

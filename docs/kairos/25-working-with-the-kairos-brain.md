@@ -27,7 +27,7 @@ Pick *Hourly* — runs outside 01:00–07:00 UTC simply find nothing to do. From
 its nightly thinking on your Max plan.
 
 If you set Kairos up before October 2026, delete the old routines on claude.ai: *Kairos thinking,
-ideas, morning, dusk, dawn, tidy* and *kairos-brain-tick*. The brain routine replaces them all.
+ideas, morning, dusk, dawn, tidy* and *kairos-brain-tick* (all retired). The brain routine replaces them all.
 
 That's it. Next morning the Status view should say "N on Max · 0 on backup".
 

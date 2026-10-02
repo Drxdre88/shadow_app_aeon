@@ -5,7 +5,7 @@
   "createdAt": "2026-09-10T15:49:38.587Z",
   "review": {
     "engine": "copilot",
-    "model": "gpt-5.6-sol",
+    "model": "gpt-6.1-sol",
     "effort": "high",
     "context": "long_context",
     "maxAiCredits": 30,

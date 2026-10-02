@@ -14,7 +14,17 @@ import {
   type CredentialPresence,
 } from '@/lib/data/ai-credentials'
 import { buildModelWithKey } from '@/lib/ai/router'
-import { isValidProvider, DEFAULT_PREFERENCES, getModelDescriptor, type ProviderId } from '@/lib/ai/providers'
+import { effortFor, remapLegacyModel } from '@aeon/shared/ai/models'
+import {
+  isValidProvider,
+  DEFAULT_PREFERENCES,
+  getModelDescriptor,
+  normalizePreferences,
+  remapPreferenceIds,
+  testModelFor,
+  effortProviderOptions,
+  type ProviderId,
+} from '@/lib/ai/providers'
 
 export async function fetchCredentials() {
   const userId = await requireAiAccess()
@@ -49,7 +59,8 @@ export async function testCandidateKey(input: { provider: string; apiKey: string
   await requireAiAccess()
   if (!isValidProvider(input.provider)) throw new Error('Invalid provider')
   const providerId = input.provider as ProviderId
-  const modelId = input.modelId ?? DEFAULT_PREFERENCES.cheap.modelId
+  // Each provider's own cheap model: an OpenAI or Gemini key cannot call Claude.
+  const modelId = input.modelId ? remapLegacyModel(input.modelId) : testModelFor(providerId)
   const descriptor = getModelDescriptor(providerId, modelId)
   if (!descriptor) throw new Error('Unknown model for provider')
 
@@ -62,7 +73,8 @@ export async function testCandidateKey(input: { provider: string; apiKey: string
     const { text, usage } = await generateText({
       model,
       prompt: 'Reply with exactly: ok',
-      maxOutputTokens: 8,
+      maxOutputTokens: 32,
+      providerOptions: effortProviderOptions(providerId, effortFor(modelId, 'low')),
     })
     return {
       ok: true,
@@ -85,7 +97,7 @@ export async function testCandidateKey(input: { provider: string; apiKey: string
 export async function fetchPreferences() {
   const userId = await requireAiAccess()
   const prefs = await getPreferences(userId)
-  if (prefs) return prefs
+  if (prefs) return normalizePreferences(prefs)
   return {
     cheap: { ...DEFAULT_PREFERENCES.cheap },
     standard: { ...DEFAULT_PREFERENCES.standard },
@@ -93,8 +105,10 @@ export async function fetchPreferences() {
   }
 }
 
-export async function savePreferences(prefs: PreferenceShape) {
+export async function savePreferences(input: PreferenceShape) {
   const userId = await requireAiAccess()
+  // A form loaded before a model retired still names it: save the successor.
+  const prefs = remapPreferenceIds(input)
   for (const tier of ['cheap', 'standard', 'heavy'] as const) {
     const t = prefs[tier]
     if (!isValidProvider(t.providerId)) throw new Error(`Invalid provider for ${tier}`)

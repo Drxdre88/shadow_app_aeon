@@ -35,15 +35,16 @@ describe('buildArgs', () => {
     expect(pairAt(args, '--permission-mode')).toBe('acceptEdits')
   })
 
-  it('passes effort and fallback-model to claude only when the env knobs are set', () => {
+  it('defaults claude to the registry mission tier and lets env knobs override', () => {
     const clean = argsFor('claude')
-    expect(clean).not.toContain('--effort')
+    expect(pairAt(clean, '--model')).toBe('claude-opus-5-5')
+    expect(pairAt(clean, '--effort')).toBe('high')
     expect(clean).not.toContain('--fallback-model')
-    process.env.KAIROS_CLAUDE_EFFORT = 'high'
+    process.env.KAIROS_CLAUDE_EFFORT = 'max'
     process.env.KAIROS_CLAUDE_FALLBACK_MODEL = 'sonnet'
     try {
       const args = argsFor('claude')
-      expect(pairAt(args, '--effort')).toBe('high')
+      expect(pairAt(args, '--effort')).toBe('max')
       expect(pairAt(args, '--fallback-model')).toBe('sonnet')
     } finally {
       delete process.env.KAIROS_CLAUDE_EFFORT
@@ -51,11 +52,16 @@ describe('buildArgs', () => {
     }
   })
 
+  it('sends no registry effort for a model without one (Haiku) or one the registry does not know', () => {
+    expect(argsFor('claude', 'claude-haiku-4-5')).not.toContain('--effort')
+    expect(argsFor('claude', 'some-preview-model')).not.toContain('--effort')
+  })
+
   it('drops an env knob whose value would reach argv as a flag or with a space', () => {
     process.env.KAIROS_CLAUDE_EFFORT = '--dangerously-skip-permissions'
     process.env.KAIROS_CLAUDE_FALLBACK_MODEL = 'sonnet --verbose'
     try {
-      const args = argsFor('claude')
+      const args = argsFor('claude', 'some-preview-model')
       expect(args).not.toContain('--effort')
       expect(args).not.toContain('--fallback-model')
       expect(args).not.toContain('--dangerously-skip-permissions')
@@ -67,20 +73,30 @@ describe('buildArgs', () => {
   })
 
   it('runs copilot unattended with json output', () => {
-    const args = argsFor('copilot', 'claude-sonnet-5')
+    const args = argsFor('copilot', 'gpt-6.1-sol')
     expect(args).toContain('--allow-all-tools')
     expect(args).toContain('--no-ask-user')
     expect(pairAt(args, '--output-format')).toBe('json')
-    expect(pairAt(args, '--model')).toBe('claude-sonnet-5')
-    expect(args).not.toContain('--reasoning-effort')
+    expect(pairAt(args, '--model')).toBe('gpt-6.1-sol')
+    expect(pairAt(args, '--reasoning-effort')).toBe('high')
     expect(args).not.toContain('--context')
   })
 
-  it('passes reasoning effort and context tier to copilot only when the env knobs are set', () => {
+  it('always names a copilot model — the registry Opus 5.5 at high effort, never the CLI default', () => {
+    const args = argsFor('copilot')
+    expect(pairAt(args, '--model')).toBe('claude-opus-5.5')
+    expect(pairAt(args, '--reasoning-effort')).toBe('high')
+  })
+
+  it('leaves effort to the CLI for a copilot model the registry does not know', () => {
+    expect(argsFor('copilot', 'account-preview-model')).not.toContain('--reasoning-effort')
+  })
+
+  it('passes reasoning effort and context tier to copilot from the env knobs', () => {
     process.env.KAIROS_COPILOT_EFFORT = 'xhigh'
     process.env.KAIROS_COPILOT_CONTEXT = 'long_context'
     try {
-      const args = argsFor('copilot', 'claude-opus-5')
+      const args = argsFor('copilot', 'claude-opus-5.5')
       expect(pairAt(args, '--reasoning-effort')).toBe('xhigh')
       expect(pairAt(args, '--context')).toBe('long_context')
     } finally {
@@ -93,7 +109,7 @@ describe('buildArgs', () => {
     process.env.KAIROS_COPILOT_EFFORT = '--allow-all-paths'
     process.env.KAIROS_COPILOT_CONTEXT = 'long_context --yolo'
     try {
-      const args = argsFor('copilot', 'claude-opus-5')
+      const args = argsFor('copilot', 'account-preview-model')
       expect(args).not.toContain('--reasoning-effort')
       expect(args).not.toContain('--context')
       expect(args).not.toContain('--allow-all-paths')
@@ -108,7 +124,7 @@ describe('buildArgs', () => {
     process.env.KAIROS_COPILOT_EFFORT = 'ultra'
     process.env.KAIROS_COPILOT_CONTEXT = 'long-context'
     try {
-      const args = argsFor('copilot', 'claude-opus-5')
+      const args = argsFor('copilot', 'account-preview-model')
       expect(args).not.toContain('--reasoning-effort')
       expect(args).not.toContain('--context')
       expect(args).not.toContain('ultra')
@@ -120,20 +136,30 @@ describe('buildArgs', () => {
   })
 
   it('sends codex its result to a file with -o', () => {
-    const args = argsFor('codex', 'gpt-5.6')
+    const args = argsFor('codex', 'gpt-6-astra')
     expect(args[0]).toBe('exec')
     expect(args).toContain('--json')
     expect(pairAt(args, '-o')).toBe(outFileFor('sess-1'))
     expect(pairAt(args, '-s')).toBe('workspace-write')
     expect(pairAt(args, '-C')).toBe('C:/code/aeon')
-    expect(pairAt(args, '-m')).toBe('gpt-5.6')
+    expect(pairAt(args, '-m')).toBe('gpt-6-astra')
+    expect(pairAt(args, '-c')).toBe('model_reasoning_effort=high')
   })
 
-  it('falls back to the adapter default and omits the flag when there is none', () => {
+  it('defaults codex to the registry GPT-6 Sol at high effort (Codex lists no 6.1 Sol yet); KAIROS_CODEX_EFFORT overrides', () => {
+    expect(pairAt(argsFor('codex'), '-m')).toBe('gpt-6-sol')
+    process.env.KAIROS_CODEX_EFFORT = 'xhigh'
+    try {
+      expect(pairAt(argsFor('codex'), '-c')).toBe('model_reasoning_effort=xhigh')
+    } finally {
+      delete process.env.KAIROS_CODEX_EFFORT
+    }
+  })
+
+  it('falls back to the adapter default model', () => {
     const codex = getEngine('codex')!
     const args = codex.buildArgs('x', { model: null, cwd: 'C:/code', outFile: null })
-    if (codex.defaultModel === null) expect(args).not.toContain('-m')
-    else expect(pairAt(args, '-m')).toBe(codex.defaultModel)
+    expect(pairAt(args, '-m')).toBe(codex.defaultModel)
     expect(args).not.toContain('-o')
   })
 

@@ -3,7 +3,8 @@
 import { useState, useTransition } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { KeyRound, ShieldCheck } from 'lucide-react'
-import { PROVIDERS, type ProviderId, type AiTier } from '@/lib/ai/providers'
+import { MODEL_REGISTRY_REVIEWED_AT } from '@aeon/shared/ai/models'
+import { PROVIDERS, testModelFor, type ProviderId, type AiTier } from '@/lib/ai/providers'
 import { PROVIDER_TINT } from '@/lib/ai/providers-ui'
 import {
   saveCredential,
@@ -58,7 +59,7 @@ export default function AiSettingsClient({ initialCredentials, initialPreference
     setError(null)
     setBusyProvider(providerId)
     try {
-      const result = await testCandidateKey({ provider: providerId, apiKey })
+      const result = await testCandidateKey({ provider: providerId, apiKey, modelId: testModelFor(providerId) })
       setTestResults((r) => ({ ...r, [providerId]: result }))
     } catch (err) {
       setTestResults((r) => ({ ...r, [providerId]: { ok: false, latencyMs: 0, error: err instanceof Error ? err.message : 'Test failed' } }))
@@ -195,6 +196,7 @@ export default function AiSettingsClient({ initialCredentials, initialPreference
 
         <footer className="mt-10 pt-6 border-t border-white/[0.06] text-[10px] uppercase tracking-[0.22em] text-white/30">
           Keys are encrypted before storage and never logged. Revoking is reversible by re-pasting.
+          <span className="block mt-2 normal-case tracking-normal text-[11px] text-white/25">Model list last checked {MODEL_REGISTRY_REVIEWED_AT}.</span>
         </footer>
       </div>
     </div>

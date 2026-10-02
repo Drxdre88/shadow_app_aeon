@@ -47,7 +47,7 @@ const storedMission = {
   objective: 'recon',
   repo: 'shadow_app_aeon',
   agent: 'codex',
-  model: 'gpt-5.6-sol',
+  model: 'gpt-6.1-sol',
   instruction: 'Map the repository and report the launch boundaries.',
   outputMode: 'auto',
   autoRun: true,
@@ -132,7 +132,7 @@ describe('spawnSessionFromCard', () => {
       metadata: {
         hangar: {
           objective: 'recon',
-          model: 'gpt-5.6-sol',
+          model: 'gpt-6.1-sol',
           subagents: ['prowler'],
           outputMode: 'auto',
           repo: 'shadow_app_aeon',

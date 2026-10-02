@@ -9,7 +9,7 @@ import { toast } from '@/components/ui/Toast'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { useHangarUiStore } from '@/lib/store/hangarUiStore'
 import { listProjectHangarRepos, saveCardMission, spawnSessionFromCard } from '@/lib/actions/hangar'
-import { getHangarModels, HANGAR_MODELS_CHECKED_AT } from '@/lib/hangar-models'
+import { getHangarDefault, getHangarModels, HANGAR_MODELS_CHECKED_AT } from '@/lib/hangar-models'
 import { HANGAR_MODEL_RE, hangarCardDraftSchema } from '@/lib/data/validators/hangar'
 import { MissionResultSection } from './MissionResultSection'
 import { withConfirmedMissionLaunch } from './autoRun'
@@ -144,6 +144,10 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
     && draft.repo.trim().length > 0 && draft.instruction.trim().length > 0
 
   const modelOptions = getHangarModels(draft.agent)
+  const runnerDefault = getHangarDefault(draft.agent)
+  const runnerDefaultLabel = runnerDefault
+    ? `Runner default (${modelOptions.find((option) => option.id === runnerDefault.model)?.label ?? runnerDefault.model} · ${runnerDefault.effort})`
+    : 'Runner default'
 
   const persist = async () => {
     const existing = (task.metadata?.hangar ?? {}) as Record<string, unknown>
@@ -315,7 +319,7 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
                   }}
                   className={cn(inputClass, '[color-scheme:dark]')}
                 >
-                  <option value="">Runner default</option>
+                  <option value="">{runnerDefaultLabel}</option>
                   {modelOptions.map((option) => (
                     <option key={option.id} value={option.id}>{option.label}</option>
                   ))}

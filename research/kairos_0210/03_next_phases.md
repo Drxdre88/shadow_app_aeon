@@ -19,7 +19,7 @@ Start the new session at **Phase 1: settle the brain.** For one quiet week, chec
 1. In Aeon, open **Kairos setup** and finish the two required steps: connect Aeon to Claude (one click), and turn on the **Kairos brain** routine.
 2. Delete the old routines it lists, including `kairos-brain-tick`.
 3. Optional: create the **Kairos chat** routine, paste its token into Vercel and set `KAIROS_CHAT_ROUTINE=1`, so the web page and Telegram answer on Max.
-4. Decide the **Paid backup** switch. Recommended: **off**, given your AI costs.
+4. ~~Decide the Paid backup switch~~ — done: off since 02/10.
 5. Monday 05/10: accept (or amend) your first constitution in the inbox.
 
 **Build (small):**
@@ -89,10 +89,13 @@ Start the new session at **Phase 1: settle the brain.** For one quiet week, chec
 
 **Waits on:** your decision about dropping the non-person groupings.
 
-## Decisions only you can make
+## Decisions
 
-1. **Paid backup:** off (no spend; a missed job waits for the next run) or on (silent backup)? Recommended: off.
-2. **Chat on Max:** create the chat routine and accept slower replies on the web page and Telegram? Recommended: yes.
-3. **Initiative rules:** one goal a night, investigations only, always ask first, promises raised in the 06:00 message. Confirm?
-4. **Chronos:** drop the non-person groupings so the scheduler can be laid out by person?
-5. **Mobile app:** provide the Google sign-in IDs to restart it, or keep it parked another quarter?
+**Settled (02/10):**
+- ✅ **Paid backup: off.** Switched off in production on 02/10. Kairos never uses your API key; a missed job waits for the next run.
+- ✅ **Initiative rules (Phase 2):** one goal a night (none is fine), investigations only, always ask first, promises raised in the 06:00 message.
+
+**Still open:**
+1. **Chat on Max:** create the chat routine so the web page and Telegram answer on Max. Until then, with paid backup off, chat replies say "I couldn't answer on your Max plan".
+2. **Chronos:** drop the non-person groupings so the scheduler can be laid out by person?
+3. **Mobile app:** provide the Google sign-in IDs to restart it, or keep it parked another quarter?

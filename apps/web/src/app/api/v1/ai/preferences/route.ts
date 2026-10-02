@@ -2,7 +2,14 @@ import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
 import { getPreferences, upsertPreferences, type PreferenceShape } from '@/lib/data/ai-credentials'
-import { DEFAULT_PREFERENCES, isValidProvider, getModelDescriptor, type ProviderId } from '@/lib/ai/providers'
+import {
+  DEFAULT_PREFERENCES,
+  isValidProvider,
+  getModelDescriptor,
+  normalizePreferences,
+  remapPreferenceIds,
+  type ProviderId,
+} from '@/lib/ai/providers'
 
 function requireAdmin(result: { id: string; role: string }) {
   return result.role === 'admin' ? null : jsonError('AI features restricted to administrators', 403)
@@ -16,7 +23,8 @@ export const GET = withRateLimit(
     if (forbidden) return forbidden
 
     const prefs = await getPreferences(result.id)
-    return jsonData(prefs ?? {
+    // Saved ids may name a retired model; report what the router will run.
+    return jsonData(prefs ? normalizePreferences(prefs) : {
       cheap: { ...DEFAULT_PREFERENCES.cheap },
       standard: { ...DEFAULT_PREFERENCES.standard },
       heavy: { ...DEFAULT_PREFERENCES.heavy },
@@ -38,7 +46,8 @@ export const PATCH = withRateLimit(
     } catch {
       return jsonError('Invalid JSON body', 400)
     }
-    const prefs = body as PreferenceShape
+    // Legacy ids are swapped for their successors before validation.
+    const prefs = remapPreferenceIds(body as PreferenceShape)
     for (const tier of ['cheap', 'standard', 'heavy'] as const) {
       const t = prefs?.[tier]
       if (!t || !isValidProvider(t.providerId)) return jsonError(`Invalid provider for ${tier}`, 400)

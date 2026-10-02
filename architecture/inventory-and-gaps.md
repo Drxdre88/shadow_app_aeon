@@ -12,14 +12,19 @@ Per-domain inventories live in the subsystem docs (this avoids drift):
 - **AI Hangar + Aeon OS harness** (missions, runner, review gate, receipts) → [hangar.md](hangar.md).
 
 Top-line status: the PM app is feature-complete + hardened; Kairos is a multi-layer brain
-(substrate → synthesis → Aether self-model → chat/ask/dialogue → **speaks-first autonomy**), now
-with a nightly **memory engine** (undoable `memory_ops`), a **thinking queue** answered by Claude Max
-routines with paid-key fallback, **two-mind beliefs**, an operator-governed **constitution** + drift
-probes, the guaranteed 08:00 London **daily message**, write-time **origin** labels + nightly **belief re-check** + a **conscience** block in chat/brief prompts (0.14), and a nightly **idea tournament** feeding idea cards to the inbox (0.15) — running a **17-cron** Vercel fleet plus
-cloud routines (brain-tick, Kairos thinking/morning/chat); the mobile
+(substrate → synthesis → Aether self-model → chat/ask/dialogue), now
+with a nightly **memory engine** (undoable `memory_ops`), a **thinking queue** answered by two Claude Max
+routines defined in code (*Kairos brain*, *Kairos chat*) with a paid-key fallback the owner can switch off (0.19),
+**two-mind beliefs**, an operator-governed **constitution** + drift
+probes, the guaranteed 06:00 London **daily message** with numbered open questions (0.18), write-time **origin** labels + nightly **belief re-check** + a **conscience** block in chat and daily-message prompts (0.14), a nightly **idea tournament** feeding idea cards to the inbox (0.15), **watched boards** and **voice notes** (0.18) and one **Set up Kairos** checklist (0.19) — running a **12-cron** Vercel fleet (mostly fallbacks) plus the two cloud routines; models come from one shared registry (`packages/shared/src/ai/model-registry.json`) and a weekly freshness check flags drift ([../docs/aeon-living-world.md](../docs/aeon-living-world.md)); the mobile
 app is at the login slice (Google auth scaffolded, awaiting operator client IDs).
 
 ## Known Gaps & Technical Debt
+
+**Status 2026-10-02 (Kairos 0.19 / app v0.36.0):** Kairos rows below were re-checked against
+0.17–0.19. Items fixed or made moot are marked *Resolved* with the version; the rest stay open. 0.17
+retired the morning briefs, raw introspection, contradiction notices, micro-consolidation and the weekly
+dedup cron (all retired in 0.17), so gaps that only concerned them are closed.
 
 Hangar inventory refreshed: 2026-09-21. The completion claim guard shipped in PR #129; durable artifact/publication delivery, draft PRs and runner recovery remain open. Mission-card/result UI and repository management are implemented for the v0.29.0 release candidate (PR #130). See [hangar.md](hangar.md) §6. The previously recorded REST UUID/membership gaps remain outside this wave; this refresh is not a new general safety audit. Other inventory entries below retain their original verification dates.
 
@@ -27,24 +32,24 @@ Hangar inventory refreshed: 2026-09-21. The completion claim guard shipped in PR
 
 | Severity | Issue | Details |
 |---|---|---|
-| Resolved 0.16 | ~~Direct paid-key crons bypass the thinking queue~~ (PR #141: all are thinking kinds; crons are fallbacks) | briefer, archetype-synthesis, introspection, contradiction-scan, chat-distill, ask-mine, micro-consolidate and constitution-seed still call the paid key directly (owner migrating them via Claude Code) |
+| Resolved 0.16 | ~~Direct paid-key crons bypass the thinking queue~~ (PR #141: all are thinking kinds; crons are fallbacks) | the eight paid-key crons became thinking kinds; five of them were then retired in 0.17 and the rest are fallbacks only |
 | Medium | Bearer claim/submit trust | any user-scoped bearer can claim and submit that user's thinking jobs; output is persisted after id grounding only |
 | Medium | `update_memory` can archive the constitution | `archivedAt` is not barred for `type='constitution'` rows while amendments are operator-only |
 | Low | Idea archive skipped when the judge never succeeds | candidates stay only in the generate job output if both routine and paid judge fail |
 | Low | Belief-ledger ops write `before: null` | create/mirror ops cannot be reverted to a prior state |
-| Low | Legacy dedup writes no `memory_ops` | weekly `memory-dedup` supersedes without undo records |
-| Low | Duplicate paid calls | `constitution/seed.ts`, `thinking/handlers/concept.ts` own paid calls instead of `paid-fallback.ts` |
+| Resolved 0.17 | ~~Legacy dedup writes no `memory_ops`~~ | the weekly dedup cron was retired in 0.17; the engine's Merge step folds duplicates with undo records |
+| Low | Duplicate paid calls | `constitution/seed.ts`, `thinking/handlers/concept.ts` own paid calls instead of `paid-fallback.ts` (both still honour the paid backup switch via `getModelForUser`) |
 | Low | Origin of older rows is inferred | rows before 0.14 carry no `sourceMetadata.origin` |
-| Low | Telegram chat routine off | `KAIROS_TELEGRAM_ROUTINE` unset, no chat routine created |
+| Low (changed 0.19) | Chat routine flag is an owner step | one flag `KAIROS_CHAT_ROUTINE` (alias `KAIROS_TELEGRAM_ROUTINE`) + `ROUTINE_CHAT_ID`/`ROUTINE_CHAT_TOKEN` now serve web and Telegram; until the owner sets them, chat answers on the paid key (or not at all with paid backup off) |
 | Low | One TODO | `lib/kairos/chat-turn-reply.ts` DB access outside `lib/data` |
 
 ### New gaps (2026-10-01, Kairos 0.11–0.13)
 
 | Severity | Issue | Details |
 |---|---|---|
-| Medium | Thinking routines not yet created | The Kairos thinking / morning / chat routines are owner-created on claude.ai; until then every thinking job runs on the paid-key fallback |
-| Medium | Telegram chat routine flag off | `KAIROS_TELEGRAM_ROUTINE` stays off until `apps/web/scripts/routine-latency.mjs` measures real latency (30 runs/h/routine limit) |
-| Low | `drift_probe` deadline vs morning routine | The 2h deadline usually expires before the optional 06:30Z morning routine, so the hourly sweep's paid fallback normally answers it |
+| Resolved 0.17 / 0.19 | ~~Thinking routines not yet created~~ | the routines are now defined in code (`lib/kairos/routines/catalog.ts`, two of them) and the 0.19 *Set up Kairos* checklist walks the owner through creating them, ticking live once the brain routine claims; Health shows "on Max / on backup / missed" per job |
+| Resolved 0.19 (superseded) | ~~Telegram chat routine flag off~~ | replaced by the single `KAIROS_CHAT_ROUTINE` flag for web + Telegram — see the 0.14–0.15 table above |
+| Resolved 0.17 | ~~`drift_probe` deadline vs morning routine~~ | the brain routine runs hourly 01:40–06:40Z and claims everything due, so the probe is picked up inside its 2h window |
 | Low | Layering: `lib/kairos` reaches into `db` | `chat-turn-reply.ts` / `chat-turn-assistant.ts` import `db` directly instead of going through `lib/data` (TODO) |
 | Low | Old proposal backlog draining | BackUp processes ≤400 pending proposals/night with a 21-day TTL, so the historic backlog takes several nights to clear |
 
@@ -55,13 +60,13 @@ Hangar inventory refreshed: 2026-09-21. The completion claim guard shipped in PR
 | Low | Avatar pile missing from task cards | **RESOLVED** (`95537d0`) — pile via `AssigneeDot` (`SortableTaskCard.tsx:337,494`); live from overlay |
 | Medium | Assignee list excluded owner + realm members | **RESOLVED** (`22b281a`) — `findAssignableMembers` (`members.ts:27`) unions owner + members + realm |
 | — | Keep-warm cron pinning Neon 24/7 | **REMOVED** (`5c759e1`) — cold-start now absorbed by the durable mutation queue + retry ladder + Neon sub-second resume |
-| Medium | Dominion REST API missing | OPEN — 16 MCP tools, no `/api/v1/dominions/` |
+| Medium | Dominion REST API missing | OPEN — 15 MCP tools, no `/api/v1/dominions/` |
 | Medium | `broadcastMemoryEvent` is a no-op stub | OPEN — memory mutations don't push via Pusher |
 | Medium | Orphan running sessions on worker restart | OPEN — heartbeat exists (`/sessions/[id]/heartbeat`, 30s) but no reconcile cron marks a silent runner's sessions dead |
 | Medium | Engine router has no CRUD surface | OPEN — `enginePolicies` editable via no MCP/REST |
 | Medium | Cost budget tripwires absent | OPEN — `costUsd` recorded; no cap / rollup / kill switch |
 | Medium | Sessions parity test missing | **CLOSED** (2026-10-01) — `app/api/__tests__/sessions-parity.test.ts` locks REST↔MCP sessions |
-| Medium | Archetype + cortex cron concurrency (TOCTOU) | OPEN — advisory-lock fix queued; cron roster has grown (larger surface) |
+| Medium | Archetype + cortex cron concurrency (TOCTOU) | OPEN — advisory-lock fix queued; both crons are fallbacks since 0.16, so the race needs a late routine plus the cron |
 | Medium | `memories.ts` past 500-line standard | LIKELY OPEN — split into core/capture/graph/context pending |
 | Medium | Chat assistant Markdown rendered as text | OPEN |
 | Medium | Cross-user cron snapshot leak | OPEN — see `docs/kairos/14-quality-gates.md` §3 |
@@ -77,7 +82,7 @@ Hangar inventory refreshed: 2026-09-21. The completion claim guard shipped in PR
 | Low | Sessions/OAuth parity & smoke tests | OPEN |
 | Low | Inbound channel adapters absent | OPEN |
 | Low | Memory titles backfill not automated | OPEN — hook + Acolyte cover it; no server cron sweep |
-| Low | Cron `isAuthorized` copied N times | OPEN — likely worse (cron roster grew); hoist to `lib/cron/auth.ts` |
+| Low | Cron `isAuthorized` copied N times | OPEN — 12 cron routes as of 2026-10-02 (down from 17); hoist to `lib/cron/auth.ts` |
 | Low | Kairos pure helpers untested | OPEN |
 | Low | Chat Visor lacks focus trap | OPEN |
 | Low | `chat_with_kairos` MCP tool absent | OPEN |
@@ -121,9 +126,9 @@ Hangar inventory refreshed: 2026-09-21. The completion claim guard shipped in PR
 
 | Severity | Issue | Details |
 |---|---|---|
-| Medium | Brain-tick delivery not wired | Cloud routine live (3×/day) but `AEON_APP_URL`+`CRON_SECRET` env vars + network allowlist pending in the claude.ai cloud environment — ticks dry-run until set |
-| Medium | Board digest unbuilt | Autonomy slice 3: curated Mission Control deltas → Telegram via /speak; zero code yet |
-| Medium | Introspection cron `parse_failed` streak | Briefings report failures Jul 11–15 — brain consolidating without introspection proposals; needs log pull |
+| Resolved 0.17 | ~~Brain-tick delivery not wired~~ | the brain-tick routine is retired; the 06:00 daily message is the one guaranteed push |
+| Resolved 0.18 (superseded) | ~~Board digest unbuilt~~ | board feed (0.11) + watched boards and same-day `board_card_done` rows (0.18) feed cortex and the daily message's board-day section, instead of a separate /speak digest |
+| Resolved 0.17 | ~~Introspection parse_failed streak~~ | raw introspection (and its cron) was retired in 0.17; the idea tournament replaced it |
 | Low | Chat-distill error branches undertested | Stalker findings 2026-07-17: resolveDate/parse-failure/cron-catch branches dark (fix queued) |
 | Low | Stale remote branches | ~40 old `feature/*` + post-merge `feat/*` refs on origin; `git remote prune origin` + a cleanup pass |
 | Medium | Chat-distill trust model (Codex cross-model finding, 2026-07-17) | Distilled chat auto-persists as operator-grade reflections (0.9 confidence) with no review step; alternative = stage as `inbound` proposals through the Will inbox (propose-not-commit pattern). **Operator decision pending** |
@@ -139,5 +144,5 @@ Hangar inventory refreshed: 2026-09-21. The completion claim guard shipped in PR
 | Low | `isTransientError` regex is broad | `persistMutation.ts:9` matches substrings (`connection`/`timeout`/`socket`); a hard error containing those words would be retried not rolled back |
 | Low | Durable queue has no size cap / TTL | `aeon-mutation-queue` grows unbounded while offline; no eviction / max-age |
 | Low | `smoothUiRenders` not in shared `DEFAULT_PREFERENCES` | default hard-coded in `themeStore.ts`; absent from `packages/shared/src/config/defaults.ts` (drift risk) |
-| Low | Cron concurrency surface grew without auth/idempotency refactor | `vercel.json` now schedules 9 crons; shared-auth-helper + idempotency-lock debt scales with each |
+| Low | Cron concurrency surface grew without auth/idempotency refactor | `vercel.json` then scheduled 9 crons (17 at the 0.16 peak, 12 as of 2026-10-02); shared-auth-helper + idempotency-lock debt scales with each |
 | Medium | Mobile chat engine not REST-reachable | Chat is a server action; the planned mobile chat needs a REST + streaming exposure (see [kairos/chat.md](kairos/chat.md) PLANNED) |

@@ -41,9 +41,10 @@ import { CITATION_FLOOR, assertCitationFloor, explicitCitationTokens, extractCit
 import { createBudgetWrapper, missionCredits, parseEnv, runRecord, workerEnvironment } from './run.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const REVIEWER = { engine: 'copilot', model: 'gpt-5.6-sol', startedAt: '2026-09-12T10:00:00.000Z', finishedAt: '2026-09-12T10:02:00.000Z' }
+const REGISTRY_FILE = join(HERE, '..', '..', 'packages', 'shared', 'src', 'ai', 'model-registry.json')
+const REVIEWER = { engine: 'copilot', model: 'gpt-6.1-sol', startedAt: '2026-09-12T10:00:00.000Z', finishedAt: '2026-09-12T10:02:00.000Z' }
 
-function attempts(count, model = 'claude-sonnet-5') {
+function attempts(count, model = 'claude-opus-5.5') {
   return Array.from({ length: count }, (_unused, offset) => ({ index: offset + 1, result: 'PASS', model }))
 }
 
@@ -170,7 +171,7 @@ test('no reviews directory means nothing is reviewed', () => {
 test('a mechanically failed attempt cannot be rescued by a PASS verdict', () => {
   withRunDir((runDir) => {
     writeVerdicts(runDir, { 1: verdictRecord(1, 'PASS'), 2: verdictRecord(2, 'PASS') })
-    const list = [{ index: 1, result: 'PASS', model: 'claude-sonnet-5' }, { index: 2, result: 'FAIL', model: 'claude-sonnet-5' }]
+    const list = [{ index: 1, result: 'PASS', model: 'claude-opus-5.5' }, { index: 2, result: 'FAIL', model: 'claude-opus-5.5' }]
     const gate = evaluateReviewGate({ attempts: list, verdicts: loadVerdicts(runDir) })
     assert.equal(gate.outcome, 'mechanical_failed')
     assert.equal(gate.status, 'failed')
@@ -396,7 +397,7 @@ test('an import with matching identity fields is accepted and stamped', () => {
     assert.equal(record.attempt, 2)
     assert.equal(record.runId, 'r')
     assert.equal(record.reviewer.engine, 'import')
-    assert.equal(record.reviewer.missionModel, 'claude-sonnet-5')
+    assert.equal(record.reviewer.missionModel, 'claude-opus-5.5')
   })
 })
 
@@ -404,16 +405,16 @@ test('an import with matching identity fields is accepted and stamped', () => {
 
 // Real --usage-output-file shape from Copilot CLI 1.0.85 (probed 2026-09-16).
 test('the reviewer model is read from currentModel / modelMetrics of the usage file', () => {
-  const real = { totalPremiumRequestCost: 1, modelMetrics: { 'gpt-5.6-sol': { requests: { count: 1, cost: 1 } } }, currentModel: 'gpt-5.6-sol' }
-  assert.equal(observedModelFromUsage(real), 'gpt-5.6-sol')
-  assert.equal(observedModelFromUsage({ modelMetrics: { 'gpt-5.6-sol': {} } }), 'gpt-5.6-sol', 'modelMetrics alone still attributes')
-  assert.equal(observedModelFromUsage({ currentModel: 'gpt-5.6-sol' }), 'gpt-5.6-sol')
-  assert.equal(observedModelFromUsage({ model: 'gpt-5.6-sol' }), null, 'the pre-1609 guessed key is not the shape')
+  const real = { totalPremiumRequestCost: 1, modelMetrics: { 'gpt-6.1-sol': { requests: { count: 1, cost: 1 } } }, currentModel: 'gpt-6.1-sol' }
+  assert.equal(observedModelFromUsage(real), 'gpt-6.1-sol')
+  assert.equal(observedModelFromUsage({ modelMetrics: { 'gpt-6.1-sol': {} } }), 'gpt-6.1-sol', 'modelMetrics alone still attributes')
+  assert.equal(observedModelFromUsage({ currentModel: 'gpt-6.1-sol' }), 'gpt-6.1-sol')
+  assert.equal(observedModelFromUsage({ model: 'gpt-6.1-sol' }), null, 'the pre-1609 guessed key is not the shape')
   assert.equal(observedModelFromUsage(null), null)
   assert.equal(observedModelFromUsage({}), null)
-  const mixed = observedModelFromUsage({ currentModel: 'gpt-5.6-sol', modelMetrics: { 'gpt-5.6-sol': {}, 'claude-sonnet-5': {} } })
-  assert.equal(mixed, 'claude-sonnet-5+gpt-5.6-sol', 'two serving models cannot be attributed to one reviewer')
-  assert.ok(modelProvenanceError({ observedModel: mixed, configuredModel: 'gpt-5.6-sol', missionModel: 'claude-sonnet-5' }), 'a mixed session fails provenance')
+  const mixed = observedModelFromUsage({ currentModel: 'gpt-6.1-sol', modelMetrics: { 'gpt-6.1-sol': {}, 'claude-opus-5.5': {} } })
+  assert.equal(mixed, 'claude-opus-5.5+gpt-6.1-sol', 'two serving models cannot be attributed to one reviewer')
+  assert.ok(modelProvenanceError({ observedModel: mixed, configuredModel: 'gpt-6.1-sol', missionModel: 'claude-opus-5.5' }), 'a mixed session fails provenance')
 })
 
 // 1609 live finding: the first real reviewer marked three correct assertions
@@ -473,9 +474,9 @@ test('a verdict that does not echo the receipt token is not a review', () => {
 // JUDGE 1609: the stored record is self-verifying — a verdict filed under an
 // attempt whose marker it does not name reviews nothing.
 test('a stored verdict naming another attempt marker counts as unreviewed', () => {
-  const reviewer = { engine: 'copilot', model: 'gpt-5.6-sol', missionModel: 'claude-sonnet-5', allowSameModel: false, sameModelAsMission: false, startedAt: 'a', finishedAt: 'b' }
+  const reviewer = { engine: 'copilot', model: 'gpt-6.1-sol', missionModel: 'claude-opus-5.5', allowSameModel: false, sameModelAsMission: false, startedAt: 'a', finishedAt: 'b' }
   const record = { attempt: 1, runId: 'r', marker: 'AEON_OS_E2E_r_02', verdict: 'PASS', findings: [], summary: 's', reviewer }
-  const attempts = [{ index: 1, result: 'PASS', marker: 'AEON_OS_E2E_r_01', model: 'claude-sonnet-5' }]
+  const attempts = [{ index: 1, result: 'PASS', marker: 'AEON_OS_E2E_r_01', model: 'claude-opus-5.5' }]
   const gate = evaluateReviewGate({ attempts, verdicts: new Map([[1, { attempt: 1, ok: true, record }]]), fullBatch: 1 })
   assert.equal(gate.counts.PASS, 0)
   assert.equal(gate.unreviewed.length, 1)
@@ -521,14 +522,14 @@ test('an empty reviewer prompt is refused before anything is spawned', async () 
 
 // STALKER 1609: the gate's decisions must be exercised where they decide
 // something — which file gets written — not only in the pure helpers.
-const FAKE_MODELS = [{ id: 'gpt-5.6-sol' }, { id: 'claude-sonnet-5' }]
-const GATE_CONFIG = { engine: 'copilot', model: 'gpt-5.6-sol', maxAiCredits: 30, timeoutMs: 5000 }
-const GATE_ATTEMPTS = [{ index: 1, result: 'PASS', marker: 'AEON_OS_E2E_x_01', model: 'claude-sonnet-5' }]
+const FAKE_MODELS = [{ id: 'gpt-6.1-sol' }, { id: 'claude-opus-5.5' }]
+const GATE_CONFIG = { engine: 'copilot', model: 'gpt-6.1-sol', maxAiCredits: 30, timeoutMs: 5000 }
+const GATE_ATTEMPTS = [{ index: 1, result: 'PASS', marker: 'AEON_OS_E2E_x_01', model: 'claude-opus-5.5' }]
 const fakeBundle = () => ({ text: 'AEON_OS_E2E_x_01\nreport body\n> 12 | const a = 1', revision: 'abc1234', citations: { total: 1, distinct: 1, resolvable: 1, unresolvable: 0, outOfRange: 0 } })
 const receiptOf = (stdinText) => /Receipt: ([0-9a-f-]{36})/.exec(stdinText)?.[1] ?? null
 const fakeDispatch = (verdictFor) => async ({ stdinText }) => ({
   startedAt: 'a', finishedAt: 'b', stdout: JSON.stringify(verdictFor(receiptOf(stdinText))), stderr: '', status: 0, signal: null, spawnError: null, timedOut: false,
-  usage: { currentModel: 'gpt-5.6-sol', modelMetrics: { 'gpt-5.6-sol': {} } }, observedModel: 'gpt-5.6-sol', argv: ['--model', 'gpt-5.6-sol'],
+  usage: { currentModel: 'gpt-6.1-sol', modelMetrics: { 'gpt-6.1-sol': {} } }, observedModel: 'gpt-6.1-sol', argv: ['--model', 'gpt-6.1-sol'],
 })
 const gateRun = (dir, dispatchReviewer) => runReview({ runId: 'x', runDir: dir, attempts: GATE_ATTEMPTS, config: GATE_CONFIG, log: () => {}, resolveBinary: () => 'fake', listModels: async () => FAKE_MODELS, buildBundle: fakeBundle, dispatchReviewer })
 
@@ -555,7 +556,7 @@ test('a verdict that echoes the receipt from the bundle tail is stored with its 
     assert.equal(record.verdict, 'FAIL')
     assert.equal(record.marker, 'AEON_OS_E2E_x_01')
     assert.match(record.receipt, /^[0-9a-f-]{36}$/)
-    assert.equal(record.reviewer.observedModel, 'gpt-5.6-sol')
+    assert.equal(record.reviewer.observedModel, 'gpt-6.1-sol')
     assert.equal(record.reviewer.promptDelivery, 'stdin')
     assert.ok(record.reviewer.usage, 'raw usage is persisted with the record')
     assert.ok(!existsSync(join(dir, 'reviews', '01.error.json')) || JSON.parse(readFileSync(join(dir, 'reviews', '01.error.json'), 'utf8')).error === null)
@@ -580,11 +581,11 @@ test('a bundle without the report marker is refused before any dispatch is paid 
 // The 1609 live defect, locked on the PRODUCTION argument builder: the empty
 // prompt path returns the argv it would have used without spawning anything.
 test('the production dispatch never passes -p, so piped input is never ignored', async () => {
-  const out = await dispatchCopilotReview({ binary: process.execPath, model: 'gpt-5.6-sol', stdinText: '', cwd: tmpdir(), maxAiCredits: 30, timeoutMs: 1000, usageFile: join(tmpdir(), 'never.json') })
+  const out = await dispatchCopilotReview({ binary: process.execPath, model: 'gpt-6.1-sol', stdinText: '', cwd: tmpdir(), maxAiCredits: 30, timeoutMs: 1000, usageFile: join(tmpdir(), 'never.json') })
   assert.match(out.spawnError, /prompt is empty/)
   assert.ok(Array.isArray(out.argv) && out.argv.length > 5, 'the default builder produced the real argv')
   assert.ok(!out.argv.includes('-p') && !out.argv.includes('--prompt') && !out.argv.includes('-i'))
-  assert.deepEqual(out.argv.slice(0, 2), ['--model', 'gpt-5.6-sol'])
+  assert.deepEqual(out.argv.slice(0, 2), ['--model', 'gpt-6.1-sol'])
   assert.ok(out.argv.includes('--deny-tool=shell'))
 })
 
@@ -641,7 +642,7 @@ test('the citation floor counts full path:line tokens, ignores prose, and reject
 
 // WARDEN 3: the reviewer gets no shell, no writes, no network, no temp grant.
 test('the reviewer command line denies the tools that could reach the repository', () => {
-  const args = reviewerArgs({ model: 'gpt-5.6-sol', maxAiCredits: 30, usageFile: 'u.json' })
+  const args = reviewerArgs({ model: 'gpt-6.1-sol', maxAiCredits: 30, usageFile: 'u.json' })
   assert.ok(args.includes('--deny-tool=shell'), 'shell must be denied: path verification does not constrain it')
   assert.ok(args.includes('--deny-tool=write'))
   assert.ok(args.includes('--deny-tool=url'))
@@ -660,26 +661,26 @@ test('the reviewer command line denies the tools that could reach the repository
 
 // WARDEN 11: the model that answered must be the model that was asked.
 test('a reviewer that reports a different model than requested is not a review', () => {
-  const error = modelProvenanceError({ observedModel: 'claude-sonnet-5', configuredModel: 'gpt-5.6-sol', missionModel: 'claude-sonnet-5' })
-  assert.match(error, /reported model claude-sonnet-5 but gpt-5\.6-sol was requested/)
-  const substituted = modelProvenanceError({ observedModel: 'gpt-5.4-mini', configuredModel: 'gpt-5.6-sol', missionModel: 'claude-sonnet-5' })
+  const error = modelProvenanceError({ observedModel: 'claude-opus-5.5', configuredModel: 'gpt-6.1-sol', missionModel: 'claude-opus-5.5' })
+  assert.match(error, /reported model claude-opus-5\.5 but gpt-6\.1-sol was requested/)
+  const substituted = modelProvenanceError({ observedModel: 'gpt-5.4-mini', configuredModel: 'gpt-6.1-sol', missionModel: 'claude-opus-5.5' })
   assert.match(substituted, /not attributable to the configured reviewer/)
 })
 
 test('a reviewer observed running the mission model is not independent', () => {
-  const error = modelProvenanceError({ observedModel: 'claude-sonnet-5', configuredModel: 'claude-sonnet-5', missionModel: 'claude-sonnet-5' })
+  const error = modelProvenanceError({ observedModel: 'claude-opus-5.5', configuredModel: 'claude-opus-5.5', missionModel: 'claude-opus-5.5' })
   assert.match(error, /the same model that wrote the report/)
   // --allow-same-model is the one way that becomes admissible, and it is
   // recorded in the verdict when it is used.
-  assert.equal(modelProvenanceError({ observedModel: 'claude-sonnet-5', configuredModel: 'claude-sonnet-5', missionModel: 'claude-sonnet-5', allowSameModel: true }), null)
+  assert.equal(modelProvenanceError({ observedModel: 'claude-opus-5.5', configuredModel: 'claude-opus-5.5', missionModel: 'claude-opus-5.5', allowSameModel: true }), null)
 })
 
 test('sound or absent provenance does not block a verdict', () => {
-  assert.equal(modelProvenanceError({ observedModel: 'gpt-5.6-sol', configuredModel: 'gpt-5.6-sol', missionModel: 'claude-sonnet-5' }), null)
+  assert.equal(modelProvenanceError({ observedModel: 'gpt-6.1-sol', configuredModel: 'gpt-6.1-sol', missionModel: 'claude-opus-5.5' }), null)
   // The platform does not always report an identity; an absent one is an
   // assurance gap already recorded elsewhere, not grounds to discard a verdict.
   for (const absent of [null, undefined, '']) {
-    assert.equal(modelProvenanceError({ observedModel: absent, configuredModel: 'gpt-5.6-sol', missionModel: 'claude-sonnet-5' }), null)
+    assert.equal(modelProvenanceError({ observedModel: absent, configuredModel: 'gpt-6.1-sol', missionModel: 'claude-opus-5.5' }), null)
   }
 })
 
@@ -720,45 +721,69 @@ test('the whole prompt travels on stdin and an oversized prompt is refused', () 
 // first real reviewer run judged an empty message and returned a FAIL that said
 // so. The prompt must reach the CLI on stdin alone.
 test('the reviewer command line never carries -p, because piped input is ignored alongside it', () => {
-  const args = reviewerArgs({ model: 'gpt-5.6-sol', maxAiCredits: 30, usageFile: 'u.json' })
+  const args = reviewerArgs({ model: 'gpt-6.1-sol', maxAiCredits: 30, usageFile: 'u.json' })
   assert.ok(!args.includes('-p'))
   assert.ok(!args.includes('--prompt'))
   assert.ok(!args.includes('-i'))
   assert.ok(!args.includes('--interactive'))
-  assert.deepEqual(args.slice(0, 2), ['--model', 'gpt-5.6-sol'])
+  assert.deepEqual(args.slice(0, 2), ['--model', 'gpt-6.1-sol'])
 })
 
 // 1709 owner directive: the reviewer's effort and context tier travel on argv,
 // because the CLI does not restore contextTier from settings.json at startup.
 test('the reviewer command line carries the configured effort and context tier', () => {
-  const args = reviewerArgs({ model: 'gpt-5.6-sol', effort: 'high', context: 'long_context', maxAiCredits: 30, usageFile: 'u.json' })
+  const args = reviewerArgs({ model: 'gpt-6.1-sol', effort: 'high', context: 'long_context', maxAiCredits: 30, usageFile: 'u.json' })
   assert.equal(args[args.indexOf('--reasoning-effort') + 1], 'high')
   assert.equal(args[args.indexOf('--context') + 1], 'long_context')
-  const bare = reviewerArgs({ model: 'gpt-5.6-sol', maxAiCredits: 30, usageFile: 'u.json' })
+  const bare = reviewerArgs({ model: 'gpt-6.1-sol', maxAiCredits: 30, usageFile: 'u.json' })
   assert.ok(!bare.includes('--reasoning-effort'))
   assert.ok(!bare.includes('--context'))
 })
 
 test('the shipped reviewer defaults are high effort on the long-context tier', () => {
-  const cfg = reviewConfig({ review: { engine: 'copilot', model: 'gpt-5.6-sol', maxAiCredits: 30, timeoutMs: 900000 } })
+  const cfg = reviewConfig({ review: { engine: 'copilot', model: 'gpt-6.1-sol', maxAiCredits: 30, timeoutMs: 900000 } })
   assert.equal(cfg.effort, 'high')
   assert.equal(cfg.context, 'long_context')
   assert.throws(() => reviewConfig({ review: { effort: 'ultra' } }), /review\.effort/)
   assert.throws(() => reviewConfig({ review: { context: '--allow-all-paths' } }), /review\.context/)
 })
 
+test('without a bootstrap review block the reviewer comes from the model registry and stays cross-model', () => {
+  const registry = JSON.parse(readFileSync(REGISTRY_FILE, 'utf8'))
+  const cfg = reviewConfig({})
+  assert.equal(cfg.engine, registry.defaults.reviewer.engine)
+  assert.equal(cfg.model, registry.defaults.reviewer.model)
+  assert.equal(cfg.effort, registry.defaults.reviewer.effort)
+  assert.notEqual(cfg.model, registry.defaults.mission.copilot.model, 'the reviewer must not be the mission model')
+})
+
+test('the shipped bootstrap reviewer matches the registry reviewer', () => {
+  const registry = JSON.parse(readFileSync(REGISTRY_FILE, 'utf8'))
+  const bootstrap = JSON.parse(readFileSync(join(HERE, 'bootstrap.json'), 'utf8'))
+  assert.equal(bootstrap.review.model, registry.defaults.reviewer.model)
+  assert.equal(bootstrap.review.effort, registry.defaults.reviewer.effort)
+})
+
 // ------------------------------------------------------- runner controls --
+
+test('the production runner falls back to the registry mission tier when no model is configured', () => {
+  const registry = JSON.parse(readFileSync(REGISTRY_FILE, 'utf8'))
+  const cfg = parseEnv({ envFile: '', environment: { AEON_BASE_URL: 'https://aeon.example', KAIROS_AEON_API_KEY: 'fixture-key' } })
+  assert.equal(cfg.model, registry.defaults.mission.copilot.model)
+  assert.equal(cfg.effort, registry.defaults.mission.copilot.effort)
+})
 
 test('the production runner accepts absent or valid effort and context settings', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aeon-runner-config-'))
   const envFile = join(dir, 'runner.env.bat')
   try {
-    writeFileSync(envFile, '@echo off\r\nset AEON_BASE_URL=https://aeon.example\r\nset KAIROS_AEON_API_KEY=fixture-key\r\nset KAIROS_COPILOT_DEFAULT_MODEL=claude-opus-5\r\n')
+    writeFileSync(envFile, '@echo off\r\nset AEON_BASE_URL=https://aeon.example\r\nset KAIROS_AEON_API_KEY=fixture-key\r\nset KAIROS_COPILOT_DEFAULT_MODEL=claude-opus-5.5\r\n')
     assert.deepEqual(parseEnv({ envFile, environment: {} }), {
       baseUrl: 'https://aeon.example',
       apiKey: 'fixture-key',
-      model: 'claude-opus-5',
-      effort: '',
+      model: 'claude-opus-5.5',
+      // Registry-known model → the same mission effort the worker applies.
+      effort: 'high',
       context: '',
     })
 
@@ -775,7 +800,7 @@ test('the production runner rejects invalid or injectable effort and context set
   const base = {
     AEON_BASE_URL: 'https://aeon.example',
     KAIROS_AEON_API_KEY: 'fixture-key',
-    KAIROS_COPILOT_DEFAULT_MODEL: 'claude-opus-5',
+    KAIROS_COPILOT_DEFAULT_MODEL: 'claude-opus-5.5',
   }
   assert.throws(() => parseEnv({ envFile: '', environment: { ...base, KAIROS_COPILOT_EFFORT: 'ultra' } }), /KAIROS_COPILOT_EFFORT/)
   assert.throws(() => parseEnv({ envFile: '', environment: { ...base, KAIROS_COPILOT_CONTEXT: 'long-context' } }), /KAIROS_COPILOT_CONTEXT/)
@@ -794,7 +819,7 @@ test('the production worker forwards the exact mission tier and records it witho
   const dir = mkdtempSync(join(tmpdir(), 'aeon-worker-env-'))
   try {
     const state = { registryPath: join(dir, 'repos.local.yaml') }
-    const cfg = { baseUrl: 'https://aeon.example', apiKey: 'fixture-key', model: 'claude-opus-5', effort: 'xhigh', context: 'long_context' }
+    const cfg = { baseUrl: 'https://aeon.example', apiKey: 'fixture-key', model: 'claude-opus-5.5', effort: 'xhigh', context: 'long_context' }
     const wrapper = createBudgetWrapper(state, cfg, {
       environment: { AEON_OS_MISSION_CREDITS: '1000' },
       target: 'C:\\fixture\\copilot.cmd',
@@ -837,7 +862,7 @@ test('the production worker forwards the exact mission tier and records it witho
       secret: 'fixture-secret',
       poll: '15000',
       heartbeat: '30000',
-      model: 'claude-opus-5',
+      model: 'claude-opus-5.5',
       effort: 'xhigh',
       context: 'long_context',
       binary: wrapper,
@@ -865,7 +890,7 @@ test('the persisted run receipt carries mission credits, effort and context', ()
       missionContext: 'long_context',
       attempts: [],
     }
-    writeFileSync(receiptPath, `${JSON.stringify(runRecord(state, { model: 'claude-opus-5' }), null, 2)}\n`)
+    writeFileSync(receiptPath, `${JSON.stringify(runRecord(state, { model: 'claude-opus-5.5' }), null, 2)}\n`)
     const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'))
     assert.deepEqual({
       credits: receipt.missionCredits,
@@ -936,8 +961,8 @@ test('a reviewer model identical to the mission model is refused before any disp
       () => runReview({
         runId: 'sandbox',
         runDir: dir,
-        attempts: attempts(2, 'claude-sonnet-5'),
-        config: { engine: 'copilot', model: 'claude-sonnet-5', maxAiCredits: 30, timeoutMs: 900_000 },
+        attempts: attempts(2, 'claude-opus-5.5'),
+        config: { engine: 'copilot', model: 'claude-opus-5.5', maxAiCredits: 30, timeoutMs: 900_000 },
         log: () => {},
       }),
       /an independent review needs a different model/,
@@ -948,9 +973,9 @@ test('a reviewer model identical to the mission model is refused before any disp
 })
 
 test('the shipped bootstrap reviewer differs from the mission model', () => {
-  const cfg = reviewConfig({ review: { engine: 'copilot', model: 'gpt-5.6-sol', maxAiCredits: 30, timeoutMs: 900000 } })
+  const cfg = reviewConfig({ review: { engine: 'copilot', model: 'gpt-6.1-sol', maxAiCredits: 30, timeoutMs: 900000 } })
   assert.equal(cfg.engine, 'copilot')
-  assert.notEqual(cfg.model, 'claude-sonnet-5')
+  assert.notEqual(cfg.model, 'claude-opus-5.5')
 })
 
 test('an unusable reviewer configuration is refused up front', () => {
@@ -985,14 +1010,18 @@ const SANDBOX_FILES = ['run.mjs', 'review.mjs', 'review-bundle.mjs', 'probe-copi
 const SANDBOX_ENV = {
   AEON_BASE_URL: 'https://127.0.0.1:9',
   KAIROS_AEON_API_KEY: 'sandbox-not-a-real-key',
-  KAIROS_COPILOT_DEFAULT_MODEL: 'claude-sonnet-5',
+  KAIROS_COPILOT_DEFAULT_MODEL: 'claude-opus-5.5',
 }
 
 function sandbox(status, attemptCount) {
   const root = mkdtempSync(join(tmpdir(), 'aeon-os-cli-'))
-  const home = join(root, 'workflows')
+  const home = join(root, 'aeon_os', 'workflows')
   mkdirSync(home, { recursive: true })
   for (const file of SANDBOX_FILES) cpSync(join(HERE, file), join(home, file))
+  // The harness reads its default models from the shared registry by a
+  // repo-relative path; mirror that layout inside the sandbox.
+  mkdirSync(join(root, 'packages', 'shared', 'src', 'ai'), { recursive: true })
+  cpSync(REGISTRY_FILE, join(root, 'packages', 'shared', 'src', 'ai', 'model-registry.json'))
   const runId = '2026-09-12T00-00-00-000Z-sandbx'
   const state = {
     version: 1,

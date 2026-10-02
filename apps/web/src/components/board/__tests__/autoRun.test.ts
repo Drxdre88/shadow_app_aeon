@@ -46,12 +46,12 @@ describe('isLaunchableMission', () => {
 
 describe('mission card view parsing', () => {
   it('keeps Agent mission fields separate from ordinary labels', () => {
-    const parsed = readMissionCard(mission({ model: 'gpt-5.6-sol', sessionIds: ['session-1'] }))
+    const parsed = readMissionCard(mission({ model: 'gpt-6.1-sol', sessionIds: ['session-1'] }))
     expect(parsed).toMatchObject({
       repo: 'arq',
       objective: 'implement',
       agent: 'copilot',
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6.1-sol',
       sessionIds: ['session-1'],
     })
   })

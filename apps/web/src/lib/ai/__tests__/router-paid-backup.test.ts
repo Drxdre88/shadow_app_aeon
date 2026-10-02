@@ -24,7 +24,7 @@ vi.mock('@ai-sdk/anthropic', () => ({ createAnthropic: vi.fn(() => (modelId: str
 import { db } from '@/lib/db'
 import { isPaidBackupEnabled } from '@/lib/kairos/paid-backup'
 import { decryptSecret } from '../crypto'
-import { AiCredentialMissingError, PaidBackupOffError, buildModelWithKey, getModelForUser } from '../router'
+import { AiCredentialMissingError, PaidBackupOffError, buildModelWithKey, getModelForUser, resolveModelForUser } from '../router'
 import { isPaidBackupOffError } from '../paid-backup-off'
 
 const CRED = { id: 'c1', ciphertext: 'x', iv: 'y', authTag: 'z' }
@@ -64,5 +64,34 @@ describe('getModelForUser — paid backup switch', () => {
     h.enabled = false
     await expect(buildModelWithKey('anthropic', 'claude-x', 'sk-direct')).resolves.toMatchObject({ modelId: 'claude-x' })
     expect(isPaidBackupEnabled).not.toHaveBeenCalled()
+  })
+})
+
+// Saved prefs (and the DB column defaults) can name retired models; the router
+// must never call one.
+describe('resolveModelForUser — retired saved models', () => {
+  const PREFS = {
+    cheapProviderId: 'anthropic', cheapModelId: 'claude-haiku-4-5-20251001',
+    standardProviderId: 'anthropic', standardModelId: 'claude-sonnet-4-6',
+    heavyProviderId: 'anthropic', heavyModelId: 'claude-opus-4-7',
+  }
+
+  it('remaps a retired heavy model to Opus 5.5 at high effort', async () => {
+    h.selects = [[PREFS], [CRED]]
+    const resolved = await resolveModelForUser('u1', 'heavy')
+    expect(resolved).toMatchObject({ providerId: 'anthropic', modelId: 'claude-opus-5-5', effort: 'high' })
+    expect(resolved.model).toMatchObject({ modelId: 'claude-opus-5-5' })
+  })
+
+  it('remaps a retired standard model and sends no effort to Haiku', async () => {
+    h.selects = [[PREFS], [CRED]]
+    expect(await resolveModelForUser('u1', 'standard')).toMatchObject({ modelId: 'claude-sonnet-5-5', effort: 'medium' })
+    h.selects = [[PREFS], [CRED]]
+    expect(await resolveModelForUser('u1', 'cheap')).toMatchObject({ modelId: 'claude-haiku-4-5', effort: null })
+  })
+
+  it('with no saved prefs uses the registry defaults', async () => {
+    h.selects = [[], [CRED]]
+    expect(await resolveModelForUser('u1', 'standard')).toMatchObject({ modelId: 'claude-opus-5-5', effort: 'medium' })
   })
 })
