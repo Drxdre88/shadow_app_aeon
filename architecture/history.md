@@ -5,6 +5,12 @@
 Reverse-chronological. The most recent work is at the top; the pre-2026-06-06 trail is preserved
 verbatim below.
 
+### 2026-10-02 (later) — Kairos 0.18 "Catch-up mornings, watched boards, voice notes" · app v0.35.0
+- **06:00 message + numbered open questions:** delivery moves to 06:00 London (cron `0 5,6 * * *`; plan window 04:00Z, settled 04:35Z). Code appends an "Open questions" block from `kairosAsk.seq` (stable per-user numbers, cap 10, 14-day expiry, `dismissed` status). `lib/kairos/ask-numbered.ts` routes `Q12: …` / `skip Q12` on Telegram before chat. Any open ask can be answered by id. New MCP/REST `list_open_kairos_asks`, `dismiss_kairos_ask` (parity test).
+- **Watched boards:** `settings.kairosFeed` set via `setProjectKairosFeed` (merge; owner only) — action, MCP `set_project_kairos_feed`, REST `PUT /api/v1/projects/{id}/kairos-feed`. `update_project` merges settings. Same-day `board_card_done` memories (agentic, origin activity, excluded from belief signals and BackUp support). Board-day pages gain a summary line; cortex reads watched boards' finished titles. Connect Kairos gains Watched (boards + core repos) and Voice notes views.
+- **Voice notes:** MCP `kairos_voice_note` / REST `POST /api/v1/kairos/voice-notes` stage verbatim parts as pending agent proposals (`voiceNote:{noteId,part,of}`); `confirmVoiceNote` (UI only) accepts them as operator reflections; belief extraction reads up to 2,000 chars of confirmed parts.
+- **Constitution seed on Max:** thinking kind `constitution_seed`; the cron moves to `58 5 * * 1` as fallback. BRIEF recipe, `run_recipe` and `/api/v1/recipes/run` retired.
+
 ### 2026-10-02 — Kairos 0.17 "Simplified brain: one Max routine" · app v0.34.0
 - **Audit first:** each thinking job was traced to its readers and checked against live data (`research/kairos_0210/02_brain_jobs_audit.md`). 14 kinds stay. Retired: `brief`, `introspection`, `contradiction`, `micro_consolidate`, and the `briefer`, `introspection`, `contradiction-scan`, `micro-consolidate` and `memory-dedup` crons with their handlers and libs.
 - **Daily message without briefs:** it plans from 05:30Z once aether, ideas and ask are settled (from 06:25Z regardless), and reads each area's latest cortex headline (`readAreaHeadlines`). The inbox pins today's message, filters out old contradiction notices, and the sidebar briefing button and advisory feed are gone.

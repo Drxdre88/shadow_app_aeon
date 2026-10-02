@@ -1,7 +1,7 @@
 # 34 — Beliefs, Constitution and Strategy (P2)
 
 Owner steer (3009): Kairos keeps **two minds side by side** — one aligned with the operator, one that grows on its own —
-so the operator can compare them and judge whether both are worth keeping. One daily message at **08:00 UK**,
+so the operator can compare them and judge whether both are worth keeping. One daily message at **06:00 UK** (08:00 until 0.18),
 a weekly review, Telegram chat on the Max plan. Evidence base: `research/kairos_2909/04_sota_five_modules.md` §C
 (Philosophical / Strategic rows). Builds on the memory engine (doc 32) and thinking queue (doc 33).
 
@@ -36,9 +36,11 @@ Both are excluded from Merge and never machine-deleted. `sourceMetadata.belief`:
 ## 2. Constitution + drift
 
 - Seed: a first draft is generated from Dominion vision/mission/objectives + top reflections and written as a
-  **proposal** (`inbound`, `introspection:true`, `kind:'constitution_amendment'`). Cron `/api/cron/constitution-seed`
-  runs Mondays 04:20Z (`20 4 * * 1`) for users with an active Dominion and a live BYOK credential: it drafts only when
-  there is no constitution and no pending amendment (a dismissed draft is re-drafted the next Monday). Accepting the
+  **proposal** (`inbound`, `introspection:true`, `kind:'constitution_amendment'`). Since 0.18 it is the thinking kind
+  `constitution_seed` (Mondays, window 04:00–05:56Z, key `constitution_seed:<ISO week>`), answered by the brain routine on
+  the Max plan with no paid key needed; the cron `/api/cron/constitution-seed` (`58 5 * * 1`) is only the fallback for users
+  with a BYOK credential and skips when the job is done. It drafts only when there is no constitution and no pending
+  amendment (a dismissed draft is re-drafted the next Monday). Accepting the
   proposal in the inbox writes the `constitution` row and ends seeding. Every later change is also an amendment
   proposal; acceptance supersedes the previous version.
 - Format: numbered principles, each with its **reason** (reasons over rules, Claude-constitution style).
@@ -48,26 +50,32 @@ Both are excluded from Merge and never machine-deleted. `sourceMetadata.belief`:
   cosine similarity to the baseline. Alert (surfaced in the daily message, not a separate ping) when mean similarity
   < 0.8 or ≥ 3 probes < 0.6. Re-pin only on constitution change.
 
-## 3. One daily message (08:00 UK)
+## 3. One daily message (06:00 UK, since 0.18)
 
-- Cron `/api/cron/daily-message` at `0 7 * * *` and `0 8 * * *`; runs only when Europe/London local hour is 8.
-- Briefer moves to 06:15Z, synthesis-health to 06:45Z so both are fresh in every season.
-- Reads: today's briefs (advisories — still written, still feed sidebar/inbox), Aether, board-day page, belief changes
-  (promotions, new aligned beliefs, drift alert), the pending ask (≤1 question), health rollup, Monday mind compare.
+- Cron `/api/cron/daily-message` at `0 5 * * *` and `0 6 * * *`; runs only when the Europe/London hour is 6.
+- Reads each area's latest cortex headline (the nine briefs were retired in 0.17), Aether, board-day pages, belief
+  changes (promotions, new aligned beliefs, drift alert), the health rollup and the Monday mind compare.
+- **Open questions** (0.18): the message ends with a code-built block listing every unanswered Kairos question,
+  oldest first, with a stable number and age — `Q12 · 3 days · <question>` — and a footer explaining how to answer.
+  The model never writes or renumbers it. Up to 10 questions stay open for 14 days; Kairos keeps asking one new
+  question a day until the backlog is full (`backlog_full`). Numbers are `kairosAsk.seq`, assigned per user at creation, starting at Q10 so Q1–Q4 never read like quarters. Only messages that start with a Q label or `skip` are routed, and a short question back (`Q12: what do you mean?`) goes to chat.
+- **Answering by number**: on Telegram, a message with `Q12: …` (several blocks allowed) or `skip Q12` is routed
+  deterministically before chat (`lib/kairos/ask-numbered.ts`) and acknowledged in one line
+  ("✓ Q12, Q14 · still open: Q15"). Anything else goes to chat as before. The inbox shows every open question with
+  its own answer box and Dismiss. MCP/REST: `list_open_kairos_asks` / `GET /api/v1/kairos/asks`,
+  `dismiss_kairos_ask` / `POST /api/v1/kairos/asks/{id}/dismiss`.
 - Delivery: `deliverKairosSpeak` with `digest:true` (keeps throttle/gate exclusions), `cronName:'daily-message'`,
-  externalId `kairos-daily:${londonDate}`. Same guard as the digest (no `#` headings, no URLs, length cap) with
-  deterministic fallback. Evening digest cron is retired.
+  externalId `kairos-daily:${londonDate}`. Same guard as the digest (no `#` headings, no URLs, length cap ≤ 4000 for
+  Telegram — question lines shrink first, never the list) with deterministic fallback.
 - Once per London date: the already-sent re-check and the send run under a transaction-scoped
   `pg_try_advisory_xact_lock(hashtext(userId), hashtext('kairos-daily:<date>'))`, so an overlapping run (manual
   `?force=1`, platform retry) skips with `delivery in flight` instead of double-sending.
 - Telegram not delivered (channel unset or API failure) → the message is still in the inbox; the run reports
-  `sent_inbox_only` and writes a `telegram_not_delivered` failure trace (health shows it). It is not retried: the
-  other UTC slot is London-gated off, and nothing but speak may talk to Telegram.
-- Max routine: kind `daily_message` planned (by a claim or the hourly sweep) once today's briefs exist, deadline 5 min
-  before delivery; the handler returns the guarded draft as the job's `output.draft`. The cron delivers that draft if
-  the job is done, else writes it on the paid key, else deterministic. The optional `Kairos morning` routine (doc 33)
-  answers it on the Max plan.
-
+  `sent_inbox_only` and writes a `telegram_not_delivered` failure trace (health shows it). It is not retried.
+- Max routine: kind `daily_message` planned from 04:00Z once tonight's aether, ideas and question are settled (from
+  04:35Z regardless), only when the UTC date equals the London date; deadline 5 min before delivery. The brain routine's
+  04:40Z run drafts it in summer, the 05:40Z run in winter. The cron delivers that draft if the job is done, else writes
+  it on the paid key, else deterministic text.
 ## 4. Weekly review
 
 Kind `weekly_review`, planned Mondays from 05:00Z (by a claim or the hourly sweep): inputs = last 7 days' board-week/board-day pages, Dominion objectives,
@@ -86,7 +94,7 @@ reply per user turn.
 ## 6. Loose ends from P1
 
 - Reactions rescore immediately (single-row Standing compute + update).
-- Asks: answered → outcome positive; expired unanswered (72h) → status `expired` + outcome negative (ask-mine sweep).
+- Asks: answered → outcome positive; expired unanswered (14 days since 0.18) → status `expired` + outcome negative (ask-mine sweep); skipped by the owner → status `dismissed`, no outcome.
 - Chat tool `undo_kairos_change` — the ONE mutating chat tool: reverts a promote/decay/merge op matched by title,
   only on an explicit operator request; logs the revert like MCP `revert_memory_op`.
 
