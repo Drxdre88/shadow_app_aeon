@@ -44,6 +44,7 @@ import {
   applyMerge,
   MemoryOpRevertRaceError,
   updatePendingProposal,
+  updatePendingProposals,
 } from '../memory-candidates'
 
 const USER = 'user-1'
@@ -117,6 +118,71 @@ describe('updatePendingProposal', () => {
     returningQueue.push([{ id: 'p' }])
     await expect(updatePendingProposal(USER, 'p', { sourceMetadata: {} }, { runId: 'run-1', ops: [decayOp] }))
       .rejects.toThrow('memory_ops insert failed')
+  })
+})
+
+describe('updatePendingProposals (batched BackUp writes)', () => {
+  const op = (id: string) => ({
+    memoryId: id,
+    step: 'backup',
+    op: 'decay' as const,
+    before: { status: 'pending', archivedAt: null },
+    after: { status: 'decayed', archivedAt: NOW.toISOString() },
+    reason: `no backing ${id}`,
+  })
+  const writes = [
+    { id: 'a', patch: { sourceMetadata: { status: 'decayed' }, archivedAt: NOW, updatedAt: NOW }, ops: [op('a')] },
+    { id: 'b', patch: { sourceMetadata: { status: 'decayed' }, archivedAt: NOW, updatedAt: NOW }, ops: [op('b')] },
+    { id: 'c', patch: { sourceMetadata: { status: 'pending', engine: { support: {} } } }, ops: [] },
+  ]
+
+  function txReturning(rows: Array<{ id: string }>) {
+    const tx = makeTx()
+    tx.execute.mockResolvedValue({ rows })
+    vi.mocked(db.transaction).mockImplementationOnce(async (fn) => fn(tx as never))
+    return tx
+  }
+
+  it('one guarded set-based UPDATE, then one op per landed memory — all in ONE transaction', async () => {
+    const tx = txReturning([{ id: 'a' }, { id: 'c' }])
+    returningQueue.push([{ id: 'op-a' }])
+
+    const landed = await updatePendingProposals(USER, writes, 'run-1')
+
+    expect([...landed].sort()).toEqual(['a', 'c'])
+    expect(db.transaction).toHaveBeenCalledOnce()
+    expect(tx.execute).toHaveBeenCalledTimes(2)
+    const dialect = new PgDialect()
+    expect(dialect.sqlToQuery(tx.execute.mock.calls[0][0] as SQL).sql).toBe('SET LOCAL statement_timeout = 10000')
+    const q = dialect.sqlToQuery(tx.execute.mock.calls[1][0] as SQL)
+    expect(q.sql).toContain('FROM (VALUES')
+    expect(q.sql).toContain("source_metadata->>'status' = 'pending'")
+    expect(q.sql).toContain('archived_at IS NULL')
+    expect(q.sql).toContain('RETURNING m.id')
+    expect(q.params).toEqual(expect.arrayContaining(['a', 'b', 'c', USER, JSON.stringify({ status: 'decayed' }), NOW.toISOString()]))
+    // 'b' lost the pending guard → no op; 'c' landed but is bookkeeping (no op).
+    const inserts = calls.filter((c) => c.table === memoryOps)
+    expect(inserts).toHaveLength(1)
+    expect(inserts[0].values).toEqual([expect.objectContaining({
+      userId: USER, runId: 'run-1', memoryId: 'a', step: 'backup', op: 'decay', before: op('a').before, after: op('a').after,
+    })])
+  })
+
+  it('inserts no ops when nothing landed', async () => {
+    txReturning([])
+    expect((await updatePendingProposals(USER, writes, 'run-1')).size).toBe(0)
+    expect(calls.filter((c) => c.table === memoryOps)).toEqual([])
+  })
+
+  it('a failed op insert rejects the whole batch (rolled back with it)', async () => {
+    const tx = txReturning([{ id: 'a' }])
+    tx.insert = () => { throw new Error('memory_ops insert failed') }
+    await expect(updatePendingProposals(USER, writes, 'run-1')).rejects.toThrow('memory_ops insert failed')
+  })
+
+  it('does nothing for an empty batch', async () => {
+    expect((await updatePendingProposals(USER, [], 'run-1')).size).toBe(0)
+    expect(db.transaction).not.toHaveBeenCalled()
   })
 })
 

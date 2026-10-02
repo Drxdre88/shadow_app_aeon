@@ -90,10 +90,10 @@ export function KairosGuideContent() {
           kinds of item can land there:
         </P>
         <ul className="flex flex-col gap-2 text-[12.5px] text-white/70 leading-relaxed pl-4">
-          <Bullet><strong>Today&apos;s brief</strong> — the daily per-Dominion advisory.</Bullet>
+          <Bullet><strong>Today&apos;s message</strong> — the 08:00 message, pinned until you clear it.</Bullet>
           <Bullet><strong>Pending ask</strong> — one question Kairos decided was worth asking. Answer it right there in the inbox.</Bullet>
           <Bullet><strong>Notify</strong> — something he judged urgent enough to interrupt you for.</Bullet>
-          <Bullet><strong>Proposal</strong> — a candidate thought from nightly introspection. Accept or dismiss it.</Bullet>
+          <Bullet><strong>Proposal</strong> — a candidate thought, such as an idea from the nightly idea contest. Accept or dismiss it.</Bullet>
         </ul>
         <P>
           Telegram is the second channel for the same voice — two-way, so replies you send there
@@ -113,7 +113,7 @@ export function KairosGuideContent() {
       <Section title="The Daily Message">
         <P>
           One guaranteed message every morning at 08:00 UK time, to the Will inbox and Telegram:
-          today&apos;s briefs, what the overnight thinking concluded, what you finished on your board
+          where each area stands, what the overnight thinking concluded, what you finished on your board
           yesterday, any change in what Kairos believes, a drift warning if there is one, and at
           most one question.
         </P>

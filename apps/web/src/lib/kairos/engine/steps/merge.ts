@@ -53,8 +53,11 @@ export const MERGE_EXCLUDED_STREAMS = ['reflection', 'concept', 'cortex', 'aethe
 
 export class MergeStep implements Step {
   readonly name = 'merge'
+  readonly budgetMs?: number
 
-  constructor(private readonly opts: { cap?: number } = {}) {}
+  constructor(private readonly opts: { cap?: number; budgetMs?: number } = {}) {
+    this.budgetMs = opts.budgetMs
+  }
 
   async run(ctx: EngineRunContext): Promise<StepResult> {
     const since = new Date(ctx.now.getTime() - MERGE_WINDOW_HOURS * 3_600_000)

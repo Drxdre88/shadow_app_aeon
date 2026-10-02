@@ -39,9 +39,12 @@ import { getThinkingHandlers } from './registry'
 //     deadline, run by the sweep's paid-key fallback.
 // ─────────────────────────────────────────────────────────────────────────
 
-// Prerequisite order: a later kind may depend on jobs an earlier kind just
-// planned in the same pass (aether waits on open cortex jobs).
-const PLAN_ORDER: ThinkingJobKind[] = [
+// Every kind the queue plans, in prerequisite order: a later kind may depend
+// on jobs an earlier kind just planned in the same pass (aether waits on open
+// cortex jobs). Chat is never planned (the Telegram webhook creates it). Must
+// match the routine catalog's BRAIN_JOBS (minus chat) — a test enforces it, so
+// a kind cannot be added without a routine to answer it.
+export const PLANNED_THINKING_KINDS: readonly ThinkingJobKind[] = [
   // Archetypes wait on tonight's chat distill; cortex waits on archetypes.
   'chat_distill', 'archetype',
   'cortex', 'concept', 'aether',
@@ -49,11 +52,12 @@ const PLAN_ORDER: ThinkingJobKind[] = [
   // Idea tournament after aether (its tensions feed generation); judge after
   // generate. Both before the daily message, which shows the idea of the day.
   'idea_generate', 'idea_judge',
-  'ask_mine', 'contradiction',
-  // Briefs before the daily message, which plans once today's briefs exist.
-  'brief', 'introspection', 'micro_consolidate',
-  'daily_message', 'chat',
+  'ask_mine',
+  // Last: the daily message reads what the night produced.
+  'daily_message',
 ]
+
+const PLAN_ORDER: readonly ThinkingJobKind[] = [...PLANNED_THINKING_KINDS, 'chat']
 
 // Kinds whose handler.fallback does real work (a paid heavy-tier model call),
 // run by the hourly sweep. Every other kind's fallback is its own cron, so the
@@ -65,7 +69,8 @@ export const SWEEP_FALLBACK_KINDS: readonly ThinkingJobKind[] = [
 ]
 
 // Who covers a job the routine did not complete — used in error texts.
-const FALLBACK_OWNER: Record<ThinkingJobKind, string> = {
+// Partial: a retired kind's leftover row gets the generic text.
+const FALLBACK_OWNER: Partial<Record<ThinkingJobKind, string>> = {
   cortex: 'the 03:00 UTC cortex-regen cron',
   aether: 'the 03:15 UTC aether-regen cron',
   concept: 'the hourly thinking-sweep API fallback',
@@ -80,18 +85,16 @@ const FALLBACK_OWNER: Record<ThinkingJobKind, string> = {
   chat_distill: 'the 02:00 UTC chat-distill cron',
   archetype: 'the 02:30 UTC archetype-synthesis cron',
   ask_mine: 'the 04:30 UTC ask-mine cron',
-  contradiction: 'the 05:00 UTC contradiction-scan cron',
-  brief: 'the 06:15 UTC briefer cron',
-  introspection: 'the 06:30 UTC introspection cron',
-  micro_consolidate: 'the next micro-consolidate cron slot',
+}
+
+function fallbackOwner(kind: ThinkingJobKind): string {
+  return FALLBACK_OWNER[kind] ?? 'nothing (this kind is retired)'
 }
 
 // Kinds the hourly sweep never plans: concept clustering is heavy and is
 // enqueued by the nightly engine (and claims); chat jobs come only from the
-// Telegram webhook; a micro_consolidate fold is planned only on claim, so its
-// window ends when the routine reads it (a fold planned by the :50 sweep
-// would drop whatever lands between the sweep and the routine's claim).
-export const SWEEP_PLAN_SKIP_KINDS: readonly ThinkingJobKind[] = ['concept', 'chat', 'micro_consolidate']
+// Telegram webhook.
+export const SWEEP_PLAN_SKIP_KINDS: readonly ThinkingJobKind[] = ['concept', 'chat']
 
 export function sweepOwnsFallback(kind: ThinkingJobKind): boolean {
   return SWEEP_FALLBACK_KINDS.includes(kind)
@@ -146,19 +149,8 @@ export const CHAT_JOB_INSTRUCTIONS = [
   'Submit it with submit_thinking_job { jobId, claimToken, text } before `deadlineAt`.',
 ].join('\n')
 
-// Kinds whose answer is plain markdown, not JSON (the brief and the delta
-// fold are prose in the paid path too). Chat has its own instructions.
-export const TEXT_ANSWER_KINDS: readonly ThinkingJobKind[] = ['brief', 'micro_consolidate']
-
-export const TEXT_JOB_INSTRUCTIONS = [
-  'Treat `system` as your system prompt and `prompt` as the user message, and write the markdown answer exactly as that system prompt demands.',
-  'Reply with the plain markdown only — no JSON, no code fence around the whole answer, no preamble, no tool calls, no memory writes.',
-  'Submit it with submit_thinking_job { jobId, claimToken, text } before `deadlineAt`.',
-].join('\n')
-
 export function jobInstructions(kind: ThinkingJobKind): string {
-  if (kind === 'chat') return CHAT_JOB_INSTRUCTIONS
-  return TEXT_ANSWER_KINDS.includes(kind) ? TEXT_JOB_INSTRUCTIONS : THINKING_JOB_INSTRUCTIONS
+  return kind === 'chat' ? CHAT_JOB_INSTRUCTIONS : THINKING_JOB_INSTRUCTIONS
 }
 
 export type SubmitErrorCode = 'not_found' | 'not_claimed' | 'bad_token' | 'deadline_passed' | 'apply_failed'
@@ -232,8 +224,7 @@ export class ThinkingQueue {
     // chat-only claim must not pay for planning the nightly kinds. Without
     // `kinds`, claimNextJob never returns a chat job (explicit-only kind).
     // A kinds-filtered claim plans only those kinds: each routine pays only for
-    // its own planning (some plans, like the contradiction probe search, are
-    // heavy) and the hourly sweep still plans everything on schedule.
+    // its own planning and the hourly sweep still plans everything on schedule.
     const chatOnly = kinds !== undefined && kinds.length > 0 && kinds.every((k) => k === 'chat')
     if (!chatOnly) await this.planDue(userId, now, kinds && kinds.length > 0 ? { onlyKinds: kinds } : {})
     return claimNextJob(userId, kinds)
@@ -256,7 +247,7 @@ export class ThinkingQueue {
       return { ok: false, code: 'bad_token', error: 'claimToken does not match the current claim', ...base }
     }
     if (job.deadlineAt.getTime() <= now.getTime()) {
-      const error = `deadline_passed: deadline was ${job.deadlineAt.toISOString()}; ${FALLBACK_OWNER[job.kind]} owns this job now`
+      const error = `deadline_passed: deadline was ${job.deadlineAt.toISOString()}; ${fallbackOwner(job.kind)} owns this job now`
       await this.closeUnanswered(userId, job, claimToken, error)
       return { ok: false, code: 'deadline_passed', error, ...base }
     }
@@ -272,7 +263,7 @@ export class ThinkingQueue {
     }
 
     if (!outcome.ok) {
-      const error = `${outcome.reason}; ${FALLBACK_OWNER[job.kind]} covers this job`
+      const error = `${outcome.reason}; ${fallbackOwner(job.kind)} covers this job`
       await this.closeUnanswered(userId, job, claimToken, error)
       return { ok: false, code: 'apply_failed', error, ...base }
     }
@@ -359,6 +350,8 @@ export async function claimThinkingJob(
   userId: string,
   input: { kinds?: ThinkingJobKind[] } = {},
 ): Promise<{ job: ClaimedJobView | null }> {
+  // An explicit but empty filter (every named kind retired) claims nothing.
+  if (input.kinds && input.kinds.length === 0) return { job: null }
   const job = await queue().claim(userId, input.kinds)
   if (!job || !job.claimToken) return { job: null }
   return {

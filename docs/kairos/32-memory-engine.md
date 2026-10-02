@@ -30,9 +30,13 @@ Superseded / invalid / archived rows get standing 0 and are never rescored.
 1. **Gate/Merge** — the day's new rows with embeddings: cosine ≥ 0.95 to an older live row of the same user
    and stream class → the newer is linked `supersedes`-style as a *reinforcement* of the older (older gets
    `useCount+1`, newer superseded), logged `merge`. Never for reflections or pinned rows.
-2. **Weigh + Age** — recompute standing for rows touched in the last 36h plus a rolling slice of the rest
-   (cap per run), logged `score` only when |Δ| ≥ 0.05.
-3. **BackUp (candidate tier)** — pending introspection/contradiction proposals are *candidates*. A candidate
+2. **Weigh + Age** — recompute standing for rows touched in the last 36h plus a rotating id-hash bucket of
+   the rest (each row re-examined about every 6 nights). A standing is written only when it moved ≥ 0.05 from
+   the **stored** value (so small drifts accumulate and cross later), always with a `score` op; first scores
+   are written without one. Writes go in 100-row transactions (0.17).
+3. **BackUp (candidate tier)** — pending introspection/contradiction proposals are *candidates* (both
+   producers retired in 0.17; the backlog drains). Works in chunks of 25 (support searches 5 at a time, one
+   transaction per chunk). A candidate
    is **promoted** when ≥ 2 independent supports exist on ≥ 2 distinct UTC days, where a support is a live
    non-meta memory created after the proposal whose embedding cosine ≥ 0.80 to it, and **independent** means:
    not written by Kairos itself (`source ∉ {cron,system}` unless a Hangar mission or board page), not the

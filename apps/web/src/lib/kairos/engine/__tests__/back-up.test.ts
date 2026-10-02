@@ -4,13 +4,16 @@ vi.mock('@/lib/data/memory-candidates', () => ({
   listPendingProposalCandidates: vi.fn(),
   findProposalSupports: vi.fn(),
   updatePendingProposal: vi.fn(),
+  updatePendingProposals: vi.fn(),
 }))
 
 import {
   findProposalSupports,
   listPendingProposalCandidates,
   updatePendingProposal,
+  updatePendingProposals,
   type ProposalCandidateRow,
+  type ProposalWrite,
   type SupportRow,
 } from '@/lib/data/memory-candidates'
 import { BackUpStep, summariseSupport } from '../steps/back-up'
@@ -57,14 +60,28 @@ function support(id: string, at: string, overrides: Partial<SupportRow> = {}): S
 // An operator-origin support (unlabelled 'manual' row → inferred operator).
 const OPERATOR: Partial<SupportRow> = { source: 'manual' }
 
-// Live runs: ops travel with the write (4th arg) so they share its transaction.
+// Live runs: a chunk's writes go to updatePendingProposals with their ops, so
+// they share its transaction; by default every write lands.
+function batchWrites(): ProposalWrite[] {
+  return vi.mocked(updatePendingProposals).mock.calls.flatMap((c) => [...c[1]])
+}
+
+// Ops of the writes that landed (batched, or one-by-one after a failed batch).
+const landedIds = new Set<string>()
 function liveOps(): MemoryOpInput[] {
-  return vi.mocked(updatePendingProposal).mock.calls.flatMap((c) => [...(c[3]?.ops ?? [])])
+  const batched = batchWrites().filter((w) => landedIds.has(w.id)).flatMap((w) => [...w.ops])
+  const single = vi.mocked(updatePendingProposal).mock.calls.flatMap((c) => [...(c[3]?.ops ?? [])])
+  return [...batched, ...single]
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  landedIds.clear()
   vi.mocked(updatePendingProposal).mockResolvedValue(true)
+  vi.mocked(updatePendingProposals).mockImplementation(async (_u, writes) => {
+    for (const w of writes) landedIds.add(w.id)
+    return new Set(writes.map((w) => w.id))
+  })
   vi.mocked(findProposalSupports).mockResolvedValue([])
 })
 
@@ -142,18 +159,19 @@ describe('BackUpStep', () => {
     expect(result).toMatchObject({ step: 'backup', examined: 1, changed: 1, opsWritten: 1 })
     // Live: nothing buffered — the op rides in the write's own transaction.
     expect(ctx.ops).toEqual([])
-    expect(updatePendingProposal).toHaveBeenCalledWith(USER, PROPOSAL, {
-      sourceMetadata: expect.objectContaining({
-        status: 'promoted',
-        promotedAt: NOW.toISOString(),
-        engine: { support: { independentSupports: 2, distinctDays: 2, anchoredSupports: 1 }, promotedAt: NOW.toISOString() },
-        citations: ['c1'],
-      }),
-      streamClass: 'idea',
-      confidence: 0.6,
-      updatedAt: NOW,
-    }, {
-      runId: 'run-1',
+    expect(updatePendingProposals).toHaveBeenCalledWith(USER, [{
+      id: PROPOSAL,
+      patch: {
+        sourceMetadata: expect.objectContaining({
+          status: 'promoted',
+          promotedAt: NOW.toISOString(),
+          engine: { support: { independentSupports: 2, distinctDays: 2, anchoredSupports: 1 }, promotedAt: NOW.toISOString() },
+          citations: ['c1'],
+        }),
+        streamClass: 'idea',
+        confidence: 0.6,
+        updatedAt: NOW,
+      },
       ops: [expect.objectContaining({
         memoryId: PROPOSAL,
         step: 'backup',
@@ -161,7 +179,7 @@ describe('BackUpStep', () => {
         before: { status: 'pending', streamClass: 'agentic', confidence: 0.45 },
         after: { status: 'promoted', streamClass: 'idea', confidence: 0.6 },
       })],
-    })
+    }], 'run-1')
   })
 
   it('does not promote two supports on the same day; records progress without an op', async () => {
@@ -175,9 +193,11 @@ describe('BackUpStep', () => {
     await new BackUpStep().run(ctx)
 
     expect(ctx.ops).toEqual([])
-    expect(updatePendingProposal).toHaveBeenCalledWith(USER, PROPOSAL, {
-      sourceMetadata: expect.objectContaining({ status: 'pending', engine: { support: { independentSupports: 2, distinctDays: 1, anchoredSupports: 0 } } }),
-    })
+    expect(batchWrites()).toEqual([{
+      id: PROPOSAL,
+      patch: { sourceMetadata: expect.objectContaining({ status: 'pending', engine: { support: { independentSupports: 2, distinctDays: 1, anchoredSupports: 0 } } }) },
+      ops: [],
+    }])
   })
 
   it('does not promote a proposal backed only by agent-session summaries (P2.5 anchor)', async () => {
@@ -191,12 +211,16 @@ describe('BackUpStep', () => {
     await new BackUpStep().run(makeCtx())
 
     expect(liveOps()).toEqual([])
-    expect(updatePendingProposal).toHaveBeenCalledWith(USER, PROPOSAL, {
-      sourceMetadata: expect.objectContaining({
-        status: 'pending',
-        engine: { support: { independentSupports: 3, distinctDays: 3, anchoredSupports: 0 } },
-      }),
-    })
+    expect(batchWrites()).toEqual([{
+      id: PROPOSAL,
+      patch: {
+        sourceMetadata: expect.objectContaining({
+          status: 'pending',
+          engine: { support: { independentSupports: 3, distinctDays: 3, anchoredSupports: 0 } },
+        }),
+      },
+      ops: [],
+    }])
   })
 
   it.each([
@@ -219,9 +243,11 @@ describe('BackUpStep', () => {
       sourceMetadata: { introspection: true, status: 'pending', engine: { support: { independentSupports: 0, distinctDays: 0 } } },
     })])
     await new BackUpStep().run(makeCtx())
-    expect(updatePendingProposal).toHaveBeenCalledWith(USER, PROPOSAL, {
-      sourceMetadata: expect.objectContaining({ engine: { support: { independentSupports: 0, distinctDays: 0, anchoredSupports: 0 } } }),
-    })
+    expect(batchWrites()).toEqual([{
+      id: PROPOSAL,
+      patch: { sourceMetadata: expect.objectContaining({ engine: { support: { independentSupports: 0, distinctDays: 0, anchoredSupports: 0 } } }) },
+      ops: [],
+    }])
   })
 
   it('skips the write when the recorded support is unchanged', async () => {
@@ -229,6 +255,7 @@ describe('BackUpStep', () => {
       sourceMetadata: { introspection: true, status: 'pending', engine: { support: { independentSupports: 0, distinctDays: 0, anchoredSupports: 0 } } },
     })])
     const result = await new BackUpStep().run(makeCtx())
+    expect(updatePendingProposals).not.toHaveBeenCalled()
     expect(updatePendingProposal).not.toHaveBeenCalled()
     expect(result.changed).toBe(0)
   })
@@ -245,20 +272,25 @@ describe('BackUpStep', () => {
       before: { status: 'pending', archivedAt: null },
       after: { status: 'decayed', archivedAt: NOW.toISOString() },
     })])
-    expect(updatePendingProposal).toHaveBeenCalledWith(USER, PROPOSAL, expect.objectContaining({
-      sourceMetadata: expect.objectContaining({
-        status: 'decayed',
-        engine: expect.objectContaining({ decayedAt: NOW.toISOString() }),
+    expect(batchWrites()).toEqual([expect.objectContaining({
+      id: PROPOSAL,
+      patch: expect.objectContaining({
+        sourceMetadata: expect.objectContaining({
+          status: 'decayed',
+          engine: expect.objectContaining({ decayedAt: NOW.toISOString() }),
+        }),
+        archivedAt: NOW,
       }),
-      archivedAt: NOW,
-    }), expect.objectContaining({ runId: 'run-1' }))
+    })])
+    expect(updatePendingProposals).toHaveBeenCalledWith(USER, expect.any(Array), 'run-1')
   })
 
-  it('reports a write whose op insert failed (rolled back) and keeps going', async () => {
+  it('a failed batch is retried one proposal per transaction: the bad one is reported, the rest still land', async () => {
     vi.mocked(listPendingProposalCandidates).mockResolvedValue([
       candidate({ id: 'bad', createdAt: new Date('2026-09-01T00:00:00Z') }),
       candidate({ id: 'good', createdAt: new Date('2026-09-02T00:00:00Z') }),
     ])
+    vi.mocked(updatePendingProposals).mockRejectedValueOnce(new Error('memory_ops insert failed'))
     vi.mocked(updatePendingProposal)
       .mockRejectedValueOnce(new Error('memory_ops insert failed'))
       .mockResolvedValueOnce(true)
@@ -267,20 +299,28 @@ describe('BackUpStep', () => {
 
     expect(result).toMatchObject({ examined: 2, changed: 1, opsWritten: 1, errors: ['bad: memory_ops insert failed'] })
     expect(result.notes).toContain('failed=1')
+    expect(updatePendingProposal).toHaveBeenLastCalledWith(USER, 'good', expect.objectContaining({ archivedAt: NOW }), {
+      runId: 'run-1',
+      ops: [expect.objectContaining({ memoryId: 'good', op: 'decay' })],
+    })
   })
 
-  it('stops before the next candidate once the deadline has passed', async () => {
+  it('stops before the next chunk once the deadline has passed', async () => {
     vi.mocked(listPendingProposalCandidates).mockResolvedValue([
       candidate({ id: 'a', createdAt: new Date('2026-09-01T00:00:00Z') }),
       candidate({ id: 'b', createdAt: new Date('2026-09-02T00:00:00Z') }),
     ])
     let deadline = Date.now() + 60_000
-    vi.mocked(updatePendingProposal).mockImplementation(async () => { deadline = 0; return true })
+    vi.mocked(updatePendingProposals).mockImplementation(async (_u, writes) => {
+      deadline = 0
+      for (const w of writes) landedIds.add(w.id)
+      return new Set(writes.map((w) => w.id))
+    })
     const ctx = { ...makeCtx(), get deadline() { return deadline } }
 
-    const result = await new BackUpStep().run(ctx)
+    const result = await new BackUpStep({ chunk: 1 }).run(ctx)
 
-    expect(updatePendingProposal).toHaveBeenCalledTimes(1)
+    expect(updatePendingProposals).toHaveBeenCalledTimes(1)
     expect(result).toMatchObject({ examined: 1, changed: 1, outOfTime: true })
     expect(result.notes).toContain('out of time after 1/2')
   })
@@ -308,6 +348,7 @@ describe('BackUpStep', () => {
 
     expect(ctx.ops.map((o) => o.op)).toEqual(['promote', 'decay'])
     expect(result.changed).toBe(2)
+    expect(updatePendingProposals).not.toHaveBeenCalled()
     expect(updatePendingProposal).not.toHaveBeenCalled()
   })
 
@@ -317,13 +358,14 @@ describe('BackUpStep', () => {
       support('a', '2026-09-26T10:00:00Z', OPERATOR),
       support('b', '2026-09-27T10:00:00Z'),
     ])
-    vi.mocked(updatePendingProposal).mockResolvedValue(false)
+    vi.mocked(updatePendingProposals).mockResolvedValue(new Set())
     const ctx = makeCtx()
 
     const result = await new BackUpStep().run(ctx)
 
     expect(ctx.ops).toEqual([])
-    expect(result.changed).toBe(0)
+    expect(liveOps()).toEqual([])
+    expect(result).toMatchObject({ changed: 0, opsWritten: 0 })
   })
 
   it('does not re-promote a vetoed promotion or re-decay a vetoed decay', async () => {
@@ -364,5 +406,90 @@ describe('BackUpStep', () => {
 
     expect(liveOps()).toEqual([])
     expect(ctx.ops).toEqual([])
+  })
+})
+
+describe('BackUpStep — batched writes (2026-10-02 backlog at ~0.9s/op)', () => {
+  const old = (id: string, day: number) => candidate({ id, title: `t-${id}`, createdAt: new Date(Date.UTC(2026, 8, day)) })
+
+  it('writes each chunk in one call with exactly one op per changed memory and its own before/after', async () => {
+    const rows = ['a', 'b', 'c', 'd', 'e'].map((id, i) => old(id, i + 1))
+    vi.mocked(listPendingProposalCandidates).mockResolvedValue(rows)
+
+    const result = await new BackUpStep({ chunk: 2 }).run(makeCtx())
+
+    expect(updatePendingProposals).toHaveBeenCalledTimes(3)
+    expect(vi.mocked(updatePendingProposals).mock.calls.map((c) => c[1].map((w) => w.id))).toEqual([['a', 'b'], ['c', 'd'], ['e']])
+    const ops = liveOps()
+    expect(ops.map((o) => o.memoryId)).toEqual(['a', 'b', 'c', 'd', 'e'])
+    for (const w of batchWrites()) {
+      expect(w.ops).toEqual([{
+        memoryId: w.id,
+        step: 'backup',
+        op: 'decay',
+        before: { status: 'pending', archivedAt: null },
+        after: { status: 'decayed', archivedAt: NOW.toISOString() },
+        reason: expect.stringContaining('no independent backing'),
+      }])
+      expect(w.patch).toMatchObject({ archivedAt: NOW, updatedAt: NOW, sourceMetadata: { status: 'decayed' } })
+    }
+    expect(result).toMatchObject({ examined: 5, changed: 5, opsWritten: 5, notes: ['promoted=0', 'decayed=5'] })
+    expect(updatePendingProposal).not.toHaveBeenCalled()
+  })
+
+  it('counts only the writes the pending guard let through', async () => {
+    vi.mocked(listPendingProposalCandidates).mockResolvedValue([old('a', 1), old('b', 2), old('c', 3)])
+    vi.mocked(updatePendingProposals).mockImplementation(async () => {
+      landedIds.add('a')
+      landedIds.add('c')
+      return new Set(['a', 'c'])
+    })
+
+    const result = await new BackUpStep().run(makeCtx())
+
+    expect(result).toMatchObject({ changed: 2, opsWritten: 2, notes: ['promoted=0', 'decayed=2'] })
+    expect(liveOps().map((o) => o.memoryId)).toEqual(['a', 'c'])
+  })
+
+  it('runs support searches concurrently but never more than the limit at once', async () => {
+    vi.mocked(listPendingProposalCandidates).mockResolvedValue(['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((id, i) => old(id, i + 1)))
+    let inFlight = 0
+    let peak = 0
+    vi.mocked(findProposalSupports).mockImplementation(async () => {
+      inFlight++
+      peak = Math.max(peak, inFlight)
+      await new Promise((r) => setTimeout(r, 1))
+      inFlight--
+      return []
+    })
+
+    await new BackUpStep({ concurrency: 3 }).run(makeCtx())
+
+    expect(findProposalSupports).toHaveBeenCalledTimes(7)
+    expect(peak).toBe(3)
+  })
+
+  it('the one-by-one retry after a failed batch stops at the deadline; the rest stay pending', async () => {
+    vi.mocked(listPendingProposalCandidates).mockResolvedValue([old('a', 1), old('b', 2), old('c', 3)])
+    let deadline = Date.now() + 60_000
+    vi.mocked(updatePendingProposals).mockRejectedValueOnce(new Error('canceling statement due to statement timeout'))
+    vi.mocked(updatePendingProposal).mockImplementation(async () => { deadline = 0; return true })
+    const ctx = { ...makeCtx(), get deadline() { return deadline } }
+
+    const result = await new BackUpStep().run(ctx)
+
+    expect(updatePendingProposal).toHaveBeenCalledTimes(1)
+    expect(result).toMatchObject({ changed: 1, opsWritten: 1, outOfTime: true })
+    expect(result).not.toHaveProperty('errors')
+  })
+
+  it('a failed support search is reported for that proposal only', async () => {
+    vi.mocked(listPendingProposalCandidates).mockResolvedValue([old('a', 1), old('b', 2)])
+    vi.mocked(findProposalSupports).mockRejectedValueOnce(new Error('timeout')).mockResolvedValue([])
+
+    const result = await new BackUpStep().run(makeCtx())
+
+    expect(result).toMatchObject({ examined: 2, changed: 1, errors: ['a: timeout'] })
+    expect(batchWrites().map((w) => w.id)).toEqual(['b'])
   })
 })

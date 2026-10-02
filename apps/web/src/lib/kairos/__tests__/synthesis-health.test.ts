@@ -107,8 +107,8 @@ describe('computeSynthesisHealth — bucketing (T-B2)', () => {
     expect(result.byStage).toEqual({
       'cortex-regen': { '2026-07-21': 'failed', '2026-07-22': 'failed' },
       'archetype-synthesis': { '2026-07-22': 'failed' },
-      // Dispatcher's recipe:'BRIEF' run traces resolve to the briefer cron's stage.
-      'briefer': { '2026-07-21': 'ok', '2026-07-22': 'ok' },
+      // Dispatcher's recipe:'BRIEF' run traces bucket under the recipe name.
+      'BRIEF': { '2026-07-21': 'ok', '2026-07-22': 'ok' },
       'contradiction-scan': { '2026-07-21': 'failed', '2026-07-22': 'failed' },
     })
     expect(result.alertedStages).toEqual(['contradiction-scan', 'cortex-regen'])
@@ -145,32 +145,32 @@ describe('computeSynthesisHealth — bucketing (T-B2)', () => {
     })
   })
 
-  it('collapses the three BRIEF keys (recipe BRIEF, cronName recipe:BRIEF, cronName briefer) into one stage', async () => {
+  it('collapses the recipe keys (recipe BRIEF, cronName recipe:BRIEF) into one stage', async () => {
     mockHistory([], [
-      // Night 1: dispatcher success trace + briefer route liveness → ok.
+      // Night 1: dispatcher success trace → ok.
       successRow('b1', 'BRIEF', '2026-07-21T07:00:00.000Z'),
-      outcomeRow('b2', 'briefer', '2026-07-21T07:01:00.000Z'),
-      // Night 2: dispatcher recipe failure + route failure → failed.
+      // Night 2: dispatcher recipe failure → failed.
       failureRow('b3', 'recipe:BRIEF', '2026-07-22T07:00:00.000Z'),
-      failureRow('b4', 'briefer', '2026-07-22T07:01:00.000Z'),
     ])
 
     const result = await computeSynthesisHealth(USER)
 
     expect(result.byStage).toEqual({
-      briefer: { '2026-07-21': 'ok', '2026-07-22': 'failed' },
+      BRIEF: { '2026-07-21': 'ok', '2026-07-22': 'failed' },
     })
   })
 
-  it('alerts a 2-strike across mixed BRIEF keys (recipe failure one night, route failure the next)', async () => {
+  it('a retired cron that stopped tracing is no signal, never an alert', async () => {
     mockHistory([], [
-      failureRow('b1', 'recipe:BRIEF', '2026-07-21T07:00:00.000Z'),
-      failureRow('b2', 'briefer', '2026-07-22T07:00:00.000Z'),
+      failureRow('b1', 'briefer', '2026-07-19T07:00:00.000Z'), // outside the 48h window
+      outcomeRow('s1', 'cortex-regen', '2026-07-22T03:00:00.000Z'),
     ])
 
     const result = await computeSynthesisHealth(USER)
 
-    expect(result.alertedStages).toEqual(['briefer'])
+    expect(result.byStage).toEqual({ 'cortex-regen': { '2026-07-22': 'ok' } })
+    expect(result.alertedStages).toEqual([])
+    expect(result.missingStages).toEqual({})
   })
 
   it('ignores cronName rows that are neither a failure nor an ok/skipped outcome (no signal)', async () => {

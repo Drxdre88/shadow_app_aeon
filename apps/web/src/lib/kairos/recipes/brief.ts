@@ -14,8 +14,9 @@ import { getProviderForTask } from '@/lib/ai/route-task'
 // P2.5 G5: the prompt also reads the Dominion's latest cortex
 // (ctx.retrieval.cortex), the latest Aether (ctx.grounding.aether — top
 // tensions + threads, short) and the conscience block filtered to this
-// Dominion (ctx.grounding.conscience). Output format is unchanged — the daily
-// message reads each brief's first lines.
+// Dominion (ctx.grounding.conscience). Since Kairos 0.17 the nightly briefer
+// and the brief thinking job are retired; this recipe stays only for the
+// on-demand run_recipe tool / REST route.
 //
 // Doc 20 §2.1.
 // ─────────────────────────────────────────────────────────────────────────
@@ -127,8 +128,7 @@ export interface BriefOutputInput {
 }
 
 // The persisted brief, whoever wrote the text — the externalId is the
-// per-(date × Dominion) idempotency key and briefingDate is what the
-// dashboard and the daily message read today's briefs by.
+// per-(date × Dominion) idempotency key; briefingDate dates the row.
 export function briefOutput(input: BriefOutputInput): RecipeOutput {
   return {
     primary: {

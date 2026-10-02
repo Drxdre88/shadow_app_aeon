@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { memories } from '@/lib/db/schema'
+import { dominions, memories } from '@/lib/db/schema'
 import { getLatestAether } from '@/lib/data/aether'
 import { getPendingKairosAsk } from '@/lib/data/ask'
 import { listBoardDayPages } from '@/lib/data/board-feed'
@@ -19,9 +19,9 @@ import {
   previousDate,
   summariseSynthesis,
   type AetherDigest,
+  type AreaDigest,
   type BeliefChange,
   type BoardDayDigest,
-  type BriefDigest,
   type DailyMessageInputs,
   type DriftDigest,
   type IdeaOfTheDay,
@@ -35,8 +35,8 @@ import {
 // ─────────────────────────────────────────────────────────────────────────
 
 const DAY_MS = 24 * 60 * 60 * 1000
-const MAX_BRIEF_LINES = 2
 const MAX_LINE_CHARS = 200
+const MAX_AREAS = 10
 const MAX_NEW_BELIEFS = 5
 const DRIFT_MAX_AGE_MS = 2 * DAY_MS
 const MIND_COMPARE_MAX_AGE_MS = 8 * DAY_MS
@@ -50,9 +50,10 @@ function clipLine(text: string): string {
   return flat.length > MAX_LINE_CHARS ? `${flat.slice(0, MAX_LINE_CHARS - 1)}…` : flat
 }
 
-// First meaningful lines of a brief: headings and section labels dropped,
-// markdown emphasis/links/URLs stripped so they can't leak into the message.
-export function briefFirstLines(bodyMd: string, max: number = MAX_BRIEF_LINES): string[] {
+// First meaningful lines of a markdown body: headings and section labels
+// dropped, markdown emphasis/links/URLs stripped so they can't leak into the
+// message.
+export function firstPlainLines(bodyMd: string, max: number): string[] {
   const out: string[] = []
   for (const raw of bodyMd.split('\n')) {
     let line = raw.trim()
@@ -70,25 +71,33 @@ export function briefFirstLines(bodyMd: string, max: number = MAX_BRIEF_LINES): 
   return out
 }
 
-// Brief titles are `${date} · ${Dominion} briefing` (recipes/brief.ts).
-export function briefDominionName(title: string): string {
-  const afterDate = title.includes(' · ') ? title.slice(title.indexOf(' · ') + 3) : title
-  return afterDate.replace(/\s+briefing$/i, '').trim() || 'General'
-}
-
-export async function readTodayBriefs(userId: string, date: string): Promise<BriefDigest[]> {
+// Each live area's latest cortex headline (its `summary` = the cortex's
+// visionAnchor, 1–2 sentences), newest area first. The nightly cortex replaced
+// the per-area morning briefs as the "what matters in this area" input.
+export async function readAreaHeadlines(userId: string): Promise<AreaDigest[]> {
   const rows = await db
-    .select({ title: memories.title, bodyMd: memories.bodyMd })
+    .select({ dominionId: memories.dominionId, dominion: dominions.name, summary: memories.summary })
     .from(memories)
+    .innerJoin(dominions, eq(memories.dominionId, dominions.id))
     .where(and(
       eq(memories.userId, userId),
-      eq(memories.type, 'advisory'),
+      eq(memories.streamClass, 'cortex'),
       isNull(memories.archivedAt),
-      sql`${memories.sourceMetadata}->>'briefingDate' = ${date}`,
+      isNull(dominions.archivedAt),
     ))
-    .orderBy(memories.createdAt)
-    .limit(10)
-  return rows.map((r) => ({ dominion: briefDominionName(r.title), lines: briefFirstLines(r.bodyMd ?? '') }))
+    .orderBy(desc(memories.createdAt))
+    .limit(MAX_AREAS * 3)
+  const seen = new Set<string>()
+  const out: AreaDigest[] = []
+  for (const r of rows) {
+    // A pinned older cortex can sit beside tonight's: keep the newest only.
+    if (!r.dominionId || seen.has(r.dominionId)) continue
+    seen.add(r.dominionId)
+    const headline = firstPlainLines(r.summary ?? '', 1)[0]
+    if (headline) out.push({ dominion: clipLine(r.dominion), headline })
+    if (out.length >= MAX_AREAS) break
+  }
+  return out
 }
 
 async function readAether(userId: string): Promise<AetherDigest[] | null> {
@@ -199,7 +208,7 @@ async function readMindCompare(userId: string, now: Date): Promise<string | null
     .orderBy(desc(memories.createdAt))
     .limit(1)
   if (!row) return null
-  const text = row.summary?.trim() || briefFirstLines(row.bodyMd ?? '', 2).join(' ')
+  const text = row.summary?.trim() || firstPlainLines(row.bodyMd ?? '', 2).join(' ')
   return text ? clipLine(text) : null
 }
 
@@ -240,8 +249,8 @@ export async function gatherDailyMessageInputs(userId: string, now: Date): Promi
   const since = new Date(now.getTime() - DAY_MS)
   const isMonday = isLondonMonday(now)
   const failed: string[] = []
-  const [briefs, aether, boardDay, promotions, newBeliefs, drift, pendingAsk, synthesis, mindCompare, idea, ideaDiversityAlarm] = await Promise.all([
-    safe('briefs', failed, () => readTodayBriefs(userId, date)),
+  const [areas, aether, boardDay, promotions, newBeliefs, drift, pendingAsk, synthesis, mindCompare, idea, ideaDiversityAlarm] = await Promise.all([
+    safe('areas', failed, () => readAreaHeadlines(userId)),
     safe('aether', failed, () => readAether(userId)),
     safe('boardDay', failed, () => readBoardDay(userId, date)),
     safe('promotions', failed, () => listPromotedBeliefsBetween(userId, since, now, MAX_DIGEST_BELIEFS)),
@@ -254,5 +263,5 @@ export async function gatherDailyMessageInputs(userId: string, now: Date): Promi
     safe('ideaDiversity', failed, () => readIdeaDiversityAlarm(userId, now)),
   ])
   failed.sort()
-  return { date, isMonday, briefs, aether, boardDay, promotions, newBeliefs, drift, pendingAsk, synthesis, mindCompare, idea, ideaDiversityAlarm, failed }
+  return { date, isMonday, areas, aether, boardDay, promotions, newBeliefs, drift, pendingAsk, synthesis, mindCompare, idea, ideaDiversityAlarm, failed }
 }

@@ -306,7 +306,7 @@ function Intro() {
   )
 }
 
-function Step({ number, title, children }: { number: number; title: string; children: React.ReactNode }) {
+export function Step({ number, title, children }: { number: number; title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center gap-3">
@@ -328,11 +328,11 @@ function Step({ number, title, children }: { number: number; title: string; chil
   )
 }
 
-function P({ children }: { children: React.ReactNode }) {
+export function P({ children }: { children: React.ReactNode }) {
   return <p className="text-[12.5px] leading-relaxed text-white/70">{children}</p>
 }
 
-function Code({ children }: { children: React.ReactNode }) {
+export function Code({ children }: { children: React.ReactNode }) {
   return (
     <code className="px-1.5 py-0.5 rounded text-[11.5px] font-mono text-white/90 bg-white/[0.06] border border-white/[0.08]">
       {children}
@@ -340,7 +340,7 @@ function Code({ children }: { children: React.ReactNode }) {
   )
 }
 
-function CodeBlock({ lang, value }: { lang: string; value: string }) {
+export function CodeBlock({ lang, value }: { lang: string; value: string }) {
   const [copied, setCopied] = useState(false)
   const onCopy = async () => {
     try {

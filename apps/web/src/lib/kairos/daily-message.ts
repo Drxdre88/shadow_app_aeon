@@ -33,8 +33,8 @@ export function draftMentions(draft: string, title: string): boolean {
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Daily Message (docs/kairos/34 §3) — the one guaranteed push of the
-// day, 08:00 Europe/London. Replaces the evening digest; the morning briefs
-// still write advisories (sidebar/inbox) and feed this message.
+// day, 08:00 Europe/London. Replaces the evening digest and (Kairos 0.17) the
+// per-area morning briefs: each area's latest cortex headline feeds it instead.
 //
 // Draft source, in order: the Max routine's `daily_message` thinking job (if
 // done today) → the paid heavy-tier key → a deterministic template. Every

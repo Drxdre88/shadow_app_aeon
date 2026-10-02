@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en" data-theme="stone">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kairos: handover check and Phase 4 verdict</title>
+<script>(function () {
+  var KEY = "srl-theme";
+  var THEMES = ["stone", "wood", "neon", "papyrus"];
+  var root = document.documentElement;
+
+  function read() {
+    try { return localStorage.getItem(KEY); } catch (e) { return null; }
+  }
+  function write(v) {
+    try { localStorage.setItem(KEY, v); } catch (e) { }
+  }
+  function apply(v) {
+    if (THEMES.indexOf(v) < 0) v = root.getAttribute("data-theme") || "stone";
+    root.setAttribute("data-theme", v);
+    var buttons = document.querySelectorAll(".srl-theme-select button[data-theme-choice]");
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].setAttribute("aria-pressed", String(buttons[i].getAttribute("data-theme-choice") === v));
+    }
+    document.dispatchEvent(new CustomEvent("srl-theme", { detail: v }));
+  }
+
+  apply(read());
+  document.addEventListener("DOMContentLoaded", function () {
+    apply(root.getAttribute("data-theme"));
+    document.addEventListener("click", function (ev) {
+      var b = ev.target.closest && ev.target.closest("[data-theme-choice]");
+      if (!b) return;
+      var v = b.getAttribute("data-theme-choice");
+      write(v);
+      apply(v);
+    });
+  });
+})();
+</script>
+<style>/* Shadow Research Lab theme: stone (dark), wood (dark), neon (dark, high contrast), papyrus (light).
+   Set on <html data-theme="stone|wood|neon|papyrus">; theme.js persists the choice as localStorage "srl-theme".
+   Tokens are the only contract: --bg --surface --surface-raised --ink --muted --rule --accent --bull --bear
+   --topbar --on-sign. Tables and figures stay flat; texture lives on the top bar only. Fully offline. */
+
+:root,
+:root[data-theme="stone"] {
+  color-scheme: dark;
+  --bg: #151619;
+  --surface: #222326;
+  --surface-raised: #2d2f32;
+  --ink: #eee7d8;
+  --muted: #b7ab96;
+  --rule: #54514d;
+  --accent: #ddbb75;
+  --bull: #80d1a6;
+  --bear: #f29191;
+  --topbar: #292b2c;
+  --on-sign: #151619;
+  --topbar-texture:
+    radial-gradient(120% 140% at 12% -20%, rgba(200, 210, 220, .10), transparent 55%),
+    radial-gradient(90% 120% at 88% 120%, rgba(160, 170, 180, .07), transparent 60%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, .025) 0 1px, transparent 1px 7px),
+    linear-gradient(180deg, #303235, #242628);
+  --topbar-edge: inset 0 1px 0 rgba(255, 255, 255, .06), inset 0 -2px 0 rgba(0, 0, 0, .45);
+}
+
+:root[data-theme="wood"] {
+  color-scheme: dark;
+  --bg: #16110e;
+  --surface: #261b15;
+  --surface-raised: #33251c;
+  --ink: #f1e6d6;
+  --muted: #bea994;
+  --rule: #624835;
+  --accent: #e4b978;
+  --bull: #83d6ad;
+  --bear: #f59391;
+  --topbar: #332419;
+  --on-sign: #16110e;
+  --topbar-texture:
+    repeating-linear-gradient(92deg, rgba(0, 0, 0, .16) 0 1px, transparent 1px 13px, rgba(255, 220, 170, .035) 13px 14px, transparent 14px 29px),
+    repeating-linear-gradient(88deg, rgba(0, 0, 0, .10) 0 2px, transparent 2px 47px),
+    linear-gradient(180deg, #3d2b1e, #2a1d14);
+  --topbar-edge: inset 0 1px 0 rgba(255, 210, 150, .10), inset 0 -2px 0 rgba(0, 0, 0, .5);
+}
+
+:root[data-theme="neon"] {
+  color-scheme: dark;
+  --bg: #07060d;
+  --surface: #110f1f;
+  --surface-raised: #1a1730;
+  --ink: #e9f7ff;
+  --muted: #9aa6d8;
+  --rule: #3b2f6b;
+  --accent: #34f0ff;
+  --bull: #5cff9d;
+  --bear: #ff4fa3;
+  --topbar: #0d0b1a;
+  --on-sign: #07060d;
+  --topbar-texture:
+    linear-gradient(90deg, rgba(52, 240, 255, .10) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(0deg, rgba(255, 79, 163, .08) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(180deg, #16112b, #0b0916);
+  --topbar-edge: inset 0 -1px 0 rgba(52, 240, 255, .55), 0 0 18px rgba(52, 240, 255, .18);
+}
+:root[data-theme="neon"] .srl-page h1,
+:root[data-theme="neon"] .srl-page h2 { text-shadow: 0 0 6px rgba(52, 240, 255, .55), 0 0 18px rgba(255, 79, 163, .25); }
+:root[data-theme="neon"] .srl-page a,
+:root[data-theme="neon"] .srl-wordmark { text-shadow: 0 0 8px rgba(52, 240, 255, .45); }
+
+:root[data-theme="papyrus"] {
+  color-scheme: light;
+  --bg: #f4ecd8;
+  --surface: #eee3ca;
+  --surface-raised: #e5d3af;
+  --ink: #302517;
+  --muted: #67533b;
+  --rule: #ac9471;
+  --accent: #715121;
+  --bull: #226345;
+  --bear: #a13739;
+  --topbar: #e5d3af;
+  --on-sign: #fbf6ea;
+  --topbar-texture:
+    radial-gradient(140% 160% at 20% -30%, rgba(255, 250, 235, .55), transparent 60%),
+    radial-gradient(100% 120% at 90% 130%, rgba(140, 105, 55, .12), transparent 60%),
+    linear-gradient(180deg, #eadbbc, #e0cda6);
+  --topbar-edge: inset 0 -1px 0 rgba(113, 81, 33, .35);
+}
+
+:root {
+  --font-display: "Old English Text MT", "UnifrakturCook", "UnifrakturMaguntia", "Palatino Linotype", Palatino, serif;
+  --font-heading: "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font-body: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-num: Consolas, "Cascadia Mono", "Courier New", monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 var(--font-body);
+}
+
+.srl-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  background: var(--topbar-texture), var(--topbar);
+  box-shadow: var(--topbar-edge);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-ui);
+}
+.srl-wordmark {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  line-height: 1;
+  color: var(--accent);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .35);
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+.srl-crumb { color: var(--muted); font-size: .85rem; letter-spacing: .06em; text-transform: uppercase; }
+.srl-spacer { flex: 1; }
+.srl-theme-select { display: inline-flex; gap: 4px; }
+.srl-theme-select button {
+  font: 500 .8rem var(--font-ui);
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.srl-theme-select button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+.srl-page { max-width: 880px; margin: 0 auto; padding: 28px 20px 56px; }
+.srl-page h1, .srl-page h2, .srl-page h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.2; }
+.srl-page h1 { font-size: 2.1rem; margin: 0 0 6px; }
+.srl-page h2 { font-size: 1.35rem; margin: 30px 0 8px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.srl-page h3 { font-size: 1.1rem; margin: 20px 0 6px; }
+.srl-page a { color: var(--accent); }
+.srl-page code { font-family: var(--font-num); font-size: .9em; background: var(--surface); padding: 1px 4px; border-radius: 3px; }
+.srl-page pre { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; overflow-x: auto; }
+.srl-page pre code { background: none; padding: 0; }
+.srl-page blockquote { margin: 12px 0; padding: 4px 14px; border-left: 3px solid var(--accent); color: var(--muted); }
+.srl-lede { color: var(--muted); font-size: 1.05rem; }
+.srl-eyebrow { font: 600 .78rem var(--font-ui); color: var(--muted); letter-spacing: .12em; text-transform: uppercase; }
+
+.srl-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 18px 0; }
+.srl-tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; }
+.srl-tile .v { font: 600 1.5rem var(--font-num); }
+.srl-tile .l { color: var(--muted); font-size: .85rem; }
+
+.srl-table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; margin: 12px 0; }
+.srl-page table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.srl-page th, .srl-page td { padding: 7px 10px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+.srl-page th { font: 600 .8rem var(--font-ui); color: var(--muted); letter-spacing: .03em; }
+.srl-page tr:last-child td { border-bottom: 0; }
+
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.bull, .pos { color: var(--bull); }
+.bear, .neg { color: var(--bear); }
+.warn { color: var(--accent); }
+.muted { color: var(--muted); }
+
+.srl-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 18px 0 0; border-bottom: 1px solid var(--rule); }
+.srl-tabs button {
+  font: 500 .88rem var(--font-ui);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.srl-tabs button[aria-selected="true"] { color: var(--ink); background: var(--surface); border-color: var(--rule); }
+.srl-tabpanel[hidden] { display: none; }
+
+.srl-footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid var(--rule); color: var(--muted); font-size: .85rem; }
+
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .srl-theme-select button, .srl-tabs button { transition: background .15s, color .15s; } }
+</style>
+</head>
+<body>
+<header class="srl-topbar"><span class="srl-wordmark">Shadow Research Lab</span><span class="srl-crumb">research / kairos_0210</span><span class="srl-spacer"></span><nav class="srl-theme-select" aria-label="Theme"><button type="button" data-theme-choice="stone" aria-pressed="false">Stone</button><button type="button" data-theme-choice="wood" aria-pressed="false">Wood</button><button type="button" data-theme-choice="neon" aria-pressed="false">Neon</button><button type="button" data-theme-choice="papyrus" aria-pressed="false">Papyrus</button></nav></header>
+<main class="srl-page">
+<p class="srl-eyebrow">Kairos · Phase 4 · 02/10</p>
+<h1>Kairos: handover check and Phase 4 verdict</h1>
+<p class="srl-lede">The handover holds up. All four Phase 4 tracks are worth building with changes; missions as hands should wait.</p>
+<div class="srl-tiles"><div class="srl-tile"><div class="v pos">✅</div><div class="l">handover checked against live data</div></div><div class="srl-tile"><div class="v pos">3 of 4</div><div class="l">tracks to build now (A, B, C)</div></div><div class="srl-tile"><div class="v warn">1</div><div class="l">track to hold for 2–4 weeks (D)</div></div><div class="srl-tile"><div class="v neg">Tonight</div><div class="l">second bad night if the engine isn&#x27;t fixed</div></div></div>
+<article>
+<h2>The short answer</h2>
+<p>The handover is accurate. I checked it against live data and found two small corrections and one new detail about the failure. Kairos 0.16 is on main: both pull requests merged on 01/10 at about 21:10 UK time. The memory engine failure is real and has to be fixed before Phase 4.</p>
+<p>All four Phase 4 tracks are worth building, but each needs changes, and the fourth (missions as hands) should wait. Build goals, promises and buttons together as one small first slice, investigations only. Give him hands after two to four weeks of clean record.</p>
+<h2>Handover check against live data</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Claim in the handover</th><th>What the live data says</th><th>Verdict</th></tr></thead><tbody><tr><td>0.16 is live</td><td>PRs #141 and #142 merged 01/10. This laptop&#x27;s copy is still on 0.15 and needs a pull before any work</td><td>✅</td></tr><tr><td>Memory engine failed</td><td>The health page marks it &quot;failed&quot; for 02/10. It failed at 01:34 UTC, which is 02:34 UK time, so both times you&#x27;ve seen are right.</td><td>✅</td></tr><tr><td>Backlog stopped at 166 of 400</td><td>The backlog step wrote about one change per second, so 400 would take about 7 minutes. That is why it ran out of time.</td><td>✅ new detail</td></tr><tr><td>8 of 9 area summaries, beliefs, ideas and today&#x27;s message ran on Max</td><td>Confirmed: 8 area summaries answered by the routine, 1 by the backup</td><td>✅</td></tr><tr><td>Briefs, contradictions, archetypes and the idea dump ran on the backup</td><td>Confirmed: every one of them shows the backup took over</td><td>✅</td></tr><tr><td>Drift checks ran on Max</td><td><strong>No.</strong> Last night&#x27;s honesty and drift checks were answered by the paid backup. They all passed</td><td>🟡 correction</td></tr><tr><td>9 brief and 9 idea-dump jobs still &quot;queued&quot;</td><td><strong>Already resolved.</strong> They now show &quot;expired, backup ran&quot;, so there&#x27;s nothing to tidy</td><td>🟡 correction</td></tr><tr><td>Today&#x27;s message delivered</td><td>Sent at 08:00 UK by the routine</td><td>✅</td></tr><tr><td>Health alarm</td><td>No alert yet: it only fires after two bad nights. <strong>Tonight is the second night</strong>, so the fix should land today</td><td>⚠️</td></tr></tbody></table></div>
+<h2>What he can do now versus before 30/09</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Before 30/09</th><th>Now (0.16)</th></tr></thead><tbody><tr><td>Half-blind: missed coding sessions, agent missions and most board work</td><td>Sees every coding session, every Hangar mission and the sprint boards</td></tr><tr><td>Every memory counted the same and nothing ever faded</td><td>Memories earn trust, fade, merge and get promoted, and every change can be undone</td></tr><tr><td>No stable views; one paid-key summary a night</td><td>Two sets of beliefs (yours and his own), a constitution only you can change, nightly drift and honesty checks</td></tr><tr><td>Trusted his own past notes as much as your words</td><td>Knows where each memory came from; his own echoes can&#x27;t raise his confidence</td></tr><tr><td>A raw nightly idea dump nobody read</td><td>A nightly idea contest that keeps 1–3 ideas, with the reason each survived</td></tr><tr><td>Several noisy messages a day</td><td>One 08:00 message and a Monday weekly review</td></tr><tr><td>All thinking on the paid key</td><td>Thinking on your Max plan first, with the paid key as backup (once the routines are switched)</td></tr><tr><td>Broken jobs: blocked questions, runaway text, made-up ids</td><td>Fixed</td></tr></tbody></table></div>
+<p>The one thing he still can&#x27;t do is act on his own. He thinks, remembers and suggests, but he never sets himself a goal, keeps a promise, or does anything about it. That is what Phase 4 adds.</p>
+<h2>What Phase 4 means</h2>
+<p>Phase 4 moves him from suggesting to following through. He proposes a goal, you approve it, he keeps a promise about it, and something outside him checks whether it happened. Later he gets to start investigation missions himself.</p>
+<h2>Verdict per track</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Track</th><th>Verdict</th><th>Biggest change the research asks for</th></tr></thead><tbody><tr><td>A. Goals of his own</td><td>🟢 Build, with changes</td><td>1 goal a night, and none is fine. He must never be the one who confirms a goal is met</td></tr><tr><td>B. Promise list</td><td>🟢 Build, with changes</td><td>Track only dated promises with a clear outcome. Escalate in the 08:00 message, not by Telegram nudges</td></tr><tr><td>C. Approve or veto buttons</td><td>🟢 Build, with changes</td><td>Ask rarely. No answer means no action. Add a &quot;veto + why&quot; option</td></tr><tr><td>D. Missions as hands</td><td>🟡 Build later</td><td>Wait 2–4 weeks for A–C to show a clean record, then start with him drafting and you pressing launch</td></tr></tbody></table></div>
+<h2>A. Goals of his own</h2>
+<p><strong>Why it&#x27;s sound.</strong> The game-world research holds up. Voyager found more when it picked its next goal from its own record, and it fell apart without a real success check. OMNI-EPIC repeated itself less when it kept an archive of past goals and had a novelty check.</p>
+<p><strong>What doesn&#x27;t carry over.</strong></p>
+<ul>
+<li>That research comes from games, where the success check can&#x27;t be fooled. Kairos can move cards himself, so &quot;the card moved&quot; proves nothing unless <strong>you</strong> moved it.</li>
+<li>The &quot;learning progress&quot; score in the handover comes from MAGELLAN, which retrains the model. Kairos only calls the model, so that score can&#x27;t be measured. Replace it with two numbers: how often you accept his goals, and how often they get done and checked.</li>
+</ul>
+<p><strong>Changes.</strong></p>
+<ol>
+<li>One goal a night, zero allowed, and at most two active at once. In a 2026 study, people lost trust after a single badly timed suggestion.</li>
+<li>Seed goals from accepted ideas and from goals that failed. Use the most similar past attempts, not random ones; OMNI-EPIC showed random picks do worse.</li>
+<li>Investigation goals only at first.</li>
+<li>Widen the ban. Besides &quot;never a goal about keeping himself running&quot;, ban goals about his own permissions, schedule, budget or memory. Lab tests show models resisting shutdown when a goal is at stake.</li>
+<li>Show goals in the 08:00 message, not as push alerts.</li>
+</ol>
+<p><strong>Caution.</strong> I found no published acceptance rate for any real assistant that proposes its own goals. ChatGPT&#x27;s daily proactive feed, Pulse, was reportedly replaced in June 2026 (low confidence). His own numbers will be the first real evidence, so measure from day one.</p>
+<h2>B. Promise list</h2>
+<p><strong>Why it&#x27;s sound.</strong> The core idea is well supported: an outside check beats the model checking itself. Models are poor at correcting their own work without outside feedback, and frontier agents have been caught gaming their own graders.</p>
+<p><strong>Corrections to the handover&#x27;s evidence.</strong></p>
+<ul>
+<li>The &quot;keeps only 48–66% of its promises&quot; figure is real (CivBench, September 2026). But it comes from a small trial of 23 runs inside a strategy game, and it measures whether a plan was carried out within 10 game turns. Quote it with that caveat.</li>
+<li>Anthropic&#x27;s long-running agent guide lets the agent tick its own &quot;passes&quot; box after testing. Our rule that only the check can close a promise is stricter. That&#x27;s a fair choice, but it&#x27;s ours, not Anthropic&#x27;s.</li>
+</ul>
+<p><strong>Changes.</strong></p>
+<ol>
+<li>Log only promises with a date and a named outcome, taken from goals and the weekly review. Leave out chat phrases like &quot;I&#x27;ll look into it&quot;. Keep no more than about 10–15 open.</li>
+<li>Two kinds of check: an automatic one (card column, merged PR, passing test) or a one-tap confirmation from you. If neither fits, don&#x27;t log it.</li>
+<li>At each Monday review, renegotiate or drop overdue items; never let them pile up.</li>
+<li>Escalate with one line in the 08:00 message. Send at most <strong>one</strong> Telegram nudge per item, only for important items more than 2 days late. Hospital alert studies show every extra or repeated reminder cuts the response rate.</li>
+<li>A daily check is enough; hourly adds nothing for one person.</li>
+<li>Kairos must not have write access to whatever the check reads.</li>
+</ol>
+<h2>C. Approve or veto buttons</h2>
+<p><strong>Why it&#x27;s sound.</strong> Telegram supports everything needed, and the reply handler already exists.</p>
+<p><strong>The real risk is fatigue, not the technology.</strong> Anthropic reports that people approve 93% of Claude Code permission prompts and stop reading them. A tap is a weak safety gate unless asking is rare.</p>
+<p><strong>Changes.</strong></p>
+<ol>
+<li>Ask rarely, a few times a day at most, and fold asks into the 08:00 message where possible. Don&#x27;t ask about read-only or undoable work; log it with an undo link instead.</li>
+<li>Each card shows what changes, what it touches, the risk, the cost cap, how to undo it, and what will check it.</li>
+<li>No answer means no action. Cards expire and the buttons disappear with &quot;Expired, not run&quot;.</li>
+<li>Make taps safe to repeat. A second tap does nothing, and only taps from you, in your private chat, count.</li>
+<li>Three options: Approve, Veto, and &quot;Veto + why&quot;, with quick reasons (wrong priority / not now / too risky). With one owner, bare yes/no taps pile up too slowly to teach him much.</li>
+<li>Track how fast you approve. If nearly everything is approved within seconds, he should ask less.</li>
+<li>Keep &quot;runs unless you veto&quot; switched off until the numbers show a clean record.</li>
+</ol>
+<h2>D. Missions as hands</h2>
+<p><strong>Why wait.</strong> Real-repo success rates for coding agents are still far from reliable, and agents passing work to other agents often fail at checking the result. He should prove he picks good goals (A–C) before he gets hands.</p>
+<p><strong>Changes.</strong></p>
+<ol>
+<li>A read-only mission isn&#x27;t automatically safe. A mission that reads repos or web pages, and has internet access or secrets, can be tricked into leaking data. Give missions a short network allow-list and no secrets, and treat the mission report as untrusted data.</li>
+<li>A mission report alone can&#x27;t close a goal. It needs the independent review gate plus your sign-off.</li>
+<li>Hard limits, not alerts: missions per day, missions running at once, and no mission may start another mission.</li>
+<li>For the first weeks, he drafts the mission and you press launch.</li>
+</ol>
+<p><strong>Plan terms.</strong> Scheduled routines on your Max plan are an official, permitted feature. Anthropic doesn&#x27;t say clearly whether a script launching extra Claude Code sessions on your account counts as &quot;ordinary individual use&quot;. Missions also eat into the same weekly allowance his nightly thinking needs. Two safe options: give missions their own small daily cap, or run them on a pay-per-use key with a hard spending limit.</p>
+<h2>Recommended order</h2>
+<ol>
+<li><strong>Today:</strong> fix the memory engine. It writes one change at a time, about one a second. Batch those writes and the backlog fits in its time limit. Tonight is the second bad night, when the health alarm fires.</li>
+<li><strong>Today or tomorrow:</strong> switch the six routines, then check that every job says &quot;answered by routine&quot;. Include the drift checks.</li>
+<li><strong>Monday 05/10:</strong> accept or amend the first constitution draft; read the first full weekly review.</li>
+<li><strong>Phase 4, first slice:</strong> build A, B and C together, investigation goals only, one a night, ask-first.</li>
+<li><strong>After 2–4 clean weeks:</strong> add D with drafted missions and owner launch, then consider &quot;runs unless you veto&quot; for low-risk investigations.</li>
+</ol>
+<h2>Sources (all checked 02/10/2026)</h2>
+<ul>
+<li>Voyager (2023): https://arxiv.org/abs/2305.16291</li>
+<li>OMNI (2023): https://arxiv.org/abs/2306.01711</li>
+<li>OMNI-EPIC (2024): https://arxiv.org/abs/2405.15568</li>
+<li>MAGELLAN (2025): https://arxiv.org/abs/2502.07709</li>
+<li>Anthropic, harnesses for long-running agents: https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents</li>
+<li>Anthropic, agentic misalignment: https://www.anthropic.com/research/agentic-misalignment</li>
+<li>Shutdown resistance (2025): https://arxiv.org/abs/2509.14260</li>
+<li>Proactive-assistant timing study (2026): https://arxiv.org/abs/2609.37267</li>
+<li>CivBench (2026): https://arxiv.org/abs/2609.02459</li>
+<li>LLMs can&#x27;t self-correct reasoning yet: https://arxiv.org/abs/2310.01798</li>
+<li>METR, reward hacking: https://metr.org/blog/2025-06-05-recent-reward-hacking/</li>
+<li>Alert fatigue (Ancker 2017): https://pubmed.ncbi.nlm.nih.gov/28395667/</li>
+<li>Telegram Bot API: https://core.telegram.org/bots/api</li>
+<li>Anthropic, Claude Code auto mode (93% approval): https://www.anthropic.com/engineering/claude-code-auto-mode</li>
+<li>MAST, multi-agent failures: https://arxiv.org/abs/2503.13657</li>
+<li>Lethal trifecta: https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/</li>
+<li>Claude Code routines: https://code.claude.com/docs/en/routines</li>
+<li>Claude Code legal and compliance: https://code.claude.com/docs/en/legal-and-compliance</li>
+</ul>
+</article>
+<footer class="srl-footer">Generated 2026-10-02 07:31 UTC · Markdown is the source of truth; regenerate, don't edit.</footer>
+</main>
+</body>
+</html>

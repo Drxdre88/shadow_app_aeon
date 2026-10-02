@@ -4,6 +4,21 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–35).
 
+## [0.17.0] — 2026-10-02 · "Simplified brain: one Max routine"
+
+> Kairos keeps only the thinking that helps. Four jobs and five scheduled tasks are retired, and one Claude Max routine ("Kairos brain", every hour 01:40–06:40 UTC) answers everything that is left, plus a separate "Kairos chat" routine for Telegram. Routine catalog: `apps/web/src/lib/kairos/routines/catalog.ts`.
+
+- **Morning briefs retired** (the `brief` job and the 06:15 UTC briefer). Nine per-area briefs mostly restated the area summaries and the self-model, and the 08:00 message kept only two lines of each. The 08:00 message now reads each area's latest summary headline directly.
+- **Raw idea dump retired** (the `introspection` job and the 06:30 UTC task). The nightly idea contest replaced it in 0.15; `KAIROS_RAW_INTROSPECTION` no longer does anything.
+- **Contradiction scan retired** (the `contradiction` job and the 05:00 UTC task). In the two months since August, none of its 20 notices was acted on, and almost all compared the intraday tidy-up notes against each other. Old pending notices stay stored but no longer show in the inbox.
+- **Intraday tidy-ups retired** (the `micro_consolidate` job and its seven daily runs). Only the next night's area summaries and self-model read them, and both already fall back to a simple count of the day's new memories.
+- **Weekly duplicate sweep retired** (the Sunday memory-dedup task). The nightly memory engine already folds new duplicates.
+- **08:00 message** — planned from 05:30 UTC once the self-model, idea contest and question of the day are settled (from 06:25 UTC regardless); still due 07:55 London, still delivered by the 08:00 task with its paid and plain-text backups. Its plain-text backup leads with one line per area from the area summaries.
+- **Inbox and sidebar** — today's 08:00 message is pinned at the top of the inbox in place of the brief card; the sidebar's "Daily briefing" button (and its paid-key "Run briefing now") and the advisory feed are gone.
+- **Guard rail** — the queue's planned kinds must match the routine catalog; a test fails if a kind is added without a routine to answer it. Retired kinds can no longer be claimed; their old rows still list.
+- **Connect Kairos** — a new window (sidebar → Connect brain, or the brain icon on `/kairos`) shows last night on Max vs backup, a brain map of every job, and copy-paste setup for the connector and both routines (claude.ai form or Claude Code `/schedule`). Older routines that still name retired kinds keep working.
+- **Memory engine fixed** (failed 02/10: scoring timed out, BackUp ran ~1 change/s). Each step has its own time budget and Concepts keeps a Sunday reserve; scoring writes in small batches and only when a memory's standing moves ≥ 0.05 from what's stored, rotating through the rest; BackUp works 25 at a time. Every change stays undoable. Old contradiction notices no longer count against beliefs.
+
 ## [0.16.0] — 2026-10-01 · "All on Max"
 
 > Every remaining paid-key cron becomes a thinking job a Claude Max routine answers; the cron stays as its fallback and skips any unit the routine already did. Playbook: `docs/kairos/33-thinking-routine.md` (§Dusk, dawn and tidy routines).

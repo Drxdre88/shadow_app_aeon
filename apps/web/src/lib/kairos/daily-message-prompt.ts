@@ -133,7 +133,9 @@ export function summariseSynthesis(byStage: Record<string, Record<string, 'ok' |
 
 // ── Inputs ───────────────────────────────────────────────────────────────
 
-export interface BriefDigest { dominion: string; lines: string[] }
+// One line per area (Dominion): the headline of its latest cortex — the
+// nightly "what this area looks like right now" summary.
+export interface AreaDigest { dominion: string; headline: string }
 export interface AetherDigest { title: string; insight: string; dominionName: string | null }
 export interface BoardDayDigest { finished: number; finishedTitles: string[]; thinCards: number }
 export interface BeliefChange { mind: 'aligned' | 'own' | 'other'; claim: string }
@@ -147,7 +149,7 @@ export interface IdeaOfTheDay { title: string; claim: string; survivedBecause: s
 export interface DailyMessageInputs {
   date: string
   isMonday: boolean
-  briefs: BriefDigest[] | null
+  areas: AreaDigest[] | null
   aether: AetherDigest[] | null
   boardDay: BoardDayDigest | null
   promotions: Array<{ title: string }> | null
@@ -167,7 +169,7 @@ export interface DailyMessageInputs {
 
 export const DAILY_MESSAGE_SYSTEM_PROMPT = [
   "You are Kairos, texting the operator the one message they get from you each morning on Telegram (08:00 UK).",
-  'It replaces the morning briefs and the evening digest: what matters today, what moved yesterday, what changed in your thinking.',
+  'It is the only morning summary: what matters today, what moved yesterday, what changed in your thinking.',
   '',
   '── OUTPUT ──',
   '',
@@ -180,7 +182,7 @@ export const DAILY_MESSAGE_SYSTEM_PROMPT = [
   '── RULES ──',
   '',
   '- Use ONLY the facts supplied in the prompt. Never invent numbers, cards, beliefs, or events.',
-  '- Lead with what matters today (the briefs), then yesterday on the board, then your thinking',
+  '- Lead with what matters today (each area\'s state), then yesterday on the board, then your thinking',
   '  (Aether, belief changes, drift). Skip any section with nothing in it — do not say "nothing to report".',
   '- If a drift alert is present, say so plainly in one line. If a question is pending, end with it, verbatim.',
   '- Synthesis health: one short line only if a stage is failing; silence when healthy or unknown.',
@@ -226,10 +228,8 @@ export function ideaOfTheDayLines(inputs: Pick<DailyMessageInputs, 'idea' | 'ide
 
 export function buildDailyMessageUserPrompt(inputs: DailyMessageInputs, conscience?: string): string {
   const out: string[] = [`Date (London): ${inputs.date}${inputs.isMonday ? ' (Monday)' : ''}.`]
-  out.push(...section("TODAY'S BRIEFS (per Dominion)", (inputs.briefs ?? []).flatMap((b) => [
-    `[${b.dominion}]`,
-    ...b.lines.map((l) => `  ${l}`),
-  ])))
+  out.push(...section('EACH AREA RIGHT NOW (latest summary per Dominion)', (inputs.areas ?? []).map((a) =>
+    `[${a.dominion}] ${a.headline}`)))
   out.push(...section('AETHER — TOP THOUGHTS', (inputs.aether ?? []).map((t) =>
     `- ${t.title}${t.dominionName ? ` (${t.dominionName})` : ''}: ${t.insight}`)))
   if (inputs.boardDay) {
@@ -301,9 +301,9 @@ function plural(n: number, word: string): string {
 // narrative never carries headings or URLs and stays under MAX_MESSAGE_CHARS.
 export function buildDeterministicDailyMessage(inputs: DailyMessageInputs): string {
   const blocks: string[] = []
-  const briefs = (inputs.briefs ?? []).filter((b) => b.lines.length > 0)
-  if (briefs.length > 0) {
-    blocks.push(['**Today**', ...briefs.slice(0, 4).map((b) => `${safeLine(b.dominion, 40)}: ${safeLine(b.lines[0], 140)}`)].join('\n'))
+  const areas = (inputs.areas ?? []).filter((a) => a.headline.trim())
+  if (areas.length > 0) {
+    blocks.push(['**Today**', ...areas.slice(0, 4).map((a) => `${safeLine(a.dominion, 40)}: ${safeLine(a.headline, 140)}`)].join('\n'))
   }
   if (inputs.boardDay && inputs.boardDay.finished > 0) {
     const b = inputs.boardDay

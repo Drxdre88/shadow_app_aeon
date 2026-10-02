@@ -5,6 +5,13 @@
 Reverse-chronological. The most recent work is at the top; the pre-2026-06-06 trail is preserved
 verbatim below.
 
+### 2026-10-02 — Kairos 0.17 "Simplified brain: one Max routine" · app v0.34.0
+- **Audit first:** each thinking job was traced to its readers and checked against live data (`research/kairos_0210/02_brain_jobs_audit.md`). 14 kinds stay. Retired: `brief`, `introspection`, `contradiction`, `micro_consolidate`, and the `briefer`, `introspection`, `contradiction-scan`, `micro-consolidate` and `memory-dedup` crons with their handlers and libs.
+- **Daily message without briefs:** it plans from 05:30Z once aether, ideas and ask are settled (from 06:25Z regardless), and reads each area's latest cortex headline (`readAreaHeadlines`). The inbox pins today's message, filters out old contradiction notices, and the sidebar briefing button and advisory feed are gone.
+- **Routines in code:** `lib/kairos/routines/catalog.ts` is the single source of truth: two routines (`Kairos brain`, cron `40 1-6 * * *`, claims with `{}`; `Kairos chat`, API-triggered), self-contained prompts, and `BRAIN_JOBS` (kind → brain area). `PLANNED_THINKING_KINDS` must equal the catalog (test). Claims drop retired kinds instead of failing.
+- **Connect Kairos modal** (`components/kairos/brain/*`): Status, Brain map, Connect, Routines (web form vs `/schedule`) and Telegram views, fed by `getKairosBrainStatus` (`lib/data/brain-status.ts`).
+- **Memory engine fix** (the 02/10 failure): per-step time budgets with a Sunday reserve for Concepts. Weigh writes in 100-row transactions, only when standing moves ≥ 0.05 from the stored value, and rotates through id-hash buckets. BackUp works in chunks of 25 with batched writes. `statement_timeout` 10 s inside engine transactions. Old contradiction notices no longer count as open challenges.
+
 ### 2026-10-01 (night) — Kairos 0.16 "All on Max" (PR #141) · app v0.33.0
 - **New thinking kinds:** the seven remaining paid-key crons become thinking kinds: `chat_distill`, `archetype`, `ask_mine`, `contradiction` (one batched job per Dominion), `brief`, `introspection` and `micro_consolidate`. There are now 18 kinds.
 - **Crons become fallbacks:** each kind is planned in a window that closes 2 min before its old cron. The cron is now only the fallback, guarded by `isJobDone` (`lib/data/thinking-jobs.ts`).

@@ -3,19 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Bell, Check, ChevronDown, Inbox, Lightbulb, MessageCircleQuestion, Sparkles, X } from 'lucide-react'
+import { Bell, Check, Inbox, Lightbulb, MessageCircleQuestion, Sparkles, X } from 'lucide-react'
 import {
   acceptKairosInboxProposal,
   answerKairosInboxAsk,
   dismissKairosInboxProposal,
   listKairosInbox,
 } from '@/lib/actions/kairos-inbox'
-import { KairosMarkdown } from '@/components/ui/KairosMarkdown'
 
 type InboxData = Awaited<ReturnType<typeof listKairosInbox>>
 type InboxItem = InboxData['items'][number]
-
-const BRIEF_DISMISS_KEY = 'kairos-inbox-brief-dismissed'
 
 // An idea-tournament survivor (docs/kairos/35) carries its card fields on the
 // proposal item as `idea`. Read defensively: absent or malformed → a plain proposal.
@@ -51,10 +48,6 @@ function IdeaDetails({ idea }: { idea: InboxIdeaCard }) {
   )
 }
 
-function todayIso() {
-  return new Date().toISOString().slice(0, 10)
-}
-
 export function KairosInbox() {
   const [data, setData] = useState<InboxData>({ items: [] })
   const [open, setOpen] = useState(false)
@@ -63,8 +56,6 @@ export function KairosInbox() {
   const [answer, setAnswer] = useState('')
   const [workingId, setWorkingId] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
-  const [briefHidden, setBriefHidden] = useState(false)
-  const [briefExpandedId, setBriefExpandedId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -80,7 +71,6 @@ export function KairosInbox() {
 
   useEffect(() => {
     setMounted(true)
-    setBriefHidden(window.localStorage.getItem(BRIEF_DISMISS_KEY) === todayIso())
     load()
   }, [load])
 
@@ -98,18 +88,11 @@ export function KairosInbox() {
     }
   }, [open, load])
 
-  const briefs = useMemo(() => data.items.filter((i): i is Extract<InboxItem, { kind: 'brief' }> => i.kind === 'brief'), [data.items])
   const ask = useMemo(() => data.items.find((i): i is Extract<InboxItem, { kind: 'ask' }> => i.kind === 'ask') ?? null, [data.items])
   const notifies = useMemo(() => data.items.filter((i): i is Extract<InboxItem, { kind: 'notify' }> => i.kind === 'notify'), [data.items])
   const proposals = useMemo(() => data.items.filter((i): i is Extract<InboxItem, { kind: 'proposal' }> => i.kind === 'proposal'), [data.items])
 
-  const visibleBriefs = briefHidden ? [] : briefs
-  const count = visibleBriefs.length + (ask ? 1 : 0) + notifies.length + proposals.length
-
-  const dismissBriefForToday = () => {
-    window.localStorage.setItem(BRIEF_DISMISS_KEY, todayIso())
-    setBriefHidden(true)
-  }
+  const count = (ask ? 1 : 0) + notifies.length + proposals.length
 
   const submitAnswer = async () => {
     if (!ask || !answer.trim()) return
@@ -223,54 +206,6 @@ export function KairosInbox() {
                     </div>
                   ) : (
                     <div className="flex flex-col gap-5">
-                      {visibleBriefs.length > 0 && (
-                        <section>
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.2em] text-amber-200/75">
-                              <Sparkles className="w-3 h-3" /> Today&apos;s brief
-                            </div>
-                            <button
-                              type="button"
-                              onClick={dismissBriefForToday}
-                              className="text-[10px] uppercase tracking-[0.14em] text-white/35 hover:text-white/70"
-                            >
-                              Dismiss for today
-                            </button>
-                          </div>
-                          <ul className="flex flex-col gap-2">
-                            {visibleBriefs.map((brief) => {
-                              const expanded = briefExpandedId === brief.id
-                              return (
-                                <li
-                                  key={brief.id}
-                                  className="rounded-xl border border-amber-300/20 bg-gradient-to-br from-amber-400/[0.08] to-violet-500/[0.05] p-4"
-                                >
-                                  <button
-                                    type="button"
-                                    onClick={() => setBriefExpandedId(expanded ? null : brief.id)}
-                                    aria-expanded={expanded}
-                                    className="w-full flex items-start justify-between gap-2 text-left"
-                                  >
-                                    <div>
-                                      <h3 className="text-[12px] font-medium text-amber-100/90">{brief.title}</h3>
-                                      {brief.dominionName && (
-                                        <p className="mt-0.5 text-[10px] uppercase tracking-[0.16em] text-white/35">{brief.dominionName}</p>
-                                      )}
-                                    </div>
-                                    <ChevronDown className={`w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-200/60 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                                  </button>
-                                  {expanded && (
-                                    <div className="mt-3 border-t border-amber-300/15 pt-3">
-                                      <KairosMarkdown markdown={brief.bodyMd} variant="briefing" />
-                                    </div>
-                                  )}
-                                </li>
-                              )
-                            })}
-                          </ul>
-                        </section>
-                      )}
-
                       {ask && (
                         <section>
                           <div className="flex items-center gap-1.5 mb-2 text-[10px] uppercase tracking-[0.2em] text-violet-200/70">
@@ -313,9 +248,17 @@ export function KairosInbox() {
                             {notifies.map((notify) => {
                               const working = workingId === notify.id
                               return (
-                                <li key={notify.id} className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-4">
+                                <li
+                                  key={notify.id}
+                                  className={notify.daily
+                                    ? 'rounded-xl border border-amber-300/20 bg-gradient-to-br from-amber-400/[0.08] to-violet-500/[0.05] p-4'
+                                    : 'rounded-xl bg-white/[0.04] border border-white/[0.06] p-4'}
+                                >
                                   <div className="flex items-start justify-between gap-2">
-                                    <h3 className="text-[12px] font-medium text-white/85">{notify.title}</h3>
+                                    <h3 className={`text-[12px] font-medium ${notify.daily ? 'text-amber-100/90' : 'text-white/85'}`}>
+                                      {notify.daily && <Sparkles className="inline w-3 h-3 mr-1.5 -mt-0.5 text-amber-200/75" />}
+                                      {notify.title}
+                                    </h3>
                                     {notify.urgency !== 'normal' && (
                                       <span className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-[0.14em] ${
                                         notify.urgency === 'high'

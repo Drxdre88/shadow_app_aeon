@@ -34,7 +34,6 @@ import {
 import {
   CHAT_JOB_INSTRUCTIONS,
   SWEEP_PLAN_SKIP_KINDS,
-  TEXT_JOB_INSTRUCTIONS,
   THINKING_JOB_INSTRUCTIONS,
   ThinkingQueue,
   createSweepBudget,
@@ -127,34 +126,26 @@ describe('ThinkingQueue.planDue / claim — lazy planning in prerequisite order'
     expect(res.planned.map((r) => r.kind)).toEqual(['weekly_review', 'daily_message'])
   })
 
-  it('plans the former paid-key kinds in their night order', async () => {
+  it('plans every kind in its night order, the daily message last', async () => {
     const log: string[] = []
     const kinds: ThinkingJobKind[] = [
-      'daily_message', 'micro_consolidate', 'introspection', 'brief', 'contradiction', 'ask_mine',
-      'idea_generate', 'aether', 'cortex', 'archetype', 'chat_distill',
+      'daily_message', 'ask_mine', 'idea_judge', 'idea_generate', 'aether', 'cortex', 'archetype', 'chat_distill',
     ]
     await new ThinkingQueue(kinds.map((k) => handler(k, log))).planDue(USER, NOW)
     expect(log).toEqual([
       'plan:chat_distill', 'plan:archetype', 'plan:cortex', 'plan:aether', 'plan:idea_generate',
-      'plan:ask_mine', 'plan:contradiction', 'plan:brief', 'plan:introspection', 'plan:micro_consolidate',
-      'plan:daily_message',
+      'plan:idea_judge', 'plan:ask_mine', 'plan:daily_message',
     ])
-  })
-
-  it('the sweep never plans a micro_consolidate fold (claim-only, so its window ends at the claim)', async () => {
-    const log: string[] = []
-    await new ThinkingQueue([handler('micro_consolidate', log), handler('brief', log)]).planDue(USER, NOW, { skipKinds: SWEEP_PLAN_SKIP_KINDS })
-    expect(log).toEqual(['plan:brief'])
   })
 
   it('a kinds-filtered claim plans only those kinds; an unfiltered claim plans all', async () => {
     const log: string[] = []
-    const q = new ThinkingQueue([handler('contradiction', log), handler('brief', log), handler('daily_message', log)])
-    await q.claim(USER, ['brief', 'daily_message'], NOW)
-    expect(log).toEqual(['plan:brief', 'plan:daily_message'])
+    const q = new ThinkingQueue([handler('ask_mine', log), handler('aether', log), handler('daily_message', log)])
+    await q.claim(USER, ['aether', 'daily_message'], NOW)
+    expect(log).toEqual(['plan:aether', 'plan:daily_message'])
     log.length = 0
     await q.claim(USER, undefined, NOW)
-    expect(log).toEqual(['plan:contradiction', 'plan:brief', 'plan:daily_message'])
+    expect(log).toEqual(['plan:aether', 'plan:ask_mine', 'plan:daily_message'])
   })
 
   it('claim plans first, then claims (with the kinds filter)', async () => {
@@ -361,11 +352,9 @@ describe('createSweepBudget env overrides', () => {
 })
 
 describe('jobInstructions', () => {
-  it('chat → chat text, brief / micro_consolidate → markdown, every other kind → JSON', () => {
+  it('chat → chat text, every other kind → JSON', () => {
     expect(jobInstructions('chat')).toBe(CHAT_JOB_INSTRUCTIONS)
-    expect(jobInstructions('brief')).toBe(TEXT_JOB_INSTRUCTIONS)
-    expect(jobInstructions('micro_consolidate')).toBe(TEXT_JOB_INSTRUCTIONS)
-    for (const k of ['cortex', 'archetype', 'chat_distill', 'ask_mine', 'contradiction', 'introspection'] as const) {
+    for (const k of ['cortex', 'archetype', 'chat_distill', 'ask_mine', 'daily_message'] as const) {
       expect(jobInstructions(k)).toBe(THINKING_JOB_INSTRUCTIONS)
     }
   })

@@ -6,7 +6,6 @@ const m = vi.hoisted(() => ({
   listJobs: vi.fn(),
   alreadyDelivered: vi.fn(),
   gatherDailyMessageInputs: vi.fn(),
-  readTodayBriefs: vi.fn(),
   loadConscienceBlock: vi.fn(),
 }))
 
@@ -19,7 +18,6 @@ vi.mock('@/lib/kairos/daily-message', () => ({
 }))
 vi.mock('@/lib/kairos/daily-message-inputs', () => ({
   gatherDailyMessageInputs: m.gatherDailyMessageInputs,
-  readTodayBriefs: m.readTodayBriefs,
 }))
 
 import { DAILY_MESSAGE_SYSTEM_PROMPT, buildDailyMessageUserPrompt } from '@/lib/kairos/daily-message-prompt'
@@ -30,7 +28,7 @@ const USER = 'user-1'
 function inputs(over: Partial<DailyMessageInputs> = {}): DailyMessageInputs {
   return {
     date: '2026-10-01', isMonday: false,
-    briefs: [{ dominion: 'AEON', lines: ['Ship it.'] }],
+    areas: [{ dominion: 'AEON', headline: 'Ship it.' }],
     aether: null, boardDay: null, promotions: null, newBeliefs: null, drift: null,
     pendingAsk: null, synthesis: null, mindCompare: null, failed: [],
     ...over,
@@ -54,7 +52,6 @@ beforeEach(() => {
   vi.useRealTimers()
   m.listJobs.mockResolvedValue([])
   m.alreadyDelivered.mockResolvedValue(false)
-  m.readTodayBriefs.mockResolvedValue([{ dominion: 'AEON', lines: ['Ship it.'] }])
   m.gatherDailyMessageInputs.mockResolvedValue(inputs())
   m.loadConscienceBlock.mockResolvedValue('')
 })
@@ -65,7 +62,7 @@ describe('daily_message handler — plan', () => {
     expect(dailyMessageDeadline(new Date('2026-10-25T05:00:00Z')).toISOString()).toBe('2026-10-25T07:55:00.000Z')
   })
 
-  it('plans one job with exactly the compose prompt once today\'s briefs exist', async () => {
+  it('plans one job with exactly the compose prompt', async () => {
     const now = new Date('2026-10-01T06:20:00Z') // 07:20 London
     const specs = await dailyMessageHandler.plan(USER, now)
     expect(specs).toHaveLength(1)
@@ -87,14 +84,15 @@ describe('daily_message handler — plan', () => {
     expect(specs[0].input.system).toBe(DAILY_MESSAGE_SYSTEM_PROMPT)
   })
 
-  it('plans nothing without today\'s briefs (missing or failed)', async () => {
-    m.readTodayBriefs.mockResolvedValueOnce([])
-    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-01T06:20:00Z'))).toEqual([])
-    expect(m.gatherDailyMessageInputs).not.toHaveBeenCalled() // cheap pre-check spares the full gather
-    m.gatherDailyMessageInputs.mockResolvedValue(inputs({ briefs: [] }))
-    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-01T06:20:00Z'))).toEqual([])
-    m.gatherDailyMessageInputs.mockResolvedValue(inputs({ briefs: null, failed: ['briefs'] }))
-    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-01T06:20:00Z'))).toEqual([])
+  it('plans nothing with neither area summaries nor a self-model (missing or failed)', async () => {
+    const now = new Date('2026-10-01T06:20:00Z')
+    m.gatherDailyMessageInputs.mockResolvedValue(inputs({ areas: [] }))
+    expect(await dailyMessageHandler.plan(USER, now)).toEqual([])
+    m.gatherDailyMessageInputs.mockResolvedValue(inputs({ areas: null, aether: null, failed: ['aether', 'areas'] }))
+    expect(await dailyMessageHandler.plan(USER, now)).toEqual([])
+    // The self-model alone is enough.
+    m.gatherDailyMessageInputs.mockResolvedValue(inputs({ areas: [], aether: [{ title: 'T', insight: 'I', dominionName: null }] }))
+    expect(await dailyMessageHandler.plan(USER, now)).toHaveLength(1)
   })
 
   it('plans nothing at/after 07:55 London (GMT: 07:55Z)', async () => {
@@ -104,20 +102,31 @@ describe('daily_message handler — plan', () => {
     expect(m.gatherDailyMessageInputs).toHaveBeenCalledTimes(1)
   })
 
-  it('waits until every brief job is answered, or until the 06:15 briefer has filled the gaps', async () => {
-    const brief = (status: string) => ({ kind: 'brief', externalKey: `brief:d:${status}`, status })
-    m.listJobs.mockImplementation(async (_u: string, f: { kind?: string }) => (
-      f.kind === 'brief' ? [brief('done'), brief('queued')] : []
-    ))
-    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-01T05:50:00Z'))).toEqual([])
+  it('never plans tomorrow’s message before midnight UTC in summer time', async () => {
+    // 23:50Z on 02/10 is already 03/10 in London (BST); yesterday's thinking must not be frozen in.
+    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-02T23:50:00Z'))).toEqual([])
     expect(m.gatherDailyMessageInputs).not.toHaveBeenCalled()
-    // Past 06:25 UTC the briefer has run: plan on what exists.
-    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-01T06:26:00Z'))).toHaveLength(1)
+  })
 
+  it('opens at 05:30 UTC and waits for live aether / idea / ask jobs until 06:25 UTC', async () => {
+    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-01T05:29:00Z'))).toEqual([])
+    expect(m.listJobs).not.toHaveBeenCalled()
+
+    const at = (iso: string) => new Date(iso)
+    const tonight = (kind: string, status: string, deadline: string) => ({ kind, externalKey: `${kind}:x`, status, deadlineAt: at(deadline) })
     m.listJobs.mockImplementation(async (_u: string, f: { kind?: string }) => (
-      f.kind === 'brief' ? [brief('done'), brief('done')] : []
+      f.kind ? [] : [tonight('idea_judge', 'claimed', '2026-10-01T06:00:00Z'), tonight('cortex', 'queued', '2026-10-01T06:00:00Z')]
     ))
-    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-01T05:50:00Z'))).toHaveLength(1)
+    expect(await dailyMessageHandler.plan(USER, at('2026-10-01T05:50:00Z'))).toEqual([])
+    expect(m.gatherDailyMessageInputs).not.toHaveBeenCalled()
+    // Past 06:25 UTC: plan on what exists.
+    expect(await dailyMessageHandler.plan(USER, at('2026-10-01T06:26:00Z'))).toHaveLength(1)
+
+    // A feeding job past its deadline is settled (its cron covers it); other kinds never block.
+    m.listJobs.mockImplementation(async (_u: string, f: { kind?: string }) => (
+      f.kind ? [] : [tonight('aether', 'claimed', '2026-10-01T03:13:00Z'), tonight('cortex', 'queued', '2026-10-01T06:00:00Z')]
+    ))
+    expect(await dailyMessageHandler.plan(USER, at('2026-10-01T05:50:00Z'))).toHaveLength(1)
   })
 
   it('plans nothing when the job exists or today was already delivered', async () => {

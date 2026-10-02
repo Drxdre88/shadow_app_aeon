@@ -158,6 +158,56 @@ export async function updatePendingProposal(
   })
 }
 
+export interface ProposalWrite {
+  id: string
+  patch: ProposalPatch
+  // Ops describing this write; inserted only if the write lands.
+  ops: readonly MemoryOpInput[]
+}
+
+const tsParam = (d: Date | undefined) => (d ? d.toISOString() : null)
+
+// Below the pool's 15s client query_timeout (lib/db).
+const BATCH_STATEMENT_TIMEOUT_MS = 10_000
+
+// Batched updatePendingProposal: one set-based UPDATE … FROM (VALUES …) under
+// the same pending guard, then the ops of exactly the rows that landed, in ONE
+// transaction — the batch and its trail commit together or not at all.
+// Unset patch fields keep the row's value (as .set() skips undefined keys).
+// Returns the ids whose write landed.
+export async function updatePendingProposals(
+  userId: string,
+  writes: readonly ProposalWrite[],
+  runId: string | null,
+): Promise<Set<string>> {
+  if (writes.length === 0) return new Set()
+  const values = sql.join(writes.map((w) => sql`(${w.id}::uuid, ${JSON.stringify(w.patch.sourceMetadata)}::jsonb, ${w.patch.streamClass ?? null}::varchar, ${w.patch.confidence ?? null}::real, ${tsParam(w.patch.archivedAt)}::timestamp, ${tsParam(w.patch.updatedAt)}::timestamp)`), sql`, `)
+  return db.transaction(async (tx) => {
+    // Server-side cap below the client's 15s query timeout: a slow batch is
+    // cancelled (releasing its row locks) instead of running on after the
+    // client gave up, so the caller's per-row retry isn't blocked behind it.
+    await tx.execute(sql`SET LOCAL statement_timeout = ${sql.raw(String(BATCH_STATEMENT_TIMEOUT_MS))}`)
+    const res = await tx.execute(sql`
+      UPDATE memories AS m
+      SET source_metadata = v.source_metadata,
+          stream_class = COALESCE(v.stream_class, m.stream_class),
+          confidence = COALESCE(v.confidence, m.confidence),
+          archived_at = COALESCE(v.archived_at, m.archived_at),
+          updated_at = COALESCE(v.updated_at, m.updated_at)
+      FROM (VALUES ${values}) AS v(id, source_metadata, stream_class, confidence, archived_at, updated_at)
+      WHERE m.id = v.id
+        AND m.user_id = ${userId}
+        AND m.source_metadata->>'status' = 'pending'
+        AND m.archived_at IS NULL
+      RETURNING m.id
+    `)
+    const landed = new Set((res.rows as Array<{ id: unknown }>).map((r) => String(r.id)))
+    const ops = writes.flatMap((w) => (landed.has(w.id) ? w.ops : []))
+    if (ops.length > 0) await insertMemoryOps(userId, runId, ops, tx)
+    return landed
+  })
+}
+
 // ── Merge: near-duplicate new rows ──────────────────────────────────────────
 
 export interface MergeCandidateRow {
