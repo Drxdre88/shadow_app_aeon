@@ -9,7 +9,7 @@ import type { CredentialSummary, PreferenceShape } from '@/lib/data/ai-credentia
 const TIER_INFO: Record<AiTier, { label: string; hint: string; icon: typeof Sparkles }> = {
   cheap:    { label: 'Cheap',    hint: 'Auto-tag, link suggestions, classification', icon: Sparkles },
   standard: { label: 'Standard', hint: 'Reflections, code, shell, summaries',         icon: Zap },
-  heavy:    { label: 'Heavy',    hint: 'Briefings, advisories, deep work',            icon: Sparkles },
+  heavy:    { label: 'Heavy',    hint: 'Backup thinking, chat, deep work',            icon: Sparkles },
 }
 
 type TierRoutingPanelProps = {

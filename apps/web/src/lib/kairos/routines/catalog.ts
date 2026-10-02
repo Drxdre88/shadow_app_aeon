@@ -30,7 +30,7 @@ export const ROUTINES: readonly RoutineDef[] = [
     id: 'brain',
     name: 'Kairos brain',
     purpose:
-      'Does all of Kairos’s scheduled thinking: chat summaries, patterns, area summaries, the self-model, beliefs, the idea contest, the question of the day, the weekly review and the 08:00 message.',
+      'Does all of Kairos’s scheduled thinking: chat summaries, patterns, area summaries, the self-model, beliefs, the idea contest, the question of the day, the weekly review, the first constitution draft and the 06:00 message.',
     trigger: 'schedule',
     cronUtc: '40 1-6 * * *',
     scheduleLabel: 'Every hour from 01:40 to 06:40 UTC',
@@ -80,11 +80,12 @@ export const BRAIN_JOBS: readonly BrainJob[] = [
   { kind: 'belief_extract', label: 'Your beliefs', area: 'Beliefs & conscience', cadence: 'nightly', what: 'Pulls what you believe out of your own words.' },
   { kind: 'drift_probe', label: 'Drift & honesty checks', area: 'Beliefs & conscience', cadence: 'nightly', what: 'Checks Kairos still answers in line with your constitution, and stays honest.' },
   { kind: 'mind_compare', label: 'Two minds', area: 'Beliefs & conscience', cadence: 'weekly', what: 'Compares your beliefs with Kairos’s own (Mondays).' },
+  { kind: 'constitution_seed', label: 'Constitution draft', area: 'Beliefs & conscience', cadence: 'weekly', what: 'Until you have a constitution, drafts a first one from your areas and reflections for you to review (Mondays).' },
   { kind: 'idea_generate', label: 'Idea contest: generate', area: 'Creativity', cadence: 'nightly', what: 'Proposes grounded new ideas.' },
   { kind: 'idea_judge', label: 'Idea contest: judge', area: 'Creativity', cadence: 'nightly', what: 'A sceptical judge keeps the best one to three.' },
   { kind: 'ask_mine', label: 'Question of the day', area: 'Voice', cadence: 'nightly', what: 'The one question Kairos most wants to ask you.' },
   { kind: 'weekly_review', label: 'Weekly review', area: 'Voice', cadence: 'weekly', what: 'Plan versus actual, belief changes and ideas (Mondays).' },
-  { kind: 'daily_message', label: '08:00 message', area: 'Voice', cadence: 'nightly', what: 'The single morning message on Telegram and in the inbox.' },
+  { kind: 'daily_message', label: '06:00 message', area: 'Voice', cadence: 'nightly', what: 'The single morning message on Telegram and in the inbox, ending with every question you haven’t answered yet, numbered.' },
   { kind: 'chat', label: 'Telegram replies', area: 'Voice', cadence: 'on demand', what: 'Answers you on Telegram.' },
 ]
 

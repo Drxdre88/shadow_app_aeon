@@ -26,8 +26,6 @@ describe('routeTask default policies (quality-over-cost, 2026-07-24)', () => {
     // Everything that shapes the self-model or speaks to the operator → heavy
     ['archetype', 'heavy'],
     ['cortex', 'heavy'],
-    ['contradiction', 'heavy'],
-    ['brief', 'heavy'],
     ['advisory', 'heavy'],
     ['aether', 'heavy'],
     ['chat', 'heavy'],

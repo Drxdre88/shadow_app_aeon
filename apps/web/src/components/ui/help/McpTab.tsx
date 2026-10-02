@@ -15,6 +15,7 @@ const TOOL_CATEGORIES = [
       'create_project',
       'update_project',
       'set_project_favorite',
+      'set_project_kairos_feed',
       'delete_project',
       'project_summary',
     ],
@@ -153,7 +154,6 @@ const TOOL_CATEGORIES = [
       'assign_project_dominion',
       'bulk_assign_projects_to_dominion',
       'get_trace_history',
-      'run_recipe',
     ],
   },
   {
@@ -161,7 +161,10 @@ const TOOL_CATEGORIES = [
     tools: [
       'run_kairos_ask',
       'get_pending_kairos_ask',
+      'list_open_kairos_asks',
       'answer_kairos_ask',
+      'dismiss_kairos_ask',
+      'kairos_voice_note',
       'open_dialogue',
       'prepare_dialogue_context',
       'append_dialogue_turn',

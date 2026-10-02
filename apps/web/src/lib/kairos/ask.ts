@@ -5,6 +5,9 @@ import {
   getPriorAethers,
   getReflectionsSince,
   getPendingKairosAsk,
+  getOpenKairosAskById,
+  listOpenKairosAsks,
+  markKairosAskDismissed,
   getNewestKairosAsk,
   createKairosAskMemory,
   markKairosAskAnswered,
@@ -18,6 +21,7 @@ import { appendTaskDescription, findTaskById } from '@/lib/data/tasks'
 import { updateVaultDescription } from '@/lib/data/vault'
 import { verifyProjectAccess } from '@/lib/data/projects'
 import { selectKairosQuestion } from './ask-select'
+import { hasNumberedMatches, mightContainNumberedAnswers, parseNumberedAnswers } from './ask-numbered'
 import type { Origin } from './origin'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -294,8 +298,10 @@ export async function answerKairosAsk(
   dominionIdOverride?: string,
   origin: Origin = ASK_DEFAULT_ORIGIN,
 ): Promise<AnswerKairosAskResult> {
-  const pending = await getPendingKairosAsk(userId)
-  if (!pending || pending.id !== questionMemoryId) {
+  // Any open ask can be answered by id — not just the newest — so a backlog
+  // of numbered questions can be caught up in any order.
+  const pending = await getOpenKairosAskById(userId, questionMemoryId)
+  if (!pending) {
     return { error: 'not_found' }
   }
 
@@ -368,4 +374,65 @@ export async function answerKairosAsk(
   const sourceIds = pending.kairosAsk.sourceMemoryIds ?? []
   if (sourceIds.length > 0) await reactUsed(userId, sourceIds, 'kairos ask answered')
   return { reflectionId: answerMemoryId }
+}
+
+// ─── Backlog: dismiss + numbered answers (Q<seq>) ─────────────────────────
+
+export type DismissKairosAskResult = { ok: true; id: string } | { error: 'not_found' }
+
+/**
+ * Operator "skip": status 'dismissed' + archived, no Outcome reaction (a
+ * dismissal is not a miss, unlike expiry). not_found when the ask is not
+ * open (answered, expired, dismissed, or someone else's).
+ */
+export async function dismissKairosAsk(userId: string, askId: string, now: Date = new Date()): Promise<DismissKairosAskResult> {
+  const dismissed = await markKairosAskDismissed(userId, askId, now)
+  return dismissed ? { ok: true, id: askId } : { error: 'not_found' }
+}
+
+export type NumberedAnswerOutcome =
+  | { matched: false }
+  | { matched: true; answered: number[]; skipped: number[]; failed: number[]; stillOpen: number[] }
+
+/**
+ * Deterministic pre-router for operator text: "Q12: …" answers and
+ * "skip Q12" dismissals against the open backlog. matched:false (no label
+ * names an open question) means the text is ordinary chat. Answers carry the
+ * operator's own words, so they are stamped operator-origin.
+ */
+export async function answerNumberedKairosAsks(
+  userId: string,
+  body: string,
+  now: Date = new Date(),
+): Promise<NumberedAnswerOutcome> {
+  if (!mightContainNumberedAnswers(body)) return { matched: false }
+  const open = await listOpenKairosAsks(userId, now)
+  const parsed = parseNumberedAnswers(body, open.map((ask) => ask.seq))
+  if (!hasNumberedMatches(parsed)) return { matched: false }
+
+  const bySeq = new Map(open.map((ask) => [ask.seq, ask]))
+  const answered: number[] = []
+  const skipped: number[] = []
+  const failed: number[] = []
+  for (const { seq, text } of parsed.answers) {
+    try {
+      const result = await answerKairosAsk(userId, bySeq.get(seq)!.id, text, undefined, { kind: 'operator', via: 'ask' })
+      ;('error' in result ? failed : answered).push(seq)
+    } catch (err) {
+      console.error('[kairos-ask] numbered answer failed', { seq, err })
+      failed.push(seq)
+    }
+  }
+  for (const seq of parsed.skips) {
+    try {
+      const result = await dismissKairosAsk(userId, bySeq.get(seq)!.id, now)
+      ;('error' in result ? failed : skipped).push(seq)
+    } catch (err) {
+      console.error('[kairos-ask] numbered skip failed', { seq, err })
+      failed.push(seq)
+    }
+  }
+  const closed = new Set([...answered, ...skipped])
+  const stillOpen = open.map((ask) => ask.seq).filter((seq) => !closed.has(seq))
+  return { matched: true, answered, skipped, failed, stillOpen }
 }

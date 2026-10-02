@@ -30,7 +30,7 @@ function inputs(over: Partial<DailyMessageInputs> = {}): DailyMessageInputs {
     date: '2026-10-01', isMonday: false,
     areas: [{ dominion: 'AEON', headline: 'Ship it.' }],
     aether: null, boardDay: null, promotions: null, newBeliefs: null, drift: null,
-    pendingAsk: null, synthesis: null, mindCompare: null, failed: [],
+    openAsks: null, synthesis: null, mindCompare: null, failed: [],
     ...over,
   }
 }
@@ -57,13 +57,13 @@ beforeEach(() => {
 })
 
 describe('daily_message handler — plan', () => {
-  it('deadline is 07:55 London on both sides of the 2026-10-25 boundary', () => {
-    expect(dailyMessageDeadline(new Date('2026-10-24T05:00:00Z')).toISOString()).toBe('2026-10-24T06:55:00.000Z')
-    expect(dailyMessageDeadline(new Date('2026-10-25T05:00:00Z')).toISOString()).toBe('2026-10-25T07:55:00.000Z')
+  it('deadline is 05:55 London on both sides of the 2026-10-25 boundary', () => {
+    expect(dailyMessageDeadline(new Date('2026-10-24T03:00:00Z')).toISOString()).toBe('2026-10-24T04:55:00.000Z')
+    expect(dailyMessageDeadline(new Date('2026-10-25T03:00:00Z')).toISOString()).toBe('2026-10-25T05:55:00.000Z')
   })
 
-  it('plans one job with exactly the compose prompt', async () => {
-    const now = new Date('2026-10-01T06:20:00Z') // 07:20 London
+  it('plans one job with exactly the compose prompt (the 04:40Z brain-routine run, BST)', async () => {
+    const now = new Date('2026-10-01T04:40:00Z') // 05:40 London
     const specs = await dailyMessageHandler.plan(USER, now)
     expect(specs).toHaveLength(1)
     expect(specs[0]).toMatchObject({
@@ -72,12 +72,12 @@ describe('daily_message handler — plan', () => {
       externalKey: 'daily_message:2026-10-01',
       input: { system: DAILY_MESSAGE_SYSTEM_PROMPT, prompt: buildDailyMessageUserPrompt(inputs()), context: { date: '2026-10-01' } },
     })
-    expect(specs[0].deadlineMinutes).toBeCloseTo(35, 5)
+    expect(specs[0].deadlineMinutes).toBeCloseTo(15, 5)
   })
 
   it('routine prompt carries the same conscience block as the paid compose', async () => {
     m.loadConscienceBlock.mockResolvedValue('## Conscience (reference data)\nP1')
-    const specs = await dailyMessageHandler.plan(USER, new Date('2026-10-01T06:20:00Z'))
+    const specs = await dailyMessageHandler.plan(USER, new Date('2026-10-01T04:40:00Z'))
     expect(m.loadConscienceBlock).toHaveBeenCalledWith(USER)
     expect(specs[0].input.prompt).toBe(buildDailyMessageUserPrompt(inputs(), '## Conscience (reference data)\nP1'))
     expect(specs[0].input.prompt).toMatch(/Conscience \(reference data\)\nP1$/)
@@ -85,7 +85,7 @@ describe('daily_message handler — plan', () => {
   })
 
   it('plans nothing with neither area summaries nor a self-model (missing or failed)', async () => {
-    const now = new Date('2026-10-01T06:20:00Z')
+    const now = new Date('2026-10-01T04:40:00Z')
     m.gatherDailyMessageInputs.mockResolvedValue(inputs({ areas: [] }))
     expect(await dailyMessageHandler.plan(USER, now)).toEqual([])
     m.gatherDailyMessageInputs.mockResolvedValue(inputs({ areas: null, aether: null, failed: ['aether', 'areas'] }))
@@ -95,10 +95,12 @@ describe('daily_message handler — plan', () => {
     expect(await dailyMessageHandler.plan(USER, now)).toHaveLength(1)
   })
 
-  it('plans nothing at/after 07:55 London (GMT: 07:55Z)', async () => {
-    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-01T06:55:00Z'))).toEqual([])
-    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-26T07:56:00Z'))).toEqual([])
-    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-26T07:30:00Z'))).toHaveLength(1)
+  it('plans nothing at/after 05:55 London (BST: 04:55Z, GMT: 05:55Z); the GMT 05:40Z run plans', async () => {
+    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-01T04:55:00Z'))).toEqual([])
+    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-26T05:56:00Z'))).toEqual([])
+    const gmt = await dailyMessageHandler.plan(USER, new Date('2026-10-26T05:40:00Z'))
+    expect(gmt).toHaveLength(1)
+    expect(gmt[0].deadlineMinutes).toBeCloseTo(15, 5)
     expect(m.gatherDailyMessageInputs).toHaveBeenCalledTimes(1)
   })
 
@@ -108,29 +110,29 @@ describe('daily_message handler — plan', () => {
     expect(m.gatherDailyMessageInputs).not.toHaveBeenCalled()
   })
 
-  it('opens at 05:30 UTC and waits for live aether / idea / ask jobs until 06:25 UTC', async () => {
-    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-01T05:29:00Z'))).toEqual([])
+  it('opens at 04:00 UTC and waits for live aether / idea / ask jobs until 04:35 UTC', async () => {
+    expect(await dailyMessageHandler.plan(USER, new Date('2026-10-01T03:59:00Z'))).toEqual([])
     expect(m.listJobs).not.toHaveBeenCalled()
 
     const at = (iso: string) => new Date(iso)
     const tonight = (kind: string, status: string, deadline: string) => ({ kind, externalKey: `${kind}:x`, status, deadlineAt: at(deadline) })
     m.listJobs.mockImplementation(async (_u: string, f: { kind?: string }) => (
-      f.kind ? [] : [tonight('idea_judge', 'claimed', '2026-10-01T06:00:00Z'), tonight('cortex', 'queued', '2026-10-01T06:00:00Z')]
+      f.kind ? [] : [tonight('idea_judge', 'claimed', '2026-10-01T04:50:00Z'), tonight('cortex', 'queued', '2026-10-01T04:50:00Z')]
     ))
-    expect(await dailyMessageHandler.plan(USER, at('2026-10-01T05:50:00Z'))).toEqual([])
+    expect(await dailyMessageHandler.plan(USER, at('2026-10-01T04:20:00Z'))).toEqual([])
     expect(m.gatherDailyMessageInputs).not.toHaveBeenCalled()
-    // Past 06:25 UTC: plan on what exists.
-    expect(await dailyMessageHandler.plan(USER, at('2026-10-01T06:26:00Z'))).toHaveLength(1)
+    // Past 04:35 UTC: plan on what exists.
+    expect(await dailyMessageHandler.plan(USER, at('2026-10-01T04:36:00Z'))).toHaveLength(1)
 
     // A feeding job past its deadline is settled (its cron covers it); other kinds never block.
     m.listJobs.mockImplementation(async (_u: string, f: { kind?: string }) => (
-      f.kind ? [] : [tonight('aether', 'claimed', '2026-10-01T03:13:00Z'), tonight('cortex', 'queued', '2026-10-01T06:00:00Z')]
+      f.kind ? [] : [tonight('aether', 'claimed', '2026-10-01T03:13:00Z'), tonight('cortex', 'queued', '2026-10-01T04:50:00Z')]
     ))
-    expect(await dailyMessageHandler.plan(USER, at('2026-10-01T05:50:00Z'))).toHaveLength(1)
+    expect(await dailyMessageHandler.plan(USER, at('2026-10-01T04:20:00Z'))).toHaveLength(1)
   })
 
   it('plans nothing when the job exists or today was already delivered', async () => {
-    const now = new Date('2026-10-01T06:20:00Z')
+    const now = new Date('2026-10-01T04:40:00Z')
     m.listJobs.mockResolvedValue([{ externalKey: 'daily_message:2026-10-01' }])
     expect(await dailyMessageHandler.plan(USER, now)).toEqual([])
     m.listJobs.mockResolvedValue([])

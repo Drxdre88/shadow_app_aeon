@@ -1,4 +1,4 @@
-import { getPendingKairosAsk, markKairosAskAnswered, getPriorAethers } from '@/lib/data/ask'
+import { getOpenKairosAskById, markKairosAskAnswered, getPriorAethers } from '@/lib/data/ask'
 import { captureReflection } from '@/lib/data/memories'
 import {
   createDialogue,
@@ -49,8 +49,9 @@ export async function openKairosDialogue(
   opts: { questionMemoryId?: string; topic?: string; dominionId?: string | null },
 ): Promise<OpenDialogueResult> {
   if (opts.questionMemoryId) {
-    const pending = await getPendingKairosAsk(userId)
-    if (!pending || pending.id !== opts.questionMemoryId) {
+    // Any open ask in the backlog can seed a dialogue, not just the newest.
+    const pending = await getOpenKairosAskById(userId, opts.questionMemoryId)
+    if (!pending) {
       return { ok: false, reason: 'ask_not_found' }
     }
 
@@ -248,8 +249,8 @@ export async function commitDialogue(
   let closedAsk = false
   const closeAsk = input.closeAsk ?? true
   if (closeAsk && thread.seed.kairosAskId) {
-    const pending = await getPendingKairosAsk(userId)
-    if (pending && pending.id === thread.seed.kairosAskId) {
+    const pending = await getOpenKairosAskById(userId, thread.seed.kairosAskId)
+    if (pending) {
       await markKairosAskAnswered(userId, pending.id, reflectionIds[0], new Date().toISOString())
       closedAsk = true
     }

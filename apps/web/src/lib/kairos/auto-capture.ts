@@ -1,9 +1,10 @@
 import { captureMemory } from '@/lib/data/memories'
 import { findTaskById } from '@/lib/data/tasks'
-import { findProjectSettings } from '@/lib/data/projects'
-import { listChecklistForTasks } from '@/lib/data/board-feed'
+import { findProjectFeedInfo } from '@/lib/data/projects'
+import { listBoardColumnsForFeed, listChecklistForTasks } from '@/lib/data/board-feed'
 import type { MemoryType } from '@/lib/data/validators'
 import { parseKairosFeed, trimText } from './board-feed-render'
+import { captureBoardCardDone } from './board-feed'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (A3 / A4) — auto-capture helpers.
@@ -35,12 +36,22 @@ export interface BoardEventInput {
 }
 
 export async function captureBoardEvent(input: BoardEventInput) {
+  const project = input.action === 'created' || input.action === 'deleted' ? null : await loadFeedProject(input.projectId)
+  const feed = project ? parseKairosFeed(project.settings) : null
+  const watched = feed && project && project.userId === input.userId ? project : null
+
+  if (watched && (input.action === 'completed' || (input.action === 'moved' && await movedIntoDoneColumn(input)))) {
+    try {
+      await captureBoardCardDone(input.userId, watched, input.taskId, new Date(), { skipIfStatusDone: input.action === 'moved' })
+      return
+    } catch (err) {
+      console.error('[kairos:auto-capture] board_card_done capture failed', input.projectId, input.taskId, err)
+    }
+  }
+
   // Feed boards get one daily/weekly page (lib/kairos/board-feed.ts) that
   // already covers moves and edits — per-event snapshot rows there are noise.
-  if (input.action === 'moved' || input.action === 'updated') {
-    const feed = await loadFeedMode(input.projectId)
-    if (feed) return
-  }
+  if ((input.action === 'moved' || input.action === 'updated') && feed) return
 
   const name = input.taskName?.trim() || '(untitled task)'
   const type: MemoryType = input.action === 'completed' ? 'achievement' : 'snapshot'
@@ -87,11 +98,25 @@ interface CardDetail {
   items: Array<{ title: string; done: boolean }>
 }
 
-async function loadFeedMode(projectId: string) {
+async function loadFeedProject(projectId: string) {
   try {
-    return parseKairosFeed(await findProjectSettings(projectId))
+    return await findProjectFeedInfo(projectId)
   } catch {
     return null
+  }
+}
+
+const DONE_COLUMN_NAMES = new Set(['done', 'vault'])
+
+async function movedIntoDoneColumn(input: BoardEventInput): Promise<boolean> {
+  const toColumnId = input.metadata?.toColumnId
+  if (typeof toColumnId !== 'string') return false
+  try {
+    const columns = await listBoardColumnsForFeed(input.projectId)
+    const name = columns.find((column) => column.id === toColumnId)?.name
+    return !!name && DONE_COLUMN_NAMES.has(name.trim().toLowerCase())
+  } catch {
+    return false
   }
 }
 

@@ -13,8 +13,10 @@ export const AETHER_DEADLINE_UTC = { hour: 3, minute: 13 }
 //   01:36–02:28 archetype      → 02:30 archetype-synthesis (after the 01:30
 //                                memory engine and tonight's chat distill)
 //   03:15–04:28 ask_mine       → 04:30 ask-mine (once aether is settled)
-// The daily message opens at 05:30 (handlers/daily-message.ts) and closes at
-// 07:55 London, before the 08:00 London daily-message cron.
+//   04:00–05:56 constitution_seed, Mondays only → 05:58 Monday constitution-seed
+//                                cron (the brain routine runs at 04:40 and 05:40)
+// The daily message opens at 04:00 UTC (handlers/daily-message.ts) and closes at
+// 05:55 London, before the 06:00 London daily-message cron.
 export interface UtcWindow {
   notBefore: { hour: number; minute: number }
   deadline: { hour: number; minute: number }
@@ -23,6 +25,12 @@ export interface UtcWindow {
 export const CHAT_DISTILL_WINDOW_UTC: UtcWindow = { notBefore: { hour: 1, minute: 0 }, deadline: { hour: 1, minute: 58 } }
 export const ARCHETYPE_WINDOW_UTC: UtcWindow = { notBefore: { hour: 1, minute: 36 }, deadline: { hour: 2, minute: 28 } }
 export const ASK_MINE_WINDOW_UTC: UtcWindow = { notBefore: { hour: 3, minute: 15 }, deadline: { hour: 4, minute: 28 } }
+export const CONSTITUTION_SEED_WINDOW_UTC: UtcWindow = { notBefore: { hour: 4, minute: 0 }, deadline: { hour: 5, minute: 56 } }
+
+// The constitution seed runs on Monday (UTC).
+export function isConstitutionSeedDay(now: Date): boolean {
+  return now.getUTCDay() === 1
+}
 
 // Minutes left in today's window at `now`; <= 0 → closed or not yet open.
 export function minutesLeftInWindow(now: Date, w: UtcWindow): number {

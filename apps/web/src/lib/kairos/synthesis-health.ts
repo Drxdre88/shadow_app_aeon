@@ -42,8 +42,10 @@ export const SYNTHESIS_HEALTH_RECIPE = 'SYNTHESIS_HEALTH'
 export const EXPECTED_NIGHTLY_STAGES: readonly string[] = ['idea-tournament']
 // Disarm a stage not seen for this long (user lost the feature / key).
 const EXPECTED_ARM_DAYS = 14
-// Today's night is only judged missing once the rollup's normal slot has
-// arrived (08:00Z cron) — an early manual run must not flag a night in flight.
+// Today's night is only judged missing from 08:00Z — after the tournament's
+// latest possible finish. The rollup's own slot (04:25Z, so the 06:00 London
+// message reads a same-day rollup) and any early manual run judge only last
+// night, never a night still in flight.
 const EXPECTED_JUDGE_TODAY_FROM_HOUR_UTC = 8
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -119,19 +121,37 @@ function extractExpectedStages(metadata: unknown): Record<string, ExpectedStageS
   return out
 }
 
+// Expected-stage nights the previous rollup judged missing.
+function extractMissingStages(metadata: unknown): Record<string, string[]> {
+  const raw = asRecord(asRecord(metadata)?.missingStages)
+  const out: Record<string, string[]> = {}
+  if (!raw) return out
+  for (const [stage, nights] of Object.entries(raw)) {
+    if (Array.isArray(nights)) out[stage] = nights.filter((n): n is string => typeof n === 'string' && ISO_DATE.test(n))
+  }
+  return out
+}
+
 function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS)
 }
 
 // Mutates byStage: an armed expected stage with no row on a judged night is
 // marked 'failed'. Returns the new carried state and the missing nights.
+// Before EXPECTED_JUDGE_TODAY_FROM_HOUR_UTC (the normal 04:25Z slot) only last
+// night is judged, so the night before is carried from the previous rollup's
+// `missingStages` — unless a trace for it has since arrived — keeping "missing
+// two nights running" a 2-strike. Tonight's run is never judged early, so a
+// tournament still in flight cannot false-alarm.
 function applyExpectedStages(
   byStage: Record<string, Record<string, StageStatus>>,
   previous: Record<string, ExpectedStageState>,
   now: Date,
+  previousMissing: Record<string, string[]> = {},
 ): { expectedStages: Record<string, ExpectedStageState>; missingStages: Record<string, string[]> } {
   const today = utcDate(now)
   const yesterday = utcDate(new Date(now.getTime() - DAY_MS))
+  const dayBefore = utcDate(new Date(now.getTime() - 2 * DAY_MS))
   const judged = now.getUTCHours() >= EXPECTED_JUDGE_TODAY_FROM_HOUR_UTC ? [yesterday, today] : [yesterday]
 
   const expectedStages: Record<string, ExpectedStageState> = {}
@@ -146,8 +166,9 @@ function applyExpectedStages(
     if (!lastSeen || !since) continue
     expectedStages[stage] = { since, lastSeen }
 
-    for (const night of judged) {
-      if (night < since || byStage[stage]?.[night]) continue
+    const carried = (previousMissing[stage] ?? []).filter((night) => night >= dayBefore && !judged.includes(night))
+    for (const night of [...new Set([...carried, ...judged])].sort()) {
+      if (night < since || night > today || byStage[stage]?.[night]) continue
       ;(byStage[stage] ??= {})[night] = 'failed'
       ;(missingStages[stage] ??= []).push(night)
     }
@@ -211,6 +232,7 @@ export async function computeSynthesisHealth(userId: string): Promise<SynthesisH
     byStage,
     extractExpectedStages(previous[0]?.sourceMetadata),
     now,
+    extractMissingStages(previous[0]?.sourceMetadata),
   )
 
   const failingStages: string[] = []

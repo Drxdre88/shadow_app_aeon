@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { X, Activity, Network, Plug, CalendarClock, Send, CloudOff, RefreshCw } from 'lucide-react'
+import { X, Activity, Network, Plug, CalendarClock, Send, CloudOff, RefreshCw, Eye, Mic } from 'lucide-react'
 import { useHasMounted } from '@/lib/utils/useHasMounted'
 import { useThemeStore } from '@/stores/themeStore'
 import { getKairosBrainStatus } from '@/lib/actions/kairos-brain'
@@ -16,13 +16,17 @@ import { BrainMapView } from './BrainMapView'
 import { ConnectView } from './ConnectView'
 import { RoutinesView } from './RoutinesView'
 import { TelegramView } from './TelegramView'
+import { WatchedView } from './WatchedView'
+import { VoiceNotesView } from './VoiceNotesView'
 
-export type BrainView = 'status' | 'map' | 'connect' | 'routines' | 'telegram'
+export type BrainView = 'status' | 'map' | 'connect' | 'watched' | 'voice' | 'routines' | 'telegram'
 
 const VIEWS: { id: BrainView; label: string; icon: typeof Activity }[] = [
   { id: 'status', label: 'Status', icon: Activity },
   { id: 'map', label: 'Brain map', icon: Network },
   { id: 'connect', label: 'Connect', icon: Plug },
+  { id: 'watched', label: 'Watched', icon: Eye },
+  { id: 'voice', label: 'Voice notes', icon: Mic },
   { id: 'routines', label: 'Routines', icon: CalendarClock },
   { id: 'telegram', label: 'Telegram', icon: Send },
 ]
@@ -174,6 +178,8 @@ function ModalBody({ onClose, defaultView }: { onClose: () => void; defaultView:
               )}
               {activeView === 'map' && <BrainMapView status={status} />}
               {activeView === 'connect' && <ConnectView status={status} />}
+              {activeView === 'watched' && <WatchedView />}
+              {activeView === 'voice' && <VoiceNotesView />}
               {activeView === 'routines' && <RoutinesView nowIso={status?.generatedAt} />}
               {activeView === 'telegram' && status?.isAdmin && <TelegramView telegram={status.telegram} />}
             </motion.div>

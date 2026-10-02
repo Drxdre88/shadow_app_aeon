@@ -14,6 +14,8 @@ import {
 import {
   buildBoardDayPage,
   buildBoardWeekPage,
+  buildCardDonePage,
+  hasNotes,
   isoWeekLabel,
   type FeedCard,
   type KairosFeedMode,
@@ -187,6 +189,7 @@ async function writeBoardDayPage(userId: string, project: FeedProject, now: Date
 
   const { created } = await captureMemory(userId, {
     title: page.title,
+    summary: page.summary,
     bodyMd: page.bodyMd,
     type: 'achievement',
     streamClass: 'agentic',
@@ -303,4 +306,55 @@ export async function runBoardFeedForProject(
   return mode === 'daily'
     ? writeBoardDayPage(userId, project, now)
     : writeBoardWeekPage(userId, project, now)
+}
+
+// Same-day capture for a watched board: one 'agentic' memory per finished card
+// per UTC day, so chat and the area summaries see it before the nightly page.
+// Origin 'activity' (inferred from kind); not a belief signal and not BackUp
+// support (source 'system' reads as self-written there) — board_day stays the
+// one anchored record of the day. A drag into Done fires both 'moved' and
+// 'completed'; the move side passes skipIfStatusDone so only one writer runs.
+export async function captureBoardCardDone(
+  userId: string,
+  project: FeedProject,
+  taskId: string,
+  now: Date = new Date(),
+  opts: { skipIfStatusDone?: boolean } = {},
+): Promise<{ status: 'created' | 'existing' | 'skipped'; externalId?: string }> {
+  const [rows, columns] = await Promise.all([
+    listBoardTasksByIds(project.id, [taskId]),
+    listBoardColumnsForFeed(project.id),
+  ])
+  if (rows.length === 0) return { status: 'skipped' }
+  if (opts.skipIfStatusDone && rows[0].status === 'done') return { status: 'skipped' }
+  const columnNames = new Map(columns.map((column) => [column.id, column.name]))
+  const [card] = await toFeedCards(rows, (task) => task.completedAt ?? now, columnNames)
+  const date = now.toISOString().slice(0, 10)
+  const externalId = `board-done:${taskId}:${date}`
+  const page = buildCardDonePage(project.name, date, card)
+
+  const { created } = await captureMemory(userId, {
+    title: page.title,
+    summary: page.summary,
+    bodyMd: page.bodyMd,
+    type: 'achievement',
+    streamClass: 'agentic',
+    source: 'system',
+    projectId: project.id,
+    taskId,
+    dominionId: project.dominionId,
+    sourceMetadata: {
+      externalId,
+      kind: 'board_card_done',
+      projectId: project.id,
+      taskId,
+      date,
+      cardTitle: card.title,
+      columnName: card.columnName ?? null,
+      hasNotes: hasNotes(card),
+      checklist: { done: card.checklist.done, total: card.checklist.total },
+      daysTaken: card.daysTaken,
+    },
+  })
+  return { status: created ? 'created' : 'existing', externalId }
 }

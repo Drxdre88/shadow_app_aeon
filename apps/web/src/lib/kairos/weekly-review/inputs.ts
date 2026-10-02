@@ -337,6 +337,7 @@ async function gatherAsks(
       if (inWindow(row.createdAt, w)) answered++
       continue
     }
+    if (status === 'dismissed') continue // the operator dropped it ("skip Q12")
     // Still-open asks always count; expired ones only if asked this week.
     if (status === 'pending' || inWindow(row.createdAt, w)) asks.push({ id: row.id, title: row.title, status })
   }

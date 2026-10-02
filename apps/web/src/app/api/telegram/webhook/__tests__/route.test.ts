@@ -38,7 +38,18 @@ vi.mock('@/lib/kairos/chat-turn', () => ({
   sendChatMessage: vi.fn(),
 }))
 
+vi.mock('@/lib/kairos/ask', () => ({
+  answerKairosAsk: vi.fn(),
+  answerNumberedKairosAsks: vi.fn(),
+}))
+
+vi.mock('@/lib/kairos/chat-turn-reply', () => ({
+  appendAssistantReplyOnce: vi.fn(),
+}))
+
 import { acceptInboxProposal, dismissInboxMemory } from '@/lib/kairos/proposal-accept'
+import { answerNumberedKairosAsks } from '@/lib/kairos/ask'
+import { appendAssistantReplyOnce } from '@/lib/kairos/chat-turn-reply'
 import { appendChatMessage, createChatThread, findOpenChatThreadByTitle, getChatThread } from '@/lib/data/kairos-chat'
 import { markKairosSpeaksReplied } from '@/lib/data/memories'
 import { failJob, findJobById, listJobs, upsertJob } from '@/lib/data/thinking-jobs'
@@ -102,6 +113,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock)
   vi.mocked(findOpenChatThreadByTitle).mockResolvedValue(THREAD_ID)
   vi.mocked(markKairosSpeaksReplied).mockResolvedValue(0)
+  vi.mocked(answerNumberedKairosAsks).mockResolvedValue({ matched: false })
 })
 
 afterEach(() => {
@@ -215,6 +227,76 @@ describe('telegram webhook — callback triage', () => {
     const res = await POST(makeReq(callbackUpdate(`dismiss:${MEMORY_ID}`), 'hook-secret'))
     expect(res.status).toBe(200)
     expect(markKairosSpeaksReplied).toHaveBeenCalledWith(OPERATOR_USER, expect.any(Date))
+  })
+})
+
+describe('telegram webhook — numbered answers to open questions', () => {
+  it('routes "Q12: … Q14: …" to the asks, acks once, keeps the exchange in the thread and skips chat', async () => {
+    vi.mocked(answerNumberedKairosAsks).mockResolvedValue({ matched: true, answered: [12, 14], skipped: [], failed: [], stillOpen: [15, 16] })
+    vi.mocked(appendChatMessage).mockResolvedValue({ ok: true, messageId: 'msg-1', seq: 5 })
+    vi.mocked(appendAssistantReplyOnce).mockResolvedValue({ ok: true, messageId: 'msg-2', seq: 6 })
+    const body = 'Q12: yes, ship it\nQ14: the deploy broke'
+
+    const res = await POST(makeReq(textUpdate(body), 'hook-secret'))
+
+    expect(res.status).toBe(200)
+    expect(answerNumberedKairosAsks).toHaveBeenCalledWith(OPERATOR_USER, body)
+    expect(markKairosSpeaksReplied).toHaveBeenCalledWith(OPERATOR_USER, expect.any(Date))
+    expect(sendChatMessage).not.toHaveBeenCalled()
+    expect(buildAssistantTurn).not.toHaveBeenCalled()
+    const ack = '✓ Q12, Q14 · still open: Q15, Q16'
+    expect(appendChatMessage).toHaveBeenCalledWith(OPERATOR_USER, THREAD_ID, { role: 'user', content: body })
+    expect(appendAssistantReplyOnce).toHaveBeenCalledWith(OPERATOR_USER, THREAD_ID, 5, { content: ack })
+    const calls = telegramCalls(fetchMock)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ method: 'sendMessage', body: { text: ack } })
+  })
+
+  it('acks a skip the same way', async () => {
+    vi.mocked(answerNumberedKairosAsks).mockResolvedValue({ matched: true, answered: [], skipped: [13], failed: [], stillOpen: [] })
+    vi.mocked(appendChatMessage).mockResolvedValue({ ok: true, messageId: 'msg-1', seq: 1 })
+
+    await POST(makeReq(textUpdate('skip Q13'), 'hook-secret'))
+
+    expect(sendChatMessage).not.toHaveBeenCalled()
+    expect(telegramCalls(fetchMock)[0].body.text).toBe('skipped Q13 · nothing else open')
+  })
+
+  it('still acks when writing the exchange into the thread fails', async () => {
+    vi.mocked(answerNumberedKairosAsks).mockResolvedValue({ matched: true, answered: [12], skipped: [], failed: [], stillOpen: [] })
+    vi.mocked(appendChatMessage).mockRejectedValue(new Error('db down'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await POST(makeReq(textUpdate('Q12: yes'), 'hook-secret'))
+
+    expect(telegramCalls(fetchMock)[0].body.text).toBe('✓ Q12 · nothing else open')
+    expect(sendChatMessage).not.toHaveBeenCalled()
+    errorSpy.mockRestore()
+  })
+
+  it('plain prose (no open Q label) goes to chat exactly as before', async () => {
+    vi.mocked(sendChatMessage).mockResolvedValue({
+      ok: true, threadId: THREAD_ID, userSeq: 1, assistantSeq: 2, assistantContent: 'Morning.', model: 'fake-model',
+    })
+
+    await POST(makeReq(textUpdate('morning, Q3 numbers look flat'), 'hook-secret'))
+
+    expect(answerNumberedKairosAsks).toHaveBeenCalledWith(OPERATOR_USER, 'morning, Q3 numbers look flat')
+    expect(sendChatMessage).toHaveBeenCalledWith(OPERATOR_USER, THREAD_ID, 'morning, Q3 numbers look flat', { surface: 'telegram' })
+    expect(appendAssistantReplyOnce).not.toHaveBeenCalled()
+  })
+
+  it('falls through to chat when the backlog cannot be read', async () => {
+    vi.mocked(answerNumberedKairosAsks).mockRejectedValue(new Error('db down'))
+    vi.mocked(sendChatMessage).mockResolvedValue({
+      ok: true, threadId: THREAD_ID, userSeq: 1, assistantSeq: 2, assistantContent: 'Hi.', model: 'fake-model',
+    })
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await POST(makeReq(textUpdate('Q12: yes'), 'hook-secret'))
+
+    expect(sendChatMessage).toHaveBeenCalledTimes(1)
+    errorSpy.mockRestore()
   })
 })
 

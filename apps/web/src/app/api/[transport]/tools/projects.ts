@@ -7,12 +7,14 @@ import {
   deleteProject,
   getProjectSummary,
   verifyProjectOwnership,
+  verifyProjectAccess,
   toggleProjectFavorite,
+  setProjectKairosFeed,
 } from '@/lib/data/projects'
-import { createProjectSchema, updateProjectSchema, setFavoriteSchema } from '@/lib/data/validators'
+import { createProjectSchema, updateProjectSchema, setFavoriteSchema, setProjectKairosFeedSchema } from '@/lib/data/validators'
 import { emitActivity } from '@/lib/data/activity'
 import type { RegisterFn } from './types'
-import { getUserId, ok, notFound } from './types'
+import { getUserId, ok, notFound, fail } from './types'
 
 async function requireOwnership(projectId: string, uid: string) {
   return !!(await verifyProjectOwnership(projectId, uid))
@@ -59,7 +61,7 @@ export const registerProjectTools: RegisterFn = (server) => {
 
   server.tool(
     'update_project',
-    'Update an existing project',
+    'Update an existing project. `settings` is merged into the stored settings (keys you omit are kept).',
     {
       projectId: z.string().uuid().describe('The project UUID'),
       ...updateProjectSchema.shape,
@@ -71,6 +73,24 @@ export const registerProjectTools: RegisterFn = (server) => {
       const project = await updateProject(projectId, uid, data)
       if (project) emitActivity(projectId, 'project', projectId, 'updated', project.name, undefined, uid, 'agent').catch(() => {})
       return project ? ok(project) : notFound('Project')
+    }
+  )
+
+  server.tool(
+    'set_project_kairos_feed',
+    'Watch a board for Kairos. "daily" writes a board-day page every night and captures each finished card the same day; "weekly" writes a Monday milestone page; null stops watching. Other project settings are kept.',
+    {
+      projectId: z.string().uuid().describe('The project UUID'),
+      feed: setProjectKairosFeedSchema.shape.feed.describe('"daily", "weekly", or null to stop watching'),
+    },
+    { title: 'Set Project Kairos Feed', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    async ({ projectId, feed }, extra) => {
+      const uid = getUserId(extra)
+      const access = await verifyProjectAccess(projectId, uid)
+      if (!access) return notFound('Project')
+      if (access.role !== 'owner') return fail('Only the project owner can change what Kairos watches')
+      const project = await setProjectKairosFeed(projectId, feed)
+      return project ? ok({ projectId, feed }) : notFound('Project')
     }
   )
 

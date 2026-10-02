@@ -174,6 +174,9 @@ export type ThinkingJobKind =
   | 'chat_distill'
   | 'archetype'
   | 'ask_mine'
+  // Monday first-draft constitution seed (docs/kairos/34 §2); the
+  // constitution-seed cron is its fallback.
+  | 'constitution_seed'
 
 export type ThinkingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'expired' | 'fallback'
 

@@ -17,7 +17,7 @@ routine in the catalog, then re-paste it — never edit a prompt only on claude.
 | **Kairos chat** | API trigger, fired by the Telegram webhook | `{"kinds":["chat"]}` | — |
 
 Delete the old routines on claude.ai: `Kairos thinking`, `Kairos ideas`, `Kairos morning`,
-`Kairos dusk`, `Kairos dawn`, `Kairos tidy` and `kairos-brain-tick` (the 08:00 message
+`Kairos dusk`, `Kairos dawn`, `Kairos tidy` and `kairos-brain-tick` (the 06:00 message
 already carries Kairos's question; one voice).
 
 **Why one routine is enough.** Every kind has its own window and the server only hands
@@ -31,15 +31,15 @@ dropped instead of failing.
 | 01:40 | chat_distill → archetype |
 | 02:40 | cortex → concept (Sun) → aether → belief_extract → drift_probe |
 | 03:40 | idea_generate → idea_judge → ask_mine |
-| 04:40 | mind_compare (Mon) |
-| 05:40 | weekly_review (Mon) → daily_message |
+| 04:40 | mind_compare + constitution_seed (Mon) → daily_message (summer) |
+| 05:40 | weekly_review (Mon) → daily_message (winter) |
 | 06:40 | anything that slipped |
 
 The paid key is only the backup: each kind keeps its cron or the hourly sweep, which runs
 only what no routine answered.
 
 **Retired in 0.17** (audit `research/kairos_0210/02_brain_jobs_audit.md`): `brief` (the
-08:00 message reads each area's cortex headline instead), `introspection` (the idea
+morning message reads each area's cortex headline instead), `introspection` (the idea
 tournament replaced it), `contradiction` (20 notices since August, none acted on),
 `micro_consolidate` (only the next night read it), and the `memory-dedup` cron (the
 engine's Merge already folds duplicates).
@@ -127,7 +127,8 @@ Kinds (times UTC unless stated):
 | `ask_mine` | 03:15Z, once aether is settled | 04:28Z | `ask_mine:<YYYY-MM-DD>` | `ask-mine` 04:30Z |
 | `mind_compare` | Mondays ≥04:00Z, both minds hold beliefs | 3 h | `mind_compare:<ISO week>` | sweep |
 | `weekly_review` | Mondays ≥05:00Z, with review signal | 6 h | `weekly_review:<ISO week>` | sweep |
-| `daily_message` | from 05:30Z once tonight's aether, ideas and ask are settled (from 06:25Z regardless); reads each area's latest cortex headline | 07:55 London | `daily_message:<London date>` | `daily-message` cron 08:00 London (paid key → plain text) |
+| `constitution_seed` | Mondays 04:00–05:56Z, only while there is no constitution and no pending draft | 05:56Z | `constitution_seed:<ISO week>` | `constitution-seed` 05:58Z (BYOK users only) |
+| `daily_message` | from 04:00Z once tonight's aether, ideas and ask are settled (from 04:35Z regardless), only when the UTC date equals the London date; reads each area's latest cortex headline; the numbered open-questions block is added by code at send time | 05:55 London | `daily_message:<London date>` | `daily-message` cron 06:00 London (paid key → plain text) |
 | `chat` | never planned — the Telegram webhook creates it; claimable only with `kinds: ["chat"]` | timeout + 30 s | `chat:<threadId>:<userMessageId>` | Telegram watchdog (paid key) |
 
 Job lifecycle: `queued` → `claimed` (token, attempts+1) → `done` | `failed` (cron kinds, on a

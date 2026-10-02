@@ -586,6 +586,37 @@ describe('gatherCortexContext — day-being-consolidated grounding', () => {
     expect(ctx?.todaySoFar).toBe('morning fold\n\n---\n\nevening fold')
   })
 
+  it("adds the watched boards' finished-card titles for the day to the grounding", async () => {
+    await mockBriefingWithVision()
+    queueInputs()
+    selectQueue.push([{ bodyMd: 'Kairos shipped micro-consolidation.' }]) // deltas
+    selectQueue.push([
+      { sourceMetadata: { kind: 'board_day', finished: [{ taskId: 't1', title: 'Ship feed' }, { taskId: 't2', title: 'Fix login' }] } },
+      { sourceMetadata: { kind: 'board_card_done', cardTitle: 'Ship feed' } },
+    ]) // watched-board finished cards
+
+    const { gatherCortexContext } = await import('../cortex')
+    const ctx = await gatherCortexContext(USER_ID, DOMINION_ID)
+
+    expect(ctx?.todaySoFar).toBe('Kairos shipped micro-consolidation.\n\nFinished on watched boards: Ship feed; Fix login')
+    const prompt = buildCortexPrompt(ctx!, '2026-09-30')
+    expect(prompt).toContain('Finished on watched boards: Ship feed; Fix login')
+  })
+
+  it('grounds a quiet day on finished cards alone', async () => {
+    await mockBriefingWithVision()
+    queueInputs()
+    selectQueue.push([]) // deltas
+    selectQueue.push([{ n: 0 }]) // count
+    selectQueue.push([{ sourceMetadata: { kind: 'board_card_done', cardTitle: 'Deploy' } }])
+
+    const { gatherCortexContext } = await import('../cortex')
+    const ctx = await gatherCortexContext(USER_ID, DOMINION_ID)
+
+    expect(ctx?.todaySoFar).toBe('Finished on watched boards: Deploy')
+    expect(ctx?.todaySoFarDay).toBe('2026-09-29')
+  })
+
   it('falls back to a dated singular count when no delta landed that day', async () => {
     await mockBriefingWithVision()
     queueInputs()

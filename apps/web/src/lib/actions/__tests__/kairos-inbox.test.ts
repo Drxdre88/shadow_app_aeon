@@ -15,15 +15,17 @@ vi.mock('@/lib/kairos/proposal-accept', () => ({
 
 vi.mock('@/lib/kairos/ask', () => ({
   answerKairosAsk: vi.fn(),
+  dismissKairosAsk: vi.fn(),
 }))
 
 import { requireAuth } from '@/lib/actions/helpers'
 import { getKairosInbox } from '@/lib/data/inbox'
-import { answerKairosAsk } from '@/lib/kairos/ask'
+import { answerKairosAsk, dismissKairosAsk } from '@/lib/kairos/ask'
 import { acceptInboxProposal, dismissInboxMemory } from '@/lib/kairos/proposal-accept'
 import {
   acceptKairosInboxProposal,
   answerKairosInboxAsk,
+  dismissKairosInboxAsk,
   dismissKairosInboxProposal,
   listKairosInbox,
 } from '../kairos-inbox'
@@ -64,6 +66,20 @@ describe('Kairos inbox actions', () => {
     vi.mocked(answerKairosAsk).mockResolvedValue({ error: 'not_found' })
 
     await expect(answerKairosInboxAsk(ASK_ID, 'Answer')).rejects.toThrow('Kairos question not found')
+  })
+
+  it('dismisses an open question through the Ask orchestrator (no negative outcome)', async () => {
+    vi.mocked(dismissKairosAsk).mockResolvedValue({ ok: true, id: ASK_ID })
+
+    await expect(dismissKairosInboxAsk(ASK_ID)).resolves.toEqual({ id: ASK_ID })
+    expect(dismissKairosAsk).toHaveBeenCalledWith(USER_ID, ASK_ID)
+  })
+
+  it('rejects a malformed id and surfaces a closed question as not found', async () => {
+    await expect(dismissKairosInboxAsk('not-a-uuid')).rejects.toThrow()
+    expect(dismissKairosAsk).not.toHaveBeenCalled()
+    vi.mocked(dismissKairosAsk).mockResolvedValue({ error: 'not_found' })
+    await expect(dismissKairosInboxAsk(ASK_ID)).rejects.toThrow('Kairos question not found')
   })
 
   it('accepts through the shared inbox helper', async () => {

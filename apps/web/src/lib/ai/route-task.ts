@@ -46,16 +46,15 @@ interface PolicyDefault {
 // shape is intentional: until non-BYOK providers land, every route resolves
 // through the BYOK lane and the user's tier preferences.
 const DEFAULT_POLICIES: PolicyDefault[] = [
-  { taskType: 'brief',        tier: 'heavy' },
   { taskType: 'advisory',     tier: 'heavy' },
   // Quality-over-cost directive (operator, 2026-07-24): every path that shapes
   // the self-model or speaks to the operator runs the heavy tier. This reverses
-  // the 2026-07-15 cost retier for archetype/cortex/contradiction and promotes
+  // the 2026-07-15 cost retier for archetype/cortex and promotes
   // chat/reflect/digest, which were standard by original design. Only genuinely
-  // mechanical extraction lanes stay below heavy.
+  // mechanical extraction lanes stay below heavy. (The brief and contradiction
+  // lanes were retired with their jobs in Kairos 0.17.)
   { taskType: 'archetype',    tier: 'heavy' },
   { taskType: 'cortex',       tier: 'heavy' },
-  { taskType: 'contradiction', tier: 'heavy' },
   { taskType: 'aether',       tier: 'heavy' },
   // Micro-consolidation fold (intraday "today so far" grounding) — mechanical
   // summarisation of new memories + board deltas, but its output feeds the

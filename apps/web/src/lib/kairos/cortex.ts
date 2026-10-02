@@ -22,6 +22,7 @@ import {
 } from './cortex-prompt'
 import { todayIso, parseWithRepair, ParseRepairError } from './_prompt-utils'
 import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
+import { collectFinishedTitles } from './board-feed-render'
 
 export {
   buildCortexPrompt,
@@ -88,7 +89,34 @@ async function fetchTodaySoFar(userId: string, dominionId: string, day: string):
   const dayStart = new Date(`${day}T00:00:00.000Z`)
   const dayEnd = new Date(dayStart.getTime() + 86_400_000)
   const inDay = and(gte(memories.createdAt, dayStart), lt(memories.createdAt, dayEnd))
+  const base = await fetchDayDeltasOrCount(userId, dominionId, day, inDay)
+  const finished = await fetchWatchedBoardFinished(userId, dominionId, inDay)
+  if (finished.length === 0) return base
+  const line = `Finished on watched boards: ${finished.join('; ')}`
+  return base ? `${base}\n\n${line}` : line
+}
 
+// Watched-board cards finished that day (same-day board_card_done rows + the
+// nightly board_day page), titles only, bounded — so area summaries learn from the board.
+const MAX_FINISHED_ROWS = 40
+
+async function fetchWatchedBoardFinished(userId: string, dominionId: string, inDay: ReturnType<typeof and>): Promise<string[]> {
+  const rows = await db
+    .select({ sourceMetadata: memories.sourceMetadata })
+    .from(memories)
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.dominionId, dominionId),
+      isNull(memories.archivedAt),
+      sql`${memories.sourceMetadata}->>'kind' IN ('board_card_done', 'board_day')`,
+      inDay,
+    ))
+    .orderBy(desc(memories.createdAt))
+    .limit(MAX_FINISHED_ROWS)
+  return collectFinishedTitles(rows.map((r) => r.sourceMetadata))
+}
+
+async function fetchDayDeltasOrCount(userId: string, dominionId: string, day: string, inDay: ReturnType<typeof and>): Promise<string | null> {
   const deltaRows = await db
     .select({ bodyMd: memories.bodyMd })
     .from(memories)

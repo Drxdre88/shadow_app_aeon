@@ -6,6 +6,7 @@ import { beliefExtractHandler } from './handlers/belief-extract'
 import { chatDistillHandler } from './handlers/chat-distill'
 import { chatHandler } from './handlers/chat'
 import { conceptHandler } from './handlers/concept'
+import { constitutionSeedHandler } from './handlers/constitution-seed'
 import { cortexHandler } from './handlers/cortex'
 import { dailyMessageHandler } from './handlers/daily-message'
 import { driftProbeHandler } from './handlers/drift-probe'
@@ -24,6 +25,7 @@ export function getThinkingHandlers(): ThinkingJobHandler[] {
     beliefExtractHandler,
     driftProbeHandler,
     mindCompareHandler,
+    constitutionSeedHandler,
     weeklyReviewHandler,
     ideaGenerateHandler,
     ideaJudgeHandler,

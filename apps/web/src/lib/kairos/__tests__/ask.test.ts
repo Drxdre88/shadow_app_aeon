@@ -6,6 +6,9 @@ vi.mock('@/lib/data/ask', () => ({
   getPriorAethers: vi.fn(),
   getReflectionsSince: vi.fn(),
   getPendingKairosAsk: vi.fn(),
+  getOpenKairosAskById: vi.fn(),
+  listOpenKairosAsks: vi.fn(),
+  markKairosAskDismissed: vi.fn(),
   getNewestKairosAsk: vi.fn(),
   createKairosAskMemory: vi.fn(),
   markKairosAskAnswered: vi.fn(),
@@ -30,13 +33,26 @@ vi.mock('@/lib/kairos/reactions', () => ({
   reactOutcome: vi.fn(async () => undefined),
 }))
 
-import { getPendingKairosAsk, markKairosAskAnswered, type KairosAskRow } from '@/lib/data/ask'
+import {
+  getOpenKairosAskById,
+  listOpenKairosAsks,
+  markKairosAskAnswered,
+  markKairosAskDismissed,
+  type KairosAskRow,
+} from '@/lib/data/ask'
 import { captureReflection, markKairosSpeaksReplied } from '@/lib/data/memories'
 import { reactOutcome, reactUsed } from '@/lib/kairos/reactions'
 import { appendTaskDescription, findTaskById } from '@/lib/data/tasks'
 import { verifyProjectAccess } from '@/lib/data/projects'
 import { updateVaultDescription } from '@/lib/data/vault'
-import { answerKairosAsk, appendCardNote, parseCardNotesAnswer, writeBackCardNotes } from '../ask'
+import {
+  answerKairosAsk,
+  answerNumberedKairosAsks,
+  appendCardNote,
+  dismissKairosAsk,
+  parseCardNotesAnswer,
+  writeBackCardNotes,
+} from '../ask'
 import { selectKairosQuestion, type SelectInput } from '../ask-select'
 import type { AetherPayload } from '../aether-types'
 
@@ -376,7 +392,7 @@ describe('answerKairosAsk clears the Kairos reply gate', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(getPendingKairosAsk).mockResolvedValue(pendingAsk)
+    vi.mocked(getOpenKairosAskById).mockResolvedValue(pendingAsk)
     vi.mocked(captureReflection).mockResolvedValue({ ok: true, memory: { id: 'reflection-1' } } as never)
     vi.mocked(markKairosAskAnswered).mockResolvedValue(true as never)
     vi.mocked(markKairosSpeaksReplied).mockResolvedValue(1)
@@ -396,7 +412,7 @@ describe('answerKairosAsk clears the Kairos reply gate', () => {
   })
 
   it('does not mark when the ask is stale', async () => {
-    vi.mocked(getPendingKairosAsk).mockResolvedValue(null)
+    vi.mocked(getOpenKairosAskById).mockResolvedValue(null)
 
     await expect(answerKairosAsk(USER, ASK_ID, 'An answer')).resolves.toEqual({ error: 'not_found' })
     expect(markKairosSpeaksReplied).not.toHaveBeenCalled()
@@ -411,7 +427,7 @@ describe('answerKairosAsk clears the Kairos reply gate', () => {
   })
 
   it('reinforces the memories the answered ask was built from (Usage + feedback)', async () => {
-    vi.mocked(getPendingKairosAsk).mockResolvedValue({
+    vi.mocked(getOpenKairosAskById).mockResolvedValue({
       ...pendingAsk,
       kairosAsk: { ...pendingAsk.kairosAsk, sourceMemoryIds: [MEM_A, MEM_B] },
     })
@@ -426,7 +442,7 @@ describe('answerKairosAsk clears the Kairos reply gate', () => {
     await answerKairosAsk(USER, ASK_ID, 'An answer')
     expect(reactUsed).not.toHaveBeenCalled()
 
-    vi.mocked(getPendingKairosAsk).mockResolvedValue({
+    vi.mocked(getOpenKairosAskById).mockResolvedValue({
       ...pendingAsk,
       kairosAsk: { ...pendingAsk.kairosAsk, sourceMemoryIds: [MEM_A] },
     })
@@ -435,6 +451,85 @@ describe('answerKairosAsk clears the Kairos reply gate', () => {
     expect(reactUsed).not.toHaveBeenCalled()
     // Only the first (won) answer scored the ask.
     expect(reactOutcome).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ─── backlog: answer any open ask by id, dismiss, numbered answers ──────
+
+describe('open-ask backlog', () => {
+  const USER = 'user-1'
+  const ask = (id: string, seq: number, over: Partial<KairosAskRow> = {}) => ({
+    id,
+    title: `Question ${seq}?`,
+    summary: null,
+    dominionId: DOM_ID,
+    createdAt: new Date('2026-09-28T04:30:00Z'),
+    kairosAsk: {
+      status: 'pending' as const,
+      seq,
+      aetherMemoryId: '',
+      sourceThoughtId: null,
+      sourceMemoryIds: [],
+      dominionId: DOM_ID,
+      askedAt: '2026-09-28T04:30:00.000Z',
+    },
+    seq,
+    ...over,
+  })
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(captureReflection).mockResolvedValue({ ok: true, memory: { id: 'reflection-1' } } as never)
+    vi.mocked(markKairosAskAnswered).mockResolvedValue(true as never)
+    vi.mocked(markKairosSpeaksReplied).mockResolvedValue(1)
+  })
+
+  it('answers an OLDER open ask by id while a newer one is also open', async () => {
+    const older = ask('ask-old', 12)
+    vi.mocked(getOpenKairosAskById).mockImplementation(async (_u, id) => (id === 'ask-old' ? older : null))
+    await expect(answerKairosAsk(USER, 'ask-old', 'Yes — ship it', undefined, { kind: 'operator', via: 'ask' }))
+      .resolves.toEqual({ reflectionId: 'reflection-1' })
+    expect(getOpenKairosAskById).toHaveBeenCalledWith(USER, 'ask-old')
+    expect(markKairosAskAnswered).toHaveBeenCalledWith(USER, 'ask-old', 'reflection-1', expect.any(String))
+    expect(reactOutcome).toHaveBeenCalledWith(USER, 'ask-old', 'positive', expect.any(String))
+  })
+
+  it('dismisses without any outcome reaction; not_found when the ask is not open', async () => {
+    vi.mocked(markKairosAskDismissed).mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+    await expect(dismissKairosAsk(USER, 'ask-1')).resolves.toEqual({ ok: true, id: 'ask-1' })
+    await expect(dismissKairosAsk(USER, 'ask-1')).resolves.toEqual({ error: 'not_found' })
+    expect(reactOutcome).not.toHaveBeenCalled()
+    expect(reactUsed).not.toHaveBeenCalled()
+  })
+
+  it('routes "Q12: … / skip Q14" to the right asks, operator-origin, and reports what is still open', async () => {
+    const open = [ask('ask-12', 12), ask('ask-14', 14), ask('ask-15', 15)]
+    vi.mocked(listOpenKairosAsks).mockResolvedValue(open)
+    vi.mocked(getOpenKairosAskById).mockImplementation(async (_u, id) => open.find((a) => a.id === id) ?? null)
+    vi.mocked(markKairosAskDismissed).mockResolvedValue(true)
+    const now = new Date('2026-10-02T07:00:00Z')
+
+    const outcome = await answerNumberedKairosAsks(USER, 'Q12: yes, ship it\nskip Q14', now)
+
+    expect(outcome).toEqual({ matched: true, answered: [12], skipped: [14], failed: [], stillOpen: [15] })
+    expect(markKairosAskAnswered).toHaveBeenCalledWith(USER, 'ask-12', 'reflection-1', expect.any(String))
+    expect(markKairosAskDismissed).toHaveBeenCalledWith(USER, 'ask-14', now)
+    expect(captureReflection).toHaveBeenCalledWith(USER, expect.objectContaining({ bodyMd: 'yes, ship it' }), { origin: { kind: 'operator', via: 'ask' } })
+  })
+
+  it('is not a match (→ chat) without an open label, and never reads the DB for plain prose', async () => {
+    vi.mocked(listOpenKairosAsks).mockResolvedValue([ask('ask-12', 12)])
+    await expect(answerNumberedKairosAsks(USER, 'Morning, how are you?')).resolves.toEqual({ matched: false })
+    expect(listOpenKairosAsks).not.toHaveBeenCalled()
+    await expect(answerNumberedKairosAsks(USER, 'Q99: what is this?')).resolves.toEqual({ matched: false })
+    expect(markKairosAskAnswered).not.toHaveBeenCalled()
+  })
+
+  it('reports an ask that closed in between as failed, leaving it in still-open', async () => {
+    vi.mocked(listOpenKairosAsks).mockResolvedValue([ask('ask-12', 12)])
+    vi.mocked(getOpenKairosAskById).mockResolvedValue(null)
+    await expect(answerNumberedKairosAsks(USER, 'Q12: late answer'))
+      .resolves.toEqual({ matched: true, answered: [], skipped: [], failed: [12], stillOpen: [12] })
   })
 })
 
@@ -473,7 +568,7 @@ describe('card_notes answers', () => {
     vi.clearAllMocks()
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-09-30T09:00:00Z'))
-    vi.mocked(getPendingKairosAsk).mockResolvedValue(cardAsk())
+    vi.mocked(getOpenKairosAskById).mockResolvedValue(cardAsk())
     vi.mocked(captureReflection).mockResolvedValue({ ok: true, memory: { id: 'reflection-1' } } as never)
     vi.mocked(markKairosAskAnswered).mockResolvedValue(true as never)
     vi.mocked(markKairosSpeaksReplied).mockResolvedValue(1)
@@ -574,7 +669,7 @@ describe('card_notes answers', () => {
   })
 
   it('writes the whole answer onto a single card', async () => {
-    vi.mocked(getPendingKairosAsk).mockResolvedValue(cardAsk([CARDS[0]!]))
+    vi.mocked(getOpenKairosAskById).mockResolvedValue(cardAsk([CARDS[0]!]))
 
     await answerKairosAsk(USER, ASK_ID, 'The feed deploy to prod.')
 

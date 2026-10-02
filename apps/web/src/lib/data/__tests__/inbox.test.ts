@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/data/ask', () => ({
-  getPendingKairosAsk: vi.fn(),
+  listOpenKairosAsks: vi.fn(),
 }))
 
 vi.mock('@/lib/data/memories', () => ({
   listMemories: vi.fn(),
 }))
 
-import { getPendingKairosAsk, type KairosAskRow } from '@/lib/data/ask'
+import { listOpenKairosAsks, type KairosOpenAsk } from '@/lib/data/ask'
 import { listMemories } from '@/lib/data/memories'
 import { getKairosInbox } from '../inbox'
 
@@ -16,7 +16,8 @@ type ListedMemory = Awaited<ReturnType<typeof listMemories>>[number]
 
 const USER_ID = 'user-1'
 
-const ask: KairosAskRow = {
+const ask: KairosOpenAsk = {
+  seq: 7,
   id: 'ask-1',
   title: 'What should change?',
   summary: 'What should change?',
@@ -54,13 +55,13 @@ function listedMemory(id: string, sourceMetadata: Record<string, unknown>): List
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(getPendingKairosAsk).mockResolvedValue(null)
+  vi.mocked(listOpenKairosAsks).mockResolvedValue([])
   vi.mocked(listMemories).mockResolvedValue([])
 })
 
 describe('getKairosInbox', () => {
   it('aggregates ask, notify and proposal kinds in pinned order', async () => {
-    vi.mocked(getPendingKairosAsk).mockResolvedValue(ask)
+    vi.mocked(listOpenKairosAsks).mockResolvedValue([ask])
     vi.mocked(listMemories).mockResolvedValue([
       listedMemory('notify-1', { kairosSpeak: true, status: 'pending', urgency: 'high' }),
       listedMemory('prop-1', { introspection: true, status: 'pending' }),
@@ -69,8 +70,9 @@ describe('getKairosInbox', () => {
 
     const { items } = await getKairosInbox(USER_ID)
 
-    expect(getPendingKairosAsk).toHaveBeenCalledWith(USER_ID)
-    expect(listMemories).toHaveBeenCalledWith(USER_ID, { type: 'inbound' })
+    expect(listOpenKairosAsks).toHaveBeenCalledWith(USER_ID)
+    expect(items[0]).toEqual({ kind: 'ask', id: 'ask-1', seq: 7, title: 'What should change?', createdAt: ask.createdAt })
+    expect(listMemories).toHaveBeenCalledWith(USER_ID, { type: 'inbound', limit: 200 })
     expect(items.map((i) => i.kind)).toEqual(['ask', 'notify', 'proposal'])
     expect(items[1]).toMatchObject({ kind: 'notify', id: 'notify-1', urgency: 'high' })
     expect(items[1]).not.toHaveProperty('daily')
@@ -78,7 +80,7 @@ describe('getKairosInbox', () => {
   })
 
   it('pins the newest daily message ahead of every other notify and proposal, after the ask', async () => {
-    vi.mocked(getPendingKairosAsk).mockResolvedValue(ask)
+    vi.mocked(listOpenKairosAsks).mockResolvedValue([ask])
     const older = { ...listedMemory('daily-0', { kairosSpeak: true, status: 'pending', digest: true, externalId: 'kairos-daily:2026-07-12' }), createdAt: new Date('2026-07-12T07:00:00Z') }
     vi.mocked(listMemories).mockResolvedValue([
       listedMemory('notify-1', { kairosSpeak: true, status: 'pending' }),
@@ -89,6 +91,30 @@ describe('getKairosInbox', () => {
     const { items } = await getKairosInbox(USER_ID)
     expect(items.map((i) => i.id)).toEqual(['ask-1', 'daily-1', 'notify-1', 'prop-1', 'daily-0'])
     expect(items[1]).toMatchObject({ kind: 'notify', daily: true })
+  })
+
+  it('lists every open question (oldest first, each with its Q number) ahead of the daily message', async () => {
+    const newer: KairosOpenAsk = { ...ask, id: 'ask-2', seq: 9, title: 'Second?', createdAt: new Date('2026-07-14T05:00:00Z') }
+    vi.mocked(listOpenKairosAsks).mockResolvedValue([ask, newer])
+    vi.mocked(listMemories).mockResolvedValue([
+      listedMemory('daily-1', { kairosSpeak: true, status: 'pending', digest: true, externalId: 'kairos-daily:2026-07-14' }),
+    ])
+    const { items } = await getKairosInbox(USER_ID)
+    expect(items.map((i) => i.id)).toEqual(['ask-1', 'ask-2', 'daily-1'])
+    expect(items.filter((i) => i.kind === 'ask').map((i) => (i as { seq: number }).seq)).toEqual([7, 9])
+  })
+
+  it('pins the daily message ahead of a voice note and puts ideas before it', async () => {
+    const voice = (part: number) => listedMemory(`seg-${part}`, { status: 'pending', voiceNote: { noteId: 'N', part, of: 2 } })
+    vi.mocked(listMemories).mockResolvedValue([
+      voice(1),
+      voice(2),
+      listedMemory('idea-1', { status: 'pending', kind: 'idea', idea: { claim: 'x', why: 'y', nextStep: 'z' } }),
+      listedMemory('daily-1', { kairosSpeak: true, status: 'pending', externalId: 'kairos-daily:2026-07-13' }),
+    ])
+    const { items } = await getKairosInbox(USER_ID)
+    expect(items.map((i) => i.id)).toEqual(['daily-1', 'idea-1', 'N'])
+    expect(items[2]).toMatchObject({ kind: 'voice_note', parts: 2 })
   })
 
   it('never lists the retired contradiction notices, even when still pending', async () => {

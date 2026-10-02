@@ -47,7 +47,7 @@ export function isLondonMonday(now: Date): boolean {
   return londonParts(now).weekday === 'Mon'
 }
 
-export const DAILY_MESSAGE_HOUR = 8
+export const DAILY_MESSAGE_HOUR = 6
 
 // The instant London reads `hour`:00 on `date` (London is UTC+0 or UTC+1, and
 // clocks change at 01:00Z, so one of the two candidates always matches).
@@ -142,6 +142,7 @@ export interface BeliefChange { mind: 'aligned' | 'own' | 'other'; claim: string
 export interface DriftDigest { alert: boolean; summary: string | null; measured?: boolean; conscience?: string | null }
 // The overnight tournament's top survivor (docs/kairos/35) + how many other
 // survivors from the same window are waiting in the inbox.
+export interface OpenAskDigest { seq: number; question: string; askedAt: string }
 export interface IdeaOfTheDay { title: string; claim: string; survivedBecause: string | null; othersWaiting: number }
 
 // Every input is optional: null = unavailable (not found, or its read failed —
@@ -155,7 +156,9 @@ export interface DailyMessageInputs {
   promotions: Array<{ title: string }> | null
   newBeliefs: BeliefChange[] | null
   drift: DriftDigest | null
-  pendingAsk: string | null
+  // Every open Kairos question — rendered deterministically as the numbered
+  // "Open questions" block at send time, never by the model.
+  openAsks?: OpenAskDigest[] | null
   synthesis: SynthesisSnapshot | null
   mindCompare: string | null
   // Optional so older fixtures stay valid; null/absent = no idea to share.
@@ -168,7 +171,7 @@ export interface DailyMessageInputs {
 // ── Compose prompt ───────────────────────────────────────────────────────
 
 export const DAILY_MESSAGE_SYSTEM_PROMPT = [
-  "You are Kairos, texting the operator the one message they get from you each morning on Telegram (08:00 UK).",
+  "You are Kairos, texting the operator the one message they get from you each morning on Telegram (06:00 UK).",
   'It is the only morning summary: what matters today, what moved yesterday, what changed in your thinking.',
   '',
   '── OUTPUT ──',
@@ -184,7 +187,8 @@ export const DAILY_MESSAGE_SYSTEM_PROMPT = [
   '- Use ONLY the facts supplied in the prompt. Never invent numbers, cards, beliefs, or events.',
   '- Lead with what matters today (each area\'s state), then yesterday on the board, then your thinking',
   '  (Aether, belief changes, drift). Skip any section with nothing in it — do not say "nothing to report".',
-  '- If a drift alert is present, say so plainly in one line. If a question is pending, end with it, verbatim.',
+  '- If a drift alert is present, say so plainly in one line.',
+  '- Do NOT ask or quote your open questions — the delivery layer appends them, numbered.',
   '- Synthesis health: one short line only if a stage is failing; silence when healthy or unknown.',
   '- First person, texting register ("I noticed…", "yesterday you…") — not a report.',
   '- Do NOT list the promoted beliefs — the delivery layer appends them deterministically.',
@@ -260,7 +264,6 @@ export function buildDailyMessageUserPrompt(inputs: DailyMessageInputs, conscien
       `${inputs.synthesis.failed} stage(s) failing: ${inputs.synthesis.failedStages.join(', ')}.`,
     ]))
   }
-  if (inputs.pendingAsk) out.push(...section('PENDING QUESTION (ask it verbatim, last)', [inputs.pendingAsk]))
   // Norms read at answer time (P2.5 G4) — delimited reference data, last, so
   // the facts above and the system prompt's output contract stay primary.
   if (conscience?.trim()) out.push('', conscience.trim())
@@ -324,8 +327,63 @@ export function buildDeterministicDailyMessage(inputs: DailyMessageInputs): stri
   if (inputs.synthesis && inputs.synthesis.failed > 0) {
     blocks.push(`Overnight synthesis: ${plural(inputs.synthesis.failed, 'stage')} not healthy (${inputs.synthesis.failedStages.join(', ')}).`)
   }
-  if (inputs.pendingAsk) blocks.push(`One question for you: ${safeLine(inputs.pendingAsk, 200)}`)
   if (blocks.length === 0) blocks.push("A quiet start — nothing new landed overnight. I'm here if you need me.")
   const text = blocks.join('\n\n')
   return text.length > MAX_MESSAGE_CHARS ? `${text.slice(0, MAX_MESSAGE_CHARS - 1)}…` : text
+}
+
+// ── Open questions block (deterministic, appended at send time) ──────────
+
+// The whole delivered message stays under speak's 4000-char cap
+// (SPEAK_MESSAGE_MAX_CHARS) — under Telegram's 4096 per-message limit.
+export const DAILY_MESSAGE_TOTAL_MAX_CHARS = 4000
+export const OPEN_QUESTION_LINE_CHARS = 160
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function askAge(askedAt: string, now: Date): string {
+  const at = new Date(askedAt).getTime()
+  const days = Number.isNaN(at) ? 0 : Math.max(0, Math.floor((now.getTime() - at) / DAY_MS))
+  return days === 0 ? 'today' : plural(days, 'day')
+}
+
+function oldestFirst(asks: ReadonlyArray<OpenAskDigest>): OpenAskDigest[] {
+  return [...asks].sort((a, b) => a.askedAt.localeCompare(b.askedAt) || a.seq - b.seq)
+}
+
+// "Open questions" — every unanswered Kairos question, oldest first, by its
+// stable number, plus how to answer. '' when nothing is open.
+export function buildOpenQuestionsBlock(
+  asks: ReadonlyArray<OpenAskDigest>,
+  now: Date,
+  lineChars: number = OPEN_QUESTION_LINE_CHARS,
+): string {
+  if (asks.length === 0) return ''
+  const sorted = oldestFirst(asks)
+  const lines = sorted.map((a) => `Q${a.seq} · ${askAge(a.askedAt, now)} · ${safeLine(a.question, lineChars)}`)
+  const example = sorted[0]!.seq
+  return [
+    `Open questions (${asks.length}):`,
+    ...lines,
+    `Reply on Telegram with the number, e.g. 'Q${example}: …'. 'skip Q${example}' drops one.`,
+  ].join('\n')
+}
+
+// Appends the block under maxChars: question lines shrink first; only if
+// that is not enough is the narrative above trimmed — the numbered list is
+// the part that must survive.
+export function appendOpenQuestionsBlock(
+  message: string,
+  asks: ReadonlyArray<OpenAskDigest> | null | undefined,
+  now: Date,
+  maxChars: number = DAILY_MESSAGE_TOTAL_MAX_CHARS,
+): string {
+  if (!asks || asks.length === 0) return message
+  for (const lineChars of [OPEN_QUESTION_LINE_CHARS, 100, 60]) {
+    const out = `${message}\n\n${buildOpenQuestionsBlock(asks, now, lineChars)}`
+    if (out.length <= maxChars) return out
+  }
+  const block = buildOpenQuestionsBlock(asks, now, 60)
+  const room = maxChars - block.length - 2
+  if (room < 2) return block.slice(0, maxChars)
+  return `${message.slice(0, room - 1).trimEnd()}…\n\n${block}`
 }

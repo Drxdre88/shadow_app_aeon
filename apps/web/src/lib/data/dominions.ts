@@ -7,7 +7,7 @@ import {
   memories,
   boardTasks,
 } from '@/lib/db/schema'
-import { eq, and, asc, desc, isNull, ne, notInArray, sql } from 'drizzle-orm'
+import { eq, and, asc, desc, gte, isNull, ne, notInArray, sql } from 'drizzle-orm'
 import { META_STREAM_CLASSES } from '@/lib/kairos/streamClass'
 import type {
   CreateDominionInput,
@@ -120,6 +120,40 @@ export async function resolveDominionByRepo(userId: string, repoSlug: string): P
     .where(eq(dominionRepos.repoSlug, repoSlug))
     .limit(1)
   return row?.dominionId ?? null
+}
+
+/** Every repo → area mapping the user owns. */
+export async function listReposForUser(userId: string): Promise<Array<{ dominionId: string; repoSlug: string }>> {
+  return db
+    .select({ dominionId: dominionRepos.dominionId, repoSlug: dominionRepos.repoSlug })
+    .from(dominionRepos)
+    .innerJoin(dominions, and(eq(dominionRepos.dominionId, dominions.id), eq(dominions.userId, userId)))
+    .orderBy(asc(dominionRepos.repoSlug))
+}
+
+/** Repos named by recent captures (sourceMetadata.repo), most recent first. Bounded by window + limit. */
+export async function listRecentCaptureRepos(
+  userId: string,
+  since: Date,
+  limit = 30,
+): Promise<Array<{ repo: string; captures: number; lastAt: Date }>> {
+  const repo = sql<string>`${memories.sourceMetadata}->>'repo'`
+  const rows = await db
+    .select({
+      repo,
+      captures: sql<number>`COUNT(*)::int`,
+      lastAt: sql<Date>`MAX(${memories.createdAt})`,
+    })
+    .from(memories)
+    .where(and(
+      eq(memories.userId, userId),
+      gte(memories.createdAt, since),
+      sql`COALESCE(${memories.sourceMetadata}->>'repo', '') <> ''`,
+    ))
+    .groupBy(repo)
+    .orderBy(sql`MAX(${memories.createdAt}) DESC`)
+    .limit(limit)
+  return rows.map((r) => ({ repo: r.repo, captures: r.captures, lastAt: new Date(r.lastAt) }))
 }
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -104,9 +104,28 @@ export interface BoardDayInput {
 
 export interface BoardDayPage {
   title: string
+  /** One line archetypes and the daily message can read without the body. */
+  summary: string
   bodyMd: string
   finished: Array<FeedCardRef & { hasNotes: boolean }>
   thinCards: FeedCardRef[]
+}
+
+const SUMMARY_TITLES_MAX = 3
+const SUMMARY_TITLE_MAX = 60
+const SUMMARY_MAX = 280
+
+/** "Finished 3: A, B, C · moved 2 · added 1" — empty parts are dropped. */
+export function boardDaySummary(finishedTitles: string[], moved: number, created: number): string {
+  const parts: string[] = []
+  if (finishedTitles.length > 0) {
+    const shown = finishedTitles.slice(0, SUMMARY_TITLES_MAX).map((title) => trimText(title, SUMMARY_TITLE_MAX))
+    const more = finishedTitles.length - shown.length
+    parts.push(`Finished ${finishedTitles.length}: ${shown.join(', ')}${more > 0 ? ` +${more} more` : ''}`)
+  }
+  if (moved > 0) parts.push(`moved ${moved}`)
+  if (created > 0) parts.push(`added ${created}`)
+  return trimText(parts.join(' · '), SUMMARY_MAX)
 }
 
 /** Null when nothing happened on the board in the window — no page that day. */
@@ -146,9 +165,31 @@ export function buildBoardDayPage(input: BoardDayInput): BoardDayPage | null {
 
   return {
     title: truncateTitle(`${input.date} · ${input.projectName} · board day`),
+    summary: boardDaySummary(finished.map((card) => card.title), input.started.length, created.length),
     bodyMd: lines.join('\n'),
     finished: finished.map((card) => ({ ...cardRef(card), hasNotes: hasNotes(card) })),
     thinCards: finished.filter(isTitleOnly).slice(0, THIN_CARDS_MAX).map(cardRef),
+  }
+}
+
+// ─── same-day finished card (watched boards) ──────────────────────────────
+
+export interface CardDonePage {
+  title: string
+  summary: string
+  bodyMd: string
+}
+
+export function buildCardDonePage(projectName: string, date: string, card: FeedCard): CardDonePage {
+  const bits = [`Finished "${trimText(card.title, 120)}" on ${projectName}`]
+  if (card.daysTaken !== null) bits.push(`${card.daysTaken}d`)
+  if (card.checklist.total > 0) bits.push(`checklist ${card.checklist.done}/${card.checklist.total}`)
+  const lines = [`**${projectName}** — card finished ${date}`, '', ...renderFullCard(card)]
+  if (isTitleOnly(card)) lines.push('', '_Title only — no notes or checklist._')
+  return {
+    title: truncateTitle(`${date} · ${projectName} · done: ${card.title}`),
+    summary: trimText(bits.join(' · '), SUMMARY_MAX),
+    bodyMd: lines.join('\n'),
   }
 }
 
@@ -209,6 +250,38 @@ export function isoWeekLabel(date: Date): string {
   const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1))
   const week = Math.ceil(((target.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7)
   return `${target.getUTCFullYear()}-W${String(week).padStart(2, '0')}`
+}
+
+// ─── finished-card titles (cortex "day being consolidated") ──────────────
+
+const MAX_FINISHED_TITLES = 15
+const FINISHED_TITLE_MAX = 80
+
+function finishedTitlesOf(meta: unknown): string[] {
+  const m = (meta && typeof meta === 'object' ? meta : {}) as Record<string, unknown>
+  if (m.kind === 'board_card_done') return typeof m.cardTitle === 'string' ? [m.cardTitle] : []
+  if (!Array.isArray(m.finished)) return []
+  return m.finished.flatMap((entry) => {
+    const title = entry && typeof entry === 'object' ? (entry as { title?: unknown }).title : null
+    return typeof title === 'string' ? [title] : []
+  })
+}
+
+/** Distinct finished-card titles from board_card_done / board_day metadata, newest rows first, bounded. */
+export function collectFinishedTitles(metas: readonly unknown[]): string[] {
+  const seen = new Set<string>()
+  const titles: string[] = []
+  for (const meta of metas) {
+    for (const raw of finishedTitlesOf(meta)) {
+      const flat = trimText(raw, FINISHED_TITLE_MAX)
+      const key = flat.toLowerCase()
+      if (!flat || seen.has(key)) continue
+      seen.add(key)
+      titles.push(flat)
+      if (titles.length >= MAX_FINISHED_TITLES) return titles
+    }
+  }
+  return titles
 }
 
 // ─── thin-card nudge (ask-mine card_notes) ────────────────────────────────

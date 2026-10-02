@@ -83,7 +83,7 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
     return { ok: false, reason: 'already_ran: an ask was already mined today' }
   }
   if (gate.skip) {
-    // A new pending ask or an outstanding reply since planning: the cron
+    // A full open-ask backlog or an outstanding reply since planning: the cron
     // would skip the user too, so the night is complete without an ask.
     await writeCronSuccessTrace(job.userId, { cronName: ASK_MINE_CRON, outcome: 'skipped', skipReason: gate.skip })
     return { ok: true, memoryIds: [], output: { skipped: gate.skip, answeredBy } }

@@ -7,7 +7,9 @@ const m = vi.hoisted(() => ({
   listSeedDominions: vi.fn(),
   listTopReflections: vi.fn(),
   getProviderForUser: vi.fn(),
+  isJobDone: vi.fn(),
 }))
+vi.mock('@/lib/data/thinking-jobs', () => ({ isJobDone: m.isJobDone }))
 vi.mock('@/lib/data/constitution', () => ({
   findLiveConstitutionRow: m.findLiveConstitutionRow,
   insertConstitutionProposal: m.insertConstitutionProposal,
@@ -25,7 +27,7 @@ vi.mock('@/lib/ai/router', () => ({
   AiCredentialDecryptError: class AiCredentialDecryptError extends Error {},
 }))
 
-import { seedConstitutionDraft } from '../seed'
+import { constitutionSeedJobKey, seedConstitutionDraft } from '../seed'
 
 const USER = 'user-1'
 const R = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222']
@@ -48,9 +50,20 @@ beforeEach(() => {
   m.listTopReflections.mockResolvedValue(R.map((id, i) => ({ id, title: `Reflection ${i}`, summary: null })))
   m.getProviderForUser.mockResolvedValue({ ask: vi.fn().mockResolvedValue({ text: draft }) })
   m.insertConstitutionProposal.mockResolvedValue({ written: true, memoryId: 'p1' })
+  m.isJobDone.mockResolvedValue(false)
 })
 
 describe('seedConstitutionDraft', () => {
+  it('skips without a model call when this week\'s constitution_seed job is done (the routine answered)', async () => {
+    const monday = new Date('2026-10-05T05:58:00Z')
+    m.isJobDone.mockResolvedValue(true)
+    expect(await seedConstitutionDraft(USER, monday)).toEqual({ status: 'skipped', reason: 'already_ran' })
+    expect(m.isJobDone).toHaveBeenCalledWith(USER, 'constitution_seed:2026-W41')
+    expect(constitutionSeedJobKey(monday)).toBe('constitution_seed:2026-W41')
+    expect(m.getProviderForUser).not.toHaveBeenCalled()
+    expect(m.insertConstitutionProposal).not.toHaveBeenCalled()
+  })
+
   it('drafts on the heavy tier and writes ONE first-draft proposal (never the constitution)', async () => {
     expect(await seedConstitutionDraft(USER)).toEqual({ status: 'created', proposalId: 'p1', principles: 3 })
     expect(m.getProviderForUser).toHaveBeenCalledWith(USER, 'heavy')

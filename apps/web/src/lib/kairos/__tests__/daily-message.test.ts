@@ -64,7 +64,7 @@ import type { DailyMessageInputs } from '../daily-message-prompt'
 import { readJobDraft, runDailyMessageForUser } from '../daily-message'
 
 const USER = 'user-1'
-const NOW = new Date('2026-10-01T07:00:00.000Z') // 08:00 London (BST)
+const NOW = new Date('2026-10-01T05:00:00.000Z') // 06:00 London (BST)
 const DATE = '2026-10-01'
 
 const INPUTS: DailyMessageInputs = {
@@ -76,7 +76,7 @@ const INPUTS: DailyMessageInputs = {
   promotions: [{ title: 'Small batches ship faster' }],
   newBeliefs: [],
   drift: null,
-  pendingAsk: null,
+  openAsks: null,
   synthesis: null,
   mindCompare: null,
   failed: ['aether'],
@@ -178,6 +178,38 @@ describe('runDailyMessageForUser', () => {
     expect(await runDailyMessageForUser(USER, { now: NOW })).toMatchObject({ source: 'routine' })
     const sent = vi.mocked(deliverKairosSpeak).mock.calls[0][1].message
     expect(sent).toContain('**Today** routine draft.\n\nIdea of the day: Cut the PPA scope — survived because backed by 3 board pages (1 more in your inbox).')
+  })
+
+  it('appends the numbered open-questions block last, after the beliefs, on every draft source', async () => {
+    const openAsks = [
+      { seq: 14, question: 'What made Tuesday hard?', askedAt: '2026-09-30T04:30:00.000Z' },
+      { seq: 12, question: 'Should Atlas ship this week?', askedAt: '2026-09-28T04:30:00.000Z' },
+    ]
+    vi.mocked(gatherDailyMessageInputs).mockResolvedValue({ ...INPUTS, openAsks })
+    selectQueue.push([{ n: 0 }])
+    vi.mocked(listJobs).mockResolvedValue([job()])
+    await runDailyMessageForUser(USER, { now: NOW })
+    const sent = vi.mocked(deliverKairosSpeak).mock.calls[0][1].message
+    expect(sent).toBe([
+      '**Today** routine draft.',
+      '',
+      'What I now believe:',
+      '1. Small batches ship faster',
+      'To undo one, just tell me “undo <title>”.',
+      '',
+      'Open questions (2):',
+      'Q12 · 3 days · Should Atlas ship this week?',
+      'Q14 · 1 day · What made Tuesday hard?',
+      "Reply on Telegram with the number, e.g. 'Q12: …'. 'skip Q12' drops one.",
+    ].join('\n'))
+
+    // Deterministic fallback (no credential) carries the same block.
+    vi.mocked(deliverKairosSpeak).mockClear()
+    vi.mocked(listJobs).mockResolvedValue([])
+    vi.mocked(getProviderForTask).mockRejectedValue(new Error('provider down'))
+    const result = await runDailyMessageForUser(USER, { now: NOW, dryRun: true })
+    expect(result.source).toBe('deterministic')
+    expect(result.message).toMatch(/\n\nOpen questions \(2\):\nQ12 · 3 days · Should Atlas ship this week\?\n/)
   })
 
   it('does not repeat the idea when the routine draft already names it', async () => {

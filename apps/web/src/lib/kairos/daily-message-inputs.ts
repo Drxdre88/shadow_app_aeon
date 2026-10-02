@@ -2,7 +2,7 @@ import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { dominions, memories } from '@/lib/db/schema'
 import { getLatestAether } from '@/lib/data/aether'
-import { getPendingKairosAsk } from '@/lib/data/ask'
+import { listOpenKairosAsks } from '@/lib/data/ask'
 import { listBoardDayPages } from '@/lib/data/board-feed'
 import { listPromotedBeliefsBetween } from '@/lib/data/memory-candidates'
 import { listTraceHistory } from '@/lib/data/recipes'
@@ -25,6 +25,7 @@ import {
   type DailyMessageInputs,
   type DriftDigest,
   type IdeaOfTheDay,
+  type OpenAskDigest,
   type SynthesisSnapshot,
 } from './daily-message-prompt'
 
@@ -180,10 +181,9 @@ async function readDrift(userId: string, now: Date): Promise<DriftInputs | null>
   return { alert: fresh.alert, summary, measured: true, conscience }
 }
 
-async function readPendingAsk(userId: string): Promise<string | null> {
-  const ask = await getPendingKairosAsk(userId)
-  if (!ask || ask.kairosAsk.status !== 'pending') return null
-  return clipLine(ask.title)
+async function readOpenAsks(userId: string, now: Date): Promise<OpenAskDigest[]> {
+  const asks = await listOpenKairosAsks(userId, now)
+  return asks.map((ask) => ({ seq: ask.seq, question: clipLine(ask.title), askedAt: ask.kairosAsk.askedAt || ask.createdAt.toISOString() }))
 }
 
 // The rollup counts only if it materialised on today's London date.
@@ -249,19 +249,19 @@ export async function gatherDailyMessageInputs(userId: string, now: Date): Promi
   const since = new Date(now.getTime() - DAY_MS)
   const isMonday = isLondonMonday(now)
   const failed: string[] = []
-  const [areas, aether, boardDay, promotions, newBeliefs, drift, pendingAsk, synthesis, mindCompare, idea, ideaDiversityAlarm] = await Promise.all([
+  const [areas, aether, boardDay, promotions, newBeliefs, drift, openAsks, synthesis, mindCompare, idea, ideaDiversityAlarm] = await Promise.all([
     safe('areas', failed, () => readAreaHeadlines(userId)),
     safe('aether', failed, () => readAether(userId)),
     safe('boardDay', failed, () => readBoardDay(userId, date)),
     safe('promotions', failed, () => listPromotedBeliefsBetween(userId, since, now, MAX_DIGEST_BELIEFS)),
     safe('newBeliefs', failed, () => readNewBeliefs(userId, since)),
     safe('drift', failed, () => readDrift(userId, now)),
-    safe('pendingAsk', failed, () => readPendingAsk(userId)),
+    safe('openAsks', failed, () => readOpenAsks(userId, now)),
     safe('synthesis', failed, () => readSynthesis(userId, date)),
     isMonday ? safe('mindCompare', failed, () => readMindCompare(userId, now)) : Promise.resolve(null),
     safe('idea', failed, () => readIdeaOfTheDay(userId, since)),
     safe('ideaDiversity', failed, () => readIdeaDiversityAlarm(userId, now)),
   ])
   failed.sort()
-  return { date, isMonday, areas, aether, boardDay, promotions, newBeliefs, drift, pendingAsk, synthesis, mindCompare, idea, ideaDiversityAlarm, failed }
+  return { date, isMonday, areas, aether, boardDay, promotions, newBeliefs, drift, openAsks, synthesis, mindCompare, idea, ideaDiversityAlarm, failed }
 }

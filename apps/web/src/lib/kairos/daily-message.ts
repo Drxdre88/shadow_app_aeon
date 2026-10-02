@@ -11,6 +11,7 @@ import { gatherDailyMessageInputs } from './daily-message-inputs'
 import { loadConscienceBlock } from './conscience-context'
 import {
   DAILY_MESSAGE_SYSTEM_PROMPT,
+  appendOpenQuestionsBlock,
   buildBeliefsBlock,
   buildDailyMessageUserPrompt,
   buildDeterministicDailyMessage,
@@ -33,13 +34,14 @@ export function draftMentions(draft: string, title: string): boolean {
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Daily Message (docs/kairos/34 §3) — the one guaranteed push of the
-// day, 08:00 Europe/London. Replaces the evening digest and (Kairos 0.17) the
+// day, 06:00 Europe/London. Replaces the evening digest and (Kairos 0.17) the
 // per-area morning briefs: each area's latest cortex headline feeds it instead.
 //
 // Draft source, in order: the Max routine's `daily_message` thinking job (if
 // done today) → the paid heavy-tier key → a deterministic template. Every
 // draft passes the same guard (length, no headings/URLs); the deterministic
-// "What I now believe" block is appended after the guard. Delivered once per
+// "What I now believe" block and the numbered "Open questions" block are
+// appended after the guard. Delivered once per
 // London date (single-flight advisory try-lock + externalId) via
 // deliverKairosSpeak(digest:true) — excluded from the speak throttle and the
 // awaiting-reply gate. Inbox-only delivery (Telegram failed) is reported as
@@ -162,6 +164,10 @@ export async function composeDailyMessage(userId: string, now: Date): Promise<Co
 
   const beliefsBlock = buildBeliefsBlock(inputs.promotions ?? [])
   if (beliefsBlock) message = `${message}\n\n${beliefsBlock}`
+  // Every open question, numbered, rebuilt at send time (so it reflects
+  // answers and asks since any routine draft was planned). Code-built, after
+  // the guard — the model never writes or quotes it.
+  message = appendOpenQuestionsBlock(message, inputs.openAsks, now)
   return { message, source, inputs }
 }
 

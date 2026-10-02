@@ -21,7 +21,7 @@ export function originKindSqlOf(source: SQL, meta: SQL): SQL {
   CASE WHEN ${meta}->'origin'->>'kind' IN ('operator','activity','agent','kairos','external')
     THEN ${meta}->'origin'->>'kind' END,
   CASE
-    WHEN ${meta}->>'kind' IN ('board_day','board_week','hangar_mission') THEN 'activity'
+    WHEN ${meta}->>'kind' IN ('board_day','board_week','board_card_done','hangar_mission') THEN 'activity'
     WHEN ${source} IN ('manual','voice') THEN 'operator'
     WHEN ${source} IN ('cron','system') THEN 'kairos'
     WHEN ${source} IN ('claude','codex','copilot','hook') THEN 'agent'
@@ -42,6 +42,8 @@ const signalColumns = {
   bodyMd: memories.bodyMd,
   type: memories.type,
   kind: sql<string | null>`${memories.sourceMetadata}->>'kind'`,
+  // A confirmed voice-note segment: the extract prompt reads more of its body.
+  voiceNote: sql<boolean>`(${memories.sourceMetadata}->'voiceNote') IS NOT NULL`,
   createdAt: memories.createdAt,
   source: memories.source,
   sourceMetadata: memories.sourceMetadata,

@@ -5,12 +5,15 @@ import { seedConstitutionDraft, type SeedResult } from '@/lib/kairos/constitutio
 import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 
 // ─────────────────────────────────────────────────────────────────────────
-// Kairos constitution seed (docs/kairos/34 §2). One-shot safe: per eligible
-// user (active Dominion + live BYOK credential) with NO constitution and NO
-// pending amendment, draft the first constitution from Dominion vision/
-// mission/objectives + the top 20 reflections and write it as a PROPOSAL.
-// Every later run is a cheap no-op for that user until they dismiss the draft
-// (then it re-drafts) — accepting it ends seeding for good.
+// Kairos constitution seed (docs/kairos/34 §2) — the paid-key FALLBACK for
+// the Monday `constitution_seed` thinking job (Claude Max routine, no key
+// needed; thinking/handlers/constitution-seed.ts). Runs Mondays 05:58 UTC,
+// after the job's 05:56 deadline. One-shot safe: per eligible user (active
+// Dominion + live BYOK credential) whose job this week is NOT done, with NO
+// constitution and NO pending amendment, draft the first constitution from
+// Dominion vision/mission/objectives + the top 20 reflections and write it as
+// a PROPOSAL. Every later run is a cheap no-op for that user until they
+// dismiss the draft (then it re-drafts) — accepting it ends seeding for good.
 // ─────────────────────────────────────────────────────────────────────────
 
 export const maxDuration = 300

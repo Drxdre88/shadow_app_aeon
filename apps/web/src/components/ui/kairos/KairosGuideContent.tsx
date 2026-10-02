@@ -90,8 +90,8 @@ export function KairosGuideContent() {
           kinds of item can land there:
         </P>
         <ul className="flex flex-col gap-2 text-[12.5px] text-white/70 leading-relaxed pl-4">
-          <Bullet><strong>Today&apos;s message</strong> — the 08:00 message, pinned until you clear it.</Bullet>
-          <Bullet><strong>Pending ask</strong> — one question Kairos decided was worth asking. Answer it right there in the inbox.</Bullet>
+          <Bullet><strong>Today&apos;s message</strong> — the 06:00 message, pinned until you clear it.</Bullet>
+          <Bullet><strong>Open questions</strong> — every question Kairos is still waiting on, numbered (Q12, Q14…). Answer or dismiss each right there in the inbox.</Bullet>
           <Bullet><strong>Notify</strong> — something he judged urgent enough to interrupt you for.</Bullet>
           <Bullet><strong>Proposal</strong> — a candidate thought, such as an idea from the nightly idea contest. Accept or dismiss it.</Bullet>
         </ul>
@@ -101,8 +101,9 @@ export function KairosGuideContent() {
         </P>
         <P>
           The default outcome of every internal pulse is <strong>silence</strong>. Kairos only
-          surfaces something past the interrupt bar, he won&apos;t stack a second question while one
-          is still unanswered, and the cadence adapts rather than firing on a fixed clock.
+          surfaces something past the interrupt bar, asks at most one new question a day (up to ten
+          stay open for two weeks, so nothing is lost on an off week), and the cadence adapts rather
+          than firing on a fixed clock.
         </P>
         <P>
           A deeper, threaded conversation seeded by an ask — Dialogue — exists today via Claude
@@ -112,10 +113,11 @@ export function KairosGuideContent() {
 
       <Section title="The Daily Message">
         <P>
-          One guaranteed message every morning at 08:00 UK time, to the Will inbox and Telegram:
+          One guaranteed message every morning at 06:00 UK time, to the Will inbox and Telegram:
           where each area stands, what the overnight thinking concluded, what you finished on your board
-          yesterday, any change in what Kairos believes, a drift warning if there is one, and at
-          most one question.
+          yesterday, any change in what Kairos believes, a drift warning if there is one, and a
+          numbered list of every question still open. Reply on Telegram with &quot;Q12: …&quot; to
+          answer one, or &quot;skip Q12&quot; to drop it.
         </P>
         <P>
           It&apos;s expected daily by design, a different register from the rare interrupt bar above.

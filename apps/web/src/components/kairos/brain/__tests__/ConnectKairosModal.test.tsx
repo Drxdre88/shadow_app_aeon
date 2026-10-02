@@ -1,11 +1,13 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { KairosBrainStatus } from '@/lib/kairos/routines/status-types'
 
-vi.mock('@/lib/actions/kairos-brain', () => ({ getKairosBrainStatus: vi.fn() }))
+vi.mock('@/lib/actions/kairos-brain', () => ({ getKairosBrainStatus: vi.fn(), getKairosWatchedOverview: vi.fn() }))
+vi.mock('@/lib/actions/projects', () => ({ setProjectKairosFeed: vi.fn() }))
+vi.mock('@/lib/actions/dominions', () => ({ addDominionRepoAction: vi.fn() }))
 
-import { getKairosBrainStatus } from '@/lib/actions/kairos-brain'
+import { getKairosBrainStatus, getKairosWatchedOverview } from '@/lib/actions/kairos-brain'
 import { ConnectKairosModal } from '../ConnectKairosModal'
 import { cronToLocal } from '../brainTime'
 
@@ -53,6 +55,22 @@ describe('ConnectKairosModal', () => {
     render(<ConnectKairosModal isOpen onClose={() => {}} />)
     fireEvent.click(await screen.findByRole('tab', { name: /Telegram/ }))
     expect(await screen.findByText(/ROUTINE_CHAT_TOKEN=sk-ant-oat01-…/)).toBeTruthy()
+  })
+
+  it('opens the Watched and Voice notes views from the switcher', async () => {
+    vi.mocked(getKairosBrainStatus).mockResolvedValue(status())
+    vi.mocked(getKairosWatchedOverview).mockResolvedValue({
+      projects: [{ id: 'p-1', name: 'AS Sprint', feed: 'daily', areaName: null }],
+      areas: [],
+      unmappedRepos: [],
+    })
+    render(<ConnectKairosModal isOpen onClose={() => {}} />)
+    await screen.findByText('11 on Max')
+    fireEvent.click(screen.getByRole('tab', { name: /Watched/ }))
+    expect(await screen.findByText('AS Sprint')).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: /Voice notes/ }))
+    await waitFor(() => expect(screen.getByRole('tab', { name: /Voice notes/ }).getAttribute('aria-selected')).toBe('true'))
+    await waitFor(() => expect(screen.queryByText('AS Sprint')).toBeNull())
   })
 
   it('shows a retryable error when the status call fails', async () => {
