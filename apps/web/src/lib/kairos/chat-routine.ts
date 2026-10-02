@@ -1,16 +1,18 @@
 import { failJob, findJobById, listJobs } from '@/lib/data/thinking-jobs'
+import { isPaidBackupEnabled, PAID_BACKUP_OFF_NOTE } from '@/lib/kairos/paid-backup'
 import type { ApplyOutcome, ThinkingJobKind, ThinkingJobRow } from '@/lib/kairos/engine/types'
 
 // ─────────────────────────────────────────────────────────────────────────
-// Telegram chat on the Max plan (docs/kairos/34 §5, playbook docs/kairos/33
-// "Chat routine").
+// Chat on the Max plan — Telegram and the Kairos page (docs/kairos/34 §5,
+// playbook docs/kairos/33 "Chat routine").
 //
-// The webhook persists the operator turn, queues a `chat` thinking job and
-// fires the "Kairos chat" Claude Code routine through its API trigger. The
-// routine claims the job over the Aeon MCP and submits the reply; the chat
-// handler persists it and sends it to Telegram. A watchdog running in the
-// webhook's after() covers the job on the paid key when the routine is slow,
-// rejected or never fired.
+// The Telegram webhook or the web chat action persists the operator turn,
+// queues a `chat` thinking job and fires the "Kairos chat" Claude Code
+// routine through its API trigger. The routine claims the job over the Aeon
+// MCP and submits the reply; the chat handler persists it (and sends it to
+// Telegram for Telegram turns). A watchdog running in the caller's after()
+// covers the job on the paid key when the routine is slow, rejected or never
+// fired — unless the owner switched the paid backup off.
 //
 // Exactly one reply per turn rests on the job's atomic state transitions:
 // the routine can only apply while the job is `claimed` and before its
@@ -27,8 +29,9 @@ import type { ApplyOutcome, ThinkingJobKind, ThinkingJobRow } from '@/lib/kairos
 export const CHAT_JOB_KIND: ThinkingJobKind = 'chat'
 
 export const DEFAULT_CHAT_ROUTINE_TIMEOUT_MS = 60_000
-// Ceiling on KAIROS_CHAT_ROUTINE_TIMEOUT_MS. The webhook function has 300 s
-// (maxDuration) for fire (≤10 s) + the watchdog wait (≤ timeout + slack +
+// Ceiling on KAIROS_CHAT_ROUTINE_TIMEOUT_MS. The webhook and the /kairos
+// layout (web chat server actions) both have 300 s (maxDuration) for fire
+// (≤10 s) + the watchdog wait (≤ timeout + slack +
 // grace + one poll = 175 s at the ceiling) + the paid fallback (~115 s left).
 export const MAX_CHAT_ROUTINE_TIMEOUT_MS = 120_000
 export const DEFAULT_CHAT_ROUTINE_POLL_MS = 3_000
@@ -52,12 +55,27 @@ export const CHAT_SUPERSEDED_PREFIX = 'superseded:'
 export const CHAT_WATCHDOG_PREFIX = 'chat-watchdog:'
 
 export const CHAT_REPLY_PENDING_MESSAGE =
-  'Kairos is still answering this message on Telegram — give him a minute.'
+  'Kairos is still answering this message — give him a minute.'
 
-export function telegramRoutineEnabled(): boolean {
-  const raw = process.env.KAIROS_TELEGRAM_ROUTINE?.trim().toLowerCase()
+// Said instead of a paid-key answer when the routine missed the turn and the
+// owner has switched the paid backup off.
+export const CHAT_PAID_BACKUP_OFF_MESSAGE =
+  "I couldn't answer on your Max plan just now — try again in a minute."
+
+export type ChatChannel = 'telegram' | 'web'
+
+function envFlag(name: string): boolean {
+  const raw = process.env[name]?.trim().toLowerCase()
   return raw === '1' || raw === 'true'
 }
+
+// One flag for both chat channels. KAIROS_TELEGRAM_ROUTINE is the pre-0.19
+// name, still accepted so existing deployments keep working.
+export function chatRoutineEnabled(): boolean {
+  return envFlag('KAIROS_CHAT_ROUTINE') || envFlag('KAIROS_TELEGRAM_ROUTINE')
+}
+
+export const telegramRoutineEnabled = chatRoutineEnabled
 
 function envMs(name: string, fallback: number): number {
   const raw = process.env[name]
@@ -154,7 +172,7 @@ export async function chatJobOwnsMessage(
   messageId: string,
   now: Date = new Date(),
 ): Promise<boolean> {
-  if (!telegramRoutineEnabled()) return false
+  if (!chatRoutineEnabled()) return false
   try {
     const key = chatJobKey(threadId, messageId)
     const since = new Date(now.getTime() - CHAT_JOB_OWNERSHIP_WINDOW_MS)
@@ -215,7 +233,9 @@ export async function takeOverChatJob(
   reason: string,
   fallback: ChatFallback,
 ): Promise<ChatWatchdogOutcome> {
-  const taken = await failJob(userId, jobId, null, `${CHAT_WATCHDOG_PREFIX} ${reason}; answered on the paid key`)
+  const paidOn = await isPaidBackupEnabled(userId)
+  const how = paidOn ? 'answered on the paid key' : PAID_BACKUP_OFF_NOTE
+  const taken = await failJob(userId, jobId, null, `${CHAT_WATCHDOG_PREFIX} ${reason}; ${how}`)
   if (!taken) return { outcome: 'owned_elsewhere' }
   return runFallback(taken, fallback)
 }

@@ -1,8 +1,10 @@
 'use client'
 
-import { RefreshCw, TriangleAlert, CircleCheck, BrainCircuit, MessageCircle, ArrowRight } from 'lucide-react'
+import { useState } from 'react'
+import { RefreshCw, TriangleAlert, CircleCheck, BrainCircuit, MessageCircle, ArrowRight, KeyRound } from 'lucide-react'
 import { BRAIN_JOBS, ROUTINES } from '@/lib/kairos/routines/catalog'
-import type { AnsweredBy, KairosBrainStatus } from '@/lib/kairos/routines/status-types'
+import type { AnsweredBy, KairosBrainStatus, KairosPaidBackupStatus } from '@/lib/kairos/routines/status-types'
+import { setPaidBackup } from '@/lib/actions/kairos-brain'
 import { cn } from '@/lib/utils/cn'
 import { ANSWER_TONE, ANSWER_WORD, ROUTINE_STATE, Dot, Panel, Eyebrow, tint } from './brainUi'
 import { localDateTime, relativeTo, localClock } from './brainTime'
@@ -47,7 +49,7 @@ export function StatusView({ status, refreshing, onRefresh, onNavigate }: Props)
               No thinking was recorded since midnight UTC yesterday.{' '}
               {brainOff ? 'The brain routine isn’t set up yet.' : 'Check the brain routine is switched on.'}
             </p>
-            <NavLink onClick={() => onNavigate('routines')}>Set up the routines</NavLink>
+            <NavLink onClick={() => onNavigate('setup')}>Open setup</NavLink>
           </div>
         ) : (
           <div className="px-5 pt-2 pb-5">
@@ -136,7 +138,87 @@ export function StatusView({ status, refreshing, onRefresh, onNavigate }: Props)
           </div>
         )
       )}
+
+      {status.paidBackup && <PaidBackupRow paidBackup={status.paidBackup} />}
     </div>
+  )
+}
+
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`
+}
+
+// The "Paid backup" switch: optimistic, reverted (with a note) if the save fails.
+function PaidBackupRow({ paidBackup }: { paidBackup: KairosPaidBackupStatus }) {
+  const [override, setOverride] = useState<boolean | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const enabled = override ?? paidBackup.enabled
+
+  const toggle = async () => {
+    const previous = enabled
+    const next = !previous
+    setOverride(next)
+    setError(null)
+    setSaving(true)
+    try {
+      const res = await setPaidBackup(next)
+      setOverride(res.enabled)
+    } catch {
+      setOverride(previous)
+      setError('Couldn’t save — the switch is back where it was. Try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const tone = enabled ? 'var(--warning)' : 'var(--success)'
+  return (
+    <Panel>
+      <div className="flex items-start gap-3 px-5 py-4">
+        <div
+          className="mt-0.5 flex items-center justify-center w-8 h-8 rounded-lg shrink-0"
+          style={{ background: tint(tone, 12), color: tone }}
+        >
+          <KeyRound className="w-4 h-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span id="kairos-paid-backup-label" className="text-[13px] font-semibold text-white">Paid backup</span>
+            <span className="text-[10.5px] font-medium" style={{ color: tone }}>{enabled ? 'On' : 'Off'}</span>
+          </div>
+          <p className="mt-0.5 text-[11.5px] text-white/55">
+            {enabled
+              ? `If your Max routine misses a job, Kairos pays your API key to cover it (${plural(paidBackup.paidCallsLast7d, 'time')} in the last 7 days).`
+              : 'Never uses your API key. A missed job waits for the next run; the 06:00 message falls back to plain text.'}
+          </p>
+          {error && (
+            <p role="alert" className="mt-1.5 text-[11.5px]" style={{ color: 'var(--error)' }}>{error}</p>
+          )}
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          aria-labelledby="kairos-paid-backup-label"
+          onClick={toggle}
+          disabled={saving}
+          className={cn(
+            'relative mt-1 inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors outline-none',
+            'focus-visible:ring-1 focus-visible:ring-[color:var(--primary)] disabled:opacity-60',
+            !enabled && 'bg-white/[0.06] border-white/[0.12]',
+          )}
+          style={enabled ? { background: tint('var(--primary)', 35), borderColor: tint('var(--primary)', 60) } : undefined}
+        >
+          <span
+            className={cn(
+              'inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform',
+              enabled ? 'translate-x-[18px]' : 'translate-x-[2px]',
+            )}
+          />
+        </button>
+      </div>
+    </Panel>
   )
 }
 

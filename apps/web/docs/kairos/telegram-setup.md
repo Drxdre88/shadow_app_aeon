@@ -1,8 +1,11 @@
 # Kairos in the gram — Telegram bot setup
 
-Kairos speaks first through Telegram: `/api/v1/kairos/speak` fans messages out
-to your chat with inline triage buttons, and anything you type back is piped
-into the whole-brain Kairos chat (one persistent `Telegram · Kairos` thread).
+Telegram is optional. With it, Kairos's 06:00 message reaches your phone (with
+inline buttons), and anything you type back goes into the same Kairos chat you
+use on the Kairos page (one persistent `Telegram · Kairos` thread).
+
+Three parts: the **bot** (steps 1–2), the **webhook** (step 3), and — so replies
+run on your Claude Max plan — the **chat routine** (step 6).
 
 ## 1. Create the bot (BotFather)
 
@@ -65,6 +68,13 @@ Redeploy after setting them.
 
 ## 5. Smoke test
 
+Easiest: in Aeon open **Kairos setup** in the sidebar and press **Send test
+message** on the Telegram step (operator only). You should get
+"Kairos test — if you can read this, Telegram is connected ✓". It is a plain
+test line — it doesn't land in the inbox or count as Kairos speaking.
+
+To test the full speak path from a terminal instead:
+
 ```bash
 curl -s "https://<your-aeon-domain>/api/v1/kairos/speak" \
   -H "Authorization: Bearer <CRON_SECRET>" \
@@ -75,5 +85,31 @@ curl -s "https://<your-aeon-domain>/api/v1/kairos/speak" \
 Expected: `{ "id": "...", "delivered": { "inbox": true, "telegram": true } }`,
 a Telegram message with a **Dismiss** button, and a matching notify card in the
 Kairos inbox bell. Tap Dismiss — the card should clear from the inbox too.
-Then type anything to the bot: Kairos should answer from the whole brain
-(or say the brain is offline if no BYOK key is configured).
+Then type anything to the bot: Kairos should answer from the whole brain.
+
+## 6. Chat replies on your Max plan
+
+Without this step, Telegram (and web) chat replies are written with your paid
+API key, if you saved one. To answer on Max instead:
+
+1. On claude.ai/code/routines create the **Kairos chat** routine — name,
+   prompt and model are in Kairos setup. Connector: `aeon` only. No schedule.
+2. Edit → *Add another trigger* → **API** → *Generate token* (shown once).
+3. In Vercel (Production) set:
+
+   | Variable | Value |
+   | --- | --- |
+   | `KAIROS_CHAT_ROUTINE` | `1` (the older name `KAIROS_TELEGRAM_ROUTINE` still works) |
+   | `ROUTINE_CHAT_ID` | the trigger id, `trig_…` |
+   | `ROUTINE_CHAT_TOKEN` | the token from step 2 |
+
+4. Redeploy.
+
+**Web and Telegram share this one routine.** Each message wakes it once, and
+the reply goes back to wherever you wrote — the Kairos page or Telegram.
+
+**The paid key is only a backup.** If the routine doesn't answer within about a
+minute, Aeon answers on your key — but only while the **Paid backup** switch in
+Kairos setup is on. With it off, Kairos replies "I couldn't answer on your Max
+plan just now — try again in a minute." With no key saved, it says the brain is
+offline and keeps your message.

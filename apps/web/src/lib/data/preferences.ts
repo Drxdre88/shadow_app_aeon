@@ -1,7 +1,8 @@
 import { db } from '@/lib/db'
 import { userPreferences } from '@/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { DEFAULT_PREFERENCES } from '@/config/defaults'
+import { PAID_BACKUP_PREF_KEY } from './kairos-paid-backup'
 
 export async function findPreferences(userId: string) {
   const row = await db
@@ -25,12 +26,19 @@ export async function hasPreferencesRow(userId: string) {
   return !!row
 }
 
+// Theme/UI sync replaces the whole blob from client state. Server-owned keys
+// (the Kairos paid-backup switch) are stripped from the client payload and the
+// stored value is carried over, so a theme save can't set or wipe them.
 export async function upsertPreferences(userId: string, prefs: Record<string, unknown>) {
+  const { [PAID_BACKUP_PREF_KEY]: _ignored, ...clientPrefs } = prefs
   await db
     .insert(userPreferences)
-    .values({ userId, preferences: prefs, updatedAt: new Date() })
+    .values({ userId, preferences: clientPrefs, updatedAt: new Date() })
     .onConflictDoUpdate({
       target: userPreferences.userId,
-      set: { preferences: prefs, updatedAt: new Date() },
+      set: {
+        preferences: sql`${JSON.stringify(clientPrefs)}::jsonb || jsonb_strip_nulls(jsonb_build_object(${PAID_BACKUP_PREF_KEY}::text, ${userPreferences.preferences} -> ${PAID_BACKUP_PREF_KEY}::text))`,
+        updatedAt: new Date(),
+      },
     })
 }

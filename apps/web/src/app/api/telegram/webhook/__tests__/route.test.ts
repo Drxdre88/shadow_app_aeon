@@ -47,6 +47,13 @@ vi.mock('@/lib/kairos/chat-turn-reply', () => ({
   appendAssistantReplyOnce: vi.fn(),
 }))
 
+vi.mock('@/lib/kairos/paid-backup', () => ({
+  isPaidBackupEnabled: vi.fn(async () => true),
+  PAID_BACKUP_OFF_NOTE: 'paid backup off',
+}))
+
+import { isPaidBackupEnabled } from '@/lib/kairos/paid-backup'
+import { CHAT_PAID_BACKUP_OFF_MESSAGE } from '@/lib/kairos/chat-routine'
 import { acceptInboxProposal, dismissInboxMemory } from '@/lib/kairos/proposal-accept'
 import { answerNumberedKairosAsks } from '@/lib/kairos/ask'
 import { appendAssistantReplyOnce } from '@/lib/kairos/chat-turn-reply'
@@ -114,6 +121,7 @@ beforeEach(() => {
   vi.mocked(findOpenChatThreadByTitle).mockResolvedValue(THREAD_ID)
   vi.mocked(markKairosSpeaksReplied).mockResolvedValue(0)
   vi.mocked(answerNumberedKairosAsks).mockResolvedValue({ matched: false })
+  vi.mocked(isPaidBackupEnabled).mockResolvedValue(true)
 })
 
 afterEach(() => {
@@ -490,7 +498,7 @@ describe('telegram webhook — chat routine flag off (default)', () => {
   })
 })
 
-describe('telegram webhook — chat routine (KAIROS_TELEGRAM_ROUTINE=1)', () => {
+describe('telegram webhook — chat routine (KAIROS_TELEGRAM_ROUTINE=1, legacy flag name)', () => {
   const USER_MSG_ID = 'msg-1'
   const JOB_ID = 'job-1'
   const ROUTINE_ENV = {
@@ -760,5 +768,46 @@ describe('telegram webhook — chat routine (KAIROS_TELEGRAM_ROUTINE=1)', () => 
 
     expect(sendChatMessage).toHaveBeenCalledTimes(1)
     expect(upsertJob).not.toHaveBeenCalled()
+  })
+
+  it('an identical resend outside the window gets the Max-plan notice, not a paid answer, when the paid backup is off', async () => {
+    vi.mocked(isPaidBackupEnabled).mockResolvedValue(false)
+    vi.mocked(getChatThread).mockReset()
+      .mockResolvedValue(thread([{ id: USER_MSG_ID, seq: 1, role: 'user', content: 'status of hydra?' }]))
+    vi.mocked(listJobs).mockResolvedValue([])
+
+    await POST(makeReq(textUpdate('status of hydra?'), 'hook-secret'))
+
+    expect(sendChatMessage).not.toHaveBeenCalled()
+    const replies = telegramCalls(fetchMock).filter((c) => c.method === 'sendMessage')
+    expect(replies.map((r) => r.body.text)).toEqual([CHAT_PAID_BACKUP_OFF_MESSAGE])
+  })
+
+  it('the watchdog sends the Max-plan notice instead of a paid answer when the paid backup is off', async () => {
+    vi.mocked(isPaidBackupEnabled).mockResolvedValue(false)
+    vi.mocked(findJobById).mockImplementation(async () => job('queued'))
+    vi.mocked(failJob).mockImplementation(async (_u, _id, _token, error) => job('failed', error))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    await POST(makeReq(textUpdate('status of hydra?'), 'hook-secret'))
+    await drainAfter()
+    consoleError.mockRestore()
+
+    expect(runAssistantTurnOnce).not.toHaveBeenCalled()
+    const replies = telegramCalls(fetchMock).filter((c) => c.method === 'sendMessage')
+    expect(replies.map((r) => r.body.text)).toEqual([CHAT_PAID_BACKUP_OFF_MESSAGE])
+  })
+
+  it('KAIROS_CHAT_ROUTINE=1 turns the routine on just like the legacy name', async () => {
+    delete process.env.KAIROS_TELEGRAM_ROUTINE
+    process.env.KAIROS_CHAT_ROUTINE = '1'
+    try {
+      await POST(makeReq(textUpdate('status of hydra?'), 'hook-secret'))
+    } finally {
+      delete process.env.KAIROS_CHAT_ROUTINE
+    }
+    expect(sendChatMessage).not.toHaveBeenCalled()
+    expect(upsertJob).toHaveBeenCalledTimes(1)
+    expect(lastJob.input.context).toMatchObject({ channel: 'telegram', chatId: Number(OPERATOR_CHAT) })
   })
 })

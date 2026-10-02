@@ -84,12 +84,17 @@ belief changes, memory_ops summary, mind compare, open asks. Output = ≤5 revie
 
 **Belief diff (P3, 0.15).** The weekly review includes the reviewed week's belief changes, read from un-reverted `memory_ops` of steps `beliefs`, `recheck` and `own_mind` (`lib/data/belief-diff.ts`) and classified: created / replaced (`promote`, with `supersedes`), reinforced / flag cleared (`feedback`, `reaffirmed`), retired (`retire`, `decay`), re-check flag raised (`recheck`), legacy normalisation and provenance remap (recheck `feedback`). All are counted; the 15 most significant are shown grouped by domain with the logged reason and are citable. It also shows the week's idea-tournament survivors and outcomes (doc 35).
 
-## 5. Telegram chat on Max
+## 5. Chat on Max (web + Telegram)
 
-Flag `KAIROS_TELEGRAM_ROUTINE=1` (default off). Webhook persists the user turn, replies "thinking…", plans a `chat`
-job and fires the chat routine (`ROUTINE_CHAT_FIRE_URL`, `ROUTINE_CHAT_TOKEN`). An `after()` watchdog waits up to
-`KAIROS_CHAT_ROUTINE_TIMEOUT_MS` (default 60000) for the job to complete, then answers on the paid key. Exactly one
-reply per user turn.
+Flag `KAIROS_CHAT_ROUTINE=1` (alias `KAIROS_TELEGRAM_ROUTINE`, the pre-0.19 name; default off) plus `ROUTINE_CHAT_ID`
+(or `ROUTINE_CHAT_FIRE_URL`) and `ROUTINE_CHAT_TOKEN`. One chat routine serves both channels. A Telegram message (webhook)
+or a web message on `/kairos` (since 0.19; the page gets `pending: true` and polls) persists the user turn, plans a
+`chat` job and fires the routine. A watchdog waits up to `KAIROS_CHAT_ROUTINE_TIMEOUT_MS` (default 60000) for the job to
+complete, then answers on the paid key — only while the owner's **Paid backup** switch is on; off, it posts "I couldn't
+answer on your Max plan just now — try again in a minute." Exactly one reply per user turn. The paid key is the backup,
+never the main path. Full detail and what every other backup does with the switch off: doc 33 (*Setup → Paid backup
+switch*, *Chat in detail*). The connector itself installs in one click from Kairos setup
+(`https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=aeon&connectorUrl=<encoded>`).
 
 ## 6. Loose ends from P1
 

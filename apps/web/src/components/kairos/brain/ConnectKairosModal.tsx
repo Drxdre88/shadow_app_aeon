@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { X, Activity, Network, Plug, CalendarClock, Send, CloudOff, RefreshCw, Eye, Mic } from 'lucide-react'
+import { X, Activity, Network, ListChecks, BookOpen, CloudOff, RefreshCw, Eye } from 'lucide-react'
 import { useHasMounted } from '@/lib/utils/useHasMounted'
 import { useThemeStore } from '@/stores/themeStore'
 import { getKairosBrainStatus } from '@/lib/actions/kairos-brain'
@@ -13,34 +13,31 @@ import { SegmentedSwitch, tint } from './brainUi'
 import { localClock } from './brainTime'
 import { StatusView, StatusSkeleton } from './StatusView'
 import { BrainMapView } from './BrainMapView'
-import { ConnectView } from './ConnectView'
-import { RoutinesView } from './RoutinesView'
-import { TelegramView } from './TelegramView'
 import { WatchedView } from './WatchedView'
-import { VoiceNotesView } from './VoiceNotesView'
+import { SetupChecklist } from './SetupChecklist'
+import { KairosGuideContent } from '@/components/ui/kairos/KairosGuideContent'
 
-export type BrainView = 'status' | 'map' | 'connect' | 'watched' | 'voice' | 'routines' | 'telegram'
+export type BrainView = 'setup' | 'health' | 'map' | 'watched' | 'guide'
 
 const VIEWS: { id: BrainView; label: string; icon: typeof Activity }[] = [
-  { id: 'status', label: 'Status', icon: Activity },
+  { id: 'setup', label: 'Setup', icon: ListChecks },
+  { id: 'health', label: 'Health', icon: Activity },
   { id: 'map', label: 'Brain map', icon: Network },
-  { id: 'connect', label: 'Connect', icon: Plug },
   { id: 'watched', label: 'Watched', icon: Eye },
-  { id: 'voice', label: 'Voice notes', icon: Mic },
-  { id: 'routines', label: 'Routines', icon: CalendarClock },
-  { id: 'telegram', label: 'Telegram', icon: Send },
+  { id: 'guide', label: 'How it works', icon: BookOpen },
 ]
 
 interface Props {
   isOpen: boolean
   onClose: () => void
   defaultView?: BrainView
+  onStatus?: (status: KairosBrainStatus) => void
 }
 
-export function ConnectKairosModal({ isOpen, onClose, defaultView = 'status' }: Props) {
+export function ConnectKairosModal({ isOpen, onClose, defaultView = 'setup', onStatus }: Props) {
   const mounted = useHasMounted()
   if (!mounted || !isOpen) return null
-  return createPortal(<ModalBody onClose={onClose} defaultView={defaultView} />, document.body)
+  return createPortal(<ModalBody onClose={onClose} defaultView={defaultView} onStatus={onStatus} />, document.body)
 }
 
 interface Load {
@@ -73,15 +70,20 @@ function useBrainStatus() {
   return { ...load, refresh }
 }
 
-function ModalBody({ onClose, defaultView }: { onClose: () => void; defaultView: BrainView }) {
+function ModalBody({
+  onClose, defaultView, onStatus,
+}: {
+  onClose: () => void
+  defaultView: BrainView
+  onStatus?: (status: KairosBrainStatus) => void
+}) {
   const { colors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
   const { status, error, loading, refresh } = useBrainStatus()
   const [view, setView] = useState<BrainView>(defaultView)
   const [dir, setDir] = useState(1)
 
-  const views = VIEWS.filter((v) => v.id !== 'telegram' || status?.isAdmin)
-  const activeView = views.some((v) => v.id === view) ? view : 'status'
+  useEffect(() => { if (status) onStatus?.(status) }, [status, onStatus])
 
   const go = useCallback((next: BrainView) => {
     setDir(VIEWS.findIndex((v) => v.id === next) >= VIEWS.findIndex((v) => v.id === view) ? 1 : -1)
@@ -138,8 +140,8 @@ function ModalBody({ onClose, defaultView }: { onClose: () => void; defaultView:
               Kairos {KAIROS_VERSION_SHORT}
             </div>
             <div className="min-w-0">
-              <h2 id="connect-kairos-title" className="text-lg font-semibold text-white leading-tight">Connect Kairos</h2>
-              <p className="text-[11.5px] text-white/45">Its brain runs on your Claude Max plan</p>
+              <h2 id="connect-kairos-title" className="text-lg font-semibold text-white leading-tight">Kairos</h2>
+              <p className="text-[11.5px] text-white/45">Set up, check on, and understand your second memory</p>
             </div>
           </div>
           <button
@@ -152,14 +154,14 @@ function ModalBody({ onClose, defaultView }: { onClose: () => void; defaultView:
         </div>
 
         <div className="flex justify-center px-5 pb-4 border-b border-white/10">
-          <SegmentedSwitch options={views} value={activeView} onChange={go} layoutId="connect-kairos-view" label="Connect Kairos views" />
+          <SegmentedSwitch options={VIEWS} value={view} onChange={go} layoutId="connect-kairos-view" label="Kairos views" />
         </div>
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 py-6 min-h-[460px]">
           {error && status && <StaleStrip at={status.generatedAt} onRetry={refresh} />}
           <AnimatePresence mode="wait" custom={dir} initial={false}>
             <motion.div
-              key={activeView}
+              key={view}
               role="tabpanel"
               custom={dir}
               initial={{ opacity: 0, x: 28 * dir }}
@@ -167,7 +169,16 @@ function ModalBody({ onClose, defaultView }: { onClose: () => void; defaultView:
               exit={{ opacity: 0, x: -28 * dir }}
               transition={{ duration: 0.18, ease: 'easeOut' }}
             >
-              {activeView === 'status' && (
+              {view === 'setup' && (
+                status ? (
+                  <SetupChecklist status={status} refreshing={loading} onRefresh={refresh} onOpenWatched={() => go('watched')} />
+                ) : error ? (
+                  <ErrorState message={error} onRetry={refresh} />
+                ) : (
+                  <SetupSkeleton />
+                )
+              )}
+              {view === 'health' && (
                 status ? (
                   <StatusView status={status} refreshing={loading} onRefresh={refresh} onNavigate={go} />
                 ) : error ? (
@@ -176,16 +187,35 @@ function ModalBody({ onClose, defaultView }: { onClose: () => void; defaultView:
                   <StatusSkeleton />
                 )
               )}
-              {activeView === 'map' && <BrainMapView status={status} />}
-              {activeView === 'connect' && <ConnectView status={status} />}
-              {activeView === 'watched' && <WatchedView />}
-              {activeView === 'voice' && <VoiceNotesView />}
-              {activeView === 'routines' && <RoutinesView nowIso={status?.generatedAt} />}
-              {activeView === 'telegram' && status?.isAdmin && <TelegramView telegram={status.telegram} />}
+              {view === 'map' && <BrainMapView status={status} />}
+              {view === 'watched' && <WatchedView />}
+              {view === 'guide' && <KairosGuideContent onNavigate={go} />}
             </motion.div>
           </AnimatePresence>
         </div>
       </motion.div>
+    </div>
+  )
+}
+
+function SetupSkeleton() {
+  return (
+    <div className="flex flex-col gap-5 animate-pulse" aria-busy="true" aria-label="Checking your setup">
+      <div className="flex flex-col gap-2.5">
+        <div className="h-4 w-56 rounded bg-white/[0.08]" />
+        <div className="h-1 w-full rounded bg-white/[0.06]" />
+      </div>
+      <div className="rounded-xl border border-white/[0.08] divide-y divide-white/[0.06]">
+        {[0, 1].map((i) => (
+          <div key={i} className="flex items-center gap-3.5 px-5 py-4">
+            <div className="w-7 h-7 rounded-full bg-white/[0.06]" />
+            <div className="flex-1 flex flex-col gap-2">
+              <div className="h-3 w-44 rounded bg-white/[0.08]" />
+              <div className="h-2.5 w-64 rounded bg-white/[0.05]" />
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

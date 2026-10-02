@@ -15,6 +15,7 @@ import type { ChatMessage, ChatThreadSummary } from '@/lib/data/kairos-chat'
 import { KairosVisorShell } from './KairosVisorShell'
 import { KairosThreadList } from './KairosThreadList'
 import { KairosMessageStream } from './KairosMessageStream'
+import { useKairosReplyWatch } from './KairosVisorReplyWatch'
 import { formatReason } from './kairos-citations'
 
 // Full-screen Kairos AI — a two-pane takeover: always-visible history rail on
@@ -40,6 +41,11 @@ export function KairosVisor() {
   const [refreshNonce, setRefreshNonce] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // Max-plan replies arrive after the send returns — poll the thread for them.
+  const { start: startReplyWatch, observe: observeReply, stateFor: replyStateFor } = useKairosReplyWatch((loaded) => {
+    if (useKairosVisorStore.getState().activeThreadId !== loaded.thread.id) return
+    setActiveThreadData({ summary: loaded.thread, messages: loaded.messages })
+  })
 
   useEffect(() => {
     if (!isOpen) return
@@ -64,10 +70,11 @@ export function KairosVisor() {
           return
         }
         setActiveThreadData({ summary: loaded.thread, messages: loaded.messages })
+        observeReply(loaded.thread.id, loaded.messages)
       })
       .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load thread') })
     return () => { cancelled = true }
-  }, [isOpen, activeThreadId, refreshNonce, setActiveThread])
+  }, [isOpen, activeThreadId, refreshNonce, setActiveThread, observeReply])
 
   useEffect(() => {
     if (!isOpen) return
@@ -83,10 +90,12 @@ export function KairosVisor() {
     return () => window.clearTimeout(id)
   }, [isOpen, composing, activeThread])
 
+  const replyState = activeThread ? replyStateFor(activeThread.summary.id) : null
+
   useEffect(() => {
     if (!scrollRef.current) return
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-  }, [activeThread?.messages.length])
+  }, [activeThread?.messages.length, replyState])
 
   const handleSubmit = useCallback(async () => {
     const body = draft.trim()
@@ -138,12 +147,13 @@ export function KairosVisor() {
     if (wasComposing || liveActive === sentToThreadId || liveActive === null) {
       setActiveThread(result.threadId)
     }
+    if ('pending' in result) startReplyWatch(result.threadId, result.userSeq)
     setRefreshNonce((n) => n + 1)
     listKairosThreads({ limit: 30 })
       .then(setThreads)
       .catch(() => { /* non-fatal */ })
     setPending(false)
-  }, [draft, pending, composing, activeThread, setActiveThread])
+  }, [draft, pending, composing, activeThread, setActiveThread, startReplyWatch])
 
   const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -196,7 +206,11 @@ export function KairosVisor() {
 
             {/* Body */}
             {activeThread && !composing ? (
-              <KairosMessageStream messages={activeThread.messages} scrollRef={scrollRef} />
+              <KairosMessageStream
+                messages={activeThread.messages}
+                scrollRef={scrollRef}
+                replyState={replyState}
+              />
             ) : composing ? (
               <div className="flex-1" />
             ) : (

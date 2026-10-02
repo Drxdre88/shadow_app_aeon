@@ -2,11 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Eye, GitBranch, RefreshCw } from 'lucide-react'
-import { P } from '@/components/ui/kairos/KairosSetupContent'
 import { getKairosWatchedOverview, type KairosWatchedOverview } from '@/lib/actions/kairos-brain'
 import { setProjectKairosFeed } from '@/lib/actions/projects'
 import { addDominionRepoAction } from '@/lib/actions/dominions'
-import { Chip, Eyebrow, Panel, SegmentedSwitch, tint } from './brainUi'
+import { Chip, Eyebrow, P, Panel, SegmentedSwitch, tint } from './brainUi'
 
 type Watch = 'off' | 'daily' | 'weekly'
 type WatchedProject = KairosWatchedOverview['projects'][number]

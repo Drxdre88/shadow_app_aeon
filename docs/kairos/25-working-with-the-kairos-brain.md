@@ -1,101 +1,96 @@
-# Working with the Kairos Brain
+# Set up and use Kairos
 
-*A practical guide for you, the operator. No code — just how to use the brain day to day.*
+*The owner's one-page guide. No code. Current as of Kairos 0.19 (web chat on Max, Paid backup switch).*
 
-**Status:** living doc · 2026-06-06
+**Status:** living doc · 02/10/2026
 
-Kairos is your second memory. It quietly captures what you work on, organises it by **Dominion** (a strand of your work — a project, a product, a research thread), and serves it back when you need it. It also briefs you each morning and, lately, proposes a few thoughts of its own. Nothing it thinks up changes the record unless you say so. You stay in charge.
+Kairos is your second brain inside Aeon. It remembers what you work on, thinks about it every night,
+sends you one message in the morning, and answers when you talk to it. **The thinking runs on your
+Claude Max plan.** A paid API key is optional and only ever a backup.
 
-This page covers the five things you'll actually do.
-
----
-
-## 1. Adding a memory or a reflection
-
-Two kinds of things you'll put in by hand.
-
-**A note / memory** — anything worth keeping: a decision, an idea, a snippet, a link. You don't have to title it; the brain will. Just create it (from the notes view, or by telling Claude "save this as a memory"). Sessions you finish in Claude Code get captured automatically — you don't lift a finger.
-
-**A reflection** — this is the important one. A reflection is *you stating a belief, a priority, or a correction*. "We're parking mobile for now." "Lean GBM for the vol-regime model." "Stop flagging the pricing thing as drift." Reflections are the **highest-weight signal in the brain** — they steer how Kairos understands each Dominion and what it tells you in the morning brief. Fire one by telling Claude to *reflect* it into the right Dominion, e.g. *"reflect into the Aeon Dominion: we're committing to the workspace-first model, no hybrid tabs."*
-
-Rule of thumb: **notes are facts, reflections are your judgement.** When you've made up your mind about something, make it a reflection — that's how the brain learns what you actually think.
+Everything below lives in one place: **Kairos setup** in the sidebar (the *Set up Kairos* checklist).
+Each step gets a ✓ by itself once Aeon sees it working.
 
 ---
 
-## 2. Proposals — how Kairos suggests things, and how you accept or reject them
+## 1. The two required steps
 
-Once a day, Kairos reads each Dominion's recent activity and surfaces a few **proposals** — short candidate thoughts. They come in four flavours:
+**Step 1 — Connect Aeon to claude.ai.**
+Click *Add to Claude* in the checklist. It opens claude.ai's "Add custom connector" form already
+filled in (name `aeon`, your Aeon address). Review it, click Add, and sign in to Aeon when asked.
+The ✓ appears once claude.ai has used the connector in the last 7 days.
 
-- a **tension** ("these two decisions seem to contradict each other")
-- a **connection** ("this old idea relates to what you did yesterday")
-- a **reflection** (a belief it thinks might be worth holding)
-- a **question** (a gap it noticed)
+**Step 2 — Create the Kairos brain routine.**
+On claude.ai/code/routines click *New routine* and copy the name, prompt and model from the checklist
+(or paste the checklist's */schedule* request into Claude Code). Give it only the `aeon` connector.
+Pick *Hourly* — runs outside 01:00–07:00 UTC simply find nothing to do. From then on Kairos does all
+its nightly thinking on your Max plan.
 
-Every proposal is **grounded** — it points back to the real memories it came from, so you can always check its evidence. And every proposal is **just a suggestion**. It is *not* a belief the brain holds. It's parked in an inbox waiting for your call.
+If you set Kairos up before October 2026, delete the old routines on claude.ai: *Kairos thinking,
+ideas, morning, dusk, dawn, tidy* and *kairos-brain-tick*. The brain routine replaces them all.
 
-**To accept one:** restate it as your own reflection (see §1). That's the deliberate "yes, I agree, make this canon" gesture. The proposal itself stays informational; *your* reflection is what counts.
-
-**To reject one:** archive it. It's gone from your view, kept for the record, and won't come back.
-
-Why the extra step instead of a one-click "accept"? Because the brain's record should only ever contain things *you actually said*. Making you re-author a proposal as a reflection keeps your belief trail honest and stops the brain from slowly drifting into its own assumptions. **Chaos for seeing, control for changing:** Kairos is free to notice anything; only you can change the record.
-
-You're never obligated to act on proposals. An empty proposal day is normal and fine.
-
----
-
-## 3. The daily BRIEF
-
-Every morning (around 07:00) Kairos writes you a short **briefing per active Dominion** — where things stand, what moved, what to watch, and a suggested next step. It draws on everything in the brain, including any fresh proposals from earlier that morning. You'll see it on the dashboard.
-
-- **Want it now, not at 07:00?** Ask for a brief on demand — *"brief me"* / `/kairos-brief` — and it regenerates today's briefing.
-- **Regenerate after new info?** The dashboard's "Regenerate today" button archives the current brief and writes a fresh one.
-
-The brief is advisory. It's Kairos thinking out loud about your work — read it, ignore it, or turn anything useful in it into a reflection.
+That's it. Next morning the Status view should say "N on Max · 0 on backup".
 
 ---
 
-## 4. How search works now
+## 2. Optional extras
 
-When you ask the brain "what do I know about X?" it does **two searches at once** and blends them:
-
-- a **keyword** search (catches exact words and names), and
-- a **meaning** search (catches the *idea* even when the words differ — ask about "mobile strategy" and it finds the "Capacitor pivot" note even though they share no words).
-
-You don't choose between them — Kairos runs both and merges the best of each. The result is a tidy, ready-to-read package of the most relevant memories, newest and pinned items weighted up.
-
-**What this means for you:** you don't have to remember the exact phrase you used. Ask in your own words. Pin the handful of things you always want surfaced — pinned memories get priority.
-
-*(If the meaning-search ever isn't configured, search quietly falls back to keyword-only — you'll still get results, just slightly less clever ones. Nothing breaks.)*
+| Extra | What you get | How |
+|---|---|---|
+| **Chat on Max** | Kairos answers on the Kairos page and on Telegram using your Max plan | Create the *Kairos chat* routine (no schedule, add an API trigger), then set `ROUTINE_CHAT_ID`, `ROUTINE_CHAT_TOKEN` and `KAIROS_CHAT_ROUTINE=1` in Vercel and redeploy. One routine serves both web and Telegram. |
+| **Telegram** | The 06:00 message on your phone, and chat from anywhere | Follow `apps/web/docs/kairos/telegram-setup.md`, then press *Send test message* in the checklist. |
+| **Coding-session capture** | Every Claude Code, Codex or Copilot session you finish becomes a memory | Copy the hook snippet for your tool from the checklist (details in doc 05). ✓ per tool once a session lands. |
+| **Voice notes** | Long thoughts dictated on your phone | In the Claude app, dictate and say "save this as a Kairos voice note". It waits in your inbox until you confirm the words are yours. |
+| **Watched boards** | Kairos follows a board daily or weekly and writes about it | In Kairos setup → Watched, set a board to *Daily* or *Weekly*. |
+| **API key (backup)** | A safety net when a Max routine misses a job | Settings → AI. Only used while the Paid backup switch is on (§4). |
 
 ---
 
-## 5. Keeping the brain healthy — daily & weekly cadence
+## 3. Daily rhythm
 
-The brain mostly runs itself. A light touch keeps it sharp.
+- **06:00 (UK time) — one message.** In the inbox and on Telegram. It covers what moved, what to
+  watch and any belief changes, and ends with every question Kairos is still waiting on, numbered
+  (`Q12 · 3 days · …`).
+- **Answering questions.** On Telegram, reply `Q12: your answer` (several at once is fine) or
+  `skip Q12`; Kairos confirms in one line, and anything else you type is normal chat. In the inbox,
+  each open question has its own answer box.
+- **Inbox.** The bell on the Kairos page. Open questions, proposals and voice notes wait there.
+  Accept what is right, dismiss the rest. Nothing Kairos suggests becomes "your belief" until you
+  accept it.
+- **Chat.** Talk to Kairos on the Kairos page or Telegram — it is one conversation memory either way.
+  Overnight, yesterday's chats become memories.
+- **Mondays.** A weekly review (plan vs actual, belief changes, best ideas) and, until you have one,
+  a first draft of your constitution to review.
 
-**Daily (2 minutes):**
-- Skim the morning **brief** for each Dominion you're active in.
-- Glance at any **proposals**. Accept the genuinely useful ones as reflections; archive the rest. Don't let them pile up — a cleared inbox keeps tomorrow's proposals relevant.
-- Fire a **reflection** whenever you actually decide something. This is the single highest-value habit.
-
-**Weekly (10 minutes):**
-- Review your **reflections** per Dominion — do they still hold? Fire a fresh one to correct anything that's changed (a new reflection supersedes old thinking; you don't have to delete the old one).
-- **Pin / unpin** so the always-relevant stuff stays on top and stale pins come down.
-- Skim what got **auto-captured** — sessions, briefs, proposals — and archive obvious noise.
-- Make sure each active strand of work has a **Dominion** so its memories land somewhere coherent.
-
-**The one habit that matters most:** when you make a decision, reflect it. Everything else — capture, search, briefs, proposals — gets better the more the brain knows what you actually believe.
+The one habit that matters most: **when you decide something, tell Kairos** ("reflect into Aeon:
+we're parking mobile"). Your own words carry the most weight.
 
 ---
 
-### Quick reference
+## 4. The Paid backup switch
 
-| You want to… | Do this |
+In Kairos setup. **On by default.** It decides whether Kairos may spend your own API key when the
+Max plan didn't do a job.
+
+| A job the Max routine missed | Switch on | Switch off |
+|---|---|---|
+| Nightly thinking (summaries, patterns, self-model, ideas, question of the day…) | Done on your key by its backup cron or the hourly sweep | Skipped; it waits for the next night |
+| 06:00 message | Written on your key | Still sent, as plain text built without AI (free) |
+| A chat reply | Answered on your key | Kairos says "I couldn't answer on your Max plan just now — try again in a minute." |
+
+With no key saved there is nothing to spend, so the backup can't run either way. The checklist shows
+how many jobs the backup answered in the last 7 days.
+
+---
+
+## 5. Troubleshooting
+
+| You see | Do this |
 |---|---|
-| Keep a fact / idea | Save a note (or just finish a Claude session — auto-captured) |
-| Record a decision or belief | Fire a **reflection** into the Dominion |
-| Accept a proposal | Restate it as a reflection |
-| Reject a proposal | Archive it |
-| Get today's brief early | "brief me" / `/kairos-brief` |
-| Find something | Just ask in your own words |
-| Always-surface something | Pin it |
+| Connector step never ticks | In claude.ai → Connectors, check `aeon` is connected (sign in again if it says so), then ask Claude "list my Aeon projects". |
+| "0 on Max" in the morning | Open the routine on claude.ai: is it enabled, on *Hourly*, with the `aeon` connector? Check its last run for errors. Max usage limits can also block a night — the backup covers it if the switch is on. |
+| Chat says it couldn't answer on Max | The chat routine didn't pick up in time. Check `KAIROS_CHAT_ROUTINE=1`, `ROUTINE_CHAT_ID` and `ROUTINE_CHAT_TOKEN` in Vercel, and that the routine has an API trigger. |
+| Telegram test fails | Check `TELEGRAM_BOT_TOKEN` and `TELEGRAM_OPERATOR_CHAT_ID`, and that you've messaged the bot at least once. |
+| No 06:00 message on Telegram | It is still in the inbox. Check the bot settings above and press *Send test message*. |
+| A session didn't show up | Check the hook is installed for that tool and points at your Aeon checkout (doc 05). |
+| Too many paid calls | Turn the Paid backup switch off, or fix the routine that keeps missing. |

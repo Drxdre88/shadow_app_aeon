@@ -2,7 +2,11 @@
 
 import { headers } from 'next/headers'
 import { auth } from '@/lib/auth'
-import { listBrainJobsSince, summariseBrainStatus, BRAIN_STATUS_WINDOW_MS } from '@/lib/data/brain-status'
+import { listBrainJobsSince, summariseBrainStatus, countPaidBackupCalls, getSetupSignals, BRAIN_STATUS_WINDOW_MS } from '@/lib/data/brain-status'
+import { checkRateLimit } from '@/lib/api/rateLimit'
+import { sendMessage, telegramConfigured } from '@/lib/kairos/telegram'
+import { getPaidBackupSetting, setPaidBackupSetting } from '@/lib/data/kairos-paid-backup'
+import { setKairosPaidBackupSchema } from '@/lib/data/validators/kairos-paid-backup'
 import { getBaseUrl } from '@/lib/email'
 import { chatRoutineConfig, telegramRoutineEnabled } from '@/lib/kairos/chat-routine'
 import type { KairosBrainStatus } from '@/lib/kairos/routines/status-types'
@@ -66,18 +70,75 @@ export async function getKairosBrainStatus(): Promise<KairosBrainStatus> {
   const session = await auth()
   const now = new Date()
   const routineFlagOn = telegramRoutineEnabled()
+  const isAdmin = session?.user?.role === 'admin'
 
-  const [rows, appUrl] = await Promise.all([
+  const [rows, appUrl, paidBackupEnabled, setup] = await Promise.all([
     listBrainJobsSince(userId, new Date(now.getTime() - BRAIN_STATUS_WINDOW_MS)),
     resolveAppUrl(),
+    getPaidBackupSetting(userId),
+    getSetupSignals(userId, { isOperator: isKairosOperator(userId, isAdmin), now }),
   ])
+  const classify = { paidBackupOff: !paidBackupEnabled }
 
   return {
     generatedAt: now.toISOString(),
     appUrl,
     mcpUrl: `${appUrl}/api/mcp`,
-    ...summariseBrainStatus(rows, now, { chatRoutineFlagOn: routineFlagOn }),
+    ...summariseBrainStatus(rows, now, { chatRoutineFlagOn: routineFlagOn, ...classify }),
     telegram: { routineFlagOn, routineConfigured: chatRoutineConfig() !== null },
-    isAdmin: session?.user?.role === 'admin',
+    isAdmin,
+    paidBackup: { enabled: paidBackupEnabled, paidCallsLast7d: countPaidBackupCalls(rows, now, classify) },
+    setup,
   }
+}
+
+// The Telegram bot talks to one person: KAIROS_OPERATOR_USER_ID. Without it
+// set (single-user dev), an admin stands in.
+function isKairosOperator(userId: string, isAdmin: boolean): boolean {
+  const operatorUserId = process.env.KAIROS_OPERATOR_USER_ID?.trim()
+  return operatorUserId ? operatorUserId === userId : isAdmin
+}
+
+const KAIROS_TEST_MESSAGE = 'Kairos test — if you can read this, Telegram is connected ✓'
+// A test button, not a speak: no inbox row, no reply gate, no cadence budget —
+// so it gets its own small limit instead of the speak throttle.
+const TEST_MESSAGE_LIMIT = { windowMs: 60_000, maxRequests: 3 }
+
+// "Send a test message" in the Set up Kairos checklist. Plain sendMessage to
+// the operator chat on purpose: deliverKairosSpeak would file an inbox item,
+// spend the speak cadence and could arm awaiting-reply.
+export async function sendKairosTestMessage(): Promise<{ ok: boolean; error?: string }> {
+  const userId = await requireAuth()
+  const session = await auth()
+  if (!isKairosOperator(userId, session?.user?.role === 'admin')) {
+    return { ok: false, error: 'Only the Kairos operator can send a Telegram test.' }
+  }
+  const chatId = process.env.TELEGRAM_OPERATOR_CHAT_ID
+  if (!telegramConfigured() || !chatId) {
+    return { ok: false, error: 'Telegram is not set up — TELEGRAM_BOT_TOKEN and TELEGRAM_OPERATOR_CHAT_ID are needed.' }
+  }
+  if (!checkRateLimit(`kairos-telegram-test:${userId}`, TEST_MESSAGE_LIMIT).allowed) {
+    return { ok: false, error: 'Too many tests — wait a minute and try again.' }
+  }
+  try {
+    await sendMessage(chatId, KAIROS_TEST_MESSAGE)
+    return { ok: true }
+  } catch (err) {
+    console.error('[kairos-brain] telegram test failed', err)
+    return { ok: false, error: 'Telegram did not accept the message — check the bot token and chat id.' }
+  }
+}
+
+// Kairos "Paid backup" switch (per user). Off = Kairos never spends the user's
+// own API key; a job the Max routine missed waits for the next run. Same
+// validator + data fns as the MCP tools and /api/v1/kairos/paid-backup.
+export async function getPaidBackup(): Promise<{ enabled: boolean }> {
+  const userId = await requireAuth()
+  return { enabled: await getPaidBackupSetting(userId) }
+}
+
+export async function setPaidBackup(enabled: boolean): Promise<{ enabled: boolean }> {
+  const userId = await requireAuth()
+  const parsed = setKairosPaidBackupSchema.parse({ enabled })
+  return { enabled: await setPaidBackupSetting(userId, parsed.enabled) }
 }

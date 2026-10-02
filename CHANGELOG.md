@@ -20,6 +20,19 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - `DOCS` — `ARCHITECTURE.md`, `VISION.md`, `CLAUDE.md`
 - `UI` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.36.0] — 2026-10-02
+
+> Areas touched: `KAIROS` `UI` `MCP` `API` `DOCS`
+> Theme: No paid spend, chat on Max, one setup checklist. Full detail: `docs/kairos/CHANGELOG.md` 0.19.
+
+### Added — Paid backup switch · `KAIROS` `UI` `MCP` `API`
+- Turn Kairos's paid-key backup off and he never touches your API key: a missed job just waits for the next run.
+
+### Changed — Kairos chat on your Max plan · `KAIROS` `UI`
+- The chat on the Kairos page now answers on your Claude Max plan, like Telegram. You'll see "Kairos is thinking…" while he works.
+
+### Changed — One setup checklist · `KAIROS` `UI` `DOCS`
+- "Kairos setup" in the sidebar replaces the old guides: two required steps, ticked automatically when they work, plus optional extras. Connecting Aeon to Claude is now one click.
 ## [0.35.0] — 2026-10-02
 
 > Areas touched: `KAIROS` `UI` `MCP` `API`

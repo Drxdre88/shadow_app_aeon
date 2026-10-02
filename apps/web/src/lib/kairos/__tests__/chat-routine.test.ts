@@ -6,7 +6,13 @@ vi.mock('@/lib/data/thinking-jobs', () => ({
   listJobs: vi.fn(),
 }))
 
+vi.mock('@/lib/kairos/paid-backup', () => ({
+  isPaidBackupEnabled: vi.fn(async () => true),
+  PAID_BACKUP_OFF_NOTE: 'paid backup off',
+}))
+
 import { failJob, findJobById, listJobs } from '@/lib/data/thinking-jobs'
+import { isPaidBackupEnabled } from '@/lib/kairos/paid-backup'
 import type { ThinkingJobRow } from '@/lib/kairos/engine/types'
 import {
   CHAT_CLAIMED_GRACE_MS,
@@ -17,6 +23,7 @@ import {
   CHAT_WATCHDOG_PREFIX,
   chatJobOwnsMessage,
   chatRoutineConfig,
+  chatRoutineEnabled,
   chatRoutinePollMs,
   chatRoutineTimeoutMs,
   chatWatchdogMaxWaitMs,
@@ -55,6 +62,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  delete process.env.KAIROS_CHAT_ROUTINE
   delete process.env.KAIROS_TELEGRAM_ROUTINE
   delete process.env.ROUTINE_CHAT_ID
   delete process.env.ROUTINE_CHAT_TOKEN
@@ -76,6 +84,20 @@ describe('runChatWatchdog', () => {
     expect(failJob).toHaveBeenCalledTimes(1)
     expect(failJob).toHaveBeenCalledWith(USER, JOB_ID, null, expect.stringMatching(new RegExp(`^${CHAT_WATCHDOG_PREFIX}`)))
     expect(fallback).toHaveBeenCalledTimes(1)
+  })
+
+  it('records "paid backup off" on the takeover when the switch is off (so Health never counts it as paid)', async () => {
+    const c = clock()
+    vi.mocked(isPaidBackupEnabled).mockResolvedValueOnce(false)
+    vi.mocked(findJobById).mockResolvedValue(row('queued'))
+    vi.mocked(failJob).mockImplementation(async (_u, _id, _t, error) => row('failed', { error }))
+    const fallback = vi.fn().mockResolvedValue({ ok: false, reason: 'paid backup off' })
+
+    await runChatWatchdog(USER, JOB_ID, fallback, opts(c))
+
+    const note = vi.mocked(failJob).mock.calls[0]![3] as string
+    expect(note).toMatch(/paid backup off$/)
+    expect(note).not.toMatch(/paid key/)
   })
 
   it('gives a claimed job until its deadline plus grace before taking over', async () => {
@@ -135,11 +157,16 @@ describe('runChatWatchdog', () => {
 })
 
 describe('chat routine config', () => {
-  it('is off unless KAIROS_TELEGRAM_ROUTINE is 1/true', () => {
-    expect(telegramRoutineEnabled()).toBe(false)
-    process.env.KAIROS_TELEGRAM_ROUTINE = '0'
-    expect(telegramRoutineEnabled()).toBe(false)
+  it('is off unless KAIROS_CHAT_ROUTINE (or the legacy KAIROS_TELEGRAM_ROUTINE alias) is 1/true', () => {
+    expect(chatRoutineEnabled()).toBe(false)
+    process.env.KAIROS_CHAT_ROUTINE = '0'
+    process.env.KAIROS_TELEGRAM_ROUTINE = 'no'
+    expect(chatRoutineEnabled()).toBe(false)
+    process.env.KAIROS_CHAT_ROUTINE = 'true'
+    expect(chatRoutineEnabled()).toBe(true)
+    delete process.env.KAIROS_CHAT_ROUTINE
     process.env.KAIROS_TELEGRAM_ROUTINE = '1'
+    expect(chatRoutineEnabled()).toBe(true)
     expect(telegramRoutineEnabled()).toBe(true)
   })
 

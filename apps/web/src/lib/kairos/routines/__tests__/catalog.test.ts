@@ -94,6 +94,16 @@ describe('routinePrompt', () => {
     expect(JSON.parse(match![1])).toEqual({ kinds: ['chat'] })
   })
 
+  it('the chat routine is channel-neutral: it serves Telegram and the Kairos page', () => {
+    const chat = getRoutine('chat')
+    expect(chat.claimKinds).toEqual(['chat'])
+    expect(chat.purpose).toContain('on Telegram and on the Kairos page')
+    expect(chat.scheduleLabel).not.toMatch(/Telegram/)
+    const prompt = routinePrompt(chat)
+    expect(prompt).toMatch(/Telegram or on the Kairos page/)
+    expect(prompt).not.toMatch(/answering the owner on Telegram\./)
+  })
+
   it.each(ROUTINES.map((r) => [r.id, r] as const))('%s prompt never asks to read a repository or doc file', (_id, r) => {
     const prompt = routinePrompt(r)
     expect(prompt).not.toMatch(/repositor|\brepo\b|\.md\b|docs\/|CLAUDE\.md|AGENTS\.md|README|read the file|open the file/i)

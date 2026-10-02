@@ -17,13 +17,15 @@ import {
   chatJobKey,
   chatJobOwnsMessage,
   chatRoutineConfig,
+  chatRoutineEnabled,
   chatRoutineTimeoutMs,
+  CHAT_PAID_BACKUP_OFF_MESSAGE,
   fireChatRoutine,
   runChatWatchdog,
   supersedeOpenChatJobs,
   takeOverChatJob,
-  telegramRoutineEnabled,
 } from '@/lib/kairos/chat-routine'
+import { isPaidBackupEnabled } from '@/lib/kairos/paid-backup'
 import { buildChatJobSpec, chatHandler } from '@/lib/kairos/thinking/handlers/chat'
 import {
   answerCallbackQuery,
@@ -200,12 +202,12 @@ async function handleTextMessage(
     return
   }
 
-  if (telegramRoutineEnabled()) {
+  if (chatRoutineEnabled()) {
     if (chatRoutineConfig()) {
       await handleTextViaRoutine(chatId!, operatorUserId, threadId, body)
       return
     }
-    console.warn('[telegram-webhook] KAIROS_TELEGRAM_ROUTINE is on but ROUTINE_CHAT_ID / ROUTINE_CHAT_TOKEN are unset — answering on the paid key')
+    console.warn('[telegram-webhook] KAIROS_CHAT_ROUTINE is on but ROUTINE_CHAT_ID / ROUTINE_CHAT_TOKEN are unset — answering on the paid key')
   }
 
   const result = await sendChatMessage(operatorUserId, threadId, body, { surface: 'telegram' })
@@ -277,8 +279,13 @@ async function handleTextViaRoutine(
     // turn already in flight — its job answers it, including while the
     // watchdog's paid fallback is still running after a takeover — or the
     // operator retrying a turn whose reply failed; that retry goes through
-    // the paid path exactly as before the routine existed.
+    // the paid path exactly as before the routine existed, if the paid
+    // backup is on.
     if (await chatJobOwnsMessage(userId, threadId, last.id)) return
+    if (!(await isPaidBackupEnabled(userId))) {
+      await sendMessage(chatId, CHAT_PAID_BACKUP_OFF_MESSAGE)
+      return
+    }
     const retried = await sendChatMessage(userId, threadId, body, { surface: 'telegram' })
     if (retried.ok) await sendTelegramChatReply(chatId, retried.assistantContent)
     else await sendMessage(chatId, telegramChatFailureText(retried.reason))
@@ -310,6 +317,7 @@ async function handleTextViaRoutine(
 
   const timeoutMs = chatRoutineTimeoutMs()
   const job = await upsertJob(userId, buildChatJobSpec(built.turn, {
+    channel: 'telegram',
     threadId,
     userSeq: appended.seq,
     userMessageId: appended.messageId,

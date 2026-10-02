@@ -4,6 +4,10 @@ import { getWorkspaceProjects } from '@/lib/actions/projects'
 import { ensurePersonalWorkspace } from '@/lib/actions/workspaces'
 import { KairosShell } from '@/components/kairos/KairosShell'
 
+// KairosShell hosts the Kairos chat here too; its server actions' after()
+// watchdog needs the same budget as /kairos (see app/kairos/layout.tsx).
+export const maxDuration = 300
+
 export default async function NotesLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
   if (!session?.user) redirect('/login')

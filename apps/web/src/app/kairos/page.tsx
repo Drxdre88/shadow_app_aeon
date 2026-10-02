@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import dynamic from 'next/dynamic'
-import { Search, EyeOff, Maximize2, Minimize2, HelpCircle, BrainCircuit } from 'lucide-react'
+import { Search, EyeOff, Maximize2, Minimize2, ListChecks } from 'lucide-react'
 import { useKairosData } from '@/components/kairos/useKairosData'
 import { TrackingRail } from '@/components/kairos/TrackingRail'
 import { MemorySidePanel } from '@/components/kairos/MemorySidePanel'
@@ -10,7 +10,6 @@ import { KairosLegend } from '@/components/kairos/KairosLegend'
 import { KairosInbox } from '@/components/kairos/KairosInbox'
 import type { ColorMode } from '@/components/kairos/nodeColor'
 import { SkyboxDropdown } from '@/components/skybox/SkyboxDropdown'
-import { KairosLearnModal } from '@/components/ui/kairos/KairosLearnModal'
 import { ConnectKairosModal } from '@/components/kairos/brain/ConnectKairosModal'
 import { useKairosStore } from '@/stores/kairosStore'
 import { useKairosPrefsStore, type KairosTimeWindow } from '@/stores/kairosPrefsStore'
@@ -53,8 +52,7 @@ export default function KairosPage() {
   const railCollapsed = useKairosPrefsStore((s) => s.railCollapsed)
   const toggleRail = useKairosPrefsStore((s) => s.toggleRail)
   const [query, setQuery] = useState('')
-  const [helpOpen, setHelpOpen] = useState(false)
-  const [brainOpen, setBrainOpen] = useState(false)
+  const [setupOpen, setSetupOpen] = useState(false)
 
   // 'z' toggles zen; Esc leaves it. Skip while typing in the filter box.
   useEffect(() => {
@@ -151,19 +149,12 @@ export default function KairosPage() {
             <SkyboxDropdown value={skybox} onChange={setSkybox} align="right" />
             <KairosInbox />
             <button
-              onClick={() => setBrainOpen(true)}
-              title="Connect Kairos brain"
-              aria-label="Connect Kairos brain"
+              onClick={() => setSetupOpen(true)}
+              title="Kairos setup"
+              aria-label="Kairos setup"
               className="flex items-center justify-center w-7 h-7 rounded-md text-white/40 hover:text-white/85 hover:bg-white/[0.06] transition-colors"
             >
-              <BrainCircuit className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => setHelpOpen(true)}
-              title="Kairos guide"
-              className="flex items-center justify-center w-7 h-7 rounded-md text-white/40 hover:text-white/85 hover:bg-white/[0.06] transition-colors"
-            >
-              <HelpCircle className="w-3.5 h-3.5" />
+              <ListChecks className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={toggleZen}
@@ -184,7 +175,23 @@ export default function KairosPage() {
             <Center muted>Failed to load: {error}</Center>
           ) : graph.nodes.length === 0 ? (
             <Center muted>
-              No memories yet — use Note in the sidebar or press <Kbd>⌘⇧Space</Kbd> to capture your first thought.
+              <div className="flex flex-col items-center gap-4">
+                <span>
+                  No memories yet — use Note in the sidebar or press <Kbd>⌘⇧Space</Kbd> to capture your first thought.
+                </span>
+                <button
+                  onClick={() => setSetupOpen(true)}
+                  className="pointer-events-auto inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[12.5px] font-semibold text-white border transition hover:brightness-125"
+                  style={{
+                    background: 'color-mix(in srgb, var(--primary) 20%, transparent)',
+                    borderColor: 'color-mix(in srgb, var(--primary) 55%, transparent)',
+                    boxShadow: '0 0 16px var(--glow-color)',
+                  }}
+                >
+                  <ListChecks className="w-4 h-4" />
+                  Set up Kairos
+                </button>
+              </div>
             </Center>
           ) : (
             <Kairos3D
@@ -232,8 +239,7 @@ export default function KairosPage() {
         )}
       </div>
 
-      <KairosLearnModal isOpen={helpOpen} defaultTab="guide" onClose={() => setHelpOpen(false)} />
-      <ConnectKairosModal isOpen={brainOpen} onClose={() => setBrainOpen(false)} />
+      <ConnectKairosModal isOpen={setupOpen} onClose={() => setSetupOpen(false)} />
     </div>
   )
 }

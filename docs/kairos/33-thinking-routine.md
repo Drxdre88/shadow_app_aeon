@@ -7,14 +7,14 @@ grounds, mints ids and persists (`lib/kairos/thinking/*`, contract in `32-memory
 
 **Since 0.17 there are two routines, defined in code.** `lib/kairos/routines/catalog.ts` is
 the single source of truth: names, schedules, caps, model and the exact prompts. The in-app
-**Connect Kairos** modal (sidebar → *Connect brain*, or the brain icon on `/kairos`) renders
+**Set up Kairos** checklist (sidebar → *Kairos setup*, or the brain icon on `/kairos`) renders
 them with copy buttons, plus live status per job (on Max / on backup / missed). Change a
 routine in the catalog, then re-paste it — never edit a prompt only on claude.ai.
 
 | Routine | Trigger | Claims | Replaces |
 |---|---|---|---|
 | **Kairos brain** | cron `40 1-6 * * *` (UTC) — or the web form's *Hourly* preset | everything due (claims with `{}`) | thinking, ideas, morning, dusk, dawn, tidy |
-| **Kairos chat** | API trigger, fired by the Telegram webhook | `{"kinds":["chat"]}` | — |
+| **Kairos chat** | API trigger, fired once per chat message — web (`/kairos`) or Telegram (since 0.19) | `{"kinds":["chat"]}` | — |
 
 Delete the old routines on claude.ai: `Kairos thinking`, `Kairos ideas`, `Kairos morning`,
 `Kairos dusk`, `Kairos dawn`, `Kairos tidy` and `kairos-brain-tick` (the 06:00 message
@@ -36,7 +36,8 @@ dropped instead of failing.
 | 06:40 | anything that slipped |
 
 The paid key is only the backup: each kind keeps its cron or the hourly sweep, which runs
-only what no routine answered.
+only what no routine answered — and only while the owner's **Paid backup** switch is on
+(see *Paid backup switch* below).
 
 **Retired in 0.17** (audit `research/kairos_0210/02_brain_jobs_audit.md`): `brief` (the
 morning message reads each area's cortex headline instead), `introspection` (the idea
@@ -46,21 +47,43 @@ engine's Merge already folds duplicates).
 
 ## Setup
 
-1. **Connector.** claude.ai → Settings → Connectors → *Add custom connector*: name `aeon`,
-   URL `<app>/api/mcp` (the modal shows yours). Sign in with OAuth. Routines use the
-   connectors on your claude.ai account.
-2. **Kairos brain.** claude.ai/code/routines → *New routine* — or paste the modal's
+The owner-facing walkthrough is doc 25 (*Set up and use Kairos*); this is the reference.
+
+1. **Connector.** One click: the checklist's *Add to Claude* opens
+   `https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=aeon&connectorUrl=<encoded MCP URL>`
+   (built by `claudeConnectorInstallUrl` in `lib/kairos/routines/setup.ts`), which pre-fills
+   claude.ai's *Add custom connector* form. By hand: claude.ai → Settings → Connectors →
+   *Add custom connector*, name `aeon`, URL `<app>/api/mcp`. Sign in with OAuth. Routines use
+   the connectors on your claude.ai account. The checklist ticks once one of your OAuth
+   tokens was used in the last 7 days.
+2. **Kairos brain.** claude.ai/code/routines → *New routine* — or paste the checklist's
    *Copy /schedule request* into Claude Code's `/schedule`. Name, prompt and model
-   (`claude-opus-5-5`) from the modal; connectors: `aeon` only; repository: any (the
+   (`claude-opus-5-5`) from the checklist; connectors: `aeon` only; repository: any (the
    prompt is self-contained and never reads it). Schedule: the web form only offers
    presets, so pick *Hourly* (runs outside 01–07 UTC just find nothing) or set the exact
    cron with `/schedule update`.
-3. **Kairos chat** (optional, Telegram). Same setup, no schedule. On the web: Edit → *Add
-   another trigger* → API → *Generate token* (shown once). Then in Vercel (Production):
-   `ROUTINE_CHAT_ID=trig_…`, `ROUTINE_CHAT_TOKEN=sk-ant-oat01-…`,
-   `KAIROS_TELEGRAM_ROUTINE=1`, and redeploy. Measure first with
-   `apps/web/scripts/routine-latency.mjs`; unset the flag to go back to the paid key.
-4. **Check.** Next morning the modal's Status view should read "N on Max · 0 on backup".
+3. **Kairos chat** (optional; web chat and Telegram). Same setup, no schedule. On the web:
+   Edit → *Add another trigger* → API → *Generate token* (shown once). Then in Vercel
+   (Production): `ROUTINE_CHAT_ID`, `ROUTINE_CHAT_TOKEN` and `KAIROS_CHAT_ROUTINE=1` (the
+   pre-0.19 name `KAIROS_TELEGRAM_ROUTINE` is still accepted), and redeploy. One routine
+   serves both channels. Measure first with `apps/web/scripts/routine-latency.mjs`; unset the
+   flag to go back to answering inline on the paid key.
+4. **Check.** Next morning the checklist's Status view should read "N on Max · 0 on backup".
+
+### Paid backup switch
+
+Per user, in Kairos setup (MCP `get_kairos_paid_backup` / `set_kairos_paid_backup`, REST
+`/api/v1/kairos/paid-backup`). **Default on.** Off = Kairos never resolves the user's saved
+key (`getModelForUser` throws `PaidBackupOffError`). What each backup does when off:
+
+| Backup | When off |
+|---|---|
+| Nightly crons (`chat-distill`, `archetype-synthesis`, `cortex-regen`, `aether-regen`, `ask-mine`, `constitution-seed`) | skip with `paid backup off`; the work waits for the next night |
+| Hourly sweep fallbacks (concept, beliefs, drift, ideas, mind compare, weekly review) | not run; the job counts as missed |
+| `daily-message` cron | still sends — deterministic plain text, no model call (the one free backup) |
+| Chat watchdog (web + Telegram) | no paid reply; Kairos says "I couldn't answer on your Max plan just now — try again in a minute." |
+
+Status counts these as *missed*, not *backup*, and shows the backup's calls over the last 7 days.
 
 ## The loop (what the prompts encode)
 
@@ -103,7 +126,8 @@ Stop on `job: null`, the job/time cap in the prompt, or two consecutive tool err
 | Piece | Where |
 |---|---|
 | Routine catalog + prompts | `apps/web/src/lib/kairos/routines/catalog.ts` |
-| Status for the modal | `lib/data/brain-status.ts`, action `getKairosBrainStatus` |
+| Status + setup ✓ signals for the checklist | `lib/data/brain-status.ts` (`summariseBrainStatus`, `getSetupSignals`), action `getKairosBrainStatus`; Telegram test: `sendKairosTestMessage` |
+| Connector install link | `lib/kairos/routines/setup.ts` (`claudeConnectorInstallUrl`) |
 | Queue (plan, claim, submit, sweep) | `apps/web/src/lib/kairos/thinking/queue.ts` (`PLANNED_THINKING_KINDS` must equal the catalog's `BRAIN_JOBS` — a test enforces it) |
 | Handlers (one per kind) | `apps/web/src/lib/kairos/thinking/handlers/*` |
 | MCP tools | `claim_thinking_job`, `submit_thinking_job`, `list_thinking_jobs` |
@@ -129,7 +153,7 @@ Kinds (times UTC unless stated):
 | `weekly_review` | Mondays ≥05:00Z, with review signal | 6 h | `weekly_review:<ISO week>` | sweep |
 | `constitution_seed` | Mondays 04:00–05:56Z, only while there is no constitution and no pending draft | 05:56Z | `constitution_seed:<ISO week>` | `constitution-seed` 05:58Z (BYOK users only) |
 | `daily_message` | from 04:00Z once tonight's aether, ideas and ask are settled (from 04:35Z regardless), only when the UTC date equals the London date; reads each area's latest cortex headline; the numbered open-questions block is added by code at send time | 05:55 London | `daily_message:<London date>` | `daily-message` cron 06:00 London (paid key → plain text) |
-| `chat` | never planned — the Telegram webhook creates it; claimable only with `kinds: ["chat"]` | timeout + 30 s | `chat:<threadId>:<userMessageId>` | Telegram watchdog (paid key) |
+| `chat` | never planned — a web (`/kairos`) or Telegram chat message creates it; claimable only with `kinds: ["chat"]` | timeout + 30 s | `chat:<threadId>:<userMessageId>` | chat watchdog (paid key, if the Paid backup switch is on) |
 
 Job lifecycle: `queued` → `claimed` (token, attempts+1) → `done` | `failed` (cron kinds, on a
 rejected or late answer; their cron covers it) | `expired` (deadline passed, swept; or a
@@ -137,17 +161,24 @@ sweep kind whose answer was late/rejected) → `fallback` (sweep kinds, when the
 fallback succeeded). Idempotency: `unique(user_id, external_key)` — a failed or expired job
 is not re-planned; its backup covers it.
 
-## Telegram chat, in detail
+## Chat (web + Telegram), in detail
 
-The webhook saves the operator's message, shows "typing…", queues one `chat` job
-(`chat:<threadId>:<userMessageId>`, deadline = timeout + 30 s), returns 200, then fires the
-routine (`POST https://api.anthropic.com/v1/claude_code/routines/{ROUTINE_CHAT_ID}/fire`).
+Both channels share one flag (`KAIROS_CHAT_ROUTINE`, alias `KAIROS_TELEGRAM_ROUTINE`) and one
+routine. **Telegram:** the webhook saves the operator's message, shows "typing…", queues one
+`chat` job, returns 200, then fires the routine. **Web** (since 0.19): the `/kairos` send action
+saves the message, queues the same kind of job, fires the routine and returns `pending: true`;
+the page polls the thread for the reply. Flag off or routine not configured → the reply is
+written inline on the paid key, as before.
+
+Each job is `chat:<threadId>:<userMessageId>` with deadline = timeout + 30 s; the fire is
+`POST https://api.anthropic.com/v1/claude_code/routines/{ROUTINE_CHAT_ID}/fire`.
 A watchdog polls every 3 s for up to `KAIROS_CHAT_ROUTINE_TIMEOUT_MS` (default 60000, cap
 120000); a job the routine has *claimed* gets until its deadline + 15 s. Not done → the
-watchdog takes the job and answers on the paid key. One reply per message either way; a
-newer operator message supersedes an unanswered one. Each fire counts against the
-routine's run limit (30/h per routine); a burst beyond it goes straight to the paid key.
-Optional: `KAIROS_CHAT_ROUTINE_POLL_MS` (default 3000, cap 10000).
+watchdog takes the job and answers on the paid key — or, with the Paid backup switch off,
+posts "I couldn't answer on your Max plan just now — try again in a minute." One reply per
+message either way; a newer operator message supersedes an unanswered one. Each fire counts
+against the routine's run limit (30/h per routine); a burst beyond it goes straight to the
+backup. Optional: `KAIROS_CHAT_ROUTINE_POLL_MS` (default 3000, cap 10000).
 
 ## Limits
 

@@ -21,6 +21,13 @@ export interface BrainRoutineStatus {
   state: 'live' | 'silent' | 'off'
 }
 
+export interface KairosPaidBackupStatus {
+  // The user's "Paid backup" switch (default on).
+  enabled: boolean
+  // Jobs answered by the backup in the last 7 days — a spend proxy.
+  paidCallsLast7d: number
+}
+
 export interface KairosBrainStatus {
   generatedAt: string
   appUrl: string
@@ -33,4 +40,22 @@ export interface KairosBrainStatus {
   routines: BrainRoutineStatus[]
   telegram: { routineFlagOn: boolean; routineConfigured: boolean }
   isAdmin: boolean
+  // Always set by getKairosBrainStatus; optional so older fixtures/clients
+  // without it still type-check (the UI hides the switch when absent).
+  paidBackup?: KairosPaidBackupStatus
+  // Live ✓ signals for the Set up Kairos checklist (optional for old fixtures).
+  setup?: KairosSetupSignals
+}
+
+export interface KairosSetupSignals {
+  // An OAuth (claude.ai connector) token for this user was used in the last 7 days.
+  connectorUsedAt: string | null
+  // Latest captured coding session per tool.
+  sessions: { claude: string | null; codex: string | null; copilot: string | null }
+  // Any voice note ever staged via kairos_voice_note.
+  voiceNoteAt: string | null
+  // Number of boards with a Kairos watch setting.
+  watchedBoards: number
+  // Telegram bot configured (token + operator chat id) — owner only.
+  telegramConfigured: boolean
 }

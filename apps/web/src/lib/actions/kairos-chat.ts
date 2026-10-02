@@ -9,11 +9,21 @@ import {
   archiveChatThread as _archiveChatThread,
 } from '@/lib/data/kairos-chat'
 import { runChatTurn, sendChatMessage, type KairosChatTurnResult } from '@/lib/kairos/chat-turn'
+import {
+  sendWebChatViaRoutine,
+  webChatRoutineReady,
+  type KairosChatPendingResult,
+} from '@/lib/kairos/chat-web-routine'
 
 // Chat server actions — session-auth wrappers over the shared chat-turn
 // engine (lib/kairos/chat-turn.ts), which the Telegram webhook also drives.
 // The engine persists the user turn BEFORE calling the model so a model
 // failure can never silently lose input.
+//
+// With KAIROS_CHAT_ROUTINE on and the chat routine configured, a send
+// returns at once with `pending: true` and the reply is written to the
+// thread by the Max-plan routine (or the watchdog's fallback) — the page
+// polls loadKairosThread for it. Otherwise the reply comes back inline.
 
 const startSchema = z.object({
   // Optional anchor — omitted/null starts an unanchored whole-brain thread.
@@ -36,7 +46,7 @@ const threadIdSchema = z.object({
   threadId: z.string().uuid(),
 })
 
-export type KairosChatActionResult = KairosChatTurnResult
+export type KairosChatActionResult = KairosChatTurnResult | KairosChatPendingResult
 
 export async function startKairosThread(input: z.infer<typeof startSchema>): Promise<KairosChatActionResult> {
   const auth = await safeAuth()
@@ -55,6 +65,7 @@ export async function startKairosThread(input: z.infer<typeof startSchema>): Pro
   })
   if (!created.ok) return { ok: false, reason: 'dominion_not_found' }
 
+  if (webChatRoutineReady()) return sendWebChatViaRoutine(userId, created.threadId, parsed.data.body)
   return runChatTurn(userId, created.threadId, dominionId, parsed.data.body)
 }
 
@@ -65,6 +76,7 @@ export async function sendKairosMessage(input: z.infer<typeof sendSchema>): Prom
   const parsed = sendSchema.safeParse(input)
   if (!parsed.success) return { ok: false, reason: 'invalid_input', message: parsed.error.issues[0].message }
 
+  if (webChatRoutineReady()) return sendWebChatViaRoutine(userId, parsed.data.threadId, parsed.data.body)
   return sendChatMessage(userId, parsed.data.threadId, parsed.data.body)
 }
 

@@ -7,6 +7,8 @@ import { userAiCredentials, userAiPreferences } from '@/lib/db/schema'
 import { and, eq, isNull } from 'drizzle-orm'
 import { decryptSecret } from './crypto'
 import { DEFAULT_PREFERENCES, type AiTier, type ProviderId } from './providers'
+import { PAID_BACKUP_OFF_ERROR_NAME, PAID_BACKUP_OFF_NOTE } from './paid-backup-off'
+import { isPaidBackupEnabled } from '@/lib/kairos/paid-backup'
 
 export class AiCredentialMissingError extends Error {
   readonly provider: ProviderId
@@ -14,6 +16,19 @@ export class AiCredentialMissingError extends Error {
     super(`No active credential found for provider ${provider}`)
     this.name = 'AiCredentialMissingError'
     this.provider = provider
+  }
+}
+
+/**
+ * Thrown instead of resolving the user's key when they switched the Kairos
+ * "Paid backup" off. Subclasses the missing-credential error so every existing
+ * caller declines exactly as it does with no key (deterministic paths, skips).
+ */
+export class PaidBackupOffError extends AiCredentialMissingError {
+  constructor(provider: ProviderId) {
+    super(provider)
+    this.message = PAID_BACKUP_OFF_NOTE
+    this.name = PAID_BACKUP_OFF_ERROR_NAME
   }
 }
 
@@ -80,8 +95,16 @@ function buildModel(providerId: ProviderId, modelId: string, apiKey: string): La
   }
 }
 
+// The single choke point for the user's saved key: its only consumer is
+// getProviderForUser, which only Kairos calls (the credential test/save paths
+// use buildModelWithKey with the key they were handed, unaffected). With the
+// Kairos "Paid backup" switch off, no key is resolved at all.
 export async function getModelForUser(userId: string, tier: AiTier): Promise<LanguageModel> {
-  const { providerId, modelId } = await resolveTier(userId, tier)
+  const [{ providerId, modelId }, paidAllowed] = await Promise.all([
+    resolveTier(userId, tier),
+    isPaidBackupEnabled(userId),
+  ])
+  if (!paidAllowed) throw new PaidBackupOffError(providerId)
   const apiKey = await getDecryptedKey(userId, providerId)
   return buildModel(providerId, modelId, apiKey)
 }

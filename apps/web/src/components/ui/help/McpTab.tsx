@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useSyncExternalStore } from 'react'
 import { useSession } from 'next-auth/react'
 import { Terminal, Key, Link2, Wrench, Plus, Trash2, AlertTriangle } from 'lucide-react'
 import { Section, FeatureCard, CodeBlock, CopyButton } from './shared'
@@ -165,6 +165,8 @@ const TOOL_CATEGORIES = [
       'answer_kairos_ask',
       'dismiss_kairos_ask',
       'kairos_voice_note',
+      'get_kairos_paid_backup',
+      'set_kairos_paid_backup',
       'open_dialogue',
       'prepare_dialogue_context',
       'append_dialogue_turn',
@@ -324,12 +326,18 @@ function ApiKeyManager() {
   )
 }
 
+const subscribeNever = () => () => {}
+
 function McpConfigBlock() {
+  // The MCP endpoint lives on whatever origin is serving this page (prod,
+  // preview or localhost) — never a hardcoded domain.
+  const origin = useSyncExternalStore(subscribeNever, () => window.location.origin, () => 'https://YOUR_AEON_URL')
+
   const configTemplate = `{
   "mcpServers": {
     "aeon": {
       "type": "http",
-      "url": "https://aeon.shadow-lab.ai/api/mcp",
+      "url": "${origin}/api/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_API_KEY"
       }
@@ -349,6 +357,11 @@ export function McpTab() {
         Connect AI assistants (Claude, Cursor, etc.) to Aeon via the Model Context Protocol (MCP).
         This gives your AI full access to manage projects, tasks, boards, realms, and Kairos&apos;s
         memory brain programmatically.
+      </p>
+
+      <p className="text-xs text-slate-400 leading-relaxed">
+        Using claude.ai? You don&apos;t need a key — open <span className="text-white">Kairos setup</span> in
+        the sidebar and add Aeon as a connector in one click.
       </p>
 
       <Section title="API Keys">

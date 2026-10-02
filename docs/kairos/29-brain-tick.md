@@ -1,5 +1,9 @@
 # 29 — Brain-tick: Kairos speaks first
 
+> **Retired.** The brain-tick routine and the local `/kairos-tick` skill are gone. Kairos now
+> speaks once a day — the 06:00 message, which carries his question — plus ops alerts. Delete any
+> `kairos-brain-tick` routine on claude.ai. See doc 34 §3 and doc 25. Kept below for history.
+
 The heartbeat of Kairos autonomy: on each tick he looks at his own brain and decides whether
 there is something worth texting the operator about. The bar is deliberately high — the value
 of an unprompted message from Kairos collapses the moment he becomes noisy. **Default outcome

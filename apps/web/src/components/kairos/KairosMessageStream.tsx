@@ -7,13 +7,16 @@ import {
   formatReadingLine,
   renderWithCitations,
 } from './kairos-citations'
+import type { ReplyWatchState } from './KairosVisorReplyWatch'
 
 export function KairosMessageStream({
   messages,
   scrollRef,
+  replyState = null,
 }: {
   messages: ChatMessage[]
   scrollRef: React.RefObject<HTMLDivElement | null>
+  replyState?: ReplyWatchState | null
 }) {
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
@@ -24,6 +27,33 @@ export function KairosMessageStream({
         {messages.map((m) => (
           <KairosMessageBubble key={m.id} message={m} />
         ))}
+        {replyState && <KairosPendingBubble state={replyState} />}
+      </div>
+    </div>
+  )
+}
+
+function KairosPendingBubble({ state }: { state: ReplyWatchState }) {
+  const thinking = state === 'thinking'
+  return (
+    <div className="flex flex-col items-start" role="status" aria-live="polite">
+      <div className="flex max-w-[85%] items-center gap-2.5 rounded-2xl rounded-bl-md border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-400">
+        {thinking && (
+          <span className="flex items-center gap-1" aria-hidden>
+            {[0, 150, 300].map((delay) => (
+              <span
+                key={delay}
+                className="h-1.5 w-1.5 animate-pulse rounded-full"
+                style={{ backgroundColor: 'var(--primary)', animationDelay: `${delay}ms` }}
+              />
+            ))}
+          </span>
+        )}
+        <span>
+          {thinking
+            ? 'Kairos is thinking…'
+            : 'Still thinking — check back in a bit. The reply will appear in this thread.'}
+        </span>
       </div>
     </div>
   )
