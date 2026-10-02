@@ -129,11 +129,11 @@ describe('ThinkingQueue.planDue / claim — lazy planning in prerequisite order'
   it('plans every kind in its night order, the daily message last', async () => {
     const log: string[] = []
     const kinds: ThinkingJobKind[] = [
-      'daily_message', 'ask_mine', 'idea_judge', 'idea_generate', 'aether', 'cortex', 'archetype', 'chat_distill',
+      'daily_message', 'ask_mine', 'idea_judge', 'idea_generate', 'constitution_seed', 'aether', 'cortex', 'archetype', 'chat_distill',
     ]
     await new ThinkingQueue(kinds.map((k) => handler(k, log))).planDue(USER, NOW)
     expect(log).toEqual([
-      'plan:chat_distill', 'plan:archetype', 'plan:cortex', 'plan:aether', 'plan:idea_generate',
+      'plan:chat_distill', 'plan:archetype', 'plan:cortex', 'plan:aether', 'plan:constitution_seed', 'plan:idea_generate',
       'plan:idea_judge', 'plan:ask_mine', 'plan:daily_message',
     ])
   })

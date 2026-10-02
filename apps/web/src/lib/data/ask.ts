@@ -10,7 +10,9 @@ import type { AetherPayload } from '@/lib/kairos/aether-types'
 // ─────────────────────────────────────────────────────────────────────────
 
 export type KairosAskMeta = {
-  status: 'pending' | 'answered' | 'expired'
+  status: 'pending' | 'answered' | 'expired' | 'dismissed'
+  /** Stable per-user question number ("Q12"), assigned at creation (or lazily for legacy asks). */
+  seq?: number
   aetherMemoryId: string
   sourceThoughtId: string | null
   sourceMemoryIds: string[]
@@ -19,6 +21,24 @@ export type KairosAskMeta = {
   expiresAt?: string
   answeredAt?: string
   answerMemoryId?: string
+  dismissedAt?: string
+}
+
+/** An open (pending, unarchived, unexpired) ask with its stable number. */
+export type KairosOpenAsk = KairosAskRow & { seq: number }
+
+/** Wire shape of an open ask — shared by the MCP tool and the REST route. */
+export function toOpenKairosAskView(ask: KairosOpenAsk) {
+  return {
+    seq: ask.seq,
+    label: `Q${ask.seq}`,
+    id: ask.id,
+    question: ask.title,
+    dominionId: ask.dominionId,
+    askedAt: ask.kairosAsk.askedAt,
+    expiresAt: ask.expiresAt ? ask.expiresAt.toISOString() : null,
+    kind: ask.askMine?.kind ?? null,
+  }
 }
 
 export type KairosAskMineMeta = {
@@ -122,6 +142,154 @@ export async function getPendingKairosAsk(userId: string): Promise<KairosAskRow 
     if (ask?.kairosAsk.status === 'pending') return ask
   }
   return null
+}
+
+const askColumns = {
+  id: memories.id,
+  title: memories.title,
+  summary: memories.summary,
+  dominionId: memories.dominionId,
+  createdAt: memories.createdAt,
+  sourceMetadata: memories.sourceMetadata,
+}
+
+const pendingAskWhere = (userId: string) => and(
+  eq(memories.userId, userId),
+  eq(memories.type, 'advisory'),
+  isNull(memories.archivedAt),
+  sql`${memories.sourceMetadata}->>'kairosAskStatus' = 'pending'`,
+)
+
+/** One open ask by id (pending, unarchived, unexpired), or null. */
+export async function getOpenKairosAskById(
+  userId: string,
+  askId: string,
+  now: Date = new Date(),
+): Promise<KairosAskRow | null> {
+  const [row] = await db
+    .select(askColumns)
+    .from(memories)
+    .where(and(pendingAskWhere(userId), eq(memories.id, askId)))
+    .limit(1)
+  const ask = row ? parseAskRow(row, now) : null
+  return ask?.kairosAsk.status === 'pending' ? ask : null
+}
+
+// Per-user ask numbering (Q<seq>). Serialised by a transaction-scoped advisory
+// lock on (userId, 'kairos-ask-seq'); the seq lives in sourceMetadata only.
+const ASK_SEQ_LOCK = 'kairos-ask-seq'
+const seqSql = sql`${memories.sourceMetadata}->'kairosAsk'->>'seq'`
+
+type AskTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+async function lockAskSeq(tx: AskTx, userId: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext(${ASK_SEQ_LOCK}))`)
+}
+
+// Numbers start above the quarter range (Q1–Q4) so "Q3: revenue…" is never
+// read as an answer to an early question.
+const MIN_FIRST_SEQ = 10
+
+async function maxAskSeq(tx: AskTx, userId: string): Promise<number> {
+  const [row] = await tx
+    .select({ max: sql<number>`COALESCE(MAX(CASE WHEN ${seqSql} ~ '^[0-9]+$' THEN (${seqSql})::int END), 0)`.mapWith(Number) })
+    .from(memories)
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.type, 'advisory'),
+      sql`${memories.sourceMetadata} ? 'kairosAsk'`,
+    ))
+  return Math.max(Number(row?.max ?? 0) || 0, MIN_FIRST_SEQ - 1)
+}
+
+function readSeq(ask: KairosAskRow): number | null {
+  const seq = ask.kairosAsk.seq
+  return typeof seq === 'number' && Number.isInteger(seq) && seq > 0 ? seq : null
+}
+
+/**
+ * Give legacy open asks (created before numbering) a seq, oldest first.
+ * Re-reads under the seq lock so a concurrent assigner never double-numbers.
+ */
+async function assignMissingAskSeqs(userId: string, askIds: string[]): Promise<Map<string, number>> {
+  return db.transaction(async (tx) => {
+    await lockAskSeq(tx, userId)
+    const rows = await tx
+      .select({ id: memories.id, seq: sql<string | null>`${memories.sourceMetadata}->'kairosAsk'->>'seq'` })
+      .from(memories)
+      .where(and(eq(memories.userId, userId), inArray(memories.id, askIds)))
+      .orderBy(memories.createdAt)
+    const assigned = new Map<string, number>()
+    let next = (await maxAskSeq(tx, userId)) + 1
+    for (const row of rows) {
+      const existing = Number(row.seq)
+      if (row.seq && Number.isInteger(existing) && existing > 0) {
+        assigned.set(row.id, existing)
+        continue
+      }
+      const seq = next++
+      await tx
+        .update(memories)
+        .set({
+          sourceMetadata: sql`jsonb_set(coalesce(${memories.sourceMetadata}, '{}'::jsonb), '{kairosAsk,seq}', ${String(seq)}::jsonb)`,
+        })
+        .where(and(eq(memories.id, row.id), eq(memories.userId, userId)))
+      assigned.set(row.id, seq)
+    }
+    return assigned
+  })
+}
+
+/**
+ * Every open ask (pending, unarchived, unexpired), oldest first, each with
+ * its stable Q number. Legacy asks without one are numbered here, lazily.
+ */
+export async function listOpenKairosAsks(userId: string, now: Date = new Date()): Promise<KairosOpenAsk[]> {
+  const rows = await db
+    .select(askColumns)
+    .from(memories)
+    .where(pendingAskWhere(userId))
+    .orderBy(memories.createdAt)
+    .limit(50)
+  const open = rows.flatMap((row) => {
+    const ask = parseAskRow(row, now)
+    return ask?.kairosAsk.status === 'pending' ? [ask] : []
+  })
+  const missing = open.filter((ask) => readSeq(ask) === null).map((ask) => ask.id)
+  const assigned = missing.length > 0 ? await assignMissingAskSeqs(userId, missing) : new Map<string, number>()
+  return open.flatMap((ask) => {
+    const seq = readSeq(ask) ?? assigned.get(ask.id)
+    return seq ? [{ ...ask, seq, kairosAsk: { ...ask.kairosAsk, seq } }] : []
+  })
+}
+
+/**
+ * Operator "skip": persist status 'dismissed' and archive. Guarded on
+ * still-pending and unexpired, so it races answer/expiry safely. No outcome
+ * reaction — a dismissal is not a miss.
+ */
+export async function markKairosAskDismissed(userId: string, askId: string, now: Date = new Date()): Promise<boolean> {
+  const patch = JSON.stringify({ status: 'dismissed', dismissedAt: now.toISOString() })
+  const claimed = await db
+    .update(memories)
+    .set({
+      sourceMetadata: sql`jsonb_set(
+        jsonb_set(coalesce(${memories.sourceMetadata}, '{}'::jsonb), '{kairosAskStatus}', '"dismissed"'),
+        '{kairosAsk}',
+        coalesce(${memories.sourceMetadata}->'kairosAsk', '{}'::jsonb) || ${patch}::jsonb
+      )`,
+      archivedAt: now,
+      updatedAt: now,
+    })
+    .where(and(
+      eq(memories.id, askId),
+      eq(memories.userId, userId),
+      isNull(memories.archivedAt),
+      sql`${memories.sourceMetadata}->>'kairosAskStatus' = 'pending'`,
+      sql`(${storedExpirySql} IS NULL OR ${storedExpirySql} > ${now.toISOString()}::timestamptz)`,
+    ))
+    .returning({ id: memories.id })
+  return claimed.length > 0
 }
 
 export async function getKairosAskSourceSnippets(
@@ -358,54 +526,62 @@ export async function createKairosAskMemory(
     externalId?: string
   },
 ): Promise<string> {
-  if (opts.externalId) {
-    const [existing] = await db
-      .select({ id: memories.id })
-      .from(memories)
-      .where(and(
-        eq(memories.userId, userId),
-        eq(memories.type, 'advisory'),
-        sql`${memories.sourceMetadata}->>'externalId' = ${opts.externalId}`,
-      ))
-      .limit(1)
-    if (existing) return existing.id
-  }
+  // One transaction under the per-user seq lock: the externalId re-check and
+  // the seq read + insert are serialised, so two concurrent writers can never
+  // share a Q number (nor both insert the same daily ask).
+  return db.transaction(async (tx) => {
+    await lockAskSeq(tx, userId)
+    if (opts.externalId) {
+      const [existing] = await tx
+        .select({ id: memories.id })
+        .from(memories)
+        .where(and(
+          eq(memories.userId, userId),
+          eq(memories.type, 'advisory'),
+          sql`${memories.sourceMetadata}->>'externalId' = ${opts.externalId}`,
+        ))
+        .limit(1)
+      if (existing) return existing.id
+    }
 
-  const kairosAsk: KairosAskMeta = {
-    status: 'pending',
-    aetherMemoryId: opts.aetherMemoryId,
-    sourceThoughtId: opts.sourceThoughtId,
-    sourceMemoryIds: opts.sourceMemoryIds,
-    dominionId: opts.dominionId,
-    askedAt: opts.askedAt,
-    ...(opts.expiresAt ? { expiresAt: opts.expiresAt } : {}),
-  }
-
-  const [row] = await db
-    .insert(memories)
-    .values({
-      userId,
+    const seq = (await maxAskSeq(tx, userId)) + 1
+    const kairosAsk: KairosAskMeta = {
+      status: 'pending',
+      seq,
+      aetherMemoryId: opts.aetherMemoryId,
+      sourceThoughtId: opts.sourceThoughtId,
+      sourceMemoryIds: opts.sourceMemoryIds,
       dominionId: opts.dominionId,
-      title: opts.question,
-      bodyMd: opts.question,
-      summary: opts.question,
-      type: 'advisory',
-      streamClass: 'advisory',
-      source: 'system',
-      sourceMetadata: {
-        kairosAsk,
-        kairosAskStatus: 'pending',
-        ...(opts.askMine ? { askMine: opts.askMine } : {}),
-        ...(opts.cardNotes ? { cardNotes: opts.cardNotes } : {}),
-        ...(opts.expiresAt ? { expiresAt: opts.expiresAt } : {}),
-        ...(opts.externalId ? { externalId: opts.externalId } : {}),
-      },
-      tags: ['kairos-ask'],
-      pinned: false,
-    })
-    .returning({ id: memories.id })
+      askedAt: opts.askedAt,
+      ...(opts.expiresAt ? { expiresAt: opts.expiresAt } : {}),
+    }
 
-  return row!.id
+    const [row] = await tx
+      .insert(memories)
+      .values({
+        userId,
+        dominionId: opts.dominionId,
+        title: opts.question,
+        bodyMd: opts.question,
+        summary: opts.question,
+        type: 'advisory',
+        streamClass: 'advisory',
+        source: 'system',
+        sourceMetadata: {
+          kairosAsk,
+          kairosAskStatus: 'pending',
+          ...(opts.askMine ? { askMine: opts.askMine } : {}),
+          ...(opts.cardNotes ? { cardNotes: opts.cardNotes } : {}),
+          ...(opts.expiresAt ? { expiresAt: opts.expiresAt } : {}),
+          ...(opts.externalId ? { externalId: opts.externalId } : {}),
+        },
+        tags: ['kairos-ask'],
+        pinned: false,
+      })
+      .returning({ id: memories.id })
+
+    return row!.id
+  })
 }
 
 /**

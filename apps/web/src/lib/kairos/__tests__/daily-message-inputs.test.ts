@@ -21,7 +21,7 @@ vi.mock('@/lib/db', () => {
 })
 
 vi.mock('@/lib/data/aether', () => ({ getLatestAether: vi.fn() }))
-vi.mock('@/lib/data/ask', () => ({ getPendingKairosAsk: vi.fn() }))
+vi.mock('@/lib/data/ask', () => ({ listOpenKairosAsks: vi.fn() }))
 vi.mock('@/lib/data/board-feed', () => ({ listBoardDayPages: vi.fn() }))
 vi.mock('@/lib/data/memory-candidates', () => ({ listPromotedBeliefsBetween: vi.fn() }))
 vi.mock('@/lib/data/recipes', () => ({ listTraceHistory: vi.fn() }))
@@ -32,7 +32,7 @@ vi.mock('@/lib/data/ideas', () => ({ listSurvivorsSince: vi.fn() }))
 vi.mock('../ideas/diversity', () => ({ weeklyIdeaDiversity: vi.fn() }))
 
 import { getLatestAether } from '@/lib/data/aether'
-import { getPendingKairosAsk } from '@/lib/data/ask'
+import { listOpenKairosAsks } from '@/lib/data/ask'
 import { listBoardDayPages } from '@/lib/data/board-feed'
 import { listPromotedBeliefsBetween } from '@/lib/data/memory-candidates'
 import { listTraceHistory } from '@/lib/data/recipes'
@@ -50,7 +50,7 @@ beforeEach(() => {
   selectQueue.length = 0
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   vi.mocked(getLatestAether).mockResolvedValue(null)
-  vi.mocked(getPendingKairosAsk).mockResolvedValue(null)
+  vi.mocked(listOpenKairosAsks).mockResolvedValue([])
   vi.mocked(listBoardDayPages).mockResolvedValue([])
   vi.mocked(listPromotedBeliefsBetween).mockResolvedValue([])
   vi.mocked(listTraceHistory).mockResolvedValue([])
@@ -61,6 +61,21 @@ beforeEach(() => {
 })
 
 describe('gatherDailyMessageInputs', () => {
+  it('reads the 04:25Z synthesis rollup at the 06:00 London send (BST 05:00Z), never yesterday\'s', async () => {
+    const at0500 = new Date('2026-10-01T05:00:00.000Z') // Thursday, 06:00 London (BST)
+    const rollup = (createdAt: string) => [{
+      createdAt: new Date(createdAt),
+      sourceMetadata: { byStage: { 'cortex-regen': { '2026-10-01': 'failed' }, aether: { '2026-10-01': 'ok' } } },
+    }] as never
+    selectQueue.push([], [])
+    vi.mocked(listTraceHistory).mockResolvedValue(rollup('2026-10-01T04:25:00.000Z'))
+    expect((await gatherDailyMessageInputs(USER, at0500)).synthesis).toEqual({ green: 1, failed: 1, failedStages: ['cortex-regen'] })
+
+    selectQueue.push([], [])
+    vi.mocked(listTraceHistory).mockResolvedValue(rollup('2026-09-30T04:25:00.000Z'))
+    expect((await gatherDailyMessageInputs(USER, at0500)).synthesis).toBeNull()
+  })
+
   it('reads every input and shapes it for the prompt', async () => {
     selectQueue.push(
       [
@@ -87,7 +102,10 @@ describe('gatherDailyMessageInputs', () => {
       date: '2026-10-26', version: 2, mean: 0.74, alert: true,
       flipped: [{ probeId: 'p', question: 'What matters most?', sim: 0.5 }], measuredAt: new Date('2026-10-26T04:00:00Z'),
     })
-    vi.mocked(getPendingKairosAsk).mockResolvedValue({ title: 'Why the pause?', kairosAsk: { status: 'pending' } } as never)
+    vi.mocked(listOpenKairosAsks).mockResolvedValue([
+      { seq: 4, title: 'Why the pause?', createdAt: new Date('2026-10-24T04:30:00Z'), kairosAsk: { status: 'pending', askedAt: '2026-10-24T04:30:00.000Z' } },
+      { seq: 7, title: 'Legacy ask', createdAt: new Date('2026-10-25T04:30:00Z'), kairosAsk: { status: 'pending', askedAt: '' } },
+    ] as never)
     vi.mocked(listTraceHistory).mockResolvedValue([{
       createdAt: new Date('2026-10-26T06:45:00Z'),
       sourceMetadata: { byStage: { cortex: { '2026-10-26': 'failed' }, aether: { '2026-10-26': 'ok' } } },
@@ -103,7 +121,10 @@ describe('gatherDailyMessageInputs', () => {
       boardDay: { finished: 4, finishedTitles: ['A', 'B', 'C'], thinCards: 1 },
       newBeliefs: [{ mind: 'own', claim: 'Small batches win' }],
       drift: { alert: true },
-      pendingAsk: 'Why the pause?',
+      openAsks: [
+        { seq: 4, question: 'Why the pause?', askedAt: '2026-10-24T04:30:00.000Z' },
+        { seq: 7, question: 'Legacy ask', askedAt: '2026-10-25T04:30:00.000Z' },
+      ],
       synthesis: { green: 1, failed: 1, failedStages: ['cortex'] },
       mindCompare: 'Agree on 4, diverge on 1',
       failed: [],
@@ -118,13 +139,13 @@ describe('gatherDailyMessageInputs', () => {
     vi.mocked(listBoardDayPages).mockRejectedValue(new Error('x'))
     vi.mocked(listPromotedBeliefsBetween).mockRejectedValue(new Error('memory_ops missing'))
     vi.mocked(getLatestDriftStatus).mockRejectedValue(new Error('x'))
-    vi.mocked(getPendingKairosAsk).mockRejectedValue(new Error('x'))
+    vi.mocked(listOpenKairosAsks).mockRejectedValue(new Error('x'))
     vi.mocked(listTraceHistory).mockRejectedValue(new Error('x'))
     vi.mocked(listSurvivorsSince).mockRejectedValue(new Error('x'))
     vi.mocked(weeklyIdeaDiversity).mockRejectedValue(new Error('x'))
 
     const inputs = await gatherDailyMessageInputs(USER, NOW)
-    expect(inputs.failed).toEqual(['aether', 'areas', 'boardDay', 'drift', 'idea', 'ideaDiversity', 'mindCompare', 'newBeliefs', 'pendingAsk', 'promotions', 'synthesis'])
+    expect(inputs.failed).toEqual(['aether', 'areas', 'boardDay', 'drift', 'idea', 'ideaDiversity', 'mindCompare', 'newBeliefs', 'openAsks', 'promotions', 'synthesis'])
     expect(inputs.idea).toBeNull()
     expect(inputs.areas).toBeNull()
     expect(inputs.promotions).toBeNull()

@@ -23,7 +23,7 @@ vi.mock('@/lib/db', () => {
   return { db: { update: vi.fn(() => chain) } }
 })
 
-import { markKairosAskExpired } from '../ask'
+import { markKairosAskDismissed, markKairosAskExpired } from '../ask'
 
 const dialect = new PgDialect()
 const render = (s: unknown) => dialect.sqlToQuery(s as SQL)
@@ -54,5 +54,27 @@ describe('markKairosAskExpired', () => {
   it('returns false when the guard matched nothing (already expired/answered)', async () => {
     returning = []
     await expect(markKairosAskExpired('user-1', 'ask-1', NOW)).resolves.toBe(false)
+  })
+})
+
+describe('markKairosAskDismissed', () => {
+  it('writes dismissed status + archives, guarded on still-pending and NOT yet expired', async () => {
+    returning = [{ id: 'ask-1' }]
+
+    await expect(markKairosAskDismissed('user-1', 'ask-1', NOW)).resolves.toBe(true)
+
+    expect(captured.set?.archivedAt).toEqual(NOW)
+    const set = render(captured.set!.sourceMetadata)
+    expect(set.sql).toContain(`'{kairosAskStatus}', '"dismissed"'`)
+    expect(set.params.join(' ')).toContain('"status":"dismissed"')
+    const where = render(captured.where)
+    expect(where.sql).toContain(`->>'kairosAskStatus' = 'pending'`)
+    expect(where.sql).toContain('"archived_at" is null')
+    expect(where.sql).toMatch(/IS NULL OR .* > \$\d+::timestamptz/)
+  })
+
+  it('returns false when the ask is no longer open', async () => {
+    returning = []
+    await expect(markKairosAskDismissed('user-1', 'ask-1', NOW)).resolves.toBe(false)
   })
 })

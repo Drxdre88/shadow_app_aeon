@@ -30,6 +30,13 @@ afterEach(() => {
 })
 
 describe('cron/daily-message route', () => {
+  it('vercel.json schedules exactly the two candidate UTC slots for 06:00 London', async () => {
+    const { readFileSync } = await import('node:fs')
+    const path = await import('node:path')
+    const config = JSON.parse(readFileSync(path.resolve(__dirname, '../../../../../../vercel.json'), 'utf8')) as { crons: Array<{ path: string; schedule: string }> }
+    expect(config.crons.filter((c) => c.path === '/api/cron/daily-message')).toEqual([{ path: '/api/cron/daily-message', schedule: '0 5,6 * * *' }])
+  })
+
   it('rejects with 401 when the bearer secret is configured and missing', async () => {
     process.env.CRON_SECRET = 'secret'
     const res = await GET(request('?force=1'))
@@ -37,25 +44,25 @@ describe('cron/daily-message route', () => {
     expect(runDailyMessageForUser).not.toHaveBeenCalled()
   })
 
-  it('runs in the BST 07:00Z slot (08:00 London) and skips the 08:00Z slot (09:00 London)', async () => {
+  it('runs in the BST 05:00Z slot (06:00 London) and skips the 06:00Z slot (07:00 London)', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(new Date('2026-10-01T07:00:00.000Z'))
+    vi.setSystemTime(new Date('2026-10-01T05:00:00.000Z'))
     let body = await (await GET(request())).json()
     expect(body).toMatchObject({ ran: true, status: 'sent' })
-    expect(runDailyMessageForUser).toHaveBeenCalledWith(OPERATOR, { now: new Date('2026-10-01T07:00:00.000Z'), dryRun: false })
+    expect(runDailyMessageForUser).toHaveBeenCalledWith(OPERATOR, { now: new Date('2026-10-01T05:00:00.000Z'), dryRun: false })
 
     vi.mocked(runDailyMessageForUser).mockClear()
-    vi.setSystemTime(new Date('2026-10-01T08:00:00.000Z'))
+    vi.setSystemTime(new Date('2026-10-01T06:00:00.000Z'))
     body = await (await GET(request())).json()
-    expect(body).toEqual({ ran: false, reason: 'not 8:00 in Europe/London' })
+    expect(body).toEqual({ ran: false, reason: 'not 6:00 in Europe/London' })
     expect(runDailyMessageForUser).not.toHaveBeenCalled()
   })
 
-  it('in GMT (after 2026-10-25) runs only the 08:00Z slot', async () => {
+  it('in GMT (after 2026-10-25) runs only the 06:00Z slot', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(new Date('2026-10-26T07:00:00.000Z'))
+    vi.setSystemTime(new Date('2026-10-26T05:00:00.000Z'))
     expect(await (await GET(request())).json()).toMatchObject({ ran: false })
-    vi.setSystemTime(new Date('2026-10-26T08:00:00.000Z'))
+    vi.setSystemTime(new Date('2026-10-26T06:00:00.000Z'))
     expect(await (await GET(request())).json()).toMatchObject({ ran: true })
     expect(runDailyMessageForUser).toHaveBeenCalledTimes(1)
   })

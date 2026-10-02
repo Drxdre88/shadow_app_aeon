@@ -29,7 +29,10 @@ export const ORIGIN_TRUST: Record<OriginKind, number> = {
   external: 0.3,
 }
 
-const ACTIVITY_KINDS: ReadonlySet<string> = new Set(['board_day', 'board_week', 'hangar_mission'])
+// board_card_done: a single card finished on a watched board, captured the same
+// day. Activity for trust, but deliberately left out of belief signals and
+// BackUp support — the nightly board_day page stays the one anchored record.
+const ACTIVITY_KINDS: ReadonlySet<string> = new Set(['board_day', 'board_week', 'board_card_done', 'hangar_mission'])
 const AGENT_SOURCES: ReadonlySet<string> = new Set(['claude', 'codex', 'copilot', 'hook'])
 
 function asRecord(v: unknown): Record<string, unknown> | null {

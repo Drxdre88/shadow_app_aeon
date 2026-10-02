@@ -28,6 +28,7 @@ import {
   registerThinkingTools,
   registerBeliefTools,
   registerConstitutionTools,
+  registerVoiceNoteTools,
 } from './tools'
 
 async function verifyToken(_req: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
@@ -72,6 +73,7 @@ const mcpHandler = createMcpHandler(
     registerThinkingTools(server)
     registerBeliefTools(server)
     registerConstitutionTools(server)
+    registerVoiceNoteTools(server)
   },
   { capabilities: {} },
   {

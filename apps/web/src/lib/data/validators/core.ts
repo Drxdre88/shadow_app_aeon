@@ -22,6 +22,12 @@ export const updateProjectSchema = z.object({
   dominionId: z.string().uuid().nullable().optional(),
 })
 
+export const KAIROS_FEED_MODES = ['daily', 'weekly'] as const
+
+export const setProjectKairosFeedSchema = z.object({
+  feed: z.enum(KAIROS_FEED_MODES).nullable(),
+})
+
 export const createTaskSchema = z.object({
   name: z.string().trim().min(1).max(255),
   description: z.string().trim().max(10000).optional(),
@@ -181,6 +187,7 @@ export const groupByModeSchema = z.enum(['column', 'label', 'dependency', 'prior
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>
+export type SetProjectKairosFeedInput = z.infer<typeof setProjectKairosFeedSchema>
 export type CreateTaskInput = z.infer<typeof createTaskSchema>
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>
 export type CreateGanttTaskInput = z.infer<typeof createGanttTaskSchema>

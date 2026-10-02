@@ -10,8 +10,11 @@ import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 // Synthesis reliability (docs/kairos/31, B3) — daily synthesis health rollup.
 //
 // Pure SQL read over each user's own trace history — no LLM/BYOK involved.
-// Runs after the morning briefing (08:00 UTC, a free slot) so the rollup
-// covers every generator that fired overnight. Idempotent: computeSynthesis-
+// Runs at 04:25 UTC: after the night's core synthesis (memory engine →
+// cortex → aether, done by ~03:30) and before the 06:00 London daily message
+// is drafted (the 04:40Z brain-routine run in summer), which only reads a rollup from the same
+// London date. Stages that run later (ask-mine, idea tournament) show their
+// last completed night. Idempotent: computeSynthesis-
 // Health stamps one rollup memory per UTC day via externalId, so a retry
 // (or a manual re-curl) is a no-op rather than a duplicate.
 //

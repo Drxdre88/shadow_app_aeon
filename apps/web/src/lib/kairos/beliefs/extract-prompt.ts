@@ -14,6 +14,7 @@ const CLAIM_MAX = 300
 const REASON_MAX = 240
 const FALSIFIER_MAX = 300
 const EXCERPT_MAX = 500
+const VOICE_NOTE_BODY_MAX = 2_000
 
 const clamped = (max: number) =>
   z.string().trim().min(1).transform((s) => (s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s))
@@ -51,6 +52,8 @@ export interface SignalInputRow {
   createdAt: Date
   // Who wrote it (lib/kairos/origin.ts). Absent → labelled by kind/type only.
   origin?: OriginKind
+  // A confirmed voice-note segment (sourceMetadata.voiceNote present).
+  voiceNote?: boolean
 }
 
 export interface HeldBeliefRef {
@@ -82,6 +85,7 @@ export const ORIGIN_LABEL: Record<OriginKind, string> = {
 }
 
 function excerpt(row: SignalInputRow): string {
+  if (row.voiceNote && row.origin === 'operator') return oneLine(row.bodyMd).slice(0, VOICE_NOTE_BODY_MAX)
   const text = row.summary?.trim() ? row.summary : row.bodyMd
   return oneLine(text).slice(0, EXCERPT_MAX)
 }

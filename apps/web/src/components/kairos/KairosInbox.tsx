@@ -3,16 +3,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Bell, Check, Inbox, Lightbulb, MessageCircleQuestion, Sparkles, X } from 'lucide-react'
+import { Bell, Check, ChevronDown, Inbox, Lightbulb, MessageCircleQuestion, Mic, Sparkles, X } from 'lucide-react'
 import {
   acceptKairosInboxProposal,
   answerKairosInboxAsk,
+  dismissKairosInboxAsk,
   dismissKairosInboxProposal,
   listKairosInbox,
 } from '@/lib/actions/kairos-inbox'
+import { confirmVoiceNote, discardVoiceNote } from '@/lib/actions/kairos-voice'
 
 type InboxData = Awaited<ReturnType<typeof listKairosInbox>>
 type InboxItem = InboxData['items'][number]
+type VoiceNoteItem = Extract<InboxItem, { kind: 'voice_note' }>
 
 // An idea-tournament survivor (docs/kairos/35) carries its card fields on the
 // proposal item as `idea`. Read defensively: absent or malformed → a plain proposal.
@@ -48,12 +51,81 @@ function IdeaDetails({ idea }: { idea: InboxIdeaCard }) {
   )
 }
 
+// One card per voice note: confirm or discard every pending part at once.
+function VoiceNoteCard({
+  note,
+  working,
+  onResolve,
+}: {
+  note: VoiceNoteItem
+  working: boolean
+  onResolve: (noteId: string, resolution: 'confirm' | 'discard') => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const waiting = note.segments.length
+  return (
+    <li className="rounded-xl bg-white/[0.04] border border-violet-300/15 p-4">
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="text-[12px] font-medium text-white/85">
+          <Mic className="inline w-3 h-3 mr-1.5 -mt-0.5 text-violet-200/75" aria-hidden="true" />
+          {note.parts > 1 ? `Voice note · ${note.parts} parts` : 'Voice note'}
+        </h3>
+        {waiting < note.parts && (
+          <span className="shrink-0 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-[0.14em] bg-white/[0.05] text-white/45 border border-white/[0.08]">
+            {waiting} of {note.parts} waiting
+          </span>
+        )}
+      </div>
+      {note.summary && <p className="mt-1.5 text-[11px] leading-relaxed text-white/60 italic">“{note.summary}”</p>}
+      {waiting > 1 && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          className="mt-2 inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-white/40 hover:text-white/70"
+        >
+          <ChevronDown className={`w-3 h-3 transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />
+          {expanded ? 'Hide parts' : `Show ${waiting} parts`}
+        </button>
+      )}
+      {expanded && (
+        <ol className="mt-2 flex flex-col gap-1.5 text-[11px] leading-relaxed text-white/50">
+          {note.segments.map((segment) => (
+            <li key={segment.id}>
+              <span className="mr-1.5 font-mono text-[10px] text-white/30">{segment.voiceNote?.part ?? '·'}</span>
+              {segment.summary ?? segment.title}
+            </li>
+          ))}
+        </ol>
+      )}
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onResolve(note.id, 'confirm')}
+          disabled={working}
+          className="px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-400/15 text-[10px] uppercase tracking-[0.16em] text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-35"
+        >
+          {working ? 'Working…' : 'Confirm all'}
+        </button>
+        <button
+          type="button"
+          onClick={() => onResolve(note.id, 'discard')}
+          disabled={working}
+          className="px-2.5 py-1 rounded-md bg-white/[0.03] border border-white/[0.06] text-[10px] uppercase tracking-[0.16em] text-white/45 hover:text-white/75 hover:bg-white/[0.07] disabled:opacity-35"
+        >
+          Discard
+        </button>
+      </div>
+    </li>
+  )
+}
+
 export function KairosInbox() {
   const [data, setData] = useState<InboxData>({ items: [] })
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [answer, setAnswer] = useState('')
+  const [answers, setAnswers] = useState<Record<string, string>>({})
   const [workingId, setWorkingId] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
 
@@ -88,22 +160,58 @@ export function KairosInbox() {
     }
   }, [open, load])
 
-  const ask = useMemo(() => data.items.find((i): i is Extract<InboxItem, { kind: 'ask' }> => i.kind === 'ask') ?? null, [data.items])
+  const asks = useMemo(() => data.items.filter((i): i is Extract<InboxItem, { kind: 'ask' }> => i.kind === 'ask'), [data.items])
   const notifies = useMemo(() => data.items.filter((i): i is Extract<InboxItem, { kind: 'notify' }> => i.kind === 'notify'), [data.items])
-  const proposals = useMemo(() => data.items.filter((i): i is Extract<InboxItem, { kind: 'proposal' }> => i.kind === 'proposal'), [data.items])
+  // Proposals and grouped voice notes, in inbox order.
+  const proposals = useMemo(() => data.items.filter((i): i is Extract<InboxItem, { kind: 'proposal' | 'voice_note' }> => i.kind === 'proposal' || i.kind === 'voice_note'), [data.items])
 
-  const count = (ask ? 1 : 0) + notifies.length + proposals.length
+  const count = asks.length + notifies.length + proposals.length
 
-  const submitAnswer = async () => {
-    if (!ask || !answer.trim()) return
-    setWorkingId(ask.id)
+  const dropAnswer = (askId: string) => setAnswers((prev) => {
+    const next = { ...prev }
+    delete next[askId]
+    return next
+  })
+
+  const submitAnswer = async (askId: string) => {
+    const answer = answers[askId] ?? ''
+    if (!answer.trim()) return
+    setWorkingId(askId)
     setError(null)
     try {
-      await answerKairosInboxAsk(ask.id, answer)
-      setAnswer('')
+      await answerKairosInboxAsk(askId, answer)
+      dropAnswer(askId)
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to answer Kairos')
+    } finally {
+      setWorkingId(null)
+    }
+  }
+
+  const dismissAsk = async (askId: string) => {
+    setWorkingId(askId)
+    setError(null)
+    try {
+      await dismissKairosInboxAsk(askId)
+      dropAnswer(askId)
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to dismiss question')
+    } finally {
+      setWorkingId(null)
+    }
+  }
+
+  const resolveVoiceNote = async (noteId: string, resolution: 'confirm' | 'discard') => {
+    setWorkingId(noteId)
+    setError(null)
+    try {
+      if (resolution === 'confirm') await confirmVoiceNote(noteId)
+      else await discardVoiceNote(noteId)
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to ${resolution} voice note`)
     } finally {
       setWorkingId(null)
     }
@@ -206,36 +314,60 @@ export function KairosInbox() {
                     </div>
                   ) : (
                     <div className="flex flex-col gap-5">
-                      {ask && (
+                      {asks.length > 0 && (
                         <section>
                           <div className="flex items-center gap-1.5 mb-2 text-[10px] uppercase tracking-[0.2em] text-violet-200/70">
-                            <MessageCircleQuestion className="w-3 h-3" /> Pending ask
+                            <MessageCircleQuestion className="w-3 h-3" /> Open questions · {asks.length}
                           </div>
-                          <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-4">
-                            <p className="text-[13px] leading-relaxed text-white/85">{ask.title}</p>
-                            <textarea
-                              value={answer}
-                              onChange={(event) => setAnswer(event.target.value)}
-                              rows={4}
-                              maxLength={10_000}
-                              placeholder="Answer Kairos…"
-                              className="mt-3 w-full resize-none rounded-lg bg-black/20 border border-white/[0.08] px-3 py-2 text-[12px] leading-relaxed text-white/85 placeholder:text-white/30 outline-none focus:border-violet-400/35"
-                            />
-                            <div className="mt-2 flex justify-end">
-                              <button
-                                type="button"
-                                onClick={submitAnswer}
-                                disabled={!answer.trim() || workingId === ask.id}
-                                className="px-3 py-1.5 rounded-md border text-[10px] uppercase tracking-[0.16em] text-white hover:brightness-125 disabled:opacity-35 disabled:cursor-not-allowed"
-                                style={{
-                                  backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)',
-                                  borderColor: 'color-mix(in srgb, var(--primary) 25%, transparent)',
-                                }}
-                              >
-                                {workingId === ask.id ? 'Sending…' : 'Send answer'}
-                              </button>
-                            </div>
-                          </div>
+                          <ul className="flex flex-col gap-2">
+                            {asks.map((ask) => {
+                              const working = workingId === ask.id
+                              const answer = answers[ask.id] ?? ''
+                              return (
+                                <li key={ask.id} className="rounded-xl bg-white/[0.04] border border-white/[0.06] p-4">
+                                  <p className="text-[13px] leading-relaxed text-white/85">
+                                    <span className="mr-1.5 font-mono text-[11px] text-violet-200/70">Q{ask.seq}</span>
+                                    {ask.title}
+                                  </p>
+                                  <textarea
+                                    value={answer}
+                                    onChange={(event) => {
+                                      const value = event.target.value
+                                      setAnswers((prev) => ({ ...prev, [ask.id]: value }))
+                                    }}
+                                    rows={3}
+                                    maxLength={10_000}
+                                    aria-label={`Answer Q${ask.seq}`}
+                                    placeholder="Answer Kairos…"
+                                    className="mt-3 w-full resize-none rounded-lg bg-black/20 border border-white/[0.08] px-3 py-2 text-[12px] leading-relaxed text-white/85 placeholder:text-white/30 outline-none focus:border-violet-400/35"
+                                  />
+                                  <div className="mt-2 flex justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => dismissAsk(ask.id)}
+                                      disabled={working}
+                                      aria-label={`Dismiss Q${ask.seq}`}
+                                      className="px-2.5 py-1 rounded-md bg-white/[0.03] border border-white/[0.06] text-[10px] uppercase tracking-[0.16em] text-white/45 hover:text-white/75 hover:bg-white/[0.07] disabled:opacity-35"
+                                    >
+                                      Dismiss
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => submitAnswer(ask.id)}
+                                      disabled={!answer.trim() || working}
+                                      className="px-3 py-1.5 rounded-md border text-[10px] uppercase tracking-[0.16em] text-white hover:brightness-125 disabled:opacity-35 disabled:cursor-not-allowed"
+                                      style={{
+                                        backgroundColor: 'color-mix(in srgb, var(--primary) 20%, transparent)',
+                                        borderColor: 'color-mix(in srgb, var(--primary) 25%, transparent)',
+                                      }}
+                                    >
+                                      {working ? 'Sending…' : 'Send answer'}
+                                    </button>
+                                  </div>
+                                </li>
+                              )
+                            })}
+                          </ul>
                         </section>
                       )}
 
@@ -296,6 +428,16 @@ export function KairosInbox() {
                           </div>
                           <ul className="flex flex-col gap-2">
                             {proposals.map((proposal) => {
+                              if (proposal.kind === 'voice_note') {
+                                return (
+                                  <VoiceNoteCard
+                                    key={proposal.id}
+                                    note={proposal}
+                                    working={workingId === proposal.id}
+                                    onResolve={resolveVoiceNote}
+                                  />
+                                )
+                              }
                               const working = workingId === proposal.id
                               const idea = 'idea' in proposal ? readInboxIdea(proposal.idea) : null
                               return (

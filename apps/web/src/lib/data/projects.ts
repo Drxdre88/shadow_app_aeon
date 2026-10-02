@@ -338,7 +338,7 @@ export async function mergeProjectSettings(projectId: string, patch: Record<stri
   const [project] = await db
     .update(projects)
     .set({
-      settings: sql`coalesce(${projects.settings}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`,
+      settings: settingsMergeSql(patch),
       updatedAt: new Date(),
     })
     .where(eq(projects.id, projectId))
@@ -354,16 +354,49 @@ export async function updateProject(projectId: string, userId: string, data: Upd
   if (data.endDate !== undefined) updates.endDate = new Date(data.endDate)
   if (data.timeScale !== undefined) updates.timeScale = data.timeScale
   if (data.planetImage !== undefined) updates.planetImage = data.planetImage
-  if (data.settings !== undefined) updates.settings = data.settings
   if (data.dominionId !== undefined) updates.dominionId = data.dominionId
 
   const [project] = await db
     .update(projects)
-    .set(updates)
+    .set(data.settings !== undefined ? { ...updates, settings: settingsMergeSql(data.settings) } : updates)
     .where(eq(projects.id, projectId))
     .returning()
 
   return project || null
+}
+
+// kairosFeed (what Kairos watches) changes only through the owner-only
+// setProjectKairosFeed; generic settings patches can't touch it.
+function settingsMergeSql(patch: Record<string, unknown>) {
+  const { kairosFeed: _ignored, ...rest } = patch
+  return sql`coalesce(${projects.settings}, '{}'::jsonb) || ${JSON.stringify(rest)}::jsonb`
+}
+
+function kairosFeedSql(feed: 'daily' | 'weekly') {
+  return sql`coalesce(${projects.settings}, '{}'::jsonb) || ${JSON.stringify({ kairosFeed: feed })}::jsonb`
+}
+
+/** Watch a board for Kairos (settings.kairosFeed); null stops watching. Other settings keys survive. */
+export async function setProjectKairosFeed(projectId: string, feed: 'daily' | 'weekly' | null) {
+  const settings = feed
+    ? kairosFeedSql(feed)
+    : sql`coalesce(${projects.settings}, '{}'::jsonb) - 'kairosFeed'`
+  const [project] = await db
+    .update(projects)
+    .set({ settings, updatedAt: new Date() })
+    .where(eq(projects.id, projectId))
+    .returning({ id: projects.id, settings: projects.settings })
+  return project || null
+}
+
+/** Owner, name, Dominion and settings of one project, for Kairos capture on a watched board. */
+export async function findProjectFeedInfo(projectId: string) {
+  const [project] = await db
+    .select({ id: projects.id, userId: projects.userId, name: projects.name, dominionId: projects.dominionId, settings: projects.settings })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1)
+  return project ?? null
 }
 
 export async function deleteProject(projectId: string, userId: string) {

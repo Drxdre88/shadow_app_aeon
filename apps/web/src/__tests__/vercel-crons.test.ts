@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 // Vercel cron fleet contract (docs/kairos/33-34): the daily message replaced
 // the evening digest and the morning briefs; the nightly engine and thinking
-// sweep stay scheduled; synthesis health (an input to the 07:00 daily
+// sweep stay scheduled; synthesis health (an input to the 06:00 London daily
 // message) runs before it; the crons retired in Kairos 0.17 stay gone.
 
 interface CronEntry { path: string; schedule: string }
@@ -31,8 +31,8 @@ describe('vercel.json crons', () => {
     }
   })
 
-  it('schedules the daily message at 07:00 and 08:00 UTC (London 08:00 across DST)', () => {
-    expect(byPath('/api/cron/daily-message')).toEqual([{ path: '/api/cron/daily-message', schedule: '0 7,8 * * *' }])
+  it('schedules the daily message at 05:00 and 06:00 UTC (London 06:00 across DST)', () => {
+    expect(byPath('/api/cron/daily-message')).toEqual([{ path: '/api/cron/daily-message', schedule: '0 5,6 * * *' }])
   })
 
   it('no longer schedules the deleted evening digest', () => {
@@ -46,13 +46,13 @@ describe('vercel.json crons', () => {
   })
 
   it.each(['/api/cron/synthesis-health'])(
-    '%s runs before 07:00 UTC (an input to the daily message)',
+    '%s runs before 05:00 UTC (an input to the 06:00 London daily message)',
     (p) => {
       const entries = byPath(p)
       expect(entries).toHaveLength(1)
       const times = fireMinutes(entries[0]!.schedule)
       expect(times.length).toBeGreaterThan(0)
-      for (const t of times) expect(t).toBeLessThan(7 * 60)
+      for (const t of times) expect(t).toBeLessThan(5 * 60)
     },
   )
 

@@ -9,12 +9,20 @@ vi.mock('@/lib/data/brain-status', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/data/brain-status')>()
   return { ...actual, listBrainJobsSince: vi.fn() }
 })
+vi.mock('@/lib/data/projects', () => ({ findOwnProjects: vi.fn() }))
+vi.mock('@/lib/data/dominions', () => ({
+  findDominionsByUser: vi.fn(),
+  listReposForUser: vi.fn(),
+  listRecentCaptureRepos: vi.fn(),
+}))
 
 import { auth } from '@/lib/auth'
 import { headers } from 'next/headers'
 import { listBrainJobsSince } from '@/lib/data/brain-status'
+import { findOwnProjects } from '@/lib/data/projects'
+import { findDominionsByUser, listReposForUser, listRecentCaptureRepos } from '@/lib/data/dominions'
 import { requireAuth } from '../helpers'
-import { getKairosBrainStatus } from '../kairos-brain'
+import { getKairosBrainStatus, getKairosWatchedOverview } from '../kairos-brain'
 
 const ENV_KEYS = [
   'AUTH_URL', 'NEXTAUTH_URL', 'NEXT_PUBLIC_APP_URL',
@@ -88,5 +96,44 @@ describe('getKairosBrainStatus', () => {
     expect((await getKairosBrainStatus()).isAdmin).toBe(true)
     vi.mocked(auth).mockResolvedValue({ user: { id: 'user-1', role: 'user' } } as never)
     expect((await getKairosBrainStatus()).isAdmin).toBe(false)
+  })
+})
+
+describe('getKairosWatchedOverview', () => {
+  beforeEach(() => {
+    vi.mocked(findOwnProjects).mockResolvedValue([
+      { id: 'p-1', name: 'Zeta', settings: {}, dominionId: null },
+      { id: 'p-2', name: 'AS Sprint', settings: { kairosFeed: 'daily' }, dominionId: 'd-1' },
+      { id: 'p-3', name: 'STP Sprint', settings: { kairosFeed: 'weekly', boardTheme: 'x' }, dominionId: 'd-gone' },
+    ] as never)
+    vi.mocked(findDominionsByUser).mockResolvedValue([
+      { id: 'd-1', name: 'KAIROS', color: 'purple', archivedAt: null },
+      { id: 'd-old', name: 'Old', color: 'blue', archivedAt: new Date() },
+    ] as never)
+    vi.mocked(listReposForUser).mockResolvedValue([{ dominionId: 'd-1', repoSlug: 'shadow_app_aeon' }])
+    vi.mocked(listRecentCaptureRepos).mockResolvedValue([
+      { repo: 'shadow_app_aeon', captures: 9, lastAt: new Date('2026-10-02T08:00:00Z') },
+      { repo: 'swarm', captures: 3, lastAt: new Date('2026-10-01T08:00:00Z') },
+    ])
+  })
+
+  it('rejects when unauthenticated and never queries', async () => {
+    vi.mocked(requireAuth).mockRejectedValue(new Error('Unauthorized'))
+    await expect(getKairosWatchedOverview()).rejects.toThrow('Unauthorized')
+    expect(findOwnProjects).not.toHaveBeenCalled()
+  })
+
+  it("lists the caller's own boards watched-first, live areas with repos, and unmapped recent repos", async () => {
+    const out = await getKairosWatchedOverview()
+    expect(findOwnProjects).toHaveBeenCalledWith('user-1')
+    expect(out.projects).toEqual([
+      { id: 'p-2', name: 'AS Sprint', feed: 'daily', areaName: 'KAIROS' },
+      { id: 'p-3', name: 'STP Sprint', feed: 'weekly', areaName: null },
+      { id: 'p-1', name: 'Zeta', feed: null, areaName: null },
+    ])
+    expect(out.areas).toEqual([{ id: 'd-1', name: 'KAIROS', color: 'purple', repos: ['shadow_app_aeon'] }])
+    expect(out.unmappedRepos).toEqual([{ repo: 'swarm', captures: 3, lastAt: '2026-10-01T08:00:00.000Z' }])
+    const [, since] = vi.mocked(listRecentCaptureRepos).mock.calls[0]!
+    expect(Date.now() - since.getTime()).toBeLessThan(14 * 86_400_000 + 5000)
   })
 })

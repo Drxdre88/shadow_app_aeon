@@ -2,7 +2,7 @@ import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialDecryptError, AiCredentialMissingError } from '@/lib/ai/router'
 import {
   createKairosAskMemory,
-  getPendingKairosAsk,
+  listOpenKairosAsks,
   listExpiredPendingKairosAskIds,
   listKairosReflectionStaleness,
   listRecentKairosAsks,
@@ -30,7 +30,13 @@ import {
 } from './ask-mine-prompt'
 
 const DAY_MS = 86_400_000
-const ASK_EXPIRY_MS = 72 * 60 * 60 * 1000
+// An ask stays open (answerable by its Q number) for 14 days; past that the
+// sweep expires it with a negative outcome.
+const ASK_EXPIRY_MS = 14 * DAY_MS
+// At most this many open asks; ask-mine stops adding while the backlog is full.
+export const ASK_BACKLOG_MAX = 10
+// Duplicate-guard lookback: covers every ask that can still be open.
+const ASK_DEDUP_LOOKBACK_DAYS = 15
 const MAX_OUTPUT_TOKENS = 4000
 const FUZZY_MATCH_THRESHOLD = 0.6
 
@@ -43,7 +49,7 @@ const TITLE_STOP_WORDS = new Set([
 // Thinking-queue key of a user's ask_mine job for one UTC date.
 export const askMineJobKey = (date: string) => `ask_mine:${date}`
 
-export type AskMineGateReason = 'pending' | 'awaiting_reply' | 'already_ran'
+export type AskMineGateReason = 'backlog_full' | 'awaiting_reply' | 'already_ran'
 
 export interface AskMineOptions {
   date?: string
@@ -297,24 +303,26 @@ async function tryCardNotesAsk(
   }
 }
 
-// Cheap gates, before any signal read: an open ask, an unanswered outbound
-// message, or an ask already mined for `date` each end the night for this user.
+// Cheap gates, before any signal read: a full backlog of open asks, an
+// unanswered outbound message, or an ask already mined for `date` each end the
+// night for this user. Open asks below the cap do NOT block: Kairos keeps
+// asking one new question a day (the duplicate guard prevents repeats).
 export async function askMineGate(
   userId: string,
   date: string,
   now: Date,
 ): Promise<{ skip: AskMineGateReason } | { skip: null; recentAsks: KairosAskRow[] }> {
-  const pending = await getPendingKairosAsk(userId)
-  if (pending) {
-    console.info('[ask-mine] pending ask exists; skipping user', { userId, askId: pending.id })
-    return { skip: 'pending' }
+  const open = await listOpenKairosAsks(userId, now)
+  if (open.length >= ASK_BACKLOG_MAX) {
+    console.info('[ask-mine] open-ask backlog full; skipping user', { userId, open: open.length })
+    return { skip: 'backlog_full' }
   }
   const conversation = await getConversationState(userId)
   if (conversation.awaitingReply) {
     console.info('[ask-mine] outbound reply outstanding; skipping user', { userId })
     return { skip: 'awaiting_reply' }
   }
-  const recentAsks = await listRecentKairosAsks(userId, 14, now)
+  const recentAsks = await listRecentKairosAsks(userId, ASK_DEDUP_LOOKBACK_DAYS, now)
   if (recentAsks.some((ask) => ask.askMine?.date === date)) {
     return { skip: 'already_ran' }
   }
@@ -391,7 +399,7 @@ export async function finishAskMine(
     (!candidate.dominionId || input.validDominionIds.has(candidate.dominionId))
     && candidate.sourceMemoryIds.every((id) => input.validSourceIds.has(id))
   ))
-  const recentAsks = input.recentAsks ?? await listRecentKairosAsks(userId, 14, now)
+  const recentAsks = input.recentAsks ?? await listRecentKairosAsks(userId, ASK_DEDUP_LOOKBACK_DAYS, now)
   const candidate = selectAskMineCandidate(groundedCandidates, recentAsks, date)
   if (!candidate) {
     return (await tryCardNotesAsk(userId, date, now)) ?? { status: 'skipped', date, reason: 'no_candidate' }

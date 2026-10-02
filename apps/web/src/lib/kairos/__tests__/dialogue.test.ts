@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('@/lib/data/ask', () => ({
-  getPendingKairosAsk: vi.fn(),
+  getOpenKairosAskById: vi.fn(),
   markKairosAskAnswered: vi.fn(),
   getPriorAethers: vi.fn(),
 }))
@@ -27,7 +27,7 @@ vi.mock('../retrieve', () => ({
 }))
 
 import { openKairosDialogue, prepareDialogueContext, commitDialogue } from '../dialogue'
-import { getPendingKairosAsk, markKairosAskAnswered, getPriorAethers } from '@/lib/data/ask'
+import { getOpenKairosAskById, markKairosAskAnswered, getPriorAethers } from '@/lib/data/ask'
 import { captureReflection } from '@/lib/data/memories'
 import {
   createDialogue,
@@ -78,7 +78,7 @@ beforeEach(() => {
 
 describe('openKairosDialogue — ask-seeded', () => {
   it('creates a thread and seeds Kairos\'s opening turn from the pending ask', async () => {
-    mock(getPendingKairosAsk).mockResolvedValue(pendingAsk())
+    mock(getOpenKairosAskById).mockResolvedValue(pendingAsk())
     mock(findOpenDialogueForAsk).mockResolvedValue(null)
     mock(createDialogue).mockResolvedValue(THREAD)
     mock(appendDialogueTurn).mockResolvedValue({ ok: true, turnId: 'turn-1', seq: 1 })
@@ -96,7 +96,7 @@ describe('openKairosDialogue — ask-seeded', () => {
   })
 
   it('is idempotent — returns the existing open dialogue without creating a new one', async () => {
-    mock(getPendingKairosAsk).mockResolvedValue(pendingAsk())
+    mock(getOpenKairosAskById).mockResolvedValue(pendingAsk())
     mock(findOpenDialogueForAsk).mockResolvedValue('existing-thread')
 
     const res = await openKairosDialogue(USER, { questionMemoryId: ASK_ID })
@@ -106,10 +106,21 @@ describe('openKairosDialogue — ask-seeded', () => {
     expect(appendDialogueTurn).not.toHaveBeenCalled()
   })
 
-  it('rejects when the question is not the current pending ask', async () => {
-    mock(getPendingKairosAsk).mockResolvedValue(pendingAsk({ id: 'different-id' }))
+  it('rejects when the question is not an open ask', async () => {
+    mock(getOpenKairosAskById).mockResolvedValue(null)
     const res = await openKairosDialogue(USER, { questionMemoryId: ASK_ID })
     expect(res).toEqual({ ok: false, reason: 'ask_not_found' })
+    expect(getOpenKairosAskById).toHaveBeenCalledWith(USER, ASK_ID)
+  })
+
+  it('opens a dialogue on any open ask in the backlog, not only the newest', async () => {
+    mock(getOpenKairosAskById).mockResolvedValue(pendingAsk({ id: 'older-ask' }))
+    mock(findOpenDialogueForAsk).mockResolvedValue(null)
+    mock(createDialogue).mockResolvedValue(THREAD)
+    mock(appendDialogueTurn).mockResolvedValue({ ok: true, turnId: 'turn-1', seq: 1 })
+    const res = await openKairosDialogue(USER, { questionMemoryId: 'older-ask' })
+    expect(res).toMatchObject({ ok: true, created: true })
+    expect(getOpenKairosAskById).toHaveBeenCalledWith(USER, 'older-ask')
   })
 })
 
@@ -203,7 +214,7 @@ describe('commitDialogue', () => {
     mock(loadDialogue).mockResolvedValue(threadWithAsk)
     mock(captureReflection).mockResolvedValue({ ok: true, memory: { id: 'ref-anchored' } })
     mock(writeFloatingReflection).mockResolvedValue('ref-floating')
-    mock(getPendingKairosAsk).mockResolvedValue(pendingAsk())
+    mock(getOpenKairosAskById).mockResolvedValue(pendingAsk())
     mock(closeDialogue).mockResolvedValue(true)
 
     const res = await commitDialogue(USER, THREAD, {
@@ -224,7 +235,7 @@ describe('commitDialogue', () => {
   it('auto-tags a floating reflection with dominion:<id> refs for the fronts it touches', async () => {
     mock(loadDialogue).mockResolvedValue(threadWithAsk)
     mock(writeFloatingReflection).mockResolvedValue('ref-1')
-    mock(getPendingKairosAsk).mockResolvedValue(pendingAsk())
+    mock(getOpenKairosAskById).mockResolvedValue(pendingAsk())
     mock(closeDialogue).mockResolvedValue(true)
     // both requested fronts are live + owned
     mock(filterLiveDominionIds).mockResolvedValue([DOM_SWARM, DOM_LAB])
@@ -241,7 +252,7 @@ describe('commitDialogue', () => {
   it('drops the home dominionId and any foreign ids from the reference tags', async () => {
     mock(loadDialogue).mockResolvedValue(threadWithAsk)
     mock(captureReflection).mockResolvedValue({ ok: true, memory: { id: 'ref-anchored' } })
-    mock(getPendingKairosAsk).mockResolvedValue(pendingAsk())
+    mock(getOpenKairosAskById).mockResolvedValue(pendingAsk())
     mock(closeDialogue).mockResolvedValue(true)
     // DOM_SWARM survives validation; the foreign id is dropped by the data layer
     mock(filterLiveDominionIds).mockResolvedValue([DOM_SWARM])

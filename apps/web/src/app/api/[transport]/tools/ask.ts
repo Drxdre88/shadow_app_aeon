@@ -1,8 +1,9 @@
 import { z } from 'zod'
-import { runKairosAsk, answerKairosAsk } from '@/lib/kairos/ask'
-import { getPendingKairosAsk } from '@/lib/data/ask'
+import { runKairosAsk, answerKairosAsk, dismissKairosAsk } from '@/lib/kairos/ask'
+import { getPendingKairosAsk, listOpenKairosAsks, toOpenKairosAskView } from '@/lib/data/ask'
+import { dismissKairosAskSchema, listOpenKairosAsksSchema } from '@/lib/data/validators/kairos-asks'
 import type { RegisterFn } from './types'
-import { getUserId, ok, notFound } from './types'
+import { getUserId, ok, notFound, fail } from './types'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Asks — MCP tools. Proactive-question layer above Aether.
@@ -15,10 +16,16 @@ import { getUserId, ok, notFound } from './types'
 //   selecting a new one — the read seam for delivery surfaces.
 //
 // answer_kairos_ask: record the operator's answer as a reflection anchored
-//   to the question's Dominion, then archive the question memory.
+//   to the question's Dominion, then archive the question memory. Any open
+//   ask can be answered by id, not just the newest.
 //
-// These tools are synthesis-surface only — NOT part of the Gantt MCP/REST
-// parity invariant (confirmed: gantt-parity.test.ts only reads gantt.ts).
+// list_open_kairos_asks / dismiss_kairos_ask: the Q-numbered open-question
+//   backlog the 06:00 message lists, and the operator's "skip". These two
+//   mirror /api/v1/kairos/asks (kairos-asks-parity.test.ts); the rest are
+//   synthesis-surface only.
+//
+// Not part of the Gantt MCP/REST parity invariant (gantt-parity.test.ts only
+// reads gantt.ts).
 // ─────────────────────────────────────────────────────────────────────────
 
 export const registerAskTools: RegisterFn = (server) => {
@@ -63,7 +70,7 @@ export const registerAskTools: RegisterFn = (server) => {
 
   server.tool(
     'get_pending_kairos_ask',
-    'Read the current pending (unanswered) Kairos question WITHOUT triggering a new selection. Returns { pending: null } when Kairos is not waiting on anything. Use this from a delivery surface (the Kairos view, a notification poller, a session opener) to check whether the operator owes Kairos an answer.',
+    'Read the newest open (unanswered) Kairos question WITHOUT triggering a new selection. Returns { pending: null } when Kairos is not waiting on anything. Several questions can be open at once — use list_open_kairos_asks for the full numbered backlog.',
     {},
     { title: 'Get Pending Kairos Ask', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (_args, extra) => {
@@ -108,6 +115,37 @@ export const registerAskTools: RegisterFn = (server) => {
       }
 
       return ok({ reflectionId: result.reflectionId })
+    },
+  )
+
+  server.tool(
+    'list_open_kairos_asks',
+    'List every open (unanswered, not expired, not dismissed) Kairos question, oldest first, each with its stable number (label "Q12"). This is the backlog the 06:00 morning message lists; answer one with answer_kairos_ask (by id) or drop it with dismiss_kairos_ask.',
+    {},
+    { title: 'List Open Kairos Asks', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    async (args, extra) => {
+      const uid = getUserId(extra)
+      const parsed = listOpenKairosAsksSchema.safeParse(args ?? {})
+      if (!parsed.success) return fail(parsed.error.issues[0].message)
+      const asks = (await listOpenKairosAsks(uid)).map(toOpenKairosAskView)
+      return ok({ count: asks.length, asks })
+    },
+  )
+
+  server.tool(
+    'dismiss_kairos_ask',
+    'Dismiss (skip) one open Kairos question: it leaves the backlog, is archived with status "dismissed", and — unlike expiry — records no negative outcome. Use only on the operator\'s request (e.g. "skip Q12").',
+    {
+      askId: z.string().uuid().describe('ID of the open kairos-ask memory (from list_open_kairos_asks)'),
+    },
+    { title: 'Dismiss Kairos Ask', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    async (args, extra) => {
+      const uid = getUserId(extra)
+      const parsed = dismissKairosAskSchema.safeParse(args)
+      if (!parsed.success) return fail(parsed.error.issues[0].message)
+      const result = await dismissKairosAsk(uid, parsed.data.askId)
+      if ('error' in result) return notFound('Open Kairos question')
+      return ok({ dismissed: true, id: result.id })
     },
   )
 }

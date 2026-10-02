@@ -10,6 +10,9 @@ import {
 import { markKairosSpeaksReplied } from '@/lib/data/memories'
 import { upsertJob } from '@/lib/data/thinking-jobs'
 import { buildAssistantTurn, sendChatMessage } from '@/lib/kairos/chat-turn'
+import { appendAssistantReplyOnce } from '@/lib/kairos/chat-turn-reply'
+import { answerNumberedKairosAsks, type NumberedAnswerOutcome } from '@/lib/kairos/ask'
+import { formatNumberedAck } from '@/lib/kairos/ask-numbered'
 import {
   chatJobKey,
   chatJobOwnsMessage,
@@ -186,18 +189,15 @@ async function handleTextMessage(
   const body = (message.text ?? '').trim()
   if (!body) return
 
+  // Deterministic pre-router: "Q12: …" answers / "skip Q12" against the open
+  // question backlog never reach the chat model. Plain prose falls through.
+  if (await routeNumberedAnswers(chatId!, operatorUserId, body)) return
+
   // One persistent whole-brain thread for the operator, found by title.
-  let threadId = await findOpenChatThreadByTitle(operatorUserId, TELEGRAM_THREAD_TITLE)
+  const threadId = await findOrCreateTelegramThread(operatorUserId)
   if (!threadId) {
-    const created = await createChatThread(operatorUserId, {
-      dominionId: null,
-      title: TELEGRAM_THREAD_TITLE,
-    })
-    if (!created.ok) {
-      await sendMessage(chatId!, 'Could not open the Telegram thread in Aeon.')
-      return
-    }
-    threadId = created.threadId
+    await sendMessage(chatId!, 'Could not open the Telegram thread in Aeon.')
+    return
   }
 
   if (telegramRoutineEnabled()) {
@@ -216,6 +216,43 @@ async function handleTextMessage(
   }
 
   await sendMessage(chatId!, telegramChatFailureText(result.reason))
+}
+
+async function findOrCreateTelegramThread(userId: string): Promise<string | null> {
+  const existing = await findOpenChatThreadByTitle(userId, TELEGRAM_THREAD_TITLE)
+  if (existing) return existing
+  const created = await createChatThread(userId, { dominionId: null, title: TELEGRAM_THREAD_TITLE })
+  return created.ok ? created.threadId : null
+}
+
+// Numbered answers to the 06:00 message's open questions. Answers are the
+// operator's own words (operator origin, via answerKairosAsk); one short ack
+// goes back, and the exchange is written into the Telegram thread so chat
+// history keeps it. Returns false (→ ordinary chat) when no label names an
+// open question, or when the backlog cannot be read.
+async function routeNumberedAnswers(chatId: number | string, userId: string, body: string): Promise<boolean> {
+  let outcome: NumberedAnswerOutcome
+  try {
+    outcome = await answerNumberedKairosAsks(userId, body)
+  } catch (err) {
+    console.error('[telegram-webhook] numbered-answer routing failed — handing the text to chat', err)
+    return false
+  }
+  if (!outcome.matched) return false
+
+  const ack = formatNumberedAck(outcome)
+  try {
+    const threadId = await findOrCreateTelegramThread(userId)
+    if (threadId) {
+      const turn = await appendChatMessage(userId, threadId, { role: 'user', content: body })
+      // Ledgered to this turn only, so an earlier in-flight chat turn still gets its reply.
+      if (turn.ok) await appendAssistantReplyOnce(userId, threadId, turn.seq, { content: ack })
+    }
+  } catch (err) {
+    console.error('[telegram-webhook] writing the numbered-answer exchange to the thread failed', err)
+  }
+  await sendMessage(chatId, ack)
+  return true
 }
 
 // Chat on the Max plan (docs/kairos/34 §5): persist the turn, queue a `chat`

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  boardDaySummary,
   buildBoardDayPage,
   buildBoardWeekPage,
+  buildCardDonePage,
+  collectFinishedTitles,
   isoWeekLabel,
   parseKairosFeed,
   type FeedCard,
@@ -156,5 +159,68 @@ describe('isoWeekLabel', () => {
     ['2024-12-30T00:00:00.000Z', '2025-W01'],
   ])('%s → %s', (iso, expected) => {
     expect(isoWeekLabel(new Date(iso))).toBe(expected)
+  })
+})
+
+describe('board_day summary line', () => {
+  it('names the first three finished cards and counts moves and adds', () => {
+    expect(boardDaySummary(['A', 'B', 'C', 'D', 'E'], 2, 1)).toBe('Finished 5: A, B, C +2 more · moved 2 · added 1')
+  })
+
+  it('drops empty parts', () => {
+    expect(boardDaySummary([], 4, 0)).toBe('moved 4')
+    expect(boardDaySummary(['Only'], 0, 0)).toBe('Finished 1: Only')
+  })
+
+  it('stays one short line however long the titles are', () => {
+    const summary = boardDaySummary(['x'.repeat(500), 'y'.repeat(500), 'z'.repeat(500)], 1, 1)
+    expect(summary.length).toBeLessThanOrEqual(280)
+    expect(summary.startsWith('Finished 3: ')).toBe(true)
+  })
+
+  it('is carried on the built page, newest finished first', () => {
+    const page = buildBoardDayPage({
+      projectName: 'AS Sprint',
+      date: '2026-09-30',
+      finished: [card({ taskId: 'a', title: 'Older', at: new Date('2026-09-30T08:00:00Z') }), card({ taskId: 'b', title: 'Newer' })],
+      started: [{ taskId: 'c', title: 'Moved', columnName: 'Live' }],
+      created: [],
+    })
+    expect(page!.summary).toBe('Finished 2: Newer, Older · moved 1')
+  })
+})
+
+describe('buildCardDonePage', () => {
+  it('renders one finished card in full with a one-line summary', () => {
+    const page = buildCardDonePage('AS Sprint', '2026-10-02', card({
+      title: 'Ship feed',
+      description: 'Board is the feed.',
+      labels: ['kairos'],
+      daysTaken: 2,
+      checklist: { done: 1, total: 1, items: [{ title: 'tests', done: true }] },
+    }))
+    expect(page.title).toBe('2026-10-02 · AS Sprint · done: Ship feed')
+    expect(page.summary).toBe('Finished "Ship feed" on AS Sprint · 2d · checklist 1/1')
+    expect(page.bodyMd).toContain('**Ship feed** · checklist 1/1 · labels: kairos · 2d')
+    expect(page.bodyMd).toContain('Notes: Board is the feed.')
+    expect(page.bodyMd).toContain('- [x] tests')
+  })
+
+  it('flags a title-only card', () => {
+    expect(buildCardDonePage('B', '2026-10-02', card()).bodyMd).toContain('Title only')
+  })
+})
+
+describe('collectFinishedTitles', () => {
+  it('reads board_card_done and board_day metadata, dedupes, and caps', () => {
+    const titles = collectFinishedTitles([
+      { kind: 'board_card_done', cardTitle: 'Ship feed' },
+      { kind: 'board_day', finished: [{ taskId: 't', title: 'ship  feed' }, { vaultId: 'v', title: 'Fix login' }, { junk: 1 }] },
+      { kind: 'board_card_done' },
+      null,
+      { kind: 'board_day', finished: Array.from({ length: 30 }, (_, i) => ({ title: `Card ${i}` })) },
+    ])
+    expect(titles.slice(0, 3)).toEqual(['Ship feed', 'Fix login', 'Card 0'])
+    expect(titles).toHaveLength(15)
   })
 })

@@ -23,18 +23,20 @@ import { deadlineOn, minutesUntil, utcDayStart } from '../deadlines'
 
 // Daily message on the thinking queue (docs/kairos/34 §3): one job per user
 // per London date, with exactly the compose prompt the daily-message cron
-// would send on the paid key. Planned from 05:30 UTC once the night's thinking
+// would send on the paid key. Planned from 04:00 UTC once the night's thinking
 // that feeds it is settled (no live aether / idea / ask job left), or from
-// 06:25 UTC regardless. The deadline is 07:55 London (5 min before delivery).
-// apply only guards the draft and returns it as `output.draft` (the queue
-// merges it into the completed job's output) — the 08:00 London cron delivers
-// it. Fallback = that cron (paid key, then deterministic); the sweep only
-// marks the job expired.
+// 04:35 UTC regardless — so the 04:40Z brain-routine run drafts it in BST
+// (delivery 05:00Z); in GMT the 05:40Z run does. The deadline is 05:55 London
+// (5 min before delivery). apply only guards the draft and returns it as
+// `output.draft` (the queue merges it into the completed job's output) — the
+// 06:00 London cron delivers it, appending the numbered open-questions block
+// at send time. Fallback = that cron (paid key, then deterministic); the
+// sweep only marks the job expired.
 
 const DEADLINE_LEAD_MS = 5 * 60_000
-export const DAILY_MESSAGE_OPENS_UTC = { hour: 5, minute: 30 }
+export const DAILY_MESSAGE_OPENS_UTC = { hour: 4, minute: 0 }
 // Past this, plan on whatever exists even if a feeding job is still open.
-export const NIGHT_SETTLED_UTC = { hour: 6, minute: 25 }
+export const NIGHT_SETTLED_UTC = { hour: 4, minute: 35 }
 // Jobs whose output the message reads; a live one delays planning.
 const FEEDING_KINDS = new Set(['aether', 'idea_generate', 'idea_judge', 'ask_mine'])
 const OPEN = new Set(['queued', 'claimed'])
@@ -99,6 +101,6 @@ export const dailyMessageHandler: ThinkingJobHandler = {
   kind: DAILY_MESSAGE_KIND,
   plan,
   apply,
-  // The 08:00 London daily-message cron composes on the paid key itself.
+  // The 06:00 London daily-message cron composes on the paid key itself.
   fallback: async () => ({ ok: false, reason: 'deferred to the daily-message cron' }),
 }

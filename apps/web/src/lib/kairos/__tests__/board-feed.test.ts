@@ -126,6 +126,7 @@ describe('daily board page', () => {
         { taskId: 'done-thin', title: 'Deploy' },
       ],
     })
+    expect(input.summary).toBe('Finished 3: Fix login, Deploy, Ship feed · moved 2 · added 1')
     expect(input.bodyMd).toContain('**Ship feed** · checklist 1/2 · labels: kairos · 3d')
     expect(input.bodyMd).toContain('**Fix login** · labels: bug · 2d')
     expect(input.bodyMd).toContain('- Old card → Live')

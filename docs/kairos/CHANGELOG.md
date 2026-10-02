@@ -4,6 +4,15 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–35).
 
+## [0.18.0] — 2026-10-02 · "Catch-up mornings, watched boards, voice notes"
+
+> The morning message moves to 06:00 and carries every unanswered question, numbered, so an off week can be caught up. Finished cards on watched boards reach Kairos the same day. Long voice notes from claude.ai arrive word for word and count as the owner's own words once confirmed. The first constitution draft runs on Max.
+
+- **06:00 message with open questions.** One morning message at 06:00 London. Code appends "Open questions": every unanswered question with a stable number and age (`Q12 · 3 days · …`). Up to 10 stay open for 14 days; Kairos keeps asking one new question a day until the backlog is full. Reply on Telegram with `Q12: …` (several at once) or `skip Q12`; the inbox shows each open question with its own answer box and Dismiss. New MCP/REST: `list_open_kairos_asks`, `dismiss_kairos_ask`.
+- **Watched boards.** A board's watch setting (Off / Daily / Weekly) is set in Connect Kairos → Watched, or with `set_project_kairos_feed` / `PUT /api/v1/projects/{id}/kairos-feed` (owner only). On a watched board each finished card becomes an activity memory the same day (notes, checklist, labels, days taken); nightly board pages gain a summary line; area summaries read the cards finished on watched boards. `update_project` now merges settings instead of replacing them. Core repos per area are listed with a warning for repos that map to no area.
+- **Voice notes from claude.ai.** New `kairos_voice_note` tool (and `POST /api/v1/kairos/voice-notes`): the transcript is stored verbatim in parts as pending proposals; one tap in the inbox ("Confirm all") makes them the owner's own reflections, and belief extraction reads up to 2,000 characters of each confirmed part. Claude's own summary is kept separately and never counts as the owner's words. Connect Kairos → Voice notes has the claude.ai Project instruction to paste.
+- **Constitution draft on Max.** New thinking kind `constitution_seed` (Mondays, answered by the brain routine); the cron moves to 05:58 UTC as a backup.
+- **Retired:** the on-demand BRIEF recipe (`run_recipe`, `POST /api/v1/recipes/run`).
 ## [0.17.0] — 2026-10-02 · "Simplified brain: one Max routine"
 
 > Kairos keeps only the thinking that helps. Four jobs and five scheduled tasks are retired, and one Claude Max routine ("Kairos brain", every hour 01:40–06:40 UTC) answers everything that is left, plus a separate "Kairos chat" routine for Telegram. Routine catalog: `apps/web/src/lib/kairos/routines/catalog.ts`.

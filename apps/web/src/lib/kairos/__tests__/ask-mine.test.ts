@@ -4,7 +4,7 @@ vi.mock('@/lib/db', () => ({ db: {} }))
 
 vi.mock('@/lib/data/ask', () => ({
   createKairosAskMemory: vi.fn(),
-  getPendingKairosAsk: vi.fn(),
+  listOpenKairosAsks: vi.fn(),
   listKairosReflectionStaleness: vi.fn(),
   listRecentKairosAsks: vi.fn(),
 }))
@@ -47,7 +47,7 @@ vi.mock('@/lib/ai/router', () => ({
 import { getProviderForTask } from '@/lib/ai/route-task'
 import {
   createKairosAskMemory,
-  getPendingKairosAsk,
+  listOpenKairosAsks,
   listKairosReflectionStaleness,
   listRecentKairosAsks,
   type KairosAskRow,
@@ -63,6 +63,7 @@ import { listBoardDayPages } from '@/lib/data/board-feed'
 import { fetchAetherInputs } from '@/lib/kairos/aether'
 import { getConversationState } from '@/lib/kairos/engagement'
 import {
+  ASK_BACKLOG_MAX,
   buildCardNotesQuestion,
   parseAskMineResponse,
   runAskMineForUser,
@@ -112,6 +113,10 @@ function recentAsk(overrides: Partial<KairosAskRow> = {}): KairosAskRow {
   }
 }
 
+function openAsks(n: number) {
+  return Array.from({ length: n }, (_, i) => ({ ...recentAsk({ id: `open-${i + 1}` }), seq: i + 1 }))
+}
+
 function providerResponse(candidates: unknown[], critiques: unknown[]) {
   return {
     text: JSON.stringify({ candidates, selfCritique: critiques }),
@@ -139,7 +144,7 @@ function routedProvider(ask: ReturnType<typeof vi.fn>): Awaited<ReturnType<typeo
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(getPendingKairosAsk).mockResolvedValue(null)
+  vi.mocked(listOpenKairosAsks).mockResolvedValue([])
   vi.mocked(isJobDone).mockResolvedValue(false)
   vi.mocked(getConversationState).mockResolvedValue({
     lastOutbound: null,
@@ -305,17 +310,27 @@ describe('ask mining', () => {
     expect(selected?.sourceMemoryIds).toEqual(['fresh-3'])
   })
 
-  it('short-circuits before signals or provider work when a pending ask exists', async () => {
-    vi.mocked(getPendingKairosAsk).mockResolvedValue(recentAsk({
-      kairosAsk: { ...recentAsk().kairosAsk, status: 'pending' },
-    }))
+  it('short-circuits before signals or provider work when the open-ask backlog is full (10)', async () => {
+    vi.mocked(listOpenKairosAsks).mockResolvedValue(openAsks(ASK_BACKLOG_MAX))
 
     const result = await runAskMineForUser(USER_ID, { date: DATE, now: NOW })
 
-    expect(result).toMatchObject({ status: 'skipped', reason: 'pending' })
+    expect(result).toMatchObject({ status: 'skipped', reason: 'backlog_full' })
+    expect(listOpenKairosAsks).toHaveBeenCalledWith(USER_ID, NOW)
     expect(getConversationState).not.toHaveBeenCalled()
     expect(fetchAetherInputs).not.toHaveBeenCalled()
     expect(getProviderForTask).not.toHaveBeenCalled()
+  })
+
+  it('keeps asking a new question while earlier ones are still open (below the cap)', async () => {
+    vi.mocked(listOpenKairosAsks).mockResolvedValue(openAsks(ASK_BACKLOG_MAX - 1))
+
+    const result = await runAskMineForUser(USER_ID, { date: DATE, now: NOW })
+
+    expect(result).toMatchObject({ status: 'created', askId: 'ask-new' })
+    expect(createKairosAskMemory).toHaveBeenCalledTimes(1)
+    // The duplicate guard looks back far enough to cover every still-open ask.
+    expect(listRecentKairosAsks).toHaveBeenCalledWith(USER_ID, 15, NOW)
   })
 
   it('skips as already_ran without signals or a model call once the routine answered tonight\'s job', async () => {
@@ -330,12 +345,12 @@ describe('ask mining', () => {
     expect(createKairosAskMemory).not.toHaveBeenCalled()
   })
 
-  it('stamps ask-mine provenance, stable idempotency, and a 72-hour expiry', async () => {
+  it('stamps ask-mine provenance, stable idempotency, and a 14-day expiry', async () => {
     await runAskMineForUser(USER_ID, { date: DATE, now: NOW })
 
     expect(createKairosAskMemory).toHaveBeenCalledWith(USER_ID, expect.objectContaining({
       askedAt: NOW.toISOString(),
-      expiresAt: '2026-07-22T04:30:00.000Z',
+      expiresAt: '2026-08-02T04:30:00.000Z',
       externalId: `ask-mine:${DATE}:1`,
       askMine: expect.objectContaining({
         date: DATE,
@@ -406,7 +421,7 @@ describe('thin-card nudge (card_notes)', () => {
     expect(createKairosAskMemory).toHaveBeenCalledWith(USER_ID, expect.objectContaining({
       dominionId: DOMINION_ID,
       externalId: `ask-mine:${DATE}:card-notes`,
-      expiresAt: '2026-07-22T04:30:00.000Z',
+      expiresAt: '2026-08-02T04:30:00.000Z',
       sourceMemoryIds: ['page-1', 'task-a', 'task-c'],
       askMine: expect.objectContaining({ date: DATE, kind: 'card_notes' }),
       cardNotes: {
@@ -452,7 +467,7 @@ describe('thin-card nudge (card_notes)', () => {
   })
 
   it.each([
-    ['pending ask', () => vi.mocked(getPendingKairosAsk).mockResolvedValue(recentAsk({ kairosAsk: { ...recentAsk().kairosAsk, status: 'pending' } })), 'pending'],
+    ['backlog full', () => vi.mocked(listOpenKairosAsks).mockResolvedValue(openAsks(ASK_BACKLOG_MAX)), 'backlog_full'],
     ['awaiting reply', () => vi.mocked(getConversationState).mockResolvedValue({ lastOutbound: null, replied: false, awaitingReply: true, replyRate7d: 0 }), 'awaiting_reply'],
     ['already asked today', () => vi.mocked(listRecentKairosAsks).mockResolvedValue([recentAsk({ askMine: { date: DATE, kind: 'card_notes', sourceMemoryIds: [], leverage: 0.5 } })]), 'already_ran'],
   ])('respects the %s gate', async (_label, arrange, reason) => {

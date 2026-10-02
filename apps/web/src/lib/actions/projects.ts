@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireAuth, requireOwnership, requireEditor, requireMember } from './helpers'
+import { requireAuth, requireOwnership, requireOwner, requireEditor, requireMember } from './helpers'
 import {
   findProjects as _findProjects,
   findProjectsWithStats as _findProjectsWithStats,
@@ -20,9 +20,10 @@ import {
   findFavoriteProjects as _findFavoriteProjects,
   findProjectSettings as _findProjectSettings,
   mergeProjectSettings as _mergeProjectSettings,
+  setProjectKairosFeed as _setProjectKairosFeed,
 } from '@/lib/data/projects'
-import { createProjectSchema, updateProjectSchema } from '@/lib/data/validators'
-import type { UpdateProjectInput } from '@/lib/data/validators'
+import { createProjectSchema, updateProjectSchema, setProjectKairosFeedSchema } from '@/lib/data/validators'
+import type { UpdateProjectInput, SetProjectKairosFeedInput } from '@/lib/data/validators'
 import { createDefaultColumns } from '@/lib/data/columns'
 import { captureProjectEvent } from '@/lib/kairos/auto-capture'
 
@@ -125,6 +126,15 @@ export async function updateProjectSettings(projectId: string, settings: Record<
   const project = await _mergeProjectSettings(projectId, settings)
   revalidatePath(`/project/${projectId}`)
   return project
+}
+
+export async function setProjectKairosFeed(projectId: string, feed: SetProjectKairosFeedInput['feed']) {
+  await requireOwner(projectId)
+  const parsed = setProjectKairosFeedSchema.parse({ feed })
+  const project = await _setProjectKairosFeed(projectId, parsed.feed)
+  if (!project) throw new Error('Project not found')
+  revalidatePath(`/project/${projectId}`)
+  return { projectId, feed: parsed.feed }
 }
 
 export async function toggleProjectFavorite(projectId: string, favorite: boolean) {

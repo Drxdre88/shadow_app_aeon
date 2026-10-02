@@ -4,9 +4,9 @@ import { runDailyMessageForUser } from '@/lib/kairos/daily-message'
 import { DAILY_MESSAGE_HOUR, isLondonHour } from '@/lib/kairos/daily-message-prompt'
 
 // ─────────────────────────────────────────────────────────────────────────
-// Kairos — Daily Message cron (docs/kairos/34 §3). Scheduled at 07:00Z and
-// 08:00Z; only the slot that is 08:00 Europe/London runs (BST → 07:00Z,
-// GMT → 08:00Z). `?force=1` runs outside the hour (manual); `?dryRun=1`
+// Kairos — Daily Message cron (docs/kairos/34 §3). Scheduled at 05:00Z and
+// 06:00Z; only the slot that is 06:00 Europe/London runs (BST → 05:00Z,
+// GMT → 06:00Z). `?force=1` runs outside the hour (manual); `?dryRun=1`
 // composes and returns the message without delivering (any hour). Both still
 // require CRON_SECRET. Single-operator: KAIROS_OPERATOR_USER_ID.
 // runDailyMessageForUser owns every failure mode and never throws.

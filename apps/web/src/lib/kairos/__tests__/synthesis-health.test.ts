@@ -318,6 +318,62 @@ describe('computeSynthesisHealth — expected nightly stage: idea-tournament (P3
     expect(result.missingStages).toEqual({})
   })
 
+  describe('at the 04:25Z slot (before the 06:00 London message)', () => {
+    const SLOT = new Date('2026-07-22T04:25:00.000Z')
+    const withMissing = (missingStages: Record<string, string[]>, alertedStages: string[] = []): Row => ({
+      ...rollupRow(alertedStages),
+      sourceMetadata: { recipe: 'SYNTHESIS_HEALTH', byStage: {}, alertedStages, expectedStages: { 'idea-tournament': ARMED }, missingStages },
+      createdAt: new Date('2026-07-21T04:25:00.000Z'),
+    })
+
+    beforeEach(() => vi.setSystemTime(SLOT))
+
+    it('never judges tonight\'s tournament (still running) — last night traced → healthy, no alert', async () => {
+      mockHistory([withMissing({})], [outcomeRow('t1', 'idea-tournament', '2026-07-21T05:10:00.000Z')])
+
+      const result = await computeSynthesisHealth(USER)
+
+      expect(result.byStage['idea-tournament']).toEqual({ '2026-07-21': 'ok' })
+      expect(result.missingStages).toEqual({})
+      expect(deliverKairosSpeak).not.toHaveBeenCalled()
+    })
+
+    it('one missing night is failed + missing but not yet a 2-strike', async () => {
+      mockHistory([withMissing({})], [outcomeRow('t0', 'idea-tournament', '2026-07-20T05:10:00.000Z')])
+
+      const result = await computeSynthesisHealth(USER)
+
+      expect(result.byStage['idea-tournament']).toEqual({ '2026-07-20': 'ok', '2026-07-21': 'failed' })
+      expect(result.missingStages).toEqual({ 'idea-tournament': ['2026-07-21'] })
+      expect(result.alertedStages).toEqual([])
+      expect(deliverKairosSpeak).not.toHaveBeenCalled()
+    })
+
+    it('carries the night the previous rollup found missing, so two missing nights alert', async () => {
+      mockHistory([withMissing({ 'idea-tournament': ['2026-07-20'] })], [])
+
+      const result = await computeSynthesisHealth(USER)
+
+      expect(result.byStage['idea-tournament']).toEqual({ '2026-07-20': 'failed', '2026-07-21': 'failed' })
+      expect(result.missingStages).toEqual({ 'idea-tournament': ['2026-07-20', '2026-07-21'] })
+      expect(result.alertedStages).toEqual(['idea-tournament'])
+      expect(deliverKairosSpeak).toHaveBeenCalledTimes(1)
+    })
+
+    it('a late trace for a carried night clears it; carried nights older than two nights are dropped', async () => {
+      mockHistory([withMissing({ 'idea-tournament': ['2026-07-18', '2026-07-20'] })], [
+        outcomeRow('late', 'idea-tournament', '2026-07-20T09:00:00.000Z'),
+        outcomeRow('t1', 'idea-tournament', '2026-07-21T05:10:00.000Z'),
+      ])
+
+      const result = await computeSynthesisHealth(USER)
+
+      expect(result.byStage['idea-tournament']).toEqual({ '2026-07-20': 'ok', '2026-07-21': 'ok' })
+      expect(result.missingStages).toEqual({})
+      expect(deliverKairosSpeak).not.toHaveBeenCalled()
+    })
+  })
+
   it('disarms a stage not seen for more than 14 days', async () => {
     mockHistory([rollupWithExpected({ 'idea-tournament': { since: '2026-06-01', lastSeen: '2026-07-01' } })], [])
 
@@ -404,5 +460,14 @@ describe('computeSynthesisHealth — 2-strike alert + alertedStages dedupe (T-B3
     expect(deliverKairosSpeak).not.toHaveBeenCalled()
     expect(captureMemory).toHaveBeenCalledOnce()
     expect(result.alertedStages).toEqual(['cortex-regen'])
+  })
+})
+
+describe('synthesis-health schedule', () => {
+  it('runs at 04:25Z — before the 06:00 London message is drafted, after the night\'s core synthesis', async () => {
+    const { readFileSync } = await import('node:fs')
+    const path = await import('node:path')
+    const config = JSON.parse(readFileSync(path.resolve(__dirname, '../../../../vercel.json'), 'utf8')) as { crons: Array<{ path: string; schedule: string }> }
+    expect(config.crons.filter((c) => c.path === '/api/cron/synthesis-health')).toEqual([{ path: '/api/cron/synthesis-health', schedule: '25 4 * * *' }])
   })
 })

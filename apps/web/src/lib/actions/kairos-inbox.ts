@@ -3,7 +3,7 @@
 import { z } from 'zod'
 import { requireAuth } from '@/lib/actions/helpers'
 import { getKairosInbox } from '@/lib/data/inbox'
-import { answerKairosAsk } from '@/lib/kairos/ask'
+import { answerKairosAsk, dismissKairosAsk } from '@/lib/kairos/ask'
 import { acceptInboxProposal, dismissInboxMemory } from '@/lib/kairos/proposal-accept'
 
 const memoryIdSchema = z.string().uuid()
@@ -30,6 +30,15 @@ export async function answerKairosInboxAsk(questionMemoryId: string, answer: str
   }
 
   return result
+}
+
+// The owner's "skip": the question leaves the backlog without an answer and
+// without a negative outcome.
+export async function dismissKairosInboxAsk(questionMemoryId: string) {
+  const userId = await requireAuth()
+  const result = await dismissKairosAsk(userId, memoryIdSchema.parse(questionMemoryId))
+  if ('error' in result) throw new Error('Kairos question not found')
+  return { id: result.id }
 }
 
 export async function acceptKairosInboxProposal(memoryId: string) {

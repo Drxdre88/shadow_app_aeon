@@ -9,7 +9,7 @@ vi.mock('@/lib/data/thinking-jobs', () => ({
 }))
 vi.mock('@/lib/data/ask', () => ({
   createKairosAskMemory: vi.fn(),
-  getPendingKairosAsk: vi.fn(),
+  listOpenKairosAsks: vi.fn(),
   listKairosReflectionStaleness: vi.fn(),
   listRecentKairosAsks: vi.fn(),
 }))
@@ -28,7 +28,7 @@ vi.mock('@/lib/ai/route-task', () => ({ getProviderForTask: vi.fn() }))
 import { getProviderForTask } from '@/lib/ai/route-task'
 import {
   createKairosAskMemory,
-  getPendingKairosAsk,
+  listOpenKairosAsks,
   listKairosReflectionStaleness,
   listRecentKairosAsks,
   type KairosAskRow,
@@ -147,7 +147,7 @@ beforeEach(() => {
   vi.mocked(isJobDone).mockResolvedValue(false)
   vi.mocked(aether.alreadyRanToday).mockResolvedValue(true)
   vi.mocked(aether.fetchAetherInputs).mockResolvedValue(aetherInputs as never)
-  vi.mocked(getPendingKairosAsk).mockResolvedValue(null)
+  vi.mocked(listOpenKairosAsks).mockResolvedValue([])
   vi.mocked(getConversationState).mockResolvedValue({ lastOutbound: null, replied: false, awaitingReply: false, replyRate7d: 0 })
   vi.mocked(listRecentKairosAsks).mockResolvedValue([])
   vi.mocked(listKairosReflectionStaleness).mockResolvedValue([])
@@ -168,7 +168,7 @@ describe('ask_mine handler — plan', () => {
     expect(await askMineHandler.plan(USER, at(hhmm))).toEqual([])
     expect(hasJobWithKeyLike).not.toHaveBeenCalled()
     expect(aether.alreadyRanToday).not.toHaveBeenCalled()
-    expect(getPendingKairosAsk).not.toHaveBeenCalled()
+    expect(listOpenKairosAsks).not.toHaveBeenCalled()
   })
 
   it('plans one job with exactly the cron prompt, fed source ids and a 04:28Z deadline', async () => {
@@ -190,7 +190,7 @@ describe('ask_mine handler — plan', () => {
     // Before 03:30 without today's aether: wait (the 03:15 fallback may still run).
     vi.mocked(aether.alreadyRanToday).mockResolvedValue(false)
     expect(await askMineHandler.plan(USER, at('03:20'))).toEqual([])
-    expect(getPendingKairosAsk).not.toHaveBeenCalled()
+    expect(listOpenKairosAsks).not.toHaveBeenCalled()
     // From 03:30 plan on whatever aether exists.
     expect(await askMineHandler.plan(USER, at('03:30'))).toHaveLength(1)
     // Today's aether already in: plan straight away.
@@ -255,12 +255,20 @@ describe('ask_mine handler — apply', () => {
     expect(createKairosAskMemory).not.toHaveBeenCalled()
   })
 
-  it('completes without an ask when a pending ask appeared since planning (the cron would skip too)', async () => {
-    vi.mocked(getPendingKairosAsk).mockResolvedValue(priorAsk({ kairosAsk: { ...priorAsk().kairosAsk, status: 'pending' } }))
+  it('completes without an ask when the open-ask backlog filled up since planning (the cron would skip too)', async () => {
+    const open = Array.from({ length: 10 }, (_, i) => ({ ...priorAsk({ id: `open-${i}` }), seq: i + 1 }))
+    vi.mocked(listOpenKairosAsks).mockResolvedValue(open)
     const res = await askMineHandler.apply(jobRow(), answer(), 'routine')
-    expect(res).toEqual({ ok: true, memoryIds: [], output: { skipped: 'pending', answeredBy: 'routine' } })
+    expect(res).toEqual({ ok: true, memoryIds: [], output: { skipped: 'backlog_full', answeredBy: 'routine' } })
     expect(createKairosAskMemory).not.toHaveBeenCalled()
-    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER, { cronName: 'ask-mine', outcome: 'skipped', skipReason: 'pending' })
+    expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER, { cronName: 'ask-mine', outcome: 'skipped', skipReason: 'backlog_full' })
+  })
+
+  it('still asks when one question is already open (below the cap)', async () => {
+    vi.mocked(listOpenKairosAsks).mockResolvedValue([{ ...priorAsk({ id: 'open-1' }), seq: 1 }])
+    const res = await askMineHandler.apply(jobRow(), answer(), 'routine')
+    expect(res).toMatchObject({ ok: true, memoryIds: [expect.any(String)] })
+    expect(createKairosAskMemory).toHaveBeenCalledTimes(1)
   })
 
   it('fallback defers to the 04:30 cron', async () => {

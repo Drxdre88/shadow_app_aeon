@@ -29,6 +29,25 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.35.0] — 2026-10-02
+
+> Areas touched: \`KAIROS\` \`UI\` \`MCP\` \`API\`
+> Theme: Catch-up mornings, watched boards, voice notes. Full detail: \`docs/kairos/CHANGELOG.md\` 0.18.
+
+### Changed — Morning message at 06:00 · \`KAIROS\`
+- Kairos's single morning message now arrives at 06:00 UK and ends with every question he is still waiting on, numbered. Answer on Telegram with "Q12: …" or drop one with "skip Q12"; questions stay open for two weeks.
+
+### Added — Watched boards · \`KAIROS\` \`UI\` \`MCP\` \`API\`
+- Choose which boards Kairos watches (Off / Daily / Weekly) in Connect Kairos. Cards you finish on a watched board reach him the same day, with their notes and checklists.
+
+### Added — Voice notes from claude.ai · \`KAIROS\` \`UI\` \`MCP\` \`API\`
+- Say "note for Kairos" in the Claude app and your words arrive exactly as spoken. Confirm them with one tap in the inbox and they count as your own words.
+
+### Changed — Constitution draft on Max · \`KAIROS\`
+- The first constitution draft is written on your Claude Max plan; the paid key is only a backup.
+
+### Removed — Brief recipe · \`MCP\` \`API\`
+- The on-demand brief command is gone.
 ## [0.34.0] — 2026-10-02
 
 > Areas touched: \`KAIROS\` \`UI\` \`MCP\` \`API\`

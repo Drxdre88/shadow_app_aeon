@@ -8,6 +8,7 @@ vi.mock('next/cache', () => ({
 vi.mock('@/lib/actions/helpers', () => ({
   requireAuth: vi.fn(),
   requireOwnership: vi.fn(),
+  requireOwner: vi.fn(),
   requireEditor: vi.fn(),
 }))
 
@@ -19,6 +20,7 @@ vi.mock('@/lib/data/projects', () => ({
   deleteProject: vi.fn(),
   setProjectGroup: vi.fn(),
   renameGroup: vi.fn(),
+  setProjectKairosFeed: vi.fn(),
 }))
 
 vi.mock('@/lib/data/columns', () => ({
@@ -31,7 +33,7 @@ vi.mock('@/lib/kairos/auto-capture', () => ({
 }))
 
 import { revalidatePath } from 'next/cache'
-import { requireAuth, requireOwnership, requireEditor } from '@/lib/actions/helpers'
+import { requireAuth, requireOwnership, requireOwner, requireEditor } from '@/lib/actions/helpers'
 import {
   findProjects,
   findProjectsWithStats,
@@ -40,6 +42,7 @@ import {
   deleteProject as _deleteProject,
   setProjectGroup as _setProjectGroup,
   renameGroup,
+  setProjectKairosFeed as _setProjectKairosFeed,
 } from '@/lib/data/projects'
 import { createDefaultColumns } from '@/lib/data/columns'
 import {
@@ -50,10 +53,12 @@ import {
   createProject,
   updateProject,
   deleteProject,
+  setProjectKairosFeed,
 } from '@/lib/actions/projects'
 
 const mockRequireAuth = vi.mocked(requireAuth)
 const mockRequireOwnership = vi.mocked(requireOwnership)
+const mockRequireOwner = vi.mocked(requireOwner)
 const mockRequireEditor = vi.mocked(requireEditor)
 const mockFindProjects = vi.mocked(findProjects)
 const mockFindProjectsWithStats = vi.mocked(findProjectsWithStats)
@@ -364,5 +369,36 @@ describe('deleteProject', () => {
 
     await expect(deleteProject('proj-1')).rejects.toThrow()
     expect(mockRevalidatePath).not.toHaveBeenCalled()
+  })
+})
+
+describe('setProjectKairosFeed', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequireOwner.mockResolvedValue('user-1')
+    vi.mocked(_setProjectKairosFeed).mockResolvedValue({ id: 'proj-1', settings: { kairosFeed: 'daily' } })
+  })
+
+  it('guards with requireOwner (owner only), then writes the validated feed', async () => {
+    expect(await setProjectKairosFeed('proj-1', 'daily')).toEqual({ projectId: 'proj-1', feed: 'daily' })
+    expect(mockRequireOwner).toHaveBeenCalledWith('proj-1')
+    expect(_setProjectKairosFeed).toHaveBeenCalledWith('proj-1', 'daily')
+    expect(mockRevalidatePath).toHaveBeenCalledWith('/project/proj-1')
+  })
+
+  it('accepts null to stop watching', async () => {
+    await setProjectKairosFeed('proj-1', null)
+    expect(_setProjectKairosFeed).toHaveBeenCalledWith('proj-1', null)
+  })
+
+  it('rejects an unknown mode before touching the database', async () => {
+    await expect(setProjectKairosFeed('proj-1', 'hourly' as never)).rejects.toThrow(ZodError)
+    expect(_setProjectKairosFeed).not.toHaveBeenCalled()
+  })
+
+  it('does not write when the guard refuses', async () => {
+    mockRequireOwner.mockRejectedValue(new Error('Project not found or unauthorized'))
+    await expect(setProjectKairosFeed('proj-1', 'daily')).rejects.toThrow('unauthorized')
+    expect(_setProjectKairosFeed).not.toHaveBeenCalled()
   })
 })
