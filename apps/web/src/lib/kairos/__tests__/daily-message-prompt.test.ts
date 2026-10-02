@@ -9,6 +9,7 @@ import {
   buildBeliefsBlock,
   buildDailyMessageUserPrompt,
   buildDeterministicDailyMessage,
+  buildGoalsBlock,
   buildOpenQuestionsBlock,
   isLondonHour,
   isLondonMonday,
@@ -246,5 +247,33 @@ describe('open questions block', () => {
     expect(out.length).toBeLessThanOrEqual(DAILY_MESSAGE_TOTAL_MAX_CHARS)
     for (let seq = 1; seq <= 10; seq++) expect(out).toContain(`Q${seq} · `)
     expect(out).toContain("'skip Q1' drops one.")
+  })
+})
+
+describe('buildGoalsBlock', () => {
+  const AT = new Date('2026-10-01T05:00:00.000Z') // 06:00 London (BST)
+  const pending = { title: 'Name the deploy cause', state: 'proposed' as const, dueAt: null, expiresAt: '2026-10-03T13:00:00.000Z' }
+  const due = { title: 'Due one', state: 'active' as const, dueAt: '2026-10-08T05:00:00.000Z', expiresAt: '2026-09-25T00:00:00.000Z' }
+  const late = { title: 'Overdue one', state: 'active' as const, dueAt: '2026-09-28T05:00:00.000Z', expiresAt: '2026-09-20T00:00:00.000Z' }
+
+  it('lists the pending proposal with its expiry, then active goals by due date, headed by the overdue count', () => {
+    expect(buildGoalsBlock([due, pending, late], AT)).toBe([
+      'Goals (2 active · 1 overdue):',
+      'Awaiting your Approve / Veto in the inbox: Name the deploy cause — expires 03/10.',
+      'Active: Overdue one — 3 days overdue (due 28/09).',
+      'Active: Due one — due 08/10.',
+    ].join('\n'))
+  })
+
+  it("is '' when there is nothing open; an expired proposal is not shown", () => {
+    expect(buildGoalsBlock(null, AT)).toBe('')
+    expect(buildGoalsBlock([], AT)).toBe('')
+    expect(buildGoalsBlock([{ ...pending, expiresAt: '2026-10-01T04:00:00.000Z' }], AT)).toBe('')
+    expect(buildGoalsBlock([pending], AT)).toBe('Goals (0 active):\nAwaiting your Approve / Veto in the inbox: Name the deploy cause — expires 03/10.')
+  })
+
+  it('strips URLs from titles and never reaches the model prompt', () => {
+    expect(buildGoalsBlock([{ ...due, title: 'Read https://x.example/a now' }], AT)).not.toMatch(/https?:/)
+    expect(buildDailyMessageUserPrompt(inputs({ goals: [pending, due] }))).not.toContain('Name the deploy cause')
   })
 })

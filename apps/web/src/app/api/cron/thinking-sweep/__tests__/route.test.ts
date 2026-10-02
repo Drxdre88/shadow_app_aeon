@@ -13,6 +13,7 @@ vi.mock('@/lib/kairos/thinking/queue', () => ({
   createSweepBudget: vi.fn(() => budget),
 }))
 vi.mock('@/lib/kairos/promises/nudge', () => ({ PROMISE_NUDGE_CRON: 'promise-nudge', runPromiseNudges: vi.fn() }))
+vi.mock('@/lib/kairos/proposal-decision', () => ({ sweepExpiredProposals: vi.fn() }))
 vi.mock('@/lib/kairos/cron-trace', () => ({
   writeCronFailureTrace: vi.fn(),
   writeCronSuccessTrace: vi.fn(),
@@ -23,6 +24,7 @@ import { listMemoryEngineUserIds } from '@/lib/data/memory-engine'
 import { createSweepBudget } from '@/lib/kairos/thinking/queue'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 import { runPromiseNudges } from '@/lib/kairos/promises/nudge'
+import { sweepExpiredProposals } from '@/lib/kairos/proposal-decision'
 import { GET, maxDuration } from '../route'
 
 function request(authorization?: string) {
@@ -153,5 +155,35 @@ describe('promise nudge step', () => {
     expect(res.status).toBe(200)
     expect((await res.json()).promiseNudge).toEqual({ status: 'error', error: 'locked' })
     expect(writeCronFailureTrace).toHaveBeenCalledWith('op-1', expect.objectContaining({ cronName: 'promise-nudge' }))
+  })
+})
+
+describe('proposal expiry step', () => {
+  beforeEach(() => {
+    vi.mocked(listUsersNeedingSweep).mockResolvedValue([])
+    vi.mocked(runPromiseNudges).mockResolvedValue({ status: 'none' })
+    delete process.env.KAIROS_OPERATOR_USER_ID
+  })
+
+  it('expires proposals for the operator only', async () => {
+    let body = await (await GET(request())).json()
+    expect(sweepExpiredProposals).not.toHaveBeenCalled()
+    expect(body.proposalExpiry).toBeNull()
+
+    process.env.KAIROS_OPERATOR_USER_ID = 'op-1'
+    vi.mocked(sweepExpiredProposals).mockResolvedValue({ expired: 1, telegramCleared: 1 })
+    body = await (await GET(request())).json()
+    expect(sweepExpiredProposals).toHaveBeenCalledWith('op-1', expect.any(Date))
+    expect(body.proposalExpiry).toEqual({ expired: 1, telegramCleared: 1 })
+  })
+
+  it('an expiry failure never fails the sweep', async () => {
+    process.env.KAIROS_OPERATOR_USER_ID = 'op-1'
+    vi.mocked(sweepExpiredProposals).mockRejectedValue(new Error('db blip'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const res = await GET(request())
+    expect(res.status).toBe(200)
+    expect((await res.json()).proposalExpiry).toEqual({ error: 'db blip' })
+    errorSpy.mockRestore()
   })
 })

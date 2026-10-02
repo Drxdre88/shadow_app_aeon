@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { extractJsonBlock, neutraliseFences } from '@/lib/kairos/_prompt-utils'
+import { initiativeEnabled } from '@/lib/kairos/initiative'
 import { makeFedIdResolver } from '@/lib/kairos/introspection-prompt'
-import type { BeliefDiffKind, WeeklyReviewInputs } from './inputs'
+import type { BeliefDiffKind, InitiativeWeekInput, WeeklyReviewInputs } from './inputs'
 
 // Weekly review prompt + strict output contract (docs/kairos/34 §4,
 // research/kairos_2909/04 §C Strategic: a periodic structured review over
@@ -114,6 +115,25 @@ export interface ReviewPromiseContext {
   open: ReadonlyArray<{ seq: number; outcome: string; dueDate: string }>
 }
 
+const pct = (rate: number | null) => (rate === null ? 'n/a' : `${Math.round(rate * 100)}%`)
+
+// Kairos's own initiative track record (Phase 2): goals it proposed and the
+// promises it closed this week. Rendered only while the initiative is on.
+function initiativeLines(initiative: InitiativeWeekInput): string[] {
+  const out = ['', `INITIATIVE — your own goals (proposed in the last ${initiative.goalDays} days) and promises (closed this week):`]
+  const g = initiative.goals
+  if (!g) out.push('- Goals: (none proposed)')
+  else {
+    const median = g.medianDecisionMinutes === null ? 'n/a' : `${g.medianDecisionMinutes} min`
+    out.push(`- Goals: ${g.proposed} proposed · approved ${g.approved}, vetoed ${g.vetoed}, expired ${g.expired}, still pending ${g.pending}`)
+    out.push(`- Acceptance rate: ${pct(g.acceptanceRate)} · done-and-checked rate: ${pct(g.doneCheckedRate)} (done ${g.done}, failed ${g.failed}, abandoned ${g.abandoned}) · median decision time: ${median}`)
+  }
+  const p = initiative.promises
+  if (!p) out.push('- Promises: (none closed this week)')
+  else out.push(`- Promises kept: ${pct(p.keptRate)} (kept ${p.kept}, lapsed ${p.lapsed}, dropped ${p.dropped})`)
+  return out
+}
+
 function promiseLines(ctx: ReviewPromiseContext): string[] {
   const out = [
     '',
@@ -180,6 +200,7 @@ export function buildWeeklyReviewPrompt(inputs: WeeklyReviewInputs, conscience?:
 
   lines.push(...beliefDiffLines(inputs))
   lines.push(...ideaLines(inputs))
+  if (inputs.initiative && initiativeEnabled()) lines.push(...initiativeLines(inputs.initiative))
 
   if (inputs.errors.length > 0) {
     lines.push('', `Unavailable inputs this week: ${inputs.errors.map((e) => e.split(':')[0]).join(', ')}`)
@@ -224,7 +245,14 @@ export const weeklyReviewSchema = z.object({
   drift: z.array(z.string().trim().min(1).max(300)).max(8).default([]),
   // Accept a few extra so one over-eager answer is capped, not rejected.
   actions: z.array(actionSchema).max(10).default([]),
-  promises: z.array(reviewPromiseSchema).max(MAX_REVIEW_PROMISES * 2).optional(),
+  // Lenient: a malformed promise list or item never costs the review.
+  promises: z.preprocess(
+    (v) => (Array.isArray(v) ? v.flatMap((item) => {
+      const parsed = reviewPromiseSchema.safeParse(item)
+      return parsed.success ? [parsed.data] : []
+    }).slice(0, MAX_REVIEW_PROMISES * 2) : undefined),
+    z.array(reviewPromiseSchema).optional(),
+  ),
 })
 
 export type WeeklyReviewOutput = z.infer<typeof weeklyReviewSchema>

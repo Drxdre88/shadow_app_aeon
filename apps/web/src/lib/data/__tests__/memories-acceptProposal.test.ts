@@ -269,3 +269,51 @@ describe('acceptProposal — constitution amendment guard (doc 34 §2)', () => {
     expect(setCalls).toHaveLength(0)
   })
 })
+
+// T2: the generic promote only touches a live, pending proposal — a row that
+// was dismissed (archived) or already resolved is never promoted, and a lost
+// race (guarded UPDATE matched nothing) supersedes nothing.
+describe('acceptProposal — live pending guard (T2)', () => {
+  const base = {
+    id: PROPOSAL_ID,
+    userId: USER,
+    type: 'inbound',
+    links: [],
+    archivedAt: null,
+    sourceMetadata: { introspection: true, kind: 'reflection', status: 'pending' },
+  }
+
+  it('refuses an archived (dismissed) proposal without writing', async () => {
+    selectQueue.push([{ ...base, archivedAt: new Date() }])
+    await expect(acceptProposal(PROPOSAL_ID, USER, { pin: false })).resolves.toEqual({ ok: false, reason: 'not_a_proposal' })
+    expect(setCalls).toHaveLength(0)
+  })
+
+  it.each(['accepted', 'dismissed', 'expired'])('refuses a %s proposal without writing', async (status) => {
+    selectQueue.push([{ ...base, sourceMetadata: { ...base.sourceMetadata, status } }])
+    await expect(acceptProposal(PROPOSAL_ID, USER, { pin: false })).resolves.toEqual({ ok: false, reason: 'not_a_proposal' })
+    expect(setCalls).toHaveLength(0)
+  })
+
+  it('treats a legacy row without a status as pending', async () => {
+    const legacy = { ...base, sourceMetadata: { introspection: true, kind: 'reflection' } }
+    selectQueue.push([legacy])
+    updateQueue.push([{ ...legacy, type: 'reflection' }])
+    expect((await acceptProposal(PROPOSAL_ID, USER, { pin: false }))?.ok).toBe(true)
+  })
+
+  it("still accepts a BackUp-'promoted' proposal (voice-note confirm path)", async () => {
+    const promoted = { ...base, sourceMetadata: { ...base.sourceMetadata, status: 'promoted' } }
+    selectQueue.push([promoted])
+    updateQueue.push([{ ...promoted, type: 'reflection' }])
+    expect((await acceptProposal(PROPOSAL_ID, USER, { pin: false }))?.ok).toBe(true)
+    expect(setCalls).toHaveLength(1)
+  })
+
+  it('a lost race (archived between read and write) supersedes nothing', async () => {
+    selectQueue.push([base])
+    updateQueue.push([]) // guarded promote matched nothing
+    await expect(acceptProposal(PROPOSAL_ID, USER, { pin: false, supersedes: ['old-1'] })).resolves.toBeNull()
+    expect(setCalls).toHaveLength(1)
+  })
+})

@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   deliverKairosSpeak: vi.fn(),
   writeCronSuccessTrace: vi.fn(),
   writeCronFailureTrace: vi.fn(),
+  closeGoal: vi.fn(),
 }))
 
 vi.mock('@/lib/data/kairos-promises', async () => {
@@ -31,6 +32,7 @@ vi.mock('@/lib/data/projects', () => ({ verifyProjectAccess: h.verifyProjectAcce
 vi.mock('@/lib/kairos/auto-capture', () => ({ DONE_COLUMN_NAMES: new Set(['done', 'vault']) }))
 vi.mock('@/lib/kairos/speak', () => ({ deliverKairosSpeak: h.deliverKairosSpeak }))
 vi.mock('@/lib/kairos/cron-trace', () => ({ writeCronSuccessTrace: h.writeCronSuccessTrace, writeCronFailureTrace: h.writeCronFailureTrace }))
+vi.mock('@/lib/kairos/goals/transitions', () => ({ closeGoal: h.closeGoal }))
 
 import { createKairosPromises } from '../create'
 import { closeKairosPromise, renegotiateKairosPromise, type PromiseCloser } from '../close'
@@ -202,6 +204,25 @@ describe('closeKairosPromise', () => {
     expect(await closeKairosPromise(USER, uuid(1), { kind: 'rule', reason: 'lapsed_14d' }, NOW)).toEqual({ ok: false, reason: 'not_eligible' })
     seed([promise(1, { dueDate: '2026-09-17' })])
     expect(await closeKairosPromise(USER, uuid(1), { kind: 'rule', reason: 'lapsed_14d' }, NOW)).toMatchObject({ ok: true, promise: { status: 'lapsed', closedBy: { kind: 'rule', reason: 'lapsed_14d' } } })
+  })
+
+  it("the owner's verdict on a goal's promise closes the goal (kept → done, dropped → abandon)", async () => {
+    h.closeGoal.mockResolvedValue({ ok: true, goal: {} })
+    const GOAL = '44444444-4444-4444-8444-444444444444'
+    seed([promise(1, { source: { kind: 'goal', goalId: GOAL } }), promise(2, { source: { kind: 'goal', goalId: GOAL } }), promise(3)])
+    await closeKairosPromise(USER, uuid(1), { kind: 'owner', via: 'telegram', verdict: 'kept' }, NOW)
+    expect(h.closeGoal).toHaveBeenLastCalledWith(USER, GOAL, 'done', { kind: 'operator', via: 'telegram' }, { now: NOW })
+    await closeKairosPromise(USER, uuid(2), { kind: 'owner', via: 'session', verdict: 'dropped' }, NOW)
+    expect(h.closeGoal).toHaveBeenLastCalledWith(USER, GOAL, 'abandon', { kind: 'operator', via: 'session' }, { now: NOW })
+    await closeKairosPromise(USER, uuid(3), { kind: 'owner', via: 'session', verdict: 'kept' }, NOW)
+    expect(h.closeGoal).toHaveBeenCalledTimes(2)
+  })
+
+  it('a failing goal close never undoes the promise close', async () => {
+    h.closeGoal.mockRejectedValue(new Error('db down'))
+    seed([promise(1, { source: { kind: 'goal', goalId: 'g-1' } })])
+    expect(await closeKairosPromise(USER, uuid(1), { kind: 'owner', via: 'session', verdict: 'kept' }, NOW)).toMatchObject({ ok: true })
+    expect(h.state.open).toEqual([])
   })
 })
 

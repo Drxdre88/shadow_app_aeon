@@ -30,7 +30,7 @@ import {
   OPERATOR_ONLY_AMENDMENT_ERROR,
   OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR,
 } from '@/lib/kairos/constitution/amendment'
-import { goalPatchRefusal } from '@/lib/kairos/goals/guards'
+import { goalPatchRefusal, isGoalRow, OPERATOR_ONLY_GOAL_ERROR } from '@/lib/kairos/goals/guards'
 import { db } from '@/lib/db'
 import { boardTasks, groupMembers } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
@@ -425,9 +425,12 @@ export const registerMemoryTools: RegisterFn = (server) => {
 
       // MCP callers are agents (bearer/OAuth), never the operator's session —
       // a constitution amendment needs the operator (docs/kairos/34 §2).
-      if (isConstitutionAmendmentProposal(await findMemoryById(memoryId, uid))) {
+      const proposalRow = await findMemoryById(memoryId, uid)
+      if (isConstitutionAmendmentProposal(proposalRow)) {
         return fail(OPERATOR_ONLY_AMENDMENT_ERROR)
       }
+      // Kairos goals are approved or vetoed by the owner only (Phase 2).
+      if (isGoalRow(proposalRow)) return fail(OPERATOR_ONLY_GOAL_ERROR)
       // Nor may an agent retire a constitution version via `supersedes`.
       const supersedesRows = await Promise.all((parsed.data.supersedes ?? []).map((id) => findMemoryById(id, uid)))
       if (supersedesRows.some(isConstitutionRow)) return fail(OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR)

@@ -13,6 +13,10 @@ vi.mock('@/lib/kairos/proposal-accept', () => ({
   dismissInboxMemory: vi.fn(),
 }))
 
+vi.mock('@/lib/kairos/proposal-decision', () => ({
+  decideKairosProposal: vi.fn(),
+}))
+
 vi.mock('@/lib/kairos/ask', () => ({
   answerKairosAsk: vi.fn(),
   dismissKairosAsk: vi.fn(),
@@ -22,9 +26,11 @@ import { requireAuth } from '@/lib/actions/helpers'
 import { getKairosInbox } from '@/lib/data/inbox'
 import { answerKairosAsk, dismissKairosAsk } from '@/lib/kairos/ask'
 import { acceptInboxProposal, dismissInboxMemory } from '@/lib/kairos/proposal-accept'
+import { decideKairosProposal } from '@/lib/kairos/proposal-decision'
 import {
   acceptKairosInboxProposal,
   answerKairosInboxAsk,
+  decideKairosInboxProposal,
   dismissKairosInboxAsk,
   dismissKairosInboxProposal,
   listKairosInbox,
@@ -106,5 +112,45 @@ describe('Kairos inbox actions', () => {
     vi.mocked(dismissInboxMemory).mockResolvedValue({ ok: false, reason: 'not_found' })
 
     await expect(dismissKairosInboxProposal(PROPOSAL_ID)).rejects.toThrow('Proposal not found')
+  })
+})
+
+describe('decideKairosInboxProposal (Approve / Veto / Veto + why)', () => {
+  it('approves an owner-decided proposal through the one decision function', async () => {
+    vi.mocked(decideKairosProposal).mockResolvedValue({ ok: true, verdict: 'approve', title: 'G', kind: 'goal', memoryId: PROPOSAL_ID })
+
+    await expect(decideKairosInboxProposal(PROPOSAL_ID, 'approve')).resolves.toEqual({ ok: true, verdict: 'approve' })
+    expect(decideKairosProposal).toHaveBeenCalledWith(USER_ID, PROPOSAL_ID, { verdict: 'approve', reason: null, via: 'inbox' })
+    expect(acceptInboxProposal).not.toHaveBeenCalled()
+  })
+
+  it('passes a trimmed veto reason', async () => {
+    vi.mocked(decideKairosProposal).mockResolvedValue({ ok: true, verdict: 'veto', title: 'G', kind: 'goal', memoryId: PROPOSAL_ID })
+
+    await decideKairosInboxProposal(PROPOSAL_ID, 'veto', '  not now  ')
+    expect(decideKairosProposal).toHaveBeenCalledWith(USER_ID, PROPOSAL_ID, { verdict: 'veto', reason: 'not now', via: 'inbox' })
+  })
+
+  it('refuses bad input without deciding', async () => {
+    await expect(decideKairosInboxProposal('nope', 'approve')).resolves.toEqual({ ok: false, reason: 'invalid_input' })
+    await expect(decideKairosInboxProposal(PROPOSAL_ID, 'veto', 'x'.repeat(2001))).resolves.toEqual({ ok: false, reason: 'invalid_input' })
+    await expect(decideKairosInboxProposal(PROPOSAL_ID, 'maybe' as 'approve')).resolves.toEqual({ ok: false, reason: 'invalid_input' })
+    expect(decideKairosProposal).not.toHaveBeenCalled()
+  })
+
+  it('returns the decision refusal as a reason', async () => {
+    vi.mocked(decideKairosProposal).mockResolvedValue({ ok: false, reason: 'already_decided', decided: 'veto' })
+    await expect(decideKairosInboxProposal(PROPOSAL_ID, 'approve')).resolves.toEqual({ ok: false, reason: 'already_decided' })
+  })
+
+  it('falls back to the classic accept / dismiss for unregistered kinds', async () => {
+    vi.mocked(decideKairosProposal).mockResolvedValue({ ok: false, reason: 'not_decidable' })
+    vi.mocked(acceptInboxProposal).mockResolvedValue({ ok: true, id: PROPOSAL_ID })
+    vi.mocked(dismissInboxMemory).mockResolvedValue({ ok: false, reason: 'already_resolved' })
+
+    await expect(decideKairosInboxProposal(PROPOSAL_ID, 'approve')).resolves.toEqual({ ok: true, verdict: 'approve' })
+    expect(acceptInboxProposal).toHaveBeenCalledWith(USER_ID, PROPOSAL_ID)
+    await expect(decideKairosInboxProposal(PROPOSAL_ID, 'veto')).resolves.toEqual({ ok: false, reason: 'already_resolved' })
+    expect(dismissInboxMemory).toHaveBeenCalledWith(USER_ID, PROPOSAL_ID)
   })
 })

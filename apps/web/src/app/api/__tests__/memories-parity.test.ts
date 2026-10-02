@@ -285,5 +285,15 @@ describe('Memory MCP <-> REST parity', () => {
     it('the update_memory description tells agents goal rows are owner-only', () => {
       expect(updateBlock).toMatch(/Kairos goal rows .* are owner-only/)
     })
+
+    // Track C: accepting a goal = approving it, owner-only.
+    it.each([
+      ['MCP accept_proposal', blockFor('accept_proposal')],
+      ['REST POST [id]/accept', readSource(path.join(REST_ROOT, '[id]/accept/route.ts'))],
+    ])('%s refuses a goal row with OPERATOR_ONLY_GOAL_ERROR before accepting', (_label, src) => {
+      expect(src).toMatch(/OPERATOR_ONLY_GOAL_ERROR/)
+      expect(src.search(/isGoalRow\(/)).toBeGreaterThan(-1)
+      expect(src.search(/isGoalRow\(/)).toBeLessThan(src.search(/acceptKairosProposal\(/))
+    })
   })
 })

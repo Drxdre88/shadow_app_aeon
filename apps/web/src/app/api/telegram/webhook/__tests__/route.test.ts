@@ -53,6 +53,20 @@ vi.mock('@/lib/kairos/paid-backup', () => ({
   PAID_BACKUP_OFF_NOTE: 'paid backup off',
 }))
 
+vi.mock('@/lib/kairos/proposal-telegram', () => ({
+  handleProposalCallback: vi.fn(),
+  routeVetoReason: vi.fn(async () => false),
+}))
+
+vi.mock('@/lib/kairos/promises/telegram-commands', () => ({
+  routePromiseCommands: vi.fn(async () => false),
+}))
+
+vi.mock('@/lib/kairos/initiative', () => ({ initiativeEnabled: vi.fn(() => false) }))
+
+import { handleProposalCallback, routeVetoReason } from '@/lib/kairos/proposal-telegram'
+import { routePromiseCommands } from '@/lib/kairos/promises/telegram-commands'
+import { initiativeEnabled } from '@/lib/kairos/initiative'
 import { isPaidBackupEnabled } from '@/lib/kairos/paid-backup'
 import { CHAT_PAID_BACKUP_OFF_MESSAGE } from '@/lib/kairos/chat-routine'
 import { acceptInboxProposal, dismissInboxMemory } from '@/lib/kairos/proposal-accept'
@@ -123,6 +137,9 @@ beforeEach(() => {
   vi.mocked(markKairosSpeaksReplied).mockResolvedValue(0)
   vi.mocked(answerNumberedKairosAsks).mockResolvedValue({ matched: false })
   vi.mocked(isPaidBackupEnabled).mockResolvedValue(true)
+  vi.mocked(initiativeEnabled).mockReturnValue(false)
+  vi.mocked(routePromiseCommands).mockResolvedValue(false)
+  vi.mocked(routeVetoReason).mockResolvedValue(false)
 })
 
 afterEach(() => {
@@ -236,6 +253,102 @@ describe('telegram webhook — callback triage', () => {
     const res = await POST(makeReq(callbackUpdate(`dismiss:${MEMORY_ID}`), 'hook-secret'))
     expect(res.status).toBe(200)
     expect(markKairosSpeaksReplied).toHaveBeenCalledWith(OPERATOR_USER, expect.any(Date))
+  })
+})
+
+describe('telegram webhook — proposal decision buttons (p1)', () => {
+  const GOAL_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+  const tap = (data: string, fromId: number | string | null = Number(OPERATOR_CHAT)) => ({
+    callback_query: {
+      id: 'cbq-9',
+      data,
+      ...(fromId !== null ? { from: { id: fromId } } : {}),
+      message: { message_id: 77, text: 'Goal proposal: X', chat: { id: Number(OPERATOR_CHAT) } },
+    },
+  })
+
+  it.each([['a'], ['v'], ['w']])('routes p1:%s to the decision handler (operator tap)', async (action) => {
+    vi.mocked(handleProposalCallback).mockResolvedValue({ ok: true, verdict: 'approve', title: 'X', kind: 'goal', memoryId: GOAL_ID })
+    const res = await POST(makeReq(tap(`p1:${action}:${GOAL_ID}`), 'hook-secret'))
+    expect(res.status).toBe(200)
+    expect(handleProposalCallback).toHaveBeenCalledWith(OPERATOR_USER, {
+      callbackId: 'cbq-9',
+      action,
+      proposalId: GOAL_ID,
+      chatId: Number(OPERATOR_CHAT),
+      messageId: 77,
+      originalText: 'Goal proposal: X',
+    }, expect.any(Date))
+    expect(acceptInboxProposal).not.toHaveBeenCalled()
+    expect(dismissInboxMemory).not.toHaveBeenCalled()
+    expect(markKairosSpeaksReplied).toHaveBeenCalled()
+  })
+
+  it.each([[999], [null]])('refuses a decision tap whose from.id is not the operator (%s)', async (fromId) => {
+    await POST(makeReq(tap(`p1:a:${GOAL_ID}`, fromId), 'hook-secret'))
+    expect(handleProposalCallback).not.toHaveBeenCalled()
+    expect(telegramCalls(fetchMock)).toEqual([
+      { method: 'answerCallbackQuery', body: { callback_query_id: 'cbq-9', text: 'Not allowed' } },
+    ])
+  })
+
+  it('malformed p1 data falls to the unknown-action answer', async () => {
+    await POST(makeReq(tap('p1:x:not-a-uuid'), 'hook-secret'))
+    expect(handleProposalCallback).not.toHaveBeenCalled()
+    expect(telegramCalls(fetchMock)[0].body.text).toBe('Unknown action')
+  })
+})
+
+describe('telegram webhook — text routing order (Phase 2)', () => {
+  it('initiative off: promise commands and veto reasons are not consulted', async () => {
+    vi.mocked(sendChatMessage).mockResolvedValue({
+      ok: true, threadId: THREAD_ID, userSeq: 1, assistantSeq: 2, assistantContent: 'Ok.', model: null,
+    })
+    await POST(makeReq(textUpdate('P3 kept'), 'hook-secret'))
+    expect(routePromiseCommands).not.toHaveBeenCalled()
+    expect(routeVetoReason).not.toHaveBeenCalled()
+    expect(sendChatMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('Q-router first: a matched Q answer never reaches promises or veto reasons', async () => {
+    vi.mocked(initiativeEnabled).mockReturnValue(true)
+    vi.mocked(answerNumberedKairosAsks).mockResolvedValue({ matched: true, answered: [3], skipped: [], failed: [], stillOpen: [] })
+    vi.mocked(appendChatMessage).mockResolvedValue({ ok: true, messageId: 'm', seq: 1 })
+    await POST(makeReq(textUpdate('Q3: yes'), 'hook-secret'))
+    expect(routePromiseCommands).not.toHaveBeenCalled()
+    expect(routeVetoReason).not.toHaveBeenCalled()
+  })
+
+  it('promise commands come before veto reasons and chat', async () => {
+    vi.mocked(initiativeEnabled).mockReturnValue(true)
+    vi.mocked(routePromiseCommands).mockResolvedValue(true)
+    await POST(makeReq(textUpdate('P3 kept'), 'hook-secret'))
+    expect(routePromiseCommands).toHaveBeenCalledWith(OPERATOR_USER, 'P3 kept', expect.any(Function))
+    expect(routeVetoReason).not.toHaveBeenCalled()
+    expect(sendChatMessage).not.toHaveBeenCalled()
+  })
+
+  it('a veto reason (reply-to + update id passed) is kept out of chat', async () => {
+    vi.mocked(initiativeEnabled).mockReturnValue(true)
+    vi.mocked(routeVetoReason).mockResolvedValue(true)
+    const update = { update_id: 7001, message: { text: 'too vague', chat: { id: Number(OPERATOR_CHAT) }, reply_to_message: { message_id: 55 } } }
+    await POST(makeReq(update, 'hook-secret'))
+    expect(routeVetoReason).toHaveBeenCalledWith(OPERATOR_USER, Number(OPERATOR_CHAT), {
+      text: 'too vague', updateId: 7001, replyToMessageId: 55,
+    })
+    expect(sendChatMessage).not.toHaveBeenCalled()
+  })
+
+  it('a routing failure hands the text to chat', async () => {
+    vi.mocked(initiativeEnabled).mockReturnValue(true)
+    vi.mocked(routeVetoReason).mockRejectedValue(new Error('db down'))
+    vi.mocked(sendChatMessage).mockResolvedValue({
+      ok: true, threadId: THREAD_ID, userSeq: 1, assistantSeq: 2, assistantContent: 'Hi.', model: null,
+    })
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await POST(makeReq(textUpdate('hello there'), 'hook-secret'))
+    expect(sendChatMessage).toHaveBeenCalledTimes(1)
+    errorSpy.mockRestore()
   })
 })
 

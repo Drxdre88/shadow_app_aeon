@@ -9,6 +9,7 @@ import { listTraceHistory } from '@/lib/data/recipes'
 import { findLatestConscienceRun } from '@/lib/data/constitution-drift'
 import { listSurvivorsSince } from '@/lib/data/ideas'
 import { readKairosPromises } from '@/lib/data/kairos-promises'
+import { listOpenGoals } from '@/lib/data/goals'
 import { weeklyIdeaDiversity } from './ideas/diversity'
 import { getLatestDriftStatus } from './constitution/amendment'
 import { conscienceFailureLine, readStoredConscience } from './constitution/conscience-probes'
@@ -25,6 +26,7 @@ import {
   type BoardDayDigest,
   type DailyMessageInputs,
   type DriftDigest,
+  type GoalDigest,
   type IdeaOfTheDay,
   type OpenAskDigest,
   type PromisesDigest,
@@ -247,6 +249,18 @@ async function readPromises(userId: string, since: Date): Promise<PromisesDigest
   return { open: state.open.map(digest), closedSince: closedSince.map(digest) }
 }
 
+// Kairos's open goals: unexpired proposals awaiting Approve / Veto and active
+// goals. null when there are none, so the input stays absent.
+async function readGoals(userId: string, now: Date): Promise<GoalDigest[] | null> {
+  const goals = await listOpenGoals(userId, now)
+  const out: GoalDigest[] = []
+  for (const g of goals) {
+    if (g.meta.state !== 'proposed' && g.meta.state !== 'active') continue
+    out.push({ title: clipLine(g.title || g.meta.question), state: g.meta.state, dueAt: g.meta.dueAt, expiresAt: g.meta.expiresAt })
+  }
+  return out.length > 0 ? out : null
+}
+
 async function safe<T>(name: string, failed: string[], fn: () => Promise<T>): Promise<T | null> {
   try {
     return await fn()
@@ -262,7 +276,7 @@ export async function gatherDailyMessageInputs(userId: string, now: Date): Promi
   const since = new Date(now.getTime() - DAY_MS)
   const isMonday = isLondonMonday(now)
   const failed: string[] = []
-  const [areas, aether, boardDay, promotions, newBeliefs, drift, openAsks, synthesis, mindCompare, idea, ideaDiversityAlarm, promises] = await Promise.all([
+  const [areas, aether, boardDay, promotions, newBeliefs, drift, openAsks, synthesis, mindCompare, idea, ideaDiversityAlarm, promises, goals] = await Promise.all([
     safe('areas', failed, () => readAreaHeadlines(userId)),
     safe('aether', failed, () => readAether(userId)),
     safe('boardDay', failed, () => readBoardDay(userId, date)),
@@ -275,11 +289,13 @@ export async function gatherDailyMessageInputs(userId: string, now: Date): Promi
     safe('idea', failed, () => readIdeaOfTheDay(userId, since)),
     safe('ideaDiversity', failed, () => readIdeaDiversityAlarm(userId, now)),
     safe('promises', failed, () => readPromises(userId, since)),
+    safe('goals', failed, () => readGoals(userId, now)),
   ])
   failed.sort()
   return {
     date, isMonday, areas, aether, boardDay, promotions, newBeliefs, drift, openAsks, synthesis, mindCompare, idea, ideaDiversityAlarm,
     ...(promises ? { promises } : {}),
+    ...(goals ? { goals } : {}),
     failed,
   }
 }

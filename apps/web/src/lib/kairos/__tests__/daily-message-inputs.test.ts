@@ -31,6 +31,7 @@ vi.mock('../synthesis-health', () => ({ SYNTHESIS_HEALTH_RECIPE: 'SYNTHESIS_HEAL
 vi.mock('@/lib/data/ideas', () => ({ listSurvivorsSince: vi.fn() }))
 vi.mock('../ideas/diversity', () => ({ weeklyIdeaDiversity: vi.fn() }))
 vi.mock('@/lib/data/kairos-promises', () => ({ readKairosPromises: vi.fn(async () => ({ v: 1, nextSeq: 1, open: [], closed: [] })) }))
+vi.mock('@/lib/data/goals', () => ({ listOpenGoals: vi.fn(async () => []) }))
 
 import { getLatestAether } from '@/lib/data/aether'
 import { listOpenKairosAsks } from '@/lib/data/ask'
@@ -42,6 +43,7 @@ import { getLatestDriftStatus } from '../constitution/amendment'
 import { listSurvivorsSince } from '@/lib/data/ideas'
 import { weeklyIdeaDiversity } from '../ideas/diversity'
 import { readKairosPromises } from '@/lib/data/kairos-promises'
+import { listOpenGoals } from '@/lib/data/goals'
 import { firstPlainLines, gatherDailyMessageInputs } from '../daily-message-inputs'
 
 const USER = 'user-1'
@@ -284,5 +286,37 @@ describe('promises input', () => {
     const inputs = await gatherDailyMessageInputs(USER, NOW)
     expect(inputs.failed).toContain('promises')
     expect(inputs).not.toHaveProperty('promises')
+  })
+})
+
+describe('goals input', () => {
+  const goal = (id: string, state: string, over: Record<string, unknown> = {}) => ({
+    id,
+    title: `Goal ${id}`,
+    meta: { state, question: `Question ${id}`, dueAt: null, expiresAt: '2026-10-28T00:00:00.000Z', ...over },
+  })
+
+  it('is absent when no goal is open', async () => {
+    expect(await gatherDailyMessageInputs(USER, NOW)).not.toHaveProperty('goals')
+    expect(listOpenGoals).toHaveBeenCalledWith(USER, NOW)
+  })
+
+  it('carries pending proposals and active goals from listOpenGoals', async () => {
+    vi.mocked(listOpenGoals).mockResolvedValueOnce([
+      goal('a', 'proposed'),
+      goal('b', 'active', { dueAt: '2026-10-30T00:00:00.000Z' }),
+      goal('c', 'done'),
+    ] as never)
+    expect((await gatherDailyMessageInputs(USER, NOW)).goals).toEqual([
+      { title: 'Goal a', state: 'proposed', dueAt: null, expiresAt: '2026-10-28T00:00:00.000Z' },
+      { title: 'Goal b', state: 'active', dueAt: '2026-10-30T00:00:00.000Z', expiresAt: '2026-10-28T00:00:00.000Z' },
+    ])
+  })
+
+  it('a read failure is a failed input, not a failed message', async () => {
+    vi.mocked(listOpenGoals).mockRejectedValueOnce(new Error('db down'))
+    const inputs = await gatherDailyMessageInputs(USER, NOW)
+    expect(inputs.failed).toContain('goals')
+    expect(inputs).not.toHaveProperty('goals')
   })
 })

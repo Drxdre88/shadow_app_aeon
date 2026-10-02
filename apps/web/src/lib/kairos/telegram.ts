@@ -211,16 +211,24 @@ async function callTelegram(method: string, payload: Record<string, unknown>): P
   return body.result
 }
 
+// Bot API ForceReply: the client opens a reply to this message.
+export type ForceReplyMarkup = { force_reply: true; input_field_placeholder?: string }
+
 export async function sendMessage(
   chatId: string | number,
   text: string,
-  opts: { inlineKeyboard?: InlineKeyboardButton[][]; parseMode?: 'MarkdownV2' | 'HTML' } = {},
+  opts: {
+    inlineKeyboard?: InlineKeyboardButton[][]
+    parseMode?: 'MarkdownV2' | 'HTML'
+    replyMarkup?: ForceReplyMarkup
+  } = {},
 ): Promise<{ messageId: number }> {
+  const replyMarkup = opts.inlineKeyboard ? { inline_keyboard: opts.inlineKeyboard } : opts.replyMarkup
   const result = (await callTelegram('sendMessage', {
     chat_id: chatId,
     text,
     ...(opts.parseMode ? { parse_mode: opts.parseMode } : {}),
-    ...(opts.inlineKeyboard ? { reply_markup: { inline_keyboard: opts.inlineKeyboard } } : {}),
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
   })) as { message_id: number }
   return { messageId: result.message_id }
 }
@@ -277,12 +285,90 @@ export async function sendTelegramChatReply(chatId: string | number, content: st
   }
 }
 
+// `inlineKeyboard: []` is sent explicitly to strip the buttons — omitting
+// reply_markup leaves Telegram's existing keyboard in place.
 export async function editMessageText(
   chatId: string | number,
   messageId: number,
   text: string,
+  opts: { inlineKeyboard?: InlineKeyboardButton[][] } = {},
 ): Promise<void> {
-  await callTelegram('editMessageText', { chat_id: chatId, message_id: messageId, text })
+  await callTelegram('editMessageText', {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    ...(opts.inlineKeyboard ? { reply_markup: { inline_keyboard: opts.inlineKeyboard } } : {}),
+  })
+}
+
+// ── Proposal decisions (Phase 2, Track C) ──────────────────────────────────
+// Callback payload p1:<a|v|w>:<uuid> — approve, veto, veto + why. Versioned
+// so a future layout can coexist with buttons already sitting in the chat.
+
+export type ProposalCallbackAction = 'a' | 'v' | 'w'
+export const PROPOSAL_CALLBACK_RE =
+  /^p1:([avw]):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i
+const CALLBACK_DATA_MAX_BYTES = 64
+
+export function proposalCallbackData(action: ProposalCallbackAction, proposalId: string): string {
+  const data = `p1:${action}:${proposalId}`
+  if (new TextEncoder().encode(data).length > CALLBACK_DATA_MAX_BYTES) {
+    throw new Error(`Telegram callback_data over ${CALLBACK_DATA_MAX_BYTES} bytes: ${data}`)
+  }
+  return data
+}
+
+export function proposalKeyboard(proposalId: string): InlineKeyboardButton[][] {
+  return [
+    [{ text: 'Approve', callback_data: proposalCallbackData('a', proposalId) }],
+    [
+      { text: 'Veto', callback_data: proposalCallbackData('v', proposalId) },
+      { text: 'Veto + why', callback_data: proposalCallbackData('w', proposalId) },
+    ],
+  ]
+}
+
+function londonExpiry(iso: string): string | null {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/London',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(d)
+}
+
+// One proposal with Approve / Veto / Veto + why. Sent directly (never through
+// the deliverKairosSpeak cadence). Returns where it landed, or null when the
+// channel is not configured. Throws on a genuine Telegram failure.
+export async function sendKairosProposal(input: {
+  proposalId: string
+  title: string
+  body: string
+  expiresAt: string
+}): Promise<{ chatId: string; messageId: number } | null> {
+  const chatId = process.env.TELEGRAM_OPERATOR_CHAT_ID
+  if (!chatId || !process.env.TELEGRAM_BOT_TOKEN) return null
+
+  const inlineKeyboard = proposalKeyboard(input.proposalId)
+  const expiry = londonExpiry(input.expiresAt)
+  const footer = expiry ? `Expires ${expiry} — no answer means no action.` : 'No answer means no action.'
+  const body = input.body.length > TELEGRAM_HTML_SPLIT_LIMIT - 300
+    ? `${input.body.slice(0, TELEGRAM_HTML_SPLIT_LIMIT - 301)}…`
+    : input.body
+
+  const html = `<b>${escapeHtml(input.title)}</b>\n\n${renderTelegramHtml(body)}\n\n<i>${escapeHtml(footer)}</i>`
+  try {
+    const sent = await sendMessage(chatId, html, { parseMode: 'HTML', inlineKeyboard })
+    return { chatId, messageId: sent.messageId }
+  } catch {
+    const plain = `${input.title}\n\n${stripTelegramFallbackMarkers(body)}\n\n${footer}`
+    const sent = await sendMessage(chatId, plain, { inlineKeyboard })
+    return { chatId, messageId: sent.messageId }
+  }
 }
 
 function aeonKairosUrl(): string | null {

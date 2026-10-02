@@ -17,6 +17,7 @@ import {
   buildBeliefsBlock,
   buildDailyMessageUserPrompt,
   buildDeterministicDailyMessage,
+  buildGoalsBlock,
   buildPromiseLine,
   ideaOfTheDayLines,
   londonDate,
@@ -167,6 +168,10 @@ export async function composeDailyMessage(userId: string, now: Date): Promise<Co
 
   const beliefsBlock = buildBeliefsBlock(inputs.promotions ?? [])
   if (beliefsBlock) message = `${message}\n\n${beliefsBlock}`
+  // Kairos's goals (pending proposal + active), code-built and placed before
+  // the questions: if the cap bites, the narrative and this block trim first.
+  const goalsBlock = buildGoalsBlock(inputs.goals, now)
+  if (goalsBlock) message = `${message}\n\n${goalsBlock}`
   // Every open question, numbered, rebuilt at send time (so it reflects
   // answers and asks since any routine draft was planned). Code-built, after
   // the guard — the model never writes or quotes it.

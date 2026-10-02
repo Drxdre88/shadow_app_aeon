@@ -9,6 +9,7 @@ import {
   OPERATOR_ONLY_AMENDMENT_ERROR,
   OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR,
 } from '@/lib/kairos/constitution/amendment'
+import { isGoalRow, OPERATOR_ONLY_GOAL_ERROR } from '@/lib/kairos/goals/guards'
 import { acceptProposalSchema } from '@/lib/data/validators'
 
 // Mirrors the accept_proposal MCP tool through the same validator + data fn
@@ -38,9 +39,13 @@ export const POST = withRateLimit(
     // operator's signed-in session: it may not accept a constitution amendment
     // (docs/kairos/34 §2). Session-cookie callers fall through.
     const isBearer = request.headers.get('authorization')?.startsWith('Bearer ') ?? false
-    if (isBearer && isConstitutionAmendmentProposal(await findMemoryById(id, result.id))) {
+    const proposalRow = isBearer ? await findMemoryById(id, result.id) : null
+    if (isBearer && isConstitutionAmendmentProposal(proposalRow)) {
       return jsonError(OPERATOR_ONLY_AMENDMENT_ERROR, 403)
     }
+    // Kairos goals are approved or vetoed by the owner only (Phase 2): a
+    // bearer caller is refused; the session goes through the decision function.
+    if (isBearer && isGoalRow(proposalRow)) return jsonError(OPERATOR_ONLY_GOAL_ERROR, 403)
     // Nor may a bearer caller retire a constitution version via `supersedes`.
     // (A session caller can't either: acceptProposal's supersede UPDATE skips
     // constitution rows.)
@@ -52,7 +57,13 @@ export const POST = withRateLimit(
     const res = await acceptKairosProposal(id, result.id, parsed.data,
       isBearer ? { origin: { kind: 'agent', via: 'rest' } } : { origin: { kind: 'operator', via: 'rest-session' } })
     if (!res) return jsonError('Memory not found', 404)
-    if (!res.ok) return jsonError('Memory is not a pending proposal', 400)
+    if (!res.ok) {
+      if (res.reason === 'forbidden_actor') return jsonError(OPERATOR_ONLY_GOAL_ERROR, 403)
+      if (res.reason === 'already_decided') return jsonError('Proposal already decided', 409)
+      if (res.reason === 'expired') return jsonError('Proposal expired', 409)
+      if (res.reason === 'cap_reached') return jsonError('Two goals are already open', 409)
+      return jsonError('Memory is not a pending proposal', 400)
+    }
     return jsonData(res.memory)
   }),
   API_WRITE_LIMIT

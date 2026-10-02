@@ -15,6 +15,7 @@ import {
 } from '@/lib/kairos/goals/prompt'
 import { expireStaleGoals, proposeGoal } from '@/lib/kairos/goals/transitions'
 import { initiativeEnabled } from '@/lib/kairos/initiative'
+import { announceGoalProposal } from '@/lib/kairos/proposal-telegram'
 import type {
   ApplyOutcome,
   ThinkingAnsweredBy,
@@ -161,6 +162,14 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
     now,
   })
   if (!result.ok) return skipped(job, result.reason, answeredBy)
+
+  // Ask first: the proposal goes to the owner's Telegram with Approve / Veto /
+  // Veto + why right away. Best-effort — the row in the inbox is the record.
+  try {
+    await announceGoalProposal(job.userId, result.goal, now)
+  } catch (err) {
+    console.error('[kairos:goal-propose] sending the proposal to Telegram failed:', errorReason(err))
+  }
 
   await writeCronSuccessTrace(job.userId, { cronName: GOAL_PROPOSE_CRON, outcome: 'ok', details: { goalId: result.goal.id } })
   return { ok: true, memoryIds: [result.goal.id], output: { goalId: result.goal.id, answeredBy } }

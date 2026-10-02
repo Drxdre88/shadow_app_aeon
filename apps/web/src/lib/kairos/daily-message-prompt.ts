@@ -147,6 +147,9 @@ export interface IdeaOfTheDay { title: string; claim: string; survivedBecause: s
 // Kairos promises (P-numbered) — rendered as one code-built line at send time.
 export interface PromiseDigest { seq: number; outcome: string; dueDate: string; status: 'open' | 'kept' | 'dropped' | 'lapsed' }
 export interface PromisesDigest { open: PromiseDigest[]; closedSince: PromiseDigest[] }
+// Kairos's own goals (Phase 2): an unexpired proposal awaiting Approve / Veto,
+// or an active goal. Rendered as a code-built block at send time.
+export interface GoalDigest { title: string; state: 'proposed' | 'active'; dueAt: string | null; expiresAt: string }
 
 // Every input is optional: null = unavailable (not found, or its read failed —
 // the name is then listed in `failed`). An input failure never costs the message.
@@ -170,6 +173,8 @@ export interface DailyMessageInputs {
   ideaDiversityAlarm?: boolean | null
   // Open promises + those closed since the last message; '' line when nothing is due.
   promises?: PromisesDigest | null
+  // Pending goal proposals + active goals; no block when absent or empty.
+  goals?: GoalDigest[] | null
   failed: string[]
 }
 
@@ -392,6 +397,49 @@ export function appendOpenQuestionsBlock(
   const room = maxChars - block.length - 2
   if (room < 2) return block.slice(0, maxChars)
   return `${message.slice(0, room - 1).trimEnd()}…\n\n${block}`
+}
+
+// ── Goals block (deterministic, appended before the questions) ───────────
+
+export const GOAL_BLOCK_TITLE_CHARS = 90
+const MAX_GOAL_BLOCK_LINES = 4
+
+function londonDayMonth(iso: string): string {
+  const date = londonDate(new Date(iso))
+  return `${date.slice(8, 10)}/${date.slice(5, 7)}`
+}
+
+// Kairos's goals: any proposal still awaiting the operator's Approve / Veto
+// (with its expiry), then active goals with their due dates, headed by the
+// active and overdue counts. '' when there is nothing to show.
+// e.g. "Goals (2 active · 1 overdue):
+//       Awaiting your Approve / Veto in the inbox: <title> — expires 04/10.
+//       Active: <title> — due 10/10.
+//       Active: <title> — 3 days overdue (due 28/09)."
+export function buildGoalsBlock(goals: ReadonlyArray<GoalDigest> | null | undefined, now: Date): string {
+  if (!goals || goals.length === 0) return ''
+  const today = londonDate(now)
+  const pending = goals
+    .filter((g) => g.state === 'proposed' && Date.parse(g.expiresAt) > now.getTime())
+    .sort((a, b) => a.expiresAt.localeCompare(b.expiresAt))
+  const active = goals
+    .filter((g) => g.state === 'active')
+    .sort((a, b) => (a.dueAt ?? '9999').localeCompare(b.dueAt ?? '9999'))
+  if (pending.length === 0 && active.length === 0) return ''
+
+  const isOverdue = (g: GoalDigest) => g.dueAt !== null && Date.parse(g.dueAt) < now.getTime()
+  const overdue = active.filter(isOverdue).length
+  const lines = [
+    ...pending.map((g) => `Awaiting your Approve / Veto in the inbox: ${safeLine(g.title, GOAL_BLOCK_TITLE_CHARS)} — expires ${londonDayMonth(g.expiresAt)}.`),
+    ...active.map((g) => {
+      const title = safeLine(g.title, GOAL_BLOCK_TITLE_CHARS)
+      if (!g.dueAt) return `Active: ${title}.`
+      if (!isOverdue(g)) return `Active: ${title} — due ${londonDayMonth(g.dueAt)}.`
+      const late = calendarDays(londonDate(new Date(g.dueAt)), today)
+      return `Active: ${title} — ${late > 0 ? `${plural(late, 'day')} overdue` : 'overdue'} (due ${londonDayMonth(g.dueAt)}).`
+    }),
+  ].slice(0, MAX_GOAL_BLOCK_LINES)
+  return [`Goals (${active.length} active${overdue > 0 ? ` · ${overdue} overdue` : ''}):`, ...lines].join('\n')
 }
 
 // ── Promise line (deterministic, appended after the questions) ───────────

@@ -394,3 +394,48 @@ describe('promises at 06:00', () => {
     expect(vi.mocked(deliverKairosSpeak).mock.calls[0][1].message).not.toContain('Promises')
   })
 })
+
+describe('goals at 06:00', () => {
+  const goals = [
+    { title: 'Name the deploy cause', state: 'proposed' as const, dueAt: null, expiresAt: '2026-10-03T13:00:00.000Z' },
+    { title: 'Map the login drop-off', state: 'active' as const, dueAt: '2026-10-08T05:00:00.000Z', expiresAt: '2026-09-25T00:00:00.000Z' },
+  ]
+  const promises = { open: [{ seq: 3, outcome: 'Login fix shipped to beta', dueDate: '2026-09-28', status: 'open' as const }], closedSince: [] }
+
+  it('appends the goals block after the beliefs and before the questions and the promise line', async () => {
+    const openAsks = [{ seq: 7, question: 'Ship Atlas?', askedAt: '2026-09-30T04:30:00.000Z' }]
+    vi.mocked(gatherDailyMessageInputs).mockResolvedValue({ ...INPUTS, openAsks, promises, goals })
+    selectQueue.push([{ n: 0 }])
+    await runDailyMessageForUser(USER, { now: NOW })
+    const sent = vi.mocked(deliverKairosSpeak).mock.calls[0][1].message
+    const at = (s: string) => sent.indexOf(s)
+    expect(at('What I now believe:')).toBeGreaterThan(-1)
+    expect(at('What I now believe:')).toBeLessThan(at('Goals (1 active):'))
+    expect(sent).toContain('Awaiting your Approve / Veto in the inbox: Name the deploy cause — expires 03/10.')
+    expect(sent).toContain('Active: Map the login drop-off — due 08/10.')
+    expect(at('Goals (1 active):')).toBeLessThan(at('Open questions (1):'))
+    expect(at('Open questions (1):')).toBeLessThan(at('Promises ('))
+    // The model prompt never carries goals.
+    expect(ask.mock.calls[0][0].prompt).not.toContain('Name the deploy cause')
+  })
+
+  it('under the cap, trimming keeps the questions and the promise line', async () => {
+    ask.mockResolvedValue({ text: JSON.stringify({ message: `**Today** ${'n'.repeat(900)}` }), finishReason: 'stop' })
+    const openAsks = Array.from({ length: 40 }, (_, i) => ({ seq: i + 1, question: 'q'.repeat(150), askedAt: '2026-09-28T04:30:00.000Z' }))
+    vi.mocked(gatherDailyMessageInputs).mockResolvedValue({ ...INPUTS, openAsks, promises, goals })
+    selectQueue.push([{ n: 0 }])
+    await runDailyMessageForUser(USER, { now: NOW })
+    const sent = vi.mocked(deliverKairosSpeak).mock.calls[0][1].message
+    expect(sent.length).toBeLessThanOrEqual(4000)
+    expect(sent).toContain('Open questions (40):')
+    for (const seq of [1, 40]) expect(sent).toContain(`Q${seq} · `)
+    expect(sent).toContain("'skip Q1' drops one.")
+    expect(sent.endsWith("Reply 'P3 kept', 'drop P3' or 'P3 by 08/10'.")).toBe(true)
+  })
+
+  it('no goals block when there are none', async () => {
+    selectQueue.push([{ n: 0 }])
+    await runDailyMessageForUser(USER, { now: NOW })
+    expect(vi.mocked(deliverKairosSpeak).mock.calls[0][1].message).not.toContain('Goals (')
+  })
+})

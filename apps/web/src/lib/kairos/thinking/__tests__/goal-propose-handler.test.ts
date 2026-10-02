@@ -14,8 +14,10 @@ vi.mock('@/lib/data/idea-inputs', () => ({ listActiveDominions: vi.fn(), listOpe
 vi.mock('@/lib/kairos/embeddings', () => ({ embedOne: vi.fn() }))
 vi.mock('@/lib/kairos/cron-trace', () => ({ writeCronSuccessTrace: vi.fn() }))
 vi.mock('@/lib/kairos/goals/transitions', () => ({ expireStaleGoals: vi.fn(), proposeGoal: vi.fn() }))
+vi.mock('@/lib/kairos/proposal-telegram', () => ({ announceGoalProposal: vi.fn(async () => true) }))
 
 import { countOpenGoals, listFailedGoals, listGoalSimilarities, listOpenGoals } from '@/lib/data/goals'
+import { announceGoalProposal } from '@/lib/kairos/proposal-telegram'
 import { listIdeaOutcomes } from '@/lib/data/ideas'
 import { listActiveDominions, listOpenObjectives } from '@/lib/data/idea-inputs'
 import { hasJobWithKeyLike } from '@/lib/data/thinking-jobs'
@@ -157,12 +159,24 @@ describe('goal_propose apply', () => {
       proposedOn: DAY,
     }))
     expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER, expect.objectContaining({ cronName: 'goal-propose', outcome: 'ok' }))
+    // Ask first: the new proposal goes straight to Telegram with its buttons.
+    expect(announceGoalProposal).toHaveBeenCalledWith(USER, { id: 'g-new' }, expect.any(Date))
+  })
+
+  it('a Telegram send failure never fails the written proposal', async () => {
+    vi.mocked(proposeGoal).mockResolvedValue({ ok: true, goal: { id: 'g-new' } as never })
+    vi.mocked(announceGoalProposal).mockRejectedValueOnce(new Error('telegram down'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const res = await goalProposeHandler.apply(jobRow(), answer(candidate), 'routine')
+    expect(res).toMatchObject({ ok: true, memoryIds: ['g-new'] })
+    errorSpy.mockRestore()
   })
 
   it('"none" is a fine answer: skipped, traced, nothing written', async () => {
     const res = await goalProposeHandler.apply(jobRow(), answer(null), 'routine')
     expect(res).toEqual({ ok: true, memoryIds: [], output: { skipped: 'no_goal', answeredBy: 'routine' } })
     expect(proposeGoal).not.toHaveBeenCalled()
+    expect(announceGoalProposal).not.toHaveBeenCalled()
     expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER, expect.objectContaining({ cronName: 'goal-propose', outcome: 'skipped', skipReason: 'no_goal' }))
   })
 

@@ -36,6 +36,7 @@ vi.mock('@/lib/kairos/proposal-accept', () => ({ acceptKairosProposal: acceptPro
 
 import { POST } from '../route'
 import { OPERATOR_ONLY_AMENDMENT_ERROR, OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR } from '@/lib/kairos/constitution/amendment'
+import { OPERATOR_ONLY_GOAL_ERROR } from '@/lib/kairos/goals/guards'
 
 type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>
 
@@ -149,5 +150,37 @@ describe('POST /api/v1/memories/[id]/accept — superseding a constitution row',
       PROPOSAL_ID, 'user-1', expect.objectContaining({ supersedes: [CONSTITUTION_ID] }),
       { origin: { kind: 'operator', via: 'rest-session' } },
     )
+  })
+})
+
+describe('POST /api/v1/memories/[id]/accept — Kairos goals (Phase 2)', () => {
+  const goalProposal = {
+    id: PROPOSAL_ID,
+    type: 'inbound',
+    sourceMetadata: { kind: 'goal', status: 'pending', goal: { state: 'proposed' } },
+  }
+
+  it.each(['aeon_k1_apikey', 'aeon_at_oauth', 'master-key'])('refuses a goal proposal for a ****** (%s)', async (token) => {
+    findMemoryById.mockResolvedValue(goalProposal)
+    const res = await accept({ authorization: `Bearer ${token}` })
+    expect(res.status).toBe(403)
+    expect(res.body.error).toBe(OPERATOR_ONLY_GOAL_ERROR)
+    expect(acceptProposal).not.toHaveBeenCalled()
+  })
+
+  it('refuses an approved goal row for a bearer too', async () => {
+    findMemoryById.mockResolvedValue({ id: PROPOSAL_ID, type: 'kairos_goal', sourceMetadata: { kind: 'goal' } })
+    expect((await accept({ authorization: BEARER })).status).toBe(403)
+  })
+
+  it('the signed-in session approves through the decision path; refusals map to 409', async () => {
+    acceptProposal.mockResolvedValueOnce({ ok: true, memory: { id: PROPOSAL_ID, type: 'kairos_goal' } })
+    expect((await accept()).status).toBe(200)
+    expect(acceptProposal).toHaveBeenCalledWith(PROPOSAL_ID, 'user-1', expect.any(Object), { origin: { kind: 'operator', via: 'rest-session' } })
+
+    acceptProposal.mockResolvedValueOnce({ ok: false, reason: 'already_decided' })
+    expect((await accept()).status).toBe(409)
+    acceptProposal.mockResolvedValueOnce({ ok: false, reason: 'cap_reached' })
+    expect((await accept()).status).toBe(409)
   })
 })

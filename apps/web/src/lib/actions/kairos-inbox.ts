@@ -5,9 +5,46 @@ import { requireAuth } from '@/lib/actions/helpers'
 import { getKairosInbox } from '@/lib/data/inbox'
 import { answerKairosAsk, dismissKairosAsk } from '@/lib/kairos/ask'
 import { acceptInboxProposal, dismissInboxMemory } from '@/lib/kairos/proposal-accept'
+import { decideKairosProposal } from '@/lib/kairos/proposal-decision'
 
 const memoryIdSchema = z.string().uuid()
 const answerSchema = z.string().trim().min(1).max(10_000)
+const decideSchema = z.object({
+  id: memoryIdSchema,
+  verdict: z.enum(['approve', 'veto']),
+  reason: z.string().trim().max(2000).optional(),
+})
+
+export type DecideKairosInboxProposalResult =
+  | { ok: true; verdict: 'approve' | 'veto' }
+  | { ok: false; reason: string }
+
+// Approve / Veto / Veto + why from the web inbox. Owner-decided kinds (goals)
+// go through the one decision function; any other proposal falls back to the
+// classic accept / dismiss so the same buttons work everywhere.
+export async function decideKairosInboxProposal(
+  id: string,
+  verdict: 'approve' | 'veto',
+  reason?: string,
+): Promise<DecideKairosInboxProposalResult> {
+  const userId = await requireAuth()
+  const parsed = decideSchema.safeParse({ id, verdict, reason })
+  if (!parsed.success) return { ok: false, reason: 'invalid_input' }
+  const input = parsed.data
+
+  const res = await decideKairosProposal(userId, input.id, {
+    verdict: input.verdict,
+    reason: input.verdict === 'veto' ? input.reason || null : null,
+    via: 'inbox',
+  })
+  if (res.ok) return { ok: true, verdict: res.verdict }
+  if (res.reason !== 'not_decidable') return { ok: false, reason: res.reason }
+
+  const fallback = input.verdict === 'approve'
+    ? await acceptInboxProposal(userId, input.id)
+    : await dismissInboxMemory(userId, input.id)
+  return fallback.ok ? { ok: true, verdict: input.verdict } : { ok: false, reason: fallback.reason }
+}
 
 export async function listKairosInbox() {
   const userId = await requireAuth()

@@ -31,7 +31,12 @@ vi.mock('@/lib/data/belief-diff', () => ({ BELIEF_DIFF_ROW_CAP: 500, listBeliefD
 vi.mock('@/lib/data/ideas', () => ({ listSurvivorsSince: data.listSurvivorsSince, listIdeaOutcomes: data.listIdeaOutcomes }))
 vi.mock('@/lib/kairos/ideas/diversity', () => ({ weeklyIdeaDiversity: data.weeklyIdeaDiversity }))
 
-import { buildBeliefDiff, classifyBeliefOp, fedMemoryIds, gatherWeeklyReviewInputs, hasReviewSignal, reviewWindow } from '../inputs'
+const init = vi.hoisted(() => ({ enabled: vi.fn(() => false), goalStats: vi.fn(), readKairosPromises: vi.fn() }))
+vi.mock('@/lib/kairos/initiative', () => ({ initiativeEnabled: init.enabled }))
+vi.mock('@/lib/data/goals', () => ({ goalStats: init.goalStats }))
+vi.mock('@/lib/data/kairos-promises', () => ({ readKairosPromises: init.readKairosPromises }))
+
+import { buildBeliefDiff, classifyBeliefOp, fedMemoryIds, gatherWeeklyReviewInputs, hasReviewSignal, reviewWindow, summarisePromiseWeek } from '../inputs'
 
 const USER = 'user-1'
 // Monday of ISO 2026-W41; the week under review is W40 (Sep 28 – Oct 4).
@@ -96,6 +101,63 @@ beforeEach(() => {
   data.listSurvivorsSince.mockResolvedValue([])
   data.listIdeaOutcomes.mockResolvedValue([])
   data.weeklyIdeaDiversity.mockResolvedValue({ survivors: 0, meanDistance: null, alarm: false, weekStart: '2026-09-28' })
+})
+
+describe('initiative metrics (Phase 2)', () => {
+  const stats = {
+    proposed: 3, pending: 0, approved: 2, vetoed: 1, expired: 0, active: 1, done: 1, failed: 0, abandoned: 0,
+    acceptanceRate: 2 / 3, doneCheckedRate: 1, medianDecisionMinutes: 42,
+  }
+  const closed = (status: string, closedAt: string) => ({ status, closedAt })
+
+  beforeEach(() => {
+    init.enabled.mockReturnValue(false)
+    init.goalStats.mockResolvedValue(stats)
+    init.readKairosPromises.mockResolvedValue({
+      v: 1, nextSeq: 9, open: [],
+      closed: [
+        closed('kept', '2026-10-01T10:00:00.000Z'),
+        closed('lapsed', '2026-10-02T10:00:00.000Z'),
+        closed('kept', '2026-09-20T10:00:00.000Z'), // before the week
+      ],
+    })
+  })
+
+  it('is not read at all while the initiative is off', async () => {
+    const inputs = await gatherWeeklyReviewInputs(USER, MONDAY)
+    expect(inputs).not.toHaveProperty('initiative')
+    expect(init.goalStats).not.toHaveBeenCalled()
+    expect(init.readKairosPromises).not.toHaveBeenCalled()
+  })
+
+  it('carries 7-day goal stats and the week\'s promise kept-rate when on', async () => {
+    init.enabled.mockReturnValue(true)
+    const inputs = await gatherWeeklyReviewInputs(USER, MONDAY)
+    expect(init.goalStats).toHaveBeenCalledWith(USER, 7, MONDAY)
+    expect(inputs.initiative).toEqual({ goalDays: 7, goals: stats, promises: { kept: 1, lapsed: 1, dropped: 0, keptRate: 0.5 } })
+    expect(inputs.errors).toEqual([])
+  })
+
+  it('a failing read is recorded; nothing to report → absent', async () => {
+    init.enabled.mockReturnValue(true)
+    init.goalStats.mockRejectedValue(new Error('db down'))
+    init.readKairosPromises.mockResolvedValue({ v: 1, nextSeq: 1, open: [], closed: [] })
+    const inputs = await gatherWeeklyReviewInputs(USER, MONDAY)
+    expect(inputs).not.toHaveProperty('initiative')
+    expect(inputs.errors.map((e) => e.split(':')[0])).toContain('goal_stats')
+  })
+
+  it('summarisePromiseWeek counts lapsed and dropped as not kept, only inside the window', () => {
+    const w = reviewWindow(MONDAY)
+    expect(summarisePromiseWeek([], w)).toBeNull()
+    expect(summarisePromiseWeek([
+      closed('kept', '2026-09-29T00:00:00.000Z'),
+      closed('dropped', '2026-09-30T00:00:00.000Z'),
+      closed('lapsed', '2026-10-03T00:00:00.000Z'),
+      closed('kept', '2026-10-05T00:00:00.000Z'), // window end is exclusive
+      { status: 'kept' },
+    ], w)).toEqual({ kept: 1, lapsed: 1, dropped: 1, keptRate: 1 / 3 })
+  })
 })
 
 describe('reviewWindow', () => {

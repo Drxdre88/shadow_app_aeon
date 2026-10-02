@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { buildWeeklyReviewPrompt, groundWeeklyReview, type WeeklyReviewOutput } from '../prompt'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { buildWeeklyReviewPrompt, groundWeeklyReview, weeklyReviewSchema, type WeeklyReviewOutput } from '../prompt'
 import type { WeeklyReviewInputs } from '../inputs'
 
 const FED = 'aaaaaaaa-0000-4000-8000-000000000001'
@@ -14,6 +14,22 @@ function out(evidenceIds: string[]): WeeklyReviewOutput {
     actions: [{ title: 'Re-plan P2', why: 'It stalled', evidenceIds, dominion: 'swarm' }],
   }
 }
+
+describe('weeklyReviewSchema promises (lenient)', () => {
+  const base = { summary: 'A steady week with one stalled objective.', wins: [], drift: [], actions: [] }
+  const good = { outcome: 'Ship the inbox fix to beta', dueDate: '2026-10-10' }
+
+  it('a null or non-array promises field never costs the review', () => {
+    expect(weeklyReviewSchema.parse({ ...base, promises: null }).promises).toBeUndefined()
+    expect(weeklyReviewSchema.parse({ ...base, promises: 'soon' }).promises).toBeUndefined()
+  })
+
+  it('drops malformed items, keeps good ones, caps the list', () => {
+    const parsed = weeklyReviewSchema.parse({ ...base, promises: [good, { outcome: null }, { dueDate: '2026-10-10' }, ...Array(10).fill(good)] })
+    expect(parsed.promises?.length).toBe(6)
+    expect(parsed.promises?.[0]).toEqual(good)
+  })
+})
 
 describe('groundWeeklyReview (shared fed-id resolver)', () => {
   it('resolves decorated or shortened citations to the canonical fed id', () => {
@@ -76,5 +92,52 @@ describe('ideas, lessons and belief diff in the prompt', () => {
     }, [FED, OTHER], DOMS)
     expect(r.actions.map((a) => [a.title, a.ideaQuality ?? false])).toEqual([['More ops ideas', true], ['Re-plan P2', false]])
     expect(r.droppedActions).toBe(1)
+  })
+})
+
+describe('initiative metrics in the prompt', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  const base: WeeklyReviewInputs = {
+    window: { isoWeek: '2026-W40', start: new Date('2026-09-28T00:00:00Z'), end: new Date('2026-10-05T00:00:00Z') },
+    dominions: [], boardPages: [], objectives: [], beliefChanges: [], memoryOps: null, mindCompare: null,
+    asks: [], asksAnswered: 0, health: [], errors: [],
+    initiative: {
+      goalDays: 7,
+      goals: {
+        proposed: 4, pending: 1, approved: 2, vetoed: 1, expired: 0, active: 1, done: 1, failed: 1, abandoned: 0,
+        acceptanceRate: 2 / 3, doneCheckedRate: 0.5, medianDecisionMinutes: 95,
+      },
+      promises: { kept: 3, lapsed: 1, dropped: 0, keptRate: 0.75 },
+    },
+  }
+
+  it('renders acceptance, done-and-checked, median decision time and promise kept-rate when the initiative is on', () => {
+    vi.stubEnv('KAIROS_INITIATIVE', '1')
+    const prompt = buildWeeklyReviewPrompt(base)
+    expect(prompt).toContain('INITIATIVE — your own goals (proposed in the last 7 days)')
+    expect(prompt).toContain('- Goals: 4 proposed · approved 2, vetoed 1, expired 0, still pending 1')
+    expect(prompt).toContain('Acceptance rate: 67% · done-and-checked rate: 50% (done 1, failed 1, abandoned 0) · median decision time: 95 min')
+    expect(prompt).toContain('- Promises kept: 75% (kept 3, lapsed 1, dropped 0)')
+  })
+
+  it('says n/a before any decision and handles a missing half', () => {
+    vi.stubEnv('KAIROS_INITIATIVE', '1')
+    const prompt = buildWeeklyReviewPrompt({
+      ...base,
+      initiative: {
+        goalDays: 7,
+        goals: { ...base.initiative!.goals!, acceptanceRate: null, doneCheckedRate: null, medianDecisionMinutes: null },
+        promises: null,
+      },
+    })
+    expect(prompt).toContain('Acceptance rate: n/a · done-and-checked rate: n/a')
+    expect(prompt).toContain('median decision time: n/a')
+    expect(prompt).toContain('- Promises: (none closed this week)')
+  })
+
+  it('is silent while the initiative is off, even if the input is present', () => {
+    vi.stubEnv('KAIROS_INITIATIVE', '0')
+    expect(buildWeeklyReviewPrompt(base)).not.toContain('INITIATIVE')
   })
 })

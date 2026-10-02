@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { mutateKairosPromises } from '@/lib/data/kairos-promises'
+import { closeGoal } from '@/lib/kairos/goals/transitions'
 import { promiseDateSchema, type KairosPromise, type PromiseClosedBy } from '@/lib/data/validators/kairos-promises'
 import { closeInState, isDueInWindow, isLapsed, replaceOpen } from './rules'
 
@@ -45,7 +46,7 @@ export async function closeKairosPromise(
   const valid = parsed.data
   const { status, closedBy } = closeOutcome(valid)
 
-  return mutateKairosPromises<ClosePromiseResult>(userId, (state) => {
+  const res = await mutateKairosPromises<ClosePromiseResult>(userId, (state) => {
     const open = state.open.find((p) => p.id === promiseId)
     if (!open) {
       const closed = state.closed.some((p) => p.id === promiseId)
@@ -56,6 +57,27 @@ export async function closeKairosPromise(
     const next = closeInState(state, promiseId, status, closedBy, now)!
     return { state: next.state, result: { ok: true, promise: next.promise } }
   })
+  if (res.ok && valid.kind === 'owner') await closeLinkedGoal(userId, res.promise, valid, now)
+  return res
+}
+
+// An approved goal's promise is its "report back": the owner's verdict on the
+// promise closes the goal too (kept → done, dropped → abandoned). Best-effort —
+// the promise close already stands.
+async function closeLinkedGoal(
+  userId: string,
+  promise: KairosPromise,
+  owner: Extract<PromiseCloser, { kind: 'owner' }>,
+  now: Date,
+): Promise<void> {
+  const goalId = promise.source.kind === 'goal' ? promise.source.goalId : undefined
+  if (!goalId) return
+  try {
+    const res = await closeGoal(userId, goalId, owner.verdict === 'kept' ? 'done' : 'abandon', { kind: 'operator', via: owner.via }, { now })
+    if (!res.ok && res.reason !== 'already_resolved') console.error('[kairos:promises] goal close after promise close refused:', res.reason)
+  } catch (err) {
+    console.error('[kairos:promises] goal close after promise close failed:', err)
+  }
 }
 
 export interface PromiseOwner { kind: 'owner'; via: 'session' | 'telegram' }
