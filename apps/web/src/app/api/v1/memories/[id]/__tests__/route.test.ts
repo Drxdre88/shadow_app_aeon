@@ -35,6 +35,7 @@ vi.mock('@/lib/data/memories', () => ({ findMemoryById, updateMemory, deleteMemo
 
 import { DELETE, PATCH } from '../route'
 import { OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR } from '@/lib/kairos/constitution/amendment'
+import { OPERATOR_ONLY_GOAL_ERROR } from '@/lib/kairos/goals/guards'
 
 type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>
 
@@ -139,5 +140,38 @@ describe('DELETE /api/v1/memories/[id] — constitution rows', () => {
     const res = await del()
     expect(res.status).toBe(200)
     expect(findMemoryById).not.toHaveBeenCalled()
+  })
+})
+
+describe('/api/v1/memories/[id] — Kairos goal rows (Phase 2)', () => {
+  const proposal = { id: MEMORY_ID, type: 'inbound', streamClass: 'agentic', title: 'Goal', bodyMd: 'b', summary: 'q', sourceMetadata: { kind: 'goal', status: 'pending' } }
+  const approved = { ...proposal, type: 'kairos_goal', sourceMetadata: { status: 'accepted' } }
+
+  it.each([['a pending proposal', proposal], ['an approved goal', approved]])('refuses a bearer archiving (vetoing) %s', async (_label, row) => {
+    findMemoryById.mockResolvedValue(row)
+    const res = await patch({ archivedAt: '2026-10-02T00:00:00.000Z' }, { authorization: BEARER })
+    expect(res.status).toBe(403)
+    expect(res.body.error).toBe(OPERATOR_ONLY_GOAL_ERROR)
+    expect(updateMemory).not.toHaveBeenCalled()
+  })
+
+  it('refuses a bearer rewriting a goal but allows a summary backfill', async () => {
+    findMemoryById.mockResolvedValue(approved)
+    expect((await patch({ bodyMd: 'new' }, { authorization: BEARER })).status).toBe(403)
+    expect((await patch({ aiTitle: 'Desk blocker' }, { authorization: BEARER })).status).toBe(200)
+  })
+
+  it('refuses a bearer deleting a goal row', async () => {
+    findMemoryById.mockResolvedValue(proposal)
+    const res = await del({ authorization: BEARER })
+    expect(res.status).toBe(403)
+    expect(res.body.error).toBe(OPERATOR_ONLY_GOAL_ERROR)
+    expect(deleteMemory).not.toHaveBeenCalled()
+  })
+
+  it('leaves the signed-in session ungated', async () => {
+    findMemoryById.mockResolvedValue(proposal)
+    expect((await patch({ archivedAt: '2026-10-02T00:00:00.000Z' })).status).toBe(200)
+    expect((await del()).status).toBe(200)
   })
 })

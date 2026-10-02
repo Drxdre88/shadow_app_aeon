@@ -38,7 +38,7 @@ export const DAILY_MESSAGE_OPENS_UTC = { hour: 4, minute: 0 }
 // Past this, plan on whatever exists even if a feeding job is still open.
 export const NIGHT_SETTLED_UTC = { hour: 4, minute: 35 }
 // Jobs whose output the message reads; a live one delays planning.
-const FEEDING_KINDS = new Set(['aether', 'idea_generate', 'idea_judge', 'ask_mine'])
+const FEEDING_KINDS = new Set(['aether', 'idea_generate', 'idea_judge', 'goal_propose', 'ask_mine'])
 const OPEN = new Set(['queued', 'claimed'])
 
 export function dailyMessageDeadline(now: Date): Date {

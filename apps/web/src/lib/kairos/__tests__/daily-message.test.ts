@@ -48,6 +48,7 @@ vi.mock('../speak', () => ({ deliverKairosSpeak: vi.fn() }))
 vi.mock('../cron-trace', () => ({ writeCronFailureTrace: vi.fn(), writeCronSuccessTrace: vi.fn() }))
 vi.mock('../daily-message-inputs', () => ({ gatherDailyMessageInputs: vi.fn() }))
 vi.mock('../conscience-context', () => ({ loadConscienceBlock: vi.fn() }))
+vi.mock('../promises/check', () => ({ PROMISE_CHECK_CRON: 'promise-check', verifyOpenPromises: vi.fn() }))
 
 import { PgDialect } from 'drizzle-orm/pg-core'
 import type { SQL } from 'drizzle-orm'
@@ -60,6 +61,7 @@ import { deliverKairosSpeak } from '../speak'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '../cron-trace'
 import { gatherDailyMessageInputs } from '../daily-message-inputs'
 import { loadConscienceBlock } from '../conscience-context'
+import { verifyOpenPromises } from '../promises/check'
 import type { DailyMessageInputs } from '../daily-message-prompt'
 import { readJobDraft, runDailyMessageForUser } from '../daily-message'
 
@@ -345,5 +347,50 @@ describe('routine draft', () => {
     expect(readJobDraft(job())).toBe('**Today** routine draft.')
     expect(readJobDraft(job({ output: { draft: '   ' } }))).toBeNull()
     expect(readJobDraft(job({ output: null }))).toBeNull()
+  })
+})
+
+describe('promises at 06:00', () => {
+  it('runs the promise check after the already-sent exit and before compose', async () => {
+    selectQueue.push([{ n: 1 }])
+    await runDailyMessageForUser(USER, { now: NOW })
+    expect(verifyOpenPromises).not.toHaveBeenCalled()
+
+    selectQueue.push([{ n: 0 }])
+    await runDailyMessageForUser(USER, { now: NOW })
+    expect(verifyOpenPromises).toHaveBeenCalledWith(USER, NOW, { persist: true })
+    expect(vi.mocked(verifyOpenPromises).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(gatherDailyMessageInputs).mock.invocationCallOrder[0])
+  })
+
+  it('a failed check is traced and never costs the message; dryRun only plans', async () => {
+    selectQueue.push([{ n: 0 }])
+    vi.mocked(verifyOpenPromises).mockRejectedValueOnce(new Error('prefs locked'))
+    expect(await runDailyMessageForUser(USER, { now: NOW })).toMatchObject({ status: 'sent' })
+    expect(writeCronFailureTrace).toHaveBeenCalledWith(USER, expect.objectContaining({ cronName: 'promise-check', reason: 'check_failed' }))
+
+    await runDailyMessageForUser(USER, { now: NOW, dryRun: true })
+    expect(verifyOpenPromises).toHaveBeenLastCalledWith(USER, NOW, { persist: false })
+  })
+
+  it('appends the promise line after the questions and trimming never cuts it', async () => {
+    const openAsks = Array.from({ length: 60 }, (_, i) => ({ seq: i + 1, question: 'q'.repeat(150), askedAt: '2026-09-28T04:30:00.000Z' }))
+    const promises = { open: [{ seq: 3, outcome: 'Login fix shipped to beta', dueDate: '2026-09-28', status: 'open' as const }], closedSince: [] }
+    vi.mocked(gatherDailyMessageInputs).mockResolvedValue({ ...INPUTS, openAsks, promises })
+    selectQueue.push([{ n: 0 }])
+    await runDailyMessageForUser(USER, { now: NOW })
+    const sent = vi.mocked(deliverKairosSpeak).mock.calls[0][1].message
+    const line = "Promises (1 open): P3 · 3 days late · Login fix shipped to beta. Reply 'P3 kept', 'drop P3' or 'P3 by 08/10'."
+    expect(sent.endsWith(`\n\n${line}`)).toBe(true)
+    expect(sent.length).toBeLessThanOrEqual(4000)
+    expect(sent.indexOf('Open questions (60):')).toBeLessThan(sent.indexOf('Promises ('))
+  })
+
+  it('no promise line when nothing is due', async () => {
+    const promises = { open: [{ seq: 3, outcome: 'Login fix shipped to beta', dueDate: '2026-10-09', status: 'open' as const }], closedSince: [] }
+    vi.mocked(gatherDailyMessageInputs).mockResolvedValue({ ...INPUTS, promises })
+    selectQueue.push([{ n: 0 }])
+    await runDailyMessageForUser(USER, { now: NOW })
+    expect(vi.mocked(deliverKairosSpeak).mock.calls[0][1].message).not.toContain('Promises')
   })
 })

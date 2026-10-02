@@ -60,6 +60,7 @@ export const BRAIN_JOBS: readonly BrainJob[] = [
   { kind: 'constitution_seed', label: 'Constitution draft', area: 'Beliefs & conscience', cadence: 'weekly', what: 'Until you have a constitution, drafts a first one from your areas and reflections for you to review (Mondays).' },
   { kind: 'idea_generate', label: 'Idea contest: generate', area: 'Creativity', cadence: 'nightly', what: 'Proposes grounded new ideas.' },
   { kind: 'idea_judge', label: 'Idea contest: judge', area: 'Creativity', cadence: 'nightly', what: 'A sceptical judge keeps the best one to three.' },
+  { kind: 'goal_propose', label: 'Goal of his own', area: 'Creativity', cadence: 'nightly', what: 'At most one investigation goal a night, seeded from ideas you accepted and goals that failed. It waits for your Approve or Veto.' },
   { kind: 'ask_mine', label: 'Question of the day', area: 'Voice', cadence: 'nightly', what: 'The one question Kairos most wants to ask you.' },
   { kind: 'weekly_review', label: 'Weekly review', area: 'Voice', cadence: 'weekly', what: 'Plan versus actual, belief changes and ideas (Mondays).' },
   { kind: 'daily_message', label: '06:00 message', area: 'Voice', cadence: 'nightly', what: 'The single morning message on Telegram and in the inbox, ending with every question you haven’t answered yet, numbered.' },

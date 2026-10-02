@@ -30,6 +30,7 @@ import {
   OPERATOR_ONLY_AMENDMENT_ERROR,
   OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR,
 } from '@/lib/kairos/constitution/amendment'
+import { goalPatchRefusal } from '@/lib/kairos/goals/guards'
 import { db } from '@/lib/db'
 import { boardTasks, groupMembers } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
@@ -143,7 +144,8 @@ export const registerMemoryTools: RegisterFn = (server) => {
     'update_memory',
     'Update an existing memory. Most commonly used to backfill or refresh AI-generated fields (aiTitle, execSummary) after re-reading the body. ' +
       'Also handles re-tagging, re-anchoring (realm/project/task), pinning, and archiving. Pass only the fields you want to change. ' +
-      'Constitution rows are owner-only: archiving, retyping, or changing title/bodyMd/summary on one is refused (aiTitle, execSummary, tags and pinned are still allowed).',
+      'Constitution rows are owner-only: archiving, retyping, or changing title/bodyMd/summary on one is refused (aiTitle, execSummary, tags and pinned are still allowed). ' +
+      'Kairos goal rows (pending goal proposals and approved goals) are owner-only the same way: archiving or un-archiving, retyping, or changing title/bodyMd/summary is refused.',
     {
       memoryId: z.string().uuid().describe('The memory UUID to update'),
       title: z.string().min(1).max(255).optional(),
@@ -170,8 +172,12 @@ export const registerMemoryTools: RegisterFn = (server) => {
 
       // MCP callers are agents: they may not archive, retype or rewrite a
       // constitution row (owner-only; docs/kairos/34 §2).
-      const constitutionErr = constitutionPatchRefusal(await findMemoryById(memoryId, uid), parsed.data)
+      const target = await findMemoryById(memoryId, uid)
+      const constitutionErr = constitutionPatchRefusal(target, parsed.data)
       if (constitutionErr) return fail(constitutionErr)
+      // Nor archive (= veto), retype or rewrite a Kairos goal (Phase 2).
+      const goalErr = goalPatchRefusal(target, parsed.data)
+      if (goalErr) return fail(goalErr)
 
       const memory = await _updateMemory(memoryId, uid, parsed.data, { origin: { kind: 'agent', via: 'mcp' } })
       if (!memory) return notFound('Memory')

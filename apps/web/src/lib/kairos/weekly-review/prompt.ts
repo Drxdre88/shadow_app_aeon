@@ -104,7 +104,29 @@ function ideaLines(inputs: WeeklyReviewInputs): string[] {
   return out
 }
 
-export function buildWeeklyReviewPrompt(inputs: WeeklyReviewInputs, conscience?: string): string {
+// Initiative only: Kairos may commit to up to MAX_REVIEW_PROMISES dated
+// promises. Absent = the review never mentions promises.
+export const MAX_REVIEW_PROMISES = 3
+
+export interface ReviewPromiseContext {
+  earliest: string
+  latest: string
+  open: ReadonlyArray<{ seq: number; outcome: string; dueDate: string }>
+}
+
+function promiseLines(ctx: ReviewPromiseContext): string[] {
+  const out = [
+    '',
+    `PROMISES — you may add up to ${MAX_REVIEW_PROMISES} dated promises for the weeks ahead: a named outcome the operator will be able to see done (e.g. "Login fix shipped to beta users"), never an activity like "look into", "explore" or "think about".`,
+    `Add them to the JSON as "promises": [{ "outcome": string (10–160 characters), "dueDate": "YYYY-MM-DD" between ${ctx.earliest} and ${ctx.latest}, "taskId": string | null }]. "taskId" is a board card id only if you know one, otherwise null. Use [] when nothing is worth promising.`,
+    'Already open (do not repeat):',
+  ]
+  if (ctx.open.length === 0) out.push('- (none)')
+  for (const p of ctx.open) out.push(`- P${p.seq} due ${p.dueDate}: ${clip(p.outcome, 160)}`)
+  return out
+}
+
+export function buildWeeklyReviewPrompt(inputs: WeeklyReviewInputs, conscience?: string, promises?: ReviewPromiseContext): string {
   const { window: w } = inputs
   const lines: string[] = [
     `Week under review: ${w.isoWeek} (${w.start.toISOString().slice(0, 10)} to ${new Date(w.end.getTime() - 1).toISOString().slice(0, 10)}).`,
@@ -166,9 +188,21 @@ export function buildWeeklyReviewPrompt(inputs: WeeklyReviewInputs, conscience?:
   // Norms read at answer time (P2.5 G4) — delimited reference data.
   if (conscience?.trim()) lines.push('', conscience.trim())
 
+  if (promises) lines.push(...promiseLines(promises))
+
   lines.push('', 'Write the weekly review JSON now.')
   return lines.join('\n')
 }
+
+// Lenient per item: a malformed promise must not cost the review.
+// createKairosPromises re-validates each one strictly and caps at 3.
+const reviewPromiseSchema = z.object({
+  outcome: z.string().max(1000),
+  dueDate: z.string().max(40),
+  taskId: z.string().max(100).nullable().optional(),
+})
+
+export type ReviewPromiseProposal = z.infer<typeof reviewPromiseSchema>
 
 const actionSchema = z.object({
   title: z.string().trim().min(3).max(160),
@@ -190,6 +224,7 @@ export const weeklyReviewSchema = z.object({
   drift: z.array(z.string().trim().min(1).max(300)).max(8).default([]),
   // Accept a few extra so one over-eager answer is capped, not rejected.
   actions: z.array(actionSchema).max(10).default([]),
+  promises: z.array(reviewPromiseSchema).max(MAX_REVIEW_PROMISES * 2).optional(),
 })
 
 export type WeeklyReviewOutput = z.infer<typeof weeklyReviewSchema>
@@ -211,6 +246,8 @@ export interface GroundedWeeklyReview {
   actions: GroundedReviewAction[]
   // Actions the model proposed but grounding (or the cap) dropped.
   droppedActions: number
+  // Raw promise proposals; persisted only when the initiative switch is on.
+  promises: ReviewPromiseProposal[]
 }
 
 export function groundWeeklyReview(
@@ -246,6 +283,7 @@ export function groundWeeklyReview(
     drift: out.drift.slice(0, 5),
     actions,
     droppedActions: out.actions.length - actions.length,
+    promises: out.promises ?? [],
   }
 }
 

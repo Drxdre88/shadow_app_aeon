@@ -144,6 +144,9 @@ export interface DriftDigest { alert: boolean; summary: string | null; measured?
 // survivors from the same window are waiting in the inbox.
 export interface OpenAskDigest { seq: number; question: string; askedAt: string }
 export interface IdeaOfTheDay { title: string; claim: string; survivedBecause: string | null; othersWaiting: number }
+// Kairos promises (P-numbered) — rendered as one code-built line at send time.
+export interface PromiseDigest { seq: number; outcome: string; dueDate: string; status: 'open' | 'kept' | 'dropped' | 'lapsed' }
+export interface PromisesDigest { open: PromiseDigest[]; closedSince: PromiseDigest[] }
 
 // Every input is optional: null = unavailable (not found, or its read failed —
 // the name is then listed in `failed`). An input failure never costs the message.
@@ -165,6 +168,8 @@ export interface DailyMessageInputs {
   idea?: IdeaOfTheDay | null
   // true = this week's surviving ideas are collapsing onto each other.
   ideaDiversityAlarm?: boolean | null
+  // Open promises + those closed since the last message; '' line when nothing is due.
+  promises?: PromisesDigest | null
   failed: string[]
 }
 
@@ -189,6 +194,7 @@ export const DAILY_MESSAGE_SYSTEM_PROMPT = [
   '  (Aether, belief changes, drift). Skip any section with nothing in it — do not say "nothing to report".',
   '- If a drift alert is present, say so plainly in one line.',
   '- Do NOT ask or quote your open questions — the delivery layer appends them, numbered.',
+  '- Do NOT mention goals or promises — the delivery layer appends them.',
   '- Synthesis health: one short line only if a stage is failing; silence when healthy or unknown.',
   '- First person, texting register ("I noticed…", "yesterday you…") — not a report.',
   '- Do NOT list the promoted beliefs — the delivery layer appends them deterministically.',
@@ -386,4 +392,58 @@ export function appendOpenQuestionsBlock(
   const room = maxChars - block.length - 2
   if (room < 2) return block.slice(0, maxChars)
   return `${message.slice(0, room - 1).trimEnd()}…\n\n${block}`
+}
+
+// ── Promise line (deterministic, appended after the questions) ───────────
+
+export const PROMISE_LINE_MAX_CHARS = 300
+
+function calendarDays(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T12:00:00.000Z`) - Date.parse(`${from}T12:00:00.000Z`)) / DAY_MS)
+}
+
+function dayMonthIn(date: string, days: number): string {
+  const d = new Date(`${date}T12:00:00.000Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  const iso = d.toISOString()
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}`
+}
+
+// One line, only when something needs the operator: an open promise that is
+// late or due today, or one kept / lapsed since the last message. '' otherwise.
+// e.g. "Promises (7 open): P3 · 3 days late · <outcome> · P5 due today · ✓ P2 kept.
+// Reply 'P3 kept', 'drop P3' or 'P3 by 20/10'."
+export function buildPromiseLine(promises: PromisesDigest | null | undefined, now: Date): string {
+  if (!promises) return ''
+  const today = londonDate(now)
+  const due = promises.open
+    .map((p) => ({ p, late: calendarDays(p.dueDate, today) }))
+    .filter((x) => x.late >= 0)
+    .sort((a, b) => b.late - a.late || a.p.seq - b.p.seq)
+  const closed = promises.closedSince.filter((p) => p.status === 'kept' || p.status === 'lapsed')
+  if (due.length === 0 && closed.length === 0) return ''
+
+  const head = `Promises (${promises.open.length} open): `
+  const hintSeq = due[0]?.p.seq
+  const hint = hintSeq === undefined ? '' : ` Reply 'P${hintSeq} kept', 'drop P${hintSeq}' or 'P${hintSeq} by ${dayMonthIn(today, 7)}'.`
+  const render = (outcomeChars: number, keep: number, withHint: boolean): string => {
+    const items = [
+      ...due.map(({ p, late }) => {
+        const when = late === 0 ? 'due today' : `${plural(late, 'day')} late`
+        return outcomeChars > 0 ? `P${p.seq} · ${when} · ${safeLine(p.outcome, outcomeChars)}` : `P${p.seq} ${when}`
+      }),
+      ...closed.map((p) => (p.status === 'kept' ? `✓ P${p.seq} kept` : `✗ P${p.seq} lapsed`)),
+    ].slice(0, keep)
+    return `${head}${items.join(' · ')}.${withHint ? hint : ''}`
+  }
+  const total = due.length + closed.length
+  for (const withHint of [true, false]) {
+    for (let keep = total; keep >= 1; keep--) {
+      for (const chars of [80, 50, 30, 0]) {
+        const line = render(chars, keep, withHint)
+        if (line.length <= PROMISE_LINE_MAX_CHARS) return line
+      }
+    }
+  }
+  return render(0, 1, false).slice(0, PROMISE_LINE_MAX_CHARS)
 }

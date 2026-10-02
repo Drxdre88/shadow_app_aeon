@@ -8,6 +8,7 @@ import {
   isConstitutionRow,
   OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR,
 } from '@/lib/kairos/constitution/amendment'
+import { goalPatchRefusal, isGoalRow, OPERATOR_ONLY_GOAL_ERROR } from '@/lib/kairos/goals/guards'
 import type { Origin } from '@/lib/kairos/origin'
 
 type Params = { params: Promise<{ id: string }> }
@@ -44,9 +45,11 @@ export const PATCH = withRateLimit(
     // P2.5 origin by auth mode (cookie only when no Bearer header is sent).
     const isBearer = request.headers.get('authorization')?.startsWith('Bearer ') ?? false
     // A bearer caller is an agent: it may not archive, retype or rewrite a
-    // constitution row (owner-only; the signed-in session still can).
+    // constitution row (owner-only; the signed-in session still can), nor a
+    // Kairos goal row (archiving one would be a veto).
     if (isBearer) {
-      const refusal = constitutionPatchRefusal(await findMemoryById(id, result.id), parsed.data)
+      const target = await findMemoryById(id, result.id)
+      const refusal = constitutionPatchRefusal(target, parsed.data) ?? goalPatchRefusal(target, parsed.data)
       if (refusal) return jsonError(refusal, 403)
     }
     const origin: Origin = isBearer
@@ -66,8 +69,10 @@ export const DELETE = withRateLimit(
     const { id } = await (ctx as Params).params
 
     const isBearer = request.headers.get('authorization')?.startsWith('Bearer ') ?? false
-    if (isBearer && isConstitutionRow(await findMemoryById(id, result.id))) {
-      return jsonError(OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR, 403)
+    if (isBearer) {
+      const target = await findMemoryById(id, result.id)
+      if (isConstitutionRow(target)) return jsonError(OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR, 403)
+      if (isGoalRow(target)) return jsonError(OPERATOR_ONLY_GOAL_ERROR, 403)
     }
 
     const ok = await _deleteMemory(id, result.id)

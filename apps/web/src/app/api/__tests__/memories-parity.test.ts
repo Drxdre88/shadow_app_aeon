@@ -252,4 +252,38 @@ describe('Memory MCP <-> REST parity', () => {
       expect(updateBlock).toMatch(/Constitution rows are owner-only/)
     })
   })
+
+  // Phase 2: Kairos goal rows (pending proposals and approved goals) are
+  // owner-decided. Agent surfaces refuse archiving (= veto), retyping,
+  // rewriting or deleting one, with the shared goal guard, before mutating.
+  describe('Kairos goal rows are owner-only on agent surfaces', () => {
+    const blockFor = (name: string) =>
+      mcpSrc.split(/server\.tool\(/).find((b) => new RegExp(`^\\s*['"]${name}['"]`).test(b)) ?? ''
+    const updateBlock = blockFor('update_memory')
+    const restItem = readSource(path.join(REST_ROOT, '[id]/route.ts'))
+    const restPatch = restItem.slice(restItem.indexOf('export const PATCH'), restItem.indexOf('export const DELETE'))
+    const restDelete = restItem.slice(restItem.indexOf('export const DELETE'))
+
+    it.each([
+      ['MCP update_memory', updateBlock, /goalPatchRefusal\(/, /_updateMemory\(/],
+      ['REST PATCH [id]', restPatch, /goalPatchRefusal\(/, /_updateMemory\(/],
+      ['REST DELETE [id]', restDelete, /isGoalRow\(/, /_deleteMemory\(/],
+    ] as const)('%s checks the goal guard before mutating', (_label, src, guard, mutation) => {
+      expect(src.search(guard)).toBeGreaterThan(-1)
+      expect(src.search(guard)).toBeLessThan(src.search(mutation))
+    })
+
+    it('REST DELETE refuses goal rows with the shared message', () => {
+      expect(restDelete).toMatch(/OPERATOR_ONLY_GOAL_ERROR/)
+    })
+
+    it('all surfaces import the guard from the goals guard module', () => {
+      expect(mcpSrc).toMatch(/import \{[^}]*\bgoalPatchRefusal\b[^}]*\} from '@\/lib\/kairos\/goals\/guards'/)
+      expect(restItem).toMatch(/import \{[^}]*\bgoalPatchRefusal\b[^}]*\bisGoalRow\b[^}]*\} from '@\/lib\/kairos\/goals\/guards'/)
+    })
+
+    it('the update_memory description tells agents goal rows are owner-only', () => {
+      expect(updateBlock).toMatch(/Kairos goal rows .* are owner-only/)
+    })
+  })
 })

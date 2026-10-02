@@ -60,6 +60,8 @@ export const PLANNED_THINKING_KINDS: readonly ThinkingJobKind[] = [
   // Idea tournament after aether (its tensions feed generation); judge after
   // generate. Both before the daily message, which shows the idea of the day.
   'idea_generate', 'idea_judge',
+  // Kairos's own goal, after the judge (accepted ideas seed it).
+  'goal_propose',
   'ask_mine',
   // Last: the daily message reads what the night produced.
   'daily_message',
@@ -94,6 +96,7 @@ const FALLBACK_OWNER: Partial<Record<ThinkingJobKind, string>> = {
   archetype: 'the 02:30 UTC archetype-synthesis cron',
   ask_mine: 'the 04:30 UTC ask-mine cron',
   constitution_seed: 'the Monday 05:58 UTC constitution-seed cron',
+  goal_propose: 'nothing — a missed night proposes no goal',
 }
 
 function fallbackOwner(kind: ThinkingJobKind): string {

@@ -177,6 +177,8 @@ export type ThinkingJobKind =
   // Monday first-draft constitution seed (docs/kairos/34 §2); the
   // constitution-seed cron is its fallback.
   | 'constitution_seed'
+  // Phase 2 initiative: at most one investigation goal a night (no fallback).
+  | 'goal_propose'
 
 export type ThinkingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'expired' | 'fallback'
 

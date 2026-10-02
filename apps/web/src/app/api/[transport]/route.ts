@@ -30,6 +30,7 @@ import {
   registerConstitutionTools,
   registerVoiceNoteTools,
   registerPaidBackupTools,
+  registerKairosPromiseTools,
 } from './tools'
 
 async function verifyToken(_req: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
@@ -76,6 +77,7 @@ const mcpHandler = createMcpHandler(
     registerConstitutionTools(server)
     registerVoiceNoteTools(server)
     registerPaidBackupTools(server)
+    registerKairosPromiseTools(server)
   },
   { capabilities: {} },
   {

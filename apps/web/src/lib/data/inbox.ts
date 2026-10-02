@@ -1,5 +1,6 @@
 import { listOpenKairosAsks } from '@/lib/data/ask'
 import { listMemories } from '@/lib/data/memories'
+import { GOAL_PROPOSAL_KIND, readGoalMeta } from '@/lib/kairos/goals/parse'
 import { groupVoiceNoteProposals, readVoiceNote, type VoiceNoteGroup, type VoiceNoteRef } from '@/lib/kairos/voice-note'
 
 export type KairosInboxUrgency = 'low' | 'normal' | 'high'
@@ -21,6 +22,7 @@ export type KairosInboxProposal = {
   summary: string | null
   createdAt: Date
   idea?: KairosInboxIdea | null
+  goal?: KairosInboxGoal | null
   voiceNote?: VoiceNoteRef | null
 }
 type KairosInboxEntry =
@@ -51,7 +53,19 @@ function readIdea(metadata: Record<string, unknown>): KairosInboxIdea | null {
   }
 }
 
-export async function getKairosInbox(userId: string): Promise<{ items: KairosInboxItem[] }> {
+// Kairos's own goal proposal (Phase 2) awaiting Approve / Veto. One past its
+// 72h expiry can no longer be decided, so it is not listed.
+export interface KairosInboxGoal { question: string; why: string; successCheck: string; dueInDays: number; expiresAt: string }
+
+function readGoal(metadata: Record<string, unknown>, now: Date): KairosInboxGoal | null {
+  if (metadata.kind !== GOAL_PROPOSAL_KIND) return null
+  const goal = readGoalMeta(metadata)
+  if (!goal || goal.state !== 'proposed') return null
+  if (!(Date.parse(goal.expiresAt) > now.getTime())) return null
+  return { question: goal.question, why: goal.why, successCheck: goal.successCheck.text, dueInDays: goal.dueInDays, expiresAt: goal.expiresAt }
+}
+
+export async function getKairosInbox(userId: string, now: Date = new Date()): Promise<{ items: KairosInboxItem[] }> {
   const [asks, inbound] = await Promise.all([
     listOpenKairosAsks(userId),
     listMemories(userId, { type: 'inbound', limit: INBOUND_LIMIT }),
@@ -69,6 +83,7 @@ export async function getKairosInbox(userId: string): Promise<{ items: KairosInb
   }))
 
   let latestDaily: KairosInboxEntry | null = null
+  const goals: KairosInboxEntry[] = []
   const ideas: KairosInboxEntry[] = []
   for (const memory of inbound) {
     const metadata = (memory.sourceMetadata ?? {}) as Record<string, unknown>
@@ -91,6 +106,8 @@ export async function getKairosInbox(userId: string): Promise<{ items: KairosInb
       entries.push(item)
       if (isDaily && (!latestDaily || item.createdAt > latestDaily.createdAt)) latestDaily = item
     } else {
+      const goal = readGoal(metadata, now)
+      if (metadata.kind === GOAL_PROPOSAL_KIND && !goal) continue
       const idea = readIdea(metadata)
       const voiceNote = readVoiceNote(metadata)
       const item: KairosInboxEntry = {
@@ -99,10 +116,12 @@ export async function getKairosInbox(userId: string): Promise<{ items: KairosInb
         title: memory.title,
         summary: memory.summary,
         createdAt: memory.createdAt,
+        ...(goal ? { goal } : {}),
         ...(idea ? { idea } : {}),
         ...(voiceNote ? { voiceNote } : {}),
       }
-      if (idea) ideas.push(item)
+      if (goal) goals.push(item)
+      else if (idea) ideas.push(item)
       else entries.push(item)
     }
   }
@@ -111,10 +130,10 @@ export async function getKairosInbox(userId: string): Promise<{ items: KairosInb
     i.kind === 'voice_note' ? { ...(i as VoiceNoteGroup<KairosInboxProposal>), id: i.noteId } : i
   ))
   const isProposalLike = (i: KairosInboxItem) => i.kind === 'proposal' || i.kind === 'voice_note'
-  // Tournament survivors (1–3 a night) lead the proposals so they aren't
-  // buried under older proposals.
+  // Kairos's goal proposals, then tournament survivors (1–3 a night), lead
+  // the proposals so they aren't buried under older proposals.
   const firstProposal = items.findIndex(isProposalLike)
-  items.splice(firstProposal === -1 ? items.length : firstProposal, 0, ...ideas)
+  items.splice(firstProposal === -1 ? items.length : firstProposal, 0, ...goals, ...ideas)
   // The newest daily message is pinned ahead of every other notify/proposal;
   // older undismissed ones keep their place.
   if (latestDaily) {

@@ -10,7 +10,12 @@ const m = vi.hoisted(() => ({
   writeCronFailureTrace: vi.fn(),
   gatherWeeklyReviewInputs: vi.fn(),
   loadConscienceBlock: vi.fn(),
+  readKairosPromises: vi.fn(),
+  createKairosPromises: vi.fn(),
 }))
+
+vi.mock('@/lib/data/kairos-promises', () => ({ readKairosPromises: m.readKairosPromises }))
+vi.mock('@/lib/kairos/promises/create', () => ({ createKairosPromises: m.createKairosPromises }))
 
 vi.mock('@/lib/kairos/conscience-context', () => ({ loadConscienceBlock: m.loadConscienceBlock }))
 vi.mock('@/lib/data/thinking-jobs', () => ({ hasJobWithKeyLike: m.hasJobWithKeyLike }))
@@ -102,6 +107,9 @@ let delivered: Set<string>
 
 beforeEach(() => {
   vi.clearAllMocks()
+  delete process.env.KAIROS_INITIATIVE
+  m.readKairosPromises.mockResolvedValue({ v: 1, nextSeq: 4, open: [{ seq: 3, outcome: 'Login fix shipped to beta', dueDate: '2026-10-09' }], closed: [] })
+  m.createKairosPromises.mockResolvedValue({ created: [], rejected: [], overflow: 0 })
   store = new Map()
   delivered = new Set()
   m.hasJobWithKeyLike.mockResolvedValue(false)
@@ -306,5 +314,56 @@ describe('weekly review fallback', () => {
     const job = jobFrom(await planOne())
     expect((await fallbackWeeklyReview(job)).ok).toBe(false)
     expect(m.captureMemory).not.toHaveBeenCalled()
+  })
+})
+
+describe('weekly review promises (initiative switch)', () => {
+  const PROMISES = [{ outcome: 'Swarm P2 objective closed out', dueDate: '2026-10-20', taskId: null }]
+
+  it('off: the prompt never mentions promises and returned promises are ignored', async () => {
+    const spec = await planOne()
+    expect(spec.input.prompt).not.toContain('PROMISES')
+    expect(m.readKairosPromises).not.toHaveBeenCalled()
+    const out = await applyWeeklyReview(jobFrom(spec), modelText({ promises: PROMISES }), 'routine')
+    expect(out.ok).toBe(true)
+    expect(m.createKairosPromises).not.toHaveBeenCalled()
+    const observation = m.captureMemory.mock.calls.at(-1)![1]
+    expect(observation.sourceMetadata).not.toHaveProperty('promises')
+  })
+
+  it('on: the prompt offers up to 3 dated promises with the London window and the open ones', async () => {
+    process.env.KAIROS_INITIATIVE = '1'
+    const prompt = (await planOne()).input.prompt
+    expect(prompt).toContain('up to 3 dated promises')
+    expect(prompt).toContain('between 2026-10-06 and 2026-11-02')
+    expect(prompt).toContain('P3 due 2026-10-09: Login fix shipped to beta')
+    expect(prompt.indexOf('PROMISES')).toBeLessThan(prompt.indexOf('Write the weekly review JSON now.'))
+  })
+
+  it('on: persists through createKairosPromises with the weekly_review source and records the result', async () => {
+    process.env.KAIROS_INITIATIVE = '1'
+    m.createKairosPromises.mockResolvedValue({
+      created: [{ id: 'p-1', seq: 4, dueDate: '2026-10-20' }], rejected: [{ index: 1, reason: 'vague_outcome' }], overflow: 0,
+    })
+    const job = jobFrom(await planOne())
+    const out = await applyWeeklyReview(job, modelText({ promises: [...PROMISES, { outcome: 'Explore new ideas for P3', dueDate: '2026-10-20' }] }), 'routine')
+    expect(out.ok).toBe(true)
+    expect(m.createKairosPromises).toHaveBeenCalledWith(USER, [
+      { outcome: 'Swarm P2 objective closed out', dueDate: '2026-10-20', taskId: null },
+      { outcome: 'Explore new ideas for P3', dueDate: '2026-10-20' },
+    ], { kind: 'weekly_review', jobId: 'job-1', isoWeek: '2026-W40' })
+    const observation = m.captureMemory.mock.calls.at(-1)![1]
+    expect(observation.sourceMetadata.promises).toEqual({
+      created: [{ id: 'p-1', seq: 4, dueDate: '2026-10-20' }], rejected: [{ index: 1, reason: 'vague_outcome' }], overflow: 0,
+    })
+  })
+
+  it('on: a promise write failure never costs the review', async () => {
+    process.env.KAIROS_INITIATIVE = '1'
+    m.createKairosPromises.mockRejectedValue(new Error('db down'))
+    const out = await applyWeeklyReview(jobFrom(await planOne()), modelText({ promises: PROMISES }), 'routine')
+    expect(out.ok).toBe(true)
+    expect(m.writeCronFailureTrace).toHaveBeenCalledWith(USER, expect.objectContaining({ cronName: 'weekly-review', reason: 'promises_failed' }))
+    expect(m.deliverKairosSpeak).toHaveBeenCalledTimes(1)
   })
 })
