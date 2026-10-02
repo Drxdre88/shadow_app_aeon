@@ -13,8 +13,12 @@ routine in the catalog, then re-paste it — never edit a prompt only on claude.
 
 | Routine | Trigger | Claims | Replaces |
 |---|---|---|---|
-| **Kairos brain** | cron `40 1-6 * * *` (UTC) — or the web form's *Hourly* preset | everything due (claims with `{}`) | thinking, ideas, morning, dusk, dawn, tidy |
-| **Kairos chat** | API trigger, fired once per chat message — web (`/kairos`) or Telegram (since 0.19) | `{"kinds":["chat"]}` | — |
+| **Kairos brain** | cron `40 1-6 * * *` (UTC) — or the web form's *Hourly* preset | everything due except chat (claims with `{"routine":"brain"}`) | thinking, ideas, morning, dusk, dawn, tidy |
+| **Kairos chat** | API trigger, fired once per chat message — web (`/kairos`) or Telegram (since 0.19) | `{"kinds":["chat"],"routine":"chat"}` | — |
+
+Since 0.20 each routine names itself on claim and submit, and the server keeps it to its own jobs
+(a wrong one gets `scope_denied` and the job stays open). Routines pasted before 0.20 still work
+unscoped; once both are re-pasted, set `KAIROS_REQUIRE_ROUTINE_SCOPE=1` to make scope mandatory.
 
 Delete the old routines on claude.ai: `Kairos thinking`, `Kairos ideas`, `Kairos morning`,
 `Kairos dusk`, `Kairos dawn`, `Kairos tidy` and `kairos-brain-tick` (all retired; the 06:00 message
@@ -87,13 +91,13 @@ Status counts these as *missed*, not *backup*, and shows the backup's calls over
 
 ## The loop (what the prompts encode)
 
-1. `claim_thinking_job({})` → `{ job: { id, kind, externalKey, claimToken, deadlineAt,
+1. `claim_thinking_job({ routine: "brain" })` → `{ job: { id, kind, externalKey, claimToken, deadlineAt,
    system, prompt, validMemoryIds, instructions } }` or `{ job: null }`.
 2. `job: null` → stop. Nothing is due; that is normal.
 3. Answer exactly as `system` demands, in the format `instructions` names (JSON for most
    kinds; plain text for `chat`). Cite only ids from `validMemoryIds`. Use only the
    substrate in `prompt`.
-4. `submit_thinking_job({ jobId, claimToken, text })` → `{ ok: true, memoryIds }`, or a
+4. `submit_thinking_job({ jobId, claimToken, text, routine: "brain" })` → `{ ok: true, memoryIds }`, or a
    rejection (`parse_failed`, `all_thoughts_ungrounded`, `already_ran`, `deadline_passed`,
    …). A rejected job is closed and its backup covers it — **never retry it**.
 5. Claim again: some jobs are planned only when the previous one settles (aether after
