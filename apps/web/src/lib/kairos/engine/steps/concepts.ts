@@ -14,18 +14,30 @@ export interface ConceptStepOptions {
   enqueue: EnqueueThinkingJobs
   handler?: Pick<ThinkingJobHandler, 'plan'>
   maxPerRun?: number
+  reserveMs?: number
 }
+
+// Run time Concepts keeps for itself on Sundays (cluster plan + enqueue).
+export const CONCEPT_RESERVE_MS = 20_000
 
 export class ConceptStep implements Step {
   readonly name = CONCEPT_STEP
   private readonly handler: Pick<ThinkingJobHandler, 'plan'>
   private readonly enqueue: EnqueueThinkingJobs
   private readonly maxPerRun: number
+  private readonly reserve: number
 
   constructor(opts: ConceptStepOptions) {
     this.handler = opts.handler ?? conceptHandler
     this.enqueue = opts.enqueue
     this.maxPerRun = opts.maxPerRun ?? MAX_CONCEPTS_PER_WEEK
+    this.reserve = opts.reserveMs ?? CONCEPT_RESERVE_MS
+  }
+
+  // Sundays only: the steps before it (BackUp draining a backlog) stop early
+  // enough to leave Concepts its plan + enqueue time.
+  reserveMs(ctx: EngineRunContext): number {
+    return isConceptDay(ctx.now) ? this.reserve : 0
   }
 
   async run(ctx: EngineRunContext): Promise<StepResult> {

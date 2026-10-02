@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { PgDialect } from 'drizzle-orm/pg-core'
+import type { SQL } from 'drizzle-orm'
 
 const results: unknown[] = []
 const calls: Array<{ method: string; args: unknown[] }> = []
@@ -46,6 +48,7 @@ vi.mock('@/lib/db', () => {
 
 import { db } from '@/lib/db'
 import {
+  countLiveEngineMemories,
   countOpenChallenges,
   listMemoryEngineUserIds,
   loadStalestEngineMemories,
@@ -80,8 +83,8 @@ describe('updateStandings', () => {
     expect(db.transaction).not.toHaveBeenCalled()
   })
 
-  it('with score ops, writes every batch AND the ops inside one transaction', async () => {
-    executeResults.push({ rowCount: 500 }, { rowCount: 2 })
+  it('with score ops, writes every batch AND the ops inside one transaction under a 10s statement limit', async () => {
+    executeResults.push({ rowCount: 0 }, { rowCount: 500 }, { rowCount: 2 })
     results.push([{ id: 'op-1' }])
     const updates = Array.from({ length: 502 }, (_, i) => ({ id: `id-${i}`, standing: 0.5 }))
     const ops = [{ memoryId: 'id-0', step: 'weigh', op: 'score' as const, before: { standing: 0.1 }, after: { standing: 0.5 }, reason: 'r' }]
@@ -89,7 +92,8 @@ describe('updateStandings', () => {
     expect(await updateStandings('user-1', updates, AT, { runId: 'run-1', ops })).toBe(502)
 
     expect(db.transaction).toHaveBeenCalledOnce()
-    expect(tx.execute).toHaveBeenCalledTimes(2)
+    expect(tx.execute).toHaveBeenCalledTimes(3)
+    expect(new PgDialect().sqlToQuery(tx.execute.mock.calls[0][0] as SQL).sql).toBe('SET LOCAL statement_timeout = 10000')
     expect(db.execute).not.toHaveBeenCalled()
     const insert = calls.find((c) => c.method === 'tx.insert')
     expect(insert).toBeDefined()
@@ -104,7 +108,7 @@ describe('updateStandings', () => {
     const ops = [{ memoryId: 'id-0', step: 'weigh', op: 'score' as const, reason: 'r' }]
     await expect(updateStandings('user-1', [{ id: 'id-0', standing: 0.5 }], AT, { runId: 'run-1', ops }))
       .rejects.toThrow('memory_ops insert failed')
-    expect(failingTx.execute).toHaveBeenCalledOnce()
+    expect(failingTx.execute).toHaveBeenCalledTimes(2)
   })
 })
 
@@ -128,6 +132,28 @@ describe('loadStalestEngineMemories', () => {
     results.push([])
     await loadStalestEngineMemories('user-1', AT, 7, ['x'])
     expect(calls.find((c) => c.method === 'limit')?.args).toEqual([7])
+  })
+
+  it('with a rotation, keeps never-scored rows plus tonight\'s id-hash bucket only', async () => {
+    results.push([])
+    await loadStalestEngineMemories('user-1', AT, 7, [], { night: 20_731, buckets: 6 })
+    const q = new PgDialect().sqlToQuery(calls.find((c) => c.method === 'where')?.args[0] as SQL)
+    expect(q.sql).toContain('IS NULL OR mod(mod(hashtext(')
+    expect(q.params).toEqual(expect.arrayContaining([6, 20_731 % 6]))
+  })
+
+  it('adds no bucket filter for a single bucket', async () => {
+    results.push([])
+    await loadStalestEngineMemories('user-1', AT, 7, [], { night: 3, buckets: 1 })
+    const q = new PgDialect().sqlToQuery(calls.find((c) => c.method === 'where')?.args[0] as SQL)
+    expect(q.sql).not.toContain('hashtext')
+  })
+})
+
+describe('countLiveEngineMemories', () => {
+  it('returns the count as a number', async () => {
+    results.push([{ n: 8123 }])
+    expect(await countLiveEngineMemories('user-1', AT)).toBe(8123)
   })
 })
 

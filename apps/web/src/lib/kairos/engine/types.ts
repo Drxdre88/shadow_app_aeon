@@ -130,6 +130,13 @@ export interface StepResult {
 
 export interface Step {
   readonly name: string
+  // Wall-clock cap (ms) on this step alone: the conductor hands it a deadline
+  // no later than its start + budgetMs, so one slow step can't starve the
+  // steps after it. Unset = bounded only by the run deadline.
+  readonly budgetMs?: number
+  // Time (ms) this step needs left in the run when it starts; every earlier
+  // step stops that much before the run deadline (0/unset = no reservation).
+  reserveMs?(ctx: EngineRunContext): number
   run(ctx: EngineRunContext): Promise<StepResult>
 }
 
@@ -167,10 +174,6 @@ export type ThinkingJobKind =
   | 'chat_distill'
   | 'archetype'
   | 'ask_mine'
-  | 'contradiction'
-  | 'brief'
-  | 'introspection'
-  | 'micro_consolidate'
 
 export type ThinkingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'expired' | 'fallback'
 

@@ -26,6 +26,10 @@ export class MemoryEngine {
 
   // `deadline` (epoch ms): steps stop starting new mutations past it and the
   // remaining steps are skipped, so the caller can still write its trace.
+  // Each step runs against its own deadline: the run deadline minus what the
+  // later steps reserve, capped at its start + budgetMs. A step that spends
+  // its slice yields (its backlog carries over, oldest first) and the later
+  // steps still run (2026-10-02: Weigh + BackUp ate the run, Concepts skipped).
   async runNight(userId: string, opts: { dryRun?: boolean; deadline?: number } = {}): Promise<EngineRunResult> {
     const dryRun = opts.dryRun ?? false
     const runId = this.newRunId()
@@ -36,14 +40,18 @@ export class MemoryEngine {
 
     let opsWritten = 0
     let stoppedEarly = false
-    for (const step of this.steps) {
-      if (outOfTime(ctx)) {
+    for (let i = 0; i < this.steps.length; i++) {
+      const step = this.steps[i]
+      const window = this.windowEnd(ctx, i)
+      if (outOfTime({ deadline: window })) {
         stoppedEarly = true
         steps.push({ step: step.name, examined: 0, changed: 0, skipped: 'out of time', outOfTime: true })
         continue
       }
+      const capped = step.budgetMs !== undefined ? Date.now() + step.budgetMs : undefined
+      const deadline = window === undefined ? capped : capped === undefined ? window : Math.min(window, capped)
       try {
-        const result = await step.run(ctx)
+        const result = await step.run({ ...ctx, deadline })
         steps.push(result)
         opsWritten += result.opsWritten ?? 0
         if (result.outOfTime) stoppedEarly = true
@@ -81,5 +89,13 @@ export class MemoryEngine {
       ...(stoppedEarly ? { outOfTime: true } : {}),
       failedSteps,
     }
+  }
+
+  // The run deadline minus the time every step after `index` reserves.
+  private windowEnd(ctx: EngineRunContext, index: number): number | undefined {
+    if (ctx.deadline === undefined) return undefined
+    let reserved = 0
+    for (const later of this.steps.slice(index + 1)) reserved += Math.max(0, later.reserveMs?.(ctx) ?? 0)
+    return ctx.deadline - reserved
   }
 }

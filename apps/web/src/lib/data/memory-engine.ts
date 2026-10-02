@@ -9,6 +9,7 @@ import { insertMemoryOps, type DbExecutor, type OpLog } from './memory-ops'
 // scoring rules live in lib/kairos/engine. Standing writes never bump updatedAt.
 
 const UPDATE_BATCH = 500
+const STATEMENT_TIMEOUT_MS = 10_000
 
 const engineColumns = {
   id: memories.id,
@@ -99,15 +100,32 @@ export async function loadTouchedEngineMemories(
   return rows.map(toEngineMemory)
 }
 
+export async function countLiveEngineMemories(userId: string, now: Date): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`COUNT(*)::int` })
+    .from(memories)
+    .where(and(eq(memories.userId, userId), notMeta(), live(now)))
+  return Number(row?.n ?? 0)
+}
+
+// `rotation`: only never-scored rows plus the rows whose id hashes into
+// bucket `night mod buckets`, so the slice moves on each night without
+// depending on a standing write to advance standing_at.
 export async function loadStalestEngineMemories(
   userId: string,
   now: Date,
   limit: number,
   excludeIds: readonly string[] = [],
+  rotation?: { night: number; buckets: number },
 ): Promise<EngineMemory[]> {
   if (limit <= 0) return []
   const conditions = [eq(memories.userId, userId), notMeta(), live(now)]
   if (excludeIds.length) conditions.push(notInArray(memories.id, [...excludeIds]))
+  if (rotation && rotation.buckets > 1) {
+    const b = Math.floor(rotation.buckets)
+    const bucket = ((Math.floor(rotation.night) % b) + b) % b
+    conditions.push(sql`(${memories.standing} IS NULL OR mod(mod(hashtext(${memories.id}::text)::bigint, ${b}) + ${b}, ${b}) = ${bucket})`)
+  }
   const rows = await db
     .select(engineColumns)
     .from(memories)
@@ -159,6 +177,8 @@ export async function countOpenChallenges(userId: string, ids: readonly string[]
       isNull(memories.archivedAt),
       isNull(memories.supersededAt),
       sql`${memories.sourceMetadata}->>'status' = 'pending'`,
+      // The contradiction scan is retired (0.17); its unread notices are not challenges.
+      sql`coalesce(${memories.sourceMetadata}->>'contradictionCheck', 'false') <> 'true'`,
       inArray(loserId, [...ids]),
     ))
     .groupBy(loserId)
@@ -191,6 +211,10 @@ export async function updateStandings(
   }
   if (!log || log.ops.length === 0) return write(db)
   return db.transaction(async (tx) => {
+    // Server-side cap below the pool's 15s client query_timeout: a slow batch
+    // is cancelled (and its row locks released) rather than left running
+    // after the client has given up.
+    await tx.execute(sql`SET LOCAL statement_timeout = ${sql.raw(String(STATEMENT_TIMEOUT_MS))}`)
     const written = await write(tx)
     await insertMemoryOps(userId, log.runId, log.ops, tx)
     return written

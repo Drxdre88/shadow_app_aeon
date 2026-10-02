@@ -156,6 +156,94 @@ describe('MemoryEngine', () => {
     })
     expect((await engine.runNight('user-1')).outOfTime).toBe(true)
   })
+
+  it('caps a step at its own budget and still runs the later steps when it overruns', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(0)
+    const seen: Array<[string, number | undefined]> = []
+    const slow: Step = {
+      name: 'weigh',
+      budgetMs: 1_000,
+      run: async (ctx) => {
+        seen.push(['weigh', ctx.deadline])
+        clock.mockReturnValue(5_000) // ran 5× past its slice
+        return { step: 'weigh', examined: 1, changed: 0, outOfTime: true }
+      },
+    }
+    const engine = new MemoryEngine({
+      steps: [slow, step('backup', async (ctx) => { seen.push(['backup', ctx.deadline]) })],
+      changes: () => fakeLog(),
+    })
+    try {
+      const result = await engine.runNight('user-1', { deadline: 100_000 })
+      expect(seen).toEqual([['weigh', 1_000], ['backup', 100_000]])
+      expect(result.steps.map((s) => s.step)).toEqual(['weigh', 'backup'])
+      expect(result.outOfTime).toBe(true)
+      expect(result.failedSteps).toEqual([])
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  it('stops earlier steps short of what a later step reserves, so that step still runs', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(0)
+    const seen: Array<[string, number | undefined]> = []
+    const concepts: Step = {
+      name: 'concepts',
+      reserveMs: () => 20_000,
+      run: async (ctx) => {
+        seen.push(['concepts', ctx.deadline])
+        return { step: 'concepts', examined: 0, changed: 0 }
+      },
+    }
+    const engine = new MemoryEngine({
+      steps: [
+        step('backup', async (ctx) => { seen.push(['backup', ctx.deadline]); clock.mockReturnValue(85_000); return { outOfTime: true } }),
+        concepts,
+      ],
+      changes: () => fakeLog(),
+    })
+    try {
+      const result = await engine.runNight('user-1', { deadline: 100_000 })
+      expect(seen).toEqual([['backup', 80_000], ['concepts', 100_000]])
+      expect(result.steps[1]).not.toHaveProperty('skipped')
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  it('a step whose window is gone is skipped while a later step with time left still runs', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(90_000)
+    const ran: string[] = []
+    const engine = new MemoryEngine({
+      steps: [
+        step('backup', async () => { ran.push('backup') }),
+        { name: 'concepts', reserveMs: () => 20_000, run: async () => { ran.push('concepts'); return { step: 'concepts', examined: 0, changed: 0 } } },
+      ],
+      changes: () => fakeLog(),
+    })
+    try {
+      const result = await engine.runNight('user-1', { deadline: 100_000 })
+      expect(ran).toEqual(['concepts'])
+      expect(result.steps[0]).toMatchObject({ step: 'backup', skipped: 'out of time', outOfTime: true })
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  it('a step that throws (e.g. a DB timeout) does not stop the later steps', async () => {
+    const ran: string[] = []
+    const engine = new MemoryEngine({
+      steps: [
+        step('weigh', async () => { throw new Error('Query read timeout') }),
+        step('own_mind', async () => { ran.push('own_mind') }),
+        step('backup', async () => { ran.push('backup') }),
+      ],
+      changes: () => fakeLog(),
+    })
+    const result = await engine.runNight('user-1', { deadline: Date.now() + 60_000 })
+    expect(ran).toEqual(['own_mind', 'backup'])
+    expect(result.failedSteps).toEqual([{ step: 'weigh', error: 'Query read timeout' }])
+  })
 })
 
 describe('buildNightSteps', () => {
@@ -163,5 +251,16 @@ describe('buildNightSteps', () => {
     const steps = buildNightSteps()
     expect(steps.map((s) => s.name)).toEqual(['merge', 'weigh', 'own_mind', 'recheck', 'backup', 'concepts'])
     expect(steps[1]).toBeInstanceOf(WeighStep)
+  })
+
+  it('caps Merge and Weigh, lets BackUp drain the rest, and reserves Concepts time on Sundays only', () => {
+    const steps = buildNightSteps()
+    const by = (n: string) => steps.find((s) => s.name === n)!
+    expect(by('merge').budgetMs).toBeGreaterThan(0)
+    expect(by('weigh').budgetMs).toBeGreaterThan(0)
+    expect(by('backup').budgetMs).toBeUndefined()
+    const at = (iso: string) => ({ userId: 'u', runId: 'r', now: new Date(iso), dryRun: false, changes: fakeLog() })
+    expect(by('concepts').reserveMs?.(at('2026-10-04T01:30:00Z'))).toBeGreaterThan(0) // Sunday
+    expect(by('concepts').reserveMs?.(at('2026-10-02T01:30:00Z'))).toBe(0) // Friday
   })
 })
