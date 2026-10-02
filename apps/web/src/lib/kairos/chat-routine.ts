@@ -1,4 +1,4 @@
-import { failJob, findJobById, listJobs } from '@/lib/data/thinking-jobs'
+import { failJob, findJobById, listJobs, mergeJobOutput } from '@/lib/data/thinking-jobs'
 import { isPaidBackupEnabled, PAID_BACKUP_OFF_NOTE } from '@/lib/kairos/paid-backup'
 import type { ApplyOutcome, ThinkingJobKind, ThinkingJobRow } from '@/lib/kairos/engine/types'
 
@@ -308,4 +308,115 @@ export async function runChatWatchdog(
     } catch { /* cosmetic */ }
     await sleep(pollMs)
   }
+}
+
+// ── Per-turn timing (stamped on the job's output.timing at settle) ────────
+
+export type ChatSettleOutcome = ChatWatchdogOutcome['outcome'] | 'error'
+
+export interface ChatTiming {
+  channel: ChatChannel
+  // null when the settle threw before the fire returned.
+  fireOk: boolean | null
+  fireMs: number | null
+  outcome: ChatSettleOutcome
+  enqueueToClaimMs: number | null
+  claimToAnswerMs: number | null
+  // Routine answers only (status done): completedAt − createdAt.
+  enqueueToAnswerMs: number | null
+  // Job creation → this settle finished (covers paid/fallback answers, whose
+  // completedAt is the takeover, not the answer).
+  enqueueToSettleMs: number
+  // Operator message persisted → job queued (retrieval + prompt build).
+  messageToEnqueueMs?: number
+}
+
+export interface RecordChatTimingInput {
+  channel: ChatChannel
+  fire: { ok: boolean; ms: number } | null
+  outcome: ChatSettleOutcome
+  settledAt: Date
+  messageToEnqueueMs?: number | null
+}
+
+// Clock-skew guard: DB timestamps vs the server clock can disagree slightly.
+const span = (from: Date | null | undefined, to: Date | null | undefined): number | null =>
+  from && to ? Math.max(0, to.getTime() - from.getTime()) : null
+
+// Best-effort: re-reads the job and merges output.timing. Never throws.
+export async function recordChatTiming(userId: string, jobId: string, input: RecordChatTimingInput): Promise<ChatTiming | null> {
+  try {
+    const job = await findJobById(userId, jobId)
+    if (!job) return null
+    const done = job.status === 'done'
+    const timing: ChatTiming = {
+      channel: input.channel,
+      fireOk: input.fire ? input.fire.ok : null,
+      fireMs: input.fire ? Math.max(0, Math.round(input.fire.ms)) : null,
+      outcome: input.outcome,
+      enqueueToClaimMs: span(job.createdAt, job.claimedAt),
+      claimToAnswerMs: done ? span(job.claimedAt, job.completedAt) : null,
+      enqueueToAnswerMs: done ? span(job.createdAt, job.completedAt) : null,
+      enqueueToSettleMs: span(job.createdAt, input.settledAt) ?? 0,
+    }
+    if (typeof input.messageToEnqueueMs === 'number' && Number.isFinite(input.messageToEnqueueMs)) {
+      timing.messageToEnqueueMs = Math.max(0, Math.round(input.messageToEnqueueMs))
+    }
+    await mergeJobOutput(userId, jobId, { timing })
+    return timing
+  } catch (err) {
+    console.error('[kairos-chat-routine] recording chat timing failed', {
+      jobId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return null
+  }
+}
+
+export interface SettleChatJobOptions {
+  channel: ChatChannel
+  timeoutMs: number
+  // Console prefix of the calling surface, e.g. 'telegram-webhook'.
+  logTag: string
+  // The chat handler's paid fallback (passed in: handlers/chat imports this module).
+  fallback: ChatFallback
+  messageToEnqueueMs?: number | null
+  onPoll?: () => Promise<void> | void
+}
+
+// The after() body of both chat channels: fire the routine, watch the job
+// (or take it over at once if the fire failed), then stamp the turn's
+// timing. Never throws.
+export async function settleChatJob(
+  userId: string,
+  jobId: string,
+  opts: SettleChatJobOptions,
+): Promise<ChatWatchdogOutcome | null> {
+  const tag = `[${opts.logTag}]`
+  let fire: RecordChatTimingInput['fire'] = null
+  let outcome: ChatWatchdogOutcome | null = null
+  try {
+    const fireStart = Date.now()
+    const fired = await fireChatRoutine()
+    fire = { ok: fired.ok, ms: Date.now() - fireStart }
+    if (!fired.ok) console.error(`${tag} chat routine fire failed — fallback`, fired.error)
+    outcome = fired.ok
+      ? await runChatWatchdog(userId, jobId, opts.fallback, { timeoutMs: opts.timeoutMs, onPoll: opts.onPoll })
+      : await takeOverChatJob(userId, jobId, fired.error, opts.fallback)
+    if (outcome.outcome === 'fallback_failed') {
+      console.error(`${tag} chat fallback failed`, { jobId, reason: outcome.reason })
+    } else {
+      console.info(`${tag} chat turn settled`, { jobId, outcome: outcome.outcome })
+    }
+  } catch (err) {
+    console.error(`${tag} chat routine watchdog failed`, err)
+  }
+  await recordChatTiming(userId, jobId, {
+    channel: opts.channel,
+    fire,
+    outcome: outcome?.outcome ?? 'error',
+    settledAt: new Date(),
+    messageToEnqueueMs: opts.messageToEnqueueMs,
+  })
+  return outcome
 }

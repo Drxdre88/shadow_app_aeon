@@ -51,6 +51,14 @@ export const memoryLinkSchema = z.object({
   note: z.string().trim().max(500).optional(),
 })
 
+// Phase 2 goals: only the goal_propose handler mints goal rows (directly in
+// the data layer), so a create/capture payload may never claim to be one.
+export const GOAL_METADATA_REFUSAL = 'sourceMetadata may not describe a Kairos goal'
+const memorySourceMetadataSchema = z.record(z.string(), z.unknown()).refine(
+  (m) => m.kind !== 'goal' && !Object.prototype.hasOwnProperty.call(m, 'goal'),
+  { message: GOAL_METADATA_REFUSAL },
+)
+
 export const createMemorySchema = z.object({
   title:           z.string().trim().min(1).max(255),
   // AI-cleaned short title (1–6 words). Optional — caller supplies if it has
@@ -63,7 +71,7 @@ export const createMemorySchema = z.object({
   execSummary:     z.array(z.string().trim().min(1).max(500)).max(15).optional(),
   type:            memoryTypeSchema.default('note'),
   source:          memorySourceSchema.default('manual'),
-  sourceMetadata:  z.record(z.string(), z.unknown()).optional(),
+  sourceMetadata:  memorySourceMetadataSchema.optional(),
   realmId:         z.string().uuid().nullable().optional(),
   projectId:       z.string().uuid().nullable().optional(),
   taskId:          z.string().uuid().nullable().optional(),
@@ -102,7 +110,7 @@ export const captureMemorySchema = z.object({
   type:            memoryTypeSchema.default('note'),
   source:          memorySourceSchema.default('manual'),
   channel:         z.string().trim().min(1).max(60).nullable().optional(),
-  sourceMetadata:  z.record(z.string(), z.unknown()).optional(),
+  sourceMetadata:  memorySourceMetadataSchema.optional(),
   realmId:         z.string().uuid().nullable().optional(),
   projectId:       z.string().uuid().nullable().optional(),
   taskId:          z.string().uuid().nullable().optional(),

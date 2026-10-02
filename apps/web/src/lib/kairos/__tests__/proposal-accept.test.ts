@@ -25,6 +25,12 @@ vi.mock('@/lib/data/ideas', () => ({
   recordIdeaOutcome: vi.fn(async () => true),
 }))
 
+vi.mock('../proposal-decision', () => ({
+  decideKairosProposal: vi.fn(),
+  isDecidableProposalKind: (kind: unknown) => kind === 'goal',
+}))
+
+import { decideKairosProposal } from '../proposal-decision'
 import { acceptProposal, archiveMemory, findMemoryById, markKairosSpeaksReplied } from '@/lib/data/memories'
 import { recordIdeaOutcome } from '@/lib/data/ideas'
 import { applyAcceptedConstitutionAmendment } from '../constitution/amendment'
@@ -307,5 +313,60 @@ describe('idea proposals — outcome grounding (docs/kairos/35)', () => {
     await dismissInboxMemory(USER_ID, 'mem-1')
 
     expect(recordIdeaOutcome).not.toHaveBeenCalled()
+  })
+})
+
+describe('owner-decided kinds (goals) dispatch to decideKairosProposal', () => {
+  const goalProposal = () => foundMemory({
+    id: PROPOSAL_ID,
+    sourceMetadata: { kind: 'goal', status: 'pending', goal: { state: 'proposed' } },
+  })
+
+  it('accept = approve through the decision function, never the generic promote', async () => {
+    vi.mocked(findMemoryById).mockResolvedValueOnce(goalProposal()).mockResolvedValueOnce(foundMemory({ id: PROPOSAL_ID, type: 'kairos_goal' }))
+    vi.mocked(decideKairosProposal).mockResolvedValue({ ok: true, verdict: 'approve', title: 'G', kind: 'goal', memoryId: PROPOSAL_ID })
+
+    const res = await acceptKairosProposal(PROPOSAL_ID, USER_ID, { pin: false }, { origin: { kind: 'operator', via: 'rest-session' } })
+
+    expect(res).toMatchObject({ ok: true, memory: { id: PROPOSAL_ID, type: 'kairos_goal' } })
+    expect(decideKairosProposal).toHaveBeenCalledWith(USER_ID, PROPOSAL_ID, {
+      verdict: 'approve', via: 'rest-session', origin: { kind: 'operator', via: 'rest-session' },
+    })
+    expect(acceptProposal).not.toHaveBeenCalled()
+    expect(reactOutcome).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { kind: 'agent', via: 'mcp' },
+    { kind: 'agent', via: 'rest' },
+  ] as const)('refuses an agent origin (%o)', async (origin) => {
+    vi.mocked(findMemoryById).mockResolvedValue(goalProposal())
+    await expect(acceptKairosProposal(PROPOSAL_ID, USER_ID, { pin: false }, { origin }))
+      .resolves.toEqual({ ok: false, reason: 'forbidden_actor' })
+    expect(decideKairosProposal).not.toHaveBeenCalled()
+    expect(acceptProposal).not.toHaveBeenCalled()
+  })
+
+  it('maps decision refusals (already decided, cap, gone)', async () => {
+    vi.mocked(findMemoryById).mockResolvedValue(goalProposal())
+    vi.mocked(decideKairosProposal).mockResolvedValueOnce({ ok: false, reason: 'cap_reached' })
+    await expect(acceptInboxProposal(USER_ID, PROPOSAL_ID)).resolves.toEqual({ ok: false, reason: 'already_resolved' })
+    expect(decideKairosProposal).toHaveBeenLastCalledWith(USER_ID, PROPOSAL_ID, { verdict: 'approve', via: 'inbox' })
+
+    vi.mocked(decideKairosProposal).mockResolvedValueOnce({ ok: false, reason: 'not_found' })
+    await expect(acceptKairosProposal(PROPOSAL_ID, USER_ID, { pin: false })).resolves.toBeNull()
+  })
+
+  it('dismiss = veto through the decision function (no generic archive or extra reaction)', async () => {
+    vi.mocked(findMemoryById).mockResolvedValue(goalProposal())
+    vi.mocked(decideKairosProposal).mockResolvedValueOnce({ ok: true, verdict: 'veto', title: 'G', kind: 'goal', memoryId: PROPOSAL_ID })
+
+    await expect(dismissInboxMemory(USER_ID, PROPOSAL_ID)).resolves.toEqual({ ok: true, id: PROPOSAL_ID })
+    expect(decideKairosProposal).toHaveBeenCalledWith(USER_ID, PROPOSAL_ID, { verdict: 'veto', via: 'inbox' })
+    expect(archiveMemory).not.toHaveBeenCalled()
+    expect(reactOutcome).not.toHaveBeenCalled()
+
+    vi.mocked(decideKairosProposal).mockResolvedValueOnce({ ok: false, reason: 'already_decided', decided: 'approve' })
+    await expect(dismissInboxMemory(USER_ID, PROPOSAL_ID)).resolves.toEqual({ ok: false, reason: 'already_resolved' })
   })
 })

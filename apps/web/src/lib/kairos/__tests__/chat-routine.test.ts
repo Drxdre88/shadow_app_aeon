@@ -4,6 +4,7 @@ vi.mock('@/lib/data/thinking-jobs', () => ({
   failJob: vi.fn(),
   findJobById: vi.fn(),
   listJobs: vi.fn(),
+  mergeJobOutput: vi.fn(async () => true),
 }))
 
 vi.mock('@/lib/kairos/paid-backup', () => ({
@@ -11,7 +12,7 @@ vi.mock('@/lib/kairos/paid-backup', () => ({
   PAID_BACKUP_OFF_NOTE: 'paid backup off',
 }))
 
-import { failJob, findJobById, listJobs } from '@/lib/data/thinking-jobs'
+import { failJob, findJobById, listJobs, mergeJobOutput } from '@/lib/data/thinking-jobs'
 import { isPaidBackupEnabled } from '@/lib/kairos/paid-backup'
 import type { ThinkingJobRow } from '@/lib/kairos/engine/types'
 import {
@@ -29,6 +30,7 @@ import {
   chatWatchdogMaxWaitMs,
   fireChatRoutine,
   MAX_CHAT_ROUTINE_TIMEOUT_MS,
+  recordChatTiming,
   runChatWatchdog,
   telegramRoutineEnabled,
 } from '../chat-routine'
@@ -267,5 +269,69 @@ describe('timeout clamp and watchdog budget', () => {
     expect(takenAt).toBeGreaterThanOrEqual(deadline + CHAT_CLAIMED_GRACE_MS)
     expect(takenAt - T0).toBeLessThanOrEqual(chatWatchdogMaxWaitMs(MAX_CHAT_ROUTINE_TIMEOUT_MS, CHAT_CLAIMED_GRACE_MS, 3_000))
     expect(fallback).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('recordChatTiming', () => {
+  const stamped = () => (vi.mocked(mergeJobOutput).mock.calls[0]![2] as { timing: Record<string, unknown> }).timing
+
+  it('routine answer: claim and answer spans from the job row, settle from the settle time', async () => {
+    vi.mocked(findJobById).mockResolvedValue(row('done', {
+      claimedBy: 'routine', claimedAt: new Date(T0 + 4_000), completedAt: new Date(T0 + 38_000),
+    }))
+
+    const out = await recordChatTiming(USER, JOB_ID, {
+      channel: 'web', fire: { ok: true, ms: 812.4 }, outcome: 'answered', settledAt: new Date(T0 + 41_000), messageToEnqueueMs: 2_300,
+    })
+
+    expect(mergeJobOutput).toHaveBeenCalledWith(USER, JOB_ID, { timing: out })
+    expect(stamped()).toEqual({
+      channel: 'web', fireOk: true, fireMs: 812, outcome: 'answered',
+      enqueueToClaimMs: 4_000, claimToAnswerMs: 34_000, enqueueToAnswerMs: 38_000,
+      enqueueToSettleMs: 41_000, messageToEnqueueMs: 2_300,
+    })
+  })
+
+  it('watchdog fallback: no answer spans (completedAt is the takeover), settle span kept', async () => {
+    vi.mocked(findJobById).mockResolvedValue(row('failed', {
+      completedAt: new Date(T0 + 60_000), error: `${CHAT_WATCHDOG_PREFIX} x`,
+    }))
+
+    await recordChatTiming(USER, JOB_ID, {
+      channel: 'telegram', fire: { ok: true, ms: 500 }, outcome: 'fallback', settledAt: new Date(T0 + 95_000),
+    })
+
+    expect(stamped()).toEqual({
+      channel: 'telegram', fireOk: true, fireMs: 500, outcome: 'fallback',
+      enqueueToClaimMs: null, claimToAnswerMs: null, enqueueToAnswerMs: null, enqueueToSettleMs: 95_000,
+    })
+  })
+
+  it('failed fire: fireOk false', async () => {
+    vi.mocked(findJobById).mockResolvedValue(row('failed', { completedAt: new Date(T0 + 1_000) }))
+
+    await recordChatTiming(USER, JOB_ID, {
+      channel: 'web', fire: { ok: false, ms: 10_000 }, outcome: 'fallback', settledAt: new Date(T0 + 30_000),
+    })
+
+    expect(stamped()).toMatchObject({ fireOk: false, fireMs: 10_000, outcome: 'fallback', enqueueToSettleMs: 30_000 })
+  })
+
+  it('swallows a failing read or write and returns null', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.mocked(findJobById).mockRejectedValueOnce(new Error('db down'))
+    await expect(recordChatTiming(USER, JOB_ID, { channel: 'web', fire: null, outcome: 'error', settledAt: new Date(T0) })).resolves.toBeNull()
+
+    vi.mocked(findJobById).mockResolvedValue(row('done'))
+    vi.mocked(mergeJobOutput).mockRejectedValueOnce(new Error('db down'))
+    await expect(recordChatTiming(USER, JOB_ID, { channel: 'web', fire: null, outcome: 'answered', settledAt: new Date(T0) })).resolves.toBeNull()
+    expect(spy).toHaveBeenCalledTimes(2)
+    spy.mockRestore()
+  })
+
+  it('a missing job writes nothing', async () => {
+    vi.mocked(findJobById).mockResolvedValue(null)
+    expect(await recordChatTiming(USER, JOB_ID, { channel: 'web', fire: null, outcome: 'missing', settledAt: new Date(T0) })).toBeNull()
+    expect(mergeJobOutput).not.toHaveBeenCalled()
   })
 })

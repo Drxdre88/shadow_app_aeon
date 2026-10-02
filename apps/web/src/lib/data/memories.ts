@@ -1548,7 +1548,13 @@ export async function archiveMemory(memoryId: string, userId: string) {
 
 export type AcceptProposalResult =
   | { ok: true; memory: typeof memories.$inferSelect }
-  | { ok: false; reason: 'not_a_proposal' | 'invalid_pair' | 'winner_not_found' | 'loser_already_superseded' | 'stale_amendment' }
+  | {
+    ok: false
+    reason:
+      | 'not_a_proposal' | 'invalid_pair' | 'winner_not_found' | 'loser_already_superseded' | 'stale_amendment'
+      // Owner-decided kinds (goals) through decideKairosProposal.
+      | 'forbidden_actor' | 'already_decided' | 'expired' | 'cap_reached'
+  }
 
 // Guided introspection — promote a staged proposal (a type='inbound' memory
 // Kairos proposed, carrying its citation links) into a committed, operator-
@@ -1569,6 +1575,8 @@ export type AcceptProposalResult =
 // (acceptKairosProposal), which dispatches constitution amendments to their
 // own versioned-write path and applies the operator reactions (Usage +
 // Outcome positive, then rescore) after a successful accept.
+const PROMOTABLE_STATUSES: readonly string[] = ['pending', 'promoted']
+
 export async function acceptProposal(
   memoryId: string,
   userId: string,
@@ -1619,6 +1627,7 @@ export async function acceptProposal(
           eq(memories.userId, userId),
           eq(memories.id, loserId),
           isNull(memories.supersededAt),
+          ne(memories.type, 'constitution'),
         ))
         .returning({ id: memories.id })
 
@@ -1639,6 +1648,10 @@ export async function acceptProposal(
     })
     return resolved
   }
+
+  // A dismissed (archived) or already-resolved proposal is not promotable.
+  // 'promoted' (BackUp's well-supported mark) is still an open proposal.
+  if (proposal.archivedAt || !PROMOTABLE_STATUSES.includes(String(meta.status ?? 'pending'))) return { ok: false, reason: 'not_a_proposal' }
 
   const kind = typeof meta.kind === 'string' ? meta.kind : 'reflection'
   const committedType = input.asType ?? committedTypeForKind(kind)
@@ -1676,18 +1689,29 @@ export async function acceptProposal(
       },
       updatedAt: now,
     })
-    .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
+    // Still a live, pending proposal: a dismissed/archived or already-
+    // accepted row (two accepts racing, or an archive between read and
+    // write) is never promoted. Legacy rows without a status count as pending.
+    .where(and(
+      eq(memories.id, memoryId),
+      eq(memories.userId, userId),
+      eq(memories.type, 'inbound'),
+      isNull(memories.archivedAt),
+      sql`coalesce(${memories.sourceMetadata}->>'status', 'pending') in ('pending', 'promoted')`,
+    ))
     .returning()
 
   // Stamp the superseded beliefs (user-scoped). Soft pointer + timestamps; the
   // rows stay queryable for time-travel, they just stop being "current". The
   // promoted memory is the new truth as of acceptance, so the losers' valid
-  // window closes at `now`.
-  if (supersedeIds.length > 0) {
+  // window closes at `now`. Only when the promote itself landed.
+  if (updated && supersedeIds.length > 0) {
     await db
       .update(memories)
       .set({ supersededAt: now, supersededById: memoryId, invalidAt: now, updatedAt: now })
-      .where(and(eq(memories.userId, userId), inArray(memories.id, supersedeIds)))
+      // Constitution rows are never superseded through a proposal accept —
+      // only the amendment transaction retires a constitution version.
+      .where(and(eq(memories.userId, userId), inArray(memories.id, supersedeIds), ne(memories.type, 'constitution')))
   }
 
   return updated ? { ok: true, memory: updated } : null

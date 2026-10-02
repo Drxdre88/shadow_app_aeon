@@ -4,6 +4,10 @@ import { captureMemory } from '@/lib/data/memories'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 import { loadConscienceBlock } from '@/lib/kairos/conscience-context'
 import { deliverKairosSpeak } from '@/lib/kairos/speak'
+import { initiativeEnabled } from '@/lib/kairos/initiative'
+import { readKairosPromises } from '@/lib/data/kairos-promises'
+import { createKairosPromises, type CreatePromisesResult } from '@/lib/kairos/promises/create'
+import { dueWindow } from '@/lib/kairos/promises/rules'
 import {
   fedMemoryIds,
   gatherWeeklyReviewInputs,
@@ -15,6 +19,7 @@ import {
   buildWeeklyReviewPrompt,
   parseWeeklyReviewText,
   type GroundedWeeklyReview,
+  type ReviewPromiseContext,
 } from '@/lib/kairos/weekly-review/prompt'
 import {
   renderReviewActionBody,
@@ -78,6 +83,7 @@ async function planWeeklyReview(userId: string, now: Date): Promise<ThinkingJobS
   if (!hasReviewSignal(inputs)) return []
   // The paid fallback re-sends job.input.prompt, so both paths get this block.
   const conscience = await loadConscienceBlock(userId)
+  const promises = initiativeEnabled() ? await reviewPromiseContext(userId, now) : undefined
 
   const context: WeeklyReviewJobContext = {
     isoWeek,
@@ -93,12 +99,38 @@ async function planWeeklyReview(userId: string, now: Date): Promise<ThinkingJobS
     deadlineMinutes: WEEKLY_REVIEW_DEADLINE_MINUTES,
     input: {
       system: WEEKLY_REVIEW_SYSTEM_PROMPT,
-      prompt: buildWeeklyReviewPrompt(inputs, conscience),
+      prompt: buildWeeklyReviewPrompt(inputs, conscience, promises),
       validMemoryIds: fedMemoryIds(inputs),
       context,
       maxOutputTokens: WEEKLY_REVIEW_MAX_OUTPUT_TOKENS,
     },
   }]
+}
+
+async function reviewPromiseContext(userId: string, now: Date): Promise<ReviewPromiseContext | undefined> {
+  try {
+    const state = await readKairosPromises(userId)
+    return { ...dueWindow(now), open: state.open.map((p) => ({ seq: p.seq, outcome: p.outcome, dueDate: p.dueDate })) }
+  } catch (err) {
+    console.warn('[kairos:weekly-review] promise read failed — no promises this week:', errorReason(err))
+    return undefined
+  }
+}
+
+// Initiative only: the review's promises go through the one server-side
+// creator (validation, caps, status forced open). Never costs the review.
+async function persistReviewPromises(
+  job: ThinkingJobRow,
+  isoWeek: string,
+  review: GroundedWeeklyReview,
+): Promise<CreatePromisesResult | null> {
+  if (!initiativeEnabled() || review.promises.length === 0) return null
+  try {
+    return await createKairosPromises(job.userId, review.promises, { kind: 'weekly_review', jobId: job.id, isoWeek })
+  } catch (err) {
+    await writeCronFailureTrace(job.userId, { cronName: CRON_NAME, reason: 'promises_failed', error: err })
+    return null
+  }
 }
 
 function readContext(job: ThinkingJobRow): WeeklyReviewJobContext | null {
@@ -175,6 +207,8 @@ async function persistWeeklyReview(
     proposalIds.push(memory.id)
   }
 
+  const promised = await persistReviewPromises(job, isoWeek, review)
+
   const evidence = [...new Set(review.actions.flatMap((a) => a.evidenceIds))]
   const { memory: observation } = await captureMemory(job.userId, {
     title: weeklyReviewTitle(isoWeek),
@@ -200,6 +234,13 @@ async function persistWeeklyReview(
       inputErrors: ctx.inputErrors,
       jobId: job.id,
       answeredBy,
+      ...(promised ? {
+        promises: {
+          created: promised.created.map((p) => ({ id: p.id, seq: p.seq, dueDate: p.dueDate })),
+          rejected: promised.rejected,
+          overflow: promised.overflow,
+        },
+      } : {}),
     },
   })
 

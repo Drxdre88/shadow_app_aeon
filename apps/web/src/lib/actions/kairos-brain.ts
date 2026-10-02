@@ -2,7 +2,7 @@
 
 import { headers } from 'next/headers'
 import { auth } from '@/lib/auth'
-import { listBrainJobsSince, summariseBrainStatus, countPaidBackupCalls, getSetupSignals, BRAIN_STATUS_WINDOW_MS } from '@/lib/data/brain-status'
+import { listBrainJobsSince, summariseBrainStatus, summariseChatLatency, countPaidBackupCalls, getSetupSignals, BRAIN_STATUS_WINDOW_MS } from '@/lib/data/brain-status'
 import { checkRateLimit } from '@/lib/api/rateLimit'
 import { sendMessage, telegramConfigured } from '@/lib/kairos/telegram'
 import { getPaidBackupSetting, setPaidBackupSetting } from '@/lib/data/kairos-paid-backup'
@@ -89,6 +89,7 @@ export async function getKairosBrainStatus(): Promise<KairosBrainStatus> {
     isAdmin,
     paidBackup: { enabled: paidBackupEnabled, paidCallsLast7d: countPaidBackupCalls(rows, now, classify) },
     setup,
+    chatLatency: summariseChatLatency(rows, now, classify),
   }
 }
 

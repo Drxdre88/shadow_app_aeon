@@ -2,11 +2,14 @@ import { listRecentKairosAsks } from '@/lib/data/ask'
 import { BELIEF_DIFF_ROW_CAP, listBeliefDiffOps, type BeliefDiffOpRow } from '@/lib/data/belief-diff'
 import { getLatestMindCompare, listBeliefs } from '@/lib/data/beliefs'
 import { findDominionsByUser, listDominionObjectives } from '@/lib/data/dominions'
+import { goalStats, type GoalStats } from '@/lib/data/goals'
 import { listIdeaOutcomes, listSurvivorsSince } from '@/lib/data/ideas'
+import { readKairosPromises } from '@/lib/data/kairos-promises'
 import { listPromotedBeliefsBetween } from '@/lib/data/memory-candidates'
 import { listMemoryOps } from '@/lib/data/memory-ops'
 import { findMemoryById, listMemories } from '@/lib/data/memories'
 import { listTraceHistory } from '@/lib/data/recipes'
+import { initiativeEnabled } from '@/lib/kairos/initiative'
 import { weeklyIdeaDiversity } from '@/lib/kairos/ideas/diversity'
 import { isoWeekKey, utcDayStart } from '@/lib/kairos/thinking/deadlines'
 
@@ -160,6 +163,25 @@ export interface BeliefDiffInput {
   truncated: boolean
 }
 
+// Phase 2 initiative metrics — gathered only while KAIROS_INITIATIVE is on.
+// goals: goals Kairos proposed in the last GOAL_STATS_DAYS days.
+// promises: promises closed in the review window; lapsed and dropped both
+// count as not kept.
+export const GOAL_STATS_DAYS = 7
+
+export interface PromiseWeekStats {
+  kept: number
+  lapsed: number
+  dropped: number
+  keptRate: number | null
+}
+
+export interface InitiativeWeekInput {
+  goalDays: number
+  goals: GoalStats | null
+  promises: PromiseWeekStats | null
+}
+
 export interface WeeklyReviewInputs {
   window: WeeklyReviewWindow
   dominions: Array<{ id: string; name: string }>
@@ -175,6 +197,8 @@ export interface WeeklyReviewInputs {
   ideas?: IdeasWeekInput | null
   ideaLessons?: IdeaLessonsInput | null
   beliefDiff?: BeliefDiffInput | null
+  // Present only while the initiative switch is on.
+  initiative?: InitiativeWeekInput | null
   // Sources that failed to load (never fatal).
   errors: string[]
 }
@@ -488,6 +512,41 @@ async function gatherBeliefDiff(userId: string, w: WeeklyReviewWindow): Promise<
   return buildBeliefDiff(rows, rows.length >= BELIEF_DIFF_ROW_CAP)
 }
 
+// ── Initiative metrics (Phase 2) ──────────────────────────────────────────
+
+export function summarisePromiseWeek(
+  closed: ReadonlyArray<{ status: string; closedAt?: string }>,
+  w: WeeklyReviewWindow,
+): PromiseWeekStats | null {
+  let kept = 0
+  let lapsed = 0
+  let dropped = 0
+  for (const p of closed) {
+    const at = p.closedAt ? Date.parse(p.closedAt) : Number.NaN
+    if (!Number.isFinite(at) || !inWindow(new Date(at), w)) continue
+    if (p.status === 'kept') kept++
+    else if (p.status === 'lapsed') lapsed++
+    else if (p.status === 'dropped') dropped++
+  }
+  const total = kept + lapsed + dropped
+  return total === 0 ? null : { kept, lapsed, dropped, keptRate: kept / total }
+}
+
+async function gatherInitiative(
+  userId: string,
+  w: WeeklyReviewWindow,
+  now: Date,
+  errors: string[],
+): Promise<InitiativeWeekInput | null> {
+  const [goals, promises] = await Promise.all([
+    safe('goal_stats', errors, null, () => goalStats(userId, GOAL_STATS_DAYS, now)),
+    safe('promise_stats', errors, null, async () => summarisePromiseWeek((await readKairosPromises(userId)).closed, w)),
+  ])
+  const hasGoals = goals !== null && goals.proposed > 0
+  if (!hasGoals && !promises) return null
+  return { goalDays: GOAL_STATS_DAYS, goals: hasGoals ? goals : null, promises }
+}
+
 export async function gatherWeeklyReviewInputs(userId: string, now: Date): Promise<WeeklyReviewInputs> {
   const window = reviewWindow(now)
   const errors: string[] = []
@@ -498,7 +557,7 @@ export async function gatherWeeklyReviewInputs(userId: string, now: Date): Promi
   // One outcome read (30 days) serves both the week's survivors and the lessons.
   const outcomes = safe('idea_outcomes', errors, null, () => listIdeaOutcomes(userId, IDEA_LESSON_DAYS))
 
-  const [boardPages, objectives, beliefChanges, memoryOps, mindCompare, asks, health, ideas, ideaLessons, beliefDiff] = await Promise.all([
+  const [boardPages, objectives, beliefChanges, memoryOps, mindCompare, asks, health, ideas, ideaLessons, beliefDiff, initiative] = await Promise.all([
     safe('board_pages', errors, [], () => gatherBoardPages(userId, window)),
     safe('objectives', errors, [], () => gatherObjectives(userId, dominions, errors)),
     safe('belief_changes', errors, [], () => gatherBeliefChanges(userId, window)),
@@ -509,6 +568,7 @@ export async function gatherWeeklyReviewInputs(userId: string, now: Date): Promi
     safe('ideas', errors, null, async () => gatherIdeasWeek(userId, window, await outcomes, errors)),
     outcomes.then(ideaLessonsFrom),
     safe('belief_diff', errors, null, () => gatherBeliefDiff(userId, window)),
+    initiativeEnabled() ? gatherInitiative(userId, window, now, errors) : Promise.resolve(null),
   ])
 
   return {
@@ -525,6 +585,7 @@ export async function gatherWeeklyReviewInputs(userId: string, now: Date): Promi
     ideas,
     ideaLessons,
     beliefDiff,
+    ...(initiative ? { initiative } : {}),
     errors,
   }
 }

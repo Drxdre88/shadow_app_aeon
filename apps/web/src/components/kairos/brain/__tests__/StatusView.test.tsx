@@ -73,3 +73,25 @@ describe('StatusView — Paid backup switch', () => {
     expect(screen.queryByRole('switch')).toBeNull()
   })
 })
+
+describe('StatusView — chat latency line', () => {
+  const latency = {
+    turns: 9, routine: 7, backup: 2, missed: 0, p50Ms: 38_200, p95Ms: 71_000, maxMs: 80_000,
+    backupP50Ms: 95_000, lastTurnMs: 40_000, fireFailures: 2,
+  }
+
+  it('shows reply times and fire failures on the chat row', () => {
+    renderView(status({ chatLatency: latency }))
+    expect(screen.getByText('Replies in ~38 s (p95 71 s) · 2 fire failures')).toBeTruthy()
+  })
+
+  it('falls back to the backup time when the routine answered nothing', () => {
+    renderView(status({ chatLatency: { ...latency, routine: 0, p50Ms: null, p95Ms: null, maxMs: null, fireFailures: 0 } }))
+    expect(screen.getByText('Backup replies in ~95 s')).toBeTruthy()
+  })
+
+  it('is absent without latency data', () => {
+    renderView(status({ chatLatency: null }))
+    expect(screen.queryByText(/Replies in/)).toBeNull()
+  })
+})

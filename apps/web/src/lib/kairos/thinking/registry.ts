@@ -10,6 +10,7 @@ import { constitutionSeedHandler } from './handlers/constitution-seed'
 import { cortexHandler } from './handlers/cortex'
 import { dailyMessageHandler } from './handlers/daily-message'
 import { driftProbeHandler } from './handlers/drift-probe'
+import { goalProposeHandler } from './handlers/goal-propose'
 import { ideaGenerateHandler } from './handlers/idea-generate'
 import { ideaJudgeHandler } from './handlers/idea-judge'
 import { mindCompareHandler } from './handlers/mind-compare'
@@ -29,6 +30,7 @@ export function getThinkingHandlers(): ThinkingJobHandler[] {
     weeklyReviewHandler,
     ideaGenerateHandler,
     ideaJudgeHandler,
+    goalProposeHandler,
     chatDistillHandler,
     archetypeHandler,
     askMineHandler,

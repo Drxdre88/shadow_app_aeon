@@ -30,6 +30,8 @@ vi.mock('@/lib/data/constitution-drift', () => ({ findLatestConscienceRun: vi.fn
 vi.mock('../synthesis-health', () => ({ SYNTHESIS_HEALTH_RECIPE: 'SYNTHESIS_HEALTH' }))
 vi.mock('@/lib/data/ideas', () => ({ listSurvivorsSince: vi.fn() }))
 vi.mock('../ideas/diversity', () => ({ weeklyIdeaDiversity: vi.fn() }))
+vi.mock('@/lib/data/kairos-promises', () => ({ readKairosPromises: vi.fn(async () => ({ v: 1, nextSeq: 1, open: [], closed: [] })) }))
+vi.mock('@/lib/data/goals', () => ({ listOpenGoals: vi.fn(async () => []) }))
 
 import { getLatestAether } from '@/lib/data/aether'
 import { listOpenKairosAsks } from '@/lib/data/ask'
@@ -40,6 +42,8 @@ import { findLatestConscienceRun } from '@/lib/data/constitution-drift'
 import { getLatestDriftStatus } from '../constitution/amendment'
 import { listSurvivorsSince } from '@/lib/data/ideas'
 import { weeklyIdeaDiversity } from '../ideas/diversity'
+import { readKairosPromises } from '@/lib/data/kairos-promises'
+import { listOpenGoals } from '@/lib/data/goals'
 import { firstPlainLines, gatherDailyMessageInputs } from '../daily-message-inputs'
 
 const USER = 'user-1'
@@ -250,5 +254,69 @@ describe('idea of the day input', () => {
     const inputs = await gatherDailyMessageInputs(USER, NOW)
     expect(inputs.idea).toBeNull()
     expect(inputs.ideaDiversityAlarm).toBe(false)
+  })
+})
+
+describe('promises input', () => {
+  const base = { source: { kind: 'weekly_review' as const }, check: { kind: 'owner_confirm' as const }, renegotiations: 0, dueHistory: [], createdAt: '2026-10-01T00:00:00.000Z' }
+  const p = (seq: number, over: Record<string, unknown> = {}) =>
+    ({ ...base, id: `00000000-0000-4000-8000-00000000000${seq}`, seq, outcome: `Outcome ${seq}`, dueDate: '2026-10-20', status: 'open' as const, ...over })
+
+  it('is absent when there are no promises', async () => {
+    expect(await gatherDailyMessageInputs(USER, NOW)).not.toHaveProperty('promises')
+  })
+
+  it('carries every open promise plus those closed in the last 24h', async () => {
+    vi.mocked(readKairosPromises).mockResolvedValueOnce({
+      v: 1, nextSeq: 5,
+      open: [p(3)],
+      closed: [
+        p(2, { status: 'kept', closedAt: new Date(NOW.getTime() - 60 * 60 * 1000).toISOString() }),
+        p(1, { status: 'lapsed', closedAt: '2026-10-01T00:00:00.000Z' }),
+      ],
+    } as never)
+    expect((await gatherDailyMessageInputs(USER, NOW)).promises).toEqual({
+      open: [{ seq: 3, outcome: 'Outcome 3', dueDate: '2026-10-20', status: 'open' }],
+      closedSince: [{ seq: 2, outcome: 'Outcome 2', dueDate: '2026-10-20', status: 'kept' }],
+    })
+  })
+
+  it('a read failure is a failed input, not a failed message', async () => {
+    vi.mocked(readKairosPromises).mockRejectedValueOnce(new Error('malformed'))
+    const inputs = await gatherDailyMessageInputs(USER, NOW)
+    expect(inputs.failed).toContain('promises')
+    expect(inputs).not.toHaveProperty('promises')
+  })
+})
+
+describe('goals input', () => {
+  const goal = (id: string, state: string, over: Record<string, unknown> = {}) => ({
+    id,
+    title: `Goal ${id}`,
+    meta: { state, question: `Question ${id}`, dueAt: null, expiresAt: '2026-10-28T00:00:00.000Z', ...over },
+  })
+
+  it('is absent when no goal is open', async () => {
+    expect(await gatherDailyMessageInputs(USER, NOW)).not.toHaveProperty('goals')
+    expect(listOpenGoals).toHaveBeenCalledWith(USER, NOW)
+  })
+
+  it('carries pending proposals and active goals from listOpenGoals', async () => {
+    vi.mocked(listOpenGoals).mockResolvedValueOnce([
+      goal('a', 'proposed'),
+      goal('b', 'active', { dueAt: '2026-10-30T00:00:00.000Z' }),
+      goal('c', 'done'),
+    ] as never)
+    expect((await gatherDailyMessageInputs(USER, NOW)).goals).toEqual([
+      { title: 'Goal a', state: 'proposed', dueAt: null, expiresAt: '2026-10-28T00:00:00.000Z' },
+      { title: 'Goal b', state: 'active', dueAt: '2026-10-30T00:00:00.000Z', expiresAt: '2026-10-28T00:00:00.000Z' },
+    ])
+  })
+
+  it('a read failure is a failed input, not a failed message', async () => {
+    vi.mocked(listOpenGoals).mockRejectedValueOnce(new Error('db down'))
+    const inputs = await gatherDailyMessageInputs(USER, NOW)
+    expect(inputs.failed).toContain('goals')
+    expect(inputs).not.toHaveProperty('goals')
   })
 })

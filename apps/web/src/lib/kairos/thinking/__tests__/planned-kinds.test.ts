@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 // nothing here touches the database.
 vi.mock('@/lib/db', () => ({ db: {} }))
 
-import { BRAIN_JOBS } from '@/lib/kairos/routines/catalog'
+import { BRAIN_JOBS, ROUTINES, getRoutine } from '@/lib/kairos/routines/catalog'
 import { PLANNED_THINKING_KINDS } from '../queue'
 import { getThinkingHandlers } from '../registry'
 import { thinkingJobKindSchema } from '@/lib/data/validators/thinking'
@@ -34,5 +34,13 @@ describe('planned thinking kinds ↔ routine catalog', () => {
       expect(PLANNED_THINKING_KINDS as readonly string[]).not.toContain(kind)
       expect(thinkingJobKindSchema.safeParse(kind).success).toBe(false)
     }
+  })
+
+  it('routine scopes partition the catalog: brain = planned kinds, chat = chat, no overlap', () => {
+    const all = ROUTINES.flatMap((r) => [...r.allowedKinds])
+    expect(new Set(all)).toEqual(new Set(brainKinds))
+    expect(all).toHaveLength(new Set(all).size)
+    expect(new Set(getRoutine('brain').allowedKinds)).toEqual(new Set(PLANNED_THINKING_KINDS))
+    expect(getRoutine('chat').allowedKinds).toEqual(['chat'])
   })
 })

@@ -20,20 +20,23 @@ import {
   chatRoutineEnabled,
   chatRoutineTimeoutMs,
   CHAT_PAID_BACKUP_OFF_MESSAGE,
-  fireChatRoutine,
-  runChatWatchdog,
+  settleChatJob,
   supersedeOpenChatJobs,
-  takeOverChatJob,
 } from '@/lib/kairos/chat-routine'
 import { isPaidBackupEnabled } from '@/lib/kairos/paid-backup'
+import { initiativeEnabled } from '@/lib/kairos/initiative'
+import { routePromiseCommands } from '@/lib/kairos/promises/telegram-commands'
+import { handleProposalCallback, routeVetoReason } from '@/lib/kairos/proposal-telegram'
 import { buildChatJobSpec, chatHandler } from '@/lib/kairos/thinking/handlers/chat'
 import {
   answerCallbackQuery,
   editMessageText,
+  PROPOSAL_CALLBACK_RE,
   sendChatAction,
   sendMessage,
   sendTelegramChatReply,
   telegramChatFailureText,
+  type ProposalCallbackAction,
 } from '@/lib/kairos/telegram'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -80,11 +83,14 @@ function isDuplicateUpdate(updateId: number | undefined): boolean {
   return false
 }
 
+type TelegramUser = { id: number | string }
+
 type TelegramUpdate = {
   update_id?: number
   callback_query?: {
     id: string
     data?: string
+    from?: TelegramUser
     message?: {
       message_id: number
       text?: string
@@ -92,8 +98,11 @@ type TelegramUpdate = {
     }
   }
   message?: {
+    message_id?: number
     text?: string
     chat?: { id: number | string }
+    from?: TelegramUser
+    reply_to_message?: { message_id: number }
   }
 }
 
@@ -126,7 +135,7 @@ export async function POST(req: NextRequest) {
       await handleCallbackQuery(update.callback_query, operatorChatId, operatorUserId)
     } else if (update.message?.text) {
       if (isDuplicateUpdate(update.update_id)) return accepted()
-      await handleTextMessage(update.message, operatorChatId, operatorUserId)
+      await handleTextMessage(update.message, operatorChatId, operatorUserId, update.update_id ?? null)
     }
   } catch (err) {
     // Never surface a 5xx to Telegram — it would redeliver the update.
@@ -144,6 +153,30 @@ async function handleCallbackQuery(
   if (!isOperatorChat(chatId, operatorChatId)) return
 
   const repliedAt = new Date()
+  const proposal = PROPOSAL_CALLBACK_RE.exec(callback.data ?? '')
+  if (proposal) {
+    // A decision button: only the operator's own tap counts (a chat id match
+    // alone would let anyone in a shared chat decide).
+    if (String(callback.from?.id) !== operatorChatId) {
+      await answerCallbackQuery(callback.id, 'Not allowed')
+      return
+    }
+    try {
+      await handleProposalCallback(operatorUserId, {
+        callbackId: callback.id,
+        action: proposal[1].toLowerCase() as ProposalCallbackAction,
+        proposalId: proposal[2].toLowerCase(),
+        chatId: chatId!,
+        messageId: callback.message?.message_id ?? null,
+        originalText: callback.message?.text ?? '',
+      }, repliedAt)
+    } finally {
+      await markKairosSpeaksReplied(operatorUserId, repliedAt)
+        .catch((err) => console.error('[telegram-webhook] reply marker failed', err))
+    }
+    return
+  }
+
   const match = CALLBACK_RE.exec(callback.data ?? '')
   if (!match) {
     await markKairosSpeaksReplied(operatorUserId, repliedAt)
@@ -183,6 +216,7 @@ async function handleTextMessage(
   message: NonNullable<TelegramUpdate['message']>,
   operatorChatId: string,
   operatorUserId: string,
+  updateId: number | null,
 ) {
   const chatId = message.chat?.id
   if (!isOperatorChat(chatId, operatorChatId)) return
@@ -194,6 +228,13 @@ async function handleTextMessage(
   // Deterministic pre-router: "Q12: …" answers / "skip Q12" against the open
   // question backlog never reach the chat model. Plain prose falls through.
   if (await routeNumberedAnswers(chatId!, operatorUserId, body)) return
+
+  // Phase 2 (dormant unless KAIROS_INITIATIVE=1): "P3 kept" / "drop P3" /
+  // "P3 by 20/10", then the free-text reason after a "Veto + why".
+  if (initiativeEnabled()) {
+    if (await routePromiseText(chatId!, operatorUserId, body)) return
+    if (await routeVetoReasonText(chatId!, operatorUserId, body, message, updateId)) return
+  }
 
   // One persistent whole-brain thread for the operator, found by title.
   const threadId = await findOrCreateTelegramThread(operatorUserId)
@@ -225,6 +266,35 @@ async function findOrCreateTelegramThread(userId: string): Promise<string | null
   if (existing) return existing
   const created = await createChatThread(userId, { dominionId: null, title: TELEGRAM_THREAD_TITLE })
   return created.ok ? created.threadId : null
+}
+
+// Owner promise commands. A failure to route hands the text to chat.
+async function routePromiseText(chatId: number | string, userId: string, body: string): Promise<boolean> {
+  try {
+    return await routePromiseCommands(userId, body, (text) => sendMessage(chatId, text))
+  } catch (err) {
+    console.error('[telegram-webhook] promise-command routing failed — handing the text to chat', err)
+    return false
+  }
+}
+
+async function routeVetoReasonText(
+  chatId: number | string,
+  userId: string,
+  body: string,
+  message: NonNullable<TelegramUpdate['message']>,
+  updateId: number | null,
+): Promise<boolean> {
+  try {
+    return await routeVetoReason(userId, chatId, {
+      text: body,
+      updateId,
+      replyToMessageId: message.reply_to_message?.message_id ?? null,
+    })
+  } catch (err) {
+    console.error('[telegram-webhook] veto-reason routing failed — handing the text to chat', err)
+    return false
+  }
 }
 
 // Numbered answers to the 06:00 message's open questions. Answers are the
@@ -328,23 +398,11 @@ async function handleTextViaRoutine(
   // Unique key already taken: another delivery owns this turn.
   if (!job) return
 
-  after(async () => {
-    try {
-      const fired = await fireChatRoutine()
-      const outcome = fired.ok
-        ? await runChatWatchdog(userId, job.id, chatHandler.fallback, {
-            timeoutMs,
-            onPoll: () => sendChatAction(chatId),
-          })
-        : await takeOverChatJob(userId, job.id, fired.error, chatHandler.fallback)
-      if (!fired.ok) console.error('[telegram-webhook] chat routine fire failed — paid fallback', fired.error)
-      if (outcome.outcome === 'fallback_failed') {
-        console.error('[telegram-webhook] chat fallback failed', { jobId: job.id, reason: outcome.reason })
-      } else {
-        console.info('[telegram-webhook] chat turn settled', { jobId: job.id, outcome: outcome.outcome })
-      }
-    } catch (err) {
-      console.error('[telegram-webhook] chat routine watchdog failed', err)
-    }
-  })
+  after(() => settleChatJob(userId, job.id, {
+    channel: 'telegram',
+    timeoutMs,
+    logTag: 'telegram-webhook',
+    fallback: chatHandler.fallback,
+    onPoll: () => sendChatAction(chatId),
+  }))
 }

@@ -137,6 +137,19 @@ describe('getKairosBrainStatus', () => {
     expect(off.paidBackup).toEqual({ enabled: false, paidCallsLast7d: 1 })
     expect(off.lastNight.missed).toBe(on.lastNight.missed + 1)
   })
+
+  it('passes 7-day chat latency through (null with no chat turns)', async () => {
+    expect((await getKairosBrainStatus()).chatLatency).toBeNull()
+
+    const now = Date.now()
+    const at = (msAgo: number) => new Date(now - msAgo)
+    vi.mocked(listBrainJobsSince).mockResolvedValue([
+      { kind: 'chat', status: 'done', claimedBy: 'routine', createdAt: at(3_600_000), claimedAt: at(3_595_000), completedAt: at(3_562_000), deadlineAt: at(3_500_000), error: null, timing: { fireOk: true } },
+      { kind: 'chat', status: 'failed', claimedBy: null, createdAt: at(7_200_000), claimedAt: null, completedAt: at(7_140_000), deadlineAt: at(7_100_000), error: 'chat-watchdog: no claim; answered on the paid key', timing: { fireOk: false, enqueueToSettleMs: 90_000 } },
+    ])
+    const s = await getKairosBrainStatus()
+    expect(s.chatLatency).toMatchObject({ turns: 2, routine: 1, backup: 1, p50Ms: 38_000, backupP50Ms: 90_000, fireFailures: 1, lastTurnMs: 38_000 })
+  })
 })
 
 describe('setup signals in getKairosBrainStatus', () => {

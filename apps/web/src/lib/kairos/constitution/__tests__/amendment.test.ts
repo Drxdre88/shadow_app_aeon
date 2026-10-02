@@ -13,10 +13,14 @@ vi.mock('@/lib/data/constitution', () => data)
 import {
   applyAcceptedConstitutionAmendment,
   buildProposalValues,
+  constitutionPatchRefusal,
   decideConstitutionAcceptance,
   getConstitutionOverview,
   getLatestDriftStatus,
+  isConstitutionRow,
+  OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR,
   proposeConstitutionAmendment,
+  type ConstitutionPatch,
 } from '../amendment'
 
 const USER = 'user-1'
@@ -59,6 +63,52 @@ beforeEach(() => {
   vi.clearAllMocks()
   data.findLiveConstitutionRow.mockResolvedValue(null)
   data.insertConstitutionProposal.mockResolvedValue({ written: true, memoryId: 'new-proposal' })
+})
+
+describe('constitution row guard (agent surfaces)', () => {
+  const constitution = {
+    type: 'constitution',
+    streamClass: 'constitution',
+    title: 'Constitution v2',
+    bodyMd: '# Constitution v2',
+    summary: 'Constitution v2: 2 principles',
+    supersededAt: null,
+  }
+  const superseded = { ...constitution, title: 'Constitution v1', supersededAt: new Date('2026-09-01') }
+  const note = { type: 'note', streamClass: 'operator_capture', title: 'n', bodyMd: 'b', summary: null }
+  const ARCHIVE = '2026-10-02T00:00:00.000Z'
+
+  it.each([
+    ['archive', constitution, { archivedAt: ARCHIVE }, true],
+    ['unarchive (archivedAt:null)', constitution, { archivedAt: null }, false],
+    ['type change', constitution, { type: 'note' }, true],
+    ['same type', constitution, { type: 'constitution' }, false],
+    ['title change', constitution, { title: 'Hijacked' }, true],
+    ['bodyMd change', constitution, { bodyMd: 'rewritten' }, true],
+    ['summary change', constitution, { summary: null }, true],
+    ['unchanged title', constitution, { title: 'Constitution v2' }, false],
+    ['aiTitle backfill', constitution, { aiTitle: 'Core principles' }, false],
+    ['execSummary/tags/pinned', constitution, { execSummary: ['a'], tags: ['constitution'], pinned: true }, false],
+    ['non-constitution archive', note, { archivedAt: ARCHIVE }, false],
+    ['non-constitution retype', note, { type: 'idea', title: 'x' }, false],
+    ['superseded constitution archive', superseded, { archivedAt: ARCHIVE }, true],
+    ['superseded constitution rewrite', superseded, { bodyMd: 'x' }, true],
+  ] as const)('%s', (_label, row, patch, refused) => {
+    expect(constitutionPatchRefusal(row, patch as ConstitutionPatch)).toBe(
+      refused ? OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR : null,
+    )
+  })
+
+  it('treats a missing row as allowed (the data layer returns not found)', () => {
+    expect(constitutionPatchRefusal(null, { archivedAt: ARCHIVE })).toBeNull()
+  })
+
+  it('recognises constitution rows by type or stream class', () => {
+    expect(isConstitutionRow({ type: 'constitution', streamClass: null })).toBe(true)
+    expect(isConstitutionRow({ type: 'note', streamClass: 'constitution' })).toBe(true)
+    expect(isConstitutionRow({ type: 'inbound', streamClass: 'introspection' })).toBe(false)
+    expect(isConstitutionRow(null)).toBe(false)
+  })
 })
 
 describe('buildProposalValues', () => {

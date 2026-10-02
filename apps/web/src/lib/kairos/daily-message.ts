@@ -9,12 +9,16 @@ import { deliverKairosSpeak, type SpeakInput, type SpeakOutcome } from './speak'
 import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 import { gatherDailyMessageInputs } from './daily-message-inputs'
 import { loadConscienceBlock } from './conscience-context'
+import { PROMISE_CHECK_CRON, verifyOpenPromises } from './promises/check'
 import {
   DAILY_MESSAGE_SYSTEM_PROMPT,
+  DAILY_MESSAGE_TOTAL_MAX_CHARS,
   appendOpenQuestionsBlock,
   buildBeliefsBlock,
   buildDailyMessageUserPrompt,
   buildDeterministicDailyMessage,
+  buildGoalsBlock,
+  buildPromiseLine,
   ideaOfTheDayLines,
   londonDate,
   parseDailyMessageDraft,
@@ -164,10 +168,18 @@ export async function composeDailyMessage(userId: string, now: Date): Promise<Co
 
   const beliefsBlock = buildBeliefsBlock(inputs.promotions ?? [])
   if (beliefsBlock) message = `${message}\n\n${beliefsBlock}`
+  // Kairos's goals (pending proposal + active), code-built and placed before
+  // the questions: if the cap bites, the narrative and this block trim first.
+  const goalsBlock = buildGoalsBlock(inputs.goals, now)
+  if (goalsBlock) message = `${message}\n\n${goalsBlock}`
   // Every open question, numbered, rebuilt at send time (so it reflects
   // answers and asks since any routine draft was planned). Code-built, after
   // the guard — the model never writes or quotes it.
-  message = appendOpenQuestionsBlock(message, inputs.openAsks, now)
+  // The promise line goes last, its length reserved from the questions' cap,
+  // so trimming can never cut it.
+  const promiseLine = buildPromiseLine(inputs.promises, now)
+  message = appendOpenQuestionsBlock(message, inputs.openAsks, now, DAILY_MESSAGE_TOTAL_MAX_CHARS - (promiseLine ? promiseLine.length + 2 : 0))
+  if (promiseLine) message = `${message}\n\n${promiseLine}`
   return { message, source, inputs }
 }
 
@@ -226,6 +238,13 @@ export async function runDailyMessageForUser(
   try {
     // Cheap early exit before composing; re-checked under the lock below.
     if (!opts.dryRun && await alreadyDelivered(userId, date)) return await skip('already sent today')
+
+    // Close kept / lapsed promises before the message reads them. Never costs the message.
+    try {
+      await verifyOpenPromises(userId, now, { persist: !opts.dryRun })
+    } catch (err) {
+      await writeCronFailureTrace(userId, { cronName: PROMISE_CHECK_CRON, reason: 'check_failed', error: err })
+    }
 
     const { message, source, inputs } = await composeDailyMessage(userId, now)
     if (opts.dryRun) return { status: 'dry_run', date, source, message, failedInputs: inputs.failed }

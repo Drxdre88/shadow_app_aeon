@@ -20,6 +20,23 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - `DOCS` — `ARCHITECTURE.md`, `VISION.md`, `CLAUDE.md`
 - `UI` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.38.0] — 2026-10-02
+
+> Areas touched: `KAIROS` `MCP` `API` `UI`
+> Theme: Kairos settles in, and gets initiative you control (switched off until you turn it on).
+
+### Changed — Settle the brain · `KAIROS` `MCP` `API`
+- Your constitution is owner-only: AI agents can no longer archive, retype, rewrite, delete or replace it through the AI connection or the API. You can still do all of that in the app.
+- The brain and chat routines can say which one they are when they pick up or hand in thinking work, and each is limited to its own jobs (`routine` on `claim_thinking_job` / `submit_thinking_job`; `KAIROS_REQUIRE_ROUTINE_SCOPE=1` makes it mandatory once both routines are re-pasted).
+- On a night when the idea judge gets no answer, that night's ideas are filed instead of lost, and Health shows the failure instead of "missing".
+- Chat replies on the web page and Telegram are timed. Kairos setup → Health shows typical and slow reply times, and a daily `CHAT_LATENCY` trace is kept.
+
+### Added — Initiative, first slice (off by default) · `KAIROS` `MCP` `API` `UI`
+- **Goals of his own:** at most one investigation goal a night, at most two open. Never about his own running, permissions, schedule, budget, memory or constitution. Each one waits for your Approve or Veto; with no answer it expires after 72 hours and nothing happens.
+- **Approve / Veto / Veto + why** in Telegram and in the inbox. A decision counts once; AI agents can never decide.
+- **Promise list:** up to 12 dated promises with a named outcome, made in the Monday review or when you approve a goal. Only you, or you finishing the linked card in the app, can close one. One line in the 06:00 message; at most one Telegram nudge per promise, at noon, once it is 3 or more days late. Reply `P3 kept`, `drop P3` or `P3 by 20/10`. New read-only `list_kairos_promises` / `GET /api/v1/kairos/promises`.
+- All of this stays dormant until `KAIROS_INITIATIVE=1` is set.
+
 ## [0.37.0] — 2026-10-02
 
 > Areas touched: `KAIROS` `UI` `INFRA` `DOCS`

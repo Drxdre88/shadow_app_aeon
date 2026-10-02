@@ -29,7 +29,9 @@ export const POST = withRateLimit(
     const parsed = claimThinkingJobSchema.safeParse(body)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
-    return jsonData(await claimThinkingJob(result.id, parsed.data))
+    const claim = await claimThinkingJob(result.id, parsed.data)
+    if ('code' in claim) return jsonError(`${claim.code}: ${claim.error}`, 409)
+    return jsonData(claim)
   }),
   API_WRITE_LIMIT
 )

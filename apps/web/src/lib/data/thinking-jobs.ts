@@ -54,7 +54,7 @@ export const EXPLICIT_ONLY_KINDS: readonly ThinkingJobKind[] = ['chat']
 export async function claimNextJob(
   userId: string,
   kinds?: readonly ThinkingJobKind[],
-  claimedBy: ThinkingAnsweredBy = 'routine',
+  claimedBy: import('@/lib/kairos/engine/types').ThinkingClaimedBy = 'routine',
 ): Promise<ThinkingJobRow | null> {
   const kindFilter = kinds && kinds.length > 0
     ? sql` AND kind IN (${sql.join(kinds.map((k) => sql`${k}`), sql`, `)})`
@@ -330,4 +330,21 @@ export async function countCortexRowsSince(userId: string, since: Date): Promise
       gte(memories.createdAt, since),
     ))
   return row?.n ?? 0
+}
+
+// Shallow jsonb merge into `output` (top-level keys of `patch` win), any
+// status. completeJob/recordFallback replace `output` wholesale, so this is
+// for stamps written after a job settles (e.g. chat timing). Leaves
+// updatedAt alone: the stamp is bookkeeping, not a state change.
+export async function mergeJobOutput(
+  userId: string,
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<boolean> {
+  const [row] = await db
+    .update(thinkingJobs)
+    .set({ output: sql`coalesce(${thinkingJobs.output}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb` })
+    .where(and(eq(thinkingJobs.id, id), eq(thinkingJobs.userId, userId)))
+    .returning({ id: thinkingJobs.id })
+  return Boolean(row)
 }

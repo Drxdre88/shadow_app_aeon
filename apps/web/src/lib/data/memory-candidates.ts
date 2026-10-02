@@ -54,9 +54,9 @@ export async function listPendingProposalCandidates(userId: string, limit: numbe
       sql`${memories.sourceMetadata}->>'introspection' = 'true'`,
       sql`${memories.sourceMetadata}->>'status' = 'pending'`,
       sql`COALESCE(${memories.sourceMetadata}->>'contradictionCheck', 'false') <> 'true'`,
-      // Review actions and constitution amendments are operator decisions, not
-      // hypotheses: evidence must never promote or decay them.
-      sql`COALESCE(${memories.sourceMetadata}->>'kind', '') NOT IN ('review_action', 'constitution_amendment')`,
+      // Review actions, constitution amendments and goal proposals are operator
+      // decisions, not hypotheses: evidence must never promote or decay them.
+      sql`COALESCE(${memories.sourceMetadata}->>'kind', '') NOT IN ('review_action', 'constitution_amendment', 'goal')`,
       isNull(memories.archivedAt),
       isNull(memories.supersededAt),
     ))

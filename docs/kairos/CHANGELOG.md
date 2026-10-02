@@ -4,6 +4,17 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–35).
 
+## [0.20.0] — 2026-10-02 · "Settled, with initiative on a leash"
+
+> Phase 1 hardens the new brain (owner-only constitution, routine-scoped jobs, no lost idea nights, timed chat). Phase 2 gives Kairos goals of his own, a promise list and Approve / Veto buttons, all off until `KAIROS_INITIATIVE=1`.
+
+- **Constitution owner-only.** MCP `update_memory`, REST PATCH/DELETE and `accept_proposal` (supersedes and contradiction losers) refuse agent changes to any constitution row.
+- **Routine scope.** Claim and submit take `routine: brain|chat`; each routine has a server-side allow-list (`allowedKinds` in the routine catalog), refusals return `scope_denied` and leave the job open. Re-paste both routines to send it; then set `KAIROS_REQUIRE_ROUTINE_SCOPE=1`.
+- **Unjudged ideas filed.** When both judges fail, the night's candidates are archived as `judge_failed` (they may return on a later night) and a `judge_unanswered` trace is written.
+- **Chat timing.** Each chat turn stores `output.timing`; Health shows reply p50/p95 and fire failures; `get_trace_history {recipe:'CHAT_LATENCY'}` gives one row a day.
+- **Goals (`goal_propose`).** One investigation goal a night at most, two open, server-side forbidden topics, owner-only approve/veto/close, 72-hour expiry, auto-fail 7 days after due.
+- **Approve / Veto / Veto + why.** One decision path for Telegram, inbox and signed-in REST; repeat taps say "already decided"; expired proposals lose their buttons.
+- **Promises.** Stored in `user_preferences.kairosPromises` (cap 12); created by the weekly review or an approved goal; closed only by you, a card you finished in the app, or the 14-day lapse; 06:00 line and one noon nudge.
 ## [0.19.0] — 2026-10-02 · "No paid spend, chat on Max, one setup checklist"
 
 > Kairos can now run with no paid API spend at all, the Kairos web-page chat answers on the Max plan like Telegram, and all setup help collapses into one live "Set up Kairos" checklist.

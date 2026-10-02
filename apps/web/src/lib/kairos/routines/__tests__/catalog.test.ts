@@ -7,9 +7,13 @@ import {
   KAIROS_ROUTINE_MODEL,
   ROUTINES,
   getRoutine,
+  routineAllows,
+  routineClaimant,
+  routineFromClaimant,
   routinePrompt,
   routineScheduleRequest,
 } from '../catalog'
+import { thinkingRoutineSchema } from '@/lib/data/validators/thinking'
 import { getThinkingHandlers } from '@/lib/kairos/thinking/registry'
 
 const THINKING_TOOLS = ['claim_thinking_job', 'submit_thinking_job', 'list_thinking_jobs']
@@ -80,10 +84,10 @@ describe('ROUTINES', () => {
 })
 
 describe('routinePrompt', () => {
-  it('brain claims with {} so the server decides what is due', () => {
+  it('brain claims with only its routine so the server decides what is due', () => {
     const prompt = routinePrompt(getRoutine('brain'))
     expect(getRoutine('brain').claimKinds).toBeNull()
-    expect(prompt).toContain('Call claim_thinking_job with {}.')
+    expect(prompt).toContain('Call claim_thinking_job with { "routine": "brain" }.')
     expect(prompt).not.toMatch(/"kinds"/)
   })
 
@@ -91,7 +95,15 @@ describe('routinePrompt', () => {
     const prompt = routinePrompt(getRoutine('chat'))
     const match = prompt.match(/claim_thinking_job with (\{[^\n]*?\})\./)
     expect(match).not.toBeNull()
-    expect(JSON.parse(match![1])).toEqual({ kinds: ['chat'] })
+    expect(JSON.parse(match![1])).toEqual({ kinds: ['chat'], routine: 'chat' })
+  })
+
+  it.each(ROUTINES.map((r) => [r.id, r] as const))('%s prompt declares its routine on claim and on submit', (id, r) => {
+    const prompt = routinePrompt(r)
+    const claim = prompt.match(/claim_thinking_job with (\{[^\n]*?\})\./)
+    expect(JSON.parse(claim![1]).routine).toBe(id)
+    const submit = prompt.split('\n').find((l) => l.includes('Call submit_thinking_job'))
+    expect(submit).toContain(`"routine": "${id}"`)
   })
 
   it('the chat routine is channel-neutral: it serves Telegram and the Kairos page', () => {
@@ -151,5 +163,32 @@ describe('BRAIN_JOBS', () => {
     for (const k of getRoutine('chat').claimKinds ?? []) {
       expect(BRAIN_JOBS.some((j) => j.kind === k)).toBe(true)
     }
+  })
+})
+
+describe('routine scope', () => {
+  it.each([
+    ['brain', 'cortex', true],
+    ['brain', 'idea_judge', true],
+    ['brain', 'daily_message', true],
+    ['brain', 'chat', false],
+    ['chat', 'chat', true],
+    ['chat', 'cortex', false],
+    ['chat', 'idea_judge', false],
+  ] as const)('routineAllows(%s, %s) = %s', (id, kind, allowed) => {
+    expect(routineAllows(id, kind)).toBe(allowed)
+  })
+
+  it('the validator accepts exactly the catalog routine ids', () => {
+    expect(new Set(thinkingRoutineSchema.options)).toEqual(new Set(ROUTINES.map((r) => r.id)))
+  })
+
+  it('claimant tags round-trip and fit claimed_by varchar(20)', () => {
+    for (const r of ROUTINES) {
+      const tag = routineClaimant(r.id)
+      expect(tag.length).toBeLessThanOrEqual(20)
+      expect(routineFromClaimant(tag)).toBe(r.id)
+    }
+    for (const v of ['routine', 'api', 'routine:nope', null, undefined]) expect(routineFromClaimant(v)).toBeNull()
   })
 })

@@ -11,6 +11,7 @@ import type { AcceptProposalInput } from '@/lib/data/validators/memory'
 import { applyAcceptedConstitutionAmendment } from './constitution/amendment'
 import { CONSTITUTION_PROPOSAL_KIND } from './constitution/schema'
 import { IDEA_PROPOSAL_KIND, type IdeaOutcome } from './ideas/types'
+import { decideKairosProposal, isDecidableProposalKind, type DecideProposalResult } from './proposal-decision'
 import { reactOutcome, reactUsed } from './reactions'
 import { recordIdeaOutcome } from '@/lib/data/ideas'
 
@@ -37,6 +38,15 @@ async function groundIdeaOutcome(userId: string, memoryId: string, outcome: Idea
   }
 }
 
+// Owner-decided kinds (Phase 2: goals) go through decideKairosProposal — the
+// one decision function shared with Telegram's buttons — never the generic
+// promote / archive. Agent origins are refused for those kinds.
+function decisionToAccept(res: Extract<DecideProposalResult, { ok: false }>): AcceptProposalResult | null {
+  if (res.reason === 'not_found') return null
+  if (res.reason === 'not_decidable') return { ok: false, reason: 'not_a_proposal' }
+  return { ok: false, reason: res.reason }
+}
+
 export async function acceptKairosProposal(
   memoryId: string,
   userId: string,
@@ -47,6 +57,18 @@ export async function acceptKairosProposal(
   if (!proposal) return null
 
   const meta = (proposal.sourceMetadata ?? {}) as Record<string, unknown>
+  if (isDecidableProposalKind(meta.kind)) {
+    if (opts.origin && opts.origin.kind !== 'operator') return { ok: false, reason: 'forbidden_actor' }
+    const res = await decideKairosProposal(userId, memoryId, {
+      verdict: 'approve',
+      via: opts.origin?.via === 'rest-session' ? 'rest-session' : 'inbox',
+      ...(opts.origin ? { origin: opts.origin } : {}),
+    })
+    if (!res.ok) return decisionToAccept(res)
+    const row = await findMemoryById(memoryId, userId)
+    return row ? { ok: true, memory: row } : null
+  }
+
   if (proposal.type === 'inbound' && meta.kind === CONSTITUTION_PROPOSAL_KIND) {
     const res = await applyAcceptedConstitutionAmendment(userId, memoryId)
     if (!res.ok) {
@@ -74,9 +96,18 @@ export async function acceptKairosProposal(
 
 export async function dismissInboxMemory(userId: string, memoryId: string): Promise<InboxResolution> {
   const memory = await findMemoryById(memoryId, userId)
-  if (!memory || memory.type !== 'inbound') return { ok: false, reason: 'not_found' }
+  if (!memory) return { ok: false, reason: 'not_found' }
 
   const metadata = (memory.sourceMetadata ?? {}) as Record<string, unknown>
+  // An owner-decided kind: dismissing it is a veto through the one decision
+  // function (its own reaction; repeat taps report already handled).
+  if (isDecidableProposalKind(metadata.kind)) {
+    const res = await decideKairosProposal(userId, memoryId, { verdict: 'veto', via: 'inbox' })
+    if (res.ok) return { ok: true, id: memoryId }
+    return { ok: false, reason: res.reason === 'not_found' ? 'not_found' : 'already_resolved' }
+  }
+  if (memory.type !== 'inbound') return { ok: false, reason: 'not_found' }
+
   // Idempotent: Telegram delivers duplicate updates; a second dismiss must
   // report "already handled" instead of erroring.
   if (memory.archivedAt || metadata.status !== 'pending') return { ok: false, reason: 'already_resolved' }

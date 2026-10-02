@@ -7,10 +7,8 @@ import {
   chatRoutineConfig,
   chatRoutineEnabled,
   chatRoutineTimeoutMs,
-  fireChatRoutine,
-  runChatWatchdog,
+  settleChatJob,
   supersedeOpenChatJobs,
-  takeOverChatJob,
   type ChatWatchdogOutcome,
 } from '@/lib/kairos/chat-routine'
 import { buildAssistantTurn, type KairosChatTurnResult } from '@/lib/kairos/chat-turn'
@@ -64,10 +62,13 @@ export async function sendWebChatViaRoutine(
 
   for (let attempt = 0; attempt < 2; attempt++) {
     let turn = reuse
+    // Message → queue time, measured only for a freshly persisted message.
+    let persistedAt: number | null = null
     if (!turn) {
       // Persist BEFORE anything can fail — input is never lost.
       const appended = await appendChatMessage(userId, threadId, { role: 'user', content: body })
       if (!appended.ok) return { ok: false, reason: 'thread_not_found' }
+      persistedAt = Date.now()
       turn = { seq: appended.seq, messageId: appended.messageId }
     }
 
@@ -94,7 +95,8 @@ export async function sendWebChatViaRoutine(
     }, timeoutMs))
 
     if (job) {
-      after(() => settleWebChatJob(userId, job.id, timeoutMs))
+      const messageToEnqueueMs = persistedAt === null ? null : Date.now() - persistedAt
+      after(() => settleWebChatJob(userId, job.id, timeoutMs, messageToEnqueueMs))
       return pending(threadId, turn.seq)
     }
     // The key is taken. For a fresh message another request owns the turn;
@@ -106,21 +108,17 @@ export async function sendWebChatViaRoutine(
   return { ok: false, reason: 'ai_failed', threadId }
 }
 
-export async function settleWebChatJob(userId: string, jobId: string, timeoutMs: number): Promise<ChatWatchdogOutcome | null> {
-  try {
-    const fired = await fireChatRoutine()
-    if (!fired.ok) console.error('[kairos-web-chat] chat routine fire failed — fallback', fired.error)
-    const outcome = fired.ok
-      ? await runChatWatchdog(userId, jobId, chatHandler.fallback, { timeoutMs })
-      : await takeOverChatJob(userId, jobId, fired.error, chatHandler.fallback)
-    if (outcome.outcome === 'fallback_failed') {
-      console.error('[kairos-web-chat] chat fallback failed', { jobId, reason: outcome.reason })
-    } else {
-      console.info('[kairos-web-chat] chat turn settled', { jobId, outcome: outcome.outcome })
-    }
-    return outcome
-  } catch (err) {
-    console.error('[kairos-web-chat] chat routine watchdog failed', err)
-    return null
-  }
+export async function settleWebChatJob(
+  userId: string,
+  jobId: string,
+  timeoutMs: number,
+  messageToEnqueueMs: number | null = null,
+): Promise<ChatWatchdogOutcome | null> {
+  return settleChatJob(userId, jobId, {
+    channel: 'web',
+    timeoutMs,
+    logTag: 'kairos-web-chat',
+    fallback: chatHandler.fallback,
+    messageToEnqueueMs,
+  })
 }

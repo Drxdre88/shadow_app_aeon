@@ -13,6 +13,7 @@ export const AETHER_DEADLINE_UTC = { hour: 3, minute: 13 }
 //   01:36–02:28 archetype      → 02:30 archetype-synthesis (after the 01:30
 //                                memory engine and tonight's chat distill)
 //   03:15–04:28 ask_mine       → 04:30 ask-mine (once aether is settled)
+//   03:15–04:28 goal_propose   → no fallback (a missed night proposes no goal)
 //   04:00–05:56 constitution_seed, Mondays only → 05:58 Monday constitution-seed
 //                                cron (the brain routine runs at 04:40 and 05:40)
 // The daily message opens at 04:00 UTC (handlers/daily-message.ts) and closes at
@@ -25,6 +26,8 @@ export interface UtcWindow {
 export const CHAT_DISTILL_WINDOW_UTC: UtcWindow = { notBefore: { hour: 1, minute: 0 }, deadline: { hour: 1, minute: 58 } }
 export const ARCHETYPE_WINDOW_UTC: UtcWindow = { notBefore: { hour: 1, minute: 36 }, deadline: { hour: 2, minute: 28 } }
 export const ASK_MINE_WINDOW_UTC: UtcWindow = { notBefore: { hour: 3, minute: 15 }, deadline: { hour: 4, minute: 28 } }
+// Phase 2 goal_propose: same window as ask_mine; it has no fallback cron.
+export const GOAL_PROPOSE_WINDOW_UTC: UtcWindow = { notBefore: { hour: 3, minute: 15 }, deadline: { hour: 4, minute: 28 } }
 export const CONSTITUTION_SEED_WINDOW_UTC: UtcWindow = { notBefore: { hour: 4, minute: 0 }, deadline: { hour: 5, minute: 56 } }
 
 // The constitution seed runs on Monday (UTC).

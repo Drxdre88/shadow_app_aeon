@@ -35,11 +35,13 @@ vi.mock('@/lib/data/memories', () => ({ findMemoryById }))
 vi.mock('@/lib/kairos/proposal-accept', () => ({ acceptKairosProposal: acceptProposal }))
 
 import { POST } from '../route'
-import { OPERATOR_ONLY_AMENDMENT_ERROR } from '@/lib/kairos/constitution/amendment'
+import { OPERATOR_ONLY_AMENDMENT_ERROR, OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR } from '@/lib/kairos/constitution/amendment'
+import { OPERATOR_ONLY_GOAL_ERROR } from '@/lib/kairos/goals/guards'
 
 type Handler = (req: NextRequest, ctx?: unknown) => Promise<Response>
 
 const PROPOSAL_ID = '50000000-0000-4000-8000-000000000001'
+const BEARER = 'Bearer aeon_k1_apikey'
 
 const amendment = {
   id: PROPOSAL_ID,
@@ -99,7 +101,86 @@ describe('POST /api/v1/memories/[id]/accept — constitution amendments', () => 
   it('falls through to the normal 404 when the memory does not exist', async () => {
     findMemoryById.mockResolvedValue(null)
     acceptProposal.mockResolvedValue(null)
-    const res = await accept({ authorization: 'Bearer aeon_k1_apikey' })
+    const res = await accept({ authorization: BEARER })
     expect(res.status).toBe(404)
+  })
+})
+
+describe('POST /api/v1/memories/[id]/accept — superseding a constitution row', () => {
+  const CONSTITUTION_ID = '60000000-0000-4000-8000-000000000001'
+  const BELIEF_ID = '60000000-0000-4000-8000-000000000002'
+  const rows: Record<string, unknown> = {
+    [PROPOSAL_ID]: reflection,
+    [CONSTITUTION_ID]: { id: CONSTITUTION_ID, type: 'constitution', streamClass: 'constitution', sourceMetadata: {} },
+    [BELIEF_ID]: { id: BELIEF_ID, type: 'belief', streamClass: 'belief', sourceMetadata: {} },
+  }
+
+  async function acceptWith(supersedes: string[], headers: Record<string, string> = {}) {
+    const req = new NextRequest(`https://aeon.shadow-lab.ai/api/v1/memories/${PROPOSAL_ID}/accept`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify({ supersedes }),
+    })
+    const res = await (POST as unknown as Handler)(req, { params: Promise.resolve({ id: PROPOSAL_ID }) })
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> }
+  }
+
+  beforeEach(() => {
+    findMemoryById.mockImplementation(async (id: string) => rows[id] ?? null)
+  })
+
+  it('refuses a bearer caller that lists a constitution row in supersedes', async () => {
+    const res = await acceptWith([BELIEF_ID, CONSTITUTION_ID], { authorization: BEARER })
+    expect(res.status).toBe(403)
+    expect(res.body.error).toBe(OPERATOR_ONLY_CONSTITUTION_EDIT_ERROR)
+    expect(findMemoryById).toHaveBeenCalledWith(CONSTITUTION_ID, 'user-1')
+    expect(acceptProposal).not.toHaveBeenCalled()
+  })
+
+  it('lets a bearer caller supersede ordinary beliefs', async () => {
+    const res = await acceptWith([BELIEF_ID], { authorization: BEARER })
+    expect(res.status).toBe(200)
+    expect(acceptProposal).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves a session caller to the data layer, whose supersede UPDATE skips constitution rows', async () => {
+    const res = await acceptWith([CONSTITUTION_ID])
+    expect(res.status).toBe(200)
+    expect(acceptProposal).toHaveBeenCalledWith(
+      PROPOSAL_ID, 'user-1', expect.objectContaining({ supersedes: [CONSTITUTION_ID] }),
+      { origin: { kind: 'operator', via: 'rest-session' } },
+    )
+  })
+})
+
+describe('POST /api/v1/memories/[id]/accept — Kairos goals (Phase 2)', () => {
+  const goalProposal = {
+    id: PROPOSAL_ID,
+    type: 'inbound',
+    sourceMetadata: { kind: 'goal', status: 'pending', goal: { state: 'proposed' } },
+  }
+
+  it.each(['aeon_k1_apikey', 'aeon_at_oauth', 'master-key'])('refuses a goal proposal for a ****** (%s)', async (token) => {
+    findMemoryById.mockResolvedValue(goalProposal)
+    const res = await accept({ authorization: `Bearer ${token}` })
+    expect(res.status).toBe(403)
+    expect(res.body.error).toBe(OPERATOR_ONLY_GOAL_ERROR)
+    expect(acceptProposal).not.toHaveBeenCalled()
+  })
+
+  it('refuses an approved goal row for a bearer too', async () => {
+    findMemoryById.mockResolvedValue({ id: PROPOSAL_ID, type: 'kairos_goal', sourceMetadata: { kind: 'goal' } })
+    expect((await accept({ authorization: BEARER })).status).toBe(403)
+  })
+
+  it('the signed-in session approves through the decision path; refusals map to 409', async () => {
+    acceptProposal.mockResolvedValueOnce({ ok: true, memory: { id: PROPOSAL_ID, type: 'kairos_goal' } })
+    expect((await accept()).status).toBe(200)
+    expect(acceptProposal).toHaveBeenCalledWith(PROPOSAL_ID, 'user-1', expect.any(Object), { origin: { kind: 'operator', via: 'rest-session' } })
+
+    acceptProposal.mockResolvedValueOnce({ ok: false, reason: 'already_decided' })
+    expect((await accept()).status).toBe(409)
+    acceptProposal.mockResolvedValueOnce({ ok: false, reason: 'cap_reached' })
+    expect((await accept()).status).toBe(409)
   })
 })

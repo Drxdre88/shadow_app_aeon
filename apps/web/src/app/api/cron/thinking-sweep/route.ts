@@ -10,6 +10,8 @@ import {
   type SweepResult,
 } from '@/lib/kairos/thinking/queue'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
+import { PROMISE_NUDGE_CRON, runPromiseNudges, type PromiseNudgeResult } from '@/lib/kairos/promises/nudge'
+import { sweepExpiredProposals, type ProposalExpirySweepResult } from '@/lib/kairos/proposal-decision'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos thinking queue sweep (docs/kairos/32 §3, 33). Hourly ('50 * * * *').
@@ -28,6 +30,11 @@ import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-
 //    started after KAIROS_SWEEP_BUDGET_MS (default 200s) — the rest wait for
 //    the next hour. Idempotent: an expired job is never re-expired and an
 //    attempted fallback is never re-run, so re-runs converge.
+// 3. Promise nudge (operator only, KAIROS_INITIATIVE=1, 12:00 London): one
+//    Telegram line for promises >2 days late, at most once per promise.
+// 4. Proposal expiry (operator only): unanswered goal proposals expire after
+//    72h (no answer = no action, no negative reaction) and their Telegram
+//    buttons are replaced by "— Expired, no action".
 // ─────────────────────────────────────────────────────────────────────────
 
 export const maxDuration = 300
@@ -81,6 +88,24 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  let promiseNudge: PromiseNudgeResult | { status: 'error'; error: string } | null = null
+  let proposalExpiry: ProposalExpirySweepResult | { error: string } | null = null
+  const operatorUserId = process.env.KAIROS_OPERATOR_USER_ID?.trim()
+  if (operatorUserId) {
+    try {
+      promiseNudge = await runPromiseNudges(operatorUserId, now)
+    } catch (err) {
+      await writeCronFailureTrace(operatorUserId, { cronName: PROMISE_NUDGE_CRON, reason: 'uncaught_exception', error: err })
+      promiseNudge = { status: 'error', error: err instanceof Error ? err.message : String(err) }
+    }
+    try {
+      proposalExpiry = await sweepExpiredProposals(operatorUserId, now)
+    } catch (err) {
+      console.error('[cron:thinking-sweep] proposal expiry sweep failed:', err)
+      proposalExpiry = { error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+
   return jsonResponse({
     planned: plans.reduce((n, p) => n + p.planned, 0),
     plans,
@@ -89,5 +114,7 @@ export async function GET(req: NextRequest) {
     fallbacksOk: users.reduce((n, u) => n + (u.result?.fallbacks.filter((f) => f.ok).length ?? 0), 0),
     deferred: users.reduce((n, u) => n + (u.result?.deferred ?? 0), 0),
     users,
+    promiseNudge,
+    proposalExpiry,
   })
 }

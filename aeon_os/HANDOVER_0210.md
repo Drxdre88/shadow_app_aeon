@@ -1,4 +1,6 @@
-# Handover 0210 — Kairos 0.17 → 0.19 + Opus 5.5 everywhere + living world · next session starts at Phase 1
+# Handover 0210 — Kairos 0.17 → 0.20 + Opus 5.5 everywhere + living world · Phase 1 built, Phase 2 built dormant
+
+> **Evening update (02/10, session 2) — read §8 first.** Phase 1's four build items and all of Phase 2 are built and committed on branch `feat/kairos-phase1-settle` (Kairos 0.20 / app v0.38.0), **not pushed or merged yet**. Phase 2 is dormant until `KAIROS_INITIATIVE=1`.
 
 **Date:** 2026-10-02 · **Repo:** shadow_app_aeon · **Kairos 0.19.0 / app v0.37.0** — #143 (0.17), #144 (0.18), #145 (0.19) and the models + living-world PR (v0.37.0) are all live.
 **Board:** AI Mission Control → "Kairos: move all paid-key thinking onto Max" (Landing Zone, checklist groups "Overhaul 0210" and "0.18 Owner asks").
@@ -70,3 +72,26 @@ Build items: block archiving the live constitution via `update_memory`; scope `c
 Paste this to start:
 
 > New Kairos/Aeon session. Read `aeon_os/HANDOVER_0210.md` and `research/kairos_0210/03_next_phases.md`. We are starting **Phase 1 — Settle the brain**, then **Phase 2 — Initiative first slice** with the rules in §6. First, fan out inferno-prowlers in parallel to spec Phase 1's build items (constitution archive guard, claim/submit scoping, idea-candidate archiving, chat-routine timing) and Phase 2's three tracks (goals, promise list, Telegram approve/veto), each returning a file:line spec with tests and exit criteria. Then run `npm run freshness` and check last night's Kairos health before building. Track on the AI Mission Control board.
+## 8. Session 2 (02/10 evening) — Phase 1 built, Phase 2 built dormant
+
+**Branch:** `feat/kairos-phase1-settle` (from main `ea474f4`), 4 local commits, not pushed:
+`79b61b2` Phase 1 · `a9e00b5` Phase 2 core · `b05525d` approve/veto + Telegram · `1a53099` release 0.20 / v0.38.0.
+**Checks:** Vitest 372/372 files, typecheck clean, lint 0 errors, `npm run freshness` versions consistent, no schema change. Two warden passes; all findings fixed (incl. a voice-note regression caught before commit).
+**Board:** AI Mission Control → "Kairos: settle the brain, then initiative" (Live). Phase 1 build items ticked.
+**Specs:** session files `spec_phase1.md` / `spec_phase2.md` (copied below as the design of record is the code + changelog `docs/kairos/CHANGELOG.md` 0.20).
+
+**Night health at handover:** last night (01→02/10) ran on the OLD 0.16 brain — memory engine failed (fixed in 0.17), several retired kinds expired, conscience answered on the paid key. Tonight (02→03/10) is night 1 of the 7-night Phase 1 clock. Paid backup confirmed off.
+
+**What 0.20 changes (plain):**
+- Constitution owner-only (5 agent paths closed: update_memory, REST PATCH/DELETE, accept supersedes, contradiction loser).
+- Routines name themselves (`routine: brain|chat`) and are held to their own jobs. **Needs a re-paste of both routines** to take effect; then set `KAIROS_REQUIRE_ROUTINE_SCOPE=1`. Old prompts keep working meanwhile.
+- Idea nights with no judge answer are filed (`judge_failed`) and show as a failure in Health.
+- Chat reply timing on Health + daily `CHAT_LATENCY` trace.
+- Phase 2 (dormant): `goal_propose` (≤1/night, ≤2 open, forbidden topics incl. constitution, 72h expiry), Approve / Veto / Veto + why (Telegram + inbox, one decision path, agents refused), promise list in `user_preferences.kairosPromises` (cap 12, owner/check/lapse close only, 06:00 line, one noon nudge >2 days late, `P3 kept` / `drop P3` / `P3 by dd/mm`), approving a goal creates its report-back promise and the owner's verdict on it closes the goal.
+
+**Open items / next steps (in order):**
+1. Owner: OK to push + open PR + merge (deploys to prod; Phase 2 stays off).
+2. After deploy: re-paste both routines from Kairos setup (the prompts now carry `routine`) — ideally as part of the first-time setup step.
+3. Watch 7 nights (§3). When Phase 1 exit criteria are met, set `KAIROS_INITIATIVE=1` in Vercel and redeploy → Phase 2 live; 14-night measure starts.
+4. Known gaps (not blocking): declared (not authenticated) routine scope — per-routine credentials unverified; an agent "resolves" link can still hide the constitution from retrieval; Telegram turns lack message→queue time; the goal/promise SQL is mock-tested only — first live night with initiative on should be watched.
+5. Architecture docs not refreshed for 0.20 (`ARCHITECTURE.md` / `architecture/hangar.md` carry another session's uncommitted edits) — run inferno-cartographer on `architecture/kairos/*` once those land.

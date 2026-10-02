@@ -169,4 +169,60 @@ describe('getKairosInbox', () => {
     expect(items.map((i) => i.id)).toEqual(['notify-1', 'idea-1'])
     expect(items[1]).toMatchObject({ idea: { survivedBecause: null } })
   })
+
+  describe('Kairos goal proposals (Phase 2)', () => {
+    const NOW = new Date('2026-10-02T09:00:00.000Z')
+    const goalMeta = (over: Record<string, unknown> = {}) => ({
+      v: 1,
+      state: 'proposed',
+      kind: 'investigation',
+      question: 'What blocks go-live?',
+      why: 'Seeded by an accepted idea.',
+      successCheck: { type: 'owner_confirm', text: 'You agree the list is right.' },
+      dueInDays: 7,
+      dueAt: null,
+      seeds: [{ kind: 'idea', id: 'seed-1' }],
+      proposedOn: '2026-10-02',
+      proposedAt: '2026-10-02T03:30:00.000Z',
+      expiresAt: '2026-10-05T03:30:00.000Z',
+      jobId: 'job-1',
+      answeredBy: 'routine',
+      decidedAt: null,
+      decidedVia: null,
+      vetoNote: null,
+      closedAt: null,
+      closedBy: null,
+      closeNote: null,
+      telegram: null,
+      history: [],
+      ...over,
+    })
+    const goalRow = (id: string, over: Record<string, unknown> = {}) =>
+      listedMemory(id, { kind: 'goal', status: 'pending', goal: goalMeta(over), origin: { kind: 'kairos', via: 'thinking:goal_propose' } })
+
+    it('carries the goal details and leads the proposals, ahead of ideas', async () => {
+      vi.mocked(listMemories).mockResolvedValue([
+        listedMemory('prop-raw', { introspection: true, status: 'pending' }),
+        listedMemory('idea-1', { status: 'pending', kind: 'idea', idea: { claim: 'x', why: 'y', nextStep: 'z' } }),
+        goalRow('goal-1'),
+      ])
+      const { items } = await getKairosInbox(USER_ID, NOW)
+      expect(items.map((i) => i.id)).toEqual(['goal-1', 'idea-1', 'prop-raw'])
+      expect(items[0]).toMatchObject({
+        kind: 'proposal',
+        goal: { question: 'What blocks go-live?', why: 'Seeded by an accepted idea.', successCheck: 'You agree the list is right.', dueInDays: 7, expiresAt: '2026-10-05T03:30:00.000Z' },
+      })
+      expect(items[1]).not.toHaveProperty('goal')
+    })
+
+    it('hides goal proposals past their expiry or with unreadable goal meta', async () => {
+      vi.mocked(listMemories).mockResolvedValue([
+        goalRow('goal-expired', { expiresAt: '2026-10-02T08:00:00.000Z' }),
+        listedMemory('goal-broken', { kind: 'goal', status: 'pending', goal: { state: 'proposed' } }),
+        listedMemory('prop-1', { introspection: true, status: 'pending' }),
+      ])
+      const { items } = await getKairosInbox(USER_ID, NOW)
+      expect(items.map((i) => i.id)).toEqual(['prop-1'])
+    })
+  })
 })

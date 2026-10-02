@@ -8,6 +8,7 @@ vi.mock('@/lib/actions/kairos-inbox', () => ({
   dismissKairosInboxProposal: vi.fn(),
   answerKairosInboxAsk: vi.fn(),
   dismissKairosInboxAsk: vi.fn(),
+  decideKairosInboxProposal: vi.fn(),
 }))
 vi.mock('@/lib/actions/kairos-voice', () => ({
   confirmVoiceNote: vi.fn(),
@@ -18,6 +19,7 @@ vi.mock('@/components/ui/KairosMarkdown', () => ({ KairosMarkdown: () => null })
 import {
   acceptKairosInboxProposal,
   answerKairosInboxAsk,
+  decideKairosInboxProposal,
   dismissKairosInboxAsk,
   listKairosInbox,
 } from '@/lib/actions/kairos-inbox'
@@ -88,6 +90,88 @@ describe('KairosInbox — idea proposals', () => {
     const card = within(dialog).getByText('Batch the digests').closest('li')!
     fireEvent.click(within(card).getByRole('button', { name: 'Accept' }))
     await vi.waitFor(() => expect(acceptKairosInboxProposal).toHaveBeenCalledWith(IDEA_ID))
+  })
+})
+
+describe('KairosInbox — goal proposals', () => {
+  const GOAL_ID = '66666666-6666-4666-8666-666666666666'
+  const goalInbox = () => ({
+    items: [
+      {
+        kind: 'proposal' as const,
+        id: GOAL_ID,
+        title: 'Why do Monday deploys fail?',
+        summary: 'summary that goals replace',
+        createdAt: new Date(),
+        goal: {
+          question: 'What makes Monday deploys fail more often?',
+          why: 'Three of the last four rollbacks were Mondays',
+          successCheck: 'You confirm the cause is named',
+          dueInDays: 5,
+          expiresAt: '2026-10-04T13:00:00.000Z',
+        },
+      },
+      { kind: 'proposal' as const, id: PLAIN_ID, title: 'Plain proposal', summary: 'Plain summary', createdAt: new Date() },
+    ],
+  })
+
+  async function openGoal() {
+    vi.mocked(listKairosInbox).mockResolvedValue(goalInbox() as never)
+    const dialog = await openInbox()
+    return within(dialog).getByText('Why do Monday deploys fail?').closest('li')!
+  }
+
+  it('shows the question, why, success check, due-in-days and expiry with Approve / Veto / Veto + why', async () => {
+    const card = await openGoal()
+    expect(within(card).getByText('Goal')).toBeTruthy()
+    expect(within(card).getByText('What makes Monday deploys fail more often?')).toBeTruthy()
+    expect(within(card).getByText('Three of the last four rollbacks were Mondays')).toBeTruthy()
+    expect(within(card).getByText('You confirm the cause is named')).toBeTruthy()
+    expect(within(card).getByText(/Due 5 days after you approve · expires 04\/10, 14:00/)).toBeTruthy()
+    expect(within(card).queryByText('summary that goals replace')).toBeNull()
+    for (const name of ['Approve', 'Veto', 'Veto + why']) expect(within(card).getByRole('button', { name })).toBeTruthy()
+    expect(within(card).queryByRole('button', { name: 'Accept' })).toBeNull()
+  })
+
+  it('leaves non-goal cards with Accept / Dismiss', async () => {
+    await openGoal()
+    const plain = screen.getByText('Plain proposal').closest('li')!
+    expect(within(plain).getByRole('button', { name: 'Accept' })).toBeTruthy()
+    expect(within(plain).queryByRole('button', { name: 'Approve' })).toBeNull()
+  })
+
+  it('approves through decideKairosInboxProposal and shows the outcome', async () => {
+    vi.mocked(decideKairosInboxProposal).mockResolvedValue({ ok: true, verdict: 'approve' })
+    const card = await openGoal()
+    fireEvent.click(within(card).getByRole('button', { name: 'Approve' }))
+    await vi.waitFor(() => expect(within(card).getByRole('status').textContent).toBe('Approved ✓'))
+    expect(decideKairosInboxProposal).toHaveBeenCalledWith(GOAL_ID, 'approve', undefined)
+    expect(within(card).queryByRole('button', { name: 'Approve' })).toBeNull()
+    expect(acceptKairosInboxProposal).not.toHaveBeenCalled()
+  })
+
+  it('Veto + why sends the typed reason (capped at 2000)', async () => {
+    vi.mocked(decideKairosInboxProposal).mockResolvedValue({ ok: true, verdict: 'veto' })
+    const card = await openGoal()
+    fireEvent.click(within(card).getByRole('button', { name: 'Veto + why' }))
+    const box = within(card).getByRole('textbox', { name: /Why veto/ })
+    expect(box.getAttribute('maxLength')).toBe('2000')
+    expect(within(card).getByRole('button', { name: 'Send veto' }).hasAttribute('disabled')).toBe(true)
+    fireEvent.change(box, { target: { value: '  Not this month  ' } })
+    fireEvent.click(within(card).getByRole('button', { name: 'Send veto' }))
+    await vi.waitFor(() => expect(within(card).getByRole('status').textContent).toBe('Vetoed ✓'))
+    expect(decideKairosInboxProposal).toHaveBeenCalledWith(GOAL_ID, 'veto', 'Not this month')
+  })
+
+  it.each([
+    ['already_decided', 'Already decided'],
+    ['expired', 'Expired — no action'],
+  ])('a plain Veto answered %s shows "%s"', async (reason, text) => {
+    vi.mocked(decideKairosInboxProposal).mockResolvedValue({ ok: false, reason })
+    const card = await openGoal()
+    fireEvent.click(within(card).getByRole('button', { name: 'Veto' }))
+    await vi.waitFor(() => expect(within(card).getByRole('status').textContent).toBe(text))
+    expect(decideKairosInboxProposal).toHaveBeenCalledWith(GOAL_ID, 'veto', undefined)
   })
 })
 

@@ -106,7 +106,7 @@ async function loadFeedProject(projectId: string) {
   }
 }
 
-const DONE_COLUMN_NAMES = new Set(['done', 'vault'])
+export const DONE_COLUMN_NAMES: ReadonlySet<string> = new Set(['done', 'vault'])
 
 async function movedIntoDoneColumn(input: BoardEventInput): Promise<boolean> {
   const toColumnId = input.metadata?.toColumnId

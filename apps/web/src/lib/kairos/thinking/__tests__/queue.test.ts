@@ -42,10 +42,13 @@ import {
   SWEEP_PLAN_SKIP_KINDS,
   THINKING_JOB_INSTRUCTIONS,
   ThinkingQueue,
+  claimThinkingJob,
   createSweepBudget,
   jobInstructions,
   submitErrorStatus,
+  submitThinkingJob,
 } from '../queue'
+import { getRoutine } from '@/lib/kairos/routines/catalog'
 
 const USER = 'user-1'
 const JOB = '22222222-2222-4222-8222-222222222222'
@@ -351,6 +354,168 @@ describe('ThinkingQueue.sweep', () => {
     vi.mocked(expireOverdue).mockResolvedValue([])
     await new ThinkingQueue([handler('concept')]).sweep(USER, NOW)
     expect(isPaidBackupEnabled).not.toHaveBeenCalled()
+  })
+})
+
+describe('ThinkingQueue.sweep — abandon hook', () => {
+  const judgeJob = () => job({ id: 'j', kind: 'idea_judge', status: 'expired' })
+
+  beforeEach(() => {
+    vi.mocked(expireOverdue).mockResolvedValue([])
+    vi.mocked(listPendingFallbacks).mockResolvedValue([judgeJob()])
+    vi.mocked(recordFallback).mockImplementation(async (_u, id) => job({ id, status: 'expired' }))
+  })
+
+  it('paid backup off: abandons each closed job once with the note', async () => {
+    vi.mocked(isPaidBackupEnabled).mockResolvedValueOnce(false)
+    const abandon = vi.fn(async () => ['a1'])
+    const h = handler('idea_judge', [], { abandon })
+    await new ThinkingQueue([h]).sweep(USER, NOW)
+    expect(h.fallback).not.toHaveBeenCalled()
+    expect(abandon).toHaveBeenCalledTimes(1)
+    expect(abandon).toHaveBeenCalledWith(expect.objectContaining({ id: 'j', kind: 'idea_judge' }), 'paid backup off')
+  })
+
+  it('a failed fallback abandons the job with its reason; a successful one does not', async () => {
+    const abandon = vi.fn(async () => [])
+    const failing = handler('idea_judge', [], { abandon, fallback: vi.fn(async () => ({ ok: false as const, reason: 'parse_failed: junk' })) })
+    await new ThinkingQueue([failing]).sweep(USER, NOW)
+    expect(abandon).toHaveBeenCalledWith(expect.objectContaining({ id: 'j' }), 'parse_failed: junk')
+
+    abandon.mockClear()
+    const passing = handler('idea_judge', [], { abandon, fallback: vi.fn(async () => ({ ok: true as const, memoryIds: ['m'] })) })
+    await new ThinkingQueue([passing]).sweep(USER, NOW)
+    expect(abandon).not.toHaveBeenCalled()
+  })
+
+  it('a throwing fallback is abandoned with the fallback_error reason', async () => {
+    const abandon = vi.fn(async () => [])
+    const h = handler('idea_judge', [], { abandon, fallback: vi.fn(async () => { throw new Error('boom') }) })
+    await new ThinkingQueue([h]).sweep(USER, NOW)
+    expect(abandon).toHaveBeenCalledWith(expect.anything(), 'fallback_error: boom')
+  })
+
+  it('a throwing abandon is logged and does not break the sweep', async () => {
+    vi.mocked(isPaidBackupEnabled).mockResolvedValueOnce(false)
+    vi.mocked(listPendingFallbacks).mockResolvedValue([judgeJob(), job({ id: 'k', kind: 'idea_judge', status: 'expired' })])
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const abandon = vi.fn(async () => { throw new Error('tx aborted') })
+    const res = await new ThinkingQueue([handler('idea_judge', [], { abandon })]).sweep(USER, NOW)
+    expect(abandon).toHaveBeenCalledTimes(2)
+    expect(res.fallbacks.map((f) => f.jobId)).toEqual(['j', 'k'])
+    expect(err).toHaveBeenCalled()
+  })
+
+  it('is not called when recordFallback matched no row (already settled)', async () => {
+    vi.mocked(recordFallback).mockResolvedValue(null)
+    const abandon = vi.fn(async () => [])
+    await new ThinkingQueue([handler('idea_judge', [], { abandon })]).sweep(USER, NOW)
+    vi.mocked(isPaidBackupEnabled).mockResolvedValueOnce(false)
+    await new ThinkingQueue([handler('idea_judge', [], { abandon })]).sweep(USER, NOW)
+    expect(abandon).not.toHaveBeenCalled()
+  })
+})
+
+describe('claimThinkingJob — routine scope', () => {
+  const saved = process.env.KAIROS_REQUIRE_ROUTINE_SCOPE
+  beforeEach(() => {
+    delete process.env.KAIROS_REQUIRE_ROUTINE_SCOPE
+    vi.mocked(claimNextJob).mockResolvedValue(job())
+  })
+  afterEach(() => {
+    if (saved === undefined) delete process.env.KAIROS_REQUIRE_ROUTINE_SCOPE
+    else process.env.KAIROS_REQUIRE_ROUTINE_SCOPE = saved
+  })
+
+  it('a brain claim without kinds claims within the brain allow-list as routine:brain', async () => {
+    const res = await claimThinkingJob(USER, { routine: 'brain' })
+    expect(claimNextJob).toHaveBeenCalledWith(USER, getRoutine('brain').allowedKinds, 'routine:brain')
+    expect(res).toMatchObject({ job: { id: JOB, kind: 'cortex' } })
+  })
+
+  it('a chat claim for chat records routine:chat', async () => {
+    await claimThinkingJob(USER, { kinds: ['chat'], routine: 'chat' })
+    expect(claimNextJob).toHaveBeenCalledWith(USER, ['chat'], 'routine:chat')
+  })
+
+  it.each([
+    ['chat', ['cortex']],
+    ['chat', ['chat', 'idea_judge']],
+    ['brain', ['chat']],
+  ] as const)('a %s claim for %j is refused with scope_denied, nothing claimed', async (routine, kinds) => {
+    const res = await claimThinkingJob(USER, { kinds: [...kinds], routine })
+    expect(res).toMatchObject({ job: null, code: 'scope_denied' })
+    expect(claimNextJob).not.toHaveBeenCalled()
+  })
+
+  it('an unscoped claim is unchanged', async () => {
+    await claimThinkingJob(USER, {})
+    expect(claimNextJob).toHaveBeenCalledWith(USER, undefined)
+    await claimThinkingJob(USER, { kinds: ['chat'] })
+    expect(claimNextJob).toHaveBeenLastCalledWith(USER, ['chat'])
+  })
+
+  it('KAIROS_REQUIRE_ROUTINE_SCOPE=1 refuses unscoped claims, scoped ones still work', async () => {
+    process.env.KAIROS_REQUIRE_ROUTINE_SCOPE = '1'
+    expect(await claimThinkingJob(USER, {})).toMatchObject({ job: null, code: 'scope_denied' })
+    expect(claimNextJob).not.toHaveBeenCalled()
+    expect(await claimThinkingJob(USER, { routine: 'brain' })).toMatchObject({ job: { id: JOB } })
+  })
+})
+
+describe('ThinkingQueue.submit — routine scope', () => {
+  it('a cortex job held by routine:chat is refused with scope_denied (409) and left open', async () => {
+    const h = handler('cortex')
+    vi.mocked(findJobById).mockResolvedValue(job({ claimedBy: 'routine:chat' }))
+    const res = await new ThinkingQueue([h]).submit(USER, JOB, TOKEN, '{}', NOW)
+    expect(res).toMatchObject({ ok: false, code: 'scope_denied', kind: 'cortex' })
+    expect(submitErrorStatus('scope_denied')).toBe(409)
+    expect(h.apply).not.toHaveBeenCalled()
+    expect(failJob).not.toHaveBeenCalled()
+    expect(releaseForFallback).not.toHaveBeenCalled()
+    expect(completeJob).not.toHaveBeenCalled()
+  })
+
+  it('a sweep-fallback kind is not released either, even past its deadline', async () => {
+    vi.mocked(findJobById).mockResolvedValue(job({ kind: 'idea_judge', claimedBy: 'routine:chat' }))
+    const res = await new ThinkingQueue([handler('idea_judge')]).submit(USER, JOB, TOKEN, '{}', new Date('2026-10-01T03:30:00.000Z'))
+    expect(res).toMatchObject({ ok: false, code: 'scope_denied' })
+    expect(releaseForFallback).not.toHaveBeenCalled()
+    expect(failJob).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['routine:brain', 'chat'],
+    ['routine', 'chat'],
+  ] as const)('claimed as %s, submitted as routine %s → scope_denied, job untouched', async (claimedBy, routine) => {
+    const h = handler('cortex')
+    vi.mocked(findJobById).mockResolvedValue(job({ claimedBy }))
+    const res = await new ThinkingQueue([h]).submit(USER, JOB, TOKEN, '{}', NOW, routine)
+    expect(res).toMatchObject({ ok: false, code: 'scope_denied' })
+    expect(h.apply).not.toHaveBeenCalled()
+    expect(failJob).not.toHaveBeenCalled()
+    expect(completeJob).not.toHaveBeenCalled()
+  })
+
+  it('an unscoped claim submitted as an allowed routine still completes (no lost answer)', async () => {
+    const h = handler('cortex')
+    vi.mocked(findJobById).mockResolvedValue(job({ claimedBy: 'routine' }))
+    const res = await new ThinkingQueue([h]).submit(USER, JOB, TOKEN, '{}', NOW, 'brain')
+    expect(res).toMatchObject({ ok: true })
+    expect(h.apply).toHaveBeenCalled()
+  })
+
+  it('an in-scope submit completes as before (answeredBy routine)', async () => {
+    vi.mocked(findJobById).mockResolvedValue(job({ claimedBy: 'routine:brain' }))
+    const res = await new ThinkingQueue([handler('cortex')]).submit(USER, JOB, TOKEN, '{}', NOW, 'brain')
+    expect(res).toMatchObject({ ok: true })
+    expect(completeJob).toHaveBeenCalledWith(USER, JOB, TOKEN, expect.objectContaining({ answeredBy: 'routine' }), 'routine')
+  })
+
+  it('submitThinkingJob passes the declared routine through', async () => {
+    vi.mocked(findJobById).mockResolvedValue(job({ claimedBy: 'routine:brain' }))
+    const res = await submitThinkingJob(USER, { jobId: JOB, claimToken: TOKEN, text: '{}', routine: 'chat' })
+    expect(res).toMatchObject({ ok: false, code: 'scope_denied' })
   })
 })
 

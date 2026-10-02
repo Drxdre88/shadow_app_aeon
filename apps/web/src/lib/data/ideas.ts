@@ -52,9 +52,15 @@ export interface IdeaNeighbour {
   similarity: number
 }
 
+// eliminatedReason of a candidate archived because no judge ruled on it (the
+// routine and the sweep fallback both failed). Left out of the novelty pool so
+// an unjudged idea can come back on a later night.
+export const IDEA_JUDGE_FAILED_REASON = 'judge_failed'
+
 // Nearest rows by cosine across the three pools the novelty gate compares
 // against: (a) the idea archive, every status INCLUDING archived rows, so a
-// dismissed or eliminated idea still blocks its repeat; (b) pending,
+// dismissed or eliminated idea still blocks its repeat (except candidates no
+// judge ruled on); (b) pending,
 // unarchived inbound proposals; (c) live held beliefs (both minds). One flat
 // `ORDER BY embedding <=> $vec LIMIT n` per pool inside one transaction with
 // SET LOCAL hnsw.ef_search (the retrieval idiom: the HNSW index is used and the
@@ -72,7 +78,10 @@ export async function findNearestIdeaNeighbours(
   const distance = sql`${memories.embedding} <=> ${toVectorLiteral(embedding)}::vector`
   const base = [eq(memories.userId, userId), isNotNull(memories.embedding)]
   const pools: Array<{ kind: IdeaNeighbourKind; where: SQL }> = [
-    { kind: 'idea', where: and(...base, hasIdea)! },
+    {
+      kind: 'idea',
+      where: and(...base, hasIdea, sql`${ideaField('eliminatedReason')} IS DISTINCT FROM ${IDEA_JUDGE_FAILED_REASON}`)!,
+    },
     {
       kind: 'proposal',
       where: and(

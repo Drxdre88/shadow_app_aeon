@@ -26,6 +26,7 @@ const m = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/data/ideas', () => ({
+  IDEA_JUDGE_FAILED_REASON: 'judge_failed',
   findNearestIdeaNeighbours: m.findNearestIdeaNeighbours,
   writeTournament: m.writeTournament,
   listIdeaOutcomes: m.listIdeaOutcomes,
@@ -354,5 +355,56 @@ describe('idea_judge', () => {
     expect(await ideaJudgeHandler.plan(USER, LATE)).toEqual([])
     m.listJobs.mockResolvedValueOnce([{ externalKey: `idea_generate:${DAY}`, status: 'done', output: { ended: 'no_novel_candidates' } }])
     expect(await ideaJudgeHandler.plan(USER, LATE)).toEqual([])
+  })
+})
+
+describe('idea_judge abandon (both judges failed)', () => {
+  it('archives every candidate as judge_failed with no survivors; repeats stay repeats', async () => {
+    const { job, ctx } = await judgeJob()
+    const repeatKey = ctx.candidates[0].key
+    const withRepeat = {
+      ...job,
+      input: { ...job.input, context: { ...ctx, candidates: ctx.candidates.map((c, i) => (i === 0 ? { ...c, novelty: { ...c.novelty, class: 'repeat' } } : c)) } },
+    }
+    const ids = await ideaJudgeHandler.abandon!(withRepeat as ThinkingJobRow, 'parse_failed: junk')
+    expect(ids).toEqual(['s1', 's2', 'a1', 'a2'])
+    expect(m.writeTournament).toHaveBeenCalledTimes(1)
+    const input = m.writeTournament.mock.calls[0][1]
+    expect(input).toMatchObject({ tournamentDate: DAY, generateJobId: 'job-gen', judgeJobId: 'job-judge', survivors: [] })
+    const others = input.others as Array<{ title: string; embedding: number[] | null; meta: IdeaMeta }>
+    expect(others).toHaveLength(ctx.candidates.length)
+    for (const o of others) {
+      if (o.meta.key === repeatKey) {
+        expect(o.meta).toMatchObject({ status: 'repeat', eliminatedReason: 'repeat', judgeJobId: 'job-judge' })
+      } else {
+        expect(o.meta).toMatchObject({ status: 'eliminated', eliminatedReason: 'judge_failed', judgeJobId: 'job-judge', generateJobId: 'job-gen', critique: null, elo: null })
+      }
+      expect(o.embedding).not.toBeNull()
+    }
+    // Other reasons were already traced by the fallback itself.
+    expect(m.writeCronFailureTrace).not.toHaveBeenCalled()
+    expect(m.writeCronSuccessTrace).not.toHaveBeenCalled()
+  })
+
+  it('with Paid backup off writes a judge_unanswered failure trace', async () => {
+    const { job } = await judgeJob()
+    await ideaJudgeHandler.abandon!(job, 'paid backup off')
+    expect(m.writeTournament).toHaveBeenCalledTimes(1)
+    expect(m.writeCronFailureTrace).toHaveBeenCalledWith(USER, { cronName: IDEA_TOURNAMENT_CRON, reason: 'judge_unanswered', rawExcerpt: 'paid backup off' })
+  })
+
+  it('writes no failure trace when that night\'s tournament already exists', async () => {
+    const { job } = await judgeJob()
+    vi.mocked(m.writeTournament).mockResolvedValueOnce({ written: false, survivorIds: ['s1'], archivedIds: [] })
+    await ideaJudgeHandler.abandon!(job, 'paid backup off')
+    expect(m.writeCronFailureTrace).not.toHaveBeenCalled()
+  })
+
+  it('does nothing for a job without a readable context', async () => {
+    const { job } = await judgeJob()
+    const ids = await ideaJudgeHandler.abandon!({ ...job, input: { ...job.input, context: { junk: true } } }, 'paid backup off')
+    expect(ids).toEqual([])
+    expect(m.writeTournament).not.toHaveBeenCalled()
+    expect(m.writeCronFailureTrace).not.toHaveBeenCalled()
   })
 })

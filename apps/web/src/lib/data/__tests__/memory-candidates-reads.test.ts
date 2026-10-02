@@ -62,11 +62,11 @@ describe('listMergeCandidates', () => {
 })
 
 describe('listPendingProposalCandidates', () => {
-  it('excludes review_action and constitution_amendment kinds (and contradiction notices)', async () => {
+  it('excludes review_action, constitution_amendment and goal kinds (and contradiction notices)', async () => {
     await listPendingProposalCandidates('user-1', 25)
 
     const where = render(captured.where)
-    expect(where.sql).toContain(`->>'kind', '') NOT IN ('review_action', 'constitution_amendment')`)
+    expect(where.sql).toContain(`->>'kind', '') NOT IN ('review_action', 'constitution_amendment', 'goal')`)
     expect(where.sql).toContain(`->>'introspection' = 'true'`)
     expect(where.sql).toContain(`->>'status' = 'pending'`)
     expect(where.sql).toContain(`->>'contradictionCheck', 'false') <> 'true'`)

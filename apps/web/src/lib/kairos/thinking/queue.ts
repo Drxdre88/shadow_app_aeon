@@ -20,6 +20,13 @@ import type {
 import { conceptWeekKeyPattern, isConceptDay, isoWeekKey } from './deadlines'
 import { getThinkingHandlers } from './registry'
 import { isPaidBackupEnabled, PAID_BACKUP_OFF_NOTE } from '@/lib/kairos/paid-backup'
+import {
+  getRoutine,
+  routineAllows,
+  routineClaimant,
+  routineFromClaimant,
+  type RoutineId,
+} from '@/lib/kairos/routines/catalog'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Thinking queue (docs/kairos/32 §3, routine playbook docs/kairos/33).
@@ -53,6 +60,8 @@ export const PLANNED_THINKING_KINDS: readonly ThinkingJobKind[] = [
   // Idea tournament after aether (its tensions feed generation); judge after
   // generate. Both before the daily message, which shows the idea of the day.
   'idea_generate', 'idea_judge',
+  // Kairos's own goal, after the judge (accepted ideas seed it).
+  'goal_propose',
   'ask_mine',
   // Last: the daily message reads what the night produced.
   'daily_message',
@@ -87,6 +96,7 @@ const FALLBACK_OWNER: Partial<Record<ThinkingJobKind, string>> = {
   archetype: 'the 02:30 UTC archetype-synthesis cron',
   ask_mine: 'the 04:30 UTC ask-mine cron',
   constitution_seed: 'the Monday 05:58 UTC constitution-seed cron',
+  goal_propose: 'nothing — a missed night proposes no goal',
 }
 
 function fallbackOwner(kind: ThinkingJobKind): string {
@@ -155,7 +165,7 @@ export function jobInstructions(kind: ThinkingJobKind): string {
   return kind === 'chat' ? CHAT_JOB_INSTRUCTIONS : THINKING_JOB_INSTRUCTIONS
 }
 
-export type SubmitErrorCode = 'not_found' | 'not_claimed' | 'bad_token' | 'deadline_passed' | 'apply_failed'
+export type SubmitErrorCode = 'not_found' | 'not_claimed' | 'bad_token' | 'deadline_passed' | 'apply_failed' | 'scope_denied'
 
 export type SubmitResult =
   | { ok: true; jobId: string; kind: ThinkingJobKind; memoryIds: string[] }
@@ -221,7 +231,12 @@ export class ThinkingQueue {
     return result
   }
 
-  async claim(userId: string, kinds?: readonly ThinkingJobKind[], now: Date = new Date()): Promise<ThinkingJobRow | null> {
+  async claim(
+    userId: string,
+    kinds?: readonly ThinkingJobKind[],
+    now: Date = new Date(),
+    routine?: RoutineId,
+  ): Promise<ThinkingJobRow | null> {
     // Chat jobs are created by web/Telegram chat messages, never planned — a
     // chat-only claim must not pay for planning the nightly kinds. Without
     // `kinds`, claimNextJob never returns a chat job (explicit-only kind).
@@ -229,7 +244,8 @@ export class ThinkingQueue {
     // its own planning and the hourly sweep still plans everything on schedule.
     const chatOnly = kinds !== undefined && kinds.length > 0 && kinds.every((k) => k === 'chat')
     if (!chatOnly) await this.planDue(userId, now, kinds && kinds.length > 0 ? { onlyKinds: kinds } : {})
-    return claimNextJob(userId, kinds)
+    // A scoped claim records its routine so submit can hold it to its scope.
+    return routine ? claimNextJob(userId, kinds, routineClaimant(routine)) : claimNextJob(userId, kinds)
   }
 
   async submit(
@@ -238,6 +254,7 @@ export class ThinkingQueue {
     claimToken: string,
     text: string,
     now: Date = new Date(),
+    routine?: RoutineId,
   ): Promise<SubmitResult> {
     const job = await findJobById(userId, jobId)
     if (!job) return { ok: false, code: 'not_found', error: 'Thinking job not found', jobId }
@@ -247,6 +264,18 @@ export class ThinkingQueue {
     }
     if (job.claimToken !== claimToken) {
       return { ok: false, code: 'bad_token', error: 'claimToken does not match the current claim', ...base }
+    }
+    // Scope: never closes the job — the real claimant, the watchdog or the
+    // sweep still owns it.
+    const scope = routineFromClaimant(job.claimedBy)
+    if (routine && scope === null && !routineAllows(routine, job.kind)) {
+      return { ok: false, code: 'scope_denied', error: `routine '${routine}' may not answer ${job.kind} jobs`, ...base }
+    }
+    if (routine && scope !== null && routine !== scope) {
+      return { ok: false, code: 'scope_denied', error: `routine '${routine}' did not claim this job (claimed ${scope ? `by routine '${scope}'` : 'unscoped'})`, ...base }
+    }
+    if (scope && !routineAllows(scope, job.kind)) {
+      return { ok: false, code: 'scope_denied', error: `routine '${scope}' may not answer ${job.kind} jobs`, ...base }
     }
     if (job.deadlineAt.getTime() <= now.getTime()) {
       const error = `deadline_passed: deadline was ${job.deadlineAt.toISOString()}; ${fallbackOwner(job.kind)} owns this job now`
@@ -294,6 +323,15 @@ export class ThinkingQueue {
   async sweep(userId: string, now: Date = new Date(), budget: SweepBudget = createSweepBudget()): Promise<SweepResult> {
     const expired = await expireOverdue(now, userId)
     const fallbacks: SweepResult['fallbacks'] = []
+    // The sweep gave up on a job: let its handler settle what it leaves behind.
+    const abandon = async (job: ThinkingJobRow, handler: ThinkingJobHandler, reason: string) => {
+      if (!handler.abandon) return
+      try {
+        await handler.abandon(job, reason)
+      } catch (err) {
+        console.error(`[kairos:thinking] abandon failed for ${job.kind} ${job.id}:`, err)
+      }
+    }
     const run = async (job: ThinkingJobRow, handler: ThinkingJobHandler) => {
       let outcome
       try {
@@ -301,7 +339,8 @@ export class ThinkingQueue {
       } catch (err) {
         outcome = { ok: false as const, reason: `fallback_error: ${message(err)}` }
       }
-      await recordFallback(userId, job.id, outcome, now)
+      const recorded = await recordFallback(userId, job.id, outcome, now)
+      if (!outcome.ok && recorded) await abandon(job, handler, outcome.reason)
       fallbacks.push(outcome.ok
         ? { jobId: job.id, kind: job.kind, ok: true }
         : { jobId: job.id, kind: job.kind, ok: false, reason: outcome.reason })
@@ -323,7 +362,8 @@ export class ThinkingQueue {
       if (!handler) continue
       if (!paidAllowed) {
         const outcome = { ok: false as const, reason: PAID_BACKUP_OFF_NOTE }
-        await recordFallback(userId, job.id, outcome, now)
+        const recorded = await recordFallback(userId, job.id, outcome, now)
+        if (recorded) await abandon(job, handler, outcome.reason)
         fallbacks.push({ jobId: job.id, kind: job.kind, ok: false, reason: outcome.reason })
         continue
       }
@@ -357,13 +397,34 @@ export interface ClaimedJobView {
   instructions: string
 }
 
+export type ClaimThinkingJobResult =
+  | { job: ClaimedJobView | null }
+  | { job: null; code: 'scope_denied'; error: string }
+
+// Set once both routines declare `routine` on claim (re-pasted prompts).
+function routineScopeRequired(): boolean {
+  return process.env.KAIROS_REQUIRE_ROUTINE_SCOPE === '1'
+}
+
 export async function claimThinkingJob(
   userId: string,
-  input: { kinds?: ThinkingJobKind[] } = {},
-): Promise<{ job: ClaimedJobView | null }> {
+  input: { kinds?: ThinkingJobKind[]; routine?: RoutineId } = {},
+): Promise<ClaimThinkingJobResult> {
   // An explicit but empty filter (every named kind retired) claims nothing.
   if (input.kinds && input.kinds.length === 0) return { job: null }
-  const job = await queue().claim(userId, input.kinds)
+  let kinds: readonly ThinkingJobKind[] | undefined = input.kinds
+  if (input.routine) {
+    // Scoped: the routine's allow-list, narrowed by any kinds it asked for.
+    const allowed = getRoutine(input.routine).allowedKinds
+    const denied = (input.kinds ?? []).filter((k) => !allowed.includes(k))
+    if (denied.length > 0) {
+      return { job: null, code: 'scope_denied', error: `routine '${input.routine}' may not claim ${denied.join(', ')}` }
+    }
+    kinds = input.kinds ?? allowed
+  } else if (routineScopeRequired()) {
+    return { job: null, code: 'scope_denied', error: 'claims must declare routine ("brain" or "chat")' }
+  }
+  const job = await queue().claim(userId, kinds, undefined, input.routine)
   if (!job || !job.claimToken) return { job: null }
   return {
     job: {
@@ -382,9 +443,9 @@ export async function claimThinkingJob(
 
 export async function submitThinkingJob(
   userId: string,
-  input: { jobId: string; claimToken: string; text: string },
+  input: { jobId: string; claimToken: string; text: string; routine?: RoutineId },
 ): Promise<SubmitResult> {
-  return queue().submit(userId, input.jobId, input.claimToken, input.text)
+  return queue().submit(userId, input.jobId, input.claimToken, input.text, undefined, input.routine)
 }
 
 export function toJobSummary(j: ThinkingJobRow) {

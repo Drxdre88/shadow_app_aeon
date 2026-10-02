@@ -35,9 +35,19 @@ vi.mock('@/lib/kairos/cron-trace', () => ({
   writeCronFailureTrace: vi.fn(),
 }))
 
+vi.mock('@/lib/kairos/chat-routine', () => ({
+  chatRoutineEnabled: vi.fn(() => false),
+}))
+
+vi.mock('@/lib/kairos/chat-latency-rollup', () => ({
+  writeChatLatencyRollup: vi.fn(async () => null),
+}))
+
 import { GET } from '../route'
 import { computeSynthesisHealth } from '@/lib/kairos/synthesis-health'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { chatRoutineEnabled } from '@/lib/kairos/chat-routine'
+import { writeChatLatencyRollup } from '@/lib/kairos/chat-latency-rollup'
 
 function request(authHeader?: string) {
   const headers = new Map<string, string>()
@@ -123,5 +133,30 @@ describe('cron/synthesis-health route', () => {
     const body = await res.json()
 
     expect(body.users[0].result.created).toBe(false)
+  })
+
+  const healthResult = {
+    date: '2026-07-22', byStage: {}, alertedStages: [],
+    newlyAlertedStages: [], missingStages: {}, memoryId: 'm1', created: true,
+  }
+
+  it('skips the chat latency rollup when the chat routine flag is off', async () => {
+    distinctQueue.push([{ userId: 'user-1' }])
+    vi.mocked(computeSynthesisHealth).mockResolvedValue(healthResult)
+    await GET(request())
+    expect(writeChatLatencyRollup).not.toHaveBeenCalled()
+  })
+
+  it('writes the chat latency rollup per user before the health rollup when the flag is on', async () => {
+    vi.mocked(chatRoutineEnabled).mockReturnValue(true)
+    const order: string[] = []
+    vi.mocked(writeChatLatencyRollup).mockImplementation(async (userId) => { order.push(`chat:${userId}`); return null })
+    vi.mocked(computeSynthesisHealth).mockImplementation(async (userId) => { order.push(`health:${userId}`); return healthResult })
+    distinctQueue.push([{ userId: 'user-1' }, { userId: 'user-2' }])
+
+    await GET(request())
+
+    expect(order).toEqual(['chat:user-1', 'health:user-1', 'chat:user-2', 'health:user-2'])
+    vi.mocked(chatRoutineEnabled).mockReturnValue(false)
   })
 })
