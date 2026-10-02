@@ -17,7 +17,7 @@ routine in the catalog, then re-paste it — never edit a prompt only on claude.
 | **Kairos chat** | API trigger, fired once per chat message — web (`/kairos`) or Telegram (since 0.19) | `{"kinds":["chat"]}` | — |
 
 Delete the old routines on claude.ai: `Kairos thinking`, `Kairos ideas`, `Kairos morning`,
-`Kairos dusk`, `Kairos dawn`, `Kairos tidy` and `kairos-brain-tick` (the 06:00 message
+`Kairos dusk`, `Kairos dawn`, `Kairos tidy` and `kairos-brain-tick` (all retired; the 06:00 message
 already carries Kairos's question; one voice).
 
 **Why one routine is enough.** Every kind has its own window and the server only hands
@@ -42,7 +42,7 @@ only what no routine answered — and only while the owner's **Paid backup** swi
 **Retired in 0.17** (audit `research/kairos_0210/02_brain_jobs_audit.md`): `brief` (the
 morning message reads each area's cortex headline instead), `introspection` (the idea
 tournament replaced it), `contradiction` (20 notices since August, none acted on),
-`micro_consolidate` (only the next night read it), and the `memory-dedup` cron (the
+`micro_consolidate` (only the next night read it), and the retired `memory-dedup` cron (the
 engine's Merge already folds duplicates).
 
 ## Setup

@@ -81,10 +81,14 @@ export async function getModelForUser(userId: string, tier: AiTier) {
 }
 ```
 
-Default tier map (overridable per user):
-- `cheap`    → Anthropic `claude-haiku-4-5-20251001`
-- `standard` → Anthropic `claude-sonnet-4-6`
-- `heavy`    → Anthropic `claude-opus-4-7`
+Default tier map (overridable per user; source of truth is the shared model registry,
+`packages/shared/src/ai/model-registry.json`, updated 2026-10-02):
+- `cheap`    → Anthropic `claude-sonnet-5-5` · effort low (`claude-haiku-4-5` selectable as the fast option)
+- `standard` → Anthropic `claude-opus-5-5` · effort medium
+- `heavy`    → Anthropic `claude-opus-5-5` · effort high
+
+The DB column defaults below still name the original 4.x models; the router remaps
+retired ids at read time (`LEGACY_REMAP`), so they are never called.
 
 When BYOK is missing for a tier's chosen provider, surface a friendly error in the UI: "Add your {provider} key in /settings/ai to enable {feature}." The feature stays gracefully disabled.
 

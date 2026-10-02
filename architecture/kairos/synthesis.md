@@ -6,11 +6,13 @@ Synthesis turns flat accumulation into a layered, self-consolidating brain. Each
 substrate (and the stage below) and distils one tier up, writing back into `memories` with a
 dedicated `streamClass`. All stages are per-user, idempotent per UTC day, soft-archive their
 priors transactionally (never leaving a tier empty on a failed insert), and skip gracefully on
-missing/undecryptable BYOK keys. State as of **Kairos 0.15.0 "Creativity"** / app **v0.32.0**
-(`lib/kairos/version.ts:3`, `lib/version.ts:6`).
+missing/undecryptable BYOK keys. State as of **Kairos 0.19.0 "No paid spend, chat on Max, one
+setup checklist"** / app **v0.36.0** (`lib/kairos/version.ts`, `lib/version.ts`). Since 0.17 every
+stage is first a thinking job answered by the **Kairos brain** routine on the owner's Max plan; the
+crons below are fallbacks only, and they run only while the owner's **paid backup** switch is on.
 
-**Parse reliability (docs/kairos/31).** The standard-tier generators (archetypes, cortex,
-introspection, contradiction) wrap `extractJsonBlock → zod.parse()` in `parseWithRepair`
+**Parse reliability (docs/kairos/31).** The paid-key generators (archetypes, cortex, aether, the
+concept step, the constitution seed and the sweep's `paid-fallback.ts`) wrap `extractJsonBlock → zod.parse()` in `parseWithRepair`
 (`_prompt-utils.ts`): one same-provider repair round-trip with the raw text + validation error,
 then `ParseRepairError`. Failure traces carry `finishReason`, a 500-char `rawExcerpt`, and split
 `parse_failed:syntax` vs `:schema`. Thinking-queue kinds parse strictly on a routine submit (no
@@ -33,7 +35,10 @@ and cards. Emits **3–7 master nodes** (`streamClass='archetype'`). Idempotency
 
 ### Cortex (03:00 UTC fallback, per Dominion — the living document)
 `lib/kairos/cortex.ts` → `runCortexRegenForDominion()`. Reads Dominion strategy, live cards,
-reflections (≤30), today's archetypes (≤12), the prior cortex and the latest intraday delta. Emits
+reflections (≤30), today's archetypes (≤12), the prior cortex and a "Today so far" line for the day
+being folded: old intraday deltas if any exist (none are written since micro-consolidation was retired
+in 0.17, so this falls back to a new-memory count) plus, since 0.18, the titles of cards finished
+that day on **watched boards** (same-day `board_card_done` rows). Emits
 one `dominion_cortex` memory (`streamClass='cortex'`; markdown + `sourceMetadata.cortex`).
 **Race defense:** a Dominion with activity but no archetypes today defers. Normally served by the
 `cortex` thinking job; the cron covers anything unanswered by 02:58Z.
@@ -43,7 +48,7 @@ one `dominion_cortex` memory (`streamClass='cortex'`; markdown + `sourceMetadata
 the latest cortex per Dominion, top-40 reflections, today's archetypes and the prior Aether. Payload
 `{ thoughts[], tensions[], shifts[], coreNarrative }`. **Anti-drift leash:** thoughts with zero
 `sourceMemoryIds` are stripped; none left → nothing written. Its **tensions feed the idea
-tournament** and its digest feeds BRIEF. Doc: `docs/kairos/27-aether-the-living-intelligence.md`.
+tournament** and the daily message reads it. Doc: `docs/kairos/27-aether-the-living-intelligence.md`.
 
 ### Idea tournament (nightly, after Aether — Kairos 0.15, docs/kairos/35)
 Two thinking kinds that replace the raw introspection dump with **1–3 ideas a night that survived
@@ -98,24 +103,16 @@ critique**. Contract and constants: `lib/kairos/ideas/types.ts`.
    with `no_survivors`/`no_novel_candidates`, or failed with `generate_failed`/`judge_failed`; a
    missing BYOK key is a benign decline). This is armed in synthesis-health (below).
 
-**Raw introspection retirement.** `isRawIntrospectionEnabled()` (`lib/kairos/introspection.ts:47`).
-`KAIROS_RAW_INTROSPECTION` unset or `1` = the old dump still runs (default today). `0`/`off`/`false`
-= `/api/cron/introspection` makes no model calls and writes one skipped `introspection` trace per
-eligible user (`route.ts:59`, `raw_introspection_off`). The rule: flip it after **14 clean
-`idea-tournament` nights**. `contradiction-scan` is unaffected.
+**Raw introspection is retired (0.17).** The raw introspection dump, its cron and the
+`KAIROS_RAW_INTROSPECTION` flag are gone; the idea tournament is the only source of idea proposals.
+The contradiction scan (cron and `contradiction` kind) was retired in the same release (audit:
+`research/kairos_0210/02_brain_jobs_audit.md`). `introspection-prompt.ts` survives only as the shared
+id-resolver helpers (`makeFedIdResolver`, `fedIdListSchema`) for other prompts.
 
-### The Briefer (06:15 UTC, per Dominion — rewired in 0.14)
-`lib/kairos/briefer.ts` (prompt) + `recipes/brief.ts` (BRIEF) via `dispatch.ts`. One
-`streamClass='advisory'` memory per active Dominion per day, idempotent on
-`briefer:{date}:{dominionId}`. **Grounding (P2.5 G5):** BRIEF declares
-`reads: ['cortex','aether','constitution','belief',…]` (`brief.ts:139`), so `loadGrounding`
-(`dispatch.ts:57`) loads the latest Aether and the Dominion-filtered conscience block alongside
-`retrieveContext`. The prompt gains a **cortex** section (from `retrieval.cortex`, ≤1500 chars), an
-**Aether digest** (narrative, 2 tensions, 3 threads — this Dominion first; `digestAether`
-`brief.ts:32`) and the **conscience block** (`renderGrounding`, `briefer.ts:48`). The output format
-is unchanged (State / Movement / Watch / Suggested next). The cron shares one per-run
-`createConscienceLoader()` across a user's Dominions. The trace meta records which grounding was
-present.
+### The Briefer — retired in 0.17
+The per-Dominion morning briefs, now retired (`brief` kind, briefer cron, BRIEF recipe, `briefer.ts`,
+`dispatch.ts`) are retired. The daily message reads each area's latest **cortex headline**
+(`readAreaHeadlines`, `daily-message-inputs.ts`) instead, and the inbox filters out old advisory rows.
 
 ### Conscience block (0.14, injected at answer time)
 `lib/kairos/conscience-context.ts` renders reference **data** inside
@@ -126,26 +123,33 @@ Caps: 12 principles, 12 beliefs, 6000 chars (≈1.5k tokens) (`:23-27`). Reads c
 `lib/data/conscience.ts` (`getConsciencePrinciples` `:19`; `listConscienceBeliefs` `:38`, ranked
 by standing → confidence → recency). A read failure gives `''` and never breaks the caller.
 **Injected into:** chat (`chat-turn-assistant.ts:257`), the daily message (routine draft
-`thinking/handlers/daily-message.ts` + paid compose `daily-message.ts:99`), the weekly review
-(`thinking/handlers/weekly-review.ts:80`), and BRIEF. **Deliberately absent** from the drift
-probe, conscience checks, belief extraction, Aether, cortex, archetypes and introspection.
+`thinking/handlers/daily-message.ts` + paid compose `daily-message.ts`) and the weekly review
+(`thinking/handlers/weekly-review.ts`). **Deliberately absent** from the drift probe, conscience
+checks, belief extraction, Aether, cortex and archetypes.
 
-### Daily Message (08:00 Europe/London — the guaranteed voice)
-`lib/kairos/daily-message{,-inputs,-prompt}.ts`. Cron `daily-message` fires `0 7,8 * * *` UTC,
-gated by `isLondonHour(now, 8)`. It is idempotent on `kairos-daily:{londonDate}` + an advisory
-lock, and sends to the Will inbox + Telegram via `deliverKairosSpeak` (`digest:true`; see
-[chat.md](chat.md) §1b). Body source, in order: the routine's `daily_message` draft → paid BYOK →
-deterministic template. The message covers briefs, Aether, the board day, promotions, new beliefs,
-drift, one pending ask, synthesis health and mind-compare, plus:
-- **Idea of the day** — the top *pending* survivor since the last window (`readIdeaOfTheDay`
-  `daily-message-inputs.ts:211`), with "survived because …" and "(N more in your inbox)". The
-  samey-ideas line appears when the diversity alarm fires (`ideaOfTheDayLines`
-  `daily-message-prompt.ts:214`).
+### Daily Message (06:00 Europe/London — the guaranteed voice, since 0.18)
+`lib/kairos/daily-message{,-inputs,-prompt}.ts`. Cron `daily-message` fires `0 5,6 * * *` UTC,
+gated by `isLondonHour(now, DAILY_MESSAGE_HOUR)` (`= 6`). It is idempotent on
+`kairos-daily:{londonDate}` + an advisory lock, and sends to the Will inbox + Telegram via
+`deliverKairosSpeak` (`digest:true`; see [chat.md](chat.md) §1b). Body source, in order: the
+routine's `daily_message` draft → paid BYOK (only with paid backup on) → deterministic template
+(always free, so the message is sent even with paid backup off). The inbox pins today's message.
+The message covers each area's latest cortex headline (`readAreaHeadlines`, since 0.17), Aether,
+the board day, promotions, new beliefs, drift, synthesis health and mind-compare (Mondays), plus:
+- **Open questions** (0.18) — code, never the model, appends a numbered block of every unanswered
+  Kairos ask (`appendOpenQuestionsBlock`, `daily-message-prompt.ts`). Numbers come from
+  `kairosAsk.seq` (stable per user); cap 10, 14-day expiry, `dismissed` status. On Telegram,
+  `Q12: …` answers and `skip Q12` dismisses (`lib/kairos/ask-numbered.ts`, routed before chat);
+  MCP/REST `list_open_kairos_asks` / `dismiss_kairos_ask` expose the same list.
+- **What I now believe** — a deterministic beliefs block, appended after the guard.
+- **Idea of the day** — the top *pending* survivor since the last window (`readIdeaOfTheDay`),
+  with "survived because …" and "(N more in your inbox)". The samey-ideas line appears when the
+  diversity alarm fires (`ideaOfTheDayLines`).
 - **Late-idea append** — a routine draft is built from inputs gathered at plan time. If the draft
-  doesn't mention the idea (`draftMentions` `daily-message.ts:26`), the idea line is appended
-  deterministically, as long as the result still passes `rejectMessageText` (`:144`).
+  doesn't mention the idea (`draftMentions`), the idea line is appended deterministically, as long
+  as the result still passes `rejectMessageText`.
 - **Conscience failure line** — `conscienceFailureLine` of the latest conscience run (failures
-  only) rides the drift line as "Self-check failures" (`daily-message-inputs.ts:152`).
+  only) rides the drift line as "Self-check failures".
 - The conscience block goes into both the routine and paid prompts.
 A Telegram failure records `sent_inbox_only` + a `telegram_not_delivered` trace.
 
@@ -182,125 +186,133 @@ This is measurement only: it is never fed back into a prompt, belief or constitu
 
 ## Thinking queue (`thinking_jobs`, docs/kairos/33)
 
-`lib/kairos/thinking/{queue,registry,deadlines,paid-fallback}.ts` + `handlers/*` (11 handlers,
-`registry.ts:16`). Statuses go queued → claimed → done | failed | expired | fallback, with unique
+`lib/kairos/thinking/{queue,registry,deadlines,paid-fallback}.ts` + `handlers/*` (15 handlers, one
+per kind). Statuses go queued → claimed → done | failed | expired | fallback, with unique
 `(userId, externalKey)`. A Claude Max **routine** claims and submits via MCP/REST; the server
-validates, grounds, mints ids and persists. `PLAN_ORDER` (`queue.ts:44`): cortex → concept → aether
-→ belief_extract → drift_probe → mind_compare → weekly_review → **idea_generate → idea_judge** →
-daily_message → chat. `SWEEP_FALLBACK_KINDS` (`:57`): concept, belief_extract, drift_probe,
-mind_compare, weekly_review, idea_generate, idea_judge. A late or rejected answer for these is
-released to the sweep's paid key. Cron kinds fail over to their own cron.
+validates, grounds, mints ids and persists. `PLAN_ORDER` = `PLANNED_THINKING_KINDS` + `chat`
+(`queue.ts`): chat_distill → archetype → cortex → concept → aether → belief_extract → drift_probe
+→ mind_compare → constitution_seed → weekly_review → **idea_generate → idea_judge** → ask_mine →
+daily_message → chat. `PLANNED_THINKING_KINDS` must equal the routine catalog's `BRAIN_JOBS`
+(`thinking/__tests__/planned-kinds.test.ts`). `SWEEP_FALLBACK_KINDS`: concept, belief_extract,
+drift_probe, mind_compare, weekly_review, idea_generate, idea_judge. A late or rejected answer for
+these is released to the sweep's paid key. Cron kinds fail over to their own cron. A claim that
+still names retired kinds has them dropped instead of failing.
 
 | Kind | Planned | Deadline → fallback |
 |---|---|---|
+| `chat_distill` | 01:00Z, one per thread with yesterday's operator messages | 01:58Z → `chat-distill` 02:00 |
+| `archetype` | 01:36Z, after tonight's chat distill | 02:28Z → `archetype-synthesis` 02:30 |
 | `cortex` | after archetypes | 02:58Z → `cortex-regen` 03:00 |
 | `aether` | after cortex | 03:13Z → `aether-regen` 03:15 |
 | `concept` | Sundays (engine Concepts step) | 6h → sweep |
 | `belief_extract` | ≥02:30Z (or on re-check flags alone) | 4h → sweep |
 | `drift_probe` (+ `:conscience`) | after aether or ≥03:30Z | 2h → sweep |
-| `mind_compare` | Mon ≥04:00Z | 3h → sweep |
-| `weekly_review` | Mon ≥05:00Z | 6h → sweep |
 | `idea_generate` | after aether or ≥03:30Z | 55 min → sweep |
 | `idea_judge` | by the generate apply | 45 min → sweep |
-| `daily_message` | once briefs exist | 07:55 London → own cron |
-| `chat` | Telegram webhook only | watchdog → paid key (see [chat.md](chat.md)) |
+| `ask_mine` | 03:15Z, once aether is settled | 04:28Z → `ask-mine` 04:30 |
+| `mind_compare` | Mon ≥04:00Z | 3h → sweep |
+| `constitution_seed` | Mon 04:00–05:56Z, only while there is no constitution and no pending draft | 05:56Z → `constitution-seed` Mon 05:58 |
+| `weekly_review` | Mon ≥05:00Z | 6h → sweep |
+| `daily_message` | from 04:00Z once aether, ideas and ask are settled (from 04:35Z regardless), only when the UTC date equals the London date | 05:55 London → own cron 06:00 London |
+| `chat` | a web (`/kairos`) or Telegram message only | watchdog → paid key, if paid backup is on (see [chat.md](chat.md)) |
 
 **`thinking-sweep`** (hourly at :50) plans every kind except `concept`/`chat`
-(`SWEEP_PLAN_SKIP_KINDS` `:80`), expires overdue jobs, and runs ≤2 paid fallbacks per invocation in
-a 200s budget (`KAIROS_SWEEP_MAX_FALLBACKS` / `_BUDGET_MS`).
+(`SWEEP_PLAN_SKIP_KINDS`), expires overdue jobs, and runs ≤2 paid fallbacks per invocation in
+a 200s budget (`KAIROS_SWEEP_MAX_FALLBACKS` / `_BUDGET_MS`). With paid backup off it closes each
+pending fallback with "paid backup off" instead of running it.
 
-**Max-plan routines (claude.ai; not inspectable from the repo).** Since 0.16 ("All on Max", PR #141)
-every Kairos model call is a thinking job first: 18 kinds — the 11 above plus `chat_distill`,
-`archetype`, `ask_mine`, `contradiction`, `brief`, `introspection`, `micro_consolidate`. Each former
-paid-key cron plans its kind in a window closing 2 min before the cron, and the cron is now only the
-**fallback**: `isJobDone(userId, externalKey)` (`lib/data/thinking-jobs.ts`) skips any unit a routine
-answered. `brief` and `micro_consolidate` take markdown answers (`TEXT_ANSWER_KINDS`); the daily
-message waits until every brief job is answered or 06:25Z. Six routines, all `claude-opus-5-5`
-(no reasoning-effort setting exists for routines), Aeon connector only, Read/Glob/Grep, UTC crons
-(prompts and caps in docs/kairos/33):
+**Max-plan routines (claude.ai).** Every Kairos model call is a thinking job first (15 kinds since
+0.18). Each former paid-key cron plans its kind in a window closing 2 min before the cron, and the
+cron is only the **fallback**: `isJobDone(userId, externalKey)` (`lib/data/thinking-jobs.ts`) skips
+any unit a routine answered. Since 0.17 there are **two routines, defined in code**:
+`lib/kairos/routines/catalog.ts` is the single source of truth (names, schedules, caps, model and the
+exact self-contained prompts), and the in-app *Set up Kairos* checklist renders them with copy
+buttons. Both use `claude-opus-5-5`, read from the shared model registry (`defaults.routine`; no
+reasoning-effort setting exists for routines), Aeon connector only (prompts and caps in
+docs/kairos/33):
 
-| Routine | Cron (UTC) | Claims |
-|---|---|---|
-| Kairos dusk | `40 1 * * *` | `chat_distill`, `archetype` |
-| Kairos thinking (`trig_01JX3JhyWYuJiNBh7tFtE4rv`) | `40 2 * * *` | cortex, concept, aether, belief_extract, drift_probe, mind_compare, weekly_review |
-| Kairos ideas (`trig_01MvjYWyfTMVS3fRd4dJrVzR`) | `35 3 * * *` | `idea_generate` → `idea_judge`, `ask_mine` |
-| Kairos dawn | `0 4 * * *` | `contradiction` (one batched job per Dominion), `introspection` |
-| Kairos morning (`trig_01AxMddrzJMkgrk6Cd3WiWH3`) | `40 5 * * *` | `brief`, the 06:15 `micro_consolidate`, `daily_message` (+ Monday kinds) |
-| Kairos tidy | `5 9,12,15,18,21,23 * * *` | `micro_consolidate` |
-| kairos-brain-tick (older, Sonnet) | `0 6,11,17 * * *` | speaks first via `/api/v1/kairos/speak` ([chat.md](chat.md)) |
+| Routine | Trigger (UTC) | Claims | Caps |
+|---|---|---|---|
+| Kairos brain | cron `40 1-6 * * *` (hourly 01:40–06:40; the web form's *Hourly* preset also works) | everything due — claims with `{}`, so a new kind needs no routine change | 40 jobs / 50 min |
+| Kairos chat | API trigger, fired once per chat message (web and Telegram, since 0.19) | `{"kinds":["chat"]}` | 5 jobs / 5 min |
 
-The paid BYOK key now runs only as a fallback (a cron or the hourly sweep covering a job no routine
-answered) and for Telegram chat replies (*Kairos chat* routine not created; `KAIROS_TELEGRAM_ROUTINE`
-off). The first manual *Kairos ideas* run (18:14Z, 01/10) completed both stages on the routine.
+The six older routines and the Sonnet brain-tick are retired (`RETIRED_ROUTINE_NAMES` in the catalog;
+the setup guide tells the owner to delete them). The chat routine is behind `KAIROS_CHAT_ROUTINE`
+(alias `KAIROS_TELEGRAM_ROUTINE`) + `ROUTINE_CHAT_ID` / `ROUTINE_CHAT_TOKEN`; off, chat answers
+inline on the paid key.
 
-## Recipes + dispatcher
+**Paid backup switch (0.19).** `user_preferences.preferences.kairosPaidBackup`, default on (theme
+saves can't overwrite it). Off, `getModelForUser` (`lib/ai/router.ts`) throws `PaidBackupOffError`,
+so every Kairos paid path declines: the fallback crons skip via `lib/kairos/paid-backup-cron.ts`,
+the sweep closes its fallbacks, the chat watchdog sends a short "couldn't answer on Max" note, and
+the daily message falls back to its free deterministic template. Exposed as MCP
+`get/set_kairos_paid_backup`, REST `GET/PUT /api/v1/kairos/paid-backup` (parity test), and a switch
+in the Health tab.
 
-`lib/kairos/dispatch.ts` → `runRecipe()` (`:78`) is the single entry for recipe writes. It runs one
-canonical `retrieveContext()` **in parallel with `loadGrounding`** (Aether + conscience, only for
-recipes whose `reads` declare `aether`/`belief`/`constitution`; best-effort). Every surface runs
-`flat()`. The primary write goes through `captureMemory` (externalId idempotency), then a
-`streamClass='trace'` audit row tied by `sourceMetadata.primaryMemoryId`. **BRIEF** (`recipes/brief.ts`)
-is the sole registered recipe; the briefer cron, `runBriefingNow` and MCP `run_recipe` all use it.
+## Recipes + dispatcher — retired in 0.18
+
+The BRIEF recipe (its only recipe), `dispatch.ts`, the retired MCP tool and `/api/v1/recipes/run` are
+gone. What remains: `recipes/_recipe.ts` (shared retrieval types used by `retrieve.ts`) and the
+read-only trace surface, MCP `get_trace_history` ↔ REST `GET /api/v1/recipes/traces`.
 
 ## Cron cadence (`apps/web/vercel.json`, all gated on `CRON_SECRET`)
 
 | UTC | Cron | What |
 |---|---|---|
 | 23:00 daily | `project-snapshot` | per-project snapshot + board feed + ephemeral lifecycle |
-| 01:30 daily | `memory-engine` | Merge → Weigh → OwnMind → **Recheck** → BackUp → Concepts (`engine/registry.ts:27`; [memory-and-capture.md](memory-and-capture.md) §7) |
+| 01:30 daily | `memory-engine` | Merge → Weigh → OwnMind → **Recheck** → BackUp → Concepts (`engine/registry.ts`; [memory-and-capture.md](memory-and-capture.md) §7) |
 | hourly :50 | `thinking-sweep` | plan / expire / paid-fallback thinking jobs (incl. the idea tournament) |
-| 02:00 daily | `chat-distill` | day's chat threads → operator reflections |
-| 02:30 daily | `archetype-synthesis` | 3–7 archetypes / Dominion |
+| 02:00 daily | `chat-distill` | fallback for `chat_distill`: day's chat threads → operator reflections |
+| 02:30 daily | `archetype-synthesis` | fallback for `archetype`: 3–7 archetypes / Dominion |
 | 03:00 daily | `cortex-regen` | fallback for the `cortex` job |
 | 03:15 daily | `aether-regen` | fallback for the `aether` job |
-| 03:25 daily | `embed-backfill` | drain missing/stale embeddings (moved from 04:00 in 0.16, before the contradiction window) |
-| 04:30 daily | `ask-mine` | Kairos Asks + `card_notes` nudges |
-| Mon 04:20 | `constitution-seed` | seed / maintain the live constitution |
-| 05:00 daily | `contradiction-scan` | auto-contradiction detection |
-| Sun 05:00 | `memory-dedup` | weekly near-duplicate supersession |
-| 06:15 daily | `briefer` | one grounded advisory / Dominion |
-| 06:30 daily | `introspection` | raw `inbound` proposals — **retiring** behind `KAIROS_RAW_INTROSPECTION` |
-| 06:45 daily | `synthesis-health` | trace rollup → `SYNTHESIS_HEALTH` memory (see below) |
-| 07:00 + 08:00 | `daily-message` | guaranteed 08:00 London speak |
-| :15 at 6,9,12,15,18,21,23 | `micro-consolidate` | intraday per-Dominion `delta` fold |
+| 03:25 daily | `embed-backfill` | drain missing/stale embeddings (no model-call fallback; embeddings use the app key) |
+| 04:25 daily | `synthesis-health` | trace rollup → `SYNTHESIS_HEALTH` memory (see below) |
+| 04:30 daily | `ask-mine` | fallback for `ask_mine`: Kairos Asks + `card_notes` nudges |
+| Mon 05:58 | `constitution-seed` | fallback for `constitution_seed` (BYOK users only) |
+| 05:00 + 06:00 | `daily-message` | guaranteed 06:00 London speak (London-hour gate) |
 
-**17 crons.** The ordering is deliberate: snapshot → engine → chat-distill → archetypes → cortex
-→ aether → **idea tournament** (queue, 03:30Z+) → embed → contradiction → briefer → introspection
-→ health → daily message. Each stage reads the fresh output of the one before it.
+**12 crons.** The paid-key fallbacks skip when the owner's paid backup is off. Retired in 0.17:
+the briefer, introspection, contradiction scan, micro-consolidation and weekly dedup crons. The
+ordering is deliberate: snapshot → engine → chat-distill → archetypes → cortex → aether → **idea
+tournament** (queue, 03:30Z+) → embed → health → ask → daily message. Each stage reads the fresh
+output of the one before it.
 
 ## synthesis-health (docs/kairos/31 + 35)
 
 `lib/kairos/synthesis-health.ts` → `computeSynthesisHealth()`, pure SQL, no LLM. It buckets the last
 48h of traces per stage per UTC night (failure wins) into one idempotent memory
-(`synthesis-health:{date}`). Stage = `cronName`, with `BRIEF` → `briefer`. A stage failing **2
+(`synthesis-health:{date}`). Stage = `cronName` (the old BRIEF alias was retired with its cron in
+0.17; retired stages simply stop appearing). A stage failing **2
 consecutive nights** fires one batched Telegram ops alert (outside the speak budget).
-**Expected stages (0.15):** `EXPECTED_NIGHTLY_STAGES = ['idea-tournament']` (`:42`). A stage is
-*armed* once seen and *disarmed* after 14 days unseen (`:44`). Arming state is carried in the rollup's
+**Expected stages (0.15):** `EXPECTED_NIGHTLY_STAGES = ['idea-tournament']`. A stage is
+*armed* once seen and *disarmed* after 14 days unseen. Arming state is carried in the rollup's
 `sourceMetadata.expectedStages {since,lastSeen}`. An armed stage with no trace on a judged night
-is marked `failed` and listed in `missingStages` (`applyExpectedStages` `:136`), so a tournament
+is marked `failed` and listed in `missingStages` (`applyExpectedStages`), so a tournament
 that never ran alarms like one that crashed. A 0-survivor night is still `ok`. Yesterday is always
-judged; today only from 08:00Z (`:47`). Because the scheduled run is 06:45Z, a missing night
-surfaces the next morning (the code comment says "08:00Z cron"; the schedule is 06:45).
+judged; today only from 08:00Z. Because the scheduled run is 04:25Z, a missing night
+surfaces the next morning.
 
 ## Live Mind layer, tiers, caching (0.9–0.10, condensed)
 
-- **Micro-consolidation** (`micro-consolidate.ts`) folds new memories + board deltas 6×/day into one
-  `streamClass='delta'` memory per Dominion (`type='observation'`). It skips when there are fewer
-  than 3 new items and uses an hour-bucket externalId. Cortex/Aether read it as "## Today so far".
+- **Micro-consolidation** was retired in 0.17 (only the next night read it). Old `streamClass='delta'`
+  rows stay readable; cortex/Aether still show them under "## Today so far" when present.
 - **Incident lifecycle:** a `resolves` link stamps targets' `invalidAt`. The `validAsOfNow` gate
   applies to archetype/cortex/aether inputs and trace retrieval.
-- **Tiers** (`lib/ai/route-task.ts`): every cognition path runs heavy (Opus) by standing directive
-  (07-24); classify/summarise/voice stay cheap. Thinking-queue paid fallbacks run heavy.
+- **Tiers** (`lib/ai/route-task.ts`): every cognition path runs heavy by standing directive
+  (07-24); classify/summarise/voice stay cheap. Thinking-queue paid fallbacks run heavy. Tier
+  models and effort come from the shared model registry ([../platform.md](../platform.md) §5).
 - **Caching:** synthesis calls pass `cacheSystem: true`, so system prompts must stay byte-exact
   static. Temperature is only set on chat (0.5) and chat-distill (0.1). `maxTokens` → `maxOutputTokens`
   (AI SDK v5) is what makes caps bind (idea generate 6000, conscience 2000).
 
 ## Key files
 
-- `lib/kairos/{archetypes,cortex,aether,briefer,introspection,contradiction,chat-distill,daily-message,daily-message-inputs,daily-message-prompt,micro-consolidate}.ts`, `cron-trace.ts`, `version.ts` (log: `docs/kairos/CHANGELOG.md`)
-- `lib/kairos/thinking/` (queue, registry, deadlines, paid-fallback, 11 handlers incl. `idea-generate.ts`, `idea-judge.ts`)
+- `lib/kairos/{archetypes,cortex,aether,chat-distill,ask-mine,daily-message,daily-message-inputs,daily-message-prompt,ask-numbered,paid-backup,paid-backup-cron}.ts`, `cron-trace.ts`, `version.ts` (log: `docs/kairos/CHANGELOG.md`)
+- `lib/kairos/routines/` (`catalog.ts` — the two routines, prompts, `BRAIN_JOBS`; `setup.ts` — connector install link); `lib/data/brain-status.ts`
+- `lib/kairos/thinking/` (queue, registry, deadlines, paid-fallback, 15 handlers incl. `idea-generate.ts`, `idea-judge.ts`, `constitution-seed.ts`)
 - `lib/kairos/ideas/` (`types`, `generate-prompt`, `judge-prompt`, `judge-context`, `novelty`, `pairing`, `elo`, `select`, `compose`, `diversity`); `lib/data/{ideas,idea-inputs}.ts`
 - `lib/kairos/conscience-context.ts`, `lib/data/conscience.ts`; `constitution/` (seed, probes, drift, amendment, **conscience-probes**)
 - `lib/kairos/weekly-review/`, `lib/data/belief-diff.ts`; `lib/kairos/proposal-accept.ts`
-- `lib/kairos/synthesis-health.ts`; `dispatch.ts`, `recipes/{_recipe,registry,brief}.ts`, `retrieve.ts`, `_prompt-utils.ts`
+- `lib/kairos/synthesis-health.ts`; `recipes/_recipe.ts` (retrieval types only), `retrieve.ts`, `_prompt-utils.ts`
 - `apps/web/src/app/api/cron/*/route.ts`; `apps/web/vercel.json`; specs `docs/kairos/31–35`

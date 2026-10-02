@@ -6,11 +6,15 @@ Kairos is Aeon's memory-and-cognition layer: a user-scoped substrate of `memorie
 captured from many sources, consolidated nightly into a layered self-model, and served back
 as grounded context to the operator and to AI assistants. This is the mental model from
 substrate up to chat. Lieutenant detail lives in [chat.md](chat.md). Kairos is versioned as
-its own product: **0.15.0 "Creativity"** (`lib/kairos/version.ts:3`; app `APP_VERSION 0.32.0`,
-`lib/version.ts:6`). Era history is in `docs/kairos/CHANGELOG.md`: 0.13 "Beliefs and Strategy",
-0.14 "Ground and Protect", 0.15 "Creativity". Its guaranteed daily voice is the **daily message**
-at 08:00 Europe/London ([synthesis.md](synthesis.md)). Retired: the 18:00 Evening Digest and the
-`memory-compaction` stub cron. Retiring (behind a flag): raw nightly introspection.
+its own product: **0.19.0 "No paid spend, chat on Max, one setup checklist"** (`lib/kairos/version.ts`;
+app `APP_VERSION 0.36.0`, `lib/version.ts`). Era history is in `docs/kairos/CHANGELOG.md`: 0.13
+"Beliefs and Strategy", 0.14 "Ground and Protect", 0.15 "Creativity", 0.16 "All on Max", 0.17
+"Simplified brain: one Max routine", 0.18 "Catch-up mornings, watched boards, voice notes", 0.19 "No
+paid spend, chat on Max, one setup checklist". Its guaranteed daily voice is the **daily message**
+at 06:00 Europe/London, ending with every open question numbered ([synthesis.md](synthesis.md)).
+Retired: the 18:00 Evening Digest, the `memory-compaction` stub cron, raw nightly introspection,
+the per-area briefs (retired in 0.17), contradiction notices, intraday micro-consolidation and the weekly dedup cron
+(all retired in 0.17; see [synthesis.md](synthesis.md)).
 
 > **Conceptual frame (2026-06-27):** the operator talks to **Kairos** (the entity); **Aether**
 > is his super-brain — the apex self-model above ALL Dominions. Kairos draws on Aether to pull
@@ -61,45 +65,61 @@ pgvector HNSW make it hybrid-searchable. See [memory-and-capture.md](memory-and-
 - **quick capture** + `POST /api/v1/memories/capture`;
 - the **coding-agent session-capture hooks** (Claude Code, Codex, Copilot CLI → `session_summary`);
 - **reflections** (`kairos_reflect`, the operator's high-weight signal);
-- **chat distillation** (the day's chats, Telegram included → operator reflections);
-- Kairos's own staged proposals: the **idea tournament** survivors (0.15) and, until retired, raw
-  **introspection**.
+- **chat distillation** (the day's chats, web and Telegram → operator reflections);
+- **voice notes** (0.18): MCP `kairos_voice_note` / REST `POST /api/v1/kairos/voice-notes` stage the
+  verbatim parts as pending agent proposals; the owner confirms them in the UI, which turns them into
+  operator reflections ([memory-and-capture.md](memory-and-capture.md));
+- **watched boards** (0.18): a project's `settings.kairosFeed` makes its finished cards same-day
+  `board_card_done` memories that cortex reads;
+- Kairos's own staged proposals: the **idea tournament** survivors (0.15; raw introspection is
+  retired).
 
 **Synthesis (consolidation).** Nightly, the substrate is distilled upward:
 - **archetypes** (3–7 per Dominion) → the per-Dominion **cortex** → **Aether** (one global self-model);
 - then the **idea tournament** (generate → novelty gate → judge → Elo → ≤3 survivors);
-- in the morning, the **Briefer** writes one advisory per Dominion, grounded in its cortex, an
-  Aether digest and the conscience block.
+- at 06:00 London, the **daily message** reads each area's latest cortex headline (the per-area
+  morning briefs were retired in 0.17).
 
-Cortex, Aether and the idea, belief, drift, review and daily-message kinds run as **thinking jobs**
-that Claude Max routines claim; the paid BYOK key is the fallback. See [synthesis.md](synthesis.md).
+Every model step runs as a **thinking job** that the Max-plan *Kairos brain* routine claims; the paid
+BYOK key is only the fallback, and only while the owner's paid backup switch is on. See
+[synthesis.md](synthesis.md).
 
-**Kairos 0.11–0.15 layers.**
+**Kairos 0.11–0.19 layers.**
 
 | Layer | What it adds | Detail |
 |---|---|---|
-| Memory engine | nightly Merge → Weigh → OwnMind → Recheck → BackUp → Concepts; `standing`; every change undoable via `memory_ops` | [memory-and-capture.md](memory-and-capture.md) §7 |
-| Thinking queue | 11 job kinds (`thinking/registry.ts:16`; `PLAN_ORDER` `queue.ts:44`) claimed by the Kairos thinking / ideas / morning routines; hourly sweep plans + paid-key fallback | [synthesis.md](synthesis.md) |
+| Memory engine | nightly Merge → Weigh → OwnMind → Recheck → BackUp → Concepts; `standing`; every change undoable via `memory_ops`; per-step time budgets (0.17) | [memory-and-capture.md](memory-and-capture.md) §7 |
+| Thinking queue | 15 job kinds (`PLANNED_THINKING_KINDS` + `chat`, equal to the routine catalog's `BRAIN_JOBS`) claimed by the *Kairos brain* and *Kairos chat* routines; hourly sweep plans + paid-key fallback | [synthesis.md](synthesis.md) |
 | Beliefs — two minds | aligned (operator) vs own (Kairos) beliefs, weekly `mind_compare` | [memory-and-capture.md](memory-and-capture.md) §8 |
 | Ground & protect (0.14) | origin labels; belief `sourceType` + confidence cap computed server-side from provenance origins (operator 0.95, tool 0.8, inference 0.6; `beliefs/support.ts`); inference can't replace operator/tool beliefs; **Recheck** flags beliefs whose sources were deleted, archived, invalidated or superseded, ×0.7 confidence, for the next `belief_extract` (`engine/steps/recheck.ts`) | docs/kairos/34 §8 (not yet in memory-and-capture) |
-| Constitution + drift | one live constitution, operator-only amendments, 24 drift probes | [memory-and-capture.md](memory-and-capture.md) §9 |
-| Conscience (0.14) | principles + top held beliefs injected into chat, daily message, weekly review and BRIEF (`conscience-context.ts`); nightly honesty self-checks `drift_probe:<day>:conscience`, measurement only | [synthesis.md](synthesis.md) |
+| Constitution + drift | one live constitution, operator-only amendments, 24 drift probes; first draft by the Monday `constitution_seed` job (0.18) | [memory-and-capture.md](memory-and-capture.md) §9 |
+| Conscience (0.14) | principles + top held beliefs injected into chat, the daily message and the weekly review (`conscience-context.ts`); nightly honesty self-checks `drift_probe:<day>:conscience`, measurement only | [synthesis.md](synthesis.md) |
 | Idea tournament (0.15) | nightly `idea_generate` → `idea_judge`; ≤3 survivors as Kairos-origin inbox proposals; outcomes feed tomorrow's generator; weekly diversity alarm | [synthesis.md](synthesis.md), docs/kairos/35 |
-| Daily message + weekly review | 08:00 London voice with "Idea of the day" and self-check failures; Monday review with ideas, lessons, diversity and a belief diff | [synthesis.md](synthesis.md) |
+| Daily message + weekly review | 06:00 London voice with area headlines, "Idea of the day", self-check failures and numbered open questions (answer `Q12: …` or `skip Q12` on Telegram); Monday review with ideas, lessons, diversity and a belief diff | [synthesis.md](synthesis.md) |
+| Paid backup switch (0.19) | per-owner switch, default on; off, no Kairos path ever uses the saved paid key | [synthesis.md](synthesis.md) |
 
-**Who thinks (0.16, "All on Max").** Every Kairos model call is a thinking job answered by six
-Max-plan routines on claude.ai (Opus 5.5, Aeon connector only): *dusk* 01:40Z, *thinking* 02:40Z,
-*ideas* 03:35Z, *dawn* 04:00Z, *morning* 05:40Z and *tidy* (:05 at 09/12/15/18/21/23Z), plus the
-older Sonnet *kairos-brain-tick* (06/11/17Z), which speaks first. The old crons stay only as
-fallbacks and skip any unit a routine answered; the paid BYOK key covers misses and Telegram chat.
-Details in [synthesis.md](synthesis.md).
+**Who thinks (since 0.17).** Two Claude Code routines on the owner's Max plan, defined in code in
+`lib/kairos/routines/catalog.ts` (Opus 5.5 from the shared model registry, Aeon connector only):
+*Kairos brain* (cron `40 1-6 * * *`, claims everything due) and *Kairos chat* (API-triggered once per
+web or Telegram message, since 0.19). The six 0.16 routines and the Sonnet brain-tick are retired.
+The crons stay only as fallbacks and skip any unit a routine answered. Details in
+[synthesis.md](synthesis.md).
+
+**Set up Kairos (0.19).** One sidebar entry opens `ConnectKairosModal`
+(`components/kairos/brain/`): **Setup** — a checklist with two required steps (connect the `aeon`
+connector, turn on the brain routine; plus "remove old routines" for pre-0.17 setups) ticked live
+from `getSetupSignals` (recent OAuth token use, routine claims), a one-click connector install link
+(`lib/kairos/routines/setup.ts`) and optional extras (watched boards, voice notes from your phone,
+coding-session capture, chat on Max, Telegram bot); **Health** (on Max / on backup /
+missed per job, plus the paid backup switch); **Brain map**; **Watched** (boards + core repos);
+**How it works**. The owner guide is `docs/kairos/25-working-with-the-kairos-brain.md`.
 
 **Retrieval.** `retrieveContext()` (`lib/kairos/retrieve.ts`) is the canonical Dominion-scoped
 fetch: the Dominion bundle + live cortex + live archetypes + top substrate (FTS+vector RRF →
 confidence/standing decay → rerank-2.5) + recent traces. `retrieveGlobalContext()` is the
 **whole-brain** variant (Aether stands in for cortex) that grounds unanchored chat. `prepareContext()`
-packs a budget-bounded bundle for any AI window. Recipes that declare `aether`/`belief`/`constitution`
-also get Aether + conscience grounding from the dispatcher (`dispatch.ts:57`).
+packs a budget-bounded bundle for any AI window. (Recipe grounding through the dispatcher was
+retired with the BRIEF recipe in 0.18.)
 
 **Conscience.** At answer time Kairos reads the operator's norms: the live constitution's
 principles and the weightiest held beliefs (*you hold* vs *Kairos's own view*). It is told to say so
@@ -118,9 +138,12 @@ See [chat.md](chat.md).
 
 **Chat + autonomy.** The **Visor** is a whole-brain chat by default: the operator talks to Kairos,
 who uses **Aether** for grounding and the **conscience block** for his norms
-(`chat-turn-assistant.ts:257`). The same turn engine powers **Telegram** (two-way; a Max-plan
-*Kairos chat* routine exists behind `KAIROS_TELEGRAM_ROUTINE=1`). The **brain-tick** routine lets
-Kairos speak first through `/api/v1/kairos/speak` (Will inbox + Telegram, server-throttled). Of the
-four lieutenants only **Sentinel** remains. Detail in [chat.md](chat.md).
+(`chat-turn-assistant.ts`). The same turn engine powers **Telegram**. Since 0.19 both web chat and
+Telegram can be answered by the Max-plan *Kairos chat* routine (`KAIROS_CHAT_ROUTINE=1`, alias
+`KAIROS_TELEGRAM_ROUTINE`): the web send returns pending and the page polls for the reply
+(`KairosVisorReplyWatch`). `/api/v1/kairos/speak` remains the server-throttled "Kairos speaks first"
+channel (Will inbox + Telegram); the brain-tick routine that used it is retired, and the 06:00 daily
+message is now the one guaranteed push. Of the four lieutenants only **Sentinel** remains. Detail in
+[chat.md](chat.md).
 
 ## Layering diagram
