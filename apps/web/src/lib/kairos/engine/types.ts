@@ -186,6 +186,8 @@ export type ThinkingJobKind =
   // Horae (initiative + KAIROS_AGENDA=1): one deep job per due agenda item,
   // fired once (key agenda_due:<itemId>); no fallback — the item is missed.
   | 'agenda_due'
+  | 'character_check'
+  | 'cold_read'
 
 export type ThinkingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'expired' | 'fallback'
 

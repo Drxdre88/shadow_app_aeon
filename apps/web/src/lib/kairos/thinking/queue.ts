@@ -56,7 +56,7 @@ export const PLANNED_THINKING_KINDS: readonly ThinkingJobKind[] = [
   // Archetypes wait on tonight's chat distill; cortex waits on archetypes.
   'chat_distill', 'archetype',
   'cortex', 'concept', 'aether',
-  'belief_extract', 'drift_probe', 'mind_compare', 'constitution_seed', 'weekly_review',
+  'belief_extract', 'drift_probe', 'mind_compare', 'constitution_seed', 'character_check', 'weekly_review',
   // Idea tournament after aether (its tensions feed generation); judge after
   // generate. Both before the daily message, which shows the idea of the day.
   'idea_generate', 'idea_judge',
@@ -70,6 +70,7 @@ export const PLANNED_THINKING_KINDS: readonly ThinkingJobKind[] = [
   'agenda_due',
   // Daytime cadence (flagged): planned only on claims, never by the sweep.
   'reflect', 'pulse',
+  'cold_read',
 ]
 
 const PLAN_ORDER: readonly ThinkingJobKind[] = [...PLANNED_THINKING_KINDS, 'chat']
@@ -105,6 +106,8 @@ const FALLBACK_OWNER: Partial<Record<ThinkingJobKind, string>> = {
   reflect: 'nothing — a missed hour is fine',
   pulse: 'nothing — a missed hour is fine',
   agenda_due: 'nothing — the item is marked missed',
+  character_check: 'nothing — a missed week is fine',
+  cold_read: 'nothing — a missed cold read is dropped',
 }
 
 function fallbackOwner(kind: ThinkingJobKind): string {
