@@ -43,6 +43,7 @@ import {
   type JudgeApplyScope,
 } from './idea-ext'
 import { PAID_BACKUP_OFF_NOTE } from '@/lib/ai/paid-backup-off'
+import { continueSwissRound1, applySwissRound, finishUnansweredRound, readSwiss } from './idea-judge-swiss'
 
 // Nightly idea tournament, stage 2 (docs/kairos/35). Normally planned by the
 // idea_generate apply; plan() here is recovery only (today's generate job is
@@ -114,12 +115,16 @@ export function assembleTournament(
   embeddings: ReadonlyMap<string, number[] | null>,
   scope?: JudgeApplyScope,
 ): TournamentRows {
-  const inputs = ctx.candidates.map((c) => ({
-    key: c.key,
-    novelty: c.novelty,
-    critique: judged.critiques.get(c.key) ?? null,
-    record: elo.get(c.key) ?? null,
-  }))
+  const inputs = ctx.candidates.map((c) => {
+    const critique = judged.critiques.get(c.key) ?? null
+    return {
+      key: c.key,
+      novelty: c.novelty,
+      critique,
+      record: elo.get(c.key) ?? null,
+      ...(c.bridge ? { bridged: true, mappingHolds: critique?.mappingHolds ?? null } : {}),
+    }
+  })
   const base = selectSurvivors(inputs)
   const selection = scope ? runPostSelect(base, inputs, scope) : base
   const evidence = new Map<string, EvidenceRef>(Object.values(ctx.evidence).map((e) => [e.id, e]))
@@ -234,18 +239,23 @@ export async function persistJudge(
 export async function applyIdeaJudge(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsweredBy): Promise<ApplyOutcome> {
   const ctx = readContext(job)
   if (!ctx) return { ok: false, reason: 'bad_job: invalid idea_judge context' }
+  const swiss = readSwiss(ctx)
+  if (swiss && swiss.round > 1) return applySwissRound(job, ctx, swiss, text, answeredBy, persistJudge)
   let judged: GroundedJudge
   try {
     judged = parseFor(ctx)(text)
   } catch (err) {
     return { ok: false, reason: `parse_failed: ${errorReason(err)}` }
   }
+  if (swiss) return continueSwissRound1(job, ctx, swiss, judged, answeredBy, persistJudge)
   return persistJudge(job, ctx, judged, answeredBy)
 }
 
 export async function fallbackIdeaJudge(job: ThinkingJobRow): Promise<ApplyOutcome> {
   const ctx = readContext(job)
   if (!ctx) return { ok: false, reason: 'bad_job: invalid idea_judge context' }
+  const swiss = readSwiss(ctx)
+  if (swiss && swiss.round > 1) return finishUnansweredRound(job, ctx, swiss, 'fallback: round unanswered', persistJudge)
   try {
     const res = await askPaidAndParse(job, {
       parse: parseFor(ctx),
@@ -265,7 +275,7 @@ export async function fallbackIdeaJudge(job: ThinkingJobRow): Promise<ApplyOutco
       }
       return res
     }
-    return await persistJudge(job, ctx, res.value, 'api')
+    return await (swiss ? continueSwissRound1(job, ctx, swiss, res.value, 'api', persistJudge) : persistJudge(job, ctx, res.value, 'api'))
   } catch (err) {
     try {
       await writeCronFailureTrace(job.userId, {
@@ -301,6 +311,11 @@ export function unjudgedMeta(c: StoredCandidate, ctx: IdeaJudgeContext, judgeJob
 export async function abandonIdeaJudge(job: ThinkingJobRow, reason: string): Promise<string[]> {
   const ctx = readContext(job)
   if (!ctx) return []
+  const swiss = readSwiss(ctx)
+  if (swiss && swiss.round > 1) {
+    const out = await finishUnansweredRound(job, ctx, swiss, reason, persistJudge)
+    return out.ok ? out.memoryIds : []
+  }
   const evidence = new Map(Object.values(ctx.evidence).map((e) => [e.id, e]))
   const res = await writeTournament(job.userId, {
     tournamentDate: ctx.date,
