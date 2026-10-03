@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import { hasJobWithKeyLike } from '@/lib/data/thinking-jobs'
 import { captureMemory } from '@/lib/data/memories'
+import { findCharacterRun } from '@/lib/data/character'
+import { characterCheckEnabled } from '@/lib/kairos/character/flag'
+import { characterLine, readCharacterRun } from '@/lib/kairos/character/rubric'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 import { loadConscienceBlock } from '@/lib/kairos/conscience-context'
 import { deliverKairosSpeak } from '@/lib/kairos/speak'
@@ -176,6 +179,20 @@ function readContext(job: ThinkingJobRow): WeeklyReviewJobContext | null {
   return parsed.success ? parsed.data : null
 }
 
+// KAIROS_CHARACTER_CHECK only: the week's character-check line, built in code
+// from the stored run (scores never reach the review prompt). Never costs the review.
+async function characterExtraLines(userId: string, isoWeek: string): Promise<string[]> {
+  if (!characterCheckEnabled()) return []
+  try {
+    const row = await findCharacterRun(userId, isoWeek)
+    const run = row ? readCharacterRun(row.sourceMetadata) : null
+    return run ? [characterLine(run)] : []
+  } catch (err) {
+    console.warn('[kairos:weekly-review] character check read failed — no line this week:', errorReason(err))
+    return []
+  }
+}
+
 const refersTo = (target: string) => ({ type: 'refers_to' as const, target, target_kind: 'memory' as const })
 
 async function deliverSummary(
@@ -248,11 +265,14 @@ async function persistWeeklyReview(
   const promised = await persistReviewPromises(job, isoWeek, review)
   const predicted = await persistReviewPredictions(job, ctx, review)
   const trackRecordLine = predictionsEnabled() ? ctx.trackRecordLine ?? null : null
+  // Read at apply time, so a character check finishing after this review was
+  // planned still shows.
+  const extraLines = await characterExtraLines(job.userId, isoWeek)
 
   const evidence = [...new Set(review.actions.flatMap((a) => a.evidenceIds))]
   const { memory: observation } = await captureMemory(job.userId, {
     title: weeklyReviewTitle(isoWeek),
-    bodyMd: renderWeeklyReviewMarkdown(review, isoWeek, trackRecordLine),
+    bodyMd: renderWeeklyReviewMarkdown(review, isoWeek, trackRecordLine, extraLines),
     summary: review.summary.slice(0, 1000),
     type: 'observation',
     source: 'cron',
@@ -291,7 +311,7 @@ async function persistWeeklyReview(
     },
   })
 
-  const delivery = await deliverSummary(job.userId, isoWeek, renderWeeklyReviewMessage(review, proposalIds.length, trackRecordLine))
+  const delivery = await deliverSummary(job.userId, isoWeek, renderWeeklyReviewMessage(review, proposalIds.length, trackRecordLine, extraLines))
   if (delivery === 'blocked') console.warn('[kairos:weekly-review] summary not delivered', { isoWeek, jobId: job.id })
   return { ok: true, memoryIds: [observation.id, ...proposalIds] }
 }

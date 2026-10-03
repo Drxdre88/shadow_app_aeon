@@ -9,6 +9,7 @@ import {
   type ProposalVerdict,
 } from '@/lib/data/proposal-decision'
 import { casGoalUpdate, type GoalRecord } from '@/lib/data/goals'
+import { casVoiceSampleStatus, expireVoiceSamples, VOICE_SAMPLE_KIND } from '@/lib/data/voice-samples'
 import { londonDate } from '@/lib/kairos/daily-message-prompt'
 import { GOAL_NOTE_MAX, GOAL_PROPOSAL_KIND } from './goals/parse'
 import { approveGoal, expireStaleGoals, vetoGoal, type GoalActionFailure } from './goals/transitions'
@@ -141,8 +142,28 @@ const goalKind: ProposalKindHandler = {
   },
 }
 
+// ── voice_sample (character check) ─────────────────────────────────────────
+// The claim is the pending → approved | vetoed compare-and-set on the row's
+// own status. Deliberately NOT the generic accept: that would refile Kairos's
+// text as an operator reflection (laundering his words as the owner's).
+
+const casFailure: KindOutcome = { ok: false, reason: 'already_decided' }
+
+const voiceSampleKind: ProposalKindHandler = {
+  async approve({ userId, id, now }) {
+    return (await casVoiceSampleStatus(userId, id, 'pending', 'approved', now)) ? { ok: true } : casFailure
+  },
+  async veto({ userId, id, now }) {
+    return (await casVoiceSampleStatus(userId, id, 'pending', 'vetoed', now)) ? { ok: true } : casFailure
+  },
+  async expire(userId, now) {
+    return expireVoiceSamples(userId, now)
+  },
+}
+
 export const PROPOSAL_KINDS: Readonly<Record<string, ProposalKindHandler>> = {
   [GOAL_PROPOSAL_KIND]: goalKind,
+  [VOICE_SAMPLE_KIND]: voiceSampleKind,
 }
 
 export function isDecidableProposalKind(kind: unknown): boolean {

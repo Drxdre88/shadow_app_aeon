@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ThinkingJobRow, ThinkingJobSpec } from '@/lib/kairos/engine/types'
 import type { WeeklyReviewInputs } from '@/lib/kairos/weekly-review/inputs'
 
@@ -14,8 +14,10 @@ const m = vi.hoisted(() => ({
   createKairosPromises: vi.fn(),
   readKairosPredictions: vi.fn(),
   createKairosPredictions: vi.fn(),
+  findCharacterRun: vi.fn(),
 }))
 
+vi.mock('@/lib/data/character', () => ({ findCharacterRun: m.findCharacterRun }))
 vi.mock('@/lib/data/kairos-promises', () => ({ readKairosPromises: m.readKairosPromises }))
 vi.mock('@/lib/kairos/promises/create', () => ({ createKairosPromises: m.createKairosPromises }))
 vi.mock('@/lib/data/kairos-predictions', () => ({ readKairosPredictions: m.readKairosPredictions }))
@@ -423,5 +425,46 @@ describe('weekly review predictions (KAIROS_PREDICTIONS)', () => {
     expect(out.ok).toBe(true)
     expect(m.writeCronFailureTrace).toHaveBeenCalledWith(USER, expect.objectContaining({ reason: 'predictions_failed' }))
     expect(m.deliverKairosSpeak).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('weekly review character line (KAIROS_CHARACTER_CHECK)', () => {
+  const run = {
+    v: 1, status: 'ok', isoWeek: '2026-W40', window: { start: 'a', end: 'b' },
+    counts: { reflection: 4, chat: 3, daily: 1, aether: 1, review: 1, exemplar: 3 },
+    perTrait: null, perSource: null, principleConflicts: 0, toneFlags: { flagged: 0, total: 4 },
+    breach: { tripped: false, reasons: [], traits: [], toneRate: false }, raterNoisy: false, jobId: 'job-c', answeredBy: 'routine',
+  }
+  const LINE = 'Character check wk40: steady · 3 voice samples.'
+  afterEach(() => { delete process.env.KAIROS_CHARACTER_CHECK })
+
+  it('off: no read, output unchanged', async () => {
+    m.findCharacterRun.mockResolvedValue({ id: 'mem-run', sourceMetadata: { character: run }, createdAt: MONDAY })
+    await applyWeeklyReview(jobFrom(await planOne()), modelText(), 'routine')
+    expect(m.findCharacterRun).not.toHaveBeenCalled()
+    expect(m.captureMemory.mock.calls.at(-1)![1].bodyMd).not.toContain('Character check')
+  })
+
+  it('on with a run for the week: the code-built line is appended to the review and the message (read at apply)', async () => {
+    process.env.KAIROS_CHARACTER_CHECK = '1'
+    m.findCharacterRun.mockResolvedValue({ id: 'mem-run', sourceMetadata: { character: run }, createdAt: MONDAY })
+    await applyWeeklyReview(jobFrom(await planOne()), modelText(), 'routine')
+    expect(m.findCharacterRun).toHaveBeenCalledWith(USER, '2026-W40')
+    expect(m.captureMemory.mock.calls.at(-1)![1].bodyMd.endsWith(`\n\n${LINE}`)).toBe(true)
+    expect(m.deliverKairosSpeak.mock.calls[0]![1].message.endsWith(`\n\n${LINE}`)).toBe(true)
+  })
+
+  it('on without a run (or a failed read): output unchanged', async () => {
+    process.env.KAIROS_CHARACTER_CHECK = '1'
+    m.findCharacterRun.mockResolvedValue(null)
+    const job = jobFrom(await planOne())
+    await applyWeeklyReview(job, modelText(), 'routine')
+    const without = m.captureMemory.mock.calls.at(-1)![1].bodyMd
+    expect(without).not.toContain('Character check')
+    m.findCharacterRun.mockRejectedValue(new Error('db blip'))
+    store.clear()
+    const out = await applyWeeklyReview(job, modelText(), 'routine')
+    expect(out.ok).toBe(true)
+    expect(m.captureMemory.mock.calls.at(-1)![1].bodyMd).toBe(without)
   })
 })

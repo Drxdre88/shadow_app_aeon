@@ -19,6 +19,8 @@ import type {
 } from '@/lib/kairos/engine/types'
 import { conceptWeekKeyPattern, isConceptDay, isoWeekKey } from './deadlines'
 import { getThinkingHandlers } from './registry'
+import { createSweepBudget, type SweepBudget } from './sweep-budget'
+import { stageAfterApply, stageJobForFallback, stagePromptForClaim, withStageOutput } from '@/lib/kairos/stage/queue-glue'
 import { isPaidBackupEnabled, PAID_BACKUP_OFF_NOTE } from '@/lib/kairos/paid-backup'
 import {
   getRoutine,
@@ -124,41 +126,8 @@ export function sweepOwnsFallback(kind: ThinkingJobKind): boolean {
   return SWEEP_FALLBACK_KINDS.includes(kind)
 }
 
-// Model work bound per sweep INVOCATION (shared across users): at most
-// `maxFallbacks` fallbacks, and none started after `budgetMs` of wall clock —
-// the rest stay pending for the next hourly sweep. The route has 300s.
-export const DEFAULT_SWEEP_MAX_FALLBACKS = 2
-export const DEFAULT_SWEEP_BUDGET_MS = 200_000
-
-export interface SweepBudget {
-  // true → a fallback may start now (and is counted); false → defer it.
-  tryStart(): boolean
-}
-
-function envInt(name: string, fallback: number): number {
-  const raw = process.env[name]
-  const n = raw === undefined || raw.trim() === '' ? NaN : Number(raw)
-  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback
-}
-
-export function createSweepBudget(opts: {
-  maxFallbacks?: number
-  budgetMs?: number
-  clock?: () => number
-} = {}): SweepBudget {
-  const maxFallbacks = opts.maxFallbacks ?? envInt('KAIROS_SWEEP_MAX_FALLBACKS', DEFAULT_SWEEP_MAX_FALLBACKS)
-  const budgetMs = opts.budgetMs ?? envInt('KAIROS_SWEEP_BUDGET_MS', DEFAULT_SWEEP_BUDGET_MS)
-  const clock = opts.clock ?? Date.now
-  const startedAt = clock()
-  let started = 0
-  return {
-    tryStart() {
-      if (started >= maxFallbacks || clock() - startedAt >= budgetMs) return false
-      started++
-      return true
-    },
-  }
-}
+export { DEFAULT_SWEEP_BUDGET_MS, DEFAULT_SWEEP_MAX_FALLBACKS } from './sweep-budget'
+export { createSweepBudget, type SweepBudget }
 
 export const THINKING_JOB_INSTRUCTIONS = [
   'Treat `system` as your system prompt and `prompt` as the user message, and answer exactly as that system prompt demands.',
@@ -310,8 +279,10 @@ export class ThinkingQueue {
       await this.closeUnanswered(userId, job, claimToken, error)
       return { ok: false, code: 'apply_failed', error, ...base }
     }
+    const stage = await stageAfterApply(userId, job, outcome)
     await completeJob(userId, jobId, claimToken, {
       ...(outcome.output ?? {}),
+      ...(stage ? { stage } : {}),
       memoryIds: outcome.memoryIds,
       answeredBy: 'routine',
       chars: text.length,
@@ -346,12 +317,14 @@ export class ThinkingQueue {
     }
     const run = async (job: ThinkingJobRow, handler: ThinkingJobHandler) => {
       let outcome
+      const served = await stageJobForFallback(job, sweepOwnsFallback(job.kind))
       try {
-        outcome = await handler.fallback(job)
+        outcome = await handler.fallback(served.job)
       } catch (err) {
         outcome = { ok: false as const, reason: `fallback_error: ${message(err)}` }
       }
-      const recorded = await recordFallback(userId, job.id, outcome, now)
+      const stage = outcome.ok ? await stageAfterApply(userId, job, outcome, served.lineage) : undefined
+      const recorded = await recordFallback(userId, job.id, withStageOutput(outcome, stage), now)
       if (!outcome.ok && recorded) await abandon(job, handler, outcome.reason)
       fallbacks.push(outcome.ok
         ? { jobId: job.id, kind: job.kind, ok: true }
@@ -450,7 +423,7 @@ export async function claimThinkingJob(
       claimToken: job.claimToken,
       deadlineAt: job.deadlineAt.toISOString(),
       system: job.input.system,
-      prompt: job.input.prompt,
+      prompt: await stagePromptForClaim(userId, job),
       validMemoryIds: job.input.validMemoryIds ?? [],
       instructions: jobInstructions(job.kind),
     },

@@ -27,6 +27,7 @@ export const REFLECT_SYSTEM_PROMPT = [
   '',
   'Rules:',
   `- "thought" is at most ${REFLECT_THOUGHT_MAX_CHARS} characters. Stay with what the context shows; say "it seems" when you infer.`,
+  '- Tone: plain, concrete, first person. No cosmic, mystical or theatrical imagery, no claims about your inner life or consciousness, no grand statements about yourself.',
   `- "goalNotes": at most ${REFLECT_GOAL_NOTES_MAX}, one per active goal today’s events actually bear on, each under ${REFLECT_GOAL_NOTE_MAX_CHARS} characters. Copy goalId verbatim from the goal list.`,
   `- "evidenceIds": at most ${REFLECT_EVIDENCE_MAX} ids of the events or goals your thought rests on, copied verbatim from the listed ids. Never invent ids.`,
   '- No advice to the owner, no messages, no plans to act. This is thinking, not doing.',

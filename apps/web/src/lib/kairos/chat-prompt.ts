@@ -5,6 +5,7 @@
 
 import type { AIMessage } from '@/lib/ai/provider'
 import { neutraliseFences } from './_prompt-utils'
+import { COLD_READ_CHAT_LINES } from './cold-read/stance'
 
 // Cap message history sent to the model. Heavy chats can accumulate
 // hundreds of messages; we send the most recent N to keep latency and
@@ -68,6 +69,7 @@ export interface BuildChatPromptInput {
   recencySection?: string         // pre-rendered last-N-hours activity (chat-recency-context.ts) — deterministic, fresher than retrieval
   todaySection?: string           // pre-rendered "Today across channels" (today-render.ts) — what the owner said / decided elsewhere today
   conscienceSection?: string      // pre-rendered constitution + held beliefs (conscience-context.ts) — reference data
+  coldRead?: boolean              // KAIROS_COLD_READ: stranger-test line + hidden <stance> tag on judgement turns
 }
 
 // Everything but the Dominion frame. An options object, not positional
@@ -236,6 +238,7 @@ export function buildChatSystemPrompt(
   }
   lines.push('- Cite specifics from the operator\'s context when relevant. When you\'re reasoning from general knowledge, say so.')
   lines.push('- Disagree with the operator when their plan has a hole. Diplomacy without disagreement is just flattery.')
+  if (opts.coldRead) lines.push(...COLD_READ_CHAT_LINES)
   if (hasRetrieval) {
     lines.push('- Cite grounded sources with `[[memory-id]]` inline. Only cite ids that appear in the Grounded context block above — do not invent ids.')
   }
@@ -252,6 +255,7 @@ export function buildChatMessages(input: BuildChatPromptInput): AIMessage[] {
     recencySection: input.recencySection,
     todaySection: input.todaySection,
     conscienceSection: input.conscienceSection,
+    coldRead: input.coldRead,
   })
   const trimmedHistory = input.history.slice(-MAX_HISTORY_MESSAGES)
 

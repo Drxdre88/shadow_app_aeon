@@ -11,7 +11,8 @@ import { readBelief } from '@/lib/kairos/beliefs/types'
 // `drift` (the probe comparison) and `conscience` (the conscience checks).
 // Pure DB access, user-scoped; re-exported from lib/data/constitution.
 
-export type DriftObservationKind = 'drift_baseline' | 'drift_run'
+// 'character_run': the weekly character check (lib/data/character.ts).
+export type DriftObservationKind = 'drift_baseline' | 'drift_run' | 'character_run'
 
 export interface DriftObservationRow {
   id: string

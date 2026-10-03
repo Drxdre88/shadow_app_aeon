@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { and, isNull, ne } from 'drizzle-orm'
+import { and, isNull, ne, sql } from 'drizzle-orm'
 import { memories } from '@/lib/db/schema'
 import { listOpenGoals } from '@/lib/data/goals'
 import { readKairosAgenda } from '@/lib/data/kairos-agenda'
@@ -22,6 +22,8 @@ import {
   type ReflectPromise,
 } from '@/lib/kairos/cadence/reflect-prompt'
 import { londonDate } from '@/lib/kairos/daily-message-prompt'
+import { characterCheckEnabled } from '@/lib/kairos/character/flag'
+import { checkTone } from '@/lib/kairos/character/tone'
 import { createKairosPredictions, type CreatePredictionsResult } from '@/lib/kairos/predictions/create'
 import { predictionsEnabled } from '@/lib/kairos/predictions/flag'
 import { renderTrackRecordBlock } from '@/lib/kairos/predictions/prompt-block'
@@ -63,6 +65,9 @@ export const REFLECT_KIND: ThinkingJobKind = 'reflect'
 const TODAY_PROMPT_CHARS = 8000
 const EVENTS_LIMIT = 15
 const MAX_LINKS = 20
+// A quarantined (tone-flagged, 'trace') reflection is not new evidence for
+// the next one — that loop is what the quarantine breaks.
+const notToneFlagged = sql`not (${memories.tags} @> '["tone_flag"]'::jsonb)`
 
 const contextSchema = z.object({
   slot: z.string().min(1),
@@ -147,7 +152,7 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
 
   const [digest, events, promises, predictions, agenda] = await Promise.all([
     loadTodayDigest(userId, { hours: 16, limit: 120 }),
-    listRecentMemories(userId, [and(ne(memories.streamClass, 'agentic'), isNull(memories.archivedAt))!], { start: since, end: now }, EVENTS_LIMIT),
+    listRecentMemories(userId, [and(ne(memories.streamClass, 'agentic'), isNull(memories.archivedAt), notToneFlagged)!], { start: since, end: now }, EVENTS_LIMIT),
     openPromises(userId),
     predictionPrompt(userId, now),
     agendaPrompt(userId, now),
@@ -251,16 +256,20 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
 
   const goalTitles = new Map(ctx.goals.map((g) => [g.id, g.title]))
   const links = [...new Set([...out.goalNotes.map((g) => g.goalId), ...out.evidenceIds])].slice(0, MAX_LINKS)
+  // Tone budget (character check): flagged text is tagged and, with the
+  // check switched on, filed as 'trace' — kept for audit, out of retrieval.
+  const tone = checkTone(out.thought)
+  const quarantined = tone.flagged && characterCheckEnabled()
   const { memory } = await captureMemory(job.userId, {
     title: `Reflection · ${ctx.slot.slice(REFLECT_KIND.length + 1).replace(/:(\d{2})$/, ' $1:00')}`,
     bodyMd: renderReflectBody(out, goalTitles),
     summary: out.thought.slice(0, 1000),
     type: 'observation',
     source: 'cron',
-    streamClass: 'agentic',
+    streamClass: quarantined ? 'trace' : 'agentic',
     dominionId: null,
     links: links.map(refersTo),
-    tags: ['reflection'],
+    tags: tone.flagged ? ['reflection', 'tone_flag'] : ['reflection'],
     sourceMetadata: {
       kind: 'reflection',
       externalId: ctx.slot,
@@ -269,6 +278,7 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
       goalNotes: out.goalNotes,
       evidenceIds: out.evidenceIds,
       dropped: out.dropped,
+      tone: { score: tone.score, markers: tone.markers, flagged: tone.flagged },
     },
   })
 

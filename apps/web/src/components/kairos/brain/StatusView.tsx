@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { RefreshCw, TriangleAlert, CircleCheck, BrainCircuit, MessageCircle, ArrowRight, KeyRound, Activity } from 'lucide-react'
+import { RefreshCw, TriangleAlert, CircleCheck, BrainCircuit, MessageCircle, ArrowRight, KeyRound, Activity, ScanFace } from 'lucide-react'
 import { BRAIN_JOBS, ROUTINES } from '@/lib/kairos/routines/catalog'
-import type { AnsweredBy, KairosBrainStatus, KairosChatLatency, KairosPaidBackupStatus } from '@/lib/kairos/routines/status-types'
+import type { AnsweredBy, KairosBrainStatus, KairosCharacterStatus, KairosChatLatency, KairosPaidBackupStatus } from '@/lib/kairos/routines/status-types'
 import { setPaidBackup } from '@/lib/actions/kairos-brain'
 import { cn } from '@/lib/utils/cn'
 import { ANSWER_TONE, ANSWER_WORD, ROUTINE_STATE, Dot, Panel, Eyebrow, tint } from './brainUi'
@@ -158,8 +158,57 @@ export function StatusView({ status, refreshing, onRefresh, onNavigate }: Props)
         )
       )}
 
+      {status.character && <CharacterRow character={status.character} />}
+
       {status.paidBackup && <PaidBackupRow paidBackup={status.paidBackup} />}
     </div>
+  )
+}
+
+const TREND_ARROW = { up: '↑', down: '↓', flat: '→' } as const
+
+// Weekly character check — measurement only; a breach suggests, never acts.
+function CharacterRow({ character }: { character: KairosCharacterStatus }) {
+  const tone = character.breach.tripped ? 'var(--warning)' : 'var(--success)'
+  const week = character.isoWeek.split('-W')[1] ?? character.isoWeek
+  return (
+    <Panel>
+      <div className="flex items-start gap-3 px-5 py-4">
+        <div
+          className="mt-0.5 flex items-center justify-center w-8 h-8 rounded-lg shrink-0"
+          style={{ background: tint(tone, 12), color: tone }}
+        >
+          <ScanFace className="w-4 h-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-semibold text-white">Character check</span>
+            <span className="text-[10.5px] font-medium" style={{ color: tone }}>
+              {character.breach.tripped ? 'Drifting' : character.status === 'unparsed' ? 'Unreadable' : 'Steady'} · wk{week}
+            </span>
+            {character.uncalibrated && <span className="text-[10.5px] text-white/40">uncalibrated</span>}
+          </div>
+          {character.status === 'ok' && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {character.traits.map((t) => (
+                <span key={t.trait} className="px-2 py-0.5 rounded-md text-[11px] border border-white/[0.1] text-white/70">
+                  {t.label} {t.mean?.toFixed(1) ?? '—'}{t.trend ? ` ${TREND_ARROW[t.trend]}` : ''}
+                </span>
+              ))}
+            </div>
+          )}
+          {character.breach.reasons.length > 0 && (
+            <ul className="mt-1.5 text-[11.5px]" style={{ color: 'var(--warning)' }}>
+              {character.breach.reasons.map((r) => <li key={r}>⚠ {r}</li>)}
+            </ul>
+          )}
+          <p className="mt-1 text-[11.5px] text-white/50">
+            {plural(character.voiceSamples, 'voice sample')} approved · tone flags on {character.toneFlags.flagged} of {plural(character.toneFlags.total, 'reflection')}
+            {character.breach.tripped ? ' · consider switching daytime reflection off — your call.' : ''}
+          </p>
+        </div>
+      </div>
+    </Panel>
   )
 }
 
