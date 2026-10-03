@@ -92,10 +92,20 @@ describe('gatherAmbient', () => {
 describe('surprise ledger hook (KAIROS_SURPRISE_STAGE)', () => {
   const surpriseItem = { key: 'surprise:s_0000abcd', kind: 'prediction_wrong', source: 'prediction' as const, tier: 'deep' as const, text: 'My prediction was wrong: billing by Friday', importance: 0.6, surprise: 0.7, goalRelevance: 0.4, need: 0.4 }
 
-  it('with ledger items, wrong predictions come only from the ledger (never twice)', () => {
-    const out = buildAmbientCandidates({ promises: [], predictions: [prediction({})], today: [], now: NOW, surprise: [surpriseItem] })
-    expect(out.filter((o) => o.kind === 'prediction')).toHaveLength(0)
+  it('drops only the wrong predictions the ledger already carries (never twice, never hidden)', () => {
+    const inLedger = prediction({})
+    const notInLedger = prediction({ id: '00000000-0000-4000-8000-0000000000a2', claim: 'The audit closes this week' })
+    const out = buildAmbientCandidates({
+      promises: [], predictions: [inLedger, notInLedger], today: [], now: NOW,
+      surprise: [surpriseItem], ledgerPredictionIds: new Set([inLedger.id]),
+    })
+    expect(out.filter((o) => o.kind === 'prediction').map((o) => o.key)).toEqual([expect.stringContaining(notInLedger.id)])
     expect(out).toContainEqual(surpriseItem)
+  })
+
+  it('an empty ledger hides nothing', () => {
+    const out = buildAmbientCandidates({ promises: [], predictions: [prediction({})], today: [], now: NOW, surprise: [], ledgerPredictionIds: new Set() })
+    expect(out.filter((o) => o.kind === 'prediction')).toHaveLength(1)
   })
 
   it('a job-sourced finding (aha, contradiction) is a valid ambient item', () => {

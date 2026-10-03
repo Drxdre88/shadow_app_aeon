@@ -4,6 +4,17 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–35).
 
+## [0.23.0] — 2026-10-03 · "One coherent mind, wave 2: surprise and dreams"
+
+> What surprised him now decides what he rewrites, credits, asks and replays; and he dreams, behind a firewall that keeps dreams out of memory and evidence. All flag-gated.
+
+- **Surprise ledger** `user_preferences.kairosSurprise` (7 days, ≤64 events) + per-memory open mark `sourceMetadata.engine.surprise` (1-night window, never bumps `updatedAt`).
+- **Gate** (`KAIROS_SURPRISE_GATE`): `writeAlignedBeliefs` (now `data/belief-aligned.ts`) — reinforce always; operator-provenance replace always (owner_correction, opens neighbours); other replaces only on open beliefs, else held beside with `replaceGated` + pressure. New `SurpriseStep` (between Weigh and OwnMind): pressure valve, signal pruning, contradictions behind `KAIROS_SURPRISE_CONTRADICTIONS`. Recheck logs `support_lost`. belief_extract re-checks open beliefs; daytime owner corrections via FTS (no paid call).
+- **Credit** (`KAIROS_SURPRISE_CREDIT`): hop-2 walker over belief provenance after prediction settlement and promise close; idempotent; caps.
+- **Learning progress** (`KAIROS_CURIOSITY_LP`): per-area Brier improvement biases ask_mine.
+- **Replay** (`KAIROS_SURPRISE_REPLAY`): need × gain selection into aether and cortex context.
+- **Surprise → stage** (`KAIROS_SURPRISE_STAGE`): ledger events as stage ambient items; wrong predictions never counted twice. `get_kairos_surprise`.
+- **Dreams** (`KAIROS_DREAMS`, `KAIROS_DREAM_LINE`): new deep kinds `dream` (01:38–03:28 UTC) and `dream_read`; output-only storage, `validMemoryIds: []`, light tier on the stage, redacted in `list_thinking_jobs`, dream-echo audit in the conscience check, import/reverse/data firewall tests, Telegram-only "I dreamt…" tail.
 ## [0.22.0] — 2026-10-03 · "One coherent mind, wave 1"
 
 > The many separate thinking jobs start to share one mind: a global-workspace stage, a weekly character check against owner-approved voice samples, and a profile-free cold read of his advice. All flag-gated.

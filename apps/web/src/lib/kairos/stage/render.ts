@@ -27,7 +27,7 @@ export function renderStageBlock(state: KairosStageState, opts: RenderStageOptio
   const { now } = opts
   const maxChars = Math.max(40, opts.maxChars ?? STAGE_BLOCK_MAX_CHARS)
   const cycle = londonCycleKey(now)
-  const ranked = rankCoalitions(state, now, { deepOnly: opts.deepOnly })
+  const ranked = rankCoalitions(state, now, { deepOnly: opts.deepOnly, excludeSpeculative: true })
     .filter((r) => r.strength >= WIN_MIN_STRENGTH)
     .slice(0, STAGE_RENDER_TOP)
   const lines: Array<{ id: string | null; text: string }> = []

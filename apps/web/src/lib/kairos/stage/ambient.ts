@@ -23,9 +23,11 @@ export interface AmbientInputs {
   predictions: readonly KairosPrediction[]
   today: readonly TodayEntryView[]
   now: Date
-  // Surprise-ledger findings (KAIROS_SURPRISE_STAGE). When present, wrong
-  // predictions come from the ledger instead, so they never count twice.
+  // Surprise-ledger findings (KAIROS_SURPRISE_STAGE), plus the ids of the
+  // predictions the ledger already carries as prediction_wrong events — only
+  // those are dropped from the stage's own wrong-prediction facts.
   surprise?: readonly AmbientCandidate[]
+  ledgerPredictionIds?: ReadonlySet<string>
 }
 
 export function buildAmbientCandidates(input: AmbientInputs): AmbientCandidate[] {
@@ -42,7 +44,8 @@ export function buildAmbientCandidates(input: AmbientInputs): AmbientCandidate[]
   }
 
   const from = input.now.getTime() - DAY_MS
-  const wrong = (input.surprise ? [] : input.predictions)
+  const wrong = input.predictions
+    .filter((p) => !input.ledgerPredictionIds?.has(p.id))
     .filter((p) => p.status === 'wrong' && p.settledAt && new Date(p.settledAt).getTime() >= from)
     .sort((a, b) => (b.settledAt ?? '').localeCompare(a.settledAt ?? ''))
     .slice(0, MAX_PER_SOURCE)
@@ -100,5 +103,18 @@ export async function gatherAmbient(userId: string, now: Date): Promise<AmbientC
       ? quiet(import('@/lib/kairos/surprise/stage-source').then((m) => m.readSurpriseAmbient(userId, now)), [], 'surprise')
       : Promise.resolve(undefined),
   ])
-  return buildAmbientCandidates({ promises, predictions, today, now, ...(surprise ? { surprise } : {}) })
+  // Only predictions the ledger has as prediction_wrong events are de-duplicated;
+  // a failed ledger read hides nothing.
+  const ledgerPredictionIds = surpriseOn
+    ? await quiet(
+        import('@/lib/kairos/surprise').then(async (m) => new Set(
+          (await m.loadSurpriseLedger(userId)).events
+            .filter((e) => e.kind === 'prediction_wrong' && e.refs.predictionId)
+            .map((e) => e.refs.predictionId as string),
+        )),
+        new Set<string>(),
+        'surprise ledger',
+      )
+    : undefined
+  return buildAmbientCandidates({ promises, predictions, today, now, ...(surprise ? { surprise } : {}), ...(ledgerPredictionIds ? { ledgerPredictionIds } : {}) })
 }
