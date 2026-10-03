@@ -52,6 +52,36 @@ export function ChatOnMaxBody({ status, refreshing, onRefresh }: Props) {
   )
 }
 
+// Daytime thinking (KAIROS_DAYTIME_THINKING=1, owner): the light pulse
+// routine. Rendered only while the server reports the pulse as switched on.
+export function PulseRoutineBody({ status, refreshing, onRefresh }: Props) {
+  const pulse = status.routines.find((r) => r.id === 'pulse')
+  if (!pulse || pulse.state === 'off') return null
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-[12.5px] leading-relaxed text-white/65">
+        Daytime thinking is on. A second, lighter routine glances at your day once an hour and keeps short notes in
+        Kairos’s memory of today. It only does work when something happened, never messages you, and never uses the
+        paid key. Kairos brain picks up his daytime reflections on its own.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Flag on={pulse.state === 'live'} text={pulse.state === 'live' ? 'Pulse: running' : 'Pulse: not heard from yet'} />
+      </div>
+      <RoutineForm
+        def={getRoutine('pulse')}
+        nowIso={status.generatedAt}
+        finish={
+          <>
+            <Act where="On the routine’s page">click <Bold>Run now</Bold> during the day, after you’ve done something in Aeon.</Act>
+            <Expect>The pulse shows as running within a minute. With nothing new since its last look it just stops — that’s normal.</Expect>
+            <CheckAgain onClick={onRefresh} busy={refreshing} />
+          </>
+        }
+      />
+    </div>
+  )
+}
+
 function Flag({ on, text }: { on: boolean; text: string }) {
   const tone = on ? 'var(--success)' : 'var(--text-dim)'
   return (

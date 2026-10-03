@@ -11,7 +11,7 @@ function bullets(items: readonly string[]): string[] {
   return items.length ? items.map((s) => `- ${s}`) : ['- (none)']
 }
 
-export function renderWeeklyReviewMarkdown(review: GroundedWeeklyReview, isoWeek: string): string {
+export function renderWeeklyReviewMarkdown(review: GroundedWeeklyReview, isoWeek: string, trackRecordLine?: string | null): string {
   const lines: string[] = [`**${weeklyReviewTitle(isoWeek)}**`, '', review.summary, '', '**Wins**', ...bullets(review.wins)]
   lines.push('', '**Drift (plan vs actual)**', ...bullets(review.drift))
   lines.push('', '**Proposed actions**')
@@ -21,6 +21,8 @@ export function renderWeeklyReviewMarkdown(review: GroundedWeeklyReview, isoWeek
     const idea = a.ideaQuality ? ' · idea quality' : ''
     lines.push(`${i + 1}. **${a.title}**${dom}${idea} — ${a.why} (evidence: ${a.evidenceIds.join(', ')})`)
   })
+  // KAIROS_PREDICTIONS: computed in code from settled predictions, never by the model.
+  if (trackRecordLine) lines.push('', trackRecordLine)
   return lines.join('\n')
 }
 
@@ -34,9 +36,10 @@ export function renderReviewActionBody(action: GroundedReviewAction, isoWeek: st
 }
 
 // The spoken summary: the model's prose (already guarded against headings and
-// URLs) plus one deterministic pointer to the proposals.
-export function renderWeeklyReviewMessage(review: GroundedWeeklyReview, proposalCount: number): string {
-  if (proposalCount === 0) return review.summary
+// URLs) plus deterministic pointers to the proposals and the track record.
+export function renderWeeklyReviewMessage(review: GroundedWeeklyReview, proposalCount: number, trackRecordLine?: string | null): string {
+  const tail = trackRecordLine ? `\n\n${trackRecordLine}` : ''
+  if (proposalCount === 0) return `${review.summary}${tail}`
   const noun = proposalCount === 1 ? 'action' : 'actions'
-  return `${review.summary}\n\nI've put ${proposalCount} proposed ${noun} for this week in your inbox.`
+  return `${review.summary}\n\nI've put ${proposalCount} proposed ${noun} for this week in your inbox.${tail}`
 }

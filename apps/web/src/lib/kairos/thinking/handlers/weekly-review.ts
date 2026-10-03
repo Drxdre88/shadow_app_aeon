@@ -8,6 +8,10 @@ import { initiativeEnabled } from '@/lib/kairos/initiative'
 import { readKairosPromises } from '@/lib/data/kairos-promises'
 import { createKairosPromises, type CreatePromisesResult } from '@/lib/kairos/promises/create'
 import { dueWindow } from '@/lib/kairos/promises/rules'
+import { readKairosPredictions } from '@/lib/data/kairos-predictions'
+import { createKairosPredictions, type CreatePredictionsResult } from '@/lib/kairos/predictions/create'
+import { predictionsEnabled } from '@/lib/kairos/predictions/flag'
+import { buildReviewPredictionContext, type ReviewPredictionContext } from '@/lib/kairos/predictions/prompt-block'
 import {
   fedMemoryIds,
   gatherWeeklyReviewInputs,
@@ -67,6 +71,8 @@ const contextSchema = z.object({
   windowEnd: z.string().min(1),
   dominions: z.array(z.object({ id: z.string().min(1), name: z.string() })),
   inputErrors: z.array(z.string()).default([]),
+  // KAIROS_PREDICTIONS: the code-built track-record line, fixed at plan time.
+  trackRecordLine: z.string().max(400).nullable().optional(),
 })
 
 export type WeeklyReviewJobContext = z.infer<typeof contextSchema>
@@ -84,6 +90,7 @@ async function planWeeklyReview(userId: string, now: Date): Promise<ThinkingJobS
   // The paid fallback re-sends job.input.prompt, so both paths get this block.
   const conscience = await loadConscienceBlock(userId)
   const promises = initiativeEnabled() ? await reviewPromiseContext(userId, now) : undefined
+  const predictions = predictionsEnabled() ? await reviewPredictionContext(userId, now) : undefined
 
   const context: WeeklyReviewJobContext = {
     isoWeek,
@@ -91,6 +98,7 @@ async function planWeeklyReview(userId: string, now: Date): Promise<ThinkingJobS
     windowEnd: inputs.window.end.toISOString(),
     dominions: inputs.dominions,
     inputErrors: inputs.errors,
+    ...(predictions ? { trackRecordLine: predictions.trackRecordLine } : {}),
   }
   return [{
     kind: WEEKLY_REVIEW_KIND,
@@ -99,7 +107,7 @@ async function planWeeklyReview(userId: string, now: Date): Promise<ThinkingJobS
     deadlineMinutes: WEEKLY_REVIEW_DEADLINE_MINUTES,
     input: {
       system: WEEKLY_REVIEW_SYSTEM_PROMPT,
-      prompt: buildWeeklyReviewPrompt(inputs, conscience, promises),
+      prompt: buildWeeklyReviewPrompt(inputs, conscience, promises, predictions),
       validMemoryIds: fedMemoryIds(inputs),
       context,
       maxOutputTokens: WEEKLY_REVIEW_MAX_OUTPUT_TOKENS,
@@ -114,6 +122,36 @@ async function reviewPromiseContext(userId: string, now: Date): Promise<ReviewPr
   } catch (err) {
     console.warn('[kairos:weekly-review] promise read failed — no promises this week:', errorReason(err))
     return undefined
+  }
+}
+
+async function reviewPredictionContext(userId: string, now: Date): Promise<ReviewPredictionContext | undefined> {
+  try {
+    return buildReviewPredictionContext(await readKairosPredictions(userId), now)
+  } catch (err) {
+    console.warn('[kairos:weekly-review] prediction read failed — no predictions this week:', errorReason(err))
+    return undefined
+  }
+}
+
+// KAIROS_PREDICTIONS only: the review's predictions go through the one
+// server-side creator (strict re-validation, grounding, caps). Never costs the review.
+async function persistReviewPredictions(
+  job: ThinkingJobRow,
+  ctx: WeeklyReviewJobContext,
+  review: GroundedWeeklyReview,
+): Promise<CreatePredictionsResult | null> {
+  if (!predictionsEnabled() || review.predictions.length === 0) return null
+  try {
+    return await createKairosPredictions(
+      job.userId,
+      review.predictions,
+      { kind: 'weekly_review', jobId: job.id, isoWeek: ctx.isoWeek },
+      { validMemoryIds: job.input.validMemoryIds ?? [], dominions: ctx.dominions },
+    )
+  } catch (err) {
+    await writeCronFailureTrace(job.userId, { cronName: CRON_NAME, reason: 'predictions_failed', error: err })
+    return null
   }
 }
 
@@ -208,11 +246,13 @@ async function persistWeeklyReview(
   }
 
   const promised = await persistReviewPromises(job, isoWeek, review)
+  const predicted = await persistReviewPredictions(job, ctx, review)
+  const trackRecordLine = predictionsEnabled() ? ctx.trackRecordLine ?? null : null
 
   const evidence = [...new Set(review.actions.flatMap((a) => a.evidenceIds))]
   const { memory: observation } = await captureMemory(job.userId, {
     title: weeklyReviewTitle(isoWeek),
-    bodyMd: renderWeeklyReviewMarkdown(review, isoWeek),
+    bodyMd: renderWeeklyReviewMarkdown(review, isoWeek, trackRecordLine),
     summary: review.summary.slice(0, 1000),
     type: 'observation',
     source: 'cron',
@@ -241,10 +281,17 @@ async function persistWeeklyReview(
           overflow: promised.overflow,
         },
       } : {}),
+      ...(predicted ? {
+        predictions: {
+          created: predicted.created.map((p) => ({ id: p.id, seq: p.seq, dueDate: p.dueDate, probability: p.probability })),
+          rejected: predicted.rejected,
+          overflow: predicted.overflow,
+        },
+      } : {}),
     },
   })
 
-  const delivery = await deliverSummary(job.userId, isoWeek, renderWeeklyReviewMessage(review, proposalIds.length))
+  const delivery = await deliverSummary(job.userId, isoWeek, renderWeeklyReviewMessage(review, proposalIds.length, trackRecordLine))
   if (delivery === 'blocked') console.warn('[kairos:weekly-review] summary not delivered', { isoWeek, jobId: job.id })
   return { ok: true, memoryIds: [observation.id, ...proposalIds] }
 }

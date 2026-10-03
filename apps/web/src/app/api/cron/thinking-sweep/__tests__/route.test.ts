@@ -14,6 +14,7 @@ vi.mock('@/lib/kairos/thinking/queue', () => ({
 }))
 vi.mock('@/lib/kairos/promises/nudge', () => ({ PROMISE_NUDGE_CRON: 'promise-nudge', runPromiseNudges: vi.fn() }))
 vi.mock('@/lib/kairos/proposal-decision', () => ({ sweepExpiredProposals: vi.fn() }))
+vi.mock('@/lib/kairos/predictions/check', () => ({ PREDICTION_CHECK_CRON: 'prediction-check', runPredictionSettlement: vi.fn() }))
 vi.mock('@/lib/kairos/cron-trace', () => ({
   writeCronFailureTrace: vi.fn(),
   writeCronSuccessTrace: vi.fn(),
@@ -25,6 +26,7 @@ import { createSweepBudget } from '@/lib/kairos/thinking/queue'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 import { runPromiseNudges } from '@/lib/kairos/promises/nudge'
 import { sweepExpiredProposals } from '@/lib/kairos/proposal-decision'
+import { runPredictionSettlement } from '@/lib/kairos/predictions/check'
 import { GET, maxDuration } from '../route'
 
 function request(authorization?: string) {
@@ -185,5 +187,35 @@ describe('proposal expiry step', () => {
     expect(res.status).toBe(200)
     expect((await res.json()).proposalExpiry).toEqual({ error: 'db blip' })
     errorSpy.mockRestore()
+  })
+})
+
+describe('prediction settlement step', () => {
+  beforeEach(() => {
+    vi.mocked(listUsersNeedingSweep).mockResolvedValue([])
+    vi.mocked(runPromiseNudges).mockResolvedValue({ status: 'none' })
+    process.env.KAIROS_OPERATOR_USER_ID = 'op-1'
+    delete process.env.KAIROS_PREDICTIONS
+  })
+
+  it('flag off: never runs and the response is unchanged', async () => {
+    const body = await (await GET(request())).json()
+    expect(runPredictionSettlement).not.toHaveBeenCalled()
+    expect(body).not.toHaveProperty('predictionCheck')
+  })
+
+  it('flag on: settles for the operator; a failure is traced and never fails the sweep', async () => {
+    process.env.KAIROS_PREDICTIONS = '1'
+    const ok = { status: 'ok' as const, open: 1, settled: [], needsVerdict: [], feedback: 0 }
+    vi.mocked(runPredictionSettlement).mockResolvedValueOnce(ok)
+    expect((await (await GET(request())).json()).predictionCheck).toEqual(ok)
+    expect(runPredictionSettlement).toHaveBeenCalledWith('op-1', expect.any(Date))
+
+    vi.mocked(runPredictionSettlement).mockRejectedValueOnce(new Error('locked'))
+    const res = await GET(request())
+    expect(res.status).toBe(200)
+    expect((await res.json()).predictionCheck).toEqual({ status: 'error', error: 'locked' })
+    expect(writeCronFailureTrace).toHaveBeenCalledWith('op-1', expect.objectContaining({ cronName: 'prediction-check' }))
+    delete process.env.KAIROS_PREDICTIONS
   })
 })

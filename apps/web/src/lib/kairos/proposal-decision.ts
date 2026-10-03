@@ -14,6 +14,7 @@ import { GOAL_NOTE_MAX, GOAL_PROPOSAL_KIND } from './goals/parse'
 import { approveGoal, expireStaleGoals, vetoGoal, type GoalActionFailure } from './goals/transitions'
 import { writeCronFailureTrace } from './cron-trace'
 import type { Origin } from './origin'
+import { bookGoalCheckins } from './agenda/goal-checkins'
 import { createKairosPromises } from './promises/create'
 import { isVagueOutcome } from './promises/rules'
 import { PROMISE_OUTCOME_MAX_CHARS, PROMISE_OUTCOME_MIN_CHARS } from '@/lib/data/validators/kairos-promises'
@@ -117,6 +118,13 @@ const goalKind: ProposalKindHandler = {
     if (res.onApprovedError) {
       console.error('[kairos:proposal-decision] goal approved but its promise failed:', res.onApprovedError)
       await writeCronFailureTrace(userId, { cronName: 'goal-promise', reason: 'promise_not_created', rawExcerpt: `${id}: ${res.onApprovedError}` }).catch(() => {})
+    }
+    // Horae check-ins (≤2) — their own try: a booking failure never touches
+    // the approval or turns into onApprovedError.
+    try {
+      await bookGoalCheckins(userId, res.goal, now)
+    } catch (err) {
+      console.error('[kairos:proposal-decision] goal approved but its agenda check-ins failed:', err)
     }
     return { ok: true }
   },

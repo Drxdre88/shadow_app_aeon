@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { RefreshCw, TriangleAlert, CircleCheck, BrainCircuit, MessageCircle, ArrowRight, KeyRound } from 'lucide-react'
+import { RefreshCw, TriangleAlert, CircleCheck, BrainCircuit, MessageCircle, ArrowRight, KeyRound, Activity } from 'lucide-react'
 import { BRAIN_JOBS, ROUTINES } from '@/lib/kairos/routines/catalog'
 import type { AnsweredBy, KairosBrainStatus, KairosChatLatency, KairosPaidBackupStatus } from '@/lib/kairos/routines/status-types'
 import { setPaidBackup } from '@/lib/actions/kairos-brain'
@@ -11,7 +11,7 @@ import { localDateTime, relativeTo, localClock } from './brainTime'
 import type { BrainView } from './ConnectKairosModal'
 
 const ORDER: AnsweredBy[] = ['routine', 'backup', 'missed']
-const ROUTINE_ICON = { brain: BrainCircuit, chat: MessageCircle }
+const ROUTINE_ICON = { brain: BrainCircuit, chat: MessageCircle, pulse: Activity }
 
 function seconds(ms: number): string {
   return ms < 100_000 ? `${Math.round(ms / 1000)} s` : `${(ms / 60_000).toFixed(1)} min`
@@ -39,6 +39,8 @@ export function StatusView({ status, refreshing, onRefresh, onNavigate }: Props)
   const total = lastNight.routine + lastNight.backup + lastNight.missed
   const allOnMax = total > 0 && lastNight.backup === 0 && lastNight.missed === 0
   const brainOff = status.routines.find((r) => r.id === 'brain')?.state === 'off'
+  // The pulse is optional (daytime thinking): shown only once it is switched on.
+  const shown = ROUTINES.filter((def) => def.id !== 'pulse' || (status.routines.find((r) => r.id === 'pulse')?.state ?? 'off') !== 'off')
 
   return (
     <div className="flex flex-col gap-5">
@@ -87,8 +89,8 @@ export function StatusView({ status, refreshing, onRefresh, onNavigate }: Props)
             </p>
           </div>
         )}
-        <div className="grid grid-cols-1 sm:grid-cols-2         border-t border-white/[0.06] divide-y sm:divide-y-0 sm:divide-x divide-white/[0.06]">
-          {ROUTINES.map((def) => {
+        <div className={cn('grid grid-cols-1 border-t border-white/[0.06] divide-y sm:divide-y-0 sm:divide-x divide-white/[0.06]', shown.length > 2 ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
+          {shown.map((def) => {
             const live = status.routines.find((r) => r.id === def.id)
             const state = ROUTINE_STATE[live?.state ?? 'off']
             const Icon = ROUTINE_ICON[def.id]

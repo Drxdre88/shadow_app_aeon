@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
 import { agentSessions, sessionEvents, boardTasks, projects, type AgentSession } from '@/lib/db/schema'
-import { eq, and, asc, desc, gte, inArray, notInArray, isNotNull, sql } from 'drizzle-orm'
+import { eq, and, asc, desc, gte, inArray, ne, notInArray, isNotNull, sql } from 'drizzle-orm'
 import type {
   SpawnSessionInput,
   UpdateSessionStatusInput,
@@ -12,6 +12,7 @@ import type {
 } from './validators'
 import { findColumns } from './columns'
 import { findProjectSettings, touchProject } from './projects'
+import { TODAY_ENGINE } from './kairos-today'
 
 const LIVE_STATUSES: AgentSessionStatus[] = ['queued', 'running']
 const TERMINAL_STATUSES: AgentSessionStatus[] = ['succeeded', 'failed', 'killed', 'timeout']
@@ -125,7 +126,7 @@ export async function findMissionSessionStatus(id: string, projectId: string, ta
 }
 
 export async function listAgentSessions(userId: string, input: ListSessionsInput) {
-  const where = [eq(agentSessions.userId, userId)]
+  const where = [eq(agentSessions.userId, userId), ne(agentSessions.engine, TODAY_ENGINE)]
 
   if (input.liveOnly) {
     where.push(inArray(agentSessions.status, LIVE_STATUSES))

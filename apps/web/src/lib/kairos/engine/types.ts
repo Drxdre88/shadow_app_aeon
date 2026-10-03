@@ -179,6 +179,10 @@ export type ThinkingJobKind =
   | 'constitution_seed'
   // Phase 2 initiative: at most one investigation goal a night (no fallback).
   | 'goal_propose'
+  // Daytime cadence (KAIROS_DAYTIME_THINKING=1): an hourly light pulse that
+  // writes only to "today", and a deep hourly reflection (no fallback for either).
+  | 'pulse'
+  | 'reflect'
 
 export type ThinkingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'expired' | 'fallback'
 

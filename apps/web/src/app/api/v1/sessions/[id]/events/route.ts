@@ -9,6 +9,11 @@ import { captureMissionMemory } from '@/lib/kairos/mission-memory'
 // A non-uuid path param would raise Postgres 22P02 and surface as a 500.
 const sessionIdSchema = z.string().uuid()
 
+// Kairos's own threads share agent_sessions. A bearer agent must never post
+// into them — a {role:'user'} event in a kairos-chat thread would read back as
+// the owner's words.
+const INTERNAL_ENGINES: ReadonlySet<string> = new Set(['kairos-chat', 'kairos-dialogue', 'kairos-today'])
+
 // Tail params come straight off the query string — see sessionEventsTailSchema
 // in lib/data/validators for the coercion/bounds rationale.
 const tailQuerySchema = sessionEventsTailSchema
@@ -35,6 +40,7 @@ export const POST = withRateLimit(
 
     const session = await findAgentSessionById(id, auth.id)
     if (!session) return jsonError('Session not found', 404)
+    if (INTERNAL_ENGINES.has(session.engine)) return jsonError('Events cannot be posted to an internal Kairos thread', 403)
 
     let body: unknown
     try {

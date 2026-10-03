@@ -14,6 +14,7 @@ export const thinkingJobKindSchema = z.enum([
   'chat_distill', 'archetype', 'ask_mine',
   'constitution_seed',
   'goal_propose',
+  'pulse', 'reflect',
 ])
 export const thinkingJobStatusSchema = z.enum(['queued', 'claimed', 'done', 'failed', 'expired', 'fallback'])
 
@@ -29,7 +30,7 @@ const claimKindsSchema = z.preprocess(
 // The routine a claim or submit speaks for (lib/kairos/routines/catalog.ts):
 // the server scopes it to that routine's allowedKinds. Optional until both
 // routines are re-pasted; KAIROS_REQUIRE_ROUTINE_SCOPE=1 then requires it on claim.
-export const thinkingRoutineSchema = z.enum(['brain', 'chat'])
+export const thinkingRoutineSchema = z.enum(['brain', 'chat', 'pulse'])
 
 export const claimThinkingJobSchema = z.object({
   kinds: claimKindsSchema.optional(),

@@ -82,3 +82,66 @@ export function isoWeekKey(now: Date): string {
 export function conceptWeekKeyPattern(weekKey: string): string {
   return `concept:%:${weekKey}:%`
 }
+
+// ── Daytime cadence (KAIROS_DAYTIME_THINKING=1) ──────────────────────────
+// Daytime windows are London hours (inclusive), so a clock change moves the
+// UTC run times, not Kairos's day. One slot per London hour per kind:
+//   pulse   07:00–22:59 London, key pulse:<date>:<HH>,   45-minute deadline
+//   reflect 08:00–21:59 London, key reflect:<date>:<HH>, 50-minute deadline
+export interface LondonHours { fromHour: number; toHour: number }
+
+export const DAYTIME_LONDON: LondonHours = { fromHour: 7, toHour: 22 }
+export const PULSE_WINDOW_LONDON: LondonHours = DAYTIME_LONDON
+export const REFLECT_WINDOW_LONDON: LondonHours = { fromHour: 8, toHour: 21 }
+export const PULSE_DEADLINE_MINUTES = 45
+export const REFLECT_DEADLINE_MINUTES = 50
+
+const londonClock = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/London',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
+export function londonDateHour(now: Date): { date: string; hour: number; minute: number } {
+  const p: Record<string, string> = {}
+  for (const part of londonClock.formatToParts(now)) p[part.type] = part.value
+  return { date: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour) % 24, minute: Number(p.minute) }
+}
+
+// "HH:MM" London wall-clock time.
+export function londonClockLabel(now: Date): string {
+  const { hour, minute } = londonDateHour(now)
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
+export function inLondonHours(now: Date, w: LondonHours): boolean {
+  const { hour } = londonDateHour(now)
+  return hour >= w.fromHour && hour <= w.toHour
+}
+
+// `<kind>:<London date>:<HH>` — one job per kind per London hour.
+export function daytimeSlotKey(kind: string, now: Date): string {
+  const { date, hour } = londonDateHour(now)
+  return `${kind}:${date}:${String(hour).padStart(2, '0')}`
+}
+
+// Prefix shared by every slot of one London day (count a day's jobs).
+export function daytimeDayPrefix(kind: string, now: Date): string {
+  return `${kind}:${londonDateHour(now).date}:`
+}
+
+// The instant the current London day began (00:00 London).
+export function londonDayStart(now: Date): Date {
+  const { date } = londonDateHour(now)
+  for (const offsetHours of [0, 1]) {
+    const candidate = new Date(`${date}T00:00:00.000Z`)
+    candidate.setUTCHours(-offsetHours)
+    const p = londonDateHour(candidate)
+    if (p.date === date && p.hour === 0) return candidate
+  }
+  return new Date(`${date}T00:00:00.000Z`)
+}

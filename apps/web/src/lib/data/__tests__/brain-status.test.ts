@@ -222,3 +222,35 @@ describe('summariseChatLatency', () => {
     expect(summariseChatLatency([superseded], NOW)).toBeNull()
   })
 })
+
+describe('daytime cadence (pulse routine, reflect)', () => {
+  const pulseDone = row({ kind: 'pulse', claimedBy: 'routine', claimedAt: t('10-02T07:10'), completedAt: t('10-02T07:11'), deadlineAt: t('10-02T07:55') })
+  const reflectDone = row({ kind: 'reflect', claimedAt: t('10-02T07:40'), completedAt: t('10-02T07:42'), deadlineAt: t('10-02T08:30') })
+  const pulse = (rows: BrainJobRow[], flag?: boolean) =>
+    summariseBrainStatus(rows, NOW, flag === undefined ? {} : { pulseRoutineFlagOn: flag }).routines.find((r) => r.id === 'pulse')
+
+  it('pulse claims count for the pulse routine, never the brain; reflect counts for the brain', () => {
+    const s = summariseBrainStatus([pulseDone], NOW, { pulseRoutineFlagOn: true })
+    expect(s.routines.find((r) => r.id === 'brain')).toEqual({ id: 'brain', lastClaimAt: null, state: 'silent' })
+    expect(pulse([pulseDone], true)).toEqual({ id: 'pulse', lastClaimAt: '2026-10-02T07:10:00.000Z', state: 'live' })
+    expect(summariseBrainStatus([reflectDone], NOW).routines.find((r) => r.id === 'brain')?.lastClaimAt).toBe('2026-10-02T07:40:00.000Z')
+  })
+
+  it('the pulse is off when daytime thinking is off (default: the server flag)', () => {
+    delete process.env.KAIROS_DAYTIME_THINKING
+    expect(pulse([pulseDone])?.state).toBe('off')
+    expect(pulse([pulseDone], false)?.state).toBe('off')
+    expect(pulse([], true)).toEqual({ id: 'pulse', lastClaimAt: null, state: 'silent' })
+  })
+
+  it('an unanswered daytime slot is missed, never "backup" (they have none)', () => {
+    const expired = { status: 'expired', claimedBy: null, claimedAt: null, completedAt: null, error: 'fallback: no fallback — a missed hour is fine' }
+    expect(classifyBrainJob(row({ kind: 'pulse', ...expired }), NOW)).toBe('missed')
+    expect(classifyBrainJob(row({ kind: 'reflect', ...expired }), NOW)).toBe('missed')
+    expect(countPaidBackupCalls([row({ kind: 'reflect', ...expired })], NOW)).toBe(0)
+  })
+
+  it('daytime jobs are not counted as "last night"', () => {
+    expect(summariseBrainStatus([pulseDone, reflectDone, row({})], NOW).lastNight).toEqual({ routine: 1, backup: 0, missed: 0 })
+  })
+})

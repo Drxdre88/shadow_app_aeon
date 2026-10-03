@@ -36,11 +36,20 @@ describe('planned thinking kinds ↔ routine catalog', () => {
     }
   })
 
-  it('routine scopes partition the catalog: brain = planned kinds, chat = chat, no overlap', () => {
+  it('routine scopes partition the catalog: brain ∪ pulse = planned kinds, chat = chat, no overlap', () => {
     const all = ROUTINES.flatMap((r) => [...r.allowedKinds])
     expect(new Set(all)).toEqual(new Set(brainKinds))
     expect(all).toHaveLength(new Set(all).size)
-    expect(new Set(getRoutine('brain').allowedKinds)).toEqual(new Set(PLANNED_THINKING_KINDS))
+    expect(new Set([...getRoutine('brain').allowedKinds, ...getRoutine('pulse').allowedKinds])).toEqual(new Set(PLANNED_THINKING_KINDS))
+    expect(getRoutine('pulse').allowedKinds).toEqual(['pulse'])
+    expect(getRoutine('brain').allowedKinds).toContain('reflect')
     expect(getRoutine('chat').allowedKinds).toEqual(['chat'])
+  })
+
+  it('the routine tier decides scope: deep kinds on the brain, light kinds on the pulse', () => {
+    for (const j of BRAIN_JOBS) {
+      if (j.kind === 'chat') continue
+      expect(getRoutine(j.tier === 'light' ? 'pulse' : 'brain').allowedKinds, j.kind).toContain(j.kind)
+    }
   })
 })

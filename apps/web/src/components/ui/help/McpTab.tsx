@@ -168,6 +168,7 @@ const TOOL_CATEGORIES = [
       'get_kairos_paid_backup',
       'set_kairos_paid_backup',
       'list_kairos_promises',
+      'get_kairos_today',
       'open_dialogue',
       'prepare_dialogue_context',
       'append_dialogue_turn',
