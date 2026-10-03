@@ -3,7 +3,8 @@ import type { EloRecord } from './elo'
 
 // Survivor selection for the idea tournament (docs/kairos/35). Elimination
 // order (first match wins): repeat → no critique / ungrounded → contradicted →
-// already known → borderline but not meaningfully different → no supporting
+// already known → borderline but not meaningfully different → bridged but the
+// judge said the mapping fails (explicit false only) → no supporting
 // evidence. The rest are ranked by Elo (then wins, then key order) and up to
 // IDEA_SURVIVORS_MAX survive; past the top one a survivor also needs Elo ≥
 // ELO_START, so a losing record never rides in on a thin night.
@@ -14,6 +15,7 @@ export type EliminationReason =
   | 'contradicted'
   | 'already_known'
   | 'not_different'
+  | 'mapping_failed'
   | 'ranked_out'
 
 export interface SelectionInput {
@@ -21,6 +23,8 @@ export interface SelectionInput {
   novelty: NoveltyResult
   critique: IdeaCritique | null
   record: EloRecord | null
+  // Collision candidate (lane B): critique.mappingHolds === false eliminates.
+  bridged?: boolean
 }
 
 export interface SelectionResult {
@@ -38,6 +42,7 @@ export function eliminationReason(c: SelectionInput): EliminationReason | null {
   if (cr.verdict === 'contradicted') return 'contradicted'
   if (cr.alreadyKnown) return 'already_known'
   if (c.novelty.class === 'borderline' && cr.meaningfullyDifferent !== true) return 'not_different'
+  if (c.bridged === true && cr.mappingHolds === false) return 'mapping_failed'
   if (cr.supports.length === 0) return 'ungrounded'
   return null
 }

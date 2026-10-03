@@ -6,6 +6,7 @@ import { PAID_BACKUP_PREF_KEY } from './kairos-paid-backup'
 import { KAIROS_PROMISES_PREF_KEY } from './kairos-promises'
 import { KAIROS_STAGE_PREF_KEY } from './kairos-stage'
 import { KAIROS_SURPRISE_PREF_KEY } from './kairos-surprise'
+import { KAIROS_IDEA_ATLAS_PREF_KEY, KAIROS_IDEA_SHELF_PREF_KEY } from '@/lib/kairos/ideas/pref-keys'
 
 export async function findPreferences(userId: string) {
   const row = await db
@@ -37,12 +38,20 @@ export async function hasPreferencesRow(userId: string) {
 }
 
 // Theme/UI sync replaces the whole blob from client state. Server-owned keys
-// (the Kairos paid-backup switch, Kairos promises, predictions, agenda, stage and surprise) are
-// stripped from the client payload and the stored value is carried over, so a
-// theme save can't set or wipe them.
+// (the Kairos paid-backup switch, Kairos promises, predictions, agenda, stage,
+// surprise, idea atlas and idea shelf) are stripped from the client payload
+// and the stored value is carried over, so a theme save can't set or wipe them.
 export const KAIROS_PREDICTIONS_PREF_KEY = 'kairosPredictions'
 export const KAIROS_AGENDA_PREF_KEY = 'kairosAgenda'
-const SERVER_OWNED_OBJECT_KEYS = [KAIROS_PROMISES_PREF_KEY, KAIROS_PREDICTIONS_PREF_KEY, KAIROS_AGENDA_PREF_KEY, KAIROS_STAGE_PREF_KEY, KAIROS_SURPRISE_PREF_KEY] as const
+const SERVER_OWNED_OBJECT_KEYS = [
+  KAIROS_PROMISES_PREF_KEY,
+  KAIROS_PREDICTIONS_PREF_KEY,
+  KAIROS_AGENDA_PREF_KEY,
+  KAIROS_STAGE_PREF_KEY,
+  KAIROS_SURPRISE_PREF_KEY,
+  KAIROS_IDEA_ATLAS_PREF_KEY,
+  KAIROS_IDEA_SHELF_PREF_KEY,
+] as const
 
 function stripServerOwned(prefs: Record<string, unknown>): Record<string, unknown> {
   const out = { ...prefs }

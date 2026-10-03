@@ -1,7 +1,9 @@
 import { z } from 'zod'
 import type { ThinkingJobSpec } from '@/lib/kairos/engine/types'
-import { IDEA_JUDGE_KIND } from './types'
-import { IDEA_JUDGE_MAX_OUTPUT_TOKENS, IDEA_JUDGE_SYSTEM_PROMPT, buildIdeaJudgePrompt, type JudgeCandidate } from './judge-prompt'
+import { IDEA_JUDGE_KIND, IDEA_KINDS, IDEA_LEAPS, IDEA_MOVES, type IdeaBridgeMeta } from './types'
+import { IDEA_JUDGE_COLLISION_RULE, IDEA_JUDGE_MAX_OUTPUT_TOKENS, IDEA_JUDGE_SYSTEM_PROMPT, buildIdeaJudgePrompt, type JudgeCandidate } from './judge-prompt'
+import { ATLAS_JUDGE_SYSTEM_LINE } from './atlas/prompt'
+import { readAtlasJudge } from './atlas/judge'
 
 // The idea_judge job's context (docs/kairos/35): everything the judge needs,
 // computed by the idea_generate apply — candidates with novelty, packed
@@ -12,6 +14,8 @@ import { IDEA_JUDGE_MAX_OUTPUT_TOKENS, IDEA_JUDGE_SYSTEM_PROMPT, buildIdeaJudgeP
 export const IDEA_JUDGE_DEADLINE_MINUTES = 45
 
 export const ideaJudgeJobKey = (day: string) => `${IDEA_JUDGE_KIND}:${day}`
+// Swiss rounds ≥ 2 (lane A): follow-on idea_judge jobs of the same night.
+export const ideaJudgeRoundJobKey = (day: string, round: number) => `${ideaJudgeJobKey(day)}:r${round}`
 
 const noveltySchema = z.object({
   class: z.enum(['novel', 'borderline', 'repeat']),
@@ -33,6 +37,15 @@ export const judgeCandidateSchema = z.object({
   novelty: noveltySchema,
   evidenceIds: z.array(z.string()),
   vector: packedSchema.nullable(),
+  // Wave 3 lane fields: absent unless a lane flag set them (owners validate).
+  kind: z.enum(IDEA_KINDS).optional(),
+  leap: z.enum(IDEA_LEAPS).optional(),
+  blend: z.string().optional(),
+  bridge: z.custom<IdeaBridgeMeta>((v) => typeof v === 'object' && v !== null).optional(),
+  move: z.enum(IDEA_MOVES).optional(),
+  likelihood: z.number().optional(),
+  lens: z.string().nullable().optional(),
+  atlas: z.record(z.string(), z.unknown()).optional(),
 })
 
 export const judgeContextSchema = z.object({
@@ -54,6 +67,10 @@ export const judgeContextSchema = z.object({
   })),
   pairs: z.array(z.object({ id: z.string(), a: z.string(), b: z.string(), forward: z.string(), swapped: z.string() })),
   matches: z.array(z.object({ id: z.string(), pairId: z.string(), first: z.string(), second: z.string() })),
+  // Wave 3 lane state carried to the judge (lane A atlas/Swiss; ext = any lane).
+  atlas: z.unknown().optional(),
+  swiss: z.unknown().optional(),
+  ext: z.unknown().optional(),
 })
 
 export type IdeaJudgeContext = z.infer<typeof judgeContextSchema>
@@ -74,19 +91,27 @@ export function judgeValidIds(ctx: IdeaJudgeContext): string[] {
 }
 
 export function buildJudgeSpec(ctx: IdeaJudgeContext): ThinkingJobSpec {
+  const holders = readAtlasJudge(ctx.atlas)?.holders ?? []
+  const live = contenders(ctx)
+  const system = [
+    IDEA_JUDGE_SYSTEM_PROMPT,
+    ...(live.some((c) => c.bridge) ? [IDEA_JUDGE_COLLISION_RULE] : []),
+    ...(holders.length ? [ATLAS_JUDGE_SYSTEM_LINE] : []),
+  ].join('\n')
   return {
     kind: IDEA_JUDGE_KIND,
     dominionId: null,
     externalKey: ideaJudgeJobKey(ctx.date),
     deadlineMinutes: IDEA_JUDGE_DEADLINE_MINUTES,
     input: {
-      system: IDEA_JUDGE_SYSTEM_PROMPT,
+      system,
       prompt: buildIdeaJudgePrompt({
         date: ctx.date,
-        candidates: contenders(ctx),
+        candidates: live,
         evidence: ctx.evidence,
         nearest: ctx.nearest,
         matches: ctx.matches,
+        ...(holders.length ? { holders: holders.map((h) => ({ id: h.id, title: h.title, claim: h.claim })) } : {}),
       }),
       validMemoryIds: judgeValidIds(ctx),
       context: ctx,
