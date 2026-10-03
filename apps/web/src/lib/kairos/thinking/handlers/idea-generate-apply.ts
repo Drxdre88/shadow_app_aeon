@@ -170,7 +170,7 @@ export function repeatMeta(c: StoredCandidate, tournamentDate: string, generateJ
   }
 }
 
-async function endNightEarly(job: ThinkingJobRow, judge: IdeaJudgeContext, reason: string): Promise<string[]> {
+export async function endNightEarly(job: ThinkingJobRow, judge: IdeaJudgeContext, reason: string): Promise<string[]> {
   const evidence = new Map(Object.values(judge.evidence).map((e) => [e.id, e]))
   const res = await writeTournament(job.userId, {
     tournamentDate: judge.date,
