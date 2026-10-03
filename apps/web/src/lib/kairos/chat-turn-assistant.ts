@@ -30,6 +30,7 @@ import { buildChatTools, runChatToolLoop } from '@/lib/kairos/chat-tools'
 import { loadConscienceBlock } from '@/lib/kairos/conscience-context'
 import { coldReadEnabled } from '@/lib/kairos/cold-read/flag'
 import { extractStance } from '@/lib/kairos/cold-read/stance'
+import { loadStageBlock } from '@/lib/kairos/stage'
 import { chatTodayChannel, loadChatTodaySection, recordChatReply, type ChatTodayChannel } from '@/lib/kairos/chat-today'
 import type { CitationRetrievalShape } from '@/lib/kairos/chat-retrieval-citations'
 import { getProviderForTask } from '@/lib/ai/route-task'
@@ -253,13 +254,15 @@ export async function buildAssistantTurn(
   }
 
   const promptRetrieval = retrieval ? toPromptRetrieval(retrieval) : undefined
-  const [boardSection, recencySection, conscienceSection, todaySection] = await Promise.all([
+  const [boardSection, recencySection, conscienceSection, todaySection, stage] = await Promise.all([
     loadBoardSection(userId, threadId, userBody),
     loadRecencySection(userId),
     // Constitution + held beliefs (P2.5 G4). Never throws — '' on failure.
     loadConscienceBlock(userId, { dominionId }),
     // Today across channels, minus this thread (one mind). '' on failure.
     loadChatTodaySection(userId, threadId),
+    // The stage (KAIROS_STAGE=1). Never throws — '' when off or empty.
+    loadStageBlock(userId),
   ])
 
   const messages = buildChatMessages({
@@ -273,6 +276,7 @@ export async function buildAssistantTurn(
     recencySection,
     todaySection: todaySection || undefined,
     conscienceSection: conscienceSection || undefined,
+    ...(stage.block ? { stageSection: stage.block } : {}),
     ...(coldReadEnabled() ? { coldRead: true } : {}),
   })
 

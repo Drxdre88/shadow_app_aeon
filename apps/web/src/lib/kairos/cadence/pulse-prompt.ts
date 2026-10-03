@@ -1,5 +1,7 @@
 import { z } from 'zod'
 import { extractJsonBlock, neutraliseFences } from '@/lib/kairos/_prompt-utils'
+import { parseStageItems, type StageCandidateInput } from '@/lib/kairos/stage'
+import { withStageField } from './stage-field'
 
 // Pulse (light, hourly, daytime): a quick glance at what changed since the
 // last look. Its only effect is a few short notes in Kairos's "today" memory —
@@ -25,6 +27,10 @@ export const PULSE_SYSTEM_PROMPT = [
   'Answer with exactly one JSON object and nothing else:',
   '{"notes": ["..."], "attention": [{"memoryId": "...", "why": "..."}]}',
 ].join('\n')
+
+// With the stage on (KAIROS_STAGE observe or 1) the pulse may also offer ≤2
+// noticed changes; off → exactly PULSE_SYSTEM_PROMPT.
+export const pulseSystemPrompt = (stageOn: boolean): string => withStageField(PULSE_SYSTEM_PROMPT, stageOn)
 
 export interface PulseInboxItem {
   id: string
@@ -56,6 +62,7 @@ const text = (max: number) => z.string().transform((s) => s.trim().replace(/\s+/
 const pulseOutputSchema = z.object({
   notes: z.array(z.unknown()).default([]),
   attention: z.array(z.unknown()).default([]),
+  stage: z.unknown().optional(),
 })
 const noteSchema = text(PULSE_NOTE_MAX_CHARS)
 const attentionSchema = z.object({ memoryId: z.string().min(1), why: text(PULSE_WHY_MAX_CHARS) })
@@ -65,6 +72,8 @@ export interface PulseOutput {
   attention: Array<{ memoryId: string; why: string }>
   // Items dropped for a bad shape or an id outside the inbox list.
   dropped: number
+  // Optional stage thoughts (≤2); malformed ones are dropped silently.
+  stage: StageCandidateInput[]
 }
 
 // Strict on the envelope (JSON object), lenient per item: a bad note or an
@@ -86,7 +95,7 @@ export function parsePulseText(raw: string, validIds: ReadonlySet<string>): Puls
     if (ok) attention.push({ memoryId: p.data.memoryId, why: p.data.why })
     else dropped++
   }
-  return { notes, attention, dropped }
+  return { notes, attention, dropped, stage: parseStageItems(env.stage).items }
 }
 
 // The lines appended to "today": the notes, then one line per inbox item.

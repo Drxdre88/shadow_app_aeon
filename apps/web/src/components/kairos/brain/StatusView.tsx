@@ -5,6 +5,7 @@ import { RefreshCw, TriangleAlert, CircleCheck, BrainCircuit, MessageCircle, Arr
 import { BRAIN_JOBS, ROUTINES } from '@/lib/kairos/routines/catalog'
 import type { AnsweredBy, KairosBrainStatus, KairosCharacterStatus, KairosChatLatency, KairosPaidBackupStatus } from '@/lib/kairos/routines/status-types'
 import { setPaidBackup } from '@/lib/actions/kairos-brain'
+import { renderColdReadsLine } from '@/lib/kairos/cold-read/compare'
 import { cn } from '@/lib/utils/cn'
 import { ANSWER_TONE, ANSWER_WORD, ROUTINE_STATE, Dot, Panel, Eyebrow, tint } from './brainUi'
 import { localDateTime, relativeTo, localClock } from './brainTime'
@@ -159,6 +160,13 @@ export function StatusView({ status, refreshing, onRefresh, onNavigate }: Props)
       )}
 
       {status.character && <CharacterRow character={status.character} />}
+
+      {status.coldReads && (
+        <div className="text-[11.5px] text-white/55 px-1">
+          {renderColdReadsLine(status.coldReads)}
+          {status.coldReads.insufficient > 0 ? ` ${status.coldReads.insufficient} too thin to judge.` : ''}
+        </div>
+      )}
 
       {status.paidBackup && <PaidBackupRow paidBackup={status.paidBackup} />}
     </div>

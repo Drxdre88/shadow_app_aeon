@@ -34,6 +34,7 @@ import type {
   ThinkingJobSpec,
 } from '@/lib/kairos/engine/types'
 import { errorReason } from './_errors'
+import { agendaDueThoughts, withThoughts } from '../stage-thoughts'
 
 // Horae on the thinking queue (deep tier): one job per due agenda item, key
 // agenda_due:<itemId>, so an item fires exactly once (the item is marked
@@ -220,11 +221,11 @@ export async function applyAgendaDue(job: ThinkingJobRow, text: string, answered
   const result = await writeResult(job, c, out, answeredBy, now)
   await settleAgendaItem(job.userId, c.itemId, job.id, result, now)
   const rebooked = await rebook(job, item, out, now)
-  return {
+  return withThoughts({
     ok: true,
     memoryIds: result.memoryId ? [result.memoryId] : [],
     output: { itemId: c.itemId, result, ...(rebooked ? { rebooked } : {}), answeredBy },
-  }
+  }, agendaDueThoughts(out, c.goalId))
 }
 
 export const agendaDueHandler: ThinkingJobHandler = {

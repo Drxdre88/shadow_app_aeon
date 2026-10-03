@@ -1,5 +1,6 @@
 import { listOpenKairosAsks } from '@/lib/data/ask'
 import { listMemories } from '@/lib/data/memories'
+import { listPendingVoiceSamples } from '@/lib/data/voice-samples'
 import { GOAL_PROPOSAL_KIND, readGoalMeta } from '@/lib/kairos/goals/parse'
 import { groupVoiceNoteProposals, readVoiceNote, type VoiceNoteGroup, type VoiceNoteRef } from '@/lib/kairos/voice-note'
 
@@ -66,9 +67,12 @@ function readGoal(metadata: Record<string, unknown>, now: Date): KairosInboxGoal
 }
 
 export async function getKairosInbox(userId: string, now: Date = new Date()): Promise<{ items: KairosInboxItem[] }> {
-  const [asks, inbound] = await Promise.all([
+  const [asks, inbound, voiceSamples] = await Promise.all([
     listOpenKairosAsks(userId),
     listMemories(userId, { type: 'inbound', limit: INBOUND_LIMIT }),
+    // Voice samples are filed as 'trace' (out of retrieval), which
+    // listMemories hides, so they are read separately.
+    listPendingVoiceSamples(userId, now).catch(() => []),
   ])
 
   // Open questions first (oldest first, by Q number), then Kairos's messages
@@ -85,7 +89,7 @@ export async function getKairosInbox(userId: string, now: Date = new Date()): Pr
   let latestDaily: KairosInboxEntry | null = null
   const goals: KairosInboxEntry[] = []
   const ideas: KairosInboxEntry[] = []
-  for (const memory of inbound) {
+  for (const memory of [...inbound, ...voiceSamples]) {
     const metadata = (memory.sourceMetadata ?? {}) as Record<string, unknown>
     if (metadata.status !== 'pending') continue
     // Contradiction notices are retired (Kairos 0.17); old pending rows stay

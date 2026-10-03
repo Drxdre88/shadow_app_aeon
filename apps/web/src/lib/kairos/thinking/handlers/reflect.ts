@@ -12,9 +12,9 @@ import { agendaEnabled } from '@/lib/kairos/agenda/flag'
 import { AGENDA_MAX_LEAD_DAYS, formatAgendaWhen } from '@/lib/kairos/agenda/rules'
 import {
   REFLECT_MAX_OUTPUT_TOKENS,
-  REFLECT_SYSTEM_PROMPT,
   buildReflectPrompt,
   parseReflectText,
+  reflectSystemPrompt,
   renderReflectBody,
   type ReflectAgendaPrompt,
   type ReflectOutput,
@@ -38,6 +38,7 @@ import {
 } from '@/lib/kairos/cadence/signal'
 import { loadTodayDigest } from '@/lib/kairos/today'
 import { renderTodaySection } from '@/lib/kairos/today-render'
+import { stageMode, stageSurpriseDue } from '@/lib/kairos/stage'
 import type {
   ApplyOutcome,
   ThinkingAnsweredBy,
@@ -48,6 +49,7 @@ import type {
 } from '@/lib/kairos/engine/types'
 import { REFLECT_DEADLINE_MINUTES, REFLECT_WINDOW_LONDON, daytimeSlotKey, inLondonHours, londonClockLabel } from '../deadlines'
 import { errorReason } from './_errors'
+import { reflectThoughts, withThoughts } from '../stage-thoughts'
 
 // Reflect (spec A, deep tier, brain routine). plan: nothing unless
 // KAIROS_DAYTIME_THINKING=1, inside 08–21 London, one job per London hour,
@@ -73,6 +75,9 @@ const contextSchema = z.object({
   slot: z.string().min(1),
   goals: z.array(z.object({ id: z.string().min(1), title: z.string() })),
   eventIds: z.array(z.string()),
+  // Why this hour reflects: an unreflected goal, new owner activity, or
+  // (KAIROS_STAGE=1) enough surprise posted to the stage since the last look.
+  trigger: z.enum(['activity', 'goal', 'surprise']).optional(),
 })
 type ReflectContext = z.infer<typeof contextSchema>
 
@@ -148,7 +153,11 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
   const goals = (await listOpenGoals(userId, now)).filter((g) => g.meta.state === 'active')
   const reflected = goalsReflectedOn(done)
   const goalPending = goals.some((g) => !reflected.has(g.id))
-  if (!goalPending && !(await hasOwnerActivitySince(userId, since, now))) return []
+  let trigger: ReflectContext['trigger'] = goalPending ? 'goal' : undefined
+  if (!trigger && (await hasOwnerActivitySince(userId, since, now))) trigger = 'activity'
+  // Early reflect: the stage has seen enough surprise since the last look.
+  if (!trigger && (await stageSurpriseDue(userId, since, now))) trigger = 'surprise'
+  if (!trigger) return []
 
   const [digest, events, promises, predictions, agenda] = await Promise.all([
     loadTodayDigest(userId, { hours: 16, limit: 120 }),
@@ -166,7 +175,7 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
     externalKey,
     deadlineMinutes: REFLECT_DEADLINE_MINUTES,
     input: {
-      system: REFLECT_SYSTEM_PROMPT,
+      system: reflectSystemPrompt(stageMode() !== 'off'),
       prompt: buildReflectPrompt({
         londonTime: londonClockLabel(now),
         since: `${londonClockLabel(since)} London`,
@@ -184,6 +193,7 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
         slot: externalKey,
         goals: goals.map((g) => ({ id: g.id, title: g.title })),
         eventIds: events.map((e) => e.id),
+        trigger,
       } satisfies ReflectContext,
     },
   }]
@@ -284,7 +294,7 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
 
   const predicted = await persistReflectPredictions(job, out)
   const booked = await persistReflectFollowUps(job, out, goalIds)
-  return {
+  return withThoughts({
     ok: true,
     memoryIds: [memory.id],
     output: {
@@ -295,7 +305,7 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
       ...(booked ? { followUps: { created: createdSeqs('A', booked.created), rejected: rejectReasons(booked.rejected) } } : {}),
       answeredBy,
     },
-  }
+  }, quarantined ? [] : reflectThoughts(out))
 }
 
 export const reflectHandler: ThinkingJobHandler = {

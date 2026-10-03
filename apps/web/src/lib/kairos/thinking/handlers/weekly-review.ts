@@ -44,6 +44,7 @@ import type {
 } from '@/lib/kairos/engine/types'
 import { askPaidAndParse } from '../paid-fallback'
 import { errorReason } from './_errors'
+import { weeklyReviewThoughts, withThoughts } from '../stage-thoughts'
 
 // Weekly review on the thinking queue (docs/kairos/34 §4). plan: Mondays
 // (UTC) from 05:00Z, one user-wide job per ISO week, over a fixed set of
@@ -313,7 +314,7 @@ async function persistWeeklyReview(
 
   const delivery = await deliverSummary(job.userId, isoWeek, renderWeeklyReviewMessage(review, proposalIds.length, trackRecordLine, extraLines))
   if (delivery === 'blocked') console.warn('[kairos:weekly-review] summary not delivered', { isoWeek, jobId: job.id })
-  return { ok: true, memoryIds: [observation.id, ...proposalIds] }
+  return withThoughts({ ok: true, memoryIds: [observation.id, ...proposalIds] }, weeklyReviewThoughts(review.summary))
 }
 
 function parseFor(ctx: WeeklyReviewJobContext, job: ThinkingJobRow) {

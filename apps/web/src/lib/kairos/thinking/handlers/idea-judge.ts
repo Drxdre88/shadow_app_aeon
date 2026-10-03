@@ -30,6 +30,7 @@ import type {
 import { utcDay } from '../deadlines'
 import { askPaidAndParse } from '../paid-fallback'
 import { errorReason } from './_errors'
+import { ideaJudgeThoughts, withThoughts } from '../stage-thoughts'
 import { BENIGN_DECLINES, IDEA_TOURNAMENT_CRON, candidateText, ideaGenerateJobKey, repeatMeta } from './idea-generate'
 import { PAID_BACKUP_OFF_NOTE } from '@/lib/ai/paid-backup-off'
 
@@ -197,7 +198,10 @@ export async function persistJudge(
     ...(rows.survivors.length > 0 ? {} : { skipReason: 'no_survivors' }),
     details: { candidates: summary.candidates, contenders: summary.contenders, survivors: rows.survivors.length, eliminated },
   })
-  return { ok: true, memoryIds: [...res.survivorIds, ...res.archivedIds], output: { tournament: summary } }
+  return withThoughts(
+    { ok: true, memoryIds: [...res.survivorIds, ...res.archivedIds], output: { tournament: summary } },
+    ideaJudgeThoughts(summary.survivors, [...elo.values()].map((r) => r.elo)),
+  )
 }
 
 export async function applyIdeaJudge(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsweredBy): Promise<ApplyOutcome> {

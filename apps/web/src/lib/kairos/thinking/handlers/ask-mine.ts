@@ -14,6 +14,7 @@ import type {
 } from '@/lib/kairos/engine/types'
 import { ASK_MINE_WINDOW_UTC, deadlineOn, minutesLeftInWindow, utcDay } from '../deadlines'
 import { errorReason } from './_errors'
+import { askMineThoughts, withThoughts } from '../stage-thoughts'
 
 // Kairos's question to the operator on the thinking queue: one job per user
 // per UTC date, planned once tonight's Aether is settled, with exactly the
@@ -109,7 +110,10 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
     outcome: result.status === 'created' ? 'ok' : 'skipped',
     ...(result.status === 'skipped' ? { skipReason: result.reason } : {}),
   })
-  if (result.status === 'created') return { ok: true, memoryIds: [result.askId], output: { answeredBy } }
+  if (result.status === 'created') {
+    const question = 'candidate' in result ? result.candidate.question : null
+    return withThoughts({ ok: true, memoryIds: [result.askId], output: { answeredBy } }, askMineThoughts(question))
+  }
   return { ok: true, memoryIds: [], output: { skipped: result.reason, answeredBy } }
 }
 

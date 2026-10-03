@@ -26,6 +26,7 @@ import {
   utcDayStart,
 } from '../deadlines'
 import { errorReason } from './_errors'
+import { aetherThoughts, withThoughts } from '../stage-thoughts'
 
 // Aether on the thinking queue: one job per user per UTC day, with exactly
 // the system/user prompt the 03:15 aether-regen cron would send. Planned
@@ -104,7 +105,7 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
     answeredBy,
   })
   if (!aetherMemoryId) return { ok: false, reason: 'persist_failed: insert returned no id' }
-  return { ok: true, memoryIds: [aetherMemoryId] }
+  return withThoughts({ ok: true, memoryIds: [aetherMemoryId] }, aetherThoughts(payload))
 }
 
 export const aetherHandler: ThinkingJobHandler = {

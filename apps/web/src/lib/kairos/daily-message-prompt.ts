@@ -277,6 +277,7 @@ export function buildDailyMessageUserPrompt(inputs: DailyMessageInputs, conscien
     ]))
   }
   out.push(...section(TODAY_DAILY_SECTION_TITLE, todayPromptLines(inputs.today)))
+  if (inputs.stage?.trim()) out.push('', inputs.stage.trim())
   // Norms read at answer time (P2.5 G4) — delimited reference data, last, so
   // the facts above and the system prompt's output contract stay primary.
   if (conscience?.trim()) out.push('', conscience.trim())

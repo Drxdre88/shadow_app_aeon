@@ -36,6 +36,7 @@ import type {
 } from '@/lib/kairos/engine/types'
 import { deadlineOn, utcDay } from '../deadlines'
 import { errorReason } from './_errors'
+import { beliefExtractThoughts, withThoughts } from '../stage-thoughts'
 
 // Aligned-mind extraction (docs/kairos/34 §1). Nightly, after the 02:30 UTC
 // archetype run: one job per user when something new was said since the last
@@ -230,7 +231,7 @@ async function persist(job: ThinkingJobRow, answer: GroundedExtraction, answered
   if (res.refusedReplaces.length) {
     console.info(`[belief_extract] ${job.id}: inference-only replace refused for ${res.refusedReplaces.join(', ')}; held as new beliefs`)
   }
-  return { ok: true, memoryIds: [...res.created, ...res.reinforced, ...res.retired] }
+  return withThoughts({ ok: true, memoryIds: [...res.created, ...res.reinforced, ...res.retired] }, beliefExtractThoughts(answer))
 }
 
 export async function applyBeliefExtract(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsweredBy): Promise<ApplyOutcome> {

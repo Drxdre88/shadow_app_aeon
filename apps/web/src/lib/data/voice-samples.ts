@@ -79,6 +79,22 @@ export async function insertVoiceSampleProposal(
   })
 }
 
+// Pending, unexpired voice samples, for the inbox (listMemories hides 'trace').
+export async function listPendingVoiceSamples(userId: string, now: Date, limit = 5) {
+  return db
+    .select({
+      id: memories.id,
+      title: memories.title,
+      summary: memories.summary,
+      createdAt: memories.createdAt,
+      sourceMetadata: memories.sourceMetadata,
+    })
+    .from(memories)
+    .where(and(scope(userId), statusIs('pending'), sql`${memories.archivedAt} IS NULL`, sql`${expiresAt} > ${ts(now)}`))
+    .orderBy(desc(memories.createdAt))
+    .limit(limit)
+}
+
 // Pending and not yet past expiry.
 export async function countPendingVoiceSamples(userId: string, now: Date): Promise<number> {
   const [row] = await db

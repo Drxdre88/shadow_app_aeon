@@ -16,6 +16,7 @@ import { weeklyIdeaDiversity } from './ideas/diversity'
 import { predictionsEnabled } from './predictions/flag'
 import { agendaEnabled } from './agenda/flag'
 import { loadTodayDigest } from './today'
+import { loadStageBlock } from './stage'
 import { summariseTodayForDaily, type AgendaDigest, type TodayDailyDigest, type VerdictDigest } from './daily-message-today'
 import { pickAgenda, pickVerdicts } from './daily-message-tail'
 import { getLatestDriftStatus } from './constitution/amendment'
@@ -332,6 +333,8 @@ export async function gatherDailyMessageInputs(userId: string, now: Date): Promi
     safe('verdicts', failed, () => readVerdicts(userId, now)),
     safe('agenda', failed, () => readAgenda(userId)),
   ])
+  // The stage block (KAIROS_STAGE=1). Never throws — '' when off or empty.
+  const stage = (await loadStageBlock(userId, { now })).block
   failed.sort()
   return {
     date, isMonday, areas, aether, boardDay, promotions, newBeliefs, drift, openAsks, synthesis, mindCompare, idea, ideaDiversityAlarm,
@@ -340,6 +343,7 @@ export async function gatherDailyMessageInputs(userId: string, now: Date): Promi
     ...(today ? { today } : {}),
     ...(verdicts ? { verdicts } : {}),
     ...(agenda ? { agenda } : {}),
+    ...(stage ? { stage } : {}),
     failed,
   }
 }
