@@ -13,8 +13,13 @@ routine in the catalog, then re-paste it — never edit a prompt only on claude.
 
 | Routine | Trigger | Claims | Replaces |
 |---|---|---|---|
-| **Kairos brain** | cron `40 1-6 * * *` (UTC) — or the web form's *Hourly* preset | everything due except chat (claims with `{"routine":"brain"}`) | thinking, ideas, morning, dusk, dawn, tidy |
+| **Kairos brain** | cron `40 * * * *` (UTC; was `40 1-6 * * *` before 0.21) — the night's work runs 01:40–06:40, daytime runs usually find nothing unless daytime thinking or Horae is on | every deep job (claims with `{"routine":"brain"}`) | thinking, ideas, morning, dusk, dawn, tidy |
+| **Kairos pulse** (0.21, optional) | cron `10 6-21 * * *` (UTC), model Sonnet 5.5 — only when `KAIROS_DAYTIME_THINKING=1` | `{"routine":"pulse"}` — only `pulse` jobs, which write short notes into the today log | — |
 | **Kairos chat** | API trigger, fired once per chat message — web (`/kairos`) or Telegram (since 0.19) | `{"kinds":["chat"],"routine":"chat"}` | — |
+
+claude.ai routines can fire at most once an hour, so the brain (:40) and the pulse (:10) together
+give a thought every half hour. Neither the daytime `reflect` job nor `pulse` has a paid fallback:
+a missed hour is simply skipped.
 
 Since 0.20 each routine names itself on claim and submit, and the server keeps it to its own jobs
 (a wrong one gets `scope_denied` and the job stays open). Routines pasted before 0.20 still work

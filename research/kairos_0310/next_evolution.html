@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en" data-theme="stone">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kairos — the next evolution</title>
+<script>(function () {
+  var KEY = "srl-theme";
+  var THEMES = ["stone", "wood", "neon", "papyrus"];
+  var root = document.documentElement;
+
+  function read() {
+    try { return localStorage.getItem(KEY); } catch (e) { return null; }
+  }
+  function write(v) {
+    try { localStorage.setItem(KEY, v); } catch (e) { }
+  }
+  function apply(v) {
+    if (THEMES.indexOf(v) < 0) v = root.getAttribute("data-theme") || "stone";
+    root.setAttribute("data-theme", v);
+    var buttons = document.querySelectorAll(".srl-theme-select button[data-theme-choice]");
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].setAttribute("aria-pressed", String(buttons[i].getAttribute("data-theme-choice") === v));
+    }
+    document.dispatchEvent(new CustomEvent("srl-theme", { detail: v }));
+  }
+
+  apply(read());
+  document.addEventListener("DOMContentLoaded", function () {
+    apply(root.getAttribute("data-theme"));
+    document.addEventListener("click", function (ev) {
+      var b = ev.target.closest && ev.target.closest("[data-theme-choice]");
+      if (!b) return;
+      var v = b.getAttribute("data-theme-choice");
+      write(v);
+      apply(v);
+    });
+  });
+})();
+</script>
+<style>/* Shadow Research Lab theme: stone (dark), wood (dark), neon (dark, high contrast), papyrus (light).
+   Set on <html data-theme="stone|wood|neon|papyrus">; theme.js persists the choice as localStorage "srl-theme".
+   Tokens are the only contract: --bg --surface --surface-raised --ink --muted --rule --accent --bull --bear
+   --topbar --on-sign. Tables and figures stay flat; texture lives on the top bar only. Fully offline. */
+
+:root,
+:root[data-theme="stone"] {
+  color-scheme: dark;
+  --bg: #151619;
+  --surface: #222326;
+  --surface-raised: #2d2f32;
+  --ink: #eee7d8;
+  --muted: #b7ab96;
+  --rule: #54514d;
+  --accent: #ddbb75;
+  --bull: #80d1a6;
+  --bear: #f29191;
+  --topbar: #292b2c;
+  --on-sign: #151619;
+  --topbar-texture:
+    radial-gradient(120% 140% at 12% -20%, rgba(200, 210, 220, .10), transparent 55%),
+    radial-gradient(90% 120% at 88% 120%, rgba(160, 170, 180, .07), transparent 60%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, .025) 0 1px, transparent 1px 7px),
+    linear-gradient(180deg, #303235, #242628);
+  --topbar-edge: inset 0 1px 0 rgba(255, 255, 255, .06), inset 0 -2px 0 rgba(0, 0, 0, .45);
+}
+
+:root[data-theme="wood"] {
+  color-scheme: dark;
+  --bg: #16110e;
+  --surface: #261b15;
+  --surface-raised: #33251c;
+  --ink: #f1e6d6;
+  --muted: #bea994;
+  --rule: #624835;
+  --accent: #e4b978;
+  --bull: #83d6ad;
+  --bear: #f59391;
+  --topbar: #332419;
+  --on-sign: #16110e;
+  --topbar-texture:
+    repeating-linear-gradient(92deg, rgba(0, 0, 0, .16) 0 1px, transparent 1px 13px, rgba(255, 220, 170, .035) 13px 14px, transparent 14px 29px),
+    repeating-linear-gradient(88deg, rgba(0, 0, 0, .10) 0 2px, transparent 2px 47px),
+    linear-gradient(180deg, #3d2b1e, #2a1d14);
+  --topbar-edge: inset 0 1px 0 rgba(255, 210, 150, .10), inset 0 -2px 0 rgba(0, 0, 0, .5);
+}
+
+:root[data-theme="neon"] {
+  color-scheme: dark;
+  --bg: #07060d;
+  --surface: #110f1f;
+  --surface-raised: #1a1730;
+  --ink: #e9f7ff;
+  --muted: #9aa6d8;
+  --rule: #3b2f6b;
+  --accent: #34f0ff;
+  --bull: #5cff9d;
+  --bear: #ff4fa3;
+  --topbar: #0d0b1a;
+  --on-sign: #07060d;
+  --topbar-texture:
+    linear-gradient(90deg, rgba(52, 240, 255, .10) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(0deg, rgba(255, 79, 163, .08) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(180deg, #16112b, #0b0916);
+  --topbar-edge: inset 0 -1px 0 rgba(52, 240, 255, .55), 0 0 18px rgba(52, 240, 255, .18);
+}
+:root[data-theme="neon"] .srl-page h1,
+:root[data-theme="neon"] .srl-page h2 { text-shadow: 0 0 6px rgba(52, 240, 255, .55), 0 0 18px rgba(255, 79, 163, .25); }
+:root[data-theme="neon"] .srl-page a,
+:root[data-theme="neon"] .srl-wordmark { text-shadow: 0 0 8px rgba(52, 240, 255, .45); }
+
+:root[data-theme="papyrus"] {
+  color-scheme: light;
+  --bg: #f4ecd8;
+  --surface: #eee3ca;
+  --surface-raised: #e5d3af;
+  --ink: #302517;
+  --muted: #67533b;
+  --rule: #ac9471;
+  --accent: #715121;
+  --bull: #226345;
+  --bear: #a13739;
+  --topbar: #e5d3af;
+  --on-sign: #fbf6ea;
+  --topbar-texture:
+    radial-gradient(140% 160% at 20% -30%, rgba(255, 250, 235, .55), transparent 60%),
+    radial-gradient(100% 120% at 90% 130%, rgba(140, 105, 55, .12), transparent 60%),
+    linear-gradient(180deg, #eadbbc, #e0cda6);
+  --topbar-edge: inset 0 -1px 0 rgba(113, 81, 33, .35);
+}
+
+:root {
+  --font-display: "Old English Text MT", "UnifrakturCook", "UnifrakturMaguntia", "Palatino Linotype", Palatino, serif;
+  --font-heading: "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font-body: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-num: Consolas, "Cascadia Mono", "Courier New", monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 var(--font-body);
+}
+
+.srl-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  background: var(--topbar-texture), var(--topbar);
+  box-shadow: var(--topbar-edge);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-ui);
+}
+.srl-wordmark {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  line-height: 1;
+  color: var(--accent);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .35);
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+.srl-crumb { color: var(--muted); font-size: .85rem; letter-spacing: .06em; text-transform: uppercase; }
+.srl-spacer { flex: 1; }
+.srl-theme-select { display: inline-flex; gap: 4px; }
+.srl-theme-select button {
+  font: 500 .8rem var(--font-ui);
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.srl-theme-select button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+.srl-page { max-width: 880px; margin: 0 auto; padding: 28px 20px 56px; }
+.srl-page h1, .srl-page h2, .srl-page h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.2; }
+.srl-page h1 { font-size: 2.1rem; margin: 0 0 6px; }
+.srl-page h2 { font-size: 1.35rem; margin: 30px 0 8px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.srl-page h3 { font-size: 1.1rem; margin: 20px 0 6px; }
+.srl-page a { color: var(--accent); }
+.srl-page code { font-family: var(--font-num); font-size: .9em; background: var(--surface); padding: 1px 4px; border-radius: 3px; }
+.srl-page pre { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; overflow-x: auto; }
+.srl-page pre code { background: none; padding: 0; }
+.srl-page blockquote { margin: 12px 0; padding: 4px 14px; border-left: 3px solid var(--accent); color: var(--muted); }
+.srl-lede { color: var(--muted); font-size: 1.05rem; }
+.srl-eyebrow { font: 600 .78rem var(--font-ui); color: var(--muted); letter-spacing: .12em; text-transform: uppercase; }
+
+.srl-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 18px 0; }
+.srl-tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; }
+.srl-tile .v { font: 600 1.5rem var(--font-num); }
+.srl-tile .l { color: var(--muted); font-size: .85rem; }
+
+.srl-table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; margin: 12px 0; }
+.srl-page table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.srl-page th, .srl-page td { padding: 7px 10px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+.srl-page th { font: 600 .8rem var(--font-ui); color: var(--muted); letter-spacing: .03em; }
+.srl-page tr:last-child td { border-bottom: 0; }
+
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.bull, .pos { color: var(--bull); }
+.bear, .neg { color: var(--bear); }
+.warn { color: var(--accent); }
+.muted { color: var(--muted); }
+
+.srl-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 18px 0 0; border-bottom: 1px solid var(--rule); }
+.srl-tabs button {
+  font: 500 .88rem var(--font-ui);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.srl-tabs button[aria-selected="true"] { color: var(--ink); background: var(--surface); border-color: var(--rule); }
+.srl-tabpanel[hidden] { display: none; }
+
+.srl-footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid var(--rule); color: var(--muted); font-size: .85rem; }
+
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .srl-theme-select button, .srl-tabs button { transition: background .15s, color .15s; } }
+</style>
+</head>
+<body>
+<header class="srl-topbar"><span class="srl-wordmark">Shadow Research Lab</span><span class="srl-crumb">research / kairos_0310</span><span class="srl-spacer"></span><nav class="srl-theme-select" aria-label="Theme"><button type="button" data-theme-choice="stone" aria-pressed="false">Stone</button><button type="button" data-theme-choice="wood" aria-pressed="false">Wood</button><button type="button" data-theme-choice="neon" aria-pressed="false">Neon</button><button type="button" data-theme-choice="papyrus" aria-pressed="false">Papyrus</button></nav></header>
+<main class="srl-page">
+<p class="srl-eyebrow">Kairos · plan</p>
+<h1>Kairos — the next evolution</h1>
+<p class="srl-lede">A good memory with a nightly habit. Next: one mind everywhere, real senses, a track record and a leash, so he&#x27;s ready to direct the harness.</p>
+<div class="srl-tiles"><div class="srl-tile"><div class="v warn">4</div><div class="l">big gaps before the harness</div></div><div class="srl-tile"><div class="v pos">1 of 7</div><div class="l">clean nights so far</div></div><div class="srl-tile"><div class="v neg">0</div><div class="l">senses outside Aeon today</div></div></div>
+<article>
+<p>3 October 2026. Read only.</p>
+<h2>The short answer</h2>
+<p>Kairos today is a <strong>good memory with a nightly habit</strong>. He remembers, forms beliefs, has values, asks you questions and writes a morning message. But he only <strong>thinks once a night</strong>, he <strong>can&#x27;t look anything up</strong> while he thinks, he <strong>only sees Aeon</strong>, and he <strong>never finds out whether he was right</strong>.</p>
+<p>The harness will give him a way to <strong>do research</strong>. Before that, he needs four things that make research worth giving him:</p>
+<ol>
+<li><strong>One mind everywhere.</strong> The same Kairos, with the same day&#x27;s memory, whether you reach him on Telegram, in Claude or in Triad.</li>
+<li><strong>Senses.</strong> He sees what&#x27;s really happening: code, deployments, harness results, trading numbers. Not just board cards.</li>
+<li><strong>A track record.</strong> He writes down predictions, checks them later, and learns how often he&#x27;s right.</li>
+<li><strong>A leash he can&#x27;t slip.</strong> Clear rules on what he may do alone, what needs you, and what never. Plus an off switch and a log of everything he did.</li>
+</ol>
+<p>Do those four, and when the harness arrives he can be its <strong>head of research</strong>: choosing what to study, reading the results and learning from them. Without them he&#x27;d just be one more loop.</p>
+<h2>What he has vs what an independent AI mind needs</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>A mind that&#x27;s truly alive needs…</th><th>Kairos today</th><th>Gap</th></tr></thead><tbody><tr><td>To remember</td><td>✅ Memory, beliefs, self-model, values (constitution)</td><td>Small</td></tr><tr><td>To be the same &quot;him&quot; everywhere</td><td>🟡 Telegram, web, Claude and Triad are separate threads, joined only overnight</td><td><strong>Big</strong></td></tr><tr><td>To notice things as they happen</td><td>🔴 Thinks once a night, in a batch; between runs he&#x27;s asleep unless spoken to</td><td><strong>Big</strong></td></tr><tr><td>To see the world</td><td>🟡 Sees Aeon boards, chats, voice notes, coding sessions; blind to GitHub, CI, production, ClickHouse, the harness</td><td><strong>Big</strong></td></tr><tr><td>To check facts while thinking</td><td>🔴 Nightly jobs say &quot;use only what you&#x27;re given, don&#x27;t look anything up&quot;</td><td>Medium</td></tr><tr><td>To know when he&#x27;s right</td><td>🔴 No record of his predictions; nothing tells him how good his judgement is</td><td><strong>Big</strong></td></tr><tr><td>To get better at thinking</td><td>🟡 Values can change (with your OK), but nothing improves his <em>methods</em></td><td>Medium (the harness brings this)</td></tr><tr><td>To pursue a goal over days</td><td>🟡 Goals and promises are built but off; he can&#x27;t plan follow-ups for himself</td><td>Medium</td></tr><tr><td>To act</td><td>🔴 No hands yet</td><td>The harness, later</td></tr><tr><td>To be safe while doing all that</td><td>🟡 Only you can approve, and he can&#x27;t touch his own values; no single off switch, no full action log</td><td><strong>Must come before acting</strong></td></tr></tbody></table></div>
+<h2>The next phase, in order (no harness needed)</h2>
+<p><strong>0. Finish what&#x27;s started.</strong> Six more clean nights, then switch on goals and promises. That&#x27;s already built, and it&#x27;s his first step towards wanting things.</p>
+<p><strong>1. One mind everywhere (&quot;today&#x27;s memory&quot;).</strong></p>
+<ul>
+<li>A short &quot;what happened today&quot; note that every channel reads and writes in real time: Telegram, Claude via the connection, Triad, the web page.</li>
+<li>If you tell him something on Telegram at 10:00, he knows it in Claude at 10:05, not the next morning.</li>
+<li>When a Claude session uses his tools, he <em>remembers</em> being used.</li>
+<li>This is what makes him one being in the cloud instead of four chat windows.</li>
+</ul>
+<p><strong>2. Senses (read only).</strong> New feeds into his memory, the same way watched boards work today:</p>
+<div class="srl-table-wrap"><table><thead><tr><th>Sense</th><th>What he learns</th></tr></thead><tbody><tr><td>GitHub and the Azure repos: PRs, failed CI</td><td>What&#x27;s actually shipping or breaking</td></tr><tr><td>Production health (Wraith)</td><td>Whether the apps are up</td></tr><tr><td>Harness runs</td><td>What the research found, and what was killed</td></tr><tr><td>Trading results (ClickHouse, read only)</td><td>Whether Swarm is making money, in numbers rather than card text</td></tr></tbody></table></div>
+<p>Then his morning message is about <em>reality</em>, not about what people wrote on cards.</p>
+<p><strong>3. Thinking with a lookup.</strong> Let the nightly thinking use a few safe, read-only tools: search his memory, open a card, read a document, run a read-only query. The rule stays: look, never change.</p>
+<p><strong>4. A track record.</strong></p>
+<ul>
+<li>When he says &quot;this card will slip&quot; or &quot;this signal won&#x27;t survive&quot;, he writes it down as a prediction with a date.</li>
+<li>Later, his senses settle it automatically, never by his own say-so.</li>
+<li>He gets a running score of how well-calibrated he is, per topic. Beliefs that keep proving wrong lose weight.</li>
+<li>This is the same idea as the harness&#x27;s ledger of research claims, aimed at his own judgement. It&#x27;s the single biggest step from &quot;remembers&quot; to &quot;learns&quot;.</li>
+</ul>
+<p><strong>5. An agenda.</strong> He can book his own follow-ups (&quot;check Thursday whether the fill-rate fix held&quot;), capped at a few at a time and always visible to you.</p>
+<p><strong>6. The leash, written down.</strong> One page and one switch:</p>
+<ul>
+<li>Three lists: may do alone (look, remember, ask), may do with your OK (goals, investigations), never (his own values, budget, permissions, schedule, money-moving systems).</li>
+<li>A Kairos STOP switch, like the harness&#x27;s, that freezes everything.</li>
+<li>A log of every action he takes, which you can read.</li>
+</ul>
+<p>The &quot;Ultron&quot; lesson is simple: <strong>capability must never grow faster than the leash.</strong> So this lands before any hands.</p>
+<h2>When the harness arrives</h2>
+<p>He becomes the research <strong>director</strong>, not a worker inside the loop:</p>
+<ul>
+<li><strong>Proposes</strong> what to study (as goals you approve), and the harness runs it.</li>
+<li><strong>Reads</strong> every result and folds it into memory and beliefs.</li>
+<li><strong>Checks</strong> his own predictions about which ideas would work.</li>
+<li><strong>Suggests</strong> where the credits should go next week.</li>
+</ul>
+<p>The harness keeps its own integrity guards (sealed scoring, the sceptic, the claims ledger). Kairos never gets to mark his own research as a win.</p>
+<h2>Effort, roughly</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Step</th><th>Size</th></tr></thead><tbody><tr><td>1 One mind everywhere</td><td>Medium (about a week)</td></tr><tr><td>2 Senses</td><td>Small each (1–2 days per sense)</td></tr><tr><td>3 Thinking with a lookup</td><td>Small</td></tr><tr><td>4 Track record</td><td>Medium</td></tr><tr><td>5 Agenda</td><td>Small (builds on goals)</td></tr><tr><td>6 The leash</td><td>Small, but must be first among anything that acts</td></tr></tbody></table></div>
+<h2>Questions</h2>
+<ol>
+<li>Is the order right? My pick is <strong>1 (one mind everywhere)</strong> first, because it&#x27;s what makes him feel alive to you day to day.</li>
+<li>Which senses matter most to you? My guess: harness results, then Swarm&#x27;s trading numbers, then GitHub/CI.</li>
+</ol>
+</article>
+<footer class="srl-footer">Generated 2026-10-03 08:34 UTC · Markdown is the source of truth; regenerate, don't edit.</footer>
+</main>
+</body>
+</html>
