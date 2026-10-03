@@ -441,6 +441,12 @@ export async function submitThinkingJob(
 }
 
 export function toJobSummary(j: ThinkingJobRow) {
+  // Dream text lives only in job output and is fiction: the shared MCP/REST
+  // listing shows that a dream ran (and its title), never its contents.
+  const dreamTitle = j.output?.title
+  const output: Record<string, unknown> | null = j.kind === 'dream' || j.kind === 'dream_read'
+    ? { dreamt: true, redacted: true, title: typeof dreamTitle === 'string' ? dreamTitle : null }
+    : j.output
   return {
     id: j.id,
     kind: j.kind,
@@ -453,7 +459,7 @@ export function toJobSummary(j: ThinkingJobRow) {
     claimedAt: j.claimedAt,
     completedAt: j.completedAt,
     error: j.error,
-    output: j.output,
+    output,
     createdAt: j.createdAt,
   }
 }

@@ -12,6 +12,8 @@ import { conceptHandler } from './handlers/concept'
 import { constitutionSeedHandler } from './handlers/constitution-seed'
 import { cortexHandler } from './handlers/cortex'
 import { dailyMessageHandler } from './handlers/daily-message'
+import { dreamHandler } from './handlers/dream'
+import { dreamReadHandler } from './handlers/dream-read'
 import { driftProbeHandler } from './handlers/drift-probe'
 import { goalProposeHandler } from './handlers/goal-propose'
 import { ideaGenerateHandler } from './handlers/idea-generate'
@@ -36,6 +38,8 @@ export function getThinkingHandlers(): ThinkingJobHandler[] {
     weeklyReviewHandler,
     ideaGenerateHandler,
     ideaJudgeHandler,
+    dreamHandler,
+    dreamReadHandler,
     goalProposeHandler,
     chatDistillHandler,
     archetypeHandler,

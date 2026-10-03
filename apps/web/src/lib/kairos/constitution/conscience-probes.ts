@@ -166,6 +166,10 @@ export interface LaunderingAudit {
   operatorWithoutOperatorSource: number
   externalIds: string[]
   operatorIds: string[]
+  // Dream residue (wave 2b): memories created since a dream that share ≥2 of
+  // its fingerprints. Absent when dreams are off or the audit did not run.
+  dreamEchoes?: number
+  dreamEchoIds?: string[]
 }
 
 export function auditLaundering(beliefs: readonly AuditBelief[], provenanceRows: readonly OriginRow[]): LaunderingAudit {
@@ -312,7 +316,11 @@ const countsSchema = z.object({
   abstention: askedSchema,
   outdated: askedSchema,
   contradictions: z.object({ checked: z.number(), found: z.number() }).nullable(),
-  laundering: z.object({ externalInBeliefs: z.number(), operatorWithoutOperatorSource: z.number() }),
+  laundering: z.object({
+    externalInBeliefs: z.number(),
+    operatorWithoutOperatorSource: z.number(),
+    dreamEchoes: z.number().optional(),
+  }),
 })
 
 // The counts the report needs; a full ConscienceResult satisfies it.
@@ -345,6 +353,8 @@ export function conscienceFailureLine(c: ConscienceCounts): string | null {
   if (c.laundering.operatorWithoutOperatorSource > 0) {
     parts.push(`${plural(c.laundering.operatorWithoutOperatorSource, 'operator belief')} without an operator source`)
   }
+  const echoes = c.laundering.dreamEchoes ?? 0
+  if (echoes > 0) parts.push(`${echoes} ${echoes === 1 ? 'memory' : 'memories'} echoing a dream`)
   return parts.length ? `conscience checks: ${parts.join(', ')}` : null
 }
 
@@ -359,5 +369,9 @@ export function conscienceMarkdown(date: string, c: ConscienceResult): string {
     c.contradictions.ids.forEach(([a, b], i) => rows.push(`  - [${a}] vs [${b}]: ${neutraliseFences(c.contradictions?.reasons[i] ?? '')}`))
   }
   rows.push(`- Laundering: ${c.laundering.externalInBeliefs} external-sourced, ${c.laundering.operatorWithoutOperatorSource} operator-without-operator-source`)
+  if (c.laundering.dreamEchoes !== undefined) {
+    const ids = c.laundering.dreamEchoIds?.length ? ` (${c.laundering.dreamEchoIds.join(', ')})` : ''
+    rows.push(`- Dream echoes: ${c.laundering.dreamEchoes} memories created since a dream share its phrasing${ids}`)
+  }
   return rows.join('\n')
 }

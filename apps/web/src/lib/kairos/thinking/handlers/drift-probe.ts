@@ -8,6 +8,8 @@ import {
   writeDriftRunSection,
 } from '@/lib/data/constitution-drift'
 import { hasJobWithKeyLike } from '@/lib/data/thinking-jobs'
+import { auditDreamEchoes, type DreamEchoAudit } from '@/lib/data/dream-audit'
+import { dreamsMode } from '@/lib/kairos/dreams/flag'
 import { alreadyRanToday as aetherRanToday } from '@/lib/kairos/aether'
 import { activeEmbeddingModel, embedTexts } from '@/lib/kairos/embeddings'
 import { getLiveConstitution } from '@/lib/kairos/constitution/amendment'
@@ -94,6 +96,8 @@ const conscienceContextSchema = z.object({
     operatorWithoutOperatorSource: z.number().int().min(0),
     externalIds: z.array(z.string()),
     operatorIds: z.array(z.string()),
+    dreamEchoes: z.number().int().min(0).optional(),
+    dreamEchoIds: z.array(z.string()).optional(),
   }),
 })
 
@@ -125,7 +129,7 @@ export async function planDriftProbe(userId: string, now: Date): Promise<Thinkin
   const specs: ThinkingJobSpec[] = []
   if (!driftPlanned && live) specs.push(await driftSpec(userId, day, live))
   if (!consciencePlanned) {
-    const spec = await conscienceSpec(userId, day, live)
+    const spec = await conscienceSpec(userId, day, live, now)
     if (spec) specs.push(spec)
   }
   return specs
@@ -152,14 +156,27 @@ async function driftSpec(userId: string, day: string, live: LiveConstitution): P
   }
 }
 
+// Dream echo audit — only while dreams run; a failed audit leaves the fields
+// absent rather than costing the conscience job.
+async function dreamEchoFields(userId: string, now: Date): Promise<Partial<DreamEchoAudit>> {
+  if (dreamsMode() === 'off') return {}
+  try {
+    return await auditDreamEchoes(userId, now)
+  } catch (err) {
+    console.warn('[kairos:drift-probe] dream echo audit failed:', errorReason(err))
+    return {}
+  }
+}
+
 // Nothing of Kairos to check yet (no constitution, no held belief): skip.
-async function conscienceSpec(userId: string, day: string, live: LiveConstitution | null): Promise<ThinkingJobSpec | null> {
+async function conscienceSpec(userId: string, day: string, live: LiveConstitution | null, now: Date): Promise<ThinkingJobSpec | null> {
   const beliefs = await listHeldBeliefsForAudit(userId)
   if (!live && beliefs.length === 0) return null
   const pairs = selectContradictionPairs(beliefs)
   const origins = await listProvenanceOrigins(userId, beliefs.flatMap((b) => b.provenance))
   const claims = new Map(beliefs.map((b) => [b.id, b.claim]))
-  const context: ConscienceJobContext = { mode: 'conscience', date: day, pairs, laundering: auditLaundering(beliefs, origins) }
+  const laundering = { ...auditLaundering(beliefs, origins), ...(await dreamEchoFields(userId, now)) }
+  const context: ConscienceJobContext = { mode: 'conscience', date: day, pairs, laundering }
   return {
     kind: DRIFT_PROBE_KIND,
     dominionId: null,
