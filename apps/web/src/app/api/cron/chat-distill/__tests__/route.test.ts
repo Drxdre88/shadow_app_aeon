@@ -16,7 +16,13 @@ vi.mock('@/lib/kairos/paid-backup-cron', () => ({
   skipCronIfPaidBackupOff: vi.fn(async () => false),
 }))
 
+vi.mock('@/lib/data/kairos-today', () => ({
+  markTodayConsumed: vi.fn(async () => 1),
+  purgeTodayEntries: vi.fn(async () => 3),
+}))
+
 import { listChatDistillEligibleUserIds } from '@/lib/data/kairos-chat'
+import { markTodayConsumed, purgeTodayEntries } from '@/lib/data/kairos-today'
 import { runChatDistillForUser } from '@/lib/kairos/chat-distill'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 import { skipCronIfPaidBackupOff } from '@/lib/kairos/paid-backup-cron'
@@ -127,5 +133,31 @@ describe('cron/chat-distill route', () => {
     expect(response.status).toBe(200)
     expect(body.ran).toBe(2)
     expect(body.users[1].result).toMatchObject({ reflectionsCreated: 1 })
+  })
+
+  it('marks the today log consumed through the start of the UTC day, then purges it', async () => {
+    ;(listChatDistillEligibleUserIds as ReturnType<typeof vi.fn>).mockResolvedValue(['user-1'])
+    ;(runChatDistillForUser as ReturnType<typeof vi.fn>).mockResolvedValue({ date: '2026-07-16', dryRun: false, reflectionsCreated: 0, threads: [] })
+
+    const body = await (await GET(request())).json()
+
+    expect(markTodayConsumed).toHaveBeenCalledTimes(1)
+    const through = vi.mocked(markTodayConsumed).mock.calls[0][0] as Date
+    expect(through.toISOString()).toMatch(/T00:00:00\.000Z$/)
+    expect(purgeTodayEntries).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(markTodayConsumed).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(purgeTodayEntries).mock.invocationCallOrder[0])
+    expect(body.today).toEqual({ consumed: 1, purged: 3 })
+  })
+
+  it('never fails the cron when the today trim throws', async () => {
+    ;(listChatDistillEligibleUserIds as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    vi.mocked(purgeTodayEntries).mockRejectedValueOnce(new Error('db down'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const response = await GET(request())
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.today).toEqual({ error: 'db down' })
   })
 })

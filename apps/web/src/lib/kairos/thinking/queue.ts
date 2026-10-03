@@ -65,6 +65,11 @@ export const PLANNED_THINKING_KINDS: readonly ThinkingJobKind[] = [
   'ask_mine',
   // Last: the daily message reads what the night produced.
   'daily_message',
+  // Horae (flagged): due agenda items, planned by claims AND the sweep (an
+  // 8-hour deadline, so the night run still covers a missed daytime one).
+  'agenda_due',
+  // Daytime cadence (flagged): planned only on claims, never by the sweep.
+  'reflect', 'pulse',
 ]
 
 const PLAN_ORDER: readonly ThinkingJobKind[] = [...PLANNED_THINKING_KINDS, 'chat']
@@ -97,6 +102,9 @@ const FALLBACK_OWNER: Partial<Record<ThinkingJobKind, string>> = {
   ask_mine: 'the 04:30 UTC ask-mine cron',
   constitution_seed: 'the Monday 05:58 UTC constitution-seed cron',
   goal_propose: 'nothing — a missed night proposes no goal',
+  reflect: 'nothing — a missed hour is fine',
+  pulse: 'nothing — a missed hour is fine',
+  agenda_due: 'nothing — the item is marked missed',
 }
 
 function fallbackOwner(kind: ThinkingJobKind): string {
@@ -105,8 +113,9 @@ function fallbackOwner(kind: ThinkingJobKind): string {
 
 // Kinds the hourly sweep never plans: concept clustering is heavy and is
 // enqueued by the nightly engine (and claims); chat jobs come only from a
-// web or Telegram chat message.
-export const SWEEP_PLAN_SKIP_KINDS: readonly ThinkingJobKind[] = ['concept', 'chat']
+// web or Telegram chat message; the daytime pulse and reflection are planned
+// only by their routine's claim (a sweep-planned slot would just expire).
+export const SWEEP_PLAN_SKIP_KINDS: readonly ThinkingJobKind[] = ['concept', 'chat', 'pulse', 'reflect']
 
 export function sweepOwnsFallback(kind: ThinkingJobKind): boolean {
   return SWEEP_FALLBACK_KINDS.includes(kind)
@@ -422,7 +431,11 @@ export async function claimThinkingJob(
     }
     kinds = input.kinds ?? allowed
   } else if (routineScopeRequired()) {
-    return { job: null, code: 'scope_denied', error: 'claims must declare routine ("brain" or "chat")' }
+    return { job: null, code: 'scope_denied', error: 'claims must declare routine ("brain", "chat" or "pulse")' }
+  } else {
+    // Unscoped (an older brain prompt): the brain's allow-list, so it never
+    // takes the pulse routine's jobs.
+    kinds = input.kinds ?? getRoutine('brain').allowedKinds
   }
   const job = await queue().claim(userId, kinds, undefined, input.routine)
   if (!job || !job.claimToken) return { job: null }

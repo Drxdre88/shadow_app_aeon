@@ -5,6 +5,7 @@ import {
 } from '@/lib/data/kairos-chat'
 import { CHAT_REPLY_PENDING_MESSAGE, chatJobOwnsMessage } from '@/lib/kairos/chat-routine'
 import { runAssistantTurn } from '@/lib/kairos/chat-turn-assistant'
+import { chatTodayChannel, recordChatOwnerTurn } from '@/lib/kairos/chat-today'
 import type { ChatTurnOptions, KairosChatTurnResult } from '@/lib/kairos/chat-turn-reply'
 
 // Whole-brain chat turn engine, extracted from the chat server actions so
@@ -74,6 +75,8 @@ export async function sendChatMessage(
     if (last.content !== body) {
       const updated = await updateChatMessageContent(userId, threadId, last.seq, body)
       if (!updated.ok) return { ok: false, reason: 'thread_not_found' }
+      // Same key as the original turn: the edited text replaces it in today.
+      recordChatOwnerTurn(userId, threadId, last.seq, body, chatTodayChannel(opts.surface))
     }
     return runAssistantTurn(userId, threadId, loaded.thread.dominionId, body, last.seq, opts)
   }
@@ -95,6 +98,7 @@ export async function runChatTurn(
     content: body,
   })
   if (!userAppend.ok) return { ok: false, reason: 'thread_not_found' }
+  recordChatOwnerTurn(userId, threadId, userAppend.seq, body, chatTodayChannel(opts.surface))
 
   return runAssistantTurn(userId, threadId, dominionId, body, userAppend.seq, opts)
 }

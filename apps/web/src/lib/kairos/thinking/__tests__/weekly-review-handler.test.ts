@@ -12,10 +12,14 @@ const m = vi.hoisted(() => ({
   loadConscienceBlock: vi.fn(),
   readKairosPromises: vi.fn(),
   createKairosPromises: vi.fn(),
+  readKairosPredictions: vi.fn(),
+  createKairosPredictions: vi.fn(),
 }))
 
 vi.mock('@/lib/data/kairos-promises', () => ({ readKairosPromises: m.readKairosPromises }))
 vi.mock('@/lib/kairos/promises/create', () => ({ createKairosPromises: m.createKairosPromises }))
+vi.mock('@/lib/data/kairos-predictions', () => ({ readKairosPredictions: m.readKairosPredictions }))
+vi.mock('@/lib/kairos/predictions/create', () => ({ createKairosPredictions: m.createKairosPredictions }))
 
 vi.mock('@/lib/kairos/conscience-context', () => ({ loadConscienceBlock: m.loadConscienceBlock }))
 vi.mock('@/lib/data/thinking-jobs', () => ({ hasJobWithKeyLike: m.hasJobWithKeyLike }))
@@ -109,6 +113,9 @@ let delivered: Set<string>
 beforeEach(() => {
   vi.clearAllMocks()
   delete process.env.KAIROS_INITIATIVE
+  delete process.env.KAIROS_PREDICTIONS
+  m.readKairosPredictions.mockResolvedValue({ v: 1, nextSeq: 1, open: [], closed: [] })
+  m.createKairosPredictions.mockResolvedValue({ created: [], rejected: [], overflow: 0 })
   m.readKairosPromises.mockResolvedValue({ v: 1, nextSeq: 4, open: [{ seq: 3, outcome: 'Login fix shipped to beta', dueDate: '2026-10-09' }], closed: [] })
   m.createKairosPromises.mockResolvedValue({ created: [], rejected: [], overflow: 0 })
   store = new Map()
@@ -365,6 +372,56 @@ describe('weekly review promises (initiative switch)', () => {
     const out = await applyWeeklyReview(jobFrom(await planOne()), modelText({ promises: PROMISES }), 'routine')
     expect(out.ok).toBe(true)
     expect(m.writeCronFailureTrace).toHaveBeenCalledWith(USER, expect.objectContaining({ cronName: 'weekly-review', reason: 'promises_failed' }))
+    expect(m.deliverKairosSpeak).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('weekly review predictions (KAIROS_PREDICTIONS)', () => {
+  const PREDICTIONS = [{ claim: 'The Swarm P2 objective closes before the end of the month', probability: 0.7, dueDate: '2026-10-20', topic: 'delivery' }]
+  const settled = (n: number) => ({
+    id: `00000000-0000-4000-8000-00000000000${n}`, seq: n, claim: `Claim number ${n} about the board work`, probability: 0.8,
+    dueDate: '2026-09-20', topic: 'delivery', dominionId: null, basisIds: [], check: { kind: 'owner_verdict' },
+    source: { kind: 'weekly_review', jobId: `j${n}` }, createdAt: '2026-09-10T00:00:00.000Z', status: n === 5 ? 'wrong' : 'right',
+    settledAt: '2026-09-25T00:00:00.000Z', settledBy: { kind: 'owner', via: 'session' },
+  })
+
+  it('off: no prompt block, no read, no create, no track-record line', async () => {
+    const spec = await planOne()
+    expect(spec.input.prompt).not.toContain('PREDICTIONS')
+    expect(m.readKairosPredictions).not.toHaveBeenCalled()
+    await applyWeeklyReview(jobFrom(spec), modelText({ predictions: PREDICTIONS }), 'routine')
+    expect(m.createKairosPredictions).not.toHaveBeenCalled()
+    const observation = m.captureMemory.mock.calls.at(-1)![1]
+    expect(observation.sourceMetadata).not.toHaveProperty('predictions')
+    expect(observation.bodyMd).not.toContain('Track record')
+  })
+
+  it('on: asks for predictions, persists through the creator and renders the code-built line', async () => {
+    process.env.KAIROS_PREDICTIONS = '1'
+    m.readKairosPredictions.mockResolvedValue({ v: 1, nextSeq: 6, open: [], closed: [1, 2, 3, 4, 5].map(settled) })
+    m.createKairosPredictions.mockResolvedValue({ created: [{ id: 'r-6', seq: 6, dueDate: '2026-10-20', probability: 0.7 }], rejected: [], overflow: 0 })
+    const spec = await planOne()
+    expect(spec.input.prompt).toContain('PREDICTIONS — you may add up to 3')
+    expect(spec.input.prompt).toContain('4 of 5 right')
+    const out = await applyWeeklyReview(jobFrom(spec), modelText({ predictions: [...PREDICTIONS, { claim: 7 }] }), 'routine')
+    expect(out.ok).toBe(true)
+    expect(m.createKairosPredictions).toHaveBeenCalledWith(USER, PREDICTIONS, { kind: 'weekly_review', jobId: 'job-1', isoWeek: '2026-W40' },
+      expect.objectContaining({ dominions: [{ id: DOM, name: 'Swarm' }] }))
+    const observation = m.captureMemory.mock.calls.at(-1)![1]
+    expect(observation.sourceMetadata.predictions.created).toEqual([{ id: 'r-6', seq: 6, dueDate: '2026-10-20', probability: 0.7 }])
+    expect(observation.bodyMd).toContain('Track record (90 days): 4 of 5 predictions right (80%)')
+    expect(m.deliverKairosSpeak.mock.calls[0]![1].message).toContain('Track record (90 days)')
+  })
+
+  it('on: a prediction write failure or a corrupt store never costs the review', async () => {
+    process.env.KAIROS_PREDICTIONS = '1'
+    m.readKairosPredictions.mockRejectedValue(new Error('corrupt'))
+    const spec = await planOne()
+    expect(spec.input.prompt).not.toContain('PREDICTIONS')
+    m.createKairosPredictions.mockRejectedValue(new Error('db down'))
+    const out = await applyWeeklyReview(jobFrom(spec), modelText({ predictions: PREDICTIONS }), 'routine')
+    expect(out.ok).toBe(true)
+    expect(m.writeCronFailureTrace).toHaveBeenCalledWith(USER, expect.objectContaining({ reason: 'predictions_failed' }))
     expect(m.deliverKairosSpeak).toHaveBeenCalledTimes(1)
   })
 })

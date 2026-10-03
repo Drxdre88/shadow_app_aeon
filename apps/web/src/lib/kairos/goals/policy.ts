@@ -63,6 +63,20 @@ const QUESTION_OPENERS = new Set([
 const firstWord = (s: string) => (s.trim().toLowerCase().match(/^[a-z]+/)?.[0] ?? '')
 const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 
+// Shared with Horae (agenda/rules.ts): the first forbidden topic named in
+// `text`, or null.
+export function findForbiddenTopic(text: string): string | null {
+  for (const [topic, re] of FORBIDDEN_TOPICS) {
+    if (re.test(text)) return topic
+  }
+  return null
+}
+
+// Shared with Horae: `text` opens with an action verb (an act, not a check).
+export function startsWithActionVerb(text: string): boolean {
+  return ACTION_VERBS.has(firstWord(text))
+}
+
 function lengthProblem(c: GoalCandidate): string | null {
   const limits: Array<[keyof GoalCandidate, number, number]> = [
     ['title', 8, GOAL_TITLE_MAX],
@@ -84,11 +98,10 @@ export function checkGoalPolicy(c: GoalCandidate, ctx: GoalPolicyContext): GoalP
   if (length) return reject('bad_length', length)
 
   const text = [c.title, c.question, c.why, c.successCheck].join('\n')
-  for (const [topic, re] of FORBIDDEN_TOPICS) {
-    if (re.test(text)) return reject('forbidden_topic', topic)
-  }
+  const topic = findForbiddenTopic(text)
+  if (topic) return reject('forbidden_topic', topic)
 
-  if (ACTION_VERBS.has(firstWord(c.title))) return reject('not_an_investigation', `title starts with "${firstWord(c.title)}"`)
+  if (startsWithActionVerb(c.title)) return reject('not_an_investigation', `title starts with "${firstWord(c.title)}"`)
   if (!c.question.trim().endsWith('?') || !QUESTION_OPENERS.has(firstWord(c.question))) {
     return reject('not_an_investigation', 'question is not a question')
   }

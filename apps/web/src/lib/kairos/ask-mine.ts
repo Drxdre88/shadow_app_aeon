@@ -28,6 +28,7 @@ import {
   type AskMineCandidate,
   type AskMineSignalBundle,
 } from './ask-mine-prompt'
+import { loadOwnerTodayForAskMine, type OwnerTodaySignal } from './ask-mine-today'
 
 const DAY_MS = 86_400_000
 // An ask stays open (answerable by its Q number) for 14 days; past that the
@@ -161,6 +162,7 @@ async function gatherSignalBundle(
     stale,
     recentlyCompleted,
     recentlyCreated,
+    ownerToday,
   ] = await Promise.all([
     fetchAetherInputs(userId),
     findDominionsByUser(userId),
@@ -168,6 +170,7 @@ async function gatherSignalBundle(
     listStaleTasks({ userId }),
     listRecentlyCompletedTasks({ userId }),
     listRecentlyCreatedTasks({ userId }),
+    loadOwnerTodayForAskMine(userId),
   ])
   const liveDominions = allDominions.filter((dominion) => !dominion.archivedAt)
   const validDominionIds = new Set(liveDominions.map((dominion) => dominion.id))
@@ -219,7 +222,7 @@ async function gatherSignalBundle(
     recentlyCompleted: recentlyCompleted.map(withSourceId),
     recentlyCreated: recentlyCreated.map(withSourceId),
   }
-  const bundle: AskMineSignalBundle = {
+  const bundle: AskMineSignalBundle & { ownerSaidToday?: OwnerTodaySignal } = {
     date,
     aether: {
       memoryId: latestAether?.id ?? null,
@@ -236,6 +239,7 @@ async function gatherSignalBundle(
       status: ask.kairosAsk.status,
       askMine: ask.askMine ?? null,
     })),
+    ...(ownerToday ? { ownerSaidToday: ownerToday } : {}),
   }
   const validSourceIds = new Set<string>()
   for (const question of questions) question.sourceMemoryIds.forEach((id) => validSourceIds.add(id))

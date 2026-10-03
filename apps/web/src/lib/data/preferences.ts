@@ -12,8 +12,14 @@ export async function findPreferences(userId: string) {
     .where(eq(userPreferences.userId, userId))
     .then((rows) => rows[0])
 
-  const { [KAIROS_PROMISES_PREF_KEY]: _promises, ...stored } = (row?.preferences as Record<string, unknown> ?? {})
+  const stored = stripServerOwnedForClient((row?.preferences as Record<string, unknown> ?? {}))
   return { ...DEFAULT_PREFERENCES, ...stored }
+}
+
+function stripServerOwnedForClient(prefs: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...prefs }
+  for (const key of SERVER_OWNED_OBJECT_KEYS) delete out[key]
+  return out
 }
 
 // Whether the user has a stored preferences row at all — distinguishes a
@@ -29,18 +35,33 @@ export async function hasPreferencesRow(userId: string) {
 }
 
 // Theme/UI sync replaces the whole blob from client state. Server-owned keys
-// (the Kairos paid-backup switch, Kairos promises) are stripped from the client
-// payload and the stored value is carried over, so a theme save can't set or
-// wipe them.
+// (the Kairos paid-backup switch, Kairos promises, predictions and agenda) are
+// stripped from the client payload and the stored value is carried over, so a
+// theme save can't set or wipe them.
+export const KAIROS_PREDICTIONS_PREF_KEY = 'kairosPredictions'
+export const KAIROS_AGENDA_PREF_KEY = 'kairosAgenda'
+const SERVER_OWNED_OBJECT_KEYS = [KAIROS_PROMISES_PREF_KEY, KAIROS_PREDICTIONS_PREF_KEY, KAIROS_AGENDA_PREF_KEY] as const
+
+function stripServerOwned(prefs: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...prefs }
+  delete out[PAID_BACKUP_PREF_KEY]
+  for (const key of SERVER_OWNED_OBJECT_KEYS) delete out[key]
+  return out
+}
+
 export async function upsertPreferences(userId: string, prefs: Record<string, unknown>) {
-  const { [PAID_BACKUP_PREF_KEY]: _ignored, [KAIROS_PROMISES_PREF_KEY]: _promises, ...clientPrefs } = prefs
+  const clientPrefs = stripServerOwned(prefs)
+  const carried = sql.join(
+    SERVER_OWNED_OBJECT_KEYS.map((key) => sql`(case when ${userPreferences.preferences} ? ${key}::text then jsonb_build_object(${key}::text, ${userPreferences.preferences} -> ${key}::text) else '{}'::jsonb end)`),
+    sql` || `,
+  )
   await db
     .insert(userPreferences)
     .values({ userId, preferences: clientPrefs, updatedAt: new Date() })
     .onConflictDoUpdate({
       target: userPreferences.userId,
       set: {
-        preferences: sql`${JSON.stringify(clientPrefs)}::jsonb || jsonb_strip_nulls(jsonb_build_object(${PAID_BACKUP_PREF_KEY}::text, ${userPreferences.preferences} -> ${PAID_BACKUP_PREF_KEY}::text)) || (case when ${userPreferences.preferences} ? ${KAIROS_PROMISES_PREF_KEY}::text then jsonb_build_object(${KAIROS_PROMISES_PREF_KEY}::text, ${userPreferences.preferences} -> ${KAIROS_PROMISES_PREF_KEY}::text) else '{}'::jsonb end)`,
+        preferences: sql`${JSON.stringify(clientPrefs)}::jsonb || jsonb_strip_nulls(jsonb_build_object(${PAID_BACKUP_PREF_KEY}::text, ${userPreferences.preferences} -> ${PAID_BACKUP_PREF_KEY}::text)) || ${carried}`,
         updatedAt: new Date(),
       },
     })

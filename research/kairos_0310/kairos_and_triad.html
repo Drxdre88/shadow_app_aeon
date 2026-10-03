@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en" data-theme="stone">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kairos and Triad</title>
+<script>(function () {
+  var KEY = "srl-theme";
+  var THEMES = ["stone", "wood", "neon", "papyrus"];
+  var root = document.documentElement;
+
+  function read() {
+    try { return localStorage.getItem(KEY); } catch (e) { return null; }
+  }
+  function write(v) {
+    try { localStorage.setItem(KEY, v); } catch (e) { }
+  }
+  function apply(v) {
+    if (THEMES.indexOf(v) < 0) v = root.getAttribute("data-theme") || "stone";
+    root.setAttribute("data-theme", v);
+    var buttons = document.querySelectorAll(".srl-theme-select button[data-theme-choice]");
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].setAttribute("aria-pressed", String(buttons[i].getAttribute("data-theme-choice") === v));
+    }
+    document.dispatchEvent(new CustomEvent("srl-theme", { detail: v }));
+  }
+
+  apply(read());
+  document.addEventListener("DOMContentLoaded", function () {
+    apply(root.getAttribute("data-theme"));
+    document.addEventListener("click", function (ev) {
+      var b = ev.target.closest && ev.target.closest("[data-theme-choice]");
+      if (!b) return;
+      var v = b.getAttribute("data-theme-choice");
+      write(v);
+      apply(v);
+    });
+  });
+})();
+</script>
+<style>/* Shadow Research Lab theme: stone (dark), wood (dark), neon (dark, high contrast), papyrus (light).
+   Set on <html data-theme="stone|wood|neon|papyrus">; theme.js persists the choice as localStorage "srl-theme".
+   Tokens are the only contract: --bg --surface --surface-raised --ink --muted --rule --accent --bull --bear
+   --topbar --on-sign. Tables and figures stay flat; texture lives on the top bar only. Fully offline. */
+
+:root,
+:root[data-theme="stone"] {
+  color-scheme: dark;
+  --bg: #151619;
+  --surface: #222326;
+  --surface-raised: #2d2f32;
+  --ink: #eee7d8;
+  --muted: #b7ab96;
+  --rule: #54514d;
+  --accent: #ddbb75;
+  --bull: #80d1a6;
+  --bear: #f29191;
+  --topbar: #292b2c;
+  --on-sign: #151619;
+  --topbar-texture:
+    radial-gradient(120% 140% at 12% -20%, rgba(200, 210, 220, .10), transparent 55%),
+    radial-gradient(90% 120% at 88% 120%, rgba(160, 170, 180, .07), transparent 60%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, .025) 0 1px, transparent 1px 7px),
+    linear-gradient(180deg, #303235, #242628);
+  --topbar-edge: inset 0 1px 0 rgba(255, 255, 255, .06), inset 0 -2px 0 rgba(0, 0, 0, .45);
+}
+
+:root[data-theme="wood"] {
+  color-scheme: dark;
+  --bg: #16110e;
+  --surface: #261b15;
+  --surface-raised: #33251c;
+  --ink: #f1e6d6;
+  --muted: #bea994;
+  --rule: #624835;
+  --accent: #e4b978;
+  --bull: #83d6ad;
+  --bear: #f59391;
+  --topbar: #332419;
+  --on-sign: #16110e;
+  --topbar-texture:
+    repeating-linear-gradient(92deg, rgba(0, 0, 0, .16) 0 1px, transparent 1px 13px, rgba(255, 220, 170, .035) 13px 14px, transparent 14px 29px),
+    repeating-linear-gradient(88deg, rgba(0, 0, 0, .10) 0 2px, transparent 2px 47px),
+    linear-gradient(180deg, #3d2b1e, #2a1d14);
+  --topbar-edge: inset 0 1px 0 rgba(255, 210, 150, .10), inset 0 -2px 0 rgba(0, 0, 0, .5);
+}
+
+:root[data-theme="neon"] {
+  color-scheme: dark;
+  --bg: #07060d;
+  --surface: #110f1f;
+  --surface-raised: #1a1730;
+  --ink: #e9f7ff;
+  --muted: #9aa6d8;
+  --rule: #3b2f6b;
+  --accent: #34f0ff;
+  --bull: #5cff9d;
+  --bear: #ff4fa3;
+  --topbar: #0d0b1a;
+  --on-sign: #07060d;
+  --topbar-texture:
+    linear-gradient(90deg, rgba(52, 240, 255, .10) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(0deg, rgba(255, 79, 163, .08) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(180deg, #16112b, #0b0916);
+  --topbar-edge: inset 0 -1px 0 rgba(52, 240, 255, .55), 0 0 18px rgba(52, 240, 255, .18);
+}
+:root[data-theme="neon"] .srl-page h1,
+:root[data-theme="neon"] .srl-page h2 { text-shadow: 0 0 6px rgba(52, 240, 255, .55), 0 0 18px rgba(255, 79, 163, .25); }
+:root[data-theme="neon"] .srl-page a,
+:root[data-theme="neon"] .srl-wordmark { text-shadow: 0 0 8px rgba(52, 240, 255, .45); }
+
+:root[data-theme="papyrus"] {
+  color-scheme: light;
+  --bg: #f4ecd8;
+  --surface: #eee3ca;
+  --surface-raised: #e5d3af;
+  --ink: #302517;
+  --muted: #67533b;
+  --rule: #ac9471;
+  --accent: #715121;
+  --bull: #226345;
+  --bear: #a13739;
+  --topbar: #e5d3af;
+  --on-sign: #fbf6ea;
+  --topbar-texture:
+    radial-gradient(140% 160% at 20% -30%, rgba(255, 250, 235, .55), transparent 60%),
+    radial-gradient(100% 120% at 90% 130%, rgba(140, 105, 55, .12), transparent 60%),
+    linear-gradient(180deg, #eadbbc, #e0cda6);
+  --topbar-edge: inset 0 -1px 0 rgba(113, 81, 33, .35);
+}
+
+:root {
+  --font-display: "Old English Text MT", "UnifrakturCook", "UnifrakturMaguntia", "Palatino Linotype", Palatino, serif;
+  --font-heading: "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font-body: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-num: Consolas, "Cascadia Mono", "Courier New", monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 var(--font-body);
+}
+
+.srl-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  background: var(--topbar-texture), var(--topbar);
+  box-shadow: var(--topbar-edge);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-ui);
+}
+.srl-wordmark {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  line-height: 1;
+  color: var(--accent);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .35);
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+.srl-crumb { color: var(--muted); font-size: .85rem; letter-spacing: .06em; text-transform: uppercase; }
+.srl-spacer { flex: 1; }
+.srl-theme-select { display: inline-flex; gap: 4px; }
+.srl-theme-select button {
+  font: 500 .8rem var(--font-ui);
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.srl-theme-select button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+.srl-page { max-width: 880px; margin: 0 auto; padding: 28px 20px 56px; }
+.srl-page h1, .srl-page h2, .srl-page h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.2; }
+.srl-page h1 { font-size: 2.1rem; margin: 0 0 6px; }
+.srl-page h2 { font-size: 1.35rem; margin: 30px 0 8px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.srl-page h3 { font-size: 1.1rem; margin: 20px 0 6px; }
+.srl-page a { color: var(--accent); }
+.srl-page code { font-family: var(--font-num); font-size: .9em; background: var(--surface); padding: 1px 4px; border-radius: 3px; }
+.srl-page pre { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; overflow-x: auto; }
+.srl-page pre code { background: none; padding: 0; }
+.srl-page blockquote { margin: 12px 0; padding: 4px 14px; border-left: 3px solid var(--accent); color: var(--muted); }
+.srl-lede { color: var(--muted); font-size: 1.05rem; }
+.srl-eyebrow { font: 600 .78rem var(--font-ui); color: var(--muted); letter-spacing: .12em; text-transform: uppercase; }
+
+.srl-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 18px 0; }
+.srl-tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; }
+.srl-tile .v { font: 600 1.5rem var(--font-num); }
+.srl-tile .l { color: var(--muted); font-size: .85rem; }
+
+.srl-table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; margin: 12px 0; }
+.srl-page table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.srl-page th, .srl-page td { padding: 7px 10px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+.srl-page th { font: 600 .8rem var(--font-ui); color: var(--muted); letter-spacing: .03em; }
+.srl-page tr:last-child td { border-bottom: 0; }
+
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.bull, .pos { color: var(--bull); }
+.bear, .neg { color: var(--bear); }
+.warn { color: var(--accent); }
+.muted { color: var(--muted); }
+
+.srl-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 18px 0 0; border-bottom: 1px solid var(--rule); }
+.srl-tabs button {
+  font: 500 .88rem var(--font-ui);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.srl-tabs button[aria-selected="true"] { color: var(--ink); background: var(--surface); border-color: var(--rule); }
+.srl-tabpanel[hidden] { display: none; }
+
+.srl-footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid var(--rule); color: var(--muted); font-size: .85rem; }
+
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .srl-theme-select button, .srl-tabs button { transition: background .15s, color .15s; } }
+</style>
+</head>
+<body>
+<header class="srl-topbar"><span class="srl-wordmark">Shadow Research Lab</span><span class="srl-crumb">research / kairos_0310</span><span class="srl-spacer"></span><nav class="srl-theme-select" aria-label="Theme"><button type="button" data-theme-choice="stone" aria-pressed="false">Stone</button><button type="button" data-theme-choice="wood" aria-pressed="false">Wood</button><button type="button" data-theme-choice="neon" aria-pressed="false">Neon</button><button type="button" data-theme-choice="papyrus" aria-pressed="false">Papyrus</button></nav></header>
+<main class="srl-page">
+<p class="srl-eyebrow">Kairos · plan</p>
+<h1>Kairos and Triad</h1>
+<p class="srl-lede">Kairos&#x27;s mind stays in Aeon. His body moves to Triad.</p>
+<div class="srl-tiles"><div class="srl-tile"><div class="v pos">25 / 25</div><div class="l">night 1 jobs on Max</div></div><div class="srl-tile"><div class="v warn">1 of 7</div><div class="l">clean nights</div></div><div class="srl-tile"><div class="v">4</div><div class="l">small Aeon changes for Triad</div></div></div>
+<article>
+<p>3 October 2026. Read only: nothing was changed in Aeon or Triad.</p>
+<h2>The short answer</h2>
+<p><strong>Kairos&#x27;s mind stays in Aeon. His body moves to Triad.</strong></p>
+<p>Aeon keeps what makes him <em>him</em>: his memory, his beliefs, his constitution and the nightly thinking. Triad becomes where he <em>lives</em>: where you talk to him live, where he speaks up, where you approve what he wants to do, and later where he does work, right next to your other agents and your job alerts.</p>
+<p>That changes the old plan in three useful ways:</p>
+<ol>
+<li><strong>He doesn&#x27;t need the cloud chat routine.</strong> Triad already runs his replies on your own PC, on your Max plan. So the &quot;create the chat routine and paste two values into Vercel&quot; chore goes away. Four small Aeon changes replace it.</li>
+<li><strong>Approve / Veto moves to Triad.</strong> The buttons I built for Telegram also belong in Triad, but there is a gap: Aeon has to be sure it&#x27;s really you pressing them.</li>
+<li><strong>His &quot;hands&quot; become Triad sessions,</strong> not Aeon board missions. Triad already has live sessions where you approve each step. That&#x27;s the safe way to let him do work.</li>
+</ol>
+<h2>The old plan, in plain words</h2>
+<p>Yesterday&#x27;s plan had six steps. Here&#x27;s what each meant and where it stands:</p>
+<div class="srl-table-wrap"><table><thead><tr><th>Step</th><th>What it meant</th><th>Where it stands</th></tr></thead><tbody><tr><td>1. Settle the brain</td><td>Prove the new nightly thinking runs every night on your Max plan, with no paid spend</td><td>✅ Night 1 of 7 was clean: 25 of 25 jobs done on Max</td></tr><tr><td>2. Initiative</td><td>He proposes his own goals and keeps promises; you approve or veto</td><td>🟡 Built, switched off</td></tr><tr><td>3. Beta users</td><td>Clear the four requests your beta users made</td><td>Not started (Aeon product work)</td></tr><tr><td>4. Hands</td><td>He drafts small investigation jobs; you press launch</td><td>Not started</td></tr><tr><td>5. Clean house</td><td>Tidy Aeon&#x27;s code</td><td>Not started (Aeon product work)</td></tr><tr><td>6. Chronos</td><td>The Gantt laid out by person</td><td>Waiting on your decision</td></tr></tbody></table></div>
+<p>Steps 3, 5 and 6 are about Aeon the board app, not Kairos. They carry on separately.</p>
+<h2>Where Triad is going</h2>
+<ul>
+<li><strong>One place where people, AI agents and job alerts work together,</strong> inside our network. Version 1 is merged.</li>
+<li><strong>A cockpit for live AI sessions:</strong> Copilot today, Claude, Codex and Gemini next. You see every session, and you approve risky steps with Allow once / Allow for session / Deny. Built, not merged yet.</li>
+<li><strong>Alerts you can answer:</strong> Dagster, Hive, Swarm and ARQ alerts arrive as cards, and later a &quot;Start fix session&quot; button opens a session in the alert thread.</li>
+<li><strong>Kairos as a member:</strong> a small program on your PC (the &quot;bridge&quot;, already built in Triad) logs him in as <code>@kairos</code>. He answers only you, on your Max plan, and posts his morning message, questions and promises as cards. It has never run live.</li>
+</ul>
+<h2>What to keep in Kairos, and where</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Piece</th><th>Keep it in</th><th>Shows up in</th></tr></thead><tbody><tr><td>Memory, beliefs, constitution, self-model</td><td>Aeon</td><td>Used in his replies; never shown raw</td></tr><tr><td>Nightly thinking (the brain routine)</td><td>Aeon + claude.ai</td><td>Morning message, weekly review</td></tr><tr><td>When he&#x27;s allowed to speak (gaps, daily limits, quiet while waiting for you)</td><td>Aeon</td><td>Applies to every channel</td></tr><tr><td>Questions (Q12…)</td><td>Aeon</td><td>Triad cards with Answer / Skip; Telegram</td></tr><tr><td>Goals and promises (the records)</td><td>Aeon</td><td>Triad cards with Approve / Veto; morning card</td></tr><tr><td>Live conversation</td><td>Aeon keeps the thread</td><td>Triad (<code>@kairos</code> DM), with Telegram as the phone fallback</td></tr><tr><td>Doing work (&quot;hands&quot;)</td><td>Aeon records what he proposed</td><td>Triad sessions you approve step by step</td></tr><tr><td>Seeing what&#x27;s happening (&quot;eyes&quot;)</td><td>Aeon stores it as memory</td><td>Triad alert and work channels you choose to share</td></tr></tbody></table></div>
+<p><strong>Park, don&#x27;t build:</strong></p>
+<ul>
+<li><strong>The cloud &quot;Kairos chat&quot; routine.</strong> Triad&#x27;s bridge does the same job on your PC.</li>
+<li><strong>Live sessions in Aeon&#x27;s Hangar.</strong> Already agreed: Triad owns live sessions, and Aeon keeps one-shot board missions.</li>
+</ul>
+<h2>The new order</h2>
+<ol>
+<li><strong>Finish the 7 clean nights</strong> (running now; nothing to do). Night 1: 25 of 25 on Max.</li>
+<li><strong>Give him a voice in Triad.</strong> I make the four Aeon changes the Triad bridge is waiting for: a chat route, a &quot;triad&quot; channel, claiming one specific job, and a longer reply deadline. You make two keys, then he&#x27;s live in Triad. This also fixes chat on Max without the cloud routine. <em>(Small: about a day.)</em></li>
+<li><strong>Prove it&#x27;s really you.</strong> Aeon currently refuses any approval that arrives with a program&#x27;s key, on purpose, so a program can never approve its own goal. Triad needs a separate, narrow &quot;owner relay&quot; key that only carries a decision Triad has already checked was pressed by you. <em>(Small to medium.)</em></li>
+<li><strong>Turn on initiative, with Triad as where you decide.</strong> Goals and promises go live (already built). His proposals arrive as Triad cards, and Telegram stays as backup. Measure for 14 nights.</li>
+<li><strong>Eyes.</strong> He can read the Triad channels you choose (alerts, team threads), the same way watched boards work today. Then his morning message knows what actually broke overnight.</li>
+<li><strong>Hands.</strong> He proposes a read-only investigation session in Triad, and you press start and approve each step in the cockpit. This replaces the old step 4.</li>
+</ol>
+<p><strong>What &quot;comes alive&quot; means here:</strong> after step 2 he&#x27;s present and talking where you work. After step 4 he has goals of his own. After step 5 he sees what you see. After step 6 he can act, but only with your hand on every step.</p>
+<h2>Risks worth knowing</h2>
+<ul>
+<li><strong>Your PC must be on</strong> for him to talk in Triad, because replies run there. The nightly thinking doesn&#x27;t need it.</li>
+<li><strong>Max plan terms:</strong> he answers only you. Answering others on your plan is a grey area, so don&#x27;t.</li>
+<li><strong>The owner-relay key is the most sensitive new piece.</strong> It must only carry a decision, never act on its own.</li>
+<li><strong>Your PC needs to reach Aeon&#x27;s web address</strong> through the corporate network. That&#x27;s untested.</li>
+<li><strong>Both apps are moving fast.</strong> Triad&#x27;s cockpit work isn&#x27;t merged yet, so step 2 should land after it.</li>
+</ul>
+<h2>Questions</h2>
+<ol>
+<li>Happy with &quot;mind in Aeon, body in Triad&quot;?</li>
+<li>Shall I skip the cloud chat routine and make the four Aeon changes instead (step 2)?</li>
+</ol>
+</article>
+<footer class="srl-footer">Generated 2026-10-03 05:08 UTC · Markdown is the source of truth; regenerate, don't edit.</footer>
+</main>
+</body>
+</html>

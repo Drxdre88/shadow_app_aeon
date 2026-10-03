@@ -95,3 +95,21 @@ describe('StatusView — chat latency line', () => {
     expect(screen.queryByText(/Replies in/)).toBeNull()
   })
 })
+
+describe('StatusView — pulse routine (daytime thinking)', () => {
+  const brainChat = status().routines
+
+  it('is hidden while daytime thinking is off (or absent from older payloads)', () => {
+    renderView(status({ routines: [...brainChat, { id: 'pulse', lastClaimAt: null, state: 'off' }] }))
+    expect(screen.queryByText('Kairos pulse')).toBeNull()
+    cleanup()
+    renderView(status())
+    expect(screen.queryByText('Kairos pulse')).toBeNull()
+    expect(screen.getByText('Kairos brain')).toBeTruthy()
+  })
+
+  it('shows its own row once switched on', () => {
+    renderView(status({ routines: [...brainChat, { id: 'pulse', lastClaimAt: '2026-10-02T06:10:00.000Z', state: 'live' }] }))
+    expect(screen.getByText('Kairos pulse')).toBeTruthy()
+  })
+})

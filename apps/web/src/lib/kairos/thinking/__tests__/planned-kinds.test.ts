@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/db', () => ({ db: {} }))
 
 import { BRAIN_JOBS, ROUTINES, getRoutine } from '@/lib/kairos/routines/catalog'
-import { PLANNED_THINKING_KINDS } from '../queue'
+import { PLANNED_THINKING_KINDS, SWEEP_PLAN_SKIP_KINDS } from '../queue'
 import { getThinkingHandlers } from '../registry'
 import { thinkingJobKindSchema } from '@/lib/data/validators/thinking'
 
@@ -36,11 +36,29 @@ describe('planned thinking kinds ↔ routine catalog', () => {
     }
   })
 
-  it('routine scopes partition the catalog: brain = planned kinds, chat = chat, no overlap', () => {
+  it('routine scopes partition the catalog: brain ∪ pulse = planned kinds, chat = chat, no overlap', () => {
     const all = ROUTINES.flatMap((r) => [...r.allowedKinds])
     expect(new Set(all)).toEqual(new Set(brainKinds))
     expect(all).toHaveLength(new Set(all).size)
-    expect(new Set(getRoutine('brain').allowedKinds)).toEqual(new Set(PLANNED_THINKING_KINDS))
+    expect(new Set([...getRoutine('brain').allowedKinds, ...getRoutine('pulse').allowedKinds])).toEqual(new Set(PLANNED_THINKING_KINDS))
+    expect(getRoutine('pulse').allowedKinds).toEqual(['pulse'])
+    expect(getRoutine('brain').allowedKinds).toContain('reflect')
     expect(getRoutine('chat').allowedKinds).toEqual(['chat'])
+  })
+
+  it('the routine tier decides scope: deep kinds on the brain, light kinds on the pulse', () => {
+    for (const j of BRAIN_JOBS) {
+      if (j.kind === 'chat') continue
+      expect(getRoutine(j.tier === 'light' ? 'pulse' : 'brain').allowedKinds, j.kind).toContain(j.kind)
+    }
+  })
+
+  it('Horae check-ins are a deep brain kind planned by claims and the sweep alike', () => {
+    const row = BRAIN_JOBS.find((j) => j.kind === 'agenda_due')
+    expect(row).toMatchObject({ label: 'Horae check-in', tier: 'deep' })
+    expect(getRoutine('brain').allowedKinds).toContain('agenda_due')
+    expect(PLANNED_THINKING_KINDS).toContain('agenda_due')
+    expect(SWEEP_PLAN_SKIP_KINDS).not.toContain('agenda_due')
+    expect(getThinkingHandlers().find((h) => h.kind === 'agenda_due')).toBeDefined()
   })
 })

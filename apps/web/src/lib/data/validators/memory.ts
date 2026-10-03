@@ -174,6 +174,8 @@ export const prepareContextSchema = z.object({
   hops:            z.union([z.literal(0), z.literal(1)]).default(1),
   maxSources:      z.number().int().min(5).max(100).default(30),
   includePinned:   z.boolean().default(true),
+  // One mind (spec_one_mind): prepend "## Today across channels" (≤15% of budget).
+  includeToday:    z.boolean().default(true),
 })
 
 export type MemoryType        = z.infer<typeof memoryTypeSchema>

@@ -25,6 +25,10 @@ import {
 } from '@/lib/kairos/chat-routine'
 import { isPaidBackupEnabled } from '@/lib/kairos/paid-backup'
 import { initiativeEnabled } from '@/lib/kairos/initiative'
+import { agendaEnabled } from '@/lib/kairos/agenda/flag'
+import { routeAgendaCommands } from '@/lib/kairos/agenda/telegram-commands'
+import { recordChatOwnerTurn } from '@/lib/kairos/chat-today'
+import { routePredictionCommands } from '@/lib/kairos/predictions/telegram-commands'
 import { routePromiseCommands } from '@/lib/kairos/promises/telegram-commands'
 import { handleProposalCallback, routeVetoReason } from '@/lib/kairos/proposal-telegram'
 import { buildChatJobSpec, chatHandler } from '@/lib/kairos/thinking/handlers/chat'
@@ -230,11 +234,13 @@ async function handleTextMessage(
   if (await routeNumberedAnswers(chatId!, operatorUserId, body)) return
 
   // Phase 2 (dormant unless KAIROS_INITIATIVE=1): "P3 kept" / "drop P3" /
-  // "P3 by 20/10", then the free-text reason after a "Veto + why".
-  if (initiativeEnabled()) {
-    if (await routePromiseText(chatId!, operatorUserId, body)) return
-    if (await routeVetoReasonText(chatId!, operatorUserId, body, message, updateId)) return
-  }
+  // "P3 by 20/10"; track record (KAIROS_PREDICTIONS=1): "R3 right" / "void R3";
+  // Horae (KAIROS_AGENDA=1): "cancel A3"; then the free-text reason after a
+  // "Veto + why". Each router either handles the whole message or passes.
+  if (initiativeEnabled() && await routeOwnerCommands('promise', routePromiseCommands, chatId!, operatorUserId, body)) return
+  if (await routeOwnerCommands('prediction', routePredictionCommands, chatId!, operatorUserId, body)) return
+  if (agendaEnabled() && await routeOwnerCommands('agenda', routeAgendaCommands, chatId!, operatorUserId, body)) return
+  if (initiativeEnabled() && await routeVetoReasonText(chatId!, operatorUserId, body, message, updateId)) return
 
   // One persistent whole-brain thread for the operator, found by title.
   const threadId = await findOrCreateTelegramThread(operatorUserId)
@@ -268,12 +274,21 @@ async function findOrCreateTelegramThread(userId: string): Promise<string | null
   return created.ok ? created.threadId : null
 }
 
-// Owner promise commands. A failure to route hands the text to chat.
-async function routePromiseText(chatId: number | string, userId: string, body: string): Promise<boolean> {
+type CommandRouter = (userId: string, body: string, send: (text: string) => Promise<unknown>) => Promise<boolean>
+
+// Owner command routers (promises, predictions, agenda). A failure to route
+// hands the text to chat.
+async function routeOwnerCommands(
+  name: string,
+  router: CommandRouter,
+  chatId: number | string,
+  userId: string,
+  body: string,
+): Promise<boolean> {
   try {
-    return await routePromiseCommands(userId, body, (text) => sendMessage(chatId, text))
+    return await router(userId, body, (text) => sendMessage(chatId, text))
   } catch (err) {
-    console.error('[telegram-webhook] promise-command routing failed — handing the text to chat', err)
+    console.error(`[telegram-webhook] ${name}-command routing failed — handing the text to chat`, err)
     return false
   }
 }
@@ -368,6 +383,7 @@ async function handleTextViaRoutine(
     await sendMessage(chatId, telegramChatFailureText('thread_not_found'))
     return
   }
+  recordChatOwnerTurn(userId, threadId, appended.seq, body, 'telegram')
   await sendChatAction(chatId).catch(() => undefined)
 
   const key = chatJobKey(threadId, appended.messageId)

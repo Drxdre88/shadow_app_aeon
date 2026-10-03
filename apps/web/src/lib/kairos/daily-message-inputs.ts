@@ -10,7 +10,14 @@ import { findLatestConscienceRun } from '@/lib/data/constitution-drift'
 import { listSurvivorsSince } from '@/lib/data/ideas'
 import { readKairosPromises } from '@/lib/data/kairos-promises'
 import { listOpenGoals } from '@/lib/data/goals'
+import { readKairosPredictions } from '@/lib/data/kairos-predictions'
+import { readKairosAgenda } from '@/lib/data/kairos-agenda'
 import { weeklyIdeaDiversity } from './ideas/diversity'
+import { predictionsEnabled } from './predictions/flag'
+import { agendaEnabled } from './agenda/flag'
+import { loadTodayDigest } from './today'
+import { summariseTodayForDaily, type AgendaDigest, type TodayDailyDigest, type VerdictDigest } from './daily-message-today'
+import { pickAgenda, pickVerdicts } from './daily-message-tail'
 import { getLatestDriftStatus } from './constitution/amendment'
 import { conscienceFailureLine, readStoredConscience } from './constitution/conscience-probes'
 import { SYNTHESIS_HEALTH_RECIPE } from './synthesis-health'
@@ -18,6 +25,7 @@ import {
   MAX_DIGEST_BELIEFS,
   isLondonMonday,
   londonDate,
+  londonInstant,
   previousDate,
   summariseSynthesis,
   type AetherDigest,
@@ -261,6 +269,33 @@ async function readGoals(userId: string, now: Date): Promise<GoalDigest[] | null
   return out.length > 0 ? out : null
 }
 
+// The previous London day from the today log (owner statements, decisions,
+// MCP use). The log keeps 36h, which covers the whole previous London day at
+// 06:00. loadTodayDigest never throws (null when off or on a failed read).
+const TODAY_LOOKBACK_HOURS = 36
+
+async function readToday(userId: string, date: string): Promise<TodayDailyDigest | null> {
+  // Two reads so a busy day of MCP use can't crowd the owner's words out of the window.
+  const [words, use] = await Promise.all([
+    loadTodayDigest(userId, { hours: TODAY_LOOKBACK_HOURS, limit: 200, excludeTypes: ['used', 'captured'] }),
+    loadTodayDigest(userId, { hours: TODAY_LOOKBACK_HOURS, limit: 200, excludeTypes: ['said', 'replied', 'decided', 'answered', 'captured', 'spoke', 'voice_staged', 'voice_confirmed', 'noted'] }),
+  ])
+  if (!words && !use) return null
+  return summariseTodayForDaily([...(words?.entries ?? []), ...(use?.entries ?? [])], londonInstant(previousDate(date), 0), londonInstant(date, 0))
+}
+
+async function readVerdicts(userId: string, now: Date): Promise<VerdictDigest[] | null> {
+  if (!predictionsEnabled()) return null
+  const picked = pickVerdicts((await readKairosPredictions(userId)).open, now)
+  return picked.length > 0 ? picked : null
+}
+
+async function readAgenda(userId: string): Promise<AgendaDigest[] | null> {
+  if (!agendaEnabled()) return null
+  const picked = pickAgenda((await readKairosAgenda(userId)).open)
+  return picked.length > 0 ? picked : null
+}
+
 async function safe<T>(name: string, failed: string[], fn: () => Promise<T>): Promise<T | null> {
   try {
     return await fn()
@@ -291,11 +326,20 @@ export async function gatherDailyMessageInputs(userId: string, now: Date): Promi
     safe('promises', failed, () => readPromises(userId, since)),
     safe('goals', failed, () => readGoals(userId, now)),
   ])
+  // One-mind inputs, after the batch above so they never reorder its reads.
+  const [today, verdicts, agenda] = await Promise.all([
+    safe('today', failed, () => readToday(userId, date)),
+    safe('verdicts', failed, () => readVerdicts(userId, now)),
+    safe('agenda', failed, () => readAgenda(userId)),
+  ])
   failed.sort()
   return {
     date, isMonday, areas, aether, boardDay, promotions, newBeliefs, drift, openAsks, synthesis, mindCompare, idea, ideaDiversityAlarm,
     ...(promises ? { promises } : {}),
     ...(goals ? { goals } : {}),
+    ...(today ? { today } : {}),
+    ...(verdicts ? { verdicts } : {}),
+    ...(agenda ? { agenda } : {}),
     failed,
   }
 }

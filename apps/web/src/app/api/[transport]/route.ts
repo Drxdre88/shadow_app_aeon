@@ -31,7 +31,11 @@ import {
   registerVoiceNoteTools,
   registerPaidBackupTools,
   registerKairosPromiseTools,
+  registerKairosTodayTools,
+  registerKairosPredictionTools,
+  registerKairosAgendaTools,
 } from './tools'
+import { installTodayUseTracking, tokenFingerprint, tokenKindOf } from '@/lib/kairos/today-mcp-use'
 
 async function verifyToken(_req: Request, bearerToken?: string): Promise<AuthInfo | undefined> {
   if (!bearerToken) return undefined
@@ -44,12 +48,13 @@ async function verifyToken(_req: Request, bearerToken?: string): Promise<AuthInf
     token: bearerToken,
     clientId: result.id,
     scopes: [result.role],
-    extra: { userId: result.id, role: result.role },
+    extra: { userId: result.id, role: result.role, tokenKind: tokenKindOf(bearerToken), fp: tokenFingerprint(bearerToken) },
   }
 }
 
 const mcpHandler = createMcpHandler(
   (server) => {
+    installTodayUseTracking(server)
     registerProjectTools(server)
     registerColumnTools(server)
     registerTaskTools(server)
@@ -78,6 +83,9 @@ const mcpHandler = createMcpHandler(
     registerVoiceNoteTools(server)
     registerPaidBackupTools(server)
     registerKairosPromiseTools(server)
+    registerKairosTodayTools(server)
+    registerKairosPredictionTools(server)
+    registerKairosAgendaTools(server)
   },
   { capabilities: {} },
   {

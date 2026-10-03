@@ -1,5 +1,6 @@
 import { listKairosAsksAnsweredBetween } from '@/lib/data/ask'
 import { listChatThreadsWithMessagesOn, type DailyChatThread } from '@/lib/data/kairos-chat'
+import { DIALOGUE_ENGINE, listDialogueThreadsWithTurnsOn } from '@/lib/data/kairos-dialogue-distill'
 import { captureMemory } from '@/lib/data/memories'
 import { isJobDone } from '@/lib/data/thinking-jobs'
 import { getProviderForTask } from '@/lib/ai/route-task'
@@ -63,15 +64,25 @@ export function resolveChatDistillDate(date?: string, now: Date = new Date()): {
 }
 
 // Threads with messages on the target date, each paired with the ask its
-// nearest operator turn resolved that day (if any).
+// nearest operator turn resolved that day (if any). With
+// KAIROS_DISTILL_DIALOGUES=1, Triad dialogue threads join them (default off:
+// commit_dialogue already distills a dialogue the operator closes).
+export function distillDialoguesEnabled(): boolean {
+  return process.env.KAIROS_DISTILL_DIALOGUES === '1'
+}
+
 export async function gatherChatDistillThreads(
   userId: string,
   target: { start: Date; end: Date },
 ): Promise<{ threads: DailyChatThread[]; askIdByThreadId: Map<string, string> }> {
-  const [threads, answeredAsks] = await Promise.all([
+  const [chatThreads, answeredAsks, dialogueThreads] = await Promise.all([
     listChatThreadsWithMessagesOn(userId, target.start, target.end, MAX_MESSAGES_PER_THREAD),
     listKairosAsksAnsweredBetween(userId, target.start, target.end),
+    distillDialoguesEnabled()
+      ? listDialogueThreadsWithTurnsOn(userId, target.start, target.end, MAX_MESSAGES_PER_THREAD)
+      : Promise.resolve([]),
   ])
+  const threads: DailyChatThread[] = [...chatThreads, ...dialogueThreads]
   const askIdByThreadId = new Map<string, string>()
   for (const ask of answeredAsks) {
     let match: { threadId: string; createdAt: number } | null = null
@@ -96,9 +107,11 @@ export function chatDistillSkipReason(thread: DailyChatThread): string | null {
 
 // P2.5: these are Kairos's distillation of the chat, not the operator's
 // words — derived origin over the thread's turns (operator's own turns
-// and Kairos's replies), which is never better than 'kairos'.
+// and Kairos's replies), which is never better than 'kairos'. A dialogue's
+// "operator" turns are relayed by an agent, so they count as agent input.
 export function chatDistillOriginKind(thread: DailyChatThread): OriginKind {
-  return derivedOriginKind(thread.messages.map((m): OriginKind => (m.role === 'user' ? 'operator' : 'kairos')))
+  const userKind: OriginKind = (thread as { engine?: string }).engine === DIALOGUE_ENGINE ? 'agent' : 'operator'
+  return derivedOriginKind(thread.messages.map((m): OriginKind => (m.role === 'user' ? userKind : 'kairos')))
 }
 
 export interface ChatDistillPersistInput {

@@ -20,9 +20,10 @@ export function KairosGuideContent({ onNavigate }: { onNavigate?: (view: BrainVi
 
       <Section title="The night">
         <P>
-          One routine — <b className="text-white/90 font-medium">Kairos brain</b> — runs on your Claude plan between
-          01:00 and 07:00 UTC. It works through a short queue of thinking: yesterday’s chats, the patterns in each area,
+          One routine — <b className="text-white/90 font-medium">Kairos brain</b> — runs on your Claude plan every hour;
+          its main work happens between 01:00 and 07:00 UTC. It works through a short queue of thinking: yesterday’s chats, the patterns in each area,
           what he understands about you, your beliefs, a contest of new ideas, and the one question he most wants to ask.
+          With daytime thinking on, it also reflects on your day, and a lighter <b className="text-white/90 font-medium">Kairos pulse</b> notes what changed.
         </P>
         {onNavigate && <Link onClick={() => onNavigate('map')}>See every job on the brain map</Link>}
       </Section>

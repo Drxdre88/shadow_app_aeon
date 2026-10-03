@@ -10,6 +10,8 @@ vi.mock('@/lib/kairos/engagement', () => ({
   getConversationState: vi.fn(),
 }))
 
+vi.mock('@/lib/kairos/today', () => ({ recordToday: vi.fn(async () => undefined) }))
+
 import { captureMemory, listRecentKairosSpeaks } from '@/lib/data/memories'
 import { getConversationState } from '@/lib/kairos/engagement'
 import { POST } from '../route'

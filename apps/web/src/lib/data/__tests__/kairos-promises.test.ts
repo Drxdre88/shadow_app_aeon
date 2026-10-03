@@ -164,6 +164,21 @@ describe('theme sync keeps promises server-owned', () => {
     expect(q.params).toContain(PAID_BACKUP_PREF_KEY)
   })
 
+  it.each(['kairosPredictions', 'kairosAgenda'])('upsertPreferences also strips and carries over %s', async (key) => {
+    await upsertPreferences('u1', { currentTheme: 'nebula', [key]: { v: 1, forged: true } })
+    const [entry] = h.inserts
+    expect((entry.values as { preferences: Record<string, unknown> }).preferences).toEqual({ currentTheme: 'nebula' })
+    const q = render(entry.set!.preferences)
+    expect(q.params.filter((p) => p === key)).toHaveLength(3)
+  })
+
+  it('findPreferences never hands predictions or agenda to the client', async () => {
+    h.selectRows = [{ preferences: { currentTheme: 'nebula', kairosPredictions: { v: 1 }, kairosAgenda: { v: 1 } } }]
+    const prefs = await findPreferences('u1') as Record<string, unknown>
+    expect(prefs.kairosPredictions).toBeUndefined()
+    expect(prefs.kairosAgenda).toBeUndefined()
+  })
+
   it('findPreferences never hands promises to the client', async () => {
     h.selectRows = [{ preferences: { currentTheme: 'nebula', [KAIROS_PROMISES_PREF_KEY]: state() } }]
     const prefs = await findPreferences('u1')

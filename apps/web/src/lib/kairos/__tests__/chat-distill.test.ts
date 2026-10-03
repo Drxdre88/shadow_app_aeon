@@ -8,6 +8,11 @@ vi.mock('@/lib/data/kairos-chat', () => ({
   listChatThreadsWithMessagesOn: vi.fn(),
 }))
 
+vi.mock('@/lib/data/kairos-dialogue-distill', () => ({
+  DIALOGUE_ENGINE: 'kairos-dialogue',
+  listDialogueThreadsWithTurnsOn: vi.fn(async () => []),
+}))
+
 vi.mock('@/lib/data/memories', () => ({
   captureMemory: vi.fn(),
 }))

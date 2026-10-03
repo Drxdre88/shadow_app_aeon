@@ -4,7 +4,8 @@ import { memories, oauthAccessTokens, projects, thinkingJobs } from '@/lib/db/sc
 import { FALLBACK_ERROR_PREFIX } from '@/lib/data/thinking-jobs'
 import { PAID_BACKUP_OFF_NOTE } from '@/lib/ai/paid-backup-off'
 import type { ThinkingJobKind } from '@/lib/kairos/engine/types'
-import { BRAIN_JOBS } from '@/lib/kairos/routines/catalog'
+import { daytimeThinkingEnabled } from '@/lib/kairos/cadence/flag'
+import { BRAIN_JOBS, ROUTINES, type RoutineId } from '@/lib/kairos/routines/catalog'
 import { telegramConfigured } from '@/lib/kairos/telegram'
 import type {
   AnsweredBy,
@@ -69,6 +70,17 @@ const SUPERSEDED_PREFIX = 'superseded:'
 const PAID_BACKUP_OFF = new RegExp(`\\b${PAID_BACKUP_OFF_NOTE}\\b`, 'i')
 // The one cron backup that stays free with the paid backup off (plain text).
 const FREE_BACKUP_KINDS = new Set<string>(['daily_message'])
+// Daytime kinds have no backup at all: an unanswered slot is missed, even
+// though the sweep stamps it 'fallback: no fallback …'.
+const NO_BACKUP_KINDS = new Set<string>(['pulse', 'reflect'])
+// Hourly daytime kinds are not "last night".
+const DAYTIME_KINDS = new Set<string>(BRAIN_JOBS.filter((j) => j.cadence === 'hourly').map((j) => j.kind))
+
+// The routine whose scope owns a kind: completeJob overwrites claimed_by, so
+// a finished job's routine cannot be read back from the row.
+function routineForKind(kind: string): RoutineId | null {
+  return ROUTINES.find((r) => (r.allowedKinds as readonly string[]).includes(kind))?.id ?? null
+}
 
 export interface ClassifyOptions {
   // The user's paid backup is currently off: a failed/expired job "covered by
@@ -94,6 +106,7 @@ export function classifyBrainJob(row: BrainJobRow, now: Date, options: ClassifyO
       const error = row.error?.trim() ?? ''
       if (error.startsWith(SUPERSEDED_PREFIX)) return null
       if (PAID_BACKUP_OFF.test(error)) return 'missed'
+      if (NO_BACKUP_KINDS.has(row.kind)) return 'missed'
       if (error.startsWith(FALLBACK_ERROR_PREFIX) || BACKUP_NOTE.test(error)) {
         return options.paidBackupOff && !FREE_BACKUP_KINDS.has(row.kind) ? 'missed' : 'backup'
       }
@@ -123,6 +136,9 @@ export interface SummariseOptions extends ClassifyOptions {
   // KAIROS_CHAT_ROUTINE (alias KAIROS_TELEGRAM_ROUTINE): when off, the chat
   // routine is 'off' regardless of history.
   chatRoutineFlagOn?: boolean
+  // KAIROS_DAYTIME_THINKING: when off, the pulse routine is 'off'. Defaults
+  // to the server flag.
+  pulseRoutineFlagOn?: boolean
 }
 
 // Spend proxy for the "Paid backup" switch: jobs (any kind, chat included)
@@ -151,6 +167,7 @@ export function summariseBrainStatus(
     BRAIN_JOBS.map((j) => [j.kind, { last: null, week: emptyCounts() }]),
   )
   let brainLastClaim: Date | null = null
+  let pulseLastClaim: Date | null = null
   let chatLatest: { at: Date; by: AnsweredBy } | null = null
   let chatLastClaim: Date | null = null
 
@@ -160,7 +177,7 @@ export function summariseBrainStatus(
     const at = eventTime(row)
     const deadline = row.deadlineAt.getTime()
 
-    if (deadline >= nightStart) lastNight[by] += 1
+    if (deadline >= nightStart && !DAYTIME_KINDS.has(row.kind)) lastNight[by] += 1
     if (by === 'backup' && known.has(row.kind) && at.getTime() >= dayStart) backupSeen.add(row.kind)
 
     const entry = perKind.get(row.kind)
@@ -173,6 +190,8 @@ export function summariseBrainStatus(
     if (row.kind === 'chat') {
       if (!chatLatest || at > chatLatest.at) chatLatest = { at, by }
       if (claim && (!chatLastClaim || claim > chatLastClaim)) chatLastClaim = claim
+    } else if (claim && routineForKind(row.kind) === 'pulse') {
+      if (!pulseLastClaim || claim > pulseLastClaim) pulseLastClaim = claim
     } else if (claim && (!brainLastClaim || claim > brainLastClaim)) {
       brainLastClaim = claim
     }
@@ -197,10 +216,16 @@ export function summariseBrainStatus(
   const chatState: BrainRoutineStatus['state'] = !options.chatRoutineFlagOn
     ? 'off'
     : chatLatest?.by === 'routine' ? 'live' : 'silent'
+  // The pulse runs only when there was activity, so a quiet day is not silence:
+  // live while it claimed within the same 26 h as the brain.
+  const pulseState: BrainRoutineStatus['state'] = !(options.pulseRoutineFlagOn ?? daytimeThinkingEnabled())
+    ? 'off'
+    : pulseLastClaim && now.getTime() - pulseLastClaim.getTime() <= ROUTINE_SILENT_AFTER_MS ? 'live' : 'silent'
 
   const routines: BrainRoutineStatus[] = [
     { id: 'brain', lastClaimAt: brainLastClaim ? (brainLastClaim as Date).toISOString() : null, state: brainState },
     { id: 'chat', lastClaimAt: chatLastClaim ? (chatLastClaim as Date).toISOString() : null, state: chatState },
+    { id: 'pulse', lastClaimAt: pulseLastClaim ? (pulseLastClaim as Date).toISOString() : null, state: pulseState },
   ]
 
   return { lastNight, backupKinds, kinds, routines }

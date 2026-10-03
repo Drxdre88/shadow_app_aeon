@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Direct memory reads (area headlines, new beliefs, mind compare) go through db.select;
 // each call takes the next queued result (an Error rejects that one read).
@@ -32,6 +32,9 @@ vi.mock('@/lib/data/ideas', () => ({ listSurvivorsSince: vi.fn() }))
 vi.mock('../ideas/diversity', () => ({ weeklyIdeaDiversity: vi.fn() }))
 vi.mock('@/lib/data/kairos-promises', () => ({ readKairosPromises: vi.fn(async () => ({ v: 1, nextSeq: 1, open: [], closed: [] })) }))
 vi.mock('@/lib/data/goals', () => ({ listOpenGoals: vi.fn(async () => []) }))
+vi.mock('@/lib/data/kairos-predictions', () => ({ readKairosPredictions: vi.fn(async () => ({ v: 1, nextSeq: 1, open: [], closed: [] })) }))
+vi.mock('@/lib/data/kairos-agenda', () => ({ readKairosAgenda: vi.fn(async () => ({ v: 1, nextSeq: 1, open: [], closed: [] })) }))
+vi.mock('../today', () => ({ loadTodayDigest: vi.fn(async () => null) }))
 
 import { getLatestAether } from '@/lib/data/aether'
 import { listOpenKairosAsks } from '@/lib/data/ask'
@@ -44,6 +47,9 @@ import { listSurvivorsSince } from '@/lib/data/ideas'
 import { weeklyIdeaDiversity } from '../ideas/diversity'
 import { readKairosPromises } from '@/lib/data/kairos-promises'
 import { listOpenGoals } from '@/lib/data/goals'
+import { readKairosPredictions } from '@/lib/data/kairos-predictions'
+import { readKairosAgenda } from '@/lib/data/kairos-agenda'
+import { loadTodayDigest } from '../today'
 import { firstPlainLines, gatherDailyMessageInputs } from '../daily-message-inputs'
 
 const USER = 'user-1'
@@ -318,5 +324,48 @@ describe('goals input', () => {
     const inputs = await gatherDailyMessageInputs(USER, NOW)
     expect(inputs.failed).toContain('goals')
     expect(inputs).not.toHaveProperty('goals')
+  })
+})
+
+describe('gatherDailyMessageInputs — one mind', () => {
+  const at0500 = new Date('2026-10-01T05:00:00.000Z') // 06:00 London (BST)
+  const prediction = { seq: 3, claim: 'The deploy ships by Friday.', dueDate: '2026-09-30', status: 'open', check: { kind: 'owner_verdict' } }
+  const item = { seq: 2, dueAt: '2026-10-08T08:00:00.000Z', what: 'Check the deploy landed', status: 'open' }
+
+  afterEach(() => {
+    delete process.env.KAIROS_PREDICTIONS
+    delete process.env.KAIROS_INITIATIVE
+    delete process.env.KAIROS_AGENDA
+  })
+
+  it('summarises the previous London day from the today log', async () => {
+    vi.mocked(loadTodayDigest).mockResolvedValueOnce({
+      from: '', to: '',
+      entries: [
+        { at: '2026-09-30T09:00:00.000Z', channel: 'telegram', type: 'said', speaker: 'owner', relayed: false, text: 'Fridays are for writing.' },
+        { at: '2026-10-01T04:00:00.000Z', channel: 'web', type: 'said', speaker: 'owner', relayed: false, text: 'today, not yesterday' },
+      ],
+    })
+    const inputs = await gatherDailyMessageInputs(USER, at0500)
+    expect(inputs.today).toEqual({ ownerSaid: [{ channel: 'telegram', text: 'Fridays are for writing.' }], decisions: [], mcpUse: null })
+    expect(loadTodayDigest).toHaveBeenCalledWith(USER, expect.objectContaining({ hours: 36 }))
+  })
+
+  it('reads verdicts and Horae only behind their flags', async () => {
+    vi.mocked(readKairosPredictions).mockResolvedValue({ v: 1, nextSeq: 4, open: [prediction], closed: [] } as never)
+    vi.mocked(readKairosAgenda).mockResolvedValue({ v: 1, nextSeq: 3, open: [item], closed: [] } as never)
+
+    const off = await gatherDailyMessageInputs(USER, at0500)
+    expect(off).not.toHaveProperty('verdicts')
+    expect(off).not.toHaveProperty('agenda')
+    expect(readKairosPredictions).not.toHaveBeenCalled()
+    expect(readKairosAgenda).not.toHaveBeenCalled()
+
+    process.env.KAIROS_PREDICTIONS = '1'
+    process.env.KAIROS_INITIATIVE = '1'
+    process.env.KAIROS_AGENDA = '1'
+    const on = await gatherDailyMessageInputs(USER, at0500)
+    expect(on.verdicts).toEqual([{ seq: 3, claim: 'The deploy ships by Friday.' }])
+    expect(on.agenda).toEqual([{ seq: 2, dueAt: '2026-10-08T08:00:00.000Z', what: 'Check the deploy landed' }])
   })
 })

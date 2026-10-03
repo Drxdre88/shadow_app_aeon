@@ -1,5 +1,6 @@
 import { stageVoiceNote } from '@/lib/data/voice-notes'
 import { kairosVoiceNoteSchema } from '@/lib/data/validators/voice-notes'
+import { recordVoiceStagedToday } from '@/lib/kairos/voice-note-today'
 import type { RegisterFn } from './types'
 import { getUserId, ok, notFound, fail } from './types'
 
@@ -29,6 +30,7 @@ export const registerVoiceNoteTools: RegisterFn = (server) => {
         if (result.reason === 'dominion_not_found') return notFound('Dominion')
         return fail(`kairos_voice_note: ${result.reason}`)
       }
+      recordVoiceStagedToday(uid, result.noteId, result.parts, parsed.data.transcript, { kind: 'agent', via: 'mcp' })
       return ok({
         noteId: result.noteId,
         parts: result.parts,

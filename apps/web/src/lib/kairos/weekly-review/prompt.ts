@@ -2,6 +2,12 @@ import { z } from 'zod'
 import { extractJsonBlock, neutraliseFences } from '@/lib/kairos/_prompt-utils'
 import { initiativeEnabled } from '@/lib/kairos/initiative'
 import { makeFedIdResolver } from '@/lib/kairos/introspection-prompt'
+import {
+  lenientReviewPredictionsSchema,
+  predictionPromptLines,
+  type ReviewPredictionContext,
+  type ReviewPredictionProposal,
+} from '@/lib/kairos/predictions/prompt-block'
 import type { BeliefDiffKind, InitiativeWeekInput, WeeklyReviewInputs } from './inputs'
 
 // Weekly review prompt + strict output contract (docs/kairos/34 §4,
@@ -146,7 +152,12 @@ function promiseLines(ctx: ReviewPromiseContext): string[] {
   return out
 }
 
-export function buildWeeklyReviewPrompt(inputs: WeeklyReviewInputs, conscience?: string, promises?: ReviewPromiseContext): string {
+export function buildWeeklyReviewPrompt(
+  inputs: WeeklyReviewInputs,
+  conscience?: string,
+  promises?: ReviewPromiseContext,
+  predictions?: ReviewPredictionContext,
+): string {
   const { window: w } = inputs
   const lines: string[] = [
     `Week under review: ${w.isoWeek} (${w.start.toISOString().slice(0, 10)} to ${new Date(w.end.getTime() - 1).toISOString().slice(0, 10)}).`,
@@ -210,6 +221,8 @@ export function buildWeeklyReviewPrompt(inputs: WeeklyReviewInputs, conscience?:
   if (conscience?.trim()) lines.push('', conscience.trim())
 
   if (promises) lines.push(...promiseLines(promises))
+  // KAIROS_PREDICTIONS only: the track record note + the predictions spec.
+  if (predictions) lines.push(...predictionPromptLines(predictions))
 
   lines.push('', 'Write the weekly review JSON now.')
   return lines.join('\n')
@@ -253,6 +266,8 @@ export const weeklyReviewSchema = z.object({
     }).slice(0, MAX_REVIEW_PROMISES * 2) : undefined),
     z.array(reviewPromiseSchema).optional(),
   ),
+  // Lenient too: a bad prediction never costs the review.
+  predictions: lenientReviewPredictionsSchema,
 })
 
 export type WeeklyReviewOutput = z.infer<typeof weeklyReviewSchema>
@@ -276,6 +291,8 @@ export interface GroundedWeeklyReview {
   droppedActions: number
   // Raw promise proposals; persisted only when the initiative switch is on.
   promises: ReviewPromiseProposal[]
+  // Raw prediction proposals; persisted only while KAIROS_PREDICTIONS is on.
+  predictions: ReviewPredictionProposal[]
 }
 
 export function groundWeeklyReview(
@@ -312,6 +329,7 @@ export function groundWeeklyReview(
     actions,
     droppedActions: out.actions.length - actions.length,
     promises: out.promises ?? [],
+    predictions: out.predictions ?? [],
   }
 }
 

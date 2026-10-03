@@ -26,6 +26,17 @@ vi.mock('../retrieve', () => ({
   retrieveContext: vi.fn(),
 }))
 
+// One mind: real today.ts / today-render.ts over a mocked data layer.
+vi.mock('next/server', () => ({ after: (task: () => Promise<unknown>) => { void task() } }))
+vi.mock('@/lib/db', () => ({ db: {} }))
+vi.mock('@/lib/data/kairos-today', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/data/kairos-today')>()),
+  writeTodayEntry: vi.fn(async () => undefined),
+  listTodayEntries: vi.fn(async () => []),
+}))
+
+import { appendDialogueTurn as appendKairosDialogueTurn } from '../dialogue'
+import { listTodayEntries, writeTodayEntry } from '@/lib/data/kairos-today'
 import { openKairosDialogue, prepareDialogueContext, commitDialogue } from '../dialogue'
 import { getOpenKairosAskById, markKairosAskAnswered, getPriorAethers } from '@/lib/data/ask'
 import { captureReflection } from '@/lib/data/memories'
@@ -310,5 +321,85 @@ describe('commitDialogue', () => {
     mock(loadDialogue).mockResolvedValue(null)
     const res = await commitDialogue(USER, THREAD, { reflections: [{ bodyMd: 'x' }] })
     expect(res).toEqual({ ok: false, reason: 'thread_not_found' })
+  })
+})
+
+describe('dialogue ↔ today (one mind)', () => {
+  it('an operator turn is logged as a relayed agent statement, never the owner', async () => {
+    mock(appendDialogueTurn).mockResolvedValue({ ok: true, turnId: 'turn-3', seq: 3 })
+
+    const res = await appendKairosDialogueTurn(USER, THREAD, 'operator', 'I said ship it')
+
+    expect(res).toEqual({ ok: true, seq: 3, turnId: 'turn-3' })
+    await vi.waitFor(() => expect(writeTodayEntry).toHaveBeenCalledTimes(1))
+    const [, payload, mode] = mock(writeTodayEntry).mock.calls[0]
+    expect(mode).toBe('upsert')
+    expect(payload).toMatchObject({
+      key: `dialogue:${THREAD}:3`,
+      channel: 'triad',
+      type: 'said',
+      speaker: 'agent',
+      relayedRole: 'operator',
+      origin: { kind: 'agent', via: 'dialogue' },
+      ref: { dialogueId: THREAD, seq: 3 },
+      covered: 'dialogue-commit',
+      text: 'I said ship it',
+    })
+  })
+
+  it('a kairos turn is logged as replied, not relayed', async () => {
+    mock(appendDialogueTurn).mockResolvedValue({ ok: true, turnId: 'turn-4', seq: 4 })
+
+    await appendKairosDialogueTurn(USER, THREAD, 'kairos', 'Then ship it Friday.')
+
+    await vi.waitFor(() => expect(writeTodayEntry).toHaveBeenCalledTimes(1))
+    const payload = mock(writeTodayEntry).mock.calls[0][1]
+    expect(payload).toMatchObject({ type: 'replied', speaker: 'agent', channel: 'triad' })
+    expect(payload).not.toHaveProperty('relayedRole')
+  })
+
+  it('records nothing when the thread is missing', async () => {
+    mock(appendDialogueTurn).mockResolvedValue({ ok: false, reason: 'thread_not_found' })
+    await appendKairosDialogueTurn(USER, THREAD, 'operator', 'x')
+    expect(writeTodayEntry).not.toHaveBeenCalled()
+  })
+
+  it('prepare carries a seeded Telegram owner statement, excluding this dialogue', async () => {
+    mock(loadDialogue).mockResolvedValue({
+      thread: {
+        id: THREAD, userId: USER, dominionId: null, title: 'Topic', status: 'running', createdAt: new Date(),
+        seed: { kind: 'kairos-dialogue', kairosAskId: null, aetherMemoryId: null, sourceThoughtId: null, sourceMemoryIds: [] },
+      },
+      turns: [],
+    })
+    mock(fetchMemoriesByIds).mockResolvedValue([])
+    mock(listTodayEntries).mockResolvedValue([{
+      createdAt: new Date('2026-10-03T10:00:00Z'),
+      toolName: 'telegram',
+      payload: {
+        v: 1, key: 'chat:tg:7', channel: 'telegram', type: 'said', origin: { kind: 'operator', via: 'telegram' },
+        speaker: 'owner', text: 'Hydra export before Friday', covered: 'chat-distill',
+      },
+    }])
+
+    const ctx = await prepareDialogueContext(USER, THREAD)
+
+    expect(listTodayEntries).toHaveBeenCalledWith(USER, expect.objectContaining({ excludeThreadId: THREAD }))
+    expect(ctx!.today).toContain('## Today across channels')
+    expect(ctx!.today).toContain('owner·telegram said: "Hydra export before Friday"')
+    expect(ctx!.today).toContain('BEGIN TODAY DATA')
+  })
+
+  it('prepare returns an empty today string on a quiet day', async () => {
+    mock(loadDialogue).mockResolvedValue({
+      thread: {
+        id: THREAD, userId: USER, dominionId: null, title: 'Topic', status: 'running', createdAt: new Date(),
+        seed: { kind: 'kairos-dialogue', kairosAskId: null, aetherMemoryId: null, sourceThoughtId: null, sourceMemoryIds: [] },
+      },
+      turns: [],
+    })
+    mock(fetchMemoriesByIds).mockResolvedValue([])
+    mock(listTodayEntries).mockResolvedValue([])
+    expect((await prepareDialogueContext(USER, THREAD))!.today).toBe('')
   })
 })

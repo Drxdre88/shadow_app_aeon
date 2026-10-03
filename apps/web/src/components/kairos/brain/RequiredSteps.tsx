@@ -8,6 +8,7 @@ import type { KairosBrainStatus } from '@/lib/kairos/routines/status-types'
 import { Code, CodeBlock, CopyField, Panel } from './brainUi'
 import { Act, Actions, B, CheckAgain, Disclosure, Expect, PrimaryLink, Troubleshoot } from './setupUi'
 import { RoutineForm } from './RoutineForm'
+import { PulseRoutineBody } from './OwnerSteps'
 
 interface StepProps {
   status: KairosBrainStatus
@@ -70,6 +71,7 @@ export function ConnectStepBody({ status, refreshing, onRefresh }: StepProps) {
 
 export function BrainStepBody({ status, refreshing, onRefresh, ranBefore }: StepProps & { ranBefore: boolean }) {
   const brain = getRoutine('brain')
+  const pulseOn = (status.routines.find((r) => r.id === 'pulse')?.state ?? 'off') !== 'off'
   return (
     <>
       <p className="text-[12.5px] leading-relaxed text-white/65">
@@ -96,6 +98,11 @@ export function BrainStepBody({ status, refreshing, onRefresh, ranBefore }: Step
         </p>
         <CodeBlock lang="cron" value={brain.cronUtc ?? ''} />
       </Disclosure>
+      {pulseOn && (
+        <Disclosure label="Daytime thinking: add the pulse routine">
+          <PulseRoutineBody status={status} refreshing={refreshing} onRefresh={onRefresh} />
+        </Disclosure>
+      )}
       <Troubleshoot
         items={[
           ['Claude shows a green run, but this step stays grey', 'A green run in Claude only means it started. Open the routine and check aeon is the only connector, and that it’s connected.'],

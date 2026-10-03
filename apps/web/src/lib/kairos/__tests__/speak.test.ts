@@ -19,9 +19,12 @@ vi.mock('@/lib/kairos/telegram', () => ({
   sendKairosSpeak: vi.fn(),
 }))
 
+vi.mock('@/lib/kairos/today', () => ({ recordToday: vi.fn(async () => undefined) }))
+
 import { getConversationState } from '@/lib/kairos/engagement'
 import { captureMemory, listRecentKairosSpeaks } from '@/lib/data/memories'
 import { sendKairosSpeak } from '@/lib/kairos/telegram'
+import { recordToday } from '@/lib/kairos/today'
 import { capSpeakMessage, deliverKairosSpeak, SPEAK_MESSAGE_MAX_CHARS } from '../speak'
 
 const OPERATOR = 'operator-1'
@@ -91,6 +94,33 @@ describe('deliverKairosSpeak — externalId dedup (F2)', () => {
     const [, input] = vi.mocked(captureMemory).mock.calls[0]
     expect(input.sourceMetadata).not.toHaveProperty('externalId')
     expect(outcome).toEqual({ status: 200, body: { id: 'memory-1', delivered: { inbox: true, telegram: true } } })
+  })
+})
+
+describe('deliverKairosSpeak — today log (one mind)', () => {
+  const send = (over: Partial<Parameters<typeof deliverKairosSpeak>[1]> = {}) => deliverKairosSpeak(OPERATOR, {
+    title: 'Kairos · 2026-10-03', message: 'Morning.', kind: 'notify', urgency: 'normal',
+    force: true, opsAlert: false, digest: true, ...over,
+  })
+
+  it('records one kairos "spoke" entry keyed to the new speak, after capture', async () => {
+    await send()
+
+    expect(recordToday).toHaveBeenCalledOnce()
+    expect(recordToday).toHaveBeenCalledWith(
+      OPERATOR,
+      expect.objectContaining({ key: 'speak:memory-1', channel: 'kairos', type: 'spoke', text: 'Kairos · 2026-10-03: Morning.', ref: { memoryId: 'memory-1' } }),
+      { kind: 'kairos', via: 'speak' },
+    )
+    expect(vi.mocked(captureMemory).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(recordToday).mock.invocationCallOrder[0])
+  })
+
+  it('records nothing on a dedup hit (already delivered) or for an ops alert', async () => {
+    vi.mocked(captureMemory).mockResolvedValueOnce({ memory: { id: 'memory-existing' } as never, created: false })
+    await send({ externalId: 'kairos-daily:2026-10-03' })
+    await send({ opsAlert: true, digest: false })
+
+    expect(recordToday).not.toHaveBeenCalled()
   })
 })
 

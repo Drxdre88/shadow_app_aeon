@@ -374,6 +374,19 @@ describe('chat channels', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('apply carries the job channel to the reply (today log): telegram and web', async () => {
+    const tg = jobFor(1)
+    vi.mocked(findJobById).mockResolvedValue(tg)
+    await chatHandler.apply(tg, 'Hydra is green.', 'routine')
+    expect(persistAssistantReplyOnce).toHaveBeenLastCalledWith(USER, THREAD, 'Hydra is green.', expect.objectContaining({ channel: 'telegram' }))
+
+    const web = jobFor(1, 'claimed', 'job-2', 'web')
+    vi.mocked(findJobById).mockResolvedValue(web)
+    messages = [{ seq: 1, role: 'user', content: 'status of hydra?', answersSeq: null }]
+    await chatHandler.apply(web, 'Hydra is green.', 'routine')
+    expect(persistAssistantReplyOnce).toHaveBeenLastCalledWith(USER, THREAD, 'Hydra is green.', expect.objectContaining({ channel: 'web' }))
+  })
+
   it('web fallback answers on the paid path with the app surface and never calls Telegram', async () => {
     expect(await chatHandler.fallback(jobFor(1, 'failed', 'job-1', 'web'))).toEqual({ ok: true, memoryIds: [] })
     expect(runAssistantTurnOnce).toHaveBeenCalledWith(USER, THREAD, null, 'status of hydra?', 1, { surface: 'app' })

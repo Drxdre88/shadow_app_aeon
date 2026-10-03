@@ -10,6 +10,7 @@ import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 import { gatherDailyMessageInputs } from './daily-message-inputs'
 import { loadConscienceBlock } from './conscience-context'
 import { PROMISE_CHECK_CRON, verifyOpenPromises } from './promises/check'
+import { buildHoraeLine, buildVerdictLine } from './daily-message-tail'
 import {
   DAILY_MESSAGE_SYSTEM_PROMPT,
   DAILY_MESSAGE_TOTAL_MAX_CHARS,
@@ -176,10 +177,16 @@ export async function composeDailyMessage(userId: string, now: Date): Promise<Co
   // answers and asks since any routine draft was planned). Code-built, after
   // the guard — the model never writes or quotes it.
   // The promise line goes last, its length reserved from the questions' cap,
-  // so trimming can never cut it.
-  const promiseLine = buildPromiseLine(inputs.promises, now)
-  message = appendOpenQuestionsBlock(message, inputs.openAsks, now, DAILY_MESSAGE_TOTAL_MAX_CHARS - (promiseLine ? promiseLine.length + 2 : 0))
-  if (promiseLine) message = `${message}\n\n${promiseLine}`
+  // so trimming can never cut it. The verdict and Horae lines (code-built,
+  // never seen by the model) follow it under the same reservation.
+  const tail = [
+    buildPromiseLine(inputs.promises, now),
+    buildVerdictLine(inputs.verdicts),
+    buildHoraeLine(inputs.agenda),
+  ].filter(Boolean)
+  const reserved = tail.reduce((n, line) => n + line.length + 2, 0)
+  message = appendOpenQuestionsBlock(message, inputs.openAsks, now, DAILY_MESSAGE_TOTAL_MAX_CHARS - reserved)
+  for (const line of tail) message = `${message}\n\n${line}`
   return { message, source, inputs }
 }
 

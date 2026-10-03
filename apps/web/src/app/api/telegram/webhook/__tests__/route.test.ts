@@ -64,6 +64,18 @@ vi.mock('@/lib/kairos/promises/telegram-commands', () => ({
 
 vi.mock('@/lib/kairos/initiative', () => ({ initiativeEnabled: vi.fn(() => false) }))
 
+vi.mock('@/lib/kairos/predictions/telegram-commands', () => ({
+  routePredictionCommands: vi.fn(async () => false),
+}))
+
+vi.mock('@/lib/kairos/agenda/telegram-commands', () => ({
+  routeAgendaCommands: vi.fn(async () => false),
+}))
+
+vi.mock('@/lib/kairos/chat-today', () => ({
+  recordChatOwnerTurn: vi.fn(),
+}))
+
 import { handleProposalCallback, routeVetoReason } from '@/lib/kairos/proposal-telegram'
 import { routePromiseCommands } from '@/lib/kairos/promises/telegram-commands'
 import { initiativeEnabled } from '@/lib/kairos/initiative'

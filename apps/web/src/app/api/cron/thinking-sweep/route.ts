@@ -11,6 +11,8 @@ import {
 } from '@/lib/kairos/thinking/queue'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
 import { PROMISE_NUDGE_CRON, runPromiseNudges, type PromiseNudgeResult } from '@/lib/kairos/promises/nudge'
+import { predictionsEnabled } from '@/lib/kairos/predictions/flag'
+import { PREDICTION_CHECK_CRON, runPredictionSettlement, type PredictionCheckResult } from '@/lib/kairos/predictions/check'
 import { sweepExpiredProposals, type ProposalExpirySweepResult } from '@/lib/kairos/proposal-decision'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -35,6 +37,9 @@ import { sweepExpiredProposals, type ProposalExpirySweepResult } from '@/lib/kai
 // 4. Proposal expiry (operator only): unanswered goal proposals expire after
 //    72h (no answer = no action, no negative reaction) and their Telegram
 //    buttons are replaced by "— Expired, no action".
+// 5. Prediction settlement (operator only, KAIROS_PREDICTIONS=1): SQL-only
+//    card checks + expiry rules. Kairos never settles; only user activity
+//    events, card-state rules or the owner's verdict do.
 // ─────────────────────────────────────────────────────────────────────────
 
 export const maxDuration = 300
@@ -90,6 +95,7 @@ export async function GET(req: NextRequest) {
 
   let promiseNudge: PromiseNudgeResult | { status: 'error'; error: string } | null = null
   let proposalExpiry: ProposalExpirySweepResult | { error: string } | null = null
+  let predictionCheck: PredictionCheckResult | { status: 'error'; error: string } | null = null
   const operatorUserId = process.env.KAIROS_OPERATOR_USER_ID?.trim()
   if (operatorUserId) {
     try {
@@ -97,6 +103,14 @@ export async function GET(req: NextRequest) {
     } catch (err) {
       await writeCronFailureTrace(operatorUserId, { cronName: PROMISE_NUDGE_CRON, reason: 'uncaught_exception', error: err })
       promiseNudge = { status: 'error', error: err instanceof Error ? err.message : String(err) }
+    }
+    if (predictionsEnabled()) {
+      try {
+        predictionCheck = await runPredictionSettlement(operatorUserId, now)
+      } catch (err) {
+        await writeCronFailureTrace(operatorUserId, { cronName: PREDICTION_CHECK_CRON, reason: 'uncaught_exception', error: err })
+        predictionCheck = { status: 'error', error: err instanceof Error ? err.message : String(err) }
+      }
     }
     try {
       proposalExpiry = await sweepExpiredProposals(operatorUserId, now)
@@ -116,5 +130,6 @@ export async function GET(req: NextRequest) {
     users,
     promiseNudge,
     proposalExpiry,
+    ...(predictionCheck ? { predictionCheck } : {}),
   })
 }

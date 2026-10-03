@@ -4,6 +4,14 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–35).
 
+## [0.21.0] — 2026-10-03 · "One mind everywhere"
+
+> Kairos is one being across Telegram, the web, Triad and Claude: a shared, labelled "today" log that every channel writes and reads. Behind switches: daytime thinking (hourly reflect + a Sonnet pulse), a track record of his predictions, and Horae, his own agenda.
+
+- **Today log.** One internal session per user (`engine 'kairos-today'`, events `kind 'kairos_today'`), 36h rolling, 500-entry cap, speaker derived only from origin. Writers: chat turns and replies (all channels), dialogue turns (relayed, unverified), Q answers, inbox and goal decisions, voice notes, session captures, speak, MCP use (coalesced per 15 minutes). Readers: chat prompt ("Today across channels"), `prepare_dialogue_context`, `prepare_context` (`includeToday`), the 06:00 message, ask_mine. Trimmed by the chat-distill cron. `get_kairos_today` / `GET /api/v1/kairos/today`. `KAIROS_TODAY=0` turns it off. Events POST refuses internal Kairos threads.
+- **Daytime thinking** (`KAIROS_DAYTIME_THINKING=1`). Brain catalog cron `40 * * * *`; new `reflect` (deep, ≤6/day, private observation) and `pulse` (light, new `pulse` routine on Sonnet, writes only today notes). No paid fallback for either.
+- **Track record** (`KAIROS_PREDICTIONS=1`). `user_preferences.kairosPredictions` (≤20 open). From the weekly review (≤3) and reflect (≤1). Settled hourly by user activity events / card-state rules, or by the owner (`R3 right|wrong`, `void R3`, web action); never by Kairos. Brier, hit rate and over-confidence; a confident wrong call lowers trust in the beliefs it cited.
+- **Horae** (`KAIROS_INITIATIVE=1` + `KAIROS_AGENDA=1`). `user_preferences.kairosAgenda` (≤8 open). Booked by reflect follow-ups and goal approvals; fired once by the new `agenda_due` job (brain routine) as a thought, ask or message under speak limits; `cancel A3`.
 ## [0.20.0] — 2026-10-02 · "Settled, with initiative on a leash"
 
 > Phase 1 hardens the new brain (owner-only constitution, routine-scoped jobs, no lost idea nights, timed chat). Phase 2 gives Kairos goals of his own, a promise list and Approve / Veto buttons, all off until `KAIROS_INITIATIVE=1`.

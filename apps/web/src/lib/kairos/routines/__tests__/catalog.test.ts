@@ -4,6 +4,7 @@ vi.mock('@/lib/db', () => ({ db: {} }))
 
 import {
   BRAIN_JOBS,
+  KAIROS_PULSE_MODEL,
   KAIROS_ROUTINE_MODEL,
   ROUTINES,
   getRoutine,
@@ -50,10 +51,11 @@ function dailyRunMinutes(cron: string): number[] {
 }
 
 describe('ROUTINES', () => {
-  it('every routine runs on the Opus routine model', () => {
+  it('deep routines run on the Opus routine model; the pulse on the cheap model', () => {
     expect(ROUTINES.length).toBeGreaterThan(0)
-    for (const r of ROUTINES) expect(r.model).toBe('claude-opus-5-5')
+    for (const r of ROUTINES) expect(r.model).toBe(r.id === 'pulse' ? KAIROS_PULSE_MODEL : 'claude-opus-5-5')
     expect(KAIROS_ROUTINE_MODEL).toBe('claude-opus-5-5')
+    expect(KAIROS_PULSE_MODEL).toBe('claude-sonnet-5-5')
   })
 
   it('ids are unique and getRoutine finds each', () => {
@@ -74,12 +76,23 @@ describe('ROUTINES', () => {
     }
   })
 
-  it('the brain routine runs hourly through the night', () => {
+  it('the brain routine runs every hour, day and night', () => {
     const brain = getRoutine('brain')
     expect(brain.trigger).toBe('schedule')
+    expect(brain.cronUtc).toBe('40 * * * *')
     const runs = dailyRunMinutes(brain.cronUtc!)
-    expect(runs.length).toBeGreaterThan(1)
+    expect(runs).toHaveLength(24)
     expect(runs.slice(1).every((m, i) => m - runs[i] === 60)).toBe(true)
+  })
+
+  it('the pulse runs hourly through the day, half an hour away from the brain', () => {
+    const pulse = getRoutine('pulse')
+    expect(pulse.trigger).toBe('schedule')
+    expect(pulse.cronUtc).toBe('10 6-21 * * *')
+    const runs = dailyRunMinutes(pulse.cronUtc!)
+    expect(runs).toHaveLength(16)
+    const brainMinute = Number(getRoutine('brain').cronUtc!.split(' ')[0])
+    for (const m of runs) expect(Math.abs((m % 60) - brainMinute)).toBe(30)
   })
 })
 
@@ -96,6 +109,14 @@ describe('routinePrompt', () => {
     const match = prompt.match(/claim_thinking_job with (\{[^\n]*?\})\./)
     expect(match).not.toBeNull()
     expect(JSON.parse(match![1])).toEqual({ kinds: ['chat'], routine: 'chat' })
+  })
+
+  it('the pulse uses the generic prompt and claims with only its routine', () => {
+    const pulse = getRoutine('pulse')
+    const prompt = routinePrompt(pulse)
+    expect(pulse.claimKinds).toBeNull()
+    expect(prompt).toContain('Call claim_thinking_job with { "routine": "pulse" }.')
+    expect(prompt).toContain(`after ${pulse.maxJobs} jobs`)
   })
 
   it.each(ROUTINES.map((r) => [r.id, r] as const))('%s prompt declares its routine on claim and on submit', (id, r) => {
@@ -136,6 +157,12 @@ describe('routinePrompt', () => {
     expect(prompt).toContain(`after ${brain.maxJobs} jobs`)
     expect(prompt).toContain(`after ${brain.maxMinutes} minutes`)
   })
+
+  it('never claims a backup for every job; the pulse is told a miss is fine', () => {
+    for (const r of ROUTINES) expect(routinePrompt(r)).not.toMatch(/backup for every job/)
+    expect(routinePrompt(getRoutine('pulse'))).toContain('do not retry it — a missed pulse is fine')
+    expect(routinePrompt(getRoutine('brain'))).toContain('do not retry it — Kairos covers or safely skips every job you leave')
+  })
 })
 
 describe('routineScheduleRequest', () => {
@@ -175,6 +202,15 @@ describe('routine scope', () => {
     ['chat', 'chat', true],
     ['chat', 'cortex', false],
     ['chat', 'idea_judge', false],
+    ['brain', 'reflect', true],
+    ['brain', 'pulse', false],
+    ['pulse', 'pulse', true],
+    ['pulse', 'cortex', false],
+    ['pulse', 'reflect', false],
+    ['chat', 'pulse', false],
+    ['brain', 'agenda_due', true],
+    ['pulse', 'agenda_due', false],
+    ['chat', 'agenda_due', false],
   ] as const)('routineAllows(%s, %s) = %s', (id, kind, allowed) => {
     expect(routineAllows(id, kind)).toBe(allowed)
   })

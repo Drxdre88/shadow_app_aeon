@@ -30,6 +30,8 @@ vi.mock('../proposal-decision', () => ({
   isDecidableProposalKind: (kind: unknown) => kind === 'goal',
 }))
 
+vi.mock('../today', () => ({ recordToday: vi.fn(async () => undefined) }))
+
 import { decideKairosProposal } from '../proposal-decision'
 import { acceptProposal, archiveMemory, findMemoryById, markKairosSpeaksReplied } from '@/lib/data/memories'
 import { recordIdeaOutcome } from '@/lib/data/ideas'

@@ -127,9 +127,12 @@ describe('ThinkingQueue.planDue / claim — lazy planning in prerequisite order'
     expect(res.planned.map((r) => r.kind)).toEqual(['aether'])
   })
 
-  it('planDue skips the given kinds (the sweep never plans concept/chat)', async () => {
+  it('planDue skips the given kinds (the sweep never plans concept/chat/pulse/reflect)', async () => {
     const log: string[] = []
-    const q = new ThinkingQueue([handler('concept', log), handler('weekly_review', log), handler('chat', log), handler('daily_message', log)])
+    const q = new ThinkingQueue([
+      handler('concept', log), handler('weekly_review', log), handler('chat', log), handler('daily_message', log),
+      handler('pulse', log), handler('reflect', log),
+    ])
     const res = await q.planDue(USER, NOW, { skipKinds: SWEEP_PLAN_SKIP_KINDS })
     expect(log).toEqual(['plan:weekly_review', 'plan:daily_message'])
     expect(res.planned.map((r) => r.kind)).toEqual(['weekly_review', 'daily_message'])
@@ -448,9 +451,10 @@ describe('claimThinkingJob — routine scope', () => {
     expect(claimNextJob).not.toHaveBeenCalled()
   })
 
-  it('an unscoped claim is unchanged', async () => {
+  it('an unscoped claim defaults to the brain allow-list, so it never takes a pulse job', async () => {
     await claimThinkingJob(USER, {})
-    expect(claimNextJob).toHaveBeenCalledWith(USER, undefined)
+    expect(claimNextJob).toHaveBeenCalledWith(USER, getRoutine('brain').allowedKinds)
+    expect(getRoutine('brain').allowedKinds).not.toContain('pulse')
     await claimThinkingJob(USER, { kinds: ['chat'] })
     expect(claimNextJob).toHaveBeenLastCalledWith(USER, ['chat'])
   })

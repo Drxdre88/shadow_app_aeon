@@ -30,6 +30,7 @@ export const GET = withRateLimit(
     const maxSources = url.searchParams.get('maxSources')
     if (maxSources) params.maxSources = Number(maxSources)
     if (url.searchParams.get('includePinned') === 'false') params.includePinned = false
+    if (url.searchParams.get('includeToday') === 'false') params.includeToday = false
 
     const types = url.searchParams.getAll('type')
     if (types.length === 1) params.type = types[0]

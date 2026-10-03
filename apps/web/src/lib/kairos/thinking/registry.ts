@@ -1,5 +1,6 @@
 import type { ThinkingJobHandler } from '@/lib/kairos/engine/types'
 import { aetherHandler } from './handlers/aether'
+import { agendaDueHandler } from './handlers/agenda-due'
 import { archetypeHandler } from './handlers/archetype'
 import { askMineHandler } from './handlers/ask-mine'
 import { beliefExtractHandler } from './handlers/belief-extract'
@@ -14,6 +15,8 @@ import { goalProposeHandler } from './handlers/goal-propose'
 import { ideaGenerateHandler } from './handlers/idea-generate'
 import { ideaJudgeHandler } from './handlers/idea-judge'
 import { mindCompareHandler } from './handlers/mind-compare'
+import { pulseHandler } from './handlers/pulse'
+import { reflectHandler } from './handlers/reflect'
 import { weeklyReviewHandler } from './handlers/weekly-review'
 
 // Every kind the thinking queue can plan, serve and apply. List order does
@@ -35,6 +38,9 @@ export function getThinkingHandlers(): ThinkingJobHandler[] {
     archetypeHandler,
     askMineHandler,
     dailyMessageHandler,
+    agendaDueHandler,
+    reflectHandler,
+    pulseHandler,
     chatHandler,
   ]
 }

@@ -1,4 +1,5 @@
 import { extractJsonBlock } from './_prompt-utils'
+import { TODAY_DAILY_SECTION_TITLE, todayPromptLines, type DailyTailInputs } from './daily-message-today'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Daily Message (docs/kairos/34 §3) — the pure half: London-time
@@ -153,7 +154,7 @@ export interface GoalDigest { title: string; state: 'proposed' | 'active'; dueAt
 
 // Every input is optional: null = unavailable (not found, or its read failed —
 // the name is then listed in `failed`). An input failure never costs the message.
-export interface DailyMessageInputs {
+export interface DailyMessageInputs extends DailyTailInputs {
   date: string
   isMonday: boolean
   areas: AreaDigest[] | null
@@ -275,6 +276,7 @@ export function buildDailyMessageUserPrompt(inputs: DailyMessageInputs, conscien
       `${inputs.synthesis.failed} stage(s) failing: ${inputs.synthesis.failedStages.join(', ')}.`,
     ]))
   }
+  out.push(...section(TODAY_DAILY_SECTION_TITLE, todayPromptLines(inputs.today)))
   // Norms read at answer time (P2.5 G4) — delimited reference data, last, so
   // the facts above and the system prompt's output contract stay primary.
   if (conscience?.trim()) out.push('', conscience.trim())

@@ -14,11 +14,13 @@ import { GOAL_NOTE_MAX, GOAL_PROPOSAL_KIND } from './goals/parse'
 import { approveGoal, expireStaleGoals, vetoGoal, type GoalActionFailure } from './goals/transitions'
 import { writeCronFailureTrace } from './cron-trace'
 import type { Origin } from './origin'
+import { bookGoalCheckins } from './agenda/goal-checkins'
 import { createKairosPromises } from './promises/create'
 import { isVagueOutcome } from './promises/rules'
 import { PROMISE_OUTCOME_MAX_CHARS, PROMISE_OUTCOME_MIN_CHARS } from '@/lib/data/validators/kairos-promises'
 import { reactOutcome } from './reactions'
 import { editMessageText, telegramConfigured } from './telegram'
+import { recordToday } from './today'
 
 // One decision function for every owner-decided proposal kind (Phase 2,
 // Track C). Web inbox, Telegram buttons and the REST session all call
@@ -118,6 +120,13 @@ const goalKind: ProposalKindHandler = {
       console.error('[kairos:proposal-decision] goal approved but its promise failed:', res.onApprovedError)
       await writeCronFailureTrace(userId, { cronName: 'goal-promise', reason: 'promise_not_created', rawExcerpt: `${id}: ${res.onApprovedError}` }).catch(() => {})
     }
+    // Horae check-ins (≤2) — their own try: a booking failure never touches
+    // the approval or turns into onApprovedError.
+    try {
+      await bookGoalCheckins(userId, res.goal, now)
+    } catch (err) {
+      console.error('[kairos:proposal-decision] goal approved but its agenda check-ins failed:', err)
+    }
     return { ok: true }
   },
   async veto({ userId, id, via, now, reason }) {
@@ -215,7 +224,27 @@ export async function decideKairosProposal(
   if (input.via !== 'telegram') {
     await closeTelegramMessage(userId, id, meta, `${row.title}\n\n— ${VERDICT_LABEL[input.verdict]} in Aeon ✓`, now)
   }
+  await recordDecisionToday(userId, id, row.title, input)
   return { ok: true, verdict: input.verdict, title: row.title, kind, memoryId: id }
+}
+
+// One "decided" entry per owner decision — reached only after the kind's
+// claim-once transition won, so a repeat tap or redelivery records nothing.
+async function recordDecisionToday(userId: string, id: string, title: string, input: DecideProposalInput): Promise<void> {
+  const telegram = input.via === 'telegram'
+  const reason = input.verdict === 'veto' ? cleanReason(input.reason) : null
+  await recordToday(
+    userId,
+    {
+      key: `decision:${id}`,
+      channel: telegram ? 'telegram' : 'inbox',
+      type: 'decided',
+      text: `${VERDICT_LABEL[input.verdict]}: ${title}${reason ? ` — ${reason}` : ''}`,
+      ref: { memoryId: id },
+      covered: 'memory',
+    },
+    { kind: 'operator', via: telegram ? 'telegram' : 'inbox' },
+  )
 }
 
 // "Veto + why": the reason (or a decline) was claimed — let the kind keep it.

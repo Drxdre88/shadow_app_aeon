@@ -8,8 +8,10 @@ import type { ThinkingJobKind } from '@/lib/kairos/engine/types'
 
 // From the shared model registry (defaults.routine).
 export const KAIROS_ROUTINE_MODEL = DEFAULT_ROLE_MODEL.routine.model
+// The light daytime pulse (defaults.cheap): a quick glance, not deep thought.
+export const KAIROS_PULSE_MODEL = DEFAULT_ROLE_MODEL.cheap.model
 
-export type RoutineId = 'brain' | 'chat'
+export type RoutineId = 'brain' | 'chat' | 'pulse'
 
 export interface RoutineDef {
   id: RoutineId
@@ -38,46 +40,57 @@ export type BrainArea =
   | 'Creativity'
   | 'Voice'
 
+// deep = the Opus brain routine (chat has its own routine); light = the cheap
+// daytime pulse routine. A routine's allowedKinds derive from the tier.
+export type BrainTier = 'deep' | 'light'
+
 export interface BrainJob {
   kind: ThinkingJobKind
   label: string
   area: BrainArea
-  cadence: 'nightly' | 'weekly' | 'on demand'
+  tier: BrainTier
+  cadence: 'nightly' | 'weekly' | 'hourly' | 'on demand'
   what: string
 }
 
 // Every thinking kind Kairos still plans, in the order a night runs them,
 // with the part of the brain it feeds. Retired kinds are absent on purpose.
 export const BRAIN_JOBS: readonly BrainJob[] = [
-  { kind: 'chat_distill', label: 'Chat summaries', area: 'Perception', cadence: 'nightly', what: 'Turns yesterday’s conversations into memories — the only path from talk into the brain.' },
-  { kind: 'archetype', label: 'Patterns', area: 'Memory', cadence: 'nightly', what: 'Finds the recurring patterns in each area.' },
-  { kind: 'cortex', label: 'Area summaries', area: 'Self-model', cadence: 'nightly', what: 'Rewrites what Kairos understands about each area.' },
-  { kind: 'concept', label: 'Concepts', area: 'Memory', cadence: 'weekly', what: 'Folds clusters of memories into lasting concepts (Sundays).' },
-  { kind: 'aether', label: 'Self-model', area: 'Self-model', cadence: 'nightly', what: 'The one picture of you and your work that every other part reads.' },
-  { kind: 'belief_extract', label: 'Your beliefs', area: 'Beliefs & conscience', cadence: 'nightly', what: 'Pulls what you believe out of your own words.' },
-  { kind: 'drift_probe', label: 'Drift & honesty checks', area: 'Beliefs & conscience', cadence: 'nightly', what: 'Checks Kairos still answers in line with your constitution, and stays honest.' },
-  { kind: 'mind_compare', label: 'Two minds', area: 'Beliefs & conscience', cadence: 'weekly', what: 'Compares your beliefs with Kairos’s own (Mondays).' },
-  { kind: 'constitution_seed', label: 'Constitution draft', area: 'Beliefs & conscience', cadence: 'weekly', what: 'Until you have a constitution, drafts a first one from your areas and reflections for you to review (Mondays).' },
-  { kind: 'idea_generate', label: 'Idea contest: generate', area: 'Creativity', cadence: 'nightly', what: 'Proposes grounded new ideas.' },
-  { kind: 'idea_judge', label: 'Idea contest: judge', area: 'Creativity', cadence: 'nightly', what: 'A sceptical judge keeps the best one to three.' },
-  { kind: 'goal_propose', label: 'Goal of his own', area: 'Creativity', cadence: 'nightly', what: 'At most one investigation goal a night, seeded from ideas you accepted and goals that failed. It waits for your Approve or Veto.' },
-  { kind: 'ask_mine', label: 'Question of the day', area: 'Voice', cadence: 'nightly', what: 'The one question Kairos most wants to ask you.' },
-  { kind: 'weekly_review', label: 'Weekly review', area: 'Voice', cadence: 'weekly', what: 'Plan versus actual, belief changes and ideas (Mondays).' },
-  { kind: 'daily_message', label: '06:00 message', area: 'Voice', cadence: 'nightly', what: 'The single morning message on Telegram and in the inbox, ending with every question you haven’t answered yet, numbered.' },
-  { kind: 'chat', label: 'Chat replies', area: 'Voice', cadence: 'on demand', what: 'Answers you on Telegram and on the Kairos page.' },
+  { kind: 'chat_distill', label: 'Chat summaries', area: 'Perception', tier: 'deep', cadence: 'nightly', what: 'Turns yesterday’s conversations into memories — the only path from talk into the brain.' },
+  { kind: 'archetype', label: 'Patterns', area: 'Memory', tier: 'deep', cadence: 'nightly', what: 'Finds the recurring patterns in each area.' },
+  { kind: 'cortex', label: 'Area summaries', area: 'Self-model', tier: 'deep', cadence: 'nightly', what: 'Rewrites what Kairos understands about each area.' },
+  { kind: 'concept', label: 'Concepts', area: 'Memory', tier: 'deep', cadence: 'weekly', what: 'Folds clusters of memories into lasting concepts (Sundays).' },
+  { kind: 'aether', label: 'Self-model', area: 'Self-model', tier: 'deep', cadence: 'nightly', what: 'The one picture of you and your work that every other part reads.' },
+  { kind: 'belief_extract', label: 'Your beliefs', area: 'Beliefs & conscience', tier: 'deep', cadence: 'nightly', what: 'Pulls what you believe out of your own words.' },
+  { kind: 'drift_probe', label: 'Drift & honesty checks', area: 'Beliefs & conscience', tier: 'deep', cadence: 'nightly', what: 'Checks Kairos still answers in line with your constitution, and stays honest.' },
+  { kind: 'mind_compare', label: 'Two minds', area: 'Beliefs & conscience', tier: 'deep', cadence: 'weekly', what: 'Compares your beliefs with Kairos’s own (Mondays).' },
+  { kind: 'constitution_seed', label: 'Constitution draft', area: 'Beliefs & conscience', tier: 'deep', cadence: 'weekly', what: 'Until you have a constitution, drafts a first one from your areas and reflections for you to review (Mondays).' },
+  { kind: 'idea_generate', label: 'Idea contest: generate', area: 'Creativity', tier: 'deep', cadence: 'nightly', what: 'Proposes grounded new ideas.' },
+  { kind: 'idea_judge', label: 'Idea contest: judge', area: 'Creativity', tier: 'deep', cadence: 'nightly', what: 'A sceptical judge keeps the best one to three.' },
+  { kind: 'goal_propose', label: 'Goal of his own', area: 'Creativity', tier: 'deep', cadence: 'nightly', what: 'At most one investigation goal a night, seeded from ideas you accepted and goals that failed. It waits for your Approve or Veto.' },
+  { kind: 'ask_mine', label: 'Question of the day', area: 'Voice', tier: 'deep', cadence: 'nightly', what: 'The one question Kairos most wants to ask you.' },
+  { kind: 'weekly_review', label: 'Weekly review', area: 'Voice', tier: 'deep', cadence: 'weekly', what: 'Plan versus actual, belief changes and ideas (Mondays).' },
+  { kind: 'daily_message', label: '06:00 message', area: 'Voice', tier: 'deep', cadence: 'nightly', what: 'The single morning message on Telegram and in the inbox, ending with every question you haven’t answered yet, numbered.' },
+  { kind: 'agenda_due', label: 'Horae check-in', area: 'Voice', tier: 'deep', cadence: 'hourly', what: 'When switched on: when a check-in Kairos booked for himself comes due, he looks at it once and keeps a note, asks you a question or sends you a short message. He can’t change anything, and you can cancel any check-in.' },
+  { kind: 'reflect', label: 'Daytime reflection', area: 'Self-model', tier: 'deep', cadence: 'hourly', what: 'When switched on: up to six times a day, a short reflection on what happened today and on his active goals. It never messages you.' },
+  { kind: 'pulse', label: 'Daytime pulse', area: 'Perception', tier: 'light', cadence: 'hourly', what: 'When switched on: a quick hourly glance at what changed, kept as notes in today’s memory. Only runs when something happened.' },
+  { kind: 'chat', label: 'Chat replies', area: 'Voice', tier: 'deep', cadence: 'on demand', what: 'Answers you on Telegram and on the Kairos page.' },
 ]
+
+const tierKinds = (tier: BrainTier): ThinkingJobKind[] =>
+  BRAIN_JOBS.filter((j) => j.tier === tier && j.kind !== 'chat').map((j) => j.kind)
 
 export const ROUTINES: readonly RoutineDef[] = [
   {
     id: 'brain',
     name: 'Kairos brain',
     purpose:
-      'Does all of Kairos’s scheduled thinking: chat summaries, patterns, area summaries, the self-model, beliefs, the idea contest, the question of the day, the weekly review, the first constitution draft and the 06:00 message.',
+      'Does all of Kairos’s scheduled thinking: chat summaries, patterns, area summaries, the self-model, beliefs, the idea contest, the question of the day, the weekly review, the first constitution draft and the 06:00 message — and, when switched on, his hourly daytime reflections and the check-ins he booked for himself.',
     trigger: 'schedule',
-    cronUtc: '40 1-6 * * *',
-    scheduleLabel: 'Every hour from 01:40 to 06:40 UTC',
+    cronUtc: '40 * * * *',
+    scheduleLabel: 'Every hour at :40 UTC — the night’s work runs from 01:40 to 06:40; daytime runs usually find nothing due',
     claimKinds: null,
-    allowedKinds: BRAIN_JOBS.map((j) => j.kind).filter((k) => k !== 'chat'),
+    allowedKinds: tierKinds('deep'),
     maxJobs: 40,
     maxMinutes: 50,
     model: KAIROS_ROUTINE_MODEL,
@@ -94,6 +107,20 @@ export const ROUTINES: readonly RoutineDef[] = [
     maxJobs: 5,
     maxMinutes: 5,
     model: KAIROS_ROUTINE_MODEL,
+  },
+  {
+    id: 'pulse',
+    name: 'Kairos pulse',
+    purpose:
+      'Optional, for daytime thinking: a quick hourly glance at what changed, kept as notes in Kairos’s memory of today. It never writes lasting memories and never messages you.',
+    trigger: 'schedule',
+    cronUtc: '10 6-21 * * *',
+    scheduleLabel: 'Every hour from 06:10 to 21:10 UTC',
+    claimKinds: null,
+    allowedKinds: tierKinds('light'),
+    maxJobs: 3,
+    maxMinutes: 10,
+    model: KAIROS_PULSE_MODEL,
   },
 ]
 
@@ -147,6 +174,15 @@ function submitScope(def: RoutineDef): string {
   return `"routine": "${def.id}"`
 }
 
+// Why a rejected submit must not be retried, worded per routine: some brain
+// kinds have a backup (a cron or the paid sweep), the rest are safely skipped;
+// a missed pulse has no backup at all — the next hour looks again.
+function rejectedNote(def: RoutineDef): string {
+  return def.id === 'pulse'
+    ? 'do not retry it — a missed pulse is fine; the next hour looks again'
+    : 'do not retry it — Kairos covers or safely skips every job you leave'
+}
+
 // Self-contained prompts: a routine never needs to read this repository, so
 // anyone can paste them into a routine attached to any repository.
 export function routinePrompt(def: RoutineDef): string {
@@ -159,7 +195,7 @@ export function routinePrompt(def: RoutineDef): string {
     "2. Treat the job's system as your system prompt and its prompt as the user message. Answer exactly as that system prompt demands, in the format the job's instructions name (usually one JSON object; plain markdown when they say so). No preamble, no commentary.",
     '3. Cite only ids listed in validMemoryIds, copied verbatim. Never invent ids.',
     "4. Call submit_thinking_job with the job's id, claimToken, " + submitScope(def) + ' and your answer as text.',
-    '5. If a submit is rejected, do not retry it — Kairos has a backup for every job. Move on.',
+    `5. If a submit is rejected, ${rejectedNote(def)}. Move on.`,
     '6. Claim again: some jobs only appear once you finish the previous one, so keep going until job: null.',
     '',
     `Stop at job: null, after ${def.maxJobs} jobs, after ${def.maxMinutes} minutes, or after two tool errors in a row.`,

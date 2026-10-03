@@ -28,6 +28,7 @@ import {
 } from '@/lib/kairos/chat-recency-context'
 import { buildChatTools, runChatToolLoop } from '@/lib/kairos/chat-tools'
 import { loadConscienceBlock } from '@/lib/kairos/conscience-context'
+import { chatTodayChannel, loadChatTodaySection, recordChatReply, type ChatTodayChannel } from '@/lib/kairos/chat-today'
 import type { CitationRetrievalShape } from '@/lib/kairos/chat-retrieval-citations'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
@@ -250,11 +251,13 @@ export async function buildAssistantTurn(
   }
 
   const promptRetrieval = retrieval ? toPromptRetrieval(retrieval) : undefined
-  const [boardSection, recencySection, conscienceSection] = await Promise.all([
+  const [boardSection, recencySection, conscienceSection, todaySection] = await Promise.all([
     loadBoardSection(userId, threadId, userBody),
     loadRecencySection(userId),
     // Constitution + held beliefs (P2.5 G4). Never throws — '' on failure.
     loadConscienceBlock(userId, { dominionId }),
+    // Today across channels, minus this thread (one mind). '' on failure.
+    loadChatTodaySection(userId, threadId),
   ])
 
   const messages = buildChatMessages({
@@ -266,6 +269,7 @@ export async function buildAssistantTurn(
     pendingAsk: pendingAskContext?.prompt,
     boardSection,
     recencySection,
+    todaySection: todaySection || undefined,
     conscienceSection: conscienceSection || undefined,
   })
 
@@ -301,6 +305,8 @@ export interface PersistAssistantReplyMeta {
   // Ask resolution is applied only when both are present.
   pendingAsk?: KairosAskRow | null
   askResolution?: AskResolution
+  // Where the turn happened, for the "today" log. Absent = web.
+  channel?: ChatTodayChannel
 }
 
 type ReplyAppender = (payload: Omit<ChatMessagePayload, 'role'>) => Promise<ReplyOnceOutcome>
@@ -343,6 +349,10 @@ async function persistReply(
       ? { ok: false, reason: 'already_answered', threadId }
       : { ok: false, reason: 'thread_not_found' }
   }
+
+  // One mind: the reply's gist joins today's log (never throws). Only after a
+  // real append — an already-answered turn records nothing.
+  await recordChatReply(userId, threadId, asstAppend.seq, content, meta.channel ?? 'web')
 
   // Memory engine reaction (docs/kairos/32 §2): memories actually cited in the
   // persisted reply (hallucinated ids already stripped) → Usage + 'feedback'
@@ -433,6 +443,7 @@ async function runTurn(
     citationsContext: turn.citationsContext,
     pendingAsk: turn.pendingAsk,
     askResolution: reply.askResolution,
+    channel: chatTodayChannel(opts.surface),
   })
 }
 
