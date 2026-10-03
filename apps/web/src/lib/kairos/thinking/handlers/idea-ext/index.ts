@@ -2,8 +2,8 @@ import type { ApplyOutcome, ThinkingJobRow } from '@/lib/kairos/engine/types'
 import type { GroundedGenerate, IdeaGenerateInputs, IdeaParseOptions } from '@/lib/kairos/ideas/generate-prompt'
 import type { IdeaJudgeContext, StoredCandidate } from '@/lib/kairos/ideas/judge-context'
 import type { GroundedJudge } from '@/lib/kairos/ideas/judge-prompt'
-import type { SelectionInput, SelectionResult } from '@/lib/kairos/ideas/select'
-import type { IdeaCandidate, IdeaCritique, IdeaMeta } from '@/lib/kairos/ideas/types'
+import { eliminationReason, type SelectionInput, type SelectionResult } from '@/lib/kairos/ideas/select'
+import { IDEA_SURVIVORS_MAX, type IdeaCandidate, type IdeaCritique, type IdeaMeta } from '@/lib/kairos/ideas/types'
 import type { TournamentRows } from '../idea-judge'
 import { errorReason } from '../_errors'
 import { atlasExtension } from './atlas'
@@ -211,17 +211,31 @@ export async function runPrepareJudge(judged: GroundedJudge, scope: JudgeApplySc
 const sameShape = (a: readonly SelectionResult[], b: readonly SelectionResult[]) =>
   Array.isArray(b) && a.length === b.length && a.every((s, i) => b[i]?.key === s.key)
 
+// An extension may re-pick among gated candidates, never past a hard gate,
+// beyond the survivor cap, or with clashing ranks.
+function validSelection(next: readonly SelectionResult[], inputs: readonly SelectionInput[]): boolean {
+  const byKey = new Map(inputs.map((c) => [c.key, c]))
+  const survivors = next.filter((s) => s.status === 'survivor')
+  if (survivors.length > IDEA_SURVIVORS_MAX) return false
+  if (survivors.some((s) => { const c = byKey.get(s.key); return !c || eliminationReason(c) !== null })) return false
+  const ranks = next.map((s) => s.rank).filter((r): r is number => r !== null)
+  return new Set(ranks).size === ranks.length
+}
+
 export function runPostSelect(selection: SelectionResult[], inputs: readonly SelectionInput[], scope: JudgeApplyScope, exts: Exts = IDEA_EXTENSIONS): SelectionResult[] {
   let out = selection
   for (const { name, ext } of exts) {
     if (!ext.postSelect) continue
     const before = out
     const next = guard(name, 'postSelect', before, () => ext.postSelect!(before, inputs, scope))
-    if (sameShape(before, next)) out = next
-    else report(name, 'postSelect', new Error('result does not match the selection order'))
+    if (sameShape(before, next) && validSelection(next, inputs)) out = next
+    else report(name, 'postSelect', new Error('result does not match the selection order or breaks a selection rule'))
   }
   return out
 }
+
+// Core tournament fields stay owned by the judge; extensions only add keys.
+const CORE_META_KEYS = new Set(['v', 'key', 'status', 'rank', 'eliminatedReason', 'outcome', 'outcomeAt', 'tournamentDate'])
 
 export function runMetaExtras(
   candidate: StoredCandidate,
@@ -234,7 +248,10 @@ export function runMetaExtras(
   for (const { name, ext } of exts) {
     if (!ext.metaExtras) continue
     const extra = guard(name, 'metaExtras', null, () => ext.metaExtras!(candidate, selection, critique, scope))
-    if (extra) out = { ...out, ...extra }
+    if (extra) {
+      const safe = Object.fromEntries(Object.entries(extra).filter(([k]) => !CORE_META_KEYS.has(k))) as Partial<IdeaMeta>
+      out = { ...out, ...safe }
+    }
   }
   return out
 }

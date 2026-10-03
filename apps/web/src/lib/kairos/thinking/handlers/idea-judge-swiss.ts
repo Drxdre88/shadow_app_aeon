@@ -48,10 +48,11 @@ export const SWISS_ROUND_MIN_MINUTES = 5
 
 export const readSwiss = (ctx: IdeaJudgeContext): SwissState | null => readSwissState(ctx.swiss)
 
-// null → no time left for another round before the night settles.
+// null → no time left for another round before the night settles; past the
+// settle time the night finishes on the votes it has rather than chain late.
 export function swissRoundDeadlineMinutes(now: Date): number | null {
   const settle = deadlineOn(now, SWISS_SETTLE_UTC)
-  if (now.getTime() >= settle.getTime()) return SWISS_ROUND_DEADLINE_MINUTES
+  if (now.getTime() >= settle.getTime()) return null
   const left = minutesUntil(now, settle)
   if (left < SWISS_ROUND_MIN_MINUTES) return null
   return Math.min(SWISS_ROUND_DEADLINE_MINUTES, left)

@@ -76,8 +76,44 @@ describe('idea-ext runners', () => {
     const inputs = [] as SelectionInput[]
     expect(runPostSelect(sel, inputs, scope, [named('x', { postSelect: (s) => s.slice(1) })])).toBe(sel)
     expect(runPostSelect(sel, inputs, scope, [named('x', { postSelect: boom })])).toBe(sel)
-    const swapped = runPostSelect(sel, inputs, scope, [named('x', { postSelect: (s) => s.map((r) => ({ ...r, status: 'survivor' as const })) })])
+    const viable = (key: string): SelectionInput => ({
+      key,
+      novelty: { class: 'novel', maxCosine: 0.2, nearestId: null, nearestKind: null },
+      critique: { verdict: 'grounded', supports: ['m1'], contradicts: [], alreadyKnown: false, meaningfullyDifferent: null, note: '' },
+      record: null,
+    } as SelectionInput)
+    const swapped = runPostSelect(sel, [viable('c1'), viable('c2')], scope, [named('x', { postSelect: (s) => s.map((r) => ({ ...r, status: 'survivor' as const })) })])
     expect(swapped.map((r) => r.status)).toEqual(['survivor', 'survivor'])
+  })
+
+  it('postSelect may not promote a gated candidate, exceed the cap, or clash ranks', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const ok = (key: string): SelectionInput => ({
+      key,
+      novelty: { class: 'novel', maxCosine: 0.2, nearestId: null, nearestKind: null },
+      critique: { verdict: 'grounded', supports: ['m1'], contradicts: [], alreadyKnown: false, meaningfullyDifferent: null, note: '' },
+      record: null,
+    } as SelectionInput)
+    const repeat = { ...ok('c2'), novelty: { class: 'repeat', maxCosine: 0.95, nearestId: null, nearestKind: null } } as SelectionInput
+    const sel: SelectionResult[] = [
+      { key: 'c1', status: 'survivor', eliminatedReason: null, rank: 1 },
+      { key: 'c2', status: 'repeat', eliminatedReason: 'repeat', rank: null },
+    ]
+    const promote = (s: SelectionResult[]) => s.map((r) => ({ ...r, status: 'survivor' as const, eliminatedReason: null }))
+    expect(runPostSelect(sel, [ok('c1'), repeat], scope, [named('x', { postSelect: promote })])).toBe(sel)
+
+    const many = ['c1', 'c2', 'c3', 'c4'].map((key, i) => ({ key, status: 'eliminated' as const, eliminatedReason: 'ranked_out' as const, rank: i + 1 }))
+    const allSurvive = (s: SelectionResult[]) => s.map((r) => ({ ...r, status: 'survivor' as const, eliminatedReason: null }))
+    expect(runPostSelect(many, many.map((r) => ok(r.key)), scope, [named('x', { postSelect: allSurvive })])).toBe(many)
+
+    const clash = (s: SelectionResult[]) => s.map((r) => ({ ...r, rank: 1 }))
+    expect(runPostSelect(many, many.map((r) => ok(r.key)), scope, [named('x', { postSelect: clash })])).toBe(many)
+  })
+
+  it('meta extras cannot overwrite core tournament fields', () => {
+    const sel: SelectionResult = { key: 'c1', status: 'survivor', eliminatedReason: null, rank: 1 }
+    const exts = [named('a', { metaExtras: () => ({ status: 'eliminated', rank: 9, outcome: 'accepted', move: 'test' } as never) })]
+    expect(runMetaExtras({} as never, sel, null, scope, exts)).toEqual({ move: 'test' })
   })
 
   it('meta extras and extra lines merge in order; a throwing lane contributes nothing', () => {

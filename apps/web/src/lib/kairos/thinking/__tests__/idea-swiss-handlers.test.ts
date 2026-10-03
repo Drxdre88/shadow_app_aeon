@@ -227,7 +227,7 @@ describe('the 04:35Z settle', () => {
   it('round deadlines close by 04:35Z; too close → finish instead of chaining', async () => {
     expect(swissRoundDeadlineMinutes(new Date(`${DAY}T04:00:00Z`))).toBe(35)
     expect(swissRoundDeadlineMinutes(new Date(`${DAY}T04:31:00Z`))).toBeNull()
-    expect(swissRoundDeadlineMinutes(new Date(`${DAY}T05:10:00Z`))).toBe(45)
+    expect(swissRoundDeadlineMinutes(new Date(`${DAY}T05:10:00Z`))).toBeNull()
     const job = await round1()
     vi.setSystemTime(new Date(`${DAY}T04:32:00Z`))
     const out = await ideaJudgeHandler.apply(job, fullAnswer(ctxOf(job)), 'routine')
