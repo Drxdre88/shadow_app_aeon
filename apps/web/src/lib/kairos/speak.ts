@@ -71,7 +71,14 @@ export function capSpeakMessage(message: string, max: number = SPEAK_MESSAGE_MAX
   return `${cut.trimEnd()}${TRUNCATION_MARK}`
 }
 
-export async function deliverKairosSpeak(operatorUserId: string, input: SpeakInput): Promise<SpeakOutcome> {
+// opts.telegramTail: Telegram-only text appended to the sent message (the 06:00
+// dream line). Never stored — the inbox capture and the today log see `message`
+// alone — so it can never be retrieved, distilled or quoted back as memory.
+export async function deliverKairosSpeak(
+  operatorUserId: string,
+  input: SpeakInput,
+  opts: { telegramTail?: string } = {},
+): Promise<SpeakOutcome> {
   const { title, kind, urgency, force, opsAlert, digest, externalId } = input
   const message = capSpeakMessage(input.message)
 
@@ -165,8 +172,9 @@ export async function deliverKairosSpeak(operatorUserId: string, input: SpeakInp
   }
 
   let telegram = false
+  const tail = opts.telegramTail?.trim()
   try {
-    telegram = await sendKairosSpeak({ memoryId: memory.id, title, message, kind })
+    telegram = await sendKairosSpeak({ memoryId: memory.id, title, message: tail ? `${message}\n\n${tail}` : message, kind })
   } catch (err) {
     console.error('[kairos-speak] telegram fan-out failed', err)
   }

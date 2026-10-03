@@ -185,6 +185,37 @@ describe('RecheckStep', () => {
     expect(res.errors).toEqual(['bad: boom'])
     expect(res.changed).toBe(1)
   })
+
+  it('surprise gate on/observe: a written flag op records one support_lost ledger event (s .4, nothing opened)', async () => {
+    vi.stubEnv('KAIROS_SURPRISE_GATE', 'observe')
+    try {
+      const store = fakeStore(row(belief()))
+      const record = vi.fn(async () => null)
+      const find = vi.fn(async () => [check(readBelief(store.get().sourceMetadata)!, [{ id: 'b', state: 'missing', survivorId: null }])])
+      await new RecheckStep({ find, mutate: store.mutate as never, record }).run(ctx())
+      expect(record).toHaveBeenCalledTimes(1)
+      expect(record).toHaveBeenCalledWith('u', {
+        key: 'support_lost:bel-1:b',
+        kind: 'support_lost',
+        s: 0.4,
+        refs: { beliefIds: ['bel-1'], memoryIds: ['b'] },
+      }, { now: NOW })
+      // A merge-only remap is not a loss: no event.
+      const remap = fakeStore(row(belief()))
+      const record2 = vi.fn(async () => null)
+      await new RecheckStep({ find: vi.fn(async () => [check(belief(), [{ id: 'b', state: 'merged', survivorId: 'c' }])]), mutate: remap.mutate as never, record: record2 }).run(ctx())
+      expect(record2).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('surprise gate off: no ledger event', async () => {
+    const store = fakeStore(row(belief()))
+    const record = vi.fn(async () => null)
+    await new RecheckStep({ find: vi.fn(async () => [check(belief(), [{ id: 'b', state: 'missing', survivorId: null }])]), mutate: store.mutate as never, record }).run(ctx())
+    expect(record).not.toHaveBeenCalled()
+  })
 })
 
 describe('normalisation of legacy beliefs', () => {

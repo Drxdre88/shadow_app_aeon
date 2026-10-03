@@ -23,6 +23,7 @@ import {
 import { todayIso, parseWithRepair, ParseRepairError } from './_prompt-utils'
 import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 import { collectFinishedTitles } from './board-feed-render'
+import { cortexDueSoonContext } from './surprise/replay-reader'
 
 export {
   buildCortexPrompt,
@@ -53,7 +54,7 @@ export {
 // but never wrote today does NOT permanently brick the regen path.
 //
 // Suggested cron: 03:00 UTC daily, AFTER 02:30 UTC archetype synthesis,
-// BEFORE 07:00 UTC Briefer. Cron wiring in vercel.json is out of scope.
+// BEFORE 07:00 UTC Briefer.
 // ─────────────────────────────────────────────────────────────────────────
 
 const MAX_REFLECTIONS = 30
@@ -270,6 +271,7 @@ export async function gatherCortexContext(
     ...inputs,
     todaySoFar,
     todaySoFarDay: todaySoFar ? todaySoFarDay : null,
+    ...(await cortexDueSoonContext(userId, dominionId)), // replay, after the sequential reads
   }
 }
 

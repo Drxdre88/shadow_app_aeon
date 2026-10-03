@@ -213,6 +213,36 @@ describe('deliverKairosSpeak — message length cap (A1 defence)', () => {
   })
 })
 
+describe('deliverKairosSpeak — Telegram-only tail (dream line)', () => {
+  const input = {
+    title: 'Kairos · 2026-10-03', message: 'Morning.', kind: 'notify' as const, urgency: 'normal' as const,
+    force: true, opsAlert: false, digest: true, externalId: 'kairos-daily:2026-10-03',
+  }
+
+  it('sends message + tail to Telegram but stores and logs the message alone', async () => {
+    await deliverKairosSpeak(OPERATOR, input, { telegramTail: '💭 I dreamt the desk was a ship.' })
+
+    const [, captured] = vi.mocked(captureMemory).mock.calls[0]
+    expect(captured.bodyMd).toBe('Morning.')
+    expect(captured.summary).toBe('Morning.')
+    expect(JSON.stringify(captured)).not.toContain('dreamt')
+    const [, entry] = vi.mocked(recordToday).mock.calls[0]
+    expect(entry.text).not.toContain('dreamt')
+    expect(vi.mocked(sendKairosSpeak).mock.calls[0][0].message).toBe('Morning.\n\n💭 I dreamt the desk was a ship.')
+  })
+
+  it('no tail, an empty tail, or a dedup hit sends nothing extra', async () => {
+    await deliverKairosSpeak(OPERATOR, input)
+    await deliverKairosSpeak(OPERATOR, input, { telegramTail: '   ' })
+    expect(vi.mocked(sendKairosSpeak).mock.calls.map((c) => c[0].message)).toEqual(['Morning.', 'Morning.'])
+
+    vi.mocked(captureMemory).mockResolvedValueOnce({ memory: { id: 'memory-1' } as never, created: false })
+    vi.mocked(sendKairosSpeak).mockClear()
+    await deliverKairosSpeak(OPERATOR, input, { telegramTail: '💭 I dreamt.' })
+    expect(sendKairosSpeak).not.toHaveBeenCalled()
+  })
+})
+
 describe('capSpeakMessage', () => {
   it('hard-cuts when no boundary exists in the tail of the budget', () => {
     const capped = capSpeakMessage('a'.repeat(50), 20)

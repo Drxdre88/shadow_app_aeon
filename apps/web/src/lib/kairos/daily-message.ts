@@ -11,6 +11,8 @@ import { gatherDailyMessageInputs } from './daily-message-inputs'
 import { loadConscienceBlock } from './conscience-context'
 import { PROMISE_CHECK_CRON, verifyOpenPromises } from './promises/check'
 import { buildHoraeLine, buildVerdictLine } from './daily-message-tail'
+import { dreamLineEnabled } from './dreams/flag'
+import { readDreamLine } from './dreams/line'
 import {
   DAILY_MESSAGE_SYSTEM_PROMPT,
   DAILY_MESSAGE_TOTAL_MAX_CHARS,
@@ -94,6 +96,9 @@ export interface ComposedDailyMessage {
   message: string
   source: DraftSource
   inputs: DailyMessageInputs
+  // Telegram-only "I dreamt…" line (dreams/line.ts) — never part of
+  // `message`, so never captured, logged to today, or seen by the model.
+  dreamLine: string | null
 }
 
 async function composeWithModel(userId: string, inputs: DailyMessageInputs): Promise<string> {
@@ -187,7 +192,8 @@ export async function composeDailyMessage(userId: string, now: Date): Promise<Co
   const reserved = tail.reduce((n, line) => n + line.length + 2, 0)
   message = appendOpenQuestionsBlock(message, inputs.openAsks, now, DAILY_MESSAGE_TOTAL_MAX_CHARS - reserved)
   for (const line of tail) message = `${message}\n\n${line}`
-  return { message, source, inputs }
+  const dreamLine = dreamLineEnabled() ? await readDreamLine(userId, now) : null
+  return { message, source, inputs, dreamLine }
 }
 
 // ── Run ──────────────────────────────────────────────────────────────────
@@ -200,6 +206,7 @@ export interface DailyMessageResult {
   source?: DraftSource
   reason?: string
   message?: string
+  dreamLine?: string
   failedInputs?: string[]
 }
 
@@ -220,6 +227,7 @@ export async function deliverDailyMessageOnce(
   userId: string,
   date: string,
   input: SpeakInput,
+  telegramTail?: string | null,
 ): Promise<DailyDeliveryFlight> {
   return db.transaction(async (tx): Promise<DailyDeliveryFlight> => {
     const res = await tx.execute(
@@ -228,7 +236,10 @@ export async function deliverDailyMessageOnce(
     const locked = (res.rows[0] as { locked?: unknown } | undefined)?.locked === true
     if (!locked) return { state: 'in_flight' }
     if (await alreadyDelivered(userId, date)) return { state: 'already_delivered' }
-    return { state: 'delivered', outcome: await deliverKairosSpeak(userId, input) }
+    const outcome = telegramTail
+      ? await deliverKairosSpeak(userId, input, { telegramTail })
+      : await deliverKairosSpeak(userId, input)
+    return { state: 'delivered', outcome }
   })
 }
 
@@ -253,8 +264,8 @@ export async function runDailyMessageForUser(
       await writeCronFailureTrace(userId, { cronName: PROMISE_CHECK_CRON, reason: 'check_failed', error: err })
     }
 
-    const { message, source, inputs } = await composeDailyMessage(userId, now)
-    if (opts.dryRun) return { status: 'dry_run', date, source, message, failedInputs: inputs.failed }
+    const { message, source, inputs, dreamLine } = await composeDailyMessage(userId, now)
+    if (opts.dryRun) return { status: 'dry_run', date, source, message, ...(dreamLine ? { dreamLine } : {}), failedInputs: inputs.failed }
 
     const flight = await deliverDailyMessageOnce(userId, date, {
       title: `Kairos · ${date}`,
@@ -265,7 +276,7 @@ export async function runDailyMessageForUser(
       opsAlert: false,
       digest: true,
       externalId: dailyMessageExternalId(date),
-    })
+    }, dreamLine)
     if (flight.state === 'in_flight') return await skip('delivery in flight')
     if (flight.state === 'already_delivered') return await skip('already sent today')
 

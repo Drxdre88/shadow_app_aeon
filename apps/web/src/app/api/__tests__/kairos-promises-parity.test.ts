@@ -71,8 +71,8 @@ describe('Kairos promises MCP <-> REST parity', () => {
 })
 
 const FORBIDDEN_ROOTS = ['app/api/[transport]', 'app/api/v1', 'lib/kairos/thinking']
-const FORBIDDEN_IDENTIFIERS = /\b(closeKairosPromise|renegotiateKairosPromise|keepKairosPromise|dropKairosPromise|renegotiateOwnKairosPromise|mutateKairosPromises|verifyOpenPromises|runPromiseNudges)\b/
-const FORBIDDEN_MODULES = /from\s+['"][^'"]*(promises\/(close|check|nudge)|actions\/kairos-promises)['"]/
+const FORBIDDEN_IDENTIFIERS = /\b(closeKairosPromise|renegotiateKairosPromise|keepKairosPromise|dropKairosPromise|renegotiateOwnKairosPromise|mutateKairosPromises|verifyOpenPromises|runPromiseNudges|feedBackPromiseClose|creditBackward)\b/
+const FORBIDDEN_MODULES = /from\s+['"][^'"]*(promises\/(close|check|nudge)|actions\/kairos-promises|surprise\/credit)['"]/
 
 function sourceFiles(dir: string): string[] {
   if (!existsSync(dir)) return []

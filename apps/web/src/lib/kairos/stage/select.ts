@@ -9,6 +9,7 @@ import {
   STAGE_MAX_SURPRISE,
 } from '@/lib/data/validators/kairos-stage'
 import { BRAIN_JOBS } from '@/lib/kairos/routines/catalog'
+import { STAGE_SPECULATIVE_KINDS } from './flag'
 import { londonDateHour } from '@/lib/kairos/thinking/deadlines'
 import { clamp01, hash8, jaccard, normaliseCandidate, stageTokens } from './normalise'
 import type {
@@ -55,8 +56,10 @@ export function londonDateOf(now: Date): string {
   return londonDateHour(now).date
 }
 
-// Light tier = the cheap daytime pulse. Unknown kinds count as deep.
+// Light tier = the cheap daytime pulse, plus speculative kinds (dreams).
+// Unknown kinds count as deep.
 export function stageTierForKind(kind: string): StageTier {
+  if ((STAGE_SPECULATIVE_KINDS as readonly string[]).includes(kind)) return 'light'
   return BRAIN_JOBS.find((j) => j.kind === kind)?.tier ?? 'deep'
 }
 
@@ -81,9 +84,19 @@ export interface RankedCoalition {
   strength: number
 }
 
-export function rankCoalitions(state: KairosStageState, now: Date, opts: { deepOnly?: boolean } = {}): RankedCoalition[] {
+// Speculative (dream-born) coalitions: every member came from a speculative
+// kind. Cross-merging is refused (bestMatch), so membership stays homogeneous.
+export function isSpeculativeCoalition(c: Pick<StageCoalition, 'members'>): boolean {
+  return c.members.length > 0 && c.members.every((m) => (STAGE_SPECULATIVE_KINDS as readonly string[]).includes(m.kind))
+}
+
+// excludeSpeculative: dream-born coalitions are kept in the stage (visible to
+// the owner through get_kairos_stage) but never rendered into a prompt, never
+// win a cycle and never become focus — the dream firewall.
+export function rankCoalitions(state: KairosStageState, now: Date, opts: { deepOnly?: boolean; excludeSpeculative?: boolean } = {}): RankedCoalition[] {
   return state.coalitions
     .filter((c) => !opts.deepOnly || c.deepBacked)
+    .filter((c) => !opts.excludeSpeculative || !isSpeculativeCoalition(c))
     .map((coalition) => ({ coalition, strength: effectiveStrength(coalition, now) }))
     .sort((a, b) =>
       b.strength - a.strength
@@ -118,7 +131,7 @@ export function closeCycleIfDue(state: KairosStageState, now: Date): KairosStage
   const prevKey = londonCycleKey(at)
   if (prevKey >= londonCycleKey(now) || state.cycles.some((c) => c.cycle === prevKey)) return state
   const s = structuredClone(state)
-  const ranked = rankCoalitions(s, at)
+  const ranked = rankCoalitions(s, at, { excludeSpeculative: true })
   const lead = ranked[0]
   const winner = lead && lead.strength >= WIN_MIN_STRENGTH ? lead : null
   const lastWinnerId = s.cycles.at(-1)?.winnerId ?? null
@@ -152,12 +165,15 @@ interface IngestMeta {
   given?: readonly string[]
 }
 
-function bestMatch(s: KairosStageState, item: StageCandidateInput): StageCoalition | null {
+function bestMatch(s: KairosStageState, item: StageCandidateInput, speculative: boolean): StageCoalition | null {
   const tokens = stageTokens(item.text)
   const cites = item.cites ?? []
   let best: StageCoalition | null = null
   let bestScore = -1
   for (const c of s.coalitions) {
+    // Dream thoughts never merge with real ones (either way): a real post can't
+    // lend weight to dream text, and a dream can't lend weight to a real thought.
+    if (isSpeculativeCoalition(c) !== speculative) continue
     const j = jaccard(tokens, stageTokens(c.text))
     const shared = cites.some((x) => c.cites.includes(x))
     if ((j >= MERGE_JACCARD || (j >= MERGE_JACCARD_WITH_CITE && shared)) && j > bestScore) {
@@ -172,7 +188,7 @@ function ingest(s: KairosStageState, item: StageCandidateInput, meta: IngestMeta
   const nowIso = now.toISOString()
   const base = salience(item, meta.tier)
   const cites = item.cites ?? []
-  const match = bestMatch(s, item)
+  const match = bestMatch(s, item, (STAGE_SPECULATIVE_KINDS as readonly string[]).includes(meta.kind))
   const memberId = `m_${hash8(`${match?.id ?? ''}|${meta.jobId ?? ''}|${meta.kind}|${nowIso}|${item.text}`)}`
   const member: StageMember = {
     id: memberId, kind: meta.kind, source: meta.source, ...(meta.jobId ? { jobId: meta.jobId } : {}), tier: meta.tier, at: nowIso, base,

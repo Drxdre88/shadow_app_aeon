@@ -16,8 +16,12 @@ const m = vi.hoisted(() => ({
   activeEmbeddingModel: vi.fn(),
   embedTexts: vi.fn(),
   getLiveConstitution: vi.fn(),
+  auditDreamEchoes: vi.fn(),
+  dreamsMode: vi.fn(),
 }))
 
+vi.mock('@/lib/data/dream-audit', () => ({ auditDreamEchoes: m.auditDreamEchoes }))
+vi.mock('@/lib/kairos/dreams/flag', () => ({ dreamsMode: m.dreamsMode }))
 vi.mock('@/lib/data/constitution-drift', () => ({
   findDriftObservation: m.findDriftObservation,
   insertDriftObservation: m.insertDriftObservation,
@@ -124,6 +128,7 @@ beforeEach(() => {
   m.writeDriftRunSection.mockResolvedValue({ memoryId: 'run-1', written: true })
   m.listHeldBeliefsForAudit.mockResolvedValue([])
   m.listProvenanceOrigins.mockResolvedValue([])
+  m.dreamsMode.mockReturnValue('off')
 })
 
 describe('drift_probe plan gating', () => {
@@ -371,5 +376,29 @@ describe('conscience checks job', () => {
     expect(await fallbackDriftProbe(jobFrom(await planConscience()))).toEqual({ ok: true, memoryIds: ['run-1'] })
     expect(ask).toHaveBeenCalledTimes(1)
     expect(m.writeDriftRunSection.mock.calls[0][1].patch.conscience).toMatchObject({ status: 'unparsed', answeredBy: 'api' })
+  })
+
+  it('runs the dream echo audit only while dreams run, and reports echoes as a failure', async () => {
+    const laundering = (s: Awaited<ReturnType<typeof planConscience>>) => (s.input.context as { laundering: object }).laundering
+    expect(laundering(await planConscience())).not.toHaveProperty('dreamEchoes')
+    expect(m.auditDreamEchoes).not.toHaveBeenCalled()
+
+    m.dreamsMode.mockReturnValue('observe')
+    m.auditDreamEchoes.mockResolvedValue({ dreamEchoes: 2, dreamEchoIds: ['mem-a', 'mem-b'] })
+    const spec = await planConscience()
+    expect(m.auditDreamEchoes).toHaveBeenCalledWith(USER, at('03:45'))
+    expect(laundering(spec)).toMatchObject({ dreamEchoes: 2, dreamEchoIds: ['mem-a', 'mem-b'] })
+    await driftProbeHandler.apply(jobFrom(spec), honest(['p1']), 'routine')
+    const values = m.writeDriftRunSection.mock.calls[0][1]
+    expect(values.patch.conscience.laundering).toMatchObject({ dreamEchoes: 2 })
+    expect(values.summary).toContain('2 memories echoing a dream')
+    expect(values.bodyMd).toContain('Dream echoes: 2')
+  })
+
+  it('a failed dream echo audit leaves the fields absent and still plans the job', async () => {
+    m.dreamsMode.mockReturnValue('on')
+    m.auditDreamEchoes.mockRejectedValue(new Error('db down'))
+    const spec = await planConscience()
+    expect((spec.input.context as { laundering: object }).laundering).not.toHaveProperty('dreamEchoes')
   })
 })

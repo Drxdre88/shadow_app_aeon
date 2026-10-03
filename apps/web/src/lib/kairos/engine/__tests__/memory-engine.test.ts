@@ -247,10 +247,11 @@ describe('MemoryEngine', () => {
 })
 
 describe('buildNightSteps', () => {
-  it('runs the own-mind mirror right after BackUp, then the belief re-check', () => {
+  it('runs Surprise between Weigh and OwnMind, then the belief re-check before BackUp', () => {
     const steps = buildNightSteps()
-    expect(steps.map((s) => s.name)).toEqual(['merge', 'weigh', 'own_mind', 'recheck', 'backup', 'concepts'])
+    expect(steps.map((s) => s.name)).toEqual(['merge', 'weigh', 'surprise', 'own_mind', 'recheck', 'backup', 'concepts'])
     expect(steps[1]).toBeInstanceOf(WeighStep)
+    expect(steps.find((s) => s.name === 'surprise')!.budgetMs).toBeLessThanOrEqual(10_000)
   })
 
   it('caps Merge and Weigh, lets BackUp drain the rest, and reserves Concepts time on Sundays only', () => {

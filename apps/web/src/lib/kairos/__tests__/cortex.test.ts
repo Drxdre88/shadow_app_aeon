@@ -65,6 +65,12 @@ vi.mock('@/lib/ai/route-task', () => ({
   getProviderForTask: vi.fn(),
 }))
 
+// Replay (spec_surprise) reads after the FIFO-queued selects; keep it out of
+// the queue entirely.
+vi.mock('@/lib/kairos/surprise/replay-reader', () => ({
+  cortexDueSoonContext: vi.fn(async () => ({})),
+}))
+
 function makeCtx(overrides: Partial<CortexContext> = {}): CortexContext {
   return {
     dominionId: '11111111-1111-4111-8111-111111111111',

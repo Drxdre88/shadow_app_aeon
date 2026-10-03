@@ -36,10 +36,11 @@ export interface StagePost {
 }
 
 // A server fact recomputed on cycle rollover; `key` is stable per London day.
+// 'job' is allowed for surprise-ledger findings (contradiction, support lost, aha).
 export interface AmbientCandidate extends StageCandidateInput {
   key: string
   kind: string
-  source: Exclude<StageSource, 'job'>
+  source: StageSource
   tier: StageTier
 }
 

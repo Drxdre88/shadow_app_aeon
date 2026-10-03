@@ -82,8 +82,8 @@ describe('Kairos predictions MCP <-> REST parity', () => {
 })
 
 const FORBIDDEN_ROOTS = ['app/api/[transport]', 'app/api/v1', 'lib/kairos/thinking']
-const FORBIDDEN_IDENTIFIERS = /\b(settleKairosPredictionByOwner|settleOwnKairosPrediction|feedBackSettlement|mutateKairosPredictions|runPredictionSettlement|planPredictionChecks|routePredictionCommands)\b/
-const FORBIDDEN_MODULES = /from\s+['"][^'"]*(predictions\/(verdict|check|telegram-commands)|actions\/kairos-predictions)['"]/
+const FORBIDDEN_IDENTIFIERS = /\b(settleKairosPredictionByOwner|settleOwnKairosPrediction|feedBackSettlement|mutateKairosPredictions|runPredictionSettlement|planPredictionChecks|routePredictionCommands|creditBackward)\b/
+const FORBIDDEN_MODULES = /from\s+['"][^'"]*(predictions\/(verdict|check|telegram-commands)|actions\/kairos-predictions|surprise\/credit)['"]/
 const PREDICTION_MODULE = /from\s+['"]@\/lib\/kairos\/predictions\/([a-z-]+)['"]/
 // What each guarded surface may import from lib/kairos/predictions.
 const ALLOWED_PREDICTION_MODULES: Record<string, ReadonlySet<string>> = {

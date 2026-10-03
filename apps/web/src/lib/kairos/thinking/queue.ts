@@ -61,6 +61,7 @@ export const PLANNED_THINKING_KINDS: readonly ThinkingJobKind[] = [
   'belief_extract', 'drift_probe', 'mind_compare', 'constitution_seed', 'character_check', 'weekly_review',
   // Idea tournament after aether (its tensions feed generation); judge after
   // generate. Both before the daily message, which shows the idea of the day.
+  'dream', 'dream_read',
   'idea_generate', 'idea_judge',
   // Kairos's own goal, after the judge (accepted ideas seed it).
   'goal_propose',
@@ -110,6 +111,8 @@ const FALLBACK_OWNER: Partial<Record<ThinkingJobKind, string>> = {
   agenda_due: 'nothing — the item is marked missed',
   character_check: 'nothing — a missed week is fine',
   cold_read: 'nothing — a missed cold read is dropped',
+  dream: 'nothing — a missed night is fine',
+  dream_read: 'nothing — a missed night is fine',
 }
 
 function fallbackOwner(kind: ThinkingJobKind): string {
@@ -438,6 +441,12 @@ export async function submitThinkingJob(
 }
 
 export function toJobSummary(j: ThinkingJobRow) {
+  // Dream text lives only in job output and is fiction: the shared MCP/REST
+  // listing shows that a dream ran (and its title), never its contents.
+  const dreamTitle = j.output?.title
+  const output: Record<string, unknown> | null = j.kind === 'dream' || j.kind === 'dream_read'
+    ? { dreamt: true, redacted: true, title: typeof dreamTitle === 'string' ? dreamTitle : null }
+    : j.output
   return {
     id: j.id,
     kind: j.kind,
@@ -450,7 +459,7 @@ export function toJobSummary(j: ThinkingJobRow) {
     claimedAt: j.claimedAt,
     completedAt: j.completedAt,
     error: j.error,
-    output: j.output,
+    output,
     createdAt: j.createdAt,
   }
 }

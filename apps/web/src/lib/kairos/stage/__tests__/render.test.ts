@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseStageItems, sanitiseStageText } from '../normalise'
 import { prependStageBlock, renderStageBlock, STAGE_BLOCK_BEGIN, STAGE_BLOCK_END } from '../render'
-import { emptyStageState } from '../select'
+import { applyStagePost, emptyStageState } from '../select'
 import type { KairosStageState, StageCoalition } from '../types'
 
 const NOW = new Date(Date.UTC(2026, 9, 3, 9, 30))
@@ -85,6 +85,31 @@ describe('renderStageBlock', () => {
   it('prepends the block before the prompt, or leaves the prompt alone', () => {
     expect(prependStageBlock('BLOCK', 'prompt')).toBe('BLOCK\n\nprompt')
     expect(prependStageBlock('', 'prompt')).toBe('prompt')
+  })
+})
+
+describe('dream firewall on the stage', () => {
+  it('a fresh dream_read post never renders into a prompt, even above the win threshold', () => {
+    const post = applyStagePost(emptyStageState(), {
+      post: { kind: 'dream_read', source: 'job', tier: 'light', jobId: 'dr1', items: [
+        { text: 'Dream hunch: worst case the launch slips past the audit window', importance: 1, surprise: 0, goalRelevance: 1, need: 1, cites: [] },
+      ] },
+    }, NOW).state!
+    expect(post.coalitions).toHaveLength(1)
+    expect(renderStageBlock(post, { now: NOW }).block).toBe('')
+  })
+
+  it('a real thought never merges into a dream-born coalition (and renders on its own)', () => {
+    let s = applyStagePost(emptyStageState(), {
+      post: { kind: 'dream_read', source: 'job', tier: 'light', jobId: 'dr1', items: [{ text: 'Dream hunch: the launch slips past the audit window', importance: 1, surprise: 0, goalRelevance: 1, need: 1 }] },
+    }, NOW).state!
+    s = applyStagePost(s, {
+      post: { kind: 'reflect', source: 'job', tier: 'deep', jobId: 'r1', items: [{ text: 'The launch slips past the audit window', importance: 1, surprise: 0.5, goalRelevance: 1, need: 1 }] },
+    }, NOW).state!
+    expect(s.coalitions).toHaveLength(2)
+    const block = renderStageBlock(s, { now: NOW }).block
+    expect(block).toContain('The launch slips past the audit window')
+    expect(block).not.toContain('Dream hunch')
   })
 })
 

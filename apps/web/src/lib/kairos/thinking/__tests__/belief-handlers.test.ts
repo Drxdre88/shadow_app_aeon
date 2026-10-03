@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ThinkingJobRow, ThinkingJobSpec } from '@/lib/kairos/engine/types'
 
 const data = vi.hoisted(() => ({
@@ -8,6 +8,8 @@ const data = vi.hoisted(() => ({
   listBeliefEvidence: vi.fn(),
   listMemoryOrigins: vi.fn(),
   listFlaggedAlignedBeliefs: vi.fn(),
+  listOpenAlignedBeliefs: vi.fn(),
+  recordBeliefExtractSurprises: vi.fn(),
   thinkingJobKeyExists: vi.fn(),
   writeAlignedBeliefs: vi.fn(),
   writeMindCompare: vi.fn(),
@@ -27,7 +29,12 @@ vi.mock('@/lib/data/beliefs', () => ({
   MIND_COMPARE_KIND: 'mind_compare',
   SIGNAL_INPUT_CAP: 60,
 }))
-vi.mock('@/lib/data/belief-recheck', () => ({ listFlaggedAlignedBeliefs: data.listFlaggedAlignedBeliefs, RECHECK_IN_PROMPT_CAP: 20 }))
+vi.mock('@/lib/data/belief-recheck', () => ({
+  listFlaggedAlignedBeliefs: data.listFlaggedAlignedBeliefs,
+  listOpenAlignedBeliefs: data.listOpenAlignedBeliefs,
+  RECHECK_IN_PROMPT_CAP: 20,
+}))
+vi.mock('@/lib/kairos/surprise/extract-signals', () => ({ recordBeliefExtractSurprises: data.recordBeliefExtractSurprises }))
 vi.mock('@/lib/data/thinking-jobs', () => ({ FALLBACK_ERROR_PREFIX: 'fallback:' }))
 vi.mock('@/lib/data/dominions', () => ({ findDominionsByUser: data.findDominionsByUser }))
 vi.mock('@/lib/ai/provider', () => ({ getProviderForUser: data.getProviderForUser }))
@@ -37,6 +44,7 @@ vi.mock('@/lib/ai/router', () => ({
 }))
 
 import { AiCredentialMissingError } from '@/lib/ai/router'
+import { EXTRACT_SYSTEM_PROMPT, EXTRACT_SYSTEM_PROMPT_SURPRISE, buildExtractPrompt } from '@/lib/kairos/beliefs/extract-prompt'
 import { beliefExtractHandler, drainBatch, extractInFlight, extractWatermark } from '../handlers/belief-extract'
 import { mindCompareHandler } from '../handlers/mind-compare'
 
@@ -91,6 +99,8 @@ beforeEach(() => {
   data.writeAlignedBeliefs.mockResolvedValue({ written: true, created: ['new-1'], superseded: [HELD], reinforced: [], retired: [], refusedReplaces: [] })
   data.listMemoryOrigins.mockImplementation(async (_u: string, ids: string[]) => new Map(ids.map((id) => [id, 'operator'])))
   data.listFlaggedAlignedBeliefs.mockResolvedValue([])
+  data.listOpenAlignedBeliefs.mockResolvedValue([])
+  data.recordBeliefExtractSurprises.mockResolvedValue(undefined)
   data.listBeliefEvidence.mockResolvedValue([])
   data.writeMindCompare.mockResolvedValue({ memoryId: 'cmp-1', written: true })
 })
@@ -307,6 +317,80 @@ describe('belief_extract apply', () => {
   it('fallback without a key declines', async () => {
     data.getProviderForUser.mockRejectedValue(new AiCredentialMissingError('none' as never))
     expect(await beliefExtractHandler.fallback(await job())).toEqual({ ok: false, reason: 'no BYOK credential' })
+  })
+})
+
+describe('belief_extract under the surprise gate (KAIROS_SURPRISE_GATE)', () => {
+  const OPEN = '88888888-bbbb-4bbb-8bbb-888888888888'
+  const openRow = (signalAt = '2026-09-30T12:00:00.000Z') => ({
+    id: OPEN,
+    belief: { v: 1, mind: 'aligned', domain: 'Aeon', dominionId: 'dom-1', claim: 'Evenings are dead time', reasons: [], falsifier: 'x', sourceType: 'tool', provenance: [EVID], status: 'held', confidence: 0.6 },
+    sourceMetadata: { engine: { surprise: { openUntil: '2026-10-01T07:00:00.000Z', signals: [{ kind: 'prediction_wrong', ref: 'p-1', at: signalAt, s: 0.7 }] } } },
+  })
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('INVARIANT flag off: no open read, base system prompt, prompt byte-identical to the pre-gate builder', async () => {
+    data.listOpenAlignedBeliefs.mockResolvedValue([openRow()])
+    const [spec] = await beliefExtractHandler.plan(USER, NIGHT)
+    expect(data.listOpenAlignedBeliefs).not.toHaveBeenCalled()
+    expect(spec.input.system).toBe(EXTRACT_SYSTEM_PROMPT)
+    expect(spec.input.prompt).toBe(buildExtractPrompt({
+      dominions: [{ id: 'dom-1', name: 'Aeon' }],
+      held: [{ id: HELD, domain: 'Aeon', claim: 'Quality first' }],
+      inputs: [signal(IN2, '2026-09-30T20:00:00Z'), signal(IN1, '2026-09-30T08:00:00Z')] as never,
+      recheck: [],
+    }))
+    expect(spec.input.prompt).not.toContain('questioned by events')
+    expect(spec.input.context).not.toHaveProperty('openIds')
+  })
+
+  it('observe: still the base prompt (observe never changes what the model sees)', async () => {
+    vi.stubEnv('KAIROS_SURPRISE_GATE', 'observe')
+    data.listOpenAlignedBeliefs.mockResolvedValue([openRow()])
+    const [spec] = await beliefExtractHandler.plan(USER, NIGHT)
+    expect(data.listOpenAlignedBeliefs).not.toHaveBeenCalled()
+    expect(spec.input.system).toBe(EXTRACT_SYSTEM_PROMPT)
+  })
+
+  it('on: an open mark alone plans a job; the questioned section says why; the static variant system prompt', async () => {
+    vi.stubEnv('KAIROS_SURPRISE_GATE', '1')
+    data.listOperatorSignals.mockResolvedValue([])
+    data.listOpenAlignedBeliefs.mockResolvedValue([openRow()])
+    const [spec] = await beliefExtractHandler.plan(USER, NIGHT)
+    expect(data.listOpenAlignedBeliefs).toHaveBeenCalledWith(USER, NIGHT, 20)
+    expect(spec.input.system).toBe(EXTRACT_SYSTEM_PROMPT_SURPRISE)
+    expect(spec.input.prompt).toContain('These beliefs were questioned by events')
+    expect(spec.input.prompt).toMatch(new RegExp(`\\[${OPEN}\\] \\(Aeon\\) Evenings are dead time \\(why: a prediction resting on it went wrong\\)`))
+    expect(spec.input.context).toMatchObject({ inputIds: [], openIds: [OPEN] })
+    expect((spec.input.context as { heldIds: string[] }).heldIds).toContain(OPEN)
+  })
+
+  it('on: an open belief a settled job already presented waits for a newer signal', async () => {
+    vi.stubEnv('KAIROS_SURPRISE_GATE', '1')
+    data.listOperatorSignals.mockResolvedValue([])
+    data.listRecentExtractJobs.mockResolvedValue([{ status: 'done', error: null, inputsUntil: null, flaggedIds: [], openIds: [OPEN], plannedAt: new Date('2026-09-30T13:00:00Z') }])
+    data.listOpenAlignedBeliefs.mockResolvedValue([openRow('2026-09-30T12:00:00.000Z')])
+    expect(await beliefExtractHandler.plan(USER, NIGHT)).toEqual([])
+    data.listOpenAlignedBeliefs.mockResolvedValue([openRow('2026-09-30T18:00:00.000Z')])
+    expect(await beliefExtractHandler.plan(USER, NIGHT)).toHaveLength(1)
+  })
+
+  it('on: an open belief is a valid retire target, openIds reach the write, signals are recorded', async () => {
+    vi.stubEnv('KAIROS_SURPRISE_GATE', '1')
+    data.listOpenAlignedBeliefs.mockResolvedValue([openRow()])
+    const result = { written: true, created: [], superseded: [], reinforced: [], retired: [OPEN], refusedReplaces: [], gatedReplaces: [], wouldGateReplaces: [], ownerCorrections: [] }
+    data.writeAlignedBeliefs.mockResolvedValue(result)
+    const [spec] = await beliefExtractHandler.plan(USER, NIGHT)
+    const out = await beliefExtractHandler.apply(jobFrom(spec), json({ beliefs: [], retire: [{ targetId: OPEN.slice(0, 8), reason: 'prediction proved it wrong' }] }), 'routine')
+    expect(out).toEqual({ ok: true, memoryIds: [OPEN] })
+    const writes = data.writeAlignedBeliefs.mock.calls[0][3]
+    expect(writes).toMatchObject({ retire: [{ targetId: OPEN, reason: 'prediction proved it wrong' }], openIds: [OPEN] })
+    expect(data.recordBeliefExtractSurprises).toHaveBeenCalledWith(USER, 'belief_extract:2026-10-01', expect.objectContaining({ inputIds: [IN2, IN1], questionedIds: [OPEN], result }))
+  })
+
+  it('off: no signals are recorded after the write', async () => {
+    await beliefExtractHandler.apply(jobFrom((await beliefExtractHandler.plan(USER, NIGHT))[0]), json({ beliefs: [] }), 'routine')
+    expect(data.recordBeliefExtractSurprises).not.toHaveBeenCalled()
   })
 })
 

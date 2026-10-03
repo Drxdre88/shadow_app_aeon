@@ -261,6 +261,24 @@ describe('aether handler — apply', () => {
     expect(date).toBe(DAY)
     expect(source).toBe('cron')
     expect(extra).toMatchObject({ answeredBy: 'routine' })
+    expect(extra).not.toHaveProperty('surpriseReplay')
+  })
+
+  it('stores the replay set the plan carried (spec_surprise replay inhibition)', async () => {
+    vi.mocked(aether.persistAether).mockResolvedValue({ aetherMemoryId: 'mem-a', archivedPrior: 0 })
+    const text = JSON.stringify({
+      generatedAt: `${DAY}T02:55:00Z`,
+      coreNarrative: 'Kairos is moving its thinking onto the routine.',
+      thoughts: [thought('t1', [REFL])],
+    })
+    const withReplay = jobRow({
+      kind: 'aether',
+      dominionId: null,
+      externalKey: `aether:${DAY}`,
+      input: { system: 's', prompt: 'p', validMemoryIds: [REFL], context: { date: DAY, replayIds: [REFL] } },
+    })
+    expect(await aetherHandler.apply(withReplay, text, 'routine')).toEqual({ ok: true, memoryIds: ['mem-a'] })
+    expect(vi.mocked(aether.persistAether).mock.lastCall?.[5]).toMatchObject({ surpriseReplay: { ids: [REFL] } })
   })
 
   it('rejects an answer whose every thought is ungrounded', async () => {

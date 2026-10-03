@@ -29,6 +29,21 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.41.0] — 2026-10-03
+
+> Areas touched: \`KAIROS\` \`MCP\` \`API\`
+> Theme: One coherent mind, wave 2 — surprise drives what he rewrites and asks, and he dreams. All off until you switch them on.
+
+### Added — Surprise as the engine · \`KAIROS\` \`MCP\` \`API\`
+- **Rewrite only on surprise** (\`KAIROS_SURPRISE_GATE=observe|1\`): Kairos may only rewrite a belief something has questioned — a wrong prediction, your correction, repeated pressure, or (with \`KAIROS_SURPRISE_CONTRADICTIONS=1\`) a contradiction the conscience check found. Your own corrections always go through, and saying "actually…" in chat flags matching beliefs without slowing the reply.
+- **Backward credit** (\`KAIROS_SURPRISE_CREDIT=observe|1\`): when a prediction settles or a promise closes, credit or blame passes on to the beliefs that relied on its evidence.
+- **Curiosity by learning progress** (\`KAIROS_CURIOSITY_LP=observe|1\`): his daily question leans toward areas where his calls are getting better fastest.
+- **Spend sleep where it pays** (\`KAIROS_SURPRISE_REPLAY=observe|1\`): the nightly self-model and area summaries are shown what's due soon or under question.
+- **Surprise → stage** (\`KAIROS_SURPRISE_STAGE=1\`): surprises post to his "on my mind" stage. New read-only \`get_kairos_surprise\` / \`GET /api/v1/kairos/surprise\`.
+
+### Added — Dreams (\`KAIROS_DREAMS=observe|1\`, \`KAIROS_DREAM_LINE=1\`) · \`KAIROS\`
+- One short dream a night: a few memories from different parts of your life, bent on purpose around your open questions. In the morning he reads it for patterns that still hold, beliefs that look fragile and a worst case worth rehearsing — notes only, nothing changes. Dreams are never stored as memories, never used as evidence, and never shown to chat or the 06:00 prompt. With the line on, the Tue/Thu/Sat 06:00 Telegram message can end with "💭 I dreamt…" (Telegram only, never stored).
+
 ## [0.40.0] — 2026-10-03
 
 > Areas touched: \`KAIROS\` \`MCP\` \`API\` \`UI\`

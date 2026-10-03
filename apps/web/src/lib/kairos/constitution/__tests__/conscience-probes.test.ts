@@ -7,7 +7,9 @@ import {
   auditLaundering,
   buildConsciencePrompt,
   conscienceFailureLine,
+  conscienceMarkdown,
   parseConscienceAnswers,
+  readStoredConscience,
   scoreConscience,
   selectContradictionPairs,
   type SampleBelief,
@@ -146,6 +148,17 @@ describe('parse + score', () => {
     const parsed = parseConscienceAnswers(answer({ ...all('A'), ...Object.fromEntries(ABSTENTION_IDS.map((id) => [id, 'unknown'])), ...OUTDATED_EXPECTED }, []), [])
     expect(conscienceFailureLine(scoreConscience(parsed, [], clean))).toBeNull()
     expect(conscienceFailureLine(scoreConscience(null, [], clean))).toBe('conscience checks: answer unparsed')
+  })
+
+  it('reports dream echoes when present and reads stored counts with or without them', () => {
+    const parsed = parseConscienceAnswers(answer({ ...all('A'), ...Object.fromEntries(ABSTENTION_IDS.map((id) => [id, 'unknown'])), ...OUTDATED_EXPECTED }, []), [])
+    expect(conscienceFailureLine(scoreConscience(parsed, [], { ...clean, dreamEchoes: 0, dreamEchoIds: [] }))).toBeNull()
+    const echoed = scoreConscience(parsed, [], { ...clean, dreamEchoes: 1, dreamEchoIds: ['mem-1'] })
+    expect(conscienceFailureLine(echoed)).toBe('conscience checks: 1 memory echoing a dream')
+    expect(conscienceMarkdown('2026-10-03', echoed)).toContain('- Dream echoes: 1 memories created since a dream share its phrasing (mem-1)')
+    expect(conscienceMarkdown('2026-10-03', scoreConscience(parsed, [], clean))).not.toContain('Dream echoes')
+    expect(readStoredConscience({ conscience: echoed })?.laundering.dreamEchoes).toBe(1)
+    expect(readStoredConscience({ conscience: scoreConscience(parsed, [], clean) })?.laundering.dreamEchoes).toBeUndefined()
   })
 })
 
