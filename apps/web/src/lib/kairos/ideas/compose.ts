@@ -53,6 +53,8 @@ export interface IdeaBodyInput {
   nextStep: string
   evidenceIds: string[]
   survivedBecause: string | null
+  // Wave 3 lane lines (collision block, novelty/taste note); appended when non-empty.
+  extraLines?: string[]
 }
 
 export function renderIdeaBody(input: IdeaBodyInput, evidence: ReadonlyMap<string, EvidenceRef>): string {
@@ -71,5 +73,6 @@ export function renderIdeaBody(input: IdeaBodyInput, evidence: ReadonlyMap<strin
       : ['- (none)']),
   ]
   if (input.survivedBecause) lines.push('', `**Survived because:** ${input.survivedBecause}`)
+  if (input.extraLines?.length) lines.push('', ...input.extraLines)
   return lines.join('\n')
 }

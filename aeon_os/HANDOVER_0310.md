@@ -10,7 +10,7 @@
 | 0.20 / v0.38.0 | #148 | ✅ live | Phase 1 safety (owner-only constitution, routine-scoped jobs, unjudged ideas filed, chat timing) + Phase 2 dormant (goals, promises, Approve/Veto). |
 | 0.21 / v0.39.0 | #149 | ✅ live | **One mind everywhere:** shared "today" log across Telegram, web, Triad, Claude (MCP), voice, coding sessions — ON by default (`KAIROS_TODAY=0` kills it). Off by default: daytime thinking (reflect + Sonnet pulse), track record (predictions), Horae (his agenda). |
 | 0.22 / v0.40.0 | #150 | ✅ live | **Wave 1:** the stage (global workspace), weekly character check, cold read. All off by default. |
-| 0.23 / v0.41.0 | **PR open (see §6)** | ⏳ not merged | **Wave 2:** surprise as the engine (gated rewrites, backward credit, learning-progress curiosity, replay, surprise→stage) + dreams (firewalled). All off by default. |
+| 0.23 / v0.41.0 | #151 | ✅ live (merged + smoke-auth passed 03/10 evening) | **Wave 2:** surprise as the engine (gated rewrites, backward credit, learning-progress curiosity, replay, surprise→stage) + dreams (firewalled). All off by default. |
 
 ## 2. Routines on claude.ai (managed from this box with `claude -p "...RemoteTrigger..." --allowedTools RemoteTrigger`; no delete action exists)
 
@@ -51,6 +51,7 @@ Night 1 on the new brain (02→03/10): 25/25 jobs done on Max.
 5. Cleanups flagged by builders: `daily-message-prompt.ts` (500 lines), `ask-mine.ts` (519), `cortex.ts` (500), `chat-turn-assistant.ts` (482), `sessions.ts`, webhook route test (945) — Butcher splits. Triad bridge `prompt.py` should render `today` and `stage`.
 
 ## 6. Traps (don't relearn)
+- **Telegram stays.** Owner rule (03/10): Telegram chat is his mobile path and must keep working; Triad lives inside the enterprise network only. Triad is an extra channel, never a replacement — don't retire or demote the Telegram webhook/chat.
 - **Shared Neon DB:** no schema change in 0.20–0.23 (jsonb/varchar, `user_preferences` server-owned keys, internal `agent_sessions` rows). Never `db:push`/`db:generate` locally; Vercel's build runs `db:push`.
 - **Server-owned preference keys** must be in `SERVER_OWNED_OBJECT_KEYS` (`lib/data/preferences.ts`): promises, predictions, agenda, stage, surprise.
 - **New thinking kind:** register in `engine/types.ts`, `validators/thinking.ts`, `queue.ts` (PLANNED + FALLBACK_OWNER), `catalog.ts` BRAIN_JOBS, `registry.ts`, `deadlines.ts` — planned-kinds/catalog tests enforce it. Land the shared registry edits in one parent commit before parallel builders.

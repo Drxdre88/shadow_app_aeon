@@ -53,6 +53,45 @@ export type CritiqueVerdict = 'grounded' | 'ungrounded' | 'contradicted'
 export type IdeaStatus = 'survivor' | 'eliminated' | 'repeat'
 export type IdeaOutcome = 'accepted' | 'dismissed'
 
+// Kinds of move a generator direction takes (re-exported by generate-prompt).
+export const IDEA_MOVES = ['stop', 'start', 'combine', 'test', 'simplify'] as const
+export type IdeaMove = (typeof IDEA_MOVES)[number]
+
+// Wave 3 atlas axes (lane A): what kind of idea, and how far it leaps.
+export const IDEA_KINDS = ['question', 'experiment', 'reframe', 'make', 'ritual'] as const
+export type IdeaKind = (typeof IDEA_KINDS)[number]
+export const IDEA_LEAPS = ['near', 'far'] as const
+export type IdeaLeap = (typeof IDEA_LEAPS)[number]
+
+// Wave 3 optional fields below are set only when their lane's flag is on;
+// absent keys keep flag-off JSON byte-identical.
+
+// Atlas cell an idea was filed under (lane A).
+export interface IdeaAtlasMeta {
+  cell: string
+  area: string
+  kind: IdeaKind
+  leap: IdeaLeap
+  leapClaimed: IdeaLeap | null
+  took: 'filled' | 'replaced' | null
+}
+
+// A verified collision between two far-apart memories (lane B).
+export interface IdeaBridgeMeta {
+  v: 1
+  pairKey: string
+  aId: string
+  bId: string
+  aArea: string | null
+  bArea: string | null
+  cos: number
+  relations: Array<{ a: string; b: string }>
+  map: Array<{ a: string; b: string }>
+  insight: string
+  mappingHolds: boolean | null
+  linkedAt?: string
+}
+
 // One generated candidate (model output after server grounding).
 export interface IdeaCandidate {
   // Stable within a tournament: c1..cN, assigned by the server.
@@ -67,6 +106,14 @@ export interface IdeaCandidate {
   nextStep: string
   // Grounded evidence ids the generator cited (subset of the job's validMemoryIds).
   citedIds: string[]
+  kind?: IdeaKind
+  leap?: IdeaLeap
+  // Collision pair id ("p1") the candidate blends (lane B).
+  blend?: string
+  // Model-stated typicality 0..1 and lens tag (lane C).
+  likelihood?: number
+  lens?: string | null
+  move?: IdeaMove
 }
 
 export interface NoveltyResult {
@@ -86,6 +133,8 @@ export interface IdeaCritique {
   // Only asked for borderline-novelty candidates; null otherwise.
   meaningfullyDifferent: boolean | null
   note: string
+  // Only asked for bridged (collision) candidates (lane B).
+  mappingHolds?: boolean | null
 }
 
 // sourceMetadata.idea on every archived candidate and surviving proposal.
@@ -113,4 +162,10 @@ export interface IdeaMeta {
   survivedBecause: string | null
   outcome: IdeaOutcome | null
   outcomeAt: string | null
+  atlas?: IdeaAtlasMeta
+  bridge?: IdeaBridgeMeta
+  move?: IdeaMove
+  round?: 'novelty'
+  pick?: 'taste' | 'surprise'
+  outcomeBy?: 'operator' | 'agent'
 }

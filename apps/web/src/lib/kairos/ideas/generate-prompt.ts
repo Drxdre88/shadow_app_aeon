@@ -5,9 +5,13 @@ import {
   IDEA_CANDIDATES_MIN,
   IDEA_DIRECTIONS_MAX,
   IDEA_DIRECTIONS_MIN,
+  IDEA_MOVES,
   type IdeaCandidate,
+  type IdeaMove,
 } from './types'
 import { IDEA_DATA_BEGIN, IDEA_DATA_END, dataLine } from './prompt-data'
+
+export { IDEA_MOVES, type IdeaMove }
 
 // idea_generate prompt (docs/kairos/35). One call: first pick 4–6 stratified
 // directions across the operator's Dominions and kinds of move, then write
@@ -19,8 +23,6 @@ export const IDEA_GENERATE_MAX_OUTPUT_TOKENS = 6000
 // Fewer raw candidates than this means the model ignored the brief: reject so
 // the routine's answer goes to the paid fallback (with one repair round-trip).
 export const IDEA_RAW_CANDIDATES_MIN = 4
-export const IDEA_MOVES = ['stop', 'start', 'combine', 'test', 'simplify'] as const
-export type IdeaMove = (typeof IDEA_MOVES)[number]
 
 // Per-section caps keep the prompt at ≈≤12k tokens with every source full.
 const CAP = {
@@ -207,6 +209,18 @@ export function buildIdeaGeneratePrompt(inputs: IdeaGenerateInputs): string {
   return lines.join('\n')
 }
 
+const DATA_END_MARKER = `\n${IDEA_DATA_END}\n`
+
+// Inserts an extension section as the last block inside the data markers.
+// Throws unless the end marker occurs exactly once (dataLine defuses fakes).
+export function spliceBeforeDataEnd(prompt: string, section: string): string {
+  const at = prompt.indexOf(DATA_END_MARKER)
+  if (at < 0 || prompt.indexOf(DATA_END_MARKER, at + 1) >= 0) {
+    throw new Error('idea-generate: data end marker must occur exactly once')
+  }
+  return `${prompt.slice(0, at)}\n${section}\n${prompt.slice(at)}`
+}
+
 // ── Parse + ground ────────────────────────────────────────────────────────
 
 const text = (max: number) => z.string().trim().min(1).transform((s) => s.slice(0, max))
@@ -243,10 +257,27 @@ export interface GroundedGenerate {
   directions: IdeaDirection[]
   candidates: IdeaCandidate[]
   dropped: { ungrounded: number; unknownDirection: number; overCap: number }
+  // The parsed JSON block; present only when parse options asked for it.
+  raw?: unknown
 }
 
-export function parseIdeaGenerateText(raw: string, validIds: ReadonlySet<string>): GroundedGenerate {
-  const parsed = generateSchema.parse(extractJsonBlock(raw, 'idea-generate'))
+// Wave 3 extension hooks into parsing. Without options the parse is unchanged;
+// with options the cap and c1..cN keys are applied after postProcess.
+export interface IdeaParseOptions {
+  extendCandidate?: (rawItem: unknown, built: IdeaCandidate, direction: IdeaDirection) => IdeaCandidate
+  postProcess?: (candidates: IdeaCandidate[], info: { directions: readonly IdeaDirection[]; raw: unknown }) => IdeaCandidate[]
+  skipCap?: boolean
+  keepRaw?: boolean
+}
+
+function rawCandidateItems(json: unknown): unknown[] {
+  const list = json && typeof json === 'object' ? (json as { candidates?: unknown }).candidates : undefined
+  return Array.isArray(list) ? list : []
+}
+
+export function parseIdeaGenerateText(raw: string, validIds: ReadonlySet<string>, opts?: IdeaParseOptions): GroundedGenerate {
+  const json = extractJsonBlock(raw, 'idea-generate')
+  const parsed = generateSchema.parse(json)
   const directions: IdeaDirection[] = []
   const seen = new Set<string>()
   for (const d of parsed.directions) {
@@ -254,34 +285,41 @@ export function parseIdeaGenerateText(raw: string, validIds: ReadonlySet<string>
     seen.add(d.id)
     directions.push({ id: d.id, label: d.label, move: d.move, dominion: d.dominion?.trim() || null })
   }
-  const labelOf = new Map(directions.map((d) => [d.id, d.label]))
+  const directionOf = new Map(directions.map((d) => [d.id, d]))
+  const rawItems = opts ? rawCandidateItems(json) : []
   const dropped = { ungrounded: 0, unknownDirection: 0, overCap: 0 }
-  const candidates: IdeaCandidate[] = []
-  for (const c of parsed.candidates) {
-    const label = labelOf.get(c.direction)
-    if (!label) {
+  let candidates: IdeaCandidate[] = []
+  parsed.candidates.forEach((c, i) => {
+    const direction = directionOf.get(c.direction)
+    if (!direction) {
       dropped.unknownDirection++
-      continue
+      return
     }
     const citedIds = [...new Set(c.evidenceIds.filter((id) => validIds.has(id)))]
     if (citedIds.length === 0) {
       dropped.ungrounded++
-      continue
+      return
     }
-    if (candidates.length >= IDEA_CANDIDATES_MAX) {
+    if (!opts?.skipCap && candidates.length >= IDEA_CANDIDATES_MAX) {
       dropped.overCap++
-      continue
+      return
     }
-    candidates.push({
+    const built: IdeaCandidate = {
       key: `c${candidates.length + 1}`,
-      direction: label,
+      direction: direction.label,
       title: c.title,
       claim: c.claim,
       why: c.why,
       nextStep: c.nextStep,
       citedIds,
-    })
+    }
+    candidates.push(opts?.extendCandidate ? opts.extendCandidate(rawItems[i], built, direction) : built)
+  })
+  if (opts) {
+    if (opts.postProcess) candidates = opts.postProcess(candidates, { directions, raw: json })
+    dropped.overCap += Math.max(0, candidates.length - IDEA_CANDIDATES_MAX)
+    candidates = candidates.slice(0, IDEA_CANDIDATES_MAX).map((c, i) => ({ ...c, key: `c${i + 1}` }))
   }
   if (candidates.length === 0) throw new Error('idea-generate: no candidate cited a valid evidence id')
-  return { directions, candidates, dropped }
+  return opts?.keepRaw ? { directions, candidates, dropped, raw: json } : { directions, candidates, dropped }
 }

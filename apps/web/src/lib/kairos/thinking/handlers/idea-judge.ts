@@ -32,6 +32,16 @@ import { askPaidAndParse } from '../paid-fallback'
 import { errorReason } from './_errors'
 import { ideaJudgeThoughts, withThoughts } from '../stage-thoughts'
 import { BENIGN_DECLINES, IDEA_TOURNAMENT_CRON, candidateText, ideaGenerateJobKey, repeatMeta } from './idea-generate'
+import {
+  runAfterTournamentWrite,
+  runComposeExtraLines,
+  runMetaExtras,
+  runPickRecoveryJudgeContext,
+  runPostSelect,
+  runPrepareJudge,
+  runSummarizeJudge,
+  type JudgeApplyScope,
+} from './idea-ext'
 import { PAID_BACKUP_OFF_NOTE } from '@/lib/ai/paid-backup-off'
 
 // Nightly idea tournament, stage 2 (docs/kairos/35). Normally planned by the
@@ -51,8 +61,9 @@ export async function planIdeaJudge(userId: string, now: Date): Promise<Thinking
   const generateKey = ideaGenerateJobKey(day)
   const jobs = await listJobs(userId, { kind: IDEA_GENERATE_KIND, limit: 5 })
   const generate = jobs.find((j) => j.externalKey === generateKey && DONE_STATUSES.has(j.status))
-  if (!generate) return []
-  const ctx = readJudgeContext(generate.output?.judgeContext)
+  const picked = await runPickRecoveryJudgeContext({ userId, day, jobs })
+  if (picked === undefined && !generate) return []
+  const ctx = readJudgeContext(picked !== undefined ? picked : generate?.output?.judgeContext)
   if (!ctx || contenders(ctx).length === 0) return []
   return [buildJudgeSpec(ctx)]
 }
@@ -93,20 +104,24 @@ export interface TournamentRows {
   selection: SelectionResult[]
 }
 
-// Pure assembly of tonight's rows (embeddings resolved by the caller).
+// Pure assembly of tonight's rows (embeddings resolved by the caller). Lane
+// hooks (postSelect, metaExtras, composeExtraLines) run only with a scope.
 export function assembleTournament(
   ctx: IdeaJudgeContext,
   judgeJobId: string,
   judged: GroundedJudge,
   elo: ReadonlyMap<string, EloRecord>,
   embeddings: ReadonlyMap<string, number[] | null>,
+  scope?: JudgeApplyScope,
 ): TournamentRows {
-  const selection = selectSurvivors(ctx.candidates.map((c) => ({
+  const inputs = ctx.candidates.map((c) => ({
     key: c.key,
     novelty: c.novelty,
     critique: judged.critiques.get(c.key) ?? null,
     record: elo.get(c.key) ?? null,
-  })))
+  }))
+  const base = selectSurvivors(inputs)
+  const selection = scope ? runPostSelect(base, inputs, scope) : base
   const evidence = new Map<string, EvidenceRef>(Object.values(ctx.evidence).map((e) => [e.id, e]))
   const survivors: TournamentRows['survivors'] = []
   const others: TournamentRows['others'] = []
@@ -139,8 +154,16 @@ export function assembleTournament(
       survivedBecause: because,
       outcome: null,
       outcomeAt: null,
+      ...(scope ? runMetaExtras(c, s, critique, scope) : {}),
     }
-    const bodyMd = renderIdeaBody({ direction: c.direction, ...wording, evidenceIds: c.evidenceIds, survivedBecause: because }, evidence)
+    const extraLines = scope ? runComposeExtraLines(meta) : []
+    const bodyMd = renderIdeaBody({
+      direction: c.direction,
+      ...wording,
+      evidenceIds: c.evidenceIds,
+      survivedBecause: because,
+      ...(extraLines.length ? { extraLines } : {}),
+    }, evidence)
     const dominionId = majorityDominion(c.evidenceIds, evidence)
     const embedding = embeddings.get(c.key) ?? null
     if (isSurvivor) {
@@ -160,16 +183,18 @@ export async function persistJudge(
   answeredBy: ThinkingAnsweredBy,
 ): Promise<ApplyOutcome> {
   const keys = contenders(ctx).map((c) => c.key)
+  const scope: JudgeApplyScope = { job, ctx, answeredBy, scratch: {} }
+  await runPrepareJudge(judged, scope)
   const elo = computeElo(keys, ctx.pairs, judged.votes)
   // Pre-select to know which survivors need a re-embed after refinement.
-  const draft = assembleTournament(ctx, job.id, judged, elo, new Map())
+  const draft = assembleTournament(ctx, job.id, judged, elo, new Map(), scope)
   const survivorKeys = new Set(draft.selection.filter((s) => s.status === 'survivor').map((s) => s.key))
   const embeddings = new Map<string, number[] | null>()
   for (const c of ctx.candidates) {
     const refined = survivorKeys.has(c.key) ? judged.refinements.get(c.key)?.claim ?? null : null
     embeddings.set(c.key, await survivorEmbedding(c, refined))
   }
-  const rows = assembleTournament(ctx, job.id, judged, elo, embeddings)
+  const rows = assembleTournament(ctx, job.id, judged, elo, embeddings, scope)
 
   const res = await writeTournament(job.userId, {
     tournamentDate: ctx.date,
@@ -178,6 +203,7 @@ export async function persistJudge(
     survivors: rows.survivors,
     others: rows.others,
   })
+  await runAfterTournamentWrite(res, rows, scope)
 
   const eliminated: Record<string, number> = {}
   for (const s of rows.selection) if (s.eliminatedReason) eliminated[s.eliminatedReason] = (eliminated[s.eliminatedReason] ?? 0) + 1
@@ -191,6 +217,7 @@ export async function persistJudge(
     votes: judged.votes.size,
     survivors: rows.survivors.map((s) => ({ key: s.meta.key, title: s.title, elo: s.meta.elo, refined: s.meta.refined })),
     eliminated,
+    ...runSummarizeJudge(rows, scope),
   }
   await writeCronSuccessTrace(job.userId, {
     cronName: IDEA_TOURNAMENT_CRON,

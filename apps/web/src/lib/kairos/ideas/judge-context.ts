@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { ThinkingJobSpec } from '@/lib/kairos/engine/types'
-import { IDEA_JUDGE_KIND } from './types'
+import { IDEA_JUDGE_KIND, IDEA_KINDS, IDEA_LEAPS, IDEA_MOVES, type IdeaBridgeMeta } from './types'
 import { IDEA_JUDGE_MAX_OUTPUT_TOKENS, IDEA_JUDGE_SYSTEM_PROMPT, buildIdeaJudgePrompt, type JudgeCandidate } from './judge-prompt'
 
 // The idea_judge job's context (docs/kairos/35): everything the judge needs,
@@ -33,6 +33,15 @@ export const judgeCandidateSchema = z.object({
   novelty: noveltySchema,
   evidenceIds: z.array(z.string()),
   vector: packedSchema.nullable(),
+  // Wave 3 lane fields: absent unless a lane flag set them (owners validate).
+  kind: z.enum(IDEA_KINDS).optional(),
+  leap: z.enum(IDEA_LEAPS).optional(),
+  blend: z.string().optional(),
+  bridge: z.custom<IdeaBridgeMeta>((v) => typeof v === 'object' && v !== null).optional(),
+  move: z.enum(IDEA_MOVES).optional(),
+  likelihood: z.number().optional(),
+  lens: z.string().nullable().optional(),
+  atlas: z.record(z.string(), z.unknown()).optional(),
 })
 
 export const judgeContextSchema = z.object({
@@ -54,6 +63,10 @@ export const judgeContextSchema = z.object({
   })),
   pairs: z.array(z.object({ id: z.string(), a: z.string(), b: z.string(), forward: z.string(), swapped: z.string() })),
   matches: z.array(z.object({ id: z.string(), pairId: z.string(), first: z.string(), second: z.string() })),
+  // Wave 3 lane state carried to the judge (lane A atlas/Swiss; ext = any lane).
+  atlas: z.unknown().optional(),
+  swiss: z.unknown().optional(),
+  ext: z.unknown().optional(),
 })
 
 export type IdeaJudgeContext = z.infer<typeof judgeContextSchema>

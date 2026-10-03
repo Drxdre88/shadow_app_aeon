@@ -15,6 +15,7 @@ import { decideKairosProposal, isDecidableProposalKind, type DecideProposalResul
 import { reactOutcome, reactUsed } from './reactions'
 import { recordIdeaOutcome } from '@/lib/data/ideas'
 import type { Origin } from './origin'
+import { runOnIdeaOutcome } from './thinking/handlers/idea-ext'
 import { recordToday, type TodayChannel } from './today'
 
 // Proposal triage — the operator gate in propose-not-commit (docs/kairos/32 §2,
@@ -37,6 +38,21 @@ async function groundIdeaOutcome(userId: string, memoryId: string, outcome: Idea
     await recordIdeaOutcome(userId, memoryId, outcome)
   } catch (err) {
     console.error('[kairos-inbox] failed to record idea outcome', err)
+  }
+}
+
+// Wave 3 lane hooks on an idea outcome (bridge links, outcomeBy). Best-effort.
+async function notifyIdeaOutcome(
+  userId: string,
+  memoryId: string,
+  meta: Record<string, unknown>,
+  outcome: IdeaOutcome,
+  origin: Origin | undefined,
+): Promise<void> {
+  try {
+    await runOnIdeaOutcome({ userId, memoryId, meta, outcome, origin })
+  } catch (err) {
+    console.error('[kairos-inbox] idea outcome hooks failed', err)
   }
 }
 
@@ -116,7 +132,10 @@ export async function acceptKairosProposal(
     await reactOutcome(userId, memoryId, 'positive', 'proposal accepted')
     await reactUsed(userId, [memoryId], 'proposal accepted')
     // `meta` was read before the accept mutated the row.
-    if (proposal.type === 'inbound' && meta.kind === IDEA_PROPOSAL_KIND) await groundIdeaOutcome(userId, memoryId, 'accepted')
+    if (proposal.type === 'inbound' && meta.kind === IDEA_PROPOSAL_KIND) {
+      await groundIdeaOutcome(userId, memoryId, 'accepted')
+      await notifyIdeaOutcome(userId, memoryId, meta, 'accepted', opts.origin)
+    }
     if (shouldRecord) await recordDecisionToday(userId, memoryId, `Accepted: ${proposal.title}`, opts.origin ?? OWNER_ACCEPT)
   }
   return result
@@ -158,7 +177,10 @@ export async function dismissInboxMemory(userId: string, memoryId: string): Prom
     // Dismissing a proposal is an operator veto: Outcome negative + a
     // 'feedback' op (docs/kairos/32 §2). Best-effort, never fails dismiss.
     await reactOutcome(userId, memoryId, 'negative', 'proposal dismissed')
-    if (metadata.kind === IDEA_PROPOSAL_KIND) await groundIdeaOutcome(userId, memoryId, 'dismissed')
+    if (metadata.kind === IDEA_PROPOSAL_KIND) {
+      await groundIdeaOutcome(userId, memoryId, 'dismissed')
+      await notifyIdeaOutcome(userId, memoryId, metadata, 'dismissed', OWNER_INBOX)
+    }
   }
   await recordDecisionToday(userId, memoryId, `Dismissed: ${memory.title}`, OWNER_INBOX)
   return { ok: true, id: archived.id }
