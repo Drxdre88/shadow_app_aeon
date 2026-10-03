@@ -20,6 +20,27 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - `DOCS` — `ARCHITECTURE.md`, `VISION.md`, `CLAUDE.md`
 - `UI` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.42.0] — 2026-10-03
+
+> Areas touched: `KAIROS` `MCP` `API`
+> Theme: One coherent mind, wave 3 — creative genius. The nightly idea contest is rebuilt to find new kinds of ideas, not more of the same. All off until you switch them on.
+
+### Added — Idea atlas and head-to-head rounds · `KAIROS` `MCP` `API`
+- **Idea atlas** (`KAIROS_IDEA_ATLAS=observe|1`): every idea is placed on a map of life area × kind (question, experiment, reframe, thing to make, ritual) × near or far leap. Each spot keeps its best-ever idea; a new idea only has to beat its own spot's holder, and empty spots become the next night's targets. New read-only `get_kairos_idea_atlas` / `GET /api/v1/kairos/idea-atlas`.
+- **Head-to-head rounds** (`KAIROS_IDEA_SWISS=1`, `KAIROS_IDEA_SWISS_ROUNDS=3..6`): ideas are judged in several rounds of pairs instead of one pass. If a round goes wrong or time runs short before the 06:00 message, the night finishes with the votes it has.
+
+### Added — Collisions (`KAIROS_COLLISIONS=observe|1`) · `KAIROS`
+- Pairs of memories from different areas and times are offered to the idea generator. A blended idea is kept only if the way things relate in one memory really carries over to the other, and the judge double-checks it. When you accept one yourself, the two memories are linked in your brain map.
+
+### Added — Less sameness and incubation · `KAIROS`
+- **Unusual ideas first** (`KAIROS_IDEA_VS=1`): each idea comes with how obvious Kairos thinks it is, the unusual tail is kept, and his recurring themes act as separate viewpoints inside one run.
+- **One retry for a samey night** (`KAIROS_IDEA_RESAMPLE=observe|1`): if a night's batch is too alike, he tries once more with "this is your usual pattern — avoid it".
+- **It came to me later** (`KAIROS_IDEA_SHELF=observe|1`, needs daytime thinking): ideas that only just missed are set aside and may come back days later during a daytime check-in, as a quiet note. He never messages you about them.
+
+### Added — Stepping stones and your taste · `KAIROS` `MCP` `API`
+- **Pure novelty nights** (`KAIROS_IDEA_NOVELTY=observe|1`, every `KAIROS_IDEA_NOVELTY_EVERY` nights, default 5): your usual preferences are set aside, old rejected ideas are used as raw material, and the winners are the ideas least like anything before.
+- **Your taste** (`KAIROS_IDEA_TASTE=observe|1`): a small profile learned from what you accept, dismiss or ignore nudges two of the three daily picks; the third is always kept for a surprise. Only your own decisions count. New read-only `get_kairos_idea_taste` / `GET /api/v1/kairos/idea-taste`.
+
 ## [0.41.0] — 2026-10-03
 
 > Areas touched: `KAIROS` `MCP` `API`

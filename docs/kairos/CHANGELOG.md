@@ -4,6 +4,18 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–35).
 
+## [0.24.0] — 2026-10-03 · "One coherent mind, wave 3: creative genius"
+
+> The idea contest is rebuilt for spread, not sameness: an atlas of idea kinds, head-to-head Swiss rounds, collisions between distant memories, verbalized sampling with one capped resample, an incubation shelf, novelty nights and a learned owner taste with a surprise slot. All flag-gated; flag-off is byte-identical.
+
+- **Seam:** `thinking/handlers/idea-ext/` — guarded `IdeaExtension` registry [stepping, atlas, collision, sameness]; `idea-generate-apply.ts` split out; `spliceBeforeDataEnd` + parse hooks in `generate-prompt.ts`; optional lane fields on `IdeaCandidate` / `IdeaMeta` / judge context; hook failures are logged and skipped.
+- **Atlas** (`KAIROS_IDEA_ATLAS`): `user_preferences.kairosIdeaAtlas` (FOR UPDATE writer), cell = Dominion|cross × kind × leap (model-declared, server-checked), anonymous holder challenges kept out of Elo, empty-cell targets (skipped on novelty nights). `get_kairos_idea_atlas`.
+- **Swiss** (`KAIROS_IDEA_SWISS`): round 1 = full judge; rounds 2..R are votes-only follow-on `idea_judge:<day>:r<k>` jobs (no new kind); Buchholz, no rematches, byes; deadlines capped to the 04:35Z settle; a failed round finishes on votes so far, never a paid call.
+- **Collisions** (`KAIROS_COLLISIONS`): deterministic distant-but-related pair pick (zero embed calls, Aether anchor), structure-mapping gate, judge `mappingHolds` check (`mapping_failed`), `relates` bridge link with `bridge · idea:` note on owner/operator accept only.
+- **Sameness** (`KAIROS_IDEA_VS`, `KAIROS_IDEA_RESAMPLE`, `KAIROS_IDEA_SAMENESS_DISTANCE`): `p` + archetype lenses in one call, keep-tail, one routine-only resample `idea_generate:<day>:resample` that never reaches the paid path.
+- **Incubation** (`KAIROS_IDEA_SHELF`): `user_preferences.kairosIdeaShelf`; near-misses (ranked_out, 2–14 days old) resurface in the pulse as a today note + light stage thought; ≤1 per London day; never speaks.
+- **Stepping stones + taste** (`KAIROS_IDEA_NOVELTY`, `KAIROS_IDEA_NOVELTY_EVERY`, `KAIROS_IDEA_TASTE`): novelty night every N (max-min distance selection, stones as uncitable text); taste recomputed on read from idea rows (agent accepts excluded, `outcomeBy` stamp), 2 taste slots + 1 surprise slot; taste never enters a prompt. `get_kairos_idea_taste`.
+- Dreams still never reach any idea prompt (firewall unchanged); Telegram unchanged.
 ## [0.23.0] — 2026-10-03 · "One coherent mind, wave 2: surprise and dreams"
 
 > What surprised him now decides what he rewrites, credits, asks and replays; and he dreams, behind a firewall that keeps dreams out of memory and evidence. All flag-gated.
