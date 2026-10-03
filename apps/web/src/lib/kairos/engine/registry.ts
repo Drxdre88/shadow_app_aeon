@@ -6,6 +6,7 @@ import { ConceptStep } from './steps/concepts'
 import { MergeStep } from './steps/merge'
 import { OwnMindStep } from './steps/own-mind'
 import { RecheckStep } from './steps/recheck'
+import { SurpriseStep } from './steps/surprise'
 import { WeighStep } from './steps/weigh'
 import type { Step, ThinkingJobSpec } from './types'
 
@@ -23,7 +24,8 @@ async function enqueueThinkingJobs(userId: string, specs: readonly ThinkingJobSp
 // slow step (one transaction + support query per candidate) and can exhaust the
 // run's time budget while a proposal backlog drains. A promotion BackUp makes
 // tonight is mirrored the next night (OwnMind looks back 14 days). Weekly
-// concepts last.
+// concepts last. Surprise (marks upkeep, ~10s, skipped unless
+// KAIROS_SURPRISE_GATE is on/observe) sits between Weigh and OwnMind.
 //
 // Time slices (route budget 230s): Merge and Weigh are capped so neither can
 // starve the steps after them; BackUp drains what is left, minus the time
@@ -36,6 +38,7 @@ export function buildNightSteps(): Step[] {
   return [
     new MergeStep({ budgetMs: MERGE_BUDGET_MS }),
     new WeighStep(new Standing(defaultScorers()), { budgetMs: WEIGH_BUDGET_MS }),
+    new SurpriseStep(),
     new OwnMindStep(),
     new RecheckStep(),
     new BackUpStep(),

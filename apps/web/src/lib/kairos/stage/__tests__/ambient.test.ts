@@ -88,3 +88,24 @@ describe('gatherAmbient', () => {
     expect(listTodayEntries).toHaveBeenCalledWith('u1', expect.objectContaining({ hours: 24, now: NOW }))
   })
 })
+
+describe('surprise ledger hook (KAIROS_SURPRISE_STAGE)', () => {
+  const surpriseItem = { key: 'surprise:s_0000abcd', kind: 'prediction_wrong', source: 'prediction' as const, tier: 'deep' as const, text: 'My prediction was wrong: billing by Friday', importance: 0.6, surprise: 0.7, goalRelevance: 0.4, need: 0.4 }
+
+  it('with ledger items, wrong predictions come only from the ledger (never twice)', () => {
+    const out = buildAmbientCandidates({ promises: [], predictions: [prediction({})], today: [], now: NOW, surprise: [surpriseItem] })
+    expect(out.filter((o) => o.kind === 'prediction')).toHaveLength(0)
+    expect(out).toContainEqual(surpriseItem)
+  })
+
+  it('a job-sourced finding (aha, contradiction) is a valid ambient item', () => {
+    const aha = { ...surpriseItem, key: 'surprise:s_0000beef', kind: 'aha', source: 'job' as const }
+    expect(buildAmbientCandidates({ promises: [], predictions: [], today: [], now: NOW, surprise: [aha] })).toEqual([aha])
+  })
+
+  it('without the hook, behaviour is unchanged', () => {
+    const out = buildAmbientCandidates({ promises: [], predictions: [prediction({})], today: [], now: NOW })
+    expect(out.filter((o) => o.kind === 'prediction')).toHaveLength(1)
+  })
+})
+

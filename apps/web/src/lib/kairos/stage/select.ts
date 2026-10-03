@@ -9,6 +9,7 @@ import {
   STAGE_MAX_SURPRISE,
 } from '@/lib/data/validators/kairos-stage'
 import { BRAIN_JOBS } from '@/lib/kairos/routines/catalog'
+import { STAGE_SPECULATIVE_KINDS } from './flag'
 import { londonDateHour } from '@/lib/kairos/thinking/deadlines'
 import { clamp01, hash8, jaccard, normaliseCandidate, stageTokens } from './normalise'
 import type {
@@ -55,8 +56,10 @@ export function londonDateOf(now: Date): string {
   return londonDateHour(now).date
 }
 
-// Light tier = the cheap daytime pulse. Unknown kinds count as deep.
+// Light tier = the cheap daytime pulse, plus speculative kinds (dreams).
+// Unknown kinds count as deep.
 export function stageTierForKind(kind: string): StageTier {
+  if ((STAGE_SPECULATIVE_KINDS as readonly string[]).includes(kind)) return 'light'
   return BRAIN_JOBS.find((j) => j.kind === kind)?.tier ?? 'deep'
 }
 

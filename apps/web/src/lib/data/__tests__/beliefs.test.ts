@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import type { SQL } from 'drizzle-orm'
 
@@ -246,6 +246,91 @@ describe('writeAlignedBeliefs', () => {
       before: { invalidAt: null, supersededAt: null, belief: { status: 'held' } },
       after: expect.objectContaining({ invalidAt: NOW.toISOString(), belief: { status: 'retired' }, extractKey: KEY }),
     })])
+  })
+})
+
+describe('writeAlignedBeliefs — surprise gate (KAIROS_SURPRISE_GATE)', () => {
+  const OPEN_MARK = { engine: { surprise: { openUntil: '2026-10-01T07:00:00.000Z', signals: [{ kind: 'prediction_wrong', ref: 'p-1', at: '2026-09-30T12:00:00.000Z', s: 0.7 }] } } }
+  const target = (over: Partial<BeliefV1> = {}, extra: Record<string, unknown> = {}) =>
+    [{ id: OLD, sourceMetadata: { kind: 'belief', ...extra, belief: belief({ sourceType: 'tool', ...over }) }, links: [], invalidAt: null }]
+  const replace = (sourceType: BeliefV1['sourceType']) =>
+    ({ create: [{ values: beliefRowValues(belief({ sourceType, confidence: 0.6, supersedes: OLD })), supersedes: OLD, reason: 'r' }], reinforce: [] })
+
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('gate on: a tool replace of a target that is not open is held beside it, bumps pressure, and logs replaceGated', async () => {
+    vi.stubEnv('KAIROS_SURPRISE_GATE', '1')
+    state.selectQueue.push([], target())
+    state.insertQueue.push([{ id: NEW }])
+    const res = await writeAlignedBeliefs(USER, JOB, KEY, replace('tool'), NOW)
+    expect(res).toMatchObject({ created: [NEW], superseded: [], gatedReplaces: [OLD], refusedReplaces: [], ownerCorrections: [] })
+    const inserted = calls().find((c) => c.kind === 'insert')!.arg as { sourceMetadata: { belief: BeliefV1 } }
+    expect(inserted.sourceMetadata.belief.supersedes).toBeUndefined()
+    const updates = calls().filter((c) => c.kind === 'update').map((c) => c.arg as Record<string, unknown>)
+    expect(updates).toHaveLength(1)
+    expect(updates[0]).not.toHaveProperty('updatedAt') // pressure never bumps decay
+    expect(updates[0]).not.toHaveProperty('supersededAt')
+    expect((updates[0].sourceMetadata as { engine: { surprise: { pressure: unknown } } }).engine.surprise.pressure).toEqual({ n: 1, since: NOW.toISOString() })
+    const [op] = vi.mocked(insertMemoryOps).mock.calls[0][2]
+    expect(op.after).toMatchObject({ replaceGated: OLD })
+    expect(op.reason).toMatch(/held beside .*not open for update/)
+  })
+
+  it('gate on: a tool replace of an OPEN target supersedes it', async () => {
+    vi.stubEnv('KAIROS_SURPRISE_GATE', '1')
+    state.selectQueue.push([], target({}, OPEN_MARK))
+    state.insertQueue.push([{ id: NEW }])
+    const res = await writeAlignedBeliefs(USER, JOB, KEY, replace('tool'), NOW)
+    expect(res).toMatchObject({ superseded: [OLD], gatedReplaces: [] })
+  })
+
+  it('gate on: a target the job presented as open counts as open even after its mark closed', async () => {
+    vi.stubEnv('KAIROS_SURPRISE_GATE', '1')
+    state.selectQueue.push([], target())
+    state.insertQueue.push([{ id: NEW }])
+    const res = await writeAlignedBeliefs(USER, JOB, KEY, { ...replace('tool'), openIds: [OLD] }, NOW)
+    expect(res.superseded).toEqual([OLD])
+  })
+
+  it.each(['1', 'observe'])('INVARIANT (gate %s): an operator-provenance replace is never gated and is an owner correction', async (mode) => {
+    vi.stubEnv('KAIROS_SURPRISE_GATE', mode)
+    state.selectQueue.push([], target({ provenance: ['m-0', 'm-9'] }))
+    state.insertQueue.push([{ id: NEW }])
+    const res = await writeAlignedBeliefs(USER, JOB, KEY, replace('operator'), NOW)
+    expect(res).toMatchObject({ superseded: [OLD], gatedReplaces: [], wouldGateReplaces: [] })
+    expect(res.ownerCorrections).toEqual([{ newId: NEW, targetId: OLD, targetProvenance: ['m-0', 'm-9'] }])
+    const [op] = vi.mocked(insertMemoryOps).mock.calls[0][2]
+    expect(op.after).not.toHaveProperty('replaceGated')
+  })
+
+  it('gate observe: computes would-gate, never blocks', async () => {
+    vi.stubEnv('KAIROS_SURPRISE_GATE', 'observe')
+    state.selectQueue.push([], target())
+    state.insertQueue.push([{ id: NEW }])
+    const res = await writeAlignedBeliefs(USER, JOB, KEY, replace('tool'), NOW)
+    expect(res).toMatchObject({ superseded: [OLD], gatedReplaces: [], wouldGateReplaces: [OLD] })
+    const [op] = vi.mocked(insertMemoryOps).mock.calls[0][2]
+    expect(op.after).toMatchObject({ supersedes: OLD, replaceWouldGate: true })
+  })
+
+  it('gate off: same replace supersedes and the result carries no gate fields', async () => {
+    state.selectQueue.push([], target())
+    state.insertQueue.push([{ id: NEW }])
+    const res = await writeAlignedBeliefs(USER, JOB, KEY, replace('tool'), NOW)
+    expect(res).toEqual({ written: true, created: [NEW], superseded: [OLD], reinforced: [], retired: [], refusedReplaces: [] })
+  })
+
+  it('retire: gate on accepts an open (unflagged) target; gate off does not', async () => {
+    vi.stubEnv('KAIROS_SURPRISE_GATE', '1')
+    state.selectQueue.push([], target({}, OPEN_MARK))
+    const on = await writeAlignedBeliefs(USER, JOB, KEY, { create: [], reinforce: [], retire: [{ targetId: OLD, reason: 'questioned' }] }, NOW)
+    expect(on.retired).toEqual([OLD])
+    expect(vi.mocked(insertMemoryOps).mock.calls[0][2][0].reason).toMatch(/surprising event/)
+
+    vi.unstubAllEnvs()
+    state.selectQueue.push([], target({}, OPEN_MARK))
+    const off = await writeAlignedBeliefs(USER, JOB, KEY, { create: [], reinforce: [], retire: [{ targetId: OLD, reason: 'questioned' }] }, NOW)
+    expect(off.retired).toEqual([])
   })
 })
 

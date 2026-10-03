@@ -100,6 +100,13 @@ export interface CortexContext {
   todaySoFar?: string | null
   // UTC day the todaySoFar text covers; drives the section heading.
   todaySoFarDay?: string | null
+  // KAIROS_SURPRISE_REPLAY=1 only: render-only rows (no ids, never citable).
+  dueSoon?: CortexDueSoonRow[]
+}
+
+export interface CortexDueSoonRow {
+  title: string
+  note: string
 }
 
 function renderReflection(r: ReflectionRow): string {
@@ -190,6 +197,9 @@ export function buildCortexUserPrompt(ctx: CortexContext, today: string): string
         ctx.todaySoFarDay ? `## The day being consolidated (${ctx.todaySoFarDay})` : '## Today so far',
         neutraliseFences(ctx.todaySoFar),
       ]
+      : []),
+    ...(ctx.dueSoon?.length
+      ? ['', '## Due soon in this area', ...ctx.dueSoon.map((d) => `- ${neutraliseFences(d.title)} (${neutraliseFences(d.note)})`)]
       : []),
     '',
     '## Owner reflections (highest weight, chronological — most recent first)',

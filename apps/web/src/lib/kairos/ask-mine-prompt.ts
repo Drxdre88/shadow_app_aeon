@@ -53,6 +53,8 @@ export interface AskMineSignalBundle {
   }
   reflectionStaleness: unknown[]
   recentAsks: unknown[]
+  // KAIROS_CURIOSITY_LP=1 only: top areas where Kairos's calls are improving.
+  learningProgress?: unknown[]
 }
 
 export const ASK_MINE_SYSTEM_PROMPT = [

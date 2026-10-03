@@ -7,8 +7,10 @@ import {
   buildAetherUserPrompt,
   extractJsonBlock,
   groundAetherPayload,
+  withAetherReplay,
 } from '@/lib/kairos/aether-prompt'
 import type { AetherPayload } from '@/lib/kairos/aether-types'
+import { loadAetherReplay, replayIdsOf, replayMetadata } from '@/lib/kairos/surprise/replay-reader'
 import { todayIso } from '@/lib/kairos/_prompt-utils'
 import type {
   ApplyOutcome,
@@ -65,6 +67,10 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
   const hasSignal = inputs.cortexSnapshots.length > 0 || inputs.topReflections.length > 0 || inputs.archetypes.length > 0
   if (!hasSignal) return []
 
+  // Replay is loaded here, never in fetchAetherInputs (ask_mine shares it).
+  const replay = await loadAetherReplay(userId, now, inputs.prior)
+  const ctx = withAetherReplay({ userId, today: day, ...inputs }, replay)
+
   return [{
     kind: 'aether',
     dominionId: null,
@@ -72,10 +78,10 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
     deadlineMinutes,
     input: {
       system: AETHER_SYSTEM_PROMPT,
-      prompt: buildAetherUserPrompt({ userId, today: day, ...inputs }),
-      validMemoryIds: [...aetherFedMemoryIds(inputs)],
+      prompt: buildAetherUserPrompt(ctx),
+      validMemoryIds: [...aetherFedMemoryIds(ctx)],
       maxOutputTokens: 10000,
-      context: { date: day },
+      context: { date: day, ...(replay ? { replayIds: replay.ids } : {}) },
     },
   }]
 }
@@ -103,6 +109,7 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
   const { aetherMemoryId } = await persistAether(job.userId, payload, runId, date, 'cron', {
     thinkingJobId: job.id,
     answeredBy,
+    ...replayMetadata(replayIdsOf(job.input?.context)),
   })
   if (!aetherMemoryId) return { ok: false, reason: 'persist_failed: insert returned no id' }
   return withThoughts({ ok: true, memoryIds: [aetherMemoryId] }, aetherThoughts(payload))

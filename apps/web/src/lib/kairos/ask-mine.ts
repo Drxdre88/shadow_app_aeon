@@ -29,6 +29,7 @@ import {
   type AskMineSignalBundle,
 } from './ask-mine-prompt'
 import { loadOwnerTodayForAskMine, type OwnerTodaySignal } from './ask-mine-today'
+import { LP_BIAS_WEIGHT, learningProgressForAskMine, loadLpBias } from './surprise/learning-progress'
 
 const DAY_MS = 86_400_000
 // An ask stays open (answerable by its Q number) for 14 days; past that the
@@ -119,6 +120,8 @@ export function selectAskMineCandidate(
   candidates: AskMineCandidate[],
   recentAsks: KairosAskRow[],
   date: string,
+  // KAIROS_CURIOSITY_LP=1 only: Dominion id → normalised learning progress.
+  lpBias?: ReadonlyMap<string, number>,
 ): AskMineCandidate | null {
   const yesterday = previousDate(date, 1)
   const weekAgo = previousDate(date, 6)
@@ -142,7 +145,8 @@ export function selectAskMineCandidate(
     ))
   })
 
-  return eligible.sort((left, right) => right.leverage - left.leverage)[0] ?? null
+  const score = (c: AskMineCandidate) => c.leverage + (lpBias && c.dominionId ? LP_BIAS_WEIGHT * (lpBias.get(c.dominionId) ?? 0) : 0)
+  return eligible.sort((left, right) => score(right) - score(left))[0] ?? null
 }
 
 function daysSince(date: Date, now: Date): number {
@@ -163,6 +167,7 @@ async function gatherSignalBundle(
     recentlyCompleted,
     recentlyCreated,
     ownerToday,
+    learningProgress,
   ] = await Promise.all([
     fetchAetherInputs(userId),
     findDominionsByUser(userId),
@@ -171,6 +176,7 @@ async function gatherSignalBundle(
     listRecentlyCompletedTasks({ userId }),
     listRecentlyCreatedTasks({ userId }),
     loadOwnerTodayForAskMine(userId),
+    learningProgressForAskMine(userId, now),
   ])
   const liveDominions = allDominions.filter((dominion) => !dominion.archivedAt)
   const validDominionIds = new Set(liveDominions.map((dominion) => dominion.id))
@@ -240,6 +246,7 @@ async function gatherSignalBundle(
       askMine: ask.askMine ?? null,
     })),
     ...(ownerToday ? { ownerSaidToday: ownerToday } : {}),
+    ...(learningProgress ? { learningProgress } : {}),
   }
   const validSourceIds = new Set<string>()
   for (const question of questions) question.sourceMemoryIds.forEach((id) => validSourceIds.add(id))
@@ -404,7 +411,7 @@ export async function finishAskMine(
     && candidate.sourceMemoryIds.every((id) => input.validSourceIds.has(id))
   ))
   const recentAsks = input.recentAsks ?? await listRecentKairosAsks(userId, ASK_DEDUP_LOOKBACK_DAYS, now)
-  const candidate = selectAskMineCandidate(groundedCandidates, recentAsks, date)
+  const candidate = selectAskMineCandidate(groundedCandidates, recentAsks, date, await loadLpBias(userId))
   if (!candidate) {
     return (await tryCardNotesAsk(userId, date, now)) ?? { status: 'skipped', date, reason: 'no_candidate' }
   }

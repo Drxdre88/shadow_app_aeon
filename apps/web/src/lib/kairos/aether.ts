@@ -16,6 +16,7 @@ import {
   previousUtcDay,
   extractJsonBlock,
   renderAetherMarkdown,
+  withAetherReplay,
   type AetherContext,
   type CortexSnapshotRow,
   type GlobalReflectionRow,
@@ -24,6 +25,7 @@ import {
 } from './aether-prompt'
 import { todayIso, parseWithRepair, ParseRepairError } from './_prompt-utils'
 import type { AetherPayload } from './aether-types'
+import { loadAetherReplay, replayMetadata } from './surprise/replay-reader'
 
 // Kairos Aether (B3) — global self-model synthesiser.
 // Idempotent: skips if a live aether row already exists for today (UTC).
@@ -332,7 +334,8 @@ export async function runAetherForUser(userId: string): Promise<{ generated: boo
   }
 
   const today = todayIso()
-  const ctx: AetherContext = { userId, today, ...inputs }
+  const replay = await loadAetherReplay(userId, new Date(), inputs.prior)
+  const ctx: AetherContext = withAetherReplay({ userId, today, ...inputs }, replay)
 
   let rawText: string
   let finishReason: string | undefined
@@ -359,7 +362,7 @@ export async function runAetherForUser(userId: string): Promise<{ generated: boo
     return { generated: false, reason: 'empty_response' }
   }
 
-  const validIds = aetherFedMemoryIds(inputs)
+  const validIds = aetherFedMemoryIds(ctx)
   let parsed: AetherPayload
   try {
     parsed = await parseWithRepair({
@@ -395,7 +398,7 @@ export async function runAetherForUser(userId: string): Promise<{ generated: boo
   }
 
   const runId = `aether:${userId}:${today}`
-  const { aetherMemoryId } = await persistAether(userId, parsed, runId, today)
+  const { aetherMemoryId } = await persistAether(userId, parsed, runId, today, 'cron', replayMetadata(replay))
 
   if (!aetherMemoryId) {
     await writeCronFailureTrace(userId, { cronName: 'aether-regen', reason: 'persist_failed' })

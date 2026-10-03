@@ -83,12 +83,34 @@ export function groundAetherPayload(
 
 // Every memory id the aether prompt shows the model — the only ids a cron
 // thought may cite.
-export function aetherFedMemoryIds(ctx: Pick<AetherContext, 'cortexSnapshots' | 'topReflections' | 'archetypes'>): Set<string> {
+export function aetherFedMemoryIds(
+  ctx: Pick<AetherContext, 'cortexSnapshots' | 'topReflections' | 'archetypes'> & Pick<Partial<AetherContext>, 'replay'>,
+): Set<string> {
   return new Set([
     ...ctx.cortexSnapshots.map((c) => c.id),
     ...ctx.topReflections.map((r) => r.id),
     ...ctx.archetypes.map((a) => a.id),
+    ...(ctx.replay ?? []).map((r) => r.id),
   ])
+}
+
+const AETHER_MAX_REFLECTIONS = 40
+const AETHER_MIN_RECENCY = 32
+
+// Folds tonight's replay set into the context (spec_surprise Lane 3). Only
+// mode 'on' changes anything: the recency list gives up at most 8 slots
+// (never below 32) and rows already fed elsewhere are not repeated. Off /
+// observe / empty → the same ctx object, so the prompt is byte-identical.
+export function withAetherReplay<T extends AetherContext>(
+  ctx: T,
+  replay: { mode: 'observe' | 'on'; items: readonly AetherReplayRow[] } | null,
+): T {
+  if (!replay || replay.mode !== 'on' || replay.items.length === 0) return ctx
+  const keep = Math.max(AETHER_MIN_RECENCY, AETHER_MAX_REFLECTIONS - replay.items.length)
+  const trimmed = { ...ctx, topReflections: ctx.topReflections.slice(0, keep) }
+  const fed = aetherFedMemoryIds(trimmed)
+  const items = replay.items.filter((r) => !fed.has(r.id))
+  return items.length === 0 ? ctx : { ...trimmed, replay: items }
 }
 
 export interface CortexSnapshotRow {
@@ -126,6 +148,15 @@ export interface PriorAetherRow {
   payload: AetherPayload | null
 }
 
+// A replayed memory (spec_surprise Lane 3): due soon or under question.
+export interface AetherReplayRow {
+  id: string
+  title: string
+  summary: string | null
+  // Why it is here, e.g. "prediction due soon; under question" (no ids).
+  note: string
+}
+
 export interface AetherContext {
   userId: string
   today: string
@@ -133,6 +164,9 @@ export interface AetherContext {
   topReflections: GlobalReflectionRow[]
   archetypes: GlobalArchetypeRow[]
   prior: PriorAetherRow | null
+  // KAIROS_SURPRISE_REPLAY=1 only (withAetherReplay); never set by
+  // fetchAetherInputs, which ask_mine shares.
+  replay?: AetherReplayRow[]
   // Grounding for the day being consolidated — the PREVIOUS UTC day's
   // cross-Dominion micro-consolidation deltas (aether runs ~03:15Z, when the
   // new day is still empty), or a new-memory count line. Field name kept for
@@ -174,6 +208,11 @@ function renderArchetypeLine(a: GlobalArchetypeRow): string {
   const themes = a.themes.length ? ` [${a.themes.slice(0, 4).join(', ')}]` : ''
   const summary = a.summary ? ` — ${neutraliseFences(a.summary).slice(0, 180)}` : ''
   return `- [${a.id}] (${neutraliseFences(a.dominionName)})${themes} ${neutraliseFences(a.title)}${summary}`
+}
+
+function renderReplayLine(r: AetherReplayRow): string {
+  const summary = r.summary ? ` — ${neutraliseFences(r.summary).slice(0, 180)}` : ''
+  return `- [${r.id}] (${neutraliseFences(r.note)}) ${neutraliseFences(r.title)}${summary}`
 }
 
 function renderPriorAether(prior: PriorAetherRow | null): string {
@@ -266,6 +305,9 @@ export function buildAetherUserPrompt(ctx: AetherContext): string {
     ctx.archetypes.length === 0
       ? '(none)'
       : ctx.archetypes.map(renderArchetypeLine).join('\n'),
+    ...(ctx.replay?.length
+      ? ['', '## Due soon / under question (what is about to matter — weigh it, cite it if it shapes a thought)', ctx.replay.map(renderReplayLine).join('\n')]
+      : []),
     ...(ctx.todaySoFar
       ? ['', `## Day being consolidated (${previousUtcDay(ctx.today)}) — micro-consolidation deltas`, neutraliseFences(ctx.todaySoFar)]
       : []),

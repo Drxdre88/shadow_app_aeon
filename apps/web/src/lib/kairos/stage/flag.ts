@@ -34,6 +34,11 @@ export const STAGE_SELF_INJECTED_KINDS: readonly ThinkingJobKind[] = ['chat', 'd
 // Readers shown only deep/owner-backed coalitions.
 export const STAGE_DEEP_ONLY_KINDS: readonly ThinkingJobKind[] = ['goal_propose']
 
+// Speculative posters (dreams): their thoughts always count as light tier, so
+// a dream can never back a coalition into ignition or a deep-only reader.
+// Dream kinds are never STAGE_READER_KINDS either.
+export const STAGE_SPECULATIVE_KINDS: readonly ThinkingJobKind[] = ['dream', 'dream_read']
+
 // Kinds the queue injects for at claim / sweep fallback.
 export function queueInjectsStage(kind: ThinkingJobKind): boolean {
   return STAGE_READER_KINDS.includes(kind) && !STAGE_SELF_INJECTED_KINDS.includes(kind)

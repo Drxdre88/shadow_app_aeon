@@ -1,6 +1,7 @@
 import { loadTodayDigest, recordTodayAfter } from '@/lib/kairos/today'
 import { renderTodaySection } from '@/lib/kairos/today-render'
 import type { ChatPromptSurface } from '@/lib/kairos/chat-prompt'
+import { scheduleChatCorrectionCheck } from '@/lib/kairos/surprise/owner-correction'
 
 // Chat ↔ "today" (spec_one_mind): the write and read points every chat
 // channel (web paid, web routine, Telegram paid, Telegram routine) shares,
@@ -17,7 +18,9 @@ export function chatTodayChannel(surface: ChatPromptSurface | undefined): ChatTo
 }
 
 // The owner's own turn. Written immediately but never awaited, so it lands
-// before the reply without delaying it.
+// before the reply without delaying it. With the surprise gate on/observe, a
+// turn that reads like a correction is matched against held beliefs after the
+// response (owner-correction.ts); otherwise that is a no-op.
 export function recordChatOwnerTurn(
   userId: string,
   threadId: string,
@@ -30,6 +33,7 @@ export function recordChatOwnerTurn(
     { key: `chat:${threadId}:${seq}`, channel, type: 'said', text: body, ref: { threadId, seq }, covered: 'chat-distill' },
     { kind: 'operator', via: channel },
   )
+  scheduleChatCorrectionCheck(userId, threadId, seq, body)
 }
 
 // Kairos's reply, as a ≤160-char gist (recordToday clips 'replied'). Started

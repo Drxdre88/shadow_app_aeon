@@ -6,6 +6,7 @@ import {
   type PredictionVerdict,
 } from '@/lib/data/validators/kairos-predictions'
 import { reactOutcome } from '@/lib/kairos/reactions'
+import { creditBackward } from '@/lib/kairos/surprise/credit'
 import { settleInState } from './rules'
 
 // The owner's verdict on a prediction (web session or the operator Telegram
@@ -31,12 +32,28 @@ export async function feedBackSettlement(userId: string, prediction: KairosPredi
   if (prediction.status !== 'right' && prediction.status !== 'wrong') return 0
   const by = prediction.settledBy?.kind
   if (by !== 'check' && by !== 'owner') return 0
-  if (prediction.probability < OUTCOME_FEEDBACK_MIN_PROBABILITY) return 0
-  const kind = prediction.status === 'right' ? 'positive' : 'negative'
-  for (const memoryId of prediction.basisIds) {
-    await reactOutcome(userId, memoryId, kind, `prediction R${prediction.seq} ${prediction.status}`)
+  const credited: string[] = []
+  if (prediction.probability >= OUTCOME_FEEDBACK_MIN_PROBABILITY) {
+    const kind = prediction.status === 'right' ? 'positive' : 'negative'
+    for (const memoryId of prediction.basisIds) {
+      await reactOutcome(userId, memoryId, kind, `prediction R${prediction.seq} ${prediction.status}`)
+      credited.push(memoryId)
+    }
   }
-  return prediction.basisIds.length
+  // Hop 2 + surprise (spec_surprise lane 2): behind KAIROS_SURPRISE_CREDIT,
+  // a no-op when off; never re-credits the basis ids above.
+  await creditBackward(userId, {
+    kind: 'prediction',
+    id: prediction.id,
+    outcome: prediction.status,
+    s: prediction.status === 'wrong' ? prediction.probability : 1 - prediction.probability,
+    basisIds: prediction.basisIds,
+    dominionId: prediction.dominionId,
+    label: `prediction R${prediction.seq} ${prediction.status}`,
+    probability: prediction.probability,
+    excludeIds: credited,
+  })
+  return credited.length
 }
 
 export async function settleKairosPredictionByOwner(

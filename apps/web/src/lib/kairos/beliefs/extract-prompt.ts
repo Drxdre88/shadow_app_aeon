@@ -41,6 +41,16 @@ export const EXTRACT_SYSTEM_PROMPT = [
   '{"beliefs":[{"claim":"...","domain":"...","reasons":["..."],"falsifier":"...","provenance":["<input id>"],"relation":"new","targetId":null,"confidence":0.7}],"retire":[]}',
 ].join('\n')
 
+const RECHECK_RULE = '- Beliefs listed under "lost part of their support": for each, either reaffirm it ("relation":"reinforces" with its id as targetId, citing remaining or new evidence ids), replace it ("relation":"replaces"), or retire it via "retire":[{"targetId":"<id>","reason":"..."}]. Retire only beliefs from that list.'
+const SURPRISE_RULE = [
+  '- Beliefs listed under "lost part of their support" or "questioned by events": for each, either reaffirm it ("relation":"reinforces" with its id as targetId, citing remaining or new evidence ids), replace it ("relation":"replaces"), or retire it via "retire":[{"targetId":"<id>","reason":"..."}]. Retire only beliefs from those lists.',
+  '- Replace an existing belief only when the operator\'s own words change it, or it is listed under "questioned by events"; otherwise state the newer view as "new" beside it.',
+].join('\n')
+
+// The surprise-gate variant (KAIROS_SURPRISE_GATE=1). Static, like the base,
+// so the system block stays cacheable; selected by the flag, never per job.
+export const EXTRACT_SYSTEM_PROMPT_SURPRISE = EXTRACT_SYSTEM_PROMPT.replace(RECHECK_RULE, SURPRISE_RULE)
+
 export interface SignalInputRow {
   id: string
   title: string
@@ -74,6 +84,13 @@ export interface ExtractPromptInput {
   held: readonly HeldBeliefRef[]
   inputs: readonly SignalInputRow[]
   recheck?: readonly RecheckBeliefRef[]
+  // Beliefs open for update after surprising events (gate on only).
+  questioned?: readonly QuestionedBeliefRef[]
+}
+
+// A held aligned belief opened by a surprise event, with why in plain words.
+export interface QuestionedBeliefRef extends HeldBeliefRef {
+  why: string
 }
 
 export const ORIGIN_LABEL: Record<OriginKind, string> = {
@@ -113,6 +130,14 @@ export function buildExtractPrompt(input: ExtractPromptInput): string {
         ]),
       ]
     : []
+  const questioned = input.questioned ?? []
+  const questionedLines = questioned.length
+    ? [
+        '',
+        `## These beliefs were questioned by events. For each: reaffirm (cite evidence), replace, or retire. (${questioned.length})`,
+        ...questioned.map((b) => `- [${b.id}] (${oneLine(b.domain)}) ${oneLine(b.claim)} (why: ${oneLine(b.why)})`),
+      ]
+    : []
   return [
     '## Dominions',
     ...doms,
@@ -121,6 +146,7 @@ export function buildExtractPrompt(input: ExtractPromptInput): string {
     '## Existing held aligned beliefs (targetId by [id])',
     ...held,
     ...recheckLines,
+    ...questionedLines,
     '',
     `## Inputs, newest first (${input.inputs.length}; provenance by [id])`,
     ...rows,
@@ -170,8 +196,10 @@ export interface ExtractGroundingContext {
   inputIds: readonly string[]
   heldIds: readonly string[]
   dominions: readonly DominionRef[]
-  // Flagged held aligned beliefs: the only valid retire targets.
+  // Flagged held aligned beliefs: valid retire targets.
   flaggedIds?: readonly string[]
+  // Open (surprise-questioned) held aligned beliefs: also valid retire targets.
+  openIds?: readonly string[]
 }
 
 export interface GroundedRetire {
@@ -233,10 +261,10 @@ export function groundExtraction(out: ExtractOutput, ctx: ExtractGroundingContex
   return result
 }
 
-// A retire must name a flagged belief (lost support) verbatim or by prefix,
-// once, and not one this same answer reaffirms or replaces.
+// A retire must name a flagged or open belief verbatim or by prefix, once,
+// and not one this same answer reaffirms or replaces.
 export function groundRetires(out: ExtractOutput, claims: readonly GroundedClaim[], ctx: ExtractGroundingContext): GroundedRetire[] {
-  const resolve = makeFedIdResolver(ctx.flaggedIds ?? [])
+  const resolve = makeFedIdResolver([...new Set([...(ctx.flaggedIds ?? []), ...(ctx.openIds ?? [])])])
   const touched = new Set(claims.map((c) => c.targetId).filter((id): id is string => !!id))
   const seen = new Set<string>()
   const result: GroundedRetire[] = []

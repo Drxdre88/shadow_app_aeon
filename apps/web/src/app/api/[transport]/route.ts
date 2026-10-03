@@ -35,6 +35,7 @@ import {
   registerKairosPredictionTools,
   registerKairosAgendaTools,
   registerKairosStageTools,
+  registerKairosSurpriseTools,
 } from './tools'
 import { installTodayUseTracking, tokenFingerprint, tokenKindOf } from '@/lib/kairos/today-mcp-use'
 
@@ -88,6 +89,7 @@ const mcpHandler = createMcpHandler(
     registerKairosPredictionTools(server)
     registerKairosAgendaTools(server)
     registerKairosStageTools(server)
+    registerKairosSurpriseTools(server)
   },
   { capabilities: {} },
   {

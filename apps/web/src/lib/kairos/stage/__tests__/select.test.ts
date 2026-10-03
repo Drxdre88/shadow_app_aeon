@@ -14,6 +14,7 @@ import {
   stageTierForKind,
   surpriseSince,
 } from '../select'
+import { STAGE_READER_KINDS } from '../flag'
 import type { AmbientCandidate, KairosStageState, StageCandidateInput, StageCoalition, StagePost } from '../types'
 
 // 2026-10-03 is BST: London = UTC+1.
@@ -60,6 +61,13 @@ describe('salience and decay', () => {
     expect(stageTierForKind('pulse')).toBe('light')
     expect(stageTierForKind('reflect')).toBe('deep')
     expect(stageTierForKind('unknown_kind')).toBe('deep')
+  })
+
+  it('dreams are speculative: always light tier, never reader kinds', () => {
+    expect(stageTierForKind('dream')).toBe('light')
+    expect(stageTierForKind('dream_read')).toBe('light')
+    expect(STAGE_READER_KINDS).not.toContain('dream')
+    expect(STAGE_READER_KINDS).not.toContain('dream_read')
   })
 
   it('keys cycles by the London hour', () => {

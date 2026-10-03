@@ -253,3 +253,37 @@ export async function listFlaggedAlignedBeliefs(
     return b?.recheck ? [{ id: r.id, belief: { ...b, recheck: b.recheck } }] : []
   })
 }
+
+export interface OpenBelief {
+  id: string
+  belief: BeliefV1
+  // The row's whole sourceMetadata (the surprise mark lives under engine.*).
+  sourceMetadata: Record<string, unknown>
+}
+
+// Held ALIGNED beliefs open for update at `now` (surprise mark, spec_surprise)
+// and NOT carrying a re-check flag (those come through
+// listFlaggedAlignedBeliefs; both share RECHECK_IN_PROMPT_CAP). Closing
+// soonest first. A belief whose model retire the operator reverted is skipped.
+export async function listOpenAlignedBeliefs(userId: string, now: Date, limit = RECHECK_IN_PROMPT_CAP): Promise<OpenBelief[]> {
+  if (limit <= 0) return []
+  const openUntil = sql`(${memories.sourceMetadata} #>> '{engine,surprise,openUntil}')`
+  const rows = await db
+    .select({ id: memories.id, sourceMetadata: memories.sourceMetadata })
+    .from(memories)
+    .where(and(
+      eq(memories.userId, userId),
+      isBelief,
+      liveHeld,
+      sql`${beliefField('mind')} = 'aligned'`,
+      sql`${openUntil} COLLATE "C" > ${now.toISOString()}`,
+      sql`(${memories.sourceMetadata}->'belief'->'recheck') IS NULL`,
+      sql`(${memories.sourceMetadata}->'engine'->'vetoes'->'retire') IS NULL`,
+    ))
+    .orderBy(sql`${openUntil} COLLATE "C" ASC`, asc(memories.id))
+    .limit(Math.min(limit, RECHECK_IN_PROMPT_CAP))
+  return rows.flatMap((r) => {
+    const b = readBelief(r.sourceMetadata)
+    return b ? [{ id: r.id, belief: b, sourceMetadata: (r.sourceMetadata ?? {}) as Record<string, unknown> }] : []
+  })
+}

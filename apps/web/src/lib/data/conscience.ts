@@ -23,6 +23,8 @@ export async function getConsciencePrinciples(userId: string): Promise<Conscienc
 }
 
 export interface ConscienceBelief {
+  // Row id (internal use, e.g. dream_read's fragile-belief link); never rendered.
+  id?: string
   mind: BeliefMind
   domain: string
   dominionId: string | null
@@ -54,7 +56,7 @@ export async function listConscienceBeliefs(
   order.push(sql`${memories.standing} DESC NULLS LAST`, sql`${memories.confidence} DESC NULLS LAST`, desc(memories.updatedAt))
 
   const rows = await db
-    .select({ sourceMetadata: memories.sourceMetadata })
+    .select({ id: memories.id, sourceMetadata: memories.sourceMetadata })
     .from(memories)
     .where(and(...conds))
     .orderBy(...order)
@@ -62,6 +64,6 @@ export async function listConscienceBeliefs(
   return rows.flatMap((r) => {
     const b = readBelief(r.sourceMetadata)
     if (!b || b.status !== 'held') return []
-    return [{ mind: b.mind, domain: b.domain, dominionId: b.dominionId, claim: b.claim, confidence: b.confidence }]
+    return [{ id: r.id, mind: b.mind, domain: b.domain, dominionId: b.dominionId, claim: b.claim, confidence: b.confidence }]
   })
 }

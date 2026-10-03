@@ -172,6 +172,7 @@ const TOOL_CATEGORIES = [
       'list_kairos_predictions',
       'list_kairos_agenda',
       'get_kairos_stage',
+      'get_kairos_surprise',
       'open_dialogue',
       'prepare_dialogue_context',
       'append_dialogue_turn',

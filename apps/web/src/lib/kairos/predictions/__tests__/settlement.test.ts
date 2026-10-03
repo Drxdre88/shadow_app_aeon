@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   listPromiseDoneEvents: vi.fn(),
   writeCronSuccessTrace: vi.fn(),
   reactOutcome: vi.fn(),
+  creditBackward: vi.fn(),
   // Runs inside the lock before the mutation, to simulate a concurrent write.
   beforeMutate: null as null | ((s: KairosPredictionsState) => KairosPredictionsState),
 }))
@@ -30,6 +31,7 @@ vi.mock('@/lib/data/kairos-promises', () => ({ findPromiseTask: h.findPromiseTas
 vi.mock('@/lib/kairos/auto-capture', () => ({ DONE_COLUMN_NAMES: new Set(['done', 'vault']) }))
 vi.mock('@/lib/kairos/cron-trace', () => ({ writeCronSuccessTrace: h.writeCronSuccessTrace }))
 vi.mock('@/lib/kairos/reactions', () => ({ reactOutcome: h.reactOutcome }))
+vi.mock('@/lib/kairos/surprise/credit', () => ({ creditBackward: h.creditBackward }))
 
 import { planPredictionChecks, runPredictionSettlement } from '../check'
 import { settleKairosPredictionByOwner } from '../verdict'
@@ -204,5 +206,31 @@ describe('settleKairosPredictionByOwner', () => {
     const res = await settleKairosPredictionByOwner(USER, p.id, 'right', { via: 'agent' } as never)
     expect(res).toEqual({ ok: false, reason: 'forbidden' })
     expect(h.writes).toBe(0)
+  })
+})
+
+describe('backward credit hook (spec_surprise lane 2)', () => {
+  it('runs after hop 1 and excludes the ids hop 1 credited', async () => {
+    const p = prediction(1, { status: 'needs_verdict', basisIds: [BASIS], probability: 0.9, dominionId: 'd1' })
+    h.state = state([p])
+    await settleKairosPredictionByOwner(USER, p.id, 'wrong', { via: 'session' })
+    expect(h.reactOutcome.mock.invocationCallOrder[0]).toBeLessThan(h.creditBackward.mock.invocationCallOrder[0]!)
+    expect(h.creditBackward).toHaveBeenCalledWith(USER, expect.objectContaining({
+      kind: 'prediction', id: p.id, outcome: 'wrong', s: 0.9, basisIds: [BASIS], dominionId: 'd1', probability: 0.9, excludeIds: [BASIS],
+    }))
+  })
+
+  it('below p 0.7 hop 1 credits nothing, the walker still sees the settlement', async () => {
+    h.state = state([prediction(1, { check: cardCheck('done'), basisIds: [BASIS], probability: 0.65 })])
+    await runPredictionSettlement(USER, AFTER_CUTOFF)
+    expect(h.reactOutcome).not.toHaveBeenCalled()
+    expect(h.creditBackward).toHaveBeenCalledWith(USER, expect.objectContaining({ outcome: 'wrong', excludeIds: [] }))
+  })
+
+  it('void / rule settlements never reach the walker', async () => {
+    const p = prediction(1, { basisIds: [BASIS] })
+    h.state = state([p])
+    await settleKairosPredictionByOwner(USER, p.id, 'void', { via: 'session' })
+    expect(h.creditBackward).not.toHaveBeenCalled()
   })
 })

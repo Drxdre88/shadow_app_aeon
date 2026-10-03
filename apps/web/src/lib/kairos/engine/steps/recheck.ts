@@ -10,6 +10,8 @@ import type { LockedBelief } from '@/lib/data/beliefs'
 import { decideRecheck, sourceTypeOf, type LostSource } from '@/lib/kairos/beliefs/support'
 import { BELIEF_CONFIDENCE_CAP, type OriginKind } from '@/lib/kairos/origin'
 import { readBelief, type BeliefV1 } from '@/lib/kairos/beliefs/types'
+import { surpriseGateMode } from '@/lib/kairos/surprise/flag'
+import { recordSurprise } from '@/lib/kairos/surprise/ledger'
 import { errorMessage, outOfTime } from '../deadline'
 import type { EngineRunContext, MemoryOpInput, Step, StepResult } from '../types'
 
@@ -156,6 +158,24 @@ export interface RecheckDeps {
   findNormalise?: typeof findBeliefsToNormalise
   origins?: typeof listMemoryOrigins
   mutate?: typeof mutateHeldBelief
+  record?: typeof recordSurprise
+}
+
+export const SUPPORT_LOST_S = 0.4
+
+// Surprise ledger (spec_surprise, gate observe/on): a written flag op is a
+// support_lost event — ledger only, nothing opens. Never throws.
+async function recordSupportLost(ctx: EngineRunContext, beliefId: string, written: readonly MemoryOpInput[], record: typeof recordSurprise): Promise<void> {
+  const flag = written.find((o) => o.op === 'recheck')
+  if (!flag) return
+  const lost = (flag.after as { lostSources?: Array<{ id?: unknown }> } | undefined)?.lostSources ?? []
+  const memoryIds = lost.map((s) => s.id).filter((id): id is string => typeof id === 'string')
+  await record(ctx.userId, {
+    key: `support_lost:${beliefId}:${[...memoryIds].sort().join(',')}`.slice(0, 200),
+    kind: 'support_lost',
+    s: SUPPORT_LOST_S,
+    refs: { beliefIds: [beliefId], memoryIds },
+  }, { now: ctx.now })
 }
 
 export class RecheckStep implements Step {
@@ -166,6 +186,7 @@ export class RecheckStep implements Step {
   async run(ctx: EngineRunContext): Promise<StepResult> {
     const find = this.deps.find ?? findBeliefSupportLosses
     const mutate = this.deps.mutate ?? mutateHeldBelief
+    const record = surpriseGateMode() === 'off' ? null : this.deps.record ?? recordSurprise
     const found = await find(ctx.userId, ctx.now, RECHECK_CAP)
     const tally: Record<string, number> = {}
     const errors: string[] = []
@@ -194,6 +215,7 @@ export class RecheckStep implements Step {
         count(written)
         opsWritten += written.length
         changed++
+        if (record) await recordSupportLost(ctx, c.beliefId, written, record)
       } catch (err) {
         errors.push(`${c.beliefId}: ${errorMessage(err)}`)
       }

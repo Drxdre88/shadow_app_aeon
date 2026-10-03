@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { mutateKairosPromises } from '@/lib/data/kairos-promises'
 import { closeGoal } from '@/lib/kairos/goals/transitions'
+import { surpriseCreditMode } from '@/lib/kairos/surprise/flag'
+import { PROMISE_SURPRISE, creditBackward } from '@/lib/kairos/surprise/credit'
 import { promiseDateSchema, type KairosPromise, type PromiseClosedBy } from '@/lib/data/validators/kairos-promises'
 import { closeInState, isDueInWindow, isLapsed, replaceOpen } from './rules'
 
@@ -58,7 +60,42 @@ export async function closeKairosPromise(
     return { state: next.state, result: { ok: true, promise: next.promise } }
   })
   if (res.ok && valid.kind === 'owner') await closeLinkedGoal(userId, res.promise, valid, now)
+  if (res.ok) await feedBackPromiseClose(userId, res.promise, now)
   return res
+}
+
+// Spec_surprise lane 2: a closed promise feeds back through the beliefs that
+// cite its basis — the goal row and the goal's seeds (weekly-review promises
+// have no basis: event only). kept → positive, lapsed → negative + open,
+// dropped → event only. Behind KAIROS_SURPRISE_CREDIT; never throws.
+export async function feedBackPromiseClose(userId: string, promise: KairosPromise, now: Date = new Date()): Promise<void> {
+  if (surpriseCreditMode() === 'off') return
+  const outcome = promise.status
+  if (outcome !== 'kept' && outcome !== 'lapsed' && outcome !== 'dropped') return
+  let basisIds: string[] = []
+  let dominionId: string | null = null
+  const goalId = promise.source.kind === 'goal' ? promise.source.goalId : undefined
+  if (goalId) {
+    try {
+      const { findGoal } = await import('@/lib/data/goals')
+      const goal = await findGoal(userId, goalId)
+      if (goal) {
+        basisIds = [goal.id, ...goal.meta.seeds.map((seed) => seed.id)]
+        dominionId = goal.dominionId
+      }
+    } catch (err) {
+      console.error('[kairos:promises] goal basis read failed:', err)
+    }
+  }
+  await creditBackward(userId, {
+    kind: 'promise',
+    id: promise.id,
+    outcome,
+    s: PROMISE_SURPRISE[outcome],
+    basisIds,
+    dominionId,
+    label: `promise P${promise.seq} ${outcome}`,
+  }, { now })
 }
 
 // An approved goal's promise is its "report back": the owner's verdict on the

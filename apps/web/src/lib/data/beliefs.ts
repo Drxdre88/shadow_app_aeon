@@ -11,15 +11,22 @@ import {
   type BeliefRowValues,
   type BeliefV1,
 } from '@/lib/kairos/beliefs/types'
-import { mayReplace, reinforcedBelief, supportSnapshot } from '@/lib/kairos/beliefs/support'
-import type { MemoryOpInput } from '@/lib/kairos/engine/types'
-import { listMemoryOrigins } from './belief-inputs'
 
 // Belief ledger data access (docs/kairos/34 §1). Pure DB — no model, no
 // grounding: lib/kairos/beliefs + the belief handlers own the policy. Every
 // write logs its memory_ops row in the SAME transaction. The canonical belief
-// readers (listBeliefs / listHeldBeliefs / getLatestMindCompare) live here.
+// readers (listBeliefs / listHeldBeliefs / getLatestMindCompare) live here;
+// the aligned-mind batch write (+ surprise gate) lives in ./belief-aligned.
 
+export {
+  writeAlignedBeliefs,
+  type AlignedCreate,
+  type AlignedReinforce,
+  type AlignedRetire,
+  type AlignedWriteResult,
+  type AlignedWrites,
+  type OwnerCorrection,
+} from './belief-aligned'
 export {
   SIGNAL_INPUT_CAP,
   listBeliefEvidence,
@@ -140,22 +147,33 @@ export interface ExtractJobState {
   inputsUntil: Date | null
   // context.flaggedIds: re-check beliefs the job put to the model.
   flaggedIds?: string[]
+  // context.openIds: beliefs open for update (surprise gate) the job put to the model.
+  openIds?: string[]
+  // When the job was planned.
+  plannedAt?: Date
 }
 
 // Recent belief_extract jobs, newest first.
 export async function listRecentExtractJobs(userId: string, limit = 10): Promise<ExtractJobState[]> {
   const rows = await db
-    .select({ status: thinkingJobs.status, error: thinkingJobs.error, input: thinkingJobs.input })
+    .select({ status: thinkingJobs.status, error: thinkingJobs.error, input: thinkingJobs.input, createdAt: thinkingJobs.createdAt })
     .from(thinkingJobs)
     .where(and(eq(thinkingJobs.userId, userId), eq(thinkingJobs.kind, 'belief_extract')))
     .orderBy(desc(thinkingJobs.createdAt))
     .limit(Math.min(Math.max(limit, 1), 50))
+  const ids = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [])
   return rows.map((row) => {
-    const ctx = (row.input as { context?: { inputsUntil?: unknown; flaggedIds?: unknown } } | null)?.context
+    const ctx = (row.input as { context?: { inputsUntil?: unknown; flaggedIds?: unknown; openIds?: unknown } } | null)?.context
     const raw = ctx?.inputsUntil
     const d = typeof raw === 'string' ? new Date(raw) : null
-    const flaggedIds = Array.isArray(ctx?.flaggedIds) ? ctx.flaggedIds.filter((x): x is string => typeof x === 'string') : []
-    return { status: row.status, error: row.error, inputsUntil: d && Number.isFinite(d.getTime()) ? d : null, flaggedIds }
+    return {
+      status: row.status,
+      error: row.error,
+      inputsUntil: d && Number.isFinite(d.getTime()) ? d : null,
+      flaggedIds: ids(ctx?.flaggedIds),
+      openIds: ids(ctx?.openIds),
+      plannedAt: row.createdAt,
+    }
   })
 }
 
@@ -168,7 +186,7 @@ export async function thinkingJobKeyExists(userId: string, externalKey: string):
   return Boolean(row)
 }
 
-// ── Aligned-mind writes ───────────────────────────────────────────────────
+// ── Row locks / inserts (shared with ./belief-aligned) ─────────────────────
 
 export interface LockedBelief {
   id: string
@@ -189,169 +207,13 @@ export async function lockHeldBelief(tx: Tx, userId: string, id: string, mind: B
   return row ? { ...row, sourceMetadata: (row.sourceMetadata ?? {}) as Record<string, unknown> } : null
 }
 
-async function insertBeliefRow(tx: Tx, userId: string, values: BeliefRowValues): Promise<string> {
+export async function insertBeliefRow(tx: Tx, userId: string, values: BeliefRowValues): Promise<string> {
   const [row] = await tx
     .insert(memories)
     .values({ userId, ...values, source: 'cron', pinned: false })
     .returning({ id: memories.id })
   if (!row) throw new Error('belief insert returned no row')
   return row.id
-}
-
-function withoutSupersedes(values: BeliefRowValues): BeliefRowValues {
-  const belief = { ...(values.sourceMetadata.belief as Record<string, unknown>) }
-  delete belief.supersedes
-  return { ...values, sourceMetadata: { ...values.sourceMetadata, belief } }
-}
-
-function linksWith(links: unknown, ids: readonly string[]): unknown[] {
-  const out = Array.isArray(links) ? [...links] : []
-  for (const id of ids) {
-    if (!out.some((l) => (l as { target?: unknown })?.target === id)) out.push({ type: 'refers_to', target: id, target_kind: 'memory' })
-  }
-  return out
-}
-
-export interface AlignedCreate {
-  values: BeliefRowValues
-  supersedes: string | null
-  reason: string
-}
-
-export interface AlignedReinforce {
-  targetId: string
-  provenance: string[]
-  reason: string
-  // The model's stated confidence; capped by the recomputed source type.
-  confidence?: number
-}
-
-export interface AlignedRetire {
-  targetId: string
-  reason: string
-}
-
-export interface AlignedWriteResult {
-  written: boolean
-  created: string[]
-  superseded: string[]
-  reinforced: string[]
-  retired: string[]
-  // Replaces refused because inference-only evidence may not displace an
-  // operator- or tool-sourced belief (the claim landed as a new held belief).
-  refusedReplaces: string[]
-}
-
-const emptyResult = (written: boolean): AlignedWriteResult =>
-  ({ written, created: [], superseded: [], reinforced: [], retired: [], refusedReplaces: [] })
-
-// One extraction's whole batch commits atomically with its ops. The advisory
-// lock + extractKey probe make a double submit (routine racing the paid-key
-// fallback) a no-op. A replace whose target is no longer held lands as new, as
-// does an inference-only replace of an operator/tool belief. Reinforcing
-// recomputes sourceType + confidence cap over the union provenance and clears
-// a re-check flag (a reaffirm). A retire must target a flagged held belief.
-export async function writeAlignedBeliefs(
-  userId: string,
-  runId: string | null,
-  extractKey: string,
-  writes: { create: AlignedCreate[]; reinforce: AlignedReinforce[]; retire?: AlignedRetire[] },
-  now: Date = new Date(),
-): Promise<AlignedWriteResult> {
-  return db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}), hashtext(${extractKey}))`)
-    const prior = await tx
-      .select({ memoryId: memoryOps.memoryId, op: memoryOps.op })
-      .from(memoryOps)
-      .where(and(eq(memoryOps.userId, userId), eq(memoryOps.step, BELIEF_STEP), sql`${memoryOps.after}->>'extractKey' = ${extractKey}`))
-    if (prior.length > 0) {
-      const created = prior.filter((p) => !p.op || p.op === 'promote').map((p) => p.memoryId).filter((id): id is string => !!id)
-      return { ...emptyResult(false), created }
-    }
-
-    const ops: MemoryOpInput[] = []
-    const out = emptyResult(true)
-    for (const c of writes.create) {
-      let target = c.supersedes ? await lockHeldBelief(tx, userId, c.supersedes, 'aligned') : null
-      const old = target ? readBelief(target.sourceMetadata) : null
-      const newType = (c.values.sourceMetadata.belief as BeliefV1 | undefined)?.sourceType ?? 'inference'
-      let refused: string | null = null
-      if (target && old && !mayReplace(newType, old.sourceType)) {
-        refused = target.id
-        target = null
-        out.refusedReplaces.push(refused)
-      }
-      const id = await insertBeliefRow(tx, userId, target ? c.values : withoutSupersedes(c.values))
-      out.created.push(id)
-      if (target) {
-        await tx
-          .update(memories)
-          .set({
-            supersededAt: now,
-            supersededById: id,
-            invalidAt: now,
-            updatedAt: now,
-            sourceMetadata: { ...target.sourceMetadata, belief: { ...(old ?? {}), status: 'retired' } },
-          })
-          .where(and(eq(memories.id, target.id), eq(memories.userId, userId)))
-        out.superseded.push(target.id)
-      }
-      const reason = target
-        ? `${c.reason}; replaces ${target.id}`
-        : refused
-          ? `${c.reason}; held beside ${refused}: inference-only evidence may not replace a ${old?.sourceType ?? 'operator'}-sourced belief`
-          : c.reason
-      ops.push({
-        memoryId: id,
-        step: BELIEF_STEP,
-        op: 'promote',
-        before: null,
-        after: { beliefId: id, mind: 'aligned', extractKey, sourceType: newType, ...(target ? { supersedes: target.id } : {}), ...(refused ? { replaceRefused: refused } : {}) },
-        reason,
-      })
-    }
-    for (const r of writes.reinforce) {
-      const target = await lockHeldBelief(tx, userId, r.targetId, 'aligned')
-      const old = target ? readBelief(target.sourceMetadata) : null
-      if (!target || !old) continue
-      const origins = await listMemoryOrigins(userId, [...old.provenance, ...r.provenance], tx)
-      const next = reinforcedBelief(old, r.provenance, origins, r.confidence)
-      const links = linksWith(target.links, r.provenance)
-      await tx
-        .update(memories)
-        .set({ links, updatedAt: now, sourceMetadata: { ...target.sourceMetadata, belief: next } })
-        .where(and(eq(memories.id, target.id), eq(memories.userId, userId)))
-      out.reinforced.push(target.id)
-      ops.push({
-        memoryId: target.id,
-        step: BELIEF_STEP,
-        op: 'feedback',
-        before: { belief: supportSnapshot(old), links: Array.isArray(target.links) ? target.links : [] },
-        after: { belief: supportSnapshot(next), beliefId: target.id, mind: 'aligned', extractKey, reinforcedBy: r.provenance, ...(old.recheck ? { reaffirmed: true } : {}) },
-        reason: old.recheck ? `${r.reason}; reaffirmed after losing support` : r.reason,
-      })
-    }
-    for (const r of writes.retire ?? []) {
-      const target = await lockHeldBelief(tx, userId, r.targetId, 'aligned')
-      const old = target ? readBelief(target.sourceMetadata) : null
-      if (!target || !old?.recheck) continue
-      await tx
-        .update(memories)
-        .set({ invalidAt: now, supersededAt: null, updatedAt: now, sourceMetadata: { ...target.sourceMetadata, belief: { ...old, status: 'retired' } } })
-        .where(and(eq(memories.id, target.id), eq(memories.userId, userId)))
-      out.retired.push(target.id)
-      ops.push({
-        memoryId: target.id,
-        step: BELIEF_STEP,
-        op: 'retire',
-        before: { invalidAt: target.invalidAt ? target.invalidAt.toISOString() : null, supersededAt: null, belief: { status: 'held' } },
-        after: { invalidAt: now.toISOString(), supersededAt: null, belief: { status: 'retired' }, beliefId: target.id, mind: 'aligned', extractKey },
-        reason: `aligned mind: retired after losing support: ${r.reason}`,
-      })
-    }
-    if (ops.length) await insertMemoryOps(userId, runId, ops, tx)
-    return out
-  })
 }
 
 // ── Own-mind mirror of engine promotions ──────────────────────────────────

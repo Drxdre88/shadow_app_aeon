@@ -23,6 +23,9 @@ export interface AmbientInputs {
   predictions: readonly KairosPrediction[]
   today: readonly TodayEntryView[]
   now: Date
+  // Surprise-ledger findings (KAIROS_SURPRISE_STAGE). When present, wrong
+  // predictions come from the ledger instead, so they never count twice.
+  surprise?: readonly AmbientCandidate[]
 }
 
 export function buildAmbientCandidates(input: AmbientInputs): AmbientCandidate[] {
@@ -39,7 +42,7 @@ export function buildAmbientCandidates(input: AmbientInputs): AmbientCandidate[]
   }
 
   const from = input.now.getTime() - DAY_MS
-  const wrong = input.predictions
+  const wrong = (input.surprise ? [] : input.predictions)
     .filter((p) => p.status === 'wrong' && p.settledAt && new Date(p.settledAt).getTime() >= from)
     .sort((a, b) => (b.settledAt ?? '').localeCompare(a.settledAt ?? ''))
     .slice(0, MAX_PER_SOURCE)
@@ -70,6 +73,7 @@ export function buildAmbientCandidates(input: AmbientInputs): AmbientCandidate[]
       need: 0.5,
     })
   }
+  if (input.surprise) out.push(...input.surprise)
   return out
 }
 
@@ -86,10 +90,15 @@ export async function gatherAmbient(userId: string, now: Date): Promise<AmbientC
       console.error(`[kairos:stage] ambient ${label} read failed:`, err)
       return fallback
     })
-  const [promises, predictions, today] = await Promise.all([
+  const { surpriseStageOn } = await import('@/lib/kairos/surprise/flag')
+  const surpriseOn = surpriseStageOn()
+  const [promises, predictions, today, surprise] = await Promise.all([
     quiet(readKairosPromises(userId).then((s) => s.open), [], 'promises'),
     quiet(readKairosPredictions(userId).then((s) => s.closed), [], 'predictions'),
     quiet(listTodayEntries(userId, { hours: 24, limit: 100, now }).then((rows) => rows.map(toKairosTodayView)), [], 'today'),
+    surpriseOn
+      ? quiet(import('@/lib/kairos/surprise/stage-source').then((m) => m.readSurpriseAmbient(userId, now)), [], 'surprise')
+      : Promise.resolve(undefined),
   ])
-  return buildAmbientCandidates({ promises, predictions, today, now })
+  return buildAmbientCandidates({ promises, predictions, today, now, ...(surprise ? { surprise } : {}) })
 }
