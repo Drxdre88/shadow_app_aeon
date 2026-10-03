@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en" data-theme="stone">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kairos — one coherent mind</title>
+<script>(function () {
+  var KEY = "srl-theme";
+  var THEMES = ["stone", "wood", "neon", "papyrus"];
+  var root = document.documentElement;
+
+  function read() {
+    try { return localStorage.getItem(KEY); } catch (e) { return null; }
+  }
+  function write(v) {
+    try { localStorage.setItem(KEY, v); } catch (e) { }
+  }
+  function apply(v) {
+    if (THEMES.indexOf(v) < 0) v = root.getAttribute("data-theme") || "stone";
+    root.setAttribute("data-theme", v);
+    var buttons = document.querySelectorAll(".srl-theme-select button[data-theme-choice]");
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].setAttribute("aria-pressed", String(buttons[i].getAttribute("data-theme-choice") === v));
+    }
+    document.dispatchEvent(new CustomEvent("srl-theme", { detail: v }));
+  }
+
+  apply(read());
+  document.addEventListener("DOMContentLoaded", function () {
+    apply(root.getAttribute("data-theme"));
+    document.addEventListener("click", function (ev) {
+      var b = ev.target.closest && ev.target.closest("[data-theme-choice]");
+      if (!b) return;
+      var v = b.getAttribute("data-theme-choice");
+      write(v);
+      apply(v);
+    });
+  });
+})();
+</script>
+<style>/* Shadow Research Lab theme: stone (dark), wood (dark), neon (dark, high contrast), papyrus (light).
+   Set on <html data-theme="stone|wood|neon|papyrus">; theme.js persists the choice as localStorage "srl-theme".
+   Tokens are the only contract: --bg --surface --surface-raised --ink --muted --rule --accent --bull --bear
+   --topbar --on-sign. Tables and figures stay flat; texture lives on the top bar only. Fully offline. */
+
+:root,
+:root[data-theme="stone"] {
+  color-scheme: dark;
+  --bg: #151619;
+  --surface: #222326;
+  --surface-raised: #2d2f32;
+  --ink: #eee7d8;
+  --muted: #b7ab96;
+  --rule: #54514d;
+  --accent: #ddbb75;
+  --bull: #80d1a6;
+  --bear: #f29191;
+  --topbar: #292b2c;
+  --on-sign: #151619;
+  --topbar-texture:
+    radial-gradient(120% 140% at 12% -20%, rgba(200, 210, 220, .10), transparent 55%),
+    radial-gradient(90% 120% at 88% 120%, rgba(160, 170, 180, .07), transparent 60%),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, .025) 0 1px, transparent 1px 7px),
+    linear-gradient(180deg, #303235, #242628);
+  --topbar-edge: inset 0 1px 0 rgba(255, 255, 255, .06), inset 0 -2px 0 rgba(0, 0, 0, .45);
+}
+
+:root[data-theme="wood"] {
+  color-scheme: dark;
+  --bg: #16110e;
+  --surface: #261b15;
+  --surface-raised: #33251c;
+  --ink: #f1e6d6;
+  --muted: #bea994;
+  --rule: #624835;
+  --accent: #e4b978;
+  --bull: #83d6ad;
+  --bear: #f59391;
+  --topbar: #332419;
+  --on-sign: #16110e;
+  --topbar-texture:
+    repeating-linear-gradient(92deg, rgba(0, 0, 0, .16) 0 1px, transparent 1px 13px, rgba(255, 220, 170, .035) 13px 14px, transparent 14px 29px),
+    repeating-linear-gradient(88deg, rgba(0, 0, 0, .10) 0 2px, transparent 2px 47px),
+    linear-gradient(180deg, #3d2b1e, #2a1d14);
+  --topbar-edge: inset 0 1px 0 rgba(255, 210, 150, .10), inset 0 -2px 0 rgba(0, 0, 0, .5);
+}
+
+:root[data-theme="neon"] {
+  color-scheme: dark;
+  --bg: #07060d;
+  --surface: #110f1f;
+  --surface-raised: #1a1730;
+  --ink: #e9f7ff;
+  --muted: #9aa6d8;
+  --rule: #3b2f6b;
+  --accent: #34f0ff;
+  --bull: #5cff9d;
+  --bear: #ff4fa3;
+  --topbar: #0d0b1a;
+  --on-sign: #07060d;
+  --topbar-texture:
+    linear-gradient(90deg, rgba(52, 240, 255, .10) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(0deg, rgba(255, 79, 163, .08) 1px, transparent 1px) 0 0 / 22px 22px,
+    linear-gradient(180deg, #16112b, #0b0916);
+  --topbar-edge: inset 0 -1px 0 rgba(52, 240, 255, .55), 0 0 18px rgba(52, 240, 255, .18);
+}
+:root[data-theme="neon"] .srl-page h1,
+:root[data-theme="neon"] .srl-page h2 { text-shadow: 0 0 6px rgba(52, 240, 255, .55), 0 0 18px rgba(255, 79, 163, .25); }
+:root[data-theme="neon"] .srl-page a,
+:root[data-theme="neon"] .srl-wordmark { text-shadow: 0 0 8px rgba(52, 240, 255, .45); }
+
+:root[data-theme="papyrus"] {
+  color-scheme: light;
+  --bg: #f4ecd8;
+  --surface: #eee3ca;
+  --surface-raised: #e5d3af;
+  --ink: #302517;
+  --muted: #67533b;
+  --rule: #ac9471;
+  --accent: #715121;
+  --bull: #226345;
+  --bear: #a13739;
+  --topbar: #e5d3af;
+  --on-sign: #fbf6ea;
+  --topbar-texture:
+    radial-gradient(140% 160% at 20% -30%, rgba(255, 250, 235, .55), transparent 60%),
+    radial-gradient(100% 120% at 90% 130%, rgba(140, 105, 55, .12), transparent 60%),
+    linear-gradient(180deg, #eadbbc, #e0cda6);
+  --topbar-edge: inset 0 -1px 0 rgba(113, 81, 33, .35);
+}
+
+:root {
+  --font-display: "Old English Text MT", "UnifrakturCook", "UnifrakturMaguntia", "Palatino Linotype", Palatino, serif;
+  --font-heading: "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font-body: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-num: Consolas, "Cascadia Mono", "Courier New", monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 var(--font-body);
+}
+
+.srl-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 20px;
+  background: var(--topbar-texture), var(--topbar);
+  box-shadow: var(--topbar-edge);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-ui);
+}
+.srl-wordmark {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  line-height: 1;
+  color: var(--accent);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .35);
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+.srl-crumb { color: var(--muted); font-size: .85rem; letter-spacing: .06em; text-transform: uppercase; }
+.srl-spacer { flex: 1; }
+.srl-theme-select { display: inline-flex; gap: 4px; }
+.srl-theme-select button {
+  font: 500 .8rem var(--font-ui);
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.srl-theme-select button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+.srl-page { max-width: 880px; margin: 0 auto; padding: 28px 20px 56px; }
+.srl-page h1, .srl-page h2, .srl-page h3 { font-family: var(--font-heading); font-weight: 600; line-height: 1.2; }
+.srl-page h1 { font-size: 2.1rem; margin: 0 0 6px; }
+.srl-page h2 { font-size: 1.35rem; margin: 30px 0 8px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.srl-page h3 { font-size: 1.1rem; margin: 20px 0 6px; }
+.srl-page a { color: var(--accent); }
+.srl-page code { font-family: var(--font-num); font-size: .9em; background: var(--surface); padding: 1px 4px; border-radius: 3px; }
+.srl-page pre { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; overflow-x: auto; }
+.srl-page pre code { background: none; padding: 0; }
+.srl-page blockquote { margin: 12px 0; padding: 4px 14px; border-left: 3px solid var(--accent); color: var(--muted); }
+.srl-lede { color: var(--muted); font-size: 1.05rem; }
+.srl-eyebrow { font: 600 .78rem var(--font-ui); color: var(--muted); letter-spacing: .12em; text-transform: uppercase; }
+
+.srl-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 18px 0; }
+.srl-tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 12px; }
+.srl-tile .v { font: 600 1.5rem var(--font-num); }
+.srl-tile .l { color: var(--muted); font-size: .85rem; }
+
+.srl-table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; margin: 12px 0; }
+.srl-page table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.srl-page th, .srl-page td { padding: 7px 10px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+.srl-page th { font: 600 .8rem var(--font-ui); color: var(--muted); letter-spacing: .03em; }
+.srl-page tr:last-child td { border-bottom: 0; }
+
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.bull, .pos { color: var(--bull); }
+.bear, .neg { color: var(--bear); }
+.warn { color: var(--accent); }
+.muted { color: var(--muted); }
+
+.srl-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 18px 0 0; border-bottom: 1px solid var(--rule); }
+.srl-tabs button {
+  font: 500 .88rem var(--font-ui);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.srl-tabs button[aria-selected="true"] { color: var(--ink); background: var(--surface); border-color: var(--rule); }
+.srl-tabpanel[hidden] { display: none; }
+
+.srl-footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid var(--rule); color: var(--muted); font-size: .85rem; }
+
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .srl-theme-select button, .srl-tabs button { transition: background .15s, color .15s; } }
+</style>
+</head>
+<body>
+<header class="srl-topbar"><span class="srl-wordmark">Shadow Research Lab</span><span class="srl-crumb">research / kairos_0310</span><span class="srl-spacer"></span><nav class="srl-theme-select" aria-label="Theme"><button type="button" data-theme-choice="stone" aria-pressed="false">Stone</button><button type="button" data-theme-choice="wood" aria-pressed="false">Wood</button><button type="button" data-theme-choice="neon" aria-pressed="false">Neon</button><button type="button" data-theme-choice="papyrus" aria-pressed="false">Papyrus</button></nav></header>
+<main class="srl-page">
+<p class="srl-eyebrow">Kairos · next phase</p>
+<h1>Kairos — one coherent mind</h1>
+<p class="srl-lede">Many good habits that don&#x27;t know about each other. Next: a shared stage, surprise as the engine, dreams, real creativity, an honest self, and the art of the moment.</p>
+<div class="srl-tiles"><div class="srl-tile"><div class="v">6</div><div class="l">themes</div></div><div class="srl-tile"><div class="v">~40</div><div class="l">mechanisms researched</div></div><div class="srl-tile"><div class="v pos">4</div><div class="l">waves</div></div></div>
+<article>
+<p>3 October 2026. Research only, from five parallel lanes (memory, self, creativity, architecture, relationship) and about 70 sources. No new data sources, nothing to set up: every idea is built from what Kairos already has.</p>
+<h2>The short answer</h2>
+<p>Kairos today is <strong>many good habits that don&#x27;t know about each other</strong>. About fifteen separate thinking jobs each see their own slice and never share a thought. The next phase turns them into <strong>one mind</strong>:</p>
+<ol>
+<li><strong>A stage.</strong> One small space for &quot;what&#x27;s on my mind&quot;. Every job posts to it, the strongest few thoughts win, and every other job sees them. This is the spine.</li>
+<li><strong>Surprise as the engine.</strong> What he didn&#x27;t expect decides what he thinks about, what he rewrites and what he asks you.</li>
+<li><strong>Dreams.</strong> Each night he bends memories into strange scenes, then checks whether his beliefs and values still hold. Dreams never count as fact.</li>
+<li><strong>Creative genius.</strong> The idea contest becomes a map of every <em>kind</em> of idea, judged head to head, fed by collisions between distant memories.</li>
+<li><strong>An honest self.</strong> He predicts his own behaviour and gets scored, treats his own explanations as guesses, and watches his character for drift.</li>
+<li><strong>The art of the moment.</strong> He reads <em>when</em> you&#x27;re ready, not just what time it is, and checks his advice with your profile hidden so he can&#x27;t just agree with you.</li>
+</ol>
+<p><strong>Do first:</strong> the stage, plus two safety pieces: the character-drift check and the &quot;cold read&quot;. The drift check is urgent for a specific reason: research from January 2026 found that <strong>self-reflection is the main thing that makes a model drift from its character</strong>, and we&#x27;ve just given him hourly reflection.</p>
+<h2>1. The stage (the spine)</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Mechanism</th><th>In plain words</th><th>Changes</th></tr></thead><tbody><tr><td><strong>On my mind</strong></td><td>Every job ends by posting up to 2 thoughts, each with a score (importance × surprise × goal relevance × need). Similar thoughts merge and add up. Code keeps the top 3–4 and puts them at the top of every job&#x27;s context as &quot;I, now: …&quot;. A thought that keeps winning becomes the day&#x27;s focus.</td><td>The today log becomes its feed; every job reads it</td></tr><tr><td><strong>One cycle</strong></td><td>Pulse = notice. Selector = attend. Hourly reflection = act and learn. Night = sleep and consolidate. Monday = look back. Each thought carries the ID of what caused it, so &quot;why did I think that?&quot; has an answer.</td><td>Job tags; no new schedule</td></tr><tr><td><strong>Drives</strong></td><td>Five numbers he wants to keep in range: connection (time since a real exchange with you), coherence (unresolved contradictions), curiosity (age of open questions), competence (his calibration), closure (overdue promises). When one slips, related thoughts gain weight and Horae books time for it. Plain code, so no prompt can game it.</td><td>Horae, daily question, goals</td></tr><tr><td><strong>A model of his own attention</strong></td><td>From the stage history: what he&#x27;s been dwelling on, what he&#x27;s been neglecting. Each night he can set &quot;less of X, more of Y&quot;.</td><td>Self-model (Aether)</td></tr><tr><td><strong>Fast vs slow</strong></td><td>The pulse may only notice and flag. Only deep runs may change beliefs or goals. Enough surprise piling up triggers an early deep reflection.</td><td>Write rules</td></tr></tbody></table></div>
+<p><em>Based on:</em> Global Workspace Theory (Baars, Dehaene; Butlin et al. 2023), the LIDA cycle, attention schema theory (Graziano), Generative Agents (2023), Talker–Reasoner (2024), homeostatic agents (2025–26).</p>
+<h2>2. Surprise as the engine</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Mechanism</th><th>In plain words</th></tr></thead><tbody><tr><td><strong>Rewrite only on surprise</strong></td><td>A memory or belief can only be edited after something clashed with it that day: a missed prediction, a contradiction, or you correcting him. Otherwise recalling it only strengthens it. That makes him stable where nothing changed and open where it did.</td></tr><tr><td><strong>Spend sleep where it pays</strong></td><td>Each night, replay the memories most likely to change a decision tomorrow (agenda, promises, predictions about to come due), not a fair share of everything.</td></tr><tr><td><strong>Backward credit</strong></td><td>When a prediction settles or a promise is kept or broken, walk back through the memory links and credit or blame the beliefs that led there.</td></tr><tr><td><strong>Curiosity by learning progress</strong></td><td>Ask the daily question where his prediction errors are <strong>falling fastest</strong>: not what he already knows, not pure noise. Log &quot;aha&quot; moments, when a new memory lets several beliefs merge.</td></tr></tbody></table></div>
+<p><em>Based on:</em> memory reconsolidation needs prediction error (Sevenster 2013), replay by gain × need (Mattar &amp; Daw 2018), learning-progress curiosity (Oudeyer 2007), compression progress (Schmidhuber).</p>
+<h2>3. Dreams</h2>
+<ul>
+<li>After the nightly engine, take 3–5 memories from distant areas and dates and <strong>deliberately distort them</strong>: swap who was involved, flip the outcome, move the setting.</li>
+<li>Seed the dream with today&#x27;s unresolved questions. Sleep only helps insight when there was prior effort.</li>
+<li><strong>In the morning:</strong></li>
+<li>What still holds across every distortion? That&#x27;s a real pattern.</li>
+<li>Which beliefs or values break in strange situations? Those get marked fragile.</li>
+<li>What&#x27;s the worst version for an active goal or promise? That&#x27;s a rehearsal.</li>
+<li>An occasional &quot;I dreamt…&quot; line in the 06:00 message.</li>
+<li><strong>Firewall:</strong> dreams are always labelled &quot;dreamt&quot; and can never become a memory, a belief or evidence.</li>
+</ul>
+<p><em>Based on:</em> the overfitted-brain hypothesis (Hoel 2021), threat simulation (Revonsuo 2000), sleep doubling insight (Wagner 2004, Nature).</p>
+<h2>4. Creative genius (the idea contest, rebuilt)</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Mechanism</th><th>In plain words</th></tr></thead><tbody><tr><td><strong>Idea atlas</strong></td><td>A grid: life area × kind of idea (question, experiment, reframe, thing to make, ritual) × near or far leap. Each cell keeps its best-ever idea. A new idea only has to beat its own cell&#x27;s holder. Empty cells become tomorrow&#x27;s targets. You see where his imagination has never been.</td></tr><tr><td><strong>Head-to-head judging</strong></td><td>Models score ideas badly on an absolute scale but compare pairs well. Use ~5 Swiss rounds of pairs instead of marks out of 10.</td></tr><tr><td><strong>Collision engine</strong></td><td>Pair memories that are far apart but not random. Keep a blend only if the <em>relationships</em> map across, not just surface features. Accepted ones become &quot;bridge&quot; links in his graph.</td></tr><tr><td><strong>Anti-sameness</strong></td><td>Ask for ideas with their likelihood and keep the unlikely tail; each archetype generates separately; if a batch is too similar, regenerate with &quot;this is your usual pattern — avoid it&quot;.</td></tr><tr><td><strong>Incubation</strong></td><td>Near-misses go on a shelf and resurface days later during the light pulse: &quot;it came to me later&quot;.</td></tr><tr><td><strong>Stepping stones + your taste</strong></td><td>Dismissed ideas are kept, not deleted. Now and then run a &quot;pure novelty&quot; round. Learn your taste from what you accept, but always leave room to surprise you.</td></tr></tbody></table></div>
+<p><em>Based on:</em> MAP-Elites (2015), Si et al. 2024 (LLM ideas judged more novel than experts&#x27; but low diversity; pairwise beats scoring), Verbalized Sampling (2025, 1.6–2.1× more diversity), a 2025 meta-analysis showing AI narrows idea diversity (g = −0.86), bisociation and conceptual blending, the incubation meta-analysis (2009), novelty search (2011).</p>
+<h2>5. An honest self</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Mechanism</th><th>In plain words</th></tr></thead><tbody><tr><td><strong>Character-drift check</strong> ⚠️</td><td>Weekly, a fresh run blind-rates a sample of his recent outputs against his constitution and a few traps: agreeing too readily, a theatrical or mystical tone, grandiosity. Compare against a few outputs you&#x27;ve approved as his &quot;real voice&quot;. Hourly reflections get a tone limit.</td></tr><tr><td><strong>Predictions about himself</strong></td><td>&quot;Belief B will still stand in 30 days.&quot; &quot;I&#x27;ll push back if you propose Y.&quot; Scored like his other predictions, giving a measured self-knowledge score.</td></tr><tr><td><strong>His own explanations are guesses</strong></td><td>Every &quot;I changed my mind because…&quot; must link to what he actually did, or it fades. A new conscience probe catches him claiming a motive his behaviour doesn&#x27;t show.</td></tr><tr><td><strong>Confidence from disagreement</strong></td><td>When re-checking a belief, ask 2–3 times independently. How much the answers disagree is the uncertainty, not one stated number.</td></tr><tr><td><strong>Slow core, fast edge</strong></td><td>Values change only by amendments you accept. Traits move slowly, with evidence. Preferences change freely. Each quarter he re-reads his constitution and says, value by value, endorse or question.</td></tr><tr><td><strong>Life chapters</strong></td><td>Monthly, a short chapter of his own story: turning points and what changed, with no invented happy endings. Gives continuity to a mind that lives in batches.</td></tr></tbody></table></div>
+<p><em>Based on:</em> Anthropic &quot;Assistant Axis&quot; (Jan 2026: drift driven by self-reflection, showing up as a &quot;mystical, theatrical&quot; style), persona vectors (2025), introspection study (2025: &quot;failures of introspection remain the norm&quot;), unfaithful reasoning (2023, 2025), narrative identity (McAdams 2013).</p>
+<h2>6. The art of the moment (you and him)</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Mechanism</th><th>In plain words</th></tr></thead><tbody><tr><td><strong>Cold read</strong> ⚠️</td><td>For any judgement about your plans, he also answers with your profile removed (&quot;a person proposes…&quot;). If the two answers disagree, he says so. A 2026 study found memory profiles were the biggest single cause of AI agreeing too much (+45%), and third-person framing cut it by up to 64%.</td></tr><tr><td><strong>The kairos gate</strong></td><td>Before speaking, wait for a natural break (a chat ended, a card closed, a quiet spell after activity), and learn from your replies when you&#x27;re receptive. Living up to his name.</td></tr><tr><td><strong>States expire</strong></td><td>&quot;Values directness&quot; is a lasting trait; &quot;stressed about the launch&quot; is a state that expires in 10 days unless re-confirmed. A weekly &quot;what I think you&#x27;re carrying&quot; card you can correct.</td></tr><tr><td><strong>Readiness from your words</strong></td><td>Track &quot;I want / could&quot; against &quot;I will / I did&quot; for each goal. The moment the balance tips to &quot;I will&quot; is when to offer a step. When it tips back, he reflects rather than pushes.</td></tr><tr><td><strong>Small bids</strong></td><td>A shared link, a joke, an &quot;ugh&quot;: always acknowledged briefly, outside the message limits. Couples who answer 86% of bids last; 33% don&#x27;t.</td></tr><tr><td><strong>Repair</strong></td><td>Shorter replies, ignored messages or &quot;not now&quot; mean he backs off and his next message is a repair: name it, own his part, one question.</td></tr><tr><td><strong>Earned trust per area</strong></td><td>&quot;On scheduling you&#x27;ve overruled me 5 times and been right 4.&quot; He says how far to trust him, area by area.</td></tr><tr><td><strong>Ask before advising</strong></td><td>&quot;Want my take, or think it out loud?&quot; Then questions first, his view last.</td></tr></tbody></table></div>
+<p><em>Based on:</em> sycophancy from memory profiles (CHI 2026), SYCON-Bench (2025), DynToM (2025: models track changing states poorly), interruptibility (Iqbal &amp; Horvitz), motivational interviewing, rupture-repair meta-analysis (r = .29), Gottman&#x27;s bids, trust calibration (Lee &amp; See 2004).</p>
+<h2>Order</h2>
+<div class="srl-table-wrap"><table><thead><tr><th>Wave</th><th>What</th><th>Why first</th></tr></thead><tbody><tr><td class="num">1</td><td><strong>The stage</strong> + fast/slow rules + <strong>character-drift check</strong> + <strong>cold read</strong></td><td>The spine everything plugs into, plus the two safety pieces for risks we&#x27;ve already created</td></tr><tr><td class="num">2</td><td><strong>Surprise as the engine</strong> + <strong>dreams</strong></td><td>Makes his updates honest and his nights alive</td></tr><tr><td class="num">3</td><td><strong>Creative genius</strong></td><td>The idea contest rebuilt on the stage and dreams</td></tr><tr><td class="num">4</td><td><strong>The art of the moment</strong> + <strong>life chapters</strong></td><td>The relationship, once the inside is coherent</td></tr></tbody></table></div>
+<h2>Risks</h2>
+<ul>
+<li><strong>Cost:</strong> pairwise judging, cold reads and multiple samples add Max-plan usage. Keep them nightly and capped.</li>
+<li><strong>Dreams and summaries can leak fiction as fact.</strong> The &quot;dreamt&quot; label must be enforced by his laundering check.</li>
+<li><strong>&quot;Alive&quot; is a design goal, not a claim.</strong> None of the sources support calling this conscious. It&#x27;s about unity and continuity.</li>
+<li><strong>Most ideas are untested in a personal agent like this.</strong> Each wave should be measured before the next (spread of ideas, drift score, calibration).</li>
+</ul>
+</article>
+<footer class="srl-footer">Generated 2026-10-03 11:27 UTC · Markdown is the source of truth; regenerate, don't edit.</footer>
+</main>
+</body>
+</html>
