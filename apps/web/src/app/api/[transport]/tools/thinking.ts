@@ -26,12 +26,12 @@ import { getUserId, ok, fail } from './types'
 export const registerThinkingTools: RegisterFn = (server) => {
   server.tool(
     'claim_thinking_job',
-    'Claim the next queued Kairos thinking job. Kinds: chat_distill, archetype, cortex, concept, aether, belief_extract, drift_probe, mind_compare, constitution_seed, weekly_review, idea_generate, idea_judge, ask_mine, daily_message, chat. Due jobs are planned on claim, in prerequisite order (submitting idea_generate plans idea_judge, so claim again to judge the same night). Without `kinds`, any kind except chat is returned; chat jobs are claimed only with kinds ["chat"]. Returns { job: { id, kind, claimToken, deadlineAt, system, prompt, validMemoryIds, instructions } } or { job: null } when nothing is due. Follow `system` + `prompt` exactly and answer as `instructions` say — the JSON only for every kind except chat, which is answered in plain text — then call submit_thinking_job. Never write memories for a job yourself.',
+    `Claim the next queued Kairos thinking job. Kinds: ${thinkingJobKindSchema.options.join(', ')}. Due jobs are planned on claim, in prerequisite order (submitting idea_generate plans idea_judge, so claim again to judge the same night). Declare your routine: "brain" claims every deep kind, "pulse" claims only pulse jobs, and "chat" claims only chat jobs (with kinds ["chat"]). Without a routine, any brain kind is returned — never pulse or chat (and once routine scope is required, an unscoped claim is refused). Returns { job: { id, kind, claimToken, deadlineAt, system, prompt, validMemoryIds, instructions } } or { job: null } when nothing is due. Follow \`system\` + \`prompt\` exactly and answer as \`instructions\` say — the JSON only for every kind except chat, which is answered in plain text — then call submit_thinking_job. Never write memories for a job yourself.`,
     {
       // Plain strings at the MCP edge: claimThinkingJobSchema drops retired
       // kinds (a pre-0.17 routine keeps working) and rejects unknown ones.
-      kinds: z.array(z.string()).max(32).optional().describe(`Only claim these kinds (default: any except chat). One of: ${thinkingJobKindSchema.options.join(', ')}`),
-      routine: thinkingRoutineSchema.optional().describe('The routine claiming ("brain" or "chat"): limits the claim to that routine\'s kinds; a kind outside them is refused with scope_denied'),
+      kinds: z.array(z.string()).max(32).optional().describe(`Only claim these kinds (default: the routine's kinds; without a routine, the brain's). One of: ${thinkingJobKindSchema.options.join(', ')}`),
+      routine: thinkingRoutineSchema.optional().describe('The routine claiming ("brain", "pulse" or "chat"): limits the claim to that routine\'s kinds; a kind outside them is refused with scope_denied'),
     },
     { title: 'Claim Thinking Job', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
@@ -46,7 +46,7 @@ export const registerThinkingTools: RegisterFn = (server) => {
 
   server.tool(
     'submit_thinking_job',
-    'Submit your raw answer (the JSON the job\'s system prompt asked for) for a claimed thinking job. The server parses it strictly (no repair), grounds citations against validMemoryIds, mints ids and persists it. Returns { ok, memoryIds } or an error explaining why the answer was rejected; a rejected or late job is closed and its fallback covers it (cron-backed kinds: their own cron; concept and the P2/P3 kinds: the hourly sweep\'s API fallback) — never retry it.',
+    'Submit your raw answer (the JSON the job\'s system prompt asked for) for a claimed thinking job. The server parses it strictly (no repair), grounds citations against validMemoryIds, mints ids and persists it. Returns { ok, memoryIds } or an error explaining why the answer was rejected; a rejected or late job is closed and its fallback covers it (cron-backed kinds: their own cron; concept and the P2/P3 kinds: the hourly sweep\'s API fallback; pulse, reflect, goal_propose and agenda_due have none and are simply skipped) — never retry it.',
     {
       jobId: z.string().uuid().describe('job.id from claim_thinking_job'),
       claimToken: z.string().uuid().describe('job.claimToken from claim_thinking_job'),

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { captureMemory, listRecentKairosSpeaks } from '@/lib/data/memories'
 import { AWAIT_WINDOW_HOURS, getConversationState } from '@/lib/kairos/engagement'
 import { sendKairosSpeak } from '@/lib/kairos/telegram'
+import { recordToday } from '@/lib/kairos/today'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos speaks first — delivery logic shared by POST /api/v1/kairos/speak
@@ -151,6 +152,16 @@ export async function deliverKairosSpeak(operatorUserId: string, input: SpeakInp
   // the Telegram/web-push fan-out — resending here would double-deliver.
   if (!created) {
     return { status: 200, body: { id: memory.id, delivered: { inbox: false, telegram: false }, alreadyDelivered: true } }
+  }
+
+  // Today log: what Kairos said, once per new speak (ops alerts are health
+  // signals, not something he said to the owner). recordToday never throws.
+  if (!opsAlert) {
+    await recordToday(
+      operatorUserId,
+      { key: `speak:${memory.id}`, channel: 'kairos', type: 'spoke', text: `${title}: ${message}`, ref: { memoryId: memory.id } },
+      { kind: 'kairos', via: 'speak' },
+    )
   }
 
   let telegram = false

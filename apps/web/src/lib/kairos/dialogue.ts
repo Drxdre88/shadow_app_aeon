@@ -21,6 +21,8 @@ import { dominionTag } from './dominionTags'
 import type { RetrievedMemory } from './recipes/_recipe'
 import type { AetherThought } from './aether-types'
 import type { Origin } from './origin'
+import { loadTodayDigest, recordTodayAfter } from './today'
+import { renderTodaySection } from './today-render'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Dialogue — orchestration (the "weld").
@@ -111,6 +113,21 @@ export interface DialogueContext {
     archetypes: RetrievedMemory[]
     substrate: RetrievedMemory[]
   } | null
+  // "Today across channels" (one mind), rendered inside DATA markers; this
+  // dialogue's own turns are excluded. '' when off or quiet.
+  today: string
+}
+
+// Same budget as the chat prompt's today section.
+const DIALOGUE_TODAY_MAX_CHARS = 1800
+
+async function loadDialogueToday(userId: string, threadId: string): Promise<string> {
+  try {
+    const digest = await loadTodayDigest(userId, { excludeThreadId: threadId })
+    return renderTodaySection(digest, { maxChars: DIALOGUE_TODAY_MAX_CHARS })
+  } catch {
+    return ''
+  }
 }
 
 /**
@@ -147,6 +164,7 @@ export async function prepareDialogueContext(
   const query = lastOperator?.content ?? thought?.insight ?? thought?.title ?? thread.title
 
   let retrieval: DialogueContext['retrieval'] = null
+  const todayPromise = loadDialogueToday(userId, threadId)
   if (thread.dominionId) {
     const r = await retrieveContext({ userId, dominionId: thread.dominionId, query })
     retrieval = { cortex: r.cortex, archetypes: r.archetypes, substrate: r.substrate }
@@ -157,6 +175,7 @@ export async function prepareDialogueContext(
     seed: { kairosAskId: thread.seed.kairosAskId, aetherCoreNarrative, thought, sourceMemories },
     turns: turns.map((t) => ({ seq: t.seq, role: t.role, content: t.content })),
     retrieval,
+    today: await todayPromise,
   }
 }
 
@@ -171,6 +190,21 @@ export async function appendDialogueTurn(
 ): Promise<{ ok: true; seq: number; turnId: string } | { ok: false; reason: 'thread_not_found' }> {
   const res = await appendTurnRow(userId, threadId, { role, content, citations })
   if (!res.ok) return res
+  // One mind: an agent (Triad / Claude Code) wrote this turn, so it is never
+  // the owner's own words — an operator turn is a relayed statement.
+  recordTodayAfter(
+    userId,
+    {
+      key: `dialogue:${threadId}:${res.seq}`,
+      channel: 'triad',
+      type: role === 'operator' ? 'said' : 'replied',
+      text: content,
+      ref: { dialogueId: threadId, seq: res.seq },
+      covered: 'dialogue-commit',
+      ...(role === 'operator' ? { relayedRole: 'operator' as const } : {}),
+    },
+    { kind: 'agent', via: 'dialogue' },
+  )
   return { ok: true, seq: res.seq, turnId: res.turnId }
 }
 

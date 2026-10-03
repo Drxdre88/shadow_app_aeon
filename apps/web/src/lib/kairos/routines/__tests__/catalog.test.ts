@@ -157,6 +157,12 @@ describe('routinePrompt', () => {
     expect(prompt).toContain(`after ${brain.maxJobs} jobs`)
     expect(prompt).toContain(`after ${brain.maxMinutes} minutes`)
   })
+
+  it('never claims a backup for every job; the pulse is told a miss is fine', () => {
+    for (const r of ROUTINES) expect(routinePrompt(r)).not.toMatch(/backup for every job/)
+    expect(routinePrompt(getRoutine('pulse'))).toContain('do not retry it — a missed pulse is fine')
+    expect(routinePrompt(getRoutine('brain'))).toContain('do not retry it — Kairos covers or safely skips every job you leave')
+  })
 })
 
 describe('routineScheduleRequest', () => {
@@ -202,6 +208,9 @@ describe('routine scope', () => {
     ['pulse', 'cortex', false],
     ['pulse', 'reflect', false],
     ['chat', 'pulse', false],
+    ['brain', 'agenda_due', true],
+    ['pulse', 'agenda_due', false],
+    ['chat', 'agenda_due', false],
   ] as const)('routineAllows(%s, %s) = %s', (id, kind, allowed) => {
     expect(routineAllows(id, kind)).toBe(allowed)
   })

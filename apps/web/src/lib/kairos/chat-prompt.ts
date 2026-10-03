@@ -66,8 +66,13 @@ export interface BuildChatPromptInput {
   pendingAsk?: ChatPromptPendingAsk
   boardSection?: string           // pre-rendered live board state (chat-board-context.ts) — deterministic, fresher than retrieval
   recencySection?: string         // pre-rendered last-N-hours activity (chat-recency-context.ts) — deterministic, fresher than retrieval
+  todaySection?: string           // pre-rendered "Today across channels" (today-render.ts) — what the owner said / decided elsewhere today
   conscienceSection?: string      // pre-rendered constitution + held beliefs (conscience-context.ts) — reference data
 }
+
+// Everything but the Dominion frame. An options object, not positional
+// args: the section list grows (today, recency, board, conscience…).
+export type ChatSystemPromptOptions = Omit<BuildChatPromptInput, 'dominion' | 'history' | 'userMessage'>
 
 export const TELEGRAM_CHAT_PERSONA = [
   '- Start with exactly one concrete **bold headline** of at most 60 characters and at most one emoji. Do not use a Markdown heading.',
@@ -143,13 +148,10 @@ function renderPendingAsk(pendingAsk: ChatPromptPendingAsk): string {
 
 export function buildChatSystemPrompt(
   dominion: ChatPromptDominion | null,
-  retrieval?: ChatPromptRetrieval,
-  surface: ChatPromptSurface = 'app',
-  pendingAsk?: ChatPromptPendingAsk,
-  boardSection?: string,
-  recencySection?: string,
-  conscienceSection?: string,
+  opts: ChatSystemPromptOptions = {},
 ): string {
+  const { retrieval, pendingAsk, boardSection, recencySection, todaySection, conscienceSection } = opts
+  const surface: ChatPromptSurface = opts.surface ?? 'app'
   const lines: string[] = dominion
     ? [
       `You are Kairos, a persistent, opinionated companion anchored to the "${dominion.name}" Dominion.`,
@@ -173,10 +175,11 @@ export function buildChatSystemPrompt(
     || retrieval.archetypes.length > 0
     || retrieval.substrate.length > 0
   )
+  const hasTodaySection = !!todaySection?.trim()
   const hasRecencySection = !!recencySection?.trim()
   const hasBoardSection = !!boardSection?.trim()
 
-  if (hasRetrieval || hasRecencySection || hasBoardSection) {
+  if (hasRetrieval || hasTodaySection || hasRecencySection || hasBoardSection) {
     lines.push('')
     lines.push('---')
     lines.push('')
@@ -186,6 +189,13 @@ export function buildChatSystemPrompt(
     lines.push('')
     if (hasRetrieval) {
       lines.push(renderRetrieval(retrieval!, dominion !== null))
+      lines.push('')
+    }
+    // Today across channels (one mind): already fenced in BEGIN/END TODAY
+    // DATA markers by renderTodaySection. Before recency — the owner's own
+    // words today outrank derived activity.
+    if (hasTodaySection) {
+      lines.push(todaySection!.trim())
       lines.push('')
     }
     if (hasRecencySection) {
@@ -234,7 +244,15 @@ export function buildChatSystemPrompt(
 }
 
 export function buildChatMessages(input: BuildChatPromptInput): AIMessage[] {
-  const system = buildChatSystemPrompt(input.dominion, input.retrieval, input.surface, input.pendingAsk, input.boardSection, input.recencySection, input.conscienceSection)
+  const system = buildChatSystemPrompt(input.dominion, {
+    retrieval: input.retrieval,
+    surface: input.surface,
+    pendingAsk: input.pendingAsk,
+    boardSection: input.boardSection,
+    recencySection: input.recencySection,
+    todaySection: input.todaySection,
+    conscienceSection: input.conscienceSection,
+  })
   const trimmedHistory = input.history.slice(-MAX_HISTORY_MESSAGES)
 
   const messages: AIMessage[] = [

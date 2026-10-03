@@ -12,6 +12,7 @@ import {
   type ChatWatchdogOutcome,
 } from '@/lib/kairos/chat-routine'
 import { buildAssistantTurn, type KairosChatTurnResult } from '@/lib/kairos/chat-turn'
+import { recordChatOwnerTurn } from '@/lib/kairos/chat-today'
 import { buildChatJobSpec, chatHandler } from '@/lib/kairos/thinking/handlers/chat'
 
 // Kairos-page chat on the Max plan (docs/kairos/34 §5). Same machinery as
@@ -70,6 +71,7 @@ export async function sendWebChatViaRoutine(
       if (!appended.ok) return { ok: false, reason: 'thread_not_found' }
       persistedAt = Date.now()
       turn = { seq: appended.seq, messageId: appended.messageId }
+      recordChatOwnerTurn(userId, threadId, appended.seq, body, 'web')
     }
 
     const key = chatJobKey(threadId, turn.messageId)

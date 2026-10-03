@@ -23,6 +23,7 @@ import { verifyProjectAccess } from '@/lib/data/projects'
 import { selectKairosQuestion } from './ask-select'
 import { hasNumberedMatches, mightContainNumberedAnswers, parseNumberedAnswers } from './ask-numbered'
 import type { Origin } from './origin'
+import { recordToday, type TodayChannel } from './today'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Asks — proactive-question layer above Aether.
@@ -350,6 +351,7 @@ export async function answerKairosAsk(
     await archiveOrphanAnswerMemory(userId, answerMemoryId)
     return { error: 'not_found' }
   }
+  await recordAskAnswerToday(userId, pending, answerText, answerMemoryId, origin)
   // An answer from any surface (web inbox, MCP, chat) is an operator reply:
   // close pending speaks so the reply gate doesn't wait out 48h. Best-effort —
   // the answer is already persisted and must not fail on the marker.
@@ -374,6 +376,38 @@ export async function answerKairosAsk(
   const sourceIds = pending.kairosAsk.sourceMemoryIds ?? []
   if (sourceIds.length > 0) await reactUsed(userId, sourceIds, 'kairos ask answered')
   return { reflectionId: answerMemoryId }
+}
+
+// One "answered" entry per claimed answer, stamped with the caller's origin
+// (never re-derived from the text). Only reached after the claim wins, so a
+// lost race records nothing. recordToday never throws.
+function todayChannelForAsk(origin: Origin): TodayChannel {
+  if (origin.via === 'telegram') return 'telegram'
+  if (origin.via === 'mcp') return 'mcp'
+  return 'ask'
+}
+
+async function recordAskAnswerToday(
+  userId: string,
+  pending: KairosAskRow,
+  answerText: string,
+  answerMemoryId: string,
+  origin: Origin,
+): Promise<void> {
+  const seq = pending.kairosAsk.seq
+  const label = typeof seq === 'number' ? `Q${seq}` : 'Q'
+  await recordToday(
+    userId,
+    {
+      key: `ask:${pending.id}`,
+      channel: todayChannelForAsk(origin),
+      type: 'answered',
+      text: `${label} (${pending.title}): ${answerText}`,
+      ref: { askId: pending.id, memoryId: answerMemoryId },
+      covered: 'ask-reflection',
+    },
+    origin,
+  )
 }
 
 // ─── Backlog: dismiss + numbered answers (Q<seq>) ─────────────────────────

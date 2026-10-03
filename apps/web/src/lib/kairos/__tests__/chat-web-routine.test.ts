@@ -37,6 +37,11 @@ vi.mock('@/lib/kairos/paid-backup', () => ({
   PAID_BACKUP_OFF_NOTE: 'paid backup off',
 }))
 
+vi.mock('@/lib/kairos/chat-today', () => ({
+  recordChatOwnerTurn: vi.fn(),
+}))
+
+import { recordChatOwnerTurn } from '@/lib/kairos/chat-today'
 import { appendChatMessage, getChatThread } from '@/lib/data/kairos-chat'
 import { failJob, findJobById, listJobs, mergeJobOutput, upsertJob } from '@/lib/data/thinking-jobs'
 import { buildAssistantTurn, runAssistantTurnOnce } from '@/lib/kairos/chat-turn'
@@ -147,6 +152,9 @@ describe('sendWebChatViaRoutine', () => {
     expect(lastJob.input.context).not.toHaveProperty('chatId')
     expect(fireCalls()).toHaveLength(0)
     expect(afterTasks).toHaveLength(1)
+    // One mind: the owner's web turn is logged once, operator origin from the channel.
+    expect(recordChatOwnerTurn).toHaveBeenCalledTimes(1)
+    expect(recordChatOwnerTurn).toHaveBeenCalledWith(USER, THREAD, 1, 'status of hydra?', 'web')
   })
 
   it('fires the routine in after(); the routine answering in time means no paid call', async () => {

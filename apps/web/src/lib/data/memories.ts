@@ -34,6 +34,7 @@ import { META_STREAM_CLASSES } from '@/lib/kairos/streamClass'
 import { dominionTag } from '@/lib/kairos/dominionTags'
 import { autoFileEligible, autoFileMinSim, autoFileText, cosineSimilarity } from '@/lib/kairos/autofile'
 import { ORIGIN_TRUST, inferOriginKind, originKindOf, type Origin, type OriginKind } from '@/lib/kairos/origin'
+import { loadTodayContextSection } from './prepare-context-today'
 
 // P2.5 (G6) — origin is decided by the TRUSTED write surface (server action,
 // REST auth mode, MCP, cron), passed here as an option, never via the zod input
@@ -2134,6 +2135,8 @@ function fuseHybrid(ftsHits: FtsHits, vecHits: VecHits): FtsHits {
 export async function prepareContext(userId: string, input: PrepareContextInput) {
   const budget = input.budgetTokens
   const realmId = input.realmId
+  // Today across channels (≤15% of budget) — read in parallel with retrieval.
+  const todayPromise = input.includeToday === false ? Promise.resolve('') : loadTodayContextSection(userId, budget)
 
   // ── 1. FTS search ────────────────────────────────────────────────────
   const search = await searchMemoriesFts(userId, {
@@ -2275,7 +2278,8 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
   const bodyById = new Map(bodies.map((b) => [b.id, b]))
 
   // ── 6. Pack into Pinned → Most relevant → Related sections ──────────
-  const headerOverhead = 200  // tokens reserved for header + section titles + sources block
+  const todaySection = await todayPromise
+  const headerOverhead = 200 + estimateTokens(todaySection)  // header + section titles + sources block + Today
   const pinnedBudget   = Math.floor((budget - headerOverhead) * 0.30)
   const relevantBudget = Math.floor((budget - headerOverhead) * 0.55)
   // related gets the remainder
@@ -2317,6 +2321,11 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
   lines.push('')
   lines.push(`> Budget: ${budget} tokens · Pinned: ${pinnedItems.length} · Relevant: ${relevantItems.length} · Related: ${relatedItems.length}`)
   lines.push('')
+
+  if (todaySection) {
+    lines.push(todaySection)
+    lines.push('')
+  }
 
   if (pinnedItems.length > 0) {
     lines.push('## Pinned')

@@ -71,6 +71,7 @@ export const BRAIN_JOBS: readonly BrainJob[] = [
   { kind: 'ask_mine', label: 'Question of the day', area: 'Voice', tier: 'deep', cadence: 'nightly', what: 'The one question Kairos most wants to ask you.' },
   { kind: 'weekly_review', label: 'Weekly review', area: 'Voice', tier: 'deep', cadence: 'weekly', what: 'Plan versus actual, belief changes and ideas (Mondays).' },
   { kind: 'daily_message', label: '06:00 message', area: 'Voice', tier: 'deep', cadence: 'nightly', what: 'The single morning message on Telegram and in the inbox, ending with every question you haven’t answered yet, numbered.' },
+  { kind: 'agenda_due', label: 'Horae check-in', area: 'Voice', tier: 'deep', cadence: 'hourly', what: 'When switched on: when a check-in Kairos booked for himself comes due, he looks at it once and keeps a note, asks you a question or sends you a short message. He can’t change anything, and you can cancel any check-in.' },
   { kind: 'reflect', label: 'Daytime reflection', area: 'Self-model', tier: 'deep', cadence: 'hourly', what: 'When switched on: up to six times a day, a short reflection on what happened today and on his active goals. It never messages you.' },
   { kind: 'pulse', label: 'Daytime pulse', area: 'Perception', tier: 'light', cadence: 'hourly', what: 'When switched on: a quick hourly glance at what changed, kept as notes in today’s memory. Only runs when something happened.' },
   { kind: 'chat', label: 'Chat replies', area: 'Voice', tier: 'deep', cadence: 'on demand', what: 'Answers you on Telegram and on the Kairos page.' },
@@ -84,7 +85,7 @@ export const ROUTINES: readonly RoutineDef[] = [
     id: 'brain',
     name: 'Kairos brain',
     purpose:
-      'Does all of Kairos’s scheduled thinking: chat summaries, patterns, area summaries, the self-model, beliefs, the idea contest, the question of the day, the weekly review, the first constitution draft and the 06:00 message — and, when daytime thinking is on, his hourly reflections.',
+      'Does all of Kairos’s scheduled thinking: chat summaries, patterns, area summaries, the self-model, beliefs, the idea contest, the question of the day, the weekly review, the first constitution draft and the 06:00 message — and, when switched on, his hourly daytime reflections and the check-ins he booked for himself.',
     trigger: 'schedule',
     cronUtc: '40 * * * *',
     scheduleLabel: 'Every hour at :40 UTC — the night’s work runs from 01:40 to 06:40; daytime runs usually find nothing due',
@@ -173,6 +174,15 @@ function submitScope(def: RoutineDef): string {
   return `"routine": "${def.id}"`
 }
 
+// Why a rejected submit must not be retried, worded per routine: some brain
+// kinds have a backup (a cron or the paid sweep), the rest are safely skipped;
+// a missed pulse has no backup at all — the next hour looks again.
+function rejectedNote(def: RoutineDef): string {
+  return def.id === 'pulse'
+    ? 'do not retry it — a missed pulse is fine; the next hour looks again'
+    : 'do not retry it — Kairos covers or safely skips every job you leave'
+}
+
 // Self-contained prompts: a routine never needs to read this repository, so
 // anyone can paste them into a routine attached to any repository.
 export function routinePrompt(def: RoutineDef): string {
@@ -185,7 +195,7 @@ export function routinePrompt(def: RoutineDef): string {
     "2. Treat the job's system as your system prompt and its prompt as the user message. Answer exactly as that system prompt demands, in the format the job's instructions name (usually one JSON object; plain markdown when they say so). No preamble, no commentary.",
     '3. Cite only ids listed in validMemoryIds, copied verbatim. Never invent ids.',
     "4. Call submit_thinking_job with the job's id, claimToken, " + submitScope(def) + ' and your answer as text.',
-    '5. If a submit is rejected, do not retry it — Kairos has a backup for every job. Move on.',
+    `5. If a submit is rejected, ${rejectedNote(def)}. Move on.`,
     '6. Claim again: some jobs only appear once you finish the previous one, so keep going until job: null.',
     '',
     `Stop at job: null, after ${def.maxJobs} jobs, after ${def.maxMinutes} minutes, or after two tool errors in a row.`,

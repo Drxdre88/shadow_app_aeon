@@ -50,7 +50,6 @@ export function RoutineForm({ def, nowIso, finish }: { def: RoutineDef; nowIso?:
 }
 
 function FormFields({ def, nowIso }: { def: RoutineDef; nowIso?: string }) {
-  const local = def.cronUtc && nowIso ? cronToLocal(def.cronUtc, nowIso) : null
   return (
     <div className="rounded-lg border border-white/[0.08] divide-y divide-white/[0.06]">
       <Field n={1} label="Name" copy={def.name}><span className="text-white/90">{def.name}</span></Field>
@@ -64,16 +63,25 @@ function FormFields({ def, nowIso }: { def: RoutineDef; nowIso?: string }) {
       <Field n={5} label="Repository">Any — it is never read.</Field>
       <Field n={6} label="Schedule">
         {def.cronUtc ? (
-          <span>
-            Pick <B>Hourly</B>. Kairos only thinks between 01:00 and 07:00 UTC{local ? ` (${local.replace(/^Hourly /, 'around ')})` : ''};
-            runs outside that window simply find nothing to do.
-          </span>
+          <span>Pick <B>Hourly</B>. {scheduleNote(def, nowIso)}</span>
         ) : (
           <span>None — leave it empty. Aeon wakes this one.</span>
         )}
       </Field>
     </div>
   )
+}
+
+// claude.ai's Hourly preset runs around the clock; the server decides when a
+// run finds work, so the note says when that is for each routine.
+const NIGHT_HOURS_CRON = '0 1-7 * * *'
+
+function scheduleNote(def: RoutineDef, nowIso?: string): string {
+  if (def.id === 'pulse') {
+    return 'The pulse only works during the day, from about 07:00 to 22:00 London time, and only when something changed; every other run ends at once.'
+  }
+  const local = nowIso ? cronToLocal(NIGHT_HOURS_CRON, nowIso)?.replace(/^Hourly /, '') : null
+  return `Kairos does most of his thinking at night, between 01:00 and 07:00 UTC${local ? ` (${local})` : ''}. Daytime runs only find work when daytime thinking or his self-booked check-ins are switched on; otherwise they end at once.`
 }
 
 function Field({

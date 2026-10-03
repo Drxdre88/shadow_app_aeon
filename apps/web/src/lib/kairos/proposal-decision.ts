@@ -20,6 +20,7 @@ import { isVagueOutcome } from './promises/rules'
 import { PROMISE_OUTCOME_MAX_CHARS, PROMISE_OUTCOME_MIN_CHARS } from '@/lib/data/validators/kairos-promises'
 import { reactOutcome } from './reactions'
 import { editMessageText, telegramConfigured } from './telegram'
+import { recordToday } from './today'
 
 // One decision function for every owner-decided proposal kind (Phase 2,
 // Track C). Web inbox, Telegram buttons and the REST session all call
@@ -223,7 +224,27 @@ export async function decideKairosProposal(
   if (input.via !== 'telegram') {
     await closeTelegramMessage(userId, id, meta, `${row.title}\n\n— ${VERDICT_LABEL[input.verdict]} in Aeon ✓`, now)
   }
+  await recordDecisionToday(userId, id, row.title, input)
   return { ok: true, verdict: input.verdict, title: row.title, kind, memoryId: id }
+}
+
+// One "decided" entry per owner decision — reached only after the kind's
+// claim-once transition won, so a repeat tap or redelivery records nothing.
+async function recordDecisionToday(userId: string, id: string, title: string, input: DecideProposalInput): Promise<void> {
+  const telegram = input.via === 'telegram'
+  const reason = input.verdict === 'veto' ? cleanReason(input.reason) : null
+  await recordToday(
+    userId,
+    {
+      key: `decision:${id}`,
+      channel: telegram ? 'telegram' : 'inbox',
+      type: 'decided',
+      text: `${VERDICT_LABEL[input.verdict]}: ${title}${reason ? ` — ${reason}` : ''}`,
+      ref: { memoryId: id },
+      covered: 'memory',
+    },
+    { kind: 'operator', via: telegram ? 'telegram' : 'inbox' },
+  )
 }
 
 // "Veto + why": the reason (or a decline) was claimed — let the kind keep it.

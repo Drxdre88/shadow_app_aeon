@@ -6,7 +6,7 @@ vi.mock('@/lib/db', () => ({ db: {} }))
 vi.mock('@/lib/data/thinking-jobs', () => ({ hasJobWithKeyLike: vi.fn(), listJobs: vi.fn() }))
 vi.mock('@/lib/data/memories', () => ({ listRecentMemories: vi.fn(), captureMemory: vi.fn() }))
 vi.mock('@/lib/data/goals', () => ({ listOpenGoals: vi.fn() }))
-vi.mock('@/lib/data/kairos-promises', () => ({ readKairosPromises: vi.fn() }))
+vi.mock('@/lib/data/kairos-promises', async (importOriginal) => ({ ...(await importOriginal<object>()), readKairosPromises: vi.fn() }))
 vi.mock('@/lib/kairos/today', () => ({
   todayEnabled: vi.fn(() => true),
   loadTodayDigest: vi.fn(async () => null),
@@ -153,10 +153,12 @@ describe('reflect apply — one grounded observation, nothing else', () => {
     expect(captureMemory).not.toHaveBeenCalled()
   })
 
-  it('wave-2 fields (followUps, predictions) are accepted and ignored', async () => {
+  it('flags off: proposed predictions and follow-ups are counted, never created', async () => {
     const answer = JSON.stringify({ thought: 'Noted.', followUps: [{ what: 'check' }], predictions: [{ claim: 'x' }, 1, 2, 3, 4, 5, 6] })
     const res = await reflectHandler.apply(reflectJob(), answer, 'routine')
-    expect(res).toMatchObject({ ok: true, output: { wave2: { followUps: 1, predictions: 5 } } })
+    expect(res).toMatchObject({ ok: true, output: { proposed: { followUps: 1, predictions: 5 } } })
+    expect(res.ok && res.output).not.toHaveProperty('predictions')
+    expect(res.ok && res.output).not.toHaveProperty('followUps')
     expect(captureMemory).toHaveBeenCalledTimes(1)
   })
 

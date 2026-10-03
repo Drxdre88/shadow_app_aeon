@@ -21,8 +21,8 @@ const pendingAsk: ChatPromptPendingAsk = {
 
 describe('ask-aware chat prompt', () => {
   it('includes the open ask block with evidence only when an ask exists', () => {
-    const withoutAsk = buildChatSystemPrompt(null, undefined, 'telegram')
-    const withAsk = buildChatSystemPrompt(null, undefined, 'telegram', pendingAsk)
+    const withoutAsk = buildChatSystemPrompt(null, { surface: 'telegram' })
+    const withAsk = buildChatSystemPrompt(null, { surface: 'telegram', pendingAsk })
 
     expect(withoutAsk).not.toContain('## Open question from you')
     expect(withAsk).toContain('## Open question from you')

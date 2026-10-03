@@ -15,6 +15,7 @@ export const thinkingJobKindSchema = z.enum([
   'constitution_seed',
   'goal_propose',
   'pulse', 'reflect',
+  'agenda_due',
 ])
 export const thinkingJobStatusSchema = z.enum(['queued', 'claimed', 'done', 'failed', 'expired', 'fallback'])
 

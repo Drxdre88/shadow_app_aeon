@@ -1,5 +1,6 @@
 import type { ThinkingJobHandler } from '@/lib/kairos/engine/types'
 import { aetherHandler } from './handlers/aether'
+import { agendaDueHandler } from './handlers/agenda-due'
 import { archetypeHandler } from './handlers/archetype'
 import { askMineHandler } from './handlers/ask-mine'
 import { beliefExtractHandler } from './handlers/belief-extract'
@@ -37,6 +38,7 @@ export function getThinkingHandlers(): ThinkingJobHandler[] {
     archetypeHandler,
     askMineHandler,
     dailyMessageHandler,
+    agendaDueHandler,
     reflectHandler,
     pulseHandler,
     chatHandler,

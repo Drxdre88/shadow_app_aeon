@@ -42,11 +42,10 @@ import { errorReason } from './_errors'
 // (createKairosAskMemory, while the ask backlog is under 10) or one message
 // (deliverKairosSpeak, force:false — a 429 becomes a thought, downgraded),
 // plus at most one rebook at depth ≤1. abandon → missed. No fallback.
-// Not registered yet: wave 2 adds 'agenda_due' to the kind union, the
-// validators, the queue lists, the registry and the brain catalog.
+// Registered on the brain routine (deep tier); planned by claims and the
+// hourly sweep alike — planAgendaDue returns nothing while the flags are off.
 
-// TODO(wave 2): drop the cast once 'agenda_due' joins ThinkingJobKind.
-const KIND = AGENDA_DUE_KIND as ThinkingJobKind
+const KIND: ThinkingJobKind = AGENDA_DUE_KIND
 const ASK_EXPIRY_MS = 14 * 24 * 60 * 60 * 1000
 
 const contextSchema = z.object({

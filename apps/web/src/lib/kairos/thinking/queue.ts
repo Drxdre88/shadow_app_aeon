@@ -65,6 +65,9 @@ export const PLANNED_THINKING_KINDS: readonly ThinkingJobKind[] = [
   'ask_mine',
   // Last: the daily message reads what the night produced.
   'daily_message',
+  // Horae (flagged): due agenda items, planned by claims AND the sweep (an
+  // 8-hour deadline, so the night run still covers a missed daytime one).
+  'agenda_due',
   // Daytime cadence (flagged): planned only on claims, never by the sweep.
   'reflect', 'pulse',
 ]
@@ -101,6 +104,7 @@ const FALLBACK_OWNER: Partial<Record<ThinkingJobKind, string>> = {
   goal_propose: 'nothing — a missed night proposes no goal',
   reflect: 'nothing — a missed hour is fine',
   pulse: 'nothing — a missed hour is fine',
+  agenda_due: 'nothing — the item is marked missed',
 }
 
 function fallbackOwner(kind: ThinkingJobKind): string {

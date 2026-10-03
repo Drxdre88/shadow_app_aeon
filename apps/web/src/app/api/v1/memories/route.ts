@@ -3,7 +3,9 @@ import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from 
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
 import { listMemories as _listMemories, createMemory as _createMemory, getGraphForUser as _getGraphForUser } from '@/lib/data/memories'
 import { createMemorySchema } from '@/lib/data/validators'
+import type { CreateMemoryInput } from '@/lib/data/validators/memory'
 import type { Origin } from '@/lib/kairos/origin'
+import { recordTodayAfter } from '@/lib/kairos/today'
 
 // Give DB-bound handlers headroom above the 8s pool-acquire timeout so a hung
 // connection surfaces as a caught 503, never a silent function-kill.
@@ -67,7 +69,30 @@ export const POST = withRateLimit(
       ? { kind: 'agent', via: 'rest' }
       : { kind: 'operator', via: 'rest-session' }
     const memory = await _createMemory(result.id, parsed.data, { origin })
+    if (parsed.data.type === 'session_summary') recordSessionCaptureToday(result.id, parsed.data, memory.id, origin)
     return jsonData(memory, 201)
   }),
   API_WRITE_LIMIT
 )
+
+// A coding session's closing summary lands in today's cross-channel log so
+// every surface knows what the agents just did. Keyed per client session, so
+// a re-posted summary replaces rather than duplicates. Fire-and-forget.
+function recordSessionCaptureToday(userId: string, input: CreateMemoryInput, memoryId: string, origin: Origin): void {
+  const meta = (input.sourceMetadata ?? {}) as Record<string, unknown>
+  const client = typeof meta.client === 'string' && meta.client ? meta.client : input.source
+  const sessionId = typeof meta.sessionId === 'string' && meta.sessionId ? meta.sessionId : memoryId
+  const gist = input.summary?.trim() || input.execSummary?.[0] || ''
+  recordTodayAfter(
+    userId,
+    {
+      key: `session:${client}:${sessionId}`,
+      channel: 'session',
+      type: 'captured',
+      text: `${client} session: ${input.title}${gist ? ` — ${gist}` : ''}`,
+      ref: { memoryId },
+      covered: 'memory',
+    },
+    origin,
+  )
+}

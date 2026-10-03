@@ -1,6 +1,7 @@
 import { jsonResponse } from '@/lib/api/response'
 import { NextRequest, NextResponse } from 'next/server'
 import { listChatDistillEligibleUserIds } from '@/lib/data/kairos-chat'
+import { markTodayConsumed, purgeTodayEntries } from '@/lib/data/kairos-today'
 import { runChatDistillForUser, type ChatDistillRunResult } from '@/lib/kairos/chat-distill'
 import { skipCronIfPaidBackupOff } from '@/lib/kairos/paid-backup-cron'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
@@ -57,6 +58,8 @@ export async function GET(req: NextRequest) {
     console.warn('[chat-distill] deadline reached — users skipped this run', { skippedUserIds })
   }
 
+  const today = await consumeAndTrimToday(new Date())
+
   return jsonResponse({
     ran: users.length,
     paidBackupOff,
@@ -67,5 +70,22 @@ export async function GET(req: NextRequest) {
       0,
     ),
     users,
+    today,
   })
+}
+
+// Nightly consume + trim of the one-mind today log (spec_one_mind). Today is
+// a cache, never a distill source, so the run marks everything up to the end
+// of the distilled UTC day consumed, then drops entries past the 36h window
+// (72h hard stop for anything unmarked). Never fails the cron.
+async function consumeAndTrimToday(now: Date): Promise<{ consumed: number; purged: number } | { error: string }> {
+  try {
+    const through = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+    const consumed = await markTodayConsumed(through)
+    const purged = await purgeTodayEntries(now)
+    return { consumed, purged }
+  } catch (error) {
+    console.error('[chat-distill] today consume/trim failed', error)
+    return { error: error instanceof Error ? error.message : String(error) }
+  }
 }

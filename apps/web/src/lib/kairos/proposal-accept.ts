@@ -14,6 +14,8 @@ import { IDEA_PROPOSAL_KIND, type IdeaOutcome } from './ideas/types'
 import { decideKairosProposal, isDecidableProposalKind, type DecideProposalResult } from './proposal-decision'
 import { reactOutcome, reactUsed } from './reactions'
 import { recordIdeaOutcome } from '@/lib/data/ideas'
+import type { Origin } from './origin'
+import { recordToday, type TodayChannel } from './today'
 
 // Proposal triage — the operator gate in propose-not-commit (docs/kairos/32 §2,
 // docs/kairos/34 §2). Business orchestration over the pure lib/data writes:
@@ -47,12 +49,37 @@ function decisionToAccept(res: Extract<DecideProposalResult, { ok: false }>): Ac
   return { ok: false, reason: res.reason }
 }
 
+// Today log (spec_one_mind): one "decided" entry per triage. Owner-decided
+// kinds are recorded once inside decideKairosProposal, never here.
+const OWNER_ACCEPT: Origin = { kind: 'operator', via: 'accept' }
+const OWNER_INBOX: Origin = { kind: 'operator', via: 'inbox' }
+
+function todayChannelFor(origin: Origin): TodayChannel {
+  if (origin.via === 'telegram') return 'telegram'
+  if (origin.via === 'mcp') return 'mcp'
+  return 'inbox'
+}
+
+async function recordDecisionToday(userId: string, memoryId: string, text: string, origin: Origin): Promise<void> {
+  await recordToday(
+    userId,
+    { key: `inbox:${memoryId}`, channel: todayChannelFor(origin), type: 'decided', text, ref: { memoryId }, covered: 'memory' },
+    origin,
+  )
+}
+
+export interface AcceptKairosProposalOptions extends MemoryWriteOptions {
+  // false: the caller records one aggregate entry itself (voice confirm).
+  recordToday?: boolean
+}
+
 export async function acceptKairosProposal(
   memoryId: string,
   userId: string,
   input: AcceptProposalInput,
-  opts: MemoryWriteOptions = {},
+  options: AcceptKairosProposalOptions = {},
 ): Promise<AcceptProposalResult | null> {
+  const { recordToday: shouldRecord = true, ...opts } = options
   const proposal = await findMemoryById(memoryId, userId)
   if (!proposal) return null
 
@@ -75,6 +102,9 @@ export async function acceptKairosProposal(
       if (res.reason === 'not_found') return null
       return { ok: false, reason: res.reason === 'stale_amendment' ? 'stale_amendment' : 'not_a_proposal' }
     }
+    if (shouldRecord) {
+      await recordDecisionToday(userId, memoryId, `Accepted constitution amendment: ${proposal.title}`, opts.origin ?? OWNER_ACCEPT)
+    }
     const row = await findMemoryById(res.constitutionId, userId)
     return row ? { ok: true, memory: row } : null
   }
@@ -87,6 +117,7 @@ export async function acceptKairosProposal(
     await reactUsed(userId, [memoryId], 'proposal accepted')
     // `meta` was read before the accept mutated the row.
     if (proposal.type === 'inbound' && meta.kind === IDEA_PROPOSAL_KIND) await groundIdeaOutcome(userId, memoryId, 'accepted')
+    if (shouldRecord) await recordDecisionToday(userId, memoryId, `Accepted: ${proposal.title}`, opts.origin ?? OWNER_ACCEPT)
   }
   return result
 }
@@ -129,6 +160,7 @@ export async function dismissInboxMemory(userId: string, memoryId: string): Prom
     await reactOutcome(userId, memoryId, 'negative', 'proposal dismissed')
     if (metadata.kind === IDEA_PROPOSAL_KIND) await groundIdeaOutcome(userId, memoryId, 'dismissed')
   }
+  await recordDecisionToday(userId, memoryId, `Dismissed: ${memory.title}`, OWNER_INBOX)
   return { ok: true, id: archived.id }
 }
 

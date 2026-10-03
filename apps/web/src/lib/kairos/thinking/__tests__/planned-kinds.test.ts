@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/db', () => ({ db: {} }))
 
 import { BRAIN_JOBS, ROUTINES, getRoutine } from '@/lib/kairos/routines/catalog'
-import { PLANNED_THINKING_KINDS } from '../queue'
+import { PLANNED_THINKING_KINDS, SWEEP_PLAN_SKIP_KINDS } from '../queue'
 import { getThinkingHandlers } from '../registry'
 import { thinkingJobKindSchema } from '@/lib/data/validators/thinking'
 
@@ -51,5 +51,14 @@ describe('planned thinking kinds ↔ routine catalog', () => {
       if (j.kind === 'chat') continue
       expect(getRoutine(j.tier === 'light' ? 'pulse' : 'brain').allowedKinds, j.kind).toContain(j.kind)
     }
+  })
+
+  it('Horae check-ins are a deep brain kind planned by claims and the sweep alike', () => {
+    const row = BRAIN_JOBS.find((j) => j.kind === 'agenda_due')
+    expect(row).toMatchObject({ label: 'Horae check-in', tier: 'deep' })
+    expect(getRoutine('brain').allowedKinds).toContain('agenda_due')
+    expect(PLANNED_THINKING_KINDS).toContain('agenda_due')
+    expect(SWEEP_PLAN_SKIP_KINDS).not.toContain('agenda_due')
+    expect(getThinkingHandlers().find((h) => h.kind === 'agenda_due')).toBeDefined()
   })
 })

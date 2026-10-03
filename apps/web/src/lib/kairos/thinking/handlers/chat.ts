@@ -218,6 +218,7 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
     userBody: ctx.userBody,
     model: answeredBy === 'routine' ? CHAT_ROUTINE_MODEL : null,
     citationsContext: citationsFrom(ctx),
+    channel: ctx.channel,
   })
   if (!result.ok) {
     if (result.reason === 'already_answered') return { ok: true, memoryIds: [] }

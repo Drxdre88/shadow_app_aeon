@@ -6,6 +6,7 @@ import {
   type ChatPromptMessage,
   type ChatPromptRetrieval,
 } from '../chat-prompt'
+import { renderTodaySection } from '../today-render'
 
 function dom(overrides: Partial<{ name: string; vision: string | null; missionLong: string | null }> = {}) {
   return {
@@ -112,12 +113,12 @@ describe('buildChatSystemPrompt with retrieval (C2)', () => {
   })
 
   it('omits the grounded block when retrieval is empty', () => {
-    const out = buildChatSystemPrompt(dom(), { cortex: null, archetypes: [], substrate: [] })
+    const out = buildChatSystemPrompt(dom(), { retrieval: { cortex: null, archetypes: [], substrate: [] } })
     expect(out).not.toContain('Grounded context')
   })
 
   it('renders cortex + archetype + substrate sections with [[uuid]] headers', () => {
-    const out = buildChatSystemPrompt(dom(), retrieval())
+    const out = buildChatSystemPrompt(dom(), { retrieval: retrieval() })
     expect(out).toContain('# Grounded context')
     expect(out).toContain('## Dominion cortex')
     expect(out).toContain(`[[${cortexId}]]`)
@@ -128,19 +129,19 @@ describe('buildChatSystemPrompt with retrieval (C2)', () => {
   })
 
   it('adds the citation style line only when grounding is present', () => {
-    const grounded = buildChatSystemPrompt(dom(), retrieval())
+    const grounded = buildChatSystemPrompt(dom(), { retrieval: retrieval() })
     expect(grounded).toMatch(/Cite grounded sources with `\[\[memory-id\]\]`/)
     const bare = buildChatSystemPrompt(dom())
     expect(bare).not.toMatch(/Cite grounded sources/)
   })
 
   it('labels each substrate entry with its streamClass', () => {
-    const out = buildChatSystemPrompt(dom(), retrieval())
+    const out = buildChatSystemPrompt(dom(), { retrieval: retrieval() })
     expect(out).toContain('_(reflection)_')
   })
 
   it('renders archetype-only retrieval without empty cortex/substrate sections', () => {
-    const out = buildChatSystemPrompt(dom(), retrieval({ cortex: null, substrate: [] }))
+    const out = buildChatSystemPrompt(dom(), { retrieval: retrieval({ cortex: null, substrate: [] }) })
     expect(out).toContain('## Active archetypes')
     expect(out).not.toContain('## Dominion cortex')
     expect(out).not.toContain('## Relevant substrate')
@@ -148,9 +149,9 @@ describe('buildChatSystemPrompt with retrieval (C2)', () => {
 
   it('clips overlong bodies with an ellipsis marker', () => {
     const long = 'x'.repeat(5000)
-    const out = buildChatSystemPrompt(dom(), retrieval({
+    const out = buildChatSystemPrompt(dom(), { retrieval: retrieval({
       cortex: { id: cortexId, title: 'huge', body: long },
-    }))
+    }) })
     expect(out).toContain('…')
     expect(out.length).toBeLessThan(long.length + 2000)
   })
@@ -167,7 +168,7 @@ describe('buildChatSystemPrompt — unanchored whole-brain (slice 3)', () => {
   })
 
   it('labels the cortex block as the Aether self-model', () => {
-    const out = buildChatSystemPrompt(null, retrieval())
+    const out = buildChatSystemPrompt(null, { retrieval: retrieval() })
     expect(out).toContain('## Aether self-model')
     expect(out).not.toContain('## Dominion cortex')
     expect(out).toContain(`[[${cortexId}]]`)
@@ -175,7 +176,7 @@ describe('buildChatSystemPrompt — unanchored whole-brain (slice 3)', () => {
   })
 
   it('keeps the Dominion cortex label for anchored threads', () => {
-    const out = buildChatSystemPrompt(dom(), retrieval())
+    const out = buildChatSystemPrompt(dom(), { retrieval: retrieval() })
     expect(out).toContain('## Dominion cortex')
     expect(out).not.toContain('## Aether self-model')
   })
@@ -207,20 +208,20 @@ describe('buildChatSystemPrompt with live board section', () => {
   ].join('\n')
 
   it('renders the board section under Grounded context even without retrieval', () => {
-    const out = buildChatSystemPrompt(dom(), undefined, 'app', undefined, boardSection)
+    const out = buildChatSystemPrompt(dom(), { boardSection })
     expect(out).toContain('# Grounded context')
     expect(out).toContain('LIVE BOARD STATE')
     expect(out).toContain('AS Sprint')
   })
 
   it('renders the board section alongside retrieval when both are present', () => {
-    const out = buildChatSystemPrompt(dom(), retrieval(), 'app', undefined, boardSection)
+    const out = buildChatSystemPrompt(dom(), { retrieval: retrieval(), boardSection })
     expect(out).toContain('## Dominion cortex')
     expect(out).toContain('LIVE BOARD STATE')
   })
 
   it('omits the Grounded context block entirely when board section is blank', () => {
-    const out = buildChatSystemPrompt(dom(), undefined, 'app', undefined, '   ')
+    const out = buildChatSystemPrompt(dom(), { boardSection: '   ' })
     expect(out).not.toContain('Grounded context')
   })
 
@@ -246,7 +247,7 @@ describe('buildChatSystemPrompt with recency section', () => {
   ].join('\n')
 
   it('renders the recency section under Grounded context even without retrieval', () => {
-    const out = buildChatSystemPrompt(dom(), undefined, 'app', undefined, undefined, recencySection)
+    const out = buildChatSystemPrompt(dom(), { recencySection })
     expect(out).toContain('# Grounded context')
     expect(out).toContain('LAST 24H')
     expect(out).toContain('Shipped export')
@@ -254,7 +255,7 @@ describe('buildChatSystemPrompt with recency section', () => {
 
   it('renders after the grounded-context block and before the board section', () => {
     const boardSection = '## LIVE BOARD STATE (authoritative — fetched now, fresher than any memory)\n\n### AS Sprint'
-    const out = buildChatSystemPrompt(dom(), retrieval(), 'app', undefined, boardSection, recencySection)
+    const out = buildChatSystemPrompt(dom(), { retrieval: retrieval(), boardSection, recencySection })
 
     const groundedIdx = out.indexOf('# Grounded context')
     const recencyIdx = out.indexOf('LAST 24H')
@@ -266,7 +267,7 @@ describe('buildChatSystemPrompt with recency section', () => {
   })
 
   it('omits the Grounded context block entirely when recency section is blank', () => {
-    const out = buildChatSystemPrompt(dom(), undefined, 'app', undefined, undefined, '   ')
+    const out = buildChatSystemPrompt(dom(), { recencySection: '   ' })
     expect(out).not.toContain('Grounded context')
   })
 
@@ -286,12 +287,12 @@ describe('buildChatSystemPrompt with conscience section (P2.5 G4)', () => {
 
   it('omits it when absent or blank', () => {
     expect(buildChatSystemPrompt(dom())).not.toContain('Conscience')
-    expect(buildChatSystemPrompt(dom(), undefined, 'app', undefined, undefined, undefined, '  ')).not.toContain('Conscience')
+    expect(buildChatSystemPrompt(dom(), { conscienceSection: '  ' })).not.toContain('Conscience')
   })
 
   it('sits after the grounded context and before the Style rules (telegram too)', () => {
     for (const surface of ['app', 'telegram'] as const) {
-      const out = buildChatSystemPrompt(dom(), undefined, surface, undefined, undefined, 'LAST 24H recency', conscience)
+      const out = buildChatSystemPrompt(dom(), { surface, recencySection: 'LAST 24H recency', conscienceSection: conscience })
       const idx = out.indexOf('## Conscience')
       expect(idx).toBeGreaterThan(out.indexOf('LAST 24H recency'))
       expect(idx).toBeLessThan(out.indexOf('Style:'))
@@ -304,6 +305,50 @@ describe('buildChatSystemPrompt with conscience section (P2.5 G4)', () => {
   })
 })
 
+describe('buildChatSystemPrompt with today section (one mind)', () => {
+  const todaySection = renderTodaySection({
+    from: '2026-10-03T00:00:00.000Z',
+    to: '2026-10-03T10:05:00.000Z',
+    entries: [{
+      at: '2026-10-03T10:00:00.000Z', channel: 'telegram', type: 'said', speaker: 'owner', relayed: false,
+      text: 'Ship the Hydra export before Friday',
+    }],
+  }, { maxChars: 1800 })
+
+  it('opens the Grounded context gate on its own, inside DATA markers', () => {
+    const out = buildChatSystemPrompt(dom(), { todaySection })
+    expect(out).toContain('# Grounded context')
+    expect(out).toContain('## Today across channels')
+    const begin = out.indexOf('BEGIN TODAY DATA')
+    const line = out.indexOf('owner·telegram said: "Ship the Hydra export before Friday"')
+    expect(begin).toBeGreaterThan(0)
+    expect(line).toBeGreaterThan(begin)
+    expect(out.indexOf('END TODAY DATA')).toBeGreaterThan(line)
+  })
+
+  it('sits after retrieval and before recency and the board', () => {
+    const out = buildChatSystemPrompt(dom(), {
+      retrieval: retrieval(),
+      todaySection,
+      recencySection: '## LAST 24H recency',
+      boardSection: '## LIVE BOARD STATE',
+    })
+    const todayIdx = out.indexOf('## Today across channels')
+    expect(todayIdx).toBeGreaterThan(out.indexOf('## Relevant substrate'))
+    expect(todayIdx).toBeLessThan(out.indexOf('## LAST 24H recency'))
+    expect(out.indexOf('## LAST 24H recency')).toBeLessThan(out.indexOf('## LIVE BOARD STATE'))
+  })
+
+  it('a blank today section does not open the gate', () => {
+    expect(buildChatSystemPrompt(dom(), { todaySection: '  ' })).not.toContain('Grounded context')
+  })
+
+  it('threads through buildChatMessages', () => {
+    const messages = buildChatMessages({ dominion: null, history: [], userMessage: 'hi', todaySection })
+    expect(messages[0].content).toContain('Ship the Hydra export before Friday')
+  })
+})
+
 describe('surface steering', () => {
   it('defaults to the app style block', () => {
     const out = buildChatSystemPrompt(null)
@@ -312,7 +357,7 @@ describe('surface steering', () => {
   })
 
   it('swaps in the Telegram texting style when surface is telegram', () => {
-    const out = buildChatSystemPrompt(null, undefined, 'telegram')
+    const out = buildChatSystemPrompt(null, { surface: 'telegram' })
     expect(out).toContain('texting the operator on Telegram')
     expect(out).toContain('two emoji total')
     expect(out).not.toContain('Markdown for replies')
