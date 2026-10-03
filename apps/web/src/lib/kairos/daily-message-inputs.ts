@@ -275,9 +275,13 @@ async function readGoals(userId: string, now: Date): Promise<GoalDigest[] | null
 const TODAY_LOOKBACK_HOURS = 36
 
 async function readToday(userId: string, date: string): Promise<TodayDailyDigest | null> {
-  const digest = await loadTodayDigest(userId, { hours: TODAY_LOOKBACK_HOURS, limit: 200 })
-  if (!digest) return null
-  return summariseTodayForDaily(digest.entries, londonInstant(previousDate(date), 0), londonInstant(date, 0))
+  // Two reads so a busy day of MCP use can't crowd the owner's words out of the window.
+  const [words, use] = await Promise.all([
+    loadTodayDigest(userId, { hours: TODAY_LOOKBACK_HOURS, limit: 200, excludeTypes: ['used', 'captured'] }),
+    loadTodayDigest(userId, { hours: TODAY_LOOKBACK_HOURS, limit: 200, excludeTypes: ['said', 'replied', 'decided', 'answered', 'captured', 'spoke', 'voice_staged', 'voice_confirmed', 'noted'] }),
+  ])
+  if (!words && !use) return null
+  return summariseTodayForDaily([...(words?.entries ?? []), ...(use?.entries ?? [])], londonInstant(previousDate(date), 0), londonInstant(date, 0))
 }
 
 async function readVerdicts(userId: string, now: Date): Promise<VerdictDigest[] | null> {

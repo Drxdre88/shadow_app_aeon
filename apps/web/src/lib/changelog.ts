@@ -29,6 +29,22 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.39.0] — 2026-10-03
+
+> Areas touched: \`KAIROS\` \`MCP\` \`API\` \`UI\`
+> Theme: One Kairos everywhere — and, when you switch them on, a mind that thinks by day, keeps score and keeps its own agenda.
+
+### Added — One mind everywhere · \`KAIROS\` \`MCP\` \`API\`
+- Kairos keeps one rolling "today" log across every channel: web chat, Telegram, Triad dialogues, Claude using him through the connection, voice notes, coding sessions, your inbox decisions and his own messages. Each entry says who spoke (you, Kairos or an agent); an agent can never be recorded as you.
+- Every channel now reads it: something you tell him on Telegram at 10:00 is in his web, Triad and Claude context at 10:05. The 06:00 message also sees yesterday across channels.
+- New read-only \`get_kairos_today\` / \`GET /api/v1/kairos/today\`. The log is trimmed nightly and never becomes memories on its own. Switch off with \`KAIROS_TODAY=0\`.
+- Programs can no longer add messages into Kairos's own chat, dialogue or today threads.
+
+### Added — Off by default, switch on when ready · \`KAIROS\` \`MCP\` \`API\` \`UI\`
+- **Daytime thinking** (\`KAIROS_DAYTIME_THINKING=1\`): the brain routine runs hourly and writes up to 6 private reflections on your day; a new lighter "Kairos pulse" routine (Sonnet) notes what changed. Neither ever messages you.
+- **Track record** (\`KAIROS_PREDICTIONS=1\`): dated predictions with a confidence level, from the Monday review and his reflections. Only your board actions or your verdict (\`R3 right\`, \`R3 wrong\`, \`void R3\`) settle them; his accuracy shows in the weekly review once five are settled. New read-only \`list_kairos_predictions\`.
+- **Horae, his agenda** (\`KAIROS_INITIATIVE=1\` + \`KAIROS_AGENDA=1\`): up to 8 self-booked check-ins (A1, A2…). Each fires once, as a note, a question or a message within the usual limits; never an action. Approving a goal books two check-ins. Cancel with \`cancel A3\`. New read-only \`list_kairos_agenda\`.
+
 ## [0.38.0] — 2026-10-02
 
 > Areas touched: \`KAIROS\` \`MCP\` \`API\` \`UI\`

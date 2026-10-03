@@ -191,12 +191,13 @@ export async function writeTodayEntry(
     })
 
     if (seq > TODAY_MAX_ENTRIES) {
+      // Over the cap: MCP-use lines go first, so the owner's words outlive them.
       await tx.execute(sql`
         delete from ${sessionEvents}
         where ${sessionEvents.id} in (
           select ${sessionEvents.id} from ${sessionEvents}
           where ${sessionEvents.sessionId} = ${parentId}
-          order by ${sessionEvents.seq} desc
+          order by (${sessionEvents.payload}->>'type' = 'used') asc, ${sessionEvents.seq} desc
           offset ${TODAY_MAX_ENTRIES}
         )`)
     }
@@ -212,6 +213,8 @@ function todayScope(userId: string) {
 }
 
 export async function listTodayEntries(userId: string, input: ListTodayEntriesInput): Promise<TodayRow[]> {
+  // KAIROS_TODAY=0 hides the log on every reader, MCP and REST included.
+  if (process.env.KAIROS_TODAY === '0') return []
   const { from } = todayWindow(input.hours, input.now)
   const where = [todayScope(userId), gte(sessionEvents.createdAt, from)]
   const channels = input.channel ? [input.channel] : input.channels

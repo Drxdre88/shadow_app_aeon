@@ -23,7 +23,7 @@ export interface OwnerTodaySignal {
 }
 
 export async function loadOwnerTodayForAskMine(userId: string): Promise<OwnerTodaySignal | null> {
-  const digest = await loadTodayDigest(userId, { hours: OWNER_TODAY_HOURS, limit: 100 })
+  const digest = await loadTodayDigest(userId, { hours: OWNER_TODAY_HOURS, limit: 100, excludeTypes: ['used', 'captured'] })
   if (!digest) return null
   const statements = digest.entries
     .filter((e) => e.speaker === 'owner' && OWNER_TYPES.has(e.type))

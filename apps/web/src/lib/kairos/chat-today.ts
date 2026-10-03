@@ -1,4 +1,4 @@
-import { loadTodayDigest, recordToday, recordTodayAfter } from '@/lib/kairos/today'
+import { loadTodayDigest, recordTodayAfter } from '@/lib/kairos/today'
 import { renderTodaySection } from '@/lib/kairos/today-render'
 import type { ChatPromptSurface } from '@/lib/kairos/chat-prompt'
 
@@ -16,7 +16,8 @@ export function chatTodayChannel(surface: ChatPromptSurface | undefined): ChatTo
   return surface === 'telegram' ? 'telegram' : 'web'
 }
 
-// The owner's own turn. Deferred (after()), never delays the reply.
+// The owner's own turn. Written immediately but never awaited, so it lands
+// before the reply without delaying it.
 export function recordChatOwnerTurn(
   userId: string,
   threadId: string,
@@ -31,8 +32,8 @@ export function recordChatOwnerTurn(
   )
 }
 
-// Kairos's reply, as a ≤160-char gist (recordToday clips 'replied'). Awaited
-// by the caller after the reply is persisted; never throws.
+// Kairos's reply, as a ≤160-char gist (recordToday clips 'replied'). Started
+// immediately, kept alive with after(); never on the reply's critical path.
 export async function recordChatReply(
   userId: string,
   threadId: string,
@@ -40,7 +41,7 @@ export async function recordChatReply(
   content: string,
   channel: ChatTodayChannel,
 ): Promise<void> {
-  await recordToday(
+  recordTodayAfter(
     userId,
     { key: `chat:${threadId}:${seq}`, channel, type: 'replied', text: content, ref: { threadId, seq }, covered: 'chat-distill' },
     { kind: 'kairos', via: 'chat' },
@@ -49,10 +50,11 @@ export async function recordChatReply(
 
 // What the owner said / decided on OTHER channels today. This thread's own
 // turns are already in the history; coding-session captures are left to
-// recency. '' when the feature is off, the window is quiet or the read fails.
+// recency and MCP-use lines are left out so they can't crowd out the owner.
+// '' when the feature is off, the window is quiet or the read fails.
 export async function loadChatTodaySection(userId: string, threadId: string): Promise<string> {
   try {
-    const digest = await loadTodayDigest(userId, { excludeThreadId: threadId, excludeTypes: ['captured'] })
+    const digest = await loadTodayDigest(userId, { excludeThreadId: threadId, excludeTypes: ['captured', 'used'] })
     return renderTodaySection(digest, { maxChars: CHAT_TODAY_MAX_CHARS })
   } catch {
     return ''

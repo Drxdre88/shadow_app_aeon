@@ -52,8 +52,9 @@ export function summariseTodayForDaily(entries: readonly TodayEntryView[], from:
     }
     const text = sanitiseTodayText(e.text, TODAY_LINE_CHARS)
     if (!text) continue
-    if (e.type === 'decided') decisions.push({ channel: e.channel, text })
-    else if (e.speaker === 'owner' && OWNER_TYPES.has(e.type)) ownerSaid.push({ channel: e.channel, text })
+    if (e.type === 'decided') {
+      decisions.push({ channel: e.channel, text: e.speaker === 'owner' ? text : `(an agent) ${text}` })
+    } else if (e.speaker === 'owner' && OWNER_TYPES.has(e.type)) ownerSaid.push({ channel: e.channel, text })
   }
   const top = [...tools.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
   const mcpUse = top.length

@@ -50,7 +50,7 @@ import type { AIProvider } from '@/lib/ai/provider'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { appendChatMessage, getChatThread, updateChatMessageContent } from '@/lib/data/kairos-chat'
 import { appendAssistantReplyOnce } from '@/lib/kairos/chat-turn-reply'
-import { loadTodayDigest, recordToday, recordTodayAfter } from '@/lib/kairos/today'
+import { loadTodayDigest, recordTodayAfter } from '@/lib/kairos/today'
 import { buildAssistantTurn, persistAssistantReplyOnce, sendChatMessage } from '../chat-turn'
 
 const USER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
@@ -69,8 +69,8 @@ function threadWith(messages: Array<{ id: string; seq: number; role: 'user' | 'a
   }
 }
 
-const ownerCalls = () => vi.mocked(recordTodayAfter).mock.calls
-const replyCalls = () => vi.mocked(recordToday).mock.calls
+const ownerCalls = () => vi.mocked(recordTodayAfter).mock.calls.filter((c) => c[1].type === 'said')
+const replyCalls = () => vi.mocked(recordTodayAfter).mock.calls.filter((c) => c[1].type === 'replied')
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -155,7 +155,7 @@ describe('chat turn ← today (read)', () => {
     const built = await buildAssistantTurn(USER, THREAD, { dominionId: null, userBody: 'what did I say?', userSeq: 1, surface: 'app' })
     if (!built.ok) throw new Error('build failed')
 
-    expect(loadTodayDigest).toHaveBeenCalledWith(USER, { excludeThreadId: THREAD, excludeTypes: ['captured'] })
+    expect(loadTodayDigest).toHaveBeenCalledWith(USER, { excludeThreadId: THREAD, excludeTypes: ['captured', 'used'] })
     const sys = built.turn.system
     const line = sys.indexOf('10:00 owner·telegram said: "Hydra export before Friday"')
     expect(line).toBeGreaterThan(sys.indexOf('BEGIN TODAY DATA'))

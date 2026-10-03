@@ -107,13 +107,15 @@ export async function recordToday(userId: string, entry: TodayEntryInput, origin
   }
 }
 
+// Starts the write now (so ordering and timestamps match the event) and only
+// uses after() to keep the function alive until it lands.
 export function recordTodayAfter(userId: string, entry: TodayEntryInput, origin: Origin): void {
   if (!todayEnabled()) return
-  const run = () => recordToday(userId, entry, origin).catch(() => undefined)
+  const pending = recordToday(userId, entry, origin).catch(() => undefined)
   try {
-    after(run)
+    after(() => pending)
   } catch {
-    void run()
+    // outside a request scope: the detached promise still completes
   }
 }
 
