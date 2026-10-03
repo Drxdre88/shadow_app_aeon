@@ -19,7 +19,9 @@ export const COLD_READ_CHAT_LINES = [
 ]
 
 const CLOSED_TAG = /[ \t]*<\s*stance\s*>([\s\S]*?)<\s*\/\s*stance\s*>[ \t]*/gi
-const DANGLING_OPEN = /[ \t]*<\s*stance\s*>([^\n]*)$/i
+// An unclosed tag swallows everything to the end, across lines (a trailing
+// newline or a gist on the next line must never leak the tag to the owner).
+const DANGLING_OPEN = /[ \t]*<\s*stance\s*>([\s\S]*)$/i
 const STRAY_CLOSE = /[ \t]*<\s*\/\s*stance\s*>[ \t]*/gi
 const SEPARATORS = ['—', '–', ':', '|', ' - ']
 

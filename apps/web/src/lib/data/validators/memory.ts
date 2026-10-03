@@ -54,9 +54,17 @@ export const memoryLinkSchema = z.object({
 // Phase 2 goals: only the goal_propose handler mints goal rows (directly in
 // the data layer), so a create/capture payload may never claim to be one.
 export const GOAL_METADATA_REFUSAL = 'sourceMetadata may not describe a Kairos goal'
+// Rows only Kairos's own jobs mint (voice samples, cold reads, character runs):
+// a create/capture payload may never claim to be one, or an agent could forge
+// an "approved" voice sample or a measurement.
+export const INTERNAL_KIND_REFUSAL = 'sourceMetadata may not describe an internal Kairos record'
+const INTERNAL_KINDS: readonly string[] = ['voice_sample', 'cold_read', 'character_run']
 const memorySourceMetadataSchema = z.record(z.string(), z.unknown()).refine(
   (m) => m.kind !== 'goal' && !Object.prototype.hasOwnProperty.call(m, 'goal'),
   { message: GOAL_METADATA_REFUSAL },
+).refine(
+  (m) => typeof m.kind !== 'string' || !INTERNAL_KINDS.includes(m.kind),
+  { message: INTERNAL_KIND_REFUSAL },
 )
 
 export const createMemorySchema = z.object({

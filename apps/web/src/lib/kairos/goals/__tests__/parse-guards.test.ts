@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { captureMemorySchema, createMemorySchema, GOAL_METADATA_REFUSAL } from '@/lib/data/validators/memory'
+import { captureMemorySchema, createMemorySchema, GOAL_METADATA_REFUSAL, INTERNAL_KIND_REFUSAL } from '@/lib/data/validators/memory'
 import { goalPatchRefusal, isGoalRow, OPERATOR_ONLY_GOAL_ERROR } from '../guards'
 import { appendGoalHistory, GOAL_HISTORY_CAP, parseGoalProposeText, readGoalMeta, type GoalHistoryEntry } from '../parse'
 
@@ -90,6 +90,14 @@ describe('create / capture validators refuse goal metadata', () => {
       const res = schema.safeParse({ ...base, sourceMetadata })
       expect(res.success).toBe(false)
       expect(res.error?.issues[0].message).toBe(GOAL_METADATA_REFUSAL)
+    }
+  })
+
+  it.each(['voice_sample', 'cold_read', 'character_run'])('rejects a forged internal %s row', (kind) => {
+    for (const schema of [createMemorySchema, captureMemorySchema]) {
+      const res = schema.safeParse({ ...base, sourceMetadata: { kind, status: 'approved' } })
+      expect(res.success).toBe(false)
+      expect(res.error?.issues[0].message).toBe(INTERNAL_KIND_REFUSAL)
     }
   })
 

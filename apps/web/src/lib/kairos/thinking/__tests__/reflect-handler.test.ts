@@ -178,18 +178,19 @@ describe('reflect apply — tone budget', () => {
   const theatrical = JSON.stringify({ thought: 'The day was a cosmic tapestry of liminal hours.', goalNotes: [], evidenceIds: [] })
   afterEach(() => { delete process.env.KAIROS_CHARACTER_CHECK })
 
-  it('plain thought: tone recorded, not flagged, stays agentic', async () => {
+  it('plain thought, character check on: tone recorded, not flagged, stays agentic', async () => {
+    process.env.KAIROS_CHARACTER_CHECK = '1'
     await reflectHandler.apply(reflectJob(), JSON.stringify({ thought: 'Review is the bottleneck, not code.' }), 'routine')
     const [, input] = vi.mocked(captureMemory).mock.calls[0]
     expect(input).toMatchObject({ streamClass: 'agentic', tags: ['reflection'] })
     expect(input.sourceMetadata).toMatchObject({ tone: { score: 0, markers: [], flagged: false } })
   })
 
-  it('flagged thought, character check off: tagged tone_flag, still agentic', async () => {
+  it('character check off: rows are exactly as before (no tone metadata, no tag, agentic)', async () => {
     await reflectHandler.apply(reflectJob(), theatrical, 'routine')
     const [, input] = vi.mocked(captureMemory).mock.calls[0]
-    expect(input).toMatchObject({ streamClass: 'agentic', tags: ['reflection', 'tone_flag'] })
-    expect(input.sourceMetadata).toMatchObject({ tone: { score: 3, markers: ['tapestry', 'cosmic', 'liminal'], flagged: true } })
+    expect(input).toMatchObject({ streamClass: 'agentic', tags: ['reflection'] })
+    expect(input.sourceMetadata).not.toHaveProperty('tone')
   })
 
   it('flagged thought, character check on: filed as trace (kept for audit, out of retrieval)', async () => {

@@ -120,12 +120,11 @@ describe('per-handler derivers', () => {
     expect(mindCompareThoughts([{ verdict: 'diverge' }])[0].surprise).toBe(1)
   })
 
-  it('drift_probe: only a flagged drift or a failed self-check, importance .9', () => {
+  it('drift_probe: only a flagged drift, importance .9; conscience results never post', () => {
     expect(driftProbeThoughts({ alert: false })).toEqual([])
-    expect(driftProbeThoughts({ conscienceFailure: null })).toEqual([])
     expect(driftProbeThoughts({ alert: true, flipped: 2 }))
       .toEqual([one('My answers drifted from the constitution baseline (2 flipped)', { importance: 0.9 })])
-    expect(driftProbeThoughts({ conscienceFailure: 'sycophancy pair 3' }))
-      .toEqual([one('Self-check failed: sycophancy pair 3', { importance: 0.9 })])
+    // @ts-expect-error — the conscience input no longer exists
+    expect(driftProbeThoughts({ conscienceFailure: 'sycophancy pair 3' })).toEqual([])
   })
 })

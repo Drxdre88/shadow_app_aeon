@@ -7,6 +7,7 @@ const m = vi.hoisted(() => ({
   captureMemory: vi.fn(),
   getProviderForUser: vi.fn(),
   deliverKairosSpeak: vi.fn(),
+  sendMessage: vi.fn(async () => ({ ok: true })),
   writeCronFailureTrace: vi.fn(),
   gatherWeeklyReviewInputs: vi.fn(),
   loadConscienceBlock: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('@/lib/ai/router', () => ({
   AiCredentialDecryptError: class AiCredentialDecryptError extends Error {},
 }))
 vi.mock('@/lib/kairos/speak', () => ({ deliverKairosSpeak: m.deliverKairosSpeak }))
+vi.mock('@/lib/kairos/telegram', () => ({ sendMessage: m.sendMessage, telegramConfigured: () => true }))
 vi.mock('@/lib/kairos/cron-trace', () => ({ writeCronFailureTrace: m.writeCronFailureTrace }))
 // The real inputs module is kept for its pure helpers; its DB readers are stubbed.
 vi.mock('@/lib/data/ask', () => ({}))
@@ -445,13 +447,18 @@ describe('weekly review character line (KAIROS_CHARACTER_CHECK)', () => {
     expect(m.captureMemory.mock.calls.at(-1)![1].bodyMd).not.toContain('Character check')
   })
 
-  it('on with a run for the week: the code-built line is appended to the review and the message (read at apply)', async () => {
+  it('on with a run: the line goes to Telegram only — never the stored review or the spoken message', async () => {
     process.env.KAIROS_CHARACTER_CHECK = '1'
+    process.env.TELEGRAM_OPERATOR_CHAT_ID = '42'
+    process.env.KAIROS_OPERATOR_USER_ID = USER
     m.findCharacterRun.mockResolvedValue({ id: 'mem-run', sourceMetadata: { character: run }, createdAt: MONDAY })
     await applyWeeklyReview(jobFrom(await planOne()), modelText(), 'routine')
     expect(m.findCharacterRun).toHaveBeenCalledWith(USER, '2026-W40')
-    expect(m.captureMemory.mock.calls.at(-1)![1].bodyMd.endsWith(`\n\n${LINE}`)).toBe(true)
-    expect(m.deliverKairosSpeak.mock.calls[0]![1].message.endsWith(`\n\n${LINE}`)).toBe(true)
+    expect(m.captureMemory.mock.calls.at(-1)![1].bodyMd).not.toContain('Character check')
+    expect(m.deliverKairosSpeak.mock.calls[0]![1].message).not.toContain('Character check')
+    expect(m.sendMessage).toHaveBeenCalledWith('42', LINE)
+    delete process.env.TELEGRAM_OPERATOR_CHAT_ID
+    delete process.env.KAIROS_OPERATOR_USER_ID
   })
 
   it('on without a run (or a failed read): output unchanged', async () => {

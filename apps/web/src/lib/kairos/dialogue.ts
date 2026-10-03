@@ -119,7 +119,7 @@ export interface DialogueContext {
   today: string
   // The stage block (what Kairos is attending to now), fenced as STAGE DATA
   // and "not evidence". '' unless KAIROS_STAGE=1 and the stage has a winner.
-  stage: string
+  stage?: string
 }
 
 // Same budget as the chat prompt's today section.
@@ -175,13 +175,14 @@ export async function prepareDialogueContext(
     retrieval = { cortex: r.cortex, archetypes: r.archetypes, substrate: r.substrate }
   }
 
+  const stageBlock = (await stagePromise).block
   return {
     thread: { id: thread.id, title: thread.title, dominionId: thread.dominionId, status: thread.status },
     seed: { kairosAskId: thread.seed.kairosAskId, aetherCoreNarrative, thought, sourceMemories },
     turns: turns.map((t) => ({ seq: t.seq, role: t.role, content: t.content })),
     retrieval,
     today: await todayPromise,
-    stage: (await stagePromise).block,
+    ...(stageBlock ? { stage: stageBlock } : {}),
   }
 }
 

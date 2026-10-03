@@ -161,7 +161,7 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
 
   const [digest, events, promises, predictions, agenda] = await Promise.all([
     loadTodayDigest(userId, { hours: 16, limit: 120 }),
-    listRecentMemories(userId, [and(ne(memories.streamClass, 'agentic'), isNull(memories.archivedAt), notToneFlagged)!], { start: since, end: now }, EVENTS_LIMIT),
+    listRecentMemories(userId, [and(ne(memories.streamClass, 'agentic'), ne(memories.streamClass, 'trace'), isNull(memories.archivedAt), notToneFlagged)!], { start: since, end: now }, EVENTS_LIMIT),
     openPromises(userId),
     predictionPrompt(userId, now),
     agendaPrompt(userId, now),
@@ -279,7 +279,7 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
     streamClass: quarantined ? 'trace' : 'agentic',
     dominionId: null,
     links: links.map(refersTo),
-    tags: tone.flagged ? ['reflection', 'tone_flag'] : ['reflection'],
+    tags: characterCheckEnabled() && tone.flagged ? ['reflection', 'tone_flag'] : ['reflection'],
     sourceMetadata: {
       kind: 'reflection',
       externalId: ctx.slot,
@@ -288,7 +288,7 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
       goalNotes: out.goalNotes,
       evidenceIds: out.evidenceIds,
       dropped: out.dropped,
-      tone: { score: tone.score, markers: tone.markers, flagged: tone.flagged },
+      ...(characterCheckEnabled() ? { tone: { score: tone.score, markers: tone.markers, flagged: tone.flagged } } : {}),
     },
   })
 

@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { extractStance, parseStanceBody } from '../stance'
 
 describe('extractStance', () => {
+  it('strips an unclosed tag with a trailing newline or a gist on the next line', () => {
+    for (const reply of ['Go for it.\n<stance>endorse — solid plan\n', 'Go for it.\n<stance>endorse\n— solid plan']) {
+      const out = extractStance(reply)
+      expect(out.text).toBe('Go for it.')
+      expect(out.text).not.toMatch(/stance/i)
+      expect(out.stance?.value).toBe('endorse')
+    }
+  })
+
   it('extracts the stance from the final line and strips it', () => {
     const out = extractStance('Do it — the numbers hold.\n\n<stance>lean_endorse — ship the pricing change this week</stance>')
     expect(out.text).toBe('Do it — the numbers hold.')

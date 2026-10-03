@@ -52,13 +52,13 @@ afterEach(() => {
 describe('prepareDialogueContext — stage', () => {
   it('KAIROS_STAGE unset: stage is "" and the store is never read', async () => {
     const ctx = await prepareDialogueContext(USER, THREAD)
-    expect(ctx!.stage).toBe('')
+    expect(ctx!.stage).toBeUndefined()
     expect(readKairosStage).not.toHaveBeenCalled()
   })
 
   it('KAIROS_STAGE=observe: no injection', async () => {
     process.env.KAIROS_STAGE = 'observe'
-    expect((await prepareDialogueContext(USER, THREAD))!.stage).toBe('')
+    expect((await prepareDialogueContext(USER, THREAD))!.stage).toBeUndefined()
   })
 
   it('KAIROS_STAGE=1: the rendered block, fenced and id-free', async () => {
@@ -74,6 +74,6 @@ describe('prepareDialogueContext — stage', () => {
     process.env.KAIROS_STAGE = '1'
     vi.mocked(readKairosStage).mockRejectedValue(new Error('corrupt'))
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    expect((await prepareDialogueContext(USER, THREAD))!.stage).toBe('')
+    expect((await prepareDialogueContext(USER, THREAD))!.stage).toBeUndefined()
   })
 })

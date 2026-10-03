@@ -7,6 +7,7 @@ import { characterLine, readCharacterRun } from '@/lib/kairos/character/rubric'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 import { loadConscienceBlock } from '@/lib/kairos/conscience-context'
 import { deliverKairosSpeak } from '@/lib/kairos/speak'
+import { sendMessage, telegramConfigured } from '@/lib/kairos/telegram'
 import { initiativeEnabled } from '@/lib/kairos/initiative'
 import { readKairosPromises } from '@/lib/data/kairos-promises'
 import { createKairosPromises, type CreatePromisesResult } from '@/lib/kairos/promises/create'
@@ -194,6 +195,16 @@ async function characterExtraLines(userId: string, isoWeek: string): Promise<str
   }
 }
 
+async function sendCharacterLines(userId: string, lines: readonly string[]): Promise<void> {
+  const chatId = process.env.TELEGRAM_OPERATOR_CHAT_ID
+  if (lines.length === 0 || !chatId || !telegramConfigured() || userId !== process.env.KAIROS_OPERATOR_USER_ID) return
+  try {
+    await sendMessage(chatId, lines.join('\n'))
+  } catch (err) {
+    console.warn('[kairos:weekly-review] character line not sent:', errorReason(err))
+  }
+}
+
 const refersTo = (target: string) => ({ type: 'refers_to' as const, target, target_kind: 'memory' as const })
 
 async function deliverSummary(
@@ -273,7 +284,7 @@ async function persistWeeklyReview(
   const evidence = [...new Set(review.actions.flatMap((a) => a.evidenceIds))]
   const { memory: observation } = await captureMemory(job.userId, {
     title: weeklyReviewTitle(isoWeek),
-    bodyMd: renderWeeklyReviewMarkdown(review, isoWeek, trackRecordLine, extraLines),
+    bodyMd: renderWeeklyReviewMarkdown(review, isoWeek, trackRecordLine),
     summary: review.summary.slice(0, 1000),
     type: 'observation',
     source: 'cron',
@@ -312,7 +323,11 @@ async function persistWeeklyReview(
     },
   })
 
-  const delivery = await deliverSummary(job.userId, isoWeek, renderWeeklyReviewMessage(review, proposalIds.length, trackRecordLine, extraLines))
+  const delivery = await deliverSummary(job.userId, isoWeek, renderWeeklyReviewMessage(review, proposalIds.length, trackRecordLine))
+  // The character line is measurement only: it goes to the owner's Telegram
+  // and never into the stored review, the spoken message or the today log,
+  // so no Kairos prompt can ever see his own scores.
+  if (delivery === 'delivered') await sendCharacterLines(job.userId, extraLines)
   if (delivery === 'blocked') console.warn('[kairos:weekly-review] summary not delivered', { isoWeek, jobId: job.id })
   return withThoughts({ ok: true, memoryIds: [observation.id, ...proposalIds] }, weeklyReviewThoughts(review.summary))
 }

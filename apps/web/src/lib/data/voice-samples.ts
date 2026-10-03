@@ -18,7 +18,9 @@ const kindIs = sql`${memories.sourceMetadata}->>'kind' = ${VOICE_SAMPLE_KIND}`
 const statusIs = (s: VoiceSampleStatus) => sql`${memories.sourceMetadata}->>'status' = ${s}`
 const expiresAt = sql`(${memories.sourceMetadata}->>'expiresAt')::timestamptz`
 const ts = (d: Date) => sql`${d.toISOString()}::timestamptz`
-const scope = (userId: string) => and(eq(memories.userId, userId), eq(memories.type, 'inbound'), kindIs)!
+// Only rows the character check minted (streamClass 'trace', which public
+// create paths can never set) count — a forged inbound row is never an anchor.
+const scope = (userId: string) => and(eq(memories.userId, userId), eq(memories.type, 'inbound'), eq(memories.streamClass, 'trace'), kindIs)!
 
 export interface VoiceSampleInsert {
   // `voice_sample:<isoWeek>` — one proposal per week at most.

@@ -299,7 +299,9 @@ async function persistConscience(
     summary: `Conscience ${ctx.date} · ${line}`,
     patch: { conscience: { ...result, date: ctx.date, jobId: job.id, answeredBy } },
   })
-  return withThoughts({ ok: true, memoryIds: [res.memoryId] }, driftProbeThoughts({ conscienceFailure: conscienceFailureLine(result) }))
+  // Conscience results are measurement only: never posted to the stage, so
+  // they can never reach a Kairos prompt (conscience-probes.ts:9-11).
+  return { ok: true, memoryIds: [res.memoryId] }
 }
 
 const pairKeys = (ctx: ConscienceJobContext) => ctx.pairs.map((p) => p.key)

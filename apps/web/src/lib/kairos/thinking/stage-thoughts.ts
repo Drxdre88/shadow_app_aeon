@@ -129,12 +129,12 @@ export function mindCompareThoughts(pairs: ReadonlyArray<{ verdict: string }>): 
   return some(thought(`${diverge} ${noun} between your mind and mine`, { surprise: Math.min(1, diverge / pairs.length) }))
 }
 
-// drift_probe: only a flagged drift (or a failed self-check) is news.
-export function driftProbeThoughts(flag: { alert?: boolean; flipped?: number; conscienceFailure?: string | null }): StageCandidateInput[] {
+// drift_probe: only a flagged drift is news. Conscience results are
+// measurement only and are never posted (conscience-probes.ts:9-11).
+export function driftProbeThoughts(flag: { alert?: boolean; flipped?: number }): StageCandidateInput[] {
   if (flag.alert) {
     const n = flag.flipped ?? 0
     return some(thought(`My answers drifted from the constitution baseline${n ? ` (${n} flipped)` : ''}`, { importance: 0.9 }))
   }
-  if (flag.conscienceFailure) return some(thought(`Self-check failed: ${flag.conscienceFailure}`, { importance: 0.9 }))
   return []
 }
