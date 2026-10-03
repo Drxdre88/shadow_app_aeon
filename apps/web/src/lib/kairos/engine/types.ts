@@ -190,6 +190,8 @@ export type ThinkingJobKind =
   | 'agenda_due'
   | 'character_check'
   | 'cold_read'
+  | 'dream'
+  | 'dream_read'
 
 export type ThinkingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'expired' | 'fallback'
 

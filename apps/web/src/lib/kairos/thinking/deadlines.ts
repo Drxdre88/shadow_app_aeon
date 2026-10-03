@@ -28,6 +28,8 @@ export const ARCHETYPE_WINDOW_UTC: UtcWindow = { notBefore: { hour: 1, minute: 3
 export const ASK_MINE_WINDOW_UTC: UtcWindow = { notBefore: { hour: 3, minute: 15 }, deadline: { hour: 4, minute: 28 } }
 // Phase 2 goal_propose: same window as ask_mine; it has no fallback cron.
 export const GOAL_PROPOSE_WINDOW_UTC: UtcWindow = { notBefore: { hour: 3, minute: 15 }, deadline: { hour: 4, minute: 28 } }
+export const DREAM_WINDOW_UTC: UtcWindow = { notBefore: { hour: 1, minute: 38 }, deadline: { hour: 3, minute: 28 } }
+export const DREAM_READ_WINDOW_UTC: UtcWindow = { notBefore: { hour: 1, minute: 38 }, deadline: { hour: 4, minute: 28 } }
 export const CONSTITUTION_SEED_WINDOW_UTC: UtcWindow = { notBefore: { hour: 4, minute: 0 }, deadline: { hour: 5, minute: 56 } }
 
 // The constitution seed runs on Monday (UTC).
