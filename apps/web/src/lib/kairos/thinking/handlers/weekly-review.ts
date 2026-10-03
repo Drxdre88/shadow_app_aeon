@@ -1,9 +1,13 @@
 import { z } from 'zod'
 import { hasJobWithKeyLike } from '@/lib/data/thinking-jobs'
 import { captureMemory } from '@/lib/data/memories'
+import { findCharacterRun } from '@/lib/data/character'
+import { characterCheckEnabled } from '@/lib/kairos/character/flag'
+import { characterLine, readCharacterRun } from '@/lib/kairos/character/rubric'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
 import { loadConscienceBlock } from '@/lib/kairos/conscience-context'
 import { deliverKairosSpeak } from '@/lib/kairos/speak'
+import { sendMessage, telegramConfigured } from '@/lib/kairos/telegram'
 import { initiativeEnabled } from '@/lib/kairos/initiative'
 import { readKairosPromises } from '@/lib/data/kairos-promises'
 import { createKairosPromises, type CreatePromisesResult } from '@/lib/kairos/promises/create'
@@ -41,6 +45,7 @@ import type {
 } from '@/lib/kairos/engine/types'
 import { askPaidAndParse } from '../paid-fallback'
 import { errorReason } from './_errors'
+import { weeklyReviewThoughts, withThoughts } from '../stage-thoughts'
 
 // Weekly review on the thinking queue (docs/kairos/34 §4). plan: Mondays
 // (UTC) from 05:00Z, one user-wide job per ISO week, over a fixed set of
@@ -176,6 +181,30 @@ function readContext(job: ThinkingJobRow): WeeklyReviewJobContext | null {
   return parsed.success ? parsed.data : null
 }
 
+// KAIROS_CHARACTER_CHECK only: the week's character-check line, built in code
+// from the stored run (scores never reach the review prompt). Never costs the review.
+async function characterExtraLines(userId: string, isoWeek: string): Promise<string[]> {
+  if (!characterCheckEnabled()) return []
+  try {
+    const row = await findCharacterRun(userId, isoWeek)
+    const run = row ? readCharacterRun(row.sourceMetadata) : null
+    return run ? [characterLine(run)] : []
+  } catch (err) {
+    console.warn('[kairos:weekly-review] character check read failed — no line this week:', errorReason(err))
+    return []
+  }
+}
+
+async function sendCharacterLines(userId: string, lines: readonly string[]): Promise<void> {
+  const chatId = process.env.TELEGRAM_OPERATOR_CHAT_ID
+  if (lines.length === 0 || !chatId || !telegramConfigured() || userId !== process.env.KAIROS_OPERATOR_USER_ID) return
+  try {
+    await sendMessage(chatId, lines.join('\n'))
+  } catch (err) {
+    console.warn('[kairos:weekly-review] character line not sent:', errorReason(err))
+  }
+}
+
 const refersTo = (target: string) => ({ type: 'refers_to' as const, target, target_kind: 'memory' as const })
 
 async function deliverSummary(
@@ -248,6 +277,9 @@ async function persistWeeklyReview(
   const promised = await persistReviewPromises(job, isoWeek, review)
   const predicted = await persistReviewPredictions(job, ctx, review)
   const trackRecordLine = predictionsEnabled() ? ctx.trackRecordLine ?? null : null
+  // Read at apply time, so a character check finishing after this review was
+  // planned still shows.
+  const extraLines = await characterExtraLines(job.userId, isoWeek)
 
   const evidence = [...new Set(review.actions.flatMap((a) => a.evidenceIds))]
   const { memory: observation } = await captureMemory(job.userId, {
@@ -292,8 +324,12 @@ async function persistWeeklyReview(
   })
 
   const delivery = await deliverSummary(job.userId, isoWeek, renderWeeklyReviewMessage(review, proposalIds.length, trackRecordLine))
+  // The character line is measurement only: it goes to the owner's Telegram
+  // and never into the stored review, the spoken message or the today log,
+  // so no Kairos prompt can ever see his own scores.
+  if (delivery === 'delivered') await sendCharacterLines(job.userId, extraLines)
   if (delivery === 'blocked') console.warn('[kairos:weekly-review] summary not delivered', { isoWeek, jobId: job.id })
-  return { ok: true, memoryIds: [observation.id, ...proposalIds] }
+  return withThoughts({ ok: true, memoryIds: [observation.id, ...proposalIds] }, weeklyReviewThoughts(review.summary))
 }
 
 function parseFor(ctx: WeeklyReviewJobContext, job: ThinkingJobRow) {

@@ -1,6 +1,8 @@
 // Shared contract for the Kairos memory engine (docs/kairos/32-memory-engine.md).
 // Parent-owned: lanes implement against these types and must not change them.
 
+import type { StageCandidateInput } from '@/lib/kairos/stage/types'
+
 export interface EngineLink {
   type: string
   target: string
@@ -186,6 +188,8 @@ export type ThinkingJobKind =
   // Horae (initiative + KAIROS_AGENDA=1): one deep job per due agenda item,
   // fired once (key agenda_due:<itemId>); no fallback — the item is missed.
   | 'agenda_due'
+  | 'character_check'
+  | 'cold_read'
 
 export type ThinkingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'expired' | 'fallback'
 
@@ -236,7 +240,8 @@ export interface ThinkingJobRow {
 
 export type ApplyOutcome =
   // `output` is merged into the completed job's output (e.g. a draft the cron delivers later).
-  | { ok: true; memoryIds: string[]; output?: Record<string, unknown> }
+  // `thoughts` are offered to the stage (lib/kairos/stage) after the apply; never persisted on the job.
+  | { ok: true; memoryIds: string[]; output?: Record<string, unknown>; thoughts?: StageCandidateInput[] }
   | { ok: false; reason: string }
 
 export interface ThinkingJobHandler {

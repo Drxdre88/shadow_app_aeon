@@ -29,6 +29,21 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.40.0] — 2026-10-03
+
+> Areas touched: \`KAIROS\` \`MCP\` \`API\` \`UI\`
+> Theme: One coherent mind, wave 1 — a shared stage, a check on his character, and a cold second opinion. All off until you switch them on.
+
+### Added — The stage (\`KAIROS_STAGE=observe|1\`) · \`KAIROS\` \`MCP\` \`API\`
+- Kairos's thinking jobs now offer what they noticed to one shared "what's on my mind" stage. Plain code keeps the strongest 3–4 thoughts; a deeply-backed thought that keeps winning becomes the day's focus. With the switch fully on, every reader job, chat, the dialogue tool and the 06:00 message see a short "I, now: …" note, labelled as his working notes, never evidence. \`observe\` records the stage without showing it. Enough surprise starts a daytime reflection early.
+- New read-only \`get_kairos_stage\` / \`GET /api/v1/kairos/stage\`.
+
+### Added — Character check (\`KAIROS_CHARACTER_CHECK=1\`) · \`KAIROS\` \`UI\`
+- Every Monday a neutral reviewer blind-rates a sample of his week (theatrical, flattering, grandiose, inner-life and padded language) against voice samples you approved. One line in the weekly review and a Health row; it never changes how he thinks. Hourly reflections get a plain-tone rule, and showy ones are filed where chat can't pick them up. Voice samples arrive for Approve / Veto in the inbox and on Telegram.
+
+### Added — Cold read (\`KAIROS_COLD_READ=audit|1\`) · \`KAIROS\` \`UI\`
+- On decision turns he quietly notes his stance; a separate pass re-judges the decision from your own words only, with your profile hidden. If the two clearly disagree he can send a short "Second look" (at most 3 a day, within the usual limits). Health shows the 7-day count.
+
 ## [0.39.0] — 2026-10-03
 
 > Areas touched: \`KAIROS\` \`MCP\` \`API\` \`UI\`

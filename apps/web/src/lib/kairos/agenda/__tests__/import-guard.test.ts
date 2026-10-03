@@ -85,6 +85,8 @@ const HANDLER_ALLOWED: Record<string, readonly string[]> = {
   '@/lib/kairos/speak': ['deliverKairosSpeak'],
   '@/lib/kairos/engine/types': ['ApplyOutcome', 'ThinkingAnsweredBy', 'ThinkingJobHandler', 'ThinkingJobKind', 'ThinkingJobRow', 'ThinkingJobSpec'],
   './_errors': ['errorReason'],
+  // Stage producer (pure deriver + the off-gate wrapper) — no writer.
+  '../stage-thoughts': ['agendaDueThoughts', 'withThoughts'],
 }
 
 describe('agenda_due handler imports', () => {

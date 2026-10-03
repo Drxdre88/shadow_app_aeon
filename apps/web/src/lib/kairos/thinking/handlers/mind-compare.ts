@@ -20,6 +20,7 @@ import type {
 } from '@/lib/kairos/engine/types'
 import { deadlineOn, isoWeekKey } from '../deadlines'
 import { errorReason } from './_errors'
+import { mindCompareThoughts, withThoughts } from '../stage-thoughts'
 
 // Weekly mind comparison (docs/kairos/34 §1): Mondays from 04:00 UTC, held
 // aligned vs own beliefs paired by embedding cosine; the model labels each
@@ -104,7 +105,7 @@ async function persist(job: ThinkingJobRow, ctx: MindCompareContext, result: Gro
       answeredBy,
     },
   })
-  return { ok: true, memoryIds: [memoryId] }
+  return withThoughts({ ok: true, memoryIds: [memoryId] }, mindCompareThoughts(result.pairs))
 }
 
 const pairingOf = (ctx: MindCompareContext): Pairing => ({ pairs: ctx.pairs, alignedOnly: ctx.alignedOnly, ownOnly: ctx.ownOnly })

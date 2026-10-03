@@ -6,6 +6,11 @@ import { listBrainJobsSince, summariseBrainStatus, summariseChatLatency, countPa
 import { checkRateLimit } from '@/lib/api/rateLimit'
 import { sendMessage, telegramConfigured } from '@/lib/kairos/telegram'
 import { getPaidBackupSetting, setPaidBackupSetting } from '@/lib/data/kairos-paid-backup'
+import { listCharacterRuns } from '@/lib/data/character'
+import { summariseCharacterRuns } from '@/lib/kairos/character/rubric'
+import { listColdReads } from '@/lib/data/cold-reads'
+import { summariseColdReads } from '@/lib/kairos/cold-read/compare'
+import { coldReadEnabled } from '@/lib/kairos/cold-read/flag'
 import { setKairosPaidBackupSchema } from '@/lib/data/validators/kairos-paid-backup'
 import { getBaseUrl } from '@/lib/email'
 import { chatRoutineConfig, telegramRoutineEnabled } from '@/lib/kairos/chat-routine'
@@ -72,11 +77,22 @@ export async function getKairosBrainStatus(): Promise<KairosBrainStatus> {
   const routineFlagOn = telegramRoutineEnabled()
   const isAdmin = session?.user?.role === 'admin'
 
-  const [rows, appUrl, paidBackupEnabled, setup] = await Promise.all([
+  const [rows, appUrl, paidBackupEnabled, setup, characterRuns, coldReadRows] = await Promise.all([
     listBrainJobsSince(userId, new Date(now.getTime() - BRAIN_STATUS_WINDOW_MS)),
     resolveAppUrl(),
     getPaidBackupSetting(userId),
     getSetupSignals(userId, { isOperator: isKairosOperator(userId, isAdmin), now }),
+    // Health only; a failed read hides the row instead of the whole status.
+    listCharacterRuns(userId, 4).catch((err) => {
+      console.error('[kairos-brain] character runs read failed', err)
+      return []
+    }),
+    coldReadEnabled()
+      ? listColdReads(userId, { since: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), limit: 100 }).catch((err) => {
+          console.error('[kairos-brain] cold reads read failed', err)
+          return null
+        })
+      : Promise.resolve(null),
   ])
   const classify = { paidBackupOff: !paidBackupEnabled }
 
@@ -90,6 +106,8 @@ export async function getKairosBrainStatus(): Promise<KairosBrainStatus> {
     paidBackup: { enabled: paidBackupEnabled, paidCallsLast7d: countPaidBackupCalls(rows, now, classify) },
     setup,
     chatLatency: summariseChatLatency(rows, now, classify),
+    character: summariseCharacterRuns(characterRuns),
+    coldReads: coldReadRows ? summariseColdReads(coldReadRows, now) : null,
   }
 }
 

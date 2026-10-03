@@ -5,7 +5,9 @@ import { archetypeHandler } from './handlers/archetype'
 import { askMineHandler } from './handlers/ask-mine'
 import { beliefExtractHandler } from './handlers/belief-extract'
 import { chatDistillHandler } from './handlers/chat-distill'
+import { characterCheckHandler } from './handlers/character-check'
 import { chatHandler } from './handlers/chat'
+import { coldReadHandler } from './handlers/cold-read'
 import { conceptHandler } from './handlers/concept'
 import { constitutionSeedHandler } from './handlers/constitution-seed'
 import { cortexHandler } from './handlers/cortex'
@@ -30,6 +32,7 @@ export function getThinkingHandlers(): ThinkingJobHandler[] {
     driftProbeHandler,
     mindCompareHandler,
     constitutionSeedHandler,
+    characterCheckHandler,
     weeklyReviewHandler,
     ideaGenerateHandler,
     ideaJudgeHandler,
@@ -41,6 +44,7 @@ export function getThinkingHandlers(): ThinkingJobHandler[] {
     agendaDueHandler,
     reflectHandler,
     pulseHandler,
+    coldReadHandler,
     chatHandler,
   ]
 }

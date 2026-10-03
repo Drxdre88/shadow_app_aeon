@@ -24,6 +24,7 @@ import type {
 } from '@/lib/kairos/engine/types'
 import { CORTEX_DEADLINE_UTC, deadlineOn, minutesUntil, utcDay, utcDayStart } from '../deadlines'
 import { errorReason } from './_errors'
+import { cortexThoughts, withThoughts } from '../stage-thoughts'
 
 // Cortex on the thinking queue: one job per active Dominion per UTC day, with
 // exactly the system/user prompt the 03:00 cortex-regen cron would send. The
@@ -147,7 +148,7 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
     answeredBy,
   })
   if (!cortexMemoryId) return { ok: false, reason: 'persist_failed: insert returned no id' }
-  return { ok: true, memoryIds: [cortexMemoryId] }
+  return withThoughts({ ok: true, memoryIds: [cortexMemoryId] }, cortexThoughts(c.dominionName, payload))
 }
 
 export const cortexHandler: ThinkingJobHandler = {

@@ -25,6 +25,7 @@ import type {
 } from '@/lib/kairos/engine/types'
 import { GOAL_PROPOSE_WINDOW_UTC, minutesLeftInWindow, utcDay } from '../deadlines'
 import { errorReason } from './_errors'
+import { goalProposeThoughts, withThoughts } from '../stage-thoughts'
 
 // Kairos's own goal (Phase 2 initiative, Track A): at most one investigation
 // goal a UTC night, seeded from ideas the owner accepted and goals that
@@ -172,7 +173,10 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
   }
 
   await writeCronSuccessTrace(job.userId, { cronName: GOAL_PROPOSE_CRON, outcome: 'ok', details: { goalId: result.goal.id } })
-  return { ok: true, memoryIds: [result.goal.id], output: { goalId: result.goal.id, answeredBy } }
+  return withThoughts(
+    { ok: true, memoryIds: [result.goal.id], output: { goalId: result.goal.id, answeredBy } },
+    goalProposeThoughts(result.goal.title),
+  )
 }
 
 export const goalProposeHandler: ThinkingJobHandler = {

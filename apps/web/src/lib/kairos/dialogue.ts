@@ -23,6 +23,7 @@ import type { AetherThought } from './aether-types'
 import type { Origin } from './origin'
 import { loadTodayDigest, recordTodayAfter } from './today'
 import { renderTodaySection } from './today-render'
+import { loadStageBlock } from './stage'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Dialogue — orchestration (the "weld").
@@ -116,6 +117,9 @@ export interface DialogueContext {
   // "Today across channels" (one mind), rendered inside DATA markers; this
   // dialogue's own turns are excluded. '' when off or quiet.
   today: string
+  // The stage block (what Kairos is attending to now), fenced as STAGE DATA
+  // and "not evidence". '' unless KAIROS_STAGE=1 and the stage has a winner.
+  stage?: string
 }
 
 // Same budget as the chat prompt's today section.
@@ -165,17 +169,20 @@ export async function prepareDialogueContext(
 
   let retrieval: DialogueContext['retrieval'] = null
   const todayPromise = loadDialogueToday(userId, threadId)
+  const stagePromise = loadStageBlock(userId)
   if (thread.dominionId) {
     const r = await retrieveContext({ userId, dominionId: thread.dominionId, query })
     retrieval = { cortex: r.cortex, archetypes: r.archetypes, substrate: r.substrate }
   }
 
+  const stageBlock = (await stagePromise).block
   return {
     thread: { id: thread.id, title: thread.title, dominionId: thread.dominionId, status: thread.status },
     seed: { kairosAskId: thread.seed.kairosAskId, aetherCoreNarrative, thought, sourceMemories },
     turns: turns.map((t) => ({ seq: t.seq, role: t.role, content: t.content })),
     retrieval,
     today: await todayPromise,
+    ...(stageBlock ? { stage: stageBlock } : {}),
   }
 }
 

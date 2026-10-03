@@ -11,7 +11,14 @@ function bullets(items: readonly string[]): string[] {
   return items.length ? items.map((s) => `- ${s}`) : ['- (none)']
 }
 
-export function renderWeeklyReviewMarkdown(review: GroundedWeeklyReview, isoWeek: string, trackRecordLine?: string | null): string {
+// `extraLines`: code-built lines (e.g. the character check) appended after the
+// track record; never model text.
+export function renderWeeklyReviewMarkdown(
+  review: GroundedWeeklyReview,
+  isoWeek: string,
+  trackRecordLine?: string | null,
+  extraLines: readonly string[] = [],
+): string {
   const lines: string[] = [`**${weeklyReviewTitle(isoWeek)}**`, '', review.summary, '', '**Wins**', ...bullets(review.wins)]
   lines.push('', '**Drift (plan vs actual)**', ...bullets(review.drift))
   lines.push('', '**Proposed actions**')
@@ -23,6 +30,7 @@ export function renderWeeklyReviewMarkdown(review: GroundedWeeklyReview, isoWeek
   })
   // KAIROS_PREDICTIONS: computed in code from settled predictions, never by the model.
   if (trackRecordLine) lines.push('', trackRecordLine)
+  if (extraLines.length) lines.push('', ...extraLines)
   return lines.join('\n')
 }
 
@@ -37,8 +45,13 @@ export function renderReviewActionBody(action: GroundedReviewAction, isoWeek: st
 
 // The spoken summary: the model's prose (already guarded against headings and
 // URLs) plus deterministic pointers to the proposals and the track record.
-export function renderWeeklyReviewMessage(review: GroundedWeeklyReview, proposalCount: number, trackRecordLine?: string | null): string {
-  const tail = trackRecordLine ? `\n\n${trackRecordLine}` : ''
+export function renderWeeklyReviewMessage(
+  review: GroundedWeeklyReview,
+  proposalCount: number,
+  trackRecordLine?: string | null,
+  extraLines: readonly string[] = [],
+): string {
+  const tail = [trackRecordLine, ...extraLines].filter((l): l is string => !!l).map((l) => `\n\n${l}`).join('')
   if (proposalCount === 0) return `${review.summary}${tail}`
   const noun = proposalCount === 1 ? 'action' : 'actions'
   return `${review.summary}\n\nI've put ${proposalCount} proposed ${noun} for this week in your inbox.${tail}`

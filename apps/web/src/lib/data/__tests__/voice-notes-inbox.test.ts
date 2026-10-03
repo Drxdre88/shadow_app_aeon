@@ -8,6 +8,7 @@ vi.mock('@/lib/data/ask', () => ({
   getPendingKairosAsk: vi.fn().mockResolvedValue(null),
   listOpenKairosAsks: vi.fn().mockResolvedValue([]),
 }))
+vi.mock('@/lib/data/voice-samples', () => ({ listPendingVoiceSamples: vi.fn(async () => []) }))
 vi.mock('@/lib/data/memories', () => ({ listMemories: vi.fn() }))
 
 import { listMemories } from '@/lib/data/memories'

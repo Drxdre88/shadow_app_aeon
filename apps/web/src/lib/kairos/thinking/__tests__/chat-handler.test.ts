@@ -436,3 +436,29 @@ describe('paid backup switched off', () => {
     expect(sentTexts()).toEqual(['Routine answer.'])
   })
 })
+
+describe('hidden stance tag (cold read)', () => {
+  const tagged = 'Ship it — the numbers hold.\n\n<stance>lean_endorse — ship pricing this week</stance>'
+
+  it('strips the tag before persist and Telegram delivery and records it on the job output', async () => {
+    const out = await chatHandler.apply(jobFor(1), tagged, 'routine')
+    expect(out).toEqual({ ok: true, memoryIds: [], output: { stance: { value: 'lean_endorse', gist: 'ship pricing this week' } } })
+    expect(persistAssistantReplyOnce).toHaveBeenCalledWith(USER, THREAD, 'Ship it — the numbers hold.', expect.anything())
+    expect(assistantMessages()).toEqual([expect.objectContaining({ content: 'Ship it — the numbers hold.' })])
+    expect(sentTexts()).toEqual(['Ship it — the numbers hold.'])
+  })
+
+  it('strips the tag on the web channel too', async () => {
+    await chatHandler.apply(jobFor(1, 'claimed', 'job-1', 'web'), tagged, 'routine')
+    expect(assistantMessages().map((m) => m.content)).toEqual(['Ship it — the numbers hold.'])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('no tag → no stance on the output', async () => {
+    expect(await chatHandler.apply(jobFor(1), 'Plain reply.', 'routine')).toEqual({ ok: true, memoryIds: [] })
+  })
+
+  it('a reply that is only a tag is empty', async () => {
+    expect(await chatHandler.apply(jobFor(1), '<stance>mixed — x</stance>', 'routine')).toEqual({ ok: false, reason: 'empty_reply' })
+  })
+})

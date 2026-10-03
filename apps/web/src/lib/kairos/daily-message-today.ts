@@ -22,6 +22,8 @@ export interface DailyTailInputs {
   // Code-built tail only; the model never sees these two.
   verdicts?: VerdictDigest[] | null
   agenda?: AgendaDigest[] | null
+  // The stage block (KAIROS_STAGE=1), rendered once in the model prompt; absent when off/empty.
+  stage?: string
 }
 
 const MAX_OWNER_LINES = 8

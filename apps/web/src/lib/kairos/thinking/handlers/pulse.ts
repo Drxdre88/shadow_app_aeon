@@ -5,14 +5,16 @@ import { listRecentMemories } from '@/lib/data/memories'
 import { hasJobWithKeyLike } from '@/lib/data/thinking-jobs'
 import {
   PULSE_MAX_OUTPUT_TOKENS,
-  PULSE_SYSTEM_PROMPT,
   buildPulsePrompt,
   parsePulseText,
+  pulseSystemPrompt,
   renderPulseNotes,
 } from '@/lib/kairos/cadence/pulse-prompt'
 import { daytimeThinkingEnabled, hasOwnerActivitySince, lastLookedAt, listDaytimeJobsToday } from '@/lib/kairos/cadence/signal'
+import { stageMode } from '@/lib/kairos/stage'
 import { appendTodayNotes, loadTodayDigest, todayEnabled } from '@/lib/kairos/today'
 import { renderTodaySection } from '@/lib/kairos/today-render'
+import { pulseThoughts, withThoughts } from '../stage-thoughts'
 import type {
   ApplyOutcome,
   ThinkingAnsweredBy,
@@ -67,7 +69,7 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
     externalKey,
     deadlineMinutes: PULSE_DEADLINE_MINUTES,
     input: {
-      system: PULSE_SYSTEM_PROMPT,
+      system: pulseSystemPrompt(stageMode() !== 'off'),
       prompt: buildPulsePrompt({
         londonTime: londonClockLabel(now),
         since: `${londonClockLabel(since)} London`,
@@ -97,11 +99,11 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
   }
   const lines = renderPulseNotes(out, new Map(ctx.inbox.map((m) => [m.id, m.title])))
   if (lines.length > 0) await appendTodayNotes(job.userId, lines, 'pulse', job.id)
-  return {
+  return withThoughts({
     ok: true,
     memoryIds: [],
     output: { notes: out.notes.length, attention: out.attention.map((a) => a.memoryId), dropped: out.dropped, answeredBy },
-  }
+  }, pulseThoughts(out.stage))
 }
 
 export const pulseHandler: ThinkingJobHandler = {

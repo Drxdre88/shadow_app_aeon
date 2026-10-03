@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { and, isNull, ne } from 'drizzle-orm'
+import { and, isNull, ne, sql } from 'drizzle-orm'
 import { memories } from '@/lib/db/schema'
 import { listOpenGoals } from '@/lib/data/goals'
 import { readKairosAgenda } from '@/lib/data/kairos-agenda'
@@ -12,9 +12,9 @@ import { agendaEnabled } from '@/lib/kairos/agenda/flag'
 import { AGENDA_MAX_LEAD_DAYS, formatAgendaWhen } from '@/lib/kairos/agenda/rules'
 import {
   REFLECT_MAX_OUTPUT_TOKENS,
-  REFLECT_SYSTEM_PROMPT,
   buildReflectPrompt,
   parseReflectText,
+  reflectSystemPrompt,
   renderReflectBody,
   type ReflectAgendaPrompt,
   type ReflectOutput,
@@ -22,6 +22,8 @@ import {
   type ReflectPromise,
 } from '@/lib/kairos/cadence/reflect-prompt'
 import { londonDate } from '@/lib/kairos/daily-message-prompt'
+import { characterCheckEnabled } from '@/lib/kairos/character/flag'
+import { checkTone } from '@/lib/kairos/character/tone'
 import { createKairosPredictions, type CreatePredictionsResult } from '@/lib/kairos/predictions/create'
 import { predictionsEnabled } from '@/lib/kairos/predictions/flag'
 import { renderTrackRecordBlock } from '@/lib/kairos/predictions/prompt-block'
@@ -36,6 +38,7 @@ import {
 } from '@/lib/kairos/cadence/signal'
 import { loadTodayDigest } from '@/lib/kairos/today'
 import { renderTodaySection } from '@/lib/kairos/today-render'
+import { stageMode, stageSurpriseDue } from '@/lib/kairos/stage'
 import type {
   ApplyOutcome,
   ThinkingAnsweredBy,
@@ -46,6 +49,7 @@ import type {
 } from '@/lib/kairos/engine/types'
 import { REFLECT_DEADLINE_MINUTES, REFLECT_WINDOW_LONDON, daytimeSlotKey, inLondonHours, londonClockLabel } from '../deadlines'
 import { errorReason } from './_errors'
+import { reflectThoughts, withThoughts } from '../stage-thoughts'
 
 // Reflect (spec A, deep tier, brain routine). plan: nothing unless
 // KAIROS_DAYTIME_THINKING=1, inside 08–21 London, one job per London hour,
@@ -63,11 +67,17 @@ export const REFLECT_KIND: ThinkingJobKind = 'reflect'
 const TODAY_PROMPT_CHARS = 8000
 const EVENTS_LIMIT = 15
 const MAX_LINKS = 20
+// A quarantined (tone-flagged, 'trace') reflection is not new evidence for
+// the next one — that loop is what the quarantine breaks.
+const notToneFlagged = sql`not (${memories.tags} @> '["tone_flag"]'::jsonb)`
 
 const contextSchema = z.object({
   slot: z.string().min(1),
   goals: z.array(z.object({ id: z.string().min(1), title: z.string() })),
   eventIds: z.array(z.string()),
+  // Why this hour reflects: an unreflected goal, new owner activity, or
+  // (KAIROS_STAGE=1) enough surprise posted to the stage since the last look.
+  trigger: z.enum(['activity', 'goal', 'surprise']).optional(),
 })
 type ReflectContext = z.infer<typeof contextSchema>
 
@@ -143,11 +153,15 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
   const goals = (await listOpenGoals(userId, now)).filter((g) => g.meta.state === 'active')
   const reflected = goalsReflectedOn(done)
   const goalPending = goals.some((g) => !reflected.has(g.id))
-  if (!goalPending && !(await hasOwnerActivitySince(userId, since, now))) return []
+  let trigger: ReflectContext['trigger'] = goalPending ? 'goal' : undefined
+  if (!trigger && (await hasOwnerActivitySince(userId, since, now))) trigger = 'activity'
+  // Early reflect: the stage has seen enough surprise since the last look.
+  if (!trigger && (await stageSurpriseDue(userId, since, now))) trigger = 'surprise'
+  if (!trigger) return []
 
   const [digest, events, promises, predictions, agenda] = await Promise.all([
     loadTodayDigest(userId, { hours: 16, limit: 120 }),
-    listRecentMemories(userId, [and(ne(memories.streamClass, 'agentic'), isNull(memories.archivedAt))!], { start: since, end: now }, EVENTS_LIMIT),
+    listRecentMemories(userId, [and(ne(memories.streamClass, 'agentic'), ne(memories.streamClass, 'trace'), isNull(memories.archivedAt), notToneFlagged)!], { start: since, end: now }, EVENTS_LIMIT),
     openPromises(userId),
     predictionPrompt(userId, now),
     agendaPrompt(userId, now),
@@ -161,7 +175,7 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
     externalKey,
     deadlineMinutes: REFLECT_DEADLINE_MINUTES,
     input: {
-      system: REFLECT_SYSTEM_PROMPT,
+      system: reflectSystemPrompt(stageMode() !== 'off'),
       prompt: buildReflectPrompt({
         londonTime: londonClockLabel(now),
         since: `${londonClockLabel(since)} London`,
@@ -179,6 +193,7 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
         slot: externalKey,
         goals: goals.map((g) => ({ id: g.id, title: g.title })),
         eventIds: events.map((e) => e.id),
+        trigger,
       } satisfies ReflectContext,
     },
   }]
@@ -251,16 +266,20 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
 
   const goalTitles = new Map(ctx.goals.map((g) => [g.id, g.title]))
   const links = [...new Set([...out.goalNotes.map((g) => g.goalId), ...out.evidenceIds])].slice(0, MAX_LINKS)
+  // Tone budget (character check): flagged text is tagged and, with the
+  // check switched on, filed as 'trace' — kept for audit, out of retrieval.
+  const tone = checkTone(out.thought)
+  const quarantined = tone.flagged && characterCheckEnabled()
   const { memory } = await captureMemory(job.userId, {
     title: `Reflection · ${ctx.slot.slice(REFLECT_KIND.length + 1).replace(/:(\d{2})$/, ' $1:00')}`,
     bodyMd: renderReflectBody(out, goalTitles),
     summary: out.thought.slice(0, 1000),
     type: 'observation',
     source: 'cron',
-    streamClass: 'agentic',
+    streamClass: quarantined ? 'trace' : 'agentic',
     dominionId: null,
     links: links.map(refersTo),
-    tags: ['reflection'],
+    tags: characterCheckEnabled() && tone.flagged ? ['reflection', 'tone_flag'] : ['reflection'],
     sourceMetadata: {
       kind: 'reflection',
       externalId: ctx.slot,
@@ -269,12 +288,13 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
       goalNotes: out.goalNotes,
       evidenceIds: out.evidenceIds,
       dropped: out.dropped,
+      ...(characterCheckEnabled() ? { tone: { score: tone.score, markers: tone.markers, flagged: tone.flagged } } : {}),
     },
   })
 
   const predicted = await persistReflectPredictions(job, out)
   const booked = await persistReflectFollowUps(job, out, goalIds)
-  return {
+  return withThoughts({
     ok: true,
     memoryIds: [memory.id],
     output: {
@@ -285,7 +305,7 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
       ...(booked ? { followUps: { created: createdSeqs('A', booked.created), rejected: rejectReasons(booked.rejected) } } : {}),
       answeredBy,
     },
-  }
+  }, quarantined ? [] : reflectThoughts(out))
 }
 
 export const reflectHandler: ThinkingJobHandler = {

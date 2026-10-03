@@ -4,6 +4,13 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–35).
 
+## [0.22.0] — 2026-10-03 · "One coherent mind, wave 1"
+
+> The many separate thinking jobs start to share one mind: a global-workspace stage, a weekly character check against owner-approved voice samples, and a profile-free cold read of his advice. All flag-gated.
+
+- **Stage** (`KAIROS_STAGE` off|observe|1). `user_preferences.kairosStage`: coalitions scored 0.35·importance + 0.25·surprise + 0.25·goalRelevance + 0.15·need, 6h decay, Jaccard merge, top 4 of 16, London-hour cycles, inhibition of return, ignition after 3 wins (deep/owner-backed only), echo rule. Producers: pulse, reflect, agenda_due, aether, cortex, belief_extract, idea_judge, goal_propose, ask_mine, weekly_review, mind_compare, drift_probe + ambient owner lines, overdue promises, wrong predictions. Served at claim time into reader prompts (never the system prompt); extraction jobs, drift_probe and idea_judge stay blind. Lineage on job output. Early reflect when Σ surprise ≥ 1.2. `get_kairos_stage`.
+- **Character check** (`KAIROS_CHARACTER_CHECK=1`). New weekly deep kind `character_check`; neutral blind rater, ≤6 approved `voice_sample` anchors (owner-only Approve/Veto), trace `character_run:<isoWeek>`, weekly-review line, Health row; hourly reflection tone budget with quarantine to `trace`. Measurement only.
+- **Cold read** (`KAIROS_COLD_READ=audit|1`). Hidden `<stance>` on judgement turns (stripped before anyone sees it); new deep kind `cold_read` (≤3/day) judges from the owner's own messages only; "Second look" via speak; trace rows, never belief evidence; Health line.
 ## [0.21.0] — 2026-10-03 · "One mind everywhere"
 
 > Kairos is one being across Telegram, the web, Triad and Claude: a shared, labelled "today" log that every channel writes and reads. Behind switches: daytime thinking (hourly reflect + a Sonnet pulse), a track record of his predictions, and Horae, his own agenda.

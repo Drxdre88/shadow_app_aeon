@@ -16,6 +16,7 @@ vi.mock('@/lib/kairos/telegram', async (importOriginal) => {
 vi.mock('@/lib/api/rateLimit', () => ({ checkRateLimit: vi.fn() }))
 vi.mock('@/lib/data/projects', () => ({ findOwnProjects: vi.fn() }))
 vi.mock('@/lib/data/kairos-paid-backup', () => ({ getPaidBackupSetting: vi.fn(), setPaidBackupSetting: vi.fn() }))
+vi.mock('@/lib/data/character', () => ({ listCharacterRuns: vi.fn(async () => []) }))
 vi.mock('@/lib/data/dominions', () => ({
   findDominionsByUser: vi.fn(),
   listReposForUser: vi.fn(),

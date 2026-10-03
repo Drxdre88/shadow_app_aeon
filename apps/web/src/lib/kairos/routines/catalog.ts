@@ -69,11 +69,13 @@ export const BRAIN_JOBS: readonly BrainJob[] = [
   { kind: 'idea_judge', label: 'Idea contest: judge', area: 'Creativity', tier: 'deep', cadence: 'nightly', what: 'A sceptical judge keeps the best one to three.' },
   { kind: 'goal_propose', label: 'Goal of his own', area: 'Creativity', tier: 'deep', cadence: 'nightly', what: 'At most one investigation goal a night, seeded from ideas you accepted and goals that failed. It waits for your Approve or Veto.' },
   { kind: 'ask_mine', label: 'Question of the day', area: 'Voice', tier: 'deep', cadence: 'nightly', what: 'The one question Kairos most wants to ask you.' },
+  { kind: 'character_check', label: 'Character check', area: 'Beliefs & conscience', tier: 'deep', cadence: 'weekly', what: 'When switched on: blind-rates a sample of his week against your constitution and the voice samples you approved (Mondays).' },
   { kind: 'weekly_review', label: 'Weekly review', area: 'Voice', tier: 'deep', cadence: 'weekly', what: 'Plan versus actual, belief changes and ideas (Mondays).' },
   { kind: 'daily_message', label: '06:00 message', area: 'Voice', tier: 'deep', cadence: 'nightly', what: 'The single morning message on Telegram and in the inbox, ending with every question you haven’t answered yet, numbered.' },
   { kind: 'agenda_due', label: 'Horae check-in', area: 'Voice', tier: 'deep', cadence: 'hourly', what: 'When switched on: when a check-in Kairos booked for himself comes due, he looks at it once and keeps a note, asks you a question or sends you a short message. He can’t change anything, and you can cancel any check-in.' },
   { kind: 'reflect', label: 'Daytime reflection', area: 'Self-model', tier: 'deep', cadence: 'hourly', what: 'When switched on: up to six times a day, a short reflection on what happened today and on his active goals. It never messages you.' },
   { kind: 'pulse', label: 'Daytime pulse', area: 'Perception', tier: 'light', cadence: 'hourly', what: 'When switched on: a quick hourly glance at what changed, kept as notes in today’s memory. Only runs when something happened.' },
+  { kind: 'cold_read', label: 'Cold read', area: 'Beliefs & conscience', tier: 'deep', cadence: 'on demand', what: 'When switched on: rechecks his advice on your decisions with your profile hidden, and tells you if the cold view differs.' },
   { kind: 'chat', label: 'Chat replies', area: 'Voice', tier: 'deep', cadence: 'on demand', what: 'Answers you on Telegram and on the Kairos page.' },
 ]
 

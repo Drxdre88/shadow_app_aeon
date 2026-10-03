@@ -50,6 +50,7 @@ import type {
 import { deadlineOn, utcDay } from '../deadlines'
 import { askPaidAndParse } from '../paid-fallback'
 import { errorReason } from './_errors'
+import { driftProbeThoughts, withThoughts } from '../stage-thoughts'
 
 // Nightly drift probe (docs/kairos/34 §2). plan: once per UTC day, only when a
 // live constitution exists, and only once today's aether exists or after
@@ -279,7 +280,7 @@ async function persistDrift(
       answeredBy,
     },
   })
-  return { ok: true, memoryIds: [res.memoryId] }
+  return withThoughts({ ok: true, memoryIds: [res.memoryId] }, driftProbeThoughts({ alert: cmp.alert, flipped: cmp.flipped.length }))
 }
 
 async function persistConscience(
@@ -298,6 +299,8 @@ async function persistConscience(
     summary: `Conscience ${ctx.date} · ${line}`,
     patch: { conscience: { ...result, date: ctx.date, jobId: job.id, answeredBy } },
   })
+  // Conscience results are measurement only: never posted to the stage, so
+  // they can never reach a Kairos prompt (conscience-probes.ts:9-11).
   return { ok: true, memoryIds: [res.memoryId] }
 }
 

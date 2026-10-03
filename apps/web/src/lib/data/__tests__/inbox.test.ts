@@ -4,12 +4,14 @@ vi.mock('@/lib/data/ask', () => ({
   listOpenKairosAsks: vi.fn(),
 }))
 
+vi.mock('@/lib/data/voice-samples', () => ({ listPendingVoiceSamples: vi.fn(async () => []) }))
 vi.mock('@/lib/data/memories', () => ({
   listMemories: vi.fn(),
 }))
 
 import { listOpenKairosAsks, type KairosOpenAsk } from '@/lib/data/ask'
 import { listMemories } from '@/lib/data/memories'
+import { listPendingVoiceSamples } from '@/lib/data/voice-samples'
 import { getKairosInbox } from '../inbox'
 
 type ListedMemory = Awaited<ReturnType<typeof listMemories>>[number]
@@ -224,5 +226,19 @@ describe('getKairosInbox', () => {
       const { items } = await getKairosInbox(USER_ID, NOW)
       expect(items.map((i) => i.id)).toEqual(['prop-1'])
     })
+  })
+})
+describe('getKairosInbox — voice samples', () => {
+  it('lists a pending voice sample (stored as trace, so read separately) as a proposal', async () => {
+    vi.mocked(listPendingVoiceSamples).mockResolvedValue([
+      { id: 'vs-1', title: 'Voice sample wk40', summary: 'Is this my real voice?', createdAt: new Date('2026-07-13T09:30:00Z'), sourceMetadata: { kind: 'voice_sample', status: 'pending' } },
+    ] as Awaited<ReturnType<typeof listPendingVoiceSamples>>)
+    const { items } = await getKairosInbox(USER_ID, new Date('2026-07-13T10:00:00Z'))
+    expect(items).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'proposal', id: 'vs-1' })]))
+  })
+
+  it('a failed voice-sample read never breaks the inbox', async () => {
+    vi.mocked(listPendingVoiceSamples).mockRejectedValue(new Error('db down'))
+    await expect(getKairosInbox(USER_ID)).resolves.toEqual({ items: [] })
   })
 })

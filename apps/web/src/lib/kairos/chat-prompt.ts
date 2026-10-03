@@ -5,6 +5,7 @@
 
 import type { AIMessage } from '@/lib/ai/provider'
 import { neutraliseFences } from './_prompt-utils'
+import { COLD_READ_CHAT_LINES } from './cold-read/stance'
 
 // Cap message history sent to the model. Heavy chats can accumulate
 // hundreds of messages; we send the most recent N to keep latency and
@@ -68,6 +69,8 @@ export interface BuildChatPromptInput {
   recencySection?: string         // pre-rendered last-N-hours activity (chat-recency-context.ts) — deterministic, fresher than retrieval
   todaySection?: string           // pre-rendered "Today across channels" (today-render.ts) — what the owner said / decided elsewhere today
   conscienceSection?: string      // pre-rendered constitution + held beliefs (conscience-context.ts) — reference data
+  stageSection?: string           // pre-rendered stage block (lib/kairos/stage, KAIROS_STAGE=1) — what Kairos is attending to now; not evidence
+  coldRead?: boolean              // KAIROS_COLD_READ: stranger-test line + hidden <stance> tag on judgement turns
 }
 
 // Everything but the Dominion frame. An options object, not positional
@@ -150,7 +153,7 @@ export function buildChatSystemPrompt(
   dominion: ChatPromptDominion | null,
   opts: ChatSystemPromptOptions = {},
 ): string {
-  const { retrieval, pendingAsk, boardSection, recencySection, todaySection, conscienceSection } = opts
+  const { retrieval, pendingAsk, boardSection, recencySection, todaySection, conscienceSection, stageSection } = opts
   const surface: ChatPromptSurface = opts.surface ?? 'app'
   const lines: string[] = dominion
     ? [
@@ -178,8 +181,9 @@ export function buildChatSystemPrompt(
   const hasTodaySection = !!todaySection?.trim()
   const hasRecencySection = !!recencySection?.trim()
   const hasBoardSection = !!boardSection?.trim()
+  const hasStageSection = !!stageSection?.trim()
 
-  if (hasRetrieval || hasTodaySection || hasRecencySection || hasBoardSection) {
+  if (hasStageSection || hasRetrieval || hasTodaySection || hasRecencySection || hasBoardSection) {
     lines.push('')
     lines.push('---')
     lines.push('')
@@ -187,6 +191,12 @@ export function buildChatSystemPrompt(
     lines.push('')
     lines.push(`The blocks below are the live Kairos brain state ${dominion ? 'for this Dominion' : 'across the whole brain'}. Reason from them when the operator asks about specifics. When you make a claim that rests on one of them, cite it inline as \`[[memory-id]]\` using the exact id shown in the block header. Reflections carry higher weight than activity-derived signals. If grounded context disagrees with the operator's latest message, surface the tension instead of papering over it.`)
     lines.push('')
+    // The stage (what Kairos is attending to right now) leads: fenced as
+    // STAGE DATA and labelled "not evidence" by its renderer.
+    if (hasStageSection) {
+      lines.push(stageSection!.trim())
+      lines.push('')
+    }
     if (hasRetrieval) {
       lines.push(renderRetrieval(retrieval!, dominion !== null))
       lines.push('')
@@ -236,6 +246,7 @@ export function buildChatSystemPrompt(
   }
   lines.push('- Cite specifics from the operator\'s context when relevant. When you\'re reasoning from general knowledge, say so.')
   lines.push('- Disagree with the operator when their plan has a hole. Diplomacy without disagreement is just flattery.')
+  if (opts.coldRead) lines.push(...COLD_READ_CHAT_LINES)
   if (hasRetrieval) {
     lines.push('- Cite grounded sources with `[[memory-id]]` inline. Only cite ids that appear in the Grounded context block above — do not invent ids.')
   }
@@ -252,6 +263,8 @@ export function buildChatMessages(input: BuildChatPromptInput): AIMessage[] {
     recencySection: input.recencySection,
     todaySection: input.todaySection,
     conscienceSection: input.conscienceSection,
+    stageSection: input.stageSection,
+    coldRead: input.coldRead,
   })
   const trimmedHistory = input.history.slice(-MAX_HISTORY_MESSAGES)
 

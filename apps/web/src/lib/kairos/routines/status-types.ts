@@ -1,4 +1,6 @@
 import type { ThinkingJobKind } from '@/lib/kairos/engine/types'
+import type { CharacterHealth } from '@/lib/kairos/character/rubric'
+import type { ColdReadSummary } from '@/lib/kairos/cold-read/compare'
 import type { RoutineId } from './catalog'
 
 // Contract between the brain-status server action and the Connect Kairos modal.
@@ -47,7 +49,14 @@ export interface KairosBrainStatus {
   setup?: KairosSetupSignals
   // Chat routine reply times over the last 7 days; null/absent = no turns.
   chatLatency?: KairosChatLatency | null
+  // Latest weekly character check (with the trend vs the previous run);
+  // null/absent = no run yet. Measurement only.
+  character?: KairosCharacterStatus | null
+  // Cold reads in the last 7 days; null/absent = switched off or none yet.
+  coldReads?: ColdReadSummary | null
 }
+
+export type KairosCharacterStatus = CharacterHealth
 
 // Chat turns (web + Telegram) in a window, by who answered.
 export interface KairosChatLatency {

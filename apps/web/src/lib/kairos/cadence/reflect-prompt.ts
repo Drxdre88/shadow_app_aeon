@@ -2,6 +2,9 @@ import { z } from 'zod'
 import { extractJsonBlock, neutraliseFences } from '@/lib/kairos/_prompt-utils'
 import { AGENDA_WHAT_MAX_CHARS, AGENDA_WHAT_MIN_CHARS } from '@/lib/data/validators/kairos-agenda'
 import { PREDICTION_CLAIM_MAX_CHARS, PREDICTION_CLAIM_MIN_CHARS } from '@/lib/data/validators/kairos-predictions'
+import { parseStageItems, type StageCandidateInput } from '@/lib/kairos/stage'
+import { withStageField } from './stage-field'
+import { characterCheckEnabled } from '@/lib/kairos/character/flag'
 
 // Reflect (deep, hourly, daytime): Kairos thinks about the owner's day so far
 // and his active goals. One short observation at most; it never speaks and
@@ -36,6 +39,19 @@ export const REFLECT_SYSTEM_PROMPT = [
   'Answer with exactly one JSON object and nothing else:',
   '{"thought": "...", "goalNotes": [{"goalId": "...", "note": "..."}], "evidenceIds": ["..."]}',
 ].join('\n')
+
+// With the stage on (KAIROS_STAGE observe or 1) the reflection may also offer
+// ≤2 stage items; off → exactly REFLECT_SYSTEM_PROMPT.
+// Character check on → the plain-tone rule is added after the Rules list's
+// first item; off → exactly REFLECT_SYSTEM_PROMPT (byte-identical).
+export const REFLECT_TONE_RULE = '- Tone: plain, concrete, first person. No cosmic, mystical or theatrical imagery, no claims about your inner life or consciousness, no grand statements about yourself.'
+const withToneRule = (prompt: string): string => {
+  if (!characterCheckEnabled()) return prompt
+  const anchor = '- No advice to the owner'
+  const i = prompt.indexOf(anchor)
+  return i < 0 ? `${prompt}\n${REFLECT_TONE_RULE}` : `${prompt.slice(0, i)}${REFLECT_TONE_RULE}\n${prompt.slice(i)}`
+}
+export const reflectSystemPrompt = (stageOn: boolean): string => withStageField(withToneRule(REFLECT_SYSTEM_PROMPT), stageOn)
 
 export interface ReflectEvent {
   id: string
@@ -142,6 +158,7 @@ const reflectOutputSchema = z.object({
   // (which re-validate strictly). Lenient so a bad item never costs the thought.
   followUps: z.array(z.unknown()).optional().transform((a) => (a ?? []).slice(0, REFLECT_WAVE2_ITEMS_MAX)),
   predictions: z.array(z.unknown()).optional().transform((a) => (a ?? []).slice(0, REFLECT_WAVE2_ITEMS_MAX)),
+  stage: z.unknown().optional(),
 })
 const goalNoteSchema = z.object({ goalId: z.string().min(1), note: text(REFLECT_GOAL_NOTE_MAX_CHARS) })
 
@@ -153,6 +170,8 @@ export interface ReflectOutput {
   followUps: unknown[]
   predictions: unknown[]
   dropped: number
+  // Optional stage thoughts (≤2); malformed ones are dropped silently.
+  stage: StageCandidateInput[]
 }
 
 // Strict on the envelope, grounded per item: goal notes must name a listed
@@ -174,7 +193,10 @@ export function parseReflectText(raw: string, validIds: ReadonlySet<string>, goa
     if (typeof id === 'string' && validIds.has(id) && !evidenceIds.includes(id) && evidenceIds.length < REFLECT_EVIDENCE_MAX) evidenceIds.push(id)
     else dropped++
   }
-  return { thought, goalNotes, evidenceIds, followUps: env.followUps, predictions: env.predictions, dropped }
+  return {
+    thought, goalNotes, evidenceIds, followUps: env.followUps, predictions: env.predictions, dropped,
+    stage: parseStageItems(env.stage).items,
+  }
 }
 
 export function renderReflectBody(out: ReflectOutput, goalTitles: ReadonlyMap<string, string>): string {

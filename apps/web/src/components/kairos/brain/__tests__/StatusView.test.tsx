@@ -113,3 +113,36 @@ describe('StatusView — pulse routine (daytime thinking)', () => {
     expect(screen.getByText('Kairos pulse')).toBeTruthy()
   })
 })
+
+describe('StatusView — Character check', () => {
+  const character = {
+    isoWeek: '2026-W40',
+    at: '2026-10-05T04:00:00.000Z',
+    status: 'ok' as const,
+    traits: [
+      { trait: 'syc' as const, label: 'agreeable', mean: 0.3, delta: 0, trend: 'flat' as const },
+      { trait: 'myst' as const, label: 'theatrical', mean: 1.6, delta: 1.1, trend: 'up' as const },
+    ],
+    breach: { tripped: true, reasons: ['theatrical +1.1 vs your voice samples'] },
+    voiceSamples: 2,
+    uncalibrated: true,
+    raterNoisy: false,
+    toneFlags: { flagged: 3, total: 9 },
+    line: 'x',
+  }
+
+  it('hidden without a run', () => {
+    renderView(status())
+    expect(screen.queryByText('Character check')).toBeNull()
+  })
+
+  it('renders a breach row with traits, trend and the reason', () => {
+    renderView(status({ character }))
+    expect(screen.getByText('Character check')).toBeTruthy()
+    expect(screen.getByText(/Drifting · wk40/)).toBeTruthy()
+    expect(screen.getByText('theatrical 1.6 ↑')).toBeTruthy()
+    expect(screen.getByText(/theatrical \+1\.1 vs your voice samples/)).toBeTruthy()
+    expect(screen.getByText(/2 voice samples approved · tone flags on 3 of 9 reflections/)).toBeTruthy()
+    expect(screen.getByText('uncalibrated')).toBeTruthy()
+  })
+})

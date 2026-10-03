@@ -18,6 +18,7 @@ vi.mock('@/lib/data/proposal-decision', async (importOriginal) => {
   }
 })
 vi.mock('@/lib/data/goals', () => ({ casGoalUpdate: vi.fn() }))
+vi.mock('@/lib/data/voice-samples', () => ({ VOICE_SAMPLE_KIND: 'voice_sample', casVoiceSampleStatus: vi.fn(), expireVoiceSamples: vi.fn(async () => []) }))
 vi.mock('../goals/transitions', () => ({ approveGoal: vi.fn(), vetoGoal: vi.fn(), expireStaleGoals: vi.fn() }))
 vi.mock('../promises/create', () => ({ createKairosPromises: vi.fn() }))
 vi.mock('../reactions', () => ({ reactOutcome: vi.fn(async () => undefined) }))
@@ -91,8 +92,9 @@ afterEach(() => {
 })
 
 describe('registry', () => {
-  it('registers goal only', () => {
+  it('registers goal and voice_sample only', () => {
     expect(isDecidableProposalKind('goal')).toBe(true)
+    expect(isDecidableProposalKind('voice_sample')).toBe(true)
     expect(isDecidableProposalKind('idea')).toBe(false)
     expect(isDecidableProposalKind('toString')).toBe(false)
     expect(isDecidableProposalKind(undefined)).toBe(false)

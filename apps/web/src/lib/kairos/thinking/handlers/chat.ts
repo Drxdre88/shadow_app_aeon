@@ -18,6 +18,7 @@ import {
   type ChatChannel,
 } from '@/lib/kairos/chat-routine'
 import { appendAssistantReplyOnce } from '@/lib/kairos/chat-turn-reply'
+import { extractStance } from '@/lib/kairos/cold-read/stance'
 import { isPaidBackupEnabled, PAID_BACKUP_OFF_NOTE } from '@/lib/kairos/paid-backup'
 import { sendTelegramChatReply, sendMessage, telegramChatFailureText } from '@/lib/kairos/telegram'
 import type {
@@ -213,7 +214,8 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
 
   // Exclusive: if the watchdog/sweep fallback answered meanwhile, nothing is
   // written or sent — the turn has its one reply.
-  const result = await persistAssistantReplyOnce(job.userId, ctx.threadId, text, {
+  const { text: reply, stance } = extractStance(text)
+  const result = await persistAssistantReplyOnce(job.userId, ctx.threadId, reply, {
     userSeq: ctx.userSeq,
     userBody: ctx.userBody,
     model: answeredBy === 'routine' ? CHAT_ROUTINE_MODEL : null,
@@ -232,7 +234,7 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
   if (pendingAskId) {
     afterResponse(() => resolvePendingAskForTurn(job.userId, ctx.dominionId, pendingAskId, ctx.userBody))
   }
-  return { ok: true, memoryIds: [] }
+  return stance ? { ok: true, memoryIds: [], output: { stance } } : { ok: true, memoryIds: [] }
 }
 
 async function fallback(job: ThinkingJobRow): Promise<ApplyOutcome> {

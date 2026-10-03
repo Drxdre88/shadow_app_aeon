@@ -43,6 +43,6 @@ export function lastLookedAt(today: readonly ThinkingJobRow[], now: Date): Date 
 export async function hasOwnerActivitySince(userId: string, since: Date, now: Date): Promise<boolean> {
   const todayCount = await countTodayEntriesSince(userId, since, { speakers: ACTIVE_SPEAKERS })
   if (todayCount > 0) return true
-  const recent = await listRecentMemories(userId, [ne(memories.streamClass, 'agentic')], { start: since, end: now }, 1)
+  const recent = await listRecentMemories(userId, [ne(memories.streamClass, 'agentic'), ne(memories.streamClass, 'trace')], { start: since, end: now }, 1)
   return recent.length > 0
 }
