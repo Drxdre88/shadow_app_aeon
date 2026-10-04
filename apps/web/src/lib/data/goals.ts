@@ -344,3 +344,14 @@ export async function goalStats(userId: string, sinceDays: number, now: Date = n
     .limit(SCAN_CAP)
   return summariseGoalStats(toRecords(rows))
 }
+
+// Goal rows created since `since`, newest first (capped). Read-only, for trust.
+export async function listGoalRecordsSince(userId: string, since: Date): Promise<GoalRecord[]> {
+  const rows = await db
+    .select(recordColumns)
+    .from(memories)
+    .where(and(goalScope(userId), gte(memories.createdAt, since)))
+    .orderBy(desc(memories.createdAt))
+    .limit(SCAN_CAP)
+  return toRecords(rows)
+}
