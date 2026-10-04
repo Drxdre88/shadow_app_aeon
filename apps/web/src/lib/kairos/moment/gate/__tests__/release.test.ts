@@ -153,14 +153,20 @@ describe('sweep + event hooks (gate on)', () => {
   })
 
   it('noteKairosBreak releases for the operator only, detached via after()', async () => {
-    h.listHeldSpeaks.mockResolvedValue([heldRow('a', 60)])
-    noteKairosBreak('someone-else', 'session_ended')
-    expect(h.after).not.toHaveBeenCalled()
-    noteKairosBreak('op', 'session_ended')
-    expect(h.after).toHaveBeenCalledOnce()
-    await h.after.mock.calls[0][0]()
-    expect(h.fanOutSpeak).toHaveBeenCalledOnce()
-    expect(h.claimHeldSpeak.mock.calls[0][3]).toBe('session_ended')
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(NOW)
+    try {
+      h.listHeldSpeaks.mockResolvedValue([heldRow('a', 60)])
+      noteKairosBreak('someone-else', 'session_ended')
+      expect(h.after).not.toHaveBeenCalled()
+      noteKairosBreak('op', 'session_ended')
+      expect(h.after).toHaveBeenCalledOnce()
+      await h.after.mock.calls[0][0]()
+      expect(h.fanOutSpeak).toHaveBeenCalledOnce()
+      expect(h.claimHeldSpeak.mock.calls[0][3]).toBe('session_ended')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('a failing break release logs and never throws', async () => {

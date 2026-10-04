@@ -25,6 +25,7 @@ import { chatTodayChannel, loadChatTodaySection, recordChatReply, type ChatToday
 import type { CitationRetrievalShape } from '@/lib/kairos/chat-retrieval-citations'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
+import { isPaidBackupOffError } from '@/lib/ai/paid-backup-off'
 import type { AIMessage } from '@/lib/ai/provider'
 import { reactUsed } from '@/lib/kairos/reactions'
 import {
@@ -98,7 +99,7 @@ async function callAssistant(
   systemMessages: ReturnType<typeof buildChatMessages>,
   pendingAsk: KairosAskRow | null,
   userBody: string,
-): Promise<RawAssistantReply | { error: 'no_credential' } | { error: 'empty' } | { error: 'failed'; message: string }> {
+): Promise<RawAssistantReply | { error: 'no_credential' } | { error: 'paid_backup_off' } | { error: 'empty' } | { error: 'failed'; message: string }> {
   try {
     const { provider } = await getProviderForTask(userId, {
       taskType: 'chat',
@@ -126,6 +127,7 @@ async function callAssistant(
       : undefined
     return { content: raw, model: response.modelId, finishReason: response.finishReason, askResolution }
   } catch (err) {
+    if (isPaidBackupOffError(err)) return { error: 'paid_backup_off' }
     if (err instanceof AiCredentialMissingError) return { error: 'no_credential' }
     if (err instanceof AiCredentialDecryptError) return { error: 'no_credential' }
     return { error: 'failed', message: err instanceof Error ? err.message : String(err) }
@@ -387,6 +389,7 @@ async function runTurn(
     // The user message is already persisted on `threadId` — surface it so the
     // client recovers to this thread on retry (no duplicate thread).
     if (reply.error === 'no_credential') return { ok: false, reason: 'no_credential', threadId }
+    if (reply.error === 'paid_backup_off') return { ok: false, reason: 'paid_backup_off', threadId }
     if (reply.error === 'empty') return { ok: false, reason: 'ai_empty', threadId }
     return { ok: false, reason: 'ai_failed', message: reply.message, threadId }
   }
