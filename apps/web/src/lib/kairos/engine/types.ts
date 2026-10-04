@@ -192,6 +192,8 @@ export type ThinkingJobKind =
   | 'cold_read'
   | 'dream'
   | 'dream_read'
+  // Wave 4 life chapters (KAIROS_LIFE_CHAPTERS): one per month, no fallback.
+  | 'life_chapter'
 
 export type ThinkingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'expired' | 'fallback'
 

@@ -49,7 +49,7 @@ export interface BrainJob {
   label: string
   area: BrainArea
   tier: BrainTier
-  cadence: 'nightly' | 'weekly' | 'hourly' | 'on demand'
+  cadence: 'nightly' | 'weekly' | 'monthly' | 'hourly' | 'on demand'
   what: string
 }
 
@@ -73,6 +73,7 @@ export const BRAIN_JOBS: readonly BrainJob[] = [
   { kind: 'ask_mine', label: 'Question of the day', area: 'Voice', tier: 'deep', cadence: 'nightly', what: 'The one question Kairos most wants to ask you.' },
   { kind: 'character_check', label: 'Character check', area: 'Beliefs & conscience', tier: 'deep', cadence: 'weekly', what: 'When switched on: blind-rates a sample of his week against your constitution and the voice samples you approved (Mondays).' },
   { kind: 'weekly_review', label: 'Weekly review', area: 'Voice', tier: 'deep', cadence: 'weekly', what: 'Plan versus actual, belief changes and ideas (Mondays).' },
+  { kind: 'life_chapter', label: 'Life chapter', area: 'Self-model', tier: 'deep', cadence: 'monthly', what: 'When switched on: early each month, a short chapter of his own story — turning points and what changed, each tied to what happened, nothing tidied into a happy ending.' },
   { kind: 'daily_message', label: '06:00 message', area: 'Voice', tier: 'deep', cadence: 'nightly', what: 'The single morning message on Telegram and in the inbox, ending with every question you haven’t answered yet, numbered.' },
   { kind: 'agenda_due', label: 'Horae check-in', area: 'Voice', tier: 'deep', cadence: 'hourly', what: 'When switched on: when a check-in Kairos booked for himself comes due, he looks at it once and keeps a note, asks you a question or sends you a short message. He can’t change anything, and you can cancel any check-in.' },
   { kind: 'reflect', label: 'Daytime reflection', area: 'Self-model', tier: 'deep', cadence: 'hourly', what: 'When switched on: up to six times a day, a short reflection on what happened today and on his active goals. It never messages you.' },

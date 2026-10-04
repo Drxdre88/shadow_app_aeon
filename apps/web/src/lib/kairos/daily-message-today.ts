@@ -1,4 +1,5 @@
 import type { TodayEntryView } from '@/lib/data/kairos-today'
+import type { MomentDaily } from './moment/types'
 import { sanitiseTodayText } from './today-render'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -24,6 +25,8 @@ export interface DailyTailInputs {
   agenda?: AgendaDigest[] | null
   // The stage block (KAIROS_STAGE=1), rendered once in the model prompt; absent when off/empty.
   stage?: string
+  // Wave 4 moment lanes (lib/kairos/moment): absent when every lane is silent.
+  moment?: MomentDaily
 }
 
 const MAX_OWNER_LINES = 8
@@ -77,4 +80,13 @@ export function todayPromptLines(today: TodayDailyDigest | null | undefined): st
     ...today.decisions.map((l) => `Decided (${l.channel}): ${l.text}`),
     ...(today.mcpUse ? [`Claude used me over MCP: ${today.mcpUse}`] : []),
   ]
+}
+
+// Prompt blocks after the "yesterday" section: the stage block, then the
+// moment lanes' blocks, each preceded by a blank line.
+export function tailBlocks(inputs: DailyTailInputs): string[] {
+  return [inputs.stage, ...(inputs.moment?.promptBlocks ?? [])]
+    .map((b) => b?.trim())
+    .filter((b): b is string => !!b)
+    .flatMap((b) => ['', b])
 }

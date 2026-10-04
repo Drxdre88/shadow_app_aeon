@@ -14,6 +14,7 @@ import { PROMISE_NUDGE_CRON, runPromiseNudges, type PromiseNudgeResult } from '@
 import { predictionsEnabled } from '@/lib/kairos/predictions/flag'
 import { PREDICTION_CHECK_CRON, runPredictionSettlement, type PredictionCheckResult } from '@/lib/kairos/predictions/check'
 import { sweepExpiredProposals, type ProposalExpirySweepResult } from '@/lib/kairos/proposal-decision'
+import { runSweepHooks } from '@/lib/kairos/moment'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos thinking queue sweep (docs/kairos/32 §3, 33). Hourly ('50 * * * *').
@@ -96,8 +97,11 @@ export async function GET(req: NextRequest) {
   let promiseNudge: PromiseNudgeResult | { status: 'error'; error: string } | null = null
   let proposalExpiry: ProposalExpirySweepResult | { error: string } | null = null
   let predictionCheck: PredictionCheckResult | { status: 'error'; error: string } | null = null
+  let moment: Record<string, unknown> | null = null
   const operatorUserId = process.env.KAIROS_OPERATOR_USER_ID?.trim()
   if (operatorUserId) {
+    // Wave 4 moment lanes (lib/kairos/moment): each hook is guarded; null = no keys.
+    moment = await runSweepHooks(operatorUserId, now)
     try {
       promiseNudge = await runPromiseNudges(operatorUserId, now)
     } catch (err) {
@@ -121,6 +125,7 @@ export async function GET(req: NextRequest) {
   }
 
   return jsonResponse({
+    ...(moment ?? {}),
     planned: plans.reduce((n, p) => n + p.planned, 0),
     plans,
     ran: userIds.length,

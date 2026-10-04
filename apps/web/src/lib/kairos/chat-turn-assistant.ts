@@ -16,21 +16,11 @@ import {
   type ChatRetrieval,
 } from '@/lib/kairos/chat-retrieval'
 import { toPromptRetrieval, toRetrievalMeta } from '@/lib/kairos/chat-retrieval-mapping'
-import {
-  matchProjectsInMessage,
-  fetchLiveBoardContext,
-  renderLiveBoardSection,
-  type LiveBoardContext,
-} from '@/lib/kairos/chat-board-context'
-import {
-  fetchRecentActivityContext,
-  renderRecentActivitySection,
-} from '@/lib/kairos/chat-recency-context'
 import { buildChatTools, runChatToolLoop } from '@/lib/kairos/chat-tools'
 import { loadConscienceBlock } from '@/lib/kairos/conscience-context'
-import { coldReadEnabled } from '@/lib/kairos/cold-read/flag'
 import { extractStance } from '@/lib/kairos/cold-read/stance'
-import { loadStageBlock } from '@/lib/kairos/stage'
+import { finishChatReply, loadMomentChatOptions, stripMomentFooters } from '@/lib/kairos/moment/chat'
+import { loadBoardSection, loadRecencySection } from '@/lib/kairos/moment/chat-grounding'
 import { chatTodayChannel, loadChatTodaySection, recordChatReply, type ChatTodayChannel } from '@/lib/kairos/chat-today'
 import type { CitationRetrievalShape } from '@/lib/kairos/chat-retrieval-citations'
 import { getProviderForTask } from '@/lib/ai/route-task'
@@ -41,7 +31,6 @@ import {
   appendAssistantReplyOnce,
   applyAskResolution,
   classifyAskResolution,
-  guardChatReply,
   pendingAskRationale,
   type AlreadyAnsweredResult,
   type AskResolution,
@@ -93,43 +82,6 @@ async function loadPendingAskContext(
     })
     return null
   }
-}
-
-// Deterministic live-board grounding: if the operator names one of their
-// projects in-message, fetch its current state straight from the data layer
-// and render it into a prompt block. Retrieval-derived memories are always
-// somewhat stale; this leg gives Kairos ground truth for the boards named.
-// Non-fatal by design — mirrors the retrieval fallback above.
-async function loadBoardSection(userId: string, threadId: string, userBody: string): Promise<string | undefined> {
-  try {
-    const matches = await matchProjectsInMessage(userId, userBody)
-    if (matches.length === 0) return undefined
-
-    const contexts = await Promise.all(
-      matches.map((m) => fetchLiveBoardContext(userId, m.id)),
-    )
-    const found = contexts.filter((c): c is LiveBoardContext => c !== null)
-    if (found.length === 0) return undefined
-
-    return renderLiveBoardSection(found)
-  } catch (err) {
-    console.warn('[kairos-chat] live board context failed, proceeding without it', {
-      threadId,
-      error: err instanceof Error ? err.message : String(err),
-    })
-    return undefined
-  }
-}
-
-// Deterministic recency grounding: last-24h coding sessions, reflections,
-// introspection proposals, asks, and board activity — fresher than any
-// synthesised memory (see chat-recency-context.ts header). Non-fatal by
-// design: fetchRecentActivityContext already catches internally and returns
-// null on error or on a genuinely quiet window, so there is nothing to log
-// here beyond that call.
-async function loadRecencySection(userId: string): Promise<string | undefined> {
-  const ctx = await fetchRecentActivityContext(userId)
-  return ctx ? renderRecentActivitySection(ctx) : undefined
 }
 
 // Default ON: the agentic tool loop is the standard chat path now. Only an
@@ -232,7 +184,7 @@ export async function buildAssistantTurn(
 
   const priorHistory = thread.messages
     .filter((m) => m.seq < userSeq)
-    .map((m) => ({ role: m.role, content: m.content }))
+    .map((m) => ({ role: m.role, content: stripMomentFooters(m.content) }))
 
   const pendingAskContext = await loadPendingAskContext(userId)
 
@@ -254,15 +206,15 @@ export async function buildAssistantTurn(
   }
 
   const promptRetrieval = retrieval ? toPromptRetrieval(retrieval) : undefined
-  const [boardSection, recencySection, conscienceSection, todaySection, stage] = await Promise.all([
+  const [boardSection, recencySection, conscienceSection, todaySection, moment] = await Promise.all([
     loadBoardSection(userId, threadId, userBody),
     loadRecencySection(userId),
     // Constitution + held beliefs (P2.5 G4). Never throws — '' on failure.
     loadConscienceBlock(userId, { dominionId }),
     // Today across channels, minus this thread (one mind). '' on failure.
     loadChatTodaySection(userId, threadId),
-    // The stage (KAIROS_STAGE=1). Never throws — '' when off or empty.
-    loadStageBlock(userId),
+    // Stage, cold read and the wave 4 moment lanes (lib/kairos/moment).
+    loadMomentChatOptions(userId, { threadId, dominionId, userBody, userSeq, surface: opts.surface, history: priorHistory }),
   ])
 
   const messages = buildChatMessages({
@@ -276,8 +228,7 @@ export async function buildAssistantTurn(
     recencySection,
     todaySection: todaySection || undefined,
     conscienceSection: conscienceSection || undefined,
-    ...(stage.block ? { stageSection: stage.block } : {}),
-    ...(coldReadEnabled() ? { coldRead: true } : {}),
+    ...moment,
   })
 
   return {
@@ -329,14 +280,12 @@ async function persistReply(
 ): Promise<KairosChatTurnResult | AlreadyAnsweredResult> {
   const raw = extractStance(text).text.trim()
   if (!raw) return { ok: false, reason: 'ai_empty', threadId }
-  const content = guardChatReply(raw, meta.finishReason)
-  if (content !== raw) {
-    console.warn('[kairos-chat] reply did not finish cleanly, trimmed', {
-      finishReason: meta.finishReason,
-      rawChars: raw.length,
-      keptChars: content.length,
-    })
-  }
+  const content = await finishChatReply(userId, threadId, raw, {
+    userSeq: meta.userSeq,
+    userBody: meta.userBody,
+    channel: meta.channel ?? 'web',
+    finishReason: meta.finishReason,
+  })
 
   // Strip hallucinated citations: only persist ids that were actually
   // retrieved this turn. UI then renders only chips it can name.

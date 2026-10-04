@@ -7,6 +7,7 @@ import { KAIROS_PROMISES_PREF_KEY } from './kairos-promises'
 import { KAIROS_STAGE_PREF_KEY } from './kairos-stage'
 import { KAIROS_SURPRISE_PREF_KEY } from './kairos-surprise'
 import { KAIROS_IDEA_ATLAS_PREF_KEY, KAIROS_IDEA_SHELF_PREF_KEY } from '@/lib/kairos/ideas/pref-keys'
+import { KAIROS_GATE_PREF_KEY, KAIROS_OWNER_MODEL_PREF_KEY, KAIROS_RAPPORT_PREF_KEY } from '@/lib/kairos/moment/pref-keys'
 
 export async function findPreferences(userId: string) {
   const row = await db
@@ -51,6 +52,9 @@ const SERVER_OWNED_OBJECT_KEYS = [
   KAIROS_SURPRISE_PREF_KEY,
   KAIROS_IDEA_ATLAS_PREF_KEY,
   KAIROS_IDEA_SHELF_PREF_KEY,
+  KAIROS_GATE_PREF_KEY,
+  KAIROS_OWNER_MODEL_PREF_KEY,
+  KAIROS_RAPPORT_PREF_KEY,
 ] as const
 
 function stripServerOwned(prefs: Record<string, unknown>): Record<string, unknown> {

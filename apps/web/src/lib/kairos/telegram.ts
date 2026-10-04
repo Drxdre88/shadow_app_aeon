@@ -195,7 +195,7 @@ export function splitTelegramMessage(text: string, limit = TELEGRAM_MESSAGE_LIMI
 
 type TelegramEnvelope = { ok?: boolean; description?: string; result?: unknown }
 
-async function callTelegram(method: string, payload: Record<string, unknown>): Promise<unknown> {
+export async function callTelegram(method: string, payload: Record<string, unknown>): Promise<unknown> {
   const token = process.env.TELEGRAM_BOT_TOKEN
   if (!token) throw new Error('TELEGRAM_BOT_TOKEN is not configured')
 
@@ -384,7 +384,7 @@ export async function sendKairosSpeak(input: {
   memoryId: string
   title: string
   message: string
-  kind: 'notify' | 'question'
+  kind: 'notify' | 'question'; keyboard?: InlineKeyboardButton[][]
 }): Promise<boolean> {
   const chatId = process.env.TELEGRAM_OPERATOR_CHAT_ID
   if (!chatId || !process.env.TELEGRAM_BOT_TOKEN) {
@@ -393,10 +393,10 @@ export async function sendKairosSpeak(input: {
   }
 
   const url = aeonKairosUrl()
-  const inlineKeyboard: InlineKeyboardButton[][] =
+  const inlineKeyboard: InlineKeyboardButton[][] = [...(input.keyboard ?? []), ...(
     input.kind === 'question'
       ? url ? [[{ text: 'Open in Aeon', url }]] : []
-      : [[{ text: 'Dismiss', callback_data: `dismiss:${input.memoryId}` }]]
+      : [[{ text: 'Dismiss', callback_data: `dismiss:${input.memoryId}` }]])]
 
   // Split the raw markdown first — HTML tags must never straddle a chunk
   // boundary — then render each chunk. The lower limit leaves headroom for

@@ -58,7 +58,7 @@ export const GOAL_METADATA_REFUSAL = 'sourceMetadata may not describe a Kairos g
 // a create/capture payload may never claim to be one, or an agent could forge
 // an "approved" voice sample or a measurement.
 export const INTERNAL_KIND_REFUSAL = 'sourceMetadata may not describe an internal Kairos record'
-const INTERNAL_KINDS: readonly string[] = ['voice_sample', 'cold_read', 'character_run']
+const INTERNAL_KINDS: readonly string[] = ['voice_sample', 'cold_read', 'character_run', 'life_chapter']
 const memorySourceMetadataSchema = z.record(z.string(), z.unknown()).refine(
   (m) => m.kind !== 'goal' && !Object.prototype.hasOwnProperty.call(m, 'goal'),
   { message: GOAL_METADATA_REFUSAL },

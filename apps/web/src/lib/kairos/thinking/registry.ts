@@ -18,6 +18,7 @@ import { driftProbeHandler } from './handlers/drift-probe'
 import { goalProposeHandler } from './handlers/goal-propose'
 import { ideaGenerateHandler } from './handlers/idea-generate'
 import { ideaJudgeHandler } from './handlers/idea-judge'
+import { lifeChapterHandler } from './handlers/life-chapter'
 import { mindCompareHandler } from './handlers/mind-compare'
 import { pulseHandler } from './handlers/pulse'
 import { reflectHandler } from './handlers/reflect'
@@ -36,6 +37,7 @@ export function getThinkingHandlers(): ThinkingJobHandler[] {
     constitutionSeedHandler,
     characterCheckHandler,
     weeklyReviewHandler,
+    lifeChapterHandler,
     ideaGenerateHandler,
     ideaJudgeHandler,
     dreamHandler,

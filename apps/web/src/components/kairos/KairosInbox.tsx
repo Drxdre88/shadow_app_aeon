@@ -13,6 +13,7 @@ import {
   listKairosInbox,
 } from '@/lib/actions/kairos-inbox'
 import { confirmVoiceNote, discardVoiceNote } from '@/lib/actions/kairos-voice'
+import { InboxExtras } from './inbox-extras'
 
 type InboxData = Awaited<ReturnType<typeof listKairosInbox>>
 type InboxItem = InboxData['items'][number]
@@ -445,6 +446,7 @@ export function KairosInbox() {
                 )}
 
                 <div className="flex-1 overflow-y-auto px-5 py-5">
+                  <InboxExtras />
                   {loading && count === 0 ? (
                     <div className="text-[12px] text-white/40">Loading…</div>
                   ) : count === 0 ? (

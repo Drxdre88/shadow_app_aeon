@@ -6,8 +6,8 @@ import { and, desc, eq, gt, gte, lte, sql } from 'drizzle-orm'
 export const AWAIT_WINDOW_HOURS = 48
 
 const REPLY_RATE_DAYS = 7
-const REPLY_CREDIT_HOURS = 24
-const REPLIED_STATUSES = new Set(['replied', 'answered', 'dismissed', 'accepted'])
+export const REPLY_CREDIT_HOURS = 24
+export const REPLIED_STATUSES: ReadonlySet<string> = new Set(['replied', 'answered', 'dismissed', 'accepted'])
 
 type SourceMetadata = Record<string, unknown>
 
@@ -26,7 +26,7 @@ function hasReplyStatus(metadata: unknown): boolean {
 // the credit window; a 40h-late reply still resolves the conversation but must
 // not bump cadence. Rows resolved without a repliedAt stamp (inbox actions)
 // carry no timing evidence, so they earn no rate credit either.
-function repliedWithinCredit(outbound: { createdAt: Date; sourceMetadata: unknown }): boolean {
+export function repliedWithinCredit(outbound: { createdAt: Date; sourceMetadata: unknown }): boolean {
   if (!hasReplyStatus(outbound.sourceMetadata)) return false
   const raw = (outbound.sourceMetadata as SourceMetadata).repliedAt
   if (typeof raw !== 'string') return false

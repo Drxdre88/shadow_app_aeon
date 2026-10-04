@@ -13,6 +13,7 @@ import { PROMISE_CHECK_CRON, verifyOpenPromises } from './promises/check'
 import { buildHoraeLine, buildVerdictLine } from './daily-message-tail'
 import { dreamLineEnabled } from './dreams/flag'
 import { readDreamLine } from './dreams/line'
+import { hasMomentHook, runDailyDelivered } from './moment'
 import {
   DAILY_MESSAGE_SYSTEM_PROMPT,
   DAILY_MESSAGE_TOTAL_MAX_CHARS,
@@ -172,6 +173,9 @@ export async function composeDailyMessage(userId: string, now: Date): Promise<Co
     }
   }
 
+  // Wave 4 moment openings (e.g. a repair line) lead the message, code-built.
+  const openings = inputs.moment?.openings ?? []
+  if (openings.length) message = [...openings, message].join('\n\n')
   const beliefsBlock = buildBeliefsBlock(inputs.promotions ?? [])
   if (beliefsBlock) message = `${message}\n\n${beliefsBlock}`
   // Kairos's goals (pending proposal + active), code-built and placed before
@@ -188,6 +192,7 @@ export async function composeDailyMessage(userId: string, now: Date): Promise<Co
     buildPromiseLine(inputs.promises, now),
     buildVerdictLine(inputs.verdicts),
     buildHoraeLine(inputs.agenda),
+    ...(inputs.moment?.tail ?? []),
   ].filter(Boolean)
   const reserved = tail.reduce((n, line) => n + line.length + 2, 0)
   message = appendOpenQuestionsBlock(message, inputs.openAsks, now, DAILY_MESSAGE_TOTAL_MAX_CHARS - reserved)
@@ -291,6 +296,9 @@ export async function runDailyMessageForUser(
       return { status: 'blocked', date, source }
     }
     if (outcome.body.alreadyDelivered) return await skip('already sent today')
+    if (hasMomentHook('dailyDelivered')) {
+      await runDailyDelivered({ userId, date, memoryId: outcome.body.id, telegram: outcome.body.delivered.telegram, moment: inputs.moment ?? null, now })
+    }
 
     const failedInputs = inputs.failed.length ? { failedInputs: inputs.failed } : {}
     // The message is in the Will inbox but Telegram did not get it (channel

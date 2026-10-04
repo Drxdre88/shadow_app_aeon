@@ -2,6 +2,8 @@ import { loadTodayDigest, recordTodayAfter } from '@/lib/kairos/today'
 import { renderTodaySection } from '@/lib/kairos/today-render'
 import type { ChatPromptSurface } from '@/lib/kairos/chat-prompt'
 import { scheduleChatCorrectionCheck } from '@/lib/kairos/surprise/owner-correction'
+import { hasMomentHook, runOwnerTurnHooks, runReplyHooks } from '@/lib/kairos/moment'
+import { runDetached } from '@/lib/kairos/moment/detached'
 
 // Chat ↔ "today" (spec_one_mind): the write and read points every chat
 // channel (web paid, web routine, Telegram paid, Telegram routine) shares,
@@ -34,6 +36,7 @@ export function recordChatOwnerTurn(
     { kind: 'operator', via: channel },
   )
   scheduleChatCorrectionCheck(userId, threadId, seq, body)
+  if (hasMomentHook('ownerTurn')) runDetached(() => runOwnerTurnHooks({ userId, threadId, seq, body, channel, at: new Date() }))
 }
 
 // Kairos's reply, as a ≤160-char gist (recordToday clips 'replied'). Started
@@ -50,6 +53,7 @@ export async function recordChatReply(
     { key: `chat:${threadId}:${seq}`, channel, type: 'replied', text: content, ref: { threadId, seq }, covered: 'chat-distill' },
     { kind: 'kairos', via: 'chat' },
   )
+  if (hasMomentHook('reply')) runDetached(() => runReplyHooks({ userId, threadId, seq, content, channel, at: new Date() }))
 }
 
 // What the owner said / decided on OTHER channels today. This thread's own
