@@ -39,6 +39,8 @@ import {
 import { loadTodayDigest } from '@/lib/kairos/today'
 import { renderTodaySection } from '@/lib/kairos/today-render'
 import { stageMode, stageSurpriseDue } from '@/lib/kairos/stage'
+import { lifeChapterMode } from '@/lib/kairos/life-chapters/flag'
+import { loadChapterContinuity } from '@/lib/kairos/life-chapters/continuity'
 import type {
   ApplyOutcome,
   ThinkingAnsweredBy,
@@ -159,12 +161,14 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
   if (!trigger && (await stageSurpriseDue(userId, since, now))) trigger = 'surprise'
   if (!trigger) return []
 
-  const [digest, events, promises, predictions, agenda] = await Promise.all([
+  const [digest, events, promises, predictions, agenda, chapter] = await Promise.all([
     loadTodayDigest(userId, { hours: 16, limit: 120 }),
     listRecentMemories(userId, [and(ne(memories.streamClass, 'agentic'), ne(memories.streamClass, 'trace'), isNull(memories.archivedAt), notToneFlagged)!], { start: since, end: now }, EVENTS_LIMIT),
     openPromises(userId),
     predictionPrompt(userId, now),
     agendaPrompt(userId, now),
+    // KAIROS_LIFE_CHAPTERS=1 only; never citable (not in validMemoryIds).
+    lifeChapterMode() === 'on' ? loadChapterContinuity(userId) : undefined,
   ])
   const todaySection = renderTodaySection(digest, { maxChars: TODAY_PROMPT_CHARS, heading: 'Today so far' })
   if (!todaySection && events.length === 0 && goals.length === 0) return []
@@ -186,6 +190,7 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
         reflectionsToday: done.length,
         ...(predictions ? { predictions } : {}),
         ...(agenda ? { agenda } : {}),
+        ...(chapter ? { chapter } : {}),
       }),
       validMemoryIds: [...events.map((e) => e.id), ...goals.map((g) => g.id)],
       maxOutputTokens: REFLECT_MAX_OUTPUT_TOKENS,

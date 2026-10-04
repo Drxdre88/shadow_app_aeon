@@ -23,7 +23,8 @@ import { runSweepHooks } from '@/lib/kairos/moment'
 //    kinds but SWEEP_PLAN_SKIP_KINDS). Only claims plan otherwise, and the
 //    nightly routine is done by ~03:20Z — so without this, kinds whose window
 //    opens later (weekly_review Mon ≥05:00Z, mind_compare Mon ≥04:00Z,
-//    daily_message from 05:30Z, drift_probe on nights the
+//    daily_message from 05:30Z, life_chapter on UTC days 1–3 ≥12:00Z,
+//    drift_probe on nights the
 //    routine stopped before aether) would never exist. Idempotent per
 //    external key; no model calls.
 // 2. Sweep: per user with open jobs or pending fallbacks: queued/claimed jobs
