@@ -125,7 +125,7 @@ export function KairosVisor() {
       // next send retries the AI half. If the thread was created (AI-failure on
       // a new thread), commit to it so the retry replies into THIS thread
       // instead of starting a duplicate.
-      const aiFailure = result.reason === 'ai_empty' || result.reason === 'ai_failed' || result.reason === 'no_credential'
+      const aiFailure = result.reason === 'ai_empty' || result.reason === 'ai_failed' || result.reason === 'no_credential' || result.reason === 'paid_backup_off'
       if (aiFailure) {
         setDraft('')
         if (result.threadId) {

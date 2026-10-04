@@ -248,6 +248,10 @@ export function telegramReplyChunks(reply: string): string[] {
 // What the operator sees when a chat turn produced no reply. The turn itself
 // is always persisted before the model runs.
 export function telegramChatFailureText(reason: string): string {
+  if (reason === 'paid_backup_off') {
+    return 'Kairos can’t reply yet — chat on your Max plan isn’t switched on, and the paid backup is off. ' +
+      'Your message is saved. Turn on the Kairos chat routine (Kairos → Set up Kairos), or switch the paid backup on in Health.'
+  }
   if (reason === 'no_credential') {
     return 'Kairos brain is offline — no AI provider key is configured in Aeon. ' +
       'Your message is saved; add a key in Settings → AI to wake him up.'

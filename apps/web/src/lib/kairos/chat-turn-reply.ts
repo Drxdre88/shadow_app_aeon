@@ -25,7 +25,7 @@ export type KairosChatTurnResult =
   // `threadId` is present on AI-failure cases (no_credential/ai_empty/ai_failed):
   // the thread was created and the user message persisted before the AI call,
   // so the client can recover to it on retry instead of starting a new thread.
-  | { ok: false; reason: 'unauthorized' | 'dominion_not_found' | 'thread_not_found' | 'no_credential' | 'ai_empty' | 'ai_failed' | 'invalid_input'; message?: string; threadId?: string }
+  | { ok: false; reason: 'unauthorized' | 'dominion_not_found' | 'thread_not_found' | 'no_credential' | 'paid_backup_off' | 'ai_empty' | 'ai_failed' | 'invalid_input'; message?: string; threadId?: string }
 
 // An exclusive persist (chat job apply / fallback) found the turn already
 // answered and wrote nothing.

@@ -228,6 +228,18 @@ describe('sendKairosMessage — persist before AI', () => {
     expect(out.ok === false && out.reason).toBe('no_credential')
   })
 
+  it('maps a paid-backup-off refusal to paid_backup_off, not no_credential', async () => {
+    vi.mocked(_getChatThread)
+      .mockResolvedValueOnce(fakeThread([]))
+      .mockResolvedValueOnce(fakeThread([{ seq: 1, role: 'user', content: 'hello' }]))
+    const off = new AiCredentialMissingError('anthropic')
+    off.name = 'PaidBackupOffError'
+    vi.mocked(getProviderForTask).mockRejectedValue(off)
+
+    const out = await sendKairosMessage({ threadId: THREAD_ID, body: 'hello' })
+    expect(out.ok === false && out.reason).toBe('paid_backup_off')
+  })
+
   it('maps whitespace-only reply to ai_empty', async () => {
     vi.mocked(_getChatThread)
       .mockResolvedValueOnce(fakeThread([]))
