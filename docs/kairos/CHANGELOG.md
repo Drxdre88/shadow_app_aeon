@@ -4,6 +4,16 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–35).
 
+## [0.25.0] — 2026-10-04 · "One coherent mind, wave 4: the art of the moment"
+
+> The relationship layer: when to speak, what he thinks you're carrying, readiness, small bids, repair, earned trust, ask-before-advising, and monthly life chapters. Built on a no-op `lib/kairos/moment/` seam; every lane flag-gated; flag-off is byte-identical; Telegram unchanged.
+
+- **Seam:** `moment/` guarded `MomentLane` registry [rapport, advise-trust, owner-model, gate, chapters] — speak policy/delivered, sweep, owner turn, reply, chat context/finish/strip, daily openings/blocks/tail, Telegram text/callback/message routes, owner decisions. `fanOutSpeak` extracted; chat grounding moved out of `chat-turn-assistant.ts`.
+- **Gate** (`KAIROS_GATE`, `_RECEPTIVITY`, `_MAX_HOLD_MIN`, `_QUIET_MIN`, `_CHAT_QUIET_MIN`, `_AWAY_MIN`): held rows = `status:'held'` + `gate` metadata (count toward caps; hidden from inbox), released by the hourly sweep / card-close / session-end with an atomic claim; flag off flushes; receptivity map in `user_preferences.kairosGate` (28-day half-life, never in a prompt). Digest/opsAlert/high never held; promise nudge gated via `opts.gate`.
+- **Owner model** (`KAIROS_OWNER_MODEL`, `_STATE_TTL_DAYS`): `user_preferences.kairosOwnerModel`; side section on `belief_extract` (Max answers only; stripped on paid fallback); live-only fenced block in chat + 06:00; weekly card `om1:*` buttons + `C<n>` commands + web card; vetoes; no MCP/REST write path.
+- **Rapport** (`KAIROS_READINESS`, `_BIDS`, `_REPAIR`): deterministic lexicon at capture, `user_preferences.kairosRapport`; readiness tips per `dominion_objectives`; bid brief replies + one Telegram `setMessageReaction`; rupture state machine with speak back-off and a repair opening (06:00 still sent).
+- **Trust / ask first** (`KAIROS_TRUST`, `KAIROS_ASK_FIRST`): recomputed on read from predictions, goals and goal promises (Beta(2,2) + Wilson); levels unknown/check/second/lean; footer stripped from history; never in a prompt; regex classifier for offer/listen/advise.
+- **Life chapters** (`KAIROS_LIFE_CHAPTERS`, `_LINE`): new monthly kind `life_chapter` (UTC days 1–3 from 12:00Z, 36h, no paid fallback), trace row, strict grounding, firewall test, reflect continuity in mode 1 only.
 ## [0.24.0] — 2026-10-03 · "One coherent mind, wave 3: creative genius"
 
 > The idea contest is rebuilt for spread, not sameness: an atlas of idea kinds, head-to-head Swiss rounds, collisions between distant memories, verbalized sampling with one capped resample, an incubation shelf, novelty nights and a learned owner taste with a surprise slot. All flag-gated; flag-off is byte-identical.

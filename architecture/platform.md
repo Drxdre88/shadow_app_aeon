@@ -7,7 +7,7 @@ Aeon exposes four programmatic front doors over the same three-layer data core (
 1. **REST API** (`/api/v1/*`) — session- or bearer-authenticated; the surface the web app, scripts, and the mobile app call.
 2. **Mobile auth** (`/api/v1/auth/mobile/*`) — issues 90-day bearer sessions for the mobile app.
 3. **OAuth 2.1 authorization server** (`/api/oauth/*` + `/.well-known/*`) — lets claude.ai's OAuth-only remote MCP connector reach the MCP server.
-4. **MCP tool server** (`/api/[transport]/`) — **132 tools across 27 categories** for AI agents.
+4. **MCP tool server** (`/api/[transport]/`) — **145 tools across 40 register groups** for AI agents (13 Kairos read tools added in 0.20–0.25; [kairos/mind.md](kairos/mind.md) §6).
 
 ---
 
@@ -43,7 +43,7 @@ NextAuth session cookie is the fallback when no bearer is present (`auth.ts:50-5
 | `recipes` | `recipes/traces` only — REST mirror of `get_trace_history`. The run route and its MCP twin were retired in 0.18 with the BRIEF recipe |
 | `projects/[id]/favorite` | PUT toggle for per-user project favorites (PR #80; mirrors MCP `set_project_favorite`) |
 | `projects/[id]/kairos-feed` | `PUT` — set which boards Kairos watches (`settings.kairosFeed`, merge, owner only; 0.18). Mirrors MCP `set_project_kairos_feed`, locked by `project-kairos-feed-parity.test.ts` |
-| `kairos/speak` | `POST /api/v1/kairos/speak` — **Kairos-initiated delivery** (Will-inbox `notify` memory + best-effort Telegram fan-out). Auth `Bearer ${CRON_SECRET}` (cron idiom, not user bearer). Server-side interrupt throttle: 4h min gap + 3/24h cap → 429; `force:true` bypass audit-logged and ceilinged at 10/24h. **Deliberately OUTSIDE MCP/REST parity** — internal delivery channel, no MCP mirror. |
+| `kairos/speak` | `POST /api/v1/kairos/speak` — **Kairos-initiated delivery** (Will-inbox `notify` memory + best-effort Telegram fan-out). Auth `Bearer ${CRON_SECRET}` (cron idiom, not user bearer). Server-side interrupt throttle (adaptive since 0.20: default 8h gap + 2/24h, 4h + 3 when he replies, 24h + 1/72h after silence) plus the 0.25 moment seam (block/hold) → 429; `force:true` bypass audit-logged and ceilinged at 10/24h. **Deliberately OUTSIDE MCP/REST parity** — internal delivery channel, no MCP mirror. |
 | `kairos/*` (0.11–0.19) | `memory-ops`, `memory-ops/[id]/revert`, `thinking-jobs`, `thinking-jobs/claim`, `thinking-jobs/[id]/submit` (`maxDuration = 300` since 0.15), `beliefs`, `beliefs/compare`, `constitution`, `constitution/amendments` — REST mirrors of the memory-ops / thinking / beliefs / constitution MCP tools. Added in 0.18: `asks` (GET open asks) + `asks/[id]/dismiss`, `voice-notes` (POST); in 0.19: `paid-backup` (GET/PUT) — each locked by a parity test |
 
 > ⚠️ **Route params are a Promise in Next 16 — always `await` them.** A handler that reads `(ctx as {params:{…}}).params` synchronously gets `undefined` for every segment, so an id-scoped guard like `getGroupRole(undefined, userId)` matches nothing and the route answers **403 for every caller**. It fails closed, compiles cleanly, and no test or typecheck catches it. Five routes under `api/v1/realms/` were written that way on 2026-04-02 and had never worked; found and fixed 2026-08-26 (`daeb93d`), all 7 param-reading route files now `await`. Use `type Params = { params: Promise<{ … }> }` + `const { x } = await (ctx as Params).params` — the pattern every other v1 family already uses.
@@ -88,7 +88,7 @@ Tokens: `aeon_at_` access (30d) + `aeon_rt_` refresh (1y, rotated), SHA-256-hash
 
 ## 4. MCP tools (`/api/[transport]/`)
 
-Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via `verifyToken` → `authenticateRequest`. **132 tools across 27 categories** (`tools/index.ts`, `route.ts`; counted from the registered tool names on 2026-10-02). **As of PR #83 every tool carries MCP annotation hints** (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint:false`) — full coverage, enabling client-side defer-loading and safe-tool filtering:
+Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via `verifyToken` → `authenticateRequest`. **145 tools across 40 register groups** (`tools/index.ts`, `route.ts`; counted from `registerTool(` calls on 2026-10-04 — 132 in the 27 categories below plus 13 Kairos read tools, one per `kairos-*.ts`, listed in [kairos/mind.md](kairos/mind.md) §6). **As of PR #83 every tool carries MCP annotation hints** (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint:false`) — full coverage, enabling client-side defer-loading and safe-tool filtering:
 
 | Category | Count | Notes |
 |---|---|---|
@@ -114,7 +114,7 @@ Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via
 | **ask** | 5 | `run_kairos_ask`, `get_pending_kairos_ask`, `answer_kairos_ask`, **`list_open_kairos_asks`**, **`dismiss_kairos_ask`** (0.18; numbered open questions, REST-mirrored) |
 | **dialogue** | 5 | `open_dialogue`, `prepare_dialogue_context`, `append_dialogue_turn`, `get_dialogue`, `commit_dialogue` |
 | **memory-ops** | 2 | `list_memory_ops`, `revert_memory_op` — memory-engine undo ledger |
-| **thinking** | 3 | `claim_thinking_job`, `submit_thinking_job`, `list_thinking_jobs` — the Claude Max routine's queue surface. 15 kinds since 0.18 (`kinds` max = enum size); a claim naming a retired kind has it dropped. Submitting `idea_generate` plans `idea_judge` the same night |
+| **thinking** | 3 | `claim_thinking_job`, `submit_thinking_job`, `list_thinking_jobs` — the Claude Max routine's queue surface. 24 kinds as of 0.25 (`kinds` max = enum size); a claim naming a retired kind has it dropped. Submitting `idea_generate` plans `idea_judge` the same night |
 | **beliefs** | 2 | `list_beliefs` (each belief carries `sourceType` + `recheck`, 0.14), `get_mind_comparison` |
 | **constitution** | 2 | `get_constitution`, `propose_constitution_amendment` (acceptance is operator-only) |
 | **voice-note** | 1 | `kairos_voice_note` (0.18) — stages verbatim voice-note parts as pending agent proposals; the owner confirms them in the UI only (`confirmVoiceNote`) |
@@ -153,7 +153,7 @@ Three-tier BYOK routing (cheap / standard / heavy) over user-supplied keys, all 
 | **Voyage AI (`voyage-3.5`, 1024-dim)** | App-owned memory embeddings (primary) | Active |
 | **OpenAI `text-embedding-3-small`** | Embedding fallback (truncated to 1024-dim) | Active (fallback) |
 | pgvector | 1024-dim memory vector column + HNSW | Active |
-| MCP Protocol | AI tool server | Active (132 tools) |
+| MCP Protocol | AI tool server | Active (145 tools) |
 | claude.ai remote connector | OAuth 2.1 MCP client → `/api/mcp` | Active (DCR + PKCE) |
 | Pusher Channels | Real-time (30s polling fallback) | Active |
 | ReactFlow (`@xyflow/react`) | Canvas | Active |
@@ -170,7 +170,7 @@ The app-owned **embedding layer** (Voyage primary / OpenAI fallback, single serv
 
 ## 6.5 Versioning + CI gates
 
-- App version is `APP_VERSION` in `apps/web/src/lib/version.ts` (**0.36.0**; Kairos `KAIROS_VERSION` **0.19.0** in `lib/kairos/version.ts`), surfaced in the Changelog modal; `apps/web/src/lib/changelog.ts` mirrors `/CHANGELOG.md` — bump all three together (the freshness report checks they agree). `package.json` versions remain scaffold defaults and are not the displayed product version.
+- App version is `APP_VERSION` in `apps/web/src/lib/version.ts` (**0.43.0**; Kairos `KAIROS_VERSION` **0.25.0** in `lib/kairos/version.ts`), surfaced in the Changelog modal; `apps/web/src/lib/changelog.ts` mirrors `/CHANGELOG.md` — bump all three together (the freshness report checks they agree). `package.json` versions remain scaffold defaults and are not the displayed product version.
 - CI (`.github/workflows/ci.yml`): lint + typecheck + Vitest + **production build** for the web app, plus kairos-worker typecheck + tests; `auth-smoke` runs on every deployment (the 2026-06-08 outage guard). `.github/workflows/freshness.yml` runs the read-only freshness report weekly (Mondays 06:30 UTC) and keeps one open issue while anything is stale — see [../docs/aeon-living-world.md](../docs/aeon-living-world.md).
 
 ## 7. DB / cold-start reliability + cron schedule

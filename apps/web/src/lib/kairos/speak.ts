@@ -1,8 +1,9 @@
 import { z } from 'zod'
 import { captureMemory, listRecentKairosSpeaks } from '@/lib/data/memories'
 import { AWAIT_WINDOW_HOURS, getConversationState } from '@/lib/kairos/engagement'
-import { sendKairosSpeak } from '@/lib/kairos/telegram'
+import { sendKairosSpeak, type InlineKeyboardButton } from '@/lib/kairos/telegram'
 import { recordToday } from '@/lib/kairos/today'
+import type { SpeakMomentOptions } from '@/lib/kairos/moment/types'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos speaks first — delivery logic shared by POST /api/v1/kairos/speak
@@ -39,7 +40,7 @@ export const speakSchema = z.object({
 export type SpeakInput = z.infer<typeof speakSchema>
 
 export type SpeakOutcome =
-  | { status: 200; body: { id: string; delivered: { inbox: boolean; telegram: boolean }; alreadyDelivered?: boolean } }
+  | { status: 200; body: { id: string; delivered: { inbox: boolean; telegram: boolean }; alreadyDelivered?: boolean; held?: { until: string } } }
   | { status: 429; body: Record<string, unknown> }
 
 // Server-side interrupt throttle: an unprompted Kairos message is only
@@ -71,13 +72,26 @@ export function capSpeakMessage(message: string, max: number = SPEAK_MESSAGE_MAX
   return `${cut.trimEnd()}${TRUNCATION_MARK}`
 }
 
+export interface FanOutSpeakInput {
+  userId: string
+  memoryId: string
+  title: string
+  message: string
+  kind: SpeakInput['kind']
+  opsAlert: boolean
+}
+
+// Telegram-only extras for one fan-out; never stored.
+export type FanOutSpeakOptions = { telegramTail?: string; telegramKeyboard?: InlineKeyboardButton[][] }
+
 // opts.telegramTail: Telegram-only text appended to the sent message (the 06:00
 // dream line). Never stored — the inbox capture and the today log see `message`
 // alone — so it can never be retrieved, distilled or quoted back as memory.
+// opts.gate / opts.telegramKeyboard: wave 4 moment seam (lib/kairos/moment/types.ts).
 export async function deliverKairosSpeak(
   operatorUserId: string,
   input: SpeakInput,
-  opts: { telegramTail?: string } = {},
+  opts: { telegramTail?: string } & SpeakMomentOptions = {},
 ): Promise<SpeakOutcome> {
   const { title, kind, urgency, force, opsAlert, digest, externalId } = input
   const message = capSpeakMessage(input.message)
@@ -138,6 +152,24 @@ export async function deliverKairosSpeak(
     console.warn('[kairos-speak] forced throttle bypass', { spokenLast24h: recent.length })
   }
 
+  // Wave 4 moment policies (loaded on use): may only block or hold, never relax.
+  const moment = await import('./moment')
+  const now = new Date()
+  const verdict = opsAlert || !moment.hasMomentHook('speakPolicy')
+    ? null
+    : await moment.runSpeakPolicies({
+      userId: operatorUserId,
+      input: { ...input, message },
+      gate: opts.gate === true,
+      awaitingReply: state.awaitingReply,
+      replyRate7d: state.replyRate7d,
+      now,
+    })
+  if (verdict?.block) return { status: 429, body: { error: 'moment_blocked', reason: verdict.block.reason } }
+  // Telegram-only extras are never stored, so a hold would lose them at release: such a send goes out now.
+  const hasTelegramExtras = Boolean(opts.telegramTail?.trim() || opts.telegramKeyboard?.length)
+  const hold = verdict?.hold && !hasTelegramExtras ? { heldAt: now.toISOString(), until: verdict.hold.until, reason: verdict.hold.reason } : null
+
   const { memory, created } = await captureMemory(operatorUserId, {
     title,
     bodyMd: message,
@@ -146,12 +178,13 @@ export async function deliverKairosSpeak(
     source: 'system',
     sourceMetadata: {
       kairosSpeak: true,
-      status: 'pending',
+      status: hold ? 'held' : 'pending',
       kind,
       urgency,
       ...(opsAlert ? { opsAlert: true } : {}),
       ...(digest ? { digest: true } : {}),
       ...(externalId ? { externalId } : {}),
+      ...(hold ? { gate: hold } : {}),
     },
   })
 
@@ -160,24 +193,38 @@ export async function deliverKairosSpeak(
   if (!created) {
     return { status: 200, body: { id: memory.id, delivered: { inbox: false, telegram: false }, alreadyDelivered: true } }
   }
+  // Held: the today log and Telegram happen at release (fanOutSpeak).
+  if (hold) return { status: 200, body: { id: memory.id, delivered: { inbox: false, telegram: false }, held: { until: hold.until } } }
 
+  const telegram = await fanOutSpeak({ userId: operatorUserId, memoryId: memory.id, title, message, kind, opsAlert }, opts)
+  if (moment.hasMomentHook('speakDelivered')) {
+    await moment.runSpeakDelivered({ userId: operatorUserId, memoryId: memory.id, input: { ...input, message }, telegram, now })
+  }
+
+  return { status: 200, body: { id: memory.id, delivered: { inbox: true, telegram } } }
+}
+
+// Today log + Telegram for a speak row already in the inbox (a new speak, or a
+// held one at release). Returns whether Telegram delivered; never throws.
+export async function fanOutSpeak(params: FanOutSpeakInput, opts: FanOutSpeakOptions = {}): Promise<boolean> {
+  const { userId, memoryId, title, message, kind, opsAlert } = params
   // Today log: what Kairos said, once per new speak (ops alerts are health
   // signals, not something he said to the owner). recordToday never throws.
   if (!opsAlert) {
     await recordToday(
-      operatorUserId,
-      { key: `speak:${memory.id}`, channel: 'kairos', type: 'spoke', text: `${title}: ${message}`, ref: { memoryId: memory.id } },
+      userId,
+      { key: `speak:${memoryId}`, channel: 'kairos', type: 'spoke', text: `${title}: ${message}`, ref: { memoryId } },
       { kind: 'kairos', via: 'speak' },
     )
   }
 
   let telegram = false
   const tail = opts.telegramTail?.trim()
+  const keyboard = opts.telegramKeyboard?.length ? { keyboard: opts.telegramKeyboard } : {}
   try {
-    telegram = await sendKairosSpeak({ memoryId: memory.id, title, message: tail ? `${message}\n\n${tail}` : message, kind })
+    telegram = await sendKairosSpeak({ memoryId, title, message: tail ? `${message}\n\n${tail}` : message, kind, ...keyboard })
   } catch (err) {
     console.error('[kairos-speak] telegram fan-out failed', err)
   }
-
-  return { status: 200, body: { id: memory.id, delivered: { inbox: true, telegram } } }
+  return telegram
 }

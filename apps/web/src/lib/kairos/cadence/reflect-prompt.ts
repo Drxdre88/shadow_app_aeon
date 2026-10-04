@@ -97,6 +97,8 @@ export interface ReflectPromptInputs {
   reflectionsToday: number
   predictions?: ReflectPredictionPrompt
   agenda?: ReflectAgendaPrompt
+  // KAIROS_LIFE_CHAPTERS=1 only: the last chapter (≤600 chars), context not evidence.
+  chapter?: string
 }
 
 const clip = (s: string, n: number) => neutraliseFences(s.length > n ? `${s.slice(0, n - 1)}…` : s)
@@ -143,6 +145,7 @@ export function buildReflectPrompt(inputs: ReflectPromptInputs): string {
     '',
     '## Your open promises',
     ...(inputs.promises.length ? inputs.promises.map((p) => `- P${p.seq} by ${p.dueDate}: ${clip(p.outcome, 160)}`) : ['- (none)']),
+    ...(inputs.chapter ? ['', '## Where your story stands (your last chapter — your own words, context not evidence; never cite)', inputs.chapter] : []),
     ...(inputs.predictions ? predictionLines(inputs.predictions) : []),
     ...(inputs.agenda ? agendaLines(inputs.agenda) : []),
   ].join('\n')

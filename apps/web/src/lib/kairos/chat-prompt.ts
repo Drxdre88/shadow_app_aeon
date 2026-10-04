@@ -71,6 +71,9 @@ export interface BuildChatPromptInput {
   conscienceSection?: string      // pre-rendered constitution + held beliefs (conscience-context.ts) — reference data
   stageSection?: string           // pre-rendered stage block (lib/kairos/stage, KAIROS_STAGE=1) — what Kairos is attending to now; not evidence
   coldRead?: boolean              // KAIROS_COLD_READ: stranger-test line + hidden <stance> tag on judgement turns
+  momentSections?: string[]       // wave 4 moment lanes (lib/kairos/moment): one block after the conscience block
+  momentStyleLines?: string[]     // wave 4 moment lanes: Style lines after the cold-read lines
+  briefReply?: boolean            // wave 4 moment lanes: Telegram only — drop the Telegram persona format lines
 }
 
 // Everything but the Dominion frame. An options object, not positional
@@ -234,19 +237,23 @@ export function buildChatSystemPrompt(
     lines.push(conscienceSection.trim())
   }
 
+  const momentSections = (opts.momentSections ?? []).map((s) => s.trim()).filter(Boolean)
+  if (momentSections.length) lines.push('', '---', '', momentSections.join('\n\n'))
+
   lines.push('')
   lines.push('---')
   lines.push('')
   lines.push('Style:')
   if (surface === 'telegram') {
     lines.push('- You are texting the operator on Telegram — write like the sharpest person in their contacts, not like a report.')
-    lines.push(...TELEGRAM_CHAT_PERSONA)
+    if (!opts.briefReply) lines.push(...TELEGRAM_CHAT_PERSONA)
   } else {
     lines.push('- Markdown for replies. Default to short paragraphs and bullets, not walls of text.')
   }
   lines.push('- Cite specifics from the operator\'s context when relevant. When you\'re reasoning from general knowledge, say so.')
   lines.push('- Disagree with the operator when their plan has a hole. Diplomacy without disagreement is just flattery.')
   if (opts.coldRead) lines.push(...COLD_READ_CHAT_LINES)
+  if (opts.momentStyleLines?.length) lines.push(...opts.momentStyleLines)
   if (hasRetrieval) {
     lines.push('- Cite grounded sources with `[[memory-id]]` inline. Only cite ids that appear in the Grounded context block above — do not invent ids.')
   }
@@ -265,6 +272,9 @@ export function buildChatMessages(input: BuildChatPromptInput): AIMessage[] {
     conscienceSection: input.conscienceSection,
     stageSection: input.stageSection,
     coldRead: input.coldRead,
+    momentSections: input.momentSections,
+    momentStyleLines: input.momentStyleLines,
+    briefReply: input.briefReply,
   })
   const trimmedHistory = input.history.slice(-MAX_HISTORY_MESSAGES)
 

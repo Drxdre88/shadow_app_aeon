@@ -30,6 +30,8 @@ import { capBeliefConfidence, type BeliefSourceType } from '@/lib/kairos/origin'
 import { surpriseGateMode } from '@/lib/kairos/surprise/flag'
 import { latestSignalAt, openWhy } from '@/lib/kairos/surprise/gate'
 import { recordBeliefExtractSurprises } from '@/lib/kairos/surprise/extract-signals'
+import { ownerModelMode } from '@/lib/kairos/owner-model/flag'
+import { ownerExtractSeqs, parseOwnerExtract, stripOwnerExtract, withOwnerExtract } from '@/lib/kairos/owner-model/extract'
 import { askPaidAndParse } from '../paid-fallback'
 import { beliefRowValues, remainingProvenance, type BeliefV1 } from '@/lib/kairos/beliefs/types'
 import type {
@@ -75,6 +77,8 @@ const contextSchema = z.object({
   evidenceIds: z.array(z.string().min(1)).default([]),
   // Surprise gate (on): beliefs open for update the job put to the model.
   openIds: z.array(z.string().min(1)).default([]),
+  // Owner model side section (KAIROS_OWNER_MODEL != off): C-numbers listed.
+  owner: z.object({ seqs: z.array(z.number().int()) }).optional(),
 }).refine((c) => c.inputIds.length + c.flaggedIds.length + c.openIds.length > 0, 'nothing to extract')
 
 export type BeliefExtractContext = z.infer<typeof contextSchema>
@@ -183,6 +187,11 @@ export async function planBeliefExtract(userId: string, now: Date): Promise<Thin
   const flaggedIds = flagged.map((f) => f.id)
   const openIds = open.map((o) => o.id)
   const questioned: QuestionedBeliefRef[] = open.map((o) => ({ id: o.id, domain: o.belief.domain, claim: o.belief.claim, why: openWhy(o.sourceMetadata) }))
+  const base = {
+    system: gateOn ? EXTRACT_SYSTEM_PROMPT_SURPRISE : EXTRACT_SYSTEM_PROMPT,
+    prompt: buildExtractPrompt({ dominions, held, inputs, recheck, ...(questioned.length ? { questioned } : {}) }),
+  }
+  const owner = await ownerSideSection(userId, now)
   const context: z.input<typeof contextSchema> = {
     day: utcDay(now),
     inputIds,
@@ -192,20 +201,36 @@ export async function planBeliefExtract(userId: string, now: Date): Promise<Thin
     flaggedIds,
     evidenceIds,
     ...(openIds.length ? { openIds } : {}),
+    ...(owner ? { owner: { seqs: owner.seqs } } : {}),
   }
+  const { system, prompt } = owner ? owner.add(base) : base
   return [{
     kind: BELIEF_EXTRACT_KIND,
     dominionId: null,
     externalKey,
     deadlineMinutes: BELIEF_EXTRACT_DEADLINE_MINUTES,
     input: {
-      system: gateOn ? EXTRACT_SYSTEM_PROMPT_SURPRISE : EXTRACT_SYSTEM_PROMPT,
-      prompt: buildExtractPrompt({ dominions, held, inputs, recheck, ...(questioned.length ? { questioned } : {}) }),
+      system,
+      prompt,
       validMemoryIds: [...context.inputIds, ...(context.evidenceIds ?? []), ...context.heldIds],
       context,
       maxOutputTokens: BELIEF_EXTRACT_MAX_OUTPUT_TOKENS,
     },
   }]
+}
+
+// Owner model side section (spec_B §3.3): planned only when the flag is not
+// off; never changes when the job plans. A read failure plans without it.
+async function ownerSideSection(userId: string, now: Date) {
+  if (ownerModelMode() === 'off') return null
+  try {
+    const { readKairosOwnerModel } = await import('@/lib/data/kairos-owner-model')
+    const model = await readKairosOwnerModel(userId)
+    return { seqs: ownerExtractSeqs(model, now), add: (base: { system: string; prompt: string }) => withOwnerExtract(base, model, now) }
+  } catch (err) {
+    console.warn(`[belief_extract] owner model unavailable, planning without it: ${errorReason(err)}`)
+    return null
+  }
 }
 
 function readContext(job: ThinkingJobRow): BeliefExtractContext | null {
@@ -292,14 +317,30 @@ export async function applyBeliefExtract(job: ThinkingJobRow, text: string, answ
   } catch (err) {
     return { ok: false, reason: `parse_failed: ${errorReason(err)}` }
   }
-  return persist(job, ctx, answer, answeredBy)
+  const outcome = await persist(job, ctx, answer, answeredBy)
+  if (outcome.ok && answeredBy !== 'api') await applyOwnerSide(job, ctx, text)
+  return outcome
+}
+
+// Owner model side answer: Max-plan answers of jobs planned with the section
+// only. Never fails the job.
+async function applyOwnerSide(job: ThinkingJobRow, ctx: BeliefExtractContext, text: string): Promise<void> {
+  if (!ctx.owner || ownerModelMode() === 'off') return
+  try {
+    const extraction = parseOwnerExtract(text, { inputIds: [...ctx.inputIds, ...ctx.evidenceIds] })
+    const { applyOwnerExtract } = await import('@/lib/kairos/owner-model/apply')
+    await applyOwnerExtract(job.userId, extraction, new Date())
+  } catch (err) {
+    console.warn(`[belief_extract] ${job.id}: owner model side answer not applied: ${errorReason(err)}`)
+  }
 }
 
 export async function fallbackBeliefExtract(job: ThinkingJobRow): Promise<ApplyOutcome> {
   const ctx = readContext(job)
   if (!ctx) return { ok: false, reason: 'bad_job: invalid belief_extract context' }
   const provenanceIds = [...ctx.inputIds, ...ctx.evidenceIds]
-  const res = await askPaidAndParse(job, {
+  // The paid prompt is byte-identical to flag-off: the owner side section is stripped.
+  const res = await askPaidAndParse({ ...job, input: stripOwnerExtract(job.input) }, {
     parse: (t) => parse(t, ctx),
     label: BELIEF_EXTRACT_KIND,
     maxTokens: job.input.maxOutputTokens ?? BELIEF_EXTRACT_MAX_OUTPUT_TOKENS,

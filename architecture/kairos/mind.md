@@ -1,0 +1,111 @@
+# Kairos — One Coherent Mind (0.20 → 0.25)
+
+> Part of the Aeon architecture set — index: [../../ARCHITECTURE.md](../../ARCHITECTURE.md) · siblings: [overview](overview.md) · [memory-and-capture](memory-and-capture.md) · [synthesis](synthesis.md) · [chat](chat.md)
+
+State as of **Kairos 0.25.0 / app v0.43.0** (2026-10-04). Plan of record: `research/kairos_0310/next_phase_mind.md`;
+release log: `docs/kairos/CHANGELOG.md` 0.20–0.25; operator handover: `aeon_os/HANDOVER_0310.md`.
+All paths below are under `apps/web/src/` unless stated.
+
+**Ground rules that hold across every wave**
+- **No schema change** since 0.16: new state is `user_preferences` server-owned keys or `memories.sourceMetadata.kind` rows (§5).
+- **Flag-gated, off by default, flag-off byte-identical.** Only the shared "today" log is on by default (`KAIROS_TODAY=0` turns it off).
+- **Max plan first.** New thinking runs as routine-claimed jobs; none of the 0.20–0.25 kinds has a paid fallback, except where a pre-existing kind already had one.
+- **Measurement-only.** Conscience results, character scores, cold reads and taste never reach a Kairos prompt. Dreams never become memories, evidence or prompt text (`dreams/__tests__/firewall.test.ts`, `life-chapters/__tests__/firewall.test.ts`).
+- **Telegram stays first-class** (owner rule 03/10). Triad is an extra, enterprise-internal channel.
+
+## 1. Releases at a glance
+
+| Version / PR | Theme | Default |
+|---|---|---|
+| 0.20 / #148 | Settle the brain: owner-only constitution, routine-scoped claims, unjudged ideas filed, chat timing; **initiative** (goals, promises, Approve/Veto) dormant | P1 on, P2 off |
+| 0.21 / #149 | **One mind everywhere** (shared today log); daytime thinking (`reflect` + `pulse`), track record (predictions), Horae (agenda) | today **on**; rest off |
+| 0.22 / #150 | Wave 1: the **stage**, weekly **character check**, **cold read** | off |
+| 0.23 / #151 | Wave 2: **surprise** as the engine, **dreams** | off |
+| 0.24 / #152 | Wave 3: **creative genius** — idea atlas, Swiss rounds, collisions, anti-sameness, incubation, stepping stones, taste | off |
+| 0.25 / wave-4 PR | Wave 4: **the art of the moment** — gate, owner model, rapport, trust/ask-first, life chapters | off |
+
+## 2. One mind everywhere (0.21)
+
+| Piece | Where | Notes |
+|---|---|---|
+| Today log | `lib/kairos/today.ts` (`recordToday`), store `lib/data/kairos-today.ts` (`agent_sessions.engine='kairos-today'`, `session_events.kind='kairos_today'`), channels in `lib/data/validators/kairos-today.ts:8` | 36h window, 500 entries; channels telegram / web / triad / mcp / voice / session / ask / inbox / kairos |
+| Writers | `chat-today.ts` (owner turns + replies), `dialogue.ts` (Triad), `today-mcp-use.ts` (Claude via MCP, one per client+tool per 15 min), `voice-note-confirm.ts`, `ask.ts`, `proposal-accept.ts` / `proposal-decision.ts`, `speak.ts`, `owner-model/correct.ts` | |
+| Readers | chat (`loadChatTodaySection`), 06:00 message (`daily-message-today.ts`), pulse/reflect, `get_kairos_today` / `GET /api/v1/kairos/today` | |
+| Daytime thinking | `thinking/handlers/reflect.ts` (08–21 London, deep) and `pulse.ts` (07–22 London, light, notes + stage thoughts only — never speaks) | `KAIROS_DAYTIME_THINKING` |
+| Track record | `lib/data/kairos-predictions.ts` (`kairosPredictions`), `predictions/score.ts` (Brier, 90-day window, shown from 5 settled) | `KAIROS_PREDICTIONS` |
+| Horae | `lib/data/kairos-agenda.ts` (`kairosAgenda`), `agenda_due` kind | `KAIROS_INITIATIVE` + `KAIROS_AGENDA` |
+
+## 3. Inner mechanisms (waves 1–3)
+
+| Mechanism | Lives in | Flag |
+|---|---|---|
+| Stage (global workspace: every job posts ≤2 thoughts; top coalitions become "I, now") | `lib/kairos/stage/` (select, ambient, queue-glue, render), `thinking/stage-thoughts.ts`, `kairosStage` | `KAIROS_STAGE` (`observe`→`1`) |
+| Character check (weekly blind rating vs constitution + owner-approved voice samples; tone budget) | `lib/kairos/character/`, `thinking/handlers/character-check.ts`, `character_run` + `voice_sample` rows | `KAIROS_CHARACTER_CHECK` |
+| Cold read (profile-free second opinion on plan judgements; `<stance>` tag in chat) | `lib/kairos/cold-read/`, `thinking/handlers/cold-read.ts`, `cold_read` rows | `KAIROS_COLD_READ` (`audit`→`1`) |
+| Surprise ledger / gate / credit / learning progress / replay / surprise→stage | `lib/kairos/surprise/`, `engine/steps/surprise.ts` (between Weigh and OwnMind), `lib/data/belief-aligned.ts`, `kairosSurprise` | `KAIROS_SURPRISE_*`, `KAIROS_CURIOSITY_LP` |
+| Dreams + morning read (firewalled; light tier on the stage; Telegram-only "I dreamt…") | `lib/kairos/dreams/`, kinds `dream`, `dream_read` (output-only storage) | `KAIROS_DREAMS`, `KAIROS_DREAM_LINE` |
+| Idea contest extensions | `thinking/handlers/idea-ext/` registry [stepping, atlas, collision, sameness]; `ideas/{atlas,swiss,sameness,stepping}/`, `collision/`, `incubation/`, `kairosIdeaAtlas`, `kairosIdeaShelf` | `KAIROS_IDEA_ATLAS`, `_SWISS`, `KAIROS_COLLISIONS`, `KAIROS_IDEA_VS`, `_RESAMPLE`, `_SHELF`, `_NOVELTY`, `_TASTE` |
+
+Swiss rounds run as follow-on `idea_judge:<day>:r<k>` jobs (no new kind), stop chaining past the 04:35Z settle,
+and never use the paid key after round 1. A collision bridge is a `relates` link with a `bridge · idea:` note,
+written only on owner/operator accepts.
+
+## 4. The moment seam and wave 4 (0.25)
+
+`lib/kairos/moment/` is a guarded `MomentLane` registry (`types.ts`, `index.ts`), mirroring the wave-3 `idea-ext`
+seam. Every hook is wrapped (a failure is logged and skipped); with no lane implementing a hook the runner passes
+the input through unchanged. Lane order — also chat style precedence — is **rapport → advise-trust → owner-model → gate → chapters**.
+
+| Hook | Called from |
+|---|---|
+| `speakPolicy` / `speakDelivered` | `speak.ts` (after caps + forced ceiling; block → 429 `moment_blocked`, hold → row `status:'held'` + `gate` metadata) / after `fanOutSpeak` |
+| `sweep` | `app/api/cron/thinking-sweep/route.ts` (operator only; keys added only when non-null) |
+| `ownerTurn` / `reply` | `chat-today.ts` (`after()`-detached) |
+| `chatContext` / `finishReply` / `stripFooter` | `moment/chat.ts` (`loadMomentChatOptions`, `finishChatReply`, `stripMomentFooters`) used by `chat-turn-assistant.ts`; grounding loaders moved to `moment/chat-grounding.ts` |
+| `daily` / `dailyDelivered` | `daily-message-inputs.ts` (`gatherMomentDaily` → openings, prompt blocks, tail) / `daily-message.ts` |
+| `telegramText` / `telegramCallback` / `telegramMessage` | `moment/telegram-routes.ts` via the webhook (text after veto-reason, before chat; callbacks after `p1:`, before dismiss/accept; non-text updates) |
+| `ownerDecision` | `proposal-accept.ts` (every accept/dismiss path) |
+
+| Lane | What it does | Flags | Code / state |
+|---|---|---|---|
+| **Gate** | Holds unprompted, non-digest messages until a natural break (chat ended, card closed, session ended, quiet ≥10 min, away ≥3h) or the deadline (default 120 min, released at the next hourly sweep, so ≤ ~3h); learns a receptivity map (hour/day/kind/source/channel, 28-day half-life) — never in a prompt. Flag off flushes held rows at the next sweep. | `KAIROS_GATE`, `_RECEPTIVITY`, `_MAX_HOLD_MIN`, `_QUIET_MIN`, `_CHAT_QUIET_MIN`, `_AWAY_MIN` | `moment/gate/`, `lib/data/kairos-gate.ts` (`kairosGate`, atomic claim on release); `get_kairos_gate` |
+| **Owner model** | Lasting traits vs states that lapse 10 days after the owner's last confirmation; live-only fenced block in chat + 06:00; Sunday-evening "what I think you're carrying" card with `om1:` buttons, `C<n> still/over/wrong` / `C<n>: …` commands and a web inbox card. Extracted as a side section of `belief_extract` (Max answers only; stripped on the paid fallback). No MCP/REST write path. | `KAIROS_OWNER_MODEL`, `_STATE_TTL_DAYS` | `lib/kairos/owner-model/`, `lib/data/kairos-owner-model.ts` (`kairosOwnerModel`), `components/kairos/OwnerCarryingCard.tsx`; `get_kairos_owner_model` |
+| **Rapport** | Deterministic lexicon at capture (no model calls): readiness per owner `dominion_objectives` (offer one step / reflect), small bids (brief warm reply; one Telegram `setMessageReaction` for sticker/GIF/photo), rupture → back-off (speak 429 unless forced/high) → repair opening (06:00 still sent, repair line first) | `KAIROS_READINESS`, `KAIROS_BIDS`, `KAIROS_REPAIR` | `lib/kairos/rapport/`, `lib/data/kairos-rapport.ts` (`kairosRapport`); `get_kairos_rapport` |
+| **Advise / trust** | Ask-first classifier (offer → "Want my take, or would you rather think it out loud?"; listen; advise = questions first, view last). Trust per area recomputed on read from predictions, goals and goal-linked promises (Beta(2,2) + Wilson; levels unknown/check/second/lean) — shown as a reply footer (stripped from history), a Monday 06:00 line and a read view; never in a prompt | `KAIROS_ASK_FIRST`, `KAIROS_TRUST` | `lib/kairos/{advise,trust}/`, `lib/data/kairos-trust.ts`; `get_kairos_trust` |
+| **Chapters** | Monthly `life_chapter` kind (UTC days 1–3 from 12:00Z, 36h, no paid fallback): honest turning points with cited ids, loose ends left open; trace row; in mode `1` reflect sees "where your story stands" (≤600 chars, never citable). The moment lane slot is empty. | `KAIROS_LIFE_CHAPTERS`, `KAIROS_LIFE_CHAPTER_LINE` | `lib/kairos/life-chapters/`, `thinking/handlers/life-chapter.ts`, `lib/data/life-chapters.ts`; `get_kairos_life_chapters` |
+
+## 5. State added since 0.16 (no new tables)
+
+| `user_preferences` key | Module (single FOR UPDATE writer) | Since |
+|---|---|---|
+| `kairosPromises` · `kairosPredictions` · `kairosAgenda` | `lib/data/kairos-{promises,predictions,agenda}.ts` | 0.20–0.21 |
+| `kairosStage` · `kairosSurprise` | `lib/data/kairos-{stage,surprise}.ts` | 0.22–0.23 |
+| `kairosIdeaAtlas` · `kairosIdeaShelf` | `lib/data/kairos-idea-{atlas,shelf}.ts` (keys in `lib/kairos/ideas/pref-keys.ts`) | 0.24 |
+| `kairosGate` · `kairosOwnerModel` · `kairosRapport` | `lib/data/kairos-{gate,owner-model,rapport}.ts` (keys in `lib/kairos/moment/pref-keys.ts`) | 0.25 |
+
+All are in `SERVER_OWNED_OBJECT_KEYS` (`lib/data/preferences.ts`), stripped from client saves and carried through
+theme saves. `kairosPaidBackup` (0.19) is a separate boolean. New `memories` row kinds (`sourceMetadata.kind`):
+`goal` (staged proposal), `cold_read`, `character_run`, `voice_sample`, `life_chapter`, `voice_note_summary`; the
+internal ones are refused on create/capture (`validators/memory.ts` `INTERNAL_KINDS`).
+
+## 6. Read surfaces added since 0.19 (MCP ⇄ REST parity)
+
+| MCP tool | REST |
+|---|---|
+| `list_kairos_promises`, `list_kairos_predictions`, `list_kairos_agenda`, `get_kairos_today` | `/api/v1/kairos/{promises,predictions,agenda,today}` |
+| `get_kairos_stage`, `get_kairos_surprise` | `/api/v1/kairos/{stage,surprise}` |
+| `get_kairos_idea_atlas`, `get_kairos_idea_taste` | `/api/v1/kairos/{idea-atlas,idea-taste}` |
+| `get_kairos_gate`, `get_kairos_owner_model`, `get_kairos_rapport`, `get_kairos_trust`, `get_kairos_life_chapters` | `/api/v1/kairos/{gate,owner-model,rapport,trust,life-chapters}` |
+
+Each pair shares a validator, data function and renderer, with a parity test in `app/api/__tests__/` that also
+guards against writer imports.
+
+## 7. Known follow-ups
+
+| Item | Where |
+|---|---|
+| Night-time goal proposals (03:15–04:28) still bypass the gate | `goal-propose.ts` → `proposal-telegram.ts` |
+| A held message would lose extra Telegram buttons on release (no current caller) | `speak.ts` hold path |
+| Dream seeds into ideas deliberately not built (conflicts with the firewall rule) — owner call | plan §4 vs handover §6 |
+| Butcher splits: `KairosInbox.tsx` (648), `daily-message-prompt.ts` (500), `ask-mine.ts`, `cortex.ts`, webhook route test | — |
+| Triad bridge `prompt.py` should render `today` and `stage` | Triad repo |

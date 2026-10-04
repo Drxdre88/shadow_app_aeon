@@ -9,6 +9,10 @@
 // **bold**, *italic*, `code`, ~~strike~~, ||spoiler||, `>` quote lines, and
 // `>>!` collapsed-quote lines (Bot API's <blockquote expandable>).
 
+import { callTelegram } from './telegram-api'
+
+export { callTelegram }
+
 export const TELEGRAM_MESSAGE_LIMIT = 4096
 
 // Pre-render split ceiling for HTML sends: headroom for the tags and
@@ -193,24 +197,6 @@ export function splitTelegramMessage(text: string, limit = TELEGRAM_MESSAGE_LIMI
   return chunks
 }
 
-type TelegramEnvelope = { ok?: boolean; description?: string; result?: unknown }
-
-async function callTelegram(method: string, payload: Record<string, unknown>): Promise<unknown> {
-  const token = process.env.TELEGRAM_BOT_TOKEN
-  if (!token) throw new Error('TELEGRAM_BOT_TOKEN is not configured')
-
-  const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-  const body = (await res.json().catch(() => null)) as TelegramEnvelope | null
-  if (!res.ok || !body?.ok) {
-    throw new Error(`Telegram ${method} failed (${res.status}): ${body?.description ?? 'no response body'}`)
-  }
-  return body.result
-}
-
 // Bot API ForceReply: the client opens a reply to this message.
 export type ForceReplyMarkup = { force_reply: true; input_field_placeholder?: string }
 
@@ -384,7 +370,7 @@ export async function sendKairosSpeak(input: {
   memoryId: string
   title: string
   message: string
-  kind: 'notify' | 'question'
+  kind: 'notify' | 'question'; keyboard?: InlineKeyboardButton[][]
 }): Promise<boolean> {
   const chatId = process.env.TELEGRAM_OPERATOR_CHAT_ID
   if (!chatId || !process.env.TELEGRAM_BOT_TOKEN) {
@@ -393,10 +379,10 @@ export async function sendKairosSpeak(input: {
   }
 
   const url = aeonKairosUrl()
-  const inlineKeyboard: InlineKeyboardButton[][] =
+  const inlineKeyboard: InlineKeyboardButton[][] = [...(input.keyboard ?? []), ...(
     input.kind === 'question'
       ? url ? [[{ text: 'Open in Aeon', url }]] : []
-      : [[{ text: 'Dismiss', callback_data: `dismiss:${input.memoryId}` }]]
+      : [[{ text: 'Dismiss', callback_data: `dismiss:${input.memoryId}` }]])]
 
   // Split the raw markdown first — HTML tags must never straddle a chunk
   // boundary — then render each chunk. The lower limit leaves headroom for

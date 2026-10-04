@@ -116,6 +116,19 @@ describe('character_check plan', () => {
     expect(m.hasJobWithKeyLike).not.toHaveBeenCalled()
   })
 
+  it('a stored trust footer never reaches the sample (stripped whatever the flags)', async () => {
+    delete process.env.KAIROS_TRUST
+    m.listChatThreadsWithMessagesOn.mockResolvedValue([{
+      id: 'thread-1', dominionId: null, title: 't',
+      messages: [0, 1, 2].map((i) => ({ id: `msg-a${i}`, role: 'assistant', content: `Answer ${i}\n\n⚖️ On Swarm: you can lean on me here.` })),
+    }])
+    const spec = await planOne()
+    const chat = ctxItems(jobFrom(spec)).filter((i) => i.source === 'chat')
+    expect(chat.length).toBeGreaterThan(0)
+    for (const i of chat) expect(i.text).not.toContain('⚖️ On')
+    expect(spec.input.prompt).not.toContain('⚖️ On')
+  })
+
   it('one job per reviewed ISO week', async () => {
     m.hasJobWithKeyLike.mockResolvedValue(true)
     expect(await characterCheckHandler.plan(USER, MONDAY)).toEqual([])

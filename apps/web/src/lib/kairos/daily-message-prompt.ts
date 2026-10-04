@@ -1,5 +1,5 @@
 import { extractJsonBlock } from './_prompt-utils'
-import { TODAY_DAILY_SECTION_TITLE, todayPromptLines, type DailyTailInputs } from './daily-message-today'
+import { TODAY_DAILY_SECTION_TITLE, tailBlocks, todayPromptLines, type DailyTailInputs } from './daily-message-today'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Daily Message (docs/kairos/34 §3) — the pure half: London-time
@@ -277,7 +277,7 @@ export function buildDailyMessageUserPrompt(inputs: DailyMessageInputs, conscien
     ]))
   }
   out.push(...section(TODAY_DAILY_SECTION_TITLE, todayPromptLines(inputs.today)))
-  if (inputs.stage?.trim()) out.push('', inputs.stage.trim())
+  out.push(...tailBlocks(inputs))
   // Norms read at answer time (P2.5 G4) — delimited reference data, last, so
   // the facts above and the system prompt's output contract stay primary.
   if (conscience?.trim()) out.push('', conscience.trim())

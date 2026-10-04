@@ -1,10 +1,10 @@
 # Kairos — Memory Substrate & Capture
 
-> Part of the Aeon architecture set — index: [../../ARCHITECTURE.md](../../ARCHITECTURE.md) · siblings: [overview](overview.md) · [synthesis](synthesis.md) · [chat](chat.md)
+> Part of the Aeon architecture set — index: [../../ARCHITECTURE.md](../../ARCHITECTURE.md) · siblings: [overview](overview.md) · [synthesis](synthesis.md) · [chat](chat.md) · [mind](mind.md)
 
 The substrate is one user-scoped table, `memories`, plus the ingress paths that feed it and the
 hybrid retrieval that reads it back. Every data-layer function takes `userId` as a required
-filter and never returns rows the user does not own. State as of Kairos 0.19 (app v0.36.0); 0.16–0.19
+filter and never returns rows the user does not own. State as of Kairos 0.19 (app v0.36.0) for the sections below — the 0.20–0.25 preference keys, row kinds and today log are in [mind.md](mind.md) §2 and §5 (still no schema change); 0.16–0.19
 added no DDL either (watched boards, voice notes and the paid backup switch live in jsonb settings/metadata).
 
 ## 1. The `memories` table

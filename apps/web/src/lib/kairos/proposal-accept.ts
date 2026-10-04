@@ -16,6 +16,7 @@ import { reactOutcome, reactUsed } from './reactions'
 import { recordIdeaOutcome } from '@/lib/data/ideas'
 import type { Origin } from './origin'
 import { runOnIdeaOutcome } from './thinking/handlers/idea-ext'
+import { runOwnerDecisionHooks } from './moment'
 import { recordToday, type TodayChannel } from './today'
 
 // Proposal triage — the operator gate in propose-not-commit (docs/kairos/32 §2,
@@ -54,6 +55,11 @@ async function notifyIdeaOutcome(
   } catch (err) {
     console.error('[kairos-inbox] idea outcome hooks failed', err)
   }
+}
+
+// Wave 4 moment lanes after a successful accept/dismiss (the runner never throws).
+async function notifyOwnerDecision(userId: string, memoryId: string, verdict: 'accept' | 'dismiss', meta: Record<string, unknown>): Promise<void> {
+  await runOwnerDecisionHooks({ userId, memoryId, verdict, kairosSpeak: meta.kairosSpeak === true, kind: typeof meta.kind === 'string' ? meta.kind : null })
 }
 
 // Owner-decided kinds (Phase 2: goals) go through decideKairosProposal — the
@@ -108,6 +114,7 @@ export async function acceptKairosProposal(
       ...(opts.origin ? { origin: opts.origin } : {}),
     })
     if (!res.ok) return decisionToAccept(res)
+    await notifyOwnerDecision(userId, memoryId, 'accept', meta)
     const row = await findMemoryById(memoryId, userId)
     return row ? { ok: true, memory: row } : null
   }
@@ -118,6 +125,7 @@ export async function acceptKairosProposal(
       if (res.reason === 'not_found') return null
       return { ok: false, reason: res.reason === 'stale_amendment' ? 'stale_amendment' : 'not_a_proposal' }
     }
+    await notifyOwnerDecision(userId, memoryId, 'accept', meta)
     if (shouldRecord) {
       await recordDecisionToday(userId, memoryId, `Accepted constitution amendment: ${proposal.title}`, opts.origin ?? OWNER_ACCEPT)
     }
@@ -137,6 +145,7 @@ export async function acceptKairosProposal(
       await notifyIdeaOutcome(userId, memoryId, meta, 'accepted', opts.origin)
     }
     if (shouldRecord) await recordDecisionToday(userId, memoryId, `Accepted: ${proposal.title}`, opts.origin ?? OWNER_ACCEPT)
+    await notifyOwnerDecision(userId, memoryId, 'accept', meta)
   }
   return result
 }
@@ -153,7 +162,10 @@ export async function dismissInboxMemory(userId: string, memoryId: string): Prom
   // function (its own reaction; repeat taps report already handled).
   if (isDecidableProposalKind(metadata.kind)) {
     const res = await decideKairosProposal(userId, memoryId, { verdict: 'veto', via: 'inbox' })
-    if (res.ok) return { ok: true, id: memoryId }
+    if (res.ok) {
+      await notifyOwnerDecision(userId, memoryId, 'dismiss', metadata)
+      return { ok: true, id: memoryId }
+    }
     return { ok: false, reason: res.reason === 'not_found' ? 'not_found' : 'already_resolved' }
   }
   if (memory.type !== 'inbound') return { ok: false, reason: 'not_found' }
@@ -183,6 +195,7 @@ export async function dismissInboxMemory(userId: string, memoryId: string): Prom
     }
   }
   await recordDecisionToday(userId, memoryId, `Dismissed: ${memory.title}`, OWNER_INBOX)
+  await notifyOwnerDecision(userId, memoryId, 'dismiss', metadata)
   return { ok: true, id: archived.id }
 }
 

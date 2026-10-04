@@ -5,6 +5,12 @@
 Reverse-chronological. The most recent work is at the top; the pre-2026-06-06 trail is preserved
 verbatim below.
 
+### 2026-10-04 — Kairos 0.20–0.25 "One mind everywhere" + "One coherent mind" waves 1–4 · app v0.43.0
+- **Releases:** 0.20 settle the brain + dormant initiative (#148); 0.21 one mind everywhere — shared today log (on by default), daytime `reflect` + Sonnet `pulse`, predictions, Horae (#149); 0.22 stage, character check, cold read (#150); 0.23 surprise engine + firewalled dreams (#151); 0.24 creative genius — `idea-ext` seam with atlas/Swiss, collisions, sameness/resample, incubation shelf, stepping stones/taste (#152); 0.25 the art of the moment — `lib/kairos/moment/` seam with the gate, owner model, rapport, advise/trust lanes and the monthly `life_chapter` kind (wave-4 PR).
+- **Shape:** no schema change since 0.16 (11 server-owned `user_preferences` keys + new `sourceMetadata.kind` rows); 24 thinking kinds; three routines (brain hourly `40 * * * *`, chat, pulse `10 6-21 * * *`); 12 crons; MCP 145 tools (13 new Kairos read tools, each with a REST mirror and parity test).
+- **Rules held:** every new feature flag-gated, off by default and flag-off byte-identical; measurement-only (conscience, character, cold read, taste, trust never reach a prompt); dreams never become memories, evidence or prompt text; Telegram unchanged and first-class.
+- **Docs:** new [kairos/mind.md](kairos/mind.md); stale counts fixed in the router, overview, synthesis, chat, platform, data-layer, directory-map.
+
 ### 2026-10-02 (evening) — Kairos 0.19 "No paid spend, chat on Max, one setup checklist" · app v0.36.0
 - **Paid backup switch:** `user_preferences.preferences.kairosPaidBackup` (default on; theme saves can't overwrite it). Choke point `getModelForUser` (`lib/ai/router.ts`) throws `PaidBackupOffError` (a no-credential error), so every Kairos paid path declines. The sweep closes fallbacks with "paid backup off", and the fallback crons skip via `lib/kairos/paid-backup-cron.ts`. Exposed as MCP `get/set_kairos_paid_backup` and REST `GET/PUT /api/v1/kairos/paid-backup` (parity test), with a switch in Health.
 - **Web chat on Max:** `chat` jobs carry `channel: 'telegram' | 'web'` (`lib/kairos/chat-web-routine.ts`). One routine and one flag, `KAIROS_CHAT_ROUTINE` (alias `KAIROS_TELEGRAM_ROUTINE`), serve both channels. The web send returns pending and runs the watchdog in `after()` (`app/kairos/layout.tsx` `maxDuration = 300`). The UI polls via `KairosVisorReplyWatch`.

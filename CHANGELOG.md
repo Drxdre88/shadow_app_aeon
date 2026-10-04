@@ -20,6 +20,31 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - `DOCS` — `ARCHITECTURE.md`, `VISION.md`, `CLAUDE.md`
 - `UI` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.43.0] — 2026-10-04
+
+> Areas touched: `KAIROS` `MCP` `API` `UI`
+> Theme: One coherent mind, wave 4 — the art of the moment. Kairos learns *when* and *how* to talk to you, not just what to say. All off until you switch them on; Telegram works exactly as before.
+
+### Added — Timing: the Kairos gate (`KAIROS_GATE=observe|1`, `KAIROS_GATE_RECEPTIVITY`) · `KAIROS` `MCP` `API`
+- Unprompted messages wait for a natural pause — a chat winding down, a card closed, a coding session ending, a quiet spell — and always go out at the first hourly check after a two-hour limit (adjustable), so within about three hours at most. The 06:00 message, the Monday review, alerts and urgent notes are never held.
+- He learns when, where and how warmly you reply (hour, day, kind, channel) and, if allowed, avoids hours you rarely answer. New read-only `get_kairos_gate` / `GET /api/v1/kairos/gate`.
+
+### Added — Traits vs moods and the "what you're carrying" card (`KAIROS_OWNER_MODEL=observe|1`) · `KAIROS` `MCP` `API` `UI`
+- Lasting traits ("values directness") are kept apart from passing states ("stressed about the launch"); states lapse after 10 days (`KAIROS_OWNER_STATE_TTL_DAYS`) unless you re-confirm them.
+- A weekly card (Sunday evening) shows what he thinks you're carrying. Correct it on Telegram (`C1 still`, `C1 over`, `C3 wrong`, `C2: what's really going on`), with buttons, or on the web inbox card. New read-only `get_kairos_owner_model` / `GET /api/v1/kairos/owner-model`.
+
+### Added — Readiness, small bids and repair (`KAIROS_READINESS`, `KAIROS_BIDS`, `KAIROS_REPAIR`) · `KAIROS` `MCP` `API`
+- **Readiness:** per goal he tallies "I want / could" against "I will / did"; when you tip to "I will" he offers one small step, when you slip back he reflects instead of pushing.
+- **Small bids:** a link, a joke or an "ugh" gets a short warm reply instead of a report; a sticker, GIF or photo on Telegram gets one emoji reaction, never an extra message.
+- **Repair:** "not now", ignored messages or dismissals make him back off; his next message names it, owns his part and asks one question. New read-only `get_kairos_rapport` / `GET /api/v1/kairos/rapport`.
+
+### Added — Earned trust and ask before advising (`KAIROS_TRUST`, `KAIROS_ASK_FIRST`) · `KAIROS` `MCP` `API`
+- **Trust per area:** built from his settled predictions, goals and goal promises — "treat me as a second opinion on delivery" — shown under advice replies, as a Monday 06:00 line and via `get_kairos_trust` / `GET /api/v1/kairos/trust`. It never feeds back into his own thinking.
+- **Ask first:** when you share a plan or problem he asks "Want my take, or would you rather think it out loud?"; questions come first and his view last.
+
+### Added — Life chapters (`KAIROS_LIFE_CHAPTERS=observe|1`, `KAIROS_LIFE_CHAPTER_LINE=1`) · `KAIROS` `MCP` `API`
+- Early each month he writes a short chapter of his own story: turning points and what changed, each tied to something that happened, with loose ends left open. In full mode his reflections see where his story stands. New read-only `get_kairos_life_chapters` / `GET /api/v1/kairos/life-chapters`.
+
 ## [0.42.0] — 2026-10-03
 
 > Areas touched: `KAIROS` `MCP` `API`

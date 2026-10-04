@@ -37,6 +37,7 @@ import {
 } from '@/lib/kairos/character/sample'
 import { MAX_VOICE_ANCHORS, proposeVoiceSample } from '@/lib/kairos/character/voice-sample'
 import { getLiveConstitution } from '@/lib/kairos/constitution/amendment'
+import { runStripFooters } from '@/lib/kairos/moment'
 import type {
   ApplyOutcome,
   ThinkingAnsweredBy,
@@ -104,9 +105,10 @@ async function gather(userId: string, start: Date, end: Date, now: Date) {
     soft('review', findLatestWeeklyReviewSummary(userId, now), null),
     soft('voice samples', listApprovedVoiceSamples(userId, MAX_VOICE_ANCHORS), []),
   ])
+  // Footers are stripped whatever the flags, so ones stored while trust was on never reach the judge.
   const raw: RawSample[] = [
     ...reflections.map((r) => ({ source: 'reflection' as const, ref: r.id, text: r.text })),
-    ...threads.flatMap((t) => t.messages.filter((m) => m.role === 'assistant').map((m) => ({ source: 'chat' as const, ref: m.id, text: m.content }))),
+    ...threads.flatMap((t) => t.messages.filter((m) => m.role === 'assistant').map((m) => ({ source: 'chat' as const, ref: m.id, text: runStripFooters(m.content) }))),
     ...daily.map((d) => ({ source: 'daily' as const, ref: d.id, text: d.text })),
     ...(aether?.coreNarrative ? [{ source: 'aether' as const, ref: `aether:${aether.generatedAt}`, text: aether.coreNarrative }] : []),
     ...(review ? [{ source: 'review' as const, ref: review.id, text: review.text }] : []),

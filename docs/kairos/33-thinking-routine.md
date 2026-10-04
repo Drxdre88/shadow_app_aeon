@@ -160,6 +160,7 @@ Kinds (times UTC unless stated):
 | `ask_mine` | 03:15Z, once aether is settled | 04:28Z | `ask_mine:<YYYY-MM-DD>` | `ask-mine` 04:30Z |
 | `mind_compare` | Mondays ≥04:00Z, both minds hold beliefs | 3 h | `mind_compare:<ISO week>` | sweep |
 | `weekly_review` | Mondays ≥05:00Z, with review signal | 6 h | `weekly_review:<ISO week>` | sweep |
+| `life_chapter` | UTC days 1–3 ≥12:00Z, `KAIROS_LIFE_CHAPTERS` observe/1, ≥3 citable ids from the previous month | 36 h | `life_chapter:<YYYY-MM of previous month>` | none — a missed month is skipped |
 | `constitution_seed` | Mondays 04:00–05:56Z, only while there is no constitution and no pending draft | 05:56Z | `constitution_seed:<ISO week>` | `constitution-seed` 05:58Z (BYOK users only) |
 | `daily_message` | from 04:00Z once tonight's aether, ideas and ask are settled (from 04:35Z regardless), only when the UTC date equals the London date; reads each area's latest cortex headline; the numbered open-questions block is added by code at send time | 05:55 London | `daily_message:<London date>` | `daily-message` cron 06:00 London (paid key → plain text) |
 | `chat` | never planned — a web (`/kairos`) or Telegram chat message creates it; claimable only with `kinds: ["chat"]` | timeout + 30 s | `chat:<threadId>:<userMessageId>` | chat watchdog (paid key, if the Paid backup switch is on) |

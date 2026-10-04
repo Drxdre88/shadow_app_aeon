@@ -68,6 +68,30 @@ export function isConceptDay(now: Date): boolean {
   return now.getUTCDay() === 0
 }
 
+// ── Life chapters (wave 4, KAIROS_LIFE_CHAPTERS) ─────────────────────────
+// One chapter per previous calendar month (UTC), planned on UTC days 1–3 from
+// 12:00Z (after a Monday-the-1st weekly review), key life_chapter:<YYYY-MM>,
+// 36-hour deadline. No fallback: a missed month is skipped.
+export const LIFE_CHAPTER_NOT_BEFORE_UTC = { hour: 12, minute: 0 }
+export const LIFE_CHAPTER_DEADLINE_MINUTES = 36 * 60
+export const LIFE_CHAPTER_DUE_DAYS = 3
+
+export function isLifeChapterDue(now: Date): boolean {
+  return now.getUTCDate() <= LIFE_CHAPTER_DUE_DAYS && now.getTime() >= deadlineOn(now, LIFE_CHAPTER_NOT_BEFORE_UTC).getTime()
+}
+
+// UTC month key, e.g. 2026-10.
+export function monthKey(now: Date): string {
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+// The previous UTC calendar month: [start, end) with its key.
+export function previousMonthWindow(now: Date): { month: string; start: Date; end: Date } {
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
+  return { month: monthKey(start), start, end }
+}
+
 // ISO-8601 week key, e.g. 2026-W40 (Thursday rule: the week belongs to the
 // year its Thursday falls in).
 export function isoWeekKey(now: Date): string {

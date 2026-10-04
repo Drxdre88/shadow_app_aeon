@@ -33,7 +33,7 @@ vi.mock('@/lib/db', () => {
   }
 })
 
-import { getConversationState } from '../engagement'
+import { getConversationState, repliedWithinCredit } from '../engagement'
 
 const USER = 'user-1'
 const NOW = new Date('2026-07-19T12:00:00.000Z')
@@ -195,5 +195,83 @@ describe('getConversationState', () => {
 
     expect(state.lastOutbound?.id).toBe(question.id)
     expect(state.awaitingReply).toBe(true)
+  })
+})
+
+describe('gate-held speaks', () => {
+  function released(capturedHoursAgo: number, releasedHoursAgo: number) {
+    const row = outbound(capturedHoursAgo)
+    row.sourceMetadata.gate = { heldAt: row.createdAt.toISOString(), releasedAt: hoursAgo(releasedHoursAgo).toISOString(), releaseReason: 'deadline' }
+    return row
+  }
+
+  it('a still-held question has no lastOutbound role and no place in the rate', async () => {
+    const held = outbound(3, 'held')
+    selectQueue.push([held])
+    selectQueue.push([held])
+
+    const state = await getConversationState(USER)
+
+    expect(state.lastOutbound).toBeNull()
+    expect(state.awaitingReply).toBe(false)
+    expect(state.replyRate7d).toBe(0)
+    const predicates = sqlCalls.map((strings) => Array.from(strings).join(' '))
+    expect(predicates.some((text) => text.includes("->>'status') IS DISTINCT FROM 'held'"))).toBe(true)
+  })
+
+  it('a chat while the question was held is not a reply once it is released', async () => {
+    // Captured 5h ago, owner chatted 3h ago (while held), released 1h ago.
+    const row = released(5, 1)
+    selectQueue.push([row])
+    selectQueue.push([row])
+    selectQueue.push([]) // reply query is bounded by the release time → no turn after it
+    selectQueue.push([{ createdAt: hoursAgo(3) }])
+
+    const state = await getConversationState(USER)
+
+    expect(state.lastOutbound?.createdAt).toEqual(hoursAgo(1))
+    expect(state.replied).toBe(false)
+    expect(state.awaitingReply).toBe(true)
+    expect(state.replyRate7d).toBe(0)
+  })
+
+  it('a chat after the release earns the usual credit', async () => {
+    const row = released(5, 2)
+    selectQueue.push([row])
+    selectQueue.push([row])
+    selectQueue.push([{ createdAt: hoursAgo(1) }])
+    selectQueue.push([{ createdAt: hoursAgo(1) }])
+
+    const state = await getConversationState(USER)
+
+    expect(state.replied).toBe(true)
+    expect(state.replyRate7d).toBe(1)
+  })
+
+  it('stamped reply credit is measured from the release time', async () => {
+    // Captured 40h ago, released 30h ago, replied 25h after capture = 15h after release → credit.
+    const row = released(40, 30)
+    row.sourceMetadata.status = 'replied'
+    row.sourceMetadata.repliedAt = hoursAgo(15).toISOString()
+    selectQueue.push([row])
+    selectQueue.push([row])
+
+    expect(repliedWithinCredit(row)).toBe(true)
+    expect(repliedWithinCredit({ createdAt: row.createdAt, sourceMetadata: { ...row.sourceMetadata, gate: undefined } })).toBe(false)
+    const state = await getConversationState(USER)
+    expect(state.replyRate7d).toBe(1)
+  })
+
+  it('the newest SEND is the last outbound, not the newest capture', async () => {
+    const later = released(6, 1)
+    const earlierSend = outbound(3)
+    selectQueue.push([earlierSend, later])
+    selectQueue.push([earlierSend, later])
+    selectQueue.push([])
+    selectQueue.push([])
+
+    const state = await getConversationState(USER)
+
+    expect(state.lastOutbound?.id).toBe(later.id)
   })
 })

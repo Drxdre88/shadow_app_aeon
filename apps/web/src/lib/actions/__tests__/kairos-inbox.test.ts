@@ -54,6 +54,19 @@ describe('Kairos inbox actions', () => {
     expect(getKairosInbox).toHaveBeenCalledWith(USER_ID)
   })
 
+  it('flags the owner-model card on the payload only while KAIROS_OWNER_MODEL is on', async () => {
+    const inbox = { items: [] }
+    vi.mocked(getKairosInbox).mockResolvedValue(inbox as never)
+    vi.stubEnv('KAIROS_OWNER_MODEL', '1')
+    try {
+      await expect(listKairosInbox()).resolves.toEqual({ items: [], ownerModelEnabled: true })
+      vi.stubEnv('KAIROS_OWNER_MODEL', 'observe')
+      await expect(listKairosInbox()).resolves.toBe(inbox)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('answers through the existing Ask orchestrator', async () => {
     vi.mocked(answerKairosAsk).mockResolvedValue({ reflectionId: 'reflection-1' })
 

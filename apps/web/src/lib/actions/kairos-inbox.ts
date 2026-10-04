@@ -6,6 +6,7 @@ import { getKairosInbox } from '@/lib/data/inbox'
 import { answerKairosAsk, dismissKairosAsk } from '@/lib/kairos/ask'
 import { acceptInboxProposal, dismissInboxMemory } from '@/lib/kairos/proposal-accept'
 import { decideKairosProposal } from '@/lib/kairos/proposal-decision'
+import { ownerModelMode } from '@/lib/kairos/owner-model/flag'
 
 const memoryIdSchema = z.string().uuid()
 const answerSchema = z.string().trim().min(1).max(10_000)
@@ -46,9 +47,14 @@ export async function decideKairosInboxProposal(
   return fallback.ok ? { ok: true, verdict: input.verdict } : { ok: false, reason: fallback.reason }
 }
 
-export async function listKairosInbox() {
+export type KairosInboxPayload = Awaited<ReturnType<typeof getKairosInbox>> & { ownerModelEnabled?: true }
+
+// ownerModelEnabled is set only while KAIROS_OWNER_MODEL is on, so the inbox
+// card skips its own server round-trip when off (payload unchanged when off).
+export async function listKairosInbox(): Promise<KairosInboxPayload> {
   const userId = await requireAuth()
-  return getKairosInbox(userId)
+  const inbox = await getKairosInbox(userId)
+  return ownerModelMode() === 'on' ? { ...inbox, ownerModelEnabled: true } : inbox
 }
 
 export async function answerKairosInboxAsk(questionMemoryId: string, answer: string) {

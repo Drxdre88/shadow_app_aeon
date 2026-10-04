@@ -31,6 +31,9 @@ import { recordChatOwnerTurn } from '@/lib/kairos/chat-today'
 import { routePredictionCommands } from '@/lib/kairos/predictions/telegram-commands'
 import { routePromiseCommands } from '@/lib/kairos/promises/telegram-commands'
 import { handleProposalCallback, routeVetoReason } from '@/lib/kairos/proposal-telegram'
+import { routeMomentCallback, routeMomentMessage, routeMomentText } from '@/lib/kairos/moment/telegram-routes'
+import { routeOwnerCommands } from '@/lib/kairos/telegram-commands'
+import type { TelegramMediaRef } from '@/lib/kairos/moment/types'
 import { buildChatJobSpec, chatHandler } from '@/lib/kairos/thinking/handlers/chat'
 import {
   answerCallbackQuery,
@@ -107,6 +110,7 @@ type TelegramUpdate = {
     chat?: { id: number | string }
     from?: TelegramUser
     reply_to_message?: { message_id: number }
+    caption?: string; sticker?: TelegramMediaRef; animation?: TelegramMediaRef; photo?: TelegramMediaRef[]
   }
 }
 
@@ -140,6 +144,8 @@ export async function POST(req: NextRequest) {
     } else if (update.message?.text) {
       if (isDuplicateUpdate(update.update_id)) return accepted()
       await handleTextMessage(update.message, operatorChatId, operatorUserId, update.update_id ?? null)
+    } else if (update.message) {
+      await routeMomentMessage(update.message, operatorChatId, operatorUserId, update.update_id ?? null)
     }
   } catch (err) {
     // Never surface a 5xx to Telegram — it would redeliver the update.
@@ -181,6 +187,7 @@ async function handleCallbackQuery(
     return
   }
 
+  if (await routeMomentCallback(callback, chatId!, operatorUserId)) return
   const match = CALLBACK_RE.exec(callback.data ?? '')
   if (!match) {
     await markKairosSpeaksReplied(operatorUserId, repliedAt)
@@ -241,6 +248,7 @@ async function handleTextMessage(
   if (await routeOwnerCommands('prediction', routePredictionCommands, chatId!, operatorUserId, body)) return
   if (agendaEnabled() && await routeOwnerCommands('agenda', routeAgendaCommands, chatId!, operatorUserId, body)) return
   if (initiativeEnabled() && await routeVetoReasonText(chatId!, operatorUserId, body, message, updateId)) return
+  if (await routeMomentText(chatId!, operatorUserId, body, message, updateId)) return
 
   // One persistent whole-brain thread for the operator, found by title.
   const threadId = await findOrCreateTelegramThread(operatorUserId)
@@ -272,25 +280,6 @@ async function findOrCreateTelegramThread(userId: string): Promise<string | null
   if (existing) return existing
   const created = await createChatThread(userId, { dominionId: null, title: TELEGRAM_THREAD_TITLE })
   return created.ok ? created.threadId : null
-}
-
-type CommandRouter = (userId: string, body: string, send: (text: string) => Promise<unknown>) => Promise<boolean>
-
-// Owner command routers (promises, predictions, agenda). A failure to route
-// hands the text to chat.
-async function routeOwnerCommands(
-  name: string,
-  router: CommandRouter,
-  chatId: number | string,
-  userId: string,
-  body: string,
-): Promise<boolean> {
-  try {
-    return await router(userId, body, (text) => sendMessage(chatId, text))
-  } catch (err) {
-    console.error(`[telegram-webhook] ${name}-command routing failed — handing the text to chat`, err)
-    return false
-  }
 }
 
 async function routeVetoReasonText(
