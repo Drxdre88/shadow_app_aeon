@@ -160,10 +160,16 @@ describe('reply + decisions + daily', () => {
 
 describe('speak policy', () => {
   it('backing off blocks a normal unprompted speak with 429', async () => {
-    backingOff()
-    const out = await deliverKairosSpeak(U, INPUT)
-    expect(out).toEqual({ status: 429, body: { error: 'moment_blocked', reason: 'rapport_backing_off:not_now' } })
-    expect(captureMemory).not.toHaveBeenCalled()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(NOW)
+    try {
+      backingOff()
+      const out = await deliverKairosSpeak(U, INPUT)
+      expect(out).toEqual({ status: 429, body: { error: 'moment_blocked', reason: 'rapport_backing_off:not_now' } })
+      expect(captureMemory).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('forced and high-urgency sends pass; the forced ceiling still applies', async () => {
