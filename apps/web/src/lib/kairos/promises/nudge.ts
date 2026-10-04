@@ -20,7 +20,7 @@ export const promiseNudgeExternalId = (promiseId: string) => `kairos-promise-nud
 export type PromiseNudgeResult =
   | { status: 'skipped'; reason: 'initiative_off' | 'not_nudge_hour' }
   | { status: 'none' }
-  | { status: 'sent' | 'inbox_only' | 'blocked' | 'failed'; promiseIds: string[] }
+  | { status: 'sent' | 'inbox_only' | 'blocked' | 'failed' | 'held'; promiseIds: string[] }
 
 const clipOutcome = (s: string) => (s.length > 120 ? `${s.slice(0, 119)}…` : s)
 
@@ -49,9 +49,11 @@ export async function runPromiseNudges(userId: string, now: Date): Promise<Promi
   if (claimed.length === 0) return { status: 'none' }
 
   const promiseIds = claimed.map((p) => p.id)
-  let status: 'sent' | 'inbox_only' | 'blocked' | 'failed' = 'failed'
+  let status: 'sent' | 'inbox_only' | 'blocked' | 'failed' | 'held' = 'failed'
   let memoryId: string | undefined
   try {
+    // gate: the Kairos gate may hold this forced send to a natural break
+    // (timing only); a held nudge is stored and released later, never lost.
     const outcome = await deliverKairosSpeak(userId, {
       title: 'Kairos · promises',
       message: buildPromiseNudgeMessage(claimed, now),
@@ -61,10 +63,10 @@ export async function runPromiseNudges(userId: string, now: Date): Promise<Promi
       opsAlert: false,
       digest: false,
       externalId: promiseNudgeExternalId(claimed[0]!.id),
-    })
+    }, { gate: true })
     if (outcome.status === 200) {
       memoryId = outcome.body.id
-      status = outcome.body.delivered.telegram ? 'sent' : 'inbox_only'
+      status = outcome.body.held ? 'held' : outcome.body.delivered.telegram ? 'sent' : 'inbox_only'
     } else {
       status = 'blocked'
     }

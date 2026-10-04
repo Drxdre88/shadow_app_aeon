@@ -6,6 +6,7 @@ import { createMemorySchema } from '@/lib/data/validators'
 import type { CreateMemoryInput } from '@/lib/data/validators/memory'
 import type { Origin } from '@/lib/kairos/origin'
 import { recordTodayAfter } from '@/lib/kairos/today'
+import { noteKairosBreak } from '@/lib/kairos/moment/gate/note'
 
 // Give DB-bound handlers headroom above the 8s pool-acquire timeout so a hung
 // connection surfaces as a caught 503, never a silent function-kill.
@@ -95,4 +96,6 @@ function recordSessionCaptureToday(userId: string, input: CreateMemoryInput, mem
     },
     origin,
   )
+  // Kairos gate (lane A): a finished coding session is a natural break.
+  noteKairosBreak(userId, 'session_ended')
 }

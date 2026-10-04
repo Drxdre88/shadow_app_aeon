@@ -5,6 +5,7 @@ import { listBoardColumnsForFeed, listChecklistForTasks } from '@/lib/data/board
 import type { MemoryType } from '@/lib/data/validators'
 import { parseKairosFeed, trimText } from './board-feed-render'
 import { captureBoardCardDone } from './board-feed'
+import { noteKairosBreak } from './moment/gate/note'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 2 (A3 / A4) — auto-capture helpers.
@@ -36,6 +37,7 @@ export interface BoardEventInput {
 }
 
 export async function captureBoardEvent(input: BoardEventInput) {
+  if (input.action === 'completed') noteKairosBreak(input.userId, 'card_closed')
   const project = input.action === 'created' || input.action === 'deleted' ? null : await loadFeedProject(input.projectId)
   const feed = project ? parseKairosFeed(project.settings) : null
   const watched = feed && project && project.userId === input.userId ? project : null
