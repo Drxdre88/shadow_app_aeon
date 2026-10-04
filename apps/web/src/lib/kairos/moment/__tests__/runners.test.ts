@@ -40,10 +40,6 @@ describe('moment registry', () => {
     expect(MOMENT_LANES.map((l) => l.name)).toEqual(['rapport', 'advise-trust', 'owner-model', 'gate', 'chapters'])
   })
 
-  it('ships with every lane empty, so no hook is implemented', () => {
-    for (const { lane } of MOMENT_LANES) expect(lane).toEqual({})
-    for (const hook of HOOKS) expect(hasMomentHook(hook)).toBe(false)
-  })
 })
 
 describe('moment runners with empty lanes', () => {
