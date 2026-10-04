@@ -3,7 +3,7 @@
 > Part of the Aeon architecture set — index: [../ARCHITECTURE.md](../ARCHITECTURE.md)
 
 **ORM:** Drizzle ORM with `@neondatabase/serverless` driver.
-**Schema file:** `apps/web/src/lib/db/schema.ts` (~1010 lines). Kairos 0.14–0.15 added **no schema/migration** — only JSONB contracts and varchar values (below).
+**Schema file:** `apps/web/src/lib/db/schema.ts` (~1010 lines). Kairos 0.14–0.25 added **no schema/migration** — only JSONB contracts and varchar values (below).
 **Migrations:** `apps/web/drizzle/` — through **`0039_kairos_memory_engine.sql`** (there is no `0038` on main). `0039` adds `memories.standing`/`standing_at`/`last_used_at`/`use_count` + `memories_standing_idx` and the `memory_ops` + `thinking_jobs` tables; applied by `scripts/apply-memory-engine-migration.mjs` (raw SQL, idempotent); `scripts/backfill-memory-ops-1001.mjs` restored 349 undo records (PR #135 hotfix). Since 0032: `0033_one_live_mission_per_card` (partial unique index on `agent_sessions(task_id)` where status ∈ queued/running — the DB-level 409 guard), `0034_chronos_schedule_fields` (ten scheduling columns on `board_tasks`), `0035_chronos_resources_calendars` (`work_calendars`, `calendar_exceptions`, `resources`), `0036_member_profiles`, `0037_member_profile_style`. Apply scripts: `scripts/apply-{one-live-mission,chronos,member-profiles,member-profile-style}-migration.mjs`; `scripts/verify-schema-drift.mjs` is the drift guard. The journal is still frozen at idx 10 (`0010_equal_hawkeye`); `0011`–`0032` are hand-written numbered files with no journal entries, applied by one-off scripts (`scripts/apply-virtual-members-migration.mjs`, raw `neon()` SQL, mirroring `apply-favorites-migration.mjs`) — **never** `db:generate`/`db:push`. Since 0026: `0027_checklist_order_reindex`, `0028_settings_templates`, `0029_task_progress`, `0030_users_email_lower_idx`, `0031_hangar`, **`0032_virtual_members`**. Earlier trail through Recent: `0023_memory_embeddings` (pgvector 1024-dim `embedding` + HNSW cosine index, raw SQL like `fts`), `0024_memory_provenance` (`confidence`, `superseded_at`, `superseded_by_id`), **`0025_memory_valid_time`** (bi-temporal `valid_at`/`invalid_at` — when a claim was true in the WORLD, vs supersededAt = when we LEARNED it changed), **`0026_favorite_projects`**. (`0009`/`0010` are preexisting duplicate-numbered pairs, not an error.)
 
 | Table | Key Columns | Purpose |
@@ -31,7 +31,7 @@
 | `taskComments` | id, taskId, userId, content | Threaded comments |
 | `boardSnapshots` | token, snapshot, expiresAt | Public share links |
 | `activityEvents` | entityType, action, actorType ∈ {user, agent}, metadata | Audit trail |
-| `userPreferences` | userId, preferences (jsonb) | Theme + UI settings blob |
+| `userPreferences` | userId, preferences (jsonb) | Theme + UI settings blob, plus 11 server-owned Kairos keys (promises, predictions, agenda, stage, surprise, idea atlas/shelf, gate, owner model, rapport — [kairos/mind.md](kairos/mind.md) §5) stripped from client saves |
 | `apiKeys` | keyPrefix, keyHash, revokedAt | REST/MCP keys (`aeon_k1_`) |
 | `userContacts` | userId, contactEmail | Invite autocomplete |
 | `mobileLoginTokens` / `mobileSessions` | tokenHash, expiresAt | Mobile login tokens (10-min, single-use) + bearer sessions (`aeon_s1_…`, 90-day; minted by `/api/v1/auth/mobile/*`, verified via `lib/api/auth.ts#verifyMobileSession`) |

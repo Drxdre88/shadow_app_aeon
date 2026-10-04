@@ -67,7 +67,7 @@ apps/
                                       confidence, rerank, rrf, autofile, chat-distill(-prompt), telegram,
                                       cron-trace, origin, conscience-context, daily-message(-inputs/-prompt),
                                       voice-note(-confirm), paid-backup(-cron), synthesis-health,
-                                      engine/ (night steps incl. recheck), thinking/ (queue + 15 handlers),
+                                      engine/ (night steps incl. recheck), thinking/ (queue + 24 handlers),
                                       routines/ (catalog.ts — the two Max routines, prompts, BRAIN_JOBS; setup.ts),
                                       beliefs/, concepts/, constitution/ (incl. conscience-probes), weekly-review/, ideas/
       realtime/                    -- lib/realtime: publishBoardEvent() sends a "board-update" Pusher event on a project's channel
