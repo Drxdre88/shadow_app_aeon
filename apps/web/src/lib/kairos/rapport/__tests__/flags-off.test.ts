@@ -58,6 +58,7 @@ beforeEach(() => {
   process.env.KAIROS_READINESS = '0'
   probe.dataImported = false
   process.env.TELEGRAM_BOT_TOKEN = 'bot-token'
+  process.env.KAIROS_OPERATOR_USER_ID = 'u'
   fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ ok: true, result: true }) })
   vi.stubGlobal('fetch', fetchMock)
   vi.mocked(getConversationState).mockResolvedValue({ awaitingReply: false, replyRate7d: 0, lastOutbound: null, replied: false } as never)

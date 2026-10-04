@@ -44,6 +44,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  process.env.KAIROS_OPERATOR_USER_ID = OPERATOR
   vi.mocked(getConversationState).mockResolvedValue(idleState() as never)
   vi.mocked(listRecentKairosSpeaks).mockResolvedValue([])
   vi.mocked(sendKairosSpeak).mockResolvedValue(true)
@@ -54,6 +55,26 @@ beforeEach(() => {
 })
 
 describe('deliverKairosSpeak — externalId dedup (F2)', () => {
+  it("never sends another user's speak to the operator's Telegram chat (inbox only)", async () => {
+    const outcome = await deliverKairosSpeak('another-user', {
+      title: 'Weekly review', message: 'their week', kind: 'notify', urgency: 'normal',
+      force: true, opsAlert: false, digest: true,
+    })
+
+    expect(outcome).toEqual({ status: 200, body: { id: 'memory-1', delivered: { inbox: true, telegram: false } } })
+    expect(captureMemory).toHaveBeenCalledOnce()
+    expect(sendKairosSpeak).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing to Telegram when no operator is configured', async () => {
+    delete process.env.KAIROS_OPERATOR_USER_ID
+    const outcome = await deliverKairosSpeak(OPERATOR, {
+      title: 't', message: 'm', kind: 'notify', urgency: 'normal', force: false, opsAlert: false, digest: false,
+    })
+
+    expect(outcome).toMatchObject({ status: 200, body: { delivered: { inbox: true, telegram: false } } })
+    expect(sendKairosSpeak).not.toHaveBeenCalled()
+  })
   it('fans out to Telegram when captureMemory creates a fresh memory', async () => {
     const outcome = await deliverKairosSpeak(OPERATOR, {
       title: 't', message: 'm', kind: 'notify', urgency: 'normal',

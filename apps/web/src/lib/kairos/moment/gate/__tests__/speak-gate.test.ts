@@ -41,6 +41,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  process.env.KAIROS_OPERATOR_USER_ID = 'op'
   vi.mocked(getConversationState).mockResolvedValue({ awaitingReply: false, replyRate7d: 0, lastOutbound: null, replied: false } as never)
   vi.mocked(listRecentKairosSpeaks).mockResolvedValue([])
   vi.mocked(sendKairosSpeak).mockResolvedValue(true)

@@ -204,6 +204,11 @@ export async function deliverKairosSpeak(
   return { status: 200, body: { id: memory.id, delivered: { inbox: true, telegram } } }
 }
 
+function ownsTelegramChat(userId: string): boolean {
+  const operator = process.env.KAIROS_OPERATOR_USER_ID?.trim()
+  return Boolean(operator) && userId === operator
+}
+
 // Today log + Telegram for a speak row already in the inbox (a new speak, or a
 // held one at release). Returns whether Telegram delivered; never throws.
 export async function fanOutSpeak(params: FanOutSpeakInput, opts: FanOutSpeakOptions = {}): Promise<boolean> {
@@ -219,6 +224,9 @@ export async function fanOutSpeak(params: FanOutSpeakInput, opts: FanOutSpeakOpt
   }
 
   let telegram = false
+  // There is one Telegram chat and it belongs to the operator, so another
+  // user's speak (e.g. their weekly review) stays in their inbox only.
+  if (!ownsTelegramChat(userId)) return telegram
   const tail = opts.telegramTail?.trim()
   const keyboard = opts.telegramKeyboard?.length ? { keyboard: opts.telegramKeyboard } : {}
   try {
