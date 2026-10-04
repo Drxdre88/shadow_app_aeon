@@ -22,6 +22,20 @@ function hasReplyStatus(metadata: unknown): boolean {
   return status !== null && REPLIED_STATUSES.has(status)
 }
 
+// A gate-held speak (KAIROS_GATE) has not been sent yet; once released, it was
+// sent at gate.releasedAt, not at capture. Rows never held keep createdAt.
+export function isHeldSpeak(metadata: unknown): boolean {
+  return statusFrom(metadata) === 'held'
+}
+
+export function speakSentAt(outbound: { createdAt: Date; sourceMetadata: unknown }): Date {
+  const meta = outbound.sourceMetadata
+  const gate = meta && typeof meta === 'object' && !Array.isArray(meta) ? (meta as SourceMetadata).gate : null
+  const raw = gate && typeof gate === 'object' ? (gate as SourceMetadata).releasedAt : null
+  const released = typeof raw === 'string' ? Date.parse(raw) : Number.NaN
+  return Number.isFinite(released) ? new Date(released) : outbound.createdAt
+}
+
 // Status-credit only counts toward the reply RATE when the reply landed inside
 // the credit window; a 40h-late reply still resolves the conversation but must
 // not bump cadence. Rows resolved without a repliedAt stamp (inbox actions)
@@ -32,7 +46,7 @@ export function repliedWithinCredit(outbound: { createdAt: Date; sourceMetadata:
   if (typeof raw !== 'string') return false
   const repliedAt = Date.parse(raw)
   if (Number.isNaN(repliedAt)) return false
-  return repliedAt - outbound.createdAt.getTime() <= REPLY_CREDIT_HOURS * 60 * 60 * 1000
+  return repliedAt - speakSentAt(outbound).getTime() <= REPLY_CREDIT_HOURS * 60 * 60 * 1000
 }
 
 // The initiative engine needs one shared view of whether Kairos still has the
@@ -49,7 +63,8 @@ export async function getConversationState(userId: string) {
   // ask-mine for 48h after every routine notify (research/kairos_2909 A3).
   // The kind predicate subsumes the old opsAlert/digest exclusions here; the
   // cadence query below keeps them because it counts every conversational send.
-  const [lastOutboundRow] = await db
+  // Held rows are not sent yet; of the newest few, the latest SEND wins.
+  const questionRows = await db
     .select({
       id: memories.id,
       title: memories.title,
@@ -63,11 +78,20 @@ export async function getConversationState(userId: string) {
       eq(memories.source, 'system'),
       sql`${memories.sourceMetadata}->>'kairosSpeak' = 'true'`,
       sql`${memories.sourceMetadata}->>'kind' = 'question'`,
+      sql`(${memories.sourceMetadata}->>'status') IS DISTINCT FROM 'held'`,
     ))
     .orderBy(desc(memories.createdAt))
-    .limit(1)
+    .limit(5)
+  const lastOutboundRow = questionRows
+    .filter((row) => !isHeldSpeak(row.sourceMetadata))
+    .map((row) => ({ ...row, sentAt: speakSentAt(row) }))
+    .reduce<(typeof questionRows[number] & { sentAt: Date }) | undefined>(
+      (best, row) => (!best || row.sentAt.getTime() > best.sentAt.getTime() ? row : best),
+      undefined,
+    )
 
-  const recentOutbounds = await db
+  // Held rows get no reply credit and no place in the rate until released.
+  const recentOutbounds = (await db
     .select({
       id: memories.id,
       createdAt: memories.createdAt,
@@ -84,7 +108,9 @@ export async function getConversationState(userId: string) {
       gte(memories.createdAt, sevenDaysAgo),
     ))
     .orderBy(desc(memories.createdAt))
-    .limit(100)
+    .limit(100))
+    .filter((row) => !isHeldSpeak(row.sourceMetadata))
+    .map((row) => ({ ...row, sentAt: speakSentAt(row) }))
 
   let replied = false
   if (lastOutboundRow) {
@@ -99,7 +125,7 @@ export async function getConversationState(userId: string) {
           eq(agentSessions.engine, CHAT_ENGINE),
           eq(sessionEvents.kind, 'message'),
           sql`${sessionEvents.payload}->>'role' = 'user'`,
-          gt(sessionEvents.createdAt, lastOutboundRow.createdAt),
+          gt(sessionEvents.createdAt, lastOutboundRow.sentAt),
         ))
         .orderBy(desc(sessionEvents.createdAt))
         .limit(1)
@@ -110,10 +136,9 @@ export async function getConversationState(userId: string) {
   let repliedWithin24h = recentOutbounds.filter(repliedWithinCredit).length
 
   if (recentOutbounds.length > repliedWithin24h) {
-    const oldestOutboundAt = recentOutbounds.at(-1)!.createdAt
-    const newestReplyDeadline = new Date(
-      recentOutbounds[0].createdAt.getTime() + REPLY_CREDIT_HOURS * 60 * 60 * 1000,
-    )
+    const sentTimes = recentOutbounds.map((outbound) => outbound.sentAt.getTime())
+    const oldestOutboundAt = new Date(Math.min(...sentTimes))
+    const newestReplyDeadline = new Date(Math.max(...sentTimes) + REPLY_CREDIT_HOURS * 60 * 60 * 1000)
     const chatTurns = await db
       .select({ createdAt: sessionEvents.createdAt })
       .from(sessionEvents)
@@ -129,20 +154,21 @@ export async function getConversationState(userId: string) {
 
     repliedWithin24h += recentOutbounds.filter((outbound) => {
       if (repliedWithinCredit(outbound)) return false
-      const replyDeadline = outbound.createdAt.getTime() + REPLY_CREDIT_HOURS * 60 * 60 * 1000
+      const replyDeadline = outbound.sentAt.getTime() + REPLY_CREDIT_HOURS * 60 * 60 * 1000
       return chatTurns.some((turn) => {
         const repliedAt = turn.createdAt.getTime()
-        return repliedAt > outbound.createdAt.getTime() && repliedAt <= replyDeadline
+        return repliedAt > outbound.sentAt.getTime() && repliedAt <= replyDeadline
       })
     }).length
   }
 
   const status = lastOutboundRow ? statusFrom(lastOutboundRow.sourceMetadata) : null
+  // createdAt here is the send time (release time for a gate-released row).
   const lastOutbound = lastOutboundRow
     ? {
         id: lastOutboundRow.id,
         title: lastOutboundRow.title,
-        createdAt: lastOutboundRow.createdAt,
+        createdAt: lastOutboundRow.sentAt,
         status,
       }
     : null

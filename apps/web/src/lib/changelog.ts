@@ -35,7 +35,7 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 > Theme: One coherent mind, wave 4 — the art of the moment. Kairos learns *when* and *how* to talk to you, not just what to say. All off until you switch them on; Telegram works exactly as before.
 
 ### Added — Timing: the Kairos gate (\`KAIROS_GATE=observe|1\`, \`KAIROS_GATE_RECEPTIVITY\`) · \`KAIROS\` \`MCP\` \`API\`
-- Unprompted messages wait for a natural pause — a chat winding down, a card closed, a coding session ending, a quiet spell — and always go out within two hours (adjustable). The 06:00 message, the Monday review, alerts and urgent notes are never held.
+- Unprompted messages wait for a natural pause — a chat winding down, a card closed, a coding session ending, a quiet spell — and always go out at the first hourly check after a two-hour limit (adjustable), so within about three hours at most. The 06:00 message, the Monday review, alerts and urgent notes are never held.
 - He learns when, where and how warmly you reply (hour, day, kind, channel) and, if allowed, avoids hours you rarely answer. New read-only \`get_kairos_gate\` / \`GET /api/v1/kairos/gate\`.
 
 ### Added — Traits vs moods and the "what you're carrying" card (\`KAIROS_OWNER_MODEL=observe|1\`) · \`KAIROS\` \`MCP\` \`API\` \`UI\`

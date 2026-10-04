@@ -32,7 +32,7 @@ import { answerNumberedKairosAsks } from '@/lib/kairos/ask'
 import { findOpenChatThreadByTitle } from '@/lib/data/kairos-chat'
 import { markKairosSpeaksReplied } from '@/lib/data/memories'
 import { sendChatMessage } from '@/lib/kairos/chat-turn'
-import { setMessageReaction } from '@/lib/kairos/moment/telegram-routes'
+import { setMessageReaction } from '@/lib/kairos/telegram-api'
 import { POST } from '../route'
 
 const OPERATOR_USER = 'operator-user-1'

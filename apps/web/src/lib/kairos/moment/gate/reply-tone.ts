@@ -1,5 +1,5 @@
-// Lexical warmth of an owner reply in [−1, 1]. Pure, no model call. Shared
-// with lane C (rapport). Thanks / laughter / warm emoji / "!" push up;
+// Lexical warmth of an owner reply in [−1, 1]. Pure, no model call. Used by
+// the gate fold only. Thanks / laughter / warm emoji / "!" push up;
 // "not now", "stop", "later", "busy" and bare one-word acks push down.
 
 const WARM = [
@@ -29,8 +29,3 @@ export function replyWarmth(text: string): number {
   return Math.round(clamp(score) * 100) / 100
 }
 
-// "not now" and friends: an explicit brush-off, regardless of other warmth.
-export function isBrushOff(text: string): boolean {
-  const t = text.trim().toLowerCase()
-  return /\b(not now|later|busy|leave (it|me)|go away|stop)\b/.test(t)
-}

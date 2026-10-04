@@ -13,7 +13,7 @@ import {
 // projects in-message, fetch its current state straight from the data layer
 // and render it into a prompt block. Retrieval-derived memories are always
 // somewhat stale; this leg gives Kairos ground truth for the boards named.
-// Non-fatal by design — mirrors the retrieval fallback above.
+// Non-fatal by design, like the chat retrieval fallback in chat-turn-assistant.ts.
 export async function loadBoardSection(userId: string, threadId: string, userBody: string): Promise<string | undefined> {
   try {
     const matches = await matchProjectsInMessage(userId, userBody)

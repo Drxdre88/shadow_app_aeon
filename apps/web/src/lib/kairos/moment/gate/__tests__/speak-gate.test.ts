@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // deliverKairosSpeak × the real gate lane. Flag unset: outcome, stored
 // metadata and Telegram call byte-identical, no gate data touched. Flag on:
@@ -33,6 +33,11 @@ import { recordToday } from '@/lib/kairos/today'
 import { deliverKairosSpeak, type SpeakInput } from '@/lib/kairos/speak'
 
 const INPUT: SpeakInput = { title: 't', message: 'm', kind: 'question', urgency: 'normal', force: false, opsAlert: false, digest: false }
+
+// speak.ts lazy-imports the moment seam; warm it so the first test does not pay the transform (timeout flake).
+beforeAll(async () => {
+  await import('@/lib/kairos/moment')
+}, 60_000)
 
 beforeEach(() => {
   vi.clearAllMocks()

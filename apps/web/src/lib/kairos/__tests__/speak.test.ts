@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // deliverKairosSpeak — throttle logic (pre-existing) + externalId dedup (F2,
 // horsemen review). Mirrors the mocking pattern in synthesis-health.test.ts
@@ -36,6 +36,11 @@ function idleState(overrides: Partial<{
 }> = {}) {
   return { awaitingReply: false, replyRate7d: 0, lastOutbound: null, ...overrides }
 }
+
+// speak.ts lazy-imports the moment seam; warm it so the first test does not pay the transform (timeout flake).
+beforeAll(async () => {
+  await import('@/lib/kairos/moment')
+}, 60_000)
 
 beforeEach(() => {
   vi.clearAllMocks()

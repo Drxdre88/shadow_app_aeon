@@ -13,6 +13,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { importStatements } from './import-statements'
 
 const WEB_ROOT = path.resolve(__dirname, '../../../..')
 const SRC = path.join(WEB_ROOT, 'src')
@@ -89,10 +90,6 @@ function sourceFiles(dir: string): string[] {
   })
 }
 
-function importStatements(src: string): string[] {
-  return src.match(/import[\s\S]*?from\s+['"][^'"]+['"]/g) ?? []
-}
-
 describe('Kairos life chapters are written by the server only', () => {
   it.each(GUARDED_ROOTS)('nothing under %s imports the chapter writer', (root) => {
     const files = sourceFiles(path.join(SRC, root))
@@ -108,5 +105,15 @@ describe('Kairos life chapters are written by the server only', () => {
   it('the guard itself would catch an import', () => {
     const sample = "import { insertLifeChapter } from '@/lib/data/life-chapters'"
     expect(importStatements(sample)[0]).toMatch(WRITER_IDENTIFIERS)
+  })
+
+  it('the guard also catches dynamic imports', () => {
+    const samples = [
+      "const { insertLifeChapter } = await import('@/lib/data/life-chapters')",
+      "const data = await import('@/lib/data/life-chapters')\nawait data.insertLifeChapter(userId)",
+      "await (await import('@/lib/data/life-chapters')).insertLifeChapter(userId)",
+      "import('@/lib/data/life-chapters').then(({ insertLifeChapter }) => insertLifeChapter())",
+    ]
+    for (const s of samples) expect(importStatements(s).join('\n')).toMatch(WRITER_IDENTIFIERS)
   })
 })

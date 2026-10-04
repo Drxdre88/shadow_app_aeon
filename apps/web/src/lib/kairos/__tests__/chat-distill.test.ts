@@ -136,6 +136,16 @@ describe('chat distillation', () => {
     })
   })
 
+  it('strips a stored trust footer from the transcript whatever the flags', () => {
+    delete process.env.KAIROS_TRUST
+    const prompt = buildChatDistillUserPrompt(thread([
+      message(1, 'user', 'Should I ship Friday?'),
+      message(2, 'assistant', 'Ship it Friday.\n\n⚖️ On Swarm: you can lean on me here.'),
+    ]), DATE)
+    expect(prompt).toContain('Ship it Friday.')
+    expect(prompt).not.toContain('⚖️ On')
+  })
+
   it('writes distilled reflections with a kairos origin, never the operator (P2.5)', async () => {
     await runChatDistillForUser(USER_ID, { date: DATE })
 

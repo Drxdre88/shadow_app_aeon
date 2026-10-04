@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { ChatMessage } from '@/lib/data/kairos-chat'
+import { runStripFooters } from '@/lib/kairos/moment'
 import { extractJsonBlock, neutraliseFences } from './_prompt-utils'
 
 const reflectionSchema = z.object({
@@ -36,10 +37,11 @@ export function buildChatDistillUserPrompt(
   date: string,
   askId?: string,
 ): string {
+  // Footers are stripped whatever the flags, so ones stored while trust was on never reach this prompt.
   const transcript = thread.messages.map((message) => ({
     seq: message.seq,
     role: message.role,
-    content: neutraliseFences(message.content),
+    content: neutraliseFences(runStripFooters(message.content)),
   }))
   const prompt = [
     `UTC date: ${date}`,

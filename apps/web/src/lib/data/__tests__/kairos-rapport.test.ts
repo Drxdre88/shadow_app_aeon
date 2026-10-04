@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   selectRows: [] as unknown[],
   lockedRows: [] as unknown[][],
   locks: [] as string[],
+  wheres: [] as unknown[],
   updates: [] as Array<Record<string, unknown>>,
   inserts: [] as Array<{ values: unknown; set?: Record<string, unknown> }>,
 }))
@@ -14,7 +15,12 @@ vi.mock('@/lib/db', () => {
   const selectChain = (rows: () => unknown[]) => {
     const chain: Record<string, unknown> = {}
     chain.from = () => chain
-    chain.where = () => chain
+    chain.where = (w: unknown) => {
+      h.wheres.push(w)
+      return chain
+    }
+    chain.orderBy = () => chain
+    chain.limit = () => chain
     chain.for = (mode: string) => {
       h.locks.push(mode)
       return Promise.resolve(h.lockedRows.shift() ?? [])
@@ -43,7 +49,7 @@ vi.mock('@/lib/db', () => {
   }
 })
 
-import { KAIROS_RAPPORT_PREF_KEY, KairosRapportCorruptError, mutateKairosRapport, readKairosRapport, toKairosRapportView } from '../kairos-rapport'
+import { KAIROS_RAPPORT_PREF_KEY, KairosRapportCorruptError, listIgnoredKairosSpeakIds, mutateKairosRapport, readKairosRapport, toKairosRapportView } from '../kairos-rapport'
 import { findPreferences, upsertPreferences } from '../preferences'
 import { kairosRapportSchema, kairosRapportViewSchema, getKairosRapportSchema } from '../validators/kairos-rapport'
 import { applyOwnerTurn, emptyRapport } from '@/lib/kairos/rapport/state'
@@ -63,6 +69,7 @@ beforeEach(() => {
   h.selectRows = []
   h.lockedRows = []
   h.locks = []
+  h.wheres = []
   h.updates = []
   h.inserts = []
 })
@@ -100,6 +107,17 @@ describe('kairosRapport storage', () => {
     expect((entry.values as { preferences: Record<string, unknown> }).preferences).toEqual({ currentTheme: 'nebula' })
     h.selectRows = [{ preferences: { currentTheme: 'nebula', [KAIROS_RAPPORT_PREF_KEY]: { v: 1 } } }]
     expect(await findPreferences('u1')).not.toHaveProperty(KAIROS_RAPPORT_PREF_KEY)
+  })
+})
+
+describe('ignored speaks', () => {
+  it('only pending (never held) rows, measured from the gate release time when released', async () => {
+    h.selectRows = [{ id: 'm1' }]
+    expect(await listIgnoredKairosSpeakIds('u1', NOW)).toEqual(['m1'])
+    const q = render(h.wheres.at(-1))
+    expect(q.sql).toContain("->>'status' = 'pending'")
+    expect(q.sql).toContain("coalesce((\"memories\".\"source_metadata\"->'gate'->>'releasedAt')::timestamptz, \"memories\".\"created_at\") <= $")
+    expect(q.params).toContain(new Date(NOW.getTime() - 24 * 3_600_000).toISOString())
   })
 })
 

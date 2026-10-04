@@ -1,29 +1,10 @@
-import { callTelegram, sendMessage } from '@/lib/kairos/telegram'
+import { sendMessage } from '@/lib/kairos/telegram'
 import { hasMomentHook, runTelegramCallback, runTelegramMessage, runTelegramText } from './index'
 import type { TelegramMomentMessage } from './types'
 
 // Telegram webhook side of the moment seam. Lane routers run after the owner
 // command routers (text) and before dismiss/accept parsing (callbacks); with
 // no lane hooks every function returns false without a Telegram call.
-
-export type CommandRouter = (userId: string, body: string, send: (text: string) => Promise<unknown>) => Promise<boolean>
-
-// Owner command routers (promises, predictions, agenda). A failure to route
-// hands the text to chat.
-export async function routeOwnerCommands(
-  name: string,
-  router: CommandRouter,
-  chatId: number | string,
-  userId: string,
-  body: string,
-): Promise<boolean> {
-  try {
-    return await router(userId, body, (text) => sendMessage(chatId, text))
-  } catch (err) {
-    console.error(`[telegram-webhook] ${name}-command routing failed — handing the text to chat`, err)
-    return false
-  }
-}
 
 export async function routeMomentText(
   chatId: number | string,
@@ -70,13 +51,4 @@ export async function routeMomentMessage(
   const chatId = message.chat?.id
   if (chatId === undefined || String(chatId) !== operatorChatId) return false
   return runTelegramMessage({ userId, chatId, message, updateId, now: new Date() })
-}
-
-// Bot API setMessageReaction: one emoji reaction on a message (bots get one per message).
-export async function setMessageReaction(chatId: number | string, messageId: number, emoji: string): Promise<void> {
-  await callTelegram('setMessageReaction', {
-    chat_id: chatId,
-    message_id: messageId,
-    reaction: [{ type: 'emoji', emoji }],
-  })
 }

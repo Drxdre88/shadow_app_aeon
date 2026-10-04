@@ -97,7 +97,11 @@ export async function listObjectiveRefs(userId: string, limit = 50): Promise<Obj
 export const IGNORED_AFTER_HOURS = 24
 const IGNORED_LOOKBACK_DAYS = 7
 
-// Conversational Kairos speaks still pending more than 24h (newest first).
+// Conversational Kairos speaks still pending more than 24h after they were
+// SENT (newest first). Held rows are status 'held', never 'pending', so they
+// are skipped; a gate-released row is measured from gate.releasedAt.
+const speakSentAtSql = sql`coalesce((${memories.sourceMetadata}->'gate'->>'releasedAt')::timestamptz, ${memories.createdAt})`
+
 export async function listIgnoredKairosSpeakIds(userId: string, now: Date = new Date()): Promise<string[]> {
   const until = new Date(now.getTime() - IGNORED_AFTER_HOURS * 3_600_000)
   const since = new Date(now.getTime() - IGNORED_LOOKBACK_DAYS * 86_400_000)
@@ -113,7 +117,7 @@ export async function listIgnoredKairosSpeakIds(userId: string, now: Date = new 
       sql`(${memories.sourceMetadata}->>'opsAlert') IS DISTINCT FROM 'true'`,
       sql`(${memories.sourceMetadata}->>'digest') IS DISTINCT FROM 'true'`,
       gte(memories.createdAt, since),
-      lte(memories.createdAt, until),
+      sql`${speakSentAtSql} <= ${until.toISOString()}::timestamptz`,
     ))
     .orderBy(desc(memories.createdAt))
     .limit(10)

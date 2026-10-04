@@ -50,4 +50,11 @@ describe('chat-today moment hooks', () => {
     await Promise.all(afterTasks.map((task) => task()))
     expect(lanes.rapport.reply).toHaveBeenCalledWith(expect.objectContaining({ seq: 4, content: 'reply', channel: 'web' }))
   })
+
+  it('the today entry never carries a stored trust footer (stripped whatever the flags)', async () => {
+    delete process.env.KAIROS_TRUST
+    await recordChatReply('u', 't', 4, 'Ship it Friday.\n\n⚖️ On Swarm: you can lean on me here.', 'web')
+    const entry = vi.mocked(recordTodayAfter).mock.calls[0][1] as { text: string }
+    expect(entry.text).toBe('Ship it Friday.')
+  })
 })

@@ -15,6 +15,10 @@ vi.mock('@/lib/actions/kairos-voice', () => ({
   discardVoiceNote: vi.fn(),
 }))
 vi.mock('@/components/ui/KairosMarkdown', () => ({ KairosMarkdown: () => null }))
+vi.mock('@/lib/actions/kairos-owner-model', () => ({
+  getKairosOwnerCard: vi.fn(async () => ({ enabled: false })),
+  correctKairosOwnerItem: vi.fn(),
+}))
 
 import {
   acceptKairosInboxProposal,

@@ -162,4 +162,13 @@ describe('sweep + event hooks (gate on)', () => {
     expect(h.fanOutSpeak).toHaveBeenCalledOnce()
     expect(h.claimHeldSpeak.mock.calls[0][3]).toBe('session_ended')
   })
+
+  it('a failing break release logs and never throws', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    h.listHeldSpeaks.mockRejectedValue(new Error('db down'))
+    expect(() => noteKairosBreak('op', 'card_closed')).not.toThrow()
+    await h.after.mock.calls[0][0]()
+    expect(warn).toHaveBeenCalledWith('[kairos:gate] break release failed', 'db down')
+    warn.mockRestore()
+  })
 })

@@ -105,19 +105,20 @@ function OwnerItemRow({
   )
 }
 
-export function OwnerCarryingCard() {
+export function OwnerCarryingCard({ ownerModelEnabled }: { ownerModelEnabled: boolean }) {
   const [items, setItems] = useState<OwnerCardItem[] | null>(null)
   const [working, setWorking] = useState<string | null>(null)
   const [outcomes, setOutcomes] = useState<Record<string, string>>({})
 
   useEffect(() => {
+    if (!ownerModelEnabled) return
     let alive = true
     actions()
       .then(({ getKairosOwnerCard }) => getKairosOwnerCard())
       .then((data) => { if (alive) setItems(data.enabled ? data.items : null) })
       .catch(() => { if (alive) setItems(null) })
     return () => { alive = false }
-  }, [])
+  }, [ownerModelEnabled])
 
   const onCorrect = useCallback(async (id: string, action: Action, text?: string) => {
     setWorking(id)
@@ -132,7 +133,7 @@ export function OwnerCarryingCard() {
     }
   }, [])
 
-  if (!items || items.length === 0) return null
+  if (!ownerModelEnabled || !items || items.length === 0) return null
   return (
     <section aria-label="What I think you're carrying" className="mb-5 rounded-xl bg-white/[0.04] border border-violet-300/15 p-4">
       <div className="flex items-center gap-1.5">

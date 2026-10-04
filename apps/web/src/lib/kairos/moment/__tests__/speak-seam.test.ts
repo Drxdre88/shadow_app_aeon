@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // deliverKairosSpeak × the wave 4 moment seam: empty lanes keep every output
 // identical; a lane policy can only block or hold.
@@ -22,6 +22,11 @@ import { deliverKairosSpeak, fanOutSpeak, type SpeakInput } from '../../speak'
 
 const OPERATOR = 'operator-1'
 const INPUT: SpeakInput = { title: 't', message: 'm', kind: 'notify', urgency: 'normal', force: false, opsAlert: false, digest: false }
+
+// speak.ts lazy-imports the moment seam; warm it so the first test does not pay the transform (timeout flake).
+beforeAll(async () => {
+  await import('@/lib/kairos/moment')
+}, 60_000)
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -77,6 +82,22 @@ describe('deliverKairosSpeak with a lane policy', () => {
     })
     expect(recordToday).not.toHaveBeenCalled()
     expect(sendKairosSpeak).not.toHaveBeenCalled()
+  })
+
+  it('a hold never swallows Telegram-only extras: the send goes out now with them', async () => {
+    lanes.gate.speakPolicy = () => ({ hold: { until: '2026-10-04T12:00:00Z', reason: 'chat_live' } })
+    const keyboard = [[{ text: 'C1 still', callback_data: 'om1:k:1' }]]
+    const withKeyboard = await deliverKairosSpeak(OPERATOR, INPUT, { telegramKeyboard: keyboard })
+    expect(withKeyboard).toEqual({ status: 200, body: { id: 'memory-1', delivered: { inbox: true, telegram: true } } })
+    expect(vi.mocked(captureMemory).mock.calls[0][1].sourceMetadata).toMatchObject({ status: 'pending' })
+    expect(vi.mocked(sendKairosSpeak).mock.calls[0][0]).toMatchObject({ keyboard })
+
+    const withTail = await deliverKairosSpeak(OPERATOR, INPUT, { telegramTail: 'dream line' })
+    expect(withTail.body).not.toHaveProperty('held')
+    expect(vi.mocked(sendKairosSpeak).mock.calls[1][0].message).toBe('m\n\ndream line')
+
+    const blank = await deliverKairosSpeak(OPERATOR, INPUT, { telegramTail: '  ', telegramKeyboard: [] })
+    expect(blank.body).toHaveProperty('held')
   })
 
   it('a block returns 429 before anything is stored', async () => {

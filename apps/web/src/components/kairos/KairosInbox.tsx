@@ -446,7 +446,7 @@ export function KairosInbox() {
                 )}
 
                 <div className="flex-1 overflow-y-auto px-5 py-5">
-                  <InboxExtras />
+                  <InboxExtras ownerModelEnabled={data.ownerModelEnabled === true} />
                   {loading && count === 0 ? (
                     <div className="text-[12px] text-white/40">Loading…</div>
                   ) : count === 0 ? (

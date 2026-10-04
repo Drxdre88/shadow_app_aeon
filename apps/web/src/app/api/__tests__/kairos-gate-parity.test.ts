@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { importStatements } from './import-statements'
 
 const WEB_ROOT = path.resolve(__dirname, '../../../..')
 const SRC = path.join(WEB_ROOT, 'src')
@@ -92,10 +93,6 @@ function sourceFiles(dir: string): string[] {
   })
 }
 
-function importStatements(src: string): string[] {
-  return src.match(/import[\s\S]*?from\s+['"][^'"]+['"]/g) ?? []
-}
-
 describe('Kairos gate is written by the server only', () => {
   it.each(GUARDED_ROOTS)('nothing under %s imports a gate writer', (root) => {
     const files = sourceFiles(path.join(SRC, root))
@@ -111,5 +108,15 @@ describe('Kairos gate is written by the server only', () => {
   it('the guard itself would catch an import', () => {
     const sample = "import { claimHeldSpeak } from '@/lib/data/kairos-gate'"
     expect(importStatements(sample)[0]).toMatch(WRITER_IDENTIFIERS)
+  })
+
+  it('the guard also catches dynamic imports', () => {
+    const samples = [
+      "const { claimHeldSpeak } = await import('@/lib/data/kairos-gate')",
+      "const data = await import('@/lib/data/kairos-gate')\nawait data.claimHeldSpeak(userId)",
+      "await (await import('@/lib/data/kairos-gate')).claimHeldSpeak(userId)",
+      "import('@/lib/data/kairos-gate').then(({ claimHeldSpeak }) => claimHeldSpeak())",
+    ]
+    for (const s of samples) expect(importStatements(s).join('\n')).toMatch(WRITER_IDENTIFIERS)
   })
 })

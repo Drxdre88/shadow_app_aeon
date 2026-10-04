@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { importStatements } from './import-statements'
 
 const WEB_ROOT = path.resolve(__dirname, '../../../..')
 const SRC = path.join(WEB_ROOT, 'src')
@@ -90,10 +91,6 @@ function sourceFiles(dir: string): string[] {
   })
 }
 
-function importStatements(src: string): string[] {
-  return src.match(/import[\s\S]*?from\s+['"][^'"]+['"]/g) ?? []
-}
-
 describe('Kairos owner model has no agent write path', () => {
   it.each(GUARDED_ROOTS)('nothing under %s imports an owner-model writer', (root) => {
     const files = sourceFiles(path.join(SRC, root))
@@ -109,5 +106,15 @@ describe('Kairos owner model has no agent write path', () => {
   it('the guard itself would catch an import', () => {
     expect(importStatements("import { correctOwnerItem } from '@/lib/kairos/owner-model/correct'")[0]).toMatch(WRITER_IDENTIFIERS)
     expect(importStatements("import { x } from '@/lib/kairos/owner-model/mutations'")[0]).toMatch(WRITER_IDENTIFIERS)
+  })
+
+  it('the guard also catches dynamic imports', () => {
+    const samples = [
+      "const { correctOwnerItem } = await import('@/lib/kairos/owner-model/correct')",
+      "const data = await import('@/lib/kairos/owner-model/correct')\nawait data.correctOwnerItem(userId)",
+      "await (await import('@/lib/kairos/owner-model/correct')).correctOwnerItem(userId)",
+      "import('@/lib/kairos/owner-model/correct').then(({ correctOwnerItem }) => correctOwnerItem())",
+    ]
+    for (const s of samples) expect(importStatements(s).join('\n')).toMatch(WRITER_IDENTIFIERS)
   })
 })

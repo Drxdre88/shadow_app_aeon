@@ -93,7 +93,7 @@ export async function ackMediaBid(ctx: TelegramMessageContext, deps: MediaBidDep
   }
   if (!stored) return true
   try {
-    const react = deps.react ?? (await import('@/lib/kairos/moment/telegram-routes')).setMessageReaction
+    const react = deps.react ?? (await import('@/lib/kairos/telegram-api')).setMessageReaction
     await react(ctx.chatId, messageId, emoji)
   } catch (err) {
     console.warn('[kairos:rapport] setMessageReaction failed (no text fallback):', err instanceof Error ? err.message : String(err))

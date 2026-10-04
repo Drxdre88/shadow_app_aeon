@@ -166,7 +166,9 @@ export async function deliverKairosSpeak(
       now,
     })
   if (verdict?.block) return { status: 429, body: { error: 'moment_blocked', reason: verdict.block.reason } }
-  const hold = verdict?.hold ? { heldAt: now.toISOString(), until: verdict.hold.until, reason: verdict.hold.reason } : null
+  // Telegram-only extras are never stored, so a hold would lose them at release: such a send goes out now.
+  const hasTelegramExtras = Boolean(opts.telegramTail?.trim() || opts.telegramKeyboard?.length)
+  const hold = verdict?.hold && !hasTelegramExtras ? { heldAt: now.toISOString(), until: verdict.hold.until, reason: verdict.hold.reason } : null
 
   const { memory, created } = await captureMemory(operatorUserId, {
     title,

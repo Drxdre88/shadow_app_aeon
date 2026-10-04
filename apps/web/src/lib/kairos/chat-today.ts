@@ -2,7 +2,7 @@ import { loadTodayDigest, recordTodayAfter } from '@/lib/kairos/today'
 import { renderTodaySection } from '@/lib/kairos/today-render'
 import type { ChatPromptSurface } from '@/lib/kairos/chat-prompt'
 import { scheduleChatCorrectionCheck } from '@/lib/kairos/surprise/owner-correction'
-import { hasMomentHook, runOwnerTurnHooks, runReplyHooks } from '@/lib/kairos/moment'
+import { hasMomentHook, runOwnerTurnHooks, runReplyHooks, runStripFooters } from '@/lib/kairos/moment'
 import { runDetached } from '@/lib/kairos/moment/detached'
 
 // Chat ↔ "today" (spec_one_mind): the write and read points every chat
@@ -48,9 +48,11 @@ export async function recordChatReply(
   content: string,
   channel: ChatTodayChannel,
 ): Promise<void> {
+  // Always stripped (not flag-gated): owner-facing footers never reach a prompt via the today log.
+  const text = runStripFooters(content)
   recordTodayAfter(
     userId,
-    { key: `chat:${threadId}:${seq}`, channel, type: 'replied', text: content, ref: { threadId, seq }, covered: 'chat-distill' },
+    { key: `chat:${threadId}:${seq}`, channel, type: 'replied', text, ref: { threadId, seq }, covered: 'chat-distill' },
     { kind: 'kairos', via: 'chat' },
   )
   if (hasMomentHook('reply')) runDetached(() => runReplyHooks({ userId, threadId, seq, content, channel, at: new Date() }))

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { KairosRapport } from '@/lib/data/validators/kairos-rapport'
 
 // Lane C hooks through the moment seam with an in-memory rapport store.
@@ -21,7 +21,8 @@ vi.mock('@/lib/data/kairos-rapport', async () => {
 })
 vi.mock('@/lib/data/memories', () => ({ markKairosSpeaksReplied: vi.fn(async () => 0), captureMemory: vi.fn(), listRecentKairosSpeaks: vi.fn() }))
 vi.mock('@/lib/kairos/engagement', () => ({ AWAIT_WINDOW_HOURS: 48, getConversationState: vi.fn() }))
-vi.mock('@/lib/kairos/telegram', () => ({ sendKairosSpeak: vi.fn(), callTelegram: vi.fn(), sendMessage: vi.fn() }))
+vi.mock('@/lib/kairos/telegram', () => ({ sendKairosSpeak: vi.fn(), sendMessage: vi.fn() }))
+vi.mock('@/lib/kairos/telegram-api', () => ({ callTelegram: vi.fn(), setMessageReaction: vi.fn() }))
 vi.mock('@/lib/kairos/today', () => ({ recordToday: vi.fn(async () => undefined) }))
 vi.mock('@/lib/kairos/moment/lanes/gate', () => ({ gateLane: {} }))
 vi.mock('@/lib/kairos/moment/lanes/owner-model', () => ({ ownerModelLane: {} }))
@@ -31,7 +32,8 @@ vi.mock('@/lib/kairos/moment/lanes/chapters', () => ({ chaptersLane: {} }))
 import { listObjectiveRefs, mutateKairosRapport } from '@/lib/data/kairos-rapport'
 import { captureMemory, listRecentKairosSpeaks, markKairosSpeaksReplied } from '@/lib/data/memories'
 import { getConversationState } from '@/lib/kairos/engagement'
-import { callTelegram, sendKairosSpeak, sendMessage } from '@/lib/kairos/telegram'
+import { sendKairosSpeak, sendMessage } from '@/lib/kairos/telegram'
+import { setMessageReaction } from '@/lib/kairos/telegram-api'
 import { deliverKairosSpeak, type SpeakInput } from '@/lib/kairos/speak'
 import { gatherMomentDaily, runDailyDelivered, runOwnerDecisionHooks, runOwnerTurnHooks, runReplyHooks, runChatContext } from '@/lib/kairos/moment'
 import { routeMomentMessage } from '@/lib/kairos/moment/telegram-routes'
@@ -51,6 +53,11 @@ const turn = (body: string, seq = 3) => ({ userId: U, threadId: 't1', seq, body,
 function setFlags(v: string) {
   for (const k of ENV) process.env[k] = v
 }
+
+// speak.ts lazy-imports the moment seam; warm it so the first test does not pay the transform (timeout flake).
+beforeAll(async () => {
+  await import('@/lib/kairos/moment')
+}, 60_000)
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -188,16 +195,16 @@ describe('Telegram media bids', () => {
   it('reacts exactly once per update and marks pending speaks replied', async () => {
     expect(await routeMomentMessage(sticker(7), CHAT, U, 7)).toBe(true)
     expect(await routeMomentMessage(sticker(7), CHAT, U, 7)).toBe(true)
-    expect(callTelegram).toHaveBeenCalledOnce()
-    expect(callTelegram).toHaveBeenCalledWith('setMessageReaction', { chat_id: Number(CHAT), message_id: 55, reaction: [{ type: 'emoji', emoji: '🤣' }] })
+    expect(setMessageReaction).toHaveBeenCalledOnce()
+    expect(setMessageReaction).toHaveBeenCalledWith(Number(CHAT), 55, '🤣')
     expect(markKairosSpeaksReplied).toHaveBeenCalledOnce()
     expect(store.state?.bids).toEqual([{ at: expect.any(String), kind: 'media', ref: `tg:${CHAT}:55` }])
   })
 
   it('a reaction failure logs only — no text fallback', async () => {
-    vi.mocked(callTelegram).mockRejectedValueOnce(new Error('REACTION_INVALID'))
+    vi.mocked(setMessageReaction).mockRejectedValueOnce(new Error('REACTION_INVALID'))
     expect(await routeMomentMessage({ message_id: 56, chat: { id: Number(CHAT) }, photo: [{ file_unique_id: 'p' }] }, CHAT, U, 8)).toBe(true)
-    expect(callTelegram).toHaveBeenCalledWith('setMessageReaction', expect.objectContaining({ reaction: [{ type: 'emoji', emoji: '👀' }] }))
+    expect(setMessageReaction).toHaveBeenCalledWith(Number(CHAT), 56, '👀')
     expect(sendMessage).not.toHaveBeenCalled()
   })
 
@@ -206,6 +213,6 @@ describe('Telegram media bids', () => {
     expect(await routeMomentMessage(sticker(10, 58, { chat: { id: 999 } }), CHAT, U, 10)).toBe(false)
     setFlags('observe')
     expect(await routeMomentMessage(sticker(11, 59), CHAT, U, 11)).toBe(false)
-    expect(callTelegram).not.toHaveBeenCalled()
+    expect(setMessageReaction).not.toHaveBeenCalled()
   })
 })

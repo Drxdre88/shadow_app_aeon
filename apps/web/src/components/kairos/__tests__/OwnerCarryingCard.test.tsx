@@ -19,16 +19,16 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('inbox extras with KAIROS_OWNER_MODEL off', () => {
-  it('renders nothing new', async () => {
-    actions.getKairosOwnerCard.mockResolvedValue({ enabled: false })
-    const { container } = render(<InboxExtras />)
-    await waitFor(() => expect(actions.getKairosOwnerCard).toHaveBeenCalledOnce())
+  it('renders nothing new and never calls the server', async () => {
+    const { container } = render(<InboxExtras ownerModelEnabled={false} />)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(actions.getKairosOwnerCard).not.toHaveBeenCalled()
     expect(container.innerHTML).toBe('')
   })
 
   it('renders nothing when the action fails or nothing is live', async () => {
     actions.getKairosOwnerCard.mockResolvedValue({ enabled: true, items: [] })
-    const { container } = render(<OwnerCarryingCard />)
+    const { container } = render(<OwnerCarryingCard ownerModelEnabled />)
     await waitFor(() => expect(actions.getKairosOwnerCard).toHaveBeenCalledOnce())
     expect(container.innerHTML).toBe('')
   })
@@ -38,7 +38,7 @@ describe('OwnerCarryingCard', () => {
   it('lists C-numbered items with dates and corrects through the session action', async () => {
     actions.getKairosOwnerCard.mockResolvedValue({ enabled: true, items: ITEMS })
     actions.correctKairosOwnerItem.mockResolvedValue({ ok: true, label: 'C1 over ✓' })
-    render(<InboxExtras />)
+    render(<InboxExtras ownerModelEnabled />)
     expect(await screen.findByText('stressed about the launch')).toBeTruthy()
     expect(screen.getByText('since 30/09, lapses 10/10')).toBeTruthy()
     expect(screen.getByText('right?')).toBeTruthy()
@@ -50,7 +50,7 @@ describe('OwnerCarryingCard', () => {
   it('sends a free-text correction in his words', async () => {
     actions.getKairosOwnerCard.mockResolvedValue({ enabled: true, items: ITEMS.slice(1) })
     actions.correctKairosOwnerItem.mockResolvedValue({ ok: true, label: 'C2 updated in your words ✓' })
-    render(<OwnerCarryingCard />)
+    render(<OwnerCarryingCard ownerModelEnabled />)
     fireEvent.click(await screen.findByRole('button', { name: 'Correct…' }))
     fireEvent.change(screen.getByLabelText('Correct C2'), { target: { value: 'only on launch weeks' } })
     fireEvent.click(screen.getByRole('button', { name: 'Send' }))

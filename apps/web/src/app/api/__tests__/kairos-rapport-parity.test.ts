@@ -13,6 +13,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { importStatements } from './import-statements'
 
 const WEB_ROOT = path.resolve(__dirname, '../../../..')
 const SRC = path.join(WEB_ROOT, 'src')
@@ -90,10 +91,6 @@ function sourceFiles(dir: string): string[] {
   })
 }
 
-function importStatements(src: string): string[] {
-  return src.match(/import[\s\S]*?from\s+['"][^'"]+['"]/g) ?? []
-}
-
 describe('Kairos rapport is written by the server only', () => {
   it.each(GUARDED_ROOTS)('nothing under %s imports a rapport writer', (root) => {
     const files = sourceFiles(path.join(SRC, root))
@@ -109,5 +106,15 @@ describe('Kairos rapport is written by the server only', () => {
   it('the guard itself would catch an import', () => {
     const sample = "import { mutateKairosRapport } from '@/lib/data/kairos-rapport'"
     expect(importStatements(sample)[0]).toMatch(WRITER_IDENTIFIERS)
+  })
+
+  it('the guard also catches dynamic imports', () => {
+    const samples = [
+      "const { mutateKairosRapport } = await import('@/lib/data/kairos-rapport')",
+      "const data = await import('@/lib/data/kairos-rapport')\nawait data.mutateKairosRapport(userId)",
+      "await (await import('@/lib/data/kairos-rapport')).mutateKairosRapport(userId)",
+      "import('@/lib/data/kairos-rapport').then(({ mutateKairosRapport }) => mutateKairosRapport())",
+    ]
+    for (const s of samples) expect(importStatements(s).join('\n')).toMatch(WRITER_IDENTIFIERS)
   })
 })

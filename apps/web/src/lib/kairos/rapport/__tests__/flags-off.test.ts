@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Every rapport flag unset → the lane exposes no hook, imports no data
 // module, and every surface (capture, chat prompt, speak, 06:00, Telegram)
@@ -46,6 +46,11 @@ const NOW = new Date('2026-10-04T08:00:00.000Z')
 const CHAT = '12345'
 
 let fetchMock: ReturnType<typeof vi.fn>
+
+// speak.ts lazy-imports the moment seam; warm it so the first test does not pay the transform (timeout flake).
+beforeAll(async () => {
+  await import('@/lib/kairos/moment')
+}, 60_000)
 
 beforeEach(() => {
   vi.clearAllMocks()

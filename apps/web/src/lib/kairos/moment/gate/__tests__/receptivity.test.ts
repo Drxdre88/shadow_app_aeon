@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { emptyGateState, emptyReceptivity, foldObservations, isColdHour, isColdNow, londonSlot, sourceOf, attachLogMemoryId, appendGateLog, type GateObservation } from '../receptivity'
-import { replyWarmth, isBrushOff } from '../reply-tone'
+import { replyWarmth } from '../reply-tone'
 import { buildObservation } from '../fold'
 import { GATE_LOG_MAX } from '@/lib/data/validators/kairos-gate'
 
@@ -112,9 +112,7 @@ describe('reply tone', () => {
     expect(Math.sign(replyWarmth(text))).toBe(sign)
   })
 
-  it('stays within [-1, 1] and spots brush-offs', () => {
+  it('stays within [-1, 1]', () => {
     expect(replyWarmth('stop, not now, later, busy, go away')).toBe(-1)
-    expect(isBrushOff('later please')).toBe(true)
-    expect(isBrushOff('thanks')).toBe(false)
   })
 })

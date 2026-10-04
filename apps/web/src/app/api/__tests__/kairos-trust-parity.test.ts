@@ -15,6 +15,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { importStatements } from './import-statements'
 
 const WEB_ROOT = path.resolve(__dirname, '../../../..')
 const SRC = path.join(WEB_ROOT, 'src')
@@ -90,12 +91,6 @@ function sourceFiles(dir: string): string[] {
   })
 }
 
-function importStatements(src: string): string[] {
-  const statics = src.match(/(?:import|export)[^;'"]*?from\s+['"][^'"]+['"]/g) ?? []
-  const dynamics = src.match(/import\(\s*['"][^'"]+['"]\s*\)/g) ?? []
-  return [...statics, ...dynamics]
-}
-
 const FORBIDDEN_MODULES = /['"][^'"]*(cold-reads|cold-read\/|\/character\/|\/character['"]|conscience)[^'"]*['"]/
 const WRITER_IDENTIFIERS = /\b(mutate\w*|settle\w*)\b/
 
@@ -126,5 +121,15 @@ describe('Kairos trust stays measurement-safe and read-only', () => {
     for (const s of samples) expect(importStatements(s)[0]).toMatch(FORBIDDEN_MODULES)
     expect(importStatements("import { mutateKairosPredictions } from '@/lib/data/kairos-predictions'")[0]).toMatch(WRITER_IDENTIFIERS)
     expect(importStatements("import { settleKairosPrediction } from '@/lib/kairos/predictions/settle'")[0]).toMatch(WRITER_IDENTIFIERS)
+  })
+
+  it('the guard also catches dynamic imports', () => {
+    const samples = [
+      "const { mutateKairosPredictions } = await import('@/lib/data/kairos-predictions')",
+      "const data = await import('@/lib/data/kairos-predictions')\nawait data.mutateKairosPredictions(userId)",
+      "await (await import('@/lib/data/kairos-predictions')).mutateKairosPredictions(userId)",
+      "import('@/lib/data/kairos-predictions').then(({ mutateKairosPredictions }) => mutateKairosPredictions())",
+    ]
+    for (const s of samples) expect(importStatements(s).join('\n')).toMatch(WRITER_IDENTIFIERS)
   })
 })

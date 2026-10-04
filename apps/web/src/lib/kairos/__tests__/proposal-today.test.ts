@@ -90,7 +90,8 @@ describe('goal decisions — recorded once, by the decision function', () => {
 
   it('an inbox accept of a goal is logged once (by the decision), never again by the accept path', async () => {
     vi.mocked(findMemoryById).mockResolvedValue(memory({ id: GOAL_ID, sourceMetadata: { kind: 'goal', status: 'pending' } }))
-    vi.mocked(findProposalForDecision).mockResolvedValue(goalRow() as never)
+    // This path reads the real clock, so the proposal must not have expired yet.
+    vi.mocked(findProposalForDecision).mockResolvedValue(goalRow({ expiresAt: '2999-01-01T00:00:00.000Z' }) as never)
     vi.mocked(approveGoal).mockResolvedValue({ ok: true, goal: approved as never })
 
     await acceptKairosProposal(GOAL_ID, USER, { pin: false })
