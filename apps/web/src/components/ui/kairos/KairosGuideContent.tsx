@@ -56,6 +56,25 @@ export function KairosGuideContent({ onNavigate }: { onNavigate?: (view: BrainVi
           Click the round Kairos avatar in the bottom-right corner, anywhere in Aeon, or write to him on Telegram. Both
           are the same conversation, and both draw on everything he knows.
         </P>
+        <P>
+          He keeps one running memory of today across Telegram, the web, Triad and Claude, so something you tell him on
+          your phone at 10:00 is something he knows in Claude at 10:05.
+        </P>
+      </Section>
+
+      <Section title="What he thinks you're carrying">
+        <P>
+          Once switched on, a Sunday-evening card lists what he thinks is on your plate: lasting traits, and passing
+          moods that fade after about ten days unless you say they still hold. Correct it with the buttons, on the inbox
+          card, or on Telegram:
+        </P>
+        <List
+          items={[
+            <><Mono>C1 still</Mono> or <Mono>C1 over</Mono> — keep a mood going, or close it.</>,
+            <><Mono>C3 wrong</Mono> — he drops it and won’t suggest it again for a while.</>,
+            <><Mono>C2: what’s really going on</Mono> — replace his read with your own words.</>,
+          ]}
+        />
       </Section>
 
       <Section title="Voice notes">
@@ -89,6 +108,22 @@ export function KairosGuideContent({ onNavigate }: { onNavigate?: (view: BrainVi
           words, and they weigh the most when he forms a view of you. Summaries Claude writes — of a session, a chat, a
           voice note — are kept as AI words and never stand in for yours. Nothing you say is reworded.
         </P>
+      </Section>
+
+      <Section title="New ways of thinking">
+        <P>
+          These are built but switched off until you turn them on in your deployment settings. Most have a “watch only”
+          mode that records what he would do without changing anything you see.
+        </P>
+        <List
+          items={[
+            <><b className="text-white/90 font-medium">A mind that holds together</b> — what’s on his mind, a weekly character check, and a cold second opinion on your plans.</>,
+            <><b className="text-white/90 font-medium">Surprise and dreams</b> — what he didn’t expect decides what he rethinks; dreams never count as fact.</>,
+            <><b className="text-white/90 font-medium">Better ideas</b> — a map of every kind of idea, head-to-head judging, novelty nights and a learned sense of your taste.</>,
+            <><b className="text-white/90 font-medium">The right moment</b> — he waits for a natural pause to speak, offers a step when you’re ready, backs off and repairs when you’re not, says how far to trust him in each area, and asks “want my take, or think it out loud?” before advising.</>,
+            <><b className="text-white/90 font-medium">Life chapters</b> — once a month, a short honest chapter of his own story.</>,
+          ]}
+        />
       </Section>
     </article>
   )
