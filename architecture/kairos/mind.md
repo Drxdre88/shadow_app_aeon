@@ -1,13 +1,15 @@
-# Kairos — One Coherent Mind (0.20 → 0.25)
+# Vorath (formerly Kairos) — One Coherent Mind (0.20 → 0.28)
 
 > Part of the Aeon architecture set — index: [../../ARCHITECTURE.md](../../ARCHITECTURE.md) · siblings: [overview](overview.md) · [memory-and-capture](memory-and-capture.md) · [synthesis](synthesis.md) · [chat](chat.md)
 
-State as of **Kairos 0.25.0 / app v0.43.0** (2026-10-04). Plan of record: `research/kairos_0310/next_phase_mind.md`;
-release log: `docs/kairos/CHANGELOG.md` 0.20–0.25; operator handover: `aeon_os/HANDOVER_0310.md`.
+State as of **Vorath 0.28.0 / app v0.46.0** (2026-10-06). Plans of record: `research/kairos_0310/next_phase_mind.md`,
+`research/vorath_0510/living_dominions.md`, `research/vorath_0510/offpiste_10.md`; release log: `docs/kairos/CHANGELOG.md`
+0.20–0.28; operator handovers: `aeon_os/HANDOVER_0310.md`, `aeon_os/HANDOVER_0410.md`. The mind is called **Vorath**
+since 0.26; code paths, env vars, pref keys and MCP tool names keep `kairos`.
 All paths below are under `apps/web/src/` unless stated.
 
 **Ground rules that hold across every wave**
-- **No schema change** since 0.16: new state is `user_preferences` server-owned keys or `memories.sourceMetadata.kind` rows (§5).
+- **No schema change** 0.16–0.26: new state is `user_preferences` server-owned keys or `memories.sourceMetadata.kind` rows (§5). 0.27 adds migration 0040 (Living Dominions, §4b).
 - **Flag-gated, off by default, flag-off byte-identical.** Only the shared "today" log is on by default (`KAIROS_TODAY=0` turns it off).
 - **Max plan first.** New thinking runs as routine-claimed jobs; none of the 0.20–0.25 kinds has a paid fallback, except where a pre-existing kind already had one.
 - **Measurement-only.** Conscience results, character scores, cold reads and taste never reach a Kairos prompt. Dreams never become memories, evidence or prompt text (`dreams/__tests__/firewall.test.ts`, `life-chapters/__tests__/firewall.test.ts`).
@@ -22,7 +24,10 @@ All paths below are under `apps/web/src/` unless stated.
 | 0.22 / #150 | Wave 1: the **stage**, weekly **character check**, **cold read** | off |
 | 0.23 / #151 | Wave 2: **surprise** as the engine, **dreams** | off |
 | 0.24 / #152 | Wave 3: **creative genius** — idea atlas, Swiss rounds, collisions, anti-sameness, incubation, stepping stones, taste | off |
-| 0.25 / wave-4 PR | Wave 4: **the art of the moment** — gate, owner model, rapport, trust/ask-first, life chapters | off |
+| 0.25 / #153 | Wave 4: **the art of the moment** — gate, owner model, rapport, trust/ask-first, life chapters | off |
+| 0.26 / #160 | **Kairos becomes Vorath** — visible rename, `/vorath` page, `VORATH_*` env alias, `/api/v1/vorath` rewrite | on |
+| 0.27 / #161 | **Living Dominions phase 1** — nightly activity score, dormant/pinned areas, one ranked roster, `dominion_members` | off (`KAIROS_LIVING_DOMINIONS`) |
+| 0.28 / wave A | **What Vorath knows** (provenance, fix in place, needs-your-eyes, private-topic hold) + **card sorting** (`card_triage`) | view on; hold + sorting off |
 
 ## 2. One mind everywhere (0.21)
 
@@ -74,7 +79,42 @@ the input through unchanged. Lane order — also chat style precedence — is **
 | **Advise / trust** | Ask-first classifier (offer → "Want my take, or would you rather think it out loud?"; listen; advise = questions first, view last). Trust per area recomputed on read from predictions, goals and goal-linked promises (Beta(2,2) + Wilson; levels unknown/check/second/lean) — shown as a reply footer (stripped from history), a Monday 06:00 line and a read view; never in a prompt | `KAIROS_ASK_FIRST`, `KAIROS_TRUST` | `lib/kairos/{advise,trust}/`, `lib/data/kairos-trust.ts`; `get_kairos_trust` |
 | **Chapters** | Monthly `life_chapter` kind (UTC days 1–3 from 12:00Z, 36h, no paid fallback): honest turning points with cited ids, loose ends left open; trace row; in mode `1` reflect sees "where your story stands" (≤600 chars, never citable). The moment lane slot is empty. | `KAIROS_LIFE_CHAPTERS`, `KAIROS_LIFE_CHAPTER_LINE` | `lib/kairos/life-chapters/`, `thinking/handlers/life-chapter.ts`, `lib/data/life-chapters.ts`; `get_kairos_life_chapters` |
 
-## 5. State added since 0.16 (no new tables)
+## 4b. 0.26–0.28: the name, the focus, the visible mind
+
+**Rename (0.26).** `lib/kairos/identity.ts` (`MIND_NAME='Vorath'`, `FORMER_MIND_NAME='Kairos'`). Every persona prompt says
+"Vorath (formerly called Kairos; memories that mention Kairos are about you)". `/kairos` permanently redirects to
+`/vorath`; `next.config.ts` rewrites `/api/v1/vorath/:path*` → `/api/v1/kairos/:path*`; `lib/env/mind-env-alias.ts`
+copies non-empty `VORATH_*` onto `KAIROS_*` at server start (`instrumentation.ts`, nodejs only — the worker and scripts
+still read `KAIROS_*`). Kept as kairos: stored keys, tags, kinds, tool names, the `Telegram · Kairos` thread title
+(lookup key), drift-probe questions (baselines). Routines are named *Vorath brain/chat/pulse* (renamed in place).
+
+**Living Dominions (0.27).** Focus follows recent activity, not a fixed list.
+| Piece | Where | Notes |
+|---|---|---|
+| Switch | `lib/kairos/living/flag.ts` | `KAIROS_LIVING_DOMINIONS` off · `observe` (score + Health only) · `1` (consumers act); `KAIROS_DORMANT_DAYS` 21 (7–90) |
+| Score | `lib/kairos/living/{score,signals,attribution,repo-slug}.ts`, `lib/data/dominion-activity.ts`, cron `dominion-activity` 01:10 | 30-day window, 10-day decay; completed card 3, created 1 (owner) / 0.3 (agent tool), move 0.2, session 2, owner note 0.5; caps 50 card events/board/day, 10 sessions/repo/day; machine memories excluded; unattributed work → `kairosLivingUnattributed` |
+| Roster seam | `lib/kairos/living/focus.ts` (pure), `lib/data/dominion-focus.ts` | dormant = `focus_state='dormant' && !pinned`; off/observe byte-identical |
+| Consumers (when `1`) | archetype/cortex/concept planning + crons, aether inputs, 06:00 areas (ranked), weekly review (`plan-weekly.ts`), ask-mine (`plan-ask.ts`), idea night + atlas (`plan-ideas.ts`), readiness | dormant skipped, ranked by activity |
+| Membership | `dominion_members` (0040), `lib/data/dominion-members.ts` | repo filing by weight; board membership synced on every project Dominion change |
+| Surfaces | Health "Where your time went" (`components/kairos/brain/FocusView.tsx`), `get_dominion_focus` / `GET /api/v1/dominions/focus`, `pinned` on `update_dominion` / `PATCH /api/v1/dominions/[id]` | pin keeps an area awake |
+
+**What Vorath knows (0.28).** Header button on `/vorath` → `components/kairos/knows/*` (drawer: beliefs/facts by area,
+*Needs your eyes*). `lib/data/memory-knows.ts` + `lib/actions/memory-knows.ts`: provenance (origin in plain words,
+source chat/session/card/voice note, standing, belief trail + `memory_ops`), edit in place (operator origin),
+"It's right" (re-label operator, `priorOrigin` kept), "This is wrong" (soft archive + `memory_ops` `reject`, undoable).
+Constitution and goal rows stay immutable. **Private-topic hold** (`lib/kairos/sensitive/*` — lexicon, capture stamp, one held predicate in `held.ts`; pref `kairosSensitiveGate`
+read/written by `lib/data/kairos-sensitive.ts`, key in `sensitive/pref-keys.ts`; default off): deterministic lexicon stamps `sourceMetadata.sensitive/sensitiveHeld/sensitiveTopics` at capture; held rows
+are excluded via `validAsOfNow` (+ chat last-24h, one-hop neighbours, 06:00 inputs, ask snippets, dialogue seeds,
+belief-recheck evidence) until confirmed; floating dialogue reflections and agent/MCP text edits are stamped too (owner edits never). Owner fixes add
+`ownerRejected` / `ownerReviewedAt`.
+
+**Card sorting (0.28).** Thinking kind `card_triage` (25th kind; brain routine, deep tier, no paid fallback):
+`lib/kairos/triage/*`, `thinking/handlers/card-triage.ts`, `lib/data/card-triage.ts`, `lib/actions/card-triage.ts`,
+`components/board/triage/*`. Per-board `projects.settings.kairosTriage='on'` (creator-only; generic settings patches
+can't flip it). Batches ≤10 recent untriaged cards/board, ≤5 boards per pass; fenced card text; labels only from the
+board; suggestions in `board_tasks.metadata.triage`, accepted/dismissed per item on the card. The toggle and Accept/Dismiss are app-only by design (no MCP/REST twin): an agent can't switch sorting on or accept its own suggestions.
+
+## 5. State added since 0.16
 
 | `user_preferences` key | Module (single FOR UPDATE writer) | Since |
 |---|---|---|
@@ -82,6 +122,8 @@ the input through unchanged. Lane order — also chat style precedence — is **
 | `kairosStage` · `kairosSurprise` | `lib/data/kairos-{stage,surprise}.ts` | 0.22–0.23 |
 | `kairosIdeaAtlas` · `kairosIdeaShelf` | `lib/data/kairos-idea-{atlas,shelf}.ts` (keys in `lib/kairos/ideas/pref-keys.ts`) | 0.24 |
 | `kairosGate` · `kairosOwnerModel` · `kairosRapport` | `lib/data/kairos-{gate,owner-model,rapport}.ts` (keys in `lib/kairos/moment/pref-keys.ts`) | 0.25 |
+| `kairosLivingUnattributed` | `lib/data/dominion-activity.ts` (key in `lib/kairos/living/types.ts`) | 0.27 |
+| `kairosSensitiveGate` (boolean) | `lib/data/kairos-sensitive.ts` (key in `lib/kairos/sensitive/pref-keys.ts`) | 0.28 |
 
 All are in `SERVER_OWNED_OBJECT_KEYS` (`lib/data/preferences.ts`), stripped from client saves and carried through
 theme saves. `kairosPaidBackup` (0.19) is a separate boolean. New `memories` row kinds (`sourceMetadata.kind`):
@@ -96,6 +138,7 @@ internal ones are refused on create/capture (`validators/memory.ts` `INTERNAL_KI
 | `get_kairos_stage`, `get_kairos_surprise` | `/api/v1/kairos/{stage,surprise}` |
 | `get_kairos_idea_atlas`, `get_kairos_idea_taste` | `/api/v1/kairos/{idea-atlas,idea-taste}` |
 | `get_kairos_gate`, `get_kairos_owner_model`, `get_kairos_rapport`, `get_kairos_trust`, `get_kairos_life_chapters` | `/api/v1/kairos/{gate,owner-model,rapport,trust,life-chapters}` |
+| `get_dominion_focus`; `update_dominion` (`pinned`) | `GET /api/v1/dominions/focus`; `PATCH /api/v1/dominions/[id]` (0.27) |
 
 Each pair shares a validator, data function and renderer, with a parity test in `app/api/__tests__/` that also
 guards against writer imports.
@@ -107,5 +150,7 @@ guards against writer imports.
 | Night-time goal proposals (03:15–04:28) still bypass the gate | `goal-propose.ts` → `proposal-telegram.ts` |
 | A held message would lose extra Telegram buttons on release (no current caller) | `speak.ts` hold path |
 | Dream seeds into ideas deliberately not built (conflicts with the firewall rule) — owner call | plan §4 vs handover §6 |
-| Butcher splits: `KairosInbox.tsx` (648), `daily-message-prompt.ts` (500), `ask-mine.ts`, `cortex.ts`, webhook route test | — |
+| Butcher splits: `KairosInbox.tsx` (649), `daily-message-prompt.ts` (500), `ask-mine.ts` (519), `weekly-review/inputs.ts` (620), `cortex.ts`, `memories.ts` (2,392), `projects.ts` (558), webhook route test | — |
+| Private-topic hold not applied by readers that bypass `validAsOfNow` (some prompt readers) | `lib/data/{recipes,dialogue,ask,voice-notes}.ts` and others |
+| Living Dominions phase 2: Approve/Reject/Rename proposals for unattributed work | `research/vorath_0510/living_dominions.md` §3 |
 | Triad bridge `prompt.py` should render `today` and `stage` | Triad repo |

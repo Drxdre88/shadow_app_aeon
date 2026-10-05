@@ -1,4 +1,4 @@
-# Kairos — Conversational & Autonomy Surfaces
+# Vorath (formerly Kairos) — Conversational & Autonomy Surfaces
 
 > Part of the Aeon architecture set — index: [../../ARCHITECTURE.md](../../ARCHITECTURE.md) · siblings: [overview](overview.md) · [memory-and-capture](memory-and-capture.md) · [synthesis](synthesis.md) · [mind](mind.md)
 
@@ -97,7 +97,7 @@ The mobile chat (the flagship feature of the new [mobile app](../mobile.md)) is 
 a port of the per-Dominion Visor. Decisions — **the first is now SHIPPED on the web Visor +
 Telegram** (whole-brain default, picker dropped, Aether-seeded persona); the rest remain planned:
 
-- ✅ **One entity, Aether-wide.** You talk to **Kairos**; he activates **Aether** (his super-brain). The one-Dominion-per-thread anchor is dropped; persona seeds from the latest Aether self-model.
+- ✅ **One entity, Aether-wide.** You talk to **Vorath** (formerly Kairos); he activates **Aether** (his super-brain). The one-Dominion-per-thread anchor is dropped; persona seeds from the latest Aether self-model.
 - **Agentic retrieval.** Instead of one fixed pre-fetch, give Kairos in-process brain tools (search / inspect / neighbours) and let the model pull what it needs mid-turn ("activates Aether to extract whatever's needed"). Tool-calling loop via the existing AI SDK.
 - **Smart write-routing (his compartmentalization).** When a turn yields something durable, an LLM step picks `dominionId` + type and **auto-files** it, surfacing a "filed under X" note (auto-file-with-transparency was the chosen autonomy level). Extends `resolveDominionForMemory`.
 - **Streaming.** Use the already-built `VercelAIProvider.stream()` for live-typing on the commute.

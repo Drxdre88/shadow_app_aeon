@@ -5,6 +5,13 @@
 Reverse-chronological. The most recent work is at the top; the pre-2026-06-06 trail is preserved
 verbatim below.
 
+### 2026-10-06 — Vorath 0.26–0.28 · app v0.44.0–v0.46.0
+- **#159** memory type/source filters render as `IN` lists (the Kairos inbox and the weekly review's board pages had failed in production with "malformed array literal").
+- **0.26 / #160** Kairos renamed **Vorath**: UI, `/vorath` (+ `/kairos` redirect), persona and messages, routine names (renamed in place), tool descriptions; `VORATH_*` env alias (`instrumentation.ts`), `/api/v1/vorath` rewrite. Stored keys, tool names and code paths unchanged.
+- **0.27 / #161** **Living Dominions** phase 1: nightly `dominion-activity` cron scores boards/repos/Dominions, dormant/pinned focus state, one ranked roster seam feeding every focus consumer (off/observe byte-identical), `dominion_members` (migration 0040, applied 05/10), Health "Where your time went", `get_dominion_focus` / `GET /api/v1/dominions/focus`, `pinned` on update_dominion / `PATCH /api/v1/dominions/[id]`. Switch `KAIROS_LIVING_DOMINIONS` (off).
+- **0.28 / wave A** (from the off-piste research swarm, `research/vorath_0510/offpiste_10.md`): **What Vorath knows** (provenance, fix in place, needs-your-eyes, opt-in private-topic hold); **Hangar autopilot** (`hangar-reconcile` cron every 15 min, requeue, plan-first, answer & relaunch, follow-ups → cards); **Connector 2.0** (mcp-handler 2.2.0 + `@modelcontextprotocol/server` 2.3.1, MCP 2026-07-28 + legacy fallback, confirmations on 20 destructive tools, `?profile=` sets); **card sorting** (`card_triage` kind, per-board creator-only toggle, off).
+- Counts now: MCP 146 tools · 14 crons · 25 thinking kinds · migrations → 0040.
+
 ### 2026-10-04 — Kairos 0.20–0.25 "One mind everywhere" + "One coherent mind" waves 1–4 · app v0.43.0
 - **Releases:** 0.20 settle the brain + dormant initiative (#148); 0.21 one mind everywhere — shared today log (on by default), daytime `reflect` + Sonnet `pulse`, predictions, Horae (#149); 0.22 stage, character check, cold read (#150); 0.23 surprise engine + firewalled dreams (#151); 0.24 creative genius — `idea-ext` seam with atlas/Swiss, collisions, sameness/resample, incubation shelf, stepping stones/taste (#152); 0.25 the art of the moment — `lib/kairos/moment/` seam with the gate, owner model, rapport, advise/trust lanes and the monthly `life_chapter` kind (wave-4 PR).
 - **Shape:** no schema change since 0.16 (11 server-owned `user_preferences` keys + new `sourceMetadata.kind` rows); 24 thinking kinds; three routines (brain hourly `40 * * * *`, chat, pulse `10 6-21 * * *`); 12 crons; MCP 145 tools (13 new Kairos read tools, each with a REST mirror and parity test).

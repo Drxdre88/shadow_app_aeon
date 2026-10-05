@@ -25,16 +25,25 @@ apps/
         kairos/{asks,voice-notes,paid-backup}/ -- open questions + dismiss, voice-note intake, paid backup switch
         auth/mobile/               -- mobile auth (google, verify, route)
         me/                        -- current-user endpoint
-      api/[transport]/             -- MCP server (Bearer API key OR OAuth aeon_at_ token); 132 annotated tools
+      api/[transport]/             -- MCP server (Bearer API key OR OAuth aeon_at_ token); 146 annotated tools; only /api/mcp;
+                                      tool-host.ts (v2 shim), confirm.ts (elicitation), profiles.ts (?profile=)
       api/telegram/webhook/        -- Telegram bot webhook (secret-token auth, single-operator gate)
       api/oauth/                   -- OAuth 2.1 AS (register, authorize, token)
       api/well-known/              -- OAuth discovery fallback (real discovery is in middleware.ts)
-      api/cron/                    -- 12 crons (CRON_SECRET): project-snapshot, memory-engine, thinking-sweep,
+      api/cron/                    -- 14 crons (CRON_SECRET): project-snapshot, hangar-reconcile, dominion-activity, memory-engine, thinking-sweep,
                                       chat-distill, archetype-synthesis, cortex-regen, aether-regen,
                                       embed-backfill, synthesis-health, ask-mine, constitution-seed,
                                       daily-message (most are fallbacks for the Max-plan routine)
       api/auth/ api/export/        -- NextAuth handlers; snapshot export
       api/planets/                 -- GET list of the 55 planet image names (public, static)
+      api/v1/dominions/focus/ [id]/ -- 0.45: ranked focus read; PATCH dominion (pinned). /api/v1/vorath/* rewrites to /api/v1/kairos/*
+      vorath/                      -- the Vorath page (0.44); kairos/ = permanent redirect
+  lib/kairos/living/               -- Living Dominions: score, signals, attribution, repo-slug, focus seam, plan-* consumers, flag
+  lib/kairos/sensitive/            -- private-topic hold: lexicon, capture stamp, meta, pref
+  lib/kairos/triage/               -- card sorting: prompt, similarity, resolve, types
+  lib/env/                         -- mind-env-alias.ts (VORATH_* -> KAIROS_*)
+  components/kairos/knows/         -- What Vorath knows drawer: KnowsList, NeedsEyesList, WhyPanel, FixPanel, SensitiveToggle
+  components/board/triage/         -- Vorath suggests block + per-board toggle
       api/stats/                   -- GET the signed-in user's totals (projects, tasks, checklist items, nodes, events, member since) for the Stats modal
       api/sync/version/[projectId] -- GET a project's boardVersion + updatedAt — polled by useProjectData, the 30s fallback when Pusher is down
     src/components/
