@@ -29,6 +29,25 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.45.0] — 2026-10-05
+
+> Areas touched: \`KAIROS\` \`DOMINION\` \`MCP\` \`API\` \`UI\` \`DATA\`
+> Theme: Living Dominions, phase 1 — Vorath follows where you actually work. Ships switched off (\`KAIROS_LIVING_DOMINIONS\`, also \`VORATH_LIVING_DOMINIONS\`).
+
+### Added — Where your time went · \`KAIROS\` \`UI\`
+- Every night at 01:10 UTC Vorath scores each area, board and code project from real activity: cards finished and created, card moves, coding sessions and your own notes. Recent work counts most, one-off bursts are capped, and his own machine-made notes don't count.
+- Vorath → Health has a new panel, "Where your time went". It ranks your areas, marks each one Active, Dormant or Pinned, shows when you last worked in it and its top boards and code projects, and lists work that belongs to no area.
+- Pin an area to keep it awake whatever the score.
+
+### Changed — Quiet areas go dormant (\`KAIROS_LIVING_DOMINIONS=observe|1\`) · \`KAIROS\` \`DOMINION\`
+- \`observe\`: scores and dormant flags are worked out and shown in Health. Nothing Vorath says changes.
+- \`1\`: an area with no activity for 21 days (\`KAIROS_DORMANT_DAYS\`, 7–90) goes dormant, and any new activity wakes it. Dormant areas get no nightly summary, drop out of the 06:00 message, the weekly review's plan, the question of the day and idea gap-filling, and the weekly review calls them "quiet by choice" instead of stalled. Their memories stay searchable. The 06:00 message leads with your most active areas.
+- Dormant is not archived: archived areas behave as before.
+
+### Added — Area membership and focus API · \`DATA\` \`MCP\` \`API\`
+- Boards and code projects can belong to areas through a new weighted membership list, seeded from today's links. Moving a board to another area (app, Claude or API) keeps it in step. Coding sessions are filed by the strongest link, and archived areas no longer receive new work.
+- New read \`get_dominion_focus\` / \`GET /api/v1/dominions/focus\`. \`update_dominion\` and the new \`PATCH /api/v1/dominions/{id}\` accept \`pinned\`.
+
 ## [0.44.0] — 2026-10-05
 
 > Areas touched: \`KAIROS\` \`MCP\` \`API\` \`UI\`
