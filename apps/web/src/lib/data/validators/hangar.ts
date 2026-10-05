@@ -52,6 +52,7 @@ export const hangarCardMetadataSchema = z.object({
   // the board's designated launch column. Defaults off — every launch is a
   // conscious act unless the owner armed the card. Cleared again on launch.
   autoRun:     z.boolean().default(false),
+  planFirst:   z.boolean().optional(),
   lastLaunchedAt: z.string().datetime().optional(),
   subagents:   z.array(z.string().trim().min(1).max(60)).max(20).default([]),
   sessionIds:  z.array(z.string().uuid()).default([]),
@@ -75,7 +76,18 @@ export const hangarCardDraftSchema = z.object({
   instruction: z.string().trim().max(20_000),
   outputMode:  hangarOutputModeSchema,
   autoRun:     z.boolean(),
+  planFirst:   z.boolean().optional(),
 })
+
+// Autopilot follow-through inputs (server actions). Bounds mirror the result
+// envelope: at most 20 questions / recommended tasks per result.
+export const HANGAR_PLAN_GROUP = 'Plan'
+export const missionAnswersSchema = z.array(z.object({
+  question: z.string().trim().min(1).max(1000),
+  answer:   z.string().trim().min(1).max(4000),
+})).min(1).max(20)
+export const planRevisionNoteSchema = z.string().trim().min(1).max(4000)
+export const followUpSelectionSchema = z.array(z.number().int().min(0).max(19)).min(1).max(20)
 
 /**
  * The Hangar slice of a SESSION's metadata (agent_sessions.metadata.hangar).
@@ -273,6 +285,7 @@ export type HangarObjective        = z.infer<typeof hangarObjectiveSchema>
 export type HangarAgent            = z.infer<typeof hangarAgentSchema>
 export type HangarOutputMode       = z.infer<typeof hangarOutputModeSchema>
 export type HangarCardMetadata     = z.infer<typeof hangarCardMetadataSchema>
+export type MissionAnswers         = z.infer<typeof missionAnswersSchema>
 export type SessionHangarMetadata  = z.infer<typeof sessionHangarMetadataSchema>
 export type ClaimSessionInput      = z.infer<typeof claimSessionSchema>
 export type HeartbeatSessionInput  = z.infer<typeof heartbeatSessionSchema>

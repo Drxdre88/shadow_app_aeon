@@ -20,7 +20,7 @@ const SRC = path.join(WEB_ROOT, 'src')
 const MCP_TOOL_FILE = path.join(SRC, 'app/api/[transport]/tools/kairos-today.ts')
 const MCP_ROUTE = path.join(SRC, 'app/api/[transport]/route.ts')
 const REST_ROUTE = path.join(SRC, 'app/api/v1/kairos/today/route.ts')
-const MCP_DOCS = path.join(SRC, 'components/ui/help/McpTab.tsx')
+const MCP_DOCS = path.join(SRC, 'components/ui/help/mcpToolCatalog.ts')
 
 const read = (p: string) => readFileSync(p, 'utf8')
 
@@ -71,7 +71,7 @@ describe('Kairos today MCP <-> REST parity', () => {
   })
 
   it('is registered on the MCP server and documented', () => {
-    expect(read(MCP_ROUTE)).toMatch(/registerKairosTodayTools\(server\)/)
+    expect(read(MCP_ROUTE)).toMatch(/\[registerKairosTodayTools, \[/)
     expect(read(MCP_DOCS)).toContain("'get_kairos_today'")
   })
 })

@@ -26,7 +26,7 @@ app is at the login slice (Google auth scaffolded, awaiting operator client IDs)
 retired the morning briefs, raw introspection, contradiction notices, micro-consolidation and the weekly
 dedup cron (all retired in 0.17), so gaps that only concerned them are closed.
 
-Hangar inventory refreshed: 2026-09-21. The completion claim guard shipped in PR #129; durable artifact/publication delivery, draft PRs and runner recovery remain open. Mission-card/result UI and repository management are implemented for the v0.29.0 release candidate (PR #130). See [hangar.md](hangar.md) §6. The previously recorded REST UUID/membership gaps remain outside this wave; this refresh is not a new general safety audit. Other inventory entries below retain their original verification dates.
+Hangar inventory refreshed: 2026-10-06. The completion claim guard shipped in PR #129; a server-side stall reconciler, requeue and plan-first missions shipped in v0.46 (wave A); durable artifact/publication delivery, draft PRs and runner supervision/recovery remain open. Mission-card/result UI and repository management are implemented for the v0.29.0 release candidate (PR #130). See [hangar.md](hangar.md) §6. The previously recorded REST UUID/membership gaps remain outside this wave; this refresh is not a new general safety audit. Other inventory entries below retain their original verification dates.
 
 ### New gaps (2026-10-01, Kairos 0.14–0.15)
 
@@ -62,12 +62,15 @@ Hangar inventory refreshed: 2026-09-21. The completion claim guard shipped in PR
 | — | Keep-warm cron pinning Neon 24/7 | **REMOVED** (`5c759e1`) — cold-start now absorbed by the durable mutation queue + retry ladder + Neon sub-second resume |
 | Medium | Dominion REST API missing | OPEN — 15 MCP tools, no `/api/v1/dominions/` |
 | Medium | `broadcastMemoryEvent` is a no-op stub | OPEN — memory mutations don't push via Pusher |
-| Medium | Orphan running sessions on worker restart | OPEN — heartbeat exists (`/sessions/[id]/heartbeat`, 30s) but no reconcile cron marks a silent runner's sessions dead |
+| Medium | Orphan running sessions on worker restart | **PARTLY CLOSED** (v0.46) — `hangar-reconcile` cron times out silent running sessions and flags queued ones "Runner offline"; runner-side recovery, worktree cleanup and reassignment still open |
+| Medium | Private-topic hold bypassed by readers that skip `validAsOfNow` | OPEN (v0.46) — e.g. `daily-message-inputs.ts` belief/cortex reads, `data/ask.ts` source snippets and reflections-since, possibly `data/dialogue.ts` `fetchMemoriesByIds`; matters only when the opt-in hold is on |
+| Medium | CIMD client registration (MCP 2026-07-28) | OPEN — client ids are UUID FKs in the OAuth tables; needs a migration |
+| Low | Hangar autopilot verbs have no MCP/REST mirror; no per-project plan-first default | OPEN (v0.46) |
 | Medium | Engine router has no CRUD surface | OPEN — `enginePolicies` editable via no MCP/REST |
 | Medium | Cost budget tripwires absent | OPEN — `costUsd` recorded; no cap / rollup / kill switch |
 | Medium | Sessions parity test missing | **CLOSED** (2026-10-01) — `app/api/__tests__/sessions-parity.test.ts` locks REST↔MCP sessions |
 | Medium | Archetype + cortex cron concurrency (TOCTOU) | OPEN — advisory-lock fix queued; both crons are fallbacks since 0.16, so the race needs a late routine plus the cron |
-| Medium | `memories.ts` past 500-line standard | LIKELY OPEN — split into core/capture/graph/context pending |
+| Medium | `memories.ts` past 500-line standard | OPEN — 2,393 lines (2026-10-06); split into core/capture/graph/context pending. Also over 500: `KairosInbox.tsx` 649, `weekly-review/inputs.ts` 620, `projects.ts` 558, `TaskBoard.tsx` 538 (grew back), `ask-mine.ts` 519, `sessions.ts` 512 |
 | Medium | Chat assistant Markdown rendered as text | OPEN |
 | Medium | Cross-user cron snapshot leak | OPEN — see `docs/kairos/14-quality-gates.md` §3 |
 | Medium | Orphan-retry multi-tab race (chat) | OPEN |
@@ -104,7 +107,7 @@ Hangar inventory refreshed: 2026-09-21. The completion claim guard shipped in PR
 
 | Was | Now |
 |---|---|
-| `TaskBoard.tsx` over the 500-line standard | **556 → 455** — overlay/card-editor cluster extracted to `useBoardOverlays.ts` + `BoardOverlays.tsx` |
+| `TaskBoard.tsx` over the 500-line standard | **556 → 455** — overlay/card-editor cluster extracted to `useBoardOverlays.ts` + `BoardOverlays.tsx` (since regrown to 538 — reopened above) |
 | `TaskAssigneeOverlay.tsx` growing into eight components | **637 → 263** — virtual section, `MemberAvatar`, `AssignCheck` extracted |
 | `api/v1/realms/**` returning 403 unconditionally (undetected since 2026-04-02) | All 7 param-reading route files now `await` their params Promise (`daeb93d`) |
 | No production-build gate in CI | `npm run build` added to the Quality Gate — lint + typecheck + 2828 tests had all passed a CSS bug that broke the deploy |

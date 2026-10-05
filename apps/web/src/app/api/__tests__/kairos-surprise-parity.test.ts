@@ -20,7 +20,7 @@ const MCP_TOOL_FILE = path.join(SRC, 'app/api/[transport]/tools/kairos-surprise.
 const MCP_ROUTE = path.join(SRC, 'app/api/[transport]/route.ts')
 const MCP_INDEX = path.join(SRC, 'app/api/[transport]/tools/index.ts')
 const REST_ROUTE = path.join(SRC, 'app/api/v1/kairos/surprise/route.ts')
-const MCP_DOCS = path.join(SRC, 'components/ui/help/McpTab.tsx')
+const MCP_DOCS = path.join(SRC, 'components/ui/help/mcpToolCatalog.ts')
 
 const read = (p: string) => readFileSync(p, 'utf8')
 
@@ -72,7 +72,7 @@ describe('Kairos surprise MCP <-> REST parity', () => {
 
   it('is registered on the MCP server and documented', () => {
     expect(read(MCP_INDEX)).toMatch(/registerKairosSurpriseTools/)
-    expect(read(MCP_ROUTE)).toMatch(/registerKairosSurpriseTools\(server\)/)
+    expect(read(MCP_ROUTE)).toMatch(/\[registerKairosSurpriseTools, \[/)
     expect(read(MCP_DOCS)).toContain("'get_kairos_surprise'")
   })
 })

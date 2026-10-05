@@ -79,6 +79,7 @@ export const BRAIN_JOBS: readonly BrainJob[] = [
   { kind: 'reflect', label: 'Daytime reflection', area: 'Self-model', tier: 'deep', cadence: 'hourly', what: 'When switched on: up to six times a day, a short reflection on what happened today and on his active goals. It never messages you.' },
   { kind: 'pulse', label: 'Daytime pulse', area: 'Perception', tier: 'light', cadence: 'hourly', what: 'When switched on: a quick hourly glance at what changed, kept as notes in today’s memory. Only runs when something happened.' },
   { kind: 'cold_read', label: 'Cold read', area: 'Beliefs & conscience', tier: 'deep', cadence: 'on demand', what: 'When switched on: rechecks his advice on your decisions with your profile hidden, and tells you if the cold view differs.' },
+  { kind: 'card_triage', label: 'Card sorting', area: 'Perception', tier: 'deep', cadence: 'hourly', what: 'On boards where you switched it on: suggests labels, a priority and possible duplicates for new cards, each with a short reason. Nothing changes until you accept it on the card.' },
   { kind: 'chat', label: 'Chat replies', area: 'Voice', tier: 'deep', cadence: 'on demand', what: 'Answers you on Telegram and on the Vorath page.' },
 ]
 
@@ -90,7 +91,7 @@ export const ROUTINES: readonly RoutineDef[] = [
     id: 'brain',
     name: 'Vorath brain',
     purpose:
-      'Does all of Vorath’s scheduled thinking: chat summaries, patterns, area summaries, the self-model, beliefs, the idea contest, the question of the day, the weekly review, the first constitution draft and the 06:00 message — and, when switched on, his hourly daytime reflections and the check-ins he booked for himself.',
+      'Does all of Vorath’s scheduled thinking: chat summaries, patterns, area summaries, the self-model, beliefs, the idea contest, the question of the day, the weekly review, the first constitution draft and the 06:00 message — and, when switched on, his hourly daytime reflections, the check-ins he booked for himself and sorting new cards on the boards you chose.',
     trigger: 'schedule',
     cronUtc: '40 * * * *',
     scheduleLabel: 'Every hour at :40 UTC — the night’s work runs from 01:40 to 06:40; daytime runs usually find nothing due',

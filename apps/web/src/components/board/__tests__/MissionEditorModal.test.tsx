@@ -155,6 +155,20 @@ describe('MissionEditorModal launch contract', () => {
     expect(screen.getByRole('button', { name: 'copilot' })).toHaveProperty('disabled', false)
   })
 
+  it('persists the plan-approval toggle and hides it for plan missions', async () => {
+    await openEditor()
+
+    const toggle = screen.getByRole('button', { name: /Approve plan first/ })
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(toggle)
+    fireEvent.click(saveButton())
+
+    await waitFor(() => expect(saveCardMission).toHaveBeenCalledWith(PROJECT, TASK, expect.objectContaining({ planFirst: true })))
+    cleanup()
+    await openEditor({ ...validMission, objective: 'plan' })
+    expect(screen.queryByRole('button', { name: /Approve plan first/ })).toBeNull()
+  })
+
   it('persists the exact selected model id', async () => {
     await openEditor()
 

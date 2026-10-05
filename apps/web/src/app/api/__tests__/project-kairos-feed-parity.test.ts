@@ -15,7 +15,7 @@ const WEB_ROOT = path.resolve(__dirname, '../../../..')
 const MCP_TOOL_FILE = path.join(WEB_ROOT, 'src/app/api/[transport]/tools/projects.ts')
 const REST_ROUTE = path.join(WEB_ROOT, 'src/app/api/v1/projects/[id]/kairos-feed/route.ts')
 const ACTIONS_FILE = path.join(WEB_ROOT, 'src/lib/actions/projects.ts')
-const MCP_DOCS = path.join(WEB_ROOT, 'src/components/ui/help/McpTab.tsx')
+const MCP_DOCS = path.join(WEB_ROOT, 'src/components/ui/help/mcpToolCatalog.ts')
 
 const read = (p: string) => readFileSync(p, 'utf8')
 

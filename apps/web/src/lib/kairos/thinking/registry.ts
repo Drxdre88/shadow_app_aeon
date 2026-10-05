@@ -4,6 +4,7 @@ import { agendaDueHandler } from './handlers/agenda-due'
 import { archetypeHandler } from './handlers/archetype'
 import { askMineHandler } from './handlers/ask-mine'
 import { beliefExtractHandler } from './handlers/belief-extract'
+import { cardTriageHandler } from './handlers/card-triage'
 import { chatDistillHandler } from './handlers/chat-distill'
 import { characterCheckHandler } from './handlers/character-check'
 import { chatHandler } from './handlers/chat'
@@ -51,6 +52,7 @@ export function getThinkingHandlers(): ThinkingJobHandler[] {
     reflectHandler,
     pulseHandler,
     coldReadHandler,
+    cardTriageHandler,
     chatHandler,
   ]
 }

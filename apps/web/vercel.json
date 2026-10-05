@@ -7,6 +7,10 @@
       "schedule": "0 23 * * *"
     },
     {
+      "path": "/api/cron/hangar-reconcile",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/cron/dominion-activity",
       "schedule": "10 1 * * *"
     },

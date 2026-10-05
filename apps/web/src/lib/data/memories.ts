@@ -35,6 +35,7 @@ import { dominionTag } from '@/lib/kairos/dominionTags'
 import { autoFileEligible, autoFileMinSim, autoFileText, cosineSimilarity } from '@/lib/kairos/autofile'
 import { ORIGIN_TRUST, inferOriginKind, originKindOf, type Origin, type OriginKind } from '@/lib/kairos/origin'
 import { loadTodayContextSection } from './prepare-context-today'
+import { notHeldSensitive, notHeldSensitiveRaw, sensitiveCaptureStamp } from '@/lib/kairos/sensitive'
 
 // P2.5 (G6) — origin is decided by the TRUSTED write surface (server action,
 // REST auth mode, MCP, cron), passed here as an option, never via the zod input
@@ -512,7 +513,7 @@ export async function getGraphForUser(
 // other synthesis/retrieval module (archetypes.ts, cortex.ts, aether.ts,
 // retrieve.ts, micro-consolidate.ts) shares this ONE definition instead of
 // each carrying its own copy.
-export const validAsOfNow = sql`(${memories.invalidAt} IS NULL OR ${memories.invalidAt} > NOW())`
+export const validAsOfNow = sql`((${memories.invalidAt} IS NULL OR ${memories.invalidAt} > NOW()) AND ${notHeldSensitive})`
 
 export async function searchMemoriesFts(userId: string, input: SearchMemoriesInput) {
   // Kairos Phase 3B — `query` is optional when scoped by `dominionId`. When
@@ -663,7 +664,7 @@ export async function getNeighbours(
   // Generation consumers (prepareContext) must not ground on rows that were
   // merged away or invalidated; browse surfaces keep showing history.
   const live = (alias: 'm' | 'm2') => opts.liveOnly
-    ? sql.raw(`AND ${alias}.superseded_at IS NULL AND (${alias}.invalid_at IS NULL OR ${alias}.invalid_at > NOW())`)
+    ? sql.raw(`AND ${alias}.superseded_at IS NULL AND (${alias}.invalid_at IS NULL OR ${alias}.invalid_at > NOW()) AND ${notHeldSensitiveRaw(alias)}`)
     : sql``
 
   // Outgoing walk: recursive CTE following links[].target where target_kind='memory'.
@@ -968,6 +969,7 @@ export async function createMemory(userId: string, input: CreateMemoryParams, op
 
   const tags = input.tags ?? []
   const origin = resolveWriteOrigin(input.source, sourceMetadata, opts.origin)
+  const sensitive = await sensitiveCaptureStamp(userId, input, effectiveStreamClass)
 
   // Insert + incident-lifecycle stamp run atomically: a 'resolves' link
   // closes its target's valid window (stampResolvedTargets), and a stamp
@@ -1010,6 +1012,7 @@ export async function createMemory(userId: string, input: CreateMemoryParams, op
         sourceMetadata: {
           ...(input.sourceMetadata ?? {}),
           ...(autoFiled ? { kairosAutoFiled: { similarity: autoFiled.similarity } } : {}),
+          ...sensitive,
           origin,
         },
         realmId: input.realmId ?? null,
@@ -1233,6 +1236,7 @@ export async function captureReflection(
         // Stamp the canonical channel so future audit queries can
         // distinguish kairos_reflect captures from generic note creates.
         kairosReflect: true,
+        ...(await sensitiveCaptureStamp(userId, { title, summary: input.summary, bodyMd: input.bodyMd }, 'reflection')),
         origin,
       },
       tags: input.tags?.slice(0, 50) ?? [],
@@ -1466,8 +1470,15 @@ export async function updateMemory(
       const writer: Origin = opts.origin ?? { kind: 'agent', via: 'update' }
       const kind = ORIGIN_TRUST[writer.kind] < ORIGIN_TRUST[currentKind] ? writer.kind : currentKind
       const priorOrigin = meta.origin ?? { kind: currentKind }
+      // Only non-owner writers (MCP/agents) re-run the private-topic hold; an owner edit is the owner's own words and stays unheld.
+      const held = writer.kind === 'operator' ? {} : await sensitiveCaptureStamp(userId, {
+        title: patch.title ?? current.title,
+        summary: patch.summary !== undefined ? patch.summary : current.summary,
+        bodyMd: patch.bodyMd ?? current.bodyMd,
+      }, current.streamClass)
       update.sourceMetadata = {
         ...meta,
+        ...held,
         priorOrigin,
         origin: writer.via ? { kind, via: writer.via } : { kind },
       }
@@ -2086,6 +2097,7 @@ export async function listRecentMemories(
     .where(and(
       eq(memories.userId, userId),
       ...extra,
+      notHeldSensitive,
       gte(memories.createdAt, window.start),
       lt(memories.createdAt, window.end),
     ))

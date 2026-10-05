@@ -17,7 +17,7 @@ const MCP_TOOL_FILE = path.join(WEB_ROOT, 'src/app/api/[transport]/tools/paid-ba
 const MCP_ROUTE = path.join(WEB_ROOT, 'src/app/api/[transport]/route.ts')
 const REST_ROUTE = path.join(WEB_ROOT, 'src/app/api/v1/kairos/paid-backup/route.ts')
 const ACTIONS_FILE = path.join(WEB_ROOT, 'src/lib/actions/kairos-brain.ts')
-const MCP_DOCS = path.join(WEB_ROOT, 'src/components/ui/help/McpTab.tsx')
+const MCP_DOCS = path.join(WEB_ROOT, 'src/components/ui/help/mcpToolCatalog.ts')
 
 const read = (p: string) => readFileSync(p, 'utf8')
 
@@ -33,7 +33,7 @@ describe('Kairos paid backup MCP <-> REST <-> action parity', () => {
   const setTool = toolBlock(tools, 'set_kairos_paid_backup')
 
   it('is registered on the MCP server and documented', () => {
-    expect(read(MCP_ROUTE)).toMatch(/registerPaidBackupTools\(server\)/)
+    expect(read(MCP_ROUTE)).toMatch(/\[registerPaidBackupTools, \[/)
     expect(read(MCP_DOCS)).toContain("'get_kairos_paid_backup'")
     expect(read(MCP_DOCS)).toContain("'set_kairos_paid_backup'")
   })

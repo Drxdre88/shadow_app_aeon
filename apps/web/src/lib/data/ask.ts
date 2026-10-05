@@ -3,6 +3,7 @@ import { boardTasks, dominions, memories, projectMembers, projects } from '@/lib
 import { and, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm'
 import { decodeDateOrNull } from './sql-decoders'
 import type { AetherPayload } from '@/lib/kairos/aether-types'
+import { notHeldSensitive } from '@/lib/kairos/sensitive/held'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Ask — pure DB queries. No business logic; all selection logic lives
@@ -306,7 +307,7 @@ export async function getKairosAskSourceSnippets(
         body: memories.bodyMd,
       })
       .from(memories)
-      .where(and(eq(memories.userId, userId), inArray(memories.id, sourceIds))),
+      .where(and(eq(memories.userId, userId), inArray(memories.id, sourceIds), notHeldSensitive)),
     db
       .selectDistinct({
         id: boardTasks.id,

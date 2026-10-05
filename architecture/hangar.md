@@ -2,7 +2,7 @@
 
 > Part of the Aeon architecture set — index: [../ARCHITECTURE.md](../ARCHITECTURE.md)
 
-Last updated: 2026-09-21 (v0.29.0 release candidate; mission-card and repository UI, runner tier forwarding). Full production acceptance baseline: 17 September, PR #129. Supervised production research evidence: 21 September; deployment tracked in PR #130.
+Last updated: 2026-10-06 (v0.46.0 wave A: **Hangar autopilot** — §2b). Earlier: 2026-09-21 (v0.29.0 release candidate; mission-card and repository UI, runner tier forwarding). Full production acceptance baseline: 17 September, PR #129. Supervised production research evidence: 21 September; deployment tracked in PR #130.
 
 ## 1. What it is
 
@@ -19,6 +19,19 @@ proves the Hangar on the live API. `aeon_os/workflows/run.mjs` flies real card �
 result cycles against a dedicated production project, then `review.mjs` gates every attempt behind
 an **independent-review PASS** from a different model. Plumbing success alone (`review_pending`) is
 explicitly not "passed". Docs, receipts and handovers live under `aeon_os/` and `aeon_os/workflows/results/`.
+
+## 2b. Autopilot (v0.46.0, wave A)
+
+| Piece | Behaviour | Where |
+|---|---|---|
+| Stall reconciler | Cron `/api/cron/hangar-reconcile` every 15 min (`CRON_SECRET`). A `running` session whose heartbeat/claim/start is older than `KAIROS_HANGAR_STALE_MIN` (default 30) **and** has no `session_events` since → `timeout`, card `lastResult` failed/blocked + `hangar.stall`, moved to Tower, `system/timeout` event — one transaction that re-checks the condition. A `queued` session past the cutoff stays queued, flagged `reconcile.runner_offline` once ("Runner offline" on the card). ≤100 rows per class per run | `lib/data/hangar-reconcile.ts`, `app/api/cron/hangar-reconcile/` |
+| Requeue | Allowed after `timeout`/`failed`/`killed`; repeats that run's phase and context; one-live-mission index still applies | `lib/actions/hangar.ts` `requeueMission` |
+| Plan first | Per-card `metadata.hangar.planFirst`: launch runs objective `plan` (`phase:'plan'`, `planGate.status='planning'`); a completed plan rewrites the card's "Plan" checklist group (≤30 steps), sets `awaiting_approval`, moves the card to Tower (one transaction, via the events route). **Approve plan & build** launches the build with the (possibly edited) checklist; **Revise** re-plans with the owner's note | `lib/data/hangar-autopilot.ts`, `app/api/v1/sessions/[id]/events/route.ts`, `approvePlanAndBuild` / `revisePlan` |
+| Answer & relaunch | Per-question answers + previous summary appended to the next instruction | `answerAndRelaunch`, `components/board/MissionAnswerForm.tsx` |
+| Follow-ups → cards | Chosen recommended follow-ups become mission cards (inherit repo/engine/model, `autoRun:false`, `parentTaskId`) in a Hangar/Backlog/Queued/Cryo/To Do column, else leftmost | `createFollowUpCards`, `components/board/MissionFollowUpPicker.tsx` |
+| UI | `MissionAutopilotPanel`, `MissionAnswerForm`, `MissionFollowUpPicker`, `MissionToggleRow` (plan-first toggle in the editor) | `components/board/` |
+
+Autopilot verbs are app server actions only (no MCP/REST mirror yet); REST/MCP spawn ignores `planFirst`. No per-project plan-first default. No runner change: a runner that returns after a timeout gets 404 on heartbeat and kills its child (inferred from `poller.ts`).
 
 ## 2. Surfaces
 
@@ -52,7 +65,7 @@ only partially delivered before this wave; no new task table or migration is nee
 | Envelope | `extractEnvelope` scans fenced ```json blocks last-to-first, rejects the prompt's own template (`looksLikeEnvelope`), `normalizeEnvelope` canonicalises status aliases and NUL-sanitises for jsonb | `src/envelope.ts` |
 | Stream parsers | claude + copilot typed events (tool_use / thinking / usage); copilot's fills `observedModel` from `session.start` so a mission records the model that actually ran, not "unknown" | `src/stream-parser.ts` |
 | Env knobs | `KAIROS_MODE` (push/poll/both), `KAIROS_WORKER_PORT` (8787; harness uses 8799), `KAIROS_WORKER_SECRET`, `KAIROS_REPOS_FILE`, `KAIROS_WORKTREE_ROOT`, `KAIROS_{CLAUDE,COPILOT,CODEX}_BIN`, `KAIROS_*_DEFAULT_MODEL`, `KAIROS_COPILOT_EFFORT`, `KAIROS_COPILOT_CONTEXT`, `KAIROS_CLAUDE_EFFORT`, `KAIROS_CLAUDE_FALLBACK_MODEL`, `AEON_BASE_URL`, `KAIROS_AEON_API_KEY` — creds in ignored `runner.env.bat` | `runner.env.example.bat`, `start-hangar-runner.bat` |
-| Availability | Foreground launcher resolves its environment file by absolute script path and calls npm. Polling lasts only while the host process runs; no checked-in supervisor/autostart or stale-session reconciler | `start-hangar-runner.bat`, `src/index.ts`, `src/poller.ts` |
+| Availability | Foreground launcher resolves its environment file by absolute script path and calls npm. Polling lasts only while the host process runs; no checked-in supervisor/autostart (a server-side stall reconciler exists since v0.46 — §2b) | `start-hangar-runner.bat`, `src/index.ts`, `src/poller.ts` |
 | CI | typecheck + test steps for the worker were added to `.github/workflows/ci.yml` on 2026-09-03 (shipped without a gate until then) | |
 
 ## 4. Data
@@ -123,7 +136,40 @@ automatic Landing does not enforce content acceptance. The v0.29.0 UI is a relea
 | Medium | ~45 more `/api/v1/**/[id]` routes pass raw path segments to Postgres (same 500 class as the fixed projects/sessions routes) — needs a shared uuid guard | `app/api/v1/**` |
 | Medium | Spawn has no project-membership check on `taskId`; a caller can spawn against a foreign card and `recordSessionResult` later rewrites it | `lib/data/sessions.ts` |
 | Medium | Durable output delivery remains incomplete: uncommitted artifacts can be lost at teardown, push failure is separate from accepted result status, and vault/RAG delivery plus automatic draft PR creation are not implemented | `apps/kairos-worker/src/poller.ts`, `worktree.ts`; Sprint 3C |
-| Medium | Runner supervision and stale-session recovery are not implemented; a queued mission can wait while the host is offline | `apps/kairos-worker/src/index.ts`, `poller.ts` |
+| Medium | Runner supervision/autostart and runner-side recovery are not implemented; a timed-out mission's worktree/branch is not cleaned server-side and a queued mission is only flagged "Runner offline", never failed or reassigned. (Server-side stall timeout shipped in v0.46 — §2b.) | `apps/kairos-worker/src/index.ts`, `poller.ts` |
+| Medium | Autopilot verbs (requeue, plan approve/revise, answer & relaunch, follow-ups) have no MCP/REST mirror; REST/MCP spawn ignores `planFirst` | `lib/actions/hangar.ts` |
+| Low | A queued mission flagged runner-offline can't be requeued (status not in the requeue set), only killed | `lib/actions/hangar.ts` |
 | Low | A project in no realm cannot launch from the browser (repo registry is realm-scoped; editor shows the amber "No repos" hint) while REST accepts any slug; the harness's own test project is created realm-less | `lib/actions/hangar.ts` `listProjectHangarRepos` |
 | Info | Full mission instructions travel in a temporary brief file, with a short pointer on argv; finalisation deletes the brief. Reviewer prompts use stdin | `apps/kairos-worker/src/poller.ts`, `engines.ts` |
 | Low | No exact-PASS autonomous harness research receipt yet; the 21 September supervisor-completed report has a separate saved-evidence audit PASS. Citation rules were tightened in PR #129; latest recorded best verdict still requires minor wording corrections | `aeon_os/HANDOVER_1709.md` |
+
+## 7. External research harnesses (fleet-shared, outside this repo)
+
+The autonomous research harnesses are **separate local repos**, not part of Aeon:
+- `dev_26/swarm_ai_quant`: Swarm strategy lab.
+- `dev_26/rnd_ai_quant`: DE Base power signals.
+- `dev_26/evo_ai_quant`: the self-evolving research lab, added 01/10/2026. It writes its own charter and lanes from `dev_26/evo_research_lab/BRIEF.md`.
+
+Each runs a Python supervisor (`harness/loop.py`) that launches headless `copilot -p` sessions. All three run the **V4 engine**:
+- shared byte-identical modules;
+- sealed statistics gate;
+- GO applied only by the supervisor after a GPT-6 Sol sceptic;
+- tamper-evident claims ledger, audited after every run;
+- canaries and a decoy file that STOP the loop if touched.
+
+How they touch Aeon:
+- **Cards.** Each harness writes lane, finding and queue cards to its **own Aeon board** through `harness/aeon_cards.py`, using REST `/api/v1` with the bearer token from the harness Copilot home's Aeon MCP config: RND board `c60c2d63-9038-441e-a2de-12e762e7c60a`, Swarm board `954a87f2-7166-4f39-966c-0617726d40c2`, EVO board `59f099f3-7de7-42fa-b702-c178ce9272e7`. A card for a lane without its own label posts to that harness's card. Inside a session, `aeon_cards.py` refuses GO. Sessions see only filtered Aeon MCP tools (list/get/comment). The directional workstream card lives on AI Mission Control.
+- **Shared fleet with the Hangar.** `apps/kairos-worker`'s `runner.env.bat` points `KAIROS_COPILOT_BIN` at the harness wrapper `swarm_ai_quant/harness/fleet_exec.cmd`, with `KAIROS_MAX_CONCURRENT=2`. Hangar missions are therefore admitted, memory-capped and charged as harness `aeon_hangar` inside the shared fleet:
+- one 45 GB memory pool and at most 5 sessions;
+- a 150k AI-credit/UTC-day cap split evo 0.35 / rnd 0.35 / swarm 0.2 / hangar 0.1. Each harness may borrow unused credits at any hour, but never another harness's protected floor (half its share);
+- runs below 2k credits are refused;
+- a weekend credit ceiling and a `KILL` sentinel apply.
+
+All of this is set in `data_science/harness_store/_fleet/fleet_config.json`. When the fleet refuses a mission, the wrapper returns a `needs_input` result envelope. This takes effect at the runner's next start.
+
+**Canonical harness documentation:** `swarm_ai_quant/docs/harness/`. It contains `HARNESS_GUIDE.md` (the agent guide), `harness_guide.html` (the owner guide with diagrams), `asbuilt/` (file:line recon of the run loop, fleet, integrity chain, memory/missions and guard/storage) and `archive/`. It is a living document, updated in place. Personal skill: `harness-ops`.
+
+| Severity | Gap | Where |
+|---|---|---|
+| Medium | Fleet limits are external to Aeon: when the fleet is at its cap, Hangar missions return `needs_input` ("fleet admission refused") rather than queueing | `swarm_ai_quant/harness/fleet_exec.py` |
+| Low | The harness repos have no git remote yet, so the guide and code exist only on the workstation | `swarm_ai_quant`, `rnd_ai_quant` |

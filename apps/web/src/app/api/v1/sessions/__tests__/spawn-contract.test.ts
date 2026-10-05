@@ -63,6 +63,12 @@ vi.mock('@/lib/kairos/spawn', () => ({
   dispatchSpawn: vi.fn(async () => ({ dispatched: false, reason: 'pull-mode' })),
 }))
 
+// Anchor access is covered in spawn-access.test.ts; this suite is about the
+// metadata and duplicate-launch contracts.
+vi.mock('@/lib/data/hangar-access', () => ({
+  resolveSessionAnchor: vi.fn(async (_userId: string, input: { projectId?: string | null }) => ({ ok: true, projectId: input.projectId ?? null })),
+}))
+
 import { POST } from '../route'
 
 function spawnRequest(body: Record<string, unknown>): NextRequest {

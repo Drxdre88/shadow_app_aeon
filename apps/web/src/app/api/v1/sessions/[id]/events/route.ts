@@ -127,12 +127,14 @@ export const POST = withRateLimit(
 
       // Terminal guard inside recordSessionResult refuses replays against an
       // already-settled session — report that honestly instead of a blind true.
+      // A completed planning run's Plan checklist + Tower move commit in the
+      // same transaction (plan-then-approve), so there is no second write here.
       const applied = await recordSessionResult(id, enforced.envelope)
 
       // Mission → memory, after the response: capture embeds + files the row,
       // which must not eat into the runner's POST timeout. Best-effort and
       // idempotent (externalId hangar:{id}); see lib/kairos/mission-memory.
-      if (applied) {
+      if (applied && (applied.task || !session.taskId)) {
         const capture = () => captureMissionMemory(auth.id, session, enforced.envelope)
         try {
           after(capture)

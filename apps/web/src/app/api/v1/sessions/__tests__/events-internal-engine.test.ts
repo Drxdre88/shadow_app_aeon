@@ -35,6 +35,7 @@ vi.mock('@/lib/api/auth', async () => {
 
 vi.mock('@/lib/data/sessions', () => mocks)
 vi.mock('@/lib/kairos/mission-memory', () => ({ captureMissionMemory: vi.fn() }))
+vi.mock('@/lib/data/hangar-autopilot', () => ({ applyPlanResult: vi.fn() }))
 
 import { POST } from '../[id]/events/route'
 

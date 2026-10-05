@@ -5,6 +5,10 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, Pin, PinOff, Trash2, ExternalLink, ChevronDown, ChevronRight, ArrowRight, ArrowLeft as ArrowLeftIcon, Link as LinkIcon, History as HistoryIcon } from 'lucide-react'
 import { getMemory, updateMemory, deleteMemoryById, getMemoryNeighbours, getMemoryBeliefTrail } from '@/lib/actions/memories'
 import { KairosMarkdown } from '@/components/ui/KairosMarkdown'
+import { WhyPanel } from '@/components/kairos/knows/WhyPanel'
+import { FixPanel } from '@/components/kairos/knows/FixPanel'
+import { originWords } from '@/components/kairos/knows/provenance'
+import { useKnowsStore } from '@/components/kairos/knows/knowsStore'
 
 type MemoryRow = NonNullable<Awaited<ReturnType<typeof getMemory>>>
 type NeighbourBundle = Awaited<ReturnType<typeof getMemoryNeighbours>>
@@ -43,6 +47,16 @@ export function MemorySidePanel({ memoryId, onClose, onChanged }: Props) {
       .then((trail) => setBeliefTrail(trail))
       .catch(() => setBeliefTrail(null))
   }, [memoryId])
+
+  const bumpKnows = useKnowsStore((s) => s.bump)
+  // After an owner fix: refetch this memory + its trail, refresh the galaxy and the knows lists.
+  const reload = () => {
+    if (!data) return
+    getMemory(data.id).then((m) => m && setData(m)).catch(() => {})
+    getMemoryBeliefTrail(data.id).then(setBeliefTrail).catch(() => {})
+    onChanged()
+    bumpKnows()
+  }
 
   const togglePin = async () => {
     if (!data) return
@@ -98,6 +112,8 @@ export function MemorySidePanel({ memoryId, onClose, onChanged }: Props) {
 
                 <PillRow data={data} />
 
+                <WhyPanel memory={data} onChanged={reload} />
+
                 <ExecSummary bullets={toBullets(data.execSummary)} />
 
                 <BodyToggle
@@ -128,6 +144,8 @@ export function MemorySidePanel({ memoryId, onClose, onChanged }: Props) {
                 />
 
                 <BeliefTrailPanel trail={beliefTrail} />
+
+                <FixPanel key={`${data.id}:${String(data.updatedAt)}`} memory={data} onChanged={reload} />
 
                 <div className="text-[10px] text-white/30 pt-2 border-t border-white/[0.04]">
                   {new Date(data.createdAt).toLocaleString()}
@@ -175,7 +193,7 @@ function PillRow({ data }: { data: MemoryRow }) {
   return (
     <div className="flex flex-wrap gap-1.5 text-[10px]">
       <Pill variant="type">{data.type}</Pill>
-      <Pill variant="source">{data.source}</Pill>
+      <Pill variant="source">{originWords(data)}</Pill>
       {data.pinned && <Pill variant="accent">pinned</Pill>}
       {repo && <Pill variant="repo">{repo}</Pill>}
       {tags.map((t) => (
@@ -334,6 +352,7 @@ function BeliefTrailPanel({ trail }: { trail: BeliefTrail | null }) {
             className="px-2.5 py-1.5 rounded-lg border border-white/[0.05] bg-white/[0.015]"
           >
             <div className="flex items-center gap-1.5 text-[10px] text-white/40 mb-0.5">
+              <span className="tabular-nums">{new Date(node.validFrom).toLocaleDateString()}</span>
               {node.isTarget && <span className="uppercase tracking-[0.12em] text-white/50">viewing</span>}
               {!node.isCurrent && node.invalidFrom && (
                 <span className="ml-auto normal-case tracking-normal">

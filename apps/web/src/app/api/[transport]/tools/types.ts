@@ -1,9 +1,23 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
+import type { z } from 'zod'
+import type { AuthInfo, CallToolResult, ToolAnnotations } from '@modelcontextprotocol/server'
 
-export type Extra = { authInfo?: AuthInfo }
+export type Extra = { authInfo?: AuthInfo; signal?: AbortSignal }
 
-export type RegisterFn = (server: McpServer) => void
+export type ToolShape = z.ZodRawShape
+
+type Awaitable<T> = T | Promise<T>
+
+export type ToolCallback<S extends ToolShape> = (args: z.infer<z.ZodObject<S>>, extra: Extra) => Awaitable<CallToolResult>
+
+export type NoArgToolCallback = (extra: Extra) => Awaitable<CallToolResult>
+
+export interface ToolServer {
+  tool(name: string, description: string, cb: NoArgToolCallback): void
+  tool<S extends ToolShape>(name: string, description: string, shape: S, cb: ToolCallback<S>): void
+  tool<S extends ToolShape>(name: string, description: string, shape: S, annotations: ToolAnnotations, cb: ToolCallback<S>): void
+}
+
+export type RegisterFn = (server: ToolServer) => void
 
 export function getUserId(extra: Extra): string {
   const uid = extra.authInfo?.extra?.userId as string | undefined

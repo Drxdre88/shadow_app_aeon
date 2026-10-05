@@ -8,6 +8,7 @@ import { TrackingRail } from '@/components/kairos/TrackingRail'
 import { MemorySidePanel } from '@/components/kairos/MemorySidePanel'
 import { KairosLegend } from '@/components/kairos/KairosLegend'
 import { KairosInbox } from '@/components/kairos/KairosInbox'
+import { KnowsButton, KnowsDrawer } from '@/components/kairos/knows/KnowsDrawer'
 import type { ColorMode } from '@/components/kairos/nodeColor'
 import { SkyboxDropdown } from '@/components/skybox/SkyboxDropdown'
 import { ConnectKairosModal } from '@/components/kairos/brain/ConnectKairosModal'
@@ -147,6 +148,7 @@ export default function KairosPage() {
               </button>
             )}
             <SkyboxDropdown value={skybox} onChange={setSkybox} align="right" />
+            <KnowsButton />
             <KairosInbox />
             <button
               onClick={() => setSetupOpen(true)}
@@ -206,6 +208,7 @@ export default function KairosPage() {
           {!zenMode && !loading && !error && graph.nodes.length > 0 && (
             <KairosLegend nodes={filteredNodes} mode={colorMode} />
           )}
+          {!zenMode && <KnowsDrawer onSelect={setSelectedId} />}
           {!zenMode && (
             <MemorySidePanel
               memoryId={selectedId}

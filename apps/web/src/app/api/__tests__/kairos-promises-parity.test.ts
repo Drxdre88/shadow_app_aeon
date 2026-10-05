@@ -20,7 +20,7 @@ const SRC = path.join(WEB_ROOT, 'src')
 const MCP_TOOL_FILE = path.join(SRC, 'app/api/[transport]/tools/kairos-promises.ts')
 const MCP_ROUTE = path.join(SRC, 'app/api/[transport]/route.ts')
 const REST_ROUTE = path.join(SRC, 'app/api/v1/kairos/promises/route.ts')
-const MCP_DOCS = path.join(SRC, 'components/ui/help/McpTab.tsx')
+const MCP_DOCS = path.join(SRC, 'components/ui/help/mcpToolCatalog.ts')
 
 const read = (p: string) => readFileSync(p, 'utf8')
 
@@ -65,7 +65,7 @@ describe('Kairos promises MCP <-> REST parity', () => {
   })
 
   it('is registered on the MCP server and documented', () => {
-    expect(read(MCP_ROUTE)).toMatch(/registerKairosPromiseTools\(server\)/)
+    expect(read(MCP_ROUTE)).toMatch(/\[registerKairosPromiseTools, \[/)
     expect(read(MCP_DOCS)).toContain("'list_kairos_promises'")
   })
 })

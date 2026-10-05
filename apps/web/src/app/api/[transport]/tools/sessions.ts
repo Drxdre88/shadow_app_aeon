@@ -19,6 +19,7 @@ import {
   LiveMissionExistsError,
 } from '@/lib/data/sessions'
 import { dispatchSpawn } from '@/lib/kairos/spawn'
+import { resolveSessionAnchor } from '@/lib/data/hangar-access'
 import type { RegisterFn } from './types'
 import { getUserId, ok, notFound, fail } from './types'
 
@@ -55,9 +56,13 @@ export const registerSessionTools: RegisterFn = (server) => {
       const hangarIssue = sessionHangarMetadataIssue(parsed.data.metadata)
       if (hangarIssue) return fail(hangarIssue)
 
+      // Mirrors REST's 403: a card-anchored session writes back to the card.
+      const anchor = await resolveSessionAnchor(uid, parsed.data)
+      if (!anchor.ok) return fail(anchor.message)
+
       let session
       try {
-        session = await createAgentSession(uid, parsed.data)
+        session = await createAgentSession(uid, { ...parsed.data, projectId: anchor.projectId })
       } catch (err) {
         // Same duplicate-launch contract as REST's 409: the partial unique
         // index settles the race, and the loser gets a message it can act on.

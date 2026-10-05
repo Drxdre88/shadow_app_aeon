@@ -374,7 +374,7 @@ export async function updateProject(projectId: string, userId: string, data: Upd
 // kairosFeed (what Kairos watches) changes only through the owner-only
 // setProjectKairosFeed; generic settings patches can't touch it.
 function settingsMergeSql(patch: Record<string, unknown>) {
-  const { kairosFeed: _ignored, ...rest } = patch
+  const { kairosFeed: _ignored, kairosTriage: _ignoredTriage, ...rest } = patch
   return sql`coalesce(${projects.settings}, '{}'::jsonb) || ${JSON.stringify(rest)}::jsonb`
 }
 

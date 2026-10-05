@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/actions/helpers', () => ({ requireAuth: vi.fn(), requireMemberAccess: vi.fn() }))
 vi.mock('@/lib/data/sessions', () => ({ findMissionSessionStatus: vi.fn() }))
 vi.mock('@/lib/kairos/spawn', () => ({ dispatchSpawn: vi.fn() }))
+vi.mock('@/lib/data/hangar-access', () => ({ resolveSessionAnchor: vi.fn() }))
 
 import { requireMemberAccess } from '@/lib/actions/helpers'
 import { findMissionSessionStatus } from '@/lib/data/sessions'

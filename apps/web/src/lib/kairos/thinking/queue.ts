@@ -74,6 +74,8 @@ export const PLANNED_THINKING_KINDS: readonly ThinkingJobKind[] = [
   // Daytime cadence (flagged): planned only on claims, never by the sweep.
   'reflect', 'pulse',
   'cold_read',
+  // Board card sorting (per-board switch): planned by claims and the sweep.
+  'card_triage',
 ]
 
 const PLAN_ORDER: readonly ThinkingJobKind[] = [...PLANNED_THINKING_KINDS, 'chat']
@@ -114,6 +116,7 @@ const FALLBACK_OWNER: Partial<Record<ThinkingJobKind, string>> = {
   dream: 'nothing — a missed night is fine',
   dream_read: 'nothing — a missed night is fine',
   life_chapter: 'nothing — a missed month is skipped',
+  card_triage: 'nothing — unanswered cards are offered again on a later run',
 }
 
 function fallbackOwner(kind: ThinkingJobKind): string {

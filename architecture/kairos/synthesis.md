@@ -1,4 +1,4 @@
-# Kairos — Synthesis Pipeline
+# Vorath (formerly Kairos) — Synthesis Pipeline
 
 > Part of the Aeon architecture set — index: [../../ARCHITECTURE.md](../../ARCHITECTURE.md) · siblings: [overview](overview.md) · [memory-and-capture](memory-and-capture.md) · [chat](chat.md) · [mind](mind.md)
 
@@ -7,8 +7,8 @@ substrate (and the stage below) and distils one tier up, writing back into `memo
 dedicated `streamClass`. All stages are per-user, idempotent per UTC day, soft-archive their
 priors transactionally (never leaving a tier empty on a failed insert), and skip gracefully on
 missing/undecryptable BYOK keys. State as of **Kairos 0.19.0 "No paid spend, chat on Max, one
-setup checklist"** / app **v0.36.0** (`lib/kairos/version.ts`, `lib/version.ts`). Since 0.17 every
-stage is first a thinking job answered by the **Kairos brain** routine on the owner's Max plan; the
+setup checklist"** / app **v0.36.0** (0.20–0.28 additions — incl. the Living Dominions focus gate on archetype/cortex/concept/aether/idea planning and the `card_triage` kind — are in [mind.md](mind.md)) (`lib/kairos/version.ts`, `lib/version.ts`). Since 0.17 every
+stage is first a thinking job answered by the **Vorath brain** routine on the owner's Max plan; the
 crons below are fallbacks only, and they run only while the owner's **paid backup** switch is on.
 
 **Parse reliability (docs/kairos/31).** The paid-key generators (archetypes, cortex, aether, the
@@ -186,7 +186,7 @@ This is measurement only: it is never fed back into a prompt, belief or constitu
 
 ## Thinking queue (`thinking_jobs`, docs/kairos/33)
 
-`lib/kairos/thinking/{queue,registry,deadlines,paid-fallback}.ts` + `handlers/*` (24 handlers as of 0.25, one
+`lib/kairos/thinking/{queue,registry,deadlines,paid-fallback}.ts` + `handlers/*` (25 handlers as of 0.28, one
 per kind). Statuses go queued → claimed → done | failed | expired | fallback, with unique
 `(userId, externalKey)`. A Claude Max **routine** claims and submits via MCP/REST; the server
 validates, grounds, mints ids and persists. `PLAN_ORDER` = `PLANNED_THINKING_KINDS` + `chat`
@@ -221,8 +221,8 @@ still names retired kinds has them dropped instead of failing.
 a 200s budget (`KAIROS_SWEEP_MAX_FALLBACKS` / `_BUDGET_MS`). With paid backup off it closes each
 pending fallback with "paid backup off" instead of running it.
 
-**Max-plan routines (claude.ai).** Every Kairos model call is a thinking job first (24 kinds as of
-0.25; the 0.20–0.25 kinds are listed in [mind.md](mind.md)). Each former paid-key cron plans its kind in a window closing 2 min before the cron, and the
+**Max-plan routines (claude.ai).** Every Kairos model call is a thinking job first (25 kinds as of
+0.28; the 0.20–0.28 kinds are listed in [mind.md](mind.md)). Each former paid-key cron plans its kind in a window closing 2 min before the cron, and the
 cron is only the **fallback**: `isJobDone(userId, externalKey)` (`lib/data/thinking-jobs.ts`) skips
 any unit a routine answered. Since 0.21 there are **three routines, defined in code** (brain, chat, pulse; claims are routine-scoped by `allowedKinds` since 0.20):
 `lib/kairos/routines/catalog.ts` is the single source of truth (names, schedules, caps, model and the
@@ -232,9 +232,9 @@ docs/kairos/33):
 
 | Routine | Trigger (UTC) | Claims | Caps |
 |---|---|---|---|
-| Kairos brain | cron `40 * * * *` (hourly since 0.21) | every due deep kind except chat | 40 jobs / 50 min |
-| Kairos pulse | cron `10 6-21 * * *` | light kinds (`pulse`); idle until `KAIROS_DAYTIME_THINKING=1` | 3 jobs / 10 min |
-| Kairos chat | API trigger, fired once per chat message (web and Telegram, since 0.19) | `{"kinds":["chat"]}` | 5 jobs / 5 min |
+| Vorath brain | cron `40 * * * *` (hourly since 0.21) | every due deep kind except chat | 40 jobs / 50 min |
+| Vorath pulse | cron `10 6-21 * * *` | light kinds (`pulse`); idle until `KAIROS_DAYTIME_THINKING=1` | 3 jobs / 10 min |
+| Vorath chat | API trigger, fired once per chat message (web and Telegram, since 0.19) | `{"kinds":["chat"]}` | 5 jobs / 5 min |
 
 The six older routines and the Sonnet brain-tick are retired (`RETIRED_ROUTINE_NAMES` in the catalog;
 the setup guide tells the owner to delete them). The chat routine is behind `KAIROS_CHAT_ROUTINE`
@@ -310,7 +310,7 @@ surfaces the next morning.
 
 - `lib/kairos/{archetypes,cortex,aether,chat-distill,ask-mine,daily-message,daily-message-inputs,daily-message-prompt,ask-numbered,paid-backup,paid-backup-cron}.ts`, `cron-trace.ts`, `version.ts` (log: `docs/kairos/CHANGELOG.md`)
 - `lib/kairos/routines/` (`catalog.ts` — the three routines, prompts, `BRAIN_JOBS`; `setup.ts` — connector install link); `lib/data/brain-status.ts`
-- `lib/kairos/thinking/` (queue, registry, deadlines, paid-fallback, 24 handlers incl. `idea-generate.ts`, `idea-judge.ts`, `constitution-seed.ts`)
+- `lib/kairos/thinking/` (queue, registry, deadlines, paid-fallback, 25 handlers incl. `card-triage.ts`, `idea-generate.ts`, `idea-judge.ts`, `constitution-seed.ts`)
 - `lib/kairos/ideas/` (`types`, `generate-prompt`, `judge-prompt`, `judge-context`, `novelty`, `pairing`, `elo`, `select`, `compose`, `diversity`); `lib/data/{ideas,idea-inputs}.ts`
 - `lib/kairos/conscience-context.ts`, `lib/data/conscience.ts`; `constitution/` (seed, probes, drift, amendment, **conscience-probes**)
 - `lib/kairos/weekly-review/`, `lib/data/belief-diff.ts`; `lib/kairos/proposal-accept.ts`

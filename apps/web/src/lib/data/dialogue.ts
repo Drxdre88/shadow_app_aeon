@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { agentSessions, sessionEvents, memories, dominions } from '@/lib/db/schema'
 import type { AetherPayload } from '@/lib/kairos/aether-types'
 import { MIND_NAME } from '@/lib/kairos/identity'
+import { notHeldSensitive, sensitiveCaptureStamp } from '@/lib/kairos/sensitive'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Dialogue — data layer.
@@ -246,7 +247,7 @@ export async function filterLiveDominionIds(userId: string, ids: string[]): Prom
   return ids.filter((id) => live.has(id))
 }
 
-/** Fetch a set of memories by id (user-scoped) for grounding a dialogue turn. */
+/** Fetch a set of memories by id (user-scoped) for grounding a dialogue turn or a dream read; held private rows are left out. */
 export async function fetchMemoriesByIds(userId: string, ids: string[]): Promise<SourceMemorySnapshot[]> {
   if (ids.length === 0) return []
   const rows = await db
@@ -258,7 +259,7 @@ export async function fetchMemoriesByIds(userId: string, ids: string[]): Promise
       dominionId: memories.dominionId,
     })
     .from(memories)
-    .where(and(eq(memories.userId, userId), inArray(memories.id, ids)))
+    .where(and(eq(memories.userId, userId), inArray(memories.id, ids), notHeldSensitive))
 
   // Preserve the caller's id order.
   const byId = new Map(rows.map((r) => [r.id, r]))
@@ -298,6 +299,7 @@ export async function writeFloatingReflection(
   const firstLine = input.bodyMd.split('\n').map((l) => l.trim()).find((l) => l.length > 0) ?? ''
   const stripped = firstLine.replace(/^([#>*\-`]+\s*)+/, '').trim()
   const title = (input.title?.trim() || stripped.slice(0, 80) || 'Reflection').slice(0, 255)
+  const held = await sensitiveCaptureStamp(userId, { title, summary: input.summary, bodyMd: input.bodyMd }, 'reflection')
 
   const [row] = await db
     .insert(memories)
@@ -310,7 +312,7 @@ export async function writeFloatingReflection(
       type: 'reflection',
       streamClass: 'reflection',
       source: 'claude',
-      sourceMetadata: { kairosReflect: true, ...(input.sourceMetadata ?? {}) },
+      sourceMetadata: { kairosReflect: true, ...(input.sourceMetadata ?? {}), ...held },
       tags: input.tags ?? [],
       pinned: false,
     })

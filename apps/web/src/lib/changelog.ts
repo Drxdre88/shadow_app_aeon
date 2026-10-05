@@ -29,6 +29,31 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.46.0] — 2026-10-06
+
+> Areas touched: \`KAIROS\` \`MCP\` \`API\` \`UI\` \`BOARD\`
+> Theme: Wave A — see and fix what Vorath knows, Hangar missions that look after themselves, a modern AI connector, and Vorath sorting new cards (off until you switch it on).
+
+### Added — What Vorath knows · \`KAIROS\` \`UI\`
+- A new button on the Vorath page opens what Vorath believes about you, grouped by area, each with a plain "I believe this because…" line.
+- Every memory now shows **why Vorath knows it**: who wrote it (you, an AI agent, Vorath himself or outside content), where it came from (chat, coding session, card, voice note), how sure he is, and its history with dates and Undo.
+- Fix it in place: Edit, "It's right" (makes it yours) and "This is wrong" (set aside with a reason, reversible).
+- **Needs your eyes**: low-trust notes, beliefs to re-check and held private topics, each with Confirm or Remove. Nothing is hidden silently.
+- Optional **private-topic hold** (off by default): new notes about health, family, money, legal matters or religion/politics are held out of Vorath's thinking until you confirm them.
+
+### Added — Hangar autopilot · \`BOARD\` \`API\`
+- Stalled missions are caught every 15 minutes: a run whose runner went quiet for 30 minutes (\`KAIROS_HANGAR_STALE_MIN\`) is marked timed out, explained on the card and moved to Tower; a queued mission nobody picked up shows "Runner offline". One-click **Requeue**.
+- **Approve plan first** (per card): the agent plans, the plan lands as a checklist, and you press "Approve plan & build" or "Revise".
+- **Answer & relaunch** the agent's questions, and turn its suggested follow-ups into new mission cards.
+
+### Changed — Connector 2.0 · \`MCP\`
+- The AI connector runs on the 2026-07-28 MCP standard (mcp-handler 2.2, MCP SDK v2). Older clients (claude.ai, Claude Code, earlier Copilot) keep working unchanged.
+- Newer clients ask before destructive actions ("Delete Task on board …? This can't be undone."); declining changes nothing.
+- Slimmer tool sets: add \`?profile=board\`, \`vorath\` or \`hangar\` to the connector link. No profile = all tools, as before.
+
+### Added — Vorath sorts new cards (off by default) · \`KAIROS\` \`BOARD\`
+- Per board, in Edit Project: "Vorath sorts new cards". When on, Vorath looks at new cards on your Max plan and suggests labels the board already has, a priority and possible duplicates, each with a reason. Accept or Dismiss on the card; nothing changes until you accept.
+
 ## [0.45.0] — 2026-10-05
 
 > Areas touched: \`KAIROS\` \`DOMINION\` \`MCP\` \`API\` \`UI\` \`DATA\`

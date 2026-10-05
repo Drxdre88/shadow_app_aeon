@@ -26,6 +26,13 @@ vi.mock('@/lib/data/projects', () => ({ mergeProjectSettings: vi.fn(), verifyPro
 vi.mock('@/lib/data/dominions', () => ({ findDominionById: vi.fn() }))
 vi.mock('@/lib/data/columns', () => ({ findColumns: vi.fn() }))
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
+vi.mock('@/lib/data/hangar-autopilot', () => ({
+  createFollowUpMissionCards: vi.fn(),
+  findCardSession: vi.fn(),
+  findFollowUpColumnId: vi.fn(),
+  findPlanSteps: vi.fn(),
+  patchCardHangar: vi.fn(),
+}))
 
 import { revalidatePath } from 'next/cache'
 import { requireEditor } from '@/lib/actions/helpers'

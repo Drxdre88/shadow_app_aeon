@@ -19,6 +19,7 @@ vi.mock('@/lib/actions/comments', () => ({
 }))
 vi.mock('@/lib/actions/projects', () => ({ updateProjectSettings: vi.fn() }))
 vi.mock('@/lib/actions/sessions', () => ({ getMissionSessionStatusAction: vi.fn() }))
+vi.mock('@/lib/actions/card-triage', () => ({ resolveCardTriage: vi.fn() }))
 vi.mock('@/lib/actions/board', () => ({
   createBoardTask: vi.fn(),
   updateBoardTask: vi.fn(),

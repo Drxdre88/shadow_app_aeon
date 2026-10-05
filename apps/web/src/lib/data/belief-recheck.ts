@@ -5,6 +5,7 @@ import { insertMemoryOps } from '@/lib/data/memory-ops'
 import { BELIEF_TYPE, readBelief, type BeliefV1, type LostSourceState } from '@/lib/kairos/beliefs/types'
 import type { MemoryOpInput } from '@/lib/kairos/engine/types'
 import { BELIEF_CONFIDENCE_CAP, type OriginKind } from '@/lib/kairos/origin'
+import { notHeldSensitiveRaw } from '@/lib/kairos/sensitive/held'
 import { listMemoryOrigins, originKindSqlOf } from './belief-inputs'
 import { beliefField, isBelief, liveHeld, lockHeldBelief, type LockedBelief } from './beliefs'
 
@@ -106,7 +107,8 @@ export interface NormaliseCandidate {
 // an own belief labelled otherwise or above that cap is selected. Computed in SQL so a belief
 // already in line is never selected; one whose provenance (or a provenance
 // origin) changes is selected again. A belief whose normalisation the
-// operator reverted (engine.vetoes.normalise) is left alone.
+// operator reverted (engine.vetoes.normalise) is left alone. Sources still
+// held for private-topic review are not live evidence.
 export async function findBeliefsToNormalise(userId: string, now: Date, limit: number): Promise<NormaliseCandidate[]> {
   if (limit <= 0) return []
   const kind = originKindSqlOf(sql.raw('m.source'), sql.raw('m.source_metadata'))
@@ -140,6 +142,7 @@ export async function findBeliefsToNormalise(userId: string, now: Date, limit: n
           AND m.id = (CASE WHEN p.pid ~ ${UUID_RE} THEN p.pid::uuid END)
           AND m.archived_at IS NULL
           AND (m.invalid_at IS NULL OR m.invalid_at > ${now})
+          AND ${sql.raw(notHeldSensitiveRaw('m'))}
       ) o ON true
       GROUP BY h.id
     )

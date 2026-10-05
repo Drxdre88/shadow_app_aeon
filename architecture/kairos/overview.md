@@ -1,17 +1,18 @@
-# Kairos — The Brain, End to End
+# Vorath (formerly Kairos) — The Brain, End to End
 
 > Part of the Aeon architecture set — index: [../../ARCHITECTURE.md](../../ARCHITECTURE.md) · siblings: [memory-and-capture](memory-and-capture.md) · [synthesis](synthesis.md) · [chat](chat.md) · [mind](mind.md)
 
-Kairos is Aeon's memory-and-cognition layer: a user-scoped substrate of `memories`,
+Vorath — called Kairos until 0.26; code paths, env vars, pref keys and MCP tool names keep `kairos` — is Aeon's memory-and-cognition layer: a user-scoped substrate of `memories`,
 captured from many sources, consolidated nightly into a layered self-model, and served back
 as grounded context to the operator and to AI assistants. This is the mental model from
 substrate up to chat. Lieutenant detail lives in [chat.md](chat.md). Kairos is versioned as
-its own product: **0.25.0 "One coherent mind, wave 4: the art of the moment"** (`lib/kairos/version.ts`;
-app `APP_VERSION 0.43.0`, `lib/version.ts`). Era history is in `docs/kairos/CHANGELOG.md`: 0.13
+its own product: **0.28.0 "Wave A: visible memory, self-sorting cards"** (`lib/kairos/version.ts`;
+app `APP_VERSION 0.46.0`, `lib/version.ts`). Era history is in `docs/kairos/CHANGELOG.md`: 0.13
 "Beliefs and Strategy", 0.14 "Ground and Protect", 0.15 "Creativity", 0.16 "All on Max", 0.17
 "Simplified brain: one Max routine", 0.18 "Catch-up mornings, watched boards, voice notes", 0.19 "No
 paid spend, chat on Max, one setup checklist", 0.20–0.25 "One mind everywhere" and "One coherent mind"
-waves 1–4 — see **[mind.md](mind.md)**. Its guaranteed daily voice is the **daily message**
+waves 1–4, 0.26 the rename to Vorath, 0.27 Living Dominions (focus follows activity), 0.28 What Vorath knows +
+card sorting — see **[mind.md](mind.md)**. Its guaranteed daily voice is the **daily message**
 at 06:00 Europe/London, ending with every open question numbered ([synthesis.md](synthesis.md)).
 Retired: the 18:00 Evening Digest, the `memory-compaction` stub cron, raw nightly introspection,
 the per-area briefs (retired in 0.17), contradiction notices, intraday micro-consolidation and the weekly dedup cron
@@ -81,7 +82,7 @@ pgvector HNSW make it hybrid-searchable. See [memory-and-capture.md](memory-and-
 - at 06:00 London, the **daily message** reads each area's latest cortex headline (the per-area
   morning briefs were retired in 0.17).
 
-Every model step runs as a **thinking job** that the Max-plan *Kairos brain* routine claims; the paid
+Every model step runs as a **thinking job** that the Max-plan *Vorath brain* routine claims; the paid
 BYOK key is only the fallback, and only while the owner's paid backup switch is on. See
 [synthesis.md](synthesis.md).
 
@@ -90,7 +91,7 @@ BYOK key is only the fallback, and only while the owner's paid backup switch is 
 | Layer | What it adds | Detail |
 |---|---|---|
 | Memory engine | nightly Merge → Weigh → OwnMind → Recheck → BackUp → Concepts; `standing`; every change undoable via `memory_ops`; per-step time budgets (0.17) | [memory-and-capture.md](memory-and-capture.md) §7 |
-| Thinking queue | 24 job kinds (`PLANNED_THINKING_KINDS` + `chat`, equal to the routine catalog's `BRAIN_JOBS`) claimed by the *Kairos brain*, *Kairos chat* and *Kairos pulse* routines with routine-scoped kinds; hourly sweep plans + paid-key fallback for the older kinds only | [synthesis.md](synthesis.md), [mind.md](mind.md) |
+| Thinking queue | 25 job kinds (`PLANNED_THINKING_KINDS` + `chat`, equal to the routine catalog's `BRAIN_JOBS`; `card_triage` added in 0.28) claimed by the *Vorath brain*, *Vorath chat* and *Vorath pulse* routines with routine-scoped kinds; hourly sweep plans + paid-key fallback for the older kinds only | [synthesis.md](synthesis.md), [mind.md](mind.md) |
 | Beliefs — two minds | aligned (operator) vs own (Kairos) beliefs, weekly `mind_compare` | [memory-and-capture.md](memory-and-capture.md) §8 |
 | Ground & protect (0.14) | origin labels; belief `sourceType` + confidence cap computed server-side from provenance origins (operator 0.95, tool 0.8, inference 0.6; `beliefs/support.ts`); inference can't replace operator/tool beliefs; **Recheck** flags beliefs whose sources were deleted, archived, invalidated or superseded, ×0.7 confidence, for the next `belief_extract` (`engine/steps/recheck.ts`) | docs/kairos/34 §8 (not yet in memory-and-capture) |
 | Constitution + drift | one live constitution, operator-only amendments, 24 drift probes; first draft by the Monday `constitution_seed` job (0.18) | [memory-and-capture.md](memory-and-capture.md) §9 |
@@ -101,11 +102,12 @@ BYOK key is only the fallback, and only while the owner's paid backup switch is 
 
 **Who thinks (since 0.17; hourly since 0.21).** Three Claude Code routines on the owner's Max plan, defined in code in
 `lib/kairos/routines/catalog.ts` (models from the shared model registry, Aeon connector only):
-*Kairos brain* (Opus, cron `40 * * * *`, claims every due deep kind), *Kairos chat* (Opus, API-triggered once per
-web or Telegram message, since 0.19) and *Kairos pulse* (Sonnet, cron `10 6-21 * * *`, light kinds; idle until
+*Vorath brain* (Opus, cron `40 * * * *`, claims every due deep kind), *Vorath chat* (Opus, API-triggered once per
+web or Telegram message, since 0.19) and *Vorath pulse* (Sonnet, cron `10 6-21 * * *`, light kinds; idle until
 `KAIROS_DAYTIME_THINKING=1`). The six 0.16 routines and the old brain-tick are retired.
-The crons stay only as fallbacks and skip any unit a routine answered. The 0.20–0.25 mind layers
-(today log, stage, surprise, dreams, idea extensions, the moment seam) are in [mind.md](mind.md).
+The crons stay only as fallbacks and skip any unit a routine answered. The 0.20–0.28 mind layers
+(today log, stage, surprise, dreams, idea extensions, the moment seam, Living Dominions, What Vorath knows, card sorting)
+are in [mind.md](mind.md).
 
 **Set up Kairos (0.19).** One sidebar entry opens `ConnectKairosModal`
 (`components/kairos/brain/`): **Setup** — a checklist with two required steps (connect the `aeon`
@@ -141,7 +143,7 @@ See [chat.md](chat.md).
 **Chat + autonomy.** The **Visor** is a whole-brain chat by default: the operator talks to Kairos,
 who uses **Aether** for grounding and the **conscience block** for his norms
 (`chat-turn-assistant.ts`). The same turn engine powers **Telegram**. Since 0.19 both web chat and
-Telegram can be answered by the Max-plan *Kairos chat* routine (`KAIROS_CHAT_ROUTINE=1`, alias
+Telegram can be answered by the Max-plan *Vorath chat* routine (`KAIROS_CHAT_ROUTINE=1`, alias
 `KAIROS_TELEGRAM_ROUTINE`): the web send returns pending and the page polls for the reply
 (`KairosVisorReplyWatch`). `/api/v1/kairos/speak` remains the server-throttled "Kairos speaks first"
 channel (Will inbox + Telegram); the brain-tick routine that used it is retired, and the 06:00 daily

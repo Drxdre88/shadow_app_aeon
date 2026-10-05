@@ -14,7 +14,8 @@ export function KairosGuideContent({ onNavigate }: { onNavigate?: (view: BrainVi
         <h3 className="text-[17px] font-semibold text-white">Your second memory</h3>
         <p className="mt-1.5 text-[13px] leading-relaxed text-white/70">
           Vorath keeps what matters from your work and your words, thinks about it overnight, and talks to you once a
-          morning. You set him up once; after that he runs on his own.
+          morning. You set him up once; after that he runs on his own. (He used to be called Kairos — same mind, same
+          memories.)
         </p>
       </div>
 
@@ -62,6 +63,21 @@ export function KairosGuideContent({ onNavigate }: { onNavigate?: (view: BrainVi
         </P>
       </Section>
 
+      <Section title="What he knows about you">
+        <P>
+          The book icon at the top of the Vorath page (“What Vorath knows about you”) opens what he believes about you, grouped by area, each with a
+          plain “I believe this because…” line. Open any memory to see why he knows it: who wrote it (you, an AI agent,
+          Vorath or outside content), where it came from, how sure he is, and its history with Undo.
+        </P>
+        <List
+          items={[
+            <><b className="text-white/90 font-medium">Edit</b> fixes the words, <b className="text-white/90 font-medium">It’s right</b> makes it yours, and <b className="text-white/90 font-medium">This is wrong</b> sets it aside with your reason — you can undo it.</>,
+            <><b className="text-white/90 font-medium">Needs your eyes</b> lists low-trust notes, beliefs to re-check and held private topics. Confirm or Remove each one; nothing is hidden silently.</>,
+            <><b className="text-white/90 font-medium">Ask me before using private topics</b> (off by default): new notes about health, family, money, legal matters, religion or politics wait there until you confirm them.</>,
+          ]}
+        />
+      </Section>
+
       <Section title="What he thinks you're carrying">
         <P>
           Once switched on, a Sunday-evening card lists what he thinks is on your plate: lasting traits, and passing
@@ -91,6 +107,25 @@ export function KairosGuideContent({ onNavigate }: { onNavigate?: (view: BrainVi
           your day.
         </P>
         {onNavigate && <Link onClick={() => onNavigate('watched')}>Choose watched boards</Link>}
+      </Section>
+
+      <Section title="Where your time went">
+        <P>
+          Each night he scores your areas from real work — cards finished and created, coding sessions and your own
+          notes — and Health shows the ranking: Active, Dormant or Pinned, when you last worked there, and work that
+          belongs to no area yet. Once switched on, an area with no activity for three weeks goes dormant: no nightly
+          summary, no place in the 06:00 message or the weekly plan, and its memories stay searchable. Any new work wakes
+          it. Pin an area to keep it awake.
+        </P>
+        {onNavigate && <Link onClick={() => onNavigate('health')}>See where your time went</Link>}
+      </Section>
+
+      <Section title="Sorting new cards">
+        <P>
+          Switch on “Vorath sorts new cards” for a board in Edit Project. During his hourly run on your Max plan he
+          suggests labels the board already has, a priority and possible duplicates, each with a reason. Accept or
+          Dismiss them on the card — nothing changes until you accept. Off by default.
+        </P>
       </Section>
 
       <Section title="Paid backup">

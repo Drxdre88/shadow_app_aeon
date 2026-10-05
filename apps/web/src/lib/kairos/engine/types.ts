@@ -194,6 +194,8 @@ export type ThinkingJobKind =
   | 'dream_read'
   // Wave 4 life chapters (KAIROS_LIFE_CHAPTERS): one per month, no fallback.
   | 'life_chapter'
+  // Card sorting on boards the owner switched on (settings.kairosTriage); no fallback.
+  | 'card_triage'
 
 export type ThinkingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'expired' | 'fallback'
 

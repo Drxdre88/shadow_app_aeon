@@ -22,6 +22,7 @@ import { triggerCelebration } from '@/components/celebrations'
 import { useHangarUiStore } from '@/lib/store/hangarUiStore'
 import { readHangarMission } from './autoRun'
 import { MissionDetailsSection } from './MissionDetailsSection'
+import { TriageSuggestions } from './triage/TriageSuggestions'
 
 export interface TaskEditFormData {
   name: string
@@ -176,6 +177,8 @@ export function TaskEditContent({
             onConfigure={() => openMissionEditor(editingTaskId)}
           />
         )}
+
+        {editingTaskId && <TriageSuggestions taskId={editingTaskId} projectId={projectId} onPriorityAccepted={(priority) => onFormChange({ ...formData, priority })} />}
 
         <div>
           <label className="block text-sm text-slate-400 mb-1.5">{isAgentMission ? 'Card notes' : 'Description'}</label>
