@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { agentSessions, sessionEvents, memories, dominions } from '@/lib/db/schema'
 import type { AetherPayload } from '@/lib/kairos/aether-types'
+import { MIND_NAME } from '@/lib/kairos/identity'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Dialogue — data layer.
@@ -74,7 +75,7 @@ export async function createDialogue(
   userId: string,
   input: { dominionId: string | null; title: string; seed: DialogueSeedMeta },
 ): Promise<string> {
-  const title = (input.title.trim() || 'Kairos dialogue').slice(0, 200)
+  const title = (input.title.trim() || `${MIND_NAME} dialogue`).slice(0, 200)
   const [row] = await db
     .insert(agentSessions)
     .values({

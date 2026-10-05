@@ -84,7 +84,7 @@ describe('Kairos inbox actions', () => {
   it('surfaces a stale Ask as not found', async () => {
     vi.mocked(answerKairosAsk).mockResolvedValue({ error: 'not_found' })
 
-    await expect(answerKairosInboxAsk(ASK_ID, 'Answer')).rejects.toThrow('Kairos question not found')
+    await expect(answerKairosInboxAsk(ASK_ID, 'Answer')).rejects.toThrow('Vorath question not found')
   })
 
   it('dismisses an open question through the Ask orchestrator (no negative outcome)', async () => {
@@ -98,7 +98,7 @@ describe('Kairos inbox actions', () => {
     await expect(dismissKairosInboxAsk('not-a-uuid')).rejects.toThrow()
     expect(dismissKairosAsk).not.toHaveBeenCalled()
     vi.mocked(dismissKairosAsk).mockResolvedValue({ error: 'not_found' })
-    await expect(dismissKairosInboxAsk(ASK_ID)).rejects.toThrow('Kairos question not found')
+    await expect(dismissKairosInboxAsk(ASK_ID)).rejects.toThrow('Vorath question not found')
   })
 
   it('accepts through the shared inbox helper', async () => {

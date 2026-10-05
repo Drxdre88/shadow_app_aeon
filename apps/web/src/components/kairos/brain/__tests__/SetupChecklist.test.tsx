@@ -48,7 +48,7 @@ const renderList = (s: KairosBrainStatus, onOpenWatched = () => {}) =>
   render(<SetupChecklist status={s} refreshing={false} onRefresh={() => {}} onOpenWatched={onOpenWatched} />)
 
 const stepRow = (title: string) => screen.getByRole('button', { name: new RegExp(title) }).closest('[data-tick]') as HTMLElement
-const openOptional = () => fireEvent.click(screen.getByRole('button', { name: /Make Kairos see and hear more/ }))
+const openOptional = () => fireEvent.click(screen.getByRole('button', { name: /Make Vorath see and hear more/ }))
 
 let writeText: ReturnType<typeof vi.fn>
 beforeEach(() => {
@@ -64,7 +64,7 @@ describe('SetupChecklist — required steps', () => {
     expect(screen.getByText(/2 steps · ~5 minutes/)).toBeTruthy()
     expect(screen.getByText('0 of 2 required done')).toBeTruthy()
     expect(stepRow('Connect Aeon to Claude').dataset.tick).toBe('todo')
-    expect(stepRow('Turn on Kairos’s brain').dataset.tick).toBe('todo')
+    expect(stepRow('Turn on Vorath’s brain').dataset.tick).toBe('todo')
     expect(screen.getByRole('link', { name: /Add to Claude/ })).toBeTruthy()
   })
 
@@ -84,7 +84,7 @@ describe('SetupChecklist — required steps', () => {
   it('shows the calm done state once both required steps are green', () => {
     const s = status(LIVE_BRAIN, { connectorUsedAt: '2026-10-01T20:00:00.000Z' })
     renderList(s)
-    expect(screen.getByText(/Kairos is set up — he thinks every night on your Max plan/)).toBeTruthy()
+    expect(screen.getByText(/Vorath is set up — he thinks every night on your Max plan/)).toBeTruthy()
     expect(screen.queryByText(/required done/)).toBeNull()
     expect(requiredMissing(s)).toBe(0)
   })

@@ -14,7 +14,7 @@ import { getUserId, ok, notFound, fail } from './types'
 export const registerMemoryOpsTools: RegisterFn = (server) => {
   server.tool(
     'list_memory_ops',
-    'List what the Kairos memory engine changed (newest first): promotions ("I now believe X"), decays, merges, re-scores, reactions and reverts, each with its before/after snapshot and reason. Filter by memoryId or op kind. Use the op id with revert_memory_op to veto a change.',
+    'List what the Vorath memory engine changed (newest first): promotions ("I now believe X"), decays, merges, re-scores, reactions and reverts, each with its before/after snapshot and reason. Filter by memoryId or op kind. Use the op id with revert_memory_op to veto a change.',
     {
       memoryId: z.string().uuid().optional().describe('Only ops that touched this memory'),
       op: memoryOpKindSchema.optional().describe('Only this op kind, e.g. "promote" or "merge"'),

@@ -14,7 +14,7 @@ export function KairosVisorToggle() {
     <button
       type="button"
       onClick={open}
-      aria-label="Open Kairos AI"
+      aria-label="Open Vorath AI"
       className="group fixed bottom-5 right-5 z-30 h-14 w-14 overflow-hidden rounded-full border border-white/15 bg-zinc-900 bg-cover bg-center transition hover:scale-105 active:scale-95"
       style={{
         backgroundImage: "url('/kairos_2.png')",

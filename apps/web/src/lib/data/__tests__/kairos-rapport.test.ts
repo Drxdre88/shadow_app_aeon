@@ -130,7 +130,7 @@ describe('read view', () => {
     expect(view.goals[0]).toMatchObject({ objectiveId: 'o1', band: 'committed', lastTip: { kind: 'commit' } })
     expect(view.bids30d).toEqual({ count: 1, byKind: { laugh: 1 } })
     const md = renderRapportMarkdown(view)
-    expect(md).toContain('# Kairos rapport')
+    expect(md).toContain('# Vorath rapport')
     expect(md).toContain('- Run a marathon: committed')
     expect(getKairosRapportSchema.parse({})).toEqual({ format: 'json' })
   })

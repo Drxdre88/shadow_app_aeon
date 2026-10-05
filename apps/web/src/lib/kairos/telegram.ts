@@ -249,14 +249,14 @@ export function telegramReplyChunks(reply: string): string[] {
 // is always persisted before the model runs.
 export function telegramChatFailureText(reason: string): string {
   if (reason === 'paid_backup_off') {
-    return 'Kairos can’t reply yet — chat on your Max plan isn’t switched on, and the paid backup is off. ' +
-      'Your message is saved. Turn on the Kairos chat routine (Kairos → Set up Kairos), or switch the paid backup on in Health.'
+    return 'Vorath can’t reply yet — chat on your Max plan isn’t switched on, and the paid backup is off. ' +
+      'Your message is saved. Turn on the Vorath chat routine (Vorath → Set up Vorath), or switch the paid backup on in Health.'
   }
   if (reason === 'no_credential') {
-    return 'Kairos brain is offline — no AI provider key is configured in Aeon. ' +
+    return 'Vorath brain is offline — no AI provider key is configured in Aeon. ' +
       'Your message is saved; add a key in Settings → AI to wake him up.'
   }
-  return `Kairos could not reply (${reason}). Your message is saved in the thread.`
+  return `Vorath could not reply (${reason}). Your message is saved in the thread.`
 }
 
 // Deliver a Kairos chat reply: citation markers are UI chips in Aeon and
@@ -364,7 +364,7 @@ export async function sendKairosProposal(input: {
 function aeonKairosUrl(): string | null {
   const base = process.env.NEXT_PUBLIC_APP_URL || process.env.AUTH_URL || process.env.NEXTAUTH_URL
   if (!base) return null
-  return `${base.replace(/\/$/, '')}/kairos`
+  return `${base.replace(/\/$/, '')}/vorath`
 }
 
 // /kairos/speak fan-out. Returns true only when the Telegram delivery

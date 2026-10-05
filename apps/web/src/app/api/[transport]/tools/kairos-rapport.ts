@@ -15,11 +15,11 @@ import { getUserId, ok, fail } from './types'
 export const registerKairosRapportTools: RegisterFn = (server) => {
   server.tool(
     'get_kairos_rapport',
-    'How Kairos reads the rapport with you: readiness per goal (preparing / committed / wavering, from your own wording), small bids it acknowledged, and whether it is backing off or owes a repair. format "json" (default) or "markdown". Read-only.',
+    'How Vorath reads the rapport with you: readiness per goal (preparing / committed / wavering, from your own wording), small bids it acknowledged, and whether it is backing off or owes a repair. format "json" (default) or "markdown". Read-only.',
     {
       format: getKairosRapportSchema.shape.format.describe('"json" (default) or "markdown"'),
     },
-    { title: 'Get Kairos Rapport', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'Get Vorath Rapport', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = getKairosRapportSchema.safeParse(args)

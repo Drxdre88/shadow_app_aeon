@@ -133,9 +133,9 @@ export function formatReason(reason: FailReason, message?: string): string {
     case 'dominion_not_found': return 'That Dominion is not accessible.'
     case 'thread_not_found':   return 'Thread was removed.'
     case 'no_credential':      return 'No BYOK credential — add an API key in settings.'
-    case 'paid_backup_off':    return 'Chat on your Max plan isn’t switched on and the paid backup is off — turn on the Kairos chat routine in Set up Kairos, or the paid backup in Health.'
-    case 'ai_empty':           return 'Kairos returned an empty reply. Try again.'
-    case 'ai_failed':          return message ? `Kairos failed: ${message}` : 'Kairos failed. Try again.'
+    case 'paid_backup_off':    return 'Chat on your Max plan isn’t switched on and the paid backup is off — turn on the Vorath chat routine in Set up Vorath, or the paid backup in Health.'
+    case 'ai_empty':           return 'Vorath returned an empty reply. Try again.'
+    case 'ai_failed':          return message ? `Vorath failed: ${message}` : 'Vorath failed. Try again.'
     case 'invalid_input':      return message ? `Invalid input: ${message}` : 'Invalid input.'
     default:                   return 'Something went wrong.'
   }

@@ -56,7 +56,7 @@ function inbox() {
 
 async function openInbox() {
   render(<KairosInbox />)
-  fireEvent.click(await screen.findByRole('button', { name: /Kairos inbox, 2 pending/ }))
+  fireEvent.click(await screen.findByRole('button', { name: /Vorath inbox, 2 pending/ }))
   return screen.findByRole('dialog')
 }
 
@@ -68,6 +68,14 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+})
+
+describe('KairosInbox — trigger', () => {
+  it('shows a visible Inbox label next to the bell', async () => {
+    render(<KairosInbox />)
+    const trigger = await screen.findByRole('button', { name: /Vorath inbox, 2 pending/ })
+    expect(trigger.textContent).toContain('Inbox')
+  })
 })
 
 describe('KairosInbox — idea proposals', () => {
@@ -204,7 +212,7 @@ describe('KairosInbox — open questions', () => {
 
   async function openAsks() {
     render(<KairosInbox />)
-    fireEvent.click(await screen.findByRole('button', { name: /Kairos inbox, 2 pending/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Vorath inbox, 2 pending/ }))
     return screen.findByRole('dialog')
   }
 
@@ -266,7 +274,7 @@ describe('KairosInbox — voice notes', () => {
     vi.mocked(confirmVoiceNote).mockResolvedValue({} as never)
     vi.mocked(discardVoiceNote).mockResolvedValue({} as never)
     render(<KairosInbox />)
-    fireEvent.click(await screen.findByRole('button', { name: /Kairos inbox, 1 pending/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Vorath inbox, 1 pending/ }))
     const dialog = await screen.findByRole('dialog')
     return within(dialog).getByText(/Voice note · 5 parts/).closest('li')!
   }

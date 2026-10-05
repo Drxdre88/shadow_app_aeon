@@ -280,7 +280,7 @@ export function buildChatTools(userId: string): Record<string, ChatTool> {
     },
     synthesis_status: {
       description:
-        'Kairos self-certifies his own overnight synthesis health: the latest SYNTHESIS_HEALTH rollup, and whether today\'s cortex (any Dominion) and Aether self-model docs exist. Use this instead of guessing at brain health from stale narrative.',
+        'Vorath self-certifies his own overnight synthesis health: the latest SYNTHESIS_HEALTH rollup, and whether today\'s cortex (any Dominion) and Aether self-model docs exist. Use this instead of guessing at brain health from stale narrative.',
       inputSchema: synthesisStatusInputSchema,
       execute: async () => {
         const now = new Date()
@@ -307,7 +307,7 @@ export function buildChatTools(userId: string): Record<string, ChatTool> {
     // confirms, the model re-runs confirm:false then confirm:true in that turn.
     undo_kairos_change: {
       description:
-        'Undo (veto) something Kairos learned: reverts the most recent promotion ("I now believe X"), decay or merge whose memory title matches. Use ONLY when the operator explicitly asks to undo/veto/forget something Kairos learned — never on your own initiative. First call with confirm:false and show the operator the match; it returns a confirmToken. Only after the operator confirms that exact change, call with confirm:true and the confirmToken from a confirm:false lookup (re-run the lookup in that turn if you no longer have it). If several changes match, ask which one.',
+        'Undo (veto) something Vorath learned: reverts the most recent promotion ("I now believe X"), decay or merge whose memory title matches. Use ONLY when the operator explicitly asks to undo/veto/forget something Vorath learned — never on your own initiative. First call with confirm:false and show the operator the match; it returns a confirmToken. Only after the operator confirms that exact change, call with confirm:true and the confirmToken from a confirm:false lookup (re-run the lookup in that turn if you no longer have it). If several changes match, ask which one.',
       inputSchema: undoKairosChangeInputSchema,
       execute: async (input: z.infer<typeof undoKairosChangeInputSchema>) => {
         if (input.confirm) {
@@ -332,14 +332,14 @@ export function buildChatTools(userId: string): Record<string, ChatTool> {
           }
           return JSON.stringify({
             status: 'undone',
-            message: `Undone: "${target.title}" is no longer ${OP_VERB[target.op] ?? target.op}, and Kairos won't redo it on its own.`,
+            message: `Undone: "${target.title}" is no longer ${OP_VERB[target.op] ?? target.op}, and Vorath won't redo it on its own.`,
             match: describeUndo(target),
           })
         }
 
         const found = matchUndoCandidate(input.title, await listUndoCandidates(userId))
         if (found.kind === 'none') {
-          return JSON.stringify({ status: 'not_found', message: `No recent Kairos change matches "${input.title}". Nothing was undone.` })
+          return JSON.stringify({ status: 'not_found', message: `No recent Vorath change matches "${input.title}". Nothing was undone.` })
         }
         if (found.kind === 'ambiguous') {
           return JSON.stringify({

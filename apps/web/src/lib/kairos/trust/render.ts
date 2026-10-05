@@ -57,7 +57,7 @@ function areaLines(a: TrustArea): string[] {
 
 export function renderTrustMarkdown(view: KairosTrustView): string {
   const lines = [
-    '# How far to trust Kairos, per area',
+    '# How far to trust Vorath, per area',
     '',
     `_Last ${view.windowDays} days · computed on read · a level needs ${view.minN} settled · trust: ${view.mode.trust} · ask first: ${view.mode.askFirst}_`,
     '',

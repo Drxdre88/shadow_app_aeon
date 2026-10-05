@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { MIND_NAME } from '@/lib/kairos/identity'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Brain Phase 1 — memory validators. See docs/brain/02-mcp-tools.md.
@@ -53,11 +54,11 @@ export const memoryLinkSchema = z.object({
 
 // Phase 2 goals: only the goal_propose handler mints goal rows (directly in
 // the data layer), so a create/capture payload may never claim to be one.
-export const GOAL_METADATA_REFUSAL = 'sourceMetadata may not describe a Kairos goal'
+export const GOAL_METADATA_REFUSAL = `sourceMetadata may not describe a ${MIND_NAME} goal`
 // Rows only Kairos's own jobs mint (voice samples, cold reads, character runs):
 // a create/capture payload may never claim to be one, or an agent could forge
 // an "approved" voice sample or a measurement.
-export const INTERNAL_KIND_REFUSAL = 'sourceMetadata may not describe an internal Kairos record'
+export const INTERNAL_KIND_REFUSAL = `sourceMetadata may not describe an internal ${MIND_NAME} record`
 const INTERNAL_KINDS: readonly string[] = ['voice_sample', 'cold_read', 'character_run', 'life_chapter']
 const memorySourceMetadataSchema = z.record(z.string(), z.unknown()).refine(
   (m) => m.kind !== 'goal' && !Object.prototype.hasOwnProperty.call(m, 'goal'),

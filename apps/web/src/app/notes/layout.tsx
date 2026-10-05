@@ -5,7 +5,7 @@ import { ensurePersonalWorkspace } from '@/lib/actions/workspaces'
 import { KairosShell } from '@/components/kairos/KairosShell'
 
 // KairosShell hosts the Kairos chat here too; its server actions' after()
-// watchdog needs the same budget as /kairos (see app/kairos/layout.tsx).
+// watchdog needs the same budget as /vorath (see app/vorath/layout.tsx).
 export const maxDuration = 300
 
 export default async function NotesLayout({ children }: { children: React.ReactNode }) {

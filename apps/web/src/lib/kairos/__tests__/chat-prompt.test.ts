@@ -36,6 +36,13 @@ describe('buildChatSystemPrompt', () => {
     const out = buildChatSystemPrompt(dom({ vision: '   ', missionLong: '\n\n' }))
     expect(out.match(/\(none set yet\)/g)?.length).toBe(2)
   })
+
+  it('names the mind Vorath and claims Kairos-era memories as its own, anchored or not', () => {
+    for (const out of [buildChatSystemPrompt(dom()), buildChatSystemPrompt(null, { surface: 'telegram' })]) {
+      expect(out).toMatch(/^You are Vorath \(formerly called Kairos; memories that mention Kairos are about you\)/)
+      expect(out).not.toContain('You are Kairos')
+    }
+  })
 })
 
 describe('buildChatMessages', () => {

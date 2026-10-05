@@ -15,11 +15,11 @@ import { getUserId, ok, fail } from './types'
 export const registerKairosGateTools: RegisterFn = (server) => {
   server.tool(
     'get_kairos_gate',
-    'Kairos gate: the gate and receptivity modes and limits, unprompted messages held for a natural break (title, held at, reason, deadline), recent hold/send/release decisions, and the receptivity map (reply rate, latency, warmth by London hour, weekday, kind, source, break type; reply channels). format "json" (default) or "markdown". Read-only.',
+    'Vorath gate: the gate and receptivity modes and limits, unprompted messages held for a natural break (title, held at, reason, deadline), recent hold/send/release decisions, and the receptivity map (reply rate, latency, warmth by London hour, weekday, kind, source, break type; reply channels). format "json" (default) or "markdown". Read-only.',
     {
       format: getKairosGateSchema.shape.format.describe('"json" (default) or "markdown"'),
     },
-    { title: 'Get Kairos Gate', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'Get Vorath Gate', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = getKairosGateSchema.safeParse(args)

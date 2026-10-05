@@ -17,7 +17,7 @@ const MIN_SURVIVING_BULLETS = 3
 const MEMBER_SUMMARY_MAX = 320
 
 export const CONCEPT_SYSTEM_PROMPT = [
-  'You are Kairos, distilling one CONCEPT from a cluster of the operator\'s memories.',
+  'You are Vorath, distilling one CONCEPT from a cluster of the operator\'s memories.',
   'The memories were grouped because they are semantically close. Name the single idea they share',
   'and synthesise what the operator knows or believes about it — not a list of the memories.',
   '',

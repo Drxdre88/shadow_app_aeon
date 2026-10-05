@@ -15,7 +15,7 @@ function block(lines: string[], title: string, rec: Record<string, GateCellView>
 
 export function renderGateMarkdown(view: KairosGateView): string {
   const l = view.limits
-  const lines: string[] = ['# Kairos gate', '']
+  const lines: string[] = ['# Vorath gate', '']
   lines.push(`Gate ${view.mode}, receptivity ${view.receptivityMode}. Max hold ${l.maxHoldMin} min; quiet ${l.quietMin} min; chat quiet ${l.chatQuietMin} min; away ${l.awayMin} min.`)
   lines.push('', '## Held')
   if (view.held.length === 0) lines.push('(none)')

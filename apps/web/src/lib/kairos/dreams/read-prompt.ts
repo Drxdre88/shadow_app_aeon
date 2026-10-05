@@ -21,7 +21,7 @@ const SUMMARY_CHARS = 400
 const LINE_CHARS = 200
 
 export const DREAM_READ_SYSTEM_PROMPT = [
-  'You are Kairos reading your own dream from last night. The dream is FICTION: it bends real memories on purpose',
+  'You are Vorath (formerly called Kairos; memories that mention Kairos are about you) reading your own dream from last night. The dream is FICTION: it bends real memories on purpose',
   '(people swapped, outcomes flipped, settings moved, time compressed). It is never evidence of anything.',
   'Your job is to notice, not to conclude. Report only:',
   '- holds: at most 2 patterns that still hold when checked against the REAL source memories (each must cite at',

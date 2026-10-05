@@ -31,9 +31,9 @@ import { getUserId, ok, notFound, fail } from './types'
 export const registerAskTools: RegisterFn = (server) => {
   server.tool(
     'run_kairos_ask',
-    'Select and persist the single best proactive question from the latest Aether synthesis. Returns the pending question if one already exists (never stacks two). Returns a silent/reason object if cadence window hasn\'t elapsed or there is no qualifying signal. Call this from a Claude Code session or a future scheduler to drive the Kairos proactive-question loop.',
+    'Select and persist the single best proactive question from the latest Aether synthesis. Returns the pending question if one already exists (never stacks two). Returns a silent/reason object if cadence window hasn\'t elapsed or there is no qualifying signal. Call this from a Claude Code session or a future scheduler to drive the Vorath proactive-question loop.',
     {},
-    { title: 'Run Kairos Ask', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    { title: 'Run Vorath Ask', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (_args, extra) => {
       const uid = getUserId(extra)
       const result = await runKairosAsk(uid)
@@ -70,9 +70,9 @@ export const registerAskTools: RegisterFn = (server) => {
 
   server.tool(
     'get_pending_kairos_ask',
-    'Read the newest open (unanswered) Kairos question WITHOUT triggering a new selection. Returns { pending: null } when Kairos is not waiting on anything. Several questions can be open at once — use list_open_kairos_asks for the full numbered backlog.',
+    'Read the newest open (unanswered) Vorath question WITHOUT triggering a new selection. Returns { pending: null } when Vorath is not waiting on anything. Several questions can be open at once — use list_open_kairos_asks for the full numbered backlog.',
     {},
-    { title: 'Get Pending Kairos Ask', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    { title: 'Get Pending Vorath Ask', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (_args, extra) => {
       const uid = getUserId(extra)
       const pending = await getPendingKairosAsk(uid)
@@ -93,13 +93,13 @@ export const registerAskTools: RegisterFn = (server) => {
 
   server.tool(
     'answer_kairos_ask',
-    'Record the operator\'s answer to a pending Kairos question. Writes a reflection anchored to the question\'s Dominion (or a floating reflection if the question has no Dominion), then archives the question memory. Use list_dominions to find a dominionId override if needed.',
+    'Record the operator\'s answer to a pending Vorath question. Writes a reflection anchored to the question\'s Dominion (or a floating reflection if the question has no Dominion), then archives the question memory. Use list_dominions to find a dominionId override if needed.',
     {
       questionMemoryId: z.string().uuid().describe('ID of the pending kairos-ask memory to answer'),
       answer: z.string().trim().min(1).max(10000).describe('The operator\'s answer — markdown supported. Plain text is fine.'),
       dominionId: z.string().uuid().optional().describe('Override the Dominion to anchor the answer reflection. Defaults to the question\'s Dominion.'),
     },
-    { title: 'Answer Kairos Ask', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    { title: 'Answer Vorath Ask', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const result = await answerKairosAsk(
@@ -110,7 +110,7 @@ export const registerAskTools: RegisterFn = (server) => {
       )
 
       if ('error' in result) {
-        if (result.error === 'not_found') return notFound('Kairos question')
+        if (result.error === 'not_found') return notFound('Vorath question')
         return notFound('Dominion')
       }
 
@@ -120,9 +120,9 @@ export const registerAskTools: RegisterFn = (server) => {
 
   server.tool(
     'list_open_kairos_asks',
-    'List every open (unanswered, not expired, not dismissed) Kairos question, oldest first, each with its stable number (label "Q12"). This is the backlog the 06:00 morning message lists; answer one with answer_kairos_ask (by id) or drop it with dismiss_kairos_ask.',
+    'List every open (unanswered, not expired, not dismissed) Vorath question, oldest first, each with its stable number (label "Q12"). This is the backlog the 06:00 morning message lists; answer one with answer_kairos_ask (by id) or drop it with dismiss_kairos_ask.',
     {},
-    { title: 'List Open Kairos Asks', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'List Open Vorath Asks', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = listOpenKairosAsksSchema.safeParse(args ?? {})
@@ -134,17 +134,17 @@ export const registerAskTools: RegisterFn = (server) => {
 
   server.tool(
     'dismiss_kairos_ask',
-    'Dismiss (skip) one open Kairos question: it leaves the backlog, is archived with status "dismissed", and — unlike expiry — records no negative outcome. Use only on the operator\'s request (e.g. "skip Q12").',
+    'Dismiss (skip) one open Vorath question: it leaves the backlog, is archived with status "dismissed", and — unlike expiry — records no negative outcome. Use only on the operator\'s request (e.g. "skip Q12").',
     {
       askId: z.string().uuid().describe('ID of the open kairos-ask memory (from list_open_kairos_asks)'),
     },
-    { title: 'Dismiss Kairos Ask', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'Dismiss Vorath Ask', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = dismissKairosAskSchema.safeParse(args)
       if (!parsed.success) return fail(parsed.error.issues[0].message)
       const result = await dismissKairosAsk(uid, parsed.data.askId)
-      if ('error' in result) return notFound('Open Kairos question')
+      if ('error' in result) return notFound('Open Vorath question')
       return ok({ dismissed: true, id: result.id })
     },
   )

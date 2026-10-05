@@ -38,7 +38,7 @@ describe('toKairosGateView', () => {
     expect(view.receptivity.hours).toEqual([{ hour: 9, n: 1, replyRate: 1, avgLatencyMin: 12, warmth: 0.5, cold: false }])
     expect(view.log[0]!.reason).toBe('idle')
     const md = renderGateMarkdown(view)
-    expect(md).toContain('# Kairos gate')
+    expect(md).toContain('# Vorath gate')
     expect(md).toContain('Agenda')
     expect(md).toContain('09:00: n 1, replied 100%')
   })

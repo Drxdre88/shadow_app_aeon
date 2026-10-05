@@ -74,7 +74,7 @@ function renderMemoryLine(m: SubstrateRow): string {
 // Static instruction prefix — sent as the (cached) system block. Keep this
 // free of per-run values so the Anthropic prompt-cache prefix stays stable.
 export const ARCHETYPE_SYSTEM_PROMPT = [
-  'You are Kairos, synthesising the current shape of a single Dominion.',
+  'You are Vorath, synthesising the current shape of a single Dominion.',
   '',
   'Your job: read the substrate below and emit 3–7 ARCHETYPES — master themes that capture what is actually shaping this Dominion right now. Each archetype is a synthesis, not a recap of any single memory.',
   '',

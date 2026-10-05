@@ -3,6 +3,9 @@ import { redirect } from 'next/navigation'
 import { getWorkspaceProjects } from '@/lib/actions/projects'
 import { ensurePersonalWorkspace } from '@/lib/actions/workspaces'
 import { KairosShell } from '@/components/kairos/KairosShell'
+import { MIND_NAME } from '@/lib/kairos/identity'
+
+export const metadata = { title: MIND_NAME }
 
 // The Kairos chat server actions run on this route; with the chat routine on,
 // their after() watchdog waits up to ~3 min and may then answer on the paid
@@ -12,6 +15,7 @@ export const maxDuration = 300
 export default async function KairosLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
   if (!session?.user) redirect('/login')
+
   if (!session.user.termsAccepted) redirect('/beta-terms')
 
   const workspaceData = await ensurePersonalWorkspace().then(() => getWorkspaceProjects())

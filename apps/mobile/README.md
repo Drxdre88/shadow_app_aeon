@@ -1,6 +1,6 @@
 # Aeon Mobile (Expo)
 
-Native companion app — **v1 is Kairos chat**; this first slice is **Google login only**.
+Native companion app — **v1 is Vorath chat**; this first slice is **Google login only**.
 Cognition, brain, and auth all live in `apps/web`; this app is a thin native client
 over the REST API.
 
@@ -61,5 +61,5 @@ Then `npm start` (runs `expo start --dev-client`) for subsequent reloads.
 - `src/config.ts` — public config (API URL + client IDs).
 
 ## Next
-- Kairos chat screen (streaming) on top of `apiFetch`.
+- Vorath chat screen (streaming) on top of `apiFetch`.
 - Simplified boards view.

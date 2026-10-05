@@ -55,7 +55,7 @@ export async function runPromiseNudges(userId: string, now: Date): Promise<Promi
     // gate: the Kairos gate may hold this forced send to a natural break
     // (timing only); a held nudge is stored and released later, never lost.
     const outcome = await deliverKairosSpeak(userId, {
-      title: 'Kairos · promises',
+      title: 'Vorath · promises',
       message: buildPromiseNudgeMessage(claimed, now),
       kind: 'notify',
       urgency: 'normal',

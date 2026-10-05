@@ -38,7 +38,7 @@ export function resetKairosSetupBadgeCache() {
 // button that opens the modal on its Setup checklist.
 export function KairosSidebarSection({ collapsed }: { collapsed: boolean }) {
   const pathname = usePathname()
-  const active = pathname?.startsWith('/kairos') ?? false
+  const active = pathname?.startsWith('/vorath') ?? false
   const [open, setOpen] = useState(false)
   const [missing, setMissing] = useState<number | null>(cached?.missing ?? null)
 
@@ -58,7 +58,7 @@ export function KairosSidebarSection({ collapsed }: { collapsed: boolean }) {
       <GlowDivider />
 
       <div className={cn('flex items-center justify-center px-2 pt-2.5 pb-2', collapsed && 'px-1')}>
-        <Link href="/kairos" aria-label="Open Kairos" className="block outline-none">
+        <Link href="/vorath" aria-label="Open Vorath" className="block outline-none">
           <motion.div
             className={cn(
               'rounded-full backdrop-blur-md font-medium uppercase select-none',
@@ -89,7 +89,7 @@ export function KairosSidebarSection({ collapsed }: { collapsed: boolean }) {
             whileHover={{ scale: 1.04 }}
             whileTap={{ scale: 0.96 }}
           >
-            {collapsed ? 'K' : `Kairos ${KAIROS_VERSION_SHORT}`}
+            {collapsed ? 'V' : `Vorath ${KAIROS_VERSION_SHORT}`}
           </motion.div>
         </Link>
       </div>
@@ -97,7 +97,7 @@ export function KairosSidebarSection({ collapsed }: { collapsed: boolean }) {
       <div className={cn('flex flex-col gap-1 px-2 pb-2.5', collapsed && 'items-center px-1')}>
         <ChildButton
           icon={<ListChecks className="w-3.5 h-3.5" />}
-          label="Kairos setup"
+          label="Vorath setup"
           onClick={() => setOpen(true)}
           collapsed={collapsed}
           badge={missing ? missing : null}

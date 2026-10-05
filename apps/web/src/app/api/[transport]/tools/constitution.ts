@@ -19,7 +19,7 @@ import { getUserId, ok, fail } from './types'
 export const registerConstitutionTools: RegisterFn = (server) => {
   server.tool(
     'get_constitution',
-    'Read the operator\'s live Kairos constitution: numbered principles, each with its reason, plus the version history, pending amendment proposals and the latest nightly drift reading (mean similarity to the baseline, alert, flipped probes). Returns constitution:null before the first draft is accepted.',
+    'Read the operator\'s live Vorath constitution: numbered principles, each with its reason, plus the version history, pending amendment proposals and the latest nightly drift reading (mean similarity to the baseline, alert, flipped probes). Returns constitution:null before the first draft is accepted.',
     {},
     { title: 'Get Constitution', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {
@@ -32,7 +32,7 @@ export const registerConstitutionTools: RegisterFn = (server) => {
 
   server.tool(
     'propose_constitution_amendment',
-    'Propose an amendment to the Kairos constitution. Send the COMPLETE amended list of principles (each with the reason it holds) — accepting replaces the live constitution with exactly these, renumbered in order. Writes a pending proposal for the operator to accept or dismiss; it never changes the constitution itself.',
+    'Propose an amendment to the Vorath constitution. Send the COMPLETE amended list of principles (each with the reason it holds) — accepting replaces the live constitution with exactly these, renumbered in order. Writes a pending proposal for the operator to accept or dismiss; it never changes the constitution itself.',
     {
       principles: z.array(amendmentPrincipleSchema).min(1).max(30)
         .describe('The full amended principle list, in order: [{ text, reason }]'),

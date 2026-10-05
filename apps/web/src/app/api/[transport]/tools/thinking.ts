@@ -26,7 +26,7 @@ import { getUserId, ok, fail } from './types'
 export const registerThinkingTools: RegisterFn = (server) => {
   server.tool(
     'claim_thinking_job',
-    `Claim the next queued Kairos thinking job. Kinds: ${thinkingJobKindSchema.options.join(', ')}. Due jobs are planned on claim, in prerequisite order (submitting idea_generate plans idea_judge, so claim again to judge the same night). Declare your routine: "brain" claims every deep kind, "pulse" claims only pulse jobs, and "chat" claims only chat jobs (with kinds ["chat"]). Without a routine, any brain kind is returned — never pulse or chat (and once routine scope is required, an unscoped claim is refused). Returns { job: { id, kind, claimToken, deadlineAt, system, prompt, validMemoryIds, instructions } } or { job: null } when nothing is due. Follow \`system\` + \`prompt\` exactly and answer as \`instructions\` say — the JSON only for every kind except chat, which is answered in plain text — then call submit_thinking_job. Never write memories for a job yourself.`,
+    `Claim the next queued Vorath thinking job. Kinds: ${thinkingJobKindSchema.options.join(', ')}. Due jobs are planned on claim, in prerequisite order (submitting idea_generate plans idea_judge, so claim again to judge the same night). Declare your routine: "brain" claims every deep kind, "pulse" claims only pulse jobs, and "chat" claims only chat jobs (with kinds ["chat"]). Without a routine, any brain kind is returned — never pulse or chat (and once routine scope is required, an unscoped claim is refused). Returns { job: { id, kind, claimToken, deadlineAt, system, prompt, validMemoryIds, instructions } } or { job: null } when nothing is due. Follow \`system\` + \`prompt\` exactly and answer as \`instructions\` say — the JSON only for every kind except chat, which is answered in plain text — then call submit_thinking_job. Never write memories for a job yourself.`,
     {
       // Plain strings at the MCP edge: claimThinkingJobSchema drops retired
       // kinds (a pre-0.17 routine keeps working) and rejects unknown ones.
@@ -66,7 +66,7 @@ export const registerThinkingTools: RegisterFn = (server) => {
 
   server.tool(
     'list_thinking_jobs',
-    'List recent Kairos thinking jobs (newest first) with status, deadline, attempts, error and output (memory ids) — no prompts. Use to check what the queue holds or what a routine run did.',
+    'List recent Vorath thinking jobs (newest first) with status, deadline, attempts, error and output (memory ids) — no prompts. Use to check what the queue holds or what a routine run did.',
     {
       status: thinkingJobStatusSchema.optional().describe('Filter by status'),
       limit: z.number().int().min(1).max(100).optional().describe('Max rows (default 20)'),

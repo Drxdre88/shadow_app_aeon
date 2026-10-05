@@ -60,7 +60,7 @@ export function TodaysAutoCaptures({ onOpen }: Props) {
       <div className="flex items-center gap-2 mb-2">
         <Sparkles className="w-3 h-3" style={{ color: 'var(--primary)' }} />
         <span className="text-[10px] uppercase tracking-[0.22em] text-white/55">
-          Today, by Kairos
+          Today, by Vorath
         </span>
         <span className="text-[10px] text-white/25">{rows.length} auto-captured</span>
       </div>

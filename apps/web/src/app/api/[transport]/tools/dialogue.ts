@@ -26,7 +26,7 @@ import { getUserId, ok, fail, notFound } from './types'
 export const registerDialogueTools: RegisterFn = (server) => {
   server.tool(
     'open_dialogue',
-    'Open (or resume) a multi-turn Kairos dialogue. Pass questionMemoryId to seed it from a pending kairos-ask — the question becomes Kairos\'s opening turn and the thread links back to the ask (idempotent: one open dialogue per ask). Or pass a topic (with optional dominionId) to start a free-standing conversation. Returns the threadId to drive with prepare_dialogue_context / append_dialogue_turn / commit_dialogue.',
+    'Open (or resume) a multi-turn Vorath dialogue. Pass questionMemoryId to seed it from a pending kairos-ask — the question becomes Vorath\'s opening turn and the thread links back to the ask (idempotent: one open dialogue per ask). Or pass a topic (with optional dominionId) to start a free-standing conversation. Returns the threadId to drive with prepare_dialogue_context / append_dialogue_turn / commit_dialogue.',
     {
       questionMemoryId: z.string().uuid().optional().describe('Pending kairos-ask to seed the dialogue from.'),
       topic: z.string().trim().min(1).max(500).optional().describe('Free-standing topic (used when no questionMemoryId).'),
@@ -41,7 +41,7 @@ export const registerDialogueTools: RegisterFn = (server) => {
         dominionId: args.dominionId,
       })
       if (!result.ok) {
-        if (result.reason === 'ask_not_found') return notFound('Pending Kairos question')
+        if (result.reason === 'ask_not_found') return notFound('Pending Vorath question')
         return fail('open_dialogue: provide either questionMemoryId or a topic.')
       }
       return ok({ threadId: result.threadId, created: result.created, opening: result.opening })
@@ -50,7 +50,7 @@ export const registerDialogueTools: RegisterFn = (server) => {
 
   server.tool(
     'prepare_dialogue_context',
-    'Pack everything needed to author Kairos\'s next turn in a dialogue: the seed Aether thought + its grounding memories + the global core narrative, the full turn history, and fresh retrieval (cortex / archetypes / substrate) keyed on the latest operator turn. Workflow: call this → compose Kairos\'s reply yourself, grounded in the bundle → append_dialogue_turn(role:"kairos"). This is the Claude-Code cognition path — no BYOK key.',
+    'Pack everything needed to author Vorath\'s next turn in a dialogue: the seed Aether thought + its grounding memories + the global core narrative, the full turn history, and fresh retrieval (cortex / archetypes / substrate) keyed on the latest operator turn. Workflow: call this → compose Vorath\'s reply yourself, grounded in the bundle → append_dialogue_turn(role:"kairos"). This is the Claude-Code cognition path — no BYOK key.',
     { threadId: z.string().uuid().describe('The dialogue thread id from open_dialogue.') },
     { title: 'Prepare Dialogue Context', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
@@ -63,7 +63,7 @@ export const registerDialogueTools: RegisterFn = (server) => {
 
   server.tool(
     'append_dialogue_turn',
-    'Record one turn in a dialogue. role="operator" for the operator\'s message, role="kairos" for Kairos\'s reply (the one you synthesised from prepare_dialogue_context). citations are optional memory ids the turn drew on. Turns are ordered and persisted on the thread.',
+    'Record one turn in a dialogue. role="operator" for the operator\'s message, role="kairos" for Vorath\'s reply (the one you synthesised from prepare_dialogue_context). citations are optional memory ids the turn drew on. Turns are ordered and persisted on the thread.',
     {
       threadId: z.string().uuid().describe('The dialogue thread id.'),
       role: z.enum(['operator', 'kairos']).describe('Who is speaking.'),

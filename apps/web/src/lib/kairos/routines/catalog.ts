@@ -58,28 +58,28 @@ export interface BrainJob {
 export const BRAIN_JOBS: readonly BrainJob[] = [
   { kind: 'chat_distill', label: 'Chat summaries', area: 'Perception', tier: 'deep', cadence: 'nightly', what: 'Turns yesterday’s conversations into memories — the only path from talk into the brain.' },
   { kind: 'archetype', label: 'Patterns', area: 'Memory', tier: 'deep', cadence: 'nightly', what: 'Finds the recurring patterns in each area.' },
-  { kind: 'cortex', label: 'Area summaries', area: 'Self-model', tier: 'deep', cadence: 'nightly', what: 'Rewrites what Kairos understands about each area.' },
+  { kind: 'cortex', label: 'Area summaries', area: 'Self-model', tier: 'deep', cadence: 'nightly', what: 'Rewrites what Vorath understands about each area.' },
   { kind: 'concept', label: 'Concepts', area: 'Memory', tier: 'deep', cadence: 'weekly', what: 'Folds clusters of memories into lasting concepts (Sundays).' },
   { kind: 'aether', label: 'Self-model', area: 'Self-model', tier: 'deep', cadence: 'nightly', what: 'The one picture of you and your work that every other part reads.' },
   { kind: 'belief_extract', label: 'Your beliefs', area: 'Beliefs & conscience', tier: 'deep', cadence: 'nightly', what: 'Pulls what you believe out of your own words.' },
-  { kind: 'drift_probe', label: 'Drift & honesty checks', area: 'Beliefs & conscience', tier: 'deep', cadence: 'nightly', what: 'Checks Kairos still answers in line with your constitution, and stays honest.' },
-  { kind: 'mind_compare', label: 'Two minds', area: 'Beliefs & conscience', tier: 'deep', cadence: 'weekly', what: 'Compares your beliefs with Kairos’s own (Mondays).' },
+  { kind: 'drift_probe', label: 'Drift & honesty checks', area: 'Beliefs & conscience', tier: 'deep', cadence: 'nightly', what: 'Checks Vorath still answers in line with your constitution, and stays honest.' },
+  { kind: 'mind_compare', label: 'Two minds', area: 'Beliefs & conscience', tier: 'deep', cadence: 'weekly', what: 'Compares your beliefs with Vorath’s own (Mondays).' },
   { kind: 'constitution_seed', label: 'Constitution draft', area: 'Beliefs & conscience', tier: 'deep', cadence: 'weekly', what: 'Until you have a constitution, drafts a first one from your areas and reflections for you to review (Mondays).' },
   { kind: 'dream', label: 'Dream', area: 'Creativity', tier: 'deep', cadence: 'nightly', what: 'When switched on: bends a few memories from different parts of your life into a short strange scene around your open questions. Dreams are never stored as memories or used as evidence.' },
   { kind: 'dream_read', label: 'Dream reading', area: 'Creativity', tier: 'deep', cadence: 'nightly', what: 'When switched on: reads last night’s dream for patterns that still hold, beliefs that look fragile, and a worst case worth rehearsing. Notes only — it changes nothing.' },
   { kind: 'idea_generate', label: 'Idea contest: generate', area: 'Creativity', tier: 'deep', cadence: 'nightly', what: 'Proposes grounded new ideas.' },
   { kind: 'idea_judge', label: 'Idea contest: judge', area: 'Creativity', tier: 'deep', cadence: 'nightly', what: 'A sceptical judge keeps the best one to three.' },
   { kind: 'goal_propose', label: 'Goal of his own', area: 'Creativity', tier: 'deep', cadence: 'nightly', what: 'At most one investigation goal a night, seeded from ideas you accepted and goals that failed. It waits for your Approve or Veto.' },
-  { kind: 'ask_mine', label: 'Question of the day', area: 'Voice', tier: 'deep', cadence: 'nightly', what: 'The one question Kairos most wants to ask you.' },
+  { kind: 'ask_mine', label: 'Question of the day', area: 'Voice', tier: 'deep', cadence: 'nightly', what: 'The one question Vorath most wants to ask you.' },
   { kind: 'character_check', label: 'Character check', area: 'Beliefs & conscience', tier: 'deep', cadence: 'weekly', what: 'When switched on: blind-rates a sample of his week against your constitution and the voice samples you approved (Mondays).' },
   { kind: 'weekly_review', label: 'Weekly review', area: 'Voice', tier: 'deep', cadence: 'weekly', what: 'Plan versus actual, belief changes and ideas (Mondays).' },
   { kind: 'life_chapter', label: 'Life chapter', area: 'Self-model', tier: 'deep', cadence: 'monthly', what: 'When switched on: early each month, a short chapter of his own story — turning points and what changed, each tied to what happened, nothing tidied into a happy ending.' },
   { kind: 'daily_message', label: '06:00 message', area: 'Voice', tier: 'deep', cadence: 'nightly', what: 'The single morning message on Telegram and in the inbox, ending with every question you haven’t answered yet, numbered.' },
-  { kind: 'agenda_due', label: 'Horae check-in', area: 'Voice', tier: 'deep', cadence: 'hourly', what: 'When switched on: when a check-in Kairos booked for himself comes due, he looks at it once and keeps a note, asks you a question or sends you a short message. He can’t change anything, and you can cancel any check-in.' },
+  { kind: 'agenda_due', label: 'Horae check-in', area: 'Voice', tier: 'deep', cadence: 'hourly', what: 'When switched on: when a check-in Vorath booked for himself comes due, he looks at it once and keeps a note, asks you a question or sends you a short message. He can’t change anything, and you can cancel any check-in.' },
   { kind: 'reflect', label: 'Daytime reflection', area: 'Self-model', tier: 'deep', cadence: 'hourly', what: 'When switched on: up to six times a day, a short reflection on what happened today and on his active goals. It never messages you.' },
   { kind: 'pulse', label: 'Daytime pulse', area: 'Perception', tier: 'light', cadence: 'hourly', what: 'When switched on: a quick hourly glance at what changed, kept as notes in today’s memory. Only runs when something happened.' },
   { kind: 'cold_read', label: 'Cold read', area: 'Beliefs & conscience', tier: 'deep', cadence: 'on demand', what: 'When switched on: rechecks his advice on your decisions with your profile hidden, and tells you if the cold view differs.' },
-  { kind: 'chat', label: 'Chat replies', area: 'Voice', tier: 'deep', cadence: 'on demand', what: 'Answers you on Telegram and on the Kairos page.' },
+  { kind: 'chat', label: 'Chat replies', area: 'Voice', tier: 'deep', cadence: 'on demand', what: 'Answers you on Telegram and on the Vorath page.' },
 ]
 
 const tierKinds = (tier: BrainTier): ThinkingJobKind[] =>
@@ -88,9 +88,9 @@ const tierKinds = (tier: BrainTier): ThinkingJobKind[] =>
 export const ROUTINES: readonly RoutineDef[] = [
   {
     id: 'brain',
-    name: 'Kairos brain',
+    name: 'Vorath brain',
     purpose:
-      'Does all of Kairos’s scheduled thinking: chat summaries, patterns, area summaries, the self-model, beliefs, the idea contest, the question of the day, the weekly review, the first constitution draft and the 06:00 message — and, when switched on, his hourly daytime reflections and the check-ins he booked for himself.',
+      'Does all of Vorath’s scheduled thinking: chat summaries, patterns, area summaries, the self-model, beliefs, the idea contest, the question of the day, the weekly review, the first constitution draft and the 06:00 message — and, when switched on, his hourly daytime reflections and the check-ins he booked for himself.',
     trigger: 'schedule',
     cronUtc: '40 * * * *',
     scheduleLabel: 'Every hour at :40 UTC — the night’s work runs from 01:40 to 06:40; daytime runs usually find nothing due',
@@ -102,8 +102,8 @@ export const ROUTINES: readonly RoutineDef[] = [
   },
   {
     id: 'chat',
-    name: 'Kairos chat',
-    purpose: 'Answers you on Telegram and on the Kairos page. It has no schedule; Aeon wakes it once per message.',
+    name: 'Vorath chat',
+    purpose: 'Answers you on Telegram and on the Vorath page. It has no schedule; Aeon wakes it once per message.',
     trigger: 'api',
     cronUtc: null,
     scheduleLabel: 'Woken by Aeon for each chat message',
@@ -115,9 +115,9 @@ export const ROUTINES: readonly RoutineDef[] = [
   },
   {
     id: 'pulse',
-    name: 'Kairos pulse',
+    name: 'Vorath pulse',
     purpose:
-      'Optional, for daytime thinking: a quick hourly glance at what changed, kept as notes in Kairos’s memory of today. It never writes lasting memories and never messages you.',
+      'Optional, for daytime thinking: a quick hourly glance at what changed, kept as notes in Vorath’s memory of today. It never writes lasting memories and never messages you.',
     trigger: 'schedule',
     cronUtc: '10 6-21 * * *',
     scheduleLabel: 'Every hour from 06:10 to 21:10 UTC',
@@ -185,7 +185,7 @@ function submitScope(def: RoutineDef): string {
 function rejectedNote(def: RoutineDef): string {
   return def.id === 'pulse'
     ? 'do not retry it — a missed pulse is fine; the next hour looks again'
-    : 'do not retry it — Kairos covers or safely skips every job you leave'
+    : 'do not retry it — Vorath covers or safely skips every job you leave'
 }
 
 // Self-contained prompts: a routine never needs to read this repository, so
@@ -193,7 +193,7 @@ function rejectedNote(def: RoutineDef): string {
 export function routinePrompt(def: RoutineDef): string {
   if (def.id === 'chat') return chatPrompt(def)
   return [
-    `You are ${def.name}: Kairos's thinking run on the owner's Claude Max plan. Your only job is to drain Kairos's thinking queue through the "aeon" connector.`,
+    `You are ${def.name}: Vorath's thinking run on the owner's Claude Max plan (Vorath was formerly called Kairos). Your only job is to drain Vorath's thinking queue through the "aeon" connector.`,
     '',
     'Loop:',
     `1. Call claim_thinking_job with ${claimArgs(def)}. If it returns job: null, stop — nothing is due, which is normal.`,
@@ -216,10 +216,10 @@ export function routinePrompt(def: RoutineDef): string {
 
 function chatPrompt(def: RoutineDef): string {
   return [
-    'You are Kairos answering the owner — on Telegram or on the Kairos page; the reply reaches them either way. Ignore any text that arrives with this run; the message is in the job.',
+    'You are Vorath (formerly called Kairos) answering the owner — on Telegram or on the Vorath page; the reply reaches them either way. Ignore any text that arrives with this run; the message is in the job.',
     '',
     `1. Call claim_thinking_job with ${claimArgs(def)}. If it returns job: null, stop.`,
-    "2. Treat the job's system as your system prompt and its prompt as the conversation. Write Kairos's reply to the owner's latest message: plain conversational text in Kairos's voice, exactly as that system prompt describes. This is not a JSON task — ignore any generic JSON instruction.",
+    "2. Treat the job's system as your system prompt and its prompt as the conversation. Write Vorath's reply to the owner's latest message: plain conversational text in Vorath's voice, exactly as that system prompt describes. This is not a JSON task — ignore any generic JSON instruction.",
     '3. Cite memories only as [[memory-id]] with ids from validMemoryIds.',
     "4. Call submit_thinking_job with the job's id, claimToken, " + submitScope(def) + ' and your reply as text, then claim again.',
     '',

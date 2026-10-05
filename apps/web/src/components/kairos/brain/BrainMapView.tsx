@@ -7,7 +7,7 @@ import { ANSWER_TONE, ANSWER_WORD, Chip, Dot, Panel, tint } from './brainUi'
 import { localDateTime, relativeTo } from './brainTime'
 
 const AREAS: { area: BrainArea; icon: typeof Eye; blurb: string }[] = [
-  { area: 'Perception', icon: Eye, blurb: 'What Kairos takes in' },
+  { area: 'Perception', icon: Eye, blurb: 'What Vorath takes in' },
   { area: 'Memory', icon: Database, blurb: 'What it keeps' },
   { area: 'Self-model', icon: ScanFace, blurb: 'How it understands you' },
   { area: 'Beliefs & conscience', icon: Scale, blurb: 'What you hold true, and staying honest' },
@@ -19,7 +19,7 @@ export function BrainMapView({ status }: { status: KairosBrainStatus | null }) {
   return (
     <div className="flex flex-col gap-5">
       <p className="text-[12.5px] leading-relaxed text-white/60">
-        Every job the brain routine runs, grouped by the part of Kairos it feeds. The record on the right is the last 7 days.
+        Every job the brain routine runs, grouped by the part of Vorath it feeds. The record on the right is the last 7 days.
       </p>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {AREAS.map(({ area, icon: Icon, blurb }) => {

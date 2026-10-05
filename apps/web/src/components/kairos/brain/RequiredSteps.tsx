@@ -75,7 +75,7 @@ export function BrainStepBody({ status, refreshing, onRefresh, ranBefore }: Step
   return (
     <>
       <p className="text-[12.5px] leading-relaxed text-white/65">
-        One routine on your Claude plan does all of Kairos’s thinking overnight. Claude can’t create it for you, so this
+        One routine on your Claude plan does all of Vorath’s thinking overnight. Claude can’t create it for you, so this
         is the one form to fill in.
       </p>
       <RoutineForm
@@ -132,7 +132,7 @@ export function useRetiredCleared(): [boolean, (v: boolean) => void] {
 export function RetiredStepBody({ cleared, onCleared }: { cleared: boolean; onCleared: (v: boolean) => void }) {
   return (
     <>
-      <Act where="In claude.ai → Routines">delete any of these that are still there. Kairos brain does their work now.</Act>
+      <Act where="In claude.ai → Routines">delete any of these that are still there. Vorath brain does their work now.</Act>
       <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
         {RETIRED_ROUTINE_NAMES.map((name) => (
           <li key={name} className="flex items-center gap-2 text-[12px] font-mono text-white/60">

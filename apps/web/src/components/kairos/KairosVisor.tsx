@@ -164,7 +164,7 @@ export function KairosVisor() {
 
   const headerLabel = useMemo(() => {
     if (composing) return 'New conversation'
-    if (!activeThread) return 'Kairos'
+    if (!activeThread) return 'Vorath'
     const domName = activeThread.summary.dominionName
     return domName ? `${domName} · ${activeThread.summary.title}` : activeThread.summary.title
   }, [composing, activeThread])
@@ -277,7 +277,7 @@ function EmptyState({ onNew }: { onNew: () => void }) {
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
       <Avatar size={72} />
       <div className="space-y-1.5">
-        <h3 className="text-lg font-semibold tracking-wide text-zinc-100">Ask Kairos</h3>
+        <h3 className="text-lg font-semibold tracking-wide text-zinc-100">Ask Vorath</h3>
         <p className="max-w-md text-sm text-zinc-400">
           Your whole memory, one conversation. Pick a past thread on the left, or start a new one.
         </p>

@@ -16,11 +16,11 @@ import { getUserId, ok, fail } from './types'
 export const registerKairosIdeaAtlasTools: RegisterFn = (server) => {
   server.tool(
     'get_kairos_idea_atlas',
-    'Kairos\'s idea atlas: for each active Dominion (plus cross-cutting), which kinds of idea (question, experiment, reframe, make, ritual) at which leap (near/far) he has found, the idea holding each cell, coverage, never-tried cells and the last targets. format "json" (default) or "markdown". Read-only.',
+    'Vorath\'s idea atlas: for each active Dominion (plus cross-cutting), which kinds of idea (question, experiment, reframe, make, ritual) at which leap (near/far) he has found, the idea holding each cell, coverage, never-tried cells and the last targets. format "json" (default) or "markdown". Read-only.',
     {
       format: getKairosIdeaAtlasSchema.shape.format.describe('"json" (default) or "markdown"'),
     },
-    { title: 'Get Kairos Idea Atlas', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'Get Vorath Idea Atlas', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = getKairosIdeaAtlasSchema.safeParse(args)

@@ -188,7 +188,7 @@ describe('sendKairosTestMessage', () => {
   it('sends one plain line to the operator chat — no inbox, no speak', async () => {
     expect(await sendKairosTestMessage()).toEqual({ ok: true })
     expect(sendMessage).toHaveBeenCalledTimes(1)
-    expect(sendMessage).toHaveBeenCalledWith('4242', 'Kairos test — if you can read this, Telegram is connected ✓')
+    expect(sendMessage).toHaveBeenCalledWith('4242', 'Vorath test — if you can read this, Telegram is connected ✓')
     expect(checkRateLimit).toHaveBeenCalledWith('kairos-telegram-test:user-1', expect.any(Object))
   })
 

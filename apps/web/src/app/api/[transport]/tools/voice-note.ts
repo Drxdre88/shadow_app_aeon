@@ -15,12 +15,12 @@ import { getUserId, ok, notFound, fail } from './types'
 export const registerVoiceNoteTools: RegisterFn = (server) => {
   server.tool(
     'kairos_voice_note',
-    'Send the operator\'s voice note (dictation) to Kairos. Use when the operator says "note for Kairos" or dictates a note to Kairos. ' +
+    'Send the operator\'s voice note (dictation) to Vorath (formerly Kairos). Use when the operator says "note for Vorath" (or the old "note for Kairos") or dictates a note to Vorath. ' +
       'Pass their words EXACTLY as transcribed in transcript — no rewording, tidying or summarising beyond removing filler like "um". ' +
       'Put any summary of your own only in claudeSummary. If they name an area, find it with list_dominions and pass its id as dominionId. ' +
-      'The note waits for the operator\'s one-tap confirmation in the Kairos inbox; tell them so.',
+      'The note waits for the operator\'s one-tap confirmation in the Vorath inbox; tell them so.',
     kairosVoiceNoteSchema.shape,
-    { title: 'Kairos Voice Note', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'Vorath Voice Note', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = kairosVoiceNoteSchema.safeParse(args)
@@ -37,7 +37,7 @@ export const registerVoiceNoteTools: RegisterFn = (server) => {
         created: result.created,
         proposalIds: result.proposalIds,
         summaryId: result.summaryId,
-        status: 'waiting for the operator\'s one-tap confirmation in the Kairos inbox',
+        status: 'waiting for the operator\'s one-tap confirmation in the Vorath inbox',
       })
     },
   )

@@ -163,8 +163,8 @@ describe('formatReason', () => {
   })
 
   it('embeds the message into ai_failed when provided', () => {
-    expect(formatReason('ai_failed', 'rate limited')).toBe('Kairos failed: rate limited')
-    expect(formatReason('ai_failed')).toBe('Kairos failed. Try again.')
+    expect(formatReason('ai_failed', 'rate limited')).toBe('Vorath failed: rate limited')
+    expect(formatReason('ai_failed')).toBe('Vorath failed. Try again.')
   })
 
   it('embeds the message into invalid_input when provided', () => {

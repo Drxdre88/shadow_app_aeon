@@ -51,7 +51,7 @@ function KairosPendingBubble({ state }: { state: ReplyWatchState }) {
         )}
         <span>
           {thinking
-            ? 'Kairos is thinking…'
+            ? 'Vorath is thinking…'
             : 'Still thinking — check back in a bit. The reply will appear in this thread.'}
         </span>
       </div>

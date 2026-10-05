@@ -23,7 +23,7 @@ export function renderOwnerModelMarkdown(view: KairosOwnerModelView): string {
     ? `Last card: ${view.lastCard.isoWeek} ${view.lastCard.status} (${view.lastCard.items} items, ${view.lastCard.at.slice(0, 16).replace('T', ' ')}).`
     : 'Last card: none yet.'
   return [
-    "# What Kairos thinks he's carrying",
+    "# What Vorath thinks he's carrying",
     '',
     card,
     `Corrections (30 days): ${view.corrections.last30d}${byAction ? ` (${byAction})` : ''}. Active vetoes: ${view.vetoes}.`,

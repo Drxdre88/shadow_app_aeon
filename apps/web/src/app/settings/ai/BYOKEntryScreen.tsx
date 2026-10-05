@@ -136,11 +136,11 @@ export default function BYOKEntryScreen({ isAdmin, initialCredentials, initialPr
           </div>
 
           <h1 className="text-center text-3xl sm:text-4xl font-light tracking-tight mb-4">
-            A backup key for Kairos.
+            A backup key for Vorath.
           </h1>
 
           <p className="text-center text-[14px] leading-relaxed text-white/55 mb-10 max-w-md mx-auto">
-            Kairos thinks on your Claude Max plan. This key is only a backup: it&apos;s used when a Max
+            Vorath thinks on your Claude Max plan. This key is only a backup: it&apos;s used when a Max
             routine misses a job, and only while the Paid backup switch is on.
           </p>
 

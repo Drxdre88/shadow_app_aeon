@@ -265,7 +265,7 @@ function PaidBackupRow({ paidBackup }: { paidBackup: KairosPaidBackupStatus }) {
           </div>
           <p className="mt-0.5 text-[11.5px] text-white/55">
             {enabled
-              ? `If your Max routine misses a job, Kairos pays your API key to cover it (${plural(paidBackup.paidCallsLast7d, 'time')} in the last 7 days).`
+              ? `If your Max routine misses a job, Vorath pays your API key to cover it (${plural(paidBackup.paidCallsLast7d, 'time')} in the last 7 days).`
               : 'Never uses your API key. A missed job waits for the next run; the 06:00 message falls back to plain text.'}
           </p>
           {error && (
@@ -314,7 +314,7 @@ function NavLink({ onClick, children }: { onClick: () => void; children: React.R
 
 export function StatusSkeleton() {
   return (
-    <div className="flex flex-col gap-5 animate-pulse" aria-busy="true" aria-label="Checking Kairos">
+    <div className="flex flex-col gap-5 animate-pulse" aria-busy="true" aria-label="Checking Vorath">
       <Panel>
         <div className="px-5 py-5 flex flex-col gap-3">
           <div className="h-2.5 w-20 rounded bg-white/[0.08]" />

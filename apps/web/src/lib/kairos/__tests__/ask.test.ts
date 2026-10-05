@@ -611,8 +611,8 @@ describe('card_notes answers', () => {
 
   it('appends a dated Kairos note to the description', () => {
     const at = new Date('2026-09-30T09:00:00Z')
-    expect(appendCardNote(null, 'x', at)).toBe('Notes (via Kairos, 30/09): x')
-    expect(appendCardNote('Old\n', 'x', at)).toBe('Old\n\nNotes (via Kairos, 30/09): x')
+    expect(appendCardNote(null, 'x', at)).toBe('Notes (via Vorath, 30/09): x')
+    expect(appendCardNote('Old\n', 'x', at)).toBe('Old\n\nNotes (via Vorath, 30/09): x')
   })
 
   it('writes three numbered lines back: live cards via atomic append, vaulted card via the vault', async () => {
@@ -632,13 +632,13 @@ describe('card_notes answers', () => {
       }),
     }), { origin: { kind: 'agent', via: 'ask' } })
     expect(appendTaskDescription).toHaveBeenCalledTimes(2)
-    expect(appendTaskDescription).toHaveBeenCalledWith('task-a', 'proj-1', 'Notes (via Kairos, 30/09): prod deploy', 10_000)
-    expect(appendTaskDescription).toHaveBeenCalledWith('task-c', 'proj-1', 'Notes (via Kairos, 30/09): inbox zero', 10_000)
+    expect(appendTaskDescription).toHaveBeenCalledWith('task-a', 'proj-1', 'Notes (via Vorath, 30/09): prod deploy', 10_000)
+    expect(appendTaskDescription).toHaveBeenCalledWith('task-c', 'proj-1', 'Notes (via Vorath, 30/09): inbox zero', 10_000)
     expect(updateVaultDescription).toHaveBeenCalledTimes(1)
     expect(updateVaultDescription).toHaveBeenCalledWith('vault-b', 'proj-1', expect.any(Function))
     const compose = vi.mocked(updateVaultDescription).mock.calls[0]![2]
-    expect(compose(null)).toBe('Notes (via Kairos, 30/09): token bug')
-    expect(compose('Old desc')).toBe('Old desc\n\nNotes (via Kairos, 30/09): token bug')
+    expect(compose(null)).toBe('Notes (via Vorath, 30/09): token bug')
+    expect(compose('Old desc')).toBe('Old desc\n\nNotes (via Vorath, 30/09): token bug')
   })
 
   it('reports vaulted outcomes: written, gone, over-length, and viewer-skipped', async () => {
@@ -673,7 +673,7 @@ describe('card_notes answers', () => {
 
     await answerKairosAsk(USER, ASK_ID, 'The feed deploy to prod.')
 
-    expect(appendTaskDescription).toHaveBeenCalledWith('task-a', 'proj-1', 'Notes (via Kairos, 30/09): The feed deploy to prod.', 10_000)
+    expect(appendTaskDescription).toHaveBeenCalledWith('task-a', 'proj-1', 'Notes (via Vorath, 30/09): The feed deploy to prod.', 10_000)
   })
 
   it('keeps an unparseable answer only as memory', async () => {

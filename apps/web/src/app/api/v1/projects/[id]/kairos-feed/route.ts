@@ -18,7 +18,7 @@ export const PUT = withRateLimit(
 
     const access = await verifyProjectAccess(id, result.id)
     if (!access) return jsonError('Project not found', 404)
-    if (access.role !== 'owner') return jsonError('Only the project owner can change what Kairos watches', 403)
+    if (access.role !== 'owner') return jsonError('Only the project owner can change what Vorath watches', 403)
 
     let body: unknown
     try {

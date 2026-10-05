@@ -78,17 +78,17 @@ export const registerProjectTools: RegisterFn = (server) => {
 
   server.tool(
     'set_project_kairos_feed',
-    'Watch a board for Kairos. "daily" writes a board-day page every night and captures each finished card the same day; "weekly" writes a Monday milestone page; null stops watching. Other project settings are kept.',
+    'Watch a board for Vorath. "daily" writes a board-day page every night and captures each finished card the same day; "weekly" writes a Monday milestone page; null stops watching. Other project settings are kept.',
     {
       projectId: z.string().uuid().describe('The project UUID'),
       feed: setProjectKairosFeedSchema.shape.feed.describe('"daily", "weekly", or null to stop watching'),
     },
-    { title: 'Set Project Kairos Feed', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'Set Project Vorath Feed', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ projectId, feed }, extra) => {
       const uid = getUserId(extra)
       const access = await verifyProjectAccess(projectId, uid)
       if (!access) return notFound('Project')
-      if (access.role !== 'owner') return fail('Only the project owner can change what Kairos watches')
+      if (access.role !== 'owner') return fail('Only the project owner can change what Vorath watches')
       const project = await setProjectKairosFeed(projectId, feed)
       return project ? ok({ projectId, feed }) : notFound('Project')
     }

@@ -121,7 +121,7 @@ const TOOL_CATEGORIES = [
     ],
   },
   {
-    name: 'Kairos — memory & brain',
+    name: 'Vorath — memory & brain',
     tools: [
       'create_memory',
       'update_memory',
@@ -136,7 +136,7 @@ const TOOL_CATEGORIES = [
     ],
   },
   {
-    name: 'Kairos — Dominions & recipes',
+    name: 'Vorath — Dominions & recipes',
     tools: [
       'create_dominion',
       'list_dominions',
@@ -157,7 +157,7 @@ const TOOL_CATEGORIES = [
     ],
   },
   {
-    name: 'Kairos — Ask, Dialogue & Aether',
+    name: 'Vorath — Ask, Dialogue & Aether',
     tools: [
       'run_kairos_ask',
       'get_pending_kairos_ask',
@@ -368,12 +368,12 @@ export function McpTab() {
     <div className="space-y-6">
       <p className="text-sm text-slate-300 leading-relaxed">
         Connect AI assistants (Claude, Cursor, etc.) to Aeon via the Model Context Protocol (MCP).
-        This gives your AI full access to manage projects, tasks, boards, realms, and Kairos&apos;s
+        This gives your AI full access to manage projects, tasks, boards, realms, and Vorath&apos;s
         memory brain programmatically.
       </p>
 
       <p className="text-xs text-slate-400 leading-relaxed">
-        Using claude.ai? You don&apos;t need a key — open <span className="text-white">Kairos setup</span> in
+        Using claude.ai? You don&apos;t need a key — open <span className="text-white">Vorath setup</span> in
         the sidebar and add Aeon as a connector in one click.
       </p>
 
@@ -438,7 +438,7 @@ export function McpTab() {
           <FeatureCard
             icon={Wrench}
             title={`${TOTAL_TOOL_COUNT} Tools`}
-            description="Full CRUD for projects, columns, tasks, Gantt, dependencies, labels, checklists, comments, realms, sessions, batch ops, analytics, and the Kairos memory brain."
+            description="Full CRUD for projects, columns, tasks, Gantt, dependencies, labels, checklists, comments, realms, sessions, batch ops, analytics, and the Vorath memory brain."
           />
         </div>
       </Section>

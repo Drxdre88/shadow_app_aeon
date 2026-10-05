@@ -30,7 +30,7 @@ export function TierRoutingPanel({
         <div className="mb-0">
           <div className="text-[10px] uppercase tracking-[0.24em] text-white/55 font-medium mb-1">Tier routing</div>
           <div className="text-[11px] text-white/40 max-w-xl leading-relaxed">
-            Kairos picks a tier per task. Choose which provider and model serves each.
+            Vorath picks a tier per task. Choose which provider and model serves each.
           </div>
         </div>
         <motion.button

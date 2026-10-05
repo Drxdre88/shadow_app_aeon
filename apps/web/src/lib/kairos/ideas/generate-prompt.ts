@@ -113,7 +113,7 @@ export function hasIdeaSignal(inputs: IdeaGenerateInputs): boolean {
 }
 
 export const IDEA_GENERATE_SYSTEM_PROMPT = [
-  'You are Kairos\'s idea generator for one operator: a practical strategist who proposes small, testable moves grounded in what the operator is actually doing.',
+  'You are Vorath\'s idea generator for one operator: a practical strategist who proposes small, testable moves grounded in what the operator is actually doing.',
   'You work in two steps inside ONE answer:',
   `1. Pick ${IDEA_DIRECTIONS_MIN}–${IDEA_DIRECTIONS_MAX} distinct directions — different angles or areas — deliberately spread across the operator's Dominions and across kinds of move (stop, start, combine, test, simplify). No two directions may be near-duplicates.`,
   `2. Write ${IDEA_CANDIDATES_MIN}–${IDEA_CANDIDATES_MAX} candidate ideas spread across those directions (every direction gets at least one).`,
@@ -171,7 +171,7 @@ export function buildIdeaGeneratePrompt(inputs: IdeaGenerateInputs): string {
   if (beliefs.length) {
     lines.push('', '## Held beliefs (weightiest first)')
     for (const b of beliefs) {
-      const label = b.mind === 'aligned' ? 'you hold' : 'Kairos\'s own view'
+      const label = b.mind === 'aligned' ? 'you hold' : 'Vorath\'s own view'
       lines.push(`- [${b.id}] (${label} · ${dataLine(b.domain, 40)}) ${dataLine(b.claim, CAP.belief)}`)
     }
   }

@@ -42,7 +42,7 @@ describe('ConnectKairosModal', () => {
   it('opens on Setup with exactly five tabs — no separate Connect, Routines, Voice notes or Chat tabs', async () => {
     vi.mocked(getKairosBrainStatus).mockResolvedValue(status())
     render(<ConnectKairosModal isOpen onClose={() => {}} />)
-    expect(await screen.findByText(/required done|Kairos is set up/)).toBeTruthy()
+    expect(await screen.findByText(/required done|Vorath is set up/)).toBeTruthy()
     const names = screen.getAllByRole('tab').map((t) => t.textContent)
     expect(names).toEqual(['Setup', 'Health', 'Brain map', 'Watched', 'How it works'])
     expect(tab(/Setup/).getAttribute('aria-selected')).toBe('true')
@@ -60,7 +60,7 @@ describe('ConnectKairosModal', () => {
   it('opens the brain map and shows a 7-day record', async () => {
     vi.mocked(getKairosBrainStatus).mockResolvedValue(status())
     render(<ConnectKairosModal isOpen onClose={() => {}} />)
-    await screen.findByText(/required done|Kairos is set up/)
+    await screen.findByText(/required done|Vorath is set up/)
     fireEvent.click(tab(/Brain map/))
     expect(await screen.findByText('7/7 on Max')).toBeTruthy()
   })
@@ -73,7 +73,7 @@ describe('ConnectKairosModal', () => {
       unmappedRepos: [],
     })
     render(<ConnectKairosModal isOpen onClose={() => {}} />)
-    await screen.findByText(/required done|Kairos is set up/)
+    await screen.findByText(/required done|Vorath is set up/)
     fireEvent.click(tab(/Watched/))
     expect(await screen.findByText('AS Sprint')).toBeTruthy()
   })
@@ -100,7 +100,7 @@ describe('ConnectKairosModal', () => {
     vi.mocked(getKairosBrainStatus).mockRejectedValueOnce(new Error('boom')).mockResolvedValue(status())
     render(<ConnectKairosModal isOpen onClose={() => {}} />)
     fireEvent.click(await screen.findByText('Try again'))
-    expect(await screen.findByText(/required done|Kairos is set up/)).toBeTruthy()
+    expect(await screen.findByText(/required done|Vorath is set up/)).toBeTruthy()
   })
 })
 

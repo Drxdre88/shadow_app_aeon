@@ -156,7 +156,7 @@ async function writeAsk(job: ThinkingJobRow, c: AgendaDueContext, text: string, 
 
 async function writeMessage(job: ThinkingJobRow, c: AgendaDueContext, text: string, answeredBy: ThinkingAnsweredBy): Promise<AgendaResult> {
   const outcome = await deliverKairosSpeak(job.userId, {
-    title: `Kairos · Horae A${c.seq}`,
+    title: `Vorath · Horae A${c.seq}`,
     message: text,
     kind: 'notify',
     urgency: 'normal',

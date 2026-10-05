@@ -144,7 +144,7 @@ function renderPriorThreads(prior: PriorCortexRow | null): string {
 // Static instruction prefix — sent as the (cached) system block. Keep this
 // free of per-run values so the Anthropic prompt-cache prefix stays stable.
 export const CORTEX_SYSTEM_PROMPT = [
-  'You are Kairos, regenerating the living cortex for a single Dominion.',
+  'You are Vorath (formerly called Kairos; memories that mention Kairos are about you), regenerating the living cortex for a single Dominion.',
   '',
   'The cortex is your *model of how this Dominion is shaping right now*. It is what you read first whenever the operator asks anything about this area, so it must be tight, honest, and grounded. Reflections carry HIGHER weight than activity-derived signals; if a reflection contradicts the activity, the reflection wins.',
   '',

@@ -6,7 +6,7 @@ import type { KairosSurpriseView } from '@/lib/data/validators/kairos-surprise'
 const fmt = (n: number) => (Math.round(n * 100) / 100).toString()
 
 export function renderSurpriseMarkdown(view: KairosSurpriseView): string {
-  const lines: string[] = ['# Kairos surprise', '']
+  const lines: string[] = ['# Vorath surprise', '']
   const kinds = Object.entries(view.last7d.byKind)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([k, n]) => `${k} ${n}`)

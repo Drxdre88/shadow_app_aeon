@@ -14,9 +14,9 @@ import { getUserId, ok, fail } from './types'
 export const registerKairosPromiseTools: RegisterFn = (server) => {
   server.tool(
     'list_kairos_promises',
-    'List Kairos\'s dated promises by P-number (P3 …): outcome, due date (London), status and how each is checked. scope "open" (default) or "all" to include the closed history. Read-only — only the owner can mark a promise kept, dropped or re-dated.',
+    'List Vorath\'s dated promises by P-number (P3 …): outcome, due date (London), status and how each is checked. scope "open" (default) or "all" to include the closed history. Read-only — only the owner can mark a promise kept, dropped or re-dated.',
     { scope: listKairosPromisesSchema.shape.scope.describe('"open" (default) or "all"') },
-    { title: 'List Kairos Promises', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'List Vorath Promises', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = listKairosPromisesSchema.safeParse(args)

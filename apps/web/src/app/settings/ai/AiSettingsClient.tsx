@@ -117,7 +117,7 @@ export default function AiSettingsClient({ initialCredentials, initialPreference
             </div>
             <h1 className="text-3xl font-light tracking-tight">Wire your providers.</h1>
             <p className="text-[13px] text-white/45 mt-2 max-w-xl leading-relaxed">
-              Bring your own keys. Pick which model runs each tier. Kairos picks up the change the next time it thinks.
+              Bring your own keys. Pick which model runs each tier. Vorath picks up the change the next time it thinks.
             </p>
           </div>
 

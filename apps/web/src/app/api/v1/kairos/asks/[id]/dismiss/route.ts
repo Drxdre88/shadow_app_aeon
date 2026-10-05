@@ -20,7 +20,7 @@ export const POST = withRateLimit(
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
     const res = await dismissKairosAsk(result.id, parsed.data.askId)
-    if ('error' in res) return jsonError('Open Kairos question not found', 404)
+    if ('error' in res) return jsonError('Open Vorath question not found', 404)
     return jsonData({ dismissed: true, id: res.id })
   }),
   API_WRITE_LIMIT

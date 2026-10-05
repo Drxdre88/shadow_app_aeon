@@ -152,7 +152,7 @@ describe('character_check plan', () => {
     for (const i of items) expect(spec.input.prompt).toContain(`[${i.id}]`)
     for (const ref of ['mem-r0', 'msg-a0', 'mem-v0', 'mem-wr', 'mem-x']) expect(spec.input.prompt).not.toContain(ref)
     expect(spec.input.prompt).not.toMatch(/exemplar|reflection/i)
-    expect(spec.input.system).not.toMatch(/Kairos|conscience/i)
+    expect(spec.input.system).not.toMatch(/Kairos|Vorath|conscience/i)
     expect(spec.input.prompt).not.toContain('Should I ship it?')
     expect(spec.input.context).toMatchObject({ isoWeek: '2026-W40', toneFlags: { flagged: 1, total: 4 } })
     expect((await planOne()).input).toEqual(spec.input)

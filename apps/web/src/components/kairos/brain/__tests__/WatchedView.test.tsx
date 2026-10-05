@@ -26,7 +26,7 @@ const OVERVIEW: KairosWatchedOverview = {
 }
 
 function row(name: string) {
-  return screen.getByRole('tablist', { name: `Kairos watch for ${name}` })
+  return screen.getByRole('tablist', { name: `Vorath watch for ${name}` })
 }
 
 beforeEach(() => {

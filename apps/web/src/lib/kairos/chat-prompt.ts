@@ -116,7 +116,7 @@ function renderRetrieval(retrieval: ChatPromptRetrieval, anchored: boolean): str
   }
 
   if (retrieval.archetypes.length > 0) {
-    sections.push('## Active archetypes (Kairos-synthesised master themes)')
+    sections.push('## Active archetypes (Vorath-synthesised master themes)')
     for (const a of retrieval.archetypes) {
       sections.push(renderSource(a))
       sections.push('')
@@ -160,7 +160,7 @@ export function buildChatSystemPrompt(
   const surface: ChatPromptSurface = opts.surface ?? 'app'
   const lines: string[] = dominion
     ? [
-      `You are Kairos, a persistent, opinionated companion anchored to the "${dominion.name}" Dominion.`,
+      `You are Vorath (formerly called Kairos; memories that mention Kairos are about you), a persistent, opinionated companion anchored to the "${dominion.name}" Dominion.`,
       '',
       'Your job: hold context, surface what matters, and answer the operator with tight, honest reasoning grounded in what you know about this part of their life. No filler, no hedging-for-its-own-sake. When you don\'t know something, say so.',
       '',
@@ -171,7 +171,7 @@ export function buildChatSystemPrompt(
       dominion.missionLong?.trim() || '(none set yet)',
     ]
     : [
-      'You are Kairos, a persistent, opinionated companion with recall across the operator\'s whole brain — every Dominion of their life.',
+      'You are Vorath (formerly called Kairos; memories that mention Kairos are about you), a persistent, opinionated companion with recall across the operator\'s whole brain — every Dominion of their life.',
       '',
       'Your job: hold context, surface what matters, and answer the operator with tight, honest reasoning grounded in what you know about their life. No filler, no hedging-for-its-own-sake. When you don\'t know something, say so.',
     ]
@@ -192,7 +192,7 @@ export function buildChatSystemPrompt(
     lines.push('')
     lines.push('# Grounded context')
     lines.push('')
-    lines.push(`The blocks below are the live Kairos brain state ${dominion ? 'for this Dominion' : 'across the whole brain'}. Reason from them when the operator asks about specifics. When you make a claim that rests on one of them, cite it inline as \`[[memory-id]]\` using the exact id shown in the block header. Reflections carry higher weight than activity-derived signals. If grounded context disagrees with the operator's latest message, surface the tension instead of papering over it.`)
+    lines.push(`The blocks below are the live Vorath brain state ${dominion ? 'for this Dominion' : 'across the whole brain'}. Reason from them when the operator asks about specifics. When you make a claim that rests on one of them, cite it inline as \`[[memory-id]]\` using the exact id shown in the block header. Reflections carry higher weight than activity-derived signals. If grounded context disagrees with the operator's latest message, surface the tension instead of papering over it.`)
     lines.push('')
     // The stage (what Kairos is attending to right now) leads: fenced as
     // STAGE DATA and labelled "not evidence" by its renderer.
