@@ -162,7 +162,7 @@ export async function listMemories(userId: string, opts: ListOpts = {}) {
   }
   if (opts.type) {
     const types = Array.isArray(opts.type) ? opts.type : [opts.type]
-    conditions.push(sql`${memories.type} = ANY(${types})`)
+    conditions.push(inArray(memories.type, types))
   }
   if (opts.realmId)   conditions.push(eq(memories.realmId, opts.realmId))
   if (opts.projectId) conditions.push(eq(memories.projectId, opts.projectId))
@@ -542,7 +542,7 @@ export async function searchMemoriesFts(userId: string, input: SearchMemoriesInp
   }
   if (input.source) {
     const sources = Array.isArray(input.source) ? input.source : [input.source]
-    conditions.push(sql`${memories.source} = ANY(${sources})`)
+    conditions.push(inArray(memories.source, sources))
   }
   if (input.realmId)    conditions.push(eq(memories.realmId, input.realmId))
   if (input.projectId)  conditions.push(eq(memories.projectId, input.projectId))
