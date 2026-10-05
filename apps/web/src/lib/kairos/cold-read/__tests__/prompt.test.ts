@@ -19,14 +19,14 @@ describe('cold read prompt', () => {
     expect(prompt).toContain('I\'m going to quit Monday.')
     expect(prompt).not.toContain('[[')
     expect(prompt).not.toContain('```')
-    expect(prompt).not.toContain('[Kairos]')
+    expect(prompt).not.toContain('[Vorath]')
     expect(prompt.indexOf('I hate my job')).toBeLessThan(prompt.indexOf('quit Monday'))
   })
 
   it('uses a neutral adviser system prompt with no persona, profile or conscience', () => {
     expect(COLD_READ_SYSTEM_PROMPT).toContain('independent adviser')
     expect(COLD_READ_SYSTEM_PROMPT).toContain('A person')
-    for (const banned of ['Kairos', 'constitution', 'belief', 'Dominion', 'self-model', 'memory']) {
+    for (const banned of ['Kairos', 'Vorath', 'constitution', 'belief', 'Dominion', 'self-model', 'memory']) {
       expect(COLD_READ_SYSTEM_PROMPT).not.toContain(banned)
     }
   })

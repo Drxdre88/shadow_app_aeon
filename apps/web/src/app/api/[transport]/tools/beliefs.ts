@@ -13,7 +13,7 @@ import { getUserId, ok, fail } from './types'
 export const registerBeliefTools: RegisterFn = (server) => {
   server.tool(
     'list_beliefs',
-    'List Kairos belief-ledger entries: the ALIGNED mind (claims extracted from the operator\'s own words) and Kairos\'s OWN mind (beliefs it formed from engine promotions). Each has a claim, domain, reasons, falsifier, provenance memory ids, status and confidence. Defaults to held beliefs, newest first.',
+    'List Vorath belief-ledger entries: the ALIGNED mind (claims extracted from the operator\'s own words) and Vorath\'s OWN mind (beliefs it formed from engine promotions). Each has a claim, domain, reasons, falsifier, provenance memory ids, status and confidence. Defaults to held beliefs, newest first.',
     {
       mind: z.enum(['aligned', 'own']).optional().describe('Only this mind'),
       domain: z.string().optional().describe('Only this domain (Dominion name or "general")'),
@@ -32,7 +32,7 @@ export const registerBeliefTools: RegisterFn = (server) => {
 
   server.tool(
     'get_mind_comparison',
-    'Get the latest weekly comparison of the aligned mind vs Kairos\'s own mind: same-topic belief pairs labelled agree/diverge with a note, plus notable aligned-only and own-only beliefs. Returns null comparison when none has run yet.',
+    'Get the latest weekly comparison of the aligned mind vs Vorath\'s own mind: same-topic belief pairs labelled agree/diverge with a note, plus notable aligned-only and own-only beliefs. Returns null comparison when none has run yet.',
     {},
     { title: 'Get Mind Comparison', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {

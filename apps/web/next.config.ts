@@ -36,6 +36,9 @@ const nextConfig: NextConfig = {
       { source: '/.well-known/openid-configuration', destination: '/api/well-known/oauth-authorization-server' },
       { source: '/.well-known/oauth-protected-resource', destination: '/api/well-known/oauth-protected-resource' },
       { source: '/.well-known/oauth-protected-resource/:path*', destination: '/api/well-known/oauth-protected-resource' },
+      // Vorath rename (05/10/2026): /api/v1/vorath/* serves the /api/v1/kairos/*
+      // handlers unchanged; auth is enforced inside each route handler.
+      { source: '/api/v1/vorath/:path*', destination: '/api/v1/kairos/:path*' },
     ]
   },
 }

@@ -14,9 +14,9 @@ import { getUserId, ok, fail } from './types'
 export const registerKairosPredictionTools: RegisterFn = (server) => {
   server.tool(
     'list_kairos_predictions',
-    'List Kairos\'s dated predictions by R-number (R3 …): claim, stated probability, due date (London), status and how each is checked, plus his 90-day track record (hit rate, Brier score, over-confidence; shown once 5 are settled). scope "open" (default) or "all" to include settled history. Read-only — only the owner\'s board activity or verdict settles a prediction.',
+    'List Vorath\'s dated predictions by R-number (R3 …): claim, stated probability, due date (London), status and how each is checked, plus his 90-day track record (hit rate, Brier score, over-confidence; shown once 5 are settled). scope "open" (default) or "all" to include settled history. Read-only — only the owner\'s board activity or verdict settles a prediction.',
     { scope: listKairosPredictionsSchema.shape.scope.describe('"open" (default) or "all"') },
-    { title: 'List Kairos Predictions', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'List Vorath Predictions', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = listKairosPredictionsSchema.safeParse(args)

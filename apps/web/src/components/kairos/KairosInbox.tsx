@@ -311,7 +311,7 @@ export function KairosInbox() {
       dropAnswer(askId)
       await load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to answer Kairos')
+      setError(err instanceof Error ? err.message : 'Failed to answer Vorath')
     } finally {
       setWorkingId(null)
     }
@@ -378,11 +378,12 @@ export function KairosInbox() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label={`Kairos inbox${count ? `, ${count} pending` : ''}`}
-        title="Kairos inbox"
-        className="relative flex items-center justify-center w-7 h-7 rounded-md bg-white/[0.04] border border-white/[0.06] text-white/40 hover:text-white/85 hover:bg-white/[0.08] transition-colors"
+        aria-label={`Vorath inbox${count ? `, ${count} pending` : ''}`}
+        title="Vorath inbox"
+        className="relative flex items-center gap-1.5 h-7 px-2 rounded-md bg-white/[0.04] border border-white/[0.06] text-white/55 hover:text-white/85 hover:bg-white/[0.08] transition-colors"
       >
         <Bell className="w-3.5 h-3.5" />
+        <span aria-hidden="true" className="text-[10px] uppercase tracking-[0.2em]">Inbox</span>
         {count > 0 && (
           <span
             className="absolute -right-1.5 -top-1.5 min-w-4 h-4 px-1 rounded-full text-[9px] leading-4 font-semibold text-white"
@@ -402,7 +403,7 @@ export function KairosInbox() {
             <>
               <motion.button
                 type="button"
-                aria-label="Close Kairos inbox"
+                aria-label="Close Vorath inbox"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -424,15 +425,15 @@ export function KairosInbox() {
                     <Inbox className="w-4 h-4 text-violet-300" />
                     <div>
                       <h2 id="kairos-inbox-title" className="text-[10px] uppercase tracking-[0.22em] text-white/80">
-                        Kairos inbox
+                        Vorath inbox
                       </h2>
-                      <p className="text-[10px] text-white/35 mt-0.5">What Kairos wants your attention on</p>
+                      <p className="text-[10px] text-white/35 mt-0.5">What Vorath wants your attention on</p>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setOpen(false)}
-                    aria-label="Close Kairos inbox"
+                    aria-label="Close Vorath inbox"
                     className="p-1.5 rounded-md text-white/40 hover:text-white hover:bg-white/[0.06]"
                   >
                     <X className="w-4 h-4" />
@@ -453,7 +454,7 @@ export function KairosInbox() {
                     <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] px-4 py-8 text-center">
                       <Check className="w-5 h-5 text-emerald-300/80 mx-auto mb-2" />
                       <p className="text-[12px] text-white/65">Nothing needs your attention.</p>
-                      <p className="text-[10px] text-white/30 mt-1">Kairos will surface asks and proposals here.</p>
+                      <p className="text-[10px] text-white/30 mt-1">Vorath will surface asks and proposals here.</p>
                     </div>
                   ) : (
                     <div className="flex flex-col gap-5">
@@ -481,7 +482,7 @@ export function KairosInbox() {
                                     rows={3}
                                     maxLength={10_000}
                                     aria-label={`Answer Q${ask.seq}`}
-                                    placeholder="Answer Kairos…"
+                                    placeholder="Answer Vorath…"
                                     className="mt-3 w-full resize-none rounded-lg bg-black/20 border border-white/[0.08] px-3 py-2 text-[12px] leading-relaxed text-white/85 placeholder:text-white/30 outline-none focus:border-violet-400/35"
                                   />
                                   <div className="mt-2 flex justify-end gap-2">
@@ -517,7 +518,7 @@ export function KairosInbox() {
                       {notifies.length > 0 && (
                         <section>
                           <div className="flex items-center gap-1.5 mb-2 text-[10px] uppercase tracking-[0.2em] text-white/45">
-                            <Bell className="w-3 h-3" /> Kairos says · {notifies.length}
+                            <Bell className="w-3 h-3" /> Vorath says · {notifies.length}
                           </div>
                           <ul className="flex flex-col gap-2">
                             {notifies.map((notify) => {

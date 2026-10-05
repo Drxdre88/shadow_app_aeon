@@ -66,7 +66,7 @@ describe('KairosMessageStream pending bubble', () => {
     const { rerender } = render(<KairosMessageStream messages={[msg(1, 'user', 'q')]} scrollRef={ref} />)
     expect(screen.queryByRole('status')).toBeNull()
     rerender(<KairosMessageStream messages={[msg(1, 'user', 'q')]} scrollRef={ref} replyState="thinking" />)
-    expect(screen.getByRole('status').textContent).toContain('Kairos is thinking…')
+    expect(screen.getByRole('status').textContent).toContain('Vorath is thinking…')
     rerender(<KairosMessageStream messages={[msg(1, 'user', 'q')]} scrollRef={ref} replyState="stale" />)
     expect(screen.getByRole('status').textContent).toMatch(/Still thinking — check back/)
   })
@@ -80,7 +80,7 @@ describe('KairosVisor — Max-plan reply polling', () => {
     const box = screen.getByPlaceholderText(/Reply\./)
     fireEvent.change(box, { target: { value: 'status of hydra?' } })
     fireEvent.keyDown(box, { key: 'Enter', ctrlKey: true })
-    await screen.findByText('Kairos is thinking…')
+    await screen.findByText('Vorath is thinking…')
     return box as HTMLTextAreaElement
   }
 
@@ -100,14 +100,14 @@ describe('KairosVisor — Max-plan reply polling', () => {
     const callsBeforePoll = vi.mocked(loadKairosThread).mock.calls.length
     await act(async () => { await vi.advanceTimersByTimeAsync(REPLY_POLL_MS) })
     expect(vi.mocked(loadKairosThread).mock.calls.length).toBe(callsBeforePoll + 1)
-    expect(screen.getByText('Kairos is thinking…')).toBeTruthy()
+    expect(screen.getByText('Vorath is thinking…')).toBeTruthy()
 
     vi.mocked(loadKairosThread).mockResolvedValue(loaded([...sent, msg(4, 'assistant', 'Hydra is green.')]))
     await act(async () => { await vi.advanceTimersByTimeAsync(REPLY_POLL_MS) })
     await flush()
 
     expect(await screen.findByText('Hydra is green.')).toBeTruthy()
-    expect(screen.queryByText('Kairos is thinking…')).toBeNull()
+    expect(screen.queryByText('Vorath is thinking…')).toBeNull()
 
     const callsAfterReply = vi.mocked(loadKairosThread).mock.calls.length
     await act(async () => { await vi.advanceTimersByTimeAsync(REPLY_POLL_MS * 3) })

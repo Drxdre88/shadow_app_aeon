@@ -55,7 +55,7 @@ export const CHAT_SUPERSEDED_PREFIX = 'superseded:'
 export const CHAT_WATCHDOG_PREFIX = 'chat-watchdog:'
 
 export const CHAT_REPLY_PENDING_MESSAGE =
-  'Kairos is still answering this message — give him a minute.'
+  'Vorath is still answering this message — give him a minute.'
 
 // Said instead of a paid-key answer when the routine missed the turn and the
 // owner has switched the paid backup off.

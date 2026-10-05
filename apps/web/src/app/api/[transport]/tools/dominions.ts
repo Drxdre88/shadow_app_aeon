@@ -30,14 +30,14 @@ import { getUserId, ok, notFound, fail } from './types'
 export const registerDominionTools: RegisterFn = (server) => {
   server.tool(
     'create_dominion',
-    'Create a Dominion — a user-scoped top-level grouping above Project for the Kairos memory layer; assign repos so Claude session captures auto-resolve their Dominion.',
+    'Create a Dominion — a user-scoped top-level grouping above Project for the Vorath memory layer; assign repos so Claude session captures auto-resolve their Dominion.',
     {
       name:        z.string().min(1).max(100).describe('Display name for the Dominion'),
       color:       z.string().max(30).optional().describe('Color token, e.g. "purple"'),
       icon:        z.string().max(50).optional().describe('Icon identifier'),
       sortOrder:   z.number().int().optional().describe('Sort position among Dominions'),
-      vision:      z.string().max(4000).nullable().optional().describe('Long-form WHAT (Kairos Phase 1 body)'),
-      missionLong: z.string().max(8000).nullable().optional().describe('Long-form HOW (Kairos Phase 1 body)'),
+      vision:      z.string().max(4000).nullable().optional().describe('Long-form WHAT (Vorath Phase 1 body)'),
+      missionLong: z.string().max(8000).nullable().optional().describe('Long-form HOW (Vorath Phase 1 body)'),
     },
     { title: 'Create Dominion', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
@@ -87,7 +87,7 @@ export const registerDominionTools: RegisterFn = (server) => {
 
   server.tool(
     'update_dominion',
-    'Update an existing Dominion. Includes the Kairos body fields (vision, missionLong) so the Briefer has standing context. Pass archivedAt to soft-delete (archived Dominions are skipped by the Briefer).',
+    'Update an existing Dominion. Includes the Vorath body fields (vision, missionLong) so the Briefer has standing context. Pass archivedAt to soft-delete (archived Dominions are skipped by the Briefer).',
     {
       dominionId:  z.string().uuid().describe('Dominion UUID to update'),
       name:        z.string().min(1).max(100).optional(),
@@ -142,7 +142,7 @@ export const registerDominionTools: RegisterFn = (server) => {
 
   server.tool(
     'create_objective',
-    'Add a concrete objective to a Dominion. Objectives are the trackable goals the Briefer references — e.g. "Ship Kairos Phase 1 by EOM". Status defaults to "active".',
+    'Add a concrete objective to a Dominion. Objectives are the trackable goals the Briefer references — e.g. "Ship Vorath Phase 1 by EOM". Status defaults to "active".',
     {
       dominionId:  z.string().uuid(),
       title:       z.string().min(1).max(255),

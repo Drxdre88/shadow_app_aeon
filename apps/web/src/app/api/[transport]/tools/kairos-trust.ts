@@ -12,12 +12,12 @@ import { getUserId, ok, fail } from './types'
 export const registerKairosTrustTools: RegisterFn = (server) => {
   server.tool(
     'get_kairos_trust',
-    'How far to trust Kairos in each area (Dominion or prediction topic), from the last 90 days: settled calls with calibration, plans the owner kept that Kairos doubted and who was right, goals taken / landed / missed (vetoes shown, not scored), goal promises kept, and a level (too early / check me / second opinion / lean on me) with a one-line statement. Ideas and recent corrections are shown for context only. format "json" (default) or "markdown"; optional area (Dominion name, topic label or key). Read-only.',
+    'How far to trust Vorath in each area (Dominion or prediction topic), from the last 90 days: settled calls with calibration, plans the owner kept that Vorath doubted and who was right, goals taken / landed / missed (vetoes shown, not scored), goal promises kept, and a level (too early / check me / second opinion / lean on me) with a one-line statement. Ideas and recent corrections are shown for context only. format "json" (default) or "markdown"; optional area (Dominion name, topic label or key). Read-only.',
     {
       format: getKairosTrustSchema.shape.format.describe('"json" (default) or "markdown"'),
       area: getKairosTrustSchema.shape.area.describe('Optional Dominion name, topic label (e.g. "delivery & timing") or area key'),
     },
-    { title: 'Get Kairos Trust', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'Get Vorath Trust', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = getKairosTrustSchema.safeParse(args)

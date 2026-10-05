@@ -72,8 +72,8 @@ describe('buildCharacterPrompt', () => {
 
   it('the system prompt is a neutral editor, not the persona, and has no conscience block', () => {
     expect(CHARACTER_SYSTEM_PROMPT).toContain('You are an editor rating short texts against a fixed style rubric.')
-    expect(CHARACTER_SYSTEM_PROMPT).not.toMatch(/Kairos|conscience/i)
-    expect(prompt).not.toMatch(/Kairos|conscience/i)
+    expect(CHARACTER_SYSTEM_PROMPT).not.toMatch(/Kairos|Vorath|conscience/i)
+    expect(prompt).not.toMatch(/Kairos|Vorath|conscience/i)
   })
 })
 

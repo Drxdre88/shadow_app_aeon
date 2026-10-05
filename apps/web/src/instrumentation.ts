@@ -4,8 +4,17 @@
 // to FTS-only. Never throws — embeddings-disabled is a supported, graceful
 // mode, not a fatal error.
 
+import { applyMindEnvAliases } from '@/lib/env/mind-env-alias'
+
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return
+
+  // Vorath rename (05/10/2026): owners may set VORATH_X instead of KAIROS_X.
+  // Copy them onto the KAIROS_* names the code reads before anything else runs.
+  const aliased = applyMindEnvAliases(process.env)
+  if (aliased.length > 0) {
+    console.info(`[vorath:instrumentation] VORATH_* env aliased onto ${aliased.join(', ')}`)
+  }
 
   // Repair `Response.json` (2026-07-18): Next's node server swaps
   // `globalThis.Response` for a lazy wrapper but leaves undici's `json` static

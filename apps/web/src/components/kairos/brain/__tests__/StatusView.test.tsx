@@ -37,7 +37,7 @@ describe('StatusView — Paid backup switch', () => {
     renderView(status())
     const sw = screen.getByRole('switch', { name: 'Paid backup' })
     expect(sw.getAttribute('aria-checked')).toBe('true')
-    expect(screen.getByText(/Kairos pays your API key to cover it \(4 times in the last 7 days\)/)).toBeTruthy()
+    expect(screen.getByText(/Vorath pays your API key to cover it \(4 times in the last 7 days\)/)).toBeTruthy()
   })
 
   it('off: says the key is never used', () => {
@@ -101,16 +101,16 @@ describe('StatusView — pulse routine (daytime thinking)', () => {
 
   it('is hidden while daytime thinking is off (or absent from older payloads)', () => {
     renderView(status({ routines: [...brainChat, { id: 'pulse', lastClaimAt: null, state: 'off' }] }))
-    expect(screen.queryByText('Kairos pulse')).toBeNull()
+    expect(screen.queryByText('Vorath pulse')).toBeNull()
     cleanup()
     renderView(status())
-    expect(screen.queryByText('Kairos pulse')).toBeNull()
-    expect(screen.getByText('Kairos brain')).toBeTruthy()
+    expect(screen.queryByText('Vorath pulse')).toBeNull()
+    expect(screen.getByText('Vorath brain')).toBeTruthy()
   })
 
   it('shows its own row once switched on', () => {
     renderView(status({ routines: [...brainChat, { id: 'pulse', lastClaimAt: '2026-10-02T06:10:00.000Z', state: 'live' }] }))
-    expect(screen.getByText('Kairos pulse')).toBeTruthy()
+    expect(screen.getByText('Vorath pulse')).toBeTruthy()
   })
 })
 

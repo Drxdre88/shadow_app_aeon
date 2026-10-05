@@ -53,7 +53,7 @@ function dataLine(s: string, max: number): string {
 }
 
 function mindLabel(mind: ConscienceBelief['mind']): string {
-  return mind === 'aligned' ? 'you hold' : "Kairos's own view"
+  return mind === 'aligned' ? 'you hold' : "Vorath's own view"
 }
 
 export function renderConscienceBlock(input: ConscienceInput): string {
@@ -92,7 +92,7 @@ export function renderConscienceBlock(input: ConscienceInput): string {
   used += body.join('\n').length + 1
 
   if (beliefs.length > 0) {
-    const legend = 'Held beliefs, weightiest first ("you hold" = the operator\'s own belief; "Kairos\'s own view" = your independent view):'
+    const legend = 'Held beliefs, weightiest first ("you hold" = the operator\'s own belief; "Vorath\'s own view" = your independent view):'
     const lines: string[] = []
     let beliefChars = legend.length + 1
     for (const b of beliefs) {

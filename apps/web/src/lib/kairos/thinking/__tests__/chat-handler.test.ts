@@ -156,7 +156,7 @@ describe('chat job spec', () => {
     const { prompt } = renderChatJobInput(built)
     expect(prompt.indexOf('earlier question')).toBeLessThan(prompt.indexOf('earlier answer'))
     expect(prompt.trimEnd().endsWith('status of hydra?')).toBe(true)
-    expect(prompt).toContain('[Kairos]')
+    expect(prompt).toContain('[Vorath]')
   })
 
   it('is never planned by the queue', async () => {

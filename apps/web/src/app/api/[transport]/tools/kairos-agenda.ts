@@ -13,9 +13,9 @@ import { getUserId, ok, fail } from './types'
 export const registerKairosAgendaTools: RegisterFn = (server) => {
   server.tool(
     'list_kairos_agenda',
-    'List Horae, Kairos\'s agenda of self-booked check-ins, by A-number (A2 …): what he will check, when it is due (London), status and what came of it. scope "open" (default) or "all" to include the closed history. Read-only — only the owner can cancel an item.',
+    'List Horae, Vorath\'s agenda of self-booked check-ins, by A-number (A2 …): what he will check, when it is due (London), status and what came of it. scope "open" (default) or "all" to include the closed history. Read-only — only the owner can cancel an item.',
     { scope: listKairosAgendaSchema.shape.scope.describe('"open" (default) or "all"') },
-    { title: 'List Kairos Agenda (Horae)', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'List Vorath Agenda (Horae)', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = listKairosAgendaSchema.safeParse(args)

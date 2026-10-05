@@ -271,7 +271,7 @@ describe('sendKairosSpeak', () => {
     await sendKairosSpeak({ memoryId: 'm1', title: 'Q', message: 'What now?', kind: 'question' })
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
-    expect(body.reply_markup.inline_keyboard).toEqual([[{ text: 'Open in Aeon', url: 'https://aeon.example/kairos' }]])
+    expect(body.reply_markup.inline_keyboard).toEqual([[{ text: 'Open in Aeon', url: 'https://aeon.example/vorath' }]])
   })
 
   it('attaches the keyboard only to the last chunk of a long message', async () => {

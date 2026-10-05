@@ -16,14 +16,14 @@ const MARKDOWN_MAX_CHARS = 12_000
 export const registerKairosTodayTools: RegisterFn = (server) => {
   server.tool(
     'get_kairos_today',
-    'What happened across Kairos\'s channels in the last hours (web chat, Telegram, Triad, MCP use, voice, inbox, asks, his own notes): who said what, oldest first. speaker "owner" = the owner\'s own words; relayed=true = an agent reported them. hours 1-36 (default 24), optional channel filter, limit 1-200 (default 100), format "json" (default) or "markdown". Read-only.',
+    'What happened across the channels of Vorath (formerly Kairos) in the last hours (web chat, Telegram, Triad, MCP use, voice, inbox, asks, his own notes): who said what, oldest first. speaker "owner" = the owner\'s own words; relayed=true = an agent reported them. hours 1-36 (default 24), optional channel filter, limit 1-200 (default 100), format "json" (default) or "markdown". Read-only.',
     {
       hours: getKairosTodaySchema.shape.hours.describe('Window in hours, 1-36 (default 24)'),
       channel: getKairosTodaySchema.shape.channel.describe(`One of ${TODAY_CHANNELS.join(', ')}`),
       limit: getKairosTodaySchema.shape.limit.describe('Max entries, 1-200 (default 100)'),
       format: getKairosTodaySchema.shape.format.describe('"json" (default) or "markdown"'),
     },
-    { title: 'Get Kairos Today', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'Get Vorath Today', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = getKairosTodaySchema.safeParse(args)

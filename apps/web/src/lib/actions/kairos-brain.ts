@@ -1,6 +1,7 @@
 'use server'
 
 import { headers } from 'next/headers'
+import { MIND_NAME } from '@/lib/kairos/identity'
 import { auth } from '@/lib/auth'
 import { listBrainJobsSince, summariseBrainStatus, summariseChatLatency, countPaidBackupCalls, getSetupSignals, BRAIN_STATUS_WINDOW_MS } from '@/lib/data/brain-status'
 import { checkRateLimit } from '@/lib/api/rateLimit'
@@ -118,7 +119,7 @@ function isKairosOperator(userId: string, isAdmin: boolean): boolean {
   return operatorUserId ? operatorUserId === userId : isAdmin
 }
 
-const KAIROS_TEST_MESSAGE = 'Kairos test — if you can read this, Telegram is connected ✓'
+const KAIROS_TEST_MESSAGE = `${MIND_NAME} test — if you can read this, Telegram is connected ✓`
 // A test button, not a speak: no inbox row, no reply gate, no cadence budget —
 // so it gets its own small limit instead of the speak throttle.
 const TEST_MESSAGE_LIMIT = { windowMs: 60_000, maxRequests: 3 }
@@ -130,7 +131,7 @@ export async function sendKairosTestMessage(): Promise<{ ok: boolean; error?: st
   const userId = await requireAuth()
   const session = await auth()
   if (!isKairosOperator(userId, session?.user?.role === 'admin')) {
-    return { ok: false, error: 'Only the Kairos operator can send a Telegram test.' }
+    return { ok: false, error: `Only the ${MIND_NAME} operator can send a Telegram test.` }
   }
   const chatId = process.env.TELEGRAM_OPERATOR_CHAT_ID
   if (!telegramConfigured() || !chatId) {

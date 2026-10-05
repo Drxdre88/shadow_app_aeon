@@ -13,24 +13,24 @@ export function KairosGuideContent({ onNavigate }: { onNavigate?: (view: BrainVi
       >
         <h3 className="text-[17px] font-semibold text-white">Your second memory</h3>
         <p className="mt-1.5 text-[13px] leading-relaxed text-white/70">
-          Kairos keeps what matters from your work and your words, thinks about it overnight, and talks to you once a
+          Vorath keeps what matters from your work and your words, thinks about it overnight, and talks to you once a
           morning. You set him up once; after that he runs on his own.
         </p>
       </div>
 
       <Section title="The night">
         <P>
-          One routine — <b className="text-white/90 font-medium">Kairos brain</b> — runs on your Claude plan every hour;
+          One routine — <b className="text-white/90 font-medium">Vorath brain</b> — runs on your Claude plan every hour;
           its main work happens between 01:00 and 07:00 UTC. It works through a short queue of thinking: yesterday’s chats, the patterns in each area,
           what he understands about you, your beliefs, a contest of new ideas, and the one question he most wants to ask.
-          With daytime thinking on, it also reflects on your day, and a lighter <b className="text-white/90 font-medium">Kairos pulse</b> notes what changed.
+          With daytime thinking on, it also reflects on your day, and a lighter <b className="text-white/90 font-medium">Vorath pulse</b> notes what changed.
         </P>
         {onNavigate && <Link onClick={() => onNavigate('map')}>See every job on the brain map</Link>}
       </Section>
 
       <Section title="The 06:00 message">
         <P>
-          Every morning at 06:00 (UK time) one message lands in Telegram and in the Kairos inbox: where each area
+          Every morning at 06:00 (UK time) one message lands in Telegram and in the Vorath inbox: where each area
           stands, what the night concluded, what you finished yesterday, anything he now believes differently, and every
           question still open — numbered.
         </P>
@@ -45,7 +45,7 @@ export function KairosGuideContent({ onNavigate }: { onNavigate?: (view: BrainVi
 
       <Section title="The inbox">
         <P>
-          The bell on the Kairos page is where he speaks first: today’s message, open questions to answer or dismiss,
+          The Inbox button on the Vorath page is where he speaks first: today’s message, open questions to answer or dismiss,
           the rare urgent note, ideas to accept or drop, and voice notes waiting for your confirm. Most nights the right
           answer is silence — he only interrupts when it’s worth it.
         </P>
@@ -53,7 +53,7 @@ export function KairosGuideContent({ onNavigate }: { onNavigate?: (view: BrainVi
 
       <Section title="Talking to him">
         <P>
-          Click the round Kairos avatar in the bottom-right corner, anywhere in Aeon, or write to him on Telegram. Both
+          Click the round Vorath avatar in the bottom-right corner, anywhere in Aeon, or write to him on Telegram. Both
           are the same conversation, and both draw on everything he knows.
         </P>
         <P>
@@ -79,14 +79,14 @@ export function KairosGuideContent({ onNavigate }: { onNavigate?: (view: BrainVi
 
       <Section title="Voice notes">
         <P>
-          Dictate in the Claude phone app, starting with “note for Kairos”. The note waits in the inbox until you tap
+          Dictate in the Claude phone app, starting with “note for Vorath”. The note waits in the inbox until you tap
           confirm — only then does it count as your words.
         </P>
       </Section>
 
       <Section title="Watched boards">
         <P>
-          Boards set to <b className="text-white/90 font-medium">Daily</b> reach Kairos the same day you finish a card;{' '}
+          Boards set to <b className="text-white/90 font-medium">Daily</b> reach Vorath the same day you finish a card;{' '}
           <b className="text-white/90 font-medium">Weekly</b> gets a Monday milestone check. You don’t have to summarise
           your day.
         </P>
@@ -96,7 +96,7 @@ export function KairosGuideContent({ onNavigate }: { onNavigate?: (view: BrainVi
       <Section title="Paid backup">
         <P>
           If the routine misses a job, the paid backup can answer it with your own API key, so nothing is skipped. Switch
-          it off in Health and Kairos never spends: a missed job waits for the next night, and the 06:00 message falls
+          it off in Health and Vorath never spends: a missed job waits for the next night, and the 06:00 message falls
           back to plain text.
         </P>
         {onNavigate && <Link onClick={() => onNavigate('health')}>Open Health</Link>}
@@ -104,7 +104,7 @@ export function KairosGuideContent({ onNavigate }: { onNavigate?: (view: BrainVi
 
       <Section title="Your words and AI words">
         <P>
-          Kairos keeps what you said apart from what an AI wrote. Your notes, replies and confirmed voice notes are your
+          Vorath keeps what you said apart from what an AI wrote. Your notes, replies and confirmed voice notes are your
           words, and they weigh the most when he forms a view of you. Summaries Claude writes — of a session, a chat, a
           voice note — are kept as AI words and never stand in for yours. Nothing you say is reworded.
         </P>

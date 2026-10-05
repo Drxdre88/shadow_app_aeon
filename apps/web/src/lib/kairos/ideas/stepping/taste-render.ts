@@ -30,7 +30,7 @@ export function renderIdeaTasteMarkdown(view: IdeaTasteView): string {
   const p = view.profile
   const t = p.totals
   const lines = [
-    '# Kairos idea taste',
+    '# Vorath idea taste',
     `Taste: ${view.mode.taste} · novelty round: ${view.mode.novelty} (every ${view.noveltyEvery} nights${view.nextNoveltyNight ? `, next ${view.nextNoveltyNight}` : ''})`,
     `Last ${p.windowDays} days: ${t.accepted} accepted, ${t.dismissed} dismissed, ${t.ignored} ignored${p.active ? '' : ' (not active yet)'}.`,
     ...p.summary.map((s) => `- ${s}`),

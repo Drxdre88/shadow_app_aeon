@@ -15,11 +15,11 @@ import { getUserId, ok, fail } from './types'
 export const registerKairosOwnerModelTools: RegisterFn = (server) => {
   server.tool(
     'get_kairos_owner_model',
-    "Kairos's working read of the owner: lasting traits, current states with since/lapse dates (a state lapses unless he re-confirms it), unconfirmed trait candidates, expired and closed items, the last weekly \"what I think you're carrying\" card and a 30-day correction tally. format \"json\" (default) or \"markdown\". Read-only.",
+    "Vorath's working read of the owner: lasting traits, current states with since/lapse dates (a state lapses unless he re-confirms it), unconfirmed trait candidates, expired and closed items, the last weekly \"what I think you're carrying\" card and a 30-day correction tally. format \"json\" (default) or \"markdown\". Read-only.",
     {
       format: getKairosOwnerModelSchema.shape.format.describe('"json" (default) or "markdown"'),
     },
-    { title: 'Get Kairos Owner Model', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'Get Vorath Owner Model', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = getKairosOwnerModelSchema.safeParse(args)

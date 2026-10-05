@@ -38,17 +38,17 @@ beforeEach(() => resetKairosSetupBadgeCache())
 afterEach(() => { cleanup(); vi.mocked(getKairosBrainStatus).mockReset() })
 
 describe('KairosSidebarSection', () => {
-  it('has one Kairos setup button instead of Connect brain / Setup / Guide', async () => {
+  it('has one Vorath setup button instead of Connect brain / Setup / Guide', async () => {
     vi.mocked(getKairosBrainStatus).mockResolvedValue(status(true))
     render(<KairosSidebarSection collapsed={false} />)
-    expect(screen.getByRole('button', { name: /^Kairos setup/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^Vorath setup/ })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Connect brain|^Setup$|^Guide$/ })).toBeNull()
   })
 
   it('badges the button with the required steps still missing', async () => {
     vi.mocked(getKairosBrainStatus).mockResolvedValue(status(false))
     render(<KairosSidebarSection collapsed={false} />)
-    expect(await screen.findByRole('button', { name: 'Kairos setup — 1 required step left' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Vorath setup — 1 required step left' })).toBeTruthy()
   })
 
   it('fetches once and reuses the answer across remounts', async () => {
@@ -64,7 +64,7 @@ describe('KairosSidebarSection', () => {
   it('opens the modal on the Setup tab', async () => {
     vi.mocked(getKairosBrainStatus).mockResolvedValue(status(true))
     render(<KairosSidebarSection collapsed={false} />)
-    fireEvent.click(screen.getByRole('button', { name: /^Kairos setup/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Vorath setup/ }))
     expect(await screen.findByRole('dialog')).toBeTruthy()
     expect(screen.getByRole('tab', { name: /Setup/ }).getAttribute('aria-selected')).toBe('true')
   })

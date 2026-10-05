@@ -20,6 +20,25 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - `DOCS` — `ARCHITECTURE.md`, `VISION.md`, `CLAUDE.md`
 - `UI` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.44.0] — 2026-10-05
+
+> Areas touched: `KAIROS` `MCP` `API` `UI`
+> Theme: Kairos is now **Vorath**. Same mind, same memories — only the name changed.
+
+### Changed — Kairos is renamed Vorath · `KAIROS` `UI`
+- Everything you see says Vorath: the sidebar, the page (now at `/vorath`; old `/kairos` links forward there), setup, guide, inbox, chat, and every message he sends — the 06:00 message, the weekly review and Telegram.
+- He introduces himself as Vorath and knows he was called Kairos, so older memories that say Kairos still read as his own.
+- The inbox button now shows an "Inbox" label next to the bell.
+- Routines are now named Vorath brain, Vorath chat and Vorath pulse. Rename your existing routines on claude.ai in place and paste the new text — don't delete them (the chat routine's API trigger lives on it).
+
+### Added — Safe aliases for the new name · `API` `MCP`
+- Settings may be named `VORATH_*`; each one sets its `KAIROS_*` twin at server start (VORATH wins). Existing `KAIROS_*` settings keep working. This applies to the Aeon web app on Vercel only; the local worker and scripts still need `KAIROS_*`.
+- `/api/v1/vorath/*` answers exactly like `/api/v1/kairos/*`, with the same sign-in checks.
+- MCP tool descriptions say Vorath. Tool names are unchanged (e.g. `get_kairos_today`), so routines keep working.
+
+### Unchanged on purpose
+- Stored keys, tags, job kinds, tool names, internal code names, the Telegram chat thread title and the nightly drift-check questions keep the old name, so nothing stored or scheduled breaks.
+
 ## [0.43.0] — 2026-10-04
 
 > Areas touched: `KAIROS` `MCP` `API` `UI`

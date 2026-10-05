@@ -41,7 +41,7 @@ export async function correctOwnerItem(
       key: `owner-card:${C}:${stamp}`,
       channel,
       type: 'decided',
-      text: `Corrected Kairos's read ${C} (${neutralise(result.item.text)})${said}`,
+      text: `Corrected Vorath's read ${C} (${neutralise(result.item.text)})${said}`,
     }, origin)
   } catch (err) {
     console.warn('[kairos:owner-model] today log failed', err)

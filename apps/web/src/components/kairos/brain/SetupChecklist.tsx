@@ -43,14 +43,14 @@ export function SetupChecklist({ status, refreshing, onRefresh, onOpenWatched }:
           <ConnectStepBody {...stepProps} />
         </SetupStep>
         <SetupStep
-          marker="2" title="Turn on Kairos’s brain" meta="~3 min · needs Claude Pro, Max, Team or Enterprise" note={brainNote}
+          marker="2" title="Turn on Vorath’s brain" meta="~3 min · needs Claude Pro, Max, Team or Enterprise" note={brainNote}
           tick={p.brain} open={open === 'brain'} onToggle={() => toggle('brain')}
         >
           <BrainStepBody {...stepProps} ranBefore={p.brainRanBefore} />
         </SetupStep>
         {p.showRetired && (
           <SetupStep
-            marker="3" title="Remove old routines" meta="~1 min · only if you set Kairos up before"
+            marker="3" title="Remove old routines" meta="~1 min · only if you set Vorath up before"
             tick={cleared ? 'done' : 'todo'} open={open === 'retired'} onToggle={() => toggle('retired')}
           >
             <RetiredStepBody cleared={cleared} onCleared={setCleared} />
@@ -66,18 +66,18 @@ export function SetupChecklist({ status, refreshing, onRefresh, onOpenWatched }:
           className="flex items-center gap-3 px-1 text-left group outline-none"
         >
           <span className="text-[10px] uppercase tracking-[0.22em] text-white/40">Optional</span>
-          <span className="text-[13px] font-semibold text-white/85 group-hover:text-white">Make Kairos see and hear more</span>
+          <span className="text-[13px] font-semibold text-white/85 group-hover:text-white">Make Vorath see and hear more</span>
           <span className="ml-auto text-[11px] text-white/40 tabular-nums">{p.optionalDone} of {p.optionalTotal} on</span>
           <ChevronDown className={cn('w-4 h-4 text-white/35 transition-transform', moreOpen && 'rotate-180')} />
         </button>
         {moreOpen && (
           <Panel className="divide-y divide-white/[0.06]">
             <SetupStep
-              marker={<Eye className="w-3.5 h-3.5" />} title="Watched boards" meta="~1 min · Kairos reads them on his own"
+              marker={<Eye className="w-3.5 h-3.5" />} title="Watched boards" meta="~1 min · Vorath reads them on his own"
               tick={p.watched} open={open === 'watched'} onToggle={() => toggle('watched')}
             >
               <Act where="In the Watched tab">set a board to <B>Daily</B> (or <B>Weekly</B> for a Monday check).</Act>
-              <Expect>Every card you finish there reaches Kairos the same day.</Expect>
+              <Expect>Every card you finish there reaches Vorath the same day.</Expect>
               <button
                 type="button"
                 onClick={onOpenWatched}
@@ -135,10 +135,10 @@ function Header({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-[16px] font-semibold text-white">
-            Set up Kairos <span className="text-white/40 font-normal">· {requiredTotal} steps · ~5 minutes</span>
+            Set up Vorath <span className="text-white/40 font-normal">· {requiredTotal} steps · ~5 minutes</span>
           </h3>
           <p className="mt-0.5 text-[12px] text-white/50">
-            Ticks come from Aeon itself — they turn green when Kairos really hears from Claude.
+            Ticks come from Aeon itself — they turn green when Vorath really hears from Claude.
           </p>
         </div>
         <button
@@ -158,7 +158,7 @@ function Header({
           style={{ borderColor: tint('var(--success)', 35), background: tint('var(--success)', 7) }}
         >
           <CircleCheck className="w-5 h-5 shrink-0" style={{ color: 'var(--success)' }} />
-          <span className="text-[13px] text-white/85">Kairos is set up — he thinks every night on your Max plan.</span>
+          <span className="text-[13px] text-white/85">Vorath is set up — he thinks every night on your Max plan.</span>
         </div>
       ) : (
         <div className="flex items-center gap-3">

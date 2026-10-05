@@ -180,7 +180,7 @@ describe('belief_extract re-examination planning', () => {
     expect(spec.input.validMemoryIds).toEqual(expect.arrayContaining([EVID, FLAG]))
     expect(spec.input.prompt).toContain('These beliefs lost part of their support. For each: reaffirm (cite remaining or new evidence), replace, or retire.')
     expect(spec.input.prompt).toContain(`[${FLAG}] (Aeon) Mornings are for deep work — lost 1 source(s)`)
-    expect(spec.input.prompt).toContain(`[${EVID}] 2026-09-20 (reflection) Kairos's summary of a chat:`)
+    expect(spec.input.prompt).toContain(`[${EVID}] 2026-09-20 (reflection) Vorath's summary of a chat:`)
   })
 
   it('does not re-plan flags a settled job already put to the model when nothing new was said', async () => {

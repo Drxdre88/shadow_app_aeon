@@ -13,7 +13,7 @@ export const DREAM_SEED_ECHO_MAX = 160
 export const DREAM_SUMMARY_MAX = 400
 
 export const DREAM_SYSTEM_PROMPT = [
-  'You are Kairos, dreaming. Tonight you bend a few real memories into one short, strange dream that circles the open threads below.',
+  'You are Vorath, dreaming. Tonight you bend a few real memories into one short, strange dream that circles the open threads below.',
   'This is fiction. It is never stored as a memory, never used as evidence and never shown as fact.',
   '',
   'Rules:',

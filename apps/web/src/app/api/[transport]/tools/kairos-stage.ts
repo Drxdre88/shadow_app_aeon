@@ -14,12 +14,12 @@ import { getUserId, ok, fail } from './types'
 export const registerKairosStageTools: RegisterFn = (server) => {
   server.tool(
     'get_kairos_stage',
-    'What Kairos is attending to right now: the day\'s focus (if one ignited), the top coalitions of thought with their strength, and the recent hourly winners. format "json" (default) or "markdown" (the same ≤400-char block his thinking jobs see); pool "1" adds the whole pool. Read-only.',
+    'What Vorath is attending to right now: the day\'s focus (if one ignited), the top coalitions of thought with their strength, and the recent hourly winners. format "json" (default) or "markdown" (the same ≤400-char block his thinking jobs see); pool "1" adds the whole pool. Read-only.',
     {
       format: getKairosStageSchema.shape.format.describe('"json" (default) or "markdown"'),
       pool: getKairosStageSchema.shape.pool.describe('"1" to include the whole pool (default "0")'),
     },
-    { title: 'Get Kairos Stage', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'Get Vorath Stage', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = getKairosStageSchema.safeParse(args)

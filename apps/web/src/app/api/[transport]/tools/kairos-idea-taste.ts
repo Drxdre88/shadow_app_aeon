@@ -10,11 +10,11 @@ import { getUserId, ok, fail } from './types'
 export const registerKairosIdeaTasteTools: RegisterFn = (server) => {
   server.tool(
     'get_kairos_idea_taste',
-    'What Kairos has learned about which nightly ideas the owner takes up: accepted / dismissed / ignored counts over 90 days, per-feature leanings (area, kind of move, idea kind, leap, length) with lift, plain-language summary lines, the surprise-slot rule, the pure-novelty round schedule and the stepping-stone archive size. Agent-made accepts are not counted. format "json" (default) or "markdown". Read-only.',
+    'What Vorath has learned about which nightly ideas the owner takes up: accepted / dismissed / ignored counts over 90 days, per-feature leanings (area, kind of move, idea kind, leap, length) with lift, plain-language summary lines, the surprise-slot rule, the pure-novelty round schedule and the stepping-stone archive size. Agent-made accepts are not counted. format "json" (default) or "markdown". Read-only.',
     {
       format: getKairosIdeaTasteSchema.shape.format.describe('"json" (default) or "markdown"'),
     },
-    { title: 'Get Kairos Idea Taste', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'Get Vorath Idea Taste', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = getKairosIdeaTasteSchema.safeParse(args)

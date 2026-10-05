@@ -137,10 +137,10 @@ function ModalBody({
                 background: tint('var(--background)', 40),
               }}
             >
-              Kairos {KAIROS_VERSION_SHORT}
+              Vorath {KAIROS_VERSION_SHORT}
             </div>
             <div className="min-w-0">
-              <h2 id="connect-kairos-title" className="text-lg font-semibold text-white leading-tight">Kairos</h2>
+              <h2 id="connect-kairos-title" className="text-lg font-semibold text-white leading-tight">Vorath</h2>
               <p className="text-[11.5px] text-white/45">Set up, check on, and understand your second memory</p>
             </div>
           </div>
@@ -154,7 +154,7 @@ function ModalBody({
         </div>
 
         <div className="flex justify-center px-5 pb-4 border-b border-white/10">
-          <SegmentedSwitch options={VIEWS} value={view} onChange={go} layoutId="connect-kairos-view" label="Kairos views" />
+          <SegmentedSwitch options={VIEWS} value={view} onChange={go} layoutId="connect-kairos-view" label="Vorath views" />
         </div>
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 py-6 min-h-[460px]">
@@ -224,7 +224,7 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
   return (
     <div className="flex flex-col items-center justify-center text-center gap-3 py-16 rounded-xl border border-dashed border-white/[0.10] bg-white/[0.02]">
       <CloudOff className="w-6 h-6" style={{ color: 'var(--error)' }} />
-      <div className="text-[14px] font-semibold text-white/90">Couldn’t check on Kairos</div>
+      <div className="text-[14px] font-semibold text-white/90">Couldn’t check on Vorath</div>
       <p className="text-[12px] text-white/45 max-w-sm">{message}</p>
       <button
         type="button"
@@ -243,7 +243,7 @@ function StaleStrip({ at, onRetry }: { at: string; onRetry: () => void }) {
       className="mb-4 flex items-center justify-between gap-3 rounded-lg border px-3.5 py-2 text-[11.5px]"
       style={{ borderColor: tint('var(--error)', 30), background: tint('var(--error)', 6) }}
     >
-      <span className="text-white/70">Couldn’t refresh — showing what Kairos reported at {localClock(at)}.</span>
+      <span className="text-white/70">Couldn’t refresh — showing what Vorath reported at {localClock(at)}.</span>
       <button type="button" onClick={onRetry} className="font-medium hover:brightness-125" style={{ color: 'var(--error)' }}>
         Try again
       </button>

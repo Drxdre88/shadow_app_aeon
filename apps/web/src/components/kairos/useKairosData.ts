@@ -19,7 +19,7 @@ export function useKairosData(realmId?: string) {
       const data = await getBrainGraph({ realmId })
       setGraph(data)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load Kairos')
+      setError(err instanceof Error ? err.message : 'Failed to load Vorath')
     } finally {
       setLoading(false)
     }

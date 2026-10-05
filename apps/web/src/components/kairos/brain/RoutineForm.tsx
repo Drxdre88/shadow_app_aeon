@@ -81,7 +81,7 @@ function scheduleNote(def: RoutineDef, nowIso?: string): string {
     return 'The pulse only works during the day, from about 07:00 to 22:00 London time, and only when something changed; every other run ends at once.'
   }
   const local = nowIso ? cronToLocal(NIGHT_HOURS_CRON, nowIso)?.replace(/^Hourly /, '') : null
-  return `Kairos does most of his thinking at night, between 01:00 and 07:00 UTC${local ? ` (${local})` : ''}. Daytime runs only find work when daytime thinking or his self-booked check-ins are switched on; otherwise they end at once.`
+  return `Vorath does most of his thinking at night, between 01:00 and 07:00 UTC${local ? ` (${local})` : ''}. Daytime runs only find work when daytime thinking or his self-booked check-ins are switched on; otherwise they end at once.`
 }
 
 function Field({

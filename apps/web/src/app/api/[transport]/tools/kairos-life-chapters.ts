@@ -15,13 +15,13 @@ import { getUserId, ok, fail } from './types'
 export const registerKairosLifeChapterTools: RegisterFn = (server) => {
   server.tool(
     'get_kairos_life_chapters',
-    'Kairos’s monthly life chapters, newest first: title, summary, turning points (before/after), what changed and what is still open, each with the ids it cites. month "YYYY-MM" narrows to one chapter; limit 1–12 (default 3); format "json" (default) or "markdown". Read-only.',
+    'Vorath’s monthly life chapters, newest first: title, summary, turning points (before/after), what changed and what is still open, each with the ids it cites. month "YYYY-MM" narrows to one chapter; limit 1–12 (default 3); format "json" (default) or "markdown". Read-only.',
     {
       month: getKairosLifeChaptersSchema.shape.month.describe('"YYYY-MM" — one month only (optional)'),
       limit: getKairosLifeChaptersSchema.shape.limit.describe('How many chapters, 1–12 (default 3)'),
       format: getKairosLifeChaptersSchema.shape.format.describe('"json" (default) or "markdown"'),
     },
-    { title: 'Get Kairos Life Chapters', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    { title: 'Get Vorath Life Chapters', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const parsed = getKairosLifeChaptersSchema.safeParse(args)

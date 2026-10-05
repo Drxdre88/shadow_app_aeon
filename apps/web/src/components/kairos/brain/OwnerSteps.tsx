@@ -22,8 +22,8 @@ export function ChatOnMaxBody({ status, refreshing, onRefresh }: Props) {
   return (
     <>
       <p className="text-[12.5px] leading-relaxed text-white/65">
-        A second routine answers you on your Max plan — on the Kairos page and on Telegram. Replies take a little longer
-        than the paid key; the page shows “Kairos is thinking…” until the answer lands.
+        A second routine answers you on your Max plan — on the Vorath page and on Telegram. Replies take a little longer
+        than the paid key; the page shows “Vorath is thinking…” until the answer lands.
       </p>
       <div className="flex flex-wrap gap-2">
         <Flag on={routineFlagOn} text={routineFlagOn ? 'Replies via routine: on' : 'Replies via routine: off'} />
@@ -42,7 +42,7 @@ export function ChatOnMaxBody({ status, refreshing, onRefresh }: Props) {
             <CodeBlock lang="env" value={CHAT_ENV} />
           </div>,
           <div key="test" className="flex flex-col gap-2.5">
-            <Act where="On the Kairos page or in Telegram">send Kairos a message.</Act>
+            <Act where="On the Vorath page or in Telegram">send Vorath a message.</Act>
             <Expect>He answers within a minute, and this step turns green.</Expect>
             <CheckAgain onClick={onRefresh} busy={refreshing} />
           </div>,
@@ -61,8 +61,8 @@ export function PulseRoutineBody({ status, refreshing, onRefresh }: Props) {
     <div className="flex flex-col gap-3">
       <p className="text-[12.5px] leading-relaxed text-white/65">
         Daytime thinking is on. A second, lighter routine glances at your day once an hour and keeps short notes in
-        Kairos’s memory of today. It only does work when something happened, never messages you, and never uses the
-        paid key. Kairos brain picks up his daytime reflections on its own.
+        Vorath’s memory of today. It only does work when something happened, never messages you, and never uses the
+        paid key. Vorath brain picks up his daytime reflections on its own.
       </p>
       <div className="flex flex-wrap gap-2">
         <Flag on={pulse.state === 'live'} text={pulse.state === 'live' ? 'Pulse: running' : 'Pulse: not heard from yet'} />
@@ -117,7 +117,7 @@ export function TelegramBody({ status, refreshing, onRefresh }: Props) {
   return (
     <>
       <p className="text-[12.5px] leading-relaxed text-white/65">
-        Your 06:00 message arrives in Telegram, and you can answer Kairos there (“Q12: …”).
+        Your 06:00 message arrives in Telegram, and you can answer Vorath there (“Q12: …”).
       </p>
       <Actions>
         <>
@@ -142,7 +142,7 @@ export function TelegramBody({ status, refreshing, onRefresh }: Props) {
         </>
         <>
           <TestMessage />
-          <Expect>A message from Kairos arrives in Telegram.</Expect>
+          <Expect>A message from Vorath arrives in Telegram.</Expect>
         </>
       </Actions>
       <Troubleshoot

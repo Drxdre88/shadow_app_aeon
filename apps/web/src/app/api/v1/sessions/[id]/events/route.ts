@@ -40,7 +40,7 @@ export const POST = withRateLimit(
 
     const session = await findAgentSessionById(id, auth.id)
     if (!session) return jsonError('Session not found', 404)
-    if (INTERNAL_ENGINES.has(session.engine)) return jsonError('Events cannot be posted to an internal Kairos thread', 403)
+    if (INTERNAL_ENGINES.has(session.engine)) return jsonError('Events cannot be posted to an internal Vorath thread', 403)
 
     let body: unknown
     try {

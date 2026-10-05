@@ -1,6 +1,7 @@
 'use server'
 
 import { z } from 'zod'
+import { MIND_NAME } from '@/lib/kairos/identity'
 import { requireAuth } from '@/lib/actions/helpers'
 import { getKairosInbox } from '@/lib/data/inbox'
 import { answerKairosAsk, dismissKairosAsk } from '@/lib/kairos/ask'
@@ -69,7 +70,7 @@ export async function answerKairosInboxAsk(questionMemoryId: string, answer: str
   )
 
   if ('error' in result) {
-    throw new Error(result.error === 'not_found' ? 'Kairos question not found' : 'Dominion not found')
+    throw new Error(result.error === 'not_found' ? `${MIND_NAME} question not found` : 'Dominion not found')
   }
 
   return result
@@ -80,7 +81,7 @@ export async function answerKairosInboxAsk(questionMemoryId: string, answer: str
 export async function dismissKairosInboxAsk(questionMemoryId: string) {
   const userId = await requireAuth()
   const result = await dismissKairosAsk(userId, memoryIdSchema.parse(questionMemoryId))
-  if ('error' in result) throw new Error('Kairos question not found')
+  if ('error' in result) throw new Error(`${MIND_NAME} question not found`)
   return { id: result.id }
 }
 

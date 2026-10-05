@@ -5,7 +5,7 @@ import { GOAL_MEMORY_TYPE, GOAL_PROPOSAL_KIND } from './parse'
 // pending proposal or an approved goal. The signed-in session is not gated
 // here; decisions go through the goal transitions.
 export const OPERATOR_ONLY_GOAL_ERROR =
-  'Kairos goals can only be approved, vetoed, closed, edited or deleted by the operator in Aeon or Telegram'
+  'Vorath goals can only be approved, vetoed, closed, edited or deleted by the operator in Aeon or Telegram'
 
 export function isGoalRow(row: { type?: unknown; sourceMetadata?: unknown } | null | undefined): boolean {
   if (!row) return false

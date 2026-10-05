@@ -277,7 +277,7 @@ export function renderGoalBody(meta: Pick<GoalMeta, 'question' | 'why' | 'succes
     '',
     `**Done when:** ${meta.successCheck.text}`,
     '',
-    `Due ${meta.dueInDays} days after you approve it. An investigation only — Kairos looks into it and reports back; it does not act.`,
+    `Due ${meta.dueInDays} days after you approve it. An investigation only — Vorath looks into it and reports back; it does not act.`,
   ].join('\n')
 }
 

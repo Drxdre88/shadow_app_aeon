@@ -150,7 +150,7 @@ async function writeUntetheredAnswer(
   extraMetadata: Record<string, unknown> = {},
   origin: Origin = ASK_DEFAULT_ORIGIN,
 ): Promise<string> {
-  const title = answerText.split('\n')[0]?.slice(0, 80).trim() || 'Kairos Ask response'
+  const title = answerText.split('\n')[0]?.slice(0, 80).trim() || 'Vorath Ask response'
   const [row] = await db
     .insert(memories)
     .values({
@@ -233,7 +233,7 @@ function ddmm(date: Date): string {
 }
 
 export function appendCardNote(existing: string | null, line: string, at: Date): string {
-  const note = `Notes (via Kairos, ${ddmm(at)}): ${line}`
+  const note = `Notes (via Vorath, ${ddmm(at)}): ${line}`
   const base = (existing ?? '').trimEnd()
   return base ? `${base}\n\n${note}` : note
 }

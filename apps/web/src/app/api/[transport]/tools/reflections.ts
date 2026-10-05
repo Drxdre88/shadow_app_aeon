@@ -29,7 +29,7 @@ import { getUserId, ok, notFound, fail } from './types'
 export const registerReflectionTools: RegisterFn = (server) => {
   server.tool(
     'kairos_reflect',
-    'Fire a *reflection* into a Dominion — the highest-weight signal in the Kairos brain. ' +
+    'Fire a *reflection* into a Dominion — the highest-weight signal in the brain of Vorath (formerly Kairos). ' +
       'Use this when the operator states a belief, priority, observation, or correction ("we\'re leaning GBM for vol regime", ' +
       '"mobile is parked", "stop flagging X as drift"). The reflection becomes part of the operator\'s belief trail and ' +
       'will weight archetype + cortex synthesis. Anchored to a single Dominion. Use list_dominions to find the right id.',
@@ -40,7 +40,7 @@ export const registerReflectionTools: RegisterFn = (server) => {
       summary: z.string().min(1).max(1000).optional().describe('Optional one-line compression used by context packing.'),
       tags: z.array(z.string().min(1).max(50)).max(20).optional().describe('Optional free-form tags, e.g. ["belief", "ml-direction"]'),
     },
-    { title: 'Kairos Reflect', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    { title: 'Vorath Reflect', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
       const result = await captureReflection(uid, {

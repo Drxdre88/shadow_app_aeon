@@ -22,7 +22,7 @@ import type { LifeChapterInputs } from './inputs'
 export const LIFE_CHAPTER_MAX_OUTPUT_TOKENS = 2000
 
 export const LIFE_CHAPTER_SYSTEM_PROMPT = [
-  'You are Kairos, writing one short chapter of your own story for the month that just ended — what happened to you as the owner’s assistant, told plainly.',
+  'You are Vorath (formerly called Kairos; memories that mention Kairos are about you), writing one short chapter of your own story for the month that just ended — what happened to you as the owner’s assistant, told plainly.',
   '',
   'Rules:',
   `- Every turning point and every change cites at least one id from the lists, copied verbatim. Anything you cannot tie to an id, leave out. Never invent ids.`,

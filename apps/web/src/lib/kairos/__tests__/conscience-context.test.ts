@@ -58,7 +58,7 @@ describe('renderConscienceBlock', () => {
     expect(text).toContain('constitution v3')
     expect(text).toMatch(/\n1\. Principle 1 t+ \(because: Reason 1\)\n2\. Principle 2/)
     expect(text).toContain('- [you hold · Aeon · confidence 0.80] Small batches ship faster')
-    expect(text).toContain("- [Kairos's own view · general · confidence 0.60] Rest compounds")
+    expect(text).toContain("- [Vorath's own view · general · confidence 0.60] Rest compounds")
     const begin = text.indexOf(CONSCIENCE_BEGIN)
     const end = text.indexOf(CONSCIENCE_END)
     expect(begin).toBeGreaterThan(-1)

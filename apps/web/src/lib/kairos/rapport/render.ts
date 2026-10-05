@@ -8,7 +8,7 @@ const kinds = (byKind: Record<string, number>): string =>
   Object.entries(byKind).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([k, n]) => `${k} ${n}`).join(', ')
 
 export function renderRapportMarkdown(view: KairosRapportView): string {
-  const lines: string[] = ['# Kairos rapport', '']
+  const lines: string[] = ['# Vorath rapport', '']
   lines.push(`Flags: readiness ${view.flags.readiness}, bids ${view.flags.bids}, repair ${view.flags.repair}.`)
   const r = view.rupture
   lines.push('', '## Rupture / repair')

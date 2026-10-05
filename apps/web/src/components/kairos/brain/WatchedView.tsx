@@ -51,8 +51,8 @@ export function WatchedView() {
   return (
     <div className="flex flex-col gap-7">
       <P>
-        Kairos reads the boards you watch on its own, so you don’t have to summarise your day.{' '}
-        <span className="text-white/90">Daily</span> — every card you finish reaches Kairos the same day, plus a
+        Vorath reads the boards you watch on its own, so you don’t have to summarise your day.{' '}
+        <span className="text-white/90">Daily</span> — every card you finish reaches Vorath the same day, plus a
         nightly page. <span className="text-white/90">Weekly</span> — a Monday milestone check.
       </P>
 
@@ -112,7 +112,7 @@ function BoardRow({ project, onChange }: { project: WatchedProject; onChange: (n
         onChange={onChange}
         layoutId={`kairos-watch-${project.id}`}
         size="sm"
-        label={`Kairos watch for ${project.name}`}
+        label={`Vorath watch for ${project.name}`}
       />
     </div>
   )

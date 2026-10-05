@@ -22,7 +22,7 @@ function openQuickCapture() {
 export function CaptureFab() {
   const pathname = usePathname()
   // Kairos already has its own capture rail — no need for a FAB there.
-  const hidden = pathname?.startsWith('/kairos')
+  const hidden = pathname?.startsWith('/vorath')
 
   return (
     <AnimatePresence>

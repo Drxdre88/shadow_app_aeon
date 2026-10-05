@@ -145,7 +145,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
     'Update an existing memory. Most commonly used to backfill or refresh AI-generated fields (aiTitle, execSummary) after re-reading the body. ' +
       'Also handles re-tagging, re-anchoring (realm/project/task), pinning, and archiving. Pass only the fields you want to change. ' +
       'Constitution rows are owner-only: archiving, retyping, or changing title/bodyMd/summary on one is refused (aiTitle, execSummary, tags and pinned are still allowed). ' +
-      'Kairos goal rows (pending goal proposals and approved goals) are owner-only the same way: archiving or un-archiving, retyping, or changing title/bodyMd/summary is refused.',
+      'Vorath goal rows (pending goal proposals and approved goals) are owner-only the same way: archiving or un-archiving, retyping, or changing title/bodyMd/summary is refused.',
     {
       memoryId: z.string().uuid().describe('The memory UUID to update'),
       title: z.string().min(1).max(255).optional(),
@@ -194,7 +194,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
   server.tool(
     'search_memories',
     'Full-text search the user-scoped brain. Returns ranked hits with snippet excerpts. Use this before answering questions that may have prior context. ' +
-      'Kairos Phase 3B: `query` is optional when `dominionId` is given — the Dominion scope plus optional `sinceDays` is sufficient to bound results, so lieutenants can pull "recent memories on this Dominion" without inventing a search term.',
+      'Vorath Phase 3B: `query` is optional when `dominionId` is given — the Dominion scope plus optional `sinceDays` is sufficient to bound results, so lieutenants can pull "recent memories on this Dominion" without inventing a search term.',
     {
       query: z.string().min(2).max(500).optional().describe('Search query — websearch syntax (quotes, OR, -term). Optional if `dominionId` is set'),
       type: z.union([
@@ -408,7 +408,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
 
   server.tool(
     'accept_proposal',
-    'Promote a staged introspection proposal (a type="inbound" memory Kairos proposed, carrying its citation links) into a committed, operator-endorsed memory — the operator gate in propose-not-commit. Optionally pin it and supersede the beliefs it replaces (stamped superseded, not deleted). To REJECT a proposal instead, call update_memory with archivedAt set; to LIST pending proposals, call search_memories with type:"inbound".',
+    'Promote a staged introspection proposal (a type="inbound" memory Vorath proposed, carrying its citation links) into a committed, operator-endorsed memory — the operator gate in propose-not-commit. Optionally pin it and supersede the beliefs it replaces (stamped superseded, not deleted). To REJECT a proposal instead, call update_memory with archivedAt set; to LIST pending proposals, call search_memories with type:"inbound".',
     {
       memoryId: z.string().uuid().describe('The proposal (inbound memory) UUID to accept'),
       pin: z.boolean().default(false).optional().describe('Pin the committed memory so it always surfaces'),

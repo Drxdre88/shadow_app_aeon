@@ -6,6 +6,7 @@ import {
   BRAIN_JOBS,
   KAIROS_PULSE_MODEL,
   KAIROS_ROUTINE_MODEL,
+  RETIRED_ROUTINE_NAMES,
   ROUTINES,
   getRoutine,
   routineAllows,
@@ -127,14 +128,21 @@ describe('routinePrompt', () => {
     expect(submit).toContain(`"routine": "${id}"`)
   })
 
-  it('the chat routine is channel-neutral: it serves Telegram and the Kairos page', () => {
+  it('the chat routine is channel-neutral: it serves Telegram and the Vorath page', () => {
     const chat = getRoutine('chat')
     expect(chat.claimKinds).toEqual(['chat'])
-    expect(chat.purpose).toContain('on Telegram and on the Kairos page')
+    expect(chat.purpose).toContain('on Telegram and on the Vorath page')
     expect(chat.scheduleLabel).not.toMatch(/Telegram/)
     const prompt = routinePrompt(chat)
-    expect(prompt).toMatch(/Telegram or on the Kairos page/)
+    expect(prompt).toMatch(/Telegram or on the Vorath page/)
     expect(prompt).not.toMatch(/answering the owner on Telegram\./)
+  })
+
+  it.each(ROUTINES.map((r) => [r.id, r] as const))('%s is pasted as Vorath and says it was formerly Kairos', (_id, r) => {
+    expect(r.name).toMatch(/^Vorath /)
+    expect(routinePrompt(r)).toMatch(/^You are Vorath.*formerly called Kairos/)
+    // Renamed in place on claude.ai (the chat routine's API trigger lives on it), never retired.
+    expect(RETIRED_ROUTINE_NAMES).not.toContain(r.name.replace('Vorath', 'Kairos'))
   })
 
   it.each(ROUTINES.map((r) => [r.id, r] as const))('%s prompt never asks to read a repository or doc file', (_id, r) => {
@@ -161,7 +169,7 @@ describe('routinePrompt', () => {
   it('never claims a backup for every job; the pulse is told a miss is fine', () => {
     for (const r of ROUTINES) expect(routinePrompt(r)).not.toMatch(/backup for every job/)
     expect(routinePrompt(getRoutine('pulse'))).toContain('do not retry it — a missed pulse is fine')
-    expect(routinePrompt(getRoutine('brain'))).toContain('do not retry it — Kairos covers or safely skips every job you leave')
+    expect(routinePrompt(getRoutine('brain'))).toContain('do not retry it — Vorath covers or safely skips every job you leave')
   })
 })
 

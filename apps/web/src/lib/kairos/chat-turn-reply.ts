@@ -41,10 +41,10 @@ export const askResolutionSchema = z.object({
 export type AskResolution = z.infer<typeof askResolutionSchema>
 
 export const ASK_RESOLUTION_SYSTEM_PROMPT = [
-  'Decide whether the operator turn answers the single open Kairos question.',
+  'Decide whether the operator turn answers the single open Vorath question.',
   'True means the turn supplies a substantive answer, decision, correction, preference, or reason relevant to that question.',
   'False means it is a greeting, deflection, clarification request, unrelated topic, or too ambiguous to preserve as an answer.',
-  'When true, distil only what the operator explicitly said into concise first-person text. Never add Kairos\'s inference.',
+  'When true, distil only what the operator explicitly said into concise first-person text. Never add Vorath\'s inference.',
   'Return only JSON: {"answersPending":boolean,"distilledAnswer"?:string}.',
 ].join('\n')
 

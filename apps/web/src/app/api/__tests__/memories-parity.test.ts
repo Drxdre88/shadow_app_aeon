@@ -283,7 +283,7 @@ describe('Memory MCP <-> REST parity', () => {
     })
 
     it('the update_memory description tells agents goal rows are owner-only', () => {
-      expect(updateBlock).toMatch(/Kairos goal rows .* are owner-only/)
+      expect(updateBlock).toMatch(/Vorath goal rows .* are owner-only/)
     })
 
     // Track C: accepting a goal = approving it, owner-only.

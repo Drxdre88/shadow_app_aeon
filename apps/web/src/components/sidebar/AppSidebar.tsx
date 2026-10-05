@@ -46,7 +46,7 @@ export function AppSidebar({
   const colors = useThemeStore((s) => s.colors)
   const { collapsed, activeRealmId, toggleCollapsed, setActiveRealm, maybeAutoCollapseForViewport } = useSidebarStore()
   const pathname = usePathname()
-  const onKairos = pathname?.startsWith('/kairos') ?? false
+  const onKairos = pathname?.startsWith('/vorath') ?? false
 
   useEffect(() => {
     maybeAutoCollapseForViewport()

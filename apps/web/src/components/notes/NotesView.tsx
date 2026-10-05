@@ -124,10 +124,10 @@ export function NotesView() {
           </span>
         </div>
         <Link
-          href="/kairos"
+          href="/vorath"
           className="text-[11px] uppercase tracking-[0.2em] text-white/45 hover:text-white/85 transition-colors"
         >
-          Open Kairos →
+          Open Vorath →
         </Link>
       </header>
 

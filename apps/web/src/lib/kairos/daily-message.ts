@@ -273,7 +273,7 @@ export async function runDailyMessageForUser(
     if (opts.dryRun) return { status: 'dry_run', date, source, message, ...(dreamLine ? { dreamLine } : {}), failedInputs: inputs.failed }
 
     const flight = await deliverDailyMessageOnce(userId, date, {
-      title: `Kairos · ${date}`,
+      title: `Vorath · ${date}`,
       message,
       kind: 'notify',
       urgency: 'normal',

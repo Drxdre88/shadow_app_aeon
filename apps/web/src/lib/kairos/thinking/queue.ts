@@ -141,7 +141,7 @@ export const THINKING_JOB_INSTRUCTIONS = [
 ].join('\n')
 
 export const CHAT_JOB_INSTRUCTIONS = [
-  'Treat `system` as your system prompt and `prompt` as the conversation so far, and write Kairos\'s next Telegram reply exactly as that system prompt demands.',
+  'Treat `system` as your system prompt and `prompt` as the conversation so far, and write Vorath\'s next Telegram reply exactly as that system prompt demands.',
   'Reply with the plain message text only — no JSON, no tool calls, no memory writes.',
   'Submit it with submit_thinking_job { jobId, claimToken, text } before `deadlineAt`.',
 ].join('\n')
