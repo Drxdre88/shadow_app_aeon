@@ -18,7 +18,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('next/server', () => ({ after: (fn: () => unknown) => { mocks.pending.push(fn) } }))
 vi.mock('@/lib/kairos/today', () => ({ noteMcpUse: mocks.noteMcpUse }))
 
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { installTodayUseTracking, TODAY_USE_TOOLS, tokenFingerprint, tokenKindOf } from '@/lib/kairos/today-mcp-use'
 
 const SRC = path.resolve(__dirname, '../../..')
@@ -35,7 +34,7 @@ function fakeServer() {
       return { name: args[0] }
     },
   }
-  installTodayUseTracking(server as unknown as McpServer)
+  installTodayUseTracking(server)
   return { server, registered }
 }
 
@@ -121,10 +120,11 @@ describe('token identity', () => {
 
   it('route.ts installs tracking before any register call and never logs the token', () => {
     const src = readFileSync(MCP_ROUTE, 'utf8')
-    const install = src.indexOf('installTodayUseTracking(server')
-    const firstRegister = src.search(/register\w+Tools\(server\)/)
+    const install = src.indexOf('installTodayUseTracking(server)')
+    const firstRegister = src.indexOf('register(server)')
     expect(install).toBeGreaterThan(-1)
     expect(install).toBeLessThan(firstRegister)
+    expect(src).not.toMatch(/as unknown as/)
     expect(src).toMatch(/tokenKind: tokenKindOf\(bearerToken\)/)
     expect(src).toMatch(/fp: tokenFingerprint\(bearerToken\)/)
     expect(src).not.toMatch(/console\.\w+\([^)]*bearerToken/)

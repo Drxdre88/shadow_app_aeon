@@ -22,7 +22,7 @@ const MCP_TOOL_FILE = path.join(SRC, 'app/api/[transport]/tools/kairos-predictio
 const MCP_ROUTE = path.join(SRC, 'app/api/[transport]/route.ts')
 const MCP_INDEX = path.join(SRC, 'app/api/[transport]/tools/index.ts')
 const REST_ROUTE = path.join(SRC, 'app/api/v1/kairos/predictions/route.ts')
-const MCP_DOCS = path.join(SRC, 'components/ui/help/McpTab.tsx')
+const MCP_DOCS = path.join(SRC, 'components/ui/help/mcpToolCatalog.ts')
 
 const read = (p: string) => readFileSync(p, 'utf8')
 
@@ -76,7 +76,7 @@ describe('Kairos predictions MCP <-> REST parity', () => {
 
   it('is exported, registered on the MCP server and documented', () => {
     expect(read(MCP_INDEX)).toMatch(/export \{ registerKairosPredictionTools \} from '\.\/kairos-predictions'/)
-    expect(read(MCP_ROUTE)).toMatch(/registerKairosPredictionTools\(server\)/)
+    expect(read(MCP_ROUTE)).toMatch(/\[registerKairosPredictionTools, \[/)
     expect(read(MCP_DOCS)).toContain("'list_kairos_predictions'")
   })
 })

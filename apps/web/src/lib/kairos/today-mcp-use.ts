@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
 import { after } from 'next/server'
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { TodayClientKind } from '@/lib/data/validators/kairos-today'
 import { noteMcpUse, type TodayClient } from './today'
 
@@ -73,7 +72,10 @@ export function wrapToolForTodayUse(name: string, cb: ToolCallback): ToolCallbac
   }
 }
 
-export function installTodayUseTracking(server: McpServer): void {
+/** Anything exposing a v1-style tool(name, description, ..., cb) — e.g. the route's ToolServer. */
+export type ToolRegistrar = { tool: (...args: never[]) => unknown }
+
+export function installTodayUseTracking(server: ToolRegistrar): void {
   const original = server.tool.bind(server) as (...args: unknown[]) => unknown
   const tool = (...args: unknown[]) => {
     const name = args[0]

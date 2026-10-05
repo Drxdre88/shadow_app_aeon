@@ -25,7 +25,7 @@ describe('Voice-note MCP <-> REST parity', () => {
 
   it('registers exactly one tool, kairos_voice_note, in the MCP route', () => {
     expect([...mcpSrc.matchAll(/server\.tool\(\s*['"]([a-z_]+)['"]/g)].map((m) => m[1])).toEqual(['kairos_voice_note'])
-    expect(read(MCP_ROUTE_FILE)).toMatch(/registerVoiceNoteTools\(server\)/)
+    expect(read(MCP_ROUTE_FILE)).toMatch(/\[registerVoiceNoteTools, \[/)
   })
 
   it('has the REST twin with POST', () => {

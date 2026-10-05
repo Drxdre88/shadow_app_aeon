@@ -35,7 +35,7 @@ describe('MCP tool profiles', () => {
   it('every slim profile gates at least one tool group in the route', () => {
     const src = readFileSync(ROUTE, 'utf8')
     for (const p of MCP_PROFILES.filter((x) => x !== 'all')) {
-      expect(src, p).toMatch(new RegExp(`on\\([^)]*'${p}'[^)]*\\)\\) register\\w+Tools\\(server\\)`))
+      expect(src, p).toMatch(new RegExp(`\\[register\\w+Tools, \\[[^\\]]*'${p}'[^\\]]*\\]\\]`))
     }
   })
 

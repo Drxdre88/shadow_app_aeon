@@ -39,8 +39,6 @@ export function extraFromContext(ctx: ServerContext): Extra {
 }
 
 export class ToolHost implements ToolServer {
-  readonly registered: string[] = []
-
   constructor(
     private readonly server: McpServer,
     private readonly gate: ConfirmGate = new ConfirmGate()
@@ -60,7 +58,6 @@ export class ToolHost implements ToolServer {
     } else {
       this.server.registerTool(spec.name, config, (ctx: ServerContext) => run(undefined, ctx))
     }
-    this.registered.push(spec.name)
   }
 
   private runner(spec: ParsedTool) {

@@ -68,7 +68,7 @@ describe('Virtual members MCP <-> REST parity', () => {
       expect(readSource(MCP_TOOL_INDEX)).toMatch(/registerVirtualMemberTools/)
       const routeSrc = readSource(MCP_TRANSPORT_ROUTE)
       expect(routeSrc).toMatch(/registerVirtualMemberTools/)
-      expect(routeSrc).toMatch(/registerVirtualMemberTools\(server\)/)
+      expect(routeSrc).toMatch(/\[registerVirtualMemberTools, \[/)
     })
 
     // MCP clients gate confirmation prompts on these — a delete advertised as
