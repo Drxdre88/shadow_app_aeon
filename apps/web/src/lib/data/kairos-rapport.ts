@@ -3,6 +3,7 @@ import { dominionObjectives, memories, userPreferences } from '@/lib/db/schema'
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm'
 import { KAIROS_RAPPORT_PREF_KEY } from '@/lib/kairos/moment/pref-keys'
 import { balanceOf } from '@/lib/kairos/rapport/readiness'
+import { focusObjectiveFilter } from '@/lib/kairos/living/plan-focus'
 import { emptyRapport, pruneRapport, type ObjectiveRef } from '@/lib/kairos/rapport/state'
 import type { RapportModes } from '@/lib/kairos/rapport/flag'
 import {
@@ -81,6 +82,7 @@ export async function mutateKairosRapport<R>(userId: string, mutate: RapportMuta
 }
 
 // The owner's own goals: active or paused, unarchived dominion objectives.
+// Living Dominions 'on' also drops goals of archived and dormant Dominions.
 export async function listObjectiveRefs(userId: string, limit = 50): Promise<ObjectiveRef[]> {
   return db
     .select({ id: dominionObjectives.id, title: dominionObjectives.title })
@@ -89,6 +91,7 @@ export async function listObjectiveRefs(userId: string, limit = 50): Promise<Obj
       eq(dominionObjectives.userId, userId),
       inArray(dominionObjectives.status, ['active', 'paused']),
       isNull(dominionObjectives.archivedAt),
+      focusObjectiveFilter(),
     ))
     .orderBy(asc(dominionObjectives.sortOrder))
     .limit(Math.min(Math.max(limit, 1), 100))

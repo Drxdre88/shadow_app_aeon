@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import type { SQL } from 'drizzle-orm'
 
@@ -49,7 +49,7 @@ vi.mock('@/lib/db', () => {
   }
 })
 
-import { KAIROS_RAPPORT_PREF_KEY, KairosRapportCorruptError, listIgnoredKairosSpeakIds, mutateKairosRapport, readKairosRapport, toKairosRapportView } from '../kairos-rapport'
+import { KAIROS_RAPPORT_PREF_KEY, KairosRapportCorruptError, listIgnoredKairosSpeakIds, listObjectiveRefs, mutateKairosRapport, readKairosRapport, toKairosRapportView } from '../kairos-rapport'
 import { findPreferences, upsertPreferences } from '../preferences'
 import { kairosRapportSchema, kairosRapportViewSchema, getKairosRapportSchema } from '../validators/kairos-rapport'
 import { applyOwnerTurn, emptyRapport } from '@/lib/kairos/rapport/state'
@@ -118,6 +118,29 @@ describe('ignored speaks', () => {
     expect(q.sql).toContain("->>'status' = 'pending'")
     expect(q.sql).toContain("coalesce((\"memories\".\"source_metadata\"->'gate'->>'releasedAt')::timestamptz, \"memories\".\"created_at\") <= $")
     expect(q.params).toContain(new Date(NOW.getTime() - 24 * 3_600_000).toISOString())
+  })
+})
+
+describe('objective refs under Living Dominions', () => {
+  const prior = process.env.KAIROS_LIVING_DOMINIONS
+  const whereFor = async (mode: string | undefined) => {
+    if (mode === undefined) delete process.env.KAIROS_LIVING_DOMINIONS
+    else process.env.KAIROS_LIVING_DOMINIONS = mode
+    await listObjectiveRefs('u1')
+    return render(h.wheres.at(-1))
+  }
+  afterEach(() => {
+    if (prior === undefined) delete process.env.KAIROS_LIVING_DOMINIONS
+    else process.env.KAIROS_LIVING_DOMINIONS = prior
+  })
+
+  it("off and 'observe' read the same goals; 'on' drops archived and dormant (unpinned) Dominions", async () => {
+    const off = await whereFor(undefined)
+    expect(await whereFor('observe')).toEqual(off)
+    expect(off.sql).not.toContain('"dominions"')
+    const on = await whereFor('1')
+    expect(on.sql).toContain(off.sql.slice(0, -1))
+    expect(on.sql).toContain(`"dominions"."archived_at" is null and ("dominions"."pinned" or "dominions"."focus_state" <> 'dormant')`)
   })
 })
 

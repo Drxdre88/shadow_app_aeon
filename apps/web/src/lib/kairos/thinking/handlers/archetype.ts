@@ -1,4 +1,5 @@
 import { findDominionsByUser } from '@/lib/data/dominions'
+import { skipForFocus } from '@/lib/data/dominion-focus'
 import { hasLiveOpenJob, listJobs } from '@/lib/data/thinking-jobs'
 import {
   alreadyRanToday,
@@ -53,7 +54,7 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
   if (await hasLiveOpenJob(userId, 'chat_distill', now)) return []
 
   const day = utcDay(now)
-  const active = (await findDominionsByUser(userId)).filter((d) => !d.archivedAt)
+  const active = (await findDominionsByUser(userId)).filter((d) => !d.archivedAt && !skipForFocus(d))
   if (active.length === 0) return []
   const existing = new Set(
     (await listJobs(userId, { kind: 'archetype', since: utcDayStart(now), limit: 200 })).map((j) => j.externalKey),

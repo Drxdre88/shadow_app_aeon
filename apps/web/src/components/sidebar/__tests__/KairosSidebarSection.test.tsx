@@ -12,6 +12,7 @@ vi.mock('@/lib/actions/kairos-brain', () => ({
 }))
 vi.mock('@/lib/actions/projects', () => ({ setProjectKairosFeed: vi.fn() }))
 vi.mock('@/lib/actions/dominions', () => ({ addDominionRepoAction: vi.fn() }))
+vi.mock('@/lib/actions/dominion-focus', () => ({ getFocusOverview: vi.fn(() => new Promise(() => {})), setDominionPinnedAction: vi.fn() }))
 
 import { getKairosBrainStatus } from '@/lib/actions/kairos-brain'
 import { KairosSidebarSection, resetKairosSetupBadgeCache } from '../KairosSidebarSection'

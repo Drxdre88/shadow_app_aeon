@@ -4,6 +4,7 @@ import { memories } from '@/lib/db/schema'
 import { listBeliefs } from '@/lib/data/beliefs'
 import { originKindSqlOf } from '@/lib/data/belief-inputs'
 import { findDominionsByUser, listDominionObjectives } from '@/lib/data/dominions'
+import { focusRankingOn, rankByActivity } from '@/lib/data/dominion-focus'
 import { validAsOfNow } from '@/lib/data/memories'
 import { originKindOf, type OriginKind } from '@/lib/kairos/origin'
 
@@ -62,10 +63,15 @@ export interface IdeaBeliefRow {
   dominionId: string | null
 }
 
+// Every live Dominion (dormant included: dream labels and the atlas view need
+// them all). Living Dominions 'on' ranks them by activity; the nightly idea
+// roster that drops dormant ones is lib/kairos/living/plan-ideas.ts.
 export async function listActiveDominions(userId: string): Promise<IdeaDominion[]> {
-  return (await findDominionsByUser(userId)).filter((d) => !d.archivedAt).map((d) => ({ id: d.id, name: d.name }))
+  const live = (await findDominionsByUser(userId)).filter((d) => !d.archivedAt)
+  return (focusRankingOn() ? rankByActivity(live) : live).map((d) => ({ id: d.id, name: d.name }))
 }
 
+// Follows the order of `dominions`, so a ranked roster puts live areas' objectives first.
 export async function listOpenObjectives(userId: string, dominions: readonly IdeaDominion[]): Promise<IdeaObjective[]> {
   const perDominion = await Promise.all(dominions.map((d) => listDominionObjectives(d.id, userId)))
   return perDominion.flatMap((rows, i) =>

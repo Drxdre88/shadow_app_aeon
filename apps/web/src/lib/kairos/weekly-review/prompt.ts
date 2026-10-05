@@ -164,6 +164,9 @@ export function buildWeeklyReviewPrompt(
     '',
     `Dominions: ${inputs.dominions.length ? inputs.dominions.map((d) => clip(d.name, 80)).join(', ') : '(none)'}`,
   ]
+  if (inputs.quietDominions?.length) {
+    lines.push(`Quiet by choice (dormant): ${inputs.quietDominions.map((n) => clip(n, 80)).join(', ')} — don't judge them as stalled.`)
+  }
 
   lines.push('', 'PLAN — active Dominion objectives:')
   if (inputs.objectives.length === 0) lines.push('- (none set)')

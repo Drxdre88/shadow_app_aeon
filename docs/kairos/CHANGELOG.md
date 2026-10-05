@@ -4,6 +4,17 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–35).
 
+## [0.27.0] — 2026-10-05 · "Living Dominions, phase 1: follow the work"
+
+> Vorath's focus comes from recent activity, not a fixed list of areas. Quiet areas go dormant; pinned ones stay awake. Switch `KAIROS_LIVING_DOMINIONS` off|observe|1; off and observe are byte-identical for every consumer.
+
+- **Score:** `lib/kairos/living/score.ts` (pure) + `lib/data/dominion-activity.ts`; cron `/api/cron/dominion-activity` 01:10 UTC. 30-day window, exp(−age/10d); completed 3, created 1 (owner) / 0.3 (agent tool), moved 0.2, other card events 0.1, session 2, operator note 0.5; caps 50 card events/board/day, 10 sessions/repo/day; completions from `activity_events` (vaulting hides them on boards). Unattributed work → `user_preferences.kairosLivingUnattributed`.
+- **State:** `dominions` += `activity_score`, `last_active_at` (never moves back), `activity_scored_at`, `activity` jsonb, `focus_state` active|dormant, `pinned`. Dormant after `KAIROS_DORMANT_DAYS` (default 21, 7–90) unless pinned.
+- **Seam:** `lib/data/dominion-focus.ts` (`listLiveDominions`, `listFocusDominions`, `setDominionPinned`) + pure `lib/kairos/living/focus.ts`. Consumers: archetype/cortex/concept planning and crons, aether inputs, 06:00 areas (ranked), weekly review (dormant objectives out, one "quiet by choice" line), ask-mine targets + staleness, idea night roster + atlas targets, readiness objective refs.
+- **Membership:** `dominion_members` (user, dominion, kind board|repo|concept, ref, weight, source owner|vorath, status, evidence, last_signal_at), seeded from `dominion_repos` + `projects.dominion_id` (migration 0040, `scripts/apply-living-dominions-migration.mjs`). Repo filing reads active members by weight, deterministic fallback; archived Dominions skipped. Board membership synced on every project Dominion change, in one transaction.
+- **Surfaces:** Health "Where your time went" (pin toggle), `get_dominion_focus` / `GET /api/v1/dominions/focus`, `pinned` on `update_dominion` / `PATCH /api/v1/dominions/[id]`.
+- **Next (phase 2):** Approve/Reject/Rename proposals for unattributed work and new areas.
+
 ## [0.26.0] — 2026-10-05 · "Kairos becomes Vorath"
 
 > The old name got popular, so the mind is renamed Vorath. Same mind, same memories: prompts say "Vorath (formerly called Kairos)" so older memories still read as his own.

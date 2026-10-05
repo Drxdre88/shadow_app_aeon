@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
 import { META_STREAM_CLASSES } from './streamClass'
 import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
+import { skipForFocus } from '@/lib/data/dominion-focus'
 import { validAsOfNow } from '@/lib/data/memories'
 import { isJobDone } from '@/lib/data/thinking-jobs'
 import { getProviderForTask } from '@/lib/ai/route-task'
@@ -350,7 +351,7 @@ export async function runArchetypeSynthesisForDominion(
 
 export async function runArchetypeSynthesisForUser(userId: string): Promise<ArchetypeRunResult[]> {
   const all = await findDominionsByUser(userId)
-  const active = all.filter((d) => !d.archivedAt)
+  const active = all.filter((d) => !d.archivedAt && !skipForFocus(d))
   const results: ArchetypeRunResult[] = []
   for (const dom of active) {
     try {

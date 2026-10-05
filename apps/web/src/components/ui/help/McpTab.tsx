@@ -143,6 +143,7 @@ const TOOL_CATEGORIES = [
       'get_dominion',
       'update_dominion',
       'inspect_dominion',
+      'get_dominion_focus',
       'list_objectives',
       'create_objective',
       'update_objective',

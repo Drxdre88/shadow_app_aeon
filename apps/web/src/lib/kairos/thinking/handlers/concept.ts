@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { findDominionsByUser } from '@/lib/data/dominions'
+import { dropDormantWhenOn } from '@/lib/kairos/living/focus-gate'
 import {
   createConceptWithOp,
   listConceptCandidates,
@@ -145,7 +146,7 @@ async function planDominion(
 export async function planConcepts(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
   if (!isConceptDay(now)) return []
   const weekKey = isoWeekKey(now)
-  const dominions = (await findDominionsByUser(userId)).filter((d) => !d.archivedAt)
+  const dominions = await dropDormantWhenOn((await findDominionsByUser(userId)).filter((d) => !d.archivedAt))
   const ranked: RankedSpec[] = []
   for (const dom of dominions) ranked.push(...(await planDominion(userId, dom, weekKey)))
   ranked.sort((a, b) =>

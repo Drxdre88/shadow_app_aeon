@@ -23,6 +23,7 @@ import { pickAgenda, pickVerdicts } from './daily-message-tail'
 import { getLatestDriftStatus } from './constitution/amendment'
 import { conscienceFailureLine, readStoredConscience } from './constitution/conscience-probes'
 import { SYNTHESIS_HEALTH_RECIPE } from './synthesis-health'
+import { areaRowLimit, orderAreaRows } from './living/focus-areas'
 import {
   MAX_DIGEST_BELIEFS,
   isLondonMonday,
@@ -87,11 +88,15 @@ export function firstPlainLines(bodyMd: string, max: number): string[] {
 }
 
 // Each live area's latest cortex headline (its `summary` = the cortex's
-// visionAnchor, 1–2 sentences), newest area first. The nightly cortex replaced
+// visionAnchor, 1–2 sentences), newest area first (Living Dominions on: by
+// activity rank, dormant left out). The nightly cortex replaced
 // the per-area morning briefs as the "what matters in this area" input.
 export async function readAreaHeadlines(userId: string): Promise<AreaDigest[]> {
   const rows = await db
-    .select({ dominionId: memories.dominionId, dominion: dominions.name, summary: memories.summary })
+    .select({
+      dominionId: memories.dominionId, dominion: dominions.name, summary: memories.summary,
+      focusState: dominions.focusState, pinned: dominions.pinned, activityScore: dominions.activityScore, sortOrder: dominions.sortOrder,
+    })
     .from(memories)
     .innerJoin(dominions, eq(memories.dominionId, dominions.id))
     .where(and(
@@ -101,10 +106,10 @@ export async function readAreaHeadlines(userId: string): Promise<AreaDigest[]> {
       isNull(dominions.archivedAt),
     ))
     .orderBy(desc(memories.createdAt))
-    .limit(MAX_AREAS * 3)
+    .limit(areaRowLimit(MAX_AREAS * 3))
   const seen = new Set<string>()
   const out: AreaDigest[] = []
-  for (const r of rows) {
+  for (const r of orderAreaRows(rows)) {
     // A pinned older cortex can sit beside tonight's: keep the newest only.
     if (!r.dominionId || seen.has(r.dominionId)) continue
     seen.add(r.dominionId)

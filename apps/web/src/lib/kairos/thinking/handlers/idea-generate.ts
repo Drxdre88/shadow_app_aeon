@@ -1,7 +1,7 @@
 import { listDirectionStats, listIdeaOutcomes } from '@/lib/data/ideas'
+import { listIdeaFocusDominions } from '@/lib/kairos/living/plan-ideas'
 import {
   getLatestAether,
-  listActiveDominions,
   listOpenObjectives,
   listOperatorReflections,
   listRecentBoardDays,
@@ -117,7 +117,7 @@ export async function planIdeaGenerate(userId: string, now: Date): Promise<Think
   if (await hasJobWithKeyLike(userId, IDEA_GENERATE_KIND, externalKey)) return []
   const afterCutoff = now.getTime() >= deadlineOn(now, IDEA_NOT_BEFORE_UTC).getTime()
   if (!afterCutoff && !(await aetherRanToday(userId))) return []
-  const dominions = await listActiveDominions(userId)
+  const dominions = await listIdeaFocusDominions(userId)
   if (dominions.length === 0) return []
 
   const errors: string[] = []

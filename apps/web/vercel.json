@@ -7,6 +7,10 @@
       "schedule": "0 23 * * *"
     },
     {
+      "path": "/api/cron/dominion-activity",
+      "schedule": "10 1 * * *"
+    },
+    {
       "path": "/api/cron/memory-engine",
       "schedule": "30 1 * * *"
     },

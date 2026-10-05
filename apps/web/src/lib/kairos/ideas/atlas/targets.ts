@@ -4,6 +4,7 @@ import { allCells, cellKey } from './cells'
 // Tonight's atlas targets ('on' mode): empty cells of the active grid, the
 // never-targeted first, then the longest-untargeted, then the least tried;
 // ties broken by a stable per-night hash so the pick rotates across nights.
+// Dormant Dominions (Living Dominions 'on') are never targeted; 'cross' stays.
 
 export const ATLAS_TARGETS_PER_NIGHT = 4
 
@@ -18,11 +19,11 @@ function hash(s: string): number {
 
 export function pickAtlasTargets(
   state: KairosIdeaAtlasState,
-  dominions: ReadonlyArray<{ id: string }>,
+  dominions: ReadonlyArray<{ id: string; dormant?: boolean }>,
   date: string,
   k: number = ATLAS_TARGETS_PER_NIGHT,
 ): string[] {
-  const empty = allCells(dominions.map((d) => d.id))
+  const empty = allCells(dominions.filter((d) => !d.dormant).map((d) => d.id))
     .map((c) => cellKey(c.area, c.kind, c.leap))
     .filter((key) => !state.cells[key]?.holder)
     .map((key) => ({ key, cell: state.cells[key], h: hash(`${date}|${key}`) }))

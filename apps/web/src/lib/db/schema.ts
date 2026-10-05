@@ -574,6 +574,14 @@ export const dominions = pgTable('dominions', {
   vision: text('vision'),
   missionLong: text('mission_long'),
   archivedAt: timestamp('archived_at', { mode: 'date' }),
+  // Living Dominions (0040): nightly activity score, dormant/active focus
+  // state (separate from archived) and the owner's pin that keeps it awake.
+  activityScore: real('activity_score').default(0).notNull(),
+  lastActiveAt: timestamp('last_active_at', { mode: 'date' }),
+  activityScoredAt: timestamp('activity_scored_at', { mode: 'date' }),
+  activity: jsonb('activity'),
+  focusState: varchar('focus_state', { length: 20 }).default('active').notNull(),
+  pinned: boolean('pinned').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => ({
@@ -682,6 +690,29 @@ export const dominionRepos = pgTable('dominion_repos', {
 }, (t) => ({
   pk: primaryKey({ columns: [t.dominionId, t.repoSlug] }),
   slugIdx: index('dominion_repos_slug_idx').on(t.repoSlug),
+}))
+
+// Living Dominions (0040): weighted, many-to-many membership of boards and
+// repos (later concepts) in Dominions, per user. source = who proposed it;
+// status = proposed | active | rejected. Seeded from dominion_repos and
+// projects.dominion_id; those stay as mirrors for older readers.
+export const dominionMembers = pgTable('dominion_members', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  dominionId: uuid('dominion_id').notNull().references(() => dominions.id, { onDelete: 'cascade' }),
+  kind: varchar('kind', { length: 20 }).notNull(),
+  ref: varchar('ref', { length: 200 }).notNull(),
+  weight: real('weight').default(1).notNull(),
+  source: varchar('source', { length: 20 }).default('owner').notNull(),
+  status: varchar('status', { length: 20 }).default('active').notNull(),
+  evidence: jsonb('evidence'),
+  lastSignalAt: timestamp('last_signal_at', { mode: 'date' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  uniq: uniqueIndex('dominion_members_uniq').on(t.userId, t.kind, t.ref, t.dominionId),
+  lookupIdx: index('dominion_members_lookup_idx').on(t.userId, t.kind, t.ref),
+  dominionIdx: index('dominion_members_dominion_idx').on(t.dominionId),
 }))
 
 // Kairos Phase 3 (D15) — Spawn primitive substrate. agent_sessions tracks

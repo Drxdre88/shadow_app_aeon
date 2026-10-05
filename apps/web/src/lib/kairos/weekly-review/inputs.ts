@@ -10,6 +10,7 @@ import { listMemoryOps } from '@/lib/data/memory-ops'
 import { findMemoryById, listMemories } from '@/lib/data/memories'
 import { listTraceHistory } from '@/lib/data/recipes'
 import { initiativeEnabled } from '@/lib/kairos/initiative'
+import { NO_WEEKLY_ROSTER, weeklyFocusRoster } from '@/lib/kairos/living/plan-weekly'
 import { weeklyIdeaDiversity } from '@/lib/kairos/ideas/diversity'
 import { isoWeekKey, utcDayStart } from '@/lib/kairos/thinking/deadlines'
 
@@ -185,6 +186,7 @@ export interface InitiativeWeekInput {
 export interface WeeklyReviewInputs {
   window: WeeklyReviewWindow
   dominions: Array<{ id: string; name: string }>
+  quietDominions?: string[]
   boardPages: BoardPageInput[]
   objectives: ObjectiveInput[]
   beliefChanges: BeliefChangeInput[]
@@ -551,15 +553,14 @@ export async function gatherWeeklyReviewInputs(userId: string, now: Date): Promi
   const window = reviewWindow(now)
   const errors: string[] = []
 
-  const dominions = await safe('dominions', errors, [], async () =>
-    (await findDominionsByUser(userId)).filter((d) => !d.archivedAt).map((d) => ({ id: d.id, name: d.name })))
+  const { dominions, plan, quiet } = await safe('dominions', errors, NO_WEEKLY_ROSTER, async () => weeklyFocusRoster(await findDominionsByUser(userId)))
 
   // One outcome read (30 days) serves both the week's survivors and the lessons.
   const outcomes = safe('idea_outcomes', errors, null, () => listIdeaOutcomes(userId, IDEA_LESSON_DAYS))
 
   const [boardPages, objectives, beliefChanges, memoryOps, mindCompare, asks, health, ideas, ideaLessons, beliefDiff, initiative] = await Promise.all([
     safe('board_pages', errors, [], () => gatherBoardPages(userId, window)),
-    safe('objectives', errors, [], () => gatherObjectives(userId, dominions, errors)),
+    safe('objectives', errors, [], () => gatherObjectives(userId, plan, errors)),
     safe('belief_changes', errors, [], () => gatherBeliefChanges(userId, window)),
     safe('memory_ops', errors, null, () => gatherMemoryOps(userId, window, errors)),
     safe('mind_compare', errors, null, () => gatherMindCompare(userId, now)),
@@ -573,7 +574,7 @@ export async function gatherWeeklyReviewInputs(userId: string, now: Date): Promi
 
   return {
     window,
-    dominions,
+    dominions, ...(quiet.length ? { quietDominions: quiet } : {}),
     boardPages,
     objectives,
     beliefChanges,

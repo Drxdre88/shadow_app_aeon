@@ -14,6 +14,7 @@ import { localClock } from './brainTime'
 import { StatusView, StatusSkeleton } from './StatusView'
 import { BrainMapView } from './BrainMapView'
 import { WatchedView } from './WatchedView'
+import { FocusView } from './FocusView'
 import { SetupChecklist } from './SetupChecklist'
 import { KairosGuideContent } from '@/components/ui/kairos/KairosGuideContent'
 
@@ -179,13 +180,16 @@ function ModalBody({
                 )
               )}
               {view === 'health' && (
-                status ? (
-                  <StatusView status={status} refreshing={loading} onRefresh={refresh} onNavigate={go} />
-                ) : error ? (
-                  <ErrorState message={error} onRetry={refresh} />
-                ) : (
-                  <StatusSkeleton />
-                )
+                <div className="flex flex-col gap-5">
+                  {status ? (
+                    <StatusView status={status} refreshing={loading} onRefresh={refresh} onNavigate={go} />
+                  ) : error ? (
+                    <ErrorState message={error} onRetry={refresh} />
+                  ) : (
+                    <StatusSkeleton />
+                  )}
+                  <FocusView />
+                </div>
               )}
               {view === 'map' && <BrainMapView status={status} />}
               {view === 'watched' && <WatchedView />}

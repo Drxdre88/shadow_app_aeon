@@ -18,6 +18,7 @@ import {
   listStaleTasks,
 } from '@/lib/data/board-signals'
 import { findDominionsByUser } from '@/lib/data/dominions'
+import { askFocusRoster } from '@/lib/kairos/living/plan-ask'
 import { isJobDone } from '@/lib/data/thinking-jobs'
 import { getConversationState } from './engagement'
 import { fetchAetherInputs } from './aether'
@@ -162,7 +163,7 @@ async function gatherSignalBundle(
   const [
     aetherInputs,
     allDominions,
-    reflectionRows,
+    rawReflections,
     stale,
     recentlyCompleted,
     recentlyCreated,
@@ -178,8 +179,7 @@ async function gatherSignalBundle(
     loadOwnerTodayForAskMine(userId),
     learningProgressForAskMine(userId, now),
   ])
-  const liveDominions = allDominions.filter((dominion) => !dominion.archivedAt)
-  const validDominionIds = new Set(liveDominions.map((dominion) => dominion.id))
+  const { validDominionIds, reflectionRows } = await askFocusRoster(allDominions, rawReflections)
   const latestAether = aetherInputs.prior
   const payload = latestAether?.payload
   const thoughtById = new Map(payload?.thoughts.map((thought) => [thought.id, thought]) ?? [])

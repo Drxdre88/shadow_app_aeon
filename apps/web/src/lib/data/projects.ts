@@ -355,10 +355,16 @@ export async function updateProject(projectId: string, userId: string, data: Upd
   if (data.timeScale !== undefined) updates.timeScale = data.timeScale
   if (data.planetImage !== undefined) updates.planetImage = data.planetImage
   if (data.dominionId !== undefined) updates.dominionId = data.dominionId
+  const set = data.settings !== undefined ? { ...updates, settings: settingsMergeSql(data.settings) } : updates
+
+  if (data.dominionId !== undefined) {
+    const { updateProjectAndBoardMembership } = await import('./dominion-members')
+    return updateProjectAndBoardMembership(projectId, userId, set, data.dominionId ?? null)
+  }
 
   const [project] = await db
     .update(projects)
-    .set(data.settings !== undefined ? { ...updates, settings: settingsMergeSql(data.settings) } : updates)
+    .set(set)
     .where(eq(projects.id, projectId))
     .returning()
 
