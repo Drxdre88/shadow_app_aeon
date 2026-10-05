@@ -22,6 +22,8 @@ export const updateDominionSchema = z.object({
   vision:      z.string().trim().max(4000).nullable().optional(),
   missionLong: z.string().trim().max(8000).nullable().optional(),
   archivedAt:  z.coerce.date().nullable().optional(),
+  // Living Dominions: pinned keeps a Dominion awake; pinning wakes a dormant one.
+  pinned:      z.boolean().optional(),
 })
 
 export const addDominionRepoSchema = z.object({

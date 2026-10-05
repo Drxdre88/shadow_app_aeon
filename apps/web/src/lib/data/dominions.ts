@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import {
   dominions,
   dominionRepos,
+  dominionMembers,
   dominionObjectives,
   projects,
   memories,
@@ -58,6 +59,11 @@ export async function updateDominion(id: string, userId: string, patch: UpdateDo
   if (patch.vision !== undefined)      update.vision = patch.vision
   if (patch.missionLong !== undefined) update.missionLong = patch.missionLong
   if (patch.archivedAt !== undefined)  update.archivedAt = patch.archivedAt
+  // Same semantics as setDominionPinned: pinning also wakes a dormant Dominion.
+  if (patch.pinned !== undefined) {
+    update.pinned = patch.pinned
+    if (patch.pinned) update.focusState = 'active'
+  }
 
   const [row] = await db
     .update(dominions)
@@ -90,36 +96,90 @@ export async function addDominionRepo(dominionId: string, userId: string, repoSl
   const owned = await findDominionById(dominionId, userId)
   if (!owned) return null
 
-  const [row] = await db
-    .insert(dominionRepos)
-    .values({ dominionId, repoSlug })
-    .onConflictDoNothing()
-    .returning()
-  return row ?? null
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(dominionRepos)
+      .values({ dominionId, repoSlug })
+      .onConflictDoNothing()
+      .returning()
+    await upsertOwnerMember(tx, { userId, dominionId, kind: 'repo', ref: repoSlug })
+    return row ?? null
+  })
 }
 
 export async function removeDominionRepo(dominionId: string, userId: string, repoSlug: string): Promise<boolean> {
   const owned = await findDominionById(dominionId, userId)
   if (!owned) return false
 
-  const [deleted] = await db
-    .delete(dominionRepos)
-    .where(and(eq(dominionRepos.dominionId, dominionId), eq(dominionRepos.repoSlug, repoSlug)))
-    .returning({ dominionId: dominionRepos.dominionId })
-  return !!deleted
+  return db.transaction(async (tx) => {
+    const [deleted] = await tx
+      .delete(dominionRepos)
+      .where(and(eq(dominionRepos.dominionId, dominionId), eq(dominionRepos.repoSlug, repoSlug)))
+      .returning({ dominionId: dominionRepos.dominionId })
+    await deleteMember(tx, { userId, dominionId, kind: 'repo', ref: repoSlug })
+    return !!deleted
+  })
 }
 
+// Active repo membership in a non-archived Dominion wins (highest weight, then
+// oldest link); otherwise the legacy dominion_repos mirror, live Dominions first.
 export async function resolveDominionByRepo(userId: string, repoSlug: string): Promise<string | null> {
+  const [member] = await db
+    .select({ dominionId: dominionMembers.dominionId })
+    .from(dominionMembers)
+    .innerJoin(dominions, and(
+      eq(dominionMembers.dominionId, dominions.id),
+      eq(dominions.userId, userId),
+      isNull(dominions.archivedAt),
+    ))
+    .where(and(
+      eq(dominionMembers.userId, userId),
+      eq(dominionMembers.kind, 'repo'),
+      eq(dominionMembers.ref, repoSlug),
+      eq(dominionMembers.status, 'active'),
+    ))
+    .orderBy(desc(dominionMembers.weight), asc(dominionMembers.createdAt), asc(dominionMembers.dominionId))
+    .limit(1)
+  if (member) return member.dominionId
+
   const [row] = await db
     .select({ dominionId: dominionRepos.dominionId })
     .from(dominionRepos)
     .innerJoin(dominions, and(
       eq(dominionRepos.dominionId, dominions.id),
       eq(dominions.userId, userId),
+      isNull(dominions.archivedAt),
     ))
     .where(eq(dominionRepos.repoSlug, repoSlug))
+    .orderBy(asc(dominions.createdAt), asc(dominions.id))
     .limit(1)
   return row?.dominionId ?? null
+}
+
+// Living Dominions membership (0040): dominion_repos and projects.dominion_id are
+// mirrors; owner-side changes to them also write the dominion_members row.
+type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0]
+type MemberKey = { userId: string; dominionId: string; kind: 'board' | 'repo' | 'concept'; ref: string }
+
+/** Insert an owner-made active link, or re-activate an existing one. */
+export async function upsertOwnerMember(exec: Executor, key: MemberKey): Promise<void> {
+  const now = new Date()
+  await exec
+    .insert(dominionMembers)
+    .values({ ...key, source: 'owner', status: 'active', updatedAt: now })
+    .onConflictDoUpdate({
+      target: [dominionMembers.userId, dominionMembers.kind, dominionMembers.ref, dominionMembers.dominionId],
+      set: { status: 'active', updatedAt: now },
+    })
+}
+
+export async function deleteMember(exec: Executor, key: MemberKey): Promise<void> {
+  await exec.delete(dominionMembers).where(and(
+    eq(dominionMembers.userId, key.userId),
+    eq(dominionMembers.kind, key.kind),
+    eq(dominionMembers.ref, key.ref),
+    eq(dominionMembers.dominionId, key.dominionId),
+  ))
 }
 
 /** Every repo → area mapping the user owns. */
@@ -367,11 +427,12 @@ export async function resolveDominionForMemory(
 
   if (opts.projectId) {
     const [proj] = await db
-      .select({ dominionId: projects.dominionId })
+      .select({ dominionId: dominions.id, archivedAt: dominions.archivedAt })
       .from(projects)
+      .leftJoin(dominions, and(eq(projects.dominionId, dominions.id), eq(dominions.userId, userId)))
       .where(and(eq(projects.id, opts.projectId), eq(projects.userId, userId)))
       .limit(1)
-    if (proj?.dominionId) return proj.dominionId
+    if (proj?.dominionId && !proj.archivedAt) return proj.dominionId
   }
 
   if (typeof opts.sourceMetadata?.repo === 'string') {

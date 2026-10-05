@@ -22,7 +22,7 @@ import {
   updateDominionObjective as _updateDominionObjective,
   archiveDominionObjective as _archiveDominionObjective,
 } from '@/lib/data/dominions'
-import { updateProject as _updateProject } from '@/lib/data/projects'
+import { assignProjectDominion, getDominionFocus } from '@/lib/data/dominion-members'
 import { verifyProjectAccess } from '@/lib/data/projects'
 import type { RegisterFn } from './types'
 import { getUserId, ok, notFound, fail } from './types'
@@ -87,7 +87,7 @@ export const registerDominionTools: RegisterFn = (server) => {
 
   server.tool(
     'update_dominion',
-    'Update an existing Dominion. Includes the Vorath body fields (vision, missionLong) so the Briefer has standing context. Pass archivedAt to soft-delete (archived Dominions are skipped by the Briefer).',
+    'Update an existing Dominion. Includes the Vorath body fields (vision, missionLong) so the Briefer has standing context. Pass archivedAt to soft-delete (archived Dominions are skipped by the Briefer). Pass pinned=true to keep a Dominion awake however quiet it gets (this also wakes a dormant one); pinned=false lets it go dormant again when idle.',
     {
       dominionId:  z.string().uuid().describe('Dominion UUID to update'),
       name:        z.string().min(1).max(100).optional(),
@@ -97,6 +97,7 @@ export const registerDominionTools: RegisterFn = (server) => {
       vision:      z.string().max(4000).nullable().optional().describe('Long-form WHAT this Dominion is for'),
       missionLong: z.string().max(8000).nullable().optional().describe('Long-form HOW — the operating mission'),
       archivedAt:  z.string().datetime().nullable().optional().describe('ISO timestamp to archive, or null to restore'),
+      pinned:      z.boolean().optional().describe('Keep this Dominion awake whatever its activity'),
     },
     { title: 'Update Dominion', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     async ({ dominionId, ...rest }, extra) => {
@@ -106,6 +107,17 @@ export const registerDominionTools: RegisterFn = (server) => {
       const row = await _updateDominion(dominionId, uid, parsed.data)
       if (!row) return notFound('Dominion')
       return ok(row)
+    }
+  )
+
+  server.tool(
+    'get_dominion_focus',
+    'See where your attention actually goes: your live Dominions ranked by recent activity (most active first), each marked dormant or awake and pinned or not, plus recent work that belongs to no Dominion yet. This is the same list Vorath uses to decide what to focus on. mode shows whether ranking is off, watch-only (observe) or on.',
+    {},
+    { title: 'Get Dominion Focus', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    async (_args, extra) => {
+      const uid = getUserId(extra)
+      return ok(await getDominionFocus(uid))
     }
   )
 
@@ -281,7 +293,7 @@ export const registerDominionTools: RegisterFn = (server) => {
         const dom = await findDominionById(dominionId, uid)
         if (!dom) return notFound('Dominion')
       }
-      const updated = await _updateProject(projectId, uid, { dominionId })
+      const updated = await assignProjectDominion(projectId, uid, dominionId)
       if (!updated) return notFound('Project')
       return ok({ projectId, dominionId, name: updated.name })
     }
@@ -306,7 +318,7 @@ export const registerDominionTools: RegisterFn = (server) => {
       for (const id of projectIds) {
         const access = await verifyProjectAccess(id, uid)
         if (!access) { skipped.push({ id, reason: 'not accessible' }); continue }
-        const row = await _updateProject(id, uid, { dominionId })
+        const row = await assignProjectDominion(id, uid, dominionId)
         if (row) updated.push(id)
         else skipped.push({ id, reason: 'update failed' })
       }

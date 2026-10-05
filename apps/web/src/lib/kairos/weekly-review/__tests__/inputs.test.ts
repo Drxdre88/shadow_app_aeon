@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const data = vi.hoisted(() => ({
   listRecentKairosAsks: vi.fn(),
@@ -18,6 +18,7 @@ const data = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/data/ask', () => ({ listRecentKairosAsks: data.listRecentKairosAsks }))
+vi.mock('@/lib/db', () => ({ db: {} }))
 vi.mock('@/lib/data/beliefs', () => ({ listBeliefs: data.listBeliefs, getLatestMindCompare: data.getLatestMindCompare }))
 vi.mock('@/lib/data/dominions', () => ({
   findDominionsByUser: data.findDominionsByUser,
@@ -320,5 +321,45 @@ describe('belief diff (G13)', () => {
     expect(inputs.beliefDiff?.changes[0]).toMatchObject({ memoryId: 'b-9', kind: 'retired', domain: 'health' })
     expect(fedMemoryIds(inputs)).toContain('b-9')
     expect(hasReviewSignal(inputs)).toBe(true)
+  })
+})
+describe('gatherWeeklyReviewInputs under Living Dominions', () => {
+  const dom = (id: string, name: string, over: Record<string, unknown> = {}) => ({
+    id, name, archivedAt: null, focusState: 'active', pinned: false, activityScore: 0, sortOrder: 0, ...over,
+  })
+  const prior = process.env.KAIROS_LIVING_DOMINIONS
+  afterEach(() => {
+    if (prior === undefined) delete process.env.KAIROS_LIVING_DOMINIONS
+    else process.env.KAIROS_LIVING_DOMINIONS = prior
+  })
+  beforeEach(() => {
+    data.findDominionsByUser.mockResolvedValue([
+      dom('d-hq', 'STP HQ', { focusState: 'dormant', sortOrder: 0 }),
+      dom('d-strat', 'Strategy', { focusState: 'dormant', pinned: true, sortOrder: 1 }),
+      dom('d-swarm', 'Swarm', { activityScore: 143, sortOrder: 2 }),
+      dom('d-stp', 'STP Asset Trading', { activityScore: 265, sortOrder: 3 }),
+    ])
+    data.listDominionObjectives.mockImplementation(async (id: string) => [
+      { title: `goal ${id}`, status: 'active', updatedAt: IN_WEEK, targetDate: null },
+    ])
+  })
+
+  it("'on': ranked roster, dormant objectives left out of the plan (pinned kept), quiet Dominions named", async () => {
+    process.env.KAIROS_LIVING_DOMINIONS = '1'
+    const inputs = await gatherWeeklyReviewInputs(USER, MONDAY)
+    expect(inputs.dominions.map((d) => d.name)).toEqual(['STP Asset Trading', 'Swarm', 'STP HQ', 'Strategy'])
+    expect(inputs.objectives.map((o) => o.dominionId)).toEqual(['d-stp', 'd-swarm', 'd-strat'])
+    expect(inputs.quietDominions).toEqual(['STP HQ'])
+  })
+
+  it("'observe' is identical to off", async () => {
+    delete process.env.KAIROS_LIVING_DOMINIONS
+    const off = await gatherWeeklyReviewInputs(USER, MONDAY)
+    process.env.KAIROS_LIVING_DOMINIONS = 'observe'
+    const observe = await gatherWeeklyReviewInputs(USER, MONDAY)
+    expect(observe).toEqual(off)
+    expect('quietDominions' in off).toBe(false)
+    expect(off.dominions.map((d) => d.name)).toEqual(['STP HQ', 'Strategy', 'Swarm', 'STP Asset Trading'])
+    expect(off.objectives).toHaveLength(4)
   })
 })

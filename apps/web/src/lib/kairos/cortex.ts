@@ -2,6 +2,7 @@ import { and, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories, dominions } from '@/lib/db/schema'
 import { findDominionsByUser, inspectDominion } from '@/lib/data/dominions'
+import { skipForFocus } from '@/lib/data/dominion-focus'
 import { validAsOfNow } from '@/lib/data/memories'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
@@ -475,8 +476,7 @@ export async function runCortexRegenForDominion(
 }
 
 export async function runCortexRegenForUser(userId: string): Promise<CortexRunResult[]> {
-  const all = await findDominionsByUser(userId)
-  const active = all.filter((d) => !d.archivedAt)
+  const active = (await findDominionsByUser(userId)).filter((d) => !d.archivedAt && !skipForFocus(d))
   const results: CortexRunResult[] = []
   for (const dom of active) {
     try {

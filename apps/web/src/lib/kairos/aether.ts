@@ -5,6 +5,7 @@ import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import { withRetry } from '@/lib/ai/retry'
 import { validAsOfNow } from '@/lib/data/memories'
+import { skipForFocus } from '@/lib/data/dominion-focus'
 import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 import {
   AETHER_SYSTEM_PROMPT,
@@ -100,7 +101,7 @@ export async function fetchAetherInputs(userId: string): Promise<{
   todaySoFar: string | null
 }> {
   const activeDoms = await db
-    .select({ id: dominions.id, name: dominions.name, color: dominions.color })
+    .select({ id: dominions.id, name: dominions.name, color: dominions.color, focusState: dominions.focusState, pinned: dominions.pinned })
     .from(dominions)
     .where(and(eq(dominions.userId, userId), isNull(dominions.archivedAt)))
 
@@ -184,7 +185,7 @@ export async function fetchAetherInputs(userId: string): Promise<{
     if (seenDominions.has(row.dominionId)) continue
     seenDominions.add(row.dominionId)
     const dom = domMap.get(row.dominionId)
-    if (!dom) continue
+    if (!dom || skipForFocus(dom)) continue
     const meta = (row.sourceMetadata ?? {}) as Record<string, unknown>
     const cortexPayload = meta.cortex as Record<string, unknown> | undefined
     cortexSnapshots.push({
