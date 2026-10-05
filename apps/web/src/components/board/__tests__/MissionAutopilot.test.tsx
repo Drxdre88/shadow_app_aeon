@@ -1,11 +1,11 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { answerAndRelaunch, approvePlanAndBuild, createFollowUpCards, requeueMission, revisePlan } from '@/lib/actions/hangar'
+import { answerAndRelaunch, approvePlanAndBuild, createFollowUpCards, requeueMission, revisePlan } from '@/lib/actions/hangar-autopilot'
 import { MissionAutopilotPanel } from '../MissionAutopilotPanel'
 import { MissionResultSection } from '../MissionResultSection'
 
-vi.mock('@/lib/actions/hangar', () => ({
+vi.mock('@/lib/actions/hangar-autopilot', () => ({
   requeueMission: vi.fn(),
   approvePlanAndBuild: vi.fn(),
   revisePlan: vi.fn(),

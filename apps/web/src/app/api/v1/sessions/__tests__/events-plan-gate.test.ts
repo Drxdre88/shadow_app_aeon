@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
-// Plan-then-approve: a completed planning run's result becomes the card's
-// Plan checklist; build runs and non-completed plans are left alone.
+// Plan-then-approve: the route hands a planning result to recordSessionResult,
+// which settles the Plan checklist in its own transaction. The route makes no
+// second card write, so a failure can never strand the card in 'planning'.
 
 const mocks = vi.hoisted(() => ({
   findAgentSessionById: vi.fn(),
@@ -12,7 +13,6 @@ const mocks = vi.hoisted(() => ({
   listSessionEvents: vi.fn(),
   getNextEventSeq: vi.fn(),
   recordSessionResult: vi.fn(),
-  applyPlanResult: vi.fn(),
 }))
 
 vi.mock('next/server', async (importOriginal) => ({
@@ -40,7 +40,6 @@ vi.mock('@/lib/data/sessions', () => ({
   recordSessionResult: mocks.recordSessionResult,
 }))
 vi.mock('@/lib/kairos/mission-memory', () => ({ captureMissionMemory: vi.fn() }))
-vi.mock('@/lib/data/hangar-autopilot', () => ({ applyPlanResult: mocks.applyPlanResult }))
 
 import { POST } from '../[id]/events/route'
 
@@ -69,28 +68,25 @@ beforeEach(() => {
 })
 
 describe('POST /sessions/:id/events — plan gate', () => {
-  it('writes a completed planning result to the card plan', async () => {
+  it('settles a completed planning result through recordSessionResult alone', async () => {
     mocks.findAgentSessionById.mockResolvedValue(session('plan'))
     const res = await postResult(PLAN)
     expect(res.status).toBe(201)
-    expect(mocks.applyPlanResult).toHaveBeenCalledWith(SESSION_ID, TASK_ID, expect.objectContaining({ outcome: 'planned' }))
+    expect(mocks.recordSessionResult).toHaveBeenCalledTimes(1)
+    expect(mocks.recordSessionResult).toHaveBeenCalledWith(SESSION_ID, expect.objectContaining({ outcome: 'planned' }))
+    expect((await res.json()).data.resultProcessed).toBe(true)
   })
 
-  it('ignores build runs and plans that need input', async () => {
-    mocks.findAgentSessionById.mockResolvedValue(session('build'))
-    await postResult({ ...PLAN, outcome: 'implemented', artifacts: ['a.ts'] })
+  it('reports a replayed planning result as not processed', async () => {
     mocks.findAgentSessionById.mockResolvedValue(session('plan'))
-    await postResult({ ...PLAN, status: 'needs_input', questions: ['Which repo?'] })
-    expect(mocks.applyPlanResult).not.toHaveBeenCalled()
-  })
-
-  it('keeps the result accepted when the plan write fails', async () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-    mocks.findAgentSessionById.mockResolvedValue(session('plan'))
-    mocks.applyPlanResult.mockRejectedValue(new Error('neon blip'))
+    mocks.recordSessionResult.mockResolvedValue({ session: { id: SESSION_ID }, task: null })
     const res = await postResult(PLAN)
-    expect(res.status).toBe(201)
-    expect(error).toHaveBeenCalledWith('[sessions/events] plan checklist write failed', expect.objectContaining({ sessionId: SESSION_ID }))
-    error.mockRestore()
+    expect((await res.json()).data.resultProcessed).toBe(false)
+  })
+
+  it('does not swallow a failed settlement — the runner sees an error and can retry', async () => {
+    mocks.findAgentSessionById.mockResolvedValue(session('plan'))
+    mocks.recordSessionResult.mockRejectedValue(new Error('neon blip'))
+    await expect(postResult(PLAN)).rejects.toThrow('neon blip')
   })
 })

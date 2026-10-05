@@ -3,7 +3,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MissionResultSection } from '../MissionResultSection'
 
-vi.mock('@/lib/actions/hangar', () => ({ answerAndRelaunch: vi.fn(), createFollowUpCards: vi.fn() }))
+vi.mock('@/lib/actions/hangar-autopilot', () => ({ answerAndRelaunch: vi.fn(), createFollowUpCards: vi.fn() }))
 vi.mock('@/components/ui/Toast', () => ({ toast: vi.fn() }))
 
 afterEach(cleanup)

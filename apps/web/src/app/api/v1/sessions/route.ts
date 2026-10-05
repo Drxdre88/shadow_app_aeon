@@ -5,6 +5,7 @@ import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLi
 import { spawnSessionSchema, listSessionsSchema, sessionHangarMetadataIssue } from '@/lib/data/validators'
 import { createAgentSession, listAgentSessions, findAgentSessionById, updateAgentSessionStatus, recordSessionEvent, findLiveSessionForTask, LiveMissionExistsError } from '@/lib/data/sessions'
 import { dispatchSpawn } from '@/lib/kairos/spawn'
+import { resolveSessionAnchor } from '@/lib/data/hangar-access'
 
 // Kairos Phase 3 (D16) — REST surface for agent_sessions.
 // POST spawns a session (and asks the worker host to shell the CLI).
@@ -32,9 +33,14 @@ export const POST = withRateLimit(
     const hangarIssue = sessionHangarMetadataIssue(parsed.data.metadata)
     if (hangarIssue) return jsonError(hangarIssue, 400)
 
+    // A card-anchored session writes back to that card (result, column, Plan
+    // checklist) — anchoring needs editor access to the card's project.
+    const anchor = await resolveSessionAnchor(auth.id, parsed.data)
+    if (!anchor.ok) return jsonError(anchor.message, 403)
+
     let session
     try {
-      session = await createAgentSession(auth.id, parsed.data)
+      session = await createAgentSession(auth.id, { ...parsed.data, projectId: anchor.projectId })
     } catch (err) {
       // The partial unique index is the launch guard (no pre-check SELECT —
       // that is the race it exists to close). Losing the insert is a duplicate

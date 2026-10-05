@@ -46,12 +46,15 @@ vi.mock('@/lib/db', () => {
   }
 })
 
-vi.mock('../sessions', () => ({ resolveResultColumn: vi.fn(async () => 'tower-col') }))
-vi.mock('../projects', () => ({ touchProject: vi.fn(async () => {}) }))
+vi.mock('../columns', () => ({ findColumns: vi.fn(async () => []) }))
+vi.mock('../projects', () => ({ touchProject: vi.fn(async () => {}), findProjectSettings: vi.fn(async () => null) }))
 vi.mock('../bridge', () => ({ syncChecklistToGanttProgress: vi.fn(async () => {}) }))
 
+import { db } from '@/lib/db'
 import { applyPlanResult, createFollowUpMissionCards, extractPlanSteps, findFollowUpColumnId } from '../hangar-autopilot'
-import { touchProject } from '../projects'
+import { preparePlanSettlement } from '../hangar-plan'
+import { findColumns } from '../columns'
+import { findProjectSettings, touchProject } from '../projects'
 
 const dialect = new PgDialect()
 const compile = (value: unknown) => dialect.sqlToQuery(value as SQL)
@@ -82,15 +85,11 @@ describe('extractPlanSteps', () => {
 })
 
 describe('applyPlanResult', () => {
-  it('replaces the Plan checklist group, marks the plan awaiting approval and moves the card to Tower atomically', async () => {
-    selectQueue.push([{ id: 't-1', projectId: 'p-1' }], [{ max: 4 }])
+  it('replaces the Plan checklist group, marks the plan awaiting approval and moves the card to Tower on the caller tx', async () => {
+    selectQueue.push([{ max: 4 }])
+    const plan = { steps: ['Step one: details'], columnId: 'tower-col' }
 
-    const result = await applyPlanResult('s-plan', 't-1', {
-      status: 'completed',
-      outcome: 'planned',
-      summary: 'Plan ready.',
-      recommended_tasks: [{ title: 'Step one', objective: 'implement', instruction: 'details' }],
-    })
+    const result = await db.transaction((tx) => applyPlanResult(tx, 's-plan', 't-1', plan))
 
     expect(result).toEqual({ taskId: 't-1', steps: ['Step one: details'], columnId: 'tower-col' })
     expect(transactionCalls).toBe(1)
@@ -103,13 +102,25 @@ describe('applyPlanResult', () => {
     const metadata = compile(card?.set?.metadata)
     expect(metadata.sql).toContain('{hangar,planGate}')
     expect(metadata.params.join(' ')).toContain('awaiting_approval')
-    expect(touchProject).toHaveBeenCalledWith('p-1', { type: 'task:updated' })
+    // Realtime is the caller's job, after its transaction commits.
+    expect(touchProject).not.toHaveBeenCalled()
+  })
+})
+
+describe('preparePlanSettlement', () => {
+  const PLAN = { status: 'completed' as const, outcome: 'planned' as const, summary: '1. First\n2. Second' }
+  const planSession = { metadata: { hangar: { objective: 'plan', phase: 'plan' } } }
+
+  it('routes a completed planning run to Tower with its steps', async () => {
+    vi.mocked(findProjectSettings).mockResolvedValueOnce({ boardMode: 'hangar' } as never)
+    vi.mocked(findColumns).mockResolvedValueOnce([{ id: 'tower-col', name: 'Tower' }] as never)
+    await expect(preparePlanSettlement(planSession, 'p-1', PLAN)).resolves.toEqual({ steps: ['First', 'Second'], columnId: 'tower-col' })
   })
 
-  it('does nothing for a card that no longer exists', async () => {
-    selectQueue.push([])
-    await expect(applyPlanResult('s', 'gone', { status: 'completed', outcome: 'planned', summary: 'x' })).resolves.toBeNull()
-    expect(transactionCalls).toBe(0)
+  it('ignores build runs and plans that did not complete', async () => {
+    await expect(preparePlanSettlement({ metadata: { hangar: { phase: 'build' } } }, 'p-1', PLAN)).resolves.toBeNull()
+    await expect(preparePlanSettlement(planSession, 'p-1', { ...PLAN, status: 'needs_input', questions: ['Which repo?'] })).resolves.toBeNull()
+    expect(findColumns).not.toHaveBeenCalled()
   })
 })
 

@@ -5,7 +5,7 @@ import { getMissionSessionStatusAction } from '@/lib/actions/sessions'
 import { MissionDetailsSection } from '../MissionDetailsSection'
 
 vi.mock('@/lib/actions/sessions', () => ({ getMissionSessionStatusAction: vi.fn() }))
-vi.mock('@/lib/actions/hangar', () => ({
+vi.mock('@/lib/actions/hangar-autopilot', () => ({
   requeueMission: vi.fn(),
   approvePlanAndBuild: vi.fn(),
   revisePlan: vi.fn(),

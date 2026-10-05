@@ -61,7 +61,9 @@ vi.mock('../columns', () => ({ findColumns: vi.fn(async () => []) }))
 vi.mock('../projects', () => ({
   findProjectSettings: vi.fn(async () => null),
   touchProject: vi.fn(async () => {}),
+  verifyProjectAccess: vi.fn(async () => ({ project: {}, role: 'editor' })),
 }))
+vi.mock('../bridge', () => ({ syncChecklistToGanttProgress: vi.fn(async () => {}) }))
 vi.mock('../tasks', () => ({ updateTask: vi.fn(async () => ({ id: 'task', columnId: null })) }))
 
 import { claimNextSession, recordSessionResult, scrubPgText, scrubJsonb, findMissionSessionStatus } from '../sessions'

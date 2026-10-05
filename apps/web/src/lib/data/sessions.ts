@@ -10,21 +10,16 @@ import type {
   HangarAgent,
   HangarResultEnvelope,
 } from './validators'
-import { findColumns } from './columns'
-import { findProjectSettings, touchProject } from './projects'
+import { touchProject } from './projects'
 import { TODAY_ENGINE } from './kairos-today'
+import { canEditProject } from './hangar-access'
+import { applyPlanResult, preparePlanSettlement, resolveResultColumn, syncPlanProgress } from './hangar-plan'
+
+export { resolveResultColumn }
 
 const LIVE_STATUSES: AgentSessionStatus[] = ['queued', 'running']
 const TERMINAL_STATUSES: AgentSessionStatus[] = ['succeeded', 'failed', 'killed', 'timeout']
 const CLAIMABLE_ENGINES: HangarAgent[] = ['claude', 'codex', 'copilot']
-
-// Hangar lifecycle columns a finished mission lands in. Failures stay put so a
-// human triages them where they were launched.
-const RESULT_COLUMN_NAMES: Record<HangarResultEnvelope['status'], string | null> = {
-  completed: 'Landing',
-  needs_input: 'Tower',
-  failed: null,
-}
 
 /** Thrown when a card already has a queued/running mission. */
 export class LiveMissionExistsError extends Error {
@@ -239,27 +234,11 @@ export async function heartbeatSession(id: string, userId: string, workerId: str
   return row ?? null
 }
 
-export async function resolveResultColumn(
-  projectId: string,
-  status: HangarResultEnvelope['status'],
-): Promise<string | null> {
-  const target = RESULT_COLUMN_NAMES[status]
-  if (!target) return null
-
-  const settings = await findProjectSettings(projectId)
-  const hangar = settings?.hangar
-  const enabled = hangar !== null && typeof hangar === 'object'
-    && !Array.isArray(hangar) && 'enabled' in hangar && hangar.enabled === true
-  if (settings?.boardMode !== 'hangar' && !enabled) return null
-
-  const columns = await findColumns(projectId)
-  const match = columns.find((c) => c.name.trim().toLowerCase() === target.toLowerCase())
-  return match?.id ?? null
-}
-
 // Terminal envelope handling: flip the session, cache the result on the card
 // and move it along the Hangar lifecycle. needs_input still counts as a clean
-// exit — the process finished, the mission is just waiting on a human.
+// exit — the process finished, the mission is just waiting on a human. A
+// completed plan-phase result settles its Plan checklist + Tower move in the
+// same transaction instead of the Landing move.
 export async function recordSessionResult(
   sessionId: string,
   envelope: HangarResultEnvelope,
@@ -276,11 +255,16 @@ export async function recordSessionResult(
   // transaction, a card-patch failure after the flip would strand the mission:
   // the terminal guard turns every retry into a no-op and the card never
   // receives its result (house rule: multi-write mutations are transactional).
-  const task = session.taskId
+  const linked = session.taskId
     ? (await db.select().from(boardTasks).where(eq(boardTasks.id, session.taskId)).limit(1))[0] ?? null
     : null
+  // Defence in depth behind the spawn-time anchor check: a session only
+  // writes to a card its owner can still edit (else it settles card-less).
+  const task = linked && (await canEditProject(linked.projectId, session.userId)) ? linked : null
+  if (linked && !task) console.warn('[sessions] result not applied to a card the session owner cannot edit', { sessionId, taskId: linked.id })
 
-  const columnId = task ? await resolveResultColumn(task.projectId, envelope.status) : null
+  const plan = task ? await preparePlanSettlement(session, task.projectId, envelope) : null
+  const columnId = task && !plan ? await resolveResultColumn(task.projectId, envelope.status) : null
 
   const now = new Date()
   const result = await db.transaction(async (tx) => {
@@ -323,12 +307,14 @@ export async function recordSessionResult(
       })
       .where(eq(boardTasks.id, task.id))
       .returning()
+    if (updatedTask && plan) await applyPlanResult(tx, sessionId, task.id, plan, now)
     return { session: updatedSession, task: updatedTask ?? null, guarded: false }
   })
 
   // Version bump + realtime after commit — one event, same as updateTask would
   // have emitted. Skipped for guarded replays (nothing changed).
   if (result.task && task) await touchProject(task.projectId, { type: 'task:updated' })
+  if (result.task && plan) syncPlanProgress(result.task.id)
 
   return { session: result.session, task: result.task }
 }

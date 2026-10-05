@@ -10,7 +10,7 @@ const RELAUNCHABLE = new Set(['timeout', 'failed', 'killed'])
 
 // Loaded on click so the card modal's module graph stays free of the Hangar
 // server actions until an autopilot control is actually used.
-export const loadHangarActions = () => import('@/lib/actions/hangar')
+export const loadHangarActions = () => import('@/lib/actions/hangar-autopilot')
 
 /** Reflect a server-confirmed launch on the board so the card starts polling the new run. */
 export function recordLocalLaunch(taskId: string, sessionId: string) {

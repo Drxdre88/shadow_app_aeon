@@ -126,7 +126,9 @@ describe('Sessions MCP <-> REST parity', () => {
     // validation (an unknown objective was accepted at 201) and a clear
     // duplicate-launch rejection (three concurrent losers returned 500). A
     // guard on one surface only is the same defect, half-fixed.
-    const spawnGuards = ['sessionHangarMetadataIssue', 'LiveMissionExistsError']
+    // A third guard (wave A review): a card-anchored session writes back to the
+    // card, so both surfaces must check editor access to the anchor first.
+    const spawnGuards = ['sessionHangarMetadataIssue', 'LiveMissionExistsError', 'resolveSessionAnchor']
 
     it.each(spawnGuards)('MCP spawn applies shared guard: %s', (guard) => {
       expect(mcpSrc, `MCP sessions.ts missing ${guard}`).toMatch(new RegExp(`\\b${guard}\\b`))
@@ -226,7 +228,7 @@ describe('Hangar registry MCP <-> REST parity', () => {
 
     it('is registered on the MCP server', () => {
       const transportSrc = readSource(TRANSPORT_ROUTE)
-      expect(transportSrc).toMatch(/registerHangarTools\(server\)/)
+      expect(transportSrc).toMatch(/\[registerHangarTools, \[/)
     })
   })
 

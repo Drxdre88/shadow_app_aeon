@@ -25,6 +25,7 @@ import {
   getNextEventSeq,
 } from '@/lib/data/sessions'
 import { dispatchSpawn } from '@/lib/kairos/spawn'
+import { resolveSessionAnchor } from '@/lib/data/hangar-access'
 
 // Spawn a new agent session. Creates the row, then asks the worker host to
 // shell the CLI. If the worker isn't reachable the row stays in 'queued' and
@@ -32,8 +33,10 @@ import { dispatchSpawn } from '@/lib/kairos/spawn'
 export async function spawnSessionAction(input: SpawnSessionInput) {
   const userId = await requireAuth()
   const parsed = spawnSessionSchema.parse(input)
+  const anchor = await resolveSessionAnchor(userId, { projectId: parsed.projectId, taskId: parsed.taskId })
+  if (!anchor.ok) throw new Error(anchor.message)
 
-  const session = await createAgentSession(userId, parsed)
+  const session = await createAgentSession(userId, { ...parsed, projectId: anchor.projectId ?? parsed.projectId })
 
   const callbackBaseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.AEON_BASE_URL || ''
   const callbackToken = process.env.AEON_API_KEY || ''

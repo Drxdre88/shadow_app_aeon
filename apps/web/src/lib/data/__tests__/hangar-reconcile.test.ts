@@ -99,6 +99,11 @@ describe('reconcileHangarSessions', () => {
     expect(sessionFlip.set).toMatchObject({ status: 'timeout', endedAt: NOW })
     const flipGuard = compile(sessionFlip.where)
     expect(flipGuard.params).toContain('running')
+    // Race guard: the flip re-checks staleness AND the telemetry clause in its
+    // own WHERE, so a heartbeat or event landing after the scan wins.
+    expect(flipGuard.sql).toMatch(/coalesce\("agent_sessions"\."last_heartbeat_at", .*\) < \$\d+::timestamp/)
+    expect(flipGuard.sql).toMatch(/not exists \(select 1 from session_events e where e\.session_id = "agent_sessions"\."id" and e\.created_at >= \$\d+::timestamp\)/)
+    expect(flipGuard.params.filter((p) => p === '2026-10-05T11:30:00.000Z')).toHaveLength(2)
     expect(cardPatch.set).toMatchObject({ columnId: 'tower-col' })
     const cardSql = compile(cardPatch.set?.metadata)
     expect(cardSql.sql).toContain('{hangar,lastResult}')
