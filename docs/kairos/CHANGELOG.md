@@ -4,6 +4,14 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–35).
 
+## [0.26.0] — 2026-10-05 · "Kairos becomes Vorath"
+
+> The old name got popular, so the mind is renamed Vorath. Same mind, same memories: prompts say "Vorath (formerly called Kairos)" so older memories still read as his own.
+
+- **Visible:** UI, `/vorath` route (`/kairos` permanent-redirects), every owner-facing message and report header, persona and routine paste text (`ROUTINES[].name` = Vorath brain/chat/pulse; renamed in place on claude.ai, not retired), MCP tool descriptions, the Dominion name. `MIND_NAME` / `FORMER_MIND_NAME` in `lib/kairos/identity.ts`.
+- **Aliases:** `applyMindEnvAliases` (`lib/env/mind-env-alias.ts`) copies `VORATH_*` onto `KAIROS_*` in `instrumentation.ts` register() (nodejs only; the worker, scripts and edge still read `KAIROS_*`); `next.config` rewrite `/api/v1/vorath/:path*` → `/api/v1/kairos/:path*` (route-level auth unchanged).
+- **Kept as kairos:** env names read by code, MCP tool names, REST paths, DB/jsonb keys, tags, kinds, externalId prefixes, origin/speaker values, the `Telegram · Kairos` thread title (thread lookup key), drift-probe questions (baselines), identifiers, comments.
+
 ## [0.25.0] — 2026-10-04 · "One coherent mind, wave 4: the art of the moment"
 
 > The relationship layer: when to speak, what he thinks you're carrying, readiness, small bids, repair, earned trust, ask-before-advising, and monthly life chapters. Built on a no-op `lib/kairos/moment/` seam; every lane flag-gated; flag-off is byte-identical; Telegram unchanged.
