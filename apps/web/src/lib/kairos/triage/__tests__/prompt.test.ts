@@ -8,7 +8,7 @@ import {
   triageContextSchema,
   type TriageBoardInput,
 } from '../prompt'
-import { findTriageItem, hasPendingTriage, triageItems, withTriageStatus } from '../resolve'
+import { findTriageItem, triageItems, withTriageStatus } from '../resolve'
 import { readCardTriage } from '../types'
 
 const board = (over: Partial<TriageBoardInput> = {}): TriageBoardInput => ({
@@ -126,7 +126,7 @@ describe('owner decisions', () => {
     expect(withTriageStatus(accepted, 'label', 'lab-bug', 'dismissed')).toBeNull()
     const dup = withTriageStatus(accepted, 'duplicate', 'old-1', 'dismissed')!
     const done = withTriageStatus(dup, 'priority', undefined, 'accepted')!
-    expect(hasPendingTriage(dup)).toBe(true)
-    expect(hasPendingTriage(done)).toBe(false)
+    expect(triageItems(dup).some((i) => i.status === 'pending')).toBe(true)
+    expect(triageItems(done).some((i) => i.status === 'pending')).toBe(false)
   })
 })

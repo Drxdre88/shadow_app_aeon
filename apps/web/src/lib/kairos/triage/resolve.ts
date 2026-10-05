@@ -33,7 +33,3 @@ export function withTriageStatus(
   if (kind === 'label') return { ...t, labels: t.labels.map((l) => (l.id === ref ? { ...l, status } : l)) }
   return { ...t, duplicates: t.duplicates.map((d) => (d.taskId === ref ? { ...d, status } : d)) }
 }
-
-export function hasPendingTriage(t: CardTriage | null): boolean {
-  return !!t && triageItems(t).some((i) => i.status === 'pending')
-}

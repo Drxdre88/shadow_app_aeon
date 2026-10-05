@@ -1,14 +1,13 @@
-import { sql } from 'drizzle-orm'
-import { memories } from '@/lib/db/schema'
+import { getSensitiveGate } from '@/lib/data/kairos-sensitive'
 import { META_STREAM_CLASSES } from '@/lib/kairos/streamClass'
 import { detectSensitiveTopics } from './lexicon'
-import { getSensitiveGate } from './pref'
 import type { SensitiveStamp } from './meta'
 
-// Rows held for the owner's review stay out of every reader that applies
-// validAsOfNow (retrieval, prompts, belief inputs, the engine). Literal SQL
-// (no bound params) so it never shifts the param list of the queries it joins.
-export const notHeldSensitive = sql`(${memories.sourceMetadata}->>'sensitiveHeld') IS DISTINCT FROM 'true'`
+// Held rows stay out of readers that apply validAsOfNow (retrieval, chat
+// context, prepareContext) and of the prompt/message readers that add
+// notHeldSensitive (./held) themselves. Pure scoring readers (memory engine,
+// belief signal inputs) do not filter: a held row can still move a score,
+// but its text never reaches a prompt or a message.
 
 interface CaptureText {
   title?: string | null

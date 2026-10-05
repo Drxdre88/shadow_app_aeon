@@ -32,8 +32,12 @@ export const ORIGIN_TRUST: Record<OriginKind, number> = {
 // board_card_done: a single card finished on a watched board, captured the same
 // day. Activity for trust, but deliberately left out of belief signals and
 // BackUp support — the nightly board_day page stays the one anchored record.
-const ACTIVITY_KINDS: ReadonlySet<string> = new Set(['board_day', 'board_week', 'board_card_done', 'hangar_mission'])
-const AGENT_SOURCES: ReadonlySet<string> = new Set(['claude', 'codex', 'copilot', 'hook'])
+// Exported so SQL mirrors of this inference (lib/data/memory-knows.ts) build from the same lists.
+export const ACTIVITY_KINDS: ReadonlySet<string> = new Set(['board_day', 'board_week', 'board_card_done', 'hangar_mission'])
+export const AGENT_SOURCES: ReadonlySet<string> = new Set(['claude', 'codex', 'copilot', 'hook'])
+export const OPERATOR_SOURCES: ReadonlySet<string> = new Set(['manual', 'voice'])
+export const EXTERNAL_SOURCES: ReadonlySet<string> = new Set(['import', 'webhook'])
+export const KAIROS_SOURCES: ReadonlySet<string> = new Set(['cron', 'system'])
 
 function asRecord(v: unknown): Record<string, unknown> | null {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
@@ -57,19 +61,11 @@ export function inferOriginKind(source: string | null | undefined, sourceMetadat
   const meta = asRecord(sourceMetadata)
   const kind = typeof meta?.kind === 'string' ? meta.kind : null
   if (kind && ACTIVITY_KINDS.has(kind)) return 'activity'
-  switch (source) {
-    case 'manual':
-    case 'voice':
-      return 'operator'
-    case 'import':
-    case 'webhook':
-      return 'external'
-    case 'cron':
-    case 'system':
-      return 'kairos'
-    default:
-      return source && AGENT_SOURCES.has(source) ? 'agent' : 'external'
-  }
+  if (!source) return 'external'
+  if (OPERATOR_SOURCES.has(source)) return 'operator'
+  if (EXTERNAL_SOURCES.has(source)) return 'external'
+  if (KAIROS_SOURCES.has(source)) return 'kairos'
+  return AGENT_SOURCES.has(source) ? 'agent' : 'external'
 }
 
 export function originKindOf(row: { source?: string | null; sourceMetadata?: unknown }): OriginKind {

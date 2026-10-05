@@ -2,11 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import type { SQL } from 'drizzle-orm'
 
-vi.mock('../pref', () => ({ getSensitiveGate: vi.fn() }))
+vi.mock('@/lib/data/kairos-sensitive', () => ({ getSensitiveGate: vi.fn() }))
 vi.mock('@/lib/db', () => ({ db: {} }))
 
-import { getSensitiveGate } from '../pref'
-import { notHeldSensitive, sensitiveCaptureStamp } from '../capture'
+import { getSensitiveGate } from '@/lib/data/kairos-sensitive'
+import { sensitiveCaptureStamp } from '../capture'
+import { heldSensitive, notHeldSensitive, notHeldSensitiveRaw } from '../held'
 import { validAsOfNow } from '@/lib/data/memories'
 
 const gate = vi.mocked(getSensitiveGate)
@@ -56,5 +57,11 @@ describe('retrieval exclusion', () => {
     expect(live.sql).toContain('"invalid_at" IS NULL OR "memories"."invalid_at" > NOW()')
     expect(live.sql).toContain(`->>'sensitiveHeld') IS DISTINCT FROM 'true'`)
     expect(live.params).toEqual([])
+  })
+
+  it('spells the held check once: positive, negative and aliased raw forms', () => {
+    expect(render(heldSensitive)).toEqual({ sql: `("memories"."source_metadata"->>'sensitiveHeld') = 'true'`, params: [] })
+    expect(notHeldSensitiveRaw('m2')).toBe(`(m2.source_metadata->>'sensitiveHeld') IS DISTINCT FROM 'true'`)
+    expect(() => notHeldSensitiveRaw('m; drop table memories')).toThrow(/alias/)
   })
 })

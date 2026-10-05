@@ -10,7 +10,7 @@ vi.mock('@/lib/data/memory-knows', () => ({
   rejectMemoryAsWrong: vi.fn(),
 }))
 vi.mock('@/lib/kairos/engine/revert', () => ({ revertMemoryOp: vi.fn() }))
-vi.mock('@/lib/kairos/sensitive', () => ({ getSensitiveGate: vi.fn(), setSensitiveGate: vi.fn() }))
+vi.mock('@/lib/data/kairos-sensitive', () => ({ getSensitiveGate: vi.fn(), setSensitiveGate: vi.fn() }))
 vi.mock('@/lib/kairos/constitution/amendment', () => ({
   isConstitutionRow: (r: { type?: string; streamClass?: string } | null) => r?.type === 'constitution' || r?.streamClass === 'constitution',
 }))
@@ -19,7 +19,7 @@ import { requireAuth } from '@/lib/actions/helpers'
 import { findMemoryById, updateMemory } from '@/lib/data/memories'
 import { confirmMemoryAsOwner, rejectMemoryAsWrong } from '@/lib/data/memory-knows'
 import { revertMemoryOp } from '@/lib/kairos/engine/revert'
-import { setSensitiveGate } from '@/lib/kairos/sensitive'
+import { setSensitiveGate } from '@/lib/data/kairos-sensitive'
 import {
   confirmMemory,
   editMemoryInPlace,

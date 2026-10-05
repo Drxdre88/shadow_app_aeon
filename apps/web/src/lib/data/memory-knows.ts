@@ -3,9 +3,19 @@ import { db } from '@/lib/db'
 import { dominions, memories, memoryOps } from '@/lib/db/schema'
 import { findMemoryById, validAsOfNow } from './memories'
 import { insertMemoryOps, listMemoryOps } from './memory-ops'
-import { originKindOf, type Origin } from '@/lib/kairos/origin'
+import {
+  ACTIVITY_KINDS,
+  AGENT_SOURCES,
+  EXTERNAL_SOURCES,
+  KAIROS_SOURCES,
+  OPERATOR_SOURCES,
+  ORIGIN_KINDS,
+  originKindOf,
+  type Origin,
+} from '@/lib/kairos/origin'
 import { readBelief } from '@/lib/kairos/beliefs/types'
-import { SENSITIVE_HELD_KEY } from '@/lib/kairos/sensitive'
+import { heldSensitive } from '@/lib/kairos/sensitive/held'
+import { SENSITIVE_HELD_KEY } from '@/lib/kairos/sensitive/meta'
 
 // "What Vorath knows" — read model and owner corrections over the memories
 // substrate. Pure DB access; auth and the constitution/goal refusals live in
@@ -85,12 +95,17 @@ export async function listKnownRows(userId: string, limit = 200): Promise<KnownR
 export type NeedsEyesReason = 'sensitive' | 'recheck' | 'low_trust'
 export type NeedsEyesRow = KnownRow & { reason: NeedsEyesReason }
 
-// Origin kind in SQL: the stored label, else the source-based inference
-// (origin.ts inferOriginKind, reduced to the agent/external cases we list).
-const sqlOriginKind = sql`coalesce(${memories.sourceMetadata}->'origin'->>'kind', case
-  when ${memories.source} in ('import', 'webhook') then 'external'
-  when ${memories.source} in ('claude', 'codex', 'copilot', 'hook') then 'agent'
-  else 'other' end)`
+// Origin kind in SQL: the stored label, else origin.ts inferOriginKind built
+// from the same source/kind lists (constants only, so literal SQL).
+const sqlList = (xs: ReadonlySet<string> | readonly string[]) => sql.raw(`(${[...xs].map((x) => `'${x.replace(/'/g, "''")}'`).join(', ')})`)
+export const sqlOriginKind = sql`coalesce(case when ${memories.sourceMetadata}->'origin'->>'kind' in ${sqlList(ORIGIN_KINDS)}
+    then ${memories.sourceMetadata}->'origin'->>'kind' end, case
+  when ${memories.sourceMetadata}->>'kind' in ${sqlList(ACTIVITY_KINDS)} then 'activity'
+  when ${memories.source} in ${sqlList(OPERATOR_SOURCES)} then 'operator'
+  when ${memories.source} in ${sqlList(EXTERNAL_SOURCES)} then 'external'
+  when ${memories.source} in ${sqlList(KAIROS_SOURCES)} then 'kairos'
+  when ${memories.source} in ${sqlList(AGENT_SOURCES)} then 'agent'
+  else 'external' end)`
 
 // What the owner should look at: sensitive rows held by the gate, beliefs the
 // engine flagged for re-check, and recent durable rows written by an agent or
@@ -107,7 +122,7 @@ export async function listNeedsEyes(userId: string, opts: { days?: number; limit
     .limit(limit)
 
   const [held, recheck, lowTrust] = await Promise.all([
-    base(and(sql`${memories.sourceMetadata}->>'sensitiveHeld' = 'true'`)),
+    base(heldSensitive),
     base(and(isNull(memories.supersededAt), sql`${memories.sourceMetadata}->'belief'->'recheck' IS NOT NULL`)),
     base(and(
       isNull(memories.supersededAt),

@@ -1,11 +1,10 @@
+import { eq, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { userPreferences } from '@/lib/db/schema'
-import { eq, sql } from 'drizzle-orm'
+import { SENSITIVE_GATE_DEFAULT, SENSITIVE_GATE_PREF_KEY } from '@/lib/kairos/sensitive/pref-keys'
 
-// Sensitive-topic gate switch: opt-in, default OFF, one boolean inside the
-// user_preferences jsonb (no schema change). Only setSensitiveGate writes it.
-export const SENSITIVE_GATE_PREF_KEY = 'kairosSensitiveGate'
-export const SENSITIVE_GATE_DEFAULT = false
+// The private-topic gate preference: the single reader/writer of
+// kairosSensitiveGate inside user_preferences (no schema change).
 
 export async function getSensitiveGate(userId: string): Promise<boolean> {
   const row = await db

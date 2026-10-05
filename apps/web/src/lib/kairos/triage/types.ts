@@ -38,8 +38,6 @@ export const cardTriageSchema = z.object({
 })
 
 export type CardTriage = z.infer<typeof cardTriageSchema>
-export type TriageLabel = z.infer<typeof triageLabelSchema>
-export type TriageDuplicate = z.infer<typeof triageDuplicateSchema>
 
 export type TriageItemKind = 'label' | 'priority' | 'duplicate'
 export type TriageDecision = 'accept' | 'dismiss'

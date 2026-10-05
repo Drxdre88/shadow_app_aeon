@@ -13,7 +13,7 @@ import {
 import { revertMemoryOp } from '@/lib/kairos/engine/revert'
 import { isConstitutionRow } from '@/lib/kairos/constitution/amendment'
 import { isGoalRow } from '@/lib/kairos/goals/guards'
-import { getSensitiveGate, setSensitiveGate } from '@/lib/kairos/sensitive'
+import { getSensitiveGate, setSensitiveGate } from '@/lib/data/kairos-sensitive'
 
 // "What Vorath knows" — the owner sees what Vorath believes, why, and fixes
 // it. requireAuth → validate → refuse protected rows → lib/data. Memories are

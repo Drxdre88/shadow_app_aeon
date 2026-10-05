@@ -2,6 +2,7 @@ import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { dominions, memories } from '@/lib/db/schema'
 import { getLatestAether } from '@/lib/data/aether'
+import { notHeldSensitive } from '@/lib/kairos/sensitive/held'
 import { listOpenKairosAsks } from '@/lib/data/ask'
 import { listBoardDayPages } from '@/lib/data/board-feed'
 import { listPromotedBeliefsBetween } from '@/lib/data/memory-candidates'
@@ -103,6 +104,7 @@ export async function readAreaHeadlines(userId: string): Promise<AreaDigest[]> {
       eq(memories.userId, userId),
       eq(memories.streamClass, 'cortex'),
       isNull(memories.archivedAt),
+      notHeldSensitive,
       isNull(dominions.archivedAt),
     ))
     .orderBy(desc(memories.createdAt))
@@ -158,6 +160,7 @@ async function readNewBeliefs(userId: string, since: Date): Promise<BeliefChange
       eq(memories.userId, userId),
       eq(memories.type, 'belief'),
       isNull(memories.archivedAt),
+      notHeldSensitive,
       gte(memories.createdAt, since),
     ))
     .orderBy(desc(memories.createdAt))
@@ -221,6 +224,7 @@ async function readMindCompare(userId: string, now: Date): Promise<string | null
       eq(memories.userId, userId),
       eq(memories.type, 'observation'),
       isNull(memories.archivedAt),
+      notHeldSensitive,
       sql`${memories.sourceMetadata}->>'kind' = 'mind_compare'`,
       gte(memories.createdAt, new Date(now.getTime() - MIND_COMPARE_MAX_AGE_MS)),
     ))

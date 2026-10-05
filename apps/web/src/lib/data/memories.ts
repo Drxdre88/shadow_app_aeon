@@ -35,7 +35,7 @@ import { dominionTag } from '@/lib/kairos/dominionTags'
 import { autoFileEligible, autoFileMinSim, autoFileText, cosineSimilarity } from '@/lib/kairos/autofile'
 import { ORIGIN_TRUST, inferOriginKind, originKindOf, type Origin, type OriginKind } from '@/lib/kairos/origin'
 import { loadTodayContextSection } from './prepare-context-today'
-import { notHeldSensitive, sensitiveCaptureStamp } from '@/lib/kairos/sensitive'
+import { notHeldSensitive, notHeldSensitiveRaw, sensitiveCaptureStamp } from '@/lib/kairos/sensitive'
 
 // P2.5 (G6) — origin is decided by the TRUSTED write surface (server action,
 // REST auth mode, MCP, cron), passed here as an option, never via the zod input
@@ -664,7 +664,7 @@ export async function getNeighbours(
   // Generation consumers (prepareContext) must not ground on rows that were
   // merged away or invalidated; browse surfaces keep showing history.
   const live = (alias: 'm' | 'm2') => opts.liveOnly
-    ? sql.raw(`AND ${alias}.superseded_at IS NULL AND (${alias}.invalid_at IS NULL OR ${alias}.invalid_at > NOW()) AND (${alias}.source_metadata->>'sensitiveHeld') IS DISTINCT FROM 'true'`)
+    ? sql.raw(`AND ${alias}.superseded_at IS NULL AND (${alias}.invalid_at IS NULL OR ${alias}.invalid_at > NOW()) AND ${notHeldSensitiveRaw(alias)}`)
     : sql``
 
   // Outgoing walk: recursive CTE following links[].target where target_kind='memory'.
@@ -1470,8 +1470,15 @@ export async function updateMemory(
       const writer: Origin = opts.origin ?? { kind: 'agent', via: 'update' }
       const kind = ORIGIN_TRUST[writer.kind] < ORIGIN_TRUST[currentKind] ? writer.kind : currentKind
       const priorOrigin = meta.origin ?? { kind: currentKind }
+      // Only non-owner writers (MCP/agents) re-run the private-topic hold; an owner edit is the owner's own words and stays unheld.
+      const held = writer.kind === 'operator' ? {} : await sensitiveCaptureStamp(userId, {
+        title: patch.title ?? current.title,
+        summary: patch.summary !== undefined ? patch.summary : current.summary,
+        bodyMd: patch.bodyMd ?? current.bodyMd,
+      }, current.streamClass)
       update.sourceMetadata = {
         ...meta,
+        ...held,
         priorOrigin,
         origin: writer.via ? { kind, via: writer.via } : { kind },
       }
