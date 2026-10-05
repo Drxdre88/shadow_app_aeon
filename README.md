@@ -52,6 +52,13 @@ AEON is a project management workspace built for individuals and small teams who
 - Sidebar hide / unhide per project and per realm (persisted)
 - `1`–`9` keyboard shortcuts for realm switching
 
+### Vorath (second brain) & Hangar
+- **Vorath** (formerly Kairos) — remembers your work and words, thinks overnight on your Claude Max plan, sends one 06:00 message, and chats on the web and Telegram. Set up from **Vorath setup** in the sidebar.
+- **What Vorath knows** — see what he believes about you and why, fix it in place (Edit / It's right / This is wrong), review **Needs your eyes**, and optionally hold private topics until you confirm them.
+- **Where your time went** — areas ranked by real activity; quiet ones go dormant, pinned ones stay awake (switch `KAIROS_LIVING_DOMINIONS`, off by default).
+- **Vorath sorts new cards** — per board, off by default: suggested labels, priority and duplicates you Accept or Dismiss.
+- **Hangar missions** — AI agent runs on cards, with stall detection and Requeue, Approve plan first, Answer & relaunch, and follow-ups turned into new cards.
+
 ### Collaboration & Sharing
 - Real-time board sync via Pusher with 30s polling fallback
 - Read-only share links with snapshot data
@@ -100,7 +107,7 @@ AEON is a project management workspace built for individuals and small teams who
 | **Email** | Resend |
 | **Testing** | Vitest + Testing Library + fast-check (property tests) |
 | **Compiler** | `babel-plugin-react-compiler` (React 19 compiler) |
-| **MCP** | `@modelcontextprotocol/sdk` + `mcp-handler` |
+| **MCP** | `mcp-handler` 2.x + `@modelcontextprotocol/server` (MCP 2026-07-28, legacy clients supported) |
 | **Mobile** | Capacitor 8 (PWA bridge) |
 | **Desktop** | Tauri 2 (scaffold only) |
 | **Monorepo** | npm workspaces + Turborepo |
@@ -133,7 +140,7 @@ shadow_app_aeon/
 src/
 ├── app/                  # Next.js App Router routes
 │   ├── api/v1/           # REST API surface (~50 routes)
-│   ├── api/[transport]/  # MCP server surface (63 tools)
+│   ├── api/[transport]/  # MCP server surface (full roster in Help → MCP)
 │   ├── dashboard/        # Main authenticated app shell
 │   ├── project/          # Project-level pages
 │   ├── invite/           # Realm invite acceptance
@@ -213,7 +220,8 @@ For full architecture details — feature inventory, completion status, known ga
 ### Operator and integration guides
 
 - [Coding-agent session capture](docs/kairos/05-session-capture.md) — install Claude Code, Codex CLI, or Copilot CLI hooks; verify capture; add a future client safely.
-- [Working with the Kairos brain](docs/kairos/25-working-with-the-kairos-brain.md) — practical day-to-day memory workflow.
+- [Set up and use Vorath](docs/kairos/25-working-with-the-kairos-brain.md) — the owner's guide: setup, daily rhythm, what Vorath knows, living areas, card sorting and switches.
+- [Vorath on Telegram](apps/web/docs/kairos/telegram-setup.md) — bot, webhook and chat on your Max plan.
 - [MCP tools](docs/kairos/02-mcp-tools.md) — connect an AI client to Aeon's project and memory surfaces.
 
 ---
@@ -303,7 +311,7 @@ AEON exposes the same data through two parallel APIs:
 
 ### MCP Server (`/api/[transport]/tools/`)
 
-63 tools across 11 categories — designed for AI agents (Claude Code, Cursor, etc.):
+Tools for boards, Gantt, realms, Hangar and Vorath — designed for AI agents (Claude Code, Cursor, etc.). The full, current list is in the app under **Help → MCP**:
 
 - `list_projects`, `create_project`, `update_project`, `delete_project`
 - `list_tasks`, `create_task`, `update_task`, `batch_create_tasks`
@@ -315,6 +323,10 @@ AEON exposes the same data through two parallel APIs:
 - … and more
 
 **Auth:** `Authorization: Bearer <api_key>` only.
+
+**Tool profiles:** add `?profile=board`, `vorath` or `hangar` to the MCP URL for a smaller, focused tool set (`kairos` also works for `vorath`). No profile means every tool, as before.
+
+**Confirmations:** clients on the 2026-07-28 MCP standard ask before destructive tools ("Delete Task on board …? This can't be undone."); declining changes nothing. Older clients keep working unchanged.
 
 **Parity guarantee:** MCP and REST share the same Zod validators and the same `lib/data/` functions. A static parity test (`src/app/api/__tests__/gantt-parity.test.ts`) locks the Gantt surface against drift — if either side grows a tool/route the other lacks, CI fails.
 

@@ -1,4 +1,6 @@
-# 33 — Thinking routines: Claude Max does all of Kairos's thinking
+# 33 — Thinking routines: Claude Max does all of Vorath's thinking
+
+*Vorath was called Kairos until 0.26; code, env and tool names still say `kairos`.*
 
 Anthropic's terms forbid the server calling Claude with Max-plan credentials, so **Claude
 comes to the brain**: a Claude Code routine (cloud, on the owner's Max plan) claims
@@ -7,15 +9,15 @@ grounds, mints ids and persists (`lib/kairos/thinking/*`, contract in `32-memory
 
 **Since 0.17 there are two routines, defined in code.** `lib/kairos/routines/catalog.ts` is
 the single source of truth: names, schedules, caps, model and the exact prompts. The in-app
-**Set up Kairos** checklist (sidebar → *Kairos setup*, or the brain icon on `/kairos`) renders
+**Set up Vorath** checklist (sidebar → *Vorath setup*, or the brain icon on `/vorath`) renders
 them with copy buttons, plus live status per job (on Max / on backup / missed). Change a
 routine in the catalog, then re-paste it — never edit a prompt only on claude.ai.
 
 | Routine | Trigger | Claims | Replaces |
 |---|---|---|---|
-| **Kairos brain** | cron `40 * * * *` (UTC; was `40 1-6 * * *` before 0.21) — the night's work runs 01:40–06:40, daytime runs usually find nothing unless daytime thinking or Horae is on | every deep job (claims with `{"routine":"brain"}`) | thinking, ideas, morning, dusk, dawn, tidy |
-| **Kairos pulse** (0.21, optional) | cron `10 6-21 * * *` (UTC), model Sonnet 5.5 — only when `KAIROS_DAYTIME_THINKING=1` | `{"routine":"pulse"}` — only `pulse` jobs, which write short notes into the today log | — |
-| **Kairos chat** | API trigger, fired once per chat message — web (`/kairos`) or Telegram (since 0.19) | `{"kinds":["chat"],"routine":"chat"}` | — |
+| **Vorath brain** | cron `40 * * * *` (UTC; was `40 1-6 * * *` before 0.21) — the night's work runs 01:40–06:40, daytime runs usually find nothing unless daytime thinking or Horae is on | every deep job (claims with `{"routine":"brain"}`) | thinking, ideas, morning, dusk, dawn, tidy |
+| **Vorath pulse** (0.21, optional) | cron `10 6-21 * * *` (UTC), model Sonnet 5.5 — only when `KAIROS_DAYTIME_THINKING=1` | `{"routine":"pulse"}` — only `pulse` jobs, which write short notes into the today log | — |
+| **Vorath chat** | API trigger, fired once per chat message — web (`/vorath`) or Telegram (since 0.19) | `{"kinds":["chat"],"routine":"chat"}` | — |
 
 claude.ai routines can fire at most once an hour, so the brain (:40) and the pulse (:10) together
 give a thought every half hour. Neither the daytime `reflect` job nor `pulse` has a paid fallback:
@@ -27,7 +29,8 @@ unscoped; once both are re-pasted, set `KAIROS_REQUIRE_ROUTINE_SCOPE=1` to make 
 
 Delete the old routines on claude.ai: `Kairos thinking`, `Kairos ideas`, `Kairos morning`,
 `Kairos dusk`, `Kairos dawn`, `Kairos tidy` and `kairos-brain-tick` (all retired; the 06:00 message
-already carries Kairos's question; one voice).
+already carries Vorath's question; one voice). Routines still named *Kairos brain / chat / pulse* are not
+retired: rename them in place to *Vorath …* and re-paste the text; keep the chat routine (its API trigger lives on it).
 
 **Why one routine is enough.** Every kind has its own window and the server only hands
 out jobs that are due, in prerequisite order. Claiming without a `kinds` filter means a
@@ -56,7 +59,7 @@ engine's Merge already folds duplicates).
 
 ## Setup
 
-The owner-facing walkthrough is doc 25 (*Set up and use Kairos*); this is the reference.
+The owner-facing walkthrough is doc 25 (*Set up and use Vorath*); this is the reference.
 
 1. **Connector.** One click: the checklist's *Add to Claude* opens
    `https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=aeon&connectorUrl=<encoded MCP URL>`
@@ -65,13 +68,13 @@ The owner-facing walkthrough is doc 25 (*Set up and use Kairos*); this is the re
    *Add custom connector*, name `aeon`, URL `<app>/api/mcp`. Sign in with OAuth. Routines use
    the connectors on your claude.ai account. The checklist ticks once one of your OAuth
    tokens was used in the last 7 days.
-2. **Kairos brain.** claude.ai/code/routines → *New routine* — or paste the checklist's
+2. **Vorath brain.** claude.ai/code/routines → *New routine* — or paste the checklist's
    *Copy /schedule request* into Claude Code's `/schedule`. Name, prompt and model
    (`claude-opus-5-5`) from the checklist; connectors: `aeon` only; repository: any (the
    prompt is self-contained and never reads it). Schedule: the web form only offers
    presets, so pick *Hourly* (runs outside 01–07 UTC just find nothing) or set the exact
    cron with `/schedule update`.
-3. **Kairos chat** (optional; web chat and Telegram). Same setup, no schedule. On the web:
+3. **Vorath chat** (optional; web chat and Telegram). Same setup, no schedule. On the web:
    Edit → *Add another trigger* → API → *Generate token* (shown once). Then in Vercel
    (Production): `ROUTINE_CHAT_ID`, `ROUTINE_CHAT_TOKEN` and `KAIROS_CHAT_ROUTINE=1` (the
    pre-0.19 name `KAIROS_TELEGRAM_ROUTINE` is still accepted), and redeploy. One routine
@@ -81,8 +84,8 @@ The owner-facing walkthrough is doc 25 (*Set up and use Kairos*); this is the re
 
 ### Paid backup switch
 
-Per user, in Kairos setup (MCP `get_kairos_paid_backup` / `set_kairos_paid_backup`, REST
-`/api/v1/kairos/paid-backup`). **Default on.** Off = Kairos never resolves the user's saved
+Per user, in Vorath setup → Health (MCP `get_kairos_paid_backup` / `set_kairos_paid_backup`, REST
+`/api/v1/kairos/paid-backup`). **Default on.** Off = Vorath never resolves the user's saved
 key (`getModelForUser` throws `PaidBackupOffError`). What each backup does when off:
 
 | Backup | When off |
@@ -90,7 +93,7 @@ key (`getModelForUser` throws `PaidBackupOffError`). What each backup does when 
 | Nightly crons (`chat-distill`, `archetype-synthesis`, `cortex-regen`, `aether-regen`, `ask-mine`, `constitution-seed`) | skip with `paid backup off`; the work waits for the next night |
 | Hourly sweep fallbacks (concept, beliefs, drift, ideas, mind compare, weekly review) | not run; the job counts as missed |
 | `daily-message` cron | still sends — deterministic plain text, no model call (the one free backup) |
-| Chat watchdog (web + Telegram) | no paid reply; Kairos says "I couldn't answer on your Max plan just now — try again in a minute." |
+| Chat watchdog (web + Telegram) | no paid reply; Vorath says "I couldn't answer on your Max plan just now — try again in a minute." |
 
 Status counts these as *missed*, not *backup*, and shows the backup's calls over the last 7 days.
 
@@ -163,7 +166,8 @@ Kinds (times UTC unless stated):
 | `life_chapter` | UTC days 1–3 ≥12:00Z, `KAIROS_LIFE_CHAPTERS` observe/1, ≥3 citable ids from the previous month | 36 h | `life_chapter:<YYYY-MM of previous month>` | none — a missed month is skipped |
 | `constitution_seed` | Mondays 04:00–05:56Z, only while there is no constitution and no pending draft | 05:56Z | `constitution_seed:<ISO week>` | `constitution-seed` 05:58Z (BYOK users only) |
 | `daily_message` | from 04:00Z once tonight's aether, ideas and ask are settled (from 04:35Z regardless), only when the UTC date equals the London date; reads each area's latest cortex headline; the numbered open-questions block is added by code at send time | 05:55 London | `daily_message:<London date>` | `daily-message` cron 06:00 London (paid key → plain text) |
-| `chat` | never planned — a web (`/kairos`) or Telegram chat message creates it; claimable only with `kinds: ["chat"]` | timeout + 30 s | `chat:<threadId>:<userMessageId>` | chat watchdog (paid key, if the Paid backup switch is on) |
+| `card_triage` | hourly, any time of day, per board the user created with *Vorath sorts new cards* on (`settings.kairosTriage`); up to 10 open cards from the last 48 h with no suggestions yet, ≤5 boards per pass | 3 h | `card_triage:<projectId>:<firstCardId>:<UTC hour>` | none — no paid calls; an expired batch is offered again, at most 3 tries per card |
+| `chat` | never planned — a web (`/vorath`) or Telegram chat message creates it; claimable only with `kinds: ["chat"]` | timeout + 30 s | `chat:<threadId>:<userMessageId>` | chat watchdog (paid key, if the Paid backup switch is on) |
 
 Job lifecycle: `queued` → `claimed` (token, attempts+1) → `done` | `failed` (cron kinds, on a
 rejected or late answer; their cron covers it) | `expired` (deadline passed, swept; or a
