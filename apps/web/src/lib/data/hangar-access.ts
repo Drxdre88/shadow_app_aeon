@@ -37,10 +37,11 @@ export async function resolveSessionAnchor(
       .where(eq(boardTasks.id, anchors.taskId))
       .limit(1)
     if (!card) return denied
+    if (!(await canEditProject(card.projectId, userId))) return denied
     if (anchors.projectId && anchors.projectId !== card.projectId) {
       return { ok: false, message: 'taskId does not belong to projectId' }
     }
-    return (await canEditProject(card.projectId, userId)) ? { ok: true, projectId: card.projectId } : denied
+    return { ok: true, projectId: card.projectId }
   }
   if (anchors.projectId) {
     return (await canEditProject(anchors.projectId, userId)) ? { ok: true, projectId: anchors.projectId } : denied

@@ -3,6 +3,7 @@ import { agentSessions, boardTasks } from '@/lib/db/schema'
 import { and, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm'
 import { getNextEventSeq, recordSessionEventWithAutoSeq, resolveResultColumn } from './sessions'
 import { touchProject } from './projects'
+import { canEditProject } from './hangar-access'
 
 // Stall reconciler (hangar.md §6 gap). Runs from /api/cron/hangar-reconcile.
 // A running mission whose runner stopped reporting is settled as 'timeout'
@@ -20,6 +21,7 @@ export function staleThresholdMinutes(env: Record<string, string | undefined> = 
 export interface StaleSessionRow {
   id: string
   taskId: string | null
+  userId?: string
 }
 
 export interface ReconcileReport {
@@ -42,7 +44,7 @@ const quietSince = (cutoff: Date) => and(
 
 export async function findStaleRunningSessions(cutoff: Date): Promise<StaleSessionRow[]> {
   return db
-    .select({ id: agentSessions.id, taskId: agentSessions.taskId })
+    .select({ id: agentSessions.id, taskId: agentSessions.taskId, userId: agentSessions.userId })
     .from(agentSessions)
     .where(and(eq(agentSessions.status, 'running'), isNotNull(agentSessions.taskId), quietSince(cutoff)))
     .limit(BATCH_LIMIT)
@@ -50,7 +52,7 @@ export async function findStaleRunningSessions(cutoff: Date): Promise<StaleSessi
 
 export async function findUnclaimedQueuedSessions(cutoff: Date): Promise<StaleSessionRow[]> {
   return db
-    .select({ id: agentSessions.id, taskId: agentSessions.taskId })
+    .select({ id: agentSessions.id, taskId: agentSessions.taskId, userId: agentSessions.userId })
     .from(agentSessions)
     .where(and(
       eq(agentSessions.status, 'queued'),
@@ -61,14 +63,18 @@ export async function findUnclaimedQueuedSessions(cutoff: Date): Promise<StaleSe
     .limit(BATCH_LIMIT)
 }
 
-async function findCard(taskId: string | null) {
+// The card is only touched when the session's owner can still edit its project
+// (same rule as recordSessionResult); otherwise only the session row settles.
+async function findCard(taskId: string | null, userId?: string) {
   if (!taskId) return null
   const [task] = await db
     .select({ id: boardTasks.id, projectId: boardTasks.projectId })
     .from(boardTasks)
     .where(eq(boardTasks.id, taskId))
     .limit(1)
-  return task ?? null
+  if (!task) return null
+  if (userId && !(await canEditProject(task.projectId, userId))) return null
+  return task
 }
 
 export function timeoutReason(minutes: number): string {
@@ -77,7 +83,7 @@ export function timeoutReason(minutes: number): string {
 
 /** Settle one stuck running mission as 'timeout'; null when it recovered or settled meanwhile. */
 export async function timeOutStaleSession(row: StaleSessionRow, cutoff: Date, minutes: number, now = new Date()) {
-  const card = await findCard(row.taskId)
+  const card = await findCard(row.taskId, row.userId)
   const columnId = card ? await resolveResultColumn(card.projectId, 'needs_input') : null
   const reason = timeoutReason(minutes)
   const at = now.toISOString()
@@ -125,7 +131,7 @@ export async function timeOutStaleSession(row: StaleSessionRow, cutoff: Date, mi
 
 /** Flag a long-unclaimed queued mission (and its card) as waiting on an offline runner. */
 export async function flagRunnerOffline(row: StaleSessionRow, minutes: number, now = new Date()) {
-  const card = await findCard(row.taskId)
+  const card = await findCard(row.taskId, row.userId)
   const at = now.toISOString()
   const reason = `No runner has picked this mission up for more than ${minutes} minutes. The runner may be offline.`
   const reconcile = { reconcile: { kind: 'runner_offline', reason, at } }

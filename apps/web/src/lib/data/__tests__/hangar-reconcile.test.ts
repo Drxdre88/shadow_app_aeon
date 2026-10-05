@@ -49,10 +49,12 @@ vi.mock('../sessions', () => ({
   recordSessionEventWithAutoSeq: vi.fn(async () => ({ id: 'ev' })),
 }))
 vi.mock('../projects', () => ({ touchProject: vi.fn(async () => {}) }))
+vi.mock('../hangar-access', () => ({ canEditProject: vi.fn(async () => true) }))
 
 import { reconcileHangarSessions, staleThresholdMinutes, timeoutReason } from '../hangar-reconcile'
 import { recordSessionEventWithAutoSeq, resolveResultColumn } from '../sessions'
 import { touchProject } from '../projects'
+import { canEditProject } from '../hangar-access'
 
 const dialect = new PgDialect()
 const compile = (value: unknown) => dialect.sqlToQuery(value as SQL)
@@ -128,6 +130,20 @@ describe('reconcileHangarSessions', () => {
     expect(updates()).toHaveLength(1)
     expect(touchProject).not.toHaveBeenCalled()
     expect(recordSessionEventWithAutoSeq).not.toHaveBeenCalled()
+  })
+
+  it("settles the session but leaves the card alone when its owner can no longer edit the project", async () => {
+    vi.mocked(canEditProject).mockResolvedValueOnce(false)
+    selectQueue.push([{ id: 's-run', taskId: 't-1', userId: 'u-gone' }], [{ id: 't-1', projectId: 'p-1' }], [])
+    updateQueue.push([{ id: 's-run' }])
+
+    const report = await reconcileHangarSessions({ minutes: 30, now: NOW })
+
+    expect(canEditProject).toHaveBeenCalledWith('p-1', 'u-gone')
+    expect(report.timedOut).toEqual(['s-run'])
+    expect(updates()).toHaveLength(1)
+    expect(updates()[0].set).toMatchObject({ status: 'timeout' })
+    expect(touchProject).not.toHaveBeenCalled()
   })
 
   it('flags a long-unclaimed queued mission as runner offline without changing its status', async () => {

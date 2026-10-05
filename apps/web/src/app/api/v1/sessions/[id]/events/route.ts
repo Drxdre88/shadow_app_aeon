@@ -134,7 +134,7 @@ export const POST = withRateLimit(
       // Mission → memory, after the response: capture embeds + files the row,
       // which must not eat into the runner's POST timeout. Best-effort and
       // idempotent (externalId hangar:{id}); see lib/kairos/mission-memory.
-      if (applied) {
+      if (applied && (applied.task || !session.taskId)) {
         const capture = () => captureMissionMemory(auth.id, session, enforced.envelope)
         try {
           after(capture)

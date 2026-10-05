@@ -122,6 +122,14 @@ describe('spawn refuses a card the caller cannot edit', () => {
     expect(m.createAgentSession).not.toHaveBeenCalled()
   })
 
+  it('gives a non-member the generic refusal even when the projectId conflicts (no card-existence leak)', async () => {
+    m.verifyProjectAccess.mockResolvedValue(null)
+    const body = { ...BODY, taskId: TASK_ID, projectId: OTHER_PROJECT }
+    expect((await rest(body)).status).toBe(403)
+    expect((await mcp(body)).content[0].text).toBe(SESSION_ANCHOR_DENIED)
+    expect(m.createAgentSession).not.toHaveBeenCalled()
+  })
+
   it('refuses a conflicting projectId on both surfaces', async () => {
     const body = { ...BODY, taskId: TASK_ID, projectId: OTHER_PROJECT }
     expect((await rest(body)).status).toBe(403)
