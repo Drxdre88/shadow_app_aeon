@@ -15,6 +15,7 @@ import { ColorSwatchPicker } from '@/components/board/ColorSwatchPicker'
 import { listProjectColumnsForHangar, setHangarBoardSettings } from '@/lib/actions/hangar'
 import { parseHangarConfig, useHangarUiStore } from '@/lib/store/hangarUiStore'
 import { PlanetPicker } from './PlanetPicker'
+import { CardTriageToggle } from '@/components/board/triage/CardTriageToggle'
 import { AccentColor, colorConfig, hexToAccent } from '@/lib/utils/colors'
 import type { RealmInfo } from './ProjectContextMenu'
 import type { Project } from '@/lib/db/schema'
@@ -308,6 +309,8 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
                   </div>
                 )}
               </div>
+
+              <CardTriageToggle projectId={project.id} isOpen={isOpen} />
 
               <PlanetPicker
                 value={formData.planetImage}

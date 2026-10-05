@@ -12,6 +12,7 @@ import { listProjectHangarRepos, saveCardMission, spawnSessionFromCard } from '@
 import { getHangarDefault, getHangarModels, HANGAR_MODELS_CHECKED_AT } from '@/lib/hangar-models'
 import { HANGAR_MODEL_RE, hangarCardDraftSchema } from '@/lib/data/validators/hangar'
 import { MissionResultSection } from './MissionResultSection'
+import { MissionToggleRow } from './MissionToggleRow'
 import { withConfirmedMissionLaunch } from './autoRun'
 
 const OBJECTIVES = [
@@ -39,6 +40,7 @@ interface HangarDraft {
   customModel: boolean
   instruction: string
   autoRun: boolean
+  planFirst: boolean
 }
 
 function draftFromMetadata(metadata: Record<string, unknown> | undefined): HangarDraft {
@@ -54,6 +56,7 @@ function draftFromMetadata(metadata: Record<string, unknown> | undefined): Hanga
     instruction: typeof h.instruction === 'string' ? h.instruction : '',
     // Owner directive: auto-run always re-defaults to OFF for fresh missions.
     autoRun: h.autoRun === true,
+    planFirst: h.planFirst === true,
   }
 }
 
@@ -161,6 +164,7 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
       instruction: draft.instruction.trim(),
       outputMode: 'auto',
       autoRun: draft.autoRun,
+      planFirst: draft.planFirst,
     })
     useBoardStore.setState((state) => ({
       tasks: state.tasks.map((candidate) => candidate.id === task.id
@@ -359,30 +363,21 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
               />
             </div>
 
-            <button
-              type="button"
-              onClick={() => setDraft({ ...draft, autoRun: !draft.autoRun })}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.07] transition-all"
-              aria-pressed={draft.autoRun}
-            >
-              <span className="text-left">
-                <span className="block text-sm text-white">Launch mode · Auto-run on drop</span>
-                <span className="block text-[10px] text-slate-500">When armed, dragging this mission into the launch column starts a run. A launch disarms it again.</span>
-              </span>
-              <span
-                className={cn(
-                  'w-9 h-5 rounded-full relative transition-colors flex-shrink-0 ml-3',
-                  draft.autoRun ? 'bg-[var(--primary)]/70' : 'bg-white/15'
-                )}
-              >
-                <span
-                  className={cn(
-                    'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
-                    draft.autoRun ? 'translate-x-[18px]' : 'translate-x-0.5'
-                  )}
-                />
-              </span>
-            </button>
+            <MissionToggleRow
+              title="Launch mode · Auto-run on drop"
+              hint="When armed, dragging this mission into the launch column starts a run. A launch disarms it again."
+              checked={draft.autoRun}
+              onToggle={() => setDraft({ ...draft, autoRun: !draft.autoRun })}
+            />
+
+            {draft.objective !== 'plan' && (
+              <MissionToggleRow
+                title="Approve plan first"
+                hint="The agent writes a plan first. You review it in the card's Plan checklist and approve it before any build starts."
+                checked={draft.planFirst}
+                onToggle={() => setDraft({ ...draft, planFirst: !draft.planFirst })}
+              />
+            )}
 
             <MissionResultSection result={(task.metadata?.hangar as Record<string, unknown> | undefined)?.lastResult} />
           </div>

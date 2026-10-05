@@ -3,6 +3,8 @@
 import { AlertTriangle, CheckCircle2, CircleHelp, GitBranch, ListChecks, PackageOpen, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { readMissionResult } from './autoRun'
+import { MissionAnswerForm } from './MissionAnswerForm'
+import { MissionFollowUpPicker } from './MissionFollowUpPicker'
 
 const statusTone = {
   completed: {
@@ -22,7 +24,17 @@ const statusTone = {
   },
 } as const
 
-export function MissionResultSection({ result, label = 'Last recorded result' }: { result: unknown; label?: string }) {
+export interface MissionResultActions {
+  projectId: string
+  taskId: string
+  /** Offer answer boxes for the agent's questions. */
+  canAnswer?: boolean
+  /** Offer "Create mission cards" for the recommended follow-ups. */
+  canCreateFollowUps?: boolean
+  createdFollowUps?: string[]
+}
+
+export function MissionResultSection({ result, label = 'Last recorded result', actions }: { result: unknown; label?: string; actions?: MissionResultActions }) {
   const parsed = readMissionResult(result)
   if (!parsed) return null
 
@@ -46,7 +58,16 @@ export function MissionResultSection({ result, label = 'Last recorded result' }:
         <p className="p-3 text-xs text-slate-500">The recorded result has no readable details.</p>
       ) : (
         <div className="p-3 space-y-3">
-          {parsed.questions.length > 0 && (
+          {parsed.questions.length > 0 && actions?.canAnswer && (
+            <MissionAnswerForm
+              key={parsed.questions.join('\n')}
+              projectId={actions.projectId}
+              taskId={actions.taskId}
+              questions={parsed.questions}
+            />
+          )}
+
+          {parsed.questions.length > 0 && !actions?.canAnswer && (
             <div className="rounded-lg border border-amber-400/25 bg-amber-500/[0.08] p-3">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-200 mb-2">
                 <CircleHelp className="w-3.5 h-3.5" /> Input required
@@ -92,7 +113,17 @@ export function MissionResultSection({ result, label = 'Last recorded result' }:
             </div>
           )}
 
-          {parsed.recommendedTasks.length > 0 && (
+          {parsed.recommendedTasks.length > 0 && actions?.canCreateFollowUps && (
+            <MissionFollowUpPicker
+              key={parsed.recommendedTasks.map((task) => task.title).join('\n')}
+              projectId={actions.projectId}
+              taskId={actions.taskId}
+              tasks={parsed.recommendedTasks}
+              alreadyCreated={actions.createdFollowUps}
+            />
+          )}
+
+          {parsed.recommendedTasks.length > 0 && !actions?.canCreateFollowUps && (
             <div>
               <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 mb-1.5">Recommended follow-up</div>
               <ul className="space-y-2">

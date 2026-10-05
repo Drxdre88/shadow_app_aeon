@@ -5,6 +5,7 @@ import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLi
 import { recordSessionEventSchema, recordSessionEventBatchSchema, hangarResultEnvelopeSchema, sessionEventsTailSchema, enforceObjectiveDeliverables, type RecordSessionEventInput } from '@/lib/data/validators'
 import { findAgentSessionById, listSessionEvents, recordSessionEvent, recordSessionEventWithAutoSeq, recordSessionEvents, getNextEventSeq, recordSessionResult } from '@/lib/data/sessions'
 import { captureMissionMemory } from '@/lib/kairos/mission-memory'
+import { applyPlanResult } from '@/lib/data/hangar-autopilot'
 
 // A non-uuid path param would raise Postgres 22P02 and surface as a 500.
 const sessionIdSchema = z.string().uuid()
@@ -129,6 +130,17 @@ export const POST = withRateLimit(
       // already-settled session — report that honestly instead of a blind true.
       const applied = await recordSessionResult(id, enforced.envelope)
 
+      // Plan-then-approve: a completed planning run becomes the card's "Plan"
+      // checklist and waits in Tower for the owner's approval.
+      const phase = (session.metadata as { hangar?: { phase?: unknown } } | null)?.hangar?.phase
+      if (applied?.task && phase === 'plan' && enforced.envelope.status === 'completed') {
+        try {
+          await applyPlanResult(id, session.taskId, enforced.envelope)
+        } catch (err) {
+          // The result itself is already recorded; a retry would be a guarded replay.
+          console.error('[sessions/events] plan checklist write failed', { sessionId: id, error: err instanceof Error ? err.message : String(err) })
+        }
+      }
       // Mission → memory, after the response: capture embeds + files the row,
       // which must not eat into the runner's POST timeout. Best-effort and
       // idempotent (externalId hangar:{id}); see lib/kairos/mission-memory.

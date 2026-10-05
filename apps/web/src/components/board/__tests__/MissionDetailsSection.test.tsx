@@ -5,6 +5,14 @@ import { getMissionSessionStatusAction } from '@/lib/actions/sessions'
 import { MissionDetailsSection } from '../MissionDetailsSection'
 
 vi.mock('@/lib/actions/sessions', () => ({ getMissionSessionStatusAction: vi.fn() }))
+vi.mock('@/lib/actions/hangar', () => ({
+  requeueMission: vi.fn(),
+  approvePlanAndBuild: vi.fn(),
+  revisePlan: vi.fn(),
+  answerAndRelaunch: vi.fn(),
+  createFollowUpCards: vi.fn(),
+}))
+vi.mock('@/components/ui/Toast', () => ({ toast: vi.fn() }))
 
 const metadata = {
   hangar: {

@@ -63,6 +63,7 @@ vi.mock('@/lib/data/sessions', () => ({
 }))
 
 vi.mock('@/lib/data/memories', () => ({ captureMemory: mocks.captureMemory }))
+vi.mock('@/lib/data/hangar-autopilot', () => ({ applyPlanResult: vi.fn() }))
 
 import { POST } from '../[id]/events/route'
 

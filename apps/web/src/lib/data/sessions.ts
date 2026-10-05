@@ -239,7 +239,7 @@ export async function heartbeatSession(id: string, userId: string, workerId: str
   return row ?? null
 }
 
-async function resolveResultColumn(
+export async function resolveResultColumn(
   projectId: string,
   status: HangarResultEnvelope['status'],
 ): Promise<string | null> {

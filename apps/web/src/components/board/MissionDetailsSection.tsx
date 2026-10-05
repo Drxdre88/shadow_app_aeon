@@ -6,6 +6,7 @@ import { getMissionSessionStatusAction } from '@/lib/actions/sessions'
 import { cn } from '@/lib/utils/cn'
 import { readHangarMission, readMissionCard } from './autoRun'
 import { MissionResultSection } from './MissionResultSection'
+import { MissionAutopilotPanel, readPlanGateStatus } from './MissionAutopilotPanel'
 
 const LIVE_STATUSES = new Set(['queued', 'running'])
 
@@ -109,6 +110,7 @@ export function MissionDetailsSection({
             value={mission.autoRun ? 'Auto-run on drop' : 'Manual launch'}
             icon={mission.autoRun ? <Zap className="w-3 h-3 text-amber-300" /> : <Rocket className="w-3 h-3" />}
           />
+          <MissionField label="Plan approval" value={rawMission.planFirst === true ? 'Approve plan first' : 'Off'} />
         </dl>
 
         <div className="rounded-lg border border-white/[0.07] bg-black/15 px-3 py-2.5 flex items-center gap-2 text-xs">
@@ -152,7 +154,21 @@ export function MissionDetailsSection({
           )}
         </div>
 
-        <MissionResultSection result={rawMission.lastResult} label={resultLabel} />
+        <MissionAutopilotPanel projectId={projectId} taskId={taskId} mission={rawMission} latestSession={sessionState === 'ready' ? latestSession : null} />
+
+        <MissionResultSection
+          result={rawMission.lastResult}
+          label={resultLabel}
+          actions={live || sessionState !== 'ready' ? undefined : {
+            projectId,
+            taskId,
+            canAnswer: true,
+            canCreateFollowUps: readPlanGateStatus(rawMission) !== 'awaiting_approval',
+            createdFollowUps: Array.isArray(rawMission.followUpTitles)
+              ? rawMission.followUpTitles.filter((title): title is string => typeof title === 'string')
+              : [],
+          }}
+        />
       </div>
     </section>
   )

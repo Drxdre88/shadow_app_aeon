@@ -5,11 +5,24 @@ import { requireEditor, requireOwner } from './helpers'
 import {
   hangarCardMetadataSchema,
   hangarCardDraftSchema,
+  hangarResultEnvelopeSchema,
+  missionAnswersSchema,
+  planRevisionNoteSchema,
+  followUpSelectionSchema,
   HANGAR_MODEL_RE,
   type HangarCardMetadata,
+  type HangarObjective,
+  type MissionAnswers,
 } from '@/lib/data/validators'
 import { findTaskById, updateTask, recordMissionLaunch } from '@/lib/data/tasks'
 import { createAgentSession, findLiveSessionForTask } from '@/lib/data/sessions'
+import {
+  createFollowUpMissionCards,
+  findCardSession,
+  findFollowUpColumnId,
+  findPlanSteps,
+  patchCardHangar,
+} from '@/lib/data/hangar-autopilot'
 import { findHangarRepoBySlug, listHangarRepos } from '@/lib/data/hangar-repos'
 import { findProjectRealmIds } from '@/lib/data/workspaces'
 import { mergeProjectSettings, verifyProjectAccess } from '@/lib/data/projects'
@@ -26,11 +39,16 @@ import { z } from 'zod'
 // (CLAUDE.md / AGENTS.md), the objective contract lives in a skill, and the
 // rest is fetched on demand through the Aeon MCP — flattening the card into
 // the prompt would only stale-cache all three.
-function buildDispatchPrompt(taskId: string, name: string, hangar: HangarCardMetadata): string {
+function buildDispatchPrompt(
+  taskId: string,
+  name: string,
+  hangar: HangarCardMetadata,
+  launch: { objective: HangarObjective; phase: LaunchPhase | null; context: string | null } = { objective: hangar.objective, phase: null, context: null },
+): string {
   const lines = [
     `task_id=${taskId}`,
     `title=${name}`,
-    `objective=${hangar.objective}`,
+    `objective=${launch.objective}`,
     `repo=${hangar.repo}`,
     `output_mode=${hangar.outputMode}`,
   ]
@@ -38,11 +56,19 @@ function buildDispatchPrompt(taskId: string, name: string, hangar: HangarCardMet
   const subagents = hangar.subagents ?? []
   if (subagents.length > 0) lines.push(`subagents=${subagents.join(', ')}`)
 
+  lines.push('', hangar.instruction)
+  if (launch.phase === 'plan') {
+    lines.push(
+      '',
+      'PLANNING STEP ONLY: do not change any files. Write a step-by-step plan for the mission above.',
+      `List every step, in order, in recommended_tasks (title = the step, objective = ${hangar.objective}, instruction = how to do it) and set outcome to "planned". The owner approves the plan before any build starts.`,
+    )
+  }
+  if (launch.context) lines.push('', 'Context from earlier runs on this card:', launch.context)
+
   lines.push(
     '',
-    hangar.instruction,
-    '',
-    `Load the aeon-dispatch-contract skill and the aeon-objective-${hangar.objective} skill and follow them.`,
+    `Load the aeon-dispatch-contract skill and the aeon-objective-${launch.objective} skill and follow them.`,
     'Read the repo CLAUDE.md (or canonical AGENTS.md) fully. All file paths are relative to the REPO ROOT.',
     'Fetch more context via Aeon MCP get_task_detail if available.',
     // Engines without skill discovery (Copilot/Codex until the junctions land)
@@ -130,6 +156,19 @@ export async function spawnSessionFromCard(
   taskId: string,
   origin: 'manual' | 'auto-drop' = 'manual'
 ) {
+  return launchCardMission(projectId, taskId, origin, null)
+}
+
+type LaunchPhase = 'plan' | 'build'
+interface LaunchOverride { phase: LaunchPhase | null; context: string | null }
+const MAX_CONTEXT_CHARS = 12_000
+
+async function launchCardMission(
+  projectId: string,
+  taskId: string,
+  origin: 'manual' | 'auto-drop',
+  override: LaunchOverride | null,
+) {
   const userId = await requireEditor(projectId)
 
   const task = await findTaskById(taskId, projectId)
@@ -164,21 +203,29 @@ export async function spawnSessionFromCard(
 
   const dominionId = await resolveLaunchDominion(projectId, userId)
 
+  // Plan-then-approve: a plain launch of a "plan first" card runs the plan
+  // objective; relaunches carry the phase and context of the run they repeat.
+  const phase = override ? override.phase : (hangar.planFirst === true && hangar.objective !== 'plan' ? 'plan' : null)
+  const context = override?.context ? override.context.slice(-MAX_CONTEXT_CHARS) : null
+  const objective: HangarObjective = phase === 'plan' ? 'plan' : hangar.objective
+
   const session = await createAgentSession(userId, {
     engine: hangar.agent,
     repo: hangar.repo,
     goal: task.name,
-    prompt: buildDispatchPrompt(taskId, task.name, hangar),
+    prompt: buildDispatchPrompt(taskId, task.name, hangar, { objective, phase, context }),
     projectId,
     taskId,
     ...(dominionId ? { dominionId } : {}),
     metadata: {
       hangar: {
-        objective: hangar.objective,
+        objective,
         model,
         subagents: hangar.subagents,
         outputMode: hangar.outputMode,
         repo: hangar.repo,
+        ...(phase ? { phase } : {}),
+        ...(context ? { context } : {}),
       },
     },
   })
@@ -188,9 +235,112 @@ export async function spawnSessionFromCard(
   // Written key-by-key in SQL so a concurrent editor save cannot be clobbered
   // (and cannot re-arm the card we just disarmed).
   await recordMissionLaunch(taskId, projectId, session.id, new Date().toISOString())
+  if (phase === 'plan') {
+    await patchCardHangar(taskId, projectId, { planGate: { status: 'planning', sessionId: session.id, at: new Date().toISOString() } })
+  }
 
   revalidatePath(`/project/${projectId}`)
   return session
+}
+
+async function readEditableMission(projectId: string, taskId: string) {
+  await requireEditor(projectId)
+  const task = await findTaskById(taskId, projectId)
+  if (!task) throw new Error('Task not found or unauthorized')
+  const hangar = ((task.metadata ?? {}) as Record<string, unknown>).hangar
+  if (!hangar || typeof hangar !== 'object' || Array.isArray(hangar)) throw new Error('This card is not an agent mission')
+  return { task, hangar: hangar as Record<string, unknown> }
+}
+
+async function findLastCardSession(taskId: string, hangar: Record<string, unknown>) {
+  const ids = Array.isArray(hangar.sessionIds) ? hangar.sessionIds.filter((id): id is string => typeof id === 'string') : []
+  const last = ids.at(-1)
+  return last ? findCardSession(last, taskId) : null
+}
+
+function launchStateOf(session: { metadata: unknown } | null): LaunchOverride {
+  const meta = ((session?.metadata ?? {}) as { hangar?: { phase?: unknown; context?: unknown } }).hangar ?? {}
+  return {
+    phase: meta.phase === 'plan' || meta.phase === 'build' ? meta.phase : null,
+    context: typeof meta.context === 'string' && meta.context.length > 0 ? meta.context : null,
+  }
+}
+
+const numbered = (steps: string[]) => steps.map((step, index) => `${index + 1}. ${step}`).join('\n')
+
+const RELAUNCHABLE_STATUSES = new Set(['timeout', 'failed', 'killed'])
+
+/** Relaunch a card whose latest run stopped (timed out, failed or killed), repeating that run's phase. */
+export async function requeueMission(projectId: string, taskId: string) {
+  const { hangar } = await readEditableMission(projectId, taskId)
+  const last = await findLastCardSession(taskId, hangar)
+  if (!last || !RELAUNCHABLE_STATUSES.has(last.status)) {
+    throw new Error('Only a mission whose last run stopped can be requeued')
+  }
+  return launchCardMission(projectId, taskId, 'manual', launchStateOf(last))
+}
+
+async function readPendingPlan(projectId: string, taskId: string) {
+  const { hangar } = await readEditableMission(projectId, taskId)
+  const gate = hangar.planGate as { status?: unknown; sessionId?: unknown } | undefined
+  if (gate?.status !== 'awaiting_approval') throw new Error('This card has no plan waiting for approval')
+  const steps = await findPlanSteps(taskId)
+  if (steps.length === 0) throw new Error('The Plan checklist is empty — revise the plan instead')
+  return { gate, steps }
+}
+
+/** Launch the build mission with the card's (possibly edited) Plan checklist as the approved plan. */
+export async function approvePlanAndBuild(projectId: string, taskId: string) {
+  const { gate, steps } = await readPendingPlan(projectId, taskId)
+  const context = `The owner approved this plan. Follow it step by step:\n${numbered(steps)}`
+  const session = await launchCardMission(projectId, taskId, 'manual', { phase: 'build', context })
+  await patchCardHangar(taskId, projectId, {
+    planGate: { status: 'approved', sessionId: gate.sessionId ?? null, buildSessionId: session.id, at: new Date().toISOString() },
+  })
+  return session
+}
+
+/** Re-run the planning step with the owner's note and the previous plan. */
+export async function revisePlan(projectId: string, taskId: string, note: string) {
+  const parsedNote = planRevisionNoteSchema.parse(note)
+  const { steps } = await readPendingPlan(projectId, taskId)
+  const context = `The owner asked for changes to your previous plan.\nOwner's note: ${parsedNote}\nPrevious plan:\n${numbered(steps)}`
+  return launchCardMission(projectId, taskId, 'manual', { phase: 'plan', context })
+}
+
+/** Relaunch with the owner's answers to the agent's questions appended to the instruction. */
+export async function answerAndRelaunch(projectId: string, taskId: string, answers: MissionAnswers) {
+  const parsed = missionAnswersSchema.parse(answers)
+  const { hangar } = await readEditableMission(projectId, taskId)
+  const last = launchStateOf(await findLastCardSession(taskId, hangar))
+  const lastResult = (hangar.lastResult ?? {}) as { summary?: unknown }
+  const answered = parsed.map((item) => `Q: ${item.question}\nA: ${item.answer}`).join('\n\n')
+  const context = [
+    last.context,
+    typeof lastResult.summary === 'string' && lastResult.summary ? `Summary of the previous run: ${lastResult.summary}` : null,
+    `The previous run asked questions. The owner's answers:\n${answered}`,
+  ].filter(Boolean).join('\n\n')
+  return launchCardMission(projectId, taskId, 'manual', { phase: last.phase, context })
+}
+
+/** Turn chosen recommended follow-ups from the card's last result into new mission cards. */
+export async function createFollowUpCards(projectId: string, taskId: string, indexes: number[]) {
+  const picked = followUpSelectionSchema.parse(indexes)
+  const { task, hangar } = await readEditableMission(projectId, taskId)
+  const recommended = hangarResultEnvelopeSchema.shape.recommended_tasks
+    .safeParse(((hangar.lastResult ?? {}) as { recommended_tasks?: unknown }).recommended_tasks)
+  const available = recommended.success ? recommended.data ?? [] : []
+  const picks = [...new Set(picked)].flatMap((index) => (available[index] ? [available[index]] : []))
+  if (picks.length === 0) throw new Error('None of the chosen follow-ups exist on the latest result')
+
+  const columnId = await findFollowUpColumnId(projectId)
+  const created = await createFollowUpMissionCards(
+    { id: task.id, projectId, name: task.name, hangar },
+    picks,
+    columnId,
+  )
+  revalidatePath(`/project/${projectId}`)
+  return created.map((card) => ({ id: card.id, name: card.name }))
 }
 
 /**

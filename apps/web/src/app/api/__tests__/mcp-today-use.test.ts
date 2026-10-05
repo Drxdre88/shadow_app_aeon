@@ -121,7 +121,7 @@ describe('token identity', () => {
 
   it('route.ts installs tracking before any register call and never logs the token', () => {
     const src = readFileSync(MCP_ROUTE, 'utf8')
-    const install = src.indexOf('installTodayUseTracking(server)')
+    const install = src.indexOf('installTodayUseTracking(server')
     const firstRegister = src.search(/register\w+Tools\(server\)/)
     expect(install).toBeGreaterThan(-1)
     expect(install).toBeLessThan(firstRegister)

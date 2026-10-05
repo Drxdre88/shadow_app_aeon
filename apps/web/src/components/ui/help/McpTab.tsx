@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useSyncExternalStore } from 'react'
 import { useSession } from 'next-auth/react'
 import { Terminal, Key, Link2, Wrench, Plus, Trash2, AlertTriangle } from 'lucide-react'
 import { Section, FeatureCard, CodeBlock, CopyButton } from './shared'
+import { McpProfilesSection } from './McpProfilesSection'
 import { useThemeStore } from '@/stores/themeStore'
 
 const TOOL_CATEGORIES = [
@@ -418,6 +419,8 @@ export function McpTab() {
           </div>
         </div>
       </Section>
+
+      <McpProfilesSection />
 
       <Section title="How Auth Works">
         <div className="grid grid-cols-2 gap-3">
