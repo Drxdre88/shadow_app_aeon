@@ -4,6 +4,14 @@ Kairos — the AI second brain inside Aeon — is versioned here as its own prod
 
 Era specs of record live beside this file in `docs/kairos/` (numbered 00–35).
 
+## [0.28.0] — 2026-10-06 · "Wave A: visible memory, self-sorting cards"
+
+> The owner can see, question and fix what Vorath knows; Vorath can sort new cards on boards where it's switched on.
+
+- **What Vorath knows:** `components/kairos/knows/*`, `lib/data/memory-knows.ts`, `lib/actions/memory-knows.ts`. Provenance from origin + source metadata + belief trail + memory_ops; edit via operator `updateMemory`; "It's right" re-labels to operator; "This is wrong" = reversible archive with reason. Constitution and goal rows stay immutable here.
+- **Private-topic hold:** `lib/kairos/sensitive/*` (deterministic lexicon), pref `kairosSensitiveGate` (server-owned, default off). Held rows carry `sourceMetadata.sensitiveHeld` and are excluded through `validAsOfNow` (+ chat last-24h and one-hop neighbours) until confirmed.
+- **Card sorting:** thinking kind `card_triage` (brain routine, deep tier; no paid fallback). Per-board `settings.kairosTriage='on'` (creator-only, generic patches can't flip it). Batches ≤10 cards/board, ≤5 boards per pass; fenced card data; labels from the board only; suggestions in `boardTasks.metadata.triage`, accepted/dismissed per item.
+
 ## [0.27.0] — 2026-10-05 · "Living Dominions, phase 1: follow the work"
 
 > Vorath's focus comes from recent activity, not a fixed list of areas. Quiet areas go dormant; pinned ones stay awake. Switch `KAIROS_LIVING_DOMINIONS` off|observe|1; off and observe are byte-identical for every consumer.
