@@ -149,6 +149,10 @@ interface BoardState {
   // board payload, so a comment must refresh the open thread, not the board.
   commentsSignal: number
   bumpCommentsSignal: () => void
+  // Bumped when the server refuses a move made from an out-of-date board;
+  // useProjectData answers it with a full reload.
+  staleBoardSignal: number
+  bumpStaleBoardSignal: () => void
 
   selectTask: (id: string | null) => void
   // Hold-to-move: the card lifted by a long press, waiting for a placement
@@ -194,6 +198,7 @@ export const useBoardStore = create<BoardState>()(
       lastMutatedAt: 0,
       showDates: false,
       commentsSignal: 0,
+      staleBoardSignal: 0,
 
       setColumns: (columns) => set({ columns }),
       addColumn: (column) => set((s) => ({ columns: [...s.columns, column], isDirty: true, lastMutatedAt: Date.now() })),
@@ -320,6 +325,7 @@ export const useBoardStore = create<BoardState>()(
         lastMutatedAt: Date.now(),
       })),
       bumpCommentsSignal: () => set((s) => ({ commentsSignal: s.commentsSignal + 1 })),
+      bumpStaleBoardSignal: () => set((s) => ({ staleBoardSignal: s.staleBoardSignal + 1 })),
       markClean: () => set({ isDirty: false }),
       setSaveStatus: (status) => {
         if (saveFadeTimer) { clearTimeout(saveFadeTimer); saveFadeTimer = null }

@@ -332,6 +332,14 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
     checkNowRef.current = checkNow
   }, [recheckSoon, checkNow])
 
+  // A refused stale move: forget the on-screen version so a reload deferred by
+  // the dirty guard still happens on the next freshness check.
+  useEffect(() => useBoardStore.subscribe((s, prev) => {
+    if (s.staleBoardSignal === prev.staleBoardSignal) return
+    knownVersionRef.current = null
+    requestReload()
+  }), [requestReload])
+
   const pusherRef = useRef<PusherClient | null>(null)
 
   useEffect(() => {

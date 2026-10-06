@@ -15,7 +15,9 @@ import {
   restoreTask as _restoreTask,
   archiveTasksBatch as _archiveTasksBatch,
   findArchivedTasks as _findArchivedTasks,
+  findTaskVersions as _findTaskVersions,
 } from '@/lib/data/tasks'
+import { findStaleTaskIds, parseExpectedUpdatedAt, type ExpectedTaskVersion, type StaleBoardResult } from '@/lib/utils/staleBoard'
 import { syncBoardStatusToGantt, deleteLinkedGanttTask } from '@/lib/data/bridge'
 import { emitActivity } from '@/lib/data/activity'
 import { captureBoardEvent } from '@/lib/kairos/auto-capture'
@@ -125,11 +127,19 @@ export async function updateBoardTask(
     orderIndex?: number
     startDate?: string | null
     endDate?: string | null
+    /** The card's updatedAt as the client last saw it; a newer row refuses the move. */
+    expectedUpdatedAt?: string
   }
 ) {
   const userId = await requireEditor(projectId)
 
-  const parsed = updateTaskSchema.parse(data)
+  const { expectedUpdatedAt, ...fields } = data
+  const parsed = updateTaskSchema.parse(fields)
+
+  if (expectedUpdatedAt !== undefined) {
+    const stale = await refuseIfStale(projectId, [{ id: taskId, expectedUpdatedAt, columnId: parsed.columnId }])
+    if (stale) return stale
+  }
 
   const existing = parsed.columnId ? await _findTaskById(taskId, projectId) : null
 
@@ -169,9 +179,14 @@ export async function deleteBoardTask(taskId: string, projectId: string) {
 
 export async function reorderBoardTasks(
   projectId: string,
-  updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }[]
-) {
+  updates: { id: string; orderIndex: number; status?: string; columnId?: string; name?: string; expectedUpdatedAt?: string }[]
+): Promise<{ updatedAt: string } | StaleBoardResult> {
   const userId = await requireEditor(projectId)
+  const guarded = updates.flatMap((u) => u.expectedUpdatedAt === undefined
+    ? []
+    : [{ id: u.id, expectedUpdatedAt: u.expectedUpdatedAt, columnId: u.columnId }])
+  const stale = await refuseIfStale(projectId, guarded)
+  if (stale) return stale
   const movingIds = updates.filter(u => u.columnId).map(u => u.id)
   const previousColumns = new Map<string, string | null>()
   if (movingIds.length > 0) {
@@ -183,7 +198,7 @@ export async function reorderBoardTasks(
     }
   }
   const parsed = updates.map(u => reorderTaskEntrySchema.parse(u))
-  await _reorderTasks(projectId, parsed)
+  const writtenAt = await _reorderTasks(projectId, parsed)
   const moves = updates.filter(u => u.columnId)
   for (const move of moves) {
     emitActivity(projectId, 'task', move.id, 'moved', move.name, { fromColumnId: previousColumns.get(move.id) ?? null, toColumnId: move.columnId }, userId).catch(() => {})
@@ -203,6 +218,17 @@ export async function reorderBoardTasks(
   }
 
   revalidatePath(`/project/${projectId}`)
+  return { updatedAt: writtenAt.toISOString() }
+}
+
+// Client moves carry the updatedAt they were made from; a newer row means
+// another device, tab or agent changed the card, so the whole write is refused.
+async function refuseIfStale(projectId: string, expected: ExpectedTaskVersion[]): Promise<StaleBoardResult | null> {
+  if (expected.length === 0) return null
+  for (const e of expected) parseExpectedUpdatedAt(e.expectedUpdatedAt)
+  const current = await _findTaskVersions(projectId, expected.map((e) => e.id))
+  const taskIds = findStaleTaskIds(expected, current)
+  return taskIds.length > 0 ? { staleBoard: true, taskIds } : null
 }
 
 export async function archiveBoardTask(taskId: string, projectId: string) {

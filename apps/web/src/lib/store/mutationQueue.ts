@@ -6,6 +6,8 @@ import { useBoardStore, registerPendingWritesSource } from './boardStore'
 import { withRetry, isTransientError } from './persistMutation'
 import { toast } from '@/components/ui/Toast'
 import { dispatchMutation, isAlreadyApplied, type QueuedMutation } from './mutationDispatch'
+import { isStaleBoardError } from '@/lib/utils/staleBoard'
+import { STALE_MOVE_TOAST, applyFreshness, freshnessFromResult, rebasePending, taskIdsOf } from './staleMoves'
 
 export type MutationSideEffects = {
   rollback?: () => void
@@ -58,6 +60,7 @@ export const useMutationQueue = create<QueueState>()(
 
         set({ flushing: true })
         useBoardStore.getState().setSaveStatus('saving')
+        let refusedStale = false
         try {
           // FIFO: preserve causal order (a card must be created before it moves).
           while (get().pending.length > 0) {
@@ -69,9 +72,22 @@ export const useMutationQueue = create<QueueState>()(
                 () => useBoardStore.getState().setSaveStatus('retrying'),
               )
               sideEffects.delete(mutation.id)
-              set((s) => ({ pending: s.pending.filter((p) => p.id !== mutation.id) }))
+              const fresh = freshnessFromResult(taskIdsOf(mutation), result)
+              applyFreshness(fresh)
+              set((s) => ({ pending: rebasePending(s.pending.filter((p) => p.id !== mutation.id), fresh) }))
               fx?.onSuccess?.(result)
             } catch (err) {
+              if (isStaleBoardError(err)) {
+                // The card changed elsewhere after this move was made: never
+                // retried, never forced. Undo it locally and reload the board.
+                sideEffects.delete(mutation.id)
+                set((s) => ({ pending: s.pending.filter((p) => p.id !== mutation.id) }))
+                fx?.rollback?.()
+                toast(STALE_MOVE_TOAST, { force: true })
+                useBoardStore.getState().bumpStaleBoardSignal()
+                refusedStale = true
+                continue
+              }
               if (isAlreadyApplied(err)) {
                 // Already on the server from a prior attempt — treat as success.
                 sideEffects.delete(mutation.id)
@@ -104,7 +120,7 @@ export const useMutationQueue = create<QueueState>()(
           }
           pendingSince = null
           useBoardStore.setState({ isDirty: false })
-          useBoardStore.getState().setSaveStatus('saved')
+          useBoardStore.getState().setSaveStatus(refusedStale ? 'error' : 'saved')
         } finally {
           set({ flushing: false })
         }
