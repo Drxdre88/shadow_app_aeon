@@ -26,10 +26,14 @@ import { findChecklistSummariesAndPreviews as _findChecklistSummariesAndPreviews
 import { getAssigneesForProject as _getAssigneesForProject } from '@/lib/data/assignees'
 import { getVirtualAssigneesForProject as _getVirtualAssigneesForProject, findVirtualMembersForProject as _findVirtualMembersForProject } from '@/lib/data/virtual-members'
 import { findRealmAvatarPrefs as _findRealmAvatarPrefs } from '@/lib/data/member-profiles'
+import { findBoardVersion as _findBoardVersion } from '@/lib/data/board-version'
 
 export async function loadBoardData(projectId: string) {
   await requireOwnership(projectId)
   await _createDefaultColumns(projectId)
+  // Read before the board rows: a write landing mid-load then shows up as a
+  // newer version on the next check instead of being silently skipped.
+  const boardVersion = await _findBoardVersion(projectId)
   const [tasks, columns, labels, taskLabels, dependencies, { summaries: checklistSummaries, previews: checklistPreviews }, assignees, virtualAssignees, virtualMembers, realmAvatars] = await Promise.all([
     _findTasks(projectId, undefined, 2000),
     _findColumns(projectId),
@@ -42,7 +46,7 @@ export async function loadBoardData(projectId: string) {
     _findVirtualMembersForProject(projectId),
     _findRealmAvatarPrefs(projectId),
   ])
-  return { tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees, virtualAssignees, virtualMembers, realmAvatars }
+  return { boardVersion, tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees, virtualAssignees, virtualMembers, realmAvatars }
 }
 
 export async function createBoardTask(data: {

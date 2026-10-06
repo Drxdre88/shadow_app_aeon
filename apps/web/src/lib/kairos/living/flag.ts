@@ -1,3 +1,4 @@
+import { mindSwitch } from '@/lib/kairos/level'
 // KAIROS_LIVING_DOMINIONS (alias VORATH_LIVING_DOMINIONS): unset/'0' → off
 // (no scoring, behaviour unchanged); 'observe' → the nightly score and dormant
 // flags are computed and shown in Health, nothing Vorath says changes; '1' →
@@ -5,7 +6,7 @@
 export type LivingDominionsMode = 'off' | 'observe' | 'on'
 
 export function livingDominionsMode(): LivingDominionsMode {
-  const raw = (process.env.KAIROS_LIVING_DOMINIONS ?? '').trim().toLowerCase()
+  const raw = mindSwitch('KAIROS_LIVING_DOMINIONS').trim().toLowerCase()
   if (raw === '1' || raw === 'on') return 'on'
   if (raw === 'observe') return 'observe'
   return 'off'

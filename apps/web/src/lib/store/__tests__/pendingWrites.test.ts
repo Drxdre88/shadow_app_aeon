@@ -55,4 +55,14 @@ describe('isDirtyOrGracePeriod pending-write sources', () => {
     queueBusy = false
     expect(isDirtyOrGracePeriod()).toBe(false)
   })
+
+  it('a fresh unsaved edit blocks reloads', () => {
+    useBoardStore.setState({ isDirty: true, lastMutatedAt: Date.now() - 10_000 })
+    expect(isDirtyOrGracePeriod()).toBe(true)
+  })
+
+  it('a dirty flag nobody cleared stops blocking reloads after 30s', () => {
+    useBoardStore.setState({ isDirty: true, lastMutatedAt: Date.now() - 31_000 })
+    expect(isDirtyOrGracePeriod()).toBe(false)
+  })
 })

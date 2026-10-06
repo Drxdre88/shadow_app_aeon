@@ -169,6 +169,10 @@ interface BoardState {
 }
 
 const DIRTY_GRACE_MS = 5000
+// isDirty is set by every optimistic edit but only some write paths clear it,
+// so on its own it may never go false. Past this age it no longer blocks
+// reloads; real in-flight writes are covered by the pending-write sources.
+const DIRTY_MAX_MS = 30_000
 
 // Holds the timer that fades a terminal save state (saved/error) back to idle.
 let saveFadeTimer: ReturnType<typeof setTimeout> | null = null
@@ -352,11 +356,12 @@ export function endDirectWrite() { directWrites = Math.max(0, directWrites - 1) 
 
 export function isDirtyOrGracePeriod(): boolean {
   const s = useBoardStore.getState()
+  const sinceEdit = Date.now() - s.lastMutatedAt
   return (
-    s.isDirty ||
+    (s.isDirty && sinceEdit < DIRTY_MAX_MS) ||
     directWrites > 0 ||
     pendingWriteSources.some((hasPending) => hasPending()) ||
-    Date.now() - s.lastMutatedAt < DIRTY_GRACE_MS
+    sinceEdit < DIRTY_GRACE_MS
   )
 }
 

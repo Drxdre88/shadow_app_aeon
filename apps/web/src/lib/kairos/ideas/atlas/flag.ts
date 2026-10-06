@@ -1,3 +1,4 @@
+import { mindSwitch } from '@/lib/kairos/level'
 // Lane A flags (wave 3), all off by default so every prompt and row stays
 // byte-identical. KAIROS_IDEA_ATLAS: unset/'0'/'off' → off; 'observe' → tag
 // candidates and fill empty cells only; '1'/'on' → targets + holder challenges.
@@ -5,7 +6,7 @@
 export type IdeaAtlasMode = 'off' | 'observe' | 'on'
 
 export function ideaAtlasMode(): IdeaAtlasMode {
-  const raw = (process.env.KAIROS_IDEA_ATLAS ?? '').trim().toLowerCase()
+  const raw = mindSwitch('KAIROS_IDEA_ATLAS').trim().toLowerCase()
   if (raw === '1' || raw === 'on') return 'on'
   if (raw === 'observe') return 'observe'
   return 'off'
@@ -13,7 +14,7 @@ export function ideaAtlasMode(): IdeaAtlasMode {
 
 // KAIROS_IDEA_SWISS 0|1 — multi-round Swiss head-to-head judging.
 export function ideaSwissEnabled(): boolean {
-  const raw = (process.env.KAIROS_IDEA_SWISS ?? '').trim().toLowerCase()
+  const raw = mindSwitch('KAIROS_IDEA_SWISS').trim().toLowerCase()
   return raw === '1' || raw === 'on'
 }
 

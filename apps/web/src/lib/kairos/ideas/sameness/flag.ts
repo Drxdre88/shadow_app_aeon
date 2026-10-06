@@ -1,3 +1,4 @@
+import { mindSwitch } from '@/lib/kairos/level'
 // Lane C anti-sameness flags (wave 3). All default off: unset → every idea
 // prompt, context and job output stays byte-identical.
 
@@ -6,7 +7,7 @@ export type IdeaTriMode = 'off' | 'observe' | 'on'
 export const SAMENESS_DISTANCE_DEFAULT = 0.15
 
 function raw(name: string): string {
-  return (process.env[name] ?? '').trim().toLowerCase()
+  return mindSwitch(name).trim().toLowerCase()
 }
 
 // KAIROS_IDEA_VS 0|1 — verbalized sampling, archetype lenses, keep-the-tail parse.

@@ -1,10 +1,11 @@
+import { mindSwitch } from '@/lib/kairos/level'
 // Kairos gate flags (wave 4 lane A). All default off in code. Tri-state:
 // unset/'0' → 'off'; 'observe' → decide + log only; '1'/'on' → live.
 
 export type GateMode = 'off' | 'observe' | 'on'
 
 function triState(name: string): GateMode {
-  const raw = (process.env[name] ?? '').trim().toLowerCase()
+  const raw = mindSwitch(name).trim().toLowerCase()
   if (raw === '1' || raw === 'on') return 'on'
   if (raw === 'observe') return 'observe'
   return 'off'

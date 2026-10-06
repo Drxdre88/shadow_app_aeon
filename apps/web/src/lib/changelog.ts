@@ -29,6 +29,19 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.46.1] — 2026-10-06
+
+> Areas touched: \`BOARD\` \`KAIROS\`
+> Theme: a board that never shows old cards as current, and one dial for Vorath.
+
+### Fixed — Stale board after sleep or switching away · \`BOARD\`
+- Coming back to Aeon (window focus, laptop or phone waking, a frozen tab resuming, network back, live connection reconnecting) now re-checks the board and reloads if anything changed. Before, it could keep showing old cards while saying "saved".
+- The board remembers the exact version it loaded and reloads whenever it isn't sure, instead of assuming it's current.
+- An edit that never cleared the "unsaved" flag (labels, for example) can no longer block refreshes for more than 30 seconds.
+
+### Changed — One dial for Vorath (\`KAIROS_LEVEL\`) · \`KAIROS\`
+- One setting, \`KAIROS_LEVEL\` (or \`VORATH_LEVEL\`) 0–3, now drives all of Vorath's feature switches: 1 = track record plus watch-only, 2 = initiative behind the message gate, 3 = everything. A switch set on its own still wins.
+
 ## [0.46.0] — 2026-10-06
 
 > Areas touched: \`KAIROS\` \`MCP\` \`API\` \`UI\` \`BOARD\`

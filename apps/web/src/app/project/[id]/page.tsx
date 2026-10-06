@@ -62,7 +62,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         email: session.user.email,
         image: session.user.image,
       }}
-      initialBoardData={{ tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees, virtualAssignees, virtualMembers, realmAvatars }}
+      initialBoardData={{ boardVersion: project.boardVersion, tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees, virtualAssignees, virtualMembers, realmAvatars }}
       initialFavorite={favoriteIds.has(id)}
     />
   )
