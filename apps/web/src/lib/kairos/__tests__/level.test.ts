@@ -9,8 +9,9 @@ import { dreamsMode } from '../dreams/flag'
 import { coldReadMode } from '../cold-read/flag'
 import { livingDominionsMode } from '../living/flag'
 import { surpriseContradictionsOn } from '../surprise/flag'
+import { cardTreeMode } from '../card-tree/flag'
 
-const touched = ['KAIROS_LEVEL', 'KAIROS_PREDICTIONS', 'KAIROS_GATE', 'KAIROS_INITIATIVE', 'KAIROS_SURPRISE_CONTRADICTIONS']
+const touched = ['KAIROS_LEVEL', 'KAIROS_PREDICTIONS', 'KAIROS_GATE', 'KAIROS_INITIATIVE', 'KAIROS_SURPRISE_CONTRADICTIONS', 'KAIROS_CARD_TREE']
 
 afterEach(() => {
   for (const k of touched) delete process.env[k]
@@ -37,6 +38,16 @@ describe('KAIROS_LEVEL', () => {
     expect(dreamsMode()).toBe('off')
     expect(mindSwitch('KAIROS_REPO_MEMORY')).toBe('1')
     expect(mindSwitch('KAIROS_MISSION_CHECK')).toBe('1')
+    expect(cardTreeMode()).toBe('on')
+  })
+
+  it('card trees are off below level 1 unless switched on directly', () => {
+    expect(cardTreeMode()).toBe('off')
+    process.env.KAIROS_CARD_TREE = 'on'
+    expect(cardTreeMode()).toBe('on')
+    process.env.KAIROS_LEVEL = '3'
+    process.env.KAIROS_CARD_TREE = '0'
+    expect(cardTreeMode()).toBe('off')
   })
 
   it('level 2 turns on initiative behind a live gate', () => {

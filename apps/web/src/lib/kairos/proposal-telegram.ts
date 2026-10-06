@@ -33,29 +33,57 @@ const isOperator = (userId: string) => Boolean(userId) && userId === process.env
 
 export const goalProposalTitle = (goal: Pick<GoalRecord, 'title'>) => `Goal proposal: ${goal.title}`
 
+// Any owner-decided proposal Telegram announces with Approve / Veto / Veto + why.
+// holdPrefix keys the gate's held row (externalId) for this kind.
+export interface AnnouncedProposal {
+  id: string
+  title: string
+  body: string
+  expiresAt: string
+  holdPrefix: string
+}
+
+export const GOAL_PROPOSAL_HOLD_PREFIX = 'goal-proposal-hold:'
+
+const goalAnnouncement = (goal: GoalRecord): AnnouncedProposal => ({
+  id: goal.id,
+  title: goalProposalTitle(goal),
+  body: renderGoalBody(goal.meta),
+  expiresAt: goal.meta.expiresAt,
+  holdPrefix: GOAL_PROPOSAL_HOLD_PREFIX,
+})
+
 // Operator only: Telegram is a single-operator channel, so another user's
 // proposal must never land in the operator's chat. Best-effort for callers.
 // Unprompted, so it goes through the Kairos gate unless KAIROS_GATE is off.
-export async function announceGoalProposal(userId: string, goal: GoalRecord, now: Date = new Date()): Promise<boolean> {
+export async function announceProposal(userId: string, proposal: AnnouncedProposal, now: Date = new Date()): Promise<boolean> {
   if (!isOperator(userId)) return false
   const mode = gateMode()
-  if (mode === 'off') return sendGoalProposal(userId, goal, now)
+  if (mode === 'off') return sendProposal(userId, proposal, now)
   const { announceThroughGate } = await import('./proposal-telegram-gate')
-  return announceThroughGate(userId, goal, now, mode)
+  return announceThroughGate(userId, proposal, now, mode)
+}
+
+export async function announceGoalProposal(userId: string, goal: GoalRecord, now: Date = new Date()): Promise<boolean> {
+  return announceProposal(userId, goalAnnouncement(goal), now)
 }
 
 // The direct send with Approve / Veto / Veto + why (also the gate release path).
-export async function sendGoalProposal(userId: string, goal: GoalRecord, now: Date): Promise<boolean> {
+export async function sendProposal(userId: string, proposal: AnnouncedProposal, now: Date): Promise<boolean> {
   if (!isOperator(userId)) return false
   const sent = await sendKairosProposal({
-    proposalId: goal.id,
-    title: goalProposalTitle(goal),
-    body: renderGoalBody(goal.meta),
-    expiresAt: goal.meta.expiresAt,
+    proposalId: proposal.id,
+    title: proposal.title,
+    body: proposal.body,
+    expiresAt: proposal.expiresAt,
   })
   if (!sent) return false
-  await setProposalTelegram(userId, goal.id, sent, now)
+  await setProposalTelegram(userId, proposal.id, sent, now)
   return true
+}
+
+export async function sendGoalProposal(userId: string, goal: GoalRecord, now: Date): Promise<boolean> {
+  return sendProposal(userId, goalAnnouncement(goal), now)
 }
 
 // ── button taps ────────────────────────────────────────────────────────────

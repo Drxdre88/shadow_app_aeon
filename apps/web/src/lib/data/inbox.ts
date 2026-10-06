@@ -1,6 +1,8 @@
 import { listOpenKairosAsks } from '@/lib/data/ask'
 import { listMemories } from '@/lib/data/memories'
 import { listPendingVoiceSamples } from '@/lib/data/voice-samples'
+import { listPendingCardTrees } from '@/lib/data/card-tree-proposals'
+import { CARD_TREE_KIND, readCardTree, type CardTree } from '@/lib/kairos/card-tree/types'
 import { GOAL_PROPOSAL_KIND, readGoalMeta } from '@/lib/kairos/goals/parse'
 import { groupVoiceNoteProposals, readVoiceNote, type VoiceNoteGroup, type VoiceNoteRef } from '@/lib/kairos/voice-note'
 
@@ -24,6 +26,7 @@ export type KairosInboxProposal = {
   createdAt: Date
   idea?: KairosInboxIdea | null
   goal?: KairosInboxGoal | null
+  cardTree?: KairosInboxCardTree | null
   voiceNote?: VoiceNoteRef | null
 }
 type KairosInboxEntry =
@@ -66,13 +69,24 @@ function readGoal(metadata: Record<string, unknown>, now: Date): KairosInboxGoal
   return { question: goal.question, why: goal.why, successCheck: goal.successCheck.text, dueInDays: goal.dueInDays, expiresAt: goal.expiresAt }
 }
 
+// Vorath's drafted card tree (Workforce L4) awaiting Approve / Veto. One past
+// its 7-day expiry can no longer be decided, so it is not listed.
+export type KairosInboxCardTree = CardTree & { expiresAt: string }
+
+function readInboxCardTree(metadata: Record<string, unknown>, now: Date): KairosInboxCardTree | null {
+  const tree = readCardTree(metadata)
+  if (!tree || typeof metadata.expiresAt !== 'string' || !(Date.parse(metadata.expiresAt) > now.getTime())) return null
+  return { ...tree, expiresAt: metadata.expiresAt }
+}
+
 export async function getKairosInbox(userId: string, now: Date = new Date()): Promise<{ items: KairosInboxItem[] }> {
-  const [asks, inbound, voiceSamples] = await Promise.all([
+  const [asks, inbound, voiceSamples, cardTrees] = await Promise.all([
     listOpenKairosAsks(userId),
     listMemories(userId, { type: 'inbound', limit: INBOUND_LIMIT }),
     // Voice samples are filed as 'trace' (out of retrieval), which
     // listMemories hides, so they are read separately.
     listPendingVoiceSamples(userId, now).catch(() => []),
+    listPendingCardTrees(userId, now).catch(() => []),
   ])
 
   // Open questions first (oldest first, by Q number), then Kairos's messages
@@ -89,7 +103,7 @@ export async function getKairosInbox(userId: string, now: Date = new Date()): Pr
   let latestDaily: KairosInboxEntry | null = null
   const goals: KairosInboxEntry[] = []
   const ideas: KairosInboxEntry[] = []
-  for (const memory of [...inbound, ...voiceSamples]) {
+  for (const memory of [...inbound, ...voiceSamples, ...cardTrees]) {
     const metadata = (memory.sourceMetadata ?? {}) as Record<string, unknown>
     if (metadata.status !== 'pending') continue
     // Contradiction notices are retired (Kairos 0.17); old pending rows stay
@@ -112,6 +126,8 @@ export async function getKairosInbox(userId: string, now: Date = new Date()): Pr
     } else {
       const goal = readGoal(metadata, now)
       if (metadata.kind === GOAL_PROPOSAL_KIND && !goal) continue
+      const cardTree = readInboxCardTree(metadata, now)
+      if (metadata.kind === CARD_TREE_KIND && !cardTree) continue
       const idea = readIdea(metadata)
       const voiceNote = readVoiceNote(metadata)
       const item: KairosInboxEntry = {
@@ -121,10 +137,11 @@ export async function getKairosInbox(userId: string, now: Date = new Date()): Pr
         summary: memory.summary,
         createdAt: memory.createdAt,
         ...(goal ? { goal } : {}),
+        ...(cardTree ? { cardTree } : {}),
         ...(idea ? { idea } : {}),
         ...(voiceNote ? { voiceNote } : {}),
       }
-      if (goal) goals.push(item)
+      if (goal || cardTree) goals.push(item)
       else if (idea) ideas.push(item)
       else entries.push(item)
     }

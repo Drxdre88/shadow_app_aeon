@@ -29,6 +29,15 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.48.0] — 2026-10-06
+
+> Areas touched: \`KAIROS\` \`BOARD\` \`MCP\` \`API\` \`UI\`
+> Theme: give Vorath a goal, get a plan you approve.
+
+### Added — Plan a goal with Vorath · \`KAIROS\` \`BOARD\` \`MCP\` \`API\`
+- "Plan a goal" on the board header (also \`request_card_tree\` for agents and a REST route). Vorath drafts up to 12 cards with their order, checklists and the board's own labels on his next run.
+- The draft waits in the Vorath inbox and on Telegram. **No card exists until you press Approve.** Approve creates the cards and their dependencies in one go and lays them out on the timeline; Veto, or no answer within 7 days, creates nothing.
+
 ## [0.47.0] — 2026-10-06
 
 > Areas touched: \`KAIROS\` \`BOARD\` \`MCP\` \`API\` \`UI\`

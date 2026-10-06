@@ -19,6 +19,7 @@ vi.mock('@/lib/data/proposal-decision', async (importOriginal) => {
 })
 vi.mock('@/lib/data/goals', () => ({ casGoalUpdate: vi.fn() }))
 vi.mock('@/lib/data/voice-samples', () => ({ VOICE_SAMPLE_KIND: 'voice_sample', casVoiceSampleStatus: vi.fn(), expireVoiceSamples: vi.fn() }))
+vi.mock('@/lib/data/card-tree-proposals', () => ({ casCardTreeStatus: vi.fn(), expireCardTrees: vi.fn(async () => []), findCardTreeProposal: vi.fn() }))
 vi.mock('@/lib/data/memories', () => ({ acceptProposal: vi.fn() }))
 vi.mock('../goals/transitions', () => ({ approveGoal: vi.fn(), vetoGoal: vi.fn(), expireStaleGoals: vi.fn(async () => ({ expired: [], timedOut: [] })) }))
 vi.mock('../promises/create', () => ({ createKairosPromises: vi.fn() }))
