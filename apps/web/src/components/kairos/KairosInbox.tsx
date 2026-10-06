@@ -14,6 +14,7 @@ import {
 } from '@/lib/actions/kairos-inbox'
 import { confirmVoiceNote, discardVoiceNote } from '@/lib/actions/kairos-voice'
 import { InboxExtras } from './inbox-extras'
+import { CardTreeProposal } from './CardTreeProposal'
 
 type InboxData = Awaited<ReturnType<typeof listKairosInbox>>
 type InboxItem = InboxData['items'][number]
@@ -594,6 +595,9 @@ export function KairosInbox() {
                                     onDecide={decideGoal}
                                   />
                                 )
+                              }
+                              if (proposal.cardTree) {
+                                return <CardTreeProposal key={proposal.id} proposal={proposal} cardTree={proposal.cardTree} working={working} decision={goalDecisions[proposal.id]} onDecide={decideGoal} />
                               }
                               const idea = 'idea' in proposal ? readInboxIdea(proposal.idea) : null
                               return (

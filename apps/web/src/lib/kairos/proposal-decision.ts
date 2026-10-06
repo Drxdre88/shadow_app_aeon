@@ -22,6 +22,8 @@ import { PROMISE_OUTCOME_MAX_CHARS, PROMISE_OUTCOME_MIN_CHARS } from '@/lib/data
 import { reactOutcome } from './reactions'
 import { editMessageText, telegramConfigured } from './telegram'
 import { recordToday } from './today'
+import { cardTreeKind } from './card-tree/decision'
+import { CARD_TREE_KIND } from './card-tree/types'
 
 // One decision function for every owner-decided proposal kind (Phase 2,
 // Track C). Web inbox, Telegram buttons and the REST session all call
@@ -61,7 +63,7 @@ export type DecideProposalResult =
   | { ok: false; reason: ProposalDecisionFailure; title?: string; decided?: ProposalVerdict }
 
 type KindFailure = Exclude<ProposalDecisionFailure, 'not_decidable'>
-type KindOutcome = { ok: true } | { ok: false; reason: KindFailure; decided?: ProposalVerdict }
+export type KindOutcome = { ok: true } | { ok: false; reason: KindFailure; decided?: ProposalVerdict }
 
 interface KindContext {
   userId: string
@@ -70,7 +72,7 @@ interface KindContext {
   now: Date
 }
 
-interface ProposalKindHandler {
+export interface ProposalKindHandler {
   approve(ctx: KindContext): Promise<KindOutcome>
   veto(ctx: KindContext & { reason: string | null }): Promise<KindOutcome>
   // A "Veto + why" reason that arrived after the veto.
@@ -164,6 +166,7 @@ const voiceSampleKind: ProposalKindHandler = {
 export const PROPOSAL_KINDS: Readonly<Record<string, ProposalKindHandler>> = {
   [GOAL_PROPOSAL_KIND]: goalKind,
   [VOICE_SAMPLE_KIND]: voiceSampleKind,
+  [CARD_TREE_KIND]: cardTreeKind,
 }
 
 export function isDecidableProposalKind(kind: unknown): boolean {
