@@ -28,7 +28,7 @@ function latestScore(data: FocusOverview): string | null {
 function ModeBanner({ mode }: { mode: LivingDominionsMode }) {
   return (
     <p className="text-[12px] leading-relaxed text-white/60">
-      {mode === 'off' && <>Switched off — set <Code>KAIROS_LIVING_DOMINIONS=observe</Code> to start watching</>}
+      {mode === 'off' && <>Switched off — set <Code>KAIROS_LEVEL=1</Code> to start watching</>}
       {mode === 'observe' && `Watch-only: this is where ${MIND_NAME} thinks your time went. Nothing he says changes yet.`}
       {mode === 'on' && `On: ${MIND_NAME} follows these areas; dormant ones are left out of his focus.`}
     </p>

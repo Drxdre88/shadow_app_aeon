@@ -1,7 +1,8 @@
+import { mindSwitch } from '@/lib/kairos/level'
 export type RapportMode = 'off' | 'observe' | 'on'
 
 function triState(name: string): RapportMode {
-  const raw = (process.env[name] ?? '').trim().toLowerCase()
+  const raw = mindSwitch(name).trim().toLowerCase()
   if (raw === '1' || raw === 'on') return 'on'
   if (raw === 'observe') return 'observe'
   return 'off'

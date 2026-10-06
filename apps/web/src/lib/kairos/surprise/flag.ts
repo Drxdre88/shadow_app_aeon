@@ -1,3 +1,4 @@
+import { mindSwitch } from '@/lib/kairos/level'
 import { stageMode } from '@/lib/kairos/stage/flag'
 
 // Surprise-as-engine flags (spec_surprise). All default off in code → every
@@ -7,14 +8,14 @@ import { stageMode } from '@/lib/kairos/stage/flag'
 export type SurpriseMode = 'off' | 'observe' | 'on'
 
 function triState(name: string): SurpriseMode {
-  const raw = (process.env[name] ?? '').trim().toLowerCase()
+  const raw = mindSwitch(name).trim().toLowerCase()
   if (raw === '1' || raw === 'on') return 'on'
   if (raw === 'observe') return 'observe'
   return 'off'
 }
 
 function binary(name: string): boolean {
-  const raw = (process.env[name] ?? '').trim().toLowerCase()
+  const raw = mindSwitch(name).trim().toLowerCase()
   return raw === '1' || raw === 'on'
 }
 

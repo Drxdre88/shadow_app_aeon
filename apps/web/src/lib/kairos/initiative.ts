@@ -1,3 +1,4 @@
+import { mindSwitch } from '@/lib/kairos/level'
 export function initiativeEnabled(): boolean {
-  return process.env.KAIROS_INITIATIVE === '1'
+  return mindSwitch('KAIROS_INITIATIVE') === '1'
 }

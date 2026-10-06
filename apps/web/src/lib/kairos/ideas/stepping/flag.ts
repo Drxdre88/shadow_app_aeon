@@ -1,9 +1,10 @@
+import { mindSwitch } from '@/lib/kairos/level'
 // Lane D flags (wave 3), default off: 'off' = byte-identical, 'observe' = record only, '1'/'on' = live.
 
 export type SteppingMode = 'off' | 'observe' | 'on'
 
 function triState(name: string): SteppingMode {
-  const raw = (process.env[name] ?? '').trim().toLowerCase()
+  const raw = mindSwitch(name).trim().toLowerCase()
   if (raw === '1' || raw === 'on') return 'on'
   if (raw === 'observe') return 'observe'
   return 'off'

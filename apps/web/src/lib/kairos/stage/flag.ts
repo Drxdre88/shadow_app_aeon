@@ -1,3 +1,4 @@
+import { mindSwitch } from '@/lib/kairos/level'
 import type { ThinkingJobKind } from '@/lib/kairos/engine/types'
 import type { StageMode } from './types'
 
@@ -5,7 +6,7 @@ import type { StageMode } from './types'
 // 'observe' → post + select + API, no injection, no surprise trigger;
 // '1' → full. Default off in code.
 export function stageMode(): StageMode {
-  const raw = (process.env.KAIROS_STAGE ?? '').trim().toLowerCase()
+  const raw = mindSwitch('KAIROS_STAGE').trim().toLowerCase()
   if (raw === '1' || raw === 'on') return 'on'
   if (raw === 'observe') return 'observe'
   return 'off'

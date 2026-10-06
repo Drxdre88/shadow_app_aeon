@@ -1,3 +1,4 @@
+import { mindSwitch } from '@/lib/kairos/level'
 // KAIROS_LIFE_CHAPTERS: unset/'0' → off (nothing planned, no read, prompts
 // byte-identical); 'observe' → write the monthly chapter, readable via
 // MCP/REST, nothing feeds back; '1' → observe + the reflect continuity block.
@@ -5,12 +6,12 @@
 export type LifeChapterMode = 'off' | 'observe' | 'on'
 
 export function lifeChapterMode(): LifeChapterMode {
-  const raw = (process.env.KAIROS_LIFE_CHAPTERS ?? '').trim().toLowerCase()
+  const raw = mindSwitch('KAIROS_LIFE_CHAPTERS').trim().toLowerCase()
   if (raw === '1' || raw === 'on') return 'on'
   if (raw === 'observe') return 'observe'
   return 'off'
 }
 
 export function lifeChapterLineOn(): boolean {
-  return lifeChapterMode() === 'on' && (process.env.KAIROS_LIFE_CHAPTER_LINE ?? '').trim() === '1'
+  return lifeChapterMode() === 'on' && mindSwitch('KAIROS_LIFE_CHAPTER_LINE').trim() === '1'
 }

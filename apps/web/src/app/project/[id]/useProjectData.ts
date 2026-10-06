@@ -10,8 +10,8 @@ import { useBoardStore, isDirtyOrGracePeriod } from '@/lib/store/boardStore'
 import { useGanttStore } from '@/lib/store/ganttStore'
 import { useCanvasStore } from '@/lib/store/canvasStore'
 import { useAvatarPrefsStore } from '@/components/board/sizing'
+import { useBoardFreshness } from './useBoardFreshness'
 
-const POLL_INTERVAL = 30_000
 const PUSHER_DEBOUNCE_MS = 300
 
 type AssigneeLite = { userId: string; name: string | null; email?: string | null; image: string | null; initials?: string | null; color?: string | null; textColor?: string | null; shape?: string | null }
@@ -59,17 +59,6 @@ function toVirtualMemberLites(raw: VirtualMemberRaw[] | undefined) {
   return (raw ?? []).map((v) => ({ id: v.id, name: v.name, initials: v.initials, color: v.color }))
 }
 
-async function fetchBoardVersion(projectId: string): Promise<number | null> {
-  try {
-    const res = await fetch(`/api/sync/version/${projectId}`)
-    if (!res.ok) return null
-    const data = await res.json()
-    return data.version ?? null
-  } catch {
-    return null
-  }
-}
-
 export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' | 'canvas' | 'trophy' | 'velocity', initialBoardData?: Record<string, unknown>) {
   const [isLoading, setIsLoading] = useState(!initialBoardData)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -80,18 +69,27 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
 
   const fetchIdRef = useRef(0)
   const knownVersionRef = useRef<number | null>(null)
-  const pollingRef = useRef(false)
+  const recheckSoonRef = useRef<() => void>(() => {})
+  const activeProjectRef = useRef<string | null>(projectId)
+  const loadInFlightRef = useRef(false)
 
   const doFullLoad = useCallback(() => {
     const currentFetchId = ++fetchIdRef.current
+    loadInFlightRef.current = true
 
     loadBoardData(projectId)
-      .then(({ tasks: dbTasks, columns: dbColumns, labels: dbLabels, taskLabels: dbTaskLabels, dependencies: dbDependencies, checklistSummaries: dbChecklistSummaries, checklistPreviews: dbChecklistPreviews, assignees: dbAssignees, virtualAssignees: dbVirtualAssignees, virtualMembers: dbVirtualMembers, realmAvatars }) => {
+      .then(({ boardVersion, tasks: dbTasks, columns: dbColumns, labels: dbLabels, taskLabels: dbTaskLabels, dependencies: dbDependencies, checklistSummaries: dbChecklistSummaries, checklistPreviews: dbChecklistPreviews, assignees: dbAssignees, virtualAssignees: dbVirtualAssignees, virtualMembers: dbVirtualMembers, realmAvatars }) => {
         if (currentFetchId !== fetchIdRef.current) return
+        loadInFlightRef.current = false
+        if (activeProjectRef.current !== projectId) return
         // Realm policy is not board state, so it lands even when the board is
         // dirty — nothing the user is typing can conflict with it.
         useAvatarPrefsStore.getState().setRealmPreferInitials(realmAvatars?.preferInitials === true)
-        if (!isInitialLoad.current && isDirtyOrGracePeriod()) return
+        if (!isInitialLoad.current && isDirtyOrGracePeriod()) {
+          recheckSoonRef.current()
+          return
+        }
+        knownVersionRef.current = boardVersion ?? null
 
         const taskLabelMap = new Map<string, string[]>()
         dbTaskLabels.forEach((tl) => {
@@ -160,6 +158,7 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
         isInitialLoad.current = false
       })
       .catch((err) => {
+        if (currentFetchId === fetchIdRef.current) loadInFlightRef.current = false
         console.error('Failed to load project data:', err)
         if (isInitialLoad.current) {
           setLoadError('Failed to load project data. Check your connection and try again.')
@@ -170,6 +169,16 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
   }, [projectId])
 
   const initialDataRef = useRef(initialBoardData)
+
+  // A load or check still in flight when the user leaves this board must not
+  // paint its cards over the next one (the board store is global).
+  useEffect(() => {
+    activeProjectRef.current = projectId
+    return () => {
+      activeProjectRef.current = null
+      loadInFlightRef.current = false
+    }
+  }, [projectId])
 
   useEffect(() => {
     const cachedTasks = useBoardStore.getState().tasks
@@ -190,8 +199,9 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
     setRows([])
 
     if (initialDataRef.current) {
-      const data = initialDataRef.current as { tasks: Array<Record<string, unknown>>; columns: Array<Record<string, unknown>>; labels: Array<Record<string, unknown>>; taskLabels: Array<{ taskId: string; labelId: string }>; dependencies: Array<Record<string, unknown>>; checklistSummaries: Record<string, never>; checklistPreviews: Record<string, never[]>; assignees?: Record<string, AssigneeLite[]>; virtualAssignees?: Record<string, VirtualAssigneeLite[]>; virtualMembers?: VirtualMemberRaw[]; realmAvatars?: RealmAvatars }
+      const data = initialDataRef.current as { boardVersion?: number; tasks: Array<Record<string, unknown>>; columns: Array<Record<string, unknown>>; labels: Array<Record<string, unknown>>; taskLabels: Array<{ taskId: string; labelId: string }>; dependencies: Array<Record<string, unknown>>; checklistSummaries: Record<string, never>; checklistPreviews: Record<string, never[]>; assignees?: Record<string, AssigneeLite[]>; virtualAssignees?: Record<string, VirtualAssigneeLite[]>; virtualMembers?: VirtualMemberRaw[]; realmAvatars?: RealmAvatars }
       initialDataRef.current = undefined
+      knownVersionRef.current = typeof data.boardVersion === 'number' ? data.boardVersion : null
       useAvatarPrefsStore.getState().setRealmPreferInitials(data.realmAvatars?.preferInitials === true)
 
       const taskLabelMap = new Map<string, string[]>()
@@ -311,45 +321,16 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
     }).catch((err) => console.error('Failed to load canvas data:', err))
   }, [activeTab, projectId, isLoading, setCanvasNodes, setCanvasEdges])
 
+  const requestReload = useCallback(() => {
+    if (loadInFlightRef.current) return
+    doFullLoad()
+  }, [doFullLoad])
+  const { checkNow, recheckSoon } = useBoardFreshness(projectId, knownVersionRef, requestReload)
+  const checkNowRef = useRef(checkNow)
   useEffect(() => {
-    const poll = async () => {
-      if (document.visibilityState !== 'visible') return
-      if (isDirtyOrGracePeriod()) return
-      if (pollingRef.current) return
-      pollingRef.current = true
-
-      try {
-        const serverVersion = await fetchBoardVersion(projectId)
-        if (serverVersion === null) return
-
-        if (knownVersionRef.current === null) {
-          knownVersionRef.current = serverVersion
-          return
-        }
-
-        if (serverVersion !== knownVersionRef.current) {
-          knownVersionRef.current = serverVersion
-          doFullLoad()
-        }
-      } finally {
-        pollingRef.current = false
-      }
-    }
-
-    const interval = setInterval(poll, POLL_INTERVAL)
-
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        poll()
-      }
-    }
-    document.addEventListener('visibilitychange', handleVisibility)
-
-    return () => {
-      clearInterval(interval)
-      document.removeEventListener('visibilitychange', handleVisibility)
-    }
-  }, [projectId, doFullLoad])
+    recheckSoonRef.current = recheckSoon
+    checkNowRef.current = checkNow
+  }, [recheckSoon, checkNow])
 
   const pusherRef = useRef<PusherClient | null>(null)
 
@@ -366,6 +347,9 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
     const pusher = new PusherClient(key, { cluster })
     pusherRef.current = pusher
     const channel = pusher.subscribe(`board-${projectId}`)
+    // Events sent while the socket was down (sleep, network drop) are never
+    // replayed, so every (re)connect re-checks the board version.
+    pusher.connection.bind('connected', () => void checkNowRef.current())
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -378,10 +362,12 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
         useBoardStore.getState().bumpCommentsSignal()
         return
       }
-      if (isDirtyOrGracePeriod()) return
+      if (isDirtyOrGracePeriod()) {
+        recheckSoonRef.current()
+        return
+      }
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = setTimeout(() => {
-        knownVersionRef.current = null
         doFullLoad()
       }, PUSHER_DEBOUNCE_MS)
     })
@@ -389,6 +375,7 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer)
       channel.unbind_all()
+      pusher.connection.unbind('connected')
       pusher.unsubscribe(`board-${projectId}`)
       pusher.disconnect()
       pusherRef.current = null
@@ -396,7 +383,6 @@ export function useProjectData(projectId: string, activeTab: 'board' | 'gantt' |
   }, [projectId, doFullLoad])
 
   const triggerReload = useCallback(() => {
-    knownVersionRef.current = null
     doFullLoad()
   }, [doFullLoad])
 

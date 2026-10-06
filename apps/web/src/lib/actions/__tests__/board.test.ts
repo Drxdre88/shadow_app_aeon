@@ -70,6 +70,10 @@ vi.mock('@/lib/data/storage', () => ({
   checkStorageLimit: vi.fn(),
 }))
 
+vi.mock('@/lib/data/board-version', () => ({
+  findBoardVersion: vi.fn().mockResolvedValue(7),
+}))
+
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
 }))
@@ -97,6 +101,7 @@ import {
 import { syncBoardStatusToGantt, deleteLinkedGanttTask } from '@/lib/data/bridge'
 import { emitActivity } from '@/lib/data/activity'
 import { checkStorageLimit } from '@/lib/data/storage'
+import { findBoardVersion as _findBoardVersion } from '@/lib/data/board-version'
 import { getAssigneesForProject as _getAssigneesForProject } from '@/lib/data/assignees'
 import {
   getVirtualAssigneesForProject as _getVirtualAssigneesForProject,
@@ -256,7 +261,15 @@ describe('loadBoardData', () => {
 
     const result = await loadBoardData(PROJECT_ID)
 
-    expect(result).toEqual({ tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees: {}, virtualAssignees: {}, virtualMembers: [], realmAvatars: { preferInitials: false } })
+    expect(result).toEqual({ boardVersion: 7, tasks, columns, labels, taskLabels, dependencies, checklistSummaries, checklistPreviews, assignees: {}, virtualAssignees: {}, virtualMembers: [], realmAvatars: { preferInitials: false } })
+  })
+
+  it('reads the board version before the board rows', async () => {
+    const order: string[] = []
+    vi.mocked(_findBoardVersion).mockImplementationOnce(async () => { order.push('version'); return 7 })
+    vi.mocked(_findTasks).mockImplementationOnce(async () => { order.push('tasks'); return [] })
+    await loadBoardData(PROJECT_ID)
+    expect(order).toEqual(['version', 'tasks'])
   })
 
   it('throws when requireOwnership rejects', async () => {
