@@ -7,6 +7,7 @@ import { createColumn, updateColumn as updateColumnAction, reorderColumns as reo
 import { sendToVault, sendBatchToVault } from '@/lib/actions/vault'
 import { useBoardStore, beginDirectWrite, endDirectWrite } from '@/lib/store/boardStore'
 import { useMutationQueue } from '@/lib/store/mutationQueue'
+import { applyFreshness, freshnessFromResult, withExpectedOnMoves, withExpectedOnUpdate } from '@/lib/store/staleMoves'
 import { toast } from '@/components/ui/Toast'
 
 /** A queued drop stops meaning "launch now" once it is this stale. */
@@ -71,7 +72,7 @@ export function useBoardHandlers(projectId: string) {
     }
 
     useMutationQueue.getState().enqueue(
-      { id: crypto.randomUUID(), type: 'task.update', args: { taskId, projectId, updates } },
+      { id: crypto.randomUUID(), type: 'task.update', args: { taskId, projectId, updates: withExpectedOnUpdate(updates, snapshot) } },
       {
         failMessage: 'Could not save card — reverted',
         rollback: () => {
@@ -83,7 +84,9 @@ export function useBoardHandlers(projectId: string) {
             toast('Task updated', {
               onUndo: () => {
                 useBoardStore.getState().updateTask(taskId, rollback as Partial<typeof snapshot>)
-                updateBoardTask(taskId, projectId, rollback as Record<string, unknown>).catch(() => toast('Failed to undo'))
+                updateBoardTask(taskId, projectId, rollback as Record<string, unknown>)
+                  .then((r) => applyFreshness(freshnessFromResult([taskId], r)))
+                  .catch(() => toast('Failed to undo'))
               },
             })
           }
@@ -139,8 +142,9 @@ export function useBoardHandlers(projectId: string) {
     launch?: { autoRunTaskId: string; armedAt: number }
   ) => {
     if (launch) toast('Mission will launch once the move saves…')
+    const guarded = withExpectedOnMoves(updates, useBoardStore.getState().tasks, snapshot)
     useMutationQueue.getState().enqueue(
-      { id: crypto.randomUUID(), type: 'task.move', args: { projectId, updates } },
+      { id: crypto.randomUUID(), type: 'task.move', args: { projectId, updates: guarded } },
       {
       failMessage: 'Could not move card — reverted',
       rollback: () => {
@@ -186,7 +190,8 @@ export function useBoardHandlers(projectId: string) {
                   id: s.id,
                   orderIndex: s.orderIndex,
                   ...(s.columnId ? { columnId: s.columnId } : {}),
-                }))).catch(() => toast('Failed to undo move'))
+                }))).then((r) => applyFreshness(freshnessFromResult(frozenSnapshot.map(s => s.id), r)))
+                  .catch(() => toast('Failed to undo move'))
               },
             })
           }

@@ -292,12 +292,13 @@ export async function deleteTasksByColumn(columnId: string, projectId: string) {
 export async function reorderTasks(
   projectId: string,
   updates: { id: string; orderIndex: number; status?: string; columnId?: string }[]
-) {
+): Promise<Date> {
+  const now = new Date()
   await db.transaction(async (tx) => {
     for (const { id, orderIndex, status, columnId } of updates) {
       const values: Partial<typeof boardTasks.$inferInsert> = {
         orderIndex,
-        updatedAt: new Date(),
+        updatedAt: now,
       }
       if (status !== undefined) {
         values.status = status
@@ -316,6 +317,16 @@ export async function reorderTasks(
     }
   })
   await touchProject(projectId, { type: 'task:moved' })
+  return now
+}
+
+/** updatedAt + column of the given cards, for the stale-move guard. */
+export async function findTaskVersions(projectId: string, taskIds: string[]) {
+  if (taskIds.length === 0) return []
+  return db
+    .select({ id: boardTasks.id, updatedAt: boardTasks.updatedAt, columnId: boardTasks.columnId })
+    .from(boardTasks)
+    .where(and(eq(boardTasks.projectId, projectId), inArray(boardTasks.id, taskIds)))
 }
 
 export async function findArchivedTasks(projectId: string) {

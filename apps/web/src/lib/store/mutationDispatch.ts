@@ -9,6 +9,7 @@ import {
   reorderChecklistItems,
   deleteChecklistGroup,
 } from '@/lib/actions/checklist'
+import { throwIfStale } from '@/lib/utils/staleBoard'
 
 // Serialisable description of a board write. Stored verbatim in the durable
 // queue (localStorage), so args MUST be plain JSON — no closures, no Dates.
@@ -32,7 +33,7 @@ export type CreateTaskArgs = {
   endDate?: string
 }
 
-export type MoveUpdate = { id: string; orderIndex: number; status?: string; columnId?: string; name?: string }
+export type MoveUpdate = { id: string; orderIndex: number; status?: string; columnId?: string; name?: string; expectedUpdatedAt?: string }
 
 export type ChecklistItemUpdates = {
   title?: string
@@ -63,11 +64,11 @@ export function dispatchMutation(m: QueuedMutation): Promise<unknown> {
     case 'task.create':
       return createBoardTask(m.args)
     case 'task.update':
-      return updateBoardTask(m.args.taskId, m.args.projectId, m.args.updates as Parameters<typeof updateBoardTask>[2])
+      return updateBoardTask(m.args.taskId, m.args.projectId, m.args.updates as Parameters<typeof updateBoardTask>[2]).then(throwIfStale)
     case 'task.delete':
       return deleteBoardTask(m.args.taskId, m.args.projectId)
     case 'task.move':
-      return reorderBoardTasks(m.args.projectId, m.args.updates)
+      return reorderBoardTasks(m.args.projectId, m.args.updates).then(throwIfStale)
     case 'checklist.create':
       return createChecklistItem({
         id: m.args.itemId,
