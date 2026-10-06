@@ -59,15 +59,16 @@ export async function releaseHeldSpeaks(userId: string, now: Date, trigger: Rele
     const claimed = await data.claimHeldSpeak(userId, row.id, now, reason)
     if (!claimed) continue
     const meta = record(claimed.sourceMetadata)
-    const { fanOutSpeak } = await import('@/lib/kairos/speak')
-    const telegram = await fanOutSpeak({
-      userId,
-      memoryId: claimed.id,
-      title: claimed.title,
-      message: claimed.bodyMd,
-      kind: meta.kind === 'question' ? 'question' : 'notify',
-      opsAlert: false,
-    })
+    const telegram = typeof meta.proposalId === 'string'
+      ? await (await import('@/lib/kairos/proposal-telegram-gate')).releaseHeldGoalProposal(userId, meta.proposalId, now)
+      : await (await import('@/lib/kairos/speak')).fanOutSpeak({
+        userId,
+        memoryId: claimed.id,
+        title: claimed.title,
+        message: claimed.bodyMd,
+        kind: meta.kind === 'question' ? 'question' : 'notify',
+        opsAlert: false,
+      })
     if (!telegram) console.warn('[kairos:gate] released speak not delivered to Telegram (stays in the inbox)', claimed.id)
     released.push({ id: claimed.id, reason, telegram })
     log.push({ at: now.toISOString(), memoryId: claimed.id, mode, decision: 'release', reason })

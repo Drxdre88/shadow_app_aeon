@@ -148,7 +148,7 @@ guards against writer imports.
 
 | Item | Where |
 |---|---|
-| Night-time goal proposals (03:15–04:28) still bypass the gate | `goal-propose.ts` → `proposal-telegram.ts` |
+| ✅ Fixed 06/10: night-time goal proposals now go through the gate (held rows released with their buttons) | `proposal-telegram-gate.ts`, `gate/release.ts` |
 | A held message would lose extra Telegram buttons on release (no current caller) | `speak.ts` hold path |
 | Dream seeds into ideas deliberately not built (conflicts with the firewall rule) — owner call | plan §4 vs handover §6 |
 | Butcher splits: `KairosInbox.tsx` (649), `daily-message-prompt.ts` (500), `ask-mine.ts` (519), `weekly-review/inputs.ts` (620), `cortex.ts`, `memories.ts` (2,392), `projects.ts` (558), webhook route test | — |

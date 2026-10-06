@@ -165,7 +165,7 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
   if (!result.ok) return skipped(job, result.reason, answeredBy)
 
   // Ask first: the proposal goes to the owner's Telegram with Approve / Veto /
-  // Veto + why right away. Best-effort — the row in the inbox is the record.
+  // Veto + why, through the Kairos gate. Best-effort — the row in the inbox is the record.
   try {
     await announceGoalProposal(job.userId, result.goal, now)
   } catch (err) {
