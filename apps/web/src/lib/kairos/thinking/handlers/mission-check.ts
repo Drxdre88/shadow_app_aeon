@@ -1,4 +1,5 @@
 import { findChecklistItems } from '@/lib/data/checklist'
+import { canEditProject } from '@/lib/data/hangar-access'
 import { listMissionCheckCandidates, writeMissionCheck } from '@/lib/data/mission-check'
 import { touchProject } from '@/lib/data/projects'
 import { missionCheckMode } from '@/lib/kairos/mission-check/flag'
@@ -46,6 +47,7 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
   const candidates = await listMissionCheckCandidates(userId, since, MISSION_CHECK_CAP)
   const specs: ThinkingJobSpec[] = []
   for (const c of candidates.slice(0, MISSION_CHECK_CAP)) {
+    if (!(await canEditProject(c.projectId, userId))) continue
     const checklist = await findChecklistItems(c.taskId, c.projectId)
     const { prompt, context } = buildMissionCheckJob({
       sessionId: c.sessionId,

@@ -24,9 +24,9 @@ beforeEach(() => {
 describe('mission check switch', () => {
   it('reports the state and whether this caller created the board', async () => {
     vi.mocked(findMissionCheckBoard).mockResolvedValue({ id: P, userId: OWNER, settings: { kairosMissionCheck: true } })
-    expect(await getMissionCheckSetting(P)).toEqual({ on: true, canToggle: true })
+    expect(await getMissionCheckSetting(P)).toEqual({ on: true, canToggle: true, available: false })
     vi.mocked(requireMember).mockResolvedValue('editor-2')
-    expect(await getMissionCheckSetting(P)).toEqual({ on: true, canToggle: false })
+    expect(await getMissionCheckSetting(P)).toEqual({ on: true, canToggle: false, available: false })
     vi.mocked(findMissionCheckBoard).mockResolvedValue({ id: P, userId: OWNER, settings: { kairosMissionCheck: 'on' } })
     expect((await getMissionCheckSetting(P)).on).toBe(false)
   })

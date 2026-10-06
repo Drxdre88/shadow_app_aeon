@@ -6,6 +6,7 @@ vi.mock('@/lib/data/mission-check', () => ({
   writeMissionCheck: vi.fn(),
 }))
 vi.mock('@/lib/data/checklist', () => ({ findChecklistItems: vi.fn() }))
+vi.mock('@/lib/data/hangar-access', () => ({ canEditProject: vi.fn(async () => true) }))
 vi.mock('@/lib/data/projects', () => ({ touchProject: vi.fn() }))
 
 import { listMissionCheckCandidates, writeMissionCheck, type MissionCheckCandidate } from '@/lib/data/mission-check'
@@ -98,6 +99,15 @@ describe('mission_check plan', () => {
     expect(spec.input.prompt).toContain('Tests: passed — 12 passed')
     expect(spec.input.system).toContain('cannot see the code')
     expect(spec.input.context).toMatchObject({ sessionId: 's-1', taskId: 't-s-1', projectId: 'p-1' })
+  })
+
+  it('skips missions on boards the user can no longer edit, before reading the card', async () => {
+    const { canEditProject } = await import('@/lib/data/hangar-access')
+    vi.mocked(canEditProject).mockResolvedValueOnce(false)
+    vi.mocked(findChecklistItems).mockClear()
+    const specs = await missionCheckHandler.plan(USER, NOW)
+    expect(specs).toHaveLength(0)
+    expect(findChecklistItems).not.toHaveBeenCalled()
   })
 
   it('caps the batch even if the data layer returns more', async () => {

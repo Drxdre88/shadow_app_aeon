@@ -16,7 +16,7 @@ interface MissionCheckToggleProps {
  * (its own owner-only action), and is shown only to the person who created the board.
  */
 export function MissionCheckToggle({ projectId, isOpen }: MissionCheckToggleProps) {
-  const [state, setState] = useState<{ on: boolean; canToggle: boolean } | null>(null)
+  const [state, setState] = useState<{ on: boolean; canToggle: boolean; available?: boolean } | null>(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -28,7 +28,7 @@ export function MissionCheckToggle({ projectId, isOpen }: MissionCheckToggleProp
     return () => { cancelled = true }
   }, [isOpen, projectId])
 
-  if (!state?.canToggle) return null
+  if (!state?.canToggle || state.available === false) return null
 
   const toggle = async () => {
     if (saving) return

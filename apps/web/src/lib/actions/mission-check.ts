@@ -7,6 +7,7 @@ import {
   setProjectMissionCheck as _setProjectMissionCheck,
 } from '@/lib/data/mission-check'
 import { isMissionCheckOn, setMissionCheckInputSchema } from '@/lib/kairos/mission-check/types'
+import { missionCheckMode } from '@/lib/kairos/mission-check/flag'
 
 // "Vorath checks finished missions": the owner-only per-board switch. App-only
 // on purpose — no MCP or REST twin, so an agent can't switch on its own grader.
@@ -15,7 +16,7 @@ export async function getMissionCheckSetting(projectId: string) {
   const userId = await requireMember(projectId)
   const board = await _findMissionCheckBoard(projectId)
   if (!board) throw new Error('Project not found')
-  return { on: isMissionCheckOn(board.settings), canToggle: board.userId === userId }
+  return { on: isMissionCheckOn(board.settings), canToggle: board.userId === userId, available: missionCheckMode() !== 'off' }
 }
 
 export async function setMissionCheck(projectId: string, on: boolean) {
