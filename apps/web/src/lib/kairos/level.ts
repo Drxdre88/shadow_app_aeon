@@ -20,6 +20,8 @@ const LEVEL_1: SwitchValues = {
   KAIROS_CURIOSITY_LP: 'observe',
   KAIROS_IDEA_TASTE: 'observe',
   KAIROS_LIVING_DOMINIONS: 'observe',
+  KAIROS_REPO_MEMORY: '1',
+  KAIROS_MISSION_CHECK: '1',
 }
 
 const LEVEL_2: SwitchValues = {

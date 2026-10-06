@@ -11,7 +11,7 @@ All paths below are under `apps/web/src/` unless stated.
 **Ground rules that hold across every wave**
 - **No schema change** 0.16–0.26: new state is `user_preferences` server-owned keys or `memories.sourceMetadata.kind` rows (§5). 0.27 adds migration 0040 (Living Dominions, §4b).
 - **Flag-gated, off by default, flag-off byte-identical.** Only the shared "today" log is on by default (`KAIROS_TODAY=0` turns it off).
-- **One dial: `KAIROS_LEVEL` 0–3** (alias `VORATH_LEVEL`, `lib/kairos/level.ts`). Every mind switch reads through `mindSwitch()`: its own env var if set (even `0`), else the level's value. 1 = track record + watch-only set (gate, rapport, ask-first, trust, surprise, curiosity, taste, Living Dominions observe); 2 = + gate live, initiative, agenda, character check, stage + owner model observe; 3 = everything else live. Never set by a level: `KAIROS_SURPRISE_CONTRADICTIONS`, `KAIROS_DISTILL_DIALOGUES`, `KAIROS_REQUIRE_ROUTINE_SCOPE`, routine/daytime switches.
+- **One dial: `KAIROS_LEVEL` 0–3** (alias `VORATH_LEVEL`, `lib/kairos/level.ts`). Every mind switch reads through `mindSwitch()`: its own env var if set (even `0`), else the level's value. 1 = track record + watch-only set (gate, rapport, ask-first, trust, surprise, curiosity, taste, Living Dominions observe) + repo memory and the mission checker (the checker still needs each board owner's switch); 2 = + gate live, initiative, agenda, character check, stage + owner model observe; 3 = everything else live. Never set by a level: `KAIROS_SURPRISE_CONTRADICTIONS`, `KAIROS_DISTILL_DIALOGUES`, `KAIROS_REQUIRE_ROUTINE_SCOPE`, routine/daytime switches.
 - **Max plan first.** New thinking runs as routine-claimed jobs; none of the 0.20–0.25 kinds has a paid fallback, except where a pre-existing kind already had one.
 - **Measurement-only.** Conscience results, character scores, cold reads and taste never reach a Kairos prompt. Dreams never become memories, evidence or prompt text (`dreams/__tests__/firewall.test.ts`, `life-chapters/__tests__/firewall.test.ts`).
 - **Telegram stays first-class** (owner rule 03/10). Triad is an extra, enterprise-internal channel.
@@ -114,6 +114,14 @@ belief-recheck evidence) until confirmed; floating dialogue reflections and agen
 `components/board/triage/*`. Per-board `projects.settings.kairosTriage='on'` (creator-only; generic settings patches
 can't flip it). Batches ≤10 recent untriaged cards/board, ≤5 boards per pass; fenced card text; labels only from the
 board; suggestions in `board_tasks.metadata.triage`, accepted/dismissed per item on the card. The toggle and Accept/Dismiss are app-only by design (no MCP/REST twin): an agent can't switch sorting on or accept its own suggestions.
+
+## 4c. 0.29: Vorath runs the workforce, wave 1
+
+Plan: `research/vorath_0610/expansion_plan.md` Phase 1; Vorath consulted 06/10 (decision memory `0fab0987`). Never merges, moves cards to Done, creates cards or writes to a repo. No migration.
+- **Repo memory** (`repo_lessons`, `KAIROS_REPO_MEMORY`, level 1): one batched nightly job (01:40–04:28 UTC, ≤6 repos with sessions in the last 24h) turns session-summary memories into a ≤10-lesson playbook per repo (`sourceMetadata.kind='repo_playbook'`, `repoSlug`, externalKey `repo_playbook:<slug>`); every lesson cites source memory ids from its own repo. `lib/kairos/repo-memory/*`, `lib/data/repo-memory.ts`. **Handover on read**: `get_repo_handover` ⇄ `GET /api/v1/kairos/repo-handover` (`lib/data/repo-handover.ts`): Start here + latest sessions, open `repo:*` cards, open asks/promises, playbook; label↔folder aliases in `repo-memory/aliases.ts`.
+- **Payback ledger** (read-only, no switch): `get_agent_payback` ⇄ `GET /api/v1/hangar/payback`, `lib/data/payback.ts`, Velocity tab `PaybackPanel`. Caller's own missions only; null cost = unknown; `timeout`/`killed` = "runner died" (owner kills are also `killed` today).
+- **Mission checker** (`mission_check`, `KAIROS_MISSION_CHECK`, level 1, plus the creator-only per-board `settings.kairosMissionCheck`): advisory verdict (`looks_done | partly_done | not_done`, reasons, unmet checklist items) in `board_tasks.metadata.hangar.check`; never changes columns. App-only toggle; generic settings patches can't flip it. `lib/kairos/mission-check/*`, `lib/data/mission-check.ts`, `components/board/MissionCheckToggle.tsx`.
+- Known: Hangar's auto-move only matches a column named exactly `Landing`, so AI Mission Control's "Landing Zone" never receives finished missions (unchanged, owner call).
 
 ## 5. State added since 0.16
 

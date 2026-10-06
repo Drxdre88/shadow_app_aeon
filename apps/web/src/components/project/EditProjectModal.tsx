@@ -16,6 +16,7 @@ import { listProjectColumnsForHangar, setHangarBoardSettings } from '@/lib/actio
 import { parseHangarConfig, useHangarUiStore } from '@/lib/store/hangarUiStore'
 import { PlanetPicker } from './PlanetPicker'
 import { CardTriageToggle } from '@/components/board/triage/CardTriageToggle'
+import { MissionCheckToggle } from '@/components/board/MissionCheckToggle'
 import { AccentColor, colorConfig, hexToAccent } from '@/lib/utils/colors'
 import type { RealmInfo } from './ProjectContextMenu'
 import type { Project } from '@/lib/db/schema'
@@ -311,6 +312,8 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
               </div>
 
               <CardTriageToggle projectId={project.id} isOpen={isOpen} />
+
+              <MissionCheckToggle projectId={project.id} isOpen={isOpen} />
 
               <PlanetPicker
                 value={formData.planetImage}

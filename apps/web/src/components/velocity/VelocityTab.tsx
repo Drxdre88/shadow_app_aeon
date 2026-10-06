@@ -7,6 +7,7 @@ import { VelocityChart } from './VelocityChart'
 import { CycleTimeCard } from './CycleTimeCard'
 import { HeatmapGrid } from './HeatmapGrid'
 import { ColumnFlowBar } from './ColumnFlowBar'
+import { PaybackPanel } from './PaybackPanel'
 import { cn } from '@/lib/utils/cn'
 
 type VelocityData = Awaited<ReturnType<typeof getVelocityStats>>
@@ -87,6 +88,8 @@ export function VelocityTab({ projectId }: VelocityTabProps) {
           </div>
 
           <ColumnFlowBar data={data.dwellTimes} />
+
+          <PaybackPanel projectId={projectId} range={range} />
         </>
       ) : (
         <div className="flex items-center justify-center h-40 text-slate-500 text-sm">

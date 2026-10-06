@@ -159,6 +159,7 @@ export function MissionDetailsSection({
         <MissionResultSection
           result={rawMission.lastResult}
           label={resultLabel}
+          mission={rawMission}
           actions={live || sessionState !== 'ready' ? undefined : {
             projectId,
             taskId,

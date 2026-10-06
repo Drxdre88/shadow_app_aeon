@@ -35,6 +35,8 @@ describe('KAIROS_LEVEL', () => {
     expect(livingDominionsMode()).toBe('observe')
     expect(initiativeEnabled()).toBe(false)
     expect(dreamsMode()).toBe('off')
+    expect(mindSwitch('KAIROS_REPO_MEMORY')).toBe('1')
+    expect(mindSwitch('KAIROS_MISSION_CHECK')).toBe('1')
   })
 
   it('level 2 turns on initiative behind a live gate', () => {

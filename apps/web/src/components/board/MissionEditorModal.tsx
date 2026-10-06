@@ -379,7 +379,7 @@ export function MissionEditorModal({ projectId }: { projectId: string }) {
               />
             )}
 
-            <MissionResultSection result={(task.metadata?.hangar as Record<string, unknown> | undefined)?.lastResult} />
+            <MissionResultSection result={(task.metadata?.hangar as Record<string, unknown> | undefined)?.lastResult} mission={task.metadata?.hangar} />
           </div>
 
           <div className="flex gap-2 mt-5 justify-end">

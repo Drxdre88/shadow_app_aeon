@@ -1,7 +1,9 @@
 'use client'
 
-import { AlertTriangle, CheckCircle2, CircleHelp, GitBranch, ListChecks, PackageOpen, XCircle } from 'lucide-react'
+import { useState } from 'react'
+import { AlertTriangle, CheckCircle2, ChevronDown, CircleHelp, GitBranch, ListChecks, PackageOpen, ShieldCheck, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { VERDICT_LABELS, readVisibleMissionCheck, type MissionCheck } from '@/lib/kairos/mission-check/types'
 import { readMissionResult } from './autoRun'
 import { MissionAnswerForm } from './MissionAnswerForm'
 import { MissionFollowUpPicker } from './MissionFollowUpPicker'
@@ -34,8 +36,64 @@ export interface MissionResultActions {
   createdFollowUps?: string[]
 }
 
-export function MissionResultSection({ result, label = 'Last recorded result', actions }: { result: unknown; label?: string; actions?: MissionResultActions }) {
+const verdictTone = {
+  looks_done: 'border-emerald-400/20 bg-emerald-500/[0.06] text-emerald-300',
+  partly_done: 'border-amber-400/25 bg-amber-500/[0.08] text-amber-200',
+  not_done: 'border-rose-400/20 bg-rose-500/[0.06] text-rose-300',
+} as const
+
+/** Vorath's advisory verdict on the latest mission; reasons and unmet items fold out. */
+function MissionCheckVerdict({ check }: { check: MissionCheck }) {
+  const [open, setOpen] = useState(false)
+  const hasMore = check.reasons.length > 0 || check.unmet.length > 0 || Boolean(check.note)
+  return (
+    <div className="px-3 py-2.5 border-t border-white/[0.06]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        disabled={!hasMore}
+        aria-expanded={open}
+        className="w-full flex items-center gap-2 text-left disabled:cursor-default"
+      >
+        <ShieldCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+        <span className="text-xs text-slate-300">Vorath&apos;s check:</span>
+        <span className={cn('px-2 py-0.5 rounded-full border text-[10px] font-medium', verdictTone[check.verdict])}>
+          {VERDICT_LABELS[check.verdict]}
+        </span>
+        {hasMore && <ChevronDown className={cn('ml-auto w-3.5 h-3.5 text-slate-500 transition-transform', open && 'rotate-180')} />}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2 text-xs">
+          {check.note && <p className="text-slate-300">{check.note}</p>}
+          {check.reasons.length > 0 && (
+            <ul className="list-disc pl-4 space-y-1 text-slate-400">
+              {check.reasons.map((reason, index) => <li key={`${reason}-${index}`}>{reason}</li>)}
+            </ul>
+          )}
+          {check.unmet.length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 mb-1">Looks unmet</div>
+              <ul className="list-disc pl-4 space-y-1 text-amber-100/80">
+                {check.unmet.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+      <p className="mt-1.5 text-[10px] text-slate-500">Advisory — based on what the mission reported; you decide.</p>
+    </div>
+  )
+}
+
+export function MissionResultSection({ result, label = 'Last recorded result', actions, mission }: {
+  result: unknown
+  label?: string
+  actions?: MissionResultActions
+  /** The card's raw hangar metadata; Vorath's check is shown only when switched fully on and about the latest mission. */
+  mission?: unknown
+}) {
   const parsed = readMissionResult(result)
+  const check = readVisibleMissionCheck(mission)
   if (!parsed) return null
 
   const tone = parsed.status ? statusTone[parsed.status] : null
@@ -141,6 +199,8 @@ export function MissionResultSection({ result, label = 'Last recorded result', a
           )}
         </div>
       )}
+
+      {check && <MissionCheckVerdict key={check.checkedAt} check={check} />}
     </section>
   )
 }

@@ -103,6 +103,8 @@ export const TOOL_CATEGORIES: McpToolCategory[] = [
       'list_hangar_repos',
       'update_hangar_repo',
       'delete_hangar_repo',
+      'get_agent_payback',
+      'get_repo_handover',
     ],
   },
   {
