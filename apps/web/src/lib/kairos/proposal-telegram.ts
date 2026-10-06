@@ -8,6 +8,7 @@ import {
 } from '@/lib/data/proposal-decision'
 import type { GoalRecord } from '@/lib/data/goals'
 import { mightContainNumberedAnswers } from './ask-numbered'
+import { gateMode } from './moment/gate/flag'
 import { renderGoalBody } from './goals/transitions'
 import { applyVetoReason, decideKairosProposal, verdictLabel, type DecideProposalResult } from './proposal-decision'
 import {
@@ -28,13 +29,27 @@ const DECLINE_RE = /^(no reason|skip|none)[.!]*$/i
 
 // ── announce ───────────────────────────────────────────────────────────────
 
+const isOperator = (userId: string) => Boolean(userId) && userId === process.env.KAIROS_OPERATOR_USER_ID?.trim()
+
+export const goalProposalTitle = (goal: Pick<GoalRecord, 'title'>) => `Goal proposal: ${goal.title}`
+
 // Operator only: Telegram is a single-operator channel, so another user's
 // proposal must never land in the operator's chat. Best-effort for callers.
+// Unprompted, so it goes through the Kairos gate unless KAIROS_GATE is off.
 export async function announceGoalProposal(userId: string, goal: GoalRecord, now: Date = new Date()): Promise<boolean> {
-  if (!userId || userId !== process.env.KAIROS_OPERATOR_USER_ID?.trim()) return false
+  if (!isOperator(userId)) return false
+  const mode = gateMode()
+  if (mode === 'off') return sendGoalProposal(userId, goal, now)
+  const { announceThroughGate } = await import('./proposal-telegram-gate')
+  return announceThroughGate(userId, goal, now, mode)
+}
+
+// The direct send with Approve / Veto / Veto + why (also the gate release path).
+export async function sendGoalProposal(userId: string, goal: GoalRecord, now: Date): Promise<boolean> {
+  if (!isOperator(userId)) return false
   const sent = await sendKairosProposal({
     proposalId: goal.id,
-    title: `Goal proposal: ${goal.title}`,
+    title: goalProposalTitle(goal),
     body: renderGoalBody(goal.meta),
     expiresAt: goal.meta.expiresAt,
   })
