@@ -72,6 +72,11 @@ describe('generic settings patches', () => {
     await updateProject(PROJECT, OWNER, { settings: { kairosTriage: 'on', boardMode: 'hangar' } })
     expect(query(state.set?.settings).params).toEqual([JSON.stringify({ boardMode: 'hangar' })])
   })
+
+  it('cannot switch the mission checker on (owner-only switch)', async () => {
+    await updateProject(PROJECT, OWNER, { settings: { kairosMissionCheck: true, boardMode: 'hangar' } })
+    expect(query(state.set?.settings).params).toEqual([JSON.stringify({ boardMode: 'hangar' })])
+  })
 })
 
 describe('writeCardTriages', () => {

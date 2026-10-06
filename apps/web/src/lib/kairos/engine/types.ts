@@ -196,6 +196,10 @@ export type ThinkingJobKind =
   | 'life_chapter'
   // Card sorting on boards the owner switched on (settings.kairosTriage); no fallback.
   | 'card_triage'
+  // Workforce (Phase 1): repo lessons nightly, Hangar mission verdicts, on-demand card trees.
+  | 'repo_lessons'
+  | 'mission_check'
+  | 'card_tree'
 
 export type ThinkingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'expired' | 'fallback'
 

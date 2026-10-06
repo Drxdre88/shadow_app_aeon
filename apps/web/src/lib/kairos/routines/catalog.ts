@@ -39,6 +39,7 @@ export type BrainArea =
   | 'Beliefs & conscience'
   | 'Creativity'
   | 'Voice'
+  | 'Workforce'
 
 // deep = the Opus brain routine (chat has its own routine); light = the cheap
 // daytime pulse routine. A routine's allowedKinds derive from the tier.
@@ -80,6 +81,9 @@ export const BRAIN_JOBS: readonly BrainJob[] = [
   { kind: 'pulse', label: 'Daytime pulse', area: 'Perception', tier: 'light', cadence: 'hourly', what: 'When switched on: a quick hourly glance at what changed, kept as notes in today’s memory. Only runs when something happened.' },
   { kind: 'cold_read', label: 'Cold read', area: 'Beliefs & conscience', tier: 'deep', cadence: 'on demand', what: 'When switched on: rechecks his advice on your decisions with your profile hidden, and tells you if the cold view differs.' },
   { kind: 'card_triage', label: 'Card sorting', area: 'Perception', tier: 'deep', cadence: 'hourly', what: 'On boards where you switched it on: suggests labels, a priority and possible duplicates for new cards, each with a short reason. Nothing changes until you accept it on the card.' },
+  { kind: 'repo_lessons', label: 'Repo lessons', area: 'Workforce', tier: 'deep', cadence: 'nightly', what: 'Nightly: turns the day’s agent sessions into a short lessons note per repo' },
+  { kind: 'mission_check', label: 'Mission check', area: 'Workforce', tier: 'deep', cadence: 'on demand', what: 'When a Hangar mission finishes: an advisory verdict against the card’s checklist' },
+  { kind: 'card_tree', label: 'Card tree', area: 'Workforce', tier: 'deep', cadence: 'on demand', what: 'On request: drafts a card tree with dependencies from a goal, for your approval' },
   { kind: 'chat', label: 'Chat replies', area: 'Voice', tier: 'deep', cadence: 'on demand', what: 'Answers you on Telegram and on the Vorath page.' },
 ]
 

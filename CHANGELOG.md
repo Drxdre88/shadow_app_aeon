@@ -20,6 +20,21 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - `DOCS` — `ARCHITECTURE.md`, `VISION.md`, `CLAUDE.md`
 - `UI` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.47.0] — 2026-10-06
+
+> Areas touched: `KAIROS` `BOARD` `MCP` `API` `UI`
+> Theme: Vorath starts running the workforce — lessons and handovers per repo, what agent work costs, and a second opinion on finished missions.
+
+### Added — Repo lessons and handovers · `KAIROS` `MCP` `API`
+- Every night Vorath reads the day's agent sessions and keeps a short lessons note per repo (what worked, what broke, traps), each lesson pointing to the sessions it came from. On at level 1.
+- Any agent can ask for a repo's **handover** (`get_repo_handover`, or the REST route): where things stand, the last sessions, open cards for that repo, open questions and promises, and the lessons. Built fresh each time, so it is never stale. Works with a board label (`aeon`) or a folder name (`shadow_app_aeon`).
+
+### Added — Hangar payback · `BOARD` `MCP` `API`
+- A new panel on the Velocity tab: missions run, finished, failed and stopped because the runner died, known cost, missions with no cost recorded, cost per finished mission, and the most expensive cards. Also available as `get_agent_payback`.
+
+### Added — Vorath checks finished missions (advisory) · `KAIROS` `BOARD`
+- Per board, in Edit Project: "Vorath checks finished missions". When a mission reports done, Vorath compares its report with the card's description and checklist and leaves a verdict on the card (looks done / partly done / not done, with reasons). Advice only: it never moves, closes or merges anything.
+
 ## [0.46.1] — 2026-10-06
 
 > Areas touched: `BOARD` `KAIROS`

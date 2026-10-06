@@ -59,7 +59,7 @@ export const GOAL_METADATA_REFUSAL = `sourceMetadata may not describe a ${MIND_N
 // a create/capture payload may never claim to be one, or an agent could forge
 // an "approved" voice sample or a measurement.
 export const INTERNAL_KIND_REFUSAL = `sourceMetadata may not describe an internal ${MIND_NAME} record`
-const INTERNAL_KINDS: readonly string[] = ['voice_sample', 'cold_read', 'character_run', 'life_chapter']
+const INTERNAL_KINDS: readonly string[] = ['voice_sample', 'cold_read', 'character_run', 'life_chapter', 'repo_playbook', 'card_tree']
 const memorySourceMetadataSchema = z.record(z.string(), z.unknown()).refine(
   (m) => m.kind !== 'goal' && !Object.prototype.hasOwnProperty.call(m, 'goal'),
   { message: GOAL_METADATA_REFUSAL },

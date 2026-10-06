@@ -4,6 +4,7 @@ import { agendaDueHandler } from './handlers/agenda-due'
 import { archetypeHandler } from './handlers/archetype'
 import { askMineHandler } from './handlers/ask-mine'
 import { beliefExtractHandler } from './handlers/belief-extract'
+import { cardTreeHandler } from './handlers/card-tree'
 import { cardTriageHandler } from './handlers/card-triage'
 import { chatDistillHandler } from './handlers/chat-distill'
 import { characterCheckHandler } from './handlers/character-check'
@@ -21,8 +22,10 @@ import { ideaGenerateHandler } from './handlers/idea-generate'
 import { ideaJudgeHandler } from './handlers/idea-judge'
 import { lifeChapterHandler } from './handlers/life-chapter'
 import { mindCompareHandler } from './handlers/mind-compare'
+import { missionCheckHandler } from './handlers/mission-check'
 import { pulseHandler } from './handlers/pulse'
 import { reflectHandler } from './handlers/reflect'
+import { repoLessonsHandler } from './handlers/repo-lessons'
 import { weeklyReviewHandler } from './handlers/weekly-review'
 
 // Every kind the thinking queue can plan, serve and apply. List order does
@@ -53,6 +56,9 @@ export function getThinkingHandlers(): ThinkingJobHandler[] {
     pulseHandler,
     coldReadHandler,
     cardTriageHandler,
+    repoLessonsHandler,
+    missionCheckHandler,
+    cardTreeHandler,
     chatHandler,
   ]
 }
