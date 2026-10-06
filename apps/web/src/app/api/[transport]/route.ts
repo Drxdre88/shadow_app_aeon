@@ -43,6 +43,9 @@ import {
   registerKairosTrustTools,
   registerKairosLifeChapterTools,
   registerKairosOwnerModelTools,
+  registerKairosRepoHandoverTools,
+  registerHangarPaybackTools,
+  registerKairosCardTreeTools,
 } from './tools'
 import type { RegisterFn, ToolServer } from './tools/types'
 import { installTodayUseTracking, tokenFingerprint, tokenKindOf } from '@/lib/kairos/today-mcp-use'
@@ -110,6 +113,9 @@ const TOOL_GROUPS: readonly ToolGroup[] = [
   [registerKairosTrustTools, ['vorath']],
   [registerKairosLifeChapterTools, ['vorath']],
   [registerKairosOwnerModelTools, ['vorath']],
+  [registerKairosRepoHandoverTools, ['vorath', 'hangar']],
+  [registerHangarPaybackTools, ['vorath', 'hangar']],
+  [registerKairosCardTreeTools, ['vorath']],
 ]
 
 function registerTools(server: ToolServer, profile: McpProfile) {

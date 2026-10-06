@@ -1,6 +1,6 @@
 'use client'
 
-import { Eye, Database, ScanFace, Scale, Lightbulb, MessageCircle } from 'lucide-react'
+import { Eye, Database, ScanFace, Scale, Lightbulb, MessageCircle, Hammer } from 'lucide-react'
 import { BRAIN_JOBS, type BrainArea, type BrainJob } from '@/lib/kairos/routines/catalog'
 import type { BrainKindStatus, KairosBrainStatus } from '@/lib/kairos/routines/status-types'
 import { ANSWER_TONE, ANSWER_WORD, Chip, Dot, Panel, tint } from './brainUi'
@@ -13,6 +13,7 @@ const AREAS: { area: BrainArea; icon: typeof Eye; blurb: string }[] = [
   { area: 'Beliefs & conscience', icon: Scale, blurb: 'What you hold true, and staying honest' },
   { area: 'Creativity', icon: Lightbulb, blurb: 'New ideas' },
   { area: 'Voice', icon: MessageCircle, blurb: 'What it says to you' },
+  { area: 'Workforce', icon: Hammer, blurb: 'How it helps your agents work' },
 ]
 
 export function BrainMapView({ status }: { status: KairosBrainStatus | null }) {

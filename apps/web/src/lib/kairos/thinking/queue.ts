@@ -76,6 +76,8 @@ export const PLANNED_THINKING_KINDS: readonly ThinkingJobKind[] = [
   'cold_read',
   // Board card sorting (per-board switch): planned by claims and the sweep.
   'card_triage',
+  // Workforce: nightly repo lessons, mission verdicts, on-demand card trees.
+  'repo_lessons', 'mission_check', 'card_tree',
 ]
 
 const PLAN_ORDER: readonly ThinkingJobKind[] = [...PLANNED_THINKING_KINDS, 'chat']
@@ -117,6 +119,9 @@ const FALLBACK_OWNER: Partial<Record<ThinkingJobKind, string>> = {
   dream_read: 'nothing — a missed night is fine',
   life_chapter: 'nothing — a missed month is skipped',
   card_triage: 'nothing — unanswered cards are offered again on a later run',
+  repo_lessons: 'nothing — the lessons note waits for the next night',
+  mission_check: 'nothing — the verdict is skipped',
+  card_tree: 'nothing — no draft is made',
 }
 
 function fallbackOwner(kind: ThinkingJobKind): string {
@@ -126,8 +131,9 @@ function fallbackOwner(kind: ThinkingJobKind): string {
 // Kinds the hourly sweep never plans: concept clustering is heavy and is
 // enqueued by the nightly engine (and claims); chat jobs come only from a
 // web or Telegram chat message; the daytime pulse and reflection are planned
-// only by their routine's claim (a sweep-planned slot would just expire).
-export const SWEEP_PLAN_SKIP_KINDS: readonly ThinkingJobKind[] = ['concept', 'chat', 'pulse', 'reflect']
+// only by their routine's claim (a sweep-planned slot would just expire);
+// card trees are made only on the owner's request.
+export const SWEEP_PLAN_SKIP_KINDS: readonly ThinkingJobKind[] = ['concept', 'chat', 'pulse', 'reflect', 'card_tree']
 
 export function sweepOwnsFallback(kind: ThinkingJobKind): boolean {
   return SWEEP_FALLBACK_KINDS.includes(kind)
