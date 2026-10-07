@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { neutraliseFences, extractJsonBlock as _extractJsonBlock } from './_prompt-utils'
+import { clipAtWord } from './clip-words'
 import { fedIdListSchema, makeFedIdResolver } from './introspection-prompt'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -12,21 +13,25 @@ import { fedIdListSchema, makeFedIdResolver } from './introspection-prompt'
 
 export const RECENT_WINDOW_DAYS = 14
 
+// Over-long short fields are clipped, not rejected: one 81-char title used to
+// fail the whole night (repeated parse_failed, 10/2026). Emptiness stays strict.
+const clipped = (max: number) => z.string().trim().min(1).transform((s) => clipAtWord(s, max))
+
 export const archetypeOutSchema = z.object({
   archetypes: z.array(z.object({
-    title: z.string().trim().min(1).max(80),
-    summary: z.string().trim().min(1).max(300),
+    title: clipped(80),
+    summary: clipped(300),
     // 100-800 matches the prompt instruction; we accept up to 2000 because
     // models sometimes overflow slightly and rejecting the whole run for a
     // 30-char overshoot wastes a BYOK call. 99-char floor stays strict —
     // we'd rather error and let tomorrow's run produce real content.
     body: z.string().trim().min(100).max(2000),
-    themes: z.array(z.string().trim().min(1).max(40)).max(8).default([]),
+    themes: z.array(clipped(40)).max(8).default([]),
     // Shape-only: ids are resolved against the fed substrate by
     // groundArchetypeCitations, so one drifted id no longer kills the night.
     citedMemoryIds: fedIdListSchema(20).default([]),
   })).min(1).max(10),
-  shifts: z.array(z.string().trim().min(1).max(200)).max(5).default([]),
+  shifts: z.array(clipped(200)).max(5).default([]),
 })
 
 export type ArchetypeOutput = z.infer<typeof archetypeOutSchema>

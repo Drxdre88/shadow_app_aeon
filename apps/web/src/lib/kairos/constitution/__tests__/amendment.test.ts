@@ -244,8 +244,8 @@ describe('getLatestDriftStatus', () => {
           version: 2,
           mean: 0.71,
           alert: true,
-          flipped: ['nature-01'],
-          perProbe: [{ probeId: 'nature-01', sim: 0.4 }, { probeId: 'values-01', sim: 0.9 }],
+          flipped: ['nature-05'],
+          perProbe: [{ probeId: 'nature-05', sim: 0.4 }, { probeId: 'values-05', sim: 0.9 }],
         },
       },
     })
@@ -254,7 +254,7 @@ describe('getLatestDriftStatus', () => {
       version: 2,
       mean: 0.71,
       alert: true,
-      flipped: [{ probeId: 'nature-01', question: 'What is Kairos?', sim: 0.4 }],
+      flipped: [{ probeId: 'nature-05', question: 'What is Vorath?', sim: 0.4 }],
       measuredAt: createdAt,
     })
   })

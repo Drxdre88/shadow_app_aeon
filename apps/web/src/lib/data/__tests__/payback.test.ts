@@ -23,6 +23,7 @@ vi.mock('../projects', () => ({ verifyProjectAccess: vi.fn(async () => ({ role: 
 
 import { readAgentPayback, summarisePayback, paybackSince, PaybackAccessError, type PaybackRow } from '../payback'
 import { verifyProjectAccess } from '../projects'
+import { db } from '@/lib/db'
 import { renderPaybackMarkdown } from '@/lib/kairos/payback/render'
 
 const NOW = new Date('2026-10-06T12:00:00.000Z')
@@ -76,7 +77,13 @@ describe('summarisePayback', () => {
 
   it('puts timeout and killed missions in their own runner-died bucket, not failed', () => {
     const view = summarise([row({ status: 'timeout' }), row({ status: 'killed' }), row({ status: 'failed' }), row({ status: 'running' }), row({ status: 'queued' })])
-    expect(view.totals).toMatchObject({ missions: 5, failed: 1, runnerDied: 2, running: 1, queued: 1, succeeded: 0 })
+    expect(view.totals).toMatchObject({ missions: 5, failed: 1, runnerDied: 2, ownerStopped: 0, running: 1, queued: 1, succeeded: 0 })
+  })
+
+  it('counts a kill the owner asked for as stopped by you, not a runner death', () => {
+    const view = summarise([row({ status: 'killed', killedBy: 'owner' }), row({ status: 'killed', killedBy: null }), row({ status: 'timeout', killedBy: 'owner' })])
+    expect(view.totals).toMatchObject({ missions: 3, ownerStopped: 1, runnerDied: 2, failed: 0 })
+    expect(view.breakdowns.engine?.[0]).toMatchObject({ ownerStopped: 1, runnerDied: 2 })
   })
 
   it('drops internal Kairos engines and card-less sessions', () => {
@@ -118,6 +125,8 @@ describe('readAgentPayback', () => {
   it('filters on user, missions only, internal engines and the period start', async () => {
     selectRows.push([row(), row({ engine: 'kairos-chat' })])
     const view = await readAgentPayback('user-1', { period: '7d' }, NOW)
+    const select = vi.mocked(db.select).mock.calls[0][0] as unknown as Record<string, unknown>
+    expect(compile(select.killedBy).sql).toBe(`"agent_sessions"."metadata" -> 'kill' ->> 'by'`)
     const { sql, params } = compile(lastWhere)
     expect(sql).toContain('"task_id" is not null')
     expect(sql).toMatch(/"engine" not in/)
@@ -153,6 +162,12 @@ describe('renderPaybackMarkdown', () => {
     const md = renderPaybackMarkdown(view)
     expect(md).toContain('30 days: 3 missions, 1 finished, 1 failed, 1 stopped because the runner died.')
     expect(md).toContain('Known cost $12.40 across 1 mission; 2 had no cost recorded.')
+  })
+
+  it('says how many missions the owner stopped, in the headline and the breakdown', () => {
+    const md = renderPaybackMarkdown(summarise([row(), row({ status: 'killed', killedBy: 'owner', costUsd: null }), row({ status: 'killed', costUsd: null })]))
+    expect(md).toContain('30 days: 3 missions, 1 finished, 0 failed, 1 stopped because the runner died, 1 stopped by you.')
+    expect(md).toContain('1 runner died, 1 stopped by you)')
   })
 
   it('says so when there are no missions', () => {

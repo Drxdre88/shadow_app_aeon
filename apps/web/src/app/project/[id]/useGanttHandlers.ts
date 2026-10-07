@@ -7,6 +7,7 @@ import { pushToGantt } from '@/lib/actions/bridge'
 import { updateBoardTask } from '@/lib/actions/board'
 import { useGanttStore } from '@/lib/store/ganttStore'
 import { useBoardStore, beginDirectWrite, endDirectWrite } from '@/lib/store/boardStore'
+import { applyFreshness } from '@/lib/store/staleMoves'
 import { toast } from '@/components/ui/Toast'
 import type { TimelineResetSnapshotEntry } from '@/lib/data/ganttViews'
 
@@ -37,6 +38,8 @@ export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' 
       endDate?: string
       color?: string
       progress?: number
+    }).then((result) => {
+      if (result?.boardTask) applyFreshness({ [result.boardTask.boardTaskId]: result.boardTask.updatedAt })
     }).catch((err) => console.error('Failed to update gantt task:', err))
   }, [projectId])
 
@@ -214,6 +217,7 @@ export function useGanttHandlers(projectId: string, setActiveTab: (tab: 'board' 
       if (ganttTask) {
         const { tasks: ganttTasks, addTask, updateTask } = useGanttStore.getState()
         updateBoardTaskStore(boardTaskId, { onTimeline: true, ganttTaskId: previousGanttTaskId ?? ganttTask.id })
+        applyFreshness({ [boardTaskId]: ganttTask.boardTaskUpdatedAt })
         const bar = {
           id: ganttTask.id,
           projectId: ganttTask.projectId,

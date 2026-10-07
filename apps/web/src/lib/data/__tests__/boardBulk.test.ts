@@ -79,10 +79,11 @@ describe('moveAllTasksToColumn', () => {
       ['to', 9],
     ])
     expect(setCalls.every((c) => c.updatedAt instanceof Date)).toBe(true)
+    const stamped = (setCalls[0].updatedAt as Date).toISOString()
     expect(moved).toEqual([
-      { id: 't1', name: 'One', orderIndex: 7 },
-      { id: 't2', name: 'Two', orderIndex: 8 },
-      { id: 't3', name: 'Three', orderIndex: 9 },
+      { id: 't1', name: 'One', orderIndex: 7, updatedAt: stamped },
+      { id: 't2', name: 'Two', orderIndex: 8, updatedAt: stamped },
+      { id: 't3', name: 'Three', orderIndex: 9, updatedAt: stamped },
     ])
     expect(touchProject).toHaveBeenCalledTimes(1)
     expect(touchProject).toHaveBeenCalledWith('p1', { type: 'task:moved' })

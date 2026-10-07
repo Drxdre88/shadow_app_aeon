@@ -116,6 +116,7 @@ export const TOOL_CATEGORIES: McpToolCategory[] = [
       'batch_add_dependencies',
       'setup_board',
       'get_velocity_stats',
+      'get_card_forecast',
     ],
   },
   {
@@ -194,6 +195,9 @@ export const TOOL_CATEGORIES: McpToolCategory[] = [
       'get_kairos_life_chapters',
       'get_kairos_owner_model',
       'request_card_tree',
+      'get_morning_cockpit',
+      'log_decision',
+      'list_decisions',
       'open_dialogue',
       'prepare_dialogue_context',
       'append_dialogue_turn',

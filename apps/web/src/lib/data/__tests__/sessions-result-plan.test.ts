@@ -58,6 +58,7 @@ vi.mock('../bridge', () => ({ syncChecklistToGanttProgress: vi.fn(async () => {}
 import { recordSessionResult } from '../sessions'
 import { touchProject, verifyProjectAccess } from '../projects'
 import { syncChecklistToGanttProgress } from '../bridge'
+import { findColumns } from '../columns'
 
 const compile = (value: unknown) => new PgDialect().sqlToQuery(value as SQL)
 const SESSION_ID = '20000000-0000-4000-8000-000000000001'
@@ -160,5 +161,19 @@ describe('recordSessionResult — plan settlement', () => {
     expect(ofOp('update')[1].set).toMatchObject({ columnId: 'landing-col' })
     expect(ofOp('delete')).toHaveLength(0)
     expect(syncChecklistToGanttProgress).not.toHaveBeenCalled()
+  })
+
+  it("routes a completed build run to 'Landing Zone' when no column is named exactly Landing", async () => {
+    vi.mocked(findColumns).mockResolvedValueOnce([
+      { id: 'tower-col', name: 'Tower Control', orderIndex: 0 },
+      { id: 'zone-col', name: 'Landing Zone', orderIndex: 1 },
+      { id: 'later-col', name: 'Landing Pad', orderIndex: 2 },
+    ] as never)
+    selectQueue.push([{ ...planSession, metadata: { hangar: { objective: 'implement', phase: 'build' } } }], [card])
+    updateQueue.push([{ id: SESSION_ID, status: 'succeeded' }], [{ id: TASK_ID, projectId: PROJECT_ID }])
+
+    await recordSessionResult(SESSION_ID, { ...PLAN, outcome: 'implemented' })
+
+    expect(ofOp('update')[1].set).toMatchObject({ columnId: 'zone-col' })
   })
 })

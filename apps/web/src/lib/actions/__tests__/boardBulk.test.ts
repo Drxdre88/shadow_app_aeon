@@ -41,8 +41,8 @@ beforeEach(() => {
   vi.mocked(requireEditor).mockResolvedValue('user-1')
   vi.mocked(_findColumns).mockResolvedValue([{ id: FROM }, { id: TO }] as never)
   vi.mocked(_moveAllTasksToColumn).mockResolvedValue([
-    { id: 'a', name: 'A', orderIndex: 3 },
-    { id: 'b', name: 'B', orderIndex: 4 },
+    { id: 'a', name: 'A', orderIndex: 3, updatedAt: '2026-10-07T06:00:00.000Z' },
+    { id: 'b', name: 'B', orderIndex: 4, updatedAt: '2026-10-07T06:00:00.000Z' },
   ])
 })
 

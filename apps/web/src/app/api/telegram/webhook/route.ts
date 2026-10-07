@@ -28,6 +28,7 @@ import { initiativeEnabled } from '@/lib/kairos/initiative'
 import { agendaEnabled } from '@/lib/kairos/agenda/flag'
 import { routeAgendaCommands } from '@/lib/kairos/agenda/telegram-commands'
 import { recordChatOwnerTurn } from '@/lib/kairos/chat-today'
+import { routeDecisionCommands } from '@/lib/kairos/decisions/telegram-commands'
 import { routePredictionCommands } from '@/lib/kairos/predictions/telegram-commands'
 import { routePromiseCommands } from '@/lib/kairos/promises/telegram-commands'
 import { handleProposalCallback, routeVetoReason } from '@/lib/kairos/proposal-telegram'
@@ -109,7 +110,7 @@ type TelegramUpdate = {
     text?: string
     chat?: { id: number | string }
     from?: TelegramUser
-    reply_to_message?: { message_id: number }
+    reply_to_message?: { message_id: number; text?: string }
     caption?: string; sticker?: TelegramMediaRef; animation?: TelegramMediaRef; photo?: TelegramMediaRef[]
   }
 }
@@ -238,7 +239,7 @@ async function handleTextMessage(
 
   // Deterministic pre-router: "Q12: …" answers / "skip Q12" against the open
   // question backlog never reach the chat model. Plain prose falls through.
-  if (await routeNumberedAnswers(chatId!, operatorUserId, body)) return
+  if (await routeNumberedAnswers(chatId!, operatorUserId, body, message.reply_to_message?.text)) return
 
   // Phase 2 (dormant unless KAIROS_INITIATIVE=1): "P3 kept" / "drop P3" /
   // "P3 by 20/10"; track record (KAIROS_PREDICTIONS=1): "R3 right" / "void R3";
@@ -246,6 +247,7 @@ async function handleTextMessage(
   // "Veto + why". Each router either handles the whole message or passes.
   if (initiativeEnabled() && await routeOwnerCommands('promise', routePromiseCommands, chatId!, operatorUserId, body)) return
   if (await routeOwnerCommands('prediction', routePredictionCommands, chatId!, operatorUserId, body)) return
+  if (await routeOwnerCommands('decision', routeDecisionCommands, chatId!, operatorUserId, body)) return
   if (agendaEnabled() && await routeOwnerCommands('agenda', routeAgendaCommands, chatId!, operatorUserId, body)) return
   if (initiativeEnabled() && await routeVetoReasonText(chatId!, operatorUserId, body, message, updateId)) return
   if (await routeMomentText(chatId!, operatorUserId, body, message, updateId)) return
@@ -306,10 +308,12 @@ async function routeVetoReasonText(
 // goes back, and the exchange is written into the Telegram thread so chat
 // history keeps it. Returns false (→ ordinary chat) when no label names an
 // open question, or when the backlog cannot be read.
-async function routeNumberedAnswers(chatId: number | string, userId: string, body: string): Promise<boolean> {
+async function routeNumberedAnswers(chatId: number | string, userId: string, body: string, replyText?: string): Promise<boolean> {
   let outcome: NumberedAnswerOutcome
   try {
-    outcome = await answerNumberedKairosAsks(userId, body)
+    outcome = replyText
+      ? await answerNumberedKairosAsks(userId, body, new Date(), replyText)
+      : await answerNumberedKairosAsks(userId, body)
   } catch (err) {
     console.error('[telegram-webhook] numbered-answer routing failed — handing the text to chat', err)
     return false

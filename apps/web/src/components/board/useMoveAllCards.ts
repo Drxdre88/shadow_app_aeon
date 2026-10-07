@@ -6,6 +6,7 @@ import { planMoveAllToColumn, maxOrderIndex } from '@/lib/utils/bulkMovePlan'
 import { moveAllTasksToColumnAction } from '@/lib/actions/boardBulk'
 import { reorderBoardTasks } from '@/lib/actions/board'
 import { toast } from '@/components/ui/Toast'
+import { applyFreshness, freshnessFromResult } from '@/lib/store/staleMoves'
 
 export interface MoveAllTarget {
   id: string
@@ -33,13 +34,17 @@ export function useMoveAllCards(projectId: string) {
     plan.forEach((p) => store.moveTask(p.id, target.id, p.orderIndex))
     const count = moving.length
     try {
-      await moveAllTasksToColumnAction(projectId, sourceColumnId, target.id)
+      const moved = await moveAllTasksToColumnAction(projectId, sourceColumnId, target.id)
+      applyFreshness(Object.fromEntries(moved.map((m) => [m.id, m.updatedAt])))
       useBoardStore.getState().markClean()
       toast(`Moved ${count} card${count === 1 ? '' : 's'} to ${target.name}`, {
         onUndo: () => {
           restore()
           reorderBoardTasks(projectId, previous.map((p) => ({ id: p.id, orderIndex: p.orderIndex, columnId: p.columnId })))
-            .then(() => useBoardStore.getState().markClean())
+            .then((result) => {
+              applyFreshness(freshnessFromResult(previous.map((p) => p.id), result))
+              useBoardStore.getState().markClean()
+            })
             .catch((err) => toast(err instanceof Error ? err.message : 'Could not undo the move', { force: true }))
         },
       })

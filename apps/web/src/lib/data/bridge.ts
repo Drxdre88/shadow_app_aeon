@@ -1,7 +1,10 @@
 import { db } from '@/lib/db'
-import { boardTasks, ganttTasks, boardColumns, labels, taskLabels, taskDependencies, rows, checklistItems } from '@/lib/db/schema'
+import { boardTasks, ganttTasks, boardColumns, labels, taskLabels, taskDependencies, rows } from '@/lib/db/schema'
 import { eq, ne, and, asc, inArray, sql } from 'drizzle-orm'
 import { touchProject } from './projects'
+
+export { syncBoardStatusToGantt, syncGanttDatesToBoard, syncChecklistToGanttProgress } from './bridge-sync'
+export type { BoardTaskStamp } from './bridge-sync'
 
 const DEFAULT_DURATION_DAYS = 2
 
@@ -135,6 +138,7 @@ export async function pushTaskToGantt(
       if (moved) bar = moved
     }
 
+    const stampedAt = new Date()
     await tx
       .update(boardTasks)
       .set({
@@ -142,78 +146,15 @@ export async function pushTaskToGantt(
         onTimeline: true,
         startDate: start,
         endDate: end,
-        updatedAt: new Date(),
+        updatedAt: stampedAt,
       })
       .where(and(eq(boardTasks.id, boardTaskId), eq(boardTasks.projectId, projectId)))
 
-    return bar
+    return { ...bar, boardTaskUpdatedAt: stampedAt.toISOString() }
   })
 
   await touchProject(projectId, { type: 'task:updated' })
   return ganttTask
-}
-
-export async function syncBoardStatusToGantt(boardTaskId: string, newStatus: string) {
-  const [boardTask] = await db
-    .select({ ganttTaskId: boardTasks.ganttTaskId })
-    .from(boardTasks)
-    .where(eq(boardTasks.id, boardTaskId))
-
-  if (!boardTask?.ganttTaskId) return
-
-  if (newStatus === 'done') {
-    await db
-      .update(ganttTasks)
-      .set({ progress: 100, updatedAt: new Date() })
-      .where(eq(ganttTasks.id, boardTask.ganttTaskId))
-  } else {
-    const summary = await getChecklistProgress(boardTaskId)
-    await db
-      .update(ganttTasks)
-      .set({ progress: summary, updatedAt: new Date() })
-      .where(eq(ganttTasks.id, boardTask.ganttTaskId))
-  }
-}
-
-export async function syncGanttDatesToBoard(ganttTaskId: string, startDate: Date, endDate: Date) {
-  const [ganttTask] = await db
-    .select({ boardTaskId: ganttTasks.boardTaskId })
-    .from(ganttTasks)
-    .where(eq(ganttTasks.id, ganttTaskId))
-
-  if (!ganttTask?.boardTaskId) return
-
-  await db
-    .update(boardTasks)
-    .set({ startDate, endDate, updatedAt: new Date() })
-    .where(eq(boardTasks.id, ganttTask.boardTaskId))
-}
-
-export async function syncChecklistToGanttProgress(taskId: string) {
-  const [boardTask] = await db
-    .select({ ganttTaskId: boardTasks.ganttTaskId, status: boardTasks.status })
-    .from(boardTasks)
-    .where(eq(boardTasks.id, taskId))
-
-  if (!boardTask?.ganttTaskId) return
-  if (boardTask.status === 'done') return
-
-  const progress = await getChecklistProgress(taskId)
-  await db
-    .update(ganttTasks)
-    .set({ progress, updatedAt: new Date() })
-    .where(eq(ganttTasks.id, boardTask.ganttTaskId))
-}
-
-async function getChecklistProgress(taskId: string): Promise<number> {
-  const items = await db
-    .select({ state: checklistItems.state })
-    .from(checklistItems)
-    .where(eq(checklistItems.taskId, taskId))
-
-  if (items.length === 0) return 0
-  const checked = items.filter((i) => i.state === 'checked').length
-  return Math.round((checked / items.length) * 100)
 }
 
 export async function deleteLinkedGanttTask(boardTaskId: string) {

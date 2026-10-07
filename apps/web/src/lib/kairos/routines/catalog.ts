@@ -84,6 +84,7 @@ export const BRAIN_JOBS: readonly BrainJob[] = [
   { kind: 'repo_lessons', label: 'Repo lessons', area: 'Workforce', tier: 'deep', cadence: 'nightly', what: 'Nightly: turns the day’s agent sessions into a short lessons note per repo' },
   { kind: 'mission_check', label: 'Mission check', area: 'Workforce', tier: 'deep', cadence: 'on demand', what: 'When a Hangar mission finishes: an advisory verdict against the card’s checklist' },
   { kind: 'card_tree', label: 'Card tree', area: 'Workforce', tier: 'deep', cadence: 'on demand', what: 'On request: drafts a card tree with dependencies from a goal, for your approval' },
+  { kind: 'card_garden', label: 'Card garden', area: 'Workforce', tier: 'deep', cadence: 'weekly', what: 'Weekly: proposes finish / park / merge / kill for stale cards, for your tap' },
   { kind: 'chat', label: 'Chat replies', area: 'Voice', tier: 'deep', cadence: 'on demand', what: 'Answers you on Telegram and on the Vorath page.' },
 ]
 

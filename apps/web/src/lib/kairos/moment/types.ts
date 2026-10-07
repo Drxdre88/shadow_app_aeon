@@ -135,7 +135,7 @@ export interface TelegramMomentMessage {
   caption?: string
   chat?: { id: number | string }
   from?: { id: number | string }
-  reply_to_message?: { message_id: number }
+  reply_to_message?: { message_id: number; text?: string }
   sticker?: TelegramMediaRef
   animation?: TelegramMediaRef
   photo?: TelegramMediaRef[]

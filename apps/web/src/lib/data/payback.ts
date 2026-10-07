@@ -5,12 +5,14 @@ import { verifyProjectAccess } from './projects'
 import type { PaybackGroup, PaybackPeriod } from './validators/payback'
 
 // Hangar payback ledger — READ ONLY. What the user's card missions cost and
-// how they ended. Missing cost is reported as unknown, never as zero, and a
-// mission the runner lost (timed out / killed) is its own category, not a failure.
+// how they ended. Missing cost is reported as unknown, never as zero, a mission
+// the runner lost (timed out / killed) is its own category, not a failure, and a
+// kill the owner asked for (metadata.kill.by='owner', session-kill.ts) is 'stopped by you'.
 
 export const PAYBACK_INTERNAL_ENGINES = ['kairos-chat', 'kairos-dialogue', 'kairos-today'] as const
 // 'timeout' = reconciler settled a silent running mission (hangar-reconcile.ts);
-// 'killed' = the process was stopped (SIGTERM, out of memory, kill request).
+// 'killed' = the process was stopped (SIGTERM, out of memory, kill request);
+// a 'killed' row stamped by the owner's kill counts as ownerStopped instead.
 export const RUNNER_DIED_STATUSES: ReadonlySet<string> = new Set(['timeout', 'killed'])
 export const DEFAULT_MODEL_KEY = 'default'
 export const TOP_CARDS_LIMIT = 10
@@ -37,6 +39,8 @@ export interface PaybackRow {
   model: string | null
   cardName: string | null
   boardName: string | null
+  // metadata->'kill'->>'by' ('owner' after an owner kill); optional for older fixtures.
+  killedBy?: string | null
 }
 
 export interface PaybackTally {
@@ -44,6 +48,7 @@ export interface PaybackTally {
   succeeded: number
   failed: number
   runnerDied: number
+  ownerStopped: number
   running: number
   queued: number
   costKnownUsd: number
@@ -93,7 +98,7 @@ function parseCost(value: string | number | null): number | null {
 }
 
 class TallyBuilder {
-  private t = { missions: 0, succeeded: 0, failed: 0, runnerDied: 0, running: 0, queued: 0, cost: 0, unknown: 0, durationMs: 0, succeededWithCost: 0 }
+  private t = { missions: 0, succeeded: 0, failed: 0, runnerDied: 0, ownerStopped: 0, running: 0, queued: 0, cost: 0, unknown: 0, durationMs: 0, succeededWithCost: 0 }
 
   add(row: PaybackRow): void {
     const t = this.t
@@ -101,6 +106,7 @@ class TallyBuilder {
     t.missions++
     if (row.status === 'succeeded') t.succeeded++
     else if (row.status === 'failed') t.failed++
+    else if (row.status === 'killed' && row.killedBy === 'owner') t.ownerStopped++
     else if (RUNNER_DIED_STATUSES.has(row.status)) t.runnerDied++
     else if (row.status === 'running') t.running++
     else if (row.status === 'queued') t.queued++
@@ -119,6 +125,7 @@ class TallyBuilder {
       succeeded: t.succeeded,
       failed: t.failed,
       runnerDied: t.runnerDied,
+      ownerStopped: t.ownerStopped,
       running: t.running,
       queued: t.queued,
       costKnownUsd: round2(t.cost),
@@ -205,6 +212,7 @@ export async function listPaybackRows(userId: string, since: Date | null, projec
       model: sql<string | null>`${agentSessions.metadata} -> 'hangar' ->> 'model'`,
       cardName: boardTasks.name,
       boardName: projects.name,
+      killedBy: sql<string | null>`${agentSessions.metadata} -> 'kill' ->> 'by'`,
     })
     .from(agentSessions)
     .leftJoin(boardTasks, eq(boardTasks.id, agentSessions.taskId))

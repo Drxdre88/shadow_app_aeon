@@ -1,5 +1,8 @@
 import { findGoal } from '@/lib/data/goals'
 import { captureMemory } from '@/lib/data/memories'
+import { findProposalForDecision } from '@/lib/data/proposal-decision'
+import { CARD_GARDEN_KIND } from './card-garden/types'
+import { CARD_TREE_KIND } from './card-tree/types'
 import type { GateMode } from './moment/gate/flag'
 import { gateLane } from './moment/lanes/gate'
 import type { SpeakHold } from './moment/types'
@@ -78,15 +81,28 @@ export async function announceThroughGate(userId: string, proposal: AnnouncedPro
   return sent
 }
 
+type HeldRelease = (userId: string, proposalId: string, now: Date) => Promise<boolean>
+
+// Non-goal proposal kinds, by the kind stored on the proposal row.
+const HELD_RELEASE: Readonly<Record<string, () => Promise<HeldRelease>>> = {
+  [CARD_TREE_KIND]: async () => (await import('./card-tree/announce')).releaseHeldCardTree,
+  [CARD_GARDEN_KIND]: async () => (await import('./card-garden/announce')).releaseHeldCardGarden,
+}
+
+async function releaseByStoredKind(userId: string, proposalId: string, now: Date): Promise<boolean> {
+  const row = await findProposalForDecision(userId, proposalId)
+  const kind = typeof row?.sourceMetadata.kind === 'string' ? row.sourceMetadata.kind : ''
+  if (!Object.prototype.hasOwnProperty.call(HELD_RELEASE, kind)) return false
+  const release = await HELD_RELEASE[kind]()
+  return await release(userId, proposalId, now)
+}
+
 // Gate release of a held proposal row: only a still-open, unannounced
-// proposal goes out (a goal, else a card tree). Never throws.
+// proposal goes out (a goal, else dispatched by its stored kind). Never throws.
 export async function releaseHeldGoalProposal(userId: string, proposalId: string, now: Date): Promise<boolean> {
   try {
     const goal = await findGoal(userId, proposalId)
-    if (!goal) {
-      const { releaseHeldCardTree } = await import('./card-tree/announce')
-      return await releaseHeldCardTree(userId, proposalId, now)
-    }
+    if (!goal) return await releaseByStoredKind(userId, proposalId, now)
     if (goal.meta.state !== 'proposed' || goal.meta.telegram) return false
     if (!(Date.parse(goal.meta.expiresAt) > now.getTime())) return false
     return await sendGoalProposal(userId, goal, now)

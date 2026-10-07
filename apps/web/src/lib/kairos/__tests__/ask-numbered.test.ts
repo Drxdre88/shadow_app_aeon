@@ -3,8 +3,10 @@ import { fc, test as fcTest } from '@fast-check/vitest'
 import {
   formatNumberedAck,
   hasNumberedMatches,
+  mightAnswerKairosAsks,
   mightContainNumberedAnswers,
   parseNumberedAnswers,
+  parseReplyToAsk,
 } from '../ask-numbered'
 
 const OPEN = [12, 14, 15]
@@ -117,6 +119,77 @@ describe('parseNumberedAnswers', () => {
       skips: [],
     })
   })
+})
+
+describe('bare "Q<n> text" labels', () => {
+  const OWNER = 'Q11 i sent answer for Artem catchup in previous telegram chat. Q12 AI Triad Chat system research was research for the triad app…'
+
+  it("splits the owner's real message into one answer per open question", () => {
+    expect(parseNumberedAnswers(OWNER, [11, 12])).toEqual({
+      answers: [
+        { seq: 11, text: 'i sent answer for Artem catchup in previous telegram chat.' },
+        { seq: 12, text: 'AI Triad Chat system research was research for the triad app…' },
+      ],
+      skips: [],
+    })
+  })
+
+  it('reads only open numbers: a closed later label stays text, a non-open start is chat', () => {
+    expect(parseNumberedAnswers(OWNER, [11]).answers).toEqual([{ seq: 11, text: OWNER.slice(4) }])
+    expect(parseNumberedAnswers('Q3 revenue looked flat', [10, 11])).toEqual({ answers: [], skips: [] })
+    expect(parseNumberedAnswers(OWNER, [13])).toEqual({ answers: [], skips: [] })
+  })
+
+  it('mixes with punctuated labels and needs a line start or sentence end mid-message', () => {
+    expect(parseNumberedAnswers('Q11: done\nQ12 later', [11, 12]).answers).toEqual([
+      { seq: 11, text: 'done' },
+      { seq: 12, text: 'later' },
+    ])
+    expect(parseNumberedAnswers('Q11 done, Q12 too', [11, 12]).answers).toEqual([{ seq: 11, text: 'done, Q12 too' }])
+  })
+
+  it('the wide pre-check admits bare labels and Q-quoting replies; the strict one does not', () => {
+    expect(mightAnswerKairosAsks('Q11 yes')).toBe(true)
+    expect(mightContainNumberedAnswers('Q11 yes')).toBe(false)
+    expect(mightAnswerKairosAsks('sounds right', 'Q12 · 1d · what?')).toBe(true)
+    expect(mightAnswerKairosAsks('morning')).toBe(false)
+    expect(mightAnswerKairosAsks('Q11')).toBe(false)
+  })
+})
+
+describe('parseReplyToAsk', () => {
+  it('answers the one open question the quoted message names', () => {
+    expect(parseReplyToAsk(' for the triad app ', 'Q12 · 1d · What was it for?', [11, 12]))
+      .toEqual({ answers: [{ seq: 12, text: 'for the triad app' }], skips: [] })
+  })
+
+  it.each([
+    ['several open questions quoted', 'Q11 · a\nQ12 · b'],
+    ['a closed question quoted', 'Q13 · gone'],
+    ['nothing quoted', undefined],
+    ['a label inside a word', 'FAQ12 notes'],
+  ])('matches nothing for %s', (_label, quoted) => {
+    expect(parseReplyToAsk('yes', quoted, [11, 12])).toEqual({ answers: [], skips: [] })
+  })
+
+  it('a short question back is chat, not an answer', () => {
+    expect(parseReplyToAsk('what do you mean?', 'Q12 · x', [12])).toEqual({ answers: [], skips: [] })
+  })
+
+  it.each([
+    ['a prediction', 'Q12 · x\nR14 · ships Friday'],
+    ['a decision', 'Q12 · x\nD3 · chose Neon'],
+    ['a promise, agenda item or owner-model item', 'Q12 · x · P2 · A4 · C1'],
+  ])('a digest also listing %s is never a single-question message', (_label, quoted) => {
+    expect(parseReplyToAsk('fine by me', quoted, [12])).toEqual({ answers: [], skips: [] })
+  })
+
+  it.each(['R14 right', 'D3 wrong', 'void R2', 'drop P1', 'P1 by 12/10', 'cancel A3', 'C2: his words', 'ok\nR14 right'])(
+    'a reply body %j that reads as an owner command is left for its router',
+    (body) => {
+      expect(parseReplyToAsk(body, 'Q12 · x', [12])).toEqual({ answers: [], skips: [] })
+    },
+  )
 })
 
 describe('formatNumberedAck', () => {

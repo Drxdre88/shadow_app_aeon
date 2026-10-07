@@ -86,11 +86,12 @@ function PaybackBody({ view }: { view: PaybackView }) {
   const models = view.breakdowns.model ?? []
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-4 lg:grid-cols-7 gap-2">
+      <div className="grid grid-cols-4 lg:grid-cols-8 gap-2">
         <Stat label="Missions" value={String(t.missions)} />
         <Stat label="Finished" value={String(t.succeeded)} tone="text-emerald-300" />
         <Stat label="Failed" value={String(t.failed)} tone="text-rose-300" />
-        <Stat label="Runner died" value={String(t.runnerDied)} tone="text-amber-300" hint="Timed out or killed — the PC slept, ran out of memory or stopped reporting. Not counted as a failure." />
+        <Stat label="Runner died" value={String(t.runnerDied)} tone="text-amber-300" hint="Timed out or killed without you asking — the PC slept, ran out of memory or stopped reporting. Not counted as a failure." />
+        <Stat label="Stopped by you" value={String(t.ownerStopped)} tone="text-slate-300" hint="Missions you stopped yourself from the app, Claude or the API." />
         <Stat label="Known cost" value={formatUsd(t.costKnownUsd)} />
         <Stat label="No cost recorded" value={String(t.missionsWithUnknownCost)} tone="text-slate-400" hint="These missions are left out of the cost, not counted as free." />
         <Stat label="Per finished mission" value={t.costPerSucceeded === null ? 'Unknown' : formatUsd(t.costPerSucceeded)} hint="All known cost divided by finished missions that have a cost." />

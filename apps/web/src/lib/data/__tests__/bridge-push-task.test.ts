@@ -97,6 +97,7 @@ describe('pushTaskToGantt', () => {
     const card = h.rows('board_tasks')[0]
     expect(card.ganttTaskId).toBe(NEW_BAR)
     expect(card.onTimeline).toBe(true)
+    expect(bar.boardTaskUpdatedAt).toBe((card.updatedAt as Date).toISOString())
   })
 
   it('creates a bar in view B when the card already has one in view A', async () => {

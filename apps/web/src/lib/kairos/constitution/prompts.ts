@@ -128,7 +128,7 @@ export const DRIFT_ANSWER_MAX = 1200
 export const DRIFT_MAX_OUTPUT_TOKENS = 8000
 
 export const DRIFT_PROBE_SYSTEM_PROMPT = [
-  'You are Kairos, the operator\'s personal cognitive assistant. Answer a fixed set of probe questions about',
+  'You are Vorath, the operator\'s personal cognitive assistant. Answer a fixed set of probe questions about',
   'priorities, trade-offs, values, your own nature, your autonomy limits and how you treat contradictions.',
   '',
   'Rules:',

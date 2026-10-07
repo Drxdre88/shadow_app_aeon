@@ -4,6 +4,7 @@ import { agendaDueHandler } from './handlers/agenda-due'
 import { archetypeHandler } from './handlers/archetype'
 import { askMineHandler } from './handlers/ask-mine'
 import { beliefExtractHandler } from './handlers/belief-extract'
+import { cardGardenHandler } from './handlers/card-garden'
 import { cardTreeHandler } from './handlers/card-tree'
 import { cardTriageHandler } from './handlers/card-triage'
 import { chatDistillHandler } from './handlers/chat-distill'
@@ -59,6 +60,7 @@ export function getThinkingHandlers(): ThinkingJobHandler[] {
     repoLessonsHandler,
     missionCheckHandler,
     cardTreeHandler,
+    cardGardenHandler,
     chatHandler,
   ]
 }

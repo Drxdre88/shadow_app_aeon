@@ -94,7 +94,10 @@ async function apply(job: ThinkingJobRow, text: string, answeredBy: ThinkingAnsw
   try {
     candidates = parseAskMineResponseStrict(text)
   } catch (err) {
-    return { ok: false, reason: `parse_failed: ${errorReason(err)}` }
+    const reason = errorReason(err)
+    // The routine's raw answer is otherwise lost; keep a short one-line sample.
+    console.warn('[kairos:ask-mine] parse_failed:', reason, '| raw:', text.replace(/\s+/g, ' ').trim().slice(0, 500))
+    return { ok: false, reason: `parse_failed: ${reason}` }
   }
 
   const result = await finishAskMine(job.userId, {
@@ -122,5 +125,5 @@ export const askMineHandler: ThinkingJobHandler = {
   plan,
   apply,
   // The 04:30 ask-mine cron is the fallback; the sweep only expires.
-  fallback: async () => ({ ok: false, reason: 'deferred to the 04:30 UTC ask-mine cron' }),
+  fallback: async () => ({ ok: false, reason: 'deferred to the 04:30 UTC ask-mine cron (only when paid backup is on)' }),
 }

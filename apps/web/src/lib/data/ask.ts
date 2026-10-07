@@ -4,6 +4,7 @@ import { and, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm'
 import { decodeDateOrNull } from './sql-decoders'
 import type { AetherPayload } from '@/lib/kairos/aether-types'
 import { notHeldSensitive } from '@/lib/kairos/sensitive/held'
+import { clipAtWord } from '@/lib/kairos/clip-words'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Ask — pure DB queries. No business logic; all selection logic lives
@@ -562,7 +563,7 @@ export async function createKairosAskMemory(
       .values({
         userId,
         dominionId: opts.dominionId,
-        title: opts.question,
+        title: clipAtWord(opts.question, 255),
         bodyMd: opts.question,
         summary: opts.question,
         type: 'advisory',

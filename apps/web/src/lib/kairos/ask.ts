@@ -21,7 +21,7 @@ import { appendTaskDescription, findTaskById } from '@/lib/data/tasks'
 import { updateVaultDescription } from '@/lib/data/vault'
 import { verifyProjectAccess } from '@/lib/data/projects'
 import { selectKairosQuestion } from './ask-select'
-import { hasNumberedMatches, mightContainNumberedAnswers, parseNumberedAnswers } from './ask-numbered'
+import { hasNumberedMatches, mightAnswerKairosAsks, parseNumberedAnswers, parseReplyToAsk } from './ask-numbered'
 import type { Origin } from './origin'
 import { recordToday, type TodayChannel } from './today'
 
@@ -429,19 +429,22 @@ export type NumberedAnswerOutcome =
   | { matched: true; answered: number[]; skipped: number[]; failed: number[]; stillOpen: number[] }
 
 /**
- * Deterministic pre-router for operator text: "Q12: …" answers and
- * "skip Q12" dismissals against the open backlog. matched:false (no label
- * names an open question) means the text is ordinary chat. Answers carry the
+ * Deterministic pre-router for operator text: "Q12: …" / "Q12 …" answers,
+ * "skip Q12" dismissals, or a reply quoting one open Q. matched:false (no
+ * open question named) means the text is ordinary chat. Answers carry the
  * operator's own words, so they are stamped operator-origin.
  */
 export async function answerNumberedKairosAsks(
   userId: string,
   body: string,
   now: Date = new Date(),
+  replyText?: string,
 ): Promise<NumberedAnswerOutcome> {
-  if (!mightContainNumberedAnswers(body)) return { matched: false }
+  if (!mightAnswerKairosAsks(body, replyText)) return { matched: false }
   const open = await listOpenKairosAsks(userId, now)
-  const parsed = parseNumberedAnswers(body, open.map((ask) => ask.seq))
+  const seqs = open.map((ask) => ask.seq)
+  const numbered = parseNumberedAnswers(body, seqs)
+  const parsed = hasNumberedMatches(numbered) ? numbered : parseReplyToAsk(body, replyText, seqs)
   if (!hasNumberedMatches(parsed)) return { matched: false }
 
   const bySeq = new Map(open.map((ask) => [ask.seq, ask]))

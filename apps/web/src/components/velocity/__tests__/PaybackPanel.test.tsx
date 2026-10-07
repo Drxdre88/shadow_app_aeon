@@ -10,7 +10,7 @@ import type { PaybackBucket, PaybackView } from '@/lib/data/payback'
 
 const PROJECT = '11111111-1111-4111-8111-111111111111'
 
-const tally = { missions: 42, succeeded: 31, failed: 6, runnerDied: 5, running: 0, queued: 0, costKnownUsd: 12.4, missionsWithUnknownCost: 17, totalDurationMin: 300, costPerSucceeded: 0.8 }
+const tally = { missions: 42, succeeded: 31, failed: 6, runnerDied: 5, ownerStopped: 2, running: 0, queued: 0, costKnownUsd: 12.4, missionsWithUnknownCost: 17, totalDurationMin: 300, costPerSucceeded: 0.8 }
 const bucket = (key: string): PaybackBucket => ({ key, ...tally })
 
 function view(over: Partial<PaybackView['totals']> = {}): PaybackView {
@@ -38,7 +38,7 @@ describe('PaybackPanel', () => {
     expect(await screen.findByText('Known cost')).toBeTruthy()
     expect(getAgentPayback).toHaveBeenCalledWith({ projectId: PROJECT, period: '30d' })
     const expected: Array<[string, string]> = [
-      ['Missions', '42'], ['Finished', '31'], ['Failed', '6'], ['Runner died', '5'],
+      ['Missions', '42'], ['Finished', '31'], ['Failed', '6'], ['Runner died', '5'], ['Stopped by you', '2'],
       ['Known cost', '$12.40'], ['No cost recorded', '17'], ['Per finished mission', '$0.80'],
     ]
     for (const [label, value] of expected) expect(statValue(label)).toBe(value)

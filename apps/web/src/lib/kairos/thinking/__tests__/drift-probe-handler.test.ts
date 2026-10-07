@@ -192,7 +192,7 @@ describe('drift_probe apply', () => {
     expect(m.findDriftObservation).toHaveBeenCalledWith(USER, 'drift_baseline', driftBaselineKey('const-2', MODEL))
     const [, values] = m.insertDriftObservation.mock.calls[0]
     expect(values.kind).toBe('drift_baseline')
-    expect(values.externalKey).toBe(`drift_baseline:const-2:${MODEL}`)
+    expect(values.externalKey).toBe(`drift_baseline:const-2:${MODEL}:probes-v2`)
     expect(values.sourceMetadata.drift.version).toBe(2)
     expect(values.sourceMetadata.drift.embeddingModel).toBe(MODEL)
     expect(Object.keys(values.sourceMetadata.drift.vectors)).toEqual([...DRIFT_PROBE_IDS])
@@ -213,12 +213,12 @@ describe('drift_probe apply', () => {
 
   it('alerts when 3 probes flip even though the mean stays ≥ 0.8', async () => {
     m.findDriftObservation.mockImplementation(async (_u: string, kind: string) => (kind === 'drift_baseline' ? baselineRow() : null))
-    const flipped = new Set(['nature-01', 'nature-02', 'autonomy-02'])
+    const flipped = new Set(['nature-05', 'nature-06', 'autonomy-06'])
     await driftProbeHandler.apply(jobFrom(await planOne()), answersText((id) => flipped.has(id)), 'routine')
     const drift = m.writeDriftRunSection.mock.calls[0][1].patch.drift
     expect(drift.mean).toBeCloseTo(21 / 24, 3)
     expect(drift.mean).toBeGreaterThanOrEqual(0.8)
-    expect(drift.flipped).toEqual(['nature-01', 'nature-02', 'autonomy-02'])
+    expect(drift.flipped).toEqual(['nature-05', 'nature-06', 'autonomy-06'])
     expect(drift.alert).toBe(true)
     expect(m.writeDriftRunSection.mock.calls[0][1].title).toContain('ALERT')
   })
@@ -234,7 +234,7 @@ describe('drift_probe apply', () => {
 
   it('still measures drift when only tonight\'s conscience section exists — same numbers', async () => {
     m.findDriftObservation.mockImplementation(async (_u: string, kind: string) => (kind === 'drift_baseline' ? baselineRow() : null))
-    const flipped = new Set(['nature-01', 'values-02'])
+    const flipped = new Set(['nature-05', 'values-02'])
     await driftProbeHandler.apply(jobFrom(await planOne()), answersText((id) => flipped.has(id)), 'routine')
     const alone = m.writeDriftRunSection.mock.calls[0][1].patch.drift
 
@@ -257,7 +257,7 @@ describe('drift_probe apply', () => {
 
   it('rejects incomplete answers and missing embeddings', async () => {
     const job = jobFrom(await planOne())
-    const partial = '```json\n' + JSON.stringify({ answers: [{ probeId: 'nature-01', answer: 'x' }] }) + '\n```'
+    const partial = '```json\n' + JSON.stringify({ answers: [{ probeId: 'nature-05', answer: 'x' }] }) + '\n```'
     expect(await driftProbeHandler.apply(job, partial, 'routine')).toMatchObject({ ok: false, reason: expect.stringContaining('parse_failed') })
     m.embedTexts.mockResolvedValue(null)
     m.activeEmbeddingModel.mockReturnValue(null)

@@ -24,6 +24,8 @@ import { editMessageText, telegramConfigured } from './telegram'
 import { recordToday } from './today'
 import { cardTreeKind } from './card-tree/decision'
 import { CARD_TREE_KIND } from './card-tree/types'
+import { cardGardenKind } from './card-garden/decision'
+import { CARD_GARDEN_KIND } from './card-garden/types'
 
 // One decision function for every owner-decided proposal kind (Phase 2,
 // Track C). Web inbox, Telegram buttons and the REST session all call
@@ -167,6 +169,7 @@ export const PROPOSAL_KINDS: Readonly<Record<string, ProposalKindHandler>> = {
   [GOAL_PROPOSAL_KIND]: goalKind,
   [VOICE_SAMPLE_KIND]: voiceSampleKind,
   [CARD_TREE_KIND]: cardTreeKind,
+  [CARD_GARDEN_KIND]: cardGardenKind,
 }
 
 export function isDecidableProposalKind(kind: unknown): boolean {

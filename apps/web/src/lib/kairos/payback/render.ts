@@ -29,6 +29,7 @@ export function paybackHeadline(view: PaybackView): string {
     `${t.failed} failed`,
     `${t.runnerDied} stopped because the runner died`,
   ]
+  if (t.ownerStopped > 0) outcome.push(`${t.ownerStopped} stopped by you`)
   const live = t.running + t.queued
   if (live > 0) outcome.push(`${live} still running or waiting`)
   const withCost = t.missions - t.missionsWithUnknownCost
@@ -41,7 +42,8 @@ export function paybackHeadline(view: PaybackView): string {
 
 function bucketLine(b: PaybackBucket): string {
   const cost = b.missions - b.missionsWithUnknownCost > 0 ? formatUsd(b.costKnownUsd) : 'cost unknown'
-  return `- **${b.key}**: ${plural(b.missions, 'mission', 'missions')} (${b.succeeded} finished, ${b.failed} failed, ${b.runnerDied} runner died), ${cost}`
+  const stopped = b.ownerStopped > 0 ? `, ${b.ownerStopped} stopped by you` : ''
+  return `- **${b.key}**: ${plural(b.missions, 'mission', 'missions')} (${b.succeeded} finished, ${b.failed} failed, ${b.runnerDied} runner died${stopped}), ${cost}`
 }
 
 const GROUP_TITLE = { repo: 'By repo', engine: 'By engine', model: 'By model' } as const
