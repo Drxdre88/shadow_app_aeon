@@ -77,6 +77,16 @@ describe('session summaries by repo', () => {
     expect(q.sql).toMatch(/"created_at" < \$\d+/)
   })
 
+  it('carries session facts: the stored record wins, hook commits/files fill its gaps', async () => {
+    h.selectResults = [[
+      { ...row('a', 'shadow_app_aeon'), record: { commits: [{ sha: 's', subject: 'feat: x' }], tests: { status: 'passed' } }, hookCommits: [{ sha: 'h', subject: 'hook' }], hookFiles: ['src/a.ts'] },
+      { ...row('b', 'shadow_app_aeon'), record: null, hookCommits: null, hookFiles: null },
+    ]]
+    const [a, b] = await listSessionSummariesBetween('u1', new Date('2026-10-05T01:00:00.000Z'), AT)
+    expect(a.facts).toMatchObject({ commits: ['feat: x'], tests: { status: 'passed' }, files: ['a.ts'] })
+    expect(b.facts).toBeNull()
+  })
+
   it('keeps only rows whose normalised repo is exactly the slug', async () => {
     h.selectResults = [[row('a', 'C:/dev/shadow_app_aeon'), row('b', 'shadow_app_aeon_old'), row('c', 'shadow_app_aeon'), row('d', 'shadow_app_aeon')]]
     const rows = await listRepoSessions('u1', 'shadow_app_aeon', 2)

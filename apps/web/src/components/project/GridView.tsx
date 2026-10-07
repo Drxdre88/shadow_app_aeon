@@ -24,6 +24,7 @@ import {
 import { cn } from '@/lib/utils/cn'
 import { timeAgo } from '@/lib/utils/timeAgo'
 import { ProjectContextMenu, type RealmInfo } from './ProjectContextMenu'
+import { useMenuArchive } from './archive/useMenuArchive'
 import type { ProjectWithStats } from './types'
 
 interface GridViewProps {
@@ -82,6 +83,7 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, r
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; project: ProjectWithStats } | null>(null)
+  const menuArchive = useMenuArchive(contextMenu?.project.id)
   const layout = controlledLayout ?? 'wrap'
   const [groupOrder, setGroupOrder] = useState<string[]>([])
   const [draggedGroup, setDraggedGroup] = useState<string | null>(null)
@@ -464,8 +466,11 @@ export function GridView({ projects, onEdit, onDelete, onShare, onGroupChange, r
           onDelete={() => { setContextMenu(null); setPendingDeleteId(contextMenu.project.id) }}
           onToggleRealm={(realmId) => onToggleRealm?.(contextMenu.project.id, realmId)}
           onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(contextMenu.project.id) : undefined}
+          canArchive={menuArchive.canArchive}
+          onArchive={() => menuArchive.requestArchive(contextMenu.project)}
         />
       )}
+      {menuArchive.dialog}
       <ConfirmModal
         isOpen={!!pendingDeleteId}
         title="Delete project?"

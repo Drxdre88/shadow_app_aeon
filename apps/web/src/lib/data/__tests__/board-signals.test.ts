@@ -70,6 +70,7 @@ import {
 const USER_ID = '10000000-0000-4000-8000-000000000001'
 const NOW = new Date('2026-07-19T12:00:00.000Z')
 const dialect = new PgDialect()
+const NOT_ARCHIVED = "(\"projects\".\"settings\" ->> 'archived') is distinct from 'true'"
 
 function compile(value: unknown) {
   return dialect.sqlToQuery(value as SQL)
@@ -98,6 +99,7 @@ function expectSharedScope(query: QueryCapture) {
   expect(compiled.sql).toContain('"projects"."user_id" = $1 or "project_members"."user_id" = $2')
   expect(compiled.params.slice(0, 2)).toEqual([USER_ID, USER_ID])
   expect(compiled.sql).toContain('"board_tasks"."archived_at" is null')
+  expect(compiled.sql).toContain(NOT_ARCHIVED)
   expect(query.joins).toEqual(expect.arrayContaining([
     expect.objectContaining({ kind: 'inner', table: projects }),
     expect.objectContaining({ kind: 'left', table: boardColumns }),
@@ -206,6 +208,7 @@ function expectCountScope(query: QueryCapture) {
   expect(compiled.sql).toContain('"projects"."user_id" = $1 or "project_members"."user_id" = $2')
   expect(compiled.params.slice(0, 2)).toEqual([USER_ID, USER_ID])
   expect(compiled.sql).toContain('"board_tasks"."archived_at" is null')
+  expect(compiled.sql).toContain(NOT_ARCHIVED)
   expect(query.joins).toEqual(expect.arrayContaining([
     expect.objectContaining({ kind: 'inner', table: projects }),
     expect.objectContaining({ kind: 'left', table: projectMembers }),
@@ -285,6 +288,7 @@ describe('count* with opts.dominionId (per-Dominion delta scope)', () => {
     expect(where.sql).toContain('"projects"."user_id" = $1 and "projects"."dominion_id" = $2')
     expect(where.params.slice(0, 2)).toEqual([USER_ID, DOMINION_ID])
     expect(where.sql).not.toContain('"project_members"."user_id"')
+    expect(where.sql).toContain(NOT_ARCHIVED)
     expect(where.sql).toContain('"board_tasks"."archived_at" is null')
   })
 })

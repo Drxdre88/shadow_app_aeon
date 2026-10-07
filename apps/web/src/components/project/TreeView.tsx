@@ -11,6 +11,7 @@ import { renameProjectGroup, setProjectGroup, deleteProject } from '@/lib/action
 import { toast } from '@/components/ui/Toast'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { ProjectContextMenu } from './ProjectContextMenu'
+import { useMenuArchive } from './archive/useMenuArchive'
 import type { ProjectWithStats } from './types'
 
 interface TreeViewProps {
@@ -59,6 +60,7 @@ export function TreeView({ projects, onEdit, onDelete, onShare, realms = [], pro
   const [editGroupValue, setEditGroupValue] = useState('')
   const editInputRef = useRef<HTMLInputElement>(null)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; project: ProjectWithStats } | null>(null)
+  const menuArchive = useMenuArchive(ctxMenu?.project.id)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
 
   const groups = useMemo(() => groupByFluidGroup(projects), [projects])
@@ -306,8 +308,11 @@ export function TreeView({ projects, onEdit, onDelete, onShare, realms = [], pro
           onDelete={() => { setPendingDeleteId(ctxMenu.project.id); setCtxMenu(null) }}
           onToggleRealm={(realmId) => onToggleRealm?.(ctxMenu.project.id, realmId)}
           onToggleFavorite={onToggleFavorite ? () => onToggleFavorite(ctxMenu.project.id) : undefined}
+          canArchive={menuArchive.canArchive}
+          onArchive={() => menuArchive.requestArchive(ctxMenu.project)}
         />
       )}
+      {menuArchive.dialog}
       <ConfirmModal
         isOpen={!!pendingDeleteId}
         title="Delete project?"

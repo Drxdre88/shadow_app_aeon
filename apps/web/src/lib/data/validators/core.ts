@@ -28,6 +28,12 @@ export const setProjectKairosFeedSchema = z.object({
   feed: z.enum(KAIROS_FEED_MODES).nullable(),
 })
 
+export const setProjectArchivedSchema = z.object({ archived: z.boolean() })
+
+export const listProjectsSchema = z.object({
+  includeArchived: z.boolean().optional(),
+})
+
 export const createTaskSchema = z.object({
   name: z.string().trim().min(1).max(255),
   description: z.string().trim().max(10000).optional(),

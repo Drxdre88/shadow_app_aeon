@@ -12,6 +12,7 @@ import { BetaFeaturesButton } from '@/components/ui/BetaFeaturesModal'
 import { ChangelogButton } from '@/components/ui/ChangelogModal'
 import { LiveSessionsButton } from '@/components/kairos/LiveSessionsButton'
 import { EodReflectionButton } from '@/components/hyperspace/EodReflectionButton'
+import { ArchivedBoardsButton } from '@/components/project/archive/ArchivedBoardsButton'
 
 type SidebarUser = { name?: string | null; email?: string | null; image?: string | null; role: string }
 
@@ -36,6 +37,7 @@ export function SidebarBottom({
           <StatsButton />
           <SettingsButton />
           <UnhideButton />
+          <ArchivedBoardsButton />
         </div>
       ) : (
         <div className="px-2 py-2" style={{ color: 'var(--primary)' }}>
@@ -59,6 +61,7 @@ export function SidebarBottom({
             <StatsButton />
             <SettingsButton />
             <UnhideButton />
+            <ArchivedBoardsButton />
           </div>
         </div>
       )}

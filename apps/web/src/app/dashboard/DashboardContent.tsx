@@ -24,6 +24,7 @@ import { ProjectViewSwitcher } from '@/components/project/ProjectViewSwitcher'
 import { SpaceView } from '@/components/project/SpaceView'
 import type { WorkspaceGroup } from './WorkspaceDashboard'
 import type { ProjectWithStats } from '@/components/project/types'
+import { useOnArchiveChange } from '@/components/project/archive/archive-events'
 
 interface DashboardContentProps {
   user: {
@@ -197,6 +198,8 @@ export default function DashboardContent({ user, projects: initialProjects, init
     document.addEventListener('visibilitychange', refresh)
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', refresh) }
   }, [loaded, loadWorkspaces])
+
+  useOnArchiveChange(loadWorkspaces)
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { workspaceGroups, groupMembers, projectGroups, projects, users, realmInvites, projectInvites, projectMembers, boardTasks, taskAssignees } from '@/lib/db/schema'
 import { sendRealmInviteEmail, getBaseUrl } from '@/lib/email'
 import { touchProject } from './projects'
+import { notArchivedSql } from './board-visibility'
 
 export async function createWorkspaceGroup(ownerId: string, data: { name: string; icon?: string; color?: string }) {
   const [group] = await db.insert(workspaceGroups).values({
@@ -62,7 +63,7 @@ export async function findProjectsInGroup(groupId: string, callerRole?: string, 
     })
     .from(projectGroups)
     .innerJoin(projects, eq(projects.id, projectGroups.projectId))
-    .where(eq(projectGroups.groupId, groupId))
+    .where(and(eq(projectGroups.groupId, groupId), notArchivedSql))
   if (callerRole === 'owner') return rows
 
   const membersOnlyIds = rows.filter((r) => r.visibility === 'members_only').map((r) => r.projectId)

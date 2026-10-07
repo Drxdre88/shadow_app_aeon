@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { boardColumns, boardTasks, projectMembers, projects } from '@/lib/db/schema'
 import { and, asc, desc, eq, gte, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm'
+import { notArchivedSql } from './board-visibility'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -18,7 +19,7 @@ function cutoffDate(now: Date, days: number) {
 }
 
 function accessibleTo(userId: string) {
-  return or(eq(projects.userId, userId), eq(projectMembers.userId, userId))
+  return and(or(eq(projects.userId, userId), eq(projectMembers.userId, userId)), notArchivedSql)
 }
 
 export async function listStaleTasks({
@@ -107,7 +108,7 @@ type CountScopeOpts = { dominionId?: string }
 
 function countScope(userId: string, opts: CountScopeOpts) {
   return opts.dominionId
-    ? and(eq(projects.userId, userId), eq(projects.dominionId, opts.dominionId))
+    ? and(eq(projects.userId, userId), eq(projects.dominionId, opts.dominionId), notArchivedSql)
     : accessibleTo(userId)
 }
 

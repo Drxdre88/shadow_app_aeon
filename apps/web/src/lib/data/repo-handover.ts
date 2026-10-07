@@ -7,6 +7,7 @@ import { findRepoPlaybook, listRepoSessions, type RepoSessionRow } from '@/lib/d
 import { repoLabelNames, resolveRepo } from '@/lib/kairos/repo-memory/aliases'
 import { buildStartHere } from '@/lib/kairos/repo-memory/render'
 import type { RepoHandover, RepoHandoverCard, RepoHandoverSession } from '@/lib/kairos/repo-memory/types'
+import { notArchivedSql } from './board-visibility'
 
 // Repo handover, assembled on every read (never stored): the latest session
 // summaries for the repo, open cards labelled repo:<label> on boards the
@@ -55,6 +56,7 @@ export async function listRepoOpenCards(userId: string, labelNames: readonly str
       isNull(boardTasks.archivedAt),
       or(isNull(boardColumns.name), sql`lower(trim(${boardColumns.name})) not in (${sql.join(DONE_COLUMN_NAMES.map((n) => sql`${n}`), sql`, `)})`),
       or(eq(projects.userId, userId), member),
+      notArchivedSql,
     ))
     .orderBy(PRIORITY_RANK, desc(boardTasks.updatedAt))
     .limit(limit * 3)

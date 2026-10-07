@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { projects, projectMembers, boardTasks, ganttTasks, projectGroups, groupMembers, workspaceGroups, favoriteProjects } from '@/lib/db/schema'
 import { eq, and, desc, sql, or, inArray, ne } from 'drizzle-orm'
 import type { CreateProjectInput, UpdateProjectInput } from './validators'
+import { notArchivedSql } from './board-visibility'
 
 export async function verifyProjectAccess(projectId: string, userId: string) {
   // Query 1: project + direct membership in one shot
@@ -114,7 +115,8 @@ export async function getMemberRole(projectId: string, userId: string) {
   return access?.role ?? null
 }
 
-export async function findProjects(userId: string, limit = 100, offset = 0) {
+export async function findProjects(userId: string, limit = 100, offset = 0, opts: { includeArchived?: boolean } = {}) {
+  const access = or(eq(projects.userId, userId), eq(projectMembers.userId, userId))
   return db
     .selectDistinct({
       id: projects.id,
@@ -134,7 +136,7 @@ export async function findProjects(userId: string, limit = 100, offset = 0) {
     })
     .from(projects)
     .leftJoin(projectMembers, eq(projectMembers.projectId, projects.id))
-    .where(or(eq(projects.userId, userId), eq(projectMembers.userId, userId)))
+    .where(opts.includeArchived ? access : and(access, notArchivedSql))
     .orderBy(desc(projects.createdAt))
     .limit(limit)
     .offset(offset)
@@ -197,6 +199,7 @@ export async function findSiblingProjects(projectId: string, userId: string) {
       and(
         eq(projectGroups.groupId, realm.groupId),
         ne(projectGroups.projectId, projectId),
+        notArchivedSql,
         or(eq(projects.userId, userId), eq(projectMembers.userId, userId))
       )
     )
@@ -244,7 +247,7 @@ export async function findProjectsWithStats(userId: string) {
     })
     .from(projects)
     .leftJoin(projectMembers, eq(projectMembers.projectId, projects.id))
-    .where(or(eq(projects.userId, userId), eq(projectMembers.userId, userId)))
+    .where(and(or(eq(projects.userId, userId), eq(projectMembers.userId, userId)), notArchivedSql))
     .orderBy(desc(projects.createdAt))
 
   return projectRows.map((row) => ({
@@ -272,7 +275,7 @@ export async function findFavoriteProjects(userId: string) {
     })
     .from(favoriteProjects)
     .innerJoin(projects, eq(favoriteProjects.projectId, projects.id))
-    .where(eq(favoriteProjects.userId, userId))
+    .where(and(eq(favoriteProjects.userId, userId), notArchivedSql))
     .orderBy(favoriteProjects.createdAt)
 }
 
@@ -374,7 +377,7 @@ export async function updateProject(projectId: string, userId: string, data: Upd
 // kairosFeed (what Kairos watches) changes only through the owner-only
 // setProjectKairosFeed; generic settings patches can't touch it.
 function settingsMergeSql(patch: Record<string, unknown>) {
-  const { kairosFeed: _ignored, kairosTriage: _ignoredTriage, kairosMissionCheck: _ignoredMissionCheck, ...rest } = patch
+  const { kairosFeed: _ignored, kairosTriage: _ignoredTriage, kairosMissionCheck: _ignoredMissionCheck, archived: _a, archivedAt: _aAt, ...rest } = patch
   return sql`coalesce(${projects.settings}, '{}'::jsonb) || ${JSON.stringify(rest)}::jsonb`
 }
 
@@ -473,7 +476,7 @@ export async function findOwnProjects(userId: string) {
   return db
     .select(PROJECT_COLUMNS)
     .from(projects)
-    .where(eq(projects.userId, userId))
+    .where(and(eq(projects.userId, userId), notArchivedSql))
     .orderBy(desc(projects.createdAt))
 }
 
@@ -487,6 +490,7 @@ export async function findSharedProjects(userId: string) {
     ))
     .where(and(
       ne(projects.userId, userId),
+      notArchivedSql,
       sql`NOT EXISTS (
         SELECT 1 FROM project_groups pg
         INNER JOIN group_members gm ON gm.group_id = pg.group_id AND gm.user_id = ${userId}
@@ -525,7 +529,7 @@ export async function findWorkspaceProjects(userId: string) {
     })
     .from(projectGroups)
     .innerJoin(projects, eq(projects.id, projectGroups.projectId))
-    .where(inArray(projectGroups.groupId, groupIds))
+    .where(and(inArray(projectGroups.groupId, groupIds), notArchivedSql))
     .orderBy(desc(projects.createdAt))
 
   const roleByGroup = new Map(userGroups.map((g) => [g.groupId, g.memberRole]))

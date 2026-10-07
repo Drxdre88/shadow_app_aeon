@@ -23,7 +23,8 @@ export const GET = withRateLimit(
     if (!name) return jsonError('name query param required', 400)
 
     const target = name.toLowerCase()
-    const all = await findProjects(result.id, 500, 0)
+    // A by-name lookup, not a list: archived boards still resolve.
+    const all = await findProjects(result.id, 500, 0, { includeArchived: true })
     const match = all.find((p) => p.name.toLowerCase() === target)
     if (!match) return jsonError('Project not found', 404)
 

@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { projects, boardTasks, activityEvents, memories } from '@/lib/db/schema'
 import { and, eq, isNull, gte, lt, desc, sql } from 'drizzle-orm'
 import { captureMemory } from '@/lib/data/memories'
+import { notArchivedSql } from '@/lib/data/board-visibility'
 import { SNAPSHOT_TTL_DAYS, ADVISORY_TTL_DAYS, cutoffDate } from './lifecycle'
 import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 import { runBoardFeedForProject, type BoardFeedResult } from './board-feed'
@@ -125,7 +126,7 @@ export async function runProjectSnapshotsForUser(userId: string): Promise<Projec
       settings: projects.settings,
     })
     .from(projects)
-    .where(eq(projects.userId, userId))
+    .where(and(eq(projects.userId, userId), notArchivedSql))
 
   if (userProjects.length === 0) {
     await writeCronSuccessTrace(userId, { cronName: 'project-snapshot', outcome: 'skipped', skipReason: 'no projects' })

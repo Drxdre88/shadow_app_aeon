@@ -5,6 +5,7 @@ import { confidenceForStreamClass } from '@/lib/kairos/confidence'
 import { normalizeRepoSlug } from '@/lib/kairos/living/repo-slug'
 import { notHeldSensitive } from '@/lib/kairos/sensitive/held'
 import { repoPlaybookMetaSchema, type RepoPlaybookMeta } from '@/lib/kairos/repo-memory/types'
+import { parseSessionFacts, type SessionFacts } from '@/lib/kairos/repo-memory/facts'
 
 // Repo memory: agent session summaries read per repo, and the one lessons
 // playbook per repo the nightly repo_lessons job keeps. A playbook is type
@@ -29,6 +30,7 @@ export interface RepoSessionRow {
   body: string
   client: string | null
   createdAt: Date
+  facts?: SessionFacts | null
 }
 
 const SESSION_COLUMNS = {
@@ -39,14 +41,30 @@ const SESSION_COLUMNS = {
   rawRepo,
   client: rawClient,
   createdAt: memories.createdAt,
+  record: sql<unknown>`${memories.sourceMetadata}->'session'`,
+  hookCommits: sql<unknown>`${memories.sourceMetadata}->'commits'`,
+  hookFiles: sql<unknown>`${memories.sourceMetadata}->'filesTouched'`,
 }
 
-type SessionSelect = { id: string; title: string; summary: string | null; body: string | null; rawRepo: string | null; client: string | null; createdAt: Date }
+type SessionSelect = {
+  id: string; title: string; summary: string | null; body: string | null; rawRepo: string | null; client: string | null; createdAt: Date
+  record?: unknown; hookCommits?: unknown; hookFiles?: unknown
+}
+
+// The session record wins; the hook's top-level commits/files fill its gaps.
+function factsOf(r: SessionSelect): SessionFacts | null {
+  const record = r.record && typeof r.record === 'object' ? (r.record as Record<string, unknown>) : {}
+  return parseSessionFacts({
+    ...record,
+    commits: Array.isArray(record.commits) ? record.commits : r.hookCommits,
+    files: Array.isArray(record.files) ? record.files : r.hookFiles,
+  })
+}
 
 function toSessionRow(r: SessionSelect): RepoSessionRow | null {
   const repo = normalizeRepoSlug(r.rawRepo)
   if (!repo) return null
-  return { id: r.id, repo, title: r.title, summary: r.summary, body: r.body ?? '', client: r.client, createdAt: r.createdAt }
+  return { id: r.id, repo, title: r.title, summary: r.summary, body: r.body ?? '', client: r.client, createdAt: r.createdAt, facts: factsOf(r) }
 }
 
 const sessionWhere = (userId: string) => and(
