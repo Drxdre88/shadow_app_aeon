@@ -5,6 +5,7 @@ vi.mock('@/lib/db', () => ({ db: {} }))
 vi.mock('@/lib/data/thinking-jobs', () => ({ hasJobWithKeyLike: vi.fn() }))
 vi.mock('@/lib/data/repo-memory', () => ({
   listSessionSummariesBetween: vi.fn(),
+  listRepoGitDigestsBetween: vi.fn(),
   listRepoPlaybooks: vi.fn(),
   upsertRepoPlaybook: vi.fn(),
 }))
@@ -12,6 +13,9 @@ vi.mock('@/lib/data/repo-memory', () => ({
 import { hasJobWithKeyLike } from '@/lib/data/thinking-jobs'
 import * as data from '@/lib/data/repo-memory'
 import type { RepoSessionRow } from '@/lib/data/repo-memory'
+import { parseRepoGitDigest, type RepoGitDigest } from '@/lib/kairos/repo-memory/git-digest'
+import { parseRepoLessonsText } from '@/lib/kairos/repo-memory/prompt'
+import { repoLessonsContextSchema } from '@/lib/kairos/repo-memory/types'
 import { repoLessonsHandler } from '../handlers/repo-lessons'
 
 const USER = 'user-1'
@@ -22,6 +26,15 @@ const session = (id: string, repo: string, hoursAgo: number, o: Partial<RepoSess
   id, repo, title: `Session ${id}`, summary: `Fixed the thing in ${repo}.`, body: '', client: 'claude',
   createdAt: new Date(NIGHT.getTime() - hoursAgo * 3_600_000), ...o,
 })
+
+const digest = (id: string, repoSlug: string, commits: number, subjects: string[] = []): RepoGitDigest => parseRepoGitDigest({
+  id,
+  summary: `${commits} commits, +10/−2 lines (code +8), 1 PRs merged`,
+  sourceMetadata: {
+    kind: 'repo_git_digest', externalId: `git-digest:${repoSlug}:2026-10-05`, repoSlug, day: '2026-10-05',
+    stats: { commits, prsMerged: 1 }, commits: subjects.map((subject, i) => ({ sha: `abc${i}`, subject, aiAssisted: i === 0 })),
+  },
+})!
 
 const priorPlaybook = {
   id: 'pb-aeon', slug: 'shadow_app_aeon', updatedAt: NIGHT,
@@ -60,6 +73,7 @@ beforeEach(() => {
     session('s2', 'shadow_app_aeon', 5),
   ])
   vi.mocked(data.listRepoPlaybooks).mockResolvedValue([priorPlaybook])
+  vi.mocked(data.listRepoGitDigestsBetween).mockResolvedValue([])
   vi.mocked(data.upsertRepoPlaybook).mockImplementation(async (_u, v) => ({ memoryId: `pb-${v.playbook.repo}`, written: true }))
 })
 
@@ -85,10 +99,38 @@ describe('repo_lessons plan', () => {
     expect(hasJobWithKeyLike).toHaveBeenCalledWith(USER, 'repo_lessons', KEY)
   })
 
-  it('skips the night when no repo had a session', async () => {
+  it('skips the night when no repo had a session or a git digest', async () => {
     vi.mocked(data.listSessionSummariesBetween).mockResolvedValue([])
     expect(await repoLessonsHandler.plan(USER, NIGHT)).toEqual([])
+    expect(data.listRepoGitDigestsBetween).toHaveBeenCalledWith(USER, expect.any(Date), NIGHT)
     expect(data.listRepoPlaybooks).not.toHaveBeenCalled()
+  })
+
+  it('a git-only repo is a candidate: digest block, citable digest id, ranked after session repos', async () => {
+    vi.mocked(data.listRepoGitDigestsBetween).mockResolvedValue([
+      digest('g-small', 'shadow_dev_lab', 2, ['fix: tiny']),
+      digest('g-aeon', 'shadow_app_aeon', 5, ['feat: digest', 'Revert "feat: digest"']),
+      digest('g-big', 'kal_el_dash', 30, ['feat: ```hostile```']),
+    ])
+    const [spec] = await repoLessonsHandler.plan(USER, NIGHT)
+    const ctx = spec.input.context as { repos: Array<{ slug: string; digestIds: string[] }> }
+    expect(ctx.repos.map((r) => [r.slug, r.digestIds])).toEqual([
+      ['shadow_app_aeon', ['g-aeon']], ['stp_app_ermac', []], ['kal_el_dash', ['g-big']], ['shadow_dev_lab', ['g-small']],
+    ])
+    expect(spec.input.validMemoryIds).toEqual(expect.arrayContaining(['g-aeon', 'g-big', 'g-small']))
+    const prompt = spec.input.prompt as string
+    expect(prompt).toContain('## Repo: kal_el_dash')
+    expect(prompt).toContain('- (no agent session — see the git block)')
+    expect(prompt).toContain('### Git (whole day, from the owner’s PC; ids you may cite)\n- [g-aeon] 2026-10-05: 5 commits, +10/−2 lines (code +8), 1 PRs merged\n  - feat: digest (AI-assisted)\n  - Revert "feat: digest"\n  - (+3 more commits)')
+    expect(prompt).not.toContain('```')
+    expect(spec.input.system).toContain('Git (whole day, from the owner’s PC)')
+  })
+
+  it('plans for a night with only git digests', async () => {
+    vi.mocked(data.listSessionSummariesBetween).mockResolvedValue([])
+    vi.mocked(data.listRepoGitDigestsBetween).mockResolvedValue([digest('g1', 'stp_app_relic', 4)])
+    const [spec] = await repoLessonsHandler.plan(USER, NIGHT)
+    expect(spec.input.context).toEqual({ day: '2026-10-06', repos: [{ slug: 'stp_app_relic', sessionIds: [], priorCitationIds: [], digestIds: ['g1'] }] })
   })
 
   it('one batched job: last 24h of sessions per repo, the previous playbook, citable ids', async () => {
@@ -103,8 +145,8 @@ describe('repo_lessons plan', () => {
     expect(spec.input.context).toEqual({
       day: '2026-10-06',
       repos: [
-        { slug: 'shadow_app_aeon', sessionIds: ['s1', 's2'], priorCitationIds: ['old-1'] },
-        { slug: 'stp_app_ermac', sessionIds: ['e1'], priorCitationIds: [] },
+        { slug: 'shadow_app_aeon', sessionIds: ['s1', 's2'], priorCitationIds: ['old-1'], digestIds: [] },
+        { slug: 'stp_app_ermac', sessionIds: ['e1'], priorCitationIds: [], digestIds: [] },
       ],
     })
     expect(new Set(spec.input.validMemoryIds)).toEqual(new Set(['s1', 's2', 'old-1', 'e1']))
@@ -179,5 +221,32 @@ describe('repo_lessons apply', () => {
 
   it('has no fallback', async () => {
     expect(await repoLessonsHandler.fallback(job())).toEqual({ ok: false, reason: 'no fallback — the lessons note waits for the next night' })
+  })
+
+  it('a job queued before digests (no digestIds) still parses and applies', async () => {
+    expect(repoLessonsContextSchema.parse(job().input.context).repos[0].digestIds).toEqual([])
+    const res = await repoLessonsHandler.apply(job(), answer([{ repo: 'stp_app_ermac', lessons: [{ kind: 'trap', text: 'x', sourceIds: ['e1'] }] }]), 'routine')
+    expect(res).toMatchObject({ ok: true, memoryIds: ['pb-stp_app_ermac'] })
+  })
+
+  it('accepts lessons citing a git digest id under its own repo only', async () => {
+    const context = {
+      day: '2026-10-06',
+      repos: [
+        { slug: 'kal_el_dash', sessionIds: [], priorCitationIds: [], digestIds: ['g-big'] },
+        { slug: 'stp_app_ermac', sessionIds: ['e1'], priorCitationIds: [], digestIds: [] },
+      ],
+    }
+    const text = answer([
+      { repo: 'kal_el_dash', lessons: [{ kind: 'broke', text: 'A revert followed the export change.', sourceIds: ['g-big'] }] },
+      { repo: 'stp_app_ermac', lessons: [{ kind: 'trap', text: 'Wrong repo.', sourceIds: ['g-big'] }] },
+    ])
+    expect(parseRepoLessonsText(text, context)).toEqual({
+      dropped: 1,
+      repos: [{ repo: 'kal_el_dash', citations: ['g-big'], lessons: [{ kind: 'broke', text: 'A revert followed the export change.', sourceIds: ['g-big'] }] }],
+    })
+    const res = await repoLessonsHandler.apply(job({ input: { system: 's', prompt: 'p', context } }), text, 'routine')
+    expect(res).toMatchObject({ ok: true, memoryIds: ['pb-kal_el_dash'] })
+    expect(vi.mocked(data.upsertRepoPlaybook).mock.calls[0][1].playbook).toMatchObject({ citations: ['g-big'], sessionCount: 0 })
   })
 })

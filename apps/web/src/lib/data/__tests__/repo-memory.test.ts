@@ -47,7 +47,7 @@ vi.mock('@/lib/db', () => {
 })
 
 import { SENSITIVE_HELD_KEY } from '@/lib/kairos/sensitive/meta'
-import { listRepoPlaybooks, listRepoSessions, listSessionSummariesBetween, upsertRepoPlaybook } from '../repo-memory'
+import { listRepoGitDigestsBetween, listRepoPlaybooks, listRepoSessions, listSessionSummariesBetween, upsertRepoPlaybook } from '../repo-memory'
 
 const dialect = new PgDialect()
 const render = (q: unknown) => dialect.sqlToQuery(q as SQL)
@@ -94,6 +94,36 @@ describe('session summaries by repo', () => {
     const q = render(h.wheres[0])
     expect(q.params).toEqual(expect.arrayContaining(['u1', 'session_summary', '%shadow_app_aeon%']))
     expect(q.sql).toMatch(/coalesce\(nullif\("memories"\."source_metadata"->>'repo', ''\), "memories"\."source_metadata"->'session'->>'repo'\)/)
+  })
+})
+
+describe('repo git digests', () => {
+  const meta = (repoSlug: unknown, o: Record<string, unknown> = {}) => ({
+    kind: 'repo_git_digest', externalId: `git-digest:${repoSlug}:2026-10-05`, repoSlug, day: '2026-10-05',
+    stats: { commits: 12, linesAdded: 400, prsMerged: 2 },
+    commits: Array.from({ length: 15 }, (_, i) => ({ sha: `sha${i}`, subject: `feat: change ${i}`, aiAssisted: i % 2 === 0 })),
+    ...o,
+  })
+
+  it('reads one user’s unheld, unarchived digest observations in the window by kind', async () => {
+    h.selectResults = [[
+      { id: 'g1', summary: '12 commits, +400/−0 lines (code +0), 2 PRs merged', sourceMetadata: meta('C:/dev_26/shadow_app_aeon') },
+      { id: 'g2', summary: null, sourceMetadata: meta('dev_26') },
+      { id: 'g3', summary: null, sourceMetadata: { kind: 'repo_git_digest' } },
+    ]]
+    const rows = await listRepoGitDigestsBetween('u1', new Date('2026-10-05T01:00:00.000Z'), AT)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ id: 'g1', slug: 'shadow_app_aeon', day: '2026-10-05', summary: '12 commits, +400/−0 lines (code +0), 2 PRs merged', stats: { commits: 12, linesAdded: 400, codeAdded: 0, prsMerged: 2 } })
+    expect(rows[0].commits).toHaveLength(8)
+    expect(rows[0].commits[0]).toEqual({ sha: 'sha0', subject: 'feat: change 0', aiAssisted: true })
+    const q = render(h.wheres[0])
+    expect(q.params).toEqual(expect.arrayContaining(['u1', 'observation', 'repo_git_digest']))
+    expect(q.sql).toMatch(/"memories"\."user_id" = \$\d+/)
+    expect(q.sql).toContain(`"memories"."source_metadata"->>'kind' = $`)
+    expect(q.sql).toContain('"memories"."archived_at" is null')
+    expect(q.sql).toContain(`->>'${SENSITIVE_HELD_KEY}') IS DISTINCT FROM 'true'`)
+    expect(q.sql).toMatch(/"created_at" >= \$\d+/)
+    expect(q.sql).toMatch(/"created_at" < \$\d+/)
   })
 })
 

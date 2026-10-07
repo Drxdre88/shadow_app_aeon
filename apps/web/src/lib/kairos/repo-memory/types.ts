@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 export const REPO_LESSONS_MAX_REPOS = 6
 export const REPO_LESSONS_SESSIONS_PER_REPO = 8
+export const REPO_LESSONS_DIGESTS_PER_REPO = 2
 export const REPO_SESSION_SNIPPET_MAX = 600
 export const REPO_LESSONS_PER_REPO = 10
 export const REPO_LESSON_TEXT_MAX = 300
@@ -41,15 +42,19 @@ export const repoLessonsAnswerSchema = z.object({
   })),
 })
 
+// digestIds (git digest memories) arrived later: jobs queued before it parse
+// with an empty list.
 export const repoLessonsContextSchema = z.object({
   day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   repos: z.array(z.object({
     slug: z.string().min(1),
     sessionIds: z.array(z.string()),
     priorCitationIds: z.array(z.string()),
+    digestIds: z.array(z.string()).default([]),
   })).min(1),
 })
 export type RepoLessonsContext = z.infer<typeof repoLessonsContextSchema>
+export type RepoLessonsContextInput = z.input<typeof repoLessonsContextSchema>
 
 // ── Handover (assembled on read) ──────────────────────────────────────────
 
