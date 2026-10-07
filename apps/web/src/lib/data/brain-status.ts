@@ -2,6 +2,7 @@ import { and, count, desc, eq, gte, isNull, max, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories, oauthAccessTokens, projects, thinkingJobs } from '@/lib/db/schema'
 import { FALLBACK_ERROR_PREFIX } from '@/lib/data/thinking-jobs'
+import { notArchivedSql } from '@/lib/data/board-visibility'
 import { PAID_BACKUP_OFF_NOTE } from '@/lib/ai/paid-backup-off'
 import type { ThinkingJobKind } from '@/lib/kairos/engine/types'
 import { daytimeThinkingEnabled } from '@/lib/kairos/cadence/flag'
@@ -381,6 +382,7 @@ async function countWatchedBoards(userId: string): Promise<number> {
     .where(and(
       eq(projects.userId, userId),
       sql`lower(trim(${projects.settings}->>'kairosFeed')) in ('daily', 'weekly')`,
+      notArchivedSql,
     ))
   return Number(row?.n ?? 0)
 }

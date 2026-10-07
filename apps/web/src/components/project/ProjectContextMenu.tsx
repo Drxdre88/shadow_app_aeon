@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Pencil, Users, Trash2, Orbit, Check, EyeOff, ExternalLink, Star } from 'lucide-react'
+import { Pencil, Users, Trash2, Orbit, Check, EyeOff, ExternalLink, Star, Archive } from 'lucide-react'
 import { useSidebarStore } from '@/stores/sidebarStore'
 
 export interface RealmInfo {
@@ -26,11 +26,13 @@ interface ProjectContextMenuProps {
   onDelete: () => void
   onToggleRealm: (realmId: string) => void
   onToggleFavorite?: () => void
+  canArchive?: boolean
+  onArchive?: () => void
 }
 
 export function ProjectContextMenu({
   x, y, projectId, projectName, realms, projectRealmIds, isFavorite,
-  onClose, onEdit, onShare, onDelete, onToggleRealm, onToggleFavorite,
+  onClose, onEdit, onShare, onDelete, onToggleRealm, onToggleFavorite, canArchive, onArchive,
 }: ProjectContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   const subRef = useRef<HTMLDivElement>(null)
@@ -108,6 +110,14 @@ export function ProjectContextMenu({
               )}
             </div>
           </div>
+        )}
+
+        {canArchive && onArchive && (
+          <MenuButton
+            icon={<Archive className="w-3.5 h-3.5" />}
+            label="Archive board"
+            onClick={() => { onArchive(); onClose() }}
+          />
         )}
 
         <MenuButton

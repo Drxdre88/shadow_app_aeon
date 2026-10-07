@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { boardTasks, projects, taskLabels } from '@/lib/db/schema'
 import { CARD_TRIAGE_SETTING, type CardTriage } from '@/lib/kairos/triage/types'
 import { touchProject } from './projects'
+import { notArchivedSql } from './board-visibility'
 
 // Card sorting ("Vorath sorts new cards"): the per-board switch in
 // projects.settings.kairosTriage and the suggestions in board_tasks.metadata.triage.
@@ -43,7 +44,7 @@ export async function listTriageBoards(userId: string, limit = 20) {
   return db
     .select({ id: projects.id, name: projects.name })
     .from(projects)
-    .where(and(eq(projects.userId, userId), triageOnSql))
+    .where(and(eq(projects.userId, userId), triageOnSql, notArchivedSql))
     .orderBy(desc(projects.updatedAt))
     .limit(limit)
 }

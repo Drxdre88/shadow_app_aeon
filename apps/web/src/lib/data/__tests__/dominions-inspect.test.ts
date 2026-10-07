@@ -43,4 +43,12 @@ describe('inspectDominion — briefer memory leg', () => {
     expect(memoryLeg.sql).toMatch(/"stream_class" not in/)
     expect(memoryLeg.params).toEqual(expect.arrayContaining(['archetype', 'cortex', 'trace', 'delta', 'snapshot']))
   })
+
+  it('leaves archived boards out of both the board list and the card leg', async () => {
+    selectQueue.push([{ id: 'dom-1', name: 'AEON' }])
+    await inspectDominion('dom-1', 'user-1')
+    const notArchived = `("projects"."settings" ->> 'archived') is distinct from 'true'`
+    expect(dialect.sqlToQuery(wheres[2]).sql).toContain(notArchived)
+    expect(dialect.sqlToQuery(wheres[5]).sql).toContain(notArchived)
+  })
 })

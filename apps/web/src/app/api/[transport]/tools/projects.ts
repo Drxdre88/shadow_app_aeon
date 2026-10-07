@@ -11,7 +11,7 @@ import {
   toggleProjectFavorite,
   setProjectKairosFeed,
 } from '@/lib/data/projects'
-import { createProjectSchema, updateProjectSchema, setFavoriteSchema, setProjectKairosFeedSchema } from '@/lib/data/validators'
+import { createProjectSchema, updateProjectSchema, setFavoriteSchema, setProjectKairosFeedSchema, listProjectsSchema } from '@/lib/data/validators'
 import { emitActivity } from '@/lib/data/activity'
 import type { RegisterFn } from './types'
 import { getUserId, ok, notFound, fail } from './types'
@@ -23,10 +23,12 @@ async function requireOwnership(projectId: string, uid: string) {
 export const registerProjectTools: RegisterFn = (server) => {
   server.tool(
     'list_projects',
-    'List all projects for the authenticated user',
-    {},
+    'List all projects for the authenticated user. Archived boards are left out unless includeArchived is true.',
+    {
+      includeArchived: listProjectsSchema.shape.includeArchived.describe('Also list archived boards (default false)'),
+    },
     { title: 'List Projects', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-    async (_args, extra) => ok(await findProjects(getUserId(extra)))
+    async ({ includeArchived }, extra) => ok(await findProjects(getUserId(extra), 100, 0, { includeArchived }))
   )
 
   server.tool(

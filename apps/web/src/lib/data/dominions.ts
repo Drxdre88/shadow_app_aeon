@@ -10,6 +10,7 @@ import {
 } from '@/lib/db/schema'
 import { eq, and, asc, desc, gte, isNull, ne, notInArray, sql } from 'drizzle-orm'
 import { META_STREAM_CLASSES } from '@/lib/kairos/streamClass'
+import { notArchivedSql } from './board-visibility'
 import type {
   CreateDominionInput,
   UpdateDominionInput,
@@ -342,7 +343,7 @@ export async function inspectDominion(
         name: projects.name,
       })
       .from(projects)
-      .where(and(eq(projects.dominionId, id), eq(projects.userId, userId)))
+      .where(and(eq(projects.dominionId, id), eq(projects.userId, userId), notArchivedSql))
       .orderBy(asc(projects.name)),
     db
       .select({ repoSlug: dominionRepos.repoSlug })
@@ -394,6 +395,7 @@ export async function inspectDominion(
       .where(and(
         eq(projects.dominionId, id),
         eq(projects.userId, userId),
+        notArchivedSql,
         isNull(boardTasks.archivedAt),
         isNull(boardTasks.completedAt),
       ))

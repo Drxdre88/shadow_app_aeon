@@ -26,6 +26,8 @@ import { BatchVaultModal } from '@/components/board/BatchVaultModal'
 import { ArchiveBrowser } from '@/components/board/ArchiveBrowser'
 import { ShareModal } from '@/components/board/ShareModal'
 import { ProjectSidebar } from '@/components/sidebar/ProjectSidebar'
+import { ArchivedBoardBanner } from '@/components/project/archive/ArchivedBoardBanner'
+import { isProjectArchived } from '@/lib/projects/archive'
 import { useSidebarStore } from '@/stores/sidebarStore'
 import type { Project } from '@/lib/db/schema'
 import { useProjectData } from './useProjectData'
@@ -247,6 +249,7 @@ export default function ProjectContent({ project, user, initialBoardData, initia
       </header>
 
       <main className="px-0 sm:px-6 py-2">
+        <ArchivedBoardBanner projectId={project.id} initiallyArchived={isProjectArchived(project.settings)} />
 
         {loadError ? (
           <div className="flex flex-col items-center justify-center py-20 rounded-2xl backdrop-blur-xl bg-white/[0.03] border border-white/[0.06]">

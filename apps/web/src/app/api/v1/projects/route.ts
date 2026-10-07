@@ -12,8 +12,9 @@ export const GET = withRateLimit(
     const url = new URL(request.url)
     const limit = Math.min(parseInt(url.searchParams.get('limit') || '100') || 100, 500)
     const offset = parseInt(url.searchParams.get('offset') || '0') || 0
+    const includeArchived = url.searchParams.get('archived') === 'true'
 
-    const data = await findProjects(result.id, limit, offset)
+    const data = await findProjects(result.id, limit, offset, { includeArchived })
     return jsonData(data)
   }),
   API_READ_LIMIT

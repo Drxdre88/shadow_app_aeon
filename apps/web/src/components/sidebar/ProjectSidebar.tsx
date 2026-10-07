@@ -15,6 +15,7 @@ import { KairosSidebarSection } from '@/components/sidebar/KairosSidebarSection'
 import { SidebarCreateActions } from '@/components/sidebar/SidebarCreateActions'
 import { SidebarFavorites } from '@/components/sidebar/SidebarFavorites'
 import { getSiblingProjects } from '@/lib/actions/projects'
+import { ArchivedBoardsButton } from '@/components/project/archive/ArchivedBoardsButton'
 import {
   LayoutGrid,
   Calendar,
@@ -278,6 +279,7 @@ function BottomSection({
         <StatsButton />
         <SettingsButton />
         <UnhideButton />
+        <ArchivedBoardsButton />
       </div>
       <div className="mx-2 h-px bg-white/[0.06]" />
       <div
