@@ -26,6 +26,10 @@ const LABEL_RE = /(?:(?<=^|[.;!?,])[ \t]*\bQ(\d{1,5})[ \t]*[:)\-–—]|(?<=^|[.
 const SKIP_RE = /(?<=^|[.;!?,])[ \t]*\b(?:skip|drop)[ \t]+(Q\d{1,5}(?:(?:[ \t]*,[ \t]*|[ \t]+and[ \t]+|[ \t]*&[ \t]*|[ \t]+)Q\d{1,5})*)\b/gim
 const SEQ_RE = /Q(\d{1,5})/gi
 const QUOTED_SEQ_RE = /\bQ(\d{1,5})\b/gi
+// Other numbered surfaces (decisions, predictions, promises, agenda, owner model).
+const OTHER_LABEL_RE = /\b[DRPAC]\d{1,5}\b/i
+// Conservative superset of the D/R/P/A/C command parsers, checked per line.
+const OWNER_COMMAND_LINE_RE = /^[ \t]*(?:(?:void|drop|cancel)[ \t]+)?[DRPAC]\d{1,5}\b/im
 
 /** Cheap pre-check (no DB): does the message START with a punctuated Q label or a skip command? */
 export function mightContainNumberedAnswers(body: string): boolean {
@@ -84,13 +88,20 @@ export function parseNumberedAnswers(body: string, openSeqs: Iterable<number>): 
   return { answers, skips: [...skips] }
 }
 
-/** A Telegram reply to a message naming exactly one open Q<n>: the whole body answers it. */
+/**
+ * A Telegram reply to a single-question message (one Q label, open, and no
+ * D/R/P/A/C labels — never a digest like the 06:00 message): the whole body
+ * answers it, unless the body reads as an owner command for another router.
+ */
 export function parseReplyToAsk(body: string, replyText: string | undefined, openSeqs: Iterable<number>): NumberedAnswerParse {
-  const open = new Set(openSeqs)
-  const quoted = new Set([...(replyText ?? '').matchAll(QUOTED_SEQ_RE)].map((m) => Number(m[1])).filter((seq) => open.has(seq)))
+  const none = { answers: [], skips: [] }
+  const quotedText = replyText ?? ''
+  const quoted = new Set([...quotedText.matchAll(QUOTED_SEQ_RE)].map((m) => Number(m[1])))
+  const [seq] = [...quoted]
   const text = body.trim()
-  if (quoted.size !== 1 || !text || isClarifyingQuestion(text)) return { answers: [], skips: [] }
-  return { answers: [{ seq: [...quoted][0]!, text }], skips: [] }
+  if (quoted.size !== 1 || !new Set(openSeqs).has(seq!) || OTHER_LABEL_RE.test(quotedText)) return none
+  if (!text || isClarifyingQuestion(text) || OWNER_COMMAND_LINE_RE.test(text)) return none
+  return { answers: [{ seq: seq!, text }], skips: [] }
 }
 
 export function hasNumberedMatches(parse: NumberedAnswerParse): boolean {

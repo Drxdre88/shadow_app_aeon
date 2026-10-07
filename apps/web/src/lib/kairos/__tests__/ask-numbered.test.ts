@@ -175,6 +175,21 @@ describe('parseReplyToAsk', () => {
   it('a short question back is chat, not an answer', () => {
     expect(parseReplyToAsk('what do you mean?', 'Q12 · x', [12])).toEqual({ answers: [], skips: [] })
   })
+
+  it.each([
+    ['a prediction', 'Q12 · x\nR14 · ships Friday'],
+    ['a decision', 'Q12 · x\nD3 · chose Neon'],
+    ['a promise, agenda item or owner-model item', 'Q12 · x · P2 · A4 · C1'],
+  ])('a digest also listing %s is never a single-question message', (_label, quoted) => {
+    expect(parseReplyToAsk('fine by me', quoted, [12])).toEqual({ answers: [], skips: [] })
+  })
+
+  it.each(['R14 right', 'D3 wrong', 'void R2', 'drop P1', 'P1 by 12/10', 'cancel A3', 'C2: his words', 'ok\nR14 right'])(
+    'a reply body %j that reads as an owner command is left for its router',
+    (body) => {
+      expect(parseReplyToAsk(body, 'Q12 · x', [12])).toEqual({ answers: [], skips: [] })
+    },
+  )
 })
 
 describe('formatNumberedAck', () => {

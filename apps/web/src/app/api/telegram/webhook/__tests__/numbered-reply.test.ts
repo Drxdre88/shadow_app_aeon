@@ -42,6 +42,7 @@ vi.mock('@/lib/kairos/chat-turn-reply', () => ({ appendAssistantReplyOnce: vi.fn
 vi.mock('@/lib/kairos/proposal-telegram', () => ({ handleProposalCallback: vi.fn(), routeVetoReason: vi.fn(async () => false) }))
 vi.mock('@/lib/kairos/promises/telegram-commands', () => ({ routePromiseCommands: vi.fn(async () => false) }))
 vi.mock('@/lib/kairos/predictions/telegram-commands', () => ({ routePredictionCommands: vi.fn(async () => false) }))
+vi.mock('@/lib/kairos/decisions/telegram-commands', () => ({ routeDecisionCommands: vi.fn(async () => false) }))
 vi.mock('@/lib/kairos/agenda/flag', () => ({ agendaEnabled: vi.fn(() => false) }))
 vi.mock('@/lib/kairos/initiative', () => ({ initiativeEnabled: vi.fn(() => false) }))
 vi.mock('@/lib/kairos/moment/telegram-routes', () => ({
@@ -54,6 +55,8 @@ import { getOpenKairosAskById, listOpenKairosAsks, markKairosAskAnswered, type K
 import { findOpenChatThreadByTitle } from '@/lib/data/kairos-chat'
 import { captureReflection } from '@/lib/data/memories'
 import { sendChatMessage } from '@/lib/kairos/chat-turn'
+import { routeDecisionCommands } from '@/lib/kairos/decisions/telegram-commands'
+import { routePredictionCommands } from '@/lib/kairos/predictions/telegram-commands'
 import { POST } from '../route'
 
 const OPERATOR_USER = 'operator-user-1'
@@ -112,6 +115,8 @@ beforeEach(() => {
   vi.mocked(captureReflection).mockImplementation(async () => ({ ok: true, memory: { id: `reflection-${Math.random()}` } }) as never)
   vi.mocked(markKairosAskAnswered).mockResolvedValue(true as never)
   vi.mocked(findOpenChatThreadByTitle).mockResolvedValue('t')
+  vi.mocked(routePredictionCommands).mockResolvedValue(false)
+  vi.mocked(routeDecisionCommands).mockResolvedValue(false)
   vi.mocked(sendChatMessage).mockResolvedValue({
     ok: true, threadId: 't', userSeq: 1, assistantSeq: 2, assistantContent: 'chat reply', model: null,
   })
@@ -176,5 +181,49 @@ describe('telegram webhook — answering open questions', () => {
     expect(markKairosAskAnswered).not.toHaveBeenCalled()
     expect(captureReflection).not.toHaveBeenCalled()
     expect(sendChatMessage).toHaveBeenCalledOnce()
+  })
+})
+
+describe('telegram webhook — replies to the 06:00 digest are not answers', () => {
+  const DIGEST = 'Morning.\nQ12 · 1d · What was the AI Triad Chat research for?\nR14 · ships by Friday\nD3 · chose Neon'
+  const handled = (ack: string) => async (_u: string, _b: string, reply: (t: string) => Promise<unknown>) => {
+    await reply(ack)
+    return true
+  }
+
+  it('"R14 right" goes to the prediction router; Q12 stays open', async () => {
+    vi.mocked(routePredictionCommands).mockImplementation(handled('✓ R14 right'))
+
+    await send('R14 right', DIGEST)
+
+    expect(routePredictionCommands).toHaveBeenCalledWith(OPERATOR_USER, 'R14 right', expect.any(Function))
+    expect(markKairosAskAnswered).not.toHaveBeenCalled()
+    expect(sentTexts()).toEqual(['✓ R14 right'])
+  })
+
+  it('"D3 wrong" goes to the decision router; Q12 stays open', async () => {
+    vi.mocked(routeDecisionCommands).mockImplementation(handled('✓ D3 wrong'))
+
+    await send('D3 wrong', DIGEST)
+
+    expect(routeDecisionCommands).toHaveBeenCalledWith(OPERATOR_USER, 'D3 wrong', expect.any(Function))
+    expect(markKairosAskAnswered).not.toHaveBeenCalled()
+    expect(sentTexts()).toEqual(['✓ D3 wrong'])
+  })
+
+  it('plain chat replying to the digest goes to chat; Q12 stays open', async () => {
+    await send('nice summary today', DIGEST)
+
+    expect(markKairosAskAnswered).not.toHaveBeenCalled()
+    expect(sendChatMessage).toHaveBeenCalledWith(OPERATOR_USER, 't', 'nice summary today', { surface: 'telegram' })
+  })
+
+  it('a command replying to a single-question message is still not an answer', async () => {
+    vi.mocked(routePredictionCommands).mockImplementation(handled('✓ R14 right'))
+
+    await send('R14 right', 'Q12 · 1d · What was the AI Triad Chat research for?')
+
+    expect(markKairosAskAnswered).not.toHaveBeenCalled()
+    expect(sentTexts()).toEqual(['✓ R14 right'])
   })
 })
