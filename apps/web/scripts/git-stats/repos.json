@@ -1,0 +1,107 @@
+{
+  "root": "C:/Users/anselikhov/data_science/dev_26",
+  "repos": [
+    "arcane_configs_lab",
+    "arcane_dag_lab",
+    "arcane_data_lab",
+    "arcane_dev_lab",
+    "arcane_llm_lab",
+    "arcane_ml_lab",
+    "evo_research_lab",
+    "meteo_lab",
+    "shadow_app_aeon",
+    "shadow_app_antares",
+    "shadow_app_arq",
+    "shadow_app_chimaera",
+    "shadow_app_hydra",
+    "shadow_app_rift",
+    "shadow_app_shadowlab",
+    "shadow_app_swarm",
+    "shadow_app_triad",
+    "shadow_app_visor",
+    "shadow_app_vulcan",
+    "shadow_app_wraith",
+    "shadow_dag_lab",
+    "shadow_data_lab",
+    "shadow_dev_lab",
+    "shadow_lab",
+    "shadow_ml_lab",
+    "shadow_research_lab",
+    "stp_app_dmc",
+    "stp_app_ermac",
+    "stp_app_poseidon",
+    "stp_app_relic",
+    "kal_el_dash"
+  ],
+  "identities": {
+    "owner_agent": [
+      "198982749+Copilot@users.noreply.github.com",
+      "223556219+Copilot@users.noreply.github.com",
+      "noreply@anthropic.com"
+    ],
+    "owner_human": [
+      "andrey.selikhov@sefe.eu",
+      "selikhov_andrey@hotmail.co.uk",
+      "82201498+Drxdre88@users.noreply.github.com",
+      "Andrey Selikhov",
+      "Cpt. Short",
+      "Captain Short",
+      "anselikhov"
+    ],
+    "others": [],
+    "bots": ["*[bot]", "*[bot]@*", "Azure Pipelines", "Project Collection Build Service*", "GitHub Action*"]
+  },
+  "exclude_paths": [
+    "**/android/app/src/main/assets/public/**",
+    "**/ios/App/App/public/**",
+    "**/src-tauri/gen/**",
+    "**/__generated__/**"
+  ],
+  "repo_overrides": {
+    "shadow_app_swarm": {
+      "exclude_paths": ["strat_research/**"]
+    },
+    "shadow_app_triad": {
+      "noise_commits": [{ "subject": "^chore: import Triad 0\\.8\\.0 snapshot", "reason": "snapshot import" }]
+    },
+    "stp_app_ermac": {
+      "exclude_paths": ["idcc-forecast/**"],
+      "noise_commits": [
+        { "subject": "vendor bsad-forecast", "reason": "vendored BSAD engine" },
+        { "subject": "vendor the BSAD forecast engine", "reason": "vendored BSAD engine" },
+        { "sha": "1f1d087", "reason": "squash of vendored BSAD engine (PR 61407)" },
+        { "sha": "e4a9e53e", "reason": "vendored idcc-forecast" }
+      ]
+    },
+    "stp_app_poseidon": {
+      "noise_commits": [{ "sha": "80f5427f", "reason": "theme system ported" }]
+    },
+    "shadow_app_hydra": {
+      "noise_commits": [{ "sha": "16c0921", "reason": "initial import push to main" }]
+    },
+    "shadow_data_lab": {
+      "noise_commits": [
+        { "subject": "^Merged PR 52753:", "reason": "1.2M-line data import (PR 52753)" },
+        { "subject": "^Merged PR 52887:", "reason": "mass deletion of the PR 52753 data import (-1.2M)" }
+      ]
+    },
+    "shadow_dev_lab": {
+      "exclude_paths": ["**/Bot Harold 1.5.py"]
+    },
+    "shadow_research_lab": {
+      "exclude_paths": ["knowledge/**", "archive/**", "src/shadow_research/projects/*/docs/runs/**"]
+    },
+    "arcane_ml_lab": {
+      "exclude_paths": ["shadow_ai/**", "external_specs/**"]
+    },
+    "arcane_dev_lab": {
+      "exclude_paths": ["shadow_ai/**"]
+    },
+    "arcane_data_lab": {
+      "exclude_paths": ["shadow_ai/**"]
+    },
+    "shadow_app_aeon": {
+      "exclude_paths": ["research/**"]
+    }
+  }
+}
