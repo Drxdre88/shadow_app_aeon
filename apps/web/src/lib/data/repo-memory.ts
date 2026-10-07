@@ -6,6 +6,7 @@ import { normalizeRepoSlug } from '@/lib/kairos/living/repo-slug'
 import { notHeldSensitive } from '@/lib/kairos/sensitive/held'
 import { repoPlaybookMetaSchema, type RepoPlaybookMeta } from '@/lib/kairos/repo-memory/types'
 import { parseSessionFacts, type SessionFacts } from '@/lib/kairos/repo-memory/facts'
+import { REPO_GIT_DIGEST_KIND, parseRepoGitDigest, type RepoGitDigest } from '@/lib/kairos/repo-memory/git-digest'
 
 // Repo memory: agent session summaries read per repo, and the one lessons
 // playbook per repo the nightly repo_lessons job keeps. A playbook is type
@@ -142,6 +143,26 @@ export async function listRepoPlaybooks(userId: string, slugs: readonly string[]
 export async function findRepoPlaybook(userId: string, slug: string): Promise<RepoPlaybookRow | null> {
   const [row] = await listRepoPlaybooks(userId, [slug])
   return row ?? null
+}
+
+// Git digests (posted nightly from the owner's PC) created in [since, until),
+// newest first; rows that do not parse as a digest are skipped.
+export async function listRepoGitDigestsBetween(userId: string, since: Date, until: Date, limit = 100): Promise<RepoGitDigest[]> {
+  const rows = await db
+    .select({ id: memories.id, summary: memories.summary, sourceMetadata: memories.sourceMetadata })
+    .from(memories)
+    .where(and(
+      eq(memories.userId, userId),
+      eq(memories.type, 'observation'),
+      isNull(memories.archivedAt),
+      notHeldSensitive,
+      sql`${memories.sourceMetadata}->>'kind' = ${REPO_GIT_DIGEST_KIND}`,
+      gte(memories.createdAt, since),
+      lt(memories.createdAt, until),
+    ))
+    .orderBy(desc(memories.createdAt))
+    .limit(limit)
+  return rows.flatMap((r) => parseRepoGitDigest(r) ?? [])
 }
 
 export interface RepoPlaybookValues {

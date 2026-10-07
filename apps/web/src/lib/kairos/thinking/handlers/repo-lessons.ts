@@ -7,7 +7,7 @@ import type {
   ThinkingJobSpec,
 } from '@/lib/kairos/engine/types'
 import { repoMemoryMode } from '@/lib/kairos/repo-memory/flag'
-import { groupSessionsByRepo } from '@/lib/kairos/repo-memory/inputs'
+import { groupRepoActivity } from '@/lib/kairos/repo-memory/inputs'
 import {
   REPO_LESSONS_MAX_OUTPUT_TOKENS,
   REPO_LESSONS_SYSTEM_PROMPT,
@@ -25,7 +25,8 @@ import { errorReason } from './_errors'
 // Repo lessons (Workforce, deep tier, brain routine). plan: only with
 // KAIROS_REPO_MEMORY on (off returns [] before any read), once per UTC day in
 // the nightly window (key repo_lessons:<YYYY-MM-DD>), skipped when no repo had
-// an agent session in the last 24 hours. apply: one playbook memory per repo
+// an agent session or a git digest in the last 24 hours (git-only repos are
+// candidates too; ranking in groupRepoActivity). apply: one playbook memory per repo
 // (repo_playbook:<slug>); lessons whose ids do not ground under that repo are
 // dropped. Never writes to a repo or a board. No fallback — the lessons note
 // waits for the next night. lib/data is imported lazily.
@@ -51,12 +52,18 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
   if (await hasJobWithKeyLike(userId, REPO_LESSONS_KIND, externalKey)) return []
 
   const data = await import('@/lib/data/repo-memory')
-  const groups = groupSessionsByRepo(await data.listSessionSummariesBetween(userId, new Date(now.getTime() - DAY_MS), now))
+  const since = new Date(now.getTime() - DAY_MS)
+  const [sessions, digests] = await Promise.all([
+    data.listSessionSummariesBetween(userId, since, now),
+    data.listRepoGitDigestsBetween(userId, since, now),
+  ])
+  const groups = groupRepoActivity(sessions, digests)
   if (groups.length === 0) return []
   const playbooks = await data.listRepoPlaybooks(userId, groups.map((g) => g.slug))
   const inputs: RepoLessonsRepoInput[] = groups.map((g) => ({
     slug: g.slug,
     sessions: g.sessions,
+    digests: g.digests,
     playbook: playbooks.find((p) => p.slug === g.slug)?.playbook ?? null,
   }))
   const repos = inputs.map((r) => ({ slug: r.slug, ...citableIdsFor(r) }))
@@ -68,7 +75,7 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
     input: {
       system: REPO_LESSONS_SYSTEM_PROMPT,
       prompt: buildRepoLessonsPrompt(day, inputs),
-      validMemoryIds: [...new Set(repos.flatMap((r) => [...r.sessionIds, ...r.priorCitationIds]))],
+      validMemoryIds: [...new Set(repos.flatMap((r) => [...r.sessionIds, ...r.digestIds, ...r.priorCitationIds]))],
       maxOutputTokens: REPO_LESSONS_MAX_OUTPUT_TOKENS,
       context: { day, repos } satisfies RepoLessonsContext,
     },

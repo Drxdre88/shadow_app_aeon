@@ -70,7 +70,7 @@ describe('repo lessons inputs', () => {
       v: 1 as const, repo: 'r', day: '2026-10-05', citations: [], sessionCount: 0, jobId: 'j', answeredBy: 'routine',
       lessons: [{ kind: 'trap' as const, text: 'x', sourceIds: ['s1', 'old'] }],
     }
-    expect(citableIdsFor({ slug: 'r', sessions: [row('s1', 'r')], playbook })).toEqual({ sessionIds: ['s1'], priorCitationIds: ['old'] })
+    expect(citableIdsFor({ slug: 'r', sessions: [row('s1', 'r')], playbook })).toEqual({ sessionIds: ['s1'], priorCitationIds: ['old'], digestIds: [] })
   })
 
   it('accepts a repo answered by path and merges duplicate repo entries', () => {
