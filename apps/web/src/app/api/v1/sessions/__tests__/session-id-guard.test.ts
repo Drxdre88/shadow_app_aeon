@@ -7,9 +7,10 @@ import { NextRequest } from 'next/server'
 // not, so they carried the same defect the projects route was caught with in
 // production acceptance (11 September, check 4).
 
-const { findAgentSessionById, updateAgentSessionStatus } = vi.hoisted(() => ({
+const { findAgentSessionById, updateAgentSessionStatus, killSessionByOwner } = vi.hoisted(() => ({
   findAgentSessionById: vi.fn(),
   updateAgentSessionStatus: vi.fn(),
+  killSessionByOwner: vi.fn(),
 }))
 
 vi.mock('@/lib/api/rateLimit', () => ({
@@ -37,6 +38,7 @@ vi.mock('@/lib/api/auth', async () => {
 })
 
 vi.mock('@/lib/data/sessions', () => ({ findAgentSessionById, updateAgentSessionStatus }))
+vi.mock('@/lib/data/session-kill', () => ({ killSessionByOwner }))
 
 import { GET, PATCH } from '../[id]/route'
 import { POST as KILL } from '../[id]/kill/route'
@@ -80,7 +82,7 @@ describe('session routes reject a malformed id before any query', () => {
     const { status } = await call(KILL, 'not-a-uuid')
 
     expect(status).toBe(404)
-    expect(updateAgentSessionStatus).not.toHaveBeenCalled()
+    expect(killSessionByOwner).not.toHaveBeenCalled()
   })
 
   it('still serves a well-formed id', async () => {

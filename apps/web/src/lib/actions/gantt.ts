@@ -71,12 +71,14 @@ export async function updateGanttTask(
 
   const parsed = updateGanttTaskSchema.parse(data)
 
+  // The card is re-dated before the bar write so the board broadcast that
+  // write sends already carries the card's new version.
+  const boardTask = parsed.startDate && parsed.endDate
+    ? await syncGanttDatesToBoard(taskId, projectId, new Date(parsed.startDate), new Date(parsed.endDate)).catch(() => null)
+    : null
   const task = await _updateGanttTask(taskId, projectId, parsed)
-  if (parsed.startDate && parsed.endDate) {
-    syncGanttDatesToBoard(taskId, new Date(parsed.startDate), new Date(parsed.endDate)).catch(() => {})
-  }
   revalidatePath(`/project/${projectId}`)
-  return task
+  return task ? { ...task, boardTask } : null
 }
 
 export async function deleteGanttTask(taskId: string, projectId: string) {

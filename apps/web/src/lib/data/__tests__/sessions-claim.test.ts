@@ -310,6 +310,8 @@ describe('recordSessionResult', () => {
   it.each([
     ['completed', 'Landing'],
     ['needs_input', 'Tower'],
+    ['completed', 'Landing Zone'],
+    ['needs_input', 'tower control'],
   ] as const)('routes %s missions on boards enabled through the UI to %s', async (status, column) => {
     selectQueue.push([{ id: SESSION_ID, status: 'running', taskId: TASK_ID }])
     selectQueue.push([{ id: TASK_ID, projectId: PROJECT_ID, metadata: {} }])

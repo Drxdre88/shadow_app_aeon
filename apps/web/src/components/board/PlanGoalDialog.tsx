@@ -1,21 +1,33 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { requestCardTreeAction } from '@/lib/actions/card-tree'
+import { getCardTreeAvailabilityAction, requestCardTreeAction } from '@/lib/actions/card-tree'
 import { NeonButton } from '@/components/ui/NeonButton'
 
 // "Plan a goal with Vorath": the owner types a goal; Vorath drafts a small
 // tree of cards later and it waits in the Vorath inbox for Approve or Veto.
-// Nothing is added to the board from here.
+// Nothing is added to the board from here. The entry stays hidden unless the
+// user's brain routine is connected — otherwise nothing would ever draft it.
 
 const GOAL_MAX = 1000
 
 export function PlanGoalDialog({ projectId }: { projectId: string }) {
   const [isOpen, setIsOpen] = useState(false)
+  const [available, setAvailable] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    getCardTreeAvailabilityAction()
+      .then((res) => { if (!cancelled) setAvailable(res.available) })
+      .catch(() => { if (!cancelled) setAvailable(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  if (!available) return null
   return (
     <>
       <button

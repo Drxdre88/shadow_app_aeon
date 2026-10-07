@@ -29,6 +29,29 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - \`DOCS\` — \`ARCHITECTURE.md\`, \`VISION.md\`, \`CLAUDE.md\`
 - \`UI\` — sidebar, settings, modals, themes (151 presets), effects
 
+## [0.49.0] — 2026-10-07
+
+> Areas touched: \`KAIROS\` \`BOARD\` \`MCP\` \`API\` \`UI\`
+> Theme: your judgement — a morning cockpit, a decision journal, likely finish dates on cards, and a weekly tidy-up.
+
+### Added — Morning cockpit · \`KAIROS\` \`UI\` \`MCP\` \`API\`
+- Vorath → Cockpit: one screen with what's due, open questions, promises, proposals waiting for you, stale cards, what agents ran overnight and which repos got new lessons. Every line links to where you act on it.
+
+### Added — Decision journal · \`KAIROS\` \`UI\` \`MCP\` \`API\`
+- Vorath → Decisions: log a big non-trading call with what you expect, how sure you are and when to check. Settle it in the app or with "D3 right" on Telegram; see how your calls land per type. Agents can log for you, but nothing counts until you confirm it.
+
+### Added — Likely finish dates on cards · \`BOARD\` \`MCP\` \`API\`
+- Cards with a due date or estimate show "Likely Fri 10 Oct" — amber when cutting it close, red when probably late. Hover for the reasoning.
+
+### Added — Weekly tidy-up (level 2) · \`KAIROS\` \`BOARD\`
+- Once a week Vorath suggests finish, park, merge or archive for up to 10 cards nobody touched in three weeks. Nothing changes until you approve; merge only points you to the board.
+
+### Fixed · \`KAIROS\` \`BOARD\`
+- Telegram answers like "Q11 my answer" (no colon) and replies to a question now close Vorath's questions.
+- No false "changed somewhere else" after "Move all cards" or timeline edits.
+- Finished missions now land in a "Landing Zone" column; missions you stop yourself show as "stopped by you" in payback.
+- Fewer failed nights: over-long summaries are shortened instead of failing, and long question titles no longer crash the nightly question.
+
 ## [0.48.0] — 2026-10-06
 
 > Areas touched: \`KAIROS\` \`BOARD\` \`MCP\` \`API\` \`UI\`

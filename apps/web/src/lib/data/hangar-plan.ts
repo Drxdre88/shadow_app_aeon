@@ -13,7 +13,8 @@ import { syncChecklistToGanttProgress } from './bridge'
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 // Hangar lifecycle columns a finished mission lands in. Failures stay put so a
-// human triages them where they were launched.
+// human triages them where they were launched. "Landing Zone" / "Tower Control"
+// count when no column has the exact name (matchLifecycleColumn).
 const RESULT_COLUMN_NAMES: Record<HangarResultEnvelope['status'], string | null> = {
   completed: 'Landing',
   needs_input: 'Tower',
@@ -34,8 +35,22 @@ export async function resolveResultColumn(
   if (settings?.boardMode !== 'hangar' && !enabled) return null
 
   const columns = await findColumns(projectId)
-  const match = columns.find((c) => c.name.trim().toLowerCase() === target.toLowerCase())
-  return match?.id ?? null
+  return matchLifecycleColumn(columns, target)?.id ?? null
+}
+
+/** Exact name first (case-insensitive), else the first column by order named "<target> …" (e.g. "Landing Zone"). */
+export function matchLifecycleColumn<T extends { name: string; orderIndex?: number | null }>(
+  columns: readonly T[],
+  target: string,
+): T | null {
+  const want = target.trim().toLowerCase()
+  const norm = (name: string) => name.trim().toLowerCase()
+  const exact = columns.find((c) => norm(c.name) === want)
+  if (exact) return exact
+  const byOrder = columns
+    .map((column, index) => ({ column, index }))
+    .sort((a, b) => (a.column.orderIndex ?? a.index) - (b.column.orderIndex ?? b.index) || a.index - b.index)
+  return byOrder.find(({ column }) => norm(column.name).startsWith(`${want} `))?.column ?? null
 }
 
 const MAX_PLAN_STEPS = 30

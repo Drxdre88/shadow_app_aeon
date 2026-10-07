@@ -200,6 +200,8 @@ export type ThinkingJobKind =
   | 'repo_lessons'
   | 'mission_check'
   | 'card_tree'
+  // Workforce (Phase 3): weekly card garden proposals for the owner's tap.
+  | 'card_garden'
 
 export type ThinkingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'expired' | 'fallback'
 

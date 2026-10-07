@@ -246,6 +246,18 @@ describe('ask_mine handler — apply', () => {
     expect(createKairosAskMemory).not.toHaveBeenCalled()
   })
 
+  it('logs a one-line raw sample capped at 500 chars when the answer fails to parse', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const raw = `Sorry,\n\nno JSON today. ${'x'.repeat(900)}`
+    const res = await askMineHandler.apply(jobRow(), raw, 'routine')
+    expect(res).toMatchObject({ ok: false, reason: expect.stringMatching(/^parse_failed: /) })
+    const call = warn.mock.calls.find((c) => c[0] === '[kairos:ask-mine] parse_failed:')
+    const sample = call?.[3] as string
+    expect(sample.startsWith('Sorry, no JSON today. x')).toBe(true)
+    expect(sample.length).toBe(500)
+    warn.mockRestore()
+  })
+
   it('rejects a stale job and one whose ask was already mined today', async () => {
     const stale = jobRow({ input: { ...jobRow().input, context: { date: '2026-09-30', validDominionIds: [DOM], aetherMemoryId: null } } })
     expect(await askMineHandler.apply(stale, answer(), 'routine')).toMatchObject({ ok: false, reason: expect.stringMatching(/^stale_job/) })
@@ -272,6 +284,6 @@ describe('ask_mine handler — apply', () => {
   })
 
   it('fallback defers to the 04:30 cron', async () => {
-    expect(await askMineHandler.fallback(jobRow())).toEqual({ ok: false, reason: 'deferred to the 04:30 UTC ask-mine cron' })
+    expect(await askMineHandler.fallback(jobRow())).toEqual({ ok: false, reason: 'deferred to the 04:30 UTC ask-mine cron (only when paid backup is on)' })
   })
 })

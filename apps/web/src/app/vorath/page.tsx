@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import dynamic from 'next/dynamic'
-import { Search, EyeOff, Maximize2, Minimize2, ListChecks } from 'lucide-react'
+import Link from 'next/link'
+import { Search, EyeOff, Maximize2, Minimize2, ListChecks, Gauge, Scale } from 'lucide-react'
 import { useKairosData } from '@/components/kairos/useKairosData'
 import { TrackingRail } from '@/components/kairos/TrackingRail'
 import { MemorySidePanel } from '@/components/kairos/MemorySidePanel'
@@ -150,6 +151,22 @@ export default function KairosPage() {
             <SkyboxDropdown value={skybox} onChange={setSkybox} align="right" />
             <KnowsButton />
             <KairosInbox />
+            <Link
+              href="/vorath/cockpit"
+              title="Vorath cockpit"
+              className="flex items-center gap-1.5 px-2 py-1 rounded-md transition-all text-[10px] uppercase tracking-[0.2em] border bg-white/[0.02] text-white/40 hover:text-white/70 border-white/[0.06]"
+            >
+              <Gauge className="w-3 h-3" />
+              <span>Cockpit</span>
+            </Link>
+            <Link
+              href="/vorath/decisions"
+              title="Decision journal"
+              className="flex items-center gap-1.5 px-2 py-1 rounded-md transition-all text-[10px] uppercase tracking-[0.2em] border bg-white/[0.02] text-white/40 hover:text-white/70 border-white/[0.06]"
+            >
+              <Scale className="w-3 h-3" />
+              <span>Decisions</span>
+            </Link>
             <button
               onClick={() => setSetupOpen(true)}
               title="Vorath setup"

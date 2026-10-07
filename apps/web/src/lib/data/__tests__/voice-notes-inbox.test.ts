@@ -10,6 +10,7 @@ vi.mock('@/lib/data/ask', () => ({
 }))
 vi.mock('@/lib/data/voice-samples', () => ({ listPendingVoiceSamples: vi.fn(async () => []) }))
 vi.mock('@/lib/data/card-tree-proposals', () => ({ listPendingCardTrees: vi.fn(async () => []) }))
+vi.mock('@/lib/data/card-garden-proposals', () => ({ listPendingCardGardens: vi.fn(async () => []) }))
 vi.mock('@/lib/data/memories', () => ({ listMemories: vi.fn() }))
 
 import { listMemories } from '@/lib/data/memories'

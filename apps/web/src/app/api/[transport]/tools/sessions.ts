@@ -18,6 +18,7 @@ import {
   findLiveSessionForTask,
   LiveMissionExistsError,
 } from '@/lib/data/sessions'
+import { killSessionByOwner } from '@/lib/data/session-kill'
 import { dispatchSpawn } from '@/lib/kairos/spawn'
 import { resolveSessionAnchor } from '@/lib/data/hangar-access'
 import type { RegisterFn } from './types'
@@ -168,23 +169,7 @@ export const registerSessionTools: RegisterFn = (server) => {
       const uid = getUserId(extra)
       const session = await findAgentSessionById(sessionId, uid)
       if (!session) return notFound('Session')
-      const workerUrl = process.env.KAIROS_WORKER_URL
-      const workerSecret = process.env.KAIROS_WORKER_SECRET
-      if (workerUrl) {
-        try {
-          await fetch(`${workerUrl.replace(/\/$/, '')}/kill/${sessionId}`, {
-            method: 'POST',
-            headers: workerSecret ? { Authorization: `Bearer ${workerSecret}` } : {},
-            signal: AbortSignal.timeout(5_000),
-          })
-        } catch {
-          // best-effort
-        }
-      }
-      const row = await updateAgentSessionStatus(sessionId, uid, {
-        status: 'killed',
-        endedAt: new Date(),
-      })
+      const { row } = await killSessionByOwner(session, uid, 'mcp')
       return ok(row)
     }
   )

@@ -58,6 +58,13 @@ describe('KAIROS_LEVEL', () => {
     expect(dreamsMode()).toBe('off')
   })
 
+  it('card garden waits for level 2', () => {
+    process.env.KAIROS_LEVEL = '1'
+    expect(mindSwitch('KAIROS_CARD_GARDEN')).toBe('')
+    process.env.KAIROS_LEVEL = '2'
+    expect(mindSwitch('KAIROS_CARD_GARDEN')).toBe('1')
+  })
+
   it('level 3 turns on the extras', () => {
     process.env.KAIROS_LEVEL = '3'
     expect(dreamsMode()).toBe('on')

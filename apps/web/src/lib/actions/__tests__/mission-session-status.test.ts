@@ -4,6 +4,7 @@ vi.mock('@/lib/actions/helpers', () => ({ requireAuth: vi.fn(), requireMemberAcc
 vi.mock('@/lib/data/sessions', () => ({ findMissionSessionStatus: vi.fn() }))
 vi.mock('@/lib/kairos/spawn', () => ({ dispatchSpawn: vi.fn() }))
 vi.mock('@/lib/data/hangar-access', () => ({ resolveSessionAnchor: vi.fn() }))
+vi.mock('@/lib/data/session-kill', () => ({ killSessionByOwner: vi.fn() }))
 
 import { requireMemberAccess } from '@/lib/actions/helpers'
 import { findMissionSessionStatus } from '@/lib/data/sessions'

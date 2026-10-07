@@ -33,7 +33,7 @@ import {
   unpackVector,
   type DriftComparison,
 } from '@/lib/kairos/constitution/drift'
-import { DRIFT_PROBE_IDS, findDriftProbe } from '@/lib/kairos/constitution/probes'
+import { DRIFT_PROBE_IDS, DRIFT_PROBE_SET_VERSION, findDriftProbe } from '@/lib/kairos/constitution/probes'
 import {
   DRIFT_MAX_OUTPUT_TOKENS,
   DRIFT_PROBE_SYSTEM_PROMPT,
@@ -76,7 +76,8 @@ export const DRIFT_BELIEF_LIMIT = 20
 
 export const driftJobKey = (day: string) => `drift_probe:${day}`
 export const driftRunKey = (day: string) => `drift_run:${day}`
-export const driftBaselineKey = (constitutionId: string, model: string) => `drift_baseline:${constitutionId}:${model}`
+export const driftBaselineKey = (constitutionId: string, model: string) =>
+  `drift_baseline:${constitutionId}:${model}:probes-v${DRIFT_PROBE_SET_VERSION}`
 export const conscienceJobKey = (day: string) => `drift_probe:${day}:conscience`
 
 const contextSchema = z.object({

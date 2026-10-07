@@ -33,6 +33,7 @@ const LEVEL_2: SwitchValues = {
   KAIROS_STAGE: 'observe',
   KAIROS_OWNER_MODEL: 'observe',
   KAIROS_CHARACTER_CHECK: '1',
+  KAIROS_CARD_GARDEN: '1',
 }
 
 const LEVEL_3: SwitchValues = {

@@ -2,7 +2,9 @@ import { listOpenKairosAsks } from '@/lib/data/ask'
 import { listMemories } from '@/lib/data/memories'
 import { listPendingVoiceSamples } from '@/lib/data/voice-samples'
 import { listPendingCardTrees } from '@/lib/data/card-tree-proposals'
+import { listPendingCardGardens } from '@/lib/data/card-garden-proposals'
 import { CARD_TREE_KIND, readCardTree, type CardTree } from '@/lib/kairos/card-tree/types'
+import { CARD_GARDEN_KIND, readCardGarden, type CardGardenPick } from '@/lib/kairos/card-garden/types'
 import { GOAL_PROPOSAL_KIND, readGoalMeta } from '@/lib/kairos/goals/parse'
 import { groupVoiceNoteProposals, readVoiceNote, type VoiceNoteGroup, type VoiceNoteRef } from '@/lib/kairos/voice-note'
 
@@ -27,6 +29,7 @@ export type KairosInboxProposal = {
   idea?: KairosInboxIdea | null
   goal?: KairosInboxGoal | null
   cardTree?: KairosInboxCardTree | null
+  cardGarden?: KairosInboxCardGarden | null
   voiceNote?: VoiceNoteRef | null
 }
 type KairosInboxEntry =
@@ -79,14 +82,24 @@ function readInboxCardTree(metadata: Record<string, unknown>, now: Date): Kairos
   return { ...tree, expiresAt: metadata.expiresAt }
 }
 
+// Vorath's weekly card garden suggestion (one card) awaiting Approve / Veto.
+export type KairosInboxCardGarden = CardGardenPick & { expiresAt: string }
+
+function readInboxCardGarden(metadata: Record<string, unknown>, now: Date): KairosInboxCardGarden | null {
+  const pick = readCardGarden(metadata)
+  if (!pick || typeof metadata.expiresAt !== 'string' || !(Date.parse(metadata.expiresAt) > now.getTime())) return null
+  return { ...pick, expiresAt: metadata.expiresAt }
+}
+
 export async function getKairosInbox(userId: string, now: Date = new Date()): Promise<{ items: KairosInboxItem[] }> {
-  const [asks, inbound, voiceSamples, cardTrees] = await Promise.all([
+  const [asks, inbound, voiceSamples, cardTrees, cardGardens] = await Promise.all([
     listOpenKairosAsks(userId),
     listMemories(userId, { type: 'inbound', limit: INBOUND_LIMIT }),
     // Voice samples are filed as 'trace' (out of retrieval), which
     // listMemories hides, so they are read separately.
     listPendingVoiceSamples(userId, now).catch(() => []),
     listPendingCardTrees(userId, now).catch(() => []),
+    listPendingCardGardens(userId, now).catch(() => []),
   ])
 
   // Open questions first (oldest first, by Q number), then Kairos's messages
@@ -103,7 +116,7 @@ export async function getKairosInbox(userId: string, now: Date = new Date()): Pr
   let latestDaily: KairosInboxEntry | null = null
   const goals: KairosInboxEntry[] = []
   const ideas: KairosInboxEntry[] = []
-  for (const memory of [...inbound, ...voiceSamples, ...cardTrees]) {
+  for (const memory of [...inbound, ...voiceSamples, ...cardTrees, ...cardGardens]) {
     const metadata = (memory.sourceMetadata ?? {}) as Record<string, unknown>
     if (metadata.status !== 'pending') continue
     // Contradiction notices are retired (Kairos 0.17); old pending rows stay
@@ -128,6 +141,8 @@ export async function getKairosInbox(userId: string, now: Date = new Date()): Pr
       if (metadata.kind === GOAL_PROPOSAL_KIND && !goal) continue
       const cardTree = readInboxCardTree(metadata, now)
       if (metadata.kind === CARD_TREE_KIND && !cardTree) continue
+      const cardGarden = readInboxCardGarden(metadata, now)
+      if (metadata.kind === CARD_GARDEN_KIND && !cardGarden) continue
       const idea = readIdea(metadata)
       const voiceNote = readVoiceNote(metadata)
       const item: KairosInboxEntry = {
@@ -138,10 +153,11 @@ export async function getKairosInbox(userId: string, now: Date = new Date()): Pr
         createdAt: memory.createdAt,
         ...(goal ? { goal } : {}),
         ...(cardTree ? { cardTree } : {}),
+        ...(cardGarden ? { cardGarden } : {}),
         ...(idea ? { idea } : {}),
         ...(voiceNote ? { voiceNote } : {}),
       }
-      if (goal || cardTree) goals.push(item)
+      if (goal || cardTree || cardGarden) goals.push(item)
       else if (idea) ideas.push(item)
       else entries.push(item)
     }

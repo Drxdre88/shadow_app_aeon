@@ -77,7 +77,7 @@ export const PLANNED_THINKING_KINDS: readonly ThinkingJobKind[] = [
   // Board card sorting (per-board switch): planned by claims and the sweep.
   'card_triage',
   // Workforce: nightly repo lessons, mission verdicts, on-demand card trees.
-  'repo_lessons', 'mission_check', 'card_tree',
+  'repo_lessons', 'mission_check', 'card_tree', 'card_garden',
 ]
 
 const PLAN_ORDER: readonly ThinkingJobKind[] = [...PLANNED_THINKING_KINDS, 'chat']
@@ -107,7 +107,7 @@ const FALLBACK_OWNER: Partial<Record<ThinkingJobKind, string>> = {
   idea_judge: 'the hourly thinking-sweep API fallback',
   chat_distill: 'the 02:00 UTC chat-distill cron',
   archetype: 'the 02:30 UTC archetype-synthesis cron',
-  ask_mine: 'the 04:30 UTC ask-mine cron',
+  ask_mine: 'the 04:30 UTC ask-mine cron (only when paid backup is on)',
   constitution_seed: 'the Monday 05:58 UTC constitution-seed cron',
   goal_propose: 'nothing — a missed night proposes no goal',
   reflect: 'nothing — a missed hour is fine',
@@ -122,6 +122,7 @@ const FALLBACK_OWNER: Partial<Record<ThinkingJobKind, string>> = {
   repo_lessons: 'nothing — the lessons note waits for the next night',
   mission_check: 'nothing — the verdict is skipped',
   card_tree: 'nothing — no draft is made',
+  card_garden: 'nothing — a missed week is fine',
 }
 
 function fallbackOwner(kind: ThinkingJobKind): string {

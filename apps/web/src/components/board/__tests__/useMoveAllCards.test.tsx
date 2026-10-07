@@ -63,6 +63,41 @@ describe('useMoveAllCards', () => {
     expect(useBoardStore.getState().isDirty).toBe(false)
   })
 
+  it('records the version the server gave each moved card, so the next drag is not refused', async () => {
+    const OLD = '2026-10-01T00:00:00.000Z'
+    const NEW = '2026-10-07T06:00:00.000Z'
+    useBoardStore.setState({
+      tasks: useBoardStore.getState().tasks.map((t) => ({ ...t, updatedAt: OLD })),
+    })
+    vi.mocked(moveAllTasksToColumnAction).mockResolvedValue([
+      { id: 'a1', name: 'a1', orderIndex: 6, updatedAt: NEW },
+      { id: 'a2', name: 'a2', orderIndex: 7, updatedAt: NEW },
+      { id: 'a3', name: 'a3', orderIndex: 8, updatedAt: NEW },
+    ])
+    const { result } = renderHook(() => useMoveAllCards(PROJECT_ID))
+
+    await act(async () => { await result.current.moveAll('col-a', DOING) })
+
+    const versions = Object.fromEntries(useBoardStore.getState().tasks.map((t) => [t.id, t.updatedAt]))
+    expect(versions).toEqual({ a1: NEW, a2: NEW, a3: NEW, b1: OLD })
+    expect(useBoardStore.getState().isDirty).toBe(false)
+  })
+
+  it('Undo records the version the reorder returned', async () => {
+    const UNDONE = '2026-10-07T07:00:00.000Z'
+    vi.mocked(reorderBoardTasks).mockResolvedValueOnce({ updatedAt: UNDONE })
+    const { result } = renderHook(() => useMoveAllCards(PROJECT_ID))
+    await act(async () => { await result.current.moveAll('col-a', DOING) })
+
+    const onUndo = (vi.mocked(toast).mock.calls[0][1] as { onUndo: () => void }).onUndo
+    await act(async () => { onUndo() })
+
+    await waitFor(() => {
+      const versions = Object.fromEntries(useBoardStore.getState().tasks.map((t) => [t.id, t.updatedAt]))
+      expect(versions).toEqual({ a1: UNDONE, a2: UNDONE, a3: UNDONE, b1: undefined })
+    })
+  })
+
   it('does nothing for an empty source column', async () => {
     const { result } = renderHook(() => useMoveAllCards(PROJECT_ID))
     await act(async () => { await result.current.moveAll('col-empty', DOING) })

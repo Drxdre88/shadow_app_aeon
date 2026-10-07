@@ -2,7 +2,8 @@ import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
 import { withRateLimit, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
-import { findAgentSessionById, updateAgentSessionStatus } from '@/lib/data/sessions'
+import { findAgentSessionById } from '@/lib/data/sessions'
+import { killSessionByOwner } from '@/lib/data/session-kill'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -23,26 +24,7 @@ export const POST = withRateLimit(
     const session = await findAgentSessionById(id, auth.id)
     if (!session) return jsonError('Session not found', 404)
 
-    const workerUrl = process.env.KAIROS_WORKER_URL
-    const workerSecret = process.env.KAIROS_WORKER_SECRET
-    let workerAck = false
-    if (workerUrl) {
-      try {
-        const res = await fetch(`${workerUrl.replace(/\/$/, '')}/kill/${session.id}`, {
-          method: 'POST',
-          headers: workerSecret ? { Authorization: `Bearer ${workerSecret}` } : {},
-          signal: AbortSignal.timeout(5_000),
-        })
-        workerAck = res.ok
-      } catch {
-        workerAck = false
-      }
-    }
-
-    const row = await updateAgentSessionStatus(id, auth.id, {
-      status: 'killed',
-      endedAt: new Date(),
-    })
+    const { row, workerAck } = await killSessionByOwner(session, auth.id, 'rest')
     return jsonData({ session: row, workerAck })
   }),
   API_WRITE_LIMIT

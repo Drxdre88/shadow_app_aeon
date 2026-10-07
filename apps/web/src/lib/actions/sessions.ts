@@ -24,6 +24,7 @@ import {
   listSessionEvents as _listSessionEvents,
   getNextEventSeq,
 } from '@/lib/data/sessions'
+import { killSessionByOwner } from '@/lib/data/session-kill'
 import { dispatchSpawn } from '@/lib/kairos/spawn'
 import { resolveSessionAnchor } from '@/lib/data/hangar-access'
 
@@ -135,19 +136,6 @@ export async function killSessionAction(id: string) {
   const session = await findAgentSessionById(id, userId)
   if (!session) throw new Error('Session not found or unauthorized')
 
-  const workerUrl = process.env.KAIROS_WORKER_URL
-  const workerSecret = process.env.KAIROS_WORKER_SECRET
-  if (workerUrl && session.workerPid) {
-    try {
-      await fetch(`${workerUrl.replace(/\/$/, '')}/kill/${session.id}`, {
-        method: 'POST',
-        headers: workerSecret ? { Authorization: `Bearer ${workerSecret}` } : {},
-        signal: AbortSignal.timeout(5_000),
-      })
-    } catch (err) {
-      console.error('[sessions/kill] worker kill failed', err)
-    }
-  }
-
-  return updateAgentSessionStatus(id, userId, { status: 'killed', endedAt: new Date() })
+  const { row } = await killSessionByOwner(session, userId, 'app', { workerPidRequired: true })
+  return row
 }

@@ -5,6 +5,7 @@ import { boardColumns, boardTasks, checklistItems, labels, taskDependencies, tas
 import { cardTreeMode } from '@/lib/kairos/card-tree/flag'
 import { buildCardTreeJob, CARD_TREE_MAX_OUTPUT_TOKENS, CARD_TREE_SYSTEM_PROMPT } from '@/lib/kairos/card-tree/prompt'
 import { CARD_TREE_KIND, CARD_TREE_OPEN_CARDS_MAX, type CardTree } from '@/lib/kairos/card-tree/types'
+import { brainRoutineClaimedRecently } from './brain-availability'
 import { claimCardTreeInTx, stampCreatedTasksInTx } from './card-tree-proposals'
 import { canEditProject } from './hangar-access'
 import { findProjectBasic, touchProject } from './projects'
@@ -19,10 +20,22 @@ export const CARD_TREE_DEADLINE_MINUTES = 24 * 60
 export const CARD_TREE_QUEUED_MESSAGE = 'Vorath will draft it on his next run; you approve before anything is created.'
 export const CARD_TREE_FORBIDDEN = 'You need editor access to this board to plan a goal on it'
 export const CARD_TREE_OFF = 'Planning a goal with Vorath is switched off'
+export const CARD_TREE_NO_BRAIN = "Vorath can't draft plans for you yet — his thinking routine isn't connected for your account"
 
 export type RequestCardTreeResult =
   | { ok: true; jobId: string; status: string; alreadyRequested: boolean; message: string }
-  | { ok: false; reason: 'off' | 'forbidden' | 'busy'; message: string }
+  | { ok: false; reason: 'off' | 'forbidden' | 'busy' | 'no_brain'; message: string }
+
+export type CardTreeAvailability =
+  | { available: true }
+  | { available: false; reason: 'off' | 'no_brain'; message: string }
+
+/** Whether a goal can be planned at all: the switch is on and the caller's brain routine has claimed recently. */
+export async function cardTreeAvailability(userId: string, now: Date = new Date()): Promise<CardTreeAvailability> {
+  if (cardTreeMode() === 'off') return { available: false, reason: 'off', message: CARD_TREE_OFF }
+  if (!(await brainRoutineClaimedRecently(userId, now))) return { available: false, reason: 'no_brain', message: CARD_TREE_NO_BRAIN }
+  return { available: true }
+}
 
 export const CARD_TREE_OPEN_MAX = 3
 export const CARD_TREE_BUSY = `Vorath already has ${CARD_TREE_OPEN_MAX} goals waiting to be planned; try again once he has drafted them`
@@ -75,6 +88,8 @@ export async function requestCardTree(
 ): Promise<RequestCardTreeResult> {
   if (cardTreeMode() === 'off') return { ok: false, reason: 'off', message: CARD_TREE_OFF }
   if (!(await canEditProject(input.projectId, userId))) return { ok: false, reason: 'forbidden', message: CARD_TREE_FORBIDDEN }
+  // card_tree jobs are claimed only by the caller's own brain routine; without one the goal would never be drafted.
+  if (!(await brainRoutineClaimedRecently(userId, now))) return { ok: false, reason: 'no_brain', message: CARD_TREE_NO_BRAIN }
   const project = await findProjectBasic(input.projectId)
   if (!project) return { ok: false, reason: 'forbidden', message: CARD_TREE_FORBIDDEN }
 

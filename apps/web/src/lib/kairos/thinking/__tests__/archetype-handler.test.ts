@@ -195,6 +195,26 @@ describe('archetype apply', () => {
     expect(writeCronSuccessTrace).toHaveBeenCalledWith(USER, { cronName: 'archetype-synthesis', dominionId: DOM_A })
   })
 
+  it('clips an over-long title and shift at a word boundary instead of failing the night', async () => {
+    vi.mocked(archetypes.persistArchetypes).mockResolvedValue({ inserted: 1, archivedPrior: 0, archetypeMemoryIds: ['arch-1'] })
+    const longTitle = 'Beta auth hardening across magic links and connector discovery '.repeat(3)
+    const longShift = 'The overnight queue quietly took over most synthesis work from the old crons '.repeat(4)
+    const text = '```json\n' + JSON.stringify({ archetypes: [{ ...archetypeRow, title: longTitle }], shifts: [longShift] }) + '\n```'
+
+    const out = await archetypeHandler.apply(jobRow({ dominionId: DOM_A, date: DAY }), text, 'routine')
+
+    expect(out).toEqual({ ok: true, memoryIds: ['arch-1'] })
+    const saved = vi.mocked(archetypes.persistArchetypes).mock.calls[0][2]
+    const [title, shift] = [saved.archetypes[0].title, saved.shifts[0]]
+    expect(title.length).toBeLessThanOrEqual(80)
+    expect(shift.length).toBeLessThanOrEqual(200)
+    for (const [clip, full] of [[title, longTitle], [shift, longShift]]) {
+      expect(clip.endsWith('…')).toBe(true)
+      expect(full.startsWith(clip.slice(0, -1))).toBe(true)
+      expect(full[clip.length - 1]).toBe(' ')
+    }
+  })
+
   it('rejects an unparseable or schema-invalid answer without writing', async () => {
     const garbage = await archetypeHandler.apply(jobRow({ dominionId: DOM_A, date: DAY }), 'no json here', 'routine')
     const tooShort = await archetypeHandler.apply(

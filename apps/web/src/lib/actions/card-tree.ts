@@ -1,8 +1,15 @@
 'use server'
 
-import { requireEditor } from './helpers'
-import { requestCardTree, type RequestCardTreeResult } from '@/lib/data/card-tree'
+import { requireAuth, requireEditor } from './helpers'
+import { cardTreeAvailability, requestCardTree, type CardTreeAvailability, type RequestCardTreeResult } from '@/lib/data/card-tree'
 import { requestCardTreeSchema } from '@/lib/data/validators/kairos-card-tree'
+
+// Whether the board should offer "Plan a goal" at all: hidden while the switch
+// is off or the caller's brain routine is not connected (nothing would draft it).
+export async function getCardTreeAvailabilityAction(): Promise<CardTreeAvailability> {
+  const userId = await requireAuth()
+  return cardTreeAvailability(userId)
+}
 
 // "Plan a goal with Vorath" on the board: queues a card_tree draft. Nothing is
 // created here — the owner approves the drafted tree in the Vorath inbox.

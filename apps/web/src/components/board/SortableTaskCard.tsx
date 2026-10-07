@@ -4,47 +4,30 @@ import { useState, useRef, memo } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { motion } from 'framer-motion'
-import { Calendar, MoreHorizontal, MoreVertical, Check, X, Clock, Trash2 } from 'lucide-react'
+import { MoreHorizontal, MoreVertical, Check, X, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { hexToRgba, resolveAccentHex } from '@/lib/utils/colors'
-import { getInitials, getInitialsFromEmail } from '@/lib/utils/initials'
-import { hasAvatarOverride, memberAvatarStyle } from '@/lib/utils/avatarStyle'
+import { hexToRgba } from '@/lib/utils/colors'
 import { useAvatarPrefs } from './sizing'
-import { resolvePriority } from '@/lib/utils/priorities'
 import { labelHex, readableTextColor } from './labelTile'
-import { progressBarStyle } from './progressColor'
 import { GlowCard } from '@/components/ui/GlowCard'
 import { useBoardStore, useSelectedTaskId, useIsTaskSelected, useLabels, useShowDates, useChecklistViewMode, useTaskAssignees } from '@/lib/store/boardStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { useCardHoldGesture, useHoldToMoveActions, halfFromPoint } from './useHoldToMove'
 import { nextSelection, selectModifiersFromEvent } from './cardSelection'
-import { DependencyIndicator } from './DependencyIndicator'
 import { TaskContextMenu } from './TaskContextMenu'
 import { ExtractCardContentsModal } from './ExtractCardContentsModal'
-import { TaskSizeBadge } from './TaskSizeBadge'
-import { StaleIndicator } from './StaleIndicator'
 import { CardPeekPreview } from './CardPeekPreview'
 import { getTriState, cycleTaskCompletion, type TriState } from './triState'
 import { useCoarsePointer } from '@/hooks/useCoarsePointer'
 import { MissionCardFace } from './MissionCardFace'
+import { TaskCardBadges, TaskCardDateRange } from './TaskCardBadges'
+import { TaskCardChecklistPreview } from './TaskCardChecklistPreview'
+import { TaskCardAssignees } from './TaskCardAssignees'
+import { MovingRing, TaskCardProgressBar } from './TaskCardDecor'
+import type { TaskCardTask } from './taskCardTypes'
 
 interface SortableTaskCardProps {
-  task: {
-    id: string
-    name: string
-    description?: string
-    status: string
-    color: string
-    priority: 'low' | 'medium' | 'high' | 'urgent'
-    labels: string[]
-    startDate?: string
-    endDate?: string
-    onTimeline: boolean
-    size?: number | null
-    progress?: number | null
-    updatedAt?: string
-    metadata?: Record<string, unknown>
-  }
+  task: TaskCardTask
   onEdit?: (taskId: string) => void
   onDependencyClick?: (taskId: string) => void
   columnGlowColor: string
@@ -82,7 +65,6 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const isMultiSelected = useIsTaskSelected(task.id)
   const setTaskSelected = useBoardStore((s) => s.setTaskSelected)
   const labels = useLabels()
-  const clSummary = useBoardStore((s) => s.checklistSummaries[task.id])
   const clPreview = useBoardStore((s) => s.checklistPreviews[task.id])
   const assignees = useTaskAssignees(task.id)
   const avatarPrefs = useAvatarPrefs()
@@ -135,11 +117,6 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
   const handleTriToggle = (e: React.MouseEvent) => {
     e.stopPropagation()
     cycleTaskCompletion(task.id, onTaskUpdate)
-  }
-
-  const getPriorityInfo = (priority: string) => {
-    const resolved = resolvePriority(priorities, priority)
-    return { label: resolved.name, style: { backgroundColor: `${resolved.color}33`, color: resolved.color } }
   }
 
   const {
@@ -363,16 +340,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
               )}
             </div>
             {assignees && assignees.length > 0 && (
-              <div className="flex items-center -space-x-1.5 flex-shrink-0 ml-1 self-start pt-0.5">
-                {assignees.slice(0, 4).map((a) => (
-                  <AssigneeDot key={a.userId} name={a.name} email={a.email} initials={a.initials} image={a.image} kind={a.kind} color={a.color} textColor={a.textColor} shape={a.shape} preferInitials={avatarPrefs.preferInitials} />
-                ))}
-                {assignees.length > 4 && (
-                  <span className="w-5 h-5 rounded-full bg-white/10 border border-white/15 flex items-center justify-center text-[8px] text-white/60">
-                    +{assignees.length - 4}
-                  </span>
-                )}
-              </div>
+              <TaskCardAssignees assignees={assignees} preferInitials={avatarPrefs.preferInitials} />
             )}
             <div className="flex items-center gap-0.5 flex-shrink-0">
               <div className={cn('flex items-center gap-0.5', coarsePointer ? 'hidden' : 'opacity-0 group-hover:opacity-100')}>
@@ -440,156 +408,20 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
             </div>
           )}
 
-          {checklistMode !== 'off' && clPreview && clPreview.length > 0 && (() => {
-            if (checklistMode === 'preview') {
-              return (
-                <div className="space-y-0.5 mb-1.5">
-                  {clPreview.slice(0, 5).map((item, i) => (
-                    <div key={i} className="flex items-center gap-1.5">
-                      <div className={cn(
-                        'w-2.5 h-2.5 rounded-sm border flex-shrink-0 flex items-center justify-center',
-                        item.state === 'checked' && 'bg-emerald-500/30 border-emerald-500/50',
-                        item.state === 'crossed' && 'bg-red-500/30 border-red-500/50',
-                        item.state === 'unchecked' && 'border-white/20',
-                      )}>
-                        {item.state === 'checked' && <Check className="w-1.5 h-1.5 text-emerald-400" />}
-                        {item.state === 'crossed' && <X className="w-1.5 h-1.5 text-red-400" />}
-                      </div>
-                      <span className={cn(
-                        'text-[10px] truncate leading-tight',
-                        item.state === 'checked' && 'text-slate-600 line-through',
-                        item.state === 'crossed' && 'text-red-400/40 line-through',
-                        item.state === 'unchecked' && 'text-slate-400',
-                      )}>
-                        {item.title}
-                      </span>
-                    </div>
-                  ))}
-                  {clPreview.length > 5 && (
-                    <span className="text-[9px] text-slate-600 pl-4">+{clPreview.length - 5} more</span>
-                  )}
-                </div>
-              )
-            }
-            const groups = new Map<string, typeof clPreview>()
-            for (const item of clPreview) {
-              const g = item.groupName || 'Checklist'
-              if (!groups.has(g)) groups.set(g, [])
-              groups.get(g)!.push(item)
-            }
-            return (
-              <div className="space-y-1.5 mb-1.5">
-                {[...groups.entries()].map(([groupName, items]) => (
-                  <div key={groupName}>
-                    <span className="text-[9px] uppercase tracking-wider text-slate-600 font-medium">{groupName}</span>
-                    <div className="space-y-0.5 mt-0.5">
-                      {items.map((item, i) => (
-                        <div key={i} className="flex items-center gap-1.5">
-                          <div className={cn(
-                            'w-2.5 h-2.5 rounded-sm border flex-shrink-0 flex items-center justify-center',
-                            item.state === 'checked' && 'bg-emerald-500/30 border-emerald-500/50',
-                            item.state === 'crossed' && 'bg-red-500/30 border-red-500/50',
-                            item.state === 'unchecked' && 'border-white/20',
-                          )}>
-                            {item.state === 'checked' && <Check className="w-1.5 h-1.5 text-emerald-400" />}
-                            {item.state === 'crossed' && <X className="w-1.5 h-1.5 text-red-400" />}
-                          </div>
-                          <span className={cn(
-                            'text-[10px] truncate leading-tight',
-                            item.state === 'checked' && 'text-slate-600 line-through',
-                            item.state === 'crossed' && 'text-red-400/40 line-through',
-                            item.state === 'unchecked' && 'text-slate-400',
-                          )}>
-                            {item.title}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )
-          })()}
+          {checklistMode !== 'off' && clPreview && clPreview.length > 0 && (
+            <TaskCardChecklistPreview items={clPreview} mode={checklistMode} />
+          )}
 
-          <div className="flex items-center justify-between mt-auto pt-2 border-t border-white/5">
-            <div className="flex items-center gap-1.5">
-              {(() => {
-                const pi = getPriorityInfo(task.priority)
-                return (
-                  <span
-                    className="px-2 py-0.5 rounded-md text-xs font-medium"
-                    style={pi.style}
-                  >
-                    {pi.label}
-                  </span>
-                )
-              })()}
-              <DependencyIndicator
-                taskId={task.id}
-                onClick={() => onDependencyClick?.(task.id)}
-              />
-            </div>
+          <TaskCardBadges task={task} onDependencyClick={onDependencyClick} />
 
-            <div className="flex items-center gap-2 ml-auto">
-              <StaleIndicator updatedAt={task.updatedAt} status={task.status} />
-              <TaskSizeBadge size={task.size} />
-              {clSummary && clSummary.total > 0 && (
-                <span className="text-[10px] font-mono tabular-nums">
-                  <span className="text-emerald-400">{clSummary.checked}</span>
-                  <span className="text-slate-600">/</span>
-                  <span className="text-red-400">{clSummary.crossed}</span>
-                  <span className="text-slate-600">/</span>
-                  <span className="text-slate-500">{clSummary.total}</span>
-                </span>
-              )}
-              {task.onTimeline && (
-                <Calendar className="w-3 h-3 text-cyan-400" style={{ filter: 'drop-shadow(0 0 3px rgba(34,211,238,0.5))' }} />
-              )}
-            </div>
-          </div>
-
-          {showDates && task.startDate && task.endDate && (() => {
-            const s = new Date(task.startDate)
-            const e = new Date(task.endDate)
-            const days = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)))
-            const fmt = (d: Date) => `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`
-            const sameDay = s.toDateString() === e.toDateString()
-            return (
-              <div className="flex items-center justify-end pt-1.5 mt-1.5 border-t border-white/5">
-                <span className="flex items-center gap-1 text-[10px] text-slate-500 font-mono tabular-nums">
-                  <Clock className="w-2.5 h-2.5" />
-                  {sameDay ? `${fmt(s)} 1d` : `${fmt(s)}-${fmt(e)} ${days}d`}
-                </span>
-              </div>
-            )
-          })()}
+          {showDates && task.startDate && task.endDate && (
+            <TaskCardDateRange startDate={task.startDate} endDate={task.endDate} />
+          )}
 
         </GlowCard>
       </motion.div>
 
-      {typeof task.progress === 'number' && (() => {
-        const pct = Math.min(100, Math.max(0, task.progress))
-        const bar = progressBarStyle(pct)
-        return (
-          <div
-            className={cn(
-              'absolute bottom-0 left-0 right-0 h-1 rounded-b-xl overflow-hidden bg-white/[0.06] pointer-events-none',
-              isDragging && 'opacity-30'
-            )}
-            title={`${pct}% complete`}
-          >
-            <div
-              className="relative h-full transition-[width] duration-500 ease-out"
-              style={{ width: `${pct}%`, background: bar.fill, boxShadow: bar.glow }}
-            >
-              <div
-                className="absolute inset-0 mix-blend-screen"
-                style={{ background: bar.cloud, filter: 'blur(1.5px)' }}
-              />
-            </div>
-          </div>
-        )
-      })()}
+      {typeof task.progress === 'number' && <TaskCardProgressBar progress={task.progress} dimmed={isDragging} />}
 
       {contextMenu && (
         <TaskContextMenu
@@ -621,66 +453,3 @@ export const SortableTaskCard = memo(function SortableTaskCard({ task, onEdit, o
     </div>
   )
 })
-
-// The lifted card's halo. Pulses with framer-motion when Smooth UI Renders is
-// on; when it's off every animation is killed (data-reduce-motion), so the
-// ring is rendered as a plain static highlight instead of a frozen keyframe.
-function MovingRing({ color, pulse }: { color: string; pulse: boolean }) {
-  const hex = resolveAccentHex(color)
-  const ring = `0 0 0 2px ${hexToRgba(hex, 0.9)}, 0 0 18px 4px ${hexToRgba(hex, 0.45)}`
-  const ringWide = `0 0 0 3px ${hexToRgba(hex, 0.6)}, 0 0 34px 10px ${hexToRgba(hex, 0.3)}`
-  if (!pulse) {
-    return <div aria-hidden className="absolute -inset-0.5 rounded-xl pointer-events-none z-10" style={{ boxShadow: ring }} />
-  }
-  return (
-    <motion.div
-      aria-hidden
-      className="absolute -inset-0.5 rounded-xl pointer-events-none z-10"
-      initial={{ boxShadow: ring, opacity: 0.6 }}
-      animate={{ boxShadow: [ring, ringWide, ring], opacity: [0.7, 1, 0.7] }}
-      transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
-    />
-  )
-}
-
-function AssigneeDot({ name, email, initials: stored, image, kind, color, textColor, shape, preferInitials }: { name: string | null; email?: string | null; initials?: string | null; image: string | null; kind?: 'virtual'; color?: string | null; textColor?: string | null; shape?: string | null; preferInitials?: boolean }) {
-  // A profile picture wins only for an UNSTYLED member. Styling (initials,
-  // fill, text colour, shape) replaces it — a curated override hidden behind
-  // an OAuth avatar looked like the feature did nothing. `preferInitials`
-  // (board or realm policy) hides photos for everyone.
-  const styled = kind !== 'virtual' && hasAvatarOverride({ initials: stored, color, textColor, shape })
-  if (image && !preferInitials && !styled) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={image} alt="" className="w-5 h-5 rounded-full object-cover border border-white/15" title={name ?? undefined} />
-  }
-  // Stored initials win — a virtual member named "MG" chose those two letters,
-  // and recomputing from the name would render "M". Then the name, then the
-  // email, and only then the '?' that means "we know nothing about this person".
-  const initials = (stored ?? '').trim() || getInitials(name, '') || getInitialsFromEmail(email) || '?'
-  // Virtual members: colored initials avatar with a dashed ring — subtly
-  // distinct from real accounts in the pile.
-  if (kind === 'virtual') {
-    const hex = resolveAccentHex(color)
-    return (
-      <span
-        className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-semibold border border-dashed border-white/45 text-white"
-        style={{ background: `linear-gradient(135deg, ${hex}cc, ${hex}66)` }}
-        title={name ? `${name} (virtual)` : undefined}
-      >
-        {initials || '?'}
-      </span>
-    )
-  }
-  // A real member: the realm's styling, or the flat translucent dot they
-  // always had. No dashed ring — that stays the "no account" marker.
-  const av = memberAvatarStyle({ seed: name ?? email ?? '', color, textColor, shape }, { dim: true })
-  return (
-    <span
-      className={`w-5 h-5 flex items-center justify-center text-[8px] font-medium border border-white/15 ${styled ? 'text-white' : 'text-white/80'} ${av.className}`}
-      style={av.style}
-      title={name ?? undefined}
-    >
-      {initials || '?'}
-    </span>
-  )
-}

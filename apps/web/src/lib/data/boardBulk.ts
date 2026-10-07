@@ -4,7 +4,8 @@ import { eq, and, asc, sql, isNull } from 'drizzle-orm'
 import { touchProject } from './projects'
 import { planMoveAllToColumn } from '@/lib/utils/bulkMovePlan'
 
-export type MovedTask = { id: string; name: string; orderIndex: number }
+/** A card the bulk move placed, with the version it now carries. */
+export type MovedTask = { id: string; name: string; orderIndex: number; updatedAt: string }
 
 /**
  * Moves every live task in `fromColumnId` to the END of `toColumnId`,
@@ -46,7 +47,8 @@ export async function moveAllTasksToColumn(
         .where(and(eq(boardTasks.id, id), eq(boardTasks.projectId, projectId)))
     }
     const names = new Map(source.map((t) => [t.id, t.name]))
-    return plan.map((p) => ({ ...p, name: names.get(p.id) ?? '' }))
+    const updatedAt = now.toISOString()
+    return plan.map((p) => ({ ...p, name: names.get(p.id) ?? '', updatedAt }))
   })
 
   if (moved.length > 0) await touchProject(projectId, { type: 'task:moved' })

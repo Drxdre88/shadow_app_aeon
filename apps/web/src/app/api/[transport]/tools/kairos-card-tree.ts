@@ -11,7 +11,7 @@ import { getUserId, ok, fail } from './types'
 export const registerKairosCardTreeTools: RegisterFn = (server) => {
   server.tool(
     'request_card_tree',
-    'Ask Vorath to plan a goal as a small tree of cards (at most 12, with dependencies, checklists and only the board\'s existing labels) on one board you can edit. This only queues the request: Vorath drafts the tree on his next run and it waits in the owner\'s inbox (and Telegram) for Approve or Veto — no card is created until the owner approves. Returns the job id. The same goal on the same board returns the existing request.',
+    'Ask Vorath to plan a goal as a small tree of cards (at most 12, with dependencies, checklists and only the board\'s existing labels) on one board you can edit. This only queues the request: Vorath drafts the tree on his next run and it waits in the owner\'s inbox (and Telegram) for Approve or Veto — no card is created until the owner approves. Returns the job id. The same goal on the same board returns the existing request. Refused while the caller\'s own Vorath thinking routine is not connected (it has not claimed a job in the last 26 hours), since nothing else would draft the plan.',
     {
       projectId: requestCardTreeSchema.shape.projectId.describe('The board (project) id'),
       goal: requestCardTreeSchema.shape.goal.describe('The goal in plain words, up to 1000 characters'),

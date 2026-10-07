@@ -33,6 +33,7 @@ vi.mock('@/lib/data/card-tree-proposals', () => ({
   expireCardTrees: h.expireCardTrees,
 }))
 vi.mock('@/lib/data/card-tree', () => ({ createCardTree: h.createCardTree }))
+vi.mock('@/lib/data/card-garden-proposals', () => ({ expireCardGardens: vi.fn(async () => []) }))
 vi.mock('@/lib/schedule/solve-project', () => ({ solveProjectSchedule: h.solveProjectSchedule }))
 vi.mock('@/lib/kairos/goals/transitions', () => ({ approveGoal: vi.fn(), vetoGoal: vi.fn(), expireStaleGoals: vi.fn(async () => ({ expired: [], timedOut: [] })) }))
 vi.mock('@/lib/kairos/promises/create', () => ({ createKairosPromises: vi.fn() }))

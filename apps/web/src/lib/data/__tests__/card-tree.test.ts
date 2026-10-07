@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   upsertJob: vi.fn(),
   claimCardTreeInTx: vi.fn(),
   stampCreatedTasksInTx: vi.fn(async () => undefined),
+  brainRoutineClaimedRecently: vi.fn(),
 }))
 
 function chain(result: unknown) {
@@ -48,10 +49,11 @@ vi.mock('@/lib/db', () => ({
 vi.mock('../hangar-access', () => ({ canEditProject: h.canEditProject }))
 vi.mock('../projects', () => ({ findProjectBasic: h.findProjectBasic, touchProject: h.touchProject }))
 vi.mock('../thinking-jobs', () => ({ upsertJob: h.upsertJob }))
+vi.mock('../brain-availability', () => ({ brainRoutineClaimedRecently: h.brainRoutineClaimedRecently }))
 vi.mock('../card-tree-proposals', () => ({ claimCardTreeInTx: h.claimCardTreeInTx, stampCreatedTasksInTx: h.stampCreatedTasksInTx }))
 
 import { boardTasks, checklistItems, taskDependencies, taskLabels } from '@/lib/db/schema'
-import { cardTreeJobKey, createCardTree, requestCardTree } from '../card-tree'
+import { CARD_TREE_NO_BRAIN, cardTreeAvailability, cardTreeJobKey, createCardTree, requestCardTree } from '../card-tree'
 import type { CardTree } from '@/lib/kairos/card-tree/types'
 
 const OWNER = 'owner-1'
@@ -75,6 +77,7 @@ beforeEach(() => {
   h.transactions = 0
   h.canEditProject.mockResolvedValue(true)
   h.claimCardTreeInTx.mockResolvedValue(true)
+  h.brainRoutineClaimedRecently.mockResolvedValue(true)
   delete process.env.KAIROS_CARD_TREE
   delete process.env.KAIROS_LEVEL
 })
@@ -168,5 +171,41 @@ describe('requestCardTree', () => {
     h.selects = [[], [], [], [], [{ n: 3 }]]
     expect(await requestCardTree(OWNER, { projectId: PROJECT, goal: 'Another goal' })).toMatchObject({ ok: false, reason: 'busy' })
     expect(h.upsertJob).not.toHaveBeenCalled()
+  })
+
+  it("is refused with no_brain when the caller's brain routine has not claimed in 26 h, before any board read", async () => {
+    process.env.KAIROS_CARD_TREE = '1'
+    h.brainRoutineClaimedRecently.mockResolvedValue(false)
+    const now = new Date('2026-10-07T06:00:00Z')
+    expect(await requestCardTree(OWNER, { projectId: PROJECT, goal: 'Ship it' }, now)).toEqual({ ok: false, reason: 'no_brain', message: CARD_TREE_NO_BRAIN })
+    expect(h.brainRoutineClaimedRecently).toHaveBeenCalledWith(OWNER, now)
+    expect(h.findProjectBasic).not.toHaveBeenCalled()
+    expect(h.upsertJob).not.toHaveBeenCalled()
+  })
+
+  it('checks edit access before the brain routine', async () => {
+    process.env.KAIROS_CARD_TREE = '1'
+    h.canEditProject.mockResolvedValue(false)
+    h.brainRoutineClaimedRecently.mockResolvedValue(false)
+    expect(await requestCardTree(OWNER, { projectId: PROJECT, goal: 'Ship it' })).toMatchObject({ reason: 'forbidden' })
+    expect(h.brainRoutineClaimedRecently).not.toHaveBeenCalled()
+  })
+})
+
+describe('cardTreeAvailability', () => {
+  it('is unavailable while the switch is off, without querying', async () => {
+    expect(await cardTreeAvailability(OWNER)).toMatchObject({ available: false, reason: 'off' })
+    expect(h.brainRoutineClaimedRecently).not.toHaveBeenCalled()
+  })
+
+  it('is unavailable without a connected brain routine', async () => {
+    process.env.KAIROS_CARD_TREE = '1'
+    h.brainRoutineClaimedRecently.mockResolvedValue(false)
+    expect(await cardTreeAvailability(OWNER)).toEqual({ available: false, reason: 'no_brain', message: CARD_TREE_NO_BRAIN })
+  })
+
+  it('is available once the brain routine has claimed recently', async () => {
+    process.env.KAIROS_CARD_TREE = '1'
+    expect(await cardTreeAvailability(OWNER)).toEqual({ available: true })
   })
 })

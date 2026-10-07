@@ -79,10 +79,10 @@ describe('drift probe prompt + parser', () => {
   it('returns answers in probe order, first answer per id wins, unknown ids ignored', () => {
     const shuffled = [...answers].reverse()
     const out = parseDriftAnswers(fence({
-      answers: [{ probeId: 'nature-01', answer: 'first' }, ...shuffled, { probeId: 'bogus', answer: 'x' }],
+      answers: [{ probeId: 'nature-05', answer: 'first' }, ...shuffled, { probeId: 'bogus', answer: 'x' }],
     }))
     expect(out.map((a) => a.probeId)).toEqual([...DRIFT_PROBE_IDS])
-    expect(out.find((a) => a.probeId === 'nature-01')?.answer).toBe('first')
+    expect(out.find((a) => a.probeId === 'nature-05')?.answer).toBe('first')
   })
 
   it('rejects a reply that skips a probe', () => {
