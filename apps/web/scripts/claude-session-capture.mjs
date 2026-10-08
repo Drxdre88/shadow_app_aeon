@@ -35,6 +35,7 @@ import { homedir, tmpdir } from 'node:os'
 import { normalizeTranscript } from './session-transcript.mjs'
 import { truncate, deriveAiTitle } from './session-title.mjs'
 import { enqueueCapture, startCaptureDrain } from './session-capture-queue.mjs'
+import { isAutomatedFirstMessage } from './session-filters.mjs'
 import {
   buildSessionRecord,
   clampTags,
@@ -316,16 +317,8 @@ function countSignals(messages) {
 // "memories about summarising memories". The primary guard is the
 // AEON_HOOK_CHILD env var set when we spawn those children; this text-sentinel
 // pass is the backfill-path backstop (old meta transcripts carry no env).
-const AUTOMATION_SENTINELS = [
-  'drain the aeon memory summary backlog',
-  'summarising a claude code session for a personal memory layer',
-  'you are running headless to drain',
-]
-
 function isAutomatedSession(messages) {
-  const first = (extractFirstUserMessage(messages) || '').toLowerCase()
-  if (!first) return false
-  return AUTOMATION_SENTINELS.some((s) => first.includes(s))
+  return isAutomatedFirstMessage(extractFirstUserMessage(messages))
 }
 
 function sessionDurationMin(messages) {

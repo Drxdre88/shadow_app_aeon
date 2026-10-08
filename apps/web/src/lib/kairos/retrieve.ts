@@ -70,7 +70,7 @@ const MIN_QUERY_CHARS = 3
 // soft `dominion:<id>` reference tag. Substrate retrieval unions both so a
 // cross-front reflection surfaces from every Dominion it touches. The FK leg
 // uses memories_dominion_idx; the tag leg uses the memories_tags_idx GIN index.
-function inDominionScope(dominionId: string) {
+export function inDominionScope(dominionId: string) {
   const tagMatch = JSON.stringify([dominionTag(dominionId)])
   return sql`(${memories.dominionId} = ${dominionId} OR ${memories.tags} @> ${tagMatch}::jsonb)`
 }

@@ -10,6 +10,7 @@ import {
 } from '@/lib/db/schema'
 import { eq, and, asc, desc, gte, isNull, ne, notInArray, sql } from 'drizzle-orm'
 import { META_STREAM_CLASSES } from '@/lib/kairos/streamClass'
+import { resolveRepo } from '@/lib/kairos/repo-memory/aliases'
 import { notArchivedSql } from './board-visibility'
 import type {
   CreateDominionInput,
@@ -122,11 +123,18 @@ export async function removeDominionRepo(dominionId: string, userId: string, rep
   })
 }
 
+function canonicalRepo(raw: string): string {
+  return resolveRepo(raw)?.slug ?? raw.trim().toLowerCase()
+}
+
 // Active repo membership in a non-archived Dominion wins (highest weight, then
 // oldest link); otherwise the legacy dominion_repos mirror, live Dominions first.
 export async function resolveDominionByRepo(userId: string, repoSlug: string): Promise<string | null> {
-  const [member] = await db
-    .select({ dominionId: dominionMembers.dominionId })
+  const target = canonicalRepo(repoSlug)
+  const matches = (ref: string) => canonicalRepo(ref) === target
+
+  const members = await db
+    .select({ dominionId: dominionMembers.dominionId, ref: dominionMembers.ref })
     .from(dominionMembers)
     .innerJoin(dominions, and(
       eq(dominionMembers.dominionId, dominions.id),
@@ -136,25 +144,22 @@ export async function resolveDominionByRepo(userId: string, repoSlug: string): P
     .where(and(
       eq(dominionMembers.userId, userId),
       eq(dominionMembers.kind, 'repo'),
-      eq(dominionMembers.ref, repoSlug),
       eq(dominionMembers.status, 'active'),
     ))
     .orderBy(desc(dominionMembers.weight), asc(dominionMembers.createdAt), asc(dominionMembers.dominionId))
-    .limit(1)
+  const member = members.find((m) => matches(m.ref))
   if (member) return member.dominionId
 
-  const [row] = await db
-    .select({ dominionId: dominionRepos.dominionId })
+  const rows = await db
+    .select({ dominionId: dominionRepos.dominionId, repoSlug: dominionRepos.repoSlug })
     .from(dominionRepos)
     .innerJoin(dominions, and(
       eq(dominionRepos.dominionId, dominions.id),
       eq(dominions.userId, userId),
       isNull(dominions.archivedAt),
     ))
-    .where(eq(dominionRepos.repoSlug, repoSlug))
     .orderBy(asc(dominions.createdAt), asc(dominions.id))
-    .limit(1)
-  return row?.dominionId ?? null
+  return rows.find((r) => matches(r.repoSlug))?.dominionId ?? null
 }
 
 // Living Dominions membership (0040): dominion_repos and projects.dominion_id are
@@ -437,8 +442,12 @@ export async function resolveDominionForMemory(
     if (proj?.dominionId && !proj.archivedAt) return proj.dominionId
   }
 
-  if (typeof opts.sourceMetadata?.repo === 'string') {
-    const resolved = await resolveDominionByRepo(userId, opts.sourceMetadata.repo)
+  const meta = opts.sourceMetadata
+  const repo = typeof meta?.repo === 'string' && meta.repo.trim()
+    ? meta.repo
+    : typeof meta?.repoSlug === 'string' && meta.repoSlug.trim() ? meta.repoSlug : null
+  if (repo) {
+    const resolved = await resolveDominionByRepo(userId, repo)
     if (resolved) return resolved
   }
 

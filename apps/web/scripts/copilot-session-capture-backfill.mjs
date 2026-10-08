@@ -18,7 +18,7 @@ for (const session of listCopilotBackfillSessions(currentSessionId)) {
     hook_event_name: 'SessionStartBackfill',
     reason: 'backfill',
   }
-  enqueueCapture(payload)
+  if (!enqueueCapture(payload)) continue
 
   attempted++
   if (attempted >= 5) break

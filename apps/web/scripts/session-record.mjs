@@ -17,6 +17,7 @@ import { existsSync, openSync, readSync, closeSync, readFileSync } from 'node:fs
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { copilotTelemetry } from './session-record-copilot.mjs'
 
 export const SESSION_RECORD_VERSION = 1
 export const FIRST_PROMPT_MAX = 500
@@ -550,24 +551,7 @@ function codexTelemetry(records) {
   return out
 }
 
-function copilotTelemetry(records) {
-  const meta = records.find((r) => r?.type === 'session_meta')?.payload || {}
-  const out = {}
-  if (typeof meta.branch === 'string' && meta.branch) out.branch = meta.branch
-  const u = meta.usage
-  if (u && typeof u === 'object') {
-    if (typeof u.model === 'string' && u.model) out.model = u.model
-    for (const k of ['inputTokens', 'outputTokens', 'cacheReadTokens']) {
-      if (Number.isFinite(u[k])) out[k] = u[k]
-    }
-    // Like Codex, Copilot's input_tokens includes the cached part (observed:
-    // cache reads ≈ 94% of input). Report non-cached input, matching Claude.
-    if (Number.isFinite(out.inputTokens) && Number.isFinite(out.cacheReadTokens)) {
-      out.inputTokens = Math.max(0, out.inputTokens - out.cacheReadTokens)
-    }
-  }
-  return out
-}
+export { copilotTelemetry }
 
 /** Per-client telemetry from the raw (un-normalized) transcript records. */
 export function extractTelemetry(records, client) {

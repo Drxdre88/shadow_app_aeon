@@ -61,13 +61,13 @@ beforeEach(() => {
 
 describe('resolveDominionByRepo', () => {
   it('prefers an active repo member in a non-archived Dominion, by weight then age', async () => {
-    selectQueue.push([{ dominionId: 'dom-member' }])
+    selectQueue.push([{ dominionId: 'dom-other', ref: 'swarm' }, { dominionId: 'dom-member', ref: 'hydra' }])
     expect(await resolveDominionByRepo('u1', 'hydra')).toBe('dom-member')
     expect(ops).toHaveLength(1)
     const [sel] = ops
     expect(sel.table).toBe('dominion_members')
     const where = q(sel.where!)
-    expect(where.params).toEqual(expect.arrayContaining(['u1', 'repo', 'hydra', 'active']))
+    expect(where.params).toEqual(expect.arrayContaining(['u1', 'repo', 'active']))
     const join = q(sel.joins[0])
     expect(join.sql).toMatch(/"archived_at" is null/)
     const order = sel.orderBy!.map((o) => q(o as SQL).sql)
@@ -76,7 +76,7 @@ describe('resolveDominionByRepo', () => {
   })
 
   it('falls back to dominion_repos in a deterministic order, skipping archived Dominions', async () => {
-    selectQueue.push([], [{ dominionId: 'dom-legacy' }])
+    selectQueue.push([], [{ dominionId: 'dom-legacy', repoSlug: 'hydra' }])
     expect(await resolveDominionByRepo('u1', 'hydra')).toBe('dom-legacy')
     expect(ops.map((o) => o.table)).toEqual(['dominion_members', 'dominion_repos'])
     const order = ops[1].orderBy!.map((o) => q(o as SQL).sql)
@@ -103,7 +103,7 @@ describe('resolveDominionForMemory — project step', () => {
   })
 
   it('skips an archived project Dominion and falls through to the repo', async () => {
-    selectQueue.push([{ dominionId: 'dom-old', archivedAt: new Date() }], [{ dominionId: 'dom-repo' }])
+    selectQueue.push([{ dominionId: 'dom-old', archivedAt: new Date() }], [{ dominionId: 'dom-repo', ref: 'hydra' }])
     const out = await resolveDominionForMemory('u1', { projectId: 'p1', sourceMetadata: { repo: 'hydra' } })
     expect(out).toBe('dom-repo')
   })
@@ -116,6 +116,40 @@ describe('resolveDominionForMemory — project step', () => {
   it('an explicit dominionId still short-circuits', async () => {
     expect(await resolveDominionForMemory('u1', { dominionId: 'dom-x', projectId: 'p1' })).toBe('dom-x')
     expect(ops).toHaveLength(0)
+  })
+})
+
+describe('resolveDominionForMemory — repo step', () => {
+  it('files a git digest that carries only repoSlug', async () => {
+    selectQueue.push([{ dominionId: 'dom-swarm', ref: 'shadow_app_swarm' }])
+    const out = await resolveDominionForMemory('u1', { sourceMetadata: { kind: 'repo_git_digest', repoSlug: 'shadow_app_swarm' } })
+    expect(out).toBe('dom-swarm')
+  })
+
+  it('matches a path-shaped repo against a folder-slug member', async () => {
+    selectQueue.push([{ dominionId: 'dom-stp', ref: 'stp_app_ermac' }])
+    const out = await resolveDominionForMemory('u1', { sourceMetadata: { repo: 'sefe/Short Term Power/stp_app_ermac' } })
+    expect(out).toBe('dom-stp')
+  })
+
+  it('matches a board-label alias in either direction', async () => {
+    selectQueue.push([{ dominionId: 'dom-aeon', ref: 'aeon' }])
+    expect(await resolveDominionForMemory('u1', { sourceMetadata: { repoSlug: 'shadow_app_aeon' } })).toBe('dom-aeon')
+    selectQueue.push([], [{ dominionId: 'dom-aeon-legacy', repoSlug: 'shadow_app_aeon' }])
+    expect(await resolveDominionForMemory('u1', { sourceMetadata: { repo: 'repo:aeon' } })).toBe('dom-aeon-legacy')
+  })
+
+  it('prefers meta.repo over meta.repoSlug', async () => {
+    selectQueue.push([{ dominionId: 'dom-hydra', ref: 'hydra' }, { dominionId: 'dom-swarm', ref: 'swarm' }])
+    const out = await resolveDominionForMemory('u1', { sourceMetadata: { repo: 'hydra', repoSlug: 'swarm' } })
+    expect(out).toBe('dom-hydra')
+  })
+
+  it('a live project Dominion still wins over the repo', async () => {
+    selectQueue.push([{ dominionId: 'dom-p', archivedAt: null }])
+    const out = await resolveDominionForMemory('u1', { projectId: 'p1', sourceMetadata: { repoSlug: 'hydra' } })
+    expect(out).toBe('dom-p')
+    expect(ops).toHaveLength(1)
   })
 })
 

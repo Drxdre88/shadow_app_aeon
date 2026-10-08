@@ -11,6 +11,7 @@ import {
   listCopilotBackfillSessions,
   loadCopilotTranscript,
   loadCopilotTranscriptWhenReady,
+  readCopilotToolRounds,
   recordCopilotCaptureReceipt,
 } from './copilot-session-transcript.mjs'
 import { normalizeTranscript } from './session-transcript.mjs'
@@ -214,5 +215,62 @@ test('records successful Copilot captures in a validated receipt path', () => {
     if (priorHome === undefined) delete process.env.COPILOT_HOME
     else process.env.COPILOT_HOME = priorHome
     rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+function seedToolRoundStore(withParentColumn = true) {
+  const dir = mkdtempSync(join(tmpdir(), 'aeon-copilot-rounds-'))
+  const storePath = join(dir, 'session-store.db')
+  const db = new DatabaseSync(storePath)
+  db.exec(`
+    CREATE TABLE sessions (id TEXT PRIMARY KEY, cwd TEXT, summary TEXT, created_at TEXT);
+    CREATE TABLE turns (id INTEGER PRIMARY KEY, session_id TEXT, turn_index INTEGER, user_message TEXT, assistant_response TEXT, timestamp TEXT);
+    CREATE TABLE session_files (id INTEGER PRIMARY KEY, session_id TEXT, file_path TEXT, first_seen_at TEXT);
+    CREATE TABLE assistant_usage_events (id INTEGER PRIMARY KEY, session_id TEXT, model TEXT, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER${withParentColumn ? ', parent_tool_call_id TEXT' : ''});
+  `)
+  db.prepare('INSERT INTO sessions VALUES (?, ?, ?, ?)').run('tool-session', 'C:/repo', 'Deploy Dagster Poll on Prod', '2026-09-01T08:00:00.000Z')
+  db.prepare('INSERT INTO turns VALUES (?, ?, ?, ?, ?, ?)').run(1, 'tool-session', 0, 'Deploy it', 'Deployed.', '2026-09-01T08:01:00.000Z')
+  const call = withParentColumn
+    ? db.prepare('INSERT INTO assistant_usage_events (session_id, model, parent_tool_call_id) VALUES (?, ?, ?)')
+    : db.prepare('INSERT INTO assistant_usage_events (session_id, model) VALUES (?, ?)')
+  for (let i = 0; i < 4; i++) withParentColumn ? call.run('tool-session', 'm', null) : call.run('tool-session', 'm')
+  if (withParentColumn) for (let i = 0; i < 3; i++) call.run('tool-session', 'm', 'subagent-call')
+  db.close()
+  return { dir, storePath }
+}
+
+test('main-thread model calls beyond the turns become file-less tool rounds', () => {
+  const { dir, storePath } = seedToolRoundStore()
+  try {
+    const records = loadCopilotTranscript('tool-session', storePath)
+    assert.equal(records[0].payload.title, 'Deploy Dagster Poll on Prod')
+    const { messages } = normalizeTranscript(records)
+    const toolUses = messages.flatMap((m) => (Array.isArray(m.message?.content) ? m.message.content : []))
+      .filter((part) => part?.type === 'tool_use')
+    assert.equal(toolUses.length, 3)
+    assert.ok(toolUses.every((part) => !part.input.file_path && !part.input.file_paths))
+    assert.equal(messages.at(-1).message.content.length, 3)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('tool rounds floor at zero and degrade to zero on stores without parent_tool_call_id', () => {
+  const { dir, storePath } = seedToolRoundStore(false)
+  const db = new DatabaseSync(storePath, { readOnly: true })
+  try {
+    assert.equal(readCopilotToolRounds(db, 'tool-session', 1), 0)
+  } finally {
+    db.close()
+  }
+  const seeded = seedToolRoundStore()
+  const db2 = new DatabaseSync(seeded.storePath, { readOnly: true })
+  try {
+    assert.equal(readCopilotToolRounds(db2, 'tool-session', 10), 0)
+    assert.equal(readCopilotToolRounds(db2, 'tool-session', 1), 3)
+  } finally {
+    db2.close()
+    rmSync(dir, { recursive: true, force: true })
+    rmSync(seeded.dir, { recursive: true, force: true })
   }
 })

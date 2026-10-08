@@ -238,6 +238,15 @@ test('Copilot telemetry comes from the session_meta the SQLite loader writes', (
   assert.deepEqual(extractTelemetry(null, 'claude'), {})
 })
 
+test("Copilot's own session summary becomes aiTitle, so tool lines never title the memory", () => {
+  const meta = (title) => [{ type: 'session_meta', payload: { client: 'copilot', ...(title === undefined ? {} : { title }) } }]
+  assert.equal(extractTelemetry(meta('  Build Nightly Repo-Docs Feeder '), 'copilot').aiTitle, 'Build Nightly Repo-Docs Feeder')
+  assert.equal('aiTitle' in extractTelemetry(meta('   '), 'copilot'), false)
+  assert.equal('aiTitle' in extractTelemetry(meta(undefined), 'copilot'), false)
+  const title = composeTitle({ repo: 'aeon', aiTitle: extractTelemetry(meta('Deploy Dagster Poll'), 'copilot').aiTitle, firstPrompt: 'Edit X.md +11 -3' }, (s) => s)
+  assert.equal(title, 'aeon: Deploy Dagster Poll')
+})
+
 test('session record v1 is flat, capped and drops empty values', () => {
   const record = buildSessionRecord({
     client: 'claude',

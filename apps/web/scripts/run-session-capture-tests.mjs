@@ -8,6 +8,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url))
 const tests = [
   join(scriptDir, 'session-transcript.test.mjs'),
   join(scriptDir, 'session-title.test.mjs'),
+  join(scriptDir, 'session-filters.test.mjs'),
   join(scriptDir, 'codex-session-transcript.test.mjs'),
   join(scriptDir, 'session-capture-dispatch.test.mjs'),
   join(scriptDir, 'session-capture-queue.test.mjs'),

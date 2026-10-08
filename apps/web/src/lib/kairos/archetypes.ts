@@ -22,6 +22,7 @@ import {
 } from './archetypes-prompt'
 import { todayIso, parseWithRepair, ParseRepairError } from './_prompt-utils'
 import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
+import { inDominionScope } from './retrieve'
 
 // Re-export for callers (cron route + tests) that only import this module.
 export {
@@ -120,7 +121,10 @@ async function fetchSubstrate(userId: string, dominionId: string) {
     )).orderBy(desc(memories.createdAt)).limit(MAX_PINNED),
 
     db.select(cols).from(memories).where(and(
-      baseScope,
+      eq(memories.userId, userId),
+      inDominionScope(dominionId),
+      isNull(memories.archivedAt),
+      validAsOfNow,
       eq(memories.streamClass, 'reflection'),
     )).orderBy(desc(memories.createdAt)).limit(MAX_REFLECTIONS),
 
