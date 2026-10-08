@@ -105,7 +105,7 @@ test('loads and normalizes a Copilot session from SQLite', () => {
     // Older stores lack assistant_usage_events: branch still flows, usage is simply absent.
     assert.deepEqual(records[0].payload, { client: 'copilot', cwd: 'C:/repo', branch: 'feat/capture' })
     assert.deepEqual(listCopilotBackfillSessions('current-session', 5, storePath), [
-      { id: 'session-1', cwd: 'C:/repo' },
+      { id: 'session-1', cwd: 'C:/repo', updatedAt: '2026-09-01T08:05:00.000Z' },
     ])
   } finally {
     rmSync(dir, { recursive: true, force: true })

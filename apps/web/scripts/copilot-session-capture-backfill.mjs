@@ -17,6 +17,7 @@ for (const session of listCopilotBackfillSessions(currentSessionId)) {
     cwd: session.cwd,
     hook_event_name: 'SessionStartBackfill',
     reason: 'backfill',
+    last_activity_at: session.updatedAt,
   }
   if (!enqueueCapture(payload)) continue
 

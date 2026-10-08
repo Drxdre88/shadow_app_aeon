@@ -50,7 +50,7 @@ export function listCopilotBackfillSessions(currentSessionId, limit = 100, store
   const db = new DatabaseSync(storePath, { readOnly: true })
   try {
     const sessions = db.prepare(`
-      SELECT s.id, s.cwd
+      SELECT s.id, s.cwd, s.updated_at
       FROM sessions s
       WHERE s.id <> ?
         AND EXISTS (
@@ -62,7 +62,7 @@ export function listCopilotBackfillSessions(currentSessionId, limit = 100, store
       ORDER BY s.updated_at DESC
       LIMIT ?
     `).all(currentSessionId, boundedLimit)
-    return sessions.map((session) => ({ id: session.id, cwd: session.cwd }))
+    return sessions.map((session) => ({ id: session.id, cwd: session.cwd, updatedAt: session.updated_at ?? null }))
   } finally {
     db.close()
   }

@@ -53,6 +53,25 @@ export function hasCaptureSkip(client, sessionId) {
   return Boolean(path) && existsSync(path)
 }
 
+function lastActivityMs(payload) {
+  const stamped = Date.parse(payload?.last_activity_at ?? '')
+  if (Number.isFinite(stamped)) return stamped
+  try {
+    return payload?.transcript_path ? statSync(payload.transcript_path).mtimeMs : null
+  } catch {
+    return null
+  }
+}
+
+// A skip only holds while the session is unchanged: a resumed session that
+// grew after it was skipped must reach the backfill safety net again.
+export function captureSkipStillHolds(payload) {
+  const path = captureSkipPath(payload?.client || 'claude', payload?.session_id)
+  if (!path || !existsSync(path)) return false
+  const activity = lastActivityMs(payload)
+  return activity === null || activity <= statSync(path).mtimeMs
+}
+
 export function recordCaptureSkip(client, sessionId, reason = 'non-substantive') {
   const path = captureSkipPath(client, sessionId)
   if (!path) return false
@@ -90,7 +109,7 @@ export function enqueueCapture(payload) {
   const client = payload?.client || 'claude'
   const sessionId = payload?.session_id
   if (!validIdentity(client, sessionId) || hasCaptureReceipt(client, sessionId)) return null
-  if (payload?.reason === 'backfill' && hasCaptureSkip(client, sessionId)) return null
+  if (payload?.reason === 'backfill' && captureSkipStillHolds({ ...payload, client })) return null
   const pendingDir = join(captureQueueRoot(), 'pending')
   mkdirSync(pendingDir, { recursive: true })
   const path = join(pendingDir, `${client}-${sessionId}.json`)
