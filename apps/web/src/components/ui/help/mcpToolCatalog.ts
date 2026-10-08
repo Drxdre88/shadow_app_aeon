@@ -178,6 +178,7 @@ export const TOOL_CATEGORIES: McpToolCategory[] = [
       'list_open_kairos_asks',
       'answer_kairos_ask',
       'dismiss_kairos_ask',
+      'answer_asks_from_message',
       'kairos_voice_note',
       'get_kairos_paid_backup',
       'set_kairos_paid_backup',

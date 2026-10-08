@@ -1,7 +1,8 @@
 import { z } from 'zod'
-import { runKairosAsk, answerKairosAsk, dismissKairosAsk } from '@/lib/kairos/ask'
+import { runKairosAsk, answerKairosAsk, dismissKairosAsk, answerNumberedKairosAsks } from '@/lib/kairos/ask'
+import { formatNumberedAck } from '@/lib/kairos/ask-numbered'
 import { getPendingKairosAsk, listOpenKairosAsks, toOpenKairosAskView } from '@/lib/data/ask'
-import { dismissKairosAskSchema, listOpenKairosAsksSchema } from '@/lib/data/validators/kairos-asks'
+import { answerAsksFromMessageSchema, dismissKairosAskSchema, listOpenKairosAsksSchema } from '@/lib/data/validators/kairos-asks'
 import type { RegisterFn } from './types'
 import { getUserId, ok, notFound, fail } from './types'
 
@@ -19,9 +20,11 @@ import { getUserId, ok, notFound, fail } from './types'
 //   to the question's Dominion, then archive the question memory. Any open
 //   ask can be answered by id, not just the newest.
 //
-// list_open_kairos_asks / dismiss_kairos_ask: the Q-numbered open-question
-//   backlog the 06:00 message lists, and the operator's "skip". These two
-//   mirror /api/v1/kairos/asks (kairos-asks-parity.test.ts); the rest are
+// list_open_kairos_asks / dismiss_kairos_ask / answer_asks_from_message: the
+//   Q-numbered open-question backlog the 06:00 message lists, the operator's
+//   "skip", and the relay seam for chat surfaces (Triad) — the same Q-label
+//   and reply-to-a-question parsing Telegram uses. These three mirror
+//   /api/v1/kairos/asks (kairos-asks-parity.test.ts); the rest are
 //   synthesis-surface only.
 //
 // Not part of the Gantt MCP/REST parity invariant (gantt-parity.test.ts only
@@ -146,6 +149,25 @@ export const registerAskTools: RegisterFn = (server) => {
       const result = await dismissKairosAsk(uid, parsed.data.askId)
       if ('error' in result) return notFound('Open Vorath question')
       return ok({ dismissed: true, id: result.id })
+    },
+  )
+
+  server.tool(
+    'answer_asks_from_message',
+    'Relay one owner chat message (verbatim) and close any open Vorath questions it answers, using the same rules as Telegram: "Q14: …" / "Q14 …" labels, "skip Q14", or — when repliedToText is the message it replies to (e.g. the thread root "Vorath asks (Q14)" card) naming exactly one open question — the whole message answers it. matched:false means it is ordinary chat: hand it to the dialogue instead. When matched, post `ack` as the whole reply; do not start a chat turn. Answers are stored as relayed by an agent.',
+    {
+      message: z.string().describe('The owner\'s message, verbatim'),
+      repliedToText: z.string().optional().describe('Text of the message this one replies to (thread root / quoted message), if any'),
+    },
+    { title: 'Answer Vorath Asks From Message', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    async (args, extra) => {
+      const uid = getUserId(extra)
+      const parsed = answerAsksFromMessageSchema.safeParse(args)
+      if (!parsed.success) return fail(parsed.error.issues[0].message)
+      const { message, repliedToText } = parsed.data
+      const outcome = await answerNumberedKairosAsks(uid, message, new Date(), repliedToText, { kind: 'agent', via: 'mcp' })
+      if (!outcome.matched) return ok({ matched: false })
+      return ok({ ...outcome, ack: formatNumberedAck(outcome) })
     },
   )
 }

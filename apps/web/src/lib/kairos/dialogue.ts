@@ -16,7 +16,8 @@ import {
   type DialogueTurn,
   type SourceMemorySnapshot,
 } from '@/lib/data/dialogue'
-import { retrieveContext } from './retrieve'
+import { retrieveContext, retrieveGlobalContext } from './retrieve'
+import { VORATH_REPLY_STYLE } from './reply-style'
 import { dominionTag } from './dominionTags'
 import type { RetrievedMemory } from './recipes/_recipe'
 import type { AetherThought } from './aether-types'
@@ -120,6 +121,8 @@ export interface DialogueContext {
   // The stage block (what Kairos is attending to now), fenced as STAGE DATA
   // and "not evidence". '' unless KAIROS_STAGE=1 and the stage has a winner.
   stage?: string
+  // How to write the reply (one rule for every surface; see reply-style.ts).
+  replyStyle: string
 }
 
 // Same budget as the chat prompt's today section.
@@ -137,8 +140,8 @@ async function loadDialogueToday(userId: string, threadId: string): Promise<stri
 /**
  * Pack everything Claude Code needs to author Kairos's next turn: the seed
  * thought + its grounding memories + the Aether narrative, the full turn
- * history, and fresh retrieval keyed on the latest operator turn (only when the
- * dialogue is anchored to a Dominion — floating dialogues lean on the seed).
+ * history, and fresh retrieval keyed on the latest operator turn — scoped to
+ * the dialogue's Dominion, or whole-brain when it has none (Triad DMs).
  */
 export async function prepareDialogueContext(
   userId: string,
@@ -167,13 +170,12 @@ export async function prepareDialogueContext(
   const lastOperator = [...turns].reverse().find((t) => t.role === 'operator')
   const query = lastOperator?.content ?? thought?.insight ?? thought?.title ?? thread.title
 
-  let retrieval: DialogueContext['retrieval'] = null
   const todayPromise = loadDialogueToday(userId, threadId)
   const stagePromise = loadStageBlock(userId)
-  if (thread.dominionId) {
-    const r = await retrieveContext({ userId, dominionId: thread.dominionId, query })
-    retrieval = { cortex: r.cortex, archetypes: r.archetypes, substrate: r.substrate }
-  }
+  const r = thread.dominionId
+    ? await retrieveContext({ userId, dominionId: thread.dominionId, query })
+    : await retrieveGlobalContext({ userId, query })
+  const retrieval: DialogueContext['retrieval'] = { cortex: r.cortex, archetypes: r.archetypes, substrate: r.substrate }
 
   const stageBlock = (await stagePromise).block
   return {
@@ -183,6 +185,7 @@ export async function prepareDialogueContext(
     retrieval,
     today: await todayPromise,
     ...(stageBlock ? { stage: stageBlock } : {}),
+    replyStyle: VORATH_REPLY_STYLE,
   }
 }
 

@@ -3,8 +3,9 @@
  *
  * Mirrors beliefs-parity.test.ts. The Q-numbered backlog and the operator's
  * "skip" must be reachable identically from Claude (MCP) and external clients:
- *   - list_open_kairos_asks <-> GET  /api/v1/kairos/asks
- *   - dismiss_kairos_ask    <-> POST /api/v1/kairos/asks/[id]/dismiss
+ *   - list_open_kairos_asks     <-> GET  /api/v1/kairos/asks
+ *   - dismiss_kairos_ask        <-> POST /api/v1/kairos/asks/[id]/dismiss
+ *   - answer_asks_from_message  <-> POST /api/v1/kairos/asks/answer-message
  * Both surfaces share the validators in lib/data/validators/kairos-asks.ts and
  * the same functions, and both bind to the calling user.
  */
@@ -16,7 +17,7 @@ import path from 'node:path'
 const WEB_ROOT = path.resolve(__dirname, '../../../..')
 const MCP_TOOL_FILE = path.join(WEB_ROOT, 'src/app/api/[transport]/tools/ask.ts')
 const REST_ROOT = path.join(WEB_ROOT, 'src/app/api/v1/kairos/asks')
-const REST_ROUTE_FILES = ['route.ts', '[id]/dismiss/route.ts']
+const REST_ROUTE_FILES = ['route.ts', '[id]/dismiss/route.ts', 'answer-message/route.ts']
 
 const read = (p: string) => readFileSync(p, 'utf8')
 
@@ -32,6 +33,7 @@ describe('Kairos asks MCP <-> REST parity', () => {
   it.each([
     { path: 'route.ts', methods: ['GET'] },
     { path: '[id]/dismiss/route.ts', methods: ['POST'] },
+    { path: 'answer-message/route.ts', methods: ['POST'] },
   ])('has route file + methods: $path', ({ path: routePath, methods }) => {
     const full = path.join(REST_ROOT, routePath)
     expect(existsSync(full), `missing REST route file: ${routePath}`).toBe(true)
@@ -42,6 +44,7 @@ describe('Kairos asks MCP <-> REST parity', () => {
   it.each([
     ['list_open_kairos_asks', 'listOpenKairosAsksSchema', 'route.ts'],
     ['dismiss_kairos_ask', 'dismissKairosAskSchema', '[id]/dismiss/route.ts'],
+    ['answer_asks_from_message', 'answerAsksFromMessageSchema', 'answer-message/route.ts'],
   ])('%s and its REST twin share validator %s', (tool, validator, routeFile) => {
     expect(toolBlock(mcpSrc, tool)).toMatch(new RegExp(`\\b${validator}\\b`))
     expect(read(path.join(REST_ROOT, routeFile))).toMatch(new RegExp(`\\b${validator}\\b`))
@@ -56,6 +59,8 @@ describe('Kairos asks MCP <-> REST parity', () => {
     ['list_open_kairos_asks', 'listOpenKairosAsks', '@/lib/data/ask', 'route.ts'],
     ['list_open_kairos_asks', 'toOpenKairosAskView', '@/lib/data/ask', 'route.ts'],
     ['dismiss_kairos_ask', 'dismissKairosAsk', '@/lib/kairos/ask', '[id]/dismiss/route.ts'],
+    ['answer_asks_from_message', 'answerNumberedKairosAsks', '@/lib/kairos/ask', 'answer-message/route.ts'],
+    ['answer_asks_from_message', 'formatNumberedAck', '@/lib/kairos/ask-numbered', 'answer-message/route.ts'],
   ])('%s and its REST twin both call %s', (tool, fn, mod, routeFile) => {
     const importRe = new RegExp(`import \\{[^}]*\\b${fn}\\b[^}]*\\} from '${mod}'`)
     expect(mcpSrc).toMatch(importRe)
@@ -78,5 +83,10 @@ describe('Kairos asks MCP <-> REST parity', () => {
     }
     expect(read(path.join(REST_ROOT, 'route.ts'))).toMatch(/listOpenKairosAsks\(result\.id\)/)
     expect(read(path.join(REST_ROOT, '[id]/dismiss/route.ts'))).toMatch(/dismissKairosAsk\(result\.id,/)
+    expect(read(path.join(REST_ROOT, 'answer-message/route.ts'))).toMatch(/answerNumberedKairosAsks\(result\.id,/)
+  })
+
+  it('a relayed message never gets the operator origin over MCP', () => {
+    expect(toolBlock(mcpSrc, 'answer_asks_from_message')).toMatch(/\{ kind: 'agent', via: 'mcp' \}/)
   })
 })
