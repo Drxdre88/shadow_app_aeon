@@ -1,11 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import {
   copilotCaptureReceiptPath,
+  copilotSessionMayStillWrite,
   hasCopilotCaptureReceipt,
   listCopilotBackfillSessions,
   loadCopilotTranscript,
@@ -13,6 +14,20 @@ import {
   recordCopilotCaptureReceipt,
 } from './copilot-session-transcript.mjs'
 import { normalizeTranscript } from './session-transcript.mjs'
+
+test('only a fresh session-state folder is worth retrying', () => {
+  const home = mkdtempSync(join(tmpdir(), 'aeon-copilot-home-'))
+  try {
+    mkdirSync(join(home, 'session-state', 'live-session-1'), { recursive: true })
+    const now = Date.now()
+    assert.equal(copilotSessionMayStillWrite('live-session-1', home, now), true)
+    assert.equal(copilotSessionMayStillWrite('live-session-1', home, now + 16 * 60_000), false)
+    assert.equal(copilotSessionMayStillWrite('wiped-harness-session', home, now), false)
+    assert.equal(copilotSessionMayStillWrite('../escape', home, now), false)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
 
 test('loads and normalizes a Copilot session from SQLite', () => {
   const dir = mkdtempSync(join(tmpdir(), 'aeon-copilot-capture-'))
