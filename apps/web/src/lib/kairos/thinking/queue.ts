@@ -76,8 +76,9 @@ export const PLANNED_THINKING_KINDS: readonly ThinkingJobKind[] = [
   'cold_read',
   // Board card sorting (per-board switch): planned by claims and the sweep.
   'card_triage',
-  // Workforce: nightly repo lessons, mission verdicts, on-demand card trees.
-  'repo_lessons', 'mission_check', 'card_tree', 'card_garden',
+  // Workforce: nightly repo lessons, mission verdicts, on-demand card trees,
+  // weekly card garden, afternoon AI DONE cards.
+  'repo_lessons', 'mission_check', 'card_tree', 'card_garden', 'ai_done',
 ]
 
 const PLAN_ORDER: readonly ThinkingJobKind[] = [...PLANNED_THINKING_KINDS, 'chat']
@@ -123,6 +124,7 @@ const FALLBACK_OWNER: Partial<Record<ThinkingJobKind, string>> = {
   mission_check: 'nothing — the verdict is skipped',
   card_tree: 'nothing — no draft is made',
   card_garden: 'nothing — a missed week is fine',
+  ai_done: 'nothing — the day is skipped',
 }
 
 function fallbackOwner(kind: ThinkingJobKind): string {

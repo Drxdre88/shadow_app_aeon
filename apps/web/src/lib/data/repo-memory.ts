@@ -32,6 +32,8 @@ export interface RepoSessionRow {
   client: string | null
   createdAt: Date
   facts?: SessionFacts | null
+  taskId?: string
+  projectId?: string
 }
 
 const SESSION_COLUMNS = {
@@ -45,11 +47,24 @@ const SESSION_COLUMNS = {
   record: sql<unknown>`${memories.sourceMetadata}->'session'`,
   hookCommits: sql<unknown>`${memories.sourceMetadata}->'commits'`,
   hookFiles: sql<unknown>`${memories.sourceMetadata}->'filesTouched'`,
+  memoryTaskId: memories.taskId,
+  memoryProjectId: memories.projectId,
 }
 
 type SessionSelect = {
   id: string; title: string; summary: string | null; body: string | null; rawRepo: string | null; client: string | null; createdAt: Date
-  record?: unknown; hookCommits?: unknown; hookFiles?: unknown
+  record?: unknown; hookCommits?: unknown; hookFiles?: unknown; memoryTaskId?: string | null; memoryProjectId?: string | null
+}
+
+const idOf = (...values: unknown[]): string | undefined =>
+  values.find((v): v is string => typeof v === 'string' && v.trim() !== '')
+
+// The card a session worked on: the session record's anchor, else the memory's own columns.
+function anchorOf(r: SessionSelect): { taskId?: string; projectId?: string } {
+  const record = r.record && typeof r.record === 'object' ? (r.record as Record<string, unknown>) : {}
+  const taskId = idOf(record.taskId, r.memoryTaskId)
+  const projectId = idOf(record.projectId, r.memoryProjectId)
+  return { ...(taskId ? { taskId } : {}), ...(projectId ? { projectId } : {}) }
 }
 
 // The session record wins; the hook's top-level commits/files fill its gaps.
@@ -65,7 +80,7 @@ function factsOf(r: SessionSelect): SessionFacts | null {
 function toSessionRow(r: SessionSelect): RepoSessionRow | null {
   const repo = normalizeRepoSlug(r.rawRepo)
   if (!repo) return null
-  return { id: r.id, repo, title: r.title, summary: r.summary, body: r.body ?? '', client: r.client, createdAt: r.createdAt, facts: factsOf(r) }
+  return { id: r.id, repo, title: r.title, summary: r.summary, body: r.body ?? '', client: r.client, createdAt: r.createdAt, facts: factsOf(r), ...anchorOf(r) }
 }
 
 const sessionWhere = (userId: string) => and(

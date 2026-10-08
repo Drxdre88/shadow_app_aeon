@@ -87,6 +87,19 @@ describe('session summaries by repo', () => {
     expect(b.facts).toBeNull()
   })
 
+  it('carries the card a session worked on: the session record first, else the memory columns', async () => {
+    h.selectResults = [[
+      { ...row('a', 'shadow_app_aeon'), record: { taskId: 't-rec', projectId: 'p-rec' }, memoryTaskId: 't-col', memoryProjectId: 'p-col' },
+      { ...row('b', 'shadow_app_aeon'), record: null, memoryTaskId: 't-col', memoryProjectId: null },
+      { ...row('c', 'shadow_app_aeon'), record: { taskId: '' } },
+    ]]
+    const [a, b, c] = await listSessionSummariesBetween('u1', new Date('2026-10-05T01:00:00.000Z'), AT)
+    expect([a.taskId, a.projectId]).toEqual(['t-rec', 'p-rec'])
+    expect(b).toMatchObject({ taskId: 't-col' })
+    expect(b).not.toHaveProperty('projectId')
+    expect(c).not.toHaveProperty('taskId')
+  })
+
   it('keeps only rows whose normalised repo is exactly the slug', async () => {
     h.selectResults = [[row('a', 'C:/dev/shadow_app_aeon'), row('b', 'shadow_app_aeon_old'), row('c', 'shadow_app_aeon'), row('d', 'shadow_app_aeon')]]
     const rows = await listRepoSessions('u1', 'shadow_app_aeon', 2)

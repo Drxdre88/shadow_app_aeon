@@ -223,8 +223,7 @@ still names retired kinds has them dropped instead of failing.
 a 200s budget (`KAIROS_SWEEP_MAX_FALLBACKS` / `_BUDGET_MS`). With paid backup off it closes each
 pending fallback with "paid backup off" instead of running it.
 
-**Max-plan routines (claude.ai).** Every Kairos model call is a thinking job first (25 kinds as of
-0.28; the 0.20–0.28 kinds are listed in [mind.md](mind.md)). Each former paid-key cron plans its kind in a window closing 2 min before the cron, and the
+**Max-plan routines (claude.ai).** Every Kairos model call is a thinking job first (30 kinds incl. chat; the 0.20+ kinds are listed in [mind.md](mind.md)). Each former paid-key cron plans its kind in a window closing 2 min before the cron, and the
 cron is only the **fallback**: `isJobDone(userId, externalKey)` (`lib/data/thinking-jobs.ts`) skips
 any unit a routine answered. Since 0.21 there are **three routines, defined in code** (brain, chat, pulse; claims are routine-scoped by `allowedKinds` since 0.20):
 `lib/kairos/routines/catalog.ts` is the single source of truth (names, schedules, caps, model and the

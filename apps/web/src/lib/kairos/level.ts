@@ -23,6 +23,7 @@ const LEVEL_1: SwitchValues = {
   KAIROS_REPO_MEMORY: '1',
   KAIROS_MISSION_CHECK: '1',
   KAIROS_CARD_TREE: '1',
+  KAIROS_AI_DONE: '1',
 }
 
 const LEVEL_2: SwitchValues = {
