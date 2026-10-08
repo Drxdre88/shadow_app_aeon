@@ -129,6 +129,7 @@ export async function runExtraction(options, log = (msg) => console.error(msg)) 
   const extractor = new RepoExtractor({
     identities, since: options.since, until: options.until,
     lookbackDays: options.lookbackDays, maxSquashRefs: options.maxSquashRefs, baseline: options.baseline !== false,
+    agentEraStart: config.agent_era_start || null,
   })
   mkdirSync(options.out, { recursive: true })
   const startedAt = new Date()
@@ -153,7 +154,10 @@ export async function runExtraction(options, log = (msg) => console.error(msg)) 
   }
   const all = results.flatMap((r) => r.result.commits)
   markCrossRepo(all)
-  const window = { since: options.since, until: options.until, lookbackDays: options.lookbackDays, prsDir: options.prsDir || null }
+  const window = {
+    since: options.since, until: options.until, lookbackDays: options.lookbackDays, prsDir: options.prsDir || null,
+    countPolicy: config.count_policy || 'all', agentEraStart: config.agent_era_start || null, agentEraNote: config.agent_era_note || null,
+  }
   for (const { name, path, result } of results) {
     const rows = result.commits.map(({ repo, ...rest }) => ({ repo, ...rest }))
     await writeJsonl(join(options.out, `${name}.commits.jsonl`), rows)

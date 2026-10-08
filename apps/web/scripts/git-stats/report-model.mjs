@@ -30,8 +30,8 @@ function methodFacts({ run, repoSummaries, agg, summaryAll, config }) {
   for (const r of repos) for (const w of r.warnings || []) warnings.push(`${r.repo}: ${w}`)
   for (const r of repos) if (r.status !== 'ok') warnings.push(`${r.repo}: ${r.error || r.status}`)
   const noiseReasons = new Map()
-  for (const c of agg.excluded) {
-    const reason = c.noise ? `named rule: ${c.noise}` : `giant (authored lines added or removed > ${fmt(GIANT_LINES)})`
+  for (const c of agg.flagged) {
+    const reason = c.noise ? `named rule: ${c.noise}` : `over ${fmt(GIANT_LINES)} authored lines`
     noiseReasons.set(reason, (noiseReasons.get(reason) || 0) + 1)
   }
   const ownerEmails = new Map()
@@ -60,22 +60,30 @@ function methodFacts({ run, repoSummaries, agg, summaryAll, config }) {
 
 export function ownerCheck(total, ownerTotals) {
   if (!ownerTotals) return []
+  const o = ownerTotals
   const pairs = [
-    ['commits', total.commits, ownerTotals.uniqueCommits],
-    ['authored lines added', total.added, ownerTotals.lines_counted_excl_giant_noise?.added],
-    ['authored lines removed', total.removed, ownerTotals.lines_counted_excl_giant_noise?.removed],
-    ['code lines added', total.code.added, ownerTotals.codeExclGiantNoise?.added],
-    ['code lines removed', total.code.removed, ownerTotals.codeExclGiantNoise?.removed],
+    ['commits', total.commits, o.uniqueCommits],
+    ['authored lines added', total.added, o.authoredAddedAll ?? o.authoredAdded],
+    ['authored lines removed', total.removed, o.authoredRemovedAll ?? o.authoredRemoved],
+    ['code lines added', total.code.added, o.codeAddedAll ?? o.buckets?.code?.added],
+    ['code lines removed', total.code.removed, o.codeRemovedAll ?? o.buckets?.code?.removed],
+    ['AI-attributed commits', total.ai, o.aiAttributedCommits],
+    ['AI-attributed code added', total.aiCode.added, o.aiAttributedCodeAdded],
   ]
   return pairs.filter(([, mine, theirs]) => theirs != null && mine !== theirs).map(([name, mine, theirs]) => `${name}: report ${fmt(mine)} vs extractor ownerTotals ${fmt(theirs)}`)
 }
 
-function setAsideRows(agg, method) {
+function folderRows(agg, method) {
   const rules = new Map(method.repoExcludes)
   return [...agg.byRepo.entries()]
-    .map(([repo, t]) => ({ repo, rules: [...(rules.get(repo) || [])], ...t.setAside, setAsideCommits: t.excludedCommits }))
+    .map(([repo, t]) => ({ repo, rules: [...(rules.get(repo) || [])], pathAdded: t.pathAdded, pathRemoved: t.pathRemoved, generatedAdded: t.rawAdded - t.added, generatedRemoved: t.rawRemoved - t.removed }))
     .filter((r) => r.pathAdded || r.pathRemoved || r.rules.length)
     .sort((a, b) => b.pathAdded + b.pathRemoved - (a.pathAdded + a.pathRemoved) || (a.repo < b.repo ? -1 : 1))
+}
+
+export function eraStartOf(config, summaryAll) {
+  const day = config?.agent_era_start ?? summaryAll?.agentEraStart ?? summaryAll?.agent_era_start ?? null
+  return typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null
 }
 
 export function buildModel({ commits, summaryAll, run = { repos: [] }, repoSummaries = {}, prs = [], prSummary = null, config = null }) {
@@ -83,21 +91,23 @@ export function buildModel({ commits, summaryAll, run = { repos: [] }, repoSumma
   const end = endDay({ summaryAll, commits, prs })
   const months = monthRange(since, end)
   const weeks = weekRange(since, end)
-  const agg = aggregateCommits(commits, { months, weeks })
-  const prAgg = aggregatePrs(prs, { since, end })
+  const eraStart = eraStartOf(config, summaryAll)
+  const agg = aggregateCommits(commits, { months, weeks, eraStart })
+  const prAgg = aggregatePrs(prs, { since, end, eraStart })
   const series = monthlySeries(months, agg.byMonth, prAgg.byMonth)
   const sortedDays = [...agg.total.days].sort()
   const method = methodFacts({ run, repoSummaries, agg, summaryAll, config })
   return {
     since,
     end,
+    eraStart,
     months,
     partialMonths: [since.slice(8) !== '01' ? months[0] : null, addDays(end, 1).slice(8) !== '01' ? months[months.length - 1] : null].filter(Boolean),
     counted: agg.counted,
     weeks: weeks.map((w) => ({ ...w, commits: agg.byWeek.get(w.week) || 0 })),
     total: agg.total,
     dedupe: agg.dedupe,
-    excluded: agg.excluded,
+    flagged: agg.flagged,
     series,
     repos: repoRows(agg, prAgg),
     baseline: baselineRows(repoSummaries, agg.byRepo, since),
@@ -106,7 +116,7 @@ export function buildModel({ commits, summaryAll, run = { repos: [] }, repoSumma
     streaks: streaks(sortedDays),
     windowDays: Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${since}T00:00:00Z`)) / 86400000) + 1,
     method,
-    setAsideRepos: setAsideRows(agg, method),
+    folderRepos: folderRows(agg, method),
     ownerCheck: ownerCheck(agg.total, summaryAll.ownerTotals),
     prNotes: (prSummary?.repos || []).filter((r) => r.error || r.note).map((r) => `${r.repo}: ${r.error || r.note}`),
   }

@@ -32,6 +32,18 @@ export function localDay(isoDate) {
   return String(isoDate || '').slice(0, 10)
 }
 
+export const AI_REASONS = ['agent_identity', 'trailer', 'agent_era']
+
+export function attributeAi(commit, agentEraStart = null) {
+  let reason = null
+  if (commit.identityClass === 'owner_agent') reason = 'agent_identity'
+  else if (commit.aiAssisted) reason = 'trailer'
+  else if (agentEraStart && commit.identityClass === 'owner_human' && localDay(commit.authorDate) >= agentEraStart) reason = 'agent_era'
+  commit.aiAttributed = reason !== null
+  commit.aiReason = reason
+  return commit
+}
+
 export function isoWeek(day) {
   const [y, m, d] = day.split('-').map(Number)
   const date = new Date(Date.UTC(y, m - 1, d))
@@ -60,6 +72,12 @@ export class Metrics {
     this.countedSquashes = 0
     this.noiseCommits = 0
     this.aiAssistedCommits = 0
+    this.aiAttributedCommits = 0
+    this.aiAttributedAdded = 0
+    this.aiAttributedRemoved = 0
+    this.aiAttributedCodeAdded = 0
+    this.aiAttributedCodeRemoved = 0
+    this.aiAttributedByReason = Object.fromEntries(AI_REASONS.map((r) => [r, 0]))
     this.linesAddedExclGiantNoise = 0
     this.linesRemovedExclGiantNoise = 0
     this.crossRepoDuplicates = 0
@@ -101,6 +119,14 @@ export class Metrics {
     this.uniqueCommits++
     if (c.squashOf != null) this.countedSquashes++
     if (c.aiAssisted) this.aiAssistedCommits++
+    if (c.aiAttributed) {
+      this.aiAttributedCommits++
+      this.aiAttributedAdded += c.linesAdded
+      this.aiAttributedRemoved += c.linesRemoved
+      this.aiAttributedCodeAdded += c.buckets.code.added
+      this.aiAttributedCodeRemoved += c.buckets.code.removed
+      if (c.aiReason in this.aiAttributedByReason) this.aiAttributedByReason[c.aiReason]++
+    }
     if (c.noise) this.noiseCommits++
     this.countedRawAdded += c.rawLinesAdded ?? c.linesAdded
     this.countedRawRemoved += c.rawLinesRemoved ?? c.linesRemoved
@@ -161,6 +187,26 @@ export class Metrics {
       rawLinesAdded: this.rawLinesAdded,
       rawLinesRemoved: this.rawLinesRemoved,
       buckets: this.buckets,
+      authoredAddedAll: this.linesAdded,
+      authoredRemovedAll: this.linesRemoved,
+      codeAddedAll: this.buckets.code.added,
+      codeRemovedAll: this.buckets.code.removed,
+      testsAddedAll: this.buckets.tests.added,
+      testsRemovedAll: this.buckets.tests.removed,
+      docsAddedAll: this.buckets.docs.added,
+      docsRemovedAll: this.buckets.docs.removed,
+      configAddedAll: this.buckets.config.added,
+      configRemovedAll: this.buckets.config.removed,
+      generatedAddedAll: this.buckets.generated_or_data.added,
+      generatedRemovedAll: this.buckets.generated_or_data.removed,
+      otherAddedAll: this.buckets.other.added,
+      otherRemovedAll: this.buckets.other.removed,
+      aiAttributedCommits: this.aiAttributedCommits,
+      aiAttributedAdded: this.aiAttributedAdded,
+      aiAttributedRemoved: this.aiAttributedRemoved,
+      aiAttributedCodeAdded: this.aiAttributedCodeAdded,
+      aiAttributedCodeRemoved: this.aiAttributedCodeRemoved,
+      aiAttributedByReason: this.aiAttributedByReason,
       bucketsExclGiantNoise: this.bucketsExclGiantNoise,
       codeExclGiantNoise: this.bucketsExclGiantNoise.code,
       filesAdded: this.filesAdded,

@@ -62,6 +62,25 @@ export function barChart({ labels, series, label, height = 220, tick = compact, 
   return `<figure>${svgOpen(height, label)}${yAxis(height, max, tick)}${bars}${xLabels(labels, height, slot)}</svg>${legend(series)}</figure>`
 }
 
+export function stackedBarChart({ labels, series, label, height = 220, tick = compact, value = fmt }) {
+  const totals = labels.map((_, i) => series.reduce((t, s) => t + (s.values[i] || 0), 0))
+  const max = niceMax(Math.max(0, ...totals))
+  const inner = height - PAD.top - PAD.bottom
+  const slot = (W - PAD.left - PAD.right) / labels.length
+  const barW = slot * 0.6
+  let bars = ''
+  labels.forEach((l, i) => {
+    let base = PAD.top + inner
+    for (const s of series) {
+      const v = s.values[i] || 0
+      const h = (inner * v) / max
+      base -= h
+      if (v) bars += `<rect x="${(PAD.left + slot * i + slot * 0.2).toFixed(1)}" y="${base.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="${s.color}"><title>${esc(`${shortMonth(l)} · ${s.name}: ${value(v)} of ${value(totals[i])}`)}</title></rect>`
+    }
+  })
+  return `<figure>${svgOpen(height, label)}${yAxis(height, max, tick)}${bars}${xLabels(labels, height, slot)}</svg>${legend(series)}</figure>`
+}
+
 export function lineChart({ labels, series, label, height = 220, max = null, tick = compact, value = fmt }) {
   const top = max ?? niceMax(Math.max(0, ...series.flatMap((s) => s.values.map((v) => v || 0))))
   const inner = height - PAD.top - PAD.bottom

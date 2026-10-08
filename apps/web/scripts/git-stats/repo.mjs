@@ -6,7 +6,7 @@ import {
   assignPatchDuplicates, computePatchIds, detectSquashMerges, listBranchRefs, markDefaultBranch, resolveDefaultRefs,
 } from './dedupe.mjs'
 import { SquashClassifier, applyDropReasons, applyNoise } from './squash.mjs'
-import { localDay } from './summary.mjs'
+import { attributeAi, localDay } from './summary.mjs'
 
 const DAY_MS = 86400000
 const OWNER_CLASSES = new Set(['owner_human', 'owner_agent'])
@@ -56,13 +56,14 @@ class BaselineTally {
 }
 
 export class RepoExtractor {
-  constructor({ identities, since, until = null, lookbackDays = 60, maxSquashRefs = 400, baseline = true }) {
+  constructor({ identities, since, until = null, lookbackDays = 60, maxSquashRefs = 400, baseline = true, agentEraStart = null }) {
     this.identities = identities
     this.since = since
     this.until = until
     this.lookbackStart = shiftDay(since, -lookbackDays)
     this.maxSquashRefs = maxSquashRefs
     this.baseline = baseline
+    this.agentEraStart = agentEraStart
   }
 
   inWindow(commit) {
@@ -143,7 +144,10 @@ export class RepoExtractor {
     applyDropReasons(commits)
 
     const windowed = commits.filter((c) => this.inWindow(c))
-    for (const commit of windowed) commit.identityClass = this.identities.classify(commit.authorName, commit.authorEmail)
+    for (const commit of windowed) {
+      commit.identityClass = this.identities.classify(commit.authorName, commit.authorEmail)
+      attributeAi(commit, this.agentEraStart)
+    }
     windowed.sort((a, b) => (Date.parse(a.authorDate) || 0) - (Date.parse(b.authorDate) || 0) || (a.sha < b.sha ? -1 : 1))
     const baseline = this.baseline ? await this.computeBaseline(repo, classifier, commits) : null
     return {

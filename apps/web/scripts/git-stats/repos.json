@@ -33,6 +33,9 @@
     "stp_app_relic",
     "kal_el_dash"
   ],
+  "count_policy": "all",
+  "agent_era_start": "2026-08-20",
+  "agent_era_note": "First Copilot CLI session on this PC. Copilot commits and opens PRs under the owner's own identity, so from this date every owner_human commit is attributed to AI (aiReason agent_era).",
   "identities": {
     "owner_agent": [
       "198982749+Copilot@users.noreply.github.com",
@@ -49,7 +52,13 @@
       "anselikhov"
     ],
     "others": [],
-    "bots": ["*[bot]", "*[bot]@*", "Azure Pipelines", "Project Collection Build Service*", "GitHub Action*"]
+    "bots": [
+      "*[bot]",
+      "*[bot]@*",
+      "Azure Pipelines",
+      "Project Collection Build Service*",
+      "GitHub Action*"
+    ]
   },
   "exclude_paths": [
     "**/android/app/src/main/assets/public/**",
@@ -58,50 +67,61 @@
     "**/__generated__/**"
   ],
   "repo_overrides": {
-    "shadow_app_swarm": {
-      "exclude_paths": ["strat_research/**"]
-    },
     "shadow_app_triad": {
-      "noise_commits": [{ "subject": "^chore: import Triad 0\\.8\\.0 snapshot", "reason": "snapshot import" }]
+      "noise_commits": [
+        {
+          "subject": "^chore: import Triad 0\\.8\\.0 snapshot",
+          "reason": "snapshot import"
+        }
+      ]
     },
     "stp_app_ermac": {
-      "exclude_paths": ["idcc-forecast/**"],
       "noise_commits": [
-        { "subject": "vendor bsad-forecast", "reason": "vendored BSAD engine" },
-        { "subject": "vendor the BSAD forecast engine", "reason": "vendored BSAD engine" },
-        { "sha": "1f1d087", "reason": "squash of vendored BSAD engine (PR 61407)" },
-        { "sha": "e4a9e53e", "reason": "vendored idcc-forecast" }
+        {
+          "subject": "vendor bsad-forecast",
+          "reason": "vendored BSAD engine"
+        },
+        {
+          "subject": "vendor the BSAD forecast engine",
+          "reason": "vendored BSAD engine"
+        },
+        {
+          "sha": "1f1d087",
+          "reason": "squash of vendored BSAD engine (PR 61407)"
+        },
+        {
+          "sha": "e4a9e53e",
+          "reason": "vendored idcc-forecast"
+        }
       ]
     },
     "stp_app_poseidon": {
-      "noise_commits": [{ "sha": "80f5427f", "reason": "theme system ported" }]
+      "noise_commits": [
+        {
+          "sha": "80f5427f",
+          "reason": "theme system ported"
+        }
+      ]
     },
     "shadow_app_hydra": {
-      "noise_commits": [{ "sha": "16c0921", "reason": "initial import push to main" }]
+      "noise_commits": [
+        {
+          "sha": "16c0921",
+          "reason": "initial import push to main"
+        }
+      ]
     },
     "shadow_data_lab": {
       "noise_commits": [
-        { "subject": "^Merged PR 52753:", "reason": "1.2M-line data import (PR 52753)" },
-        { "subject": "^Merged PR 52887:", "reason": "mass deletion of the PR 52753 data import (-1.2M)" }
+        {
+          "subject": "^Merged PR 52753:",
+          "reason": "1.2M-line data import (PR 52753)"
+        },
+        {
+          "subject": "^Merged PR 52887:",
+          "reason": "mass deletion of the PR 52753 data import (-1.2M)"
+        }
       ]
-    },
-    "shadow_dev_lab": {
-      "exclude_paths": ["**/Bot Harold 1.5.py"]
-    },
-    "shadow_research_lab": {
-      "exclude_paths": ["knowledge/**", "archive/**", "src/shadow_research/projects/*/docs/runs/**"]
-    },
-    "arcane_ml_lab": {
-      "exclude_paths": ["shadow_ai/**", "external_specs/**"]
-    },
-    "arcane_dev_lab": {
-      "exclude_paths": ["shadow_ai/**"]
-    },
-    "arcane_data_lab": {
-      "exclude_paths": ["shadow_ai/**"]
-    },
-    "shadow_app_aeon": {
-      "exclude_paths": ["research/**"]
     }
   }
 }

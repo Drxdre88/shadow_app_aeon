@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { localDayOf, planDays } from './digest-days.mjs'
 import { AeonPoster, loadEnvFile } from './digest-post.mjs'
-import { buildPayload, buildRepoDay } from './digest-stats.mjs'
+import { aiAttribution, buildPayload, buildRepoDay } from './digest-stats.mjs'
 import { DigestStore } from './digest-store.mjs'
 import { DigestRunner, parseDigestCli } from './digest.mjs'
 
@@ -123,16 +123,33 @@ test('payload shape: exact keys, externalId, no top-level repo key, summary cap'
   assert.equal('repo' in m, false)
   assert.deepEqual(Object.keys(m), ['kind', 'externalId', 'repoSlug', 'day', 'stats', 'commits'])
   assert.equal(m.externalId, 'git-digest:shadow_app_x:2026-10-06')
-  assert.deepEqual(Object.keys(m.stats), ['commits', 'linesAdded', 'linesRemoved', 'honestAdded', 'honestRemoved', 'codeAdded', 'codeRemoved', 'filesAdded', 'filesModified', 'filesDeleted', 'aiAssistedCommits', 'giantCommits', 'prsOpened', 'prsMerged', 'rawAdded', 'rawRemoved'])
+  assert.deepEqual(Object.keys(m.stats), ['commits', 'linesAdded', 'linesRemoved', 'honestAdded', 'honestRemoved', 'codeAdded', 'codeRemoved', 'filesAdded', 'filesModified', 'filesDeleted', 'aiAssistedCommits',   'giantCommits', 'prsOpened', 'prsMerged', 'rawAdded', 'rawRemoved', 'aiCommits', 'aiCodeAdded'])
   assert.deepEqual([m.stats.prsOpened, m.stats.prsMerged], [1, 1])
-  assert.equal(m.commits.length, 15)
-  assert.deepEqual(m.commits[0], { sha: 'aaaaaaa', subject: 's0', aiAssisted: true })
+    assert.deepEqual([m.stats.aiCommits, m.stats.aiCodeAdded], [1, 2])
+    assert.equal(m.commits.length, 15)
+    assert.deepEqual(m.commits[0], { sha: 'aaaaaaa', subject: 's0', aiAssisted: true, aiAttributed: true, aiReason: 'trailer' })
   assert.match(p.bodyMd, /- `aaaaaaa` s0 \(AI-assisted\)/)
   assert.match(p.bodyMd, /…and 5 more/)
   assert.equal(buildPayload(buildRepoDay('r', '2026-10-06', commits, { timeZone: TZ })).sourceMetadata.stats.prsMerged, null)
 })
 
-test('fixture repo: local-day bucketing, owner filter, giant exclusion, receipts stop re-posts', async (t) => {
+test('AI attribution: extractor field wins, else agent identity, trailer, or owner commit in the agent era', () => {
+  const base = { counted: true, authorDate: '2026-10-06T12:00:00+01:00', linesAdded: 5, linesRemoved: 0, filesAdded: 0, filesModified: 1, filesDeleted: 0, buckets: { code: { added: 5, removed: 0 } }, codeDirs: {}, giant: false, noise: null }
+  const human = { ...base, sha: 'h'.repeat(40), identityClass: 'owner_human', aiAssisted: false }
+  assert.deepEqual(aiAttribution(human, { agentEraStart: null }), { ai: false, reason: null })
+  assert.deepEqual(aiAttribution(human, { agentEraStart: '2026-10-07' }), { ai: false, reason: null })
+  assert.deepEqual(aiAttribution(human, { agentEraStart: '2026-10-06' }), { ai: true, reason: 'agent_era' })
+  assert.deepEqual(aiAttribution({ ...human, identityClass: 'owner_agent' }), { ai: true, reason: 'agent_identity' })
+  assert.deepEqual(aiAttribution({ ...human, aiAssisted: true }), { ai: true, reason: 'trailer' })
+  assert.deepEqual(aiAttribution({ ...human, aiAttributed: false, aiReason: null }, { agentEraStart: '2026-01-01' }), { ai: false, reason: null })
+  assert.deepEqual(aiAttribution({ ...human, aiAttributed: true, aiReason: 'agent_era' }), { ai: true, reason: 'agent_era' })
+  const big = { ...human, sha: 'b'.repeat(40), giant: true, giantReason: 'authored +50000 > 40000', linesAdded: 50000, buckets: { code: { added: 50000, removed: 0 } } }
+  const rd = buildRepoDay('r', '2026-10-06', [human, big], { timeZone: TZ, agentEraStart: '2026-08-20' })
+  assert.deepEqual([rd.stats.aiCommits, rd.stats.aiCodeAdded, rd.stats.codeAdded, rd.stats.honestAdded], [2, 50005, 50005, 50005])
+  assert.equal(rd.bigDrops.length, 1)
+})
+
+test('fixture repo: local-day bucketing, owner filter, big drops counted, receipts stop re-posts', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'git-digest-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const { s } = buildFixture(root)
@@ -149,14 +166,18 @@ test('fixture repo: local-day bucketing, owner filter, giant exclusion, receipts
   const d6 = byDay['2026-10-06']
   assert.deepEqual(d6.commits.map((c) => c.sha), [s.a, s.e, s.g], 'stranger excluded; late-evening commits moved to the 7th')
   assert.deepEqual([d6.stats.linesAdded, d6.stats.rawAdded], [10 + 40001, 10 + 20001 + 40001], 'CSV dump is data: raw only, 0 authored')
-  assert.deepEqual([d6.stats.honestAdded, d6.stats.codeAdded, d6.stats.giantCommits, d6.stats.aiAssistedCommits], [10, 10, 1, 1], '>40k authored code commit is giant')
+  assert.deepEqual([d6.stats.honestAdded, d6.stats.codeAdded, d6.stats.giantCommits, d6.stats.aiAssistedCommits], [40011, 40011, 1, 1], 'giant commit still counts in full')
+  assert.deepEqual([d6.stats.aiCommits, d6.stats.aiCodeAdded], [1, 0], 'trailer-only AI commit touched data, not code')
   assert.equal(d6.stats.prsMerged, null)
+  assert.equal(calls.find((c) => c.payload.sourceMetadata.day === '2026-10-06').payload.summary, '3 commits, +40011/−0 lines (code +40011), PRs n/a')
   assert.deepEqual(byDay['2026-10-07'].commits.map((c) => c.sha), [s.d, s.c], 'owner_agent kept, bucketed by London day')
+  assert.deepEqual([byDay['2026-10-07'].stats.aiCommits, byDay['2026-10-07'].stats.aiCodeAdded], [1, 2], 'agent identity counts as AI; era off without agent_era_start')
+  assert.deepEqual(byDay['2026-10-07'].commits.map((c) => c.aiReason), [null, 'agent_identity'])
   const body6 = calls.find((c) => c.payload.sourceMetadata.day === '2026-10-06').payload.bodyMd
-  assert.match(body6, new RegExp(`Imports/dumps excluded:\\*\\* \`${s.g}\` feat: vendored engine \\(\\+40,001 authored, authored \\+40001 > 40000\\)`))
-  assert.doesNotMatch(body6, /excluded:.*data dump/)
-  assert.match(body6, /authored \+40,011\/−0 \(raw \+60,012\/−0\)/)
-  assert.doesNotMatch(body6, /counted/)
+  assert.match(body6, /\*\*3 commits \(1 by AI\)\*\* · code \+40,011\/−0 · authored \+40,011\/−0 \(raw \+60,012\/−0\)/)
+  assert.match(body6, new RegExp(`Big drops \\(included above\\):\\*\\* \`${s.g}\` feat: vendored engine \\(\\+40,001 authored, authored \\+40001 > 40000\\)`))
+  assert.doesNotMatch(body6, /Big drops.*data dump/)
+  assert.doesNotMatch(body6, /excluded|counted/)
 
   const receipts = store.readReceipts()
   assert.ok(Object.values(receipts.days).every((d) => d.complete))
@@ -199,6 +220,21 @@ test('failed posts stay un-receipted and are retried next run; dry run writes no
   assert.deepEqual(second.days, ['2026-10-06'])
   assert.equal(good.calls.length, 1)
   assert.equal(store.readReceipts().days['2026-10-06'].complete, true)
+})
+
+test('agent_era_start from repos.json reaches the extractor: owner commits from that day are AI', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'git-digest-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const { s } = buildFixture(root)
+  const store = new DigestStore(join(root, 'home'))
+  const printed = []
+  const era = runner(root, store, null, { poster: null, config: fixtureConfig(root, { agent_era_start: '2026-10-06' }), print: (x) => printed.push(JSON.parse(x)) })
+  await era.run({ catchUp: 3, explicitCatchUp: true, dryRun: true, writeStore: false })
+  const byDay = Object.fromEntries(printed.map((p) => [p.sourceMetadata.day, p.sourceMetadata]))
+  assert.deepEqual(byDay['2026-10-06'].commits.map((c) => [c.sha, c.aiReason]), [[s.a, 'agent_era'], [s.e, 'trailer'], [s.g, 'agent_era']])
+  assert.deepEqual([byDay['2026-10-06'].stats.aiCommits, byDay['2026-10-06'].stats.aiCodeAdded], [3, 40011])
+  assert.deepEqual(byDay['2026-10-05'].commits.map((c) => [c.sha, c.aiReason]), [[s.f, null]], 'before the era owner commits are human')
+  assert.equal(byDay['2026-10-05'].stats.aiCommits, 0)
 })
 
 test('no-activity day posts nothing but is receipted', async (t) => {

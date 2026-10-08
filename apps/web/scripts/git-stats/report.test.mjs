@@ -5,9 +5,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
-  Tally, aggregateCommits, baselineRows, isCounted, isHonest, isOwner, monthOf, monthRange, repoKind, streaks, weekRange,
+  Tally, aggregateCommits, aiReasonOf, baselineRows, isCounted, isOwner, monthOf, monthRange, repoKind, streaks, weekRange,
 } from './report-aggregate.mjs'
-import { THRESHOLDS, aiTrend, findings, headlines, kindShift, trailerGap } from './report-findings.mjs'
+import { THRESHOLDS, findings, headlines, kindShift } from './report-findings.mjs'
+import { aiFindings, aiScale, biggestDrops, dropKind, eraComparison } from './report-ai.mjs'
 import { compact, niceMax } from './report-charts.mjs'
 import { fmt, hours } from './report-format.mjs'
 import { buildModel, ownerCheck } from './report-model.mjs'
@@ -66,18 +67,16 @@ test('counted excludes merges, duplicates and cross-repo copies', () => {
   assert.equal(isCounted(commit()), true)
 })
 
-test('honest lines skip giant and noise commits but keep them as commits', () => {
+test('every counted commit counts in full; big commits are only flagged', () => {
   const t = new Tally()
   for (const c of [commit({ code: 100 }), commit({ code: 45000, data: 30000, giant: true }), commit({ code: 7, noise: 'import' })]) t.add(c)
-  assert.equal(isHonest(commit({ giant: true })), false)
   assert.equal(t.commits, 3)
-  assert.equal(t.added, 100)
-  assert.equal(t.code.added, 100)
-  assert.equal(t.excludedCommits, 2)
-  assert.equal(t.excludedAdded, 45007)
-  assert.equal(t.countedAdded, 45107)
-  assert.equal(t.setAside.rawAdded - t.countedAdded, 30000, 'generated lines are raw minus authored')
-  assert.equal(t.filesAdded, 1)
+  assert.equal(t.added, 45107)
+  assert.equal(t.code.added, 45107)
+  assert.equal(t.flaggedCommits, 2)
+  assert.equal(t.flaggedCode, 45007)
+  assert.equal(t.rawAdded - t.added, 30000, 'generated lines are raw minus authored')
+  assert.equal(t.filesAdded, 3)
 })
 
 test('streaks report the longest run and the longest gap', () => {
@@ -98,21 +97,26 @@ test('PR roles and windowing', () => {
     { repo: 'r', status: 'completed', author: { login: 'Colleague' }, createdAt: '2026-01-05T10:00:00Z', closedAt: '2026-01-05T11:00:00Z' },
   ]
   const agg = aggregatePrs(prs, { since: '2025-12-01', end: '2026-02-28' })
-  assert.deepEqual([agg.totals.opened, agg.totals.merged, agg.totals.abandoned], [3, 2, 1])
-  assert.deepEqual(agg.byMonth.get('2026-01'), { opened: 3, merged: 1 })
-  assert.deepEqual(agg.byMonth.get('2026-02'), { opened: 0, merged: 1 })
+  assert.deepEqual([agg.totals.opened, agg.totals.merged, agg.totals.abandoned, agg.totals.ai], [3, 2, 1, 0])
+  assert.deepEqual(agg.byMonth.get('2026-01'), { opened: 3, merged: 1, aiOpened: 0 })
+  assert.deepEqual(agg.byMonth.get('2026-02'), { opened: 0, merged: 1, aiOpened: 0 })
   assert.equal(agg.mergedWithinHour, 1)
   assert.equal(agg.others.length, 1)
+  const era = aggregatePrs(prs, { since: '2025-12-01', end: '2026-02-28', eraStart: '2026-01-31' })
+  assert.equal(era.totals.ai, 1, 'owner PRs from the era start count as AI-made')
+  assert.equal(era.byMonth.get('2026-01').aiOpened, 1)
+  assert.equal(aggregatePrs([{ ...prs[0], author: { login: 'Copilot' } }], { since: '2025-12-01', end: '2026-02-28' }).totals.ai, 1)
 })
 
 test('baseline rows come only from repos with owner pre-window history', () => {
   const rows = baselineRows({
-    lab: { baseline: { before: '2025-10-07', byIdentity: { owner: { commits: 4, linesAdded: 900, linesAddedExclGiant: 90, codeAdded: 50, firstCommit: '2025-03-01T00:00:00Z', lastCommit: '2025-09-01T00:00:00Z' } } } },
+    lab: { baseline: { before: '2025-10-07', byIdentity: { owner: { commits: 4, linesAdded: 900, linesAddedExclGiant: 90, codeAdded: 50, codeAddedInclGiant: 500, firstCommit: '2025-03-01T00:00:00Z', lastCommit: '2025-09-01T00:00:00Z' } } } },
     app: { baseline: { byIdentity: { others: { commits: 2 } } } },
     none: { baseline: null },
   }, new Map(), '2025-10-07')
   assert.equal(rows.length, 1)
-  assert.equal(rows[0].baseAdded, 90)
+  assert.equal(rows[0].baseAdded, 900, 'baseline includes big commits like the year figures')
+  assert.equal(rows[0].baseCode, 500)
   assert.equal(rows[0].yearCommits, 0)
 })
 
@@ -135,54 +139,76 @@ test('repo kind and the labs-to-apps shift threshold', () => {
   assert.ok(!findings(flat).some((f) => f.startsWith('Work moved')), 'no shift finding below threshold')
 })
 
-test('AI trend and trailer-gap findings respect thresholds', () => {
-  const series = [{ ai: 0, commits: 10 }, { ai: 0, commits: 10 }, { ai: 1, commits: 10 }, { ai: 8, commits: 10 }, { ai: 9, commits: 10 }, { ai: 10, commits: 10 }]
-  const trend = aiTrend(series, 3)
-  assert.ok(trend.delta >= THRESHOLDS.aiTrendPoints)
-  const ai = Array.from({ length: 3 }, () => commit({ aiAssisted: true, authorDate: '2026-01-02T10:00:00Z' }))
-  const after = Array.from({ length: THRESHOLDS.trailerGapCommits }, () => commit({ authorDate: '2026-01-20T10:00:00Z' }))
-  assert.deepEqual(trailerGap([...ai, ...after]), { last: '2026-01-02', after: THRESHOLDS.trailerGapCommits })
-  assert.equal(trailerGap([...ai, ...after.slice(1)]), null)
-  assert.match(headlines(model([...ai, ...after])).lines[4], /lower bound/)
+test('AI attribution prefers extractor fields and falls back to identity, trailer and era date', () => {
+  assert.equal(aiReasonOf(commit({ aiAttributed: true, aiReason: 'agent_era' }), null), 'agent_era')
+  assert.equal(aiReasonOf(commit({ aiAttributed: false, aiReason: null, aiAssisted: true }), '2026-01-01'), null, 'extractor verdict wins')
+  assert.equal(aiReasonOf(commit({ identityClass: 'owner_agent' })), 'agent_identity')
+  assert.equal(aiReasonOf(commit({ aiAssisted: true })), 'trailer')
+  assert.equal(aiReasonOf(commit({ authorDate: '2026-01-15T10:00:00Z' }), '2026-01-15'), 'agent_era')
+  assert.equal(aiReasonOf(commit({ authorDate: '2026-01-14T23:00:00Z' }), '2026-01-15'), null)
+  assert.equal(aiReasonOf(commit({ identityClass: 'others', authorDate: '2026-02-01T10:00:00Z' }), '2026-01-15'), null)
 })
 
-test('excluded and raw set-aside findings cite their numbers', () => {
+test('agent-era comparison and AI findings come from the data', () => {
+  const before = [commit({ code: 100, authorDate: '2026-01-05T10:00:00Z' }), commit({ code: 100, authorDate: '2026-01-06T10:00:00Z', aiAssisted: true })]
+  const after = [commit({ code: 600, authorDate: '2026-01-20T10:00:00Z' }), commit({ code: 600, authorDate: '2026-01-20T12:00:00Z' })]
+  const m = buildModel({ commits: [...before, ...after], summaryAll: SUMMARY, config: { agent_era_start: '2026-01-15' } })
+  const s = aiScale(m)
+  assert.deepEqual([s.commits, s.code, s.reasons.trailer, s.reasons.agent_era], [3, 1300, 1, 2])
+  const cmp = eraComparison(m)
+  assert.equal(cmp.before.codePerActiveDay, 100)
+  assert.equal(cmp.after.codePerActiveDay, 1200)
+  assert.equal(cmp.multipliers.codePerActiveDay, 12)
+  const out = aiFindings(m)
+  assert.match(out[0], /^AI made 93% of all code \(\+1,300 lines\)/)
+  assert.match(out[1], /12\.0× the earlier average/)
+  assert.match(headlines(m).lines[3], /Copilot commits as you from 15 Jan 2026/)
+  assert.equal(eraComparison(model(before)), null, 'no era comparison without a start date')
+})
+
+test('biggest drops are labelled but nothing is excluded', () => {
   const rows = [
-    commit({ code: 100, authorDate: '2026-01-05T10:00:00Z' }),
-    commit({ code: 0, data: 0, linesAdded: 45000, linesRemoved: 0, giant: true, giantReason: 'authored +45000 > 40000', authorDate: '2026-01-06T10:00:00Z' }),
+    commit({ code: 5, linesAdded: 90000, sha: 'aaaaaaa1', noise: 'snapshot import' }),
+    commit({ code: 5, linesAdded: 80000, sha: 'bbbbbbb2', noise: 'vendored BSAD engine' }),
+    commit({ code: 70000, sha: 'ccccccc3', giant: true }),
+    commit({ code: 10, sha: 'ddddddd4' }),
   ]
-  const out = findings(model(rows))
-  const excluded = out.find((f) => f.includes('imports and dumps'))
-  assert.match(excluded, /\+45,000 \/ −0 authored lines/)
-  assert.match(excluded, /authored \+45000 > 40000/)
-  assert.ok(!out.some((f) => f.includes('not written by hand')), 'no raw finding when nothing was generated')
-  const data = commit({ code: 10, data: 900, linesAdded: 10, rawLinesAdded: 910, excludedAdded: 300, authorDate: '2026-01-07T10:00:00Z' })
-  const raw = findings(model([data])).find((f) => f.includes('not written by hand'))
-  assert.match(raw, /\+900 \/ −0 raw lines \(named folders alone \+300/)
-})
-
-test('owner totals cross-check flags disagreements only', () => {
-  const t = new Tally()
-  t.add(commit({ code: 10 }))
-  assert.deepEqual(ownerCheck(t, { uniqueCommits: 1, lines_counted_excl_giant_noise: { added: 10, removed: 1 }, codeExclGiantNoise: { added: 10, removed: 0 } }), [])
-  const issues = ownerCheck(t, { uniqueCommits: 2, lines_counted_excl_giant_noise: { added: 10, removed: 1 } })
-  assert.equal(issues.length, 1)
-  assert.match(issues[0], /^commits: report 1 vs extractor ownerTotals 2/)
-})
-
-test('set-aside sections list sha, reason and excluded-folder rules from config', () => {
-  const rows = [
-    commit({ repo: 'shadow_app_swarm', code: 10, rawLinesAdded: 510, excludedAdded: 500, data: 500, linesAdded: 10 }),
-    commit({ repo: 'shadow_app_swarm', sha: 'abcdef1234', noise: 'snapshot import', linesAdded: 90000 }),
-  ]
-  const config = { exclude_paths: ['**/gen/**'], repo_overrides: { shadow_app_swarm: { exclude_paths: ['strat_research/**'] } } }
-  const m = buildModel({ commits: rows, summaryAll: SUMMARY, config })
+  assert.deepEqual(biggestDrops(rows, 3).map(dropKind), ['import', 'vendored', 'feature'])
+  assert.equal(dropKind(commit({ linesAdded: 12, linesRemoved: 62758 })), 'deletion')
+  const m = model(rows)
+  assert.equal(m.total.added, 90000 + 80000 + 70000 + 10)
   const sec = buildSections(m)
-  assert.deepEqual(sec.excluded.rows[0].slice(0, 2), ['shadow_app_swarm', 'abcdef1'])
-  assert.equal(sec.excluded.rows[0][6], 'named rule: snapshot import')
-  assert.deepEqual(sec.excludedPaths.rows[0].slice(0, 3), ['shadow_app_swarm', 'strat_research/**', '500'])
+  assert.deepEqual(sec.drops.rows[0].slice(0, 2), ['shadow_app_x', 'aaaaaaa'])
+  assert.deepEqual(sec.drops.rows[0].slice(6), ['import', 'snapshot import'])
+  assert.ok(findings(m).some((f) => /^The 4 biggest single commits hold \+70,020 code lines \(100% of all code\)/.test(f)))
+})
+
+test('raw finding needs the generated share threshold and cites named folders', () => {
+  assert.ok(!findings(model([commit({ code: 100 })])).some((f) => f.startsWith('In raw git terms')))
+  const data = commit({ code: 10, data: 900, excludedAdded: 300 })
+  const raw = findings(model([data])).find((f) => f.startsWith('In raw git terms'))
+  assert.match(raw, /\+910 \/ −1 lines; 99% of that .*excluded folders \(those alone \+300/)
+  const plain = findings(model([commit({ code: 10, data: 900 })])).find((f) => f.startsWith('In raw git terms'))
+  assert.doesNotMatch(plain, /excluded folders/, 'no folder clause when nothing sits in excluded folders')
+})
+
+test('owner totals cross-check uses the all-inclusive fields', () => {
+  const t = new Tally()
+  t.add({ ...commit({ code: 10 }), aiReason_: 'trailer' })
+  const ok = { uniqueCommits: 1, authoredAddedAll: 10, authoredRemovedAll: 1, codeAddedAll: 10, codeRemovedAll: 0, aiAttributedCommits: 1, aiAttributedCodeAdded: 10 }
+  assert.deepEqual(ownerCheck(t, ok), [])
+  const issues = ownerCheck(t, { ...ok, codeAddedAll: 12 })
+  assert.deepEqual(issues, ['code lines added: report 10 vs extractor ownerTotals 12'])
+})
+
+test('method lists folder rules from config and states only duplicates are removed', () => {
+  const rows = [commit({ repo: 'shadow_app_swarm', code: 10, data: 500, excludedAdded: 500 })]
+  const config = { exclude_paths: ['**/gen/**'], repo_overrides: { shadow_app_swarm: { exclude_paths: ['strat_research/**'] } }, agent_era_start: '2026-01-01' }
+  const sec = buildSections(buildModel({ commits: rows, summaryAll: SUMMARY, config }))
+  assert.deepEqual(sec.folders.rows[0].slice(0, 3), ['shadow_app_swarm', 'strat_research/**', '500 / 0'])
   assert.ok(sec.method.some((b) => b.includes('"**/gen/**"') && b.includes('shadow_app_swarm: "strat_research/**"')))
-  assert.ok(sec.method.some((b) => b.includes('exceed 40,000')))
+  assert.ok(sec.method.some((b) => b.startsWith('Only exact duplicates are removed')))
+  assert.ok(!sec.method.some((b) => /lower bound|set aside/i.test(b)))
 })
 
 test('concentration finding switches wording at the threshold', () => {
@@ -207,7 +233,7 @@ test('buildReport renders offline HTML and Markdown from a raw directory', () =>
     writeFileSync(join(dir, 'commits.jsonl'), rows.map((r) => JSON.stringify(r)).join('\n'))
     writeFileSync(join(dir, 'summary.all.json'), JSON.stringify(SUMMARY))
     const { html, markdown, sections } = buildReport({ raw: dir, prs: null })
-    assert.match(sections.headlines[0], /^1 commits/)
+    assert.match(sections.headlines[0], /^\+1,200 lines of code written \(−0 removed\) in 1 commits/)
     assert.match(html, /<svg class="chart"/)
     assert.doesNotMatch(html, /<script|https?:\/\/(?!www\.w3\.org)/)
     assert.match(markdown, /\| shadow_app_x \| 1 \|/)

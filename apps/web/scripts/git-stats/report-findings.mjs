@@ -1,16 +1,14 @@
 import { dayLabel, fmt, hours, listJoin, monthLabel, pct, share, signed } from './report-format.mjs'
-import { isAiAssisted, isExcluded, monthOf, repoKind } from './report-aggregate.mjs'
+import { monthOf, repoKind } from './report-aggregate.mjs'
+import { aiFindings, aiScale, biggestDrops, dropKind } from './report-ai.mjs'
 
 export const THRESHOLDS = {
   driverShare: 0.25,
   shiftPoints: 0.2,
-  aiTrendPoints: 0.15,
-  trendMonths: 3,
   mergedFastShare: 0.5,
-  setAsideShare: 0.25,
+  rawShare: 0.25,
   concentration: 0.3,
   gapDays: 14,
-  trailerGapCommits: 50,
   maxFindings: 10,
 }
 
@@ -18,24 +16,21 @@ export function busiestMonth(series) {
   return series.reduce((best, m) => (m.commits > (best?.commits ?? -1) ? m : best), null)
 }
 
-function aiCaveat(model) {
-  const gap = trailerGap(model.counted)
-  return gap ? `, a lower bound: no AI trailer was recorded after ${dayLabel(gap.last)}` : ''
-}
-
 export function headlines(model) {
   const t = model.total
   const p = model.prs.totals
   const busy = busiestMonth(model.series)
+  const s = aiScale(model)
+  const era = model.eraStart ? ` Copilot commits as you from ${dayLabel(model.eraStart)}, so everything from that date counts as AI-made; before it, trailers and agent identities.` : ''
   const lines = [
-    `${fmt(t.commits)} commits on ${fmt(t.activeDays)} active days across ${fmt(model.repos.filter((r) => r.tally.commits).length)} repositories, ${dayLabel(model.since)} to ${dayLabel(model.end)}.`,
+    `+${fmt(t.code.added)} lines of code written (−${fmt(t.code.removed)} removed) in ${fmt(t.commits)} commits on ${fmt(t.activeDays)} active days across ${fmt(model.repos.filter((r) => r.tally.commits).length)} repositories, ${dayLabel(model.since)} to ${dayLabel(model.end)}.`,
+    `With tests: +${fmt(t.codeAndTests.added)}. With docs and config as well: +${fmt(t.added)} authored lines. In raw git terms, including generated files and data: +${fmt(t.rawAdded)} / −${fmt(t.rawRemoved)}.`,
     `${fmt(p.opened)} pull requests opened and ${fmt(p.merged)} merged.`,
-    `${signed(t.added, t.removed)} lines you wrote, of which code ${signed(t.code.added, t.code.removed)}.`,
+    `AI made ${pct(s.code, t.code.added)} of the code (+${fmt(s.code)} lines), ${pct(s.commits, t.commits)} of commits and ${pct(s.prs, p.opened)} of pull requests.${era}`,
     `${fmt(t.filesAdded)} files added, ${fmt(t.filesModified)} changed and ${fmt(t.filesDeleted)} deleted (${fmt(t.filesRenamed)} renamed).`,
-    `${pct(t.ai, t.commits)} of commits were AI-assisted (${fmt(t.ai)} of ${fmt(t.commits)})${aiCaveat(model)}.`,
   ]
-  if (busy?.commits) lines.push(`Busiest month: ${monthLabel(busy.month)}, with ${fmt(busy.commits)} commits and +${fmt(busy.added)} lines written.`)
-  const counting = `Only your own commits count, each change once: merge commits, rebased or cherry-picked copies, squash-merge duplicates and copies across repositories are dropped. Line figures are authored lines, so lockfiles, generated files, data and named research or vendor folders are left out, and ${fmt(t.excludedCommits)} imports and dumps (${signed(t.excludedAdded, t.excludedRemoved)} authored lines) are listed separately under "What was set aside".`
+  if (busy?.commits) lines.push(`Busiest month: ${monthLabel(busy.month)}, with ${fmt(busy.commits)} commits and +${fmt(busy.codeAdded)} lines of code.`)
+  const counting = 'Everything you committed counts, including imports, vendored engines and big features. Only exact duplicates are removed: merge commits, rebased or cherry-picked copies, squash-merge repeats and copies across repositories.'
   return { lines, counting }
 }
 
@@ -59,7 +54,7 @@ function linesPeakFinding(model) {
   if (!top?.codeAdded) return null
   const totalCode = model.total.code.added
   const repo = model.counted
-    .filter((c) => monthOf(c.authorDate) === top.month && !isExcluded(c))
+    .filter((c) => monthOf(c.authorDate) === top.month)
     .reduce((acc, c) => acc.set(c.repo, (acc.get(c.repo) || 0) + (c.buckets?.code?.added || 0)), new Map())
   const [leader, leaderLines] = [...repo.entries()].sort((a, b) => b[1] - a[1])[0] || ['–', 0]
   return `The most code was written in ${monthLabel(top.month)}${model.partialMonths.includes(top.month) ? ' (only partly inside the window)' : ''}: +${fmt(top.codeAdded)} code lines, ${pct(top.codeAdded, totalCode)} of the year's code, led by ${leader} (+${fmt(leaderLines)}).`
@@ -87,34 +82,6 @@ function shiftFinding(model) {
   return `Work moved ${dir}: app repositories took ${pct(s.halves[0].app, s.halves[0].n)} of commits in ${span(s.firstMonths)} and ${pct(s.halves[1].app, s.halves[1].n)} in ${span(s.secondMonths)}.`
 }
 
-export function aiTrend(series, n = THRESHOLDS.trendMonths) {
-  const pool = (ms) => ms.reduce((acc, m) => ({ ai: acc.ai + m.ai, commits: acc.commits + m.commits }), { ai: 0, commits: 0 })
-  const early = pool(series.slice(0, n))
-  const late = pool(series.slice(-n))
-  return { early, late, delta: share(late.ai, late.commits) - share(early.ai, early.commits) }
-}
-
-export function trailerGap(counted, minCommits = THRESHOLDS.trailerGapCommits) {
-  const aiDays = counted.filter(isAiAssisted).map((c) => c.authorDate.slice(0, 10)).sort()
-  if (!aiDays.length) return null
-  const last = aiDays[aiDays.length - 1]
-  const after = counted.filter((c) => c.authorDate.slice(0, 10) > last).length
-  return after >= minCommits ? { last, after } : null
-}
-
-function aiFinding(model) {
-  const t = model.total
-  if (!t.commits) return null
-  const { early, late, delta } = aiTrend(model.series)
-  const gap = trailerGap(model.counted)
-  const gapText = gap ? ` No AI co-author trailer appears after ${dayLabel(gap.last)}, yet ${fmt(gap.after)} commits followed, so the share after that date is unmeasured rather than zero.` : ''
-  const base = `${pct(t.ai, t.commits)} of commits (${fmt(t.ai)}) carry an AI co-author or agent identity.`
-  if (Math.abs(delta) < THRESHOLDS.aiTrendPoints || !early.commits || !late.commits) return `${base} The share stayed within ${Math.round(THRESHOLDS.aiTrendPoints * 100)} points between the first and last ${THRESHOLDS.trendMonths} months.${gapText}`
-  const peak = model.series.reduce((b, m) => (m.commits && (m.aiShare ?? 0) > (b?.aiShare ?? -1) ? m : b), null)
-  const word = delta > 0 ? 'rose' : 'fell'
-  return `${base} It ${word} from ${pct(early.ai, early.commits)} in the first ${THRESHOLDS.trendMonths} months to ${pct(late.ai, late.commits)} in the last ${THRESHOLDS.trendMonths}, peaking at ${pct(peak.ai, peak.commits)} in ${monthLabel(peak.month)}.${gapText}`
-}
-
 function prFinding(model) {
   const p = model.prs
   if (!p.totals.opened) return null
@@ -125,20 +92,22 @@ function prFinding(model) {
   return `${fmt(p.totals.opened)} pull requests opened, ${pct(p.totals.merged, p.totals.opened)} merged; ${speed} (median ${hours(p.medianMergeHours)}). ${pct(p.singleCommit, p.totals.opened)} contained a single commit, and ${fmt(p.totals.abandoned)} were abandoned.`
 }
 
-function excludedFinding(model) {
-  const t = model.total
-  if (!t.excludedCommits) return null
-  const biggest = [...model.excluded].sort((a, b) => b.linesAdded + b.linesRemoved - (a.linesAdded + a.linesRemoved))[0]
-  const why = biggest.noise || biggest.giantReason || 'giant'
-  return `${fmt(t.excludedCommits)} imports and dumps (${signed(t.excludedAdded, t.excludedRemoved)} authored lines) were set aside; with them, lines written would read ${signed(t.countedAdded, t.countedRemoved)} instead of ${signed(t.added, t.removed)}. The largest was ${biggest.repo} ${biggest.sha.slice(0, 7)} on ${dayLabel(biggest.authorDate.slice(0, 10))} (${signed(biggest.linesAdded, biggest.linesRemoved)}, ${why}).`
+function dropsFinding(model) {
+  const drops = biggestDrops(model.counted)
+  const code = model.total.code.added
+  if (!drops.length || !code) return null
+  const dropCode = drops.reduce((sum, c) => sum + (c.buckets?.code?.added || 0), 0)
+  const top = drops[0]
+  return `The ${fmt(drops.length)} biggest single commits hold +${fmt(dropCode)} code lines (${pct(dropCode, code)} of all code). The largest was ${top.repo} ${top.sha.slice(0, 7)} on ${dayLabel(top.authorDate.slice(0, 10))} (+${fmt(top.linesAdded)} / −${fmt(top.linesRemoved)}, ${dropKind(top)}).`
 }
 
 function rawFinding(model) {
-  const s = model.total.setAside
-  const raw = s.rawAdded + s.rawRemoved
-  const dropped = raw - (model.total.countedAdded + model.total.countedRemoved)
-  if (!raw || share(dropped, raw) < THRESHOLDS.setAsideShare) return null
-  return `${pct(dropped, raw)} of raw changed lines were not written by hand: lockfiles, generated files, data and named research or vendor folders account for +${fmt(s.rawAdded - model.total.countedAdded)} / −${fmt(s.rawRemoved - model.total.countedRemoved)} raw lines (named folders alone +${fmt(s.pathAdded)} / −${fmt(s.pathRemoved)}). They are left out of every line figure here.`
+  const t = model.total
+  const raw = t.rawAdded + t.rawRemoved
+  const other = raw - (t.added + t.removed)
+  if (!raw || share(other, raw) < THRESHOLDS.rawShare) return null
+  const folders = t.pathAdded || t.pathRemoved ? ` and excluded folders (those alone +${fmt(t.pathAdded)} / −${fmt(t.pathRemoved)})` : ''
+  return `In raw git terms the year moved +${fmt(t.rawAdded)} / −${fmt(t.rawRemoved)} lines; ${pct(other, raw)} of that was lockfiles, generated files and data${folders}, counted only in the raw figure.`
 }
 
 function concentrationFinding(model) {
@@ -169,6 +138,6 @@ function testsFinding(model) {
 }
 
 export function findings(model) {
-  const all = [peakMonthFinding, linesPeakFinding, shiftFinding, aiFinding, prFinding, excludedFinding, rawFinding, concentrationFinding, rhythmFinding, testsFinding]
-  return all.map((f) => f(model)).filter(Boolean).slice(0, THRESHOLDS.maxFindings)
+  const all = [peakMonthFinding, linesPeakFinding, aiFindings, shiftFinding, prFinding, dropsFinding, rawFinding, concentrationFinding, rhythmFinding, testsFinding]
+  return all.flatMap((f) => f(model)).filter(Boolean).slice(0, THRESHOLDS.maxFindings)
 }

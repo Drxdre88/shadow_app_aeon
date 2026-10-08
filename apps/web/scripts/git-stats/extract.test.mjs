@@ -6,8 +6,29 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PathClassifier, globToRegExp } from './classify.mjs'
 import { parseLogTokens } from './log-parse.mjs'
-import { IdentityMatcher, isoWeek } from './summary.mjs'
-import { markCrossRepo, parseCli, runExtraction } from './extract.mjs'
+import { IdentityMatcher, attributeAi, isoWeek } from './summary.mjs'
+import { loadConfig, markCrossRepo, parseCli, runExtraction } from './extract.mjs'
+
+const scriptDir = import.meta.dirname
+
+test('AI attribution precedence: agent identity > trailer > agent era', () => {
+  const at = (identityClass, day, aiAssisted = false) =>
+    attributeAi({ identityClass, aiAssisted, authorDate: `${day}T12:00:00+01:00` }, '2026-08-20').aiReason
+  assert.equal(at('owner_agent', '2025-11-01', true), 'agent_identity')
+  assert.equal(at('owner_human', '2025-11-01', true), 'trailer')
+  assert.equal(at('owner_human', '2026-08-20'), 'agent_era')
+  assert.equal(at('owner_human', '2026-08-19'), null)
+  assert.equal(at('others', '2026-09-01'), null)
+  assert.equal(attributeAi({ identityClass: 'owner_human', authorDate: '2026-09-01T00:00:00Z' }).aiAttributed, false)
+})
+
+test('repos.json follows the count-everything policy', () => {
+  const config = loadConfig(join(scriptDir, 'repos.json'))
+  assert.equal(config.count_policy, 'all')
+  assert.match(config.agent_era_start, /^\d{4}-\d{2}-\d{2}$/)
+  assert.ok(config.agent_era_note)
+  for (const [repo, o] of Object.entries(config.repo_overrides)) assert.equal(o.exclude_paths, undefined, `${repo} still excludes paths`)
+})
 
 const lines = (n, prefix = 'line') => Array.from({ length: n }, (_, i) => `${prefix} ${i + 1}`).join('\n') + '\n'
 
@@ -216,6 +237,7 @@ test('end-to-end extraction on a fixture repo', async (t) => {
   writeFileSync(config, JSON.stringify({
     root,
     repos: ['fixture', 'zclone', 'missing_repo'],
+    agent_era_start: '2025-11-10',
     identities: { owner_human: ['OWNER@example.com'], bots: ['*[bot]'] },
     exclude_paths: [],
     repo_overrides: { fixture: { exclude_paths: ['vendorized/**'], noise_commits: [{ subject: '^data dump', reason: 'test dump' }] } },
@@ -279,6 +301,9 @@ test('end-to-end extraction on a fixture repo', async (t) => {
   assert.equal(by[shas.c4].aiAssisted, true)
   assert.equal(by[shas.c1].aiAssisted, false)
   assert.equal(c7.noise, 'test dump')
+  assert.equal(c7.noiseReason, 'test dump')
+  assert.deepEqual([by[shas.c4].aiReason, by[shas.s2].aiReason, by[shas.c1].aiReason, c7.aiReason], ['trailer', 'agent_era', null, null])
+  assert.equal(by[shas.s2].aiAttributed, true)
 
   const summary = JSON.parse(readFileSync(join(out, 'fixture.summary.json'), 'utf8'))
   const t0 = summary.totals
@@ -298,6 +323,16 @@ test('end-to-end extraction on a fixture repo', async (t) => {
   assert.equal(t0.codeExclGiantNoise.added, 40)
   assert.equal(summary.ownerTotals.uniqueCommits, 10)
   assert.equal(summary.ownerTotals.codeExclGiantNoise.added, 37, 'bot and unknown authors left out of owner code')
+  assert.equal(summary.countPolicy, 'all')
+  assert.equal(t0.codeAddedAll, 40041, 'count-all code includes the giant/noise commit')
+  assert.equal(t0.authoredAddedAll, t0.authoredAdded)
+  assert.equal(t0.generatedAddedAll, t0.buckets.generated_or_data.added)
+  assert.equal(summary.ownerTotals.codeAddedAll, 37)
+  assert.equal(summary.byMonth['2025-11'].owner.codeAddedAll, 37)
+  assert.ok(summary.byWeek['2025-W46'].owner.aiAttributedCommits > 0)
+  assert.equal(t0.aiAttributedCommits, 6)
+  assert.deepEqual(t0.aiAttributedByReason, { agent_identity: 0, trailer: 1, agent_era: 5 })
+  assert.deepEqual([t0.aiAttributedAdded, t0.aiAttributedCodeAdded], [14, 13])
   assert.equal(summary.byIdentity.bots.uniqueCommits, 1)
   assert.deepEqual(summary.unknownIdentities, [{ identity: 'Stranger <who@else.org>', commits: 1 }])
   assert.equal(summary.byMonth['2025-11'].all.uniqueCommits, 12)

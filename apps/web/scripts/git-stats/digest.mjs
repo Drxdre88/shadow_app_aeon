@@ -14,7 +14,7 @@ import { buildPayload, buildRepoDay } from './digest-stats.mjs'
 import { DigestStore } from './digest-store.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
-const STAT_KEYS = ['commits', 'linesAdded', 'linesRemoved', 'honestAdded', 'honestRemoved', 'codeAdded', 'codeRemoved', 'filesAdded', 'filesModified', 'filesDeleted', 'aiAssistedCommits', 'giantCommits', 'rawAdded', 'rawRemoved']
+const STAT_KEYS = ['commits', 'linesAdded', 'linesRemoved', 'honestAdded', 'honestRemoved', 'codeAdded', 'codeRemoved', 'filesAdded', 'filesModified', 'filesDeleted', 'aiAssistedCommits', 'giantCommits', 'rawAdded', 'rawRemoved', 'aiCommits', 'aiCodeAdded']
 
 export const USAGE = `Usage: node digest.mjs [--day YYYY-MM-DD] [--catch-up N] [--dry-run [--store]] [--repos a,b]
   [--no-prs] [--config repos.json] [--lookback-days 60] [--concurrency 4]`
@@ -71,7 +71,7 @@ export class DigestRunner {
   async collect(names, firstDay, lastDay) {
     const extractor = new RepoExtractor({
       identities: this.identities, since: shiftDay(firstDay, -1), until: shiftDay(lastDay, 1),
-      lookbackDays: this.lookbackDays, maxSquashRefs: 400, baseline: false,
+      lookbackDays: this.lookbackDays, maxSquashRefs: 400, baseline: false, agentEraStart: this.config.agent_era_start || null,
     })
     const prSince = shiftDay(firstDay, -PR_LOOKBACK_DAYS)
     const rows = await mapLimit(names, this.concurrency, async (name) => {
@@ -102,7 +102,7 @@ export class DigestRunner {
         errors[name] = data.error
         continue
       }
-      repoDays.push(buildRepoDay(name, day, data.commits, { prs: data.pr.records, prNote: data.pr.note, timeZone: this.timeZone }))
+      repoDays.push(buildRepoDay(name, day, data.commits, { prs: data.pr.records, prNote: data.pr.note, timeZone: this.timeZone, agentEraStart: this.config.agent_era_start || null }))
     }
     return { repoDays, errors }
   }
@@ -156,7 +156,7 @@ export class DigestRunner {
         const prNotes = Object.fromEntries([...collected].filter(([, v]) => v.pr?.note).map(([n, v]) => [n, v.pr.note]))
         this.store.writeDaily(d, {
           day: d, generatedAt, timeZone: this.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone,
-          note: 'owner_human + owner_agent counted commits by author date (local day); cross-repo duplicates not removed',
+          note: 'owner_human + owner_agent counted commits by author date (local day); all authored lines count (big drops are informational); cross-repo duplicates not removed',
           totals: sumStats(repoDays), errors, prNotes, repos: Object.fromEntries(repoDays.map((rd) => [rd.repo, rd])),
         })
         this.store.appendHistory(repoDays.map((rd) => ({ day: d, repo: rd.repo, ...rd.stats, generatedAt })))
