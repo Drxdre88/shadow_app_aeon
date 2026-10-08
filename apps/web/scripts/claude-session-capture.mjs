@@ -940,12 +940,14 @@ async function runFromHook() {
   if (process.env.AEON_HOOK_CHILD === '1') bail('hook-child session — skip capture')
   const payload = readStdin()
   let transcriptRecords = null
+  let retryOnEmpty = false
   if (payload.client === 'copilot') {
-    const { loadCopilotTranscriptWhenReady } = await import('./copilot-session-transcript.mjs')
+    const { loadCopilotTranscriptWhenReady, copilotSessionMayStillWrite } = await import('./copilot-session-transcript.mjs')
     // Copilot emits SessionEnd before its final SQLite turn is durable. Re-read
     // for at most two seconds and proceed as soon as both sides of the final
     // conversation exist, before the shared substance gate sees the transcript.
     transcriptRecords = await loadCopilotTranscriptWhenReady(payload.session_id)
+    retryOnEmpty = copilotSessionMayStillWrite(payload.session_id)
   }
   log('payload event:', payload.hook_event_name, 'reason:', payload.reason)
   const result = await processSession({
@@ -956,7 +958,7 @@ async function runFromHook() {
     hookEvent: payload.hook_event_name,
     reason: payload.reason,
     dispatch: payload.dispatch && typeof payload.dispatch === 'object' ? payload.dispatch : null,
-    retryOnEmpty: payload.client === 'copilot',
+    retryOnEmpty,
   })
   if (result.id) log(`memory created/upserted: ${result.id}`)
   return result

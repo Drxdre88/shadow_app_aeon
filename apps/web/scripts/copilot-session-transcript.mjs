@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -7,6 +7,25 @@ import { captureReceiptPath, hasCaptureReceipt, recordCaptureReceipt } from './s
 export function resolveCopilotStorePath() {
   const copilotHome = process.env.COPILOT_HOME || join(homedir(), '.copilot')
   return process.env.COPILOT_SESSION_STORE || join(copilotHome, 'session-store.db')
+}
+
+// A just-ended session can still be writing its final turn, so an empty read is
+// worth retrying only while its session-state is fresh. A missing or stale
+// folder (a wiped harness home, a probe that never had a conversation) will
+// never produce a transcript, and retrying only dead-letters it.
+const FRESH_MS = 15 * 60_000
+
+export function copilotSessionMayStillWrite(
+  sessionId,
+  copilotHome = process.env.COPILOT_HOME || join(homedir(), '.copilot'),
+  now = Date.now(),
+) {
+  if (!validSessionId(sessionId)) return false
+  const dir = join(copilotHome, 'session-state', sessionId)
+  if (!existsSync(dir)) return false
+  const events = join(dir, 'events.jsonl')
+  const lastWrite = Math.max(statSync(dir).mtimeMs, existsSync(events) ? statSync(events).mtimeMs : 0)
+  return now - lastWrite < FRESH_MS
 }
 
 function validSessionId(sessionId) {

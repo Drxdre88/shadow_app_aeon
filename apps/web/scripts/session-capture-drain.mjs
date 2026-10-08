@@ -78,6 +78,8 @@ function drainJob(path) {
     windowsHide: true,
     timeout: 150_000,
     maxBuffer: 2 * 1024 * 1024,
+    // node:sqlite's ExperimentalWarning otherwise fills lastError and hides the real failure.
+    env: { ...process.env, NODE_NO_WARNINGS: '1' },
   })
   if (hasCaptureReceipt(job.client, job.sessionId)) {
     unlinkSync(path)
