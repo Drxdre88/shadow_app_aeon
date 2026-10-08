@@ -140,7 +140,9 @@ the board day, promotions, new beliefs, drift, synthesis health and mind-compare
   Kairos ask (`appendOpenQuestionsBlock`, `daily-message-prompt.ts`). Numbers come from
   `kairosAsk.seq` (stable per user); cap 10, 14-day expiry, `dismissed` status. On Telegram,
   `Q12: …` answers and `skip Q12` dismisses (`lib/kairos/ask-numbered.ts`, routed before chat);
-  MCP/REST `list_open_kairos_asks` / `dismiss_kairos_ask` expose the same list.
+  MCP/REST `list_open_kairos_asks` / `dismiss_kairos_ask` expose the same list, and
+  `answer_asks_from_message` lets Triad relay a message (or a thread reply under a Q card) through
+  the same parsing.
 - **What I now believe** — a deterministic beliefs block, appended after the guard.
 - **Idea of the day** — the top *pending* survivor since the last window (`readIdeaOfTheDay`),
   with "survived because …" and "(N more in your inbox)". The samey-ideas line appears when the

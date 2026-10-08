@@ -113,8 +113,8 @@ Auth: Bearer only (API key, master key, mobile session, or OAuth `aeon_at_`) via
 | reflections | 1 | `kairos_reflect` |
 | recipes | 1 | `get_trace_history` (read-only trace surface; the on-demand recipe-run tool was retired in 0.18) |
 | **synthesis** | 2 | `prepare_aether_context`, `commit_aether` — Aether (global self-model) via the Claude-Code cognition path (no BYOK) |
-| **ask** | 5 | `run_kairos_ask`, `get_pending_kairos_ask`, `answer_kairos_ask`, **`list_open_kairos_asks`**, **`dismiss_kairos_ask`** (0.18; numbered open questions, REST-mirrored) |
-| **dialogue** | 5 | `open_dialogue`, `prepare_dialogue_context`, `append_dialogue_turn`, `get_dialogue`, `commit_dialogue` |
+| **ask** | 6 | `run_kairos_ask`, `get_pending_kairos_ask`, `answer_kairos_ask`, **`list_open_kairos_asks`**, **`dismiss_kairos_ask`** (0.18; numbered open questions, REST-mirrored), **`answer_asks_from_message`** (Triad relay: Telegram's Q-label + reply-to-a-question parsing, agent origin; REST `POST /api/v1/kairos/asks/answer-message`) |
+| **dialogue** | 5 | `open_dialogue`, `prepare_dialogue_context` (returns `replyStyle`, `lib/kairos/reply-style.ts`), `append_dialogue_turn`, `get_dialogue`, `commit_dialogue` |
 | **memory-ops** | 2 | `list_memory_ops`, `revert_memory_op` — memory-engine undo ledger |
 | **thinking** | 3 | `claim_thinking_job`, `submit_thinking_job`, `list_thinking_jobs` — the Claude Max routine's queue surface. 25 kinds as of 0.28 (`card_triage` added; `kinds` max = enum size); a claim naming a retired kind has it dropped. Submitting `idea_generate` plans `idea_judge` the same night |
 | **beliefs** | 2 | `list_beliefs` (each belief carries `sourceType` + `recheck`, 0.14), `get_mind_comparison` |

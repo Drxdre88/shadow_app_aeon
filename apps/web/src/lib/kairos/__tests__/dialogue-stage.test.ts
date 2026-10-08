@@ -12,7 +12,10 @@ vi.mock('@/lib/data/dialogue', () => ({
   closeDialogue: vi.fn(), fetchMemoriesByIds: vi.fn(async () => []), fetchAetherPayload: vi.fn(),
   writeFloatingReflection: vi.fn(), filterLiveDominionIds: vi.fn(),
 }))
-vi.mock('../retrieve', () => ({ retrieveContext: vi.fn() }))
+vi.mock('../retrieve', () => ({
+  retrieveContext: vi.fn(),
+  retrieveGlobalContext: vi.fn(async () => ({ bundle: null, cortex: null, archetypes: [], substrate: [], traces: [] })),
+}))
 vi.mock('../today', () => ({ loadTodayDigest: vi.fn(async () => null), recordTodayAfter: vi.fn() }))
 vi.mock('@/lib/data/kairos-stage', () => ({ readKairosStage: vi.fn() }))
 

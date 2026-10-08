@@ -24,6 +24,7 @@ vi.mock('@/lib/data/dialogue', () => ({
 
 vi.mock('../retrieve', () => ({
   retrieveContext: vi.fn(),
+  retrieveGlobalContext: vi.fn(),
 }))
 
 // One mind: real today.ts / today-render.ts over a mocked data layer.
@@ -51,7 +52,8 @@ import {
   writeFloatingReflection,
   filterLiveDominionIds,
 } from '@/lib/data/dialogue'
-import { retrieveContext } from '../retrieve'
+import { retrieveContext, retrieveGlobalContext } from '../retrieve'
+import { VORATH_REPLY_STYLE } from '../reply-style'
 
 const USER = 'user-1'
 const ASK_ID = 'a0000000-0000-4000-8000-000000000001'
@@ -192,17 +194,21 @@ describe('prepareDialogueContext', () => {
     // retrieval query is the latest operator turn
     expect(retrieveContext).toHaveBeenCalledWith({ userId: USER, dominionId: DOM_ID, query: 'my latest reply' })
     expect(ctx!.retrieval).not.toBeNull()
+    expect(ctx!.replyStyle).toBe(VORATH_REPLY_STYLE)
   })
 
-  it('skips retrieval for a floating (Dominion-less) dialogue', async () => {
+  it('searches the whole brain for a floating (Dominion-less) dialogue, e.g. a Triad DM', async () => {
     mock(loadDialogue).mockResolvedValue({ ...loaded, thread: { ...loaded.thread, dominionId: null } })
     mock(fetchAetherPayload).mockResolvedValue(null)
     mock(fetchMemoriesByIds).mockResolvedValue([])
+    const hit = { id: 'm9', title: 'EPEX SFTP swap', bodyMd: 'b', streamClass: 'reflection', createdAt: new Date() }
+    mock(retrieveGlobalContext).mockResolvedValue({ bundle: null, cortex: null, archetypes: [], substrate: [hit], traces: [] })
 
     const ctx = await prepareDialogueContext(USER, THREAD)
 
-    expect(ctx!.retrieval).toBeNull()
     expect(retrieveContext).not.toHaveBeenCalled()
+    expect(retrieveGlobalContext).toHaveBeenCalledWith({ userId: USER, query: 'my latest reply' })
+    expect(ctx!.retrieval!.substrate).toEqual([hit])
   })
 
   it('returns null when the thread is not found', async () => {

@@ -67,8 +67,10 @@ The conversational successor to the one-shot Ask: a pending ask (or free topic) 
 retrieval-grounded back-and-forth that Claude Code authors turn-by-turn (no BYOK), then distils into
 durable reflections. Persistence reuses `agent_sessions` (`engine='kairos-dialogue'`) +
 `session_events` (roles `operator`/`kairos`); null-Dominion dialogues allowed. Orchestration
-(`lib/kairos/dialogue.ts`): `openKairosDialogue`, `prepareDialogueContext` (fresh per-turn retrieval
-when Dominion-anchored), `appendDialogueTurn`, `commitDialogue` (distils → reflections, closes ask +
+(`lib/kairos/dialogue.ts`): `openKairosDialogue`, `prepareDialogueContext` (fresh per-turn retrieval:
+Dominion-scoped when anchored, whole-brain `retrieveGlobalContext` otherwise, e.g. Triad DMs; also
+returns `replyStyle`, the one reply-style rule from `lib/kairos/reply-style.ts`), `appendDialogueTurn`,
+`commitDialogue` (distils → reflections, closes ask +
 thread). **Soft Dominion tagging:** `commitDialogue` accepts `dominionIds[]` written as
 `dominion:<id>` reference tags — prefer tagging over hard pinning. MCP: `open_dialogue`,
 `prepare_dialogue_context`, `append_dialogue_turn`, `get_dialogue`, `commit_dialogue`. Driver: the

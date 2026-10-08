@@ -431,14 +431,16 @@ export type NumberedAnswerOutcome =
 /**
  * Deterministic pre-router for operator text: "Q12: …" / "Q12 …" answers,
  * "skip Q12" dismissals, or a reply quoting one open Q. matched:false (no
- * open question named) means the text is ordinary chat. Answers carry the
- * operator's own words, so they are stamped operator-origin.
+ * open question named) means the text is ordinary chat. Owner surfaces
+ * (Telegram) keep the operator origin; an agent relaying the owner's message
+ * (Triad via MCP/REST) passes an agent origin.
  */
 export async function answerNumberedKairosAsks(
   userId: string,
   body: string,
   now: Date = new Date(),
   replyText?: string,
+  origin: Origin = { kind: 'operator', via: 'ask' },
 ): Promise<NumberedAnswerOutcome> {
   if (!mightAnswerKairosAsks(body, replyText)) return { matched: false }
   const open = await listOpenKairosAsks(userId, now)
@@ -453,7 +455,7 @@ export async function answerNumberedKairosAsks(
   const failed: number[] = []
   for (const { seq, text } of parsed.answers) {
     try {
-      const result = await answerKairosAsk(userId, bySeq.get(seq)!.id, text, undefined, { kind: 'operator', via: 'ask' })
+      const result = await answerKairosAsk(userId, bySeq.get(seq)!.id, text, undefined, origin)
       ;('error' in result ? failed : answered).push(seq)
     } catch (err) {
       console.error('[kairos-ask] numbered answer failed', { seq, err })
