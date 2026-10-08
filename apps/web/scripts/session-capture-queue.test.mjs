@@ -32,3 +32,30 @@ test('rejects unsafe queue identities', () => {
   assert.equal(queue.enqueueCapture({ client: 'other', session_id: 'one' }), null)
   assert.equal(queue.enqueueCapture({ client: 'codex', session_id: '../one' }), null)
 })
+
+test('a skip receipt stops backfill re-queues but not a live SessionEnd', () => {
+  const backfill = { client: 'codex', session_id: 'skipped-session', reason: 'backfill' }
+  assert.equal(queue.hasCaptureSkip('codex', 'skipped-session'), false)
+  assert.equal(queue.recordCaptureSkip('codex', 'skipped-session'), true)
+  assert.equal(queue.hasCaptureSkip('codex', 'skipped-session'), true)
+  assert.match(queue.captureSkipPath('codex', 'skipped-session'), /aeon-capture-skips[\\/]skipped-session$/)
+  assert.equal(queue.enqueueCapture(backfill), null)
+  const live = queue.enqueueCapture({ ...backfill, reason: 'prompt_input_exit' })
+  assert.ok(live)
+  assert.equal(JSON.parse(readFileSync(live, 'utf8')).sessionId, 'skipped-session')
+})
+
+test('skip receipts reject unsafe identities', () => {
+  assert.equal(queue.recordCaptureSkip('codex', '../escape'), false)
+  assert.equal(queue.hasCaptureSkip('other', 'one'), false)
+})
+
+test('a session resumed after its skip reaches backfill again', () => {
+  assert.equal(queue.recordCaptureSkip('codex', 'resumed-session'), true)
+  const backfill = { client: 'codex', session_id: 'resumed-session', reason: 'backfill' }
+  const before = new Date(Date.now() - 60_000).toISOString()
+  const after = new Date(Date.now() + 60_000).toISOString()
+  assert.equal(queue.enqueueCapture({ ...backfill, last_activity_at: before }), null)
+  assert.equal(queue.enqueueCapture({ ...backfill, last_activity_at: 'garbage' }), null)
+  assert.ok(queue.enqueueCapture({ ...backfill, last_activity_at: after }))
+})

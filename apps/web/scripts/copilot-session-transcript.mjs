@@ -50,7 +50,7 @@ export function listCopilotBackfillSessions(currentSessionId, limit = 100, store
   const db = new DatabaseSync(storePath, { readOnly: true })
   try {
     const sessions = db.prepare(`
-      SELECT s.id, s.cwd
+      SELECT s.id, s.cwd, s.updated_at
       FROM sessions s
       WHERE s.id <> ?
         AND EXISTS (
@@ -62,7 +62,7 @@ export function listCopilotBackfillSessions(currentSessionId, limit = 100, store
       ORDER BY s.updated_at DESC
       LIMIT ?
     `).all(currentSessionId, boundedLimit)
-    return sessions.map((session) => ({ id: session.id, cwd: session.cwd }))
+    return sessions.map((session) => ({ id: session.id, cwd: session.cwd, updatedAt: session.updated_at ?? null }))
   } finally {
     db.close()
   }
@@ -93,6 +93,25 @@ export function readCopilotUsage(db, sessionId) {
     }
   } catch {
     return null
+  }
+}
+
+// Copilot keeps no tool rows in SQLite, but every main-thread model call past
+// the one that answers a turn is a tool round. Sub-agent calls carry a
+// parent_tool_call_id and are left out. Older stores lack the column: 0.
+const MAX_TOOL_ROUNDS = 200
+
+export function readCopilotToolRounds(db, sessionId, turnCount) {
+  try {
+    const row = db.prepare(`
+      SELECT count(*) AS calls
+      FROM assistant_usage_events
+      WHERE session_id = ? AND parent_tool_call_id IS NULL
+    `).get(sessionId)
+    const rounds = Number(row?.calls || 0) - Math.max(0, Number(turnCount) || 0)
+    return Math.min(Math.max(rounds, 0), MAX_TOOL_ROUNDS)
+  } catch {
+    return 0
   }
 }
 
@@ -142,6 +161,15 @@ export function loadCopilotTranscript(sessionId, storePath = resolveCopilotStore
         })
       }
     }
+    const toolRounds = readCopilotToolRounds(db, sessionId, turns.length)
+    if (toolRounds > 0) {
+      messages.push({
+        type: 'assistant',
+        message: { content: Array.from({ length: toolRounds }, () => ({ type: 'tool_use', name: 'CopilotToolRound', input: {} })) },
+        timestamp: turns.at(-1)?.timestamp ?? session.created_at,
+        cwd: session.cwd,
+      })
+    }
     for (const file of files) {
       if (typeof file.file_path !== 'string' || !file.file_path) continue
       messages.push({
@@ -161,6 +189,7 @@ export function loadCopilotTranscript(sessionId, storePath = resolveCopilotStore
         client: 'copilot',
         cwd: session.cwd,
         ...(typeof session.branch === 'string' && session.branch ? { branch: session.branch } : {}),
+        ...(typeof session.summary === 'string' && session.summary.trim() ? { title: session.summary.trim() } : {}),
         ...(usage ? { usage } : {}),
       },
     }, ...messages]

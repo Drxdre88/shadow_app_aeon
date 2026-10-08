@@ -74,8 +74,8 @@ const FREE_BACKUP_KINDS = new Set<string>(['daily_message'])
 // Daytime kinds have no backup at all: an unanswered slot is missed, even
 // though the sweep stamps it 'fallback: no fallback …'.
 const NO_BACKUP_KINDS = new Set<string>(['pulse', 'reflect'])
-// Hourly daytime kinds are not "last night".
-const DAYTIME_KINDS = new Set<string>(BRAIN_JOBS.filter((j) => j.cadence === 'hourly').map((j) => j.kind))
+// Hourly daytime kinds and the afternoon (daily) kinds are "today", not "last night".
+const DAYTIME_KINDS = new Set<string>(BRAIN_JOBS.filter((j) => j.cadence === 'hourly' || j.cadence === 'daily').map((j) => j.kind))
 
 // The routine whose scope owns a kind: completeJob overwrites claimed_by, so
 // a finished job's routine cannot be read back from the row.

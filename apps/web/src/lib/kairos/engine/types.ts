@@ -202,6 +202,8 @@ export type ThinkingJobKind =
   | 'card_tree'
   // Workforce (Phase 3): weekly card garden proposals for the owner's tap.
   | 'card_garden'
+  // Workforce: afternoon AI DONE cards on boards the owner switched on (settings.kairosAiDone).
+  | 'ai_done'
 
 export type ThinkingJobStatus = 'queued' | 'claimed' | 'done' | 'failed' | 'expired' | 'fallback'
 

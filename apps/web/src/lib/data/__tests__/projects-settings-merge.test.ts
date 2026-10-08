@@ -75,6 +75,11 @@ describe('updateProject settings', () => {
     expect(settingsQuery().params).toEqual([JSON.stringify({ boardMode: 'hangar' })])
   })
 
+  it('never lets a generic settings patch switch on Vorath checks (AI DONE, creator-only switch)', async () => {
+    await updateProject(PROJECT, 'user-1', { settings: { kairosAiDone: true, boardMode: 'hangar' } })
+    expect(settingsQuery().params).toEqual([JSON.stringify({ boardMode: 'hangar' })])
+  })
+
   it('leaves settings untouched when the patch has none', async () => {
     await updateProject(PROJECT, 'user-1', { name: 'Renamed' })
     expect(state.set).not.toHaveProperty('settings')

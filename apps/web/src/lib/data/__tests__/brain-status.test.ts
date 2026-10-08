@@ -253,4 +253,9 @@ describe('daytime cadence (pulse routine, reflect)', () => {
   it('daytime jobs are not counted as "last night"', () => {
     expect(summariseBrainStatus([pulseDone, reflectDone, row({})], NOW).lastNight).toEqual({ routine: 1, backup: 0, missed: 0 })
   })
+
+  it('the afternoon (daily) AI DONE job is "today", not "last night"', () => {
+    const aiDone = row({ kind: 'ai_done', claimedAt: t('10-01T15:40'), completedAt: t('10-01T15:42'), deadlineAt: t('10-01T17:30') })
+    expect(summariseBrainStatus([aiDone, row({})], NOW).lastNight).toEqual({ routine: 1, backup: 0, missed: 0 })
+  })
 })

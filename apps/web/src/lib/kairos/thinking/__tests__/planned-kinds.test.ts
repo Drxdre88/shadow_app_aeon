@@ -61,4 +61,12 @@ describe('planned thinking kinds ↔ routine catalog', () => {
     expect(SWEEP_PLAN_SKIP_KINDS).not.toContain('agenda_due')
     expect(getThinkingHandlers().find((h) => h.kind === 'agenda_due')).toBeDefined()
   })
+
+  it('AI DONE cards are a daily deep brain kind with a handler, planned by claims and the sweep', () => {
+    expect(BRAIN_JOBS.find((j) => j.kind === 'ai_done')).toMatchObject({ label: 'AI DONE cards', area: 'Workforce', tier: 'deep', cadence: 'daily' })
+    expect(getRoutine('brain').allowedKinds).toContain('ai_done')
+    expect(PLANNED_THINKING_KINDS).toContain('ai_done')
+    expect(SWEEP_PLAN_SKIP_KINDS).not.toContain('ai_done')
+    expect(getThinkingHandlers().find((h) => h.kind === 'ai_done')).toBeDefined()
+  })
 })

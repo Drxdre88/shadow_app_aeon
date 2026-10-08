@@ -50,7 +50,7 @@ export interface BrainJob {
   label: string
   area: BrainArea
   tier: BrainTier
-  cadence: 'nightly' | 'weekly' | 'monthly' | 'hourly' | 'on demand'
+  cadence: 'nightly' | 'daily' | 'weekly' | 'monthly' | 'hourly' | 'on demand'
   what: string
 }
 
@@ -85,7 +85,7 @@ export const BRAIN_JOBS: readonly BrainJob[] = [
   { kind: 'mission_check', label: 'Mission check', area: 'Workforce', tier: 'deep', cadence: 'on demand', what: 'When a Hangar mission finishes: an advisory verdict against the card’s checklist' },
   { kind: 'card_tree', label: 'Card tree', area: 'Workforce', tier: 'deep', cadence: 'on demand', what: 'On request: drafts a card tree with dependencies from a goal, for your approval' },
   { kind: 'card_garden', label: 'Card garden', area: 'Workforce', tier: 'deep', cadence: 'weekly', what: 'Weekly: proposes finish / park / merge / kill for stale cards, for your tap' },
-  { kind: 'chat', label: 'Chat replies', area: 'Voice', tier: 'deep', cadence: 'on demand', what: 'Answers you on Telegram and on the Vorath page.' },
+    { kind: 'ai_done', label: 'AI DONE cards', area: 'Workforce', tier: 'deep', cadence: 'daily', what: 'Each afternoon on boards you chose: adds ticked-but-not-done cards to an AI DONE column for coding work he saw that isn\'t on the board yet.' },  { kind: 'chat', label: 'Chat replies', area: 'Voice', tier: 'deep', cadence: 'on demand', what: 'Answers you on Telegram and on the Vorath page.' },
 ]
 
 const tierKinds = (tier: BrainTier): ThinkingJobKind[] =>
@@ -96,7 +96,7 @@ export const ROUTINES: readonly RoutineDef[] = [
     id: 'brain',
     name: 'Vorath brain',
     purpose:
-      'Does all of Vorath’s scheduled thinking: chat summaries, patterns, area summaries, the self-model, beliefs, the idea contest, the question of the day, the weekly review, the first constitution draft and the 06:00 message — and, when switched on, his hourly daytime reflections, the check-ins he booked for himself and sorting new cards on the boards you chose.',
+      'Does all of Vorath’s scheduled thinking: chat summaries, patterns, area summaries, the self-model, beliefs, the idea contest, the question of the day, the weekly review, the first constitution draft and the 06:00 message — and, when switched on, his hourly daytime reflections, the check-ins he booked for himself, sorting new cards on the boards you chose and the afternoon AI DONE cards.',
     trigger: 'schedule',
     cronUtc: '40 * * * *',
     scheduleLabel: 'Every hour at :40 UTC — the night’s work runs from 01:40 to 06:40; daytime runs usually find nothing due',

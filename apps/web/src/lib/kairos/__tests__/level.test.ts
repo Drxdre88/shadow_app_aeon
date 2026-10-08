@@ -22,6 +22,7 @@ const rank = (v: string | undefined) => (v === '1' ? 2 : v === 'observe' ? 1 : 0
 describe('KAIROS_LEVEL', () => {
   it('unset or junk means level 0: every switch off', () => {
     expect(mindLevel()).toBe(0)
+    expect(mindSwitch('KAIROS_AI_DONE')).toBe('')
     process.env.KAIROS_LEVEL = 'lots'
     expect(mindLevel()).toBe(0)
     expect(predictionsEnabled()).toBe(false)
@@ -38,6 +39,7 @@ describe('KAIROS_LEVEL', () => {
     expect(dreamsMode()).toBe('off')
     expect(mindSwitch('KAIROS_REPO_MEMORY')).toBe('1')
     expect(mindSwitch('KAIROS_MISSION_CHECK')).toBe('1')
+    expect(mindSwitch('KAIROS_AI_DONE')).toBe('1')
     expect(cardTreeMode()).toBe('on')
   })
 

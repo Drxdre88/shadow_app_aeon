@@ -221,6 +221,9 @@ describe('routine scope', () => {
     ['chat', 'agenda_due', false],
     ['brain', 'character_check', true],
     ['chat', 'character_check', false],
+    ['brain', 'ai_done', true],
+    ['pulse', 'ai_done', false],
+    ['chat', 'ai_done', false],
   ] as const)('routineAllows(%s, %s) = %s', (id, kind, allowed) => {
     expect(routineAllows(id, kind)).toBe(allowed)
   })

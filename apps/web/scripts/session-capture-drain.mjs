@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { captureQueueRoot, hasCaptureReceipt, readCaptureJob } from './session-capture-queue.mjs'
+import { captureQueueRoot, hasCaptureReceipt, readCaptureJob, recordCaptureSkip } from './session-capture-queue.mjs'
 
 const root = captureQueueRoot()
 const pendingDir = join(root, 'pending')
@@ -85,6 +85,7 @@ function drainJob(path) {
     unlinkSync(path)
     log(`captured ${job.client}/${job.sessionId}`)
   } else if (result.status === 3) {
+    recordCaptureSkip(job.client, job.sessionId)
     unlinkSync(path)
     log(`skipped non-substantive ${job.client}/${job.sessionId}`)
   } else {

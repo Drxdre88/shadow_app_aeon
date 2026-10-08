@@ -23,7 +23,7 @@ let queued = 0
 for (const session of listCodexBackfillSessions(currentSessionId)) {
   if (hasCaptureReceipt('codex', session.id)) continue
 
-  enqueueCapture({
+  const enqueued = enqueueCapture({
     client: 'codex',
     session_id: session.id,
     transcript_path: session.path,
@@ -31,6 +31,7 @@ for (const session of listCodexBackfillSessions(currentSessionId)) {
     hook_event_name: 'SessionStartBackfill',
     reason: 'backfill',
   })
+  if (!enqueued) continue
 
   queued++
   if (queued >= MAX_PER_RUN) break
