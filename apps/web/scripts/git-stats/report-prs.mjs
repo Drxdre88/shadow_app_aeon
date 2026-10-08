@@ -30,19 +30,25 @@ export function inWindow(day, since, end) {
   return Boolean(day) && day >= since && day <= end
 }
 
-export function aggregatePrs(prs, { since, end }) {
+export const isAiPr = (pr, eraStart) => prRole(pr) === 'owner_agent' || (isOwnerPr(pr) && Boolean(eraStart) && localDay(pr.createdAt) >= eraStart)
+
+export function aggregatePrs(prs, { since, end, eraStart = null }) {
   const windowed = prs.filter((pr) => inWindow(localDay(pr.createdAt), since, end))
   const owner = windowed.filter(isOwnerPr)
-  const totals = { opened: owner.length, merged: 0, abandoned: 0, active: 0, agent: 0, all: windowed.length }
+  const totals = { opened: owner.length, merged: 0, abandoned: 0, active: 0, agent: 0, ai: 0, all: windowed.length }
   const byMonth = new Map()
   const byRepo = new Map()
   const mergeHours = []
   const bump = (map, key, field) => {
-    if (!map.has(key)) map.set(key, { opened: 0, merged: 0 })
+    if (!map.has(key)) map.set(key, { opened: 0, merged: 0, aiOpened: 0 })
     map.get(key)[field]++
   }
   for (const pr of owner) {
     if (prRole(pr) === 'owner_agent') totals.agent++
+    if (isAiPr(pr, eraStart)) {
+      totals.ai++
+      bump(byMonth, localDay(pr.createdAt).slice(0, 7), 'aiOpened')
+    }
     bump(byMonth, localDay(pr.createdAt).slice(0, 7), 'opened')
     bump(byRepo, pr.repo, 'opened')
     if (pr.status === 'abandoned') totals.abandoned++

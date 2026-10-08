@@ -41,9 +41,18 @@ ${sec.headlines.map((l) => `- ${l}`).join('\n')}
 
 ${sec.counting}
 
+## Scale of the AI operation
+
+${sec.aiLines.map((l) => `- ${l}`).join('\n')}
+
+${sec.aiPolicy}
+
+${sec.eraTable.rows.length ? `### Before and after the agent era\n\n${tableMd(sec.eraTable)}\n` : ''}### You vs AI by month
+
+${tableMd(sec.aiMonths)}
 ## How the year unfolded
 
-Month-by-month figures (the HTML report charts these: commits, authored lines added and removed for code vs all files, cumulative lines, PRs opened vs merged, active days, AI-assisted share).${model.partialMonths.length ? ' "(part)" months are only partly inside the window.' : ''}
+Month-by-month figures (the HTML report charts these: code and authored lines added and removed, cumulative lines, commits, PRs opened vs merged, active days). Authored lines are code, tests, docs and config.${model.partialMonths.length ? ' "(part)" months are only partly inside the window.' : ''}
 
 ${tableMd(sec.months)}
 ### Week by week
@@ -51,7 +60,7 @@ ${tableMd(sec.months)}
 ${weekTable(model.weeks)}
 ## By repository
 
-Sorted by code lines changed; lines are authored lines; set-aside commits are not included.
+Sorted by code lines changed.
 
 ${tableMd(sec.repos)}
 ### Active period and main directories
@@ -69,20 +78,15 @@ ${tableMd(sec.baseline)}
 
 ${sec.findings.map((f, i) => `${i + 1}. ${f}`).join('\n')}
 
-## What was set aside
+## Biggest single drops
 
-Commits kept out of line and file totals (they still count as commits), largest first. Lines are authored lines.
+The largest commits of the year by lines changed. All of them are counted; the kind and label are for information only.
 
-${tableMd(sec.excluded)}
-### Lines in excluded folders, per repository
-
-Your counted commits only. The last column includes the excluded folders plus lockfiles, generated files and data anywhere in the repository.
-
-${tableMd(sec.excludedPaths)}
+${tableMd(sec.drops)}
 ${sec.others}
 
 ## Method and caveats
 
 ${sec.method.map((m) => `- ${m}`).join('\n')}
-`
+${sec.folders.rows.length ? `\n### Lines counted only in the raw figure, per repository\n\n${tableMd(sec.folders)}` : ''}`
 }

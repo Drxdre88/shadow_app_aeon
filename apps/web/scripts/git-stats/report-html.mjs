@@ -1,4 +1,4 @@
-import { COLORS, barChart, heatStrip, lineChart, timeline } from './report-charts.mjs'
+import { COLORS, barChart, heatStrip, lineChart, stackedBarChart, timeline } from './report-charts.mjs'
 import { esc } from './report-format.mjs'
 
 const CSS = `
@@ -35,28 +35,37 @@ export function tableHtml({ head, align, rows }) {
   return `<div class="table"><table><thead><tr>${th}</tr></thead><tbody>\n${body}\n</tbody></table></div>`
 }
 
-const pctValue = (v) => (v == null ? '–' : `${Math.round(v * 100)}%`)
-
 function charts(model) {
   const labels = model.months
-  const s = model.series
-  const col = (key) => s.map((m) => m[key])
+  const col = (key) => model.series.map((m) => m[key])
   const all = { color: COLORS.muted }
   const code = { color: COLORS.accent }
   return [
+    ['Code lines added per month', barChart({ labels, label: 'Code lines added per month', series: [{ name: 'All authored lines', values: col('added'), ...all }, { name: 'Code', values: col('codeAdded'), ...code }] })],
+    ['Lines removed per month', barChart({ labels, label: 'Lines removed per month', series: [{ name: 'All authored lines', values: col('removed'), ...all }, { name: 'Code', values: col('codeRemoved'), ...code }] })],
+    ['Cumulative lines added', lineChart({ labels, label: 'Cumulative lines added', series: [{ name: 'All authored lines', values: col('cumAdded'), ...all }, { name: 'Code', values: col('cumCode'), ...code }] })],
     ['Commits per month', barChart({ labels, label: 'Commits per month', series: [{ name: 'Commits', values: col('commits'), ...code }] })],
-    ['Lines added per month (authored)', barChart({ labels, label: 'Lines added per month', series: [{ name: 'All files', values: col('added'), ...all }, { name: 'Code only', values: col('codeAdded'), ...code }] })],
-    ['Lines removed per month (authored)', barChart({ labels, label: 'Lines removed per month', series: [{ name: 'All files', values: col('removed'), ...all }, { name: 'Code only', values: col('codeRemoved'), ...code }] })],
-    ['Cumulative lines added', lineChart({ labels, label: 'Cumulative lines added', series: [{ name: 'All files', values: col('cumAdded'), ...all }, { name: 'Code only', values: col('cumCode'), ...code }] })],
     ['Pull requests per month', barChart({ labels, label: 'Pull requests per month', series: [{ name: 'Opened', values: col('prsOpened'), ...all }, { name: 'Merged', values: col('prsMerged'), ...code }] })],
     ['Active days per month', barChart({ labels, label: 'Active days per month', series: [{ name: 'Active days', values: col('activeDays'), ...code }] })],
-    ['AI-assisted share of commits', lineChart({ labels, label: 'AI-assisted share per month', max: 1, tick: pctValue, value: pctValue, series: [{ name: 'AI-assisted', values: col('aiShare'), ...code }] })],
   ]
 }
 
+function aiCharts(model) {
+  const labels = model.months
+  const col = (fn) => model.series.map(fn)
+  const you = { name: 'You', color: COLORS.muted }
+  const ai = { name: 'AI-made', color: COLORS.accent }
+  return [
+    ['Code lines added per month: you vs AI', stackedBarChart({ labels, label: 'Code lines per month, you vs AI', series: [{ ...you, values: col((m) => m.codeAdded - m.aiCodeAdded) }, { ...ai, values: col((m) => m.aiCodeAdded) }] })],
+    ['Commits per month: you vs AI', stackedBarChart({ labels, label: 'Commits per month, you vs AI', series: [{ ...you, values: col((m) => m.commits - m.ai) }, { ...ai, values: col((m) => m.ai) }] })],
+    ['Pull requests opened per month: you vs AI', stackedBarChart({ labels, label: 'Pull requests per month, you vs AI', series: [{ ...you, values: col((m) => m.prsOpened - m.prsAi) }, { ...ai, values: col((m) => m.prsAi) }] })],
+  ]
+}
+
+const blocks = (list) => list.map(([title, svg]) => `<h3>${esc(title)}</h3>\n${svg}`).join('\n')
+
 export function renderHtml(model, sec) {
-  const partial = model.partialMonths.length ? ` Months marked "part" are only partly inside the window.` : ''
-  const chartBlocks = charts(model).map(([title, svg]) => `<h3>${esc(title)}</h3>\n${svg}`).join('\n')
+  const partial = model.partialMonths.length ? ' Months marked "part" are only partly inside the window.' : ''
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -76,9 +85,17 @@ ${sec.headlines.map((l) => `<li>${esc(l)}</li>`).join('\n')}
 </ul>
 <p class="note">${esc(sec.counting)}</p>
 
+<h2>Scale of the AI operation</h2>
+<ul class="answer">
+${sec.aiLines.map((l) => `<li>${esc(l)}</li>`).join('\n')}
+</ul>
+<p class="note">${esc(sec.aiPolicy)}</p>
+${sec.eraTable.rows.length ? `<h3>Before and after the agent era</h3>\n${tableHtml(sec.eraTable)}` : ''}
+${blocks(aiCharts(model))}
+
 <h2>How the year unfolded</h2>
-<p class="note">Hover over any bar or point for its exact value. All line figures are authored lines; set-aside imports and dumps are not included.${esc(partial)}</p>
-${chartBlocks}
+<p class="note">Hover over any bar or point for its exact value. Authored lines are code, tests, docs and config; generated files and data are not included.${esc(partial)}</p>
+${blocks(charts(model))}
 <h3>Week by week</h3>
 <p class="note">One square per week; brighter means more commits.</p>
 ${heatStrip(model.weeks)}
@@ -86,7 +103,7 @@ ${heatStrip(model.weeks)}
 ${tableHtml(sec.months)}
 
 <h2>By repository</h2>
-<p class="note">Sorted by code lines changed. Lines are authored lines; set-aside commits are not included.</p>
+<p class="note">Sorted by code lines changed.</p>
 ${tableHtml(sec.repos)}
 <h3>When each repository was active</h3>
 ${timeline(model.repos.filter((r) => r.tally.commits), model.months)}
@@ -102,18 +119,16 @@ ${tableHtml(sec.baseline)}
 ${sec.findings.map((f) => `<li>${esc(f)}</li>`).join('\n')}
 </ol>
 
-<h2>What was set aside</h2>
-<p class="note">Commits kept out of line and file totals (they still count as commits), largest first. Lines are authored lines.</p>
-${tableHtml(sec.excluded)}
-<h3>Lines in excluded folders, per repository</h3>
-<p class="note">Your counted commits only. The last column includes the excluded folders plus lockfiles, generated files and data anywhere in the repository.</p>
-${tableHtml(sec.excludedPaths)}
+<h2>Biggest single drops</h2>
+<p class="note">The largest commits of the year by lines changed. All of them are counted; the kind and label are for information only.</p>
+${tableHtml(sec.drops)}
 <p class="note">${esc(sec.others)}</p>
 
 <h2>Method and caveats</h2>
 <ul>
 ${sec.method.map((m) => `<li>${esc(m)}</li>`).join('\n')}
 </ul>
+${sec.folders.rows.length ? `<h3>Lines counted only in the raw figure, per repository</h3>\n${tableHtml(sec.folders)}` : ''}
 </main>
 </body>
 </html>

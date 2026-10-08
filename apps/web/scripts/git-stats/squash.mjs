@@ -106,7 +106,10 @@ export function applyNoise(commits, rules = []) {
   const compiled = rules.map((r) => ({ sha: r.sha?.toLowerCase(), subject: r.subject ? new RegExp(r.subject, 'i') : null, reason: r.reason || 'noise' }))
   for (const c of commits) {
     const hit = compiled.find((r) => (r.sha && c.sha.startsWith(r.sha)) || (r.subject && r.subject.test(c.subject)))
-    if (hit) c.noise = hit.reason
+    if (hit) {
+      c.noise = hit.reason
+      c.noiseReason = hit.reason
+    }
   }
 }
 

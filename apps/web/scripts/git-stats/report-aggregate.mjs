@@ -2,15 +2,22 @@ import { BUCKETS } from './classify.mjs'
 import { isUnique, isoWeek, localDay } from './summary.mjs'
 
 export const OWNER_CLASSES = new Set(['owner_human', 'owner_agent'])
+export const AI_REASONS = ['agent_identity', 'trailer', 'agent_era']
 const DAY_MS = 86400000
 const TOP_DIRS = 3
 
 export const isOwner = (c) => OWNER_CLASSES.has(c.identityClass)
 export const isCounted = (c) => isUnique(c, { crossRepo: true })
-export const isExcluded = (c) => Boolean(c.giant || c.noise)
-export const isHonest = (c) => isCounted(c) && !isExcluded(c)
-export const isAiAssisted = (c) => Boolean(c.aiAssisted) || c.identityClass === 'owner_agent'
+export const isFlagged = (c) => Boolean(c.giant || c.noise)
 export const monthOf = (isoDate) => localDay(isoDate).slice(0, 7)
+
+export function aiReasonOf(c, eraStart = null) {
+  if ('aiAttributed' in c) return c.aiAttributed ? c.aiReason || 'trailer' : null
+  if (c.identityClass === 'owner_agent') return 'agent_identity'
+  if (c.aiAssisted) return 'trailer'
+  if (eraStart && isOwner(c) && localDay(c.authorDate) >= eraStart) return 'agent_era'
+  return null
+}
 
 export function repoKind(repo) {
   if (/_app_|_dash$/.test(repo)) return 'app'
@@ -69,19 +76,23 @@ export class Tally {
   constructor() {
     this.commits = 0
     this.ai = 0
+    this.aiReasons = Object.fromEntries(AI_REASONS.map((r) => [r, 0]))
+    this.aiAdded = 0
+    this.aiRemoved = 0
+    this.aiCode = { added: 0, removed: 0 }
     this.added = 0
     this.removed = 0
+    this.rawAdded = 0
+    this.rawRemoved = 0
+    this.pathAdded = 0
+    this.pathRemoved = 0
     this.buckets = Object.fromEntries(BUCKETS.map((b) => [b, { added: 0, removed: 0 }]))
     this.filesAdded = 0
     this.filesModified = 0
     this.filesDeleted = 0
     this.filesRenamed = 0
-    this.excludedCommits = 0
-    this.excludedAdded = 0
-    this.excludedRemoved = 0
-    this.countedAdded = 0
-    this.countedRemoved = 0
-    this.setAside = { rawAdded: 0, rawRemoved: 0, generatedAdded: 0, generatedRemoved: 0, pathAdded: 0, pathRemoved: 0 }
+    this.flaggedCommits = 0
+    this.flaggedCode = 0
     this.days = new Set()
     this.dirs = new Map()
     this.first = null
@@ -90,28 +101,29 @@ export class Tally {
 
   add(c) {
     const day = localDay(c.authorDate)
+    const code = c.buckets?.code || { added: 0, removed: 0 }
     this.commits++
-    if (isAiAssisted(c)) this.ai++
     this.days.add(day)
     if (!this.first || day < this.first) this.first = day
     if (!this.last || day > this.last) this.last = day
-    this.countedAdded += c.linesAdded
-    this.countedRemoved += c.linesRemoved
-    const s = this.setAside
-    s.rawAdded += c.rawLinesAdded ?? c.linesAdded
-    s.rawRemoved += c.rawLinesRemoved ?? c.linesRemoved
-    s.generatedAdded += c.buckets?.generated_or_data?.added || 0
-    s.generatedRemoved += c.buckets?.generated_or_data?.removed || 0
-    s.pathAdded += c.excludedAdded || 0
-    s.pathRemoved += c.excludedRemoved || 0
-    if (isExcluded(c)) {
-      this.excludedCommits++
-      this.excludedAdded += c.linesAdded
-      this.excludedRemoved += c.linesRemoved
-      return
+    if (c.aiReason_) {
+      this.ai++
+      this.aiReasons[c.aiReason_] = (this.aiReasons[c.aiReason_] || 0) + 1
+      this.aiAdded += c.linesAdded
+      this.aiRemoved += c.linesRemoved
+      this.aiCode.added += code.added
+      this.aiCode.removed += code.removed
     }
     this.added += c.linesAdded
     this.removed += c.linesRemoved
+    this.rawAdded += c.rawLinesAdded ?? c.linesAdded
+    this.rawRemoved += c.rawLinesRemoved ?? c.linesRemoved
+    this.pathAdded += c.excludedAdded || 0
+    this.pathRemoved += c.excludedRemoved || 0
+    if (isFlagged(c)) {
+      this.flaggedCommits++
+      this.flaggedCode += code.added
+    }
     for (const b of BUCKETS) {
       this.buckets[b].added += c.buckets?.[b]?.added || 0
       this.buckets[b].removed += c.buckets?.[b]?.removed || 0
@@ -125,6 +137,10 @@ export class Tally {
 
   get code() {
     return this.buckets.code
+  }
+
+  get codeAndTests() {
+    return { added: this.buckets.code.added + this.buckets.tests.added, removed: this.buckets.code.removed + this.buckets.tests.removed }
   }
 
   get activeDays() {
@@ -150,9 +166,9 @@ export function dedupeStats(ownerCommits) {
   return stats
 }
 
-export function aggregateCommits(commits, { months, weeks }) {
+export function aggregateCommits(commits, { months, weeks, eraStart = null }) {
   const owner = commits.filter(isOwner)
-  const counted = owner.filter(isCounted)
+  const counted = owner.filter(isCounted).map((c) => ({ ...c, aiReason_: aiReasonOf(c, eraStart) }))
   const total = new Tally()
   const byMonth = new Map(months.map((m) => [m, new Tally()]))
   const byRepo = new Map()
@@ -173,7 +189,7 @@ export function aggregateCommits(commits, { months, weeks }) {
     const week = isoWeek(localDay(c.authorDate))
     byWeek.set(week, (byWeek.get(week) || 0) + 1)
   }
-  return { owner, counted, total, byMonth, byRepo, repoMonths, byWeek, dedupe: dedupeStats(owner), excluded: counted.filter(isExcluded) }
+  return { owner, counted, total, byMonth, byRepo, repoMonths, byWeek, dedupe: dedupeStats(owner), flagged: counted.filter(isFlagged) }
 }
 
 export function monthlySeries(months, byMonth, prMonths) {
@@ -183,12 +199,13 @@ export function monthlySeries(months, byMonth, prMonths) {
     const t = byMonth.get(month) || new Tally()
     cumAdded += t.added
     cumCode += t.code.added
-    const pr = prMonths.get(month) || { opened: 0, merged: 0 }
+    const pr = prMonths.get(month) || { opened: 0, merged: 0, aiOpened: 0 }
     return {
       month,
       commits: t.commits,
       ai: t.ai,
       aiShare: t.commits ? t.ai / t.commits : null,
+      aiCodeAdded: t.aiCode.added,
       added: t.added,
       removed: t.removed,
       codeAdded: t.code.added,
@@ -198,6 +215,7 @@ export function monthlySeries(months, byMonth, prMonths) {
       cumCode,
       prsOpened: pr.opened,
       prsMerged: pr.merged,
+      prsAi: pr.aiOpened || 0,
       tally: t,
     }
   })
@@ -213,9 +231,8 @@ export function baselineRows(repoSummaries, byRepo, since) {
       repo,
       before: meta.baseline.before || since,
       baseCommits: base.commits,
-      baseAdded: base.linesAddedExclGiant ?? base.linesAdded,
-      baseCode: base.codeAdded,
-      baseCodeExclGiant: 'codeAddedInclGiant' in base,
+      baseAdded: base.linesAdded,
+      baseCode: base.codeAddedInclGiant ?? base.codeAdded,
       baseGiant: base.giantCommits || 0,
       baseFirst: localDay(base.firstCommit),
       baseLast: localDay(base.lastCommit),
