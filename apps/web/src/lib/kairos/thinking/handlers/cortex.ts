@@ -16,6 +16,7 @@ import {
   type CortexOutput,
 } from '@/lib/kairos/cortex-prompt'
 import { todayIso } from '@/lib/kairos/_prompt-utils'
+import { archetypeChangeCheck, cortexChangeCheck } from '@/lib/kairos/synthesis-change'
 import type {
   ApplyOutcome,
   ThinkingAnsweredBy,
@@ -75,9 +76,9 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
   if (deadlineMinutes <= 0) return []
 
   const dayStart = utcDayStart(now)
-  // Prerequisite: tonight's archetype synthesis has written something.
+  // Archetypes written or confirmed tonight; a Dominion whose archetypes are
+  // not due (no new input) counts as settled too.
   const archetypeDoms = await listDominionsWithArchetypesSince(userId, dayStart)
-  if (archetypeDoms.size === 0) return []
 
   const day = utcDay(now)
   const active = (await findDominionsByUser(userId)).filter((d) => !d.archivedAt && !skipForFocus(d))
@@ -91,14 +92,16 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
     const externalKey = cortexJobKey(dom.id, day)
     if (existing.has(externalKey)) continue
     if (await alreadyRanToday(userId, dom.id)) continue
+    if (!(await cortexChangeCheck(userId, dom.id, now)).run) continue
+    // A Dominion waits until ITS archetypes are settled tonight (the 02:30 run
+    // can still be mid-fleet), so the prompt never anchors on stale archetypes.
+    if (!archetypeDoms.has(dom.id) && (await archetypeChangeCheck(userId, dom.id, now)).run) continue
 
     const ctx = await gatherCortexContext(userId, dom.id)
     if (!ctx) continue
-    // Same gates as runCortexRegenForDominion, plus: an active Dominion
-    // waits until ITS archetypes for today exist (the 02:30 run can still be
-    // mid-fleet), so the prompt never anchors on yesterday's archetypes.
+    // Same gates as runCortexRegenForDominion.
     const hasActivitySignal = ctx.reflections.length > 0 || ctx.boardTasks.length > 0
-    if (hasActivitySignal && (ctx.archetypes.length === 0 || !archetypeDoms.has(dom.id))) continue
+    if (hasActivitySignal && ctx.archetypes.length === 0) continue
     const hasSignal = ctx.archetypes.length + ctx.reflections.length > 0 || Boolean(ctx.vision) || Boolean(ctx.missionLong)
     if (!hasSignal) continue
 

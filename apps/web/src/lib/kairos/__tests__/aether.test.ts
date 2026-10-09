@@ -50,6 +50,11 @@ vi.mock('@/lib/ai/route-task', () => ({
   getProviderForTask: vi.fn(),
 }))
 
+vi.mock('../synthesis-change', async (importActual) => ({
+  ...(await importActual<typeof import('../synthesis-change')>()),
+  aetherChangeCheck: vi.fn(async () => ({ run: true, reason: 'new_input' })),
+}))
+
 // Spy (not stub) the range operators so the day-window test can assert bounds.
 vi.mock('drizzle-orm', async (importOriginal) => {
   const actual = await importOriginal<typeof import('drizzle-orm')>()

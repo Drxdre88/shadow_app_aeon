@@ -127,6 +127,7 @@ const OP_WORDS: Record<string, string> = {
   score: 'weighed', promote: 'promoted', decay: 'faded', reject: 'set aside', merge: 'merged with a repeat',
   concept_create: 'grouped into a concept', concept_update: 'concept updated', feedback: 'feedback recorded',
   revert: 'a change was undone', recheck: 'flagged for re-check', retire: 'retired',
+  archetype_update: 'theme revised',
 }
 
 export function opWords(op: { op: string; step: string }): string {

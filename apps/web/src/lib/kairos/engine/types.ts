@@ -84,6 +84,8 @@ export type MemoryOpKind =
   | 'recheck'
   // P2.5: a belief retired after re-examination.
   | 'retire'
+  // Wave 1: nightly archetype synthesis revised a live archetype in place.
+  | 'archetype_update'
 
 export interface MemoryOpInput {
   memoryId: string | null

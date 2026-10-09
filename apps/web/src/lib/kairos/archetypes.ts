@@ -23,9 +23,13 @@ import {
 import { todayIso, parseWithRepair, ParseRepairError } from './_prompt-utils'
 import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 import { inDominionScope } from './retrieve'
+import { archetypeRunStamp } from '@/lib/data/synthesis-change'
+import { persistArchetypes } from './archetype-persist'
+import { archetypeChangeCheck, NO_NEW_INPUT } from './synthesis-change'
 
 // Re-export for callers (cron route + tests) that only import this module.
 export {
+  persistArchetypes,
   archetypeOutSchema,
   buildArchetypePrompt,
   extractJsonBlock,
@@ -46,11 +50,14 @@ export {
 //
 // Output: 3–7 archetype rows (streamClass='archetype', type='archetype'),
 // each with title / one-line summary / 100–800 char body / 1–5 themes /
-// 0–N cited memory ids. Soft-archives prior non-pinned archetypes for
-// the Dominion at the start of the run. Pinned archetypes are kept.
+// 0–N cited memory ids. Persisted as in-place edits of the live set
+// (archetype-persist.ts): unchanged rows are kept, changed rows updated with
+// a memory_ops undo handle, new ones inserted, unreturned ones archived.
+// Pinned archetypes are never edited or archived.
 //
-// Idempotency: skip a Dominion if any archetype memory already exists
-// for it created today (UTC). Mirrors the Briefer's daily-no-op pattern.
+// Idempotency: skip a Dominion whose live archetypes were created or
+// confirmed today (UTC). Change check: skip a Dominion with no new input
+// since its last run (weekly refresh regardless) — synthesis-change.ts.
 //
 // See docs/kairos/12-kairos-evolution-plan.md §"Phase 1B" and
 // docs/kairos/14-quality-gates.md §5 (reflection weight).
@@ -77,7 +84,7 @@ export async function alreadyRanToday(userId: string, dominionId: string): Promi
       eq(memories.dominionId, dominionId),
       eq(memories.streamClass, 'archetype'),
       isNull(memories.archivedAt),
-      sql`${memories.createdAt} >= DATE_TRUNC('day', NOW())`,
+      sql`${archetypeRunStamp} >= DATE_TRUNC('day', NOW())`,
     ))
   return (row?.n ?? 0) > 0
 }
@@ -178,69 +185,6 @@ export function archetypeFedIds(ctx: ArchetypeContext): string[] {
   return [ctx.recent, ctx.pinned, ctx.reflections, ctx.existing].flat().map((m) => m.id)
 }
 
-interface PersistResult {
-  inserted: number
-  archivedPrior: number
-  archetypeMemoryIds: string[]
-}
-
-export async function persistArchetypes(
-  userId: string,
-  dominionId: string,
-  parsed: ArchetypeOutput,
-  runId: string,
-): Promise<PersistResult> {
-  const now = new Date()
-
-  const rows = parsed.archetypes.map((a) => ({
-    userId,
-    dominionId,
-    title: a.title.slice(0, 255),
-    bodyMd: a.body,
-    summary: a.summary.slice(0, 1000),
-    type: 'archetype' as const,
-    streamClass: 'archetype' as const,
-    source: 'cron' as const,
-    sourceMetadata: {
-      runId,
-      runDate: runId.split(':').pop() ?? null,
-      dominionId,
-      citedMemoryIds: a.citedMemoryIds,
-      themes: a.themes,
-      shifts: parsed.shifts,
-    },
-    tags: a.themes.slice(0, 50),
-    pinned: false,
-  }))
-
-  // Atomic archive + insert. If insert fails, the archive rolls back so we
-  // never leave the Dominion with zero live archetypes (which would brick
-  // the alreadyRanToday short-circuit and look like "ran but empty").
-  return db.transaction(async (tx) => {
-    const archived = await tx
-      .update(memories)
-      .set({ archivedAt: now })
-      .where(and(
-        eq(memories.userId, userId),
-        eq(memories.dominionId, dominionId),
-        eq(memories.streamClass, 'archetype'),
-        eq(memories.pinned, false),
-        isNull(memories.archivedAt),
-      ))
-      .returning({ id: memories.id })
-
-    const inserted = rows.length === 0
-      ? []
-      : await tx.insert(memories).values(rows).returning({ id: memories.id })
-
-    return {
-      inserted: inserted.length,
-      archivedPrior: archived.length,
-      archetypeMemoryIds: inserted.map((r) => r.id),
-    }
-  })
-}
-
 export interface ArchetypeRunResult {
   dominionId: string
   dominionName: string
@@ -265,6 +209,11 @@ export async function runArchetypeSynthesisForDominion(
   if (await alreadyRanToday(userId, dominionId)) {
     await writeCronSuccessTrace(userId, { cronName: 'archetype-synthesis', dominionId, outcome: 'skipped', skipReason: 'already ran today' })
     return { dominionId, dominionName: dom.name, status: 'existing', reason: 'already ran today' }
+  }
+
+  if (!(await archetypeChangeCheck(userId, dominionId)).run) {
+    await writeCronSuccessTrace(userId, { cronName: 'archetype-synthesis', dominionId, outcome: 'skipped', skipReason: NO_NEW_INPUT })
+    return { dominionId, dominionName: dom.name, status: 'skipped', reason: NO_NEW_INPUT }
   }
 
   const ctx = await gatherArchetypeContext(userId, dominionId)
@@ -335,9 +284,10 @@ export async function runArchetypeSynthesisForDominion(
     throw err
   }
 
-  const { inserted, archivedPrior, archetypeMemoryIds } = await persistArchetypes(userId, dominionId, parsed, runId)
+  const { archivedPrior, archetypeMemoryIds } = await persistArchetypes(userId, dominionId, parsed, runId)
+  const written = archetypeMemoryIds.length
 
-  if (inserted === 0) {
+  if (written === 0) {
     await writeCronFailureTrace(userId, { cronName: 'archetype-synthesis', dominionId, reason: 'persist_failed' })
   } else {
     await writeCronSuccessTrace(userId, { cronName: 'archetype-synthesis', dominionId })
@@ -346,10 +296,10 @@ export async function runArchetypeSynthesisForDominion(
   return {
     dominionId,
     dominionName: dom.name,
-    status: inserted > 0 ? 'created' : 'error',
+    status: written > 0 ? 'created' : 'error',
     archetypeMemoryIds,
     archivedPrior,
-    reason: inserted === 0 ? 'no archetypes emitted' : undefined,
+    reason: written === 0 ? 'no archetypes emitted' : undefined,
   }
 }
 

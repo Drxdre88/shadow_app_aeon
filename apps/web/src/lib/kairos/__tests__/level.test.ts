@@ -8,10 +8,15 @@ import { trustMode } from '../trust/flag'
 import { dreamsMode } from '../dreams/flag'
 import { coldReadMode } from '../cold-read/flag'
 import { livingDominionsMode } from '../living/flag'
-import { surpriseContradictionsOn } from '../surprise/flag'
+import { surpriseContradictionsOn, surpriseGateMode } from '../surprise/flag'
 import { cardTreeMode } from '../card-tree/flag'
 
-const touched = ['KAIROS_LEVEL', 'KAIROS_PREDICTIONS', 'KAIROS_GATE', 'KAIROS_INITIATIVE', 'KAIROS_SURPRISE_CONTRADICTIONS', 'KAIROS_CARD_TREE']
+const PARKED = [
+  'KAIROS_GATE', 'KAIROS_GATE_RECEPTIVITY', 'KAIROS_READINESS', 'KAIROS_BIDS', 'KAIROS_REPAIR', 'KAIROS_ASK_FIRST',
+  'KAIROS_TRUST', 'KAIROS_SURPRISE_GATE', 'KAIROS_SURPRISE_CREDIT', 'KAIROS_SURPRISE_REPLAY', 'KAIROS_CURIOSITY_LP',
+]
+
+const touched = ['KAIROS_LEVEL', 'KAIROS_PREDICTIONS', 'KAIROS_GATE', 'KAIROS_INITIATIVE', 'KAIROS_SURPRISE_CONTRADICTIONS', 'KAIROS_CARD_TREE', 'KAIROS_SURPRISE_GATE']
 
 afterEach(() => {
   for (const k of touched) delete process.env[k]
@@ -29,18 +34,40 @@ describe('KAIROS_LEVEL', () => {
     expect(gateMode()).toBe('off')
   })
 
-  it('level 1 starts the track record and watches without acting', () => {
+  it('level 1 starts the track record; the watch-only set is parked', () => {
     process.env.KAIROS_LEVEL = '1'
     expect(predictionsEnabled()).toBe(true)
-    expect(gateMode()).toBe('observe')
-    expect(trustMode()).toBe('observe')
+    expect(gateMode()).toBe('off')
+    expect(trustMode()).toBe('off')
+    expect(surpriseGateMode()).toBe('off')
     expect(livingDominionsMode()).toBe('observe')
+    expect(mindSwitch('KAIROS_IDEA_TASTE')).toBe('observe')
     expect(initiativeEnabled()).toBe(false)
     expect(dreamsMode()).toBe('off')
     expect(mindSwitch('KAIROS_REPO_MEMORY')).toBe('1')
     expect(mindSwitch('KAIROS_MISSION_CHECK')).toBe('1')
     expect(mindSwitch('KAIROS_AI_DONE')).toBe('1')
     expect(cardTreeMode()).toBe('on')
+    for (const name of PARKED) expect(mindSwitch(name), name).toBe('')
+  })
+
+  it('a parked switch still turns on from its own env var at level 1', () => {
+    process.env.KAIROS_LEVEL = '1'
+    process.env.KAIROS_SURPRISE_GATE = 'observe'
+    expect(surpriseGateMode()).toBe('observe')
+  })
+
+  it('level 2 restores the parked set in observe mode, gate live', () => {
+    process.env.KAIROS_LEVEL = '2'
+    expect(gateMode()).toBe('on')
+    expect(trustMode()).toBe('observe')
+    expect(surpriseGateMode()).toBe('observe')
+    for (const name of PARKED.filter((n) => n !== 'KAIROS_GATE')) expect(mindSwitch(name), name).toBe('observe')
+  })
+
+  it('level 3 turns every parked switch live', () => {
+    process.env.KAIROS_LEVEL = '3'
+    for (const name of PARKED) expect(mindSwitch(name), name).toBe('1')
   })
 
   it('card trees are off below level 1 unless switched on directly', () => {

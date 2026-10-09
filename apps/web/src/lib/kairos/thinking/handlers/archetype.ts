@@ -19,6 +19,7 @@ import {
 } from '@/lib/kairos/archetypes-prompt'
 import { todayIso } from '@/lib/kairos/_prompt-utils'
 import { writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
+import { archetypeChangeCheck } from '@/lib/kairos/synthesis-change'
 import type {
   ApplyOutcome,
   ThinkingJobHandler,
@@ -30,7 +31,9 @@ import { errorReason } from './_errors'
 
 // Archetype synthesis on the thinking queue: one job per active Dominion per
 // UTC day, with exactly the system/user prompt the 02:30 archetype-synthesis
-// cron would send. Planned only once tonight's chat distill has settled (its
+// cron would send. A Dominion with no new input since its last run is not
+// planned (synthesis-change.ts; weekly refresh regardless). Planned only once
+// tonight's chat distill has settled (its
 // reflections are substrate). The answer is parsed strictly, grounded against
 // the fed memory ids, and persisted through the cron's own persistArchetypes
 // — so the rows are indistinguishable and the cron's alreadyRanToday guard
@@ -66,6 +69,7 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
     if (existing.has(externalKey)) continue
     // Same gates as runArchetypeSynthesisForDominion.
     if (await alreadyRanToday(userId, dom.id)) continue
+    if (!(await archetypeChangeCheck(userId, dom.id, now)).run) continue
     const ctx = await gatherArchetypeContext(userId, dom.id)
     if (!ctx || !hasArchetypeSignal(ctx)) continue
 
@@ -102,8 +106,8 @@ async function apply(job: ThinkingJobRow, text: string): Promise<ApplyOutcome> {
   }
 
   const runId = `archetype:${c.dominionId}:${c.date}`
-  const { inserted, archetypeMemoryIds } = await persistArchetypes(job.userId, c.dominionId, payload, runId)
-  if (inserted === 0) return { ok: false, reason: 'persist_failed: no archetypes inserted' }
+  const { archetypeMemoryIds } = await persistArchetypes(job.userId, c.dominionId, payload, runId)
+  if (archetypeMemoryIds.length === 0) return { ok: false, reason: 'persist_failed: no archetypes written' }
   await writeCronSuccessTrace(job.userId, { cronName: 'archetype-synthesis', dominionId: c.dominionId })
   return { ok: true, memoryIds: archetypeMemoryIds }
 }

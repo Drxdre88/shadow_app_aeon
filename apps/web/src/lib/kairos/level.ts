@@ -5,8 +5,10 @@ export type MindLevel = 0 | 1 | 2 | 3
 
 type SwitchValues = Readonly<Record<string, string>>
 
-const LEVEL_1: SwitchValues = {
-  KAIROS_PREDICTIONS: '1',
+// Watch-only switches parked at level 1 (Wave 1, 09/10): they logged without
+// changing anything visible. Level 2 turns them back on in observe mode; an
+// env var still turns any of them on directly.
+const PARKED_OBSERVE: SwitchValues = {
   KAIROS_GATE: 'observe',
   KAIROS_GATE_RECEPTIVITY: 'observe',
   KAIROS_READINESS: 'observe',
@@ -18,6 +20,10 @@ const LEVEL_1: SwitchValues = {
   KAIROS_SURPRISE_CREDIT: 'observe',
   KAIROS_SURPRISE_REPLAY: 'observe',
   KAIROS_CURIOSITY_LP: 'observe',
+}
+
+const LEVEL_1: SwitchValues = {
+  KAIROS_PREDICTIONS: '1',
   KAIROS_IDEA_TASTE: 'observe',
   KAIROS_LIVING_DOMINIONS: 'observe',
   KAIROS_REPO_MEMORY: '1',
@@ -28,6 +34,7 @@ const LEVEL_1: SwitchValues = {
 
 const LEVEL_2: SwitchValues = {
   ...LEVEL_1,
+  ...PARKED_OBSERVE,
   KAIROS_GATE: '1',
   KAIROS_INITIATIVE: '1',
   KAIROS_AGENDA: '1',
