@@ -14,16 +14,16 @@
 // Dev and production are ONE Neon database. This script only ever SELECTs from
 // information_schema and pg_catalog — no DDL, no writes, not ever.
 //
-// Pool, not the neon() HTTP driver, matching apply-chronos-migration.mjs: the
-// introspection is several queries and a pooled session runs them against one
-// consistent connection.
+// It also runs as the Vercel deploy gate (--gate), replacing the old
+// `db:push` in the build: only code AHEAD of the database (BREAKING) blocks a
+// deploy; schema changes are applied deliberately with `npm run db:apply`.
 //
 // Exit codes:
-//   0  clean, or shape mismatches only (advisory)
-//   1  drift found in either direction
-//   2  could not run (no DATABASE_URL, unreadable schema.ts, connection failed)
+//   0  clean, or shape mismatches only (advisory); with --gate: anything but BREAKING
+//   1  drift found in either direction; with --gate: BREAKING only
+//   2  could not run (no DATABASE_URL, unreadable schema.ts, connection failed); never with --gate
 
-import { Pool } from '@neondatabase/serverless'
+import { neon } from '@neondatabase/serverless'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
 import dotenv from 'dotenv'
@@ -380,11 +380,12 @@ export async function readDeclaredShape(schemaPath = SCHEMA_TS) {
 async function main() {
   dotenv.config({ path: '.env.local' })
   dotenv.config({ path: '.env' })
+  const gate = process.argv.includes('--gate')
 
   const url = process.env.DATABASE_URL
   if (!url) {
     console.error('DATABASE_URL not set — cannot introspect. Nothing checked.')
-    return 2
+    return gate ? gateSkip() : 2
   }
 
   let declared
@@ -393,30 +394,33 @@ async function main() {
   } catch (err) {
     console.error('Could not read schema.ts declarations — nothing checked.')
     console.error(`  ${err.message}`)
-    return 2
+    return gate ? gateSkip() : 2
   }
 
-  const pool = new Pool({ connectionString: url, connectionTimeoutMillis: 20000 })
+  // HTTP driver, not a websocket Pool: three independent read-only SELECTs need
+  // no shared session, and a Pool's websocket teardown intermittently crashed
+  // node on exit (0xC0000409 on Windows) — fatal for a deploy gate.
+  const http = neon(url, { fullResults: true })
+  const reader = { query: (text) => http(text) }
   let live
   try {
-    live = await readDatabaseShape(pool)
+    live = await readDatabaseShape(reader)
   } catch (err) {
     console.error('Could not introspect the database — nothing checked.')
     console.error(`  ${err.message}`)
-    await pool.end().catch(() => {})
-    return 2
+    return gate ? gateSkip() : 2
   }
-  await pool.end().catch(() => {})
 
   const report = compareSchemas(live, declared)
   const dbCount = Object.keys(live.tables).length
   const declaredCount = Object.keys(declared.tables).length
 
-  console.log('schema drift check — public schema, read-only\n')
+  console.log(`schema drift check — public schema, read-only${gate ? ' (deploy gate)' : ''}\n`)
   console.log(`  database:  ${dbCount} tables`)
   console.log(`  schema.ts: ${declaredCount} tables\n`)
   console.log(formatReport(report))
 
+  if (gate) return gateVerdict(report)
   if (report.drifted) {
     console.log(`\nDrift: ${report.counts.destructive} object(s) only in the database, ` +
       `${report.counts.breaking} only in schema.ts. Do NOT run db:push until this is zero.`)
@@ -426,18 +430,43 @@ async function main() {
   return 0
 }
 
+// Deploy gate (--gate, run by the Vercel build): only code that is AHEAD of
+// the database blocks a deploy — those queries would fail for live users. A
+// database ahead of schema.ts (a migration applied before its schema PR lands)
+// is a warning, and a check that cannot run never blocks a deploy.
+export function gateVerdict(report) {
+  if (report.counts.breaking > 0) {
+    console.log(`\nDEPLOY BLOCKED: ${report.counts.breaking} object(s) declared in schema.ts are missing from the database.` +
+      '\nApply the migration first: npm run db:apply -- drizzle/<file>.sql')
+    return 1
+  }
+  if (report.counts.destructive > 0) {
+    console.log(`\nDeploy allowed: ${report.counts.destructive} object(s) exist only in the database — declare them in schema.ts.`)
+  }
+  return 0
+}
+
+function gateSkip() {
+  console.warn('\nDeploy gate SKIPPED: the drift check could not run, so this deploy was not checked.')
+  return 0
+}
+
 const invokedDirectly = process.argv[1] &&
   pathToFileURL(resolve(process.argv[1])).href === import.meta.url
 
 if (invokedDirectly) {
   // A diagnostic that crashes teaches nothing — every failure exits with a
-  // message instead of a stack trace.
-  let code = 2
+  // message instead of a stack trace. As a deploy gate it never blocks on its
+  // own failure.
+  let code = process.argv.includes('--gate') ? 0 : 2
   try {
     code = await main()
   } catch (err) {
     console.error('schema drift check failed unexpectedly — nothing was written.')
     console.error(`  ${err?.message ?? err}`)
   }
-  process.exit(code)
+  // exitCode, not process.exit(): forcing exit while drizzle's module graph and
+  // fetch sockets are still settling crashed node intermittently on Windows
+  // (0xC0000409), which would have failed deploys at random.
+  process.exitCode = code
 }
