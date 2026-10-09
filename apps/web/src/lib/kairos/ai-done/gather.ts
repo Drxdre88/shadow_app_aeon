@@ -11,10 +11,11 @@ import { londonDateHour, londonDayStart } from '@/lib/kairos/thinking/deadlines'
 import type { AiDoneJobBoard, AiDoneJobBoardCard, AiDoneJobInput, AiDoneJobSession } from './prompt'
 import { AI_DONE_MAX_BOARD_CARDS, AI_DONE_MAX_BOARDS, AI_DONE_MAX_SESSIONS } from './types'
 
-// The afternoon's inputs: today's (London) session summaries from the user's
-// core repos (dominion_repos), and per switched-on board the sessions not yet
-// on it — not anchored to one of its cards and not cited by an earlier AI DONE
-// card — plus the board's open and recently done cards for dedup.
+// The afternoon's inputs: today's (London) session summaries from every repo
+// the owner worked in (core repos only add their Dominion name for dom:
+// labels), and per switched-on board the sessions not yet on it — not
+// anchored to one of its cards and not cited by an earlier AI DONE card —
+// plus the board's open and recently done cards for dedup.
 
 const DONE_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000
 const DIGEST_LOOKBACK_MS = 24 * 60 * 60 * 1000
@@ -78,8 +79,8 @@ export async function gatherAiDone(userId: string, now: Date): Promise<AiDoneJob
   ])
   const core = coreRepoIndex(repos, dominions)
   const sessions: CoreSession[] = rows.flatMap((row) => {
-    const slug = coreSlug(row.repo)
-    return slug && core.has(slug) ? [{ row, slug, dominion: core.get(slug) ?? null }] : []
+    const slug = coreSlug(row.repo) ?? normalizeRepoSlug(row.repo)
+    return slug ? [{ row, slug, dominion: core.get(slug) ?? null }] : []
   }).slice(0, AI_DONE_MAX_SESSIONS).reverse()
   if (sessions.length === 0) return null
 
@@ -123,7 +124,7 @@ export async function gatherAiDone(userId: string, now: Date): Promise<AiDoneJob
 
   const slugs = new Set(used.map((s) => s.slug))
   const digests: RepoGitDigest[] = (await listRepoGitDigestsBetween(userId, new Date(dayStart.getTime() - DIGEST_LOOKBACK_MS), now))
-    .filter((d) => slugs.has(coreSlug(d.slug) ?? ''))
+    .filter((d) => slugs.has(coreSlug(d.slug) ?? normalizeRepoSlug(d.slug) ?? ''))
     .slice(0, MAX_DIGESTS)
 
   return { day: londonDateHour(now).date, boards: jobBoards, sessions: jobSessions, digests }

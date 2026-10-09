@@ -85,6 +85,14 @@ describe('groundAiDone', () => {
     }])
   })
 
+  it('adds up to two of the board\'s own labels the model picked, never invented ones', () => {
+    const board = { ...INPUT.boards[0]!, labels: [{ id: 'l-dev', name: 'Dev' }, { id: 'l-ai', name: 'AI' }, { id: 'l-quant', name: 'Quant' }] }
+    const own = buildAiDoneJob({ ...INPUT, boards: [board] })
+    expect(own.prompt).toContain('Labels on this board: Dev, AI, Quant')
+    const out = groundAiDone(answer([card({ labels: ['made-up', 'ai', 'Dev', 'Quant'] })]), own.context)
+    expect(out.boards[0]?.cards[0]?.labelIds).toEqual(['l-ai', 'l-dev'])
+  })
+
   it('drops alreadyOn cards, cards without a valid session, titles already on the board, and batch repeats', () => {
     const out = groundAiDone(answer([
       card({ alreadyOn: 'E1' }),

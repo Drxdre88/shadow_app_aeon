@@ -7,6 +7,7 @@ import {
   AI_DONE_MAX_CARDS,
   AI_DONE_MAX_GROUPS,
   AI_DONE_MAX_ITEMS,
+  AI_DONE_MAX_PICKED_LABELS,
   AI_DONE_TITLE_MAX,
   normTitle,
   type AiDoneAnswer,
@@ -22,7 +23,8 @@ import {
 // handles are dropped, cards with no valid session, an "alreadyOn" mark, no
 // checklist or a title already on the board (or earlier in the batch) are
 // dropped, everything is clipped to the owner-style caps, and labels are only
-// ever existing board labels (repo:<label>, dom:<Dominion>).
+// ever existing board labels (repo:<label>, dom:<Dominion>, plus up to two of
+// the board's own labels the model picked, e.g. "Dev" on AS Sprint).
 
 export interface AiDoneDropped {
   cards: number
@@ -64,13 +66,20 @@ function repoFor(modelRepo: string | undefined, cited: AiDoneContextSession[]): 
   return cited.find((s) => s.repo === wanted) ?? cited[0]!
 }
 
-function labelIdsFor(session: AiDoneContextSession, board: AiDoneContextBoard): string[] {
+function labelIdsFor(session: AiDoneContextSession, board: AiDoneContextBoard, picked: readonly string[]): string[] {
   const resolved = resolveRepo(session.repo)
   const wanted = [...(resolved ? repoLabelNames(resolved) : []), ...(session.dominion ? [`dom:${session.dominion}`] : [])]
   const ids: string[] = []
-  for (const name of wanted) {
+  const add = (name: string) => {
     const label = board.labels.find((l) => normTitle(l.name) === normTitle(name))
     if (label && !ids.includes(label.id)) ids.push(label.id)
+    return Boolean(label)
+  }
+  for (const name of wanted) add(name)
+  let taken = 0
+  for (const name of picked) {
+    if (taken >= AI_DONE_MAX_PICKED_LABELS) break
+    if (add(name)) taken++
   }
   return ids
 }
@@ -118,7 +127,7 @@ export function groundAiDone(answer: AiDoneAnswer, ctx: AiDoneContext): GroundAi
         title,
         description: boardText(raw.description ?? '', AI_DONE_DESCRIPTION_MAX),
         repo: repo.repo,
-        labelIds: labelIdsFor(repo, board),
+        labelIds: labelIdsFor(repo, board, raw.labels ?? []),
         groups,
         sessionIds: cited.map((s) => s.id),
       }
