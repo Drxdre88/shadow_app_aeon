@@ -35,6 +35,9 @@ export const GET = withRateLimit(
     if (url.searchParams.get('includePinned') === 'false') params.includePinned = false
     if (url.searchParams.get('includeToday') === 'false') params.includeToday = false
     if (url.searchParams.get('includeMachine') === 'true') params.includeMachine = true
+    const expand = url.searchParams.get('expand')
+    if (expand === 'true') params.expand = true
+    else if (expand === 'false') params.expand = false
 
     const types = url.searchParams.getAll('type')
     if (types.length === 1) params.type = types[0]

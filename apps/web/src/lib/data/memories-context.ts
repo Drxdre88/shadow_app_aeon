@@ -6,6 +6,7 @@ import { exactFilterConditions } from './memories-search'
 import { loadTodayContextSection } from './prepare-context-today'
 import { rankScore } from '@/lib/kairos/ranking'
 import { REAL_MEMORY_STREAMS, searchCore } from '@/lib/kairos/search-core'
+import { SEARCH_EXPAND_DEFAULT, type SearchVia } from '@/lib/kairos/search-expand'
 import { assessConfidence } from '@/lib/kairos/retrieval-confidence'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -50,11 +51,14 @@ type Candidate = {
   origin: 'pinned' | 'hit' | 'neighbour'
   snippet?: string  // populated for FTS hits
   edgeType?: string // populated for neighbours
+  via?: SearchVia   // hits: core provenance; neighbours: 'link'; pinned: none
 }
 
 type Scored = Candidate & { compositeScore: number }
 
-export type ContextSource = { id: string; title: string; score: number; section: 'pinned' | 'relevant' | 'related' }
+export type ContextSource = {
+  id: string; title: string; score: number; section: 'pinned' | 'relevant' | 'related'; via?: SearchVia
+}
 
 export async function prepareContext(userId: string, input: PrepareContextInput) {
   const budget = input.budgetTokens
@@ -77,10 +81,11 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
     rerankChars: CONTEXT_RERANK_CHARS,
     snippets: true,
     minQueryChars: 2,
+    expand: input.expand ?? SEARCH_EXPAND_DEFAULT,
   })
   // relevance (pre-standing) is the base score: the composite below applies
   // the standing factor exactly once.
-  const hits = core.hits.map((h) => ({ ...h.row, rank: h.relevance, snippet: h.row.snippet ?? '' }))
+  const hits = core.hits.map((h) => ({ ...h.row, rank: h.relevance, snippet: h.row.snippet ?? '', via: h.via }))
 
   // ── 2. Pinned fetch (user-scoped, realm-scoped if provided) ──────────
   const pinned = input.includePinned
@@ -122,7 +127,7 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
     candidates.push({
       id: h.id, title: h.title, summary: h.summary ?? null, type: h.type ?? 'note', source: h.source ?? 'manual',
       createdAt: h.createdAt, updatedAt: h.updatedAt, confidence: h.confidence, standing: h.standing,
-      pinned: !!h.pinned, baseScore: h.rank, origin: 'hit', snippet: h.snippet,
+      pinned: !!h.pinned, baseScore: h.rank, origin: 'hit', snippet: h.snippet, via: h.via,
     })
   }
   for (const p of pinned) {
@@ -141,7 +146,7 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
     const bonus = EDGE_BONUS[n.edgeType] ?? 0.1
     candidates.push({
       id: n.id, title: n.title, summary: n.summary, type: n.type, source: n.source, createdAt: n.createdAt,
-      pinned: false, baseScore: parentRank * 0.5 + bonus, origin: 'neighbour', edgeType: n.edgeType,
+      pinned: false, baseScore: parentRank * 0.5 + bonus, origin: 'neighbour', edgeType: n.edgeType, via: 'link',
     })
   }
 
@@ -226,9 +231,10 @@ function packSections(
   }
 
   const score = (c: Scored) => Number(c.compositeScore.toFixed(3))
-  for (const r of out.relevantItems) out.sources.push({ id: r.id, title: r.title, score: score(r), section: 'relevant' })
-  for (const p of out.pinnedItems) out.sources.push({ id: p.id, title: p.title, score: score(p), section: 'pinned' })
-  for (const r of out.relatedItems) out.sources.push({ id: r.id, title: r.title, score: score(r), section: 'related' })
+  const via = (c: Scored) => (c.via ? { via: c.via } : {})
+  for (const r of out.relevantItems) out.sources.push({ id: r.id, title: r.title, score: score(r), section: 'relevant', ...via(r) })
+  for (const p of out.pinnedItems) out.sources.push({ id: p.id, title: p.title, score: score(p), section: 'pinned', ...via(p) })
+  for (const r of out.relatedItems) out.sources.push({ id: r.id, title: r.title, score: score(r), section: 'related', ...via(r) })
   return out
 }
 

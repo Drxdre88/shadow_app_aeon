@@ -1,6 +1,7 @@
 import { exactFilterConditions, searchMemoriesFts } from '@/lib/data/memories-search'
 import type { SearchMemoriesInput } from '@/lib/data/validators'
 import { MACHINE_STREAMS, REAL_MEMORY_STREAMS, searchCore, type CoreRow } from './search-core'
+import { SEARCH_EXPAND_DEFAULT, type SearchVia } from './search-expand'
 import { assessConfidence, type RetrievalConfidence } from './retrieval-confidence'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -43,7 +44,7 @@ function excerpt(row: CoreRow): string {
   return text.length > EXCERPT_CHARS ? `${text.slice(0, EXCERPT_CHARS)}…` : text
 }
 
-function toHit(row: CoreRow, score: number) {
+function toHit(row: CoreRow, score: number, via: SearchVia) {
   return {
     id: row.id,
     title: row.title,
@@ -66,6 +67,8 @@ function toHit(row: CoreRow, score: number) {
     rank: score,
     score,
     snippet: row.snippet || excerpt(row),
+    // Additive (graph step 1): main legs, link neighbour, or archetype signpost.
+    via,
   }
 }
 
@@ -77,7 +80,7 @@ export async function searchMemoriesHybrid(userId: string, input: SearchMemories
   if (!input.query) {
     const browse = await searchMemoriesFts(userId, input, lifted ? {} : { excludeStreams: MACHINE_STREAMS })
     return {
-      hits: browse.hits.map((h) => ({ ...h, score: Number(h.rank) || 0 })),
+      hits: browse.hits.map((h) => ({ ...h, score: Number(h.rank) || 0, via: 'search' as SearchVia })),
       total: browse.total,
       retrieval: { mode: 'browse', reranked: false, ...NO_SIGNAL } as SearchRetrieval,
     }
@@ -100,11 +103,12 @@ export async function searchMemoriesHybrid(userId: string, input: SearchMemories
     rerankChars: SEARCH_RERANK_CHARS,
     snippets: true,
     minQueryChars: 2,
+    expand: input.expand ?? SEARCH_EXPAND_DEFAULT,
   })
 
   const total = Math.min(core.candidates, HYBRID_MAX_WINDOW)
   return {
-    hits: core.hits.slice(input.offset).map((h) => toHit(h.row, h.score)),
+    hits: core.hits.slice(input.offset).map((h) => toHit(h.row, h.score, h.via)),
     total,
     hasMore: window < total,
     retrieval: { mode: core.mode, reranked: core.reranked, ...assessConfidence(core.topRelevance) } as SearchRetrieval,

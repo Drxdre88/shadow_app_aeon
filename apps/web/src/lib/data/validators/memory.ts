@@ -149,6 +149,9 @@ export const searchMemoriesSchema = z.object({
   // Wave 1 "one search": machine rows (traces, snapshots, deltas, archetypes,
   // cortex, aether, advisories) are hidden unless the caller opts in.
   includeMachine:  z.boolean().optional(),
+  // Graph step 1: widen the rerank pool with link neighbours and archetype
+  // signposts. Absent → server default (SEARCH_EXPAND_DEFAULT).
+  expand:          z.boolean().optional(),
   limit:           z.number().int().min(1).max(100).default(20),
   offset:          z.number().int().min(0).default(0),
 }).refine(
@@ -192,6 +195,8 @@ export const prepareContextSchema = z.object({
   // and the same machine-row opt-in as search_memories.
   dominionId:      z.string().uuid().optional(),
   includeMachine:  z.boolean().optional(),
+  // Same pool expansion switch as search_memories.
+  expand:          z.boolean().optional(),
 })
 
 export type MemoryType        = z.infer<typeof memoryTypeSchema>

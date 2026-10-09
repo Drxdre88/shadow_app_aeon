@@ -212,6 +212,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       sinceDays: z.number().int().min(1).max(365).optional().describe('Only memories created within the last N days'),
       pinnedOnly: z.boolean().optional(),
       includeMachine: z.boolean().optional().describe('Also return machine rows (traces, snapshots, deltas, archetypes, cortex, aether, advisories)'),
+      expand: z.boolean().optional().describe('Widen the rerank pool with linked memories and memories cited by matching archetypes; each hit reports `via` (search/link/signpost). Default off'),
       limit: z.number().int().min(1).max(100).default(20).optional(),
     },
     { title: 'Search Memories', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -227,6 +228,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
         sinceDays: args.sinceDays,
         pinnedOnly: args.pinnedOnly,
         includeMachine: args.includeMachine,
+        expand: args.expand,
         limit: args.limit ?? 20,
         offset: 0,
       })
@@ -302,6 +304,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       maxSources: z.number().int().min(5).max(100).default(30).optional().describe('Cap on search hits considered before scoring'),
       includePinned: z.boolean().default(true).optional().describe('Whether to surface pinned memories regardless of search match'),
       includeMachine: z.boolean().optional().describe('Also retrieve machine rows (traces, snapshots, deltas, archetypes, cortex, aether, advisories)'),
+      expand: z.boolean().optional().describe('Widen the rerank pool with linked memories and memories cited by matching archetypes; sources report `via`. Default off'),
     },
     { title: 'Prepare Context', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
@@ -316,6 +319,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
         maxSources: args.maxSources ?? 30,
         includePinned: args.includePinned ?? true,
         includeMachine: args.includeMachine,
+        expand: args.expand,
       })
       if (!parsed.success) return fail(parsed.error.issues[0].message)
 
