@@ -143,9 +143,12 @@ export interface SearchCoreResult {
   reranked: boolean
   // Distinct candidates found across both legs (before the top-k slice).
   candidates: number
+  // Best rerank relevance across the reranked pool (0..1); null when the
+  // result was not reranked (no calibrated relevance scale).
+  topRelevance: number | null
 }
 
-const EMPTY: SearchCoreResult = { hits: [], mode: 'none', reranked: false, candidates: 0 }
+const EMPTY: SearchCoreResult = { hits: [], mode: 'none', reranked: false, candidates: 0, topRelevance: null }
 
 const isReflection = (r: { streamClass: string }) => (r.streamClass === 'reflection' ? 1 : 0)
 
@@ -197,6 +200,7 @@ export async function searchCore(userId: string, opts: SearchCoreOptions): Promi
     mode: 'fts',
     reranked: false,
     candidates: ftsRows.length,
+    topRelevance: null,
   })
 
   if (!embeddingsEnabled()) return ftsOnly()
@@ -243,7 +247,7 @@ export async function searchCore(userId: string, opts: SearchCoreOptions): Promi
     })
 
     if (!reranked) {
-      return { hits: toHits(ranked.slice(0, limit), fusedRel), mode: 'hybrid', reranked: false, candidates: byId.size }
+      return { hits: toHits(ranked.slice(0, limit), fusedRel), mode: 'hybrid', reranked: false, candidates: byId.size, topRelevance: null }
     }
 
     const relevance = new Map(reranked.map((s) => [s.item, s.relevance]))
@@ -251,7 +255,8 @@ export async function searchCore(userId: string, opts: SearchCoreOptions): Promi
     const top = toHits(scoreRows(reranked.map((s) => s.item), rerankRel, { tieBreak: isReflection }), rerankRel)
     // Rows past the rerank pool keep their fused order after the reranked head.
     const rest = toHits(ranked.slice(pool.length), fusedRel)
-    return { hits: [...top, ...rest].slice(0, limit), mode: 'hybrid', reranked: true, candidates: byId.size }
+    const topRelevance = Math.max(...reranked.map((s) => s.relevance))
+    return { hits: [...top, ...rest].slice(0, limit), mode: 'hybrid', reranked: true, candidates: byId.size, topRelevance }
   } catch (err) {
     console.warn('[search-core] semantic search failed, FTS-only:', err instanceof Error ? err.message : err)
     return ftsOnly()

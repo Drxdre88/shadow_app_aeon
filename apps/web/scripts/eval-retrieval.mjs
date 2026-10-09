@@ -13,7 +13,8 @@
 //   Chat retrieval (retrieveForChatGlobal) has no REST route, so it is not measured here.
 //
 // Ranking: a path's ranked list is the ids in the order the endpoint returns them
-// (search hits; context sources = pinned → relevant → related).
+// (search hits; context sources = relevant → pinned → related since the 09/10 ordering change;
+// earlier saved runs were pinned → relevant → related).
 // Abstention rule: an abstention question passes on a path when the path returns
 // ZERO query-driven results in its top 10 (search hits; context sources excluding
 // the user's pinned memories, which prepare_context injects into every answer).

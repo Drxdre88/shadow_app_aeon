@@ -89,6 +89,8 @@ export type FanOutSpeakOptions = {
   telegramKeyboard?: InlineKeyboardButton[][]
   telegramText?: string
   telegramDismiss?: boolean
+  // Receives each sent Telegram message_id (the Sunday deck keys its mapping on it).
+  telegramOnSent?: (messageId: number) => void
 }
 
 // opts.telegramTail: Telegram-only text appended to the sent message (the 06:00
@@ -238,8 +240,9 @@ export async function fanOutSpeak(params: FanOutSpeakInput, opts: FanOutSpeakOpt
   const keyboard = opts.telegramKeyboard?.length ? { keyboard: opts.telegramKeyboard } : {}
   const dismiss = opts.telegramDismiss === false ? { dismissButton: false } : {}
   const text = opts.telegramText?.trim() || message
+  const onSent = opts.telegramOnSent ? { onSent: opts.telegramOnSent } : {}
   try {
-    telegram = await sendKairosSpeak({ memoryId, title, message: tail ? `${text}\n\n${tail}` : text, kind, ...keyboard, ...dismiss })
+    telegram = await sendKairosSpeak({ memoryId, title, message: tail ? `${text}\n\n${tail}` : text, kind, ...keyboard, ...dismiss, ...onSent })
   } catch (err) {
     console.error('[kairos-speak] telegram fan-out failed', err)
   }

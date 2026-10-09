@@ -16,6 +16,8 @@ import { readDreamLine } from './dreams/line'
 import { hasMomentHook, runDailyDelivered } from './moment'
 import { expireStaleIdeaProposals } from '@/lib/data/idea-expiry'
 import { buildDailyBrief, type DailyBrief } from './daily-brief'
+import { composeVerdictDeck, rememberVerdictDeck } from './verdict-deck/compose'
+import type { DeckItem } from './verdict-deck/types'
 import { ideaVerdictKeyboard } from './idea-verdict-keyboard'
 import { openInAeonKeyboard, type InlineKeyboardButton } from './telegram'
 import {
@@ -63,6 +65,7 @@ export function draftMentions(draft: string, title: string): boolean {
 export const DAILY_MESSAGE_CRON = 'daily-message'
 export const DAILY_MESSAGE_KIND: ThinkingJobKind = 'daily_message'
 export const IDEA_EXPIRY_CRON = 'idea-expiry'
+export const VERDICT_DECK_CRON = 'verdict-deck'
 export const dailyMessageJobKey = (date: string) => `daily_message:${date}`
 export const dailyMessageExternalId = (date: string) => `kairos-daily:${date}`
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -107,6 +110,8 @@ export interface ComposedDailyMessage {
   dreamLine: string | null
   // What Telegram shows (daily-brief.ts); `message` is the full inbox text.
   brief: DailyBrief
+  // Sunday verdict deck numbering (verdict-deck/), null on any other day.
+  deckItems: DeckItem[] | null
 }
 
 async function composeWithModel(userId: string, inputs: DailyMessageInputs): Promise<string> {
@@ -206,7 +211,13 @@ export async function composeDailyMessage(userId: string, now: Date): Promise<Co
   message = appendOpenQuestionsBlock(message, inputs.openAsks, now, DAILY_MESSAGE_TOTAL_MAX_CHARS - reserved)
   for (const line of tail) message = `${message}\n\n${line}`
   const dreamLine = dreamLineEnabled() ? await readDreamLine(userId, now) : null
-  return { message, source, inputs, dreamLine, brief: buildDailyBrief(narrative, inputs, now) }
+  // Sundays (London): the brief becomes the numbered verdict deck.
+  const deck = await composeVerdictDeck(userId, narrative, inputs, now)
+  return {
+    message, source, inputs, dreamLine,
+    brief: deck?.brief ?? buildDailyBrief(narrative, inputs, now),
+    deckItems: deck ? deck.items : null,
+  }
 }
 
 // ── Run ──────────────────────────────────────────────────────────────────
@@ -251,6 +262,7 @@ export interface DailyTelegramExtras {
   text?: string
   keyboard?: InlineKeyboardButton[][]
   dismiss?: boolean
+  onSent?: (messageId: number) => void
 }
 
 export async function deliverDailyMessageOnce(
@@ -259,11 +271,12 @@ export async function deliverDailyMessageOnce(
   input: SpeakInput,
   extras: DailyTelegramExtras = {},
 ): Promise<DailyDeliveryFlight> {
-  const { telegramTail, text, keyboard, dismiss } = extras
+  const { telegramTail, text, keyboard, dismiss, onSent } = extras
   const telegram = {
     ...(text ? { telegramText: text } : {}),
     ...(keyboard?.length ? { telegramKeyboard: keyboard } : {}),
     ...(dismiss === false ? { telegramDismiss: false } : {}),
+    ...(onSent ? { telegramOnSent: onSent } : {}),
   }
   return db.transaction(async (tx): Promise<DailyDeliveryFlight> => {
     const res = await tx.execute(
@@ -309,11 +322,13 @@ export async function runDailyMessageForUser(
       }
     }
 
-    const { message, source, inputs, dreamLine, brief } = await composeDailyMessage(userId, now)
+    const { message, source, inputs, dreamLine, brief, deckItems } = await composeDailyMessage(userId, now)
     if (opts.dryRun) {
       return { status: 'dry_run', date, source, message, brief: brief.text, ...(dreamLine ? { dreamLine } : {}), failedInputs: inputs.failed }
     }
 
+    const deckMessageIds: number[] = []
+    const deckSent = deckItems?.length ? { onSent: (id: number) => { deckMessageIds.push(id) } } : {}
     const flight = await deliverDailyMessageOnce(userId, date, {
       title: `Vorath · ${date}`,
       message,
@@ -323,7 +338,7 @@ export async function runDailyMessageForUser(
       opsAlert: false,
       digest: true,
       externalId: dailyMessageExternalId(date),
-    }, { telegramTail: dreamLine, text: brief.text, ...dailyKeyboard(brief) })
+    }, { telegramTail: dreamLine, text: brief.text, ...dailyKeyboard(brief), ...deckSent })
     if (flight.state === 'in_flight') return await skip('delivery in flight')
     if (flight.state === 'already_delivered') return await skip('already sent today')
 
@@ -354,6 +369,15 @@ export async function runDailyMessageForUser(
         error: new Error(`daily message ${outcome.body.id} reached the inbox only — Telegram fan-out did not deliver`),
       })
       return { status: 'sent_inbox_only', date, source, ...failedInputs }
+    }
+
+    // The deck's number → item mapping, for the owner's "1y 2n 3 skip" reply.
+    if (deckItems?.length) {
+      try {
+        await rememberVerdictDeck(userId, date, deckItems, deckMessageIds)
+      } catch (err) {
+        await writeCronFailureTrace(userId, { cronName: VERDICT_DECK_CRON, reason: 'save_failed', error: err })
+      }
     }
 
     await writeCronSuccessTrace(userId, { cronName: DAILY_MESSAGE_CRON, now })

@@ -179,6 +179,20 @@ A Telegram failure records `sent_inbox_only` + a `telegram_not_delivered` trace.
   button from the message's own keyboard, checks the tap is the owner's, runs the same
   `acceptInboxProposal` / `dismissInboxMemory` with origin `operator/telegram` (so taste learns),
   answers "✓ kept" / "✓ dropped" and collapses that row (`idea-verdict-telegram.ts`).
+- **Sunday verdict deck** (Wave 2, 09/10) — on Sunday (London, `isLondonSunday`) the same 06:00 run
+  (no new cron or thinking kind) swaps the brief for one numbered deck (`lib/kairos/verdict-deck/`):
+  every item waiting on the owner — pending idea survivors, open `Q`s, `R`s due (predictions switch
+  on), pending goal / card-tree proposals — numbered 1..N oldest
+  first, ≤10 shown, one clipped line each, `+N more in your inbox.`, footer `Reply e.g. "1y 2n 3
+  skip"`; nothing waiting → the quiet line; a failed gather → the ordinary brief. Speak's
+  `telegramOnSent` captures the sent message id; after Telegram delivered, the number → item map
+  is stored in the server-owned `kairosVerdictDeck` pref (`lib/data/kairos-verdict-deck.ts`, latest
+  deck only, no migration). The webhook routes a deck reply first (before Q/R/D/P/A and chat): text
+  that is ONLY bare numbered verdicts (`y/yes/✅/keep`, `n/no/❌/drop`, `s/skip`) replying to that
+  message, or sent on the deck's London day (a "no" only on a reply to the deck). Verdicts go to the
+  existing owner handlers with origin `operator/telegram` (idea accept/dismiss, Q "n" sets it aside
+  and "y" asks for the answer text, R right/wrong, proposal approve/veto); the decision journal is never in the deck (it stays private to the owner); skip touches nothing; unknown numbers are reported; one-line ack
+  `✓ 1 kept · ✓ 2 dropped · 3 skipped · 4 unknown`.
 - **Idea expiry** — before composing (never on a dry run), `expireStaleIdeaProposals`
   (`lib/data/idea-expiry.ts`) archives pending, undecided idea survivors older than 7 days with
   `status`/`idea.outcome` `'ignored'` — never deleted; taste and stepping stones read them as

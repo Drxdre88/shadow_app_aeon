@@ -6,6 +6,7 @@ import { exactFilterConditions } from './memories-search'
 import { loadTodayContextSection } from './prepare-context-today'
 import { rankScore } from '@/lib/kairos/ranking'
 import { REAL_MEMORY_STREAMS, searchCore } from '@/lib/kairos/search-core'
+import { assessConfidence } from '@/lib/kairos/retrieval-confidence'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Brain Phase 4 — prepare_context (moved out of memories.ts; re-exported
@@ -109,19 +110,12 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
     neighbours = walks.flat()
   }
 
-  // ── 4. Build candidate set with composite scoring ────────────────────
+  // ── 4. Build candidate set with composite scoring. Query hits claim their
+  //      ids first, so a pinned memory that also matches is cited once, as a
+  //      relevant hit; the rest of the pinned set follows. ──
   const seen = new Set<string>()
   const candidates: Candidate[] = []
 
-  for (const p of pinned) {
-    if (seen.has(p.id)) continue
-    seen.add(p.id)
-    candidates.push({
-      id: p.id, title: p.title, summary: p.summary, type: p.type, source: p.source,
-      createdAt: p.createdAt, updatedAt: p.updatedAt, confidence: p.confidence, standing: p.standing,
-      pinned: true, baseScore: 2.0, origin: 'pinned',
-    })
-  }
   for (const h of hits) {
     if (seen.has(h.id)) continue
     seen.add(h.id)
@@ -129,6 +123,15 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
       id: h.id, title: h.title, summary: h.summary ?? null, type: h.type ?? 'note', source: h.source ?? 'manual',
       createdAt: h.createdAt, updatedAt: h.updatedAt, confidence: h.confidence, standing: h.standing,
       pinned: !!h.pinned, baseScore: h.rank, origin: 'hit', snippet: h.snippet,
+    })
+  }
+  for (const p of pinned) {
+    if (seen.has(p.id)) continue
+    seen.add(p.id)
+    candidates.push({
+      id: p.id, title: p.title, summary: p.summary, type: p.type, source: p.source,
+      createdAt: p.createdAt, updatedAt: p.updatedAt, confidence: p.confidence, standing: p.standing,
+      pinned: true, baseScore: 2.0, origin: 'pinned',
     })
   }
   for (const n of neighbours) {
@@ -155,14 +158,16 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
 
   const todaySection = await todayPromise
   const packed = packSections(scored, bodyById, budget, todaySection)
-  const contextMd = renderContext(input.query, budget, todaySection, packed, candidates.length === 0)
+  const confidence = assessConfidence(core.topRelevance)
+  const contextMd = renderContext(input.query, budget, todaySection, packed, candidates.length === 0, confidence.lowConfidence)
 
   return {
     contextMd,
     tokensUsed: estimateTokens(contextMd),
     sources: packed.sources,
-    // Additive (Wave 1): which retrieval path produced the hits.
-    retrieval: { mode: core.mode, reranked: core.reranked },
+    // Additive (Wave 1): which retrieval path produced the hits, and how
+    // confident the best match is (flag only; pinned/today never dropped).
+    retrieval: { mode: core.mode, reranked: core.reranked, ...confidence },
   }
 }
 
@@ -173,7 +178,9 @@ type Packed = {
   sources: ContextSource[]
 }
 
-// ── 6. Pack into Pinned → Most relevant → Related sections ──────────────
+// ── 6. Pack into Most relevant → Pinned → Related sections. Pinned rows
+//      that overflow their budget drop to Related; they never take a
+//      Most-relevant slot from a query match. ──
 function packSections(
   scored: Scored[],
   bodyById: Map<string, { bodyMd: string | null }>,
@@ -194,14 +201,20 @@ function packSections(
     const body = bodyById.get(c.id)?.bodyMd ?? c.summary ?? ''
     const bodyTokens = estimateTokens(body) + estimateTokens(c.title) + 30  // body + title + section overhead
 
-    if (c.origin === 'pinned' && pinnedUsed + bodyTokens <= pinnedBudget) {
-      out.pinnedItems.push({ ...c, body })
-      pinnedUsed += bodyTokens
-      continue
-    }
-    if (relevantUsed + bodyTokens <= relevantBudget && out.relevantItems.length < 8) {
+    if (c.origin === 'pinned') {
+      if (pinnedUsed + bodyTokens <= pinnedBudget) {
+        out.pinnedItems.push({ ...c, body })
+        pinnedUsed += bodyTokens
+        continue
+      }
+    } else if (relevantUsed + bodyTokens <= relevantBudget && out.relevantItems.length < 8) {
       out.relevantItems.push({ ...c, body })
       relevantUsed += bodyTokens
+      continue
+    } else if (c.pinned && pinnedUsed + bodyTokens <= pinnedBudget) {
+      // A pinned memory that matched only weakly keeps its full body in Pinned.
+      out.pinnedItems.push({ ...c, body })
+      pinnedUsed += bodyTokens
       continue
     }
     const summaryTokens = estimateTokens(c.summary ?? c.title) + 20
@@ -213,19 +226,21 @@ function packSections(
   }
 
   const score = (c: Scored) => Number(c.compositeScore.toFixed(3))
-  for (const p of out.pinnedItems) out.sources.push({ id: p.id, title: p.title, score: score(p), section: 'pinned' })
   for (const r of out.relevantItems) out.sources.push({ id: r.id, title: r.title, score: score(r), section: 'relevant' })
+  for (const p of out.pinnedItems) out.sources.push({ id: p.id, title: p.title, score: score(p), section: 'pinned' })
   for (const r of out.relatedItems) out.sources.push({ id: r.id, title: r.title, score: score(r), section: 'related' })
   return out
 }
 
 // ── 7. Render markdown ──────────────────────────────────────────────────
-function renderContext(query: string, budget: number, todaySection: string, packed: Packed, empty: boolean): string {
+function renderContext(
+  query: string, budget: number, todaySection: string, packed: Packed, empty: boolean, lowConfidence: boolean,
+): string {
   const { pinnedItems, relevantItems, relatedItems, sources } = packed
   const lines: string[] = []
   lines.push(`# Context for: ${query}`)
   lines.push('')
-  lines.push(`> Budget: ${budget} tokens · Pinned: ${pinnedItems.length} · Relevant: ${relevantItems.length} · Related: ${relatedItems.length}`)
+  lines.push(`> Budget: ${budget} tokens · Relevant: ${relevantItems.length} · Pinned: ${pinnedItems.length} · Related: ${relatedItems.length}`)
   lines.push('')
 
   if (todaySection) {
@@ -233,13 +248,9 @@ function renderContext(query: string, budget: number, todaySection: string, pack
     lines.push('')
   }
 
-  if (pinnedItems.length > 0) {
-    lines.push('## Pinned')
+  if (lowConfidence && !empty) {
+    lines.push('> Low confidence: no memory closely matches this query; treat the matches below as weak leads.')
     lines.push('')
-    for (const p of pinnedItems) {
-      const date = new Date(p.createdAt).toISOString().slice(0, 10)
-      lines.push(`### ${p.title}`, `*${date} · ${p.type} · ${p.source}*`, '', p.body, '', '---', '')
-    }
   }
 
   if (relevantItems.length > 0) {
@@ -249,6 +260,15 @@ function renderContext(query: string, budget: number, todaySection: string, pack
       const date = new Date(r.createdAt).toISOString().slice(0, 10)
       const linked = r.origin === 'neighbour' && r.edgeType ? ` · linked: ${r.edgeType}` : ''
       lines.push(`### ${r.title}`, `*${date} · ${r.type} · ${r.source}${linked}*`, '', r.body, '', '---', '')
+    }
+  }
+
+  if (pinnedItems.length > 0) {
+    lines.push('## Pinned')
+    lines.push('')
+    for (const p of pinnedItems) {
+      const date = new Date(p.createdAt).toISOString().slice(0, 10)
+      lines.push(`### ${p.title}`, `*${date} · ${p.type} · ${p.source}*`, '', p.body, '', '---', '')
     }
   }
 

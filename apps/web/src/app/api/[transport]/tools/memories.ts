@@ -195,6 +195,8 @@ export const registerMemoryTools: RegisterFn = (server) => {
   server.tool(
     'search_memories',
     'Search the user-scoped brain (hybrid: full-text + semantic, ranked by relevance × standing, reranked). Returns ranked hits with snippet excerpts. Use this before answering questions that may have prior context. ' +
+      '`retrieval.confidence` is the best rerank relevance (0..1, null when not reranked or browsing); `retrieval.lowConfidence` ' +
+      'means no memory closely matches the query — hits are still returned but are weak evidence, so say you do not know rather than answer from them. ' +
       'Real memories only by default — machine rows (cron traces, snapshots, deltas, archetypes, cortex, aether, advisories) are hidden unless `includeMachine` is true or an explicit `type`/`source` filter is given. ' +
       'Vorath Phase 3B: `query` is optional when `dominionId` is given — the Dominion scope plus optional `sinceDays` is sufficient to bound results, so lieutenants can pull "recent memories on this Dominion" without inventing a search term.',
     {
@@ -280,8 +282,11 @@ export const registerMemoryTools: RegisterFn = (server) => {
     'prepare_context',
     'Build a budget-packed markdown context bundle from the user-scoped brain. ' +
       'Combines hybrid retrieval (full-text + semantic, ranked by relevance × standing, reranked) + 1-hop typed graph walk + pinned items, ' +
-      'and packs into Pinned/Most-relevant/Related ' +
-      'sections sized to a token budget. Real memories only by default (machine rows need `includeMachine`); optional `dominionId` scope. Use this BEFORE answering open-ended ' +
+      'and packs into Most-relevant/Pinned/Related ' +
+      'sections sized to a token budget (query matches first; pinned items follow, de-duplicated). ' +
+      'Real memories only by default (machine rows need `includeMachine`); optional `dominionId` scope. ' +
+      '`retrieval.confidence` is the best rerank relevance (0..1, null when not reranked); `retrieval.lowConfidence` ' +
+      'means no memory closely matches — treat Most-relevant as weak leads. Use this BEFORE answering open-ended ' +
       'questions ("what should I focus on?", "what do I know about X?", "what was ' +
       'the decision on Y?") — it returns ready-to-prepend context with cited sources.',
     {

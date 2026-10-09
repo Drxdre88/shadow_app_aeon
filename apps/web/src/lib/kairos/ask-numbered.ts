@@ -96,7 +96,7 @@ export function parseNumberedAnswers(body: string, openSeqs: Iterable<number>): 
 // Text that only the 06:00 brief carries. A brief shows one Q beside other
 // items (idea, goal, "+N more"), so a free reply to it is not an answer to
 // that Q; the owner answers with "Q12: …" or the buttons instead.
-const BRIEF_MARKER_RE = /(?:more in your inbox\.|The full brief is in your inbox\.|💡 Idea:)/
+const BRIEF_MARKER_RE = /(?:more in your inbox\.|The full brief is in your inbox\.|💡 Idea:|Reply e\.g\. "1y)/
 
 export function parseReplyToAsk(body: string, replyText: string | undefined, openSeqs: Iterable<number>): NumberedAnswerParse {
   const none = { answers: [], skips: [] }
