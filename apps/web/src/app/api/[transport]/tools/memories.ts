@@ -212,7 +212,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       sinceDays: z.number().int().min(1).max(365).optional().describe('Only memories created within the last N days'),
       pinnedOnly: z.boolean().optional(),
       includeMachine: z.boolean().optional().describe('Also return machine rows (traces, snapshots, deltas, archetypes, cortex, aether, advisories)'),
-      expand: z.boolean().optional().describe('Widen the rerank pool with linked memories and memories cited by matching archetypes; each hit reports `via` (search/link/signpost). Default off'),
+      expand: z.boolean().optional().describe('Widen the rerank pool with linked memories and memories cited by matching archetypes; each hit reports `via` (search/link/signpost). Default on; pass false to opt out'),
       limit: z.number().int().min(1).max(100).default(20).optional(),
     },
     { title: 'Search Memories', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -304,7 +304,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       maxSources: z.number().int().min(5).max(100).default(30).optional().describe('Cap on search hits considered before scoring'),
       includePinned: z.boolean().default(true).optional().describe('Whether to surface pinned memories regardless of search match'),
       includeMachine: z.boolean().optional().describe('Also retrieve machine rows (traces, snapshots, deltas, archetypes, cortex, aether, advisories)'),
-      expand: z.boolean().optional().describe('Widen the rerank pool with linked memories and memories cited by matching archetypes; sources report `via`. Default off'),
+      expand: z.boolean().optional().describe('Widen the rerank pool with linked memories and memories cited by matching archetypes; sources report `via`. Default on; pass false to opt out'),
     },
     { title: 'Prepare Context', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
