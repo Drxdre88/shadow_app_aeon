@@ -21,8 +21,9 @@ import {
 
 // Grounding a model answer onto the boards: unknown boards and session
 // handles are dropped, cards with no valid session, an "alreadyOn" mark, no
-// checklist or a title already on the board (or earlier in the batch) are
-// dropped, everything is clipped to the owner-style caps, and labels are only
+// checklist or a title already on the board, already finished (Done column or
+// vault) or earlier in the batch — exactly or near enough — are dropped,
+// everything is clipped to the owner-style caps, and labels are only
 // ever existing board labels (repo:<label>, dom:<Dominion>, plus up to two of
 // the board's own labels the model picked, e.g. "Dev" on AS Sprint).
 
@@ -38,6 +39,19 @@ export interface GroundAiDoneResult {
 }
 
 const DEFAULT_GROUP = 'Checklist'
+
+const titleWords = (s: string) => new Set(normTitle(s).replace(/[^a-z0-9 ]+/g, ' ').split(' ').filter((w) => w.length > 1))
+
+/** Same title, or two titles of 2+ words that share at least 80% of the shorter one's words. */
+export function sameWork(a: string, b: string): boolean {
+  if (normTitle(a) === normTitle(b)) return true
+  const x = titleWords(a)
+  const y = titleWords(b)
+  if (x.size < 2 || y.size < 2) return false
+  let common = 0
+  for (const w of x) if (y.has(w)) common++
+  return common >= 2 && common / Math.min(x.size, y.size) >= 0.8
+}
 
 function groupsOf(raw: Array<{ name: string; items: string[] } | null>): AiDoneGroup[] {
   const groups: AiDoneGroup[] = []
@@ -117,7 +131,7 @@ export function groundAiDone(answer: AiDoneAnswer, ctx: AiDoneContext): GroundAi
       }
       const title = boardText(raw.title, AI_DONE_TITLE_MAX)
       const groups = groupsOf(raw.groups)
-      if (cited.length === 0 || !title || groups.length === 0 || taken.has(normTitle(title)) || entry.cards.length >= AI_DONE_MAX_CARDS) {
+      if (cited.length === 0 || !title || groups.length === 0 || [...taken].some((t) => sameWork(t, title)) || entry.cards.length >= AI_DONE_MAX_CARDS) {
         dropped.cards++
         continue
       }
