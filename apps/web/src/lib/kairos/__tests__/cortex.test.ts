@@ -67,6 +67,11 @@ vi.mock('@/lib/ai/route-task', () => ({
 
 // Replay (spec_surprise) reads after the FIFO-queued selects; keep it out of
 // the queue entirely.
+vi.mock('../synthesis-change', async (importActual) => ({
+  ...(await importActual<typeof import('../synthesis-change')>()),
+  cortexChangeCheck: vi.fn(async () => ({ run: true, reason: 'new_input' })),
+}))
+
 vi.mock('@/lib/kairos/surprise/replay-reader', () => ({
   cortexDueSoonContext: vi.fn(async () => ({})),
 }))

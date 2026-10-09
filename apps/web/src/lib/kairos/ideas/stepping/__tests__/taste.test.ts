@@ -80,6 +80,13 @@ describe('computeIdeaTaste', () => {
     expect(p.totals).toMatchObject({ accepted: 0, dismissed: 1, ignored: 2 })
   })
 
+  it('an expired idea (archived, outcome ignored) counts as ignored, never as an owner dismissal', () => {
+    const expired = row({ status: 'ignored', archived: true, ageDays: 8 })
+    ;(expired.sourceMetadata as { idea: Record<string, unknown> }).idea.outcome = 'ignored'
+    expect(computeIdeaTaste([expired], NOW, names).totals).toMatchObject({ accepted: 0, dismissed: 0, ignored: 1 })
+    expect(steppingStoneReason(expired, NOW)).toBe('ignored')
+  })
+
   it('excludes agent-made accepts but counts legacy accepts as the owner\'s', () => {
     const p = computeIdeaTaste([
       ...times(3, { outcome: 'accepted', outcomeBy: 'agent' }),

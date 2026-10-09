@@ -246,6 +246,7 @@ async function readIdeaOfTheDay(userId: string, since: Date): Promise<IdeaOfTheD
   if (!top) return null
   const title = clipLine(top.title || top.claim)
   return {
+    id: top.id,
     title,
     claim: clipLine(top.claim || top.title),
     survivedBecause: top.survivedBecause?.trim() ? clipLine(top.survivedBecause) : null,

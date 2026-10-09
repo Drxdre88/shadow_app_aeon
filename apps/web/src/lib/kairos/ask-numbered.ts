@@ -93,13 +93,18 @@ export function parseNumberedAnswers(body: string, openSeqs: Iterable<number>): 
  * D/R/P/A/C labels — never a digest like the 06:00 message): the whole body
  * answers it, unless the body reads as an owner command for another router.
  */
+// Text that only the 06:00 brief carries. A brief shows one Q beside other
+// items (idea, goal, "+N more"), so a free reply to it is not an answer to
+// that Q; the owner answers with "Q12: …" or the buttons instead.
+const BRIEF_MARKER_RE = /(?:more in your inbox\.|The full brief is in your inbox\.|💡 Idea:)/
+
 export function parseReplyToAsk(body: string, replyText: string | undefined, openSeqs: Iterable<number>): NumberedAnswerParse {
   const none = { answers: [], skips: [] }
   const quotedText = replyText ?? ''
   const quoted = new Set([...quotedText.matchAll(QUOTED_SEQ_RE)].map((m) => Number(m[1])))
   const [seq] = [...quoted]
   const text = body.trim()
-  if (quoted.size !== 1 || !new Set(openSeqs).has(seq!) || OTHER_LABEL_RE.test(quotedText)) return none
+  if (quoted.size !== 1 || !new Set(openSeqs).has(seq!) || OTHER_LABEL_RE.test(quotedText) || BRIEF_MARKER_RE.test(quotedText)) return none
   if (!text || isClarifyingQuestion(text) || OWNER_COMMAND_LINE_RE.test(text)) return none
   return { answers: [{ seq: seq!, text }], skips: [] }
 }

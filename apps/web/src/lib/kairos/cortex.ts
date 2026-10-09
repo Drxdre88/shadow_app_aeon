@@ -21,6 +21,7 @@ import { todayIso, parseWithRepair, ParseRepairError } from './_prompt-utils'
 import { writeCronFailureTrace, writeCronSuccessTrace } from './cron-trace'
 import { cortexDueSoonContext } from './surprise/replay-reader'
 import { fetchCortexInputs, fetchTodaySoFar, previousUtcDay } from './cortex-inputs'
+import { cortexChangeCheck, NO_NEW_INPUT } from './synthesis-change'
 
 export {
   buildCortexPrompt,
@@ -46,6 +47,9 @@ export {
 // with the rendered markdown in bodyMd and the structured payload in
 // sourceMetadata.cortex. Old cortex rows are soft-archived in a tx so the
 // Dominion is never left without a live cortex on a failed insert.
+//
+// Change check: skip a Dominion with no new input (memories, archetype
+// edits, strategy edits) since its live cortex; weekly refresh regardless.
 //
 // Idempotency: skip a Dominion if a LIVE cortex row already exists for it
 // today (UTC). Mirrors B1's pattern — a failed run that archived yesterday
@@ -195,6 +199,11 @@ export async function runCortexRegenForDominion(
   if (await alreadyRanToday(userId, dominionId)) {
     await writeCronSuccessTrace(userId, { cronName: 'cortex-regen', dominionId, outcome: 'skipped', skipReason: 'already ran today' })
     return { dominionId, dominionName: dom.name, status: 'existing', reason: 'already ran today' }
+  }
+
+  if (!(await cortexChangeCheck(userId, dominionId)).run) {
+    await writeCronSuccessTrace(userId, { cronName: 'cortex-regen', dominionId, outcome: 'skipped', skipReason: NO_NEW_INPUT })
+    return { dominionId, dominionName: dom.name, status: 'skipped', reason: NO_NEW_INPUT }
   }
 
   const ctx = await gatherCortexContext(userId, dominionId)

@@ -99,7 +99,7 @@ function buildPatch(
   veto: VetoStamp | null,
   opKind: string,
 ): MemoryRestorePatch | 'stale' {
-  if (opKind === 'concept_update') return buildConceptPatch(plan, row)
+  if (opKind === 'concept_update' || opKind === 'archetype_update') return buildConceptPatch(plan, row)
   if (BELIEF_SNAPSHOT_OPS.has(opKind) && asRecord(plan.before.belief)) return buildBeliefPatch(plan, row, veto)
   if (opKind === 'feedback' && asRecord(plan.before.outcome)) return buildOutcomePatch(plan)
 

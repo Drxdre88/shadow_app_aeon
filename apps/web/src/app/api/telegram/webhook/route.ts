@@ -32,6 +32,8 @@ import { routeDecisionCommands } from '@/lib/kairos/decisions/telegram-commands'
 import { routePredictionCommands } from '@/lib/kairos/predictions/telegram-commands'
 import { routePromiseCommands } from '@/lib/kairos/promises/telegram-commands'
 import { handleProposalCallback, routeVetoReason } from '@/lib/kairos/proposal-telegram'
+import { handleIdeaVerdictTap } from '@/lib/kairos/idea-verdict-telegram'
+import { tappedIdeaVerdict } from '@/lib/kairos/idea-verdict-keyboard'
 import { routeMomentCallback, routeMomentMessage, routeMomentText } from '@/lib/kairos/moment/telegram-routes'
 import { routeOwnerCommands } from '@/lib/kairos/telegram-commands'
 import type { TelegramMediaRef } from '@/lib/kairos/moment/types'
@@ -44,6 +46,7 @@ import {
   sendMessage,
   sendTelegramChatReply,
   telegramChatFailureText,
+  type InlineKeyboardButton,
   type ProposalCallbackAction,
 } from '@/lib/kairos/telegram'
 
@@ -103,6 +106,7 @@ type TelegramUpdate = {
       message_id: number
       text?: string
       chat?: { id: number | string }
+      reply_markup?: { inline_keyboard?: InlineKeyboardButton[][] }
     }
   }
   message?: {
@@ -198,6 +202,30 @@ async function handleCallbackQuery(
   }
 
   const [, action, memoryId] = match
+  // A Keep / Drop button on an idea (06:00 message): same triage, owner-only tap.
+  const keyboard = callback.message?.reply_markup?.inline_keyboard
+  const verdict = tappedIdeaVerdict(keyboard, callback.data ?? '')
+  if (verdict) {
+    if (String(callback.from?.id) !== operatorChatId) {
+      await answerCallbackQuery(callback.id, 'Not allowed')
+      return
+    }
+    try {
+      await handleIdeaVerdictTap(operatorUserId, {
+        callbackId: callback.id,
+        chatId: chatId!,
+        messageId: callback.message?.message_id ?? null,
+        keyboard: keyboard ?? [],
+        data: callback.data!,
+        memoryId,
+        verdict,
+      })
+    } finally {
+      await markKairosSpeaksReplied(operatorUserId, repliedAt)
+        .catch((err) => console.error('[telegram-webhook] reply marker failed', err))
+    }
+    return
+  }
   const result = await (async () => {
     try {
       return action.toLowerCase() === 'accept'

@@ -14,6 +14,10 @@ import { buildHoraeLine, buildVerdictLine } from './daily-message-tail'
 import { dreamLineEnabled } from './dreams/flag'
 import { readDreamLine } from './dreams/line'
 import { hasMomentHook, runDailyDelivered } from './moment'
+import { expireStaleIdeaProposals } from '@/lib/data/idea-expiry'
+import { buildDailyBrief, type DailyBrief } from './daily-brief'
+import { ideaVerdictKeyboard } from './idea-verdict-keyboard'
+import { openInAeonKeyboard, type InlineKeyboardButton } from './telegram'
 import {
   DAILY_MESSAGE_SYSTEM_PROMPT,
   DAILY_MESSAGE_TOTAL_MAX_CHARS,
@@ -58,6 +62,7 @@ export function draftMentions(draft: string, title: string): boolean {
 
 export const DAILY_MESSAGE_CRON = 'daily-message'
 export const DAILY_MESSAGE_KIND: ThinkingJobKind = 'daily_message'
+export const IDEA_EXPIRY_CRON = 'idea-expiry'
 export const dailyMessageJobKey = (date: string) => `daily_message:${date}`
 export const dailyMessageExternalId = (date: string) => `kairos-daily:${date}`
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -100,6 +105,8 @@ export interface ComposedDailyMessage {
   // Telegram-only "I dreamt…" line (dreams/line.ts) — never part of
   // `message`, so never captured, logged to today, or seen by the model.
   dreamLine: string | null
+  // What Telegram shows (daily-brief.ts); `message` is the full inbox text.
+  brief: DailyBrief
 }
 
 async function composeWithModel(userId: string, inputs: DailyMessageInputs): Promise<string> {
@@ -173,6 +180,7 @@ export async function composeDailyMessage(userId: string, now: Date): Promise<Co
     }
   }
 
+  const narrative = message
   // Wave 4 moment openings (e.g. a repair line) lead the message, code-built.
   const openings = inputs.moment?.openings ?? []
   if (openings.length) message = [...openings, message].join('\n\n')
@@ -198,10 +206,17 @@ export async function composeDailyMessage(userId: string, now: Date): Promise<Co
   message = appendOpenQuestionsBlock(message, inputs.openAsks, now, DAILY_MESSAGE_TOTAL_MAX_CHARS - reserved)
   for (const line of tail) message = `${message}\n\n${line}`
   const dreamLine = dreamLineEnabled() ? await readDreamLine(userId, now) : null
-  return { message, source, inputs, dreamLine }
+  return { message, source, inputs, dreamLine, brief: buildDailyBrief(narrative, inputs, now) }
 }
 
 // ── Run ──────────────────────────────────────────────────────────────────
+
+// Keep / Drop per idea in the brief (replacing the self-Dismiss); otherwise an
+// Open in Aeon link, or the plain Dismiss when no app URL is configured.
+export function dailyKeyboard(brief: Pick<DailyBrief, 'ideas'>): Pick<DailyTelegramExtras, 'keyboard' | 'dismiss'> {
+  const keyboard = brief.ideas.length ? ideaVerdictKeyboard(brief.ideas) : openInAeonKeyboard()
+  return keyboard.length ? { keyboard, dismiss: false } : {}
+}
 
 export type DailyMessageRunStatus = 'sent' | 'sent_fallback' | 'sent_inbox_only' | 'dry_run' | 'blocked' | 'skipped'
 
@@ -211,6 +226,7 @@ export interface DailyMessageResult {
   source?: DraftSource
   reason?: string
   message?: string
+  brief?: string
   dreamLine?: string
   failedInputs?: string[]
 }
@@ -228,12 +244,27 @@ export type DailyDeliveryFlight =
   | { state: 'already_delivered' }
   | { state: 'delivered'; outcome: SpeakOutcome }
 
+// Telegram-only extras: the short brief replacing the stored text, its
+// buttons, and the dream line (tail). None of them is ever stored.
+export interface DailyTelegramExtras {
+  telegramTail?: string | null
+  text?: string
+  keyboard?: InlineKeyboardButton[][]
+  dismiss?: boolean
+}
+
 export async function deliverDailyMessageOnce(
   userId: string,
   date: string,
   input: SpeakInput,
-  telegramTail?: string | null,
+  extras: DailyTelegramExtras = {},
 ): Promise<DailyDeliveryFlight> {
+  const { telegramTail, text, keyboard, dismiss } = extras
+  const telegram = {
+    ...(text ? { telegramText: text } : {}),
+    ...(keyboard?.length ? { telegramKeyboard: keyboard } : {}),
+    ...(dismiss === false ? { telegramDismiss: false } : {}),
+  }
   return db.transaction(async (tx): Promise<DailyDeliveryFlight> => {
     const res = await tx.execute(
       sql`select pg_try_advisory_xact_lock(hashtext(${userId}), hashtext(${dailyMessageExternalId(date)})) as locked`,
@@ -242,8 +273,8 @@ export async function deliverDailyMessageOnce(
     if (!locked) return { state: 'in_flight' }
     if (await alreadyDelivered(userId, date)) return { state: 'already_delivered' }
     const outcome = telegramTail
-      ? await deliverKairosSpeak(userId, input, { telegramTail })
-      : await deliverKairosSpeak(userId, input)
+      ? await deliverKairosSpeak(userId, input, { telegramTail, ...telegram })
+      : await deliverKairosSpeak(userId, input, telegram)
     return { state: 'delivered', outcome }
   })
 }
@@ -269,8 +300,19 @@ export async function runDailyMessageForUser(
       await writeCronFailureTrace(userId, { cronName: PROMISE_CHECK_CRON, reason: 'check_failed', error: err })
     }
 
-    const { message, source, inputs, dreamLine } = await composeDailyMessage(userId, now)
-    if (opts.dryRun) return { status: 'dry_run', date, source, message, ...(dreamLine ? { dreamLine } : {}), failedInputs: inputs.failed }
+    // Undecided ideas older than a week become 'ignored' (archived, never deleted).
+    if (!opts.dryRun) {
+      try {
+        await expireStaleIdeaProposals(userId, now)
+      } catch (err) {
+        await writeCronFailureTrace(userId, { cronName: IDEA_EXPIRY_CRON, reason: 'expiry_failed', error: err })
+      }
+    }
+
+    const { message, source, inputs, dreamLine, brief } = await composeDailyMessage(userId, now)
+    if (opts.dryRun) {
+      return { status: 'dry_run', date, source, message, brief: brief.text, ...(dreamLine ? { dreamLine } : {}), failedInputs: inputs.failed }
+    }
 
     const flight = await deliverDailyMessageOnce(userId, date, {
       title: `Vorath · ${date}`,
@@ -281,7 +323,7 @@ export async function runDailyMessageForUser(
       opsAlert: false,
       digest: true,
       externalId: dailyMessageExternalId(date),
-    }, dreamLine)
+    }, { telegramTail: dreamLine, text: brief.text, ...dailyKeyboard(brief) })
     if (flight.state === 'in_flight') return await skip('delivery in flight')
     if (flight.state === 'already_delivered') return await skip('already sent today')
 

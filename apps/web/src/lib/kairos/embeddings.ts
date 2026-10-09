@@ -18,6 +18,8 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 export const EMBEDDING_DIMENSIONS = 1024
+// Bounds a hung provider call; search falls back to FTS, writes to the nightly backfill.
+const EMBED_TIMEOUT_MS = 10000
 
 export type EmbeddingInputType = 'query' | 'document'
 
@@ -52,6 +54,7 @@ interface EmbeddingResponse {
 async function embedVoyage(key: string, texts: string[], inputType: EmbeddingInputType): Promise<number[][]> {
   const res = await fetch('https://api.voyageai.com/v1/embeddings', {
     method: 'POST',
+    signal: AbortSignal.timeout(EMBED_TIMEOUT_MS),
     headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
     body: JSON.stringify({
       model: 'voyage-3.5',
@@ -70,6 +73,7 @@ async function embedOpenai(key: string, texts: string[]): Promise<number[][]> {
   // OpenAI 3-small has no asymmetric mode; `dimensions` truncates via MRL.
   const res = await fetch('https://api.openai.com/v1/embeddings', {
     method: 'POST',
+    signal: AbortSignal.timeout(EMBED_TIMEOUT_MS),
     headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
     body: JSON.stringify({
       model: 'text-embedding-3-small',

@@ -153,7 +153,8 @@ export async function acceptKairosProposal(
 // Shared inbox triage — the inbox server actions and the Telegram webhook
 // resolve items through these, so the two surfaces can never drift.
 
-export async function dismissInboxMemory(userId: string, memoryId: string): Promise<InboxResolution> {
+// origin: the owner surface the tap came from (default the inbox); always operator.
+export async function dismissInboxMemory(userId: string, memoryId: string, origin: Origin = OWNER_INBOX): Promise<InboxResolution> {
   const memory = await findMemoryById(memoryId, userId)
   if (!memory) return { ok: false, reason: 'not_found' }
 
@@ -191,16 +192,16 @@ export async function dismissInboxMemory(userId: string, memoryId: string): Prom
     await reactOutcome(userId, memoryId, 'negative', 'proposal dismissed')
     if (metadata.kind === IDEA_PROPOSAL_KIND) {
       await groundIdeaOutcome(userId, memoryId, 'dismissed')
-      await notifyIdeaOutcome(userId, memoryId, metadata, 'dismissed', OWNER_INBOX)
+      await notifyIdeaOutcome(userId, memoryId, metadata, 'dismissed', origin)
     }
   }
-  await recordDecisionToday(userId, memoryId, `Dismissed: ${memory.title}`, OWNER_INBOX)
+  await recordDecisionToday(userId, memoryId, `Dismissed: ${memory.title}`, origin)
   await notifyOwnerDecision(userId, memoryId, 'dismiss', metadata)
   return { ok: true, id: archived.id }
 }
 
-export async function acceptInboxProposal(userId: string, memoryId: string): Promise<InboxResolution> {
-  const result = await acceptKairosProposal(memoryId, userId, { pin: false })
+export async function acceptInboxProposal(userId: string, memoryId: string, origin?: Origin): Promise<InboxResolution> {
+  const result = await acceptKairosProposal(memoryId, userId, { pin: false }, origin ? { origin } : {})
   if (!result) return { ok: false, reason: 'not_found' }
   if (!result.ok) return { ok: false, reason: 'already_resolved' }
   return { ok: true, id: result.memory.id }

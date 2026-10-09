@@ -118,12 +118,18 @@ coding-session capture, chat on Max, Telegram bot); **Health** (on Max / on back
 missed per job, plus the paid backup switch); **Brain map**; **Watched** (boards + core repos);
 **How it works**. The owner guide is `docs/kairos/25-working-with-the-kairos-brain.md`.
 
-**Retrieval.** `retrieveContext()` (`lib/kairos/retrieve.ts`) is the canonical Dominion-scoped
-fetch: the Dominion bundle + live cortex + live archetypes + top substrate (FTS+vector RRF →
-confidence/standing decay → rerank-2.5) + recent traces. `retrieveGlobalContext()` is the
-**whole-brain** variant (Aether stands in for cortex) that grounds unanchored chat. `prepareContext()`
-packs a budget-bounded bundle for any AI window. (Recipe grounding through the dispatcher was
-retired with the BRIEF recipe in 0.18.)
+**Retrieval.** One core: `searchCore()` (`lib/kairos/search-core.ts`) runs every memory search —
+FTS + vector legs with the same filters → RRF → relevance × standing → rerank-2.5 over a bounded
+pool. It searches **real memory** by default (reflection, idea, agentic, concept, belief,
+constitution, execution); machine rows (trace, snapshot, delta, archetype, cortex, aether, advisory)
+need `includeMachine` (an explicit `type`/`source` filter also lifts the default). Optional Dominion
+scope is FK or soft `dominion:` tag. `retrieveContext()` (`lib/kairos/retrieve.ts`) is the canonical
+Dominion-scoped fetch: the Dominion bundle + live cortex + live archetypes + top substrate (the core over
+the chat streams, 90-day window) + recent traces. `retrieveGlobalContext()` is the **whole-brain**
+variant (Aether stands in for cortex) that grounds unanchored chat. MCP/REST `search_memories`
+(`lib/kairos/memory-search.ts`) and `prepareContext()` (budget-packed bundle for any AI window) run
+the same core, and the hits they hand an agent count as use (`noteAgentReads`, top 5, after the
+response). (Recipe grounding through the dispatcher was retired with the BRIEF recipe in 0.18.)
 
 **Conscience.** At answer time Kairos reads the operator's norms: the live constitution's
 principles and the weightiest held beliefs (*you hold* vs *Kairos's own view*). It is told to say so

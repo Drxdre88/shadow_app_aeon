@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
 import { withRateLimit, API_READ_LIMIT } from '@/lib/api/rateLimit'
-import { searchMemoriesFts } from '@/lib/data/memories'
+import { searchMemoriesHybrid } from '@/lib/kairos/memory-search'
+import { isEvalRead, noteAgentReads } from '@/lib/kairos/agent-reads'
 import { searchMemoriesSchema } from '@/lib/data/validators'
 
 export const GET = withRateLimit(
@@ -44,11 +45,14 @@ export const GET = withRateLimit(
     const tagsAll = url.searchParams.getAll('tagAll')
     if (tagsAll.length > 0) params.tagsAll = tagsAll
     if (url.searchParams.get('pinned') === 'true') params.pinnedOnly = true
+    if (url.searchParams.get('includeMachine') === 'true') params.includeMachine = true
 
     const parsed = searchMemoriesSchema.safeParse(params)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
-    const data = await searchMemoriesFts(result.id, parsed.data)
+    // Same hybrid core as MCP search_memories; agent reads count as use.
+    const data = await searchMemoriesHybrid(result.id, parsed.data)
+    if (parsed.data.query && !isEvalRead(request.headers)) noteAgentReads(result.id, data.hits.map((h) => h.id), 'rest:search_memories')
     return jsonData(data)
   }),
   API_READ_LIMIT

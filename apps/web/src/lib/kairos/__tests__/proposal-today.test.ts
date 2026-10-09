@@ -143,4 +143,34 @@ describe('inbox accept / dismiss — non-decidable kinds', () => {
       { kind: 'operator', via: 'inbox' },
     )
   })
+
+  it('a Telegram Drop on an idea: same dismissal, recorded as the owner on telegram, idea outcome stamped', async () => {
+    const { recordIdeaOutcome } = await import('@/lib/data/ideas')
+    const { reactOutcome } = await import('../reactions')
+    const idea = memory({ title: 'Cut the PPA scope', sourceMetadata: { introspection: true, kind: 'idea', status: 'pending', idea: { status: 'survivor' } } })
+    vi.mocked(findMemoryById).mockResolvedValue(idea)
+    vi.mocked(archiveMemory).mockResolvedValue(memory({ archivedAt: new Date() }) as never)
+
+    await expect(dismissInboxMemory(USER, PROPOSAL_ID, { kind: 'operator', via: 'telegram' })).resolves.toEqual({ ok: true, id: PROPOSAL_ID })
+
+    expect(archiveMemory).toHaveBeenCalledWith(PROPOSAL_ID, USER)
+    expect(reactOutcome).toHaveBeenCalledWith(USER, PROPOSAL_ID, 'negative', expect.any(String))
+    expect(recordIdeaOutcome).toHaveBeenCalledWith(USER, PROPOSAL_ID, 'dismissed')
+    expect(recordToday).toHaveBeenCalledWith(
+      USER,
+      expect.objectContaining({ key: `inbox:${PROPOSAL_ID}`, channel: 'telegram', type: 'decided', text: 'Dismissed: Cut the PPA scope' }),
+      { kind: 'operator', via: 'telegram' },
+    )
+  })
+
+  it('a Telegram Keep on an idea accepts with the owner (telegram) origin', async () => {
+    vi.mocked(findMemoryById).mockResolvedValue(memory({ sourceMetadata: { introspection: true, kind: 'idea', status: 'pending' } }))
+    vi.mocked(acceptProposal).mockResolvedValue({ ok: true, memory: memory() as never })
+    const { acceptInboxProposal } = await import('../proposal-accept')
+
+    await expect(acceptInboxProposal(USER, PROPOSAL_ID, { kind: 'operator', via: 'telegram' })).resolves.toEqual({ ok: true, id: PROPOSAL_ID })
+
+    expect(acceptProposal).toHaveBeenCalledWith(PROPOSAL_ID, USER, { pin: false }, { origin: { kind: 'operator', via: 'telegram' } })
+    expect(vi.mocked(recordToday).mock.calls[0][1]).toMatchObject({ channel: 'telegram' })
+  })
 })

@@ -25,6 +25,12 @@ vi.mock('@/lib/ai/router', () => ({
   AiCredentialDecryptError: class AiCredentialDecryptError extends Error {},
 }))
 vi.mock('@/lib/kairos/cron-trace', () => ({ writeCronFailureTrace: vi.fn(), writeCronSuccessTrace: vi.fn() }))
+// Change checks (Wave 1 "fewer rewrites") are covered by synthesis-skip tests;
+// here every Dominion counts as changed so only focus decides the plan.
+vi.mock('@/lib/kairos/synthesis-change', () => ({
+  archetypeChangeCheck: vi.fn(async () => ({ run: true, reason: 'new_input' })),
+  cortexChangeCheck: vi.fn(async () => ({ run: true, reason: 'new_input' })),
+}))
 vi.mock('@/lib/kairos/archetypes', async (importActual) => ({
   ...(await importActual<typeof import('@/lib/kairos/archetypes')>()),
   alreadyRanToday: vi.fn(async () => false),
@@ -70,7 +76,7 @@ beforeEach(() => {
   vi.mocked(findDominionsByUser).mockResolvedValue(roster as never)
   vi.mocked(archetypes.gatherArchetypeContext).mockImplementation(async (_u, d) => archetypeCtx(d) as never)
   vi.mocked(cortex.gatherCortexContext).mockImplementation(async (_u, d) => cortexCtx(d) as never)
-  vi.mocked(listDominionsWithArchetypesSince).mockResolvedValue(new Set(['live']) as never)
+  vi.mocked(listDominionsWithArchetypesSince).mockResolvedValue(new Set(['live', 'dormant', 'pinned']) as never)
 })
 
 afterEach(() => vi.unstubAllEnvs())

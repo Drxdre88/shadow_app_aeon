@@ -8,6 +8,11 @@ vi.mock('@/lib/data/thinking-jobs', () => ({
   listJobs: vi.fn(async () => []),
 }))
 vi.mock('@/lib/data/dominions', () => ({ findDominionsByUser: vi.fn(), inspectDominion: vi.fn() }))
+vi.mock('@/lib/kairos/synthesis-change', () => ({
+  archetypeChangeCheck: vi.fn(async () => ({ run: true, reason: 'new_input' })),
+  cortexChangeCheck: vi.fn(async () => ({ run: true, reason: 'new_input' })),
+  aetherChangeCheck: vi.fn(async () => ({ run: true, reason: 'new_input' })),
+}))
 vi.mock('@/lib/data/memories', () => ({ captureMemory: vi.fn(), validAsOfNow: 'mock-valid-as-of-now' }))
 vi.mock('@/lib/ai/route-task', () => ({ getProviderForTask: vi.fn() }))
 vi.mock('@/lib/ai/router', () => ({
@@ -177,7 +182,7 @@ describe('archetype apply', () => {
   })
 
   it('persists grounded archetypes through the cron write path and writes its success trace', async () => {
-    vi.mocked(archetypes.persistArchetypes).mockResolvedValue({ inserted: 1, archivedPrior: 3, archetypeMemoryIds: ['arch-1'] })
+    vi.mocked(archetypes.persistArchetypes).mockResolvedValue({ inserted: 1, updated: 0, kept: 0, archivedPrior: 3, archetypeMemoryIds: ['arch-1'] })
     const text = '```json\n' + JSON.stringify({ archetypes: [archetypeRow], shifts: ['queue took over'] }) + '\n```'
 
     const out = await archetypeHandler.apply(jobRow({ dominionId: DOM_A, date: DAY }), text, 'routine')
@@ -196,7 +201,7 @@ describe('archetype apply', () => {
   })
 
   it('clips an over-long title and shift at a word boundary instead of failing the night', async () => {
-    vi.mocked(archetypes.persistArchetypes).mockResolvedValue({ inserted: 1, archivedPrior: 0, archetypeMemoryIds: ['arch-1'] })
+    vi.mocked(archetypes.persistArchetypes).mockResolvedValue({ inserted: 1, updated: 0, kept: 0, archivedPrior: 0, archetypeMemoryIds: ['arch-1'] })
     const longTitle = 'Beta auth hardening across magic links and connector discovery '.repeat(3)
     const longShift = 'The overnight queue quietly took over most synthesis work from the old crons '.repeat(4)
     const text = '```json\n' + JSON.stringify({ archetypes: [{ ...archetypeRow, title: longTitle }], shifts: [longShift] }) + '\n```'
@@ -244,8 +249,8 @@ describe('archetype apply', () => {
     expect(archetypes.persistArchetypes).not.toHaveBeenCalled()
   })
 
-  it('reports persist_failed when nothing was inserted', async () => {
-    vi.mocked(archetypes.persistArchetypes).mockResolvedValue({ inserted: 0, archivedPrior: 0, archetypeMemoryIds: [] })
+  it('reports persist_failed when nothing was written', async () => {
+    vi.mocked(archetypes.persistArchetypes).mockResolvedValue({ inserted: 0, updated: 0, kept: 0, archivedPrior: 0, archetypeMemoryIds: [] })
 
     const out = await archetypeHandler.apply(
       jobRow({ dominionId: DOM_A, date: DAY }),

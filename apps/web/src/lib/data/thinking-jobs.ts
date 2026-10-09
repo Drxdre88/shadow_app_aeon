@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNull, like, lte, notLike, or, sql, type SQL } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories, thinkingJobs } from '@/lib/db/schema'
+import { archetypeRunStamp } from './synthesis-change'
 import type {
   ApplyOutcome,
   ThinkingAnsweredBy,
@@ -304,7 +305,8 @@ export async function listUsersNeedingSweep(fallbackKinds: readonly ThinkingJobK
 }
 
 // Planning prerequisites (lazy planning in the queue). Live archetype rows
-// written since `since`, grouped by Dominion — cortex waits for these.
+// written or confirmed (kept in place) since `since`, grouped by Dominion —
+// cortex waits for these.
 export async function listDominionsWithArchetypesSince(userId: string, since: Date): Promise<Set<string>> {
   const rows = await db
     .selectDistinct({ dominionId: memories.dominionId })
@@ -313,7 +315,7 @@ export async function listDominionsWithArchetypesSince(userId: string, since: Da
       eq(memories.userId, userId),
       eq(memories.streamClass, 'archetype'),
       isNull(memories.archivedAt),
-      gte(memories.createdAt, since),
+      sql`${archetypeRunStamp} >= ${since.toISOString()}::timestamp`,
     ))
   return new Set(rows.map((r) => r.dominionId).filter((id): id is string => Boolean(id)))
 }

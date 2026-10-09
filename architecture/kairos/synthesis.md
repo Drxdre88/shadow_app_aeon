@@ -31,7 +31,19 @@ isolation). Archetypes read them the same night. 240s deadline guard under the 3
 `runArchetypeSynthesisForUser()`. Reads 14 days of non-pinned substrate (≤80), pinned (≤30),
 reflections (≤30, weighted), live archetypes (≤10), and the Dominion's vision, mission, objectives
 and cards. Emits **3–7 master nodes** (`streamClass='archetype'`). Idempotency: `alreadyRanToday`
-(live archetype created today, `isNull(archivedAt)`).
+(live archetype created or confirmed today, `isNull(archivedAt)`). **Edited in place** since Wave 1
+(09/10, `archetype-persist.ts` + `archetype-match.ts`): each generated archetype is matched to a live one
+by normalised title/summary overlap — unchanged → kept (only `sourceMetadata.confirmedAt` stamped),
+changed → updated with the same id and an `archetype_update` memory_ops row (undoable like
+`concept_update`), unmatched → inserted, live but not returned → archived; pinned rows are never
+edited or archived.
+
+**Change checks (Wave 1, `lib/kairos/synthesis-change.ts`).** Archetypes, cortex and aether skip
+instead of rewriting when nothing new arrived since their last live output: archetypes/cortex need a
+new non-synthesis memory in the Dominion (cortex also counts archetype edits) or a Dominion edit;
+aether needs a cortex written since the live aether. Output older than 7 days refreshes regardless.
+A skip plans no thinking job (nothing owed, so brain status never shows it missed) and the fallback
+cron writes a `skipped` trace (health = ok).
 
 ### Cortex (03:00 UTC fallback, per Dominion — the living document)
 `lib/kairos/cortex.ts` → `runCortexRegenForDominion()`. Reads Dominion strategy, live cards,
@@ -128,7 +140,7 @@ by standing → confidence → recency). A read failure gives `''` and never bre
 checks, belief extraction, Aether, cortex and archetypes.
 
 ### Daily Message (06:00 Europe/London — the guaranteed voice, since 0.18)
-`lib/kairos/daily-message{,-inputs,-prompt}.ts`. Cron `daily-message` fires `0 5,6 * * *` UTC,
+`lib/kairos/daily-message{,-inputs,-prompt,-time}.ts` + `daily-brief.ts`. Cron `daily-message` fires `0 5,6 * * *` UTC,
 gated by `isLondonHour(now, DAILY_MESSAGE_HOUR)` (`= 6`). It is idempotent on
 `kairos-daily:{londonDate}` + an advisory lock, and sends to the Will inbox + Telegram via
 `deliverKairosSpeak` (`digest:true`; see [chat.md](chat.md) §1b). Body source, in order: the
@@ -154,6 +166,23 @@ the board day, promotions, new beliefs, drift, synthesis health and mind-compare
   only) rides the drift line as "Self-check failures".
 - The conscience block goes into both the routine and paid prompts.
 A Telegram failure records `sent_inbox_only` + a `telegram_not_delivered` trace.
+- **Short brief on Telegram** (Wave 2, 09/10) — the inbox stores the full message above; Telegram
+  gets `buildDailyBrief` (`daily-brief.ts`, ≤800 chars, `DAILY_BRIEF_MAX_CHARS`) via speak's
+  Telegram-only `telegramText`: a bold headline (the draft's first line — the prompt now asks for
+  a headline first and a `Next: …` look-ahead last), at most 3 verdict items (idea → oldest `Q` →
+  first `R` → goal proposal → `P` due, then the rest; numbers kept), one look-ahead line (the
+  draft's `Next:`, else Horae / goal / promise), then `+N more in your inbox.` (or "The full
+  brief is in your inbox."). Nothing pending and nothing notable → one quiet line, never nothing.
+- **Keep / Drop buttons** — the idea in the brief gets `✅ Keep` / `❌ Drop` on the existing
+  `accept:<id>` / `dismiss:<id>` callbacks (`idea-verdict-keyboard.ts`), replacing the self-Dismiss
+  (no idea → an "Open in Aeon" link, or the Dismiss if no app URL). The webhook spots a verdict
+  button from the message's own keyboard, checks the tap is the owner's, runs the same
+  `acceptInboxProposal` / `dismissInboxMemory` with origin `operator/telegram` (so taste learns),
+  answers "✓ kept" / "✓ dropped" and collapses that row (`idea-verdict-telegram.ts`).
+- **Idea expiry** — before composing (never on a dry run), `expireStaleIdeaProposals`
+  (`lib/data/idea-expiry.ts`) archives pending, undecided idea survivors older than 7 days with
+  `status`/`idea.outcome` `'ignored'` — never deleted; taste and stepping stones read them as
+  ignored (`stones.ts` `rowOutcome`). A failure traces `idea-expiry` and never costs the message.
 
 ### Weekly review (Mondays)
 `lib/kairos/weekly-review/{inputs,prompt,render}.ts` + the `weekly_review` job (Mon ≥05:00Z). Plan

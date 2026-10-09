@@ -12,6 +12,7 @@ import {
 import type { AetherPayload } from '@/lib/kairos/aether-types'
 import { loadAetherReplay, replayIdsOf, replayMetadata } from '@/lib/kairos/surprise/replay-reader'
 import { todayIso } from '@/lib/kairos/_prompt-utils'
+import { aetherChangeCheck } from '@/lib/kairos/synthesis-change'
 import type {
   ApplyOutcome,
   ThinkingAnsweredBy,
@@ -62,6 +63,7 @@ async function plan(userId: string, now: Date): Promise<ThinkingJobSpec[]> {
   if (!cortexSettled) return []
 
   if (await alreadyRanToday(userId)) return []
+  if (!(await aetherChangeCheck(userId, now)).run) return []
 
   const inputs = await fetchAetherInputs(userId)
   const hasSignal = inputs.cortexSnapshots.length > 0 || inputs.topReflections.length > 0 || inputs.archetypes.length > 0

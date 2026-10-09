@@ -8,6 +8,11 @@ vi.mock('@/lib/data/thinking-jobs', () => ({
   listDominionsWithArchetypesSince: vi.fn(),
 }))
 vi.mock('@/lib/data/dominions', () => ({ findDominionsByUser: vi.fn() }))
+vi.mock('@/lib/kairos/synthesis-change', () => ({
+  archetypeChangeCheck: vi.fn(async () => ({ run: true, reason: 'new_input' })),
+  cortexChangeCheck: vi.fn(async () => ({ run: true, reason: 'new_input' })),
+  aetherChangeCheck: vi.fn(async () => ({ run: true, reason: 'new_input' })),
+}))
 vi.mock('@/lib/kairos/aether', () => ({
   alreadyRanToday: vi.fn(),
   fetchAetherInputs: vi.fn(),

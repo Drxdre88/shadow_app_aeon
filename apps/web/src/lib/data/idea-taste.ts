@@ -61,7 +61,7 @@ export async function countIdeaArchive(userId: string, now: Date = new Date()): 
     .select({
       eliminated: sql<number>`count(*) filter (where ${statusIs('eliminated')} and ${ideaField('eliminatedReason')} in ${STONE_REASONS})::int`,
       dismissed: sql<number>`count(*) filter (where ${statusIs('survivor')} and (${outcome} = 'dismissed' or (${outcome} is null and ${proposalStatus} in ('pending', 'dismissed'))))::int`,
-      ignored: sql<number>`count(*) filter (where ${statusIs('survivor')} and ${outcome} is null and ${proposalStatus} = 'decayed')::int`,
+      ignored: sql<number>`count(*) filter (where ${statusIs('survivor')} and (${outcome} = 'ignored' or (${outcome} is null and ${proposalStatus} = 'decayed')))::int`,
     })
     .from(memories)
     .where(and(

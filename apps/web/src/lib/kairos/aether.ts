@@ -27,9 +27,13 @@ import {
 import { todayIso, parseWithRepair, ParseRepairError } from './_prompt-utils'
 import type { AetherPayload } from './aether-types'
 import { loadAetherReplay, replayMetadata } from './surprise/replay-reader'
+import { archetypeRunStamp } from '@/lib/data/synthesis-change'
+import { aetherChangeCheck, NO_NEW_INPUT } from './synthesis-change'
 
 // Kairos Aether (B3) — global self-model synthesiser.
 // Idempotent: skips if a live aether row already exists for today (UTC).
+// Change check: skips when no cortex was written since the live aether
+// (weekly refresh regardless) — synthesis-change.ts.
 // Anti-drift: citations are grounded against the fed memory ids and thought
 // ids are server-minted (groundAetherPayload) before persist.
 
@@ -158,7 +162,7 @@ export async function fetchAetherInputs(userId: string): Promise<{
         eq(memories.streamClass, 'archetype'),
         isNull(memories.archivedAt),
         validAsOfNow,
-        sql`${memories.createdAt} >= DATE_TRUNC('day', NOW())`,
+        sql`${archetypeRunStamp} >= DATE_TRUNC('day', NOW())`,
       ))
       .orderBy(desc(memories.createdAt))
       .limit(activeDoms.length * MAX_ARCHETYPES_PER_DOMINION + 5),
@@ -321,6 +325,11 @@ export async function runAetherForUser(userId: string): Promise<{ generated: boo
   if (await alreadyRanToday(userId)) {
     await writeCronSuccessTrace(userId, { cronName: 'aether-regen', outcome: 'skipped', skipReason: 'already_ran' })
     return { generated: false, reason: 'already_ran' }
+  }
+
+  if (!(await aetherChangeCheck(userId)).run) {
+    await writeCronSuccessTrace(userId, { cronName: 'aether-regen', outcome: 'skipped', skipReason: NO_NEW_INPUT })
+    return { generated: false, reason: 'no_new_input' }
   }
 
   const inputs = await fetchAetherInputs(userId)

@@ -173,7 +173,7 @@ describe('(d) the 06:00 prompt never reads a dream; the line is Telegram-only', 
   it('daily-message.ts reads the line after composing and hands it only to speak as telegramTail', () => {
     const src = read(path.join(SRC, 'lib/kairos/daily-message.ts'))
     expect(src).not.toMatch(/import\s*\{[^}]*\b(recordToday|captureMemory)\b/)
-    expect(src).toMatch(/deliverKairosSpeak\(userId, input, \{ telegramTail \}\)/)
+    expect(src).toMatch(/deliverKairosSpeak\(userId, input, \{ telegramTail[ ,}]/)
     const compose = src.slice(src.indexOf('export async function composeDailyMessage'), src.indexOf('// ── Run'))
     expect(compose.indexOf('readDreamLine')).toBeGreaterThan(compose.lastIndexOf('appendOpenQuestionsBlock'))
     expect(compose).not.toMatch(/message = `[^`]*dreamLine/)
@@ -188,7 +188,7 @@ describe('(d) the 06:00 prompt never reads a dream; the line is Telegram-only', 
 
   it('speak.ts appends the tail only in the Telegram send', () => {
     const src = read(path.join(SRC, 'lib/kairos/speak.ts'))
-    expect(src).toMatch(/sendKairosSpeak\(\{[^}]*message: tail \? `\$\{message\}\\n\\n\$\{tail\}` : message/)
+    expect(src).toMatch(/sendKairosSpeak\(\{[^}]*message: tail \? `\$\{text\}\\n\\n\$\{tail\}` : text/)
     const capture = src.slice(src.indexOf('await captureMemory('), src.indexOf('let telegram'))
     expect(capture).not.toMatch(/\btail\b|telegramTail/)
   })

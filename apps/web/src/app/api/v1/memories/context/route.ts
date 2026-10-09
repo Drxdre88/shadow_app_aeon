@@ -6,6 +6,7 @@ import { groupMembers } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { prepareContext } from '@/lib/data/memories'
 import { prepareContextSchema } from '@/lib/data/validators'
+import { isEvalRead, noteAgentReads, relevantSourceIds } from '@/lib/kairos/agent-reads'
 
 // Brain Phase 4 — GET /api/v1/memories/context
 // Returns a budget-packed markdown context bundle assembled from the user's
@@ -25,12 +26,15 @@ export const GET = withRateLimit(
     if (budgetTokens) params.budgetTokens = Number(budgetTokens)
     const realmId = url.searchParams.get('realmId')
     if (realmId) params.realmId = realmId
+    const dominionId = url.searchParams.get('dominionId')
+    if (dominionId) params.dominionId = dominionId
     const hops = url.searchParams.get('hops')
     if (hops !== null) params.hops = Number(hops) as 0 | 1
     const maxSources = url.searchParams.get('maxSources')
     if (maxSources) params.maxSources = Number(maxSources)
     if (url.searchParams.get('includePinned') === 'false') params.includePinned = false
     if (url.searchParams.get('includeToday') === 'false') params.includeToday = false
+    if (url.searchParams.get('includeMachine') === 'true') params.includeMachine = true
 
     const types = url.searchParams.getAll('type')
     if (types.length === 1) params.type = types[0]
@@ -50,6 +54,7 @@ export const GET = withRateLimit(
     }
 
     const data = await prepareContext(result.id, parsed.data)
+    if (!isEvalRead(request.headers)) noteAgentReads(result.id, relevantSourceIds(data.sources), 'rest:prepare_context')
     return jsonData(data)
   }),
   API_READ_LIMIT

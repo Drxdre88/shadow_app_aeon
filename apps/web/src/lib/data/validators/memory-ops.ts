@@ -17,6 +17,8 @@ export const MEMORY_OP_KINDS = [
   // P2.5 belief re-check cascade (engine step 'recheck', belief_extract retire).
   'recheck',
   'retire',
+  // Nightly archetype synthesis revised a live archetype in place.
+  'archetype_update',
 ] as const
 
 export const memoryOpKindSchema = z.enum(MEMORY_OP_KINDS)

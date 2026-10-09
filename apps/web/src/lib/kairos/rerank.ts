@@ -23,6 +23,7 @@ const RERANK_MODEL = 'rerank-2.5'
 // Per-document clip. Voyage allows ~32k tokens/doc; clip on chars well under
 // that so a single huge memory body can't blow the request (mirrors embeddings).
 const MAX_DOC_CHARS = 24000
+const RERANK_TIMEOUT_MS = 4000
 
 function resolveRerankKey(): string | null {
   // `|| null` (not `??`) so an empty-string env var counts as unset, mirroring
@@ -78,6 +79,8 @@ export async function rerankScored<T>(
   try {
     const res = await fetch('https://api.voyageai.com/v1/rerank', {
       method: 'POST',
+      // A hung rerank falls back to fused order instead of stalling agent search.
+      signal: AbortSignal.timeout(RERANK_TIMEOUT_MS),
       headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
       body: JSON.stringify({
         model: RERANK_MODEL,

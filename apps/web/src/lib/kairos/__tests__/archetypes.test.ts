@@ -30,6 +30,8 @@ vi.mock('@/lib/db', () => {
       select: vi.fn(() => makeChain(selectQueue.shift() ?? [])),
       transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
+          execute: async () => undefined,
+          select: () => ({ from: () => ({ where: () => ({ for: () => Promise.resolve([]) }) }) }),
           update: () => ({ set: () => ({ where: () => ({ returning: () => Promise.resolve([]) }) }) }),
           insert: () => ({
             values: (v: Array<Record<string, unknown>>) => {
@@ -62,6 +64,11 @@ vi.mock('@/lib/ai/route-task', () => ({
 
 vi.mock('@/lib/data/thinking-jobs', () => ({
   isJobDone: vi.fn(async () => false),
+}))
+
+vi.mock('../synthesis-change', async (importActual) => ({
+  ...(await importActual<typeof import('../synthesis-change')>()),
+  archetypeChangeCheck: vi.fn(async () => ({ run: true, reason: 'new_input' })),
 }))
 
 function makeCtx(overrides: Partial<Parameters<typeof buildArchetypePrompt>[0]> = {}) {
