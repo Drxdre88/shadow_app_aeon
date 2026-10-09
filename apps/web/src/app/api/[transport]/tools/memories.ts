@@ -12,7 +12,6 @@ import {
 import {
   createMemory as _createMemory,
   updateMemory as _updateMemory,
-  searchMemoriesFts as _searchMemoriesFts,
   addLink as _addLink,
   findMemoryById,
   getNeighbours as _getNeighbours,
@@ -21,6 +20,8 @@ import {
   targetMemoryExists,
   listMemoriesNeedingSummary as _listMemoriesNeedingSummary,
 } from '@/lib/data/memories'
+import { searchMemoriesHybrid } from '@/lib/kairos/memory-search'
+import { noteAgentReads, relevantSourceIds } from '@/lib/kairos/agent-reads'
 import { acceptKairosProposal } from '@/lib/kairos/proposal-accept'
 import { verifyProjectAccess } from '@/lib/data/projects'
 import {
@@ -193,7 +194,8 @@ export const registerMemoryTools: RegisterFn = (server) => {
 
   server.tool(
     'search_memories',
-    'Full-text search the user-scoped brain. Returns ranked hits with snippet excerpts. Use this before answering questions that may have prior context. ' +
+    'Search the user-scoped brain (hybrid: full-text + semantic, ranked by relevance × standing, reranked). Returns ranked hits with snippet excerpts. Use this before answering questions that may have prior context. ' +
+      'Real memories only by default — machine rows (cron traces, snapshots, deltas, archetypes, cortex, aether, advisories) are hidden unless `includeMachine` is true or an explicit `type`/`source` filter is given. ' +
       'Vorath Phase 3B: `query` is optional when `dominionId` is given — the Dominion scope plus optional `sinceDays` is sufficient to bound results, so lieutenants can pull "recent memories on this Dominion" without inventing a search term.',
     {
       query: z.string().min(2).max(500).optional().describe('Search query — websearch syntax (quotes, OR, -term). Optional if `dominionId` is set'),
@@ -207,6 +209,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       dominionId: z.string().uuid().optional().describe('Scope to a single Dominion. When set, `query` is optional'),
       sinceDays: z.number().int().min(1).max(365).optional().describe('Only memories created within the last N days'),
       pinnedOnly: z.boolean().optional(),
+      includeMachine: z.boolean().optional().describe('Also return machine rows (traces, snapshots, deltas, archetypes, cortex, aether, advisories)'),
       limit: z.number().int().min(1).max(100).default(20).optional(),
     },
     { title: 'Search Memories', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -221,11 +224,14 @@ export const registerMemoryTools: RegisterFn = (server) => {
         dominionId: args.dominionId,
         sinceDays: args.sinceDays,
         pinnedOnly: args.pinnedOnly,
+        includeMachine: args.includeMachine,
         limit: args.limit ?? 20,
         offset: 0,
       })
       if (!parsed.success) return fail(parsed.error.issues[0].message)
-      const result = await _searchMemoriesFts(uid, parsed.data)
+      const result = await searchMemoriesHybrid(uid, parsed.data)
+      // Agent reads count as use (query hits only; a browse is not a read).
+      if (parsed.data.query) noteAgentReads(uid, result.hits.map((h) => h.id), 'mcp:search_memories')
       return ok(result)
     }
   )
@@ -273,22 +279,24 @@ export const registerMemoryTools: RegisterFn = (server) => {
   server.tool(
     'prepare_context',
     'Build a budget-packed markdown context bundle from the user-scoped brain. ' +
-      'Combines BM25 full-text search + 1-hop typed graph walk + pinned items, ' +
-      'scores by relevance × recency, and packs into Pinned/Most-relevant/Related ' +
-      'sections sized to a token budget. Use this BEFORE answering open-ended ' +
+      'Combines hybrid retrieval (full-text + semantic, ranked by relevance × standing, reranked) + 1-hop typed graph walk + pinned items, ' +
+      'and packs into Pinned/Most-relevant/Related ' +
+      'sections sized to a token budget. Real memories only by default (machine rows need `includeMachine`); optional `dominionId` scope. Use this BEFORE answering open-ended ' +
       'questions ("what should I focus on?", "what do I know about X?", "what was ' +
       'the decision on Y?") — it returns ready-to-prepend context with cited sources.',
     {
       query: z.string().min(2).max(500).describe('What the user wants context for — a question, topic, or anchor phrase'),
       budgetTokens: z.number().int().min(500).max(50_000).default(4000).optional().describe('Soft cap on returned context tokens; defaults to 4000'),
       realmId: z.string().uuid().optional().describe('Scope retrieval to a single realm'),
+      dominionId: z.string().uuid().optional().describe('Scope retrieval to a single Dominion (its own memories plus ones tagged to it)'),
       type: z.union([
         memoryTypeEnum,
         z.array(memoryTypeEnum),
       ]).optional().describe('Filter by memory type(s)'),
-      hops: z.union([z.literal(0), z.literal(1)]).default(1).optional().describe('Graph walk depth from top FTS hits (0 = no graph)'),
-      maxSources: z.number().int().min(5).max(100).default(30).optional().describe('Cap on FTS hits considered before scoring'),
-      includePinned: z.boolean().default(true).optional().describe('Whether to surface pinned memories regardless of FTS match'),
+      hops: z.union([z.literal(0), z.literal(1)]).default(1).optional().describe('Graph walk depth from top hits (0 = no graph)'),
+      maxSources: z.number().int().min(5).max(100).default(30).optional().describe('Cap on search hits considered before scoring'),
+      includePinned: z.boolean().default(true).optional().describe('Whether to surface pinned memories regardless of search match'),
+      includeMachine: z.boolean().optional().describe('Also retrieve machine rows (traces, snapshots, deltas, archetypes, cortex, aether, advisories)'),
     },
     { title: 'Prepare Context', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
@@ -297,10 +305,12 @@ export const registerMemoryTools: RegisterFn = (server) => {
         query: args.query,
         budgetTokens: args.budgetTokens ?? 4000,
         realmId: args.realmId,
+        dominionId: args.dominionId,
         type: args.type,
         hops: args.hops ?? 1,
         maxSources: args.maxSources ?? 30,
         includePinned: args.includePinned ?? true,
+        includeMachine: args.includeMachine,
       })
       if (!parsed.success) return fail(parsed.error.issues[0].message)
 
@@ -311,6 +321,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
       }
 
       const result = await _prepareContext(uid, parsed.data)
+      noteAgentReads(uid, relevantSourceIds(result.sources), 'mcp:prepare_context')
       return ok(result)
     }
   )

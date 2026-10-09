@@ -141,7 +141,7 @@ describe('Memory MCP <-> REST parity', () => {
     const sharedFns = [
       'createMemory',
       'updateMemory',
-      'searchMemoriesFts',
+      'searchMemoriesHybrid',
       'addLink',
       'findMemoryById',
       'getNeighbours',
@@ -157,6 +157,42 @@ describe('Memory MCP <-> REST parity', () => {
 
     it.each(sharedFns)('REST imports and uses: %s', (fn) => {
       expect(restSrcConcat).toMatch(new RegExp(`\\b${fn}\\b`))
+    })
+  })
+
+  // Wave 1 "one search": both surfaces run the shared retrieval core (never
+  // the raw FTS path) and count the hits they hand an agent as use.
+  describe('one search — shared core + agent reads count as use', () => {
+    const blockFor = (name: string) =>
+      mcpSrc.split(/server\.tool\(/).find((b) => new RegExp(`^\\s*['"]${name}['"]`).test(b)) ?? ''
+    const restSearch = readSource(path.join(REST_ROOT, 'search/route.ts'))
+    const restContext = readSource(path.join(REST_ROOT, 'context/route.ts'))
+
+    it('neither search surface calls the raw FTS function', () => {
+      expect(blockFor('search_memories')).not.toMatch(/searchMemoriesFts/)
+      expect(restSearch).not.toMatch(/searchMemoriesFts/)
+    })
+
+    it.each([
+      ['MCP search_memories', blockFor('search_memories'), /searchMemoriesHybrid\(/, 'mcp:search_memories'],
+      ['REST GET search', restSearch, /searchMemoriesHybrid\(/, 'rest:search_memories'],
+      ['MCP prepare_context', blockFor('prepare_context'), /_prepareContext\(/, 'mcp:prepare_context'],
+      ['REST GET context', restContext, /prepareContext\(/, 'rest:prepare_context'],
+    ] as const)('%s notes agent reads after retrieving', (_label, src, retrieval, surface) => {
+      expect(src).toContain(`'${surface}'`)
+      expect(src.search(/noteAgentReads\(/)).toBeGreaterThan(src.search(retrieval))
+    })
+
+    it.each([
+      ['MCP', mcpSrc],
+      ['REST', restSearch + restContext],
+    ])('%s exposes the includeMachine opt-in', (_label, src) => {
+      expect(src).toMatch(/includeMachine/)
+    })
+
+    it('both prepare_context surfaces accept a dominionId scope', () => {
+      expect(blockFor('prepare_context')).toMatch(/dominionId/)
+      expect(restContext).toMatch(/dominionId/)
     })
   })
 

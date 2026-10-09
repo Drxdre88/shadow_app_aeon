@@ -52,7 +52,7 @@ Trust follows the origin, never the wording.
 (2) `project.dominionId`; (3) `dominionRepos` lookup by `sourceMetadata.repo`; (4) **content-based
 auto-filing** (`lib/kairos/autofile.ts`); (5) `null`. Soft association via `dominion:<uuid>` tags
 (`dominionTags.ts`) lets one memory be referenced by many Dominions. Retrieval unions the FK leg and the tag
-leg (`inDominionScope`, `retrieve.ts:73`).
+leg (`inDominionScope`, `search-core.ts`).
 
 **Auto-filing:** applies only to `AUTO_FILE_STREAMS = {idea, reflection, execution, agentic}`. It embeds
 `title+summary+body`, and `classifyDominionByContent()` (`memories.ts:1058`) scans live cortex rows with an **exact
@@ -121,22 +121,28 @@ the server write path (see also the **Acolyte** lieutenant in [chat.md](chat.md)
 
 ## 5. Hybrid retrieval — the full pipeline
 
-**Pipeline:** FTS + vector legs → RRF fuse (k=60) → confidence-decay weight → reflection bonus → rerank
-pool of 12 → Voyage `rerank-2.5` (`lib/kairos/rerank.ts`; any error keeps the prior order) → top-5. **Shared ranker**
+**One core (Wave 1, 09/10):** `searchCore()` (`lib/kairos/search-core.ts`) is the only search pipeline: FTS + vector legs
+(same scope + exact filters) → RRF fuse (k=60) → relevance × standing → rerank pool of max(12, k) (agent surfaces cap it
+at 40 and clip docs to 4k chars) → Voyage `rerank-2.5` (`lib/kairos/rerank.ts`; any error keeps the prior order) → top-k.
+Default scope `REAL_MEMORY_STREAMS` (reflection, idea, agentic, concept, belief, constitution, execution); `MACHINE_STREAMS`
+only with `includeMachine` or an explicit `type`/`source` filter. **Shared ranker**
 (`lib/kairos/ranking.ts`): `rankScore = relevance × standingFactor`, where `standingFactor = 0.5 + standing` for scored rows,
 otherwise `confidenceBoost × recencyMultiplier`.
 
 - **`retrieveContext()`** (`retrieve.ts:99`) is the Dominion-scoped fetch for recipes and chat. It returns `{ bundle, cortex, archetypes, substrate, traces }`.
   - The substrate covers `SUBSTRATE_STREAMS = reflection, idea, agentic, concept, belief, constitution` (`retrieve.ts:53`).
-  - **Liveness (0.14):** every grounding leg (FTS, vector and traces) applies `substrateLive()` (`retrieve.ts:408`): not archived, `supersededAt IS NULL`, valid now. Merge supersedes without `invalidAt`, so `validAsOfNow` alone missed merged rows. Archived `idea_candidate` traces never ground.
-  - **90-day window:** `inSubstrateWindow()` (`retrieve.ts:419`) exempts `WINDOW_EXEMPT_STREAMS = concept, belief, constitution` (`:417`). Retired beliefs and replaced constitution versions still drop out via liveness.
+  - **Liveness (0.14):** every grounding leg (FTS, vector and traces) applies `liveConditions()` (`search-core.ts`): not archived, `supersededAt IS NULL`, valid now. Merge supersedes without `invalidAt`, so `validAsOfNow` alone missed merged rows. Archived `idea_candidate` traces never ground.
+  - **90-day window:** the substrate passes `window: { days: 90, exempt: WINDOW_EXEMPT_STREAMS = concept, belief, constitution }` to the core. Retired beliefs and replaced constitution versions still drop out via liveness.
   - The vector leg (`hnsw.ef_search=100`) is best-effort and falls back to pure FTS.
 - **`retrieveGlobalContext()`** (`retrieve.ts:120`): whole-brain retrieval. `dominionId=null` makes scope TRUE and the latest Aether stands in for cortex. It powers unanchored chat.
-- **`prepareContext()`** (`memories.ts:2110`): a budget-packed bundle (FTS + optional vector via `fuseHybrid`, pinned rows, a 1-hop graph walk). Since 0.14 its pinned leg uses `listMemories({ liveOnly: true })` (`:2147`; filter at `listMemories`, `:154`). Its walk uses `getNeighbours({ liveOnly: true })` (`:2161`; SQL at `getNeighbours`, `:654`), which drops superseded/invalidated neighbours. Browse surfaces keep history (`liveOnly` defaults off). MCP `search_memories` is a separate path with no rerank.
+- **`prepareContext()`** (`lib/data/memories-context.ts`): a budget-packed bundle — core hits (optional `dominionId`, realm/type filters) + pinned rows (`listMemories({ liveOnly: true })`) + a 1-hop walk (`getNeighbours({ liveOnly: true })`, drops superseded/invalidated neighbours). Hits score on core relevance so standing applies once. Browse surfaces keep history (`liveOnly` defaults off).
+- **`search_memories`** (MCP + REST `GET /api/v1/memories/search`, `lib/kairos/memory-search.ts`): the core with the caller's exact filters; responses keep the old FTS fields and add `streamClass`, `dominionId`, `score` and `retrieval`. With no query (Dominion browse) it stays the recency-ordered `searchMemoriesFts` path, machine rows hidden. Both agent surfaces and `prepare_context` call `noteAgentReads` (`lib/kairos/agent-reads.ts`): top-5 hits → `reactUsed` after the response.
 
 **Embeddings** (`lib/kairos/embeddings.ts`): Voyage `voyage-3.5` @1024 is primary and OpenAI `text-embedding-3-small` (truncated) is the fallback;
-with neither, retrieval is pure FTS. `updateMemory()` nulls the vector on content change. Cron `embed-backfill` runs at 03:25Z (04:00Z before 0.16)
-(≤200/day), after the 01:30Z engine, which is why Merge looks back 96 h.
+with neither, retrieval is pure FTS. `updateMemory()` nulls the vector on content change. **Embed on write:** `createMemory()` and
+`updateMemory()` hand the written row to `scheduleMemoryEmbed()` (`lib/data/memory-embed.ts`), which embeds it in `after()` when
+embeddings are on and the row has no vector (never blocking or failing the write; outside a request scope it skips). Cron
+`embed-backfill` at 03:25Z (04:00Z before 0.16) (≤200/day) stays the safety net, after the 01:30Z engine, which is why Merge looks back 96 h.
 
 ## 6. Dedup
 

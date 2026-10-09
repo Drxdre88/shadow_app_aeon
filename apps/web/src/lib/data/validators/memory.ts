@@ -146,6 +146,9 @@ export const searchMemoriesSchema = z.object({
   tagsAny:         z.array(z.string()).max(50).optional(),
   tagsAll:         z.array(z.string()).max(50).optional(),
   pinnedOnly:      z.boolean().optional(),
+  // Wave 1 "one search": machine rows (traces, snapshots, deltas, archetypes,
+  // cortex, aether, advisories) are hidden unless the caller opts in.
+  includeMachine:  z.boolean().optional(),
   limit:           z.number().int().min(1).max(100).default(20),
   offset:          z.number().int().min(0).default(0),
 }).refine(
@@ -185,6 +188,10 @@ export const prepareContextSchema = z.object({
   includePinned:   z.boolean().default(true),
   // One mind (spec_one_mind): prepend "## Today across channels" (≤15% of budget).
   includeToday:    z.boolean().default(true),
+  // Wave 1 "one search": optional Dominion scope (FK or soft dominion: tag)
+  // and the same machine-row opt-in as search_memories.
+  dominionId:      z.string().uuid().optional(),
+  includeMachine:  z.boolean().optional(),
 })
 
 export type MemoryType        = z.infer<typeof memoryTypeSchema>

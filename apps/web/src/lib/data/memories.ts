@@ -4,10 +4,8 @@ import { eq, and, desc, sql, inArray, isNull, gte, lt, ne, notInArray, type SQL 
 import type {
   CreateMemoryInput,
   UpdateMemoryInput,
-  SearchMemoriesInput,
   AddLinkInput,
   MemoryLink,
-  PrepareContextInput,
   AcceptProposalInput,
 } from './validators'
 import type { StreamClass } from '@/lib/kairos/streamClass'
@@ -16,7 +14,6 @@ import {
   embedTexts,
   embedOne,
   toVectorLiteral,
-  embeddingsEnabled,
   activeEmbeddingModel,
 } from '@/lib/kairos/embeddings'
 import {
@@ -26,16 +23,20 @@ import {
   DEFAULT_DEDUP_THRESHOLD,
   type DedupCandidate,
 } from '@/lib/kairos/dedup'
-import { rrfFuse } from '@/lib/kairos/rrf'
 import { confidenceForStreamClass } from '@/lib/kairos/confidence'
-import { rankScore } from '@/lib/kairos/ranking'
 import { defaultStreamClass, deriveValidAt } from '@/lib/kairos/stream-class-default'
 import { META_STREAM_CLASSES } from '@/lib/kairos/streamClass'
 import { dominionTag } from '@/lib/kairos/dominionTags'
 import { autoFileEligible, autoFileMinSim, autoFileText, cosineSimilarity } from '@/lib/kairos/autofile'
 import { ORIGIN_TRUST, inferOriginKind, originKindOf, type Origin, type OriginKind } from '@/lib/kairos/origin'
-import { loadTodayContextSection } from './prepare-context-today'
 import { notHeldSensitive, notHeldSensitiveRaw, sensitiveCaptureStamp } from '@/lib/kairos/sensitive'
+import { SLIM_COLUMNS, validAsOfNow } from './memories-shared'
+import { scheduleMemoryEmbed } from './memory-embed'
+
+// Split-out modules (file-size rule); memories.ts stays the public import path.
+export { validAsOfNow } from './memories-shared'
+export { searchMemoriesFts, vectorSearchMemories } from './memories-search'
+export { prepareContext } from './memories-context'
 
 // P2.5 (G6) — origin is decided by the TRUSTED write surface (server action,
 // REST auth mode, MCP, cron), passed here as an option, never via the zod input
@@ -106,29 +107,6 @@ function committedTypeForKind(kind: string): string {
     default:           return 'observation' // tension / connection / unknown
   }
 }
-
-const SLIM_COLUMNS = {
-  id: memories.id,
-  title: memories.title,
-  summary: memories.summary,
-  type: memories.type,
-  source: memories.source,
-  sourceMetadata: memories.sourceMetadata,
-  createdAt: memories.createdAt,
-  updatedAt: memories.updatedAt,
-  realmId: memories.realmId,
-  projectId: memories.projectId,
-  taskId: memories.taskId,
-  tags: memories.tags,
-  pinned: memories.pinned,
-  // Governed-memory trust prior, peer to `pinned`. Feeds read-time confidence
-  // decay in retrieval scoring; intentionally surfaced to search consumers (the
-  // caller's own non-sensitive prior) — MCP/REST stay in parity via this shared set.
-  confidence: memories.confidence,
-  // Memory-engine standing (docs/kairos/32 §1). Feeds the shared ranker
-  // (lib/kairos/ranking.ts); NULL = unscored → P0 confidence × recency.
-  standing: memories.standing,
-} as const
 
 export async function findMemoryById(memoryId: string, userId: string) {
   const [row] = await db
@@ -505,140 +483,8 @@ export async function getGraphForUser(
   return { nodes, edges }
 }
 
-// Bi-temporal valid-time gate. A belief participates in retrieval only while it
-// is valid as-of now: invalid_at unset, or still in the future. Composes with
-// the supersededAt gate — accepting a supersession stamps invalid_at, but a
-// belief can also expire on its own without a successor. Reused across every
-// retrieval leg so the corpus is filtered identically. Exported so every
-// other synthesis/retrieval module (archetypes.ts, cortex.ts, aether.ts,
-// retrieve.ts, micro-consolidate.ts) shares this ONE definition instead of
-// each carrying its own copy.
-export const validAsOfNow = sql`((${memories.invalidAt} IS NULL OR ${memories.invalidAt} > NOW()) AND ${notHeldSensitive})`
-
-export async function searchMemoriesFts(userId: string, input: SearchMemoriesInput) {
-  // Kairos Phase 3B — `query` is optional when scoped by `dominionId`. When
-  // no query is given, drop the FTS match condition and rank/snippet
-  // expressions; sort by recency instead. Result row shape stays identical
-  // (rank=0, snippet='') so callers don't branch on response shape.
-  const hasQuery = Boolean(input.query)
-  const tsQuery = hasQuery ? sql`websearch_to_tsquery('english', ${input.query})` : null
-  const rank = hasQuery
-    ? sql<number>`ts_rank_cd("memories"."fts", ${tsQuery})`
-    : sql<number>`0::float4`
-  const snippet = hasQuery
-    ? sql<string>`ts_headline('english', coalesce(${memories.summary}, ${memories.bodyMd}), ${tsQuery}, 'MaxFragments=2,MaxWords=18,MinWords=5')`
-    : sql<string>`''::text`
-
-  const conditions = [
-    eq(memories.userId, userId),
-    sql`${memories.archivedAt} IS NULL`,
-    isNull(memories.supersededAt),
-    validAsOfNow,
-  ]
-  if (hasQuery) conditions.push(sql`"memories"."fts" @@ ${tsQuery}`)
-
-  if (input.type) {
-    const types = Array.isArray(input.type) ? input.type : [input.type]
-    conditions.push(inArray(memories.type, types))
-  }
-  if (input.source) {
-    const sources = Array.isArray(input.source) ? input.source : [input.source]
-    conditions.push(inArray(memories.source, sources))
-  }
-  if (input.realmId)    conditions.push(eq(memories.realmId, input.realmId))
-  if (input.projectId)  conditions.push(eq(memories.projectId, input.projectId))
-  if (input.taskId)     conditions.push(eq(memories.taskId, input.taskId))
-  if (input.dominionId) conditions.push(eq(memories.dominionId, input.dominionId))
-  if (input.sinceDays !== undefined) {
-    conditions.push(sql`${memories.createdAt} >= NOW() - make_interval(days => ${input.sinceDays})`)
-  }
-  if (input.pinnedOnly) conditions.push(eq(memories.pinned, true))
-  if (input.tagsAny && input.tagsAny.length > 0) {
-    conditions.push(sql`${memories.tags} ?| ${input.tagsAny}::text[]`)
-  }
-  if (input.tagsAll && input.tagsAll.length > 0) {
-    conditions.push(sql`${memories.tags} ?& ${input.tagsAll}::text[]`)
-  }
-
-  const orderBy = hasQuery
-    ? [desc(rank), desc(memories.pinned), desc(memories.createdAt)]
-    : [desc(memories.pinned), desc(memories.createdAt)]
-
-  const hits = await db
-    .select({
-      ...SLIM_COLUMNS,
-      rank,
-      snippet,
-    })
-    .from(memories)
-    .where(and(...conditions))
-    .orderBy(...orderBy)
-    .limit(input.limit)
-    .offset(input.offset)
-
-  const [{ total }] = await db
-    .select({ total: sql<number>`count(*)::int` })
-    .from(memories)
-    .where(and(...conditions))
-
-  return { hits, total }
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Brain Phase 4 (P2) — semantic vector search (hybrid retrieval's second leg).
-//
-// Flat `ORDER BY embedding <=> $vec LIMIT n` so the HNSW index is actually
-// used (pgvector's planner skips HNSW inside CTEs / behind heavy filters).
-// Runs in a transaction with `SET LOCAL hnsw.ef_search` so recall is bounded
-// above the LIMIT and the GUC auto-reverts on commit (never leaks across the
-// pooled Neon connection). Returns SLIM rows in nearest-first order; callers
-// fuse with the FTS hit list via RRF. Embeddings from different models are not
-// comparable — the active model is enforced at write time, not here.
-// ─────────────────────────────────────────────────────────────────────────
-
-type VectorSearchInput = {
-  realmId?: string
-  projectId?: string
-  taskId?: string
-  dominionId?: string
-  type?: string | string[]
-  limit: number
-}
-
-export async function vectorSearchMemories(
-  userId: string,
-  queryVec: number[],
-  input: VectorSearchInput,
-) {
-  const vecLiteral = toVectorLiteral(queryVec)
-  const distance = sql`${memories.embedding} <=> ${vecLiteral}::vector`
-
-  const conditions = [
-    eq(memories.userId, userId),
-    sql`${memories.archivedAt} IS NULL`,
-    isNull(memories.supersededAt),
-    validAsOfNow,
-    sql`${memories.embedding} IS NOT NULL`,
-  ]
-  if (input.type) {
-    const types = Array.isArray(input.type) ? input.type : [input.type]
-    conditions.push(inArray(memories.type, types))
-  }
-  if (input.realmId)    conditions.push(eq(memories.realmId, input.realmId))
-  if (input.projectId)  conditions.push(eq(memories.projectId, input.projectId))
-  if (input.taskId)     conditions.push(eq(memories.taskId, input.taskId))
-  if (input.dominionId) conditions.push(eq(memories.dominionId, input.dominionId))
-
-  return db.transaction(async (tx) => {
-    await tx.execute(sql`SET LOCAL hnsw.ef_search = 100`)
-    return tx
-      .select(SLIM_COLUMNS)
-      .from(memories)
-      .where(and(...conditions))
-      .orderBy(distance)
-      .limit(input.limit)
-  })
-}
+// validAsOfNow, searchMemoriesFts and vectorSearchMemories live in
+// memories-shared.ts / memories-search.ts and are re-exported above.
 
 type NeighbourRow = {
   id: string
@@ -1043,6 +889,11 @@ export async function createMemory(userId: string, input: CreateMemoryParams, op
     return inserted
   })
 
+  // Embed on write: background, best-effort; the capture-time auto-file
+  // vector (when present) already landed on the row, so this only fires for
+  // rows still without one.
+  scheduleMemoryEmbed(userId, row)
+
   return row
 }
 
@@ -1445,6 +1296,7 @@ export async function updateMemory(
       .set(update)
       .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
       .returning()
+    scheduleMemoryEmbed(userId, row)
     return row ?? null
   }
 
@@ -1453,7 +1305,7 @@ export async function updateMemory(
   // can't keep riding an operator label into belief extraction. The previous
   // label is kept as priorOrigin (same pattern as acceptProposal). Read +
   // write share a row lock so a concurrent edit can't slip between them.
-  return db.transaction(async (tx) => {
+  const updated = await db.transaction(async (tx) => {
     const [current] = await tx
       .select()
       .from(memories)
@@ -1491,6 +1343,8 @@ export async function updateMemory(
       .returning()
     return row ?? null
   })
+  scheduleMemoryEmbed(userId, updated)
+  return updated
 }
 
 export async function addLink(memoryId: string, userId: string, input: AddLinkInput) {
@@ -2008,43 +1862,10 @@ export async function findSimilarBeliefs(
   })
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// Brain Phase 4 — prepare_context. Single retrieval call that returns a
-// budget-packed markdown bundle ready to drop into an AI context window.
-//
-// Algorithm:
-//   1. BM25 FTS search for candidates (top-K = maxSources)
-//   2. Pinned fetch (always or per includePinned flag), user-scoped, realm-scoped
-//   3. 1-hop graph walk from top-10 hits (in parallel) for typed neighbours
-//   4. Composite score = baseScore × standingFactor (lib/kairos/ranking.ts)
-//        - baseScore: pinned=2.0, hit=rank, neighbour=parentRank*0.5 + edgeBonus
-//        - standingFactor: 0.5 + standing once the memory engine scored the row;
-//          unscored → confidenceBoost × recencyMultiplier (P0, unchanged)
-//        - recencyMultiplier: 1 + 0.3·exp(-ln2·daysOld / 14) — true 14-day half-life
-//   5. Sort, fetch full bodies for top items
-//   6. Pack into Pinned (≤30% budget, full body) → Most relevant (≤70% budget,
-//      full body) → Related (rest, summary only) until budget exhausted
-//   7. Return markdown + token estimate + source citations
-//
-// Token estimate uses a rough chars/4 heuristic — good enough for budget
-// guard rails; tiktoken refinement is a Phase 5 polish if needed.
-// ─────────────────────────────────────────────────────────────────────────
+// prepareContext lives in memories-context.ts (re-exported above).
 
-const EDGE_BONUS: Record<string, number> = {
-  supports:        0.5,
-  contradicts:     0.4,
-  supersedes:      0.3,
-  refers_to:       0.3,
-  relates:         0.2,
-  blocks_thinking: 0.1,
-}
-
-function estimateTokens(s: string): number {
-  return Math.ceil(s.length / 4)
-}
-
-// Shared recency curve for BOTH ranking stacks (prepareContext below and chat
-// substrate ranking in lib/kairos/retrieve.ts) so they cannot drift apart
+// Shared recency curve for BOTH ranking stacks (prepareContext and the shared
+// retrieval core in lib/kairos/search-core.ts) so they cannot drift apart
 // again. A true half-life: the decay term is exactly 0.5 at 14 days (the old
 // exp(-d/14) was mislabelled — its real half-life was ≈9.7d). `now` is
 // injectable for deterministic tests.
@@ -2103,298 +1924,4 @@ export async function listRecentMemories(
     ))
     .orderBy(desc(memories.createdAt))
     .limit(limit)
-}
-
-type Candidate = {
-  id: string
-  title: string
-  summary: string | null
-  type: string
-  source: string
-  createdAt: Date
-  updatedAt?: Date | null   // reinforcement signal for confidence decay
-  confidence?: number | null // stored trust prior; absent → neutral (no effect)
-  standing?: number | null   // memory-engine standing; absent → P0 fallback
-  pinned: boolean
-  baseScore: number
-  origin: 'pinned' | 'hit' | 'neighbour'
-  snippet?: string  // populated for FTS hits
-  edgeType?: string // populated for neighbours
-}
-
-type FtsHits = Awaited<ReturnType<typeof searchMemoriesFts>>['hits']
-type VecHits = Awaited<ReturnType<typeof vectorSearchMemories>>
-
-// Merge FTS + vector hit lists into one RRF-ranked list shaped like the FTS
-// hits, so the downstream candidate builder needs no changes. FTS rows win on
-// metadata (they carry the ts_headline snippet); vector-only rows fold in with
-// an empty snippet. Each row's `rank` is replaced by its fused RRF score.
-function fuseHybrid(ftsHits: FtsHits, vecHits: VecHits): FtsHits {
-  const rrf = rrfFuse([
-    { ids: ftsHits.map((h) => h.id), weight: 1 },
-    { ids: vecHits.map((h) => h.id), weight: 1 },
-  ])
-  const byId = new Map<string, FtsHits[number]>()
-  for (const h of ftsHits) byId.set(h.id, h)
-  for (const h of vecHits) {
-    if (!byId.has(h.id)) byId.set(h.id, { ...h, rank: 0, snippet: '' })
-  }
-  return [...byId.values()]
-    .map((h) => ({ ...h, rank: rrf.get(h.id) ?? 0 }))
-    .sort((a, b) => b.rank - a.rank)
-}
-
-export async function prepareContext(userId: string, input: PrepareContextInput) {
-  const budget = input.budgetTokens
-  const realmId = input.realmId
-  // Today across channels (≤15% of budget) — read in parallel with retrieval.
-  const todayPromise = input.includeToday === false ? Promise.resolve('') : loadTodayContextSection(userId, budget)
-
-  // ── 1. FTS search ────────────────────────────────────────────────────
-  const search = await searchMemoriesFts(userId, {
-    query: input.query,
-    realmId,
-    type: input.type,
-    limit: input.maxSources,
-    offset: 0,
-  })
-  let hits = search.hits
-
-  // ── 1b. Hybrid: fuse a semantic vector search via RRF. Best-effort — if
-  //        embeddings are disabled or the embedding call fails, we keep the
-  //        FTS result set untouched (graceful degradation, prod-safe). ─────
-  if (input.query && embeddingsEnabled()) {
-    try {
-      const queryVec = await embedOne(input.query, 'query')
-      if (queryVec) {
-        const vecHits = await vectorSearchMemories(userId, queryVec, {
-          realmId,
-          type: input.type,
-          limit: input.maxSources,
-        })
-        hits = fuseHybrid(hits, vecHits)
-      }
-    } catch (err) {
-      console.warn('[prepareContext] semantic search failed, FTS-only:', err instanceof Error ? err.message : err)
-    }
-  }
-
-  // ── 2. Pinned fetch (user-scoped, realm-scoped if provided) ──────────
-  const pinned = input.includePinned
-    ? await listMemories(userId, {
-        pinnedOnly: true,
-        liveOnly: true,
-        realmId,
-        limit: 20,
-      })
-    : []
-
-  // ── 3. 1-hop graph walk in parallel from top-10 hits ─────────────────
-  const seedIds = hits.slice(0, 10).map((h) => h.id)
-  const parentRanks = new Map<string, number>()
-  for (const h of hits.slice(0, 10)) parentRanks.set(h.id, h.rank)
-  let neighbours: Array<{ id: string; title: string; summary: string | null; type: string; source: string; createdAt: Date; edgeType: string; parentId: string }> = []
-  if (input.hops >= 1 && seedIds.length > 0) {
-    const walks = await Promise.all(
-      seedIds.map(async (sid) => {
-        const rows = await getNeighbours(sid, userId, { hops: 1, includeReverse: true, limit: 5, liveOnly: true })
-        return rows.map((r) => ({
-          id: r.id,
-          title: r.title,
-          summary: r.summary,
-          type: r.type,
-          source: r.source,
-          createdAt: r.createdAt,
-          edgeType: r.edgeType,
-          parentId: sid,
-        }))
-      })
-    )
-    neighbours = walks.flat()
-  }
-
-  // ── 4. Build candidate set with composite scoring ────────────────────
-  const seen = new Set<string>()
-  const candidates: Candidate[] = []
-
-  for (const p of pinned) {
-    if (seen.has(p.id)) continue
-    seen.add(p.id)
-    candidates.push({
-      id: p.id,
-      title: p.title,
-      summary: p.summary,
-      type: p.type,
-      source: p.source,
-      createdAt: p.createdAt,
-      updatedAt: p.updatedAt,
-      confidence: p.confidence,
-      standing: p.standing,
-      pinned: true,
-      baseScore: 2.0,
-      origin: 'pinned',
-    })
-  }
-  for (const h of hits) {
-    if (seen.has(h.id)) continue
-    seen.add(h.id)
-    candidates.push({
-      id: h.id,
-      title: h.title,
-      summary: h.summary,
-      type: h.type,
-      source: h.source,
-      createdAt: h.createdAt,
-      updatedAt: h.updatedAt,
-      confidence: h.confidence,
-      standing: h.standing,
-      pinned: !!h.pinned,
-      baseScore: h.rank,
-      origin: 'hit',
-      snippet: h.snippet,
-    })
-  }
-  for (const n of neighbours) {
-    if (seen.has(n.id)) continue
-    seen.add(n.id)
-    const parentRank = parentRanks.get(n.parentId) ?? 0
-    const bonus = EDGE_BONUS[n.edgeType] ?? 0.1
-    candidates.push({
-      id: n.id,
-      title: n.title,
-      summary: n.summary,
-      type: n.type,
-      source: n.source,
-      createdAt: n.createdAt,
-      pinned: false,
-      baseScore: parentRank * 0.5 + bonus,
-      origin: 'neighbour',
-      edgeType: n.edgeType,
-    })
-  }
-
-  const rankNow = Date.now()
-  for (const c of candidates) {
-    // Shared ranker: standing once scored; otherwise P0 confidence decay ×
-    // recency (neutral confidence for pinned, neighbours, and rows without a
-    // stored prior).
-    ;(c as Candidate & { compositeScore: number }).compositeScore = rankScore(c.baseScore, c, rankNow)
-  }
-  const scored = candidates as Array<Candidate & { compositeScore: number }>
-  scored.sort((a, b) => b.compositeScore - a.compositeScore)
-
-  // ── 5. Fetch full bodies for top items (cap at 40 — anything beyond
-  //      that will land in Related as summary only) ─────────────────────
-  const bodyFetchIds = scored.slice(0, 40).map((c) => c.id)
-  const bodies = await findMemoriesByIds(bodyFetchIds, userId)
-  const bodyById = new Map(bodies.map((b) => [b.id, b]))
-
-  // ── 6. Pack into Pinned → Most relevant → Related sections ──────────
-  const todaySection = await todayPromise
-  const headerOverhead = 200 + estimateTokens(todaySection)  // header + section titles + sources block + Today
-  const pinnedBudget   = Math.floor((budget - headerOverhead) * 0.30)
-  const relevantBudget = Math.floor((budget - headerOverhead) * 0.55)
-  // related gets the remainder
-
-  const pinnedItems: Array<Candidate & { compositeScore: number; body: string }> = []
-  const relevantItems: typeof pinnedItems = []
-  const relatedItems: Array<Candidate & { compositeScore: number; summary: string | null }> = []
-
-  let pinnedUsed = 0
-  let relevantUsed = 0
-  let relatedUsed = 0
-  const relatedBudget = Math.max(budget - headerOverhead - pinnedBudget - relevantBudget, 200)
-
-  for (const c of scored) {
-    const body = bodyById.get(c.id)?.bodyMd ?? c.summary ?? ''
-    const bodyTokens = estimateTokens(body) + estimateTokens(c.title) + 30  // body + title + section overhead
-
-    if (c.origin === 'pinned' && pinnedUsed + bodyTokens <= pinnedBudget) {
-      pinnedItems.push({ ...c, body })
-      pinnedUsed += bodyTokens
-      continue
-    }
-    if (relevantUsed + bodyTokens <= relevantBudget && relevantItems.length < 8) {
-      relevantItems.push({ ...c, body })
-      relevantUsed += bodyTokens
-      continue
-    }
-    const summaryTokens = estimateTokens(c.summary ?? c.title) + 20
-    if (relatedUsed + summaryTokens <= relatedBudget) {
-      relatedItems.push({ ...c, summary: c.summary })
-      relatedUsed += summaryTokens
-    }
-    // Else: drop. Sources block at end will still cite it.
-  }
-
-  // ── 7. Render markdown ───────────────────────────────────────────────
-  const lines: string[] = []
-  lines.push(`# Context for: ${input.query}`)
-  lines.push('')
-  lines.push(`> Budget: ${budget} tokens · Pinned: ${pinnedItems.length} · Relevant: ${relevantItems.length} · Related: ${relatedItems.length}`)
-  lines.push('')
-
-  if (todaySection) {
-    lines.push(todaySection)
-    lines.push('')
-  }
-
-  if (pinnedItems.length > 0) {
-    lines.push('## Pinned')
-    lines.push('')
-    for (const p of pinnedItems) {
-      const date = new Date(p.createdAt).toISOString().slice(0, 10)
-      lines.push(`### ${p.title}`)
-      lines.push(`*${date} · ${p.type} · ${p.source}*`)
-      lines.push('')
-      lines.push(p.body)
-      lines.push('')
-      lines.push('---')
-      lines.push('')
-    }
-  }
-
-  if (relevantItems.length > 0) {
-    lines.push('## Most relevant')
-    lines.push('')
-    for (const r of relevantItems) {
-      const date = new Date(r.createdAt).toISOString().slice(0, 10)
-      lines.push(`### ${r.title}`)
-      lines.push(`*${date} · ${r.type} · ${r.source}${r.origin === 'neighbour' && r.edgeType ? ` · linked: ${r.edgeType}` : ''}*`)
-      lines.push('')
-      lines.push(r.body)
-      lines.push('')
-      lines.push('---')
-      lines.push('')
-    }
-  }
-
-  if (relatedItems.length > 0) {
-    lines.push('## Related')
-    lines.push('')
-    for (const r of relatedItems) {
-      const date = new Date(r.createdAt).toISOString().slice(0, 10)
-      const summary = r.summary ?? r.title
-      const linked = r.origin === 'neighbour' && r.edgeType ? ` *(${r.edgeType})*` : ''
-      lines.push(`- **${r.title}** · ${date}${linked} — ${summary}`)
-    }
-    lines.push('')
-  }
-
-  if (candidates.length === 0) {
-    lines.push('_No matching memories found for this query._')
-    lines.push('')
-  }
-
-  lines.push('## Sources')
-  const sources: Array<{ id: string; title: string; score: number; section: 'pinned' | 'relevant' | 'related' }> = []
-  for (const p of pinnedItems) sources.push({ id: p.id, title: p.title, score: Number(p.compositeScore.toFixed(3)), section: 'pinned' })
-  for (const r of relevantItems) sources.push({ id: r.id, title: r.title, score: Number(r.compositeScore.toFixed(3)), section: 'relevant' })
-  for (const r of relatedItems) sources.push({ id: r.id, title: r.title, score: Number(r.compositeScore.toFixed(3)), section: 'related' })
-  for (const s of sources) lines.push(`- \`${s.id}\` · ${s.title} · score ${s.score} · ${s.section}`)
-
-  const contextMd = lines.join('\n')
-  const tokensUsed = estimateTokens(contextMd)
-
-  return { contextMd, tokensUsed, sources }
 }
