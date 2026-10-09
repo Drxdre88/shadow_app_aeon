@@ -11,6 +11,7 @@ import { KAIROS_GATE_PREF_KEY, KAIROS_OWNER_MODEL_PREF_KEY, KAIROS_RAPPORT_PREF_
 import { SENSITIVE_GATE_PREF_KEY } from '@/lib/kairos/sensitive/pref-keys'
 import { LIVING_UNATTRIBUTED_PREF_KEY } from '@/lib/kairos/living/types'
 import { KAIROS_DECISIONS_PREF_KEY } from '@/lib/kairos/decisions/pref-keys'
+import { KAIROS_VERDICT_DECK_PREF_KEY } from '@/lib/kairos/verdict-deck/pref-keys'
 
 export async function findPreferences(userId: string) {
   const row = await db
@@ -61,6 +62,7 @@ const SERVER_OWNED_OBJECT_KEYS = [
   SENSITIVE_GATE_PREF_KEY,
   LIVING_UNATTRIBUTED_PREF_KEY,
   KAIROS_DECISIONS_PREF_KEY,
+  KAIROS_VERDICT_DECK_PREF_KEY,
 ] as const
 
 function stripServerOwned(prefs: Record<string, unknown>): Record<string, unknown> {

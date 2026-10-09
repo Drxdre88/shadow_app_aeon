@@ -36,6 +36,7 @@ import { handleIdeaVerdictTap } from '@/lib/kairos/idea-verdict-telegram'
 import { tappedIdeaVerdict } from '@/lib/kairos/idea-verdict-keyboard'
 import { routeMomentCallback, routeMomentMessage, routeMomentText } from '@/lib/kairos/moment/telegram-routes'
 import { routeOwnerCommands } from '@/lib/kairos/telegram-commands'
+import { routeVerdictDeckReply } from '@/lib/kairos/verdict-deck/telegram'
 import type { TelegramMediaRef } from '@/lib/kairos/moment/types'
 import { buildChatJobSpec, chatHandler } from '@/lib/kairos/thinking/handlers/chat'
 import {
@@ -265,6 +266,10 @@ async function handleTextMessage(
   const body = (message.text ?? '').trim()
   if (!body) return
 
+  // Sunday verdict deck: a message that is only "1y 2n 3 skip" (bare numbers,
+  // never a Q/R/D/P/A label) replying to the deck, or sent on its London day.
+  if (await routeVerdictDeckText(chatId!, operatorUserId, body, message, operatorChatId)) return
+
   // Deterministic pre-router: "Q12: …" answers / "skip Q12" against the open
   // question backlog never reach the chat model. Plain prose falls through.
   if (await routeNumberedAnswers(chatId!, operatorUserId, body, message.reply_to_message?.text)) return
@@ -310,6 +315,26 @@ async function findOrCreateTelegramThread(userId: string): Promise<string | null
   if (existing) return existing
   const created = await createChatThread(userId, { dominionId: null, title: TELEGRAM_THREAD_TITLE })
   return created.ok ? created.threadId : null
+}
+
+async function routeVerdictDeckText(
+  chatId: number | string,
+  userId: string,
+  body: string,
+  message: NonNullable<TelegramUpdate['message']>,
+  ownerId: string,
+): Promise<boolean> {
+  try {
+    return await routeVerdictDeckReply(userId, {
+      body,
+      replyToMessageId: message.reply_to_message?.message_id ?? null,
+      fromId: message.from ? String(message.from.id) : null,
+      ownerId,
+    }, (text) => sendMessage(chatId, text))
+  } catch (err) {
+    console.error('[telegram-webhook] verdict-deck routing failed — handing the text on', err)
+    return false
+  }
 }
 
 async function routeVetoReasonText(

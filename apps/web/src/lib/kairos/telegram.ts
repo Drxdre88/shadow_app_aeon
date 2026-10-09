@@ -396,6 +396,8 @@ export async function sendKairosSpeak(input: {
   message: string
   kind: 'notify' | 'question'; keyboard?: InlineKeyboardButton[][]
   dismissButton?: boolean
+  // Called with each sent chunk's Telegram message_id (the deck mapping key).
+  onSent?: (messageId: number) => void
 }): Promise<boolean> {
   const chatId = process.env.TELEGRAM_OPERATOR_CHAT_ID
   if (!chatId || !process.env.TELEGRAM_BOT_TOKEN) {
@@ -416,15 +418,17 @@ export async function sendKairosSpeak(input: {
     const isLast = i === chunks.length - 1
     const keyboard = isLast && inlineKeyboard.length ? { inlineKeyboard } : {}
     const html = (i === 0 ? `<b>${escapeHtml(input.title)}</b>\n\n` : '') + renderTelegramHtml(chunks[i])
+    let sent: { messageId: number } | undefined
     try {
-      await sendMessage(chatId, html, { parseMode: 'HTML', ...keyboard })
+      sent = await sendMessage(chatId, html, { parseMode: 'HTML', ...keyboard })
     } catch {
       // A formatting rejection must not kill delivery — degrade to plain
       // text (stripping the markers the HTML tags never applied); a
       // genuine API failure re-throws from the plain send.
       const plain = stripTelegramFallbackMarkers(chunks[i])
-      await sendMessage(chatId, (i === 0 ? `${input.title}\n\n` : '') + plain, keyboard)
+      sent = await sendMessage(chatId, (i === 0 ? `${input.title}\n\n` : '') + plain, keyboard)
     }
+    if (typeof sent?.messageId === 'number') input.onSent?.(sent.messageId)
   }
   return true
 }

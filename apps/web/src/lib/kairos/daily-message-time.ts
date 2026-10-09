@@ -37,6 +37,10 @@ export function isLondonMonday(now: Date): boolean {
   return londonParts(now).weekday === 'Mon'
 }
 
+export function isLondonSunday(now: Date): boolean {
+  return londonParts(now).weekday === 'Sun'
+}
+
 export const DAILY_MESSAGE_HOUR = 6
 
 // The instant London reads `hour`:00 on `date` (London is UTC+0 or UTC+1, and
