@@ -11,15 +11,15 @@
 // Every extra passes the caller's full scope through `hydrate` (user,
 // Dominion, streams, liveness, filters, window), is deduped against the pool
 // and capped at EXPAND_CAP, split fairly between the kinds. Any failure
-// returns no extras: expansion never fails a read. Default OFF until the eval
-// passes; flipping SEARCH_EXPAND_DEFAULT turns it on for every surface.
+// returns no extras: expansion never fails a read. Default ON since 10/10
+// (100-question eval: search top-5 82→85%); expand=false opts one call out.
 // ─────────────────────────────────────────────────────────────────────────
 
 import { and, sql, type SQL } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories } from '@/lib/db/schema'
 
-export const SEARCH_EXPAND_DEFAULT = false
+export const SEARCH_EXPAND_DEFAULT = true
 
 export const EXPAND_SEEDS = 8
 export const EXPAND_CAP = 12
