@@ -1,229 +1,154 @@
 #!/usr/bin/env node
 // ─────────────────────────────────────────────────────────────────────────
-// Kairos Brain — retrieval evaluation harness.
+// Vorath / Kairos Brain — retrieval evaluation harness (read-only, GET only).
 //
-// Reads eval/retrieval-fixtures.json, calls the /context endpoint for each
-// query, and prints recall@k, precision@k, MRR, and hit-rate.
+// Scores labelled owner questions (eval/retrieval-fixtures.json) against every
+// REST retrieval path and prints recall@5, recall@10, MRR, hit@1 per path and
+// per category, plus the abstention pass rate.
 //
-// The server decides FTS-only vs hybrid (embedding) retrieval based on its
-// own configuration — this harness measures whatever the server does.
-// Run once for keyword baseline, again after embeddings go live, compare.
+// Paths:
+//   search         GET /api/v1/memories/search?q=      (search_memories REST twin, FTS)
+//   context        GET /api/v1/memories/context?query= (prepare_context; FTS+vector RRF, pinned, 1-hop graph)
+//   context-nopin  same with includePinned=false&includeToday=false (pure query-driven ranking)
+//   Chat retrieval (retrieveForChatGlobal) has no REST route, so it is not measured here.
 //
-// Usage:
-//   AEON_API_KEY=sk-... node scripts/eval-retrieval.mjs
-//   AEON_API_KEY=sk-... node scripts/eval-retrieval.mjs --k 5 --budget 2000 --maxSources 10
-//   AEON_API_KEY=sk-... node scripts/eval-retrieval.mjs --json > results.json
+// Ranking: a path's ranked list is the ids in the order the endpoint returns them
+// (search hits; context sources = pinned → relevant → related).
+// Abstention rule: an abstention question passes on a path when the path returns
+// ZERO query-driven results in its top 10 (search hits; context sources excluding
+// the user's pinned memories, which prepare_context injects into every answer).
+// Knowledge-update questions also report staleAbove: a mustNotId ranked above the
+// first relevant id in the top 10.
 //
-// Required env: AEON_API_KEY
-// Optional env: AEON_BASE_URL (default http://localhost:3000)
+// Usage (from apps/web):
+//   npm run eval:retrieval                               # markdown report to stdout
+//   npm run eval:retrieval -- --json > eval/out.json     # full JSON (per-question ranks)
+//   node scripts/eval-retrieval.mjs --paths search,context --only ku01,tm03 --delay 400
+//   node scripts/eval-retrieval.mjs --out eval/run.json      # save JSON; later: --render eval/run.json (offline)
+//   node scripts/eval-retrieval.mjs --help
+//
+// Env: AEON_API_KEY (falls back to apps/web/.env.local; never printed),
+//      AEON_BASE_URL (falls back to .env.local, then https://aeon.shadow-lab.ai).
+// Rate: sequential with --delay ms between calls (default 350 ≈ 170/min, under the 200 reads/min limit).
+// Labelling/verification helper: scripts/eval-probe.mjs (verify fixture ids before trusting a score).
 // ─────────────────────────────────────────────────────────────────────────
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { resolve, dirname } from 'node:path'
+import { ReadOnlyClient, resolveConfig, makePaths } from './eval-http.mjs'
+import { scoreQuestion, aggregate, aggregateByCategory, CATEGORIES } from './eval-metrics.mjs'
+import { renderMarkdown } from './eval-report.mjs'
 
-// ── Pure metric functions (self-contained; this harness is their only home) ──
+const HELP = `Usage: node scripts/eval-retrieval.mjs [options]
 
-function recallAtK(retrievedIds, relevantIds, k) {
-  if (relevantIds.length === 0) return null // can't score, not 0
-  const topK = new Set(retrievedIds.slice(0, k))
-  return relevantIds.filter((id) => topK.has(id)).length / relevantIds.length
-}
+Read-only retrieval eval over eval/retrieval-fixtures.json (40 labelled owner questions).
 
-function precisionAtK(retrievedIds, relevantIds, k) {
-  const topK = retrievedIds.slice(0, k)
-  if (topK.length === 0) return 0
-  const rel = new Set(relevantIds)
-  return topK.filter((id) => rel.has(id)).length / topK.length
-}
+Options:
+  --paths <list>       comma list of: search, context, context-nopin   (default: all)
+  --only <ids>         comma list of fixture ids to run (e.g. ku01,tm03)
+  --budget <n>         context budgetTokens (default 4000)
+  --maxSources <n>     context maxSources (default 15)
+  --delay <ms>         pause between HTTP calls (default 350)
+  --fixtures <path>    alternative fixtures file
+  --json               print JSON (config, per-question results, aggregates) instead of markdown
+  --out <file>         also write the JSON report to <file> (e.g. eval/baseline-0910.json)
+  --render <file>      re-render markdown from a saved JSON report (no network)
+  --help                this text
 
-function reciprocalRank(retrievedIds, relevantIds) {
-  const rel = new Set(relevantIds)
-  for (let i = 0; i < retrievedIds.length; i++) {
-    if (rel.has(retrievedIds[i])) return 1 / (i + 1)
+Metrics per path and per category: recall@5, recall@10, MRR, hit@1 (also hit@5, hit@10).
+Abstention passes when a path returns no query-driven results (pinned context excluded).
+Env: AEON_API_KEY, AEON_BASE_URL (both fall back to apps/web/.env.local).`
+
+function parseArgs(argv) {
+  const get = (name, def) => {
+    const i = argv.indexOf(`--${name}`)
+    return i !== -1 && argv[i + 1] !== undefined ? argv[i + 1] : def
   }
-  return 0
-}
-
-function avg(nums) {
-  if (nums.length === 0) return 0
-  return nums.reduce((s, v) => s + v, 0) / nums.length
-}
-
-// ── CLI flags ──────────────────────────────────────────────────────────────
-
-const args = process.argv.slice(2)
-function flag(name, def) {
-  const i = args.indexOf(`--${name}`)
-  return i !== -1 ? args[i + 1] : def
-}
-const K = parseInt(flag('k', '10'), 10)
-const BUDGET = parseInt(flag('budget', '4000'), 10)
-const MAX_SOURCES = parseInt(flag('maxSources', '15'), 10)
-const JSON_OUTPUT = args.includes('--json')
-
-// ── Config ─────────────────────────────────────────────────────────────────
-
-const API_KEY = process.env.AEON_API_KEY
-const BASE_URL = (process.env.AEON_BASE_URL ?? 'http://localhost:3000').replace(/\/$/, '')
-
-if (!API_KEY) {
-  console.error('ERROR: AEON_API_KEY env var is required.')
-  process.exit(1)
-}
-
-// ── Load fixtures ──────────────────────────────────────────────────────────
-
-const __dir = dirname(fileURLToPath(import.meta.url))
-const fixturesPath = resolve(__dir, '../eval/retrieval-fixtures.json')
-
-let fixturesData
-try {
-  fixturesData = JSON.parse(readFileSync(fixturesPath, 'utf8'))
-} catch (err) {
-  console.error(`ERROR: Could not read fixtures at ${fixturesPath}: ${err.message}`)
-  process.exit(1)
-}
-
-const fixtures = fixturesData.fixtures
-if (!Array.isArray(fixtures) || fixtures.length === 0) {
-  console.error('ERROR: fixtures.json must have a non-empty "fixtures" array.')
-  process.exit(1)
-}
-
-// ── Retrieval call ─────────────────────────────────────────────────────────
-
-async function fetchContext(query) {
-  const url = new URL('/api/v1/memories/context', BASE_URL)
-  url.searchParams.set('query', query)
-  url.searchParams.set('budgetTokens', String(BUDGET))
-  url.searchParams.set('maxSources', String(MAX_SOURCES))
-  url.searchParams.set('hops', '1')
-
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${API_KEY}` },
-    signal: AbortSignal.timeout(20_000),
-  })
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`)
+  return {
+    help: argv.includes('--help') || argv.includes('-h'),
+    json: argv.includes('--json'),
+    paths: get('paths', 'search,context,context-nopin').split(',').map((s) => s.trim()).filter(Boolean),
+    only: get('only', '').split(',').map((s) => s.trim()).filter(Boolean),
+    budget: Number(get('budget', '4000')),
+    maxSources: Number(get('maxSources', '15')),
+    delay: Number(get('delay', '350')),
+    out: get('out', ''),
+    render: get('render', ''),
+    fixtures: get('fixtures', resolve(dirname(fileURLToPath(import.meta.url)), '../eval/retrieval-fixtures.json')),
   }
-
-  return res.json()
 }
 
-// ── Main ───────────────────────────────────────────────────────────────────
+function loadFixtures(path, only) {
+  const data = JSON.parse(readFileSync(path, 'utf8'))
+  const all = data.fixtures ?? []
+  const bad = all.filter((f) => !f.id || !CATEGORIES.includes(f.category) || !f.query)
+  if (bad.length) throw new Error(`invalid fixtures: ${bad.map((f) => f.id ?? f.query).join(', ')}`)
+  return only.length ? all.filter((f) => only.includes(f.id)) : all
+}
 
-const results = []
-const scored = [] // only fixtures with non-empty relevantIds
-
-for (const fixture of fixtures) {
-  const { query, relevantIds = [], note = '' } = fixture
-
-  if (!Array.isArray(relevantIds) || relevantIds.length === 0) {
-    if (!JSON_OUTPUT) {
-      console.warn(`[SKIP] "${query}" — relevantIds is empty, cannot score. Fill fixtures.`)
+async function runPath(name, fn, fixtures, log, alwaysOn = new Set()) {
+  const rows = []
+  for (const f of fixtures) {
+    const base = { id: f.id, category: f.category, query: f.query, relevantIds: f.relevantIds ?? [] }
+    try {
+      const results = await fn(f.query)
+      const ranked = results.map((r) => r.id)
+      const candidates = results.filter((r) => r.section !== 'pinned' && !alwaysOn.has(r.id)).map((r) => r.id)
+      rows.push({ ...base, ranked, top: results.slice(0, 10), score: scoreQuestion(f, ranked, candidates) })
+    } catch (err) {
+      rows.push({ ...base, ranked: [], error: err.message, score: null })
     }
-    results.push({ query, note, skipped: true, retrieved: [] })
-    continue
+    log(`  ${name} ${f.id} ${rows.at(-1).error ? 'ERROR' : 'ok'}`)
   }
-
-  let retrieved = []
-  let error = null
-
-  try {
-    const data = await fetchContext(query)
-    retrieved = (data.sources ?? []).map((s) => s.id)
-  } catch (err) {
-    error = err.message
-    if (!JSON_OUTPUT) {
-      console.error(`[ERROR] "${query}": ${err.message}`)
-    }
-    results.push({ query, note, error, retrieved: [], skipped: false })
-    continue
-  }
-
-  const recall = recallAtK(retrieved, relevantIds, K)
-  const precision = precisionAtK(retrieved, relevantIds, K)
-  const rr = reciprocalRank(retrieved, relevantIds)
-  const hasHit = retrieved.slice(0, K).some((id) => relevantIds.includes(id))
-
-  results.push({
-    query,
-    note,
-    skipped: false,
-    retrieved,
-    relevantIds,
-    recall,
-    precision,
-    rr,
-    hasHit,
-    retrievedCount: retrieved.length,
-  })
-  scored.push({ recall, precision, rr, hasHit })
+  return { path: name, rows, overall: aggregate(rows), byCategory: aggregateByCategory(rows) }
 }
 
-// ── Aggregate ──────────────────────────────────────────────────────────────
-
-const aggregate =
-  scored.length === 0
-    ? null
-    : {
-        k: K,
-        queries: fixtures.length,
-        scored: scored.length,
-        recallAtK: avg(scored.map((s) => s.recall ?? 0)),
-        precisionAtK: avg(scored.map((s) => s.precision)),
-        mrr: avg(scored.map((s) => s.rr)),
-        hitRate: scored.filter((s) => s.hasHit).length / scored.length,
-      }
-
-// ── Output ─────────────────────────────────────────────────────────────────
-
-if (JSON_OUTPUT) {
-  console.log(JSON.stringify({ config: { k: K, budget: BUDGET, maxSources: MAX_SOURCES }, results, aggregate }, null, 2))
-  process.exit(0)
-}
-
-// Human-readable table
-const pct = (v) => (v == null ? '   n/a' : `${(v * 100).toFixed(1).padStart(5)}%`)
-const pad = (s, n) => String(s ?? '').slice(0, n).padEnd(n)
-
-console.log()
-console.log(`Kairos Retrieval Eval  (k=${K}, budget=${BUDGET}, maxSources=${MAX_SOURCES})`)
-console.log(`Server: ${BASE_URL}`)
-console.log()
-console.log(
-  `${'Query'.padEnd(45)}  ${'Recall'.padStart(7)}  ${'Prec'.padStart(7)}  ${'RR'.padStart(7)}  Hit`,
-)
-console.log('─'.repeat(75))
-
-for (const r of results) {
-  if (r.skipped) {
-    console.log(`${pad(r.query, 45)}  [SKIP — no relevantIds]`)
-    continue
+async function main() {
+  const opts = parseArgs(process.argv.slice(2))
+  if (opts.help) {
+    process.stdout.write(HELP + '\n')
+    return
   }
-  if (r.error) {
-    console.log(`${pad(r.query, 45)}  [ERROR: ${r.error.slice(0, 30)}]`)
-    continue
+  const fixtures = loadFixtures(opts.fixtures, opts.only)
+  if (opts.render) {
+    process.stdout.write(renderMarkdown(JSON.parse(readFileSync(opts.render, 'utf8')), fixtures) + '\n')
+    return
   }
-  console.log(
-    `${pad(r.query, 45)}  ${pct(r.recall)}  ${pct(r.precision)}  ${pct(r.rr)}  ${r.hasHit ? 'yes' : ' no'}`,
-  )
+  const cfg = resolveConfig()
+  if (!cfg.apiKey) {
+    process.stderr.write('ERROR: AEON_API_KEY missing (env or apps/web/.env.local).\n')
+    process.exit(1)
+  }
+  const client = new ReadOnlyClient({ ...cfg, delayMs: opts.delay })
+  const available = makePaths(client, { k: 10, budget: opts.budget, maxSources: opts.maxSources })
+  const unknown = opts.paths.filter((p) => !available[p])
+  if (unknown.length) throw new Error(`unknown path(s): ${unknown.join(', ')}`)
+
+  const log = (s) => process.stderr.write(s + '\n')
+  const started = new Date().toISOString()
+  const pinned = opts.paths.some((p) => p.startsWith('context')) ? await client.pinnedIds() : new Set()
+  const relevantPinned = [...new Set(fixtures.flatMap((f) => f.relevantIds ?? []))].filter((id) => pinned.has(id))
+  const paths = []
+  for (const p of opts.paths) {
+    paths.push(await runPath(p, available[p], fixtures, log, p === 'context' ? pinned : new Set()))
+  }
+
+  const report = {
+    config: {
+      baseUrl: cfg.baseUrl, started, budget: opts.budget, maxSources: opts.maxSources, questions: fixtures.length,
+      calls: client.calls, pinnedCount: pinned.size, relevantPinned,
+    },
+    paths,
+  }
+  if (opts.out) {
+    writeFileSync(opts.out, JSON.stringify(report, null, 2) + '\n')
+    log(`JSON written to ${opts.out}`)
+  }
+  process.stdout.write(opts.json ? JSON.stringify(report, null, 2) + '\n' : renderMarkdown(report, fixtures) + '\n')
 }
 
-console.log('─'.repeat(75))
-
-if (!aggregate) {
-  console.log('No scored queries — populate relevantIds in eval/retrieval-fixtures.json.')
-} else {
-  console.log(
-    `${'AGGREGATE'.padEnd(45)}  ${pct(aggregate.recallAtK)}  ${pct(aggregate.precisionAtK)}  ${pct(aggregate.mrr)}  ${pct(aggregate.hitRate)}`,
-  )
-  console.log()
-  console.log(
-    `Scored ${aggregate.scored}/${aggregate.queries} queries.  MRR=${(aggregate.mrr * 100).toFixed(1)}%  Hit-rate=${(aggregate.hitRate * 100).toFixed(1)}%`,
-  )
-}
-console.log()
+main().catch((err) => {
+  process.stderr.write(`ERROR: ${err.message}\n`)
+  process.exit(1)
+})
