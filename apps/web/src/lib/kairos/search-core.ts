@@ -211,8 +211,12 @@ export async function searchCore(userId: string, opts: SearchCoreOptions): Promi
 
     const distance = sql`${memories.embedding} <=> ${toVectorLiteral(qVec)}::vector`
     // SET LOCAL inside the txn: HNSW recall bound that auto-reverts on commit.
+    // Iterative scan (pgvector ≥0.8): keep walking the index until enough rows
+    // pass the filters — ~60% of vectors are machine rows the stream filter
+    // drops, and a single ef_search pass could leave nothing.
     const vecRows: CoreRow[] = await db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL hnsw.ef_search = 100`)
+      await tx.execute(sql`SET LOCAL hnsw.iterative_scan = strict_order`)
       return tx
         .select(CORE_COLUMNS)
         .from(memories)
