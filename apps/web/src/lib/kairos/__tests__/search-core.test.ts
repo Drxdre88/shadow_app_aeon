@@ -124,7 +124,7 @@ describe('searchCore — scope and filters', () => {
 
   it('returns nothing (and runs no query) below the minimum query length', async () => {
     const out = await searchCore('user-1', { query: 'ab', limit: 5 })
-    expect(out).toEqual({ hits: [], mode: 'none', reranked: false, candidates: 0 })
+    expect(out).toEqual({ hits: [], mode: 'none', reranked: false, candidates: 0, topRelevance: null })
     expect(ftsWhere).toHaveLength(0)
 
     await searchCore('user-1', { query: 'ab', limit: 5, minQueryChars: 2 })
@@ -151,7 +151,7 @@ describe('searchCore — ranking with mocked legs', () => {
 
     const out = await searchCore('user-1', { query: 'launch plan', limit: 5 })
 
-    expect(out).toMatchObject({ mode: 'hybrid', reranked: false, candidates: 2 })
+    expect(out).toMatchObject({ mode: 'hybrid', reranked: false, candidates: 2, topRelevance: null })
     // A is in both legs (higher RRF) but C's standing 0.9 vs 0.1 wins.
     expect(out.hits.map((h) => h.row.id)).toEqual([C, A])
   })
@@ -175,6 +175,8 @@ describe('searchCore — ranking with mocked legs', () => {
     // Highest rerank relevance (last row) leads after the blend.
     expect(out.hits[0].row.id).toBe(rows[5].id)
     expect(out.hits[0].relevance).toBeCloseTo(0.6)
+    // Confidence signal: the best rerank relevance in the pool.
+    expect(out.topRelevance).toBeCloseTo(0.6)
   })
 
   it('rows past the rerank pool keep their fused order after the reranked head', async () => {

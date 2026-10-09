@@ -1,6 +1,7 @@
 import { exactFilterConditions, searchMemoriesFts } from '@/lib/data/memories-search'
 import type { SearchMemoriesInput } from '@/lib/data/validators'
 import { MACHINE_STREAMS, REAL_MEMORY_STREAMS, searchCore, type CoreRow } from './search-core'
+import { assessConfidence, type RetrievalConfidence } from './retrieval-confidence'
 
 // ─────────────────────────────────────────────────────────────────────────
 // search_memories (MCP tool + REST GET /api/v1/memories/search) over the
@@ -22,10 +23,15 @@ const SEARCH_RERANK_POOL_MAX = 40
 const SEARCH_RERANK_CHARS = 4000
 const EXCERPT_CHARS = 200
 
-export interface SearchRetrieval {
+// confidence/lowConfidence: see retrieval-confidence.ts. Hits are never
+// dropped on low confidence (the eval showed no clean floor); null/false off
+// the reranked path.
+export interface SearchRetrieval extends RetrievalConfidence {
   mode: 'hybrid' | 'fts' | 'browse' | 'none'
   reranked: boolean
 }
+
+const NO_SIGNAL = assessConfidence(null)
 
 function liftsStreamDefault(input: SearchMemoriesInput): boolean {
   return Boolean(input.includeMachine || input.type || input.source)
@@ -73,7 +79,7 @@ export async function searchMemoriesHybrid(userId: string, input: SearchMemories
     return {
       hits: browse.hits.map((h) => ({ ...h, score: Number(h.rank) || 0 })),
       total: browse.total,
-      retrieval: { mode: 'browse', reranked: false } as SearchRetrieval,
+      retrieval: { mode: 'browse', reranked: false, ...NO_SIGNAL } as SearchRetrieval,
     }
   }
 
@@ -82,7 +88,7 @@ export async function searchMemoriesHybrid(userId: string, input: SearchMemories
   // when to stop. total is capped there and hasMore says whether to page on.
   const window = Math.min(input.limit + input.offset, HYBRID_MAX_WINDOW)
   if (input.offset >= HYBRID_MAX_WINDOW) {
-    return { hits: [], total: HYBRID_MAX_WINDOW, hasMore: false, retrieval: { mode: 'hybrid', reranked: false } as SearchRetrieval }
+    return { hits: [], total: HYBRID_MAX_WINDOW, hasMore: false, retrieval: { mode: 'hybrid', reranked: false, ...NO_SIGNAL } as SearchRetrieval }
   }
   const core = await searchCore(userId, {
     query: input.query,
@@ -101,7 +107,7 @@ export async function searchMemoriesHybrid(userId: string, input: SearchMemories
     hits: core.hits.slice(input.offset).map((h) => toHit(h.row, h.score)),
     total,
     hasMore: window < total,
-    retrieval: { mode: core.mode, reranked: core.reranked } as SearchRetrieval,
+    retrieval: { mode: core.mode, reranked: core.reranked, ...assessConfidence(core.topRelevance) } as SearchRetrieval,
   }
 }
 

@@ -77,7 +77,13 @@ export class ReadOnlyClient {
 
   async search(query, limit) {
     const data = await this.get('/api/v1/memories/search', { q: query, limit })
-    return (data.hits ?? []).map((h) => ({ id: h.id, title: h.title, createdAt: h.createdAt, rank: h.rank }))
+    const r = data.retrieval ?? {}
+    // Score inputs captured so confidence floors can be tuned from saved runs.
+    return (data.hits ?? []).map((h) => ({
+      id: h.id, title: h.title, createdAt: h.createdAt, updatedAt: h.updatedAt, rank: h.rank,
+      score: h.score, standing: h.standing ?? null, confidence: h.confidence ?? null, pinned: h.pinned,
+      mode: r.mode, reranked: r.reranked, retrievalConfidence: r.confidence, lowConfidence: r.lowConfidence,
+    }))
   }
 
   async context(query, { budget = 4000, maxSources = 15, includePinned, includeToday } = {}) {

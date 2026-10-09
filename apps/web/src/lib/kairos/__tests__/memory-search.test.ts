@@ -73,13 +73,13 @@ describe('searchMemoriesHybrid', () => {
         { row: coreRow('m1', { snippet: '<b>Telegram</b> morning' }), score: 0.9, relevance: 0.7 },
         { row: coreRow('m2'), score: 0.5, relevance: 0.4 },
       ],
-      mode: 'hybrid', reranked: true, candidates: 7,
+      mode: 'hybrid', reranked: true, candidates: 7, topRelevance: 0.82,
     })
 
     const out = await searchMemoriesHybrid(USER, parse({ query: 'telegram morning' }))
 
     expect(out.total).toBe(7)
-    expect(out.retrieval).toEqual({ mode: 'hybrid', reranked: true })
+    expect(out.retrieval).toEqual({ mode: 'hybrid', reranked: true, confidence: 0.82, lowConfidence: false })
     expect(out.hits[0]).toMatchObject({
       id: 'm1', title: 't-m1', type: 'note', source: 'claude', pinned: false, confidence: 0.6,
       streamClass: 'idea', dominionId: 'dom-1', rank: 0.9, score: 0.9, snippet: '<b>Telegram</b> morning',
@@ -87,6 +87,29 @@ describe('searchMemoriesHybrid', () => {
     expect(out.hits[0]).not.toHaveProperty('bodyMd')
     // Vector-only hit: no ts_headline, so a plain excerpt stands in.
     expect(out.hits[1].snippet).toBe('A long body about Telegram morning messages.')
+  })
+
+  it('a weak best match keeps its hits but flags lowConfidence', async () => {
+    mocks.searchCore.mockResolvedValue({
+      hits: [{ row: coreRow('w1'), score: 0.4, relevance: 0.39 }],
+      mode: 'hybrid', reranked: true, candidates: 1, topRelevance: 0.393,
+    })
+
+    const out = await searchMemoriesHybrid(USER, parse({ query: 'tokyo office lease renewal' }))
+
+    expect(out.hits.map((h) => h.id)).toEqual(['w1'])
+    expect(out.retrieval).toEqual({ mode: 'hybrid', reranked: true, confidence: 0.393, lowConfidence: true })
+  })
+
+  it('without rerank there is no calibrated signal: confidence null, never flagged', async () => {
+    mocks.searchCore.mockResolvedValue({
+      hits: [{ row: coreRow('f1'), score: 0.02, relevance: 0.016 }],
+      mode: 'fts', reranked: false, candidates: 1, topRelevance: null,
+    })
+
+    const out = await searchMemoriesHybrid(USER, parse({ query: 'aeon deploy' }))
+
+    expect(out.retrieval).toMatchObject({ confidence: null, lowConfidence: false })
   })
 
   it('pages with offset over the ranked window', async () => {
@@ -121,7 +144,7 @@ describe('searchMemoriesHybrid', () => {
 
     expect(mocks.searchCore).not.toHaveBeenCalled()
     expect(mocks.searchMemoriesFts).toHaveBeenCalledWith(USER, expect.any(Object), { excludeStreams: MACHINE_STREAMS })
-    expect(out).toMatchObject({ total: 1, retrieval: { mode: 'browse', reranked: false } })
+    expect(out).toMatchObject({ total: 1, retrieval: { mode: 'browse', reranked: false, confidence: null, lowConfidence: false } })
     expect(out.hits[0]).toMatchObject({ id: 'x', score: 0 })
   })
 })
