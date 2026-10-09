@@ -16,10 +16,15 @@
 // (search hits; context sources = relevant → pinned → related since the 09/10 ordering change;
 // earlier saved runs were pinned → relevant → related).
 // Abstention rule: an abstention question passes on a path when the path returns
-// ZERO query-driven results in its top 10 (search hits; context sources excluding
-// the user's pinned memories, which prepare_context injects into every answer).
+// ZERO query-driven results in its top 10 (rule 'empty': search hits; context sources excluding
+// the user's pinned memories, which prepare_context injects into every answer), or when the
+// endpoint flags its best match as weak (rule 'lowConfidence': retrieval.lowConfidence === true,
+// captured from both search and context). The passing rule is reported per path.
 // Knowledge-update questions also report staleAbove: a mustNotId ranked above the
 // first relevant id in the top 10.
+// Provenance: each hit/source may carry `via` ('search' | 'link' | 'signpost'; absent = 'search');
+// the report counts relevant top-10 hits per via so graph/signpost widening can be credited.
+// --expand on|off sends expand=true|false to both endpoints (recorded in report.config.expand).
 //
 // Usage (from apps/web):
 //   npm run eval:retrieval                               # markdown report to stdout
@@ -43,7 +48,7 @@ import { renderMarkdown } from './eval-report.mjs'
 
 const HELP = `Usage: node scripts/eval-retrieval.mjs [options]
 
-Read-only retrieval eval over eval/retrieval-fixtures.json (40 labelled owner questions).
+Read-only retrieval eval over eval/retrieval-fixtures.json (100 labelled owner questions, v3).
 
 Options:
   --paths <list>       comma list of: search, context, context-nopin   (default: all)
@@ -51,6 +56,7 @@ Options:
   --budget <n>         context budgetTokens (default 4000)
   --maxSources <n>     context maxSources (default 15)
   --delay <ms>         pause between HTTP calls (default 350)
+  --expand on|off      send expand=true|false to search and context (graph/signpost pool widening); omitted by default
   --fixtures <path>    alternative fixtures file
   --json               print JSON (config, per-question results, aggregates) instead of markdown
   --out <file>         also write the JSON report to <file> (e.g. eval/baseline-0910.json)
@@ -58,8 +64,16 @@ Options:
   --help                this text
 
 Metrics per path and per category: recall@5, recall@10, MRR, hit@1 (also hit@5, hit@10).
-Abstention passes when a path returns no query-driven results (pinned context excluded).
+Abstention passes when a path returns no query-driven results (pinned context excluded) or flags retrieval.lowConfidence.
+Relevant hits are also counted by how they arrived (via: search | link | signpost; absent = search).
 Env: AEON_API_KEY, AEON_BASE_URL (both fall back to apps/web/.env.local).`
+
+function parseExpand(raw) {
+  if (raw === undefined || raw === '') return null
+  if (raw === 'on') return true
+  if (raw === 'off') return false
+  throw new Error(`--expand must be on or off (got ${raw})`)
+}
 
 function parseArgs(argv) {
   const get = (name, def) => {
@@ -74,6 +88,7 @@ function parseArgs(argv) {
     budget: Number(get('budget', '4000')),
     maxSources: Number(get('maxSources', '15')),
     delay: Number(get('delay', '350')),
+    expand: parseExpand(get('expand', undefined)),
     out: get('out', ''),
     render: get('render', ''),
     fixtures: get('fixtures', resolve(dirname(fileURLToPath(import.meta.url)), '../eval/retrieval-fixtures.json')),
@@ -93,10 +108,12 @@ async function runPath(name, fn, fixtures, log, alwaysOn = new Set()) {
   for (const f of fixtures) {
     const base = { id: f.id, category: f.category, query: f.query, relevantIds: f.relevantIds ?? [] }
     try {
-      const results = await fn(f.query)
+      const { results, retrieval } = await fn(f.query)
       const ranked = results.map((r) => r.id)
+      const via = results.map((r) => r.via ?? 'search')
       const candidates = results.filter((r) => r.section !== 'pinned' && !alwaysOn.has(r.id)).map((r) => r.id)
-      rows.push({ ...base, ranked, top: results.slice(0, 10), score: scoreQuestion(f, ranked, candidates) })
+      const score = scoreQuestion(f, ranked, candidates, { lowConfidence: retrieval?.lowConfidence, via })
+      rows.push({ ...base, ranked, retrieval, top: results.slice(0, 10), score })
     } catch (err) {
       rows.push({ ...base, ranked: [], error: err.message, score: null })
     }
@@ -122,7 +139,7 @@ async function main() {
     process.exit(1)
   }
   const client = new ReadOnlyClient({ ...cfg, delayMs: opts.delay })
-  const available = makePaths(client, { k: 10, budget: opts.budget, maxSources: opts.maxSources })
+  const available = makePaths(client, { k: 10, budget: opts.budget, maxSources: opts.maxSources, expand: opts.expand })
   const unknown = opts.paths.filter((p) => !available[p])
   if (unknown.length) throw new Error(`unknown path(s): ${unknown.join(', ')}`)
 
@@ -138,7 +155,7 @@ async function main() {
   const report = {
     config: {
       baseUrl: cfg.baseUrl, started, budget: opts.budget, maxSources: opts.maxSources, questions: fixtures.length,
-      calls: client.calls, pinnedCount: pinned.size, relevantPinned,
+      expand: opts.expand, calls: client.calls, pinnedCount: pinned.size, relevantPinned,
     },
     paths,
   }

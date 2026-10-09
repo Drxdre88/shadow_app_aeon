@@ -75,18 +75,19 @@ export class ReadOnlyClient {
     throw new Error(`gave up after retries: ${url.pathname}`)
   }
 
-  async search(query, limit) {
-    const data = await this.get('/api/v1/memories/search', { q: query, limit })
+  async search(query, limit, { expand } = {}) {
+    const data = await this.get('/api/v1/memories/search', { q: query, limit, expand })
     const r = data.retrieval ?? {}
     // Score inputs captured so confidence floors can be tuned from saved runs.
-    return (data.hits ?? []).map((h) => ({
+    const results = (data.hits ?? []).map((h) => ({
       id: h.id, title: h.title, createdAt: h.createdAt, updatedAt: h.updatedAt, rank: h.rank,
       score: h.score, standing: h.standing ?? null, confidence: h.confidence ?? null, pinned: h.pinned,
-      mode: r.mode, reranked: r.reranked, retrievalConfidence: r.confidence, lowConfidence: r.lowConfidence,
+      via: h.via ?? 'search',
     }))
+    return { results, retrieval: data.retrieval ?? null, mode: r.mode }
   }
 
-  async context(query, { budget = 4000, maxSources = 15, includePinned, includeToday } = {}) {
+  async context(query, { budget = 4000, maxSources = 15, includePinned, includeToday, expand } = {}) {
     const data = await this.get('/api/v1/memories/context', {
       query,
       budgetTokens: budget,
@@ -94,8 +95,12 @@ export class ReadOnlyClient {
       hops: 1,
       includePinned: includePinned === false ? 'false' : undefined,
       includeToday: includeToday === false ? 'false' : undefined,
+      expand,
     })
-    return (data.sources ?? []).map((s) => ({ id: s.id, title: s.title, section: s.section, score: s.score }))
+    const results = (data.sources ?? []).map((s) => ({
+      id: s.id, title: s.title, section: s.section, score: s.score, via: s.via ?? 'search',
+    }))
+    return { results, retrieval: data.retrieval ?? null }
   }
 
   async memory(id) {
@@ -109,11 +114,13 @@ export class ReadOnlyClient {
   }
 }
 
+// Each adapter returns { results, retrieval }. opts.expand: true/false sends expand=true|false; undefined omits it.
 export function makePaths(client, opts) {
+  const expand = opts.expand === undefined || opts.expand === null ? undefined : String(Boolean(opts.expand))
+  const ctx = { budget: opts.budget, maxSources: opts.maxSources, expand }
   return {
-    search: (q) => client.search(q, Math.max(opts.k, 10)),
-    context: (q) => client.context(q, { budget: opts.budget, maxSources: opts.maxSources }),
-    'context-nopin': (q) =>
-      client.context(q, { budget: opts.budget, maxSources: opts.maxSources, includePinned: false, includeToday: false }),
+    search: (q) => client.search(q, Math.max(opts.k, 10), { expand }),
+    context: (q) => client.context(q, ctx),
+    'context-nopin': (q) => client.context(q, { ...ctx, includePinned: false, includeToday: false }),
   }
 }
