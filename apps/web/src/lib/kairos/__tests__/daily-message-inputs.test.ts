@@ -250,7 +250,7 @@ describe('idea of the day input', () => {
     const inputs = await gatherDailyMessageInputs(USER, NOW)
     expect(listSurvivorsSince).toHaveBeenCalledWith(USER, new Date(NOW.getTime() - 24 * 3600_000), 3)
     expect(weeklyIdeaDiversity).toHaveBeenCalledWith(USER, NOW)
-    expect(inputs.idea).toEqual({ title: 'Idea a', claim: 'Claim a', survivedBecause: 'beat the field a', othersWaiting: 1 })
+    expect(inputs.idea).toEqual({ id: 'a', title: 'Idea a', claim: 'Claim a', survivedBecause: 'beat the field a', othersWaiting: 1 })
     expect(inputs.ideaDiversityAlarm).toBe(true)
     expect(inputs.failed).toEqual([])
   })

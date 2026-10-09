@@ -184,6 +184,14 @@ describe('parseReplyToAsk', () => {
     expect(parseReplyToAsk('fine by me', quoted, [12])).toEqual({ answers: [], skips: [] })
   })
 
+  it.each([
+    ['an idea line', '**Morning**\n💡 Idea: Publish-lag alarms — Keep or Drop below.\nQ12 · What was it for?'],
+    ['the overflow pointer', '**Morning**\nQ12 · What was it for?\n+2 more in your inbox.'],
+    ['the full-brief pointer', '**Morning**\nQ12 · What was it for?\nThe full brief is in your inbox.'],
+  ])('a reply to the 06:00 brief with %s is never taken as an answer', (_label, quoted) => {
+    expect(parseReplyToAsk('keep the idea, and the goal looks good', quoted, [12, 13])).toEqual({ answers: [], skips: [] })
+  })
+
   it.each(['R14 right', 'D3 wrong', 'void R2', 'drop P1', 'P1 by 12/10', 'cancel A3', 'C2: his words', 'ok\nR14 right'])(
     'a reply body %j that reads as an owner command is left for its router',
     (body) => {

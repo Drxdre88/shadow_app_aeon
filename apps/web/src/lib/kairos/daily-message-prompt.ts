@@ -1,74 +1,16 @@
 import { extractJsonBlock } from './_prompt-utils'
 import { TODAY_DAILY_SECTION_TITLE, tailBlocks, todayPromptLines, type DailyTailInputs } from './daily-message-today'
+import { londonDate } from './daily-message-time'
 
 // ─────────────────────────────────────────────────────────────────────────
-// Kairos Daily Message (docs/kairos/34 §3) — the pure half: London-time
-// helpers, the shared model-output guard + "What I now believe" block (also
-// used by the retiring evening digest), the compose prompt (identical for the
-// paid key and the Max routine's thinking job) and the deterministic fallback.
-// No DB, no network.
+// Kairos Daily Message (docs/kairos/34 §3) — the pure half: the shared
+// model-output guard + "What I now believe" block (also used by the retiring
+// evening digest), the compose prompt (identical for the paid key and the Max
+// routine's thinking job) and the deterministic fallback. London-time helpers
+// live in daily-message-time.ts (re-exported here). No DB, no network.
 // ─────────────────────────────────────────────────────────────────────────
 
-// ── London time ──────────────────────────────────────────────────────────
-
-const LONDON_TZ = 'Europe/London'
-const londonFormat = new Intl.DateTimeFormat('en-GB', {
-  timeZone: LONDON_TZ,
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  weekday: 'short',
-  hourCycle: 'h23',
-})
-
-interface LondonParts { date: string; hour: number; minute: number; weekday: string }
-
-function londonParts(now: Date): LondonParts {
-  const parts: Record<string, string> = {}
-  for (const p of londonFormat.formatToParts(now)) parts[p.type] = p.value
-  return {
-    date: `${parts.year}-${parts.month}-${parts.day}`,
-    hour: Number(parts.hour) % 24,
-    minute: Number(parts.minute),
-    weekday: parts.weekday,
-  }
-}
-
-export function londonDate(now: Date): string {
-  return londonParts(now).date
-}
-
-export function isLondonHour(now: Date, hour: number): boolean {
-  return londonParts(now).hour === hour
-}
-
-export function isLondonMonday(now: Date): boolean {
-  return londonParts(now).weekday === 'Mon'
-}
-
-export const DAILY_MESSAGE_HOUR = 6
-
-// The instant London reads `hour`:00 on `date` (London is UTC+0 or UTC+1, and
-// clocks change at 01:00Z, so one of the two candidates always matches).
-export function londonInstant(date: string, hour: number = DAILY_MESSAGE_HOUR): Date {
-  for (const offsetHours of [0, 1]) {
-    const candidate = new Date(`${date}T00:00:00.000Z`)
-    candidate.setUTCHours(hour - offsetHours, 0, 0, 0)
-    const p = londonParts(candidate)
-    if (p.date === date && p.hour === hour && p.minute === 0) return candidate
-  }
-  throw new Error(`londonInstant: no ${hour}:00 London on ${date}`)
-}
-
-// The previous calendar date (board-day pages are dated by the 23:00Z
-// project-snapshot run, i.e. the day before the morning they are read).
-export function previousDate(date: string): string {
-  const d = new Date(`${date}T12:00:00.000Z`)
-  d.setUTCDate(d.getUTCDate() - 1)
-  return d.toISOString().slice(0, 10)
-}
+export { DAILY_MESSAGE_HOUR, isLondonHour, isLondonMonday, londonDate, londonInstant, previousDate } from './daily-message-time'
 
 // ── Shared guard (digest + daily message) ────────────────────────────────
 
@@ -144,7 +86,8 @@ export interface DriftDigest { alert: boolean; summary: string | null; measured?
 // The overnight tournament's top survivor (docs/kairos/35) + how many other
 // survivors from the same window are waiting in the inbox.
 export interface OpenAskDigest { seq: number; question: string; askedAt: string }
-export interface IdeaOfTheDay { title: string; claim: string; survivedBecause: string | null; othersWaiting: number }
+// `id` (the inbox proposal) carries the Telegram Keep / Drop buttons.
+export interface IdeaOfTheDay { id?: string; title: string; claim: string; survivedBecause: string | null; othersWaiting: number }
 // Kairos promises (P-numbered) — rendered as one code-built line at send time.
 export interface PromiseDigest { seq: number; outcome: string; dueDate: string; status: 'open' | 'kept' | 'dropped' | 'lapsed' }
 export interface PromisesDigest { open: PromiseDigest[]; closedSince: PromiseDigest[] }
@@ -189,9 +132,13 @@ export const DAILY_MESSAGE_SYSTEM_PROMPT = [
   '',
   'Reply with ONLY a JSON object: {"message": "<the text>"} (one ```json fenced block is fine). No commentary.',
   '',
-  'The message: plain text with light markdown, ≤1000 characters. Short bold section labels are allowed',
-  '(e.g. **Today**, **Yesterday**, **Thinking**) — at most 4 of them. Never use # headings, links, URLs, tables,',
-  'or a title/greeting line (the delivery layer adds its own header). Short flat lines; at most 2 emoji.',
+  'The message: plain text with light markdown, ≤1000 characters. It is the full brief kept in the inbox;',
+  'Telegram gets a short version built from its first and last lines plus the items awaiting a verdict.',
+  '- The FIRST line is the headline: one bold sentence (≤100 characters) naming the single thing that matters most today.',
+  '- The LAST line is the look-ahead: "Next: …" (≤140 characters) — the one thing coming up that the owner should know.',
+  'Between them, short bold section labels are allowed (e.g. **Today**, **Yesterday**, **Thinking**) — at most 4.',
+  'Never use # headings, links, URLs, tables, or a greeting line (the delivery layer adds its own header).',
+  'Short flat lines, never a wall of bullets; at most 2 emoji.',
   '',
   '── RULES ──',
   '',
@@ -206,6 +153,7 @@ export const DAILY_MESSAGE_SYSTEM_PROMPT = [
   '- Do NOT list the promoted beliefs — the delivery layer appends them deterministically.',
   '- An IDEA OF THE DAY, when present, gets one short line in the thinking part: the idea and why it survived;',
   '  mention other waiting ideas only as a count, and the samey-ideas warning only if given. It is a proposal, not a fact.',
+  '  The delivery layer adds Keep / Drop buttons for it — never ask the owner to reply about the idea.',
   '- A Conscience block, when present, holds standing principles and beliefs: check the message against it, but it is',
   '  not news — never report its contents as something that changed.',
 ].join('\n')

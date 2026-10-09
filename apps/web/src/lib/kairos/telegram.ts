@@ -291,6 +291,19 @@ export async function editMessageText(
   })
 }
 
+// Swaps only the buttons, so the message's formatted text stays as sent.
+export async function editMessageReplyMarkup(
+  chatId: string | number,
+  messageId: number,
+  inlineKeyboard: InlineKeyboardButton[][],
+): Promise<void> {
+  await callTelegram('editMessageReplyMarkup', {
+    chat_id: chatId,
+    message_id: messageId,
+    reply_markup: { inline_keyboard: inlineKeyboard },
+  })
+}
+
 // ── Proposal decisions (Phase 2, Track C) ──────────────────────────────────
 // Callback payload p1:<a|v|w>:<uuid> — approve, veto, veto + why. Versioned
 // so a future layout can coexist with buttons already sitting in the chat.
@@ -367,14 +380,22 @@ function aeonKairosUrl(): string | null {
   return `${base.replace(/\/$/, '')}/vorath`
 }
 
+// One "Open in Aeon" row, or none when no app URL is configured.
+export function openInAeonKeyboard(): InlineKeyboardButton[][] {
+  const url = aeonKairosUrl()
+  return url ? [[{ text: 'Open in Aeon', url }]] : []
+}
+
 // /kairos/speak fan-out. Returns true only when the Telegram delivery
 // actually happened; false when the channel isn't configured. Throws on
 // Telegram API failure — the speak route catches and degrades.
+// dismissButton: false drops the notify kind's self-Dismiss row.
 export async function sendKairosSpeak(input: {
   memoryId: string
   title: string
   message: string
   kind: 'notify' | 'question'; keyboard?: InlineKeyboardButton[][]
+  dismissButton?: boolean
 }): Promise<boolean> {
   const chatId = process.env.TELEGRAM_OPERATOR_CHAT_ID
   if (!chatId || !process.env.TELEGRAM_BOT_TOKEN) {
@@ -382,11 +403,10 @@ export async function sendKairosSpeak(input: {
     return false
   }
 
-  const url = aeonKairosUrl()
   const inlineKeyboard: InlineKeyboardButton[][] = [...(input.keyboard ?? []), ...(
     input.kind === 'question'
-      ? url ? [[{ text: 'Open in Aeon', url }]] : []
-      : [[{ text: 'Dismiss', callback_data: `dismiss:${input.memoryId}` }]])]
+      ? openInAeonKeyboard()
+      : input.dismissButton === false ? [] : [[{ text: 'Dismiss', callback_data: `dismiss:${input.memoryId}` }]])]
 
   // Split the raw markdown first — HTML tags must never straddle a chunk
   // boundary — then render each chunk. The lower limit leaves headroom for

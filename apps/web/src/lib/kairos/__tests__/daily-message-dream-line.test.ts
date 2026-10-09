@@ -27,6 +27,7 @@ vi.mock('../conscience-context', () => ({ loadConscienceBlock: vi.fn(async () =>
 vi.mock('../promises/check', () => ({ PROMISE_CHECK_CRON: 'promise-check', verifyOpenPromises: vi.fn() }))
 vi.mock('../dreams/flag', () => ({ dreamLineEnabled: vi.fn() }))
 vi.mock('../dreams/line', () => ({ readDreamLine: vi.fn() }))
+vi.mock('@/lib/data/idea-expiry', () => ({ expireStaleIdeaProposals: vi.fn(async () => []) }))
 
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { deliverKairosSpeak } from '../speak'
@@ -70,7 +71,8 @@ describe('daily message dream line', () => {
     const [user, input, opts] = vi.mocked(deliverKairosSpeak).mock.calls[0]
     expect(user).toBe(USER)
     expect(input.message).not.toContain('dreamt')
-    expect(opts).toEqual({ telegramTail: LINE })
+    expect(opts).toMatchObject({ telegramTail: LINE })
+    expect(opts?.telegramText).not.toContain('dreamt')
   })
 
   it('dry run returns the line', async () => {
@@ -78,18 +80,18 @@ describe('daily message dream line', () => {
     expect(deliverKairosSpeak).not.toHaveBeenCalled()
   })
 
-  it('flag off: no lookup, no tail, speak called with two arguments', async () => {
+  it('flag off: no lookup, no Telegram tail', async () => {
     vi.mocked(dreamLineEnabled).mockReturnValue(false)
     expect((await composeDailyMessage(USER, NOW)).dreamLine).toBeNull()
     await runDailyMessageForUser(USER, { now: NOW })
     expect(readDreamLine).not.toHaveBeenCalled()
-    expect(vi.mocked(deliverKairosSpeak).mock.calls[0]).toHaveLength(2)
+    expect(vi.mocked(deliverKairosSpeak).mock.calls[0][2]).not.toHaveProperty('telegramTail')
     expect(await runDailyMessageForUser(USER, { now: NOW, dryRun: true })).not.toHaveProperty('dreamLine')
   })
 
-  it('no line today (off-day / no read): two-argument delivery', async () => {
+  it('no line today (off-day / no read): no Telegram tail', async () => {
     vi.mocked(readDreamLine).mockResolvedValue(null)
     await runDailyMessageForUser(USER, { now: NOW })
-    expect(vi.mocked(deliverKairosSpeak).mock.calls[0]).toHaveLength(2)
+    expect(vi.mocked(deliverKairosSpeak).mock.calls[0][2]).not.toHaveProperty('telegramTail')
   })
 })

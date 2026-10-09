@@ -81,8 +81,15 @@ export interface FanOutSpeakInput {
   opsAlert: boolean
 }
 
-// Telegram-only extras for one fan-out; never stored.
-export type FanOutSpeakOptions = { telegramTail?: string; telegramKeyboard?: InlineKeyboardButton[][] }
+// Telegram-only extras for one fan-out; never stored. telegramText replaces the
+// stored message on Telegram only (the 06:00 short brief); telegramDismiss:
+// false drops the notify self-Dismiss row.
+export type FanOutSpeakOptions = {
+  telegramTail?: string
+  telegramKeyboard?: InlineKeyboardButton[][]
+  telegramText?: string
+  telegramDismiss?: boolean
+}
 
 // opts.telegramTail: Telegram-only text appended to the sent message (the 06:00
 // dream line). Never stored — the inbox capture and the today log see `message`
@@ -91,7 +98,7 @@ export type FanOutSpeakOptions = { telegramTail?: string; telegramKeyboard?: Inl
 export async function deliverKairosSpeak(
   operatorUserId: string,
   input: SpeakInput,
-  opts: { telegramTail?: string } & SpeakMomentOptions = {},
+  opts: Omit<FanOutSpeakOptions, 'telegramKeyboard'> & SpeakMomentOptions = {},
 ): Promise<SpeakOutcome> {
   const { title, kind, urgency, force, opsAlert, digest, externalId } = input
   const message = capSpeakMessage(input.message)
@@ -167,7 +174,7 @@ export async function deliverKairosSpeak(
     })
   if (verdict?.block) return { status: 429, body: { error: 'moment_blocked', reason: verdict.block.reason } }
   // Telegram-only extras are never stored, so a hold would lose them at release: such a send goes out now.
-  const hasTelegramExtras = Boolean(opts.telegramTail?.trim() || opts.telegramKeyboard?.length)
+  const hasTelegramExtras = Boolean(opts.telegramTail?.trim() || opts.telegramKeyboard?.length || opts.telegramText?.trim())
   const hold = verdict?.hold && !hasTelegramExtras ? { heldAt: now.toISOString(), until: verdict.hold.until, reason: verdict.hold.reason } : null
 
   const { memory, created } = await captureMemory(operatorUserId, {
@@ -229,8 +236,10 @@ export async function fanOutSpeak(params: FanOutSpeakInput, opts: FanOutSpeakOpt
   if (!ownsTelegramChat(userId)) return telegram
   const tail = opts.telegramTail?.trim()
   const keyboard = opts.telegramKeyboard?.length ? { keyboard: opts.telegramKeyboard } : {}
+  const dismiss = opts.telegramDismiss === false ? { dismissButton: false } : {}
+  const text = opts.telegramText?.trim() || message
   try {
-    telegram = await sendKairosSpeak({ memoryId, title, message: tail ? `${message}\n\n${tail}` : message, kind, ...keyboard })
+    telegram = await sendKairosSpeak({ memoryId, title, message: tail ? `${text}\n\n${tail}` : text, kind, ...keyboard, ...dismiss })
   } catch (err) {
     console.error('[kairos-speak] telegram fan-out failed', err)
   }

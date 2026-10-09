@@ -53,6 +53,8 @@ export function rowOutcome(row: IdeaRowLike, now: Date, opts: { pendingIgnored?:
   if (idea.outcome === 'accepted') return { signal: 'accepted', by }
   if (idea.outcome === 'dismissed') return { signal: 'dismissed', by: 'operator' }
   const status = str(meta.status) ?? 'pending'
+  // Expired undecided (lib/data/idea-expiry.ts): archived but never an owner dismissal.
+  if (idea.outcome === 'ignored' || status === 'ignored') return { signal: 'ignored', by: null }
   if (status === 'accepted') return { signal: 'accepted', by: 'operator' }
   if (row.archivedAt && (status === 'pending' || status === 'dismissed')) return { signal: 'dismissed', by: 'operator' }
   if (status === 'decayed') return { signal: 'ignored', by: null }

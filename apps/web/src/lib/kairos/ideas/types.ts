@@ -52,6 +52,8 @@ export type NoveltyClass = 'novel' | 'borderline' | 'repeat'
 export type CritiqueVerdict = 'grounded' | 'ungrounded' | 'contradicted'
 export type IdeaStatus = 'survivor' | 'eliminated' | 'repeat'
 export type IdeaOutcome = 'accepted' | 'dismissed'
+// No owner decision within the expiry window: archived, never deleted (lib/data/idea-expiry.ts).
+export const IDEA_EXPIRED_OUTCOME = 'ignored' as const
 
 // Kinds of move a generator direction takes (re-exported by generate-prompt).
 export const IDEA_MOVES = ['stop', 'start', 'combine', 'test', 'simplify'] as const
@@ -160,7 +162,7 @@ export interface IdeaMeta {
   refined: boolean
   // One line: why it survived (survivors) — shown in the inbox and daily message.
   survivedBecause: string | null
-  outcome: IdeaOutcome | null
+  outcome: IdeaOutcome | typeof IDEA_EXPIRED_OUTCOME | null
   outcomeAt: string | null
   atlas?: IdeaAtlasMeta
   bridge?: IdeaBridgeMeta
