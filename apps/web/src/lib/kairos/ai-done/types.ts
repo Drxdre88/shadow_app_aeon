@@ -11,6 +11,7 @@ export const AI_DONE_SETTING = 'kairosAiDone' as const
 export const AI_DONE_COLUMN = 'AI DONE'
 
 export const AI_DONE_MAX_CARDS = 6
+export const AI_DONE_MAX_PICKED_LABELS = 2
 export const AI_DONE_MAX_GROUPS = 4
 export const AI_DONE_MAX_ITEMS = 10
 export const AI_DONE_TITLE_MAX = 60
@@ -37,6 +38,7 @@ const answerCardSchema = z.object({
   title: str,
   description: str.optional().catch(undefined),
   repo: str.optional().catch(undefined),
+  labels: strList.optional().catch([]),
   groups: z.array(answerGroupSchema.nullable().catch(null)).catch([]),
   sessions: strList,
   alreadyOn: str.nullable().optional().catch(null),

@@ -48,22 +48,28 @@ describe('core repos', () => {
 })
 
 describe('gatherAiDone', () => {
-  it('reads today (London) and keeps only core-repo sessions not already on the board, oldest first', async () => {
+  it('reads today (London) and keeps every repo\'s sessions not already on the board, oldest first', async () => {
     const out = await gatherAiDone(USER, NOW)
     expect(listSessionSummariesBetween).toHaveBeenCalledWith(USER, new Date('2026-10-07T23:00:00Z'), NOW)
     expect(findTaskIdsOnBoard).toHaveBeenCalledWith('p-1', ['t-on-board'])
     expect(out?.day).toBe('2026-10-08')
     expect(out?.sessions.map((s) => [s.h, s.id, s.repo, s.dominion])).toEqual([
       ['S1', 'm-0', 'shadow_app_aeon', 'KAIROS'],
-      ['S2', 'm-3', 'shadow_app_triad', 'Shadow Apps'],
+      ['S2', 'm-2', 'shadow_app_swarm', null],
+      ['S3', 'm-3', 'shadow_app_triad', 'Shadow Apps'],
     ])
-    expect(out?.boards).toMatchObject([{ h: 'B1', projectId: 'p-1', sessions: ['S1', 'S2'] }])
+    expect(out?.boards).toMatchObject([{ h: 'B1', projectId: 'p-1', sessions: ['S1', 'S2', 'S3'] }])
   })
 
   it('drops sessions an earlier AI DONE card already cites', async () => {
     vi.mocked(listAiDoneCitedSessionIds).mockResolvedValue(new Set(['m-0']))
     const out = await gatherAiDone(USER, NOW)
-    expect(out?.sessions.map((s) => s.id)).toEqual(['m-3'])
+    expect(out?.sessions.map((s) => s.id)).toEqual(['m-2', 'm-3'])
+  })
+
+  it('skips sessions with no usable repo', async () => {
+    vi.mocked(listSessionSummariesBetween).mockResolvedValueOnce([session('m-9', 'dev_26'), session('m-8', '')])
+    expect(await gatherAiDone(USER, NOW)).toBeNull()
   })
 
   it('gives each board its cards with labels and checklist text, and every title for dedup', async () => {
@@ -81,13 +87,11 @@ describe('gatherAiDone', () => {
     ])
   })
 
-  it('returns null with no switched-on board, no core-repo session, or nothing new for any board', async () => {
+  it('returns null with no switched-on board or nothing new for any board', async () => {
     vi.mocked(listAiDoneBoards).mockResolvedValueOnce([])
     expect(await gatherAiDone(USER, NOW)).toBeNull()
     expect(listSessionSummariesBetween).not.toHaveBeenCalled()
-    vi.mocked(listReposForUser).mockResolvedValueOnce([])
-    expect(await gatherAiDone(USER, NOW)).toBeNull()
-    vi.mocked(listAiDoneCitedSessionIds).mockResolvedValueOnce(new Set(['m-0', 'm-3']))
+    vi.mocked(listAiDoneCitedSessionIds).mockResolvedValueOnce(new Set(['m-0', 'm-2', 'm-3']))
     expect(await gatherAiDone(USER, NOW)).toBeNull()
   })
 })
