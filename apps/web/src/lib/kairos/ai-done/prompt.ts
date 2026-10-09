@@ -35,7 +35,7 @@ export const AI_DONE_SYSTEM_PROMPT = [
   '- Use only work the sessions show. Never invent work, plans or next steps.',
   '- Group several sessions of the same workstream into ONE card. Prefer fewer cards.',
   `- At most ${AI_DONE_MAX_CARDS} cards per board. Cite the S handles each card comes from; only handles listed for that board.`,
-  '- If the work is already on the board (by title or by checklist item), give no card: return it with "alreadyOn" set to that E handle instead.',
+  '- If the work is already on the board or already finished by the owner (by title or checklist item, even worded differently), give no card: return it with "alreadyOn" set to that E or F handle instead. When unsure, treat it as already there.',
   '- "repo" is the repo name of the sessions the card came from, as listed.',
   `- "labels": 1–${AI_DONE_MAX_PICKED_LABELS} names copied exactly from that board's "Labels on this board" list that best fit the card (e.g. Dev, AI, Quant). Never invent a label; give [] if none fits.`,
   '',
@@ -81,6 +81,7 @@ export interface AiDoneJobBoard {
   labels: Array<{ id: string; name: string }>
   titles: string[]
   cards: AiDoneJobBoardCard[]
+  finished?: AiDoneJobBoardCard[]
   sessions: string[]
 }
 
@@ -125,6 +126,8 @@ function boardLines(b: AiDoneJobBoard): string[] {
     `  Labels on this board: ${labels.length ? labels.join(', ') : '(none)'}`,
     '  Cards already on the board:',
     ...(b.cards.length > 0 ? b.cards.map(cardLine) : ['  (none)']),
+    '  Already finished by the owner (his Done column or vault, last 90 days):',
+    ...((b.finished ?? []).length > 0 ? b.finished!.map(cardLine) : ['  (none)']),
   ]
 }
 

@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/db', () => ({ db: {} }))
-vi.mock('@/lib/data/ai-done', () => ({ listAiDoneBoards: vi.fn(), listAiDoneCitedSessionIds: vi.fn(), findTaskIdsOnBoard: vi.fn() }))
+vi.mock('@/lib/data/ai-done', () => ({ listAiDoneBoards: vi.fn(), listAiDoneCitedSessionIds: vi.fn(), findTaskIdsOnBoard: vi.fn(), listAiDoneFinished: vi.fn(async () => []) }))
 vi.mock('@/lib/data/board-feed', () => ({ listChecklistForTasks: vi.fn(async () => []), listLabelNamesForTasks: vi.fn(async () => []) }))
 vi.mock('@/lib/data/card-triage', () => ({ listTriagePool: vi.fn(async () => []) }))
 vi.mock('@/lib/data/dominions', () => ({ listReposForUser: vi.fn(), findDominionsByUser: vi.fn() }))
 vi.mock('@/lib/data/labels', () => ({ findLabels: vi.fn(async () => []) }))
 vi.mock('@/lib/data/repo-memory', () => ({ listSessionSummariesBetween: vi.fn(), listRepoGitDigestsBetween: vi.fn(async () => []) }))
 
-import { findTaskIdsOnBoard, listAiDoneBoards, listAiDoneCitedSessionIds } from '@/lib/data/ai-done'
+import { findTaskIdsOnBoard, listAiDoneBoards, listAiDoneCitedSessionIds, listAiDoneFinished } from '@/lib/data/ai-done'
 import { listChecklistForTasks, listLabelNamesForTasks } from '@/lib/data/board-feed'
 import { listTriagePool } from '@/lib/data/card-triage'
 import { findDominionsByUser, listReposForUser } from '@/lib/data/dominions'
@@ -70,6 +70,20 @@ describe('gatherAiDone', () => {
   it('skips sessions with no usable repo', async () => {
     vi.mocked(listSessionSummariesBetween).mockResolvedValueOnce([session('m-9', 'dev_26'), session('m-8', '')])
     expect(await gatherAiDone(USER, NOW)).toBeNull()
+  })
+
+  it('shows the owner\'s finished work (Done column and vault, 90 days) as F handles and dedups their titles', async () => {
+    vi.mocked(listAiDoneFinished).mockResolvedValueOnce([
+      { title: 'Swarm Data Rebuild', checklist: ['EPEX SFTP'], vaulted: false },
+      { title: 'Paper Researcher', checklist: [], vaulted: true },
+    ])
+    const out = await gatherAiDone(USER, NOW)
+    expect(listAiDoneFinished).toHaveBeenCalledWith('p-1', new Date(NOW.getTime() - 90 * 24 * 60 * 60 * 1000))
+    expect(out?.boards[0]?.finished).toEqual([
+      { h: 'F1', title: 'Swarm Data Rebuild', done: true, labels: [], checklist: ['EPEX SFTP'] },
+      { h: 'F2', title: 'Paper Researcher', done: true, labels: ['vault'], checklist: [] },
+    ])
+    expect(out?.boards[0]?.titles).toEqual(['Swarm Data Rebuild', 'Paper Researcher'])
   })
 
   it('gives each board its cards with labels and checklist text, and every title for dedup', async () => {

@@ -1,4 +1,4 @@
-import { listAiDoneBoards, listAiDoneCitedSessionIds, findTaskIdsOnBoard } from '@/lib/data/ai-done'
+import { findTaskIdsOnBoard, listAiDoneBoards, listAiDoneCitedSessionIds, listAiDoneFinished } from '@/lib/data/ai-done'
 import { listChecklistForTasks, listLabelNamesForTasks } from '@/lib/data/board-feed'
 import { listTriagePool } from '@/lib/data/card-triage'
 import { findDominionsByUser, listReposForUser } from '@/lib/data/dominions'
@@ -18,6 +18,8 @@ import { AI_DONE_MAX_BOARD_CARDS, AI_DONE_MAX_BOARDS, AI_DONE_MAX_SESSIONS } fro
 // plus the board's open and recently done cards for dedup.
 
 const DONE_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000
+const FINISHED_LOOKBACK_MS = 90 * 24 * 60 * 60 * 1000
+const FINISHED_SHOWN = 120
 const DIGEST_LOOKBACK_MS = 24 * 60 * 60 * 1000
 const MAX_DIGESTS = 10
 const POOL_LIMIT = 300
@@ -53,8 +55,11 @@ export function sessionsForBoard<T extends Pick<RepoSessionRow, 'id' | 'taskId'>
 
 interface CoreSession { row: RepoSessionRow; slug: string; dominion: string | null }
 
-async function boardCards(projectId: string, now: Date): Promise<{ titles: string[]; cards: AiDoneJobBoardCard[] }> {
-  const pool = await listTriagePool(projectId, new Date(now.getTime() - DONE_LOOKBACK_MS), POOL_LIMIT)
+async function boardCards(projectId: string, now: Date): Promise<{ titles: string[]; cards: AiDoneJobBoardCard[]; finished: AiDoneJobBoardCard[] }> {
+  const [pool, done] = await Promise.all([
+    listTriagePool(projectId, new Date(now.getTime() - DONE_LOOKBACK_MS), POOL_LIMIT),
+    listAiDoneFinished(projectId, new Date(now.getTime() - FINISHED_LOOKBACK_MS)),
+  ])
   const shown = pool.slice(0, AI_DONE_MAX_BOARD_CARDS)
   const ids = shown.map((c) => c.id)
   const [checklist, labelRows] = await Promise.all([listChecklistForTasks(ids), listLabelNamesForTasks(ids)])
@@ -65,7 +70,14 @@ async function boardCards(projectId: string, now: Date): Promise<{ titles: strin
     labels: labelRows.filter((l) => l.taskId === c.id).map((l) => l.name),
     checklist: checklist.filter((item) => item.taskId === c.id).map((item) => item.title),
   }))
-  return { titles: pool.map((c) => c.name), cards }
+  const finished = done.slice(0, FINISHED_SHOWN).map((f, i) => ({
+    h: `F${i + 1}`,
+    title: f.title,
+    done: true,
+    labels: f.vaulted ? ['vault'] : [],
+    checklist: f.checklist,
+  }))
+  return { titles: [...new Set([...pool.map((c) => c.name), ...done.map((f) => f.title)])], cards, finished }
 }
 
 export async function gatherAiDone(userId: string, now: Date): Promise<AiDoneJobInput | null> {
@@ -110,7 +122,7 @@ export async function gatherAiDone(userId: string, now: Date): Promise<AiDoneJob
 
   const jobBoards: AiDoneJobBoard[] = []
   for (const [i, { board, ids }] of perBoard.entries()) {
-    const [{ titles, cards }, boardLabels] = await Promise.all([boardCards(board.id, now), findLabels(board.id, 200)])
+    const [{ titles, cards, finished }, boardLabels] = await Promise.all([boardCards(board.id, now), findLabels(board.id, 200)])
     jobBoards.push({
       h: `B${i + 1}`,
       projectId: board.id,
@@ -118,6 +130,7 @@ export async function gatherAiDone(userId: string, now: Date): Promise<AiDoneJob
       labels: boardLabels.map((l) => ({ id: l.id, name: l.name })),
       titles,
       cards,
+      finished,
       sessions: used.filter((s) => ids.has(s.row.id)).map((s) => handle.get(s.row.id)!),
     })
   }

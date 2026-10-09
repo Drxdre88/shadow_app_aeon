@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groundAiDone } from '../ground'
+import { groundAiDone, sameWork } from '../ground'
 import { AI_DONE_SYSTEM_PROMPT, buildAiDoneJob, parseAiDoneText, type AiDoneJobInput } from '../prompt'
 import { AI_DONE_MAX_CARDS, aiDoneContextSchema, type AiDoneAnswer, type AiDoneContext } from '../types'
 
@@ -104,6 +104,23 @@ describe('groundAiDone', () => {
     ]), ctx())
     expect(out.boards[0]?.cards.map((c) => c.title)).toEqual(['Triad Polish'])
     expect(out.dropped).toEqual({ cards: 4, alreadyOn: 1, sessions: 1 })
+  })
+
+  it('treats near-identical titles as the same work, but not merely similar ones', () => {
+    expect(sameWork('Shadow Auth', 'shadow auth')).toBe(true)
+    expect(sameWork('Swarm Data Rebuild', 'Swarm Data Rebuild V2')).toBe(true)
+    expect(sameWork('Antares Polish', 'Antares polish - charts')).toBe(true)
+    expect(sameWork('Triad Polish', 'Antares Polish')).toBe(false)
+    expect(sameWork('Relic', 'Relic Launch')).toBe(false)
+    const out = groundAiDone(answer([card({ title: 'Shadow Auth V2', sessions: ['S2'] })]), ctx())
+    expect(out.boards).toEqual([])
+  })
+
+  it('shows finished work under its own heading', () => {
+    const finished = [{ h: 'F1', title: 'Paper Researcher', done: true, labels: ['vault'], checklist: [] }]
+    const { prompt } = buildAiDoneJob({ ...INPUT, boards: [{ ...INPUT.boards[0]!, finished }] })
+    expect(prompt).toContain('Already finished by the owner (his Done column or vault, last 90 days):')
+    expect(prompt).toContain('F1 [done] Paper Researcher — labels: vault')
   })
 
   it('ignores unknown boards and sessions not listed for the board', () => {

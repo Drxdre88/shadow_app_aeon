@@ -133,7 +133,7 @@ describe('writeAiDoneCards', () => {
     ]
   }
 
-  it('creates AI DONE just before Done, shifting Done right, and files a ticked-but-not-done card', async () => {
+  it('creates AI DONE just after Done, shifting later columns right, and files a ticked-but-not-done card', async () => {
     happyPath([{ id: 'c-todo', name: 'Todo', orderIndex: 0 }, { id: 'c-done', name: ' Done ', orderIndex: 1 }])
     h.insertReturning = [[{ id: 'c-ai' }], [{ id: 't-1', name: 'Triad Polish' }]]
     const out = await writeAiDoneCards(input())
@@ -142,10 +142,11 @@ describe('writeAiDoneCards', () => {
     const shift = h.updates.find((u) => u.table === boardColumns)
     expect(shift?.inTx).toBe(true)
     expect(query(shift?.set.orderIndex).sql).toContain('"board_columns"."order_index" + 1')
+    expect(query(shift?.where).sql).toContain('"board_columns"."order_index" >')
     expect(query(shift?.where).params).toEqual([PROJECT, 1])
 
     const column = h.inserts.find((i) => i.table === boardColumns)
-    expect(column?.values).toMatchObject({ projectId: PROJECT, name: 'AI DONE', orderIndex: 1 })
+    expect(column?.values).toMatchObject({ projectId: PROJECT, name: 'AI DONE', orderIndex: 2 })
 
     const task = h.inserts.find((i) => i.table === boardTasks)
     expect(task?.inTx).toBe(true)

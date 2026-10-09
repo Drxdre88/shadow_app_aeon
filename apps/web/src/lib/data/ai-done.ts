@@ -1,6 +1,6 @@
-import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, gte, inArray, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { boardColumns, boardTasks, checklistItems, labels, projects, taskLabels } from '@/lib/db/schema'
+import { boardColumns, boardTasks, checklistItems, labels, projects, taskLabels, taskVault } from '@/lib/db/schema'
 import { pickDoneColumn } from '@/lib/kairos/card-garden/types'
 import {
   AI_DONE_COLUMN,
@@ -17,7 +17,7 @@ import { touchProject } from './projects'
 
 // AI DONE ("Vorath checks"): the per-board switch in projects.settings.kairosAiDone
 // and the one writer that files Vorath's ticked-but-not-done cards into the
-// board's AI DONE column (created just before Done when missing). Cards never
+// board's AI DONE column (created just after Done when missing). Cards never
 // go to Done and never get a completedAt.
 
 const switchOnSql = sql`(${projects.settings} -> ${AI_DONE_SETTING}) = 'true'::jsonb`
@@ -60,14 +60,63 @@ export async function listAiDoneBoards(userId: string, limit = 5) {
     .limit(limit)
 }
 
-/** Session memory ids already cited by any AI DONE card on the board (any column, archived too). */
+/** Session memory ids already cited by any AI DONE card on the board (any column, archived or vaulted too). */
 export async function listAiDoneCitedSessionIds(projectId: string): Promise<Set<string>> {
   const cited = sql`${boardTasks.metadata} -> 'aiDone' -> 'sessionIds'`
-  const rows = await db
-    .select({ id: sql<string>`jsonb_array_elements_text(${cited})` })
-    .from(boardTasks)
-    .where(and(eq(boardTasks.projectId, projectId), sql`jsonb_typeof(${cited}) = 'array'`))
-  return new Set(rows.map((r) => r.id))
+  const vaultCited = sql`${taskVault.metadata} -> 'aiDone' -> 'sessionIds'`
+  const [rows, vaultRows] = await Promise.all([
+    db
+      .select({ id: sql<string>`jsonb_array_elements_text(${cited})` })
+      .from(boardTasks)
+      .where(and(eq(boardTasks.projectId, projectId), sql`jsonb_typeof(${cited}) = 'array'`)),
+    db
+      .select({ id: sql<string>`jsonb_array_elements_text(${vaultCited})` })
+      .from(taskVault)
+      .where(and(eq(taskVault.projectId, projectId), sql`jsonb_typeof(${vaultCited}) = 'array'`)),
+  ])
+  return new Set([...rows, ...vaultRows].map((r) => r.id))
+}
+
+/**
+ * What the owner already finished on the board since `since`: cards in its
+ * Done/Vault column or marked done (with checklist text), and cards moved to
+ * the vault (title only — the vault keeps no item text). Feeds AI DONE dedup.
+ */
+export async function listAiDoneFinished(projectId: string, since: Date, limit = 300) {
+  const doneColumns = (await db
+    .select({ id: boardColumns.id, name: boardColumns.name })
+    .from(boardColumns)
+    .where(eq(boardColumns.projectId, projectId)))
+    .filter((c) => pickDoneColumn([c]) !== null)
+    .map((c) => c.id)
+  const finishedOnBoard = doneColumns.length > 0
+    ? or(inArray(boardTasks.columnId, doneColumns), eq(boardTasks.status, 'done'))
+    : eq(boardTasks.status, 'done')
+  const [board, vault] = await Promise.all([
+    db
+      .select({ id: boardTasks.id, name: boardTasks.name })
+      .from(boardTasks)
+      .where(and(eq(boardTasks.projectId, projectId), finishedOnBoard, gte(boardTasks.updatedAt, since)))
+      .orderBy(desc(boardTasks.updatedAt))
+      .limit(limit),
+    db
+      .select({ name: taskVault.name })
+      .from(taskVault)
+      .where(and(eq(taskVault.projectId, projectId), gte(taskVault.archivedAt, since)))
+      .orderBy(desc(taskVault.archivedAt))
+      .limit(limit),
+  ])
+  const ids = board.map((b) => b.id)
+  const items = ids.length > 0
+    ? await db
+      .select({ taskId: checklistItems.taskId, title: checklistItems.title })
+      .from(checklistItems)
+      .where(inArray(checklistItems.taskId, ids))
+    : []
+  return [
+    ...board.map((b) => ({ title: b.name, checklist: items.filter((i) => i.taskId === b.id).map((i) => i.title), vaulted: false })),
+    ...vault.map((v) => ({ title: v.name, checklist: [] as string[], vaulted: true })),
+  ]
 }
 
 /** Which of these card ids are on the board. */
@@ -82,8 +131,9 @@ export async function findTaskIdsOnBoard(projectId: string, taskIds: string[]): 
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
-// The board's AI DONE column; created immediately before Done (later columns
-// shift right) or appended when the board has no Done column.
+// The board's AI DONE column; created immediately after Done (later columns
+// shift right) or appended when the board has no Done column. An existing
+// AI DONE column is reused wherever the owner moved it.
 async function ensureAiDoneColumn(tx: Tx, projectId: string): Promise<string> {
   const columns = await tx
     .select({ id: boardColumns.id, name: boardColumns.name, orderIndex: boardColumns.orderIndex })
@@ -94,11 +144,11 @@ async function ensureAiDoneColumn(tx: Tx, projectId: string): Promise<string> {
   const done = pickDoneColumn(columns)
   let orderIndex = columns.reduce((m, c) => Math.max(m, c.orderIndex), -1) + 1
   if (done) {
-    orderIndex = done.orderIndex
+    orderIndex = done.orderIndex + 1
     await tx
       .update(boardColumns)
       .set({ orderIndex: sql`${boardColumns.orderIndex} + 1` })
-      .where(and(eq(boardColumns.projectId, projectId), gte(boardColumns.orderIndex, done.orderIndex)))
+      .where(and(eq(boardColumns.projectId, projectId), gt(boardColumns.orderIndex, done.orderIndex)))
   }
   const [column] = await tx
     .insert(boardColumns)
