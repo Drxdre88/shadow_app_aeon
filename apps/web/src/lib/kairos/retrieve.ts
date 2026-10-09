@@ -28,6 +28,7 @@ import { db } from '@/lib/db'
 import { memories } from '@/lib/db/schema'
 import { inspectDominion } from '@/lib/data/dominions'
 import { liveConditions, searchCore } from './search-core'
+import { SEARCH_EXPAND_DEFAULT } from './search-expand'
 import { isStreamClass, type StreamClass } from './streamClass'
 import type {
   RetrievalResult,
@@ -216,6 +217,7 @@ async function fetchSubstrate(
     streams: SUBSTRATE_STREAMS,
     window: { days: SUBSTRATE_WINDOW_DAYS, exempt: WINDOW_EXEMPT_STREAMS },
     reflectionFirst: true,
+    expand: SEARCH_EXPAND_DEFAULT,
   })
   return hits.map((h) => rowToMemory(h.row))
 }

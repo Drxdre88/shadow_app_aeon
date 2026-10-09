@@ -6,6 +6,8 @@
 //   FTS leg + vector leg (same filters) → RRF fuse → relevance × standing
 //   (lib/kairos/ranking.ts) → Voyage rerank-2.5 over a bounded pool, blended
 //   with the same standing factor → top-k.
+//   Opt-in `expand` (search-expand.ts) widens the rerank pool first with link
+//   neighbours of the top fused rows and memories cited by matching archetypes.
 //
 // Default scope is REAL memory: machine rows (traces, snapshots, deltas,
 // archetypes, cortex, aether, advisories) are excluded unless the caller opts
@@ -22,6 +24,7 @@ import { embeddingsEnabled, embedOne, toVectorLiteral } from './embeddings'
 import { rrfFuse } from './rrf'
 import { scoreRows, type Ranked } from './ranking'
 import { rerankScored } from './rerank'
+import { EXPAND_SEEDS, expandCandidates, type ExpandVia, type SearchVia } from './search-expand'
 import type { StreamClass } from './streamClass'
 
 // Operator signal + agent work: what an agent means by "a memory".
@@ -127,6 +130,9 @@ export interface SearchCoreOptions {
   rerankChars?: number
   snippets?: boolean
   minQueryChars?: number
+  // Graph step 1: add link neighbours + archetype signposts to the rerank
+  // pool (search-expand.ts). Hybrid mode only; default SEARCH_EXPAND_DEFAULT.
+  expand?: boolean
 }
 
 export interface SearchCoreHit {
@@ -135,6 +141,8 @@ export interface SearchCoreHit {
   score: number
   // Pre-standing relevance: rerank relevance, else RRF or ts_rank_cd.
   relevance: number
+  // How the row reached the result: the main legs, or pool expansion.
+  via: SearchVia
 }
 
 export interface SearchCoreResult {
@@ -152,8 +160,12 @@ const EMPTY: SearchCoreResult = { hits: [], mode: 'none', reranked: false, candi
 
 const isReflection = (r: { streamClass: string }) => (r.streamClass === 'reflection' ? 1 : 0)
 
-function toHits(ranked: Ranked<CoreRow>[], relevanceOf: (r: CoreRow) => number): SearchCoreHit[] {
-  return ranked.map(({ row, score }) => ({ row, score, relevance: relevanceOf(row) }))
+function toHits(
+  ranked: Ranked<CoreRow>[],
+  relevanceOf: (r: CoreRow) => number,
+  viaOf: (r: CoreRow) => SearchVia = () => 'search',
+): SearchCoreHit[] {
+  return ranked.map(({ row, score }) => ({ row, score, relevance: relevanceOf(row), via: viaOf(row) }))
 }
 
 export async function searchCore(userId: string, opts: SearchCoreOptions): Promise<SearchCoreResult> {
@@ -209,7 +221,8 @@ export async function searchCore(userId: string, opts: SearchCoreOptions): Promi
     const qVec = await embedOne(query, 'query')
     if (!qVec) return ftsOnly()
 
-    const distance = sql`${memories.embedding} <=> ${toVectorLiteral(qVec)}::vector`
+    const vectorLiteral = toVectorLiteral(qVec)
+    const distance = sql`${memories.embedding} <=> ${vectorLiteral}::vector`
     // SET LOCAL inside the txn: HNSW recall bound that auto-reverts on commit.
     // Iterative scan (pgvector ≥0.8): keep walking the index until enough rows
     // pass the filters — ~60% of vectors are machine rows the stream filter
@@ -244,23 +257,53 @@ export async function searchCore(userId: string, opts: SearchCoreOptions): Promi
       opts.rerankPoolMax ? Math.min(limit, opts.rerankPoolMax) : limit,
     )
     const pool = ranked.slice(0, poolSize).map((r) => r.row)
+    // Expansion runs after both legs (callers mock select order) and only on
+    // opt-in; extras pass the same scope + filters + window via hydrate.
+    const extras = opts.expand
+      ? await expandCandidates<CoreRow>({
+          userId,
+          seedIds: ranked.slice(0, EXPAND_SEEDS).map((r) => r.row.id),
+          pooled: new Set(pool.map((r) => r.id)),
+          known: byId,
+          archetypeScope: [
+            eq(memories.userId, userId),
+            opts.dominionId ? inDominionScope(opts.dominionId) : sql`TRUE`,
+            eq(memories.streamClass, 'archetype'),
+            ...liveConditions(),
+          ],
+          vectorLiteral,
+          hydrate: async (ids) => db
+            .select(CORE_COLUMNS)
+            .from(memories)
+            .where(and(...scope, inArray(memories.id, ids), ...tail)),
+        })
+      : []
+    const expandedVia = new Map<CoreRow, ExpandVia>(extras.map((e) => [e.row, e.via]))
+    const viaOf = (r: CoreRow): SearchVia => expandedVia.get(r) ?? 'search'
+    // Promoted = already a fused candidate past the pool; fresh = new rows.
+    const promoted = new Set(extras.map((e) => e.row.id))
+    const fresh = extras.filter((e) => !byId.has(e.row.id))
+    const candidates = byId.size + fresh.length
     const clip = opts.rerankChars
-    const reranked = await rerankScored(query, pool, (r) => {
+    const reranked = await rerankScored(query, [...pool, ...extras.map((e) => e.row)], (r) => {
       const text = `${r.title}\n${r.bodyMd ?? ''}`
       return clip ? text.slice(0, clip) : text
     })
 
     if (!reranked) {
-      return { hits: toHits(ranked.slice(0, limit), fusedRel), mode: 'hybrid', reranked: false, candidates: byId.size, topRelevance: null }
+      // Fused order untouched; brand-new extras only trail it.
+      const tailHits = toHits(fresh.map((e) => ({ row: e.row, score: 0 })), () => 0, viaOf)
+      const hits = [...toHits(ranked.slice(0, limit), fusedRel), ...tailHits].slice(0, limit)
+      return { hits, mode: 'hybrid', reranked: false, candidates, topRelevance: null }
     }
 
     const relevance = new Map(reranked.map((s) => [s.item, s.relevance]))
     const rerankRel = (r: CoreRow) => relevance.get(r) ?? 0
-    const top = toHits(scoreRows(reranked.map((s) => s.item), rerankRel, { tieBreak: isReflection }), rerankRel)
+    const top = toHits(scoreRows(reranked.map((s) => s.item), rerankRel, { tieBreak: isReflection }), rerankRel, viaOf)
     // Rows past the rerank pool keep their fused order after the reranked head.
-    const rest = toHits(ranked.slice(pool.length), fusedRel)
+    const rest = toHits(ranked.slice(pool.length).filter((r) => !promoted.has(r.row.id)), fusedRel)
     const topRelevance = Math.max(...reranked.map((s) => s.relevance))
-    return { hits: [...top, ...rest].slice(0, limit), mode: 'hybrid', reranked: true, candidates: byId.size, topRelevance }
+    return { hits: [...top, ...rest].slice(0, limit), mode: 'hybrid', reranked: true, candidates, topRelevance }
   } catch (err) {
     console.warn('[search-core] semantic search failed, FTS-only:', err instanceof Error ? err.message : err)
     return ftsOnly()

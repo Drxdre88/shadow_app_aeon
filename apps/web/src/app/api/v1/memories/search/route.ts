@@ -46,6 +46,9 @@ export const GET = withRateLimit(
     if (tagsAll.length > 0) params.tagsAll = tagsAll
     if (url.searchParams.get('pinned') === 'true') params.pinnedOnly = true
     if (url.searchParams.get('includeMachine') === 'true') params.includeMachine = true
+    const expand = url.searchParams.get('expand')
+    if (expand === 'true') params.expand = true
+    else if (expand === 'false') params.expand = false
 
     const parsed = searchMemoriesSchema.safeParse(params)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
