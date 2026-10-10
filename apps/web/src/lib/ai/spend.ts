@@ -1,3 +1,4 @@
+import { after } from 'next/server'
 import { insertAiUsage, sumAiSpendSince, type AiUsageInsert } from '@/lib/data/ai-usage'
 import type { AIUsage } from './provider'
 import { estimateCostUsd } from './spend-pricing'
@@ -177,11 +178,18 @@ export class SpendMeter {
       ...(row.error ? { error: row.error } : {}),
     }))
     this.guard.add(event.userId, costUsd)
-    Promise.resolve()
+    const pending = Promise.resolve()
       .then(() => this.write(row))
       .catch((err: unknown) => {
         console.warn('[ai-usage] usage write failed', { error: err instanceof Error ? err.message : String(err) })
       })
+    // Keep the function alive until the row lands, so a request that ends right
+    // after its last paid call cannot drop the spend the cap counts.
+    try {
+      after(() => pending)
+    } catch {
+      // outside a request scope (cron scripts, tests): the write still completes
+    }
   }
 }
 

@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
+*.key
+state.json
+config.toml
+*.log
