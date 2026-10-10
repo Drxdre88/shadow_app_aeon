@@ -241,18 +241,25 @@ export async function searchCore(userId: string, opts: SearchCoreOptions): Promi
     topRelevance: null,
   })
 
-  const entityRows = (): Promise<CoreRow[]> => ((opts.entity ?? SEARCH_ENTITY_DEFAULT)
-    ? entityLeg<CoreRow>({
-        userId,
-        query,
-        fetch: (mentions, confidence) => db
-          .select(CORE_COLUMNS)
-          .from(memories)
-          .where(and(...scope, mentions, ...tail))
-          .orderBy(desc(confidence), desc(memories.createdAt))
-          .limit(legLimit),
-      })
-    : Promise.resolve([]))
+  // One entity lookup per search: memoised so a late hybrid failure falling
+  // back to ftsOnly() reuses it; it still runs after the vector leg.
+  let entityOnce: Promise<CoreRow[]> | null = null
+  const entityRows = (): Promise<CoreRow[]> => {
+    if (entityOnce) return entityOnce
+    entityOnce = (opts.entity ?? SEARCH_ENTITY_DEFAULT)
+      ? entityLeg<CoreRow>({
+          userId,
+          query,
+          fetch: (mentions, confidence) => db
+            .select(CORE_COLUMNS)
+            .from(memories)
+            .where(and(...scope, mentions, ...tail))
+            .orderBy(desc(confidence), desc(memories.createdAt))
+            .limit(legLimit),
+        })
+      : Promise.resolve([])
+    return entityOnce
+  }
 
   // FTS-only mode still fuses the entity list when a name matched.
   const ftsOnly = async (): Promise<SearchCoreResult> => {

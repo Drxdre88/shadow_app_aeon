@@ -54,6 +54,7 @@ vi.mock('../search-entity', () => ({
 
 import { searchCore } from '../search-core'
 import { entityLeg } from '../search-entity'
+import { rerankScored } from '../rerank'
 
 const dialect = new PgDialect()
 const render = (w: unknown) => dialect.sqlToQuery(w as SQL)
@@ -143,5 +144,20 @@ describe('searchCore — entity list', () => {
     vecQueue.push([])
     await searchCore('user-1', { query: 'Wraith outage', limit: 5, expand: false, entity: false })
     expect(entityLeg).not.toHaveBeenCalled()
+  })
+
+  it('a late hybrid failure falls back to FTS reusing the one entity lookup', async () => {
+    selectQueue.push([A])
+    vecQueue.push([])
+    selectQueue.push([NAMED])
+    vi.mocked(rerankScored).mockRejectedValueOnce(new Error('rerank exploded'))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const out = await searchCore('user-1', { query: 'Wraith outage', limit: 5, expand: false })
+
+    expect(entityLeg).toHaveBeenCalledTimes(1)
+    expect(out.mode).toBe('fts')
+    expect(out.hits.map((h) => [h.row.id, h.via])).toEqual([[A.id, 'search'], [NAMED.id, 'entity']])
+    warn.mockRestore()
   })
 })

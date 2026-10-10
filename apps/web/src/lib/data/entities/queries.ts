@@ -2,6 +2,7 @@ import { and, asc, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { entities, entityAliases, entityMentions, entityScans, memories } from '@/lib/db/schema'
 import { notHeldSensitive } from '@/lib/kairos/sensitive'
+import { validAsOfNow } from '@/lib/data/memories-shared'
 import type { GetEntityInput, ListEntitiesInput } from '@/lib/data/validators/entities'
 import { normAlias } from './normalize'
 
@@ -92,6 +93,7 @@ export async function getEntity(userId: string, input: GetEntityInput) {
           eq(memories.userId, userId),
           isNull(memories.archivedAt),
           isNull(memories.supersededAt),
+          validAsOfNow,
           notHeldSensitive,
         ))
         .orderBy(desc(entityMentions.confidence), desc(memories.createdAt))
