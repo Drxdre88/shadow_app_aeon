@@ -85,11 +85,12 @@ describe('POST voice/turn', () => {
     expect(m.createChatThread).not.toHaveBeenCalled()
   })
 
-  it('409 when paid backup is switched off', async () => {
-    m.getProviderForTask.mockRejectedValue(namedError('PaidBackupOffError'))
+  it('resolves the owner-initiated voice_chat task, never plain chat', async () => {
+    m.getProviderForTask.mockRejectedValue(namedError('AiCredentialDecryptError'))
     const res = await turn({ text: 'hello' })
     expect(res.status).toBe(409)
-    expect(await res.json()).toMatchObject({ code: 'paid_backup_off' })
+    expect(await res.json()).toMatchObject({ code: 'no_paid_key' })
+    expect(m.getProviderForTask).toHaveBeenCalledWith('owner-id', { taskType: 'voice_chat' })
   })
 
   it('400 on an empty text', async () => {

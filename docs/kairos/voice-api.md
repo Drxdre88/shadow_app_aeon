@@ -20,8 +20,9 @@ Request body (JSON):
 | `threadKey` | string, optional | Letters, digits and `_ . : -`, up to 80. Picks a separate voice thread (for example one per device). Leave it out to use the single "Voice · Vorath" thread. |
 
 The turn runs through Vorath's normal chat engine: the same grounding, memory, tools,
-owner model and reply recording as web chat. It always uses the owner's paid key, never
-the Max routine. Both sides of the turn are saved in the voice thread, so they appear in
+owner model and reply recording as web chat. It always uses the owner's paid key on Claude
+Sonnet 5.5, never the Max routine. Speaking is an explicit owner action, so the paid-backup
+switch (which governs automatic paid fallbacks) does not apply. Both sides of the turn are saved in the voice thread, so they appear in
 the chat history and in the nightly memory capture. The reply uses a spoken register:
 2–3 sentences of plain speech, no formatting, at most one question.
 
@@ -35,14 +36,14 @@ event: delta
 data: {"text":"Want me to open it?"}
 
 event: done
-data: {"threadId":"…","userSeq":7,"assistantSeq":8,"text":"The Swarm build is waiting on your approval. Want me to open it?","model":"tier:heavy","streamed":true,"ms":2140}
+data: {"threadId":"…","userSeq":7,"assistantSeq":8,"text":"The Swarm build is waiting on your approval. Want me to open it?","model":"claude-sonnet-5-5","streamed":true,"ms":2140}
 ```
 
 - `delta`: one or more whole sentences of plain speech, in order. Send each one to TTS as it arrives.
 - `done`: always the last event on success. `text` is the saved reply as plain speech.
   **If no `delta` arrived (`streamed:false`), speak `done.text`.** Otherwise it's for display and logs.
 - `error`: the last event on failure, as `{"reason","message","threadId"}`. `reason` is usually
-  `ai_failed`, `ai_empty`, `no_credential`, `paid_backup_off` or `thread_not_found`.
+  `ai_failed`, `ai_empty`, `no_credential` or `thread_not_found`.
   The owner's words are already saved. Retrying the same text answers the saved turn without saving it twice.
 
 Deltas are a best effort. When Vorath looks something up with a tool, the answer arrives in
@@ -56,7 +57,7 @@ reads his brain.
 | 400 | Bad body (empty `text`, a bad `threadKey`) |
 | 401 | Missing or invalid key |
 | 404 | Not the owner |
-| 409 | `code: "no_paid_key"`: no usable paid AI key. `code: "paid_backup_off"`: the owner switched paid backup off. There's no fallback, so ask the owner to fix it in Aeon. |
+| 409 | `code: "no_paid_key"`: no usable paid AI key (none saved, or it can't be decrypted). There's no fallback, so ask the owner to add one in Aeon. |
 | 429 | Rate limited |
 | 500 | Server error |
 
@@ -100,6 +101,6 @@ Poll it **every 5 seconds**. Send the previous response's `next` as `since`.
 
 ## Cost
 
-- Each turn is one paid chat call on the owner's chat tier, plus up to four lookup rounds
+- Each turn is one paid Claude Sonnet 5.5 call (the `voice_chat` task, not the heavy chat tier), plus up to four lookup rounds
   when Vorath uses a tool.
 - The feed makes no model calls.

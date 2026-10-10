@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import { getProviderForTask } from '@/lib/ai/route-task'
-import { isPaidBackupOffError } from '@/lib/ai/paid-backup-off'
 import type { AIProvider } from '@/lib/ai/provider'
 import { createChatThread, findOpenChatThreadByTitle } from '@/lib/data/kairos-chat'
 import { sendChatMessage } from '@/lib/kairos/chat-turn'
@@ -30,20 +29,19 @@ export function voiceThreadTitle(threadKey?: string): string {
 
 export type VoicePaidKey =
   | { ok: true; provider: AIProvider }
-  | { ok: false; code: 'no_paid_key' | 'paid_backup_off'; message: string }
+  | { ok: false; code: 'no_paid_key'; message: string }
 
 const MISSING_KEY_ERRORS = new Set(['AiCredentialMissingError', 'AiCredentialDecryptError'])
 
 // Resolved before anything is persisted, so a turn without a usable paid key
-// leaves no orphan message behind. Other errors propagate (500).
+// leaves no orphan message behind. The 'voice_chat' task pins Sonnet and is
+// owner-initiated, so the paid-backup switch does not apply. Other errors
+// propagate (500).
 export async function resolveVoicePaidKey(userId: string): Promise<VoicePaidKey> {
   try {
-    const { provider } = await getProviderForTask(userId, { taskType: 'chat' })
+    const { provider } = await getProviderForTask(userId, { taskType: 'voice_chat' })
     return { ok: true, provider }
   } catch (err) {
-    if (isPaidBackupOffError(err)) {
-      return { ok: false, code: 'paid_backup_off', message: 'Vorath\'s paid backup is switched off. Turn it on in Vorath settings to use the voice line.' }
-    }
     if (err instanceof Error && MISSING_KEY_ERRORS.has(err.name)) {
       return { ok: false, code: 'no_paid_key', message: 'No usable paid AI key is configured for Vorath chat. Add one in Settings → AI to use the voice line.' }
     }
