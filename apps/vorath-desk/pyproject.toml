@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vorath-desk"
+version = "0.1.0"
+description = "Windows tray app for talking to Vorath by voice."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "httpx==0.28.1",
+    "loguru==0.7.3",
+    "sounddevice==0.5.6",
+    "numpy==2.5.3",
+    "pynput==1.8.2",
+    "pystray==0.19.5",
+    "pillow==12.3.0",
+    "faster-whisper==1.2.1",
+    "pyttsx3==2.99",
+]
+
+[project.scripts]
+vorath-desk = "vorath_desk.cli:main"
+
+[project.gui-scripts]
+vorath-desk-tray = "vorath_desk.cli:tray_main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vorath_desk"]
+
+[tool.hatch.envs.vorath_desk_env_312]
+python = "3.12"
+dependencies = ["pytest==9.1.1"]
+
+[tool.hatch.envs.vorath_desk_env_312.scripts]
+test = "pytest {args}"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
