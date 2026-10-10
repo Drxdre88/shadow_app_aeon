@@ -19,7 +19,9 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 
-import { entityLeg, matchQueryEntities, queryGrams } from '../search-entity'
+import { entityLeg, listWorthyEntities, matchQueryEntities, queryGrams } from '../search-entity'
+
+const ids = async (q: string) => (await matchQueryEntities('u1', q)).map((m) => m.id)
 
 const dialect = new PgDialect()
 const SWARM = 'a0000000-0000-4000-8000-000000000001'
@@ -50,19 +52,19 @@ describe('queryGrams', () => {
 describe('matchQueryEntities', () => {
   it('a stoplisted alias counts only when capitalised in the query', async () => {
     aliasRows = [{ entity_id: SWARM, alias: 'Swarm', alias_norm: 'swarm', kind: 'repo' }]
-    expect(await matchQueryEntities('u1', 'swarm of bees')).toEqual([])
-    expect(await matchQueryEntities('u1', 'Swarm backtest')).toEqual([SWARM])
+    expect(await ids('swarm of bees')).toEqual([])
+    expect(await ids('Swarm backtest')).toEqual([SWARM])
   })
 
   it('initials need an exact case-sensitive match', async () => {
     aliasRows = [{ entity_id: MG, alias: 'MG', alias_norm: 'mg', kind: 'person' }]
-    expect(await matchQueryEntities('u1', 'take 5 mg')).toEqual([])
-    expect(await matchQueryEntities('u1', 'ask MG about it')).toEqual([MG])
+    expect(await ids('take 5 mg')).toEqual([])
+    expect(await ids('ask MG about it')).toEqual([MG])
   })
 
   it('ordinary aliases match in any case; the lookup is scoped to the user', async () => {
     aliasRows = [{ entity_id: WRAITH, alias: 'wraith', alias_norm: 'wraith', kind: 'repo' }]
-    expect(await matchQueryEntities('u1', 'wraith outage')).toEqual([WRAITH])
+    expect(await ids('wraith outage')).toEqual([WRAITH])
     const q = dialect.sqlToQuery(executed[0] as SQL)
     expect(q.params).toContain('u1')
     expect(q.params).toContain('wraith')
@@ -71,7 +73,54 @@ describe('matchQueryEntities', () => {
 
   it('returns the survivor id the SQL resolved for a merged entity', async () => {
     aliasRows = [{ entity_id: SURVIVOR, alias: 'wraith', alias_norm: 'wraith', kind: 'repo' }]
-    expect(await matchQueryEntities('u1', 'wraith')).toEqual([SURVIVOR])
+    expect(await ids('wraith')).toEqual([SURVIVOR])
+  })
+})
+
+describe('match strength', () => {
+  it('a capitalised word, exact initials or a slug / multi-word alias is strong', async () => {
+    aliasRows = [
+      { entity_id: WRAITH, alias: 'wraith', alias_norm: 'wraith', kind: 'repo', mentions: 117 },
+      { entity_id: SWARM, alias: 'shadow_app_swarm', alias_norm: 'shadow_app_swarm', kind: 'repo', mentions: 810 },
+      { entity_id: MG, alias: 'MG', alias_norm: 'mg', kind: 'person', mentions: 4 },
+    ]
+    const m = await matchQueryEntities('u1', 'Wraith and shadow_app_swarm, ask MG')
+    expect(m).toEqual(expect.arrayContaining([
+      { id: WRAITH, strong: true, specific: false, mentions: 117 },
+      { id: SWARM, strong: true, specific: true, mentions: 810 },
+      { id: MG, strong: true, specific: false, mentions: 4 },
+    ]))
+  })
+
+  it('a lowercase single word is a weak match', async () => {
+    aliasRows = [{ entity_id: WRAITH, alias: 'wraith', alias_norm: 'wraith', kind: 'repo', mentions: 117 }]
+    expect(await matchQueryEntities('u1', 'wraith outage')).toEqual([
+      { id: WRAITH, strong: false, specific: false, mentions: 117 },
+    ])
+  })
+
+  it('the lookup counts mentions of the resolved entity', async () => {
+    aliasRows = [{ entity_id: WRAITH, alias: 'wraith', alias_norm: 'wraith', kind: 'repo', mentions: 3 }]
+    await matchQueryEntities('u1', 'Wraith')
+    expect(dialect.sqlToQuery(executed[0] as SQL).sql).toContain('FROM entity_mentions m WHERE m.user_id')
+  })
+})
+
+describe('listWorthyEntities', () => {
+  const m = (id: string, strong: boolean, specific: boolean, mentions: number) => ({ id, strong, specific, mentions })
+
+  it('drops weak matches', () => {
+    expect(listWorthyEntities([m(WRAITH, false, false, 117)])).toEqual([])
+  })
+
+  it('a strong single word on a rare entity fires; on a very common one it does not', () => {
+    expect(listWorthyEntities([m(WRAITH, true, false, 117)])).toEqual([WRAITH])
+    expect(listWorthyEntities([m(SWARM, true, false, 871)])).toEqual([])
+    expect(listWorthyEntities([m(SWARM, true, false, 300)])).toEqual([SWARM])
+  })
+
+  it('a very common entity still fires on a specific alias', () => {
+    expect(listWorthyEntities([m(SWARM, true, true, 871)])).toEqual([SWARM])
   })
 })
 
@@ -82,13 +131,23 @@ describe('entityLeg', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('fetches with an EXISTS filter over the matched entities', async () => {
-    aliasRows = [{ entity_id: WRAITH, alias: 'wraith', alias_norm: 'wraith', kind: 'repo' }]
-    const fetch = vi.fn(async (_m: SQL, _c: SQL<number>) => [{ id: 'm1' }])
-    expect(await entityLeg({ userId: 'u1', query: 'wraith outage', fetch })).toEqual([{ id: 'm1' }])
+  it('skips the fetch on a weak or too-common match', async () => {
+    const fetch = vi.fn(async () => [])
+    aliasRows = [{ entity_id: WRAITH, alias: 'wraith', alias_norm: 'wraith', kind: 'repo', mentions: 117 }]
+    expect(await entityLeg({ userId: 'u1', query: 'wraith outage', fetch })).toEqual([])
+    aliasRows = [{ entity_id: SWARM, alias: 'Swarm', alias_norm: 'swarm', kind: 'repo', mentions: 871 }]
+    expect(await entityLeg({ userId: 'u1', query: 'history of the leak in Swarm', fetch })).toEqual([])
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('fetches a capped list with an EXISTS filter over the strong matches', async () => {
+    aliasRows = [{ entity_id: WRAITH, alias: 'wraith', alias_norm: 'wraith', kind: 'repo', mentions: 117 }]
+    const fetch = vi.fn(async (_m: SQL, _cap: number) => [{ id: 'm1' }])
+    expect(await entityLeg({ userId: 'u1', query: 'Wraith outage', fetch })).toEqual([{ id: 'm1' }])
     const mentions = dialect.sqlToQuery(fetch.mock.calls[0][0])
     expect(mentions.sql).toContain('EXISTS (SELECT 1 FROM entity_mentions em')
     expect(mentions.params).toEqual(expect.arrayContaining(['u1', WRAITH]))
+    expect(fetch.mock.calls[0][1]).toBe(8)
   })
 
   it('warns and returns nothing when the lookup fails', async () => {
