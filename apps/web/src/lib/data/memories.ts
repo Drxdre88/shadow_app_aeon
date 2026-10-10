@@ -32,6 +32,7 @@ import { ORIGIN_TRUST, inferOriginKind, originKindOf, type Origin, type OriginKi
 import { notHeldSensitive, notHeldSensitiveRaw, sensitiveCaptureStamp } from '@/lib/kairos/sensitive'
 import { SLIM_COLUMNS, validAsOfNow } from './memories-shared'
 import { scheduleMemoryEmbed } from './memory-embed'
+import { scheduleEntityScan } from './entities/on-write'
 
 // Split-out modules (file-size rule); memories.ts stays the public import path.
 export { validAsOfNow } from './memories-shared'
@@ -893,6 +894,7 @@ export async function createMemory(userId: string, input: CreateMemoryParams, op
   // vector (when present) already landed on the row, so this only fires for
   // rows still without one.
   scheduleMemoryEmbed(userId, row)
+  scheduleEntityScan(userId, row)
 
   return row
 }
@@ -1297,6 +1299,7 @@ export async function updateMemory(
       .where(and(eq(memories.id, memoryId), eq(memories.userId, userId)))
       .returning()
     scheduleMemoryEmbed(userId, row)
+    scheduleEntityScan(userId, row)
     return row ?? null
   }
 
@@ -1344,6 +1347,7 @@ export async function updateMemory(
     return row ?? null
   })
   scheduleMemoryEmbed(userId, updated)
+  scheduleEntityScan(userId, updated)
   return updated
 }
 
