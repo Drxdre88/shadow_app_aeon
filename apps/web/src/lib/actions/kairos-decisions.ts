@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { requireAuth } from '@/lib/actions/helpers'
+import { requireVorath } from '@/lib/actions/helpers'
 import {
   confirmKairosDecisionByOwner,
   discardRelayedKairosDecision,
@@ -46,34 +46,34 @@ async function finish(userId: string, res: DecisionResult): Promise<DecisionActi
 }
 
 export async function listOwnKairosDecisions(scope?: 'open' | 'all'): Promise<KairosDecisionsList> {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const input = listDecisionsSchema.parse({ scope })
   return listKairosDecisions(userId, input)
 }
 
 export async function logOwnKairosDecision(input: unknown): Promise<DecisionActionResult> {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = logDecisionSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid decision' }
   return finish(userId, await logKairosDecision(userId, parsed.data, { kind: 'owner', via: 'app' }))
 }
 
 export async function settleOwnKairosDecision(decisionId: string, verdict: DecisionVerdict): Promise<DecisionActionResult> {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = ownerDecisionVerdictSchema.safeParse({ decisionId, verdict })
   if (!parsed.success) return { ok: false, error: 'Pick right, wrong or void.' }
   return finish(userId, await settleKairosDecisionByOwner(userId, parsed.data.decisionId, parsed.data.verdict, { via: 'app' }))
 }
 
 export async function confirmOwnKairosDecision(decisionId: string): Promise<DecisionActionResult> {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = ownerDecisionIdSchema.safeParse({ decisionId })
   if (!parsed.success) return { ok: false, error: REFUSAL_MESSAGE.not_found }
   return finish(userId, await confirmKairosDecisionByOwner(userId, parsed.data.decisionId))
 }
 
 export async function discardOwnKairosDecision(decisionId: string): Promise<DecisionActionResult> {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const parsed = ownerDecisionIdSchema.safeParse({ decisionId })
   if (!parsed.success) return { ok: false, error: REFUSAL_MESSAGE.not_found }
   return finish(userId, await discardRelayedKairosDecision(userId, parsed.data.decisionId))

@@ -1,6 +1,6 @@
 'use server'
 
-import { requireAuth } from '@/lib/actions/helpers'
+import { requireVorath } from '@/lib/actions/helpers'
 import { readKairosOwnerModel } from '@/lib/data/kairos-owner-model'
 import { ownerItemCorrectionSchema, type OwnerItemKind } from '@/lib/data/validators/kairos-owner-model'
 import { cardItems } from '@/lib/kairos/owner-model/card'
@@ -26,7 +26,7 @@ export interface OwnerCardItem {
 export type OwnerCardData = { enabled: false } | { enabled: true; items: OwnerCardItem[] }
 
 export async function getKairosOwnerCard(): Promise<OwnerCardData> {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   if (ownerModelMode() !== 'on') return { enabled: false }
   const now = new Date()
   const items = cardItems(await readKairosOwnerModel(userId), now).map((i) => ({
@@ -43,7 +43,7 @@ export async function getKairosOwnerCard(): Promise<OwnerCardData> {
 }
 
 export async function correctKairosOwnerItem(itemId: string, action: 'still' | 'over' | 'wrong' | 'text', text?: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   if (ownerModelMode() !== 'on') return { ok: false as const, reason: 'disabled' as const }
   const input = ownerItemCorrectionSchema.parse({ itemId, action, ...(text !== undefined ? { text } : {}) })
   const res = await correctOwnerItem(userId, { itemId: input.itemId }, input.action, {

@@ -5,6 +5,7 @@ import { markTodayConsumed, purgeTodayEntries } from '@/lib/data/kairos-today'
 import { runChatDistillForUser, type ChatDistillRunResult } from '@/lib/kairos/chat-distill'
 import { skipCronIfPaidBackupOff } from '@/lib/kairos/paid-backup-cron'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { canUseVorath } from '@/lib/vorath-access'
 
 export const maxDuration = 300
 
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) return jsonResponse({ error: 'unauthorized' }, { status: 401 })
 
   const startedAt = Date.now()
-  const userIds = await listChatDistillEligibleUserIds()
+  const userIds = (await listChatDistillEligibleUserIds()).filter((userId) => canUseVorath(userId))
   const users: Array<{ userId: string; result?: ChatDistillRunResult; error?: string }> = []
   const skippedUserIds: string[] = []
 

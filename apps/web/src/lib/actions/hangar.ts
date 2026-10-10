@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireEditor, requireOwner } from './helpers'
+import { assertVorath, canUseVorath } from '@/lib/vorath-access'
 import { hangarCardDraftSchema } from '@/lib/data/validators'
 import { findTaskById, updateTask } from '@/lib/data/tasks'
 import { listHangarRepos } from '@/lib/data/hangar-repos'
@@ -36,7 +37,7 @@ export async function spawnSessionFromCard(
  * realm registry the project belongs to (active entries only).
  */
 export async function listProjectHangarRepos(projectId: string) {
-  await requireEditor(projectId)
+  if (!canUseVorath(await requireEditor(projectId))) return []
   const realmIds = await findProjectRealmIds(projectId)
   const registries = await Promise.all(realmIds.map((id) => listHangarRepos(id)))
   const bySlug = new Map<string, { slug: string; name: string; allowedEngines: string[] }>()
@@ -59,7 +60,7 @@ export async function saveCardMission(
   taskId: string,
   draft: z.input<typeof hangarCardDraftSchema>
 ) {
-  await requireEditor(projectId)
+  assertVorath(await requireEditor(projectId))
   const task = await findTaskById(taskId, projectId)
   if (!task) throw new Error('Task not found or unauthorized')
 
@@ -83,8 +84,9 @@ export async function saveCardMission(
  * editor without ever hydrating the board store, so reading columns from the
  * client store there yields an empty list.
  */
+// The project editor opens this for every board: empty outside Vorath, so the modal still works.
 export async function listProjectColumnsForHangar(projectId: string) {
-  await requireEditor(projectId)
+  if (!canUseVorath(await requireEditor(projectId))) return []
   const columns = await findColumns(projectId)
   return columns
     .slice()
@@ -108,7 +110,7 @@ export async function setHangarBoardSettings(
   projectId: string,
   input: { enabled: boolean; triggerColumnId: string | null }
 ) {
-  await requireOwner(projectId)
+  assertVorath(await requireOwner(projectId))
   const parsed = hangarSettingsSchema.parse(input)
 
   // A trigger column from another board would sit in settings looking armed

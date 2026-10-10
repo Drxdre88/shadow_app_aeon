@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 import { listUsersForConstitutionSeed } from '@/lib/data/constitution'
 import { seedConstitutionDraft, type SeedResult } from '@/lib/kairos/constitution/seed'
 import { writeCronFailureTrace, writeCronSuccessTrace } from '@/lib/kairos/cron-trace'
+import { canUseVorath } from '@/lib/vorath-access'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos constitution seed (docs/kairos/34 §2) — the paid-key FALLBACK for
@@ -27,7 +28,7 @@ function isAuthorized(req: NextRequest): boolean {
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) return jsonResponse({ error: 'unauthorized' }, { status: 401 })
 
-  const userIds = await listUsersForConstitutionSeed()
+  const userIds = (await listUsersForConstitutionSeed()).filter((userId) => canUseVorath(userId))
   const users: Array<{ userId: string; result?: SeedResult; error?: string }> = []
 
   for (const userId of userIds) {

@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 import { listDominionActivityUserIds, scoreDominionActivityForUser, type DominionActivityRun } from '@/lib/data/dominion-activity'
 import { livingDominionsMode } from '@/lib/kairos/living/flag'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { canUseVorath } from '@/lib/vorath-access'
 
 // Living Dominions activity score — 01:10 UTC daily (living_dominions.md §2 A).
 // Off: does nothing. Observe and on: scores every user with a live Dominion;
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
   if (mode === 'off') return jsonResponse({ skipped: 'off' })
 
   const users: UserOutcome[] = []
-  for (const userId of await listDominionActivityUserIds()) {
+  for (const userId of (await listDominionActivityUserIds()).filter((id) => canUseVorath(id))) {
     try {
       users.push(await scoreDominionActivityForUser(userId))
     } catch (err) {

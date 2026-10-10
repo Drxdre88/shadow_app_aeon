@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
-import { requireAuth } from './helpers'
+import { requireVorath } from './helpers'
 import { listLiveDominions, rankByActivity, setDominionPinned, type FocusDominion } from '@/lib/data/dominion-focus'
 import { getUnattributedActivity } from '@/lib/data/dominion-activity'
 import { livingDominionsMode, type LivingDominionsMode } from '@/lib/kairos/living/flag'
@@ -77,7 +77,7 @@ function toView(d: FocusDominion): FocusDominionView {
 // "Where your time went" in Vorath → Health: live Dominions ranked by activity
 // (also in watch-only mode, where the shared roster keeps the old order).
 export async function getFocusOverview(): Promise<FocusOverview> {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const [rows, unattributed] = await Promise.all([listLiveDominions(userId), getUnattributedActivity(userId)])
   return {
     mode: livingDominionsMode(),
@@ -88,7 +88,7 @@ export async function getFocusOverview(): Promise<FocusOverview> {
 }
 
 export async function setDominionPinnedAction(input: { dominionId: string; pinned: boolean }) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const { dominionId, pinned } = setPinnedSchema.parse(input)
   const row = await setDominionPinned(dominionId, userId, pinned)
   if (!row) throw new Error('Area not found or unauthorized')

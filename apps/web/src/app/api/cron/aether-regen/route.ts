@@ -6,6 +6,7 @@ import { isNull } from 'drizzle-orm'
 import { runAetherForUser } from '@/lib/kairos/aether'
 import { skipCronIfPaidBackupOff } from '@/lib/kairos/paid-backup-cron'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { canUseVorath } from '@/lib/vorath-access'
 
 // Aether cron — 03:15 UTC daily (after cortex-regen at 03:00). Idempotent.
 
@@ -21,10 +22,11 @@ function isAuthorized(req: NextRequest): boolean {
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) return jsonResponse({ error: 'unauthorized' }, { status: 401 })
 
-  const usersWithDominions = await db
+  const usersWithDominions = (await db
     .selectDistinct({ userId: dominions.userId })
     .from(dominions)
-    .where(isNull(dominions.archivedAt))
+    .where(isNull(dominions.archivedAt)))
+    .filter(({ userId }) => canUseVorath(userId))
 
   if (usersWithDominions.length === 0) {
     return jsonResponse({ ran: 0, generated: 0, users: [] })

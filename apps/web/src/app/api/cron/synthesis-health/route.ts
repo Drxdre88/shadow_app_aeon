@@ -5,6 +5,7 @@ import { dominions } from '@/lib/db/schema'
 import { isNull } from 'drizzle-orm'
 import { computeSynthesisHealth, type SynthesisHealthResult } from '@/lib/kairos/synthesis-health'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { canUseVorath } from '@/lib/vorath-access'
 import { chatRoutineEnabled } from '@/lib/kairos/chat-routine'
 import { writeChatLatencyRollup } from '@/lib/kairos/chat-latency-rollup'
 
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
     .from(dominions)
     .where(isNull(dominions.archivedAt))
 
-  const userIds = usersWithDominions.map((r) => r.userId)
+  const userIds = usersWithDominions.map((r) => r.userId).filter((userId) => canUseVorath(userId))
   const users: Array<{ userId: string; result?: SynthesisHealthResult; error?: string }> = []
   const chatRoutineOn = chatRoutineEnabled()
 

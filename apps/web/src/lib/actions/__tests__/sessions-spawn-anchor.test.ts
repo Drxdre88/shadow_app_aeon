@@ -10,7 +10,7 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/db', () => ({ db: {} }))
-vi.mock('../helpers', () => ({ requireAuth: vi.fn(async () => 'u1'), requireMemberAccess: vi.fn() }))
+vi.mock('../helpers', () => { const requireAuth = vi.fn(async () => 'u1'); return { requireAuth, requireVorath: requireAuth, requireMemberAccess: vi.fn() } })
 vi.mock('@/lib/data/hangar-access', () => ({ resolveSessionAnchor: h.anchor }))
 vi.mock('@/lib/data/sessions', async (orig) => ({
   ...(await orig<Record<string, unknown>>()),

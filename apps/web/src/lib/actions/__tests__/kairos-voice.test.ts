@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/lib/actions/helpers', () => ({ requireAuth: vi.fn() }))
+vi.mock('@/lib/actions/helpers', () => { const requireAuth = vi.fn(); return { requireAuth, requireVorath: requireAuth } })
 vi.mock('@/lib/data/voice-notes', () => ({ discardVoiceNote: vi.fn() }))
 vi.mock('@/lib/kairos/voice-note-confirm', () => ({ confirmVoiceNote: vi.fn() }))
 

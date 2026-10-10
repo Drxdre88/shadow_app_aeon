@@ -8,6 +8,7 @@ import {
   reconcileDerivedMemories,
 } from '@/lib/kairos/project-snapshot'
 import { writeCronFailureTrace } from '@/lib/kairos/cron-trace'
+import { canUseVorath } from '@/lib/vorath-access'
 
 // Kairos Phase 2 (A5) — nightly project snapshot cron.
 // Vercel Cron 23:00 UTC. Iterates every user with at least one project,
@@ -24,9 +25,10 @@ function isAuthorized(req: NextRequest): boolean {
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) return jsonResponse({ error: 'unauthorized' }, { status: 401 })
 
-  const users = await db
+  const users = (await db
     .selectDistinct({ userId: projects.userId })
-    .from(projects)
+    .from(projects))
+    .filter(({ userId }) => canUseVorath(userId))
 
   const userResults: Array<{
     userId: string

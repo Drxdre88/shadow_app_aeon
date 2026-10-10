@@ -1,6 +1,6 @@
 'use server'
 
-import { requireAuth } from '@/lib/actions/helpers'
+import { requireVorath } from '@/lib/actions/helpers'
 import { listKairosAgenda, toKairosAgendaView } from '@/lib/data/kairos-agenda'
 import { listKairosAgendaSchema, ownerAgendaItemIdSchema } from '@/lib/data/validators/kairos-agenda'
 import { cancelAgendaItem } from '@/lib/kairos/agenda/cancel'
@@ -10,12 +10,12 @@ import { cancelAgendaItem } from '@/lib/kairos/agenda/cancel'
 // read the agenda.
 
 export async function listOwnKairosAgenda(scope?: 'open' | 'all') {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   const input = listKairosAgendaSchema.parse({ scope })
   return (await listKairosAgenda(userId, input)).map(toKairosAgendaView)
 }
 
 export async function cancelOwnKairosAgendaItem(itemId: string) {
-  const userId = await requireAuth()
+  const userId = await requireVorath()
   return cancelAgendaItem(userId, ownerAgendaItemIdSchema.parse(itemId), { kind: 'owner', via: 'session' })
 }
