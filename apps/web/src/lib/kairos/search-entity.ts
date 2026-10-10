@@ -12,7 +12,7 @@ import { db } from '@/lib/db'
 import { memories } from '@/lib/db/schema'
 import { aliasRule, isUsableAlias, normAlias, passesRule } from '@/lib/data/entities/normalize'
 
-export const SEARCH_ENTITY_DEFAULT = true
+export const SEARCH_ENTITY_DEFAULT = false
 
 const MAX_GRAM_WORDS = 6
 const MAX_GRAMS = 200
