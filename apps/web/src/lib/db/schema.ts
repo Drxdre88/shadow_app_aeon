@@ -999,6 +999,70 @@ export const resources = pgTable('resources', {
   ),
 }))
 
+// Total Recall step 2a (migration 0041): the owner's entity map. Seeded from
+// Dominions, boards, repos, labels and people with no LLM; a merged entity
+// points at its survivor through mergedIntoId.
+export const entities = pgTable('entities', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  kind: varchar('kind', { length: 20 }).notNull(),
+  name: varchar('name', { length: 200 }).notNull(),
+  normName: varchar('norm_name', { length: 200 }).notNull(),
+  refKind: varchar('ref_kind', { length: 20 }),
+  refId: text('ref_id'),
+  source: varchar('source', { length: 20 }).default('seed').notNull(),
+  status: varchar('status', { length: 20 }).default('active').notNull(),
+  mergedIntoId: uuid('merged_into_id').references((): AnyPgColumn => entities.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  userKindNormUniq: uniqueIndex('entities_user_kind_norm_uniq').on(t.userId, t.kind, t.normName),
+  kindCheck: check('entities_kind_check', sql`(kind)::text = ANY ((ARRAY['person'::character varying, 'project'::character varying, 'repo'::character varying, 'app'::character varying, 'tool'::character varying, 'dominion'::character varying, 'concept'::character varying])::text[])`),
+  refKindCheck: check('entities_ref_kind_check', sql`(ref_kind IS NULL) OR ((ref_kind)::text = ANY ((ARRAY['dominion'::character varying, 'project'::character varying, 'hangar_repo'::character varying, 'dominion_repo'::character varying, 'label'::character varying, 'member'::character varying, 'virtual_member'::character varying])::text[]))`),
+  sourceCheck: check('entities_source_check', sql`(source)::text = ANY ((ARRAY['seed'::character varying, 'llm'::character varying, 'manual'::character varying])::text[])`),
+  statusCheck: check('entities_status_check', sql`(status)::text = ANY ((ARRAY['active'::character varying, 'merged'::character varying])::text[])`),
+}))
+
+export const entityAliases = pgTable('entity_aliases', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  entityId: uuid('entity_id').notNull().references(() => entities.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  alias: varchar('alias', { length: 200 }).notNull(),
+  aliasNorm: varchar('alias_norm', { length: 200 }).notNull(),
+  source: varchar('source', { length: 20 }).default('seed').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  entityNormUniq: uniqueIndex('entity_aliases_entity_norm_uniq').on(t.entityId, t.aliasNorm),
+  userNormIdx: index('entity_aliases_user_norm_idx').on(t.userId, t.aliasNorm),
+}))
+
+// One row per (entity, memory). fk = the memory's own Dominion / board / repo
+// (confidence 1); dict = an alias found in its text (0.7); llm = step 2b.
+export const entityMentions = pgTable('entity_mentions', {
+  entityId: uuid('entity_id').notNull().references(() => entities.id, { onDelete: 'cascade' }),
+  memoryId: uuid('memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  source: varchar('source', { length: 20 }).notNull(),
+  confidence: real('confidence').default(1).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ name: 'entity_mentions_pk', columns: [t.entityId, t.memoryId] }),
+  memoryIdx: index('entity_mentions_memory_idx').on(t.memoryId),
+  userEntityIdx: index('entity_mentions_user_entity_idx').on(t.userId, t.entityId),
+  sourceCheck: check('entity_mentions_source_check', sql`(source)::text = ANY ((ARRAY['fk'::character varying, 'dict'::character varying, 'llm'::character varying])::text[])`),
+}))
+
+export const entityScans = pgTable('entity_scans', {
+  memoryId: uuid('memory_id').primaryKey().references(() => memories.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  scannedAt: timestamp('scanned_at').defaultNow().notNull(),
+  method: varchar('method', { length: 20 }).notNull(),
+  model: varchar('model', { length: 120 }),
+}, (t) => ({
+  userIdx: index('entity_scans_user_idx').on(t.userId, t.scannedAt),
+  methodCheck: check('entity_scans_method_check', sql`(method)::text = ANY ((ARRAY['dict'::character varying, 'llm'::character varying])::text[])`),
+}))
+
 export type User = typeof users.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type GanttView = typeof ganttViews.$inferSelect
@@ -1041,3 +1105,5 @@ export type TaskAssignee = typeof taskAssignees.$inferSelect
 export type VirtualMember = typeof virtualMembers.$inferSelect
 export type MemberProfile = typeof memberProfiles.$inferSelect
 export type TaskVirtualAssignee = typeof taskVirtualAssignees.$inferSelect
+export type Entity = typeof entities.$inferSelect
+export type EntityAlias = typeof entityAliases.$inferSelect
