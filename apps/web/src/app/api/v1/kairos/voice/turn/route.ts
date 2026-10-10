@@ -4,8 +4,10 @@ import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit } from '@/lib/api/rateLimit'
 import { jsonResponse } from '@/lib/api/response'
 import { SSE_HEADERS } from '@/lib/kairos/voice/turn-stream'
+import { VOICE_TURN_LIMIT } from '@/lib/kairos/voice/limits'
 import {
   findOrCreateVoiceThread,
+  findVoiceTurnInProgress,
   resolveVoicePaidKey,
   voiceTurnSchema,
   voiceTurnStream,
@@ -20,8 +22,6 @@ import {
 // Retrieval + up to 45s of tool loop + the reply; well under Vercel's limit.
 export const maxDuration = 120
 
-const VOICE_TURN_LIMIT = { windowMs: 60_000, maxRequests: 30 }
-
 export const POST = withRateLimit(
   apiHandler(async (request: NextRequest) => {
     const auth = await authenticateRequest(request)
@@ -35,6 +35,12 @@ export const POST = withRateLimit(
 
     const paid = await resolveVoicePaidKey(auth.id)
     if (!paid.ok) return jsonResponse({ error: paid.message, code: paid.code }, { status: 409 })
+
+    // Checked before any write: an unanswered turn still being answered owns
+    // the thread; a second one would be merged into it by the engine.
+    if (await findVoiceTurnInProgress(auth.id, parsed.data.threadKey)) {
+      return jsonResponse({ error: 'Vorath is still answering the previous turn', code: 'turn_in_progress' }, { status: 409 })
+    }
 
     const threadId = await findOrCreateVoiceThread(auth.id, parsed.data.threadKey)
     if (!threadId) return jsonError('Could not open the voice thread', 500)

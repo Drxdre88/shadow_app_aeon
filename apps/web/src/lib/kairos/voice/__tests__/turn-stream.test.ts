@@ -38,7 +38,30 @@ describe('voice turn SSE framing', () => {
     expect(frames.map((f) => f.event)).toEqual(['delta', 'delta', 'done'])
     expect(frames[0].data).toEqual({ text: 'The build is stuck.' })
     expect(frames[1].data).toEqual({ text: 'Want me to look?' })
-    expect(frames[2].data).toMatchObject({ threadId: 't1', userSeq: 1, assistantSeq: 2, text: 'Done text.', streamed: true })
+    expect(frames[2].data).toMatchObject({ threadId: 't1', userSeq: 1, assistantSeq: 2, text: 'Done text.', streamed: true, replaced: true })
+  })
+
+  it('done.text is the saved reply; replaced only when the words differ from what was spoken', async () => {
+    const same = parseFrames(await readAll(createVoiceTurnStream(async (onText) => {
+      onText('The build is stuck. Want me to look?')
+      return { ok: true, done: { ...DONE, text: 'The build is stuck; want me to look?' } }
+    })))
+    expect(same.at(-1)).toMatchObject({ event: 'done', data: { text: 'The build is stuck; want me to look?', replaced: false } })
+    const swapped = parseFrames(await readAll(createVoiceTurnStream(async (onText) => {
+      onText('Half an answer.')
+      return { ok: true, done: { ...DONE, text: 'I ran out of time.' } }
+    })))
+    expect(swapped.at(-1)).toMatchObject({ event: 'done', data: { text: 'I ran out of time.', streamed: true, replaced: true } })
+  })
+
+  it('text pushed after the turn returned is never framed', async () => {
+    let late: ((t: string) => void) | null = null
+    const frames = parseFrames(await readAll(createVoiceTurnStream(async (onText) => {
+      late = onText
+      return { ok: true, done: DONE }
+    })))
+    late!('Too late. ')
+    expect(frames.map((f) => f.event)).toEqual(['done'])
   })
 
   it('without deltas the full text arrives in a single done event', async () => {
@@ -96,6 +119,34 @@ describe('VoiceTapProvider', () => {
     expect(seen).toEqual([])
     await tap.ask(withTools)
     expect(seen).toEqual(['All green.'])
+  })
+
+  it('a tool round that resolves after the answer was tapped stays silent', async () => {
+    const seen: string[] = []
+    let resolveSlow: (r: AIResponse) => void = () => {}
+    const slow = new Promise<AIResponse>((resolve) => { resolveSlow = resolve })
+    const ask = vi.fn()
+      .mockReturnValueOnce(slow)
+      .mockResolvedValueOnce({ text: 'Real answer.', providerId: 'byok', modelId: 'm' })
+    const tap = new VoiceTapProvider(fakeProvider({ ask }), (t) => seen.push(t))
+    const lost = tap.ask(withTools) // the round that loses the deadline race
+    await tap.ask(withTools)
+    resolveSlow({ text: 'Stale answer.', providerId: 'byok', modelId: 'm' })
+    await lost
+    expect(seen).toEqual(['Real answer.'])
+  })
+
+  it('after seal() nothing is tapped, not even a late tool round or stream chunk', async () => {
+    const seen: string[] = []
+    let resolveSlow: (r: AIResponse) => void = () => {}
+    const ask = vi.fn().mockReturnValueOnce(new Promise<AIResponse>((resolve) => { resolveSlow = resolve }))
+    const tap = new VoiceTapProvider(fakeProvider({ ask }), (t) => seen.push(t))
+    const pending = tap.ask(withTools)
+    tap.seal()
+    resolveSlow({ text: 'After the engine returned.', providerId: 'byok', modelId: 'm' })
+    await pending
+    await tap.ask(plain)
+    expect(seen).toEqual([])
   })
 
   it('falls back to ask() when stream() fails before any text', async () => {

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import type { AIProvider } from '@/lib/ai/provider'
-import { createChatThread, findOpenChatThreadByTitle } from '@/lib/data/kairos-chat'
+import { createChatThread, findOpenChatThreadByTitle, getChatThread } from '@/lib/data/kairos-chat'
 import { sendChatMessage } from '@/lib/kairos/chat-turn'
 import { stripMomentFooters } from '@/lib/kairos/moment/chat'
 import { toSpeechText } from './speech-text'
@@ -57,6 +57,21 @@ export async function findOrCreateVoiceThread(userId: string, threadKey?: string
   return created.ok ? created.threadId : null
 }
 
+// A turn counts as in progress while the thread's last message is an
+// unanswered owner turn younger than this (beyond the route's own duration).
+export const VOICE_TURN_IN_PROGRESS_MS = 2 * 60_000
+
+// Read-only: true when the voice thread is still answering a recent turn.
+// Older unanswered turns are left to the engine's orphan recovery.
+export async function findVoiceTurnInProgress(userId: string, threadKey?: string, now: Date = new Date()): Promise<boolean> {
+  const threadId = await findOpenChatThreadByTitle(userId, voiceThreadTitle(threadKey))
+  if (!threadId) return false
+  const loaded = await getChatThread(userId, threadId)
+  const last = loaded?.messages[loaded.messages.length - 1]
+  if (!last || last.role !== 'user') return false
+  return now.getTime() - last.createdAt.getTime() < VOICE_TURN_IN_PROGRESS_MS
+}
+
 async function runVoiceTurn(
   userId: string,
   threadId: string,
@@ -65,7 +80,13 @@ async function runVoiceTurn(
   onText: (text: string) => void,
 ): Promise<VoiceTurnOutcome> {
   const tapped = new VoiceTapProvider(provider, onText)
-  const result = await sendChatMessage(userId, threadId, text, { channel: 'voice', provider: tapped })
+  let result: Awaited<ReturnType<typeof sendChatMessage>>
+  try {
+    result = await sendChatMessage(userId, threadId, text, { channel: 'voice', provider: tapped })
+  } finally {
+    // Nothing a late provider call produces may reach the line after this.
+    tapped.seal()
+  }
   if (!result.ok) {
     return { ok: false, reason: result.reason, ...('message' in result && result.message ? { message: result.message } : {}), threadId }
   }

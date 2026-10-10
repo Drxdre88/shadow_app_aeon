@@ -10,9 +10,13 @@ import type { AIProvider, AIRequest, AIResponse, AIUsage, StreamChunk } from '@/
 //   is tapped. If stream() fails before any text, it falls back to ask().
 // - After the answer is tapped the wrapper disarms, so later calls (the
 //   pending-ask classifier) are never spoken.
+// - The armed flag is re-checked after every await: a tool round that lost
+//   the tool loop's deadline race can still resolve later and must stay
+//   silent. seal() (called when the engine returns) silences everything.
 
 export class VoiceTapProvider implements AIProvider {
   private armed = true
+  private sealed = false
   private usage: AIUsage | undefined
 
   constructor(
@@ -33,11 +37,16 @@ export class VoiceTapProvider implements AIProvider {
     return this.usage
   }
 
+  seal(): void {
+    this.sealed = true
+    this.armed = false
+  }
+
   async ask(req: AIRequest): Promise<AIResponse> {
     if (!this.armed) return this.inner.ask(req)
     if (req.tools) {
       const response = await this.inner.ask(req)
-      if (!response.toolCalls?.length && response.text.trim()) this.tapWhole(response)
+      if (this.armed && !response.toolCalls?.length && response.text.trim()) this.tapWhole(response)
       return response
     }
     this.armed = false
@@ -48,10 +57,14 @@ export class VoiceTapProvider implements AIProvider {
     return this.inner.stream(req)
   }
 
+  private emit(text: string): void {
+    if (!this.sealed) this.onText(text)
+  }
+
   private tapWhole(response: AIResponse): void {
     this.armed = false
     this.usage = response.usage
-    this.onText(response.text)
+    this.emit(response.text)
   }
 
   private async streamAnswer(req: AIRequest): Promise<AIResponse> {
@@ -60,7 +73,7 @@ export class VoiceTapProvider implements AIProvider {
       for await (const chunk of this.inner.stream(req)) {
         if (chunk.text) {
           text += chunk.text
-          this.onText(chunk.text)
+          this.emit(chunk.text)
         }
         if (chunk.usage) this.usage = chunk.usage
       }

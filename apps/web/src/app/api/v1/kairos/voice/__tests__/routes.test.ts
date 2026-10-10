@@ -6,6 +6,7 @@ const m = vi.hoisted(() => ({
   getProviderForTask: vi.fn(),
   findOpenChatThreadByTitle: vi.fn(),
   createChatThread: vi.fn(),
+  getChatThread: vi.fn(),
   sendChatMessage: vi.fn(),
   fireChatRoutine: vi.fn(),
   sendWebChatViaRoutine: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('@/lib/ai/route-task', () => ({ getProviderForTask: m.getProviderForTask
 vi.mock('@/lib/data/kairos-chat', () => ({
   findOpenChatThreadByTitle: m.findOpenChatThreadByTitle,
   createChatThread: m.createChatThread,
+  getChatThread: m.getChatThread,
 }))
 vi.mock('@/lib/kairos/chat-turn', () => ({ sendChatMessage: m.sendChatMessage }))
 vi.mock('@/lib/kairos/moment/chat', () => ({ stripMomentFooters: (s: string) => s }))
@@ -55,6 +57,7 @@ beforeEach(() => {
   vi.stubEnv('VORATH_USER_IDS', 'owner-id')
   m.authenticateRequest.mockResolvedValue({ id: 'owner-id', role: 'user' })
   m.findOpenChatThreadByTitle.mockResolvedValue('thread-1')
+  m.getChatThread.mockResolvedValue({ thread: { id: 'thread-1' }, messages: [] })
   m.loadVoiceFeedRows.mockResolvedValue([])
 })
 
@@ -95,6 +98,28 @@ describe('POST voice/turn', () => {
 
   it('400 on an empty text', async () => {
     expect((await turn({ text: '  ' })).status).toBe(400)
+  })
+
+  it('409 turn_in_progress while the last turn is unanswered and recent, before any write', async () => {
+    m.getProviderForTask.mockResolvedValue({ provider: { providerId: 'byok', modelId: 'm', ask: vi.fn(), stream: vi.fn() } })
+    const pending = { role: 'user', content: 'first', seq: 5, createdAt: new Date(Date.now() - 30_000) }
+    m.getChatThread.mockResolvedValue({ thread: { id: 'thread-1' }, messages: [pending] })
+    const res = await turn({ text: 'second' })
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ code: 'turn_in_progress' })
+    expect(m.sendChatMessage).not.toHaveBeenCalled()
+    expect(m.createChatThread).not.toHaveBeenCalled()
+  })
+
+  it('an unanswered turn older than two minutes no longer blocks', async () => {
+    m.getProviderForTask.mockResolvedValue({ provider: { providerId: 'byok', modelId: 'm', ask: vi.fn(), stream: vi.fn() } })
+    const stale = { role: 'user', content: 'first', seq: 5, createdAt: new Date(Date.now() - 3 * 60_000) }
+    m.getChatThread.mockResolvedValue({ thread: { id: 'thread-1' }, messages: [stale] })
+    m.sendChatMessage.mockResolvedValue({ ok: true, threadId: 'thread-1', userSeq: 5, assistantSeq: 6, assistantContent: 'Hi.', model: 'm' })
+    const res = await turn({ text: 'first' })
+    expect(res.status).toBe(200)
+    await res.text()
+    expect(m.sendChatMessage).toHaveBeenCalled()
   })
 
   it('streams the engine turn on the voice channel with the paid provider', async () => {

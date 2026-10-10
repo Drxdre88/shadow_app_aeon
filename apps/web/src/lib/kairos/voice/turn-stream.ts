@@ -36,6 +36,12 @@ export interface VoiceTurnTiming {
   ok: boolean
 }
 
+// Words only: sentence-by-sentence cleaning and whole-reply cleaning can differ
+// in punctuation and spacing without the listener hearing anything different.
+export function speechKey(text: string): string {
+  return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')
+}
+
 // `run` receives the raw-text sink and resolves when the turn is persisted.
 export function createVoiceTurnStream(
   run: (onText: (text: string) => void) => Promise<VoiceTurnOutcome>,
@@ -57,18 +63,26 @@ export function createVoiceTurnStream(
           open = false
         }
       }
+      const spoken: string[] = []
       const chunker = new SpeechChunker((text) => {
         if (firstDeltaMs === null) firstDeltaMs = Date.now() - startedAt
         deltas += 1
+        spoken.push(text)
         send('delta', { text })
       })
       let ok = false
       try {
-        const outcome = await run((text) => chunker.push(text))
+        let settled = false
+        const outcome = await run((text) => { if (!settled) chunker.push(text) })
+        settled = true
         chunker.flush()
         if (outcome.ok) {
           ok = true
-          send('done', { ...outcome.done, streamed: deltas > 0, ms: Date.now() - startedAt })
+          // done.text is always the saved reply; replaced tells the client the
+          // deltas it spoke differ from it (a deadline fallback, a trimmed or
+          // rewritten reply), so it should re-speak done.text.
+          const replaced = deltas > 0 && speechKey(spoken.join(' ')) !== speechKey(outcome.done.text)
+          send('done', { ...outcome.done, streamed: deltas > 0, replaced, ms: Date.now() - startedAt })
         } else {
           send('error', { reason: outcome.reason, message: outcome.message ?? null, threadId: outcome.threadId ?? null })
         }

@@ -7,7 +7,8 @@ routes outside the MCP/REST parity invariant, like `kairos/speak`.
 
 - Send `Authorization: Bearer aeon_k1_…`: an Aeon API key created by the owner (Settings → API keys).
 - Every non-owner gets **404**, the same answer as a route that doesn't exist.
-- Rate limits are per IP: the turn route allows 30 a minute and the feed allows 20 a minute.
+- Rate limits are per IP, and each voice route has its own bucket, so other REST calls don't count:
+  the turn route allows 30 a minute and the feed allows 60 a minute.
   Over the limit you get **429** with a `Retry-After` header.
 
 ## 1. Talk: `POST /api/v1/kairos/voice/turn`
@@ -40,11 +41,14 @@ data: {"threadId":"…","userSeq":7,"assistantSeq":8,"text":"The Swarm build is 
 ```
 
 - `delta`: one or more whole sentences of plain speech, in order. Send each one to TTS as it arrives.
-- `done`: always the last event on success. `text` is the saved reply as plain speech.
-  **If no `delta` arrived (`streamed:false`), speak `done.text`.** Otherwise it's for display and logs.
+- `done`: always the last event on success. `text` is always the saved reply as plain speech.
+  **If no `delta` arrived (`streamed:false`), speak `done.text`.** If `replaced:true`, the saved reply
+  differs from what the deltas said (for example a time-out answer), so stop and speak `done.text`.
+  Otherwise it's for display and logs.
 - `error`: the last event on failure, as `{"reason","message","threadId"}`. `reason` is usually
   `ai_failed`, `ai_empty`, `no_credential` or `thread_not_found`.
-  The owner's words are already saved. Retrying the same text answers the saved turn without saving it twice.
+  The owner's words are already saved. Retrying the same text after two minutes answers the saved
+  turn without saving it twice.
 
 Deltas are a best effort. When Vorath looks something up with a tool, the answer arrives in
 one go and is split into sentences. The first sentence can take a few seconds while he
@@ -57,7 +61,7 @@ reads his brain.
 | 400 | Bad body (empty `text`, a bad `threadKey`) |
 | 401 | Missing or invalid key |
 | 404 | Not the owner |
-| 409 | `code: "no_paid_key"`: no usable paid AI key (none saved, or it can't be decrypted). There's no fallback, so ask the owner to add one in Aeon. |
+| 409 | `code: "no_paid_key"`: no usable paid AI key (none saved, or it can't be decrypted). There's no fallback, so ask the owner to add one in Aeon. `code: "turn_in_progress"`: the thread's last turn is still unanswered and under two minutes old. Wait for its `done` before sending the next one. |
 | 429 | Rate limited |
 | 500 | Server error |
 
