@@ -213,7 +213,8 @@ export const registerMemoryTools: RegisterFn = (server) => {
       pinnedOnly: z.boolean().optional(),
       includeMachine: z.boolean().optional().describe('Also return machine rows (traces, snapshots, deltas, archetypes, cortex, aether, advisories)'),
       expand: z.boolean().optional().describe('Widen the rerank pool with linked memories and memories cited by matching archetypes; each hit reports `via` (search/link/signpost). Default on; pass false to opt out'),
-      limit: z.number().int().min(1).max(100).default(20).optional(),
+            entity: z.boolean().optional().describe('Also fuse memories mentioning a named entity (repo, board, person) from the query; such hits report `via: entity`. Default off'),
+            limit: z.number().int().min(1).max(100).default(20).optional(),
     },
     { title: 'Search Memories', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
@@ -229,6 +230,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
         pinnedOnly: args.pinnedOnly,
         includeMachine: args.includeMachine,
         expand: args.expand,
+        entity: args.entity,
         limit: args.limit ?? 20,
         offset: 0,
       })
@@ -305,7 +307,8 @@ export const registerMemoryTools: RegisterFn = (server) => {
       includePinned: z.boolean().default(true).optional().describe('Whether to surface pinned memories regardless of search match'),
       includeMachine: z.boolean().optional().describe('Also retrieve machine rows (traces, snapshots, deltas, archetypes, cortex, aether, advisories)'),
       expand: z.boolean().optional().describe('Widen the rerank pool with linked memories and memories cited by matching archetypes; sources report `via`. Default on; pass false to opt out'),
-    },
+            entity: z.boolean().optional().describe('Also fuse memories mentioning a named entity (repo, board, person) from the query; such sources report `via: entity`. Default off'),
+          },
     { title: 'Prepare Context', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async (args, extra) => {
       const uid = getUserId(extra)
@@ -320,6 +323,7 @@ export const registerMemoryTools: RegisterFn = (server) => {
         includePinned: args.includePinned ?? true,
         includeMachine: args.includeMachine,
         expand: args.expand,
+        entity: args.entity,
       })
       if (!parsed.success) return fail(parsed.error.issues[0].message)
 

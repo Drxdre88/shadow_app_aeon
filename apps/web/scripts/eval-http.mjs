@@ -75,8 +75,8 @@ export class ReadOnlyClient {
     throw new Error(`gave up after retries: ${url.pathname}`)
   }
 
-  async search(query, limit, { expand } = {}) {
-    const data = await this.get('/api/v1/memories/search', { q: query, limit, expand })
+  async search(query, limit, { expand, entity } = {}) {
+    const data = await this.get('/api/v1/memories/search', { q: query, limit, expand, entity })
     const r = data.retrieval ?? {}
     // Score inputs captured so confidence floors can be tuned from saved runs.
     const results = (data.hits ?? []).map((h) => ({
@@ -87,7 +87,7 @@ export class ReadOnlyClient {
     return { results, retrieval: data.retrieval ?? null, mode: r.mode }
   }
 
-  async context(query, { budget = 4000, maxSources = 15, includePinned, includeToday, expand } = {}) {
+  async context(query, { budget = 4000, maxSources = 15, includePinned, includeToday, expand, entity } = {}) {
     const data = await this.get('/api/v1/memories/context', {
       query,
       budgetTokens: budget,
@@ -96,6 +96,7 @@ export class ReadOnlyClient {
       includePinned: includePinned === false ? 'false' : undefined,
       includeToday: includeToday === false ? 'false' : undefined,
       expand,
+      entity,
     })
     const results = (data.sources ?? []).map((s) => ({
       id: s.id, title: s.title, section: s.section, score: s.score, via: s.via ?? 'search',
@@ -114,12 +115,14 @@ export class ReadOnlyClient {
   }
 }
 
-// Each adapter returns { results, retrieval }. opts.expand: true/false sends expand=true|false; undefined omits it.
+// Each adapter returns { results, retrieval }. opts.expand / opts.entity: true/false send =true|false; undefined omits it.
 export function makePaths(client, opts) {
-  const expand = opts.expand === undefined || opts.expand === null ? undefined : String(Boolean(opts.expand))
-  const ctx = { budget: opts.budget, maxSources: opts.maxSources, expand }
+  const flag = (v) => (v === undefined || v === null ? undefined : String(Boolean(v)))
+  const expand = flag(opts.expand)
+  const entity = flag(opts.entity)
+  const ctx = { budget: opts.budget, maxSources: opts.maxSources, expand, entity }
   return {
-    search: (q) => client.search(q, Math.max(opts.k, 10), { expand }),
+    search: (q) => client.search(q, Math.max(opts.k, 10), { expand, entity }),
     context: (q) => client.context(q, ctx),
     'context-nopin': (q) => client.context(q, { ...ctx, includePinned: false, includeToday: false }),
   }

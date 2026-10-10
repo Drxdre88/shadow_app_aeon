@@ -67,6 +67,15 @@ describe('searchMemoriesHybrid', () => {
     expect(mocks.searchCore.mock.calls[0][1].streams).toBeNull()
   })
 
+  it('passes the entity switch through; absent leaves the core default', async () => {
+    await searchMemoriesHybrid(USER, parse({ query: 'Triad bridge', entity: true }))
+    await searchMemoriesHybrid(USER, parse({ query: 'Triad bridge' }))
+
+    expect(mocks.searchCore.mock.calls[0][1].entity).toBe(true)
+    expect(mocks.searchCore.mock.calls[1][1].entity).toBeUndefined()
+    expect(searchMemoriesSchema.safeParse({ query: 'x y', entity: 'yes' }).success).toBe(false)
+  })
+
   it('keeps the legacy hit fields and adds streamClass, dominionId, score and retrieval', async () => {
     mocks.searchCore.mockResolvedValue({
       hits: [

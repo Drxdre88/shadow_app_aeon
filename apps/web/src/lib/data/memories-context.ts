@@ -82,6 +82,7 @@ export async function prepareContext(userId: string, input: PrepareContextInput)
     snippets: true,
     minQueryChars: 2,
     expand: input.expand ?? SEARCH_EXPAND_DEFAULT,
+    entity: input.entity,
   })
   // relevance (pre-standing) is the base score: the composite below applies
   // the standing factor exactly once.

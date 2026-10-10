@@ -104,6 +104,7 @@ export async function searchMemoriesHybrid(userId: string, input: SearchMemories
     snippets: true,
     minQueryChars: 2,
     expand: input.expand ?? SEARCH_EXPAND_DEFAULT,
+    entity: input.entity,
   })
 
   const total = Math.min(core.candidates, HYBRID_MAX_WINDOW)
