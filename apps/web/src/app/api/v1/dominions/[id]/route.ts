@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
+import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
 import { updateDominion } from '@/lib/data/dominions'
 import { updateDominionSchema } from '@/lib/data/validators'
@@ -16,6 +17,8 @@ export const PATCH = withRateLimit(
   apiHandler(async (request: NextRequest, ctx: unknown) => {
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
+    const denied = vorathGuard(result)
+    if (denied) return denied
     const { id } = await (ctx as Params).params
     if (!dominionIdSchema.safeParse(id).success) return jsonError('Dominion not found', 404)
 

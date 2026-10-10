@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
+import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit, API_READ_LIMIT } from '@/lib/api/rateLimit'
 import { listBeliefs } from '@/lib/data/beliefs'
 import { listBeliefsSchema } from '@/lib/data/validators/beliefs'
@@ -11,6 +12,8 @@ export const GET = withRateLimit(
   apiHandler(async (request: NextRequest) => {
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
+    const denied = vorathGuard(result)
+    if (denied) return denied
 
     const params = request.nextUrl.searchParams
     const parsed = listBeliefsSchema.safeParse({

@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
+import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
 import { captureMemory } from '@/lib/data/memories'
 import { captureMemorySchema } from '@/lib/data/validators'
@@ -16,6 +17,8 @@ export const POST = withRateLimit(
   apiHandler(async (request: NextRequest) => {
     const auth = await authenticateRequest(request)
     if (!isApiUser(auth)) return auth
+    const denied = vorathGuard(auth)
+    if (denied) return denied
 
     let body: unknown
     try {

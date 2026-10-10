@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
+import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
 import { verifyProjectAccess, setProjectKairosFeed } from '@/lib/data/projects'
 import { setProjectKairosFeedSchema } from '@/lib/data/validators'
@@ -13,6 +14,8 @@ export const PUT = withRateLimit(
   apiHandler(async (request: NextRequest, ctx: unknown) => {
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
+    const denied = vorathGuard(result)
+    if (denied) return denied
     const { id } = await (ctx as Params).params
     if (!projectIdSchema.safeParse(id).success) return jsonError('Project not found', 404)
 

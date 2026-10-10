@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
+import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit, API_READ_LIMIT } from '@/lib/api/rateLimit'
 import { listOpenKairosAsks, toOpenKairosAskView } from '@/lib/data/ask'
 import { listOpenKairosAsksSchema } from '@/lib/data/validators/kairos-asks'
@@ -12,6 +13,8 @@ export const GET = withRateLimit(
   apiHandler(async (request: NextRequest) => {
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
+    const denied = vorathGuard(result)
+    if (denied) return denied
 
     const parsed = listOpenKairosAsksSchema.safeParse({})
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)

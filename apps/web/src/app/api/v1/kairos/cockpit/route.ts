@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
+import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit, API_READ_LIMIT } from '@/lib/api/rateLimit'
 import { readMorningCockpit } from '@/lib/data/morning-cockpit'
 import { getMorningCockpitSchema } from '@/lib/data/validators/kairos-cockpit'
@@ -11,6 +12,8 @@ export const GET = withRateLimit(
   apiHandler(async (request: NextRequest) => {
     const result = await authenticateRequest(request)
     if (!isApiUser(result)) return result
+    const denied = vorathGuard(result)
+    if (denied) return denied
 
     const parsed = getMorningCockpitSchema.safeParse({ format: request.nextUrl.searchParams.get('format') ?? undefined })
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)

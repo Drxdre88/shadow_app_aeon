@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { z } from 'zod'
 import { authenticateRequest, isApiUser, apiHandler, jsonData, jsonError } from '@/lib/api/auth'
+import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit, API_READ_LIMIT, API_WRITE_LIMIT } from '@/lib/api/rateLimit'
 import { updateHangarRepoSchema } from '@/lib/data/validators'
 import { findHangarRepoById, updateHangarRepo, deleteHangarRepo } from '@/lib/data/hangar-repos'
@@ -20,6 +21,8 @@ export const GET = withRateLimit(
   apiHandler(async (request: NextRequest, ctx: unknown) => {
     const auth = await authenticateRequest(request)
     if (!isApiUser(auth)) return auth
+    const denied = vorathGuard(auth)
+    if (denied) return denied
     const { id } = await (ctx as Params).params
     if (!repoIdSchema.safeParse(id).success) return jsonError('Repo not found', 404)
 
@@ -38,6 +41,8 @@ export const PUT = withRateLimit(
   apiHandler(async (request: NextRequest, ctx: unknown) => {
     const auth = await authenticateRequest(request)
     if (!isApiUser(auth)) return auth
+    const denied = vorathGuard(auth)
+    if (denied) return denied
     const { id } = await (ctx as Params).params
     if (!repoIdSchema.safeParse(id).success) return jsonError('Repo not found', 404)
 
@@ -68,6 +73,8 @@ export const DELETE = withRateLimit(
   apiHandler(async (request: NextRequest, ctx: unknown) => {
     const auth = await authenticateRequest(request)
     if (!isApiUser(auth)) return auth
+    const denied = vorathGuard(auth)
+    if (denied) return denied
     const { id } = await (ctx as Params).params
     if (!repoIdSchema.safeParse(id).success) return jsonError('Repo not found', 404)
 

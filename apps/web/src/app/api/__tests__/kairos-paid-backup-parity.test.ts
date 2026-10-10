@@ -62,7 +62,7 @@ describe('Kairos paid backup MCP <-> REST <-> action parity', () => {
     const actions = read(ACTIONS_FILE)
     expect(actions).toMatch(/getPaidBackupSetting\(userId\)/)
     expect(actions).toMatch(/setPaidBackupSetting\(userId, parsed\.enabled\)/)
-    expect(actions).toMatch(/await requireAuth\(\)/)
+    expect(actions).toMatch(/await (requireAuth|requireVorath|safeRequireVorath)\(\)/)
   })
 
   it('annotates the tools correctly', () => {
