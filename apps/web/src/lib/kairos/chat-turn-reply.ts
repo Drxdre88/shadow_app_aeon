@@ -23,7 +23,17 @@ export interface ChatTurnOptions {
   // A caller-resolved paid provider (the voice line taps it to stream);
   // absent = resolved here through getProviderForTask.
   provider?: AIProvider
+  // For calls that are not the reply (the ask classifier), so a tapped
+  // `provider` never speaks them; absent = `provider`.
+  sideProvider?: AIProvider
+  // false = answer in one tool-less call (it can stream); absent = the
+  // agentic tool loop when the kill switch allows it.
+  tools?: boolean
+  // Timing marks for the voice turn log: 'retrieved', 'grounded', 'answered', 'saved'.
+  onMark?: (mark: ChatTurnMark) => void
 }
+
+export type ChatTurnMark = 'retrieved' | 'grounded' | 'answered' | 'saved'
 
 export type KairosChatTurnResult =
   | { ok: true; threadId: string; userSeq: number; assistantSeq: number; assistantContent: string; model: string | null }

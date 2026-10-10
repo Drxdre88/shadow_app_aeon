@@ -1,4 +1,5 @@
 import type { AIProvider, AIRequest, AIResponse, AIUsage, StreamChunk } from '@/lib/ai/provider'
+import type { VoiceTurnClock } from './timing'
 
 // Wraps the owner's paid provider for one voice turn so the reply text
 // reaches the voice line as it is produced, while the chat engine still sees
@@ -13,15 +14,19 @@ import type { AIProvider, AIRequest, AIResponse, AIUsage, StreamChunk } from '@/
 // - The armed flag is re-checked after every await: a tool round that lost
 //   the tool loop's deadline race can still resolve later and must stay
 //   silent. seal() (called when the engine returns) silences everything.
+// - An optional clock records the first model call, each tool round, the
+//   first tapped text and the prompt size, for the turn timing log.
 
 export class VoiceTapProvider implements AIProvider {
   private armed = true
   private sealed = false
+  private called = false
   private usage: AIUsage | undefined
 
   constructor(
     private readonly inner: AIProvider,
     private readonly onText: (text: string) => void,
+    private readonly clock?: VoiceTurnClock,
   ) {}
 
   get providerId() {
@@ -44,6 +49,7 @@ export class VoiceTapProvider implements AIProvider {
 
   async ask(req: AIRequest): Promise<AIResponse> {
     if (!this.armed) return this.inner.ask(req)
+    this.noteCall(req)
     if (req.tools) {
       const response = await this.inner.ask(req)
       if (this.armed && !response.toolCalls?.length && response.text.trim()) this.tapWhole(response)
@@ -58,7 +64,18 @@ export class VoiceTapProvider implements AIProvider {
   }
 
   private emit(text: string): void {
-    if (!this.sealed) this.onText(text)
+    if (this.sealed) return
+    this.clock?.mark('first_text')
+    this.onText(text)
+  }
+
+  private noteCall(req: AIRequest): void {
+    if (!this.clock) return
+    this.clock.count(req.tools ? 'toolRounds' : 'plainCalls')
+    if (this.called) return
+    this.called = true
+    this.clock.mark('model_call')
+    this.clock.note('promptChars', (req.messages ?? []).reduce((n, m) => n + m.content.length, 0))
   }
 
   private tapWhole(response: AIResponse): void {

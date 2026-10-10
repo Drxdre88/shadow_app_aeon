@@ -3,6 +3,8 @@
 For the desk app (Windows tray, later Android). Two owner-only routes. Both are auxiliary
 routes outside the MCP/REST parity invariant, like `kairos/speak`.
 
+Windows client: [`apps/vorath-desk/`](../../apps/vorath-desk/README.md).
+
 ## Auth
 
 - Send `Authorization: Bearer aeon_k1_…`: an Aeon API key created by the owner (Settings → API keys).
@@ -20,8 +22,9 @@ Request body (JSON):
 | `text` | string, 1–4000 | What the owner said, already transcribed |
 | `threadKey` | string, optional | Letters, digits and `_ . : -`, up to 80. Picks a separate voice thread (for example one per device). Leave it out to use the single "Voice · Vorath" thread. |
 
-The turn runs through Vorath's normal chat engine: the same grounding, memory, tools,
-owner model and reply recording as web chat. It always uses the owner's paid key on Claude
+The turn runs through Vorath's normal chat engine: the same memory, tools and reply recording
+as web chat, with a voice-sized grounding bundle so the first words come sooner (see
+[Latency](#latency)). It always uses the owner's paid key on Claude
 Sonnet 5.5, never the Max routine. Speaking is an explicit owner action, so the paid-backup
 switch (which governs automatic paid fallbacks) does not apply. Both sides of the turn are saved in the voice thread, so they appear in
 the chat history and in the nightly memory capture. The reply uses a spoken register:
@@ -50,9 +53,29 @@ data: {"threadId":"…","userSeq":7,"assistantSeq":8,"text":"The Swarm build is 
   The owner's words are already saved. Retrying the same text after two minutes answers the saved
   turn without saving it twice.
 
-Deltas are a best effort. When Vorath looks something up with a tool, the answer arrives in
-one go and is split into sentences. The first sentence can take a few seconds while he
-reads his brain.
+Deltas are a best effort. A plain question streams: each sentence goes out as soon as the
+model finishes it. When the question asks for a lookup ("what's the latest on…", "check…",
+a board, today's activity, an undo), Vorath uses his tools first, and that answer arrives in
+one go, split into sentences, a few seconds later.
+
+### Latency
+
+The server works to get the first sentence out quickly:
+
+- **Voice-sized grounding.** The prompt carries the Aether doc, three archetypes and four
+  memory hits, all clipped short, plus a short "today" digest and the last 12 messages.
+  Web chat gets more of each. The owner-model, stage and cold-read blocks are web-only.
+  All grounding reads start at the same time.
+- **Tools only when asked.** A quick word check decides whether the question needs a lookup.
+  It makes no model call. Other questions are answered in one streamed call with no tools.
+  If the answer isn't in his context, Vorath says so and offers to look it up, and a reply
+  like "yes, look it up" brings the tools back.
+- **Work nobody hears runs later.** Checking whether the turn answers Vorath's open
+  question, and reinforcing the memories he cited, both run after the reply is saved.
+  They no longer delay `done`.
+- Each turn logs `[kairos-voice] turn timing` with `firstDeltaMs`, `totalMs`, the step marks
+  (`retrievedMs`, `groundedMs`, `modelCallMs`, `firstTextMs`, `answeredMs`, `savedMs`),
+  `tools`, `toolRounds`, `plainCalls` and `promptChars`.
 
 ### Errors before the stream starts (JSON `{error, code?}`)
 
@@ -106,5 +129,5 @@ Poll it **every 5 seconds**. Send the previous response's `next` as `since`.
 ## Cost
 
 - Each turn is one paid Claude Sonnet 5.5 call (the `voice_chat` task, not the heavy chat tier), plus up to four lookup rounds
-  when Vorath uses a tool.
+  when Vorath uses a tool, plus one short classifier call after the reply when he has an open question.
 - The feed makes no model calls.

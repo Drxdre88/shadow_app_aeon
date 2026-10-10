@@ -135,7 +135,25 @@ describe('POST voice/turn', () => {
     const [, threadId, text, opts] = m.sendChatMessage.mock.calls[0]
     expect([threadId, text, opts.channel]).toEqual(['thread-1', 'did it ship?', 'voice'])
     expect(opts.provider).toBeDefined()
+    // A simple question answers tool-less (streamed); the classifier gets the untapped provider.
+    expect(opts.tools).toBe(false)
+    expect(opts.sideProvider).toBe((await m.getProviderForTask.mock.results[0].value).provider)
     expect(m.fireChatRoutine).not.toHaveBeenCalled()
+  })
+
+  it('a lookup question keeps the tools, and a first turn opens the voice thread', async () => {
+    m.getProviderForTask.mockResolvedValue({ provider: { providerId: 'byok', modelId: 'm', ask: vi.fn(), stream: vi.fn() } })
+    m.findOpenChatThreadByTitle.mockResolvedValue(null)
+    m.createChatThread.mockResolvedValue({ ok: true, threadId: 'thread-new' })
+    m.sendChatMessage.mockResolvedValue({ ok: true, threadId: 'thread-new', userSeq: 1, assistantSeq: 2, assistantContent: 'Checking.', model: 'm' })
+    const res = await turn({ text: "what's the latest on swarm?" })
+    expect(res.status).toBe(200)
+    await res.text()
+    expect(m.findOpenChatThreadByTitle).toHaveBeenCalledTimes(1)
+    expect(m.createChatThread).toHaveBeenCalledWith('owner-id', { dominionId: null, title: 'Voice · Vorath' })
+    const [, threadId, , opts] = m.sendChatMessage.mock.calls[0]
+    expect(threadId).toBe('thread-new')
+    expect(opts.tools).toBe(true)
   })
 })
 
