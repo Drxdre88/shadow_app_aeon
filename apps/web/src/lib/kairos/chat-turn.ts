@@ -46,6 +46,7 @@ export {
   type AlreadyAnsweredResult,
   type AskResolution,
   type ChatReplyMark,
+  type ChatTurnMark,
   type ChatTurnOptions,
   type KairosChatTurnResult,
 } from '@/lib/kairos/chat-turn-reply'

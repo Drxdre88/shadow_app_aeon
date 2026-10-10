@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AIProvider, AIRequest, AIResponse, StreamChunk } from '@/lib/ai/provider'
 import { createVoiceTurnStream, sseFrame } from '../turn-stream'
 import { VoiceTapProvider } from '../tap-provider'
+import { VoiceTurnClock } from '../timing'
 
 async function readAll(stream: ReadableStream<Uint8Array>): Promise<string> {
   const reader = stream.getReader()
@@ -155,5 +156,38 @@ describe('VoiceTapProvider', () => {
     const tap = new VoiceTapProvider(fakeProvider({ stream }), (t) => seen.push(t))
     expect((await tap.ask(plain)).text).toBe('Asked.')
     expect(seen).toEqual(['Asked.'])
+  })
+
+  it('records the first call, tool rounds, the first text and the prompt size on the clock', async () => {
+    let now = 0
+    const clock = new VoiceTurnClock(() => now)
+    const ask = vi.fn()
+      .mockResolvedValueOnce({ text: '', providerId: 'byok', modelId: 'm', toolCalls: [{ toolCallId: '1', toolName: 't', input: {} }] })
+    const tap = new VoiceTapProvider(fakeProvider({ ask }), () => {}, clock)
+    now = 100
+    await tap.ask(withTools)
+    now = 400
+    await tap.ask(plain)
+    expect(clock.snapshot()).toEqual({ modelCallMs: 100, firstTextMs: 400, toolRounds: 1, plainCalls: 1, promptChars: 2 })
+  })
+})
+
+describe('voice turn end to end over the tap', () => {
+  it('streams token deltas as whole sentences, in order, before done', async () => {
+    const tokens = ['The build ', 'is green. ', 'Two tests ', 'were flaky. ', 'Want the list?']
+    const inner = fakeProvider({
+      stream: async function* (): AsyncIterable<StreamChunk> {
+        for (const text of tokens) yield { text, providerId: 'byok', modelId: 'm' }
+      },
+    })
+    const frames = parseFrames(await readAll(createVoiceTurnStream(async (onText) => {
+      const tap = new VoiceTapProvider(inner, onText)
+      const answer = await tap.ask({ messages: [{ role: 'user', content: 'how is the build?' }] })
+      tap.seal()
+      return { ok: true, done: { ...DONE, text: answer.text } }
+    })))
+    expect(frames.map((f) => f.event)).toEqual(['delta', 'delta', 'delta', 'done'])
+    expect(frames.slice(0, 3).map((f) => f.data.text)).toEqual(['The build is green.', 'Two tests were flaky.', 'Want the list?'])
+    expect(frames[3].data).toMatchObject({ streamed: true, replaced: false })
   })
 })

@@ -6,8 +6,8 @@ import { jsonResponse } from '@/lib/api/response'
 import { SSE_HEADERS } from '@/lib/kairos/voice/turn-stream'
 import { VOICE_TURN_LIMIT } from '@/lib/kairos/voice/limits'
 import {
-  findOrCreateVoiceThread,
-  findVoiceTurnInProgress,
+  ensureVoiceThread,
+  loadVoiceThreadState,
   resolveVoicePaidKey,
   voiceTurnSchema,
   voiceTurnStream,
@@ -33,16 +33,19 @@ export const POST = withRateLimit(
     const parsed = voiceTurnSchema.safeParse(body)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)
 
-    const paid = await resolveVoicePaidKey(auth.id)
+    // Both reads at once: the key and the thread state. Nothing is written
+    // until both pass, so a missing key or a turn still being answered (a
+    // second one would be merged into it by the engine) leaves no trace.
+    const [paid, state] = await Promise.all([
+      resolveVoicePaidKey(auth.id),
+      loadVoiceThreadState(auth.id, parsed.data.threadKey),
+    ])
     if (!paid.ok) return jsonResponse({ error: paid.message, code: paid.code }, { status: 409 })
-
-    // Checked before any write: an unanswered turn still being answered owns
-    // the thread; a second one would be merged into it by the engine.
-    if (await findVoiceTurnInProgress(auth.id, parsed.data.threadKey)) {
+    if (state.inProgress) {
       return jsonResponse({ error: 'Vorath is still answering the previous turn', code: 'turn_in_progress' }, { status: 409 })
     }
 
-    const threadId = await findOrCreateVoiceThread(auth.id, parsed.data.threadKey)
+    const threadId = await ensureVoiceThread(auth.id, state, parsed.data.threadKey)
     if (!threadId) return jsonError('Could not open the voice thread', 500)
 
     return new Response(voiceTurnStream(auth.id, threadId, parsed.data.text, paid.provider), {

@@ -41,6 +41,9 @@ export const GET = withRateLimit(
     const expand = url.searchParams.get('expand')
     if (expand === 'true') params.expand = true
     else if (expand === 'false') params.expand = false
+    const entity = url.searchParams.get('entity')
+    if (entity === 'true') params.entity = true
+    else if (entity === 'false') params.entity = false
 
     const types = url.searchParams.getAll('type')
     if (types.length === 1) params.type = types[0]

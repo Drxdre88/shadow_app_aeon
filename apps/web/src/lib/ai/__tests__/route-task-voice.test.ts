@@ -26,7 +26,7 @@ vi.mock('@ai-sdk/anthropic', () => ({ createAnthropic: vi.fn(() => h.build) }))
 import registry from '@aeon/shared/ai/model-registry.json'
 import { isPaidBackupEnabled } from '@/lib/kairos/paid-backup'
 import { getProviderForTask, routeTask } from '../route-task'
-import { AiCredentialMissingError, PaidBackupOffError } from '../router'
+import { AiCredentialMissingError, PaidBackupOffError, resolveModelForUser } from '../router'
 
 const CRED = { id: 'c1', ciphertext: 'x', iv: 'y', authTag: 'z' }
 const PREFS = {
@@ -60,6 +60,14 @@ describe('voice_chat task route', () => {
   it('still needs a usable key', async () => {
     h.selects = [[], []]
     await expect(getProviderForTask('u1', { taskType: 'voice_chat' })).rejects.toBeInstanceOf(AiCredentialMissingError)
+  })
+
+  it('a pinned effort overrides the tier effort; omitted keeps it', async () => {
+    const model = { providerId: 'anthropic' as const, modelId: 'claude-sonnet-5-5' }
+    h.selects = [[CRED]]
+    expect((await resolveModelForUser('u1', 'standard', { model, ownerInitiated: true, effort: 'low' })).effort).toBe('low')
+    h.selects = [[CRED]]
+    expect((await resolveModelForUser('u1', 'standard', { model, ownerInitiated: true })).effort).not.toBe('low')
   })
 })
 

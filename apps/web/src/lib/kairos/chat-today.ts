@@ -63,10 +63,10 @@ export async function recordChatReply(
 // turns are already in the history; coding-session captures are left to
 // recency and MCP-use lines are left out so they can't crowd out the owner.
 // '' when the feature is off, the window is quiet or the read fails.
-export async function loadChatTodaySection(userId: string, threadId: string): Promise<string> {
+export async function loadChatTodaySection(userId: string, threadId: string, maxChars: number = CHAT_TODAY_MAX_CHARS): Promise<string> {
   try {
     const digest = await loadTodayDigest(userId, { excludeThreadId: threadId, excludeTypes: ['captured', 'used'] })
-    return renderTodaySection(digest, { maxChars: CHAT_TODAY_MAX_CHARS })
+    return renderTodaySection(digest, { maxChars })
   } catch {
     return ''
   }

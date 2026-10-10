@@ -1,38 +1,22 @@
-import { eq, and } from 'drizzle-orm'
-import { db } from '@/lib/db'
-import { dominions } from '@/lib/db/schema'
-import {
-  getKairosAskSourceSnippets,
-  getPendingKairosAsk,
-  type KairosAskRow,
-} from '@/lib/data/ask'
-import { getChatThread, appendChatMessage, type ChatMessagePayload } from '@/lib/data/kairos-chat'
-import type { ChatRetrievalMeta } from '@/lib/data/kairos-chat-payload'
-import { buildChatMessages, type ChatPromptPendingAsk } from '@/lib/kairos/chat-prompt'
-import {
-  retrieveForChatGlobal,
-  extractCitationIds,
-  intersectWithRetrieved,
-  type ChatRetrieval,
-} from '@/lib/kairos/chat-retrieval'
-import { toPromptRetrieval, toRetrievalMeta } from '@/lib/kairos/chat-retrieval-mapping'
+import type { KairosAskRow } from '@/lib/data/ask'
+import { appendChatMessage, type ChatMessagePayload } from '@/lib/data/kairos-chat'
+import type { buildChatMessages } from '@/lib/kairos/chat-prompt'
+import { extractCitationIds, intersectWithRetrieved } from '@/lib/kairos/chat-retrieval'
 import { buildChatTools, runChatToolLoop } from '@/lib/kairos/chat-tools'
-import { loadConscienceBlock } from '@/lib/kairos/conscience-context'
 import { extractStance } from '@/lib/kairos/cold-read/stance'
-import { finishChatReply, loadMomentChatOptions, stripMomentFooters } from '@/lib/kairos/moment/chat'
-import { loadBoardSection, loadRecencySection } from '@/lib/kairos/chat-grounding'
-import { chatTodayChannel, loadChatTodaySection, recordChatReply, type ChatTodayChannel } from '@/lib/kairos/chat-today'
-import type { CitationRetrievalShape } from '@/lib/kairos/chat-retrieval-citations'
+import { finishChatReply } from '@/lib/kairos/moment/chat'
+import { runDetached } from '@/lib/kairos/moment/detached'
+import { chatTodayChannel, recordChatReply, type ChatTodayChannel } from '@/lib/kairos/chat-today'
+import { buildAssistantTurn, type ChatCitationsContext } from '@/lib/kairos/chat-turn-context'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import { isPaidBackupOffError } from '@/lib/ai/paid-backup-off'
-import type { AIMessage, AIProvider } from '@/lib/ai/provider'
+import type { AIProvider } from '@/lib/ai/provider'
 import { reactUsed } from '@/lib/kairos/reactions'
 import {
   appendAssistantReplyOnce,
   applyAskResolution,
   classifyAskResolution,
-  pendingAskRationale,
   type AlreadyAnsweredResult,
   type AskResolution,
   type ChatTurnOptions,
@@ -41,8 +25,20 @@ import {
 } from '@/lib/kairos/chat-turn-reply'
 
 // Assistant half of a chat turn (split out of chat-turn.ts): build the
-// context, call the paid model, persist the reply. Shared by the paid path
-// and the Telegram chat routine job (lib/kairos/thinking/handlers/chat.ts).
+// context (chat-turn-context.ts), call the paid model, persist the reply.
+// Shared by the paid path and the Telegram chat routine job
+// (lib/kairos/thinking/handlers/chat.ts).
+//
+// The voice channel defers the work nobody hears: the pending-ask classifier
+// and memory reinforcement run detached after the reply is saved, so the
+// voice line's `done` is not held up by them.
+
+export {
+  buildAssistantTurn,
+  type AssistantTurnOptions,
+  type BuiltAssistantTurn,
+  type ChatCitationsContext,
+} from '@/lib/kairos/chat-turn-context'
 
 // Model output before the P0 cut-short guard — persistAssistantReply guards it.
 interface RawAssistantReply {
@@ -50,39 +46,7 @@ interface RawAssistantReply {
   model: string | null
   finishReason?: string
   askResolution?: AskResolution
-}
-
-async function loadPendingAskContext(
-  userId: string,
-): Promise<{ pending: KairosAskRow; prompt: ChatPromptPendingAsk } | null> {
-  try {
-    const pending = await getPendingKairosAsk(userId)
-    if (!pending) return null
-    const sourceSnippets = await getKairosAskSourceSnippets(
-      userId,
-      pending.askMine?.sourceMemoryIds ?? pending.kairosAsk.sourceMemoryIds,
-    ).catch((error) => {
-      console.error('[kairos-chat] ask source lookup failed', {
-        askId: pending.id,
-        error: error instanceof Error ? error.message : String(error),
-      })
-      return []
-    })
-    return {
-      pending,
-      prompt: {
-        question: pending.title,
-        kind: pending.askMine?.kind ?? 'aether',
-        rationale: pendingAskRationale(pending),
-        sourceSnippets,
-      },
-    }
-  } catch (error) {
-    console.error('[kairos-chat] pending ask lookup failed', {
-      error: error instanceof Error ? error.message : String(error),
-    })
-    return null
-  }
+  provider: AIProvider
 }
 
 // Default ON: the agentic tool loop is the standard chat path now. Only an
@@ -93,16 +57,24 @@ function agenticToolsEnabled(): boolean {
   return raw !== '0' && raw !== 'false'
 }
 
+interface CallAssistantOptions {
+  provider?: AIProvider
+  sideProvider?: AIProvider
+  tools: boolean
+  // Classify the pending ask now (before persisting); false = the caller defers it.
+  classifyNow: boolean
+}
+
 async function callAssistant(
   userId: string,
   dominionId: string | null,
   systemMessages: ReturnType<typeof buildChatMessages>,
   pendingAsk: KairosAskRow | null,
   userBody: string,
-  injected?: AIProvider,
+  opts: CallAssistantOptions,
 ): Promise<RawAssistantReply | { error: 'no_credential' } | { error: 'paid_backup_off' } | { error: 'empty' } | { error: 'failed'; message: string }> {
   try {
-    const provider = injected ?? (await getProviderForTask(userId, {
+    const provider = opts.provider ?? (await getProviderForTask(userId, {
       taskType: 'chat',
       dominionId,
     })).provider
@@ -110,10 +82,11 @@ async function callAssistant(
     // (same reason PR #84 stripped it from the synthesis call sites).
     // Agentic tools default ON as of the live-mind work: only an explicit
     // '0'/'false' opts back out to the plain (no tools key) call — the kill
-    // switch stays, but the WP2 lookup loop is now the default path. The
-    // deterministic board/recency sections are already baked into
-    // systemMessages in both modes.
-    const response = agenticToolsEnabled()
+    // switch stays, but the WP2 lookup loop is now the default path. A caller
+    // can also answer tool-less (`tools: false`, the voice line's simple
+    // questions). The deterministic board/recency sections are already baked
+    // into systemMessages in both modes.
+    const response = opts.tools && agenticToolsEnabled()
       ? await runChatToolLoop(provider, systemMessages, buildChatTools(userId), {
           maxOutputTokens: 2000,
         })
@@ -123,10 +96,10 @@ async function callAssistant(
         })
     const raw = response.text.trim()
     if (!raw) return { error: 'empty' }
-    const askResolution = pendingAsk
-      ? await classifyAskResolution(provider, pendingAsk, userBody)
+    const askResolution = pendingAsk && opts.classifyNow
+      ? await classifyAskResolution(opts.sideProvider ?? provider, pendingAsk, userBody)
       : undefined
-    return { content: raw, model: response.modelId, finishReason: response.finishReason, askResolution }
+    return { content: raw, model: response.modelId, finishReason: response.finishReason, askResolution, provider }
   } catch (err) {
     if (isPaidBackupOffError(err)) return { error: 'paid_backup_off' }
     if (err instanceof AiCredentialMissingError) return { error: 'no_credential' }
@@ -135,126 +108,21 @@ async function callAssistant(
   }
 }
 
-// What a persisted reply needs to keep citations honest, serialisable so a
-// chat thinking job can carry it to whichever reasoner answers: the ids that
-// were retrieved this turn (citations are intersected with them) and the
-// retrieval meta stored on the assistant message.
-export interface ChatCitationsContext {
-  retrieved: CitationRetrievalShape | null
-  retrievalMeta?: ChatRetrievalMeta
-}
-
-export interface AssistantTurnOptions extends ChatTurnOptions {
-  dominionId: string | null
-  userBody: string
-  userSeq: number
-}
-
-export interface BuiltAssistantTurn {
-  // The system prompt alone, and the full message list (system first, then
-  // trimmed history, then the user turn) exactly as the paid model sees it.
-  system: string
-  messages: AIMessage[]
-  citationsContext: ChatCitationsContext
-  pendingAsk: KairosAskRow | null
-}
-
-// Context half of an assistant turn: Dominion frame, history, pending ask,
-// whole-brain retrieval, live board + recency sections → chat messages.
-// Shared by the paid path (runAssistantTurn) and the chat routine job.
-export async function buildAssistantTurn(
-  userId: string,
-  threadId: string,
-  opts: AssistantTurnOptions,
-): Promise<{ ok: true; turn: BuiltAssistantTurn } | { ok: false; reason: 'dominion_not_found' | 'thread_not_found' }> {
-  const { dominionId, userBody, userSeq } = opts
-  // An anchored thread's Dominion frames the prompt (persona + vision/mission).
-  // Unanchored (null) threads get the whole-brain persona; provider routing is
-  // Dominion-agnostic either way (routeTask resolves on taskType + tier).
-  let dominion: { name: string; vision: string | null; missionLong: string | null } | null = null
-  if (dominionId) {
-    const [domRow] = await db
-      .select({ name: dominions.name, vision: dominions.vision, missionLong: dominions.missionLong })
-      .from(dominions)
-      .where(and(eq(dominions.id, dominionId), eq(dominions.userId, userId)))
-      .limit(1)
-    if (!domRow) return { ok: false, reason: 'dominion_not_found' }
-    dominion = domRow
-  }
-
-  const thread = await getChatThread(userId, threadId)
-  if (!thread) return { ok: false, reason: 'thread_not_found' }
-
-  const priorHistory = thread.messages
-    .filter((m) => m.seq < userSeq)
-    .map((m) => ({ role: m.role, content: stripMomentFooters(m.content) }))
-
-  const pendingAskContext = await loadPendingAskContext(userId)
-
-  // JARVIS-level recall — whole-brain, no Dominion scope. Kairos pulls the
-  // Aether self-model + top-k substrate across EVERY Dominion, so the operator
-  // talks to him without pinpointing a front. Failure here must NOT block the
-  // reply (a warming brain has no Aether yet); fall back to bare chat on any
-  // retrieval error. Logged so a silently-bare reply is debuggable.
-  let retrieval: ChatRetrieval | null = null
-  try {
-    retrieval = await retrieveForChatGlobal(userId, userBody)
-  } catch (err) {
-    console.error('[kairos-chat] retrieval failed, falling back to bare chat', {
-      threadId,
-      dominionId,
-      error: err instanceof Error ? err.message : String(err),
-    })
-    retrieval = null
-  }
-
-  const promptRetrieval = retrieval ? toPromptRetrieval(retrieval) : undefined
-  const [boardSection, recencySection, conscienceSection, todaySection, moment] = await Promise.all([
-    loadBoardSection(userId, threadId, userBody),
-    loadRecencySection(userId),
-    // Constitution + held beliefs (P2.5 G4). Never throws — '' on failure.
-    loadConscienceBlock(userId, { dominionId }),
-    // Today across channels, minus this thread (one mind). '' on failure.
-    loadChatTodaySection(userId, threadId),
-    // Stage, cold read and the wave 4 moment lanes (lib/kairos/moment).
-    loadMomentChatOptions(userId, { threadId, dominionId, userBody, userSeq, surface: opts.surface, history: priorHistory }),
-  ])
-
-  const messages = buildChatMessages({
-    dominion,
-    history: priorHistory,
-    userMessage: userBody,
-    retrieval: promptRetrieval,
-    surface: opts.surface,
-    channel: opts.channel,
-    pendingAsk: pendingAskContext?.prompt,
-    boardSection,
-    recencySection,
-    todaySection: todaySection || undefined,
-    conscienceSection: conscienceSection || undefined,
-    ...moment,
+// Voice: the pending ask is classified after the reply is saved, detached,
+// on the untapped provider, so its answer is never spoken and never delays
+// `done`. Never throws (classifyAskResolution falls back to not answered).
+function deferAskResolution(userId: string, provider: AIProvider, pending: KairosAskRow, userBody: string): void {
+  runDetached(async () => {
+    try {
+      const resolution = await classifyAskResolution(provider, pending, userBody)
+      if (resolution.answersPending) await applyAskResolution(userId, pending, resolution, userBody)
+    } catch (error) {
+      console.error('[kairos-chat] deferred ask resolution failed', {
+        askId: pending.id,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
   })
-
-  return {
-    ok: true,
-    turn: {
-      system: messages[0]?.role === 'system' ? messages[0].content : '',
-      messages,
-      citationsContext: {
-        retrieved: retrieval ? toCitationShape(retrieval) : null,
-        ...(retrieval ? { retrievalMeta: toRetrievalMeta(retrieval) } : {}),
-      },
-      pendingAsk: pendingAskContext?.pending ?? null,
-    },
-  }
-}
-
-function toCitationShape(r: ChatRetrieval): CitationRetrievalShape {
-  return {
-    cortex: r.cortex ? { id: r.cortex.id } : null,
-    archetypes: r.archetypes.map((a) => ({ id: a.id })),
-    substrate: r.substrate.map((s) => ({ id: s.id })),
-  }
 }
 
 export interface PersistAssistantReplyMeta {
@@ -269,6 +137,8 @@ export interface PersistAssistantReplyMeta {
   askResolution?: AskResolution
   // Where the turn happened, for the "today" log. Absent = web.
   channel?: ChatTodayChannel
+  // Reinforce cited memories detached instead of before returning (voice).
+  deferReinforcement?: boolean
 }
 
 type ReplyAppender = (payload: Omit<ChatMessagePayload, 'role'>) => Promise<ReplyOnceOutcome>
@@ -317,7 +187,10 @@ async function persistReply(
   // Memory engine reaction (docs/kairos/32 §2): memories actually cited in the
   // persisted reply (hallucinated ids already stripped) → Usage + 'feedback'
   // op. reactUsed swallows its own errors, so this never fails the turn.
-  if (citedIds.length > 0) await reactUsed(userId, citedIds, 'cited in kairos chat reply')
+  if (citedIds.length > 0) {
+    if (meta.deferReinforcement) runDetached(() => reactUsed(userId, citedIds, 'cited in kairos chat reply'))
+    else await reactUsed(userId, citedIds, 'cited in kairos chat reply')
+  }
 
   if (meta.pendingAsk && meta.askResolution?.answersPending) {
     await applyAskResolution(userId, meta.pendingAsk, meta.askResolution, meta.userBody)
@@ -379,6 +252,8 @@ async function runTurn(
   const built = await buildAssistantTurn(userId, threadId, { ...opts, dominionId, userBody, userSeq })
   if (!built.ok) return { ok: false, reason: built.reason }
   const { turn } = built
+  // The voice line defers what nobody hears until after the reply is saved.
+  const deferSideWork = opts.channel === 'voice'
 
   const reply = await callAssistant(
     userId,
@@ -386,8 +261,9 @@ async function runTurn(
     turn.messages,
     turn.pendingAsk,
     userBody,
-    opts.provider,
+    { provider: opts.provider, sideProvider: opts.sideProvider, tools: opts.tools !== false, classifyNow: !deferSideWork },
   )
+  opts.onMark?.('answered')
   if ('error' in reply) {
     // The user message is already persisted on `threadId` — surface it so the
     // client recovers to this thread on retry (no duplicate thread).
@@ -397,7 +273,7 @@ async function runTurn(
     return { ok: false, reason: 'ai_failed', message: reply.message, threadId }
   }
 
-  return persist(reply.content, {
+  const result = await persist(reply.content, {
     userSeq,
     userBody,
     model: reply.model,
@@ -406,7 +282,13 @@ async function runTurn(
     pendingAsk: turn.pendingAsk,
     askResolution: reply.askResolution,
     channel: chatTodayChannel(opts.surface, opts.channel),
+    deferReinforcement: deferSideWork,
   })
+  opts.onMark?.('saved')
+  if (result.ok && deferSideWork && turn.pendingAsk) {
+    deferAskResolution(userId, opts.sideProvider ?? reply.provider, turn.pendingAsk, userBody)
+  }
+  return result
 }
 
 export async function runAssistantTurn(

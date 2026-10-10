@@ -115,6 +115,8 @@ export interface ResolveModelOptions {
   // An explicit owner action (the voice line): the paid-backup switch, which
   // governs automatic paid fallbacks, does not apply. The key is still required.
   ownerInitiated?: boolean
+  // A task policy's pinned effort; undefined keeps the tier's effort.
+  effort?: ModelEffort | null
 }
 
 export async function resolveModelForUser(userId: string, tier: AiTier, opts: ResolveModelOptions = {}): Promise<ResolvedTierModel> {
@@ -124,7 +126,8 @@ export async function resolveModelForUser(userId: string, tier: AiTier, opts: Re
   ])
   if (!paidAllowed) throw new PaidBackupOffError(providerId)
   const apiKey = await getDecryptedKey(userId, providerId)
-  return { model: buildModel(providerId, modelId, apiKey), providerId, modelId, effort: tierEffort(tier, modelId) }
+  const effort = opts.effort !== undefined ? opts.effort : tierEffort(tier, modelId)
+  return { model: buildModel(providerId, modelId, apiKey), providerId, modelId, effort }
 }
 
 export async function getModelForUser(userId: string, tier: AiTier): Promise<LanguageModel> {

@@ -52,6 +52,9 @@ export const GET = withRateLimit(
     const expand = url.searchParams.get('expand')
     if (expand === 'true') params.expand = true
     else if (expand === 'false') params.expand = false
+    const entity = url.searchParams.get('entity')
+    if (entity === 'true') params.entity = true
+    else if (entity === 'false') params.entity = false
 
     const parsed = searchMemoriesSchema.safeParse(params)
     if (!parsed.success) return jsonError(parsed.error.issues[0].message, 400)

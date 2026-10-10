@@ -5,6 +5,7 @@ import { getProviderForUser } from './provider'
 import type { AIProvider } from './provider'
 import type { AiTier } from './providers'
 import type { TierResolution } from './router'
+import type { ModelEffort } from '@aeon/shared/ai/models'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 1 (B10) — Engine Router.
@@ -43,6 +44,8 @@ interface PolicyDefault {
   tier: AiTier
   // Pins a model for this task instead of the user's tier preference.
   model?: TierResolution
+  // Pins the call's effort (latency-bound tasks); omitted = the tier's effort.
+  effort?: ModelEffort
 }
 
 // Defaults read by every taskType not explicitly overridden. The tier-only
@@ -67,7 +70,7 @@ const DEFAULT_POLICIES: PolicyDefault[] = [
   { taskType: 'chat',         tier: 'heavy' },
   // The voice line (owner speaking to Vorath): a spoken 2-3 sentence reply
   // where latency matters more than depth, so Sonnet rather than the heavy tier.
-  { taskType: 'voice_chat',   tier: 'standard', model: { providerId: 'anthropic', modelId: 'claude-sonnet-5-5' } },
+  { taskType: 'voice_chat',   tier: 'standard', model: { providerId: 'anthropic', modelId: 'claude-sonnet-5-5' }, effort: 'low' },
   { taskType: 'classify',     tier: 'cheap' },
   { taskType: 'summarise',    tier: 'cheap' },
   { taskType: 'reflect',      tier: 'heavy' },
@@ -143,9 +146,8 @@ export async function getProviderForTask(
   // Only a default policy's pinned model is honoured; engine_policies rows keep
   // resolving through the user's tier preference as before.
   const model = decision.source === 'default' ? defaultModelFor(req.taskType) : undefined
+  const effort = decision.source === 'default' ? DEFAULT_POLICIES.find((p) => p.taskType === req.taskType)?.effort : undefined
   const ownerInitiated = OWNER_INITIATED_TASKS.has(req.taskType)
-  const provider = model || ownerInitiated
-    ? await getProviderForUser(userId, decision.tier, { model, ownerInitiated })
-    : await getProviderForUser(userId, decision.tier)
+  const provider = await getProviderForUser(userId, decision.tier, { model, effort, ownerInitiated, task: req.taskType })
   return { decision, provider }
 }

@@ -1063,6 +1063,26 @@ export const entityScans = pgTable('entity_scans', {
   methodCheck: check('entity_scans_method_check', sql`(method)::text = ANY ((ARRAY['dict'::character varying, 'llm'::character varying])::text[])`),
 }))
 
+// Wave 0 (migration 0042): one row per paid-key LLM call, read by the daily spend cap.
+export const aiUsage = pgTable('ai_usage', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  task: varchar('task', { length: 60 }).notNull(),
+  providerId: varchar('provider_id', { length: 20 }).notNull(),
+  modelId: varchar('model_id', { length: 120 }).notNull(),
+  inputTokens: integer('input_tokens').default(0).notNull(),
+  outputTokens: integer('output_tokens').default(0).notNull(),
+  cacheReadTokens: integer('cache_read_tokens').default(0).notNull(),
+  cacheWriteTokens: integer('cache_write_tokens').default(0).notNull(),
+  costUsd: numeric('cost_usd', { precision: 12, scale: 6 }).default('0').notNull(),
+  latencyMs: integer('latency_ms').notNull(),
+  ok: boolean('ok').notNull(),
+  error: varchar('error', { length: 200 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  userCreatedIdx: index('ai_usage_user_created_idx').on(t.userId, t.createdAt),
+}))
+
 export type User = typeof users.$inferSelect
 export type Project = typeof projects.$inferSelect
 export type GanttView = typeof ganttViews.$inferSelect
@@ -1107,3 +1127,4 @@ export type MemberProfile = typeof memberProfiles.$inferSelect
 export type TaskVirtualAssignee = typeof taskVirtualAssignees.$inferSelect
 export type Entity = typeof entities.$inferSelect
 export type EntityAlias = typeof entityAliases.$inferSelect
+export type AiUsageRow = typeof aiUsage.$inferSelect

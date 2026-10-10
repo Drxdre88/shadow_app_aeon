@@ -25,6 +25,7 @@
 // Provenance: each hit/source may carry `via` ('search' | 'link' | 'signpost'; absent = 'search');
 // the report counts relevant top-10 hits per via so graph/signpost widening can be credited.
 // --expand on|off sends expand=true|false to both endpoints (recorded in report.config.expand).
+// --entity on|off sends entity=true|false the same way (recorded in report.config.entity).
 //
 // Usage (from apps/web):
 //   npm run eval:retrieval                               # markdown report to stdout
@@ -57,6 +58,7 @@ Options:
   --maxSources <n>     context maxSources (default 15)
   --delay <ms>         pause between HTTP calls (default 350)
   --expand on|off      send expand=true|false to search and context (graph/signpost pool widening); omitted by default
+  --entity on|off      send entity=true|false to search and context (entity-mention list); omitted by default
   --fixtures <path>    alternative fixtures file
   --json               print JSON (config, per-question results, aggregates) instead of markdown
   --out <file>         also write the JSON report to <file> (e.g. eval/baseline-0910.json)
@@ -68,11 +70,11 @@ Abstention passes when a path returns no query-driven results (pinned context ex
 Relevant hits are also counted by how they arrived (via: search | link | signpost; absent = search).
 Env: AEON_API_KEY, AEON_BASE_URL (both fall back to apps/web/.env.local).`
 
-function parseExpand(raw) {
+function parseOnOff(name, raw) {
   if (raw === undefined || raw === '') return null
   if (raw === 'on') return true
   if (raw === 'off') return false
-  throw new Error(`--expand must be on or off (got ${raw})`)
+  throw new Error(`--${name} must be on or off (got ${raw})`)
 }
 
 function parseArgs(argv) {
@@ -88,7 +90,8 @@ function parseArgs(argv) {
     budget: Number(get('budget', '4000')),
     maxSources: Number(get('maxSources', '15')),
     delay: Number(get('delay', '350')),
-    expand: parseExpand(get('expand', undefined)),
+    expand: parseOnOff('expand', get('expand', undefined)),
+    entity: parseOnOff('entity', get('entity', undefined)),
     out: get('out', ''),
     render: get('render', ''),
     fixtures: get('fixtures', resolve(dirname(fileURLToPath(import.meta.url)), '../eval/retrieval-fixtures.json')),
@@ -139,7 +142,7 @@ async function main() {
     process.exit(1)
   }
   const client = new ReadOnlyClient({ ...cfg, delayMs: opts.delay })
-  const available = makePaths(client, { k: 10, budget: opts.budget, maxSources: opts.maxSources, expand: opts.expand })
+  const available = makePaths(client, { k: 10, budget: opts.budget, maxSources: opts.maxSources, expand: opts.expand, entity: opts.entity })
   const unknown = opts.paths.filter((p) => !available[p])
   if (unknown.length) throw new Error(`unknown path(s): ${unknown.join(', ')}`)
 
@@ -155,7 +158,7 @@ async function main() {
   const report = {
     config: {
       baseUrl: cfg.baseUrl, started, budget: opts.budget, maxSources: opts.maxSources, questions: fixtures.length,
-      expand: opts.expand, calls: client.calls, pinnedCount: pinned.size, relevantPinned,
+      expand: opts.expand, entity: opts.entity, calls: client.calls, pinnedCount: pinned.size, relevantPinned,
     },
     paths,
   }

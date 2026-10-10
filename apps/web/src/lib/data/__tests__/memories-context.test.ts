@@ -74,6 +74,14 @@ describe('prepareContext on the shared core', () => {
     expect(mocks.searchCore.mock.calls[1][1].streams).toBeNull()
   })
 
+  it('passes the entity switch through; absent leaves the core default', async () => {
+    await prepareContext(USER, prepareContextSchema.parse({ query: 'Triad bridge', entity: false }))
+    await prepareContext(USER, prepareContextSchema.parse({ query: 'Triad bridge' }))
+
+    expect(mocks.searchCore.mock.calls[0][1].entity).toBe(false)
+    expect(mocks.searchCore.mock.calls[1][1].entity).toBeUndefined()
+  })
+
   it('scores hits on core relevance (standing applied once) and reports the retrieval mode', async () => {
     // B has the higher relevance; A's higher core score already folds standing.
     mocks.searchCore.mockResolvedValue({
