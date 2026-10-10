@@ -5,6 +5,7 @@ import { withRateLimit } from '@/lib/api/rateLimit'
 import { jsonResponse } from '@/lib/api/response'
 import { buildVoiceFeed, parseVoiceFeedParams } from '@/lib/kairos/voice/feed'
 import { loadVoiceFeedRows } from '@/lib/kairos/voice/feed-query'
+import { VOICE_FEED_LIMIT } from '@/lib/kairos/voice/limits'
 
 // Voice line — GET /api/v1/kairos/voice/feed?since=<ISO>&limit=. The desk
 // app's alert feed, polled every 5s (docs/kairos/voice-api.md): Morghul
@@ -12,8 +13,7 @@ import { loadVoiceFeedRows } from '@/lib/kairos/voice/feed-query'
 // marks, never arms awaiting-reply. Auxiliary owner-only route outside the
 // MCP/REST parity invariant, like kairos/speak.
 
-// A 5s poll is 12 a minute; 20 leaves room for a retry or a second window.
-const VOICE_FEED_LIMIT = { windowMs: 60_000, maxRequests: 20 }
+// Own per-IP bucket, 60 a minute (lib/kairos/voice/limits.ts).
 
 export const GET = withRateLimit(
   apiHandler(async (request: NextRequest) => {
