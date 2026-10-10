@@ -58,12 +58,17 @@ export interface ChatPromptPendingAsk {
 // a phone messenger — tight texts, light emoji, flat formatting.
 export type ChatPromptSurface = 'app' | 'telegram'
 
+// How the reply is delivered, beside the surface. 'voice' = read aloud by
+// text-to-speech on the voice line; it overrides the surface's format lines.
+export type ChatPromptChannel = 'voice'
+
 export interface BuildChatPromptInput {
   dominion: ChatPromptDominion | null // null = unanchored whole-brain thread
   history: ChatPromptMessage[]   // chronological, oldest first
   userMessage: string             // the new message about to be sent
   retrieval?: ChatPromptRetrieval // C2 grounding — optional, degrades cleanly
   surface?: ChatPromptSurface     // defaults to 'app'
+  channel?: ChatPromptChannel     // 'voice' = spoken reply register (VOICE_CHAT_REGISTER)
   pendingAsk?: ChatPromptPendingAsk
   boardSection?: string           // pre-rendered live board state (chat-board-context.ts) — deterministic, fresher than retrieval
   recencySection?: string         // pre-rendered last-N-hours activity (chat-recency-context.ts) — deterministic, fresher than retrieval
@@ -88,6 +93,15 @@ export const TELEGRAM_CHAT_PERSONA = [
   '- Close with a single question or call to action. Never present a text menu.',
   '- When the operator has answered your open ask, probe motive or reasons with at most ONE follow-up question. Never leave more than one open question on the table.',
   '- When the operator pushes a topic, follow their lead instead of steering back to your prior agenda.',
+]
+
+// The voice line: the reply is spoken aloud, so nothing that only works on a
+// screen, and short enough to listen to.
+export const VOICE_CHAT_REGISTER = [
+  '- You are talking to the operator on a voice line: your reply is read aloud by a text-to-speech voice, so write it the way you would say it.',
+  '- Answer in 2–3 short sentences of plain speech. No markdown, lists, headings, tables, code, links or emoji.',
+  '- Ask at most one question, and only when you need the answer.',
+  '- Say numbers the way a person says them aloud: "about two thousand", "half past three", "twelve percent", not digits, symbols or units.',
 ]
 
 function clipBody(body: string): string {
@@ -244,7 +258,9 @@ export function buildChatSystemPrompt(
   lines.push('---')
   lines.push('')
   lines.push('Style:')
-  if (surface === 'telegram') {
+  if (opts.channel === 'voice') {
+    lines.push(...VOICE_CHAT_REGISTER)
+  } else if (surface === 'telegram') {
     lines.push('- You are texting the operator on Telegram — write like the sharpest person in their contacts, not like a report.')
     if (!opts.briefReply) lines.push(...TELEGRAM_CHAT_PERSONA)
   } else {
@@ -255,7 +271,9 @@ export function buildChatSystemPrompt(
   if (opts.coldRead) lines.push(...COLD_READ_CHAT_LINES)
   if (opts.momentStyleLines?.length) lines.push(...opts.momentStyleLines)
   if (hasRetrieval) {
-    lines.push('- Cite grounded sources with `[[memory-id]]` inline. Only cite ids that appear in the Grounded context block above — do not invent ids.')
+    lines.push(opts.channel === 'voice'
+      ? '- Cite grounded sources with `[[memory-id]]` at the end of the sentence that uses them; they are removed before the reply is spoken. Only cite ids that appear in the Grounded context block above — do not invent ids.'
+      : '- Cite grounded sources with `[[memory-id]]` inline. Only cite ids that appear in the Grounded context block above — do not invent ids.')
   }
 
   return lines.join('\n')
@@ -265,6 +283,7 @@ export function buildChatMessages(input: BuildChatPromptInput): AIMessage[] {
   const system = buildChatSystemPrompt(input.dominion, {
     retrieval: input.retrieval,
     surface: input.surface,
+    channel: input.channel,
     pendingAsk: input.pendingAsk,
     boardSection: input.boardSection,
     recencySection: input.recencySection,

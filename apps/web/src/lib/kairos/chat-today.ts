@@ -1,6 +1,6 @@
 import { loadTodayDigest, recordTodayAfter } from '@/lib/kairos/today'
 import { renderTodaySection } from '@/lib/kairos/today-render'
-import type { ChatPromptSurface } from '@/lib/kairos/chat-prompt'
+import type { ChatPromptChannel, ChatPromptSurface } from '@/lib/kairos/chat-prompt'
 import { scheduleChatCorrectionCheck } from '@/lib/kairos/surprise/owner-correction'
 import { hasMomentHook, runOwnerTurnHooks, runReplyHooks, runStripFooters } from '@/lib/kairos/moment'
 import { runDetached } from '@/lib/kairos/moment/detached'
@@ -10,12 +10,13 @@ import { runDetached } from '@/lib/kairos/moment/detached'
 // so keys and origins stay identical whichever path persisted the turn.
 // Key `chat:{thread}:{seq}` is upserted — an edited retry replaces the entry.
 
-export type ChatTodayChannel = 'web' | 'telegram'
+export type ChatTodayChannel = 'web' | 'telegram' | 'voice'
 
 // ~1,800 chars of the chat prompt (spec render budget).
 export const CHAT_TODAY_MAX_CHARS = 1800
 
-export function chatTodayChannel(surface: ChatPromptSurface | undefined): ChatTodayChannel {
+export function chatTodayChannel(surface: ChatPromptSurface | undefined, channel?: ChatPromptChannel): ChatTodayChannel {
+  if (channel === 'voice') return 'voice'
   return surface === 'telegram' ? 'telegram' : 'web'
 }
 
