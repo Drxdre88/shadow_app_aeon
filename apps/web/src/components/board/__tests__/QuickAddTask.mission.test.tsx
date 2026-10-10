@@ -6,6 +6,8 @@ import { useBoardStore } from '@/lib/store/boardStore'
 import { useHangarUiStore } from '@/lib/store/hangarUiStore'
 import { readMissionCard } from '../autoRun'
 
+vi.mock('@/hooks/useVorath', () => ({ useVorath: () => true }))
+
 beforeEach(() => {
   localStorage.clear()
   useBoardStore.setState({ tasks: [], labels: [], columns: [] })

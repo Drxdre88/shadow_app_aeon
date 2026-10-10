@@ -7,6 +7,7 @@ import { VERDICT_LABELS, readVisibleMissionCheck, type MissionCheck } from '@/li
 import { readMissionResult } from './autoRun'
 import { MissionAnswerForm } from './MissionAnswerForm'
 import { MissionFollowUpPicker } from './MissionFollowUpPicker'
+import { useVorath } from '@/hooks/useVorath'
 
 const statusTone = {
   completed: {
@@ -93,7 +94,8 @@ export function MissionResultSection({ result, label = 'Last recorded result', a
   mission?: unknown
 }) {
   const parsed = readMissionResult(result)
-  const check = readVisibleMissionCheck(mission)
+  const vorath = useVorath()
+  const check = vorath ? readVisibleMissionCheck(mission) : null
   if (!parsed) return null
 
   const tone = parsed.status ? statusTone[parsed.status] : null

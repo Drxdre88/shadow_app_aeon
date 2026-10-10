@@ -15,6 +15,7 @@ import { SaveStatusPill } from '@/components/board/SaveStatusPill'
 import { FavoriteStar } from '@/components/board/FavoriteStar'
 import { BoardSizingButton } from '@/components/board/BoardSizingButton'
 import { PlanGoalDialog } from '@/components/board/PlanGoalDialog'
+import { VorathOnly } from '@/components/providers/VorathOnly'
 import { activeFilterCount, DEFAULT_FILTERS } from '@/lib/utils/boardFilters'
 import type { BoardFilters } from '@/lib/utils/boardFilters'
 import { cn } from '@/lib/utils/cn'
@@ -190,8 +191,10 @@ export default function ProjectContent({ project, user, initialBoardData, initia
                   projectId={project.id}
                   settings={(project.settings ?? {}) as Record<string, unknown>}
                 />
-                <PlanGoalDialog key={`plan-${project.id}`} projectId={project.id} />
-                <HangarRepositories key={project.id} projectId={project.id} />
+                <VorathOnly>
+                  <PlanGoalDialog key={`plan-${project.id}`} projectId={project.id} />
+                  <HangarRepositories key={project.id} projectId={project.id} />
+                </VorathOnly>
                 <button
                   onClick={() => setBoardLayout(boardLayout === 'scroll' ? 'grid' : 'scroll')}
                   className={cn(

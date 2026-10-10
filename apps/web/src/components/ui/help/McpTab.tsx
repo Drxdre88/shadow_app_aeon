@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback, useSyncExternalStore } from 'react'
-import { useSession } from 'next-auth/react'
+import { useVorath } from '@/hooks/useVorath'
 import { Terminal, Key, Link2, Wrench, Plus, Trash2, AlertTriangle } from 'lucide-react'
 import { Section, FeatureCard, CodeBlock, CopyButton } from './shared'
 import { McpProfilesSection } from './McpProfilesSection'
-import { TOOL_CATEGORIES, TOTAL_TOOL_COUNT } from './mcpToolCatalog'
+import { visibleToolCategories } from './mcpToolCatalog'
 import { useThemeStore } from '@/stores/themeStore'
 
 type ApiKeyEntry = {
@@ -178,19 +178,31 @@ function McpConfigBlock() {
 
 export function McpTab() {
   const { colors } = useThemeStore()
+  const vorath = useVorath()
+  const categories = visibleToolCategories(vorath)
+  const toolCount = categories.reduce((sum, cat) => sum + cat.tools.length, 0)
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-slate-300 leading-relaxed">
-        Connect AI assistants (Claude, Cursor, etc.) to Aeon via the Model Context Protocol (MCP).
-        This gives your AI full access to manage projects, tasks, boards, realms, and Vorath&apos;s
-        memory brain programmatically.
-      </p>
+      {vorath ? (
+        <>
+          <p className="text-sm text-slate-300 leading-relaxed">
+            Connect AI assistants (Claude, Cursor, etc.) to Aeon via the Model Context Protocol (MCP).
+            This gives your AI full access to manage projects, tasks, boards, realms, and Vorath&apos;s
+            memory brain programmatically.
+          </p>
 
-      <p className="text-xs text-slate-400 leading-relaxed">
-        Using claude.ai? You don&apos;t need a key — open <span className="text-white">Vorath setup</span> in
-        the sidebar and add Aeon as a connector in one click.
-      </p>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Using claude.ai? You don&apos;t need a key — open <span className="text-white">Vorath setup</span> in
+            the sidebar and add Aeon as a connector in one click.
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-slate-300 leading-relaxed">
+          Connect AI assistants (Claude, Cursor, etc.) to Aeon via the Model Context Protocol (MCP).
+          This gives your AI full access to manage projects, tasks, boards and realms programmatically.
+        </p>
+      )}
 
       <Section title="API Keys">
         <ApiKeyManager />
@@ -254,15 +266,17 @@ export function McpTab() {
           />
           <FeatureCard
             icon={Wrench}
-            title={`${TOTAL_TOOL_COUNT} Tools`}
-            description="Full CRUD for projects, columns, tasks, Gantt, dependencies, labels, checklists, comments, realms, Hangar sessions and repos, batch ops, analytics, and the Vorath memory brain."
+            title={`${toolCount} Tools`}
+            description={vorath
+              ? 'Full CRUD for projects, columns, tasks, Gantt, dependencies, labels, checklists, comments, realms, Hangar sessions and repos, batch ops, analytics, and the Vorath memory brain.'
+              : 'Full CRUD for projects, columns, tasks, Gantt, dependencies, labels, checklists, comments, realms, batch ops and analytics.'}
           />
         </div>
       </Section>
 
-      <Section title={`Available Tools (${TOTAL_TOOL_COUNT})`}>
+      <Section title={`Available Tools (${toolCount})`}>
         <div className="grid grid-cols-2 gap-4">
-          {TOOL_CATEGORIES.map((cat) => (
+          {categories.map((cat) => (
             <div key={cat.name}>
               <p
                 className="text-xs font-semibold mb-1.5"

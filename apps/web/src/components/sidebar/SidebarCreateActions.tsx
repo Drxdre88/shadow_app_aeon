@@ -11,6 +11,7 @@ import { CreateProjectModal } from '@/components/project/CreateProjectModal'
 import { CreateWorkspaceModal } from '@/components/workspace/CreateWorkspaceModal'
 import { CreateDominionModal } from '@/components/kairos/CreateDominionModal'
 import { createGroup } from '@/lib/actions/workspaces'
+import { useVorath } from '@/hooks/useVorath'
 
 // Self-contained "New Project / New Realm" actions for sidebars that don't
 // own the modal state. On /kairos the actions swap to a single "New Dominion"
@@ -18,7 +19,8 @@ import { createGroup } from '@/lib/actions/workspaces'
 export function SidebarCreateActions({ collapsed }: { collapsed: boolean }) {
   const router = useRouter()
   const pathname = usePathname()
-  const onKairos = pathname?.startsWith('/vorath') ?? false
+  const vorath = useVorath()
+  const onKairos = vorath && (pathname?.startsWith('/vorath') ?? false)
   const colors = useThemeStore((s) => s.colors)
   const glowColor = colors?.glow ?? 'rgba(139, 92, 246, 0.4)'
   const triggerKairosRefresh = useKairosStore((s) => s.triggerRefresh)
@@ -78,15 +80,17 @@ export function SidebarCreateActions({ collapsed }: { collapsed: boolean }) {
         }}
       />
 
-      <CreateDominionModal
-        isOpen={dominionOpen}
-        onClose={() => setDominionOpen(false)}
-        onCreated={() => {
-          setDominionOpen(false)
-          triggerKairosRefresh()
-          router.refresh()
-        }}
-      />
+      {vorath && (
+        <CreateDominionModal
+          isOpen={dominionOpen}
+          onClose={() => setDominionOpen(false)}
+          onCreated={() => {
+            setDominionOpen(false)
+            triggerKairosRefresh()
+            router.refresh()
+          }}
+        />
+      )}
     </>
   )
 }

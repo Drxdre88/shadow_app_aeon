@@ -4,6 +4,12 @@ export const ARCHIVE_CHANGED_EVENT = 'aeon:board-archive-changed'
 
 export const ARCHIVE_EXPLAINER = "Hides this board from everyone's dashboard and from Vorath; you can restore it any time."
 
+const ARCHIVE_EXPLAINER_PUBLIC = "Hides this board from everyone's dashboard; you can restore it any time."
+
+export function archiveExplainer(vorath: boolean): string {
+  return vorath ? ARCHIVE_EXPLAINER : ARCHIVE_EXPLAINER_PUBLIC
+}
+
 export const ARCHIVE_OWNER_ONLY = 'Only the person who created this board can archive it.'
 
 /** Lets the dashboard, the sidebar's archived list and the board banner refresh after any archive or restore. */

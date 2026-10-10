@@ -13,6 +13,7 @@ import { ChangelogButton } from '@/components/ui/ChangelogModal'
 import { LiveSessionsButton } from '@/components/kairos/LiveSessionsButton'
 import { EodReflectionButton } from '@/components/hyperspace/EodReflectionButton'
 import { ArchivedBoardsButton } from '@/components/project/archive/ArchivedBoardsButton'
+import { useVorath } from '@/hooks/useVorath'
 
 type SidebarUser = { name?: string | null; email?: string | null; image?: string | null; role: string }
 
@@ -23,14 +24,19 @@ export function SidebarBottom({
   collapsed: boolean
   onSignOut: () => void
 }) {
+  const vorath = useVorath()
   return (
     <div className="shrink-0">
       <div className="mx-2 h-px bg-white/[0.06]" />
       {collapsed ? (
         <div className="flex flex-col items-center justify-center gap-1 px-2 py-2" style={{ color: 'var(--primary)' }}>
-          <NotesButton />
-          <EodReflectionButton />
-          <LiveSessionsButton />
+          {vorath && (
+            <>
+              <NotesButton />
+              <EodReflectionButton />
+              <LiveSessionsButton />
+            </>
+          )}
           <ChangelogButton />
           <BetaFeaturesButton />
           <HelpButton />
@@ -41,19 +47,23 @@ export function SidebarBottom({
         </div>
       ) : (
         <div className="px-2 py-2" style={{ color: 'var(--primary)' }}>
-          <div className="flex items-center justify-center gap-1">
-            <NotesButton />
-            <EodReflectionButton />
-            <LiveSessionsButton />
-          </div>
-          <div
-            className="my-1.5 h-px mx-6"
-            style={{
-              background:
-                'linear-gradient(to right, transparent, color-mix(in oklab, var(--primary) 55%, transparent), transparent)',
-              boxShadow: '0 0 6px color-mix(in oklab, var(--primary) 40%, transparent)',
-            }}
-          />
+          {vorath && (
+            <>
+              <div className="flex items-center justify-center gap-1">
+                <NotesButton />
+                <EodReflectionButton />
+                <LiveSessionsButton />
+              </div>
+              <div
+                className="my-1.5 h-px mx-6"
+                style={{
+                  background:
+                    'linear-gradient(to right, transparent, color-mix(in oklab, var(--primary) 55%, transparent), transparent)',
+                  boxShadow: '0 0 6px color-mix(in oklab, var(--primary) 40%, transparent)',
+                }}
+              />
+            </>
+          )}
           <div className="flex items-center justify-center gap-1">
             <ChangelogButton />
             <BetaFeaturesButton />

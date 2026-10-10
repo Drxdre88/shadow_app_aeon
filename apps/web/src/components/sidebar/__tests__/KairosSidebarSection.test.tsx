@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { KairosBrainStatus } from '@/lib/kairos/routines/status-types'
 
 vi.mock('next/navigation', () => ({ usePathname: () => '/dashboard' }))
+vi.mock('@/hooks/useVorath', () => ({ useVorath: () => true }))
 vi.mock('@/lib/actions/kairos-brain', () => ({
   getKairosBrainStatus: vi.fn(),
   getKairosWatchedOverview: vi.fn(),

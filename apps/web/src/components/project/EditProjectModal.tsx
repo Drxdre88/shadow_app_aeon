@@ -18,6 +18,7 @@ import { PlanetPicker } from './PlanetPicker'
 import { CardTriageToggle } from '@/components/board/triage/CardTriageToggle'
 import { MissionCheckToggle } from '@/components/board/MissionCheckToggle'
 import { AiDoneToggle } from '@/components/board/AiDoneToggle'
+import { useVorath } from '@/hooks/useVorath'
 import { ArchiveBoardToggle } from './archive/ArchiveBoardToggle'
 import { AccentColor, colorConfig, hexToAccent } from '@/lib/utils/colors'
 import type { RealmInfo } from './ProjectContextMenu'
@@ -54,18 +55,19 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
   const [activeRealmIds, setActiveRealmIds] = useState<string[]>(projectRealmIds)
   const [togglingRealm, setTogglingRealm] = useState<string | null>(null)
   const [hangar, setHangar] = useState(() => parseHangarConfig(project.settings))
+  const vorath = useVorath()
   // Fetched, not read from the board store: the dashboard never hydrates it,
   // so the picker would be empty exactly where boards are usually configured.
   const [boardColumns, setBoardColumns] = useState<{ id: string; name: string }[]>([])
 
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen || !vorath) return
     let cancelled = false
     listProjectColumnsForHangar(project.id)
       .then((cols) => { if (!cancelled) setBoardColumns(cols) })
       .catch(() => { if (!cancelled) setBoardColumns([]) })
     return () => { cancelled = true }
-  }, [isOpen, project.id])
+  }, [isOpen, project.id, vorath])
 
   useEffect(() => {
     setActiveRealmIds(projectRealmIds)
@@ -108,9 +110,11 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
       // Trust what the SERVER stored, not the local draft: it drops a trigger
       // column that doesn't belong to this project, and a client that kept
       // believing in it would arm drops the server considers unarmed.
-      const savedHangar = await setHangarBoardSettings(project.id, hangar)
-      setHangar(savedHangar)
-      useHangarUiStore.getState().setConfig(project.id, savedHangar)
+      if (vorath) {
+        const savedHangar = await setHangarBoardSettings(project.id, hangar)
+        setHangar(savedHangar)
+        useHangarUiStore.getState().setConfig(project.id, savedHangar)
+      }
       onClose()
       router.refresh()
     } catch (error) {
@@ -260,6 +264,7 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
                 </div>
               )}
 
+              {vorath && (
               <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3 space-y-3">
                 <button
                   type="button"
@@ -312,12 +317,17 @@ export function EditProjectModal({ isOpen, project, onClose, existingGroups = []
                   </div>
                 )}
               </div>
+              )}
 
-              <CardTriageToggle projectId={project.id} isOpen={isOpen} />
+              {vorath && (
+                <>
+                  <CardTriageToggle projectId={project.id} isOpen={isOpen} />
 
-              <MissionCheckToggle projectId={project.id} isOpen={isOpen} />
+                  <MissionCheckToggle projectId={project.id} isOpen={isOpen} />
 
-              <AiDoneToggle projectId={project.id} isOpen={isOpen} />
+                  <AiDoneToggle projectId={project.id} isOpen={isOpen} />
+                </>
+              )}
 
               <ArchiveBoardToggle projectId={project.id} projectName={project.name} isOpen={isOpen} onArchived={onClose} />
 

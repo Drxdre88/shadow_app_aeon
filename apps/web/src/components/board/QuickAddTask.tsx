@@ -6,6 +6,7 @@ import { Plus, X, Tag, Bot } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { useBoardStore } from '@/lib/store/boardStore'
 import { useHangarUiStore } from '@/lib/store/hangarUiStore'
+import { useVorath } from '@/hooks/useVorath'
 import { AccentColor, colorConfig, generateId, hexToRgba } from '@/lib/utils/colors'
 import { sortLabelsByName } from '@/lib/utils/labels'
 import { ColorSwatchPicker } from './ColorSwatchPicker'
@@ -41,7 +42,8 @@ export function QuickAddTask({ projectId, columnId, onClose, onTaskCreate }: Qui
   const [selectedLabels, setSelectedLabels] = useState<string[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const { addTask, tasks, labels } = useBoardStore()
-  const aiEnabled = useHangarUiStore((s) => s.config.enabled)
+  const vorath = useVorath()
+  const aiEnabled = useHangarUiStore((s) => s.config.enabled) && vorath
   const openMissionEditor = useHangarUiStore((s) => s.openMissionEditor)
 
   useEffect(() => {

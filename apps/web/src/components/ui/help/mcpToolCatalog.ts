@@ -211,3 +211,14 @@ export const TOOL_CATEGORIES: McpToolCategory[] = [
 ]
 
 export const TOTAL_TOOL_COUNT = TOOL_CATEGORIES.reduce((sum, cat) => sum + cat.tools.length, 0)
+
+const OWNER_ONLY_CATEGORY = /^(Vorath|Hangar)\b/
+const OWNER_ONLY_TOOL = /kairos/
+
+/** The catalogue as shown in Help: beta testers see no Vorath or Hangar tools. */
+export function visibleToolCategories(vorath: boolean): McpToolCategory[] {
+  if (vorath) return TOOL_CATEGORIES
+  return TOOL_CATEGORIES
+    .filter((cat) => !OWNER_ONLY_CATEGORY.test(cat.name))
+    .map((cat) => ({ ...cat, tools: cat.tools.filter((t) => !OWNER_ONLY_TOOL.test(t)) }))
+}

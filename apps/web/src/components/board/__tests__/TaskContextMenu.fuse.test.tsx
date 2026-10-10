@@ -8,6 +8,7 @@ import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/re
 // the board's fusion lifecycle through FuseRequestContext.
 
 vi.mock('@/components/ui/Toast', () => ({ toast: vi.fn() }))
+vi.mock('@/hooks/useVorath', () => ({ useVorath: () => true }))
 vi.mock('@/lib/actions/transfer', () => ({
   listProjectsForTransfer: vi.fn().mockResolvedValue([]),
   copyTaskToProject: vi.fn(),

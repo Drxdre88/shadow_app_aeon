@@ -7,7 +7,8 @@ import { cn } from '@/lib/utils/cn'
 import { toast } from '@/components/ui/Toast'
 import { getProjectArchiveSetting, setProjectArchived } from '@/lib/actions/project-archive'
 import { ArchiveConfirm } from './ArchiveConfirm'
-import { ARCHIVE_EXPLAINER, ARCHIVE_OWNER_ONLY, announceArchiveChange } from './archive-events'
+import { archiveExplainer, ARCHIVE_OWNER_ONLY, announceArchiveChange } from './archive-events'
+import { useVorath } from '@/hooks/useVorath'
 
 interface ArchiveBoardToggleProps {
   projectId: string
@@ -27,6 +28,7 @@ export function ArchiveBoardToggle({ projectId, projectName, isOpen, onArchived 
   const [state, setState] = useState<ArchiveState | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const explainer = archiveExplainer(useVorath())
 
   useEffect(() => {
     if (!isOpen) return
@@ -80,7 +82,7 @@ export function ArchiveBoardToggle({ projectId, projectName, isOpen, onArchived 
           <span>
             <span className="block text-sm text-white">Archive board</span>
             <span className="block text-[10px] text-slate-500">
-              {locked ? ARCHIVE_OWNER_ONLY : ARCHIVE_EXPLAINER}
+              {locked ? ARCHIVE_OWNER_ONLY : explainer}
             </span>
           </span>
         </span>

@@ -46,7 +46,9 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const mult = glowIntensity / 75
   const { data: session } = useSession()
   const isAdmin = session?.user?.role === 'admin'
-  const tabs = isAdmin ? [...TAB_CONFIG, ADMIN_TAB] : TAB_CONFIG
+  const vorath = session?.user?.vorath === true
+  const baseTabs = vorath ? TAB_CONFIG : TAB_CONFIG.filter((t) => t.id !== 'ai')
+  const tabs = isAdmin ? [...baseTabs, ADMIN_TAB] : baseTabs
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') onClose()
@@ -146,7 +148,7 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
           {activeTab === 'effects' && <EffectsTab />}
           {activeTab === 'fun' && <FunTab />}
           {activeTab === 'projects' && <DashboardTab />}
-          {activeTab === 'ai' && <AiTab onClose={onClose} />}
+          {activeTab === 'ai' && vorath && <AiTab onClose={onClose} />}
           {activeTab === 'defaults' && isAdmin && <DefaultsTemplateTab />}
         </div>
       </motion.div>

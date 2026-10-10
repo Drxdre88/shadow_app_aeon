@@ -8,6 +8,7 @@ import { CycleTimeCard } from './CycleTimeCard'
 import { HeatmapGrid } from './HeatmapGrid'
 import { ColumnFlowBar } from './ColumnFlowBar'
 import { PaybackPanel } from './PaybackPanel'
+import { VorathOnly } from '@/components/providers/VorathOnly'
 import { cn } from '@/lib/utils/cn'
 
 type VelocityData = Awaited<ReturnType<typeof getVelocityStats>>
@@ -89,7 +90,9 @@ export function VelocityTab({ projectId }: VelocityTabProps) {
 
           <ColumnFlowBar data={data.dwellTimes} />
 
-          <PaybackPanel projectId={projectId} range={range} />
+          <VorathOnly>
+            <PaybackPanel projectId={projectId} range={range} />
+          </VorathOnly>
         </>
       ) : (
         <div className="flex items-center justify-center h-40 text-slate-500 text-sm">
