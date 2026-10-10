@@ -50,6 +50,8 @@ vi.mock('../embeddings', () => ({
 
 vi.mock('../rerank', () => ({ rerankScored: vi.fn(async () => null) }))
 
+vi.mock('../search-entity', () => ({ SEARCH_ENTITY_DEFAULT: true, entityLeg: vi.fn(async () => []) }))
+
 import { searchCore } from '../search-core'
 import { rerankScored } from '../rerank'
 import { db } from '@/lib/db'
