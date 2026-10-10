@@ -6,6 +6,7 @@ import { motion } from 'framer-motion'
 import { ScrollText, X } from 'lucide-react'
 import { CHANGELOG_MD } from '@/lib/changelog'
 import { APP_VERSION } from '@/lib/version'
+import { getPrivateChangelog, type PrivateChangelog } from '@/lib/actions/changelog-private'
 import { useThemeStore } from '@/stores/themeStore'
 import { useHasMounted } from '@/lib/utils/useHasMounted'
 import { Tooltip } from './Tooltip'
@@ -32,6 +33,7 @@ type Line =
   | { kind: 'h1'; text: string }
   | { kind: 'h2'; text: string }
   | { kind: 'h3'; text: string }
+  | { kind: 'h4'; text: string }
   | { kind: 'li';  text: string }
   | { kind: 'p';   text: string }
   | { kind: 'quote'; text: string }
@@ -44,6 +46,7 @@ function parse(md: string): Line[] {
     if (line.startsWith('# '))  return { kind: 'h1', text: line.slice(2) }
     if (line.startsWith('## ')) return { kind: 'h2', text: line.slice(3) }
     if (line.startsWith('### ')) return { kind: 'h3', text: line.slice(4) }
+    if (line.startsWith('#### ')) return { kind: 'h4', text: line.slice(5) }
     if (line.startsWith('- '))  return { kind: 'li', text: line.slice(2) }
     if (line.startsWith('> '))  return { kind: 'quote', text: line.slice(2) }
     return { kind: 'p', text: line }
@@ -136,7 +139,11 @@ export function ChangelogModal({ isOpen, onClose }: ChangelogModalProps) {
   const mounted = useHasMounted()
   const { colors, glowIntensity } = useThemeStore()
   const mult = glowIntensity / 75
-  const lines = useMemo(() => parse(CHANGELOG_MD), [])
+  const [privateLog, setPrivateLog] = useState<PrivateChangelog | null>(null)
+  const [tab, setTab] = useState<'aeon' | 'vorath'>('aeon')
+  const showVorath = tab === 'vorath' && privateLog !== null
+  const markdown = showVorath ? privateLog.markdown : CHANGELOG_MD
+  const lines = useMemo(() => parse(markdown), [markdown])
   const primary = colors.primary
 
   const onKey = useCallback((e: KeyboardEvent) => {
@@ -148,6 +155,16 @@ export function ChangelogModal({ isOpen, onClose }: ChangelogModalProps) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [isOpen, onKey])
+
+  // The owner-only log is fetched through a server action; anyone else gets null and never sees the tab.
+  useEffect(() => {
+    if (!isOpen || privateLog) return
+    let live = true
+    getPrivateChangelog()
+      .then((log) => { if (live && log) setPrivateLog(log) })
+      .catch(() => {})
+    return () => { live = false }
+  }, [isOpen, privateLog])
 
   if (!mounted || !isOpen) return null
 
@@ -213,10 +230,12 @@ export function ChangelogModal({ isOpen, onClose }: ChangelogModalProps) {
                 <span
                   className="font-mono text-[10px] tabular-nums tracking-[0.2em] text-white/40"
                 >
-                  CURRENT BUILD · v{APP_VERSION}
+                  {showVorath ? `VORATH · v${privateLog.version}` : `CURRENT BUILD · v${APP_VERSION}`}
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">What shipped, when, and why</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {showVorath ? 'Owner-only · never shown to testers' : 'What shipped, when, and why'}
+              </p>
             </div>
           </div>
           <button
@@ -228,8 +247,33 @@ export function ChangelogModal({ isOpen, onClose }: ChangelogModalProps) {
           </button>
         </div>
 
+        {privateLog && (
+          <div role="tablist" aria-label="Changelog" className="flex gap-1 px-5 border-b border-white/10 relative z-10">
+            {(['aeon', 'vorath'] as const).map((id) => {
+              const active = tab === id
+              return (
+                <button
+                  key={id}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setTab(id)}
+                  className="px-3 py-2 text-[11px] font-bold tracking-[0.2em] uppercase transition-colors"
+                  style={{
+                    color: active ? primary : 'rgba(255,255,255,0.45)',
+                    borderBottom: `2px solid ${active ? primary : 'transparent'}`,
+                    textShadow: active ? `0 0 10px ${colors.glowColor}` : 'none',
+                    marginBottom: -1,
+                  }}
+                >
+                  {id === 'aeon' ? 'Aeon' : 'Vorath'}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 relative z-10" style={{ color: 'rgba(255,255,255,0.85)' }}>
+        <div key={tab} className="flex-1 overflow-y-auto px-6 py-5 relative z-10" style={{ color: 'rgba(255,255,255,0.85)' }}>
           {lines.map((l, i) => {
             if (l.kind === 'blank') return <div key={i} className="h-3" />
 
@@ -279,6 +323,21 @@ export function ChangelogModal({ isOpen, onClose }: ChangelogModalProps) {
               >
                 {inline(l.text, primary, true)}
               </h3>
+            )
+
+            if (l.kind === 'h4') return (
+              <h4
+                key={i}
+                className="font-bold tracking-[0.12em]"
+                style={{
+                  fontSize: 11,
+                  color: `color-mix(in srgb, ${primary} 55%, white)`,
+                  marginTop: 14,
+                  marginBottom: 4,
+                }}
+              >
+                {inline(l.text, primary)}
+              </h4>
             )
 
             if (l.kind === 'quote') return (

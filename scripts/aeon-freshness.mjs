@@ -33,6 +33,7 @@ import {
   topChangelogVersion,
   unmentionedFolders,
 } from './freshness/lib.mjs'
+import { findPrivateTerms } from '../apps/web/scripts/changelog-sync.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const SKIP_DIRS = new Set(['node_modules', '.next', '.git', '.turbo', 'dist', 'build', 'out', 'coverage', '.runtime'])
@@ -155,25 +156,36 @@ function architectureSection() {
 function versionsSection() {
   const appVersion = constVersion(read('apps/web/src/lib/version.ts') ?? '', 'APP_VERSION')
   const kairosVersion = constVersion(read('apps/web/src/lib/kairos/version.ts') ?? '', 'KAIROS_VERSION')
+  const privateModule = read('apps/web/src/lib/changelog-private.ts') ?? ''
+  // Public log (testers) vs the owner-only Vorath log; apps/web/scripts/changelog-sync.mjs owns both rules.
+  const leaks = ['CHANGELOG.md', 'apps/web/src/lib/changelog.ts'].flatMap((p) =>
+    findPrivateTerms(read(p) ?? '').map((h) => `${p}:${h.line} "${h.term}"`),
+  )
   return {
     title: 'Versions & changelogs',
-    findings: checkVersions([
-      {
-        label: 'App version',
-        values: {
-          'lib/version.ts': appVersion,
-          'CHANGELOG.md': topChangelogVersion(read('CHANGELOG.md') ?? ''),
-          'lib/changelog.ts': topChangelogVersion(read('apps/web/src/lib/changelog.ts') ?? ''),
+    findings: [
+      ...checkVersions([
+        {
+          label: 'App version (public changelog)',
+          values: {
+            'lib/version.ts': appVersion,
+            'CHANGELOG.md': topChangelogVersion(read('CHANGELOG.md') ?? ''),
+            'lib/changelog.ts': topChangelogVersion(read('apps/web/src/lib/changelog.ts') ?? ''),
+          },
         },
-      },
-      {
-        label: 'Kairos version',
-        values: {
-          'lib/kairos/version.ts': kairosVersion,
-          'docs/kairos/CHANGELOG.md': topChangelogVersion(read('docs/kairos/CHANGELOG.md') ?? ''),
+        {
+          label: 'Vorath version (private changelog)',
+          values: {
+            'lib/kairos/version.ts': kairosVersion,
+            'docs/kairos/CHANGELOG.md': topChangelogVersion(read('docs/kairos/CHANGELOG.md') ?? ''),
+            'lib/changelog-private.ts': constVersion(privateModule, 'PRIVATE_CHANGELOG_VERSION'),
+          },
         },
-      },
-    ]),
+      ]),
+      leaks.length
+        ? finding('red', `Public changelog mentions Vorath content (${leaks.length} line(s)); move it to docs/kairos/CHANGELOG.md.`, leaks)
+        : finding('green', 'Public changelog has no Vorath content.'),
+    ],
   }
 }
 

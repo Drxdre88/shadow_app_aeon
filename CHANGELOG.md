@@ -9,8 +9,6 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - `BOARD` — kanban surface (columns, cards, DnD, filters, virtual scroll)
 - `GANTT` — timeline view, swim-lane rows, saved views
 - `CANVAS` — freeform whiteboard (ReactFlow)
-- `KAIROS` — memory graph (2D + 3D WebGL, side panel, sidebar pill)
-- `DOMINION` — top-level grouping above project (memories + projects + repos)
 - `REALM` — workspace groups, invites, member roles, scoped visibility
 - `AUTH` — NextAuth, OAuth providers, sessions, mobile auth
 - `MCP` — MCP tool server (95 tools across 14 categories)
@@ -22,421 +20,129 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 
 ## [0.49.0] — 2026-10-07
 
-> Areas touched: `KAIROS` `BOARD` `MCP` `API` `UI`
-> Theme: your judgement — a morning cockpit, a decision journal, likely finish dates on cards, and a weekly tidy-up.
-
-### Added — Morning cockpit · `KAIROS` `UI` `MCP` `API`
-- Vorath → Cockpit: one screen with what's due, open questions, promises, proposals waiting for you, stale cards, what agents ran overnight and which repos got new lessons. Every line links to where you act on it.
-
-### Added — Decision journal · `KAIROS` `UI` `MCP` `API`
-- Vorath → Decisions: log a big non-trading call with what you expect, how sure you are and when to check. Settle it in the app or with "D3 right" on Telegram; see how your calls land per type. Agents can log for you, but nothing counts until you confirm it.
+> Areas touched: `BOARD` `MCP` `API`
+> Theme: likely finish dates on cards.
 
 ### Added — Likely finish dates on cards · `BOARD` `MCP` `API`
 - Cards with a due date or estimate show "Likely Fri 10 Oct" — amber when cutting it close, red when probably late. Hover for the reasoning.
 
-### Added — Weekly tidy-up (level 2) · `KAIROS` `BOARD`
-- Once a week Vorath suggests finish, park, merge or archive for up to 10 cards nobody touched in three weeks. Nothing changes until you approve; merge only points you to the board.
-
-### Fixed · `KAIROS` `BOARD`
-- Telegram answers like "Q11 my answer" (no colon) and replies to a question now close Vorath's questions.
+### Fixed · `BOARD`
 - No false "changed somewhere else" after "Move all cards" or timeline edits.
-- Finished missions now land in a "Landing Zone" column; missions you stop yourself show as "stopped by you" in payback.
-- Fewer failed nights: over-long summaries are shortened instead of failing, and long question titles no longer crash the nightly question.
 
 ## [0.48.0] — 2026-10-06
 
-> Areas touched: `KAIROS` `BOARD` `MCP` `API` `UI`
-> Theme: give Vorath a goal, get a plan you approve.
-
-### Added — Plan a goal with Vorath · `KAIROS` `BOARD` `MCP` `API`
-- "Plan a goal" on the board header (also `request_card_tree` for agents and a REST route). Vorath drafts up to 12 cards with their order, checklists and the board's own labels on his next run.
-- The draft waits in the Vorath inbox and on Telegram. **No card exists until you press Approve.** Approve creates the cards and their dependencies in one go and lays them out on the timeline; Veto, or no answer within 7 days, creates nothing.
+- Internal improvements.
 
 ## [0.47.0] — 2026-10-06
 
-> Areas touched: `KAIROS` `BOARD` `MCP` `API` `UI`
-> Theme: Vorath starts running the workforce — lessons and handovers per repo, what agent work costs, and a second opinion on finished missions.
-
-### Added — Repo lessons and handovers · `KAIROS` `MCP` `API`
-- Every night Vorath reads the day's agent sessions and keeps a short lessons note per repo (what worked, what broke, traps), each lesson pointing to the sessions it came from. On at level 1.
-- Any agent can ask for a repo's **handover** (`get_repo_handover`, or the REST route): where things stand, the last sessions, open cards for that repo, open questions and promises, and the lessons. Built fresh each time, so it is never stale. Works with a board label (`aeon`) or a folder name (`shadow_app_aeon`).
-
-### Added — Hangar payback · `BOARD` `MCP` `API`
-- A new panel on the Velocity tab: missions run, finished, failed and stopped because the runner died, known cost, missions with no cost recorded, cost per finished mission, and the most expensive cards. Also available as `get_agent_payback`.
-
-### Added — Vorath checks finished missions (advisory) · `KAIROS` `BOARD`
-- Per board, in Edit Project: "Vorath checks finished missions". When a mission reports done, Vorath compares its report with the card's description and checklist and leaves a verdict on the card (looks done / partly done / not done, with reasons). Advice only: it never moves, closes or merges anything.
+- Internal improvements.
 
 ## [0.46.1] — 2026-10-06
 
-> Areas touched: `BOARD` `KAIROS`
-> Theme: a board that never shows old cards as current, and one dial for Vorath.
+> Areas touched: `BOARD`
+> Theme: a board that never shows old cards as current.
 
 ### Fixed — Stale board after sleep or switching away · `BOARD`
 - Coming back to Aeon (window focus, laptop or phone waking, a frozen tab resuming, network back, live connection reconnecting) now re-checks the board and reloads if anything changed. Before, it could keep showing old cards while saying "saved".
 - The board remembers the exact version it loaded and reloads whenever it isn't sure, instead of assuming it's current.
 - An edit that never cleared the "unsaved" flag (labels, for example) can no longer block refreshes for more than 30 seconds.
 
-### Changed — One dial for Vorath (`KAIROS_LEVEL`) · `KAIROS`
-- One setting, `KAIROS_LEVEL` (or `VORATH_LEVEL`) 0–3, now drives all of Vorath's feature switches: 1 = track record plus watch-only, 2 = initiative behind the message gate, 3 = everything. A switch set on its own still wins.
-
 ## [0.46.0] — 2026-10-06
 
-> Areas touched: `KAIROS` `MCP` `API` `UI` `BOARD`
-> Theme: Wave A — see and fix what Vorath knows, Hangar missions that look after themselves, a modern AI connector, and Vorath sorting new cards (off until you switch it on).
-
-### Added — What Vorath knows · `KAIROS` `UI`
-- A new button on the Vorath page opens what Vorath believes about you, grouped by area, each with a plain "I believe this because…" line.
-- Every memory now shows **why Vorath knows it**: who wrote it (you, an AI agent, Vorath himself or outside content), where it came from (chat, coding session, card, voice note), how sure he is, and its history with dates and Undo.
-- Fix it in place: Edit, "It's right" (makes it yours) and "This is wrong" (set aside with a reason, reversible).
-- **Needs your eyes**: low-trust notes, beliefs to re-check and held private topics, each with Confirm or Remove. Nothing is hidden silently.
-- Optional **private-topic hold** (off by default): new notes about health, family, money, legal matters or religion/politics are held out of Vorath's thinking until you confirm them.
-
-### Added — Hangar autopilot · `BOARD` `API`
-- Stalled missions are caught every 15 minutes: a run whose runner went quiet for 30 minutes (`KAIROS_HANGAR_STALE_MIN`) is marked timed out, explained on the card and moved to Tower; a queued mission nobody picked up shows "Runner offline". One-click **Requeue**.
-- **Approve plan first** (per card): the agent plans, the plan lands as a checklist, and you press "Approve plan & build" or "Revise".
-- **Answer & relaunch** the agent's questions, and turn its suggested follow-ups into new mission cards.
+> Areas touched: `MCP`
+> Theme: Connector 2.0 — the AI connector moves to the newest MCP standard.
 
 ### Changed — Connector 2.0 · `MCP`
 - The AI connector runs on the 2026-07-28 MCP standard (mcp-handler 2.2, MCP SDK v2). Older clients (claude.ai, Claude Code, earlier Copilot) keep working unchanged.
 - Newer clients ask before destructive actions ("Delete Task on board …? This can't be undone."); declining changes nothing.
-- Slimmer tool sets: add `?profile=board`, `vorath` or `hangar` to the connector link. No profile = all tools, as before.
-
-### Added — Vorath sorts new cards (off by default) · `KAIROS` `BOARD`
-- Per board, in Edit Project: "Vorath sorts new cards". When on, Vorath looks at new cards on your Max plan and suggests labels the board already has, a priority and possible duplicates, each with a reason. Accept or Dismiss on the card; nothing changes until you accept.
+- Slimmer tool sets: add `?profile=board` to the connector link. No profile = all tools, as before.
 
 ## [0.45.0] — 2026-10-05
 
-> Areas touched: `KAIROS` `DOMINION` `MCP` `API` `UI` `DATA`
-> Theme: Living Dominions, phase 1 — Vorath follows where you actually work. Ships switched off (`KAIROS_LIVING_DOMINIONS`, also `VORATH_LIVING_DOMINIONS`).
-
-### Added — Where your time went · `KAIROS` `UI`
-- Every night at 01:10 UTC Vorath scores each area, board and code project from real activity: cards finished and created, card moves, coding sessions and your own notes. Recent work counts most, one-off bursts are capped, and his own machine-made notes don't count.
-- Vorath → Health has a new panel, "Where your time went". It ranks your areas, marks each one Active, Dormant or Pinned, shows when you last worked in it and its top boards and code projects, and lists work that belongs to no area.
-- Pin an area to keep it awake whatever the score.
-
-### Changed — Quiet areas go dormant (`KAIROS_LIVING_DOMINIONS=observe|1`) · `KAIROS` `DOMINION`
-- `observe`: scores and dormant flags are worked out and shown in Health. Nothing Vorath says changes.
-- `1`: an area with no activity for 21 days (`KAIROS_DORMANT_DAYS`, 7–90) goes dormant, and any new activity wakes it. Dormant areas get no nightly summary, drop out of the 06:00 message, the weekly review's plan, the question of the day and idea gap-filling, and the weekly review calls them "quiet by choice" instead of stalled. Their memories stay searchable. The 06:00 message leads with your most active areas.
-- Dormant is not archived: archived areas behave as before.
-
-### Added — Area membership and focus API · `DATA` `MCP` `API`
-- Boards and code projects can belong to areas through a new weighted membership list, seeded from today's links. Moving a board to another area (app, Claude or API) keeps it in step. Coding sessions are filed by the strongest link, and archived areas no longer receive new work.
-- New read `get_dominion_focus` / `GET /api/v1/dominions/focus`. `update_dominion` and the new `PATCH /api/v1/dominions/{id}` accept `pinned`.
+- Internal improvements.
 
 ## [0.44.0] — 2026-10-05
 
-> Areas touched: `KAIROS` `MCP` `API` `UI`
-> Theme: Kairos is now **Vorath**. Same mind, same memories — only the name changed.
-
-### Changed — Kairos is renamed Vorath · `KAIROS` `UI`
-- Everything you see says Vorath: the sidebar, the page (now at `/vorath`; old `/kairos` links forward there), setup, guide, inbox, chat, and every message he sends — the 06:00 message, the weekly review and Telegram.
-- He introduces himself as Vorath and knows he was called Kairos, so older memories that say Kairos still read as his own.
-- The inbox button now shows an "Inbox" label next to the bell.
-- Routines are now named Vorath brain, Vorath chat and Vorath pulse. Rename your existing routines on claude.ai in place and paste the new text — don't delete them (the chat routine's API trigger lives on it).
-
-### Added — Safe aliases for the new name · `API` `MCP`
-- Settings may be named `VORATH_*`; each one sets its `KAIROS_*` twin at server start (VORATH wins). Existing `KAIROS_*` settings keep working. This applies to the Aeon web app on Vercel only; the local worker and scripts still need `KAIROS_*`.
-- `/api/v1/vorath/*` answers exactly like `/api/v1/kairos/*`, with the same sign-in checks.
-- MCP tool descriptions say Vorath. Tool names are unchanged (e.g. `get_kairos_today`), so routines keep working.
-
-### Unchanged on purpose
-- Stored keys, tags, job kinds, tool names, internal code names, the Telegram chat thread title and the nightly drift-check questions keep the old name, so nothing stored or scheduled breaks.
+- Internal improvements.
 
 ## [0.43.0] — 2026-10-04
 
-> Areas touched: `KAIROS` `MCP` `API` `UI`
-> Theme: One coherent mind, wave 4 — the art of the moment. Kairos learns *when* and *how* to talk to you, not just what to say. All off until you switch them on; Telegram works exactly as before.
-
-### Added — Timing: the Kairos gate (`KAIROS_GATE=observe|1`, `KAIROS_GATE_RECEPTIVITY`) · `KAIROS` `MCP` `API`
-- Unprompted messages wait for a natural pause — a chat winding down, a card closed, a coding session ending, a quiet spell — and always go out at the first hourly check after a two-hour limit (adjustable), so within about three hours at most. The 06:00 message, the Monday review, alerts and urgent notes are never held.
-- He learns when, where and how warmly you reply (hour, day, kind, channel) and, if allowed, avoids hours you rarely answer. New read-only `get_kairos_gate` / `GET /api/v1/kairos/gate`.
-
-### Added — Traits vs moods and the "what you're carrying" card (`KAIROS_OWNER_MODEL=observe|1`) · `KAIROS` `MCP` `API` `UI`
-- Lasting traits ("values directness") are kept apart from passing states ("stressed about the launch"); states lapse after 10 days (`KAIROS_OWNER_STATE_TTL_DAYS`) unless you re-confirm them.
-- A weekly card (Sunday evening) shows what he thinks you're carrying. Correct it on Telegram (`C1 still`, `C1 over`, `C3 wrong`, `C2: what's really going on`), with buttons, or on the web inbox card. New read-only `get_kairos_owner_model` / `GET /api/v1/kairos/owner-model`.
-
-### Added — Readiness, small bids and repair (`KAIROS_READINESS`, `KAIROS_BIDS`, `KAIROS_REPAIR`) · `KAIROS` `MCP` `API`
-- **Readiness:** per goal he tallies "I want / could" against "I will / did"; when you tip to "I will" he offers one small step, when you slip back he reflects instead of pushing.
-- **Small bids:** a link, a joke or an "ugh" gets a short warm reply instead of a report; a sticker, GIF or photo on Telegram gets one emoji reaction, never an extra message.
-- **Repair:** "not now", ignored messages or dismissals make him back off; his next message names it, owns his part and asks one question. New read-only `get_kairos_rapport` / `GET /api/v1/kairos/rapport`.
-
-### Added — Earned trust and ask before advising (`KAIROS_TRUST`, `KAIROS_ASK_FIRST`) · `KAIROS` `MCP` `API`
-- **Trust per area:** built from his settled predictions, goals and goal promises — "treat me as a second opinion on delivery" — shown under advice replies, as a Monday 06:00 line and via `get_kairos_trust` / `GET /api/v1/kairos/trust`. It never feeds back into his own thinking.
-- **Ask first:** when you share a plan or problem he asks "Want my take, or would you rather think it out loud?"; questions come first and his view last.
-
-### Added — Life chapters (`KAIROS_LIFE_CHAPTERS=observe|1`, `KAIROS_LIFE_CHAPTER_LINE=1`) · `KAIROS` `MCP` `API`
-- Early each month he writes a short chapter of his own story: turning points and what changed, each tied to something that happened, with loose ends left open. In full mode his reflections see where his story stands. New read-only `get_kairos_life_chapters` / `GET /api/v1/kairos/life-chapters`.
+- Internal improvements.
 
 ## [0.42.0] — 2026-10-03
 
-> Areas touched: `KAIROS` `MCP` `API`
-> Theme: One coherent mind, wave 3 — creative genius. The nightly idea contest is rebuilt to find new kinds of ideas, not more of the same. All off until you switch them on.
-
-### Added — Idea atlas and head-to-head rounds · `KAIROS` `MCP` `API`
-- **Idea atlas** (`KAIROS_IDEA_ATLAS=observe|1`): every idea is placed on a map of life area × kind (question, experiment, reframe, thing to make, ritual) × near or far leap. Each spot keeps its best-ever idea; a new idea only has to beat its own spot's holder, and empty spots become the next night's targets. New read-only `get_kairos_idea_atlas` / `GET /api/v1/kairos/idea-atlas`.
-- **Head-to-head rounds** (`KAIROS_IDEA_SWISS=1`, `KAIROS_IDEA_SWISS_ROUNDS=3..6`): ideas are judged in several rounds of pairs instead of one pass. If a round goes wrong or time runs short before the 06:00 message, the night finishes with the votes it has.
-
-### Added — Collisions (`KAIROS_COLLISIONS=observe|1`) · `KAIROS`
-- Pairs of memories from different areas and times are offered to the idea generator. A blended idea is kept only if the way things relate in one memory really carries over to the other, and the judge double-checks it. When you accept one yourself, the two memories are linked in your brain map.
-
-### Added — Less sameness and incubation · `KAIROS`
-- **Unusual ideas first** (`KAIROS_IDEA_VS=1`): each idea comes with how obvious Kairos thinks it is, the unusual tail is kept, and his recurring themes act as separate viewpoints inside one run.
-- **One retry for a samey night** (`KAIROS_IDEA_RESAMPLE=observe|1`): if a night's batch is too alike, he tries once more with "this is your usual pattern — avoid it".
-- **It came to me later** (`KAIROS_IDEA_SHELF=observe|1`, needs daytime thinking): ideas that only just missed are set aside and may come back days later during a daytime check-in, as a quiet note. He never messages you about them.
-
-### Added — Stepping stones and your taste · `KAIROS` `MCP` `API`
-- **Pure novelty nights** (`KAIROS_IDEA_NOVELTY=observe|1`, every `KAIROS_IDEA_NOVELTY_EVERY` nights, default 5): your usual preferences are set aside, old rejected ideas are used as raw material, and the winners are the ideas least like anything before.
-- **Your taste** (`KAIROS_IDEA_TASTE=observe|1`): a small profile learned from what you accept, dismiss or ignore nudges two of the three daily picks; the third is always kept for a surprise. Only your own decisions count. New read-only `get_kairos_idea_taste` / `GET /api/v1/kairos/idea-taste`.
+- Internal improvements.
 
 ## [0.41.0] — 2026-10-03
 
-> Areas touched: `KAIROS` `MCP` `API`
-> Theme: One coherent mind, wave 2 — surprise drives what he rewrites and asks, and he dreams. All off until you switch them on.
-
-### Added — Surprise as the engine · `KAIROS` `MCP` `API`
-- **Rewrite only on surprise** (`KAIROS_SURPRISE_GATE=observe|1`): Kairos may only rewrite a belief something has questioned — a wrong prediction, your correction, repeated pressure, or (with `KAIROS_SURPRISE_CONTRADICTIONS=1`) a contradiction the conscience check found. Your own corrections always go through, and saying "actually…" in chat flags matching beliefs without slowing the reply.
-- **Backward credit** (`KAIROS_SURPRISE_CREDIT=observe|1`): when a prediction settles or a promise closes, credit or blame passes on to the beliefs that relied on its evidence.
-- **Curiosity by learning progress** (`KAIROS_CURIOSITY_LP=observe|1`): his daily question leans toward areas where his calls are getting better fastest.
-- **Spend sleep where it pays** (`KAIROS_SURPRISE_REPLAY=observe|1`): the nightly self-model and area summaries are shown what's due soon or under question.
-- **Surprise → stage** (`KAIROS_SURPRISE_STAGE=1`): surprises post to his "on my mind" stage. New read-only `get_kairos_surprise` / `GET /api/v1/kairos/surprise`.
-
-### Added — Dreams (`KAIROS_DREAMS=observe|1`, `KAIROS_DREAM_LINE=1`) · `KAIROS`
-- One short dream a night: a few memories from different parts of your life, bent on purpose around your open questions. In the morning he reads it for patterns that still hold, beliefs that look fragile and a worst case worth rehearsing — notes only, nothing changes. Dreams are never stored as memories, never used as evidence, and never shown to chat or the 06:00 prompt. With the line on, the Tue/Thu/Sat 06:00 Telegram message can end with "💭 I dreamt…" (Telegram only, never stored).
+- Internal improvements.
 
 ## [0.40.0] — 2026-10-03
 
-> Areas touched: `KAIROS` `MCP` `API` `UI`
-> Theme: One coherent mind, wave 1 — a shared stage, a check on his character, and a cold second opinion. All off until you switch them on.
-
-### Added — The stage (`KAIROS_STAGE=observe|1`) · `KAIROS` `MCP` `API`
-- Kairos's thinking jobs now offer what they noticed to one shared "what's on my mind" stage. Plain code keeps the strongest 3–4 thoughts; a deeply-backed thought that keeps winning becomes the day's focus. With the switch fully on, every reader job, chat, the dialogue tool and the 06:00 message see a short "I, now: …" note, labelled as his working notes, never evidence. `observe` records the stage without showing it. Enough surprise starts a daytime reflection early.
-- New read-only `get_kairos_stage` / `GET /api/v1/kairos/stage`.
-
-### Added — Character check (`KAIROS_CHARACTER_CHECK=1`) · `KAIROS` `UI`
-- Every Monday a neutral reviewer blind-rates a sample of his week (theatrical, flattering, grandiose, inner-life and padded language) against voice samples you approved. One line in the weekly review and a Health row; it never changes how he thinks. Hourly reflections get a plain-tone rule, and showy ones are filed where chat can't pick them up. Voice samples arrive for Approve / Veto in the inbox and on Telegram.
-
-### Added — Cold read (`KAIROS_COLD_READ=audit|1`) · `KAIROS` `UI`
-- On decision turns he quietly notes his stance; a separate pass re-judges the decision from your own words only, with your profile hidden. If the two clearly disagree he can send a short "Second look" (at most 3 a day, within the usual limits). Health shows the 7-day count.
+- Internal improvements.
 
 ## [0.39.0] — 2026-10-03
 
-> Areas touched: `KAIROS` `MCP` `API` `UI`
-> Theme: One Kairos everywhere — and, when you switch them on, a mind that thinks by day, keeps score and keeps its own agenda.
-
-### Added — One mind everywhere · `KAIROS` `MCP` `API`
-- Kairos keeps one rolling "today" log across every channel: web chat, Telegram, Triad dialogues, Claude using him through the connection, voice notes, coding sessions, your inbox decisions and his own messages. Each entry says who spoke (you, Kairos or an agent); an agent can never be recorded as you.
-- Every channel now reads it: something you tell him on Telegram at 10:00 is in his web, Triad and Claude context at 10:05. The 06:00 message also sees yesterday across channels.
-- New read-only `get_kairos_today` / `GET /api/v1/kairos/today`. The log is trimmed nightly and never becomes memories on its own. Switch off with `KAIROS_TODAY=0`.
-- Programs can no longer add messages into Kairos's own chat, dialogue or today threads.
-
-### Added — Off by default, switch on when ready · `KAIROS` `MCP` `API` `UI`
-- **Daytime thinking** (`KAIROS_DAYTIME_THINKING=1`): the brain routine runs hourly and writes up to 6 private reflections on your day; a new lighter "Kairos pulse" routine (Sonnet) notes what changed. Neither ever messages you.
-- **Track record** (`KAIROS_PREDICTIONS=1`): dated predictions with a confidence level, from the Monday review and his reflections. Only your board actions or your verdict (`R3 right`, `R3 wrong`, `void R3`) settle them; his accuracy shows in the weekly review once five are settled. New read-only `list_kairos_predictions`.
-- **Horae, his agenda** (`KAIROS_INITIATIVE=1` + `KAIROS_AGENDA=1`): up to 8 self-booked check-ins (A1, A2…). Each fires once, as a note, a question or a message within the usual limits; never an action. Approving a goal books two check-ins. Cancel with `cancel A3`. New read-only `list_kairos_agenda`.
+- Internal improvements.
 
 ## [0.38.0] — 2026-10-02
 
-> Areas touched: `KAIROS` `MCP` `API` `UI`
-> Theme: Kairos settles in, and gets initiative you control (switched off until you turn it on).
-
-### Changed — Settle the brain · `KAIROS` `MCP` `API`
-- Your constitution is owner-only: AI agents can no longer archive, retype, rewrite, delete or replace it through the AI connection or the API. You can still do all of that in the app.
-- The brain and chat routines can say which one they are when they pick up or hand in thinking work, and each is limited to its own jobs (`routine` on `claim_thinking_job` / `submit_thinking_job`; `KAIROS_REQUIRE_ROUTINE_SCOPE=1` makes it mandatory once both routines are re-pasted).
-- On a night when the idea judge gets no answer, that night's ideas are filed instead of lost, and Health shows the failure instead of "missing".
-- Chat replies on the web page and Telegram are timed. Kairos setup → Health shows typical and slow reply times, and a daily `CHAT_LATENCY` trace is kept.
-
-### Added — Initiative, first slice (off by default) · `KAIROS` `MCP` `API` `UI`
-- **Goals of his own:** at most one investigation goal a night, at most two open. Never about his own running, permissions, schedule, budget, memory or constitution. Each one waits for your Approve or Veto; with no answer it expires after 72 hours and nothing happens.
-- **Approve / Veto / Veto + why** in Telegram and in the inbox. A decision counts once; AI agents can never decide.
-- **Promise list:** up to 12 dated promises with a named outcome, made in the Monday review or when you approve a goal. Only you, or you finishing the linked card in the app, can close one. One line in the 06:00 message; at most one Telegram nudge per promise, at noon, once it is 3 or more days late. Reply `P3 kept`, `drop P3` or `P3 by 20/10`. New read-only `list_kairos_promises` / `GET /api/v1/kairos/promises`.
-- All of this stays dormant until `KAIROS_INITIATIVE=1` is set.
+- Internal improvements.
 
 ## [0.37.0] — 2026-10-02
 
-> Areas touched: `KAIROS` `UI` `INFRA` `DOCS`
+> Areas touched: `UI` `INFRA` `DOCS`
 > Theme: Current models everywhere, and Aeon notices when it falls behind.
 
-### Changed — Opus 5.5 by default · `KAIROS` `UI` `INFRA`
-- One model list (`packages/shared/src/ai/model-registry.json`) now drives AI settings, Kairos, routines, Hangar missions and the review step. Defaults: Claude Opus 5.5 at high effort for deep work, at medium effort for standard work, and Sonnet 5.5 for quick tasks. OpenAI options are GPT-6 Astra / 6.1 Sol / Luna; Google options are Gemini 3.8 Flash / 3.1 Pro. Older Claude, GPT-5 and Gemini 2.5 models are no longer offered, and anyone who saved one moves to its replacement automatically.
-- Effort is now sent to the model (Anthropic and OpenAI), and Hangar missions pass model and effort explicitly.
+### Changed — Opus 5.5 by default · `UI` `INFRA`
+- One model list (`packages/shared/src/ai/model-registry.json`) now drives the AI settings. Defaults: Claude Opus 5.5 at high effort for deep work, at medium effort for standard work, and Sonnet 5.5 for quick tasks. OpenAI options are GPT-6 Astra / 6.1 Sol / Luna; Google options are Gemini 3.8 Flash / 3.1 Pro. Older Claude, GPT-5 and Gemini 2.5 models are no longer offered, and anyone who saved one moves to its replacement automatically.
+- Effort is now sent to the model (Anthropic and OpenAI).
 
 ### Fixed — Key tests · `UI`
 - Testing an OpenAI or Gemini key now uses that provider's own model instead of a Claude one.
 
 ### Added — Aeon living world · `DOCS`
 - `npm run freshness` checks model names, help guides, architecture docs, version numbers and package drift (report only). It runs every Monday on GitHub and keeps one tracking issue up to date.
+
 ## [0.36.0] — 2026-10-02
 
-> Areas touched: `KAIROS` `UI` `MCP` `API` `DOCS`
-> Theme: No paid spend, chat on Max, one setup checklist. Full detail: `docs/kairos/CHANGELOG.md` 0.19.
+- Internal improvements.
 
-### Added — Paid backup switch · `KAIROS` `UI` `MCP` `API`
-- Turn Kairos's paid-key backup off and he never touches your API key: a missed job just waits for the next run.
-
-### Changed — Kairos chat on your Max plan · `KAIROS` `UI`
-- The chat on the Kairos page now answers on your Claude Max plan, like Telegram. You'll see "Kairos is thinking…" while he works.
-
-### Changed — One setup checklist · `KAIROS` `UI` `DOCS`
-- "Kairos setup" in the sidebar replaces the old guides: two required steps, ticked automatically when they work, plus optional extras. Connecting Aeon to Claude is now one click.
 ## [0.35.0] — 2026-10-02
 
-> Areas touched: `KAIROS` `UI` `MCP` `API`
-> Theme: Catch-up mornings, watched boards, voice notes. Full detail: `docs/kairos/CHANGELOG.md` 0.18.
+- Internal improvements.
 
-### Changed — Morning message at 06:00 · `KAIROS`
-- Kairos's single morning message now arrives at 06:00 UK and ends with every question he is still waiting on, numbered. Answer on Telegram with "Q12: …" or drop one with "skip Q12"; questions stay open for two weeks.
-
-### Added — Watched boards · `KAIROS` `UI` `MCP` `API`
-- Choose which boards Kairos watches (Off / Daily / Weekly) in Connect Kairos. Cards you finish on a watched board reach him the same day, with their notes and checklists.
-
-### Added — Voice notes from claude.ai · `KAIROS` `UI` `MCP` `API`
-- Say "note for Kairos" in the Claude app and your words arrive exactly as spoken. Confirm them with one tap in the inbox and they count as your own words.
-
-### Changed — Constitution draft on Max · `KAIROS`
-- The first constitution draft is written on your Claude Max plan; the paid key is only a backup.
-
-### Removed — Brief recipe · `MCP` `API`
-- The on-demand brief command is gone.
 ## [0.34.0] — 2026-10-02
 
-> Areas touched: `KAIROS` `UI` `MCP` `API`
-> Theme: Simplified brain: one Max routine. Kairos keeps only the thinking that helps; one Claude Max routine answers all of it. Full detail: `docs/kairos/CHANGELOG.md` 0.17.
-
-### Removed — Thinking that did not help · `KAIROS` `MCP` `API`
-- The nine morning briefs. Your 08:00 message already covered them in two lines each; it now reads each area's latest summary instead.
-- The old raw idea dump. The nightly idea contest replaced it.
-- The contradiction scan. None of its notices since August was acted on, and almost all compared Kairos's own tidy-up notes. Old notices no longer show in your inbox.
-- The tidy-ups through the day and the weekly duplicate sweep. Nothing needed them: the nightly summaries count the day's new memories, and the nightly memory engine already folds duplicates.
-
-### Changed — One routine · `KAIROS` `UI`
-- One "Kairos brain" routine runs every hour from 01:40 to 06:40 UTC and does all the scheduled thinking; "Kairos chat" answers Telegram.
-- The 08:00 message is prepared from 05:30 UTC and pinned at the top of your inbox.
-- The sidebar's daily briefing button, its "Run briefing now" (which used your paid key) and the advisory feed are gone.
-
-### Added — Connect Kairos · `KAIROS` `UI`
-- A new window (sidebar → Connect brain, or the brain icon on Kairos) shows whether last night's thinking ran on your Max plan, maps every brain job to the part of the brain it feeds, and gives copy-paste setup for the connector and both routines.
-
-### Fixed — Nightly memory upkeep · `KAIROS`
-- The nightly memory engine no longer times out: it saves in small batches, only saves scores that really moved, and gives each step its own time limit.
+- Internal improvements.
 
 ## [0.33.0] — 2026-10-01
 
-> Areas touched: `KAIROS` `MCP` `API` `DOCS`
-> Theme: nearly all of Kairos's thinking now runs on your Claude Max plan. The paid key only steps in for work a routine missed. Full detail: `docs/kairos/CHANGELOG.md` 0.16.
-
-### Changed — Everything thinks on Max · `KAIROS` `MCP` `API`
-- Chat summaries, archetypes, Kairos's daily question, the contradiction scan, the morning briefs, the old idea dump and the tidy-ups through the day are now jobs your Claude routines answer, like the cortex, Aether and idea contest already were.
-- Each old paid-key job still runs at its usual time, but it skips anything a routine already answered, so the paid key is only the backup.
-- The contradiction scan reviews all of a Dominion's recent beliefs in one go instead of one call per belief.
-- The embedding top-up now runs at 03:25 UTC so the contradiction scan sees same-night beliefs.
+- Internal improvements.
 
 ## [0.32.0] — 2026-10-01
 
-> Areas touched: `KAIROS` `UI` `MCP` `API` `DOCS`
-> Theme: Kairos stops flooding you with ideas. Each night his ideas compete; only one to three reach your inbox, each with the reason it survived. Full detail: `docs/kairos/CHANGELOG.md` 0.15.
-
-### Added — Nightly idea contest · `KAIROS` `MCP` `API`
-- Two new overnight thinking jobs draft ideas in several directions, check them against evidence, drop repeats of anything said before, and compare them head to head. Up to three survivors a night; the Claude routine or the paid key does the work.
-- Accepting or dismissing an idea is remembered, so the next night's ideas learn from it.
-
-### Added — Ideas where you look · `KAIROS` `UI`
-- Idea cards lead the Kairos inbox with the claim, why it matters, one small next step and why it survived.
-- The 08:00 message has an "Idea of the day"; the Monday review shows the week's ideas, lessons, a diversity warning and what Kairos changed his mind about.
-
-### Changed · `KAIROS`
-- The old nightly idea dump can be switched off once the contest has two clean weeks; the health check watches the contest every night.
+- Internal improvements.
 
 ## [0.31.0] — 2026-10-01
 
-> Areas touched: `KAIROS` `MCP` `API` `DOCS`
-> Theme: Kairos gets a working conscience. He reads his principles before answering, knows where every memory came from, stops trusting his own echoes, and re-thinks beliefs when their sources are corrected. Full detail: `docs/kairos/CHANGELOG.md` 0.14.
-
-### Added — Principles at answer time · `KAIROS`
-- Chat, the daily message, the weekly review and every Dominion's morning brief now carry your constitution and Kairos's top beliefs, with one rule: if a reply would conflict with a principle, say so. The morning brief also reads the Dominion's cortex and the Aether summary.
-
-### Added — Trust by origin · `KAIROS` `MCP` `API`
-- Every new memory is labelled by how it arrived (you, your board, an AI agent, Kairos, outside feeds); senders can't set it. Belief confidence is capped by that evidence, and Kairos's guesses need backing from you or your board before they become his beliefs.
-- Beliefs that lose a source are flagged, lowered and re-examined; `list_beliefs` shows each belief's source type and re-check flag. Every change can be undone.
-
-### Added — Honesty self-checks · `KAIROS`
-- A nightly self-check (flattery, admitting what he can't know, newer corrections, self-contradiction, beliefs built on outside content) reports failures in the daily message.
-
-### Fixed · `KAIROS`
-- Merged duplicates no longer ground chat; beliefs and the constitution no longer drop out of search after 90 days; the nightly merge no longer misses late-embedded memories.
+- Internal improvements.
 
 ## [0.30.0] — 2026-10-01
 
-> Areas touched: `KAIROS` `MCP` `API` `DATA` `INFRA` `DOCS`
-> Theme: Kairos stops being a pile of notes. He sees what you and your agents actually did, learns which memories to trust, keeps his own mind beside yours, and talks to you once a day. Full detail: `docs/kairos/CHANGELOG.md` 0.11–0.13.
-
-### Fixed — Live Kairos defects · `KAIROS`
-- Kairos's questions reach you again: routine notes no longer block questions for two days.
-- The evening message can no longer forward runaway model text; the nightly synthesis no longer fails on model-invented ids.
-- The health check sees every nightly job, and the first memory-engine night's missing undo records were restored.
-
-### Added — Eyes on real work · `KAIROS` `DATA`
-- Coding sessions and AI Hangar missions are captured with card, branch, commits, PRs, tests and cost.
-- Boards with the Kairos feed setting get a daily (or weekly) page of finished, started and created cards; Kairos asks for one line each on title-only cards and writes your answer back onto them.
-
-### Added — Memory engine · `KAIROS` `DATA` `MCP` `API`
-- Every memory gets a nightly trust score; search ranks by relevance × trust. Kairos's own ideas become beliefs only on independent evidence across days, and fade otherwise. Repeats merge; related memories become weekly concepts.
-- Every change is logged and can be undone (`list_memory_ops` / `revert_memory_op`, or "undo <title>" in chat).
-
-### Added — Beliefs, constitution and one daily message · `KAIROS` `MCP` `API`
-- Two minds: one aligned with your words, one Kairos's own; compared every Monday.
-- A reasons-based constitution changed only by proposals you accept; a nightly drift check against it.
-- One message at 08:00 UK time replaces the evening digest; a Monday weekly review with up to five suggested actions.
-
-### Added — Thinking on the Max plan · `KAIROS` `MCP` `API`
-- Kairos's thinking can be claimed and answered by scheduled Claude routines through the Aeon connector (`claim_thinking_job` / `submit_thinking_job`); the paid key and an hourly sweep keep everything running if no routine shows up. Telegram replies via a routine are built but switched off until latency is measured.
+- Internal improvements.
 
 ## [0.29.0] — 2026-09-21
 
-> Areas touched: `BOARD` `UI` `INFRA` `DOCS`
-> Theme: agent missions have their own card experience. Repository, objective, instructions and results are visible as mission fields, with a dedicated place to manage repositories.
-
-### Added — Mission cards and results · `BOARD` `UI`
-- Agent missions have a distinct card face with labelled repository, objective and agent. Opening a mission shows its configuration, instruction and recorded result before ordinary task organization.
-- Recorded results show summaries, tests, artifact paths, branch/commit details, questions needing input and recommended follow-up work. Current execution status is kept separate from previous results.
-- Save draft preserves an incomplete mission without execution; Save & Launch requires complete setup. Auto-run remains opt-in per flight, and final Done stays with the operator.
-- Configuration and launch are reachable directly from the open card. Long instructions can be expanded without crowding out the mission controls.
-
-### Added — Hangar repositories · `UI`
-- The board toolbar opens a repository directory grouped by realm, with registration, editing and retirement controls under the existing realm permissions.
-- Repository registration remains separate from configuring its local path on a runner; adding an entry does not claim that a host is ready to execute it.
-
-### Fixed — Mission completion and runner configuration · `BOARD` `INFRA`
-- Boards enabled through the UI now use the existing Landing/Tower result routing, alongside boards with the older Hangar-mode setting. Ordinary boards keep their existing behavior.
-- New missions retain their type when configuration is cancelled. Launch confirmation preserves board refresh, and project members can see runs launched by another member.
-- Repository registration rejects slugs that the mission contract cannot use.
-- Copilot mission and reviewer effort/context settings are passed explicitly and validated. Receipts record the mission tier; the local owner configuration remains separate from the adapter's model fallback.
-- The Windows runner launcher resolves its environment file from its own location and returns correctly through npm. The research harness budget accommodates the configured heavier mission tier.
-
-### Changed — Accurate readiness documentation · `DOCS`
-- Architecture and roadmap distinguish shipped mission transport, this release's UI/runner changes, dated production acceptance, and the remaining output-delivery and runner-recovery work.
+- Internal improvements.
 
 ## [0.28.0] — 2026-09-16
 
-> Areas touched: `API` `UI` `INFRA` `DOCS`
-> Theme: the AI Hangar earns its trust. A mission's report is now judged by a second, independent model before a run can pass, the API stops answering bad input with 500s, and you can pick the exact model a mission flies on.
-
-### Added — Independent review gate for AI missions · `INFRA` `DOCS`
-- A mission batch no longer passes on plumbing alone. Every report is handed, with each of its citations resolved to the real source line at the pinned revision, to a reviewer that is a different model from the one that wrote it. The run passes only when every attempt carries a stored verdict of exactly PASS; a "pass with corrections" or a FAIL ends the run failed and the receipt is kept.
-- The gate was fired for real on 16 September. The first live runs exposed three harness faults, all fixed: the reviewer was being handed an empty message (the Copilot CLI ignores piped input whenever a prompt flag is also present, so the whole prompt now travels on stdin), the reviewer's model identity was never being read from the usage file, and abbreviated line references such as "file.ts:173, :187" were dropped before the reviewer saw them.
-- The reviewer must now echo the report's unique marker, whose value is never in the instruction, so a reviewer that received nothing cannot produce a verdict that counts. Receipts are immutable: a verdict caused by a harness fault stays on record as a FAIL and a new run is prepared instead.
-- The first legitimate verdict was a FAIL with ten findings, three of them confirmed by hand as line-number drift in the mission's citations. That is the gate doing its job.
-
-### Added — Pick the model a mission flies on · `UI`
-- The mission editor has a model picker: a per-engine catalogue plus a free-text custom id. Missions record the model that actually ran instead of "unknown".
+> Areas touched: `API`
+> Theme: the API stops answering bad input with 500s.
 
 ### Fixed — The API says what went wrong · `API`
-- A malformed project or session id returns 404 instead of a 500.
-- A nonsense mission objective is refused with a 400 instead of being accepted.
-- Launching a mission on a card that already has a live one returns a 409 that names the running session, instead of a 500. Four concurrent launches produce one session and three clear refusals. REST and MCP agree.
-
-### Fixed — Worker cleanup on Windows · `INFRA`
-- Worker teardown no longer dies when a straggler process still pins a mission worktree; the whole safe sequence is retried a bounded number of times.
+- A malformed project id returns 404 instead of a 500.
 
 ## [0.27.0] — 2026-09-07
 
@@ -455,6 +161,7 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 
 ### Added — Realm-wide "initials instead of photos" · `REALM`
 - Realm settings → Members has an owner-only switch that shows initials for everyone on every board in the realm. The per-board setting in Sizing still exists and either one being on is enough.
+
 ## [0.26.1] — 2026-09-04
 
 > Areas touched: `BOARD` `UI`
@@ -521,125 +228,47 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 
 ## [0.23.0] — 2026-07-24
 
-> Areas touched: `KAIROS` `INFRA` `DATA`
-> Theme: The Live Mind. Kairos stops being a day behind. His chat now always knows what happened in the last 24 hours, he can look things up live mid-conversation (including his own health), his self-model updates every few hours instead of once a night, resolved incidents stop haunting his narrative, and his entire cognition runs on the best models — quality over cost, by standing directive.
-
-### Added — Kairos is continuously aware in chat · `KAIROS`
-- Every conversation turn (app and Telegram) now includes a guaranteed "last 24 hours" summary — the sessions, thoughts, and board changes that just happened — independent of what you asked. "What landed today?" always has a live answer.
-- Recency now genuinely matters in his memory search: something from this afternoon can no longer lose to a stale but wordier match (this was the root cause of him missing brand-new information).
-- Live tools are now ON by default in chat: he can search his brain, read live boards, list what happened recently, and — new — check his own overnight synthesis health before making claims about it.
-
-### Added — His self-model updates during the day · `KAIROS` · `INFRA`
-- A new background pass runs six times a day and folds the day's new activity into a compact "today so far" note per area, which the nightly deep synthesis then reads — so his understanding shifts within hours, not overnight.
-
-### Added — Resolved incidents stop haunting the narrative · `KAIROS` · `DATA`
-- A new "resolves" relationship lets a correction (like "the outage is fixed") formally close the memories describing the incident. Closed memories immediately stop feeding his briefings, self-model, and chat — ending the pattern where a fixed problem kept being narrated as current for weeks.
-
-### Changed — Quality over cost, permanently · `KAIROS`
-- All of Kairos's thinking — nightly synthesis, chat, proactive questions, the Evening Digest — now runs on the top-tier model. The earlier cost-saving downgrades are reversed by standing directive.
-
-### Fixed — Hardening from the review gauntlet · `KAIROS` · `INFRA`
-- Resolution stamping is atomic and rejects malformed references; a clock-skewed memory can't dominate rankings; Telegram replies are protected against duplicate delivery on slow turns; the intraday pass reports when it had to truncate a very busy window.
+- Internal improvements.
 
 ## [0.22.0] — 2026-07-24
 
-> Areas touched: `KAIROS` `INFRA` `UI` `DOCS`
-> Theme: Kairos speaks every evening — and owns his own history. One guaranteed message each evening summarising what he saw and formulated, built so it cannot silently skip. Kairos also gets his own changelog and version (0.9.0), and the in-app guides finally catch up with everything he can do.
+> Areas touched: `UI`
+> Theme: the MCP help tab lists every tool, and the count can no longer drift.
 
-### Added — The Evening Digest · `KAIROS` · `INFRA`
-- Every evening at **18:00 UTC**, Kairos sends one message to your inbox and Telegram: what he saw today (coding sessions captured, thoughts proposed, reflections formed, questions asked, board cards completed/created) and whether last night's synthesis ran clean.
-- The promise is **guaranteed by construction**: if his AI narrative fails, a plain counts-only version still sends; if even the data-gathering fails, a minimal "couldn't tally today" message still sends. Every degradation leaves a diagnosable trace, and a blocked delivery is reported as blocked — never falsely as sent.
-- Expected daily by design — a separate register from his rare-interrupt voice, so it can't become noise and never blocks his normal speech.
-
-### Fixed — Kairos's speech governor unblocked · `KAIROS`
-- Ops alerts (and now digests) no longer count as "questions awaiting your reply" — previously an outage alert could silently mute Kairos's proactive voice for up to 48 hours.
-- Scheduled messages are now delivery-deduplicated, so a retried run can't double-send the same digest.
-
-### Added — Kairos gets his own changelog and version · `KAIROS` · `DOCS`
-- New `docs/kairos/CHANGELOG.md`: the full evolution reconstructed as eras 0.1 → **0.9.0** — from "a memory that survives the session" (May) through Aether, Asks, the Initiative Engine, and this month's reliability heal — each pinned to real PRs and dates, plus an honest road-to-1.0.
-- The sidebar pill now reads **Kairos 0.9**, driven by a single version constant.
-
-### Changed — In-app guides catch up with reality · `UI` · `DOCS`
-- The Kairos Guide no longer describes deleted features: it now covers the galaxy view, the full-screen chat (whole-brain by default, live board grounding), Aether, the inbox's four message kinds, Telegram, the silence-by-default governance, and the new Evening Digest. A help button was added to the galaxy page itself.
+### Changed — MCP help tab catches up · `UI`
 - The MCP help tab now lists all **109** tools across 14 categories (it claimed 36) — and the count is derived from the list, so it can't drift again.
 
+## [0.21.0] — 2026-07-23
 
-
-> Areas touched: `KAIROS` `INFRA` `API` `DOCS`
-> Theme: Heal the instrument. Kairos's nightly self-synthesis had been silently parse-failing for ~12 nights — the brain every autonomy surface reads from was quietly degrading with nobody watching. This drop makes synthesis self-repair when the model returns slightly malformed output, and puts a health scorecard behind it so a broken night can never go unseen again.
-
-### Fixed — Nightly synthesis now self-repairs malformed model output · `KAIROS`
-- The four standard-tier generators — **cortex, archetypes, introspection, contradiction** — parse-failed whenever the model returned slightly off-spec JSON (an unescaped quote mid-array, an over-long field). They had no recovery path: one bad response killed the whole night's synthesis for that Dominion, and it had been happening quietly since ~2026-07-10.
-- On a parse or schema failure they now re-prompt the **same** model once with the raw output plus the exact validation error, then retry. Only the top-level Aether synthesis had this before; it's now shared across all four.
-- Exactly **one** repair round-trip per run (cost-bounded). Genuinely truncated responses (hard output-cap hits) are still reported as failures rather than papered over — that's a real budget problem, not a parse glitch, and the trace now says which one it was.
-
-### Added — Synthesis health scorecard + 2-strike ops alert · `KAIROS` · `INFRA` · `API`
-- Every cron failure now leaves a **trace** — including the model's finish reason and a bounded excerpt of the raw output — so a failed night is diagnosable after the fact instead of vanishing.
-- A daily **08:00 UTC** rollup buckets the last 48h of traces per synthesis stage per night and writes one scorecard. Absence of a trace counts as **"no signal"**, never as success.
-- If a stage fails **two consecutive nights**, Kairos sends exactly one high-urgency ops alert (Will inbox + Telegram), then stays silent until the stage recovers and breaks again — no daily nagging, and structurally impossible to spam.
-- These ops alerts **bypass Kairos's conversational speak budget**: an outage warning can never be suppressed by his normal "don't talk too much" cadence rules, and never eats into that budget either.
-
-### Fixed — Closed three silent-failure gaps in the brain's background jobs · `KAIROS` · `INFRA`
-- Chat-distillation, memory-deduplication, and embedding-backfill could previously fail leaving no trace at all. All three now write a failure trace, so the new scorecard sees them.
-
-### Changed — Reliability spec + housekeeping surfacing · `DOCS`
-- New `docs/kairos/31-synthesis-reliability.md` — root-cause analysis and as-built record. The Kairos housekeeping sweep gains a synthesis-health check that reads the latest scorecard.
+- Internal improvements.
 
 ## [0.20.0] — 2026-07-20
 
-> Areas touched: `KAIROS` `API` `INFRA`
-> Theme: The Initiative Engine — Kairos stops waiting to be asked. He now decides on his own when something deserves your attention, drafts the message, and delivers it to your inbox and Telegram, with guardrails so he never floods you.
-
-### Added — Initiative Engine (Kairos asks first) · `KAIROS` · `API`
-- A nightly pass reads the brain, decides whether anything clears the "worth interrupting you" bar, and if so posts one proactive message. A no-stacking governor prevents pile-ups, and chat is now aware of a pending question so it surfaces in conversation.
-- The first fully autonomous Kairos message — decided and sent with no prompt from you — went out on 2026-07-19.
-
-### Added — Live board grounding + memory decay · `KAIROS`
-- Chat can now read live board state when it helps answer, instead of leaning on stale imported snapshots. A new decay tier automatically retires memories the board has since contradicted.
+> Areas touched: `API` `INFRA`
+> Theme: production blank errors healed.
 
 ### Fixed — Production blank-error incident healed · `API` · `INFRA`
-- Under certain workspace states, sign-in, Kairos delivery, mobile, and API routes were returning blank errors. All now return proper responses. A chat setting that was breaking some replies was also fixed.
-
-### Changed — Autonomy hardening · `KAIROS` · `DOCS`
-- Post-review follow-ups from the internal audit pass, Telegram formatting polish, and an architecture-doc refresh.
+- Under certain workspace states, sign-in, mobile and API routes were returning blank errors. All now return proper responses.
 
 ## [0.19.0] — 2026-07-17
 
-> Areas touched: `KAIROS` `MCP` `INFRA` `BOARD` `API`
-> Theme: Kairos in the gram. He can now reach you on Telegram in his own voice — and only speaks first when it's genuinely worth it, on a throttle so he's never noisy. Nightly synthesis got cheaper, and the whole tool surface became self-describing.
+> Areas touched: `MCP` `BOARD`
+> Theme: self-describing tools and a checklist fix.
 
-### Added — Kairos on Telegram + speaks-first · `KAIROS` · `API` · `INFRA`
-- Two-way Telegram: Kairos delivers to your inbox and to Telegram, renders in native Telegram formatting, and adapts his tone to whichever surface he's speaking on.
-- A "brain-tick" throttle governs when he's allowed to speak first — default is silence, one pulse per run, never a stream.
-
-### Added — Chat now feeds the brain · `KAIROS`
-- A nightly job distills your chat conversations back into durable memory, closing the old one-way gap where things said in chat used to evaporate.
-
-### Changed — Cheaper nights + self-describing tools · `KAIROS` · `MCP`
-- Prompt caching and a model re-tier cut the cost of nightly synthesis. Every automation tool now carries usage annotations. Tool count: 95 → 109.
+### Changed — Self-describing tools · `MCP`
+- Every automation tool now carries usage annotations.
 
 ### Fixed — Checklist ghost input · `BOARD`
 - Phantom "New item" rows no longer appear in checklists.
 
 ## [0.18.0] — 2026-07-14
 
-> Areas touched: `KAIROS` `UI`
-> Theme: Subtract to focus. The experimental skybox view and the old flat graph are retired — the 3D memory galaxy is now the one and only spatial view — and Kairos grows a proactive inbox.
-
-### Changed — The galaxy is the only spatial view · `KAIROS` · `UI`
-- Retired the experimental Aether skybox view and the legacy 2D graph. The 3D memory galaxy becomes the single canonical way to see the brain, per the Vision north-star pass.
-
-### Added — Will inbox · `KAIROS`
-- A proactive inbox that gathers Kairos's questions and proposals in one place — the surface the speaks-first layer delivers into.
+- Internal improvements.
 
 ## [0.17.0] — 2026-07-13
 
-> Areas touched: `KAIROS` `BOARD` `UI` `DATA`
-> Theme: Talk to the whole brain. Chat stops making you pick a Dominion first — it now recalls across everything Kairos knows and files new memories to the right place automatically. Plus: favorite your projects.
-
-### Added — Whole-brain chat · `KAIROS`
-- Chat recalls across the entire brain with a relevance re-rank pass, and the Dominion picker is gone — you just talk, and threads span everything.
-- New memories are auto-filed to the right Dominion at capture time, so nothing lands unsorted.
+> Areas touched: `BOARD` `UI` `DATA`
+> Theme: favorite your projects.
 
 ### Added — Project favorites · `BOARD` · `UI` · `DATA`
 - Star a project from the dashboard or the board header; favorites float to the top.
@@ -652,25 +281,11 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 
 ## [0.16.0] — 2026-07-09
 
-> Areas touched: `KAIROS` `DATA` `UI`
-> Theme: Governed memory. The brain learns to reason about time and trust — memories can go stale, get contradicted, and lose confidence as they age, and the galaxy shows that confidence as brightness.
-
-### Added — Bi-temporal memory + belief trail · `KAIROS` · `DATA`
-- Memories now track when a fact was actually true, not just when it was written, so a superseded belief can be dated out without being deleted.
-- Automatic contradiction detection and a belief-trail view surface when the brain's understanding changed, and why.
-
-### Added — Confidence decay · `KAIROS`
-- Retrieval now weights memories by a confidence that decays with age, so fresher and reinforced knowledge outranks stale one-offs at read time.
-
-### Changed — Galaxy shows confidence as brightness · `KAIROS` · `UI`
-- Node brightness in the memory galaxy now encodes confidence — the brain visibly dims where it's unsure.
-
-### Migrations required
-- `0025_memory_valid_time.sql` — `valid_at` / `invalid_at` on memories.
+- Internal improvements.
 
 ## [0.15.0] — 2026-07-02
 
-> Areas touched: `BOARD` `UI` `AUTH` `INFRA`
+> Areas touched: `BOARD` `AUTH` `INFRA`
 > Theme: A board that never sleeps. Saves became instant and durable — they auto-retry and queue offline — dense columns render natively, and completing a card got a big friendly checkbox and a hotkey.
 
 ### Added — Never-asleep saves · `BOARD`
@@ -680,216 +295,66 @@ Each section tags its **domain** (orthogonal to Added/Changed/Fixed):
 - A bigger completion checkbox and a "complete card" hotkey. Checklist items can now be dragged across groups.
 
 ### Fixed — Assignee picker + mobile login · `BOARD` · `AUTH`
-- Workspace members and the owner now appear in the task assignee picker. Mobile login and brain-capture paths were fixed, and the Aether self-model generation moved to Opus 4.8.
+- Workspace members and the owner now appear in the task assignee picker. Mobile login was fixed.
 
 ### Changed — Dense columns render natively · `BOARD` · `INFRA`
 - Dropped the fragile JavaScript virtualization in favor of native browser rendering for long columns.
 
 ## [0.14.0] — 2026-06-15
 
-> Areas touched: `KAIROS` `UI` `INFRA`
-> Theme: Aether wakes up. Above every Dominion now sits one living self-model — Aether — with its own immersive view; on top of it Kairos gains a voice that asks you one sharp question a day and can hold a real back-and-forth.
-
-### Added — Aether, the living intelligence · `KAIROS` · `UI` · `INFRA`
-- A single self-model synthesized above all Dominions, shown as a new Kairos view with hosted skyboxes and a full-screen chat.
-
-### Added — Kairos Asks · `KAIROS`
-- A proactive layer that surfaces one surgical question at a time, drawn from what the brain notices across Dominions.
-
-### Added — Dialogue · `KAIROS`
-- A multi-turn conversation between you and Kairos, seeded by a pending ask and distilled afterward into durable reflections, with soft Dominion tagging.
+- Internal improvements.
 
 ## [0.13.0] — 2026-06-11
 
-> Areas touched: `KAIROS` `MCP` `API` `AUTH` `DATA` `INFRA`
-> Theme: A brain that retrieves, reachable from anywhere. Aeon's Kairos toolset now connects straight into claude.ai as a remote connector over OAuth, and the brain gains clean capture, semantic retrieval, guided introspection, and automatic de-duplication.
+> Areas touched: `MCP` `API` `AUTH`
+> Theme: Aeon connects straight into claude.ai as a remote connector over OAuth.
 
 ### Added — claude.ai remote connector (OAuth 2.1) · `MCP` · `AUTH` · `API`
-- Aeon now runs an OAuth 2.1 authorization server, so the Kairos toolset connects directly inside claude.ai as a remote connector — no local proxy. Includes the fix for the prerender bug that had been breaking connector discovery.
-
-### Added — Brain upgrade: clean capture + hybrid retrieval + introspection · `KAIROS` · `DATA`
-- Memories are cleaned as they're captured and retrieved with semantic (vector) search blended with keyword search, so recall finds the right thing by meaning, not just exact wording.
-- Guided introspection lets the brain reflect on itself during synthesis.
-
-### Added — Consolidation: de-dup, snapshot lifecycle, own cognition engine · `KAIROS` · `INFRA`
-- Automatic memory de-duplication, a snapshot lifecycle for compaction, and the ability to use Claude Code itself as Kairos's cognition engine with no external key — the foundation Aether builds on.
+- Aeon now runs an OAuth 2.1 authorization server, so Aeon's tools connect directly inside claude.ai as a remote connector — no local proxy. Includes the fix for the prerender bug that had been breaking connector discovery.
 
 ### Migrations required
 - `0022_oauth.sql` — OAuth authorization-server tables.
-- `0023_memory_embeddings.sql` — vector embeddings on memories.
-- `0024_memory_provenance.sql` — capture-provenance fields on memories.
 
 ## [0.12.0] — 2026-06-02
 
-> Areas touched: `KAIROS` `DOMINION` `DATA` `MCP` `INFRA` `UI` `DOCS`
-> Theme: Kairos grows a brain. Every Dominion now synthesises itself overnight — 3–7 archetype themes plus one living cortex document — and you can chat with the result through a slide-out panel that cites the memories it reasons from.
-
-### Added — Slide-out chat Visor anchored per Dominion · `KAIROS` · `UI`
-- Sparkles button bottom-right opens a right-edge slide-out panel on `/kairos`, `/notes`, and `/settings/ai`. Pick a Dominion at thread creation, type, **Cmd/Ctrl+Enter** to send.
-- Single active thread per Visor open; threads persist across reloads in the existing `agent_sessions` + `session_events` tables. History capped at 30 messages per turn.
-- User message is persisted **before** the model call — a model failure never silently loses what you typed. Retry detects the trailing orphan; if you edit the body on retry, the orphan is rewritten in place instead of double-posting.
-
-### Added — Memory-grounded chat replies with citation chips · `KAIROS` · `UI`
-- Every reply pulls the anchored Dominion's live cortex doc, all live archetypes, and the top-5 FTS substrate hits over the last 90 days. They flow into the system prompt as a grounded context block.
-- Inline `[[uuid]]` citation tokens render as small purple chips bearing the source memory's title (truncated, hover-expand). Tokens the model invents (ids not in the retrieved set) render as a muted **?** so confabulation is visible at a glance.
-- A dim **Reading: cortex · N archetypes · M memories** line sits above each assistant bubble so you can see what was grounding the answer.
-- Falls back cleanly to bare chat when a Dominion has no cortex yet — newly-created Dominions are still usable on day one.
-
-### Added — Nightly Dominion synthesis (archetypes + cortex) · `KAIROS` · `DATA` · `INFRA`
-- **Archetype generator** (02:30 UTC): per-Dominion BYOK heavy-tier pass over the last 14 days of substrate + all reflections, emitting 3–7 master themes. Prior batches are soft-archived so "live archetypes" always equals today's run.
-- **Cortex regen** (03:00 UTC): one living document per Dominion, regenerated nightly from those archetypes + reflections + Dominion vision. Acts as the system-prompt prefix when you chat anchored to that Dominion. Old cortex rows are kept as historical record — scrub backwards to watch the brain change.
-- Both are gated by your BYOK heavy-tier key. No key wired for a Dominion → the synthesis skips that Dominion cleanly.
-
-### Added — `kairos_reflect` MCP tool — owner reflections from any Claude session · `KAIROS` · `MCP`
-- New MCP tool: `{dominionId, body, tags?}` captures a reflection into the anchored Dominion. Stored with `streamClass='reflection'` and weighted **higher** than any other class in synthesis prompts — reflections can override drift signals and are never archived by compaction.
-- Use `list_dominions` to find the target id, then `kairos_reflect` to fire. Designed for fast quick-fire capture from any Claude Code session — no UI, no friction.
-
-### Added — Three-layer memory classification (`streamClass`) · `DATA` · `KAIROS`
-- New `streamClass` field on every memory: `reflection` (highest weight, owner signal) / `idea` (manual notes) / `agentic` (Claude sessions, agent output) / `execution` (board imports, cron snapshots) / `archetype` (synthesised master nodes) / `cortex` (living Dominion doc).
-- All 378 existing memories backfilled via a source+type cascade. The Briefer, synthesis prompts, and chat retrieval all weight by class.
-
-### Added — Memory hygiene cron + quality gates · `KAIROS` · `INFRA` · `DOCS`
-- Weekly memory-compaction cron (Sun 03:00 UTC) — Phase 1A scaffolded in counts-only mode; Phase 1B will absorb stale execution-class memories into archetypes and soft-archive the originals. Pinned + reflection-class rows are never archived.
-- New `docs/kairos/14-quality-gates.md` documents what enters/leaves the brain, the memory↔board boundary, cross-user isolation rules, Dominion lifecycle, and reflection weighting.
-
-### Added — Dominion backfill — every memory now has a home · `DOMINION` · `DATA`
-- Phase 1A cascade-backfilled `dominionId` across the substrate (project → repo → fallback). 98% of memories landed; the 5 unanchored are a cross-user cron-leak symptom that's now tracked as a separate audit item.
-
-### Changed — Briefer now reads live board state · `KAIROS` · `DATA`
-- The 7 a.m. daily briefer no longer relies on a bulk-imported snapshot of every card. It now queries the board directly via `inspectDominion()`'s board-task join, so the advisory always reflects what's actually on the boards right now.
-- The bulk-import script that previously mirrored every card into the memory layer is deprecated behind a tripwire env flag — the board owns cards, the brain owns synthesis, no double-write.
-
-### Changed — MCP tool count: 94 → 95 · `MCP`
-- +1 in **kairos** (`kairos_reflect`).
-
-### Migrations required
-- `0021_memory_stream_class.sql` — adds `stream_class` to `memories` with the source+type cascade backfill.
+- Internal improvements.
 
 ## [0.11.0] — 2026-05-30
 
-> Areas touched: `KAIROS` `DOMINION` `UI` `MCP` `API` `DATA` `AUTH` `BOARD` `DOCS`
-> Theme: Kairos becomes a daily companion — auto-capture, daily briefer, advisory feed, agent spawn — gated by your own AI keys. Sidebar gets a Home entry, the dashboard stops shouting at you, and the AI key page is rebuilt in product voice.
+> Areas touched: `UI` `MCP` `API` `DATA` `AUTH` `BOARD`
+> Theme: bring your own AI keys, Trello-style task assignment, and a Home entry at the top of every sidebar; the dashboard opens straight on your realms.
 
-### Added — Bring Your Own AI (BYOK) · `KAIROS` · `AUTH` · `API` · `UI`
+### Added — Bring Your Own AI (BYOK) · `AUTH` · `API` · `UI`
 - Plug your own Anthropic, OpenAI, or Gemini key into Aeon. Encrypted at rest (AES-256-GCM), per-tier model routing (cheap / standard / heavy), one key active per provider.
 - Settings cog gains an **AI** tab; `/settings/ai` opens on a redesigned landing screen (provider-tinted glass) with three provider cards: paste, reveal-toggle, test, save → rotate. The provider you point the heavy tier at gets an **Active** badge.
 - Admin-gated during closed beta. Non-admin accounts see a held `Rolling out soon` state.
 
-### Added — Daily Briefer · `KAIROS`
-- A 7 a.m. cron writes one advisory per active Dominion using your BYOK heavy-tier model. The advisory is anchored to that Dominion and idempotent — running twice on the same day is a no-op.
-- The Daily Briefing card has three explicit states: no key wired → CTA, key wired but no advisory today → manual **Run now**, advisory present → render with provider pills in the header.
-
-### Added — Daily Briefing + EOD Reflection as sidebar popovers · `UI` · `KAIROS`
-- Both have moved out of the auto-pinned dashboard slot. The dashboard now opens directly on your realms.
-- Sun icon = Daily Briefing popover. Moon icon = End-of-Day reflection (three fields: what happened, what did I decide, what's still open; idempotent per day, day-resets after midnight).
-- Both share a new `AnchoredPopover` primitive that flips below the trigger when there isn't room above and closes on Escape.
-
-### Added — Advisory feed (ambient sidebar) · `KAIROS`
-- Sparkle icon in the sidebar shows an unread count. Popover lists the last 3 days of advisories with acknowledge (soft-archive) and `open →` deep-link to the memory in Kairos.
-
-### Added — Auto-capture (board + project events) · `KAIROS` · `DATA`
-- Task and project mutations now fire-and-forget into the memory layer (created, updated, moved, completed, deleted). The Notes bento and Kairos graph populate themselves as you work.
-- A nightly project-snapshot cron writes one memory per project per day: open / done / blocked counts plus the last 5 events.
-
-### Added — Kairos Spawn primitive · `KAIROS` · `API` · `DATA` · `MCP`
-- New `agent_sessions` + `session_events` tables and `apps/kairos-worker/` — a standalone Node HTTP service that shells the Claude Code / Codex CLI on your behalf.
-- Live Sessions button in the sidebar shows running sessions with a pulsing badge, a transcript that polls every 2 s, and a kill switch. Full REST (`/api/v1/sessions/*`) and MCP (`spawn_session`, `list_sessions`, `get_session`, `list_session_events`, `kill_session`) parity.
-
-### Added — Notes bento page (`/notes`) · `KAIROS` · `UI`
-- Pinterest-style grid of memories with today's auto-capture strip up top, a neighbours panel that re-seeds on any linked memory, and **Promote to Card** (convert a memory into a board task).
+### Changed — The dashboard opens on your realms · `UI`
+- The dashboard opens directly on your realms instead of an auto-pinned panel.
 
 ### Added — Trello-style task assignment · `BOARD` · `DATA` · `MCP`
 - New `task_assignees` table. Press `M` on any selected card to open the assignee picker overlay. Multi-assign per task. Card-face avatar pile is not yet shipped — picker only.
 
 ### Added — Home entry at the top of every sidebar · `UI`
 - Glowing **Home** tile sits above the realm list on every page, lighting up when you're on `/dashboard`. Replaces the ad-hoc `← Dashboard` arrows that were missing on several routes.
-- Bottom pill row reorganised: top cluster = today (Notes / Briefing / Advisories / EOD / Live sessions); bottom cluster = utilities (Changelog / Beta features / Help / Stats / Settings).
 
-### Added — Dominion editor + creator · `DOMINION` · `UI`
-- **New Dominion** sidebar action opens a glassy creation modal (name, color, icon).
-- Dominion edit drawer lets you inline-edit vision, long-form mission, objectives (status + target date), and the visual treatment.
+### Changed — `/settings/ai` now wraps in the standard sidebar shell · `UI`
+- Previously rendered bare — the page now shows the same sidebar as the rest of the app, with a working Home entry.
 
-### Changed — `/notes` and `/settings/ai` now wrap in the standard sidebar shell · `UI`
-- Previously rendered bare — both pages now show the same sidebar as the rest of the app, with a working Home entry.
-
-### Changed — AI key wiring page redesigned · `UI` · `KAIROS`
+### Changed — AI key wiring page redesigned · `UI`
 - Blue, generic settings form replaced with a theme-aware, glassy, provider-tinted dashboard. Reveal toggle on the input. Test result inlines as a tinted chip. Save button label flips to **Rotate** once a key exists. Tier-routing cards flag any tier whose chosen provider has no key.
-
-### Changed — MCP tool count: 76 → 94 · `MCP`
-- +16 in **dominions** (CRUD, vision, objectives, repo mapping, project assignment, bulk assign), +5 in **sessions** (spawn, list, get, events, kill). Realms grew +3 (members + invites). Total now 14 categories.
-
-### Fixed — Help / Stats / Settings modals no longer get overlapped by Kairos node labels · `UI`
-- Bumped from `z-50` to `z-[200]` so the 3D graph's planet labels (drei `Html zIndexRange={[100,0]}`) sit below them. Same fix as previously applied to the changelog + features modals.
-
-### Fixed — EOD reflection's "already today" flag persisted across midnight · `KAIROS`
-- A tab left open overnight kept showing yesterday's status. The flag now invalidates when the captured day no longer matches today's tag.
-
-### Fixed — Daily Briefing card no longer crashes on a corrupt cache entry · `KAIROS`
-- Each cached advisory is shape-checked on parse; mismatches trigger a clean refetch instead of throwing inside the markdown renderer.
-
-### Fixed — Briefing provider pill no longer flickers · `KAIROS` · `DATA`
-- When the heavy-tier preference isn't wired, the fallback active provider is now picked from a deterministically ordered credential list (was undefined Postgres row order).
 
 ### Migrations required
 - `0014_ai_integration.sql` — `user_ai_credentials`, `user_ai_preferences`.
-- `0017_dominion_body.sql` — vision / mission / objectives on `dominions`; `dominion_objectives` table.
-- `0018_engine_policies.sql` — `engine_policies` for routing overrides.
-- `0019_agent_sessions.sql` — `agent_sessions` + `session_events`.
 - `0020_task_assignees.sql` — `task_assignees`.
 
 ## [0.10.0] — 2026-05-23
 
-> Areas touched: `KAIROS` `DOMINION` `MCP` `API` `DATA` `UI` `DOCS`
-> Theme: Kairos K-0 through K-5 complete. 2D WebGL graph with cross-repo connections via Dominions, memory backfill tool, in-app onboarding modal.
-
-### Added — Kairos 2D WebGL graph · `KAIROS` · `UI`
-- Orthographic Three.js scene via `@react-three/fiber` + `d3-force-3d`. Orthographic camera controls, planet-cloud node rendering, real edge lines, starfield backdrop.
-- Color modes: by **Dominion**, by type, by realm, by recency.
-- `MemorySidePanel` renders the AI-cleaned title + execSummary bullets when a node is selected.
-- Cross-repo edges now appear automatically when memories share a Dominion.
-
-### Added — Dominions (top-level grouping above project) · `DOMINION` · `DATA` · `MCP`
-- New tables `dominions` + `dominion_repos`. `projects.dominion_id` and `memories.dominion_id` foreign keys added.
-- Dominion resolves for a memory in this order: explicit `memory.dominion_id` ?? owning `project.dominion_id` ?? `dominion_repos` lookup via `sourceMetadata.repo` ?? Unassigned.
-- 10 new MCP tools: CRUD + `add_dominion_repo` / `remove_dominion_repo` / `assign_project_dominion` / `bulk_assign_projects_to_dominion`.
-- REST surface for Dominions is **not yet built** — flagged as known gap.
-
-### Added — `list_memories_needing_summary` MCP tool + REST mirror · `MCP` · `API`
-- Returns memories with empty `execSummary` (and/or null `aiTitle`) so the caller can backfill them via `update_memory` in a loop.
-- REST mirror at `GET /api/v1/memories/needs-summary`.
-- Memory parity test now locks 7 MCP tools against 9 REST routes.
-
-### Added — Kairos Setup + Guide modal · `KAIROS` · `UI`
-- Glowing pill in the sidebar (between realm list and create actions) opens a two-tab onboarding modal.
-- Setup walks new users through MCP configuration; Guide is the usage reference.
-
-### Fixed — 2D edges now render after the first d3-force tick · `KAIROS`
-- d3-force mutates `link.source` / `link.target` from string IDs to node refs after the first tick. The renderer was doing `nodeById.get(string)` every frame and the lookup quietly returned undefined. One-line guard added.
-
-### Changed — `ARCHITECTURE.md` and `VISION.md` refreshed · `DOCS`
-- MCP tool count bumped 63 → 76. K-0 through K-5 marked complete. K-6 (Dominion REST + bulk-assign UX) and K-7 (BYOK merge) added.
-
-### Migrations required
-- `0015_kairos_summaries.sql` — adds `ai_title varchar(120)` and `exec_summary jsonb default []` to `memories`.
-- `0016_dominion.sql` — creates `dominions` + `dominion_repos`, adds `dominion_id` to `projects` and `memories`.
+- Internal improvements.
 
 ## [0.9.0] — 2026-05-22
 
-> Areas touched: `KAIROS` `DATA` `UI` `MCP`
-> Theme: Brain → Kairos rebrand, memory display rework, AI-cleaned title + exec summary schema.
-
-### Changed — Brain → Kairos rebrand · `KAIROS` · `UI` · `DOCS`
-- All paths and references: `app/brain/` → `app/kairos/`, `components/brain/` → `components/kairos/`, `docs/brain/` → `docs/kairos/`. Route is now `/kairos`.
-- Sidebar header animates `AEON : KAIROS` with a pulsing glow when on the Kairos route.
-
-### Added — Memory schema for AI-cleaned display · `DATA` · `MCP`
-- `memories.aiTitle` (varchar 120, nullable) — 1–6 word AI-cleaned title for front-of-house display.
-- `memories.execSummary` (jsonb default `[]`) — 5–10 bullet array.
-- `create_memory` and `update_memory` MCP tools accept and return both fields.
-- The Aeon server does **no LLM work** — all summarisation happens at the call site (Claude Code self-cleans, then sends pre-cleaned payload).
-
-### Added — `MemorySidePanel` rework · `KAIROS` · `UI`
-- Title + colour pills + execSummary bullets + collapsed body. Graceful empty-state for memories that pre-date the schema.
+- Internal improvements.
 
 ## [0.8.0] — 2026-04-07
 

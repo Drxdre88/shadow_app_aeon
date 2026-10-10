@@ -28,6 +28,11 @@ jobs:
       # (apps/web/src/middleware.test.ts) that guards the sign-in path.
       - run: npm run -w apps/web test
 
+      # The public changelog must never mention Vorath, and the in-app copies
+      # (changelog.ts, version.ts, the server-only private module) must match
+      # their markdown sources. Added 10/10/2026 with the owner-only split.
+      - run: npm run -w apps/web changelog:test
+      - run: npm run -w apps/web changelog:check
       # The Hangar runner (stream parser, worktree lifecycle, engine adapters)
       # has its own suite; it shipped without a CI gate until 2026-09-03.
       - run: npm run -w apps/kairos-worker typecheck
