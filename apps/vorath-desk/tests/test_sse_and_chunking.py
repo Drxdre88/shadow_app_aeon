@@ -51,3 +51,13 @@ def test_chunker_does_not_treat_closing_paren_alone_as_end() -> None:
     chunker = SentenceChunker()
     assert chunker.feed("See the board (Swarm)") == []
     assert chunker.flush() == ["See the board (Swarm)"]
+
+
+def test_chunker_releases_a_clause_delta_at_once() -> None:
+    chunker = SentenceChunker()
+    assert chunker.feed("The Swarm build finished overnight without errors,") == [
+        "The Swarm build finished overnight without errors,"
+    ]
+    assert chunker.feed("Focus on the release notes first—") == ["Focus on the release notes first—"]
+    assert chunker.feed("but two tests were flaky.") == ["but two tests were flaky."]
+    assert chunker.flush() == []

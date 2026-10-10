@@ -62,6 +62,19 @@ def test_malformed_event_is_skipped() -> None:
     assert list(make_client(lambda r: httpx.Response(200, text=body)).stream_turn("x")) == [DoneEvent("ok")]
 
 
+def test_ack_and_unknown_events_are_ignored() -> None:
+    body = (
+        'event: ack\ndata: {"threadId":"t"}\n\n'
+        'event: something_new\ndata: {"x":1}\n\n'
+        'event: delta\ndata: {"text":"Hi."}\n\n'
+        'event: done\ndata: {"text":"Hi.","timing":{"totalMs":900}}\n\n'
+    )
+    assert list(make_client(lambda r: httpx.Response(200, text=body)).stream_turn("x")) == [
+        DeltaEvent("Hi."),
+        DoneEvent("Hi."),
+    ]
+
+
 @pytest.mark.parametrize(
     ("code", "error_type"),
     [("turn_in_progress", TurnInProgressError), ("no_paid_key", NoPaidKeyError)],
