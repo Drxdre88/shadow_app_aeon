@@ -1,8 +1,10 @@
-import { generateText, streamText, tool as sdkTool, type LanguageModel } from 'ai'
+import { generateText, streamText, tool as sdkTool, type LanguageModel, type LanguageModelUsage } from 'ai'
 import type { z } from 'zod'
 import { effortFor, type ModelEffort } from '@aeon/shared/ai/models'
 import { effortProviderOptions, type AiTier, type ProviderId } from './providers'
 import { resolveModelForUser, buildModelWithKey, type ResolveModelOptions } from './router'
+import { MeteredProvider } from './metered-provider'
+import { spendMeter } from './spend'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 1 (B6) — AIProvider seam.
@@ -61,6 +63,8 @@ export interface AIRequest {
 export interface AIUsage {
   inputTokens?: number
   outputTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
   // USD; populated when the provider knows its own pricing. Router/budget
   // layer can recompute from per-provider pricing if absent.
   costUsd?: number
@@ -151,6 +155,16 @@ function toSdkArgs(model: LanguageModel, req: AIRequest, providerOptions?: SdkPr
   return { ...base, prompt: req.prompt ?? '' }
 }
 
+function toUsage(usage: LanguageModelUsage | undefined): AIUsage | undefined {
+  if (!usage) return undefined
+  return {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.inputTokenDetails?.cacheReadTokens,
+    cacheWriteTokens: usage.inputTokenDetails?.cacheWriteTokens,
+  }
+}
+
 // Vercel-SDK-backed implementation. Used for any provider exposed via
 // @ai-sdk/* (Anthropic, OpenAI, Google, OpenRouter via OpenAI-compatible).
 export class VercelAIProvider implements AIProvider {
@@ -172,9 +186,7 @@ export class VercelAIProvider implements AIProvider {
       text: result.text,
       providerId: this.providerId,
       modelId: this.modelId,
-      usage: result.usage
-        ? { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens }
-        : undefined,
+      usage: toUsage(result.usage),
       finishReason: result.finishReason,
       ...(toolCalls.length ? { toolCalls } : {}),
       raw: result,
@@ -192,21 +204,26 @@ export class VercelAIProvider implements AIProvider {
       providerId: this.providerId,
       modelId: this.modelId,
       done: true,
-      usage: final
-        ? { inputTokens: final.inputTokens, outputTokens: final.outputTokens }
-        : undefined,
+      usage: toUsage(final),
     }
   }
+}
+
+export interface ProviderForUserOptions extends ResolveModelOptions {
+  task?: string
 }
 
 // Factory: resolve a user's tier preference through the BYOK router and
 // return a ready-to-call AIProvider carrying the tier's effort. The Briefer
 // (E20) calls this with tier='heavy' for daily inference.
-export async function getProviderForUser(userId: string, tier: AiTier, opts?: ResolveModelOptions): Promise<AIProvider> {
-  const { model, providerId, effort } = await resolveModelForUser(userId, tier, opts)
+// Every call on the returned provider spends the user's own key, so it is
+// metered: refused at the daily spend cap, and recorded to ai_usage.
+export async function getProviderForUser(userId: string, tier: AiTier, opts?: ProviderForUserOptions): Promise<AIProvider> {
+  const { model, providerId, modelId, effort } = await resolveModelForUser(userId, tier, opts)
   // For Phase 1 we surface a generic 'byok' marker; B10's policy table
   // overrides this with the chosen provider/model on a per-call basis.
-  return new VercelAIProvider('byok', opts?.model?.modelId ?? `tier:${tier}`, model, effortProviderOptions(providerId, effort))
+  const inner = new VercelAIProvider('byok', opts?.model?.modelId ?? `tier:${tier}`, model, effortProviderOptions(providerId, effort))
+  return new MeteredProvider(inner, { userId, task: opts?.task ?? `tier:${tier}`, providerId, modelId }, spendMeter)
 }
 
 // Direct constructor for when caller has already picked provider + key —

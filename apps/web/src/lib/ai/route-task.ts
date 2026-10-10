@@ -144,8 +144,6 @@ export async function getProviderForTask(
   // resolving through the user's tier preference as before.
   const model = decision.source === 'default' ? defaultModelFor(req.taskType) : undefined
   const ownerInitiated = OWNER_INITIATED_TASKS.has(req.taskType)
-  const provider = model || ownerInitiated
-    ? await getProviderForUser(userId, decision.tier, { model, ownerInitiated })
-    : await getProviderForUser(userId, decision.tier)
+  const provider = await getProviderForUser(userId, decision.tier, { model, ownerInitiated, task: req.taskType })
   return { decision, provider }
 }
