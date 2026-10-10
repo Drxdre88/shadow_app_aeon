@@ -88,6 +88,8 @@ export interface StreamChunk {
   modelId: string
   done?: boolean
   usage?: AIUsage
+  // On the final (done) chunk: why the model stopped, as in AIResponse.
+  finishReason?: string
 }
 
 export interface AIProvider {
@@ -193,18 +195,30 @@ export class VercelAIProvider implements AIProvider {
     }
   }
 
+  // fullStream, not textStream: streamText swallows provider errors into an
+  // `error` part, so textStream would end silently and an overloaded or
+  // refused call would look like an empty answer instead of a failure.
   async *stream(req: AIRequest): AsyncIterable<StreamChunk> {
     const result = streamText(toSdkArgs(this.model, req, this.providerOptions))
-    for await (const part of result.textStream) {
-      yield { text: part, providerId: this.providerId, modelId: this.modelId }
+    let finishReason: string | undefined
+    let usage: LanguageModelUsage | undefined
+    for await (const part of result.fullStream) {
+      if (part.type === 'text-delta') {
+        if (part.text) yield { text: part.text, providerId: this.providerId, modelId: this.modelId }
+      } else if (part.type === 'error') {
+        throw part.error instanceof Error ? part.error : new Error(String(part.error))
+      } else if (part.type === 'finish') {
+        finishReason = part.finishReason
+        usage = part.totalUsage
+      }
     }
-    const final = await result.usage
     yield {
       text: '',
       providerId: this.providerId,
       modelId: this.modelId,
       done: true,
-      usage: toUsage(final),
+      usage: toUsage(usage),
+      ...(finishReason ? { finishReason } : {}),
     }
   }
 }
