@@ -5,7 +5,8 @@
 //
 //   FTS leg + vector leg (same filters) → RRF fuse → relevance × standing
 //   (lib/kairos/ranking.ts) → Voyage rerank-2.5 over a bounded pool, blended
-//   with the same standing factor → top-k.
+//   with the same standing factor → top-k. The query embedding runs alongside
+//   the FTS leg; `rerank: false` keeps the fused order (the voice line).
 //   Opt-in `expand` (search-expand.ts) widens the rerank pool first with link
 //   neighbours of the top fused rows and memories cited by matching archetypes.
 //   Opt-in `entity` (search-entity.ts) adds a few memories mentioning an
@@ -133,6 +134,11 @@ export interface SearchCoreOptions {
   // the query, ordered by relevance, join the candidates without re-ordering
   // the legs (search-entity.ts). Default SEARCH_ENTITY_DEFAULT.
   entity?: boolean
+  // false = keep the fused order and skip the cross-encoder call (the voice
+  // line trades its precision for a sooner first word). Default true.
+  rerank?: boolean
+  // Durations of the network steps, for latency logs: 'embedding', 'rerank'.
+  onTiming?: (step: 'embedding' | 'rerank', ms: number) => void
 }
 
 export interface SearchCoreHit {
@@ -195,6 +201,17 @@ export async function searchCore(userId: string, opts: SearchCoreOptions): Promi
   const tsQuery = sql`websearch_to_tsquery('english', ${query})`
   const rank = sql<number>`ts_rank_cd("memories"."fts", ${tsQuery})`
   const snippet = sql<string>`ts_headline('english', coalesce(${memories.summary}, ${memories.bodyMd}), ${tsQuery}, 'MaxFragments=2,MaxWords=18,MinWords=5')`
+
+  // The query embedding is a network call, not a select: it starts now and
+  // runs alongside the FTS leg instead of after it. Settled into a value so a
+  // failing FTS read never leaves it as an unhandled rejection.
+  const embedStarted = Date.now()
+  const queryVector: Promise<{ vec: number[] | null } | { error: unknown }> | null = embeddingsEnabled()
+    ? embedOne(query, 'query').then(
+        (vec) => { opts.onTiming?.('embedding', Date.now() - embedStarted); return { vec } },
+        (error: unknown) => ({ error }),
+      )
+    : null
 
   // No await before this select: callers fire several selects in a known
   // order (retrieve.ts Promise.all), and this one must keep its slot.
@@ -271,10 +288,12 @@ export async function searchCore(userId: string, opts: SearchCoreOptions): Promi
     }
   }
 
-  if (!embeddingsEnabled()) return ftsOnly()
+  if (!queryVector) return ftsOnly()
 
   try {
-    const qVec = await embedOne(query, 'query')
+    const embedded = await queryVector
+    if ('error' in embedded) throw embedded.error
+    const qVec = embedded.vec
     if (!qVec) return ftsOnly()
 
     const vectorLiteral = toVectorLiteral(qVec)
@@ -351,10 +370,12 @@ export async function searchCore(userId: string, opts: SearchCoreOptions): Promi
     const fresh = extras.filter((e) => !byId.has(e.row.id))
     const candidates = byId.size + fresh.length
     const clip = opts.rerankChars
-    const reranked = await rerankScored(query, [...pool, ...extras.map((e) => e.row)], (r) => {
+    const rerankStarted = Date.now()
+    const reranked = opts.rerank === false ? null : await rerankScored(query, [...pool, ...extras.map((e) => e.row)], (r) => {
       const text = `${r.title}\n${r.bodyMd ?? ''}`
       return clip ? text.slice(0, clip) : text
     })
+    if (opts.rerank !== false) opts.onTiming?.('rerank', Date.now() - rerankStarted)
 
     if (!reranked) {
       // Fused order untouched; brand-new extras only trail it.

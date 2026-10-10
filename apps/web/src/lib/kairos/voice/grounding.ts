@@ -1,4 +1,5 @@
 import type { ChatRetrieval, RetrievedMemory } from '@/lib/kairos/chat-retrieval'
+import type { GlobalRetrievalOptions } from '@/lib/kairos/retrieve'
 
 // The voice-sized grounding bundle. A spoken reply is two or three sentences,
 // so the prompt carries the strongest few sources, clipped short, instead of
@@ -6,6 +7,11 @@ import type { ChatRetrieval, RetrievedMemory } from '@/lib/kairos/chat-retrieval
 // up to 1,800 characters each). A smaller prompt reaches its first token
 // sooner. Web-only sections (the moment lanes: owner model, stage, cold read)
 // are not loaded for voice at all; see chat-turn-context.ts.
+//
+// Retrieval is lighter too (VOICE_RETRIEVAL): the substrate keeps the fused
+// FTS + vector order with no cross-encoder call, no pool expansion and no
+// entity read, which takes a network call and three database reads off the
+// path to the first word; only the rows the prompt shows are read.
 
 export const VOICE_GROUNDING = {
   cortexChars: 900,
@@ -18,6 +24,15 @@ export const VOICE_GROUNDING = {
   // Spoken turns are short; older ones add tokens, not context.
   historyMessages: 12,
 } as const
+
+export const VOICE_RETRIEVAL: GlobalRetrievalOptions = {
+  substrateLimit: VOICE_GROUNDING.substrate,
+  archetypesLimit: VOICE_GROUNDING.archetypes,
+  rerank: false,
+  expand: false,
+  entity: false,
+  traces: false,
+}
 
 function clip(memory: RetrievedMemory, max: number): RetrievedMemory {
   const body = memory.body.trim()

@@ -7,7 +7,7 @@
 // traces).
 // ─────────────────────────────────────────────────────────────────────────
 
-import { retrieveGlobalContext } from './retrieve'
+import { retrieveGlobalContext, type GlobalRetrievalOptions } from './retrieve'
 import type { RetrievedMemory } from './recipes/_recipe'
 
 export type { RetrievedMemory }
@@ -25,8 +25,9 @@ export interface ChatRetrieval {
 export async function retrieveForChatGlobal(
   userId: string,
   userQuery: string,
+  options?: GlobalRetrievalOptions,
 ): Promise<ChatRetrieval> {
-  const r = await retrieveGlobalContext({ userId, query: userQuery })
+  const r = await retrieveGlobalContext(options ? { userId, query: userQuery, options } : { userId, query: userQuery })
   return { cortex: r.cortex, archetypes: r.archetypes, substrate: r.substrate }
 }
 
