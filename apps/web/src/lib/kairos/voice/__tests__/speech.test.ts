@@ -54,3 +54,49 @@ describe('SpeechChunker', () => {
     expect(out.join(' ')).toBe('It shipped. Good.')
   })
 })
+
+describe('SpeechChunker clause pieces', () => {
+  function pieces(deltas: string[], opts?: { clauseWords?: number }): string[] {
+    const out: string[] = []
+    const chunker = new SpeechChunker((s) => out.push(s), opts)
+    for (const d of deltas) chunker.push(d)
+    chunker.flush()
+    return out
+  }
+
+  it('speaks the clause before a comma once it has about six words, before the sentence ends', () => {
+    const out: string[] = []
+    const chunker = new SpeechChunker((s) => out.push(s))
+    chunker.push('The Swarm build finished overnight without errors, ')
+    expect(out).toEqual(['The Swarm build finished overnight without errors,'])
+    chunker.push('but two tests were flaky.')
+    chunker.flush()
+    expect(out).toEqual(['The Swarm build finished overnight without errors,', 'but two tests were flaky.'])
+  })
+
+  it('a short opener waits for the rest of its sentence', () => {
+    expect(pieces(['Morning, Andrey. ', 'All good.'])).toEqual(['Morning, Andrey.', 'All good.'])
+    expect(pieces(['Yes, ', 'the build ', 'is green now.'])).toEqual(['Yes, the build is green now.'])
+  })
+
+  it('cuts at a spaced hyphen or a dash and keeps the dash', () => {
+    expect(pieces(['Focus on the Aeon release notes first - then the Swarm review.'])).toEqual([
+      'Focus on the Aeon release notes first—',
+      'then the Swarm review.',
+    ])
+    expect(pieces(['Focus on the Aeon release notes first—then the review.'])[0]).toBe('Focus on the Aeon release notes first—')
+  })
+
+  it('never splits a number or a clause inside a citation', () => {
+    expect(pieces(['We moved about 1,000 rows into the new table yesterday.'])).toEqual(['We moved about 1,000 rows into the new table yesterday.'])
+    expect(pieces(['The memory says the release slipped twice [[ab, cd]] and then shipped.'])).toEqual([
+      'The memory says the release slipped twice and then shipped.',
+    ])
+  })
+
+  it('clauseWords: 0 keeps whole sentences only', () => {
+    expect(pieces(['The Swarm build finished overnight without errors, but two tests were flaky.'], { clauseWords: 0 })).toEqual([
+      'The Swarm build finished overnight without errors, but two tests were flaky.',
+    ])
+  })
+})

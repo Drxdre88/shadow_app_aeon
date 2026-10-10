@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { agentSessions, sessionEvents } from '@/lib/db/schema'
 import { getPendingKairosAsk, type KairosAskRow } from '@/lib/data/ask'
-import { CHAT_ENGINE, type ChatMessagePayload } from '@/lib/data/kairos-chat'
+import { CHAT_ENGINE, type ChatMessage, type ChatMessagePayload, type ChatThreadSummary } from '@/lib/data/kairos-chat'
 import { hasAnyRetrieval } from '@/lib/data/kairos-chat-payload'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import type { AIProvider } from '@/lib/ai/provider'
@@ -31,7 +31,15 @@ export interface ChatTurnOptions {
   tools?: boolean
   // Timing marks for the voice turn log: 'retrieved', 'grounded', 'answered', 'saved'.
   onMark?: (mark: ChatTurnMark) => void
+  // Step durations for the voice timing: 'thread' (owner turn saved),
+  // 'retrieval', 'embedding', 'rerank', and 'section:<name>' per grounding read.
+  onSpan?: (name: string, ms: number) => void
+  // The thread exactly as the caller just read it (the voice route), reused
+  // instead of reading it again. Absent = read here.
+  loadedThread?: LoadedChatThread
 }
+
+export type LoadedChatThread = { thread: ChatThreadSummary; messages: ChatMessage[] }
 
 export type ChatTurnMark = 'retrieved' | 'grounded' | 'answered' | 'saved'
 

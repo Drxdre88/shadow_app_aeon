@@ -46,8 +46,8 @@ import { reactUsed } from '@/lib/kairos/reactions'
 import { intersectWithRetrieved, retrieveForChatGlobal, type ChatRetrieval } from '@/lib/kairos/chat-retrieval'
 import { loadChatTodaySection } from '@/lib/kairos/chat-today'
 import { loadMomentChatOptions } from '@/lib/kairos/moment/chat'
-import { runAssistantTurn, type ChatTurnMark } from '../chat-turn'
-import { VOICE_GROUNDING } from '../voice/grounding'
+import { runAssistantTurn, sendChatMessage, type ChatTurnMark } from '../chat-turn'
+import { VOICE_GROUNDING, VOICE_RETRIEVAL } from '../voice/grounding'
 
 const USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const THREAD_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
@@ -188,5 +188,56 @@ describe('voice turns: deferred side work', () => {
     expect(provider.ask).toHaveBeenCalledTimes(2)
     expect(provider.ask.mock.invocationCallOrder[1]).toBeLessThan(vi.mocked(appendChatMessage).mock.invocationCallOrder[0])
     expect(detached.tasks).toHaveLength(0)
+  })
+})
+
+describe('voice turns: the owner turn saves while the context is built', () => {
+  const loaded = () => ({ thread: { id: THREAD_ID, dominionId: null }, messages: history }) as never
+
+  it('asks retrieval for the light voice path: fused order, no rerank, no expansion, no traces', async () => {
+    const spans: string[] = []
+    await runAssistantTurn(USER_ID, THREAD_ID, null, 'hi', 21, {
+      provider: fakeProvider(['Hi.']), tools: false, channel: 'voice', onSpan: (name) => spans.push(name),
+    })
+    const [, , options] = vi.mocked(retrieveForChatGlobal).mock.calls[0]
+    expect(options).toMatchObject({ ...VOICE_RETRIEVAL, onTiming: expect.any(Function) })
+    expect(options).toMatchObject({ rerank: false, expand: false, entity: false, traces: false })
+    expect(spans).toEqual(expect.arrayContaining(['retrieval', 'section:history', 'section:pendingAsk', 'section:today', 'section:conscience']))
+  })
+
+  it('web chat keeps the full retrieval', async () => {
+    await runAssistantTurn(USER_ID, THREAD_ID, null, 'hi', 21, { provider: fakeProvider(['Hi.']), tools: false })
+    expect(vi.mocked(retrieveForChatGlobal).mock.calls[0]).toHaveLength(2)
+  })
+
+  it('reuses the route-read thread, starts retrieval before the save lands, and calls the model only after it', async () => {
+    let saved: (v: unknown) => void = () => {}
+    vi.mocked(appendChatMessage).mockReturnValueOnce(new Promise((resolve) => { saved = resolve }) as never)
+    const provider = fakeProvider(['Hi.'])
+    const spans: string[] = []
+    const turn = sendChatMessage(USER_ID, THREAD_ID, 'hi there', {
+      provider, tools: false, channel: 'voice', loadedThread: loaded(), onSpan: (name) => spans.push(name),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(retrieveForChatGlobal).toHaveBeenCalledTimes(1)
+    expect(provider.ask).not.toHaveBeenCalled()
+    saved({ ok: true, messageId: 'm-21', seq: 21 })
+    const result = await turn
+
+    expect(result).toMatchObject({ ok: true, userSeq: 21 })
+    expect(getChatThread).not.toHaveBeenCalled()
+    expect(spans).toContain('thread')
+    const messages = (provider.ask.mock.calls[0][0] as AIRequest).messages!
+    expect(messages.filter((m) => m.content === 'hi there')).toHaveLength(1)
+    expect(messages.at(-2)!.content).toBe('turn 20')
+    expect(vi.mocked(appendChatMessage).mock.calls[1][2]).toMatchObject({ role: 'assistant', content: 'Hi.' })
+  })
+
+  it('a failed save never reaches the model', async () => {
+    vi.mocked(appendChatMessage).mockResolvedValueOnce({ ok: false, reason: 'thread_not_found' })
+    const provider = fakeProvider(['Hi.'])
+    const result = await sendChatMessage(USER_ID, THREAD_ID, 'hi', { provider, tools: false, channel: 'voice', loadedThread: loaded() })
+    expect(result).toEqual({ ok: false, reason: 'thread_not_found' })
+    expect(provider.ask).not.toHaveBeenCalled()
   })
 })

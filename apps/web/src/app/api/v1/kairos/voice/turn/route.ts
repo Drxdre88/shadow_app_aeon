@@ -4,6 +4,7 @@ import { vorathGuard } from '@/lib/api/vorath-guard'
 import { withRateLimit } from '@/lib/api/rateLimit'
 import { jsonResponse } from '@/lib/api/response'
 import { SSE_HEADERS } from '@/lib/kairos/voice/turn-stream'
+import { VoiceTurnClock } from '@/lib/kairos/voice/timing'
 import { VOICE_TURN_LIMIT } from '@/lib/kairos/voice/limits'
 import {
   ensureVoiceThread,
@@ -24,6 +25,8 @@ export const maxDuration = 120
 
 export const POST = withRateLimit(
   apiHandler(async (request: NextRequest) => {
+    // Every stage time in done.timing reads from here.
+    const clock = new VoiceTurnClock()
     const auth = await authenticateRequest(request)
     if (!isApiUser(auth)) return auth
     const denied = vorathGuard(auth)
@@ -47,8 +50,17 @@ export const POST = withRateLimit(
 
     const threadId = await ensureVoiceThread(auth.id, state, parsed.data.threadKey)
     if (!threadId) return jsonError('Could not open the voice thread', 500)
+    clock.mark('accepted')
 
-    return new Response(voiceTurnStream(auth.id, threadId, parsed.data.text, paid.provider), {
+    const stream = voiceTurnStream({
+      userId: auth.id,
+      threadId,
+      text: parsed.data.text,
+      provider: paid.provider,
+      clock,
+      loadedThread: state.threadId === threadId ? state.loaded : null,
+    })
+    return new Response(stream, {
       status: 200,
       headers: SSE_HEADERS,
     })

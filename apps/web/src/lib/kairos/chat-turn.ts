@@ -4,9 +4,9 @@ import {
   updateChatMessageContent,
 } from '@/lib/data/kairos-chat'
 import { CHAT_REPLY_PENDING_MESSAGE, chatJobOwnsMessage } from '@/lib/kairos/chat-routine'
-import { runAssistantTurn } from '@/lib/kairos/chat-turn-assistant'
+import { answerBuiltAssistantTurn, buildAssistantTurn, runAssistantTurn } from '@/lib/kairos/chat-turn-assistant'
 import { chatTodayChannel, recordChatOwnerTurn } from '@/lib/kairos/chat-today'
-import type { ChatTurnOptions, KairosChatTurnResult } from '@/lib/kairos/chat-turn-reply'
+import type { ChatTurnOptions, KairosChatTurnResult, LoadedChatThread } from '@/lib/kairos/chat-turn-reply'
 
 // Whole-brain chat turn engine, extracted from the chat server actions so
 // non-session surfaces (the Telegram webhook) can run the SAME machinery
@@ -62,7 +62,7 @@ export async function sendChatMessage(
   body: string,
   opts: ChatTurnOptions = {},
 ): Promise<KairosChatTurnResult> {
-  const loaded = await getChatThread(userId, threadId)
+  const loaded = opts.loadedThread ?? await getChatThread(userId, threadId)
   if (!loaded) return { ok: false, reason: 'thread_not_found' }
 
   const last = loaded.messages[loaded.messages.length - 1]
@@ -82,7 +82,41 @@ export async function sendChatMessage(
     return runAssistantTurn(userId, threadId, loaded.thread.dominionId, body, last.seq, opts)
   }
 
+  if (opts.channel === 'voice') return runVoiceChatTurn(userId, threadId, loaded, body, opts)
   return runChatTurn(userId, threadId, loaded.thread.dominionId, body, opts)
+}
+
+// Voice: the owner's turn is saved while the context is built, from the
+// thread as already read (so the new message can't appear twice). The model
+// call starts only once the save succeeded, so input is never lost.
+async function runVoiceChatTurn(
+  userId: string,
+  threadId: string,
+  loaded: LoadedChatThread,
+  body: string,
+  opts: ChatTurnOptions,
+): Promise<KairosChatTurnResult> {
+  const dominionId = loaded.thread.dominionId
+  const started = Date.now()
+  const appended = appendChatMessage(userId, threadId, { role: 'user', content: body }).then((saved) => {
+    opts.onSpan?.('thread', Date.now() - started)
+    if (saved.ok) recordChatOwnerTurn(userId, threadId, saved.seq, body, chatTodayChannel(opts.surface, opts.channel))
+    return saved
+  })
+  const [userAppend, built] = await Promise.all([
+    appended,
+    buildAssistantTurn(userId, threadId, {
+      ...opts,
+      loadedThread: loaded,
+      dominionId,
+      userBody: body,
+      // Every message already read precedes the turn being saved.
+      userSeq: Number.MAX_SAFE_INTEGER,
+    }),
+  ])
+  if (!userAppend.ok) return { ok: false, reason: 'thread_not_found' }
+  if (!built.ok) return { ok: false, reason: built.reason }
+  return answerBuiltAssistantTurn(userId, threadId, dominionId, body, userAppend.seq, opts, built.turn)
 }
 
 // Shared core: persist user message → run assistant half.

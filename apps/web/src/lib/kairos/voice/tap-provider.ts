@@ -15,7 +15,11 @@ import type { VoiceTurnClock } from './timing'
 //   the tool loop's deadline race can still resolve later and must stay
 //   silent. seal() (called when the engine returns) silences everything.
 // - An optional clock records the first model call, each tool round, the
-//   first tapped text and the prompt size, for the turn timing log.
+//   first tapped text, the end of the answer and the prompt size, for the
+//   turn timing.
+// - onEnd fires once the answer is complete (stream finished, or the whole
+//   answer tapped), so the voice line can speak its last piece before the
+//   reply is saved.
 
 export class VoiceTapProvider implements AIProvider {
   private armed = true
@@ -27,6 +31,7 @@ export class VoiceTapProvider implements AIProvider {
     private readonly inner: AIProvider,
     private readonly onText: (text: string) => void,
     private readonly clock?: VoiceTurnClock,
+    private readonly onEnd?: () => void,
   ) {}
 
   get providerId() {
@@ -78,14 +83,22 @@ export class VoiceTapProvider implements AIProvider {
     this.clock.note('promptChars', (req.messages ?? []).reduce((n, m) => n + m.content.length, 0))
   }
 
+  private end(): void {
+    if (this.sealed) return
+    this.clock?.mark('answer_end')
+    this.onEnd?.()
+  }
+
   private tapWhole(response: AIResponse): void {
     this.armed = false
     this.usage = response.usage
     this.emit(response.text)
+    this.end()
   }
 
   private async streamAnswer(req: AIRequest): Promise<AIResponse> {
     let text = ''
+    let finishReason: string | undefined
     try {
       for await (const chunk of this.inner.stream(req)) {
         if (chunk.text) {
@@ -93,6 +106,7 @@ export class VoiceTapProvider implements AIProvider {
           this.emit(chunk.text)
         }
         if (chunk.usage) this.usage = chunk.usage
+        if (chunk.finishReason) finishReason = chunk.finishReason
       }
     } catch (err) {
       if (text) throw err
@@ -103,6 +117,7 @@ export class VoiceTapProvider implements AIProvider {
       this.tapWhole(response)
       return response
     }
-    return { text, providerId: this.inner.providerId, modelId: this.inner.modelId, usage: this.usage }
+    this.end()
+    return { text, providerId: this.inner.providerId, modelId: this.inner.modelId, usage: this.usage, ...(finishReason ? { finishReason } : {}) }
   }
 }
