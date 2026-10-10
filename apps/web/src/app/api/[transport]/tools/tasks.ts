@@ -6,6 +6,7 @@ import { createTaskSchema, updateTaskSchema } from '@/lib/data/validators'
 import { emitActivity } from '@/lib/data/activity'
 import type { RegisterFn } from './types'
 import { getUserId, ok, notFound } from './types'
+import { withoutVorathTaskFields } from '@/lib/vorath-access'
 
 async function requireOwnership(projectId: string, uid: string) {
   return !!(await verifyProjectOwnership(projectId, uid))
@@ -46,13 +47,13 @@ export const registerTaskTools: RegisterFn = (server) => {
     async ({ projectId, columnId, ...data }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
-      const task = await createTask(projectId, {
+      const task = await createTask(projectId, withoutVorathTaskFields(uid, {
         ...data,
         columnId,
         status: data.status ?? 'todo',
         priority: data.priority ?? 'medium',
         color: data.color ?? 'purple',
-      })
+      }))
       emitActivity(projectId, 'task', task.id, 'created', task.name, undefined, uid, 'agent').catch(() => {})
       return ok(task)
     }
@@ -75,7 +76,7 @@ export const registerTaskTools: RegisterFn = (server) => {
     async ({ projectId, taskId, columnId, ...data }, extra) => {
       const uid = getUserId(extra)
       if (!await requireOwnership(projectId, uid)) return notFound('Project')
-      const task = await updateTask(taskId, projectId, { ...data, columnId })
+      const task = await updateTask(taskId, projectId, withoutVorathTaskFields(uid, { ...data, columnId }))
       if (task) {
         if (data.status === 'done') {
           emitActivity(projectId, 'task', taskId, 'completed', task.name, undefined, uid, 'agent').catch(() => {})

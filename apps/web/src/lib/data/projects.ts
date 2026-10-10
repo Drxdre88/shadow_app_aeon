@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { projects, projectMembers, boardTasks, ganttTasks, projectGroups, groupMembers, workspaceGroups, favoriteProjects } from '@/lib/db/schema'
+import { withoutVorathProjectFields } from '@/lib/vorath-access'
 import { eq, and, desc, sql, or, inArray, ne } from 'drizzle-orm'
 import type { CreateProjectInput, UpdateProjectInput } from './validators'
 import { notArchivedSql } from './board-visibility'
@@ -349,7 +350,8 @@ export async function mergeProjectSettings(projectId: string, patch: Record<stri
   return project || null
 }
 
-export async function updateProject(projectId: string, userId: string, data: UpdateProjectInput) {
+export async function updateProject(projectId: string, userId: string, input: UpdateProjectInput) {
+  const data = withoutVorathProjectFields(userId, input)
   const updates: Partial<typeof projects.$inferInsert> = { updatedAt: new Date() }
   if (data.name !== undefined) updates.name = data.name
   if (data.description !== undefined) updates.description = data.description ?? null

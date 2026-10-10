@@ -25,3 +25,26 @@ export class VorathAccessError extends Error {
 export function assertVorath(userId: string | null | undefined): void {
   if (!canUseVorath(userId)) throw new VorathAccessError()
 }
+
+type WithMetadata = { metadata?: Record<string, unknown> | null }
+
+// Card metadata.hangar is a Vorath mission (instruction, autoRun). Generic task
+// writes from non-owners drop it so a co-member can't arm or rewrite a mission
+// the owner later launches.
+export function withoutVorathTaskFields<T extends WithMetadata>(userId: string | null | undefined, data: T): T {
+  if (canUseVorath(userId) || !data.metadata || !('hangar' in data.metadata)) return data
+  const { hangar: _hangar, ...metadata } = data.metadata
+  return { ...data, metadata }
+}
+
+type ProjectPatch = { dominionId?: string | null; settings?: Record<string, unknown> }
+
+// Board settings.hangar (auto-launch, trigger column) and the Dominion link are
+// Vorath; generic project updates from non-owners drop them.
+export function withoutVorathProjectFields<T extends ProjectPatch>(userId: string | null | undefined, data: T): T {
+  if (canUseVorath(userId)) return data
+  const { dominionId: _dominionId, ...rest } = data
+  if (!rest.settings || !('hangar' in rest.settings)) return rest as T
+  const { hangar: _hangar, ...settings } = rest.settings
+  return { ...rest, settings } as T
+}
