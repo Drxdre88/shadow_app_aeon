@@ -49,6 +49,7 @@ import {
   registerKairosDecisionTools,
   registerCardForecastTools,
   registerKairosCockpitTools,
+  registerEntityTools,
 } from './tools'
 import type { RegisterFn, ToolServer } from './tools/types'
 import { installTodayUseTracking, tokenFingerprint, tokenKindOf } from '@/lib/kairos/today-mcp-use'
@@ -123,6 +124,7 @@ const TOOL_GROUPS: readonly ToolGroup[] = [
   [registerKairosDecisionTools, ['vorath']],
   [registerCardForecastTools, ['board']],
   [registerKairosCockpitTools, ['vorath']],
+  [registerEntityTools, ['vorath']],
 ]
 
 // PM-core is every group the board profile carries; everything else is Vorath,
