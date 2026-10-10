@@ -27,7 +27,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { memories } from '@/lib/db/schema'
 import { inspectDominion } from '@/lib/data/dominions'
-import { liveConditions, searchCore } from './search-core'
+import { liveConditions, searchCore, type SearchCoreOptions } from './search-core'
 import { SEARCH_EXPAND_DEFAULT } from './search-expand'
 import { isStreamClass, type StreamClass } from './streamClass'
 import type {
@@ -95,17 +95,30 @@ export async function retrieveContext(args: RetrievalArgs): Promise<RetrievalRes
 // is null. Confidence decay + RRF fusion in fetchSubstrate are unchanged — the
 // only difference from retrieveContext is the dropped scope, so a sure, recent
 // belief still outranks a stale one no matter which Dominion it belongs to.
+// Lighter settings for latency-bound callers (the voice line). Absent fields
+// keep the defaults; the substrate fields pass through to the retrieval core.
+export interface GlobalRetrievalOptions {
+  substrateLimit?: number
+  archetypesLimit?: number
+  rerank?: boolean
+  expand?: boolean
+  entity?: boolean
+  // false = no trace read (chat never shows traces).
+  traces?: boolean
+  onTiming?: SearchCoreOptions['onTiming']
+}
+
 export async function retrieveGlobalContext(
-  args: { userId: string; query?: string },
+  args: { userId: string; query?: string; options?: GlobalRetrievalOptions },
 ): Promise<RetrievalResult> {
-  const { userId, query } = args
+  const { userId, query, options } = args
   const trimmedQuery = query?.trim() ?? ''
 
   const [cortex, archetypes, substrate, traces] = await Promise.all([
     fetchAetherDoc(userId),
-    fetchArchetypes(userId, null),
-    fetchSubstrate(userId, null, trimmedQuery),
-    fetchTraces(userId, null),
+    fetchArchetypes(userId, null, options?.archetypesLimit),
+    fetchSubstrate(userId, null, trimmedQuery, options?.substrateLimit, options),
+    options?.traces === false ? Promise.resolve([]) : fetchTraces(userId, null),
   ])
 
   return { bundle: null, cortex, archetypes, substrate, traces }
@@ -154,7 +167,7 @@ async function fetchCortex(userId: string, dominionId: string): Promise<Retrieve
   return row ? rowToMemory(row) : null
 }
 
-async function fetchArchetypes(userId: string, dominionId: string | null): Promise<RetrievedMemory[]> {
+async function fetchArchetypes(userId: string, dominionId: string | null, limit: number = ARCHETYPES_LIMIT): Promise<RetrievedMemory[]> {
   const rows = await db
     .select({
       id: memories.id,
@@ -171,7 +184,7 @@ async function fetchArchetypes(userId: string, dominionId: string | null): Promi
       isNull(memories.archivedAt),
     ))
     .orderBy(desc(memories.createdAt))
-    .limit(ARCHETYPES_LIMIT)
+    .limit(limit)
 
   return rows.map(rowToMemory)
 }
@@ -209,6 +222,7 @@ async function fetchSubstrate(
   dominionId: string | null,
   query: string,
   topK: number = SUBSTRATE_TOP_K,
+  light: Pick<GlobalRetrievalOptions, 'rerank' | 'expand' | 'entity' | 'onTiming'> = {},
 ): Promise<RetrievedMemory[]> {
   const { hits } = await searchCore(userId, {
     query,
@@ -217,7 +231,10 @@ async function fetchSubstrate(
     streams: SUBSTRATE_STREAMS,
     window: { days: SUBSTRATE_WINDOW_DAYS, exempt: WINDOW_EXEMPT_STREAMS },
     reflectionFirst: true,
-    expand: SEARCH_EXPAND_DEFAULT,
+    expand: light.expand ?? SEARCH_EXPAND_DEFAULT,
+    ...(light.entity !== undefined ? { entity: light.entity } : {}),
+    ...(light.rerank !== undefined ? { rerank: light.rerank } : {}),
+    ...(light.onTiming ? { onTiming: light.onTiming } : {}),
   })
   return hits.map((h) => rowToMemory(h.row))
 }

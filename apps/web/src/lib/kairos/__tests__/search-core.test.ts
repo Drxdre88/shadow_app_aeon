@@ -52,6 +52,8 @@ vi.mock('../search-entity', () => ({ SEARCH_ENTITY_DEFAULT: true, entityLeg: vi.
 
 import { MACHINE_STREAMS, REAL_MEMORY_STREAMS, searchCore } from '../search-core'
 import { rerankScored } from '../rerank'
+import { embedOne } from '../embeddings'
+import { db } from '@/lib/db'
 
 const dialect = new PgDialect()
 const render = (w: unknown) => dialect.sqlToQuery(w as SQL)
@@ -209,5 +211,53 @@ describe('searchCore — ranking with mocked legs', () => {
     expect(out.hits.map((h) => h.row.id)).toEqual([A, B])
     expect(rerankScored).not.toHaveBeenCalled()
     warn.mockRestore()
+  })
+})
+
+describe('searchCore — the light path for the voice line', () => {
+  it('starts the query embedding before the FTS leg instead of after it', async () => {
+    hybrid = true
+    ftsQueue.push([row(A, NOW)])
+    vecQueue.push([])
+    await searchCore('user-1', { query: 'launch plan', limit: 5 })
+    expect(vi.mocked(embedOne).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(db.select).mock.invocationCallOrder[0])
+  })
+
+  it('a failed embedding still falls back to FTS', async () => {
+    hybrid = true
+    vi.mocked(embedOne).mockRejectedValueOnce(new Error('voyage 503'))
+    ftsQueue.push([row(A, NOW)])
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const out = await searchCore('user-1', { query: 'launch plan', limit: 5 })
+    expect(out.mode).toBe('fts')
+    expect(out.hits.map((h) => h.row.id)).toEqual([A])
+    warn.mockRestore()
+  })
+
+  it('rerank: false keeps the fused order, makes no cross-encoder call and times only the embedding', async () => {
+    hybrid = true
+    ftsQueue.push([row(A, OLD, { standing: 0.1 })])
+    vecQueue.push([row(C, OLD, { standing: 0.9 }), row(A, OLD, { standing: 0.1 })])
+    const steps: string[] = []
+
+    const out = await searchCore('user-1', {
+      query: 'launch plan', limit: 1, rerank: false, expand: false, entity: false,
+      onTiming: (step) => steps.push(step),
+    })
+
+    expect(rerankScored).not.toHaveBeenCalled()
+    expect(out).toMatchObject({ mode: 'hybrid', reranked: false })
+    expect(out.hits.map((h) => h.row.id)).toEqual([C])
+    expect(steps).toEqual(['embedding'])
+  })
+
+  it('the default path still reranks and reports its time', async () => {
+    hybrid = true
+    ftsQueue.push([row(A, NOW)])
+    vecQueue.push([])
+    const steps: string[] = []
+    await searchCore('user-1', { query: 'launch plan', limit: 5, onTiming: (step) => steps.push(step) })
+    expect(rerankScored).toHaveBeenCalledTimes(1)
+    expect(steps).toEqual(['embedding', 'rerank'])
   })
 })

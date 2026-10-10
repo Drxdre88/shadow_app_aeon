@@ -24,6 +24,7 @@ vi.mock('@/lib/api/auth', async () => {
   }
 })
 vi.mock('@/lib/ai/route-task', () => ({ getProviderForTask: m.getProviderForTask }))
+vi.mock('@/lib/ai/spend', () => ({ spendMeter: { check: vi.fn(async () => undefined) } }))
 vi.mock('@/lib/data/kairos-chat', () => ({
   findOpenChatThreadByTitle: m.findOpenChatThreadByTitle,
   createChatThread: m.createChatThread,
@@ -37,6 +38,7 @@ vi.mock('@/lib/kairos/voice/feed-query', () => ({ loadVoiceFeedRows: m.loadVoice
 
 import { POST as turnPOST } from '../turn/route'
 import { GET as feedGET } from '../feed/route'
+import { spendMeter } from '@/lib/ai/spend'
 
 type Handler = (r: NextRequest, c: unknown) => Promise<Response>
 const turn = (body: unknown) => (turnPOST as Handler)(
@@ -139,6 +141,29 @@ describe('POST voice/turn', () => {
     expect(opts.tools).toBe(false)
     expect(opts.sideProvider).toBe((await m.getProviderForTask.mock.results[0].value).provider)
     expect(m.fireChatRoutine).not.toHaveBeenCalled()
+  })
+
+  it('acks first, hands the read thread to the engine, warms the spend cache and times the turn', async () => {
+    m.getProviderForTask.mockResolvedValue({ provider: { providerId: 'byok', modelId: 'm', ask: vi.fn(), stream: vi.fn() } })
+    const loaded = { thread: { id: 'thread-1', dominionId: null }, messages: [] }
+    m.getChatThread.mockResolvedValue(loaded)
+    m.sendChatMessage.mockResolvedValue({ ok: true, threadId: 'thread-1', userSeq: 3, assistantSeq: 4, assistantContent: 'Hi.', model: 'm' })
+    const body = await (await turn({ text: 'hello' })).text()
+
+    expect(body.startsWith('event: ack\ndata: {"threadId":"thread-1"}\n\n')).toBe(true)
+    const done = JSON.parse(body.split('event: done\ndata: ')[1])
+    expect(done.timing).toMatchObject({ routeMs: expect.any(Number), totalMs: expect.any(Number), sections: {}, tools: false })
+    expect(m.sendChatMessage.mock.calls[0][3].loadedThread).toBe(loaded)
+    expect(spendMeter.check).toHaveBeenCalledWith('owner-id')
+  })
+
+  it('a spend cap reached is not a 409 at the route; the model call refuses it later', async () => {
+    m.getProviderForTask.mockResolvedValue({ provider: { providerId: 'byok', modelId: 'm', ask: vi.fn(), stream: vi.fn() } })
+    vi.mocked(spendMeter.check).mockRejectedValueOnce(new Error('daily AI budget reached'))
+    m.sendChatMessage.mockResolvedValue({ ok: false, reason: 'ai_failed', message: 'daily AI budget reached', threadId: 'thread-1' })
+    const res = await turn({ text: 'hello' })
+    expect(res.status).toBe(200)
+    expect(await res.text()).toContain('event: error')
   })
 
   it('a lookup question keeps the tools, and a first turn opens the voice thread', async () => {

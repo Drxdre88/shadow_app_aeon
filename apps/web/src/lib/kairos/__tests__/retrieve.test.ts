@@ -209,6 +209,22 @@ describe('retrieveGlobalContext (JARVIS-level, no Dominion scope)', () => {
     expect(r.substrate).toEqual([])
     expect(r.traces).toEqual([])
   })
+
+  it('light options (voice): no trace read at all', async () => {
+    selectQueue.push([row(AETHER_ID, 'aether', 'global self-model')])
+    selectQueue.push([row(ARCHETYPE_ID, 'archetype', 'arch')])
+    selectQueue.push([row(SUBSTRATE_ID, 'reflection', 'hit')])
+
+    const r = await retrieveGlobalContext({
+      userId: USER_ID,
+      query: 'how am I doing',
+      options: { traces: false, rerank: false, expand: false, entity: false, archetypesLimit: 3, substrateLimit: 4 },
+    })
+
+    expect(r.traces).toEqual([])
+    expect(r.substrate.map((s) => s.id)).toEqual([SUBSTRATE_ID])
+    expect(whereArgs).toHaveLength(3)
+  })
 })
 
 describe('fetchSubstrate recency weighting (FTS-only path — no embeddings key in tests)', () => {

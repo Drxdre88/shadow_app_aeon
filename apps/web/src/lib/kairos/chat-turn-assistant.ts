@@ -7,7 +7,7 @@ import { extractStance } from '@/lib/kairos/cold-read/stance'
 import { finishChatReply } from '@/lib/kairos/moment/chat'
 import { runDetached } from '@/lib/kairos/moment/detached'
 import { chatTodayChannel, recordChatReply, type ChatTodayChannel } from '@/lib/kairos/chat-today'
-import { buildAssistantTurn, type ChatCitationsContext } from '@/lib/kairos/chat-turn-context'
+import { buildAssistantTurn, type BuiltAssistantTurn, type ChatCitationsContext } from '@/lib/kairos/chat-turn-context'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import { isPaidBackupOffError } from '@/lib/ai/paid-backup-off'
@@ -251,7 +251,20 @@ async function runTurn(
 ): Promise<KairosChatTurnResult | AlreadyAnsweredResult> {
   const built = await buildAssistantTurn(userId, threadId, { ...opts, dominionId, userBody, userSeq })
   if (!built.ok) return { ok: false, reason: built.reason }
-  const { turn } = built
+  return answerTurn(userId, threadId, dominionId, userBody, userSeq, opts, built.turn, persist)
+}
+
+// The answer half of the paid path, over an already-built context.
+async function answerTurn(
+  userId: string,
+  threadId: string,
+  dominionId: string | null,
+  userBody: string,
+  userSeq: number,
+  opts: ChatTurnOptions,
+  turn: BuiltAssistantTurn,
+  persist: ReplyPersister,
+): Promise<KairosChatTurnResult | AlreadyAnsweredResult> {
   // The voice line defers what nobody hears until after the reply is saved.
   const deferSideWork = opts.channel === 'voice'
 
@@ -300,6 +313,21 @@ export async function runAssistantTurn(
   opts: ChatTurnOptions = {},
 ): Promise<KairosChatTurnResult> {
   return narrowPlain(await runTurn(userId, threadId, dominionId, userBody, userSeq, opts,
+    (text, meta) => persistAssistantReply(userId, threadId, text, meta)))
+}
+
+// Paid path over a context built while the owner's turn was being saved (the
+// voice line): the model call still starts only after that save.
+export async function answerBuiltAssistantTurn(
+  userId: string,
+  threadId: string,
+  dominionId: string | null,
+  userBody: string,
+  userSeq: number,
+  opts: ChatTurnOptions,
+  turn: BuiltAssistantTurn,
+): Promise<KairosChatTurnResult> {
+  return narrowPlain(await answerTurn(userId, threadId, dominionId, userBody, userSeq, opts, turn,
     (text, meta) => persistAssistantReply(userId, threadId, text, meta)))
 }
 

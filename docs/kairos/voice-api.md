@@ -33,49 +33,91 @@ the chat history and in the nightly memory capture. The reply uses a spoken regi
 ### Response: `text/event-stream`
 
 ```
+event: ack
+data: {"threadId":"…"}
+
 event: delta
-data: {"text":"The Swarm build is waiting on your approval."}
+data: {"text":"The Swarm build finished overnight without errors,"}
+
+event: delta
+data: {"text":"but it is waiting on your approval."}
 
 event: delta
 data: {"text":"Want me to open it?"}
 
 event: done
-data: {"threadId":"…","userSeq":7,"assistantSeq":8,"text":"The Swarm build is waiting on your approval. Want me to open it?","model":"claude-sonnet-5-5","streamed":true,"ms":2140}
+data: {"threadId":"…","userSeq":7,"assistantSeq":8,"text":"The Swarm build finished overnight without errors, but it is waiting on your approval. Want me to open it?","model":"claude-sonnet-5-5","streamed":true,"ms":2140,"timing":{…}}
 ```
 
-- `delta`: one or more whole sentences of plain speech, in order. Send each one to TTS as it arrives.
+- `ack`: sent the moment the turn is accepted, before any lookup or model call, so the client can
+  play a short earcon. It carries the `threadId`. Clients should ignore events they don't know.
+- `delta`: a piece of plain speech, in order. Send each one to TTS as it arrives. A piece is one or
+  more whole sentences, or, once a sentence has run on for about six words, the clause before a comma,
+  semicolon or dash. A clause piece keeps that comma, semicolon or dash at its end. The last piece is
+  sent as soon as the model finishes, before the reply is saved.
 - `done`: always the last event on success. `text` is always the saved reply as plain speech.
   **If no `delta` arrived (`streamed:false`), speak `done.text`.** If `replaced:true`, the saved reply
   differs from what the deltas said (for example a time-out answer), so stop and speak `done.text`.
-  Otherwise it's for display and logs.
+  Otherwise it's for display and logs. `timing` is the stage breakdown (see [Timing](#timing)).
 - `error`: the last event on failure, as `{"reason","message","threadId"}`. `reason` is usually
   `ai_failed`, `ai_empty`, `no_credential` or `thread_not_found`.
   The owner's words are already saved. Retrying the same text after two minutes answers the saved
   turn without saving it twice.
 
-Deltas are a best effort. A plain question streams: each sentence goes out as soon as the
+Deltas are a best effort. A plain question streams: each piece goes out as soon as the
 model finishes it. When the question asks for a lookup ("what's the latest on…", "check…",
 a board, today's activity, an undo), Vorath uses his tools first, and that answer arrives in
-one go, split into sentences, a few seconds later.
+one go, split into pieces, a few seconds later.
+
+### Timing
+
+`done.timing` shows where the turn's time went. Every value is in milliseconds, measured from the
+moment the route received the request (network time to and from the client isn't included).
+A value is `null` when its step didn't run.
+
+| Field | Meaning |
+|---|---|
+| `routeMs` | Auth, rate limit, the paid-key and thread checks, and opening the stream |
+| `threadMs` | Saving the owner's turn (runs alongside the grounding reads) |
+| `retrievalMs` | Memory retrieval as a whole (the Aether doc, archetypes and memory hits) |
+| `embeddingMs` | Embedding the question (Voyage), inside retrieval |
+| `rerankMs` | Reranking (Voyage). Always `null` on the voice line, which skips it |
+| `sections` | Each other grounding read: `history`, `dominion`, `pendingAsk`, `board`, `recency`, `conscience`, `today` |
+| `groundedMs` | When the prompt was ready |
+| `promptChars` | Size of the prompt sent to the model |
+| `modelCallMs` | When the model call started |
+| `modelFirstTokenMs` | From the model call to its first text |
+| `modelTotalMs` | From the model call to the end of the answer |
+| `saveMs` | Saving the reply after the answer |
+| `firstDeltaMs`, `totalMs`, `deltas` | First `delta` sent, the whole turn, and how many pieces were sent |
+| `tools`, `toolRounds`, `plainCalls` | Whether the lookup tools were offered, and the model calls made |
+
+The same object is logged as `[kairos-voice] turn timing`. The fields can grow; ignore any you
+don't know.
 
 ### Latency
 
-The server works to get the first sentence out quickly:
+The server works to get the first words out quickly:
 
 - **Voice-sized grounding.** The prompt carries the Aether doc, three archetypes and four
   memory hits, all clipped short, plus a short "today" digest and the last 12 messages.
   Web chat gets more of each. The owner-model, stage and cold-read blocks are web-only.
   All grounding reads start at the same time.
+- **Lighter retrieval.** The memory hits keep the combined keyword-and-meaning order. Voice skips
+  the reranking call, the related-memory expansion, the named-entity read and the trace read, and
+  only reads as many rows as the prompt shows. The question is embedded while the keyword search runs.
+- **No repeated reads.** The thread the route reads for its checks is reused. The owner's turn
+  is saved while the grounding is read, and the model call starts as soon as both are done. Your
+  words are always saved before the model is called. The daily spend check is read during
+  the route checks, so the model call doesn't wait on it.
 - **Tools only when asked.** A quick word check decides whether the question needs a lookup.
   It makes no model call. Other questions are answered in one streamed call with no tools.
   If the answer isn't in his context, Vorath says so and offers to look it up, and a reply
   like "yes, look it up" brings the tools back.
+- **Clause pieces and an early last piece.** See `delta` above.
 - **Work nobody hears runs later.** Checking whether the turn answers Vorath's open
   question, and reinforcing the memories he cited, both run after the reply is saved.
   They no longer delay `done`.
-- Each turn logs `[kairos-voice] turn timing` with `firstDeltaMs`, `totalMs`, the step marks
-  (`retrievedMs`, `groundedMs`, `modelCallMs`, `firstTextMs`, `answeredMs`, `savedMs`),
-  `tools`, `toolRounds`, `plainCalls` and `promptChars`.
 
 ### Errors before the stream starts (JSON `{error, code?}`)
 

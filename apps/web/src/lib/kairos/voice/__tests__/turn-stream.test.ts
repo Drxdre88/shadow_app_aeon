@@ -168,7 +168,7 @@ describe('VoiceTapProvider', () => {
     await tap.ask(withTools)
     now = 400
     await tap.ask(plain)
-    expect(clock.snapshot()).toEqual({ modelCallMs: 100, firstTextMs: 400, toolRounds: 1, plainCalls: 1, promptChars: 2 })
+    expect(clock.snapshot()).toEqual({ modelCallMs: 100, firstTextMs: 400, answerEndMs: 400, toolRounds: 1, plainCalls: 1, promptChars: 2 })
   })
 })
 
@@ -189,5 +189,110 @@ describe('voice turn end to end over the tap', () => {
     expect(frames.map((f) => f.event)).toEqual(['delta', 'delta', 'delta', 'done'])
     expect(frames.slice(0, 3).map((f) => f.data.text)).toEqual(['The build is green.', 'Two tests were flaky.', 'Want the list?'])
     expect(frames[3].data).toMatchObject({ streamed: true, replaced: false })
+  })
+})
+
+describe('voice turn ack, early last piece and timing', () => {
+  it('sends ack first, before the engine has produced anything', async () => {
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const stream = createVoiceTurnStream(async (onText) => {
+      await gate
+      onText('Hi.')
+      return { ok: true, done: { ...DONE, text: 'Hi.' } }
+    }, undefined, { ack: { threadId: 't1' } })
+    const reader = stream.getReader()
+    const first = new TextDecoder().decode((await reader.read()).value)
+    expect(first).toBe('event: ack\ndata: {"threadId":"t1"}\n\n')
+    release()
+    let rest = ''
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      rest += new TextDecoder().decode(value)
+    }
+    expect(parseFrames(rest).map((f) => f.event)).toEqual(['delta', 'done'])
+  })
+
+  it('speaks the last piece when the answer ends, not after the save', async () => {
+    const seen: string[] = []
+    let saved: () => void = () => {}
+    const save = new Promise<void>((resolve) => { saved = resolve })
+    const stream = createVoiceTurnStream(async (onText, onEnd) => {
+      onText('Hello there')
+      onEnd()
+      await save
+      return { ok: true, done: { ...DONE, text: 'Hello there' } }
+    })
+    const reader = stream.getReader()
+    seen.push(new TextDecoder().decode((await reader.read()).value))
+    expect(parseFrames(seen[0])).toEqual([{ event: 'delta', data: { text: 'Hello there' } }])
+    saved()
+    const tail = new TextDecoder().decode((await reader.read()).value)
+    expect(parseFrames(tail)[0]).toMatchObject({ event: 'done', data: { streamed: true, replaced: false } })
+  })
+
+  it('done carries the timing object built from the stream times', async () => {
+    const frames = parseFrames(await readAll(createVoiceTurnStream(async (onText) => {
+      onText('Hi there.')
+      return { ok: true, done: DONE }
+    }, undefined, { timing: (t) => ({ deltas: t.deltas, ok: t.ok, sawFirst: t.firstDeltaMs !== null }) })))
+    expect(frames.at(-1)!.data.timing).toEqual({ deltas: 1, ok: true, sawFirst: true })
+  })
+
+  it('without the options nothing extra is framed', async () => {
+    const frames = parseFrames(await readAll(createVoiceTurnStream(async () => ({ ok: true, done: DONE }))))
+    expect(frames.map((f) => f.event)).toEqual(['done'])
+    expect(frames[0].data).not.toHaveProperty('timing')
+  })
+
+  it('the tap ends the answer once its stream is done, before ask() resolves to the engine', async () => {
+    const order: string[] = []
+    const tap = new VoiceTapProvider(fakeProvider(), (t) => order.push(`text:${t}`), undefined, () => order.push('end'))
+    await tap.ask({ messages: [{ role: 'user', content: 'hi' }] })
+    order.push('resolved')
+    expect(order).toEqual(['text:Str', 'text:eamed.', 'end', 'resolved'])
+  })
+})
+
+describe('VoiceTurnClock.payload', () => {
+  it('turns marks and spans into stage durations on the request clock', () => {
+    let now = 1000
+    const clock = new VoiceTurnClock(() => now)
+    now = 1080; clock.mark('accepted')
+    clock.span('thread', 140)
+    clock.span('retrieval', 420.4)
+    clock.span('embedding', 180)
+    clock.span('section:today', 95)
+    clock.span('section:pendingAsk', 160)
+    now = 1600; clock.mark('grounded')
+    clock.note('promptChars', 9000)
+    clock.note('tools', false)
+    now = 1610; clock.mark('model_call'); clock.count('plainCalls')
+    now = 2400; clock.mark('first_text')
+    now = 3100; clock.mark('answer_end')
+    now = 3110; clock.mark('answered')
+    now = 3500; clock.mark('saved')
+
+    expect(clock.payload({ firstDeltaMs: 1350, totalMs: 2440, deltas: 3 }, 80)).toEqual({
+      routeMs: 80,
+      threadMs: 140,
+      retrievalMs: 420,
+      embeddingMs: 180,
+      rerankMs: null,
+      sections: { today: 95, pendingAsk: 160 },
+      groundedMs: 600,
+      promptChars: 9000,
+      modelCallMs: 610,
+      modelFirstTokenMs: 790,
+      modelTotalMs: 1490,
+      saveMs: 390,
+      firstDeltaMs: 1430,
+      totalMs: 2520,
+      deltas: 3,
+      tools: false,
+      toolRounds: 0,
+      plainCalls: 1,
+    })
   })
 })

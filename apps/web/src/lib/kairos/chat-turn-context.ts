@@ -18,7 +18,7 @@ import type { MomentChatOptions } from '@/lib/kairos/moment/types'
 import { loadBoardSection, loadRecencySection } from '@/lib/kairos/chat-grounding'
 import { loadChatTodaySection } from '@/lib/kairos/chat-today'
 import { pendingAskRationale, type ChatTurnOptions } from '@/lib/kairos/chat-turn-reply'
-import { trimRetrievalForVoice, VOICE_GROUNDING } from '@/lib/kairos/voice/grounding'
+import { trimRetrievalForVoice, VOICE_GROUNDING, VOICE_RETRIEVAL } from '@/lib/kairos/voice/grounding'
 import type { AIMessage } from '@/lib/ai/provider'
 
 // Context half of an assistant turn (split out of chat-turn-assistant.ts):
@@ -104,9 +104,11 @@ async function loadDominion(userId: string, dominionId: string | null): Promise<
 // block the reply (a warming brain has no Aether yet): fall back to bare chat,
 // logged so a silently-bare reply is debuggable.
 async function loadRetrieval(userId: string, threadId: string, opts: AssistantTurnOptions): Promise<ChatRetrieval | null> {
+  const started = Date.now()
   try {
-    const retrieval = await retrieveForChatGlobal(userId, opts.userBody)
-    return opts.channel === 'voice' ? trimRetrievalForVoice(retrieval) : retrieval
+    if (opts.channel !== 'voice') return await retrieveForChatGlobal(userId, opts.userBody)
+    const retrieval = await retrieveForChatGlobal(userId, opts.userBody, { ...VOICE_RETRIEVAL, ...(opts.onSpan ? { onTiming: opts.onSpan } : {}) })
+    return trimRetrievalForVoice(retrieval)
   } catch (err) {
     console.error('[kairos-chat] retrieval failed, falling back to bare chat', {
       threadId,
@@ -115,8 +117,17 @@ async function loadRetrieval(userId: string, threadId: string, opts: AssistantTu
     })
     return null
   } finally {
+    opts.onSpan?.('retrieval', Date.now() - started)
     opts.onMark?.('retrieved')
   }
+}
+
+// Times one grounding read for the voice timing; a no-op wrapper otherwise.
+function timed<T>(opts: AssistantTurnOptions, name: string, read: Promise<T>): Promise<T> {
+  const onSpan = opts.onSpan
+  if (!onSpan) return read
+  const started = Date.now()
+  return read.finally(() => onSpan(`section:${name}`, Date.now() - started))
 }
 
 function toCitationShape(r: ChatRetrieval): CitationRetrievalShape {
@@ -136,7 +147,7 @@ export async function buildAssistantTurn(
   const { dominionId, userBody, userSeq } = opts
   const voice = opts.channel === 'voice'
 
-  const threadP = getChatThread(userId, threadId)
+  const threadP = opts.loadedThread ? Promise.resolve(opts.loadedThread) : getChatThread(userId, threadId)
   const historyOf = (loaded: Awaited<typeof threadP>): ChatPromptMessage[] => (loaded?.messages ?? [])
     .filter((m) => m.seq < userSeq)
     .map((m) => ({ role: m.role, content: stripMomentFooters(m.content) }))
@@ -150,16 +161,16 @@ export async function buildAssistantTurn(
       : {}))
 
   const [dominion, thread, pendingAskContext, retrieval, boardSection, recencySection, conscienceSection, todaySection, moment] = await Promise.all([
-    loadDominion(userId, dominionId),
-    threadP,
-    loadPendingAskContext(userId),
+    timed(opts, 'dominion', loadDominion(userId, dominionId)),
+    timed(opts, 'history', threadP),
+    timed(opts, 'pendingAsk', loadPendingAskContext(userId)),
     loadRetrieval(userId, threadId, opts),
-    loadBoardSection(userId, threadId, userBody),
-    loadRecencySection(userId),
+    timed(opts, 'board', loadBoardSection(userId, threadId, userBody)),
+    timed(opts, 'recency', loadRecencySection(userId)),
     // Constitution + held beliefs (P2.5 G4). Never throws — '' on failure.
-    loadConscienceBlock(userId, { dominionId }),
+    timed(opts, 'conscience', loadConscienceBlock(userId, { dominionId })),
     // Today across channels, minus this thread (one mind). '' on failure.
-    voice ? loadChatTodaySection(userId, threadId, VOICE_GROUNDING.todayChars) : loadChatTodaySection(userId, threadId),
+    timed(opts, 'today', voice ? loadChatTodaySection(userId, threadId, VOICE_GROUNDING.todayChars) : loadChatTodaySection(userId, threadId)),
     momentP,
   ])
   if (dominion === 'missing') return { ok: false, reason: 'dominion_not_found' }
