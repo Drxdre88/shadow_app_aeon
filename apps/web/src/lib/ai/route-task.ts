@@ -4,6 +4,7 @@ import { and, eq, desc, isNull, or, sql } from 'drizzle-orm'
 import { getProviderForUser } from './provider'
 import type { AIProvider } from './provider'
 import type { AiTier } from './providers'
+import type { TierResolution } from './router'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 1 (B10) — Engine Router.
@@ -40,6 +41,8 @@ export interface RouteDecision {
 interface PolicyDefault {
   taskType: string
   tier: AiTier
+  // Pins a model for this task instead of the user's tier preference.
+  model?: TierResolution
 }
 
 // Defaults read by every taskType not explicitly overridden. The tier-only
@@ -62,6 +65,9 @@ const DEFAULT_POLICIES: PolicyDefault[] = [
   // same quality-over-cost directive as the generators that read it.
   { taskType: 'delta',        tier: 'heavy' },
   { taskType: 'chat',         tier: 'heavy' },
+  // The voice line (owner speaking to Vorath): a spoken 2-3 sentence reply
+  // where latency matters more than depth, so Sonnet rather than the heavy tier.
+  { taskType: 'voice_chat',   tier: 'standard', model: { providerId: 'anthropic', modelId: 'claude-sonnet-5-5' } },
   { taskType: 'classify',     tier: 'cheap' },
   { taskType: 'summarise',    tier: 'cheap' },
   { taskType: 'reflect',      tier: 'heavy' },
@@ -73,8 +79,17 @@ const DEFAULT_POLICIES: PolicyDefault[] = [
 
 const FALLBACK_TIER: AiTier = 'standard'
 
+// Tasks that only ever run on an explicit owner action. The paid-backup
+// switch governs automatic paid fallbacks for background work, so it does not
+// apply to them; a usable key is still required.
+const OWNER_INITIATED_TASKS = new Set(['voice_chat'])
+
 function defaultTierFor(taskType: string): AiTier {
   return DEFAULT_POLICIES.find((p) => p.taskType === taskType)?.tier ?? FALLBACK_TIER
+}
+
+function defaultModelFor(taskType: string): TierResolution | undefined {
+  return DEFAULT_POLICIES.find((p) => p.taskType === taskType)?.model
 }
 
 export async function routeTask(userId: string, req: RouteTaskRequest): Promise<RouteDecision> {
@@ -110,7 +125,7 @@ export async function routeTask(userId: string, req: RouteTaskRequest): Promise<
 
   return {
     providerId: 'byok',
-    modelId: null,
+    modelId: defaultModelFor(req.taskType)?.modelId ?? null,
     tier: defaultTierFor(req.taskType),
     source: 'default',
   }
@@ -125,6 +140,12 @@ export async function getProviderForTask(
   req: RouteTaskRequest,
 ): Promise<{ decision: RouteDecision; provider: AIProvider }> {
   const decision = await routeTask(userId, req)
-  const provider = await getProviderForUser(userId, decision.tier)
+  // Only a default policy's pinned model is honoured; engine_policies rows keep
+  // resolving through the user's tier preference as before.
+  const model = decision.source === 'default' ? defaultModelFor(req.taskType) : undefined
+  const ownerInitiated = OWNER_INITIATED_TASKS.has(req.taskType)
+  const provider = model || ownerInitiated
+    ? await getProviderForUser(userId, decision.tier, { model, ownerInitiated })
+    : await getProviderForUser(userId, decision.tier)
   return { decision, provider }
 }

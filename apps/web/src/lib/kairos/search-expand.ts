@@ -28,8 +28,8 @@ export const SIGNPOST_TOP_K = 3
 export const LINK_EXPAND_TYPES = ['refers_to', 'supports', 'contradicts'] as const
 const LINK_ROW_LIMIT = 48
 
-export type SearchVia = 'search' | 'link' | 'signpost'
-export type ExpandVia = Exclude<SearchVia, 'search'>
+export type SearchVia = 'search' | 'link' | 'signpost' | 'entity'
+export type ExpandVia = Exclude<SearchVia, 'search' | 'entity'>
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

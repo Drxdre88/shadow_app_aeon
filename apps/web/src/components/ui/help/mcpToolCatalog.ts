@@ -199,6 +199,8 @@ export const TOOL_CATEGORIES: McpToolCategory[] = [
       'get_morning_cockpit',
       'log_decision',
       'list_decisions',
+      'list_entities',
+      'get_entity',
       'open_dialogue',
       'prepare_dialogue_context',
       'append_dialogue_turn',

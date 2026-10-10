@@ -62,7 +62,7 @@ const DESTRUCTIVE = [
   'remove_dependency', 'remove_dominion_repo', 'remove_label_from_task', 'remove_project_from_realm', 'remove_realm_member',
 ]
 
-const PROFILE_SIZES = { all: 154, board: 73, vorath: 71, hangar: 41 } as const
+const PROFILE_SIZES = { all: 156, board: 73, vorath: 73, hangar: 41 } as const
 
 describe('MCP route — profiles over the real handler', () => {
   it('all exposes every tool exactly once', async () => {

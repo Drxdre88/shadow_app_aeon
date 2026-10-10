@@ -2,7 +2,7 @@ import { generateText, streamText, tool as sdkTool, type LanguageModel } from 'a
 import type { z } from 'zod'
 import { effortFor, type ModelEffort } from '@aeon/shared/ai/models'
 import { effortProviderOptions, type AiTier, type ProviderId } from './providers'
-import { resolveModelForUser, buildModelWithKey } from './router'
+import { resolveModelForUser, buildModelWithKey, type ResolveModelOptions } from './router'
 
 // ─────────────────────────────────────────────────────────────────────────
 // Kairos Phase 1 (B6) — AIProvider seam.
@@ -202,11 +202,11 @@ export class VercelAIProvider implements AIProvider {
 // Factory: resolve a user's tier preference through the BYOK router and
 // return a ready-to-call AIProvider carrying the tier's effort. The Briefer
 // (E20) calls this with tier='heavy' for daily inference.
-export async function getProviderForUser(userId: string, tier: AiTier): Promise<AIProvider> {
-  const { model, providerId, effort } = await resolveModelForUser(userId, tier)
+export async function getProviderForUser(userId: string, tier: AiTier, opts?: ResolveModelOptions): Promise<AIProvider> {
+  const { model, providerId, effort } = await resolveModelForUser(userId, tier, opts)
   // For Phase 1 we surface a generic 'byok' marker; B10's policy table
   // overrides this with the chosen provider/model on a per-call basis.
-  return new VercelAIProvider('byok', `tier:${tier}`, model, effortProviderOptions(providerId, effort))
+  return new VercelAIProvider('byok', opts?.model?.modelId ?? `tier:${tier}`, model, effortProviderOptions(providerId, effort))
 }
 
 // Direct constructor for when caller has already picked provider + key —

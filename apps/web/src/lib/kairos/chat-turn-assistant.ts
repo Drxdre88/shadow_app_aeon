@@ -26,7 +26,7 @@ import type { CitationRetrievalShape } from '@/lib/kairos/chat-retrieval-citatio
 import { getProviderForTask } from '@/lib/ai/route-task'
 import { AiCredentialMissingError, AiCredentialDecryptError } from '@/lib/ai/router'
 import { isPaidBackupOffError } from '@/lib/ai/paid-backup-off'
-import type { AIMessage } from '@/lib/ai/provider'
+import type { AIMessage, AIProvider } from '@/lib/ai/provider'
 import { reactUsed } from '@/lib/kairos/reactions'
 import {
   appendAssistantReplyOnce,
@@ -99,12 +99,13 @@ async function callAssistant(
   systemMessages: ReturnType<typeof buildChatMessages>,
   pendingAsk: KairosAskRow | null,
   userBody: string,
+  injected?: AIProvider,
 ): Promise<RawAssistantReply | { error: 'no_credential' } | { error: 'paid_backup_off' } | { error: 'empty' } | { error: 'failed'; message: string }> {
   try {
-    const { provider } = await getProviderForTask(userId, {
+    const provider = injected ?? (await getProviderForTask(userId, {
       taskType: 'chat',
       dominionId,
-    })
+    })).provider
     // No temperature: current-gen Claude models 400 on non-default values
     // (same reason PR #84 stripped it from the synthesis call sites).
     // Agentic tools default ON as of the live-mind work: only an explicit
@@ -225,6 +226,7 @@ export async function buildAssistantTurn(
     userMessage: userBody,
     retrieval: promptRetrieval,
     surface: opts.surface,
+    channel: opts.channel,
     pendingAsk: pendingAskContext?.prompt,
     boardSection,
     recencySection,
@@ -384,6 +386,7 @@ async function runTurn(
     turn.messages,
     turn.pendingAsk,
     userBody,
+    opts.provider,
   )
   if ('error' in reply) {
     // The user message is already persisted on `threadId` — surface it so the
@@ -402,7 +405,7 @@ async function runTurn(
     citationsContext: turn.citationsContext,
     pendingAsk: turn.pendingAsk,
     askResolution: reply.askResolution,
-    channel: chatTodayChannel(opts.surface),
+    channel: chatTodayChannel(opts.surface, opts.channel),
   })
 }
 

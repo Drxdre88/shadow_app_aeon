@@ -76,7 +76,7 @@ export async function sendChatMessage(
       const updated = await updateChatMessageContent(userId, threadId, last.seq, body)
       if (!updated.ok) return { ok: false, reason: 'thread_not_found' }
       // Same key as the original turn: the edited text replaces it in today.
-      recordChatOwnerTurn(userId, threadId, last.seq, body, chatTodayChannel(opts.surface))
+      recordChatOwnerTurn(userId, threadId, last.seq, body, chatTodayChannel(opts.surface, opts.channel))
     }
     return runAssistantTurn(userId, threadId, loaded.thread.dominionId, body, last.seq, opts)
   }
@@ -98,7 +98,7 @@ export async function runChatTurn(
     content: body,
   })
   if (!userAppend.ok) return { ok: false, reason: 'thread_not_found' }
-  recordChatOwnerTurn(userId, threadId, userAppend.seq, body, chatTodayChannel(opts.surface))
+  recordChatOwnerTurn(userId, threadId, userAppend.seq, body, chatTodayChannel(opts.surface, opts.channel))
 
   return runAssistantTurn(userId, threadId, dominionId, body, userAppend.seq, opts)
 }

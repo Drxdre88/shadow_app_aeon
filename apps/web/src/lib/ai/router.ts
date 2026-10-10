@@ -49,7 +49,7 @@ export class AiCredentialDecryptError extends Error {
   }
 }
 
-type TierResolution = { providerId: ProviderId; modelId: string }
+export type TierResolution = { providerId: ProviderId; modelId: string }
 
 async function resolveTier(userId: string, tier: AiTier): Promise<TierResolution> {
   const [prefs] = await db.select().from(userAiPreferences).where(eq(userAiPreferences.userId, userId))
@@ -109,10 +109,18 @@ export interface ResolvedTierModel {
   effort: ModelEffort | null
 }
 
-export async function resolveModelForUser(userId: string, tier: AiTier): Promise<ResolvedTierModel> {
+export interface ResolveModelOptions {
+  // A task policy's pinned model, used instead of the user's tier preference.
+  model?: TierResolution
+  // An explicit owner action (the voice line): the paid-backup switch, which
+  // governs automatic paid fallbacks, does not apply. The key is still required.
+  ownerInitiated?: boolean
+}
+
+export async function resolveModelForUser(userId: string, tier: AiTier, opts: ResolveModelOptions = {}): Promise<ResolvedTierModel> {
   const [{ providerId, modelId }, paidAllowed] = await Promise.all([
-    resolveTier(userId, tier),
-    isPaidBackupEnabled(userId),
+    opts.model ?? resolveTier(userId, tier),
+    opts.ownerInitiated ? true : isPaidBackupEnabled(userId),
   ])
   if (!paidAllowed) throw new PaidBackupOffError(providerId)
   const apiKey = await getDecryptedKey(userId, providerId)

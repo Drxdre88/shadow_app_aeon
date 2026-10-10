@@ -4,6 +4,8 @@ import { jsonResponse } from '@/lib/api/response'
 export type RateLimitConfig = {
   windowMs: number
   maxRequests: number
+  // Own bucket per IP (`scope:ip`) instead of the IP bucket shared by every route.
+  scope?: string
 }
 
 export const API_READ_LIMIT: RateLimitConfig = { windowMs: 60_000, maxRequests: 200 }
@@ -64,7 +66,7 @@ export function withRateLimit(
       ?? req.headers.get('x-real-ip')
       ?? 'unknown'
 
-    const { allowed, remaining, resetAt } = checkRateLimit(ip, config)
+    const { allowed, remaining, resetAt } = checkRateLimit(config.scope ? `${config.scope}:${ip}` : ip, config)
 
     if (!allowed) {
       const retryAfter = Math.ceil((resetAt - Date.now()) / 1000)

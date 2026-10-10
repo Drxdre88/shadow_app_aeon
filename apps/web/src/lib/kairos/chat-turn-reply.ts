@@ -8,7 +8,7 @@ import { hasAnyRetrieval } from '@/lib/data/kairos-chat-payload'
 import { getProviderForTask } from '@/lib/ai/route-task'
 import type { AIProvider } from '@/lib/ai/provider'
 import { answerKairosAsk } from '@/lib/kairos/ask'
-import type { ChatPromptSurface } from '@/lib/kairos/chat-prompt'
+import type { ChatPromptChannel, ChatPromptSurface } from '@/lib/kairos/chat-prompt'
 import { extractJsonBlock, neutraliseFences } from '@/lib/kairos/_prompt-utils'
 
 // Shared leaves of the chat turn engine (chat-turn.ts → chat-turn-assistant.ts
@@ -18,6 +18,11 @@ import { extractJsonBlock, neutraliseFences } from '@/lib/kairos/_prompt-utils'
 
 export interface ChatTurnOptions {
   surface?: ChatPromptSurface
+  // 'voice' selects the spoken reply register and the voice today channel.
+  channel?: ChatPromptChannel
+  // A caller-resolved paid provider (the voice line taps it to stream);
+  // absent = resolved here through getProviderForTask.
+  provider?: AIProvider
 }
 
 export type KairosChatTurnResult =

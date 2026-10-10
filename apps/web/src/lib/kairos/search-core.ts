@@ -3,7 +3,8 @@
 // this pipeline: chat substrate (retrieve.ts), MCP/REST search_memories
 // (memory-search.ts) and prepare_context (lib/data/memories-context.ts).
 //
-//   FTS leg + vector leg (same filters) → RRF fuse → relevance × standing
+//   FTS leg + vector leg (same filters) + entity list (search-entity.ts) →
+//   RRF fuse → relevance × standing
 //   (lib/kairos/ranking.ts) → Voyage rerank-2.5 over a bounded pool, blended
 //   with the same standing factor → top-k.
 //   Opt-in `expand` (search-expand.ts) widens the rerank pool first with link
@@ -25,17 +26,10 @@ import { rrfFuse } from './rrf'
 import { scoreRows, type Ranked } from './ranking'
 import { rerankScored } from './rerank'
 import { EXPAND_SEEDS, expandCandidates, type ExpandVia, type SearchVia } from './search-expand'
-import type { StreamClass } from './streamClass'
+import { SEARCH_ENTITY_DEFAULT, entityLeg } from './search-entity'
+import { REAL_MEMORY_STREAMS } from './search-streams'
 
-// Operator signal + agent work: what an agent means by "a memory".
-export const REAL_MEMORY_STREAMS = [
-  'reflection', 'idea', 'agentic', 'concept', 'belief', 'constitution', 'execution',
-] as const satisfies readonly StreamClass[]
-
-// Machine / synthesis rows hidden by default (opt in with includeMachine).
-export const MACHINE_STREAMS = [
-  'trace', 'snapshot', 'delta', 'archetype', 'cortex', 'aether', 'advisory',
-] as const satisfies readonly StreamClass[]
+export { MACHINE_STREAMS, REAL_MEMORY_STREAMS } from './search-streams'
 
 const DEFAULT_RERANK_POOL = 12
 const DEFAULT_MIN_QUERY_CHARS = 3
@@ -133,6 +127,9 @@ export interface SearchCoreOptions {
   // Graph step 1: add link neighbours + archetype signposts to the rerank
   // pool (search-expand.ts). Hybrid mode only; default SEARCH_EXPAND_DEFAULT.
   expand?: boolean
+  // Total Recall 2a: memories mentioning an entity named in the query join
+  // as a third RRF list (search-entity.ts). Default SEARCH_ENTITY_DEFAULT.
+  entity?: boolean
 }
 
 export interface SearchCoreHit {
@@ -166,6 +163,35 @@ function toHits(
   viaOf: (r: CoreRow) => SearchVia = () => 'search',
 ): SearchCoreHit[] {
   return ranked.map(({ row, score }) => ({ row, score, relevance: relevanceOf(row), via: viaOf(row) }))
+}
+
+interface MergedLists {
+  byId: Map<string, CoreRow>
+  rows: CoreRow[]
+  rel: (r: CoreRow) => number
+  via: (r: CoreRow) => SearchVia
+}
+
+// RRF over the main legs plus the entity list (only when it found rows, so a
+// query naming no entity fuses exactly as before). Entity-only rows are tagged.
+function mergeLists(legs: CoreRow[][], ents: CoreRow[]): MergedLists {
+  const byId = new Map<string, CoreRow>()
+  for (const leg of legs) for (const r of leg) if (!byId.has(r.id)) byId.set(r.id, r)
+  const entityOnly = new Set<string>()
+  for (const r of ents) {
+    if (byId.has(r.id)) continue
+    byId.set(r.id, r)
+    entityOnly.add(r.id)
+  }
+  const lists = ents.length > 0 ? [...legs, ents] : legs
+  const fused = rrfFuse(lists.map((leg) => ({ ids: leg.map((r) => r.id), weight: 1 })))
+  const rows = [...fused.keys()].map((id) => byId.get(id)).filter((r): r is CoreRow => r != null)
+  return {
+    byId,
+    rows,
+    rel: (r) => fused.get(r.id) ?? 0,
+    via: (r) => (entityOnly.has(r.id) ? 'entity' : 'search'),
+  }
 }
 
 export async function searchCore(userId: string, opts: SearchCoreOptions): Promise<SearchCoreResult> {
@@ -207,13 +233,47 @@ export async function searchCore(userId: string, opts: SearchCoreOptions): Promi
     .limit(legLimit)
 
   const ftsRank = (r: CoreRow) => Number(r.rank) || 0
-  const ftsOnly = (): SearchCoreResult => ({
+  const ftsOnlyPlain = (): SearchCoreResult => ({
     hits: toHits(scoreRows(ftsRows, ftsRank, tier).slice(0, limit), ftsRank),
     mode: 'fts',
     reranked: false,
     candidates: ftsRows.length,
     topRelevance: null,
   })
+
+  // One entity lookup per search: memoised so a late hybrid failure falling
+  // back to ftsOnly() reuses it; it still runs after the vector leg.
+  let entityOnce: Promise<CoreRow[]> | null = null
+  const entityRows = (): Promise<CoreRow[]> => {
+    if (entityOnce) return entityOnce
+    entityOnce = (opts.entity ?? SEARCH_ENTITY_DEFAULT)
+      ? entityLeg<CoreRow>({
+          userId,
+          query,
+          fetch: (mentions, confidence) => db
+            .select(CORE_COLUMNS)
+            .from(memories)
+            .where(and(...scope, mentions, ...tail))
+            .orderBy(desc(confidence), desc(memories.createdAt))
+            .limit(legLimit),
+        })
+      : Promise.resolve([])
+    return entityOnce
+  }
+
+  // FTS-only mode still fuses the entity list when a name matched.
+  const ftsOnly = async (): Promise<SearchCoreResult> => {
+    const ents = await entityRows()
+    if (ents.length === 0) return ftsOnlyPlain()
+    const merged = mergeLists([ftsRows], ents)
+    return {
+      hits: toHits(scoreRows(merged.rows, merged.rel, tier).slice(0, limit), merged.rel, merged.via),
+      mode: 'fts',
+      reranked: false,
+      candidates: merged.byId.size,
+      topRelevance: null,
+    }
+  }
 
   if (!embeddingsEnabled()) return ftsOnly()
 
@@ -238,17 +298,13 @@ export async function searchCore(userId: string, opts: SearchCoreOptions): Promi
         .limit(legLimit)
     })
 
-    const byId = new Map<string, CoreRow>()
-    for (const r of ftsRows) byId.set(r.id, r)
-    for (const r of vecRows) if (!byId.has(r.id)) byId.set(r.id, r)
-
-    const fused = rrfFuse([
-      { ids: ftsRows.map((r) => r.id), weight: 1 },
-      { ids: vecRows.map((r) => r.id), weight: 1 },
-    ])
-    const fusedRows = [...fused.keys()].map((id) => byId.get(id)).filter((r): r is CoreRow => r != null)
-    const fusedRel = (r: CoreRow) => fused.get(r.id) ?? 0
-    const ranked = scoreRows(fusedRows, fusedRel, tier)
+    // The entity list runs after both legs and before expansion (callers mock
+    // select order); its fetch passes the same scope + filters + window.
+    const merged = mergeLists([ftsRows, vecRows], await entityRows())
+    const byId = merged.byId
+    const fusedRel = merged.rel
+    const baseVia = merged.via
+    const ranked = scoreRows(merged.rows, fusedRel, tier)
 
     // Standing already decided WHICH rows reach the pool; the cross-encoder
     // then sharpens relevance, blended with the same standing factor.
@@ -279,7 +335,7 @@ export async function searchCore(userId: string, opts: SearchCoreOptions): Promi
         })
       : []
     const expandedVia = new Map<CoreRow, ExpandVia>(extras.map((e) => [e.row, e.via]))
-    const viaOf = (r: CoreRow): SearchVia => expandedVia.get(r) ?? 'search'
+    const viaOf = (r: CoreRow): SearchVia => expandedVia.get(r) ?? baseVia(r)
     // Promoted = already a fused candidate past the pool; fresh = new rows.
     const promoted = new Set(extras.map((e) => e.row.id))
     const fresh = extras.filter((e) => !byId.has(e.row.id))
@@ -293,7 +349,7 @@ export async function searchCore(userId: string, opts: SearchCoreOptions): Promi
     if (!reranked) {
       // Fused order untouched; brand-new extras only trail it.
       const tailHits = toHits(fresh.map((e) => ({ row: e.row, score: 0 })), () => 0, viaOf)
-      const hits = [...toHits(ranked.slice(0, limit), fusedRel), ...tailHits].slice(0, limit)
+      const hits = [...toHits(ranked.slice(0, limit), fusedRel, baseVia), ...tailHits].slice(0, limit)
       return { hits, mode: 'hybrid', reranked: false, candidates, topRelevance: null }
     }
 
@@ -301,7 +357,7 @@ export async function searchCore(userId: string, opts: SearchCoreOptions): Promi
     const rerankRel = (r: CoreRow) => relevance.get(r) ?? 0
     const top = toHits(scoreRows(reranked.map((s) => s.item), rerankRel, { tieBreak: isReflection }), rerankRel, viaOf)
     // Rows past the rerank pool keep their fused order after the reranked head.
-    const rest = toHits(ranked.slice(pool.length).filter((r) => !promoted.has(r.row.id)), fusedRel)
+    const rest = toHits(ranked.slice(pool.length).filter((r) => !promoted.has(r.row.id)), fusedRel, baseVia)
     const topRelevance = Math.max(...reranked.map((s) => s.relevance))
     return { hits: [...top, ...rest].slice(0, limit), mode: 'hybrid', reranked: true, candidates, topRelevance }
   } catch (err) {
